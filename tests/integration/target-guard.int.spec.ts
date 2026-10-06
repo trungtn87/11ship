@@ -18,6 +18,13 @@ function runGuard(env: Record<string, string | undefined>) {
   });
 }
 
+function withDatabaseUser(databaseUrl: string, user: string, password: string): string {
+  const url = new URL(databaseUrl);
+  url.username = user;
+  url.password = password;
+  return url.toString();
+}
+
 describe('F06 — test target guard (pure logic)', () => {
   it('rejects every APP_ENV other than test before touching any database', () => {
     for (const appEnv of ['development', 'staging', 'production', '', undefined]) {
@@ -101,5 +108,19 @@ describe('F06 — test target guard (real process and real database)', () => {
     } finally {
       await other.end();
     }
+  });
+
+  it('fails against a real connection when current_user is outside the allowlist', () => {
+    const adminPassword = process.env.PGPASSWORD;
+    expect(adminPassword).toBeTruthy();
+
+    const wrongUserUrl = withDatabaseUser(databaseUrl, 'ci_admin', adminPassword ?? '');
+    const result = runGuard({ APP_ENV: 'test', DATABASE_URL: wrongUserUrl });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('TEST_TARGET_GUARD_FAILED');
+    expect(result.stderr).toContain('not the allowed test user');
+    expect(result.stderr).not.toContain(adminPassword ?? '');
+    expect(result.stdout).not.toContain(adminPassword ?? '');
   });
 });
