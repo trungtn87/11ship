@@ -110,16 +110,32 @@ describe('F06 — test target guard (real process and real database)', () => {
     }
   });
 
-  it('fails against a real connection when current_user is outside the allowlist', () => {
+  it('fails against the allowed database when current_user is outside the allowlist', async () => {
     const adminPassword = process.env.PGPASSWORD;
     expect(adminPassword).toBeTruthy();
 
     const wrongUserUrl = withDatabaseUser(databaseUrl, 'ci_admin', adminPassword ?? '');
+
+    // Precondition: this is the allowed database with the wrong real server user, not an auth
+    // failure or a database-name mismatch.
+    const probe = new Client({ connectionString: wrongUserUrl, connectionTimeoutMillis: 3000 });
+    await probe.connect();
+    try {
+      const identity = await probe.query<{ database_name: string; user_name: string }>(
+        'SELECT current_database() AS database_name, current_user AS user_name',
+      );
+      expect(identity.rows).toEqual([
+        { database_name: ALLOWED_TEST_DATABASE, user_name: 'ci_admin' },
+      ]);
+    } finally {
+      await probe.end();
+    }
+
     const result = runGuard({ APP_ENV: 'test', DATABASE_URL: wrongUserUrl });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('TEST_TARGET_GUARD_FAILED');
-    expect(result.stderr).toContain('not the allowed test user');
+    expect(result.stderr).toContain('not the allowed test database and user');
     expect(result.stderr).not.toContain(adminPassword ?? '');
     expect(result.stdout).not.toContain(adminPassword ?? '');
   });
