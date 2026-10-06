@@ -175,7 +175,7 @@ At-least-once:
 - success audit của mutation nằm cùng transaction;
 - rollback -> success audit không tồn tại;
 - standalone security DENIED/FAILURE được ghi bằng helper short transaction;
-- update/delete audit row bị từ chối;
+- update/delete/truncate audit row bị từ chối;
 - secret marker không xuất hiện trong DB hoặc logs.
 
 ## 11. Acceptance tests
