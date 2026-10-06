@@ -1,0 +1,47 @@
+# Local development databases (Docker Desktop on Windows, or Docker Engine elsewhere).
+#
+#   docker compose -f compose.dev.yml up -d db-dev db-test
+#
+# DEV and TEST are two separate containers with separate users, passwords and databases, so test
+# code can never reach DEV data. Both listen on 127.0.0.1 only. Passwords come from .env
+# (copy .env.example to .env first); there are no defaults to fall back on.
+name: ship11-dev
+
+services:
+  db-dev:
+    image: postgres:17.11
+    container_name: ship11-db-dev
+    environment:
+      POSTGRES_USER: ship11_dev
+      POSTGRES_PASSWORD: ${DEV_DB_PASSWORD:?Set DEV_DB_PASSWORD in .env (see .env.example)}
+      POSTGRES_DB: ship11_dev
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ship11_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ship11_dev -d ship11_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  db-test:
+    image: postgres:17.11
+    container_name: ship11-db-test
+    environment:
+      POSTGRES_USER: ship11_test
+      POSTGRES_PASSWORD: ${TEST_DB_PASSWORD:?Set TEST_DB_PASSWORD in .env (see .env.example)}
+      POSTGRES_DB: ship11_test
+    ports:
+      - "127.0.0.1:5433:5432"
+    # Throwaway data: the test database is rebuilt from scratch every time the container starts.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ship11_test -d ship11_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  ship11_dev_data:
