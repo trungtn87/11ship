@@ -1,0 +1,37 @@
+{
+  "name": "11ship",
+  "version": "0.0.0",
+  "private": true,
+  "description": "11Ship — backend foundation (task M00-B1)",
+  "packageManager": "npm@11.9.0",
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11 <12"
+  },
+  "workspaces": [
+    "apps/backend"
+  ],
+  "scripts": {
+    "dev": "npm run build && node --env-file-if-exists=.env apps/backend/dist/main.js",
+    "start": "node apps/backend/dist/main.js",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc -p apps/backend/tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "build": "npm run build --workspace apps/backend",
+    "clean:test": "node scripts/clean-dir.js .test-dist",
+    "build:test": "npm run clean:test && tsc -p tsconfig.test.json",
+    "db:migrate": "node scripts/db-migrate.js",
+    "test:unit": "npm run build:test && jest --config jest.unit.config.js",
+    "test:integration": "npm run build:test && node .test-dist/tests/integration/support/guard-cli.js && jest --config jest.integration.config.js --runInBand"
+  },
+  "devDependencies": {
+    "@jest/globals": "30.5.2",
+    "@nestjs/testing": "11.2.7",
+    "@types/node": "24.19.1",
+    "@types/pg": "8.23.1",
+    "eslint": "9.39.5",
+    "jest": "30.5.2",
+    "node-pg-migrate": "8.0.4",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.1"
+  }
+}
