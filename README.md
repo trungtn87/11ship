@@ -3,7 +3,7 @@
 
 ## Tiến độ hiện tại
 
-Đã kiểm tra repository và hoàn thiện gói thiết kế nền M00-B1. Mã nền backend M00-B1 (bootstrap NestJS, cấu hình, pool PostgreSQL, migration, health endpoints, test, CI) đã được viết nhưng **chưa nghiệm thu**: chưa có `package-lock.json` thật, chưa có kết quả build/test/CI. Mọi case F01–F09 đang ở trạng thái BLOCKED, xem [docs/evidence/M00-B1.md](docs/evidence/M00-B1.md). Chưa có migration nghiệp vụ và chưa có bản app cho Owner test.
+Đã kiểm tra repository và hoàn thiện gói thiết kế nền M00-B1. Mã nền backend M00-B1 (bootstrap NestJS, cấu hình, pool PostgreSQL, migration, health endpoints, test, CI) đã được viết nhưng **chưa nghiệm thu**: chưa có `package-lock.json` thật, chưa có kết quả build/test/CI. Các case F01–F06, F08, F09 đang BLOCKED còn F07 (CI) FAIL vì thiếu lockfile; chưa case nào PASS. Xem [docs/evidence/M00-B1.md](docs/evidence/M00-B1.md). Chưa có migration nghiệp vụ và chưa có bản app cho Owner test.
 
 - [Quyết định nền backend](docs/current/ADR-001-backend-foundation.md)
 - [Quyết định session và password](docs/current/ADR-002-auth-security-foundation.md)
