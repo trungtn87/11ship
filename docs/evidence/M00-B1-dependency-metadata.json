@@ -1,0 +1,157 @@
+{
+  "checked_at_vietnam_date": "2026-10-06",
+  "method": "npm view package@major version engines peerDependencies --json",
+  "scope": "metadata only; no install/build/runtime test",
+  "results": [
+    {
+      "package": "@nestjs/core@11",
+      "metadata": {
+        "version": "11.2.7",
+        "engines": {
+          "node": ">= 20"
+        },
+        "peerDependencies": {
+          "rxjs": "^7.1.0",
+          "@nestjs/common": "^11.0.0",
+          "reflect-metadata": "^0.1.12 || ^0.2.0",
+          "@nestjs/websockets": "^11.0.0",
+          "@nestjs/microservices": "^11.0.0",
+          "@nestjs/platform-express": "^11.0.0"
+        }
+      }
+    },
+    {
+      "package": "@nestjs/common@11",
+      "metadata": {
+        "version": "11.2.7",
+        "peerDependencies": {
+          "rxjs": "^7.1.0",
+          "class-validator": ">=0.13.2",
+          "reflect-metadata": "^0.1.12 || ^0.2.0",
+          "class-transformer": ">=0.4.1"
+        }
+      }
+    },
+    {
+      "package": "@nestjs/platform-express@11",
+      "metadata": {
+        "version": "11.2.7",
+        "peerDependencies": {
+          "@nestjs/core": "^11.0.0",
+          "@nestjs/common": "^11.0.0"
+        }
+      }
+    },
+    {
+      "package": "@nestjs/testing@11",
+      "metadata": {
+        "version": "11.2.7",
+        "peerDependencies": {
+          "@nestjs/core": "^11.0.0",
+          "@nestjs/common": "^11.0.0",
+          "@nestjs/microservices": "^11.0.0",
+          "@nestjs/platform-express": "^11.0.0"
+        }
+      }
+    },
+    {
+      "package": "typescript@5",
+      "metadata": {
+        "version": "5.9.3",
+        "engines": {
+          "node": ">=14.17"
+        }
+      }
+    },
+    {
+      "package": "pg@8",
+      "metadata": {
+        "version": "8.23.1",
+        "engines": {
+          "node": ">= 16.0.0"
+        },
+        "peerDependencies": {
+          "pg-native": ">=3.0.1"
+        }
+      }
+    },
+    {
+      "package": "node-pg-migrate@8",
+      "metadata": {
+        "version": "8.0.4",
+        "engines": {
+          "node": ">=20.11.0"
+        },
+        "peerDependencies": {
+          "pg": ">=4.3.0 <9.0.0",
+          "@types/pg": ">=6.0.0 <9.0.0"
+        }
+      }
+    },
+    {
+      "package": "jest@30",
+      "metadata": {
+        "version": "30.5.2",
+        "engines": {
+          "node": "^18.14.0 || ^20.0.0 || ^22.0.0 || >=24.0.0"
+        },
+        "peerDependencies": {
+          "node-notifier": "^8.0.1 || ^9.0.0 || ^10.0.0"
+        }
+      }
+    },
+    {
+      "package": "reflect-metadata@0.2",
+      "metadata": "0.2.2"
+    },
+    {
+      "package": "rxjs@7",
+      "metadata": "7.8.2"
+    },
+    {
+      "package": "eslint@9",
+      "metadata": {
+        "version": "9.39.5",
+        "engines": {
+          "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+        },
+        "peerDependencies": {
+          "jiti": "*"
+        }
+      }
+    },
+    {
+      "package": "typescript-eslint@8",
+      "metadata": {
+        "version": "8.71.1",
+        "engines": {
+          "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+        },
+        "peerDependencies": {
+          "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0",
+          "typescript": ">=4.8.4 <6.1.0"
+        }
+      }
+    },
+    {
+      "package": "@types/node@24",
+      "metadata": {
+        "version": "24.19.1",
+        "peerDependencies": {}
+      }
+    },
+    {
+      "package": "@types/pg@8",
+      "metadata": "8.23.1"
+    },
+    {
+      "package": "argon2@0.44",
+      "metadata": {
+        "version": "0.44.0",
+        "engines": {
+          "node": ">=16.17.0"
+        }
+      }
+    }
+  ]
+}

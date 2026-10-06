@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+.dart_tool/
+.flutter-plugins-dependencies
+build/
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
