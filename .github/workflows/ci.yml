@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify (Node 24, PostgreSQL 17)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          # Admin account of this throwaway service container. The application and the tests
+          # never use it; they use the restricted ship11_test role created below.
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: ci_admin_ephemeral_only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      PGPASSWORD: ci_admin_ephemeral_only
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Verify toolchain versions
+        run: |
+          expected_node="$(tr -d '[:space:]' < .node-version)"
+          actual_node="$(node -p 'process.versions.node')"
+          npm_major="$(npm -v | cut -d. -f1)"
+          echo "node ${actual_node} (expected ${expected_node}), npm $(npm -v)"
+          test "${actual_node}" = "${expected_node}"
+          test "${npm_major}" = "11"
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      - name: Lockfile must be unchanged by npm ci
+        run: git diff --exit-code -- package-lock.json
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Create restricted test role and database
+        run: |
+          psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U ci_admin -d postgres <<'SQL'
+          CREATE ROLE ship11_test LOGIN PASSWORD 'ci_test_ephemeral_only'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          CREATE DATABASE ship11_test OWNER ship11_test;
+          SQL
+
+      - name: Apply migrations (smoke)
+        env:
+          APP_ENV: test
+          DATABASE_URL: postgres://ship11_test:ci_test_ephemeral_only@127.0.0.1:5432/ship11_test
+        run: npm run db:migrate
+
+      - name: Unit tests
+        env:
+          NODE_ENV: test
+        run: npm run test:unit
+
+      - name: Integration tests (real PostgreSQL)
+        env:
+          NODE_ENV: test
+          APP_ENV: test
+          DATABASE_URL: postgres://ship11_test:ci_test_ephemeral_only@127.0.0.1:5432/ship11_test
+        run: npm run test:integration
