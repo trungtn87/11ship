@@ -49,14 +49,17 @@ jobs:
           node-version-file: .node-version
           cache: npm
 
+      - name: Pin npm from packageManager
+        run: npm install --global npm@11.9.0
+
       - name: Verify toolchain versions
         run: |
           expected_node="$(tr -d '[:space:]' < .node-version)"
           actual_node="$(node -p 'process.versions.node')"
-          npm_major="$(npm -v | cut -d. -f1)"
+          actual_npm="$(npm -v)"
           echo "node ${actual_node} (expected ${expected_node}), npm $(npm -v)"
           test "${actual_node}" = "${expected_node}"
-          test "${npm_major}" = "11"
+          test "${actual_npm}" = "11.9.0"
 
       - name: Install dependencies (npm ci)
         run: npm ci
