@@ -3,7 +3,7 @@
 
 ## Tiến độ hiện tại
 
-Đã kiểm tra repository và hoàn thiện gói thiết kế nền M00-B1. Mã nền backend M00-B1 (bootstrap NestJS, cấu hình, pool PostgreSQL, migration, health endpoints, test, CI) đã được viết nhưng **chưa nghiệm thu**: chưa có `package-lock.json` thật, chưa có kết quả build/test/CI. Các case F01–F06, F08, F09 đang BLOCKED còn F07 (CI) FAIL vì thiếu lockfile; chưa case nào PASS. Xem [docs/evidence/M00-B1.md](docs/evidence/M00-B1.md). Chưa có migration nghiệp vụ và chưa có bản app cho Owner test.
+Đã kiểm tra repository, hoàn thiện thiết kế nền và triển khai M00-B1. Nền backend (NestJS bootstrap, cấu hình, pool PostgreSQL, migration, health endpoints, error/log contract, test và CI) đã **nghiệm thu PASS F01–F09** trên Node 24.21.0, npm 11.9.0 và PostgreSQL 17.11. CI xác nhận 54 unit test + 28 integration test đều PASS; `package-lock.json` thật đã được commit và `npm ci` không làm thay đổi lockfile. Xem [docs/evidence/M00-B1.md](docs/evidence/M00-B1.md). Chưa có migration nghiệp vụ và chưa có bản app cho Owner test.
 
 - [Quyết định nền backend](docs/current/ADR-001-backend-foundation.md)
 - [Quyết định session và password](docs/current/ADR-002-auth-security-foundation.md)
@@ -17,7 +17,7 @@
 
 ChatGPT thiết kế, chia task và review. Claude code từng task. Owner test nghiệp vụ và duyệt. Mỗi gói dùng nhánh riêng, giữ base/head commit và bằng chứng test. Chưa merge khi chưa PASS.
 
-Task tiếp theo giao Claude: M00-B1. Sau khi nền PASS mới làm M00-C1 (transaction context/idempotency/audit/outbox), rồi M01-A1 (Auth Core). Không giao gói Auth trước để tránh bị chặn vì nền chưa có.
+M00-B1 đã PASS ở nhánh code và đang chờ quy trình merge tài liệu/nền. Sau khi PR thiết kế #1 được merge và PR M00-B1 được retarget/rebase về `main`, bước tiếp theo là M00-C1 (transaction context/idempotency/audit/outbox), rồi mới tới M01-A1 (Auth Core).
 
 Thiết kế nằm ở nhánh docs/step-5-foundation, PR #1. Main chưa chứa bộ tài liệu này trước khi PR được merge.
 
@@ -49,7 +49,7 @@ Sau đó kiểm tra:
 - `http://127.0.0.1:3000/v1/health/live` trả `{"data":{"status":"ok"}}`.
 - `http://127.0.0.1:3000/v1/health/ready` trả `{"data":{"status":"ready"}}` khi DB chạy, và 503 khi DB mất.
 
-`npm ci` cần có `package-lock.json`. Lần đầu tiên trên một máy có truy cập npm registry, chạy `npm install` để tạo lockfile rồi commit.
+`package-lock.json` đã có trong repo. Dùng `npm ci` để cài đúng dependency đã khóa; không cần chạy `npm install` chỉ để tạo lockfile nữa.
 
 Hai database tách riêng: `db-dev` (cổng 5432, user/DB `ship11_dev`) và `db-test` (cổng 5433, user/DB `ship11_test`, dữ liệu mất khi dừng container). Cả hai chỉ lắng nghe trên 127.0.0.1.
 
