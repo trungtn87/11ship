@@ -1,7 +1,7 @@
 # M00-C1 — Transactional Core
 
-Phiên bản 0.1, ngày 07/10/2026.
-Trạng thái: DESIGN — READY FOR OWNER/CHATGPT REVIEW; chưa giao Claude code.
+Phiên bản 0.2, ngày 07/10/2026.
+Trạng thái: DESIGN REVIEWED — READY FOR OWNER LOCK; chưa giao Claude code.
 
 ## 1. Base và nguồn
 
@@ -18,6 +18,13 @@ Base bắt buộc: `main` sau M00-B1, merge SHA `91316a5fe155f7af5ad96491121f5bb
 M00-C1 không được sửa business contract để làm implementation dễ hơn.
 
 ## 2. Mục tiêu code
+
+M00-C1 là **một milestone nhưng không giao Claude trong một prompt lớn**. Triển khai theo 3 slice tuần tự, mỗi slice có branch/PR/CI riêng và chỉ bắt đầu slice sau khi slice trước đã review/merge:
+- `M00-C1A`: TransactionContext + idempotency + crypto/TTL/cleanup — C01..C10.
+- `M00-C1B`: safe JSON + audit + transactional outbox writer — C11..C12.
+- `M00-C1C`: outbox dispatcher/lease/retry/recovery + final integration — C13..C16.
+
+Auth vẫn chờ **toàn bộ M00-C1** hoàn tất.
 
 Tạo reusable M00 infrastructure:
 1. explicit TransactionContext/TransactionManager;
@@ -48,7 +55,7 @@ Không sửa ADR/source baseline trong code branch.
 
 ## 4. Schema bắt buộc
 
-Migration mới tạo đúng 3 bảng chuẩn:
+Toàn milestone M00-C1 tạo đúng 3 bảng chuẩn (có thể chia thành migration theo slice, không bắt buộc một migration duy nhất):
 - `app.idempotency_records`
 - `app.audit_logs`
 - `app.outbox_events`.
@@ -68,8 +75,9 @@ Tối thiểu:
 - callback nhận `TransactionContext`;
 - repository có thể query qua transaction context mà không mở connection khác;
 - rollback/release luôn chạy đúng;
-- không silent nested independent transaction;
-- external publisher không chạy khi transaction business còn mở.
+- không silent nested independent transaction; C1 không hỗ trợ nested `withTransaction`/savepoint như một feature;
+- external publisher không chạy khi transaction business còn mở;
+- C1 không tự retry callback khi gặp `40001`/`40P01`; chỉ surface lỗi đã sanitize.
 
 Không dùng `pool.query` rời rạc cho các statement phải atomic.
 
@@ -78,7 +86,7 @@ Không dùng `pool.query` rời rạc cho các statement phải atomic.
 Input tối thiểu:
 - server-derived scope type/id;
 - operation_id;
-- Idempotency-Key;
+- Idempotency-Key UUID canonical;
 - normalized logical request;
 - replay TTL + dedupe TTL trong bound;
 - business callback nhận TransactionContext;
@@ -92,16 +100,19 @@ New request:
 - commit.
 
 Existing same fingerprint:
+- fingerprint incoming bằng key version của existing record, không bằng active key hiện tại;
 - không chạy callback;
-- authorization hook chạy trước decrypt;
+- sensitive authorization hook chạy trong cùng TransactionContext trước decrypt;
 - còn replay TTL -> decrypt + trả same logical result;
 - hết replay TTL nhưng tombstone còn -> `IDEMPOTENCY_REPLAY_EXPIRED`.
 
 Existing different fingerprint:
 - `IDEMPOTENCY_KEY_REUSED`.
 
-Rollback:
+Rollback/failure:
 - không để completed idempotency record;
+- mặc định chỉ 2xx committed success được persist để replay;
+- validation/authorization/business failure không consume key;
 - retry sau rollback có thể trở thành owner mới.
 
 Không lưu plaintext request/secret.
@@ -109,13 +120,13 @@ Không lưu plaintext request/secret.
 ## 7. Crypto/config contract
 
 Dùng built-in `node:crypto`.
-- AES-256-GCM, 12-byte random IV, 16-byte tag.
+- AES-256-GCM, 12-byte random IV, 16-byte tag và explicit `authTagLength=16` khi encrypt/decrypt.
 - HMAC-SHA-256 request fingerprint.
 - subkeys derive từ versioned 32-byte master bằng HKDF-SHA-256/domain separation.
-- AAD bind immutable record identity.
+- AAD bind immutable record identity bằng encoding không mơ hồ và có `replay_format_version=1`.
 - active key id phải tồn tại trong keyring.
 - key material sai length/encoding -> startup/config fail, chỉ nêu tên config, không in value.
-- old key vẫn decrypt/verify old record sau active-key rotation.
+- old key vẫn fingerprint/decrypt/verify old record sau active-key rotation.
 - missing required historical key -> 503 safe error, không rerun mutation.
 
 Tên config cụ thể có thể chốt khi code nhưng phải có:
@@ -135,6 +146,7 @@ Audit metadata, replay_guard và outbox payload:
 - reject known secret-key names: password, token/access_token, authorization, cookie, otp, verification_token/proof, database_url và tương đương normalization;
 - không tự stringify Error/raw request;
 - replay encrypted payload là ngoại lệ duy nhất được phép chứa secret cần replay, nhưng ciphertext mới được persist/loggable; plaintext chỉ tồn tại trong memory của request.
+- hard cap: replay plaintext/outbox payload 64 KiB, audit metadata 8 KiB, replay_guard 4 KiB, JSON depth 8.
 
 ## 9. Outbox dispatcher contract
 
@@ -178,7 +190,7 @@ At-least-once:
 Same scope/operation/key + same logical body chạy callback một lần và lần 2 replay cùng logical result.
 
 ### C03 — Concurrent idempotency
-Hai request concurrent cùng key/body -> chỉ một callback/business insert; request còn lại replay, không duplicate.
+Hai request concurrent cùng key/body -> chỉ một callback/business insert; request còn lại replay, không duplicate. Advisory-lock derivation phải dùng deterministic two-int32 representation; không dùng JS Number cho arbitrary 64-bit bigint.
 
 ### C04 — Key reuse conflict
 Same scope/operation/key + body khác -> 409 `IDEMPOTENCY_KEY_REUSED`; không mutation lần 2.
@@ -189,11 +201,12 @@ Owner request rollback trước commit -> không idempotency record completed; r
 ### C06 — Scope/operation isolation
 Cùng key nhưng khác scope hoặc operation không đụng nhau.
 
-### C07 — Fingerprint privacy
-Password/proof marker có trong logical request nhưng không xuất hiện plaintext trong DB/log; same normalized request có same fingerprint dưới same key version, changed request khác fingerprint.
+### C07 — Fingerprint privacy/rotation
+Password/proof marker có trong logical request nhưng không xuất hiện plaintext trong DB/log; same normalized request có same fingerprint dưới same key version, changed request khác fingerprint; string canonicalization không trim/Unicode-normalize. Record v1 vẫn nhận ra same request sau active key chuyển v2 bằng cách dùng record key v1.
 
 ### C08 — Encrypted replay
 - DB không chứa plaintext secret marker;
+- replay plaintext >64 KiB bị reject trước persist;
 - decrypt đúng trả original logical payload;
 - tamper ciphertext/tag/AAD -> fail closed;
 - replay authorization hook bị deny -> không trả/decrypt payload cho caller;
@@ -205,20 +218,24 @@ Record tạo bằng key v1 replay được sau khi active chuyển v2 nếu v1 c
 ### C10 — Replay TTL/tombstone
 - hết replay TTL nhưng chưa dedupe TTL -> 409 REPLAY_EXPIRED, không re-execute;
 - cleanup pha 1 xóa ciphertext nhưng giữ tombstone;
+- cleanup dùng row locking/SKIP LOCKED để không race replay;
+- record quá dedupe TTL dù cleanup chưa chạy phải được executor xóa trong locked transaction và xử lý như idempotency window mới;
 - quá dedupe TTL cleanup xóa record.
 
 ### C11 — Audit atomicity/privacy
 - business commit + audit cùng tồn tại;
 - business rollback -> success audit không có;
 - standalone DENIED audit tồn tại;
-- UPDATE/DELETE audit bị chặn;
-- secret metadata bị reject/sanitized theo contract.
+- UPDATE/DELETE/TRUNCATE audit bị chặn;
+- secret metadata bị reject/sanitized theo contract;
+- audit SUCCESS insert fail -> business rollback;
+- standalone DENIED audit fail không đổi denial response gốc.
 
 ### C12 — Outbox atomicity
 Business mutation + outbox commit cùng tồn tại; rollback -> cả hai không tồn tại.
 
 ### C13 — Outbox concurrency/lease
-Hai dispatcher concurrent claim disjoint; stale lease được reclaim; active lease không bị worker khác lấy.
+Hai dispatcher concurrent claim disjoint; stale lease được reclaim; active lease không bị worker khác lấy; old worker ack bằng stale lock_token không được overwrite state mới. Lease/available time dùng DB time.
 
 ### C14 — Outbox retry
 Publish fail -> attempt tăng + retry/backoff; quá max -> DEAD; raw error/secret không persist.
@@ -232,7 +249,11 @@ Mô phỏng publish thành công nhưng ack thất bại/lease hết -> event đ
 - npm ci/lockfile/lint/typecheck/build/unit/integration đều PASS trong CI thật;
 - test process thoát sạch.
 
-## 12. Definition of Done
+## 12. Register replay integration invariant
+
+M01-A1 phải resolve verification token -> proof identity mà chưa consume và chưa reject chỉ vì proof đã `used`. Retry sau register success dùng proof identity để tìm idempotency record trước; chỉ new-owner callback mới lock/enforce `proof unused` rồi consume. Đây là điều kiện để A01-09 thật sự replay được access_token đã mã hóa.
+
+## 13. Definition of Done
 
 M00-C1 chỉ PASS khi:
 - C01–C16 có evidence thật;
@@ -246,7 +267,7 @@ M00-C1 chỉ PASS khi:
 - CI trên commit bàn giao xanh;
 - ChatGPT review diff không phát hiện contract drift.
 
-## 13. Điều kiện dừng
+## 14. Điều kiện dừng
 
 Claude phải STOP và báo `BLOCKED_BY_FOUNDATION` nếu implementation đòi:
 - đổi query stack/PostgreSQL major/framework;
@@ -257,3 +278,14 @@ Claude phải STOP và báo `BLOCKED_BY_FOUNDATION` nếu implementation đòi:
 - thay business contract module khác;
 - dùng exactly-once claim không có thiết kế mới.
 
+
+## 15. Slice handoff policy
+
+### M00-C1A — Transaction + Idempotency
+Chỉ giao transaction/idempotency/crypto/config và migration `idempotency_records`. PASS C01–C10 + CI trước khi merge. Không code audit/outbox dispatcher trong prompt A.
+
+### M00-C1B — Audit + Outbox Write
+Base là `main` sau C1A. Tạo `audit_logs`, `outbox_events`, safe-json validator, audit writer và outbox writer. PASS C11–C12 + regression C01–C10. Không code publisher worker ngoài minimal interface.
+
+### M00-C1C — Dispatcher + Final
+Base là `main` sau C1B. Code claim/lease/retry/dead/reclaim dispatcher + fake publisher + C13–C16. Chạy regression toàn C01–C16. Chỉ khi C1C merge và main CI xanh mới ghi `M00-C1 — TRANSACTIONAL CORE READY` và mở M01-A1.
