@@ -36,9 +36,6 @@ jobs:
           --health-timeout 5s
           --health-retries 12
 
-    env:
-      PGPASSWORD: ci_admin_ephemeral_only
-
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -76,12 +73,19 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Create restricted test role and database
+      - name: Create restricted test role, database and wrong-user fixture
+        # PGPASSWORD (the service admin password) exists only in this step. The tests never see it.
+        env:
+          PGPASSWORD: ci_admin_ephemeral_only
         run: |
           psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U ci_admin -d postgres <<'SQL'
           CREATE ROLE ship11_test LOGIN PASSWORD 'ci_test_ephemeral_only'
             NOSUPERUSER NOCREATEDB NOCREATEROLE;
           CREATE DATABASE ship11_test OWNER ship11_test;
+          -- Negative fixture for F06: a real, restricted server login that can reach ship11_test
+          -- but is not the allowed user. Used only through TEST_WRONG_USER_DATABASE_URL.
+          CREATE ROLE ship11_wrong_user LOGIN PASSWORD 'ci_wrong_user_ephemeral_only'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE;
           SQL
 
       - name: Apply migrations (smoke)
@@ -93,11 +97,40 @@ jobs:
       - name: Unit tests
         env:
           NODE_ENV: test
-        run: npm run test:unit
+        run: npm run test:unit -- --json --outputFile=.test-results/unit.json
 
-      - name: Integration tests (real PostgreSQL)
+      - name: Report unit test counts
+        if: ${{ always() && hashFiles('.test-results/unit.json') != '' }}
+        run: node scripts/report-test-counts.js "Unit tests" .test-results/unit.json --max-pending 0
+
+      # Local mode: exactly what the README tells a developer to run. No CI admin credential and no
+      # wrong-user fixture. Only the real wrong-user test may be skipped; nothing else.
+      - name: Integration tests, local mode (no CI-only credentials)
         env:
           NODE_ENV: test
           APP_ENV: test
           DATABASE_URL: postgres://ship11_test:ci_test_ephemeral_only@127.0.0.1:5432/ship11_test
-        run: npm run test:integration
+        run: |
+          test -z "${PGPASSWORD:-}" && test -z "${TEST_WRONG_USER_DATABASE_URL:-}"
+          npm run test:integration -- --json --outputFile=.test-results/integration-local.json
+
+      - name: Report integration counts, local mode
+        if: ${{ always() && hashFiles('.test-results/integration-local.json') != '' }}
+        run: |
+          node scripts/report-test-counts.js "Integration (local mode)" .test-results/integration-local.json \
+            --max-pending 1 --expect "real PostgreSQL server user is outside the allowlist=pending"
+
+      # CI mode: same suite plus the real wrong-user fixture. Nothing may be skipped.
+      - name: Integration tests, CI mode (real wrong-user fixture)
+        env:
+          NODE_ENV: test
+          APP_ENV: test
+          DATABASE_URL: postgres://ship11_test:ci_test_ephemeral_only@127.0.0.1:5432/ship11_test
+          TEST_WRONG_USER_DATABASE_URL: postgres://ship11_wrong_user:ci_wrong_user_ephemeral_only@127.0.0.1:5432/ship11_test
+        run: npm run test:integration -- --json --outputFile=.test-results/integration-ci.json
+
+      - name: Report integration counts, CI mode
+        if: ${{ always() && hashFiles('.test-results/integration-ci.json') != '' }}
+        run: |
+          node scripts/report-test-counts.js "Integration (CI mode)" .test-results/integration-ci.json \
+            --max-pending 0 --expect "real PostgreSQL server user is outside the allowlist=passed"

@@ -18,13 +18,6 @@ function runGuard(env: Record<string, string | undefined>) {
   });
 }
 
-function withDatabaseUser(databaseUrl: string, user: string, password: string): string {
-  const url = new URL(databaseUrl);
-  url.username = user;
-  url.password = password;
-  return url.toString();
-}
-
 describe('F06 — test target guard (pure logic)', () => {
   it('rejects every APP_ENV other than test before touching any database', () => {
     for (const appEnv of ['development', 'staging', 'production', '', undefined]) {
@@ -110,33 +103,41 @@ describe('F06 — test target guard (real process and real database)', () => {
     }
   });
 
-  it('fails against the allowed database when current_user is outside the allowlist', async () => {
-    const adminPassword = process.env.PGPASSWORD;
-    expect(adminPassword).toBeTruthy();
+  // Real wrong-user proof. It needs a second PostgreSQL login that can reach ship11_test but is not
+  // ship11_test. CI creates one and passes it as TEST_WRONG_USER_DATABASE_URL. A plain local setup
+  // (compose.dev.yml) does not have it, so only this one test is skipped there; the pure-logic
+  // user-mismatch test above and every other test still run. CI asserts that this test is NOT skipped.
+  const wrongUserUrl = process.env.TEST_WRONG_USER_DATABASE_URL ?? '';
+  const itWithWrongUserFixture = wrongUserUrl === '' ? it.skip : it;
 
-    const wrongUserUrl = withDatabaseUser(databaseUrl, 'ci_admin', adminPassword ?? '');
+  itWithWrongUserFixture(
+    'fails against the allowed database when the real PostgreSQL server user is outside the allowlist',
+    async () => {
+      // Precondition: this is the allowed database with a different real server user, not an auth
+      // failure or a database-name mismatch.
+      const probe = new Client({ connectionString: wrongUserUrl, connectionTimeoutMillis: 3000 });
+      await probe.connect();
+      try {
+        const identity = await probe.query<{ database_name: string; user_name: string }>(
+          'SELECT current_database() AS database_name, current_user AS user_name',
+        );
+        expect(identity.rows).toHaveLength(1);
+        expect(identity.rows[0].database_name).toBe(ALLOWED_TEST_DATABASE);
+        expect(identity.rows[0].user_name).not.toBe(ALLOWED_TEST_USER);
+      } finally {
+        await probe.end();
+      }
 
-    // Precondition: this is the allowed database with the wrong real server user, not an auth
-    // failure or a database-name mismatch.
-    const probe = new Client({ connectionString: wrongUserUrl, connectionTimeoutMillis: 3000 });
-    await probe.connect();
-    try {
-      const identity = await probe.query<{ database_name: string; user_name: string }>(
-        'SELECT current_database() AS database_name, current_user AS user_name',
-      );
-      expect(identity.rows).toEqual([
-        { database_name: ALLOWED_TEST_DATABASE, user_name: 'ci_admin' },
-      ]);
-    } finally {
-      await probe.end();
-    }
+      const result = runGuard({ APP_ENV: 'test', DATABASE_URL: wrongUserUrl });
 
-    const result = runGuard({ APP_ENV: 'test', DATABASE_URL: wrongUserUrl });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('TEST_TARGET_GUARD_FAILED');
+      expect(result.stderr).toContain('not the allowed test database and user');
 
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('TEST_TARGET_GUARD_FAILED');
-    expect(result.stderr).toContain('not the allowed test database and user');
-    expect(result.stderr).not.toContain(adminPassword ?? '');
-    expect(result.stdout).not.toContain(adminPassword ?? '');
-  });
+      const password = decodeURIComponent(new URL(wrongUserUrl).password);
+      expect(password).not.toBe('');
+      expect(result.stderr).not.toContain(password);
+      expect(result.stdout).not.toContain(password);
+    },
+  );
 });
