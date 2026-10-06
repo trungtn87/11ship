@@ -97,11 +97,14 @@ jobs:
       - name: Unit tests
         env:
           NODE_ENV: test
-        run: npm run test:unit -- --json --outputFile=.test-results/unit.json
+        shell: bash
+        run: |
+          mkdir -p .test-results
+          npm run test:unit -- --json --outputFile=.test-results/unit.json 2>&1 | tee .test-results/unit.log
 
       - name: Report unit test counts
-        if: ${{ always() && hashFiles('.test-results/unit.json') != '' }}
-        run: node scripts/report-test-counts.js "Unit tests" .test-results/unit.json --max-pending 0
+        if: ${{ always() && hashFiles('.test-results/unit.log') != '' }}
+        run: node scripts/report-test-counts.js "Unit tests" .test-results/unit.json --log .test-results/unit.log --max-pending 0
 
       # Local mode: exactly what the README tells a developer to run. No CI admin credential and no
       # wrong-user fixture. Only the real wrong-user test may be skipped; nothing else.
@@ -110,14 +113,16 @@ jobs:
           NODE_ENV: test
           APP_ENV: test
           DATABASE_URL: postgres://ship11_test:ci_test_ephemeral_only@127.0.0.1:5432/ship11_test
+        shell: bash
         run: |
           test -z "${PGPASSWORD:-}" && test -z "${TEST_WRONG_USER_DATABASE_URL:-}"
-          npm run test:integration -- --json --outputFile=.test-results/integration-local.json
+          mkdir -p .test-results
+          npm run test:integration -- --json --outputFile=.test-results/integration-local.json 2>&1 | tee .test-results/integration-local.log
 
       - name: Report integration counts, local mode
-        if: ${{ always() && hashFiles('.test-results/integration-local.json') != '' }}
+        if: ${{ always() && hashFiles('.test-results/integration-local.log') != '' }}
         run: |
-          node scripts/report-test-counts.js "Integration (local mode)" .test-results/integration-local.json \
+          node scripts/report-test-counts.js "Integration (local mode)" .test-results/integration-local.json --log .test-results/integration-local.log \
             --max-pending 1 --expect "real PostgreSQL server user is outside the allowlist=pending"
 
       # CI mode: same suite plus the real wrong-user fixture. Nothing may be skipped.
@@ -127,10 +132,13 @@ jobs:
           APP_ENV: test
           DATABASE_URL: postgres://ship11_test:ci_test_ephemeral_only@127.0.0.1:5432/ship11_test
           TEST_WRONG_USER_DATABASE_URL: postgres://ship11_wrong_user:ci_wrong_user_ephemeral_only@127.0.0.1:5432/ship11_test
-        run: npm run test:integration -- --json --outputFile=.test-results/integration-ci.json
+        shell: bash
+        run: |
+          mkdir -p .test-results
+          npm run test:integration -- --json --outputFile=.test-results/integration-ci.json 2>&1 | tee .test-results/integration-ci.log
 
       - name: Report integration counts, CI mode
-        if: ${{ always() && hashFiles('.test-results/integration-ci.json') != '' }}
+        if: ${{ always() && hashFiles('.test-results/integration-ci.log') != '' }}
         run: |
-          node scripts/report-test-counts.js "Integration (CI mode)" .test-results/integration-ci.json \
+          node scripts/report-test-counts.js "Integration (CI mode)" .test-results/integration-ci.json --log .test-results/integration-ci.log \
             --max-pending 0 --expect "real PostgreSQL server user is outside the allowlist=passed"
