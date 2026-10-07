@@ -48,7 +48,7 @@ Không thuộc gói code đầu tiên của 4.2:
 
 - Một user có thể đồng thời có SHOP và DRIVER.
 - Role được cấp bởi kết quả onboarding tương ứng, không được cấp trong request đăng ký user.
-- SHOP và DRIVER là role nghiệp vụ; `driver.type = SYSTEM` chỉ là phân loại xế, tuyệt đối không phải quyền quản trị.
+- SHOP và DRIVER là role nghiệp vụ; `driver_type = PLATFORM` chỉ là phân loại xế, tuyệt đối không phải quyền quản trị.
 - Nếu user có nhiều role, app 11Ship hiển thị lựa chọn SHOP/DRIVER khi vào hệ thống và cho phép chuyển role không cần tạo tài khoản khác.
 
 ### 2.3 OTP / verification proof
@@ -395,7 +395,7 @@ Quy tắc:
 - một user chỉ có một `drivers` profile;
 - client không được gửi/chọn `driver_type`;
 - tạo mới luôn mặc định `driver_type = EXTERNAL`;
-- `SYSTEM` chỉ do luồng quản lý thay đổi sau này;
+- `PLATFORM` chỉ do luồng quản lý có quyền thay đổi; legacy driver_type SYSTEM bị từ chối;
 - xác minh ban đầu chỉ bằng SĐT; không yêu cầu CCCD/KYC, giấy tờ xe;
 - không bắt buộc `vehicle_type`;
 - biển số nếu có là optional.
@@ -416,8 +416,8 @@ Sau transaction thành công:
 
 1. M03 tạo `drivers` với `driver_type=EXTERNAL`.
 2. M03 tạo `driver_service_areas` theo vùng user đăng ký.
-3. `approval_status = PENDING`.
-4. `accepting_orders = false`.
+3. `status = PENDING` (nguồn lifecycle duy nhất, không tạo thêm approval_status độc lập).
+4. `accepting_deliveries = false` (chỉ driver; shop vẫn dùng accepting_orders).
 5. M01 cấp `user_roles.DRIVER` để user vào được giao diện xế.
 6. Có role DRIVER không đồng nghĩa được nhận đơn.
 
@@ -514,7 +514,7 @@ Revoke session SHOP cũ + activate session SHOP mới phải xử lý atomically
 7. Proof consume rồi dùng lại -> fail.
 8. Hai request register đồng thời cùng phone -> đúng một user.
 9. Retry cùng Idempotency-Key -> cùng kết quả, không duplicate.
-10. Client gửi `role=ADMIN` hoặc `driver_type=SYSTEM` trong register -> bị reject/ignored theo strict schema, tuyệt đối không phát sinh quyền.
+10. Client gửi `role=ADMIN`, `driver_type=PLATFORM` hoặc legacy `driver_type=SYSTEM` trong register -> reject theo strict schema, tuyệt đối không phát sinh quyền.
 11. Register thành công -> user login được dù `available_roles=[]`.
 
 ### A02 — Login/Role/Session
@@ -534,13 +534,13 @@ Revoke session SHOP cũ + activate session SHOP mới phải xử lý atomically
 21. Shop đủ dữ liệu, chưa có giờ hoạt động -> onboarding thành công, shop hồ sơ active nhưng availability offline.
 22. Retry shop onboarding cùng idempotency key -> không tạo shop thứ hai.
 23. Driver self-register -> type luôn EXTERNAL.
-24. Client cố gửi SYSTEM -> không được phép.
+24. Client cố gửi PLATFORM hoặc legacy SYSTEM trong driver_type -> reject; không tự chọn phân loại.
 25. Driver không CCCD/giấy tờ xe vẫn onboarding được.
 26. Driver không vehicle_type vẫn onboarding được.
 27. Driver service area invalid/inactive -> fail.
-28. Driver onboarding thành công -> role DRIVER có, approval PENDING, accepting_orders=false.
+28. Driver onboarding thành công -> role DRIVER có, status PENDING, accepting_deliveries=false.
 29. Driver PENDING gọi API nhận đơn -> bị chặn.
-30. SYSTEM driver classification không bao giờ tạo admin permission.
+30. PLATFORM driver classification không bao giờ tạo admin permission; role SYSTEM quản trị giữ nguyên.
 
 ---
 
@@ -619,3 +619,8 @@ Bước 4.2 được LOCK khi:
 9. A01-06/07 áp dụng new execution (bao gồm khác key); A01-09 phải test response mất, consumed proof, natural proof expiry trong replay TTL, key rotation, current authorization deny và replay TTL expired.
 10. Header/error envelope nền phải bảo toàn request_id hiện tại và typed error codes. Idempotency-Key một mình không cấp quyền replay.
 11. Khi giao Claude, addendum và ADR-003 §13 là AUTHORITATIVE SPECS bổ sung cho prompt §22 (nếu có); không dùng prompt cũ độc lập. Không đổi token/session architecture ADR-002 và không triển khai ngoài Auth scope.
+
+
+## Driver/Wallet design patch — 07/10/2026
+
+Đọc `docs/current/ADR-004-driver-wallet-consistency.md` và `docs/tasks/M03-M04-design-patch-plan.md` cho ownership, enum và integration mới. Đây là DESIGN PATCH chờ review/Owner lock, không mở business implementation trong Auth Core hoặc M00. DRIVER role không đồng nghĩa ACTIVE driver; PLATFORM chỉ miễn count và registered service area, không cấp admin. ADR-003 v0.3 replay clarification giữ nguyên. Ví/ledger/hold/withdrawal chỉ M04 mutation; M03-B điều phối approval/closure. Closure finalization chờ M07 responsibility adapter thật, thiếu adapter phải fail closed. Bộ test `docs/current/M03-M04-acceptance-matrix.md` là contract CHƯA CHẠY.

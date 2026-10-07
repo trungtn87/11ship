@@ -1,7 +1,7 @@
 # 11Ship — Bước 4.1: Nền triển khai, M00-A
 
 Ngày: 06/10/2026, giờ Việt Nam. Phiên bản tài liệu: 1.0.
-Trạng thái: DESIGN — hoàn thành bản chuẩn hóa để rà soát; chưa CODE_READY, chưa triển khai code.
+Trạng thái tài liệu gốc: DESIGN. Bổ sung Driver/Wallet ngày 07/10/2026: xem `ADR-004-driver-wallet-consistency.md` (DESIGN PATCH — READY FOR REVIEW). Tiến độ nền mới nhất phải đọc PR/evidence; trạng thái gốc không đại diện M00-C1A0 đã merge.
 
 ## 1. Mục tiêu và phạm vi
 
@@ -74,7 +74,7 @@ Các tên sau được chọn làm tên chuẩn để viết schema vật lý. M
 | M01 | `users`, `user_roles`, `admin_scopes`, `admin_permissions`, `phone_verifications`, `verification_proofs`, `sessions` | SĐT chuẩn hóa unique; OTP/proof đúng purpose dùng một lần; thu hồi phiên/quyền thực thi phía server |
 | M02 | `service_areas`, `shops`, `shop_members`, `shop_business_hours` | Membership đúng quán; vùng lấy hàng; khung giờ nửa mở; trạng thái quán và bật nhận tách riêng |
 | M03 | `drivers`, `driver_service_areas`, `driver_bank_accounts`, `driver_closure_requests` | Một driver/user; type mặc định EXTERNAL; ngân hàng đổi mất verification; closure không xóa ví |
-| M04 | `driver_wallets`, `wallet_ledger_entries`, `wallet_holds`, `wallet_topups`, `wallet_withdrawals`, `wallet_adjustments` | Một ví/xế; ledger append-only; giữ/capture/release một lần; unique giao dịch ngân hàng; available không âm |
+| M04 | `driver_wallets`, `wallet_ledger_entries`, `wallet_holds`, `wallet_bank_transactions`, `wallet_topups`, `wallet_withdrawals`, `wallet_adjustments` | Một ví/xế; ledger append-only; giữ/capture/release một lần; registry unique giao dịch ngân hàng xuyên topup/payout; available không âm |
 | M05 | `customers`, `customer_addresses` | Customer tối giản; địa chỉ thuộc người đặt; tối đa một default active; lat/lng có cùng nhau hoặc đều null |
 | M06 | `shipping_quotes`, `driver_routing_states`, `route_evaluations`, `policy_versions` | Quote bind/version/TTL; khóa aggregate xế; policy snapshot; ETA gốc thuộc assignment bất biến |
 | M07 | `deliveries`, `delivery_items`, `delivery_assignments`, `delivery_events`, `delivery_incidents` | Một active delivery/order; một active assignment/delivery; hạn tìm cố định; incident bảo vệ hàng sau fail |
@@ -110,11 +110,11 @@ Ghi chú ownership:
 | Thiếu terminal tìm xế | Bổ sung `search_stopped` |
 | `cancelled_by_customer` | Chỉ đọc lịch sử nếu có; không mở API khách hủy |
 | Một `delivery_id` trên order | Projection `active_delivery_id`, `latest_delivery_id` và history; không unique toàn bộ order_id |
-| `driver_type=SYSTEM` và quản trị SYSTEM | Enum và phép kiểm quyền riêng; không dùng chung `isSystem()` |
+| `driver_type=PLATFORM` và quản trị SYSTEM | PLATFORM chỉ phân loại xế; SYSTEM vẫn là role quản trị. Legacy driver type SYSTEM không hợp lệ cho input mới; không dùng chung `isSystem()` |
 
 Order dùng `pending_confirmation`, `confirmed`, `rejected`, `cancelled_by_merchant`, `completed`. Delivery dùng `waiting_driver`, `accepted`, `location_confirmed`, `picked_up`, `delivering`, `completed`, `failed`, `cancelled_by_merchant`, `search_stopped`. Không thêm `preparing`/`ready`.
 
-Chọn chuẩn mới cho các enum phụ chưa có hợp đồng đầy đủ: hold `active/captured/released`; withdrawal `pending/processing/reconciliation/paid/cancelled`. Đây là chuẩn tên đề xuất của M00-A, phải được cụ thể hóa transition/quyền trong M04-C, không dùng bảng này để mở mutation tự do. Nếu source thật đã có tên khác, lập mapping và migration có test, không đổi dữ liệu mù.
+Chọn chuẩn mới cho các enum phụ chưa có hợp đồng đầy đủ: hold `ACTIVE/CAPTURED/RELEASED`; withdrawal `PENDING/PROCESSING/RECONCILIATION/PAID/CANCELLED`. Driver dùng `status` và `accepting_deliveries` riêng; transition/quyền/closure guard theo ADR-004. Không dùng danh sách enum để mở mutation tự do. Nếu source thật đã có tên khác, lập mapping và migration có test, không đổi dữ liệu mù.
 
 ## 6. Hợp đồng chung
 
@@ -143,7 +143,7 @@ Event envelope chuẩn có `event_id`, `event_type`, `event_schema_version`, `re
 
 Các service nhận transaction context chung. M07 hỗ trợ order adapter khi có M10; đơn ngoài app không phụ thuộc M10. Không ghép bằng nhiều HTTP call độc lập rồi giả rằng tất cả đã commit cùng nhau.
 
-Routing provider gọi ngoài transaction; khi commit kiểm lại tuổi kết quả, version/quyền/policy/ví/đơn. Thứ tự khóa và bounded retry phải thiết kế ở M00-B/C và task concurrency; chưa có DDL nên chưa tuyên bố đã giải quyết deadlock. Khóa aggregate xế và ví cần bảo vệ nhận song song hai delivery khác nhau.
+Routing provider gọi ngoài transaction; khi commit kiểm lại tuổi kết quả, version/quyền/policy/ví/đơn. Thứ tự khóa nghiệp vụ ở ADR-004 §3; ADR-003 không tự retry callback. Task concurrency phải chứng minh khóa/version/invariant; chưa có DDL nghiệp vụ nên chưa tuyên bố PASS runtime. Khóa aggregate xế và ví cần bảo vệ nhận song song hai delivery khác nhau.
 
 ## 8. Thứ tự công việc tiếp theo
 
@@ -169,12 +169,18 @@ Claude triển khai trong phạm vi; ChatGPT kiểm diff và sự phù hợp con
 | Kiểm tra | Kết quả rà soát tài liệu |
 |---|---|
 | Một tên chuẩn cho ví/ledger/hold | Đã chọn trong manifest |
-| SYSTEM driver không mang quyền admin | Tách namespace và quyền |
+| PLATFORM driver không mang quyền admin | Tách namespace và quyền; chỉ miễn count/registered-area |
 | Ghép/gọi lại và order–delivery không bị mất lịch sử | Giữ assignment riêng và một active delivery/order |
 | Tiền hàng/ship không đi vào ví | Ví chỉ nạp/rút/hoa hồng/adjustment |
 | Policy mới không sửa snapshot cũ | Quy định version/snapshot |
 | Không nhân bản nguồn chuẩn sang app quản lý | Backend và module sở hữu dữ liệu |
-| Không vòng phụ thuộc M03–M04 | M03-A trước, M03-B sau M04 |
+| Không vòng phụ thuộc M03–M04 | M04 chỉ dùng M03-A ports; coordinator M03-B ở lớp workflow, không import vòng toàn module |
 | DDL/OpenAPI/source/build/thiết bị | Chưa xác minh; không đánh PASS runtime |
 
 M00-A đã có đầu ra thiết kế để tiếp tục 4.2. Chưa khóa schema vật lý hoặc version công nghệ; chưa nghiệm thu phần mềm. Việc tiếp theo cụ thể là viết gói M01-A, bắt đầu xác thực SĐT, đăng ký và onboarding đúng quyền.
+
+## Driver/Wallet design patch — 07/10/2026
+
+Đọc `docs/current/ADR-004-driver-wallet-consistency.md` và `docs/tasks/M03-M04-design-patch-plan.md` cho ownership, enum và integration mới. Đây là DESIGN PATCH chờ review/Owner lock, không mở business implementation trong Auth Core hoặc M00. DRIVER role không đồng nghĩa ACTIVE driver; PLATFORM chỉ miễn count và registered service area, không cấp admin. ADR-003 v0.3 replay clarification giữ nguyên. Ví/ledger/hold/withdrawal chỉ M04 mutation; M03-B điều phối approval/closure. Closure finalization chờ M07 responsibility adapter thật, thiếu adapter phải fail closed. Bộ test `docs/current/M03-M04-acceptance-matrix.md` là contract CHƯA CHẠY.
+
+Manifest bổ sung: M07 `delivery_incidents` giữ responsible_assignment_id và resolution để bảo vệ hàng sau failed; không tạo custody module riêng. Driver/Wallet logical constraints và deferred source relations ở ADR-004 §4. Workflow tạo withdrawal và PAID do M04-C điều phối; closure do M03-B gọi M04/M07 guard cùng context. M04-B không trực tiếp activate driver. Chuẩn hóa SYSTEM→PLATFORM chỉ trong driver namespace; không đổi SYSTEM_DISTANCE/system_categories/role SYSTEM.

@@ -119,7 +119,7 @@ Claude không được triển khai trong package này:
 - Delivery/order.
 - Customer ordering.
 - Admin provisioning.
-- SYSTEM driver provisioning.
+- PLATFORM driver provisioning.
 - 2FA admin.
 - Forgot/change password.
 - Change phone.
@@ -591,7 +591,7 @@ Claude phải map **1 test ID = ít nhất 1 assertion path rõ ràng**.
 - `A01-07` proof consume rồi dùng lại -> fail.
 - `A01-08` hai request register đồng thời cùng phone -> đúng một user.
 - `A01-09` retry cùng Idempotency-Key -> cùng logical result, không duplicate.
-- `A01-10` client gửi `role=ADMIN` hoặc `driver_type=SYSTEM` -> tuyệt đối không phát sinh quyền.
+- `A01-10` client gửi `role=ADMIN`, `driver_type=PLATFORM` hoặc legacy `driver_type=SYSTEM` -> reject, tuyệt đối không phát sinh quyền.
 - `A01-11` register thành công -> login được với `available_roles=[]`.
 
 ### A02 — Login/Role/Session
@@ -868,7 +868,7 @@ KHI BÀN GIAO, TRẢ:
 - [ ] Response/error codes đúng contract.
 - [ ] Register roleless thật sự.
 - [ ] Không role injection.
-- [ ] Không SYSTEM/admin privilege leak.
+- [ ] Không PLATFORM driver/admin privilege leak; role SYSTEM quản trị không đổi.
 
 ### Database
 
@@ -949,3 +949,8 @@ Bước kế tiếp là **4.4 — M01-A2-ONBOARDING**:
 9. A01-06/07 áp dụng new execution (bao gồm khác key); A01-09 phải test response mất, consumed proof, natural proof expiry trong replay TTL, key rotation, current authorization deny và replay TTL expired.
 10. Header/error envelope nền phải bảo toàn request_id hiện tại và typed error codes. Idempotency-Key một mình không cấp quyền replay.
 11. Khi giao Claude, addendum và ADR-003 §13 là AUTHORITATIVE SPECS bổ sung cho prompt §22 (nếu có); không dùng prompt cũ độc lập. Không đổi token/session architecture ADR-002 và không triển khai ngoài Auth scope.
+
+
+## Driver/Wallet design patch — 07/10/2026
+
+Đọc `docs/current/ADR-004-driver-wallet-consistency.md` và `docs/tasks/M03-M04-design-patch-plan.md` cho ownership, enum và integration mới. Đây là DESIGN PATCH chờ review/Owner lock, không mở business implementation trong Auth Core hoặc M00. DRIVER role không đồng nghĩa ACTIVE driver; PLATFORM chỉ miễn count và registered service area, không cấp admin. ADR-003 v0.3 replay clarification giữ nguyên. Ví/ledger/hold/withdrawal chỉ M04 mutation; M03-B điều phối approval/closure. Closure finalization chờ M07 responsibility adapter thật, thiếu adapter phải fail closed. Bộ test `docs/current/M03-M04-acceptance-matrix.md` là contract CHƯA CHẠY.
