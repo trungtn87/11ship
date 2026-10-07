@@ -1,7 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { performance } from 'node:perf_hooks';
 import { AppError } from '../common/app-errors';
 import { isSqlState, isSystemErrorCode } from '../common/safe-error';
 import { QueryRows, TransactionContext } from './transaction-context';
+import { classifyParticipantStatement } from './sql-guard';
 import { TransactionError } from './transaction-error';
 
 /** What the manager needs from a pooled connection. Implemented over pg.PoolClient in production. */
@@ -22,17 +24,6 @@ export interface TransactionOptions {
   readonly timeoutMs: number;
   /** PostgreSQL idle_in_transaction_session_timeout applied with SET LOCAL semantics. */
   readonly idleInTransactionTimeoutMs: number;
-}
-
-// Statements that would end, nest or split the transaction behind the manager's back. This is a
-// guard rail against accidents, not a security boundary: transaction control is not part of the
-// context API at all.
-const CONTROL_STATEMENT =
-  /(?:^|;)\s*(?:begin|commit|rollback|end|abort|start\s+transaction|savepoint|release|prepare\s+transaction|commit\s+prepared|rollback\s+prepared)\b/i;
-const LEADING_COMMENTS = /^(?:\s+|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/;
-
-function isControlStatement(text: string): boolean {
-  return CONTROL_STATEMENT.test(text.replace(LEADING_COMMENTS, ''));
 }
 
 interface ServerRejection {
@@ -91,8 +82,13 @@ class TransactionSession {
     if (this.state !== 'ACTIVE') {
       return Promise.reject(new TransactionError('CONTEXT_CLOSED'));
     }
-    if (typeof text !== 'string' || isControlStatement(text)) {
+    // Exactly one top-level statement, and never transaction control (see sql-guard.ts).
+    const verdict = typeof text === 'string' ? classifyParticipantStatement(text) : 'invalid';
+    if (verdict === 'control') {
       return Promise.reject(new TransactionError('CONTROL_STATEMENT'));
+    }
+    if (verdict === 'invalid') {
+      return Promise.reject(new TransactionError('INVALID_STATEMENT'));
     }
     return this.execute(text, values);
   }
@@ -218,21 +214,55 @@ export class TransactionManager {
     session: TransactionSession,
     work: (context: TransactionContext) => Promise<T>,
   ): Promise<T> {
+    // One budget for the whole transaction, measured from just before BEGIN (pool acquisition is not
+    // part of it) until PostgreSQL answers COMMIT. The same timer guards every phase, so no phase
+    // gets a fresh allowance. A monotonic clock backs the timer for the moments between phases.
+    const startedAt = performance.now();
+    const timeoutMs = this.#options.timeoutMs;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(DEADLINE), timeoutMs);
+    });
+    // The deadline may fire while nothing is racing it; that must never be an unhandled rejection.
+    deadline.catch(() => undefined);
+    const budgetLeft = (): boolean => performance.now() - startedAt < timeoutMs;
+
     try {
-      await session.execute('BEGIN');
-      await session.execute("SELECT set_config('idle_in_transaction_session_timeout', $1, true)", [
-        String(this.#options.idleInTransactionTimeoutMs),
-      ]);
+      return await this.#runWithin(session, work, deadline, budgetLeft);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async #runWithin<T>(
+    session: TransactionSession,
+    work: (context: TransactionContext) => Promise<T>,
+    deadline: Promise<never>,
+    budgetLeft: () => boolean,
+  ): Promise<T> {
+    const begin = session
+      .execute('BEGIN')
+      .then(() => {
+        // A late BEGIN must not go on to use a client that was already released or destroyed.
+        if (session.state !== 'ACTIVE') {
+          throw new TransactionError('CONTEXT_CLOSED');
+        }
+        return session.execute("SELECT set_config('idle_in_transaction_session_timeout', $1, true)", [
+          String(this.#options.idleInTransactionTimeoutMs),
+        ]);
+      });
+    begin.catch(() => undefined);
+    try {
+      await Promise.race([begin, deadline]);
     } catch (error) {
       session.close();
       session.finish(true);
+      if (error === DEADLINE) {
+        throw new TransactionError('DEADLINE_EXCEEDED');
+      }
       throw new TransactionError('BEGIN_FAILED', serverRejectionOf(error)?.code);
     }
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => reject(DEADLINE), this.#options.timeoutMs);
-    });
     const running = Promise.resolve().then(() => work(session.context));
     // If the deadline wins, the callback may still fail later; that must not become an unhandled rejection.
     running.catch(() => undefined);
@@ -245,8 +275,6 @@ export class TransactionManager {
     } catch (error) {
       failed = true;
       failure = error;
-    } finally {
-      clearTimeout(timer);
     }
 
     if (failed) {
@@ -260,6 +288,12 @@ export class TransactionManager {
 
     // From here on no participant statement can start; only COMMIT is allowed on the client.
     session.close();
+    if (!budgetLeft()) {
+      // The budget ran out before COMMIT was sent (the timer may simply not have run yet): nothing
+      // is committed, so roll back (or destroy when the client is not trustworthy) and fail.
+      await this.#abort(session);
+      throw new TransactionError('DEADLINE_EXCEEDED');
+    }
     if (session.inFlight > 0) {
       // The callback finished while a query it never awaited is still running.
       session.finish(true);
@@ -273,10 +307,19 @@ export class TransactionManager {
       );
     }
 
+    const commit = session.execute('COMMIT');
+    // A COMMIT that settles after the deadline already decided the outcome must not go unhandled.
+    commit.catch(() => undefined);
     let committed: QueryRows;
     try {
-      committed = await session.execute('COMMIT');
+      committed = await Promise.race([commit, deadline]);
     } catch (error) {
+      if (error === DEADLINE) {
+        // COMMIT was sent and PostgreSQL has not answered: it may or may not be committed. Never a
+        // rollback conclusion, never a second callback run; the connection cannot be trusted.
+        session.finish(true);
+        throw new AppError('TRANSACTION_OUTCOME_UNKNOWN');
+      }
       throw this.#afterFailedCommit(session, error);
     }
     // COMMIT of a transaction that an earlier statement already aborted does not fail: PostgreSQL
@@ -286,6 +329,11 @@ export class TransactionManager {
       throw new TransactionError('COMMIT_REJECTED');
     }
     session.finish(false);
+    if (!budgetLeft()) {
+      // PostgreSQL did answer, but only after the total budget: the work is committed yet the caller
+      // is not given a success past its deadline. It learns the honest "unknown" and can look it up.
+      throw new AppError('TRANSACTION_OUTCOME_UNKNOWN');
+    }
     return value as T;
   }
 

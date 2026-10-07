@@ -1,6 +1,8 @@
+import { performance } from 'node:perf_hooks';
 import { describe, expect, it } from '@jest/globals';
 import { AppError } from '../common/app-errors';
 import { QueryRows } from './transaction-context';
+import { classifyParticipantStatement } from './sql-guard';
 import { TransactionError } from './transaction-error';
 import {
   TransactionClient,
@@ -493,6 +495,174 @@ describe('TransactionManager — deadline', () => {
   });
 });
 
+describe('TransactionManager — total deadline from BEGIN to COMMIT', () => {
+  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  it('counts BEGIN/setup against the budget: a slow setup leaves the callback only the remainder', async () => {
+    const client = new ScriptedClient(async (text) => {
+      if (text.startsWith('SELECT set_config')) {
+        await sleep(100);
+      }
+      return rows(text);
+    });
+    const { manager } = managerFor(client, { timeoutMs: 150, idleInTransactionTimeoutMs: 500 });
+    const never = deferred();
+    let calls = 0;
+    const startedAt = performance.now();
+
+    const error = await failureOf(() =>
+      manager.withTransaction(async () => {
+        calls += 1;
+        await never.promise;
+      }),
+    );
+    const elapsed = performance.now() - startedAt;
+
+    expect((error as TransactionError).reason).toBe('DEADLINE_EXCEEDED');
+    expect(calls).toBe(1);
+    // A fresh 150 ms allowance for the callback would end near 250 ms; the shared budget ends near 150.
+    expect(elapsed).toBeLessThan(230);
+    expect(client.log.at(-1)).toBe('ROLLBACK');
+    expect(client.released).toEqual([false]);
+  });
+
+  it('fails with DEADLINE_EXCEEDED, destroys the client and never runs the callback when BEGIN outlasts the budget', async () => {
+    const heldBegin = deferred<QueryRows>();
+    const client = new ScriptedClient((text) => (text === 'BEGIN' ? heldBegin.promise : rows(text)));
+    const { manager } = managerFor(client, { timeoutMs: 30, idleInTransactionTimeoutMs: 500 });
+    let calls = 0;
+
+    const error = await failureOf(() =>
+      manager.withTransaction(() => {
+        calls += 1;
+        return Promise.resolve();
+      }),
+    );
+
+    expect((error as TransactionError).reason).toBe('DEADLINE_EXCEEDED');
+    expect(calls).toBe(0);
+    expect(client.released).toEqual([true]);
+
+    // The late BEGIN answer must not go on to issue setup on a client that was already destroyed.
+    heldBegin.resolve(rows('BEGIN'));
+    await sleep(5);
+    expect(client.log).toEqual(['BEGIN']);
+    expect(client.released).toEqual([true]);
+  });
+
+  it('reports an UNKNOWN outcome when the callback finished in time but COMMIT is held past the deadline', async () => {
+    const heldCommit = deferred<QueryRows>();
+    const client = new ScriptedClient((text) => (text === 'COMMIT' ? heldCommit.promise : rows(text)));
+    const { manager, source } = managerFor(client, { timeoutMs: 40, idleInTransactionTimeoutMs: 500 });
+    let calls = 0;
+    const unhandled: unknown[] = [];
+    const listener = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', listener);
+    try {
+      const error = await failureOf(() =>
+        manager.withTransaction(async (context) => {
+          calls += 1;
+          await context.query('INSERT INTO t VALUES (1)');
+        }),
+      );
+
+      expect(error).toBeInstanceOf(AppError);
+      expect((error as AppError).code).toBe('TRANSACTION_OUTCOME_UNKNOWN');
+      expect(calls).toBe(1);
+      expect(source.acquired).toBe(1);
+      expect(client.log.filter((text) => text === 'COMMIT')).toHaveLength(1);
+      expect(client.log).not.toContain('ROLLBACK');
+      expect(client.released).toEqual([true]);
+
+      // Late settlement of the abandoned COMMIT: no second release, no reuse, no unhandled rejection.
+      heldCommit.reject(Object.assign(new Error('Connection terminated SECRET'), { code: 'ECONNRESET' }));
+      await sleep(5);
+      await sleep(5);
+      expect(client.released).toEqual([true]);
+      expect(client.log.filter((text) => text === 'COMMIT')).toHaveLength(1);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', listener);
+    }
+  });
+
+  it('does not let a late successful COMMIT answer double-release or reuse the client', async () => {
+    const heldCommit = deferred<QueryRows>();
+    const client = new ScriptedClient((text) => (text === 'COMMIT' ? heldCommit.promise : rows(text)));
+    const { manager } = managerFor(client, { timeoutMs: 30, idleInTransactionTimeoutMs: 500 });
+
+    const error = await failureOf(() => manager.withTransaction(() => Promise.resolve()));
+    expect((error as AppError).code).toBe('TRANSACTION_OUTCOME_UNKNOWN');
+
+    heldCommit.resolve(rows('COMMIT'));
+    await sleep(5);
+    expect(client.released).toEqual([true]);
+    expect(client.log).toEqual([
+      'BEGIN',
+      "SELECT set_config('idle_in_transaction_session_timeout', $1, true)",
+      'COMMIT',
+    ]);
+  });
+
+  it('never succeeds after the total deadline: callback time plus COMMIT time is what counts', async () => {
+    const client = new ScriptedClient(async (text) => {
+      if (text === 'COMMIT') {
+        await sleep(150); // alone well inside the budget; together with the callback it is not
+      }
+      return rows(text);
+    });
+    const { manager } = managerFor(client, { timeoutMs: 150, idleInTransactionTimeoutMs: 500 });
+    let calls = 0;
+
+    const error = await failureOf(() =>
+      manager.withTransaction(async () => {
+        calls += 1;
+        await sleep(60);
+      }),
+    );
+
+    expect((error as AppError).code).toBe('TRANSACTION_OUTCOME_UNKNOWN');
+    expect(calls).toBe(1);
+    expect(client.released).toEqual([true]);
+  });
+
+  it('refuses to send COMMIT when the budget ran out while the event loop was busy: rolls back, DEADLINE_EXCEEDED', async () => {
+    const client = new ScriptedClient();
+    const { manager } = managerFor(client, { timeoutMs: 30, idleInTransactionTimeoutMs: 500 });
+
+    const error = await failureOf(() =>
+      manager.withTransaction(() => {
+        // Synchronous work: the deadline timer cannot run, only the monotonic clock sees the overrun.
+        const until = performance.now() + 45;
+        while (performance.now() < until) {
+          // busy
+        }
+        return Promise.resolve('too late');
+      }),
+    );
+
+    expect((error as TransactionError).reason).toBe('DEADLINE_EXCEEDED');
+    expect(client.log).not.toContain('COMMIT');
+    expect(client.log.at(-1)).toBe('ROLLBACK');
+    expect(client.released).toEqual([false]);
+  });
+
+  it('still succeeds when COMMIT is answered inside the budget', async () => {
+    const client = new ScriptedClient(async (text) => {
+      if (text === 'COMMIT') {
+        await sleep(10);
+      }
+      return rows(text);
+    });
+    const { manager } = managerFor(client, { timeoutMs: 500, idleInTransactionTimeoutMs: 500 });
+
+    await expect(manager.withTransaction(() => Promise.resolve('done'))).resolves.toBe('done');
+    expect(client.released).toEqual([false]);
+  });
+});
+
 describe('TransactionManager — participant boundary', () => {
   it('hands participants a query capability only: no client, pool, manager or transaction control', async () => {
     const client = new ScriptedClient();
@@ -554,21 +724,76 @@ describe('TransactionManager — participant boundary', () => {
     'START TRANSACTION',
     'SAVEPOINT s1',
     'RELEASE s1',
-    'PREPARE TRANSACTION \'x\'',
+    "PREPARE TRANSACTION 'x'",
+    'COMMIT PREPARED \'x\'',
     '/* note */ COMMIT',
     '-- note\nROLLBACK',
+    '/* a /* nested */ still comment */ COMMIT',
     'SELECT 1; COMMIT',
+    'SELECT 1; /* note */ COMMIT',
+    'SELECT 1; -- note ROLLBACK\nROLLBACK',
+    'SELECT 1;\n-- note\nCOMMIT',
     'INSERT INTO t VALUES (1);rollback',
-  ])('refuses the transaction-control statement %s before it reaches the client', async (text) => {
+    "SELECT '; ok'; COMMIT",
+    'SELECT $$;$$; COMMIT',
+  ])('refuses the transaction-control statement %j before it reaches the client', async (text) => {
     const client = new ScriptedClient();
     const { manager } = managerFor(client);
 
     const error = await failureOf(() => manager.withTransaction((context) => context.query(text)));
 
-    expect((error as TransactionError).reason).toBe('CONTROL_STATEMENT');
+    expect(['CONTROL_STATEMENT', 'INVALID_STATEMENT']).toContain((error as TransactionError).reason);
     // Only the manager's own BEGIN and setup precede the rollback; the statement never went out.
     expect(client.log.slice(2)).toEqual(['ROLLBACK']);
   });
+
+  it.each(['SELECT 1; /* note */ COMMIT', 'SELECT 1; -- note ROLLBACK\nROLLBACK', 'COMMIT', '/* x */ BEGIN'])(
+    'classifies a statement that hides transaction control (%j) as control or as several statements, never as ok',
+    (text) => {
+      expect(classifyParticipantStatement(text)).not.toBe('ok');
+    },
+  );
+
+  it.each([
+    "SELECT '; COMMIT' AS txt",
+    "SELECT '/* ROLLBACK */' AS txt",
+    "SELECT '-- ROLLBACK' AS txt",
+    "SELECT E'it\\'s; COMMIT' AS txt",
+    "SELECT 'it''s; COMMIT' AS txt",
+    'SELECT "commit;" FROM t',
+    'SELECT "a""; ROLLBACK" FROM t',
+    'SELECT $$; COMMIT$$ AS txt',
+    'SELECT $q$ ; ROLLBACK; $q$ AS txt',
+    'DO $body$ BEGIN PERFORM 1; END $body$',
+    'SELECT 1 /* ; COMMIT */',
+    'SELECT 1 -- ; COMMIT',
+    'SELECT /* /* nested ; COMMIT */ */ 1',
+    'SELECT 1;',
+    '  SELECT 1 ; -- trailing note\n',
+    'SELECT $1, $2',
+    'SELECT a$1 FROM t',
+    'SET LOCAL lock_timeout = 250',
+    "SET LOCAL lock_timeout = '250ms'",
+    'SELECT begin_at, committed, rollback_count, endpoint FROM t',
+    'WITH x AS (SELECT 1) SELECT * FROM x',
+    'PREPARE plan AS SELECT 1',
+  ])('lets the valid single statement %j through without a false positive', (text) => {
+    expect(classifyParticipantStatement(text)).toBe('ok');
+  });
+
+  it.each(['', '   ', '-- only a comment', ';', 'SELECT 1; SELECT 2', "SELECT 'unterminated", 'SELECT "open', 'SELECT $$ open', 'SELECT 1 /* open'])(
+    'refuses %j as not exactly one well-formed statement, without touching the client',
+    async (text) => {
+      expect(classifyParticipantStatement(text)).toBe('invalid');
+      const client = new ScriptedClient();
+      const { manager } = managerFor(client);
+
+      const error = await failureOf(() => manager.withTransaction((context) => context.query(text)));
+
+      expect((error as TransactionError).reason).toBe('INVALID_STATEMENT');
+      expect(client.log.slice(2)).toEqual(['ROLLBACK']);
+    },
+  );
 
   it('lets ordinary statements through, including SET LOCAL', async () => {
     const client = new ScriptedClient();

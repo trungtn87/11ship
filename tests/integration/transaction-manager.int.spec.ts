@@ -220,6 +220,36 @@ describe('M00-C1A0 — TransactionManager on real PostgreSQL', () => {
       expect((closed as TransactionError).reason).toBe('CONTEXT_CLOSED');
     });
 
+    it('refuses transaction control hidden behind comments or a second statement, and does not mistake quoted text for it (real server)', async () => {
+      const manager = managerFor(poolClientSource(pool));
+
+      for (const hidden of [
+        'SELECT 1; /* note */ COMMIT',
+        'SELECT 1; -- note ROLLBACK\nROLLBACK',
+        '/* lead */ COMMIT',
+      ]) {
+        const refused = await failureOf(() =>
+          manager.withTransaction(async (context) => {
+            await context.query(`INSERT INTO ${items} (id, note) VALUES (1, 'must vanish')`);
+            await context.query(hidden);
+          }),
+        );
+        expect(['CONTROL_STATEMENT', 'INVALID_STATEMENT']).toContain((refused as TransactionError).reason);
+        // Refused before PostgreSQL saw it: the INSERT before it was rolled back by the manager.
+        expect(await countItems()).toBe(0);
+      }
+
+      const answers = await manager.withTransaction(async (context) => {
+        await context.query(`INSERT INTO ${items} (id, note) VALUES (7, '; COMMIT')`);
+        await context.query("SET LOCAL lock_timeout = '250ms'");
+        const quoted = await context.query<{ txt: string }>("SELECT '; COMMIT' AS txt");
+        const commented = await context.query<{ txt: string }>("SELECT '/* ROLLBACK */' AS txt");
+        return [quoted.rows[0]?.txt, commented.rows[0]?.txt];
+      });
+      expect(answers).toEqual(['; COMMIT', '/* ROLLBACK */']);
+      expect(await itemIds()).toEqual([7]);
+    });
+
     it('is wired by the application module from the validated configuration', async () => {
       const running = await startApp(config);
       try {
@@ -428,6 +458,38 @@ describe('M00-C1A0 — TransactionManager on real PostgreSQL', () => {
       expect(source.released).toEqual([true]);
       await eventually(() => backendIsGone(pool, pid), 'destroyed backend is gone');
       expect(await countItems()).toBe(0);
+    });
+
+    it('counts the COMMIT round trip in the total deadline: held acknowledgement past the budget is UNKNOWN, never success (injected delay)', async () => {
+      const release = deferred();
+      let serverAnswered = false;
+      const source = faultySource(pool, (text, real) =>
+        text === 'COMMIT'
+          ? real.query('COMMIT').then(async (answer) => {
+              serverAnswered = true;
+              await release.promise; // the acknowledgement is stuck on the network
+              return answer;
+            })
+          : undefined,
+      );
+      let calls = 0;
+
+      const error = await failureOf(() =>
+        managerFor(source, { timeoutMs: 400 }).withTransaction(async (context) => {
+          calls += 1;
+          await context.query(`INSERT INTO ${items} (id, note) VALUES (1, 'committed, ack late')`);
+        }),
+      );
+
+      expect(error).toBeInstanceOf(AppError);
+      expect((error as AppError).code).toBe('TRANSACTION_OUTCOME_UNKNOWN');
+      expect(calls).toBe(1);
+      expect(source.acquired()).toBe(1);
+      expect(source.released).toEqual([true]);
+      expect(serverAnswered).toBe(true);
+      // The server did commit; only another connection can tell. The caller was told "unknown".
+      expect(await itemIds()).toEqual([1]);
+      release.resolve();
     });
 
     it('distinguishes a COMMIT the server REJECTED (real deferred constraint) from an unknown outcome', async () => {

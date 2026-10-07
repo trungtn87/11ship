@@ -14,12 +14,14 @@ export type TransactionFailureReason =
   // Programming errors (misuse of the API): surfaced as the generic 500 envelope.
   | 'CONTEXT_CLOSED'
   | 'CONTROL_STATEMENT'
+  | 'INVALID_STATEMENT'
   | 'NESTED_TRANSACTION'
   | 'DETACHED_QUERY';
 
 const PROGRAMMING_ERRORS: ReadonlySet<TransactionFailureReason> = new Set([
   'CONTEXT_CLOSED',
   'CONTROL_STATEMENT',
+  'INVALID_STATEMENT',
   'NESTED_TRANSACTION',
   'DETACHED_QUERY',
 ]);
