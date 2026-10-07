@@ -460,7 +460,41 @@ describe('M01-A1 — Auth Core migration', () => {
       await client.query("DELETE FROM app.phone_verifications WHERE phone_normalized = '+84900000001'");
     });
 
-    it('verification_proofs: exactly one proof per verification and a unique token digest', async () => {
+    it('verification_proofs: a token digest is unique across proofs of DIFFERENT verifications', async () => {
+      // Two valid verifications (A and B), one proof each. Reusing proof A's digest on proof B can only trip the
+      // token-digest UNIQUE: B's verification is distinct and exists, so neither the one-proof-per-verification
+      // UNIQUE nor the FK is involved.
+      const verificationA = randomUUID();
+      const verificationB = randomUUID();
+      for (const [id, number] of [
+        [verificationA, '+84900000003'],
+        [verificationB, '+84900000004'],
+      ] as const) {
+        await client.query(
+          `INSERT INTO app.phone_verifications (verification_id, phone_normalized, purpose, otp_digest, status, attempt_count, expires_at, resend_not_before, created_at, verified_at)
+           VALUES ($1::uuid, $2, 'REGISTER', $3, 'VERIFIED', 0, now() + interval '5 minutes', now(), now(), now())`,
+          [id, number, DIGEST],
+        );
+      }
+      const insertProofFor = (verification: string, number: string, digest: string): Promise<unknown> =>
+        client.query(
+          `INSERT INTO app.verification_proofs (proof_id, verification_id, phone_normalized, purpose, token_digest, expires_at, created_at)
+           VALUES ($1::uuid, $2::uuid, $3, 'REGISTER', $4, now() + interval '10 minutes', now())`,
+          [randomUUID(), verification, number, digest],
+        );
+      const sharedDigest = '1'.repeat(64);
+      await insertProofFor(verificationA, '+84900000003', sharedDigest);
+      expect(await failureCode(() => insertProofFor(verificationB, '+84900000004', sharedDigest))).toEqual({
+        code: '23505',
+        constraint: 'verification_proofs_token_digest_uq',
+      });
+      // Proof B was not stored; with a different digest it is accepted, so the failure above was the digest alone.
+      await insertProofFor(verificationB, '+84900000004', '2'.repeat(64));
+      await client.query("DELETE FROM app.verification_proofs WHERE phone_normalized IN ('+84900000003', '+84900000004')");
+      await client.query("DELETE FROM app.phone_verifications WHERE phone_normalized IN ('+84900000003', '+84900000004')");
+    });
+
+    it('verification_proofs: exactly one proof per verification, and a proof needs an existing verification', async () => {
       const verificationId = randomUUID();
       await client.query(
         `INSERT INTO app.phone_verifications (verification_id, phone_normalized, purpose, otp_digest, status, attempt_count, expires_at, resend_not_before, created_at, verified_at)

@@ -215,10 +215,22 @@ describe('M01-A1 — register', () => {
       const proof = await obtainProof(app, phone);
       const missing = await app.call('POST', '/auth/register', { body: registerBody(phone, proof.proofToken) });
       expect([missing.status, errorCode(missing)]).toEqual([400, 'IDEMPOTENCY_KEY_REQUIRED']);
-      // Hex case is NOT a validity criterion (ADR-003 3.1): only shape, whitespace and the nil UUID are.
-      for (const key of ['', 'not-a-uuid', ` ${randomUUID()}`]) {
+      // Hex case is NOT a validity criterion (ADR-003 3.1): only shape and the nil UUID are.
+      // Only values the HTTP transport preserves belong here. Leading/trailing whitespace is deliberately
+      // absent: the HTTP stack may strip a header's optional whitespace (OWS) before the application layer
+      // sees it, so such a value never reaches parseIdempotencyKey intact over HTTP. The whitespace cases
+      // (leading space, trailing space, trailing newline) are asserted at parser level in
+      // apps/backend/src/idempotency/idempotency-key.spec.ts.
+      const malformedKeys: ReadonlyArray<readonly [string, string]> = [
+        ['empty', ''],
+        ['not a uuid', 'not-a-uuid'],
+        ['nil UUID', '00000000-0000-0000-0000-000000000000'],
+        ['no hyphens (32 hex)', randomUUID().replace(/-/g, '')],
+        ['non-hex digit', `${randomUUID().slice(0, 35)}g`],
+      ];
+      for (const [label, key] of malformedKeys) {
         const response = await register(phone, proof.proofToken, key);
-        expect([key, response.status, errorCode(response)]).toEqual([key, 400, 'INVALID_IDEMPOTENCY_KEY']);
+        expect([label, response.status, errorCode(response)]).toEqual([label, 400, 'INVALID_IDEMPOTENCY_KEY']);
       }
       expect(await userCount(phone.normalized)).toBe(0);
     });
