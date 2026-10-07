@@ -420,6 +420,7 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
       "UPDATE app.idempotency_records SET replay_guard = '{\"guard_id\":\"tampered\"}'::jsonb WHERE idempotency_key = $1::uuid",
       'UPDATE app.idempotency_records SET response_status = 202 WHERE idempotency_key = $1::uuid',
       "UPDATE app.idempotency_records SET replay_expires_at = replay_expires_at + interval '1 second' WHERE idempotency_key = $1::uuid",
+      "UPDATE app.idempotency_records SET replay_ciphertext = set_byte(replay_ciphertext, 0, (get_byte(replay_ciphertext, 0) + 1) % 256) WHERE idempotency_key = $1::uuid",
       "UPDATE app.idempotency_records SET replay_tag = decode(repeat('00', 16), 'hex') WHERE idempotency_key = $1::uuid",
       "UPDATE app.idempotency_records SET replay_iv = decode(repeat('01', 12), 'hex') WHERE idempotency_key = $1::uuid",
     ];
