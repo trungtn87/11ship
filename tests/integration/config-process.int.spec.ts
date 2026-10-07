@@ -20,9 +20,10 @@ function startMain(env: Record<string, string | undefined>) {
 describe('F05 — invalid configuration stops the process', () => {
   const SECRET = 'SECRET_MARKER_F05_c81b';
   const validUrl = `postgres://ship11_test:${SECRET}@127.0.0.1:5433/ship11_test`;
+  const crypto = { CRYPTO_KEYRING: FIXTURE_KEYRING_ENV, CRYPTO_ACTIVE_KEY_ID: 'k1' };
 
   it('exits nonzero when DATABASE_URL is missing and names only DATABASE_URL', () => {
-    const result = startMain({ APP_ENV: 'test' });
+    const result = startMain({ APP_ENV: 'test', ...crypto });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('DATABASE_URL');
@@ -31,7 +32,7 @@ describe('F05 — invalid configuration stops the process', () => {
   });
 
   it('exits nonzero for an invalid PORT, names only PORT and prints no values', () => {
-    const result = startMain({ APP_ENV: 'test', DATABASE_URL: validUrl, PORT: 'not-a-port' });
+    const result = startMain({ APP_ENV: 'test', DATABASE_URL: validUrl, PORT: 'not-a-port', ...crypto });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('PORT');
@@ -42,7 +43,7 @@ describe('F05 — invalid configuration stops the process', () => {
   });
 
   it('never prints a bad DATABASE_URL value', () => {
-    const result = startMain({ APP_ENV: 'test', DATABASE_URL: `mysql://u:${SECRET}@h/db` });
+    const result = startMain({ APP_ENV: 'test', DATABASE_URL: `mysql://u:${SECRET}@h/db`, ...crypto });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('DATABASE_URL');
@@ -51,7 +52,7 @@ describe('F05 — invalid configuration stops the process', () => {
   });
 
   it('exits nonzero for APP_ENV=production without a DATABASE_URL (no fallback)', () => {
-    const result = startMain({ APP_ENV: 'production' });
+    const result = startMain({ APP_ENV: 'production', ...crypto });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('DATABASE_URL');
@@ -61,7 +62,7 @@ describe('F05 — invalid configuration stops the process', () => {
   // real entry point. A child process that needs a key gets the fixture keyring explicitly from the
   // test; nothing here depends on a key in the parent environment.
   describe('M00-C1A0 configuration', () => {
-    const base = { APP_ENV: 'test', DATABASE_URL: validUrl };
+    const base = { APP_ENV: 'test', DATABASE_URL: validUrl, ...crypto };
 
     it('exits nonzero when the client query timeout is not larger than the server statement timeout', () => {
       const result = startMain({
@@ -95,6 +96,25 @@ describe('F05 — invalid configuration stops the process', () => {
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('DB_IDLE_IN_TRANSACTION_TIMEOUT_MS');
       expect(result.stderr).not.toContain('DB_STATEMENT_TIMEOUT_MS');
+    });
+
+    it('exits nonzero when required crypto variables are missing and names only them', () => {
+      const result = startMain({ APP_ENV: 'test', DATABASE_URL: validUrl });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('CRYPTO_KEYRING');
+      expect(result.stderr).toContain('CRYPTO_ACTIVE_KEY_ID');
+      expect(result.stderr).not.toContain(SECRET);
+    });
+
+    it('exits nonzero for invalid idempotency TTL ordering', () => {
+      const result = startMain({
+        ...base,
+        IDEMPOTENCY_REPLAY_TTL_SECONDS: '901',
+        IDEMPOTENCY_DEDUPE_TTL_SECONDS: '900',
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('IDEMPOTENCY_REPLAY_TTL_SECONDS');
+      expect(result.stderr).toContain('IDEMPOTENCY_DEDUPE_TTL_SECONDS');
     });
 
     it('exits nonzero for a malformed keyring, names only CRYPTO_KEYRING and prints no key material', () => {
