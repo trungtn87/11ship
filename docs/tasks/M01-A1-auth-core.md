@@ -5,6 +5,8 @@ Date: 2026-10-07
 Design base: `main @ a215bee274accc92e135707d8109512869507842`  
 Foundation gate: M00-C1 merged at `5252efa8695fe628d6927609e432078cf01c0ac9`, post-merge CI `37603602643` success.
 
+UI scope: `NONE` for M01-A1 implementation. A1 remains Auth backend/API only and is **not blocked by Figma**. Auth app UI may be designed in parallel in the project Figma file, but frontend implementation belongs to a later user-facing task and must satisfy the `UI_LOCKED` gate in [11Ship Figma/UI workflow](../current/11Ship-figma-ui-workflow-v1.0.md).
+
 ## 1. Authority and corrections
 
 For M01-A1, precedence is:
