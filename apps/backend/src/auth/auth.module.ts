@@ -2,6 +2,7 @@ import { DynamicModule, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OutboxModule } from '../outbox/outbox.module';
+import { ShopModule } from '../shop/shop.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { authConfigProvider } from './auth-config.provider';
 import { AuthController } from './auth.controller';
@@ -11,6 +12,7 @@ import { Argon2idPasswordHasher, PASSWORD_HASHER } from './password-hasher';
 import { ProofRepository } from './proof-repository';
 import { RegistrationService } from './registration-service';
 import { RoleContextService } from './role-context-service';
+import { RoleGrantParticipant } from './role-grant-participant';
 import { SessionAuthGuard } from './session-auth.guard';
 import { SessionRepository } from './session-repository';
 import { SessionService } from './session-service';
@@ -27,13 +29,18 @@ export interface AuthModuleOptions {
  * Auth Core (M01-A1). It reuses the M00 modules (transaction, idempotency, audit, outbox) and adds only
  * Auth's own repositories and services. Import it through register(): the OTP provider must be bound
  * explicitly by whoever builds the application.
+ *
+ * M01-A2S: it imports ShopModule ONLY for the read-only eligibility port (Auth never issues SQL against M02
+ * tables), and it exports the three things an onboarding coordinator needs: the session guard (with the
+ * SessionService the guard is built from) and the narrow role-grant participant. Nothing else leaves Auth.
+ * ShopModule imports nothing, so Auth -> Shop is one-way and needs no forwardRef.
  */
 @Module({})
 export class AuthModule {
   static register(options: AuthModuleOptions): DynamicModule {
     return {
       module: AuthModule,
-      imports: [TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
+      imports: [TransactionModule, IdempotencyModule, AuditModule, OutboxModule, ShopModule],
       controllers: [AuthController],
       providers: [
         authConfigProvider,
@@ -48,8 +55,12 @@ export class AuthModule {
         LoginService,
         SessionService,
         RoleContextService,
+        RoleGrantParticipant,
         SessionAuthGuard,
       ],
+      // A guard named in @UseGuards() of another module is built in THAT module, from its imports, so the
+      // SessionService it depends on has to be exported together with the guard.
+      exports: [SessionAuthGuard, SessionService, RoleGrantParticipant],
     };
   }
 }

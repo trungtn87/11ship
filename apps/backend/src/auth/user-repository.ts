@@ -120,4 +120,20 @@ export class UserRepository {
     ]);
     return result.rows.length > 0;
   }
+
+  /**
+   * Idempotent grant: inserts the (user, role) row unless it already exists. Returns true when this call
+   * created it, false when the user already held the role. The caller holds the user row lock; nothing here
+   * decides WHICH roles may be granted (RoleGrantParticipant does).
+   */
+  async grantRole(context: TransactionContext, userId: string, role: string): Promise<boolean> {
+    const result = await context.query(
+      `INSERT INTO app.user_roles (user_id, role, created_at)
+       SELECT $1::uuid, $2, clock.t
+         FROM (${CLOCK_CTE}) AS clock
+       ON CONFLICT (user_id, role) DO NOTHING`,
+      [userId, role],
+    );
+    return result.rowCount === 1;
+  }
 }

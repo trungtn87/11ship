@@ -49,6 +49,13 @@ export const APP_ERROR_DEFINITIONS = {
   SESSION_INVALID: { status: 401, message: 'The session is not valid' },
   SESSION_REVOKED: { status: 401, message: 'The session was revoked' },
   SESSION_EXPIRED: { status: 401, message: 'The session has expired' },
+
+  // Shop onboarding (M01-A2S, handoff section 10). Fixed messages: they never echo what the client sent,
+  // never name a database constraint and never reveal another account's data.
+  SHOP_ONBOARDING_EXISTS: { status: 409, message: 'A shop profile already exists for this account' },
+  SHOP_PROFILE_INCOMPLETE: { status: 409, message: 'The shop profile is not ready to be completed' },
+  INVALID_SERVICE_AREA: { status: 400, message: 'The service area is not valid' },
+  VERSION_CONFLICT: { status: 409, message: 'The resource was changed by another request' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;

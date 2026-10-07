@@ -3,7 +3,9 @@ import { AuditWriter } from '../audit/audit-writer';
 import { StandaloneAuditRecorder } from '../audit/standalone-audit-recorder';
 import { AppError } from '../common/app-errors';
 import { AuthConfig } from '../config/auth-config';
+import { ShopEligibilityReader } from '../shop/shop-eligibility-reader';
 import { TransactionManager } from '../transaction/transaction-manager';
+import { availableRoles } from './available-roles';
 import { AUDIT_ACTIONS } from './auth-constants';
 import { AUTH_CONFIG } from './auth-config.provider';
 import { LoginInput } from './auth-validation';
@@ -40,6 +42,7 @@ export class LoginService {
     private readonly recorder: StandaloneAuditRecorder,
     @Inject(AUTH_CONFIG) private readonly config: AuthConfig,
     @Inject(PASSWORD_HASHER) private readonly hasher: PasswordHasher,
+    private readonly shops: ShopEligibilityReader,
   ) {}
 
   async login(input: LoginInput, requestId: string): Promise<LoginResult> {
@@ -69,7 +72,9 @@ export class LoginService {
         device: input.device,
         ttlSeconds: this.config.sessionTtlSeconds,
       });
-      const roles = await this.users.supportedRoles(context, locked.userId);
+      // The roles the user can actually select: SHOP only with an ACTIVE owned shop (see availableRoles).
+      const held = await this.users.supportedRoles(context, locked.userId);
+      const roles = availableRoles(held, await this.shops.ownerShopEligibility(context, locked.userId));
       await this.audit.append(context, {
         requestId,
         actorType: 'USER',
