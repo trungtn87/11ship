@@ -94,7 +94,7 @@ describe('F03 — migrations apply once and stay consistent', () => {
   it('upgrades the B1-only schema to C1A1 with the same migration history', async () => {
     await client.query('DROP SCHEMA IF EXISTS app CASCADE');
 
-    const baseOnly = migrate(upgradeHistorySchema, ['--count', '1']);
+    const baseOnly = migrate(upgradeHistorySchema, ['1']);
     expect(baseOnly.status).toBe(0);
     const before = await client.query(
       "SELECT 1 FROM information_schema.tables WHERE table_schema = 'app' AND table_name = 'idempotency_records'",
