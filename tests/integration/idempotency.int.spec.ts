@@ -13,6 +13,7 @@ import { IdempotencyExecutor } from '../../apps/backend/src/idempotency/idempote
 import { IdempotencyOptions } from '../../apps/backend/src/idempotency/idempotency.types';
 import { idempotencyLockKey } from '../../apps/backend/src/shared/lock-key';
 import { poolClientSource } from '../../apps/backend/src/transaction/pg-client-source';
+import { TransactionContext } from '../../apps/backend/src/transaction/transaction-context';
 import { deferred, eventually, failureOf } from './support/async-helpers';
 import { loadIntegrationConfig } from './support/test-helpers';
 import {
@@ -390,7 +391,7 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
     const sensitive = {
       ...request(key),
       sensitiveReplay: true,
-      replayAuthorization: async (context: { query: (text: string, values?: readonly unknown[]) => Promise<{ rows: Array<{ allowed: boolean }> }> }, guard: unknown) => {
+      replayAuthorization: async (context: TransactionContext, guard: unknown) => {
         const id = (guard as { guard_id: string }).guard_id;
         const result = await context.query<{ allowed: boolean }>(
           'SELECT allowed FROM app.c1a1_guard_fixture WHERE guard_id = $1::uuid FOR UPDATE',
@@ -663,7 +664,7 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
       [proofId],
     );
 
-    const replayAuthorization = async (context: import('../../apps/backend/src/transaction/transaction-context').TransactionContext, guard: import('../../apps/backend/src/shared/json/safe-json').JsonValue) => {
+    const replayAuthorization = async (context: TransactionContext, guard: import('../../apps/backend/src/shared/json/safe-json').JsonValue) => {
       guardCount += 1;
       const id = (guard as { proof_id: string }).proof_id;
       const proof = await context.query<{ invalidated: boolean }>(
@@ -673,7 +674,7 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
       if (proof.rows[0]?.invalidated !== false) throw new Error('proof invalidated');
     };
 
-    const work = async (context: import('../../apps/backend/src/transaction/transaction-context').TransactionContext) => {
+    const work = async (context: TransactionContext) => {
       const proof = await context.query<{ used: boolean; invalidated: boolean; fresh: boolean }>(
         `SELECT used, invalidated, expires_at > clock_timestamp() AS fresh
          FROM app.c1a1_proof_fixture WHERE proof_id = $1::uuid FOR UPDATE`,
@@ -739,7 +740,7 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
       ...request(key),
       sensitiveReplay: true,
       replayAuthorization: async (
-        context: import('../../apps/backend/src/transaction/transaction-context').TransactionContext,
+        context: TransactionContext,
         guard: import('../../apps/backend/src/shared/json/safe-json').JsonValue,
       ) => {
         hookStarted.resolve();
