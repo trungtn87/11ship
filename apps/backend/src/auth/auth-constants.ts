@@ -49,6 +49,7 @@ export const AUDIT_ACTIONS = Object.freeze({
   login: 'auth.login.v1',
   roleSelect: 'auth.role_select.v1',
   otpVerify: 'auth.otp_verify.v1',
+  sessionRevoke: 'auth.session_revoke.v1',
 });
 
 /** Outbox event of a completed registration. */

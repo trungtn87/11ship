@@ -1,0 +1,123 @@
+import { Injectable } from '@nestjs/common';
+import { TechnicalError } from '../common/app-errors';
+import { TransactionContext } from '../transaction/transaction-context';
+import { SUPPORTED_ROLES } from './auth-constants';
+import { CLOCK_CTE } from './auth-db';
+
+export type UserStatus = 'ACTIVE' | 'DISABLED';
+
+export interface UserRow {
+  readonly userId: string;
+  readonly phoneNormalized: string;
+  readonly passwordHash: string;
+  readonly status: UserStatus;
+}
+
+interface RawUser {
+  user_id: string;
+  phone_normalized: string;
+  password_hash: string;
+  status: UserStatus;
+}
+
+function toUser(row: RawUser): UserRow {
+  return {
+    userId: row.user_id,
+    phoneNormalized: row.phone_normalized,
+    passwordHash: row.password_hash,
+    status: row.status,
+  };
+}
+
+/** SQL for users and user_roles. */
+@Injectable()
+export class UserRepository {
+  async isPhoneRegistered(context: TransactionContext, phoneNormalized: string): Promise<boolean> {
+    const result = await context.query('SELECT 1 FROM app.users WHERE phone_normalized = $1', [
+      phoneNormalized,
+    ]);
+    return result.rows.length > 0;
+  }
+
+  async findByPhone(context: TransactionContext, phoneNormalized: string): Promise<UserRow | undefined> {
+    const result = await context.query<RawUser>(
+      `SELECT user_id, phone_normalized, password_hash, status
+         FROM app.users WHERE phone_normalized = $1`,
+      [phoneNormalized],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toUser(row);
+  }
+
+  async lockById(context: TransactionContext, userId: string): Promise<UserRow | undefined> {
+    const result = await context.query<RawUser>(
+      `SELECT user_id, phone_normalized, password_hash, status
+         FROM app.users WHERE user_id = $1::uuid FOR UPDATE`,
+      [userId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toUser(row);
+  }
+
+  async findById(context: TransactionContext, userId: string): Promise<UserRow | undefined> {
+    const result = await context.query<RawUser>(
+      `SELECT user_id, phone_normalized, password_hash, status
+         FROM app.users WHERE user_id = $1::uuid`,
+      [userId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toUser(row);
+  }
+
+  /**
+   * Creates the ACTIVE user, taking phone_verified_at from the verification that backed the proof. Returns
+   * false when the phone number already belongs to a user (the UNIQUE constraint decided, possibly a race).
+   * No role is ever written here: a new account is roleless.
+   */
+  async insertRegistered(
+    context: TransactionContext,
+    input: { userId: string; phoneNormalized: string; passwordHash: string; proofId: string },
+  ): Promise<boolean> {
+    const result = await context.query(
+      `INSERT INTO app.users (
+         user_id, phone_normalized, password_hash, phone_verified_at, status, version, created_at, updated_at
+       )
+       SELECT $1::uuid, $2, $3, v.verified_at, 'ACTIVE', 1, clock.t, clock.t
+         FROM app.verification_proofs p
+         JOIN app.phone_verifications v ON v.verification_id = p.verification_id
+        CROSS JOIN (${CLOCK_CTE}) AS clock
+        WHERE p.proof_id = $4::uuid AND v.verified_at IS NOT NULL
+       ON CONFLICT (phone_normalized) DO NOTHING`,
+      [input.userId, input.phoneNormalized, input.passwordHash, input.proofId],
+    );
+    if (result.rowCount === 1) {
+      return true;
+    }
+    // Either the phone is taken (the expected conflict) or the verification join found nothing. Tell them
+    // apart so a broken invariant is never reported as "phone already registered".
+    const taken = await this.isPhoneRegistered(context, input.phoneNormalized);
+    if (!taken) {
+      throw new TechnicalError('internal', 'User was not written');
+    }
+    return false;
+  }
+
+  /** Sorted supported business roles of the user (SHOP, DRIVER). */
+  async supportedRoles(context: TransactionContext, userId: string): Promise<string[]> {
+    const result = await context.query<{ role: string }>(
+      `SELECT role FROM app.user_roles
+        WHERE user_id = $1::uuid AND role = ANY($2::text[])
+        ORDER BY role`,
+      [userId, [...SUPPORTED_ROLES]],
+    );
+    return result.rows.map((row) => row.role);
+  }
+
+  async hasRole(context: TransactionContext, userId: string, role: string): Promise<boolean> {
+    const result = await context.query('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid AND role = $2', [
+      userId,
+      role,
+    ]);
+    return result.rows.length > 0;
+  }
+}

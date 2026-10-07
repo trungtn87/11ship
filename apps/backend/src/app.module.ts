@@ -1,4 +1,5 @@
 import { DynamicModule, Module } from '@nestjs/common';
+import { AuthModule, AuthModuleOptions } from './auth/auth.module';
 import { AppConfig } from './config/app-config';
 import { ConfigModule } from './config/config.module';
 import { DatabaseModule } from './database/database.module';
@@ -10,6 +11,11 @@ import { TransactionModule } from './transaction/transaction.module';
 export interface AppModuleOptions {
   config: AppConfig;
   logger: JsonLogger;
+  /**
+   * Auth Core. Optional so that tests of unrelated parts can build an app without Auth's database and
+   * secrets; main.ts always passes it. When present, an explicit OTP provider binding is required.
+   */
+  auth?: AuthModuleOptions;
 }
 
 @Module({})
@@ -25,6 +31,7 @@ export class AppModule {
         DatabaseModule,
         TransactionModule,
         HealthModule,
+        ...(options.auth === undefined ? [] : [AuthModule.register(options.auth)]),
       ],
     };
   }
