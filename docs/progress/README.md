@@ -72,6 +72,10 @@ Tính theo trọng số (`weight`) của task lá, mặc định mỗi task lá 
 
 Sửa `docs/progress/plan.yml` (mô tả các trường ở đầu file), chạy `npm run progress:test`, rồi mở PR. Không ghi trạng thái vào plan. Khi một task có PR mới, chỉ cần gắn đủ label; không cần sửa plan.
 
+### UI / Figma gate
+
+Progress schema v1 chưa có field Figma và parser của plan là fail-closed, vì vậy **không thêm field UI/Figma ad-hoc vào `plan.yml`**. Mỗi task/handoff phải tự khai `UI_SCOPE: NONE` hoặc `UI_SCOPE: FIGMA_REQUIRED` theo [quy trình Figma + UI](../current/11Ship-figma-ui-workflow-v1.0.md). Với task có UI, trạng thái `READY_FOR_CLAUDE` của dashboard chỉ mở đường cho implementation theo task contract; frontend vẫn phải chờ frame/node cụ thể đạt `UI_LOCKED`. Backend/API có thể chạy song song nếu contract đã khóa.
+
 ## Tự động cập nhật và bảo mật
 
 - `preview` (sự kiện `pull_request`): token **chỉ đọc** (kể cả `statuses: read`), chạy test và in dashboard vào job summary. Có thể chạy mã của chính PR vì không có quyền ghi.
