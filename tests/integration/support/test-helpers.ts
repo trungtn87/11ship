@@ -4,6 +4,7 @@ import path from 'node:path';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../../../apps/backend/src/app.module';
+import { AuthModuleOptions } from '../../../apps/backend/src/auth/auth.module';
 import { configureApp } from '../../../apps/backend/src/app.setup';
 import {
   AppConfig,
@@ -44,15 +45,20 @@ export interface RunningApp {
   logs: string[];
 }
 
+export interface StartAppOptions {
+  /** Binds Auth Core (with an explicit OTP provider), exactly as main.ts does. Omitted: no Auth routes. */
+  readonly auth?: AuthModuleOptions;
+}
+
 /** Boots the real AppModule through the same HTTP pipeline as main.ts, on a random free port. */
-export async function startApp(config: AppConfig): Promise<RunningApp> {
+export async function startApp(config: AppConfig, options: StartAppOptions = {}): Promise<RunningApp> {
   const logs: string[] = [];
   const logger = new JsonLogger((line) => {
     logs.push(line);
   });
 
   const moduleRef = await Test.createTestingModule({
-    imports: [AppModule.register({ config, logger })],
+    imports: [AppModule.register({ config, logger, ...(options.auth === undefined ? {} : { auth: options.auth }) })],
   }).compile();
 
   const app = moduleRef.createNestApplication({ logger: false });
