@@ -11,7 +11,7 @@ describe('normalizeIdempotencyKey', () => {
 
   it.each([undefined, null, ''])('requires a key for %p', (value) => {
     expect(() => normalizeIdempotencyKey(value)).toThrow(
-      expect.objectContaining<AppError>({ code: 'IDEMPOTENCY_KEY_REQUIRED' }),
+      expect.objectContaining({ code: 'IDEMPOTENCY_KEY_REQUIRED' }),
     );
   });
 
@@ -23,7 +23,7 @@ describe('normalizeIdempotencyKey', () => {
     123,
   ])('rejects invalid key %p', (value) => {
     expect(() => normalizeIdempotencyKey(value)).toThrow(
-      expect.objectContaining<AppError>({ code: 'INVALID_IDEMPOTENCY_KEY' }),
+      expect.objectContaining({ code: 'INVALID_IDEMPOTENCY_KEY' }),
     );
   });
 });
