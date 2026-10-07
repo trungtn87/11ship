@@ -21,7 +21,7 @@ describe('IdempotencyOperationRegistry', () => {
     [{ operationId: 'x', replayTtlSeconds: 2, dedupeTtlSeconds: 1 }],
     [{ operationId: 'x', replayTtlSeconds: 1, dedupeTtlSeconds: 604801 }],
   ])('rejects invalid policy %p', (entry) => {
-    expect(() => new IdempotencyOperationRegistry(entry)).toThrow(RangeError);
+    expect(() => new IdempotencyOperationRegistry([entry])).toThrow(RangeError);
   });
 
   it('rejects duplicate operation ids', () => {
