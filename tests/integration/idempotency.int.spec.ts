@@ -75,7 +75,8 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
   async function setExpired(key: string, dedupe = false): Promise<void> {
     await pool.query(
       `UPDATE app.idempotency_records
-       SET replay_expires_at = date_trunc('milliseconds', clock_timestamp() - interval '1 second'),
+       SET created_at = date_trunc('milliseconds', clock_timestamp() - interval '2 seconds'),
+           replay_expires_at = date_trunc('milliseconds', clock_timestamp() - interval '1 second'),
            dedupe_expires_at = CASE
              WHEN $2::boolean THEN date_trunc('milliseconds', clock_timestamp() - interval '1 millisecond')
              ELSE date_trunc('milliseconds', clock_timestamp() + interval '1 day')
