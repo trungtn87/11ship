@@ -139,6 +139,8 @@ jobs:
           NODE_ENV: test
           APP_ENV: test
           DATABASE_URL: postgres://ship11_test:ci_test_ephemeral_only@127.0.0.1:5432/ship11_test
+          CRYPTO_ACTIVE_KEY_ID: k1
+          CRYPTO_KEYRING: k1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=,k2://79/Pv6+fj39vX08/Lx8O/u7ezr6uno5+bl5OPi4eA=
         shell: bash
         run: |
           test -z "${PGPASSWORD:-}" && test -z "${TEST_WRONG_USER_DATABASE_URL:-}"
@@ -157,6 +159,8 @@ jobs:
           NODE_ENV: test
           APP_ENV: test
           DATABASE_URL: postgres://ship11_test:ci_test_ephemeral_only@127.0.0.1:5432/ship11_test
+          CRYPTO_ACTIVE_KEY_ID: k1
+          CRYPTO_KEYRING: k1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=,k2://79/Pv6+fj39vX08/Lx8O/u7ezr6uno5+bl5OPi4eA=
           TEST_WRONG_USER_DATABASE_URL: postgres://ship11_wrong_user:ci_wrong_user_ephemeral_only@127.0.0.1:5432/ship11_test
         shell: bash
         run: |
