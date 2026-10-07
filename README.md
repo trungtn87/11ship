@@ -103,6 +103,14 @@ Xem [.env.example](.env.example). Thiếu hoặc sai biến thì tiến trình t
 - Biến mới: `IDEMPOTENCY_ADVISORY_WAIT_MS` (250, 1..5000, nhỏ hơn `DB_STATEMENT_TIMEOUT_MS`), `IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS` (500, 1..30000, nhỏ hơn `DB_STATEMENT_TIMEOUT_MS`), `IDEMPOTENCY_REPLAY_TTL_SECONDS` (900) và `IDEMPOTENCY_DEDUPE_TTL_SECONDS` (604800) với `1 <= replay <= dedupe <= 604800`. Module idempotency yêu cầu `CRYPTO_KEYRING` + `CRYPTO_ACTIVE_KEY_ID`; thiếu thì tiến trình thoát khác 0 và chỉ in tên hai biến. Module chưa được `AppModule` import (chưa có consumer); M01 sẽ import `IdempotencyModule`.
 - Test integration cần migration mới nhất; bộ test migration (C23) reset schema `app` của chính database `ship11_test` (sau khi guard xác nhận) rồi luôn migrate lại về bản mới nhất.
 
+### Audit và Outbox ghi (M00-C1B)
+
+- Bảng `app.audit_logs` (migration `1791417600000_create-audit-outbox`) chỉ-thêm: trigger mức câu lệnh chặn UPDATE, DELETE và TRUNCATE (SQLSTATE `23001`) kể cả khi không khớp hàng nào. Bảng `app.outbox_events` có đủ cột trạng thái giao nhận (status, attempt_count, available_at, lease, published_at, last_error_code) nhưng C1B chỉ ghi trạng thái đầu `PENDING` / 0 / `available_at = occurred_at`. Không có dispatcher, claim, ack, retry hay publisher (thuộc M00-C1C).
+- `AuditWriter.append(context, entry)` và `OutboxWriter.append(context, event)` (apps/backend/src/audit, apps/backend/src/outbox) chỉ chạy trong giao dịch của coordinator: không pool, không BEGIN/COMMIT, lỗi luôn được ném để giao dịch rollback cùng nghiệp vụ. Dữ liệu được kiểm tra trọn vẹn trước khi chạm DB (metadata audit tối đa 8 KiB, payload outbox tối đa 64 KiB, cùng validator JSON an toàn của A0, cấm khóa bí mật); không bao giờ cắt hay sửa. `occurred_at` lấy từ đồng hồ PostgreSQL; `OutboxWriter` trả `EventId` và dùng một mẫu đồng hồ cho cả `occurred_at` lẫn `available_at`.
+- `StandaloneAuditRecorder.recordBestEffort(entry)` chỉ ghi `DENIED`/`FAILURE`, trong giao dịch riêng sau khi giao dịch nghiệp vụ đã rollback và trả kết nối. Tổng ngân sách cố định 500 ms cho acquire + BEGIN + INSERT + COMMIT; client đến muộn được trả ngay và không bao giờ ghi muộn; mọi lỗi bị nuốt sau một dòng log cố định (`audit_standalone_failed` + mã). Không gọi từ bên trong callback nghiệp vụ.
+- `AuditModule` và `OutboxModule` chưa được `AppModule` import (chưa có consumer) và không import `TransactionModule`. Không có biến cấu hình mới.
+- Test: C11, C12, C27, C28 và phần mở rộng C23 trong `tests/integration` (cần PostgreSQL test); unit test không cần DB. Bằng chứng: [docs/evidence/M00-C1B.md](docs/evidence/M00-C1B.md).
+
 ### Phạm vi hiện tại
 
 Chỉ có nền backend: health endpoints, cấu hình, pool, migration runner, error contract. Chưa có Auth, Shop, Driver, Wallet, Delivery, frontend, SMS hay triển khai production. Hướng dẫn sao lưu/khôi phục ở [ops/runbooks](ops/runbooks/database-backup-restore-guidance.md) chỉ là hướng dẫn cho tương lai, chưa được kiểm thử.
