@@ -96,8 +96,8 @@ export class IdempotencyExecutor {
     transactions: TransactionManager,
     keyring: Keyring,
     options: IdempotencyOptions,
-    lockKey: LockKeyFn = idempotencyLockKey,
     operationRegistry: IdempotencyOperationRegistry = new IdempotencyOperationRegistry(),
+    lockKey: LockKeyFn = idempotencyLockKey,
   ) {
     if (
       !Number.isSafeInteger(options.advisoryWaitMs) ||
