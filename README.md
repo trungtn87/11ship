@@ -115,6 +115,13 @@ Xem [.env.example](.env.example). Thiếu hoặc sai biến thì tiến trình t
 - `AuditModule` và `OutboxModule` chưa được `AppModule` import (chưa có consumer) và không import `TransactionModule`. Không có biến cấu hình mới.
 - Test: C11, C12, C27, C28 và phần mở rộng C23 trong `tests/integration` (cần PostgreSQL test); unit test không cần DB. Bằng chứng: [docs/evidence/M00-C1B.md](docs/evidence/M00-C1B.md).
 
+### Outbox dispatcher (M00-C1C)
+
+- `OutboxDispatcher` + `OutboxDispatchStore` (`apps/backend/src/outbox`) giao sự kiện outbox theo at-least-once: claim ngắn (`FOR UPDATE SKIP LOCKED`, giờ DB) → publish ngoài transaction → ack/fail có fencing theo `lock_token`. Retry backoff mũ không jitter, hết `OUTBOX_MAX_ATTEMPTS` thì `DEAD`. Cùng `event_id` qua mọi lần giao; consumer phải dedupe.
+- Không tự khởi động (không worker/poll loop, không broker thật). `drain(deadlineMs)` là primitive tắt có giới hạn. Publisher thật chưa có; chỉ có fake trong test.
+- Biến cấu hình (xem `.env.example`): `OUTBOX_MAX_ATTEMPTS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_PUBLISH_CONCURRENCY`, `OUTBOX_PUBLISH_TIMEOUT_MS`, `OUTBOX_LEASE_MS` (phải > timeout + 2000), `OUTBOX_BACKOFF_BASE_MS` (<= cap), `OUTBOX_BACKOFF_CAP_MS`. Cấu hình sai chỉ log tên biến, không log giá trị.
+- Test: C13, C14, C15, C16, C24. Bằng chứng: [docs/evidence/M00-C1C.md](docs/evidence/M00-C1C.md).
+
 ### Phạm vi hiện tại
 
 Chỉ có nền backend: health endpoints, cấu hình, pool, migration runner, error contract. Chưa có Auth, Shop, Driver, Wallet, Delivery, frontend, SMS hay triển khai production. Hướng dẫn sao lưu/khôi phục ở [ops/runbooks](ops/runbooks/database-backup-restore-guidance.md) chỉ là hướng dẫn cho tương lai, chưa được kiểm thử.
