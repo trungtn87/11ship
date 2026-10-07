@@ -1,7 +1,7 @@
 # M00-C1 — Transactional Core
 
 Phiên bản 0.3, ngày 07/10/2026.
-Trạng thái: AUDIT FIXES PROPOSED — WAITING OWNER REVIEW; chưa LOCKED/CODE_READY, chưa giao Claude code.
+Trạng thái: OWNER LOCKED DESIGN — 07/10/2026; C1A0 CODE_READY theo task riêng, các slice sau giữ dependency gates.
 
 ## 1. Base và nguồn
 
@@ -348,4 +348,4 @@ C24 kiểm DEAD được giữ, không test production redrive chưa triển kha
 | Deadlock/serialization | Rollback, không automatic callback retry |
 | Audit fail trước commit | Toàn bộ business/audit/outbox/idempotency rollback |
 
-Đây là kiểm tra logic đặc tả, không phải runtime PASS/CI evidence. Sau Owner lock mới giao A0.
+Đây là kiểm tra logic đặc tả, không phải runtime PASS/CI evidence. Owner đã lock thiết kế ngày 07/10/2026; gói A0 ở docs/tasks/CLAUDE-M00-C1A0.md. Chưa bắt đầu implementation trong phiên thiết kế.

@@ -1,12 +1,12 @@
 # 11Ship — Bước 4.2
 ## Đặc tả đăng ký, đăng nhập và onboarding — M01-A v1.0
 
-**Trạng thái:** DESIGN — register replay addendum 07/10/2026 chờ Owner duyệt  
+**Trạng thái:** DESIGN — register replay addendum ADR-003 v0.3 được Owner duyệt 07/10/2026; Auth implementation vẫn chờ toàn bộ M00-C1  
 **Phụ thuộc:** Bước 4.1 — M00-A  
 **Mục tiêu:** khóa contract đủ chi tiết để giao Claude triển khai theo gói nhỏ, không tự diễn giải nghiệp vụ.
 
 
-> **Register replay clarification — 07/10/2026, ADR-003 v0.3:** ADR-001/002 khóa stack/session; ADR-003 v0.3 §13 chi phối transactional replay và có ưu tiên với các câu used/expired proof hoặc transaction order bên dưới. New execution phải reject proof used/expired; replay kết quả đã commit không phải consume proof lần hai. Chưa Owner lock revision thì chưa CODE_READY.
+> **Register replay clarification — 07/10/2026, ADR-003 v0.3:** ADR-001/002 khóa stack/session; ADR-003 v0.3 §13 chi phối transactional replay và có ưu tiên với các câu used/expired proof hoặc transaction order bên dưới. New execution phải reject proof used/expired; replay kết quả đã commit không phải consume proof lần hai. Owner đã lock revision ADR-003 v0.3; Auth vẫn chưa CODE_READY trước khi toàn bộ M00-C1 hoàn tất.
 
 ---
 

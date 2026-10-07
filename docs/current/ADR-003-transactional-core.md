@@ -1,6 +1,6 @@
 # ADR-003 — Transactional Core: transaction context, idempotency, audit và outbox
 
-Ngày: 07/10/2026. Phiên bản: 0.3. Trạng thái: AUDIT FIXES PROPOSED — WAITING OWNER REVIEW; chưa LOCKED/CODE_READY.
+Ngày: 07/10/2026. Phiên bản: 0.3. Trạng thái: OWNER LOCKED DESIGN — 07/10/2026; chỉ C1A0 được mở qua task riêng.
 Phạm vi: M00-C1. Phụ thuộc: M00-B1 đã FOUNDATION READY trên `main` tại merge SHA `91316a5fe155f7af5ad96491121f5bbee60703c6`.
 
 ## 1. Mục tiêu
@@ -343,4 +343,4 @@ Defaults: max_attempts=5 (1..20), batch_size=10 (1..100), publish_concurrency=10
 
 ## 14. Audit disposition
 
-v0.3 xử lý B01–B02, H01–H05, M01–M03 ở mức contract; task chứa C17–C30 để chứng minh khi implementation. Đây không phải tuyên bố runtime PASS. Owner chưa lock; không mở implementation cho đến khi Owner duyệt.
+v0.3 xử lý B01–B02, H01–H05, M01–M03 ở mức contract; task chứa C17–C30 để chứng minh khi implementation. Đây không phải tuyên bố runtime PASS. Owner duyệt tiếp tục ngày 07/10/2026 sau bản sửa 1cc4f480df146317432fbf154ba7d2ad0692d10d. DESIGN LOCKED, không phải runtime PASS. Chỉ mở C1A0 theo task handoff riêng; không tự merge PR #3.
