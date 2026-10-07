@@ -9,7 +9,10 @@ import { IdempotencyOperationRegistry } from './idempotency-operation-registry';
 @Module({
   imports: [TransactionModule],
   providers: [
-    IdempotencyOperationRegistry,
+    {
+      provide: IdempotencyOperationRegistry,
+      useFactory: () => new IdempotencyOperationRegistry(),
+    },
     {
       provide: IdempotencyExecutor,
       inject: [TransactionManager, APP_CONFIG, IdempotencyOperationRegistry],
