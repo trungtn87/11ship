@@ -25,6 +25,30 @@ export const APP_ERROR_DEFINITIONS = {
     status: 503,
     message: 'The outcome of the operation could not be determined',
   },
+
+  // Auth Core (M01-A1, task section 15). Fixed messages: they never echo a phone number, an OTP, a token or
+  // anything else the client sent, and they never say whether an account exists.
+  INVALID_PHONE: { status: 400, message: 'The phone number is not valid' },
+  OTP_INVALID: { status: 400, message: 'The verification code is not correct' },
+  OTP_EXPIRED: { status: 400, message: 'The verification code has expired' },
+  OTP_ALREADY_USED: { status: 409, message: 'The verification code was already used' },
+  OTP_RATE_LIMITED: {
+    status: 429,
+    message: 'Too many verification requests or attempts; try again later',
+  },
+  PHONE_ALREADY_REGISTERED: { status: 409, message: 'This phone number is already registered' },
+  VERIFICATION_PROOF_INVALID: { status: 400, message: 'The verification proof is not valid' },
+  VERIFICATION_PROOF_USED: { status: 409, message: 'The verification proof was already used' },
+  VERIFICATION_PURPOSE_MISMATCH: {
+    status: 400,
+    message: 'The verification was issued for a different purpose',
+  },
+  INVALID_CREDENTIALS: { status: 401, message: 'The phone number or password is not correct' },
+  ACCOUNT_DISABLED: { status: 403, message: 'This account is disabled' },
+  ROLE_NOT_AVAILABLE: { status: 403, message: 'The requested role is not available' },
+  SESSION_INVALID: { status: 401, message: 'The session is not valid' },
+  SESSION_REVOKED: { status: 401, message: 'The session was revoked' },
+  SESSION_EXPIRED: { status: 401, message: 'The session has expired' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;

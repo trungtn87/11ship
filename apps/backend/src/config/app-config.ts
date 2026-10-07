@@ -1,5 +1,24 @@
 import { Keyring, parseKeyringConfig } from '../crypto/keyring';
 import {
+  AuthConfig,
+  DEFAULT_AUTH_OTP_MAX_ATTEMPTS,
+  DEFAULT_AUTH_OTP_RESEND_SECONDS,
+  DEFAULT_AUTH_OTP_TTL_SECONDS,
+  DEFAULT_AUTH_PROOF_TTL_SECONDS,
+  DEFAULT_AUTH_SESSION_TTL_SECONDS,
+  MAX_AUTH_OTP_MAX_ATTEMPTS,
+  MAX_AUTH_OTP_RESEND_SECONDS,
+  MAX_AUTH_OTP_TTL_SECONDS,
+  MAX_AUTH_PROOF_TTL_SECONDS,
+  MAX_AUTH_SESSION_TTL_SECONDS,
+  MIN_AUTH_OTP_MAX_ATTEMPTS,
+  MIN_AUTH_OTP_RESEND_SECONDS,
+  MIN_AUTH_OTP_TTL_SECONDS,
+  MIN_AUTH_PROOF_TTL_SECONDS,
+  MIN_AUTH_SESSION_TTL_SECONDS,
+  parseOtpHmacSecret,
+} from './auth-config';
+import {
   DEFAULT_ADVISORY_WAIT_MS,
   DEFAULT_BUSINESS_LOCK_TIMEOUT_MS,
   DEFAULT_DEDUPE_TTL_SECONDS,
@@ -77,6 +96,12 @@ export interface AppConfig {
    * start without it (see requireKeyring in idempotency.module.ts), naming only the variables.
    */
   crypto: Keyring | undefined;
+  /**
+   * Auth Core settings (M01-A1). Optional at the config level, exactly like the keyring: it is present only when
+   * AUTH_OTP_HMAC_SECRET is set and valid, and it is REQUIRED wherever the Auth module is wired (AuthModule
+   * refuses to start without it, naming only the variable). The other AUTH_* variables are always validated.
+   */
+  auth: AuthConfig | undefined;
 }
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -397,6 +422,66 @@ export function loadConfig(env: EnvSource): ConfigResult {
     }
   }
 
+  // Auth Core (M01-A1 task section 9). Bounds first; the HMAC secret is all-or-nothing and, like the keyring, only
+  // its NAME is ever reported. Argon2 parameters are constants (ADR-002), not variables.
+  const authOtpTtlSeconds = readInteger(
+    env,
+    'AUTH_OTP_TTL_SECONDS',
+    DEFAULT_AUTH_OTP_TTL_SECONDS,
+    MIN_AUTH_OTP_TTL_SECONDS,
+    MAX_AUTH_OTP_TTL_SECONDS,
+    invalid,
+  );
+  const authOtpResendSeconds = readInteger(
+    env,
+    'AUTH_OTP_RESEND_SECONDS',
+    DEFAULT_AUTH_OTP_RESEND_SECONDS,
+    MIN_AUTH_OTP_RESEND_SECONDS,
+    MAX_AUTH_OTP_RESEND_SECONDS,
+    invalid,
+  );
+  const authOtpMaxAttempts = readInteger(
+    env,
+    'AUTH_OTP_MAX_ATTEMPTS',
+    DEFAULT_AUTH_OTP_MAX_ATTEMPTS,
+    MIN_AUTH_OTP_MAX_ATTEMPTS,
+    MAX_AUTH_OTP_MAX_ATTEMPTS,
+    invalid,
+  );
+  const authProofTtlSeconds = readInteger(
+    env,
+    'AUTH_PROOF_TTL_SECONDS',
+    DEFAULT_AUTH_PROOF_TTL_SECONDS,
+    MIN_AUTH_PROOF_TTL_SECONDS,
+    MAX_AUTH_PROOF_TTL_SECONDS,
+    invalid,
+  );
+  const authSessionTtlSeconds = readInteger(
+    env,
+    'AUTH_SESSION_TTL_SECONDS',
+    DEFAULT_AUTH_SESSION_TTL_SECONDS,
+    MIN_AUTH_SESSION_TTL_SECONDS,
+    MAX_AUTH_SESSION_TTL_SECONDS,
+    invalid,
+  );
+  let auth: AuthConfig | undefined;
+  const rawOtpHmacSecret = env.AUTH_OTP_HMAC_SECRET;
+  if (rawOtpHmacSecret !== undefined) {
+    const otpHmacKey = parseOtpHmacSecret(rawOtpHmacSecret);
+    if (otpHmacKey === undefined) {
+      flag('AUTH_OTP_HMAC_SECRET');
+    } else {
+      auth = {
+        otpTtlSeconds: authOtpTtlSeconds,
+        otpResendSeconds: authOtpResendSeconds,
+        otpMaxAttempts: authOtpMaxAttempts,
+        proofTtlSeconds: authProofTtlSeconds,
+        sessionTtlSeconds: authSessionTtlSeconds,
+        otpHmacKey,
+      };
+    }
+  }
+
   if (invalid.length > 0 || appEnv === undefined || databaseUrl === undefined) {
     return { ok: false, invalid };
   }
@@ -421,6 +506,7 @@ export function loadConfig(env: EnvSource): ConfigResult {
         backoffCapMs: outboxBackoffCapMs,
       },
       crypto,
+      auth,
     },
   };
 }

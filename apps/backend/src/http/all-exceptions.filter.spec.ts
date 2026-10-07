@@ -138,15 +138,30 @@ describe('AllExceptionsFilter', () => {
   describe('typed error registry', () => {
     const codes = Object.keys(APP_ERROR_DEFINITIONS) as AppErrorCode[];
 
-    it('registers exactly the six idempotency codes and the unknown-transaction-outcome code', () => {
+    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome) and the Auth Core codes', () => {
       expect([...codes].sort()).toEqual([
+        'ACCOUNT_DISABLED',
         'IDEMPOTENCY_BUSY',
         'IDEMPOTENCY_KEY_REQUIRED',
         'IDEMPOTENCY_KEY_REUSED',
         'IDEMPOTENCY_KEY_UNAVAILABLE',
         'IDEMPOTENCY_REPLAY_EXPIRED',
+        'INVALID_CREDENTIALS',
         'INVALID_IDEMPOTENCY_KEY',
+        'INVALID_PHONE',
+        'OTP_ALREADY_USED',
+        'OTP_EXPIRED',
+        'OTP_INVALID',
+        'OTP_RATE_LIMITED',
+        'PHONE_ALREADY_REGISTERED',
+        'ROLE_NOT_AVAILABLE',
+        'SESSION_EXPIRED',
+        'SESSION_INVALID',
+        'SESSION_REVOKED',
         'TRANSACTION_OUTCOME_UNKNOWN',
+        'VERIFICATION_PROOF_INVALID',
+        'VERIFICATION_PROOF_USED',
+        'VERIFICATION_PURPOSE_MISMATCH',
       ]);
     });
 

@@ -91,8 +91,10 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     expect(body.error.request_id).toBe(header);
   });
 
-  it('covers exactly the six idempotency codes plus the unknown transaction outcome', () => {
-    expect(codes).toHaveLength(7);
+  it('covers exactly the six idempotency codes, the unknown transaction outcome and the 15 Auth Core codes', () => {
+    // 7 foundation codes (M00-C1) + 15 Auth Core codes (M01-A1): the total is pinned so that an accidental
+    // addition or removal is still caught.
+    expect(codes).toHaveLength(22);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);
     expect(codes).toContain('TRANSACTION_OUTCOME_UNKNOWN');
   });
