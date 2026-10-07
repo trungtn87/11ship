@@ -2,6 +2,8 @@ import { describe, expect, it } from '@jest/globals';
 import { AuditWriter } from '../audit/audit-writer';
 import { StandaloneAuditRecorder } from '../audit/standalone-audit-recorder';
 import { AppError } from '../common/app-errors';
+import { ShopEligibilityReader } from '../shop/shop-eligibility-reader';
+import { OwnerShopEligibility } from '../shop/shop-types';
 import { OtpHmacKey } from '../config/auth-config';
 import { AuthConfig } from '../config/auth-config';
 import { fakeTransactions } from './auth-fakes.fixture';
@@ -44,6 +46,7 @@ function rig(options: {
   locked?: UserRow | undefined;
   passwordOk?: boolean;
   roles?: string[];
+  shop?: OwnerShopEligibility;
 }): Rig {
   const { manager, state } = fakeTransactions();
   const calls: string[] = [];
@@ -65,6 +68,9 @@ function rig(options: {
   } as unknown as SessionRepository;
   const audit = { append: async (_c: unknown, entry: unknown) => void audits.push(entry) } as unknown as AuditWriter;
   const recorder = { recordBestEffort: async (entry: unknown) => void denials.push(entry) } as unknown as StandaloneAuditRecorder;
+  const shops = {
+    ownerShopEligibility: async () => options.shop ?? { onboarding: 'COMPLETED', selectable: true },
+  } as unknown as ShopEligibilityReader;
   const hasher: PasswordHasher = {
     hash: async () => 'never',
     verify: async () => {
@@ -75,7 +81,7 @@ function rig(options: {
       calls.push(state.inTransaction ? 'dummy(in-tx)' : 'dummy');
     },
   };
-  return { service: new LoginService(manager, users, sessions, audit, recorder, CONFIG, hasher), calls, state, audits, denials };
+  return { service: new LoginService(manager, users, sessions, audit, recorder, CONFIG, hasher, shops), calls, state, audits, denials };
 }
 
 async function codeOf(run: () => Promise<unknown>): Promise<string> {
@@ -131,6 +137,12 @@ describe('LoginService (task section 11)', () => {
     expect(result.active_role).toBeNull();
     expect(result.onboarding_required).toBe(false);
     expect(result.role_selection_required).toBe(true);
+  });
+
+  it('a SHOP role without an ACTIVE owned shop is not offered at login', async () => {
+    const r = rig({ roles: ['DRIVER', 'SHOP'], shop: { onboarding: 'INCOMPLETE', selectable: false } });
+    const result = await r.service.login(INPUT, REQUEST_ID);
+    expect(result.available_roles).toEqual(['DRIVER']);
   });
 
   it('correct password on a disabled account: ACCOUNT_DISABLED, a DENIED audit, and no session', async () => {

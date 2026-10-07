@@ -1,6 +1,8 @@
 import { describe, expect, it } from '@jest/globals';
 import { AuditWriter } from '../audit/audit-writer';
 import { AppError } from '../common/app-errors';
+import { ShopEligibilityReader } from '../shop/shop-eligibility-reader';
+import { OwnerShopEligibility } from '../shop/shop-types';
 import { fakeTransactions } from './auth-fakes.fixture';
 import { AuthPrincipal } from './auth-principal';
 import { RoleContextService } from './role-context-service';
@@ -31,6 +33,7 @@ function rig(options: {
   holdsRole?: boolean;
   revokedByShop?: string[];
   roles?: string[];
+  shop?: OwnerShopEligibility;
 }): Rig {
   const { manager, state, events } = fakeTransactions(NOW);
   const audits: Array<Record<string, unknown>> = [];
@@ -60,7 +63,13 @@ function rig(options: {
     setActiveRole: async (_c: unknown, _id: string, role: string) => void events.push(`role.set:${role}`),
   } as unknown as SessionRepository;
   const audit = { append: async (_c: unknown, entry: Record<string, unknown>) => void (events.push('audit'), audits.push(entry)) } as unknown as AuditWriter;
-  return { service: new RoleContextService(manager, users, sessions, audit), events, audits, transactions: state };
+  const shops = {
+    ownerShopEligibility: async () => {
+      events.push('shop.read');
+      return options.shop ?? { onboarding: 'COMPLETED', selectable: true };
+    },
+  } as unknown as ShopEligibilityReader;
+  return { service: new RoleContextService(manager, users, sessions, audit, shops), events, audits, transactions: state };
 }
 
 async function codeOf(run: () => Promise<unknown>): Promise<string> {
@@ -89,6 +98,7 @@ describe('RoleContextService.selectRole (task section 12)', () => {
       'session.lock',
       'clock',
       'role.check',
+      'shop.read',
       'shop.revoke',
       'role.set:SHOP',
       'audit', // the revoked session
@@ -127,6 +137,24 @@ describe('RoleContextService.selectRole (task section 12)', () => {
     expect(r.audits[0]).toMatchObject({ metadata: { role: 'SHOP', revoked_sessions: 0 } });
   });
 
+  it('SHOP held without an ACTIVE owned shop (stray role) is ROLE_NOT_AVAILABLE and changes nothing', async () => {
+    for (const shop of [
+      { onboarding: 'NOT_STARTED', selectable: false },
+      { onboarding: 'INCOMPLETE', selectable: false },
+      { onboarding: 'COMPLETED', selectable: false },
+    ] as const) {
+      const r = rig({ shop });
+      expect(await codeOf(() => r.service.selectRole(PRINCIPAL, 'SHOP', REQUEST_ID))).toBe('ROLE_NOT_AVAILABLE');
+      expect(r.events).toEqual(['user.lock', 'session.lock', 'clock', 'role.check', 'shop.read']);
+      expect(r.audits).toHaveLength(0);
+    }
+  });
+
+  it('DRIVER stays selectable whatever the shop state', async () => {
+    const r = rig({ shop: { onboarding: 'NOT_STARTED', selectable: false }, roles: ['DRIVER'] });
+    expect((await r.service.selectRole(PRINCIPAL, 'DRIVER', REQUEST_ID)).active_role).toBe('DRIVER');
+  });
+
   it('DRIVER: sets the role on this session and NEVER revokes another session', async () => {
     const r = rig({ revokedByShop: ['should-not-be-used'] });
     const result = await r.service.selectRole(PRINCIPAL, 'DRIVER', REQUEST_ID);
@@ -157,7 +185,7 @@ describe('RoleContextService.selectRole (task section 12)', () => {
 
 describe('RoleContextService.me (task section 13)', () => {
   it('no roles: onboarding_required, no role selection', async () => {
-    const r = rig({ roles: [] });
+    const r = rig({ roles: [], shop: { onboarding: 'NOT_STARTED', selectable: false } });
     expect(await r.service.me(PRINCIPAL)).toEqual({
       user_id: PRINCIPAL.userId,
       phone_normalized: PRINCIPAL.phoneNormalized,
@@ -165,6 +193,7 @@ describe('RoleContextService.me (task section 13)', () => {
       active_role: null,
       onboarding_required: true,
       role_selection_required: false,
+      onboarding: { shop: 'NOT_STARTED', driver: 'NOT_STARTED' },
     });
   });
 
@@ -182,11 +211,22 @@ describe('RoleContextService.me (task section 13)', () => {
     expect(result.onboarding_required).toBe(false);
   });
 
-  it('never invents SHOP/DRIVER onboarding state (no such field exists before M02/M03)', async () => {
+  it('reports the shop onboarding state, DRIVER is the constant NOT_STARTED, and a stray SHOP role is hidden', async () => {
+    const started = await rig({ roles: ['SHOP'], shop: { onboarding: 'INCOMPLETE', selectable: false } }).service.me(PRINCIPAL);
+    expect(started.onboarding).toEqual({ shop: 'INCOMPLETE', driver: 'NOT_STARTED' });
+    expect(started.available_roles).toEqual([]);
+    expect(started.onboarding_required).toBe(true);
+    const done = await rig({ roles: ['SHOP'] }).service.me(PRINCIPAL);
+    expect(done.onboarding).toEqual({ shop: 'COMPLETED', driver: 'NOT_STARTED' });
+    expect(done.available_roles).toEqual(['SHOP']);
+  });
+
+  it('has exactly the documented fields', async () => {
     const result = await rig({ roles: ['SHOP'] }).service.me(PRINCIPAL);
     expect(Object.keys(result).sort()).toEqual([
       'active_role',
       'available_roles',
+      'onboarding',
       'onboarding_required',
       'phone_normalized',
       'role_selection_required',
