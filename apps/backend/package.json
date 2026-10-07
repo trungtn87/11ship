@@ -2,7 +2,7 @@
   "name": "@ship11/backend",
   "version": "0.0.0",
   "private": true,
-  "description": "11Ship backend \u2014 modular monolith (NestJS 11, Express adapter, PostgreSQL via pg)",
+  "description": "11Ship backend — modular monolith (NestJS 11, Express adapter, PostgreSQL via pg)",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.build.json"
