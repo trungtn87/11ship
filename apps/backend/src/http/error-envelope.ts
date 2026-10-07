@@ -1,4 +1,10 @@
 import { HttpException } from '@nestjs/common';
+import {
+  APP_ERROR_DEFINITIONS,
+  AppError,
+  isAppErrorCode,
+  TechnicalError,
+} from '../common/app-errors';
 
 export interface ErrorBody {
   error: {
@@ -56,6 +62,23 @@ function httpStatusOf(exception: unknown): number | undefined {
 }
 
 export function classifyException(exception: unknown): ClassifiedError {
+  // Typed errors are classified by their CLASS, and the public code/status/message come from the
+  // fixed registry. An arbitrary exception that merely has a `code` or `status` property is never
+  // trusted to name its own public code.
+  if (exception instanceof AppError && isAppErrorCode(exception.code)) {
+    const definition = APP_ERROR_DEFINITIONS[exception.code];
+    return { status: definition.status, code: exception.code, message: definition.message };
+  }
+  if (exception instanceof TechnicalError && exception.kind === 'unavailable') {
+    const known = KNOWN[503];
+    if (known !== undefined) {
+      return { status: 503, code: known.code, message: known.message };
+    }
+  }
+  if (exception instanceof TechnicalError) {
+    return INTERNAL;
+  }
+
   const status = httpStatusOf(exception);
   if (status === undefined) {
     return INTERNAL;

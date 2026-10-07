@@ -87,6 +87,14 @@ Không có DB thì test thất bại, không bị bỏ qua. Test dọn dẹp ch�
 
 Xem [.env.example](.env.example). Thiếu hoặc sai biến thì tiến trình thoát với mã khác 0 và chỉ in tên biến, không in giá trị. `APP_ENV` và `DATABASE_URL` bắt buộc ở mọi môi trường, không có giá trị dự phòng.
 
+### Nền giao dịch (M00-C1A0)
+
+- Biến mới: `DB_STATEMENT_TIMEOUT_MS` (800), `DB_TRANSACTION_TIMEOUT_MS` (5000), `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` (2000), mỗi biến trong 100..30000. Ràng buộc: query timeout phía client > statement timeout phía server; transaction deadline > statement timeout. `CRYPTO_ACTIVE_KEY_ID` và `CRYPTO_KEYRING` (`id:base64,id:base64`, mỗi khóa 32 byte) là tùy chọn nhưng phải đặt cùng nhau; `.env.example` chỉ có placeholder.
+- `TransactionManager` (apps/backend/src/transaction) do coordinator sở hữu. Participant chỉ nhận `TransactionContext` (`query`, `isActive`), không có pool, client thô hay lệnh BEGIN/COMMIT. Không tự retry, không giao dịch lồng nhau, không savepoint.
+- COMMIT không nhận được phản hồi trả `503 TRANSACTION_OUTCOME_UNKNOWN`; callback không bao giờ chạy lần hai.
+- Primitive dùng chung: JSON canonical v1 + validator có giới hạn, keyring/HKDF/HMAC/AES-GCM, khóa advisory hai int32. Chưa có bảng idempotency, audit hay outbox (thuộc A1/B/C).
+- Test: `npm run test:unit` không cần DB; `npm run test:integration` cần PostgreSQL test đúng guard hiện có (xem trên).
+
 ### Phạm vi hiện tại
 
 Chỉ có nền backend: health endpoints, cấu hình, pool, migration runner, error contract. Chưa có Auth, Shop, Driver, Wallet, Delivery, frontend, SMS hay triển khai production. Hướng dẫn sao lưu/khôi phục ở [ops/runbooks](ops/runbooks/database-backup-restore-guidance.md) chỉ là hướng dẫn cho tương lai, chưa được kiểm thử.

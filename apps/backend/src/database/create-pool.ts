@@ -13,8 +13,10 @@ export function createPool(config: DatabaseConfig, logger: JsonLogger): Pool {
     connectionString: config.url,
     max: config.poolMax,
     connectionTimeoutMillis: config.connectTimeoutMs,
+    // Client-side timeout is larger than the server-side one, so PostgreSQL's own statement cancel
+    // normally wins and the connection stays usable (ADR-003 §13.1).
     query_timeout: config.queryTimeoutMs,
-    statement_timeout: config.queryTimeoutMs,
+    statement_timeout: config.statementTimeoutMs,
     idleTimeoutMillis: 30_000,
   });
 

@@ -1,5 +1,10 @@
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from '@jest/globals';
+import {
+  FIXTURE_K1_BASE64,
+  FIXTURE_K2_BASE64,
+  FIXTURE_KEYRING_ENV,
+} from '../../apps/backend/src/crypto/test-keys.fixture';
 import { COMPILED_MAIN, minimalChildEnv } from './support/test-helpers';
 
 // F05 — the real compiled entry point must exit nonzero on bad configuration and name only the
@@ -50,5 +55,93 @@ describe('F05 — invalid configuration stops the process', () => {
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('DATABASE_URL');
+  });
+
+  // C16-A0: the new transaction/timeout/keyring configuration is validated at startup by the same
+  // real entry point. A child process that needs a key gets the fixture keyring explicitly from the
+  // test; nothing here depends on a key in the parent environment.
+  describe('M00-C1A0 configuration', () => {
+    const base = { APP_ENV: 'test', DATABASE_URL: validUrl };
+
+    it('exits nonzero when the client query timeout is not larger than the server statement timeout', () => {
+      const result = startMain({
+        ...base,
+        DB_QUERY_TIMEOUT_MS: '800',
+        DB_STATEMENT_TIMEOUT_MS: '800',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('DB_QUERY_TIMEOUT_MS');
+      expect(result.stderr).toContain('DB_STATEMENT_TIMEOUT_MS');
+      expect(result.stderr).not.toContain('DATABASE_URL');
+      expect(result.stderr).not.toContain(SECRET);
+    });
+
+    it('exits nonzero when the transaction timeout is not larger than the statement timeout', () => {
+      const result = startMain({
+        ...base,
+        DB_TRANSACTION_TIMEOUT_MS: '700',
+        DB_STATEMENT_TIMEOUT_MS: '800',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('DB_TRANSACTION_TIMEOUT_MS');
+      expect(result.stderr).toContain('DB_STATEMENT_TIMEOUT_MS');
+    });
+
+    it('exits nonzero for an out-of-range idle-in-transaction timeout and names only it', () => {
+      const result = startMain({ ...base, DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: '5' });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('DB_IDLE_IN_TRANSACTION_TIMEOUT_MS');
+      expect(result.stderr).not.toContain('DB_STATEMENT_TIMEOUT_MS');
+    });
+
+    it('exits nonzero for a malformed keyring, names only CRYPTO_KEYRING and prints no key material', () => {
+      const result = startMain({
+        ...base,
+        // Two entries with the same id: a real key value inside an invalid keyring.
+        CRYPTO_KEYRING: `k1:${FIXTURE_K1_BASE64},k1:${FIXTURE_K2_BASE64}`,
+        CRYPTO_ACTIVE_KEY_ID: 'k1',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('CRYPTO_KEYRING');
+      expect(result.stderr).not.toContain('CRYPTO_ACTIVE_KEY_ID');
+      for (const output of [result.stderr, result.stdout]) {
+        expect(output).not.toContain(FIXTURE_K1_BASE64);
+        expect(output).not.toContain(FIXTURE_K2_BASE64);
+        expect(output).not.toContain(SECRET);
+      }
+    });
+
+    it('exits nonzero when the active key id is not in the keyring and names only CRYPTO_ACTIVE_KEY_ID', () => {
+      const result = startMain({
+        ...base,
+        CRYPTO_KEYRING: FIXTURE_KEYRING_ENV,
+        CRYPTO_ACTIVE_KEY_ID: 'ACTIVE_ID_MARKER_9z',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('CRYPTO_ACTIVE_KEY_ID');
+      expect(result.stderr).not.toContain('CRYPTO_KEYRING');
+      expect(result.stderr).not.toContain('ACTIVE_ID_MARKER_9z');
+      expect(result.stderr).not.toContain(FIXTURE_K1_BASE64);
+    });
+
+    it('does not mention a VALID keyring when some other variable is the problem', () => {
+      const result = startMain({
+        ...base,
+        PORT: 'not-a-port',
+        CRYPTO_KEYRING: FIXTURE_KEYRING_ENV,
+        CRYPTO_ACTIVE_KEY_ID: 'k1',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('PORT');
+      expect(result.stderr).not.toContain('CRYPTO');
+      expect(result.stderr).not.toContain(FIXTURE_K1_BASE64);
+      expect(result.stdout).not.toContain(FIXTURE_K2_BASE64);
+    });
   });
 });

@@ -5,6 +5,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { JsonLogger } from './logging/json-logger';
 import { LoggingModule } from './logging/logging.module';
+import { TransactionModule } from './transaction/transaction.module';
 
 export interface AppModuleOptions {
   config: AppConfig;
@@ -22,6 +23,7 @@ export class AppModule {
         ConfigModule.forRoot(options.config),
         LoggingModule.forRoot(options.logger),
         DatabaseModule,
+        TransactionModule,
         HealthModule,
       ],
     };
