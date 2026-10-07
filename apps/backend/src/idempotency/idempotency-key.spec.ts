@@ -1,5 +1,4 @@
 import { describe, expect, it } from '@jest/globals';
-import { AppError } from '../common/app-errors';
 import { normalizeIdempotencyKey } from './idempotency-key';
 
 describe('normalizeIdempotencyKey', () => {
