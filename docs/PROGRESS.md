@@ -5,7 +5,7 @@
 > **AUTO-GENERATED — DO NOT EDIT MANUALLY**
 >
 > The plan lives in [`docs/progress/plan.yml`](progress/plan.yml); the status comes from GitHub (merged PRs, draft/open/closed state, labels, head SHA, required checks, dependencies). Nobody, human or AI, can mark a task DONE by writing it down. See [how states are derived](progress/README.md).
-> Data as of main HEAD `fe9a1c0` · main CI: ✅ PASS
+> Data as of main HEAD `e2d0682` · main CI: ⏳ RUNNING
 
 ## 🎯 CURRENT FOCUS
 
@@ -79,7 +79,7 @@ flowchart TD
 | **M00-C1** design · Transactional Core | 🔒 DESIGN_LOCKED | — | [#3](https://github.com/trungtn87/11ship/pull/3) | ✅ PASS | `de82b15` | B1 DONE | Continue child tasks |
 | &nbsp;&nbsp;M00-C1A0 · Transaction + Shared Primitives | ✅ DONE | — | [#4](https://github.com/trungtn87/11ship/pull/4) | ✅ PASS | `688e796` | — | — |
 | &nbsp;&nbsp;M00-C1A1 · Idempotency | ✅ DONE | — | [#6](https://github.com/trungtn87/11ship/pull/6) | ✅ PASS | `44c0fa7` | C1A0 DONE | — |
-| &nbsp;&nbsp;M00-C1B · Audit + Outbox Write | 🟦 READY_FOR_CLAUDE | Claude | — | — | main HEAD `fe9a1c0` | C1A1 DONE | Claude implement |
+| &nbsp;&nbsp;M00-C1B · Audit + Outbox Write | 🟦 READY_FOR_CLAUDE | Claude | — | — | main HEAD `e2d0682` | C1A1 DONE | Claude implement |
 | &nbsp;&nbsp;M00-C1C · Dispatcher + Final Integration | ⛔ BLOCKED_BY_DEPENDENCY | — | — | — | — | C1B READY_FOR_CLAUDE | Wait for C1B |
 | M01 · Authentication | ⛔ BLOCKED_BY_DEPENDENCY | — | — | — | — | C1C BLOCKED_BY_DEPENDENCY | Wait for C1C |
 
@@ -96,7 +96,7 @@ How every PR is treated. A PR counts only through explicit metadata (labels, or 
 | [#5](https://github.com/trungtn87/11ship/pull/5) feat(m00-c1a1): idempotency executor, replay and cleanup | 🚫 CANCELLED / IGNORED | M00-C1A1 | implementation | ✅ PASS | `e1c67b1` | 🚫 not counted (cancelled) — Implementation opened by ChatGPT against the workflow, closed without merge. Not accepted. |
 | [#6](https://github.com/trungtn87/11ship/pull/6) M00-C1A1: Idempotency (draft) | MERGED | M00-C1A1 | implementation | ✅ PASS | `44c0fa7` | counted |
 | [#7](https://github.com/trungtn87/11ship/pull/7) docs(m03-m04): financial consistency, withdrawal reconcilia… | DRAFT | — | — | ✅ PASS | `645a59b` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR not c… |
-| [#8](https://github.com/trungtn87/11ship/pull/8) chore(progress): GitHub-derived project progress dashboard | OPEN | — | infra | ✅ PASS | `e67742d` | out of plan — Out of plan (type:infra) |
+| [#8](https://github.com/trungtn87/11ship/pull/8) chore(progress): GitHub-derived project progress dashboard | MERGED | — | infra | — | `1ce1e50` | out of plan — Out of plan (type:infra) |
 
 ## ⚠️ Attention
 
