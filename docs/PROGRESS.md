@@ -98,7 +98,7 @@ How every PR is treated. A PR counts only through explicit metadata (labels, or 
 | [#7](https://github.com/trungtn87/11ship/pull/7) docs(m03-m04): financial consistency, withdrawal reconcilia… | DRAFT | — | — | ✅ PASS | `645a59b` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR not c… |
 | [#8](https://github.com/trungtn87/11ship/pull/8) chore(progress): GitHub-derived project progress dashboard | MERGED | — | infra | — | `1ce1e50` | out of plan — Out of plan (type:infra) |
 | [#9](https://github.com/trungtn87/11ship/pull/9) M00-C1B: Audit + Outbox write primitives | MERGED | — | — | — | `b418fd2` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR not c… |
-| [#10](https://github.com/trungtn87/11ship/pull/10) feat(outbox): M00-C1C outbox dispatcher + final | DRAFT | — | — | ❌ FAIL | `7ea2f00` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR not c… |
+| [#10](https://github.com/trungtn87/11ship/pull/10) feat(outbox): M00-C1C outbox dispatcher + final | DRAFT | — | — | ⏳ RUNNING | `4c07f1b` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR not c… |
 
 ## ⚠️ Attention
 
