@@ -156,14 +156,73 @@ tasks:
 
   - id: M01
     module: M01
-    title: Authentication
-    kind: leaf
+    title: Authentication + Onboarding
+    kind: group
     parent: null
     order: 30
-    weight: 1
     owner_role: CLAUDE
     design_role: CHATGPT
     review_role: CHATGPT
     depends_on:
       - M00-C1C
     requires_main_ci_green: true
+
+  - id: M01-A1
+    module: M01
+    title: Auth Core
+    kind: leaf
+    parent: M01
+    order: 31
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on: []
+    design_pr: 11
+    implementation_pr: 12
+    requires_main_ci_green: true
+    acceptance: docs/tasks/M01-A1-auth-core.md
+    evidence: docs/evidence/M01-A1.md
+
+  - id: M01-A2
+    module: M01
+    title: Onboarding
+    kind: group
+    parent: M01
+    order: 32
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-A1
+    requires_main_ci_green: true
+    acceptance: docs/tasks/M01-A2-onboarding.md
+
+  - id: M01-A2S
+    module: M01
+    title: Shop Onboarding
+    kind: leaf
+    parent: M01-A2
+    order: 33
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on: []
+    requires_main_ci_green: true
+    acceptance: docs/tasks/M01-A2-onboarding.md
+
+  - id: M01-A2D
+    module: M01
+    title: Driver Onboarding
+    kind: leaf
+    parent: M01-A2
+    order: 34
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-A2S
+    requires_main_ci_green: true
+    acceptance: docs/tasks/M01-A2-onboarding.md
