@@ -23,7 +23,7 @@ Mỗi task trước khi giao Claude phải được ChatGPT ghi rõ một trong 
 - `UI_SCOPE: NONE` — backend/infra thuần, không có giao diện.
 - `UI_SCOPE: FIGMA_REQUIRED` — có màn hình, component, trạng thái hiển thị hoặc interaction cần người dùng thao tác.
 
-Không được để Claude tự quyết định layout, màu, typography, spacing hoặc interaction cho task `FIGMA_REQUIRED`.
+Không được để Claude tự quyết định layout hoặc interaction cho task `FIGMA_REQUIRED`. Màu, logo, typography, spacing, radius, shadow, control sizing và core component baseline lấy bắt buộc từ [UI Foundation v1](11Ship-ui-foundation-v1.0.md) ngay từ wireframe đầu tiên.
 
 ## 3. Pipeline chuẩn
 
@@ -50,7 +50,7 @@ SPEC / UX CONTRACT -+                                               +-> INTEGRAT
 
 Quy tắc:
 
-1. ChatGPT chốt flow, state, dữ liệu cần hiển thị và interaction trước.
+1. Mọi frame mới bắt đầu từ `FOUNDATION_LOCKED`: logo, background, color, Plus Jakarta Sans, spacing/radius/shadow/control baseline đã có sẵn; không dựng wireframe bằng style tạm riêng.
 2. Khi API/data contract đủ ổn định, Figma bắt đầu ngay; không chờ backend hoàn thành.
 3. Backend có thể tiếp tục song song nếu không phụ thuộc quyết định UI còn mở.
 4. Claude chỉ được code **frontend của frame đã `UI_LOCKED`**.
@@ -94,23 +94,11 @@ Sai khác có chủ đích phải được ghi lại và đồng bộ về Figma
 
 ## 7. Design System 11Ship
 
-Ưu tiên xây dần, không cần hoàn thiện toàn bộ trước khi code:
+Lớp nền đã được Owner khóa thành **UI Foundation v1** và phải dùng ngay từ màn đầu tiên: brand colors/background, logo, Plus Jakarta Sans, type ramp, spacing, radius, shadows, control sizes, breakpoints và core component baseline.
 
-- color semantic: primary/surface/text/border/success/warning/danger;
-- typography;
-- spacing;
-- radius/elevation;
-- button;
-- input/search/select;
-- card/list item;
-- badge/status;
-- app bar;
-- bottom navigation;
-- modal/bottom sheet;
-- loading/empty/error;
-- các component domain được tái sử dụng.
+Xem [11Ship UI Foundation v1](11Ship-ui-foundation-v1.0.md).
 
-Màn hình mới phải ưu tiên dùng component/token đã có thay vì tạo style riêng.
+Chỉ các **component domain** (Shop/Driver/Wallet/Delivery...) và bố cục/interaction cụ thể được phát triển dần theo module. Màn hình mới không được tạo style nền riêng.
 
 ## 8. Áp dụng vào tiến độ hiện tại
 
