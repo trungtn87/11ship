@@ -157,43 +157,43 @@ describe('what is not allowed to move a task', () => {
 
 describe('review gate', () => {
   const head = 'b'.repeat(40);
-  const open = (labels, events, extra = {}) =>
+  const REVIEW_CONTEXT = '11ship/chatgpt-review';
+  // A review label counts only with a trusted status for exactly this head; see review-sha.test.mjs.
+  const backed = (state, sha = head) => ({ sha, context: REVIEW_CONTEXT, state });
+  const open = (labels, review_status, extra = {}) =>
     pr({
       number: 6,
       head_sha: head,
       labels: [...LABELS_C1A1, ...labels],
       checks: checks.pass,
-      head_committed_at: '2026-10-07T10:00:00Z',
-      label_events: events,
+      review_status,
       ...extra,
     });
-  const fresh = '2026-10-07T11:00:00Z';
-  const stale = '2026-10-07T09:00:00Z';
 
-  test('fresh review labels drive CHATGPT_REVIEW, CHANGES_REQUESTED and READY_TO_MERGE', () => {
-    let r = resolve([...history(), open(['review:in-progress'], { 'review:in-progress': fresh })]);
+  test('review labels backed by a status on the current head drive CHATGPT_REVIEW, CHANGES_REQUESTED and READY_TO_MERGE', () => {
+    let r = resolve([...history(), open(['review:in-progress'], backed('pending'))]);
     assert.equal(stateOf(r, 'M00-C1A1'), STATE.CHATGPT_REVIEW);
-    r = resolve([...history(), open(['review:changes-requested'], { 'review:changes-requested': fresh })]);
+    r = resolve([...history(), open(['review:changes-requested'], backed('failure'))]);
     assert.equal(stateOf(r, 'M00-C1A1'), STATE.CHANGES_REQUESTED);
     assert.equal(taskOf(r, 'M00-C1A1').owner, OWNER.CLAUDE);
-    r = resolve([...history(), open(['review:pass'], { 'review:pass': fresh })]);
+    r = resolve([...history(), open(['review:pass'], backed('success'))]);
     assert.equal(stateOf(r, 'M00-C1A1'), STATE.READY_TO_MERGE);
     assert.equal(taskOf(r, 'M00-C1A1').owner, OWNER.OWNER);
   });
 
-  test('a review label older than the head commit is ignored (new push invalidates PASS)', () => {
-    const r = resolve([...history(), open(['review:pass'], { 'review:pass': stale })]);
+  test('a review label whose status is on an older head is ignored (new push invalidates PASS)', () => {
+    const r = resolve([...history(), open(['review:pass'], backed('success', 'a'.repeat(40)))]);
     assert.equal(stateOf(r, 'M00-C1A1'), STATE.WAITING_CHATGPT_REVIEW);
-    assert.ok(r.attention.some((a) => a.code === 'STALE_REVIEW_LABEL'));
+    assert.ok(r.attention.some((a) => a.code === 'REVIEW_NOT_BOUND'));
   });
 
-  test('a review label with unknown time is ignored', () => {
-    const r = resolve([...history(), open(['review:pass'], {})]);
+  test('a review label with no status at all is ignored', () => {
+    const r = resolve([...history(), open(['review:pass'], null)]);
     assert.equal(stateOf(r, 'M00-C1A1'), STATE.WAITING_CHATGPT_REVIEW);
   });
 
-  test('READY_TO_MERGE needs green CI even with a fresh PASS label', () => {
-    const r = resolve([...history(), open(['review:pass'], { 'review:pass': fresh }, { checks: checks.fail })]);
+  test('READY_TO_MERGE needs green CI even with a valid PASS', () => {
+    const r = resolve([...history(), open(['review:pass'], backed('success'), { checks: checks.fail })]);
     assert.equal(stateOf(r, 'M00-C1A1'), STATE.CI_FAILED);
   });
 });

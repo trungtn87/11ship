@@ -5,13 +5,13 @@
 > **AUTO-GENERATED — DO NOT EDIT MANUALLY**
 >
 > The plan lives in [`docs/progress/plan.yml`](progress/plan.yml); the status comes from GitHub (merged PRs, draft/open/closed state, labels, head SHA, required checks, dependencies). Nobody, human or AI, can mark a task DONE by writing it down. See [how states are derived](progress/README.md).
-> Data as of main HEAD `cfd901f` · main CI: ✅ PASS
+> Data as of main HEAD `fe9a1c0` · main CI: ✅ PASS
 
 ## 🎯 CURRENT FOCUS
 
 | | |
 |---|---|
-| **Task** | **M00-C1A1 — Idempotency** |
+| **Task** | **M00-C1B — Audit + Outbox Write** |
 | **Status** | 🟦 `READY_FOR_CLAUDE` |
 | **Current owner** | 🔵 **CLAUDE** |
 | **ChatGPT** | Waiting for Claude implementation before review |
@@ -19,7 +19,6 @@
 | **Owner** | No action needed |
 | **Blocked by** | None |
 | **Next gate** | Implementation PR (agent:claude, type:implementation, module label) + required CI green |
-| **Ignored PRs** | #5 (cancelled, never counted) |
 
 ## Progress
 
@@ -27,8 +26,8 @@ Weighted by task weight in the plan (each leaf task = 1 unless stated). Commits,
 
 | Scope | Done / total |
 |---|---|
-| Current milestone — M00 Foundation | 2 / 5 (40%) |
-| Overall — planned tasks only (roadmap not final) | 2 / 6 (33%) |
+| Current milestone — M00 Foundation | 3 / 5 (60%) |
+| Overall — planned tasks only (roadmap not final) | 3 / 6 (50%) |
 | Module M01 Authentication | 0 / 1 (0%) |
 
 ## Progress tree
@@ -41,8 +40,8 @@ flowchart TD
     M00_B1["M00-B1<br/>Backend Foundation<br/>⚪ —<br/>DONE"]
     M00_C1["M00-C1 (design)<br/>Transactional Core<br/>⚪ —<br/>DESIGN_LOCKED"]
     M00_C1A0["M00-C1A0<br/>Transaction + Shared Primitives<br/>⚪ —<br/>DONE"]
-    M00_C1A1["M00-C1A1<br/>Idempotency<br/>🔵 CLAUDE<br/>READY_FOR_CLAUDE"]
-    M00_C1B["M00-C1B<br/>Audit + Outbox Write<br/>⚪ —<br/>BLOCKED_BY_DEPENDENCY"]
+    M00_C1A1["M00-C1A1<br/>Idempotency<br/>⚪ —<br/>DONE"]
+    M00_C1B["M00-C1B<br/>Audit + Outbox Write<br/>🔵 CLAUDE<br/>READY_FOR_CLAUDE"]
     M00_C1C["M00-C1C<br/>Dispatcher + Final Integration<br/>⚪ —<br/>BLOCKED_BY_DEPENDENCY"]
   end
   subgraph M01_box["M01 · Authentication"]
@@ -65,11 +64,11 @@ flowchart TD
   classDef blocked fill:#f3f4f6,stroke:#9ca3af,color:#4b5563,stroke-dasharray:4 3
   classDef planned fill:#ffffff,stroke:#9ca3af,color:#374151
   classDef focus stroke:#f59e0b,stroke-width:5px
-  class M00_B1,M00_C1A0 done
+  class M00_B1,M00_C1A0,M00_C1A1 done
   class M00_C1 locked
-  class M00_C1A1 ready
-  class M00_C1B,M00_C1C,M01 blocked
-  class M00_C1A1 focus
+  class M00_C1B ready
+  class M00_C1C,M01 blocked
+  class M00_C1B focus
 ```
 
 ## Task details
@@ -79,9 +78,9 @@ flowchart TD
 | M00-B1 · Backend Foundation | ✅ DONE | — | [#2](https://github.com/trungtn87/11ship/pull/2) | ✅ PASS | `55c5d81` | — | — |
 | **M00-C1** design · Transactional Core | 🔒 DESIGN_LOCKED | — | [#3](https://github.com/trungtn87/11ship/pull/3) | ✅ PASS | `de82b15` | B1 DONE | Continue child tasks |
 | &nbsp;&nbsp;M00-C1A0 · Transaction + Shared Primitives | ✅ DONE | — | [#4](https://github.com/trungtn87/11ship/pull/4) | ✅ PASS | `688e796` | — | — |
-| &nbsp;&nbsp;M00-C1A1 · Idempotency | 🟦 READY_FOR_CLAUDE | Claude | — | — | main HEAD `cfd901f` | C1A0 DONE | Claude implement |
-| &nbsp;&nbsp;M00-C1B · Audit + Outbox Write | ⛔ BLOCKED_BY_DEPENDENCY | — | — | — | — | C1A1 READY_FOR_CLAUDE | Wait for C1A1 |
-| &nbsp;&nbsp;M00-C1C · Dispatcher + Final Integration | ⛔ BLOCKED_BY_DEPENDENCY | — | — | — | — | C1B BLOCKED_BY_DEPENDENCY | Wait for C1B |
+| &nbsp;&nbsp;M00-C1A1 · Idempotency | ✅ DONE | — | [#6](https://github.com/trungtn87/11ship/pull/6) | ✅ PASS | `44c0fa7` | C1A0 DONE | — |
+| &nbsp;&nbsp;M00-C1B · Audit + Outbox Write | 🟦 READY_FOR_CLAUDE | Claude | — | — | main HEAD `fe9a1c0` | C1A1 DONE | Claude implement |
+| &nbsp;&nbsp;M00-C1C · Dispatcher + Final Integration | ⛔ BLOCKED_BY_DEPENDENCY | — | — | — | — | C1B READY_FOR_CLAUDE | Wait for C1B |
 | M01 · Authentication | ⛔ BLOCKED_BY_DEPENDENCY | — | — | — | — | C1C BLOCKED_BY_DEPENDENCY | Wait for C1C |
 
 ## Pull request ledger
@@ -95,12 +94,12 @@ How every PR is treated. A PR counts only through explicit metadata (labels, or 
 | [#3](https://github.com/trungtn87/11ship/pull/3) docs(m00-c1): transactional core design | MERGED | M00-C1 | design | ✅ PASS | `de82b15` | counted |
 | [#4](https://github.com/trungtn87/11ship/pull/4) M00-C1A0: transaction lifecycle and shared primitives | MERGED | M00-C1A0 | implementation | ✅ PASS | `688e796` | counted |
 | [#5](https://github.com/trungtn87/11ship/pull/5) feat(m00-c1a1): idempotency executor, replay and cleanup | 🚫 CANCELLED / IGNORED | M00-C1A1 | implementation | ✅ PASS | `e1c67b1` | 🚫 not counted (cancelled) — Implementation opened by ChatGPT against the workflow, closed without merge. Not accepted. |
-| [#6](https://github.com/trungtn87/11ship/pull/6) M00-C1A1: Idempotency (draft) | DRAFT | — | — | ✅ PASS | `44c0fa7` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR not c… |
+| [#6](https://github.com/trungtn87/11ship/pull/6) M00-C1A1: Idempotency (draft) | MERGED | M00-C1A1 | implementation | ✅ PASS | `44c0fa7` | counted |
 | [#7](https://github.com/trungtn87/11ship/pull/7) docs(m03-m04): financial consistency, withdrawal reconcilia… | DRAFT | — | — | ✅ PASS | `645a59b` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR not c… |
+| [#8](https://github.com/trungtn87/11ship/pull/8) chore(progress): GitHub-derived project progress dashboard | OPEN | — | infra | ✅ PASS | `e67742d` | out of plan — Out of plan (type:infra) |
 
 ## ⚠️ Attention
 
-- `UNCLASSIFIED_PR` PR #6: no usable metadata (missing module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR not counted. State is never inferred from titles, bodies or authors.
 - `UNCLASSIFIED_PR` PR #7: no usable metadata (missing module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR not counted. State is never inferred from titles, bodies or authors.
 
 ## Workflow

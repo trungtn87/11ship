@@ -1,6 +1,7 @@
 // Regression tests for the two PR #8 blockers:
 //   MAIN-CI-01..04    main CI is judged on the real head; only a verified progress-bot commit is skipped.
-//   REVIEW-SHA-01..04 a review label never survives a head change.
+//   reset-review      cleanup of review:* labels when the head changes (defense in depth only).
+// The exact-SHA review binding itself (REVIEW-SHA-01..08) is tested in review-sha.test.mjs.
 // Plus the manifest role validation and static checks of the workflow that enforces the binding.
 
 import { describe, test } from 'node:test';
@@ -12,7 +13,7 @@ import { resetReviewLabels } from '../../scripts/progress/review.mjs';
 import { resolveProgress, validatePlan, mainStatus, STATE, CI } from '../../scripts/progress/resolve.mjs';
 import { buildMarkdown } from '../../scripts/generate-progress.mjs';
 import { PROGRESS_BOT, PROGRESS_COMMIT_MESSAGE, REVIEW_LABELS } from '../../scripts/progress/constants.mjs';
-import { plan, REQUIRED, checks, history, merged, pr, snapshot, LABELS_C1A1, stateOf, taskOf, root } from './helpers.mjs';
+import { plan, REQUIRED, checks, history, merged, snapshot, LABELS_C1A1, stateOf, root } from './helpers.mjs';
 
 // ---------------------------------------------------------------------------------------------
 // A tiny fake of the GitHub REST API. The longest matching route wins; unknown paths are 404.
@@ -257,9 +258,7 @@ describe('main CI is judged on the real head (blocker 1)', () => {
 
 // ---------------------------------------------------------------------------------------------
 
-describe('review labels are bound to the head SHA (blocker 2)', () => {
-  const A = 'a'.repeat(40);
-  const B = 'b'.repeat(40);
+describe('reset-review: cleanup of review labels when the head changes (defense in depth)', () => {
   const REVIEW_ALL = ['review:pass', 'review:in-progress', 'review:changes-requested'];
 
   /** An in-memory PR plus a fake GitHub that serves its labels. */
@@ -277,54 +276,11 @@ describe('review labels are bound to the head SHA (blocker 2)', () => {
     return { state, fetchImpl, calls };
   }
 
-  const resolveWith = (prFields) => resolveProgress(plan, snapshot([...history(), pr({ number: 6, labels: [], checks: checks.pass, ...prFields })]));
-  const reviewed = (head, labels, labeledAt, committedAt = '2026-10-07T10:00:00Z') => ({
-    head_sha: head,
-    labels,
-    head_committed_at: committedAt,
-    label_events: Object.fromEntries(labels.filter((l) => l.startsWith('review:')).map((l) => [l, labeledAt])),
-  });
-
-  test('REVIEW-SHA-01 review:pass for head A with green CI is READY_TO_MERGE', () => {
-    const r = resolveWith(reviewed(A, [...LABELS_C1A1, 'review:pass'], '2026-10-07T11:00:00Z'));
-    assert.equal(stateOf(r, 'M00-C1A1'), STATE.READY_TO_MERGE);
-    assert.equal(taskOf(r, 'M00-C1A1').head, A);
-  });
-
-  test('REVIEW-SHA-02 pushing head B removes the PASS of A at once; after green CI the task waits for a new review', async () => {
-    const before = livePr([...LABELS_C1A1, 'review:pass', 'review:in-progress']);
-    // the trusted workflow runs on "synchronize"
-    const { removed } = await resetReviewLabels({ repo: 'o/r', prNumber: 6, token: 'tok', fetchImpl: before.fetchImpl });
+  test('pushing a new head removes the review labels of the old one and leaves every other label alone', async () => {
+    const live = livePr([...LABELS_C1A1, 'review:pass', 'review:in-progress']);
+    const { removed } = await resetReviewLabels({ repo: 'o/r', prNumber: 6, token: 'tok', fetchImpl: live.fetchImpl });
     assert.deepEqual(removed.sort(), ['review:in-progress', 'review:pass']);
-    assert.deepEqual(before.state.labels.sort(), [...LABELS_C1A1].sort(), 'only review:* labels are touched');
-
-    const r = resolveWith({ head_sha: B, labels: before.state.labels, label_events: {}, head_committed_at: '2026-10-07T12:00:00Z' });
-    assert.equal(stateOf(r, 'M00-C1A1'), STATE.WAITING_CHATGPT_REVIEW);
-    assert.notEqual(stateOf(r, 'M00-C1A1'), STATE.READY_TO_MERGE);
-  });
-
-  test('REVIEW-SHA-03 a head B whose commit timestamp is older than the PASS of A still waits for review', async () => {
-    const passForA = '2026-10-07T11:00:00Z';
-    const olderThanPass = '2026-10-07T08:00:00Z'; // committer date of B, set by the author, before the label was applied
-    const live = livePr([...LABELS_C1A1, 'review:pass']);
-    await resetReviewLabels({ repo: 'o/r', prNumber: 6, token: 'tok', fetchImpl: live.fetchImpl });
-    // Even if a stale event record for the old label were still around, no label means no review.
-    const r = resolveWith({ head_sha: B, labels: live.state.labels, head_committed_at: olderThanPass, label_events: { 'review:pass': passForA } });
-    assert.equal(stateOf(r, 'M00-C1A1'), STATE.WAITING_CHATGPT_REVIEW);
-  });
-
-  test('REVIEW-SHA-04 a new review:pass applied for exact head B is READY_TO_MERGE', async () => {
-    const live = livePr([...LABELS_C1A1, 'review:pass']);
-    await resetReviewLabels({ repo: 'o/r', prNumber: 6, token: 'tok', fetchImpl: live.fetchImpl });
-    live.state.labels.push('review:pass'); // ChatGPT reviews B and labels it
-    const r = resolveWith(reviewed(B, live.state.labels, '2026-10-07T13:00:00Z', '2026-10-07T12:00:00Z'));
-    assert.equal(stateOf(r, 'M00-C1A1'), STATE.READY_TO_MERGE);
-    assert.equal(taskOf(r, 'M00-C1A1').head, B);
-  });
-
-  test('the timestamp check is still there as a second defense: a label older than the head commit is ignored', () => {
-    const r = resolveWith(reviewed(B, [...LABELS_C1A1, 'review:pass'], '2026-10-07T09:00:00Z', '2026-10-07T10:00:00Z'));
-    assert.equal(stateOf(r, 'M00-C1A1'), STATE.WAITING_CHATGPT_REVIEW);
+    assert.deepEqual(live.state.labels.sort(), [...LABELS_C1A1].sort(), 'only review:* labels are touched');
   });
 
   test('all three review labels are removed, in-progress and changes-requested too', async () => {
@@ -400,6 +356,24 @@ describe('workflow wiring (static checks)', () => {
     assert.ok(!/git add (-A|\.|--all)/.test(text), 'only docs/PROGRESS.md is ever staged');
   });
 
+  test('review-status binds the review to the head SHA with minimal permissions and no PR code', () => {
+    const block = jobBlock('review-status');
+    assert.match(block, /github\.event_name == 'pull_request_target'/);
+    assert.match(block, /github\.event\.action == 'labeled' \|\| github\.event\.action == 'unlabeled'/);
+    assert.match(block, /startsWith\(github\.event\.label\.name, 'review:'\)/);
+    assert.match(block, /permissions:\n\s+contents: read\n\s+pull-requests: read\n\s+statuses: write\n/);
+    assert.ok(!/(issues|actions|checks|packages|id-token|deployments|contents: write|pull-requests: write): /.test(block.split('steps:')[0]), 'no other permission');
+    assert.match(block, /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/);
+    assert.ok(!/head\.ref|github\.head_ref|pull_request\.title|pull_request\.body/.test(block), 'no branch, title or body');
+    assert.ok(!/npm (ci|install)/.test(block), 'no dependencies installed next to a write token');
+    assert.match(block, /PR_NUMBER: \$\{\{ github\.event\.pull_request\.number \}\}/);
+    assert.match(block, /EVENT_HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
+    assert.match(block, /run: node scripts\/sync-review-status\.mjs/);
+    assert.match(block, /concurrency:\n\s+group: review-status-\$\{\{ github\.event\.pull_request\.number \}\}/);
+    // the PR head is only ever a value handed to the script as data; the code that runs is the default branch's
+    assert.ok(!/ref: .*pull_request/.test(block), 'the PR head is never checked out');
+  });
+
   test('reset-review runs only for synchronize on pull_request_target with minimal permissions and no PR code', () => {
     const block = jobBlock('reset-review');
     assert.match(block, /if: github\.event_name == 'pull_request_target' && github\.event\.action == 'synchronize'/);
@@ -413,17 +387,25 @@ describe('workflow wiring (static checks)', () => {
   });
 
   test('no run: line interpolates anything from the event', () => {
-    for (const name of ['preview', 'reset-review', 'publish']) {
+    for (const name of ['preview', 'review-status', 'reset-review', 'publish']) {
       for (const line of runLines(jobBlock(name))) assert.ok(!line.includes('${{'), `${name}: ${line.trim()}`);
     }
   });
 
-  test('publish waits for reset-review and is skipped if it failed', () => {
+  test('publish waits for review-status and reset-review and is skipped if either failed', () => {
     const block = jobBlock('publish');
-    assert.match(block, /needs: reset-review/);
+    assert.match(block, /needs: \[reset-review, review-status\]/);
     assert.match(block, /needs\.reset-review\.result == 'success' \|\| needs\.reset-review\.result == 'skipped'/);
+    assert.match(block, /needs\.review-status\.result == 'success' \|\| needs\.review-status\.result == 'skipped'/);
     assert.match(block, /github\.event_name != 'pull_request'/);
     assert.match(block, /contents: write/);
+  });
+
+  test('only the review-status job may write commit statuses; the jobs that read them can read them', () => {
+    const code = text.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n'); // comments may mention it
+    assert.equal((code.match(/statuses: write/g) ?? []).length, 1, 'one job has statuses: write');
+    for (const name of ['preview', 'publish']) assert.match(jobBlock(name), /statuses: read/, `${name} reads statuses`);
+    assert.ok(!/statuses: write/.test(jobBlock('publish')) && !/statuses: write/.test(jobBlock('preview')) && !/statuses: write/.test(jobBlock('reset-review')));
   });
 
   test('loop guards stay in place', () => {

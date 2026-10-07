@@ -1,10 +1,17 @@
 // Collects the GitHub facts the resolver needs, using the REST API only.
 //
 // The snapshot keeps just the fields the resolver reads: number, title (display only), state,
-// draft, merged_at, head SHA, labels, check runs, and for review-labelled open PRs the label
-// timestamps and head commit date. PR bodies are never fetched into the snapshot.
+// draft, merged_at, head SHA, labels, check runs, and for review-labelled open PRs the trusted
+// review status of the CURRENT head (sha, context, state). PR bodies are never fetched.
 
-import { MAIN_LOOKBACK, PROGRESS_BOT, PROGRESS_COMMIT_MESSAGE, PROGRESS_FILE } from './constants.mjs';
+import {
+  MAIN_LOOKBACK,
+  PROGRESS_BOT,
+  PROGRESS_COMMIT_MESSAGE,
+  PROGRESS_FILE,
+  REVIEW_CONTEXT,
+  REVIEW_STATUS_CREATOR,
+} from './constants.mjs';
 
 const API_VERSION = '2022-11-28';
 
@@ -17,7 +24,7 @@ export class GitHubError extends Error {
 
 export function makeClient({ token, apiBase = 'https://api.github.com', fetchImpl = globalThis.fetch }) {
   if (!token) throw new Error('GITHUB_TOKEN (or GH_TOKEN) is required to read GitHub state');
-  return async function get(path, { method = 'GET' } = {}) {
+  return async function get(path, { method = 'GET', body } = {}) {
     const res = await fetchImpl(`${apiBase}${path}`, {
       method,
       headers: {
@@ -25,7 +32,9 @@ export function makeClient({ token, apiBase = 'https://api.github.com', fetchImp
         Authorization: `Bearer ${token}`,
         'X-GitHub-Api-Version': API_VERSION,
         'User-Agent': '11ship-progress-generator',
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
       },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) {
@@ -50,6 +59,27 @@ async function paginate(get, path, { perPage = 100, maxPages = 10, pick = (x) =>
     if (batch.length < perPage) break;
   }
   return items;
+}
+
+/**
+ * The review result recorded for ONE commit SHA: the newest status of the review context that the
+ * Actions token created. Only { sha, context, state } is kept. `sha` is what GitHub reports for the
+ * commit, not what we asked for, so the resolver compares real values. A status written by anybody
+ * else is ignored (the combined-status endpoint returns the newest status per context, so a forged
+ * newer one can only hide the real one, which fails closed, never grant a review). Returns null
+ * when there is none. An API error throws: the dashboard is not generated from a guess.
+ */
+export async function reviewStatusFor(get, repo, sha) {
+  let reportedSha = null;
+  for (let page = 1; page <= 5; page += 1) {
+    const res = await get(`/repos/${repo}/commits/${sha}/status?per_page=100&page=${page}`);
+    reportedSha = reportedSha ?? res.sha ?? null;
+    const batch = res.statuses ?? [];
+    const found = batch.filter((s) => s.context === REVIEW_CONTEXT && s.creator?.login === REVIEW_STATUS_CREATOR).sort((a, b) => b.id - a.id)[0];
+    if (found) return { sha: reportedSha, context: found.context, state: found.state };
+    if (batch.length < 100) break;
+  }
+  return null;
 }
 
 const slimCheck = (c) => ({ id: c.id, name: c.name, status: c.status, conclusion: c.conclusion ?? null });
@@ -80,18 +110,8 @@ export async function collectSnapshot({ repo, mainBranch, requiredChecks, pinned
       labels,
       checks: wantChecks && p.head?.sha ? await checkRuns(get, repo, p.head.sha) : [],
     };
-    if (open && labels.some((l) => l.startsWith('review:'))) {
-      const events = await paginate(get, `/repos/${repo}/issues/${p.number}/events`, { maxPages: 5 });
-      const labelEvents = {};
-      for (const e of events) {
-        if (e.event === 'labeled' && e.label?.name?.startsWith('review:')) {
-          const prev = labelEvents[e.label.name];
-          if (!prev || e.created_at > prev) labelEvents[e.label.name] = e.created_at;
-        }
-      }
-      pr.label_events = labelEvents;
-      const commit = await get(`/repos/${repo}/commits/${p.head.sha}`);
-      pr.head_committed_at = commit.commit?.committer?.date ?? commit.commit?.author?.date ?? null;
+    if (open && p.head?.sha && labels.some((l) => l.startsWith('review:'))) {
+      pr.review_status = await reviewStatusFor(get, repo, p.head.sha);
     }
     pulls.push(pr);
   }

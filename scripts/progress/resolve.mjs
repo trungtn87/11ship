@@ -4,10 +4,11 @@
 // Output: per-task states, per-PR classification, current focus, progress and attention items.
 //
 // Nothing here reads the clock, the network or the file system, and nothing reads a PR title or
-// body: state comes only from merged_at / state / draft / head SHA / check runs / labels /
-// dependencies. The same input always produces the same output.
+// body: state comes only from merged_at / state / draft / head SHA / check runs / labels / the
+// trusted review status of the head / dependencies. The same input always produces the same output.
 
 import { FIXED_ROLES } from './constants.mjs';
+import { reviewBinding } from './review-binding.mjs';
 
 export const STATE = Object.freeze({
   PLANNED: 'PLANNED',
@@ -237,20 +238,6 @@ export function mainStatus(main, required) {
   };
 }
 
-/**
- * Defense in depth only. A review label is bound to a head SHA by the trusted reset-review
- * workflow, which removes every review:* label whenever the PR head changes (see
- * .github/workflows/update-progress.yml). This timestamp comparison can never make a label valid
- * by itself; it can only reject one that is still there while the reset has not run yet. Commit
- * timestamps are author-controlled metadata and are not evidence of which SHA was reviewed.
- */
-export function reviewLabelFresh(pr, label) {
-  const labeledAt = Date.parse(pr.label_events?.[label] ?? '');
-  const committedAt = Date.parse(pr.head_committed_at ?? '');
-  if (Number.isNaN(labeledAt) || Number.isNaN(committedAt)) return false;
-  return labeledAt >= committedAt;
-}
-
 // ---------------------------------------------------------------------------------------------
 // PR classification
 
@@ -472,19 +459,22 @@ export function resolveProgress(plan, snapshot) {
     const pr = active[0];
     const raw = pr.raw;
     const base = { pr: pr.number, ci: pr.ci, head: pr.head_sha };
-    const fresh = (label) => raw.labels?.includes(label) && reviewLabelFresh(raw, label);
-    for (const label of [LABEL.reviewInProgress, LABEL.reviewChangesRequested, LABEL.reviewPass]) {
-      if (raw.labels?.includes(label) && !reviewLabelFresh(raw, label)) {
-        attention.push({ code: 'STALE_REVIEW_LABEL', pr: pr.number, message: `PR #${pr.number}: label ${label} is older than head ${shortSha(pr.head_sha)} (or its time is unknown) and is ignored.` });
-      }
+    // A review label counts only when a trusted status for EXACTLY this head SHA backs it (see
+    // review-binding.mjs). Timestamps, label order and workflow order play no part.
+    const review = reviewBinding(raw);
+    const reviewIs = (label) => review.valid && review.label === label;
+    if (review.label && !review.valid) {
+      attention.push({ code: 'REVIEW_NOT_BOUND', pr: pr.number, message: `PR #${pr.number}: label ${review.label} is not backed for head ${shortSha(pr.head_sha)} (${review.reason}) and is ignored.` });
+    } else if (!review.label && review.reason === 'more than one review label') {
+      attention.push({ code: 'REVIEW_NOT_BOUND', pr: pr.number, message: `PR #${pr.number}: more than one review label on head ${shortSha(pr.head_sha)}; none is used.` });
     }
 
     if (pr.ci === CI.FAIL) return finish(STATE.CI_FAILED, base);
-    if (fresh(LABEL.reviewChangesRequested)) return finish(STATE.CHANGES_REQUESTED, base);
+    if (reviewIs(LABEL.reviewChangesRequested)) return finish(STATE.CHANGES_REQUESTED, base);
     if (pr.lifecycle === PR_STATE.DRAFT) return finish(STATE.CLAUDE_CODING, base);
     if (pr.ci !== CI.PASS) return finish(STATE.CI_RUNNING, base);
-    if (fresh(LABEL.reviewPass)) return finish(STATE.READY_TO_MERGE, base);
-    if (fresh(LABEL.reviewInProgress)) return finish(STATE.CHATGPT_REVIEW, base);
+    if (reviewIs(LABEL.reviewPass)) return finish(STATE.READY_TO_MERGE, base);
+    if (reviewIs(LABEL.reviewInProgress)) return finish(STATE.CHATGPT_REVIEW, base);
     return finish(STATE.WAITING_CHATGPT_REVIEW, base);
   };
 

@@ -100,24 +100,28 @@ describe('collectSnapshot', () => {
     assert.ok(!JSON.stringify(snap).includes('tok"'), 'token never lands in the snapshot');
   });
 
-  test('review-labelled open PRs also get label timestamps and head commit date', async () => {
+  test('review-labelled open PRs get the review status of their current head (sha, context, state) and nothing else', async () => {
+    const head = '5'.repeat(40);
     const labeled = pull(5, { state: 'open', labels: [{ name: 'review:pass' }] });
-    const { fetchImpl } = fakeGitHub({
+    const { fetchImpl, calls } = fakeGitHub({
       '/repos/o/r/pulls?': [labeled],
-      '/repos/o/r/issues/5/events': [
-        { event: 'labeled', created_at: '2026-10-07T01:00:00Z', label: { name: 'review:pass' } },
-        { event: 'labeled', created_at: '2026-10-07T03:00:00Z', label: { name: 'review:pass' } },
-        { event: 'labeled', created_at: '2026-10-07T04:00:00Z', label: { name: 'bug' } },
-      ],
-      [`/repos/o/r/commits/${'5'.repeat(40)}/check-runs`]: { check_runs: [run(1)] },
-      [`/repos/o/r/commits/${'5'.repeat(40)}`]: { commit: { committer: { date: '2026-10-07T02:00:00Z' } } },
+      [`/repos/o/r/commits/${head}/check-runs`]: { check_runs: [run(1)] },
+      [`/repos/o/r/commits/${head}/status`]: {
+        sha: head,
+        statuses: [
+          { id: 7, context: '11ship/chatgpt-review', state: 'success', description: 'ChatGPT review passed', target_url: 'https://x', creator: { login: 'github-actions[bot]' } },
+          { id: 9, context: 'ci/other', state: 'failure', creator: { login: 'github-actions[bot]' } },
+        ],
+      },
       '/repos/o/r/commits?': [{ sha: 'm1', parents: [] }],
       '/repos/o/r/commits/m1/check-runs': { check_runs: [run(1)] },
     });
     const snap = await collectSnapshot({ repo: 'o/r', mainBranch: 'main', requiredChecks: [REQUIRED], token: 'tok', fetchImpl });
     const p = snap.pulls[0];
-    assert.deepEqual(p.label_events, { 'review:pass': '2026-10-07T03:00:00Z' });
-    assert.equal(p.head_committed_at, '2026-10-07T02:00:00Z');
+    assert.deepEqual(p.review_status, { sha: head, context: '11ship/chatgpt-review', state: 'success' });
+    assert.equal(p.label_events, undefined, 'label timestamps are not collected');
+    assert.equal(p.head_committed_at, undefined, 'the head commit date is not collected');
+    assert.ok(!calls.some((c) => /\/events/.test(c.path)));
   });
 
   test('API errors carry status and path but never the token', async () => {

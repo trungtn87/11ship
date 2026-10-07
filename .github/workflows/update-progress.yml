@@ -10,13 +10,22 @@ name: Update progress
 #     way). It checks out the DEFAULT BRANCH only and never the PR head, and it never reads a PR
 #     title, body, branch name or label value in the shell: the generator reads state itself through
 #     the REST API and treats it as data. Nothing from the event payload is interpolated into `run:`.
-# * Review labels are bound to the head SHA by removal. `reset-review` runs on pull_request_target
-#   `synchronize` (the PR head changed) and removes every review:* label, so a PASS given for an
-#   older head can never carry over to a newer one. It checks out the default branch only, receives
-#   nothing but the PR number (as an environment variable, validated as an integer by the script),
-#   and holds only `pull-requests: write` + `contents: read`. `publish` waits for it and does not
-#   run if it fails, so a dashboard is never generated from labels that should have been removed.
-#   Commit timestamps are NOT used as evidence of which SHA was reviewed (see resolve.mjs).
+# * A review result is bound to the EXACT head SHA by a commit status, not by labels or timestamps.
+#   The review:* labels are only the input. `review-status` runs on pull_request_target `labeled` /
+#   `unlabeled` for a review:* label. It checks out the default branch only, reads the PR through the
+#   API at that moment (head SHA and labels in one read), and posts the status
+#   `11ship/chatgpt-review` (pending / failure / success) on THAT head SHA. A commit status lives on
+#   one SHA, so a PASS given for head A cannot become a PASS for head B, whatever order the workflows
+#   run in: the resolver accepts a label only when a trusted status for the current head backs it, so
+#   a new head with no status is WAITING_CHATGPT_REVIEW even while a stale review:pass is still there.
+#   If the head moved since the label event, nothing is written. If the API fails, the job fails and
+#   `publish` of the same run does not run. It receives only the PR number and the event head SHA (as
+#   environment variables, validated by the script), never a title, body, branch or label text, and
+#   holds only contents: read + pull-requests: read + statuses: write. No npm ci, no PR code.
+# * `reset-review` runs on pull_request_target `synchronize` and removes every review:* label. It is
+#   UI cleanup and defense in depth, no longer the root of correctness: even if it has not run yet,
+#   the exact-SHA status binding already protects the new head. Commit timestamps are not evidence
+#   of anything (see resolve.mjs and review-binding.mjs).
 # * No infinite loops:
 #   - the bot pushes with GITHUB_TOKEN, and GitHub does not start workflows for GITHUB_TOKEN pushes;
 #   - `push` ignores changes that only touch docs/PROGRESS.md;
@@ -53,6 +62,7 @@ jobs:
       checks: read
       issues: read
       actions: read
+      statuses: read
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -72,8 +82,41 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/generate-progress.mjs --stdout >> "$GITHUB_STEP_SUMMARY"
 
+  review-status:
+    name: Bind review label to the head SHA (commit status)
+    if: ${{ github.event_name == 'pull_request_target' && (github.event.action == 'labeled' || github.event.action == 'unlabeled') && startsWith(github.event.label.name, 'review:') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    # Runs for one PR never overlap, so two quick label changes cannot write their statuses out of
+    # order. A waiting run is replaced by a newer one; every run reads the live PR, so the newest wins.
+    concurrency:
+      group: review-status-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out the default branch (never the PR head)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Write the review status on the current head SHA
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/sync-review-status.mjs
+
   reset-review:
-    name: Reset review labels (head changed)
+    name: Reset review labels (head changed; cleanup only)
     if: github.event_name == 'pull_request_target' && github.event.action == 'synchronize'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -100,9 +143,10 @@ jobs:
 
   publish:
     name: Publish docs/PROGRESS.md
-    needs: reset-review
-    # Run when reset-review succeeded or was not needed; skip when it failed or the run was cancelled.
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && (needs.reset-review.result == 'success' || needs.reset-review.result == 'skipped') }}
+    needs: [reset-review, review-status]
+    # Run when both trusted jobs succeeded or were not needed; skip when either failed or the run was
+    # cancelled, so a dashboard is never generated after a review status or label cleanup that failed.
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (needs.reset-review.result == 'success' || needs.reset-review.result == 'skipped') && (needs.review-status.result == 'success' || needs.review-status.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -111,6 +155,7 @@ jobs:
       checks: read
       issues: read
       actions: read
+      statuses: read
     # One publisher at a time; later runs wait instead of racing each other. Every run reads live
     # state, so the last one always wins with the freshest data.
     concurrency:
