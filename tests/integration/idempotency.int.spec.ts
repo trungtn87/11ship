@@ -10,6 +10,7 @@ import {
 import { Keyring } from '../../apps/backend/src/crypto/keyring';
 import { IdempotencyCleanup } from '../../apps/backend/src/idempotency/idempotency-cleanup';
 import { IdempotencyExecutor } from '../../apps/backend/src/idempotency/idempotency-executor';
+import { IdempotencyOperationRegistry } from '../../apps/backend/src/idempotency/idempotency-operation-registry';
 import { IdempotencyOptions } from '../../apps/backend/src/idempotency/idempotency.types';
 import { idempotencyLockKey } from '../../apps/backend/src/shared/lock-key';
 import { poolClientSource } from '../../apps/backend/src/transaction/pg-client-source';
@@ -46,8 +47,15 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
     keyring = fixtureKeyring('k1'),
     source = poolClientSource(pool),
     lockKey = idempotencyLockKey,
+    operationRegistry = new IdempotencyOperationRegistry(),
   ): IdempotencyExecutor {
-    return new IdempotencyExecutor(managerFor(source), keyring, { ...OPTIONS, ...options }, lockKey);
+    return new IdempotencyExecutor(
+      managerFor(source),
+      keyring,
+      { ...OPTIONS, ...options },
+      operationRegistry,
+      lockKey,
+    );
   }
 
   function request(key: string, logicalRequest: unknown = { password: SECRET_PASSWORD }) {
@@ -293,6 +301,27 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
     );
     expect(otherScope.replayed).toBe(false);
     expect(otherOperation.replayed).toBe(false);
+  });
+
+  it('C10 — operation TTL override comes only from the immutable server registry', async () => {
+    const key = randomUUID();
+    const operationId = 'fixture.short-ttl.v1';
+    const registry = new IdempotencyOperationRegistry([
+      { operationId, replayTtlSeconds: 2, dedupeTtlSeconds: 5 },
+    ]);
+    const ex = executor({}, fixtureKeyring('k1'), poolClientSource(pool), idempotencyLockKey, registry);
+    await ex.execute({ ...request(key), operationId }, (context) =>
+      writeEffect(context, 'operation-ttl'),
+    );
+    const row = await pool.query<{ replay_ms: string; dedupe_ms: string }>(
+      `SELECT
+         floor(extract(epoch FROM (replay_expires_at - created_at)) * 1000)::bigint::text AS replay_ms,
+         floor(extract(epoch FROM (dedupe_expires_at - created_at)) * 1000)::bigint::text AS dedupe_ms
+       FROM app.idempotency_records
+       WHERE idempotency_key = $1::uuid`,
+      [key],
+    );
+    expect(row.rows[0]).toEqual({ replay_ms: '2000', dedupe_ms: '5000' });
   });
 
   it('C07/C09 — record uses historical key after active rotation and new record uses new active key', async () => {
