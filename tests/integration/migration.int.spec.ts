@@ -36,6 +36,10 @@ describe('F03 — migrations apply once and stay consistent', () => {
   beforeAll(async () => {
     client = new Client({ connectionString: databaseUrl });
     await client.connect();
+    // This suite runs only after the global target guard has verified the disposable ship11_test
+    // database/user. Reset the application schema so F03 proves a clean install with its own
+    // migration history instead of relying on the CI smoke migration history.
+    await client.query('DROP SCHEMA IF EXISTS app CASCADE');
   });
 
   afterAll(async () => {
@@ -59,6 +63,10 @@ describe('F03 — migrations apply once and stay consistent', () => {
       "SELECT 1 FROM information_schema.schemata WHERE schema_name = 'app'",
     );
     expect(baseSchema.rowCount).toBe(1);
+    const idempotency = await client.query(
+      "SELECT 1 FROM information_schema.tables WHERE table_schema = 'app' AND table_name = 'idempotency_records'",
+    );
+    expect(idempotency.rowCount).toBe(1);
   });
 
   it('does not apply anything twice on the second run', async () => {
