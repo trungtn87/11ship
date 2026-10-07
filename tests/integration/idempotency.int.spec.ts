@@ -120,6 +120,54 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
     await pool.end();
   });
 
+  it('C02 — sequential same-key request replays the exact result without a second callback', async () => {
+    const key = randomUUID();
+    const ex = executor();
+    let calls = 0;
+    const first = await ex.execute(request(key), async (context) => {
+      calls += 1;
+      return writeEffect(context, 'sequential', { access_token: SECRET_RESPONSE, n: 7 });
+    });
+    const second = await ex.execute(request(key), async (context) => {
+      calls += 1;
+      return writeEffect(context, 'sequential', { access_token: 'must-never-be-created' });
+    });
+    expect(first).toEqual({
+      responseStatus: 201,
+      responseBody: { access_token: SECRET_RESPONSE, n: 7 },
+      replayed: false,
+    });
+    expect(second).toEqual({ ...first, replayed: true });
+    expect(calls).toBe(1);
+  });
+
+  it('C08 — oversized replay plaintext fails before persist and rolls back business work', async () => {
+    const key = randomUUID();
+    const ex = executor();
+    const error = await failureOf(() =>
+      ex.execute(request(key), async (context) => {
+        await context.query('INSERT INTO app.c1a1_effects(effect_key, hits) VALUES ($1, 1)', [
+          'oversized',
+        ]);
+        return {
+          responseStatus: 200,
+          responseBody: { value: 'x'.repeat(70 * 1024) },
+          replayGuard: {},
+        };
+      }),
+    );
+    expect(error).toBeDefined();
+    const effect = await pool.query(
+      "SELECT 1 FROM app.c1a1_effects WHERE effect_key = 'oversized'",
+    );
+    const record = await pool.query(
+      'SELECT 1 FROM app.idempotency_records WHERE idempotency_key = $1::uuid',
+      [key],
+    );
+    expect(effect.rowCount).toBe(0);
+    expect(record.rowCount).toBe(0);
+  });
+
   it('C02/C03 — concurrent same-key requests overlap at the advisory lock but commit one effect', async () => {
     const key = randomUUID();
     const entered = deferred();
@@ -504,6 +552,20 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
       "SELECT hits FROM app.c1a1_effects WHERE effect_key = 'unknown-commit'",
     );
     expect(effect.rows[0]?.hits).toBe(1);
+  });
+
+  it('C29 — database acquisition outage is technical failure, never IDEMPOTENCY_BUSY', async () => {
+    const failingSource = {
+      acquire: async () => {
+        throw Object.assign(new Error('fixture outage'), { code: 'ECONNREFUSED' });
+      },
+    };
+    const error = await failureOf(() =>
+      executor({}, fixtureKeyring('k1'), failingSource).execute(request(randomUUID()), () => {
+        throw new Error('must not run callback');
+      }),
+    );
+    expect(error).not.toBeInstanceOf(AppError);
   });
 
   it('C29 — advisory timeout alone maps to IDEMPOTENCY_BUSY and lock_timeout is restored after acquisition', async () => {
