@@ -12,6 +12,26 @@ import {
   MIN_BUSINESS_LOCK_TIMEOUT_MS,
   MIN_TTL_SECONDS,
 } from '../idempotency/idempotency-config';
+import {
+  DEFAULT_OUTBOX_BACKOFF_BASE_MS,
+  DEFAULT_OUTBOX_BACKOFF_CAP_MS,
+  DEFAULT_OUTBOX_BATCH_SIZE,
+  DEFAULT_OUTBOX_LEASE_MS,
+  DEFAULT_OUTBOX_MAX_ATTEMPTS,
+  DEFAULT_OUTBOX_PUBLISH_CONCURRENCY,
+  DEFAULT_OUTBOX_PUBLISH_TIMEOUT_MS,
+  isValidBackoffRelation,
+  isValidLeaseRelation,
+  MAX_OUTBOX_BATCH_SIZE,
+  MAX_OUTBOX_DURATION_MS,
+  MAX_OUTBOX_MAX_ATTEMPTS,
+  MAX_OUTBOX_PUBLISH_CONCURRENCY,
+  MIN_OUTBOX_BATCH_SIZE,
+  MIN_OUTBOX_DURATION_MS,
+  MIN_OUTBOX_MAX_ATTEMPTS,
+  MIN_OUTBOX_PUBLISH_CONCURRENCY,
+  OutboxConfig,
+} from './outbox-config';
 
 export const APP_ENVIRONMENTS = ['development', 'test', 'staging', 'production'] as const;
 export type AppEnvironment = (typeof APP_ENVIRONMENTS)[number];
@@ -49,6 +69,8 @@ export interface AppConfig {
   transaction: TransactionConfig;
   /** Idempotency windows and lock budgets (M00-C1A1). Always present, with defaults. */
   idempotency: IdempotencyConfig;
+  /** Outbox dispatcher bounds (M00-C1C). Always present, with defaults. Nothing starts a dispatcher by itself. */
+  outbox: OutboxConfig;
   /**
    * Immutable crypto keyring. Optional at the config level; when either variable is set both must be
    * valid. It is REQUIRED wherever the idempotency executor is wired: IdempotencyModule refuses to
@@ -279,6 +301,80 @@ export function loadConfig(env: EnvSource): ConfigResult {
     flag('IDEMPOTENCY_DEDUPE_TTL_SECONDS');
   }
 
+  // Outbox dispatcher (ADR-003 §13.6). Bounds first, then the two relations; a relation is only judged when
+  // both of its variables are individually valid, so one bad value is reported once and by its own name.
+  const outboxMaxAttempts = readInteger(
+    env,
+    'OUTBOX_MAX_ATTEMPTS',
+    DEFAULT_OUTBOX_MAX_ATTEMPTS,
+    MIN_OUTBOX_MAX_ATTEMPTS,
+    MAX_OUTBOX_MAX_ATTEMPTS,
+    invalid,
+  );
+  const outboxBatchSize = readInteger(
+    env,
+    'OUTBOX_BATCH_SIZE',
+    DEFAULT_OUTBOX_BATCH_SIZE,
+    MIN_OUTBOX_BATCH_SIZE,
+    MAX_OUTBOX_BATCH_SIZE,
+    invalid,
+  );
+  const outboxPublishConcurrency = readInteger(
+    env,
+    'OUTBOX_PUBLISH_CONCURRENCY',
+    DEFAULT_OUTBOX_PUBLISH_CONCURRENCY,
+    MIN_OUTBOX_PUBLISH_CONCURRENCY,
+    MAX_OUTBOX_PUBLISH_CONCURRENCY,
+    invalid,
+  );
+  const outboxPublishTimeoutMs = readInteger(
+    env,
+    'OUTBOX_PUBLISH_TIMEOUT_MS',
+    DEFAULT_OUTBOX_PUBLISH_TIMEOUT_MS,
+    MIN_OUTBOX_DURATION_MS,
+    MAX_OUTBOX_DURATION_MS,
+    invalid,
+  );
+  const outboxLeaseMs = readInteger(
+    env,
+    'OUTBOX_LEASE_MS',
+    DEFAULT_OUTBOX_LEASE_MS,
+    MIN_OUTBOX_DURATION_MS,
+    MAX_OUTBOX_DURATION_MS,
+    invalid,
+  );
+  const outboxBackoffBaseMs = readInteger(
+    env,
+    'OUTBOX_BACKOFF_BASE_MS',
+    DEFAULT_OUTBOX_BACKOFF_BASE_MS,
+    MIN_OUTBOX_DURATION_MS,
+    MAX_OUTBOX_DURATION_MS,
+    invalid,
+  );
+  const outboxBackoffCapMs = readInteger(
+    env,
+    'OUTBOX_BACKOFF_CAP_MS',
+    DEFAULT_OUTBOX_BACKOFF_CAP_MS,
+    MIN_OUTBOX_DURATION_MS,
+    MAX_OUTBOX_DURATION_MS,
+    invalid,
+  );
+  // Both verdicts are sampled before either flag is raised, so neither depends on the other.
+  const leaseRelationBroken =
+    individuallyValid('OUTBOX_LEASE_MS', 'OUTBOX_PUBLISH_TIMEOUT_MS') &&
+    !isValidLeaseRelation(outboxLeaseMs, outboxPublishTimeoutMs);
+  const backoffRelationBroken =
+    individuallyValid('OUTBOX_BACKOFF_BASE_MS', 'OUTBOX_BACKOFF_CAP_MS') &&
+    !isValidBackoffRelation(outboxBackoffBaseMs, outboxBackoffCapMs);
+  if (leaseRelationBroken) {
+    flag('OUTBOX_LEASE_MS');
+    flag('OUTBOX_PUBLISH_TIMEOUT_MS');
+  }
+  if (backoffRelationBroken) {
+    flag('OUTBOX_BACKOFF_BASE_MS');
+    flag('OUTBOX_BACKOFF_CAP_MS');
+  }
+
   // Crypto keyring: optional at this level, but all-or-nothing and strictly validated when present.
   // Only variable NAMES are ever reported; key material is never echoed.
   let crypto: Keyring | undefined;
@@ -315,6 +411,15 @@ export function loadConfig(env: EnvSource): ConfigResult {
       database: { url: databaseUrl, poolMax, connectTimeoutMs, queryTimeoutMs, statementTimeoutMs },
       transaction: { timeoutMs: transactionTimeoutMs, idleInTransactionTimeoutMs },
       idempotency: { advisoryWaitMs, businessLockTimeoutMs, replayTtlSeconds, dedupeTtlSeconds },
+      outbox: {
+        maxAttempts: outboxMaxAttempts,
+        batchSize: outboxBatchSize,
+        publishConcurrency: outboxPublishConcurrency,
+        publishTimeoutMs: outboxPublishTimeoutMs,
+        leaseMs: outboxLeaseMs,
+        backoffBaseMs: outboxBackoffBaseMs,
+        backoffCapMs: outboxBackoffCapMs,
+      },
       crypto,
     },
   };
