@@ -27,6 +27,15 @@ export interface TransactionConfig {
   idleInTransactionTimeoutMs: number;
 }
 
+export interface IdempotencyConfig {
+  /** Bounded wait only for pg_advisory_xact_lock. */
+  advisoryWaitMs: number;
+  /** lock_timeout restored immediately after advisory acquisition for business row locks. */
+  businessLockTimeoutMs: number;
+  replayTtlSeconds: number;
+  dedupeTtlSeconds: number;
+}
+
 export interface AppConfig {
   appEnv: AppEnvironment;
   nodeEnv: NodeEnvironment | undefined;
@@ -34,11 +43,9 @@ export interface AppConfig {
   port: number;
   database: DatabaseConfig;
   transaction: TransactionConfig;
-  /**
-   * Immutable crypto keyring. Optional in M00-C1A0 (nothing consumes it yet); when either variable
-   * is set both must be valid. A later slice makes it required where the idempotency executor runs.
-   */
-  crypto: Keyring | undefined;
+  idempotency: IdempotencyConfig;
+  /** Immutable crypto keyring. Required from M00-C1A1 because the executor persists HMAC/encrypted replay. */
+  crypto: Keyring;
 }
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -57,6 +64,10 @@ const DEFAULT_QUERY_TIMEOUT_MS = 1000;
 const DEFAULT_STATEMENT_TIMEOUT_MS = 800;
 const DEFAULT_TRANSACTION_TIMEOUT_MS = 5000;
 const DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT_MS = 2000;
+const DEFAULT_IDEMPOTENCY_ADVISORY_WAIT_MS = 250;
+const DEFAULT_BUSINESS_LOCK_TIMEOUT_MS = 500;
+const DEFAULT_REPLAY_TTL_SECONDS = 900;
+const DEFAULT_DEDUPE_TTL_SECONDS = 604800;
 
 function pickEnum<T extends string>(raw: string | undefined, allowed: readonly T[]): T | undefined {
   return allowed.find((candidate) => candidate === raw);
@@ -179,6 +190,38 @@ export function loadConfig(env: EnvSource): ConfigResult {
     30000,
     invalid,
   );
+  const advisoryWaitMs = readInteger(
+    env,
+    'IDEMPOTENCY_ADVISORY_WAIT_MS',
+    DEFAULT_IDEMPOTENCY_ADVISORY_WAIT_MS,
+    1,
+    5000,
+    invalid,
+  );
+  const businessLockTimeoutMs = readInteger(
+    env,
+    'DB_BUSINESS_LOCK_TIMEOUT_MS',
+    DEFAULT_BUSINESS_LOCK_TIMEOUT_MS,
+    1,
+    30000,
+    invalid,
+  );
+  const replayTtlSeconds = readInteger(
+    env,
+    'IDEMPOTENCY_REPLAY_TTL_SECONDS',
+    DEFAULT_REPLAY_TTL_SECONDS,
+    1,
+    604800,
+    invalid,
+  );
+  const dedupeTtlSeconds = readInteger(
+    env,
+    'IDEMPOTENCY_DEDUPE_TTL_SECONDS',
+    DEFAULT_DEDUPE_TTL_SECONDS,
+    1,
+    604800,
+    invalid,
+  );
 
   // Relations between the timeouts (ADR-003 §13.1). Only checked when the individual values are
   // valid, so one bad value is reported once and by its own name.
@@ -203,30 +246,48 @@ export function loadConfig(env: EnvSource): ConfigResult {
     flag('DB_STATEMENT_TIMEOUT_MS');
     flag('DB_TRANSACTION_TIMEOUT_MS');
   }
+  if (
+    individuallyValid('IDEMPOTENCY_ADVISORY_WAIT_MS', 'DB_STATEMENT_TIMEOUT_MS') &&
+    advisoryWaitMs >= statementTimeoutMs
+  ) {
+    flag('IDEMPOTENCY_ADVISORY_WAIT_MS');
+    flag('DB_STATEMENT_TIMEOUT_MS');
+  }
+  if (
+    individuallyValid('DB_BUSINESS_LOCK_TIMEOUT_MS', 'DB_STATEMENT_TIMEOUT_MS') &&
+    businessLockTimeoutMs >= statementTimeoutMs
+  ) {
+    flag('DB_BUSINESS_LOCK_TIMEOUT_MS');
+    flag('DB_STATEMENT_TIMEOUT_MS');
+  }
+  if (
+    individuallyValid('IDEMPOTENCY_REPLAY_TTL_SECONDS', 'IDEMPOTENCY_DEDUPE_TTL_SECONDS') &&
+    replayTtlSeconds > dedupeTtlSeconds
+  ) {
+    flag('IDEMPOTENCY_REPLAY_TTL_SECONDS');
+    flag('IDEMPOTENCY_DEDUPE_TTL_SECONDS');
+  }
 
-  // Crypto keyring: optional for now, but all-or-nothing and strictly validated when present.
-  // Only variable NAMES are ever reported; key material is never echoed.
+  // Crypto keyring is required from C1A1. Only variable NAMES are ever reported; key material is never echoed.
   let crypto: Keyring | undefined;
   const rawKeyring = env.CRYPTO_KEYRING;
   const rawActiveKeyId = env.CRYPTO_ACTIVE_KEY_ID;
-  if (rawKeyring !== undefined || rawActiveKeyId !== undefined) {
-    if (rawKeyring === undefined) {
-      flag('CRYPTO_KEYRING');
-    }
-    if (rawActiveKeyId === undefined) {
-      flag('CRYPTO_ACTIVE_KEY_ID');
-    }
-    if (rawKeyring !== undefined && rawActiveKeyId !== undefined) {
-      const parsed = parseKeyringConfig(rawKeyring, rawActiveKeyId);
-      if (parsed.ok) {
-        crypto = parsed.keyring;
-      } else {
-        parsed.invalid.forEach(flag);
-      }
+  if (rawKeyring === undefined) {
+    flag('CRYPTO_KEYRING');
+  }
+  if (rawActiveKeyId === undefined) {
+    flag('CRYPTO_ACTIVE_KEY_ID');
+  }
+  if (rawKeyring !== undefined && rawActiveKeyId !== undefined) {
+    const parsed = parseKeyringConfig(rawKeyring, rawActiveKeyId);
+    if (parsed.ok) {
+      crypto = parsed.keyring;
+    } else {
+      parsed.invalid.forEach(flag);
     }
   }
 
-  if (invalid.length > 0 || appEnv === undefined || databaseUrl === undefined) {
+  if (invalid.length > 0 || appEnv === undefined || databaseUrl === undefined || crypto === undefined) {
     return { ok: false, invalid };
   }
 
@@ -239,6 +300,12 @@ export function loadConfig(env: EnvSource): ConfigResult {
       port,
       database: { url: databaseUrl, poolMax, connectTimeoutMs, queryTimeoutMs, statementTimeoutMs },
       transaction: { timeoutMs: transactionTimeoutMs, idleInTransactionTimeoutMs },
+      idempotency: {
+        advisoryWaitMs,
+        businessLockTimeoutMs,
+        replayTtlSeconds,
+        dedupeTtlSeconds,
+      },
       crypto,
     },
   };
