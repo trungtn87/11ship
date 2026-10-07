@@ -5,6 +5,8 @@
 
 👉 [Open live project progress](docs/PROGRESS.md)
 
+🎨 [Brand Guideline v1.0 — 11 / 11Food / 11Ship](docs/current/11-brand-guideline-v1.0.md)
+
 ## Tiến độ hiện tại
 
 Nền backend M00-B1 (NestJS bootstrap, cấu hình, pool PostgreSQL, migration, health endpoints, error/log contract, test và CI) đã **nghiệm thu PASS F01–F09** trên Node 24.21.0, npm 11.9.0 và PostgreSQL 17.11. CI xác nhận 54 unit test + 28 integration test đều PASS; `package-lock.json` thật đã được commit và `npm ci` không làm thay đổi lockfile. Xem [docs/evidence/M00-B1.md](docs/evidence/M00-B1.md). Chưa có migration nghiệp vụ và chưa có bản app cho Owner test.
