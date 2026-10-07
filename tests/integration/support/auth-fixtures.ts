@@ -576,3 +576,42 @@ export async function removeFault(pool: Pool, name: string, table: string): Prom
   await pool.query(`DROP TRIGGER IF EXISTS ${name} ON ${table}`);
   await pool.query(`DROP FUNCTION IF EXISTS app.${name}()`);
 }
+
+/**
+ * M01-A2S barrier: a row trigger on app.shops that waits for an advisory lock a test holds, but ONLY for the
+ * statement that turns a shop ACTIVE. By then the completing request already holds the user row, the owner
+ * membership, the shop row and the service-area row FOR SHARE, so "a backend waits on the advisory lock"
+ * proves it is inside its transaction with all of them held.
+ */
+export async function installShopActivateStall(pool: Pool, key: readonly [number, number]): Promise<void> {
+  await pool.query(
+    `CREATE FUNCTION app.test_stall_shop_activate() RETURNS trigger LANGUAGE plpgsql AS $$
+     BEGIN
+       IF NEW.status = 'ACTIVE' AND OLD.status IS DISTINCT FROM 'ACTIVE' THEN
+         PERFORM pg_advisory_xact_lock(${key[0]}, ${key[1]});
+       END IF;
+       RETURN NEW;
+     END $$`,
+  );
+  await pool.query(
+    `CREATE TRIGGER test_stall_shop_activate BEFORE UPDATE ON app.shops
+       FOR EACH ROW EXECUTE FUNCTION app.test_stall_shop_activate()`,
+  );
+}
+
+export async function removeShopActivateStall(pool: Pool): Promise<void> {
+  await pool.query('DROP TRIGGER IF EXISTS test_stall_shop_activate ON app.shops');
+  await pool.query('DROP FUNCTION IF EXISTS app.test_stall_shop_activate()');
+}
+
+/** The default valid profile body. Callers override fields; the contact phone is a fresh number. */
+export function shopProfileBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    name: 'Quán Bún Chả',
+    contact_phone: randomPhone().local,
+    address_text: '12 Hàng Mã, Hoàn Kiếm',
+    zalo: 'zalo.example',
+    facebook: 'fb.example/shop',
+    ...overrides,
+  };
+}
