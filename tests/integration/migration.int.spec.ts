@@ -9,6 +9,7 @@ import { minimalChildEnv, REPO_ROOT, runNpmScript } from './support/test-helpers
 // schema owned by this test, so cleanup only ever drops that schema.
 describe('F03 — migrations apply once and stay consistent', () => {
   const historySchema = `mig_${randomBytes(6).toString('hex')}`;
+  const upgradeHistorySchema = `mig_${randomBytes(6).toString('hex')}`;
   const migrationsDir = path.join(REPO_ROOT, 'database', 'migrations');
   const expectedNames = readdirSync(migrationsDir)
     .filter((file) => file.endsWith('.sql'))
@@ -18,10 +19,13 @@ describe('F03 — migrations apply once and stay consistent', () => {
   const databaseUrl = process.env.DATABASE_URL;
   let client: Client;
 
-  function migrate(): ReturnType<typeof runNpmScript> {
+  function migrate(
+    schema = historySchema,
+    extraArgs: string[] = [],
+  ): ReturnType<typeof runNpmScript> {
     return runNpmScript(
       'db:migrate',
-      ['--migrations-schema', historySchema, '--create-migrations-schema'],
+      ['--migrations-schema', schema, '--create-migrations-schema', ...extraArgs],
       minimalChildEnv({ APP_ENV: 'test', DATABASE_URL: databaseUrl }),
     );
   }
@@ -46,6 +50,9 @@ describe('F03 — migrations apply once and stay consistent', () => {
     // Only the random schema created by this test is removed.
     if (/^mig_[0-9a-f]{12}$/.test(historySchema)) {
       await client.query(`DROP SCHEMA IF EXISTS ${historySchema} CASCADE`);
+    }
+    if (/^mig_[0-9a-f]{12}$/.test(upgradeHistorySchema)) {
+      await client.query(`DROP SCHEMA IF EXISTS ${upgradeHistorySchema} CASCADE`);
     }
     await client.end();
   });
@@ -83,4 +90,23 @@ describe('F03 — migrations apply once and stay consistent', () => {
     expect(after.rows).toEqual(before.rows);
     expect(await historyNames()).toEqual(expectedNames);
   });
+
+  it('upgrades the B1-only schema to C1A1 with the same migration history', async () => {
+    await client.query('DROP SCHEMA IF EXISTS app CASCADE');
+
+    const baseOnly = migrate(upgradeHistorySchema, ['--count', '1']);
+    expect(baseOnly.status).toBe(0);
+    const before = await client.query(
+      "SELECT 1 FROM information_schema.tables WHERE table_schema = 'app' AND table_name = 'idempotency_records'",
+    );
+    expect(before.rowCount).toBe(0);
+
+    const upgrade = migrate(upgradeHistorySchema);
+    expect(upgrade.status).toBe(0);
+    const after = await client.query(
+      "SELECT 1 FROM information_schema.tables WHERE table_schema = 'app' AND table_name = 'idempotency_records'",
+    );
+    expect(after.rowCount).toBe(1);
+  });
+
 });
