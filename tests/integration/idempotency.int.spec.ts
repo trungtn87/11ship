@@ -529,18 +529,30 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
     const guard = { proof_id: proofId, user_id: userId, session_id: sessionId };
     const authorize = async (context: TransactionContext, value: import('../../apps/backend/src/shared/json/safe-json').JsonValue) => {
       const g = value as typeof guard;
+      await context.query(
+        'SELECT proof_id FROM app.c1a1_proof_fixture WHERE proof_id = $1::uuid FOR UPDATE',
+        [g.proof_id],
+      );
       const proof = await context.query<{ invalidated: boolean }>(
-        'SELECT invalidated FROM app.c1a1_proof_fixture WHERE proof_id = $1::uuid FOR UPDATE',
+        'SELECT invalidated FROM app.c1a1_proof_fixture WHERE proof_id = $1::uuid',
         [g.proof_id],
       );
       if (proof.rows[0]?.invalidated !== false) throw new Error('proof invalidated');
 
+      await context.query(
+        'SELECT user_id FROM app.c1a1_user_fixture WHERE user_id = $1::uuid FOR UPDATE',
+        [g.user_id],
+      );
       const user = await context.query<{ active: boolean }>(
-        'SELECT active FROM app.c1a1_user_fixture WHERE user_id = $1::uuid FOR UPDATE',
+        'SELECT active FROM app.c1a1_user_fixture WHERE user_id = $1::uuid',
         [g.user_id],
       );
       if (user.rows[0]?.active !== true) throw new Error('user disabled');
 
+      await context.query(
+        'SELECT session_id FROM app.c1a1_session_fixture WHERE session_id = $1::uuid FOR UPDATE',
+        [g.session_id],
+      );
       const session = await context.query<{
         user_id: string;
         proof_id: string;
@@ -550,8 +562,7 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
         `SELECT user_id::text, proof_id::text, revoked,
                 expires_at > clock_timestamp() AS fresh
          FROM app.c1a1_session_fixture
-         WHERE session_id = $1::uuid
-         FOR UPDATE`,
+         WHERE session_id = $1::uuid`,
         [g.session_id],
       );
       const row = session.rows[0];
@@ -625,8 +636,12 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
         await context.query('SELECT proof_id FROM app.c1a1_proof_fixture WHERE proof_id = $1::uuid FOR UPDATE', [g.proof_id]);
         await context.query('SELECT user_id FROM app.c1a1_user_fixture WHERE user_id = $1::uuid FOR UPDATE', [g.user_id]);
         hookStarted.resolve();
+        await context.query(
+          'SELECT session_id FROM app.c1a1_session_fixture WHERE session_id = $1::uuid FOR UPDATE',
+          [g.session_id],
+        );
         const session = await context.query<{ fresh: boolean }>(
-          'SELECT expires_at > clock_timestamp() AS fresh FROM app.c1a1_session_fixture WHERE session_id = $1::uuid FOR UPDATE',
+          'SELECT expires_at > clock_timestamp() AS fresh FROM app.c1a1_session_fixture WHERE session_id = $1::uuid',
           [g.session_id],
         );
         if (session.rows[0]?.fresh !== true) throw new Error('session expired');
@@ -929,17 +944,25 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
     const replayAuthorization = async (context: TransactionContext, guard: import('../../apps/backend/src/shared/json/safe-json').JsonValue) => {
       guardCount += 1;
       const id = (guard as { proof_id: string }).proof_id;
+      await context.query(
+        'SELECT proof_id FROM app.c1a1_proof_fixture WHERE proof_id = $1::uuid FOR UPDATE',
+        [id],
+      );
       const proof = await context.query<{ invalidated: boolean }>(
-        'SELECT invalidated FROM app.c1a1_proof_fixture WHERE proof_id = $1::uuid FOR UPDATE',
+        'SELECT invalidated FROM app.c1a1_proof_fixture WHERE proof_id = $1::uuid',
         [id],
       );
       if (proof.rows[0]?.invalidated !== false) throw new Error('proof invalidated');
     };
 
     const work = async (context: TransactionContext) => {
+      await context.query(
+        'SELECT proof_id FROM app.c1a1_proof_fixture WHERE proof_id = $1::uuid FOR UPDATE',
+        [proofId],
+      );
       const proof = await context.query<{ used: boolean; invalidated: boolean; fresh: boolean }>(
         `SELECT used, invalidated, expires_at > clock_timestamp() AS fresh
-         FROM app.c1a1_proof_fixture WHERE proof_id = $1::uuid FOR UPDATE`,
+         FROM app.c1a1_proof_fixture WHERE proof_id = $1::uuid`,
         [proofId],
       );
       const row = proof.rows[0];
