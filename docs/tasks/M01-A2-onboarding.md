@@ -107,6 +107,15 @@ The onboarding coordinator may depend on owner services/ports, but it MUST NOT i
 
 Owner participants accept the SAME existing M00 `TransactionContext`; they never begin/commit their own transaction.
 
+Composition wiring must preserve one-way ownership:
+
+- A2 may make Auth export the existing `SessionAuthGuard` plus a narrow M01 role-grant participant; do not duplicate authentication logic in Onboarding.
+- M02 exports read/write ports for ServiceArea/Shop that accept UUID actor IDs + TransactionContext; M02 does not import AuthModule.
+- M03 exports Driver profile/status ports and may consume the M02 ServiceArea read/lock port; M03 does not import AuthModule.
+- The Onboarding composition module imports Auth + M02 (+ M03 for A2D) and coordinates them.
+- Auth role-context may consume read-only Shop/Driver eligibility ports once A2 is wired. This is a read dependency only; Auth must not issue raw M02/M03 SQL.
+- If NestJS wiring would require a circular module import, STOP and move the composition provider to the app/onboarding layer rather than using `forwardRef` as an architectural shortcut.
+
 Logical dependency:
 
 ```
