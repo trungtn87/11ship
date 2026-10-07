@@ -103,6 +103,17 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
         invalidated boolean NOT NULL,
         expires_at timestamptz NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS app.c1a1_user_fixture (
+        user_id uuid PRIMARY KEY,
+        active boolean NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS app.c1a1_session_fixture (
+        session_id uuid PRIMARY KEY,
+        user_id uuid NOT NULL,
+        proof_id uuid NOT NULL,
+        revoked boolean NOT NULL,
+        expires_at timestamptz NOT NULL
+      );
     `);
   });
 
@@ -110,10 +121,14 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
     await pool.query('DELETE FROM app.idempotency_records');
     await pool.query('DELETE FROM app.c1a1_effects');
     await pool.query('DELETE FROM app.c1a1_guard_fixture');
+    await pool.query('DELETE FROM app.c1a1_session_fixture');
+    await pool.query('DELETE FROM app.c1a1_user_fixture');
     await pool.query('DELETE FROM app.c1a1_proof_fixture');
   });
 
   afterAll(async () => {
+    await pool.query('DROP TABLE IF EXISTS app.c1a1_session_fixture');
+    await pool.query('DROP TABLE IF EXISTS app.c1a1_user_fixture');
     await pool.query('DROP TABLE IF EXISTS app.c1a1_proof_fixture');
     await pool.query('DROP TABLE IF EXISTS app.c1a1_guard_fixture');
     await pool.query('DROP TABLE IF EXISTS app.c1a1_effects');
@@ -463,6 +478,160 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
     ).rejects.toThrow('fixture guard denied');
   });
 
+  it('C19 — sensitive replay binds proof, active user and live session under ordered row locks', async () => {
+    const key = randomUUID();
+    const proofId = randomUUID();
+    const userId = randomUUID();
+    const sessionId = randomUUID();
+    const ex = executor();
+
+    await pool.query(
+      "INSERT INTO app.c1a1_proof_fixture(proof_id, used, invalidated, expires_at) VALUES ($1::uuid, true, false, clock_timestamp() - interval '1 minute')",
+      [proofId],
+    );
+    await pool.query('INSERT INTO app.c1a1_user_fixture(user_id, active) VALUES ($1::uuid, true)', [
+      userId,
+    ]);
+    await pool.query(
+      "INSERT INTO app.c1a1_session_fixture(session_id, user_id, proof_id, revoked, expires_at) VALUES ($1::uuid, $2::uuid, $3::uuid, false, clock_timestamp() + interval '1 day')",
+      [sessionId, userId, proofId],
+    );
+
+    const guard = { proof_id: proofId, user_id: userId, session_id: sessionId };
+    const authorize = async (context: TransactionContext, value: import('../../apps/backend/src/shared/json/safe-json').JsonValue) => {
+      const g = value as typeof guard;
+      const proof = await context.query<{ invalidated: boolean }>(
+        'SELECT invalidated FROM app.c1a1_proof_fixture WHERE proof_id = $1::uuid FOR UPDATE',
+        [g.proof_id],
+      );
+      if (proof.rows[0]?.invalidated !== false) throw new Error('proof invalidated');
+
+      const user = await context.query<{ active: boolean }>(
+        'SELECT active FROM app.c1a1_user_fixture WHERE user_id = $1::uuid FOR UPDATE',
+        [g.user_id],
+      );
+      if (user.rows[0]?.active !== true) throw new Error('user disabled');
+
+      const session = await context.query<{
+        user_id: string;
+        proof_id: string;
+        revoked: boolean;
+        fresh: boolean;
+      }>(
+        `SELECT user_id::text, proof_id::text, revoked,
+                expires_at > clock_timestamp() AS fresh
+         FROM app.c1a1_session_fixture
+         WHERE session_id = $1::uuid
+         FOR UPDATE`,
+        [g.session_id],
+      );
+      const row = session.rows[0];
+      if (
+        row === undefined ||
+        row.user_id !== g.user_id ||
+        row.proof_id !== g.proof_id ||
+        row.revoked ||
+        !row.fresh
+      ) {
+        throw new Error('session denied');
+      }
+    };
+
+    const req = {
+      ...request(key),
+      operationId: 'fixture.sensitive.v1',
+      sensitiveReplay: true,
+      replayAuthorization: authorize,
+    };
+    await ex.execute(req, (context) =>
+      writeEffect(context, 'full-binding', { access_token: SECRET_RESPONSE }, guard),
+    );
+    expect((await ex.execute(req, () => Promise.reject(new Error('must replay')))).replayed).toBe(true);
+
+    await pool.query('UPDATE app.c1a1_user_fixture SET active = false WHERE user_id = $1::uuid', [userId]);
+    await expect(ex.execute(req, () => Promise.reject(new Error('must replay')))).rejects.toThrow(
+      'user disabled',
+    );
+    await pool.query('UPDATE app.c1a1_user_fixture SET active = true WHERE user_id = $1::uuid', [userId]);
+
+    await pool.query('UPDATE app.c1a1_session_fixture SET revoked = true WHERE session_id = $1::uuid', [
+      sessionId,
+    ]);
+    await expect(ex.execute(req, () => Promise.reject(new Error('must replay')))).rejects.toThrow(
+      'session denied',
+    );
+    await pool.query('UPDATE app.c1a1_session_fixture SET revoked = false, user_id = $2::uuid WHERE session_id = $1::uuid', [
+      sessionId,
+      randomUUID(),
+    ]);
+    await expect(ex.execute(req, () => Promise.reject(new Error('must replay')))).rejects.toThrow(
+      'session denied',
+    );
+  });
+
+  it('C17/C19 — session expiry while waiting on its row lock denies replay with fresh DB state', async () => {
+    const key = randomUUID();
+    const proofId = randomUUID();
+    const userId = randomUUID();
+    const sessionId = randomUUID();
+    const ex = executor({ businessLockTimeoutMs: 3000 });
+    const hookStarted = deferred();
+
+    await pool.query(
+      "INSERT INTO app.c1a1_proof_fixture(proof_id, used, invalidated, expires_at) VALUES ($1::uuid, true, false, clock_timestamp() + interval '1 day')",
+      [proofId],
+    );
+    await pool.query('INSERT INTO app.c1a1_user_fixture(user_id, active) VALUES ($1::uuid, true)', [userId]);
+    await pool.query(
+      "INSERT INTO app.c1a1_session_fixture(session_id, user_id, proof_id, revoked, expires_at) VALUES ($1::uuid, $2::uuid, $3::uuid, false, clock_timestamp() + interval '700 milliseconds')",
+      [sessionId, userId, proofId],
+    );
+    const guard = { proof_id: proofId, user_id: userId, session_id: sessionId };
+    const req = {
+      ...request(key),
+      operationId: 'fixture.session-expiry.v1',
+      sensitiveReplay: true,
+      replayAuthorization: async (context: TransactionContext, value: import('../../apps/backend/src/shared/json/safe-json').JsonValue) => {
+        const g = value as typeof guard;
+        await context.query('SELECT proof_id FROM app.c1a1_proof_fixture WHERE proof_id = $1::uuid FOR UPDATE', [g.proof_id]);
+        await context.query('SELECT user_id FROM app.c1a1_user_fixture WHERE user_id = $1::uuid FOR UPDATE', [g.user_id]);
+        hookStarted.resolve();
+        const session = await context.query<{ fresh: boolean }>(
+          'SELECT expires_at > clock_timestamp() AS fresh FROM app.c1a1_session_fixture WHERE session_id = $1::uuid FOR UPDATE',
+          [g.session_id],
+        );
+        if (session.rows[0]?.fresh !== true) throw new Error('session expired');
+      },
+    };
+
+    await ex.execute(req, (context) =>
+      writeEffect(context, 'session-expiry', { access_token: SECRET_RESPONSE }, guard),
+    );
+
+    const holder = await pool.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query(
+        'SELECT session_id FROM app.c1a1_session_fixture WHERE session_id = $1::uuid FOR UPDATE',
+        [sessionId],
+      );
+      const replay = ex.execute(req, () => Promise.reject(new Error('must replay')));
+      await hookStarted.promise;
+      await eventually(async () => {
+        const state = await pool.query<{ fresh: boolean }>(
+          'SELECT expires_at > clock_timestamp() AS fresh FROM app.c1a1_session_fixture WHERE session_id = $1::uuid',
+          [sessionId],
+        );
+        return state.rows[0]?.fresh === false;
+      }, 'session expires while replay waits for row lock', 2000);
+      await holder.query('COMMIT');
+      await expect(replay).rejects.toThrow('session expired');
+    } finally {
+      await holder.query('ROLLBACK').catch(() => undefined);
+      holder.release();
+    }
+  });
+
   it('C19 — replay guard row lock fences a concurrent revocation update', async () => {
     const key = randomUUID();
     const guardId = randomUUID();
@@ -716,6 +885,8 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
   it('C18 — consumed/naturally-expired proof can resolve replay, but a new execution must reject it', async () => {
     const key = randomUUID();
     const proofId = randomUUID();
+    const userId = randomUUID();
+    const sessionId = randomUUID();
     const logical = { verification_token: `proof:${proofId}`, password: SECRET_PASSWORD, device: 'fixture' };
     const ex = executor();
     let mintCount = 0;
@@ -748,7 +919,7 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
       }
       await context.query('UPDATE app.c1a1_proof_fixture SET used = true WHERE proof_id = $1::uuid', [proofId]);
       mintCount += 1;
-      return writeEffect(context, 'proof-protocol', { access_token: SECRET_RESPONSE }, { proof_id: proofId });
+      return writeEffect(context, 'proof-protocol', { access_token: SECRET_RESPONSE }, { proof_id: proofId, user_id: userId, session_id: sessionId });
     };
 
     const req = { ...request(key, logical), sensitiveReplay: true, replayAuthorization };
