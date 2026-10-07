@@ -4,18 +4,29 @@ import { TransactionModule } from '../transaction/transaction.module';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { IdempotencyCleanup } from './idempotency-cleanup';
 import { IdempotencyExecutor } from './idempotency-executor';
+import { IdempotencyOperationRegistry } from './idempotency-operation-registry';
 
 @Module({
   imports: [TransactionModule],
   providers: [
+    IdempotencyOperationRegistry,
     {
       provide: IdempotencyExecutor,
-      inject: [TransactionManager, APP_CONFIG],
-      useFactory: (transactions: TransactionManager, config: AppConfig) => {
+      inject: [TransactionManager, APP_CONFIG, IdempotencyOperationRegistry],
+      useFactory: (
+        transactions: TransactionManager,
+        config: AppConfig,
+        operationRegistry: IdempotencyOperationRegistry,
+      ) => {
         if (config.crypto === undefined) {
           throw new Error('IdempotencyExecutor requires configured crypto keyring');
         }
-        return new IdempotencyExecutor(transactions, config.crypto, config.idempotency);
+        return new IdempotencyExecutor(
+          transactions,
+          config.crypto,
+          config.idempotency,
+          operationRegistry,
+        );
       },
     },
     {
@@ -24,6 +35,6 @@ import { IdempotencyExecutor } from './idempotency-executor';
       useFactory: (transactions: TransactionManager) => new IdempotencyCleanup(transactions),
     },
   ],
-  exports: [IdempotencyExecutor, IdempotencyCleanup],
+  exports: [IdempotencyExecutor, IdempotencyCleanup, IdempotencyOperationRegistry],
 })
 export class IdempotencyModule {}
