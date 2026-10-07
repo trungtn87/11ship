@@ -979,6 +979,15 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
     expect(first.replayed).toBe(false);
     expect(mintCount).toBe(1);
 
+    const persisted = await pool.query<{ stored: string }>(
+      `SELECT row_to_json(r)::text AS stored
+       FROM app.idempotency_records AS r
+       WHERE idempotency_key = $1::uuid`,
+      [key],
+    );
+    expect(persisted.rows[0]?.stored).not.toContain(logical.verification_token);
+    expect(persisted.rows[0]?.stored).not.toContain(SECRET_PASSWORD);
+
     // Natural proof expiry after a committed result does not block lookup/replay.
     await pool.query(
       "UPDATE app.c1a1_proof_fixture SET expires_at = clock_timestamp() - interval '1 second' WHERE proof_id = $1::uuid",
