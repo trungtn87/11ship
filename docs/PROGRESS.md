@@ -5,7 +5,7 @@
 > **AUTO-GENERATED — DO NOT EDIT MANUALLY**
 >
 > The plan lives in [`docs/progress/plan.yml`](progress/plan.yml); the status comes from GitHub (merged PRs, draft/open/closed state, labels, head SHA, required checks, dependencies). Nobody, human or AI, can mark a task DONE by writing it down. See [how states are derived](progress/README.md).
-> Data as of main code `5252efa` (HEAD is a docs-only progress-bot commit; CI is read from this code commit) · main CI: ⏳ RUNNING
+> Data as of main code `5252efa` (HEAD is a docs-only progress-bot commit; CI is read from this code commit) · main CI: ✅ PASS
 
 ## 🎯 CURRENT FOCUS
 
