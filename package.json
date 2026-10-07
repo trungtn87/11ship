@@ -21,7 +21,10 @@
     "build:test": "npm run clean:test && tsc -p tsconfig.test.json",
     "db:migrate": "node scripts/db-migrate.js",
     "test:unit": "npm run build:test && jest --config jest.unit.config.js",
-    "test:integration": "npm run build:test && node .test-dist/tests/integration/support/guard-cli.js && jest --config jest.integration.config.js --runInBand"
+    "test:integration": "npm run build:test && node .test-dist/tests/integration/support/guard-cli.js && jest --config jest.integration.config.js --runInBand",
+    "progress:generate": "node scripts/generate-progress.mjs",
+    "progress:check": "node scripts/generate-progress.mjs --check",
+    "progress:test": "node --test \"tests/progress/*.test.mjs\""
   },
   "devDependencies": {
     "@jest/globals": "30.5.2",
