@@ -1,6 +1,6 @@
 # ADR-003 — Transactional Core: transaction context, idempotency, audit và outbox
 
-Ngày: 07/10/2026. Phiên bản: 0.2. Trạng thái: REVIEWED — READY FOR OWNER LOCK; chưa CODE_READY cho implementation.
+Ngày: 07/10/2026. Phiên bản: 0.3. Trạng thái: AUDIT FIXES PROPOSED — WAITING OWNER REVIEW; chưa LOCKED/CODE_READY.
 Phạm vi: M00-C1. Phụ thuộc: M00-B1 đã FOUNDATION READY trên `main` tại merge SHA `91316a5fe155f7af5ad96491121f5bbee60703c6`.
 
 ## 1. Mục tiêu
@@ -36,7 +36,7 @@ Unique logical key:
 
 - `scope_type/scope_id` luôn do server suy ra, không nhận raw actor scope từ client.
 - Authenticated mutation thường dùng user/session-derived scope.
-- Register có thể dùng verified proof record làm scope sau khi token proof được xác thực.
+- Register dùng scope_type=verification_proof, scope_id=proof.id, operation_id=auth.register.v1 sau khi xác minh token digest và binding phone/purpose.
 - `operation_id` là tên ổn định của command, không dùng URL tự do.
 - `Idempotency-Key` dùng UUID canonical 36 ký tự, normalize chữ hex về lowercase; nil UUID bị từ chối. Client nên phát UUID ngẫu nhiên (v4 là mặc định phù hợp). Invalid -> `INVALID_IDEMPOTENCY_KEY`.
 - Endpoint contract nào yêu cầu key mà thiếu -> `IDEMPOTENCY_KEY_REQUIRED`.
@@ -47,9 +47,9 @@ Unique logical key:
 Không commit record trạng thái "in progress".
 
 Flow trong cùng transaction:
-1. canonicalize exact tuple scope + operation + idempotency key và SHA-256 nó; lấy 8 byte đầu thành **hai signed int32** để gọi advisory-lock API 2-key, tránh sai số JavaScript khi biểu diễn bigint 64-bit;
+1. encode canonical JSON array ["11ship.idempotency.lock.v1", scope_type, scope_id, operation_id, idempotency_key] và SHA-256 nó; đọc byte 0..3 và 4..7 thành **hai signed int32 big-endian** để gọi advisory-lock API 2-key, tránh sai số JavaScript khi biểu diễn bigint 64-bit;
 2. trong transaction, đặt `SET LOCAL lock_timeout` theo idempotency wait bound rồi lấy `pg_advisory_xact_lock(int,int)`; wait bound phải nhỏ hơn DB query timeout. Chỉ lock-timeout ở bước này được map thành `IDEMPOTENCY_BUSY`;
-3. SELECT exact idempotency record `FOR UPDATE`;
+3. restore lock_timeout về business lock budget đã cấu hình, rồi SELECT exact idempotency record `FOR UPDATE`;
 4. nếu đã có: so request fingerprint rồi replay hoặc conflict;
 5. nếu chưa có: chạy business callback, audit/outbox cần thiết, ghi completed idempotency record, commit.
 
@@ -83,7 +83,7 @@ Dùng Node.js built-in `node:crypto`, không thêm crypto package:
 - replay encryption: AES-256-GCM;
 - IV: random 12 bytes cho mỗi record;
 - auth tag: 16 bytes; khi tạo cipher/decipher phải chỉ rõ `authTagLength=16`;
-- AAD bind immutable record identity bằng encoding không mơ hồ (canonical JSON array hoặc length-prefixed UTF-8): replay_format_version + record_id + scope + operation + idempotency_key + request_fingerprint + crypto_key_id.
+- AAD bind immutable record identity bằng encoding không mơ hồ (canonical JSON array hoặc length-prefixed UTF-8): replay_format_version + record_id + scope + operation + idempotency_key + request_fingerprint + crypto_key_id + canonical replay_guard + response_status + replay_expires_at. Encoding cụ thể ở §13.
 
 Không hard-code key. Key provider đọc keyring từ secret/config injection. `.env.example` chỉ placeholder. Production sau này phải đưa key bằng secret manager/secret injection; DB không chứa master key.
 
@@ -99,7 +99,7 @@ Không hard-code key. Key provider đọc keyring từ secret/config injection. 
 
 `Idempotency-Key` một mình không đủ để nhận secret replay.
 
-Record có `replay_guard` JSON nhỏ, plaintext nhưng chỉ chứa non-secret identifiers cần check quyền (ví dụ session_id/user_id/resource id), không chứa token/password/proof. Sensitive replay hook nhận cùng `TransactionContext`, kiểm state/quyền hiện hành **trong transaction trước decrypt**; module sau quyết định row lock cụ thể để tránh TOCTOU.
+Record có `replay_guard` JSON nhỏ, plaintext nhưng chỉ chứa non-secret identifiers cần check quyền (ví dụ session_id/user_id/resource id), không chứa token/password/proof. Sensitive replay hook nhận cùng `TransactionContext`, kiểm state/quyền hiện hành **trong transaction trước decrypt**; hook phải khóa các row quyết định quyền bằng protocol tương thích với revoke/disable; SELECT thường trong cùng transaction không đủ. Hook read-only, giữ khóa tới transaction end. Register protocol ở §13.
 
 Khi record đã tồn tại:
 1. compare request fingerprint;
@@ -121,13 +121,13 @@ Nếu cùng key/request đến sau replay expiry nhưng trước dedupe expiry:
 - không chạy business callback;
 - trả 409 `IDEMPOTENCY_REPLAY_EXPIRED`.
 
-Persisted expiry/lease decisions dùng PostgreSQL time (`CURRENT_TIMESTAMP`) để tránh clock skew giữa process.
+Persisted expiry/lease decisions dùng fresh PostgreSQL clock_timestamp() sau khi lấy lock cần thiết. Không dùng CURRENT_TIMESTAMP/now() (cố định tại BEGIN) để quyết định expiry sau thời gian chờ. Kiểm replay và session expiry lần cuối ngay trước decrypt; tại equality coi là expired. TTL record mới tính từ thời điểm hoàn thiện record gần commit; lease tính tại lúc mark PROCESSING. Không hứa token còn hạn đến lúc mạng giao response.
 
 Cleanup có 2 pha và claim row bằng `FOR UPDATE SKIP LOCKED`:
 1. null ciphertext/IV/tag của record quá replay TTL nhưng giữ fingerprint/tombstone;
 2. delete record quá dedupe TTL.
 
-Executor không phụ thuộc cleanup chạy đúng giờ: nếu exact record đã `dedupe_expires_at <= CURRENT_TIMESTAMP`, executor xóa record hết hạn trong cùng locked transaction rồi xử lý request như idempotency window mới. Nếu quá replay TTL nhưng chưa quá dedupe TTL thì vẫn trả `IDEMPOTENCY_REPLAY_EXPIRED` và không re-execute.
+Executor không phụ thuộc cleanup chạy đúng giờ: nếu exact record đã `dedupe_expires_at <= fresh DB decision time`, executor xóa record hết hạn trong cùng locked transaction rồi xử lý request như idempotency window mới. Nếu quá replay TTL nhưng chưa quá dedupe TTL thì vẫn trả `IDEMPOTENCY_REPLAY_EXPIRED` và không re-execute.
 
 Có thể override TTL theo operation nhưng `replay_ttl <= dedupe_ttl` và bị bound bằng config. C1 không tạo scheduler production; chỉ cung cấp cleanup primitive + test.
 
@@ -203,7 +203,7 @@ Dispatch engine:
 - failure -> PENDING + bounded exponential backoff; quá max attempts -> DEAD;
 - stale PROCESSING lease được reclaim theo PostgreSQL time. Ack/fail luôn conditional theo `lock_token`; worker giữ lease cũ không thể overwrite state của worker đã reclaim.
 
-Delivery semantics: at-least-once. Crash sau publish nhưng trước ack có thể publish lại cùng `event_id`. Consumer bắt buộc dedupe theo event_id. Không tuyên bố exactly-once.
+Delivery semantics: at-least-once attempt/retry, có thể duplicate; retry hữu hạn có thể kết thúc DEAD, nên không bảo đảm eventual successful delivery nếu chưa có recovery. Crash sau publish nhưng trước ack có thể publish lại cùng `event_id`. Consumer bắt buộc dedupe theo event_id. Không tuyên bố exactly-once.
 
 M00-C1 chỉ tạo publisher interface + dispatcher engine + fake publisher cho integration test; chưa kết nối broker/push/WS thật và không bắt background worker tự chạy production.
 
@@ -250,3 +250,97 @@ M00-C1 không tạo public business endpoint. Integration test dùng test-only N
 - Node 24 `node:crypto`: AES-GCM, random IV, auth tag.
 - OWASP Cryptographic Storage/Key Management: authenticated encryption, không hard-code key, hỗ trợ rotation và tách key khỏi data.
 
+
+
+## 13. Audit revision v0.3 — normative implementation contracts
+
+Các điều khoản này bổ sung/chi tiết hóa §2–10; không phải implementation evidence.
+
+### 13.1 Transaction lifecycle và lỗi
+
+- TransactionContext là query capability gắn một client và trạng thái ACTIVE/CLOSED; không expose BEGIN/COMMIT/release cho repository. Query sau CLOSED bị reject trước khi chạm client.
+- Chỉ outer coordinator sở hữu TransactionManager; participant chỉ nhận context, không inject manager để mở transaction riêng. Không cung cấp savepoint/nested transaction feature.
+- Có transaction deadline và idle-in-transaction timeout trên PostgreSQL 17; defaults đề xuất 5s tổng, 2s idle, mỗi giá trị cấu hình trong 100ms..30s. Transaction timeout phải lớn hơn statement timeout. Query timeout phía client phải lớn hơn server statement timeout để ưu tiên nhận kết quả hủy từ server. Validate quan hệ config tại startup.
+- Advisory wait default 250ms, bound 1ms..5s và nhỏ hơn statement timeout; business lock budget default 500ms, cũng nhỏ hơn statement timeout. Restore budget sau advisory acquisition. Chỉ SQLSTATE 55P03 phát sinh tại acquisition đó map BUSY.
+- Không dùng Promise.race rồi release một client mà callback còn chạy. Khi deadline/cancel, context bị đóng; cleanup client phải xử lý query đang chạy và destroy connection nếu trạng thái không xác định. Callback không được giữ reference client hoặc chạy detached query.
+- COMMIT mất acknowledgement là UNKNOWN outcome, không được kết luận rollback. Trả 503 TRANSACTION_OUTCOME_UNKNOWN với message cố định, không tự retry callback. Client retry cùng key; DB record/lock quyết định replay hay execution.
+- ROLLBACK/connection failure: destroy client, không đưa client không sạch vào pool; giữ nguyên lỗi gốc đã sanitize. Release/destroy chỉ một lần. BEGIN failure cũng cleanup.
+- 40001/40P01 rollback và surface lỗi kỹ thuật an toàn; tuyệt đối không helper auto-retry. Callback có thể được chạy lại bởi request mới sau rollback, không có bảo đảm callback once-ever.
+- READ COMMITTED đủ cho protocol exact-key này; module nghiệp vụ vẫn phải có unique/version/aggregate locks riêng. Không external call, Argon2 computation dài hoặc publisher trong transaction; chuẩn bị ngoài transaction và recheck state dưới lock.
+- Error registry nội bộ ánh xạ code/status/message cố định; unknown exception không được tự cung cấp code/message/details. Bổ sung HTTP filter để bảo toàn các code §10. Không trả raw SQL/crypto errors.
+
+### 13.2 Register proof và replay authorization
+
+- Resolve token -> digest -> proof identity kiểm cryptographic token match, normalized phone và purpose REGISTER. Không coi consumed hoặc natural expiry là lý do chặn lookup kết quả đã commit.
+- Logical request register gồm phone_normalized, password nguyên nghĩa, verification_token nguyên nghĩa và toàn bộ device fields đã validate; không dùng password hash ngẫu nhiên làm fingerprint.
+- Giữ proof identity/digest/binding/consume/invalidation markers ít nhất tới dedupe_expires_at của idempotency record liên quan; proof cleanup không được phá lookup đang còn dedupe. M01 sở hữu implementation, C1 chỉ dùng test fixture.
+- Không có live idempotency record: callback khóa proof và kiểm unused, unexpired, not invalidated/revoked, đúng phone/purpose; mới được consume + create user/session.
+- Có record: fingerprint khớp, proof không invalidated/revoked, user ACTIVE, session đúng user/proof/result và chưa revoked/expired. Natural proof expiry không cấm replay đã commit; proof invalidation/revocation có cấm.
+- replay_guard register chứa proof_id, user_id, session_id; bind guard vào AAD. Identifier plaintext không phải credential.
+- Register replay khóa proof rồi user rồi session bằng row lock xung đột với UPDATE/DELETE, đọc state sau lock. New register cũng lấy idempotency lock trước proof lock. Revoke/disable flow phải tuân thứ tự tương thích, không lấy idempotency lock sau business row lock.
+- Guard chạy trước decrypt; fresh clock kiểm session/replay expiry ngay trước decrypt. Nếu revoke commit trước guard lock thì deny; nếu replay giữ lock trước thì revoke đợi. Không hứa cấm thu hồi sau replay commit hoặc trước khi network giao token.
+- Deny bằng contract Auth an toàn: proof invalidation -> VERIFICATION_PROOF_INVALID; disabled user -> ACCOUNT_DISABLED; revoked session -> SESSION_REVOKED; expired session -> SESSION_EXPIRED (401). Không mint token mới khi replay bị deny.
+- A01-06/07 kiểm new execution; A01-09 kiểm replay trong replay window và authorization hiện hành. Hết replay window nhưng còn dedupe -> REPLAY_EXPIRED, không callback; hết dedupe -> new execution vẫn phải vượt proof/business invariant.
+- Đây là clarification có ưu tiên so với câu “used/expired proof không được register” ở 4.2/4.3; không đổi opaque token architecture ADR-002.
+
+### 13.3 Crypto format v1 và rotation
+
+- Keyring immutable cho lifetime process; rollout add historical/new key trước, sau đó chuyển active trên tất cả writer, cuối cùng mới remove key cũ khi không còn record phụ thuộc và cleanup hoàn tất. Không cần hot reload.
+- key_id là ASCII [A-Za-z0-9_-]{1,64}; mapping ID -> 32-byte master bất biến, không gán lại ID cho material khác. Master encode canonical base64; reject malformed/noncanonical encoding/duplicate key IDs, không log value.
+- HKDF-SHA-256: salt=UTF-8("11ship.transactional-core.v1"); info=UTF-8("request-hmac.v1") hoặc UTF-8("replay-aes-gcm.v1"); mỗi output 32 bytes. Không dùng active key để verify record cũ.
+- Capture một key version cho cả HMAC/encryption của new record. Historical key phải tồn tại để compare fingerprint tới hết dedupe, không chỉ hết replay.
+- Canonical JSON v1: JSON thuần; object own enumerable keys sort theo UTF-16 code unit order, arrays giữ thứ tự; primitives dùng JSON.stringify semantics; reject undefined, nonfinite, sparse arrays, cycles, accessors/custom prototypes/toJSON. Không Unicode-normalize/trim. Với -0, normalize về 0 và adapter không được gán nghĩa khác.
+- AAD là UTF-8 canonical JSON array: [1, record_id, scope_type, scope_id, operation_id, idempotency_key, request_fingerprint, crypto_key_id, replay_guard, response_status, replay_expiry_epoch_ms_string].
+- replay expiry được persist ở millisecond precision; đọc epoch milliseconds từ DB chính xác, không round khác nhau giữa encrypt/decrypt. Request fingerprint lowercase hex 64 ký tự, compare fixed-length decoded bytes bằng timingSafeEqual.
+- IV = randomBytes(12) mới cho mỗi lần encrypt, kể cả lần encrypt sau rollback. Không derive IV từ request/key/UUID và không reuse IV khi re-encrypt. RNG error -> fail closed. Random nonce có xác suất collision không bằng zero; không tuyên bố uniqueness toán học hoặc thêm counter phân tán.
+- Explicit authTagLength=16; reject sai IV/tag length, unknown format/version và malformed envelope. setAAD trước update; không parse/use/return plaintext trước final thành công.
+- Bind guard/status/replay expiry trong AAD giúp phát hiện thay đổi envelope; không bảo vệ trước DB administrator xóa record hoặc sửa toàn bộ authorization DB. Dedupe không phải anti-tamper ledger.
+- Ciphertext, IV/tag, canonical request, key material và token đều không log. Crypto failure không xóa record hoặc chuyển sang new execution; generic safe error.
+- Known-answer vectors cho canonical JSON, HKDF/HMAC/AAD và lock derivation phải commit cùng implementation. Không thêm crypto package/KMS.
+
+### 13.4 TTL, cleanup và bounds
+
+- Tuple identity columns NOT NULL, có bounded length; UNIQUE không thay thế non-null constraints. DB CHECK status 200..299, TTL ordering, format version, IV/tag lengths, replay fields all-null/all-present.
+- Sau advisory lock và SELECT FOR UPDATE: lấy fresh time; dedupe expired được xóa và mở window mới trước historical-key lookup. Record còn sống mà thiếu key -> 503, tuyệt đối không rerun.
+- Replay expired vẫn là tombstone; fingerprint compare bằng historical key, không decrypt. Same request -> REPLAY_EXPIRED; different request -> KEY_REUSED. Guard deny không bao giờ cho decrypt.
+- Cleanup batch bounded, row locks SKIP LOCKED, recheck eligibility trong locked transaction; không lấy advisory lock sau row lock. Executor dùng cùng row lock nên cleanup không null/delete row đang replay.
+- Ciphertext all-null trong replay window là corrupted record -> fail closed, không execution mới.
+- Replay default 900s, dedupe default 604800s. Operation override chỉ từ registry server, 1s <= replay <= dedupe <= 604800s; không nhận TTL từ client.
+- Bounded JSON primitive có từ C1A0, dùng chung cho guard/audit/outbox; check depth/node traversal trước stringify, tối đa 8 depth và tối đa 65536 visited nodes, reject invalid JSON types. Size caps §9 giữ nguyên.
+- Same key sau dedupe có thể tạo mutation mới: Wallet/Order task bắt buộc nêu business invariant dài hạn cụ thể trước CODE_READY.
+
+### 13.5 Audit failure và privacy
+
+- SUCCESS audit failure rollback toàn bộ mutation, outbox và idempotency record.
+- Standalone DENIED/FAILURE chỉ chạy sau rollback/release outer transaction, budget tối đa 500ms; audit/log sink failure không thay response gốc. Không mở standalone audit transaction từ bên trong business callback đang giữ pool client.
+- Log error code từ fixed allowlist; regex chỉ kiểm hình dạng, không chứng minh an toàn. Unknown error -> fixed UNKNOWN, không stringify Error/request/config.
+- Metadata action-specific allowlist ở module; generic secret-key denylist không bảo đảm PII-safe. Không truncate/sanitize âm thầm metadata SUCCESS rồi coi forensic đầy đủ: reject invalid payload và rollback.
+- Trigger chặn UPDATE/DELETE và statement-level TRUNCATE; application role không có DDL/disable-trigger quyền ở deployment. Không hứa chống superuser/table-owner bypass. Production role provisioning nằm runbook triển khai sau; C1 test cả ba operation.
+- DENIED/FAILURE là best-effort và có thể mất record khi storage lỗi; không tuyên bố forensic completeness.
+
+### 13.6 Outbox transition, progress và publisher contract
+
+Defaults: max_attempts=5 (1..20), batch_size=10 (1..100), publish_concurrency=10 (1..100), publish_timeout=5s, lease=30s; timeout/lease bound 100ms..300s, lease > publish_timeout + ack budget 2s. Claim tối đa số slot đang trống, không prefetch batch chờ xử lý nối đuôi.
+
+| Source | Condition | Transition |
+|---|---|---|
+| PENDING | available_at <= fresh DB time; attempts < max | PROCESSING, attempts+1, fresh unique token/locked_at |
+| PROCESSING | lease stale; attempts < max | PROCESSING, attempts+1, token mới/locked_at mới |
+| PENDING hoặc stale PROCESSING | attempts >= max | DEAD, clear lease, giữ event/payload |
+| PROCESSING | publisher success + matching token/status | PUBLISHED, published_at fresh, clear lease |
+| PROCESSING | publisher fail/timeout + matching token/status; attempts < max | PENDING, available_at=DB time+backoff, clear lease |
+| PROCESSING | publisher fail/timeout + matching token/status; attempts >= max | DEAD, clear lease |
+| Bất kỳ | stale/duplicate ack/fail không match | no-op; không overwrite |
+
+- Claim/mark/attempt increment cùng short transaction bằng SKIP LOCKED. Publisher chỉ chạy sau COMMIT được xác nhận; claim commit unknown -> không publish batch đó, để recovery phân xử.
+- Ack/fail WHERE event_id AND status=PROCESSING AND lock_token. Lease stale đơn thuần không chứng minh publish chưa xảy ra. Token fencing bảo vệ DB state, không ngăn external duplicate.
+- Timeout là unknown publish outcome; AbortSignal/timeout được truyền cho adapter nhưng không giả định cancel luôn ngăn side effect. Bound concurrent unresolved calls; không tiếp tục claim vô hạn nếu publisher bỏ qua cancellation. Engine shutdown ngừng claim, drain có deadline.
+- Backoff xác định: min(60s, 1s * 2^(attempt_count-1)); config base/cap có bound 100ms..300s, base<=cap. Không thêm jitter framework trong C1.
+- DEAD có thể chưa publish lần nào nếu crash sau claim; giữ nguyên để điều tra/redrive. Không tự xóa DEAD. Production alert/redrive command hoãn; runbook ghi recovery phải có quyền/audit, giữ event_id và có reset attempt policy rõ ràng trước production.
+- Consumer cần atomic dedupe(event_id)+business effect, không chỉ check-then-act. Consumer implementation thuộc module sau.
+- Không có bảo đảm global ordering; resource_version để consumer nhận diện stale event. Event id/envelope/payload bất biến qua retry.
+- Acceptance phải cover crash trước/sau claim commit, trước publish, sau publish/trước ack, ack unknown, fail transition unknown và attempt cuối.
+
+## 14. Audit disposition
+
+v0.3 xử lý B01–B02, H01–H05, M01–M03 ở mức contract; task chứa C17–C30 để chứng minh khi implementation. Đây không phải tuyên bố runtime PASS. Owner chưa lock; không mở implementation cho đến khi Owner duyệt.

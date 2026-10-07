@@ -1,10 +1,13 @@
 # 11Ship — Bước 4.3
 ## Gói triển khai Claude — M01-A1-AUTH-CORE v1.0
 
-**Trạng thái:** READY FOR OWNER LOCK  
+**Trạng thái:** DESIGN — register replay addendum 07/10/2026 chờ Owner duyệt  
 **Phụ thuộc bắt buộc:** Bước 4.1 M00-A + Bước 4.2 M01-A v1.0  
 **Package ID:** `M01-A1-AUTH-CORE`  
 **Mục tiêu:** giao Claude một gói code nhỏ, khép kín và có test contract rõ ràng; không cho phép tự mở rộng nghiệp vụ sang Shop, Driver, Wallet, Delivery hoặc Admin.
+
+
+> **Register replay clarification — 07/10/2026, ADR-003 v0.3:** ADR-001/002 khóa stack/session; ADR-003 v0.3 §13 chi phối transactional replay và có ưu tiên với các câu used/expired proof hoặc transaction order bên dưới. New execution phải reject proof used/expired; replay kết quả đã commit không phải consume proof lần hai. Chưa Owner lock revision thì chưa CODE_READY.
 
 ---
 
@@ -931,3 +934,18 @@ Bước kế tiếp là **4.4 — M01-A2-ONBOARDING**:
 - grant role sau business transaction thành công;
 - A03 acceptance tests 20–30;
 - không sửa lại Auth Core trừ khi review phát hiện contract bug thật sự.
+
+
+## Addendum — Register replay, ADR-003 v0.3
+
+1. Scope cố định: verification_proof / proof.id / auth.register.v1 / canonical Idempotency-Key. Server resolve bằng token digest, phone_normalized và purpose REGISTER; client không cung cấp scope_id.
+2. Resolve được proof consumed hoặc tự nhiên hết hạn để lookup idempotency trước. Giữ identity/digest/binding/consume/invalidation markers ít nhất tới dedupe expiry của record liên quan.
+3. Logical request gồm phone_normalized, password và verification_token nguyên nghĩa, toàn bộ device fields đã validate. HMAC/key version/encrypted response theo ADR-003; không plaintext secret trong DB/log.
+4. Chỉ NEW execution khóa proof, kiểm unused/unexpired/not invalidated, create user + consume proof + session + infrastructure writes cùng transaction. Proof invalid/used không tạo user/session mới.
+5. EXISTING same request: replay_guard bind proof_id/user_id/session_id, kiểm proof không invalidated/revoked, user ACTIVE, session đúng binding/chưa revoked/chưa expired. Natural proof expiry không chặn replay đã commit; proof invalidation có chặn.
+6. Lấy idempotency lock trước business locks. Replay khóa proof -> user -> session, tương thích revoke/disable; fresh DB clock sau lock và ngay trước decrypt. Không dùng SELECT thường làm bảo đảm chống TOCTOU.
+7. Trong replay TTL mặc định 15 phút trả cùng token/logical result; quá replay TTL còn dedupe 7 ngày -> IDEMPOTENCY_REPLAY_EXPIRED, không mutation. Hết dedupe thì new execution vẫn phải qua proof và unique phone invariant.
+8. Session revoked -> SESSION_REVOKED (401); expired -> SESSION_EXPIRED (401); disabled user -> ACCOUNT_DISABLED (403); invalidated proof -> VERIFICATION_PROOF_INVALID (400). Không mint token thay thế khi replay deny.
+9. A01-06/07 áp dụng new execution (bao gồm khác key); A01-09 phải test response mất, consumed proof, natural proof expiry trong replay TTL, key rotation, current authorization deny và replay TTL expired.
+10. Header/error envelope nền phải bảo toàn request_id hiện tại và typed error codes. Idempotency-Key một mình không cấp quyền replay.
+11. Khi giao Claude, addendum và ADR-003 §13 là AUTHORITATIVE SPECS bổ sung cho prompt §22 (nếu có); không dùng prompt cũ độc lập. Không đổi token/session architecture ADR-002 và không triển khai ngoài Auth scope.
