@@ -95,6 +95,12 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
         guard_id uuid PRIMARY KEY,
         allowed boolean NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS app.c1a1_proof_fixture (
+        proof_id uuid PRIMARY KEY,
+        used boolean NOT NULL,
+        invalidated boolean NOT NULL,
+        expires_at timestamptz NOT NULL
+      );
     `);
   });
 
@@ -102,9 +108,11 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
     await pool.query('DELETE FROM app.idempotency_records');
     await pool.query('DELETE FROM app.c1a1_effects');
     await pool.query('DELETE FROM app.c1a1_guard_fixture');
+    await pool.query('DELETE FROM app.c1a1_proof_fixture');
   });
 
   afterAll(async () => {
+    await pool.query('DROP TABLE IF EXISTS app.c1a1_proof_fixture');
     await pool.query('DROP TABLE IF EXISTS app.c1a1_guard_fixture');
     await pool.query('DROP TABLE IF EXISTS app.c1a1_effects');
     await pool.end();
@@ -640,4 +648,176 @@ describe('M00-C1A1 — idempotency executor on real PostgreSQL', () => {
       ),
     ).toBe(0);
   });
+
+  it('C18 — consumed/naturally-expired proof can resolve replay, but a new execution must reject it', async () => {
+    const key = randomUUID();
+    const proofId = randomUUID();
+    const logical = { verification_token: `proof:${proofId}`, password: SECRET_PASSWORD, device: 'fixture' };
+    const ex = executor();
+    let mintCount = 0;
+    let guardCount = 0;
+
+    await pool.query(
+      "INSERT INTO app.c1a1_proof_fixture(proof_id, used, invalidated, expires_at) VALUES ($1::uuid, false, false, clock_timestamp() + interval '1 day')",
+      [proofId],
+    );
+
+    const replayAuthorization = async (context: import('../../apps/backend/src/transaction/transaction-context').TransactionContext, guard: import('../../apps/backend/src/shared/json/safe-json').JsonValue) => {
+      guardCount += 1;
+      const id = (guard as { proof_id: string }).proof_id;
+      const proof = await context.query<{ invalidated: boolean }>(
+        'SELECT invalidated FROM app.c1a1_proof_fixture WHERE proof_id = $1::uuid FOR UPDATE',
+        [id],
+      );
+      if (proof.rows[0]?.invalidated !== false) throw new Error('proof invalidated');
+    };
+
+    const work = async (context: import('../../apps/backend/src/transaction/transaction-context').TransactionContext) => {
+      const proof = await context.query<{ used: boolean; invalidated: boolean; fresh: boolean }>(
+        `SELECT used, invalidated, expires_at > clock_timestamp() AS fresh
+         FROM app.c1a1_proof_fixture WHERE proof_id = $1::uuid FOR UPDATE`,
+        [proofId],
+      );
+      const row = proof.rows[0];
+      if (row === undefined || row.used || row.invalidated || !row.fresh) {
+        throw new Error('proof not eligible for new execution');
+      }
+      await context.query('UPDATE app.c1a1_proof_fixture SET used = true WHERE proof_id = $1::uuid', [proofId]);
+      mintCount += 1;
+      return writeEffect(context, 'proof-protocol', { access_token: SECRET_RESPONSE }, { proof_id: proofId });
+    };
+
+    const req = { ...request(key, logical), sensitiveReplay: true, replayAuthorization };
+    const first = await ex.execute(req, work);
+    expect(first.replayed).toBe(false);
+    expect(mintCount).toBe(1);
+
+    // Natural proof expiry after a committed result does not block lookup/replay.
+    await pool.query(
+      "UPDATE app.c1a1_proof_fixture SET expires_at = clock_timestamp() - interval '1 second' WHERE proof_id = $1::uuid",
+      [proofId],
+    );
+    const replay = await ex.execute(req, work);
+    expect(replay.replayed).toBe(true);
+    expect(mintCount).toBe(1);
+    expect(guardCount).toBe(1);
+
+    // A different idempotency key has no record, so the new-execution proof checks run and reject used/expired.
+    await expect(ex.execute({ ...req, idempotencyKey: randomUUID() }, work)).rejects.toThrow(
+      'proof not eligible for new execution',
+    );
+    expect(mintCount).toBe(1);
+
+    // Same key but changed password conflicts before the sensitive replay guard/decrypt path.
+    const changed = await failureOf(() =>
+      ex.execute({ ...req, logicalRequest: { ...logical, password: 'changed' } }, work),
+    );
+    expect(changed).toBeInstanceOf(AppError);
+    expect((changed as AppError).code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(guardCount).toBe(1);
+
+    // Explicit invalidation does block an already-committed sensitive replay.
+    await pool.query('UPDATE app.c1a1_proof_fixture SET invalidated = true WHERE proof_id = $1::uuid', [proofId]);
+    await expect(ex.execute(req, work)).rejects.toThrow('proof invalidated');
+    expect(mintCount).toBe(1);
+  });
+
+  it('C17 — replay TTL is rechecked with fresh DB time after waiting in the authorization hook', async () => {
+    const key = randomUUID();
+    const guardId = randomUUID();
+    const hookStarted = deferred();
+    const holder = await pool.connect();
+    const ex = executor({
+      replayTtlSeconds: 1,
+      dedupeTtlSeconds: 30,
+      businessLockTimeoutMs: 3000,
+    });
+
+    await pool.query('INSERT INTO app.c1a1_guard_fixture(guard_id, allowed) VALUES ($1::uuid, true)', [guardId]);
+    const req = {
+      ...request(key),
+      sensitiveReplay: true,
+      replayAuthorization: async (
+        context: import('../../apps/backend/src/transaction/transaction-context').TransactionContext,
+        guard: import('../../apps/backend/src/shared/json/safe-json').JsonValue,
+      ) => {
+        hookStarted.resolve();
+        await context.query(
+          'SELECT allowed FROM app.c1a1_guard_fixture WHERE guard_id = $1::uuid FOR UPDATE',
+          [(guard as { guard_id: string }).guard_id],
+        );
+      },
+    };
+
+    await ex.execute(req, (context) =>
+      writeEffect(context, 'ttl-wait', { access_token: SECRET_RESPONSE }, { guard_id: guardId }),
+    );
+
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT guard_id FROM app.c1a1_guard_fixture WHERE guard_id = $1::uuid FOR UPDATE', [guardId]);
+
+      const replay = ex.execute(req, () => {
+        throw new Error('must not execute');
+      });
+      await hookStarted.promise;
+
+      await eventually(async () => {
+        const state = await pool.query<{ expired: boolean }>(
+          'SELECT replay_expires_at <= clock_timestamp() AS expired FROM app.idempotency_records WHERE idempotency_key = $1::uuid',
+          [key],
+        );
+        return state.rows[0]?.expired === true;
+      }, 'replay TTL expires while authorization is waiting', 2500);
+
+      await holder.query('COMMIT');
+      const error = await failureOf(() => replay);
+      expect(error).toBeInstanceOf(AppError);
+      expect((error as AppError).code).toBe('IDEMPOTENCY_REPLAY_EXPIRED');
+    } finally {
+      await holder.query('ROLLBACK').catch(() => undefined);
+      holder.release();
+    }
+  });
+
+  it('C30 — after dedupe expiry, concurrent retries create one committed effect in the new window', async () => {
+    const key = randomUUID();
+    const ex = executor({ advisoryWaitMs: 1500 });
+    await ex.execute(request(key), (context) => writeEffect(context, 'new-window'));
+    await setExpired(key, true);
+
+    const entered = deferred();
+    const release = deferred();
+    let newWindowCalls = 0;
+    const first = ex.execute(request(key), async (context) => {
+      newWindowCalls += 1;
+      entered.resolve();
+      await release.promise;
+      return writeEffect(context, 'new-window');
+    });
+    await entered.promise;
+    const second = ex.execute(request(key), async (context) => {
+      newWindowCalls += 1;
+      return writeEffect(context, 'new-window');
+    });
+
+    await eventually(async () => {
+      const waiting = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM pg_stat_activity
+         WHERE datname = current_database() AND wait_event_type = 'Lock'
+           AND query LIKE 'SELECT pg_advisory_xact_lock%'`,
+      );
+      return Number(waiting.rows[0]?.count ?? '0') >= 1;
+    }, 'second retry waits for the new-window owner');
+    release.resolve();
+
+    const [a, b] = await Promise.all([first, second]);
+    expect(newWindowCalls).toBe(1);
+    expect([a.replayed, b.replayed].sort()).toEqual([false, true]);
+    const effect = await pool.query<{ hits: number }>(
+      "SELECT hits FROM app.c1a1_effects WHERE effect_key = 'new-window'",
+    );
+    expect(effect.rows[0]?.hits).toBe(2);
+  });
+
 });
