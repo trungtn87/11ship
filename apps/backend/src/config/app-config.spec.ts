@@ -127,6 +127,7 @@ describe('loadConfig', () => {
   it('reports several bad variables in a fixed order', () => {
     expect(
       invalidOf({
+        ...validEnv,
         APP_ENV: 'x',
         NODE_ENV: 'staging',
         DATABASE_URL: 'mysql://u:p@h/db',
@@ -137,6 +138,7 @@ describe('loadConfig', () => {
 
   it('never puts a variable value into the failure message', () => {
     const invalid = invalidOf({
+      ...validEnv,
       APP_ENV: 'test',
       DATABASE_URL: `mysql://u:${SECRET}@h/db`,
       PORT: 'SECRET_PORT_VALUE',
@@ -168,6 +170,8 @@ describe('loadConfig', () => {
       DB_QUERY_TIMEOUT_MS: '101',
       DB_TRANSACTION_TIMEOUT_MS: '30000',
       DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: '100',
+      IDEMPOTENCY_ADVISORY_WAIT_MS: '1',
+      DB_BUSINESS_LOCK_TIMEOUT_MS: '1',
     });
     if (!result.ok) {
       throw new Error('expected the configuration to be accepted');
