@@ -3,6 +3,7 @@ import { AppConfig } from './config/app-config';
 import { ConfigModule } from './config/config.module';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
+import { IdempotencyModule } from './idempotency/idempotency.module';
 import { JsonLogger } from './logging/json-logger';
 import { LoggingModule } from './logging/logging.module';
 import { TransactionModule } from './transaction/transaction.module';
@@ -24,6 +25,7 @@ export class AppModule {
         LoggingModule.forRoot(options.logger),
         DatabaseModule,
         TransactionModule,
+        IdempotencyModule,
         HealthModule,
       ],
     };
