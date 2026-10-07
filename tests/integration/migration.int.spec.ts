@@ -396,7 +396,8 @@ describe('F03 / C23 — migrations on the guarded test database', () => {
         'DROP TABLE app.outbox_events',
         'DROP TABLE app.audit_logs',
       ]);
-      expect(downSql).not.toMatch(/CASCADE/i);
+      // statements only: the comment above them says "No CASCADE" on purpose
+      expect(downStatements.join(';')).not.toMatch(/CASCADE/i);
     });
 
     it('down then up (executed as SQL in a transaction that is rolled back) leaves no orphan and no change', async () => {
