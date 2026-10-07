@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import path from 'node:path';
 import { describe, expect, it } from '@jest/globals';
 import {
   FIXTURE_K1_BASE64,
@@ -142,6 +143,84 @@ describe('F05 — invalid configuration stops the process', () => {
       expect(result.stderr).not.toContain('CRYPTO');
       expect(result.stderr).not.toContain(FIXTURE_K1_BASE64);
       expect(result.stdout).not.toContain(FIXTURE_K2_BASE64);
+    });
+  });
+
+  // C16/C23-A1: idempotency TTL and lock settings, and the keyring requirement where the executor
+  // is wired, through real child processes. Only variable NAMES are ever printed.
+  describe('M00-C1A1 configuration', () => {
+    const base = { APP_ENV: 'test', DATABASE_URL: validUrl };
+    const WIRED_CLI = path.join(__dirname, 'support', 'wired-startup-cli.js');
+
+    function startWired(env: Record<string, string | undefined>) {
+      return spawnSync(process.execPath, [WIRED_CLI], {
+        env: minimalChildEnv(env),
+        encoding: 'utf8',
+        timeout: 30_000,
+      });
+    }
+
+    const invalidCases: ReadonlyArray<readonly [string, Record<string, string>, readonly string[]]> = [
+      ['advisory wait 0', { IDEMPOTENCY_ADVISORY_WAIT_MS: '0' }, ['IDEMPOTENCY_ADVISORY_WAIT_MS']],
+      ['advisory wait above 5 s', { IDEMPOTENCY_ADVISORY_WAIT_MS: '5001' }, ['IDEMPOTENCY_ADVISORY_WAIT_MS']],
+      ['advisory wait not a number', { IDEMPOTENCY_ADVISORY_WAIT_MS: 'soon' }, ['IDEMPOTENCY_ADVISORY_WAIT_MS']],
+      ['business budget 0', { IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS: '0' }, ['IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS']],
+      ['replay TTL 0', { IDEMPOTENCY_REPLAY_TTL_SECONDS: '0' }, ['IDEMPOTENCY_REPLAY_TTL_SECONDS']],
+      ['dedupe TTL above 7 days', { IDEMPOTENCY_DEDUPE_TTL_SECONDS: '604801' }, ['IDEMPOTENCY_DEDUPE_TTL_SECONDS']],
+      [
+        'replay TTL above dedupe TTL',
+        { IDEMPOTENCY_REPLAY_TTL_SECONDS: '1000', IDEMPOTENCY_DEDUPE_TTL_SECONDS: '999' },
+        ['IDEMPOTENCY_REPLAY_TTL_SECONDS', 'IDEMPOTENCY_DEDUPE_TTL_SECONDS'],
+      ],
+      [
+        'advisory wait not below the statement timeout',
+        { IDEMPOTENCY_ADVISORY_WAIT_MS: '800', DB_STATEMENT_TIMEOUT_MS: '800', DB_QUERY_TIMEOUT_MS: '1500', DB_TRANSACTION_TIMEOUT_MS: '2000' },
+        ['IDEMPOTENCY_ADVISORY_WAIT_MS', 'DB_STATEMENT_TIMEOUT_MS'],
+      ],
+    ];
+    for (const [label, env, named] of invalidCases) {
+      it(`exits nonzero for ${label}, names ${named.join(' + ')} and prints no value`, () => {
+        const result = startMain({ ...base, ...env });
+        expect(result.status).toBe(1);
+        for (const name of named) {
+          expect(result.stderr).toContain(name);
+        }
+        expect(result.stderr).not.toContain('DATABASE_URL');
+        for (const value of Object.values(env)) {
+          expect(result.stderr).not.toContain(`=${value}`);
+        }
+        expect(result.stderr).not.toContain(SECRET);
+        expect(result.stdout).not.toContain(SECRET);
+      });
+    }
+
+    it('where the executor is wired, a missing keyring stops startup nonzero naming only the two keyring variables', () => {
+      const result = startWired({ ...base });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('CRYPTO_KEYRING');
+      expect(result.stderr).toContain('CRYPTO_ACTIVE_KEY_ID');
+      expect(result.stderr).not.toContain('DATABASE_URL');
+      expect(result.stderr).not.toContain(SECRET);
+      expect(result.stdout).not.toContain('WIRED_STARTUP_OK');
+    });
+
+    it('where the executor is wired, a valid keyring lets startup complete and prints no key material', () => {
+      const result = startWired({ ...base, CRYPTO_KEYRING: FIXTURE_KEYRING_ENV, CRYPTO_ACTIVE_KEY_ID: 'k1' });
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('WIRED_STARTUP_OK');
+      for (const output of [result.stdout, result.stderr]) {
+        expect(output).not.toContain(FIXTURE_K1_BASE64);
+        expect(output).not.toContain(FIXTURE_K2_BASE64);
+        expect(output).not.toContain(SECRET);
+      }
+    });
+
+    it('the plain server (idempotency not wired) still starts configuration checks without requiring a keyring', () => {
+      // An invalid PORT is reported alone: the absence of a keyring is not an error for AppModule.
+      const result = startMain({ ...base, PORT: 'not-a-port' });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('PORT');
+      expect(result.stderr).not.toContain('CRYPTO');
     });
   });
 });
