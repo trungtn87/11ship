@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { eventually } from './support/async-helpers';
 import {
+  advisoryWaiterExists,
   ApiResponse,
   AuthApp,
   countRows,
@@ -10,15 +11,17 @@ import {
   errorCode,
   expireSession,
   grantRole,
+  installRoleSelectShopStall,
   loginUser,
   OTHER_PASSWORD,
   randomPhone,
   registerUser,
   Registered,
+  removeRoleSelectShopStall,
+  rowLockWaiters,
   sessionIdOfToken,
   setUserStatus,
   startAuthApp,
-  transactionWaiters,
 } from './support/auth-fixtures';
 import { LockHolder } from './support/idempotency-fixtures';
 
@@ -389,10 +392,12 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
       });
 
       afterAll(async () => {
+        await removeRoleSelectShopStall(slow.pool);
         await slow.close();
       });
 
       it('two sessions select SHOP at once: both calls are serialized, exactly one unrevoked SHOP session remains, DRIVER survives', async () => {
+        const STALL_KEY = [910_101, 910_102] as const;
         const user = await registerUser(slow);
         await grantRole(slow.pool, user.userId, 'SHOP');
         await grantRole(slow.pool, user.userId, 'DRIVER');
@@ -401,26 +406,62 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
         const sessionD = await loginOn(user, 'device-race-d', slow);
         expect((await selectRole(sessionD, 'DRIVER', slow)).status).toBe(200);
 
-        // Deterministic barrier: the user row is held, both requests queue on it, then they are released together.
+        // Deterministic barrier, no sleeps. A test-only trigger makes the statement that moves a session into
+        // SHOP wait for a fixed advisory lock that the test holds. A selection reaches that statement only after
+        // it has locked the user row and its own session row, so "A is an advisory waiter" PROVES that A is
+        // inside its transaction holding the user lock. B must then block behind A's row lock: real overlap.
+        await removeRoleSelectShopStall(slow.pool);
+        await installRoleSelectShopStall(slow.pool, STALL_KEY);
         const holder = await LockHolder.begin(slow.pool);
-        await holder.query('SELECT 1 FROM app.users WHERE user_id = $1::uuid FOR UPDATE', [user.userId]);
-        const waitersBefore = await transactionWaiters(slow.pool);
-        let results: ApiResponse[];
+        await holder.query('SELECT pg_advisory_xact_lock($1::int, $2::int)', [STALL_KEY[0], STALL_KEY[1]]);
+        let released = false;
+        const release = async (): Promise<void> => {
+          if (!released) {
+            released = true;
+            await holder.commit();
+          }
+        };
+
+        let resultA: ApiResponse;
+        let resultB: ApiResponse;
         try {
-          const pending = Promise.all([selectRole(sessionA, 'SHOP', slow), selectRole(sessionB, 'SHOP', slow)]);
-          await eventually(async () => (await transactionWaiters(slow.pool)) >= waitersBefore + 2, 'both selections wait on the user row');
-          await holder.commit();
-          results = await pending;
+          const pendingA = selectRole(sessionA, 'SHOP', slow);
+          await eventually(() => advisoryWaiterExists(slow.pool, STALL_KEY), 'selection A is stalled inside its transaction');
+
+          const blockedBefore = await rowLockWaiters(slow.pool);
+          const pendingB = selectRole(sessionB, 'SHOP', slow);
+          await eventually(async () => (await rowLockWaiters(slow.pool)) > blockedBefore, 'selection B is blocked on the row lock A holds');
+          // A is still stalled while B is blocked: the two transactions genuinely overlap.
+          expect(await advisoryWaiterExists(slow.pool, STALL_KEY)).toBe(true);
+
+          await release();
+          [resultA, resultB] = await Promise.all([pendingA, pendingB]);
         } finally {
-          await holder.rollback();
+          await release();
+          await removeRoleSelectShopStall(slow.pool);
         }
 
-        expect(results.map((r) => r.status)).toEqual([200, 200]); // sequential success, last one wins
+        // Sequential success: A went first (it held the lock), B followed and replaced it.
+        expect([resultA.status, resultB.status]).toEqual([200, 200]);
         expect(await unrevokedShopSessions(user.userId)).toBe(1);
+
+        const sessionRows = await slow.pool.query<{ session_id: string; active_role: string | null; revoked: boolean }>(
+          'SELECT session_id, active_role, revoked_at IS NOT NULL AS revoked FROM app.sessions WHERE user_id = $1::uuid',
+          [user.userId],
+        );
+        const byId = new Map(sessionRows.rows.map((row) => [row.session_id, row]));
+        const rowA = byId.get(await sessionIdOfToken(slow.pool, sessionA));
+        const rowB = byId.get(await sessionIdOfToken(slow.pool, sessionB));
+        const rowD = byId.get(await sessionIdOfToken(slow.pool, sessionD));
+        expect([rowA?.active_role, rowA?.revoked]).toEqual(['SHOP', true]); // the earlier SHOP session is revoked
+        expect([rowB?.active_role, rowB?.revoked]).toEqual(['SHOP', false]); // the later one is the single live SHOP session
+        expect([rowD?.active_role, rowD?.revoked]).toEqual(['DRIVER', false]);
+
         const afterA = await slow.call('GET', '/auth/me', { bearer: sessionA });
+        expect([afterA.status, errorCode(afterA)]).toEqual([401, 'SESSION_REVOKED']);
         const afterB = await slow.call('GET', '/auth/me', { bearer: sessionB });
-        expect([afterA.status, afterB.status].sort()).toEqual([200, 401]); // the earlier winner now fails
-        expect(errorCode(afterA.status === 401 ? afterA : afterB)).toBe('SESSION_REVOKED');
+        expect(afterB.status).toBe(200);
+        expect(dataOf(afterB).active_role).toBe('SHOP');
         const driver = await slow.call('GET', '/auth/me', { bearer: sessionD });
         expect(driver.status).toBe(200);
         expect(dataOf(driver).active_role).toBe('DRIVER');

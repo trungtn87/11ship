@@ -153,8 +153,14 @@ describe('M01-A1 — Auth Core migration', () => {
       'DROP TABLE app.user_roles',
       'DROP TABLE app.users',
     ]);
-    // Auth-owned tables only: nothing of Shop, Driver, Wallet or Order.
-    expect(statements).not.toMatch(/\b(shops?|drivers?|wallets?|orders?|deliver(y|ies))\b/i);
+    // Auth-owned tables only: nothing of Shop, Driver, Wallet or Order. This is a STRUCTURAL assertion on the
+    // tables the migration creates, not a word scan: literals such as active_role = 'SHOP' in a constraint or
+    // an index are legitimate Auth semantics (the SHOP single-active-session invariant).
+    const createdTables = [...statements.matchAll(/\bCREATE\s+TABLE\s+([A-Za-z0-9_."]+)/gi)].map((match) => match[1]);
+    expect(createdTables).toEqual(TABLES.map((table) => `app.${table}`));
+    // And every dropped table is one of them (the down migration is the exact inverse set).
+    const droppedTables = downStatements.map((statement) => /^DROP TABLE (app\.[a-z_]+)$/.exec(statement)?.[1]);
+    expect([...droppedTables].sort()).toEqual(TABLES.map((table) => `app.${table}`).sort());
   });
 
   it('down then up (as SQL in a transaction that is rolled back) leaves no orphan and no change', async () => {
@@ -469,7 +475,8 @@ describe('M01-A1 — Auth Core migration', () => {
         );
       await insertProof('d'.repeat(64));
       expect((await failureCode(() => insertProof('e'.repeat(64)))).constraint).toBe('verification_proofs_verification_uq');
-      expect((await failureCode(() => insertProof('d'.repeat(64), randomUUID()))).constraint).toBe('verification_proofs_verification_fk');
+      // A FRESH digest: reusing 'd'.repeat(64) would trip verification_proofs_token_digest_uq before the FK.
+      expect((await failureCode(() => insertProof('f'.repeat(64), randomUUID()))).constraint).toBe('verification_proofs_verification_fk');
       await client.query("DELETE FROM app.verification_proofs WHERE phone_normalized = '+84900000002'");
       await client.query("DELETE FROM app.phone_verifications WHERE phone_normalized = '+84900000002'");
     });

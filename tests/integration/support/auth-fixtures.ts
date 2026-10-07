@@ -418,6 +418,44 @@ export async function removeRegisterAuditStall(pool: Pool): Promise<void> {
   await pool.query('DROP FUNCTION IF EXISTS app.test_stall_register_audit()');
 }
 
+/**
+ * Installs a stall for role selection: a row trigger on app.sessions that waits for an advisory lock a test
+ * holds, but ONLY for the statement that moves a session INTO the SHOP context (active_role changes to SHOP
+ * on an unrevoked row). The revoke of an earlier SHOP session keeps active_role = 'SHOP' and is not stalled.
+ * By the time a selection reaches this trigger it already holds the user row and its own session row.
+ */
+export async function installRoleSelectShopStall(pool: Pool, key: readonly [number, number]): Promise<void> {
+  await pool.query(
+    `CREATE FUNCTION app.test_stall_role_select_shop() RETURNS trigger LANGUAGE plpgsql AS $$
+     BEGIN
+       IF NEW.active_role = 'SHOP' AND OLD.active_role IS DISTINCT FROM 'SHOP' AND NEW.revoked_at IS NULL THEN
+         PERFORM pg_advisory_xact_lock(${key[0]}, ${key[1]});
+       END IF;
+       RETURN NEW;
+     END $$`,
+  );
+  await pool.query(
+    `CREATE TRIGGER test_stall_role_select_shop BEFORE UPDATE ON app.sessions
+       FOR EACH ROW EXECUTE FUNCTION app.test_stall_role_select_shop()`,
+  );
+}
+
+export async function removeRoleSelectShopStall(pool: Pool): Promise<void> {
+  await pool.query('DROP TRIGGER IF EXISTS test_stall_role_select_shop ON app.sessions');
+  await pool.query('DROP FUNCTION IF EXISTS app.test_stall_role_select_shop()');
+}
+
+/**
+ * Backends currently blocked behind another transaction's row lock: either waiting for its transaction id, or
+ * queued on the row's tuple lock (PostgreSQL shows a waiter in one of the two forms).
+ */
+export async function rowLockWaiters(pool: Pool): Promise<number> {
+  const result = await pool.query<{ n: number }>(
+    "SELECT count(*)::int AS n FROM pg_locks WHERE locktype IN ('transactionid', 'tuple') AND NOT granted",
+  );
+  return result.rows[0]?.n ?? 0;
+}
+
 /** True while some backend waits for the given (int, int) advisory lock. */
 export async function advisoryWaiterExists(pool: Pool, key: readonly [number, number]): Promise<boolean> {
   const result = await pool.query(

@@ -215,11 +215,41 @@ describe('M01-A1 — register', () => {
       const proof = await obtainProof(app, phone);
       const missing = await app.call('POST', '/auth/register', { body: registerBody(phone, proof.proofToken) });
       expect([missing.status, errorCode(missing)]).toEqual([400, 'IDEMPOTENCY_KEY_REQUIRED']);
-      for (const key of ['', 'not-a-uuid', randomUUID().toUpperCase(), ` ${randomUUID()}`]) {
+      // Hex case is NOT a validity criterion (ADR-003 3.1): only shape, whitespace and the nil UUID are.
+      for (const key of ['', 'not-a-uuid', ` ${randomUUID()}`]) {
         const response = await register(phone, proof.proofToken, key);
         expect([key, response.status, errorCode(response)]).toEqual([key, 400, 'INVALID_IDEMPOTENCY_KEY']);
       }
       expect(await userCount(phone.normalized)).toBe(0);
+    });
+
+    it('accepts an upper-case UUID key and normalizes it: a lower-case replay of the same UUID is the SAME request', async () => {
+      const phone = randomPhone();
+      const proof = await obtainProof(app, phone);
+      const uuid = randomUUID();
+      const upper = uuid.toUpperCase();
+      expect(upper).not.toBe(uuid); // the premise: the two spellings really differ
+
+      const first = await register(phone, proof.proofToken, upper);
+      expect(first.status).toBe(201);
+      const proofId = await proofIdOfToken(app.pool, proof.proofToken);
+      const recordsAfterFirst = await registerRecordsOf(app.pool, proofId);
+      expect(recordsAfterFirst).toHaveLength(1);
+
+      const replay = await register(phone, proof.proofToken, uuid);
+      expect(replay.status).toBe(201);
+      expect(dataOf(replay).access_token).toBe(dataOf(first).access_token);
+      expect(replay.body).toEqual(first.body);
+
+      // Same idempotency record (not a second one), and exactly one business execution.
+      const recordsAfterReplay = await registerRecordsOf(app.pool, proofId);
+      expect(recordsAfterReplay).toHaveLength(1);
+      expect(recordsAfterReplay[0]?.record_id).toBe(recordsAfterFirst[0]?.record_id);
+      expect(await userCount(phone.normalized)).toBe(1);
+      expect(await sessionCountOf(phone.normalized)).toBe(1);
+      const userId = String(dataOf(first).user_id);
+      expect(await countRows(app.pool, 'SELECT 1 FROM app.outbox_events WHERE resource_id = $1', [userId])).toBe(1);
+      expect(await countRows(app.pool, "SELECT 1 FROM app.audit_logs WHERE action = 'auth.register.v1' AND resource_id = $1", [userId])).toBe(1);
     });
   });
 
