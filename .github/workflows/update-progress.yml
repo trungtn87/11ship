@@ -1,0 +1,207 @@
+name: Update progress
+
+# Keeps docs/PROGRESS.md in step with GitHub. Design notes (see also docs/progress/README.md):
+#
+# * Two kinds of jobs, split by trust:
+#   - `preview` runs on `pull_request`, may execute the PR's own code, and therefore gets a READ-ONLY
+#     token. It runs the tests and prints the dashboard to the job summary. It never writes.
+#   - `publish` holds the only write token. It runs on `push`, `workflow_run`, `workflow_dispatch` and
+#     `pull_request_target` (needed because label changes only reach a write-capable workflow that
+#     way). It checks out the DEFAULT BRANCH only and never the PR head, and it never reads a PR
+#     title, body, branch name or label value in the shell: the generator reads state itself through
+#     the REST API and treats it as data. Nothing from the event payload is interpolated into `run:`.
+# * A review result is bound to the EXACT head SHA by a commit status, not by labels or timestamps.
+#   The review:* labels are only the input. `review-status` runs on pull_request_target `labeled` /
+#   `unlabeled` for a review:* label. It checks out the default branch only, reads the PR through the
+#   API at that moment (head SHA and labels in one read), and posts the status
+#   `11ship/chatgpt-review` (pending / failure / success) on THAT head SHA. A commit status lives on
+#   one SHA, so a PASS given for head A cannot become a PASS for head B, whatever order the workflows
+#   run in: the resolver accepts a label only when a trusted status for the current head backs it, so
+#   a new head with no status is WAITING_CHATGPT_REVIEW even while a stale review:pass is still there.
+#   If the head moved since the label event, nothing is written. If the API fails, the job fails and
+#   `publish` of the same run does not run. It receives only the PR number and the event head SHA (as
+#   environment variables, validated by the script), never a title, body, branch or label text, and
+#   holds only contents: read + pull-requests: read + statuses: write. No npm ci, no PR code.
+# * `reset-review` runs on pull_request_target `synchronize` and removes every review:* label. It is
+#   UI cleanup and defense in depth, no longer the root of correctness: even if it has not run yet,
+#   the exact-SHA status binding already protects the new head. Commit timestamps are not evidence
+#   of anything (see resolve.mjs and review-binding.mjs).
+# * No infinite loops:
+#   - the bot pushes with GITHUB_TOKEN, and GitHub does not start workflows for GITHUB_TOKEN pushes;
+#   - `push` ignores changes that only touch docs/PROGRESS.md;
+#   - `workflow_run` listens to "CI" only, never to this workflow;
+#   - a commit is made only when the generated file actually changed.
+# * The generator has no npm dependencies, so no `npm ci` (and no lifecycle scripts) runs next to
+#   the write token.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed, labeled, unlabeled]
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed, labeled, unlabeled]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  push:
+    branches: [main]
+    paths-ignore:
+      - docs/PROGRESS.md
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  preview:
+    name: Test and preview (read-only)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      issues: read
+      actions: read
+      statuses: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Progress unit tests
+        run: node --test "tests/progress/*.test.mjs"
+
+      - name: Preview dashboard in the job summary
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/generate-progress.mjs --stdout >> "$GITHUB_STEP_SUMMARY"
+
+  review-status:
+    name: Bind review label to the head SHA (commit status)
+    if: ${{ github.event_name == 'pull_request_target' && (github.event.action == 'labeled' || github.event.action == 'unlabeled') && startsWith(github.event.label.name, 'review:') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    # Runs for one PR never overlap, so two quick label changes cannot write their statuses out of
+    # order. A waiting run is replaced by a newer one; every run reads the live PR, so the newest wins.
+    concurrency:
+      group: review-status-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out the default branch (never the PR head)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Write the review status on the current head SHA
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/sync-review-status.mjs
+
+  reset-review:
+    name: Reset review labels (head changed; cleanup only)
+    if: github.event_name == 'pull_request_target' && github.event.action == 'synchronize'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Check out the default branch (never the PR head)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Remove review:* labels from the PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node scripts/reset-review-labels.mjs
+
+  publish:
+    name: Publish docs/PROGRESS.md
+    needs: [reset-review, review-status]
+    # Run when both trusted jobs succeeded or were not needed; skip when either failed or the run was
+    # cancelled, so a dashboard is never generated after a review status or label cleanup that failed.
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (needs.reset-review.result == 'success' || needs.reset-review.result == 'skipped') && (needs.review-status.result == 'success' || needs.review-status.result == 'skipped') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: read
+      checks: read
+      issues: read
+      actions: read
+      statuses: read
+    # One publisher at a time; later runs wait instead of racing each other. Every run reads live
+    # state, so the last one always wins with the freshest data.
+    concurrency:
+      group: update-progress-publish
+      cancel-in-progress: false
+    env:
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - name: Check out the default branch (never the PR head)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Generate docs/PROGRESS.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/generate-progress.mjs
+
+      - name: Commit when changed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            if git diff --quiet -- docs/PROGRESS.md; then
+              echo "docs/PROGRESS.md unchanged"
+              exit 0
+            fi
+            git add docs/PROGRESS.md
+            git commit -m "chore(progress): update docs/PROGRESS.md [skip ci]"
+            if git push origin "HEAD:${DEFAULT_BRANCH}"; then
+              echo "published on attempt ${attempt}"
+              exit 0
+            fi
+            echo "push rejected (attempt ${attempt}); refreshing from ${DEFAULT_BRANCH} and regenerating"
+            git fetch origin "${DEFAULT_BRANCH}"
+            git reset --hard "origin/${DEFAULT_BRANCH}"
+            node scripts/generate-progress.mjs
+          done
+          echo "could not publish after 3 attempts" >&2
+          exit 1
