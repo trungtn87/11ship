@@ -1,7 +1,17 @@
-import { Controller, Get, HttpException, Module, NotFoundException, Param } from '@nestjs/common';
+import {
+  Controller,
+  DynamicModule,
+  Get,
+  HttpException,
+  Inject,
+  Module,
+  NotFoundException,
+  Param,
+} from '@nestjs/common';
 import { AppError, isAppErrorCode } from '../../../apps/backend/src/common/app-errors';
 import { CryptoError } from '../../../apps/backend/src/crypto/crypto-error';
 import { JsonValidationError } from '../../../apps/backend/src/shared/json/safe-json';
+import { TransactionManager } from '../../../apps/backend/src/transaction/transaction-manager';
 import {
   TransactionError,
   TransactionFailureReason,
@@ -80,5 +90,50 @@ export class ErrorHarnessController {
   }
 }
 
-@Module({ controllers: [ErrorHarnessController] })
-export class ErrorHarnessModule {}
+export const HARNESS_MANAGERS = Symbol('HARNESS_MANAGERS');
+
+export interface HarnessManagers {
+  /** Real pool, real PostgreSQL. */
+  database: TransactionManager;
+  /** Real PostgreSQL, but the COMMIT acknowledgement is lost (injected at the client boundary). */
+  unknownCommit: TransactionManager;
+  /** Real PostgreSQL with a very short transaction deadline. */
+  shortDeadline: TransactionManager;
+}
+
+// Failures that come out of a REAL TransactionManager, to prove what a client and the logs see.
+@Controller('harness/tx')
+export class TransactionHarnessController {
+  constructor(@Inject(HARNESS_MANAGERS) private readonly managers: HarnessManagers) {}
+
+  @Get('db-error')
+  async dbError(): Promise<void> {
+    // The server puts the marker into its own error message (and into the driver error).
+    await this.managers.database.withTransaction((context) =>
+      context.query(`DO $$ BEGIN RAISE EXCEPTION '${HARNESS_SECRET}'; END $$`),
+    );
+  }
+
+  @Get('unknown-commit')
+  async unknownCommit(): Promise<void> {
+    await this.managers.unknownCommit.withTransaction((context) => context.query('SELECT 1'));
+  }
+
+  @Get('deadline')
+  async deadline(): Promise<void> {
+    await this.managers.shortDeadline.withTransaction(
+      () => new Promise<void>(() => undefined), // a callback that never finishes
+    );
+  }
+}
+
+@Module({})
+export class ErrorHarnessModule {
+  static register(managers: HarnessManagers): DynamicModule {
+    return {
+      module: ErrorHarnessModule,
+      controllers: [ErrorHarnessController, TransactionHarnessController],
+      providers: [{ provide: HARNESS_MANAGERS, useValue: managers }],
+    };
+  }
+}

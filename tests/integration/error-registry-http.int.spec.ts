@@ -10,7 +10,9 @@ import {
 import { JsonLogger } from '../../apps/backend/src/logging/json-logger';
 import { LoggingModule } from '../../apps/backend/src/logging/logging.module';
 import { ErrorHarnessModule, HARNESS_SECRET } from './support/error-harness';
-import { UUID_PATTERN } from './support/test-helpers';
+import { loadIntegrationConfig, UUID_PATTERN } from './support/test-helpers';
+import { poolClientSource } from '../../apps/backend/src/transaction/pg-client-source';
+import { expectPoolRecovered, faultySource, managerFor, testPool } from './support/transaction-fixtures';
 
 interface Envelope {
   error: { code: string; message: string; request_id: string; details: Record<string, unknown> };
@@ -21,6 +23,7 @@ interface Envelope {
 describe('C22-A0 — typed errors over real HTTP', () => {
   let app: INestApplication;
   let baseUrl: string;
+  const pool = testPool(loadIntegrationConfig().database);
   const logs: string[] = [];
   const requestIds = new Set<string>();
 
@@ -37,7 +40,27 @@ describe('C22-A0 — typed errors over real HTTP', () => {
       logs.push(line);
     });
     const moduleRef = await Test.createTestingModule({
-      imports: [LoggingModule.forRoot(logger), ErrorHarnessModule],
+      imports: [
+        LoggingModule.forRoot(logger),
+        ErrorHarnessModule.register({
+          database: managerFor(poolClientSource(pool)),
+          // Injected: the server commits, but the acknowledgement never reaches the client.
+          unknownCommit: managerFor(
+            faultySource(pool, (text, real) =>
+              text === 'COMMIT'
+                ? real
+                    .query('COMMIT')
+                    .then(() =>
+                      Promise.reject(
+                        Object.assign(new Error(`ack lost ${HARNESS_SECRET}`), { code: 'ECONNRESET' }),
+                      ),
+                    )
+                : undefined,
+            ),
+          ),
+          shortDeadline: managerFor(poolClientSource(pool), { timeoutMs: 100 }),
+        }),
+      ],
     }).compile();
     app = moduleRef.createNestApplication({ logger: false });
     configureApp(app);
@@ -47,6 +70,7 @@ describe('C22-A0 — typed errors over real HTTP', () => {
 
   afterAll(async () => {
     await app.close();
+    await pool.end();
   });
 
   const codes = Object.keys(APP_ERROR_DEFINITIONS) as AppErrorCode[];
@@ -130,6 +154,31 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     const programming = await get('transaction-error/CONTEXT_CLOSED');
     expect(programming.status).toBe(500);
     expect(programming.body.error.code).toBe('INTERNAL_ERROR');
+  });
+
+  it('hides what a REAL TransactionManager and PostgreSQL raise: database error, unknown COMMIT, deadline', async () => {
+    const dbError = await get('tx/db-error');
+    expect(dbError.status).toBe(500);
+    expect(dbError.body.error.code).toBe('INTERNAL_ERROR');
+    expect(dbError.body.error.message).toBe('Internal server error');
+
+    const unknown = await get('tx/unknown-commit');
+    expect(unknown.status).toBe(503);
+    expect(unknown.body.error.code).toBe('TRANSACTION_OUTCOME_UNKNOWN');
+    expect(unknown.body.error.message).toBe(APP_ERROR_DEFINITIONS.TRANSACTION_OUTCOME_UNKNOWN.message);
+
+    const deadline = await get('tx/deadline');
+    expect(deadline.status).toBe(503);
+    expect(deadline.body.error.code).toBe('SERVICE_UNAVAILABLE');
+
+    for (const result of [dbError, unknown, deadline]) {
+      expect(result.text).not.toContain(HARNESS_SECRET);
+      expect(result.text).not.toContain('RAISE');
+      expect(result.text).not.toContain('P0001');
+      expect(result.body.error.request_id).toBe(result.header);
+    }
+    // Each failed transaction gave its connection back (or destroyed it): nothing leaked.
+    await expectPoolRecovered(pool);
   });
 
   it('writes only whitelisted, secret-free log lines', () => {
