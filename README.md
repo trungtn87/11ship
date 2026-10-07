@@ -122,6 +122,14 @@ Xem [.env.example](.env.example). Thiếu hoặc sai biến thì tiến trình t
 - Biến cấu hình (xem `.env.example`): `OUTBOX_MAX_ATTEMPTS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_PUBLISH_CONCURRENCY`, `OUTBOX_PUBLISH_TIMEOUT_MS`, `OUTBOX_LEASE_MS` (phải > timeout + 2000), `OUTBOX_BACKOFF_BASE_MS` (<= cap), `OUTBOX_BACKOFF_CAP_MS`. Cấu hình sai chỉ log tên biến, không log giá trị.
 - Test: C13, C14, C15, C16, C24. Bằng chứng: [docs/evidence/M00-C1C.md](docs/evidence/M00-C1C.md).
 
+### Auth Core (M01-A1)
+
+- Migration `1791504000000_create-auth-core`: `app.users`, `app.user_roles`, `app.phone_verifications`, `app.verification_proofs`, `app.sessions`. Mật khẩu là chuỗi PHC Argon2id (memory 19456 KiB, timeCost 2, parallelism 1); OTP lưu dưới dạng HMAC-SHA-256; proof và access token chỉ lưu SHA-256 digest. Index duy nhất một phần `sessions_active_shop_per_user_uq` là chốt cuối cho quy tắc một session SHOP đang hoạt động.
+- Endpoint (`/v1/auth`): `POST phone-verifications`, `POST phone-verifications/:id/verify`, `POST register` (không role, dùng `IdempotencyExecutor`), `POST login`, `POST role/select` và `GET me` (bearer session mờ, TTL tuyệt đối, không refresh).
+- Biến cấu hình: `AUTH_OTP_HMAC_SECRET` (bắt buộc, base64 của đúng 32 byte), `AUTH_OTP_TTL_SECONDS`, `AUTH_OTP_RESEND_SECONDS`, `AUTH_OTP_MAX_ATTEMPTS`, `AUTH_PROOF_TTL_SECONDS`, `AUTH_SESSION_TTL_SECONDS` (xem `.env.example`). Server cũng cần `CRYPTO_KEYRING` + `CRYPTO_ACTIVE_KEY_ID` vì register dùng idempotency. Cấu hình sai chỉ in tên biến.
+- OTP provider giả (in-memory) chỉ dành cho `APP_ENV=development|test`; `staging`/`production` từ chối khởi động (chỉ in `OTP_PROVIDER`) cho đến khi có adapter SMS thật. Chưa có onboarding SHOP/DRIVER, ví, đơn, SMS production.
+- Test: unit trong `apps/backend/src/auth`, integration `tests/integration/auth-*.int.spec.ts`. Bằng chứng: [docs/evidence/M01-A1.md](docs/evidence/M01-A1.md).
+
 ### Phạm vi hiện tại
 
 Chỉ có nền backend: health endpoints, cấu hình, pool, migration runner, error contract. Chưa có Auth, Shop, Driver, Wallet, Delivery, frontend, SMS hay triển khai production. Hướng dẫn sao lưu/khôi phục ở [ops/runbooks](ops/runbooks/database-backup-restore-guidance.md) chỉ là hướng dẫn cho tương lai, chưa được kiểm thử.
