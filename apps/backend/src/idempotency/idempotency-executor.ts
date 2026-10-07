@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { AppError, TechnicalError } from '../common/app-errors';
 import { isSqlState } from '../common/safe-error';
+import { fingerprintsEqual } from '../crypto/key-version';
 import { Keyring } from '../crypto/keyring';
 import { REPLAY_FORMAT_VERSION } from '../crypto/replay-aad';
 import { REPLAY_GUARD_POLICY, REPLAY_PAYLOAD_POLICY } from '../shared/json/json-policy';
@@ -240,11 +241,6 @@ export class IdempotencyExecutor {
     }
 
     const incoming = version.fingerprint(request.logicalRequest);
-    if (!version.fingerprintsEqual?.(incoming, record.request_fingerprint)) {
-      // KeyVersion intentionally exposes no instance comparator; import-free fallback below is
-      // replaced by the fixed-length comparator in the helper method.
-    }
-    const { fingerprintsEqual } = await import('../crypto/key-version');
     if (!fingerprintsEqual(incoming, record.request_fingerprint)) {
       throw new AppError('IDEMPOTENCY_KEY_REUSED');
     }
