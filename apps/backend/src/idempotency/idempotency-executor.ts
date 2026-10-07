@@ -16,6 +16,7 @@ import {
   IdempotencyWorkResult,
 } from './idempotency.types';
 import { normalizeIdempotencyKey } from './idempotency-key';
+import { IdempotencyOperationRegistry } from './idempotency-operation-registry';
 
 const SCOPE_TYPE_MAX = 64;
 const SCOPE_ID_MAX = 256;
@@ -89,12 +90,14 @@ export class IdempotencyExecutor {
   readonly #keyring: Keyring;
   readonly #options: IdempotencyOptions;
   readonly #lockKey: LockKeyFn;
+  readonly #operationRegistry: IdempotencyOperationRegistry;
 
   constructor(
     transactions: TransactionManager,
     keyring: Keyring,
     options: IdempotencyOptions,
     lockKey: LockKeyFn = idempotencyLockKey,
+    operationRegistry: IdempotencyOperationRegistry = new IdempotencyOperationRegistry(),
   ) {
     if (
       !Number.isSafeInteger(options.advisoryWaitMs) ||
@@ -115,6 +118,7 @@ export class IdempotencyExecutor {
     this.#keyring = keyring;
     this.#options = Object.freeze({ ...options });
     this.#lockKey = lockKey;
+    this.#operationRegistry = operationRegistry;
   }
 
   execute(
@@ -161,8 +165,12 @@ export class IdempotencyExecutor {
       const replayGuard = canonicalJsonValue(produced.replayGuard, true);
       const responseBody = canonicalJsonValue(produced.responseBody, false);
       const completedAtMs = await this.#clock(context);
-      const replayExpiresAtMs = completedAtMs + this.#options.replayTtlSeconds * 1000;
-      const dedupeExpiresAtMs = completedAtMs + this.#options.dedupeTtlSeconds * 1000;
+      const ttl = this.#operationRegistry.resolve(request.operationId, {
+        replayTtlSeconds: this.#options.replayTtlSeconds,
+        dedupeTtlSeconds: this.#options.dedupeTtlSeconds,
+      });
+      const replayExpiresAtMs = completedAtMs + ttl.replayTtlSeconds * 1000;
+      const dedupeExpiresAtMs = completedAtMs + ttl.dedupeTtlSeconds * 1000;
       const recordId = randomUUID();
 
       const fields = {
