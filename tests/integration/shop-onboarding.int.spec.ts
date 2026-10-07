@@ -35,23 +35,23 @@ describe('M01-A2S — Shop onboarding', () => {
   const saveProfile = (
     token: string | undefined,
     body: unknown,
-    key: string | undefined = randomUUID(),
+    key: string | null = randomUUID(),
   ): Promise<ApiResponse> =>
     app.call('PUT', '/onboarding/shop/profile', {
       body,
       ...(token === undefined ? {} : { bearer: token }),
-      ...(key === undefined ? {} : { headers: { 'idempotency-key': key } }),
+      ...(key === null ? {} : { headers: { 'idempotency-key': key } }),
     });
 
   const complete = (
     token: string | undefined,
     body: unknown,
-    key: string | undefined = randomUUID(),
+    key: string | null = randomUUID(),
   ): Promise<ApiResponse> =>
     app.call('POST', '/onboarding/shop/complete', {
       body,
       ...(token === undefined ? {} : { bearer: token }),
-      ...(key === undefined ? {} : { headers: { 'idempotency-key': key } }),
+      ...(key === null ? {} : { headers: { 'idempotency-key': key } }),
     });
 
   const me = (token: string): Promise<ApiResponse> => app.call('GET', '/auth/me', { bearer: token });
@@ -326,11 +326,11 @@ describe('M01-A2S — Shop onboarding', () => {
 
     it('requires a valid Idempotency-Key on both commands', async () => {
       const user = await registerUser(app);
-      const missing = await saveProfile(user.accessToken, shopProfileBody(), undefined);
+      const missing = await saveProfile(user.accessToken, shopProfileBody(), null);
       expect([missing.status, errorCode(missing)]).toEqual([400, 'IDEMPOTENCY_KEY_REQUIRED']);
       const invalid = await saveProfile(user.accessToken, shopProfileBody(), 'not a key');
       expect([invalid.status, errorCode(invalid)]).toEqual([400, 'INVALID_IDEMPOTENCY_KEY']);
-      const missingComplete = await complete(user.accessToken, { expected_version: 1 }, undefined);
+      const missingComplete = await complete(user.accessToken, { expected_version: 1 }, null);
       expect([missingComplete.status, errorCode(missingComplete)]).toEqual([400, 'IDEMPOTENCY_KEY_REQUIRED']);
       expect(await shopRowsOf(user.userId)).toEqual([]);
     });
