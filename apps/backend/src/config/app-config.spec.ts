@@ -1,5 +1,10 @@
 import { describe, expect, it } from '@jest/globals';
 import { formatInvalidConfigMessage, loadConfig } from './app-config';
+import {
+  FIXTURE_K1_BASE64,
+  FIXTURE_K2_BASE64,
+  FIXTURE_KEYRING_ENV,
+} from '../crypto/test-keys.fixture';
 
 const SECRET = 'SECRET_MARKER_CONFIG_7f3a';
 const validEnv = {
@@ -30,7 +35,11 @@ describe('loadConfig', () => {
       poolMax: 10,
       connectTimeoutMs: 1000,
       queryTimeoutMs: 1000,
+      statementTimeoutMs: 800,
     });
+    expect(result.config.transaction).toEqual({ timeoutMs: 5000, idleInTransactionTimeoutMs: 2000 });
+    // M00-C1A0: the keyring is optional until a slice consumes it.
+    expect(result.config.crypto).toBeUndefined();
   });
 
   it('accepts explicit values inside the allowed bounds', () => {
@@ -131,5 +140,135 @@ describe('loadConfig', () => {
     expect(message).not.toContain(SECRET);
     expect(message).not.toContain('SECRET_PORT_VALUE');
     expect(JSON.stringify(invalid)).not.toContain(SECRET);
+  });
+
+  it.each([
+    ['DB_STATEMENT_TIMEOUT_MS', '99'],
+    ['DB_STATEMENT_TIMEOUT_MS', '30001'],
+    ['DB_TRANSACTION_TIMEOUT_MS', '99'],
+    ['DB_TRANSACTION_TIMEOUT_MS', '30001'],
+    ['DB_IDLE_IN_TRANSACTION_TIMEOUT_MS', '99'],
+    ['DB_IDLE_IN_TRANSACTION_TIMEOUT_MS', '30001'],
+    ['DB_IDLE_IN_TRANSACTION_TIMEOUT_MS', 'soon'],
+  ])('rejects %s=%s as outside the bounded range', (name, value) => {
+    expect(invalidOf({ ...validEnv, [name]: value })).toEqual([name]);
+  });
+
+  it('accepts explicit transaction timeouts at the bounds', () => {
+    const result = loadConfig({
+      ...validEnv,
+      DB_STATEMENT_TIMEOUT_MS: '100',
+      DB_QUERY_TIMEOUT_MS: '101',
+      DB_TRANSACTION_TIMEOUT_MS: '30000',
+      DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: '100',
+    });
+    if (!result.ok) {
+      throw new Error('expected the configuration to be accepted');
+    }
+    expect(result.config.database.statementTimeoutMs).toBe(100);
+    expect(result.config.transaction).toEqual({ timeoutMs: 30000, idleInTransactionTimeoutMs: 100 });
+  });
+
+  describe('timeout relations (ADR-003 §13.1)', () => {
+    it('requires the client query timeout to be LARGER than the server statement timeout', () => {
+      expect(
+        invalidOf({ ...validEnv, DB_QUERY_TIMEOUT_MS: '800', DB_STATEMENT_TIMEOUT_MS: '800' }),
+      ).toEqual(['DB_STATEMENT_TIMEOUT_MS', 'DB_QUERY_TIMEOUT_MS']);
+      expect(
+        invalidOf({ ...validEnv, DB_QUERY_TIMEOUT_MS: '500', DB_STATEMENT_TIMEOUT_MS: '900' }),
+      ).toEqual(['DB_STATEMENT_TIMEOUT_MS', 'DB_QUERY_TIMEOUT_MS']);
+      expect(
+        loadConfig({ ...validEnv, DB_QUERY_TIMEOUT_MS: '801', DB_STATEMENT_TIMEOUT_MS: '800' }).ok,
+      ).toBe(true);
+    });
+
+    it('checks the default statement timeout too, so a bare small query timeout is refused', () => {
+      expect(invalidOf({ ...validEnv, DB_QUERY_TIMEOUT_MS: '500' })).toEqual([
+        'DB_STATEMENT_TIMEOUT_MS',
+        'DB_QUERY_TIMEOUT_MS',
+      ]);
+    });
+
+    it('requires the transaction timeout to be LARGER than the statement timeout', () => {
+      expect(
+        invalidOf({ ...validEnv, DB_TRANSACTION_TIMEOUT_MS: '800', DB_STATEMENT_TIMEOUT_MS: '800' }),
+      ).toEqual(['DB_STATEMENT_TIMEOUT_MS', 'DB_TRANSACTION_TIMEOUT_MS']);
+      expect(
+        loadConfig({ ...validEnv, DB_TRANSACTION_TIMEOUT_MS: '801', DB_STATEMENT_TIMEOUT_MS: '800' })
+          .ok,
+      ).toBe(true);
+    });
+
+    it('does not report a relation for a value that is already invalid on its own', () => {
+      expect(invalidOf({ ...validEnv, DB_STATEMENT_TIMEOUT_MS: 'x' })).toEqual([
+        'DB_STATEMENT_TIMEOUT_MS',
+      ]);
+    });
+
+    it('never gives the client and server timeouts the same value by default', () => {
+      const result = loadConfig(validEnv);
+      if (!result.ok) {
+        throw new Error('expected the configuration to be accepted');
+      }
+      expect(result.config.database.queryTimeoutMs).toBeGreaterThan(
+        result.config.database.statementTimeoutMs,
+      );
+      expect(result.config.transaction.timeoutMs).toBeGreaterThan(
+        result.config.database.statementTimeoutMs,
+      );
+    });
+  });
+
+  describe('crypto keyring', () => {
+    it('accepts a valid keyring and active key id', () => {
+      const result = loadConfig({
+        ...validEnv,
+        CRYPTO_KEYRING: FIXTURE_KEYRING_ENV,
+        CRYPTO_ACTIVE_KEY_ID: 'k2',
+      });
+      if (!result.ok) {
+        throw new Error('expected the configuration to be accepted');
+      }
+      expect(result.config.crypto?.activeKeyId).toBe('k2');
+      expect(result.config.crypto?.keyIds()).toEqual(['k1', 'k2']);
+    });
+
+    it('is all-or-nothing: one variable without the other is invalid and named', () => {
+      expect(invalidOf({ ...validEnv, CRYPTO_KEYRING: FIXTURE_KEYRING_ENV })).toEqual([
+        'CRYPTO_ACTIVE_KEY_ID',
+      ]);
+      expect(invalidOf({ ...validEnv, CRYPTO_ACTIVE_KEY_ID: 'k1' })).toEqual(['CRYPTO_KEYRING']);
+    });
+
+    it.each([
+      ['not base64', 'k1:not-base64'],
+      ['wrong length', `k1:${Buffer.alloc(16).toString('base64')}`],
+      ['duplicate id', `k1:${FIXTURE_K1_BASE64},k1:${FIXTURE_K2_BASE64}`],
+      ['missing separator', FIXTURE_K1_BASE64],
+      ['empty', ''],
+    ])('rejects a keyring that is %s and names only CRYPTO_KEYRING', (_label, raw) => {
+      expect(invalidOf({ ...validEnv, CRYPTO_KEYRING: raw, CRYPTO_ACTIVE_KEY_ID: 'k1' })).toEqual([
+        'CRYPTO_KEYRING',
+      ]);
+    });
+
+    it('rejects an active key id that is not in the keyring and names only CRYPTO_ACTIVE_KEY_ID', () => {
+      expect(
+        invalidOf({ ...validEnv, CRYPTO_KEYRING: FIXTURE_KEYRING_ENV, CRYPTO_ACTIVE_KEY_ID: 'k9' }),
+      ).toEqual(['CRYPTO_ACTIVE_KEY_ID']);
+    });
+
+    it('never puts key material or the active id into the failure message', () => {
+      const invalid = invalidOf({
+        ...validEnv,
+        CRYPTO_KEYRING: `k1:${FIXTURE_K1_BASE64},k1:${FIXTURE_K2_BASE64}`,
+        CRYPTO_ACTIVE_KEY_ID: 'ACTIVE_ID_SECRET_MARKER',
+      });
+      const message = formatInvalidConfigMessage(invalid);
+      expect(message).toContain('CRYPTO_KEYRING');
+      expect(message).not.toContain(FIXTURE_K1_BASE64);
+      expect(message).not.toContain(FIXTURE_K2_BASE64);
+      expect(message).not.toContain('ACTIVE_ID_SECRET_MARKER');
+    });
   });
 });

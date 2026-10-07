@@ -1,3 +1,5 @@
+import { Keyring, parseKeyringConfig } from '../crypto/keyring';
+
 export const APP_ENVIRONMENTS = ['development', 'test', 'staging', 'production'] as const;
 export type AppEnvironment = (typeof APP_ENVIRONMENTS)[number];
 
@@ -12,7 +14,17 @@ export interface DatabaseConfig {
   url: string;
   poolMax: number;
   connectTimeoutMs: number;
+  /** Client-side per-query timeout. Must be larger than the server statement timeout. */
   queryTimeoutMs: number;
+  /** Server-side statement_timeout. Must be smaller than the client query timeout. */
+  statementTimeoutMs: number;
+}
+
+export interface TransactionConfig {
+  /** Total wall-clock budget of one transaction. Must be larger than the statement timeout. */
+  timeoutMs: number;
+  /** idle_in_transaction_session_timeout. */
+  idleInTransactionTimeoutMs: number;
 }
 
 export interface AppConfig {
@@ -21,6 +33,12 @@ export interface AppConfig {
   host: string;
   port: number;
   database: DatabaseConfig;
+  transaction: TransactionConfig;
+  /**
+   * Immutable crypto keyring. Optional in M00-C1A0 (nothing consumes it yet); when either variable
+   * is set both must be valid. A later slice makes it required where the idempotency executor runs.
+   */
+  crypto: Keyring | undefined;
 }
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -34,6 +52,11 @@ const DEFAULT_PORT = 3000;
 const DEFAULT_POOL_MAX = 10;
 const DEFAULT_CONNECT_TIMEOUT_MS = 1000;
 const DEFAULT_QUERY_TIMEOUT_MS = 1000;
+// Server statement timeout is deliberately smaller than the client query timeout, so PostgreSQL's own
+// cancellation arrives before the client gives up and the connection stays usable.
+const DEFAULT_STATEMENT_TIMEOUT_MS = 800;
+const DEFAULT_TRANSACTION_TIMEOUT_MS = 5000;
+const DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT_MS = 2000;
 
 function pickEnum<T extends string>(raw: string | undefined, allowed: readonly T[]): T | undefined {
   return allowed.find((candidate) => candidate === raw);
@@ -132,6 +155,77 @@ export function loadConfig(env: EnvSource): ConfigResult {
     invalid,
   );
 
+  const statementTimeoutMs = readInteger(
+    env,
+    'DB_STATEMENT_TIMEOUT_MS',
+    DEFAULT_STATEMENT_TIMEOUT_MS,
+    100,
+    30000,
+    invalid,
+  );
+  const transactionTimeoutMs = readInteger(
+    env,
+    'DB_TRANSACTION_TIMEOUT_MS',
+    DEFAULT_TRANSACTION_TIMEOUT_MS,
+    100,
+    30000,
+    invalid,
+  );
+  const idleInTransactionTimeoutMs = readInteger(
+    env,
+    'DB_IDLE_IN_TRANSACTION_TIMEOUT_MS',
+    DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+    100,
+    30000,
+    invalid,
+  );
+
+  // Relations between the timeouts (ADR-003 §13.1). Only checked when the individual values are
+  // valid, so one bad value is reported once and by its own name.
+  const flag = (name: string): void => {
+    if (!invalid.includes(name)) {
+      invalid.push(name);
+    }
+  };
+  const individuallyValid = (...names: string[]): boolean =>
+    names.every((name) => !invalid.includes(name));
+  if (
+    individuallyValid('DB_QUERY_TIMEOUT_MS', 'DB_STATEMENT_TIMEOUT_MS') &&
+    queryTimeoutMs <= statementTimeoutMs
+  ) {
+    flag('DB_STATEMENT_TIMEOUT_MS');
+    flag('DB_QUERY_TIMEOUT_MS');
+  }
+  if (
+    individuallyValid('DB_TRANSACTION_TIMEOUT_MS', 'DB_STATEMENT_TIMEOUT_MS') &&
+    transactionTimeoutMs <= statementTimeoutMs
+  ) {
+    flag('DB_STATEMENT_TIMEOUT_MS');
+    flag('DB_TRANSACTION_TIMEOUT_MS');
+  }
+
+  // Crypto keyring: optional for now, but all-or-nothing and strictly validated when present.
+  // Only variable NAMES are ever reported; key material is never echoed.
+  let crypto: Keyring | undefined;
+  const rawKeyring = env.CRYPTO_KEYRING;
+  const rawActiveKeyId = env.CRYPTO_ACTIVE_KEY_ID;
+  if (rawKeyring !== undefined || rawActiveKeyId !== undefined) {
+    if (rawKeyring === undefined) {
+      flag('CRYPTO_KEYRING');
+    }
+    if (rawActiveKeyId === undefined) {
+      flag('CRYPTO_ACTIVE_KEY_ID');
+    }
+    if (rawKeyring !== undefined && rawActiveKeyId !== undefined) {
+      const parsed = parseKeyringConfig(rawKeyring, rawActiveKeyId);
+      if (parsed.ok) {
+        crypto = parsed.keyring;
+      } else {
+        parsed.invalid.forEach(flag);
+      }
+    }
+  }
+
   if (invalid.length > 0 || appEnv === undefined || databaseUrl === undefined) {
     return { ok: false, invalid };
   }
@@ -143,7 +237,9 @@ export function loadConfig(env: EnvSource): ConfigResult {
       nodeEnv,
       host,
       port,
-      database: { url: databaseUrl, poolMax, connectTimeoutMs, queryTimeoutMs },
+      database: { url: databaseUrl, poolMax, connectTimeoutMs, queryTimeoutMs, statementTimeoutMs },
+      transaction: { timeoutMs: transactionTimeoutMs, idleInTransactionTimeoutMs },
+      crypto,
     },
   };
 }

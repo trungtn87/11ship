@@ -6,7 +6,11 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
+import { APP_ERROR_DEFINITIONS, AppError, AppErrorCode, TechnicalError } from '../common/app-errors';
+import { CryptoError } from '../crypto/crypto-error';
 import { JsonLogger, LOG_META_WHITELIST } from '../logging/json-logger';
+import { JsonValidationError } from '../shared/json/safe-json';
+import { TransactionError } from '../transaction/transaction-error';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 
 const SECRET = 'SECRET_MARKER_FILTER_91c2';
@@ -129,5 +133,114 @@ describe('AllExceptionsFilter', () => {
     expect(entry.request_id).toBe(REQUEST_ID);
     expect(entry.status).toBe(500);
     expect(entry.code).toBe('INTERNAL_ERROR');
+  });
+
+  describe('typed error registry', () => {
+    const codes = Object.keys(APP_ERROR_DEFINITIONS) as AppErrorCode[];
+
+    it('registers exactly the six idempotency codes and the unknown-transaction-outcome code', () => {
+      expect([...codes].sort()).toEqual([
+        'IDEMPOTENCY_BUSY',
+        'IDEMPOTENCY_KEY_REQUIRED',
+        'IDEMPOTENCY_KEY_REUSED',
+        'IDEMPOTENCY_KEY_UNAVAILABLE',
+        'IDEMPOTENCY_REPLAY_EXPIRED',
+        'INVALID_IDEMPOTENCY_KEY',
+        'TRANSACTION_OUTCOME_UNKNOWN',
+      ]);
+    });
+
+    it.each(codes)('preserves %s with its fixed status and message', (code) => {
+      const { reply, logs } = run(new AppError(code));
+      expect(reply.status).toBe(APP_ERROR_DEFINITIONS[code].status);
+      expect(reply.body).toEqual({
+        error: {
+          code,
+          message: APP_ERROR_DEFINITIONS[code].message,
+          request_id: REQUEST_ID,
+          details: {},
+        },
+      });
+      const entry = JSON.parse(logs[0] ?? '{}') as Record<string, unknown>;
+      expect(entry.code).toBe(code);
+      expect(entry.error_class).toBe('AppError');
+    });
+
+    it('uses the documented statuses', () => {
+      expect(APP_ERROR_DEFINITIONS.IDEMPOTENCY_KEY_REQUIRED.status).toBe(400);
+      expect(APP_ERROR_DEFINITIONS.INVALID_IDEMPOTENCY_KEY.status).toBe(400);
+      expect(APP_ERROR_DEFINITIONS.IDEMPOTENCY_KEY_REUSED.status).toBe(409);
+      expect(APP_ERROR_DEFINITIONS.IDEMPOTENCY_BUSY.status).toBe(409);
+      expect(APP_ERROR_DEFINITIONS.IDEMPOTENCY_REPLAY_EXPIRED.status).toBe(409);
+      expect(APP_ERROR_DEFINITIONS.IDEMPOTENCY_KEY_UNAVAILABLE.status).toBe(503);
+      expect(APP_ERROR_DEFINITIONS.TRANSACTION_OUTCOME_UNKNOWN.status).toBe(503);
+    });
+
+    it('never reflects a code, message or details supplied by an arbitrary exception', () => {
+      const impostor = Object.assign(new Error(`message ${SECRET}`), {
+        code: 'IDEMPOTENCY_BUSY',
+        status: 409,
+        statusCode: 409,
+        details: { leaked: SECRET },
+        response: { code: 'IDEMPOTENCY_KEY_REUSED', message: SECRET },
+      });
+      const { reply, logs } = run(impostor);
+      // `status: 409` is honoured as a plain client status, but the public code is the generic one.
+      expect(reply.body.error.code).toBe('CONFLICT');
+      expect(reply.body.error.message).toBe('Conflict');
+      expect(reply.body.error.details).toEqual({});
+      expect(JSON.stringify(reply.body)).not.toContain(SECRET);
+      expect(logs.join('\n')).not.toContain(SECRET);
+      expect(JSON.parse(logs[0] ?? '{}')).toMatchObject({ code: 'CONFLICT' });
+    });
+
+    it('does not trust an object that only imitates AppError', () => {
+      const fake = { code: 'IDEMPOTENCY_KEY_REUSED', status: 409, message: SECRET };
+      expect(run(fake).reply.body.error.code).toBe('CONFLICT');
+      const fakeError = Object.assign(new Error(SECRET), { name: 'AppError', code: 'IDEMPOTENCY_BUSY' });
+      const { reply } = run(fakeError);
+      expect(reply.status).toBe(500);
+      expect(reply.body.error.code).toBe('INTERNAL_ERROR');
+    });
+
+    it('does not let an HttpException choose its own public code or message', () => {
+      const exception = new BadRequestException({
+        code: 'IDEMPOTENCY_KEY_REUSED',
+        message: SECRET,
+        details: { leaked: SECRET },
+      });
+      const { reply } = run(exception);
+      expect(reply.body.error.code).toBe('BAD_REQUEST');
+      expect(JSON.stringify(reply.body)).not.toContain(SECRET);
+    });
+
+    it('collapses infrastructure failures into the generic envelopes', () => {
+      const unavailable = run(new TransactionError('DEADLINE_EXCEEDED', '57014'));
+      expect(unavailable.reply.status).toBe(503);
+      expect(unavailable.reply.body.error.code).toBe('SERVICE_UNAVAILABLE');
+      expect(unavailable.reply.body.error.message).toBe('Service unavailable');
+
+      for (const failure of [
+        new TransactionError('CONTEXT_CLOSED'),
+        new CryptoError('authentication_failed'),
+        new JsonValidationError('secret_key'),
+        new TechnicalError('internal', SECRET),
+      ]) {
+        const { reply, logs } = run(failure);
+        expect(reply.status).toBe(500);
+        expect(reply.body.error.code).toBe('INTERNAL_ERROR');
+        expect(JSON.stringify(reply.body)).not.toContain('authentication_failed');
+        expect(JSON.stringify(reply.body)).not.toContain(SECRET);
+        expect(logs.join('\n')).not.toContain(SECRET);
+      }
+    });
+
+    it('logs only allow-listed error classes, never an arbitrary class name', () => {
+      class SECRET_MARKER_CLASS_NAME extends Error {}
+      const { logs } = run(new SECRET_MARKER_CLASS_NAME('x'));
+      const entry = JSON.parse(logs[0] ?? '{}') as Record<string, unknown>;
+      expect(entry.error_class).toBe('UnknownError');
+      expect(logs.join('\n')).not.toContain('SECRET_MARKER_CLASS_NAME');
+    });
   });
 });

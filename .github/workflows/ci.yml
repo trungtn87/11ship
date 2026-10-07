@@ -64,14 +64,40 @@ jobs:
       - name: Lockfile must be unchanged by npm ci
         run: git diff --exit-code -- package-lock.json
 
+      # Lint, typecheck and build also write their output to a file. When one of them fails, the tail
+      # of that output becomes an annotation (the job log itself cannot always be downloaded).
       - name: Lint
-        run: npm run lint
+        id: lint
+        shell: bash
+        run: |
+          mkdir -p .test-results
+          npm run lint 2>&1 | tee .test-results/lint.log
+
+      - name: Annotate lint failure
+        if: ${{ failure() && steps.lint.conclusion == 'failure' }}
+        run: node scripts/annotate-log.js Lint .test-results/lint.log
 
       - name: Typecheck
-        run: npm run typecheck
+        id: typecheck
+        shell: bash
+        run: |
+          mkdir -p .test-results
+          npm run typecheck 2>&1 | tee .test-results/typecheck.log
+
+      - name: Annotate typecheck failure
+        if: ${{ failure() && steps.typecheck.conclusion == 'failure' }}
+        run: node scripts/annotate-log.js Typecheck .test-results/typecheck.log 60
 
       - name: Build
-        run: npm run build
+        id: build
+        shell: bash
+        run: |
+          mkdir -p .test-results
+          npm run build 2>&1 | tee .test-results/build.log
+
+      - name: Annotate build failure
+        if: ${{ failure() && steps.build.conclusion == 'failure' }}
+        run: node scripts/annotate-log.js Build .test-results/build.log 60
 
       - name: Create restricted test role, database and wrong-user fixture
         # PGPASSWORD (the service admin password) exists only in this step. The tests never see it.

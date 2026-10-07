@@ -9,6 +9,16 @@ describe('safeErrorCode', () => {
     expect(safeErrorCode({ code: '57P01' })).toBe('57P01');
   });
 
+  it('accepts only real SQLSTATE classes, system codes and registry codes', () => {
+    expect(safeErrorCode({ code: '40001' })).toBe('40001');
+    expect(safeErrorCode({ code: 'IDEMPOTENCY_BUSY' })).toBe('IDEMPOTENCY_BUSY');
+    // Right shape, but not a class PostgreSQL defines.
+    expect(safeErrorCode({ code: 'ZZ999' })).toBe('UNKNOWN');
+    // Looks like a code but is not on any allow-list.
+    expect(safeErrorCode({ code: 'SECRET_MARKER_CODE' })).toBe('UNKNOWN');
+    expect(safeErrorCode({ code: 'ECUSTOM' })).toBe('UNKNOWN');
+  });
+
   it('refuses codes that look like free text and anything that is not an object', () => {
     expect(safeErrorCode({ code: 'password=SECRET' })).toBe('UNKNOWN');
     expect(safeErrorCode({ code: 'x'.repeat(33) })).toBe('UNKNOWN');
@@ -20,10 +30,11 @@ describe('safeErrorCode', () => {
 });
 
 describe('safeErrorClass', () => {
-  it('returns the constructor name for Error instances only', () => {
+  it('returns the constructor name for allow-listed Error classes only', () => {
     class CustomFailure extends Error {}
     expect(safeErrorClass(new Error('x'))).toBe('Error');
-    expect(safeErrorClass(new CustomFailure('x'))).toBe('CustomFailure');
+    expect(safeErrorClass(new TypeError('x'))).toBe('TypeError');
+    expect(safeErrorClass(new CustomFailure('x'))).toBe('UnknownError');
     expect(safeErrorClass('SECRET')).toBe('UnknownError');
     expect(safeErrorClass({ constructor: { name: 'Fake' } })).toBe('UnknownError');
   });
