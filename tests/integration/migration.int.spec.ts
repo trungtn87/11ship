@@ -87,7 +87,7 @@ describe('F03 / C23 — migrations on the guarded test database', () => {
 
   it('C23: a REAL upgrade from B1 to C1A1 (history holds only B1, then the next up adds the table)', async () => {
     await reset();
-    const baseOnly = migrate(['--count', '1']);
+    const baseOnly = migrate(['1']);
     expect(baseOnly.status).toBe(0);
     expect(await historyNames()).toEqual([B1]);
     expect(await tableExists()).toBe(false);
@@ -102,7 +102,7 @@ describe('F03 / C23 — migrations on the guarded test database', () => {
 
   it('C23: schema drift is NOT hidden: a pre-existing conflicting table makes the migration fail and stay unrecorded', async () => {
     await reset();
-    expect(migrate(['--count', '1']).status).toBe(0);
+    expect(migrate(['1']).status).toBe(0);
     await client.query('CREATE TABLE app.idempotency_records (drifted integer)');
 
     const failing = migrate();

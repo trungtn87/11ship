@@ -33,7 +33,7 @@ describe('M00-C1A1 — replay TTL, cleanup and dedupe window on real PostgreSQL'
   let h: IdempotencyHarness;
 
   beforeAll(async () => {
-    h = await createHarness();
+    h = await createHarness({ poolMax: 12 });
   });
 
   afterAll(async () => {
