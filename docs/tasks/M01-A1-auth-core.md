@@ -173,7 +173,7 @@ Centralized config:
 - `AUTH_SESSION_TTL_SECONDS=604800`
 - `AUTH_OTP_HMAC_SECRET`: base64 of exactly 32 bytes
 
-Suggested bounds:
+Bounds:
 
 - OTP TTL 30..600 s
 - resend 1..300 s
@@ -191,13 +191,13 @@ OTP request A1 enforces the locked 60-second cooldown transactionally by phone +
 
 Define `OtpProvider` port. No production SMS adapter in A1.
 
-A fake provider is permitted only in test/development and must never log the OTP. No silent fake fallback in staging/production.
+A fake provider is permitted only in test/development and must never log the OTP. No silent fake fallback in staging/production. The Auth module must receive an explicit provider binding; production SMS remains a later adapter, not a reason to invent one inside A1.
 
 OTP delivery must happen outside a DB transaction.
 
 Request flow:
 
-1. transactionally serialize the phone+purpose request and enforce resend cooldown;
+1. in a short transaction, serialize the exact phone+purpose lane with `pg_advisory_xact_lock(int,int)`; derive the two signed int32 keys from SHA-256 of canonical JSON array `["11ship.auth.otp.request.v1", phone_normalized, purpose]`; enforce resend cooldown;
 2. create a PENDING_DELIVERY verification with HMAC digest and commit;
 3. call `OtpProvider` outside the transaction;
 4. on success, short transaction marks PENDING;
@@ -207,11 +207,11 @@ A failed delivery must not become a usable verification and must not permanently
 
 ## 8. OTP digest and verify
 
-HMAC input must unambiguously bind:
+HMAC input is the UTF-8 canonical JSON array:
 
-`verification_id + phone_normalized + purpose + otp`
+`["11ship.auth.otp.v1", verification_id, phone_normalized, purpose, otp]`
 
-using the configured 32-byte secret and HMAC-SHA-256.
+using the configured 32-byte secret and HMAC-SHA-256. Do not use delimiter-free string concatenation.
 
 Verify endpoint locks the verification row and uses fresh PostgreSQL time.
 
@@ -242,18 +242,25 @@ Security-sensitive unknown fields such as role, driver_type, is_admin, permissio
 
 ### 9.1 Resolve before idempotency
 
-Parse the proof token and resolve by digest before executing the idempotency coordinator.
+Parse the proof token and resolve the proof identity by its token digest before executing the idempotency coordinator.
 
 Resolution MUST still find a proof that is:
 
 - consumed;
 - naturally expired;
-- invalidated.
+- invalidated;
+- bound to a phone/purpose that the incoming body does not match.
 
-This lookup establishes server-side proof identity. It must not reject consumed/natural-expired proof before idempotency lookup.
+This pre-step establishes only the server-side `proof_id`. It must NOT reject used/expired/invalidated/phone-mismatch/purpose-mismatch state before the idempotency fingerprint lookup, otherwise a retry with a changed logical request could bypass `IDEMPOTENCY_KEY_REUSED`.
 
-Wrong purpose -> `VERIFICATION_PURPOSE_MISMATCH`.  
-Unknown/binding-invalid token -> `VERIFICATION_PROOF_INVALID`.
+Malformed or unknown proof token -> `VERIFICATION_PROOF_INVALID`.
+
+For a NEW execution, the callback under the proof row lock performs the authoritative phone/purpose/state checks:
+- purpose mismatch -> `VERIFICATION_PURPOSE_MISMATCH`;
+- phone binding mismatch -> `VERIFICATION_PROOF_INVALID`;
+- used -> `VERIFICATION_PROOF_USED`;
+- natural expiry -> `VERIFICATION_PROOF_INVALID`;
+- invalidated -> `VERIFICATION_PROOF_INVALID`.
 
 Idempotency identity:
 
@@ -453,7 +460,7 @@ Register emits one outbox event:
 - resource_type = `user`
 - resource_id = user_id
 - resource_version = 1
-- payload contains only safe non-secret identifiers needed by future consumers.
+- payload is exactly a small safe object containing `user_id` in A1; no phone/session/proof/token data.
 
 Replay does not emit a second audit/outbox event because the business callback is not rerun.
 
