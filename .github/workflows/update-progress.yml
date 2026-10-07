@@ -1,0 +1,127 @@
+name: Update progress
+
+# Keeps docs/PROGRESS.md in step with GitHub. Design notes (see also docs/progress/README.md):
+#
+# * Two kinds of jobs, split by trust:
+#   - `preview` runs on `pull_request`, may execute the PR's own code, and therefore gets a READ-ONLY
+#     token. It runs the tests and prints the dashboard to the job summary. It never writes.
+#   - `publish` holds the only write token. It runs on `push`, `workflow_run`, `workflow_dispatch` and
+#     `pull_request_target` (needed because label changes only reach a write-capable workflow that
+#     way). It checks out the DEFAULT BRANCH only and never the PR head, and it never reads a PR
+#     title, body, branch name or label value in the shell: the generator reads state itself through
+#     the REST API and treats it as data. Nothing from the event payload is interpolated into `run:`.
+# * No infinite loops:
+#   - the bot pushes with GITHUB_TOKEN, and GitHub does not start workflows for GITHUB_TOKEN pushes;
+#   - `push` ignores changes that only touch docs/PROGRESS.md;
+#   - `workflow_run` listens to "CI" only, never to this workflow;
+#   - a commit is made only when the generated file actually changed.
+# * The generator has no npm dependencies, so no `npm ci` (and no lifecycle scripts) runs next to
+#   the write token.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed, labeled, unlabeled]
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed, labeled, unlabeled]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  push:
+    branches: [main]
+    paths-ignore:
+      - docs/PROGRESS.md
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  preview:
+    name: Test and preview (read-only)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      issues: read
+      actions: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Progress unit tests
+        run: node --test "tests/progress/*.test.mjs"
+
+      - name: Preview dashboard in the job summary
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/generate-progress.mjs --stdout >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish docs/PROGRESS.md
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: read
+      checks: read
+      issues: read
+      actions: read
+    # One publisher at a time; later runs wait instead of racing each other. Every run reads live
+    # state, so the last one always wins with the freshest data.
+    concurrency:
+      group: update-progress-publish
+      cancel-in-progress: false
+    env:
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - name: Check out the default branch (never the PR head)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Generate docs/PROGRESS.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/generate-progress.mjs
+
+      - name: Commit when changed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            if git diff --quiet -- docs/PROGRESS.md; then
+              echo "docs/PROGRESS.md unchanged"
+              exit 0
+            fi
+            git add docs/PROGRESS.md
+            git commit -m "chore(progress): update docs/PROGRESS.md [skip ci]"
+            if git push origin "HEAD:${DEFAULT_BRANCH}"; then
+              echo "published on attempt ${attempt}"
+              exit 0
+            fi
+            echo "push rejected (attempt ${attempt}); refreshing from ${DEFAULT_BRANCH} and regenerating"
+            git fetch origin "${DEFAULT_BRANCH}"
+            git reset --hard "origin/${DEFAULT_BRANCH}"
+            node scripts/generate-progress.mjs
+          done
+          echo "could not publish after 3 attempts" >&2
+          exit 1
