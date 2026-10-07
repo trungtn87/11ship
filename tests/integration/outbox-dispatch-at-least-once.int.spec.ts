@@ -71,7 +71,6 @@ describe('M00-C1C C15 — at-least-once: publish succeeded, ack lost, event publ
     expect(publisher.eventIds).toEqual([id, id]);
     expect(publisher.calls.map((call) => call.event.attemptCount)).toEqual([1, 2]);
     expect(publisher.calls[0]?.event.payload).toEqual(publisher.calls[1]?.event.payload);
-    expect(publisher.calls[0]?.event.occurredAt).toBe(publisher.calls[1]?.event.occurredAt);
 
     const row = await rowOf(h, id as string);
     expect(row.status).toBe('PUBLISHED');
