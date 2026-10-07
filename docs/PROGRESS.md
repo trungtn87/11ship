@@ -104,7 +104,7 @@ How every PR is treated. A PR counts only through explicit metadata (labels, or 
 | [#13](https://github.com/trungtn87/11ship/pull/13) chore(progress): Việt hóa dashboard tiến độ | OPEN | — | infra | ✅ PASS | `25a62e9` | out of plan — Out of plan (type:infra) |
 | [#14](https://github.com/trungtn87/11ship/pull/14) docs(ui): add Figma workflow and frontend UI gate | OPEN | — | infra | ✅ PASS | `0d16d7b` | out of plan — Out of plan (type:infra) |
 | [#15](https://github.com/trungtn87/11ship/pull/15) docs(m01-a2): lock onboarding contract and task split | MERGED | — | — | — | `c329808` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;); PR not counted. State is never inferred from titles, bod… |
-| [#16](https://github.com/trungtn87/11ship/pull/16) feat(onboarding): M01-A2S shop onboarding (READY CANDIDATE,… | DRAFT | — | — | ⏳ RUNNING | `98d4392` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;); PR not counted. State is never inferred from titles, bod… |
+| [#16](https://github.com/trungtn87/11ship/pull/16) feat(onboarding): M01-A2S shop onboarding (READY CANDIDATE,… | DRAFT | — | — | ✅ PASS | `98d4392` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;); PR not counted. State is never inferred from titles, bod… |
 
 ## ⚠️ Attention
 
