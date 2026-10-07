@@ -197,9 +197,9 @@ export class IdempotencyExecutor {
           $1::uuid, $2, $3, $4, $5::uuid,
           $6, $7, $8, $9,
           $10::jsonb, $11::bytea, $12::bytea, $13::bytea,
-          to_timestamp($14::double precision / 1000.0),
-          to_timestamp($15::double precision / 1000.0),
-          to_timestamp($16::double precision / 1000.0)
+          TIMESTAMPTZ 'epoch' + $14::bigint * INTERVAL '1 millisecond',
+          TIMESTAMPTZ 'epoch' + $15::bigint * INTERVAL '1 millisecond',
+          TIMESTAMPTZ 'epoch' + $16::bigint * INTERVAL '1 millisecond'
         )`,
         [
           recordId,
