@@ -12,7 +12,9 @@ Nguyên tắc: **kế hoạch nằm trong repo, thực tế nằm trên GitHub.*
 | `scripts/generate-progress.mjs` | CLI: đọc plan + GitHub, sinh `docs/PROGRESS.md`. |
 | `scripts/progress/resolve.mjs` | State resolver thuần (không mạng, không đồng hồ). |
 | `scripts/progress/render.mjs` | Sinh markdown và Mermaid, tất định từng byte. |
-| `scripts/progress/github.mjs` | Đọc GitHub bằng REST (không GraphQL). |
+| `scripts/progress/github.mjs` | Đọc GitHub bằng REST (không GraphQL); tách `head_sha` / `ci_sha` của main. |
+| `scripts/progress/constants.mjs` | Hằng số dùng chung: commit message và danh tính bot, label review, vai trò cố định. |
+| `scripts/progress/review.mjs`, `scripts/reset-review-labels.mjs` | Gỡ label `review:*` khi head PR đổi. |
 | `scripts/progress/yaml-subset.mjs` | Parser YAML tối thiểu, không dependency. |
 | `.github/workflows/update-progress.yml` | Tự cập nhật. |
 | `tests/progress/` | Unit test (P01–P10 và các quy tắc khác) + snapshot thật ngày 07/10/2026. |
@@ -35,7 +37,7 @@ Quy tắc bắt buộc:
 
 - PR `type:design` phải có `agent:chatgpt`. PR `type:implementation` và `type:review-fix` phải có `agent:claude`. Sai agent thì PR **không được tính** và bị liệt kê ở mục Attention.
 - Chỉ mở PR có `module:` + `type:` hợp lệ mới được tính. PR thiếu metadata hiện ở mục Attention (`UNCLASSIFIED_PR`) và không làm đổi trạng thái nào.
-- Label `review:*` chỉ có hiệu lực nếu được gắn **sau** commit head hiện tại. Push thêm commit thì `review:pass` cũ tự mất hiệu lực (`STALE_REVIEW_LABEL`).
+- Label `review:*` chỉ đúng cho head SHA đã được review. Gốc của việc ràng buộc là **xoá label**: mỗi khi head của PR đổi (`pull_request_target` + `synchronize`), job `reset-review` gỡ cả ba label `review:in-progress`, `review:changes-requested`, `review:pass`. Sau đó task về `WAITING_CHATGPT_REVIEW` (khi CI xanh) cho tới khi có review mới được gắn label. Resolver còn so thời điểm gắn label với thời điểm commit head (`STALE_REVIEW_LABEL`), nhưng đó chỉ là lớp phòng thủ thêm: timestamp của commit do tác giả đặt, không chứng minh được SHA nào đã được review, và không bao giờ tự làm một label có hiệu lực.
 - PR lịch sử chưa có label (#1–#4) được chấp nhận vì số PR được **ghim trong `plan.yml`** (`design_pr`, `implementation_pr`).
 
 Tạo bộ label một lần: `npm run progress:generate -- --print-labels` in ra các lệnh `gh label create ...` để chạy (script không tự tạo label).
@@ -72,6 +74,7 @@ Sửa `docs/progress/plan.yml` (mô tả các trường ở đầu file), chạy
 ## Tự động cập nhật và bảo mật
 
 - `preview` (sự kiện `pull_request`): token **chỉ đọc**, chạy test và in dashboard vào job summary. Có thể chạy mã của chính PR vì không có quyền ghi.
+- `reset-review` (sự kiện `pull_request_target` loại `synchronize`): quyền `contents: read` + `pull-requests: write`, checkout nhánh mặc định, không chạy code của PR, chỉ nhận số PR từ event qua biến môi trường (script kiểm tra đó là số nguyên dương) và chỉ gỡ ba label `review:*`.
 - `publish` (sự kiện `push` vào `main`, `workflow_run` của CI, `workflow_dispatch`, `pull_request_target`): có `contents: write`, chỉ checkout **nhánh mặc định**, không bao giờ checkout head của PR, không đưa title/body/branch/label vào lệnh shell, và không có `npm ci`. `pull_request_target` được dùng vì thay đổi label chỉ tới được workflow có quyền ghi theo cách này; rủi ro của nó (chạy mã PR với quyền ghi) bị loại bằng các ràng buộc trên.
 - Không bị lặp vô hạn: bot đẩy bằng `GITHUB_TOKEN` nên GitHub không kích hoạt workflow nào; `push` bỏ qua thay đổi chỉ chạm `docs/PROGRESS.md`; `workflow_run` chỉ nghe workflow `CI`; chỉ commit khi nội dung thật sự đổi.
 - Text lấy từ GitHub (title PR, tên label) được escape trước khi vào bảng và không bao giờ đi vào Mermaid.
@@ -79,6 +82,8 @@ Sửa `docs/progress/plan.yml` (mô tả các trường ở đầu file), chạy
 
 ## Giới hạn đã biết
 
-- Commit của bot vào `main` không có CI (GitHub không chạy workflow cho push bằng `GITHUB_TOKEN`). "CI của main" vì vậy được tính ở commit mới nhất trên `main` **có** chạy required check; commit của bot bị bỏ qua.
+- Commit của bot vào `main` không có CI (GitHub không chạy workflow cho push bằng `GITHUB_TOKEN`). Collector giữ riêng hai SHA: `head_sha` (đầu thật của `main`, không bao giờ bị thay) và `ci_sha` (commit dùng để đánh giá CI). Hai SHA chỉ khác nhau khi head là commit progress-bot **được xác minh**: message đúng từng chữ `chore(progress): update docs/PROGRESS.md [skip ci]`, author và committer đều là `github-actions[bot]` (đúng tên và email), một parent, và commit chỉ sửa `docs/PROGRESS.md`. Khi đó CI lấy từ commit ngay dưới (lặp lại nếu có nhiều commit bot liên tiếp, tối đa 15 commit). Một head bình thường chưa có required check **không** bị đi xuống commit cũ: CI là `NONE` hoặc `RUNNING`, không bao giờ `PASS`. Chuỗi parent bị đứt, hoặc không tìm thấy commit có CI trong cửa sổ 15 commit, cũng cho `NONE`. Dashboard ghi `main HEAD <sha>` khi head là commit thường; khi head là commit bot thì ghi `main code <sha>` (commit code mà CI được đọc) và nói rõ head là commit bot chỉ sửa docs, không in SHA của commit bot vì SHA đó đổi sau mỗi lần cập nhật dashboard.
+- Review: nếu job `reset-review` chưa kịp chạy thì label cũ có thể còn trong một khoảng ngắn; job `publish` luôn chờ `reset-review` và không chạy nếu nó lỗi, nên dashboard không được sinh từ label lẽ ra đã bị gỡ. Ngược lại nếu `reset-review` chạy trễ sau khi review mới đã gắn label thì label hợp lệ đó cũng bị gỡ; hướng sai này an toàn (task chỉ phải chờ review lại). Khoảng trễ giữa lúc push và lúc `reset-review` chạy là giới hạn đã biết; trong khoảng đó chỉ có lớp timestamp ở trên chặn label cũ, và đó là lý do không được merge chỉ dựa vào dashboard khi vừa push.
+- Vai trò trong `plan.yml` (`owner_role`, `design_role`, `review_role`) là cố định ở schema v1 (CLAUDE / CHATGPT / CHATGPT), được validate chặt và chưa cấu hình được.
 - Dashboard trên `main` cập nhật theo sự kiện, nên có thể trễ vài chục giây so với GitHub. Trong PR, job summary của `preview` luôn lấy dữ liệu mới nhất.
 - Nếu branch protection yêu cầu PR cho `main` thì bot không đẩy trực tiếp được; khi đó cần cho phép github-actions bypass hoặc chuyển sang nhánh riêng.

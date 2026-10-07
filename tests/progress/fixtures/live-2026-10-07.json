@@ -122,7 +122,9 @@
     }
   ],
   "main": {
-    "sha": "cfd901f698dde33dc8db07ad24b5fa0551bc4a56",
+    "head_sha": "cfd901f698dde33dc8db07ad24b5fa0551bc4a56",
+    "ci_sha": "cfd901f698dde33dc8db07ad24b5fa0551bc4a56",
+    "skipped_progress_shas": [],
     "checks": [
       {
         "id": 112606116128,

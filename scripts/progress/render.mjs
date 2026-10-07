@@ -162,8 +162,28 @@ function dependencyCell(task) {
   return task.own_deps.map((d) => `${shortId(d.id)} ${d.state === STATE.DONE ? 'DONE' : d.state}`).join(', ');
 }
 
+/**
+ * Names main without ever presenting a CI-bearing older commit as the head. When the head is a
+ * progress-bot commit its SHA is deliberately not printed: it changes with every dashboard commit,
+ * so printing it would make every regeneration produce another commit.
+ */
+function mainRef(main) {
+  if (main.head_is_progress_commit) return `main code \`${shortSha(main.ci_sha)}\``;
+  return main.head_sha ? `main HEAD \`${shortSha(main.head_sha)}\`` : '';
+}
+
+function mainBanner(main) {
+  const ref = mainRef(main) || 'main unknown';
+  const note = main.head_is_progress_commit
+    ? ' (HEAD is a docs-only progress-bot commit; CI is read from this code commit)'
+    : main.ci === CI.NONE && main.head_sha
+      ? ' (main CI is not verified for HEAD; older commits are not used)'
+      : '';
+  return `${ref}${note}`;
+}
+
 function headCell(task, model) {
-  if (task.state === STATE.READY_FOR_CLAUDE) return model.main.sha ? `main @ ${shortSha(model.main.sha)}` : 'main';
+  if (task.state === STATE.READY_FOR_CLAUDE) return mainRef(model.main) || 'main';
   if (task.head && task.head !== 'main') return `\`${shortSha(task.head)}\``;
   return '—';
 }
@@ -182,7 +202,7 @@ export function renderProgress(model) {
   out.push('> **AUTO-GENERATED — DO NOT EDIT MANUALLY**');
   out.push('>');
   out.push('> The plan lives in [`docs/progress/plan.yml`](progress/plan.yml); the status comes from GitHub (merged PRs, draft/open/closed state, labels, head SHA, required checks, dependencies). Nobody, human or AI, can mark a task DONE by writing it down. See [how states are derived](progress/README.md).');
-  out.push(`> Data as of \`main @ ${shortSha(model.main.sha) || 'unknown'}\` · main CI: ${CI_CELL[model.main.ci]}`);
+  out.push(`> Data as of ${mainBanner(model.main)} · main CI: ${CI_CELL[model.main.ci]}`);
   out.push('');
 
   // CURRENT FOCUS

@@ -10,6 +10,13 @@ name: Update progress
 #     way). It checks out the DEFAULT BRANCH only and never the PR head, and it never reads a PR
 #     title, body, branch name or label value in the shell: the generator reads state itself through
 #     the REST API and treats it as data. Nothing from the event payload is interpolated into `run:`.
+# * Review labels are bound to the head SHA by removal. `reset-review` runs on pull_request_target
+#   `synchronize` (the PR head changed) and removes every review:* label, so a PASS given for an
+#   older head can never carry over to a newer one. It checks out the default branch only, receives
+#   nothing but the PR number (as an environment variable, validated as an integer by the script),
+#   and holds only `pull-requests: write` + `contents: read`. `publish` waits for it and does not
+#   run if it fails, so a dashboard is never generated from labels that should have been removed.
+#   Commit timestamps are NOT used as evidence of which SHA was reviewed (see resolve.mjs).
 # * No infinite loops:
 #   - the bot pushes with GITHUB_TOKEN, and GitHub does not start workflows for GITHUB_TOKEN pushes;
 #   - `push` ignores changes that only touch docs/PROGRESS.md;
@@ -65,9 +72,37 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/generate-progress.mjs --stdout >> "$GITHUB_STEP_SUMMARY"
 
+  reset-review:
+    name: Reset review labels (head changed)
+    if: github.event_name == 'pull_request_target' && github.event.action == 'synchronize'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Check out the default branch (never the PR head)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Remove review:* labels from the PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node scripts/reset-review-labels.mjs
+
   publish:
     name: Publish docs/PROGRESS.md
-    if: github.event_name != 'pull_request'
+    needs: reset-review
+    # Run when reset-review succeeded or was not needed; skip when it failed or the run was cancelled.
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (needs.reset-review.result == 'success' || needs.reset-review.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

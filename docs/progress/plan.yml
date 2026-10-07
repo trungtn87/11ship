@@ -19,9 +19,13 @@
 #   parent                parent task id or null
 #   order                 global display order (ascending)
 #   weight                progress weight of a leaf (groups carry no weight); default 1
-#   owner_role            who implements (CLAUDE) / owns the group
-#   design_role           who designs (CHATGPT)
-#   review_role           who reviews (CHATGPT)
+#   owner_role            REQUIRED, must be CLAUDE (implements / owns the group)
+#   design_role           REQUIRED, must be CHATGPT (designs)
+#   review_role           REQUIRED, must be CHATGPT (reviews)
+#                         Schema v1 FIXES these three roles: the resolver does not read them to decide
+#                         anything, and validatePlan rejects any other value or a missing field. They
+#                         are documentation of the workflow, NOT configuration. Making roles
+#                         configurable needs a new schema_version.
 #   depends_on            task ids that must be DONE first (a child also inherits its ancestors')
 #   design_pr             pinned design PR number (history only; new PRs are matched by labels)
 #   implementation_pr     pinned implementation PR number (history only)

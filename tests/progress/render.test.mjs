@@ -78,7 +78,7 @@ describe('acceptance on the real repository state (frozen snapshot 2026-10-07)',
     assert.match(md, /## 🎯 CURRENT FOCUS/);
     assert.match(md, /\*\*M00-C1A1 — Idempotency\*\*/);
     assert.match(md, /\| (?:&nbsp;)*M00-C1A0 · Transaction \+ Shared Primitives \| ✅ DONE \| — \| \[#4\].* `688e796` \| — \| — \|/);
-    assert.match(md, /\| (?:&nbsp;)*M00-C1A1 · Idempotency \| 🟦 READY_FOR_CLAUDE \| Claude \| — \| — \| main @ cfd901f \| C1A0 DONE \| Claude implement \|/);
+    assert.match(md, /\| (?:&nbsp;)*M00-C1A1 · Idempotency \| 🟦 READY_FOR_CLAUDE \| Claude \| — \| — \| main HEAD `cfd901f` \| C1A0 DONE \| Claude implement \|/);
     assert.match(md, /\[#5\].*CANCELLED \/ IGNORED/);
     assert.match(md, /```mermaid\nflowchart TD/);
     assert.match(md, /class M00_C1A1 focus/);

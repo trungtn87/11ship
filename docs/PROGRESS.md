@@ -5,7 +5,7 @@
 > **AUTO-GENERATED — DO NOT EDIT MANUALLY**
 >
 > The plan lives in [`docs/progress/plan.yml`](progress/plan.yml); the status comes from GitHub (merged PRs, draft/open/closed state, labels, head SHA, required checks, dependencies). Nobody, human or AI, can mark a task DONE by writing it down. See [how states are derived](progress/README.md).
-> Data as of `main @ cfd901f` · main CI: ✅ PASS
+> Data as of main HEAD `cfd901f` · main CI: ✅ PASS
 
 ## 🎯 CURRENT FOCUS
 
@@ -79,7 +79,7 @@ flowchart TD
 | M00-B1 · Backend Foundation | ✅ DONE | — | [#2](https://github.com/trungtn87/11ship/pull/2) | ✅ PASS | `55c5d81` | — | — |
 | **M00-C1** design · Transactional Core | 🔒 DESIGN_LOCKED | — | [#3](https://github.com/trungtn87/11ship/pull/3) | ✅ PASS | `de82b15` | B1 DONE | Continue child tasks |
 | &nbsp;&nbsp;M00-C1A0 · Transaction + Shared Primitives | ✅ DONE | — | [#4](https://github.com/trungtn87/11ship/pull/4) | ✅ PASS | `688e796` | — | — |
-| &nbsp;&nbsp;M00-C1A1 · Idempotency | 🟦 READY_FOR_CLAUDE | Claude | — | — | main @ cfd901f | C1A0 DONE | Claude implement |
+| &nbsp;&nbsp;M00-C1A1 · Idempotency | 🟦 READY_FOR_CLAUDE | Claude | — | — | main HEAD `cfd901f` | C1A0 DONE | Claude implement |
 | &nbsp;&nbsp;M00-C1B · Audit + Outbox Write | ⛔ BLOCKED_BY_DEPENDENCY | — | — | — | — | C1A1 READY_FOR_CLAUDE | Wait for C1A1 |
 | &nbsp;&nbsp;M00-C1C · Dispatcher + Final Integration | ⛔ BLOCKED_BY_DEPENDENCY | — | — | — | — | C1B BLOCKED_BY_DEPENDENCY | Wait for C1B |
 | M01 · Authentication | ⛔ BLOCKED_BY_DEPENDENCY | — | — | — | — | C1C BLOCKED_BY_DEPENDENCY | Wait for C1C |

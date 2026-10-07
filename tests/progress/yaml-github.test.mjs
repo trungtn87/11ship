@@ -74,13 +74,12 @@ describe('collectSnapshot', () => {
   const pull = (number, extra = {}) => ({ number, title: `t${number}`, state: 'closed', draft: false, merged_at: null, head: { sha: `${number}`.repeat(40), ref: `b${number}` }, labels: [], ...extra });
   const run = (id, conclusion = 'success', name = REQUIRED) => ({ id, name, status: 'completed', conclusion });
 
-  test('paginates, fetches checks only where needed, finds the newest main commit with a required check', async () => {
+  test('paginates and fetches checks only where needed; main CI is read from the real head', async () => {
     const many = Array.from({ length: 100 }, (_, i) => pull(i + 1));
     const second = [pull(101, { state: 'open', draft: true, labels: [{ name: 'module:M00-C1A1' }, { name: 'agent:claude' }] })];
     const { fetchImpl, calls } = fakeGitHub({
       '/repos/o/r/pulls?': (path) => (/[?&]page=1(&|$)/.test(path) ? many : second),
-      '/repos/o/r/commits?': [{ sha: 'botbot' }, { sha: 'realreal' }],
-      '/repos/o/r/commits/botbot/check-runs': { check_runs: [] },
+      '/repos/o/r/commits?': [{ sha: 'realreal', parents: [] }],
       '/repos/o/r/commits/realreal/check-runs': { check_runs: [run(2, 'failure'), run(3)] },
       [`/repos/o/r/commits/${'7'.repeat(40)}/check-runs`]: { check_runs: [run(1)] },
       [`/repos/o/r/commits/${'1'.repeat(40)}/check-runs`]: { check_runs: [run(1)] },
@@ -90,7 +89,9 @@ describe('collectSnapshot', () => {
 
     assert.equal(snap.pulls.length, 101);
     assert.deepEqual(snap.pulls.map((p) => p.number).slice(0, 3), [1, 2, 3]);
-    assert.equal(snap.main.sha, 'realreal', 'bot commit without CI is skipped');
+    assert.equal(snap.main.head_sha, 'realreal');
+    assert.equal(snap.main.ci_sha, 'realreal');
+    assert.deepEqual(snap.main.skipped_progress_shas, []);
     assert.deepEqual(snap.main.checks.map((c) => c.id), [2, 3]);
     assert.equal(snap.pulls.find((p) => p.number === 7).checks.length, 1, 'pinned PR gets checks');
     assert.equal(snap.pulls.find((p) => p.number === 8).checks.length, 0, 'unrelated closed PR does not');
@@ -110,7 +111,7 @@ describe('collectSnapshot', () => {
       ],
       [`/repos/o/r/commits/${'5'.repeat(40)}/check-runs`]: { check_runs: [run(1)] },
       [`/repos/o/r/commits/${'5'.repeat(40)}`]: { commit: { committer: { date: '2026-10-07T02:00:00Z' } } },
-      '/repos/o/r/commits?': [{ sha: 'm1' }],
+      '/repos/o/r/commits?': [{ sha: 'm1', parents: [] }],
       '/repos/o/r/commits/m1/check-runs': { check_runs: [run(1)] },
     });
     const snap = await collectSnapshot({ repo: 'o/r', mainBranch: 'main', requiredChecks: [REQUIRED], token: 'tok', fetchImpl });

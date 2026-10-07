@@ -7,6 +7,8 @@
 // body: state comes only from merged_at / state / draft / head SHA / check runs / labels /
 // dependencies. The same input always produces the same output.
 
+import { FIXED_ROLES } from './constants.mjs';
+
 export const STATE = Object.freeze({
   PLANNED: 'PLANNED',
   DESIGNING: 'DESIGNING',
@@ -97,6 +99,11 @@ export function validatePlan(plan) {
     if (!moduleIds.has(t.module)) add(`task ${t.id}: unknown module ${t.module}`);
     if (t.kind !== 'leaf' && t.kind !== 'group') add(`task ${t.id}: kind must be leaf or group`);
     if (!Number.isInteger(t.order)) add(`task ${t.id}: order must be an integer`);
+    // Schema v1 fixes the workflow (Claude implements, ChatGPT designs and reviews). The fields stay
+    // in plan.yml as documentation, but they are not configurable: any other value is an error.
+    for (const [field, expected] of Object.entries(FIXED_ROLES)) {
+      if (t[field] !== expected) add(`task ${t.id}: ${field} must be ${expected} in schema v1 (got ${t[field] ?? 'nothing'}); roles are not configurable yet`);
+    }
     if (t.kind === 'leaf' && !(Number.isInteger(t.weight ?? 1) && (t.weight ?? 1) >= 0)) {
       add(`task ${t.id}: weight must be a non-negative integer`);
     }
@@ -210,7 +217,33 @@ export function ciStatus(checks = [], required = []) {
   return pending ? CI.RUNNING : CI.PASS;
 }
 
-/** A review label only counts if it was applied at or after the current head commit. */
+/**
+ * Main CI verdict, bound to the real head. Checks only count when they belong to the head itself
+ * (ci_sha === head_sha) or to the commit under a chain of trusted progress-bot commits that starts
+ * AT the head. Anything else (no head, no CI commit, a CI commit that is not the head and not
+ * reached through such a chain) is NONE, never the green of an older commit.
+ */
+export function mainStatus(main, required) {
+  const headSha = main?.head_sha ?? null;
+  const ciSha = main?.ci_sha ?? null;
+  const skipped = main?.skipped_progress_shas ?? [];
+  const viaProgressCommits = skipped.length > 0 && skipped[0] === headSha && ciSha !== headSha;
+  const bound = Boolean(headSha && ciSha && (ciSha === headSha || viaProgressCommits));
+  return {
+    head_sha: headSha,
+    ci_sha: bound ? ciSha : null,
+    head_is_progress_commit: viaProgressCommits,
+    ci: bound ? ciStatus(main.checks ?? [], required) : CI.NONE,
+  };
+}
+
+/**
+ * Defense in depth only. A review label is bound to a head SHA by the trusted reset-review
+ * workflow, which removes every review:* label whenever the PR head changes (see
+ * .github/workflows/update-progress.yml). This timestamp comparison can never make a label valid
+ * by itself; it can only reject one that is still there while the reset has not run yet. Commit
+ * timestamps are author-controlled metadata and are not evidence of which SHA was reviewed.
+ */
 export function reviewLabelFresh(pr, label) {
   const labeledAt = Date.parse(pr.label_events?.[label] ?? '');
   const committedAt = Date.parse(pr.head_committed_at ?? '');
@@ -316,8 +349,8 @@ export function resolveProgress(plan, snapshot) {
   const attention = [...prAttention];
   const prsByTask = (id, role) => prs.filter((p) => p.counted && p.task === id && p.role === role);
 
-  const mainChecks = snapshot.main?.checks ?? [];
-  const mainCi = ciStatus(mainChecks, required);
+  const mainState = mainStatus(snapshot.main, required);
+  const mainCi = mainState.ci;
 
   const ancestors = (t) => {
     const chain = [];
@@ -422,7 +455,7 @@ export function resolveProgress(plan, snapshot) {
     // Start gate: a task that has no PR in flight may only start while required checks on main are
     // green. A task already in flight is not pulled back by a later red main.
     if (active.length === 0 && t.requires_main_ci_green && mainCi !== CI.PASS) {
-      return finish(STATE.BLOCKED_BY_CI, { reason: `main CI is ${mainCi}; required checks must be green on main`, head: snapshot.main?.sha ?? null });
+      return finish(STATE.BLOCKED_BY_CI, { reason: `main CI is ${mainCi}; required checks must be green on main`, head: mainState.head_sha });
     }
 
     if (!design.locked) {
@@ -468,7 +501,7 @@ export function resolveProgress(plan, snapshot) {
   return {
     project: plan.project,
     repo: plan.repo,
-    main: { sha: snapshot.main?.sha ?? null, ci: mainCi },
+    main: mainState,
     tasks: resolved,
     prs: prs.map(({ raw, ...rest }) => rest),
     focus: focusTask ? describeFocus(focusTask, resolved, prs) : null,

@@ -50,10 +50,13 @@ export const history = () => [
 export const pr5 = (extra = {}) =>
   pr({ number: 5, state: 'closed', draft: true, merged_at: null, head_sha: sha('5'), checks: checks.pass, ...extra });
 
-export const snapshot = (pulls, mainChecks = checks.pass) => ({
+/** Main whose head is a normal commit that carries its own checks (the usual case). */
+export const mainAt = (head, mainChecks = checks.pass) => ({ head_sha: head, ci_sha: head, skipped_progress_shas: [], checks: mainChecks });
+
+export const snapshot = (pulls, mainChecks = checks.pass, main = mainAt(sha('c'), mainChecks)) => ({
   repo: plan.repo,
   pulls,
-  main: { sha: sha('c'), checks: mainChecks },
+  main,
 });
 
 export const LABELS_C1A1 = ['agent:claude', 'type:implementation', 'module:M00-C1A1'];
