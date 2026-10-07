@@ -161,6 +161,10 @@ describe('loadConfig', () => {
       DB_QUERY_TIMEOUT_MS: '101',
       DB_TRANSACTION_TIMEOUT_MS: '30000',
       DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: '100',
+      // M00-C1A1 (ADR-003 §13.1): both idempotency lock budgets must stay below the statement timeout,
+      // so at a 100 ms statement timeout they are set explicitly below it. The A0 assertions are unchanged.
+      IDEMPOTENCY_ADVISORY_WAIT_MS: '50',
+      IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS: '99',
     });
     if (!result.ok) {
       throw new Error('expected the configuration to be accepted');
@@ -270,5 +274,150 @@ describe('loadConfig', () => {
       expect(message).not.toContain(FIXTURE_K2_BASE64);
       expect(message).not.toContain('ACTIVE_ID_SECRET_MARKER');
     });
+  });
+});
+
+describe('loadConfig — idempotency (M00-C1A1)', () => {
+  function configOf(env: Record<string, string | undefined>) {
+    const result = loadConfig(env);
+    if (!result.ok) {
+      throw new Error('expected the configuration to be accepted');
+    }
+    return result.config;
+  }
+
+  it('defaults: 250 ms advisory wait, 500 ms business lock budget, 900 s replay, 604800 s dedupe', () => {
+    expect(configOf(validEnv).idempotency).toEqual({
+      advisoryWaitMs: 250,
+      businessLockTimeoutMs: 500,
+      replayTtlSeconds: 900,
+      dedupeTtlSeconds: 604800,
+    });
+  });
+
+  it('accepts explicit values inside the bounds', () => {
+    expect(
+      configOf({
+        ...validEnv,
+        IDEMPOTENCY_ADVISORY_WAIT_MS: '5',
+        IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS: '700',
+        IDEMPOTENCY_REPLAY_TTL_SECONDS: '60',
+        IDEMPOTENCY_DEDUPE_TTL_SECONDS: '3600',
+        DB_STATEMENT_TIMEOUT_MS: '800',
+      }).idempotency,
+    ).toEqual({
+      advisoryWaitMs: 5,
+      businessLockTimeoutMs: 700,
+      replayTtlSeconds: 60,
+      dedupeTtlSeconds: 3600,
+    });
+  });
+
+  it('accepts the advisory wait bounds 1 ms and 5 s when the statement timeout is larger', () => {
+    expect(configOf({ ...validEnv, IDEMPOTENCY_ADVISORY_WAIT_MS: '1' }).idempotency.advisoryWaitMs).toBe(1);
+    expect(
+      configOf({
+        ...validEnv,
+        IDEMPOTENCY_ADVISORY_WAIT_MS: '5000',
+        DB_STATEMENT_TIMEOUT_MS: '5001',
+        DB_QUERY_TIMEOUT_MS: '5002',
+        DB_TRANSACTION_TIMEOUT_MS: '9000',
+        IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS: '500',
+      }).idempotency.advisoryWaitMs,
+    ).toBe(5000);
+  });
+
+  it.each([
+    ['IDEMPOTENCY_ADVISORY_WAIT_MS', '0'],
+    ['IDEMPOTENCY_ADVISORY_WAIT_MS', '5001'],
+    ['IDEMPOTENCY_ADVISORY_WAIT_MS', 'soon'],
+    ['IDEMPOTENCY_ADVISORY_WAIT_MS', ''],
+    ['IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS', '0'],
+    ['IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS', '30001'],
+    ['IDEMPOTENCY_REPLAY_TTL_SECONDS', '0'],
+    ['IDEMPOTENCY_REPLAY_TTL_SECONDS', '604801'],
+    ['IDEMPOTENCY_DEDUPE_TTL_SECONDS', '0'],
+    ['IDEMPOTENCY_DEDUPE_TTL_SECONDS', '604801'],
+    ['IDEMPOTENCY_DEDUPE_TTL_SECONDS', '1.5'],
+  ])('rejects %s=%s and names only that variable', (name, value) => {
+    expect(invalidOf({ ...validEnv, [name]: value })).toEqual([name]);
+  });
+
+  describe('relations (ADR-003 §13.1, §13.4)', () => {
+    it('refuses an advisory wait that is not below the statement timeout', () => {
+      expect(
+        invalidOf({ ...validEnv, IDEMPOTENCY_ADVISORY_WAIT_MS: '800', DB_STATEMENT_TIMEOUT_MS: '800' }),
+      ).toEqual(['IDEMPOTENCY_ADVISORY_WAIT_MS', 'DB_STATEMENT_TIMEOUT_MS']);
+    });
+
+    it('refuses a business lock budget that is not below the statement timeout', () => {
+      expect(
+        invalidOf({
+          ...validEnv,
+          IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS: '800',
+          DB_STATEMENT_TIMEOUT_MS: '800',
+        }),
+      ).toEqual(['IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS', 'DB_STATEMENT_TIMEOUT_MS']);
+    });
+
+    it('checks the DEFAULT lock budgets against an explicit small statement timeout', () => {
+      // 250 ms and 500 ms default budgets are not below a 200 ms statement timeout.
+      expect(invalidOf({ ...validEnv, DB_STATEMENT_TIMEOUT_MS: '200', DB_QUERY_TIMEOUT_MS: '300' })).toEqual([
+        'IDEMPOTENCY_ADVISORY_WAIT_MS',
+        'DB_STATEMENT_TIMEOUT_MS',
+        'IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS',
+      ]);
+    });
+
+    it('requires replay TTL <= dedupe TTL', () => {
+      expect(
+        invalidOf({
+          ...validEnv,
+          IDEMPOTENCY_REPLAY_TTL_SECONDS: '1000',
+          IDEMPOTENCY_DEDUPE_TTL_SECONDS: '999',
+        }),
+      ).toEqual(['IDEMPOTENCY_REPLAY_TTL_SECONDS', 'IDEMPOTENCY_DEDUPE_TTL_SECONDS']);
+      // equality is allowed
+      expect(
+        configOf({
+          ...validEnv,
+          IDEMPOTENCY_REPLAY_TTL_SECONDS: '900',
+          IDEMPOTENCY_DEDUPE_TTL_SECONDS: '900',
+        }).idempotency.dedupeTtlSeconds,
+      ).toBe(900);
+    });
+
+    it('checks the default replay TTL when only the dedupe TTL is lowered', () => {
+      expect(invalidOf({ ...validEnv, IDEMPOTENCY_DEDUPE_TTL_SECONDS: '600' })).toEqual([
+        'IDEMPOTENCY_REPLAY_TTL_SECONDS',
+        'IDEMPOTENCY_DEDUPE_TTL_SECONDS',
+      ]);
+    });
+
+    it('does not double-report a variable that is already individually invalid', () => {
+      expect(
+        invalidOf({
+          ...validEnv,
+          IDEMPOTENCY_ADVISORY_WAIT_MS: '0',
+          IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS: '100',
+          DB_STATEMENT_TIMEOUT_MS: '300',
+          DB_QUERY_TIMEOUT_MS: '400',
+        }),
+      ).toEqual(['IDEMPOTENCY_ADVISORY_WAIT_MS']);
+    });
+  });
+
+  it('never puts a configured value into the failure message', () => {
+    const invalid = invalidOf({
+      ...validEnv,
+      IDEMPOTENCY_REPLAY_TTL_SECONDS: 'SECRET_TTL_VALUE_3c',
+      IDEMPOTENCY_ADVISORY_WAIT_MS: '99999',
+    });
+    const message = formatInvalidConfigMessage(invalid);
+    expect(message).toContain('IDEMPOTENCY_REPLAY_TTL_SECONDS');
+    expect(message).toContain('IDEMPOTENCY_ADVISORY_WAIT_MS');
+    expect(message).not.toContain('SECRET_TTL_VALUE_3c');
+    expect(message).not.toContain('99999');
+    expect(message).not.toContain(SECRET);
   });
 });
