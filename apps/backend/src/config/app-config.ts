@@ -1,4 +1,17 @@
 import { Keyring, parseKeyringConfig } from '../crypto/keyring';
+import {
+  DEFAULT_ADVISORY_WAIT_MS,
+  DEFAULT_BUSINESS_LOCK_TIMEOUT_MS,
+  DEFAULT_DEDUPE_TTL_SECONDS,
+  DEFAULT_REPLAY_TTL_SECONDS,
+  IdempotencyConfig,
+  MAX_ADVISORY_WAIT_MS,
+  MAX_BUSINESS_LOCK_TIMEOUT_MS,
+  MAX_TTL_SECONDS,
+  MIN_ADVISORY_WAIT_MS,
+  MIN_BUSINESS_LOCK_TIMEOUT_MS,
+  MIN_TTL_SECONDS,
+} from '../idempotency/idempotency-config';
 
 export const APP_ENVIRONMENTS = ['development', 'test', 'staging', 'production'] as const;
 export type AppEnvironment = (typeof APP_ENVIRONMENTS)[number];
@@ -34,9 +47,12 @@ export interface AppConfig {
   port: number;
   database: DatabaseConfig;
   transaction: TransactionConfig;
+  /** Idempotency windows and lock budgets (M00-C1A1). Always present, with defaults. */
+  idempotency: IdempotencyConfig;
   /**
-   * Immutable crypto keyring. Optional in M00-C1A0 (nothing consumes it yet); when either variable
-   * is set both must be valid. A later slice makes it required where the idempotency executor runs.
+   * Immutable crypto keyring. Optional at the config level; when either variable is set both must be
+   * valid. It is REQUIRED wherever the idempotency executor is wired: IdempotencyModule refuses to
+   * start without it (see requireKeyring in idempotency.module.ts), naming only the variables.
    */
   crypto: Keyring | undefined;
 }
@@ -204,7 +220,66 @@ export function loadConfig(env: EnvSource): ConfigResult {
     flag('DB_TRANSACTION_TIMEOUT_MS');
   }
 
-  // Crypto keyring: optional for now, but all-or-nothing and strictly validated when present.
+  // Idempotency (ADR-003 sections 3.2, 5, 13.1, 13.4). Both lock budgets must stay below the server
+  // statement timeout, otherwise PostgreSQL would cancel the statement before the lock timeout could
+  // fire and a lock wait would be reported as a generic query timeout.
+  const advisoryWaitMs = readInteger(
+    env,
+    'IDEMPOTENCY_ADVISORY_WAIT_MS',
+    DEFAULT_ADVISORY_WAIT_MS,
+    MIN_ADVISORY_WAIT_MS,
+    MAX_ADVISORY_WAIT_MS,
+    invalid,
+  );
+  const businessLockTimeoutMs = readInteger(
+    env,
+    'IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS',
+    DEFAULT_BUSINESS_LOCK_TIMEOUT_MS,
+    MIN_BUSINESS_LOCK_TIMEOUT_MS,
+    MAX_BUSINESS_LOCK_TIMEOUT_MS,
+    invalid,
+  );
+  const replayTtlSeconds = readInteger(
+    env,
+    'IDEMPOTENCY_REPLAY_TTL_SECONDS',
+    DEFAULT_REPLAY_TTL_SECONDS,
+    MIN_TTL_SECONDS,
+    MAX_TTL_SECONDS,
+    invalid,
+  );
+  const dedupeTtlSeconds = readInteger(
+    env,
+    'IDEMPOTENCY_DEDUPE_TTL_SECONDS',
+    DEFAULT_DEDUPE_TTL_SECONDS,
+    MIN_TTL_SECONDS,
+    MAX_TTL_SECONDS,
+    invalid,
+  );
+  // Validity is sampled BEFORE any of these relation flags is raised, so the verdict on one budget does
+  // not depend on whether the other budget already flagged the statement timeout.
+  const advisoryAgainstStatement =
+    individuallyValid('IDEMPOTENCY_ADVISORY_WAIT_MS', 'DB_STATEMENT_TIMEOUT_MS') &&
+    advisoryWaitMs >= statementTimeoutMs;
+  const businessAgainstStatement =
+    individuallyValid('IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS', 'DB_STATEMENT_TIMEOUT_MS') &&
+    businessLockTimeoutMs >= statementTimeoutMs;
+  if (advisoryAgainstStatement) {
+    flag('IDEMPOTENCY_ADVISORY_WAIT_MS');
+    flag('DB_STATEMENT_TIMEOUT_MS');
+  }
+  if (businessAgainstStatement) {
+    flag('IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS');
+    flag('DB_STATEMENT_TIMEOUT_MS');
+  }
+  if (
+    individuallyValid('IDEMPOTENCY_REPLAY_TTL_SECONDS', 'IDEMPOTENCY_DEDUPE_TTL_SECONDS') &&
+    replayTtlSeconds > dedupeTtlSeconds
+  ) {
+    flag('IDEMPOTENCY_REPLAY_TTL_SECONDS');
+    flag('IDEMPOTENCY_DEDUPE_TTL_SECONDS');
+  }
+
+  // Crypto keyring: optional at this level, but all-or-nothing and strictly validated when present.
   // Only variable NAMES are ever reported; key material is never echoed.
   let crypto: Keyring | undefined;
   const rawKeyring = env.CRYPTO_KEYRING;
@@ -239,6 +314,7 @@ export function loadConfig(env: EnvSource): ConfigResult {
       port,
       database: { url: databaseUrl, poolMax, connectTimeoutMs, queryTimeoutMs, statementTimeoutMs },
       transaction: { timeoutMs: transactionTimeoutMs, idleInTransactionTimeoutMs },
+      idempotency: { advisoryWaitMs, businessLockTimeoutMs, replayTtlSeconds, dedupeTtlSeconds },
       crypto,
     },
   };

@@ -2,8 +2,8 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { configureApp } from './app.setup';
-import { safeErrorCode } from './common/safe-error';
 import { formatInvalidConfigMessage, loadConfig } from './config/app-config';
+import { describeStartupFailure } from './config/startup-failure';
 import { JsonLogger } from './logging/json-logger';
 
 async function bootstrap(): Promise<void> {
@@ -20,7 +20,12 @@ async function bootstrap(): Promise<void> {
   const logger = new JsonLogger();
 
   // The database is NOT contacted here and migrations are NOT run on startup.
-  const app = await NestFactory.create(AppModule.register({ config, logger }), { logger: false });
+  // abortOnError: false lets a startup failure (for example a module that needs a missing keyring)
+  // reach the catch below, which prints only variable names, instead of Nest exiting silently.
+  const app = await NestFactory.create(AppModule.register({ config, logger }), {
+    logger: false,
+    abortOnError: false,
+  });
 
   try {
     configureApp(app);
@@ -35,6 +40,6 @@ async function bootstrap(): Promise<void> {
 }
 
 bootstrap().catch((error: unknown) => {
-  process.stderr.write(`Startup failed (${safeErrorCode(error)}).\n`);
+  process.stderr.write(`${describeStartupFailure(error)}\n`);
   process.exitCode = 1;
 });

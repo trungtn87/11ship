@@ -99,6 +99,14 @@ Xem [.env.example](.env.example). Thiếu hoặc sai biến thì tiến trình t
 - Primitive dùng chung: JSON canonical v1 + validator có giới hạn, keyring/HKDF/HMAC/AES-GCM, khóa advisory hai int32. Chưa có bảng idempotency, audit hay outbox (thuộc A1/B/C).
 - Test: `npm run test:unit` không cần DB; `npm run test:integration` cần PostgreSQL test đúng guard hiện có (xem trên).
 
+### Idempotency (M00-C1A1)
+
+- Bảng `app.idempotency_records` (migration `1791331200000_create-idempotency-records`) lưu khóa chính xác `(scope_type, scope_id, operation_id, idempotency_key)`, fingerprint HMAC, id khóa mã hóa, guard không bí mật và replay đã mã hóa AES-256-GCM (ciphertext/IV/tag). Không có plaintext secret. Chưa có audit, outbox, Auth.
+- `IdempotencyExecutor` (apps/backend/src/idempotency) điều phối toàn bộ giao dịch qua `TransactionManager`: advisory lock hai int32 → khôi phục `lock_timeout` → `SELECT ... FOR UPDATE` đúng hàng → giờ mới `clock_timestamp()`. Replay dùng khóa lịch sử của chính record; thiếu khóa → `503 IDEMPOTENCY_KEY_UNAVAILABLE`, không chạy lại. Replay nhạy cảm gọi hook xác thực cùng `TransactionContext` trước khi giải mã. Chỉ kết quả 2xx được lưu; callback chạy đúng một lần cho record mới.
+- `IdempotencyCleanup` là primitive gọi tay (chưa có scheduler): pha 1 xóa ciphertext nhưng giữ tombstone, pha 2 xóa record quá dedupe TTL; `FOR UPDATE SKIP LOCKED`, có giới hạn lô, kiểm tra lại điều kiện.
+- Biến mới: `IDEMPOTENCY_ADVISORY_WAIT_MS` (250, 1..5000, nhỏ hơn `DB_STATEMENT_TIMEOUT_MS`), `IDEMPOTENCY_BUSINESS_LOCK_TIMEOUT_MS` (500, 1..30000, nhỏ hơn `DB_STATEMENT_TIMEOUT_MS`), `IDEMPOTENCY_REPLAY_TTL_SECONDS` (900) và `IDEMPOTENCY_DEDUPE_TTL_SECONDS` (604800) với `1 <= replay <= dedupe <= 604800`. Module idempotency yêu cầu `CRYPTO_KEYRING` + `CRYPTO_ACTIVE_KEY_ID`; thiếu thì tiến trình thoát khác 0 và chỉ in tên hai biến. Module chưa được `AppModule` import (chưa có consumer); M01 sẽ import `IdempotencyModule`.
+- Test integration cần migration mới nhất; bộ test migration (C23) reset schema `app` của chính database `ship11_test` (sau khi guard xác nhận) rồi luôn migrate lại về bản mới nhất.
+
 ### Phạm vi hiện tại
 
 Chỉ có nền backend: health endpoints, cấu hình, pool, migration runner, error contract. Chưa có Auth, Shop, Driver, Wallet, Delivery, frontend, SMS hay triển khai production. Hướng dẫn sao lưu/khôi phục ở [ops/runbooks](ops/runbooks/database-backup-restore-guidance.md) chỉ là hướng dẫn cho tương lai, chưa được kiểm thử.
