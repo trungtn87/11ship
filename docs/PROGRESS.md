@@ -102,7 +102,7 @@ How every PR is treated. A PR counts only through explicit metadata (labels, or 
 | [#11](https://github.com/trungtn87/11ship/pull/11) docs(m01-a1): lock Auth Core implementation contract | MERGED | — | — | — | `a17935f` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR not c… |
 | [#12](https://github.com/trungtn87/11ship/pull/12) feat(auth): M01-A1 Auth Core (READY CANDIDATE) | MERGED | — | — | — | `ef3afd4` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR not c… |
 | [#13](https://github.com/trungtn87/11ship/pull/13) chore(progress): Việt hóa dashboard tiến độ | OPEN | — | infra | ✅ PASS | `25a62e9` | out of plan — Out of plan (type:infra) |
-| [#14](https://github.com/trungtn87/11ship/pull/14) docs(ui): add Figma workflow and frontend UI gate | OPEN | — | infra | ✅ PASS | `182945c` | out of plan — Out of plan (type:infra) |
+| [#14](https://github.com/trungtn87/11ship/pull/14) docs(ui): add Figma workflow and frontend UI gate | OPEN | — | infra | ⏳ RUNNING | `0d16d7b` | out of plan — Out of plan (type:infra) |
 
 ## ⚠️ Attention
 
