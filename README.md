@@ -19,7 +19,9 @@ Nền backend M00-B1 (NestJS bootstrap, cấu hình, pool PostgreSQL, migration,
 
 ## Cách làm việc
 
-ChatGPT thiết kế, chia task và review. Claude code từng task. Owner test nghiệp vụ và duyệt. Mỗi gói dùng nhánh riêng, giữ base/head commit và bằng chứng test. Chưa merge khi chưa PASS.
+ChatGPT thiết kế, chia task, làm UX/Figma cho phần có giao diện và review. Claude code từng task. Owner test nghiệp vụ, duyệt UI và duyệt merge. Mỗi gói dùng nhánh riêng, giữ base/head commit và bằng chứng test. Chưa merge khi chưa PASS.
+
+**UI workflow:** task backend/infra thuần dùng `UI_SCOPE: NONE`; task có giao diện dùng `UI_SCOPE: FIGMA_REQUIRED`. Backend/API được phép chạy song song với thiết kế Figma; Claude chỉ bắt đầu frontend của màn hình sau khi frame tương ứng đã được Owner duyệt và đánh dấu `UI_LOCKED`. Figma là source of truth cho layout/style/interaction; sau code phải visual QA so với Figma. Xem [quy trình Figma + UI](docs/current/11Ship-figma-ui-workflow-v1.0.md).
 
 Trạng thái M00-B1: PR #1 (thiết kế, ADR, task) **đã merge vào `main`**. PR #2 (code M00-B1) đã target `main`, F01–F09 PASS, **chưa merge** và đang chờ final review. M00-C1 chưa bắt đầu; sau M00-B1 sẽ là M00-C1 (transaction context/idempotency/audit/outbox), rồi M01-A1 (Auth Core).
 
