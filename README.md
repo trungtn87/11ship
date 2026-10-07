@@ -17,7 +17,7 @@ Nền backend M00-B1 (NestJS bootstrap, cấu hình, pool PostgreSQL, migration,
 
 ChatGPT thiết kế, chia task và review. Claude code từng task. Owner test nghiệp vụ và duyệt. Mỗi gói dùng nhánh riêng, giữ base/head commit và bằng chứng test. Chưa merge khi chưa PASS.
 
-Trạng thái M00-B1: PR #1 (thiết kế, ADR, task) **đã merge vào `main`**. PR #2 (code M00-B1) đã target `main`, F01–F09 PASS, **chưa merge** và đang chờ final review. M00-C1 chưa bắt đầu; sau M00-B1 sẽ là M00-C1 (transaction context/idempotency/audit/outbox), rồi M01-A1 (Auth Core).
+Trạng thái: M00-B1 và M00-C1A0 đã merge vào `main`. M00-C1A1 (idempotency executor/replay/TTL/cleanup) đang triển khai trên draft PR #5. Audit/outbox/dispatcher thuộc C1B/C; M01-A1 chỉ mở sau khi toàn bộ M00-C1 hoàn tất.
 
 ## Chạy backend ở máy phát triển
 
@@ -71,11 +71,13 @@ Test integration chỉ chấp nhận `APP_ENV=test` và database `ship11_test` v
 ```powershell
 $env:APP_ENV = "test"
 $env:DATABASE_URL = "postgres://ship11_test:<TEST_DB_PASSWORD>@127.0.0.1:5433/ship11_test"
+$env:CRYPTO_ACTIVE_KEY_ID = "k1"
+$env:CRYPTO_KEYRING = "k1:<base64-of-32-test-bytes>"
 npm run test:integration
 ```
 
 ```bash
-APP_ENV=test DATABASE_URL="postgres://ship11_test:<TEST_DB_PASSWORD>@127.0.0.1:5433/ship11_test" npm run test:integration
+APP_ENV=test DATABASE_URL="postgres://ship11_test:<TEST_DB_PASSWORD>@127.0.0.1:5433/ship11_test" CRYPTO_ACTIVE_KEY_ID="k1" CRYPTO_KEYRING="k1:<base64-of-32-test-bytes>" npm run test:integration
 ```
 
 Không có DB thì test thất bại, không bị bỏ qua. Test dọn dẹp chỉ trong schema tạm có tên ngẫu nhiên do chính test tạo; không có lệnh reset dữ liệu.
@@ -85,14 +87,21 @@ Không có DB thì test thất bại, không bị bỏ qua. Test dọn dẹp ch�
 
 ### Cấu hình
 
-Xem [.env.example](.env.example). Thiếu hoặc sai biến thì tiến trình thoát với mã khác 0 và chỉ in tên biến, không in giá trị. `APP_ENV` và `DATABASE_URL` bắt buộc ở mọi môi trường, không có giá trị dự phòng.
+Xem [.env.example](.env.example). Thiếu hoặc sai biến thì tiến trình thoát với mã khác 0 và chỉ in tên biến, không in giá trị. `APP_ENV`, `DATABASE_URL`, `CRYPTO_ACTIVE_KEY_ID` và `CRYPTO_KEYRING` bắt buộc từ M00-C1A1. Không có fallback cho khóa crypto; giá trị thật phải được inject bằng secret/config ngoài repo.
 
 ### Nền giao dịch (M00-C1A0)
 
-- Biến mới: `DB_STATEMENT_TIMEOUT_MS` (800), `DB_TRANSACTION_TIMEOUT_MS` (5000), `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` (2000), mỗi biến trong 100..30000. Ràng buộc: query timeout phía client > statement timeout phía server; transaction deadline > statement timeout. `CRYPTO_ACTIVE_KEY_ID` và `CRYPTO_KEYRING` (`id:base64,id:base64`, mỗi khóa 32 byte) là tùy chọn nhưng phải đặt cùng nhau; `.env.example` chỉ có placeholder.
+- A0: `DB_STATEMENT_TIMEOUT_MS` (800), `DB_TRANSACTION_TIMEOUT_MS` (5000), `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` (2000), mỗi biến trong 100..30000. Ràng buộc: query timeout phía client > statement timeout phía server; transaction deadline > statement timeout.
 - `TransactionManager` (apps/backend/src/transaction) do coordinator sở hữu. Participant chỉ nhận `TransactionContext` (`query`, `isActive`), không có pool, client thô hay lệnh BEGIN/COMMIT. Không tự retry, không giao dịch lồng nhau, không savepoint.
 - COMMIT không nhận được phản hồi trả `503 TRANSACTION_OUTCOME_UNKNOWN`; callback không bao giờ chạy lần hai.
-- Primitive dùng chung: JSON canonical v1 + validator có giới hạn, keyring/HKDF/HMAC/AES-GCM, khóa advisory hai int32. Chưa có bảng idempotency, audit hay outbox (thuộc A1/B/C).
+- Primitive dùng chung: JSON canonical v1 + validator có giới hạn, keyring/HKDF/HMAC/AES-GCM, khóa advisory hai int32.
+
+### Idempotency (M00-C1A1 — draft PR #5)
+
+- `CRYPTO_ACTIVE_KEY_ID` và `CRYPTO_KEYRING` (`id:base64,id:base64`, mỗi master key đúng 32 byte) là bắt buộc. `.env.example` chỉ chứa placeholder; thay bằng khóa riêng trước khi chạy app.
+- `IDEMPOTENCY_ADVISORY_WAIT_MS` mặc định 250ms và `DB_BUSINESS_LOCK_TIMEOUT_MS` mặc định 500ms; cả hai phải nhỏ hơn `DB_STATEMENT_TIMEOUT_MS`.
+- `IDEMPOTENCY_REPLAY_TTL_SECONDS` mặc định 900s, `IDEMPOTENCY_DEDUPE_TTL_SECONDS` mặc định 604800s; bắt buộc `1 <= replay <= dedupe <= 604800`.
+- A1 tạo `app.idempotency_records`, executor exact-key, encrypted replay, historical-key rotation, replay authorization hook và cleanup primitive. Không có scheduler production; audit/outbox vẫn thuộc C1B/C.
 - Test: `npm run test:unit` không cần DB; `npm run test:integration` cần PostgreSQL test đúng guard hiện có (xem trên).
 
 ### Phạm vi hiện tại
