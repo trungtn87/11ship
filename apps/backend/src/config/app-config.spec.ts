@@ -10,6 +10,8 @@ const SECRET = 'SECRET_MARKER_CONFIG_7f3a';
 const validEnv = {
   APP_ENV: 'test',
   DATABASE_URL: `postgres://ship11_test:${SECRET}@127.0.0.1:5433/ship11_test`,
+  CRYPTO_KEYRING: FIXTURE_KEYRING_ENV,
+  CRYPTO_ACTIVE_KEY_ID: 'k1',
 };
 
 function invalidOf(env: Record<string, string | undefined>): readonly string[] {
@@ -38,8 +40,13 @@ describe('loadConfig', () => {
       statementTimeoutMs: 800,
     });
     expect(result.config.transaction).toEqual({ timeoutMs: 5000, idleInTransactionTimeoutMs: 2000 });
-    // M00-C1A0: the keyring is optional until a slice consumes it.
-    expect(result.config.crypto).toBeUndefined();
+    expect(result.config.idempotency).toEqual({
+      advisoryWaitMs: 250,
+      businessLockTimeoutMs: 500,
+      replayTtlSeconds: 900,
+      dedupeTtlSeconds: 604800,
+    });
+    expect(result.config.crypto.activeKeyId).toBe('k1');
   });
 
   it('accepts explicit values inside the allowed bounds', () => {
@@ -64,15 +71,15 @@ describe('loadConfig', () => {
   });
 
   it('rejects a missing DATABASE_URL and names only that variable', () => {
-    expect(invalidOf({ APP_ENV: 'test' })).toEqual(['DATABASE_URL']);
+    expect(invalidOf({ ...validEnv, DATABASE_URL: undefined })).toEqual(['DATABASE_URL']);
   });
 
   it('has no fallback for DATABASE_URL in production', () => {
-    expect(invalidOf({ APP_ENV: 'production' })).toEqual(['DATABASE_URL']);
+    expect(invalidOf({ ...validEnv, APP_ENV: 'production', DATABASE_URL: undefined })).toEqual(['DATABASE_URL']);
   });
 
   it('rejects a missing or unknown APP_ENV', () => {
-    expect(invalidOf({ DATABASE_URL: validEnv.DATABASE_URL })).toEqual(['APP_ENV']);
+    expect(invalidOf({ ...validEnv, APP_ENV: undefined })).toEqual(['APP_ENV']);
     expect(invalidOf({ ...validEnv, APP_ENV: 'prod' })).toEqual(['APP_ENV']);
     expect(invalidOf({ ...validEnv, APP_ENV: '' })).toEqual(['APP_ENV']);
   });
@@ -219,6 +226,36 @@ describe('loadConfig', () => {
     });
   });
 
+  describe('idempotency configuration', () => {
+    it('enforces advisory/business lock budgets below statement_timeout', () => {
+      expect(invalidOf({ ...validEnv, IDEMPOTENCY_ADVISORY_WAIT_MS: '800' })).toEqual([
+        'IDEMPOTENCY_ADVISORY_WAIT_MS',
+        'DB_STATEMENT_TIMEOUT_MS',
+      ]);
+      expect(invalidOf({ ...validEnv, DB_BUSINESS_LOCK_TIMEOUT_MS: '800' })).toEqual([
+        'DB_BUSINESS_LOCK_TIMEOUT_MS',
+        'DB_STATEMENT_TIMEOUT_MS',
+      ]);
+    });
+
+    it('enforces replay <= dedupe <= 7 days and accepts equality', () => {
+      expect(
+        invalidOf({
+          ...validEnv,
+          IDEMPOTENCY_REPLAY_TTL_SECONDS: '901',
+          IDEMPOTENCY_DEDUPE_TTL_SECONDS: '900',
+        }),
+      ).toEqual(['IDEMPOTENCY_REPLAY_TTL_SECONDS', 'IDEMPOTENCY_DEDUPE_TTL_SECONDS']);
+      expect(
+        loadConfig({
+          ...validEnv,
+          IDEMPOTENCY_REPLAY_TTL_SECONDS: '60',
+          IDEMPOTENCY_DEDUPE_TTL_SECONDS: '60',
+        }).ok,
+      ).toBe(true);
+    });
+  });
+
   describe('crypto keyring', () => {
     it('accepts a valid keyring and active key id', () => {
       const result = loadConfig({
@@ -234,10 +271,10 @@ describe('loadConfig', () => {
     });
 
     it('is all-or-nothing: one variable without the other is invalid and named', () => {
-      expect(invalidOf({ ...validEnv, CRYPTO_KEYRING: FIXTURE_KEYRING_ENV })).toEqual([
+      expect(invalidOf({ ...validEnv, CRYPTO_ACTIVE_KEY_ID: undefined })).toEqual([
         'CRYPTO_ACTIVE_KEY_ID',
       ]);
-      expect(invalidOf({ ...validEnv, CRYPTO_ACTIVE_KEY_ID: 'k1' })).toEqual(['CRYPTO_KEYRING']);
+      expect(invalidOf({ ...validEnv, CRYPTO_KEYRING: undefined })).toEqual(['CRYPTO_KEYRING']);
     });
 
     it.each([
