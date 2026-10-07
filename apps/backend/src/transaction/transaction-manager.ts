@@ -263,6 +263,14 @@ export class TransactionManager {
       throw new TransactionError('BEGIN_FAILED', serverRejectionOf(error)?.code);
     }
 
+    if (!budgetLeft()) {
+      // BEGIN/setup used up the whole budget (the timer may simply not have run yet): the business
+      // callback must not start. Nothing was written, so roll back or destroy an untrusted client.
+      session.close();
+      await this.#abort(session);
+      throw new TransactionError('DEADLINE_EXCEEDED');
+    }
+
     const running = Promise.resolve().then(() => work(session.context));
     // If the deadline wins, the callback may still fail later; that must not become an unhandled rejection.
     running.catch(() => undefined);
@@ -318,6 +326,13 @@ export class TransactionManager {
         // COMMIT was sent and PostgreSQL has not answered: it may or may not be committed. Never a
         // rollback conclusion, never a second callback run; the connection cannot be trusted.
         session.finish(true);
+        throw new AppError('TRANSACTION_OUTCOME_UNKNOWN');
+      }
+      if (!budgetLeft()) {
+        // The failure was only observed after the total deadline (the timer was late). It is not a
+        // result inside the budget, so it is reported as unknown, never as a rejection or a rollback.
+        const rejection = serverRejectionOf(error);
+        session.finish(rejection === undefined || isFatal(rejection));
         throw new AppError('TRANSACTION_OUTCOME_UNKNOWN');
       }
       throw this.#afterFailedCommit(session, error);

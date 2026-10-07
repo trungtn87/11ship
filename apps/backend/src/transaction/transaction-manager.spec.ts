@@ -649,6 +649,125 @@ describe('TransactionManager — total deadline from BEGIN to COMMIT', () => {
     expect(client.released).toEqual([false]);
   });
 
+  it('does not start the callback when BEGIN/setup used up the budget while the event loop was blocked', async () => {
+    const client = new ScriptedClient((text) => {
+      if (text.startsWith('SELECT set_config')) {
+        // Synchronous block: the deadline timer cannot be dispatched, only the monotonic clock knows.
+        const until = performance.now() + 45;
+        while (performance.now() < until) {
+          // busy
+        }
+      }
+      return rows(text);
+    });
+    const { manager } = managerFor(client, { timeoutMs: 30, idleInTransactionTimeoutMs: 500 });
+    let calls = 0;
+
+    const error = await failureOf(() =>
+      manager.withTransaction(() => {
+        calls += 1;
+        return Promise.resolve();
+      }),
+    );
+
+    expect((error as TransactionError).reason).toBe('DEADLINE_EXCEEDED');
+    expect(calls).toBe(0);
+    expect(client.log).not.toContain('COMMIT');
+    expect(client.log.at(-1)).toBe('ROLLBACK');
+    expect(client.released).toEqual([false]);
+  });
+
+  it('destroys instead of rolling back when the budget ran out in setup and the client is not trustworthy', async () => {
+    const client = new ScriptedClient((text) => {
+      if (text.startsWith('SELECT set_config')) {
+        const until = performance.now() + 45;
+        while (performance.now() < until) {
+          // busy
+        }
+        client.emitError(new Error('Connection terminated SECRET'));
+      }
+      return rows(text);
+    });
+    const { manager } = managerFor(client, { timeoutMs: 30, idleInTransactionTimeoutMs: 500 });
+    let calls = 0;
+
+    const error = await failureOf(() =>
+      manager.withTransaction(() => {
+        calls += 1;
+        return Promise.resolve();
+      }),
+    );
+
+    expect((error as TransactionError).reason).toBe('DEADLINE_EXCEEDED');
+    expect(calls).toBe(0);
+    expect(client.log).not.toContain('ROLLBACK');
+    expect(client.released).toEqual([true]);
+  });
+
+  it.each(['23505', '40001', '40P01'])(
+    'reports a server-style COMMIT rejection (%s) observed after the budget as UNKNOWN when the timer was late',
+    async (sqlState) => {
+      const client = new ScriptedClient((text) => {
+        if (text === 'COMMIT') {
+          const until = performance.now() + 45;
+          while (performance.now() < until) {
+            // busy: the deadline timer cannot run before the rejection is observed
+          }
+          throw serverError(sqlState);
+        }
+        return rows(text);
+      });
+      const { manager, source } = managerFor(client, { timeoutMs: 30, idleInTransactionTimeoutMs: 500 });
+      let calls = 0;
+      const unhandled: unknown[] = [];
+      const listener = (reason: unknown) => {
+        unhandled.push(reason);
+      };
+      process.on('unhandledRejection', listener);
+      try {
+        const error = await failureOf(() =>
+          manager.withTransaction(async (context) => {
+            calls += 1;
+            await context.query('INSERT INTO t VALUES (1)');
+          }),
+        );
+
+        expect(error).toBeInstanceOf(AppError);
+        expect((error as AppError).code).toBe('TRANSACTION_OUTCOME_UNKNOWN');
+        expect((error as Error).message).not.toContain('SECRET');
+        expect(calls).toBe(1);
+        expect(source.acquired).toBe(1);
+        expect(client.log.filter((text) => text === 'COMMIT')).toHaveLength(1);
+        expect(client.log).not.toContain('ROLLBACK');
+        expect(client.released).toHaveLength(1);
+        await sleep(40); // let the (now cleared) deadline and any late settlement pass
+        expect(client.released).toHaveLength(1);
+        expect(unhandled).toEqual([]);
+      } finally {
+        process.off('unhandledRejection', listener);
+      }
+    },
+  );
+
+  it('reports a COMMIT failure without a server answer after the budget as UNKNOWN and destroys the client', async () => {
+    const client = new ScriptedClient((text) => {
+      if (text === 'COMMIT') {
+        const until = performance.now() + 45;
+        while (performance.now() < until) {
+          // busy
+        }
+        throw Object.assign(new Error('read ECONNRESET SECRET'), { code: 'ECONNRESET' });
+      }
+      return rows(text);
+    });
+    const { manager } = managerFor(client, { timeoutMs: 30, idleInTransactionTimeoutMs: 500 });
+
+    const error = await failureOf(() => manager.withTransaction(() => Promise.resolve()));
+
+    expect((error as AppError).code).toBe('TRANSACTION_OUTCOME_UNKNOWN');
+    expect(client.released).toEqual([true]);
+  });
+
   it('still succeeds when COMMIT is answered inside the budget', async () => {
     const client = new ScriptedClient(async (text) => {
       if (text === 'COMMIT') {
