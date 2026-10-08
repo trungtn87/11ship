@@ -10,9 +10,9 @@ import { UserRepository } from './user-repository';
 const CONTEXT = {} as TransactionContext;
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 
-function rig(user: { status: string } | undefined = { status: 'ACTIVE' }) {
+function rig(user: { status: string } | null = { status: 'ACTIVE' }) {
   const grantRole = jest.fn<(context: TransactionContext, userId: string, role: string) => Promise<boolean>>(async () => true);
-  const lockById = jest.fn<(context: TransactionContext, userId: string) => Promise<{ status: string } | undefined>>(async () => user);
+  const lockById = jest.fn<(context: TransactionContext, userId: string) => Promise<{ status: string } | undefined>>(async () => user ?? undefined);
   const participant = new RoleGrantParticipant({ grantRole, lockById } as unknown as UserRepository);
   return { participant, grantRole, lockById };
 }
@@ -47,7 +47,7 @@ describe('RoleGrantParticipant.lockActiveUser', () => {
   });
 
   it('a missing user is SESSION_INVALID and a DISABLED user is ACCOUNT_DISABLED', async () => {
-    const missing = await rig(undefined).participant.lockActiveUser(CONTEXT, USER_ID).catch((error: unknown) => error);
+    const missing = await rig(null).participant.lockActiveUser(CONTEXT, USER_ID).catch((error: unknown) => error);
     expect(missing).toBeInstanceOf(AppError);
     expect((missing as AppError).code).toBe('SESSION_INVALID');
     const disabled = await rig({ status: 'DISABLED' }).participant.lockActiveUser(CONTEXT, USER_ID).catch((error: unknown) => error);
