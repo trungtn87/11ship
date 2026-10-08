@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AppError } from '../common/app-errors';
+import { AppError, TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
 import { DriverStatus } from './driver-types';
 
@@ -24,6 +24,7 @@ export interface ActiveDriver {
  * Outcomes:
  * - ACTIVE                                  -> resolves with the driver id.
  * - PENDING                                 -> DRIVER_PENDING_APPROVAL (the contracted answer).
+ * - any other (unknown) status             -> TechnicalError('internal'), never a resolved value.
  * - SUSPENDED, CLOSING, CLOSED, no profile  -> ROLE_NOT_AVAILABLE. The A2 error contract names no code for these
  *   states. The guard fails CLOSED with the existing registry code rather than invent one, and no HTTP endpoint
  *   of A2D calls the guard, so no client sees this answer yet. Owner decision pending before a later slice wires
@@ -51,6 +52,10 @@ export class DriverActiveGuard {
       case 'CLOSING':
       case 'CLOSED':
         throw new AppError('ROLE_NOT_AVAILABLE');
+      default:
+        // A status outside the known set (schema drift, a newer writer): the CHECK constraint and the union
+        // type do not replace this. Never resolve with nothing; fail closed with a safe internal error.
+        throw new TechnicalError('internal', 'Unexpected driver status');
     }
   }
 }
