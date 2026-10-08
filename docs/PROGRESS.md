@@ -92,7 +92,7 @@ flowchart TD
 | **M01-A2** thiết kế · Onboarding (Quán + Tài xế) | ✅ Hoàn thành (`DONE`) | — | [#15](https://github.com/trungtn87/11ship/pull/15) | ✅ Đạt (`PASS`) | `c329808` | A1 Hoàn thành (DONE) | — |
 | &nbsp;&nbsp;M01-A2S · Onboarding quán (Shop) | ✅ Hoàn thành (`DONE`) | — | [#16](https://github.com/trungtn87/11ship/pull/16) | ✅ Đạt (`PASS`) | `620333f` | — | — |
 | &nbsp;&nbsp;M01-A2D · Onboarding tài xế (Driver) | ✅ Hoàn thành (`DONE`) | — | [#17](https://github.com/trungtn87/11ship/pull/17) | ✅ Đạt (`PASS`) | `c37082a` | A2S Hoàn thành (DONE) | — |
-| M01-R1 · Sửa sau merge (session, rollback, router, tiến độ) | 🛠️ Claude đang code (`CLAUDE_CODING`) | Claude | [#19](https://github.com/trungtn87/11ship/pull/19) | ⏳ Đang chạy (`RUNNING`) | `4eac382` | A2 Hoàn thành (DONE) | Claude hoàn tất PR #19, chuyển sang ready |
+| M01-R1 · Sửa sau merge (session, rollback, router, tiến độ) | 🛠️ Claude đang code (`CLAUDE_CODING`) | Claude | [#19](https://github.com/trungtn87/11ship/pull/19) | ✅ Đạt (`PASS`) | `3c935b3` | A2 Hoàn thành (DONE) | Claude hoàn tất PR #19, chuyển sang ready |
 
 ## Danh sách Pull Request
 
@@ -118,7 +118,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#16](https://github.com/trungtn87/11ship/pull/16) feat(onboarding): M01-A2S shop onboarding | Đã merge (`MERGED`) | M01-A2S | triển khai | ✅ Đạt (`PASS`) | `620333f` | được tính |
 | [#17](https://github.com/trungtn87/11ship/pull/17) feat(m01-a2d): DRIVER onboarding (no Driver service area) | Đã merge (`MERGED`) | M01-A2D | triển khai | ✅ Đạt (`PASS`) | `c37082a` | được tính |
 | [#18](https://github.com/trungtn87/11ship/pull/18) docs(m02-a): hồ sơ quán và tự động hoạt động theo giờ | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `ebb0f3a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#19](https://github.com/trungtn87/11ship/pull/19) docs(m00-m01): session authorization, bounded rollback, rou… | Bản nháp (`DRAFT`) | M01-R1 | thiết kế + triển khai | ⏳ Đang chạy (`RUNNING`) | `4eac382` | được tính |
+| [#19](https://github.com/trungtn87/11ship/pull/19) docs(m00-m01): session authorization, bounded rollback, rou… | Bản nháp (`DRAFT`) | M01-R1 | thiết kế + triển khai | ✅ Đạt (`PASS`) | `3c935b3` | được tính |
 
 ## ⚠️ Cần chú ý
 

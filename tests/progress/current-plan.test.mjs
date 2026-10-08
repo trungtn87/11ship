@@ -259,3 +259,86 @@ describe('combined PR: ordinary tasks are unchanged', () => {
     assert.equal(plan.tasks.some((t) => t.combined_design_implementation), false);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Re-audit of 3c935b3: design lifecycle of the combined PR (P2) and null in the optional flag (P3).
+
+describe('combined PR: design_state follows the real PR lifecycle', () => {
+  const head = sha('b');
+  const combinedPr = (extra = {}) => pr({ number: 19, head_sha: head, labels: [], checks: checks.pass, ...extra });
+  const task = (pulls) => resolveProgress(livePlan, snapshot([...realHistory(), ...pulls])).tasks.find((t) => t.id === 'M01-R1');
+
+  test('Draft -> DESIGNING, with the implementation state untouched', () => {
+    const r = task([combinedPr({ draft: true })]);
+    assert.equal(r.design_state, STATE.DESIGNING);
+    assert.equal(r.design_pr, 19);
+    assert.equal(r.state, STATE.CLAUDE_CODING);
+  });
+
+  test('Open, not Draft -> DESIGN_REVIEW (implementation: waiting for review, or CI)', () => {
+    const r = task([combinedPr()]);
+    assert.equal(r.design_state, STATE.DESIGN_REVIEW);
+    assert.equal(r.state, STATE.WAITING_CHATGPT_REVIEW);
+    assert.equal(task([combinedPr({ checks: checks.fail })]).design_state, STATE.DESIGN_REVIEW);
+  });
+
+  test('Merged -> DESIGN_LOCKED, and DONE only with green required checks', () => {
+    const ok = task([merged(19, 'b')]);
+    assert.equal(ok.design_state, STATE.DESIGN_LOCKED);
+    assert.equal(ok.state, STATE.DONE);
+    const red = task([merged(19, 'b', { checks: checks.fail })]);
+    assert.equal(red.design_state, STATE.DESIGN_LOCKED);
+    assert.equal(red.state, STATE.CI_FAILED);
+  });
+
+  test('Missing, or closed without merge -> PLANNED (design not locked, not ready for Claude)', () => {
+    for (const pulls of [[], [combinedPr({ state: 'closed', merged_at: null })]]) {
+      const r = task(pulls);
+      assert.equal(r.design_state, STATE.PLANNED);
+      assert.equal(r.state, STATE.PLANNED);
+    }
+  });
+
+  test('still counted once: one PR row, one leaf, and ordinary tasks keep their own design lookup', () => {
+    const result = resolveProgress(livePlan, snapshot([...realHistory(), combinedPr({ draft: true })]));
+    assert.equal(result.prs.filter((p) => p.number === 19).length, 1);
+    assert.equal(result.progress.overall.total, 9);
+    const a2s = result.tasks.find((t) => t.id === 'M01-A2S');
+    assert.equal(a2s.design_state, STATE.DESIGN_LOCKED);
+    assert.equal(a2s.design_pr, 15);
+  });
+});
+
+describe('combined_design_implementation: present means boolean (null included)', () => {
+  const withValue = (value) => {
+    const p = structuredClone(livePlan);
+    p.tasks.find((t) => t.id === 'M01-R1').combined_design_implementation = value;
+    return p;
+  };
+
+  for (const [label, value] of [['null', null], ['string true', 'true'], ['empty string', ''], ['zero', 0], ['one', 1], ['object', {}], ['array', []]]) {
+    test(`rejects ${label}`, () => {
+      assert.throws(() => validatePlan(withValue(value)), /must be true or false/);
+    });
+  }
+
+  test('rejects null on an ordinary task too, and reads null from real YAML', async () => {
+    const { parseYaml } = await import('../../scripts/progress/yaml-subset.mjs');
+    const { readFileSync } = await import('node:fs');
+    const text = readFileSync(new URL('../../docs/progress/plan.yml', import.meta.url), 'utf8').replace(
+      /(  - id: M01-A2S\n)/,
+      '$1    combined_design_implementation: null\n',
+    );
+    assert.throws(() => validatePlan(parseYaml(text)), /M01-A2S: combined_design_implementation must be true or false/);
+  });
+
+  test('absent and false keep the old behaviour; true stays valid on the combined leaf', () => {
+    assert.doesNotThrow(() => validatePlan(withValue(true)));
+    const absent = structuredClone(livePlan);
+    delete absent.tasks.find((t) => t.id === 'M01-A2S').combined_design_implementation;
+    assert.doesNotThrow(() => validatePlan(absent));
+    const falsy = structuredClone(livePlan);
+    falsy.tasks.find((t) => t.id === 'M01-A2S').combined_design_implementation = false;
+    assert.doesNotThrow(() => validatePlan(falsy));
+  });
+});

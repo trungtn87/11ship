@@ -105,7 +105,7 @@ export function validatePlan(plan) {
     for (const [field, expected] of Object.entries(FIXED_ROLES)) {
       if (t[field] !== expected) add(`task ${t.id}: ${field} must be ${expected} in schema v1 (got ${t[field] ?? 'nothing'}); roles are not configurable yet`);
     }
-    if (t.combined_design_implementation != null) {
+    if (Object.hasOwn(t, 'combined_design_implementation') && t.combined_design_implementation !== undefined) {
       if (typeof t.combined_design_implementation !== 'boolean') {
         add(`task ${t.id}: combined_design_implementation must be true or false`);
       } else if (t.combined_design_implementation) {
@@ -353,7 +353,6 @@ export function resolveProgress(plan, snapshot) {
   const required = plan.required_checks;
   const { results: prs, attention: prAttention } = classifyPrs(plan, tasksById, snapshot);
   const attention = [...prAttention];
-  const prsByTask = (id, role) => prs.filter((p) => p.counted && p.task === id && p.role === role);
 
   const mainState = mainStatus(snapshot.main, required);
   const mainCi = mainState.ci;
@@ -376,7 +375,8 @@ export function resolveProgress(plan, snapshot) {
   // Design gate: nearest node (self, then ancestors) that has any counted design PR decides.
   const designOf = (t) => {
     for (const node of [t, ...ancestors(t)]) {
-      const designPrs = prsByTask(node.id, 'design');
+      // An explicitly combined PR is both the design reference and the implementation of its leaf.
+      const designPrs = prs.filter((p) => p.counted && p.task === node.id && (p.role === 'design' || p.role === 'combined'));
       if (designPrs.length === 0) continue;
       const merged = designPrs.filter((p) => p.lifecycle === PR_STATE.MERGED).sort((a, b) => b.number - a.number)[0];
       if (merged) return { locked: true, state: STATE.DESIGN_LOCKED, pr: merged, node: node.id };

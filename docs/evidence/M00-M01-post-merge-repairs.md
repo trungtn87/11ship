@@ -93,3 +93,16 @@ How the proof was run (locally, Node 22, no dependencies): `node --test "tests/p
 Dashboard: regenerated from real GitHub data with `scripts/generate-progress.mjs` (`--check` clean). While #19 is Draft it shows `M01-R1` as "Claude đang code" (`CLAUDE_CODING`) with CI of the PR head; progress is 8/9 overall and 3/4 for M01, so M01 is NOT reported complete. Nothing was patched by hand.
 
 Heads and CI for this correction: see the handoff message (a commit cannot name its own CI).
+
+## §6 follow-up: re-audit of `3c935b3` (two findings)
+
+Reviewed head `3c935b3a0475937cafdbacc5366b28a8949a30ab` (CI [37735414881](https://github.com/trungtn87/11ship/actions/runs/37735414881) was green on it; the findings are about the resolver, not CI). The earlier §6 text above is kept as the history of that head.
+
+| Finding | Fix (`scripts/progress/resolve.mjs`) | Regression tests (`tests/progress/current-plan.test.mjs`) |
+| --- | --- | --- |
+| P2 `design_state` of the combined PR was PLANNED while #19 was open | the design lookup treats a counted `combined` PR as the task's design reference: Draft → DESIGNING, open and not Draft → DESIGN_REVIEW, merged → DESIGN_LOCKED; missing or closed-unmerged stays PLANNED. Implementation state, dependency gates, required CI, review binding and one-time counting are untouched; the `design_state` field only reports, the implementation branch still does not wait on it | "combined PR: design_state follows the real PR lifecycle" (draft, open, open+failing CI, merged green, merged red, missing, closed, counted once, ordinary task keeps its own design PR #15) |
+| P3 `combined_design_implementation: null` slipped through | validation now tests for presence (own property, not `undefined`) instead of `!= null`, so null, strings, numbers, objects and arrays are rejected; absent or false is unchanged; leaf / equal positive pins / reuse / pinned-and-ignored rules unchanged | "present means boolean (null included)": null, `'true'`, `''`, 0, 1, `{}`, `[]`, null on an ordinary task read from real YAML, absent/false/true still valid |
+
+Old → new proof (local, Node 22, no dependencies, no load errors): `scripts/progress/resolve.mjs` was restored from `3c935b3` with `git show 3c935b3:scripts/progress/resolve.mjs`, then `node --test tests/progress/current-plan.test.mjs` ran against it: 46 tests, 41 passed, **5 failed on behaviour**: Draft expected DESIGNING got PLANNED; open expected DESIGN_REVIEW got PLANNED; merged expected DESIGN_LOCKED got PLANNED; `null` flag: "Missing expected exception" (twice: the direct case and the real-YAML case). The fixed resolver was put back and the same file passed 46/46; the whole suite `node --test "tests/progress/*.test.mjs"` passed 172/172. A first draft of the new tests used `test.each`, which `node:test` does not provide; it was replaced with plain loops, so no test relies on a load error.
+
+Dashboard: regenerated from real GitHub data; `--check` clean. Heads and the CI run of the correction are in the handoff message.
