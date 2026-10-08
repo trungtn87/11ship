@@ -3,13 +3,13 @@ import { AuditWriter } from '../audit/audit-writer';
 import { AppError } from '../common/app-errors';
 import { DriverEligibilityReader } from '../driver/driver-eligibility-reader';
 import { DriverOnboardingState, OwnerDriverEligibility } from '../driver/driver-types';
-import { freshClockMs } from '../idempotency/idempotency-repository';
 import { ShopEligibilityReader } from '../shop/shop-eligibility-reader';
 import { OwnerShopEligibility, ShopOnboardingState } from '../shop/shop-types';
 import { TransactionManager } from '../transaction/transaction-manager';
-import { roleContext } from './available-roles';
+import { effectiveActiveRole, roleContext } from './available-roles';
 import { AUDIT_ACTIONS, isSupportedRole } from './auth-constants';
-import { AuthPrincipal } from './auth-principal';
+import { actorOf, AuthPrincipal } from './auth-principal';
+import { SessionAuthorizationParticipant } from './session-authorization-participant';
 import { SessionRepository } from './session-repository';
 import { UserRepository } from './user-repository';
 
@@ -46,33 +46,32 @@ export class RoleContextService {
     private readonly audit: AuditWriter,
     private readonly shops: ShopEligibilityReader,
     private readonly drivers: DriverEligibilityReader,
+    private readonly sessionAuth: SessionAuthorizationParticipant,
   ) {}
 
   /**
-   * One coherent projection (A2S review addendum, extended by A2D). The user row is taken FOR SHARE before the
-   * roles and the Shop and Driver eligibility are read. Shop completion, Driver creation (and every other
-   * writer of a user's roles or profile status) holds that row FOR UPDATE until it commits, so /me either runs
-   * entirely before such a writer or waits for it and then reads everything after its commit. Without the lock
-   * the reads are separate READ COMMITTED snapshots and a creation committing between them could show a PENDING
-   * driver next to a role list without DRIVER.
+   * One coherent projection (A2S review addendum, extended by A2D, then by the post-merge router repair). The user
+   * row is taken FOR SHARE and then the CURRENT session row FOR SHARE (through the Auth-owned participant) before
+   * the roles and the Shop and Driver eligibility are read. Shop completion, Driver creation, role selection and a
+   * revocation hold those rows FOR UPDATE until they commit, so /me either runs entirely before such a writer or
+   * waits for it and then reads everything after its commit: the session state, the role list and the profile
+   * statuses are one coherent state, never separate READ COMMITTED snapshots.
    *
-   * FOR SHARE, not FOR UPDATE: any number of /me calls of one user run together, and nothing is written. Only
-   * this one lock is taken, at the root of the A2 lock order, so the order of the mutations is unchanged.
+   * The active role is read from the LOCKED session row, not from the principal the guard built before this
+   * transaction began, and is reported only while it is still an available role (effectiveActiveRole). The session
+   * is validated again here (revoked, expired at the fresh database clock, user disabled), so a /me that waited
+   * behind a revocation answers with the session error instead of stale data.
+   *
+   * FOR SHARE, not FOR UPDATE: any number of /me calls of one user run together, and nothing is written. The
+   * locks are taken in the order user, session: the same as every mutation, so no reverse order exists.
    */
   async me(principal: AuthPrincipal): Promise<MeProjection> {
     const view = await this.transactions.withTransaction(async (context) => {
-      const user = await this.users.lockByIdForShare(context, principal.userId);
-      if (user === undefined) {
-        throw new AppError('SESSION_INVALID');
-      }
-      // Re-check after the lock: the guard read the status before this transaction began.
-      if (user.status !== 'ACTIVE') {
-        throw new AppError('ACCOUNT_DISABLED');
-      }
+      const { activeRole } = await this.sessionAuth.lockAuthorizedActorShared(context, actorOf(principal));
       const held = await this.users.supportedRoles(context, principal.userId);
       const shop = await this.shops.ownerShopEligibility(context, principal.userId);
       const driver = await this.drivers.ownerDriverEligibility(context, principal.userId);
-      return { held, shop, driver };
+      return { held, shop, driver, activeRole };
     });
     return {
       ...this.#shape(
@@ -81,7 +80,7 @@ export class RoleContextService {
         view.held,
         view.shop,
         view.driver,
-        principal.activeRole,
+        view.activeRole,
       ),
       onboarding: { shop: view.shop.onboarding, driver: view.driver.onboarding },
     };
@@ -104,25 +103,9 @@ export class RoleContextService {
     }
 
     return this.transactions.withTransaction(async (context) => {
-      const user = await this.users.lockById(context, principal.userId);
-      if (user === undefined) {
-        throw new AppError('SESSION_INVALID');
-      }
-      const session = await this.sessions.lockById(context, principal.sessionId);
-      if (session === undefined || session.userId !== principal.userId) {
-        throw new AppError('SESSION_INVALID');
-      }
-      // Re-check inside the transaction, with the clock read after the locks.
-      if (session.revoked) {
-        throw new AppError('SESSION_REVOKED');
-      }
-      const nowMs = await freshClockMs(context);
-      if (session.expiresAtMs <= nowMs) {
-        throw new AppError('SESSION_EXPIRED');
-      }
-      if (user.status !== 'ACTIVE') {
-        throw new AppError('ACCOUNT_DISABLED');
-      }
+      // User FOR UPDATE, then the current session FOR UPDATE, a fresh database clock after both waits, and the
+      // error precedence SESSION_REVOKED, SESSION_EXPIRED, ACCOUNT_DISABLED: the same participant onboarding uses.
+      await this.sessionAuth.lockAuthorizedActor(context, actorOf(principal));
       if (!(await this.users.hasRole(context, principal.userId, role))) {
         throw new AppError('ROLE_NOT_AVAILABLE');
       }
@@ -179,13 +162,14 @@ export class RoleContextService {
     driver: OwnerDriverEligibility,
     activeRole: string | null,
   ): MeResult {
-    // The same rule as login: see roleContext.
+    // The same rule as login: see roleContext. `activeRole` is what the session row stores; what is REPORTED is the
+    // effective role (stored AND still available), so a stale role is never shown and never routed into.
     const context = roleContext(held, shop, driver, activeRole);
     return {
       user_id: userId,
       phone_normalized: phone,
       available_roles: context.available_roles,
-      active_role: activeRole,
+      active_role: effectiveActiveRole(context.available_roles, activeRole),
       onboarding_required: context.onboarding_required,
       role_selection_required: context.role_selection_required,
     };
