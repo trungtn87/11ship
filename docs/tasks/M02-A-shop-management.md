@@ -1,6 +1,6 @@
 # M02-A — Hồ sơ quán, giờ hoạt động và trạng thái nhận đơn
 
-Trạng thái: DESIGN READY FOR OWNER REVIEW — chưa LOCK, chưa giao implementation.
+Trạng thái: OWNER APPROVED — duyệt tiếp tục ngày 08/10/2026; design merge/CI gate còn phải đạt trước implementation.
 Ngày: 2026-10-08.
 Base thiết kế ban đầu: main@87509eb0e866731ed55dc5b55bb2f3960e03b9a0.
 Đã đối chiếu code M01-R1 trên main@beb33e34d2f1d0f93336567eb0393d2da8ea658d ngày 08/10/2026. Branch này chưa rebase; khi giao implementation phải lấy current main đã có M01-R1.
@@ -13,13 +13,13 @@ Không triển khai menu, Order/Delivery, Driver, Wallet, ADMIN, SMS thật, chu
 Không thêm vùng hoạt động Driver. PLATFORM/EXTERNAL không phải Auth role.
 Kế hoạch song song/checklist nằm ở PR #20 (hiện Draft). M02-A gồm BE/UI/E2E/UAT; backend DONE không đồng nghĩa module hoàn tất. Không sửa manifest/dashboard trong PR #18; đối chiếu kế hoạch khi #20 merge.
 
-## 2. Quy tắc và điểm cần Owner duyệt
+## 2. Quy tắc đã chốt
 - Mỗi tài khoản OWNER chỉ sở hữu một quán; giữ nguyên constraint onboarding.
 - ACTIVE là trạng thái hồ sơ, độc lập với ONLINE/OFFLINE.
 - Owner chốt ngày 08/10/2026: quán tự ONLINE/OFFLINE hoàn toàn theo giờ hoạt động đã cài đặt. Không có công tắc bật/tắt thủ công hoặc API accepting-orders. Ngoài giờ luôn OFFLINE; tới giờ mở cửa tự ONLINE nếu hồ sơ và service area hợp lệ. Không cần quán mở app, giữ session online hay thao tác mỗi ngày; không cần cron cập nhật hàng.
 - Quyết định này thay thế mọi quy tắc cũ yêu cầu quán tự bật/tắt nhận đơn.
 - Không có lịch nghỉ đặc biệt.
-- Đề xuất kỹ thuật cần duyệt: múi giờ cố định Asia/Ho_Chi_Minh; lịch tuần có nhiều khoảng mỗi ngày, phút chính xác, cho phép qua nửa đêm; đóng cửa là exclusive.
+- Thiết kế được duyệt tiếp tục: múi giờ cố định Asia/Ho_Chi_Minh; lịch tuần có nhiều khoảng mỗi ngày, phút chính xác, cho phép qua nửa đêm; đóng cửa là exclusive.
 - Chưa có lịch: OFFLINE với reason NO_BUSINESS_HOURS; cài lịch hợp lệ là đủ để tự hoạt động theo lịch.
 - Hồ sơ ACTIVE có thể sửa tên, liên hệ, Zalo, Facebook, địa chỉ, GPS và service area hợp lệ. Sửa không làm mất role hoặc tạo lại onboarding.
 - INCOMPLETE tiếp tục dùng endpoint onboarding; DISABLED không được sửa trong slice này.
@@ -38,7 +38,7 @@ Bảng app.shop_business_hours:
 - PK (shop_id, weekday, start_minute);
 - CHECK: offset=0 thì end_minute>start_minute; offset=1 thì end_minute<=start_minute và end_minute<1440.
 Mỗi khoảng dài >0 và <=24 giờ. Ví dụ 18:00–02:00: start=1080,end=120,offset=1; 00:00–24:00: 0,1440,0.
-Tối đa 28 khoảng/tuần (giới hạn đề xuất cần duyệt).
+Tối đa 28 khoảng/tuần.
 Chuẩn hóa mỗi khoảng thành đoạn trên vòng tuần 10080 phút; split wrap Chủ nhật→thứ Hai rồi kiểm overlap toàn bộ. Khoảng liền kề hợp lệ; overlap/duplicate bị reject, không tự gộp.
 Lịch không có rows = đóng cả tuần.
 Cột shops.accepting_orders đã tồn tại từ A2S được giữ nguyên để tương thích migration/code cũ, nhưng M02-A không đọc nó để quyết định availability, không sửa nó, không expose trong API và không dùng nó làm công tắc. Giá trị false mặc định không chặn ONLINE theo lịch. Không sửa applied migration hoặc onboarding chỉ để bật cột này.
@@ -121,12 +121,12 @@ Unit kiểm validation/interval logic; integration PostgreSQL thật và barrier
 Clock-boundary unit dùng instant tham số thuần; integration chứng minh DB clock plumbing/timezone, không sửa clock production để test.
 
 ## 9. Handoff và gate
-Thiết kế cần Owner duyệt các lựa chọn §2/§3 trước implementation.
+Owner đã duyệt tiếp tục sau bản §2/§3 và dòng Cả tuần. Giao code chỉ sau design merge + relevant main CI xanh.
 Sau lock/merge design: Claude branch feat/m02-a-shop-management từ current main; PR DRAFT; không Ready/merge hoặc module tiếp.
 Allowed: shop owner code, shop-management composition/controller, Auth narrow session participant, migration mới, errors, tests, docs/evidence/M02-A.md.
 Nếu cần đổi ADR-002/003, role/session policy, M00 semantics hoặc ownership: BLOCKED_BY_FOUNDATION.
 Checks: npm ci, lockfile unchanged, lint,typecheck,build,migrations smoke, unit,integration local,integration CI và progress tests nếu docs conventions yêu cầu.
-Evidence mapping từng A01–A16 đến test name/CI exact head, counts, race/fault proofs.
+Evidence mapping từng A01–A18 đến test name/CI exact head, counts, race/fault proofs.
 Production chưa chạy được OTP thật và chưa có service-area provisioning; không tuyên bố app dùng thực tế sau task này.
 
 
@@ -147,3 +147,6 @@ Production chưa chạy được OTP thật và chưa có service-area provision
 
 ## 11. Song song UI / E2E / Owner UAT
 Xem [M02-A delivery và handoff](CLAUDE-M02-A.md). Backend chuẩn bị độc lập với M01-UAT; thiết kế UI có thể bắt đầu ngay. Frontend code chờ frame UI_LOCKED và API/backend tương ứng đã merge. Local/E2E/UAT theo luồng M00/M01 của PR #20. Không tuyên bố module hoàn tất chỉ từ merge backend.
+
+## 12. Cả tuần — contract đã duyệt
+Dòng Cả tuần đặt trên T2; áp dụng lịch xuống weekdays 1..7 trong draft, vẫn sửa riêng từng ngày. Chỉ Lưu chung ghi DB; không weekday=0, không cấu hình override tách biệt. Chi tiết UI/E2E/UAT ở CLAUDE-M02-A.md §5.
