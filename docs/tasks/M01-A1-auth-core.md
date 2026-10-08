@@ -566,3 +566,10 @@ Claude opens a DRAFT PR only.
 Do not mark Ready, merge, start A2, or modify M02/M03.
 
 If implementation requires changing ADR-002/ADR-003, transaction/idempotency semantics, production SMS architecture, or business data ownership, STOP with `BLOCKED_BY_FOUNDATION`.
+
+## Post-merge repair addendum (2026-10-08)
+
+Bổ sung, không thay evidence lịch sử ([M01-A1](../evidence/M01-A1.md)). Chi tiết: [M00-M01-post-merge-repairs §3](M00-M01-post-merge-repairs.md).
+
+- `effective_active_role` = role đã lưu trên session nếu nó còn nằm trong `available_roles`, ngược lại `null`. `role_selection_required` = có ít nhất một role khả dụng VÀ effective role là `null`. `onboarding_required` giữ nguyên ngữ nghĩa.
+- `/auth/me` khóa user FOR SHARE rồi session FOR SHARE (qua SessionAuthorizationParticipant) và đọc `active_role` HIỆN TẠI từ session đã khóa, không đọc từ principal của guard. Không sửa session, không nested transaction, không SERIALIZABLE.

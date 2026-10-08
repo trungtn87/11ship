@@ -2,6 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import { AuditWriter } from '../audit/audit-writer';
 import { fakeContext } from '../auth/auth-fakes.fixture';
 import { RoleGrantParticipant } from '../auth/role-grant-participant';
+import { SessionActor, SessionAuthorizationParticipant } from '../auth/session-authorization-participant';
 import { AppError } from '../common/app-errors';
 import { IdempotencyExecutor, IdempotentRequest, IdempotentResult } from '../idempotency/idempotency-executor';
 import { OutboxWriter } from '../outbox/outbox-writer';
@@ -12,6 +13,8 @@ import { ShopOnboardingService } from './shop-onboarding-service';
 import { ShopCompleteInput, ShopProfileInput } from './shop-onboarding-validation';
 
 const USER_ID = '523e4567-e89b-42d3-a456-426614174000';
+const SESSION_ID = '923e4567-e89b-42d3-a456-426614174000';
+const ACTOR: SessionActor = { userId: USER_ID, sessionId: SESSION_ID };
 const SHOP_ID = '623e4567-e89b-42d3-a456-426614174000';
 const AREA_ID = '723e4567-e89b-42d3-a456-426614174000';
 const REQUEST_ID = '323e4567-e89b-42d3-a456-426614174000';
@@ -53,6 +56,10 @@ interface Rig {
   requests: IdempotentRequest[];
   audits: Array<Record<string, unknown>>;
   outbox: Array<Record<string, unknown>>;
+  /** Every actor the coordinator asked the session-authorization participant to lock and check. */
+  authorized: SessionActor[];
+  /** Set an error to make the NEXT authorization (a command or a replay hook) refuse. */
+  gate: { error: AppError | undefined };
 }
 
 function rig(options: {
@@ -76,13 +83,18 @@ function rig(options: {
       return { status: result.status, payload: result.payload, replayed: false, persisted: true };
     },
   } as unknown as IdempotencyExecutor;
-  const roleGrants = {
-    lockActiveUser: async () => {
-      events.push('user.lock');
-      if (options.lockFailure !== undefined) {
-        throw options.lockFailure;
+  const authorized: SessionActor[] = [];
+  const gate: { error: AppError | undefined } = { error: options.lockFailure };
+  const sessionAuth = {
+    lockAuthorizedActor: async (_c: unknown, actor: SessionActor) => {
+      events.push('actor.authorize');
+      authorized.push(actor);
+      if (gate.error !== undefined) {
+        throw gate.error;
       }
     },
+  } as unknown as SessionAuthorizationParticipant;
+  const roleGrants = {
     grant: async (_c: unknown, _u: string, role: string) => void events.push(`role.grant:${role}`),
   } as unknown as RoleGrantParticipant;
   const shops = {
@@ -118,11 +130,13 @@ function rig(options: {
   } as unknown as OutboxWriter;
 
   return {
-    service: new ShopOnboardingService(executor, roleGrants, shops, serviceAreas, audit, outboxWriter),
+    service: new ShopOnboardingService(executor, sessionAuth, roleGrants, shops, serviceAreas, audit, outboxWriter),
     events,
     requests,
     audits,
     outbox,
+    authorized,
+    gate,
   };
 }
 
@@ -135,9 +149,9 @@ async function codeOf(run: () => Promise<unknown>): Promise<string> {
   return 'OK';
 }
 
-const save = (r: Rig, input: ShopProfileInput = PROFILE) => r.service.saveProfile(USER_ID, input, KEY, REQUEST_ID);
+const save = (r: Rig, input: ShopProfileInput = PROFILE) => r.service.saveProfile(ACTOR, input, KEY, REQUEST_ID);
 const complete = (r: Rig, input: ShopCompleteInput = { expectedVersion: 1 }) =>
-  r.service.complete(USER_ID, input, KEY, REQUEST_ID);
+  r.service.complete(ACTOR, input, KEY, REQUEST_ID);
 
 describe('ShopOnboardingService.saveProfile', () => {
   it('create: user lock, owner lookup, service area (FOR SHARE), shop, membership, audit — in that order', async () => {
@@ -145,7 +159,7 @@ describe('ShopOnboardingService.saveProfile', () => {
     const outcome = await save(r);
     expect(r.events).toEqual([
       'executor',
-      'user.lock',
+      'actor.authorize',
       'shop.lock',
       'area.lock',
       'shop.insert',
@@ -228,7 +242,7 @@ describe('ShopOnboardingService.complete', () => {
     const outcome = await complete(r);
     expect(r.events).toEqual([
       'executor',
-      'user.lock',
+      'actor.authorize',
       'shop.lock',
       'area.lock',
       'shop.activate',
@@ -277,5 +291,84 @@ describe('ShopOnboardingService.complete', () => {
       expect(r.events.filter((event) => event.startsWith('role.grant') || event === 'shop.activate')).toEqual([]);
       expect([label, r.audits.length, r.outbox.length]).toEqual([label, 0, 0]);
     }
+  });
+});
+
+describe('ShopOnboardingService session authorization (post-merge repair, section 1)', () => {
+  it('save and complete authorize the server-authenticated user AND session first, before any business read', async () => {
+    const created = rig();
+    await save(created);
+    expect(created.authorized).toEqual([ACTOR]);
+    expect(created.events.slice(0, 2)).toEqual(['executor', 'actor.authorize']);
+
+    const completed = rig({ shop: shopRow() });
+    await complete(completed);
+    expect(completed.authorized).toEqual([ACTOR]);
+    expect(completed.events.slice(0, 2)).toEqual(['executor', 'actor.authorize']);
+  });
+
+  it('a revoked, expired or foreign session refuses the command before any business effect', async () => {
+    for (const code of ['SESSION_REVOKED', 'SESSION_EXPIRED', 'SESSION_INVALID', 'ACCOUNT_DISABLED'] as const) {
+      const saved = rig({ lockFailure: new AppError(code) });
+      expect([code, await codeOf(() => save(saved))]).toEqual([code, code]);
+      expect(saved.events).toEqual(['executor', 'actor.authorize']);
+      expect([saved.audits.length, saved.outbox.length]).toEqual([0, 0]);
+
+      const completed = rig({ shop: shopRow(), lockFailure: new AppError(code) });
+      expect([code, await codeOf(() => complete(completed))]).toEqual([code, code]);
+      expect(completed.events).toEqual(['executor', 'actor.authorize']);
+      expect([completed.audits.length, completed.outbox.length]).toEqual([0, 0]);
+    }
+  });
+
+  it.each(['save', 'complete'] as const)(
+    'the sensitive replay hook of %s runs the same authorization with the CURRENT session, before it allows anything',
+    async (operation) => {
+      // save needs no existing shop (a create); complete needs the INCOMPLETE draft to activate.
+      const r = rig(operation === 'save' ? {} : { shop: shopRow() });
+      await (operation === 'save' ? save(r) : complete(r));
+      const replay = r.requests[0]?.replay;
+      if (replay?.kind !== 'sensitive') {
+        throw new Error('expected a sensitive replay policy');
+      }
+
+      r.events.length = 0;
+      r.authorized.length = 0;
+      await expect(replay.authorize(fakeContext(1, []), { user_id: USER_ID })).resolves.toBe(true);
+      expect(r.events).toEqual(['actor.authorize']);
+      expect(r.authorized).toEqual([ACTOR]);
+
+      // A revoked or expired session is refused by the hook itself: the executor never reaches decryption.
+      r.gate.error = new AppError('SESSION_REVOKED');
+      const denied = await replay.authorize(fakeContext(1, []), { user_id: USER_ID }).catch((error: unknown) => error);
+      expect(denied).toBeInstanceOf(AppError);
+      expect((denied as AppError).code).toBe('SESSION_REVOKED');
+    },
+  );
+
+  it('the replay guard names the user only: the session id is neither in the guard, the logical request nor the scope', async () => {
+    const r = rig();
+    await save(r);
+    const request = r.requests[0];
+    expect(request?.scopeId).toBe(USER_ID);
+    expect(JSON.stringify(request?.logicalRequest)).not.toContain(SESSION_ID);
+    const outcome = await r.service.saveProfile(ACTOR, PROFILE, KEY, REQUEST_ID);
+    expect(JSON.stringify(outcome)).not.toContain(SESSION_ID);
+  });
+
+  it('a replay guard of another user is an internal error and never reaches the authorization', async () => {
+    const r = rig();
+    await save(r);
+    const replay = r.requests[0]?.replay;
+    if (replay?.kind !== 'sensitive') {
+      throw new Error('expected a sensitive replay policy');
+    }
+    r.events.length = 0;
+    const failure = await replay
+      .authorize(fakeContext(1, []), { user_id: '123e4567-e89b-42d3-a456-426614174999' })
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(AppError);
+    expect(r.events).toEqual([]);
   });
 });

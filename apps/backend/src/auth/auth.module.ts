@@ -15,6 +15,7 @@ import { RegistrationService } from './registration-service';
 import { RoleContextService } from './role-context-service';
 import { RoleGrantParticipant } from './role-grant-participant';
 import { SessionAuthGuard } from './session-auth.guard';
+import { SessionAuthorizationParticipant } from './session-authorization-participant';
 import { SessionRepository } from './session-repository';
 import { SessionService } from './session-service';
 import { UserRepository } from './user-repository';
@@ -32,10 +33,10 @@ export interface AuthModuleOptions {
  * explicitly by whoever builds the application.
  *
  * M01-A2S/A2D: it imports ShopModule and DriverModule ONLY for their read-only eligibility ports (Auth never issues
- * SQL against M02 or M03 tables), and it exports the three things an onboarding coordinator needs: the session
- * guard (with the SessionService the guard is built from) and the narrow role-grant participant. Nothing else
- * leaves Auth. ShopModule and DriverModule import nothing, so Auth -> Shop and Auth -> Driver are one-way and
- * need no forwardRef.
+ * SQL against M02 or M03 tables), and it exports what an onboarding coordinator needs: the session guard (with
+ * the SessionService the guard is built from), the narrow role-grant participant and the session-authorization
+ * participant that re-checks the caller INSIDE the business transaction. Nothing else leaves Auth. ShopModule
+ * and DriverModule import nothing, so Auth -> Shop and Auth -> Driver are one-way and need no forwardRef.
  */
 @Module({})
 export class AuthModule {
@@ -58,11 +59,12 @@ export class AuthModule {
         SessionService,
         RoleContextService,
         RoleGrantParticipant,
+        SessionAuthorizationParticipant,
         SessionAuthGuard,
       ],
       // A guard named in @UseGuards() of another module is built in THAT module, from its imports, so the
       // SessionService it depends on has to be exported together with the guard.
-      exports: [SessionAuthGuard, SessionService, RoleGrantParticipant],
+      exports: [SessionAuthGuard, SessionService, RoleGrantParticipant, SessionAuthorizationParticipant],
     };
   }
 }

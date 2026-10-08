@@ -29,6 +29,14 @@ export interface LockedSession {
   readonly expiresAtMs: number;
 }
 
+/**
+ * A session read under a shared row lock. It also carries the CURRENT active role, read from the locked row,
+ * so /auth/me never reports the role the guard saw before this transaction began.
+ */
+export interface SharedLockedSession extends LockedSession {
+  readonly activeRole: string | null;
+}
+
 /** SQL for sessions. The plaintext token exists only inside create(); the table gets the SHA-256 digest. */
 @Injectable()
 export class SessionRepository {
@@ -117,6 +125,37 @@ export class SessionRepository {
     return {
       sessionId: row.session_id,
       userId: row.user_id,
+      revoked: row.revoked,
+      expiresAtMs: toSafeInteger(row.expires_ms),
+    };
+  }
+
+  /**
+   * A shared row lock on the session, for a reader that must see one coherent state together with the user row
+   * it already holds FOR SHARE (/auth/me). It waits for a writer holding the session FOR UPDATE (role selection,
+   * revocation) and lets other FOR SHARE readers through. The caller reads the database clock AFTER this call.
+   */
+  async lockByIdForShare(context: TransactionContext, sessionId: string): Promise<SharedLockedSession | undefined> {
+    const result = await context.query<{
+      session_id: string;
+      user_id: string;
+      active_role: string | null;
+      revoked: boolean;
+      expires_ms: string;
+    }>(
+      `SELECT session_id, user_id, active_role, revoked_at IS NOT NULL AS revoked,
+              ${epochMs('expires_at')} AS expires_ms
+         FROM app.sessions WHERE session_id = $1::uuid FOR SHARE`,
+      [sessionId],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      return undefined;
+    }
+    return {
+      sessionId: row.session_id,
+      userId: row.user_id,
+      activeRole: row.active_role,
       revoked: row.revoked,
       expiresAtMs: toSafeInteger(row.expires_ms),
     };

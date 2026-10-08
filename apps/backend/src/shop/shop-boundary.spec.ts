@@ -61,17 +61,18 @@ describe('Onboarding coordinator boundary', () => {
     expect(all).toEqual([]);
   });
 
-  it('Auth does not import Onboarding, and Onboarding imports Auth only for the guard, the participant and two pure helpers', () => {
+  it('Auth does not import Onboarding, and Onboarding imports Auth only for the guard, the participants and two pure helpers', () => {
     const authFiles = filesOf('auth').filter((file) => /from '\.\.\/onboarding\//.test(codeOf(file)));
     expect(authFiles).toEqual([]);
     const imports = codeIn('onboarding').match(/from '\.\.\/auth\/[^']+'/g) ?? [];
-    // Besides the guard and the participant, the strict body parsers reuse Auth's text and phone helpers.
+    // Besides the guard and the participants (role grant, session authorization), the strict body parsers reuse Auth's text and phone helpers.
     expect([...new Set(imports)].sort()).toEqual([
       "from '../auth/auth-principal'",
       "from '../auth/auth-validation'",
       "from '../auth/phone'",
       "from '../auth/role-grant-participant'",
       "from '../auth/session-auth.guard'",
+      "from '../auth/session-authorization-participant'",
     ]);
   });
 

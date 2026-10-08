@@ -1,7 +1,7 @@
 import { performance } from 'node:perf_hooks';
 import { describe, expect, it } from '@jest/globals';
 import { AppError } from '../common/app-errors';
-import { QueryRows } from './transaction-context';
+import { QueryRows, TransactionContext } from './transaction-context';
 import { classifyParticipantStatement } from './sql-guard';
 import { TransactionError } from './transaction-error';
 import {
@@ -417,7 +417,7 @@ describe('TransactionManager — COMMIT outcomes', () => {
 });
 
 describe('TransactionManager — deadline', () => {
-  it('closes the context at the deadline, rolls back, and a late callback can no longer reach the client', async () => {
+  it('closes the context at the deadline, destroys the connection without ROLLBACK, and a late callback can no longer reach the client', async () => {
     const client = new ScriptedClient();
     const { manager } = managerFor(client, { timeoutMs: 30, idleInTransactionTimeoutMs: 500 });
     const gate = deferred();
@@ -437,8 +437,10 @@ describe('TransactionManager — deadline', () => {
     );
 
     expect((error as TransactionError).reason).toBe('DEADLINE_EXCEEDED');
-    expect(client.log.at(-1)).toBe('ROLLBACK');
-    expect(client.released).toEqual([false]);
+    // The one budget is spent: no ROLLBACK is sent (the server rolls back when the session ends) and the
+    // connection is destroyed exactly once instead of going back to the pool (post-merge repair, section 2).
+    expect(client.log).not.toContain('ROLLBACK');
+    expect(client.released).toEqual([true]);
     const logged = [...client.log];
 
     gate.resolve();
@@ -446,7 +448,7 @@ describe('TransactionManager — deadline', () => {
     expect(late).toBeInstanceOf(TransactionError);
     expect((late as TransactionError).reason).toBe('CONTEXT_CLOSED');
     expect(client.log).toEqual(logged);
-    expect(client.released).toEqual([false]);
+    expect(client.released).toEqual([true]);
   });
 
   it('destroys the connection instead of rolling back when a query is still running at the deadline', async () => {
@@ -522,8 +524,8 @@ describe('TransactionManager — total deadline from BEGIN to COMMIT', () => {
     expect(calls).toBe(1);
     // A fresh 150 ms allowance for the callback would end near 250 ms; the shared budget ends near 150.
     expect(elapsed).toBeLessThan(230);
-    expect(client.log.at(-1)).toBe('ROLLBACK');
-    expect(client.released).toEqual([false]);
+    expect(client.log).not.toContain('ROLLBACK'); // the budget was spent: destroyed, not rolled back
+    expect(client.released).toEqual([true]);
   });
 
   it('fails with DEADLINE_EXCEEDED, destroys the client and never runs the callback when BEGIN outlasts the budget', async () => {
@@ -628,7 +630,7 @@ describe('TransactionManager — total deadline from BEGIN to COMMIT', () => {
     expect(client.released).toEqual([true]);
   });
 
-  it('refuses to send COMMIT when the budget ran out while the event loop was busy: rolls back, DEADLINE_EXCEEDED', async () => {
+  it('refuses to send COMMIT when the budget ran out while the event loop was busy: destroys without ROLLBACK, DEADLINE_EXCEEDED', async () => {
     const client = new ScriptedClient();
     const { manager } = managerFor(client, { timeoutMs: 30, idleInTransactionTimeoutMs: 500 });
 
@@ -645,8 +647,8 @@ describe('TransactionManager — total deadline from BEGIN to COMMIT', () => {
 
     expect((error as TransactionError).reason).toBe('DEADLINE_EXCEEDED');
     expect(client.log).not.toContain('COMMIT');
-    expect(client.log.at(-1)).toBe('ROLLBACK');
-    expect(client.released).toEqual([false]);
+    expect(client.log).not.toContain('ROLLBACK');
+    expect(client.released).toEqual([true]);
   });
 
   it('does not start the callback when BEGIN/setup used up the budget while the event loop was blocked', async () => {
@@ -673,8 +675,8 @@ describe('TransactionManager — total deadline from BEGIN to COMMIT', () => {
     expect((error as TransactionError).reason).toBe('DEADLINE_EXCEEDED');
     expect(calls).toBe(0);
     expect(client.log).not.toContain('COMMIT');
-    expect(client.log.at(-1)).toBe('ROLLBACK');
-    expect(client.released).toEqual([false]);
+    expect(client.log).not.toContain('ROLLBACK'); // nothing was written and the budget is spent: destroy only
+    expect(client.released).toEqual([true]);
   });
 
   it('destroys instead of rolling back when the budget ran out in setup and the client is not trustworthy', async () => {
@@ -779,6 +781,167 @@ describe('TransactionManager — total deadline from BEGIN to COMMIT', () => {
 
     await expect(manager.withTransaction(() => Promise.resolve('done'))).resolves.toBe('done');
     expect(client.released).toEqual([false]);
+  });
+});
+
+describe('TransactionManager — rollback and disposition share the transaction deadline (post-merge repair, section 2)', () => {
+  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  async function guardingUnhandled<T>(run: (unhandled: unknown[]) => Promise<T>): Promise<T> {
+    const unhandled: unknown[] = [];
+    const listener = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', listener);
+    try {
+      return await run(unhandled);
+    } finally {
+      process.off('unhandledRejection', listener);
+    }
+  }
+
+  const rollbacks = (client: ScriptedClient) => client.log.filter((text) => text === 'ROLLBACK');
+
+  it('callback throws an AppError and ROLLBACK never answers: finishes by the deadline, destroys the client once, keeps the identical error', async () => {
+    const hung = deferred<QueryRows>();
+    const client = new ScriptedClient((text) => (text === 'ROLLBACK' ? hung.promise : rows(text)));
+    const { manager } = managerFor(client, { timeoutMs: 120, idleInTransactionTimeoutMs: 500 });
+    const original = new AppError('VERSION_CONFLICT');
+    let kept: TransactionContext | undefined;
+    const startedAt = performance.now();
+
+    await guardingUnhandled(async (unhandled) => {
+      const error = await failureOf(() =>
+        manager.withTransaction(async (context) => {
+          kept = context;
+          throw original;
+        }),
+      );
+      const elapsed = performance.now() - startedAt;
+
+      expect(error).toBe(original);
+      // The ONE deadline (120 ms) bounds the rollback. A fresh allowance for it would end near 240 ms, and an
+      // unbounded await would never end at all.
+      expect(elapsed).toBeLessThan(230);
+      expect(rollbacks(client)).toHaveLength(1);
+      expect(client.released).toEqual([true]);
+
+      // The abandoned ROLLBACK answers late: nothing is reused, released again or left unhandled, and the
+      // closed context still refuses a late query before it can touch the client.
+      const logged = [...client.log];
+      hung.resolve(rows('ROLLBACK'));
+      await sleep(10);
+      const late = await failureOf(() => kept?.query('SELECT late') ?? Promise.resolve());
+      expect((late as TransactionError).reason).toBe('CONTEXT_CLOSED');
+      expect(client.log).toEqual(logged);
+      expect(client.released).toEqual([true]);
+      expect(unhandled).toEqual([]);
+    });
+  });
+
+  it('a ROLLBACK that rejects only after the deadline is consumed: no unhandled rejection, no second release', async () => {
+    const hung = deferred<QueryRows>();
+    const client = new ScriptedClient((text) => (text === 'ROLLBACK' ? hung.promise : rows(text)));
+    const { manager } = managerFor(client, { timeoutMs: 60, idleInTransactionTimeoutMs: 500 });
+    const original = new AppError('VERSION_CONFLICT');
+
+    await guardingUnhandled(async (unhandled) => {
+      const error = await failureOf(() => manager.withTransaction(() => Promise.reject(original)));
+      expect(error).toBe(original);
+      expect(client.released).toEqual([true]);
+
+      hung.reject(Object.assign(new Error('Connection terminated SECRET'), { code: 'ECONNRESET' }));
+      await sleep(10);
+      await sleep(10);
+      expect(client.released).toEqual([true]);
+      expect(rollbacks(client)).toHaveLength(1);
+      expect(unhandled).toEqual([]);
+    });
+  });
+
+  it('a slow ROLLBACK that still answers inside the budget releases the client normally, once', async () => {
+    const client = new ScriptedClient(async (text) => {
+      if (text === 'ROLLBACK') {
+        await sleep(40);
+      }
+      return rows(text);
+    });
+    const { manager } = managerFor(client, { timeoutMs: 400, idleInTransactionTimeoutMs: 500 });
+    const original = new AppError('VERSION_CONFLICT');
+
+    const error = await failureOf(() => manager.withTransaction(() => Promise.reject(original)));
+
+    expect(error).toBe(original);
+    expect(client.log.at(-1)).toBe('ROLLBACK');
+    expect(client.released).toEqual([false]);
+  });
+
+  it('a ROLLBACK that answers only after the budget destroys the client once; the late answer changes nothing', async () => {
+    const client = new ScriptedClient(async (text) => {
+      if (text === 'ROLLBACK') {
+        await sleep(250);
+      }
+      return rows(text);
+    });
+    const { manager } = managerFor(client, { timeoutMs: 80, idleInTransactionTimeoutMs: 500 });
+    const original = new AppError('VERSION_CONFLICT');
+    const startedAt = performance.now();
+
+    const error = await failureOf(() => manager.withTransaction(() => Promise.reject(original)));
+
+    expect(error).toBe(original);
+    expect(performance.now() - startedAt).toBeLessThan(200);
+    expect(client.released).toEqual([true]);
+    await sleep(260); // the slow answer lands now
+    expect(client.released).toEqual([true]);
+    expect(rollbacks(client)).toHaveLength(1);
+  });
+
+  it('keeps the original technical error too (a server rejection that is not an AppError) when the rollback hangs', async () => {
+    const hung = deferred<QueryRows>();
+    const client = new ScriptedClient((text) => (text === 'ROLLBACK' ? hung.promise : rows(text)));
+    const { manager } = managerFor(client, { timeoutMs: 60, idleInTransactionTimeoutMs: 500 });
+    const original = serverError('23505');
+
+    const error = await failureOf(() => manager.withTransaction(() => Promise.reject(original)));
+
+    expect(error).toBe(original);
+    expect(client.released).toEqual([true]);
+  });
+
+  it('sends no ROLLBACK and keeps the original business error when the callback failed after the budget ran out', async () => {
+    const client = new ScriptedClient();
+    const { manager } = managerFor(client, { timeoutMs: 30, idleInTransactionTimeoutMs: 500 });
+    const original = new AppError('VERSION_CONFLICT');
+
+    const error = await failureOf(() =>
+      manager.withTransaction(async () => {
+        // Synchronous work: the deadline timer cannot run, only the monotonic clock sees the overrun.
+        const until = performance.now() + 45;
+        while (performance.now() < until) {
+          // busy
+        }
+        throw original;
+      }),
+    );
+
+    // The cause was the business failure, not the deadline, so that is what the caller sees.
+    expect(error).toBe(original);
+    expect(client.log).not.toContain('ROLLBACK');
+    expect(client.released).toEqual([true]);
+  });
+
+  it('does not let a hung ROLLBACK replace a DEADLINE_EXCEEDED cause: the budget is spent, so no ROLLBACK is sent at all', async () => {
+    const hung = deferred<QueryRows>();
+    const client = new ScriptedClient((text) => (text === 'ROLLBACK' ? hung.promise : rows(text)));
+    const { manager } = managerFor(client, { timeoutMs: 40, idleInTransactionTimeoutMs: 500 });
+    const never = deferred();
+
+    const error = await failureOf(() => manager.withTransaction(() => never.promise));
+
+    expect((error as TransactionError).reason).toBe('DEADLINE_EXCEEDED');
+    expect(rollbacks(client)).toHaveLength(0);
+    expect(client.released).toEqual([true]);
   });
 });
 

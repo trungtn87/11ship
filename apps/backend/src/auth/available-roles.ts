@@ -21,6 +21,17 @@ export function availableRoles(
   return held.filter((role) => (role !== 'SHOP' || shop.selectable) && (role !== 'DRIVER' || driver.selectable));
 }
 
+/**
+ * The role a session REALLY has, from the role stored on its row (M00/M01 post-merge repair, section 3): the stored
+ * role when it is still one of the available roles, otherwise null. A stored role goes stale when the profile that
+ * earned it changes (Driver CLOSED, Shop DISABLED), when the role row is removed or when there is no profile. The
+ * session row is never rewritten to hide that: it is only not REPORTED, so a client is never routed into a role the
+ * server would refuse. login, /me and role selection all answer `active_role` through this one function.
+ */
+export function effectiveActiveRole(available: readonly string[], stored: string | null): string | null {
+  return stored !== null && available.includes(stored) ? stored : null;
+}
+
 /** The three role-context fields login, /me and role selection all report. */
 export interface RoleContext {
   readonly available_roles: string[];
@@ -39,8 +50,10 @@ export interface RoleContext {
  *   and a Driver profile never does either, even a CLOSED one: the onboarding endpoints would refuse that user
  *   (SHOP_ONBOARDING_EXISTS, DRIVER_PROFILE_EXISTS), so sending them back would be a dead end. With no Driver
  *   profile this is exactly the A2S rule.
- * - `role_selection_required`: there is something to select and this session has selected nothing. With no
- *   selectable role it is false, whatever the profile states.
+ * - `role_selection_required`: there is something to select and this session has no EFFECTIVE active role (see
+ *   effectiveActiveRole: a stored role that is no longer available counts as none). With no selectable role it is
+ *   false, whatever the profile states, so nobody is routed into an invalid role or forced through a finished
+ *   onboarding again.
  */
 export function roleContext(
   held: readonly string[],
@@ -53,6 +66,6 @@ export function roleContext(
     available_roles: roles,
     onboarding_required:
       roles.length === 0 && shop.onboarding !== 'COMPLETED' && driver.onboarding === 'NOT_STARTED',
-    role_selection_required: roles.length > 0 && activeRole === null,
+    role_selection_required: roles.length > 0 && effectiveActiveRole(roles, activeRole) === null,
   };
 }

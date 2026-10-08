@@ -13,7 +13,7 @@ import { resetReviewLabels } from '../../scripts/progress/review.mjs';
 import { resolveProgress, validatePlan, mainStatus, STATE, CI } from '../../scripts/progress/resolve.mjs';
 import { buildMarkdown } from '../../scripts/generate-progress.mjs';
 import { PROGRESS_BOT, PROGRESS_COMMIT_MESSAGE, REVIEW_LABELS } from '../../scripts/progress/constants.mjs';
-import { plan, REQUIRED, checks, history, merged, snapshot, LABELS_C1A1, stateOf, root } from './helpers.mjs';
+import { plan, livePlan, REQUIRED, checks, history, merged, snapshot, LABELS_C1A1, stateOf, root } from './helpers.mjs';
 
 // ---------------------------------------------------------------------------------------------
 // A tiny fake of the GitHub REST API. The longest matching route wins; unknown paths are 404.
@@ -426,7 +426,7 @@ describe('manifest roles are fixed in schema v1 (finding)', () => {
   };
 
   test('the shipped plan.yml uses exactly the fixed workflow roles', () => {
-    for (const t of plan.tasks) {
+    for (const t of livePlan.tasks) {
       assert.equal(t.owner_role, 'CLAUDE', t.id);
       assert.equal(t.design_role, 'CHATGPT', t.id);
       assert.equal(t.review_role, 'CHATGPT', t.id);

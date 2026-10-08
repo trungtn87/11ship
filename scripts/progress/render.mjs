@@ -83,10 +83,16 @@ const TITLE_VI = new Map([
   ['Idempotency', 'Chống xử lý lặp (Idempotency)'],
   ['Audit + Outbox Write', 'Audit + ghi Outbox'],
   ['Dispatcher + Final Integration', 'Dispatcher + tích hợp cuối'],
+  ['Auth Core', 'Lõi xác thực (Auth Core)'],
+  ['Onboarding (Shop + Driver)', 'Onboarding (Quán + Tài xế)'],
+  ['Shop onboarding', 'Onboarding quán (Shop)'],
+  ['Driver onboarding', 'Onboarding tài xế (Driver)'],
+  ['Post-merge repairs (session, rollback, router, progress)', 'Sửa sau merge (session, rollback, router, tiến độ)'],
 ]);
 
 const ROLE_VI = {
   design: 'thiết kế',
+  combined: 'thiết kế + triển khai',
   implementation: 'triển khai',
   'review-fix': 'sửa sau review',
   infra: 'hạ tầng',

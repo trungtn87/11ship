@@ -69,9 +69,11 @@ function classifyWriteFailure(error: unknown): StandaloneAuditFailureCode {
  * log line, so the caller keeps handling the ORIGINAL denial or failure unchanged.
  *
  * Budget. A single monotonic deadline of STANDALONE_AUDIT_BUDGET_MS covers pool acquisition, BEGIN, the
- * INSERT and COMMIT. A0's TransactionManager deliberately does not count pool acquisition in its own
- * deadline and is NOT changed here; instead the connection is acquired HERE, under this deadline, and
- * handed to a manager whose transaction deadline is exactly the time that remains.
+ * INSERT, COMMIT and the cleanup of a failed write. The TransactionManager does not count pool acquisition in its
+ * own deadline; instead the connection is acquired HERE, under this deadline, and handed to a manager whose
+ * transaction deadline is exactly the time that remains. That same deadline bounds the manager's own cleanup:
+ * ROLLBACK races what is left of it, and a spent budget destroys the connection instead of rolling back, so a hung
+ * rollback can never keep this client checked out past the budget and never changes the caller's original error.
  *
  * Late acquisition. pg cannot cancel a queued acquisition. If the budget runs out first, the pending
  * acquisition stays queued, and the client it eventually yields is released at once and never used: no

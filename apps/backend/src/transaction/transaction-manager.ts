@@ -175,6 +175,9 @@ const insideTransaction = new AsyncLocalStorage<true>();
  *   callback simply can no longer reach the database.
  * - A connection whose state is unknown (query in flight, connection error, client-side timeout) is
  *   destroyed, never returned to the pool.
+ * - The ONE budget that started before BEGIN also bounds the cleanup: ROLLBACK races the remaining time of
+ *   that same deadline, and an exhausted budget means the connection is destroyed instead of rolled back.
+ *   Cleanup never gets a fresh allowance and a hung ROLLBACK can never keep a client checked out.
  * - COMMIT without a server answer is an UNKNOWN outcome: never reported as a rollback, never retried.
  * - Callbacks are never run twice by this class.
  */
@@ -220,12 +223,18 @@ export class TransactionManager {
     const startedAt = performance.now();
     const timeoutMs = this.#options.timeoutMs;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // Set by the timer itself: once it has fired the budget is spent, even if the monotonic clock reads a
+    // hair under the limit (a timer may be delivered marginally early). Cleanup must not start after it.
+    let expired = false;
     const deadline = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => reject(DEADLINE), timeoutMs);
+      timer = setTimeout(() => {
+        expired = true;
+        reject(DEADLINE);
+      }, timeoutMs);
     });
     // The deadline may fire while nothing is racing it; that must never be an unhandled rejection.
     deadline.catch(() => undefined);
-    const budgetLeft = (): boolean => performance.now() - startedAt < timeoutMs;
+    const budgetLeft = (): boolean => !expired && performance.now() - startedAt < timeoutMs;
 
     try {
       return await this.#runWithin(session, work, deadline, budgetLeft);
@@ -265,9 +274,10 @@ export class TransactionManager {
 
     if (!budgetLeft()) {
       // BEGIN/setup used up the whole budget (the timer may simply not have run yet): the business
-      // callback must not start. Nothing was written, so roll back or destroy an untrusted client.
+      // callback must not start. Nothing was written. The budget is spent, so no ROLLBACK is sent: the
+      // connection is destroyed and the server rolls the transaction back when the session ends.
       session.close();
-      await this.#abort(session);
+      await this.#abort(session, deadline, budgetLeft);
       throw new TransactionError('DEADLINE_EXCEEDED');
     }
 
@@ -286,20 +296,22 @@ export class TransactionManager {
     }
 
     if (failed) {
+      // Participant statements are refused from here on. The ORIGINAL failure is captured and translated
+      // BEFORE any cleanup, so a rollback that fails, hangs or times out can never replace the business or
+      // technical error the caller must see. When the original cause was the deadline, that is what it stays.
       session.close();
-      await this.#abort(session);
-      if (failure === DEADLINE) {
-        throw new TransactionError('DEADLINE_EXCEEDED');
-      }
-      throw this.#translate(failure, session);
+      const original: unknown =
+        failure === DEADLINE ? new TransactionError('DEADLINE_EXCEEDED') : this.#translate(failure, session);
+      await this.#abort(session, deadline, budgetLeft);
+      throw original;
     }
 
     // From here on no participant statement can start; only COMMIT is allowed on the client.
     session.close();
     if (!budgetLeft()) {
-      // The budget ran out before COMMIT was sent (the timer may simply not have run yet): nothing
-      // is committed, so roll back (or destroy when the client is not trustworthy) and fail.
-      await this.#abort(session);
+      // The budget ran out before COMMIT was sent (the timer may simply not have run yet): nothing is
+      // committed. The budget is spent, so the connection is destroyed rather than rolled back, and we fail.
+      await this.#abort(session, deadline, budgetLeft);
       throw new TransactionError('DEADLINE_EXCEEDED');
     }
     if (session.inFlight > 0) {
@@ -352,18 +364,39 @@ export class TransactionManager {
     return value as T;
   }
 
-  /** ROLLBACK and release; destroy the connection instead whenever its state is not trustworthy. */
-  async #abort(session: TransactionSession): Promise<void> {
-    if (session.mustDestroy()) {
+  /**
+   * Ends a transaction that must not commit, under the SAME deadline that bounded it. Callers have already closed
+   * the participant context.
+   *
+   * - Budget already spent, a query still in flight, a dirty state or a connection error: the connection is
+   *   destroyed exactly once and ROLLBACK is never sent (the server rolls the transaction back when the session
+   *   ends, and a suspect connection never returns to the pool).
+   * - Otherwise ROLLBACK races what is left of the one deadline (no new timer, no fresh allowance). A rollback
+   *   that finishes inside the budget on a still-trustworthy client releases it normally; a rejection, the
+   *   deadline, or an answer that only arrives after the budget (checked on the monotonic clock as well, since a
+   *   timer can be delivered late) destroys it exactly once.
+   * - The ROLLBACK promise is always consumed, so a late rejection is never unhandled, and a late settlement
+   *   only decrements a counter: it cannot release again or touch the client.
+   */
+  async #abort(
+    session: TransactionSession,
+    deadline: Promise<never>,
+    budgetLeft: () => boolean,
+  ): Promise<void> {
+    if (!budgetLeft() || session.mustDestroy()) {
       session.finish(true);
       return;
     }
+    const rollback = session.execute('ROLLBACK');
+    rollback.catch(() => undefined);
     try {
-      await session.execute('ROLLBACK');
-      session.finish(false);
+      await Promise.race([rollback, deadline]);
     } catch {
+      // The server refused the rollback, the connection failed, or the deadline won: not reusable.
       session.finish(true);
+      return;
     }
+    session.finish(!budgetLeft() || session.mustDestroy());
   }
 
   /** Keeps the callback's own error, except for failures that must be reported as technical ones. */
