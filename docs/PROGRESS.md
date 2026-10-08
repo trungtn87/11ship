@@ -110,7 +110,8 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#20](https://github.com/trungtn87/11ship/pull/20) docs(plan): M00 local, M01 UI/test and M02 parallel deliver… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `78cb319` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#21](https://github.com/trungtn87/11ship/pull/21) feat(shop): M02-A shop management backend (draft) | Đã merge (`MERGED`) | — | — | — | `c7f0d5b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#22](https://github.com/trungtn87/11ship/pull/22) design(M00-D): Render Free + Supabase staging | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `a846a68` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#23](https://github.com/trungtn87/11ship/pull/23) design(M02-A-UI): shop profile and weekly schedule screens | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `8a0bafe` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#23](https://github.com/trungtn87/11ship/pull/23) design(M02-A-UI): shop profile and weekly schedule screens | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `8a0bafe` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#24](https://github.com/trungtn87/11ship/pull/24) design(M01-FE0): responsive frontend foundation and session… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `ef29717` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
@@ -118,6 +119,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 - `UNCLASSIFIED_PR` PR #20: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #22: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #23: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #24: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
