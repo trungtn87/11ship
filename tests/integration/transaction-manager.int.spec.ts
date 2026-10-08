@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from '@jest/glob
 import { Pool } from 'pg';
 import { AppError } from '../../apps/backend/src/common/app-errors';
 import { poolClientSource } from '../../apps/backend/src/transaction/pg-client-source';
-import { TransactionContext } from '../../apps/backend/src/transaction/transaction-context';
+import { QueryRows, TransactionContext } from '../../apps/backend/src/transaction/transaction-context';
 import { TransactionError } from '../../apps/backend/src/transaction/transaction-error';
 import { TransactionManager } from '../../apps/backend/src/transaction/transaction-manager';
 import { deferred, eventually, failureOf } from './support/async-helpers';
@@ -404,6 +404,31 @@ describe('M00-C1A0 — TransactionManager on real PostgreSQL', () => {
       );
 
       expect(error).toBe(boom);
+      expect(source.released).toEqual([true]);
+      await eventually(() => backendIsGone(pool, pid), 'destroyed backend is gone');
+      expect(await countItems()).toBe(0);
+    });
+
+    it('bounds a hung ROLLBACK by the same deadline: client destroyed, original error kept, the server ends the transaction (injected)', async () => {
+      // Only ROLLBACK is intercepted and never answers; the INSERT and everything else is real PostgreSQL.
+      const source = faultySource(pool, (text) =>
+        text === 'ROLLBACK' ? new Promise<QueryRows>(() => undefined) : undefined,
+      );
+      let pid = -1;
+      const boom = new Error('business failure');
+      const started = Date.now();
+
+      const error = await failureOf(() =>
+        managerFor(source, { timeoutMs: 300 }).withTransaction(async (context) => {
+          pid = await backendPid(context);
+          await context.query(`INSERT INTO ${items} (id, note) VALUES (1, 'x')`);
+          throw boom;
+        }),
+      );
+
+      expect(error).toBe(boom);
+      // The one 300 ms deadline bounds the rollback; an unbounded await would never return.
+      expect(Date.now() - started).toBeLessThan(1500);
       expect(source.released).toEqual([true]);
       await eventually(() => backendIsGone(pool, pid), 'destroyed backend is gone');
       expect(await countItems()).toBe(0);

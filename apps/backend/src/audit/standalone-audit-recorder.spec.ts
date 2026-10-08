@@ -1,4 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
+import { AppError } from '../common/app-errors';
 import { QueryRows, TransactionContext } from '../transaction/transaction-context';
 import {
   TransactionClient,
@@ -348,6 +349,36 @@ describe('StandaloneAuditRecorder — every failure is swallowed after a fixed-c
     expect(client.statements).toContain('ROLLBACK');
     expect(client.statements).not.toContain('COMMIT');
     expect(client.released).toEqual([false]);
+  });
+
+  it('a failing writer plus a ROLLBACK that never answers still ends at the budget: resolves, client destroyed, the caller keeps its original denial', async () => {
+    const client = fakeClient((text) => (text === 'ROLLBACK' ? new Promise<QueryRows>(() => undefined) : undefined));
+    const { writer } = recordingWriter(() => Promise.reject(leaky));
+    const { logger, lines } = recordingLogger();
+    const recorder = new StandaloneAuditRecorder(sourceOf(client), writer, logger, { budgetMs: 60 });
+    const denial = new AppError('INVALID_CREDENTIALS');
+
+    // The protected operation was denied and records that denial on its way out, exactly as a caller does.
+    const protectedOperation = async (): Promise<never> => {
+      try {
+        throw denial;
+      } catch (original) {
+        await recorder.recordBestEffort(DENIED);
+        throw original;
+      }
+    };
+    const started = Date.now();
+    const error = await protectedOperation().catch((caught: unknown) => caught);
+    const elapsed = Date.now() - started;
+
+    expect(error).toBe(denial); // the original denial is unchanged
+    // The whole write (acquisition, BEGIN, INSERT and the failed-write cleanup) ends within the budget: a rollback
+    // with a fresh allowance, or an unbounded await, would not.
+    expect(elapsed).toBeLessThan(250);
+    expect(client.statements).toContain('ROLLBACK');
+    expect(client.released).toEqual([true]); // the hung connection is destroyed, never left checked out
+    expect(codes(lines)).toEqual(['AUDIT_WRITE_FAILED']);
+    expect(JSON.stringify(lines)).not.toContain(MARKER);
   });
 
   it('a lost COMMIT acknowledgement is swallowed too, and the connection is destroyed', async () => {
