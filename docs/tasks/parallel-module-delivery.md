@@ -63,3 +63,22 @@ Ghi nhận lỗi, sửa, chạy regression và Owner test lại. Chỉ đóng ta
 5. Module sau lặp lại cùng hai luồng. Các task của module sau được thêm khi phạm vi đã có spec, không tạo phần trăm cho roadmap chưa xác định.
 
 Kế hoạch này chỉ sửa tài liệu/manifest; không triển khai server, UI, SMS hoặc production.
+
+## Ghi nhận vào dashboard sau khi khóa kế hoạch
+
+Claude cập nhật manifest và regression tests trong cùng gói kế hoạch, trước khi giao implementation runtime/UI. Không sửa percentages thủ công hoặc chỉ đưa task vào tài liệu rồi bỏ khỏi dashboard.
+
+| Task ID | Loại / module | Design reference | Dependency khi nghiệm thu |
+|---|---|---|---|
+| R01 | group / R01 (Bản thử M01) | PR #20 | M01-A2, M01-R1 |
+| R01-ENV | leaf / R01, parent R01 | Kế thừa #20; spec runtime chi tiết bổ sung trước khi code | Kế thừa dependency của R01 |
+| R01-UI | leaf / R01, parent R01 | PR #14 | R01-ENV; frame/node phải UI_LOCKED |
+| R01-E2E | leaf / R01, parent R01 | Kế thừa #20 | R01-ENV, R01-UI |
+| R01-UAT | leaf / R01, parent R01 | Kế thừa #20 | R01-E2E; Owner xác nhận |
+| M02-A | leaf / M02 | PR #18 | M01-A2, M01-R1; không phụ thuộc R01-UAT |
+
+Thêm module R01 và M02, task acceptance/evidence paths và pins bằng schema hiện có; không dùng một số PR làm pin cho nhiều task. R01-UI dùng design #14, ba leaf còn lại kế thừa group design #20. Implementation pins chỉ thêm khi PR implementation thật tồn tại. Nếu cần gate spec runtime riêng, mở PR thiết kế thật rồi pin trên R01-ENV; không coi kế hoạch tổng là đủ spec deploy.
+
+Current-plan tests hiện giả định tổng 9 leaf; phải cập nhật kỳ vọng cho kế hoạch mới, giữ frozen snapshot fixture lịch sử, bổ sung test hai luồng: R01 chưa DONE không chặn thiết kế/implementation M02-A khi dependency kỹ thuật đạt; UI không DONE trước ENV; E2E và UAT không bị tự suy ra từ backend DONE. Chạy toàn bộ progress tests/check rồi regenerate từ dữ liệu thật.
+
+Schema v1 không tự biết frame Figma đã khóa hoặc Owner đã nghiệm thu; kiểm các gate đó bằng acceptance/evidence và review/Owner duyệt PR tương ứng. Không chế tạo label/status để giả vờ đã được duyệt. Dashboard sau merge kế hoạch phải hiển thị các gói bản thử còn mở, tránh báo toàn sản phẩm hoàn thành.
