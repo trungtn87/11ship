@@ -5,7 +5,7 @@
 > **AUTO-GENERATED — DO NOT EDIT MANUALLY**
 >
 > The plan lives in [`docs/progress/plan.yml`](progress/plan.yml); the status comes from GitHub (merged PRs, draft/open/closed state, labels, head SHA, required checks, dependencies). Nobody, human or AI, can mark a task DONE by writing it down. See [how states are derived](progress/README.md).
-> Data as of main code `` (HEAD is a docs-only progress-bot commit; CI is read from this code commit) · main CI: —
+> Data as of main HEAD `45ac3f0` · main CI: ⏳ RUNNING
 
 ## 🎯 CURRENT FOCUS
 
@@ -79,7 +79,7 @@ flowchart TD
 | **M00-C1** design · Transactional Core | 🔒 DESIGN_LOCKED | — | [#3](https://github.com/trungtn87/11ship/pull/3) | ✅ PASS | `de82b15` | B1 DONE | Continue child tasks |
 | &nbsp;&nbsp;M00-C1A0 · Transaction + Shared Primitives | ✅ DONE | — | [#4](https://github.com/trungtn87/11ship/pull/4) | ✅ PASS | `688e796` | — | — |
 | &nbsp;&nbsp;M00-C1A1 · Idempotency | ✅ DONE | — | [#6](https://github.com/trungtn87/11ship/pull/6) | ✅ PASS | `44c0fa7` | C1A0 DONE | — |
-| &nbsp;&nbsp;M00-C1B · Audit + Outbox Write | 🟦 READY_FOR_CLAUDE | Claude | — | — | main code `` | C1A1 DONE | Claude implement |
+| &nbsp;&nbsp;M00-C1B · Audit + Outbox Write | 🟦 READY_FOR_CLAUDE | Claude | — | — | main HEAD `45ac3f0` | C1A1 DONE | Claude implement |
 | &nbsp;&nbsp;M00-C1C · Dispatcher + Final Integration | ⛔ BLOCKED_BY_DEPENDENCY | — | — | — | — | C1B READY_FOR_CLAUDE | Wait for C1B |
 | M01 · Authentication | ⛔ BLOCKED_BY_DEPENDENCY | — | — | — | — | C1C BLOCKED_BY_DEPENDENCY | Wait for C1C |
 
@@ -104,12 +104,11 @@ How every PR is treated. A PR counts only through explicit metadata (labels, or 
 | [#13](https://github.com/trungtn87/11ship/pull/13) chore(progress): Việt hóa dashboard tiến độ | OPEN | — | infra | ✅ PASS | `25a62e9` | out of plan — Out of plan (type:infra) |
 | [#14](https://github.com/trungtn87/11ship/pull/14) docs(ui): add Figma workflow and frontend UI gate | OPEN | — | infra | ✅ PASS | `0d16d7b` | out of plan — Out of plan (type:infra) |
 | [#15](https://github.com/trungtn87/11ship/pull/15) docs(m01-a2): lock onboarding contract and task split | MERGED | — | — | — | `c329808` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;); PR not counted. State is never inferred from titles, bod… |
-| [#16](https://github.com/trungtn87/11ship/pull/16) feat(onboarding): M01-A2S shop onboarding (READY CANDIDATE,… | DRAFT | — | — | ✅ PASS | `620333f` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;); PR not counted. State is never inferred from titles, bod… |
+| [#16](https://github.com/trungtn87/11ship/pull/16) feat(onboarding): M01-A2S shop onboarding (READY CANDIDATE,… | MERGED | — | — | — | `620333f` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;); PR not counted. State is never inferred from titles, bod… |
 
 ## ⚠️ Attention
 
 - `UNCLASSIFIED_PR` PR #7: no usable metadata (missing module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR not counted. State is never inferred from titles, bodies or authors.
-- `UNCLASSIFIED_PR` PR #16: no usable metadata (missing module:&lt;task id&gt;); PR not counted. State is never inferred from titles, bodies or authors.
 
 ## Workflow
 
