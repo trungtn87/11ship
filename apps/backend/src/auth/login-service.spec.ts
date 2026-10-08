@@ -111,7 +111,8 @@ describe('LoginService (task section 11)', () => {
   });
 
   it('verifies the password OUTSIDE any transaction, then creates the session and the audit inside one', async () => {
-    const r = rig({ roles: [] });
+    // A roleless user who never started Shop onboarding (the rig's default shop is a completed ACTIVE one).
+    const r = rig({ roles: [], shop: { onboarding: 'NOT_STARTED', selectable: false } });
     const result = await r.service.login(INPUT, REQUEST_ID);
     expect(r.calls).toEqual(['verify', 'session.create']);
     expect(r.state.transactions).toBe(2); // lookup, then the short login transaction
