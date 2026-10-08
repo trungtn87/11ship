@@ -54,7 +54,7 @@ describe('parseShopProfileUpdateBody (M02-A section 4)', () => {
     },
   );
 
-  it.each(['name', 'contact_phone', 'address_text', 'pickup_lat', 'pickup_lng', 'service_area_id', 'expected_version'])(
+  it.each(['name', 'address_text', 'pickup_lat', 'pickup_lng', 'service_area_id', 'expected_version'])(
     'rejects null for the required %s',
     (key) => {
       expect(thrown(() => parseShopProfileUpdateBody({ ...PROFILE, [key]: null }))).toBeInstanceOf(
@@ -81,9 +81,14 @@ describe('parseShopProfileUpdateBody (M02-A section 4)', () => {
     ['version 0', { expected_version: 0 }],
     ['version 1.5', { expected_version: 1.5 }],
     ['blank name', { name: '   ' }],
-    ['bad phone', { contact_phone: '123' }],
   ])('rejects %s as a generic 400', (_label, patch) => {
     expect(thrown(() => parseShopProfileUpdateBody({ ...PROFILE, ...patch }))).toBeInstanceOf(BadRequestException);
+  });
+
+  it.each([null, '123', 5])('rejects the contact phone %p with the existing INVALID_PHONE error', (phone) => {
+    const error = thrown(() => parseShopProfileUpdateBody({ ...PROFILE, contact_phone: phone }));
+    expect(error).toBeInstanceOf(AppError);
+    expect((error as AppError).code).toBe('INVALID_PHONE');
   });
 
   it.each([null, undefined, 'x', 3, [], [PROFILE]])('rejects a non-object body %p', (body) => {

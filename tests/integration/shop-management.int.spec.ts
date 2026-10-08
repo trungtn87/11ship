@@ -207,13 +207,20 @@ describe('M02-A — Shop management', () => {
       ['null latitude', { pickup_lat: null }],
       ['malformed service area', { service_area_id: 'nope' }],
       ['blank name', { name: '  ' }],
-      ['invalid phone', { contact_phone: '12345' }],
       ['version 0', { expected_version: 0 }],
     ])('rejects %s as BAD_REQUEST without writing', async (_label, patch) => {
       const owner = await createShopOwner(app);
       const before = await shopState(app.pool, owner);
       const response = await putProfile(app, owner.token, profileBody(owner, patch));
       expect([response.status, errorCode(response)]).toEqual([400, 'BAD_REQUEST']);
+      expect(await shopState(app.pool, owner)).toEqual(before);
+    });
+
+    it('refuses an invalid contact phone with INVALID_PHONE without writing', async () => {
+      const owner = await createShopOwner(app);
+      const before = await shopState(app.pool, owner);
+      const response = await putProfile(app, owner.token, profileBody(owner, { contact_phone: '12345' }));
+      expect([response.status, errorCode(response)]).toEqual([400, 'INVALID_PHONE']);
       expect(await shopState(app.pool, owner)).toEqual(before);
     });
 
