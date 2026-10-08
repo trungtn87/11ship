@@ -135,7 +135,7 @@ describe('Driver onboarding coordinator boundary', () => {
     expect(codeOf('onboarding/driver-onboarding.controller.ts')).not.toMatch(/SessionService|setActiveRole|selectRole|access_token|accessToken/);
   });
 
-  it('the Driver files add no import from Auth beyond the guard, the principal, the participant and the text helper', () => {
+  it('the Driver files add no import from Auth beyond the guard, the principal, the participants and the text helper', () => {
     const imports = driverFiles()
       .map((file) => codeOf(file))
       .join('\n')
@@ -145,6 +145,7 @@ describe('Driver onboarding coordinator boundary', () => {
       "from '../auth/auth-validation'",
       "from '../auth/role-grant-participant'",
       "from '../auth/session-auth.guard'",
+      "from '../auth/session-authorization-participant'",
     ]);
   });
 });

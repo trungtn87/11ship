@@ -324,7 +324,8 @@ describe('ShopOnboardingService session authorization (post-merge repair, sectio
   it.each(['save', 'complete'] as const)(
     'the sensitive replay hook of %s runs the same authorization with the CURRENT session, before it allows anything',
     async (operation) => {
-      const r = rig({ shop: shopRow() });
+      // save needs no existing shop (a create); complete needs the INCOMPLETE draft to activate.
+      const r = rig(operation === 'save' ? {} : { shop: shopRow() });
       await (operation === 'save' ? save(r) : complete(r));
       const replay = r.requests[0]?.replay;
       if (replay?.kind !== 'sensitive') {
