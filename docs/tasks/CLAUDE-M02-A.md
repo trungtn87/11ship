@@ -21,7 +21,7 @@ Deliverable: code head, final head, base, CI URL/counts, changed existing tests/
 UI_SCOPE: FIGMA_REQUIRED. Thiết kế ngay trong khi BE/local chuẩn bị; tái dùng brand foundation và UI M01. Brief này chưa phải frame Figma hay UI_LOCKED.
 Ba màn/frame cần tạo:
 - Hồ sơ quán: tên/SĐT liên hệ/Zalo/Facebook/địa chỉ/vị trí lấy hàng/vùng; sửa và lưu; thông tin đọc được khi DISABLED.
-- Giờ hoạt động: lịch thứ Hai→Chủ nhật, nhiều khoảng/ngày, thêm/xóa khoảng, hỗ trợ qua đêm, cả ngày, ngày đóng; preview lịch tuần trước lưu.
+- Giờ hoạt động: dòng “Cả tuần” ở đầu, phía trên T2, rồi lịch thứ Hai→Chủ nhật, nhiều khoảng/ngày, thêm/xóa khoảng, hỗ trợ qua đêm, cả ngày, ngày đóng; preview lịch tuần trước lưu.
 - Trạng thái quán: chip Đang mở cửa/Đã đóng cửa/Chưa cài giờ hoạt động/Quán bị vô hiệu/Vùng chưa hoạt động; giải thích theo lịch, không có công tắc.
 
 Copy đề xuất:
@@ -55,3 +55,12 @@ Bản local được chuẩn bị từ luồng M00, truy cập Windows/điện t
 - Sửa lịch/hồ sơ, reload và khởi động lại; kiểm wording và cách nhập trên điện thoại.
 Ghi Owner acceptance thực tế, SHA/bản test/bug/retest. Không tự tick nghiệm thu bằng CI.
 Module M02-A có bốn mốc riêng BE/UI/E2E/UAT; menu M02-B thiết kế riêng.
+
+## 5. Owner bổ sung — dòng Cả tuần (08/10/2026)
+- Thêm một dòng “Cả tuần” cùng cách trình bày với T2/T3/.../CN, đặt đầu danh sách theo ảnh tham chiếu Owner.
+- Chọn giờ mở/đóng hoặc danh sách khoảng giờ ở dòng này, bấm “Áp dụng cho cả tuần” để sao chép xuống cả 7 ngày trong bản đang sửa. Hỗ trợ qua đêm, cả ngày và ngày đóng như dòng từng ngày.
+- Đây là thao tác áp dụng hàng loạt một lần, không liên kết cố định các ngày. Sau khi áp dụng vẫn sửa riêng T2–CN; áp dụng lại thay thế lịch của cả 7 ngày trong draft.
+- Chỉ nút “Lưu” chung gửi PUT business-hours; apply-all không ghi DB riêng. Lịch luôn được validate toàn tuần, kể cả overlap qua nửa đêm/Chủ nhật→thứ Hai.
+- Khi 7 ngày có cùng lịch thì dòng Cả tuần hiển thị lịch chung; khác nhau thì hiển thị “Tùy chỉnh theo ngày”. Mở form chọn lịch chung mới khi bấm dòng này.
+- Không thêm weekday=0/all hoặc cột lịch chung vào DB/API; frontend expand thành weekdays 1..7, dùng expected_version/key như PUT hiện có.
+- E2E/UAT: nhập 22:00–07:00 ở Cả tuần → 7 ngày đúng giờ qua đêm; sửa riêng CN → các ngày khác nguyên vẹn, Cả tuần hiện “Tùy chỉnh theo ngày”; lưu/reload giữ đúng dữ liệu; apply-all lần nữa thay thế cả tuần; apply-all chưa Lưu không thay dữ liệu server.
