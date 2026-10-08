@@ -4,7 +4,6 @@ import {
   ApiResponse,
   AuthApp,
   countRows,
-  createServiceArea,
   dataOf,
   driverBody,
   installFault,
@@ -14,7 +13,7 @@ import {
 } from './support/auth-fixtures';
 
 // M01-A2D fault matrix: a failure at ANY persistence step of Driver creation leaves nothing behind (no driver,
-// area row, role, audit, outbox event or idempotency record), reveals nothing, and does not consume the
+// role, audit, outbox event or idempotency record), reveals nothing, and does not consume the
 // Idempotency-Key: the same key and request succeeds afterwards. Faults are PostgreSQL triggers that raise a
 // non-application server error for the rows of ONE test user only.
 describe('M01-A2D — Driver onboarding fault matrix', () => {
@@ -41,11 +40,6 @@ describe('M01-A2D — Driver onboarding fault matrix', () => {
       name: 'fault_driver_row',
       table: 'app.drivers',
       condition: (u) => `NEW.user_id = '${u}'::uuid`,
-    },
-    {
-      name: 'fault_driver_area',
-      table: 'app.driver_service_areas',
-      condition: (u) => `EXISTS (SELECT 1 FROM app.drivers d WHERE d.driver_id = NEW.driver_id AND d.user_id = '${u}'::uuid)`,
     },
     {
       name: 'fault_driver_role',
@@ -76,8 +70,7 @@ describe('M01-A2D — Driver onboarding fault matrix', () => {
   for (const fault of faults) {
     it(`fault at ${fault.table} (${fault.name}) leaves nothing; the same key then succeeds`, async () => {
       const user = await registerUser(app);
-      const areaId = await createServiceArea(app.pool);
-      const body = driverBody([areaId], { full_name: `Fault ${fault.name}` });
+      const body = driverBody({ full_name: `Fault ${fault.name}` });
       const key = randomUUID();
 
       await installFault(app.pool, fault.name, fault.table, 'INSERT', fault.condition(user.userId));
@@ -92,7 +85,6 @@ describe('M01-A2D — Driver onboarding fault matrix', () => {
       expect(failed.text).not.toContain('injected fault');
       expect(failed.text).not.toContain(`Fault ${fault.name}`);
       expect(await count('SELECT 1 FROM app.drivers WHERE user_id = $1::uuid', [user.userId])).toBe(0);
-      expect(await count('SELECT 1 FROM app.driver_service_areas WHERE service_area_id = $1::uuid', [areaId])).toBe(0);
       expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(0);
       expect(await count('SELECT 1 FROM app.audit_logs WHERE request_id = $1::uuid AND action = $2', [failed.requestId, OPERATION])).toBe(0);
       expect(await count("SELECT 1 FROM app.outbox_events WHERE event_type = 'driver.onboarded.v1' AND payload->>'user_id' = $1", [user.userId])).toBe(0);

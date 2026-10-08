@@ -6,7 +6,7 @@ import { Client } from 'pg';
 import { assertTestDatabaseTarget } from './support/assert-test-target';
 import { minimalChildEnv, REPO_ROOT, runNpmScript } from './support/test-helpers';
 
-// M01-A2D — the Driver onboarding migration (drivers, driver_service_areas), with the same rules as the M00,
+// M01-A2D — the Driver onboarding migration (app.drivers only; Driver operating areas were removed by the Owner, task section 22), with the same rules as the M00,
 // Auth and Shop migrations: clean install, a no-op second up, a REAL upgrade from the Shop-onboarding schema,
 // drift that fails loudly and atomically, an explicit down, and a database that enforces the invariants on its
 // own.
@@ -22,7 +22,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
   const driverSql = readFileSync(path.join(migrationsDir, `${DRIVER}.sql`), 'utf8');
   const upSql = (driverSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const downSql = driverSql.split('-- Down Migration')[1] as string;
-  const TABLES = ['driver_service_areas', 'drivers'] as const;
+  const TABLES = ['drivers'] as const;
 
   const databaseUrl = process.env.DATABASE_URL;
   let client: Client;
@@ -78,7 +78,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
     expect(Number(DRIVER.split('_')[0])).toBeGreaterThan(Number((BEFORE[BEFORE.length - 1] as string).split('_')[0]));
   });
 
-  it('clean install records every migration and creates the two tables with NO seed data', async () => {
+  it('clean install records every migration and creates the drivers table with NO seed data', async () => {
     await reset();
     expect(migrate().status).toBe(0);
     expect(await historyNames()).toEqual(names);
@@ -129,7 +129,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
     });
   }
 
-  it('has no IF [NOT] EXISTS or CASCADE outside comments; the down migration drops exactly its two tables in dependency order', () => {
+  it('has no IF [NOT] EXISTS or CASCADE outside comments; the down migration drops exactly its one table', () => {
     const strip = (text: string): string =>
       text
         .split('\n')
@@ -139,12 +139,9 @@ describe('M01-A2D — Driver onboarding migration', () => {
     expect(statements).not.toMatch(/IF\s+NOT\s+EXISTS/i);
     expect(statements).not.toMatch(/IF\s+EXISTS/i);
     expect(statements).not.toMatch(/CASCADE/i);
-    expect(strip(downSql).split(';').map((s) => s.trim()).filter((s) => s.length > 0)).toEqual([
-      'DROP TABLE app.driver_service_areas',
-      'DROP TABLE app.drivers',
-    ]);
+    expect(strip(downSql).split(';').map((s) => s.trim()).filter((s) => s.length > 0)).toEqual(['DROP TABLE app.drivers']);
     const created = [...strip(upSql).matchAll(/\bCREATE\s+TABLE\s+([A-Za-z0-9_."]+)/gi)].map((match) => match[1]);
-    expect(created).toEqual(['app.drivers', 'app.driver_service_areas']);
+    expect(created).toEqual(['app.drivers']);
     // Scope: no bank, wallet, approval, order, delivery table; no seed INSERT; no trigger or function.
     expect(statements).not.toMatch(/\b(bank|wallet|approval|order|delivery|assignment|closure)\w*/i);
     expect(statements).not.toMatch(/\bINSERT\b/i);
@@ -160,7 +157,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
       expect(await presentTables()).toEqual([]);
       const leftovers = await client.query(
         `SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-          WHERE n.nspname = 'app' AND (c.relname LIKE 'drivers%' OR c.relname LIKE 'driver_service_areas%')`,
+          WHERE n.nspname = 'app' AND c.relname LIKE 'drivers%'`,
       );
       expect(leftovers.rowCount).toBe(0);
       await client.query(upSql);
@@ -190,7 +187,6 @@ describe('M01-A2D — Driver onboarding migration', () => {
   describe('the database enforces the invariants on its own', () => {
     const HASH = '$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$aGFzaGhhc2hoYXNoaGFzaA';
     const users: string[] = [];
-    const areas: string[] = [];
 
     function phone(): string {
       return `+849${String(Math.floor(Math.random() * 100_000_000)).padStart(8, '0')}`;
@@ -204,17 +200,6 @@ describe('M01-A2D — Driver onboarding migration', () => {
         [id, phone(), HASH],
       );
       users.push(id);
-      return id;
-    }
-
-    async function insertArea(): Promise<string> {
-      const id = randomUUID();
-      await client.query(
-        `INSERT INTO app.service_areas (service_area_id, code, name, status, version, created_at, updated_at)
-         VALUES ($1::uuid, $2, 'Area', 'ACTIVE', 1, now(), now())`,
-        [id, `DAREA-${id}`],
-      );
-      areas.push(id);
       return id;
     }
 
@@ -253,13 +238,6 @@ describe('M01-A2D — Driver onboarding migration', () => {
       return id;
     }
 
-    async function insertDriverArea(driverId: string, areaId: string): Promise<void> {
-      await client.query(
-        'INSERT INTO app.driver_service_areas (driver_id, service_area_id, created_at) VALUES ($1::uuid, $2::uuid, now())',
-        [driverId, areaId],
-      );
-    }
-
     async function failureCode(run: () => Promise<unknown>): Promise<{ code: string; constraint: string | undefined }> {
       try {
         await run();
@@ -287,11 +265,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
     }
 
     async function wipe(): Promise<void> {
-      await client.query('DELETE FROM app.driver_service_areas');
       await client.query('DELETE FROM app.drivers');
-      if (areas.length > 0) {
-        await client.query('DELETE FROM app.service_areas WHERE service_area_id = ANY($1::uuid[])', [areas.splice(0)]);
-      }
       if (users.length > 0) {
         await client.query('DELETE FROM app.users WHERE user_id = ANY($1::uuid[])', [users.splice(0)]);
       }
@@ -320,11 +294,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
           'drivers_not_active_not_accepting_ck',
         ].sort(),
       );
-      expect(await constraintNames('driver_service_areas')).toEqual(
-        ['driver_service_areas_pkey', 'driver_service_areas_driver_fk', 'driver_service_areas_area_fk'].sort(),
-      );
       expect(await indexNames('drivers')).toEqual(['drivers_pkey', 'drivers_user_uq']);
-      expect(await indexNames('driver_service_areas')).toEqual(['driver_service_areas_area_idx', 'driver_service_areas_pkey']);
     });
 
     it('defaults: EXTERNAL, not accepting, version 1; a driver must say its status and its name', async () => {
@@ -418,30 +388,8 @@ describe('M01-A2D — Driver onboarding migration', () => {
       ).toBe('drivers_not_active_not_accepting_ck');
     });
 
-    it('driver areas: one row per (driver, area), real driver and real area, nothing cascades', async () => {
+    it('a user that still has a Driver cannot be deleted: nothing cascades', async () => {
       const driver = await insertDriver();
-      const area = await insertArea();
-      await insertDriverArea(driver, area);
-      expect(await failureCode(() => insertDriverArea(driver, area))).toMatchObject({
-        code: '23505',
-        constraint: 'driver_service_areas_pkey',
-      });
-      expect(await failureCode(() => insertDriverArea(randomUUID(), area))).toMatchObject({
-        code: '23503',
-        constraint: 'driver_service_areas_driver_fk',
-      });
-      expect(await failureCode(() => insertDriverArea(driver, randomUUID()))).toMatchObject({
-        code: '23503',
-        constraint: 'driver_service_areas_area_fk',
-      });
-      expect(await failureCode(() => client.query('DELETE FROM app.drivers WHERE driver_id = $1::uuid', [driver]))).toMatchObject({
-        code: '23503',
-        constraint: 'driver_service_areas_driver_fk',
-      });
-      expect(await failureCode(() => client.query('DELETE FROM app.service_areas WHERE service_area_id = $1::uuid', [area]))).toMatchObject({
-        code: '23503',
-        constraint: 'driver_service_areas_area_fk',
-      });
       const owner = (await client.query<{ user_id: string }>('SELECT user_id FROM app.drivers WHERE driver_id = $1::uuid', [driver])).rows[0]
         ?.user_id as string;
       expect(await failureCode(() => client.query('DELETE FROM app.users WHERE user_id = $1::uuid', [owner]))).toMatchObject({
@@ -450,16 +398,21 @@ describe('M01-A2D — Driver onboarding migration', () => {
       });
     });
 
-    it('one driver may cover several areas, and one area several drivers', async () => {
-      const a = await insertArea();
-      const b = await insertArea();
-      const d1 = await insertDriver();
-      const d2 = await insertDriver();
-      await insertDriverArea(d1, a);
-      await insertDriverArea(d1, b);
-      await insertDriverArea(d2, a);
-      const covered = await client.query<{ n: number }>('SELECT count(*)::int AS n FROM app.driver_service_areas WHERE service_area_id = $1::uuid', [a]);
-      expect(covered.rows[0]?.n).toBe(2);
+    it('a Driver can be created by direct SQL without any area row, and no area table or index exists (task section 22)', async () => {
+      const id = await insertDriver();
+      const row = await client.query('SELECT 1 FROM app.drivers WHERE driver_id = $1::uuid', [id]);
+      expect(row.rowCount).toBe(1);
+      const leftovers = await client.query<{ relname: string }>(
+        `SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'app' AND (c.relname LIKE 'driver_service_areas%' OR c.relname LIKE 'driver_area%')`,
+      );
+      expect(leftovers.rows).toEqual([]);
+      const columns = await client.query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema = 'app' AND table_name = 'drivers' ORDER BY column_name`,
+      );
+      expect(columns.rows.map((r) => r.column_name)).toEqual(
+        ['accepting_deliveries', 'created_at', 'driver_id', 'driver_type', 'full_name', 'plate_number', 'status', 'updated_at', 'user_id', 'version'].sort(),
+      );
     });
   });
 });

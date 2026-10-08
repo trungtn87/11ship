@@ -53,11 +53,20 @@ describe('Driver (M03) module boundary', () => {
     }
   });
 
-  it('only the Driver module issues SQL against its two tables', () => {
+  it('only the Driver module issues SQL against its table', () => {
     const outside = productionFiles()
       .filter((name) => !name.startsWith('driver/'))
-      .filter((name) => /app\.(drivers|driver_service_areas)\b/.test(codeOf(name)));
+      .filter((name) => /app\.drivers\b/.test(codeOf(name)));
     expect(outside).toEqual([]);
+  });
+
+  it('Driver registration has no operating area anywhere in production code (Owner revision, task section 22)', () => {
+    const named = productionFiles().filter((name) => /driver_service_areas|DRIVER_SERVICE_AREAS|insertServiceAreas/.test(codeOf(name)));
+    expect(named).toEqual([]);
+    // Driver code and the Driver coordinator never touch M02's service areas.
+    for (const file of [...filesOf('driver'), 'onboarding/driver-onboarding-service.ts', 'onboarding/driver-onboarding-validation.ts']) {
+      expect([file, /service_?area|ServiceArea/i.test(codeOf(file))]).toEqual([file, false]);
+    }
   });
 
   it('the vocabulary is the contract one: EXTERNAL | PLATFORM and PENDING | ACTIVE | SUSPENDED | CLOSING | CLOSED, no SYSTEM', () => {

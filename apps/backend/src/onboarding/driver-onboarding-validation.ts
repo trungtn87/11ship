@@ -1,24 +1,17 @@
 import { BadRequestException } from '@nestjs/common';
 import { isWellFormed } from '../auth/auth-validation';
-import { AppError } from '../common/app-errors';
-import { isCanonicalUuid } from '../shared/identifiers';
-import {
-  DRIVER_FULL_NAME_MAX_LENGTH,
-  DRIVER_PLATE_NUMBER_MAX_LENGTH,
-  DRIVER_SERVICE_AREAS_MAX,
-} from './onboarding-constants';
+import { DRIVER_FULL_NAME_MAX_LENGTH, DRIVER_PLATE_NUMBER_MAX_LENGTH } from './onboarding-constants';
 
 // Strict request-body parser of Driver onboarding (M01-A2D, task section 9). Like the Shop and Auth parsers it
 // is pure: no I/O and no Nest pipeline magic. A body is accepted only when it is a plain JSON object whose keys
-// are a subset of {full_name, plate_number, service_area_ids} and include full_name and service_area_ids, so a
+// are a subset of {full_name, plate_number} and include full_name, so a
 // security-sensitive extra field (driver_type, status, accepting_deliveries, user_id, role, an admin or a
-// wallet/bank flag, ...) is refused instead of ignored.
+// wallet/bank flag, and the superseded service_area_ids of task section 22) is refused instead of ignored.
 //
 // The three small text helpers below repeat the ones of shop-onboarding-validation.ts on purpose: the A2S files
 // are left untouched by A2D, and a later slice may move both copies to one shared module.
 //
-// Failures never echo the offending value or key: a malformed shape is a plain 400 BAD_REQUEST. A duplicate
-// service area is a well-formed request naming one area twice, and is INVALID_SERVICE_AREA (task section 14).
+// Failures never echo the offending value or key: a malformed shape is a plain 400 BAD_REQUEST.
 
 function reject(): never {
   throw new BadRequestException();
@@ -72,47 +65,20 @@ function optionalText(value: unknown, max: number): string | null {
   return boundedText(value, max);
 }
 
-/**
- * At least one and at most DRIVER_SERVICE_AREAS_MAX canonical UUIDs, none twice. The result is sorted by UUID
- * (the text order of a canonical lower-case UUID is PostgreSQL's order), which is both the idempotency
- * fingerprint's order and the order the rows are locked in.
- */
-function serviceAreaIds(value: unknown): readonly string[] {
-  if (!Array.isArray(value) || value.length === 0 || value.length > DRIVER_SERVICE_AREAS_MAX) {
-    return reject();
-  }
-  const ids: string[] = [];
-  for (const entry of value as unknown[]) {
-    // A malformed identifier is a malformed request; a well-formed one that names no ACTIVE area is
-    // INVALID_SERVICE_AREA, decided by the service under lock.
-    if (typeof entry !== 'string' || !isCanonicalUuid(entry)) {
-      return reject();
-    }
-    ids.push(entry);
-  }
-  if (new Set(ids).size !== ids.length) {
-    throw new AppError('INVALID_SERVICE_AREA');
-  }
-  return ids.sort();
-}
-
 export interface DriverOnboardingInput {
   readonly fullName: string;
   readonly plateNumber: string | null;
-  /** Unique and sorted by UUID. */
-  readonly serviceAreaIds: readonly string[];
 }
 
 /**
- * POST /v1/onboarding/driver. full_name and service_area_ids are required; plate_number may be absent or null.
+ * POST /v1/onboarding/driver. full_name is required; plate_number may be absent or null.
  * The result is the NORMALIZED request: it is also what the idempotency fingerprint is built from, so a retry
- * that spells "absent" and "null", or lists the same areas in another order, is still the same request.
+ * that spells "absent" and "null", is still the same request.
  */
 export function parseDriverOnboardingBody(body: unknown): DriverOnboardingInput {
-  const parsed = objectWithKeys(body, ['full_name', 'service_area_ids'], ['plate_number']);
+  const parsed = objectWithKeys(body, ['full_name'], ['plate_number']);
   return {
     fullName: boundedText(parsed.full_name, DRIVER_FULL_NAME_MAX_LENGTH),
     plateNumber: optionalText(parsed.plate_number, DRIVER_PLATE_NUMBER_MAX_LENGTH),
-    serviceAreaIds: serviceAreaIds(parsed.service_area_ids),
   };
 }

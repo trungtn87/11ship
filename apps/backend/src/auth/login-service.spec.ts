@@ -185,7 +185,7 @@ describe('LoginService (task section 11)', () => {
     const code = sourceOf('auth/login-service.ts');
     expect(code).toContain('this.drivers.ownerDriverEligibility(context');
     expect(code.indexOf('this.users.lockById(')).toBeLessThan(code.indexOf('this.drivers.ownerDriverEligibility('));
-    expect(code).not.toMatch(/app\.drivers|driver_service_areas/);
+    expect(code).not.toMatch(/app\.drivers/);
   });
 
   it('reports the same onboarding / role-selection flags as /me for every shop state (A2S review addendum)', async () => {

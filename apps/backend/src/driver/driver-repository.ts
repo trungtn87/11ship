@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
 import { CLOCK_CTE, toSafeInteger } from './driver-db';
 import { DriverStatus, DriverType } from './driver-types';
@@ -48,8 +47,7 @@ function toDriver(row: RawDriver): DriverRow {
 }
 
 /**
- * SQL for app.drivers and app.driver_service_areas. M03 owns both tables; no other module issues SQL against
- * them. Every method takes the caller's TransactionContext: none of them begins, commits or rolls back anything.
+ * SQL for app.drivers. M03 owns the table; no other module issues SQL against it. Every method takes the caller's TransactionContext: none of them begins, commits or rolls back anything.
  */
 @Injectable()
 export class DriverRepository {
@@ -90,26 +88,5 @@ export class DriverRepository {
       [driver.driverId, driver.userId, driver.fullName, driver.plateNumber],
     );
     return result.rowCount === 1;
-  }
-
-  /**
-   * Registers the driver for every area in one statement. The caller has verified and locked the areas; a row
-   * count that differs from the list length is a broken invariant, not a business answer.
-   */
-  async insertServiceAreas(
-    context: TransactionContext,
-    driverId: string,
-    serviceAreaIds: readonly string[],
-  ): Promise<void> {
-    const result = await context.query(
-      `INSERT INTO app.driver_service_areas (driver_id, service_area_id, created_at)
-       SELECT $1::uuid, area.service_area_id, clock.t
-         FROM unnest($2::uuid[]) AS area(service_area_id)
-        CROSS JOIN (${CLOCK_CTE}) AS clock`,
-      [driverId, [...serviceAreaIds]],
-    );
-    if (result.rowCount !== serviceAreaIds.length) {
-      throw new TechnicalError('internal', 'Driver service areas were not written');
-    }
   }
 }

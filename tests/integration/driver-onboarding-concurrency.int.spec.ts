@@ -61,13 +61,11 @@ describe('M01-A2D — Driver onboarding concurrency', () => {
 
   it('two creates of one user (different keys) overlap on the user lock: exactly one Driver, one 201 and one DRIVER_PROFILE_EXISTS', async () => {
     const user = await registerUser(app);
-    const areaA = await createServiceArea(app.pool);
-    const areaB = await createServiceArea(app.pool);
     const holder = await lockUserRow(user.userId);
     let released = false;
     try {
-      const first = create(user.accessToken, driverBody([areaA], { full_name: 'First' }));
-      const second = create(user.accessToken, driverBody([areaB], { full_name: 'Second' }));
+      const first = create(user.accessToken, driverBody({ full_name: 'First' }));
+      const second = create(user.accessToken, driverBody({ full_name: 'Second' }));
       // Both requests are inside their transactions and blocked behind the user row: a real overlap.
       await eventually(waiters(2), 'two creates blocked on the user row lock');
       await holder.commit();
@@ -80,10 +78,6 @@ describe('M01-A2D — Driver onboarding concurrency', () => {
       expect(await roleCount(user.userId, 'DRIVER')).toBe(1);
       expect(await eventCount(user.userId)).toBe(1);
       expect(await auditCount(user.userId)).toBe(1);
-      // The loser left no area row behind either: exactly the winner's single area.
-      expect(
-        await count('SELECT 1 FROM app.driver_service_areas a JOIN app.drivers d USING (driver_id) WHERE d.user_id = $1::uuid', [user.userId]),
-      ).toBe(1);
     } finally {
       if (!released) {
         await holder.rollback();
@@ -93,14 +87,13 @@ describe('M01-A2D — Driver onboarding concurrency', () => {
 
   it('the same key sent twice at once executes once (the M00 advisory and record locks decide)', async () => {
     const user = await registerUser(app);
-    const areaId = await createServiceArea(app.pool);
     const key = randomUUID();
     const holder = await lockUserRow(user.userId);
     let released = false;
     try {
-      const first = create(user.accessToken, driverBody([areaId]), key);
+      const first = create(user.accessToken, driverBody(), key);
       await eventually(waiters(1), 'the first create blocked on the user row lock');
-      const second = create(user.accessToken, driverBody([areaId]), key);
+      const second = create(user.accessToken, driverBody(), key);
       await holder.commit();
       released = true;
       const results = await Promise.all([first, second]);
@@ -121,138 +114,6 @@ describe('M01-A2D — Driver onboarding concurrency', () => {
     }
   });
 
-  it('a service area deactivated while the create waits for it: the create sees INACTIVE, refuses, and writes nothing', async () => {
-    const user = await registerUser(app);
-    const areaId = await createServiceArea(app.pool);
-    const operator = await LockHolder.begin(app.pool);
-    let released = false;
-    try {
-      await operator.query(
-        "UPDATE app.service_areas SET status = 'INACTIVE', version = version + 1, updated_at = clock_timestamp() WHERE service_area_id = $1::uuid",
-        [areaId],
-      );
-      const pending = create(user.accessToken, driverBody([areaId]));
-      await eventually(waiters(1), 'the create blocked on the service area row (FOR SHARE vs the uncommitted UPDATE)');
-      await operator.commit();
-      released = true;
-
-      const response = await pending;
-      expect([response.status, errorCode(response)]).toEqual([400, 'INVALID_SERVICE_AREA']);
-      expect(await driverCount(user.userId)).toBe(0);
-      expect(await roleCount(user.userId, 'DRIVER')).toBe(0);
-      expect(await eventCount(user.userId)).toBe(0);
-      expect(await auditCount(user.userId)).toBe(0);
-      expect(
-        await count("SELECT 1 FROM app.idempotency_records WHERE scope_type = 'user' AND scope_id = $1 AND operation_id = 'onboarding.driver.create.v1'", [
-          user.userId,
-        ]),
-      ).toBe(0);
-    } finally {
-      if (!released) {
-        await operator.rollback();
-      }
-    }
-  });
-
-  it('the area is INACTIVE in one of two: the whole create is refused, nothing partial', async () => {
-    const user = await registerUser(app);
-    const keep = await createServiceArea(app.pool);
-    const going = await createServiceArea(app.pool);
-    const operator = await LockHolder.begin(app.pool);
-    let released = false;
-    try {
-      await operator.query(
-        "UPDATE app.service_areas SET status = 'INACTIVE', version = version + 1, updated_at = clock_timestamp() WHERE service_area_id = $1::uuid",
-        [going],
-      );
-      const pending = create(user.accessToken, driverBody([keep, going]));
-      await eventually(waiters(1), 'the create blocked on the second area row');
-      await operator.commit();
-      released = true;
-      const response = await pending;
-      expect([response.status, errorCode(response)]).toEqual([400, 'INVALID_SERVICE_AREA']);
-      expect(await driverCount(user.userId)).toBe(0);
-      expect(await count('SELECT 1 FROM app.driver_service_areas WHERE service_area_id = ANY($1::uuid[])', [[keep, going]])).toBe(0);
-    } finally {
-      if (!released) {
-        await operator.rollback();
-      }
-    }
-  });
-
-  it('a service area deactivated AFTER the create took its FOR SHARE lock: the operator waits until the create commits', async () => {
-    const user = await registerUser(app);
-    const areaId = await createServiceArea(app.pool);
-    await removeDriverInsertStall(app.pool);
-    await installDriverInsertStall(app.pool, STALL_KEY, user.userId);
-    const gate = await LockHolder.begin(app.pool);
-    let gateOpen = true;
-    try {
-      await gate.advisory({ first: STALL_KEY[0], second: STALL_KEY[1] });
-      const creation = create(user.accessToken, driverBody([areaId]));
-      // Stalled right before the Driver INSERT: the request holds the user row and the area row FOR SHARE.
-      await eventually(() => advisoryWaiterExists(app.pool, STALL_KEY), 'the create stalled inside its transaction');
-
-      let operatorDone = false;
-      const operator = app.pool
-        .query(
-          "UPDATE app.service_areas SET status = 'INACTIVE', version = version + 1, updated_at = clock_timestamp() WHERE service_area_id = $1::uuid",
-          [areaId],
-        )
-        .then(() => {
-          operatorDone = true;
-        });
-      await eventually(waiters(1), 'the operator UPDATE blocked behind the create FOR SHARE lock');
-      expect(operatorDone).toBe(false);
-
-      await gate.commit();
-      gateOpen = false;
-      expect((await creation).status).toBe(201);
-      await operator;
-
-      expect(await driverCount(user.userId)).toBe(1);
-      const area = await app.pool.query<{ status: string }>('SELECT status FROM app.service_areas WHERE service_area_id = $1::uuid', [areaId]);
-      expect(area.rows[0]?.status).toBe('INACTIVE');
-    } finally {
-      if (gateOpen) {
-        await gate.rollback();
-      }
-      await removeDriverInsertStall(app.pool);
-    }
-  });
-
-  it('areas are locked in one global order: two users listing the same areas in opposite orders never deadlock', async () => {
-    const first = await registerUser(app);
-    const second = await registerUser(app);
-    const a = await createServiceArea(app.pool);
-    const b = await createServiceArea(app.pool);
-    const [low, high] = [a, b].sort() as [string, string];
-    // An operator holds the HIGHER area row for a moment (an UPDATE that changes nothing a create cares about
-    // after it rolls back). Both creates take the lower area first, then queue on the higher one.
-    const operator = await LockHolder.begin(app.pool);
-    let released = false;
-    try {
-      await operator.query(
-        'UPDATE app.service_areas SET updated_at = clock_timestamp() WHERE service_area_id = $1::uuid',
-        [high],
-      );
-      const one = create(first.accessToken, driverBody([low, high]));
-      const two = create(second.accessToken, driverBody([high, low]));
-      await eventually(waiters(2), 'both creates queued behind the operator on the higher area');
-      await operator.rollback();
-      released = true;
-
-      const results = await Promise.all([one, two]);
-      expect(results.map((r) => r.status)).toEqual([201, 201]);
-      expect(await driverCount(first.userId)).toBe(1);
-      expect(await driverCount(second.userId)).toBe(1);
-    } finally {
-      if (!released) {
-        await operator.rollback();
-      }
-    }
-  });
-
   describe('one user, Shop and Driver at once', () => {
     const put = (token: string, body: unknown): Promise<ApiResponse> =>
       app.call('PUT', '/onboarding/shop/profile', { bearer: token, body, headers: { 'idempotency-key': randomUUID() } });
@@ -262,7 +123,6 @@ describe('M01-A2D — Driver onboarding concurrency', () => {
     it('Shop completion and Driver creation overlap on the user lock: both succeed, two roles, one event each', async () => {
       const user = await registerUser(app);
       const shopArea = await createServiceArea(app.pool);
-      const driverArea = await createServiceArea(app.pool);
       const saved = await put(user.accessToken, shopProfileBody({ pickup_lat: 21.03, pickup_lng: 105.85, service_area_id: shopArea }));
       expect(saved.status).toBe(201);
       const version = Number(dataOf(saved).version);
@@ -271,7 +131,7 @@ describe('M01-A2D — Driver onboarding concurrency', () => {
       let released = false;
       try {
         const shop = complete(user.accessToken, { expected_version: version });
-        const driver = create(user.accessToken, driverBody([driverArea]));
+        const driver = create(user.accessToken, driverBody());
         await eventually(waiters(2), 'completion and Driver creation blocked on the user row lock');
         await holder.commit();
         released = true;
@@ -299,7 +159,6 @@ describe('M01-A2D — Driver onboarding concurrency', () => {
 
     it('/auth/me started while the create holds the user row WAITS for it, then reports DRIVER available and PENDING_APPROVAL', async () => {
       const user: Registered = await registerUser(app);
-      const areaId = await createServiceArea(app.pool);
       expect(dataOf(await me(user.accessToken))).toMatchObject({
         available_roles: [],
         onboarding: { shop: 'NOT_STARTED', driver: 'NOT_STARTED' },
@@ -312,7 +171,7 @@ describe('M01-A2D — Driver onboarding concurrency', () => {
       let gateOpen = true;
       try {
         await gate.advisory({ first: STALL_KEY[0], second: STALL_KEY[1] });
-        const creation = create(user.accessToken, driverBody([areaId]));
+        const creation = create(user.accessToken, driverBody());
         // Stalled on the Driver INSERT, BEFORE the role grant and before COMMIT: the create holds the user row
         // FOR UPDATE and nothing it did is visible to anyone else yet.
         await eventually(() => advisoryWaiterExists(app.pool, STALL_KEY), 'the create stalled inside its write transaction');

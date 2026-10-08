@@ -1,18 +1,14 @@
 -- Up Migration
--- M01-A2D: Driver onboarding schema (M03-owned drivers and driver_service_areas). It follows
--- docs/tasks/M01-A2-onboarding.md section 7 and the M01-A2D handoff. M03 identity tables only: no bank
--- account, wallet, closure, assignment or delivery tables, no approval columns and no seed data.
+-- M01-A2D: Driver onboarding schema (M03-owned app.drivers only). It follows docs/tasks/M01-A2-onboarding.md
+-- section 7 as revised by section 22: Driver onboarding takes no operating area, so there is no
+-- driver_service_areas table and no area index. M03 identity table only: no bank account, wallet, closure,
+-- assignment or delivery tables, no approval columns, no GPS and no seed data.
 --
--- No IF [NOT] EXISTS anywhere: if any of these objects already exists the migration must fail (and be
--- rolled back as a whole, with no history row) instead of hiding schema drift. Applied migrations are never
--- edited; this is a new file after the Shop onboarding migration, whose app.service_areas it references, and
--- after the Auth Core migration, whose app.users it references.
+-- No IF [NOT] EXISTS anywhere: if the table already exists the migration must fail (and be rolled back as a
+-- whole, with no history row) instead of hiding schema drift. Applied migrations are never edited; this is a new
+-- file after the Shop onboarding migration, and it references only app.users from the Auth Core migration.
 --
--- No CASCADE anywhere: no delete of a user, a driver or a service area silently removes related rows.
---
--- Cross-row rules stay in the service layer and are re-checked under lock: that every area a driver is
--- registered for is ACTIVE when the driver is created (a CHECK cannot read another row), and that a driver has
--- at least one area (written in the same transaction as the driver).
+-- No CASCADE anywhere: no delete of a user silently removes a driver.
 
 -- ---------------------------------------------------------------------------------------------------
 -- app.drivers
@@ -52,30 +48,9 @@ CREATE TABLE app.drivers (
   CONSTRAINT drivers_not_active_not_accepting_ck CHECK (status = 'ACTIVE' OR accepting_deliveries = false)
 );
 
--- ---------------------------------------------------------------------------------------------------
--- app.driver_service_areas
--- ---------------------------------------------------------------------------------------------------
--- The service areas a driver registered for. The composite primary key makes a duplicate (driver, area) pair
--- impossible at the database layer, whatever the service does.
-CREATE TABLE app.driver_service_areas (
-  driver_id uuid NOT NULL,
-  service_area_id uuid NOT NULL,
-  created_at timestamptz NOT NULL,
-
-  CONSTRAINT driver_service_areas_pkey PRIMARY KEY (driver_id, service_area_id),
-  CONSTRAINT driver_service_areas_driver_fk FOREIGN KEY (driver_id) REFERENCES app.drivers (driver_id),
-  CONSTRAINT driver_service_areas_area_fk FOREIGN KEY (service_area_id) REFERENCES app.service_areas (service_area_id)
-);
-
--- The primary key serves lookups by driver. This index serves the foreign key from the area side (what a row
--- lock or a delete of a service area has to check) and "which drivers cover this area".
-CREATE INDEX driver_service_areas_area_idx ON app.driver_service_areas (service_area_id);
-
 -- Down Migration
--- Only for disposable test or experimental databases. Reverse dependency order (driver_service_areas
--- references drivers and service_areas, drivers references users); indexes go with their table. No CASCADE and
--- no IF EXISTS: it fails loudly if anything is missing instead of hiding drift. It must run BEFORE the Shop
--- onboarding down migration (which drops app.service_areas) and the Auth Core down migration (which drops
--- app.users); migration runners apply down migrations in reverse order, so that holds.
-DROP TABLE app.driver_service_areas;
+-- Only for disposable test or experimental databases. drivers references users, so this must run BEFORE the Auth
+-- Core down migration (which drops app.users); migration runners apply down migrations in reverse order, so that
+-- holds. Indexes go with their table. No CASCADE and no IF EXISTS: it fails loudly if anything is missing instead
+-- of hiding drift.
 DROP TABLE app.drivers;

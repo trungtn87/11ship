@@ -7,19 +7,16 @@ import { DriverRepository, DriverRow, NewDriverFields } from '../driver/driver-r
 import { IdempotencyExecutor, IdempotentRequest, IdempotentResult } from '../idempotency/idempotency-executor';
 import { OutboxWriter } from '../outbox/outbox-writer';
 import { codeOf as sourceOf } from '../shared/source-scan.fixture';
-import { ServiceAreaRepository } from '../shop/service-area-repository';
 import { TransactionContext } from '../transaction/transaction-context';
 import { DriverOnboardingService } from './driver-onboarding-service';
 import { DriverOnboardingInput } from './driver-onboarding-validation';
 
 const USER_ID = '523e4567-e89b-42d3-a456-426614174000';
 const DRIVER_ID = '623e4567-e89b-42d3-a456-426614174000';
-const AREA_A = '123e4567-e89b-42d3-a456-426614174001';
-const AREA_B = '123e4567-e89b-42d3-a456-426614174002';
 const REQUEST_ID = '323e4567-e89b-42d3-a456-426614174000';
 const KEY = '923e4567-e89b-42d3-a456-426614174000';
 
-const INPUT: DriverOnboardingInput = { fullName: 'Nguyễn Văn A', plateNumber: '11B1-12345', serviceAreaIds: [AREA_A, AREA_B] };
+const INPUT: DriverOnboardingInput = { fullName: 'Nguyễn Văn A', plateNumber: '11B1-12345' };
 
 function driverRow(overrides: Partial<DriverRow> = {}): DriverRow {
   return {
@@ -42,14 +39,11 @@ interface Rig {
   audits: Array<Record<string, unknown>>;
   outbox: Array<Record<string, unknown>>;
   inserted: NewDriverFields[];
-  areaRows: Array<{ driverId: string; ids: readonly string[] }>;
-  lockedAreas: string[];
 }
 
 function rig(
   options: {
     existing?: DriverRow | undefined;
-    areas?: Record<string, 'ACTIVE' | 'INACTIVE' | undefined>;
     insertConflict?: boolean;
     lockFailure?: AppError;
   } = {},
@@ -59,10 +53,7 @@ function rig(
   const audits: Array<Record<string, unknown>> = [];
   const outbox: Array<Record<string, unknown>> = [];
   const inserted: NewDriverFields[] = [];
-  const areaRows: Array<{ driverId: string; ids: readonly string[] }> = [];
-  const lockedAreas: string[] = [];
   const existing = 'existing' in options ? options.existing : undefined;
-  const areas = options.areas ?? { [AREA_A]: 'ACTIVE', [AREA_B]: 'ACTIVE' };
 
   const executor = {
     execute: async (request: IdempotentRequest, work: (context: TransactionContext) => Promise<IdempotentResult>) => {
@@ -91,19 +82,7 @@ function rig(
       inserted.push(fields);
       return !(options.insertConflict ?? false);
     },
-    insertServiceAreas: async (_c: unknown, driverId: string, ids: readonly string[]) => {
-      events.push('areas.insert');
-      areaRows.push({ driverId, ids });
-    },
   } as unknown as DriverRepository;
-  const serviceAreas = {
-    lockShared: async (_c: unknown, id: string) => {
-      events.push('area.lock');
-      lockedAreas.push(id);
-      const status = areas[id];
-      return status === undefined ? undefined : { serviceAreaId: id, status };
-    },
-  } as unknown as ServiceAreaRepository;
   const audit = {
     append: async (_c: unknown, entry: Record<string, unknown>) => void (events.push('audit'), audits.push(entry)),
   } as unknown as AuditWriter;
@@ -112,14 +91,12 @@ function rig(
   } as unknown as OutboxWriter;
 
   return {
-    service: new DriverOnboardingService(executor, roleGrants, drivers, serviceAreas, audit, outboxWriter),
+    service: new DriverOnboardingService(executor, roleGrants, drivers, audit, outboxWriter),
     events,
     requests,
     audits,
     outbox,
     inserted,
-    areaRows,
-    lockedAreas,
   };
 }
 
@@ -135,24 +112,20 @@ async function codeOf(run: () => Promise<unknown>): Promise<string> {
 const create = (r: Rig, input: DriverOnboardingInput = INPUT) => r.service.create(USER_ID, input, KEY, REQUEST_ID);
 
 describe('DriverOnboardingService.create (A03-26)', () => {
-  it('runs in the A2 lock order: user, existing driver, areas (sorted), driver, areas, role, audit, outbox', async () => {
+  it('runs in the A2 lock order: user, existing driver, driver insert, role, audit, outbox', async () => {
     const r = rig();
     const outcome = await create(r);
     expect(r.events).toEqual([
       'executor',
       'user.lock',
       'driver.lock',
-      'area.lock',
-      'area.lock',
       'driver.insert',
-      'areas.insert',
       'role.grant:DRIVER',
       'audit',
       'outbox',
     ]);
     expect(outcome.status).toBe(201);
     expect(outcome.replayed).toBe(false);
-    expect(r.lockedAreas).toEqual([AREA_A, AREA_B]);
   });
 
   it('answers with exactly the contract payload: EXTERNAL, PENDING, not accepting, role granted, version 1', async () => {
@@ -181,7 +154,6 @@ describe('DriverOnboardingService.create (A03-26)', () => {
     expect(r.inserted).toHaveLength(1);
     expect(Object.keys(r.inserted[0] as object).sort()).toEqual(['driverId', 'fullName', 'plateNumber', 'userId']);
     expect(r.inserted[0]).toMatchObject({ userId: USER_ID, fullName: 'Nguyễn Văn A', plateNumber: '11B1-12345' });
-    expect(r.areaRows).toEqual([{ driverId: r.inserted[0]?.driverId, ids: [AREA_A, AREA_B] }]);
   });
 
   it('is scoped to the authenticated user under the locked operation id, with the normalized request', async () => {
@@ -192,7 +164,7 @@ describe('DriverOnboardingService.create (A03-26)', () => {
       scopeId: USER_ID,
       operationId: 'onboarding.driver.create.v1',
       idempotencyKey: KEY,
-      logicalRequest: { full_name: 'Nguyễn Văn A', plate_number: '11B1-12345', service_area_ids: [AREA_A, AREA_B] },
+      logicalRequest: { full_name: 'Nguyễn Văn A', plate_number: '11B1-12345' },
     });
     expect(r.requests[0]?.replay.kind).toBe('sensitive');
   });
@@ -234,44 +206,27 @@ describe('DriverOnboardingService.create (A03-26)', () => {
     const r = rig();
     await create(r);
     const written = JSON.stringify([r.audits, r.outbox]);
-    for (const secret of ['Nguyễn Văn A', '11B1-12345', AREA_A, AREA_B, KEY]) {
+    for (const secret of ['Nguyễn Văn A', '11B1-12345', KEY]) {
       expect([secret, written.includes(secret)]).toEqual([secret, false]);
     }
   });
 });
 
-describe('DriverOnboardingService.create refusals (A03-29)', () => {
-  const none = (r: Rig) => [r.audits.length, r.outbox.length, r.inserted.length, r.areaRows.length];
+describe('DriverOnboardingService.create refusals', () => {
+  const none = (r: Rig) => [r.audits.length, r.outbox.length, r.inserted.length];
 
-  it('a user who already has a Driver profile gets DRIVER_PROFILE_EXISTS in every status, before any area is locked', async () => {
+  it('a user who already has a Driver profile gets DRIVER_PROFILE_EXISTS in every status', async () => {
     for (const status of ['PENDING', 'ACTIVE', 'SUSPENDED', 'CLOSING', 'CLOSED'] as const) {
       const r = rig({ existing: driverRow({ status }) });
       expect([status, await codeOf(() => create(r))]).toEqual([status, 'DRIVER_PROFILE_EXISTS']);
       expect(r.events).toEqual(['executor', 'user.lock', 'driver.lock']);
-      expect(none(r)).toEqual([0, 0, 0, 0]);
-    }
-  });
-
-  it('an unknown or inactive area is INVALID_SERVICE_AREA and writes nothing, grants no role', async () => {
-    const cases: Array<[string, Record<string, 'ACTIVE' | 'INACTIVE' | undefined>]> = [
-      ['first unknown', { [AREA_B]: 'ACTIVE' }],
-      ['second unknown', { [AREA_A]: 'ACTIVE' }],
-      ['first inactive', { [AREA_A]: 'INACTIVE', [AREA_B]: 'ACTIVE' }],
-      ['second inactive', { [AREA_A]: 'ACTIVE', [AREA_B]: 'INACTIVE' }],
-      ['all inactive', { [AREA_A]: 'INACTIVE', [AREA_B]: 'INACTIVE' }],
-    ];
-    for (const [label, areas] of cases) {
-      const r = rig({ areas });
-      expect([label, await codeOf(() => create(r))]).toEqual([label, 'INVALID_SERVICE_AREA']);
-      expect([label, none(r)]).toEqual([label, [0, 0, 0, 0]]);
-      expect(r.events.filter((event) => event.startsWith('role.grant'))).toEqual([]);
+      expect(none(r)).toEqual([0, 0, 0]);
     }
   });
 
   it('a unique-violation on insert (only reachable without the user lock) is DRIVER_PROFILE_EXISTS and grants nothing', async () => {
     const r = rig({ insertConflict: true });
     expect(await codeOf(() => create(r))).toBe('DRIVER_PROFILE_EXISTS');
-    expect(r.events).not.toContain('areas.insert');
     expect(r.events.filter((event) => event.startsWith('role.grant'))).toEqual([]);
     expect([r.audits.length, r.outbox.length]).toEqual([0, 0]);
   });
@@ -290,5 +245,10 @@ describe('DriverOnboardingService boundaries', () => {
     // The shape of the new driver is M03's statement; the coordinator never passes a type, status or flag.
     expect(code).not.toMatch(/driverType|acceptingDeliveries/);
     expect(code.split('this.executor.execute(').length - 1).toBe(1);
+  });
+
+  it('takes no service area at all: no area repository, no area lock, no area SQL (Owner revision, task section 22)', () => {
+    const code = sourceOf('onboarding/driver-onboarding-service.ts');
+    expect(code).not.toMatch(/ServiceArea|serviceArea|service_area|lockShared|INVALID_SERVICE_AREA/);
   });
 });

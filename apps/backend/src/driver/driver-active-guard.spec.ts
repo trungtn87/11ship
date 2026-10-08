@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { AppError } from '../common/app-errors';
+import { AppError, TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
 import { DriverActiveGuard } from './driver-active-guard';
 import { DRIVER_STATUSES } from './driver-types';
@@ -58,9 +58,22 @@ describe('DriverActiveGuard.requireDriverActive (A03-30)', () => {
     expect(seen[0]?.text).not.toMatch(/FOR (UPDATE|SHARE)|\b(INSERT|UPDATE|DELETE)\b/);
   });
 
-  it('a status from the database that the guard does not know can never pass', async () => {
-    // The CHECK constraint makes this impossible; the guard must still not treat "unknown" as active.
-    const result = await outcome(contextReturning([{ driver_id: DRIVER_ID, status: 'REJECTED' }]));
-    expect(result.startsWith('OK:')).toBe(false);
+  // F1. The assertion is on the PROMISE the guard returns: it must reject. (Reading `.driverId` after the call
+  // would turn a wrongly resolved `undefined` into a TypeError that merely looks like a denial.)
+  it('a status the guard does not know makes the guard promise itself reject with a safe internal error, never resolve', async () => {
+    for (const status of ['REJECTED', 'PENDING_BALANCE_RESOLUTION', 'active', '', 'ARCHIVED']) {
+      const pending = new DriverActiveGuard().requireDriverActive(contextReturning([{ driver_id: DRIVER_ID, status }]), USER_ID);
+      await expect(pending).rejects.toBeInstanceOf(TechnicalError);
+      const failure = await pending.catch((error: unknown) => error);
+      expect([status, (failure as TechnicalError).kind]).toEqual([status, 'internal']);
+      // Not an application error a client could see, and nothing from the row in its message.
+      expect(failure).not.toBeInstanceOf(AppError);
+      expect((failure as Error).message).not.toContain(DRIVER_ID);
+    }
+  });
+
+  it('a row with no status at all also rejects instead of resolving', async () => {
+    const pending = new DriverActiveGuard().requireDriverActive(contextReturning([{ driver_id: DRIVER_ID }]), USER_ID);
+    await expect(pending).rejects.toBeInstanceOf(TechnicalError);
   });
 });

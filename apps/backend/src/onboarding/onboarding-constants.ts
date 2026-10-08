@@ -45,11 +45,3 @@ export const DRIVER_ONBOARDED_EVENT_SCHEMA_VERSION = 1;
 /** Column widths of app.drivers. Text is counted in characters (code points), as varchar(n) counts them. */
 export const DRIVER_FULL_NAME_MAX_LENGTH = 120;
 export const DRIVER_PLATE_NUMBER_MAX_LENGTH = 32;
-
-/**
- * Upper bound on service_area_ids in one request. The A2 contract asks for "at least one unique ACTIVE area" and
- * names no maximum; the bound only keeps one request from holding an unbounded number of row locks and
- * statements inside one transaction. It is generous for a real driver and is a validation limit, not a rule
- * about how many areas a driver may ever serve. Owner review item.
- */
-export const DRIVER_SERVICE_AREAS_MAX = 50;
