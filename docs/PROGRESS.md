@@ -5,21 +5,22 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo mã main `` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: —
+> Dữ liệu theo main HEAD `e844276` · CI main: ⏳ Đang chạy (`RUNNING`)
 
 ## 🎯 VIỆC ĐANG LÀM
 
 | | |
 |---|---|
 | **Task** | **M01-R1 — Sửa sau merge (session, rollback, router, tiến độ)** |
-| **Trạng thái** | 🛠️ Claude đang code (`CLAUDE_CODING`) |
-| **Người phụ trách** | 🔵 **CLAUDE** |
-| **ChatGPT** | Chờ Claude hoàn tất triển khai trước khi kiểm tra |
-| **Claude** | Đang code |
+| **Trạng thái** | ⏳ CI đang chạy (`CI_RUNNING`) |
+| **Người phụ trách** | ⚙️ **CI** |
+| **ChatGPT** | Chờ CI trước khi kiểm tra |
+| **Claude** | Đã push triển khai; đang chờ CI |
 | **Chủ dự án** | Không cần thao tác |
 | **Đang bị chặn bởi** | Không |
-| **Điều kiện sang bước tiếp** | Claude chuyển PR sang sẵn sàng review + required CI xanh |
+| **Điều kiện sang bước tiếp** | Required CI xanh |
 | **PR đang hoạt động** | PR #19 |
+| **Ghi chú** | PR đã merge nhưng chưa xác minh required check xanh; chưa được tính HOÀN THÀNH |
 
 ## Tiến độ
 
@@ -50,7 +51,7 @@ flowchart TD
     M01_A2["M01-A2 (thiết kế)<br/>Onboarding (Quán + Tài xế)<br/>⚪ —<br/>Hoàn thành (DONE)"]
     M01_A2S["M01-A2S<br/>Onboarding quán (Shop)<br/>⚪ —<br/>Hoàn thành (DONE)"]
     M01_A2D["M01-A2D<br/>Onboarding tài xế (Driver)<br/>⚪ —<br/>Hoàn thành (DONE)"]
-    M01_R1["M01-R1<br/>Sửa sau merge (session, rollback, router, tiến độ)<br/>🔵 CLAUDE<br/>Claude đang code (CLAUDE_CODING)"]
+    M01_R1["M01-R1<br/>Sửa sau merge (session, rollback, router, tiến độ)<br/>⚙️ CI<br/>CI đang chạy (CI_RUNNING)"]
   end
 
   M00_B1 --> M00_C1
@@ -92,7 +93,7 @@ flowchart TD
 | **M01-A2** thiết kế · Onboarding (Quán + Tài xế) | ✅ Hoàn thành (`DONE`) | — | [#15](https://github.com/trungtn87/11ship/pull/15) | ✅ Đạt (`PASS`) | `c329808` | A1 Hoàn thành (DONE) | — |
 | &nbsp;&nbsp;M01-A2S · Onboarding quán (Shop) | ✅ Hoàn thành (`DONE`) | — | [#16](https://github.com/trungtn87/11ship/pull/16) | ✅ Đạt (`PASS`) | `620333f` | — | — |
 | &nbsp;&nbsp;M01-A2D · Onboarding tài xế (Driver) | ✅ Hoàn thành (`DONE`) | — | [#17](https://github.com/trungtn87/11ship/pull/17) | ✅ Đạt (`PASS`) | `c37082a` | A2S Hoàn thành (DONE) | — |
-| M01-R1 · Sửa sau merge (session, rollback, router, tiến độ) | 🛠️ Claude đang code (`CLAUDE_CODING`) | Claude | [#19](https://github.com/trungtn87/11ship/pull/19) | ✅ Đạt (`PASS`) | `3c935b3` | A2 Hoàn thành (DONE) | Claude hoàn tất PR #19, chuyển sang ready |
+| M01-R1 · Sửa sau merge (session, rollback, router, tiến độ) | ⏳ CI đang chạy (`CI_RUNNING`) | CI | [#19](https://github.com/trungtn87/11ship/pull/19) | ⏳ Đang chạy (`RUNNING`) | `cd0e6de` | A2 Hoàn thành (DONE) | Chờ CI trên PR #19 |
 
 ## Danh sách Pull Request
 
@@ -118,7 +119,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#16](https://github.com/trungtn87/11ship/pull/16) feat(onboarding): M01-A2S shop onboarding | Đã merge (`MERGED`) | M01-A2S | triển khai | ✅ Đạt (`PASS`) | `620333f` | được tính |
 | [#17](https://github.com/trungtn87/11ship/pull/17) feat(m01-a2d): DRIVER onboarding (no Driver service area) | Đã merge (`MERGED`) | M01-A2D | triển khai | ✅ Đạt (`PASS`) | `c37082a` | được tính |
 | [#18](https://github.com/trungtn87/11ship/pull/18) docs(m02-a): hồ sơ quán và tự động hoạt động theo giờ | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `ebb0f3a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#19](https://github.com/trungtn87/11ship/pull/19) docs(m00-m01): session authorization, bounded rollback, rou… | Bản nháp (`DRAFT`) | M01-R1 | thiết kế + triển khai | ✅ Đạt (`PASS`) | `3c935b3` | được tính |
+| [#19](https://github.com/trungtn87/11ship/pull/19) docs(m00-m01): session authorization, bounded rollback, rou… | Đã merge (`MERGED`) | M01-R1 | thiết kế + triển khai | ⏳ Đang chạy (`RUNNING`) | `cd0e6de` | được tính |
 
 ## ⚠️ Cần chú ý
 
