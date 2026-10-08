@@ -22,6 +22,7 @@ import {
   putProfile,
   ShopOwner,
   shopState,
+  Wire,
 } from './support/shop-management-fixtures';
 
 // M02-A — Shop management through the REAL Nest pipeline on a REAL PostgreSQL: acceptance A01-A05, A07, A09, A16.
@@ -318,7 +319,7 @@ describe('M02-A — Shop management', () => {
       await putHours(app, owner.token, hoursBody(original));
       const day = (d: number) => [interval(d, 0, 100), interval(d, 200, 300), interval(d, 400, 500), interval(d, 600, 700)];
       const tooMany = [1, 2, 3, 4, 5, 6, 7].flatMap(day).concat([interval(1, 800, 900)]);
-      const bad: Array<[string, unknown[]]> = [
+      const bad: Array<[string, Wire[]]> = [
         ['same-day overlap', [interval(1, 0, 100), interval(1, 50, 150)]],
         ['duplicate', [interval(1, 0, 100), interval(1, 0, 100)]],
         ['overnight into the next interval', [interval(1, 1080, 120, 1), interval(2, 60, 200)]],
