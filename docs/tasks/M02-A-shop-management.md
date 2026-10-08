@@ -2,7 +2,8 @@
 
 Trạng thái: DESIGN READY FOR OWNER REVIEW — chưa LOCK, chưa giao implementation.
 Ngày: 2026-10-08.
-Base đã đọc: main@87509eb0e866731ed55dc5b55bb2f3960e03b9a0.
+Base thiết kế ban đầu: main@87509eb0e866731ed55dc5b55bb2f3960e03b9a0.
+Đã đối chiếu code M01-R1 trên main@beb33e34d2f1d0f93336567eb0393d2da8ea658d ngày 08/10/2026. Branch này chưa rebase; khi giao implementation phải lấy current main đã có M01-R1.
 UI_SCOPE: NONE (backend/API). Frontend là task riêng, cần frame Figma được Owner duyệt.
 
 ## 1. Cơ sở và phạm vi
@@ -10,7 +11,7 @@ M01-A1, A2S (#16) và A2D (#17) đã merge. M02 đã có service_areas, shops, s
 M02-A hoàn thiện hồ sơ ACTIVE, lịch mở cửa tuần và read port availability cho module Order sau này.
 Không triển khai menu, Order/Delivery, Driver, Wallet, ADMIN, SMS thật, chuyển quyền sở hữu, tạo quán thứ hai hoặc frontend.
 Không thêm vùng hoạt động Driver. PLATFORM/EXTERNAL không phải Auth role.
-Dashboard hiện thiếu mapping PR mới; không dùng phần trăm dashboard làm điều kiện triển khai và không sửa dashboard trong task này.
+Kế hoạch song song/checklist nằm ở PR #20 (hiện Draft). M02-A gồm BE/UI/E2E/UAT; backend DONE không đồng nghĩa module hoàn tất. Không sửa manifest/dashboard trong PR #18; đối chiếu kế hoạch khi #20 merge.
 
 ## 2. Quy tắc và điểm cần Owner duyệt
 - Mỗi tài khoản OWNER chỉ sở hữu một quán; giữ nguyên constraint onboarding.
@@ -70,7 +71,7 @@ M02 export port nhận TransactionContext và shop_id; không tự mở transact
 ONLINE iff shop ACTIVE AND area ACTIVE AND giờ hiện tại thuộc ít nhất một khoảng.
 Reason ưu tiên: SHOP_DISABLED / SHOP_INCOMPLETE / SERVICE_AREA_INACTIVE / NO_BUSINESS_HOURS / OUTSIDE_BUSINESS_HOURS / ONLINE.
 Không có shop -> typed SHOP_NOT_FOUND; status không nhận diện -> TechnicalError, không mặc định ONLINE.
-Clock duy nhất PostgreSQL clock_timestamp(); chuyển local bằng AT TIME ZONE 'Asia/Ho_Chi_Minh'. Không dùng đồng hồ thiết bị.
+Clock duy nhất PostgreSQL clock_timestamp(), lấy đúng một lần bằng MATERIALIZED clock CTE rồi dùng cùng instant cho membership interval và evaluated_at; chuyển local bằng AT TIME ZONE 'Asia/Ho_Chi_Minh'. Không dùng đồng hồ thiết bị.
 Lấy profile, area, lịch và evaluated_at trong một SQL statement/snapshot; read có thể quan sát trạng thái trước hoặc sau concurrent mutation, không ghép hai cấu hình.
 Khi Order triển khai, Order phải recheck qua write/lock port trong transaction tạo đơn; GET ONLINE không cấp quyền tạo đơn về sau. Port write cho Order chưa thuộc slice này.
 Auth selectable SHOP vẫn dựa ACTIVE profile, không dựa giờ hoạt động. Chủ quán phải vào được để sửa lịch khi OFFLINE.
@@ -79,12 +80,12 @@ Auth selectable SHOP vẫn dựa ACTIVE profile, không dựa giờ hoạt độ
 Reuse M00 executor/audit/outbox; không tự viết primitives.
 Mutation identity: scope_type=user, scope_id=authenticated user_id; operation_id shop.profile.update.v1 / shop.business_hours.replace.v1.
 Fingerprint gồm toàn bộ body chuẩn hóa và expected_version; hours sort canonical weekday,start,end,offset (array order không có nghĩa).
-Replay guard IDs: user_id,session_id,shop_id. Session hiện tại được xác thực, đúng OWNER/shop, active_role SHOP, user/profile ACTIVE trước decrypt; không bypass quyền do replay.
+Replay guard chính xác: {user_id,shop_id}. session_id chỉ là authorization context của request hiện tại, không có trong fingerprint, scope hoặc persisted replay guard (M01-R1 §1). Session hiện tại được xác thực, đúng OWNER/shop, active_role SHOP, user/profile ACTIVE trước decrypt; không bypass quyền do replay.
 Không yêu cầu session hiện tại giống session ban đầu: cho phép retry bằng session SHOP mới hợp lệ cùng user/shop; session cũ revoked bị deny.
 Replay cùng request bỏ qua expected_version hiện tại; trả kết quả cấu hình cũ chính xác, không chạy callback và không tăng version.
 Changed logical body same key -> IDEMPOTENCY_KEY_REUSED trước version check. Không đưa thông tin secret vào guard/audit/outbox.
 New execution locks: idempotency → M01 user FOR UPDATE → current session FOR UPDATE (recheck user binding, active_role, revoked, expiry bằng DB clock) → OWNER membership → shop → service area nếu profile update.
-Dùng M01 narrow participant để recheck session, không SQL Auth từ M02. Cần mở rộng participant khi LockedSession hiện chưa trả active_role; không chỉ tin guard ngoài transaction.
+Reuse SessionAuthorizationParticipant của M01-R1; không copy authorization/SQL Auth sang M02. Thêm method lockAuthorizedShopActor(context,actor) trong participant: user FOR UPDATE → session FOR UPDATE, giữ error precedence và fresh clock của #decide, sau đó kiểm active_role=SHOP đọc từ locked row và role SHOP hiện hành. Mở rộng LockedSession/lockById trả activeRole; method onboarding lockAuthorizedActor hiện có vẫn không yêu cầu role, giữ hành vi A2. Shared read variant hiện có trả activeRole; GET dùng lockAuthorizedActorShared, kiểm activeRole=SHOP và role membership hiện hành qua M01 port, rồi M02 đọc profile/hours/availability cùng statement. Không chỉ tin guard ngoài transaction.
 Check current membership/shop/state/version dưới lock. Giữ thứ tự tương thích A2S và role/select. Không transaction lồng nhau, savepoint hoặc tự retry callback.
 Hours replace: delete + insert + shop version + audit + outbox + idempotency cùng transaction.
 Nếu service-area writer tương lai đổi trạng thái, phải tuân thủ global lock order; slice này không cung cấp admin area writer.
@@ -95,8 +96,8 @@ Một outbox event/mutation: shop.profile_updated.v1 / shop.business_hours_updat
 resource_type=shop, resource_id=shop_id, resource_version=version mới, schema_version=1.
 Payload chính xác {shop_id,version}. Không emit tự động khi giờ đóng/mở; availability computed.
 Replay không thêm audit/event.
-Dùng error envelope/request_id hiện có; reuse SESSION_*, ACCOUNT_DISABLED, INVALID_SERVICE_AREA và version-conflict code hiện có nếu đã định nghĩa.
-Thêm SHOP_NOT_FOUND 404, SHOP_ROLE_REQUIRED 403, SHOP_DISABLED 403, SHOP_PROFILE_INCOMPLETE 409, INVALID_BUSINESS_HOURS 400; lỗi schema generic 400 theo convention hiện có.
+Dùng error envelope/request_id hiện có; reuse SESSION_*, ACCOUNT_DISABLED, INVALID_SERVICE_AREA, SHOP_PROFILE_INCOMPLETE và VERSION_CONFLICT 409; không định nghĩa lại các mã đã có.
+Thêm SHOP_NOT_FOUND 404, SHOP_ROLE_REQUIRED 403, SHOP_DISABLED 403, INVALID_BUSINESS_HOURS 400; lỗi schema generic 400 theo convention hiện có.
 Không đổi A1/A2 error semantics.
 
 ## 8. Acceptance bắt buộc
@@ -127,3 +128,22 @@ Nếu cần đổi ADR-002/003, role/session policy, M00 semantics hoặc owners
 Checks: npm ci, lockfile unchanged, lint,typecheck,build,migrations smoke, unit,integration local,integration CI và progress tests nếu docs conventions yêu cầu.
 Evidence mapping từng A01–A16 đến test name/CI exact head, counts, race/fault proofs.
 Production chưa chạy được OTP thật và chưa có service-area provisioning; không tuyên bố app dùng thực tế sau task này.
+
+
+## 10. Review bổ sung và contract triển khai
+- Precedence: Owner auto-hours revision → M01-R1 session contract → task này → A2S legacy. Các lời accepting_orders trước đó không áp dụng availability M02.
+- GET mở một read transaction ở composition service; M01 shared user/session locks giữ tới hết đọc, chứng minh role/select/revoke race và hai GET song song tương thích. Availability SQL không tự lấy session locks.
+- Replay authorization khóa current user/session → OWNER membership → shop, kiểm shop_id khớp guard; không kiểm expected_version hoặc service-area ACTIVE trong replay (không có mutation, area inactive không được ngăn chủ quán đọc lại kết quả đã lưu). User/profile DISABLED vẫn deny.
+- Guard không có shop_id do client cung cấp; lần thực thi mới resolve shop dưới user/OWNER locks rồi persist đúng identity. Foreign shop body/URL không có trong API.
+- GET data chính xác: {shop_id,name,contact_phone,zalo,facebook,address_text,pickup_lat,pickup_lng,service_area_id,status,version,timezone,hours,availability}. hours là array interval đã sort, availability={online,reason,evaluated_at}; evaluated_at ISO UTC, timezone='Asia/Ho_Chi_Minh'. Không expose accepting_orders.
+- PUT profile response data={shop_id,version,profile}; profile chính xác các field PUT trừ expected_version, contact_phone dạng chuẩn hóa. PUT hours response data={shop_id,version,timezone,intervals}. Reuse response envelope hiện hành.
+- null chỉ được phép zalo/facebook; ngày/giờ không null. expected_version positive safe integer theo A2S. Interval có đúng bốn keys; max 28. Profile bounds/normalizer đúng A2S, không sáng tạo giới hạn mới.
+- Dùng phạm vi [start,end) theo phút tuần local. Có seconds/milliseconds thì giờ mở inclusive, giờ đóng exclusive đúng instant. Khoảng kết thúc 00:00 qua đêm (end_minute=0,offset=1) hợp lệ.
+- Lịch 24h start=end,offset=1 và 0→1440,offset=0 cùng nghĩa: normalize dạng 0→1440 nếu start=0 để duplicate/array reorder có fingerprint nhất quán. Các khoảng 24h bắt đầu giờ khác giữ nguyên.
+- Schema checks NOT NULL tất cả interval columns; index/PK theo shop/day/start. Down chỉ drop bảng mới, không động cột accepting_orders legacy.
+- Thêm acceptance A17: shared GET auth races, current-role chuyển SHOP→DRIVER khi chờ phải deny; read expiry/revoke sau lock wait, không dùng principal cũ.
+- Thêm acceptance A18: midnight=0, 24h, seconds boundary, clock CTE một instant, overlapping week wrap; canonical equivalent 24h representation replay không duplicate effect.
+- 16 nhóm A01–A16 và A17–A18 là yêu cầu test, chưa phải tests đã code/chạy. Chỉ ghi PASS khi implementation evidence có exact-head CI.
+
+## 11. Song song UI / E2E / Owner UAT
+Xem [M02-A delivery và handoff](CLAUDE-M02-A.md). Backend chuẩn bị độc lập với M01-UAT; thiết kế UI có thể bắt đầu ngay. Frontend code chờ frame UI_LOCKED và API/backend tương ứng đã merge. Local/E2E/UAT theo luồng M00/M01 của PR #20. Không tuyên bố module hoàn tất chỉ từ merge backend.
