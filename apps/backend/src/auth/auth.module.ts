@@ -1,5 +1,6 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
+import { DriverModule } from '../driver/driver.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OutboxModule } from '../outbox/outbox.module';
 import { ShopModule } from '../shop/shop.module';
@@ -30,17 +31,18 @@ export interface AuthModuleOptions {
  * Auth's own repositories and services. Import it through register(): the OTP provider must be bound
  * explicitly by whoever builds the application.
  *
- * M01-A2S: it imports ShopModule ONLY for the read-only eligibility port (Auth never issues SQL against M02
- * tables), and it exports the three things an onboarding coordinator needs: the session guard (with the
- * SessionService the guard is built from) and the narrow role-grant participant. Nothing else leaves Auth.
- * ShopModule imports nothing, so Auth -> Shop is one-way and needs no forwardRef.
+ * M01-A2S/A2D: it imports ShopModule and DriverModule ONLY for their read-only eligibility ports (Auth never issues
+ * SQL against M02 or M03 tables), and it exports the three things an onboarding coordinator needs: the session
+ * guard (with the SessionService the guard is built from) and the narrow role-grant participant. Nothing else
+ * leaves Auth. ShopModule and DriverModule import nothing, so Auth -> Shop and Auth -> Driver are one-way and
+ * need no forwardRef.
  */
 @Module({})
 export class AuthModule {
   static register(options: AuthModuleOptions): DynamicModule {
     return {
       module: AuthModule,
-      imports: [TransactionModule, IdempotencyModule, AuditModule, OutboxModule, ShopModule],
+      imports: [TransactionModule, IdempotencyModule, AuditModule, OutboxModule, ShopModule, DriverModule],
       controllers: [AuthController],
       providers: [
         authConfigProvider,

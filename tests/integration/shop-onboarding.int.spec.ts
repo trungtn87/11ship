@@ -8,6 +8,7 @@ import {
   dataOf,
   DEVICE,
   errorCode,
+  grantRole,
   grantStrayRole,
   loginUser,
   randomPhone,
@@ -784,8 +785,8 @@ describe('M01-A2S — Shop onboarding', () => {
       it('DRIVER + DISABLED shop: only DRIVER is offered and selectable; DRIVER behaviour is unchanged', async () => {
         const { user, version } = await completeDraft();
         expect((await complete(user.accessToken, { expected_version: version })).status).toBe(200);
-        // DRIVER onboarding does not exist yet: a bare DRIVER role row stands in for it, as in the A1 suites.
-        await grantStrayRole(app.pool, user.userId, 'DRIVER');
+        // Since M01-A2D a selectable DRIVER is a role row plus a Driver profile (here a PENDING one, as onboarding leaves it).
+        await grantRole(app.pool, user.userId, 'DRIVER');
         await disableShopOf(user.userId);
 
         expect(await projections(user, 'driver-disabled')).toEqual([
@@ -804,12 +805,23 @@ describe('M01-A2S — Shop onboarding', () => {
         });
         const after = dataOf(await me(user.accessToken));
         expect([after.active_role, after.onboarding_required, after.role_selection_required]).toEqual(['DRIVER', false, false]);
-        expect(after.onboarding).toEqual({ shop: 'COMPLETED', driver: 'NOT_STARTED' });
+        expect(after.onboarding).toEqual({ shop: 'COMPLETED', driver: 'PENDING_APPROVAL' });
+      });
+
+      it('a stray DRIVER role without a Driver profile is not offered (A2D): onboarding is required again', async () => {
+        const user = await registerUser(app);
+        await grantStrayRole(app.pool, user.userId, 'DRIVER');
+        expect(await projections(user, 'driver-stray')).toEqual([
+          ['me', [], true, false],
+          ['login', [], true, false],
+        ]);
+        const driver = await selectRole(user.accessToken, 'DRIVER');
+        expect([driver.status, errorCode(driver)]).toEqual([403, 'ROLE_NOT_AVAILABLE']);
       });
 
       it('a DRIVER with no shop at all is as in A1: no onboarding required, role selection required', async () => {
         const user = await registerUser(app);
-        await grantStrayRole(app.pool, user.userId, 'DRIVER');
+        await grantRole(app.pool, user.userId, 'DRIVER');
         expect(await projections(user, 'driver-only')).toEqual([
           ['me', ['DRIVER'], false, true],
           ['login', ['DRIVER'], false, true],
@@ -820,8 +832,8 @@ describe('M01-A2S — Shop onboarding', () => {
     it('A1 regression after real onboarding: SHOP moves between devices and a DRIVER session is untouched', async () => {
       const { user, version } = await completeDraft();
       expect((await complete(user.accessToken, { expected_version: version })).status).toBe(200);
-      // DRIVER onboarding does not exist yet: a bare DRIVER role row stands in for it, as in the A1 suites.
-      await grantStrayRole(app.pool, user.userId, 'DRIVER');
+      // Since M01-A2D a selectable DRIVER is a role row plus a Driver profile.
+      await grantRole(app.pool, user.userId, 'DRIVER');
       const login = async (deviceId: string): Promise<string> =>
         String(dataOf(await loginUser(app, user, { ...DEVICE, device_id: deviceId })).access_token);
       const deviceB = await login('device-onboarded-b');

@@ -1,17 +1,21 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
+import { DriverModule } from '../driver/driver.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OutboxModule } from '../outbox/outbox.module';
 import { ShopModule } from '../shop/shop.module';
 import { TransactionModule } from '../transaction/transaction.module';
+import { DriverOnboardingController } from './driver-onboarding.controller';
+import { DriverOnboardingService } from './driver-onboarding-service';
 import { ShopOnboardingController } from './shop-onboarding.controller';
 import { ShopOnboardingService } from './shop-onboarding-service';
 import { ShopProfileQueryService } from './shop-profile-query-service';
 
 /**
- * Onboarding coordinator (M01-A2S). It sits ABOVE Auth (M01) and Shop (M02): it imports the already built
- * Auth dynamic module (for the session guard and the role-grant participant) and ShopModule (for the
- * repositories). Neither Auth nor Shop imports it, so the graph is acyclic and needs no forwardRef.
+ * Onboarding coordinator (M01-A2S, M01-A2D). It sits ABOVE Auth (M01), Shop (M02) and Driver (M03): it imports the
+ * already built Auth dynamic module (for the session guard and the role-grant participant), ShopModule (for the
+ * Shop repositories and the service-area lock port) and DriverModule (for the Driver repository). None of them
+ * imports it, so the graph is acyclic and needs no forwardRef.
  *
  * Commands run inside the transaction the M00 IdempotencyExecutor opens. The one read endpoint (resume) has no
  * idempotency record, so ShopProfileQueryService opens its own short read transaction through TransactionModule.
@@ -23,9 +27,9 @@ export class OnboardingModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: OnboardingModule,
-      imports: [auth, ShopModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
-      controllers: [ShopOnboardingController],
-      providers: [ShopOnboardingService, ShopProfileQueryService],
+      imports: [auth, ShopModule, DriverModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
+      controllers: [ShopOnboardingController, DriverOnboardingController],
+      providers: [ShopOnboardingService, ShopProfileQueryService, DriverOnboardingService],
     };
   }
 }

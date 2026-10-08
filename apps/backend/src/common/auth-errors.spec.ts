@@ -30,6 +30,36 @@ const SHOP_ONBOARDING_ERRORS: ReadonlyArray<readonly [string, number]> = [
   ['VERSION_CONFLICT', 409],
 ];
 
+// M01-A2D (task section 14): the two codes Driver onboarding adds. INVALID_SERVICE_AREA (400) and
+// VERSION_CONFLICT (409) are the A2S codes and are reused, not redefined.
+const DRIVER_ONBOARDING_ERRORS: ReadonlyArray<readonly [string, number]> = [
+  ['DRIVER_PROFILE_EXISTS', 409],
+  ['DRIVER_PENDING_APPROVAL', 403],
+];
+
+describe('Driver onboarding error registry (M01-A2D)', () => {
+  it('registers the two new codes with the locked statuses and clean fixed messages', () => {
+    for (const [code, status] of DRIVER_ONBOARDING_ERRORS) {
+      const definition = (APP_ERROR_DEFINITIONS as Record<string, { status: number; message: string }>)[code];
+      expect([code, definition?.status]).toEqual([code, status]);
+      expect(definition?.message).not.toMatch(/[{}$%<>]|undefined|null|constraint|drivers?_|uuid/i);
+    }
+  });
+
+  it('is serialized through the standard envelope with empty details', () => {
+    for (const [code, status] of DRIVER_ONBOARDING_ERRORS) {
+      const classified = classifyException(new AppError(code as keyof typeof APP_ERROR_DEFINITIONS));
+      expect([classified.status, classified.code]).toEqual([status, code]);
+      expect(buildErrorBody(classified, '123e4567-e89b-42d3-a456-426614174000').error.details).toEqual({});
+    }
+  });
+
+  it('reuses the A2S service-area and version codes unchanged', () => {
+    expect(APP_ERROR_DEFINITIONS.INVALID_SERVICE_AREA.status).toBe(400);
+    expect(APP_ERROR_DEFINITIONS.VERSION_CONFLICT.status).toBe(409);
+  });
+});
+
 describe('Shop onboarding error registry (M01-A2S)', () => {
   it('registers exactly the four locked codes with the locked statuses and clean fixed messages', () => {
     for (const [code, status] of SHOP_ONBOARDING_ERRORS) {

@@ -110,8 +110,15 @@ describe('Onboarding coordinator boundary', () => {
     expect(service.split('this.executor.execute(').length - 1).toBe(2);
   });
 
-  it('has no Driver, Wallet, bank, approval, order or delivery code', () => {
-    expect(codeIn('onboarding')).not.toMatch(/driver|wallet|bank|approv|topup|withdraw|deliver|menu|business_hours/i);
+  it('the Shop onboarding files have no Driver, Wallet, bank, approval, order or delivery code', () => {
+    // Narrowed by M01-A2D: the onboarding directory now also holds the Driver coordinator (see
+    // driver/driver-boundary.spec.ts for what that one may and may not contain). The A2S files keep the
+    // original rule unchanged.
+    const shopCode = filesOf('onboarding')
+      .filter((file) => file.startsWith('onboarding/shop-'))
+      .map((file) => codeOf(file))
+      .join('\n');
+    expect(shopCode).not.toMatch(/driver|wallet|bank|approv|topup|withdraw|deliver|menu|business_hours/i);
   });
 
   it('AppModule builds Auth once and hands the same object to Onboarding', () => {

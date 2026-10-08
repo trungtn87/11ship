@@ -138,9 +138,11 @@ describe('AllExceptionsFilter', () => {
   describe('typed error registry', () => {
     const codes = Object.keys(APP_ERROR_DEFINITIONS) as AppErrorCode[];
 
-    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes and the Shop onboarding codes', () => {
+    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes, the Shop onboarding codes and the Driver onboarding codes', () => {
       expect([...codes].sort()).toEqual([
         'ACCOUNT_DISABLED',
+        'DRIVER_PENDING_APPROVAL',
+        'DRIVER_PROFILE_EXISTS',
         'IDEMPOTENCY_BUSY',
         'IDEMPOTENCY_KEY_REQUIRED',
         'IDEMPOTENCY_KEY_REUSED',

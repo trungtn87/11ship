@@ -21,6 +21,11 @@ describe('M01-A2S — Shop onboarding migration', () => {
   const shopSql = readFileSync(path.join(migrationsDir, `${SHOP}.sql`), 'utf8');
   const upSql = (shopSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const downSql = shopSql.split('-- Down Migration')[1] as string;
+  // M01-A2D adds a migration AFTER this one (drivers reference app.service_areas): it goes down first, up last.
+  const DRIVER = names.find((name) => name.endsWith('create-driver-onboarding')) as string;
+  const driverSql = readFileSync(path.join(migrationsDir, `${DRIVER}.sql`), 'utf8');
+  const driverUpSql = (driverSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+  const driverDownSql = driverSql.split('-- Down Migration')[1] as string;
   const TABLES = ['service_areas', 'shop_members', 'shops'] as const;
 
   const databaseUrl = process.env.DATABASE_URL;
@@ -67,9 +72,9 @@ describe('M01-A2S — Shop onboarding migration', () => {
     }
   });
 
-  it('is a NEW last migration after M00 and Auth Core (applied migrations are never edited)', () => {
+  it('is a NEW migration after M00 and Auth Core, followed only by the Driver one (applied migrations are never edited)', () => {
     expect(SHOP).toBeDefined();
-    expect(names[names.length - 1]).toBe(SHOP);
+    expect(names.slice(names.indexOf(SHOP))).toEqual([SHOP, DRIVER]);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(names.filter((name) => name.endsWith('create-shop-onboarding'))).toHaveLength(1);
     expect(Number(SHOP.split('_')[0])).toBeGreaterThan(Number((BEFORE[BEFORE.length - 1] as string).split('_')[0]));
@@ -154,6 +159,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
     expect(migrate().status).toBe(0);
     await client.query('BEGIN');
     try {
+      await client.query(driverDownSql);
       await client.query(downSql);
       expect(await presentTables()).toEqual([]);
       const leftovers = await client.query(
@@ -162,6 +168,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
       );
       expect(leftovers.rowCount).toBe(0);
       await client.query(upSql);
+      await client.query(driverUpSql);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
       await client.query('ROLLBACK');

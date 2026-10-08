@@ -166,6 +166,11 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
         AND scope_id IN (SELECT user_id::text FROM app.users WHERE phone_normalized = $1)`,
     [normalizedPhone],
   );
+  // M01-A2D: the Driver profile of the user (it references the user purged below).
+  await pool.query(
+    'DELETE FROM app.drivers WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
+    [normalizedPhone],
+  );
   // Memberships first, then the shops no member points at any more (a shop of this user has exactly one member).
   await pool.query(
     `WITH owned AS (
@@ -330,14 +335,34 @@ export async function createActiveShopFor(pool: Pool, userId: string, serviceAre
 }
 
 /**
- * Grants a role directly. Since M01-A2S a SHOP role is only selectable together with an ACTIVE owned shop, so
- * granting 'SHOP' here also creates that shop: the A1 suites keep exercising "a user who is a shop". Use
- * grantStrayRole to get the bare role row without a shop.
+ * A Driver profile owned by the user, as onboarding would have left it (EXTERNAL, accepting_deliveries=false,
+ * version 1) unless the status says otherwise. A Driver has no operating area (task section 22). It does NOT grant
+ * the DRIVER role row.
+ */
+export async function createDriverFor(pool: Pool, userId: string, options: { status?: string } = {}): Promise<string> {
+  const driverId = randomUUID();
+  await pool.query(
+    `INSERT INTO app.drivers (driver_id, user_id, full_name, plate_number, driver_type, status,
+                              accepting_deliveries, version, created_at, updated_at)
+     VALUES ($1::uuid, $2::uuid, 'Fixture driver', NULL, 'EXTERNAL', $3, false, 1, clock_timestamp(), clock_timestamp())`,
+    [driverId, userId, options.status ?? 'PENDING'],
+  );
+  return driverId;
+}
+
+/**
+ * Grants a role directly. Since M01-A2S a SHOP role is only selectable together with an ACTIVE owned shop, and
+ * since M01-A2D a DRIVER role only together with a Driver profile that is not CLOSED, so granting 'SHOP' or
+ * 'DRIVER' here also creates that profile: the A1 suites keep exercising "a user who is a shop / a driver".
+ * Use grantStrayRole to get the bare role row without a profile.
  */
 export async function grantRole(pool: Pool, userId: string, role: string): Promise<void> {
   await grantStrayRole(pool, userId, role);
   if (role === 'SHOP') {
     await createActiveShopFor(pool, userId);
+  }
+  if (role === 'DRIVER') {
+    await createDriverFor(pool, userId);
   }
 }
 
@@ -630,6 +655,43 @@ export function shopProfileBody(overrides: Record<string, unknown> = {}): Record
     address_text: '12 Hàng Mã, Hoàn Kiếm',
     zalo: 'zalo.example',
     facebook: 'fb.example/shop',
+    ...overrides,
+  };
+}
+
+/**
+ * M01-A2D barrier: a row trigger on app.drivers that waits for an advisory lock a test holds, on the Driver
+ * INSERT of ONE user (other suites' fixtures are not stalled). By then the creating request already holds the idempotency record and the user row FOR UPDATE, so "a backend waits on the advisory lock" proves it is inside its transaction with all of them.
+ */
+export async function installDriverInsertStall(pool: Pool, key: readonly [number, number], userId: string): Promise<void> {
+  if (!/^[0-9a-f-]{36}$/.test(userId)) {
+    throw new Error('unsafe user id');
+  }
+  await pool.query(
+    `CREATE FUNCTION app.test_stall_driver_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+     BEGIN
+       IF NEW.user_id = '${userId}'::uuid THEN
+         PERFORM pg_advisory_xact_lock(${key[0]}, ${key[1]});
+       END IF;
+       RETURN NEW;
+     END $$`,
+  );
+  await pool.query(
+    `CREATE TRIGGER test_stall_driver_insert BEFORE INSERT ON app.drivers
+       FOR EACH ROW EXECUTE FUNCTION app.test_stall_driver_insert()`,
+  );
+}
+
+export async function removeDriverInsertStall(pool: Pool): Promise<void> {
+  await pool.query('DROP TRIGGER IF EXISTS test_stall_driver_insert ON app.drivers');
+  await pool.query('DROP FUNCTION IF EXISTS app.test_stall_driver_insert()');
+}
+
+/** The default valid Driver onboarding body. Callers override fields. */
+export function driverBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    full_name: 'Nguyễn Văn Tài',
+    plate_number: '29A-123.45',
     ...overrides,
   };
 }

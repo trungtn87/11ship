@@ -777,3 +777,68 @@ A DISABLED shop finished onboarding. It cannot be selected, and it must not be t
 A Shop-only user whose completed shop is DISABLED therefore gets, at login and at `/auth/me`: `available_roles = []`, `onboarding_required = false`, `role_selection_required = false`.
 
 DRIVER is unchanged: holding the role makes it selectable, and any selectable role makes `onboarding_required = false`.
+
+
+## 22. Owner-locked A2D revision — remove Driver service-area registration
+
+Decision date: 2026-10-08. Owner explicitly approved removing Driver operating-area registration from A2D. This section supersedes ALL earlier Driver-specific area requirements in sections 2, 4, 7, 9, 11, 12, 15–20 and the previous Claude handoff. Shop/service-area rules remain unchanged. This is the accepted implementation target; PR #17 at `48ea24887009fc432b5077bdff4786eedab35524` still implements the superseded design and is NOT ready to merge.
+
+### Schema and API
+
+- M03 A2D owns only `drivers`. Do not create `driver_service_areas` or its index.
+- Remove `service_area_ids` from Driver request schema, logical request, coordinator, repository and fixtures. Under strict unknown-field validation, a request containing it returns the existing generic 400 BAD_REQUEST and creates no effects.
+- Remove `DRIVER_SERVICE_AREAS_MAX`; no 50-area cap or substitute cap.
+- Request: required `full_name`; optional/null `plate_number`. Existing text normalization and length limits remain.
+- No GPS field, GPS check, province check, default-area assignment or location provider is introduced in A2D.
+- Future verification and delivery-acceptance slices will define their own conditions. A2D does not define new distance/position conditions or change existing delivery policies.
+- M02 `service_areas`, Shop's area FK, Shop validation and Shop area-lock tests remain.
+
+### Transaction and ownership
+
+Use the existing M00 executor, same user scope and operation `onboarding.driver.create.v1`. Logical request is exactly normalized full_name and plate_number.
+
+Lock order: M00 idempotency advisory/existing-record lock → M01 user FOR UPDATE → existing Driver row if present → Driver insert → M01 DRIVER role grant → audit → outbox → idempotency-result persistence.
+
+One Driver per user remains enforced by UNIQUE(user_id). Self-onboarding still creates EXTERNAL/PENDING/accepting_deliveries=false/version 1, and grants DRIVER atomically. Replay, strict privilege-field rejection, outbox payload, Auth eligibility, coherent /auth/me and no automatic role selection/token minting remain unchanged. Concurrent Shop completion and Driver creation still serialize on the user root and may both succeed.
+
+### Migration policy
+
+The Driver migration on this unmerged draft PR has been exercised only on disposable local/CI test databases per the author handoff. Amend `1791676800000_create-driver-onboarding.sql` to create/drop only drivers and its own constraints/indexes. Do not edit any previously merged M00/Auth/Shop migration. Recreate disposable test databases after the amendment; do not prescribe a reset of persistent data. If an actual persistent deployment of the draft migration is discovered, STOP the migration edit and report it for an additive migration plan.
+
+### Accepted Auth/guard semantics
+
+- A Driver profile of any known status means Driver onboarding has already finished. A CLOSED profile is not selectable and must not route the user back to Driver creation.
+- ACTIVE-only guard: ACTIVE returns driver_id; PENDING throws DRIVER_PENDING_APPROVAL; SUSPENDED/CLOSING/CLOSED/missing profile throws existing ROLE_NOT_AVAILABLE.
+- Unexpected runtime status MUST reject (safe TechnicalError/internal is acceptable), never resolve undefined. The database CHECK and TypeScript union do not replace this defensive behavior.
+- Guard remains a read participant using the caller's TransactionContext. No new locking protocol or delivery endpoint is introduced here.
+
+### Revised acceptance mapping
+
+| ID | Required proof |
+| --- | --- |
+| A03-26 | Create EXTERNAL/PENDING/offline/version 1 with atomic DRIVER role, audit, event and idempotency result |
+| A03-27 | Reject driver_type (PLATFORM/SYSTEM), status, accepting_deliveries, identity/admin/bank/wallet injection; no effects |
+| A03-28 | No CCCD/vehicle_type required; plate_number may be absent/null; no area/GPS input required |
+| A03-29 | **Superseded:** Driver area validation is removed. New proof: legacy service_area_ids is rejected as an unknown field; full_name with optional plate succeeds without any service-area fixture |
+| A03-30 | Real PostgreSQL-backed active guard: PENDING rejects with DRIVER_PENDING_APPROVAL |
+| A03-C01 | Concurrent different-key create: exactly one Driver and one set of effects |
+| A03-C02 | Driver area race removed; existing Shop area-race coverage remains unchanged |
+| A03-C03 | Same-user Shop complete + Driver create both succeed sequentially; both profiles/roles preserved |
+| A03-C04 | Driver/role/audit/outbox/idempotency persistence fault matrix: full rollback and successful retry; Driver-area fault removed |
+| A03-C05 | Coherent /auth/me Driver projection, including concurrent creation |
+| A03-C06 | Profile-aware SHOP/DRIVER eligibility; pending Driver selectable; stray role and CLOSED refused |
+| A03-C07 | Existing SHOP device-switch invariant unchanged |
+| A03-C08 | No profile text/secrets in logs/audit/outbox/idempotency guard |
+
+Migration proofs: clean install, upgrade from merged base, second runner up no-op, drift atomic failure, down dependency order, one Driver/user, FK to users, types/status/offline constraints. Remove Driver-area FK/uniqueness/index proofs. Assert the final schema has NO driver_service_areas table/index. Direct SQL creation of a Driver without area rows is valid.
+
+## 23. Claude repair handoff — PR #17, revision 22 plus F1–F3
+
+Start from reviewed head `48ea24887009fc432b5077bdff4786eedab35524` plus the design-only commit that adds sections 22–23. Fetch branch `feat/m01-a2d-driver-onboarding`, verify the intervening diff, and record the actual new base. Keep the same PR #17 DRAFT. Do not merge, mark Ready or start another module.
+
+1. Implement section 22 across migration, M03, Driver coordinator/parser/constants, Auth test fixtures, Driver tests and evidence. Remove all Driver area rows/SQL/locks/fixtures/faults/tests. Preserve Shop areas and all relevant Shop tests. Do not add GPS or verification workflows.
+2. **F1:** fix the active guard's unexpected-status fallthrough. Unit test must assert the guard promise itself rejects; it must not read driverId after resolution and mistake that TypeError for guard denial. Show the new regression fails on old guard and passes on fixed guard.
+3. **F2:** add PostgreSQL-backed tests that invoke the real DriverActiveGuard through an actual M00 TransactionContext. Prove ACTIVE returns the correct id; PENDING → DRIVER_PENDING_APPROVAL; SUSPENDED/CLOSING/CLOSED and missing profile → ROLE_NOT_AVAILABLE. Do not fake SQL results or add an HTTP endpoint to expose the guard.
+4. **F3:** rewrite evidence mapping against section 22 and actual test names. Correct the historical final-head run 37721442229 at 48ea248: unit 1051/1051; local integration 615 passed + 1 pending out of 616; CI integration 616/616, no pending. Report fresh counts separately, do not carry old totals forward.
+5. Run required lint/typecheck/build/migration smoke/unit/integration local and CI modes; verify Shop/Auth regression. Local toolchain/network limitations must be reported honestly; GitHub CI evidence is acceptable.
+6. Update PR title/body around the final no-area implementation and evidence. Handoff: base, code head, final head, exact-SHA final CI URL/status/counts, changed old tests/reasons, acceptance mapping and migration amendment scope. No PASS or DONE claim before independent audit.

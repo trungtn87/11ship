@@ -1,6 +1,8 @@
 import { describe, expect, it } from '@jest/globals';
 import { AuditWriter } from '../audit/audit-writer';
 import { AppError } from '../common/app-errors';
+import { DriverEligibilityReader } from '../driver/driver-eligibility-reader';
+import { OwnerDriverEligibility } from '../driver/driver-types';
 import { ShopEligibilityReader } from '../shop/shop-eligibility-reader';
 import { OwnerShopEligibility } from '../shop/shop-types';
 import { codeOf as sourceOf } from '../shared/source-scan.fixture';
@@ -35,6 +37,8 @@ function rig(options: {
   revokedByShop?: string[];
   roles?: string[];
   shop?: OwnerShopEligibility;
+  /** Default: a PENDING (selectable) Driver profile, which is what a user holding DRIVER normally has. */
+  driver?: OwnerDriverEligibility;
 }): Rig {
   const { manager, state, events } = fakeTransactions(NOW);
   const audits: Array<Record<string, unknown>> = [];
@@ -74,7 +78,13 @@ function rig(options: {
       return options.shop ?? { onboarding: 'COMPLETED', selectable: true };
     },
   } as unknown as ShopEligibilityReader;
-  return { service: new RoleContextService(manager, users, sessions, audit, shops), events, audits, transactions: state };
+  const drivers = {
+    ownerDriverEligibility: async () => {
+      events.push('driver.read');
+      return options.driver ?? { onboarding: 'PENDING_APPROVAL', selectable: true };
+    },
+  } as unknown as DriverEligibilityReader;
+  return { service: new RoleContextService(manager, users, sessions, audit, shops, drivers), events, audits, transactions: state };
 }
 
 async function codeOf(run: () => Promise<unknown>): Promise<string> {
@@ -85,6 +95,13 @@ async function codeOf(run: () => Promise<unknown>): Promise<string> {
   }
   return 'OK';
 }
+
+const NO_DRIVER: OwnerDriverEligibility = { onboarding: 'NOT_STARTED', selectable: false };
+const PENDING: OwnerDriverEligibility = { onboarding: 'PENDING_APPROVAL', selectable: true };
+const DRIVER_ACTIVE: OwnerDriverEligibility = { onboarding: 'ACTIVE', selectable: true };
+const SUSPENDED: OwnerDriverEligibility = { onboarding: 'SUSPENDED', selectable: true };
+const CLOSING: OwnerDriverEligibility = { onboarding: 'CLOSING', selectable: true };
+const CLOSED: OwnerDriverEligibility = { onboarding: 'CLOSED', selectable: false };
 
 describe('RoleContextService.selectRole (task section 12)', () => {
   it('refuses ADMIN, SYSTEM, PLATFORM, EXTERNAL and unknown roles before touching the database', async () => {
@@ -104,6 +121,7 @@ describe('RoleContextService.selectRole (task section 12)', () => {
       'clock',
       'role.check',
       'shop.read',
+      'driver.read',
       'shop.revoke',
       'role.set:SHOP',
       'audit', // the revoked session
@@ -150,14 +168,38 @@ describe('RoleContextService.selectRole (task section 12)', () => {
     ] as const) {
       const r = rig({ shop });
       expect(await codeOf(() => r.service.selectRole(PRINCIPAL, 'SHOP', REQUEST_ID))).toBe('ROLE_NOT_AVAILABLE');
-      expect(r.events).toEqual(['user.lock', 'session.lock', 'clock', 'role.check', 'shop.read']);
+      expect(r.events).toEqual(['user.lock', 'session.lock', 'clock', 'role.check', 'shop.read', 'driver.read']);
       expect(r.audits).toHaveLength(0);
     }
   });
 
-  it('DRIVER stays selectable whatever the shop state', async () => {
-    const r = rig({ shop: { onboarding: 'NOT_STARTED', selectable: false }, roles: ['DRIVER'] });
-    expect((await r.service.selectRole(PRINCIPAL, 'DRIVER', REQUEST_ID)).active_role).toBe('DRIVER');
+  it('DRIVER with a PENDING, ACTIVE, SUSPENDED or CLOSING profile is selectable whatever the shop state', async () => {
+    for (const driver of [PENDING, DRIVER_ACTIVE, SUSPENDED, CLOSING]) {
+      const r = rig({ shop: { onboarding: 'NOT_STARTED', selectable: false }, roles: ['DRIVER'], driver });
+      expect([driver.onboarding, (await r.service.selectRole(PRINCIPAL, 'DRIVER', REQUEST_ID)).active_role]).toEqual([
+        driver.onboarding,
+        'DRIVER',
+      ]);
+    }
+  });
+
+  it('DRIVER held without a Driver profile (stray role) or with a CLOSED one is ROLE_NOT_AVAILABLE and changes nothing', async () => {
+    for (const driver of [NO_DRIVER, CLOSED]) {
+      const r = rig({ roles: ['DRIVER'], driver });
+      expect([driver.onboarding, await codeOf(() => r.service.selectRole(PRINCIPAL, 'DRIVER', REQUEST_ID))]).toEqual([
+        driver.onboarding,
+        'ROLE_NOT_AVAILABLE',
+      ]);
+      expect(r.events).toEqual(['user.lock', 'session.lock', 'clock', 'role.check', 'shop.read', 'driver.read']);
+      expect(r.audits).toHaveLength(0);
+    }
+  });
+
+  it('the Driver rule does not touch SHOP selection and the Shop rule does not touch DRIVER selection', async () => {
+    const shopOnly = rig({ roles: ['SHOP'], driver: NO_DRIVER });
+    expect((await shopOnly.service.selectRole(PRINCIPAL, 'SHOP', REQUEST_ID)).active_role).toBe('SHOP');
+    const driverOnly = rig({ roles: ['DRIVER'], shop: { onboarding: 'NOT_STARTED', selectable: false } });
+    expect((await driverOnly.service.selectRole(PRINCIPAL, 'DRIVER', REQUEST_ID)).active_role).toBe('DRIVER');
   });
 
   it('DRIVER: sets the role on this session and NEVER revokes another session', async () => {
@@ -190,7 +232,7 @@ describe('RoleContextService.selectRole (task section 12)', () => {
 
 describe('RoleContextService.me (task section 13)', () => {
   it('no roles: onboarding_required, no role selection', async () => {
-    const r = rig({ roles: [], shop: { onboarding: 'NOT_STARTED', selectable: false } });
+    const r = rig({ roles: [], shop: { onboarding: 'NOT_STARTED', selectable: false }, driver: NO_DRIVER });
     expect(await r.service.me(PRINCIPAL)).toEqual({
       user_id: PRINCIPAL.userId,
       phone_normalized: PRINCIPAL.phoneNormalized,
@@ -216,20 +258,30 @@ describe('RoleContextService.me (task section 13)', () => {
     expect(result.onboarding_required).toBe(false);
   });
 
-  it('reports the shop onboarding state, DRIVER is the constant NOT_STARTED, and a stray SHOP role is hidden', async () => {
-    const started = await rig({ roles: ['SHOP'], shop: { onboarding: 'INCOMPLETE', selectable: false } }).service.me(PRINCIPAL);
+  it('reports the shop onboarding state, DRIVER NOT_STARTED without a profile, and a stray SHOP role is hidden', async () => {
+    const started = await rig({ roles: ['SHOP'], shop: { onboarding: 'INCOMPLETE', selectable: false }, driver: NO_DRIVER }).service.me(
+      PRINCIPAL,
+    );
     expect(started.onboarding).toEqual({ shop: 'INCOMPLETE', driver: 'NOT_STARTED' });
     expect(started.available_roles).toEqual([]);
     expect(started.onboarding_required).toBe(true);
-    const done = await rig({ roles: ['SHOP'] }).service.me(PRINCIPAL);
+    const done = await rig({ roles: ['SHOP'], driver: NO_DRIVER }).service.me(PRINCIPAL);
     expect(done.onboarding).toEqual({ shop: 'COMPLETED', driver: 'NOT_STARTED' });
     expect(done.available_roles).toEqual(['SHOP']);
   });
 
-  it('takes the user row FOR SHARE first, re-checks it, then reads roles and shop in ONE transaction', async () => {
+  it('reports the Driver profile status from the owner port: NOT_STARTED, PENDING_APPROVAL, ACTIVE, SUSPENDED, CLOSING, CLOSED', async () => {
+    for (const driver of [NO_DRIVER, PENDING, DRIVER_ACTIVE, SUSPENDED, CLOSING, CLOSED]) {
+      const result = await rig({ roles: ['DRIVER'], driver }).service.me(PRINCIPAL);
+      expect([driver.onboarding, result.onboarding.driver]).toEqual([driver.onboarding, driver.onboarding]);
+      expect([driver.onboarding, result.available_roles]).toEqual([driver.onboarding, driver.selectable ? ['DRIVER'] : []]);
+    }
+  });
+
+  it('takes the user row FOR SHARE first, re-checks it, then reads roles, shop and driver in ONE transaction', async () => {
     const r = rig({ roles: ['SHOP'] });
     await r.service.me(PRINCIPAL);
-    expect(r.events).toEqual(['user.share', 'roles.read', 'shop.read']);
+    expect(r.events).toEqual(['user.share', 'roles.read', 'shop.read', 'driver.read']);
     expect(r.transactions.transactions).toBe(1);
     // A reader: never the exclusive lock, never a session lock, never an audit row.
     expect(r.events).not.toContain('user.lock');
@@ -258,6 +310,7 @@ describe('RoleContextService.me (task section 13)', () => {
     expect(me.indexOf('lockByIdForShare(')).toBeGreaterThan(-1);
     expect(me.indexOf('lockByIdForShare(')).toBeLessThan(me.indexOf('supportedRoles('));
     expect(me.indexOf('supportedRoles(')).toBeLessThan(me.indexOf('ownerShopEligibility('));
+    expect(me.indexOf('ownerShopEligibility(')).toBeLessThan(me.indexOf('ownerDriverEligibility('));
     expect(me).not.toMatch(/lockById\(|SERIALIZABLE|\.query\(/);
   });
 
@@ -267,8 +320,13 @@ describe('RoleContextService.me (task section 13)', () => {
     const ACTIVE: OwnerShopEligibility = { onboarding: 'COMPLETED', selectable: true };
     const DISABLED: OwnerShopEligibility = { onboarding: 'COMPLETED', selectable: false };
 
-    const flags = async (roles: string[], shop: OwnerShopEligibility, activeRole: string | null = null) => {
-      const result = await rig({ roles, shop }).service.me({ ...PRINCIPAL, activeRole });
+    const flags = async (
+      roles: string[],
+      shop: OwnerShopEligibility,
+      activeRole: string | null = null,
+      driver: OwnerDriverEligibility = NO_DRIVER,
+    ) => {
+      const result = await rig({ roles, shop, driver }).service.me({ ...PRINCIPAL, activeRole });
       return [result.available_roles, result.onboarding.shop, result.onboarding_required, result.role_selection_required];
     };
 
@@ -292,13 +350,23 @@ describe('RoleContextService.me (task section 13)', () => {
     });
 
     it('DRIVER + DISABLED shop: only DRIVER is offered, no onboarding, role selection as usual', async () => {
-      expect(await flags(['DRIVER', 'SHOP'], DISABLED)).toEqual([['DRIVER'], 'COMPLETED', false, true]);
-      expect(await flags(['DRIVER', 'SHOP'], DISABLED, 'DRIVER')).toEqual([['DRIVER'], 'COMPLETED', false, false]);
+      expect(await flags(['DRIVER', 'SHOP'], DISABLED, null, PENDING)).toEqual([['DRIVER'], 'COMPLETED', false, true]);
+      expect(await flags(['DRIVER', 'SHOP'], DISABLED, 'DRIVER', PENDING)).toEqual([['DRIVER'], 'COMPLETED', false, false]);
     });
 
-    it('DRIVER is unchanged by an unfinished shop: holding it turns onboarding off', async () => {
-      expect(await flags(['DRIVER'], NOT_STARTED)).toEqual([['DRIVER'], 'NOT_STARTED', false, true]);
-      expect(await flags(['DRIVER', 'SHOP'], INCOMPLETE)).toEqual([['DRIVER'], 'INCOMPLETE', false, true]);
+    it('a Driver profile is unaffected by an unfinished shop: it is offered and turns onboarding off', async () => {
+      expect(await flags(['DRIVER'], NOT_STARTED, null, PENDING)).toEqual([['DRIVER'], 'NOT_STARTED', false, true]);
+      expect(await flags(['DRIVER', 'SHOP'], INCOMPLETE, null, PENDING)).toEqual([['DRIVER'], 'INCOMPLETE', false, true]);
+    });
+
+    it('a stray DRIVER role without a profile is hidden and onboarding is still required (A03-C06)', async () => {
+      expect(await flags(['DRIVER'], NOT_STARTED)).toEqual([[], 'NOT_STARTED', true, false]);
+      expect(await flags(['DRIVER'], INCOMPLETE)).toEqual([[], 'INCOMPLETE', true, false]);
+    });
+
+    it('a CLOSED Driver profile is hidden and the user is NOT sent back to onboarding or to role selection', async () => {
+      expect(await flags(['DRIVER'], NOT_STARTED, null, CLOSED)).toEqual([[], 'NOT_STARTED', false, false]);
+      expect(await flags(['DRIVER', 'SHOP'], ACTIVE, null, CLOSED)).toEqual([['SHOP'], 'COMPLETED', false, true]);
     });
   });
 
