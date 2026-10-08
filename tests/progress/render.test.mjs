@@ -75,15 +75,29 @@ describe('acceptance on the real repository state (frozen snapshot 2026-10-07)',
   test('rendered dashboard shows the same facts', () => {
     const md = buildMarkdown(plan, live);
     assert.match(md.split('\n')[0], /AUTO-GENERATED — DO NOT EDIT MANUALLY/);
-    assert.match(md, /## 🎯 CURRENT FOCUS/);
-    assert.match(md, /\*\*M00-C1A1 — Idempotency\*\*/);
-    assert.match(md, /\| (?:&nbsp;)*M00-C1A0 · Transaction \+ Shared Primitives \| ✅ DONE \| — \| \[#4\].* `688e796` \| — \| — \|/);
-    assert.match(md, /\| (?:&nbsp;)*M00-C1A1 · Idempotency \| 🟦 READY_FOR_CLAUDE \| Claude \| — \| — \| main HEAD `cfd901f` \| C1A0 DONE \| Claude implement \|/);
-    assert.match(md, /\[#5\].*CANCELLED \/ IGNORED/);
+    assert.match(md, /## 🎯 VIỆC ĐANG LÀM/);
+    assert.match(md, /\*\*M00-C1A1 — Chống xử lý lặp \(Idempotency\)\*\*/);
+    assert.match(md, /\| (?:&nbsp;)*M00-C1A0 · Giao dịch \+ primitive dùng chung \| ✅ Hoàn thành \(`DONE`\).*\[#4\].*`688e796`/);
+    assert.match(md, /\| (?:&nbsp;)*M00-C1A1 · Chống xử lý lặp \(Idempotency\) \| 🟦 Sẵn sàng giao Claude \(`READY_FOR_CLAUDE`\).*main HEAD `cfd901f`.*C1A0 Hoàn thành \(DONE\).*Claude triển khai/);
+    assert.match(md, /\[#5\].*Đã hủy \/ bỏ qua \(`CANCELLED \/ IGNORED`\)/);
     assert.match(md, /```mermaid\nflowchart TD/);
     assert.match(md, /class M00_C1A1 focus/);
   });
 
+  test('giao diện dashboard là tiếng Việt nhưng vẫn giữ mã kỹ thuật để audit', () => {
+    const md = buildMarkdown(plan, live);
+    assert.match(md, /## 🎯 VIỆC ĐANG LÀM/);
+    assert.match(md, /## Tiến độ/);
+    assert.match(md, /## Cây tiến độ/);
+    assert.match(md, /## Chi tiết công việc/);
+    assert.match(md, /## Danh sách Pull Request/);
+    assert.match(md, /## ⚠️ Cần chú ý/);
+    assert.match(md, /## Quy trình/);
+    assert.match(md, /Sẵn sàng giao Claude \(`READY_FOR_CLAUDE`\)/);
+    assert.match(md, /Hoàn thành \(`DONE`\)/);
+    assert.match(md, /Đạt \(`PASS`\)/);
+    assert.doesNotMatch(md, /## 🎯 CURRENT FOCUS|## Progress\n|## Task details|## Pull request ledger|## ⚠️ Attention/);
+  });
   test('the committed docs/PROGRESS.md is the generator output for some snapshot (header intact)', () => {
     const committed = readFileSync(resolve(root, 'docs/PROGRESS.md'), 'utf8');
     assert.match(committed, /^<!-- AUTO-GENERATED — DO NOT EDIT MANUALLY/);
@@ -121,14 +135,14 @@ describe('dashboard follows the workflow', () => {
 
   test('Claude coding: focus shows the active PR and Claude as owner', () => {
     const md = render([...history(), claudePr({ draft: true, checks: checks.running })]);
-    assert.match(md, /\| \*\*Current owner\*\* \| 🔵 \*\*CLAUDE\*\* \|/);
-    assert.match(md, /\| \*\*Active PR\*\* \| PR #6 \|/);
+    assert.match(md, /\| \*\*Người phụ trách\*\* \| 🔵 \*\*CLAUDE\*\* \|/);
+    assert.match(md, /\| \*\*PR đang hoạt động\*\* \| PR #6 \|/);
     assert.match(md, /CLAUDE_CODING/);
   });
 
   test('waiting for review: ChatGPT is the owner', () => {
     const md = render([...history(), claudePr({ checks: checks.pass })]);
-    assert.match(md, /\| \*\*Current owner\*\* \| 🟣 \*\*CHATGPT\*\* \|/);
+    assert.match(md, /\| \*\*Người phụ trách\*\* \| 🟣 \*\*CHATGPT\*\* \|/);
     assert.equal(stateOf(resolveProgress(plan, snapshot([...history(), claudePr({ checks: checks.pass })])), 'M00-C1A1'), STATE.WAITING_CHATGPT_REVIEW);
   });
 
@@ -144,6 +158,6 @@ describe('dashboard follows the workflow', () => {
     assert.equal(r.focus, null);
     assert.equal(r.progress.overall.percent, 100);
     assert.equal(taskOf(r, 'M01').state, STATE.DONE);
-    assert.match(renderProgress(withPlan(r, plan)), /All planned tasks are DONE/);
+    assert.match(renderProgress(withPlan(r, plan)), /Tất cả task đã lập kế hoạch đều HOÀN THÀNH/);
   });
 });

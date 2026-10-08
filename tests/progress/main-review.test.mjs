@@ -239,8 +239,8 @@ describe('main CI is judged on the real head (blocker 1)', () => {
   test('the dashboard never shows an older SHA as the head, and never prints a progress-bot SHA', async () => {
     const normal = await mainFor({ commits: [entry('a'.repeat(40), 'b'.repeat(40)), entry('b'.repeat(40), null)], runs: { ['b'.repeat(40)]: green } });
     const mdNormal = buildMarkdown(plan, { ...normal.snap, pulls: [] });
-    assert.match(mdNormal, /Data as of main HEAD `aaaaaaa`/);
-    assert.match(mdNormal, /\(main CI is not verified for HEAD; older commits are not used\) · main CI: —/);
+    assert.match(mdNormal, /Dữ liệu theo main HEAD `aaaaaaa`/);
+    assert.match(mdNormal, /\(chưa xác minh CI cho HEAD; không dùng kết quả của commit cũ\) · CI main: —/);
     assert.ok(!mdNormal.includes('bbbbbbb'), 'the old green commit is not named');
 
     const bot = await mainFor({
@@ -249,7 +249,7 @@ describe('main CI is judged on the real head (blocker 1)', () => {
       files: { ['d'.repeat(40)]: ['docs/PROGRESS.md'] },
     });
     const mdBot = buildMarkdown(plan, { ...bot.snap, pulls: [] });
-    assert.match(mdBot, /Data as of main code `ccccccc` \(HEAD is a docs-only progress-bot commit; CI is read from this code commit\)/);
+    assert.match(mdBot, /Dữ liệu theo mã main `ccccccc` \(HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này\)/);
     assert.ok(!mdBot.includes('ddddddd'), 'the bot SHA changes with every dashboard commit, so it is not printed');
     // Regenerating after the dashboard's own commit must not produce yet another change.
     assert.equal(buildMarkdown(plan, { ...bot.snap, pulls: [] }), mdBot);

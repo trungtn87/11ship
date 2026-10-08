@@ -1,6 +1,6 @@
 # Hệ thống theo dõi tiến độ (Progress Tree)
 
-Trang xem tiến độ: [docs/PROGRESS.md](../PROGRESS.md). File đó **tự sinh**, không sửa tay.
+Trang xem tiến độ: [docs/PROGRESS.md](../PROGRESS.md). File đó **tự sinh**, không sửa tay. Dashboard hiển thị bằng **tiếng Việt**; các mã kỹ thuật như `DONE`, `READY_FOR_CLAUDE`, `PASS` vẫn được giữ trong ngoặc để audit và đối chiếu log.
 
 Nguyên tắc: **kế hoạch nằm trong repo, thực tế nằm trên GitHub.** Không ai, kể cả AI, đánh dấu một task là DONE bằng cách viết ra. Trạng thái được suy ra từ `merged_at`, `state`, `draft`, head SHA, check run, label và dependency giữa các task. Mô tả PR (title, body) và tên tác giả không bao giờ được dùng để suy ra trạng thái.
 
