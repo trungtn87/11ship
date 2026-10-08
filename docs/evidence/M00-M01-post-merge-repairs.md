@@ -67,8 +67,8 @@ Known gap, stated plainly: PR #19 carries both the design document and the repai
 
 ## Old tests changed, and why
 
-Four `transaction-manager.spec.ts` tests asserted that a ROLLBACK is sent after the budget is spent. Section 2 forbids exactly that (budget spent → destroy, never ROLLBACK), so they now assert "no ROLLBACK, released `[true]`":
-the callback-failure-after-deadline case, the busy-loop refusal, the setup-exhausted case and the detached-query case.
+Four `transaction-manager.spec.ts` tests asserted that a ROLLBACK is sent (`log.at(-1) === 'ROLLBACK'`, `released [false]`) after the budget was spent. Section 2 forbids exactly that (budget spent → destroy, never ROLLBACK), so they now assert "no ROLLBACK in the log, `released [true]`":
+"closes the context at the deadline…" (renamed "…destroys the connection without ROLLBACK…"), "counts BEGIN/setup against the budget…", "refuses to send COMMIT when the budget ran out while the event loop was busy…" (renamed) and "does not start the callback when BEGIN/setup used up the budget while the event loop was blocked".
 Boundary specs (`shop-boundary.spec.ts`, `driver-boundary.spec.ts`) gained the new Auth import in their allow-lists. The progress test helper now loads a frozen copy of the
 2026-10-07 plan (`tests/progress/fixtures/plan-2026-10-07.yml`) for the snapshot tests, and `livePlan` for the shipped plan.
 
