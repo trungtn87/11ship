@@ -9,7 +9,7 @@
 
 ## Tiến độ hiện tại
 
-Đã triển khai và merge: nền backend M00-B1, lõi giao dịch M00-C1 (transaction, idempotency, audit + outbox ghi, outbox dispatcher), Auth Core M01-A1, và onboarding M01-A2 (A2S quán, A2D tài xế). Gói sửa sau merge M00/M01 ([PR #19](docs/tasks/M00-M01-post-merge-repairs.md)) đang ở trạng thái **DRAFT**, chưa merge; xem trạng thái thật ở [docs/PROGRESS.md](docs/PROGRESS.md), không ở file này.
+Đã merge backend M00, M01-A1/A2 và sửa sau merge M01-R1 (#19). Backend đạt CI là một mốc riêng; môi trường local dành cho Owner, UI, E2E và nghiệm thu còn có task chưa thực hiện. Xem [dashboard](docs/PROGRESS.md) để biết trạng thái GitHub hiện tại.
 
 Chưa có (cố ý hoãn): logout và khôi phục tài khoản, ADMIN/SYSTEM/2FA, SMS production, publisher/worker chạy thật cho outbox, và dọn dẹp theo lịch (scheduled cleanup). Chưa có bản app cho Owner test.
 
@@ -22,6 +22,13 @@ Bằng chứng: [M00-B1](docs/evidence/M00-B1.md), [M01-A1](docs/evidence/M01-A1
 - [Bằng chứng nghiệm thu M00-B1](docs/evidence/M00-B1.md)
 - [Metadata thư viện đã kiểm tra](docs/evidence/M00-B1-dependency-metadata.json)
 - [Preflight bước 5.1](docs/current/11Ship-buoc-5.1-repository-preflight.md)
+
+## Kế hoạch triển khai theo module
+
+- [Quy trình và hai luồng song song](docs/tasks/module-delivery-workflow.md)
+- [Checklist M00 — local và vận hành](docs/tasks/M00-delivery-checklist.md)
+- [Checklist M01 — Auth/onboarding, UI và phần còn thiếu](docs/tasks/M01-delivery-checklist.md)
+- [Checklist M02 — hồ sơ, giờ hoạt động và menu](docs/tasks/M02-delivery-checklist.md)
 
 ## Cách làm việc
 

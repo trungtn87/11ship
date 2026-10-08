@@ -1,0 +1,251 @@
+# 11Ship progress plan (manifest).
+#
+# This file describes the PLAN only: which tasks exist, who is responsible, what depends on what.
+# It never records runtime status (DONE, CI green, ...). Status is derived by
+# scripts/generate-progress.mjs from real GitHub objects (merged_at, state, draft, head SHA,
+# check runs, labels) and written to docs/PROGRESS.md.
+#
+# YAML subset understood by scripts/progress/yaml-subset.mjs (anything else is a hard error):
+#   2-space indentation, "key: value" maps, "- item" lists, "- key: value" list-of-maps,
+#   scalars (null, true/false, integers, plain/quoted strings), "[]" / "[a, b]" flow lists,
+#   and "#" comments. No anchors, multi-line scalars, tags or tabs.
+#
+# Task fields
+#   id                    unique id; label "module:<id>" binds a PR to the task
+#   module                module id (see modules)
+#   title                 display title
+#   kind                  "leaf" (counts for progress, has an implementation PR) or
+#                         "group" (design gate + roll-up of its children)
+#   parent                parent task id or null
+#   order                 global display order (ascending)
+#   weight                progress weight of a leaf (groups carry no weight); default 1
+#   owner_role            REQUIRED, must be CLAUDE (implements / owns the group)
+#   design_role           REQUIRED, must be CHATGPT (designs)
+#   review_role           REQUIRED, must be CHATGPT (reviews)
+#                         Schema v1 FIXES these three roles: the resolver does not read them to decide
+#                         anything, and validatePlan rejects any other value or a missing field. They
+#                         are documentation of the workflow, NOT configuration. Making roles
+#                         configurable needs a new schema_version.
+#   depends_on            task ids that must be DONE first (a child also inherits its ancestors')
+#   design_pr             pinned design PR number (history only; new PRs are matched by labels)
+#   implementation_pr     pinned implementation PR number (history only)
+#   combined_design_implementation
+#                         optional boolean, default false. true marks ONE leaf whose single PR carries both the
+#                         design document and the implementation (explicit exception, never inferred from titles,
+#                         authors, labels, paths or PR bodies). Valid only on a leaf whose design_pr and
+#                         implementation_pr are the same positive PR number; that is the only repeated pin allowed.
+#                         The PR is classified once; its lifecycle is the task's implementation lifecycle (it does
+#                         not wait for itself to merge as a design gate). Ordinary tasks keep design-first behavior.
+#   requires_main_ci_green  extra gate: the latest main commit must have all required checks green
+#   acceptance            path of the task / acceptance document
+#   evidence              path of the evidence document
+#
+# Pinned PR numbers are the only way an unlabeled historical PR is accepted. Every other PR must
+# carry explicit labels (agent:*, type:*, module:<task id>); GitHub usernames are never used.
+
+schema_version: 1
+
+project:
+  id: 11ship
+  name: 11Ship
+
+repo: trungtn87/11ship
+main_branch: main
+
+# Check run names that must be "success" for CI to count as PASS. The repository is private on a
+# plan without the branch-protection API, so the list lives here instead of being read from GitHub.
+required_checks:
+  - Verify (Node 24, PostgreSQL 17)
+
+# false: the roadmap is not final, so overall progress is labelled "planned tasks only".
+roadmap_complete: false
+
+modules:
+  - id: M00
+    title: Foundation
+    order: 1
+  - id: M01
+    title: Authentication
+    order: 2
+
+# PRs that must never count, whatever their state or labels. A closed-without-merge PR is already
+# CANCELLED automatically; this list adds the human reason and also covers a reopened PR.
+ignored_prs:
+  - number: 5
+    task: M00-C1A1
+    reason: Implementation opened by ChatGPT against the workflow, closed without merge. Not accepted.
+
+tasks:
+  - id: M00-B1
+    module: M00
+    title: Backend Foundation
+    kind: leaf
+    parent: null
+    order: 10
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on: []
+    design_pr: 1
+    implementation_pr: 2
+    acceptance: docs/tasks/M00-B1-foundation.md
+    evidence: docs/evidence/M00-B1.md
+
+  - id: M00-C1
+    module: M00
+    title: Transactional Core
+    kind: group
+    parent: null
+    order: 20
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-B1
+    design_pr: 3
+    acceptance: docs/tasks/M00-C1-transactional-core.md
+
+  - id: M00-C1A0
+    module: M00
+    title: Transaction + Shared Primitives
+    kind: leaf
+    parent: M00-C1
+    order: 21
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on: []
+    implementation_pr: 4
+    acceptance: docs/tasks/CLAUDE-M00-C1A0.md
+    evidence: docs/evidence/M00-C1A0.md
+
+  - id: M00-C1A1
+    module: M00
+    title: Idempotency
+    kind: leaf
+    parent: M00-C1
+    order: 22
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-C1A0
+    implementation_pr: 6
+    evidence: docs/evidence/M00-C1A1.md
+
+  - id: M00-C1B
+    module: M00
+    title: Audit + Outbox Write
+    kind: leaf
+    parent: M00-C1
+    order: 23
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-C1A1
+    implementation_pr: 9
+    evidence: docs/evidence/M00-C1B.md
+
+  - id: M00-C1C
+    module: M00
+    title: Dispatcher + Final Integration
+    kind: leaf
+    parent: M00-C1
+    order: 24
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-C1B
+    implementation_pr: 10
+    evidence: docs/evidence/M00-C1C.md
+
+  - id: M01-A1
+    module: M01
+    title: Auth Core
+    kind: leaf
+    parent: null
+    order: 30
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-C1C
+    requires_main_ci_green: true
+    design_pr: 11
+    implementation_pr: 12
+    acceptance: docs/tasks/M01-A1-auth-core.md
+    evidence: docs/evidence/M01-A1.md
+
+  - id: M01-A2
+    module: M01
+    title: Onboarding (Shop + Driver)
+    kind: group
+    parent: null
+    order: 40
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-A1
+    design_pr: 15
+    acceptance: docs/tasks/M01-A2-onboarding.md
+
+  - id: M01-A2S
+    module: M01
+    title: Shop onboarding
+    kind: leaf
+    parent: M01-A2
+    order: 41
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on: []
+    implementation_pr: 16
+    acceptance: docs/tasks/M01-A2-onboarding.md
+    evidence: docs/evidence/M01-A2S.md
+
+  - id: M01-A2D
+    module: M01
+    title: Driver onboarding
+    kind: leaf
+    parent: M01-A2
+    order: 42
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-A2S
+    implementation_pr: 17
+    acceptance: docs/tasks/M01-A2-onboarding.md
+    evidence: docs/evidence/M01-A2D.md
+
+  # Corrective work after the M00/M01 merges (session authorization inside onboarding transactions, bounded
+  # rollback, effective active role, progress accuracy). PR #19 carries the design document AND the repair code,
+  # so it is pinned as BOTH, with the explicit combined_design_implementation flag (see the field list above).
+  - id: M01-R1
+    module: M01
+    title: Post-merge repairs (session, rollback, router, progress)
+    kind: leaf
+    parent: null
+    order: 50
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-A2
+    design_pr: 19
+    implementation_pr: 19
+    combined_design_implementation: true
+    acceptance: docs/tasks/M00-M01-post-merge-repairs.md
+    evidence: docs/evidence/M00-M01-post-merge-repairs.md

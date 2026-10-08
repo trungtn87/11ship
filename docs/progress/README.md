@@ -93,3 +93,9 @@ Sửa `docs/progress/plan.yml` (mô tả các trường ở đầu file), chạy
 - Vai trò trong `plan.yml` (`owner_role`, `design_role`, `review_role`) là cố định ở schema v1 (CLAUDE / CHATGPT / CHATGPT), được validate chặt và chưa cấu hình được.
 - Dashboard trên `main` cập nhật theo sự kiện, nên có thể trễ vài chục giây so với GitHub. Trong PR, job summary của `preview` luôn lấy dữ liệu mới nhất.
 - Nếu branch protection yêu cầu PR cho `main` thì bot không đẩy trực tiếp được; khi đó cần cho phép github-actions bypass hoặc chuyển sang nhánh riêng.
+# Kế hoạch bàn giao M00–M02
+
+Xem [quy trình nghiệp vụ → backend/UI → E2E → Owner UAT](../tasks/module-delivery-workflow.md) và checklist từng module được liên kết trên dashboard. Manifest giữ nguyên các gói backend đã merge, bổ sung môi trường local ở M00, UI/test/UAT và phạm vi Auth còn thiếu ở M01, cùng hồ sơ/lịch quán và menu M02.
+
+Phần trăm là số gói bàn giao theo trọng số, không phải tỷ lệ công sức hoặc mức sẵn sàng production. UI_LOCKED và Owner acceptance phải có evidence; required CI không thay thế hai bước này. Các PR evidence UAT chỉ được merge sau Owner xác nhận bản chạy. Trạng thái thiết kế có thể tiến hành song song; dependency trong manifest khóa bàn giao implementation.
+

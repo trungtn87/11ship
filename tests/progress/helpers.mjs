@@ -12,6 +12,7 @@ export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 // day and must not move when the live plan is corrected. `livePlan` is the shipped docs/progress/plan.yml.
 export const plan = validatePlan(parseYaml(readFileSync(resolve(root, 'tests/progress/fixtures/plan-2026-10-07.yml'), 'utf8')));
 export const livePlan = validatePlan(parseYaml(readFileSync(resolve(root, 'docs/progress/plan.yml'), 'utf8')));
+export const repairPlan = validatePlan(parseYaml(readFileSync(resolve(root, 'tests/progress/fixtures/plan-2026-10-08-repairs.yml'), 'utf8')));
 export const REQUIRED = plan.required_checks[0];
 
 const sha = (c) => String(c).repeat(40);

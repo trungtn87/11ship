@@ -67,6 +67,9 @@ modules:
   - id: M01
     title: Authentication
     order: 2
+  - id: M02
+    title: Quán và thực đơn
+    order: 3
 
 # PRs that must never count, whatever their state or labels. A closed-without-merge PR is already
 # CANCELLED automatically; this list adds the human reason and also covers a reopened PR.
@@ -249,3 +252,628 @@ tasks:
     combined_design_implementation: true
     acceptance: docs/tasks/M00-M01-post-merge-repairs.md
     evidence: docs/evidence/M00-M01-post-merge-repairs.md
+
+# Delivery lifecycle: design is the group's design gate; leaves are backend/UI/E2E/Owner evidence.
+# Merged backend history remains DONE; UI/UAT are independent unfinished deliverables.
+
+  - id: M00-LOCAL
+    module: M00
+    title: Môi trường test local
+    kind: group
+    parent: null
+    order: 25
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-R1
+    design_pr: 20
+    acceptance: docs/tasks/M00-delivery-checklist.md
+
+  - id: M00-LOCAL-RUN
+    module: M00
+    title: Backend và PostgreSQL chạy local
+    kind: leaf
+    parent: M00-LOCAL
+    order: 26
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on: []
+    acceptance: docs/tasks/M00-delivery-checklist.md
+    evidence: docs/evidence/M00-LOCAL-RUN.md
+
+  - id: M00-LOCAL-DATA
+    module: M00
+    title: Dữ liệu mẫu và OTP dành cho bản thử
+    kind: leaf
+    parent: M00-LOCAL
+    order: 27
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-LOCAL-RUN
+    acceptance: docs/tasks/M00-delivery-checklist.md
+    evidence: docs/evidence/M00-LOCAL-DATA.md
+
+  - id: M00-LOCAL-QA
+    module: M00
+    title: Kiểm chứng môi trường và khôi phục dữ liệu
+    kind: leaf
+    parent: M00-LOCAL
+    order: 28
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-LOCAL-DATA
+    acceptance: docs/tasks/M00-delivery-checklist.md
+    evidence: docs/evidence/M00-LOCAL-QA.md
+
+  - id: M00-LOCAL-UAT
+    module: M00
+    title: Owner nghiệm thu môi trường local
+    kind: leaf
+    parent: M00-LOCAL
+    order: 29
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-LOCAL-QA
+    acceptance: docs/tasks/M00-delivery-checklist.md
+    evidence: docs/evidence/M00-LOCAL-UAT.md
+
+  - id: M01-UI
+    module: M01
+    title: Thiết kế và triển khai UI Auth + onboarding
+    kind: group
+    parent: null
+    order: 60
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-R1
+    design_pr: 14
+    acceptance: docs/tasks/M01-delivery-checklist.md
+
+  - id: M01-UI-AUTH
+    module: M01
+    title: UI đăng ký, đăng nhập và chọn vai trò
+    kind: leaf
+    parent: M01-UI
+    order: 61
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-LOCAL-DATA
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-UI-AUTH.md
+
+  - id: M01-UI-ONBOARD
+    module: M01
+    title: UI hồ sơ quán và hồ sơ xế
+    kind: leaf
+    parent: M01-UI
+    order: 62
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-UI-AUTH
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-UI-ONBOARD.md
+
+  - id: M01-TEST
+    module: M01
+    title: Kiểm thử và nghiệm thu M01-A1/A2
+    kind: group
+    parent: null
+    order: 70
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-R1
+    acceptance: docs/tasks/M01-delivery-checklist.md
+
+  - id: M01-E2E
+    module: M01
+    title: Test đầu cuối Auth và onboarding
+    kind: leaf
+    parent: M01-TEST
+    order: 71
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-UI-ONBOARD
+      - M00-LOCAL-UAT
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-E2E.md
+
+  - id: M01-UAT
+    module: M01
+    title: Owner nghiệm thu bản thử M01-A1/A2
+    kind: leaf
+    parent: M01-TEST
+    order: 72
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-E2E
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-UAT.md
+
+  - id: M01-B
+    module: M01
+    title: Nghiệp vụ bổ sung: tài khoản và phiên
+    kind: group
+    parent: null
+    order: 80
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-R1
+    acceptance: docs/tasks/M01-delivery-checklist.md
+
+  - id: M01-B-LOGOUT
+    module: M01
+    title: Backend đăng xuất và thu hồi phiên
+    kind: leaf
+    parent: M01-B
+    order: 81
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on: []
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-B-LOGOUT.md
+
+  - id: M01-B-PASSWORD
+    module: M01
+    title: Backend đổi và khôi phục mật khẩu
+    kind: leaf
+    parent: M01-B
+    order: 82
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-B-LOGOUT
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-B-PASSWORD.md
+
+  - id: M01-B-PHONE
+    module: M01
+    title: Backend đổi số điện thoại đã xác minh
+    kind: leaf
+    parent: M01-B
+    order: 83
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-B-PASSWORD
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-B-PHONE.md
+
+  - id: M01-B-UI
+    module: M01
+    title: UI quản lý tài khoản và phiên
+    kind: leaf
+    parent: M01-B
+    order: 84
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-B-PHONE
+      - M01-UI-AUTH
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-B-UI.md
+
+  - id: M01-B-E2E
+    module: M01
+    title: Test đầu cuối tài khoản và phiên
+    kind: leaf
+    parent: M01-B
+    order: 85
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-B-UI
+      - M00-LOCAL-UAT
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-B-E2E.md
+
+  - id: M01-B-UAT
+    module: M01
+    title: Owner nghiệm thu tài khoản và phiên
+    kind: leaf
+    parent: M01-B
+    order: 86
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-B-E2E
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-B-UAT.md
+
+  - id: M01-C
+    module: M01
+    title: Nghiệp vụ bổ sung: SMS thật và chống lạm dụng
+    kind: group
+    parent: null
+    order: 90
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-R1
+    acceptance: docs/tasks/M01-delivery-checklist.md
+
+  - id: M01-C-SMS
+    module: M01
+    title: Adapter SMS và giới hạn gửi/thử thật
+    kind: leaf
+    parent: M01-C
+    order: 91
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on: []
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-C-SMS.md
+
+  - id: M01-C-E2E
+    module: M01
+    title: Test SMS thật trên số được phép
+    kind: leaf
+    parent: M01-C
+    order: 92
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-C-SMS
+      - M01-UI-AUTH
+      - M00-LOCAL-UAT
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-C-E2E.md
+
+  - id: M01-C-UAT
+    module: M01
+    title: Owner nghiệm thu OTP thật và thông báo lỗi
+    kind: leaf
+    parent: M01-C
+    order: 93
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-C-E2E
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-C-UAT.md
+
+  - id: M01-D
+    module: M01
+    title: Nghiệp vụ bổ sung: ADMIN, SYSTEM và 2FA
+    kind: group
+    parent: null
+    order: 100
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-R1
+    acceptance: docs/tasks/M01-delivery-checklist.md
+
+  - id: M01-D-ACCESS
+    module: M01
+    title: Backend khởi tạo và phân quyền quản trị
+    kind: leaf
+    parent: M01-D
+    order: 101
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on: []
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-D-ACCESS.md
+
+  - id: M01-D-2FA
+    module: M01
+    title: Backend 2FA và khôi phục quyền quản trị
+    kind: leaf
+    parent: M01-D
+    order: 102
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-D-ACCESS
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-D-2FA.md
+
+  - id: M01-D-UI
+    module: M01
+    title: UI đăng nhập và bảo mật quản trị
+    kind: leaf
+    parent: M01-D
+    order: 103
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-D-2FA
+      - M01-UI-AUTH
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-D-UI.md
+
+  - id: M01-D-E2E
+    module: M01
+    title: Test quyền và 2FA đầu cuối
+    kind: leaf
+    parent: M01-D
+    order: 104
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-D-UI
+      - M00-LOCAL-UAT
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-D-E2E.md
+
+  - id: M01-D-UAT
+    module: M01
+    title: Owner nghiệm thu bảo mật quản trị
+    kind: leaf
+    parent: M01-D
+    order: 105
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-D-E2E
+    acceptance: docs/tasks/M01-delivery-checklist.md
+    evidence: docs/evidence/M01-D-UAT.md
+
+  - id: M02-A
+    module: M02
+    title: Nghiệp vụ hồ sơ quán và giờ hoạt động
+    kind: group
+    parent: null
+    order: 120
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-R1
+    design_pr: 18
+    acceptance: docs/tasks/M02-delivery-checklist.md
+
+  - id: M02-A-BE
+    module: M02
+    title: Backend hồ sơ, lịch tuần và trạng thái tự động
+    kind: leaf
+    parent: M02-A
+    order: 121
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on: []
+    acceptance: docs/tasks/M02-delivery-checklist.md
+    evidence: docs/evidence/M02-A-BE.md
+
+  - id: M02-A-UI
+    module: M02
+    title: UI hồ sơ, lịch tuần và trạng thái quán
+    kind: leaf
+    parent: M02-A
+    order: 122
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M02-A-BE
+      - M01-UI-ONBOARD
+    acceptance: docs/tasks/M02-delivery-checklist.md
+    evidence: docs/evidence/M02-A-UI.md
+
+  - id: M02-A-E2E
+    module: M02
+    title: Test đầu cuối hồ sơ và lịch hoạt động
+    kind: leaf
+    parent: M02-A
+    order: 123
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M02-A-UI
+      - M00-LOCAL-UAT
+    acceptance: docs/tasks/M02-delivery-checklist.md
+    evidence: docs/evidence/M02-A-E2E.md
+
+  - id: M02-A-UAT
+    module: M02
+    title: Owner nghiệm thu hoạt động quán tự động
+    kind: leaf
+    parent: M02-A
+    order: 124
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M02-A-E2E
+    acceptance: docs/tasks/M02-delivery-checklist.md
+    evidence: docs/evidence/M02-A-UAT.md
+
+  - id: M02-B
+    module: M02
+    title: Nghiệp vụ menu và nhóm món
+    kind: group
+    parent: null
+    order: 130
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M02-A-BE
+    acceptance: docs/tasks/M02-delivery-checklist.md
+
+  - id: M02-B-BE
+    module: M02
+    title: Backend menu, nhóm món và ảnh
+    kind: leaf
+    parent: M02-B
+    order: 131
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on: []
+    acceptance: docs/tasks/M02-delivery-checklist.md
+    evidence: docs/evidence/M02-B-BE.md
+
+  - id: M02-B-UI
+    module: M02
+    title: UI quản lý menu và nhóm món
+    kind: leaf
+    parent: M02-B
+    order: 132
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M02-B-BE
+      - M02-A-UI
+    acceptance: docs/tasks/M02-delivery-checklist.md
+    evidence: docs/evidence/M02-B-UI.md
+
+  - id: M02-B-E2E
+    module: M02
+    title: Test đầu cuối menu
+    kind: leaf
+    parent: M02-B
+    order: 133
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M02-B-UI
+      - M00-LOCAL-UAT
+    acceptance: docs/tasks/M02-delivery-checklist.md
+    evidence: docs/evidence/M02-B-E2E.md
+
+  - id: M02-B-UAT
+    module: M02
+    title: Owner nghiệm thu menu
+    kind: leaf
+    parent: M02-B
+    order: 134
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M02-B-E2E
+    acceptance: docs/tasks/M02-delivery-checklist.md
+    evidence: docs/evidence/M02-B-UAT.md
+
+  - id: M00-OPS
+    module: M00
+    title: Vận hành nền tảng trước production
+    kind: group
+    parent: null
+    order: 200
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-C1C
+    acceptance: docs/tasks/M00-delivery-checklist.md
+
+  - id: M00-OPS-WORKER
+    module: M00
+    title: Publisher và worker outbox chạy thật
+    kind: leaf
+    parent: M00-OPS
+    order: 201
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on: []
+    acceptance: docs/tasks/M00-delivery-checklist.md
+    evidence: docs/evidence/M00-OPS-WORKER.md
+
+  - id: M00-OPS-CLEANUP
+    module: M00
+    title: Lịch dọn dữ liệu và retention
+    kind: leaf
+    parent: M00-OPS
+    order: 202
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on: []
+    acceptance: docs/tasks/M00-delivery-checklist.md
+    evidence: docs/evidence/M00-OPS-CLEANUP.md
+
+  - id: M00-OPS-RELEASE
+    module: M00
+    title: Triển khai, giám sát và diễn tập phục hồi
+    kind: leaf
+    parent: M00-OPS
+    order: 203
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-LOCAL-UAT
+      - M00-OPS-WORKER
+      - M00-OPS-CLEANUP
+      - M01-C-UAT
+      - M01-D-UAT
+    acceptance: docs/tasks/M00-delivery-checklist.md
+    evidence: docs/evidence/M00-OPS-RELEASE.md

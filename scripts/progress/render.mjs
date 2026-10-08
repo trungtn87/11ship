@@ -356,6 +356,27 @@ export function renderProgress(model) {
   out.push(`> Dữ liệu theo ${mainBanner(model.main)} · CI main: ${CI_CELL[model.main.ci]}`);
   out.push('');
 
+  // Delivery stages are planned separately; group design state is not proof of UI lock or Owner UAT.
+  if (model.tasks.some((task) => task.id === 'M00-LOCAL')) {
+    out.push('## Các luồng song song và checklist');
+    out.push('');
+    out.push('Nghiệp vụ → thiết kế backend/UI → triển khai → E2E → Owner nghiệm thu. Backend DONE không đồng nghĩa UI hoặc bản dùng thử đã đạt.');
+    out.push('');
+    out.push('| Luồng | Thiết kế | Công việc / checklist |');
+    out.push('|---|---|---|');
+    for (const [id, label, path] of [
+      ['M00-LOCAL', 'M00 — môi trường test local', 'M00-delivery-checklist.md'],
+      ['M01-UI', 'M01 — UI và bản thử Auth/onboarding', 'M01-delivery-checklist.md'],
+      ['M02-A', 'M02 — nghiệp vụ hồ sơ và lịch quán', 'M02-delivery-checklist.md'],
+    ]) {
+      const task = model.tasks.find((candidate) => candidate.id === id);
+      if (task) out.push(`| ${label} | ${stateCell(task.design_state)}${task.design_pr ? ` · #${task.design_pr}` : ''} | [Checklist](${`tasks/${path}`}) · xem dependency từng gói bên dưới |`);
+    }
+    out.push('');
+    out.push('Thiết kế UI được làm trong khi chuẩn bị môi trường. Frame Figma và xác nhận Owner nằm trong evidence; CI không tự xác nhận hai bước này. [Quy trình đầy đủ](tasks/module-delivery-workflow.md).');
+    out.push('');
+  }
+
   // CURRENT FOCUS
   out.push('## 🎯 VIỆC ĐANG LÀM');
   out.push('');
