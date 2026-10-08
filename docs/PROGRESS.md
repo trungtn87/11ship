@@ -5,22 +5,11 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo mã main `e844276` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ⏳ Đang chạy (`RUNNING`)
+> Dữ liệu theo mã main `e844276` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ✅ Đạt (`PASS`)
 
 ## 🎯 VIỆC ĐANG LÀM
 
-| | |
-|---|---|
-| **Task** | **M01-R1 — Sửa sau merge (session, rollback, router, tiến độ)** |
-| **Trạng thái** | ⏳ CI đang chạy (`CI_RUNNING`) |
-| **Người phụ trách** | ⚙️ **CI** |
-| **ChatGPT** | Chờ CI trước khi kiểm tra |
-| **Claude** | Đã push triển khai; đang chờ CI |
-| **Chủ dự án** | Không cần thao tác |
-| **Đang bị chặn bởi** | Không |
-| **Điều kiện sang bước tiếp** | Required CI xanh |
-| **PR đang hoạt động** | PR #19 |
-| **Ghi chú** | PR đã merge nhưng chưa xác minh required check xanh; chưa được tính HOÀN THÀNH |
+**Tất cả task đã lập kế hoạch đều HOÀN THÀNH.** Thêm task tiếp theo vào `docs/progress/plan.yml`.
 
 ## Tiến độ
 
@@ -28,8 +17,8 @@ Tính theo trọng số task trong kế hoạch (mỗi task lá = 1 nếu không
 
 | Phạm vi | Hoàn thành / tổng |
 |---|---|
-| Milestone hiện tại — M01 Xác thực | 3 / 4 (75%) |
-| Toàn bộ — chỉ tính task đã lập kế hoạch (roadmap chưa chốt hết) | 8 / 9 (88%) |
+| Milestone hiện tại — M01 Xác thực | 4 / 4 (100%) |
+| Toàn bộ — chỉ tính task đã lập kế hoạch (roadmap chưa chốt hết) | 9 / 9 (100%) |
 | Module M00 Nền tảng | 5 / 5 (100%) |
 
 ## Cây tiến độ
@@ -51,7 +40,7 @@ flowchart TD
     M01_A2["M01-A2 (thiết kế)<br/>Onboarding (Quán + Tài xế)<br/>⚪ —<br/>Hoàn thành (DONE)"]
     M01_A2S["M01-A2S<br/>Onboarding quán (Shop)<br/>⚪ —<br/>Hoàn thành (DONE)"]
     M01_A2D["M01-A2D<br/>Onboarding tài xế (Driver)<br/>⚪ —<br/>Hoàn thành (DONE)"]
-    M01_R1["M01-R1<br/>Sửa sau merge (session, rollback, router, tiến độ)<br/>⚙️ CI<br/>CI đang chạy (CI_RUNNING)"]
+    M01_R1["M01-R1<br/>Sửa sau merge (session, rollback, router, tiến độ)<br/>⚪ —<br/>Hoàn thành (DONE)"]
   end
 
   M00_B1 --> M00_C1
@@ -74,9 +63,7 @@ flowchart TD
   classDef blocked fill:#f3f4f6,stroke:#9ca3af,color:#4b5563,stroke-dasharray:4 3
   classDef planned fill:#ffffff,stroke:#9ca3af,color:#374151
   classDef focus stroke:#f59e0b,stroke-width:5px
-  class M00_B1,M00_C1,M00_C1A0,M00_C1A1,M00_C1B,M00_C1C,M01_A1,M01_A2,M01_A2S,M01_A2D done
-  class M01_R1 active
-  class M01_R1 focus
+  class M00_B1,M00_C1,M00_C1A0,M00_C1A1,M00_C1B,M00_C1C,M01_A1,M01_A2,M01_A2S,M01_A2D,M01_R1 done
 ```
 
 ## Chi tiết công việc
@@ -93,7 +80,7 @@ flowchart TD
 | **M01-A2** thiết kế · Onboarding (Quán + Tài xế) | ✅ Hoàn thành (`DONE`) | — | [#15](https://github.com/trungtn87/11ship/pull/15) | ✅ Đạt (`PASS`) | `c329808` | A1 Hoàn thành (DONE) | — |
 | &nbsp;&nbsp;M01-A2S · Onboarding quán (Shop) | ✅ Hoàn thành (`DONE`) | — | [#16](https://github.com/trungtn87/11ship/pull/16) | ✅ Đạt (`PASS`) | `620333f` | — | — |
 | &nbsp;&nbsp;M01-A2D · Onboarding tài xế (Driver) | ✅ Hoàn thành (`DONE`) | — | [#17](https://github.com/trungtn87/11ship/pull/17) | ✅ Đạt (`PASS`) | `c37082a` | A2S Hoàn thành (DONE) | — |
-| M01-R1 · Sửa sau merge (session, rollback, router, tiến độ) | ⏳ CI đang chạy (`CI_RUNNING`) | CI | [#19](https://github.com/trungtn87/11ship/pull/19) | ⏳ Đang chạy (`RUNNING`) | `cd0e6de` | A2 Hoàn thành (DONE) | Chờ CI trên PR #19 |
+| M01-R1 · Sửa sau merge (session, rollback, router, tiến độ) | ✅ Hoàn thành (`DONE`) | — | [#19](https://github.com/trungtn87/11ship/pull/19) | ✅ Đạt (`PASS`) | `cd0e6de` | A2 Hoàn thành (DONE) | — |
 
 ## Danh sách Pull Request
 
@@ -119,7 +106,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#16](https://github.com/trungtn87/11ship/pull/16) feat(onboarding): M01-A2S shop onboarding | Đã merge (`MERGED`) | M01-A2S | triển khai | ✅ Đạt (`PASS`) | `620333f` | được tính |
 | [#17](https://github.com/trungtn87/11ship/pull/17) feat(m01-a2d): DRIVER onboarding (no Driver service area) | Đã merge (`MERGED`) | M01-A2D | triển khai | ✅ Đạt (`PASS`) | `c37082a` | được tính |
 | [#18](https://github.com/trungtn87/11ship/pull/18) docs(m02-a): hồ sơ quán và tự động hoạt động theo giờ | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `ebb0f3a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#19](https://github.com/trungtn87/11ship/pull/19) docs(m00-m01): session authorization, bounded rollback, rou… | Đã merge (`MERGED`) | M01-R1 | thiết kế + triển khai | ⏳ Đang chạy (`RUNNING`) | `cd0e6de` | được tính |
+| [#19](https://github.com/trungtn87/11ship/pull/19) docs(m00-m01): session authorization, bounded rollback, rou… | Đã merge (`MERGED`) | M01-R1 | thiết kế + triển khai | ✅ Đạt (`PASS`) | `cd0e6de` | được tính |
 
 ## ⚠️ Cần chú ý
 
