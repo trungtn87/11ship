@@ -1,4 +1,5 @@
 import { Keyring, parseKeyringConfig } from '../crypto/keyring';
+import { DatabaseTls, resolveDatabaseTls } from '../database/tls-config';
 import {
   AuthConfig,
   DEFAULT_AUTH_OTP_MAX_ATTEMPTS,
@@ -70,6 +71,12 @@ export interface DatabaseConfig {
   queryTimeoutMs: number;
   /** Server-side statement_timeout. Must be smaller than the client query timeout. */
   statementTimeoutMs: number;
+  /**
+   * Strict TLS (M00-D1). Always present in staging/production (startup is refused without it); present in
+   * development/test only when DB_SSL_CA or DB_SSL_CA_FILE is set. When undefined the pool is built exactly as
+   * before M00-D1 (no `ssl` option), which is what local PostgreSQL and CI rely on.
+   */
+  tls?: DatabaseTls;
 }
 
 export interface TransactionConfig {
@@ -400,6 +407,25 @@ export function loadConfig(env: EnvSource): ConfigResult {
     flag('OUTBOX_BACKOFF_CAP_MS');
   }
 
+  // Database TLS (M00-D1). Staging and production must verify the server certificate against a supplied CA, so a
+  // missing or malformed CA (or a weakening URL query / NODE_TLS_REJECT_UNAUTHORIZED=0) refuses startup. The
+  // URL is only inspected when it is itself valid; an invalid URL is already reported as DATABASE_URL.
+  // Only variable NAMES are ever reported: never the CA text, the file path or the URL.
+  let databaseTls: DatabaseTls | undefined;
+  if (appEnv !== undefined) {
+    const tlsResult = resolveDatabaseTls({
+      env,
+      required: appEnv === 'staging' || appEnv === 'production',
+      databaseUrl:
+        databaseUrl !== undefined && !invalid.includes('DATABASE_URL') ? databaseUrl : undefined,
+    });
+    if (tlsResult.ok) {
+      databaseTls = tlsResult.tls;
+    } else {
+      tlsResult.invalid.forEach(flag);
+    }
+  }
+
   // Crypto keyring: optional at this level, but all-or-nothing and strictly validated when present.
   // Only variable NAMES are ever reported; key material is never echoed.
   let crypto: Keyring | undefined;
@@ -493,7 +519,15 @@ export function loadConfig(env: EnvSource): ConfigResult {
       nodeEnv,
       host,
       port,
-      database: { url: databaseUrl, poolMax, connectTimeoutMs, queryTimeoutMs, statementTimeoutMs },
+      database: {
+        url: databaseUrl,
+        poolMax,
+        connectTimeoutMs,
+        queryTimeoutMs,
+        statementTimeoutMs,
+        // The key is omitted (not set to undefined) when there is no TLS, so local/CI configs are unchanged.
+        ...(databaseTls === undefined ? {} : { tls: databaseTls }),
+      },
       transaction: { timeoutMs: transactionTimeoutMs, idleInTransactionTimeoutMs },
       idempotency: { advisoryWaitMs, businessLockTimeoutMs, replayTtlSeconds, dedupeTtlSeconds },
       outbox: {

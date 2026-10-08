@@ -249,3 +249,100 @@ tasks:
     combined_design_implementation: true
     acceptance: docs/tasks/M00-M01-post-merge-repairs.md
     evidence: docs/evidence/M00-M01-post-merge-repairs.md
+
+  # M00-D: Render Free + Supabase staging (design PR #22). Design, implementation, remote deployment and Owner
+  # acceptance are tracked as SEPARATE tasks on purpose: a merged D1 (configuration, tests, runbook) is NOT a
+  # deployed backend and NOT an Owner-tested one. Only a merged implementation PR with a green required check
+  # can make a leaf DONE, so D4 (remote deployment acceptance) and D5 (Owner acceptance) stay open until an
+  # evidence PR for each is merged; nothing about D1 can mark them done. The order values sit after the corrective
+  # work (M01-R1) so this lane does not take over the dashboard focus.
+  #
+  # Known limit of this schema: the manifest has no per-leaf "design still to be written" gate. docs/tasks/
+  # M00-D-render-supabase-staging.md requires a concrete follow-on design before any D2 schema/API change, so D2
+  # must not start just because the dashboard shows it ready; that gate lives in the task document.
+  - id: M00-D
+    module: M00
+    title: Render Free + Supabase staging
+    kind: group
+    parent: null
+    order: 60
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-C1C
+    design_pr: 22
+    acceptance: docs/tasks/M00-D-render-supabase-staging.md
+
+  - id: M00-D1
+    module: M00
+    title: Connection and deploy configuration
+    kind: leaf
+    parent: M00-D
+    order: 61
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on: []
+    acceptance: docs/tasks/CLAUDE-M00-D1-render-supabase.md
+    evidence: docs/evidence/M00-D1.md
+
+  - id: M00-D2
+    module: M00
+    title: Test accounts without real SMS
+    kind: leaf
+    parent: M00-D
+    order: 62
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-D1
+    acceptance: docs/tasks/M00-D-render-supabase-staging.md
+
+  - id: M00-D3
+    module: M00
+    title: Operations and portability
+    kind: leaf
+    parent: M00-D
+    order: 63
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-D1
+    acceptance: docs/tasks/M00-D-render-supabase-staging.md
+
+  # Evidence-only tasks. owner_role stays CLAUDE because schema v1 fixes the three roles (they are documentation,
+  # not configuration); the remote steps themselves are run by the deployment operator and verified by the Owner.
+  - id: M00-D4
+    module: M00
+    title: Remote deployment acceptance
+    kind: leaf
+    parent: M00-D
+    order: 64
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-D2
+      - M00-D3
+    acceptance: docs/tasks/M00-D-render-supabase-staging.md
+
+  - id: M00-D5
+    module: M00
+    title: Owner acceptance of the staging backend
+    kind: leaf
+    parent: M00-D
+    order: 65
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M00-D4
+    acceptance: docs/tasks/M00-D-render-supabase-staging.md

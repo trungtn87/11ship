@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from '@jest/globals';
 import { FIXTURE_KEYRING_ENV } from '../../apps/backend/src/crypto/test-keys.fixture';
+import { createTestPki } from '../../apps/backend/src/database/test-tls.fixture';
 import { COMPILED_MAIN, minimalChildEnv } from './support/test-helpers';
 
 // M01-A1 section 9: the real compiled entry point refuses invalid Auth configuration with a nonzero exit,
@@ -99,6 +100,9 @@ describe('M01-A1 — Auth configuration stops the process and leaks nothing', ()
       const result = startMain({
         ...base,
         APP_ENV: appEnv,
+        // Staging/production also refuse to start without a database CA (M00-D1). Supplying one lets this case
+        // reach the OTP gate it is about, which is evaluated after the configuration is accepted.
+        DB_SSL_CA: createTestPki().caPem,
         AUTH_OTP_HMAC_SECRET: validSecret,
         CRYPTO_KEYRING: FIXTURE_KEYRING_ENV,
         CRYPTO_ACTIVE_KEY_ID: 'k1',

@@ -20,6 +20,12 @@ async function bootstrap(): Promise<void> {
   const { config } = result;
   const logger = new JsonLogger();
 
+  // Fixed event name only: the logger's metadata whitelist deliberately has no TLS, host or path fields, so
+  // nothing about the CA can reach a log line. Emitted only when strict TLS is active (always in staging).
+  if (config.database.tls !== undefined) {
+    logger.log('info', 'db_tls_verify_full');
+  }
+
   // Auth Core needs an explicit OTP provider. bindOtpProvider refuses staging/production (no production SMS
   // adapter exists yet) before anything is opened, naming only OTP_PROVIDER.
   const otpProvider = bindOtpProvider(config.appEnv);

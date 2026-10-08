@@ -23,6 +23,10 @@ Bằng chứng: [M00-B1](docs/evidence/M00-B1.md), [M01-A1](docs/evidence/M01-A1
 - [Metadata thư viện đã kiểm tra](docs/evidence/M00-B1-dependency-metadata.json)
 - [Preflight bước 5.1](docs/current/11Ship-buoc-5.1-repository-preflight.md)
 
+## Staging (Render + Supabase) — cấu hình, chưa triển khai
+
+M00-D1 chỉ chuẩn bị cấu hình: `render.yaml` (một web service Render Free, không tự deploy), kết nối PostgreSQL qua TLS xác minh đầy đủ (`DB_SSL_CA` hoặc `DB_SSL_CA_FILE`; staging/production không khởi động nếu thiếu) và lệnh migration từ xa riêng `npm run db:migrate:remote`. **Chưa deploy, chưa migrate Supabase thật**, và dịch vụ chưa thể chạy thật cho đến khi có M00-D2 (OTP staging). Hướng dẫn: [runbook](ops/runbooks/render-supabase-staging.md), bằng chứng: [M00-D1](docs/evidence/M00-D1.md).
+
 ## Cách làm việc
 
 ChatGPT thiết kế, chia task và review. Claude code từng task. Owner test nghiệp vụ và duyệt. Mỗi gói dùng nhánh riêng, giữ base/head commit và bằng chứng test. Chưa merge khi chưa PASS.

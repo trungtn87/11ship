@@ -18,6 +18,13 @@ if (process.env.APP_ENV !== 'test' && existsSync('.env')) {
   }
 }
 
+// Remote databases have their own explicit path (strict TLS, separate migration credential, target confirmation).
+// This local command refuses to touch them even if DATABASE_URL points somewhere remote.
+if (process.env.APP_ENV === 'staging' || process.env.APP_ENV === 'production') {
+  console.error('db:migrate: refused for APP_ENV=staging|production. Use "npm run db:migrate:remote" for remote databases.');
+  process.exit(1);
+}
+
 if (!process.env.DATABASE_URL) {
   console.error('db:migrate: missing required environment variable: DATABASE_URL');
   process.exit(1);

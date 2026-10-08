@@ -9,6 +9,20 @@ describe('safeErrorCode', () => {
     expect(safeErrorCode({ code: '57P01' })).toBe('57P01');
   });
 
+  it('names TLS verification failures by their fixed identifier and nothing else (M00-D1)', () => {
+    for (const code of [
+      'SELF_SIGNED_CERT_IN_CHAIN',
+      'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+      'DEPTH_ZERO_SELF_SIGNED_CERT',
+      'CERT_HAS_EXPIRED',
+      'ERR_TLS_CERT_ALTNAME_INVALID',
+    ]) {
+      expect(safeErrorCode(Object.assign(new Error('Hostname/IP does not match'), { code }))).toBe(code);
+    }
+    // A look-alike that is not on the list stays hidden.
+    expect(safeErrorCode({ code: 'ERR_TLS_CERT_SECRET_MARKER' })).toBe('UNKNOWN');
+  });
+
   it('accepts only real SQLSTATE classes, system codes and registry codes', () => {
     expect(safeErrorCode({ code: '40001' })).toBe('40001');
     expect(safeErrorCode({ code: 'IDEMPOTENCY_BUSY' })).toBe('IDEMPOTENCY_BUSY');

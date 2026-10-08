@@ -61,11 +61,12 @@ describe('resolved state with the merged history and draft PR #19', () => {
     assert.equal(repair.pr, 19);
   });
 
-  test('progress is computed from leaves: M00 5/5, M01 3/4, overall 8/9 (88%, rounded down)', () => {
+  test('progress is computed from leaves: M00 5/10, M01 3/4, overall 8/14 (57%, rounded down)', () => {
     const m = Object.fromEntries(r.progress.modules.map((x) => [x.id, x]));
-    assert.deepEqual([m.M00.done, m.M00.total], [5, 5]);
+    // M00 gained the five open M00-D leaves (D1..D5); nothing about them is done, so only the total moved.
+    assert.deepEqual([m.M00.done, m.M00.total], [5, 10]);
     assert.deepEqual([m.M01.done, m.M01.total, m.M01.percent], [3, 4, 75]);
-    assert.deepEqual([r.progress.overall.done, r.progress.overall.total, r.progress.overall.percent], [8, 9, 88]);
+    assert.deepEqual([r.progress.overall.done, r.progress.overall.total, r.progress.overall.percent], [8, 14, 57]);
   });
 
   test('the dashboard focus is the repair, not a finished task', () => {
@@ -195,7 +196,7 @@ describe('combined PR: lifecycle of M01-R1 (PR #19)', () => {
     assert.equal(r.pr, 19);
     // one PR row, one leaf in the totals, no attention
     assert.equal(result.prs.filter((p) => p.number === 19).length, 1);
-    assert.deepEqual([result.progress.overall.done, result.progress.overall.total], [9, 9]);
+    assert.deepEqual([result.progress.overall.done, result.progress.overall.total], [9, 14]);
     assert.deepEqual(result.attention, []);
   });
 
@@ -229,7 +230,7 @@ describe('combined PR: lifecycle of M01-R1 (PR #19)', () => {
   test('no double counting while open: one PR row and one leaf of weight 1', () => {
     const result = resolveProgress(livePlan, snapshot([...realHistory(), combinedPr({ draft: true })]));
     assert.equal(result.prs.filter((p) => p.number === 19).length, 1);
-    assert.deepEqual([result.progress.overall.done, result.progress.overall.total], [8, 9]);
+    assert.deepEqual([result.progress.overall.done, result.progress.overall.total], [8, 14]);
   });
 
   test('the OLD model fails the corrected expectation: design-only pin makes merged-green #19 READY_FOR_CLAUDE', () => {
@@ -302,7 +303,7 @@ describe('combined PR: design_state follows the real PR lifecycle', () => {
   test('still counted once: one PR row, one leaf, and ordinary tasks keep their own design lookup', () => {
     const result = resolveProgress(livePlan, snapshot([...realHistory(), combinedPr({ draft: true })]));
     assert.equal(result.prs.filter((p) => p.number === 19).length, 1);
-    assert.equal(result.progress.overall.total, 9);
+    assert.equal(result.progress.overall.total, 14);
     const a2s = result.tasks.find((t) => t.id === 'M01-A2S');
     assert.equal(a2s.design_state, STATE.DESIGN_LOCKED);
     assert.equal(a2s.design_pr, 15);
