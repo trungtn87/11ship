@@ -52,20 +52,20 @@ describe('M02-A — Shop management fault matrix', () => {
   });
 
   const common = (action: string, operation: string): Fault[] => [
-    insertFault('fault_m02_audit', 'app.audit_logs', (o) => `NEW.actor_id::text = '${o.userId}' AND NEW.action = '${action}'`),
-    insertFault('fault_m02_outbox', 'app.outbox_events', (o) => `NEW.resource_id::text = '${o.shopId}' AND NEW.event_type LIKE 'shop.%'`),
-    insertFault('fault_m02_record', 'app.idempotency_records', (o) => `NEW.scope_id = '${o.userId}' AND NEW.operation_id = '${operation}'`),
+    insertFault('fault_shopmgmt_audit', 'app.audit_logs', (o) => `NEW.actor_id::text = '${o.userId}' AND NEW.action = '${action}'`),
+    insertFault('fault_shopmgmt_outbox', 'app.outbox_events', (o) => `NEW.resource_id::text = '${o.shopId}' AND NEW.event_type LIKE 'shop.%'`),
+    insertFault('fault_shopmgmt_record', 'app.idempotency_records', (o) => `NEW.scope_id = '${o.userId}' AND NEW.operation_id = '${operation}'`),
   ];
 
   const HOURS_FAULTS: Fault[] = [
-    deleteFault('fault_m02_hours_delete', 'app.shop_business_hours', (o) => `OLD.shop_id = '${o.shopId}'::uuid`),
-    insertFault('fault_m02_hours_insert', 'app.shop_business_hours', (o) => `NEW.shop_id = '${o.shopId}'::uuid`),
-    updateFault('fault_m02_hours_version', 'app.shops', (o) => `NEW.shop_id = '${o.shopId}'::uuid`),
+    deleteFault('fault_shopmgmt_hours_delete', 'app.shop_business_hours', (o) => `OLD.shop_id = '${o.shopId}'::uuid`),
+    insertFault('fault_shopmgmt_hours_insert', 'app.shop_business_hours', (o) => `NEW.shop_id = '${o.shopId}'::uuid`),
+    updateFault('fault_shopmgmt_hours_version', 'app.shops', (o) => `NEW.shop_id = '${o.shopId}'::uuid`),
     ...common('shop.business_hours.replace.v1', 'shop.business_hours.replace.v1'),
   ];
 
   const PROFILE_FAULTS: Fault[] = [
-    updateFault('fault_m02_profile_update', 'app.shops', (o) => `NEW.shop_id = '${o.shopId}'::uuid`),
+    updateFault('fault_shopmgmt_profile_update', 'app.shops', (o) => `NEW.shop_id = '${o.shopId}'::uuid`),
     ...common('shop.profile.update.v1', 'shop.profile.update.v1'),
   ];
 

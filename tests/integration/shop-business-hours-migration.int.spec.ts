@@ -282,7 +282,7 @@ describe('M02-A — Shop business-hours migration', () => {
     it.each([
       ['weekday 0 (there is no all-week value in the database)', 0, 0, 60, 0, 'shop_business_hours_weekday_ck'],
       ['weekday 8', 8, 0, 60, 0, 'shop_business_hours_weekday_ck'],
-      ['start 1440', 1, 1440, 1440, 0, 'shop_business_hours_start_ck'],
+      ['start 1440', 1, 1440, 0, 1, 'shop_business_hours_start_ck'],
       ['negative start', 1, -1, 60, 0, 'shop_business_hours_start_ck'],
       ['end 1441', 1, 0, 1441, 0, 'shop_business_hours_end_ck'],
       ['offset 2', 1, 60, 30, 2, 'shop_business_hours_offset_ck'],
