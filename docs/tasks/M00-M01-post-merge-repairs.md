@@ -1,6 +1,6 @@
 # M00/M01 — post-merge corrective contract and Claude handoff
 
-Date: 2026-10-08. Status: OWNER-AUTHORIZED REPAIR DESIGN; implementation not started.
+Date: 2026-10-08. Status: OWNER-AUTHORIZED REPAIR DESIGN; implementation on DRAFT PR #19, re-audit correction pending.
 Repository: trungtn87/11ship. Verified design base: 307fa3a0175cae1c1c1b8466de0bf606938ee8cc.
 Review reference: c6aab20379249178febb5a0e7c55f72f6df6611a (A2D merge).
 This focused addendum overrides conflicting M00/M01 task/ADR sentences ONLY for the fixes below. Preserve A2 §22: no Driver area registration or GPS onboarding.
@@ -95,3 +95,41 @@ Meaningful regressions must fail on old code and pass on fix; record proof hones
 If local dependency installation remains unavailable, report that and use exact-head GitHub CI; do not call tests locally passed.
 Handoff base, code head, final head, CI URL/status/counts, old tests changed/reasons, timeout resource-disposition proofs, PG session barriers, router matrix, accurate progress gaps.
 Keep PR DRAFT; no merge/Ready or next-module code until independent review. This design PR alone does NOT fix production code.
+
+
+## 6. Re-audit correction: explicit combined PR linkage (P2)
+
+Audit reference: PR #19 head 43a7013e45c0b74ee1eccb4449989f55e5dd4679. Sections 1–3 have no remaining blocking finding from that review; section 4 is incomplete. The current plan pins #19 only as design, so it reports DESIGNING while implementation exists and would report READY_FOR_CLAUDE after merging the implementation. The tests currently encode that wrong projection. Disclosure in evidence does not satisfy accurate progress.
+
+This section authorizes a narrow, explicit exception for the already combined design/repair PR. It does not change the normal design-first workflow or authorize a merge.
+
+### 6.1 Manifest and validation
+
+Add supported optional task field `combined_design_implementation: true`. Absent or false preserves all existing behavior. Validate the field as boolean when present. True is valid ONLY on a leaf with positive integer `design_pr` and `implementation_pr` that are equal. For M01-R1 use both pins = 19 and this flag = true.
+
+Permit the repeated PR pin only for these two fields of that same explicitly combined leaf. A PR reused across tasks, an unflagged duplicate, a combined group, unequal/missing pins, nonpositive/noninteger pins or a pinned-and-ignored PR remain validation errors. Do not infer the exception from titles, authors, labels, code paths or PR bodies. Document the schema extension in the progress README and manifest comments; fixed owner/design/review roles remain unchanged.
+
+### 6.2 Classification and resolution
+
+Classify the one real PR once with an explicit combined role; do not duplicate its dashboard row, task weight, progress total or attention entries. The combined PR supplies both the task's design reference and implementation lifecycle. Keep the factual design lifecycle: an open combined PR does not mean the design has already merged.
+
+For this explicitly combined leaf only, resolve its implementation lifecycle without waiting for that same PR to merge as a separate design gate. Reuse the existing implementation precedence, dependency gates, required-check evaluation and exact-head review binding:
+- Draft with green CI -> CLAUDE_CODING; never DONE.
+- Failing required CI -> CI_FAILED; existing changes-requested precedence stays intact.
+- Ready/non-draft with green CI and no valid bound review -> WAITING_CHATGPT_REVIEW.
+- Review labels without trusted status on the exact current head remain ignored with the existing attention behavior.
+- Valid bound in-progress / changes-requested / pass reviews -> the existing CHATGPT_REVIEW / CHANGES_REQUESTED / READY_TO_MERGE states.
+- Merged with green required checks on its actual head and satisfied dependencies -> DONE exactly once.
+- Merged with failed/missing/pending required checks -> existing CI_FAILED / CI_RUNNING, never DONE.
+- Closed without merge -> CANCELLED PR; task not DONE and not READY_FOR_CLAUDE as though its design had merged.
+- Unsatisfied dependencies remain blocking even for a merged combined PR.
+
+Do not introduce runtime status into plan.yml, weaken review/CI binding, mark open work DONE or fabricate a separate implementation PR. A manual workflow_dispatch check on the exact head is legitimate CI evidence; it is not independent review evidence. Ordinary separate design/implementation tasks must retain their prior behavior.
+
+### 6.3 Regression and handoff
+
+Replace the current-plan test asserting that #19 must be pinned only as design. Add meaningful resolver/validation tests covering the lifecycle above, stale review head after a push, cross-task duplicate rejection, invalid flag/pin combinations, ordinary tasks unchanged and no double counting. Demonstrate the old model's merged-green #19 -> READY_FOR_CLAUDE failure against the corrected expectation, then the repaired result -> DONE; record how the proof was run.
+
+Regenerate the Vietnamese dashboard from real GitHub data. While #19 is Draft, it must identify Claude implementation as in progress (or the actual CI/error state), rather than say Claude has not started. Do not manually patch generated status/percentages or report full M01 completed.
+
+Update repair evidence to remove the deferred linkage gap and accurately record the correction, test mapping, actual code/final heads and CI. Preserve prior audit/CI history. Run progress tests/check plus required repository CI on the new final head. Keep PR #19 Draft, do not merge/mark Ready/start M02 code, and hand back the new SHA and evidence for independent re-audit.
