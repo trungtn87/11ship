@@ -344,3 +344,12 @@ Defaults: max_attempts=5 (1..20), batch_size=10 (1..100), publish_concurrency=10
 ## 14. Audit disposition
 
 v0.3 xử lý B01–B02, H01–H05, M01–M03 ở mức contract; task chứa C17–C30 để chứng minh khi implementation. Đây không phải tuyên bố runtime PASS. Owner duyệt tiếp tục ngày 07/10/2026 sau bản sửa 1cc4f480df146317432fbf154ba7d2ad0692d10d. DESIGN LOCKED, không phải runtime PASS. Chỉ mở C1A0 theo task handoff riêng; không tự merge PR #3.
+
+## 15. Post-merge repair addendum (2026-10-08)
+
+Bổ sung cho §13.1; không viết lại evidence lịch sử. Khi khác §13.1, mục này thắng. Chi tiết và acceptance: [M00-M01-post-merge-repairs](../tasks/M00-M01-post-merge-repairs.md), bằng chứng: [evidence](../evidence/M00-M01-post-merge-repairs.md).
+
+- ROLLBACK và disposition của connection dùng **cùng một** deadline của TransactionManager. Hết budget, còn query đang chạy, trạng thái dirty hoặc lỗi connection thì destroy connection đúng một lần và **không gửi ROLLBACK**. Ngược lại ROLLBACK chạy đua với phần deadline còn lại; hết hạn thì destroy.
+- Lỗi gốc của callback được capture/translate **trước** cleanup; cleanup không đổi được nó. Quy tắc COMMIT-unknown giữ nguyên.
+- Ngân sách <=500 ms của StandaloneAuditRecorder đã gồm cả cleanup.
+- Participant mở session authorization trong transaction (SessionAuthorizationParticipant) theo thứ tự user FOR UPDATE rồi session FOR UPDATE, đọc đồng hồ PostgreSQL sau mọi lock wait; `expiresAt <= now` là hết hạn. Thứ tự lỗi: SESSION_REVOKED, SESSION_EXPIRED, ACCOUNT_DISABLED; session thiếu hoặc không khớp user là SESSION_INVALID.

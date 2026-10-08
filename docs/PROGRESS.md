@@ -11,14 +11,15 @@
 
 | | |
 |---|---|
-| **Task** | **M00-C1B — Audit + ghi Outbox** |
-| **Trạng thái** | 🟦 Sẵn sàng giao Claude (`READY_FOR_CLAUDE`) |
-| **Người phụ trách** | 🔵 **CLAUDE** |
-| **ChatGPT** | Chờ Claude triển khai trước khi kiểm tra |
-| **Claude** | Sẵn sàng triển khai |
+| **Task** | **M01-R1 — Sửa sau merge (session, rollback, router, tiến độ)** |
+| **Trạng thái** | 📐 Đang thiết kế (`DESIGNING`) |
+| **Người phụ trách** | 🟣 **CHATGPT** |
+| **ChatGPT** | Đang thiết kế |
+| **Claude** | Chưa bắt đầu (chưa được mở khóa) |
 | **Chủ dự án** | Không cần thao tác |
 | **Đang bị chặn bởi** | Không |
-| **Điều kiện sang bước tiếp** | PR triển khai (agent:claude, type:implementation, module label) + required CI xanh |
+| **Điều kiện sang bước tiếp** | PR thiết kế sẵn sàng review |
+| **PR đang hoạt động** | PR #19 |
 
 ## Tiến độ
 
@@ -26,9 +27,9 @@ Tính theo trọng số task trong kế hoạch (mỗi task lá = 1 nếu không
 
 | Phạm vi | Hoàn thành / tổng |
 |---|---|
-| Milestone hiện tại — M00 Nền tảng | 3 / 5 (60%) |
-| Toàn bộ — chỉ tính task đã lập kế hoạch (roadmap chưa chốt hết) | 3 / 6 (50%) |
-| Module M01 Xác thực | 0 / 1 (0%) |
+| Milestone hiện tại — M01 Xác thực | 3 / 4 (75%) |
+| Toàn bộ — chỉ tính task đã lập kế hoạch (roadmap chưa chốt hết) | 8 / 9 (88%) |
+| Module M00 Nền tảng | 5 / 5 (100%) |
 
 ## Cây tiến độ
 
@@ -38,14 +39,18 @@ Mũi tên liền là dependency, mũi tên nét đứt là task cha → task con
 flowchart TD
   subgraph M00_box["M00 · Nền tảng"]
     M00_B1["M00-B1<br/>Nền tảng Backend<br/>⚪ —<br/>Hoàn thành (DONE)"]
-    M00_C1["M00-C1 (thiết kế)<br/>Lõi giao dịch<br/>⚪ —<br/>Thiết kế đã khóa (DESIGN_LOCKED)"]
+    M00_C1["M00-C1 (thiết kế)<br/>Lõi giao dịch<br/>⚪ —<br/>Hoàn thành (DONE)"]
     M00_C1A0["M00-C1A0<br/>Giao dịch + primitive dùng chung<br/>⚪ —<br/>Hoàn thành (DONE)"]
     M00_C1A1["M00-C1A1<br/>Chống xử lý lặp (Idempotency)<br/>⚪ —<br/>Hoàn thành (DONE)"]
-    M00_C1B["M00-C1B<br/>Audit + ghi Outbox<br/>🔵 CLAUDE<br/>Sẵn sàng giao Claude (READY_FOR_CLAUDE)"]
-    M00_C1C["M00-C1C<br/>Dispatcher + tích hợp cuối<br/>⚪ —<br/>Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY)"]
+    M00_C1B["M00-C1B<br/>Audit + ghi Outbox<br/>⚪ —<br/>Hoàn thành (DONE)"]
+    M00_C1C["M00-C1C<br/>Dispatcher + tích hợp cuối<br/>⚪ —<br/>Hoàn thành (DONE)"]
   end
   subgraph M01_box["M01 · Xác thực"]
-    M01["M01<br/>Xác thực<br/>⚪ —<br/>Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY)"]
+    M01_A1["M01-A1<br/>Lõi xác thực (Auth Core)<br/>⚪ —<br/>Hoàn thành (DONE)"]
+    M01_A2["M01-A2 (thiết kế)<br/>Onboarding (Quán + Tài xế)<br/>⚪ —<br/>Hoàn thành (DONE)"]
+    M01_A2S["M01-A2S<br/>Onboarding quán (Shop)<br/>⚪ —<br/>Hoàn thành (DONE)"]
+    M01_A2D["M01-A2D<br/>Onboarding tài xế (Driver)<br/>⚪ —<br/>Hoàn thành (DONE)"]
+    M01_R1["M01-R1<br/>Sửa sau merge (session, rollback, router, tiến độ)<br/>🟣 CHATGPT<br/>Đang thiết kế (DESIGNING)"]
   end
 
   M00_B1 --> M00_C1
@@ -53,7 +58,11 @@ flowchart TD
   M00_C1A0 --> M00_C1A1
   M00_C1A1 --> M00_C1B
   M00_C1B --> M00_C1C
-  M00_C1C --> M01
+  M00_C1C --> M01_A1
+  M01_A1 --> M01_A2
+  M01_A2 -.-> M01_A2S
+  M01_A2S --> M01_A2D
+  M01_A2 --> M01_R1
 
   classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
   classDef locked fill:#e0e7ff,stroke:#4338ca,color:#312e81
@@ -64,11 +73,9 @@ flowchart TD
   classDef blocked fill:#f3f4f6,stroke:#9ca3af,color:#4b5563,stroke-dasharray:4 3
   classDef planned fill:#ffffff,stroke:#9ca3af,color:#374151
   classDef focus stroke:#f59e0b,stroke-width:5px
-  class M00_B1,M00_C1A0,M00_C1A1 done
-  class M00_C1 locked
-  class M00_C1B ready
-  class M00_C1C,M01 blocked
-  class M00_C1B focus
+  class M00_B1,M00_C1,M00_C1A0,M00_C1A1,M00_C1B,M00_C1C,M01_A1,M01_A2,M01_A2S,M01_A2D done
+  class M01_R1 planned
+  class M01_R1 focus
 ```
 
 ## Chi tiết công việc
@@ -76,12 +83,16 @@ flowchart TD
 | Task | Trạng thái | Người phụ trách | PR | CI | Head | Dependency | Việc tiếp theo |
 |---|---|---|---|---|---|---|---|
 | M00-B1 · Nền tảng Backend | ✅ Hoàn thành (`DONE`) | — | [#2](https://github.com/trungtn87/11ship/pull/2) | ✅ Đạt (`PASS`) | `55c5d81` | — | — |
-| **M00-C1** thiết kế · Lõi giao dịch | 🔒 Thiết kế đã khóa (`DESIGN_LOCKED`) | — | [#3](https://github.com/trungtn87/11ship/pull/3) | ✅ Đạt (`PASS`) | `de82b15` | B1 Hoàn thành (DONE) | Tiếp tục các task con |
+| **M00-C1** thiết kế · Lõi giao dịch | ✅ Hoàn thành (`DONE`) | — | [#3](https://github.com/trungtn87/11ship/pull/3) | ✅ Đạt (`PASS`) | `de82b15` | B1 Hoàn thành (DONE) | — |
 | &nbsp;&nbsp;M00-C1A0 · Giao dịch + primitive dùng chung | ✅ Hoàn thành (`DONE`) | — | [#4](https://github.com/trungtn87/11ship/pull/4) | ✅ Đạt (`PASS`) | `688e796` | — | — |
 | &nbsp;&nbsp;M00-C1A1 · Chống xử lý lặp (Idempotency) | ✅ Hoàn thành (`DONE`) | — | [#6](https://github.com/trungtn87/11ship/pull/6) | ✅ Đạt (`PASS`) | `44c0fa7` | C1A0 Hoàn thành (DONE) | — |
-| &nbsp;&nbsp;M00-C1B · Audit + ghi Outbox | 🟦 Sẵn sàng giao Claude (`READY_FOR_CLAUDE`) | Claude | — | — | mã main `c6aab20` | C1A1 Hoàn thành (DONE) | Claude triển khai |
-| &nbsp;&nbsp;M00-C1C · Dispatcher + tích hợp cuối | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | C1B Sẵn sàng giao Claude (READY_FOR_CLAUDE) | Chờ C1B |
-| M01 · Xác thực | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | C1C Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY) | Chờ C1C |
+| &nbsp;&nbsp;M00-C1B · Audit + ghi Outbox | ✅ Hoàn thành (`DONE`) | — | [#9](https://github.com/trungtn87/11ship/pull/9) | ✅ Đạt (`PASS`) | `b418fd2` | C1A1 Hoàn thành (DONE) | — |
+| &nbsp;&nbsp;M00-C1C · Dispatcher + tích hợp cuối | ✅ Hoàn thành (`DONE`) | — | [#10](https://github.com/trungtn87/11ship/pull/10) | ✅ Đạt (`PASS`) | `172931b` | C1B Hoàn thành (DONE) | — |
+| M01-A1 · Lõi xác thực (Auth Core) | ✅ Hoàn thành (`DONE`) | — | [#12](https://github.com/trungtn87/11ship/pull/12) | ✅ Đạt (`PASS`) | `ef3afd4` | C1C Hoàn thành (DONE) | — |
+| **M01-A2** thiết kế · Onboarding (Quán + Tài xế) | ✅ Hoàn thành (`DONE`) | — | [#15](https://github.com/trungtn87/11ship/pull/15) | ✅ Đạt (`PASS`) | `c329808` | A1 Hoàn thành (DONE) | — |
+| &nbsp;&nbsp;M01-A2S · Onboarding quán (Shop) | ✅ Hoàn thành (`DONE`) | — | [#16](https://github.com/trungtn87/11ship/pull/16) | ✅ Đạt (`PASS`) | `620333f` | — | — |
+| &nbsp;&nbsp;M01-A2D · Onboarding tài xế (Driver) | ✅ Hoàn thành (`DONE`) | — | [#17](https://github.com/trungtn87/11ship/pull/17) | ✅ Đạt (`PASS`) | `c37082a` | A2S Hoàn thành (DONE) | — |
+| M01-R1 · Sửa sau merge (session, rollback, router, tiến độ) | 📐 Đang thiết kế (`DESIGNING`) | ChatGPT | [#19](https://github.com/trungtn87/11ship/pull/19) | ⏳ Đang chạy (`RUNNING`) | `b62e5f4` | A2 Hoàn thành (DONE) | ChatGPT hoàn tất PR thiết kế #19 |
 
 ## Danh sách Pull Request
 
@@ -97,16 +108,17 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#6](https://github.com/trungtn87/11ship/pull/6) M00-C1A1: Idempotency (draft) | Đã merge (`MERGED`) | M00-C1A1 | triển khai | ✅ Đạt (`PASS`) | `44c0fa7` | được tính |
 | [#7](https://github.com/trungtn87/11ship/pull/7) docs(m03-m04): financial consistency, withdrawal reconcilia… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `645a59b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#8](https://github.com/trungtn87/11ship/pull/8) chore(progress): GitHub-derived project progress dashboard | Đã merge (`MERGED`) | — | hạ tầng | — | `1ce1e50` | ngoài kế hoạch — Ngoài kế hoạch (type:infra) |
-| [#9](https://github.com/trungtn87/11ship/pull/9) M00-C1B: Audit + Outbox write primitives | Đã merge (`MERGED`) | — | — | — | `b418fd2` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#10](https://github.com/trungtn87/11ship/pull/10) feat(outbox): M00-C1C outbox dispatcher + final | Đã merge (`MERGED`) | — | — | — | `172931b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#11](https://github.com/trungtn87/11ship/pull/11) docs(m01-a1): lock Auth Core implementation contract | Đã merge (`MERGED`) | — | — | — | `a17935f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#12](https://github.com/trungtn87/11ship/pull/12) feat(auth): M01-A1 Auth Core (READY CANDIDATE) | Đã merge (`MERGED`) | — | — | — | `ef3afd4` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#9](https://github.com/trungtn87/11ship/pull/9) M00-C1B: Audit + Outbox write primitives | Đã merge (`MERGED`) | M00-C1B | triển khai | ✅ Đạt (`PASS`) | `b418fd2` | được tính |
+| [#10](https://github.com/trungtn87/11ship/pull/10) feat(outbox): M00-C1C outbox dispatcher + final | Đã merge (`MERGED`) | M00-C1C | triển khai | ✅ Đạt (`PASS`) | `172931b` | được tính |
+| [#11](https://github.com/trungtn87/11ship/pull/11) docs(m01-a1): lock Auth Core implementation contract | Đã merge (`MERGED`) | M01-A1 | thiết kế | ✅ Đạt (`PASS`) | `a17935f` | được tính |
+| [#12](https://github.com/trungtn87/11ship/pull/12) feat(auth): M01-A1 Auth Core (READY CANDIDATE) | Đã merge (`MERGED`) | M01-A1 | triển khai | ✅ Đạt (`PASS`) | `ef3afd4` | được tính |
 | [#13](https://github.com/trungtn87/11ship/pull/13) chore(progress): Việt hóa dashboard tiến độ | Đã merge (`MERGED`) | — | hạ tầng | — | `25a62e9` | ngoài kế hoạch — Ngoài kế hoạch (type:infra) |
 | [#14](https://github.com/trungtn87/11ship/pull/14) docs(ui): add Figma workflow and frontend UI gate | Đang mở (`OPEN`) | — | hạ tầng | ✅ Đạt (`PASS`) | `0d16d7b` | ngoài kế hoạch — Ngoài kế hoạch (type:infra) |
-| [#15](https://github.com/trungtn87/11ship/pull/15) docs(m01-a2): lock onboarding contract and task split | Đã merge (`MERGED`) | — | — | — | `c329808` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;); PR không được tính. Trạng thái không bao giờ được suy r… |
-| [#16](https://github.com/trungtn87/11ship/pull/16) feat(onboarding): M01-A2S shop onboarding | Đã merge (`MERGED`) | — | — | — | `620333f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;); PR không được tính. Trạng thái không bao giờ được suy r… |
-| [#17](https://github.com/trungtn87/11ship/pull/17) feat(m01-a2d): DRIVER onboarding (no Driver service area) | Đã merge (`MERGED`) | — | — | — | `c37082a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#15](https://github.com/trungtn87/11ship/pull/15) docs(m01-a2): lock onboarding contract and task split | Đã merge (`MERGED`) | M01-A2 | thiết kế | ✅ Đạt (`PASS`) | `c329808` | được tính |
+| [#16](https://github.com/trungtn87/11ship/pull/16) feat(onboarding): M01-A2S shop onboarding | Đã merge (`MERGED`) | M01-A2S | triển khai | ✅ Đạt (`PASS`) | `620333f` | được tính |
+| [#17](https://github.com/trungtn87/11ship/pull/17) feat(m01-a2d): DRIVER onboarding (no Driver service area) | Đã merge (`MERGED`) | M01-A2D | triển khai | ✅ Đạt (`PASS`) | `c37082a` | được tính |
 | [#18](https://github.com/trungtn87/11ship/pull/18) docs(m02-a): hồ sơ quán và tự động hoạt động theo giờ | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `ebb0f3a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#19](https://github.com/trungtn87/11ship/pull/19) docs(m00-m01): session authorization, bounded rollback, rou… | Bản nháp (`DRAFT`) | M01-R1 | thiết kế | ⏳ Đang chạy (`RUNNING`) | `b62e5f4` | được tính |
 
 ## ⚠️ Cần chú ý
 

@@ -842,3 +842,11 @@ Start from reviewed head `48ea24887009fc432b5077bdff4786eedab35524` plus the des
 4. **F3:** rewrite evidence mapping against section 22 and actual test names. Correct the historical final-head run 37721442229 at 48ea248: unit 1051/1051; local integration 615 passed + 1 pending out of 616; CI integration 616/616, no pending. Report fresh counts separately, do not carry old totals forward.
 5. Run required lint/typecheck/build/migration smoke/unit/integration local and CI modes; verify Shop/Auth regression. Local toolchain/network limitations must be reported honestly; GitHub CI evidence is acceptable.
 6. Update PR title/body around the final no-area implementation and evidence. Handoff: base, code head, final head, exact-SHA final CI URL/status/counts, changed old tests/reasons, acceptance mapping and migration amendment scope. No PASS or DONE claim before independent audit.
+
+## 24. Post-merge repair addendum (2026-10-08)
+
+Bổ sung cho §8, §10 và §12; không viết lại evidence lịch sử ([A2S](../evidence/M01-A2S.md), [A2D](../evidence/M01-A2D.md)). Chi tiết: [M00-M01-post-merge-repairs §1](M00-M01-post-merge-repairs.md).
+
+- Mọi lệnh onboarding (shop save, shop complete, driver create) và replay nhạy cảm xác thực lại user VÀ session HIỆN TẠI bên trong transaction nghiệp vụ: user FOR UPDATE, session FOR UPDATE, rồi đồng hồ PostgreSQL mới; replay chạy cùng participant trước khi decrypt. SessionAuthGuard chỉ còn là precheck.
+- `sessionId` không thuộc scope, replay guard hay logical request; session thay thế hợp lệ của cùng user vẫn replay được, session đã revoke hoặc hết hạn thì không.
+- `RoleGrantParticipant.grant()` không còn tự khóa user; user lock nằm ở participant trên.

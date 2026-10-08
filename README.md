@@ -9,7 +9,11 @@
 
 ## Tiến độ hiện tại
 
-Nền backend M00-B1 (NestJS bootstrap, cấu hình, pool PostgreSQL, migration, health endpoints, error/log contract, test và CI) đã **nghiệm thu PASS F01–F09** trên Node 24.21.0, npm 11.9.0 và PostgreSQL 17.11. CI xác nhận 54 unit test + 28 integration test đều PASS; `package-lock.json` thật đã được commit và `npm ci` không làm thay đổi lockfile. Xem [docs/evidence/M00-B1.md](docs/evidence/M00-B1.md). Chưa có migration nghiệp vụ và chưa có bản app cho Owner test.
+Đã triển khai và merge: nền backend M00-B1, lõi giao dịch M00-C1 (transaction, idempotency, audit + outbox ghi, outbox dispatcher), Auth Core M01-A1, và onboarding M01-A2 (A2S quán, A2D tài xế). Gói sửa sau merge M00/M01 ([PR #19](docs/tasks/M00-M01-post-merge-repairs.md)) đang ở trạng thái **DRAFT**, chưa merge; xem trạng thái thật ở [docs/PROGRESS.md](docs/PROGRESS.md), không ở file này.
+
+Chưa có (cố ý hoãn): logout và khôi phục tài khoản, ADMIN/SYSTEM/2FA, SMS production, publisher/worker chạy thật cho outbox, và dọn dẹp theo lịch (scheduled cleanup). Chưa có bản app cho Owner test.
+
+Bằng chứng: [M00-B1](docs/evidence/M00-B1.md), [M01-A1](docs/evidence/M01-A1.md), [M01-A2S](docs/evidence/M01-A2S.md), [M01-A2D](docs/evidence/M01-A2D.md).
 
 - [Quyết định nền backend](docs/current/ADR-001-backend-foundation.md)
 - [Quyết định session và password](docs/current/ADR-002-auth-security-foundation.md)
@@ -23,7 +27,6 @@ Nền backend M00-B1 (NestJS bootstrap, cấu hình, pool PostgreSQL, migration,
 
 ChatGPT thiết kế, chia task và review. Claude code từng task. Owner test nghiệp vụ và duyệt. Mỗi gói dùng nhánh riêng, giữ base/head commit và bằng chứng test. Chưa merge khi chưa PASS.
 
-Trạng thái M00-B1: PR #1 (thiết kế, ADR, task) **đã merge vào `main`**. PR #2 (code M00-B1) đã target `main`, F01–F09 PASS, **chưa merge** và đang chờ final review. M00-C1 chưa bắt đầu; sau M00-B1 sẽ là M00-C1 (transaction context/idempotency/audit/outbox), rồi M01-A1 (Auth Core).
 
 ## Chạy backend ở máy phát triển
 
@@ -134,4 +137,4 @@ Xem [.env.example](.env.example). Thiếu hoặc sai biến thì tiến trình t
 
 ### Phạm vi hiện tại
 
-Chỉ có nền backend: health endpoints, cấu hình, pool, migration runner, error contract. Chưa có Auth, Shop, Driver, Wallet, Delivery, frontend, SMS hay triển khai production. Hướng dẫn sao lưu/khôi phục ở [ops/runbooks](ops/runbooks/database-backup-restore-guidance.md) chỉ là hướng dẫn cho tương lai, chưa được kiểm thử.
+Backend gồm nền M00 (health, cấu hình, pool, migration, error contract, transaction, idempotency, audit/outbox), Auth Core (M01-A1) và onboarding Shop/Driver (M01-A2). Chưa có Wallet, Delivery, frontend, SMS hay triển khai production, và các mục hoãn nêu ở phần Tiến độ hiện tại. Hướng dẫn sao lưu/khôi phục ở [ops/runbooks](ops/runbooks/database-backup-restore-guidance.md) chỉ là hướng dẫn cho tương lai, chưa được kiểm thử.

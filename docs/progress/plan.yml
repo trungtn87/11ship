@@ -126,6 +126,7 @@ tasks:
     review_role: CHATGPT
     depends_on:
       - M00-C1A0
+    implementation_pr: 6
     evidence: docs/evidence/M00-C1A1.md
 
   - id: M00-C1B
@@ -140,6 +141,8 @@ tasks:
     review_role: CHATGPT
     depends_on:
       - M00-C1A1
+    implementation_pr: 9
+    evidence: docs/evidence/M00-C1B.md
 
   - id: M00-C1C
     module: M00
@@ -153,10 +156,12 @@ tasks:
     review_role: CHATGPT
     depends_on:
       - M00-C1B
+    implementation_pr: 10
+    evidence: docs/evidence/M00-C1C.md
 
-  - id: M01
+  - id: M01-A1
     module: M01
-    title: Authentication
+    title: Auth Core
     kind: leaf
     parent: null
     order: 30
@@ -167,3 +172,72 @@ tasks:
     depends_on:
       - M00-C1C
     requires_main_ci_green: true
+    design_pr: 11
+    implementation_pr: 12
+    acceptance: docs/tasks/M01-A1-auth-core.md
+    evidence: docs/evidence/M01-A1.md
+
+  - id: M01-A2
+    module: M01
+    title: Onboarding (Shop + Driver)
+    kind: group
+    parent: null
+    order: 40
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-A1
+    design_pr: 15
+    acceptance: docs/tasks/M01-A2-onboarding.md
+
+  - id: M01-A2S
+    module: M01
+    title: Shop onboarding
+    kind: leaf
+    parent: M01-A2
+    order: 41
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on: []
+    implementation_pr: 16
+    acceptance: docs/tasks/M01-A2-onboarding.md
+    evidence: docs/evidence/M01-A2S.md
+
+  - id: M01-A2D
+    module: M01
+    title: Driver onboarding
+    kind: leaf
+    parent: M01-A2
+    order: 42
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-A2S
+    implementation_pr: 17
+    acceptance: docs/tasks/M01-A2-onboarding.md
+    evidence: docs/evidence/M01-A2D.md
+
+  # Corrective work after the M00/M01 merges (session authorization inside onboarding transactions, bounded
+  # rollback, effective active role, progress accuracy). PR #19 carries the design document AND the repair
+  # code, so it is pinned once, as the design PR. The task stays open (not DONE) until the Owner decides how the
+  # repair is merged; no implementation PR is pinned and none is invented.
+  - id: M01-R1
+    module: M01
+    title: Post-merge repairs (session, rollback, router, progress)
+    kind: leaf
+    parent: null
+    order: 50
+    weight: 1
+    owner_role: CLAUDE
+    design_role: CHATGPT
+    review_role: CHATGPT
+    depends_on:
+      - M01-A2
+    design_pr: 19
+    acceptance: docs/tasks/M00-M01-post-merge-repairs.md
+    evidence: docs/evidence/M00-M01-post-merge-repairs.md
