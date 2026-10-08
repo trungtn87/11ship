@@ -70,7 +70,7 @@ describe('M02-A — Shop management fault matrix', () => {
   ];
 
   const OLD_SCHEDULE = [interval(1, 480, 720), interval(2, 480, 720)];
-  const NEW_SCHEDULE = [interval(3, 600, 900), interval(4, 1080, 120, 1), interval(5, 0, 1440)];
+  const NEW_SCHEDULE = [interval(3, 600, 900), interval(4, 1080, 120, 1), interval(6, 0, 1440)];
 
   describe('business hours replacement', () => {
     for (const fault of HOURS_FAULTS) {
