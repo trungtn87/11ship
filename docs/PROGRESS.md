@@ -111,7 +111,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#21](https://github.com/trungtn87/11ship/pull/21) feat(shop): M02-A shop management backend (draft) | Đã merge (`MERGED`) | — | — | — | `c7f0d5b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#22](https://github.com/trungtn87/11ship/pull/22) design(M00-D): Render Free + Supabase staging | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `a846a68` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#23](https://github.com/trungtn87/11ship/pull/23) design(M02-A-UI): shop profile and weekly schedule screens | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `8a0bafe` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#24](https://github.com/trungtn87/11ship/pull/24) design(M01-FE0): responsive frontend foundation and session… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `ef29717` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#24](https://github.com/trungtn87/11ship/pull/24) design(M01-FE0): responsive frontend foundation and session… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `ef29717` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
