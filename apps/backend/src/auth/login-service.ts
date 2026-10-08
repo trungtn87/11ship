@@ -3,6 +3,7 @@ import { AuditWriter } from '../audit/audit-writer';
 import { StandaloneAuditRecorder } from '../audit/standalone-audit-recorder';
 import { AppError } from '../common/app-errors';
 import { AuthConfig } from '../config/auth-config';
+import { DriverEligibilityReader } from '../driver/driver-eligibility-reader';
 import { ShopEligibilityReader } from '../shop/shop-eligibility-reader';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { roleContext } from './available-roles';
@@ -43,6 +44,7 @@ export class LoginService {
     @Inject(AUTH_CONFIG) private readonly config: AuthConfig,
     @Inject(PASSWORD_HASHER) private readonly hasher: PasswordHasher,
     private readonly shops: ShopEligibilityReader,
+    private readonly drivers: DriverEligibilityReader,
   ) {}
 
   async login(input: LoginInput, requestId: string): Promise<LoginResult> {
@@ -72,10 +74,16 @@ export class LoginService {
         device: input.device,
         ttlSeconds: this.config.sessionTtlSeconds,
       });
-      // The roles the user can actually select (SHOP only with an ACTIVE owned shop) and the two flags, from
-      // the same rule /me uses (see roleContext). A new session has no active role.
+      // The roles the user can actually select (SHOP only with an ACTIVE owned shop, DRIVER only with a Driver
+      // profile that is not CLOSED) and the two flags, from the same rule /me uses (see roleContext). A new
+      // session has no active role.
       const held = await this.users.supportedRoles(context, locked.userId);
-      const roles = roleContext(held, await this.shops.ownerShopEligibility(context, locked.userId), null);
+      const roles = roleContext(
+        held,
+        await this.shops.ownerShopEligibility(context, locked.userId),
+        await this.drivers.ownerDriverEligibility(context, locked.userId),
+        null,
+      );
       await this.audit.append(context, {
         requestId,
         actorType: 'USER',

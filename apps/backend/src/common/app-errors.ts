@@ -56,6 +56,11 @@ export const APP_ERROR_DEFINITIONS = {
   SHOP_PROFILE_INCOMPLETE: { status: 409, message: 'The shop profile is not ready to be completed' },
   INVALID_SERVICE_AREA: { status: 400, message: 'The service area is not valid' },
   VERSION_CONFLICT: { status: 409, message: 'The resource was changed by another request' },
+
+  // Driver onboarding (M01-A2D, task section 14). Same rule: fixed messages that echo nothing the client sent
+  // and reveal nothing about any other account. INVALID_SERVICE_AREA (above) also serves the Driver areas.
+  DRIVER_PROFILE_EXISTS: { status: 409, message: 'A driver profile already exists for this account' },
+  DRIVER_PENDING_APPROVAL: { status: 403, message: 'The driver profile is waiting for approval' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;

@@ -6,11 +6,14 @@
 export const ONBOARDING_SCOPE_TYPE = 'user';
 export const SHOP_PROFILE_SAVE_OPERATION_ID = 'onboarding.shop.profile.save.v1';
 export const SHOP_COMPLETE_OPERATION_ID = 'onboarding.shop.complete.v1';
+/** Driver self-onboarding (M01-A2D). Same scope rule: the authenticated user, never a client value. */
+export const DRIVER_CREATE_OPERATION_ID = 'onboarding.driver.create.v1';
 
 /** Audit action names (dotted, versioned). */
 export const ONBOARDING_AUDIT_ACTIONS = Object.freeze({
   shopProfileSave: 'onboarding.shop.profile.save.v1',
   shopComplete: 'onboarding.shop.complete.v1',
+  driverCreate: 'onboarding.driver.create.v1',
 });
 
 /** Resource kind of the audit rows and outbox events of a shop. */
@@ -28,3 +31,25 @@ export const SHOP_NAME_MAX_LENGTH = 120;
 export const SHOP_ZALO_MAX_LENGTH = 160;
 export const SHOP_FACEBOOK_MAX_LENGTH = 300;
 export const SHOP_ADDRESS_MAX_LENGTH = 500;
+
+/** Resource kind of the audit rows and outbox events of a driver. */
+export const DRIVER_RESOURCE_TYPE = 'driver';
+
+/**
+ * Outbox event of a created Driver profile. Its payload is exactly {"driver_id","user_id"}: no name, no plate
+ * number, no service area and nothing the client sent.
+ */
+export const DRIVER_ONBOARDED_EVENT_TYPE = 'driver.onboarded.v1';
+export const DRIVER_ONBOARDED_EVENT_SCHEMA_VERSION = 1;
+
+/** Column widths of app.drivers. Text is counted in characters (code points), as varchar(n) counts them. */
+export const DRIVER_FULL_NAME_MAX_LENGTH = 120;
+export const DRIVER_PLATE_NUMBER_MAX_LENGTH = 32;
+
+/**
+ * Upper bound on service_area_ids in one request. The A2 contract asks for "at least one unique ACTIVE area" and
+ * names no maximum; the bound only keeps one request from holding an unbounded number of row locks and
+ * statements inside one transaction. It is generous for a real driver and is a validation limit, not a rule
+ * about how many areas a driver may ever serve. Owner review item.
+ */
+export const DRIVER_SERVICE_AREAS_MAX = 50;

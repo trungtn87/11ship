@@ -2,10 +2,13 @@ import { describe, expect, it } from '@jest/globals';
 import { AuditWriter } from '../audit/audit-writer';
 import { StandaloneAuditRecorder } from '../audit/standalone-audit-recorder';
 import { AppError } from '../common/app-errors';
+import { DriverEligibilityReader } from '../driver/driver-eligibility-reader';
+import { OwnerDriverEligibility } from '../driver/driver-types';
 import { ShopEligibilityReader } from '../shop/shop-eligibility-reader';
 import { OwnerShopEligibility } from '../shop/shop-types';
 import { OtpHmacKey } from '../config/auth-config';
 import { AuthConfig } from '../config/auth-config';
+import { codeOf as sourceOf } from '../shared/source-scan.fixture';
 import { fakeTransactions } from './auth-fakes.fixture';
 import { LoginService } from './login-service';
 import { PasswordHasher } from './password-hasher';
@@ -33,6 +36,14 @@ const INPUT = {
 };
 const REQUEST_ID = '223e4567-e89b-42d3-a456-426614174000';
 
+const NOT_STARTED_SHOP: OwnerShopEligibility = { onboarding: 'NOT_STARTED', selectable: false };
+const NO_DRIVER: OwnerDriverEligibility = { onboarding: 'NOT_STARTED', selectable: false };
+const PENDING: OwnerDriverEligibility = { onboarding: 'PENDING_APPROVAL', selectable: true };
+const DRIVER_ACTIVE: OwnerDriverEligibility = { onboarding: 'ACTIVE', selectable: true };
+const SUSPENDED: OwnerDriverEligibility = { onboarding: 'SUSPENDED', selectable: true };
+const CLOSING: OwnerDriverEligibility = { onboarding: 'CLOSING', selectable: true };
+const CLOSED: OwnerDriverEligibility = { onboarding: 'CLOSED', selectable: false };
+
 interface Rig {
   service: LoginService;
   calls: string[];
@@ -47,6 +58,8 @@ function rig(options: {
   passwordOk?: boolean;
   roles?: string[];
   shop?: OwnerShopEligibility;
+  /** Default: no Driver profile. A test that holds the DRIVER role states the profile it holds. */
+  driver?: OwnerDriverEligibility;
 }): Rig {
   const { manager, state } = fakeTransactions();
   const calls: string[] = [];
@@ -71,6 +84,9 @@ function rig(options: {
   const shops = {
     ownerShopEligibility: async () => options.shop ?? { onboarding: 'COMPLETED', selectable: true },
   } as unknown as ShopEligibilityReader;
+  const drivers = {
+    ownerDriverEligibility: async () => options.driver ?? { onboarding: 'NOT_STARTED', selectable: false },
+  } as unknown as DriverEligibilityReader;
   const hasher: PasswordHasher = {
     hash: async () => 'never',
     verify: async () => {
@@ -81,7 +97,7 @@ function rig(options: {
       calls.push(state.inTransaction ? 'dummy(in-tx)' : 'dummy');
     },
   };
-  return { service: new LoginService(manager, users, sessions, audit, recorder, CONFIG, hasher, shops), calls, state, audits, denials };
+  return { service: new LoginService(manager, users, sessions, audit, recorder, CONFIG, hasher, shops, drivers), calls, state, audits, denials };
 }
 
 async function codeOf(run: () => Promise<unknown>): Promise<string> {
@@ -132,7 +148,7 @@ describe('LoginService (task section 11)', () => {
   });
 
   it('with roles: returns them, selects none and asks for role selection', async () => {
-    const r = rig({ roles: ['DRIVER', 'SHOP'] });
+    const r = rig({ roles: ['DRIVER', 'SHOP'], driver: PENDING });
     const result = await r.service.login(INPUT, REQUEST_ID);
     expect(result.available_roles).toEqual(['DRIVER', 'SHOP']);
     expect(result.active_role).toBeNull();
@@ -141,9 +157,35 @@ describe('LoginService (task section 11)', () => {
   });
 
   it('a SHOP role without an ACTIVE owned shop is not offered at login', async () => {
-    const r = rig({ roles: ['DRIVER', 'SHOP'], shop: { onboarding: 'INCOMPLETE', selectable: false } });
+    const r = rig({ roles: ['DRIVER', 'SHOP'], shop: { onboarding: 'INCOMPLETE', selectable: false }, driver: PENDING });
     const result = await r.service.login(INPUT, REQUEST_ID);
     expect(result.available_roles).toEqual(['DRIVER']);
+  });
+
+  it('a DRIVER role without a Driver profile (stray) or with a CLOSED one is not offered at login', async () => {
+    for (const driver of [NO_DRIVER, CLOSED]) {
+      const result = await rig({ roles: ['DRIVER', 'SHOP'], driver }).service.login(INPUT, REQUEST_ID);
+      expect([driver.onboarding, result.available_roles]).toEqual([driver.onboarding, ['SHOP']]);
+    }
+  });
+
+  it('a PENDING, ACTIVE, SUSPENDED or CLOSING Driver profile is offered at login (selectable is not "may take deliveries")', async () => {
+    for (const driver of [PENDING, DRIVER_ACTIVE, SUSPENDED, CLOSING]) {
+      const result = await rig({ roles: ['DRIVER'], shop: NOT_STARTED_SHOP, driver }).service.login(INPUT, REQUEST_ID);
+      expect([driver.onboarding, result.available_roles, result.onboarding_required, result.role_selection_required]).toEqual([
+        driver.onboarding,
+        ['DRIVER'],
+        false,
+        true,
+      ]);
+    }
+  });
+
+  it('reads the Driver eligibility inside the login transaction, after the user lock, through the owner port only', () => {
+    const code = sourceOf('auth/login-service.ts');
+    expect(code).toContain('this.drivers.ownerDriverEligibility(context');
+    expect(code.indexOf('this.users.lockById(')).toBeLessThan(code.indexOf('this.drivers.ownerDriverEligibility('));
+    expect(code).not.toMatch(/app\.drivers|driver_service_areas/);
   });
 
   it('reports the same onboarding / role-selection flags as /me for every shop state (A2S review addendum)', async () => {
@@ -151,19 +193,23 @@ describe('LoginService (task section 11)', () => {
     const INCOMPLETE: OwnerShopEligibility = { onboarding: 'INCOMPLETE', selectable: false };
     const ACTIVE: OwnerShopEligibility = { onboarding: 'COMPLETED', selectable: true };
     const DISABLED: OwnerShopEligibility = { onboarding: 'COMPLETED', selectable: false };
-    const cases: Array<[string, string[], OwnerShopEligibility, string[], boolean, boolean]> = [
-      ['no role, NOT_STARTED', [], NOT_STARTED, [], true, false],
-      ['stray SHOP, NOT_STARTED', ['SHOP'], NOT_STARTED, [], true, false],
-      ['INCOMPLETE', [], INCOMPLETE, [], true, false],
-      ['stray SHOP, INCOMPLETE', ['SHOP'], INCOMPLETE, [], true, false],
-      ['ACTIVE', ['SHOP'], ACTIVE, ['SHOP'], false, true],
+    const cases: Array<[string, string[], OwnerShopEligibility, OwnerDriverEligibility, string[], boolean, boolean]> = [
+      ['no role, NOT_STARTED', [], NOT_STARTED, NO_DRIVER, [], true, false],
+      ['stray SHOP, NOT_STARTED', ['SHOP'], NOT_STARTED, NO_DRIVER, [], true, false],
+      ['INCOMPLETE', [], INCOMPLETE, NO_DRIVER, [], true, false],
+      ['stray SHOP, INCOMPLETE', ['SHOP'], INCOMPLETE, NO_DRIVER, [], true, false],
+      ['ACTIVE', ['SHOP'], ACTIVE, NO_DRIVER, ['SHOP'], false, true],
       // Completed but DISABLED: nothing to select and nothing to onboard.
-      ['DISABLED', ['SHOP'], DISABLED, [], false, false],
-      ['DRIVER + DISABLED', ['DRIVER', 'SHOP'], DISABLED, ['DRIVER'], false, true],
-      ['DRIVER, NOT_STARTED', ['DRIVER'], NOT_STARTED, ['DRIVER'], false, true],
+      ['DISABLED', ['SHOP'], DISABLED, NO_DRIVER, [], false, false],
+      ['DRIVER + DISABLED', ['DRIVER', 'SHOP'], DISABLED, PENDING, ['DRIVER'], false, true],
+      ['DRIVER, NOT_STARTED shop', ['DRIVER'], NOT_STARTED, PENDING, ['DRIVER'], false, true],
+      // A2D: a stray DRIVER role is hidden and still needs onboarding; a CLOSED profile is hidden and does not.
+      ['stray DRIVER', ['DRIVER'], NOT_STARTED, NO_DRIVER, [], true, false],
+      ['CLOSED driver, NOT_STARTED shop', ['DRIVER'], NOT_STARTED, CLOSED, [], false, false],
+      ['CLOSED driver + ACTIVE shop', ['DRIVER', 'SHOP'], ACTIVE, CLOSED, ['SHOP'], false, true],
     ];
-    for (const [name, roles, shop, available, onboardingRequired, selectionRequired] of cases) {
-      const result = await rig({ roles, shop }).service.login(INPUT, REQUEST_ID);
+    for (const [name, roles, shop, driver, available, onboardingRequired, selectionRequired] of cases) {
+      const result = await rig({ roles, shop, driver }).service.login(INPUT, REQUEST_ID);
       expect([name, result.available_roles, result.onboarding_required, result.role_selection_required]).toEqual([
         name,
         available,
