@@ -202,6 +202,74 @@ export class ShopRepository {
   }
 
   /**
+   * Replaces the profile of an ACTIVE shop at exactly `expectedVersion` (M02-A) and returns the new version. Like
+   * updateDraft, the WHERE clause repeats the status and version the caller verified under the shop lock: it is a
+   * second guard, and an update that touches no row is a broken invariant, not a business answer. The status, the
+   * legacy accepting_orders column and the ownership are never written here; the database still refuses an ACTIVE
+   * shop without a pickup point and a service area.
+   */
+  async updateActiveProfile(
+    context: TransactionContext,
+    shopId: string,
+    expectedVersion: number,
+    profile: ShopProfileFields,
+  ): Promise<number> {
+    const result = await context.query<{ version: string }>(
+      `UPDATE app.shops
+          SET name = $3,
+              contact_phone_normalized = $4,
+              zalo = $5,
+              facebook = $6,
+              address_text = $7,
+              pickup_lat = $8::double precision,
+              pickup_lng = $9::double precision,
+              service_area_id = $10::uuid,
+              version = version + 1,
+              updated_at = date_trunc('milliseconds', clock_timestamp())
+        WHERE shop_id = $1::uuid AND status = 'ACTIVE' AND version = $2::bigint
+        RETURNING version`,
+      [
+        shopId,
+        expectedVersion,
+        profile.name,
+        profile.contactPhoneNormalized,
+        profile.zalo,
+        profile.facebook,
+        profile.addressText,
+        profile.pickupLat,
+        profile.pickupLng,
+        profile.serviceAreaId,
+      ],
+    );
+    const row = result.rows[0];
+    if (result.rowCount !== 1 || row === undefined) {
+      throw new TechnicalError('internal', 'Shop profile was not updated');
+    }
+    return toSafeInteger(row.version);
+  }
+
+  /**
+   * Advances the shared version of an ACTIVE shop by exactly one (a business-hours replacement changes no profile
+   * column, but profile and hours share ONE version) and returns it. The WHERE clause repeats the status and version
+   * the caller verified under lock; an update that touches no row is a broken invariant.
+   */
+  async advanceVersion(context: TransactionContext, shopId: string, expectedVersion: number): Promise<number> {
+    const result = await context.query<{ version: string }>(
+      `UPDATE app.shops
+          SET version = version + 1,
+              updated_at = date_trunc('milliseconds', clock_timestamp())
+        WHERE shop_id = $1::uuid AND status = 'ACTIVE' AND version = $2::bigint
+        RETURNING version`,
+      [shopId, expectedVersion],
+    );
+    const row = result.rows[0];
+    if (result.rowCount !== 1 || row === undefined) {
+      throw new TechnicalError('internal', 'Shop version was not advanced');
+    }
+    return toSafeInteger(row.version);
+  }
+
+  /**
    * INCOMPLETE -> ACTIVE at exactly `expectedVersion`, still not accepting orders, and returns the new
    * version. The database also refuses an ACTIVE shop without a pickup point and a service area.
    */

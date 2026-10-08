@@ -21,3 +21,28 @@ export interface OwnerShopEligibility {
   readonly onboarding: ShopOnboardingState;
   readonly selectable: boolean;
 }
+
+/**
+ * Why a shop is ONLINE or OFFLINE (M02-A, task section 5). The order is the precedence: the first condition that
+ * holds is the reason. ONLINE means every condition holds.
+ */
+export const AVAILABILITY_REASONS = [
+  'SHOP_DISABLED',
+  'SHOP_INCOMPLETE',
+  'SERVICE_AREA_INACTIVE',
+  'NO_BUSINESS_HOURS',
+  'OUTSIDE_BUSINESS_HOURS',
+  'ONLINE',
+] as const;
+export type AvailabilityReason = (typeof AVAILABILITY_REASONS)[number];
+
+/**
+ * The computed availability of a shop at one instant of the PostgreSQL clock. It is never stored: nothing marks a
+ * shop open or closed, so nothing has to run when the schedule says a shop opens or closes.
+ */
+export interface ShopAvailability {
+  readonly online: boolean;
+  readonly reason: AvailabilityReason;
+  /** ISO 8601 UTC, millisecond precision: the instant the membership test used. */
+  readonly evaluatedAt: string;
+}

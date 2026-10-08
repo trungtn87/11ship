@@ -61,6 +61,14 @@ export const APP_ERROR_DEFINITIONS = {
   // and reveal nothing about any other account. INVALID_SERVICE_AREA (above) also serves the Driver areas.
   DRIVER_PROFILE_EXISTS: { status: 409, message: 'A driver profile already exists for this account' },
   DRIVER_PENDING_APPROVAL: { status: 403, message: 'The driver profile is waiting for approval' },
+
+  // Shop management (M02-A, task section 7). Same rule: fixed messages that echo nothing the client sent and reveal
+  // nothing about any other account. SESSION_*, ACCOUNT_DISABLED, INVALID_SERVICE_AREA, SHOP_PROFILE_INCOMPLETE and
+  // VERSION_CONFLICT (above) are reused unchanged.
+  SHOP_NOT_FOUND: { status: 404, message: 'No shop was found for this account' },
+  SHOP_ROLE_REQUIRED: { status: 403, message: 'The shop role is required for this request' },
+  SHOP_DISABLED: { status: 403, message: 'The shop is disabled' },
+  INVALID_BUSINESS_HOURS: { status: 400, message: 'The business hours are not valid' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;

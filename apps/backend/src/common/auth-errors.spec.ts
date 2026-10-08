@@ -37,6 +37,41 @@ const DRIVER_ONBOARDING_ERRORS: ReadonlyArray<readonly [string, number]> = [
   ['DRIVER_PENDING_APPROVAL', 403],
 ];
 
+// M02-A (task section 7): the four codes Shop management adds. SESSION_*, ACCOUNT_DISABLED, INVALID_SERVICE_AREA,
+// SHOP_PROFILE_INCOMPLETE and VERSION_CONFLICT are reused, not redefined.
+const SHOP_MANAGEMENT_ERRORS: ReadonlyArray<readonly [string, number]> = [
+  ['SHOP_NOT_FOUND', 404],
+  ['SHOP_ROLE_REQUIRED', 403],
+  ['SHOP_DISABLED', 403],
+  ['INVALID_BUSINESS_HOURS', 400],
+];
+
+describe('Shop management error registry (M02-A)', () => {
+  it('registers exactly the four new codes with the locked statuses and clean fixed messages', () => {
+    for (const [code, status] of SHOP_MANAGEMENT_ERRORS) {
+      const definition = (APP_ERROR_DEFINITIONS as Record<string, { status: number; message: string }>)[code];
+      expect([code, definition?.status]).toEqual([code, status]);
+      expect(definition?.message).not.toMatch(/[{}$%<>]|undefined|null|constraint|shops?_|uuid/i);
+    }
+  });
+
+  it('is serialized through the standard envelope with empty details', () => {
+    for (const [code, status] of SHOP_MANAGEMENT_ERRORS) {
+      const classified = classifyException(new AppError(code as keyof typeof APP_ERROR_DEFINITIONS));
+      expect([classified.status, classified.code]).toEqual([status, code]);
+      expect(buildErrorBody(classified, '123e4567-e89b-42d3-a456-426614174000').error.details).toEqual({});
+    }
+  });
+
+  it('reuses the existing session, account, area, completeness and version codes unchanged', () => {
+    expect(APP_ERROR_DEFINITIONS.SHOP_PROFILE_INCOMPLETE.status).toBe(409);
+    expect(APP_ERROR_DEFINITIONS.ACCOUNT_DISABLED.status).toBe(403);
+    expect(APP_ERROR_DEFINITIONS.INVALID_SERVICE_AREA.status).toBe(400);
+    expect(APP_ERROR_DEFINITIONS.VERSION_CONFLICT.status).toBe(409);
+    expect(APP_ERROR_DEFINITIONS.SESSION_REVOKED.status).toBe(401);
+  });
+});
+
 describe('Driver onboarding error registry (M01-A2D)', () => {
   it('registers the two new codes with the locked statuses and clean fixed messages', () => {
     for (const [code, status] of DRIVER_ONBOARDING_ERRORS) {

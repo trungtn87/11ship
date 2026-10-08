@@ -15,6 +15,9 @@ export interface SessionActor {
   readonly sessionId: string;
 }
 
+/** The only context the Shop variants accept (the value of sessions.active_role and of user_roles.role). */
+const SHOP_ROLE = 'SHOP';
+
 /** What a reader gets back from the shared variant: the session's CURRENT active role. */
 export interface AuthorizedSessionState {
   readonly activeRole: string | null;
@@ -35,8 +38,10 @@ export interface AuthorizedSessionState {
  *
  * Error precedence for an existing session of this user: SESSION_REVOKED, then SESSION_EXPIRED, then
  * ACCOUNT_DISABLED. A missing user, a missing session and a session of ANOTHER user are all SESSION_INVALID,
- * so the answer never discloses whether a foreign session exists. No role is required: onboarding is what
- * earns the first role.
+ * so the answer never discloses whether a foreign session exists. The onboarding variants require no role:
+ * onboarding is what earns the first role. The two SHOP variants (M02-A) additionally require the CURRENT context
+ * to be SHOP, decided from the LOCKED session row and the current user_roles row, never from the guard's earlier
+ * principal; they run after the session checks, so SESSION_* and ACCOUNT_DISABLED keep their precedence.
  */
 @Injectable()
 export class SessionAuthorizationParticipant {
@@ -71,6 +76,47 @@ export class SessionAuthorizationParticipant {
       throw new AppError('SESSION_INVALID');
     }
     return { activeRole: session.activeRole };
+  }
+
+  /**
+   * For a Shop command that writes (M02-A): the same locks and the same session decision as lockAuthorizedActor
+   * (user FOR UPDATE, then the CURRENT session FOR UPDATE, fresh database clock after both waits), and then the
+   * caller must be in the SHOP context: the active role stored on the LOCKED session row is SHOP and the user holds
+   * the SHOP role now. Anything else is SHOP_ROLE_REQUIRED (roleless, DRIVER context, a revoked role). The caller
+   * proves ownership of a shop afterwards, under the membership and shop locks.
+   */
+  async lockAuthorizedShopActor(context: TransactionContext, actor: SessionActor): Promise<void> {
+    assertActorShape(actor);
+    const user = await this.users.lockById(context, actor.userId);
+    const session = user === undefined ? undefined : await this.sessions.lockById(context, actor.sessionId);
+    await this.#decide(context, actor, user, session);
+    if (session === undefined) {
+      // Unreachable: #decide refuses a missing session. Kept so the type narrows without a cast.
+      throw new AppError('SESSION_INVALID');
+    }
+    await this.#requireShopContext(context, actor.userId, session.activeRole);
+  }
+
+  /**
+   * For a Shop reader (GET /v1/shop/me): the shared locks of lockAuthorizedActorShared (any number of readers of
+   * one user run together; a role selection, a revocation or a Shop command is waited for) and then the same SHOP
+   * context requirement as lockAuthorizedShopActor, read from the locked session row. The locks stay held until the
+   * caller's transaction ends, so the role cannot change between this check and the read that follows.
+   */
+  async lockAuthorizedShopActorShared(context: TransactionContext, actor: SessionActor): Promise<void> {
+    const { activeRole } = await this.lockAuthorizedActorShared(context, actor);
+    await this.#requireShopContext(context, actor.userId, activeRole);
+  }
+
+  async #requireShopContext(
+    context: TransactionContext,
+    userId: string,
+    activeRole: string | null,
+  ): Promise<void> {
+    // The role query only runs for a session already in the SHOP context: the cheap check comes first.
+    if (activeRole !== SHOP_ROLE || !(await this.users.hasRole(context, userId, SHOP_ROLE))) {
+      throw new AppError('SHOP_ROLE_REQUIRED');
+    }
   }
 
   async #decide(

@@ -26,7 +26,9 @@ const SESSION: SharedLockedSession = {
   expiresAtMs: NOW + 60_000,
 };
 
-function rig(options: { user?: UserRow | undefined; session?: SharedLockedSession | undefined } = {}) {
+function rig(
+  options: { user?: UserRow | undefined; session?: SharedLockedSession | undefined; roles?: readonly string[] } = {},
+) {
   const events: string[] = [];
   const user = 'user' in options ? options.user : USER;
   const session = 'session' in options ? options.session : SESSION;
@@ -38,6 +40,10 @@ function rig(options: { user?: UserRow | undefined; session?: SharedLockedSessio
     lockByIdForShare: async () => {
       events.push('user.share');
       return user;
+    },
+    hasRole: async (_c: unknown, _u: string, role: string) => {
+      events.push(`role.check:${role}`);
+      return (options.roles ?? []).includes(role);
     },
   } as unknown as UserRepository;
   const sessions = {
@@ -216,5 +222,50 @@ describe('SessionAuthorizationParticipant boundaries', () => {
     const decide = code.slice(code.indexOf('async #decide('));
     expect(decide.indexOf('session.revoked')).toBeLessThan(decide.indexOf('freshClockMs('));
     expect(decide.indexOf('freshClockMs(')).toBeLessThan(decide.indexOf("user.status !== 'ACTIVE'"));
+  });
+});
+
+describe('SessionAuthorizationParticipant Shop variants (M02-A)', () => {
+  const SHOP_SESSION: SharedLockedSession = { ...SESSION, activeRole: 'SHOP' };
+
+  it('writer: user FOR UPDATE, session FOR UPDATE, clock, then the SHOP role check', async () => {
+    const { participant, events } = rig({ session: SHOP_SESSION, roles: ['SHOP'] });
+    await participant.lockAuthorizedShopActor(fakeContext(NOW, events), ACTOR);
+    expect(events).toEqual(['user.update', 'session.update', 'clock', 'role.check:SHOP']);
+  });
+
+  it('reader: shared locks, clock, then the SHOP role check; never FOR UPDATE', async () => {
+    const { participant, events } = rig({ session: SHOP_SESSION, roles: ['SHOP'] });
+    await participant.lockAuthorizedShopActorShared(fakeContext(NOW, events), ACTOR);
+    expect(events).toEqual(['user.share', 'session.share', 'clock', 'role.check:SHOP']);
+  });
+
+  it.each([
+    ['roleless session', null],
+    ['DRIVER context', 'DRIVER'],
+  ])('refuses a %s with SHOP_ROLE_REQUIRED without querying roles', async (_label, activeRole) => {
+    const { participant, events } = rig({ session: { ...SESSION, activeRole }, roles: ['SHOP', 'DRIVER'] });
+    expect(await codeOf(() => participant.lockAuthorizedShopActor(fakeContext(NOW, events), ACTOR))).toBe('SHOP_ROLE_REQUIRED');
+    expect(events).not.toContain('role.check:SHOP');
+    const shared = rig({ session: { ...SESSION, activeRole }, roles: ['SHOP'] });
+    expect(await codeOf(() => shared.participant.lockAuthorizedShopActorShared(fakeContext(NOW, shared.events), ACTOR))).toBe('SHOP_ROLE_REQUIRED');
+  });
+
+  it('refuses a SHOP session whose user no longer holds the SHOP role', async () => {
+    const { participant, events } = rig({ session: SHOP_SESSION, roles: [] });
+    expect(await codeOf(() => participant.lockAuthorizedShopActor(fakeContext(NOW, events), ACTOR))).toBe('SHOP_ROLE_REQUIRED');
+  });
+
+  it('session errors keep their precedence over the role requirement', async () => {
+    const revoked = rig({ session: { ...SESSION, revoked: true }, roles: [] });
+    expect(await codeOf(() => revoked.participant.lockAuthorizedShopActor(fakeContext(NOW, revoked.events), ACTOR))).toBe('SESSION_REVOKED');
+    const missing = rig({ session: undefined });
+    expect(await codeOf(() => missing.participant.lockAuthorizedShopActorShared(fakeContext(NOW, missing.events), ACTOR))).toBe('SESSION_INVALID');
+  });
+
+  it('lockAuthorizedActor stays roleless (onboarding)', async () => {
+    const { participant, events } = rig({ session: SESSION, roles: [] });
+    await participant.lockAuthorizedActor(fakeContext(NOW, events), ACTOR);
+    expect(events).not.toContain('role.check:SHOP');
   });
 });

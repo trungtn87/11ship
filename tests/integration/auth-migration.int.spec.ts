@@ -22,6 +22,10 @@ describe('M01-A1 — Auth Core migration', () => {
   // M01-A2D adds one more migration after the Shop one (it references app.service_areas and app.users).
   const DRIVER = names.find((name) => name.endsWith('create-driver-onboarding')) as string;
   const M00 = names.slice(0, names.indexOf(AUTH));
+  const HOURS = names.find((name) => name.endsWith('create-shop-business-hours')) as string;
+  const hoursSql = readFileSync(path.join(migrationsDir, `${HOURS}.sql`), 'utf8');
+  const hoursUpSql = (hoursSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+  const hoursDownSql = hoursSql.split('-- Down Migration')[1] as string;
   const driverSql = readFileSync(path.join(migrationsDir, `${DRIVER}.sql`), 'utf8');
   const driverUpSql = (driverSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const driverDownSql = driverSql.split('-- Down Migration')[1] as string;
@@ -81,7 +85,7 @@ describe('M01-A1 — Auth Core migration', () => {
     expect(AUTH).toBeDefined();
     expect(M00.length).toBeGreaterThanOrEqual(3);
     // Auth directly follows M00; the only migration after it is the M01-A2S Shop one.
-    expect(names.slice(M00.length)).toEqual([AUTH, SHOP, DRIVER]);
+    expect(names.slice(M00.length)).toEqual([AUTH, SHOP, DRIVER, HOURS]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });
 
@@ -180,6 +184,7 @@ describe('M01-A1 — Auth Core migration', () => {
     await client.query('BEGIN');
     try {
       // The Shop and Driver migrations reference app.users, so they go down first and come back up last.
+      await client.query(hoursDownSql);
       await client.query(driverDownSql);
       await client.query(shopDownSql);
       await client.query(downSql);
@@ -193,6 +198,7 @@ describe('M01-A1 — Auth Core migration', () => {
       await client.query(upSql);
       await client.query(shopUpSql);
       await client.query(driverUpSql);
+      await client.query(hoursUpSql);
       expect(await presentTables()).toEqual([...TABLES].sort());
     } finally {
       await client.query('ROLLBACK');

@@ -19,14 +19,16 @@ import {
 // never echo the offending value or key: a malformed shape is a plain 400 BAD_REQUEST, a bad contact phone is
 // INVALID_PHONE (the Auth phone contract, reused).
 
-const LATITUDE_LIMIT = 90;
-const LONGITUDE_LIMIT = 180;
+// The text, key-set and version helpers below are exported so that Shop management (M02-A) validates the same
+// profile fields with the SAME bounds and normalizers instead of a second copy that could drift.
+export const LATITUDE_LIMIT = 90;
+export const LONGITUDE_LIMIT = 180;
 
-function reject(): never {
+export function reject(): never {
   throw new BadRequestException();
 }
 
-function objectWithKeys(
+export function objectWithKeys(
   value: unknown,
   required: readonly string[],
   optional: readonly string[],
@@ -54,7 +56,7 @@ function objectWithKeys(
  * NUL character cannot be stored in a PostgreSQL text column, so both are refused here rather than turned into
  * a database error.
  */
-function boundedText(value: unknown, max: number): string {
+export function boundedText(value: unknown, max: number): string {
   if (typeof value !== 'string' || !isWellFormed(value) || value.includes('\u0000')) {
     return reject();
   }
@@ -67,7 +69,7 @@ function boundedText(value: unknown, max: number): string {
 }
 
 /** Absent and null both mean "no value": the two are the same logical request. */
-function optionalText(value: unknown, max: number): string | null {
+export function optionalText(value: unknown, max: number): string | null {
   if (value === undefined || value === null) {
     return null;
   }
@@ -105,7 +107,7 @@ function optionalVersion(value: unknown): number | null {
   return positiveVersion(value);
 }
 
-function positiveVersion(value: unknown): number {
+export function positiveVersion(value: unknown): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
     return reject();
   }
