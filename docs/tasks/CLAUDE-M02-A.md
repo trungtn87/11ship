@@ -1,8 +1,8 @@
 # M02-A — delivery brief và gói giao Claude
 
-Status: PREPARED, chưa CODE_READY. PR #18 chưa merge/LOCK. Không chạy prompt implementation trước design gate.
+Status: OWNER APPROVED, awaiting design merge/CI gate. Không chạy implementation trước khi #18 merge và relevant main CI xanh. UI brief chưa phải UI_LOCKED.
 Authority: M02-A-shop-management.md (gồm §10), M01-R1 repair, ADR-002/003; kế hoạch song song PR #20 đang Draft.
-Owner đã chốt auto-hours; các lựa chọn lịch nhiều khoảng/qua đêm/giới hạn 28 còn chờ khóa thiết kế.
+Owner đã duyệt tiếp tục: auto-hours, lịch nhiều khoảng/qua đêm, tối đa 28 khoảng/tuần và dòng Cả tuần áp dụng cho 7 ngày.
 
 ## 1. Backend — M02-A-BE
 Sau khi Owner lock/merge #18 và CI dependency xanh:
