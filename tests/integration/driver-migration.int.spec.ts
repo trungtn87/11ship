@@ -392,9 +392,11 @@ describe('M01-A2D — Driver onboarding migration', () => {
       for (const status of ['PENDING', 'ACTIVE', 'SUSPENDED', 'CLOSING', 'CLOSED']) {
         await insertDriver({ status });
       }
-      for (const status of ['REJECTED', 'pending', '', 'PENDING_BALANCE_RESOLUTION']) {
+      for (const status of ['REJECTED', 'pending', '']) {
         expect([status, (await failureCode(() => insertDriver({ status }))).constraint]).toEqual([status, 'drivers_status_ck']);
       }
+      // Longer than the column (varchar(16)): refused by the type, before any CHECK.
+      expect((await failureCode(() => insertDriver({ status: 'PENDING_BALANCE_RESOLUTION' }))).code).toBe('22001');
       expect((await failureCode(() => insertDriver({ version: 0 }))).constraint).toBe('drivers_version_ck');
       expect(
         (await failureCode(() => insertDriver({ createdAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }))).constraint,

@@ -474,7 +474,8 @@ describe('M01-A2D — Driver onboarding', () => {
   describe('privacy (A03-30)', () => {
     it('name, plate and the raw request never reach audit, outbox, idempotency metadata, responses to others or logs', async () => {
       const user = await registerUser(app);
-      const marker = `PRIVMARK${randomUUID().replace(/-/g, '')}`;
+      // Short enough for the 32-character plate once the suffix is added.
+      const marker = `PM${randomUUID().replace(/-/g, '').slice(0, 14)}`;
       const areaId = await createServiceArea(app.pool);
       const key = randomUUID();
       const response = await create(
