@@ -105,7 +105,7 @@ How every PR is treated. A PR counts only through explicit metadata (labels, or 
 | [#14](https://github.com/trungtn87/11ship/pull/14) docs(ui): add Figma workflow and frontend UI gate | OPEN | — | infra | ✅ PASS | `0d16d7b` | out of plan — Out of plan (type:infra) |
 | [#15](https://github.com/trungtn87/11ship/pull/15) docs(m01-a2): lock onboarding contract and task split | MERGED | — | — | — | `c329808` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;); PR not counted. State is never inferred from titles, bod… |
 | [#16](https://github.com/trungtn87/11ship/pull/16) feat(onboarding): M01-A2S shop onboarding | MERGED | — | — | — | `620333f` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;); PR not counted. State is never inferred from titles, bod… |
-| [#17](https://github.com/trungtn87/11ship/pull/17) feat(m01-a2d): DRIVER onboarding | DRAFT | — | — | ⏳ RUNNING | `ec4d6f2` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR not c… |
+| [#17](https://github.com/trungtn87/11ship/pull/17) feat(m01-a2d): DRIVER onboarding | DRAFT | — | — | ❌ FAIL | `ec4d6f2` | ⚠️ not counted — no usable metadata (missing module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR not c… |
 
 ## ⚠️ Attention
 
