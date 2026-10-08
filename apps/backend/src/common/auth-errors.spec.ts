@@ -22,6 +22,32 @@ const AUTH_ERRORS: ReadonlyArray<readonly [string, number]> = [
   ['SESSION_EXPIRED', 401],
 ];
 
+// M01-A2S (handoff section 10): the four Shop onboarding codes.
+const SHOP_ONBOARDING_ERRORS: ReadonlyArray<readonly [string, number]> = [
+  ['SHOP_ONBOARDING_EXISTS', 409],
+  ['SHOP_PROFILE_INCOMPLETE', 409],
+  ['INVALID_SERVICE_AREA', 400],
+  ['VERSION_CONFLICT', 409],
+];
+
+describe('Shop onboarding error registry (M01-A2S)', () => {
+  it('registers exactly the four locked codes with the locked statuses and clean fixed messages', () => {
+    for (const [code, status] of SHOP_ONBOARDING_ERRORS) {
+      const definition = (APP_ERROR_DEFINITIONS as Record<string, { status: number; message: string }>)[code];
+      expect([code, definition?.status]).toEqual([code, status]);
+      expect(definition?.message).not.toMatch(/[{}$%<>]|undefined|null|constraint|shops?_|uuid/i);
+    }
+  });
+
+  it('is serialized through the standard envelope with empty details', () => {
+    for (const [code, status] of SHOP_ONBOARDING_ERRORS) {
+      const classified = classifyException(new AppError(code as keyof typeof APP_ERROR_DEFINITIONS));
+      expect([classified.status, classified.code]).toEqual([status, code]);
+      expect(buildErrorBody(classified, '123e4567-e89b-42d3-a456-426614174000').error.details).toEqual({});
+    }
+  });
+});
+
 describe('Auth error registry', () => {
   it('registers exactly the 15 locked codes with the locked statuses', () => {
     for (const [code, status] of AUTH_ERRORS) {

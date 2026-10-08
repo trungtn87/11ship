@@ -708,3 +708,72 @@ A2D PASS requires:
 - no bank/wallet/approval/delivery implementation leaked into scope.
 
 No A2 implementation is allowed to claim Driver ACTIVE or production onboarding rollout readiness.
+
+## 21. A2S review addendum — resumable profile and coherent Auth projection
+
+Three corrections from the independent design review of the A2S implementation (PR #16). They add to sections 8, 10 and 12; nothing else in this document changes, and where an earlier sentence disagrees with this section, this section wins.
+
+### 21.1 `GET /v1/onboarding/shop/profile` — the draft is resumable
+
+Section 8.1 promises "save/resume" but defined only the write. A new session or another device had no way to get the draft and its current version back. This endpoint is that read.
+
+- `Authorization: Bearer ...` is required (existing session errors apply). **No `Idempotency-Key`**: it is not required and is ignored when sent.
+- Read-only: no audit row on success, no outbox event, no idempotency record.
+- M02 owns the SQL: one statement joining the user's OWNER membership to its shop, so membership and shop come from a single snapshot. It takes no lock.
+- The user comes only from the session. The response never contains `user_id`, membership fields, or audit/idempotency metadata.
+
+No Shop profile yet:
+
+```json
+{ "data": null }
+```
+
+Otherwise (200):
+
+```json
+{
+  "data": {
+    "shop_id": "...",
+    "name": "Tên quán",
+    "contact_phone": "+84987654321",
+    "zalo": null,
+    "facebook": null,
+    "address_text": "Địa chỉ",
+    "pickup_lat": null,
+    "pickup_lng": null,
+    "service_area_id": null,
+    "status": "INCOMPLETE",
+    "accepting_orders": false,
+    "version": 1
+  }
+}
+```
+
+`contact_phone` is the stored normalized value. The response is enough to rebuild the form and `PUT` it back with `expected_version = version`. An owned ACTIVE or DISABLED shop is returned too; the mutation rules of 8.1 and 8.2 are unchanged.
+
+### 21.2 `GET /v1/auth/me` reads one coherent state
+
+`/auth/me` read the user's roles and then the Shop eligibility as two READ COMMITTED statements without a lock. A completion committing between them could produce a projection that never existed (for example `onboarding.shop = COMPLETED` without SHOP in `available_roles`).
+
+- Before reading roles and Shop eligibility, `/auth/me` takes a **shared** row lock on the user (`FOR SHARE`) and re-checks that the user exists and is ACTIVE.
+- Completion keeps its user `FOR UPDATE` (section 12, step 2), so the two serialize at the user row: `/auth/me` runs entirely before a completion or waits for its commit.
+- `FOR SHARE` does not conflict with `FOR SHARE`: concurrent `/auth/me` calls of one user do not wait for each other.
+- No SERIALIZABLE transaction, no Auth SQL against M02 tables, no `forwardRef`. The lock order of every mutation in section 12 is unchanged; `/auth/me` takes only this one lock and writes nothing. A1 session behavior is unchanged.
+
+### 21.3 `onboarding_required` when the Shop is COMPLETED but not selectable
+
+A DISABLED shop finished onboarding. It cannot be selected, and it must not be told to onboard again, because both onboarding commands refuse it. One rule, shared by login and `/auth/me`:
+
+- `onboarding_required = true` only when the user has no selectable role **and** Shop onboarding is `NOT_STARTED` or `INCOMPLETE`. A stray SHOP role without a profile still needs onboarding.
+- `role_selection_required = true` only when at least one role is selectable and the session has no active role.
+
+| Shop state | SHOP in `available_roles` | `onboarding.shop` | `onboarding_required` (no other usable role) |
+| --- | --- | --- | --- |
+| no profile | no | `NOT_STARTED` | `true` |
+| INCOMPLETE | no | `INCOMPLETE` | `true` |
+| ACTIVE | yes (with the SHOP role) | `COMPLETED` | `false` |
+| DISABLED | no; select gives `ROLE_NOT_AVAILABLE` | `COMPLETED` | `false` |
+
+A Shop-only user whose completed shop is DISABLED therefore gets, at login and at `/auth/me`: `available_roles = []`, `onboarding_required = false`, `role_selection_required = false`.
+
+DRIVER is unchanged: holding the role makes it selectable, and any selectable role makes `onboarding_required = false`.

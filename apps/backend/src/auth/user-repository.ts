@@ -59,6 +59,21 @@ export class UserRepository {
     return row === undefined ? undefined : toUser(row);
   }
 
+  /**
+   * A shared row lock on the user, for a reader that must see one coherent state of everything the user lock
+   * guards (roles, owned shop status). It waits for a writer holding the row FOR UPDATE and lets other
+   * FOR SHARE readers through. The caller re-checks the returned status; nothing is written.
+   */
+  async lockByIdForShare(context: TransactionContext, userId: string): Promise<UserRow | undefined> {
+    const result = await context.query<RawUser>(
+      `SELECT user_id, phone_normalized, password_hash, status
+         FROM app.users WHERE user_id = $1::uuid FOR SHARE`,
+      [userId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toUser(row);
+  }
+
   async findById(context: TransactionContext, userId: string): Promise<UserRow | undefined> {
     const result = await context.query<RawUser>(
       `SELECT user_id, phone_normalized, password_hash, status
@@ -119,5 +134,21 @@ export class UserRepository {
       role,
     ]);
     return result.rows.length > 0;
+  }
+
+  /**
+   * Idempotent grant: inserts the (user, role) row unless it already exists. Returns true when this call
+   * created it, false when the user already held the role. The caller holds the user row lock; nothing here
+   * decides WHICH roles may be granted (RoleGrantParticipant does).
+   */
+  async grantRole(context: TransactionContext, userId: string, role: string): Promise<boolean> {
+    const result = await context.query(
+      `INSERT INTO app.user_roles (user_id, role, created_at)
+       SELECT $1::uuid, $2, clock.t
+         FROM (${CLOCK_CTE}) AS clock
+       ON CONFLICT (user_id, role) DO NOTHING`,
+      [userId, role],
+    );
+    return result.rowCount === 1;
   }
 }

@@ -215,6 +215,7 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
         active_role: null,
         onboarding_required: true,
         role_selection_required: false,
+        onboarding: { shop: 'NOT_STARTED', driver: 'NOT_STARTED' },
       });
     });
 

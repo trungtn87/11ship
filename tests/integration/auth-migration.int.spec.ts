@@ -17,7 +17,12 @@ describe('M01-A1 — Auth Core migration', () => {
   const files = readdirSync(migrationsDir).filter((file) => file.endsWith('.sql')).sort();
   const names = files.map((file) => file.replace(/\.sql$/, ''));
   const AUTH = names.find((name) => name.endsWith('create-auth-core')) as string;
-  const M00 = names.filter((name) => name !== AUTH);
+  // M01-A2S adds a migration AFTER the Auth one (it references app.users); this suite owns the Auth one only.
+  const SHOP = names.find((name) => name.endsWith('create-shop-onboarding')) as string;
+  const M00 = names.slice(0, names.indexOf(AUTH));
+  const shopSql = readFileSync(path.join(migrationsDir, `${SHOP}.sql`), 'utf8');
+  const shopUpSql = (shopSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+  const shopDownSql = shopSql.split('-- Down Migration')[1] as string;
   const authSql = readFileSync(path.join(migrationsDir, `${AUTH}.sql`), 'utf8');
   const upSql = (authSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const downSql = authSql.split('-- Down Migration')[1] as string;
@@ -70,7 +75,8 @@ describe('M01-A1 — Auth Core migration', () => {
   it('is a NEW migration after every M00 migration (applied migrations are never edited)', () => {
     expect(AUTH).toBeDefined();
     expect(M00.length).toBeGreaterThanOrEqual(3);
-    expect(names[names.length - 1]).toBe(AUTH);
+    // Auth directly follows M00; the only migration after it is the M01-A2S Shop one.
+    expect(names.slice(M00.length)).toEqual([AUTH, SHOP]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });
 
@@ -168,6 +174,8 @@ describe('M01-A1 — Auth Core migration', () => {
     expect(migrate().status).toBe(0);
     await client.query('BEGIN');
     try {
+      // The Shop migration references app.users, so it goes down first and comes back up last.
+      await client.query(shopDownSql);
       await client.query(downSql);
       expect(await presentTables()).toEqual([]);
       const leftovers = await client.query(
@@ -177,6 +185,7 @@ describe('M01-A1 — Auth Core migration', () => {
       );
       expect(leftovers.rowCount).toBe(0);
       await client.query(upSql);
+      await client.query(shopUpSql);
       expect(await presentTables()).toEqual([...TABLES].sort());
     } finally {
       await client.query('ROLLBACK');

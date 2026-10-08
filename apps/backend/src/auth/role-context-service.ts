@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
 import { AppError } from '../common/app-errors';
 import { freshClockMs } from '../idempotency/idempotency-repository';
+import { ShopEligibilityReader } from '../shop/shop-eligibility-reader';
+import { OwnerShopEligibility, ShopOnboardingState } from '../shop/shop-types';
 import { TransactionManager } from '../transaction/transaction-manager';
+import { roleContext } from './available-roles';
 import { AUDIT_ACTIONS, isSupportedRole } from './auth-constants';
 import { AuthPrincipal } from './auth-principal';
 import { SessionRepository } from './session-repository';
@@ -17,6 +20,19 @@ export interface MeResult {
   readonly role_selection_required: boolean;
 }
 
+/**
+ * How far each onboarding got (M01-A2S). `driver` is the constant NOT_STARTED until Driver onboarding exists:
+ * it is never read from a database and nothing about approval, wallet or bank is invented.
+ */
+export interface OnboardingProjection {
+  readonly shop: ShopOnboardingState;
+  readonly driver: 'NOT_STARTED';
+}
+
+export interface MeProjection extends MeResult {
+  readonly onboarding: OnboardingProjection;
+}
+
 /** /me and role selection (task sections 12 and 13). */
 @Injectable()
 export class RoleContextService {
@@ -25,19 +41,47 @@ export class RoleContextService {
     private readonly users: UserRepository,
     private readonly sessions: SessionRepository,
     private readonly audit: AuditWriter,
+    private readonly shops: ShopEligibilityReader,
   ) {}
 
-  async me(principal: AuthPrincipal): Promise<MeResult> {
-    const roles = await this.transactions.withTransaction((context) =>
-      this.users.supportedRoles(context, principal.userId),
-    );
-    return this.#shape(principal.userId, principal.phoneNormalized, roles, principal.activeRole);
+  /**
+   * One coherent projection (A2S review addendum). The user row is taken FOR SHARE before the roles and the
+   * shop eligibility are read. Shop completion (and every other writer of a user's roles or shop status) holds
+   * that row FOR UPDATE until it commits, so /me either runs entirely before such a writer or waits for it and
+   * then reads everything after its commit. Without the lock the two reads are two READ COMMITTED snapshots
+   * and a completion committing between them could show a COMPLETED shop next to a role list without SHOP.
+   *
+   * FOR SHARE, not FOR UPDATE: any number of /me calls of one user run together, and nothing is written. Only
+   * this one lock is taken, at the root of the A2 lock order, so the order of the mutations is unchanged.
+   */
+  async me(principal: AuthPrincipal): Promise<MeProjection> {
+    const view = await this.transactions.withTransaction(async (context) => {
+      const user = await this.users.lockByIdForShare(context, principal.userId);
+      if (user === undefined) {
+        throw new AppError('SESSION_INVALID');
+      }
+      // Re-check after the lock: the guard read the status before this transaction began.
+      if (user.status !== 'ACTIVE') {
+        throw new AppError('ACCOUNT_DISABLED');
+      }
+      const held = await this.users.supportedRoles(context, principal.userId);
+      const shop = await this.shops.ownerShopEligibility(context, principal.userId);
+      return { held, shop };
+    });
+    return {
+      ...this.#shape(principal.userId, principal.phoneNormalized, view.held, view.shop, principal.activeRole),
+      onboarding: { shop: view.shop.onboarding, driver: 'NOT_STARTED' },
+    };
   }
 
   /**
    * Lock order: user, then current session, then role membership. The user lock serializes every role
    * selection of one user, so two SHOP selections on two sessions run one after the other and the later one
    * revokes the earlier. The partial unique index is only the final safety net.
+   *
+   * SHOP is selectable only when the user holds the SHOP role AND owns an ACTIVE shop. The shop is read through
+   * M02's eligibility port while the user lock is held; every writer of shop status takes that lock first, so
+   * the answer is stable for the rest of this transaction.
    */
   async selectRole(principal: AuthPrincipal, role: string, requestId: string): Promise<MeResult> {
     if (!isSupportedRole(role)) {
@@ -65,6 +109,11 @@ export class RoleContextService {
         throw new AppError('ACCOUNT_DISABLED');
       }
       if (!(await this.users.hasRole(context, principal.userId, role))) {
+        throw new AppError('ROLE_NOT_AVAILABLE');
+      }
+      const shop = await this.shops.ownerShopEligibility(context, principal.userId);
+      if (role === 'SHOP' && !shop.selectable) {
+        // A stray SHOP role without an ACTIVE owned shop: same answer as a role the user does not hold.
         throw new AppError('ROLE_NOT_AVAILABLE');
       }
 
@@ -97,19 +146,27 @@ export class RoleContextService {
         metadata: { role, revoked_sessions: revoked.length },
       });
 
-      const roles = await this.users.supportedRoles(context, principal.userId);
-      return this.#shape(principal.userId, principal.phoneNormalized, roles, role);
+      const held = await this.users.supportedRoles(context, principal.userId);
+      return this.#shape(principal.userId, principal.phoneNormalized, held, shop, role);
     });
   }
 
-  #shape(userId: string, phone: string, roles: string[], activeRole: string | null): MeResult {
+  #shape(
+    userId: string,
+    phone: string,
+    held: readonly string[],
+    shop: OwnerShopEligibility,
+    activeRole: string | null,
+  ): MeResult {
+    // The same rule as login: see roleContext.
+    const context = roleContext(held, shop, activeRole);
     return {
       user_id: userId,
       phone_normalized: phone,
-      available_roles: roles,
+      available_roles: context.available_roles,
       active_role: activeRole,
-      onboarding_required: roles.length === 0,
-      role_selection_required: roles.length > 0 && activeRole === null,
+      onboarding_required: context.onboarding_required,
+      role_selection_required: context.role_selection_required,
     };
   }
 }

@@ -56,7 +56,7 @@ export interface ApiOptions {
 
 export async function api(
   baseUrl: string,
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PUT',
   path: string,
   options: ApiOptions = {},
 ): Promise<ApiResponse> {
@@ -103,7 +103,7 @@ export interface AuthApp {
   readonly config: AppConfig;
   readonly provider: FakeOtpProvider;
   readonly pool: Pool;
-  call(method: 'GET' | 'POST', path: string, options?: ApiOptions): Promise<ApiResponse>;
+  call(method: 'GET' | 'POST' | 'PUT', path: string, options?: ApiOptions): Promise<ApiResponse>;
   /** Registers a normalized phone for cleanup when the app closes. */
   track(normalizedPhone: string): void;
   close(): Promise<void>;
@@ -148,6 +148,7 @@ export async function startAuthApp(
         for (const phone of tracked) {
           await purgePhone(pool, phone);
         }
+        await purgeTestServiceAreas(pool);
       } finally {
         await pool.end();
         await running.app.close();
@@ -158,6 +159,23 @@ export async function startAuthApp(
 
 /** Removes every Auth row of one phone number (and the register idempotency records of its proofs). */
 export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<void> {
+  // M01-A2S: shops owned by the user, their memberships and the user-scoped onboarding idempotency records.
+  await pool.query(
+    `DELETE FROM app.idempotency_records
+      WHERE scope_type = 'user'
+        AND scope_id IN (SELECT user_id::text FROM app.users WHERE phone_normalized = $1)`,
+    [normalizedPhone],
+  );
+  // Memberships first, then the shops no member points at any more (a shop of this user has exactly one member).
+  await pool.query(
+    `WITH owned AS (
+       DELETE FROM app.shop_members
+        WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)
+        RETURNING shop_id
+     )
+     DELETE FROM app.shops WHERE shop_id IN (SELECT shop_id FROM owned)`,
+    [normalizedPhone],
+  );
   await pool.query(
     `DELETE FROM app.idempotency_records
       WHERE scope_type = 'verification_proof'
@@ -269,7 +287,62 @@ export async function loginUser(
   return app.call('POST', '/auth/login', { body: { phone: user.phone.local, password: user.password, device } });
 }
 
+/** A service area fixture with a unique code. Removed by purgeTestServiceAreas when the app closes. */
+export async function createServiceArea(
+  pool: Pool,
+  status: 'ACTIVE' | 'INACTIVE' = 'ACTIVE',
+): Promise<string> {
+  const id = randomUUID();
+  await pool.query(
+    `INSERT INTO app.service_areas (service_area_id, code, name, status, version, created_at, updated_at)
+     VALUES ($1::uuid, $2, 'Test area', $3, 1, clock_timestamp(), clock_timestamp())`,
+    [id, `ZT-${id}`, status],
+  );
+  return id;
+}
+
+/** Removes the test areas no shop references any more (areas still in use are left for their shops' purge). */
+export async function purgeTestServiceAreas(pool: Pool): Promise<void> {
+  await pool.query(
+    `DELETE FROM app.service_areas a
+      WHERE a.code LIKE 'ZT-%'
+        AND NOT EXISTS (SELECT 1 FROM app.shops s WHERE s.service_area_id = a.service_area_id)`,
+  );
+}
+
+/** An ACTIVE shop owned by the user, complete as onboarding would have left it (accepting_orders=false). */
+export async function createActiveShopFor(pool: Pool, userId: string, serviceAreaId?: string): Promise<string> {
+  const areaId = serviceAreaId ?? (await createServiceArea(pool));
+  const shopId = randomUUID();
+  await pool.query(
+    `INSERT INTO app.shops (shop_id, name, contact_phone_normalized, address_text, pickup_lat, pickup_lng,
+                            service_area_id, status, accepting_orders, version, created_at, updated_at)
+     VALUES ($1::uuid, 'Fixture shop', '+84900000001', 'Fixture address', 21.0, 105.8, $2::uuid, 'ACTIVE', false, 2,
+             clock_timestamp(), clock_timestamp())`,
+    [shopId, areaId],
+  );
+  await pool.query(
+    `INSERT INTO app.shop_members (shop_id, user_id, member_role, created_at)
+     VALUES ($1::uuid, $2::uuid, 'OWNER', clock_timestamp())`,
+    [shopId, userId],
+  );
+  return shopId;
+}
+
+/**
+ * Grants a role directly. Since M01-A2S a SHOP role is only selectable together with an ACTIVE owned shop, so
+ * granting 'SHOP' here also creates that shop: the A1 suites keep exercising "a user who is a shop". Use
+ * grantStrayRole to get the bare role row without a shop.
+ */
 export async function grantRole(pool: Pool, userId: string, role: string): Promise<void> {
+  await grantStrayRole(pool, userId, role);
+  if (role === 'SHOP') {
+    await createActiveShopFor(pool, userId);
+  }
+}
+
+/** The bare user_roles row, whatever the role (for the stray SHOP role cases and for ADMIN-like rows). */
+export async function grantStrayRole(pool: Pool, userId: string, role: string): Promise<void> {
   await pool.query(
     'INSERT INTO app.user_roles (user_id, role, created_at) VALUES ($1::uuid, $2, clock_timestamp())',
     [userId, role],
@@ -456,6 +529,24 @@ export async function rowLockWaiters(pool: Pool): Promise<number> {
   return result.rows[0]?.n ?? 0;
 }
 
+/**
+ * Backends blocked behind another transaction's row lock WHILE running a statement whose text matches the
+ * given LIKE pattern. It names the waiter: "the /auth/me FOR SHARE on the user row is the statement that
+ * waits", not merely "something waits". The pattern travels as a parameter, so this query never matches itself.
+ */
+export async function rowLockWaitersRunning(pool: Pool, queryLike: string): Promise<number> {
+  const result = await pool.query<{ n: number }>(
+    `SELECT count(DISTINCT l.pid)::int AS n
+       FROM pg_locks l
+       JOIN pg_stat_activity a ON a.pid = l.pid
+      WHERE l.locktype IN ('transactionid', 'tuple') AND NOT l.granted
+        AND a.wait_event_type = 'Lock'
+        AND a.query LIKE $1`,
+    [queryLike],
+  );
+  return result.rows[0]?.n ?? 0;
+}
+
 /** True while some backend waits for the given (int, int) advisory lock. */
 export async function advisoryWaiterExists(pool: Pool, key: readonly [number, number]): Promise<boolean> {
   const result = await pool.query(
@@ -502,4 +593,43 @@ export async function installFault(
 export async function removeFault(pool: Pool, name: string, table: string): Promise<void> {
   await pool.query(`DROP TRIGGER IF EXISTS ${name} ON ${table}`);
   await pool.query(`DROP FUNCTION IF EXISTS app.${name}()`);
+}
+
+/**
+ * M01-A2S barrier: a row trigger on app.shops that waits for an advisory lock a test holds, but ONLY for the
+ * statement that turns a shop ACTIVE. By then the completing request already holds the user row, the owner
+ * membership, the shop row and the service-area row FOR SHARE, so "a backend waits on the advisory lock"
+ * proves it is inside its transaction with all of them held.
+ */
+export async function installShopActivateStall(pool: Pool, key: readonly [number, number]): Promise<void> {
+  await pool.query(
+    `CREATE FUNCTION app.test_stall_shop_activate() RETURNS trigger LANGUAGE plpgsql AS $$
+     BEGIN
+       IF NEW.status = 'ACTIVE' AND OLD.status IS DISTINCT FROM 'ACTIVE' THEN
+         PERFORM pg_advisory_xact_lock(${key[0]}, ${key[1]});
+       END IF;
+       RETURN NEW;
+     END $$`,
+  );
+  await pool.query(
+    `CREATE TRIGGER test_stall_shop_activate BEFORE UPDATE ON app.shops
+       FOR EACH ROW EXECUTE FUNCTION app.test_stall_shop_activate()`,
+  );
+}
+
+export async function removeShopActivateStall(pool: Pool): Promise<void> {
+  await pool.query('DROP TRIGGER IF EXISTS test_stall_shop_activate ON app.shops');
+  await pool.query('DROP FUNCTION IF EXISTS app.test_stall_shop_activate()');
+}
+
+/** The default valid profile body. Callers override fields; the contact phone is a fresh number. */
+export function shopProfileBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    name: 'Quán Bún Chả',
+    contact_phone: randomPhone().local,
+    address_text: '12 Hàng Mã, Hoàn Kiếm',
+    zalo: 'zalo.example',
+    facebook: 'fb.example/shop',
+    ...overrides,
+  };
 }

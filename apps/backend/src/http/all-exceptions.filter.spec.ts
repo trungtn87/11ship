@@ -138,7 +138,7 @@ describe('AllExceptionsFilter', () => {
   describe('typed error registry', () => {
     const codes = Object.keys(APP_ERROR_DEFINITIONS) as AppErrorCode[];
 
-    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome) and the Auth Core codes', () => {
+    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes and the Shop onboarding codes', () => {
       expect([...codes].sort()).toEqual([
         'ACCOUNT_DISABLED',
         'IDEMPOTENCY_BUSY',
@@ -149,6 +149,7 @@ describe('AllExceptionsFilter', () => {
         'INVALID_CREDENTIALS',
         'INVALID_IDEMPOTENCY_KEY',
         'INVALID_PHONE',
+        'INVALID_SERVICE_AREA',
         'OTP_ALREADY_USED',
         'OTP_EXPIRED',
         'OTP_INVALID',
@@ -158,10 +159,13 @@ describe('AllExceptionsFilter', () => {
         'SESSION_EXPIRED',
         'SESSION_INVALID',
         'SESSION_REVOKED',
+        'SHOP_ONBOARDING_EXISTS',
+        'SHOP_PROFILE_INCOMPLETE',
         'TRANSACTION_OUTCOME_UNKNOWN',
         'VERIFICATION_PROOF_INVALID',
         'VERIFICATION_PROOF_USED',
         'VERIFICATION_PURPOSE_MISMATCH',
+        'VERSION_CONFLICT',
       ]);
     });
 

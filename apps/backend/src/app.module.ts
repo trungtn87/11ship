@@ -6,6 +6,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { JsonLogger } from './logging/json-logger';
 import { LoggingModule } from './logging/logging.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 import { TransactionModule } from './transaction/transaction.module';
 
 export interface AppModuleOptions {
@@ -23,6 +24,8 @@ export class AppModule {
   // Configuration and logger are validated/created by the caller and injected. This keeps
   // tests free to build an app without mutating process.env.
   static register(options: AppModuleOptions): DynamicModule {
+    // Built once: Onboarding must import the same Auth module object the application imports.
+    const auth = options.auth === undefined ? undefined : AuthModule.register(options.auth);
     return {
       module: AppModule,
       imports: [
@@ -31,7 +34,7 @@ export class AppModule {
         DatabaseModule,
         TransactionModule,
         HealthModule,
-        ...(options.auth === undefined ? [] : [AuthModule.register(options.auth)]),
+        ...(auth === undefined ? [] : [auth, OnboardingModule.register(auth)]),
       ],
     };
   }
