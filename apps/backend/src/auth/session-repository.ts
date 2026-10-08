@@ -22,20 +22,21 @@ export interface SessionView {
   readonly phoneNormalized: string;
 }
 
+/**
+ * A session row read under a row lock (FOR UPDATE or FOR SHARE). It carries the CURRENT active role, read from the
+ * locked row, so neither /auth/me nor a Shop command ever acts on the role the guard saw before the transaction
+ * began.
+ */
 export interface LockedSession {
   readonly sessionId: string;
   readonly userId: string;
+  readonly activeRole: string | null;
   readonly revoked: boolean;
   readonly expiresAtMs: number;
 }
 
-/**
- * A session read under a shared row lock. It also carries the CURRENT active role, read from the locked row,
- * so /auth/me never reports the role the guard saw before this transaction began.
- */
-export interface SharedLockedSession extends LockedSession {
-  readonly activeRole: string | null;
-}
+/** The shared-lock variant returns the same shape; the alias keeps the name the readers already use. */
+export type SharedLockedSession = LockedSession;
 
 /** SQL for sessions. The plaintext token exists only inside create(); the table gets the SHA-256 digest. */
 @Injectable()
@@ -106,15 +107,20 @@ export class SessionRepository {
     };
   }
 
-  /** Locks the session row. The caller reads the database clock AFTER this call. */
+  /**
+   * Locks the session row FOR UPDATE and returns its CURRENT state, including the active role stored on the locked
+   * row. The caller reads the database clock AFTER this call.
+   */
   async lockById(context: TransactionContext, sessionId: string): Promise<LockedSession | undefined> {
     const result = await context.query<{
       session_id: string;
       user_id: string;
+      active_role: string | null;
       revoked: boolean;
       expires_ms: string;
     }>(
-      `SELECT session_id, user_id, revoked_at IS NOT NULL AS revoked, ${epochMs('expires_at')} AS expires_ms
+      `SELECT session_id, user_id, active_role, revoked_at IS NOT NULL AS revoked,
+              ${epochMs('expires_at')} AS expires_ms
          FROM app.sessions WHERE session_id = $1::uuid FOR UPDATE`,
       [sessionId],
     );
@@ -125,6 +131,7 @@ export class SessionRepository {
     return {
       sessionId: row.session_id,
       userId: row.user_id,
+      activeRole: row.active_role,
       revoked: row.revoked,
       expiresAtMs: toSafeInteger(row.expires_ms),
     };

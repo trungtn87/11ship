@@ -7,6 +7,7 @@ import { HealthModule } from './health/health.module';
 import { JsonLogger } from './logging/json-logger';
 import { LoggingModule } from './logging/logging.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
+import { ShopManagementModule } from './shop-management/shop-management.module';
 import { TransactionModule } from './transaction/transaction.module';
 
 export interface AppModuleOptions {
@@ -34,7 +35,7 @@ export class AppModule {
         DatabaseModule,
         TransactionModule,
         HealthModule,
-        ...(auth === undefined ? [] : [auth, OnboardingModule.register(auth)]),
+        ...(auth === undefined ? [] : [auth, OnboardingModule.register(auth), ShopManagementModule.register(auth)]),
       ],
     };
   }

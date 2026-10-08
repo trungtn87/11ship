@@ -171,6 +171,13 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
     'DELETE FROM app.drivers WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],
   );
+  // M02-A: the weekly schedule of those shops (it references the shop deleted below).
+  await pool.query(
+    `DELETE FROM app.shop_business_hours
+      WHERE shop_id IN (SELECT shop_id FROM app.shop_members
+                         WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1))`,
+    [normalizedPhone],
+  );
   // Memberships first, then the shops no member points at any more (a shop of this user has exactly one member).
   await pool.query(
     `WITH owned AS (

@@ -23,6 +23,10 @@ describe('M01-A2S — Shop onboarding migration', () => {
   const downSql = shopSql.split('-- Down Migration')[1] as string;
   // M01-A2D adds a migration AFTER this one (drivers reference app.service_areas): it goes down first, up last.
   const DRIVER = names.find((name) => name.endsWith('create-driver-onboarding')) as string;
+  const HOURS = names.find((name) => name.endsWith('create-shop-business-hours')) as string;
+  const hoursSql = readFileSync(path.join(migrationsDir, `${HOURS}.sql`), 'utf8');
+  const hoursUpSql = (hoursSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+  const hoursDownSql = hoursSql.split('-- Down Migration')[1] as string;
   const driverSql = readFileSync(path.join(migrationsDir, `${DRIVER}.sql`), 'utf8');
   const driverUpSql = (driverSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const driverDownSql = driverSql.split('-- Down Migration')[1] as string;
@@ -74,7 +78,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
 
   it('is a NEW migration after M00 and Auth Core, followed only by the Driver one (applied migrations are never edited)', () => {
     expect(SHOP).toBeDefined();
-    expect(names.slice(names.indexOf(SHOP))).toEqual([SHOP, DRIVER]);
+    expect(names.slice(names.indexOf(SHOP))).toEqual([SHOP, DRIVER, HOURS]);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(names.filter((name) => name.endsWith('create-shop-onboarding'))).toHaveLength(1);
     expect(Number(SHOP.split('_')[0])).toBeGreaterThan(Number((BEFORE[BEFORE.length - 1] as string).split('_')[0]));
@@ -159,6 +163,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
     expect(migrate().status).toBe(0);
     await client.query('BEGIN');
     try {
+      await client.query(hoursDownSql);
       await client.query(driverDownSql);
       await client.query(downSql);
       expect(await presentTables()).toEqual([]);
@@ -169,6 +174,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
       expect(leftovers.rowCount).toBe(0);
       await client.query(upSql);
       await client.query(driverUpSql);
+      await client.query(hoursUpSql);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
       await client.query('ROLLBACK');

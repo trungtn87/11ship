@@ -22,7 +22,7 @@ const PRINCIPAL: AuthPrincipal = {
   phoneNormalized: '+84987654321',
 };
 const USER: UserRow = { userId: PRINCIPAL.userId, phoneNormalized: PRINCIPAL.phoneNormalized, passwordHash: 'h', status: 'ACTIVE' };
-const SESSION: LockedSession = { sessionId: PRINCIPAL.sessionId, userId: PRINCIPAL.userId, revoked: false, expiresAtMs: NOW + 60_000 };
+const SESSION: LockedSession = { sessionId: PRINCIPAL.sessionId, userId: PRINCIPAL.userId, activeRole: null, revoked: false, expiresAtMs: NOW + 60_000 };
 
 interface Rig {
   service: RoleContextService;

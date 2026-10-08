@@ -138,7 +138,7 @@ describe('AllExceptionsFilter', () => {
   describe('typed error registry', () => {
     const codes = Object.keys(APP_ERROR_DEFINITIONS) as AppErrorCode[];
 
-    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes, the Shop onboarding codes and the Driver onboarding codes', () => {
+    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes, the Shop onboarding codes, the Driver onboarding codes and the Shop management codes', () => {
       expect([...codes].sort()).toEqual([
         'ACCOUNT_DISABLED',
         'DRIVER_PENDING_APPROVAL',
@@ -148,6 +148,7 @@ describe('AllExceptionsFilter', () => {
         'IDEMPOTENCY_KEY_REUSED',
         'IDEMPOTENCY_KEY_UNAVAILABLE',
         'IDEMPOTENCY_REPLAY_EXPIRED',
+        'INVALID_BUSINESS_HOURS',
         'INVALID_CREDENTIALS',
         'INVALID_IDEMPOTENCY_KEY',
         'INVALID_PHONE',
@@ -161,8 +162,11 @@ describe('AllExceptionsFilter', () => {
         'SESSION_EXPIRED',
         'SESSION_INVALID',
         'SESSION_REVOKED',
+        'SHOP_DISABLED',
+        'SHOP_NOT_FOUND',
         'SHOP_ONBOARDING_EXISTS',
         'SHOP_PROFILE_INCOMPLETE',
+        'SHOP_ROLE_REQUIRED',
         'TRANSACTION_OUTCOME_UNKNOWN',
         'VERIFICATION_PROOF_INVALID',
         'VERIFICATION_PROOF_USED',
