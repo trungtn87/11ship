@@ -54,6 +54,13 @@ describe('M01-A2S — Shop onboarding', () => {
       ...(key === null ? {} : { headers: { 'idempotency-key': key } }),
     });
 
+  /** GET sends no Idempotency-Key unless a test passes headers explicitly. */
+  const readProfile = (token: string | undefined, headers?: Record<string, string>): Promise<ApiResponse> =>
+    app.call('GET', '/onboarding/shop/profile', {
+      ...(token === undefined ? {} : { bearer: token }),
+      ...(headers === undefined ? {} : { headers }),
+    });
+
   const me = (token: string): Promise<ApiResponse> => app.call('GET', '/auth/me', { bearer: token });
   const selectRole = (token: string, role: string): Promise<ApiResponse> =>
     app.call('POST', '/auth/role/select', { bearer: token, body: { role } });
@@ -177,6 +184,223 @@ describe('M01-A2S — Shop onboarding', () => {
       const second = await registerUser(app);
       expect((await saveProfile(first.accessToken, shopProfileBody({ contact_phone: contact }))).status).toBe(201);
       expect((await saveProfile(second.accessToken, shopProfileBody({ contact_phone: contact }))).status).toBe(201);
+    });
+  });
+
+  describe('GET /v1/onboarding/shop/profile — a draft is resumable (A2S review addendum)', () => {
+    const PROFILE_KEYS = [
+      'accepting_orders',
+      'address_text',
+      'contact_phone',
+      'facebook',
+      'name',
+      'pickup_lat',
+      'pickup_lng',
+      'service_area_id',
+      'shop_id',
+      'status',
+      'version',
+      'zalo',
+    ];
+
+    async function sideEffectRows(userId: string): Promise<{ audit: number; outbox: number; idempotency: number }> {
+      return {
+        audit: await countRows(app.pool, 'SELECT 1 FROM app.audit_logs WHERE actor_id = $1', [userId]),
+        outbox: await countRows(app.pool, "SELECT 1 FROM app.outbox_events WHERE payload->>'user_id' = $1", [userId]),
+        idempotency: await countRows(
+          app.pool,
+          "SELECT 1 FROM app.idempotency_records WHERE scope_type = 'user' AND scope_id = $1",
+          [userId],
+        ),
+      };
+    }
+
+    it('before any save: 200 with data null', async () => {
+      const user = await registerUser(app);
+      const response = await readProfile(user.accessToken);
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ data: null });
+    });
+
+    it('after a save: returns the whole draft and its version, the contact phone normalized', async () => {
+      const user = await registerUser(app);
+      const contact = randomPhone();
+      const areaId = await createServiceArea(app.pool);
+      const saved = await saveProfile(
+        user.accessToken,
+        shopProfileBody({
+          name: '  Quán Resume  ',
+          contact_phone: contact.local,
+          address_text: '12 Hàng Mã',
+          zalo: 'zalo.resume',
+          facebook: null,
+          ...GPS,
+          service_area_id: areaId,
+        }),
+      );
+      expect(saved.status).toBe(201);
+
+      const response = await readProfile(user.accessToken);
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        data: {
+          shop_id: dataOf(saved).shop_id,
+          name: 'Quán Resume',
+          contact_phone: contact.normalized,
+          zalo: 'zalo.resume',
+          facebook: null,
+          address_text: '12 Hàng Mã',
+          pickup_lat: GPS.pickup_lat,
+          pickup_lng: GPS.pickup_lng,
+          service_area_id: areaId,
+          status: 'INCOMPLETE',
+          accepting_orders: false,
+          version: 1,
+        },
+      });
+      expect(Object.keys(dataOf(response)).sort()).toEqual(PROFILE_KEYS);
+      // Nothing about the user, the membership or the bookkeeping leaves with it.
+      expect(response.text).not.toContain(user.userId);
+      expect(response.text).not.toMatch(/user_id|member|idempotency|audit|created_at|updated_at/);
+    });
+
+    it('a draft without GPS and area comes back with nulls', async () => {
+      const user = await registerUser(app);
+      await saveProfile(user.accessToken, { name: 'N', contact_phone: randomPhone().local, address_text: 'A' });
+      expect(dataOf(await readProfile(user.accessToken))).toMatchObject({
+        zalo: null,
+        facebook: null,
+        pickup_lat: null,
+        pickup_lng: null,
+        service_area_id: null,
+        status: 'INCOMPLETE',
+        version: 1,
+      });
+    });
+
+    it('a NEW session on another device reads the draft and can save it back at the version it was given', async () => {
+      const user = await registerUser(app);
+      const areaId = await createServiceArea(app.pool);
+      expect((await saveProfile(user.accessToken, shopProfileBody({ ...GPS, service_area_id: areaId }))).status).toBe(201);
+      const original = dataOf(await readProfile(user.accessToken));
+
+      // Nothing of the first client survives: a fresh login, a different device, a different token.
+      const login = await loginUser(app, user, { ...DEVICE, device_id: 'device-resume-other' });
+      expect(login.status).toBe(200);
+      const otherToken = String(dataOf(login).access_token);
+      expect(otherToken).not.toBe(user.accessToken);
+
+      const resumed = dataOf(await readProfile(otherToken));
+      expect(resumed).toEqual(original);
+
+      // The response alone rebuilds the form: send the same fields back with expected_version = version.
+      const form = Object.fromEntries(
+        Object.entries(resumed).filter(([key]) => !['shop_id', 'status', 'accepting_orders', 'version'].includes(key)),
+      );
+      const again = await saveProfile(otherToken, { ...form, expected_version: resumed.version });
+      expect(again.status).toBe(200);
+      expect(dataOf(again)).toEqual({ shop_id: resumed.shop_id, status: 'INCOMPLETE', version: 2, role_granted: false });
+      expect(dataOf(await readProfile(otherToken))).toEqual({ ...resumed, version: 2 });
+
+      // And the new session can finish onboarding from there.
+      expect((await complete(otherToken, { expected_version: 2 })).status).toBe(200);
+    });
+
+    it('after an update: returns the new data and the new version', async () => {
+      const user = await registerUser(app);
+      const areaId = await createServiceArea(app.pool);
+      await saveProfile(user.accessToken, shopProfileBody({ name: 'First', zalo: 'first.zalo' }));
+      const updated = await saveProfile(
+        user.accessToken,
+        shopProfileBody({ name: 'Second', zalo: null, ...GPS, service_area_id: areaId, expected_version: 1 }),
+      );
+      expect(updated.status).toBe(200);
+      expect(dataOf(await readProfile(user.accessToken))).toMatchObject({
+        name: 'Second',
+        zalo: null,
+        pickup_lat: GPS.pickup_lat,
+        pickup_lng: GPS.pickup_lng,
+        service_area_id: areaId,
+        status: 'INCOMPLETE',
+        version: 2,
+      });
+    });
+
+    it('a completed profile reads ACTIVE; a DISABLED one reads DISABLED; mutation rules are unchanged', async () => {
+      const { user, shopId, version } = await completeDraft();
+      expect((await complete(user.accessToken, { expected_version: version })).status).toBe(200);
+      expect(dataOf(await readProfile(user.accessToken))).toMatchObject({
+        shop_id: shopId,
+        status: 'ACTIVE',
+        accepting_orders: false,
+        version: version + 1,
+      });
+      const edit = await saveProfile(user.accessToken, shopProfileBody({ expected_version: version + 1 }));
+      expect([edit.status, errorCode(edit)]).toEqual([409, 'SHOP_ONBOARDING_EXISTS']);
+
+      await app.pool.query(
+        `UPDATE app.shops SET status = 'DISABLED', accepting_orders = false, version = version + 1, updated_at = clock_timestamp()
+          WHERE shop_id = $1::uuid`,
+        [shopId],
+      );
+      expect(dataOf(await readProfile(user.accessToken))).toMatchObject({ shop_id: shopId, status: 'DISABLED', version: version + 2 });
+    });
+
+    it('needs no Idempotency-Key, and ignores one that is sent (even a malformed one)', async () => {
+      const user = await registerUser(app);
+      await saveProfile(user.accessToken, shopProfileBody({ name: 'Keyless' }));
+      const before = await sideEffectRows(user.userId);
+      for (const headers of [undefined, { 'idempotency-key': randomUUID() }, { 'idempotency-key': 'not a key' }]) {
+        const response = await readProfile(user.accessToken, headers);
+        expect([headers, response.status]).toEqual([headers, 200]);
+        expect(dataOf(response).name).toBe('Keyless');
+      }
+      expect(await sideEffectRows(user.userId)).toEqual(before);
+    });
+
+    it('requires a valid session: the existing session errors, and no profile data', async () => {
+      const missing = await readProfile(undefined);
+      expect([missing.status, errorCode(missing)]).toEqual([401, 'SESSION_INVALID']);
+      const bogus = await readProfile('x'.repeat(43));
+      expect([bogus.status, errorCode(bogus)]).toEqual([401, 'SESSION_INVALID']);
+
+      const user = await registerUser(app);
+      await saveProfile(user.accessToken, shopProfileBody());
+      await setUserStatus(app.pool, user.userId, 'DISABLED');
+      const disabled = await readProfile(user.accessToken);
+      expect([disabled.status, errorCode(disabled)]).toEqual([403, 'ACCOUNT_DISABLED']);
+      expect(disabled.body.data).toBeUndefined();
+    });
+
+    it("never returns another user's profile", async () => {
+      const owner = await registerUser(app);
+      const other = await registerUser(app);
+      await saveProfile(owner.accessToken, shopProfileBody({ name: 'Mine only' }));
+      expect((await readProfile(other.accessToken)).body).toEqual({ data: null });
+      expect(dataOf(await readProfile(owner.accessToken)).name).toBe('Mine only');
+    });
+
+    it('is read-only: no audit row, no outbox event, no idempotency record, and nothing of the profile in the logs', async () => {
+      const user = await registerUser(app);
+      const marker = `READMARK${randomUUID().replace(/-/g, '')}`;
+      const saved = await saveProfile(user.accessToken, shopProfileBody({ name: `${marker}_NAME`, address_text: `${marker}_ADDRESS` }));
+      expect(saved.status).toBe(201);
+      const before = await sideEffectRows(user.userId);
+      const shopBefore = await shopRowsOf(user.userId);
+
+      const first = await readProfile(user.accessToken);
+      const second = await readProfile(user.accessToken);
+      expect([first.status, second.status]).toEqual([200, 200]);
+      expect(dataOf(second)).toEqual(dataOf(first));
+      expect(String(dataOf(first).name)).toBe(`${marker}_NAME`);
+
+      expect(await sideEffectRows(user.userId)).toEqual(before);
+      for (const requestId of [first.requestId, second.requestId]) {
+        expect(await countRows(app.pool, 'SELECT 1 FROM app.audit_logs WHERE request_id = $1::uuid', [requestId])).toBe(0);
+      }
+      // The shop itself is untouched: same version, same row.
+      expect(await shopRowsOf(user.userId)).toEqual(shopBefore);
+      expect(app.running.logs.join('\n')).not.toContain(marker);
     });
   });
 
@@ -485,6 +709,112 @@ describe('M01-A2S — Shop onboarding', () => {
       expect(data.available_roles).toEqual([]);
       const select = await selectRole(user.accessToken, 'SHOP');
       expect([select.status, errorCode(select)]).toEqual([403, 'ROLE_NOT_AVAILABLE']);
+    });
+
+    describe('onboarding_required / role_selection_required at /me and at login (A2S review addendum)', () => {
+      const disableShopOf = (userId: string) =>
+        app.pool.query(
+          `UPDATE app.shops SET status = 'DISABLED', accepting_orders = false, version = version + 1, updated_at = clock_timestamp()
+            WHERE shop_id IN (SELECT shop_id FROM app.shop_members WHERE user_id = $1::uuid)`,
+          [userId],
+        );
+
+      /** The same four facts from /me (existing session) and from a fresh login: they must agree. */
+      async function projections(user: Registered, label: string): Promise<Array<[string, unknown, unknown, unknown]>> {
+        const fromMe = dataOf(await me(user.accessToken));
+        const login = await loginUser(app, user, { ...DEVICE, device_id: `device-flags-${label}` });
+        expect(login.status).toBe(200);
+        const fromLogin = dataOf(login);
+        return [
+          ['me', fromMe.available_roles, fromMe.onboarding_required, fromMe.role_selection_required],
+          ['login', fromLogin.available_roles, fromLogin.onboarding_required, fromLogin.role_selection_required],
+        ];
+      }
+
+      it('NOT_STARTED and INCOMPLETE without a usable role: onboarding is required (also with a stray SHOP role)', async () => {
+        const user = await registerUser(app);
+        expect(await projections(user, 'ns')).toEqual([
+          ['me', [], true, false],
+          ['login', [], true, false],
+        ]);
+        await grantStrayRole(app.pool, user.userId, 'SHOP');
+        expect(await projections(user, 'ns-stray')).toEqual([
+          ['me', [], true, false],
+          ['login', [], true, false],
+        ]);
+        expect((await saveProfile(user.accessToken, shopProfileBody())).status).toBe(201);
+        expect(dataOf(await me(user.accessToken)).onboarding).toEqual({ shop: 'INCOMPLETE', driver: 'NOT_STARTED' });
+        expect(await projections(user, 'inc')).toEqual([
+          ['me', [], true, false],
+          ['login', [], true, false],
+        ]);
+      });
+
+      it('ACTIVE: SHOP is available, onboarding is not required, a role must be selected', async () => {
+        const { user, version } = await completeDraft();
+        expect((await complete(user.accessToken, { expected_version: version })).status).toBe(200);
+        expect(await projections(user, 'active')).toEqual([
+          ['me', ['SHOP'], false, true],
+          ['login', ['SHOP'], false, true],
+        ]);
+      });
+
+      it('DISABLED shop-only user: COMPLETED, nothing to select, and NOT sent back to an onboarding that would refuse', async () => {
+        const { user, version } = await completeDraft();
+        expect((await complete(user.accessToken, { expected_version: version })).status).toBe(200);
+        await disableShopOf(user.userId);
+
+        const data = dataOf(await me(user.accessToken));
+        expect(data.onboarding).toEqual({ shop: 'COMPLETED', driver: 'NOT_STARTED' });
+        expect(data.active_role).toBeNull();
+        expect(await projections(user, 'disabled')).toEqual([
+          ['me', [], false, false],
+          ['login', [], false, false],
+        ]);
+
+        const select = await selectRole(user.accessToken, 'SHOP');
+        expect([select.status, errorCode(select)]).toEqual([403, 'ROLE_NOT_AVAILABLE']);
+        // This is why onboarding_required must be false: both onboarding commands refuse this user.
+        const save = await saveProfile(user.accessToken, shopProfileBody({ expected_version: version + 2 }));
+        expect([save.status, errorCode(save)]).toEqual([409, 'SHOP_ONBOARDING_EXISTS']);
+        const again = await complete(user.accessToken, { expected_version: version + 2 });
+        expect([again.status, errorCode(again)]).toEqual([409, 'SHOP_ONBOARDING_EXISTS']);
+      });
+
+      it('DRIVER + DISABLED shop: only DRIVER is offered and selectable; DRIVER behaviour is unchanged', async () => {
+        const { user, version } = await completeDraft();
+        expect((await complete(user.accessToken, { expected_version: version })).status).toBe(200);
+        // DRIVER onboarding does not exist yet: a bare DRIVER role row stands in for it, as in the A1 suites.
+        await grantStrayRole(app.pool, user.userId, 'DRIVER');
+        await disableShopOf(user.userId);
+
+        expect(await projections(user, 'driver-disabled')).toEqual([
+          ['me', ['DRIVER'], false, true],
+          ['login', ['DRIVER'], false, true],
+        ]);
+        const shop = await selectRole(user.accessToken, 'SHOP');
+        expect([shop.status, errorCode(shop)]).toEqual([403, 'ROLE_NOT_AVAILABLE']);
+        const driver = await selectRole(user.accessToken, 'DRIVER');
+        expect(driver.status).toBe(200);
+        expect(dataOf(driver)).toMatchObject({
+          available_roles: ['DRIVER'],
+          active_role: 'DRIVER',
+          onboarding_required: false,
+          role_selection_required: false,
+        });
+        const after = dataOf(await me(user.accessToken));
+        expect([after.active_role, after.onboarding_required, after.role_selection_required]).toEqual(['DRIVER', false, false]);
+        expect(after.onboarding).toEqual({ shop: 'COMPLETED', driver: 'NOT_STARTED' });
+      });
+
+      it('a DRIVER with no shop at all is as in A1: no onboarding required, role selection required', async () => {
+        const user = await registerUser(app);
+        await grantStrayRole(app.pool, user.userId, 'DRIVER');
+        expect(await projections(user, 'driver-only')).toEqual([
+          ['me', ['DRIVER'], false, true],
+          ['login', ['DRIVER'], false, true],
+        ]);
+      });
     });
 
     it('A1 regression after real onboarding: SHOP moves between devices and a DRIVER session is untouched', async () => {

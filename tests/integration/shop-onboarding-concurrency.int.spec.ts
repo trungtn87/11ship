@@ -14,6 +14,7 @@ import {
   Registered,
   removeShopActivateStall,
   rowLockWaiters,
+  rowLockWaitersRunning,
   shopProfileBody,
   startAuthApp,
 } from './support/auth-fixtures';
@@ -246,6 +247,102 @@ describe('M01-A2S — Shop onboarding concurrency', () => {
       }
       await removeShopActivateStall(app.pool);
     }
+  });
+
+  describe('/auth/me is one coherent snapshot against a concurrent completion (A2S review addendum)', () => {
+    const me = (token: string): Promise<ApiResponse> => app.call('GET', '/auth/me', { bearer: token });
+    // The statement /auth/me blocks on: the shared lock of the user row.
+    const ME_SHARE_LOCK = '%FROM app.users WHERE user_id = $1::uuid FOR SHARE%';
+    const meWaiters = (): Promise<number> => rowLockWaitersRunning(app.pool, ME_SHARE_LOCK);
+
+    it('/auth/me started while a completion holds the user row WAITS for it, then reports the final state: SHOP available, COMPLETED, no onboarding', async () => {
+      const { user, version } = await draft();
+      // Before anything: the user has an INCOMPLETE draft and no role.
+      expect(dataOf(await me(user.accessToken))).toMatchObject({
+        available_roles: [],
+        onboarding: { shop: 'INCOMPLETE', driver: 'NOT_STARTED' },
+        onboarding_required: true,
+      });
+
+      await removeShopActivateStall(app.pool);
+      await installShopActivateStall(app.pool, STALL_KEY);
+      const gate = await LockHolder.begin(app.pool);
+      let gateOpen = true;
+      try {
+        await gate.advisory({ first: STALL_KEY[0], second: STALL_KEY[1] });
+        const completion = post(user.accessToken, { expected_version: version });
+        // Stalled on the ACTIVE transition, BEFORE the role grant and before COMMIT: the completion holds the
+        // user row FOR UPDATE, and nothing it did is visible to anyone else yet.
+        await eventually(() => advisoryWaiterExists(app.pool, STALL_KEY), 'the completion stalled inside its write transaction');
+        expect(await meWaiters()).toBe(0);
+        expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(0);
+
+        let meSettled = false;
+        const pending = me(user.accessToken).finally(() => {
+          meSettled = true;
+        });
+        // Observed in pg_locks + pg_stat_activity, not assumed from timing: one backend is blocked on a row
+        // lock while running exactly the FOR SHARE statement of /auth/me.
+        await eventually(async () => (await meWaiters()) === 1, '/auth/me blocked on the user row behind the completion');
+        expect(meSettled).toBe(false);
+        // The completion is still stalled, so /me is waiting for a transaction that has not committed.
+        expect(await advisoryWaiterExists(app.pool, STALL_KEY)).toBe(true);
+        expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(0);
+
+        await gate.commit();
+        gateOpen = false;
+        const [completed, response] = await Promise.all([completion, pending]);
+        expect(completed.status).toBe(200);
+        expect(response.status).toBe(200);
+
+        // The coherent final projection. The impossible mix (shop COMPLETED while SHOP is not yet listed, or
+        // the reverse) cannot appear: every read of /me ran after the completion committed.
+        const data = dataOf(response);
+        expect(data.available_roles).toEqual(['SHOP']);
+        expect(data.onboarding).toEqual({ shop: 'COMPLETED', driver: 'NOT_STARTED' });
+        expect(data.onboarding_required).toBe(false);
+        expect(data.role_selection_required).toBe(true);
+        expect(data.active_role).toBeNull();
+        expect(await meWaiters()).toBe(0);
+      } finally {
+        if (gateOpen) {
+          await gate.rollback();
+        }
+        await removeShopActivateStall(app.pool);
+      }
+    });
+
+    it('the shared lock does not serialize readers: /auth/me answers while another transaction holds the user row FOR SHARE', async () => {
+      const { user } = await draft();
+      const sharer = await LockHolder.begin(app.pool);
+      try {
+        await sharer.query('SELECT 1 FROM app.users WHERE user_id = $1::uuid FOR SHARE', [user.userId]);
+        // Completes while the other share lock is still held: FOR SHARE does not conflict with FOR SHARE.
+        const responses = await Promise.all([me(user.accessToken), me(user.accessToken)]);
+        expect(responses.map((r) => r.status)).toEqual([200, 200]);
+        expect(dataOf(responses[0] as ApiResponse).onboarding).toEqual({ shop: 'INCOMPLETE', driver: 'NOT_STARTED' });
+      } finally {
+        await sharer.rollback();
+      }
+    });
+
+    it('/auth/me writes nothing and leaves the A1 session as it was', async () => {
+      const { user } = await draft();
+      const sessionsBefore = await app.pool.query(
+        'SELECT session_id, active_role, revoked_at, updated_at FROM app.sessions WHERE user_id = $1::uuid ORDER BY session_id',
+        [user.userId],
+      );
+      const auditBefore = await count('SELECT 1 FROM app.audit_logs WHERE actor_id = $1', [user.userId]);
+      const response = await me(user.accessToken);
+      expect(response.status).toBe(200);
+      const sessionsAfter = await app.pool.query(
+        'SELECT session_id, active_role, revoked_at, updated_at FROM app.sessions WHERE user_id = $1::uuid ORDER BY session_id',
+        [user.userId],
+      );
+      expect(sessionsAfter.rows).toEqual(sessionsBefore.rows);
+      expect(await count('SELECT 1 FROM app.audit_logs WHERE actor_id = $1', [user.userId])).toBe(auditBefore);
+      expect(await count('SELECT 1 FROM app.audit_logs WHERE request_id = $1::uuid', [response.requestId])).toBe(0);
+    });
   });
 
   it('a popular area does not serialize shops: completions of two users run while a third transaction holds FOR SHARE on the area', async () => {

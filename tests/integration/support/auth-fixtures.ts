@@ -529,6 +529,24 @@ export async function rowLockWaiters(pool: Pool): Promise<number> {
   return result.rows[0]?.n ?? 0;
 }
 
+/**
+ * Backends blocked behind another transaction's row lock WHILE running a statement whose text matches the
+ * given LIKE pattern. It names the waiter: "the /auth/me FOR SHARE on the user row is the statement that
+ * waits", not merely "something waits". The pattern travels as a parameter, so this query never matches itself.
+ */
+export async function rowLockWaitersRunning(pool: Pool, queryLike: string): Promise<number> {
+  const result = await pool.query<{ n: number }>(
+    `SELECT count(DISTINCT l.pid)::int AS n
+       FROM pg_locks l
+       JOIN pg_stat_activity a ON a.pid = l.pid
+      WHERE l.locktype IN ('transactionid', 'tuple') AND NOT l.granted
+        AND a.wait_event_type = 'Lock'
+        AND a.query LIKE $1`,
+    [queryLike],
+  );
+  return result.rows[0]?.n ?? 0;
+}
+
 /** True while some backend waits for the given (int, int) advisory lock. */
 export async function advisoryWaiterExists(pool: Pool, key: readonly [number, number]): Promise<boolean> {
   const result = await pool.query(

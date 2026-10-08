@@ -5,7 +5,7 @@ import { AppError } from '../common/app-errors';
 import { AuthConfig } from '../config/auth-config';
 import { ShopEligibilityReader } from '../shop/shop-eligibility-reader';
 import { TransactionManager } from '../transaction/transaction-manager';
-import { availableRoles } from './available-roles';
+import { roleContext } from './available-roles';
 import { AUDIT_ACTIONS } from './auth-constants';
 import { AUTH_CONFIG } from './auth-config.provider';
 import { LoginInput } from './auth-validation';
@@ -72,9 +72,10 @@ export class LoginService {
         device: input.device,
         ttlSeconds: this.config.sessionTtlSeconds,
       });
-      // The roles the user can actually select: SHOP only with an ACTIVE owned shop (see availableRoles).
+      // The roles the user can actually select (SHOP only with an ACTIVE owned shop) and the two flags, from
+      // the same rule /me uses (see roleContext). A new session has no active role.
       const held = await this.users.supportedRoles(context, locked.userId);
-      const roles = availableRoles(held, await this.shops.ownerShopEligibility(context, locked.userId));
+      const roles = roleContext(held, await this.shops.ownerShopEligibility(context, locked.userId), null);
       await this.audit.append(context, {
         requestId,
         actorType: 'USER',
@@ -89,10 +90,10 @@ export class LoginService {
         kind: 'ok',
         result: {
           user_id: locked.userId,
-          available_roles: roles,
+          available_roles: roles.available_roles,
           active_role: null,
-          onboarding_required: roles.length === 0,
-          role_selection_required: roles.length > 0,
+          onboarding_required: roles.onboarding_required,
+          role_selection_required: roles.role_selection_required,
           access_token: session.accessToken,
         },
       };

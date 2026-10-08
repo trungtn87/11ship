@@ -59,6 +59,21 @@ export class UserRepository {
     return row === undefined ? undefined : toUser(row);
   }
 
+  /**
+   * A shared row lock on the user, for a reader that must see one coherent state of everything the user lock
+   * guards (roles, owned shop status). It waits for a writer holding the row FOR UPDATE and lets other
+   * FOR SHARE readers through. The caller re-checks the returned status; nothing is written.
+   */
+  async lockByIdForShare(context: TransactionContext, userId: string): Promise<UserRow | undefined> {
+    const result = await context.query<RawUser>(
+      `SELECT user_id, phone_normalized, password_hash, status
+         FROM app.users WHERE user_id = $1::uuid FOR SHARE`,
+      [userId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toUser(row);
+  }
+
   async findById(context: TransactionContext, userId: string): Promise<UserRow | undefined> {
     const result = await context.query<RawUser>(
       `SELECT user_id, phone_normalized, password_hash, status

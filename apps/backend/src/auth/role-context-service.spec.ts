@@ -3,6 +3,7 @@ import { AuditWriter } from '../audit/audit-writer';
 import { AppError } from '../common/app-errors';
 import { ShopEligibilityReader } from '../shop/shop-eligibility-reader';
 import { OwnerShopEligibility } from '../shop/shop-types';
+import { codeOf as sourceOf } from '../shared/source-scan.fixture';
 import { fakeTransactions } from './auth-fakes.fixture';
 import { AuthPrincipal } from './auth-principal';
 import { RoleContextService } from './role-context-service';
@@ -40,6 +41,10 @@ function rig(options: {
   const users = {
     lockById: async () => {
       events.push('user.lock');
+      return 'user' in options ? options.user : USER;
+    },
+    lockByIdForShare: async () => {
+      events.push('user.share');
       return 'user' in options ? options.user : USER;
     },
     hasRole: async () => {
@@ -219,6 +224,82 @@ describe('RoleContextService.me (task section 13)', () => {
     const done = await rig({ roles: ['SHOP'] }).service.me(PRINCIPAL);
     expect(done.onboarding).toEqual({ shop: 'COMPLETED', driver: 'NOT_STARTED' });
     expect(done.available_roles).toEqual(['SHOP']);
+  });
+
+  it('takes the user row FOR SHARE first, re-checks it, then reads roles and shop in ONE transaction', async () => {
+    const r = rig({ roles: ['SHOP'] });
+    await r.service.me(PRINCIPAL);
+    expect(r.events).toEqual(['user.share', 'roles.read', 'shop.read']);
+    expect(r.transactions.transactions).toBe(1);
+    // A reader: never the exclusive lock, never a session lock, never an audit row.
+    expect(r.events).not.toContain('user.lock');
+    expect(r.audits).toHaveLength(0);
+  });
+
+  it('re-checks the user AFTER the shared lock: gone is SESSION_INVALID, disabled is ACCOUNT_DISABLED, nothing else is read', async () => {
+    const gone = rig({ user: undefined });
+    expect(await codeOf(() => gone.service.me(PRINCIPAL))).toBe('SESSION_INVALID');
+    expect(gone.events).toEqual(['user.share']);
+    const disabled = rig({ user: { ...USER, status: 'DISABLED' } });
+    expect(await codeOf(() => disabled.service.me(PRINCIPAL))).toBe('ACCOUNT_DISABLED');
+    expect(disabled.events).toEqual(['user.share']);
+  });
+
+  it('the shared lock is a real FOR SHARE in the Auth repository and /me asks for it before any read', () => {
+    const repository = sourceOf('auth/user-repository.ts');
+    const share = repository.slice(repository.indexOf('async lockByIdForShare('), repository.indexOf('async findById('));
+    expect(share).toMatch(/FROM app\.users WHERE user_id = \$1::uuid FOR SHARE/);
+    expect(share).not.toMatch(/FOR UPDATE|INSERT|UPDATE app|DELETE/);
+    // The exclusive lock of the mutations is untouched.
+    expect(repository.split('FOR UPDATE').length - 1).toBe(1);
+
+    const service = sourceOf('auth/role-context-service.ts');
+    const me = service.slice(service.indexOf('async me('), service.indexOf('async selectRole('));
+    expect(me.indexOf('lockByIdForShare(')).toBeGreaterThan(-1);
+    expect(me.indexOf('lockByIdForShare(')).toBeLessThan(me.indexOf('supportedRoles('));
+    expect(me.indexOf('supportedRoles(')).toBeLessThan(me.indexOf('ownerShopEligibility('));
+    expect(me).not.toMatch(/lockById\(|SERIALIZABLE|\.query\(/);
+  });
+
+  describe('onboarding_required / role_selection_required by shop state (A2S review addendum)', () => {
+    const NOT_STARTED: OwnerShopEligibility = { onboarding: 'NOT_STARTED', selectable: false };
+    const INCOMPLETE: OwnerShopEligibility = { onboarding: 'INCOMPLETE', selectable: false };
+    const ACTIVE: OwnerShopEligibility = { onboarding: 'COMPLETED', selectable: true };
+    const DISABLED: OwnerShopEligibility = { onboarding: 'COMPLETED', selectable: false };
+
+    const flags = async (roles: string[], shop: OwnerShopEligibility, activeRole: string | null = null) => {
+      const result = await rig({ roles, shop }).service.me({ ...PRINCIPAL, activeRole });
+      return [result.available_roles, result.onboarding.shop, result.onboarding_required, result.role_selection_required];
+    };
+
+    it('NOT_STARTED: onboarding is required, with or without a stray SHOP role', async () => {
+      expect(await flags([], NOT_STARTED)).toEqual([[], 'NOT_STARTED', true, false]);
+      expect(await flags(['SHOP'], NOT_STARTED)).toEqual([[], 'NOT_STARTED', true, false]);
+    });
+
+    it('INCOMPLETE: onboarding is still required', async () => {
+      expect(await flags([], INCOMPLETE)).toEqual([[], 'INCOMPLETE', true, false]);
+      expect(await flags(['SHOP'], INCOMPLETE)).toEqual([[], 'INCOMPLETE', true, false]);
+    });
+
+    it('ACTIVE: SHOP is available, onboarding is not required, selection is required until a role is active', async () => {
+      expect(await flags(['SHOP'], ACTIVE)).toEqual([['SHOP'], 'COMPLETED', false, true]);
+      expect(await flags(['SHOP'], ACTIVE, 'SHOP')).toEqual([['SHOP'], 'COMPLETED', false, false]);
+    });
+
+    it('DISABLED: COMPLETED, SHOP hidden, and the user is NOT sent back to onboarding or to role selection', async () => {
+      expect(await flags(['SHOP'], DISABLED)).toEqual([[], 'COMPLETED', false, false]);
+    });
+
+    it('DRIVER + DISABLED shop: only DRIVER is offered, no onboarding, role selection as usual', async () => {
+      expect(await flags(['DRIVER', 'SHOP'], DISABLED)).toEqual([['DRIVER'], 'COMPLETED', false, true]);
+      expect(await flags(['DRIVER', 'SHOP'], DISABLED, 'DRIVER')).toEqual([['DRIVER'], 'COMPLETED', false, false]);
+    });
+
+    it('DRIVER is unchanged by an unfinished shop: holding it turns onboarding off', async () => {
+      expect(await flags(['DRIVER'], NOT_STARTED)).toEqual([['DRIVER'], 'NOT_STARTED', false, true]);
+      expect(await flags(['DRIVER', 'SHOP'], INCOMPLETE)).toEqual([['DRIVER'], 'INCOMPLETE', false, true]);
+    });
   });
 
   it('has exactly the documented fields', async () => {

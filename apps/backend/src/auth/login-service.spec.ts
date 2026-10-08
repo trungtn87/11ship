@@ -145,6 +145,34 @@ describe('LoginService (task section 11)', () => {
     expect(result.available_roles).toEqual(['DRIVER']);
   });
 
+  it('reports the same onboarding / role-selection flags as /me for every shop state (A2S review addendum)', async () => {
+    const NOT_STARTED: OwnerShopEligibility = { onboarding: 'NOT_STARTED', selectable: false };
+    const INCOMPLETE: OwnerShopEligibility = { onboarding: 'INCOMPLETE', selectable: false };
+    const ACTIVE: OwnerShopEligibility = { onboarding: 'COMPLETED', selectable: true };
+    const DISABLED: OwnerShopEligibility = { onboarding: 'COMPLETED', selectable: false };
+    const cases: Array<[string, string[], OwnerShopEligibility, string[], boolean, boolean]> = [
+      ['no role, NOT_STARTED', [], NOT_STARTED, [], true, false],
+      ['stray SHOP, NOT_STARTED', ['SHOP'], NOT_STARTED, [], true, false],
+      ['INCOMPLETE', [], INCOMPLETE, [], true, false],
+      ['stray SHOP, INCOMPLETE', ['SHOP'], INCOMPLETE, [], true, false],
+      ['ACTIVE', ['SHOP'], ACTIVE, ['SHOP'], false, true],
+      // Completed but DISABLED: nothing to select and nothing to onboard.
+      ['DISABLED', ['SHOP'], DISABLED, [], false, false],
+      ['DRIVER + DISABLED', ['DRIVER', 'SHOP'], DISABLED, ['DRIVER'], false, true],
+      ['DRIVER, NOT_STARTED', ['DRIVER'], NOT_STARTED, ['DRIVER'], false, true],
+    ];
+    for (const [name, roles, shop, available, onboardingRequired, selectionRequired] of cases) {
+      const result = await rig({ roles, shop }).service.login(INPUT, REQUEST_ID);
+      expect([name, result.available_roles, result.onboarding_required, result.role_selection_required]).toEqual([
+        name,
+        available,
+        onboardingRequired,
+        selectionRequired,
+      ]);
+      expect(result.active_role).toBeNull();
+    }
+  });
+
   it('correct password on a disabled account: ACCOUNT_DISABLED, a DENIED audit, and no session', async () => {
     const r = rig({ found: { ...USER, status: 'DISABLED' } });
     expect(await codeOf(() => r.service.login(INPUT, REQUEST_ID))).toBe('ACCOUNT_DISABLED');

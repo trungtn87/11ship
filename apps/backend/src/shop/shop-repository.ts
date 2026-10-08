@@ -95,6 +95,24 @@ export class ShopRepository {
     return toShop(row);
   }
 
+  /**
+   * Reads the shop the user owns, whatever its status, or undefined when the user owns none. ONE statement on
+   * purpose: the OWNER membership and the shop are joined in a single snapshot, so the caller can never see a
+   * membership from one moment and a shop from another. It locks nothing and writes nothing.
+   */
+  async findOwnedShop(context: TransactionContext, userId: string): Promise<ShopRow | undefined> {
+    const result = await context.query<RawShop>(
+      `SELECT s.shop_id, s.name, s.contact_phone_normalized, s.zalo, s.facebook, s.address_text, s.pickup_lat,
+              s.pickup_lng, s.service_area_id, s.status, s.accepting_orders, s.version
+         FROM app.shop_members m
+         JOIN app.shops s ON s.shop_id = m.shop_id
+        WHERE m.user_id = $1::uuid AND m.member_role = $2`,
+      [userId, OWNER_MEMBER_ROLE],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toShop(row);
+  }
+
   /** Inserts an INCOMPLETE draft at version 1 that is not accepting orders. */
   async insertDraft(context: TransactionContext, shopId: string, profile: ShopProfileFields): Promise<void> {
     const result = await context.query(

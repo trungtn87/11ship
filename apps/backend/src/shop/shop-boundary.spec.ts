@@ -77,7 +77,32 @@ describe('Onboarding coordinator boundary', () => {
 
   it('issues no SQL itself: it composes repositories and participants inside the executor transaction', () => {
     const code = codeIn('onboarding');
-    expect(code).not.toMatch(/\.query\(|DATABASE_POOL|from 'pg'|BEGIN|COMMIT|ROLLBACK|TransactionManager/);
+    expect(code).not.toMatch(/\.query\(|DATABASE_POOL|from 'pg'|BEGIN|COMMIT|ROLLBACK/);
+    // Commands never open a transaction of their own. The single exception is the read side (resume), which
+    // has no idempotency record to run under: only that file may name the transaction manager.
+    const openers = filesOf('onboarding').filter((file) => /TransactionManager|withTransaction/.test(codeOf(file)));
+    expect(openers).toEqual(['onboarding/shop-profile-query-service.ts']);
+  });
+
+  it('the read side is one read: a single transaction, a single M02 query, no executor, audit, outbox or role grant', () => {
+    const query = codeOf('onboarding/shop-profile-query-service.ts');
+    expect(query.split('withTransaction(').length - 1).toBe(1);
+    expect(query.split('this.shops.').length - 1).toBe(1);
+    expect(query).toContain('this.shops.findOwnedShop(');
+    expect(query).not.toMatch(/Idempotency|AuditWriter|OutboxWriter|RoleGrantParticipant|ServiceAreaRepository|lockOwnedShop/);
+
+    const controller = codeOf('onboarding/shop-onboarding.controller.ts');
+    const read = controller.slice(controller.indexOf("@Get('profile')"), controller.indexOf("@Put('profile')"));
+    expect(read).toContain('this.profiles.ownedProfile(principal.userId)');
+    expect(read).not.toMatch(/idempotency|@Body|this\.onboarding\./i);
+  });
+
+  it('M02 reads the owned shop in ONE joined statement that takes no lock', () => {
+    const repository = codeOf('shop/shop-repository.ts');
+    const find = repository.slice(repository.indexOf('async findOwnedShop('), repository.indexOf('async insertDraft('));
+    expect(find.split('context.query').length - 1).toBe(1);
+    expect(find).toMatch(/FROM app\.shop_members m\s+JOIN app\.shops s ON s\.shop_id = m\.shop_id/);
+    expect(find).not.toMatch(/FOR (UPDATE|SHARE)|\b(INSERT|UPDATE|DELETE)\b/);
   });
 
   it('writes the profile and completion only through the M00 idempotency executor', () => {

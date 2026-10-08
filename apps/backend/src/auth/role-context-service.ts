@@ -3,9 +3,9 @@ import { AuditWriter } from '../audit/audit-writer';
 import { AppError } from '../common/app-errors';
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { ShopEligibilityReader } from '../shop/shop-eligibility-reader';
-import { ShopOnboardingState } from '../shop/shop-types';
+import { OwnerShopEligibility, ShopOnboardingState } from '../shop/shop-types';
 import { TransactionManager } from '../transaction/transaction-manager';
-import { availableRoles } from './available-roles';
+import { roleContext } from './available-roles';
 import { AUDIT_ACTIONS, isSupportedRole } from './auth-constants';
 import { AuthPrincipal } from './auth-principal';
 import { SessionRepository } from './session-repository';
@@ -44,19 +44,32 @@ export class RoleContextService {
     private readonly shops: ShopEligibilityReader,
   ) {}
 
+  /**
+   * One coherent projection (A2S review addendum). The user row is taken FOR SHARE before the roles and the
+   * shop eligibility are read. Shop completion (and every other writer of a user's roles or shop status) holds
+   * that row FOR UPDATE until it commits, so /me either runs entirely before such a writer or waits for it and
+   * then reads everything after its commit. Without the lock the two reads are two READ COMMITTED snapshots
+   * and a completion committing between them could show a COMPLETED shop next to a role list without SHOP.
+   *
+   * FOR SHARE, not FOR UPDATE: any number of /me calls of one user run together, and nothing is written. Only
+   * this one lock is taken, at the root of the A2 lock order, so the order of the mutations is unchanged.
+   */
   async me(principal: AuthPrincipal): Promise<MeProjection> {
     const view = await this.transactions.withTransaction(async (context) => {
+      const user = await this.users.lockByIdForShare(context, principal.userId);
+      if (user === undefined) {
+        throw new AppError('SESSION_INVALID');
+      }
+      // Re-check after the lock: the guard read the status before this transaction began.
+      if (user.status !== 'ACTIVE') {
+        throw new AppError('ACCOUNT_DISABLED');
+      }
       const held = await this.users.supportedRoles(context, principal.userId);
       const shop = await this.shops.ownerShopEligibility(context, principal.userId);
       return { held, shop };
     });
     return {
-      ...this.#shape(
-        principal.userId,
-        principal.phoneNormalized,
-        availableRoles(view.held, view.shop),
-        principal.activeRole,
-      ),
+      ...this.#shape(principal.userId, principal.phoneNormalized, view.held, view.shop, principal.activeRole),
       onboarding: { shop: view.shop.onboarding, driver: 'NOT_STARTED' },
     };
   }
@@ -134,18 +147,26 @@ export class RoleContextService {
       });
 
       const held = await this.users.supportedRoles(context, principal.userId);
-      return this.#shape(principal.userId, principal.phoneNormalized, availableRoles(held, shop), role);
+      return this.#shape(principal.userId, principal.phoneNormalized, held, shop, role);
     });
   }
 
-  #shape(userId: string, phone: string, roles: string[], activeRole: string | null): MeResult {
+  #shape(
+    userId: string,
+    phone: string,
+    held: readonly string[],
+    shop: OwnerShopEligibility,
+    activeRole: string | null,
+  ): MeResult {
+    // The same rule as login: see roleContext.
+    const context = roleContext(held, shop, activeRole);
     return {
       user_id: userId,
       phone_normalized: phone,
-      available_roles: roles,
+      available_roles: context.available_roles,
       active_role: activeRole,
-      onboarding_required: roles.length === 0,
-      role_selection_required: roles.length > 0 && activeRole === null,
+      onboarding_required: context.onboarding_required,
+      role_selection_required: context.role_selection_required,
     };
   }
 }

@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Body, Controller, Headers, HttpCode, Post, Put, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Post, Put, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthenticatedRequest } from '../auth/auth-principal';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
 import { ShopOnboardingService } from './shop-onboarding-service';
 import { parseShopCompleteBody, parseShopProfileBody } from './shop-onboarding-validation';
+import { ShopProfileQueryService } from './shop-profile-query-service';
 
 interface StatusSettableResponse {
   status(code: number): unknown;
@@ -21,7 +22,20 @@ function requestIdOf(request: { requestId?: string }): string {
 @Controller('onboarding/shop')
 @UseGuards(SessionAuthGuard)
 export class ShopOnboardingController {
-  constructor(private readonly onboarding: ShopOnboardingService) {}
+  constructor(
+    private readonly onboarding: ShopOnboardingService,
+    private readonly profiles: ShopProfileQueryService,
+  ) {}
+
+  /**
+   * Resume: the caller's own Shop profile with its current version, or null when there is none yet. Read-only,
+   * so there is no Idempotency-Key, no audit row and no outbox event.
+   */
+  @Get('profile')
+  async readProfile(@Req() request: AuthenticatedRequest) {
+    const principal = this.#principal(request);
+    return { data: await this.profiles.ownedProfile(principal.userId) };
+  }
 
   @Put('profile')
   async saveProfile(
