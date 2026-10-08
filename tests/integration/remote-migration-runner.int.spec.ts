@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Client } from 'pg';
 import { assertTestDatabaseTarget } from './support/assert-test-target';
@@ -29,6 +31,7 @@ interface RemoteMigrationScript {
   MIGRATIONS_SCHEMA: string;
 }
 
+const execFileAsync = promisify(execFile);
 const nodeRequire = createRequire(__filename);
 const script = nodeRequire(path.join(REPO_ROOT, 'scripts', 'db-migrate-remote.js')) as RemoteMigrationScript;
 const MIGRATIONS_DIR = path.join(REPO_ROOT, 'database', 'migrations');
@@ -96,18 +99,33 @@ describe('M00-D1 — the remote migration path against a real PostgreSQL', () =>
 
   it('lets node-pg-migrate run on an already-connected client and finds nothing to do on a migrated database', async () => {
     const before = await script.readMigrationState(client, MIGRATIONS_DIR, HISTORY_SCHEMA);
-    const messages: string[] = [];
-    const ran = await script.defaultRunMigrations({
-      client,
-      dir: MIGRATIONS_DIR,
-      log: (message) => messages.push(String(message)),
-      schema: HISTORY_SCHEMA,
+    // node-pg-migrate is loaded with a dynamic import(), which Jest's module sandbox does not allow. So the runner
+    // call runs in a plain Node child process against the same guarded database (the target was already asserted
+    // in beforeAll). The child inherits DATABASE_URL and prints only counts.
+    const childSource = `
+      const { Client } = require('pg');
+      const script = require(${JSON.stringify(path.join(REPO_ROOT, 'scripts', 'db-migrate-remote.js'))});
+      (async () => {
+        const c = new Client({ connectionString: process.env.DATABASE_URL });
+        await c.connect();
+        try {
+          const ran = await script.defaultRunMigrations({
+            client: c, dir: ${JSON.stringify(MIGRATIONS_DIR)}, log: () => undefined, schema: ${JSON.stringify(HISTORY_SCHEMA)},
+          });
+          const alive = await c.query('SELECT 1 AS ok');
+          console.log(JSON.stringify({ ran: ran.length, alive: alive.rows[0].ok }));
+        } finally {
+          await c.end();
+        }
+      })().catch((e) => { console.error(e && e.code ? String(e.code) : 'FAILED', e && e.message); process.exit(1); });
+    `;
+    const { stdout } = await execFileAsync(process.execPath, ['-e', childSource], {
+      cwd: REPO_ROOT,
+      env: process.env,
+      timeout: 60000,
     });
-    expect(ran).toEqual([]);
+    expect(JSON.parse(stdout.trim())).toEqual({ ran: 0, alive: 1 });
     const after = await script.readMigrationState(client, MIGRATIONS_DIR, HISTORY_SCHEMA);
     expect(after.applied).toEqual(before.applied);
-    // The client is still usable afterwards (the runner did not close a connection it does not own).
-    const alive = await client.query<{ ok: number }>('SELECT 1 AS ok');
-    expect(alive.rows[0]?.ok).toBe(1);
   });
 });
