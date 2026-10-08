@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
-import { AuthApp, errorCode, installFault, removeFault, startAuthApp } from './support/auth-fixtures';
+import { AuthApp, createServiceArea, errorCode, installFault, removeFault, startAuthApp } from './support/auth-fixtures';
 import {
   createShopOwner,
   hoursBody,
@@ -105,15 +105,41 @@ describe('M02-A — Shop management fault matrix', () => {
     for (const fault of PROFILE_FAULTS) {
       it(`${fault.name}: everything rolls back, the old profile survives, the key is not consumed`, async () => {
         const owner = await createShopOwner(app);
+        // Every updatable profile field differs from the fixture, the service area included (another ACTIVE area).
+        const otherArea = await createServiceArea(app.pool);
+        expect(otherArea).not.toBe(owner.areaId);
+        const body = profileBody(owner, {
+          expected_version: 3, // after the schedule below
+          name: 'Quán Đổi Mới',
+          contact_phone: '0933333333',
+          zalo: 'zalo.changed',
+          facebook: 'fb.changed',
+          address_text: '9 Phố Mới, Cầu Giấy',
+          pickup_lat: 21.0333,
+          pickup_lng: 105.7777,
+          service_area_id: otherArea,
+        });
+        expect((await putHours(app, owner.token, hoursBody(OLD_SCHEDULE))).status).toBe(200);
         const before = await shopState(app.pool, owner);
+        expect(before).toMatchObject({
+          name: 'Fixture shop',
+          contact: '+84900000001',
+          zalo: null,
+          facebook: null,
+          addressText: 'Fixture address',
+          pickupLat: 21,
+          pickupLng: 105.8,
+          areaId: owner.areaId,
+          hours: OLD_SCHEDULE,
+        });
         const key = randomUUID();
-        const body = profileBody(owner);
 
         await fault.install(owner);
         try {
           const failed = await putProfile(app, owner.token, body, key);
           expect([failed.status, errorCode(failed)]).toEqual([500, 'INTERNAL_ERROR']);
           expect(failed.text).not.toMatch(/injected|XX001|trigger/i);
+          // The WHOLE profile, version, schedule and every side effect are rolled back.
           expect(await shopState(app.pool, owner)).toEqual(before);
         } finally {
           await removeFault(app.pool, fault.name, fault.table);
@@ -122,8 +148,21 @@ describe('M02-A — Shop management fault matrix', () => {
         const retried = await putProfile(app, owner.token, body, key);
         expect(retried.status).toBe(200);
         const after = await shopState(app.pool, owner);
-        expect(after).toMatchObject({ name: 'Quán Mới', version: before.version + 1 });
-        expect([after.audits - before.audits, after.events - before.events, after.records - before.records]).toEqual([1, 1, 1]);
+        expect(after).toEqual({
+          ...before,
+          name: 'Quán Đổi Mới',
+          contact: '+84933333333',
+          zalo: 'zalo.changed',
+          facebook: 'fb.changed',
+          addressText: '9 Phố Mới, Cầu Giấy',
+          pickupLat: 21.0333,
+          pickupLng: 105.7777,
+          areaId: otherArea,
+          version: before.version + 1,
+          audits: before.audits + 1,
+          events: before.events + 1,
+          records: before.records + 1,
+        });
       });
     }
   });

@@ -127,6 +127,11 @@ export interface ShopState {
   readonly status: string;
   readonly name: string;
   readonly contact: string;
+  readonly zalo: string | null;
+  readonly facebook: string | null;
+  readonly addressText: string;
+  readonly pickupLat: number | null;
+  readonly pickupLng: number | null;
   readonly areaId: string;
   readonly acceptingOrders: boolean;
   readonly hours: Wire[];
@@ -147,10 +152,16 @@ export async function shopState(pool: Pool, owner: ShopOwner): Promise<ShopState
     status: string;
     name: string;
     contact_phone_normalized: string;
+    zalo: string | null;
+    facebook: string | null;
+    address_text: string;
+    pickup_lat: number | null;
+    pickup_lng: number | null;
     service_area_id: string;
     accepting_orders: boolean;
   }>(
-    `SELECT version, status, name, contact_phone_normalized, service_area_id, accepting_orders
+    `SELECT version, status, name, contact_phone_normalized, zalo, facebook, address_text, pickup_lat, pickup_lng,
+            service_area_id, accepting_orders
        FROM app.shops WHERE shop_id = $1::uuid`,
     [owner.shopId],
   );
@@ -163,6 +174,11 @@ export async function shopState(pool: Pool, owner: ShopOwner): Promise<ShopState
     status: row.status,
     name: row.name,
     contact: row.contact_phone_normalized,
+    zalo: row.zalo,
+    facebook: row.facebook,
+    addressText: row.address_text,
+    pickupLat: row.pickup_lat === null ? null : Number(row.pickup_lat),
+    pickupLng: row.pickup_lng === null ? null : Number(row.pickup_lng),
     areaId: row.service_area_id,
     acceptingOrders: row.accepting_orders,
     hours: await hoursOf(pool, owner.shopId),

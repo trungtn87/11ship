@@ -9,7 +9,6 @@ import {
   errorCode,
   loginUser,
   rowLockWaitersRunning,
-  sessionIdOfToken,
   setUserStatus,
   startAuthApp,
 } from './support/auth-fixtures';
@@ -128,31 +127,48 @@ describe('M02-A — replay authorization', () => {
         expect([replay.status, dataOf(replay)]).toEqual([200, dataOf(first)]);
       });
 
-      it('a session revoked while the replay waits for its row is refused and returns no payload', async () => {
-        const { owner, key } = await stored();
-        const token = await replacementSession(owner);
-        const sessionId = await sessionIdOfToken(app.pool, token);
-        const holder = await LockHolder.begin(app.pool);
-        let released = false;
-        try {
-          await holder.query(
-            `UPDATE app.sessions SET revoked_at = date_trunc('milliseconds', clock_timestamp()),
-                    updated_at = date_trunc('milliseconds', clock_timestamp()) WHERE session_id = $1::uuid`,
-            [sessionId],
-          );
-          const pending = operation.send(owner, token, key);
-          await eventually(async () => (await rowLockWaitersRunning(app.pool, SESSION_LOCK)) >= 1, 'the replay waits for the session row');
-          await holder.commit();
-          released = true;
-          const denied = await pending;
-          expect([denied.status, errorCode(denied)]).toEqual([401, 'SESSION_REVOKED']);
-          expect(denied.body.data).toBeUndefined();
-        } finally {
-          if (!released) {
-            await holder.rollback();
+      for (const change of ['revoke', 'expire'] as const) {
+        it(`a session ${change}d while the replay waits for its row is refused BEFORE decrypt (corrupted ciphertext), keeps the record and replays for a valid session`, async () => {
+          const { owner, key, first } = await stored();
+          const sessionId = owner.sessionId;
+          await flipCiphertext(key);
+          const before = await shopState(app.pool, owner);
+          const holder = await LockHolder.begin(app.pool);
+          let released = false;
+          try {
+            await holder.query(
+              change === 'revoke'
+                ? `UPDATE app.sessions SET revoked_at = date_trunc('milliseconds', clock_timestamp()),
+                          updated_at = date_trunc('milliseconds', clock_timestamp()) WHERE session_id = $1::uuid`
+                : `UPDATE app.sessions SET created_at = created_at - interval '2 days', updated_at = updated_at - interval '2 days',
+                          expires_at = clock_timestamp() - interval '1 second' WHERE session_id = $1::uuid`,
+              [sessionId],
+            );
+            // The session is still valid for the HTTP guard (a plain SELECT never waits), so the request enters the
+            // transaction and waits for the session row lock: the authorization is what decides, not the guard.
+            const pending = operation.send(owner, owner.token, key);
+            await eventually(async () => (await rowLockWaitersRunning(app.pool, SESSION_LOCK)) >= 1, 'the replay waits for the session row');
+            await holder.commit();
+            released = true;
+            const denied = await pending;
+            // 401 with the typed code, not a 500 from decrypting the corrupted ciphertext.
+            expect([denied.status, errorCode(denied)]).toEqual([401, change === 'revoke' ? 'SESSION_REVOKED' : 'SESSION_EXPIRED']);
+            expect(denied.body.data).toBeUndefined();
+            expect(denied.text).not.toContain(operation.payloadKey);
+          } finally {
+            if (!released) {
+              await holder.rollback();
+            }
           }
-        }
-      });
+          // No new mutation, audit, event or idempotency record; the stored record is intact.
+          expect(await shopState(app.pool, owner)).toEqual(before);
+          await flipCiphertext(key); // restore
+          const token = await replacementSession(owner);
+          const replay = await operation.send(owner, token, key);
+          expect([replay.status, dataOf(replay)]).toEqual([200, dataOf(first)]);
+          expect(await shopState(app.pool, owner)).toEqual(before);
+        });
+      }
 
       it('a disabled account is refused BEFORE decrypt', async () => {
         const { owner, key } = await stored();
