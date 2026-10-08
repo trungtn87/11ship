@@ -14,10 +14,11 @@ ChatGPT designs/reviews; Claude implements under the existing project workflow.
 No Render Blueprint exists at reviewed source.
 bindOtpProvider rejects staging and production; do not deploy as development to evade this gate.
 Registration currently requires OTP proof. Disabling an SMS provider does not implement test registration.
-Supabase project, certificate and connection credentials have not been supplied.
-Render tool requires user confirmation of workspace before resource actions.
+Supabase project supplied and checked via connector: blavybabrrhfudxxrqlz, ACTIVE_HEALTHY, region ap-northeast-1, PostgreSQL 17.11; app schema absent at preflight.
+Render workspace confirmed by Owner: tea-cvu8f4be5dus73ch67sg (Trung's workspace). No existing 11Ship service found.
+Still required: verified session pooler endpoint/CA and restricted runtime connection. Database password is confidential and must never enter repository artifacts.
 No frontend currently exists: backend deployment alone is not an Owner-testable app.
-No Supabase connector is available in this session.
+Supabase connector is available. Preflight query was read-only; no migrations or infrastructure changes have run.
 
 ## D1: Connection and deploy configuration
 Create render.yaml for one Node web service, plan free, no paid worker/database.
