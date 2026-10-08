@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Body, Controller, Headers, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
-import { AuthenticatedRequest } from '../auth/auth-principal';
+import { actorOf, AuthenticatedRequest } from '../auth/auth-principal';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
 import { DriverOnboardingService } from './driver-onboarding-service';
@@ -31,7 +31,7 @@ export class DriverOnboardingController {
       throw new AppError('SESSION_INVALID');
     }
     const input = parseDriverOnboardingBody(body);
-    const outcome = await this.onboarding.create(request.auth.userId, input, idempotencyKey, requestIdOf(request));
+    const outcome = await this.onboarding.create(actorOf(request.auth), input, idempotencyKey, requestIdOf(request));
     return { data: outcome.payload };
   }
 }

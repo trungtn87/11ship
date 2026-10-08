@@ -12,3 +12,11 @@ export interface AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
   auth?: AuthPrincipal;
 }
+
+/**
+ * The two server-authenticated identifiers a command needs to authorize itself again inside its transaction.
+ * Only these two cross into a coordinator: no token, no phone number, no cached role.
+ */
+export function actorOf(principal: AuthPrincipal): { readonly userId: string; readonly sessionId: string } {
+  return { userId: principal.userId, sessionId: principal.sessionId };
+}

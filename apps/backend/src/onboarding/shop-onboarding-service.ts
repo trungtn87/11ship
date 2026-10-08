@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
 import { RoleGrantParticipant } from '../auth/role-grant-participant';
+import { SessionActor, SessionAuthorizationParticipant } from '../auth/session-authorization-participant';
 import { AppError, TechnicalError } from '../common/app-errors';
 import { IdempotencyExecutor, JsonObject } from '../idempotency/idempotency-executor';
 import { OutboxWriter } from '../outbox/outbox-writer';
@@ -30,14 +31,18 @@ export interface OnboardingOutcome {
  * Shop onboarding coordinator (M01-A2S). One transaction per command, opened by the M00 IdempotencyExecutor.
  *
  * Lock order inside the callback (the A2 global order, after the executor's own advisory + record locks):
- *   user row -> OWNER membership -> shop -> service_area (FOR SHARE) -> business writes -> audit/outbox.
- * The authenticated user comes from the session principal; nothing about identity, role, status or
- * accepting_orders is read from the request body.
+ *   user row FOR UPDATE -> CURRENT session row FOR UPDATE -> OWNER membership -> shop -> service_area
+ *   (FOR SHARE) -> role grant -> audit/outbox -> (the executor writes the idempotency record last).
+ * The authenticated user AND session come from the guard's principal; nothing about identity, session, role,
+ * status or accepting_orders is read from the request body. The HTTP guard is only a precheck: the session is
+ * authorized again inside this transaction, under its lock, so a revocation or expiry during a lock wait
+ * refuses the command before any business effect (SessionAuthorizationParticipant).
  */
 @Injectable()
 export class ShopOnboardingService {
   constructor(
     private readonly executor: IdempotencyExecutor,
+    private readonly sessionAuth: SessionAuthorizationParticipant,
     private readonly roleGrants: RoleGrantParticipant,
     private readonly shops: ShopRepository,
     private readonly serviceAreas: ServiceAreaRepository,
@@ -46,11 +51,12 @@ export class ShopOnboardingService {
   ) {}
 
   async saveProfile(
-    userId: string,
+    actor: SessionActor,
     input: ShopProfileInput,
     idempotencyKey: string | readonly string[] | undefined,
     requestId: string,
   ): Promise<OnboardingOutcome> {
+    const userId = actor.userId;
     const outcome = await this.executor.execute(
       {
         scopeType: ONBOARDING_SCOPE_TYPE,
@@ -69,19 +75,20 @@ export class ShopOnboardingService {
           service_area_id: input.serviceAreaId,
           expected_version: input.expectedVersion,
         },
-        replay: { kind: 'sensitive', authorize: (context, guard) => this.#authorizeReplay(context, guard, userId) },
+        replay: { kind: 'sensitive', authorize: (context, guard) => this.#authorizeReplay(context, guard, actor) },
       },
-      (context) => this.#save(context, userId, input, requestId),
+      (context) => this.#save(context, actor, input, requestId),
     );
     return { status: outcome.status, payload: outcome.payload, replayed: outcome.replayed };
   }
 
   async complete(
-    userId: string,
+    actor: SessionActor,
     input: ShopCompleteInput,
     idempotencyKey: string | readonly string[] | undefined,
     requestId: string,
   ): Promise<OnboardingOutcome> {
+    const userId = actor.userId;
     const outcome = await this.executor.execute(
       {
         scopeType: ONBOARDING_SCOPE_TYPE,
@@ -89,15 +96,16 @@ export class ShopOnboardingService {
         operationId: SHOP_COMPLETE_OPERATION_ID,
         idempotencyKey,
         logicalRequest: { expected_version: input.expectedVersion },
-        replay: { kind: 'sensitive', authorize: (context, guard) => this.#authorizeReplay(context, guard, userId) },
+        replay: { kind: 'sensitive', authorize: (context, guard) => this.#authorizeReplay(context, guard, actor) },
       },
-      (context) => this.#complete(context, userId, input, requestId),
+      (context) => this.#complete(context, actor, input, requestId),
     );
     return { status: outcome.status, payload: outcome.payload, replayed: outcome.replayed };
   }
 
-  async #save(context: TransactionContext, userId: string, input: ShopProfileInput, requestId: string) {
-    await this.roleGrants.lockActiveUser(context, userId);
+  async #save(context: TransactionContext, actor: SessionActor, input: ShopProfileInput, requestId: string) {
+    const userId = actor.userId;
+    await this.sessionAuth.lockAuthorizedActor(context, actor);
     const existing = await this.shops.lockOwnedShop(context, userId);
 
     if (input.expectedVersion === null && existing !== undefined) {
@@ -160,8 +168,9 @@ export class ShopOnboardingService {
     };
   }
 
-  async #complete(context: TransactionContext, userId: string, input: ShopCompleteInput, requestId: string) {
-    await this.roleGrants.lockActiveUser(context, userId);
+  async #complete(context: TransactionContext, actor: SessionActor, input: ShopCompleteInput, requestId: string) {
+    const userId = actor.userId;
+    await this.sessionAuth.lockAuthorizedActor(context, actor);
     const shop = await this.shops.lockOwnedShop(context, userId);
     if (shop === undefined) {
       throw new AppError('SHOP_PROFILE_INCOMPLETE');
@@ -216,13 +225,19 @@ export class ShopOnboardingService {
     };
   }
 
-  /** A stored result is replayed only while the account is still ACTIVE (user row locked first). */
-  async #authorizeReplay(context: TransactionContext, guard: JsonObject, userId: string): Promise<true> {
+  /**
+   * A stored result is replayed only while the CURRENT session is still valid for this user and the account is
+   * ACTIVE. The same authorization as a new execution runs first (user then session, both locked, fresh database
+   * clock), before anything is decrypted. The replay guard names the user only: a valid replacement session of the
+   * same user may replay, a revoked or expired one may not. The sessionId is authorization context here, never part
+   * of the logical request, the idempotency scope or the guard.
+   */
+  async #authorizeReplay(context: TransactionContext, guard: JsonObject, actor: SessionActor): Promise<true> {
     const guarded = guard.user_id;
-    if (!isCanonicalUuid(guarded) || guarded !== userId) {
+    if (!isCanonicalUuid(guarded) || guarded !== actor.userId) {
       throw new TechnicalError('internal', 'Invalid replay guard');
     }
-    await this.roleGrants.lockActiveUser(context, userId);
+    await this.sessionAuth.lockAuthorizedActor(context, actor);
     return true;
   }
 }

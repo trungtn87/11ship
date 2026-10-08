@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
 import { RoleGrantParticipant } from '../auth/role-grant-participant';
+import { SessionActor, SessionAuthorizationParticipant } from '../auth/session-authorization-participant';
 import { AppError, TechnicalError } from '../common/app-errors';
 import { DriverRepository } from '../driver/driver-repository';
 import { IdempotencyExecutor, JsonObject } from '../idempotency/idempotency-executor';
@@ -23,11 +24,13 @@ import { OnboardingOutcome } from './shop-onboarding-service';
  * Driver onboarding coordinator (M01-A2D). One transaction per command, opened by the M00 IdempotencyExecutor.
  *
  * Lock order inside the callback (the A2 global order, after the executor's own advisory + record locks):
- *   user row -> existing Driver row -> Driver insert -> DRIVER role grant -> audit -> outbox -> idempotency
- *   record (the executor writes it last). Driver onboarding takes no operating area (Owner revision, task
- *   section 22), so no M02 row is read or locked.
- * The authenticated user comes from the session principal; nothing about identity, role, type, status or
- * accepting_deliveries is read from the request body, and the Driver row is always inserted as
+ *   user row FOR UPDATE -> CURRENT session row FOR UPDATE -> existing Driver row -> Driver insert -> DRIVER role
+ *   grant -> audit -> outbox -> idempotency record (the executor writes it last). Driver onboarding takes no
+ *   operating area (Owner revision, task section 22), so no M02 row is read or locked.
+ * The authenticated user AND session come from the guard's principal and are authorized again inside this
+ * transaction under their locks (SessionAuthorizationParticipant); the HTTP guard is only a precheck. Nothing
+ * about identity, session, role, type, status or accepting_deliveries is read from the request body, and the
+ * Driver row is always inserted as
  * EXTERNAL / PENDING / accepting_deliveries=false / version 1 by M03's own statement.
  *
  * Self-onboarding does not activate anything: it creates the PENDING profile and grants the DRIVER role, in one
@@ -38,6 +41,7 @@ import { OnboardingOutcome } from './shop-onboarding-service';
 export class DriverOnboardingService {
   constructor(
     private readonly executor: IdempotencyExecutor,
+    private readonly sessionAuth: SessionAuthorizationParticipant,
     private readonly roleGrants: RoleGrantParticipant,
     private readonly drivers: DriverRepository,
     private readonly audit: AuditWriter,
@@ -45,11 +49,12 @@ export class DriverOnboardingService {
   ) {}
 
   async create(
-    userId: string,
+    actor: SessionActor,
     input: DriverOnboardingInput,
     idempotencyKey: string | readonly string[] | undefined,
     requestId: string,
   ): Promise<OnboardingOutcome> {
+    const userId = actor.userId;
     const outcome = await this.executor.execute(
       {
         scopeType: ONBOARDING_SCOPE_TYPE,
@@ -58,15 +63,16 @@ export class DriverOnboardingService {
         idempotencyKey,
         // The NORMALIZED request: "absent" and null are the same plate.
         logicalRequest: { full_name: input.fullName, plate_number: input.plateNumber },
-        replay: { kind: 'sensitive', authorize: (context, guard) => this.#authorizeReplay(context, guard, userId) },
+        replay: { kind: 'sensitive', authorize: (context, guard) => this.#authorizeReplay(context, guard, actor) },
       },
-      (context) => this.#create(context, userId, input, requestId),
+      (context) => this.#create(context, actor, input, requestId),
     );
     return { status: outcome.status, payload: outcome.payload, replayed: outcome.replayed };
   }
 
-  async #create(context: TransactionContext, userId: string, input: DriverOnboardingInput, requestId: string) {
-    await this.roleGrants.lockActiveUser(context, userId);
+  async #create(context: TransactionContext, actor: SessionActor, input: DriverOnboardingInput, requestId: string) {
+    const userId = actor.userId;
+    await this.sessionAuth.lockAuthorizedActor(context, actor);
 
     // One Driver per user, proven under the user lock: a user who already has a profile (in any status,
     // CLOSED included) gets the same answer whatever Idempotency-Key the request carries.
@@ -122,13 +128,18 @@ export class DriverOnboardingService {
     };
   }
 
-  /** A stored result is replayed only while the account is still ACTIVE (user row locked first). */
-  async #authorizeReplay(context: TransactionContext, guard: JsonObject, userId: string): Promise<true> {
+  /**
+   * A stored result is replayed only while the CURRENT session is still valid for this user and the account is
+   * ACTIVE: the same authorization as a new execution (user then session, locked, fresh database clock) runs
+   * before anything is decrypted. The replay guard names the user only, so a valid replacement session of the same
+   * user may replay and a revoked or expired one may not.
+   */
+  async #authorizeReplay(context: TransactionContext, guard: JsonObject, actor: SessionActor): Promise<true> {
     const guarded = guard.user_id;
-    if (!isCanonicalUuid(guarded) || guarded !== userId) {
+    if (!isCanonicalUuid(guarded) || guarded !== actor.userId) {
       throw new TechnicalError('internal', 'Invalid replay guard');
     }
-    await this.roleGrants.lockActiveUser(context, userId);
+    await this.sessionAuth.lockAuthorizedActor(context, actor);
     return true;
   }
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import { AuditWriter } from '../audit/audit-writer';
 import { fakeContext } from '../auth/auth-fakes.fixture';
 import { RoleGrantParticipant } from '../auth/role-grant-participant';
+import { SessionActor, SessionAuthorizationParticipant } from '../auth/session-authorization-participant';
 import { AppError } from '../common/app-errors';
 import { DriverRepository, DriverRow, NewDriverFields } from '../driver/driver-repository';
 import { IdempotencyExecutor, IdempotentRequest, IdempotentResult } from '../idempotency/idempotency-executor';
@@ -12,6 +13,8 @@ import { DriverOnboardingService } from './driver-onboarding-service';
 import { DriverOnboardingInput } from './driver-onboarding-validation';
 
 const USER_ID = '523e4567-e89b-42d3-a456-426614174000';
+const SESSION_ID = 'a23e4567-e89b-42d3-a456-426614174000';
+const ACTOR: SessionActor = { userId: USER_ID, sessionId: SESSION_ID };
 const DRIVER_ID = '623e4567-e89b-42d3-a456-426614174000';
 const REQUEST_ID = '323e4567-e89b-42d3-a456-426614174000';
 const KEY = '923e4567-e89b-42d3-a456-426614174000';
@@ -39,6 +42,10 @@ interface Rig {
   audits: Array<Record<string, unknown>>;
   outbox: Array<Record<string, unknown>>;
   inserted: NewDriverFields[];
+  /** Every actor the coordinator asked the session-authorization participant to lock and check. */
+  authorized: SessionActor[];
+  /** Set an error to make the NEXT authorization (a command or a replay hook) refuse. */
+  gate: { error: AppError | undefined };
 }
 
 function rig(
@@ -63,13 +70,18 @@ function rig(
       return { status: result.status, payload: result.payload, replayed: false, persisted: true };
     },
   } as unknown as IdempotencyExecutor;
-  const roleGrants = {
-    lockActiveUser: async () => {
-      events.push('user.lock');
-      if (options.lockFailure !== undefined) {
-        throw options.lockFailure;
+  const authorized: SessionActor[] = [];
+  const gate: { error: AppError | undefined } = { error: options.lockFailure };
+  const sessionAuth = {
+    lockAuthorizedActor: async (_c: unknown, actor: SessionActor) => {
+      events.push('actor.authorize');
+      authorized.push(actor);
+      if (gate.error !== undefined) {
+        throw gate.error;
       }
     },
+  } as unknown as SessionAuthorizationParticipant;
+  const roleGrants = {
     grant: async (_c: unknown, _u: string, role: string) => void events.push(`role.grant:${role}`),
   } as unknown as RoleGrantParticipant;
   const drivers = {
@@ -91,12 +103,14 @@ function rig(
   } as unknown as OutboxWriter;
 
   return {
-    service: new DriverOnboardingService(executor, roleGrants, drivers, audit, outboxWriter),
+    service: new DriverOnboardingService(executor, sessionAuth, roleGrants, drivers, audit, outboxWriter),
     events,
     requests,
     audits,
     outbox,
     inserted,
+    authorized,
+    gate,
   };
 }
 
@@ -109,15 +123,15 @@ async function codeOf(run: () => Promise<unknown>): Promise<string> {
   return 'OK';
 }
 
-const create = (r: Rig, input: DriverOnboardingInput = INPUT) => r.service.create(USER_ID, input, KEY, REQUEST_ID);
+const create = (r: Rig, input: DriverOnboardingInput = INPUT) => r.service.create(ACTOR, input, KEY, REQUEST_ID);
 
 describe('DriverOnboardingService.create (A03-26)', () => {
-  it('runs in the A2 lock order: user, existing driver, driver insert, role, audit, outbox', async () => {
+  it('runs in the A2 lock order: user and session, existing driver, driver insert, role, audit, outbox', async () => {
     const r = rig();
     const outcome = await create(r);
     expect(r.events).toEqual([
       'executor',
-      'user.lock',
+      'actor.authorize',
       'driver.lock',
       'driver.insert',
       'role.grant:DRIVER',
@@ -219,7 +233,7 @@ describe('DriverOnboardingService.create refusals', () => {
     for (const status of ['PENDING', 'ACTIVE', 'SUSPENDED', 'CLOSING', 'CLOSED'] as const) {
       const r = rig({ existing: driverRow({ status }) });
       expect([status, await codeOf(() => create(r))]).toEqual([status, 'DRIVER_PROFILE_EXISTS']);
-      expect(r.events).toEqual(['executor', 'user.lock', 'driver.lock']);
+      expect(r.events).toEqual(['executor', 'actor.authorize', 'driver.lock']);
       expect(none(r)).toEqual([0, 0, 0]);
     }
   });
@@ -231,10 +245,73 @@ describe('DriverOnboardingService.create refusals', () => {
     expect([r.audits.length, r.outbox.length]).toEqual([0, 0]);
   });
 
-  it('a disabled account is refused at the user lock, before anything else is read', async () => {
+  it('a disabled account is refused at the user/session lock, before anything else is read', async () => {
     const r = rig({ lockFailure: new AppError('ACCOUNT_DISABLED') });
     expect(await codeOf(() => create(r))).toBe('ACCOUNT_DISABLED');
-    expect(r.events).toEqual(['executor', 'user.lock']);
+    expect(r.events).toEqual(['executor', 'actor.authorize']);
+  });
+});
+
+describe('DriverOnboardingService session authorization (post-merge repair, section 1)', () => {
+  it('authorizes the server-authenticated user AND session first, before any business read', async () => {
+    const r = rig();
+    await create(r);
+    expect(r.authorized).toEqual([ACTOR]);
+    expect(r.events.slice(0, 3)).toEqual(['executor', 'actor.authorize', 'driver.lock']);
+  });
+
+  it('a revoked, expired or foreign session refuses the command before any business effect', async () => {
+    for (const code of ['SESSION_REVOKED', 'SESSION_EXPIRED', 'SESSION_INVALID', 'ACCOUNT_DISABLED'] as const) {
+      const r = rig({ lockFailure: new AppError(code) });
+      expect([code, await codeOf(() => create(r))]).toEqual([code, code]);
+      expect(r.events).toEqual(['executor', 'actor.authorize']);
+      expect([r.audits.length, r.outbox.length, r.inserted.length]).toEqual([0, 0, 0]);
+    }
+  });
+
+  it('the sensitive replay hook runs the same authorization with the CURRENT session, before it allows anything', async () => {
+    const r = rig();
+    await create(r);
+    const replay = r.requests[0]?.replay;
+    if (replay?.kind !== 'sensitive') {
+      throw new Error('expected a sensitive replay policy');
+    }
+
+    r.events.length = 0;
+    r.authorized.length = 0;
+    await expect(replay.authorize(fakeContext(1, []), { user_id: USER_ID })).resolves.toBe(true);
+    expect(r.events).toEqual(['actor.authorize']);
+    expect(r.authorized).toEqual([ACTOR]);
+
+    r.gate.error = new AppError('SESSION_EXPIRED');
+    const denied = await replay.authorize(fakeContext(1, []), { user_id: USER_ID }).catch((error: unknown) => error);
+    expect(denied).toBeInstanceOf(AppError);
+    expect((denied as AppError).code).toBe('SESSION_EXPIRED');
+  });
+
+  it('the replay guard names the user only: the session id is neither in the logical request nor the scope', async () => {
+    const r = rig();
+    const outcome = await create(r);
+    const request = r.requests[0];
+    expect(request?.scopeId).toBe(USER_ID);
+    expect(JSON.stringify(request?.logicalRequest)).not.toContain(SESSION_ID);
+    expect(JSON.stringify(outcome)).not.toContain(SESSION_ID);
+  });
+
+  it('a replay guard of another user is an internal error and never reaches the authorization', async () => {
+    const r = rig();
+    await create(r);
+    const replay = r.requests[0]?.replay;
+    if (replay?.kind !== 'sensitive') {
+      throw new Error('expected a sensitive replay policy');
+    }
+    r.events.length = 0;
+    const failure = await replay
+      .authorize(fakeContext(1, []), { user_id: '123e4567-e89b-42d3-a456-426614174999' })
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(AppError);
+    expect(r.events).toEqual([]);
   });
 });
 

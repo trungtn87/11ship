@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Body, Controller, Get, Headers, HttpCode, Post, Put, Req, Res, UseGuards } from '@nestjs/common';
-import { AuthenticatedRequest } from '../auth/auth-principal';
+import { actorOf, AuthenticatedRequest } from '../auth/auth-principal';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
 import { ShopOnboardingService } from './shop-onboarding-service';
@@ -47,7 +47,7 @@ export class ShopOnboardingController {
     const principal = this.#principal(request);
     const input = parseShopProfileBody(body);
     const outcome = await this.onboarding.saveProfile(
-      principal.userId,
+      actorOf(principal),
       input,
       idempotencyKey,
       requestIdOf(request),
@@ -66,7 +66,7 @@ export class ShopOnboardingController {
   ) {
     const principal = this.#principal(request);
     const input = parseShopCompleteBody(body);
-    const outcome = await this.onboarding.complete(principal.userId, input, idempotencyKey, requestIdOf(request));
+    const outcome = await this.onboarding.complete(actorOf(principal), input, idempotencyKey, requestIdOf(request));
     return { data: outcome.payload };
   }
 

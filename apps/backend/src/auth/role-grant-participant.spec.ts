@@ -1,20 +1,19 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { AppError, TechnicalError } from '../common/app-errors';
+import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
 import { RoleGrantParticipant, GrantableRole } from './role-grant-participant';
 import { UserRepository } from './user-repository';
 
-// The narrow participant onboarding coordinators use to hold the user lock and grant a role (A2S: SHOP, A2D:
-// DRIVER). It must never become a way to grant any other role.
+// The narrow participant onboarding coordinators use to grant a role (A2S: SHOP, A2D: DRIVER). It must never
+// become a way to grant any other role. Authorization of the caller is SessionAuthorizationParticipant's job.
 
 const CONTEXT = {} as TransactionContext;
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 
-function rig(user: { status: string } | null = { status: 'ACTIVE' }) {
+function rig() {
   const grantRole = jest.fn<(context: TransactionContext, userId: string, role: string) => Promise<boolean>>(async () => true);
-  const lockById = jest.fn<(context: TransactionContext, userId: string) => Promise<{ status: string } | undefined>>(async () => user ?? undefined);
-  const participant = new RoleGrantParticipant({ grantRole, lockById } as unknown as UserRepository);
-  return { participant, grantRole, lockById };
+  const participant = new RoleGrantParticipant({ grantRole } as unknown as UserRepository);
+  return { participant, grantRole };
 }
 
 describe('RoleGrantParticipant.grant', () => {
@@ -36,21 +35,5 @@ describe('RoleGrantParticipant.grant', () => {
     expect(failure).toBeInstanceOf(TechnicalError);
     expect((failure as TechnicalError).kind).toBe('internal');
     expect(grantRole).not.toHaveBeenCalled();
-  });
-});
-
-describe('RoleGrantParticipant.lockActiveUser', () => {
-  it('passes for an ACTIVE user', async () => {
-    const { participant, lockById } = rig({ status: 'ACTIVE' });
-    await expect(participant.lockActiveUser(CONTEXT, USER_ID)).resolves.toBeUndefined();
-    expect(lockById).toHaveBeenCalledWith(CONTEXT, USER_ID);
-  });
-
-  it('a missing user is SESSION_INVALID and a DISABLED user is ACCOUNT_DISABLED', async () => {
-    const missing = await rig(null).participant.lockActiveUser(CONTEXT, USER_ID).catch((error: unknown) => error);
-    expect(missing).toBeInstanceOf(AppError);
-    expect((missing as AppError).code).toBe('SESSION_INVALID');
-    const disabled = await rig({ status: 'DISABLED' }).participant.lockActiveUser(CONTEXT, USER_ID).catch((error: unknown) => error);
-    expect((disabled as AppError).code).toBe('ACCOUNT_DISABLED');
   });
 });
