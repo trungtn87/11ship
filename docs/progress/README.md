@@ -68,6 +68,10 @@ Required check được khai trong `plan.yml` (`required_checks`) vì repo priva
 
 Tính theo trọng số (`weight`) của task lá, mặc định mỗi task lá bằng 1. Không tính theo commit, số dòng code hay PR bị huỷ. Làm tròn xuống để không nói quá. Khi `roadmap_complete: false`, con số toàn dự án được ghi rõ là "planned tasks only".
 
+## PR gộp thiết kế + triển khai (ngoại lệ tường minh)
+
+Trường tùy chọn `combined_design_implementation: true` trong `plan.yml`, mặc định `false` và không bao giờ được suy ra từ tiêu đề, tác giả, label, đường dẫn hay mô tả PR. Chỉ hợp lệ trên một task **lá** có `design_pr` và `implementation_pr` là **cùng một** số PR dương; đây là trường hợp duy nhất được phép ghim lặp một PR. PR gộp bị phân loại **một lần** (vai trò `combined`, hiển thị "thiết kế + triển khai"), không nhân đôi dòng PR, trọng số hay cảnh báo. Vòng đời của nó là vòng đời triển khai của task, dùng nguyên các quy tắc hiện có: draft → `CLAUDE_CODING`; CI lỗi → `CI_FAILED`; ready + CI xanh, chưa có review gắn đúng head → `WAITING_CHATGPT_REVIEW`; review hợp lệ → các trạng thái review hiện có; merge + required check xanh trên head thật + dependency xong → `DONE` đúng một lần; merge nhưng CI lỗi/thiếu → `CI_FAILED`/`CI_RUNNING`; đóng không merge → `PLANNED` (không bao giờ `READY_FOR_CLAUDE`). Dependency chưa xong vẫn chặn kể cả khi PR đã merge. Task thường giữ nguyên quy trình thiết kế trước. Vai trò cố định (owner/design/review) không đổi.
+
 ## Thêm hoặc đổi task
 
 Sửa `docs/progress/plan.yml` (mô tả các trường ở đầu file), chạy `npm run progress:test`, rồi mở PR. Không ghi trạng thái vào plan. Khi một task có PR mới, chỉ cần gắn đủ label; không cần sửa plan.

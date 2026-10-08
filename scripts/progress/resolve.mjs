@@ -105,6 +105,17 @@ export function validatePlan(plan) {
     for (const [field, expected] of Object.entries(FIXED_ROLES)) {
       if (t[field] !== expected) add(`task ${t.id}: ${field} must be ${expected} in schema v1 (got ${t[field] ?? 'nothing'}); roles are not configurable yet`);
     }
+    if (t.combined_design_implementation != null) {
+      if (typeof t.combined_design_implementation !== 'boolean') {
+        add(`task ${t.id}: combined_design_implementation must be true or false`);
+      } else if (t.combined_design_implementation) {
+        const posInt = (v) => Number.isInteger(v) && v > 0;
+        if (t.kind !== 'leaf') add(`task ${t.id}: combined_design_implementation is only valid on a leaf`);
+        if (!posInt(t.design_pr) || !posInt(t.implementation_pr) || t.design_pr !== t.implementation_pr) {
+          add(`task ${t.id}: combined_design_implementation needs design_pr and implementation_pr set to the same positive PR number`);
+        }
+      }
+    }
     if (t.kind === 'leaf' && !(Number.isInteger(t.weight ?? 1) && (t.weight ?? 1) >= 0)) {
       add(`task ${t.id}: weight must be a non-negative integer`);
     }
@@ -149,11 +160,14 @@ export function validatePlan(plan) {
   for (const t of tasks) visit(t.id, []);
   const pins = new Map();
   for (const t of tasks) {
+    // The only permitted repeat of a pin: BOTH fields of one leaf that is explicitly flagged as combined.
+    const combined = t.combined_design_implementation === true && t.kind === 'leaf' && Number.isInteger(t.design_pr) && t.design_pr === t.implementation_pr;
     for (const [field, kind] of [['design_pr', 'design'], ['implementation_pr', 'implementation']]) {
       if (t[field] == null) continue;
       if (!Number.isInteger(t[field])) add(`task ${t.id}: ${field} must be a PR number`);
+      else if (combined && field === 'implementation_pr') continue;
       else if (pins.has(t[field])) add(`PR #${t[field]} is pinned twice (${pins.get(t[field])}, ${t.id})`);
-      else pins.set(t[field], `${t.id}:${kind}`);
+      else pins.set(t[field], `${t.id}:${combined ? 'combined' : kind}`);
     }
   }
   for (const ig of plan.ignored_prs ?? []) {
@@ -246,6 +260,11 @@ function classifyPrs(plan, tasksById, snapshot) {
   const ignoredNumbers = new Set(ignored.keys());
   const pins = new Map();
   for (const t of plan.tasks) {
+    if (t.combined_design_implementation === true) {
+      // One real PR, classified once, as both the design reference and the implementation lifecycle.
+      pins.set(t.design_pr, { task: t.id, role: 'combined' });
+      continue;
+    }
     if (t.design_pr != null) pins.set(t.design_pr, { task: t.id, role: 'design' });
     if (t.implementation_pr != null) pins.set(t.implementation_pr, { task: t.id, role: 'implementation' });
   }
@@ -395,7 +414,7 @@ export function resolveProgress(plan, snapshot) {
       head: null,
       reason: '',
       design_state: design.state,
-      design_pr: design.pr?.number ?? null,
+      design_pr: design.pr?.number ?? (t.combined_design_implementation === true ? t.design_pr : null),
       weight: t.kind === 'leaf' ? (t.weight ?? 1) : 0,
       children: children.map((c) => c.id),
     };
@@ -420,8 +439,9 @@ export function resolveProgress(plan, snapshot) {
     }
 
     // Leaf task
-    const impl = prs.filter((p) => p.counted && p.task === id && (p.role === 'implementation' || p.role === 'review-fix'));
-    const mergedImpl = impl.filter((p) => p.lifecycle === PR_STATE.MERGED && p.role === 'implementation').sort((a, b) => b.number - a.number)[0];
+    const combined = t.combined_design_implementation === true;
+    const impl = prs.filter((p) => p.counted && p.task === id && (p.role === 'implementation' || p.role === 'review-fix' || p.role === 'combined'));
+    const mergedImpl = impl.filter((p) => p.lifecycle === PR_STATE.MERGED && (p.role === 'implementation' || p.role === 'combined')).sort((a, b) => b.number - a.number)[0];
 
     if (unmet.length) {
       if (mergedImpl) {
@@ -445,7 +465,14 @@ export function resolveProgress(plan, snapshot) {
       return finish(STATE.BLOCKED_BY_CI, { reason: `main CI is ${mainCi}; required checks must be green on main`, head: mainState.head_sha });
     }
 
-    if (!design.locked) {
+    if (combined && impl.length === 0) {
+      // No live combined PR (missing from the snapshot, or closed without merge). Its design never merged, so the
+      // task is NOT ready for Claude and not done.
+      const closed = prs.find((p) => p.task === id && p.role === 'combined' && p.lifecycle === PR_STATE.CANCELLED);
+      return finish(STATE.PLANNED, { pr: closed?.number ?? null, reason: closed ? `combined PR #${closed.number} was closed without merge` : 'combined PR not found' });
+    }
+
+    if (!design.locked && !combined) {
       return finish(design.state, { pr: design.pr?.number ?? null, ci: design.pr?.ci ?? CI.NONE, head: design.pr?.head_sha ?? null });
     }
 

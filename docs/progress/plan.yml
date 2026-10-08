@@ -29,6 +29,13 @@
 #   depends_on            task ids that must be DONE first (a child also inherits its ancestors')
 #   design_pr             pinned design PR number (history only; new PRs are matched by labels)
 #   implementation_pr     pinned implementation PR number (history only)
+#   combined_design_implementation
+#                         optional boolean, default false. true marks ONE leaf whose single PR carries both the
+#                         design document and the implementation (explicit exception, never inferred from titles,
+#                         authors, labels, paths or PR bodies). Valid only on a leaf whose design_pr and
+#                         implementation_pr are the same positive PR number; that is the only repeated pin allowed.
+#                         The PR is classified once; its lifecycle is the task's implementation lifecycle (it does
+#                         not wait for itself to merge as a design gate). Ordinary tasks keep design-first behavior.
 #   requires_main_ci_green  extra gate: the latest main commit must have all required checks green
 #   acceptance            path of the task / acceptance document
 #   evidence              path of the evidence document
@@ -223,9 +230,8 @@ tasks:
     evidence: docs/evidence/M01-A2D.md
 
   # Corrective work after the M00/M01 merges (session authorization inside onboarding transactions, bounded
-  # rollback, effective active role, progress accuracy). PR #19 carries the design document AND the repair
-  # code, so it is pinned once, as the design PR. The task stays open (not DONE) until the Owner decides how the
-  # repair is merged; no implementation PR is pinned and none is invented.
+  # rollback, effective active role, progress accuracy). PR #19 carries the design document AND the repair code,
+  # so it is pinned as BOTH, with the explicit combined_design_implementation flag (see the field list above).
   - id: M01-R1
     module: M01
     title: Post-merge repairs (session, rollback, router, progress)
@@ -239,5 +245,7 @@ tasks:
     depends_on:
       - M01-A2
     design_pr: 19
+    implementation_pr: 19
+    combined_design_implementation: true
     acceptance: docs/tasks/M00-M01-post-merge-repairs.md
     evidence: docs/evidence/M00-M01-post-merge-repairs.md

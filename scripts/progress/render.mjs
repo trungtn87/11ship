@@ -92,6 +92,7 @@ const TITLE_VI = new Map([
 
 const ROLE_VI = {
   design: 'thiết kế',
+  combined: 'thiết kế + triển khai',
   implementation: 'triển khai',
   'review-fix': 'sửa sau review',
   infra: 'hạ tầng',
