@@ -161,10 +161,10 @@ function Start-Launcher {
 function Update-Launcher {
   Ensure-Dirs; Assert-Tools; $null = Assert-LocalEnv
   Invoke-InRepo {
-    if (Capture 'git.exe' @('rev-parse','--git-dir') -eq $null) { Fail 'Không phải Git repo.' }
+    if ((Capture 'git.exe' @('rev-parse','--git-dir')) -eq $null) { Fail 'Không phải Git repo.' }
     foreach ($marker in @('MERGE_HEAD','rebase-merge','rebase-apply','CHERRY_PICK_HEAD','REVERT_HEAD')) { if (Test-Path (Join-Path (Capture 'git.exe' @('rev-parse','--git-dir')) $marker)) { Fail "Git operation đang dở: $marker" } }
-    if (Capture 'git.exe' @('symbolic-ref','--short','HEAD') -eq $null) { Fail 'Đang detached HEAD.' }
-    if (Capture 'git.exe' @('rev-parse','--abbrev-ref','--symbolic-full-name','@{u}') -eq $null) { Fail 'Branch chưa có upstream.' }
+    if ((Capture 'git.exe' @('symbolic-ref','--short','HEAD')) -eq $null) { Fail 'Đang detached HEAD.' }
+    if ((Capture 'git.exe' @('rev-parse','--abbrev-ref','--symbolic-full-name','@{u}')) -eq $null) { Fail 'Branch chưa có upstream.' }
     if ((Capture 'git.exe' @('status','--porcelain','--untracked-files=no'))) { Fail 'Có thay đổi tracked; không tự stash.' }
     $oldLock = File-HashOrEmpty (Join-Path $script:Repo 'package-lock.json')
     Run 'git.exe' @('fetch','--prune','origin')
