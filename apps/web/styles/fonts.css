@@ -1,0 +1,17 @@
+/*
+ * Brand font: Plus Jakarta Sans (brand guideline section 4, SIL Open Font License).
+ * The font file is NOT in the repository yet: the build environment could not download it (see assets/fonts/README.md).
+ * Until the file is added, only an installed copy is used (local()), the page falls back to the system font, and
+ * src/main.js flags html[data-font="fallback"]. To activate the self-hosted file, add it as described in the README and
+ * uncomment the url() line below.
+ */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src:
+    local('Plus Jakarta Sans'),
+    local('PlusJakartaSans-Regular');
+  /* url('../assets/fonts/PlusJakartaSans-Variable.woff2') format('woff2'); */
+}

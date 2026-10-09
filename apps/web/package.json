@@ -1,0 +1,7 @@
+{
+  "name": "11ship-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "11Ship web client (M01 Auth + onboarding test UI). Static HTML/CSS/JS, no build step, no runtime dependencies."
+}

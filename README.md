@@ -32,6 +32,23 @@ M00-D1 chỉ chuẩn bị cấu hình: `render.yaml` (một web service Render F
 ChatGPT thiết kế, chia task và review. Claude code từng task. Owner test nghiệp vụ và duyệt. Mỗi gói dùng nhánh riêng, giữ base/head commit và bằng chứng test. Chưa merge khi chưa PASS.
 
 
+## Chạy UI web thử nghiệm M01 (Đăng nhập / Onboarding)
+
+UI nằm ở `apps/web` (HTML/CSS/JS thuần, không cần cài thêm package). Backend không có CORS và không phục vụ file tĩnh, nên dùng server dev cùng origin: phục vụ UI và chuyển `/v1/*` sang backend.
+
+```bash
+# 1. chạy backend như phần trên (npm run dev, cổng 3000)
+# 2. chạy UI
+npm run web:dev                      # http://127.0.0.1:5173
+WEB_API_ORIGIN=https://<staging-api-origin> npm run web:dev   # trỏ tới API staging
+```
+
+Biến môi trường: `WEB_API_ORIGIN` (mặc định `http://127.0.0.1:3000`), `WEB_PORT` (5173), `WEB_HOST` (127.0.0.1; chỉ đặt `0.0.0.0` khi cần mở bằng điện thoại cùng mạng LAN và hiểu rủi ro).
+
+- Token chỉ nằm trong bộ nhớ trang: tải lại trang sẽ về màn đăng nhập (chủ ý).
+- Không có đăng ký/OTP; không có SMS bypass. Tài khoản fixture hiển thị "Tài khoản thử nghiệm — chưa xác minh SĐT".
+- Kiểm thử: `npm run web:test` (unit, Node thuần). Kiểm tra trình duyệt dùng Playwright, xem `docs/evidence/M01-UI.md`.
+
 ## Chạy backend ở máy phát triển
 
 ### Yêu cầu

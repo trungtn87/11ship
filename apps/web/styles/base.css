@@ -1,0 +1,96 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-lg);
+  line-height: var(--lh-body-lg);
+  color: var(--ship-text-primary);
+  background: var(--ship-surface-subtle);
+}
+
+h1,
+h2,
+h3,
+p,
+dl,
+dd,
+ul {
+  margin: 0;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--ship-brand-dark);
+  outline-offset: 2px;
+}
+
+h1:focus {
+  outline: none; /* heading focus is for screen readers after a screen change, not a control */
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--s2);
+  top: -64px;
+  z-index: 100;
+  padding: var(--s3) var(--s4);
+  background: var(--ship-brand-dark);
+  color: #fff;
+  border-radius: var(--radius-md);
+}
+.skip-link:focus {
+  top: var(--s2);
+}
+
+.noscript {
+  padding: var(--s4);
+}
+
+.live-region {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+#app {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}

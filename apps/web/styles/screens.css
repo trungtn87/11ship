@@ -1,0 +1,315 @@
+/* ---- Environment strip ---- */
+.env-banner {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  align-items: baseline;
+  justify-content: center;
+  padding: var(--s2) var(--s4);
+  background: var(--ship-brand-dark);
+  color: #fff;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  text-align: center;
+}
+.env-banner strong {
+  color: var(--ship-brand-primary);
+}
+.env-sub {
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+.offline-banner {
+  padding: var(--s2) var(--s4);
+  background: var(--ship-warning-bg);
+  border-bottom: 2px solid var(--ship-warning);
+  text-align: center;
+  font-size: var(--fs-body);
+}
+
+/* ---- Brand ---- */
+.wordmark {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.tagline {
+  font-weight: 600;
+}
+
+/* ---- Signed-out layout: brand panel + card ---- */
+.auth-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr;
+  flex: 1;
+}
+.brand-panel {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  padding: var(--s4) var(--s4) 0;
+}
+.brand-copy {
+  display: none;
+}
+.auth-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--s4);
+}
+
+@media (min-width: 1024px) {
+  .auth-layout {
+    grid-template-columns: 5fr 7fr;
+    grid-template-rows: none;
+  }
+  .brand-panel {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: var(--s3);
+    padding: var(--s9);
+    background: var(--ship-brand-dark);
+    color: #fff;
+  }
+  .brand-panel .wordmark {
+    font-size: 48px;
+    line-height: 56px;
+  }
+  .brand-panel .tagline {
+    color: var(--ship-brand-primary);
+    font-size: var(--fs-h2);
+    line-height: var(--lh-h2);
+  }
+  .brand-copy {
+    display: block;
+    color: #dddcd8;
+  }
+  .auth-main {
+    align-items: center;
+    padding: var(--s9);
+  }
+}
+
+/* ---- Signed-in layout ---- */
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  min-height: var(--app-bar-h);
+  padding: 0 var(--s4);
+  background: var(--ship-surface);
+  border-bottom: 1px solid var(--ship-border);
+}
+.user-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s1) var(--s3);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+.user-phone {
+  color: var(--ship-text-secondary);
+}
+.role-chip {
+  padding: var(--s1) var(--s3);
+  border-radius: var(--radius-pill);
+  background: var(--ship-surface-subtle);
+  border: 1px solid var(--ship-border);
+  font-weight: 600;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s4);
+}
+.fixture-note {
+  width: 100%;
+  max-width: 720px;
+  padding: var(--s3) var(--s4);
+  border-left: 4px solid var(--ship-info);
+  border-radius: var(--radius-md);
+  background: var(--ship-info-bg);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+.app-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s1);
+  padding: var(--s4);
+  text-align: center;
+}
+@media (min-width: 768px) {
+  .app-main {
+    padding: var(--s7);
+  }
+  .card {
+    padding: var(--s7);
+  }
+}
+
+/* ---- Content blocks ---- */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+}
+.facts {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--s1) var(--s4);
+}
+.facts dt {
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--ship-text-secondary);
+  font-weight: 600;
+  margin-top: var(--s3);
+}
+.facts dd {
+  font-size: var(--fs-body-lg);
+  overflow-wrap: anywhere;
+}
+@media (min-width: 640px) {
+  .facts {
+    grid-template-columns: 200px 1fr;
+    align-items: baseline;
+  }
+  .facts dt {
+    margin-top: 0;
+  }
+}
+
+.role-grid {
+  display: grid;
+  gap: var(--s4);
+  grid-template-columns: 1fr;
+}
+@media (min-width: 640px) {
+  .role-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.role-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  min-height: 96px;
+  padding: var(--s4);
+  text-align: left;
+  background: var(--ship-surface);
+  border: 2px solid var(--ship-control-border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+.role-card:hover {
+  border-color: var(--ship-brand-dark);
+}
+.role-card[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.role-card.is-loading {
+  cursor: progress;
+  opacity: 1;
+  border-color: var(--ship-brand-primary);
+}
+.role-card-title {
+  font-size: var(--fs-h3);
+  line-height: var(--lh-h3);
+  font-weight: 700;
+}
+.role-card-desc {
+  color: var(--ship-text-secondary);
+}
+
+.profile-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+.profile-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s4);
+  border: 1px solid var(--ship-border);
+  border-radius: var(--radius-lg);
+  background: var(--ship-surface);
+}
+.profile-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+}
+.conditions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s4);
+  border-radius: var(--radius-md);
+  background: var(--ship-surface-subtle);
+}
+.checklist {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  font-size: var(--fs-body);
+}
+.checklist li {
+  display: flex;
+  gap: var(--s2);
+}
+.checklist .done {
+  color: var(--ship-success);
+  font-weight: 600;
+}
+.checklist .todo {
+  color: var(--ship-text-primary);
+}
+.check-mark {
+  width: 20px;
+  flex: none;
+  text-align: center;
+  font-weight: 700;
+}

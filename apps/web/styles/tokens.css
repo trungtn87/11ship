@@ -1,0 +1,71 @@
+/*
+ * Design tokens. Colours and font come from docs/current/11-brand-guideline-v1.0.md (LOCKED). Neutral greys, type ramp,
+ * spacing, radius, shadows, control sizes and breakpoints come from the UI Foundation v1.0 (PR #14, Owner lock
+ * 2026-10-08, not merged yet). Screens use only these variables: no colour or size is hard-coded elsewhere.
+ */
+:root {
+  --ship-brand-primary: #d8ad18;
+  --ship-brand-primary-hover: #c79f14;
+  --ship-brand-primary-pressed: #b38f11;
+  --ship-brand-dark: #2a2a2e;
+  --ship-text-primary: #2a2a2e;
+  --ship-text-secondary: #6b6b70;
+  --ship-text-disabled: #9c9b97;
+  --ship-surface: #ffffff;
+  --ship-surface-subtle: #f2f1ee;
+  --ship-surface-disabled: #e6e5e1;
+  --ship-border: #dddcd8;
+  /* Form controls use the strong border: the default one is below the 3:1 contrast needed to see an input's edge. */
+  --ship-border-strong: #b7b6b2;
+  --ship-control-border: #8d8c88;
+
+  --ship-success: #2e7d32;
+  --ship-warning: #b7791f;
+  --ship-danger: #c62828;
+  --ship-info: #2563eb;
+  --ship-active: #0f766e;
+  --ship-success-bg: #e8f3e9;
+  --ship-warning-bg: #fbf1dc;
+  --ship-danger-bg: #fbe9e9;
+  --ship-info-bg: #e7eefc;
+  --ship-neutral-bg: #edece9;
+
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --s7: 32px;
+  --s8: 40px;
+  --s9: 48px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 2px 8px rgba(42, 42, 46, 0.08);
+  --shadow-floating: 0 8px 24px -2px rgba(42, 42, 46, 0.14);
+  --shadow-modal: 0 16px 40px -4px rgba(42, 42, 46, 0.2);
+
+  --control-h: 48px;
+  --app-bar-h: 56px;
+
+  --font-ui: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --fs-display: 32px;
+  --lh-display: 40px;
+  --fs-h1: 28px;
+  --lh-h1: 36px;
+  --fs-h2: 24px;
+  --lh-h2: 32px;
+  --fs-h3: 20px;
+  --lh-h3: 28px;
+  --fs-body-lg: 16px;
+  --lh-body-lg: 24px;
+  --fs-body: 14px;
+  --lh-body: 20px;
+  --fs-caption: 12px;
+  --lh-caption: 16px;
+}
