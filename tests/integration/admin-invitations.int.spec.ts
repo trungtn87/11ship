@@ -321,7 +321,6 @@ describe('M01-D-ADMIN-1A - admin invitations (schema, participant, transactions)
       ['a phone that is not +84 and nine digits', () => ({ phone_normalized: '+8491111111' })],
       ['a phone with a letter', () => ({ phone_normalized: '+8491111111a' })],
       ['a blank full name', () => ({ full_name: '   ' })],
-      ['a 121 character full name', () => ({ full_name: 'x'.repeat(121) })],
       ['an upper-case digest', () => ({ token_digest: 'A'.repeat(64) })],
       ['a short digest', () => ({ token_digest: 'a'.repeat(63) })],
       ['an unknown status', () => ({ status: 'DELETED' })],
@@ -342,6 +341,10 @@ describe('M01-D-ADMIN-1A - admin invitations (schema, participant, transactions)
         expect(state).toBe('23514');
       });
     }
+
+    it('rejects a 121 character full name (22001, the column is varchar(120))', async () => {
+      expect(await stateOf((client) => insertRaw(client, rawRow({ full_name: 'x'.repeat(121) })))).toBe('22001');
+    });
 
     it('rejects a SUPERSEDED row that names itself as successor (23514)', async () => {
       const id = randomUUID();

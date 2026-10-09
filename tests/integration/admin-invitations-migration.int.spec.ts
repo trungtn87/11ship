@@ -63,8 +63,9 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
 
   it('has no IF [NOT] EXISTS, no CASCADE and no seed outside comments, and creates exactly its two tables', () => {
     const statements = code(sql);
-    expect(statements).not.toMatch(/IF\s+NOT\s+EXISTS/i);
-    expect(statements).not.toMatch(/IF\s+EXISTS/i);
+    // DDL guards only: the PL/pgSQL body legitimately says "IF EXISTS(SELECT ...)" in a condition.
+    expect(statements).not.toMatch(/\bIF\s+NOT\s+EXISTS\b/i);
+    expect(statements).not.toMatch(/\b(?:CREATE|DROP|ALTER)\b[^;]*\bIF\s+EXISTS\b/i);
     expect(statements).not.toMatch(/\bCASCADE\b/i);
     expect(code(upSql)).not.toMatch(/\bINSERT\s+INTO\b/i);
     const created = [...code(upSql).matchAll(/\bCREATE\s+TABLE\s+([A-Za-z0-9_."]+)/gi)].map((match) => match[1]);

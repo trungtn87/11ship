@@ -72,6 +72,7 @@ describe('M02-A — Shop business-hours migration', () => {
       HOURS,
       '1791936000000_add-users-account-origin',
       '1792022400000_create-admin-auth',
+      '1792108800000_create-admin-invitations',
     ]);
     expect(HOURS).toBe('1791763200000_create-shop-business-hours');
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-driver-onboarding')).toBe(true);
