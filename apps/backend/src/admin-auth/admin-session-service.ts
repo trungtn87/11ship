@@ -3,12 +3,14 @@ import { digestToken } from '../auth/tokens';
 import { AdminIdentityParticipant } from '../auth/admin-identity-participant';
 import { AuditWriter } from '../audit/audit-writer';
 import { AppError } from '../common/app-errors';
+import { freshClockMs } from '../idempotency/idempotency-repository';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { ADMIN_AUDIT_ACTIONS, AdminRole } from './admin-auth-constants';
 import { AdminChallengeRepository } from './admin-challenge-repository';
 import { AdminCredentialChecks } from './admin-credential-checks';
 import { AdminCrypto } from './admin-crypto';
+import { isExpiredAt } from './admin-expiry';
 import { AdminFactorRepository } from './admin-factor-repository';
 import { AdminSessionRepository } from './admin-session-repository';
 
@@ -89,7 +91,8 @@ export class AdminSessionService {
 
   async #readSession(context: TransactionContext, digest: string): Promise<AdminMe | undefined> {
     const known = await this.sessions.findByDigest(context, digest);
-    if (known === undefined || known.revoked || known.expired) {
+    // The unlocked lookup only filters early; the decision is taken again under the locks below.
+    if (known === undefined || known.revoked || known.expiredAtLookup) {
       return undefined;
     }
     const checked = await this.checks.lockAndCheck(context, known, 'read');
@@ -106,7 +109,10 @@ export class AdminSessionService {
       return undefined;
     }
     const session = await this.sessions.lockShared(context, known.sessionId);
-    if (session === undefined || session.revoked || session.expired) {
+    // The database clock is read only now, after the last lock was granted: a session that expired while this request
+    // waited for a lock is not accepted.
+    const nowMs = await freshClockMs(context);
+    if (session === undefined || session.revoked || isExpiredAt(session.expiresAtMs, nowMs)) {
       return undefined;
     }
     return {
@@ -127,7 +133,8 @@ export class AdminSessionService {
     digest: string,
   ): Promise<{ nextStep: 'ENROLL_TOTP' | 'VERIFY_TOTP'; expiresAtMs: number; csrfToken: string } | undefined> {
     const known = await this.challenges.findByDigest(context, digest);
-    if (known === undefined || known.consumed || known.expired) {
+    // The unlocked lookup only filters early; the decision is taken again under the locks below.
+    if (known === undefined || known.consumed || known.expiredAtLookup) {
       return undefined;
     }
     const checked = await this.checks.lockAndCheck(context, known, 'read');
@@ -136,7 +143,10 @@ export class AdminSessionService {
     }
     const factor = await this.factors.lockShared(context, known.userId);
     const challenge = await this.challenges.lockShared(context, known.challengeId);
-    if (challenge === undefined || challenge.consumed || challenge.expired) {
+    // The database clock is read only now, after the last lock was granted: a step that expired while this request
+    // waited for a lock is not reported as a live preauth state.
+    const nowMs = await freshClockMs(context);
+    if (challenge === undefined || challenge.consumed || isExpiredAt(challenge.expiresAtMs, nowMs)) {
       return undefined;
     }
     let nextStep: 'ENROLL_TOTP' | 'VERIFY_TOTP';
@@ -178,7 +188,7 @@ export class AdminSessionService {
     }
     const digest = digestToken(sessionToken);
     const known = await this.transactions.withTransaction((context) => this.sessions.findByDigest(context, digest));
-    if (known === undefined || known.revoked || known.expired) {
+    if (known === undefined || known.revoked || known.expiredAtLookup) {
       return;
     }
     const csrfOk = this.crypto.csrfMatches(

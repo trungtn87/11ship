@@ -16,9 +16,10 @@ import {
   TOTP_FAILURE_WINDOW_SECONDS,
   TOTP_ISSUER,
 } from './admin-auth-constants';
-import { AdminChallengeRepository, ChallengeRow } from './admin-challenge-repository';
+import { AdminChallengeRepository, ChallengeLookup, ChallengeRow } from './admin-challenge-repository';
 import { AdminCredentialChecks } from './admin-credential-checks';
 import { AdminCrypto } from './admin-crypto';
+import { isExpiredAt } from './admin-expiry';
 import { AdminFactorRepository, FactorRow } from './admin-factor-repository';
 import { AdminLimiter } from './admin-limiter';
 import { AdminLimitsRepository } from './admin-limits-repository';
@@ -67,8 +68,12 @@ export class AdminTotpService {
     private readonly audit: AuditWriter,
   ) {}
 
-  /** The preauth step behind a cookie and its CSRF token, or the contract's refusal. No lock: a precheck. */
-  async #precheck(preauthToken: string | undefined, csrfHeader: unknown): Promise<ChallengeRow> {
+  /**
+   * The preauth step behind a cookie and its CSRF token, or the contract's refusal. No lock: a precheck that only
+   * filters early. Whether the step is still valid is decided again under the locks, with a database clock read after
+   * the last lock was granted.
+   */
+  async #precheck(preauthToken: string | undefined, csrfHeader: unknown): Promise<ChallengeLookup> {
     if (preauthToken === undefined) {
       throw new AppError('ADMIN_PREAUTH_INVALID');
     }
@@ -76,7 +81,7 @@ export class AdminTotpService {
     const challenge = await this.transactions.withTransaction((context) =>
       this.challenges.findByDigest(context, digest),
     );
-    if (challenge === undefined || challenge.consumed || challenge.expired) {
+    if (challenge === undefined || challenge.consumed || challenge.expiredAtLookup) {
       throw new AppError('ADMIN_PREAUTH_INVALID');
     }
     const csrfOk = this.crypto.csrfMatches(
@@ -101,7 +106,10 @@ export class AdminTotpService {
       const userId = checked.identity.userId;
       const factor = await this.factors.lock(context, userId);
       const challenge = await this.challenges.lock(context, known.challengeId);
-      if (challenge === undefined || challenge.consumed || challenge.expired) {
+      // The database clock is read only now, after every lock wait of this request. A step that expired while the
+      // request waited is refused here: no factor is created and no secret is returned for it.
+      const nowMs = await freshClockMs(context);
+      if (challenge === undefined || challenge.consumed || isExpiredAt(challenge.expiresAtMs, nowMs)) {
         throw new AppError('ADMIN_PREAUTH_INVALID');
       }
 
@@ -206,7 +214,16 @@ export class AdminTotpService {
       const userId = checked.identity.userId;
       const factor = await this.factors.lock(context, userId);
       const challenge = await this.challenges.lock(context, known.challengeId);
-      if (challenge === undefined || challenge.consumed || challenge.expired || challenge.attemptCount >= CHALLENGE_ATTEMPT_LIMIT) {
+      // The database clock is read ONCE, here, after every lock wait of this request (the bucket, the user, the
+      // membership, the factor and the challenge). It decides the expiry of the step and, below, the TOTP window, so
+      // both use the same instant. A step that expired while the request waited is refused before any secret is opened.
+      const nowMs = await freshClockMs(context);
+      if (
+        challenge === undefined ||
+        challenge.consumed ||
+        isExpiredAt(challenge.expiresAtMs, nowMs) ||
+        challenge.attemptCount >= CHALLENGE_ATTEMPT_LIMIT
+      ) {
         throw new AppError('ADMIN_PREAUTH_INVALID');
       }
       if (factor === undefined) {
@@ -227,14 +244,13 @@ export class AdminTotpService {
         throw new AppError('ADMIN_PREAUTH_INVALID');
       }
 
-      // 3. The comparison, with the database clock read AFTER every lock wait.
+      // 3. The comparison, with the database instant read AFTER every lock wait (nowMs above).
       const secret = this.crypto.openTotpSecret(
         factor.keyId,
         { userId, factorId: factor.factorId, factorVersion: factor.version },
         factor.envelope,
       );
-      const nowSeconds = (await freshClockMs(context)) / 1000;
-      const step = matchTotp(secret, code, nowSeconds, factor.lastAcceptedStep);
+      const step = matchTotp(secret, code, nowMs / 1000, factor.lastAcceptedStep);
 
       if (step === undefined) {
         // Wrong, outside the window or replayed: the same answer. Both counters move in THIS transaction, which

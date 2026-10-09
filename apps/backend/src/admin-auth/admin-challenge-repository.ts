@@ -18,9 +18,18 @@ export interface ChallengeRow {
   readonly deviceId: string;
   readonly attemptCount: number;
   readonly consumed: boolean;
-  /** Decided by the database clock at read time. */
-  readonly expired: boolean;
+  /**
+   * Epoch milliseconds from the database. A row read UNDER A LOCK deliberately carries no "expired" flag: whether it is
+   * expired is decided by comparing this value with a database clock read AFTER the last lock was granted
+   * (isExpiredAt + freshClockMs), because a flag computed inside the locking statement can predate the lock wait.
+   */
   readonly expiresAtMs: number;
+}
+
+/** The unlocked lookup by cookie digest: its flag is an early filter only, never the decision to accept a credential. */
+export interface ChallengeLookup extends ChallengeRow {
+  /** True when the database clock had passed expires_at when this lookup statement ran (no lock, no wait). */
+  readonly expiredAtLookup: boolean;
 }
 
 interface RawChallenge {
@@ -36,14 +45,23 @@ interface RawChallenge {
   device_id: string;
   attempt_count: number;
   consumed: boolean;
-  expired: boolean;
   expires_ms: string;
 }
 
-const SELECT = `SELECT challenge_id, user_id, csrf_nonce, csrf_key_id, password_binding, password_key_id,
+interface RawChallengeLookup extends RawChallenge {
+  expired_at_lookup: boolean;
+}
+
+const COLUMNS = `challenge_id, user_id, csrf_nonce, csrf_key_id, password_binding, password_key_id,
        membership_version, factor_id, factor_version, device_id, attempt_count,
-       consumed_at IS NOT NULL AS consumed, expires_at <= clock_timestamp() AS expired,
-       ${epochMs('expires_at')} AS expires_ms
+       consumed_at IS NOT NULL AS consumed, ${epochMs('expires_at')} AS expires_ms`;
+
+/** Locking reads: no clock expression in a statement that can wait for a lock. */
+const SELECT = `SELECT ${COLUMNS}
+  FROM app.admin_auth_challenges`;
+
+/** The plain lookup never waits for a lock, so its clock reading is current when it is taken. */
+const LOOKUP = `SELECT ${COLUMNS}, expires_at <= clock_timestamp() AS expired_at_lookup
   FROM app.admin_auth_challenges`;
 
 function toChallenge(row: RawChallenge): ChallengeRow {
@@ -60,9 +78,12 @@ function toChallenge(row: RawChallenge): ChallengeRow {
     deviceId: row.device_id,
     attemptCount: row.attempt_count,
     consumed: row.consumed,
-    expired: row.expired,
     expiresAtMs: toSafeInteger(row.expires_ms),
   };
+}
+
+function toLookup(row: RawChallengeLookup): ChallengeLookup {
+  return { ...toChallenge(row), expiredAtLookup: row.expired_at_lookup };
 }
 
 export interface NewChallenge {
@@ -82,10 +103,10 @@ export interface NewChallenge {
 /** SQL for app.admin_auth_challenges (the preauth step). Plaintext tokens never reach this class, only digests. */
 @Injectable()
 export class AdminChallengeRepository {
-  async findByDigest(context: TransactionContext, tokenDigest: string): Promise<ChallengeRow | undefined> {
-    const result = await context.query<RawChallenge>(`${SELECT} WHERE token_digest = $1`, [tokenDigest]);
+  async findByDigest(context: TransactionContext, tokenDigest: string): Promise<ChallengeLookup | undefined> {
+    const result = await context.query<RawChallengeLookup>(`${LOOKUP} WHERE token_digest = $1`, [tokenDigest]);
     const row = result.rows[0];
-    return row === undefined ? undefined : toChallenge(row);
+    return row === undefined ? undefined : toLookup(row);
   }
 
   async lock(context: TransactionContext, challengeId: string): Promise<ChallengeRow | undefined> {
@@ -104,7 +125,10 @@ export class AdminChallengeRepository {
     return row === undefined ? undefined : toChallenge(row);
   }
 
-  /** Consumes every unconsumed preauth step of the user: a new login replaces the older ones. */
+  /**
+   * Consumes every unconsumed preauth step of the user. Called by a new login ONLY while the user's factor is not
+   * ACTIVE (the contract's supersession); with an ACTIVE factor the other live steps are left alone.
+   */
   async supersedeUnconsumed(context: TransactionContext, userId: string): Promise<void> {
     await context.query(
       `UPDATE app.admin_auth_challenges

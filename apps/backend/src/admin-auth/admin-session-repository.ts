@@ -15,9 +15,18 @@ export interface AdminSessionRow {
   readonly factorId: string;
   readonly factorVersion: number;
   readonly revoked: boolean;
-  /** Decided by the database clock at read time. */
-  readonly expired: boolean;
+  /**
+   * Epoch milliseconds from the database. A row read UNDER A LOCK deliberately carries no "expired" flag: whether it is
+   * expired is decided by comparing this value with a database clock read AFTER the last lock was granted
+   * (isExpiredAt + freshClockMs), because a flag computed inside the locking statement can predate the lock wait.
+   */
   readonly expiresAtMs: number;
+}
+
+/** The unlocked lookup by cookie digest: its flag is an early filter only, never the decision to accept a credential. */
+export interface SessionLookup extends AdminSessionRow {
+  /** True when the database clock had passed expires_at when this lookup statement ran (no lock, no wait). */
+  readonly expiredAtLookup: boolean;
 }
 
 interface RawSession {
@@ -31,14 +40,23 @@ interface RawSession {
   factor_id: string;
   factor_version: string;
   revoked: boolean;
-  expired: boolean;
   expires_ms: string;
 }
 
-const SELECT = `SELECT session_id, user_id, csrf_nonce, csrf_key_id, password_binding, password_key_id,
+interface RawSessionLookup extends RawSession {
+  expired_at_lookup: boolean;
+}
+
+const COLUMNS = `session_id, user_id, csrf_nonce, csrf_key_id, password_binding, password_key_id,
        membership_version, factor_id, factor_version,
-       revoked_at IS NOT NULL AS revoked, expires_at <= clock_timestamp() AS expired,
-       ${epochMs('expires_at')} AS expires_ms
+       revoked_at IS NOT NULL AS revoked, ${epochMs('expires_at')} AS expires_ms`;
+
+/** Locking reads: no clock expression in a statement that can wait for a lock. */
+const SELECT = `SELECT ${COLUMNS}
+  FROM app.admin_sessions`;
+
+/** The plain lookup never waits for a lock, so its clock reading is current when it is taken. */
+const LOOKUP = `SELECT ${COLUMNS}, expires_at <= clock_timestamp() AS expired_at_lookup
   FROM app.admin_sessions`;
 
 function toSession(row: RawSession): AdminSessionRow {
@@ -53,9 +71,12 @@ function toSession(row: RawSession): AdminSessionRow {
     factorId: row.factor_id,
     factorVersion: toSafeInteger(row.factor_version),
     revoked: row.revoked,
-    expired: row.expired,
     expiresAtMs: toSafeInteger(row.expires_ms),
   };
+}
+
+function toLookup(row: RawSessionLookup): SessionLookup {
+  return { ...toSession(row), expiredAtLookup: row.expired_at_lookup };
 }
 
 export interface NewAdminSession {
@@ -75,10 +96,10 @@ export interface NewAdminSession {
 /** SQL for app.admin_sessions. The plaintext cookie value never reaches this class, only its digest. */
 @Injectable()
 export class AdminSessionRepository {
-  async findByDigest(context: TransactionContext, tokenDigest: string): Promise<AdminSessionRow | undefined> {
-    const result = await context.query<RawSession>(`${SELECT} WHERE token_digest = $1`, [tokenDigest]);
+  async findByDigest(context: TransactionContext, tokenDigest: string): Promise<SessionLookup | undefined> {
+    const result = await context.query<RawSessionLookup>(`${LOOKUP} WHERE token_digest = $1`, [tokenDigest]);
     const row = result.rows[0];
-    return row === undefined ? undefined : toSession(row);
+    return row === undefined ? undefined : toLookup(row);
   }
 
   async lock(context: TransactionContext, sessionId: string): Promise<AdminSessionRow | undefined> {

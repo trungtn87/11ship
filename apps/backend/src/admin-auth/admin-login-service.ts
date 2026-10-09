@@ -41,8 +41,9 @@ type LoginOutcome =
  * costs no hashing) -> Argon2id OUTSIDE any transaction (a dummy verification when there is no usable account, so the
  * time does not tell) -> one transaction that takes the phone and address bucket locks FIRST (ascending bucket_key),
  * re-checks them, records a failure or, for a correct password, re-checks the account and the membership under their
- * locks, supersedes older preauth steps and issues the new one with its audit row. Counters of a failed credential are
- * committed (the transaction returns an outcome; the refusal is thrown afterwards).
+ * locks, supersedes older preauth steps ONLY while the factor is not ACTIVE, and issues the new one with its audit row.
+ * Counters of a failed credential are committed (the transaction returns an outcome; the refusal is thrown afterwards).
+ * A failed login never touches a session or a step; only a successful second factor revokes the older session.
  *
  * Login does not read the TOTP failure bucket at all: the second-factor lock is enforced where the code is verified.
  */
@@ -126,12 +127,18 @@ export class AdminLoginService {
         return { kind: 'changed' };
       }
       let factor = await this.factors.lock(context, user.userId);
-      await this.challenges.supersedeUnconsumed(context, user.userId);
-      if (factor !== undefined && factor.state === 'PENDING') {
-        // The pending generation belonged to a superseded step: it is replaced, never reused.
-        await this.factors.deletePending(context, user.userId);
-        factor = undefined;
+      if (factor === undefined || factor.state === 'PENDING') {
+        // Factor not ACTIVE yet (contract): the new login SUPERSEDES the older unconsumed steps, and the pending
+        // generation that belonged to one of them is deleted and replaced, never reused. Admin sessions are untouched.
+        await this.challenges.supersedeUnconsumed(context, user.userId);
+        if (factor !== undefined) {
+          await this.factors.deletePending(context, user.userId);
+          factor = undefined;
+        }
       }
+      // Factor ACTIVE (contract): the new login does NOT cancel the user's other unconsumed steps. Two tabs may both
+      // hold a live step; each completes on its own, the TOTP replay guard (last_accepted_step, one factor) still
+      // allows every code once, and only a SUCCESSFUL second factor revokes the older session.
 
       const token = this.crypto.randomBytes(32).toString('base64url');
       const csrf = this.crypto.newCsrf();

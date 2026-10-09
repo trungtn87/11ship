@@ -10,6 +10,7 @@ import { Argon2idPasswordHasher } from '../../../apps/backend/src/auth/password-
 import { FakeOtpProvider } from '../../../apps/backend/src/auth/fake-otp-provider';
 import { AdminAuthConfig, loadLimiterConfig } from '../../../apps/backend/src/config/admin-auth-config';
 import { AppConfig } from '../../../apps/backend/src/config/app-config';
+import { Keyring } from '../../../apps/backend/src/crypto/keyring';
 import { fixtureKeyring } from '../../../apps/backend/src/crypto/test-keys.fixture';
 import { authTestConfig, purgePhone, randomPhone } from './auth-fixtures';
 import { loadIntegrationConfig, RunningApp, startApp } from './test-helpers';
@@ -197,6 +198,8 @@ export interface AdminApp {
 export interface StartAdminOptions {
   readonly trustedProxyIps?: readonly string[];
   readonly activeKeyId?: string;
+  /** A complete keyring instead of the two fixture keys (for example one that no longer holds a historical key). */
+  readonly keyring?: Keyring;
   /** Do not clear the rate-limit state at start (a restart keeps its locks). */
   readonly keepLimits?: boolean;
 }
@@ -222,7 +225,7 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
     // Roomier than the production defaults: Argon2 and several lock waits happen in one test.
     database: { ...loaded.database, queryTimeoutMs: 20_000, statementTimeoutMs: 15_000 },
     transaction: { timeoutMs: 25_000, idleInTransactionTimeoutMs: 10_000 },
-    crypto: fixtureKeyring(options.activeKeyId ?? 'k1'),
+    crypto: options.keyring ?? fixtureKeyring(options.activeKeyId ?? 'k1'),
     auth: authTestConfig(),
     adminAuth,
   };
@@ -347,6 +350,27 @@ export function totpNow(secretBase32: string, stepOffset = 0): string {
     throw new Error('not a Base32 secret');
   }
   return hotp(secret, stepAt(Math.floor(Date.now() / 1000)) + stepOffset);
+}
+
+/** A six-digit code that is NOT valid for the previous, the current or the next step of the secret. */
+export function wrongCode(secretBase32: string): string {
+  const valid = new Set([totpNow(secretBase32, -1), totpNow(secretBase32, 0), totpNow(secretBase32, 1)]);
+  const free = ['000000', '111111', '222222', '333333'].find((candidate) => !valid.has(candidate));
+  if (free === undefined) {
+    throw new Error('no free wrong code');
+  }
+  return free;
+}
+
+/**
+ * Test database only: moves the factor's last accepted step back, so the CURRENT step's code counts as a first use
+ * again. It stands in for "a later 30-second step", which a test cannot wait for on every case.
+ */
+export async function rewindAcceptedStep(app: AdminApp, userId: string, steps = 10): Promise<void> {
+  await app.pool.query(
+    'UPDATE app.admin_totp_factors SET last_accepted_step = last_accepted_step - $2::int WHERE user_id = $1::uuid',
+    [userId, steps],
+  );
 }
 
 export interface SessionLogin {
