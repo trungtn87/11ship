@@ -48,10 +48,17 @@ written down in the repo.
 ```sql
 CREATE ROLE ship11_migrator LOGIN PASSWORD '<generated>' NOSUPERUSER NOCREATEDB NOCREATEROLE;
 CREATE ROLE ship11_app      LOGIN PASSWORD '<generated>' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+GRANT CONNECT ON DATABASE postgres TO ship11_migrator, ship11_app;
+GRANT CREATE ON DATABASE postgres TO ship11_migrator;  -- needed by migration 1 (CREATE SCHEMA IF NOT EXISTS app)
 CREATE SCHEMA app AUTHORIZATION ship11_migrator;      -- the migration tool never creates this schema
 GRANT USAGE ON SCHEMA app TO ship11_app;
 REVOKE ALL ON SCHEMA app FROM PUBLIC, anon, authenticated, service_role;
 ```
+
+`GRANT CREATE ON DATABASE` is required even though schema `app` already exists: PostgreSQL checks that privilege
+before honouring `IF NOT EXISTS` in the first migration (found by the disposable-database integration test; editing the
+already-merged migration is not an option). It lets the migrator create further schemas in that database; keep that
+role off the runtime service.
 
 `ship11_migrator` owns schema `app`, runs `npm run db:migrate:remote`, and keeps its history table at
 `app.pgmigrations` (never in `public`, which Supabase exposes through the Data API). `ship11_app` is the only role

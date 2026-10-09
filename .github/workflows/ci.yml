@@ -129,6 +129,9 @@ jobs:
           CREATE DATABASE ship11_remote_path_test;
           REVOKE ALL ON DATABASE ship11_remote_path_test FROM PUBLIC;
           GRANT CONNECT ON DATABASE ship11_remote_path_test TO ship11_remote_migrator, ship11_remote_app;
+          -- Migration 1 runs CREATE SCHEMA IF NOT EXISTS app; PostgreSQL checks CREATE on the database even when the
+          -- schema already exists, so the migrator needs it (found by this test; see the runbook).
+          GRANT CREATE ON DATABASE ship11_remote_path_test TO ship11_remote_migrator;
           SQL
           psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U ci_admin -d ship11_remote_path_test <<'SQL'
           REVOKE ALL ON SCHEMA public FROM PUBLIC;
