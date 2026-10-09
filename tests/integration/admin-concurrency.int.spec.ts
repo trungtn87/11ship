@@ -131,13 +131,15 @@ describe('M01-D-LOGIN - concurrency on one bucket and one step', () => {
     expect(totp).toHaveLength(1);
     expect(totp[0]?.failure_count).toBe(TOTP_FAILURE_LIMIT);
     expect(totp[0]?.locked_until).not.toBeNull();
-    const attempts = await app.pool.query<{ attempt_count: number }>(
-      'SELECT attempt_count FROM app.admin_auth_challenges WHERE challenge_id IN (SELECT challenge_id FROM app.admin_auth_challenges WHERE user_id = $1::uuid AND consumed_at IS NULL)',
+    // The burst's own step (the newest challenge of the user, whatever its consumed state) was charged exactly the
+    // attempt limit: no overrun and no lost increment. Asserted on that one row, never on a possibly empty set.
+    const burstStep = await app.pool.query<{ attempt_count: number }>(
+      `SELECT attempt_count FROM app.admin_auth_challenges
+        WHERE user_id = $1::uuid ORDER BY created_at DESC, challenge_id DESC LIMIT 1`,
       [system.userId],
     );
-    for (const row of attempts.rows) {
-      expect(row.attempt_count).toBeLessThanOrEqual(CHALLENGE_ATTEMPT_LIMIT);
-    }
+    expect(burstStep.rows).toHaveLength(1);
+    expect(burstStep.rows[0]?.attempt_count).toBe(CHALLENGE_ATTEMPT_LIMIT);
 
     // The burst used the step up (five failed attempts end it). A new login still hands out a step (decision Q1) and the
     // lock then decides at verify, for every concurrent request, without touching the row.
