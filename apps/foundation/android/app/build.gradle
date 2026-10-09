@@ -1,0 +1,25 @@
+plugins { id 'com.android.application' }
+def origin = providers.gradleProperty('apiOrigin').getOrElse('')
+if (origin != '' && !(origin ==~ /https:\/\/[A-Za-z0-9.-]+(:[0-9]{1,5})?/)) {
+    throw new GradleException('apiOrigin must be an HTTPS origin without path, credentials or query')
+}
+android {
+    namespace 'vn.eleven.foundation'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'vn.eleven.foundation'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0-step1'
+        buildConfigField 'String', 'API_ORIGIN', '"' + origin + '"'
+    }
+    buildFeatures { buildConfig true }
+    flavorDimensions 'audience'
+    productFlavors {
+        customer { dimension 'audience'; applicationIdSuffix '.customer'; resValue 'string', 'app_name', '11Food · Khách TEST'; buildConfigField 'String', 'AUDIENCE', '"Khách"'; buildConfigField 'String', 'BRAND', '"11Food"'; buildConfigField 'String', 'TAGLINE', '"Thèm là có"' }
+        shop { dimension 'audience'; applicationIdSuffix '.shop'; resValue 'string', 'app_name', '11Ship · Quán TEST'; buildConfigField 'String', 'AUDIENCE', '"Quán"'; buildConfigField 'String', 'BRAND', '"11Ship"'; buildConfigField 'String', 'TAGLINE', '"Gọi là có"' }
+        driver { dimension 'audience'; applicationIdSuffix '.driver'; resValue 'string', 'app_name', '11Ship · Xế TEST'; buildConfigField 'String', 'AUDIENCE', '"Xế"'; buildConfigField 'String', 'BRAND', '"11Ship"'; buildConfigField 'String', 'TAGLINE', '"Gọi là có"' }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
