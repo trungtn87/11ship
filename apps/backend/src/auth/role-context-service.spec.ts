@@ -6,6 +6,8 @@ import { OwnerDriverEligibility } from '../driver/driver-types';
 import { ShopEligibilityReader } from '../shop/shop-eligibility-reader';
 import { OwnerShopEligibility } from '../shop/shop-types';
 import { codeOf as sourceOf } from '../shared/source-scan.fixture';
+import { PhoneAllowlist } from '../config/staging-fixtures-config';
+import { AccountOriginPolicy, createAccountOriginPolicy } from './account-origin';
 import { fakeTransactions } from './auth-fakes.fixture';
 import { AuthPrincipal } from './auth-principal';
 import { RoleContextService } from './role-context-service';
@@ -22,6 +24,11 @@ const PRINCIPAL: AuthPrincipal = {
   phoneNormalized: '+84987654321',
 };
 const USER: UserRow = { userId: PRINCIPAL.userId, phoneNormalized: PRINCIPAL.phoneNormalized, passwordHash: 'h', status: 'ACTIVE', accountOrigin: 'PHONE_VERIFIED' };
+const FIXTURE_POLICY = createAccountOriginPolicy({
+  appEnv: 'staging',
+  fixtureModeEnabled: true,
+  allowedPhones: new PhoneAllowlist(['+84987654321']),
+});
 const SESSION: LockedSession = { sessionId: PRINCIPAL.sessionId, userId: PRINCIPAL.userId, activeRole: null, revoked: false, expiresAtMs: NOW + 60_000 };
 
 interface Rig {
@@ -42,6 +49,8 @@ function rig(options: {
   driver?: OwnerDriverEligibility;
   /** The role STORED on the locked session row, as /me reads it (the principal's copy is deliberately ignored). */
   activeRole?: string | null;
+  /** M00-D2: the account origin policy of the process. Default: the standard one (verified accounts only). */
+  policy?: AccountOriginPolicy;
 }): Rig {
   const { manager, state, events } = fakeTransactions(NOW);
   const audits: Array<Record<string, unknown>> = [];
@@ -92,7 +101,7 @@ function rig(options: {
       return options.driver ?? { onboarding: 'PENDING_APPROVAL', selectable: true };
     },
   } as unknown as DriverEligibilityReader;
-  const sessionAuth = new SessionAuthorizationParticipant(users, sessions);
+  const sessionAuth = new SessionAuthorizationParticipant(users, sessions, options.policy);
   return {
     service: new RoleContextService(manager, users, sessions, audit, shops, drivers, sessionAuth),
     events,
@@ -255,7 +264,20 @@ describe('RoleContextService.me (task section 13)', () => {
       onboarding_required: true,
       role_selection_required: false,
       onboarding: { shop: 'NOT_STARTED', driver: 'NOT_STARTED' },
+      phone_verification_status: 'VERIFIED',
     });
+  });
+
+  it('a staging fixture user (fixture mode on) is reported UNVERIFIED_TEST, a registered one VERIFIED', async () => {
+    const fixtureUser: UserRow = { ...USER, accountOrigin: 'STAGING_FIXTURE' };
+    const result = await rig({ user: fixtureUser, policy: FIXTURE_POLICY }).service.me(PRINCIPAL);
+    expect(result.phone_verification_status).toBe('UNVERIFIED_TEST');
+    expect((await rig({}).service.me(PRINCIPAL)).phone_verification_status).toBe('VERIFIED');
+  });
+
+  it('a staging fixture user under the standard policy (production, or mode off) is refused inside the /me transaction', async () => {
+    const fixtureUser: UserRow = { ...USER, accountOrigin: 'STAGING_FIXTURE' };
+    expect(await codeOf(() => rig({ user: fixtureUser }).service.me(PRINCIPAL))).toBe('SESSION_INVALID');
   });
 
   it('roles and no active role: role_selection_required', async () => {
@@ -528,6 +550,7 @@ describe('RoleContextService.me (task section 13)', () => {
       'onboarding',
       'onboarding_required',
       'phone_normalized',
+      'phone_verification_status',
       'role_selection_required',
       'user_id',
     ]);

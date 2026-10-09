@@ -11,7 +11,7 @@ Tokyo (ap-northeast-1). Render: one Free web service from `render.yaml` (`11ship
 
 | Item | State |
 |---|---|
-| M00-D2 (staging OTP binding) | **Not done.** `APP_ENV=staging` refuses to start without an OTP provider, so the service cannot become live until D2. Do not set `APP_ENV=development` on Render to get around it. |
+| M00-D2 (staging accounts without SMS) | **Implemented, not deployed, not applied remotely.** `APP_ENV=staging` starts only with the staging fixture mode on (§8); without it the service still refuses to start. Do not set `APP_ENV=development` on Render to get around it. The `account_origin` migration (§4) must be applied before the new build is deployed. |
 | Frontend / app for the Owner | None. |
 | Remote migrations | Not applied. |
 | Render deploy | Not performed. `autoDeployTrigger` is `off`. |
@@ -159,3 +159,55 @@ real services). Each must be confirmed in D2/D4 or at first manual deploy:
 - node-pg-migrate 8.0.4 `runner` option names (`dbClient`, `migrationsSchema`, `createMigrationsSchema`) — exercised
   only by CI (`remote-migration-runner.int.spec.ts`).
 - Grants matrix in §3 (static analysis only).
+
+## 8. Staging accounts without SMS (M00-D2) — prepared, NOT executed
+
+No SMS provider exists, so staging runs in **fixture mode**: a few operator-created accounts can log in; nobody can
+register. Nothing in this section has been run against the real Supabase project or Render.
+
+**Render settings** (dashboard, never in `render.yaml` or the repo):
+
+| Variable | Value |
+|---|---|
+| `AUTH_STAGING_FIXTURES_ENABLED` | exactly `true` (anything else except `false` is a startup error; `true` is accepted for `APP_ENV=staging` only) |
+| `AUTH_STAGING_ALLOWED_PHONES` | **secret** JSON array, 1–20 unique normalized `+84` numbers, e.g. `["+84…"]`. Required when the mode is on; present while it is off is a startup error |
+
+While the mode is on: OTP request/verify and register answer `503 AUTH_REGISTRATION_UNAVAILABLE` (nothing is written),
+and the bound OTP provider is the Disabled one (no code can ever be delivered or guessed). Fixture accounts log in with
+the password the operator seeded; login and `GET /v1/auth/me` return `phone_verification_status = UNVERIFIED_TEST`
+(registered accounts: `VERIFIED`). Accounts registered through a real proof are **not** accepted while the mode is on.
+
+**Seeding** (from the controlled machine of §4, never from Render, never at build or start):
+
+1. `npm ci && npm run build` at the reviewed commit; the §4 migration for `account_origin` already applied.
+2. Shell only (never a file): `APP_ENV=staging`; `AUTH_STAGING_FIXTURES_ENABLED=true` and the same
+   `AUTH_STAGING_ALLOWED_PHONES` as Render; `MIGRATION_DATABASE_URL` (operator role) and `DATABASE_URL` (runtime role),
+   both session pooler port 5432 with `<role>.<project ref>` user names; `DB_SSL_CA` or `DB_SSL_CA_FILE`;
+   `MIGRATION_CONFIRM_TARGET=<pooler host>:5432/postgres/<project ref>` — the same gates as `db:migrate:remote`.
+3. Pipe the data on **stdin**; the command takes no argument (so no password reaches a process list or shell history):
+   `printf '%s' "$SEED_JSON" | npm run staging:seed-fixtures` where `SEED_JSON` is
+   `[{"phone":"+84…","password":"…"}]` (≤ 20, only keys `phone` and `password`, every phone in the allowlist, passwords
+   by the registration rules). Do not keep the JSON in a file in the repo; a secret manager or a one-time shell variable.
+4. Output is counts and safe codes only: `created N, skipped M`. Re-running is safe: an existing fixture is left
+   exactly as it is (password, status, version, roles), and the run never overwrites a registered account (the whole
+   batch is then rolled back with `PHONE_ALREADY_VERIFIED`).
+5. The command creates users only: **no role, no profile, no session, no OTP/proof record, no outbox event**. A
+   fixture continues through the existing SHOP / DRIVER onboarding after login. Audit action
+   `auth.staging_fixture_created.v1` by actor `OPERATOR` / `staging-seed-cli`.
+
+**Switching it off.** Set `AUTH_STAGING_FIXTURES_ENABLED=false` (and delete `AUTH_STAGING_ALLOWED_PHONES`) — with no
+SMS provider the staging service then refuses to start again, which is the safe state until real SMS exists. Removing
+one phone from the allowlist locks that account out immediately on the next deploy, including its existing sessions
+(`SESSION_INVALID`); the sessions are not revoked in the database, so re-adding the phone restores them. Fixture rows are
+never deleted by any command here.
+
+**Production** refuses the flag at startup and, independently, never accepts a `STAGING_FIXTURE` row at login, bearer
+authentication or inside any authorized transaction, even for sessions created earlier on staging.
+
+**UI contract (for the HTML client, not implemented here).** After login/`/me`, `phone_verification_status` is display
+only (never an authorization source): `UNVERIFIED_TEST` should be shown as a "test account, phone not verified" notice.
+While the mode is on, hide registration and OTP screens (they answer `503 AUTH_REGISTRATION_UNAVAILABLE`). Login errors
+stay `INVALID_CREDENTIALS`, and a rejected old session is `SESSION_INVALID` (send the user to login).
+
+**Not verified yet:** everything above against the real Supabase pooler and Render; the grants matrix of §3 for the new
+column (no new table; `users` keeps SELECT, INSERT, UPDATE); the seed run under the operator role through Supavisor.
