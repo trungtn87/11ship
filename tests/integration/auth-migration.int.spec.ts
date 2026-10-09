@@ -256,6 +256,9 @@ describe('M01-A1 — Auth Core migration', () => {
           'users_status_ck',
           'users_version_ck',
           'users_time_order_ck',
+          // M00-D2 (account_origin)
+          'users_account_origin_ck',
+          'users_origin_verified_ck',
         ].sort(),
       );
       expect(await constraintNames('user_roles')).toEqual(['user_roles_pkey', 'user_roles_role_ck', 'user_roles_user_fk']);
