@@ -193,7 +193,7 @@ function Test-Launcher {
     if ($u.Host -ne '127.0.0.1' -or $u.Port -ne 5433 -or $u.AbsolutePath -ne '/ship11_test' -or $u.UserInfo.Split(':')[0] -ne 'ship11_test') { Fail 'Guard TEST từ chối database đích.' }
     $stamp=Get-Date -Format 'yyyyMMdd-HHmmss'; $sha=Capture 'git.exe' @('-C',$script:Repo,'rev-parse','HEAD'); $summary=@()
     foreach ($step in @(
-      @('lint','run','lint'), @('typecheck','run','typecheck'), @('build','run','build'), @('deploy','run','deploy:test'),
+      @('lint','run','lint'), @('typecheck','run','typecheck'), @('build','run','build'), @('launcher-contract','run','launcher:test'), @('deploy','run','deploy:test'),
       @('unit','run','test:unit'), @('migrate-test','run','db:migrate'), @('integration-local','run','test:integration'), @('progress-test','run','progress:test'), @('progress-check','run','progress:check')
     )) {
       $name=$step[0]; $log=Join-Path $script:Logs "$stamp-$name.log"; Write-Info "Test: $name"
