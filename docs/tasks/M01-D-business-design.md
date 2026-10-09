@@ -16,10 +16,19 @@ Tiếp M01 phần thiết kế độc lập môi trường. Test local/thiết b
 - Một tài khoản một thiết bị online theo quy tắc Owner; cách migration/thu hồi cho session legacy phải khóa trong thiết kế kỹ thuật trước code.
 - PLATFORM/EXTERNAL là loại xế, không quyền SYSTEM/ADMIN.
 
-## Đề xuất cần Owner duyệt
+## Quyết định Owner bổ sung ngày 09/10/2026
+- Khởi tạo sẵn đúng một tài khoản SYSTEM ngay khi cài đặt hệ thống. “Fix cứng” áp dụng số lượng và quyền SYSTEM; SĐT/mật khẩu cung cấp riêng khi cài đặt, không lưu credential cố định trong mã nguồn.
+- Không có đăng ký hoặc chức năng tạo SYSTEM thứ hai. Khởi tạo chạy lại không nhân bản/ghi đè mật khẩu, ràng buộc database phải giữ đúng một SYSTEM dưới concurrency.
+- SYSTEM và ADMIN dùng chung một link/form đăng nhập quản trị; không chọn role trên form. Backend xác định role/scope sau xác thực.
+- Mọi tài khoản vào web quản trị bắt buộc SĐT + mật khẩu và 2FA Authenticator thật. Chưa enroll phải thiết lập/xác nhận 2FA; chưa qua 2FA không có phiên hoặc quyền truy cập nghiệp vụ quản trị.
+- Tài khoản không có SYSTEM/ADMIN bị từ chối vào quản trị, kể cả có phiên ở app Khách/Quán/Xế. Backend kiểm quyền mỗi thao tác.
+- OTP hiển thị thử thay SMS không thay TOTP quản trị hoặc bỏ bước 2FA.
+Quyết định này chốt các mục trên; chưa chốt toàn bộ API/schema, recovery, scope và ảnh UI.
+
+## Đề xuất còn cần Owner duyệt
 | Chủ đề | Hành vi đề xuất |
 |---|---|
-| Khởi tạo SYSTEM | Operator khởi tạo một lần bằng công cụ vận hành; nhập SĐT hợp lệ và mật khẩu; không màn signup SYSTEM, không mật khẩu mặc định |
+| Khởi tạo SYSTEM — Owner đã chốt | Cài đặt khởi tạo sẵn duy nhất SYSTEM từ cấu hình riêng; SĐT hợp lệ và mật khẩu, không signup SYSTEM/mật khẩu mặc định; chạy lại không tạo thêm hoặc ghi đè |
 | Lần đầu SYSTEM login | SĐT + mật khẩu → thiết lập Authenticator → nhập mã xác nhận → vào web; chưa hoàn tất 2FA không có quyền quản trị |
 | Tạo ADMIN | SYSTEM nhập tên, SĐT hợp lệ/duy nhất và chọn scope; mật khẩu tạm sinh ngẫu nhiên, chỉ hiển thị một lần để giao riêng |
 | ADMIN lần đầu | Đổi mật khẩu tạm → thiết lập 2FA → xác nhận mã → vào phần được cấp; chưa đủ bước không có quyền quản trị |
@@ -33,7 +42,7 @@ Mật khẩu tạm, TTL/kích hoạt, cách giao credential, scope API enum, rec
 OTP SMS thử không thay mã Google Authenticator. Quản trị vẫn cần 2FA thật; không hiện mã TOTP thử để vượt 2FA.
 
 ## Luồng màn hình dự kiến — sau duyệt nghiệp vụ sẽ gửi ảnh UI
-1. Web login quản trị: SĐT, mật khẩu, nút đăng nhập; lỗi không lộ tồn tại tài khoản.
+1. Một link/form login quản trị chung SYSTEM/ADMIN: SĐT, mật khẩu, nút đăng nhập; không ô chọn role; lỗi không lộ tồn tại tài khoản.
 2. Thiết lập 2FA: QR/khóa thiết lập, nhập mã, xác nhận; secret không log/telemetry.
 3. Xác nhận 2FA: mã Authenticator, tùy chọn mã khôi phục theo quyền.
 4. SYSTEM quản lý ADMIN: danh sách tên/SĐT/trạng thái/scope; tạo, xem/sửa scope, khóa/mở khóa, reset 2FA.
