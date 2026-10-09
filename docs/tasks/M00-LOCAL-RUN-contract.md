@@ -45,8 +45,13 @@ Ba package cài đồng thời trên một AVD, test lần lượt. Native thay 
 Phải kiểm chứng release loại CA/endpoint local. LAN/điện thoại và DNS/cert là gói sau, không tự mở firewall.
 ### M00-LOCAL-OTP/DATA
 main đang bind FakeOtpProvider in-memory; main process chưa có đường cho Owner đọc OTP. Không cố đọc OTP từ DB vì DB lưu HMAC.
-Đề xuất operator sidecar loopback riêng, chỉ development và bật rõ ràng, số thử allowlist; CLI truyền số bằng stdin, xác thực bằng credential local ngoài repo. OTP inbox có TTL, overwrite mã cũ, không lưu lâu dài; output chỉ vào phiên terminal Owner chủ động gọi, không log/evidence/CI.
-Không proxy inbox qua web/API, không public endpoint OTP và không endpoint đổi role. Thiếu allowlist/credential hoặc staging/production phải từ chối bật. Contract chi tiết port/protocol/TTL/cleanup và xử lý restart sẽ nằm trong task riêng trước code.
+Quyết định Owner ngày 09/10/2026: người test vẫn nhập SĐT; backend kiểm tra/chuẩn hóa SĐT theo contract hiện hành. Chỉ thay kênh gửi SMS bằng hiển thị OTP thử trên bản test. Quyết định này thay đề xuất lấy OTP qua terminal/sidecar ở bản trước.
+Backend vẫn sinh OTP ngẫu nhiên; UI không tự sinh mã và không dùng mã cố định. Giữ nguyên validation SĐT, điều kiện tài khoản đã tồn tại, purpose, TTL, resend cooldown, giới hạn lần nhập, kiểm mã, proof, đăng ký, mật khẩu, idempotency và các quy tắc phiên/phân quyền hiện hành. SĐT sai phải bị từ chối trước khi sinh/gửi mã theo luồng hiện có.
+Hiển thị “Mã OTP thử: …” là thay thế delivery, không tự điền/xác nhận hộ người dùng; vẫn nhập mã và gọi verify API thật. Kiểm tra đúng/sai/hết hạn/gửi lại và các ca lỗi như bản thật.
+SĐT hợp lệ về định dạng không chứng minh sở hữu số hoặc SIM đang hoạt động. Evidence phải ghi dùng delivery thử, không SMS thật.
+Test mode/allowlist là giới hạn môi trường delivery thử, không thay validator SĐT. Số hợp lệ nhưng không nằm trong danh sách thử phải có thông báo riêng, không báo “SĐT không hợp lệ”.
+Chỉ local hoặc staging test được cho phép tường minh mới hiển thị mã; production không được bật. Không đưa OTP vào log/evidence/artifact. Phải thiết kế contract trả mã test và dấu hiệu môi trường, dữ liệu tài khoản thử và chặn production trước khi giao Claude code; không tự đổi API/schema đã khóa trong gói RUN.
+PR #27 hiện đóng OTP/register nên không đáp ứng quyết định này; cần gói điều chỉnh thiết kế staging riêng, không dùng fixture seed thay đăng ký. Chưa coi Owner đã duyệt chi tiết transport/API hoặc UI chỉ từ quyết định nghiệp vụ này.
 Seed fixture manifest riêng, không tự cấp SYSTEM/ADMIN, không ghi đè tài khoản đã có, không thay thế test REGISTER. Thiết kế reset/cleanup riêng sau khi đọc schema đầy đủ.
 ### M00-LOCAL-QA/UAT
 Sau RUN + Android/TLS + OTP/DATA được review: Owner xác nhận môi trường đầy đủ. RUN đạt chỉ mở kiểm tra backend/web transport, chưa mở nghiệm thu đầy đủ M01.
