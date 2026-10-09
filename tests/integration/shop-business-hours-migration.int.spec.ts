@@ -67,7 +67,8 @@ describe('M02-A — Shop business-hours migration', () => {
 
   it('is a NEW last migration after M00, Auth, Shop and Driver onboarding (applied migrations are never edited)', () => {
     expect(HOURS).toBeDefined();
-    expect(names[names.length - 1]).toBe(HOURS);
+    // Followed only by the M00-D2 account_origin migration.
+    expect(names.slice(names.indexOf(HOURS))).toEqual([HOURS, '1791849600000_add-users-account-origin']);
     expect(HOURS).toBe('1791763200000_create-shop-business-hours');
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-driver-onboarding')).toBe(true);
     expect(names.filter((name) => name.endsWith('create-shop-business-hours'))).toHaveLength(1);

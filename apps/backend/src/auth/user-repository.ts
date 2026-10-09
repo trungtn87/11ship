@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
+import { AccountOrigin, isAccountOrigin } from './account-origin';
 import { SUPPORTED_ROLES } from './auth-constants';
 import { CLOCK_CTE } from './auth-db';
 
@@ -11,6 +12,8 @@ export interface UserRow {
   readonly phoneNormalized: string;
   readonly passwordHash: string;
   readonly status: UserStatus;
+  /** How the account came to exist (M00-D2). Read from the database; never from a client. */
+  readonly accountOrigin: AccountOrigin;
 }
 
 interface RawUser {
@@ -18,14 +21,20 @@ interface RawUser {
   phone_normalized: string;
   password_hash: string;
   status: UserStatus;
+  account_origin: string;
 }
 
 function toUser(row: RawUser): UserRow {
+  if (!isAccountOrigin(row.account_origin)) {
+    // The CHECK constraint makes this unreachable; refuse rather than guess an origin.
+    throw new TechnicalError('internal', 'Database returned an unexpected account origin');
+  }
   return {
     userId: row.user_id,
     phoneNormalized: row.phone_normalized,
     passwordHash: row.password_hash,
     status: row.status,
+    accountOrigin: row.account_origin,
   };
 }
 
@@ -41,7 +50,7 @@ export class UserRepository {
 
   async findByPhone(context: TransactionContext, phoneNormalized: string): Promise<UserRow | undefined> {
     const result = await context.query<RawUser>(
-      `SELECT user_id, phone_normalized, password_hash, status
+      `SELECT user_id, phone_normalized, password_hash, status, account_origin
          FROM app.users WHERE phone_normalized = $1`,
       [phoneNormalized],
     );
@@ -51,7 +60,7 @@ export class UserRepository {
 
   async lockById(context: TransactionContext, userId: string): Promise<UserRow | undefined> {
     const result = await context.query<RawUser>(
-      `SELECT user_id, phone_normalized, password_hash, status
+      `SELECT user_id, phone_normalized, password_hash, status, account_origin
          FROM app.users WHERE user_id = $1::uuid FOR UPDATE`,
       [userId],
     );
@@ -66,7 +75,7 @@ export class UserRepository {
    */
   async lockByIdForShare(context: TransactionContext, userId: string): Promise<UserRow | undefined> {
     const result = await context.query<RawUser>(
-      `SELECT user_id, phone_normalized, password_hash, status
+      `SELECT user_id, phone_normalized, password_hash, status, account_origin
          FROM app.users WHERE user_id = $1::uuid FOR SHARE`,
       [userId],
     );
@@ -76,7 +85,7 @@ export class UserRepository {
 
   async findById(context: TransactionContext, userId: string): Promise<UserRow | undefined> {
     const result = await context.query<RawUser>(
-      `SELECT user_id, phone_normalized, password_hash, status
+      `SELECT user_id, phone_normalized, password_hash, status, account_origin
          FROM app.users WHERE user_id = $1::uuid`,
       [userId],
     );
@@ -95,9 +104,9 @@ export class UserRepository {
   ): Promise<boolean> {
     const result = await context.query(
       `INSERT INTO app.users (
-         user_id, phone_normalized, password_hash, phone_verified_at, status, version, created_at, updated_at
+         user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at
        )
-       SELECT $1::uuid, $2, $3, v.verified_at, 'ACTIVE', 1, clock.t, clock.t
+       SELECT $1::uuid, $2, $3, v.verified_at, 'PHONE_VERIFIED', 'ACTIVE', 1, clock.t, clock.t
          FROM app.verification_proofs p
          JOIN app.phone_verifications v ON v.verification_id = p.verification_id
         CROSS JOIN (${CLOCK_CTE}) AS clock
@@ -115,6 +124,28 @@ export class UserRepository {
       throw new TechnicalError('internal', 'User was not written');
     }
     return false;
+  }
+
+  /**
+   * Creates one ACTIVE STAGING_FIXTURE account: roleless, phone_verified_at NULL (the phone was never proven),
+   * timestamps from the database clock. Returns false when the phone number already belongs to a user (the UNIQUE
+   * constraint decided); an existing account is NEVER touched: no password reset, no status change, no role.
+   * Used only by the operator seed command (M00-D2); no HTTP path reaches it.
+   */
+  async insertStagingFixture(
+    context: TransactionContext,
+    input: { userId: string; phoneNormalized: string; passwordHash: string },
+  ): Promise<boolean> {
+    const result = await context.query(
+      `INSERT INTO app.users (
+         user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at
+       )
+       SELECT $1::uuid, $2, $3, NULL, 'STAGING_FIXTURE', 'ACTIVE', 1, clock.t, clock.t
+         FROM (${CLOCK_CTE}) AS clock
+       ON CONFLICT (phone_normalized) DO NOTHING`,
+      [input.userId, input.phoneNormalized, input.passwordHash],
+    );
+    return result.rowCount === 1;
   }
 
   /** Sorted supported business roles of the user (SHOP, DRIVER). */

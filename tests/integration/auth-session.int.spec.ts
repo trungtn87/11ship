@@ -75,6 +75,7 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
         'active_role',
         'available_roles',
         'onboarding_required',
+        'phone_verification_status',
         'role_selection_required',
         'user_id',
       ]);
@@ -211,6 +212,7 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
       expect(dataOf(response)).toEqual({
         user_id: user.userId,
         phone_normalized: user.phone.normalized,
+        phone_verification_status: 'VERIFIED',
         available_roles: [],
         active_role: null,
         onboarding_required: true,

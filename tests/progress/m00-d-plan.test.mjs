@@ -32,6 +32,17 @@ describe('the M00-D entries of the shipped plan', () => {
     assert.deepEqual(byId.get('M00-D5').depends_on, ['M00-D4']);
   });
 
+  test('D2 pins its approved design PR #26 and its own acceptance and evidence documents; DONE is never written by hand', () => {
+    const d2 = byId.get('M00-D2');
+    assert.equal(d2.design_pr, 26);
+    assert.equal(d2.acceptance, 'docs/tasks/M00-D2-staging-fixtures.md');
+    assert.equal(d2.evidence, 'docs/evidence/M00-D2.md');
+    assert.equal(d2.requires_main_ci_green, true);
+    assert.equal(d2.implementation_pr, undefined);
+    assert.equal(d2.state, undefined);
+    assert.equal(d2.status, undefined);
+  });
+
   test('D1 has no pinned implementation PR (it is matched by labels), and no D leaf is a combined PR', () => {
     for (const id of ['M00-D1', 'M00-D2', 'M00-D3', 'M00-D4', 'M00-D5']) {
       assert.equal(byId.get(id).implementation_pr, undefined, id);
@@ -87,12 +98,12 @@ describe('once the design is merged', () => {
 
   test('D4 and D5 stay open until their own evidence PRs merge, whatever D1..D3 do', () => {
     const d = (n, task, head) => merged(n, head, { labels: ['agent:claude', 'type:implementation', `module:${task}`] });
-    const upToD3 = [...baseHistory(), designMerged(), d(23, 'M00-D1', 'e'), d(24, 'M00-D2', 'f'), d(25, 'M00-D3', 'a')];
+    const upToD3 = [...baseHistory(), designMerged(), merged(26, '6', { labels: [] }), d(23, 'M00-D1', 'e'), d(24, 'M00-D2', 'f'), d(25, 'M00-D3', 'a')];
     const r = resolve(upToD3);
     assert.equal(stateOf(r, 'M00-D3'), STATE.DONE);
     assert.equal(stateOf(r, 'M00-D4'), STATE.READY_FOR_CLAUDE);
     assert.equal(stateOf(r, 'M00-D5'), STATE.BLOCKED_BY_DEPENDENCY);
-    const r2 = resolve([...upToD3, d(26, 'M00-D4', 'b')]);
+    const r2 = resolve([...upToD3, d(28, 'M00-D4', 'b')]);
     assert.equal(stateOf(r2, 'M00-D4'), STATE.DONE);
     assert.equal(stateOf(r2, 'M00-D5'), STATE.READY_FOR_CLAUDE);
     assert.notEqual(stateOf(r2, 'M00-D'), STATE.DONE);
@@ -104,5 +115,40 @@ describe('the dashboard focus is not taken over by the M00-D lane', () => {
     const draft19 = pr({ number: 19, draft: true, head_sha: 'b'.repeat(40), labels: [], checks: checks.running });
     const r = resolve([...baseHistory(), draft19, designPr()]);
     assert.equal(r.focus.task, 'M01-R1');
+  });
+});
+
+describe('M00-D2 (accounts without SMS) design gate and acceptance', () => {
+  const d2Labels = ['agent:claude', 'type:implementation', 'module:M00-D2'];
+  const d1Done = () => merged(23, 'e', { labels: d1Labels });
+  const designMerged = () => merged(22, 'd', { labels: [] });
+  const d2Design = (extra = {}) => pr({ number: 26, draft: false, head_sha: '6'.repeat(40), labels: [], checks: checks.pass, ...extra });
+  const d2Impl = (extra = {}) => pr({ number: 27, draft: true, head_sha: '7'.repeat(40), labels: d2Labels, checks: checks.pass, ...extra });
+
+  test('while design PR #26 is open D2 is in design review and its draft implementation PR cannot be DONE', () => {
+    const r = resolve([...baseHistory(), designMerged(), d1Done(), d2Design(), d2Impl()]);
+    assert.equal(stateOf(r, 'M00-D2'), STATE.DESIGN_REVIEW);
+  });
+
+  test('once #26 is merged a draft implementation PR is CLAUDE_CODING and never DONE', () => {
+    const r = resolve([...baseHistory(), designMerged(), d1Done(), merged(26, '6', { labels: [] }), d2Impl()]);
+    assert.equal(stateOf(r, 'M00-D2'), STATE.CLAUDE_CODING);
+    assert.equal(taskOf(r, 'M00-D2').pr, 27);
+  });
+
+  test('a merged implementation PR with a green required check on its head is DONE', () => {
+    const r = resolve([...baseHistory(), designMerged(), d1Done(), merged(26, '6', { labels: [] }), merged(27, '7', { labels: d2Labels })]);
+    assert.equal(stateOf(r, 'M00-D2'), STATE.DONE);
+  });
+
+  test('a merged implementation PR whose required check failed is not DONE', () => {
+    const r = resolve([...baseHistory(), designMerged(), d1Done(), merged(26, '6', { labels: [] }), merged(27, '7', { labels: d2Labels, checks: checks.fail })]);
+    assert.notEqual(stateOf(r, 'M00-D2'), STATE.DONE);
+  });
+
+  test('with main CI red D2 is BLOCKED_BY_CI instead of ready, and with main green it is READY_FOR_CLAUDE (requires_main_ci_green)', () => {
+    const pulls = [...baseHistory(), designMerged(), d1Done(), merged(26, '6', { labels: [] })];
+    assert.equal(stateOf(resolveProgress(livePlan, snapshot(pulls, checks.fail)), 'M00-D2'), STATE.BLOCKED_BY_CI);
+    assert.equal(stateOf(resolveProgress(livePlan, snapshot(pulls)), 'M00-D2'), STATE.READY_FOR_CLAUDE);
   });
 });

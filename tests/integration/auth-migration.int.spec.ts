@@ -32,6 +32,11 @@ describe('M01-A1 — Auth Core migration', () => {
   const shopSql = readFileSync(path.join(migrationsDir, `${SHOP}.sql`), 'utf8');
   const shopUpSql = (shopSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const shopDownSql = shopSql.split('-- Down Migration')[1] as string;
+  // M00-D2 adds one more migration after the Hours one (account_origin on app.users); it must go down FIRST.
+  const ACCT = names.find((name) => name.endsWith('add-users-account-origin')) as string;
+  const acctSql = readFileSync(path.join(migrationsDir, `${ACCT}.sql`), 'utf8');
+  const acctUpSql = (acctSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+  const acctDownSql = acctSql.split('-- Down Migration')[1] as string;
   const authSql = readFileSync(path.join(migrationsDir, `${AUTH}.sql`), 'utf8');
   const upSql = (authSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const downSql = authSql.split('-- Down Migration')[1] as string;
@@ -85,7 +90,7 @@ describe('M01-A1 — Auth Core migration', () => {
     expect(AUTH).toBeDefined();
     expect(M00.length).toBeGreaterThanOrEqual(3);
     // Auth directly follows M00; the only migration after it is the M01-A2S Shop one.
-    expect(names.slice(M00.length)).toEqual([AUTH, SHOP, DRIVER, HOURS]);
+    expect(names.slice(M00.length)).toEqual([AUTH, SHOP, DRIVER, HOURS, ACCT]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });
 
@@ -184,6 +189,7 @@ describe('M01-A1 — Auth Core migration', () => {
     await client.query('BEGIN');
     try {
       // The Shop and Driver migrations reference app.users, so they go down first and come back up last.
+      await client.query(acctDownSql);
       await client.query(hoursDownSql);
       await client.query(driverDownSql);
       await client.query(shopDownSql);
@@ -199,6 +205,7 @@ describe('M01-A1 — Auth Core migration', () => {
       await client.query(shopUpSql);
       await client.query(driverUpSql);
       await client.query(hoursUpSql);
+      await client.query(acctUpSql);
       expect(await presentTables()).toEqual([...TABLES].sort());
     } finally {
       await client.query('ROLLBACK');
@@ -249,6 +256,9 @@ describe('M01-A1 — Auth Core migration', () => {
           'users_status_ck',
           'users_version_ck',
           'users_time_order_ck',
+          // M00-D2 (account_origin)
+          'users_account_origin_ck',
+          'users_origin_verified_ck',
         ].sort(),
       );
       expect(await constraintNames('user_roles')).toEqual(['user_roles_pkey', 'user_roles_role_ck', 'user_roles_user_fk']);

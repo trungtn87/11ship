@@ -5,6 +5,8 @@ import { fakeContext } from './auth-fakes.fixture';
 import { SessionActor, SessionAuthorizationParticipant } from './session-authorization-participant';
 import { LockedSession, SessionRepository, SharedLockedSession } from './session-repository';
 import { UserRepository, UserRow } from './user-repository';
+import { AccountOriginPolicy, createAccountOriginPolicy } from './account-origin';
+import { PhoneAllowlist } from '../config/staging-fixtures-config';
 
 // Post-merge repair, section 1: the participant that re-authorizes the caller INSIDE a business transaction.
 // These specs pin ORDER (user, then session, then the database clock), PRECEDENCE of the error codes and the
@@ -17,7 +19,7 @@ const ACTOR: SessionActor = {
   sessionId: '623e4567-e89b-42d3-a456-426614174000',
 };
 const OTHER_USER = '723e4567-e89b-42d3-a456-426614174000';
-const USER: UserRow = { userId: ACTOR.userId, phoneNormalized: '+84987654321', passwordHash: 'h', status: 'ACTIVE' };
+const USER: UserRow = { userId: ACTOR.userId, phoneNormalized: '+84987654321', passwordHash: 'h', status: 'ACTIVE', accountOrigin: 'PHONE_VERIFIED' };
 const SESSION: SharedLockedSession = {
   sessionId: ACTOR.sessionId,
   userId: ACTOR.userId,
@@ -27,7 +29,12 @@ const SESSION: SharedLockedSession = {
 };
 
 function rig(
-  options: { user?: UserRow | undefined; session?: SharedLockedSession | undefined; roles?: readonly string[] } = {},
+  options: {
+    user?: UserRow | undefined;
+    session?: SharedLockedSession | undefined;
+    roles?: readonly string[];
+    policy?: AccountOriginPolicy;
+  } = {},
 ) {
   const events: string[] = [];
   const user = 'user' in options ? options.user : USER;
@@ -56,7 +63,7 @@ function rig(
       return session;
     },
   } as unknown as SessionRepository;
-  return { participant: new SessionAuthorizationParticipant(users, sessions), events };
+  return { participant: new SessionAuthorizationParticipant(users, sessions, options.policy), events };
 }
 
 async function codeOf(run: () => Promise<unknown>): Promise<string> {
@@ -166,11 +173,12 @@ describe('SessionAuthorizationParticipant.lockAuthorizedActorShared (readers)', 
     const { participant, events } = rig({ session: { ...SESSION, activeRole: 'DRIVER' } });
     await expect(participant.lockAuthorizedActorShared(fakeContext(NOW, events), ACTOR)).resolves.toEqual({
       activeRole: 'DRIVER',
+      phoneVerificationStatus: 'VERIFIED',
     });
     const roleless = rig();
     await expect(
       roleless.participant.lockAuthorizedActorShared(fakeContext(NOW, roleless.events), ACTOR),
-    ).resolves.toEqual({ activeRole: null });
+    ).resolves.toEqual({ activeRole: null, phoneVerificationStatus: 'VERIFIED' });
   });
 
   it('applies the same checks and precedence as the writer variant', async () => {
@@ -267,5 +275,89 @@ describe('SessionAuthorizationParticipant Shop variants (M02-A)', () => {
     const { participant, events } = rig({ session: SESSION, roles: [] });
     await participant.lockAuthorizedActor(fakeContext(NOW, events), ACTOR);
     expect(events).not.toContain('role.check:SHOP');
+  });
+});
+
+// M00-D2: the account origin policy is re-checked on the LOCKED user row, inside the transaction, at every entry
+// point (docs/tasks/M00-D2-staging-fixtures.md section 4).
+describe('SessionAuthorizationParticipant account origin policy (M00-D2)', () => {
+  const FIXTURE: UserRow = { ...USER, accountOrigin: 'STAGING_FIXTURE' };
+  const SHOP_SESSION: SharedLockedSession = { ...SESSION, activeRole: 'SHOP' };
+  const policyOf = (appEnv: 'staging' | 'production', mode: boolean, phones: string[]) =>
+    createAccountOriginPolicy({ appEnv, fixtureModeEnabled: mode, allowedPhones: new PhoneAllowlist(phones) });
+  const STAGING_ON = policyOf('staging', true, [USER.phoneNormalized]);
+
+  type Entry = 'writer' | 'reader' | 'shopWriter' | 'shopReader';
+  const entries: readonly Entry[] = ['writer', 'reader', 'shopWriter', 'shopReader'];
+  const call = (r: ReturnType<typeof rig>, entry: Entry): Promise<unknown> => {
+    const context = fakeContext(NOW, r.events);
+    switch (entry) {
+      case 'writer':
+        return r.participant.lockAuthorizedActor(context, ACTOR);
+      case 'reader':
+        return r.participant.lockAuthorizedActorShared(context, ACTOR);
+      case 'shopWriter':
+        return r.participant.lockAuthorizedShopActor(context, ACTOR);
+      case 'shopReader':
+        return r.participant.lockAuthorizedShopActorShared(context, ACTOR);
+    }
+  };
+
+  it.each(entries)('%s: an allowed fixture passes and the shared reader reports UNVERIFIED_TEST from the locked row', async (entry) => {
+    const r = rig({ user: FIXTURE, session: SHOP_SESSION, roles: ['SHOP'], policy: STAGING_ON });
+    expect(await codeOf(() => call(r, entry))).toBe('OK');
+    if (entry === 'reader') {
+      const shared = rig({ user: FIXTURE, policy: STAGING_ON });
+      const state = await shared.participant.lockAuthorizedActorShared(fakeContext(NOW, shared.events), ACTOR);
+      expect(state.phoneVerificationStatus).toBe('UNVERIFIED_TEST');
+    }
+  });
+
+  it('a verified user is reported as VERIFIED', async () => {
+    const r = rig();
+    const state = await r.participant.lockAuthorizedActorShared(fakeContext(NOW, r.events), ACTOR);
+    expect(state.phoneVerificationStatus).toBe('VERIFIED');
+  });
+
+  const denied: ReadonlyArray<readonly [string, AccountOriginPolicy | undefined]> = [
+    ['no fixture mode', undefined],
+    ['the mode switched off', policyOf('staging', false, [USER.phoneNormalized])],
+    ['production with the mode forced on', policyOf('production', true, [USER.phoneNormalized])],
+    ['the phone removed from the allowlist', policyOf('staging', true, ['+84900000000'])],
+  ];
+  for (const [label, policy] of denied) {
+    it.each(entries)(`%s: a fixture is SESSION_INVALID under ${label}, after both locks and BEFORE the clock`, async (entry) => {
+      const r = rig({ user: FIXTURE, session: SHOP_SESSION, roles: ['SHOP'], policy });
+      expect(await codeOf(() => call(r, entry))).toBe('SESSION_INVALID');
+      const locks = entry === 'writer' || entry === 'shopWriter' ? ['user.update', 'session.update'] : ['user.share', 'session.share'];
+      expect(r.events).toEqual(locks);
+    });
+  }
+
+  it('the policy answer wins over revoked, expired and disabled: nothing about a denied fixture is disclosed', async () => {
+    for (const change of [{ session: { ...SESSION, revoked: true } }, { session: { ...SESSION, expiresAtMs: NOW - 1 } }, { user: { ...FIXTURE, status: 'DISABLED' as const } }]) {
+      const r = rig({ user: FIXTURE, ...change });
+      expect(await codeOf(() => call(r, 'writer'))).toBe('SESSION_INVALID');
+    }
+  });
+
+  it('a verified user is refused while the fixture mode is on (the check is on the locked row, not on the guard principal)', async () => {
+    const r = rig({ policy: STAGING_ON });
+    expect(await codeOf(() => call(r, 'writer'))).toBe('SESSION_INVALID');
+  });
+
+  it('a policy that changes between two calls (mode switched off) is honoured by the next lock, never cached', async () => {
+    let mode = true;
+    const toggling: AccountOriginPolicy = {
+      get fixtureMode() {
+        return mode;
+      },
+      allows: (subject) => subject.accountOrigin === 'STAGING_FIXTURE' && mode,
+      assertRegistrationOpen: () => undefined,
+    };
+    const r = rig({ user: FIXTURE, policy: toggling });
+    expect(await codeOf(() => call(r, 'writer'))).toBe('OK');
+    mode = false;
+    expect(await codeOf(() => call(r, 'writer'))).toBe('SESSION_INVALID');
   });
 });

@@ -21,6 +21,7 @@
     "build:test": "npm run clean:test && tsc -p tsconfig.test.json",
     "db:migrate": "node scripts/db-migrate.js",
     "db:migrate:remote": "node scripts/db-migrate-remote.js",
+    "staging:seed-fixtures": "node scripts/staging-seed-fixtures.js",
     "deploy:validate": "node scripts/deploy/validate-render-blueprint.mjs",
     "deploy:test": "node --test \"tests/deploy/*.test.mjs\"",
     "test:unit": "npm run build:test && jest --config jest.unit.config.js",

@@ -70,7 +70,11 @@ describe('M01-A2D — Driver onboarding migration', () => {
 
   it('is a NEW migration after M00, Auth Core and Shop onboarding, followed only by the M02-A one (applied migrations are never edited)', () => {
     expect(DRIVER).toBeDefined();
-    expect(names.slice(names.indexOf(DRIVER))).toEqual([DRIVER, '1791763200000_create-shop-business-hours']);
+    expect(names.slice(names.indexOf(DRIVER))).toEqual([
+      DRIVER,
+      '1791763200000_create-shop-business-hours',
+      '1791849600000_add-users-account-origin',
+    ]);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-shop-onboarding')).toBe(true);
     expect(names.filter((name) => name.endsWith('create-driver-onboarding'))).toHaveLength(1);
