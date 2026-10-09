@@ -135,11 +135,11 @@ describeWithFixture('M00-D1 — remote migration path on a fresh disposable Post
     expect(after.pending).toEqual([]);
     expect(after.unknownApplied).toEqual([]);
 
-    const history = await migrator.query<{ app_history: string | null; public_history: string | null }>(
-      "SELECT to_regclass('app.pgmigrations')::text AS app_history, to_regclass('public.pgmigrations')::text AS public_history",
+    // Catalog lookup, not to_regclass('public....'): the fixture revokes USAGE on public, as the runbook does.
+    const history = await migrator.query<{ schema_name: string }>(
+      "SELECT s.nspname AS schema_name FROM pg_class c JOIN pg_namespace s ON s.oid = c.relnamespace WHERE c.relname = 'pgmigrations' AND c.relkind = 'r'",
     );
-    expect(history.rows[0]?.app_history).toBe('app.pgmigrations');
-    expect(history.rows[0]?.public_history).toBeNull();
+    expect(history.rows.map((row) => row.schema_name)).toEqual(['app']);
 
     const publicObjects = await migrator.query<{ n: string }>(
       "SELECT count(*)::text AS n FROM pg_class c JOIN pg_namespace s ON s.oid = c.relnamespace WHERE s.nspname = 'public'",
