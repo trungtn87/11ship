@@ -61,7 +61,7 @@ function parseDevice(value: unknown): DeviceInfo {
 }
 
 /** The password exactly as sent. Length is counted in code points; a lone surrogate (not valid UTF-8) is refused. */
-function parsePassword(value: unknown): string {
+export function parsePassword(value: unknown): string {
   if (typeof value !== 'string' || !isWellFormed(value)) {
     return reject();
   }

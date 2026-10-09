@@ -28,6 +28,7 @@ const USER: UserRow = {
   phoneNormalized: '+84987654321',
   passwordHash: '$argon2id$v=19$m=19456,t=2,p=1$salt$hash',
   status: 'ACTIVE',
+  accountOrigin: 'PHONE_VERIFIED',
 };
 const INPUT = {
   phoneNormalized: '+84987654321',
@@ -118,6 +119,19 @@ describe('LoginService (task section 11)', () => {
     expect(await codeOf(() => r.service.login(INPUT, REQUEST_ID))).toBe('INVALID_CREDENTIALS');
     expect(r.calls).toEqual(['dummy']);
     expect(r.state.transactions).toBe(1); // only the lookup
+  });
+
+  it('an administration account is refused like an unknown phone: dummy verification, INVALID_CREDENTIALS, no session', async () => {
+    const r = rig({ found: { ...USER, accountOrigin: 'ADMIN_PROVISIONED' } });
+    expect(await codeOf(() => r.service.login(INPUT, REQUEST_ID))).toBe('INVALID_CREDENTIALS');
+    expect(r.calls).toEqual(['dummy']);
+    expect(r.state.transactions).toBe(1);
+  });
+
+  it('an account whose origin changed to administration before the lock is refused without a session', async () => {
+    const r = rig({ locked: { ...USER, accountOrigin: 'ADMIN_PROVISIONED' } });
+    expect(await codeOf(() => r.service.login(INPUT, REQUEST_ID))).toBe('INVALID_CREDENTIALS');
+    expect(r.calls).toEqual(['verify']);
   });
 
   it('wrong password: INVALID_CREDENTIALS, no dummy, no session', async () => {

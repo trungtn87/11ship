@@ -21,6 +21,8 @@
     "build:test": "npm run clean:test && tsc -p tsconfig.test.json",
     "db:migrate": "node scripts/db-migrate.js",
     "db:migrate:remote": "node scripts/db-migrate-remote.js",
+    "admin-auth:init-limit-config": "node scripts/admin-auth-init-limit-config.js",
+    "admin-auth:bootstrap-system": "node scripts/admin-auth-bootstrap-system.js",
     "deploy:validate": "node scripts/deploy/validate-render-blueprint.mjs",
     "deploy:test": "node --test \"tests/deploy/*.test.mjs\"",
     "test:unit": "npm run build:test && jest --config jest.unit.config.js",

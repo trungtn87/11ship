@@ -7,6 +7,8 @@ import { ShopModule } from '../shop/shop.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { authConfigProvider } from './auth-config.provider';
 import { AuthController } from './auth.controller';
+import { AdminIdentityParticipant } from './admin-identity-participant';
+import { AdminPasswordVerifier } from './admin-password-verifier';
 import { LoginService } from './login-service';
 import { OTP_PROVIDER, OtpProvider } from './otp-provider';
 import { Argon2idPasswordHasher, PASSWORD_HASHER } from './password-hasher';
@@ -61,10 +63,19 @@ export class AuthModule {
         RoleGrantParticipant,
         SessionAuthorizationParticipant,
         SessionAuthGuard,
+        AdminIdentityParticipant,
+        AdminPasswordVerifier,
       ],
       // A guard named in @UseGuards() of another module is built in THAT module, from its imports, so the
       // SessionService it depends on has to be exported together with the guard.
-      exports: [SessionAuthGuard, SessionService, RoleGrantParticipant, SessionAuthorizationParticipant],
+      exports: [
+        SessionAuthGuard,
+        SessionService,
+        RoleGrantParticipant,
+        SessionAuthorizationParticipant,
+        AdminIdentityParticipant,
+        AdminPasswordVerifier,
+      ],
     };
   }
 }

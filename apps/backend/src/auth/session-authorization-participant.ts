@@ -128,6 +128,10 @@ export class SessionAuthorizationParticipant {
     if (user === undefined || session === undefined || session.userId !== actor.userId) {
       throw new AppError('SESSION_INVALID');
     }
+    // Re-checked under the locks: an administration account never acts through an application session.
+    if (user.accountOrigin !== 'PHONE_VERIFIED') {
+      throw new AppError('SESSION_INVALID');
+    }
     if (session.revoked) {
       throw new AppError('SESSION_REVOKED');
     }

@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
-import { APP_ERROR_DEFINITIONS, AppError, AppErrorCode, TechnicalError } from '../common/app-errors';
+import { AdminAuthRateLimitError, APP_ERROR_DEFINITIONS, AppError, AppErrorCode, TechnicalError } from '../common/app-errors';
 import { CryptoError } from '../crypto/crypto-error';
 import { JsonLogger, LOG_META_WHITELIST } from '../logging/json-logger';
 import { JsonValidationError } from '../shared/json/safe-json';
@@ -25,11 +25,15 @@ interface Reply {
 function run(exception: unknown, request: { requestId?: string; method?: string } = {
   requestId: REQUEST_ID,
   method: 'GET',
-}): { reply: Reply; logs: string[] } {
+}): { reply: Reply; logs: string[]; headers: Array<[string, string]> } {
   const logs: string[] = [];
+  const headers: Array<[string, string]> = [];
   const replies: Reply[] = [];
   const adapterHost = {
     httpAdapter: {
+      setHeader: (_response: unknown, name: string, value: string) => {
+        headers.push([name, value]);
+      },
       reply: (_response: unknown, body: Reply['body'], status: number) => {
         replies.push({ body, status });
       },
@@ -48,8 +52,34 @@ function run(exception: unknown, request: { requestId?: string; method?: string 
   if (reply === undefined) {
     throw new Error('the filter did not reply');
   }
-  return { reply, logs };
+  return { reply, logs, headers };
 }
+
+describe('AllExceptionsFilter — Retry-After (administration rate limit)', () => {
+  it('sends Retry-After only for the typed AdminAuthRateLimitError, with its integer seconds', () => {
+    const { reply, headers } = run(new AdminAuthRateLimitError(42));
+    expect(reply.status).toBe(429);
+    expect(reply.body.error.code).toBe('ADMIN_AUTH_RATE_LIMITED');
+    expect(reply.body.error.message).toBe(APP_ERROR_DEFINITIONS.ADMIN_AUTH_RATE_LIMITED.message);
+    expect(reply.body.error.details).toEqual({});
+    expect(headers).toEqual([['Retry-After', '42']]);
+  });
+
+  it('floors an invalid value to 1 second instead of emitting a malformed header', () => {
+    for (const value of [0, -5, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(run(new AdminAuthRateLimitError(value)).headers).toEqual([['Retry-After', '1']]);
+    }
+  });
+
+  it('never sends Retry-After for a plain AppError of the same code or for an impostor', () => {
+    expect(run(new AppError('ADMIN_AUTH_RATE_LIMITED')).headers).toEqual([]);
+    expect(run(new AppError('OTP_RATE_LIMITED')).headers).toEqual([]);
+    const impostor = Object.assign(new Error('x'), { status: 429, retryAfterSeconds: 99, headers: { 'Retry-After': '99' } });
+    const { reply, headers } = run(impostor);
+    expect(reply.status).toBe(429);
+    expect(headers).toEqual([]);
+  });
+});
 
 describe('AllExceptionsFilter', () => {
   it('returns 503 SERVICE_UNAVAILABLE in the documented envelope', () => {

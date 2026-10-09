@@ -69,6 +69,15 @@ export const APP_ERROR_DEFINITIONS = {
   SHOP_ROLE_REQUIRED: { status: 403, message: 'The shop role is required for this request' },
   SHOP_DISABLED: { status: 403, message: 'The shop is disabled' },
   INVALID_BUSINESS_HOURS: { status: 400, message: 'The business hours are not valid' },
+
+  // Administration web authentication (M01-D-LOGIN). Fixed messages that never echo what the client sent and never
+  // say whether an account, a membership or a factor exists. Crypto/storage failures use the generic 503.
+  ADMIN_PREAUTH_INVALID: { status: 401, message: 'The authentication step is not valid' },
+  ADMIN_TOTP_INVALID: { status: 400, message: 'The authentication code is not valid' },
+  ADMIN_AUTH_RATE_LIMITED: { status: 429, message: 'Too many authentication attempts; try again later' },
+  ADMIN_CSRF_INVALID: { status: 403, message: 'The request could not be verified' },
+  ADMIN_SESSION_INVALID: { status: 401, message: 'The administration session is not valid' },
+  ADMIN_ENROLLMENT_NOT_ALLOWED: { status: 409, message: 'Authenticator setup is not available' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;
@@ -91,6 +100,22 @@ export class AppError extends Error {
     this.name = 'AppError';
     this.code = code;
     this.status = APP_ERROR_DEFINITIONS[code].status;
+  }
+}
+
+/**
+ * The administration rate-limit refusal. It is the ONLY error that makes the HTTP layer send a Retry-After header, and
+ * the header value comes only from this typed field (never from a message, a property of some other exception or the
+ * request): a finite integer number of seconds >= 1 that the caller computed from the database clock.
+ */
+export class AdminAuthRateLimitError extends AppError {
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number) {
+    super('ADMIN_AUTH_RATE_LIMITED');
+    this.name = 'AdminAuthRateLimitError';
+    this.retryAfterSeconds =
+      Number.isSafeInteger(retryAfterSeconds) && retryAfterSeconds >= 1 ? retryAfterSeconds : 1;
   }
 }
 
