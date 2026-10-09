@@ -36,7 +36,7 @@ describe('M01-D-LOGIN - administration schema', () => {
     const userId = randomUUID();
     await pool.query(
       `INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at)
-       VALUES ($1::uuid, $2, 'hash', ${origin === 'PHONE_VERIFIED' ? 'now()' : 'NULL'}, $3, 'ACTIVE', 1, now(), now())`,
+       VALUES ($1::uuid, $2, '$argon2id$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA', ${origin === 'PHONE_VERIFIED' ? 'now()' : 'NULL'}, $3, 'ACTIVE', 1, now(), now())`,
       [userId, phone.normalized, origin],
     );
     return userId;
@@ -89,7 +89,7 @@ describe('M01-D-LOGIN - administration schema', () => {
     const insert = (origin: string, verifiedSql: string): Promise<unknown> =>
       pool.query(
         `INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at)
-         VALUES ($1::uuid, $2, 'hash', ${verifiedSql}, $3, 'ACTIVE', 1, now(), now())`,
+         VALUES ($1::uuid, $2, '$argon2id$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA', ${verifiedSql}, $3, 'ACTIVE', 1, now(), now())`,
         [randomUUID(), phone.normalized, origin],
       );
     await expect(insert('ADMIN_PROVISIONED', 'now()')).rejects.toMatchObject({ code: '23514' });

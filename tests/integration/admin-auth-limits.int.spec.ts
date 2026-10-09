@@ -111,11 +111,14 @@ describe('M01-D-LOGIN - limits and locks', () => {
     expect(Number(refused.headers['retry-after'])).toBeGreaterThanOrEqual(1);
   });
 
-  it('applies the TOTP request quota before the body is read', async () => {
+  it('reserves the TOTP request quota (30 per minute per address) before any cookie or code is looked at', async () => {
     let last = 0;
     for (let index = 0; index < 31; index += 1) {
-      const response = await app.call('POST', '/totp/verify', { rawBody: '{not json', csrf: 'x' });
+      const response = await app.call('POST', '/totp/verify', { body: { code: '123456' }, csrf: 'x' });
       last = response.status;
+      if (index < 30) {
+        expect(response.status).toBe(401);
+      }
     }
     expect(last).toBe(429);
   });
