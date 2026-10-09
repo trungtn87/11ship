@@ -151,7 +151,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#29](https://github.com/trungtn87/11ship/pull/29) feat(web): M01 test UI — login, session router, role select… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `363a526` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;); PR không được tính. Trạng thái không bao giờ được suy r… |
 | [#30](https://github.com/trungtn87/11ship/pull/30) docs(M01): roadmap đầy đủ SYSTEM, ADMIN và Auth từng ứng dụ… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `bd213e5` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#31](https://github.com/trungtn87/11ship/pull/31) feat(M01): bước 1 — khung web admin và 3 app Android test | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `be45bee` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#32](https://github.com/trungtn87/11ship/pull/32) docs: khóa phân công và gate local/điện thoại cho từng modu… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `0206918` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#32](https://github.com/trungtn87/11ship/pull/32) docs: khóa phân công và gate local/điện thoại cho từng modu… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `0206918` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
