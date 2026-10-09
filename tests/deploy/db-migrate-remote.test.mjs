@@ -7,17 +7,23 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { main, parseDatabaseUrl, listMigrationFiles } = require('../../scripts/db-migrate-remote.js');
+const { main, parseDatabaseUrl, checkSessionPoolerTarget, listMigrationFiles } = require('../../scripts/db-migrate-remote.js');
 
 const PASSWORD = 'SECRET_MARKER_REMOTE_MIGRATE_3f9';
 const CA = '-----BEGIN CERTIFICATE-----\nSECRET_MARKER_CA_BODY\n-----END CERTIFICATE-----\n';
 const HOST = 'pooler.example.test';
-const MIGRATION_URL = `postgres://ship11_migrator.projref:${PASSWORD}@${HOST}:5432/postgres`;
-const RUNTIME_URL = `postgres://ship11_app.projref:${PASSWORD}@${HOST}:5432/postgres`;
+const REF = 'abcdefghij0123456789'; // fake 20-character project ref
+const OTHER_REF = 'zyxwvutsrq9876543210';
+const urlFor = ({ role, ref = REF, host = HOST, port = 5432, db = 'postgres' }) =>
+  `postgres://${role}.${ref}:${PASSWORD}@${host}:${port}/${db}`;
+const MIGRATION_URL = urlFor({ role: 'ship11_migrator' });
+const RUNTIME_URL = urlFor({ role: 'ship11_app' });
+const TARGET = `${HOST}:5432/postgres/${REF}`;
 const GOOD_ENV = {
   APP_ENV: 'staging',
   MIGRATION_DATABASE_URL: MIGRATION_URL,
-  MIGRATION_CONFIRM_TARGET: `${HOST}/postgres`,
+  DATABASE_URL: RUNTIME_URL,
+  MIGRATION_CONFIRM_TARGET: TARGET,
   DB_SSL_CA: CA,
 };
 const FILES = ['100_a', '200_b', '300_c'];
@@ -36,7 +42,7 @@ function harness({ state = { applied: ['100_a', '200_b'] }, versionNum = 170011,
     query: async (sql) => {
       log.queries.push(sql);
       if (/server_version_num/.test(sql)) {
-        return { rows: [{ version_num: versionNum, version: '17.11', role: 'ship11_migrator.projref', db: 'postgres' }] };
+        return { rows: [{ version_num: versionNum, version: '17.11', role: 'ship11_migrator', db: 'postgres' }] };
       }
       if (/to_regnamespace/.test(sql)) return { rows: [{ present: schemaPresent }] };
       if (/to_regclass/.test(sql)) return { rows: [{ present: state.applied.length > 0 }] };
@@ -105,11 +111,81 @@ describe('db:migrate:remote gates (nothing connects before every gate passes)', 
     assert.equal(code, 1);
     assert.match(printed(h), /same role/);
     assert.equal(h.log.clients.length, 0);
+    assert.equal(h.log.migrations.length, 0);
   });
 
-  test('accepts a runtime URL with a different role present in the same environment', async () => {
+  test('role split is fail-closed: a missing or malformed runtime DATABASE_URL stops the command before any client', async () => {
+    for (const url of [undefined, '', 'not a url', `mysql://u:${PASSWORD}@h/db`, `postgres://ship11_app.${REF}:${PASSWORD}@/db`]) {
+      for (const argv of [[], ['--apply']]) {
+        const h = harness();
+        const code = await run({ ...GOOD_ENV, DATABASE_URL: url }, argv, h);
+        assert.equal(code, 1, String(url));
+        assert.match(printed(h), /DATABASE_URL/);
+        noSecrets(h);
+        assert.equal(h.log.clients.length, 0, 'no client may be created');
+        assert.equal(h.log.migrations.length, 0, 'the runner must not be called');
+      }
+    }
+  });
+
+  test('accepts a runtime URL with a different role on the same host, port, database and project', async () => {
     const h = harness({ state: { applied: realFiles } });
-    assert.equal(await run({ ...GOOD_ENV, DATABASE_URL: RUNTIME_URL }, [], h), 0);
+    assert.equal(await run(GOOD_ENV, [], h), 0);
+    assert.equal(h.log.clients.length, 1);
+  });
+
+  test('refuses a different project on the same pooler host and database (runtime vs migrator), before connecting', async () => {
+    for (const [name, env] of [
+      ['runtime in another project', { DATABASE_URL: urlFor({ role: 'ship11_app', ref: OTHER_REF }) }],
+      ['migrator in another project', { MIGRATION_DATABASE_URL: urlFor({ role: 'ship11_migrator', ref: OTHER_REF }) }],
+    ]) {
+      const h = harness();
+      const code = await run({ ...GOOD_ENV, ...env }, ['--apply'], h);
+      assert.equal(code, 1, name);
+      assert.match(printed(h), /differ in: projectRef/, name);
+      noSecrets(h);
+      assert.equal(h.log.clients.length, 0, name);
+      assert.equal(h.log.migrations.length, 0, name);
+    }
+  });
+
+  test('refuses runtime and migrator that differ in host or database', async () => {
+    const cases = [
+      [{ DATABASE_URL: urlFor({ role: 'ship11_app', host: 'other-pooler.example.test' }) }, /differ in: host/],
+      [{ DATABASE_URL: urlFor({ role: 'ship11_app', db: 'other' }) }, /differ in: database/],
+    ];
+    for (const [env, pattern] of cases) {
+      const h = harness();
+      assert.equal(await run({ ...GOOD_ENV, ...env }, ['--apply'], h), 1);
+      assert.match(printed(h), pattern);
+      assert.equal(h.log.clients.length, 0);
+    }
+  });
+
+  test('accepts only the session pooler port 5432: 6543 and any other port are refused before connecting', async () => {
+    for (const port of [6543, 5433, 443]) {
+      for (const which of ['MIGRATION_DATABASE_URL', 'DATABASE_URL']) {
+        const role = which === 'DATABASE_URL' ? 'ship11_app' : 'ship11_migrator';
+        const h = harness();
+        const env = { ...GOOD_ENV, [which]: urlFor({ role, port }), MIGRATION_CONFIRM_TARGET: `${HOST}:${port}/postgres/${REF}` };
+        const code = await run(env, ['--apply'], h);
+        assert.equal(code, 1, `${which} ${port}`);
+        assert.match(printed(h), new RegExp(`${which} must use the Supabase SESSION pooler on port 5432`));
+        noSecrets(h);
+        assert.equal(h.log.clients.length, 0);
+        assert.equal(h.log.migrations.length, 0);
+      }
+    }
+  });
+
+  test('requires the pooler user name form <role>.<project ref> on both URLs', async () => {
+    for (const username of ['ship11_migrator', 'ship11_migrator.short', 'ship11_migrator.ABCDEFGHIJ0123456789']) {
+      const h = harness();
+      const url = `postgres://${username}:${PASSWORD}@${HOST}:5432/postgres`;
+      assert.equal(await run({ ...GOOD_ENV, MIGRATION_DATABASE_URL: url }, [], h), 1, username);
+      assert.match(printed(h), /pooler user name of the form <role>\.<project ref>/);
+      assert.equal(h.log.clients.length, 0);
+    }
   });
 
   test('asks the shared TLS rules for strict TLS and passes the MIGRATION url to them', async () => {
@@ -132,11 +208,20 @@ describe('db:migrate:remote gates (nothing connects before every gate passes)', 
   });
 
   test('refuses without the typed target, and a wrong target, telling the operator what to type', async () => {
-    for (const confirm of [undefined, '', `${HOST}/other`, 'other-host/postgres', `${HOST}/postgres `]) {
+    for (const confirm of [
+      undefined,
+      '',
+      `${HOST}/postgres`, // the old host/database form no longer identifies the target
+      `${HOST}:5432/other/${REF}`,
+      `other-host:5432/postgres/${REF}`,
+      `${HOST}:5432/postgres/${OTHER_REF}`, // same host and database, different project
+      `${HOST}:6543/postgres/${REF}`,
+      `${TARGET} `,
+    ]) {
       const h = harness();
       const code = await run({ ...GOOD_ENV, MIGRATION_CONFIRM_TARGET: confirm }, [], h);
       assert.equal(code, 1, String(confirm));
-      assert.match(printed(h), new RegExp(`MIGRATION_CONFIRM_TARGET=${HOST}/postgres`));
+      assert.match(printed(h), new RegExp(`MIGRATION_CONFIRM_TARGET=${TARGET}`));
       noSecrets(h);
       assert.equal(h.log.clients.length, 0);
     }
@@ -167,7 +252,7 @@ describe('db:migrate:remote behaviour once the gates pass', () => {
     assert.equal(h.log.migrations.length, 0, 'the runner must not be called without --apply');
     const text = printed(h);
     assert.match(text, /check only; nothing was changed/);
-    assert.match(text, /connected over verified TLS to pooler\.example\.test\/postgres/);
+    assert.match(text, /connected over verified TLS to pooler\.example\.test:5432\/postgres\/abcdefghij0123456789/);
     assert.match(text, new RegExp(`pending ${realFiles[2]}`));
     assert.ok(h.log.queries.every((sql) => /^\s*SELECT/i.test(sql)), 'check mode must only SELECT');
     assert.equal(h.log.ended, 1);
@@ -249,7 +334,16 @@ describe('db:migrate:remote behaviour once the gates pass', () => {
 
 describe('helpers', () => {
   test('parseDatabaseUrl returns host, database and role only for a usable postgres URL', () => {
-    assert.deepEqual(parseDatabaseUrl(MIGRATION_URL), { host: HOST, database: 'postgres', username: 'ship11_migrator.projref' });
+    assert.deepEqual(parseDatabaseUrl(MIGRATION_URL), {
+      host: HOST,
+      port: 5432,
+      database: 'postgres',
+      username: `ship11_migrator.${REF}`,
+      role: 'ship11_migrator',
+      projectRef: REF,
+    });
+    assert.equal(parseDatabaseUrl(`postgres://u.${REF}:p@${HOST}/postgres`).port, 5432, 'no port means the default 5432');
+    assert.equal(checkSessionPoolerTarget(undefined, 'X').problem, 'missing or invalid environment variable: X');
     assert.equal(parseDatabaseUrl('http://h/db'), undefined);
     assert.equal(parseDatabaseUrl('nonsense'), undefined);
   });

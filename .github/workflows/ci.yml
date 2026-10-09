@@ -118,6 +118,24 @@ jobs:
           CREATE ROLE ship11_wrong_user LOGIN PASSWORD 'ci_wrong_user_ephemeral_only'
             NOSUPERUSER NOCREATEDB NOCREATEROLE;
           SQL
+          # M00-D1 fixture for the remote migration path test (a disposable database on this throwaway container; never
+          # Supabase). Mirrors ops/runbooks/render-supabase-staging.md section 3: two NON-superuser roles, the admin
+          # creates schema app AUTHORIZATION the migrator, and the runtime role only gets USAGE on it.
+          psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U ci_admin -d postgres <<'SQL'
+          CREATE ROLE ship11_remote_migrator LOGIN PASSWORD 'ci_remote_migrator_ephemeral_only'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          CREATE ROLE ship11_remote_app LOGIN PASSWORD 'ci_remote_app_ephemeral_only'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          CREATE DATABASE ship11_remote_path_test;
+          REVOKE ALL ON DATABASE ship11_remote_path_test FROM PUBLIC;
+          GRANT CONNECT ON DATABASE ship11_remote_path_test TO ship11_remote_migrator, ship11_remote_app;
+          SQL
+          psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U ci_admin -d ship11_remote_path_test <<'SQL'
+          REVOKE ALL ON SCHEMA public FROM PUBLIC;
+          CREATE SCHEMA app AUTHORIZATION ship11_remote_migrator;
+          REVOKE ALL ON SCHEMA app FROM PUBLIC;
+          GRANT USAGE ON SCHEMA app TO ship11_remote_app;
+          SQL
 
       - name: Apply migrations (smoke)
         env:
@@ -146,7 +164,7 @@ jobs:
           DATABASE_URL: postgres://ship11_test:ci_test_ephemeral_only@127.0.0.1:5432/ship11_test
         shell: bash
         run: |
-          test -z "${PGPASSWORD:-}" && test -z "${TEST_WRONG_USER_DATABASE_URL:-}"
+          test -z "${PGPASSWORD:-}" && test -z "${TEST_WRONG_USER_DATABASE_URL:-}" && test -z "${TEST_REMOTE_PATH_DATABASE_URL:-}"
           mkdir -p .test-results
           npm run test:integration -- --json --outputFile=.test-results/integration-local.json 2>&1 | tee .test-results/integration-local.log
 
@@ -154,7 +172,8 @@ jobs:
         if: ${{ always() && hashFiles('.test-results/integration-local.log') != '' }}
         run: |
           node scripts/report-test-counts.js "Integration (local mode)" .test-results/integration-local.json --log .test-results/integration-local.log \
-            --max-pending 1 --expect "real PostgreSQL server user is outside the allowlist=pending"
+            --max-pending 5 --expect "real PostgreSQL server user is outside the allowlist=pending" \
+            --expect "applies every migration as the non-superuser migrator=pending"
 
       # CI mode: same suite plus the real wrong-user fixture. Nothing may be skipped.
       - name: Integration tests, CI mode (real wrong-user fixture)
@@ -163,6 +182,8 @@ jobs:
           APP_ENV: test
           DATABASE_URL: postgres://ship11_test:ci_test_ephemeral_only@127.0.0.1:5432/ship11_test
           TEST_WRONG_USER_DATABASE_URL: postgres://ship11_wrong_user:ci_wrong_user_ephemeral_only@127.0.0.1:5432/ship11_test
+          TEST_REMOTE_PATH_DATABASE_URL: postgres://ship11_remote_migrator:ci_remote_migrator_ephemeral_only@127.0.0.1:5432/ship11_remote_path_test
+          TEST_REMOTE_PATH_RUNTIME_URL: postgres://ship11_remote_app:ci_remote_app_ephemeral_only@127.0.0.1:5432/ship11_remote_path_test
         shell: bash
         run: |
           mkdir -p .test-results
@@ -172,4 +193,7 @@ jobs:
         if: ${{ always() && hashFiles('.test-results/integration-ci.log') != '' }}
         run: |
           node scripts/report-test-counts.js "Integration (CI mode)" .test-results/integration-ci.json --log .test-results/integration-ci.log \
-            --max-pending 0 --expect "real PostgreSQL server user is outside the allowlist=passed"
+            --max-pending 0 --expect "real PostgreSQL server user is outside the allowlist=passed" \
+            --expect "applies every migration as the non-superuser migrator=passed" \
+            --expect "finds nothing to do on a second run=passed" \
+            --expect "runbook per-table grants cover exactly the tables=passed"

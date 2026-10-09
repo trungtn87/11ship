@@ -6,7 +6,9 @@
 //   - uses MIGRATION_DATABASE_URL (the migration role), which must differ from the runtime DATABASE_URL role;
 //   - applies the same strict TLS as the application (same compiled module: CA from DB_SSL_CA / DB_SSL_CA_FILE,
 //     certificate chain and host name verified, no query string, no NODE_TLS_REJECT_UNAUTHORIZED=0);
-//   - needs the operator to type the target (host/database) in MIGRATION_CONFIRM_TARGET;
+//   - needs the operator to type the target (host:port/database/project ref) in MIGRATION_CONFIRM_TARGET;
+//   - accepts only the Supabase SESSION pooler (port 5432) and checks that runtime and migration URLs name the same
+//     host, port, database and project ref (a shared pooler host serves many projects) with different roles;
 //   - defaults to a read-only CHECK (server version, role, pending migrations); only "--apply" changes anything;
 //   - keeps node-pg-migrate's own lock enabled, so two operators cannot migrate at once;
 //   - keeps the migration history in app.pgmigrations and never creates anything in Supabase's public schema;
@@ -29,6 +31,11 @@ const MIN_SERVER_VERSION_NUM = 170000; // PostgreSQL 17
 const REMOTE_APP_ENVS = new Set(['staging', 'production']);
 const PROGRAM = 'db:migrate:remote';
 
+const SESSION_POOLER_PORT = 5432;
+// Supabase pooler user names have the form <role>.<project ref>. The project ref is how a shared pooler host tells
+// projects apart, so it is part of the target identity. Refs are 20 lowercase alphanumeric characters.
+const POOLER_USERNAME = /^([A-Za-z_][A-Za-z0-9_]*)\.([a-z0-9]{20})$/;
+
 function parseDatabaseUrl(raw) {
   try {
     const url = new URL(raw);
@@ -36,10 +43,39 @@ function parseDatabaseUrl(raw) {
     if (!/^postgres(ql)?:$/.test(url.protocol) || url.hostname === '' || database === '') {
       return undefined;
     }
-    return { host: url.hostname, database, username: decodeURIComponent(url.username) };
+    const username = decodeURIComponent(url.username);
+    const pooler = POOLER_USERNAME.exec(username);
+    return {
+      host: url.hostname,
+      port: url.port === '' ? SESSION_POOLER_PORT : Number(url.port),
+      database,
+      username,
+      role: pooler === null ? undefined : pooler[1],
+      projectRef: pooler === null ? undefined : pooler[2],
+    };
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Gate for one URL of the Supabase path: usable URL, SESSION pooler port, pooler user name <role>.<project ref>.
+ * Returns { target } or { problem } where the problem names the variable and the rule, never a value.
+ */
+function checkSessionPoolerTarget(raw, variable) {
+  const target = raw === undefined ? undefined : parseDatabaseUrl(raw);
+  if (target === undefined) {
+    return { problem: `missing or invalid environment variable: ${variable}` };
+  }
+  if (target.port !== SESSION_POOLER_PORT) {
+    return {
+      problem: `${variable} must use the Supabase SESSION pooler on port ${SESSION_POOLER_PORT} (the transaction pooler on 6543 and any other port are refused).`,
+    };
+  }
+  if (target.role === undefined || target.projectRef === undefined) {
+    return { problem: `${variable} must use a pooler user name of the form <role>.<project ref>.` };
+  }
+  return { target };
 }
 
 function listMigrationFiles(dir = MIGRATIONS_DIR) {
@@ -138,17 +174,25 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
   }
 
   const rawUrl = env.MIGRATION_DATABASE_URL;
-  const target = rawUrl === undefined ? undefined : parseDatabaseUrl(rawUrl);
-  if (target === undefined) {
-    return fail('missing or invalid environment variable: MIGRATION_DATABASE_URL');
+  const migration = checkSessionPoolerTarget(rawUrl, 'MIGRATION_DATABASE_URL');
+  if (migration.target === undefined) {
+    return fail(migration.problem);
   }
+  const target = migration.target;
 
-  // Separate credentials: the migration role must not be the runtime role.
-  if (env.DATABASE_URL !== undefined) {
-    const runtime = parseDatabaseUrl(env.DATABASE_URL);
-    if (runtime !== undefined && runtime.username === target.username) {
-      return fail('MIGRATION_DATABASE_URL and DATABASE_URL use the same role. Migration and runtime credentials must differ.');
-    }
+  // The runtime URL is REQUIRED and must describe the same database as the migration URL, with a different role.
+  // Without it the role split (and the project check) could not be proven, so the command stops.
+  const runtimeCheck = checkSessionPoolerTarget(env.DATABASE_URL, 'DATABASE_URL');
+  if (runtimeCheck.target === undefined) {
+    return fail(runtimeCheck.problem);
+  }
+  const runtime = runtimeCheck.target;
+  const different = ['host', 'port', 'database', 'projectRef'].filter((key) => runtime[key] !== target[key]);
+  if (different.length > 0) {
+    return fail(`DATABASE_URL and MIGRATION_DATABASE_URL must point at the same host, port, database and project; they differ in: ${different.join(', ')}.`);
+  }
+  if (runtime.role === target.role) {
+    return fail('MIGRATION_DATABASE_URL and DATABASE_URL use the same role. Migration and runtime credentials must differ.');
   }
 
   const tls = deps.resolveDatabaseTls({ env, required: true, databaseUrl: rawUrl });
@@ -159,7 +203,7 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
     return fail(`invalid or missing configuration. Check environment variable(s): ${names.join(', ')}`);
   }
 
-  const expectedTarget = `${target.host}/${target.database}`;
+  const expectedTarget = `${target.host}:${target.port}/${target.database}/${target.projectRef}`;
   if (env.MIGRATION_CONFIRM_TARGET !== expectedTarget) {
     return fail(`confirm the target by setting MIGRATION_CONFIRM_TARGET=${expectedTarget}`);
   }
@@ -218,7 +262,7 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
   }
 }
 
-module.exports = { main, parseDatabaseUrl, listMigrationFiles, readMigrationState, schemaExists, defaultRunMigrations, MIGRATIONS_TABLE, MIGRATIONS_SCHEMA };
+module.exports = { main, parseDatabaseUrl, checkSessionPoolerTarget, listMigrationFiles, readMigrationState, schemaExists, defaultRunMigrations, MIGRATIONS_TABLE, MIGRATIONS_SCHEMA };
 
 if (require.main === module) {
   main({ argv: process.argv.slice(2), env: process.env }).then(

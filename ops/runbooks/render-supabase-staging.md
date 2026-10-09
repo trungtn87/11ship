@@ -97,14 +97,19 @@ SHOW pgrst.db_schemas;   -- or Dashboard → API settings: schema "app" must not
 Run from a controlled machine, never from Render, never at build or start.
 
 1. Check out the exact reviewed commit SHA; `npm ci`; `npm run build` (the tool loads `apps/backend/dist`).
-2. Set in the shell only (never a file): `APP_ENV=staging`, `MIGRATION_DATABASE_URL` (migrator role, session pooler,
-   no query), `DATABASE_URL` (runtime role, used only to prove the roles differ), one of `DB_SSL_CA`/`DB_SSL_CA_FILE`,
-   and `MIGRATION_CONFIRM_TARGET=<pooler host>/postgres`.
+2. Set in the shell only (never a file): `APP_ENV=staging`; `MIGRATION_DATABASE_URL` (migrator role); `DATABASE_URL`
+   (runtime role — **required**, used only to prove the split); one of `DB_SSL_CA`/`DB_SSL_CA_FILE`; and
+   `MIGRATION_CONFIRM_TARGET=<pooler host>:5432/postgres/<project ref>`. Both URLs must be the **session pooler on
+   port 5432** with user names `<role>.<project ref>`; the host name alone does not identify a project on a shared
+   pooler, which is why the project ref and port are part of the typed target.
 3. `npm run db:migrate:remote` — default is a **read-only check**: prints applied / pending / unknown migration names
    and counts.
-4. `npm run db:migrate:remote -- --apply` — applies pending migrations with the tool lock kept. Refuses when: not
-   staging/production, same role as runtime, wrong confirm target, TLS unmet, PostgreSQL < 17, schema `app` missing,
-   or migration history contains unknown names.
+4. `npm run db:migrate:remote -- --apply` — applies pending migrations with the tool lock kept. It refuses, before
+   creating any database client, when: not staging/production; either URL missing, malformed, not port 5432 (6543 and
+   every other port are refused), or without a `<role>.<project ref>` user name; the two URLs differ in host, port,
+   database or project ref; both URLs use the same role; TLS settings are unmet; the typed target does not match.
+   After connecting it refuses when PostgreSQL < 17, when schema `app` is missing, or when the database history
+   contains a migration **name** this checkout does not have.
 5. Record the printed names/counts, the commit SHA and the time in the evidence. Never paste URLs or errors that may
    contain them.
 
@@ -125,7 +130,10 @@ Run from a controlled machine, never from Render, never at build or start.
 
 - Application: manual redeploy of the previous known-good commit in Render.
 - Database: **fix forward** with a new migration. Never run `down`, never reset the database, never drop schema `app`.
-- A migration that was applied remotely is not edited; the tool reports edited history as unknown/changed and refuses.
+- A migration that was applied remotely is **never edited**; this is a rule for people, not something the tool
+  enforces. The tool compares migration **names** only: it detects a database history that contains a name this
+  checkout does not know. It stores and compares **no checksum**, so it does **not** detect a migration file whose
+  content was changed after it was applied. Checksum verification is not implemented in D1.
 
 ## 7. Not verified yet (remote unknowns)
 
@@ -134,7 +142,10 @@ real services). Each must be confirmed in D2/D4 or at first manual deploy:
 
 - Supavisor accepting the `statement_timeout` startup parameter the pool sends.
 - The pooler certificate chain/SAN matching the pooler host name with the downloaded CA.
-- `npx --yes npm@11.9.0 ...` in the Render build, and `autoDeployTrigger: "off"` as the accepted Blueprint key.
+- `npx --yes npm@11.9.0 ...` in the Render build.
+- `autoDeployTrigger: "off"` is confirmed as a Blueprint key in Render's official Blueprint specification
+  (https://render.com/docs/blueprint-spec). That confirms one key only; it is **not** a validation of the whole
+  Blueprint by Render's tooling.
 - Render region choice (`singapore` is a proposal; cannot be changed after creation).
 - Official Render Blueprint validation (`render blueprints validate`) — **not performed**; only the repository's
   structural check (`npm run deploy:validate`) has run.
