@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { formatInvalidConfigMessage, loadConfig } from './app-config';
+import { createTestPki } from '../database/test-tls.fixture';
 import {
   FIXTURE_K1_BASE64,
   FIXTURE_K2_BASE64,
@@ -7,6 +8,8 @@ import {
 } from '../crypto/test-keys.fixture';
 
 const SECRET = 'SECRET_MARKER_CONFIG_7f3a';
+// Staging and production refuse to start without a database CA (M00-D1), so the tests that accept them supply one.
+const TEST_CA = createTestPki().caPem;
 const validEnv = {
   APP_ENV: 'test',
   DATABASE_URL: `postgres://ship11_test:${SECRET}@127.0.0.1:5433/ship11_test`,
@@ -68,7 +71,7 @@ describe('loadConfig', () => {
   });
 
   it('has no fallback for DATABASE_URL in production', () => {
-    expect(invalidOf({ APP_ENV: 'production' })).toEqual(['DATABASE_URL']);
+    expect(invalidOf({ APP_ENV: 'production', DB_SSL_CA: TEST_CA })).toEqual(['DATABASE_URL']);
   });
 
   it('rejects a missing or unknown APP_ENV', () => {
@@ -78,12 +81,16 @@ describe('loadConfig', () => {
   });
 
   it.each(['development', 'staging', 'production', 'test'])('accepts APP_ENV=%s', (value) => {
-    expect(loadConfig({ ...validEnv, APP_ENV: value }).ok).toBe(true);
+    const tlsRequired = value === 'staging' || value === 'production';
+    const env = { ...validEnv, APP_ENV: value, ...(tlsRequired ? { DB_SSL_CA: TEST_CA } : {}) };
+    expect(loadConfig(env).ok).toBe(true);
   });
 
   it('rejects NODE_ENV=staging while still allowing APP_ENV=staging', () => {
     expect(invalidOf({ ...validEnv, NODE_ENV: 'staging' })).toEqual(['NODE_ENV']);
-    expect(loadConfig({ ...validEnv, APP_ENV: 'staging', NODE_ENV: 'production' }).ok).toBe(true);
+    expect(
+      loadConfig({ ...validEnv, APP_ENV: 'staging', NODE_ENV: 'production', DB_SSL_CA: TEST_CA }).ok,
+    ).toBe(true);
   });
 
   it.each(['abc', '0', '65536', '-1', '3000.5', ' 3000', '', '1e3', '0x50'])(
@@ -419,5 +426,93 @@ describe('loadConfig — idempotency (M00-C1A1)', () => {
     expect(message).not.toContain('SECRET_TTL_VALUE_3c');
     expect(message).not.toContain('99999');
     expect(message).not.toContain(SECRET);
+  });
+});
+
+// M00-D1: strict database TLS decided at startup, from variable NAMES only.
+describe('loadConfig: database TLS (M00-D1)', () => {
+  const pki = createTestPki();
+  const stagingBase = {
+    APP_ENV: 'staging',
+    NODE_ENV: 'production',
+    DATABASE_URL: `postgres://ship11_app.projref:${SECRET}@pooler.example.test:5432/postgres`,
+  };
+
+  it('keeps development and test exactly as before: no tls key at all without a CA', () => {
+    for (const appEnv of ['development', 'test']) {
+      const result = loadConfig({ ...validEnv, APP_ENV: appEnv });
+      if (!result.ok) {
+        throw new Error('expected the configuration to be accepted');
+      }
+      expect('tls' in result.config.database).toBe(false);
+    }
+  });
+
+  it('keeps a URL query such as ?sslmode=disable working in development/test when no CA is supplied', () => {
+    const result = loadConfig({ ...validEnv, DATABASE_URL: `${validEnv.DATABASE_URL}?sslmode=disable` });
+    expect(result.ok).toBe(true);
+  });
+
+  it('refuses staging and production without a CA, naming both variables and no value', () => {
+    for (const appEnv of ['staging', 'production']) {
+      const invalid = invalidOf({ ...stagingBase, APP_ENV: appEnv });
+      expect(invalid).toEqual(['DB_SSL_CA', 'DB_SSL_CA_FILE']);
+      const message = formatInvalidConfigMessage(invalid);
+      expect(message).not.toContain(SECRET);
+      expect(message).not.toContain('pooler.example.test');
+    }
+  });
+
+  it('accepts staging and production with a CA and carries strict TLS into the database config', () => {
+    for (const appEnv of ['staging', 'production']) {
+      const result = loadConfig({ ...stagingBase, APP_ENV: appEnv, DB_SSL_CA: pki.caPem });
+      if (!result.ok) {
+        throw new Error('expected the configuration to be accepted');
+      }
+      expect(result.config.database.tls?.rejectUnauthorized).toBe(true);
+      expect(result.config.database.tls?.ca).toBe(pki.caPem.trim() + '\n');
+    }
+  });
+
+  it('refuses a URL query once TLS is required, so the URL cannot weaken verification', () => {
+    const invalid = invalidOf({
+      ...stagingBase,
+      DB_SSL_CA: pki.caPem,
+      DATABASE_URL: `${stagingBase.DATABASE_URL}?sslmode=no-verify`,
+    });
+    expect(invalid).toEqual(['DATABASE_URL']);
+    expect(formatInvalidConfigMessage(invalid)).not.toContain('no-verify');
+  });
+
+  it('refuses NODE_TLS_REJECT_UNAUTHORIZED=0 in staging by name', () => {
+    expect(
+      invalidOf({ ...stagingBase, DB_SSL_CA: pki.caPem, NODE_TLS_REJECT_UNAUTHORIZED: '0' }),
+    ).toEqual(['NODE_TLS_REJECT_UNAUTHORIZED']);
+  });
+
+  it('reports a bad CA by name and never echoes the CA text, the key or the URL', () => {
+    const badCa = `${pki.caPem}${pki.serverKeyPem}`;
+    const invalid = invalidOf({ ...stagingBase, DB_SSL_CA: badCa });
+    expect(invalid).toEqual(['DB_SSL_CA']);
+    const message = formatInvalidConfigMessage(invalid);
+    expect(message).not.toContain('PRIVATE KEY');
+    expect(message).not.toContain((pki.caPem.split('\n')[1] ?? 'x').slice(0, 30));
+    expect(message).not.toContain(SECRET);
+  });
+
+  it('does not report TLS problems twice when the URL itself is invalid', () => {
+    expect(invalidOf({ ...stagingBase, DATABASE_URL: 'not a url', DB_SSL_CA: pki.caPem })).toEqual([
+      'DATABASE_URL',
+    ]);
+  });
+
+  it('reads the CA from a file variable and refuses an unreadable one by name', () => {
+    expect(
+      invalidOf({ ...stagingBase, DB_SSL_CA_FILE: '/definitely/not/a/real/file/ca.crt' }),
+    ).toEqual(['DB_SSL_CA_FILE']);
+  });
+
+  it('does not let a missing APP_ENV hide behind the TLS check', () => {
+    expect(invalidOf({ DATABASE_URL: stagingBase.DATABASE_URL })).toEqual(['APP_ENV']);
   });
 });

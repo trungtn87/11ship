@@ -6,6 +6,7 @@ import {
   FIXTURE_K2_BASE64,
   FIXTURE_KEYRING_ENV,
 } from '../../apps/backend/src/crypto/test-keys.fixture';
+import { createTestPki } from '../../apps/backend/src/database/test-tls.fixture';
 import { COMPILED_MAIN, minimalChildEnv } from './support/test-helpers';
 
 // F05 — the real compiled entry point must exit nonzero on bad configuration and name only the
@@ -222,5 +223,66 @@ describe('F05 — invalid configuration stops the process', () => {
       expect(result.stderr).toContain('PORT');
       expect(result.stderr).not.toContain('CRYPTO');
     });
+  });
+});
+
+// M00-D1 — the real compiled entry point fails closed on database TLS. Every case is invalid, so it exits at
+// configuration time: no database is contacted and the server never starts.
+describe('M00-D1 — database TLS stops the process and leaks nothing', () => {
+  const SECRET = 'SECRET_MARKER_D1_TLS_5e92';
+  const url = `postgres://ship11_app.projref:${SECRET}@pooler.example.test:5432/postgres`;
+  const ca = createTestPki().caPem;
+  const staging = { APP_ENV: 'staging', NODE_ENV: 'production', DATABASE_URL: url };
+
+  it.each(['staging', 'production'])(
+    'exits nonzero in APP_ENV=%s without a CA and names only the two CA variables',
+    (appEnv) => {
+      const result = startMain({ ...staging, APP_ENV: appEnv });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('DB_SSL_CA');
+      expect(result.stderr).toContain('DB_SSL_CA_FILE');
+      // Fails at configuration, before the OTP gate and before anything is opened.
+      expect(result.stderr).not.toContain('OTP_PROVIDER');
+      expect(result.stderr).not.toContain('DATABASE_URL');
+      expect(result.stderr).not.toContain(SECRET);
+      expect(result.stdout).not.toContain(SECRET);
+      expect(result.stdout).not.toContain('server_listening');
+    },
+  );
+
+  it('exits nonzero when the URL carries sslmode=no-verify, naming DATABASE_URL and echoing nothing', () => {
+    const result = startMain({ ...staging, DB_SSL_CA: ca, DATABASE_URL: `${url}?sslmode=no-verify` });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('DATABASE_URL');
+    expect(result.stderr).not.toContain('no-verify');
+    expect(result.stderr).not.toContain(SECRET);
+    expect(result.stdout).not.toContain('server_listening');
+  });
+
+  it('exits nonzero when NODE_TLS_REJECT_UNAUTHORIZED=0 would switch verification off', () => {
+    const result = startMain({ ...staging, DB_SSL_CA: ca, NODE_TLS_REJECT_UNAUTHORIZED: '0' });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('NODE_TLS_REJECT_UNAUTHORIZED');
+    expect(result.stderr).not.toContain(SECRET);
+  });
+
+  it('exits nonzero for a CA that is not a certificate and never prints it', () => {
+    const result = startMain({ ...staging, DB_SSL_CA: `${ca}${createTestPki().serverKeyPem}` });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('DB_SSL_CA');
+    expect(result.stderr).not.toContain('PRIVATE KEY');
+    expect(result.stderr).not.toContain((ca.split('\n')[1] ?? 'x').slice(0, 30));
+  });
+
+  it('exits nonzero for an unreadable CA file without printing its path', () => {
+    const result = startMain({ ...staging, DB_SSL_CA_FILE: '/definitely/not/here/SECRET_PATH_MARKER.crt' });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('DB_SSL_CA_FILE');
+    expect(result.stderr).not.toContain('SECRET_PATH_MARKER');
   });
 });

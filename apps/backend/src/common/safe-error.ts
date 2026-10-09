@@ -16,6 +16,19 @@ const SYSTEM_CODES: ReadonlySet<string> = new Set([
   'EHOSTUNREACH',
   'ENETUNREACH',
   'EADDRINUSE',
+  // TLS certificate verification failures (M00-D1). Fixed OpenSSL/Node identifiers that name the failure class
+  // only; they carry no host, certificate subject or file path, and they tell an operator that the CA or the
+  // host name is wrong without leaking either.
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'CERT_HAS_EXPIRED',
+  'CERT_NOT_YET_VALID',
+  'CERT_UNTRUSTED',
+  'CERT_SIGNATURE_FAILURE',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
 ]);
 
 // SQLSTATE class codes defined by PostgreSQL (Appendix A). A code is accepted only when it is five
