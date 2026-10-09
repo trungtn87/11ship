@@ -30,7 +30,7 @@ function reject(): never {
   throw new BadRequestException();
 }
 
-function exactObject(value: unknown, keys: readonly string[]): Record<string, unknown> {
+export function exactObject(value: unknown, keys: readonly string[]): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return reject();
   }
@@ -61,7 +61,7 @@ function parseDevice(value: unknown): DeviceInfo {
 }
 
 /** The password exactly as sent. Length is counted in code points; a lone surrogate (not valid UTF-8) is refused. */
-function parsePassword(value: unknown): string {
+export function parsePassword(value: unknown): string {
   if (typeof value !== 'string' || !isWellFormed(value)) {
     return reject();
   }

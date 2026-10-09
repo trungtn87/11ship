@@ -300,7 +300,13 @@ tasks:
     review_role: CHATGPT
     depends_on:
       - M00-D1
-    acceptance: docs/tasks/M00-D-render-supabase-staging.md
+    # PR #26 carries the Owner-approved D2 design (docs/tasks/M00-D2-staging-fixtures.md). It is a design gate:
+    # while it is open D2 is DESIGNING, and the implementation PR (matched by labels) cannot make D2 DONE before it
+    # merges. DONE still comes only from a merged implementation PR with the required check green on main.
+    design_pr: 26
+    acceptance: docs/tasks/M00-D2-staging-fixtures.md
+    evidence: docs/evidence/M00-D2.md
+    requires_main_ci_green: true
 
   - id: M00-D3
     module: M00

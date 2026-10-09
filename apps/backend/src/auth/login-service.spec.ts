@@ -9,6 +9,8 @@ import { OwnerShopEligibility } from '../shop/shop-types';
 import { OtpHmacKey } from '../config/auth-config';
 import { AuthConfig } from '../config/auth-config';
 import { codeOf as sourceOf } from '../shared/source-scan.fixture';
+import { AccountOriginPolicy, createAccountOriginPolicy } from './account-origin';
+import { PhoneAllowlist } from '../config/staging-fixtures-config';
 import { fakeTransactions } from './auth-fakes.fixture';
 import { LoginService } from './login-service';
 import { PasswordHasher } from './password-hasher';
@@ -28,6 +30,7 @@ const USER: UserRow = {
   phoneNormalized: '+84987654321',
   passwordHash: '$argon2id$v=19$m=19456,t=2,p=1$salt$hash',
   status: 'ACTIVE',
+  accountOrigin: 'PHONE_VERIFIED',
 };
 const INPUT = {
   phoneNormalized: '+84987654321',
@@ -60,6 +63,8 @@ function rig(options: {
   shop?: OwnerShopEligibility;
   /** Default: no Driver profile. A test that holds the DRIVER role states the profile it holds. */
   driver?: OwnerDriverEligibility;
+  /** Account origin policy; the service default (verified accounts only, no fixture) when omitted. */
+  policy?: AccountOriginPolicy;
 }): Rig {
   const { manager, state } = fakeTransactions();
   const calls: string[] = [];
@@ -97,7 +102,7 @@ function rig(options: {
       calls.push(state.inTransaction ? 'dummy(in-tx)' : 'dummy');
     },
   };
-  return { service: new LoginService(manager, users, sessions, audit, recorder, CONFIG, hasher, shops, drivers), calls, state, audits, denials };
+  return { service: new LoginService(manager, users, sessions, audit, recorder, CONFIG, hasher, shops, drivers, options.policy), calls, state, audits, denials };
 }
 
 async function codeOf(run: () => Promise<unknown>): Promise<string> {
@@ -138,6 +143,7 @@ describe('LoginService (task section 11)', () => {
       active_role: null,
       onboarding_required: true,
       role_selection_required: false,
+      phone_verification_status: 'VERIFIED',
       access_token: 'T'.repeat(43),
     });
     expect(r.audits).toHaveLength(1);
@@ -251,5 +257,80 @@ describe('LoginService (task section 11)', () => {
     const r = rig({ locked: undefined });
     expect(await codeOf(() => r.service.login(INPUT, REQUEST_ID))).toBe('INVALID_CREDENTIALS');
     expect(r.calls).toEqual(['verify']);
+  });
+});
+
+// M00-D2: the account origin policy at login (docs/tasks/M00-D2-staging-fixtures.md section 4).
+const FIXTURE_PHONE = '+84987654321';
+const FIXTURE: UserRow = { ...USER, phoneNormalized: FIXTURE_PHONE, accountOrigin: 'STAGING_FIXTURE' };
+const policyOf = (options: { appEnv: 'staging' | 'production' | 'test'; mode: boolean; phones: string[] }) =>
+  createAccountOriginPolicy({
+    appEnv: options.appEnv,
+    fixtureModeEnabled: options.mode,
+    allowedPhones: new PhoneAllowlist(options.phones),
+  });
+const STAGING_ON = policyOf({ appEnv: 'staging', mode: true, phones: [FIXTURE_PHONE] });
+
+describe('LoginService account origin policy (M00-D2)', () => {
+  it('a fixture on staging, mode on, in the allowlist, logs in roleless and is shown as UNVERIFIED_TEST', async () => {
+    const r = rig({ found: FIXTURE, roles: [], shop: NOT_STARTED_SHOP, policy: STAGING_ON });
+    const result = await r.service.login(INPUT, REQUEST_ID);
+    expect(result.phone_verification_status).toBe('UNVERIFIED_TEST');
+    expect(result.available_roles).toEqual([]);
+    expect(result.active_role).toBeNull();
+    expect(r.calls).toEqual(['verify', 'session.create']);
+  });
+
+  const deniedPolicies: ReadonlyArray<readonly [string, AccountOriginPolicy | undefined]> = [
+    ['the default policy (no fixture mode)', undefined],
+    ['staging with the mode OFF', policyOf({ appEnv: 'staging', mode: false, phones: [FIXTURE_PHONE] })],
+    ['production, even when the mode is forced on', policyOf({ appEnv: 'production', mode: true, phones: [FIXTURE_PHONE] })],
+    ['test, even when the mode is forced on', policyOf({ appEnv: 'test', mode: true, phones: [FIXTURE_PHONE] })],
+    ['staging, mode on, phone NOT in the allowlist', policyOf({ appEnv: 'staging', mode: true, phones: ['+84900000000'] })],
+  ];
+  for (const [label, policy] of deniedPolicies) {
+    it(`a fixture is refused as INVALID_CREDENTIALS under ${label}, only after the password was verified, with no session`, async () => {
+      const r = rig({ found: FIXTURE, policy });
+      expect(await codeOf(() => r.service.login(INPUT, REQUEST_ID))).toBe('INVALID_CREDENTIALS');
+      expect(r.calls).toEqual(['verify']);
+      expect(r.audits).toHaveLength(0);
+      expect(r.denials).toHaveLength(0);
+    });
+  }
+
+  it('a wrong password is INVALID_CREDENTIALS before the policy is consulted (no origin is disclosed)', async () => {
+    let consulted = 0;
+    const spy: AccountOriginPolicy = {
+      fixtureMode: true,
+      allows: () => {
+        consulted += 1;
+        return true;
+      },
+      assertRegistrationOpen: () => undefined,
+    };
+    const r = rig({ found: FIXTURE, passwordOk: false, policy: spy });
+    expect(await codeOf(() => r.service.login(INPUT, REQUEST_ID))).toBe('INVALID_CREDENTIALS');
+    expect(consulted).toBe(0);
+  });
+
+  it('a verified account is refused while the fixture mode is on (the mode is a closed testing mode)', async () => {
+    const r = rig({ policy: STAGING_ON });
+    expect(await codeOf(() => r.service.login(INPUT, REQUEST_ID))).toBe('INVALID_CREDENTIALS');
+    expect(r.calls).toEqual(['verify']);
+  });
+
+  it('the policy is checked AGAIN on the locked row: an account whose origin changed after verification gets no session', async () => {
+    const r = rig({ found: FIXTURE, locked: { ...FIXTURE, accountOrigin: 'PHONE_VERIFIED' }, policy: STAGING_ON });
+    expect(await codeOf(() => r.service.login(INPUT, REQUEST_ID))).toBe('INVALID_CREDENTIALS');
+    expect(r.calls).toEqual(['verify']);
+  });
+
+  it('an allowed fixture that is DISABLED still gets ACCOUNT_DISABLED, but a denied one never learns that', async () => {
+    const disabled = { ...FIXTURE, status: 'DISABLED' as const };
+    const allowed = rig({ found: disabled, policy: STAGING_ON });
+    expect(await codeOf(() => allowed.service.login(INPUT, REQUEST_ID))).toBe('ACCOUNT_DISABLED');
+    const denied = rig({ found: disabled });
+    expect(await codeOf(() => denied.service.login(INPUT, REQUEST_ID))).toBe('INVALID_CREDENTIALS');
+    expect(denied.denials).toHaveLength(0);
   });
 });

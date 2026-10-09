@@ -78,7 +78,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
 
   it('is a NEW migration after M00 and Auth Core, followed only by the Driver one (applied migrations are never edited)', () => {
     expect(SHOP).toBeDefined();
-    expect(names.slice(names.indexOf(SHOP))).toEqual([SHOP, DRIVER, HOURS]);
+    expect(names.slice(names.indexOf(SHOP))).toEqual([SHOP, DRIVER, HOURS, '1791849600000_add-users-account-origin']);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(names.filter((name) => name.endsWith('create-shop-onboarding'))).toHaveLength(1);
     expect(Number(SHOP.split('_')[0])).toBeGreaterThan(Number((BEFORE[BEFORE.length - 1] as string).split('_')[0]));

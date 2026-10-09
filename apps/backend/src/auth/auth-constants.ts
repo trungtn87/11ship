@@ -50,7 +50,16 @@ export const AUDIT_ACTIONS = Object.freeze({
   roleSelect: 'auth.role_select.v1',
   otpVerify: 'auth.otp_verify.v1',
   sessionRevoke: 'auth.session_revoke.v1',
+  stagingFixtureCreated: 'auth.staging_fixture_created.v1',
 });
+
+/**
+ * M00-D2 staging fixture seed. The advisory-lock domain serializes every seed run (one fixed key); the audit actor
+ * is a FIXED operator label, never a user and never SYSTEM: the operator holds no authority in the product.
+ */
+export const STAGING_SEED_LOCK_DOMAIN = '11ship.auth.staging_seed.v1';
+export const STAGING_SEED_ACTOR_TYPE = 'OPERATOR';
+export const STAGING_SEED_ACTOR_ID = 'staging-seed-cli';
 
 /** Outbox event of a completed registration. */
 export const USER_REGISTERED_EVENT_TYPE = 'auth.user_registered.v1';
