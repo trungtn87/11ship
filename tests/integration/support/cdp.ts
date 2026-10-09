@@ -321,7 +321,7 @@ export class Page {
     const height = Math.max(viewport.clientHeight, Math.ceil(size.height));
     const shot = await this.send('Page.captureScreenshot', {
       format: 'webp',
-      quality: 82,
+      quality: 70,
       captureBeyondViewport: true,
       clip: { x: 0, y: 0, width, height, scale: 1 },
     });

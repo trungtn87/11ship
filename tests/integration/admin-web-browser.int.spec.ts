@@ -350,8 +350,8 @@ describe('M01-D-LOGIN-UI - admin web in a real browser against the real backend'
 
 /**
  * Writes the screenshots to .test-results/admin-web-shots. In the CI-mode run on GitHub Actions it also prints each one
- * as base64 in ::notice:: workflow commands (split in parts), because the job artifacts and logs cannot always be
- * downloaded; the reviewer reassembles them from the check-run annotations.
+ * as base64 in ::notice:: workflow commands (split in parts, with a manifest), because the job artifacts and logs cannot
+ * always be downloaded; the reviewer reassembles them from the check-run annotations.
  */
 function publishShots(shots: readonly Shot[]): void {
   const directory = join(repoRoot(), '.test-results', 'admin-web-shots');
@@ -362,7 +362,11 @@ function publishShots(shots: readonly Shot[]): void {
   if (process.env.GITHUB_ACTIONS !== 'true' || process.env.TEST_REMOTE_PATH_DATABASE_URL === undefined) {
     return;
   }
-  const part = 60_000;
+  // GitHub keeps at most 4096 characters of an annotation message, so each image is split into parts below that.
+  const part = 4_000;
+  process.stdout.write(
+    `::notice title=admin-web-shot manifest::${shots.map((item) => `${item.name}=${String(Math.ceil(item.data.toString('base64').length / part))}`).join(' ')}\n`,
+  );
   for (const item of shots) {
     const encoded = item.data.toString('base64');
     const total = Math.ceil(encoded.length / part);
