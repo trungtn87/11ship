@@ -89,7 +89,7 @@ Tests khóa user/IP rồi rotate CRYPTO key, restart và nhiều instances giữ
 Theo deployment loopback/default không trust X-Forwarded-For; proxy trust config phải là IP/hops allowlist, không trust all. Khi proxy chưa khóa, không public deploy.
 Success consume challenge + activate factor(if needed) + revoke sessions cũ + insert mới + audit cùng transaction. Admin session verified phải có user ACTIVE, password binding match, membership ACTIVE/version match và factor ACTIVE/id+version match mỗi request.
 Mutation luôn authorization recheck dưới locks. Session mới chỉ được cấp sau commit thành công; audit exception rollback toàn bộ.
-Audit action names ADMIN_SYSTEM_BOOTSTRAPPED,ADMIN_LOGIN_PREAUTH,ADMIN_TOTP_ENROLLED,ADMIN_LOGIN_COMPLETED,ADMIN_LOGOUT; metadata chỉ ID/version không credential/phone/code.
+Audit action names admin_auth.system_bootstrapped.v1,admin_auth.login_preauth.v1,admin_auth.totp_enrolled.v1,admin_auth.login_completed.v1,admin_auth.logout.v1; metadata chỉ ID/version không credential/phone/code.
 Không implementation recovery hoặc privileged reset tự động.
 
 ## Bootstrap và recovery giới hạn
@@ -122,3 +122,6 @@ PR#27 chưa merge cũng thêm account_origin: Claude không cherry-pick implemen
 Migration xuống không được phục hồi NOT NULL khi còn ADMIN_PROVISIONED; fail rõ và bảo toàn dữ liệu, không tự xóa user quản trị. Production rollout/rollback chỉ sau runbook và review.
 Bổ sung tests: backfill verified giữ nguyên, CHECK combinations, bootstrap origin admin/null verified, app guard từ chối admin-provisioned, regression verified vẫn đăng nhập, migration rollback refusal.
 Origin là phần contract hiện hành, không blocker hoặc override ngầm. Thiết kế thay đổi account origin/guard phải được review cùng gói, không gọi đã code hoặc đạt CI.
+
+## Quyết định sau preflight Claude
+Đọc M01-D-LOGIN-preflight-decisions.md: phụ lục này khóa ingress/config/module boundary/migration coordination/CLI và lỗi HTTP. Phần xung đột origin PR#27 được giải quyết theo phụ lục, không cherry-pick hoặc tự merge #27.
