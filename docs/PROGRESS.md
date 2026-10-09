@@ -149,6 +149,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#27](https://github.com/trungtn87/11ship/pull/27) feat(M00-D2): staging accounts without SMS (fixture mode, s… | Bản nháp (`DRAFT`) | M00-D2 | triển khai | ✅ Đạt (`PASS`) | `c8b410e` | được tính |
 | [#28](https://github.com/trungtn87/11ship/pull/28) design: roadmap tổng thể 11Ship và gate nghiệm thu theo từn… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `cdf030d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#29](https://github.com/trungtn87/11ship/pull/29) feat(web): M01 test UI — login, session router, role select… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `363a526` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;); PR không được tính. Trạng thái không bao giờ được suy r… |
+| [#30](https://github.com/trungtn87/11ship/pull/30) docs(M01): roadmap đầy đủ SYSTEM, ADMIN và Auth từng ứng dụ… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `bd213e5` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
@@ -159,6 +160,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 - `UNCLASSIFIED_PR` PR #26: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #28: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #29: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #30: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
