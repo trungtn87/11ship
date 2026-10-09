@@ -118,6 +118,14 @@ export async function launchChrome(spkiHash: string): Promise<Browser> {
   };
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} did not finish within ${String(ms)} ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 interface Pending {
   resolve(value: Record<string, unknown>): void;
   reject(error: Error): void;
@@ -186,7 +194,21 @@ export class Page {
     this.#nextId += 1;
     const id = this.#nextId;
     return new Promise((resolve, reject) => {
-      this.#pending.set(id, { resolve, reject });
+      // A command that never answers fails the test with its name instead of hanging until the jest timeout.
+      const timer = setTimeout(() => {
+        this.#pending.delete(id);
+        reject(new Error(`DevTools command ${method} did not answer within 20 s`));
+      }, 20_000);
+      this.#pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
       socket.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -205,7 +227,7 @@ export class Page {
       this.#listeners.push(listener);
     });
     await this.send('Page.navigate', { url });
-    await loaded;
+    await withTimeout(loaded, 30_000, `load of ${url}`);
     this.#listeners = this.#listeners.filter((listener) => listener.method !== 'Page.loadEventFired');
   }
 
@@ -214,7 +236,7 @@ export class Page {
       this.#listeners.push({ method: 'Page.loadEventFired', callback: () => resolve() });
     });
     await this.send('Page.reload', { ignoreCache: true });
-    await loaded;
+    await withTimeout(loaded, 30_000, 'reload');
     this.#listeners = this.#listeners.filter((listener) => listener.method !== 'Page.loadEventFired');
   }
 
@@ -249,7 +271,13 @@ export class Page {
     return this.evaluate<string>(`(document.querySelector(${JSON.stringify(selector)})?.textContent ?? '').trim()`);
   }
 
+  /** Input events go to the focused tab only; with several tabs open, the tab is brought to the front first. */
+  async #front(): Promise<void> {
+    await this.send('Page.bringToFront');
+  }
+
   async click(selector: string): Promise<void> {
+    await this.#front();
     const box = await this.evaluate<{ x: number; y: number } | null>(
       `(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) return null; e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`,
     );
@@ -263,6 +291,7 @@ export class Page {
 
   /** Focuses the field, clears it and types the text as real input (one insertText, like a paste). */
   async fill(selector: string, text: string): Promise<void> {
+    await this.#front();
     await this.evaluate(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); e.focus(); e.select && e.select(); })()`);
     await this.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
     await this.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
@@ -272,6 +301,7 @@ export class Page {
   }
 
   async pressEnter(): Promise<void> {
+    await this.#front();
     await this.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
     await this.send('Input.dispatchKeyEvent', { type: 'char', key: 'Enter', text: '\r' });
     await this.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
