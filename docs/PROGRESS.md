@@ -5,11 +5,20 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo main HEAD `225be9a` · CI main: ⏳ Đang chạy (`RUNNING`)
+> Dữ liệu theo main HEAD `75760bd` · CI main: ⏳ Đang chạy (`RUNNING`)
 
 ## 🎯 VIỆC ĐANG LÀM
 
-**Tất cả task đã lập kế hoạch đều HOÀN THÀNH.** Thêm task tiếp theo vào `docs/progress/plan.yml`.
+| | |
+|---|---|
+| **Task** | **M00-D1 — Connection and deploy configuration** |
+| **Trạng thái** | 🟦 Sẵn sàng giao Claude (`READY_FOR_CLAUDE`) |
+| **Người phụ trách** | 🔵 **CLAUDE** |
+| **ChatGPT** | Chờ Claude triển khai trước khi kiểm tra |
+| **Claude** | Sẵn sàng triển khai |
+| **Chủ dự án** | Không cần thao tác |
+| **Đang bị chặn bởi** | Không |
+| **Điều kiện sang bước tiếp** | PR triển khai (agent:claude, type:implementation, module label) + required CI xanh |
 
 ## Tiến độ
 
@@ -17,9 +26,9 @@ Tính theo trọng số task trong kế hoạch (mỗi task lá = 1 nếu không
 
 | Phạm vi | Hoàn thành / tổng |
 |---|---|
-| Milestone hiện tại — M01 Xác thực | 4 / 4 (100%) |
-| Toàn bộ — chỉ tính task đã lập kế hoạch (roadmap chưa chốt hết) | 9 / 9 (100%) |
-| Module M00 Nền tảng | 5 / 5 (100%) |
+| Milestone hiện tại — M00 Nền tảng | 5 / 10 (50%) |
+| Toàn bộ — chỉ tính task đã lập kế hoạch (roadmap chưa chốt hết) | 9 / 14 (64%) |
+| Module M01 Xác thực | 4 / 4 (100%) |
 
 ## Cây tiến độ
 
@@ -34,6 +43,12 @@ flowchart TD
     M00_C1A1["M00-C1A1<br/>Chống xử lý lặp (Idempotency)<br/>⚪ —<br/>Hoàn thành (DONE)"]
     M00_C1B["M00-C1B<br/>Audit + ghi Outbox<br/>⚪ —<br/>Hoàn thành (DONE)"]
     M00_C1C["M00-C1C<br/>Dispatcher + tích hợp cuối<br/>⚪ —<br/>Hoàn thành (DONE)"]
+    M00_D["M00-D (thiết kế)<br/>Render Free + Supabase staging<br/>⚪ —<br/>Thiết kế đã khóa (DESIGN_LOCKED)"]
+    M00_D1["M00-D1<br/>Connection and deploy configuration<br/>🔵 CLAUDE<br/>Sẵn sàng giao Claude (READY_FOR_CLAUDE)"]
+    M00_D2["M00-D2<br/>Test accounts without real SMS<br/>⚪ —<br/>Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY)"]
+    M00_D3["M00-D3<br/>Operations and portability<br/>⚪ —<br/>Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY)"]
+    M00_D4["M00-D4<br/>Remote deployment acceptance<br/>⚪ —<br/>Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY)"]
+    M00_D5["M00-D5<br/>Owner acceptance of the staging backend<br/>⚪ —<br/>Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY)"]
   end
   subgraph M01_box["M01 · Xác thực"]
     M01_A1["M01-A1<br/>Lõi xác thực (Auth Core)<br/>⚪ —<br/>Hoàn thành (DONE)"]
@@ -53,6 +68,13 @@ flowchart TD
   M01_A2 -.-> M01_A2S
   M01_A2S --> M01_A2D
   M01_A2 --> M01_R1
+  M00_C1C --> M00_D
+  M00_D -.-> M00_D1
+  M00_D1 --> M00_D2
+  M00_D1 --> M00_D3
+  M00_D2 --> M00_D4
+  M00_D3 --> M00_D4
+  M00_D4 --> M00_D5
 
   classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
   classDef locked fill:#e0e7ff,stroke:#4338ca,color:#312e81
@@ -64,6 +86,10 @@ flowchart TD
   classDef planned fill:#ffffff,stroke:#9ca3af,color:#374151
   classDef focus stroke:#f59e0b,stroke-width:5px
   class M00_B1,M00_C1,M00_C1A0,M00_C1A1,M00_C1B,M00_C1C,M01_A1,M01_A2,M01_A2S,M01_A2D,M01_R1 done
+  class M00_D locked
+  class M00_D1 ready
+  class M00_D2,M00_D3,M00_D4,M00_D5 blocked
+  class M00_D1 focus
 ```
 
 ## Chi tiết công việc
@@ -81,6 +107,12 @@ flowchart TD
 | &nbsp;&nbsp;M01-A2S · Onboarding quán (Shop) | ✅ Hoàn thành (`DONE`) | — | [#16](https://github.com/trungtn87/11ship/pull/16) | ✅ Đạt (`PASS`) | `620333f` | — | — |
 | &nbsp;&nbsp;M01-A2D · Onboarding tài xế (Driver) | ✅ Hoàn thành (`DONE`) | — | [#17](https://github.com/trungtn87/11ship/pull/17) | ✅ Đạt (`PASS`) | `c37082a` | A2S Hoàn thành (DONE) | — |
 | M01-R1 · Sửa sau merge (session, rollback, router, tiến độ) | ✅ Hoàn thành (`DONE`) | — | [#19](https://github.com/trungtn87/11ship/pull/19) | ✅ Đạt (`PASS`) | `cd0e6de` | A2 Hoàn thành (DONE) | — |
+| **M00-D** thiết kế · Render Free + Supabase staging | 🔒 Thiết kế đã khóa (`DESIGN_LOCKED`) | — | [#22](https://github.com/trungtn87/11ship/pull/22) | ✅ Đạt (`PASS`) | `a846a68` | C1C Hoàn thành (DONE) | Tiếp tục các task con |
+| &nbsp;&nbsp;M00-D1 · Connection and deploy configuration | 🟦 Sẵn sàng giao Claude (`READY_FOR_CLAUDE`) | Claude | — | — | main HEAD `75760bd` | — | Claude triển khai |
+| &nbsp;&nbsp;M00-D2 · Test accounts without real SMS | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D1 Sẵn sàng giao Claude (READY_FOR_CLAUDE) | Chờ D1 |
+| &nbsp;&nbsp;M00-D3 · Operations and portability | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D1 Sẵn sàng giao Claude (READY_FOR_CLAUDE) | Chờ D1 |
+| &nbsp;&nbsp;M00-D4 · Remote deployment acceptance | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D2 Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY), D3 Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY) | Chờ D2, D3 |
+| &nbsp;&nbsp;M00-D5 · Owner acceptance of the staging backend | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D4 Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY) | Chờ D4 |
 
 ## Danh sách Pull Request
 
@@ -109,10 +141,10 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#19](https://github.com/trungtn87/11ship/pull/19) docs(m00-m01): session authorization, bounded rollback, rou… | Đã merge (`MERGED`) | M01-R1 | thiết kế + triển khai | ✅ Đạt (`PASS`) | `cd0e6de` | được tính |
 | [#20](https://github.com/trungtn87/11ship/pull/20) docs(plan): M00 local, M01 UI/test and M02 parallel deliver… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `78cb319` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#21](https://github.com/trungtn87/11ship/pull/21) feat(shop): M02-A shop management backend (draft) | Đã merge (`MERGED`) | — | — | — | `c7f0d5b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#22](https://github.com/trungtn87/11ship/pull/22) design(M00-D): Render Free + Supabase staging | Đã merge (`MERGED`) | — | — | — | `a846a68` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#22](https://github.com/trungtn87/11ship/pull/22) design(M00-D): Render Free + Supabase staging | Đã merge (`MERGED`) | M00-D | thiết kế | ✅ Đạt (`PASS`) | `a846a68` | được tính |
 | [#23](https://github.com/trungtn87/11ship/pull/23) design(M02-A-UI): shop profile and weekly schedule screens | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `8a0bafe` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#24](https://github.com/trungtn87/11ship/pull/24) design(M01-FE0): responsive frontend foundation and session… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `ef29717` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#25](https://github.com/trungtn87/11ship/pull/25) feat(M00-D1): Render Free blueprint, strict Supabase TLS, r… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `44dbf10` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;); PR không được tính. Trạng thái không bao giờ được suy r… |
+| [#25](https://github.com/trungtn87/11ship/pull/25) feat(M00-D1): Render Free blueprint, strict Supabase TLS, r… | Đã merge (`MERGED`) | — | — | — | `44dbf10` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;); PR không được tính. Trạng thái không bao giờ được suy r… |
 
 ## ⚠️ Cần chú ý
 
@@ -120,7 +152,6 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 - `UNCLASSIFIED_PR` PR #20: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #23: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #24: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
-- `UNCLASSIFIED_PR` PR #25: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
