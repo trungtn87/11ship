@@ -139,13 +139,17 @@ describe('M01-D-LOGIN - concurrency on one bucket and one step', () => {
       expect(row.attempt_count).toBeLessThanOrEqual(CHALLENGE_ATTEMPT_LIMIT);
     }
 
+    // The burst used the step up (five failed attempts end it). A new login still hands out a step (decision Q1) and the
+    // lock then decides at verify, for every concurrent request, without touching the row.
     const locked = await bucket('TOTP_USER');
+    const nextStep = await loginStep(app, system, address(29));
+    expect(await bucket('TOTP_USER')).toEqual(locked);
     const again = await Promise.all(
       Array.from({ length: 6 }, (_unused, index) =>
         app.call('POST', '/totp/verify', {
           body: { code: wrongCode(first.secret) },
-          cookies: preauthCookies(step),
-          csrf: step.csrf,
+          cookies: preauthCookies(nextStep),
+          csrf: nextStep.csrf,
           headers: { 'x-forwarded-for': address(30 + index) },
         }),
       ),
@@ -181,7 +185,10 @@ describe('M01-D-LOGIN - concurrency on one bucket and one step', () => {
     );
     expect(sessions.rows.map((row) => row.revoked)).toEqual([true, false]);
     // Nothing was charged: the losers were refused as an already consumed step, not as wrong codes.
-    expect(await bucket('TOTP_USER')).toEqual([]);
+    for (const row of await bucket('TOTP_USER')) {
+      expect(row.failure_count).toBe(0);
+      expect(row.locked_until).toBeNull();
+    }
   });
 
   it('a double-submitted enrollment verify activates the factor and creates the session once', async () => {
