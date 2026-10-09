@@ -31,14 +31,23 @@ function input(overrides: Partial<CreateInvitationInput> = {}): CreateInvitation
 function rig() {
   const calls: string[] = [];
   const repository = {
-    insert: jest.fn(async () => void calls.push('insert')),
-    insertPermission: jest.fn(async (_context: TransactionContext, _id: string, permission: InvitationPermission) => {
-      calls.push(`permission:${permission.app}`);
-    }),
-    seal: jest.fn(async () => void calls.push('seal')),
+    insert: jest.fn<(context: TransactionContext, row: object) => Promise<void>>(async () => void calls.push('insert')),
+    insertPermission: jest.fn<(context: TransactionContext, id: string, permission: InvitationPermission) => Promise<void>>(
+      async (_context, _id, permission) => void calls.push(`permission:${permission.app}`),
+    ),
+    seal: jest.fn<(context: TransactionContext, id: string) => Promise<void>>(async () => void calls.push('seal')),
     lock: jest.fn(),
     lockPendingByPhone: jest.fn(),
-    transition: jest.fn(async () => 2 as number | undefined),
+    transition: jest.fn<
+      (
+        context: TransactionContext,
+        id: string,
+        version: number,
+        to: string,
+        acceptedUserId: string | null,
+        successorId: string | null,
+      ) => Promise<number | undefined>
+    >(async () => 2),
   };
   return { calls, repository, participant: new AdminInvitationParticipant(repository as unknown as AdminInvitationRepository) };
 }
