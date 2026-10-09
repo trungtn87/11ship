@@ -374,7 +374,10 @@ export class Page {
     }
   }
 
-  /** The paused response never reaches the page: fetch() rejects as on a cut connection (Set-Cookie is not applied). */
+  /**
+   * The paused response never reaches the page: fetch() rejects as on a cut connection. Note that Chrome has already seen
+   * the response headers at this stage, so a Set-Cookie in them may be stored (like an answer whose body is lost).
+   */
   async failResponse(requestId: string): Promise<void> {
     await this.send('Fetch.failRequest', { requestId, errorReason: 'ConnectionReset' });
   }

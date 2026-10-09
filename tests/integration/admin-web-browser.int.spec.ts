@@ -373,23 +373,24 @@ describe('M01-D-LOGIN-UI - admin web in a real browser against the real backend'
     await tabA.close();
   }, 120_000);
 
-  it('lost enrollment answer AFTER the backend committed, and another tab moved to VERIFY_TOTP: tab A follows to the verify step', async () => {
+  it('lost enrollment answer, then the factor is activated elsewhere and another tab gets VERIFY_TOTP: tab A follows to the verify step', async () => {
     const tabA = await openPage(MOBILE);
     await tabA.waitFor(`document.querySelector('#login-title')`);
     await passwordStep(tabA);
     await tabA.waitFor(`document.querySelector('.qr svg path')`);
-    const secret = await revealKey(tabA);
+    const oldSecret = await revealKey(tabA);
 
-    // A correct code: the backend activates the factor and creates the session; the answer (and its cookie) is lost.
+    // Tab A's code (wrong) is processed by the backend; the answer is lost.
     await tabA.interceptResponses(`*${ENROLL_VERIFY}`);
-    await tabA.fill('#enroll-code', totpNow(secret));
+    await tabA.fill('#enroll-code', wrongCode(oldSecret));
     await tabA.pressEnter();
     const paused = await tabA.nextPausedResponse();
-    expect(paused.status).toBe(200);
-    expect(await count(app.pool, `SELECT 1 FROM app.admin_totp_factors WHERE user_id = $1::uuid AND state = 'ACTIVE'`, [system.userId])).toBe(1);
-    expect(await count(app.pool, 'SELECT 1 FROM app.admin_sessions WHERE user_id = $1::uuid', [system.userId])).toBe(1);
+    expect(paused.status).toBe(400);
 
-    // Tab B logs in with the password: the factor is ACTIVE now, so its step is VERIFY_TOTP.
+    // Meanwhile the account finishes enrollment from another client (real backend, outside this browser): the old step
+    // is replaced and the factor becomes ACTIVE. Then tab B logs in with the password and gets a VERIFY_TOTP step.
+    const elsewhere = await enrollAndLogin(app, system);
+    await rewindAcceptedStep(app, system.userId);
     const tabB = await openPage(DESKTOP);
     await tabB.waitFor(`document.querySelector('#login-title')`);
     await passwordStep(tabB);
@@ -403,11 +404,9 @@ describe('M01-D-LOGIN-UI - admin web in a real browser against the real backend'
     expect(await tabA.evaluate<boolean>(`document.querySelector('.qr') === null && document.querySelector('#setup-key') === null`)).toBe(true);
     expect(tabA.posts(ENROLL_VERIFY)).toBe(1);
     expect(tabA.posts('/v1/admin-auth/totp/verify')).toBe(0);
-    expect(await count(app.pool, 'SELECT 1 FROM app.admin_sessions WHERE user_id = $1::uuid', [system.userId])).toBe(1);
 
-    // The user continues with a code of a later step (the enrollment used the current one; stand-in for waiting).
-    await rewindAcceptedStep(app, system.userId);
-    await tabA.fill('#verify-code', totpNow(secret));
+    // The user continues on purpose with the active factor's code.
+    await tabA.fill('#verify-code', totpNow(elsewhere.secret));
     await tabA.pressEnter();
     await tabA.waitFor(`document.querySelector('#shell-title')`);
     expect(tabA.posts('/v1/admin-auth/totp/verify')).toBe(1);
@@ -416,6 +415,32 @@ describe('M01-D-LOGIN-UI - admin web in a real browser against the real backend'
     await tabA.close();
   }, 120_000);
 
+  it('lost enrollment answer AFTER the backend committed (session cookie arrived, body lost): tab A reads the state and enters the shell', async () => {
+    const tabA = await openPage(DESKTOP);
+    await tabA.waitFor(`document.querySelector('#login-title')`);
+    await passwordStep(tabA);
+    await tabA.waitFor(`document.querySelector('.qr svg path')`);
+    const secret = await revealKey(tabA);
+
+    await tabA.interceptResponses(`*${ENROLL_VERIFY}`);
+    await tabA.fill('#enroll-code', totpNow(secret));
+    await tabA.pressEnter();
+    const paused = await tabA.nextPausedResponse();
+    expect(paused.status).toBe(200);
+    // Committed on the server: the factor is active and the session exists.
+    expect(await count(app.pool, `SELECT 1 FROM app.admin_totp_factors WHERE user_id = $1::uuid AND state = 'ACTIVE'`, [system.userId])).toBe(1);
+    expect(await count(app.pool, 'SELECT 1 FROM app.admin_sessions WHERE user_id = $1::uuid', [system.userId])).toBe(1);
+
+    await tabA.failResponse(paused.requestId);
+    await tabA.stopIntercepting();
+    await tabA.waitFor(`document.querySelector('#shell-title')`);
+    expect(await tabA.text('.lead .role-badge')).toBe('SYSTEM');
+    // Only reads followed the lost answer: no second verify, no second session.
+    expect(tabA.posts(ENROLL_VERIFY)).toBe(1);
+    expect(await count(app.pool, 'SELECT 1 FROM app.admin_sessions WHERE user_id = $1::uuid', [system.userId])).toBe(1);
+    expect(tabA.consoleErrors).toEqual([]);
+    await tabA.close();
+  }, 120_000);
 });
 
 /**
