@@ -5,10 +5,11 @@ Tài liệu này ghi trạng thái, KHÔNG phải nghiệm thu. Không dòng nà
 
 ## Checklist
 - [x] Kiểm kê nguồn và backend thực tế (preflight, đã cập nhật theo handoff 77684c6).
-- [ ] Owner duyệt nghiệp vụ: còn 2 câu hỏi mở (xem mô tả PR) - Q1 (đăng nhập đúng mật khẩu khi TOTP bị khóa), Q2 (khóa bucket mật khẩu theo SĐT).
+- [x] Nghiệp vụ Q1 (đúng mật khẩu khi TOTP bị khóa: vẫn cấp preauth, verify 429) và Q2 (bucket theo SĐT và IP, khóa 15 phút, lần chạm ngưỡng trả 429) đã được chốt; có test chứng minh. Rủi ro khóa SYSTEM cố ý được chấp nhận, chưa có khôi phục (xem evidence). Đây không phải nghiệm thu của Owner.
 - [ ] UI: ngoài phạm vi gói này (không làm UI).
 - [x] Gói giao xác định base, scope, giới hạn, hợp đồng, test.
-- [ ] Code, test, build; CI trên final head: chưa có kết quả tại thời điểm viết.
+- [x] Sửa theo review: hết hạn quyết định sau khóa, thay thế challenge đúng hợp đồng, test xoay khóa/XFF/đồng thời/mất response (evidence: `docs/evidence/M01-D-LOGIN-review-fixes-2026-10-09.md`).
+- [ ] CI trên final head: xem mô tả PR (không ghi SHA/kết quả trong tài liệu này).
 - [ ] ChatGPT review đúng SHA.
 - [ ] Owner chạy local / thiết bị thật: chưa; chờ M00 và UI.
 - [ ] Owner quyết định nghiệm thu/merge/đóng module.

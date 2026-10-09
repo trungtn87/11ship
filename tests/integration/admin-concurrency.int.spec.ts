@@ -112,7 +112,7 @@ describe('M01-D-LOGIN - concurrency on one bucket and one step', () => {
   });
 
   it('concurrent wrong codes on one live step: exactly 5 are charged (4 answer 400, the rest 429) and the lock is not extended', async () => {
-    const first = await enrollAndLogin(app, system);
+    const first = await enrollAndLogin(app, system, address(99));
     const step = await loginStep(app, system, address(0));
     const burst = TOTP_FAILURE_LIMIT + 3;
     const responses = await Promise.all(
@@ -156,7 +156,7 @@ describe('M01-D-LOGIN - concurrency on one bucket and one step', () => {
   });
 
   it('a double-submitted verify creates exactly one session: one 200, the other 401', async () => {
-    const first = await enrollAndLogin(app, system);
+    const first = await enrollAndLogin(app, system, address(99));
     await rewindAcceptedStep(app, system.userId);
     const step = await loginStep(app, system, address(0));
     const code = totpNow(first.secret);

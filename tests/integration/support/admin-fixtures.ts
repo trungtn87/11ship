@@ -381,9 +381,10 @@ export interface SessionLogin {
 }
 
 /** Full first login: password, enrollment, first code. Returns the session cookie and the TOTP secret for later logins. */
-export async function enrollAndLogin(app: AdminApp, account: SystemAccount): Promise<SessionLogin> {
-  const preauth = await loginStep(app, account);
-  const started = await app.call('POST', '/totp/enrollment', { body: {}, cookies: preauthCookies(preauth), csrf: preauth.csrf });
+export async function enrollAndLogin(app: AdminApp, account: SystemAccount, ip?: string): Promise<SessionLogin> {
+  const headers = ip === undefined ? {} : { headers: { 'x-forwarded-for': ip } };
+  const preauth = await loginStep(app, account, ip);
+  const started = await app.call('POST', '/totp/enrollment', { body: {}, cookies: preauthCookies(preauth), csrf: preauth.csrf, ...headers });
   if (started.status !== 200) {
     throw new Error(`enrollment failed: ${started.status} ${started.text}`);
   }
@@ -392,6 +393,7 @@ export async function enrollAndLogin(app: AdminApp, account: SystemAccount): Pro
     body: { code: totpNow(secret) },
     cookies: preauthCookies(preauth),
     csrf: preauth.csrf,
+    ...headers,
   });
   if (verified.status !== 200) {
     throw new Error(`enrollment verify failed: ${verified.status} ${verified.text}`);
