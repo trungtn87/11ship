@@ -89,6 +89,19 @@ Runbook migrate additive/backup/restore; rollback không drop factor/user/audit 
 PR evidence ghi base/head/version/results/limits; backend CI chưa chứng minh browser reload hay Google Authenticator thật. Local/device chờ M00.
 
 ## Gate
-Nghiệp vụ/param đã Owner chốt. Backend contract đang hoàn thiện: blocker users origin cần giải quyết; chưa READY_FOR_CLAUDE.
+Nghiệp vụ/param đã Owner chốt. Backend contract đang hoàn thiện: users origin đã có phương án ở phụ lục dưới; vẫn cần review kỹ thuật độc lập trước READY_FOR_CLAUDE.
 Web login Owner duyệt trong phạm vi đã nói, UI integration/states chưa toàn bộ đạt.
 App quản lý/Khách/Quán/Xế chưa nghiệm thu; chỉ regression backend gói này. Không merge/đóng module.
+
+## Bổ sung sau đối chiếu migration users — nguồn tài khoản quản trị
+Đã đọc database/migrations/1791504000000_create-auth-core.sql trên main (blob c3330b2a2e3fa3f0c5ed5667a3f85a1b8726f2ca): phone_verified_at NOT NULL. Không thể bootstrap đúng nếu chỉ thêm admin_memberships.
+Thiết kế giải quyết: migration additive thêm account_origin PHONE_VERIFIED/ADMIN_PROVISIONED; backfill user cũ PHONE_VERIFIED; cho phone_verified_at nullable với CHECK:
+PHONE_VERIFIED => phone_verified_at IS NOT NULL; ADMIN_PROVISIONED => phone_verified_at IS NULL.
+SYSTEM bootstrap tạo users ADMIN_PROVISIONED + membership SYSTEM atomic. Không tạo OTP/proof giả và không tự ghi timestamp verified.
+Giữ uniqueness phone toàn users. Origin không mang quyền; membership và MFA vẫn quyết định quyền quản trị.
+ADMIN_PROVISIONED không được /auth/login hoặc app session authorization chấp nhận trong gói này; trả INVALID_CREDENTIALS/SESSION_INVALID. Đây là guard additive bắt buộc, không thay behavior PHONE_VERIFIED cũ. Kiểm lại dưới khóa trong participant, không chỉ login/HTTP guard.
+Khi membership bị khóa, origin không tự biến tài khoản thành app user. App/role onboarding của tài khoản quản trị chưa thuộc gói này.
+PR#27 chưa merge cũng thêm account_origin: Claude không cherry-pick implementation fixture. Nếu main có thay đổi origin trước bắt đầu, dừng báo reconciliation; không tạo hai migration cùng cột hoặc làm mất STAGING_FIXTURE policy.
+Migration xuống không được phục hồi NOT NULL khi còn ADMIN_PROVISIONED; fail rõ và bảo toàn dữ liệu, không tự xóa user quản trị. Production rollout/rollback chỉ sau runbook và review.
+Bổ sung tests: backfill verified giữ nguyên, CHECK combinations, bootstrap origin admin/null verified, app guard từ chối admin-provisioned, regression verified vẫn đăng nhập, migration rollback refusal.
+Phụ lục này thay blocker bootstrap origin trong các đoạn trước. Thiết kế thay đổi account origin/guard phải được review cùng gói, không gọi đã code hoặc đạt CI.
