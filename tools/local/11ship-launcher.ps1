@@ -203,7 +203,10 @@ function Test-Launcher {
         continue
       }
       Push-Location $script:Repo
-      try { & npm.cmd @($step[1..($step.Count-1)]) *> $log; $code=$LASTEXITCODE } finally { Pop-Location }
+      $previousPreference = $ErrorActionPreference
+      $ErrorActionPreference = 'Continue'
+      try { & npm.cmd @($step[1..($step.Count-1)]) *> $log; $code=$LASTEXITCODE }
+      finally { $ErrorActionPreference = $previousPreference; Pop-Location }
       $summary += [pscustomobject]@{step=$name;result=if($code -eq 0){'PASS'}else{'FAIL'};exitCode=$code;log=$log}
       if ($code -ne 0) { break }
     }
