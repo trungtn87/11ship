@@ -25,4 +25,3 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\local\11ship-launcher.
 4. Mở `http://127.0.0.1:3000/v1/health/ready` hoặc chạy Status.
 
 Launcher không chạy remote migration, không dùng staging/production, không tự stash/reset và không xóa volume. Khi FAIL, đọc đường dẫn log được in; không gửi `.env` hoặc log chứa credential cho người khác.
-
