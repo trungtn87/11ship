@@ -88,6 +88,8 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | admin_sessions | SELECT, INSERT, UPDATE |
 | admin_auth_limit_config | SELECT only (written once by the operator command) |
 | admin_auth_limits | SELECT, INSERT, UPDATE |
+| admin_invitations | SELECT, INSERT, UPDATE (no DELETE: a trigger refuses it; UPDATE is the seal, the terminal transition and `FOR UPDATE`) |
+| admin_invitation_permissions | SELECT, INSERT (snapshot rows are immutable) |
 
 ```sql
 -- example shape, repeat per row of the table above
