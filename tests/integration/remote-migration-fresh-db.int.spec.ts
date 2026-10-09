@@ -206,10 +206,16 @@ async function runRunnerInChild(databaseUrl: string): Promise<{ stdout: string }
       }
     })().catch((e) => { console.error(e && e.code ? String(e.code) : 'FAILED', e && e.message); process.exit(1); });
   `;
-  return execFileAsync(process.execPath, ['-e', source], {
-    cwd: REPO_ROOT,
-    // Only the disposable URL; the guarded ship11_test DATABASE_URL is not passed on.
-    env: { PATH: process.env.PATH ?? '', REMOTE_PATH_URL: databaseUrl },
-    timeout: 120000,
-  });
+  try {
+    return await execFileAsync(process.execPath, ['-e', source], {
+      cwd: REPO_ROOT,
+      // Only the disposable URL; the guarded ship11_test DATABASE_URL is not passed on.
+      env: { PATH: process.env.PATH ?? '', REMOTE_PATH_URL: databaseUrl },
+      timeout: 120000,
+    });
+  } catch (error) {
+    // The child prints only an error code and message from the disposable database (no URL), so it is safe to show.
+    const stderr = (error as { stderr?: unknown }).stderr;
+    throw new Error(`runner child failed: ${typeof stderr === 'string' ? stderr.slice(0, 1500) : 'no stderr'}`);
+  }
 }
