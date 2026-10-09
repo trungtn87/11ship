@@ -202,6 +202,8 @@ export interface StartAdminOptions {
   readonly keyring?: Keyring;
   /** Do not clear the rate-limit state at start (a restart keeps its locks). */
   readonly keepLimits?: boolean;
+  /** Exact HTTPS origins accepted on POST (default: ADMIN_ORIGIN). The browser test passes its local HTTPS front. */
+  readonly allowedOrigins?: readonly string[];
 }
 
 export async function startAdminApp(options: StartAdminOptions = {}): Promise<AdminApp> {
@@ -216,7 +218,7 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
   }
   const loaded = loadIntegrationConfig();
   const adminAuth: AdminAuthConfig = {
-    allowedOrigins: [ADMIN_ORIGIN],
+    allowedOrigins: options.allowedOrigins ?? [ADMIN_ORIGIN],
     trustedProxyIps: options.trustedProxyIps ?? [],
     limiter: limiter.limiter,
   };
