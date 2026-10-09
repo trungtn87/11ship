@@ -1,3 +1,4 @@
+// Historical pre-roadmap contract tests use the frozen plan. New shipped-plan assertions are in project-roadmap.test.mjs.
 // The shipped docs/progress/plan.yml against the repository as it really is after the M00/M01 merges
 // (post-merge repair, section 4). Every PR number below is the real one; nothing here marks a task done by
 // hand: DONE still needs a merged PR AND a green required check on that PR's head.
@@ -6,7 +7,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveProgress, STATE } from '../../scripts/progress/resolve.mjs';
 import { REVIEW_CONTEXT } from '../../scripts/progress/constants.mjs';
-import { livePlan, checks, merged, pr, snapshot, stateOf } from './helpers.mjs';
+import { beforeRoadmapPlan as livePlan, checks, merged, pr, snapshot, stateOf } from './helpers.mjs';
 
 const MERGED_PRS = [1, 2, 3, 4, 6, 9, 10, 11, 12, 15, 16, 17];
 const realHistory = (mergedCheck = checks.pass) =>
@@ -326,7 +327,7 @@ describe('combined_design_implementation: present means boolean (null included)'
   test('rejects null on an ordinary task too, and reads null from real YAML', async () => {
     const { parseYaml } = await import('../../scripts/progress/yaml-subset.mjs');
     const { readFileSync } = await import('node:fs');
-    const text = readFileSync(new URL('../../docs/progress/plan.yml', import.meta.url), 'utf8').replace(
+    const text = readFileSync(new URL('./fixtures/plan-before-project-roadmap.yml', import.meta.url), 'utf8').replace(
       /(  - id: M01-A2S\n)/,
       '$1    combined_design_implementation: null\n',
     );
@@ -343,3 +344,4 @@ describe('combined_design_implementation: present means boolean (null included)'
     assert.doesNotThrow(() => validatePlan(falsy));
   });
 });
+

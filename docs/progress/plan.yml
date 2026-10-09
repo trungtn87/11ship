@@ -1,348 +1,2235 @@
-# 11Ship progress plan (manifest).
-#
-# This file describes the PLAN only: which tasks exist, who is responsible, what depends on what.
-# It never records runtime status (DONE, CI green, ...). Status is derived by
-# scripts/generate-progress.mjs from real GitHub objects (merged_at, state, draft, head SHA,
-# check runs, labels) and written to docs/PROGRESS.md.
-#
-# YAML subset understood by scripts/progress/yaml-subset.mjs (anything else is a hard error):
-#   2-space indentation, "key: value" maps, "- item" lists, "- key: value" list-of-maps,
-#   scalars (null, true/false, integers, plain/quoted strings), "[]" / "[a, b]" flow lists,
-#   and "#" comments. No anchors, multi-line scalars, tags or tabs.
-#
-# Task fields
-#   id                    unique id; label "module:<id>" binds a PR to the task
-#   module                module id (see modules)
-#   title                 display title
-#   kind                  "leaf" (counts for progress, has an implementation PR) or
-#                         "group" (design gate + roll-up of its children)
-#   parent                parent task id or null
-#   order                 global display order (ascending)
-#   weight                progress weight of a leaf (groups carry no weight); default 1
-#   owner_role            REQUIRED, must be CLAUDE (implements / owns the group)
-#   design_role           REQUIRED, must be CHATGPT (designs)
-#   review_role           REQUIRED, must be CHATGPT (reviews)
-#                         Schema v1 FIXES these three roles: the resolver does not read them to decide
-#                         anything, and validatePlan rejects any other value or a missing field. They
-#                         are documentation of the workflow, NOT configuration. Making roles
-#                         configurable needs a new schema_version.
-#   depends_on            task ids that must be DONE first (a child also inherits its ancestors')
-#   design_pr             pinned design PR number (history only; new PRs are matched by labels)
-#   implementation_pr     pinned implementation PR number (history only)
-#   combined_design_implementation
-#                         optional boolean, default false. true marks ONE leaf whose single PR carries both the
-#                         design document and the implementation (explicit exception, never inferred from titles,
-#                         authors, labels, paths or PR bodies). Valid only on a leaf whose design_pr and
-#                         implementation_pr are the same positive PR number; that is the only repeated pin allowed.
-#                         The PR is classified once; its lifecycle is the task's implementation lifecycle (it does
-#                         not wait for itself to merge as a design gate). Ordinary tasks keep design-first behavior.
-#   requires_main_ci_green  extra gate: the latest main commit must have all required checks green
-#   acceptance            path of the task / acceptance document
-#   evidence              path of the evidence document
-#
-# Pinned PR numbers are the only way an unlabeled historical PR is accepted. Every other PR must
-# carry explicit labels (agent:*, type:*, module:<task id>); GitHub usernames are never used.
-
+# PLAN ONLY. No runtime status. Historical pins retained; see docs/roadmap/README.md.
 schema_version: 1
-
 project:
-  id: 11ship
-  name: 11Ship
-
-repo: trungtn87/11ship
-main_branch: main
-
-# Check run names that must be "success" for CI to count as PASS. The repository is private on a
-# plan without the branch-protection API, so the list lives here instead of being read from GitHub.
+  id: "11ship"
+  name: "11Ship"
+repo: "trungtn87/11ship"
+main_branch: "main"
 required_checks:
-  - Verify (Node 24, PostgreSQL 17)
-
-# false: the roadmap is not final, so overall progress is labelled "planned tasks only".
+  - "Verify (Node 24, PostgreSQL 17)"
 roadmap_complete: false
-
 modules:
-  - id: M00
-    title: Foundation
+  - id: "M00"
+    title: "Nền tảng"
     order: 1
-  - id: M01
-    title: Authentication
+  - id: "M01"
+    title: "Tài khoản và quyền"
     order: 2
-
-# PRs that must never count, whatever their state or labels. A closed-without-merge PR is already
-# CANCELLED automatically; this list adds the human reason and also covers a reopened PR.
+  - id: "M02"
+    title: "Vùng và quán"
+    order: 3
+  - id: "M03"
+    title: "Hồ sơ và vòng đời xế"
+    order: 4
+  - id: "M04"
+    title: "Ví, nạp, rút và đối soát"
+    order: 5
+  - id: "M05"
+    title: "Khách và địa chỉ"
+    order: 6
+  - id: "M06"
+    title: "Phí, tuyến và điều kiện nhận"
+    order: 7
+  - id: "M07"
+    title: "Delivery và tìm xế"
+    order: 8
+  - id: "M08"
+    title: "GPS và thông báo"
+    order: 9
+  - id: "M09"
+    title: "Thực đơn"
+    order: 10
+  - id: "M10"
+    title: "Order khách"
+    order: 11
+  - id: "M11"
+    title: "Đánh giá và phản ánh"
+    order: 12
+  - id: "M12"
+    title: "Quản trị và vận hành"
+    order: 13
 ignored_prs:
   - number: 5
-    task: M00-C1A1
-    reason: Implementation opened by ChatGPT against the workflow, closed without merge. Not accepted.
-
+    task: "M00-C1A1"
+    reason: "Implementation opened by ChatGPT against the workflow, closed without merge. Not accepted."
 tasks:
-  - id: M00-B1
-    module: M00
-    title: Backend Foundation
-    kind: leaf
+  - id: "M00-B1"
+    module: "M00"
+    title: "Backend Foundation"
+    kind: "leaf"
     parent: null
     order: 10
     weight: 1
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
     depends_on: []
     design_pr: 1
     implementation_pr: 2
-    acceptance: docs/tasks/M00-B1-foundation.md
-    evidence: docs/evidence/M00-B1.md
-
-  - id: M00-C1
-    module: M00
-    title: Transactional Core
-    kind: group
+    acceptance: "docs/tasks/M00-B1-foundation.md"
+    evidence: "docs/evidence/M00-B1.md"
+    phase: "backend"
+  - id: "M00-C1"
+    module: "M00"
+    title: "Transactional Core"
+    kind: "group"
     parent: null
     order: 20
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
     depends_on:
-      - M00-B1
+      - "M00-B1"
     design_pr: 3
-    acceptance: docs/tasks/M00-C1-transactional-core.md
-
-  - id: M00-C1A0
-    module: M00
-    title: Transaction + Shared Primitives
-    kind: leaf
-    parent: M00-C1
-    order: 21
-    weight: 1
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
-    depends_on: []
-    implementation_pr: 4
-    acceptance: docs/tasks/CLAUDE-M00-C1A0.md
-    evidence: docs/evidence/M00-C1A0.md
-
-  - id: M00-C1A1
-    module: M00
-    title: Idempotency
-    kind: leaf
-    parent: M00-C1
-    order: 22
-    weight: 1
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
-    depends_on:
-      - M00-C1A0
-    implementation_pr: 6
-    evidence: docs/evidence/M00-C1A1.md
-
-  - id: M00-C1B
-    module: M00
-    title: Audit + Outbox Write
-    kind: leaf
-    parent: M00-C1
-    order: 23
-    weight: 1
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
-    depends_on:
-      - M00-C1A1
-    implementation_pr: 9
-    evidence: docs/evidence/M00-C1B.md
-
-  - id: M00-C1C
-    module: M00
-    title: Dispatcher + Final Integration
-    kind: leaf
-    parent: M00-C1
-    order: 24
-    weight: 1
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
-    depends_on:
-      - M00-C1B
-    implementation_pr: 10
-    evidence: docs/evidence/M00-C1C.md
-
-  - id: M01-A1
-    module: M01
-    title: Auth Core
-    kind: leaf
-    parent: null
+    acceptance: "docs/tasks/M00-C1-transactional-core.md"
+  - id: "M00-C1A0"
+    module: "M00"
+    title: "Transaction + Shared Primitives"
+    kind: "leaf"
+    parent: "M00-C1"
     order: 30
     weight: 1
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on: []
+    implementation_pr: 4
+    acceptance: "docs/tasks/CLAUDE-M00-C1A0.md"
+    evidence: "docs/evidence/M00-C1A0.md"
+    phase: "backend"
+  - id: "M00-C1A1"
+    module: "M00"
+    title: "Idempotency"
+    kind: "leaf"
+    parent: "M00-C1"
+    order: 40
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
     depends_on:
-      - M00-C1C
+      - "M00-C1A0"
+    implementation_pr: 6
+    evidence: "docs/evidence/M00-C1A1.md"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M00.md"
+  - id: "M00-C1B"
+    module: "M00"
+    title: "Audit + Outbox Write"
+    kind: "leaf"
+    parent: "M00-C1"
+    order: 50
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M00-C1A1"
+    implementation_pr: 9
+    evidence: "docs/evidence/M00-C1B.md"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M00.md"
+  - id: "M00-C1C"
+    module: "M00"
+    title: "Dispatcher + Final Integration"
+    kind: "leaf"
+    parent: "M00-C1"
+    order: 60
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M00-C1B"
+    implementation_pr: 10
+    evidence: "docs/evidence/M00-C1C.md"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M00.md"
+  - id: "M01-A1"
+    module: "M01"
+    title: "Auth Core"
+    kind: "leaf"
+    parent: null
+    order: 70
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M00-C1C"
     requires_main_ci_green: true
     design_pr: 11
     implementation_pr: 12
-    acceptance: docs/tasks/M01-A1-auth-core.md
-    evidence: docs/evidence/M01-A1.md
-
-  - id: M01-A2
-    module: M01
-    title: Onboarding (Shop + Driver)
-    kind: group
+    acceptance: "docs/tasks/M01-A1-auth-core.md"
+    evidence: "docs/evidence/M01-A1.md"
+    phase: "backend"
+  - id: "M01-A2"
+    module: "M01"
+    title: "Onboarding (Shop + Driver)"
+    kind: "group"
     parent: null
-    order: 40
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
+    order: 80
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
     depends_on:
-      - M01-A1
+      - "M01-A1"
     design_pr: 15
-    acceptance: docs/tasks/M01-A2-onboarding.md
-
-  - id: M01-A2S
-    module: M01
-    title: Shop onboarding
-    kind: leaf
-    parent: M01-A2
-    order: 41
+    acceptance: "docs/tasks/M01-A2-onboarding.md"
+  - id: "M01-A2S"
+    module: "M01"
+    title: "Shop onboarding"
+    kind: "leaf"
+    parent: "M01-A2"
+    order: 90
     weight: 1
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
     depends_on: []
     implementation_pr: 16
-    acceptance: docs/tasks/M01-A2-onboarding.md
-    evidence: docs/evidence/M01-A2S.md
-
-  - id: M01-A2D
-    module: M01
-    title: Driver onboarding
-    kind: leaf
-    parent: M01-A2
-    order: 42
+    acceptance: "docs/tasks/M01-A2-onboarding.md"
+    evidence: "docs/evidence/M01-A2S.md"
+    phase: "backend"
+  - id: "M01-A2D"
+    module: "M01"
+    title: "Driver onboarding"
+    kind: "leaf"
+    parent: "M01-A2"
+    order: 100
     weight: 1
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
     depends_on:
-      - M01-A2S
+      - "M01-A2S"
     implementation_pr: 17
-    acceptance: docs/tasks/M01-A2-onboarding.md
-    evidence: docs/evidence/M01-A2D.md
-
-  # Corrective work after the M00/M01 merges (session authorization inside onboarding transactions, bounded
-  # rollback, effective active role, progress accuracy). PR #19 carries the design document AND the repair code,
-  # so it is pinned as BOTH, with the explicit combined_design_implementation flag (see the field list above).
-  - id: M01-R1
-    module: M01
-    title: Post-merge repairs (session, rollback, router, progress)
-    kind: leaf
+    acceptance: "docs/tasks/M01-A2-onboarding.md"
+    evidence: "docs/evidence/M01-A2D.md"
+    phase: "backend"
+  - id: "M01-R1"
+    module: "M01"
+    title: "Post-merge repairs (session, rollback, router, progress)"
+    kind: "leaf"
     parent: null
-    order: 50
+    order: 110
     weight: 1
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
     depends_on:
-      - M01-A2
+      - "M01-A2"
     design_pr: 19
     implementation_pr: 19
     combined_design_implementation: true
-    acceptance: docs/tasks/M00-M01-post-merge-repairs.md
-    evidence: docs/evidence/M00-M01-post-merge-repairs.md
-
-  # M00-D: Render Free + Supabase staging (design PR #22). Design, implementation, remote deployment and Owner
-  # acceptance are tracked as SEPARATE tasks on purpose: a merged D1 (configuration, tests, runbook) is NOT a
-  # deployed backend and NOT an Owner-tested one. Only a merged implementation PR with a green required check
-  # can make a leaf DONE, so D4 (remote deployment acceptance) and D5 (Owner acceptance) stay open until an
-  # evidence PR for each is merged; nothing about D1 can mark them done. The order values sit after the corrective
-  # work (M01-R1) so this lane does not take over the dashboard focus.
-  #
-  # Known limit of this schema: the manifest has no per-leaf "design still to be written" gate. docs/tasks/
-  # M00-D-render-supabase-staging.md requires a concrete follow-on design before any D2 schema/API change, so D2
-  # must not start just because the dashboard shows it ready; that gate lives in the task document.
-  - id: M00-D
-    module: M00
-    title: Render Free + Supabase staging
-    kind: group
+    acceptance: "docs/tasks/M00-M01-post-merge-repairs.md"
+    evidence: "docs/evidence/M00-M01-post-merge-repairs.md"
+    phase: "backend"
+  - id: "M00-D"
+    module: "M00"
+    title: "Render Free + Supabase staging"
+    kind: "group"
     parent: null
-    order: 60
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
+    order: 120
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
     depends_on:
-      - M00-C1C
+      - "M00-C1C"
     design_pr: 22
-    acceptance: docs/tasks/M00-D-render-supabase-staging.md
-
-  - id: M00-D1
-    module: M00
-    title: Connection and deploy configuration
-    kind: leaf
-    parent: M00-D
-    order: 61
+    acceptance: "docs/tasks/M00-D-render-supabase-staging.md"
+  - id: "M00-D1"
+    module: "M00"
+    title: "Connection and deploy configuration"
+    kind: "leaf"
+    parent: "M00-D"
+    order: 130
     weight: 1
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
     depends_on: []
-    acceptance: docs/tasks/CLAUDE-M00-D1-render-supabase.md
-    evidence: docs/evidence/M00-D1.md
-
-  - id: M00-D2
-    module: M00
-    title: Test accounts without real SMS
-    kind: leaf
-    parent: M00-D
-    order: 62
+    acceptance: "docs/tasks/CLAUDE-M00-D1-render-supabase.md"
+    evidence: "docs/evidence/M00-D1.md"
+    phase: "backend"
+    implementation_pr: 25
+  - id: "M00-D2"
+    module: "M00"
+    title: "Test accounts without real SMS"
+    kind: "leaf"
+    parent: "M00-D"
+    order: 140
     weight: 1
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
     depends_on:
-      - M00-D1
-    acceptance: docs/tasks/M00-D-render-supabase-staging.md
-
-  - id: M00-D3
-    module: M00
-    title: Operations and portability
-    kind: leaf
-    parent: M00-D
-    order: 63
+      - "M00-D1"
+    acceptance: "docs/roadmap/modules/M00.md"
+    phase: "backend"
+    design_pr: 26
+    implementation_pr: 27
+    requires_main_ci_green: true
+  - id: "M00-D3"
+    module: "M00"
+    title: "Operations and portability"
+    kind: "leaf"
+    parent: "M00-D"
+    order: 150
     weight: 1
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
     depends_on:
-      - M00-D1
-    acceptance: docs/tasks/M00-D-render-supabase-staging.md
-
-  # Evidence-only tasks. owner_role stays CLAUDE because schema v1 fixes the three roles (they are documentation,
-  # not configuration); the remote steps themselves are run by the deployment operator and verified by the Owner.
-  - id: M00-D4
-    module: M00
-    title: Remote deployment acceptance
-    kind: leaf
-    parent: M00-D
-    order: 64
+      - "M00-D1"
+    acceptance: "docs/tasks/M00-D-render-supabase-staging.md"
+    phase: "operations"
+    requires_own_design: true
+  - id: "M00-D4"
+    module: "M00"
+    title: "Remote deployment acceptance"
+    kind: "leaf"
+    parent: "M00-D"
+    order: 160
     weight: 1
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
     depends_on:
-      - M00-D2
-      - M00-D3
-    acceptance: docs/tasks/M00-D-render-supabase-staging.md
-
-  - id: M00-D5
-    module: M00
-    title: Owner acceptance of the staging backend
-    kind: leaf
-    parent: M00-D
-    order: 65
+      - "M00-D2"
+      - "M00-D3"
+    acceptance: "docs/tasks/M00-D-render-supabase-staging.md"
+    phase: "deployment"
+    requires_own_design: true
+  - id: "M00-D5"
+    module: "M00"
+    title: "Owner acceptance of the staging backend"
+    kind: "leaf"
+    parent: "M00-D"
+    order: 170
     weight: 1
-    owner_role: CLAUDE
-    design_role: CHATGPT
-    review_role: CHATGPT
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
     depends_on:
-      - M00-D4
-    acceptance: docs/tasks/M00-D-render-supabase-staging.md
+      - "M00-D4"
+      - "M00-TEST-E2E"
+    acceptance: "docs/tasks/M00-D-render-supabase-staging.md"
+    phase: "owner_acceptance"
+    evidence: "docs/evidence/M00-D5.md"
+    requires_own_design: true
+  - id: "M00-LOCAL"
+    module: "M00"
+    title: "Môi trường test local"
+    kind: "group"
+    parent: null
+    order: 180
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-R1"
+    design_pr: 20
+    acceptance: "docs/roadmap/modules/M00.md"
+  - id: "M00-LOCAL-RUN"
+    module: "M00"
+    title: "Backend và PostgreSQL chạy local"
+    kind: "leaf"
+    parent: "M00-LOCAL"
+    order: 190
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on: []
+    acceptance: "docs/roadmap/modules/M00.md"
+    evidence: "docs/evidence/M00-LOCAL-RUN.md"
+    phase: "operations"
+    requires_own_design: true
+  - id: "M00-LOCAL-DATA"
+    module: "M00"
+    title: "Dữ liệu mẫu và OTP dành cho bản thử"
+    kind: "leaf"
+    parent: "M00-LOCAL"
+    order: 200
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M00-LOCAL-RUN"
+    acceptance: "docs/roadmap/modules/M00.md"
+    evidence: "docs/evidence/M00-LOCAL-DATA.md"
+    phase: "operations"
+    requires_own_design: true
+  - id: "M00-LOCAL-QA"
+    module: "M00"
+    title: "Kiểm chứng môi trường và khôi phục dữ liệu"
+    kind: "leaf"
+    parent: "M00-LOCAL"
+    order: 210
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M00-LOCAL-DATA"
+    acceptance: "docs/roadmap/modules/M00.md"
+    evidence: "docs/evidence/M00-LOCAL-QA.md"
+    phase: "automated_test"
+    requires_own_design: true
+  - id: "M00-LOCAL-UAT"
+    module: "M00"
+    title: "Owner nghiệm thu môi trường local"
+    kind: "leaf"
+    parent: "M00-LOCAL"
+    order: 220
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M00-LOCAL-QA"
+    acceptance: "docs/roadmap/modules/M00.md"
+    evidence: "docs/evidence/M00-LOCAL-UAT.md"
+    phase: "owner_acceptance"
+    requires_own_design: true
+  - id: "M01-UI"
+    module: "M01"
+    title: "Thiết kế và triển khai UI Auth + onboarding"
+    kind: "group"
+    parent: null
+    order: 230
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-R1"
+    design_pr: 14
+    acceptance: "docs/roadmap/modules/M01.md"
+  - id: "M01-UI-AUTH"
+    module: "M01"
+    title: "UI đăng ký, đăng nhập và chọn vai trò"
+    kind: "leaf"
+    parent: "M01-UI"
+    order: 240
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M00-D4"
+      - "M01-FE0"
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-UI-AUTH.md"
+    phase: "app_test"
+    requires_own_design: true
+  - id: "M01-UI-ONBOARD"
+    module: "M01"
+    title: "UI hồ sơ quán và hồ sơ xế"
+    kind: "leaf"
+    parent: "M01-UI"
+    order: 250
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-UI-AUTH"
+      - "M02-AREA-READ"
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-UI-ONBOARD.md"
+    phase: "app_test"
+    requires_own_design: true
+  - id: "M01-TEST"
+    module: "M01"
+    title: "Kiểm thử và nghiệm thu M01-A1/A2"
+    kind: "group"
+    parent: null
+    order: 260
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-R1"
+    acceptance: "docs/roadmap/modules/M01.md"
+  - id: "M01-E2E"
+    module: "M01"
+    title: "Test đầu cuối Auth và onboarding"
+    kind: "leaf"
+    parent: "M01-TEST"
+    order: 270
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-UI-ONBOARD"
+      - "M00-D5"
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-E2E.md"
+    phase: "automated_test"
+    requires_own_design: true
+  - id: "M01-UAT"
+    module: "M01"
+    title: "Owner nghiệm thu bản thử M01-A1/A2"
+    kind: "leaf"
+    parent: "M01-TEST"
+    order: 280
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-E2E"
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-UAT.md"
+    phase: "owner_acceptance"
+    requires_own_design: true
+  - id: "M01-B"
+    module: "M01"
+    title: "Nghiệp vụ bổ sung: tài khoản và phiên"
+    kind: "group"
+    parent: null
+    order: 290
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-R1"
+    acceptance: "docs/roadmap/modules/M01.md"
+  - id: "M01-B-LOGOUT"
+    module: "M01"
+    title: "Backend đăng xuất và thu hồi phiên"
+    kind: "leaf"
+    parent: "M01-B"
+    order: 300
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on: []
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-B-LOGOUT.md"
+    phase: "backend"
+    requires_own_design: true
+  - id: "M01-B-PASSWORD"
+    module: "M01"
+    title: "Backend đổi và khôi phục mật khẩu"
+    kind: "leaf"
+    parent: "M01-B"
+    order: 310
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-B-LOGOUT"
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-B-PASSWORD.md"
+    phase: "backend"
+    requires_own_design: true
+  - id: "M01-B-PHONE"
+    module: "M01"
+    title: "Backend đổi số điện thoại đã xác minh"
+    kind: "leaf"
+    parent: "M01-B"
+    order: 320
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-B-PASSWORD"
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-B-PHONE.md"
+    phase: "backend"
+    requires_own_design: true
+  - id: "M01-B-UI"
+    module: "M01"
+    title: "UI quản lý tài khoản và phiên"
+    kind: "leaf"
+    parent: "M01-B"
+    order: 330
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-B-PHONE"
+      - "M01-UI-AUTH"
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-B-UI.md"
+    phase: "app_test"
+    requires_own_design: true
+  - id: "M01-B-E2E"
+    module: "M01"
+    title: "Test đầu cuối tài khoản và phiên"
+    kind: "leaf"
+    parent: "M01-B"
+    order: 340
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-B-UI"
+      - "M00-D5"
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-B-E2E.md"
+    phase: "automated_test"
+    requires_own_design: true
+  - id: "M01-B-UAT"
+    module: "M01"
+    title: "Owner nghiệm thu tài khoản và phiên"
+    kind: "leaf"
+    parent: "M01-B"
+    order: 350
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-B-E2E"
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-B-UAT.md"
+    phase: "owner_acceptance"
+    requires_own_design: true
+  - id: "M01-C"
+    module: "M01"
+    title: "Nghiệp vụ bổ sung: SMS thật và chống lạm dụng"
+    kind: "group"
+    parent: null
+    order: 360
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-R1"
+    acceptance: "docs/roadmap/modules/M01.md"
+  - id: "M01-C-SMS"
+    module: "M01"
+    title: "Adapter SMS và giới hạn gửi/thử thật"
+    kind: "leaf"
+    parent: "M01-C"
+    order: 370
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on: []
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-C-SMS.md"
+    phase: "backend"
+    start_after:
+      - "M12-FIGMA-UAT"
+    requires_own_design: true
+  - id: "M01-C-E2E"
+    module: "M01"
+    title: "Test SMS thật trên số được phép"
+    kind: "leaf"
+    parent: "M01-C"
+    order: 380
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-C-SMS"
+      - "M01-UI-AUTH"
+      - "M00-D5"
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-C-E2E.md"
+    phase: "automated_test"
+    requires_own_design: true
+  - id: "M01-C-UAT"
+    module: "M01"
+    title: "Owner nghiệm thu OTP thật và thông báo lỗi"
+    kind: "leaf"
+    parent: "M01-C"
+    order: 390
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-C-E2E"
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-C-UAT.md"
+    phase: "owner_acceptance"
+    requires_own_design: true
+  - id: "M01-D"
+    module: "M01"
+    title: "Nghiệp vụ bổ sung: ADMIN, SYSTEM và 2FA"
+    kind: "group"
+    parent: null
+    order: 400
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-R1"
+    acceptance: "docs/roadmap/modules/M01.md"
+  - id: "M01-D-ACCESS"
+    module: "M01"
+    title: "Backend khởi tạo và phân quyền quản trị"
+    kind: "leaf"
+    parent: "M01-D"
+    order: 410
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on: []
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-D-ACCESS.md"
+    phase: "backend"
+    requires_own_design: true
+  - id: "M01-D-2FA"
+    module: "M01"
+    title: "Backend 2FA và khôi phục quyền quản trị"
+    kind: "leaf"
+    parent: "M01-D"
+    order: 420
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-D-ACCESS"
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-D-2FA.md"
+    phase: "backend"
+    requires_own_design: true
+  - id: "M01-D-UI"
+    module: "M01"
+    title: "UI đăng nhập và bảo mật quản trị"
+    kind: "leaf"
+    parent: "M01-D"
+    order: 430
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-D-2FA"
+      - "M01-UI-AUTH"
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-D-UI.md"
+    phase: "app_test"
+    requires_own_design: true
+  - id: "M01-D-E2E"
+    module: "M01"
+    title: "Test quyền và 2FA đầu cuối"
+    kind: "leaf"
+    parent: "M01-D"
+    order: 440
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-D-UI"
+      - "M00-D5"
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-D-E2E.md"
+    phase: "automated_test"
+    requires_own_design: true
+  - id: "M01-D-UAT"
+    module: "M01"
+    title: "Owner nghiệm thu bảo mật quản trị"
+    kind: "leaf"
+    parent: "M01-D"
+    order: 450
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-D-E2E"
+    acceptance: "docs/roadmap/modules/M01.md"
+    evidence: "docs/evidence/M01-D-UAT.md"
+    phase: "owner_acceptance"
+    requires_own_design: true
+  - id: "M02-A"
+    module: "M02"
+    title: "Nghiệp vụ hồ sơ quán và giờ hoạt động"
+    kind: "group"
+    parent: null
+    order: 460
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-R1"
+    design_pr: 18
+    acceptance: "docs/roadmap/modules/M02.md"
+  - id: "M02-A-BE"
+    module: "M02"
+    title: "Backend hồ sơ, lịch tuần và trạng thái tự động"
+    kind: "leaf"
+    parent: "M02-A"
+    order: 470
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on: []
+    acceptance: "docs/roadmap/modules/M02.md"
+    evidence: "docs/evidence/M02-A-BE.md"
+    phase: "backend"
+    implementation_pr: 21
+    start_after:
+      - "M01-UAT"
+  - id: "M02-A-UI"
+    module: "M02"
+    title: "UI hồ sơ, lịch tuần và trạng thái quán"
+    kind: "leaf"
+    parent: "M02-A"
+    order: 480
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M02-A-BE"
+      - "M01-UI-ONBOARD"
+    acceptance: "docs/roadmap/modules/M02.md"
+    evidence: "docs/evidence/M02-A-UI.md"
+    phase: "app_test"
+    design_pr: 23
+    start_after:
+      - "M01-UAT"
+  - id: "M02-A-E2E"
+    module: "M02"
+    title: "Test đầu cuối hồ sơ và lịch hoạt động"
+    kind: "leaf"
+    parent: "M02-A"
+    order: 490
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M02-A-UI"
+      - "M00-D5"
+    acceptance: "docs/roadmap/modules/M02.md"
+    evidence: "docs/evidence/M02-A-E2E.md"
+    phase: "automated_test"
+    requires_own_design: true
+  - id: "M02-A-UAT"
+    module: "M02"
+    title: "Owner nghiệm thu hoạt động quán tự động"
+    kind: "leaf"
+    parent: "M02-A"
+    order: 500
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M02-A-E2E"
+    acceptance: "docs/roadmap/modules/M02.md"
+    evidence: "docs/evidence/M02-A-UAT.md"
+    phase: "owner_acceptance"
+    requires_own_design: true
+  - id: "M02-B"
+    module: "M09"
+    title: "Thực đơn (mã task lịch sử PR20, owner M09)"
+    kind: "group"
+    parent: null
+    order: 510
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M02-A-UAT"
+    acceptance: "docs/roadmap/modules/M09.md"
+  - id: "M02-B-BE"
+    module: "M09"
+    title: "Backend menu, nhóm món và ảnh"
+    kind: "leaf"
+    parent: "M02-B"
+    order: 520
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M00-UPLOAD"
+    acceptance: "docs/roadmap/modules/M09.md"
+    evidence: "docs/evidence/M02-B-BE.md"
+    phase: "backend"
+    requires_own_design: true
+  - id: "M02-B-UI"
+    module: "M09"
+    title: "UI quản lý menu và nhóm món"
+    kind: "leaf"
+    parent: "M02-B"
+    order: 530
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M02-B-BE"
+      - "M01-FE0"
+    acceptance: "docs/roadmap/modules/M09.md"
+    evidence: "docs/evidence/M02-B-UI.md"
+    phase: "app_test"
+    requires_own_design: true
+  - id: "M02-B-E2E"
+    module: "M09"
+    title: "Test đầu cuối menu"
+    kind: "leaf"
+    parent: "M02-B"
+    order: 540
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M02-B-UI"
+      - "M00-D5"
+    acceptance: "docs/roadmap/modules/M09.md"
+    evidence: "docs/evidence/M02-B-E2E.md"
+    phase: "automated_test"
+    requires_own_design: true
+  - id: "M02-B-UAT"
+    module: "M09"
+    title: "Owner nghiệm thu menu"
+    kind: "leaf"
+    parent: "M02-B"
+    order: 550
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M02-B-E2E"
+    acceptance: "docs/roadmap/modules/M09.md"
+    evidence: "docs/evidence/M02-B-UAT.md"
+    phase: "owner_acceptance"
+    requires_own_design: true
+  - id: "M00-OPS"
+    module: "M00"
+    title: "Vận hành nền tảng trước production"
+    kind: "group"
+    parent: null
+    order: 560
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M00-C1C"
+    acceptance: "docs/roadmap/modules/M00.md"
+  - id: "M00-OPS-WORKER"
+    module: "M00"
+    title: "Publisher và worker outbox chạy thật"
+    kind: "leaf"
+    parent: "M00-OPS"
+    order: 570
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on: []
+    acceptance: "docs/roadmap/modules/M00.md"
+    evidence: "docs/evidence/M00-OPS-WORKER.md"
+    phase: "operations"
+    requires_own_design: true
+  - id: "M00-OPS-CLEANUP"
+    module: "M00"
+    title: "Lịch dọn dữ liệu và retention"
+    kind: "leaf"
+    parent: "M00-OPS"
+    order: 580
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on: []
+    acceptance: "docs/roadmap/modules/M00.md"
+    evidence: "docs/evidence/M00-OPS-CLEANUP.md"
+    phase: "operations"
+    requires_own_design: true
+  - id: "M00-OPS-RELEASE"
+    module: "M00"
+    title: "Triển khai, giám sát và diễn tập phục hồi"
+    kind: "leaf"
+    parent: "M00-OPS"
+    order: 590
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M12-RELEASE-UAT"
+    acceptance: "docs/roadmap/modules/M00.md"
+    evidence: "docs/evidence/M00-OPS-RELEASE.md"
+    phase: "deployment"
+    requires_own_design: true
+  - id: "M01-FE0"
+    module: "M01"
+    title: "Nền frontend HTML/CSS responsive và API client"
+    kind: "leaf"
+    parent: null
+    order: 600
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-R1"
+    phase: "app_test"
+    acceptance: "docs/roadmap/modules/M01.md"
+    design_pr: 24
+  - id: "M02-AREA-READ"
+    module: "M02"
+    title: "Nguồn vùng active tối thiểu cho nghiệm thu onboarding M01"
+    kind: "leaf"
+    parent: null
+    order: 610
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-R1"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M02.md"
+    requires_own_design: true
+  - id: "M02-AREAS"
+    module: "M02"
+    title: "Quản lý vùng phục vụ, trạng thái và version/polygon"
+    kind: "leaf"
+    parent: null
+    order: 620
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-UAT"
+      - "M01-D-UAT"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M02.md"
+    requires_own_design: true
+  - id: "M02-AREAS-APP"
+    module: "M02"
+    title: "App test quản lý vùng qua API có quyền"
+    kind: "leaf"
+    parent: null
+    order: 630
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M02-AREAS"
+      - "M01-FE0"
+      - "M00-D4"
+    phase: "app_test"
+    acceptance: "docs/roadmap/modules/M02.md"
+    requires_own_design: true
+  - id: "M02-AREAS-E2E"
+    module: "M02"
+    title: "Kiểm vùng active, boundary, version và quyền"
+    kind: "leaf"
+    parent: null
+    order: 640
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M02-AREAS-APP"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M02.md"
+    requires_own_design: true
+  - id: "M02-AREAS-UAT"
+    module: "M02"
+    title: "Owner nghiệm thu vùng phục vụ thật"
+    kind: "leaf"
+    parent: null
+    order: 650
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M02-AREAS-E2E"
+    phase: "owner_acceptance"
+    acceptance: "docs/roadmap/modules/M02.md"
+    evidence: "docs/evidence/M02-AREAS-UAT.md"
+    requires_own_design: true
+  - id: "M00-UPLOAD"
+    module: "M00"
+    title: "Upload ảnh, ownership và lưu trữ bền vững"
+    kind: "leaf"
+    parent: null
+    order: 660
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-R1"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M00.md"
+    requires_own_design: true
+  - id: "M00-TEST-SHELL"
+    module: "M00"
+    title: "Trang chẩn đoán app test: phiên bản, API và dữ liệu sau restart"
+    kind: "leaf"
+    parent: null
+    order: 670
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M00-D4"
+    phase: "app_test"
+    acceptance: "docs/roadmap/modules/M00.md"
+    requires_own_design: true
+  - id: "M00-TEST-E2E"
+    module: "M00"
+    title: "PC, điện thoại 4G, HTTPS và restart"
+    kind: "leaf"
+    parent: null
+    order: 680
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M00-TEST-SHELL"
+      - "M00-D4"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M00.md"
+    requires_own_design: true
+  - id: "M03-A"
+    module: "M03"
+    title: "Identity, PLATFORM/EXTERNAL, vùng và ngân hàng (cần contract vật lý mới)"
+    kind: "leaf"
+    parent: "M03-PLAN"
+    order: 690
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M02-A-UAT"
+      - "M01-D-UAT"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M03.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M04-A1"
+    module: "M04"
+    title: "Ví zero, ledger, source và invariants"
+    kind: "leaf"
+    parent: null
+    order: 700
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M03-A"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M04.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M04-A2"
+    module: "M04"
+    title: "Hold reserve/capture/release"
+    kind: "leaf"
+    parent: null
+    order: 710
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M04-A1"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M04.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M04-B"
+    module: "M04"
+    title: "Topup và registry giao dịch ngân hàng"
+    kind: "leaf"
+    parent: null
+    order: 720
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M04-A2"
+      - "M01-D-UAT"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M04.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M03-B1"
+    module: "M03"
+    title: "Nạp-và-duyệt, reject, suspend, resume, bật nhận"
+    kind: "leaf"
+    parent: "M03-PLAN"
+    order: 730
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M04-B"
+      - "M03-A"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M03.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M04-C1"
+    module: "M04"
+    title: "Tạo rút và hủy pending, snapshot ngân hàng"
+    kind: "leaf"
+    parent: null
+    order: 740
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M04-A2"
+      - "M03-A"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M04.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M04-C2"
+    module: "M04"
+    title: "Processing, paid và reconciliation"
+    kind: "leaf"
+    parent: null
+    order: 750
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M04-C1"
+      - "M01-D-UAT"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M04.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M05-A"
+    module: "M05"
+    title: "Hồ sơ khách, địa chỉ và default"
+    kind: "leaf"
+    parent: null
+    order: 760
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-UAT"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M05.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M08-A"
+    module: "M08"
+    title: "Location ingest, binding thiết bị và spike push"
+    kind: "leaf"
+    parent: null
+    order: 770
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-UAT"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M08.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M06-A"
+    module: "M06"
+    title: "Quote, routing provider và snapshot phí"
+    kind: "leaf"
+    parent: null
+    order: 780
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M02-A-UAT"
+      - "M03-B1"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M06.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M06-B"
+    module: "M06"
+    title: "Eligibility, ghép đơn và policy type"
+    kind: "leaf"
+    parent: null
+    order: 790
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M06-A"
+      - "M08-A"
+      - "M04-A2"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M06.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M07-A"
+    module: "M07"
+    title: "Quán gọi giao, sửa, deadline, stop và hủy"
+    kind: "leaf"
+    parent: null
+    order: 800
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M06-B"
+      - "M03-B1"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M07.md"
+    start_after:
+      - "M01-UAT"
+      - "M03-ACTIVATION-UAT"
+      - "M04-MONEY-UAT"
+    requires_own_design: true
+  - id: "M07-B"
+    module: "M07"
+    title: "Nhận/trả, assignment và hold nguyên tử"
+    kind: "leaf"
+    parent: null
+    order: 810
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M07-A"
+      - "M04-A2"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M07.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M07-C"
+    module: "M07"
+    title: "Ghim giao, pickup, complete, fail và trách nhiệm hàng"
+    kind: "leaf"
+    parent: null
+    order: 820
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M07-B"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M07.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M03-B2"
+    module: "M03"
+    title: "Ngừng/đóng hồ sơ, money và custody guard"
+    kind: "leaf"
+    parent: "M03-PLAN"
+    order: 830
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M04-C2"
+      - "M07-C"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M03.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M08-B"
+    module: "M08"
+    title: "Tracking, outbox delivery, WS và reminders"
+    kind: "leaf"
+    parent: null
+    order: 840
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M08-A"
+      - "M07-C"
+      - "M00-OPS-WORKER"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M08.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M10-A"
+    module: "M10"
+    title: "Checkout, recipient, giá và hẹn giờ"
+    kind: "leaf"
+    parent: null
+    order: 850
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M05-A"
+      - "M02-B-BE"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M10.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M10-B"
+    module: "M10"
+    title: "Quán sửa/confirm/reject/cancel"
+    kind: "leaf"
+    parent: null
+    order: 860
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M10-A"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M10.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M10-C"
+    module: "M10"
+    title: "Order-delivery integration và lịch sử gọi lại"
+    kind: "leaf"
+    parent: null
+    order: 870
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M10-B"
+      - "M07-C"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M10.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M08-ORDER-ADAPTER"
+    module: "M08"
+    title: "Tracking và thông báo order theo quyền khách"
+    kind: "leaf"
+    parent: null
+    order: 880
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M10-C"
+      - "M08-B"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M08.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M11-A"
+    module: "M11"
+    title: "Rating xế/quán, phản hồi và moderation"
+    kind: "leaf"
+    parent: null
+    order: 890
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M10-C"
+      - "M07-C"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M11.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M11-B"
+    module: "M11"
+    title: "Outcome report, correction và delta tiền"
+    kind: "leaf"
+    parent: null
+    order: 900
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M11-A"
+      - "M04-C2"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M11.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M12-A"
+    module: "M12"
+    title: "App quản lý và web: projection, map, scope, policy"
+    kind: "leaf"
+    parent: null
+    order: 910
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-D-UAT"
+      - "M07-C"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M12.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M12-B"
+    module: "M12"
+    title: "Quyền, audit, báo cáo và case vận hành"
+    kind: "leaf"
+    parent: null
+    order: 920
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M12-A"
+      - "M11-B"
+    phase: "backend"
+    acceptance: "docs/roadmap/modules/M12.md"
+    start_after:
+      - "M01-UAT"
+    requires_own_design: true
+  - id: "M03-PLAN"
+    module: "M03"
+    title: "Khung M03/M04 PR7 chưa khóa; không thay contract từng slice"
+    kind: "group"
+    parent: null
+    order: 930
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on: []
+    design_pr: 7
+    acceptance: "docs/roadmap/modules/M03.md"
+  - id: "M03-APP"
+    module: "M03"
+    title: "App test HTML/CSS qua API thật"
+    kind: "leaf"
+    parent: null
+    order: 940
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M03-A"
+      - "M03-B1"
+      - "M03-B2"
+      - "M01-FE0"
+      - "M00-D4"
+    phase: "app_test"
+    acceptance: "docs/roadmap/modules/M03.md"
+    requires_own_design: true
+  - id: "M03-E2E"
+    module: "M03"
+    title: "Tự động, browser/API/DB, race và regression"
+    kind: "leaf"
+    parent: null
+    order: 950
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M03-APP"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M03.md"
+    requires_own_design: true
+  - id: "M03-UAT"
+    module: "M03"
+    title: "Owner nghiệm thu nghiệp vụ trên PC và điện thoại"
+    kind: "leaf"
+    parent: null
+    order: 960
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M03-E2E"
+    phase: "owner_acceptance"
+    acceptance: "docs/roadmap/modules/M03.md"
+    evidence: "docs/evidence/M03-UAT.md"
+    requires_own_design: true
+  - id: "M04-APP"
+    module: "M04"
+    title: "App test HTML/CSS qua API thật"
+    kind: "leaf"
+    parent: null
+    order: 970
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M04-A1"
+      - "M04-A2"
+      - "M04-B"
+      - "M04-C1"
+      - "M04-C2"
+      - "M01-FE0"
+      - "M00-D4"
+    phase: "app_test"
+    acceptance: "docs/roadmap/modules/M04.md"
+    requires_own_design: true
+  - id: "M04-E2E"
+    module: "M04"
+    title: "Tự động, browser/API/DB, race và regression"
+    kind: "leaf"
+    parent: null
+    order: 980
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M04-APP"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M04.md"
+    requires_own_design: true
+  - id: "M04-UAT"
+    module: "M04"
+    title: "Owner nghiệm thu nghiệp vụ trên PC và điện thoại"
+    kind: "leaf"
+    parent: null
+    order: 990
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M04-E2E"
+    phase: "owner_acceptance"
+    acceptance: "docs/roadmap/modules/M04.md"
+    evidence: "docs/evidence/M04-UAT.md"
+    requires_own_design: true
+  - id: "M05-APP"
+    module: "M05"
+    title: "App test HTML/CSS qua API thật"
+    kind: "leaf"
+    parent: null
+    order: 1000
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M05-A"
+      - "M01-FE0"
+      - "M00-D4"
+    phase: "app_test"
+    acceptance: "docs/roadmap/modules/M05.md"
+    requires_own_design: true
+  - id: "M05-E2E"
+    module: "M05"
+    title: "Tự động, browser/API/DB, race và regression"
+    kind: "leaf"
+    parent: null
+    order: 1010
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M05-APP"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M05.md"
+    requires_own_design: true
+  - id: "M05-UAT"
+    module: "M05"
+    title: "Owner nghiệm thu nghiệp vụ trên PC và điện thoại"
+    kind: "leaf"
+    parent: null
+    order: 1020
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M05-E2E"
+    phase: "owner_acceptance"
+    acceptance: "docs/roadmap/modules/M05.md"
+    evidence: "docs/evidence/M05-UAT.md"
+    requires_own_design: true
+  - id: "M06-APP"
+    module: "M06"
+    title: "App test HTML/CSS qua API thật"
+    kind: "leaf"
+    parent: null
+    order: 1030
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M06-A"
+      - "M06-B"
+      - "M01-FE0"
+      - "M00-D4"
+    phase: "app_test"
+    acceptance: "docs/roadmap/modules/M06.md"
+    requires_own_design: true
+  - id: "M06-E2E"
+    module: "M06"
+    title: "Tự động, browser/API/DB, race và regression"
+    kind: "leaf"
+    parent: null
+    order: 1040
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M06-APP"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M06.md"
+    requires_own_design: true
+  - id: "M06-UAT"
+    module: "M06"
+    title: "Owner nghiệm thu nghiệp vụ trên PC và điện thoại"
+    kind: "leaf"
+    parent: null
+    order: 1050
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M06-E2E"
+    phase: "owner_acceptance"
+    acceptance: "docs/roadmap/modules/M06.md"
+    evidence: "docs/evidence/M06-UAT.md"
+    requires_own_design: true
+  - id: "M07-APP"
+    module: "M07"
+    title: "App test HTML/CSS qua API thật"
+    kind: "leaf"
+    parent: null
+    order: 1060
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M07-A"
+      - "M07-B"
+      - "M07-C"
+      - "M01-FE0"
+      - "M00-D4"
+    phase: "app_test"
+    acceptance: "docs/roadmap/modules/M07.md"
+    requires_own_design: true
+  - id: "M07-E2E"
+    module: "M07"
+    title: "Tự động, browser/API/DB, race và regression"
+    kind: "leaf"
+    parent: null
+    order: 1070
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M07-APP"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M07.md"
+    requires_own_design: true
+  - id: "M07-UAT"
+    module: "M07"
+    title: "Owner nghiệm thu nghiệp vụ trên PC và điện thoại"
+    kind: "leaf"
+    parent: null
+    order: 1080
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M07-E2E"
+    phase: "owner_acceptance"
+    acceptance: "docs/roadmap/modules/M07.md"
+    evidence: "docs/evidence/M07-UAT.md"
+    requires_own_design: true
+  - id: "M08-APP"
+    module: "M08"
+    title: "App test HTML/CSS qua API thật"
+    kind: "leaf"
+    parent: null
+    order: 1090
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M08-A"
+      - "M08-B"
+      - "M08-ORDER-ADAPTER"
+      - "M01-FE0"
+      - "M00-D4"
+    phase: "app_test"
+    acceptance: "docs/roadmap/modules/M08.md"
+    requires_own_design: true
+  - id: "M08-E2E"
+    module: "M08"
+    title: "Tự động, browser/API/DB, race và regression"
+    kind: "leaf"
+    parent: null
+    order: 1100
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M08-APP"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M08.md"
+    requires_own_design: true
+  - id: "M08-UAT"
+    module: "M08"
+    title: "Owner nghiệm thu nghiệp vụ trên PC và điện thoại"
+    kind: "leaf"
+    parent: null
+    order: 1110
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M08-E2E"
+    phase: "owner_acceptance"
+    acceptance: "docs/roadmap/modules/M08.md"
+    evidence: "docs/evidence/M08-UAT.md"
+    requires_own_design: true
+  - id: "M10-APP"
+    module: "M10"
+    title: "App test HTML/CSS qua API thật"
+    kind: "leaf"
+    parent: null
+    order: 1120
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M10-A"
+      - "M10-B"
+      - "M10-C"
+      - "M01-FE0"
+      - "M00-D4"
+    phase: "app_test"
+    acceptance: "docs/roadmap/modules/M10.md"
+    requires_own_design: true
+  - id: "M10-E2E"
+    module: "M10"
+    title: "Tự động, browser/API/DB, race và regression"
+    kind: "leaf"
+    parent: null
+    order: 1130
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M10-APP"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M10.md"
+    requires_own_design: true
+  - id: "M10-UAT"
+    module: "M10"
+    title: "Owner nghiệm thu nghiệp vụ trên PC và điện thoại"
+    kind: "leaf"
+    parent: null
+    order: 1140
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M10-E2E"
+    phase: "owner_acceptance"
+    acceptance: "docs/roadmap/modules/M10.md"
+    evidence: "docs/evidence/M10-UAT.md"
+    requires_own_design: true
+  - id: "M11-APP"
+    module: "M11"
+    title: "App test HTML/CSS qua API thật"
+    kind: "leaf"
+    parent: null
+    order: 1150
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M11-A"
+      - "M11-B"
+      - "M01-FE0"
+      - "M00-D4"
+    phase: "app_test"
+    acceptance: "docs/roadmap/modules/M11.md"
+    requires_own_design: true
+  - id: "M11-E2E"
+    module: "M11"
+    title: "Tự động, browser/API/DB, race và regression"
+    kind: "leaf"
+    parent: null
+    order: 1160
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M11-APP"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M11.md"
+    requires_own_design: true
+  - id: "M11-UAT"
+    module: "M11"
+    title: "Owner nghiệm thu nghiệp vụ trên PC và điện thoại"
+    kind: "leaf"
+    parent: null
+    order: 1170
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M11-E2E"
+    phase: "owner_acceptance"
+    acceptance: "docs/roadmap/modules/M11.md"
+    evidence: "docs/evidence/M11-UAT.md"
+    requires_own_design: true
+  - id: "M12-APP"
+    module: "M12"
+    title: "App test HTML/CSS qua API thật"
+    kind: "leaf"
+    parent: null
+    order: 1180
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M12-A"
+      - "M12-B"
+      - "M01-FE0"
+      - "M00-D4"
+    phase: "app_test"
+    acceptance: "docs/roadmap/modules/M12.md"
+    requires_own_design: true
+  - id: "M12-E2E"
+    module: "M12"
+    title: "Tự động, browser/API/DB, race và regression"
+    kind: "leaf"
+    parent: null
+    order: 1190
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M12-APP"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M12.md"
+    requires_own_design: true
+  - id: "M12-UAT"
+    module: "M12"
+    title: "Owner nghiệm thu nghiệp vụ trên PC và điện thoại"
+    kind: "leaf"
+    parent: null
+    order: 1200
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M12-E2E"
+    phase: "owner_acceptance"
+    acceptance: "docs/roadmap/modules/M12.md"
+    evidence: "docs/evidence/M12-UAT.md"
+    requires_own_design: true
+  - id: "M03-ACTIVATION-APP"
+    module: "M03"
+    title: "App test hồ sơ, ngân hàng và nạp-duyệt trước delivery"
+    kind: "leaf"
+    parent: null
+    order: 1210
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M03-B1"
+      - "M04-B"
+      - "M01-FE0"
+      - "M00-D4"
+    phase: "app_test"
+    acceptance: "docs/roadmap/modules/M03.md"
+    requires_own_design: true
+  - id: "M03-ACTIVATION-E2E"
+    module: "M03"
+    title: "API/browser thật cho activation trước delivery"
+    kind: "leaf"
+    parent: null
+    order: 1220
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M03-ACTIVATION-APP"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M03.md"
+    requires_own_design: true
+  - id: "M03-ACTIVATION-UAT"
+    module: "M03"
+    title: "Owner nghiệm thu hồ sơ, ngân hàng và nạp-duyệt trước delivery"
+    kind: "leaf"
+    parent: null
+    order: 1230
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M03-ACTIVATION-E2E"
+      - "M00-D5"
+    phase: "owner_acceptance"
+    acceptance: "docs/roadmap/modules/M03.md"
+    evidence: "docs/evidence/M03-ACTIVATION-UAT.md"
+    requires_own_design: true
+  - id: "M04-MONEY-UAT"
+    module: "M04"
+    title: "Owner nghiệm thu nạp/rút và đối soát trước delivery"
+    kind: "leaf"
+    parent: null
+    order: 1240
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M04-E2E"
+      - "M00-D5"
+    phase: "owner_acceptance"
+    acceptance: "docs/roadmap/modules/M04.md"
+    evidence: "docs/evidence/M04-MONEY-UAT.md"
+    requires_own_design: true
+  - id: "M00-NATIVE-CLIENTS"
+    module: "M00"
+    title: "Đóng gói 4 app, kiểm Android/iOS và kết nối cùng API"
+    kind: "leaf"
+    parent: null
+    order: 1250
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M03-UAT"
+      - "M04-UAT"
+      - "M05-UAT"
+      - "M06-UAT"
+      - "M07-UAT"
+      - "M08-UAT"
+      - "M02-B-UAT"
+      - "M10-UAT"
+      - "M11-UAT"
+      - "M12-UAT"
+    phase: "app_test"
+    acceptance: "docs/roadmap/modules/M00.md"
+    requires_own_design: true
+  - id: "M00-NATIVE-E2E"
+    module: "M00"
+    title: "Thiết bị thật: nền, GPS, push, reconnect và signing"
+    kind: "leaf"
+    parent: null
+    order: 1260
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M00-NATIVE-CLIENTS"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M00.md"
+    requires_own_design: true
+  - id: "M12-FIGMA"
+    module: "M12"
+    title: "Thiết kế lại Figma toàn bộ ứng dụng và web quản trị"
+    kind: "leaf"
+    parent: null
+    order: 1270
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M00-NATIVE-E2E"
+    phase: "design"
+    acceptance: "docs/roadmap/modules/M12.md"
+    requires_own_design: true
+  - id: "M12-FIGMA-IMPLEMENT"
+    module: "M12"
+    title: "Triển khai giao diện Figma và regression các ứng dụng"
+    kind: "leaf"
+    parent: null
+    order: 1280
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M12-FIGMA"
+    phase: "app_test"
+    acceptance: "docs/roadmap/modules/M12.md"
+    requires_own_design: true
+  - id: "M12-FIGMA-UAT"
+    module: "M12"
+    title: "Owner nghiệm thu giao diện hoàn thiện"
+    kind: "leaf"
+    parent: null
+    order: 1290
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M12-FIGMA-IMPLEMENT"
+    phase: "owner_acceptance"
+    acceptance: "docs/roadmap/modules/M12.md"
+    evidence: "docs/evidence/M12-FIGMA-UAT.md"
+    requires_own_design: true
+  - id: "M12-SYSTEM-E2E"
+    module: "M12"
+    title: "Toàn hệ thống và ngoài thực địa Cao Bằng"
+    kind: "leaf"
+    parent: null
+    order: 1300
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M01-C-UAT"
+      - "M12-FIGMA-UAT"
+      - "M01-B-UAT"
+      - "M01-D-UAT"
+      - "M00-NATIVE-E2E"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M12.md"
+    requires_own_design: true
+  - id: "M12-SECURITY-MONEY"
+    module: "M12"
+    title: "Audit bảo mật, concurrency và tài chính xuyên module"
+    kind: "leaf"
+    parent: null
+    order: 1310
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M12-SYSTEM-E2E"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M12.md"
+    requires_own_design: true
+  - id: "M12-RESTORE"
+    module: "M12"
+    title: "Backup/restore, server dự phòng và diễn tập sự cố"
+    kind: "leaf"
+    parent: null
+    order: 1320
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M12-SECURITY-MONEY"
+      - "M00-OPS-CLEANUP"
+      - "M00-D3"
+    phase: "operations"
+    acceptance: "docs/roadmap/modules/M12.md"
+    requires_own_design: true
+  - id: "M12-LOAD"
+    module: "M12"
+    title: "Đo tải và xác định cấu hình release từ dữ liệu thật"
+    kind: "leaf"
+    parent: null
+    order: 1330
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M12-RESTORE"
+    phase: "automated_test"
+    acceptance: "docs/roadmap/modules/M12.md"
+    requires_own_design: true
+  - id: "M12-RELEASE-UAT"
+    module: "M12"
+    title: "Owner chấp thuận phát hành theo exact release candidate"
+    kind: "leaf"
+    parent: null
+    order: 1340
+    weight: 1
+    owner_role: "CLAUDE"
+    design_role: "CHATGPT"
+    review_role: "CHATGPT"
+    depends_on:
+      - "M12-LOAD"
+    phase: "owner_acceptance"
+    acceptance: "docs/roadmap/modules/M12.md"
+    evidence: "docs/evidence/M12-RELEASE-UAT.md"
+    requires_own_design: true
+owner_login: "trungtn87"

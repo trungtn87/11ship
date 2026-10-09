@@ -89,6 +89,8 @@ async function main() {
       mainBranch: plan.main_branch,
       requiredChecks: plan.required_checks,
       pinnedNumbers: pinned,
+      evidenceTasks: plan.tasks.filter((t) => t.phase === 'owner_acceptance'),
+      ownerLogin: plan.owner_login,
       token: process.env.GITHUB_TOKEN || process.env.GH_TOKEN,
       apiBase: process.env.GITHUB_API_URL || 'https://api.github.com',
     });
@@ -134,3 +136,4 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     },
   );
 }
+

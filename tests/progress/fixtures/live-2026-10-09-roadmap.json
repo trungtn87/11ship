@@ -1,0 +1,2664 @@
+{
+  "repo": "trungtn87/11ship",
+  "pulls": [
+    {
+      "number": 27,
+      "title": "feat(M00-D2): staging accounts without SMS (fixture mode, seed command)",
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head_sha": "c8b410ef7e8a96737e898f95d33d52a26c0a9681",
+      "head_ref": "feat/m00-d2-staging-fixtures",
+      "labels": [
+        "agent:claude",
+        "module:M00-D2",
+        "type:implementation"
+      ],
+      "checks": [
+        {
+          "id": 113640494045,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113640460292,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113640459905,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113640459867,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113640459198,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113640458866,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113640453814,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113640453384,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113640452557,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 26,
+      "title": "design(M00-D2): tài khoản staging chưa xác minh SĐT",
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head_sha": "fe235cc15452bb2cee01526aa5b1af27e07b5f8b",
+      "head_ref": "design/m00-d2-staging-fixtures",
+      "labels": [],
+      "checks": [
+        {
+          "id": 113631555257,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113631555055,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113631554840,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113631554707,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113631554411,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113631554186,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113631554072,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113631553460,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113631553393,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 25,
+      "title": "feat(M00-D1): Render Free blueprint, strict Supabase TLS, remote migration path",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-09T01:01:44Z",
+      "head_sha": "44dbf10c6d7ef6ccc3f7eb812d6488a172c2fb65",
+      "head_ref": "feat/m00-d1-render-supabase",
+      "labels": [
+        "agent:claude",
+        "type:implementation"
+      ],
+      "checks": [
+        {
+          "id": 113618478655,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618468323,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618464263,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618447717,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618438342,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618437404,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618437338,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618436653,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "id": 113618436380,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618436357,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113618421679,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618421278,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618420999,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618420441,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "id": 113618420386,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618419808,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113613713419,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113613702375,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113613667919,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113613667597,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113613667135,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113613665947,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113613659710,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113613659525,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113613658391,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 24,
+      "title": "design(M01-FE0): responsive frontend foundation and session client",
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head_sha": "ef297175004b0fa4b99413ccba52d8e40bf8764a",
+      "head_ref": "design/m01-frontend-foundation",
+      "labels": [],
+      "checks": [
+        {
+          "id": 113469034452,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113469020513,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113468965919,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113468965278,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113468964475,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113468964449,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113468963781,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113468963187,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113468961909,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 23,
+      "title": "design(M02-A-UI): shop profile and weekly schedule screens",
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head_sha": "8a0bafebbbf4dc5a3b9817c4d0c9cc9304cb3c3b",
+      "head_ref": "design/m02-a-ui-contract",
+      "labels": [],
+      "checks": [
+        {
+          "id": 113466631993,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113466556745,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113466555688,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113466555362,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113466554430,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113466554339,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113466553712,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113466552577,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113466551580,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 22,
+      "title": "design(M00-D): Render Free + Supabase staging",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-09T01:01:20Z",
+      "head_sha": "a846a68f75de0129b2eea6e50ea446bbf8983209",
+      "head_ref": "design/m00-d-render-supabase",
+      "labels": [],
+      "checks": [
+        {
+          "id": 113618359150,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618326636,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618326574,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618326109,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618325966,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618325965,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113618325475,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618324447,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113618314323,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618273870,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618273180,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618272600,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113618272398,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618271959,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618271764,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113618270217,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113456235679,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113455810494,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113455799318,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113455742925,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113455741605,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113455739988,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113455730976,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113455730637,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113455728717,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 21,
+      "title": "feat(shop): M02-A shop management backend (draft)",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-08T11:57:12Z",
+      "head_sha": "c7f0d5b31b0a9347ad6e584843843df696fed0ba",
+      "head_ref": "feat/m02-a-shop-management",
+      "labels": [],
+      "checks": [
+        {
+          "id": 113298555697,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113298537803,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113298518892,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113298518717,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113298518510,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113298517656,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113298516902,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113298516708,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113298516633,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "id": 113298479029,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113298478448,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113298478409,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113298477638,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113298476363,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113298476155,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113298474381,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113293744826,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113293685128,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113293684722,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113293684518,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113293684185,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113293682577,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113293672557,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113293672521,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113293670927,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 20,
+      "title": "docs(plan): M00 local, M01 UI/test and M02 parallel delivery checklists",
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head_sha": "78cb31984ba6c225a73185d3475ef43905e0e09a",
+      "head_ref": "docs/parallel-module-delivery",
+      "labels": [],
+      "checks": [
+        {
+          "id": 113211524945,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113211466000,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113211465848,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113211464134,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 19,
+      "title": "docs(m00-m01): session authorization, bounded rollback, router and progress repairs",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-08T06:30:27Z",
+      "head_sha": "cd0e6dec9d97d3fc37e4ee6de0b0a1ed5011359f",
+      "head_ref": "docs/m00-m01-post-merge-repairs",
+      "labels": [],
+      "checks": [
+        {
+          "id": 113181849670,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113181816067,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113181815870,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113181815807,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113181815777,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113181815740,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113181814499,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113181814268,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113181797029,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113181766729,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113181757753,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113181740489,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113181739878,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113181738609,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113181738517,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113181730286,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113181729226,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 18,
+      "title": "docs(m02-a): hồ sơ quán và tự động hoạt động theo giờ",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-08T10:23:28Z",
+      "head_sha": "207133b777e4aba17e5756f8ac7b03296a1b2c15",
+      "head_ref": "docs/m02-a-shop-management",
+      "labels": [],
+      "checks": [
+        {
+          "id": 113264257665,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113264256551,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113264256197,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113264255966,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113264255965,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113264255823,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113264255677,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113264255299,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113261314012,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113261296081,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113261295833,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113261295537,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113261295454,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113261293943,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113261293245,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113261292880,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113261291194,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113261166279,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "id": 113261156740,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113261153176,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113261107768,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113261106827,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113261105490,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113261105378,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113261104136,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 17,
+      "title": "feat(m01-a2d): DRIVER onboarding (no Driver service area)",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-08T04:23:43Z",
+      "head_sha": "c37082add6fe651333f0acd535503ff465dd0700",
+      "head_ref": "feat/m01-a2d-driver-onboarding",
+      "labels": [],
+      "checks": [
+        {
+          "id": 113148247446,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113148242341,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113148216225,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113148214959,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113148206166,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113148206049,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113148205935,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113148205887,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113148205563,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113148204998,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113148180147,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113148179527,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113148178572,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113148178266,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113148178140,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113148177259,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113145513166,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113145481946,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113145481829,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113145481611,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113145481056,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113145480609,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113145473020,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113145472802,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113145471831,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 16,
+      "title": "feat(onboarding): M01-A2S shop onboarding",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-08T02:39:04Z",
+      "head_sha": "620333fc472912ca3acc184e73fad17e5ebb169e",
+      "head_ref": "feat/m01-a2s-shop-onboarding",
+      "labels": [
+        "agent:claude",
+        "type:implementation"
+      ],
+      "checks": [
+        {
+          "id": 113121783968,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113121782514,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113121770394,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113121770329,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113121770206,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113121770188,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113121770176,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113121769741,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113121769622,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "id": 113121768683,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113121748020,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113121747323,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113121746531,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113121746003,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113121745833,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113121744917,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113119326076,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113119293857,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113119293787,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113119293719,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113119292821,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113119292544,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113119288540,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113119288051,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113119286952,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 15,
+      "title": "docs(m01-a2): lock onboarding contract and task split",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-07T18:38:26Z",
+      "head_sha": "c329808591969b5fdf61cce8ba2fdcbf8c4a9ce3",
+      "head_ref": "docs/m01-a2-onboarding",
+      "labels": [
+        "agent:chatgpt",
+        "type:design"
+      ],
+      "checks": [
+        {
+          "id": 112953489730,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112953426080,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112953424613,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112953424206,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112953423920,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112953423683,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112953423050,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112953422131,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112953396431,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112953392004,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112953331707,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112953331678,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112953330574,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112953329226,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112953328300,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112953327096,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112951626742,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112951362324,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112951345780,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112951327784,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112951282375,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112951282201,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112951281952,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112951280384,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112951271259,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 14,
+      "title": "docs(ui): add Figma workflow and frontend UI gate",
+      "state": "open",
+      "draft": false,
+      "merged_at": null,
+      "head_sha": "0d16d7b25de129b38cef0741b4b4ee9682bdd698",
+      "head_ref": "docs/figma-ui-workflow",
+      "labels": [
+        "agent:chatgpt",
+        "type:infra"
+      ],
+      "checks": [
+        {
+          "id": 112949095644,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112949020971,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112949020890,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112949020540,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112949019233,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112949018589,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112949005629,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112949005236,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112949003331,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 13,
+      "title": "chore(progress): Việt hóa dashboard tiến độ",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-08T03:55:40Z",
+      "head_sha": "25a62e9cc403fdbf2926b527a57b1ad62f8d703d",
+      "head_ref": "chore/progress-dashboard-vi",
+      "labels": [
+        "agent:chatgpt",
+        "type:infra"
+      ],
+      "checks": [
+        {
+          "id": 113141201189,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113141200046,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113141165970,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113141165968,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113141165932,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113141165596,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 113141165358,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113141164738,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112934123732,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112933699390,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112933684677,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112933679033,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112933630359,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112933628948,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112933616512,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112933615970,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112933614100,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 12,
+      "title": "feat(auth): M01-A1 Auth Core (READY CANDIDATE)",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-07T18:17:21Z",
+      "head_sha": "ef3afd483af7143b61ad5f6f6c3fbcf9a0e6ca4f",
+      "head_ref": "feat/m01-a1-auth-core",
+      "labels": [],
+      "checks": [
+        {
+          "id": 112944204781,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112944194381,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112944155367,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112944147302,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112944145956,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112944145941,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112944144600,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112944144319,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "id": 112944143730,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112944099144,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112944098021,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112944097990,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112944096781,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112944093999,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112944093839,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112944092217,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112938530574,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112938460705,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112938459986,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112938459564,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112938458342,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112938457522,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112938435808,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112938435310,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112938433663,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 11,
+      "title": "docs(m01-a1): lock Auth Core implementation contract",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-07T10:25:05Z",
+      "head_sha": "a17935fbc63a66041e91ead50b7e9911ed316809",
+      "head_ref": "docs/m01-a1-auth-core",
+      "labels": [],
+      "checks": [
+        {
+          "id": 112745840023,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112745715726,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745673858,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745673432,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745673254,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745672528,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745671624,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745671578,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "id": 112745671487,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112745667837,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745662437,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745659178,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "id": 112745615493,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745615037,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745614454,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112745614190,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745613963,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745612479,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112745597736,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745596981,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745596888,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745595105,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112745590941,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745590299,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112745589130,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 10,
+      "title": "feat(outbox): M00-C1C outbox dispatcher + final",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-07T09:52:37Z",
+      "head_sha": "172931bddab009865a89ecc976d1e69c0b6fce46",
+      "head_ref": "feat/m00-c1c-outbox-dispatcher",
+      "labels": [],
+      "checks": [
+        {
+          "id": 112733703477,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112733701339,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112733694205,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112733645499,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112733643424,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112733642256,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112733641919,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112733641787,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112733626163,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112733595128,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112733594165,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112733594064,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112733591822,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112733591318,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112733591185,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112733589017,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112712170849,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112712128045,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112712127994,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112712127881,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112712126980,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112712126273,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112712113158,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112712112990,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112712111049,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 9,
+      "title": "M00-C1B: Audit + Outbox write primitives",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-07T07:11:25Z",
+      "head_sha": "b418fd2b9fc5d5ad0acb7b5bfbc5b574ad47f5d7",
+      "head_ref": "feat/m00-c1b-audit-outbox-write",
+      "labels": [],
+      "checks": [
+        {
+          "id": 112675600072,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112675571346,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112675571249,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112675570796,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112675570479,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112675570431,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112675570149,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112675569329,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112675568050,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112675566637,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112675518701,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112675517705,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112675517695,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112675517308,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112675517124,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112675515928,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112674315842,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112674314622,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112674314158,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112674313725,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112674313185,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112673746949,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112673677755,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112673677452,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112673675980,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 8,
+      "title": "chore(progress): GitHub-derived project progress dashboard",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-07T05:20:57Z",
+      "head_sha": "1ce1e508ef476861afd444059ae49d51a6748831",
+      "head_ref": "chore/progress-dashboard",
+      "labels": [
+        "agent:claude",
+        "type:infra"
+      ],
+      "checks": [
+        {
+          "id": 112644545353,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112644535903,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112644502411,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112644501760,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112644501594,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112644501515,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112644501344,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112644500582,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112638809070,
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112638808092,
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112638808019,
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 112638807238,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 112638806927,
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "title": "docs(m03-m04): financial consistency, withdrawal reconciliation and safe closure",
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head_sha": "645a59b80e850893282a44c0dc3080014f09f6b1",
+      "head_ref": "docs/m03-m04-financial-consistency",
+      "labels": [],
+      "checks": [
+        {
+          "id": 112626520693,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "title": "M00-C1A1: Idempotency (draft)",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-07T04:34:04Z",
+      "head_sha": "44c0fa77a222ba8f15961e20b294c19b2c14e9d2",
+      "head_ref": "feat/m00-c1a1-idempotency",
+      "labels": [
+        "agent:claude",
+        "module:M00-C1A1",
+        "type:implementation"
+      ],
+      "checks": [
+        {
+          "id": 112626868560,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "title": "feat(m00-c1a1): idempotency executor, replay and cleanup",
+      "state": "closed",
+      "draft": true,
+      "merged_at": null,
+      "head_sha": "e1c67b114a14d9622a00402e998d7587a2191821",
+      "head_ref": "feat/m00-c1a1-idempotency",
+      "labels": [],
+      "checks": [
+        {
+          "id": 112616045065,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "title": "M00-C1A0: transaction lifecycle and shared primitives",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-07T02:46:19Z",
+      "head_sha": "688e7968889cec0688d60905e0666d5f8ebb6801",
+      "head_ref": "feat/m00-c1a0-primitives",
+      "labels": [],
+      "checks": [
+        {
+          "id": 112605644455,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "title": "docs(m00-c1): transactional core design",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-07T02:42:32Z",
+      "head_sha": "de82b15e11604500aa620dc39445a30143c2fada",
+      "head_ref": "docs/m00-c1-transactional-core",
+      "labels": [],
+      "checks": [
+        {
+          "id": 112580831771,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "title": "feat(m00-b1): backend foundation — F01–F09 verified PASS",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-06T17:27:18Z",
+      "head_sha": "55c5d81edd70502ccabecbe6871e663a1587f42e",
+      "head_ref": "feat/m00-b1-foundation",
+      "labels": [],
+      "checks": [
+        {
+          "id": 112402618063,
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "number": 1,
+      "title": "Bước 5.1–5.2: kiểm tra repo, chốt nền và bàn giao M00-B1",
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-06T17:00:48Z",
+      "head_sha": "a07bbf7f534d09170e69ffe4888882f38d4d091d",
+      "head_ref": "docs/step-5-foundation",
+      "labels": [],
+      "checks": []
+    }
+  ],
+  "main": {
+    "head_sha": "5ba378db163dbdd7895dce646345e0d06f3b4e4b",
+    "ci_sha": "75760bdfe42381dc1fd17f5cc7a9c79682d7f2ad",
+    "skipped_progress_shas": [
+      "5ba378db163dbdd7895dce646345e0d06f3b4e4b",
+      "fa713673f6b04ca24b952247ca84cf72a32713c3",
+      "7ee2e8d593a13669ffc9d5319c59b499583796eb",
+      "418bbb79ae2a8bda54d45956920c9396d4d9464a",
+      "737e66a7f6cc09b08a2ec68857c70b1ddea94d97",
+      "347cc51a04a969ce7a8fa343711dab9f7afbc866",
+      "075d000032149c9dc9bf278982574bb45fa24bb2",
+      "d949903ff3b7ba770d8431f545f371f51b70eafb",
+      "a480de24f194b56d1d63696cfb58197e032173f7"
+    ],
+    "checks": [
+      {
+        "id": 113618757326,
+        "name": "Verify (Node 24, PostgreSQL 17)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 113618471877,
+        "name": "Reset review labels (head changed; cleanup only)",
+        "status": "completed",
+        "conclusion": "skipped"
+      },
+      {
+        "id": 113618468394,
+        "name": "Test and preview (read-only)",
+        "status": "completed",
+        "conclusion": "skipped"
+      },
+      {
+        "id": 113618436486,
+        "name": "Bind review label to the head SHA (commit status)",
+        "status": "completed",
+        "conclusion": "skipped"
+      },
+      {
+        "id": 113618436475,
+        "name": "Publish docs/PROGRESS.md",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  }
+}
+

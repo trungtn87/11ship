@@ -27,6 +27,7 @@ const OWNER_WORD = {
   [OWNER.NONE]: '—',
 };
 const STATE_ICON = {
+  [STATE.WAITING_OWNER_ACCEPTANCE]: '🟠',
   [STATE.DONE]: '✅',
   [STATE.DESIGN_LOCKED]: '🔒',
   [STATE.READY_FOR_CLAUDE]: '🟦',
@@ -57,6 +58,7 @@ const PR_STATE_CELL = {
 };
 
 const STATE_LABEL_VI = {
+  [STATE.WAITING_OWNER_ACCEPTANCE]: 'Chờ Owner nghiệm thu đúng head',
   [STATE.PLANNED]: 'Đã lên kế hoạch',
   [STATE.DESIGNING]: 'Đang thiết kế',
   [STATE.DESIGN_REVIEW]: 'Chờ duyệt thiết kế',
@@ -163,11 +165,13 @@ function focusTextVi(state, actor) {
   if (actor === 'claude') return claude[state] ?? 'Chưa bắt đầu (chưa được mở khóa)';
   if (state === STATE.READY_TO_MERGE) return 'Quyết định merge';
   if (state === STATE.DESIGN_REVIEW) return 'Khóa hoặc từ chối thiết kế';
+  if (state === STATE.WAITING_OWNER_ACCEPTANCE) return 'Nghiệm thu checklist và xác nhận đúng head evidence';
   return 'Không cần thao tác';
 }
 
 function nextGateVi(focus) {
   const gates = {
+    [STATE.WAITING_OWNER_ACCEPTANCE]: 'Xác nhận OWNER_ACCEPTED đúng task và head trên evidence PR',
     [STATE.READY_FOR_CLAUDE]: 'PR triển khai (agent:claude, type:implementation, module label) + required CI xanh',
     [STATE.CLAUDE_CODING]: 'Claude chuyển PR sang sẵn sàng review + required CI xanh',
     [STATE.CI_RUNNING]: 'Required CI xanh',
@@ -188,6 +192,7 @@ function nextGateVi(focus) {
 function nextActionVi(task) {
   const pr = task.pr != null ? ` #${task.pr}` : '';
   switch (task.state) {
+    case STATE.WAITING_OWNER_ACCEPTANCE: return 'Owner nghiệm thu đúng head evidence';
     case STATE.DONE: return '—';
     case STATE.BLOCKED_BY_DEPENDENCY: return `Chờ ${task.unmet.map(shortId).join(', ')}`;
     case STATE.BLOCKED_BY_CI: return 'Sửa required check trên main';
@@ -369,7 +374,9 @@ export function renderProgress(model) {
     out.push(`| **Trạng thái** | ${stateCell(focus.state)} |`);
     out.push(`| **Người phụ trách** | ${OWNER_ICON[focus.owner]} **${OWNER_LABEL[focus.owner]}** |`);
     out.push(`| **ChatGPT** | ${focusTextVi(focus.state, 'chatgpt')} |`);
-    out.push(`| **Claude** | ${focusTextVi(focus.state, 'claude')} |`);
+    const focusTask = model.tasks.find((t) => t.id === focus.task);
+    const activeCode = focusTask?.active_implementation_pr;
+    out.push(`| **Claude** | ${activeCode ? `Đã có code/PR ${prCell(repo, activeCode)}; vẫn phải xử lý gate hiện tại` : focusTextVi(focus.state, 'claude')} |`);
     out.push(`| **Chủ dự án** | ${focusTextVi(focus.state, 'owner')} |`);
     out.push(`| **Đang bị chặn bởi** | ${blockedBy} |`);
     out.push(`| **Điều kiện sang bước tiếp** | ${nextGateVi(focus)} |`);
@@ -396,13 +403,35 @@ export function renderProgress(model) {
   out.push('');
 
   // Tree
+  if (model._planTasks.some((t) => t.phase)) {
+    out.push('## Trạng thái từng phần của module');
+    out.push('');
+    out.push('Số gói đã đủ bằng chứng / số gói trong phần đó. Backend CI xanh chỉ hoàn tất gói backend. Khóa module cần đủ app test, test và xác nhận Owner; không suy ra từ phần trăm. Thiết kế nằm ở cột riêng của bảng task.');
+    out.push('');
+    out.push('| Module | Backend | App test | Test tự động | Deploy | Owner nghiệm thu | Khóa module |');
+    out.push('|---|---|---|---|---|---|---|');
+    for (const m of model.module_delivery) out.push(`| ${m.id} | ${m.phases.map((p) => p.total ? `${p.done}/${p.total}` : '—').join(' | ')} | ${m.locked ? 'Đủ bằng chứng' : 'Chưa'} |`);
+    out.push('');
+    out.push('Gate M01 → code mới M02: cần M01-UAT. M02-A-BE đã merge #21 giữ nguyên lịch sử; start gate chỉ chặn việc mới. M02-AREA-READ là prerequisite tối thiểu cho onboarding M01, không mở các nghiệp vụ M02 khác.');
+    out.push('');
+    out.push('[Roadmap, milestone và quyết định còn mở](roadmap/README.md) · [Kiểm kê nguồn](roadmap/source-inventory.md)');
+    out.push('');
+    out.push('| Task | Thiết kế | Phần việc | Gate bắt đầu còn thiếu | Code đã merge / PR đang chạy |');
+    out.push('|---|---|---|---|---|');
+    for (const t of model.tasks.filter((x) => x.kind === 'leaf')) out.push(`| ${t.id} | ${stateCell(t.design_state)} ${prCell(repo, t.design_pr)} | ${t.phase ?? '—'} | ${t.start_unmet?.join(', ') || '—'} | ${prCell(repo, t.implemented_pr)} / ${prCell(repo, t.active_implementation_pr)} |`);
+    out.push('');
+  }
   out.push('## Cây tiến độ');
   out.push('');
   out.push('Mũi tên liền là dependency, mũi tên nét đứt là task cha → task con đầu tiên. Viền vàng đậm là việc đang làm.');
   out.push('');
-  out.push('```mermaid');
-  out.push(renderMermaid(model, model._planModules));
-  out.push('```');
+  if (model._planTasks.length <= 50) {
+    out.push('```mermaid');
+    out.push(renderMermaid(model, model._planModules));
+    out.push('```');
+  } else {
+    out.push('Xem dependency đầy đủ trong bảng task và manifest; roadmap dùng sơ đồ milestone riêng để tránh cây 100+ task khó đọc.');
+  }
   out.push('');
 
   // Details table
@@ -449,7 +478,7 @@ export function renderProgress(model) {
   // Legend
   out.push('## Quy trình');
   out.push('');
-  out.push('`KẾ HOẠCH → CHATGPT THIẾT KẾ → THIẾT KẾ ĐÃ KHÓA → SẴN SÀNG GIAO CLAUDE → CLAUDE CODE → CI → CHỜ CHATGPT KIỂM TRA → CHATGPT KIỂM TRA → SẴN SÀNG MERGE → ĐÃ MERGE / ĐÃ KHÓA → task tiếp theo`');
+  out.push('`NGHIỆP VỤ → DATABASE/API/STATE MACHINE → REVIEW/KHÓA THIẾT KẾ → CLAUDE CODE → REVIEW CODE → TEST TỰ ĐỘNG → APP TEST API THẬT → OWNER NGHIỆM THU → KHÓA MODULE`');
   out.push('');
   out.push('ChatGPT thiết kế và kiểm tra, Claude triển khai và test, Chủ dự án chốt quyết định và merge. Không có gì được tự động merge.');
   out.push('');
@@ -464,3 +493,4 @@ export function withPlan(model, plan) {
     _planModules: [...plan.modules].sort((a, b) => a.order - b.order),
   };
 }
+

@@ -93,3 +93,14 @@ Sửa `docs/progress/plan.yml` (mô tả các trường ở đầu file), chạy
 - Vai trò trong `plan.yml` (`owner_role`, `design_role`, `review_role`) là cố định ở schema v1 (CLAUDE / CHATGPT / CHATGPT), được validate chặt và chưa cấu hình được.
 - Dashboard trên `main` cập nhật theo sự kiện, nên có thể trễ vài chục giây so với GitHub. Trong PR, job summary của `preview` luôn lấy dữ liệu mới nhất.
 - Nếu branch protection yêu cầu PR cho `main` thì bot không đẩy trực tiếp được; khi đó cần cho phép github-actions bypass hoặc chuyển sang nhánh riêng.
+
+
+## Roadmap tổng thể và nghiệm thu riêng (09/10/2026)
+
+Giữ schema v1 và vai trò Claude/ChatGPT, không đổi binding CI/review head. phase chia backend/app_test/automated_test/deployment/owner_acceptance/operations/design. requires_own_design cần design PR của chính slice, không kế thừa kế hoạch tổng quát thành CODE_READY. start_after chặn việc mới nhưng giữ merged implementation PR; design_state được trình bày độc lập. Trạng thái blocked vẫn hiển thị PR đang chạy.
+
+Owner acceptance khác CI: evidence PR phải merged, required CI xanh và có comment của owner_login trungtn87 đúng một dòng OWNER_ACCEPTED <task-id> <40-char-head-sha>. OWNER_REJECTED hoặc comment cho head cũ không mở gate. Collector đọc comments qua API, giữ identity/head/task, không suy từ title/body PR, không tự đăng comment thay Owner. Evidence phải mô tả bản đã test theo client/backend SHA, từng case và blocker/retest. Merge tài liệu hoặc thiết kế không đủ để coi Owner test.
+
+module_delivery chỉ đủ khóa khi tất cả leaf DONE và có phần backend/app_test/automated_test/owner_acceptance. Module M01 còn SMS/admin/account; M01-UAT chỉ A1/A2 gate mở M02. Số task là gói, không module/công sức/thời gian. roadmap_complete chưa được chốt nên phần trăm vẫn planned-tasks-only. Snapshot thật ngày09/10 là evidence tái lập dashboard, không chứng nhận deploy/UAT.
+
+Các test pre-roadmap dùng fixtures frozen để không sửa lịch sử; project-roadmap.test.mjs kiểm plan mới. Xem docs/roadmap/README.md, source-inventory.md và 13 checklist.

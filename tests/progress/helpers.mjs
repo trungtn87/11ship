@@ -11,6 +11,7 @@ export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 // `plan` is the FROZEN plan of 2026-10-07: the snapshot-based acceptance tests describe the repository on that
 // day and must not move when the live plan is corrected. `livePlan` is the shipped docs/progress/plan.yml.
 export const plan = validatePlan(parseYaml(readFileSync(resolve(root, 'tests/progress/fixtures/plan-2026-10-07.yml'), 'utf8')));
+export const beforeRoadmapPlan = validatePlan(parseYaml(readFileSync(resolve(root, 'tests/progress/fixtures/plan-before-project-roadmap.yml'), 'utf8')));
 export const livePlan = validatePlan(parseYaml(readFileSync(resolve(root, 'docs/progress/plan.yml'), 'utf8')));
 export const REQUIRED = plan.required_checks[0];
 
@@ -67,3 +68,4 @@ export const LABELS_C1A1 = ['agent:claude', 'type:implementation', 'module:M00-C
 export const taskOf = (result, id) => result.tasks.find((t) => t.id === id);
 export const stateOf = (result, id) => taskOf(result, id).state;
 export const prOf = (result, number) => result.prs.find((p) => p.number === number);
+

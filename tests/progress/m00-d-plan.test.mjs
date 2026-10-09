@@ -1,3 +1,4 @@
+// Historical pre-roadmap contract tests use the frozen plan. New shipped-plan assertions are in project-roadmap.test.mjs.
 // M00-D (Render Free + Supabase staging) on the dashboard. The rule under test: a merged D1 (configuration, tests,
 // runbook) must never read as "deployed" or "Owner-tested". Those are separate leaves (D4, D5) that only their own
 // merged evidence PRs can finish. Nothing here marks anything done by hand.
@@ -5,7 +6,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveProgress, STATE, validatePlan } from '../../scripts/progress/resolve.mjs';
-import { livePlan, checks, merged, pr, snapshot, stateOf, taskOf } from './helpers.mjs';
+import { beforeRoadmapPlan as livePlan, checks, merged, pr, snapshot, stateOf, taskOf } from './helpers.mjs';
 
 const MERGED_PRS = [1, 2, 3, 4, 6, 9, 10, 11, 12, 15, 16, 17];
 const baseHistory = () =>
@@ -106,3 +107,4 @@ describe('the dashboard focus is not taken over by the M00-D lane', () => {
     assert.equal(r.focus.task, 'M01-R1');
   });
 });
+

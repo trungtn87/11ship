@@ -12,6 +12,7 @@ import {
   REVIEW_CONTEXT,
   REVIEW_STATUS_CREATOR,
 } from './constants.mjs';
+import { ownerDecision } from './acceptance.mjs';
 
 const API_VERSION = '2022-11-28';
 
@@ -89,7 +90,7 @@ async function checkRuns(get, repo, sha) {
   return runs.map(slimCheck).sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
 }
 
-export async function collectSnapshot({ repo, mainBranch, requiredChecks, pinnedNumbers = [], token, apiBase, fetchImpl }) {
+export async function collectSnapshot({ repo, mainBranch, requiredChecks, pinnedNumbers = [], evidenceTasks = [], ownerLogin, token, apiBase, fetchImpl }) {
   const get = makeClient({ token, apiBase, fetchImpl });
   const pinned = new Set(pinnedNumbers);
 
@@ -112,6 +113,11 @@ export async function collectSnapshot({ repo, mainBranch, requiredChecks, pinned
     };
     if (open && p.head?.sha && labels.some((l) => l.startsWith('review:'))) {
       pr.review_status = await reviewStatusFor(get, repo, p.head.sha);
+    }
+    const evidence = evidenceTasks.filter((t) => t.implementation_pr === p.number || labels.includes(`module:${t.id}`));
+    if (ownerLogin && evidence.length) {
+      const comments = await paginate(get, `/repos/${repo}/issues/${p.number}/comments`);
+      pr.owner_acceptances = evidence.map((t) => ownerDecision(comments, ownerLogin, t.id)).filter(Boolean);
     }
     pulls.push(pr);
   }
@@ -169,3 +175,4 @@ export async function collectMain(get, { repo, mainBranch, lookback = MAIN_LOOKB
   const checks = ciSha ? await checkRuns(get, repo, ciSha) : [];
   return { head_sha: headSha, ci_sha: ciSha, skipped_progress_shas: skipped, checks };
 }
+

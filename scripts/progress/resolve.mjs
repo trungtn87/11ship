@@ -9,6 +9,7 @@
 
 import { FIXED_ROLES } from './constants.mjs';
 import { reviewBinding } from './review-binding.mjs';
+import { acceptanceValid } from './acceptance.mjs';
 
 export const STATE = Object.freeze({
   PLANNED: 'PLANNED',
@@ -26,6 +27,7 @@ export const STATE = Object.freeze({
   DONE: 'DONE',
   BLOCKED_BY_DEPENDENCY: 'BLOCKED_BY_DEPENDENCY',
   BLOCKED_BY_CI: 'BLOCKED_BY_CI',
+  WAITING_OWNER_ACCEPTANCE: 'WAITING_OWNER_ACCEPTANCE',
 });
 
 export const PR_STATE = Object.freeze({
@@ -97,6 +99,10 @@ export function validatePlan(plan) {
     }
     if (ids.has(t.id)) add(`duplicate task id ${t.id}`);
     ids.add(t.id);
+    if (t.requires_own_design != null && typeof t.requires_own_design !== 'boolean') add(`task ${t.id}: requires_own_design must be boolean`);
+    if (t.start_after != null && !Array.isArray(t.start_after)) add(`task ${t.id}: start_after must be a list`);
+    if (t.phase != null && !['backend', 'app_test', 'automated_test', 'owner_acceptance', 'deployment', 'operations', 'design'].includes(t.phase)) add(`task ${t.id}: invalid phase`);
+    if (t.phase === 'owner_acceptance' && !plan.owner_login) add(`task ${t.id}: owner_login required`);
     if (!moduleIds.has(t.module)) add(`task ${t.id}: unknown module ${t.module}`);
     if (t.kind !== 'leaf' && t.kind !== 'group') add(`task ${t.id}: kind must be leaf or group`);
     if (!Number.isInteger(t.order)) add(`task ${t.id}: order must be an integer`);
@@ -133,7 +139,7 @@ export function validatePlan(plan) {
       else if (p.kind !== 'group') add(`task ${t.id}: parent ${t.parent} is not a group`);
       else if (p.module !== t.module) add(`task ${t.id}: module differs from parent ${t.parent}`);
     }
-    for (const d of t.depends_on ?? []) {
+    for (const d of [...(t.depends_on ?? []), ...(t.start_after ?? [])]) {
       if (!byId.has(d)) add(`task ${t.id}: unknown dependency ${d}`);
       if (d === t.id) add(`task ${t.id}: depends on itself`);
     }
@@ -151,7 +157,7 @@ export function validatePlan(plan) {
     visiting.add(id);
     const t = byId.get(id);
     if (t) {
-      const next = [...(t.depends_on ?? []), ...(t.parent != null ? [t.parent] : [])];
+      const next = [...(t.depends_on ?? []), ...(t.start_after ?? []), ...(t.parent != null ? [t.parent] : [])];
       for (const n of next) if (byId.has(n)) visit(n, [...trail, id]);
     }
     visiting.delete(id);
@@ -374,7 +380,7 @@ export function resolveProgress(plan, snapshot) {
 
   // Design gate: nearest node (self, then ancestors) that has any counted design PR decides.
   const designOf = (t) => {
-    for (const node of [t, ...ancestors(t)]) {
+    for (const node of t.requires_own_design ? [t] : [t, ...ancestors(t)]) {
       // An explicitly combined PR is both the design reference and the implementation of its leaf.
       const designPrs = prs.filter((p) => p.counted && p.task === node.id && (p.role === 'design' || p.role === 'combined'));
       if (designPrs.length === 0) continue;
@@ -417,6 +423,8 @@ export function resolveProgress(plan, snapshot) {
       design_pr: design.pr?.number ?? (t.combined_design_implementation === true ? t.design_pr : null),
       weight: t.kind === 'leaf' ? (t.weight ?? 1) : 0,
       children: children.map((c) => c.id),
+      phase: t.phase ?? null,
+      start_unmet: (t.start_after ?? []).filter((d) => resolveTask(d).state !== STATE.DONE),
     };
     const finish = (state, extra = {}) => {
       Object.assign(out, { state }, extra);
@@ -442,6 +450,8 @@ export function resolveProgress(plan, snapshot) {
     const combined = t.combined_design_implementation === true;
     const impl = prs.filter((p) => p.counted && p.task === id && (p.role === 'implementation' || p.role === 'review-fix' || p.role === 'combined'));
     const mergedImpl = impl.filter((p) => p.lifecycle === PR_STATE.MERGED && (p.role === 'implementation' || p.role === 'combined')).sort((a, b) => b.number - a.number)[0];
+    out.implemented_pr = mergedImpl?.number ?? null;
+    out.active_implementation_pr = impl.filter((p) => p.lifecycle === PR_STATE.OPEN || p.lifecycle === PR_STATE.DRAFT).sort((a, b) => b.number - a.number)[0]?.number ?? null;
 
     if (unmet.length) {
       if (mergedImpl) {
@@ -452,12 +462,18 @@ export function resolveProgress(plan, snapshot) {
 
     if (mergedImpl) {
       const base = { pr: mergedImpl.number, ci: mergedImpl.ci, head: mergedImpl.head_sha };
+      if (mergedImpl.ci === CI.PASS && t.phase === 'owner_acceptance' && !acceptanceValid(mergedImpl.raw.owner_acceptances?.find((a) => a.task === id), plan.owner_login, id, mergedImpl.head_sha)) {
+        return finish(STATE.WAITING_OWNER_ACCEPTANCE, { ...base, owner: OWNER.OWNER, reason: 'evidence PR merged; explicit Owner acceptance on this head is missing' });
+      }
       if (mergedImpl.ci === CI.PASS) return finish(STATE.DONE, base);
       if (mergedImpl.ci === CI.FAIL) return finish(STATE.CI_FAILED, { ...base, reason: 'merged PR has failing required checks; not counted as DONE' });
       return finish(STATE.CI_RUNNING, { ...base, reason: 'merged PR has no verified green required checks; not counted as DONE' });
     }
 
     const active = impl.filter((p) => p.lifecycle === PR_STATE.OPEN || p.lifecycle === PR_STATE.DRAFT).sort((a, b) => b.number - a.number);
+    if (out.start_unmet.length) {
+      return finish(STATE.BLOCKED_BY_DEPENDENCY, { unmet: [...new Set([...unmet, ...out.start_unmet])], pr: active[0]?.number ?? design.pr?.number ?? null, ci: active[0]?.ci ?? CI.NONE, head: active[0]?.head_sha ?? null, reason: `start gate: waiting for ${out.start_unmet.join(', ')}` });
+    }
 
     // Start gate: a task that has no PR in flight may only start while required checks on main are
     // green. A task already in flight is not pulled back by a later red main.
@@ -525,6 +541,14 @@ export function resolveProgress(plan, snapshot) {
     progress,
     attention,
     roadmap_complete: plan.roadmap_complete === true,
+    module_delivery: plan.modules.map((m) => {
+      const own = resolved.filter((t) => t.module === m.id && t.kind === 'leaf');
+      const phases = ['backend', 'app_test', 'automated_test', 'deployment', 'owner_acceptance'].map((phase) => {
+        const entries = own.filter((t) => t.phase === phase);
+        return { phase, done: entries.filter((t) => t.state === STATE.DONE).length, total: entries.length };
+      });
+      return { id: m.id, phases, locked: own.length > 0 && own.every((t) => t.state === STATE.DONE) && phases.filter((p) => ['backend', 'app_test', 'automated_test', 'owner_acceptance'].includes(p.phase)).every((p) => p.total > 0) };
+    }),
   };
 }
 
@@ -634,6 +658,8 @@ function describeFocus(task, resolved, prs) {
 export function nextAction(task) {
   const pr = task.pr != null ? ` #${task.pr}` : '';
   switch (task.state) {
+    case STATE.WAITING_OWNER_ACCEPTANCE:
+      return 'Owner accept the evidence on the exact head';
     case STATE.DONE:
       return '—';
     case STATE.BLOCKED_BY_DEPENDENCY:
@@ -668,3 +694,4 @@ export function nextAction(task) {
       return '—';
   }
 }
+

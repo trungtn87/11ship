@@ -7,30 +7,15 @@
 
 🎨 [Brand Guideline v1.0 — 11 / 11Food / 11Ship](docs/current/11-brand-guideline-v1.0.md)
 
-## Tiến độ hiện tại
+## Roadmap và tiến độ
 
-Đã triển khai và merge: nền backend M00-B1, lõi giao dịch M00-C1 (transaction, idempotency, audit + outbox ghi, outbox dispatcher), Auth Core M01-A1, và onboarding M01-A2 (A2S quán, A2D tài xế). Gói sửa sau merge M00/M01 ([PR #19](docs/tasks/M00-M01-post-merge-repairs.md)) đang ở trạng thái **DRAFT**, chưa merge; xem trạng thái thật ở [docs/PROGRESS.md](docs/PROGRESS.md), không ở file này.
+[Roadmap tổng thể](docs/roadmap/README.md) kiểm kê 13 module M00–M12 và 121 task lá (13 group), gồm backend, 4 app và web quản trị. Đây là đề xuất chưa chốt toàn bộ; roadmap_complete vẫn false. [Dashboard](docs/PROGRESS.md) tách thiết kế/backend/app test/test/deploy/Owner acceptance; backend CI xanh không khóa module.
 
-Chưa có (cố ý hoãn): logout và khôi phục tài khoản, ADMIN/SYSTEM/2FA, SMS production, publisher/worker chạy thật cho outbox, và dọn dẹp theo lịch (scheduled cleanup). Chưa có bản app cho Owner test.
+Lịch sử đã merge: M00-B1/C1, Auth/onboarding M01-A1/A2 và repairs #19, M02-A backend #21, staging configuration D1 #25. D2 design #26 và code #27 đang Draft. Chưa có evidence deploy staging, app test M01 hoặc Owner UAT. Không deploy/migrate từ tác vụ roadmap.
 
-Bằng chứng: [M00-B1](docs/evidence/M00-B1.md), [M01-A1](docs/evidence/M01-A1.md), [M01-A2S](docs/evidence/M01-A2S.md), [M01-A2D](docs/evidence/M01-A2D.md).
+Ưu tiên D2/D3 → staging Render/Supabase dùng HTTPS PC/4G, dữ liệu giữ sau restart → app M01 HTML/CSS/API thật → Owner M01-UAT. Code mới M02 chờ gate đó; #21 đã merge giữ lịch sử. Design/review sau có thể làm song song. UI dùng ngay brand/CSS/usable states; Figma và SMS thật về cuối trước production. [Decision log](docs/roadmap/owner-decisions.md) ghi các nguồn thiếu/mâu thuẫn.
 
-- [Quyết định nền backend](docs/current/ADR-001-backend-foundation.md)
-- [Quyết định session và password](docs/current/ADR-002-auth-security-foundation.md)
-- [Task M00-B1 — phạm vi và nghiệm thu](docs/tasks/M00-B1-foundation.md)
-- [Prompt giao Claude](docs/tasks/CLAUDE-M00-B1.md)
-- [Bằng chứng nghiệm thu M00-B1](docs/evidence/M00-B1.md)
-- [Metadata thư viện đã kiểm tra](docs/evidence/M00-B1-dependency-metadata.json)
-- [Preflight bước 5.1](docs/current/11Ship-buoc-5.1-repository-preflight.md)
-
-## Staging (Render + Supabase) — cấu hình, chưa triển khai
-
-M00-D1 chỉ chuẩn bị cấu hình: `render.yaml` (một web service Render Free, không tự deploy), kết nối PostgreSQL qua TLS xác minh đầy đủ (`DB_SSL_CA` hoặc `DB_SSL_CA_FILE`; staging/production không khởi động nếu thiếu) và lệnh migration từ xa riêng `npm run db:migrate:remote`. **Chưa deploy, chưa migrate Supabase thật**, và dịch vụ chưa thể chạy thật cho đến khi có M00-D2 (OTP staging). Hướng dẫn: [runbook](ops/runbooks/render-supabase-staging.md), bằng chứng: [M00-D1](docs/evidence/M00-D1.md).
-
-## Cách làm việc
-
-ChatGPT thiết kế, chia task và review. Claude code từng task. Owner test nghiệp vụ và duyệt. Mỗi gói dùng nhánh riêng, giữ base/head commit và bằng chứng test. Chưa merge khi chưa PASS.
-
+Staging D1 hiện chỉ có render.yaml, TLS và remote migration command; chưa deploy. [Runbook](ops/runbooks/render-supabase-staging.md), [D1 evidence](docs/evidence/M00-D1.md). D2 dùng fixture chưa xác minh, registration khóa; không ghi test account verified hoặc mang fixture/key test lên production.
 
 ## Chạy backend ở máy phát triển
 
@@ -142,3 +127,4 @@ Xem [.env.example](.env.example). Thiếu hoặc sai biến thì tiến trình t
 ### Phạm vi hiện tại
 
 Backend gồm nền M00 (health, cấu hình, pool, migration, error contract, transaction, idempotency, audit/outbox), Auth Core (M01-A1) và onboarding Shop/Driver (M01-A2). Chưa có Wallet, Delivery, frontend, SMS hay triển khai production, và các mục hoãn nêu ở phần Tiến độ hiện tại. Hướng dẫn sao lưu/khôi phục ở [ops/runbooks](ops/runbooks/database-backup-restore-guidance.md) chỉ là hướng dẫn cho tương lai, chưa được kiểm thử.
+
