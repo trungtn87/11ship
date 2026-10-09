@@ -168,9 +168,15 @@ describe('AllExceptionsFilter', () => {
   describe('typed error registry', () => {
     const codes = Object.keys(APP_ERROR_DEFINITIONS) as AppErrorCode[];
 
-    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes, the Shop onboarding codes, the Driver onboarding codes and the Shop management codes', () => {
+    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes, the Shop onboarding codes, the Driver onboarding codes, the Shop management codes and the administration login codes', () => {
       expect([...codes].sort()).toEqual([
         'ACCOUNT_DISABLED',
+        'ADMIN_AUTH_RATE_LIMITED',
+        'ADMIN_CSRF_INVALID',
+        'ADMIN_ENROLLMENT_NOT_ALLOWED',
+        'ADMIN_PREAUTH_INVALID',
+        'ADMIN_SESSION_INVALID',
+        'ADMIN_TOTP_INVALID',
         'DRIVER_PENDING_APPROVAL',
         'DRIVER_PROFILE_EXISTS',
         'IDEMPOTENCY_BUSY',
