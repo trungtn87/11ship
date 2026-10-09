@@ -64,3 +64,28 @@ Module M02-A có bốn mốc riêng BE/UI/E2E/UAT; menu M02-B thiết kế riên
 - Khi 7 ngày có cùng lịch thì dòng Cả tuần hiển thị lịch chung; khác nhau thì hiển thị “Tùy chỉnh theo ngày”. Mở form chọn lịch chung mới khi bấm dòng này.
 - Không thêm weekday=0/all hoặc cột lịch chung vào DB/API; frontend expand thành weekdays 1..7, dùng expected_version/key như PUT hiện có.
 - E2E/UAT: nhập 22:00–07:00 ở Cả tuần → 7 ngày đúng giờ qua đêm; sửa riêng CN → các ngày khác nguyên vẹn, Cả tuần hiện “Tùy chỉnh theo ngày”; lưu/reload giữ đúng dữ liệu; apply-all lần nữa thay thế cả tuần; apply-all chưa Lưu không thay dữ liệu server.
+
+## Quy trình và phân công giai đoạn — Owner chốt 09/10/2026
+
+Áp dụng [quy trình bắt buộc](../process/11ship-delivery-workflow.md), [AGENTS.md](../../AGENTS.md) và [mẫu module](../templates/module-delivery-checklist.md). Mục này điều chỉnh phân công/gate; giữ nguyên phạm vi kỹ thuật và evidence lịch sử ở trên.
+
+| Giai đoạn | Thực hiện | Gate chuyển |
+|---|---|---|
+| Nghiệp vụ/API/dữ liệu | ChatGPT thiết kế | Owner duyệt |
+| Ảnh UI chi tiết và trạng thái liên quan | ChatGPT thiết kế | Owner duyệt UI; backend-only ghi N/A có lý do |
+| Gói giao task | ChatGPT | Scope/base/hợp đồng/checklist đã rõ |
+| Code/build/test/CI và sửa finding | Claude | CI đúng final head + ChatGPT review đạt |
+| Test local, phản hồi/sửa | Owner test; ChatGPT phân tích; Claude sửa | Owner xác nhận local đạt |
+| Bản web/điện thoại test | Claude chuẩn bị | Local đạt, bản/SHA hiện tại review đạt |
+| Test thiết bị thật và liên thông | Owner | Từng app liên quan đạt |
+| Nghiệm thu/merge/đóng | Owner quyết định | Đủ gate và bằng chứng; không suy từ backend DONE |
+
+Checklist gate mới (chưa kiểm chứng, không phủ nhận kết quả test kỹ thuật lịch sử):
+- [ ] Xác định task con và ứng dụng liên quan; điền ma trận theo mẫu.
+- [ ] Ghi link Owner duyệt nghiệp vụ/UI, hoặc N/A có lý do.
+- [ ] Claude cung cấp bản local, hướng dẫn và bằng chứng đúng SHA; ChatGPT review.
+- [ ] Owner test local, sửa phản hồi và xác nhận đạt.
+- [ ] Owner test thiết bị thật riêng từng app và liên thông, xác nhận đạt.
+- [ ] Owner quyết định phạm vi nghiệm thu, merge và đóng M02 khi đủ các task liên quan.
+
+M02-A backend-only chưa đóng toàn M02. Phần UI được thiết kế bằng ảnh chi tiết/mẫu HTML theo lựa chọn mới của Owner; không bắt buộc Figma ở giai đoạn này. Tách task UI/local/điện thoại của ứng dụng liên quan.
