@@ -3,6 +3,17 @@ Ngày 09/10/2026. DRAFT CONTRACT, chưa READY_FOR_CLAUDE.
 Nguồn: workflow/ADR-002 main; main login-service.ts, session-repository.ts, auth.controller.ts; quyết định Owner SYSTEM duy nhất, form chung và 2FA bắt buộc.
 ChatGPT thiết kế/handoff/review; Claude code/tests/build; Owner duyệt/test/merge. M00 tạm dừng; nghiệm thu local chưa mở.
 
+## Quyết định Owner chốt ngày 09/10/2026
+Nguồn: Owner nói “Chốt các điểm còn lại” sau bảng tham số đăng nhập và sửa reload.
+- Hoàn tất bước 2FA trong 5 phút.
+- Tối đa 5 lần sai mỗi challenge; budget 5 mã sai/15 phút theo user, khóa tạm15 phút để challenge mới không reset budget.
+- Phiên quản trị TTL tuyệt đối8 giờ; tải lại trang giữ phiên, không kéo dài TTL.
+- Chỉ sau login +2FA thành công trên máy mới mới thu hồi phiên quản trị cũ; thất bại không đá phiên cũ.
+- Cookie web bảo mật HttpOnly/Secure; backend kiểm phiên/quyền sau reload. Không giữ bearer trong localStorage.
+Các lựa chọn kỹ thuật đã trình bày trong luồng (TOTP 6 số/30s, cửa sổ current/previous, budget mật khẩu10 lỗi/15 phút) được ghi nhận cùng đề xuất còn lại; không suy rộng sang scope tạo ADMIN/recovery hoặc invariant một thiết bị toàn hệ.
+Màn login chung đã được Owner duyệt; không tự xác nhận toàn bộ UI state/recovery.
+Gói này đã chốt tham số nghiệp vụ đăng nhập; vẫn DRAFT kỹ thuật: cần final API/error/schema/migration/CSRF và frontend integration trước READY_FOR_CLAUDE. Không code/merge/deploy từ quyết định này.
+
 ## Trạng thái duyệt
 Owner ngày 09/10/2026 nói “Ok. Chốt màn login”: ghi nhận duyệt màn login chung đã trình bày, không tự mở rộng thành duyệt mọi màn/trạng thái/recovery hoặc toàn bộ API/schema.
 SYSTEM duy nhất khởi tạo sẵn, ADMIN chỉ do SYSTEM tạo, tất cả quản trị phải qua 2FA là nghiệp vụ đã chốt.
@@ -71,7 +82,7 @@ Phải có migration forward/backfill không cấp quyền cho user cũ; rollbac
 Evidence đúng final SHA; CI không thay Owner acceptance.
 
 ## Việc cần làm trước giao code
-- [ ] Owner chốt TTL/cửa sổ/rate-limit và phạm vi gói; reload giữ phiên theo phản hồi, transport cookie/CSRF cần review.
+- [x] Owner chốt các tham số đăng nhập còn lại ngày09/10/2026; reload giữ phiên.\n- [ ] Khóa chi tiết cookie/CSRF, API/schema và phạm vi frontend trước code.
 - [ ] Review kỹ thuật schema/API lỗi/idempotency/audience/lock order/migration và dependency TOTP.
 - [ ] Chốt frontend tích hợp và đủ UI state duyệt; login đã duyệt không thay toàn gate UI.
 - [ ] Tạo handoff Claude final có base SHA, files, test matrix, PR Draft và điều kiện chuyển.
