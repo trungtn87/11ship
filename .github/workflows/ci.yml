@@ -104,6 +104,9 @@ jobs:
       - name: Deploy configuration tests (Render Blueprint, remote migration gates)
         run: npm run deploy:test
 
+      - name: Windows local launcher contract tests
+        run: npm run launcher:test
+
       - name: Create restricted test role, database and wrong-user fixture
         # PGPASSWORD (the service admin password) exists only in this step. The tests never see it.
         env:
