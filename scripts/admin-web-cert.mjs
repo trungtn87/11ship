@@ -29,7 +29,9 @@ export function createLocalCertificate(directory, days = 30) {
 }
 
 if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const directory = join(dirname(fileURLToPath(import.meta.url)), '..', '.local', 'admin-web-tls');
-  const { cert } = createLocalCertificate(directory);
-  console.log(`certificate written to ${cert} (self-signed, localhost + 127.0.0.1, 30 days)`);
+  // Optional arguments (used by the browser integration test): target directory and validity in days.
+  const directory = process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..', '.local', 'admin-web-tls');
+  const days = process.argv[3] === undefined ? 30 : Number(process.argv[3]);
+  const { cert } = createLocalCertificate(directory, days);
+  console.log(`certificate written to ${cert} (self-signed, localhost + 127.0.0.1, ${String(days)} days)`);
 }

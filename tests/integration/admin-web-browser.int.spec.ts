@@ -1,11 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
 import { createHash, X509Certificate } from 'node:crypto';
+import { ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { Server } from 'node:https';
 import { AddressInfo, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { ADMIN_PREAUTH_COOKIE, ADMIN_SESSION_COOKIE } from '../../apps/backend/src/admin-auth/admin-auth-constants';
 import { COPY } from '../../apps/admin-web/src/core/messages';
 import {
@@ -44,8 +43,36 @@ function repoRoot(): string {
   throw new Error('repository root not found');
 }
 
-async function importScript<T>(relative: string): Promise<T> {
-  return (await import(pathToFileURL(join(repoRoot(), relative)).href)) as T;
+/** Runs one of the repository's admin web scripts exactly as a developer does (`node scripts/...`). */
+function runScript(name: string, args: string[] = []): void {
+  execFileSync(process.execPath, [join(repoRoot(), 'scripts', name), ...args], { cwd: repoRoot(), stdio: 'pipe' });
+}
+
+/** Starts the local HTTPS front (scripts/admin-web-dev.mjs) as its own process and waits until it listens. */
+async function startFront(env: Record<string, string>): Promise<ChildProcess> {
+  const child = spawn(process.execPath, [join(repoRoot(), 'scripts', 'admin-web-dev.mjs')], {
+    cwd: repoRoot(),
+    env: { ...process.env, ...env },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  await new Promise<void>((resolve, reject) => {
+    let output = '';
+    const timer = setTimeout(() => reject(new Error(`admin web front did not start: ${output}`)), 20_000);
+    const onData = (chunk: Buffer) => {
+      output += chunk.toString('utf8');
+      if (output.includes('admin web: ')) {
+        clearTimeout(timer);
+        resolve();
+      }
+    };
+    child.stdout?.on('data', onData);
+    child.stderr?.on('data', onData);
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error(`admin web front exited (${String(code)}): ${output}`));
+    });
+  });
+  return child;
 }
 
 async function freePort(): Promise<number> {
@@ -66,7 +93,7 @@ const MOBILE = { width: 390, height: 844, mobile: true };
 
 describe('M01-D-LOGIN-UI - admin web in a real browser against the real backend', () => {
   let app: AdminApp;
-  let front: Server;
+  let front: ChildProcess | undefined;
   let browser: Browser;
   let origin: string;
   let system: SystemAccount;
@@ -74,32 +101,31 @@ describe('M01-D-LOGIN-UI - admin web in a real browser against the real backend'
   const shots: Shot[] = [];
 
   beforeAll(async () => {
-    const { buildAdminWeb } = await importScript<{ buildAdminWeb(options: { quiet: boolean }): string }>('scripts/admin-web-build.mjs');
-    const distDir = buildAdminWeb({ quiet: true });
-    const { createLocalCertificate } = await importScript<{ createLocalCertificate(directory: string, days: number): { key: string; cert: string } }>(
-      'scripts/admin-web-cert.mjs',
-    );
+    // The same three commands the local run guide uses: build, certificate, HTTPS front.
+    runScript('admin-web-build.mjs');
     tlsDir = mkdtempSync(join(tmpdir(), 'admin-web-tls-'));
-    const tls = createLocalCertificate(tlsDir, 1);
-    const cert = readFileSync(tls.cert);
-    const spki = new X509Certificate(cert).publicKey.export({ type: 'spki', format: 'der' });
+    runScript('admin-web-cert.mjs', [tlsDir, '1']);
+    const certPath = join(tlsDir, 'cert.pem');
+    const spki = new X509Certificate(readFileSync(certPath)).publicKey.export({ type: 'spki', format: 'der' });
     const spkiHash = createHash('sha256').update(spki).digest('base64');
 
     const port = await freePort();
     origin = `https://localhost:${String(port)}`;
     // The local front's origin, plus the fixture origin used by the API helpers that prepare an ACTIVE factor.
     app = await startAdminApp({ allowedOrigins: [origin, ADMIN_ORIGIN] });
-    const { createAdminWebServer } = await importScript<{
-      createAdminWebServer(options: { distDir: string; backendUrl: string; key: Buffer; cert: Buffer }): Server;
-    }>('scripts/admin-web-dev.mjs');
-    front = createAdminWebServer({ distDir, backendUrl: app.running.baseUrl, key: readFileSync(tls.key), cert });
-    await new Promise<void>((resolve) => front.listen(port, '127.0.0.1', resolve));
+    front = await startFront({
+      ADMIN_WEB_PORT: String(port),
+      ADMIN_WEB_HOST: 'localhost',
+      ADMIN_WEB_BACKEND: app.running.baseUrl,
+      ADMIN_WEB_TLS_CERT: certPath,
+      ADMIN_WEB_TLS_KEY: join(tlsDir, 'key.pem'),
+    });
     browser = await launchChrome(spkiHash);
   }, 120_000);
 
   afterAll(async () => {
     await browser?.close();
-    await new Promise<void>((resolve) => (front === undefined ? resolve() : front.close(() => resolve())));
+    front?.kill('SIGTERM');
     await app?.close();
     rmSync(tlsDir, { recursive: true, force: true });
     publishShots(shots);
