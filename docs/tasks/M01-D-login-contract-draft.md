@@ -26,7 +26,7 @@ Frontend chưa thống nhất #24/#29/#31: phải chọn/tích hợp nền UI đ
 5. TOTP đề xuất 6 số, SHA-1, period30s theo profile tương thích Authenticator; cửa sổ current và previous step, không future step. Truy vấn giờ DB sau khóa; lưu last accepted step toàn factor, chặn dùng lại ngay cả giữa hai challenge.
 6. Verify/enroll tối đa5 lần mỗi pre-auth; hết lượt token hết hiệu lực. Thêm budget theo user để tạo challenge mới không reset khả năng brute force: đề xuất5 mã sai/15 phút, khóa tạm15 phút; mật khẩu đề xuất10 lỗi/15 phút theo normalized phone và IP. Counter dùng storage chung, không in-memory nếu nhiều instance; hành vi IP/proxy cần khóa deployment trước code.
 7. Verify thành công consume pre-auth, recheck password version/user/member/factor và cấp opaque admin session trong cùng transaction; revoke admin session cũ cùng user. Login mật khẩu thất bại hoặc challenge mới chưa thành công không được đá phiên đang hoạt động.
-8. Phiên quản trị TTL tuyệt đối8 giờ, không refresh/sliding; frontend bearer chỉ trong bộ nhớ, reload phải login lại theo lựa chọn cần duyệt. /me trả quyền từ backend hiện tại, không secret.
+8. Phiên quản trị TTL tuyệt đối8 giờ, không refresh/sliding; web dùng session cookie HttpOnly/Secure/SameSite với thời hạn khớp phiên server; tải lại trang gọi /me để phục hồi phiên/quyền, không nhập lại mật khẩu/2FA khi phiên còn hợp lệ. Cookie không kéo dài TTL khi reload. Đây là sửa đề xuất theo phản hồi Owner, chi tiết CSRF/origin/deployment cần khóa trước code. /me trả quyền từ backend hiện tại, không secret.
 9. Logout revoke server, gọi lại an toàn; UI clear token. Mất phản hồi verify không replay bearer bằng challenge đã consumed: đăng nhập lại và dùng mã mới, UI nói rõ; không auto-retry mutation cấp phiên.
 10. Member/role khóa hoặc factor/password đổi vô hiệu hóa pre-auth và session liên quan. Mutation quản trị recheck trạng thái dưới transaction khóa, không chỉ guard.
 Không thay tất cả giá trị config auth cũ; tham số quản trị riêng. Các giá trị này chưa được Owner chốt.
@@ -42,7 +42,7 @@ TOTP tham chiếu: https://www.rfc-editor.org/rfc/rfc6238.html — period và kh
 | POST /totp/verify | pre-auth bearer + code | consume challenge, cấp admin session |
 | GET /me | admin bearer đã 2FA | user_id, admin_role, scopes, expires_at |
 | POST /logout | admin bearer | thu hồi phiên; 204 hoặc error envelope theo contract final |
-Token pre-auth và admin có audience/type tách biệt; không dùng lẫn, kể cả gửi vào endpoint app. Không secret/token trong URL.
+Token pre-auth và admin có audience/type tách biệt; không dùng lẫn, kể cả gửi vào endpoint app. Không secret/token trong URL. Với web, phiên admin dùng cookie HttpOnly/Secure, không trả bearer vào JavaScript/localStorage; cập nhật bảng API credential admin thành cookie trong contract final. Mutation cookie bắt buộc CSRF protection và kiểm origin; chốt same-origin routing trước code. Pre-auth transport cũng phải khóa riêng, không mặc định cookie session cấp quyền trước 2FA.
 Các body/schema/error enums/HTTP codes cuối phải đóng trong phụ lục trước handoff, không giao Claude tự đoán.
 
 ## Dữ liệu logical đề xuất
@@ -71,7 +71,7 @@ Phải có migration forward/backfill không cấp quyền cho user cũ; rollbac
 Evidence đúng final SHA; CI không thay Owner acceptance.
 
 ## Việc cần làm trước giao code
-- [ ] Owner chốt TTL/cửa sổ/rate-limit/reload và phạm vi gói.
+- [ ] Owner chốt TTL/cửa sổ/rate-limit và phạm vi gói; reload giữ phiên theo phản hồi, transport cookie/CSRF cần review.
 - [ ] Review kỹ thuật schema/API lỗi/idempotency/audience/lock order/migration và dependency TOTP.
 - [ ] Chốt frontend tích hợp và đủ UI state duyệt; login đã duyệt không thay toàn gate UI.
 - [ ] Tạo handoff Claude final có base SHA, files, test matrix, PR Draft và điều kiện chuyển.
