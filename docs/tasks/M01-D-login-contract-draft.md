@@ -29,44 +29,10 @@ Bootstrap SYSTEM; mật khẩu → enroll/challenge TOTP → phiên quản trị
 Không tạo ADMIN trong gói 1; không dashboard nghiệp vụ, recovery/reset 2FA, đổi mật khẩu/phone hay SMS thử. ADMIN flow được test bằng fixture integration riêng, không seed ADMIN qua public API.
 Frontend chưa thống nhất #24/#29/#31: phải chọn/tích hợp nền UI được review trước code UI; backend có thể tách PR trước. Không dùng gói này làm quyền merge các PR đó.
 
-## Luồng và tham số đề xuất
-1. Bootstrap operator nhập SĐT chuẩn hóa hợp lệ và mật khẩu theo validator hiện hành, không credential trong git/log. Chạy lại cùng SYSTEM là no-op, số khác từ chối; không ghi đè mật khẩu. Transaction + singleton DB constraint; nếu SĐT đã thuộc user hiện có thì từ chối và yêu cầu thiết kế xử lý riêng, không tự nâng quyền.
-2. Login kiểm user/password và membership quản trị còn active; dummy hash cho số không tồn tại. Trước 2FA chỉ cấp pre-auth token ngẫu nhiên 32 byte, digest trong DB, TTL 5 phút. Không cấp access_token quản trị.
-3. Chưa enroll: pre-auth cho phép start enrollment. Secret ngẫu nhiên riêng user, lưu mã hóa bằng keyring AEAD có context user/factor; không hash secret TOTP vì verifier cần sử dụng. Secret pending không trở thành active trước verify thành công; không ghi vào idempotency plaintext/cache/log.
-4. Đã enroll: pre-auth chỉ được verify challenge, không được đọc lại secret hoặc bắt đầu enrollment để thay factor.
-5. TOTP đề xuất 6 số, SHA-1, period30s theo profile tương thích Authenticator; cửa sổ current và previous step, không future step. Truy vấn giờ DB sau khóa; lưu last accepted step toàn factor, chặn dùng lại ngay cả giữa hai challenge.
-6. Verify/enroll tối đa5 lần mỗi pre-auth; hết lượt token hết hiệu lực. Thêm budget theo user để tạo challenge mới không reset khả năng brute force: đề xuất5 mã sai/15 phút, khóa tạm15 phút; mật khẩu đề xuất10 lỗi/15 phút theo normalized phone và IP. Counter dùng storage chung, không in-memory nếu nhiều instance; hành vi IP/proxy cần khóa deployment trước code.
-7. Verify thành công consume pre-auth, recheck password version/user/member/factor và cấp opaque admin session trong cùng transaction; revoke admin session cũ cùng user. Login mật khẩu thất bại hoặc challenge mới chưa thành công không được đá phiên đang hoạt động.
-8. Phiên quản trị TTL tuyệt đối8 giờ, không refresh/sliding; web dùng session cookie HttpOnly/Secure/SameSite với thời hạn khớp phiên server; tải lại trang gọi /me để phục hồi phiên/quyền, không nhập lại mật khẩu/2FA khi phiên còn hợp lệ. Cookie không kéo dài TTL khi reload. Đây là sửa đề xuất theo phản hồi Owner, chi tiết CSRF/origin/deployment cần khóa trước code. /me trả quyền từ backend hiện tại, không secret.
-9. Logout revoke server, gọi lại an toàn; UI clear token. Mất phản hồi verify không replay bearer bằng challenge đã consumed: đăng nhập lại và dùng mã mới, UI nói rõ; không auto-retry mutation cấp phiên.
-10. Member/role khóa hoặc factor/password đổi vô hiệu hóa pre-auth và session liên quan. Mutation quản trị recheck trạng thái dưới transaction khóa, không chỉ guard.
-Không thay tất cả giá trị config auth cũ; tham số quản trị riêng. Các giá trị này chưa được Owner chốt.
-
-TOTP tham chiếu: https://www.rfc-editor.org/rfc/rfc6238.html — period và không chấp nhận lại mã đã xác nhận. Tham số TTL/rate limit/session trên là đề xuất dự án, không coi RFC đã chỉ định.
-
-## API boundary đề xuất (prefix /v1/admin-auth)
-| Method/path | Credential | Kết quả |
-|---|---|---|
-| POST /login | phone/password/device | preauth_token + next_step ENROLL_TOTP hoặc VERIFY_TOTP + expires_at; chưa access_token |
-| POST /totp/enrollment | pre-auth bearer | secret/otpauth_uri pending; Cache-Control:no-store; chỉ chưa enroll |
-| POST /totp/enrollment/verify | pre-auth bearer + code | consume challenge, activate factor, cấp admin session |
-| POST /totp/verify | pre-auth bearer + code | consume challenge, cấp admin session |
-| GET /me | admin bearer đã 2FA | user_id, admin_role, scopes, expires_at |
-| POST /logout | admin bearer | thu hồi phiên; 204 hoặc error envelope theo contract final |
-Token pre-auth và admin có audience/type tách biệt; không dùng lẫn, kể cả gửi vào endpoint app. Không secret/token trong URL. Với web, phiên admin dùng cookie HttpOnly/Secure, không trả bearer vào JavaScript/localStorage; cập nhật bảng API credential admin thành cookie trong contract final. Mutation cookie bắt buộc CSRF protection và kiểm origin; chốt same-origin routing trước code. Pre-auth transport cũng phải khóa riêng, không mặc định cookie session cấp quyền trước 2FA.
-Các body/schema/error enums/HTTP codes cuối phải đóng trong phụ lục trước handoff, không giao Claude tự đoán.
-
-## Dữ liệu logical đề xuất
-- admin_memberships: user FK, SYSTEM/ADMIN, trạng thái; SYSTEM singleton.
-- admin_totp_factors: user FK, pending/active, encrypted secret/key_id/nonce/tag, factor version và last accepted step.
-- admin_auth_challenges: digest/type, user/password version/factor version/device, TTL/attempts/consumed.
-- admin_sessions: digest/user/device/admin membership version/factor version, MFA completed, expiry/revoked.
-- admin_auth_limits: shared window/lockout cho login và verify.
-Tách privilege khỏi SHOP/DRIVER role enum cũ. Đây là mô hình logical, chưa SQL migration locked.
-Lock ordering user → member → factor → challenge → sessions; rate-limit lock thứ tự riêng phải thiết kế nhất quán để không deadlock.
-Audit success cùng transaction; denied sau rollback theo primitive hiện hữu; không secret/code/hash/token/phone plaintext trong metadata.
-Phải có migration forward/backfill không cấp quyền cho user cũ; rollback/recovery runbook trước deploy. Không mất secret key rồi tự reset yếu tố.
-
+## Contract kỹ thuật hiện hành
+Đọc [backend handoff](M01-D-LOGIN-backend-handoff.md) cho API/schema/cookie/CSRF và các sửa F01–F06. Tài liệu này chỉ lưu quyết định nghiệp vụ và phạm vi; không duy trì bảng bearer/schema tạm thứ hai.
+Web dùng HttpOnly/Secure cookie; /state và /me trả CSRF ổn định theo credential, F5 không đăng nhập lại.
+Gói login trả admin_role, chưa trả scopes; ADMIN chưa có quyền module. Scope sẽ thiết kế ở task tạo ADMIN.
 ## Acceptance bắt buộc
 - Singleton bootstrap: concurrent/rerun/conflict, không thay mật khẩu, không nâng user cũ.
 - Sai phone/password/no admin membership; không có privileged session trước2FA.
@@ -82,7 +48,8 @@ Phải có migration forward/backfill không cấp quyền cho user cũ; rollbac
 Evidence đúng final SHA; CI không thay Owner acceptance.
 
 ## Việc cần làm trước giao code
-- [x] Owner chốt các tham số đăng nhập còn lại ngày09/10/2026; reload giữ phiên.\n- [ ] Khóa chi tiết cookie/CSRF, API/schema và phạm vi frontend trước code.
+- [x] Owner chốt các tham số đăng nhập còn lại ngày09/10/2026; reload giữ phiên.
+- [ ] Khóa chi tiết cookie/CSRF, API/schema và phạm vi frontend trước code.
 - [ ] Review kỹ thuật schema/API lỗi/idempotency/audience/lock order/migration và dependency TOTP.
 - [ ] Chốt frontend tích hợp và đủ UI state duyệt; login đã duyệt không thay toàn gate UI.
 - [ ] Tạo handoff Claude final có base SHA, files, test matrix, PR Draft và điều kiện chuyển.
