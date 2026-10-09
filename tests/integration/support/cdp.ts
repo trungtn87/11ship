@@ -148,6 +148,9 @@ export class Page {
   #pending = new Map<number, Pending>();
   #listeners: { method: string; callback: (params: Record<string, unknown>) => void }[] = [];
   readonly consoleErrors: string[] = [];
+  /** Every request this page sent (method + URL), in order; used to prove that nothing was re-sent. */
+  readonly requests: { method: string; url: string }[] = [];
+  #paused: { requestId: string; url: string; status: number }[] = [];
 
   constructor(
     private readonly url: string,
@@ -184,6 +187,17 @@ export class Page {
     await this.send('Runtime.enable');
     await this.send('Network.enable');
     this.on('Runtime.exceptionThrown', (params) => this.consoleErrors.push(JSON.stringify(params).slice(0, 500)));
+    this.on('Network.requestWillBeSent', (params) => {
+      const request = params.request as { method: string; url: string };
+      this.requests.push({ method: request.method, url: request.url });
+    });
+    this.on('Fetch.requestPaused', (params) => {
+      this.#paused.push({
+        requestId: String(params.requestId),
+        url: String((params.request as { url: string }).url),
+        status: Number(params.responseStatusCode ?? 0),
+      });
+    });
   }
 
   send(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
@@ -326,6 +340,43 @@ export class Page {
       clip: { x: 0, y: 0, width, height, scale: 1 },
     });
     return Buffer.from(String(shot.data), 'base64');
+  }
+
+  /** POST requests this page sent to a path (exact pathname match). */
+  posts(path: string): number {
+    return this.requests.filter((request) => request.method === 'POST' && new URL(request.url).pathname === path).length;
+  }
+
+  /**
+   * TEST FAULT INJECTION: pause the responses of requests matching `urlPattern` AFTER the server answered (the backend
+   * really processed and committed the request), so the test can drop them with failResponse().
+   */
+  async interceptResponses(urlPattern: string): Promise<void> {
+    await this.send('Fetch.enable', { patterns: [{ urlPattern, requestStage: 'Response' }] });
+  }
+
+  async stopIntercepting(): Promise<void> {
+    await this.send('Fetch.disable');
+  }
+
+  /** Waits for the next paused response (see interceptResponses). */
+  async nextPausedResponse(timeoutMs = 15_000): Promise<{ requestId: string; url: string; status: number }> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const next = this.#paused.shift();
+      if (next !== undefined) {
+        return next;
+      }
+      if (Date.now() > deadline) {
+        throw new Error('no paused response');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  /** The paused response never reaches the page: fetch() rejects as on a cut connection (Set-Cookie is not applied). */
+  async failResponse(requestId: string): Promise<void> {
+    await this.send('Fetch.failRequest', { requestId, errorReason: 'ConnectionReset' });
   }
 
   async close(): Promise<void> {

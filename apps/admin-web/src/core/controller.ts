@@ -236,7 +236,9 @@ export class AdminAuthController {
       await this.#enterSession(this.#advance(), undefined);
       return 'sent';
     }
-    if (result.kind === 'network') {
+    // No usable answer (connection lost, communication timeout) or a 5xx (proxy timeout, outcome unknown): the server may
+    // have committed. Only GET /state is read to find out; the code is never sent again.
+    if (result.kind === 'network' || result.status >= 500) {
       await this.#afterLostResponse(generation);
       return 'sent';
     }
@@ -525,11 +527,19 @@ export class AdminAuthController {
   }
 
   /**
-   * The code was sent but no answer came back. The server may have committed (session cookie set) or not. Only a READ
-   * is made: SESSION -> shell; the same step still alive -> stay, the user decides; no step and no session -> login with
-   * the instruction to use a new code. The code is never sent again automatically.
+   * The code was sent but no usable answer came back. The server may have committed (session cookie set) or not, and
+   * another tab may have replaced the step meanwhile. Only a READ is made, and the screen follows it:
+   *  - SESSION -> GET /me -> shell;
+   *  - the SAME challenge (same CSRF token) and the same kind of step -> stay, keep the QR, show the connection error; the
+   *    user decides whether to submit again;
+   *  - another challenge or another kind of step -> everything of the old step is dropped (CSRF, secret, otpauth URI,
+   *    QR, typed code) and the new step is entered; a new ENROLL_TOTP step loads its own secret through the protected
+   *    enrollment endpoint with the new CSRF token;
+   *  - 401 -> login with "use a new code".
+   * The code is never sent again automatically, and an answer that arrives after the flow moved on is ignored.
    */
   async #afterLostResponse(generation: number): Promise<void> {
+    const sentWithCsrf = this.#memory.csrf;
     const result = await this.api.state();
     if (generation !== this.#generation) {
       return;
@@ -538,14 +548,22 @@ export class AdminAuthController {
     if (current.name !== 'enroll' && current.name !== 'verify') {
       return;
     }
-    if (result.kind === 'ok' && result.data.state === 'SESSION') {
-      this.#forget();
-      await this.#enterSession(this.#advance(), undefined);
-      return;
-    }
     if (result.kind === 'ok') {
-      this.#remember(result.data.csrfToken, result.data.expiresAt);
-      this.#set({ ...current, pending: false, codeError: COPY.unavailable });
+      const state = result.data;
+      if (state.state === 'SESSION') {
+        this.#forget();
+        await this.#enterSession(this.#advance(), undefined);
+        return;
+      }
+      const sameKind = (current.name === 'enroll') === (state.nextStep === 'ENROLL_TOTP');
+      if (sameKind && state.csrfToken === sentWithCsrf) {
+        this.#remember(state.csrfToken, state.expiresAt);
+        this.#set({ ...current, pending: false, codeError: COPY.unavailable });
+        return;
+      }
+      this.#forget();
+      this.#remember(state.csrfToken, state.expiresAt);
+      this.#enterStep(state.nextStep, COPY.stepChanged);
       return;
     }
     if (result.kind === 'error' && result.status === 401) {

@@ -1,10 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
 import { createHash, X509Certificate } from 'node:crypto';
-import { ChildProcess, execFileSync, spawn } from 'node:child_process';
+import { ChildProcess } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { AddressInfo, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { ADMIN_PREAUTH_COOKIE, ADMIN_SESSION_COOKIE } from '../../apps/backend/src/admin-auth/admin-auth-constants';
 import { COPY } from '../../apps/admin-web/src/core/messages';
 import {
@@ -19,6 +18,7 @@ import {
   totpNow,
   wrongCode,
 } from './support/admin-fixtures';
+import { freePort, repoRoot, runScript, startFront } from './support/admin-web-harness';
 import { Browser, CdpCookie, launchChrome, Page } from './support/cdp';
 
 // M01-D-LOGIN-UI - the BUILT administration web, in a REAL headless Chrome, against the REAL backend and PostgreSQL,
@@ -26,62 +26,6 @@ import { Browser, CdpCookie, launchChrome, Page } from './support/cdp';
 // backend's __Host- cookies (Secure, HttpOnly, SameSite=Strict) only because the page is served over HTTPS on one
 // origin, and the backend checks the exact Origin the browser sends. Screenshots of the real pages are written to
 // .test-results/admin-web-shots and, in the CI-mode run on GitHub Actions, published as check-run annotations.
-
-function repoRoot(): string {
-  let directory = __dirname;
-  for (let depth = 0; depth < 8; depth += 1) {
-    try {
-      const pkg = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')) as { name?: string };
-      if (pkg.name === '11ship') {
-        return directory;
-      }
-    } catch {
-      // keep going up
-    }
-    directory = dirname(directory);
-  }
-  throw new Error('repository root not found');
-}
-
-/** Runs one of the repository's admin web scripts exactly as a developer does (`node scripts/...`). */
-function runScript(name: string, args: string[] = []): void {
-  execFileSync(process.execPath, [join(repoRoot(), 'scripts', name), ...args], { cwd: repoRoot(), stdio: 'pipe' });
-}
-
-/** Starts the local HTTPS front (scripts/admin-web-dev.mjs) as its own process and waits until it listens. */
-async function startFront(env: Record<string, string>): Promise<ChildProcess> {
-  const child = spawn(process.execPath, [join(repoRoot(), 'scripts', 'admin-web-dev.mjs')], {
-    cwd: repoRoot(),
-    env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  await new Promise<void>((resolve, reject) => {
-    let output = '';
-    const timer = setTimeout(() => reject(new Error(`admin web front did not start: ${output}`)), 20_000);
-    const onData = (chunk: Buffer) => {
-      output += chunk.toString('utf8');
-      if (output.includes('admin web: ')) {
-        clearTimeout(timer);
-        resolve();
-      }
-    };
-    child.stdout?.on('data', onData);
-    child.stderr?.on('data', onData);
-    child.once('exit', (code) => {
-      clearTimeout(timer);
-      reject(new Error(`admin web front exited (${String(code)}): ${output}`));
-    });
-  });
-  return child;
-}
-
-async function freePort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const { port } = server.address() as AddressInfo;
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-  return port;
-}
 
 interface Shot {
   readonly name: string;
@@ -346,6 +290,132 @@ describe('M01-D-LOGIN-UI - admin web in a real browser against the real backend'
     expect(tabA.consoleErrors).toEqual([]);
     await tabA.close();
   }, 120_000);
+
+  // ---- Lost response + another tab (review finding 2). The FAULT is injected by the test harness only: the browser's
+  // own DevTools pauses the answer AFTER the real backend processed and committed the request, then drops it, exactly
+  // like a cut connection. Everything else is the real page, the real backend and the real database.
+
+  const ENROLL_VERIFY = '/v1/admin-auth/totp/enrollment/verify';
+  const ENROLL_START = '/v1/admin-auth/totp/enrollment';
+
+  async function revealKey(page: Page): Promise<string> {
+    await page.click('#enroll-title ~ .link-btn');
+    await page.waitFor(`document.querySelector('#setup-key').textContent.length > 0`);
+    const key = (await page.text('#setup-key')).replace(/\s+/g, '');
+    await page.click('#enroll-title ~ .link-btn');
+    await page.waitFor(`document.querySelector('#setup-key').textContent === ''`);
+    return key;
+  }
+
+  async function passwordStep(page: Page): Promise<void> {
+    await page.fill('#phone', system.phone.local);
+    await page.fill('#password', system.password);
+    await page.pressEnter();
+  }
+
+  const qrPathOf = (page: Page) => page.evaluate<string | null>(`document.querySelector('.qr svg path')?.getAttribute('d') ?? null`);
+
+  it('lost enrollment answer while another tab replaces the challenge: tab A drops the old QR, loads the new secret, re-sends nothing', async () => {
+    const tabA = await openPage(DESKTOP);
+    await tabA.waitFor(`document.querySelector('#login-title')`);
+    await passwordStep(tabA);
+    await tabA.waitFor(`document.querySelector('.qr svg path')`);
+    const oldSecret = await revealKey(tabA);
+    const oldQr = await qrPathOf(tabA);
+
+    // Tab A submits a (wrong) code; the backend answers and commits the attempt, but the answer never reaches the page.
+    await tabA.interceptResponses(`*${ENROLL_VERIFY}`);
+    await tabA.fill('#enroll-code', wrongCode(oldSecret));
+    await tabA.pressEnter();
+    const paused = await tabA.nextPausedResponse();
+    expect(paused.status).toBe(400);
+    const committed = await app.pool.query<{ attempt_count: number }>(
+      'SELECT attempt_count FROM app.admin_auth_challenges WHERE user_id = $1::uuid AND consumed_at IS NULL',
+      [system.userId],
+    );
+    expect(committed.rows.map((row) => row.attempt_count)).toEqual([1]);
+    expect(await tabA.evaluate<string>(`document.querySelector('#enroll-title ~ form button[type=submit]').textContent`)).toBe('Đang xác thực…');
+
+    // Meanwhile tab B (same cookie jar) logs in again: the factor is not active, so the challenge and its pending
+    // generation are replaced on the server, and B gets a NEW secret.
+    const tabB = await openPage(DESKTOP);
+    await tabB.waitFor(`document.querySelector('#enroll-title') || document.querySelector('#login-title')`);
+    if (await tabB.evaluate<boolean>(`document.querySelector('#enroll-title') !== null`)) {
+      await tabB.waitFor(`document.querySelector('.qr svg path')`);
+      await tabB.click('#enroll-title ~ form .btn-secondary');
+      await tabB.waitFor(`document.querySelector('#login-title')`);
+    }
+    await passwordStep(tabB);
+    await tabB.waitFor(`document.querySelector('.qr svg path')`);
+    const newSecret = await revealKey(tabB);
+    expect(newSecret).not.toBe(oldSecret);
+
+    // The lost answer is dropped now. Tab A reads GET /state, sees another challenge and follows it.
+    await tabA.failResponse(paused.requestId);
+    await tabA.stopIntercepting();
+    await tabA.waitFor(`!document.querySelector('#enroll-notice').hidden`);
+    expect(await tabA.text('#enroll-notice')).toBe(COPY.stepChanged);
+    await tabA.waitFor(`document.querySelector('.qr svg path')`);
+    expect(await qrPathOf(tabA)).not.toBe(oldQr);
+    expect(await tabA.evaluate<string>(`document.querySelector('#enroll-code').value`)).toBe('');
+    expect(await revealKey(tabA)).toBe(newSecret);
+    // Nothing was re-sent: one verify attempt in total; the second enrollment call loaded the NEW challenge's secret.
+    expect(tabA.posts(ENROLL_VERIFY)).toBe(1);
+    expect(tabA.posts(ENROLL_START)).toBe(2);
+
+    // The user continues on purpose with the new secret.
+    await tabA.fill('#enroll-code', totpNow(newSecret));
+    await tabA.pressEnter();
+    await tabA.waitFor(`document.querySelector('#shell-title')`);
+    expect(tabA.posts(ENROLL_VERIFY)).toBe(2);
+    expect(tabA.consoleErrors).toEqual([]);
+    await tabB.close();
+    await tabA.close();
+  }, 120_000);
+
+  it('lost enrollment answer AFTER the backend committed, and another tab moved to VERIFY_TOTP: tab A follows to the verify step', async () => {
+    const tabA = await openPage(MOBILE);
+    await tabA.waitFor(`document.querySelector('#login-title')`);
+    await passwordStep(tabA);
+    await tabA.waitFor(`document.querySelector('.qr svg path')`);
+    const secret = await revealKey(tabA);
+
+    // A correct code: the backend activates the factor and creates the session; the answer (and its cookie) is lost.
+    await tabA.interceptResponses(`*${ENROLL_VERIFY}`);
+    await tabA.fill('#enroll-code', totpNow(secret));
+    await tabA.pressEnter();
+    const paused = await tabA.nextPausedResponse();
+    expect(paused.status).toBe(200);
+    expect(await count(app.pool, `SELECT 1 FROM app.admin_totp_factors WHERE user_id = $1::uuid AND state = 'ACTIVE'`, [system.userId])).toBe(1);
+    expect(await count(app.pool, 'SELECT 1 FROM app.admin_sessions WHERE user_id = $1::uuid', [system.userId])).toBe(1);
+
+    // Tab B logs in with the password: the factor is ACTIVE now, so its step is VERIFY_TOTP.
+    const tabB = await openPage(DESKTOP);
+    await tabB.waitFor(`document.querySelector('#login-title')`);
+    await passwordStep(tabB);
+    await tabB.waitFor(`document.querySelector('#verify-title')`);
+
+    await tabA.failResponse(paused.requestId);
+    await tabA.stopIntercepting();
+    await tabA.waitFor(`document.querySelector('#verify-title')`);
+    expect(await tabA.text('#verify-notice')).toBe(COPY.stepChanged);
+    // Nothing of the enrollment is left on the page, and nothing was re-sent.
+    expect(await tabA.evaluate<boolean>(`document.querySelector('.qr') === null && document.querySelector('#setup-key') === null`)).toBe(true);
+    expect(tabA.posts(ENROLL_VERIFY)).toBe(1);
+    expect(tabA.posts('/v1/admin-auth/totp/verify')).toBe(0);
+    expect(await count(app.pool, 'SELECT 1 FROM app.admin_sessions WHERE user_id = $1::uuid', [system.userId])).toBe(1);
+
+    // The user continues with a code of a later step (the enrollment used the current one; stand-in for waiting).
+    await rewindAcceptedStep(app, system.userId);
+    await tabA.fill('#verify-code', totpNow(secret));
+    await tabA.pressEnter();
+    await tabA.waitFor(`document.querySelector('#shell-title')`);
+    expect(tabA.posts('/v1/admin-auth/totp/verify')).toBe(1);
+    expect(tabA.consoleErrors).toEqual([]);
+    await tabB.close();
+    await tabA.close();
+  }, 120_000);
+
 });
 
 /**

@@ -1,6 +1,6 @@
 // User-facing Vietnamese copy. The first group is quoted from the approved design (M01-D-auth-UI-v1 and the UI
-// handoff of 2026-10-09). The second group was NOT in the design text and is waiting for ChatGPT/Owner approval; it is
-// kept short and neutral, and every string is in this one file so it can be changed without touching the logic.
+// handoff of 2026-10-09). The second group was not in the design text; the Owner approved it with the screenshots of
+// 2026-10-09. Every string is in this one file so it can be changed without touching the logic.
 
 export const COPY = {
   // Approved.
@@ -11,7 +11,7 @@ export const COPY = {
   preauthExpired: 'Phiên xác thực đã hết hạn. Vui lòng đăng nhập lại.',
   unavailable: 'Chưa thể kết nối. Vui lòng thử lại.',
   lostResponse: 'Đăng nhập lại và dùng mã mới trong Authenticator.',
-  // Pending approval (not quoted in the design text).
+  // Not in the design text; approved by the Owner with the screenshots of 2026-10-09 (kept unchanged).
   stepChanged: 'Bước xác thực đã thay đổi. Vui lòng kiểm tra và tiếp tục.',
   rateLimited: (clock: string) => `Bạn đã thử quá nhiều lần. Vui lòng thử lại sau ${clock}.`,
   rateLimitedOver: 'Bạn có thể thử lại.',

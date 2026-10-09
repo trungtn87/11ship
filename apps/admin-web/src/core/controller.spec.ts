@@ -8,6 +8,7 @@ import {
   deferred,
   enrollmentOk,
   fail,
+  ok,
   loginOk,
   meOk,
   noContent,
@@ -284,6 +285,88 @@ describe('admin web flow - Authenticator steps', () => {
     await controller.submitCode('123456');
     expect(controller.screen).toMatchObject({ name: 'verify', codeError: COPY.unavailable, pending: false });
     expect(server.count('POST', '/totp/verify')).toBe(1);
+  });
+
+  it('lost response on enrollment, same challenge: the QR and secret stay, the error is shown, nothing is re-sent', async () => {
+    const server = new FakeServer();
+    const { controller } = await toEnroll(server);
+    server.on('POST', '/totp/enrollment/verify', 'network').on('GET', '/state', preauthState('ENROLL_TOTP', 'csrf-pre-1'));
+    await controller.submitCode('123456');
+    expect(controller.screen).toMatchObject({ name: 'enroll', secret: SECRET, codeError: COPY.unavailable, pending: false });
+    expect(server.count('POST', '/totp/enrollment/verify')).toBe(1);
+    expect(server.count('POST', '/totp/enrollment')).toBe(1);
+  });
+
+  it('lost response on enrollment, another tab replaced the challenge: old QR/secret/code dropped, the new secret loaded with the new CSRF', async () => {
+    const server = new FakeServer();
+    const { controller, screens } = await toEnroll(server);
+    const newSecret = 'KRSXG5CTMVRXEZLUKRSXG5CTMVRXEZLU';
+    server
+      .on('POST', '/totp/enrollment/verify', 'network')
+      .on('GET', '/state', preauthState('ENROLL_TOTP', 'csrf-pre-tab-b'))
+      .on('POST', '/totp/enrollment', ok({ secret: newSecret, otpauth_uri: `otpauth://totp/x?secret=${newSecret}`, expires_at: '2999-01-01T00:00:00.000Z' }));
+    const before = screens.length;
+    await controller.submitCode('123456');
+    await settle();
+    // Right after the state answer, the screen of the new step holds nothing of the old one.
+    const firstNew = screens.slice(before).find((screen) => screen.name === 'enroll' && !screen.pending);
+    expect(firstNew).toMatchObject({ name: 'enroll', notice: COPY.stepChanged, codeReset: 1 });
+    expect(JSON.stringify(firstNew)).not.toContain(SECRET);
+    // The new secret came from the protected endpoint, called with the NEW challenge's CSRF token.
+    expect(server.requests.at(-1)).toEqual({ method: 'POST', path: '/totp/enrollment', body: {}, csrf: 'csrf-pre-tab-b' });
+    expect(controller.screen).toMatchObject({ name: 'enroll', secret: newSecret, loadingSecret: false });
+    expect(JSON.stringify(controller.screen)).not.toContain(SECRET);
+    expect(server.count('POST', '/totp/enrollment/verify')).toBe(1);
+  });
+
+  it('lost response on enrollment, the step became VERIFY_TOTP: verify step, no secret kept, no enrollment call', async () => {
+    const server = new FakeServer();
+    const { controller } = await toEnroll(server);
+    server.on('POST', '/totp/enrollment/verify', 'network').on('GET', '/state', preauthState('VERIFY_TOTP', 'csrf-pre-1'));
+    await controller.submitCode('123456');
+    expect(controller.screen).toMatchObject({ name: 'verify', notice: COPY.stepChanged, pending: false });
+    expect(JSON.stringify(controller.screen)).not.toContain(SECRET);
+    expect(server.count('POST', '/totp/enrollment')).toBe(1);
+    expect(server.count('POST', '/totp/enrollment/verify')).toBe(1);
+    // The next user-initiated submit goes to the verify route with the state's CSRF token.
+    server.on('POST', '/totp/verify', fail(400, 'ADMIN_TOTP_INVALID'));
+    await controller.submitCode('123456');
+    expect(server.requests.at(-1)).toEqual({ method: 'POST', path: '/totp/verify', body: { code: '123456' }, csrf: 'csrf-pre-1' });
+  });
+
+  it('lost response on verify, the step became ENROLL_TOTP: enrollment with its own secret from the protected endpoint', async () => {
+    const server = new FakeServer();
+    const { controller } = await toVerify(server);
+    server.on('POST', '/totp/verify', 'network').on('GET', '/state', preauthState('ENROLL_TOTP', 'csrf-pre-2')).on('POST', '/totp/enrollment', enrollmentOk());
+    await controller.submitCode('123456');
+    await settle();
+    expect(controller.screen).toMatchObject({ name: 'enroll', secret: SECRET, notice: COPY.stepChanged });
+    expect(server.requests.at(-1)).toEqual({ method: 'POST', path: '/totp/enrollment', body: {}, csrf: 'csrf-pre-2' });
+    expect(server.count('POST', '/totp/verify')).toBe(1);
+  });
+
+  it('a 5xx (proxy timeout, unknown outcome) on verify is treated like a lost response: only GET /state is read', async () => {
+    const server = new FakeServer();
+    const { controller } = await toVerify(server);
+    server.on('POST', '/totp/verify', fail(504, 'SERVICE_UNAVAILABLE')).on('GET', '/state', sessionState()).on('GET', '/me', meOk('SYSTEM'));
+    await controller.submitCode('123456');
+    expect(controller.screen).toEqual({ name: 'shell', role: 'SYSTEM', pending: false });
+    expect(server.count('POST', '/totp/verify')).toBe(1);
+  });
+
+  it('a GET /state answer that arrives after the user went back to login is ignored', async () => {
+    const state = deferred<Scripted>();
+    const server = new FakeServer();
+    const { controller } = await toVerify(server);
+    server.on('POST', '/totp/verify', 'network').on('GET', '/state', state.promise);
+    const sent = controller.submitCode('123456');
+    await settle();
+    controller.backToLogin();
+    state.resolve(preauthState('ENROLL_TOTP', 'csrf-late'));
+    await sent;
+    await settle();
+    expect(controller.screen.name).toBe('login');
+    expect(server.count('POST', '/totp/enrollment')).toBe(0);
   });
 
   it('"Quay lại đăng nhập" is available while a code is pending and its late answer is ignored', async () => {

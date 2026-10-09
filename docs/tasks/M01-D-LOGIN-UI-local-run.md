@@ -44,6 +44,17 @@ Tùy chọn:
 - `ADMIN_WEB_PORT` (mặc định 8443). Đổi cổng thì đổi luôn `ADMIN_AUTH_ALLOWED_ORIGINS` cho khớp.
 - `ADMIN_WEB_BACKEND` (mặc định `http://127.0.0.1:3000`; chỉ nhận địa chỉ loopback).
 - Sửa code UI: chạy lại `npm run build:admin-web` rồi F5. Front đọc file mới, không cần khởi động lại.
+- `ADMIN_WEB_UPSTREAM_TIMEOUT_MS` (mặc định 15000): thời gian front chờ backend cho một request, tính cả lúc nhận body.
+  - Quá hạn thì front cắt kết nối tới backend và trả 504 cho trang (hoặc cắt kết nối nếu backend đã bắt đầu trả lời).
+  - Trình duyệt ngắt trước thì request tới backend cũng bị hủy.
+
+## Timeout giao tiếp
+- Đây chỉ là timeout giao tiếp. Không thay đổi TTL phiên (8 giờ) hay bước xác thực (5 phút); hai TTL đó do backend quyết.
+- Trang: mỗi request (kể cả GET /state, GET /me) có hạn 20 giây, tính từ lúc gửi tới khi đọc xong body. Quá hạn thì request bị hủy, trang thoát trạng thái chờ và người dùng có thể thao tác lại.
+- Front local: 15 giây cho mỗi request tới backend.
+- Timeout không chứng minh backend chưa thực hiện request:
+  - Với bước mã Authenticator, trang chỉ đọc GET /state để đối chiếu, không bao giờ tự gửi lại mã.
+  - Đăng xuất bị timeout thì trang vẫn ở shell và báo lỗi, không coi là đã đăng xuất.
 
 ## Owner kiểm tra gì (sau khi tiếp tục M00)
 1. Đăng nhập lần đầu: SĐT/mật khẩu, quét QR bằng Google Authenticator thật, nhập mã, vào shell thấy vai trò.

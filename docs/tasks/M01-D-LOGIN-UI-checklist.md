@@ -4,7 +4,7 @@ Mẫu: [module-delivery-checklist](../templates/module-delivery-checklist.md). Q
 - **Module/task:** M01-D-LOGIN-UI (web quản trị: đăng nhập, Authenticator, giữ trạng thái khi F5, shell, đăng xuất).
 - **Handoff:** `docs/tasks/CLAUDE-M01-D-LOGIN-UI-handoff-2026-10-09.md` @ `bb5d6c97ab2f1b2853765d218ad76cc9816c9952` (nhánh `design/m01-complete-roadmap`, PR #30). Nguồn visual là `M01-D-auth-UI-v1.md` cùng SHA.
 - **Base:** nhánh `feat/m01-d-login-backend` (PR #34, chưa merge) @ `4d20660eb3b0656b626a084df6e55d4385ee405a`. PR UI là PR riêng, base là nhánh đó (stacked).
-- **Giai đoạn:** Draft PR, chờ review.
+- **Giai đoạn:** Draft PR. Owner đã duyệt ảnh UI hiện tại (bố cục, màu, câu chữ) ngày 09/10/2026. Vòng này chỉ sửa logic và test theo 2 finding review của PR #35 (head được review `c4e7f2d`). Chưa nghiệm thu local và điện thoại.
 
 Tài liệu này ghi trạng thái, KHÔNG phải nghiệm thu. Kết quả CI theo head cuối nằm trong mô tả PR.
 
@@ -30,7 +30,7 @@ Tài liệu này ghi trạng thái, KHÔNG phải nghiệm thu. Kết quả CI t
 ## Xung đột / thiếu trong thiết kế (trả về ChatGPT/Owner)
 - **Logo:** handoff yêu cầu "logo 11 từ asset thương hiệu repo", nhưng repo chưa có asset. Brand guideline mục 12 còn ghi "asset logo SVG/PNG chính thức" là việc mở.
   - Tôi không tự vẽ logo. Vị trí logo đang hiện chữ "11" làm chỗ giữ. Khi có asset chỉ cần thay `brand()` trong `src/dom/view.ts`.
-- **Câu chữ chưa có trong thiết kế:** gom trong `src/core/messages.ts`, nhóm "Pending approval":
+- **Câu chữ ban đầu không có trong thiết kế** (gom trong `src/core/messages.ts`). Owner đã duyệt cùng bộ ảnh ngày 09/10/2026 và vòng này giữ nguyên:
   - "Bước xác thực đã thay đổi. Vui lòng kiểm tra và tiếp tục." (CSRF đổi hoặc tab khác).
   - "Bạn đã thử quá nhiều lần. Vui lòng thử lại sau mm:ss." và "Bạn có thể thử lại." (429).
   - Màn kiểm tra "Đang kiểm tra phiên đăng nhập…".
@@ -59,11 +59,32 @@ Tài liệu này ghi trạng thái, KHÔNG phải nghiệm thu. Kết quả CI t
   - 401: về login với câu "Đăng nhập lại và dùng mã mới trong Authenticator."
 - **Hai tab:** khi tab hiện lại, trang đọc GET /state và đi theo đó; bước đổi thì báo cho người dùng. Bước preauth hoặc phiên hết hạn thì đọc lại state đúng lúc hết hạn.
 
+## Timeout và mất response (vòng sửa finding)
+- **Trang (`fetchTransport`):** mỗi request có một hạn 20 giây (`REQUEST_TIMEOUT_MS`), phủ cả lúc chờ response headers lẫn đọc body.
+  - Quá hạn: request bị hủy, stream body bị cancel, timer luôn được dọn. Kết quả trả về là `network`, trang thoát trạng thái chờ.
+  - GET /state và GET /me đi cùng đường này.
+- **Front local:** hạn 15 giây cho mỗi request tới backend (`ADMIN_WEB_UPSTREAM_TIMEOUT_MS`).
+  - Quá hạn: hủy kết nối tới backend, trả 504 với envelope `SERVICE_UNAVAILABLE`.
+  - Trình duyệt ngắt trước: hủy request tới backend. Timer được dọn khi xong, khi lỗi hoặc khi client ngắt.
+- **Hai giá trị trên chỉ là timeout giao tiếp.** Không đổi TTL phiên hay bước xác thực.
+- **Mutation bị timeout không chứng minh backend chưa commit:**
+  - Mã Authenticator: mất response, timeout hoặc 5xx đều chỉ dẫn tới đọc GET /state, không tự gửi lại mã.
+  - Đăng xuất bị timeout: vẫn ở shell, báo lỗi.
+- **Sau khi mất response**, trang đối chiếu CSRF và `next_step` với bước hiện tại:
+  - Cùng challenge, cùng loại bước: giữ bước và QR, báo "Chưa thể kết nối".
+  - Challenge khác hoặc loại bước khác: bỏ CSRF, secret, otpauth URI, QR và mã đã nhập, rồi vào đúng ENROLL_TOTP/VERIFY_TOTP. ENROLL_TOTP mới tải secret qua endpoint được bảo vệ, dùng CSRF của challenge mới.
+  - SESSION: gọi GET /me rồi vào shell.
+  - 401: về login với câu "dùng mã mới".
+  - Câu trả lời đến muộn của generation cũ bị bỏ qua.
+
 ## Kiểm thử
 | Nhóm | File | Loại |
 |---|---|---|
 | Unit: API client, mapping lỗi, Retry-After, ô mã/SĐT, QR, controller (reload, chống bấm lặp, 429, mất response, dọn secret, không có quyền trước MFA, hai tab) | `apps/admin-web/src/core/*.spec.ts` | Server giả lập theo kịch bản. KHÔNG phải integration |
+| Unit: timeout của transport (không có headers, body treo, timer được dọn, không lặp request); đồng bộ sau mất response (cùng challenge, challenge mới, đổi loại bước, 5xx, câu trả lời đến muộn) | `apps/admin-web/src/core/api.spec.ts`, `controller.spec.ts` | Server giả lập theo kịch bản |
+| Front local: backend không trả headers, body treo, client ngắt trước, trả lời bình thường, chỉ forward `/v1/admin-auth/*` | `tests/integration/admin-web-proxy.int.spec.ts` | Front chạy thật như một process; "backend" là server fault-injection do test sở hữu |
 | Browser integration: trang đã build, Chrome headless thật, HTTPS front thật, backend Nest + PostgreSQL thật | `tests/integration/admin-web-browser.int.spec.ts` | Integration thật, chạy trong CI ở cả local mode và CI mode |
+| Browser: mất response ở tab A, tab B thay challenge hoặc chuyển sang VERIFY_TOTP | `tests/integration/admin-web-browser.int.spec.ts` (2 test cuối) | Backend thật commit request (kiểm trong DB). DevTools của trình duyệt giữ response lại rồi hủy (fault injection chỉ có trong test). Kiểm tab A theo state mới, không còn QR cũ, không gửi lại mutation |
 
 Browser integration kiểm:
 - Login sai/đúng.
@@ -80,11 +101,13 @@ Browser integration kiểm:
   - Phiên bị thu hồi thì F5 về login.
   - 429 hiện đếm ngược và khóa nút.
 
-Ảnh desktop/mobile lấy từ chính test này. Chưa kiểm: Google Authenticator thật trên điện thoại, trình duyệt thật của Owner, mất response ở mức browser (đã kiểm ở mức unit và backend).
+Ảnh desktop/mobile lấy từ chính test này. Chưa kiểm: Google Authenticator thật trên điện thoại, trình duyệt thật của Owner. Timeout 20 giây của trang mới kiểm ở mức unit với đồng hồ giả, chưa đợi 20 giây thật trong trình duyệt. Timeout của front đã kiểm thật nhưng với giá trị rút ngắn còn 600 ms.
 
 ## Checklist
 - [x] Kiểm kê nguồn, backend thực tế và repo; ghi phần thiếu (logo, câu chữ chưa duyệt).
-- [ ] Owner duyệt câu chữ bổ sung và vị trí logo tạm.
+- [x] Owner đã duyệt ảnh UI hiện tại, gồm bố cục, màu và câu chữ (09/10/2026). Đây là duyệt ảnh, không phải nghiệm thu local hay điện thoại. Logo chính thức vẫn chờ asset.
+- [x] Sửa finding 1 (request treo): timeout giao tiếp 20 giây ở trang, 15 giây ở front local; hủy request, dọn timer, không tự lặp mutation.
+- [x] Sửa finding 2 (đồng bộ PREAUTH sau khi mất response): đối chiếu CSRF và next_step từ GET /state; bước đổi thì bỏ secret/URI/QR/mã cũ và vào đúng bước mới.
 - [x] Code, unit test, browser integration test; CI tại head cuối: xem mô tả PR.
 - [ ] ChatGPT review đúng SHA.
 - [ ] Owner chạy local và test Authenticator thật (sau khi tiếp tục M00).
@@ -94,6 +117,6 @@ Browser integration kiểm:
 ## Ma trận từng ứng dụng
 | Ứng dụng | Phạm vi | Nghiệp vụ/UI duyệt | Code/CI/review | Local | Thiết bị thật | Owner nghiệm thu |
 |---|---|---|---|---|---|---|
-| Web quản trị | Login, Authenticator, F5, shell, logout | UI v1 đã chốt màn login; câu chữ bổ sung và logo tạm chờ duyệt | Code xong; CI xem PR; chờ review | Chưa kiểm chứng (chờ M00) | Chưa kiểm chứng | Chưa |
+| Web quản trị | Login, Authenticator, F5, shell, logout | Owner đã duyệt ảnh UI hiện tại; logo chính thức chờ asset | Đã sửa 2 finding; CI xem PR; chờ review lại | Chưa kiểm chứng (chờ M00) | Chưa kiểm chứng | Chưa |
 | Khách / Quán / Xế / App quản lý | N/A: task này không đổi các app | — | — | — | — | Quyết định Owner |
 | Liên thông | Web quản trị ↔ backend PR #34 | — | Browser integration trong CI | Chưa kiểm chứng | Chưa kiểm chứng | Chưa |

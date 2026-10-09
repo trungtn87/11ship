@@ -60,8 +60,74 @@ export interface TransportResponse {
 
 export type Transport = (request: TransportRequest) => Promise<TransportResponse>;
 
-/** The browser transport: same-origin fetch, cookies included, never cached, no redirect followed. */
-export function fetchTransport(fetchImpl: typeof fetch): Transport {
+/**
+ * Communication timeout of one request, from sending it to the end of reading the response body (default 20 s). It
+ * only bounds how long the page waits for the network; it has nothing to do with the session or challenge lifetimes,
+ * which the server alone decides. A request that times out is reported as `network`: the server may still have done it.
+ */
+export const REQUEST_TIMEOUT_MS = 20_000;
+
+export interface TransportTimers {
+  setTimeout(callback: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+}
+
+const defaultTimers: TransportTimers = {
+  setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms),
+  clearTimeout: (handle) => globalThis.clearTimeout(handle as Parameters<typeof globalThis.clearTimeout>[0]),
+};
+
+/** Rejects as soon as `signal` is aborted, whatever `promise` does (a stalled body stream may ignore the signal). */
+function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(new Error('aborted'));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new Error('aborted'));
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error instanceof Error ? error : new Error('request failed'));
+      },
+    );
+  });
+}
+
+/** Reads the whole body as text under the request's deadline; on abort the stream is cancelled, not left open. */
+async function readBody(response: Response, signal: AbortSignal): Promise<string> {
+  if (response.body === null) {
+    return '';
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  try {
+    for (;;) {
+      const chunk = await untilAborted(reader.read(), signal);
+      if (chunk.done) {
+        return text + decoder.decode();
+      }
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+  } catch (error) {
+    void reader.cancel().catch(() => undefined);
+    throw error instanceof Error ? error : new Error('body read failed');
+  }
+}
+
+/**
+ * The browser transport: same-origin fetch, cookies included, never cached, no redirect followed. One deadline covers
+ * the response headers AND the whole body: when it passes, the request is aborted (and the body stream cancelled), the
+ * call rejects, and the timer is always cleared. Nothing here ever repeats a request.
+ */
+export function fetchTransport(fetchImpl: typeof fetch, options: { timeoutMs?: number; timers?: TransportTimers } = {}): Transport {
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const timers = options.timers ?? defaultTimers;
   return async (request) => {
     const headers: Record<string, string> = { accept: 'application/json' };
     let body: string | undefined;
@@ -72,29 +138,45 @@ export function fetchTransport(fetchImpl: typeof fetch): Transport {
     if (request.csrf !== undefined) {
       headers['x-csrf-token'] = request.csrf;
     }
-    const response = await fetchImpl(`${API_BASE}${request.path}`, {
-      method: request.method,
-      headers,
-      body,
-      credentials: 'same-origin',
-      cache: 'no-store',
-      redirect: 'error',
-    });
-    return {
-      status: response.status,
-      header: (name) => response.headers.get(name),
-      json: async () => {
-        const text = await response.text();
-        if (text === '') {
-          return undefined;
-        }
-        try {
-          return JSON.parse(text) as unknown;
-        } catch {
-          return undefined;
-        }
-      },
-    };
+    const controller = new AbortController();
+    const timer = timers.setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response | undefined;
+    try {
+      response = await untilAborted(
+        fetchImpl(`${API_BASE}${request.path}`, {
+          method: request.method,
+          headers,
+          body,
+          credentials: 'same-origin',
+          cache: 'no-store',
+          redirect: 'error',
+          signal: controller.signal,
+        }),
+        controller.signal,
+      );
+      const text = await readBody(response, controller.signal);
+      const status = response.status;
+      const responseHeaders = response.headers;
+      return {
+        status,
+        header: (name) => responseHeaders.get(name),
+        json: async () => {
+          if (text === '') {
+            return undefined;
+          }
+          try {
+            return JSON.parse(text) as unknown;
+          } catch {
+            return undefined;
+          }
+        },
+      };
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('request failed');
+    } finally {
+      timers.clearTimeout(timer);
+      controller.abort();
+    }
   };
 }
 

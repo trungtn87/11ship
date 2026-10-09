@@ -63,10 +63,12 @@ const DROPPED_REQUEST_HEADERS = new Set([
 const DROPPED_RESPONSE_HEADERS = new Set(['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'trailer']);
 
 /**
- * @param {{ distDir: string, backendUrl: string, key: string | Buffer, cert: string | Buffer }} options
+ * @param {{ distDir: string, backendUrl: string, key: string | Buffer, cert: string | Buffer, upstreamTimeoutMs?: number }} options
  * @returns {import('node:https').Server}
  */
-export function createAdminWebServer({ distDir, backendUrl, key, cert }) {
+export const UPSTREAM_TIMEOUT_MS = 15_000;
+
+export function createAdminWebServer({ distDir, backendUrl, key, cert, upstreamTimeoutMs = UPSTREAM_TIMEOUT_MS }) {
   const backend = new URL(backendUrl);
   if (backend.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(backend.hostname)) {
     throw new Error('the backend must be a loopback http URL (this front is for local use only)');
@@ -76,14 +78,21 @@ export function createAdminWebServer({ distDir, backendUrl, key, cert }) {
   return https.createServer({ key, cert, minVersion: 'TLSv1.2' }, (request, response) => {
     const url = new URL(request.url ?? '/', 'https://front.invalid');
     if (url.pathname.startsWith(API_PREFIX)) {
-      forward(request, response, backend);
+      forward(request, response, backend, upstreamTimeoutMs);
       return;
     }
     serveStatic(url.pathname, request, response, distRoot);
   });
 }
 
-function forward(request, response, backend) {
+/**
+ * Forwards one API request. A single upstream deadline (default 15 s, ADMIN_WEB_UPSTREAM_TIMEOUT_MS) covers the whole
+ * exchange: connecting, the backend's answer and its body. When it passes, the upstream connection is destroyed and the
+ * browser gets 504 (or a cut connection if the answer had already started). If the browser goes away first, the upstream
+ * request is destroyed too. The timer is cleared in every case. This is a communication timeout of the local front only;
+ * it does not change any session or challenge lifetime, and a timed-out request may still have been executed upstream.
+ */
+function forward(request, response, backend, timeoutMs) {
   const headers = {};
   for (const [name, value] of Object.entries(request.headers)) {
     if (!DROPPED_REQUEST_HEADERS.has(name) && value !== undefined) {
@@ -91,6 +100,24 @@ function forward(request, response, backend) {
     }
   }
   headers.host = backend.host;
+  let finished = false;
+  let timer;
+  const finish = () => {
+    finished = true;
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+  };
+  const answerError = (status, code) => {
+    if (!response.headersSent) {
+      // Same envelope shape as the backend's answers; the page shows "Chưa thể kết nối".
+      response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      response.end(JSON.stringify({ error: { code, message: 'Service unavailable', request_id: '', details: {} } }));
+    } else {
+      response.destroy();
+    }
+  };
   const upstream = http.request(
     { hostname: backend.hostname.replace(/^\[|\]$/g, ''), port: backend.port || 80, method: request.method, path: request.url, headers },
     (answer) => {
@@ -101,17 +128,35 @@ function forward(request, response, backend) {
         }
       }
       response.writeHead(answer.statusCode ?? 502, out);
+      answer.on('end', finish);
+      answer.on('error', () => {
+        finish();
+        response.destroy();
+      });
       answer.pipe(response);
     },
   );
-  upstream.on('error', () => {
-    if (!response.headersSent) {
-      // Same envelope as the backend's generic unavailable answer; the page shows "Chưa thể kết nối".
-      response.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-      response.end(JSON.stringify({ error: { code: 'SERVICE_UNAVAILABLE', message: 'Service unavailable', request_id: '', details: {} } }));
-    } else {
-      response.destroy();
+  timer = setTimeout(() => {
+    timer = undefined;
+    if (!finished) {
+      finished = true;
+      upstream.destroy(new Error('upstream timeout'));
+      answerError(504, 'SERVICE_UNAVAILABLE');
     }
+  }, timeoutMs);
+  upstream.on('error', () => {
+    if (finished) {
+      return;
+    }
+    finish();
+    answerError(503, 'SERVICE_UNAVAILABLE');
+  });
+  // The browser closed the connection before the answer was complete: stop waiting for the backend.
+  response.on('close', () => {
+    if (!response.writableFinished) {
+      upstream.destroy();
+    }
+    finish();
   });
   request.pipe(upstream);
 }
@@ -167,7 +212,12 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
   const host = process.env.ADMIN_WEB_HOST ?? 'localhost';
   const port = Number(process.env.ADMIN_WEB_PORT ?? '8443');
   const backendUrl = process.env.ADMIN_WEB_BACKEND ?? 'http://127.0.0.1:3000';
-  const server = createAdminWebServer({ distDir, backendUrl, key: readFileSync(keyPath), cert: readFileSync(certPath) });
+  const upstreamTimeoutMs = Number(process.env.ADMIN_WEB_UPSTREAM_TIMEOUT_MS ?? String(UPSTREAM_TIMEOUT_MS));
+  if (!Number.isSafeInteger(upstreamTimeoutMs) || upstreamTimeoutMs < 100) {
+    console.error('ADMIN_WEB_UPSTREAM_TIMEOUT_MS must be an integer number of milliseconds >= 100.');
+    process.exit(1);
+  }
+  const server = createAdminWebServer({ distDir, backendUrl, key: readFileSync(keyPath), cert: readFileSync(certPath), upstreamTimeoutMs });
   server.listen(port, host === 'localhost' ? '127.0.0.1' : host, () => {
     const origin = `https://${host}${port === 443 ? '' : `:${port}`}`;
     console.log(`admin web: ${origin}  ->  backend ${backendUrl}${API_PREFIX}`);

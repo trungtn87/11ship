@@ -97,6 +97,11 @@ export class FakeClock implements Clock {
     this.#timers = this.#timers.filter((timer) => timer.id !== handle);
   }
 
+  /** Number of timers still scheduled (a finished request must leave none behind). */
+  pending(): number {
+    return this.#timers.length;
+  }
+
   advance(ms: number): void {
     const target = this.#now + ms;
     for (;;) {
