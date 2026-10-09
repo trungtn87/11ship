@@ -202,11 +202,13 @@ function Test-Launcher {
         Write-WarnLine 'Bỏ qua progress-check vì máy Owner không có GitHub token.'
         continue
       }
-      Push-Location $script:Repo
-      $previousPreference = $ErrorActionPreference
-      $ErrorActionPreference = 'Continue'
-      try { & npm.cmd @($step[1..($step.Count-1)]) *> $log; $code=$LASTEXITCODE }
-      finally { $ErrorActionPreference = $previousPreference; Pop-Location }
+      $errorLog = "$log.stderr"
+      $process = Start-Process -FilePath 'npm.cmd' -ArgumentList @($step[1..($step.Count-1)]) -WorkingDirectory $script:Repo -RedirectStandardOutput $log -RedirectStandardError $errorLog -Wait -PassThru -WindowStyle Hidden
+      $code = $process.ExitCode
+      if (Test-Path $errorLog) {
+        Get-Content -LiteralPath $errorLog | Add-Content -LiteralPath $log
+        Remove-Item -LiteralPath $errorLog -Force
+      }
       $summary += [pscustomobject]@{step=$name;result=if($code -eq 0){'PASS'}else{'FAIL'};exitCode=$code;log=$log}
       if ($code -ne 0) { break }
     }
