@@ -5,7 +5,7 @@ Nguồn module: baseline tổng hợp v1.1 §5 và manifest 4.1. Không cấp mo
 | Module | Phạm vi | Task lá | Độ lớn | Dependency / thứ tự |
 |---|---|---|---|---|
 | [M00](modules/M00.md) | Nền tảng | 22 | L | M00-C1C → D1 → D2/D3 → D4 → app chẩn đoán/E2E → D5; native clients sau các luồng nghiệp vụ. |
-| [M01](modules/M01.md) | Tài khoản và quyền | 23 | L | R1 + D4 + FE0 + API vùng tối thiểu → UI → E2E → M01-UAT; B/D bổ sung riêng; C-SMS chờ Figma-UAT. |
+| [M01](modules/M01.md) | Tài khoản và quyền | 23 | L | R1 + D4 + FE0 + API vùng tối thiểu → UI → E2E → M01-UAT; B/D-UAT phải đủ trước M01-UAT; C-SMS chờ Figma-UAT. |
 | [M02](modules/M02.md) | Vùng và quán | 9 | M | Backend #21 giữ lịch sử; code mới M02-A-UI chờ M01-UAT; M02-AREA-READ là prerequisite giới hạn cho M01. |
 | [M03](modules/M03.md) | Hồ sơ và vòng đời xế | 9 | L | M03-A identity/bank → M04 primitives → M03-B1; M03-B2 chờ M04-C2 + M07-C; M07 chỉ dùng identity ports, không phụ thuộc toàn M03-UAT. |
 | [M04](modules/M04.md) | Ví, nạp, rút và đối soát | 9 | L | M03-A → A1 → A2 → B/C1 → C2; quyền M01-D trước API tiền; production commission FK/integration chờ M07. |
