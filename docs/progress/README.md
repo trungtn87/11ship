@@ -101,6 +101,6 @@ Giữ schema v1 và vai trò Claude/ChatGPT, không đổi binding CI/review hea
 
 Owner acceptance khác CI: evidence PR phải merged, required CI xanh và có comment của owner_login trungtn87 đúng một dòng OWNER_ACCEPTED <task-id> <40-char-head-sha>. OWNER_REJECTED hoặc comment cho head cũ không mở gate. Collector đọc comments qua API, giữ identity/head/task, không suy từ title/body PR, không tự đăng comment thay Owner. Evidence phải mô tả bản đã test theo client/backend SHA, từng case và blocker/retest. Merge tài liệu hoặc thiết kế không đủ để coi Owner test.
 
-module_delivery chỉ đủ khóa khi tất cả leaf DONE và có phần backend/app_test/automated_test/owner_acceptance. Module M01 còn SMS/admin/account; M01-UAT chỉ A1/A2 gate mở M02. Số task là gói, không module/công sức/thời gian. roadmap_complete chưa được chốt nên phần trăm vẫn planned-tasks-only. Snapshot thật ngày09/10 là evidence tái lập dashboard, không chứng nhận deploy/UAT.
+module_delivery chỉ đủ khóa khi tất cả leaf DONE và có phần backend/app_test/automated_test/owner_acceptance. Module M01 còn SMS/admin/account; M01-UAT gồm Auth/onboarding, B account/session và D admin staging; SMS thật khóa, gate mở M02. Số task là gói, không module/công sức/thời gian. roadmap_complete chưa được chốt nên phần trăm vẫn planned-tasks-only. Snapshot thật ngày09/10 là evidence tái lập dashboard, không chứng nhận deploy/UAT.
 
 Các test pre-roadmap dùng fixtures frozen để không sửa lịch sử; project-roadmap.test.mjs kiểm plan mới. Xem docs/roadmap/README.md, source-inventory.md và 13 checklist.

@@ -28,6 +28,7 @@ test('inventory counts modules, leaves and groups separately, preserves historic
   assert.equal(t('M03-PLAN').design_pr, 7);
   assert.equal(t('M02-B-BE').module, 'M09');
   assert.equal(t('M03-A').requires_own_design, true);
+  assert.deepEqual(t('M01-UAT').depends_on, ['M01-E2E', 'M01-B-UAT', 'M01-D-UAT']);
   for (const task of livePlan.tasks) assert.ok(existsSync(resolve(root, task.acceptance)), task.acceptance);
   assert.doesNotThrow(() => validatePlan(livePlan));
 });

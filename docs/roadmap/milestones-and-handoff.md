@@ -5,7 +5,7 @@
 | Mốc | Gói chính | Điều kiện qua mốc / bằng chứng |
 |---|---|---|
 | S0 — staging dùng được | D2/D3 → D4 → PC/4G/restart → D5 | #26 review/lock, #27 audit/retest; HTTPS/API thật/TLS/DB bền vững; remote evidence đúng deployed SHA; Owner nghiệm thu môi trường |
-| S1 — M01 bản test | FE0, API vùng tối thiểu, UI Auth/onboarding → E2E → M01-UAT | Staging chưa xác minh rõ; registration khóa; quán/xế đúng contract; 2 thiết bị SHOP, mất mạng/retry/restart; Owner duyệt A1/A2, blocker=0 |
+| S1 — M01 bản test | FE0, API vùng tối thiểu, UI Auth/onboarding → E2E → M01-UAT | Staging chưa xác minh rõ; registration khóa; quán/xế đúng contract; 2 thiết bị SHOP, mất mạng/retry/restart; Owner duyệt Auth/onboarding + B tài khoản/phiên + D quyền quản trị/2FA, blocker=0 |
 | S2 — quán/xế/tiền | M02 UI/UAT, M01-D quyền/2FA, M03-A, M04, M03-B1 | Không code mới M02 trước S1; app test nạp/rút/đối soát; nghiệm thu activation/money, không guard admin giả |
 | S3 — giao ngoài app | M08-A + M06 → M07 → M08-B + dashboard M12 | Tranh nhận/hold, pickup/cancel, terminal/custody/deadline, GPS/nhắc đúng quyền; M03-B2 closure sau custody guard |
 | S4 — khách đặt món | M05 + M09 → M10 → M11 | Snapshot giá/recipient/giờ, quán confirm, order-delivery-history, rating/correction đúng tiền và quyền |
@@ -14,7 +14,7 @@
 | S7 — release candidate | System/field E2E → security/concurrency/money → restore/failover → load → Owner release-UAT | Exact release SHA; không blocker; đo tải và recovery số liệu thật, secrets/DB production tách; rollback/incident runbook |
 | S8 — production | M00-OPS-RELEASE | Owner release acceptance; migration có review và kế hoạch rollback; deploy evidence; không suy production từ CI hoặc blueprint |
 
-Không làm S8 trong PR roadmap. M01-UAT là lát A1/A2 để mở M02, không chờ SMS production/đóng toàn bộ M01. B/D account/admin tiếp tục riêng; phone/recovery ở staging không có SMS thật thì không giả Owner đã nghiệm thu gửi mã. Nghiệm thu phone/provider thật nằm S6/S7.
+Không làm S8 trong PR roadmap. M01-UAT phải có M01-E2E + M01-B-UAT + M01-D-UAT để mở M02; không chờ SMS production/khóa toàn module M01; phone/recovery ở staging không có SMS thật thì không giả Owner đã nghiệm thu gửi mã. Nghiệm thu phone/provider thật nằm S6/S7.
 
 ## Gate M01 → M02
 

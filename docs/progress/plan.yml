@@ -472,7 +472,7 @@ tasks:
     requires_own_design: true
   - id: "M01-UAT"
     module: "M01"
-    title: "Owner nghiệm thu bản thử M01-A1/A2"
+    title: "Owner nghiệm thu đầy đủ M01 trên staging (SMS thật khóa)"
     kind: "leaf"
     parent: "M01-TEST"
     order: 280
@@ -482,6 +482,8 @@ tasks:
     review_role: "CHATGPT"
     depends_on:
       - "M01-E2E"
+      - "M01-B-UAT"
+      - "M01-D-UAT"
     acceptance: "docs/roadmap/modules/M01.md"
     evidence: "docs/evidence/M01-UAT.md"
     phase: "owner_acceptance"

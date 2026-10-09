@@ -1,6 +1,6 @@
 # Roadmap tổng thể 11Ship — đề xuất 09/10/2026
 
-Ưu tiên: hoàn thiện Render + Supabase staging và app test đủ M01, Owner nghiệm thu M01-A1/A2 rồi mới code mới M02. Thiết kế/review module sau được chuẩn bị song song. Backend M02-A đã merge #21: giữ lịch sử, kiểm hồi quy trên staging sau gate; không xóa hoặc gọi nó là chưa code.
+Ưu tiên: hoàn thiện Render + Supabase staging và app test đủ M01, Owner nghiệm thu M01 staging (Auth/onboarding, tài khoản/phiên, quyền quản trị; SMS thật khóa) rồi mới code mới M02. Thiết kế/review module sau được chuẩn bị song song. Backend M02-A đã merge #21: giữ lịch sử, kiểm hồi quy trên staging sau gate; không xóa hoặc gọi nó là chưa code.
 
 Kế hoạch gồm **13 module chính (M00–M12), 121 task lá và 13 group**, chưa phải roadmap đã Owner chốt. `roadmap_complete: false` giữ nguyên cho đến khi coverage, nguồn mâu thuẫn và quyết định Owner được đóng bằng PR riêng. Không có cam kết ngày hoàn thành.
 
@@ -8,8 +8,7 @@ Kế hoạch gồm **13 module chính (M00–M12), 121 task lá và 13 group**, 
 - [Kiểm kê nguồn, hiện trạng và khoảng trống](source-inventory.md)
 - [Milestone, gate, song song và gói giao việc](milestones-and-handoff.md)
 - [Decision log cần Owner duyệt](owner-decisions.md)
-- [Dashboard live từ GitHub](../PROGRESS.md) (bot đang dùng manifest main)
-- [Preview roadmap từ snapshot inventory](../ROADMAP-PROGRESS-PREVIEW.md)
+- [Dashboard từ GitHub](../PROGRESS.md)
 
 ## Quy trình bắt buộc
 
