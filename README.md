@@ -29,6 +29,11 @@ M00-D1 chỉ chuẩn bị cấu hình: `render.yaml` (một web service Render F
 
 ## Cách làm việc
 
+Quy trình bắt buộc: [phân công và gate nghiệm thu](docs/process/11ship-delivery-workflow.md), [hướng dẫn agent](AGENTS.md), [mẫu checklist từng module](docs/templates/module-delivery-checklist.md).
+
+Nghiệp vụ + ảnh UI (ChatGPT, Owner duyệt) → code/test (Claude) → review (ChatGPT) → Owner test local và sửa → test điện thoại thật → Owner nghiệm thu, duyệt merge/đóng module. Backend merge/CI xanh chưa phải module hoàn tất.
+
+
 ChatGPT thiết kế, chia task và review. Claude code từng task. Owner test nghiệp vụ và duyệt. Mỗi gói dùng nhánh riêng, giữ base/head commit và bằng chứng test. Chưa merge khi chưa PASS.
 
 

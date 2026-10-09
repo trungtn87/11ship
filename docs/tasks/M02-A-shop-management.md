@@ -150,3 +150,28 @@ Xem [M02-A delivery và handoff](CLAUDE-M02-A.md). Backend chuẩn bị độc l
 
 ## 12. Cả tuần — contract đã duyệt
 Dòng Cả tuần đặt trên T2; áp dụng lịch xuống weekdays 1..7 trong draft, vẫn sửa riêng từng ngày. Chỉ Lưu chung ghi DB; không weekday=0, không cấu hình override tách biệt. Chi tiết UI/E2E/UAT ở CLAUDE-M02-A.md §5.
+
+## Quy trình và phân công giai đoạn — Owner chốt 09/10/2026
+
+Áp dụng [quy trình bắt buộc](../process/11ship-delivery-workflow.md), [AGENTS.md](../../AGENTS.md) và [mẫu module](../templates/module-delivery-checklist.md). Mục này điều chỉnh phân công/gate; giữ nguyên phạm vi kỹ thuật và evidence lịch sử ở trên.
+
+| Giai đoạn | Thực hiện | Gate chuyển |
+|---|---|---|
+| Nghiệp vụ/API/dữ liệu | ChatGPT thiết kế | Owner duyệt |
+| Ảnh UI chi tiết và trạng thái liên quan | ChatGPT thiết kế | Owner duyệt UI; backend-only ghi N/A có lý do |
+| Gói giao task | ChatGPT | Scope/base/hợp đồng/checklist đã rõ |
+| Code/build/test/CI và sửa finding | Claude | CI đúng final head + ChatGPT review đạt |
+| Test local, phản hồi/sửa | Owner test; ChatGPT phân tích; Claude sửa | Owner xác nhận local đạt |
+| Bản web/điện thoại test | Claude chuẩn bị | Local đạt, bản/SHA hiện tại review đạt |
+| Test thiết bị thật và liên thông | Owner | Từng app liên quan đạt |
+| Nghiệm thu/merge/đóng | Owner quyết định | Đủ gate và bằng chứng; không suy từ backend DONE |
+
+Checklist gate mới (chưa kiểm chứng, không phủ nhận kết quả test kỹ thuật lịch sử):
+- [ ] Xác định task con và ứng dụng liên quan; điền ma trận theo mẫu.
+- [ ] Ghi link Owner duyệt nghiệp vụ/UI, hoặc N/A có lý do.
+- [ ] Claude cung cấp bản local, hướng dẫn và bằng chứng đúng SHA; ChatGPT review.
+- [ ] Owner test local, sửa phản hồi và xác nhận đạt.
+- [ ] Owner test thiết bị thật riêng từng app và liên thông, xác nhận đạt.
+- [ ] Owner quyết định phạm vi nghiệm thu, merge và đóng M02 khi đủ các task liên quan.
+
+M02-A backend-only chưa đóng toàn M02. Phần UI được thiết kế bằng ảnh chi tiết/mẫu HTML theo lựa chọn mới của Owner; không bắt buộc Figma ở giai đoạn này. Tách task UI/local/điện thoại của ứng dụng liên quan.

@@ -93,3 +93,7 @@ Sửa `docs/progress/plan.yml` (mô tả các trường ở đầu file), chạy
 - Vai trò trong `plan.yml` (`owner_role`, `design_role`, `review_role`) là cố định ở schema v1 (CLAUDE / CHATGPT / CHATGPT), được validate chặt và chưa cấu hình được.
 - Dashboard trên `main` cập nhật theo sự kiện, nên có thể trễ vài chục giây so với GitHub. Trong PR, job summary của `preview` luôn lấy dữ liệu mới nhất.
 - Nếu branch protection yêu cầu PR cho `main` thì bot không đẩy trực tiếp được; khi đó cần cho phép github-actions bypass hoặc chuyển sang nhánh riêng.
+
+## Gate nghiệm thu theo chỉ đạo Owner 09/10/2026
+
+Áp dụng [quy trình bắt buộc](../process/11ship-delivery-workflow.md) và [checklist module](../templates/module-delivery-checklist.md). DONE/READY_TO_MERGE trong resolver v1 là trạng thái task kỹ thuật; không thay quyết định Owner hoặc bằng chứng local/thiết bị thật. Không suy ra module đóng từ roll-up backend. Theo dõi gate từng app trong tài liệu task cho đến khi Claude triển khai mở rộng dashboard theo thiết kế được duyệt. Không sửa tay dashboard hoặc thay schema manifest trong PR tài liệu này.
