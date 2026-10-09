@@ -218,7 +218,7 @@ export class Page {
   }
 
   async viewport(width: number, height: number, mobile: boolean): Promise<void> {
-    await this.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: mobile ? 2 : 1, mobile });
+    await this.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
   }
 
   async goto(url: string): Promise<void> {

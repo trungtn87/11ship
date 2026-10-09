@@ -349,9 +349,11 @@ describe('M01-D-LOGIN-UI - admin web in a real browser against the real backend'
 });
 
 /**
- * Writes the screenshots to .test-results/admin-web-shots. In the CI-mode run on GitHub Actions it also prints each one
- * as base64 in ::notice:: workflow commands (split in parts, with a manifest), because the job artifacts and logs cannot
- * always be downloaded; the reviewer reassembles them from the check-run annotations.
+ * Writes the screenshots to .test-results/admin-web-shots. On GitHub Actions it also prints them as base64 in workflow
+ * commands, because the job logs and artifacts cannot always be downloaded and a reviewer reassembles them from the
+ * check-run annotations. GitHub keeps at most 4096 characters per annotation message and 10 annotations of each level per
+ * step, so the desktop shots go out in the local-mode run and the mobile shots in the CI-mode run, as parts in notice
+ * and then warning annotations titled "admin-web-shot" (image data, not a problem), with a manifest first.
  */
 function publishShots(shots: readonly Shot[]): void {
   const directory = join(repoRoot(), '.test-results', 'admin-web-shots');
@@ -359,19 +361,24 @@ function publishShots(shots: readonly Shot[]): void {
   for (const item of shots) {
     writeFileSync(join(directory, `${item.name}.webp`), item.data);
   }
-  if (process.env.GITHUB_ACTIONS !== 'true' || process.env.TEST_REMOTE_PATH_DATABASE_URL === undefined) {
+  if (process.env.GITHUB_ACTIONS !== 'true') {
     return;
   }
-  // GitHub keeps at most 4096 characters of an annotation message, so each image is split into parts below that.
+  const ciMode = process.env.TEST_REMOTE_PATH_DATABASE_URL !== undefined;
+  const selected = shots.filter((item) => item.name.endsWith(ciMode ? '-mobile' : '-desktop'));
   const part = 4_000;
-  process.stdout.write(
-    `::notice title=admin-web-shot manifest::${shots.map((item) => `${item.name}=${String(Math.ceil(item.data.toString('base64').length / part))}`).join(' ')}\n`,
-  );
-  for (const item of shots) {
+  const parts: string[] = [];
+  for (const item of selected) {
     const encoded = item.data.toString('base64');
     const total = Math.ceil(encoded.length / part);
     for (let index = 0; index < total; index += 1) {
-      process.stdout.write(`::notice title=admin-web-shot ${item.name} ${String(index + 1)}/${String(total)}::${encoded.slice(index * part, (index + 1) * part)}\n`);
+      parts.push(`title=admin-web-shot ${item.name} ${String(index + 1)}/${String(total)} (image data)::${encoded.slice(index * part, (index + 1) * part)}`);
     }
   }
+  const capacity = 9 + 10;
+  const manifest = selected.map((item) => `${item.name}=${String(Math.ceil(item.data.toString('base64').length / part))}`).join(' ');
+  process.stdout.write(`::notice title=admin-web-shot manifest::${manifest}${parts.length > capacity ? ` (only ${String(capacity)} of ${String(parts.length)} parts fit)` : ''}\n`);
+  parts.slice(0, capacity).forEach((line, index) => {
+    process.stdout.write(`::${index < 9 ? 'notice' : 'warning'} ${line}\n`);
+  });
 }
