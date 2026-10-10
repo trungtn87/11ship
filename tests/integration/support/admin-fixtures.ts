@@ -215,6 +215,8 @@ export interface StartAdminOptions {
   readonly activationConfig?: Partial<AdminActivationConfig>;
   /** Exact HTTPS origins accepted on POST (default: ADMIN_ORIGIN). The browser test passes its local HTTPS front. */
   readonly allowedOrigins?: readonly string[];
+  /** Origin the invitation link is built on (default: ADMIN_ORIGIN). The browser test passes its local HTTPS front. */
+  readonly activationOrigin?: string;
 }
 
 export async function startAdminApp(options: StartAdminOptions = {}): Promise<AdminApp> {
@@ -233,7 +235,7 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
     trustedProxyIps: options.trustedProxyIps ?? [],
     limiter: limiter.limiter,
     invitationTtlSeconds: options.invitationTtlSeconds ?? 72 * 3600,
-    activationOrigin: ADMIN_ORIGIN,
+    activationOrigin: options.activationOrigin ?? ADMIN_ORIGIN,
   };
   const config: AppConfig = {
     ...loaded,
