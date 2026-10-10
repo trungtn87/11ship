@@ -1,8 +1,16 @@
 import { DynamicModule, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { AdminInvitationParticipant } from '../admin-invitations/admin-invitation-participant';
+import { AdminInvitationRepository } from '../admin-invitations/admin-invitation-repository';
+import { AdminInvitationReader } from '../admin-provisioning/admin-invitation-reader';
+import { AdminInvitationService } from '../admin-provisioning/admin-invitation-service';
+import { AdminOperationRepository } from '../admin-provisioning/admin-operation-repository';
+import { AdminOperationService } from '../admin-provisioning/admin-operation-service';
+import { AdminProvisioningController } from '../admin-provisioning/admin-provisioning.controller';
+import { AdminSystemActor } from '../admin-provisioning/admin-system-actor';
 import { AuditModule } from '../audit/audit.module';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { AdminAuthConfig } from '../config/admin-auth-config';
-import { requireKeyring } from '../idempotency/idempotency.module';
+import { IdempotencyModule, requireKeyring } from '../idempotency/idempotency.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { adminAuthConfigProvider, ADMIN_AUTH_CONFIG } from './admin-auth-config.provider';
 import { AdminAuthController, noStoreMiddleware } from './admin-auth.controller';
@@ -34,8 +42,9 @@ export class AdminAuthModule implements NestModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: AdminAuthModule,
-      imports: [auth, TransactionModule, AuditModule],
-      controllers: [AdminAuthController],
+      imports: [auth, TransactionModule, AuditModule, IdempotencyModule],
+      // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
+      controllers: [AdminAuthController, AdminProvisioningController],
       providers: [
         adminAuthConfigProvider,
         {
@@ -62,11 +71,18 @@ export class AdminAuthModule implements NestModule {
         AdminLimitConfigService,
         AdminLimitConfigVerifier,
         AdminBootstrapService,
+        AdminInvitationRepository,
+        AdminInvitationParticipant,
+        AdminInvitationReader,
+        AdminOperationRepository,
+        AdminSystemActor,
+        AdminOperationService,
+        AdminInvitationService,
       ],
     };
   }
 
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController);
+    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController);
   }
 }
