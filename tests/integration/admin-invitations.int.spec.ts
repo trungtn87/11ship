@@ -30,8 +30,8 @@ describe('M01-D-ADMIN-1A - admin invitations (schema, participant, transactions)
   const manager = () => managerFor(poolClientSource(pool));
 
   async function truncateInvitations(): Promise<void> {
-    // M01-D-ADMIN-1B's step-up operations reference admin_invitations, so a TRUNCATE must name that table too.
-    await pool.query('TRUNCATE app.admin_sensitive_operations, app.admin_invitation_permissions, app.admin_invitations');
+    // M01-D-ADMIN-1B's step-up operations and M01-D-ADMIN-1C's attempts/profiles reference admin_invitations, so a TRUNCATE must name those tables too.
+    await pool.query('TRUNCATE app.admin_app_permissions, app.admin_profiles, app.admin_activation_otp_challenges, app.admin_activation_attempts, app.admin_sensitive_operations, app.admin_invitation_permissions, app.admin_invitations');
   }
 
   async function makeUser(admin: boolean): Promise<string> {

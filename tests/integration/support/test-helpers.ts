@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { ActivationOtpProvider } from '../../../apps/backend/src/admin-activation/activation-otp-provider';
 import { AppModule } from '../../../apps/backend/src/app.module';
 import { AuthModuleOptions } from '../../../apps/backend/src/auth/auth.module';
 import { configureApp } from '../../../apps/backend/src/app.setup';
@@ -48,6 +49,8 @@ export interface RunningApp {
 export interface StartAppOptions {
   /** Binds Auth Core (with an explicit OTP provider), exactly as main.ts does. Omitted: no Auth routes. */
   readonly auth?: AuthModuleOptions;
+  /** M01-D-ADMIN-1C: the explicitly bound activation OTP provider (only used when config.adminActivation is set). */
+  readonly activationOtpProvider?: ActivationOtpProvider;
 }
 
 /** Boots the real AppModule through the same HTTP pipeline as main.ts, on a random free port. */
@@ -58,7 +61,14 @@ export async function startApp(config: AppConfig, options: StartAppOptions = {})
   });
 
   const moduleRef = await Test.createTestingModule({
-    imports: [AppModule.register({ config, logger, ...(options.auth === undefined ? {} : { auth: options.auth }) })],
+    imports: [
+      AppModule.register({
+        config,
+        logger,
+        ...(options.auth === undefined ? {} : { auth: options.auth }),
+        ...(options.activationOtpProvider === undefined ? {} : { activationOtpProvider: options.activationOtpProvider }),
+      }),
+    ],
   }).compile();
 
   const app = moduleRef.createNestApplication({ logger: false });

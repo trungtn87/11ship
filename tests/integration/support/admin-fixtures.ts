@@ -8,6 +8,8 @@ import { base32Decode } from '../../../apps/backend/src/admin-auth/base32';
 import { hotp, stepAt } from '../../../apps/backend/src/admin-auth/totp';
 import { Argon2idPasswordHasher } from '../../../apps/backend/src/auth/password-hasher';
 import { FakeOtpProvider } from '../../../apps/backend/src/auth/fake-otp-provider';
+import { ActivationOtpProvider } from '../../../apps/backend/src/admin-activation/activation-otp-provider';
+import { AdminActivationConfig } from '../../../apps/backend/src/config/admin-activation-config';
 import { AdminAuthConfig, loadLimiterConfig } from '../../../apps/backend/src/config/admin-auth-config';
 import { AppConfig } from '../../../apps/backend/src/config/app-config';
 import { Keyring } from '../../../apps/backend/src/crypto/keyring';
@@ -208,6 +210,9 @@ export interface StartAdminOptions {
   readonly businessLockTimeoutMs?: number;
   /** M01-D-ADMIN-1B: lifetime of a new invitation. Default 72 hours. */
   readonly invitationTtlSeconds?: number;
+  /** M01-D-ADMIN-1C: enables the activation routes with this (fake) provider. Omitted: the routes are not wired. */
+  readonly activationProvider?: ActivationOtpProvider;
+  readonly activationConfig?: Partial<AdminActivationConfig>;
 }
 
 export async function startAdminApp(options: StartAdminOptions = {}): Promise<AdminApp> {
@@ -237,8 +242,21 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
     crypto: options.keyring ?? fixtureKeyring(options.activeKeyId ?? 'k1'),
     auth: authTestConfig(),
     adminAuth,
+    ...(options.activationProvider === undefined
+      ? {}
+      : {
+          adminActivation: {
+            otpMode: 'FAKE' as const,
+            providerTimeoutMs: 8000,
+            promoteGraceMs: 10_000,
+            ...options.activationConfig,
+          },
+        }),
   };
-  const running = await startApp(config, { auth: { otpProvider: new FakeOtpProvider() } });
+  const running = await startApp(config, {
+    auth: { otpProvider: new FakeOtpProvider() },
+    ...(options.activationProvider === undefined ? {} : { activationOtpProvider: options.activationProvider }),
+  });
   const pool = testPool(loaded.database, { poolMax: 6 });
   const tracked = new Set<string>();
   const clearLimits = async (): Promise<void> => {
