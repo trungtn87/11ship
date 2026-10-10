@@ -213,6 +213,8 @@ export interface StartAdminOptions {
   /** M01-D-ADMIN-1C: enables the activation routes with this (fake) provider. Omitted: the routes are not wired. */
   readonly activationProvider?: ActivationOtpProvider;
   readonly activationConfig?: Partial<AdminActivationConfig>;
+  /** Exact HTTPS origins accepted on POST (default: ADMIN_ORIGIN). The browser test passes its local HTTPS front. */
+  readonly allowedOrigins?: readonly string[];
 }
 
 export async function startAdminApp(options: StartAdminOptions = {}): Promise<AdminApp> {
@@ -227,7 +229,7 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
   }
   const loaded = loadIntegrationConfig();
   const adminAuth: AdminAuthConfig = {
-    allowedOrigins: [ADMIN_ORIGIN],
+    allowedOrigins: options.allowedOrigins ?? [ADMIN_ORIGIN],
     trustedProxyIps: options.trustedProxyIps ?? [],
     limiter: limiter.limiter,
     invitationTtlSeconds: options.invitationTtlSeconds ?? 72 * 3600,
