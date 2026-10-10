@@ -63,7 +63,7 @@ describe('the validator rejects a widened Blueprint', () => {
   });
 
   test('a migration in build or start', () => {
-    expectProblem(mutate('run build\n', 'run build && npm run db:migrate\n'), /buildCommand must not run migrations/);
+    expectProblem(mutate('run build:admin-web\n', 'run build:admin-web && npm run db:migrate\n'), /buildCommand must not run migrations/);
     expectProblem(mutate('startCommand: npm start', 'startCommand: npm run db:migrate && npm start'), /startCommand/);
   });
 
