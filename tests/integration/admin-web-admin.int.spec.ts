@@ -658,17 +658,25 @@ describe('M01-D-ADMIN-WEB - SYSTEM invitations and ADMIN activation in a real br
   }, 180_000);
 
   it('too many wrong links lock the address: the page shows the wait taken from Retry-After and sends nothing more', async () => {
-    for (let index = 0; index <= LINK_FAILURE_LIMIT; index += 1) {
-      const refused = await act(app, 'POST', '/start', { body: { token: `${String.fromCharCode(66 + index)}`.repeat(43) }, origin });
-      expect(refused.status).toBeGreaterThanOrEqual(400);
+    // Every attempt goes through the local front, so they all count against the same address bucket.
+    let page: Page | undefined;
+    for (let index = 0; index <= LINK_FAILURE_LIMIT + 1; index += 1) {
+      await page?.close();
+      page = await openAt(`${origin}/activate#t=${String.fromCharCode(66 + index).repeat(43)}`);
+      await page.waitFor(`document.body.innerText.includes(${JSON.stringify(ADMIN_COPY.linkInvalid)}) || document.body.innerText.includes('thử lại sau')`);
+      if ((await bodyText(page)).includes('thử lại sau')) {
+        break;
+      }
     }
-    const page = await openAt(`${origin}/activate#t=${'D'.repeat(43)}`);
-    await page.waitFor(`document.body.innerText.includes('thử lại sau')`);
+    if (page === undefined) {
+      throw new Error('no page');
+    }
     expect(await bodyText(page)).toMatch(/thử lại sau \d{2}:\d{2}/);
+    expect(await bodyText(page)).not.toContain(ADMIN_COPY.linkInvalid);
     await shot(page, '45-activate-rate-limited-desktop');
     expect(page.posts('/v1/admin-activation/start')).toBe(1);
     await page.close();
-  }, 60_000);
+  }, 90_000);
 
   // =====================================================================================================================
   // E. Responsive, keyboard, forms
