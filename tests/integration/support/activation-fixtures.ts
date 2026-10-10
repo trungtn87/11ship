@@ -1,5 +1,17 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
+import { Type } from '@nestjs/common';
+import { AdminCrypto } from '../../../apps/backend/src/admin-auth/admin-crypto';
+import { AdminLimitsRepository } from '../../../apps/backend/src/admin-auth/admin-limits-repository';
+import { AdminInvitationParticipant } from '../../../apps/backend/src/admin-invitations/admin-invitation-participant';
+import { AdminActivationLimiter } from '../../../apps/backend/src/admin-activation/admin-activation-limiter';
+import { AdminActivationRepository } from '../../../apps/backend/src/admin-activation/admin-activation-repository';
+import { AdminActivationService } from '../../../apps/backend/src/admin-activation/admin-activation-service';
+import { AdminInvitationReader } from '../../../apps/backend/src/admin-provisioning/admin-invitation-reader';
+import { AdminIdentityParticipant } from '../../../apps/backend/src/auth/admin-identity-participant';
+import { AdminPasswordVerifier } from '../../../apps/backend/src/auth/admin-password-verifier';
+import { AuditWriter } from '../../../apps/backend/src/audit/audit-writer';
+import { TransactionClientSource, TransactionManager } from '../../../apps/backend/src/transaction/transaction-manager';
 import { FakeActivationOtpProvider } from '../../../apps/backend/src/admin-activation/activation-otp-providers';
 import { ACTIVATION_COOKIE } from '../../../apps/backend/src/admin-activation/admin-activation-constants';
 import { digestToken, generateToken } from '../../../apps/backend/src/auth/tokens';
@@ -265,4 +277,92 @@ export async function insertAttempt(
     ],
   );
   return { attemptId, cookie };
+}
+
+// ----- the real service over a chosen transaction source (trace and fault injection) -------------------------------
+
+export function directActivation(ctx: ActivationApp, source: TransactionClientSource): AdminActivationService {
+  const nest = ctx.app.running.app;
+  const get = <T>(token: Type<T>): T => nest.get(token, { strict: false });
+  const config = ctx.app.config;
+  const adminAuth = config.adminAuth;
+  const activation = config.adminActivation;
+  if (adminAuth === undefined || activation === undefined) {
+    throw new Error('the test app has no activation configuration');
+  }
+  const manager = new TransactionManager(source, {
+    timeoutMs: config.transaction.timeoutMs,
+    idleInTransactionTimeoutMs: config.transaction.idleInTransactionTimeoutMs,
+  });
+  const limits = get(AdminLimitsRepository);
+  return new AdminActivationService(
+    manager,
+    get(AdminActivationRepository),
+    get(AdminInvitationParticipant),
+    get(AdminInvitationReader),
+    get(AdminIdentityParticipant),
+    get(AdminPasswordVerifier),
+    get(AdminCrypto),
+    get(AuditWriter),
+    new AdminActivationLimiter(manager, limits, adminAuth),
+    limits,
+    adminAuth.limiter.key,
+    ctx.provider,
+    config,
+    activation,
+  );
+}
+
+export interface ActivationRank {
+  readonly rank: number;
+  readonly name: string;
+}
+
+/** Contract section 9: R0 < S0 < L2 < L3 < L8 < L9a < L9b. Anything else that locks a row is unranked (99) and fails the order check. */
+export function activationRank(statement: string): ActivationRank | undefined {
+  if (/pg_advisory_xact_lock/.test(statement)) {
+    return { rank: 3, name: 'L3 phone advisory' };
+  }
+  if (/app\.admin_auth_limits/.test(statement) && /FOR UPDATE|INSERT INTO/.test(statement)) {
+    return { rank: 2, name: 'L2 bucket' };
+  }
+  if (!/FOR (UPDATE|SHARE)/.test(statement)) {
+    return undefined;
+  }
+  if (/FROM app\.admin_invitations\b/.test(statement)) {
+    return { rank: 8, name: /FOR SHARE/.test(statement) ? 'L8 invitation S' : 'L8 invitation X' };
+  }
+  if (/FROM app\.admin_activation_attempts\b/.test(statement)) {
+    return { rank: 9.5, name: 'L9a attempt' };
+  }
+  if (/FROM app\.admin_activation_otp_challenges\b/.test(statement)) {
+    return { rank: 9.6, name: 'L9b challenge' };
+  }
+  return { rank: 99, name: `unranked lock: ${statement.slice(0, 80)}` };
+}
+
+export function activationLockSequence(statements: readonly string[]): string[] {
+  return statements.map(activationRank).filter((ranked): ranked is ActivationRank => ranked !== undefined).map((ranked) => ranked.name);
+}
+
+export function activationOrderOk(statements: readonly string[]): boolean {
+  let last = 0;
+  for (const statement of statements) {
+    const ranked = activationRank(statement);
+    if (ranked === undefined) {
+      continue;
+    }
+    if (ranked.rank < last || ranked.rank === 99) {
+      return false;
+    }
+    last = ranked.rank;
+  }
+  return true;
+}
+
+/** True when `lock_timeout` is set before the first lock statement of the transaction. */
+export function setsLockTimeoutFirst(statements: readonly string[]): boolean {
+  const timeout = statements.findIndex((statement) => /set_config\('lock_timeout'/.test(statement));
+  const firstLock = statements.findIndex((statement) => activationRank(statement) !== undefined);
+  return timeout >= 0 && (firstLock < 0 || timeout < firstLock);
 }
