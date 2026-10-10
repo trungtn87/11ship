@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
+import { generateToken } from '../../apps/backend/src/auth/tokens';
 import { adminErrorCode, AdminResponse } from './support/admin-fixtures';
 import { act, ActivationApp, bucketRows, startActivationApp } from './support/activation-fixtures';
 
@@ -61,9 +62,12 @@ describe('M01-D-ADMIN-1C - transport headers on parser-level failures (raw HTTP,
   });
 
   it('the same headers on a successful-path rejection that reaches the controller (control: unchanged behaviour)', async () => {
-    const response = await act(ctx.app, 'POST', '/start', { body: { token: SECRET } });
-    expect(response.status).toBe(404);
-    expectTransport(response);
+    const unknown = await act(ctx.app, 'POST', '/start', { body: { token: generateToken().token } });
+    expect(unknown.status).toBe(404);
+    expectTransport(unknown);
+    const malformedShape = await act(ctx.app, 'POST', '/start', { body: { token: SECRET } });
+    expect({ status: malformedShape.status, code: adminErrorCode(malformedShape) }).toEqual({ status: 400, code: 'ADMIN_INPUT_INVALID' });
+    expectTransport(malformedShape);
   });
 
   it('conditional request headers cannot produce a 304 on the activation routes', async () => {
