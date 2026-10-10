@@ -145,6 +145,7 @@ export class ProvisioningView {
   #mountList(key: string): Mounted {
     const title = h('h1', { class: 'title', tabindex: '-1' }, 'Lời mời ADMIN');
     const create = this.#link('Tạo lời mời', { name: 'invitation-new' }, 'btn btn-primary btn-link');
+    create.id = 'invitations-new';
     const filter = h('select', { id: 'filter', class: 'select' });
     filter.append(h('option', { value: 'ALL' }, 'Tất cả trạng thái'));
     for (const [value, label] of Object.entries(STATUS_LABEL)) {
@@ -331,6 +332,7 @@ export class ProvisioningView {
     replace.addEventListener('change', applyMode);
 
     const submit = kind === 'revoke' ? h('button', { type: 'submit', class: 'btn btn-danger' }, 'Tiếp tục') : primary('Tiếp tục');
+    submit.id = 'compose-submit';
     const cancel = this.#link('Hủy', { name: 'invitations' }, 'link-btn');
     const formParts: HTMLElement[] = [];
     if (kind === 'create') {
@@ -338,7 +340,7 @@ export class ProvisioningView {
     } else {
       formParts.push(field('Lý do', 'f-reason', reason as unknown as HTMLInputElement, undefined, reasonError));
     }
-    const form = h('form', { class: 'form', novalidate: true }, ...formParts, kind === 'revoke' ? h('span') : kind === 'reissue' ? modeBox : h('span'), kind === 'revoke' ? h('span') : matrixBox, formError, h('div', { class: 'actions' }, submit, cancel));
+    const form = h('form', { id: 'compose-form', class: 'form', novalidate: true }, ...formParts, kind === 'revoke' ? h('span') : kind === 'reissue' ? modeBox : h('span'), kind === 'revoke' ? h('span') : matrixBox, formError, h('div', { class: 'actions' }, submit, cancel));
     if (kind === 'reissue') {
       matrixBox.hidden = true;
     }
@@ -362,7 +364,9 @@ export class ProvisioningView {
     const lockMessage = message('warning', 'compose-lock');
     const code = codeInput('step-code', 'compose-code-error');
     const codeSubmit = primary('Xác nhận');
+    codeSubmit.id = 'step-submit';
     const codeBack = secondary('Quay lại');
+    codeBack.id = 'step-back';
     codeBack.addEventListener('click', () => this.controller.backToForm());
     const refreshCode = (): void => {
       const s = this.controller.screen;
@@ -386,6 +390,7 @@ export class ProvisioningView {
     const working = h('p', { class: 'muted', role: 'status', hidden: true }, 'Đang xử lý…');
     const retryText = h('p', { class: 'message message-warning', role: 'alert' });
     const retryButton = primary('Kiểm tra lại', 'button');
+    retryButton.id = 'retry-business';
     retryButton.addEventListener('click', () => void this.controller.retryBusiness());
     const retryPart = h('div', { class: 'retry', hidden: true }, retryText, h('div', { class: 'actions' }, retryButton, this.#link('Mở danh sách', { name: 'invitations' }, 'btn btn-secondary btn-link')));
 
@@ -395,6 +400,7 @@ export class ProvisioningView {
     const linkInput = h('input', { id: 'issued-link', type: 'text', readonly: true, class: 'link-input', 'aria-label': 'Liên kết kích hoạt', spellcheck: 'false' });
     linkInput.addEventListener('focus', () => linkInput.select());
     const copyButton = secondary('Sao chép liên kết');
+    copyButton.id = 'copy-link';
     const copyStatus = message('notice', 'copy-status');
     copyButton.addEventListener('click', () => {
       void copyText(linkInput.value).then((ok) => {

@@ -89,6 +89,7 @@ export class ActivationPage {
   #mountUnavailable(): Mounted {
     const title = h('h1', { class: 'title', tabindex: '-1' }, TITLE);
     const retry = primary('Thử lại', 'button');
+    retry.id = 'act-retry';
     retry.addEventListener('click', () => void this.controller.retry());
     this.#page(h('section', { class: 'card' }, title, h('p', { class: 'message message-error', role: 'alert' }, COPY.unavailable), retry));
     return {
@@ -131,6 +132,7 @@ export class ActivationPage {
     const help = h('p', { class: 'lead lead-last' });
     const error = message('error', 'act-restart-error');
     const restart = primary(ADMIN_COPY.restart, 'button');
+    restart.id = 'act-restart';
     restart.addEventListener('click', () => void this.controller.restart());
     this.#page(h('section', { class: 'card' }, title, text, help, error, restart));
     return {
@@ -162,10 +164,12 @@ export class ActivationPage {
     const sendError = message('error', 'act-send-error');
     const test = h('p', { class: 'test-display', hidden: true });
     const send = primary('Gửi mã xác minh', 'button');
+    send.id = 'act-send';
     send.addEventListener('click', () => void this.controller.requestOtp());
     const codeError = message('error', 'act-otp-code-error');
     const code = codeInput('act-otp-code', 'act-otp-code-error');
     const submit = primary('Xác nhận mã');
+    submit.id = 'act-otp-submit';
     const codeForm = h('form', { class: 'form', novalidate: true }, field('Mã xác minh 6 số', 'act-otp-code', code, undefined, codeError), submit);
     code.addEventListener('input', () => {
       const clean = sanitizeCodeInput(code.value);
@@ -252,7 +256,9 @@ export class ActivationPage {
     });
     const hint = h('p', { id: 'act-pw-hint', class: 'hint' }, 'Từ 8 đến 128 ký tự.');
     const submit = primary('Tiếp tục');
+    submit.id = 'act-pw-submit';
     const restart = secondary(ADMIN_COPY.restart);
+    restart.id = 'act-pw-restart';
     restart.hidden = true;
     restart.addEventListener('click', () => void this.controller.restart());
     const form = h('form', { class: 'form', novalidate: true }, field('Mật khẩu mới', 'act-pw', password, eye, hint), field('Nhập lại mật khẩu', 'act-pw2', confirm), error, submit, restart);
@@ -306,7 +312,7 @@ export class ActivationPage {
       h('li', {}, 'Nhập mã 6 số hiển thị trong ứng dụng.'),
     );
     const qrBox = h('div', { class: 'qr', role: 'img', 'aria-label': 'Mã QR thiết lập Authenticator' });
-    const keyToggle = h('button', { type: 'button', class: 'link-btn', 'aria-expanded': 'false', 'aria-controls': 'act-key' }, 'Hiện khóa thiết lập');
+    const keyToggle = h('button', { id: 'act-key-toggle', type: 'button', class: 'link-btn', 'aria-expanded': 'false', 'aria-controls': 'act-key' }, 'Hiện khóa thiết lập');
     keyToggle.addEventListener('click', () => this.controller.toggleKey());
     const keyBox = h('p', { id: 'act-key', class: 'setup-key', hidden: true });
     const loadError = message('error', 'act-load-error');
@@ -318,6 +324,7 @@ export class ActivationPage {
     const lock = message('warning', 'act-en-lock');
     const code = codeInput('act-en-code', 'act-en-code-error');
     const submit = primary('Hoàn tất kích hoạt');
+    submit.id = 'act-en-submit';
     const refresh = (): void => {
       const s = this.controller.screen;
       submit.disabled = s.name !== 'enroll' || s.pending || s.secret === undefined || this.controller.waitSeconds() > 0 || !isCompleteCode(code.value);
@@ -397,7 +404,7 @@ export class ActivationPage {
 
   #mountDone(): Mounted {
     const title = h('h1', { class: 'title', tabindex: '-1' }, ADMIN_COPY.activationDone);
-    const login = h('a', { class: 'btn btn-primary btn-link', href: '/' }, ADMIN_COPY.goToLogin);
+    const login = h('a', { id: 'act-login', class: 'btn btn-primary btn-link', href: '/' }, ADMIN_COPY.goToLogin);
     this.#page(h('section', { class: 'card' }, title, h('p', { class: 'lead' }, ADMIN_COPY.activationDoneHelp), login));
     return { name: 'done', update: () => undefined, focus: () => title.focus() };
   }
