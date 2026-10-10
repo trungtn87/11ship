@@ -250,6 +250,7 @@ describe('RoleContextService.me (task section 13)', () => {
     expect(await r.service.me(PRINCIPAL)).toEqual({
       user_id: PRINCIPAL.userId,
       phone_normalized: PRINCIPAL.phoneNormalized,
+      phone_verification_status: 'VERIFIED',
       available_roles: [],
       active_role: null,
       onboarding_required: true,
@@ -528,6 +529,7 @@ describe('RoleContextService.me (task section 13)', () => {
       'onboarding',
       'onboarding_required',
       'phone_normalized',
+      'phone_verification_status',
       'role_selection_required',
       'user_id',
     ]);
