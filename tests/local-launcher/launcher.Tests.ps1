@@ -382,6 +382,7 @@ try {
     $idle = Start-IdleNode
     # Linux only: Node 24 names its main thread "MainThread", which is what the OS then reports as the process
     # name. The launcher is a Windows tool (image name "node"), so there these checks always run.
+    Start-Sleep -Milliseconds 1500   # the rename happens a moment after the process starts
     $idleName = (Get-Process -Id $idle.Id).ProcessName
     try {
      if ($idleName -ne 'node') {
