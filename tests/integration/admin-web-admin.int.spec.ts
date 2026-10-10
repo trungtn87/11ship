@@ -10,7 +10,7 @@ import { TestDisplayActivationOtpProvider } from '../../apps/backend/src/admin-a
 import { DEFAULT_ACTIVATION_LIMITS } from '../../apps/backend/src/config/admin-activation-config';
 import { ADMIN_COPY, COPY } from '../../apps/admin-web/src/core/messages';
 import { ADMIN_ORIGIN, AdminApp, count, createAdminMember, createSystem, enrollAndLogin, rewindAcceptedStep, startAdminApp, SystemAccount, totpNow, wrongCode } from './support/admin-fixtures';
-import { act, begin } from './support/activation-fixtures';
+import { act } from './support/activation-fixtures';
 import { freePort, repoRoot, runScript, startFront } from './support/admin-web-harness';
 import { createInvitation, createPayload, insertRawInvitation, systemSession } from './support/provisioning-fixtures';
 import { randomPhone } from './support/auth-fixtures';
@@ -264,8 +264,11 @@ describe('M01-D-ADMIN-WEB - SYSTEM invitations and ADMIN activation in a real br
     await page.fill('#f-phone', phone.local);
     await page.click('#p-SHOP-canView');
     await page.click('#compose-submit');
-    await page.waitFor(`document.querySelector('#step-code') && document.querySelector('#step-code').offsetParent !== null`);
-    await stepUpCode(page, secret);
+    // The backend may refuse the duplicate at the operation or at the business request: either way the page says so.
+    await page.waitFor(`document.body.innerText.includes(${JSON.stringify(ADMIN_COPY.pendingExists)}) || (document.querySelector('#step-code') && document.querySelector('#step-code').offsetParent !== null)`);
+    if (await page.visible('#step-code')) {
+      await stepUpCode(page, secret);
+    }
     await expectText(page, ADMIN_COPY.pendingExists);
     expect(await invitationsOf(phone.normalized)).toBe(1);
     await page.close();
@@ -297,7 +300,7 @@ describe('M01-D-ADMIN-WEB - SYSTEM invitations and ADMIN activation in a real br
     // Only reads or the page's own explicit retry may follow; nothing was re-sent by itself.
     expect(page.posts('/v1/admin/invitations')).toBe(1);
     expect(page.posts('/v1/admin/operations')).toBe(1);
-    const verifies = page.requests.filter((request) => request.method === 'POST' && new URL(request.url).pathname.endsWith('/verify')).length;
+    const verifies = page.requests.filter((request) => request.method === 'POST' && /^\/v1\/admin\/operations\/[^/]+\/verify$/.test(new URL(request.url).pathname)).length;
     expect(verifies).toBe(1);
 
     // The user repeats on purpose: the same Idempotency-Key and operation, so the backend replays the committed result.
@@ -587,7 +590,8 @@ describe('M01-D-ADMIN-WEB - SYSTEM invitations and ADMIN activation in a real br
     await page.send('Network.clearBrowserCookies');
     await page.reload();
     await expectText(page, ADMIN_COPY.sessionInvalid);
-    expect(page.posts('/v1/admin-activation/start')).toBe(0);
+    // Only the first load started the attempt; the reload sent no new start (there is no token to send).
+    expect(page.posts('/v1/admin-activation/start')).toBe(1);
     await page.close();
   }, 60_000);
 
@@ -596,7 +600,9 @@ describe('M01-D-ADMIN-WEB - SYSTEM invitations and ADMIN activation in a real br
     const page = await openAt(invite.link);
     await page.waitFor(`document.querySelector('#act-send')`);
     // Another client opens the same link: the backend supersedes the first attempt.
-    await begin(app, { invitationId: invite.invitationId, token: invite.token, phone: invite.phone });
+    // (The activation routes accept the Origin of ADMIN_ACTIVATION_ORIGIN only: this test's front.)
+    const other = await act(app, 'POST', '/start', { body: { token: invite.token }, origin });
+    expect([200, 201]).toContain(other.status);
     await page.reload();
     await expectText(page, ADMIN_COPY.replaced);
     await shot(page, '42-activate-replaced-desktop');
@@ -653,7 +659,8 @@ describe('M01-D-ADMIN-WEB - SYSTEM invitations and ADMIN activation in a real br
 
   it('too many wrong links lock the address: the page shows the wait taken from Retry-After and sends nothing more', async () => {
     for (let index = 0; index <= LINK_FAILURE_LIMIT; index += 1) {
-      await act(app, 'POST', '/start', { body: { token: `${String.fromCharCode(66 + index)}`.repeat(43) } });
+      const refused = await act(app, 'POST', '/start', { body: { token: `${String.fromCharCode(66 + index)}`.repeat(43) }, origin });
+      expect(refused.status).toBeGreaterThanOrEqual(400);
     }
     const page = await openAt(`${origin}/activate#t=${'D'.repeat(43)}`);
     await page.waitFor(`document.body.innerText.includes('thử lại sau')`);
