@@ -26,6 +26,9 @@ PY
 
 up_repo_migrations() { # $1 = db. Only the "Up Migration" part of every existing migration, in filename order.
   for f in "$ROOT"/database/migrations/*.sql; do
+    case "$(basename "$f")" in # the 1C migrations are applied from sql/ (verified equal below), not twice
+      1792281600000_*|1792368000000_*|1792454400000_*) continue ;;
+    esac
     awk '/^-- Up Migration/{u=1;next} /^-- Down Migration/{u=0} u' "$f" | psqlq -d "$1" || { fail "repo migration $(basename "$f")"; return 1; }
   done
 }

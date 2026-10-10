@@ -38,6 +38,10 @@ export const LIMIT_KINDS = Object.freeze({
   loginRequestIp: 'LOGIN_REQUEST_IP',
   totpUser: 'TOTP_USER',
   totpRequestIp: 'TOTP_REQUEST_IP',
+  activationRequestIp: 'ACTIVATION_REQUEST_IP',
+  activationLinkIp: 'ACTIVATION_LINK_IP',
+  activationOtpSend: 'ACTIVATION_OTP_SEND',
+  activationTotp: 'ACTIVATION_TOTP',
 });
 export type LimitKind = (typeof LIMIT_KINDS)[keyof typeof LIMIT_KINDS];
 
