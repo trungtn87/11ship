@@ -11,7 +11,7 @@ Vì vậy trang và API phải cùng một origin HTTPS. Không có bước nào
 
 `scripts/admin-web-dev.mjs` là front HTTPS chỉ dùng local (mặc định `https://localhost:8443`):
 - Phục vụ trang đã build trong `apps/admin-web/dist`.
-- Chuyển tiếp **chỉ** `/v1/admin-auth/*` tới backend qua loopback HTTP.
+- Chuyển tiếp **chỉ** `/v1/admin-auth/*`, `/v1/admin-activation/*` và `/v1/admin/*` tới backend qua loopback HTTP (hai prefix sau dùng cho web mời/kích hoạt ADMIN, xem [M01-D-ADMIN-WEB-local-run](M01-D-ADMIN-WEB-local-run.md)).
 - Bỏ mọi `X-Forwarded-For`/`Forwarded` do client gửi và không tự thêm header nào. Backend giữ `ADMIN_AUTH_TRUSTED_PROXY_IPS=[]`.
 - Hệ quả: mọi request local được tính chung một địa chỉ `127.0.0.1` trong limiter.
 - Cookie, Origin và `x-csrf-token` đi qua nguyên vẹn.
