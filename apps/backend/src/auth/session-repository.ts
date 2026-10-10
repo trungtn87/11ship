@@ -6,7 +6,6 @@ import { TransactionContext } from '../transaction/transaction-context';
 import { CLOCK_CTE, epochMs, toSafeInteger } from './auth-db';
 import { DeviceInfo } from './auth-validation';
 import { generateToken } from './tokens';
-import { AccountOrigin } from './user-repository';
 
 export interface CreatedSession {
   readonly sessionId: string;
