@@ -188,3 +188,59 @@ real services). Each must be confirmed in D2/D4 or at first manual deploy:
 - node-pg-migrate 8.0.4 `runner` option names (`dbClient`, `migrationsSchema`, `createMigrationsSchema`) — exercised
   only by CI (`remote-migration-runner.int.spec.ts`).
 - Grants matrix in §3 (static analysis only).
+
+## 9. M00 staging Web Admin M01 — integration gate (2026-10-10)
+
+**Status: prepared in Draft PR #42; NOT DEPLOYED, NO OWNER LOGIN ACCEPTANCE.** The existing local
+`scripts/admin-web-dev.mjs` is **never** run on Render. On the reviewed staging build only,
+`ADMIN_WEB_STAGING_ENABLED=true` installs a static-only handler in the main Nest process for
+`/`, CSS, font and compiled JS assets, on the same HTTPS origin as `/v1/admin-auth/*`.
+Render terminates HTTPS, so the application itself listens on HTTP `$PORT` internally.
+The old self-signed HTTPS local front remains local-only.
+
+### Reviewed target (non-secret data)
+
+- Supabase project `blavybabrrhfudxxrqlz` in Tokyo, PostgreSQL 17.
+- Verified Session pooler: `aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres`.
+- Pooler user format: `<role>.blavybabrrhfudxxrqlz`. The Owner-provided
+  `postgres.blavybabrrhfudxxrqlz` is **administrative**: never put its URI or password in Render.
+- The dedicated `app` schema is owned by `ship11_migrator`; restricted `ship11_app`
+  has USAGE, while `anon` does not. Both custom roles started as NOLOGIN (safe preparation),
+  so there is **no deployable runtime connection yet**.
+- Render Free workspace `Trung's workspace`; 11Ship service has not been created.
+
+### Before **any** remote migration or public deploy
+
+1. Complete the integration tests, review all three `users.account_origin` values,
+   and approve the final exact SHA. M00-D2 introduces the column; the later Admin migration
+   expands its constraints rather than adding the column again. Never apply the duplicate
+   old M01 migration unchanged, and never edit a migration that has already been applied.
+2. In a private operator environment, generate unique cryptographic passwords and enable
+   LOGIN only for the two new roles. Do not send passwords or connection URLs through chat,
+   GitHub, PR evidence or screenshots. Verify the project reference in each pooler username.
+3. Download and verify the provider TLS CA fingerprint via the Supabase dashboard. Keep full
+   TLS server-name and certificate-chain validation. Never use `sslmode=disable`,
+   `NODE_TLS_REJECT_UNAUTHORIZED=0`, or the transaction pooler port 6543.
+4. Run the repository's **reviewed** remote migration runner, first read-only then with the
+   explicit `--apply` target gate. It alone owns `app.pgmigrations`. Do not substitute
+   Supabase SQL editor migrations for it or write fake migration history rows.
+5. Apply the explicit per-table grants for the runtime role, including admin-auth tables,
+   and recheck public API schema exposure. No blanket superuser permissions.
+6. Configure the Render service (one Free service, Singapore, manual deploy):
+   build backend **and** `build:admin-web`, then `npm start`. Supply secrets using secure
+   environment settings, NOT `render.yaml` values: runtime `DATABASE_URL`, `DB_SSL_CA`,
+   `AUTH_OTP_HMAC_SECRET`, crypto keyring, `AUTH_STAGING_ALLOWED_PHONES`,
+   `ADMIN_AUTH_ALLOWED_ORIGINS` (the **real assigned** https://...onrender.com origin),
+   and `ADMIN_RATE_LIMIT_HMAC_KEY`. Do not supply `MIGRATION_DATABASE_URL` to Render.
+   The blueprint explicitly requires `APP_ENV=staging`, fixture mode, and Admin Auth.
+7. From a restricted operator session, initialize the admin limiter and bootstrap the
+   **single** SYSTEM account through the repository CLI. Do not log temporary passwords
+   or TOTP recovery data. Owner enrolls a fresh authenticator directly on the real HTTPS UI.
+8. Smoke test real `/v1/health/ready`, loading `/`, CSS/JS, login, enrollment, MFA,
+   authenticated `/me`, refresh, logout, revoked-cookie refusal, and mobile browser.
+   Record only redacted status/evidence and the exact deployed SHA. No green CI can
+   replace this live round.
+
+**Blockers until completion:** audited integration code; safe secret provisioning; remote
+migrations/grants; deployment and real Owner login. None of these are established by the
+mere existence of the empty staging schema or by the pooler host and username.
