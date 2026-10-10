@@ -22,6 +22,7 @@ import {
   relogin,
   sessionOf,
   stepUp,
+  totpBucketFailures,
   SystemSession,
   systemSession,
   verifyOperation,
@@ -160,6 +161,73 @@ describe('M01-D-ADMIN-1B - SYSTEM invitations over HTTP', () => {
       const post = await api(app, 'POST', '/operations', { body: { action: 'CREATE_INVITATION', payload: createPayload() }, ...sessionOf(system) });
       expect(post.status).toBe(401);
       expect(await operationCount()).toBe(0);
+    });
+  });
+
+  // ----- finding on ad9b092: authorization before the target lookup of reissue/revoke -----------------------------
+
+  describe('reissue/revoke authorize the session BEFORE looking the target up (finding, review of ad9b092)', () => {
+    async function snapshot(invitationId: string): Promise<unknown> {
+      const invitation = await invitationRow(app.pool, invitationId);
+      const operations = await app.pool.query('SELECT operation_id, status, attempt_count FROM app.admin_sensitive_operations ORDER BY operation_id');
+      const audits = await count(app.pool, "SELECT 1 FROM app.audit_logs WHERE action LIKE 'admin_invitation.%'");
+      const records = await count(app.pool, "SELECT 1 FROM app.idempotency_records WHERE scope_type = 'admin_user'");
+      return { invitation, operations: operations.rows, audits, records, bucket: await totpBucketFailures(app.pool) };
+    }
+
+    function call(kind: 'reissue' | 'revoke', invitationId: string, as: { cookies: Record<string, string>; csrf: string }) {
+      return api(app, 'POST', `/invitations/${invitationId}/${kind}`, {
+        body: { operation_id: randomUUID(), expected_version: 1, reason: 'r' },
+        headers: { 'idempotency-key': randomUUID() },
+        ...as,
+      });
+    }
+
+    it.each(['reissue', 'revoke'] as const)(
+      '%s: an ADMIN-role session gets 403 ADMIN_FORBIDDEN for an existing AND an unknown id; nothing changes',
+      async (kind) => {
+        const created = await createInvitation(app, system);
+        await createOperation(app, system, 'REVOKE_INVITATION', { invitation_id: created.invitationId, expected_version: 1, reason: 'r' });
+        await app.clearLimits();
+        const member = await createAdminMember(app);
+        const as = sessionOf({ login: await enrollAndLogin(app, member) });
+        const before = await snapshot(created.invitationId);
+        for (const id of [created.invitationId, randomUUID()]) {
+          const response = await call(kind, id, as);
+          expect(response.status).toBe(403);
+          expect(adminErrorCode(response)).toBe('ADMIN_FORBIDDEN');
+          expect(response.text).not.toContain('NOT_FOUND');
+        }
+        expect(await snapshot(created.invitationId)).toEqual(before);
+      },
+    );
+
+    it.each(['reissue', 'revoke'] as const)('%s: a valid SYSTEM session still gets 404 for an unknown id', async (kind) => {
+      const response = await call(kind, randomUUID(), sessionOf(system));
+      expect(response.status).toBe(404);
+      expect(adminErrorCode(response)).toBe('ADMIN_INVITATION_NOT_FOUND');
+    });
+
+    it.each([
+      ['reissue', 'the session was revoked', 'UPDATE app.admin_sessions SET revoked_at = clock_timestamp() WHERE user_id = $1::uuid AND revoked_at IS NULL'],
+      ['revoke', 'the session was revoked', 'UPDATE app.admin_sessions SET revoked_at = clock_timestamp() WHERE user_id = $1::uuid AND revoked_at IS NULL'],
+      ['reissue', 'the session expired', "UPDATE app.admin_sessions SET expires_at = created_at + interval '1 millisecond' WHERE user_id = $1::uuid AND revoked_at IS NULL"],
+      ['revoke', 'the session expired', "UPDATE app.admin_sessions SET expires_at = created_at + interval '1 millisecond' WHERE user_id = $1::uuid AND revoked_at IS NULL"],
+      ['reissue', 'the factor version moved', 'UPDATE app.admin_totp_factors SET version = version + 1 WHERE user_id = $1::uuid'],
+      ['revoke', 'the factor version moved', 'UPDATE app.admin_totp_factors SET version = version + 1 WHERE user_id = $1::uuid'],
+      ['reissue', 'the membership version moved', 'UPDATE app.admin_memberships SET version = version + 1 WHERE user_id = $1::uuid'],
+      ['revoke', 'the membership was disabled', "UPDATE app.admin_memberships SET status = 'DISABLED' WHERE user_id = $1::uuid"],
+    ] as const)('%s: refused with 401 when %s, for an existing and an unknown id; nothing changes', async (kind, _case, sql) => {
+      const created = await createInvitation(app, system);
+      await app.clearLimits();
+      await app.pool.query(sql, [system.account.userId]);
+      const before = await snapshot(created.invitationId);
+      for (const id of [created.invitationId, randomUUID()]) {
+        const response = await call(kind, id, sessionOf(system));
+        expect(response.status).toBe(401);
+        expect(adminErrorCode(response)).toBe('ADMIN_SESSION_INVALID');
+      }
+      expect(await snapshot(created.invitationId)).toEqual(before);
     });
   });
 

@@ -132,6 +132,27 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
 
     const ACTOR_WRITE = ['L4 users', 'L5 admin_memberships', 'L6 admin_totp_factors', 'L7 admin_sessions'];
 
+    /**
+     * Reissue/revoke (finding on ad9b092): a read-only authorization transaction (L4-L7 FOR SHARE, lock_timeout first)
+     * runs and ENDS before the coordinator, which then takes L1, L3 and the actor rows again in its own order. The two
+     * transactions are checked separately; no actor lock is held while L1/L3 are acquired.
+     */
+    function expectAuthorizedThenMutation(trace: string[][], mutation: string[]): void {
+      const transactions = lockingTransactions(trace);
+      expect(transactions).toHaveLength(2);
+      const [authorization, coordinator] = transactions as [string[], string[]];
+      expect(lockSequence(authorization)).toEqual(['L4 users', 'L5 admin_memberships', 'L6 admin_totp_factors', 'L7 admin_sessions']);
+      expect(authorization.some((statement) => /\bFOR UPDATE\b/.test(statement))).toBe(false);
+      expect(authorization.some((statement) => /pg_advisory_xact_lock/.test(statement))).toBe(false);
+      const timeoutAt = authorization.indexOf(LOCK_TIMEOUT);
+      const firstLock = authorization.findIndex((statement) => lockSequence([statement]).length > 0);
+      expect(timeoutAt).toBeGreaterThanOrEqual(0);
+      expect(timeoutAt).toBeLessThan(firstLock);
+      expect(isNonDecreasing(coordinator)).toBe(true);
+      expect(lockSequence(coordinator)).toEqual(mutation);
+      expect(trace.indexOf(authorization)).toBeLessThan(trace.indexOf(coordinator));
+    }
+
     it('create-operation (create / reissue target) and verify', async () => {
       const create = traced();
       const payload = createPayload();
@@ -194,7 +215,7 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
         randomUUID(),
         meta(),
       );
-      expectOrdered(reissue.trace, mutation, { ownLockTimeout: false });
+      expectAuthorizedThenMutation(reissue.trace, mutation);
 
       const successor = String(((reissued.payload as Record<string, unknown>).invitation as Record<string, unknown>).invitation_id);
       await app.clearLimits();
@@ -207,7 +228,7 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
         randomUUID(),
         meta(),
       );
-      expectOrdered(revoke.trace, mutation, { ownLockTimeout: false });
+      expectAuthorizedThenMutation(revoke.trace, mutation);
     });
 
     it('the three reads take shared locks in the same order and set lock_timeout first', async () => {

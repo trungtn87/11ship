@@ -168,7 +168,7 @@ export class AdminInvitationService {
   ): Promise<IdempotentOutcome> {
     const known = await this.actor.precheck(sessionToken, { required: true, header: csrfHeader });
     const payload = input.payload;
-    const phone = await this.#targetPhone(payload.invitationId);
+    const phone = await this.#authorizeAndTargetPhone(known, payload.invitationId);
     const canonical = canonicalPayload({ action: 'REISSUE_INVITATION', payload });
     return this.executor.execute(
       {
@@ -267,7 +267,7 @@ export class AdminInvitationService {
   ): Promise<IdempotentOutcome> {
     const known = await this.actor.precheck(sessionToken, { required: true, header: csrfHeader });
     const payload = input.payload;
-    const phone = await this.#targetPhone(payload.invitationId);
+    const phone = await this.#authorizeAndTargetPhone(known, payload.invitationId);
     const canonical = canonicalPayload({ action: 'REVOKE_INVITATION', payload });
     return this.executor.execute(
       {
@@ -370,9 +370,25 @@ export class AdminInvitationService {
 
   // ----- shared steps ---------------------------------------------------------------------------------------------
 
-  /** Unlocked read of the IMMUTABLE phone of a target, before any lock (it decides the L3 key). */
-  async #targetPhone(invitationId: string): Promise<string> {
-    const phone = await this.transactions.withTransaction((context) => this.reader.peekPhone(context, invitationId));
+  /**
+   * Finding (review of #41 at ad9b092): the target lookup of reissue/revoke must not answer an ADMIN-role (or an
+   * otherwise invalid) session with a NOT_FOUND that reveals whether an invitation id exists. So, BEFORE the lookup,
+   * a separate read-only authorization transaction runs the full actor check under shared locks in the module order
+   * (L4 users S -> L5 membership S -> L6 factor S -> L7 session S, lock_timeout first), reads the database clock after
+   * those locks and requires a live SYSTEM session (assertLive): ADMIN -> 403 ADMIN_FORBIDDEN, expired / revoked /
+   * factor or membership drift -> 401 ADMIN_SESSION_INVALID, for an existing and an unknown id alike. Only then is
+   * the IMMUTABLE phone read (plain SELECT, no lock) to derive the L3 key; an unknown id is then 404. The transaction
+   * ends (read-only commit) before the coordinator starts, so no actor lock is ever held while L1/L3 are acquired; the
+   * coordinator and the replay hook repeat the authoritative actor check under their own locks.
+   */
+  async #authorizeAndTargetPhone(known: SessionLookup, invitationId: string): Promise<string> {
+    const phone = await this.transactions.withTransaction(async (context): Promise<string | undefined> => {
+      await setBusinessLockTimeout(context, this.#lockTimeoutMs);
+      const actor = await this.actor.lock(context, known, { user: 'read', factor: 'read' });
+      const nowMs = await freshClockMs(context);
+      this.actor.assertLive(actor, nowMs);
+      return this.reader.peekPhone(context, invitationId);
+    });
     if (phone === undefined) {
       throw new AppError('ADMIN_INVITATION_NOT_FOUND');
     }
