@@ -380,7 +380,14 @@ try {
   else {
     New-GitSandbox; Record-Install; $script:DbHasTable = $true; $script:DbApplied = @(Get-MigrationFiles)
     $idle = Start-IdleNode
+    # Linux only: Node 24 names its main thread "MainThread", which is what the OS then reports as the process
+    # name. The launcher is a Windows tool (image name "node"), so there these checks always run.
+    $idleName = (Get-Process -Id $idle.Id).ProcessName
     try {
+     if ($idleName -ne 'node') {
+      if ($onWindows) { Check $false "node process is reported as '$idleName' on Windows" }
+      else { $script:Skipped.Add("live backend ownership checks - this OS reports the node process as '$idleName' (Windows job covers them)") }
+     } else {
       Write-BackendState $idle
       $ownedProcess = Get-OwnedBackendProcess
       Check ($ownedProcess -and $ownedProcess.Id -eq $idle.Id) 'a recorded node process with matching start time is owned'
@@ -415,6 +422,7 @@ try {
       Stop-Launcher | Out-Null
       $idle.WaitForExit(10000) | Out-Null
       Check ($idle.HasExited) 'Stop ends the backend it owns'
+     }
     } finally { Stop-Quietly $idle }
 
     # Stale PID of a process that no longer exists: Start replaces the state and starts one backend.
@@ -654,6 +662,7 @@ try {
 
     # Terminal / automation style: redirected streams. Must finish by itself.
     $p = Start-Process -FilePath 'cmd.exe' -ArgumentList ('/c ""{0}""' -f $wrapper) -RedirectStandardInput $emptyInput -RedirectStandardOutput $captured -PassThru -WindowStyle Hidden
+    $null = $p.Handle   # without a cached handle, ExitCode stays empty for a process started with -PassThru
     $finished = $p.WaitForExit(180000)
     if (!$finished) { & taskkill.exe /PID $p.Id /T /F | Out-Null }
     Check $finished 'F05: wrapper with redirected streams finishes without waiting for a key'
