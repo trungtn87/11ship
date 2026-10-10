@@ -53,7 +53,8 @@ describe('M01-D-ADMIN-1C - activation migrations', () => {
     expect(sql).toContain('-- Down Migration');
     expect(sql).toContain('M01-D-ADMIN-1C');
     const statements = code(sql);
-    expect(statements).not.toMatch(/\bIF\s+NOT\s+EXISTS\b/i);
+    // DDL guards only: a plpgsql condition `IF NOT EXISTS (SELECT ...)` inside a function body is ordinary logic.
+    expect(statements).not.toMatch(/\b(?:CREATE|ADD)\s+(?:TABLE|INDEX|UNIQUE\s+INDEX|SCHEMA|TYPE|SEQUENCE|COLUMN|CONSTRAINT)\s+IF\s+NOT\s+EXISTS\b/i);
     expect(statements).not.toMatch(/\b(?:CREATE|DROP|ALTER)\b[^;]*\bIF\s+EXISTS\b/i);
     expect(statements).not.toMatch(/\bCASCADE\b/i);
     expect(code(up(sql))).not.toMatch(/\bINSERT\s+INTO\b/i);
