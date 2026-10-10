@@ -82,7 +82,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | idempotency_records | SELECT, INSERT, UPDATE, DELETE |
 | outbox_events | SELECT, INSERT, UPDATE |
 | audit_logs | INSERT only |
-| admin_memberships | SELECT, UPDATE (UPDATE only because `FOR UPDATE/SHARE` needs it; rows are created by the operator command) |
+| admin_memberships | SELECT, INSERT, UPDATE (INSERT: the activation (M01-D-ADMIN-1C) creates ADMIN-role rows; the SYSTEM row is created by the operator command; UPDATE also because `FOR UPDATE/SHARE` needs it) |
 | admin_auth_challenges | SELECT, INSERT, UPDATE |
 | admin_totp_factors | SELECT, INSERT, UPDATE, DELETE |
 | admin_sessions | SELECT, INSERT, UPDATE |
@@ -91,6 +91,10 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | admin_invitations | SELECT, INSERT, UPDATE (no DELETE: a trigger refuses it; UPDATE is the seal, the terminal transition and `FOR UPDATE`) |
 | admin_invitation_permissions | SELECT, INSERT (snapshot rows are immutable) |
 | admin_sensitive_operations | SELECT, INSERT, UPDATE (no DELETE: a trigger refuses it; UPDATE is the replace/verify/consume/attempt transition and `FOR UPDATE`) |
+| admin_activation_attempts | SELECT, INSERT, UPDATE (no DELETE: a trigger refuses it; UPDATE is the state transition, the wrong-TOTP counter and `FOR UPDATE`) |
+| admin_activation_otp_challenges | SELECT, INSERT, UPDATE (no DELETE: a trigger refuses it; UPDATE is promote/verify/lock/invalidate and `FOR UPDATE`) |
+| admin_profiles | SELECT, INSERT (written once at activation) |
+| admin_app_permissions | SELECT, INSERT (written once at activation) |
 
 ```sql
 -- example shape, repeat per row of the table above
@@ -139,6 +143,13 @@ M01-D-ADMIN-1B (ADMIN invitations) adds, when `ADMIN_AUTH_ENABLED=true`:
 - `ADMIN_INVITATION_TTL_HOURS` - optional, integer 1..168, default 72. It applies to NEW invitations only (snapshotted
   into `expires_at`); a change never extends an existing invitation.
 - The table `admin_sensitive_operations` (grant row above). Apply the migration before deploying the code that uses it.
+
+M01-D-ADMIN-1C (account activation) adds, **off by default** (`ADMIN_ACTIVATION_ENABLED` unset or `false`: no route is mounted):
+
+- Three migrations (activation tables, limiter kinds, membership origin guard) and the four tables with the grant rows above. Apply the migrations **before** deploying the code that uses them. The grant of `admin_memberships` gains `INSERT`.
+- `ADMIN_ACTIVATION_ENABLED=true` needs `ADMIN_AUTH_ENABLED=true` and an **explicit** `ADMIN_ACTIVATION_OTP_MODE`. There is no real SMS adapter yet, so `SMS` refuses startup; `FAKE` and `TEST_DISPLAY` are accepted **only** with `APP_ENV` of `development` or `test` and never in staging/production, and nothing falls back to a test provider.
+- Optional: `ADMIN_ACTIVATION_OTP_PROVIDER_TIMEOUT_MS` (500..30000, default 8000) and `ADMIN_ACTIVATION_OTP_PROMOTE_GRACE_MS` (1000..60000, default 10000). Every other number is a constant of the code.
+- Down migration B refuses to run while activation limiter buckets exist (by design): clear them with the operator procedure first.
 
 ## 4. Migration procedure
 
