@@ -18,7 +18,7 @@ ALTER TABLE app.users ADD CONSTRAINT users_origin_verified_ck CHECK (
 -- Refuse to remove ADMIN_PROVISIONED support while any such account exists.
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM app.users WHERE account_origin = 'ADMIN_PROVISIONED') THEN
+  IF (SELECT count(*) FROM app.users WHERE account_origin = 'ADMIN_PROVISIONED') > 0 THEN
     RAISE EXCEPTION 'cannot downgrade account origin: administration accounts exist';
   END IF;
 END $$;
