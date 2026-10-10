@@ -160,4 +160,99 @@ describe('M01-D-ADMIN-1C - barriers: users unique, expiry after the locks', () =
     expect(response.setCookie).toEqual([]);
     expect(await attemptsOf(pool, invitationId)).toEqual([]);
   });
+
+  // ----- complete: expiry re-checked AFTER the wait on users.phone_normalized -----------------------------------------------
+
+  async function auditTotal(): Promise<number> {
+    return Number((await ctx.pool.query<{ n: string }>('SELECT count(*)::text AS n FROM app.audit_logs')).rows[0]?.n);
+  }
+
+  async function nothingMade(phone: string, invitationId: string): Promise<void> {
+    const { pool } = ctx;
+    // The competing registration rolled back, so no user exists; nothing of the activation survived either.
+    expect((await pool.query('SELECT 1 FROM app.users WHERE phone_normalized = $1', [phone])).rowCount).toBe(0);
+    expect((await pool.query('SELECT 1 FROM app.admin_profiles WHERE invitation_id = $1::uuid', [invitationId])).rowCount).toBe(0);
+    expect((await pool.query("SELECT 1 FROM app.admin_totp_factors f JOIN app.admin_activation_attempts a ON a.factor_id = f.factor_id WHERE a.invitation_id = $1::uuid", [invitationId])).rowCount).toBe(0);
+    const attempts = await attemptsOf(pool, invitationId);
+    expect(attempts.map((row) => [row.status, row.totp_attempt_count])).toEqual([['TOTP_ISSUED', 0]]);
+  }
+
+  it('K30 (attempt expiry): complete read T, waits at the users INSERT behind a registration, the DB clock passes attempt.expires_at, the registration rolls back - 401 and every row made is rolled back', async () => {
+    const { app, pool } = ctx;
+    const invite = await newInvite(app, system);
+    const row = await insertAttempt(pool, { invitationId: invite.invitationId, status: 'PASSWORD_SET', createdAgoSeconds: 5, expiresInSeconds: 7 });
+    const state = adminData(ok(await getState(app, { cookie: row.cookie, csrf: '' })));
+    const session = { cookie: row.cookie, csrf: String(state.csrf_token) };
+    const secret = String(adminData(ok(await post(app, '/totp/enrollment', session))).secret);
+    const competing = await holdUserInsert(invite.phone.normalized);
+    const audits = await auditTotal();
+    const pending = post(app, '/complete', session, { code: totpNow(secret) });
+    await waitForBlockedBackends(pool); // complete is parked ON the unique index, after it already read T
+    await waitUntilDbClockPast(pool, 'SELECT expires_at FROM app.admin_activation_attempts WHERE attempt_id = $1::uuid', [row.attemptId]);
+    await competing.rollback();
+    const response = await pending;
+    expect(response.status).toBe(401);
+    expect(adminErrorCode(response)).toBe('ADMIN_ACTIVATION_SESSION_INVALID');
+    await nothingMade(invite.phone.normalized, invite.invitationId);
+    expect(await invitationStatus(pool, invite.invitationId)).toBe('PENDING');
+    expect(await auditTotal()).toBe(audits);
+  });
+
+  it('K30 (invitation expiry): same schedule, the INVITATION expires while complete waits - the uniform 404 and nothing made', async () => {
+    const { app, pool } = ctx;
+    const phone = randomPhone();
+    app.track(phone.normalized);
+    const invitationId = randomUUID();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO app.admin_invitations
+           (invitation_id, generation_id, phone_normalized, full_name, note, token_digest, status, version, created_by,
+            created_at, expires_at, snapshot_sealed)
+         VALUES ($1::uuid, $2::uuid, $3, 'Short Lived', NULL, $4, 'PENDING', 1, $5::uuid,
+                 now() - interval '1 hour', now() + interval '7 seconds', false)`,
+        [invitationId, randomUUID(), phone.normalized, generateToken().digest, system.account.userId],
+      );
+      await client.query(
+        `INSERT INTO app.admin_invitation_permissions (invitation_id, app, can_view, can_review_profile, can_lock)
+         VALUES ($1::uuid, 'SHOP', true, false, false)`,
+        [invitationId],
+      );
+      await client.query('UPDATE app.admin_invitations SET snapshot_sealed = true WHERE invitation_id = $1::uuid', [invitationId]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+    const row = await insertAttempt(pool, { invitationId, status: 'PASSWORD_SET', createdAgoSeconds: 5, expiresInSeconds: 600 });
+    const state = adminData(ok(await getState(app, { cookie: row.cookie, csrf: '' })));
+    const session = { cookie: row.cookie, csrf: String(state.csrf_token) };
+    const secret = String(adminData(ok(await post(app, '/totp/enrollment', session))).secret);
+    const competing = await holdUserInsert(phone.normalized);
+    const audits = await auditTotal();
+    const pending = post(app, '/complete', session, { code: totpNow(secret) });
+    await waitForBlockedBackends(pool);
+    await waitUntilDbClockPast(pool, 'SELECT expires_at FROM app.admin_invitations WHERE invitation_id = $1::uuid', [invitationId]);
+    await competing.rollback();
+    const response = await pending;
+    expect(response.status).toBe(404);
+    expect(adminErrorCode(response)).toBe('ADMIN_ACTIVATION_LINK_INVALID');
+    await nothingMade(phone.normalized, invitationId);
+    expect(await invitationStatus(pool, invitationId)).toBe('PENDING');
+    expect(await auditTotal()).toBe(audits);
+  });
+
+  it('K30 (control): the same schedule WITHOUT an expiry still completes - the re-check only refuses what really expired', async () => {
+    const { app, pool } = ctx;
+    const invite = await newInvite(app, system);
+    const { session, secret } = await advance(deps(), invite, 'TOTP_ISSUED');
+    const competing = await holdUserInsert(invite.phone.normalized);
+    const pending = post(app, '/complete', session, { code: totpNow(String(secret)) });
+    await waitForBlockedBackends(pool);
+    await competing.rollback();
+    expect((await pending).status).toBe(200);
+  });
 });

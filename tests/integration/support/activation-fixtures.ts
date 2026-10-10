@@ -437,7 +437,7 @@ export function directActivation(ctx: ActivationApp, source: TransactionClientSo
     get(AdminPasswordVerifier),
     get(AdminCrypto),
     get(AuditWriter),
-    new AdminActivationLimiter(manager, limits, adminAuth),
+    new AdminActivationLimiter(manager, limits, adminAuth, activation),
     limits,
     adminAuth.limiter.key,
     ctx.provider,

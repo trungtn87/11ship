@@ -1,5 +1,5 @@
 import { ActivationErrorDetails } from '../common/app-errors';
-import { PASSWORD_DEADLINE_MS, OTP_WRONG_LIMIT, TOTP_WRONG_LIMIT } from './admin-activation-constants';
+import { OTP_WRONG_LIMIT, TOTP_WRONG_LIMIT } from './admin-activation-constants';
 import { AttemptRow, ChallengeRow } from './admin-activation-repository';
 
 // The ONLY non-sensitive view of an activation attempt (contract section 6.3). It is built from values the service read
@@ -59,12 +59,12 @@ export function stateGetsCsrf(attempt: AttemptRow): boolean {
   return attempt.status !== 'COMPLETED';
 }
 
-export function passwordDeadlineMs(attempt: AttemptRow): number | null {
-  return attempt.otpVerifiedAtMs === null ? null : attempt.otpVerifiedAtMs + PASSWORD_DEADLINE_MS;
+export function passwordDeadlineMs(attempt: AttemptRow, windowMs: number): number | null {
+  return attempt.otpVerifiedAtMs === null ? null : attempt.otpVerifiedAtMs + windowMs;
 }
 
 /** The state body (GET state / 409 details). `csrf` is set by the caller only where the table of 6.1.1 allows it. */
-export function stateBody(input: ViewInput, csrf: string | undefined): ActivationErrorDetails & Record<string, unknown> {
+export function stateBody(input: ViewInput, csrf: string | undefined, passwordWindowMs: number): ActivationErrorDetails & Record<string, unknown> {
   const { attempt, nowMs } = input;
   const body: Record<string, string | number | boolean | null | Record<string, string | number | boolean | null>> = {
     state: attempt.status,
@@ -82,7 +82,7 @@ export function stateBody(input: ViewInput, csrf: string | undefined): Activatio
       break;
     }
     case 'OTP_VERIFIED': {
-      const deadline = passwordDeadlineMs(attempt);
+      const deadline = passwordDeadlineMs(attempt, passwordWindowMs);
       body.password_deadline = deadline === null ? null : iso(deadline);
       body.restart_required = deadline !== null && nowMs > deadline;
       break;

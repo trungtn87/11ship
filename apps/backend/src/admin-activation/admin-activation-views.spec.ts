@@ -1,7 +1,10 @@
 import { describe, expect, it } from '@jest/globals';
-import { PASSWORD_DEADLINE_MS } from './admin-activation-constants';
+import { DEFAULT_ACTIVATION_LIMITS } from '../config/admin-activation-config';
 import { AttemptRow, ChallengeRow } from './admin-activation-repository';
-import { otpStatusOf, stateBody, stateGetsCsrf, wireReason } from './admin-activation-views';
+import { otpStatusOf, stateBody as stateBodyWith, stateGetsCsrf, wireReason, ViewInput } from './admin-activation-views';
+
+const PASSWORD_DEADLINE_MS = DEFAULT_ACTIVATION_LIMITS.passwordDeadlineSeconds * 1000;
+const stateBody = (input: ViewInput, csrf: string | undefined): ReturnType<typeof stateBodyWith> => stateBodyWith(input, csrf, PASSWORD_DEADLINE_MS);
 
 const NOW = 1_800_000_000_000;
 

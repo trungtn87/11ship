@@ -22,7 +22,7 @@ import {
   AppError,
   TechnicalError,
 } from '../common/app-errors';
-import { AdminActivationConfig } from '../config/admin-activation-config';
+import { ActivationLimits, AdminActivationConfig } from '../config/admin-activation-config';
 import { AdminLimiterKey } from '../config/admin-auth-config';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { freshClockMs } from '../idempotency/idempotency-repository';
@@ -34,23 +34,12 @@ import {
   ACTIVATION_AUDIT_ACTIONS,
   ACTOR_ANONYMOUS,
   ACTOR_USER,
-  ATTEMPT_TTL_MS,
-  LINK_FAILURE_LIMIT,
-  LINK_FAILURE_LOCK_SECONDS,
-  LINK_FAILURE_WINDOW_SECONDS,
   LIVE_ATTEMPT_STATUSES,
-  OTP_RESEND_COOLDOWN_MS,
-  OTP_SEND_LIMIT,
-  OTP_SEND_WINDOW_SECONDS,
-  OTP_TTL_MS,
   OTP_WRONG_LIMIT,
-  PASSWORD_DEADLINE_MS,
   RESOURCE_ATTEMPT,
   RESOURCE_CHALLENGE,
   RESOURCE_INVITATION,
   TOTP_FAILURE_LIMIT,
-  TOTP_FAILURE_LOCK_SECONDS,
-  TOTP_FAILURE_WINDOW_SECONDS,
   TOTP_WRONG_LIMIT,
 } from './admin-activation-constants';
 import { AdminActivationLimiter } from './admin-activation-limiter';
@@ -107,6 +96,7 @@ export class AdminActivationService {
   readonly #lockTimeoutMs: number;
   readonly #providerTimeoutMs: number;
   readonly #promoteGraceMs: number;
+  readonly #limits: ActivationLimits;
 
   constructor(
     private readonly transactions: TransactionManager,
@@ -127,6 +117,7 @@ export class AdminActivationService {
     this.#lockTimeoutMs = appConfig.idempotency.businessLockTimeoutMs;
     this.#providerTimeoutMs = config.providerTimeoutMs;
     this.#promoteGraceMs = config.promoteGraceMs;
+    this.#limits = config.limits;
   }
 
   // ===== POST /start (10.1) ==================================================================================
@@ -155,7 +146,7 @@ export class AdminActivationService {
 
     return this.#run<Answer>(async (context) => {
       const linkBucket = this.limiter.linkBucket(meta.ip);
-      const [bucket] = await this.limits.lockBuckets(context, [linkBucket], LINK_FAILURE_WINDOW_SECONDS);
+      const [bucket] = await this.limits.lockBuckets(context, [linkBucket], this.#limits.linkFailureWindowSeconds);
       if (bucket === undefined) {
         throw new TechnicalError('internal', 'Bucket is missing');
       }
@@ -165,8 +156,8 @@ export class AdminActivationService {
       const failLink = async (): Promise<Outcome<never>> => {
         await this.limits.recordFailure(context, {
           bucketKey: linkBucket.bucketKey,
-          limit: LINK_FAILURE_LIMIT,
-          lockSeconds: LINK_FAILURE_LOCK_SECONDS,
+          limit: this.#limits.linkFailureLimit,
+          lockSeconds: this.#limits.linkFailureLockSeconds,
         });
         return thenThrow(linkInvalid());
       };
@@ -281,7 +272,7 @@ export class AdminActivationService {
     // txn1: the challenge is written and committed BEFORE the provider is called.
     const created = await this.#run<{ challengeId: string; phone: string; resendAtMs: number }>(async (context) => {
       const sendBucket = this.limiter.otpSendBucket(invitationId);
-      const [bucket] = await this.limits.lockBuckets(context, [sendBucket], OTP_SEND_WINDOW_SECONDS);
+      const [bucket] = await this.limits.lockBuckets(context, [sendBucket], this.#limits.otpSendWindowSeconds);
       if (bucket === undefined) {
         throw new TechnicalError('internal', 'Bucket is missing');
       }
@@ -323,7 +314,7 @@ export class AdminActivationService {
       }
       const challengeId = randomUUID();
       const digest = this.crypto.activationOtpDigest(challengeId, invitation.phoneNormalized, otp);
-      const resendAtMs = nowMs + OTP_RESEND_COOLDOWN_MS;
+      const resendAtMs = nowMs + this.#limits.otpResendCooldownSeconds * 1000;
       await this.repo.insertChallenge(context, {
         challengeId,
         attemptId,
@@ -331,13 +322,13 @@ export class AdminActivationService {
         otpDigest: digest.digest,
         digestKeyId: digest.keyId,
         createdAtMs: nowMs,
-        expiresAtMs: nowMs + OTP_TTL_MS,
+        expiresAtMs: nowMs + this.#limits.otpTtlSeconds * 1000,
         resendNotBeforeMs: resendAtMs,
       });
       await this.limits.recordFailure(context, {
         bucketKey: sendBucket.bucketKey,
-        limit: OTP_SEND_LIMIT,
-        lockSeconds: OTP_SEND_WINDOW_SECONDS,
+        limit: this.#limits.otpSendLimit,
+        lockSeconds: this.#limits.otpSendWindowSeconds,
       });
       await this.#audit(context, meta, {
         action: ACTIVATION_AUDIT_ACTIONS.otpRequested,
@@ -494,7 +485,7 @@ export class AdminActivationService {
       // 10.4: the gate runs before the (expensive) hashing; a failed gate costs no hash.
       throw this.#stepInvalid(this.#viewOf(snapshot));
     }
-    const deadline = snapshot.attempt.otpVerifiedAtMs === null ? null : snapshot.attempt.otpVerifiedAtMs + PASSWORD_DEADLINE_MS;
+    const deadline = snapshot.attempt.otpVerifiedAtMs === null ? null : snapshot.attempt.otpVerifiedAtMs + this.#limits.passwordDeadlineSeconds * 1000;
     if (deadline === null || snapshot.nowMs > deadline) {
       throw this.#stepInvalid(this.#viewOf(snapshot));
     }
@@ -512,7 +503,7 @@ export class AdminActivationService {
       if (attempt.status !== 'OTP_VERIFIED') {
         throw this.#stepInvalid(await this.#lockedView(context, attempt, invitation, nowMs));
       }
-      if (attempt.otpVerifiedAtMs === null || nowMs > attempt.otpVerifiedAtMs + PASSWORD_DEADLINE_MS) {
+      if (attempt.otpVerifiedAtMs === null || nowMs > attempt.otpVerifiedAtMs + this.#limits.passwordDeadlineSeconds * 1000) {
         throw this.#stepInvalid(await this.#lockedView(context, attempt, invitation, nowMs));
       }
       if (invitation === undefined || invitation.status !== 'PENDING' || nowMs >= invitation.expiresAtMs) {
@@ -604,7 +595,7 @@ export class AdminActivationService {
 
     return this.#run<Answer>(async (context) => {
       const totpBucket = this.limiter.totpBucket(invitationId);
-      const [bucket] = await this.limits.lockBuckets(context, [totpBucket], TOTP_FAILURE_WINDOW_SECONDS);
+      const [bucket] = await this.limits.lockBuckets(context, [totpBucket], this.#limits.totpFailureWindowSeconds);
       if (bucket === undefined) {
         throw new TechnicalError('internal', 'Bucket is missing');
       }
@@ -658,7 +649,7 @@ export class AdminActivationService {
         const after = await this.limits.recordFailure(context, {
           bucketKey: totpBucket.bucketKey,
           limit: TOTP_FAILURE_LIMIT,
-          lockSeconds: TOTP_FAILURE_LOCK_SECONDS,
+          lockSeconds: this.#limits.totpFailureLockSeconds,
         });
         await this.#audit(context, meta, {
           action: ACTIVATION_AUDIT_ACTIONS.totpWrong,
@@ -683,12 +674,21 @@ export class AdminActivationService {
         // Lost a race with /auth/register on the unique phone: the same closing path, and the code is NOT counted.
         return this.#phoneConflict(context, meta, invitation, [attempt], nowMs);
       }
-      await this.repo.insertMembership(context, { userId: attempt.userId, atMs: nowMs });
+      // The INSERT above may have WAITED on users.phone_normalized behind a competing registration, so `T` is stale: the
+      // clock is read again after the wait and both expiries are re-checked. A refusal rolls back every row made so far.
+      const doneMs = await freshClockMs(context);
+      if (doneMs >= attempt.expiresAtMs) {
+        throw sessionInvalid();
+      }
+      if (doneMs >= invitation.expiresAtMs) {
+        throw linkInvalid();
+      }
+      await this.repo.insertMembership(context, { userId: attempt.userId, atMs: doneMs });
       await this.repo.insertProfile(context, {
         userId: attempt.userId,
         invitationId,
         phoneVerifiedAtMs: attempt.otpVerifiedAtMs,
-        atMs: nowMs,
+        atMs: doneMs,
       });
       await this.repo.copyPermissions(context, { userId: attempt.userId, invitationId });
       await this.repo.insertActiveFactor(context, {
@@ -697,7 +697,7 @@ export class AdminActivationService {
         keyId: attempt.totpKeyId,
         envelope: attempt.totpEnvelope,
         step,
-        atMs: nowMs,
+        atMs: doneMs,
       });
       const accepted = await this.invitations.transition(context, invitationId, invitation.version, {
         to: 'ACCEPTED',
@@ -706,7 +706,7 @@ export class AdminActivationService {
       if (accepted === undefined) {
         throw new TechnicalError('internal', 'Locked invitation could not be accepted');
       }
-      await this.repo.completeAttempt(context, { attemptId, atMs: nowMs });
+      await this.repo.completeAttempt(context, { attemptId, atMs: doneMs });
       await this.audit.append(context, {
         requestId: meta.requestId,
         actorType: ACTOR_USER,
@@ -797,12 +797,12 @@ export class AdminActivationService {
   }
 
   #stepInvalid(view: ViewInput): ActivationStateError {
-    return new ActivationStateError(stateBody(view, undefined) as ActivationErrorDetails);
+    return new ActivationStateError(stateBody(view, undefined, this.#limits.passwordDeadlineSeconds * 1000) as ActivationErrorDetails);
   }
 
   /** 200 body of a state read, enveloped like every other success. */
   #stateEnvelope(view: ViewInput, csrf: string): JsonObject {
-    return { data: stateBody(view, csrf) as JsonObject };
+    return { data: stateBody(view, csrf, this.#limits.passwordDeadlineSeconds * 1000) as JsonObject };
   }
 
   #completedAnswer(snapshot: AttemptSnapshot): Answer {
@@ -827,7 +827,7 @@ export class AdminActivationService {
       return false;
     }
     if (attempt.status === 'OTP_VERIFIED') {
-      return attempt.otpVerifiedAtMs !== null && nowMs <= attempt.otpVerifiedAtMs + PASSWORD_DEADLINE_MS;
+      return attempt.otpVerifiedAtMs !== null && nowMs <= attempt.otpVerifiedAtMs + this.#limits.passwordDeadlineSeconds * 1000;
     }
     return true;
   }
@@ -864,7 +864,7 @@ export class AdminActivationService {
     const cookieToken = this.crypto.randomBytes(32).toString('base64url');
     const csrf = this.crypto.newCsrf();
     const attemptId = randomUUID();
-    const expiresAtMs = Math.min(nowMs + ATTEMPT_TTL_MS, invitation.expiresAtMs);
+    const expiresAtMs = Math.min(nowMs + this.#limits.attemptTtlSeconds * 1000, invitation.expiresAtMs);
     await this.repo.insertAttempt(context, {
       attemptId,
       invitationId: invitation.invitationId,

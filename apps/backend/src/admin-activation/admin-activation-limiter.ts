@@ -7,7 +7,8 @@ import { AdminAuthRateLimitError } from '../common/app-errors';
 import { AdminAuthConfig, AdminLimiterKey } from '../config/admin-auth-config';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
-import { ACTIVATION_REQUEST_LIMIT, ACTIVATION_REQUEST_WINDOW_SECONDS } from './admin-activation-constants';
+import { AdminActivationConfig } from '../config/admin-activation-config';
+import { ADMIN_ACTIVATION_CONFIG } from './admin-activation-config.provider';
 
 /**
  * Bucket identities and the ingress quota of the activation (contract sections 7 and 8). The limiter key and the
@@ -17,13 +18,18 @@ import { ACTIVATION_REQUEST_LIMIT, ACTIVATION_REQUEST_WINDOW_SECONDS } from './a
 @Injectable()
 export class AdminActivationLimiter {
   readonly #key: AdminLimiterKey;
+  readonly #limit: number;
+  readonly #windowSeconds: number;
 
   constructor(
     private readonly transactions: TransactionManager,
     private readonly limits: AdminLimitsRepository,
     @Inject(ADMIN_AUTH_CONFIG) config: AdminAuthConfig,
+    @Inject(ADMIN_ACTIVATION_CONFIG) activation: AdminActivationConfig,
   ) {
     this.#key = config.limiter.key;
+    this.#limit = activation.limits.requestLimit;
+    this.#windowSeconds = activation.limits.requestWindowSeconds;
   }
 
   linkBucket(ip: string): BucketRef {
@@ -48,8 +54,8 @@ export class AdminActivationLimiter {
       this.limits.reserveRequest(context, {
         bucketKey,
         kind: LIMIT_KINDS.activationRequestIp,
-        limit: ACTIVATION_REQUEST_LIMIT,
-        windowSeconds: ACTIVATION_REQUEST_WINDOW_SECONDS,
+        limit: this.#limit,
+        windowSeconds: this.#windowSeconds,
       }),
     );
     if (!reservation.allowed) {

@@ -9,7 +9,7 @@ import { hotp, stepAt } from '../../../apps/backend/src/admin-auth/totp';
 import { Argon2idPasswordHasher } from '../../../apps/backend/src/auth/password-hasher';
 import { FakeOtpProvider } from '../../../apps/backend/src/auth/fake-otp-provider';
 import { ActivationOtpProvider } from '../../../apps/backend/src/admin-activation/activation-otp-provider';
-import { AdminActivationConfig } from '../../../apps/backend/src/config/admin-activation-config';
+import { AdminActivationConfig, DEFAULT_ACTIVATION_LIMITS } from '../../../apps/backend/src/config/admin-activation-config';
 import { AdminAuthConfig, loadLimiterConfig } from '../../../apps/backend/src/config/admin-auth-config';
 import { AppConfig } from '../../../apps/backend/src/config/app-config';
 import { Keyring } from '../../../apps/backend/src/crypto/keyring';
@@ -249,6 +249,7 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
             otpMode: 'FAKE' as const,
             providerTimeoutMs: 8000,
             promoteGraceMs: 10_000,
+            limits: DEFAULT_ACTIVATION_LIMITS,
             ...options.activationConfig,
           },
         }),

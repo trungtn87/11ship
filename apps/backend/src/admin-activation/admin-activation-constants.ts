@@ -1,41 +1,18 @@
-// Fixed values of M01-D-ADMIN-1C (administration account activation). Constants on purpose, like those of 1A/1B: the
-// contract (docs/tasks/M01-D-ADMIN-1C-technical-contract.md, sections 6-8) fixes them, the Owner approved them (OD-7),
-// the database CHECKs cap them, and no environment variable can loosen them. Only the provider timeout and the
-// promote grace are configuration (AdminActivationConfig).
+// Fixed values of M01-D-ADMIN-1C (administration account activation). The TTLs and thresholds of section 7 are
+// configuration (config/admin-activation-config.ts, defaults = section 7, OD-7/OD-9); what stays here is what the
+// database CHECKs fix and the transport/domain names.
 
 /** Activation-session cookie. Distinct from the login cookies; never accepted in place of them. */
 export const ACTIVATION_COOKIE = '__Host-11admin-act';
 
 export const ACTIVATION_ROUTE_PREFIX = 'admin-activation';
 
-// ----- lifetimes (section 7) --------------------------------------------------------------------------------------
-export const ATTEMPT_TTL_MS = 30 * 60 * 1000;
-export const OTP_TTL_MS = 300 * 1000;
-export const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
-/** After OTP verification the password must be set within this time (passwordDeadline). */
-export const PASSWORD_DEADLINE_MS = 600 * 1000;
-
-// ----- counters (sections 7 and 8) ---------------------------------------------------------------------------------
+// ----- counters the SCHEMA fixes (section 7) ---------------------------------------------------------------------
+// Not configuration: CHECK attempt_count <= 5 / totp_attempt_count <= 5 (and LOCKED / ATTEMPTS_EXHAUSTED at 5). The TOTP
+// bucket limit equals the per-attempt limit on purpose: the fifth wrong code invalidates the attempt AND locks the bucket.
 export const OTP_WRONG_LIMIT = 5;
 export const TOTP_WRONG_LIMIT = 5;
-
-/** Ingress quota (R0): 30 requests / 60 s / client address. The slot is never given back. */
-export const ACTIVATION_REQUEST_LIMIT = 30;
-export const ACTIVATION_REQUEST_WINDOW_SECONDS = 60;
-
-/** Wrong invitation token at start: 10 / 15 min / address, then a 15 min lock. */
-export const LINK_FAILURE_LIMIT = 10;
-export const LINK_FAILURE_WINDOW_SECONDS = 15 * 60;
-export const LINK_FAILURE_LOCK_SECONDS = 15 * 60;
-
-/** OTP sends: 5 / hour / invitation (the bucket is the invitation, never a phone). */
-export const OTP_SEND_LIMIT = 5;
-export const OTP_SEND_WINDOW_SECONDS = 3600;
-
-/** Wrong TOTP at complete: 5 / 15 min / invitation, then a 15 min lock. */
 export const TOTP_FAILURE_LIMIT = 5;
-export const TOTP_FAILURE_WINDOW_SECONDS = 15 * 60;
-export const TOTP_FAILURE_LOCK_SECONDS = 15 * 60;
 
 // ----- transport (section 6.1) -------------------------------------------------------------------------------------
 export const MAX_BODY_BYTES = 4096;
