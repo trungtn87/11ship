@@ -47,6 +47,7 @@ export class KeyVersion {
   readonly #adminPasswordBindingKey: Buffer;
   readonly #adminCsrfKey: Buffer;
   readonly #adminTotpKey: Buffer;
+  readonly #adminOperationKey: Buffer;
   readonly #random: RandomBytesFn;
 
   constructor(id: string, subkeys: DerivedSubkeys, random: RandomBytesFn) {
@@ -56,6 +57,7 @@ export class KeyVersion {
     this.#adminPasswordBindingKey = subkeys.adminPasswordBinding;
     this.#adminCsrfKey = subkeys.adminCsrf;
     this.#adminTotpKey = subkeys.adminTotpEncryption;
+    this.#adminOperationKey = subkeys.adminOperation;
     this.#random = random;
     Object.freeze(this);
   }
@@ -216,6 +218,24 @@ export class KeyVersion {
     } catch {
       throw new CryptoError('authentication_failed');
     }
+  }
+
+  /**
+   * Step-up operation fingerprint (M01-D-ADMIN-1B): lowercase-hex HMAC-SHA-256 over the Canonical JSON v1 of
+   * ["admin-operation.v1", action, canonical payload] under the operation purpose key. The payload is already
+   * normalized by the caller; it is never stored, only this digest is.
+   */
+  adminOperationFingerprint(action: string, canonicalPayload: unknown): string {
+    if (typeof action !== 'string' || action.length === 0) {
+      throw new CryptoError('invalid_input');
+    }
+    let canonical: string;
+    try {
+      canonical = validateJson(['admin-operation.v1', action, canonicalPayload], LOGICAL_REQUEST_POLICY).canonical;
+    } catch {
+      throw new CryptoError('invalid_input');
+    }
+    return createHmac('sha256', this.#adminOperationKey).update(canonical, 'utf8').digest('hex');
   }
 
   #adminTotpAad(binding: AdminTotpBinding): Buffer {

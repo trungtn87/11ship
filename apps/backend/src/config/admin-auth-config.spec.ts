@@ -17,6 +17,7 @@ const ENABLED = {
   ADMIN_AUTH_ALLOWED_ORIGINS: '["https://admin.example.test"]',
   ADMIN_RATE_LIMIT_HMAC_KEY: KEY_B64,
   ADMIN_RATE_LIMIT_KEY_ID: 'limiter-1',
+  ADMIN_ACTIVATION_ORIGIN: 'https://admin.example.test',
 };
 const BASE = {
   APP_ENV: 'test',
@@ -58,6 +59,7 @@ describe('ADMIN_AUTH_ENABLED', () => {
       'ADMIN_AUTH_ALLOWED_ORIGINS',
       'ADMIN_RATE_LIMIT_HMAC_KEY',
       'ADMIN_RATE_LIMIT_KEY_ID',
+      'ADMIN_ACTIVATION_ORIGIN',
     ]);
   });
 
@@ -164,5 +166,68 @@ describe('limiter key', () => {
     for (const text of [JSON.stringify(result.limiter), inspect(result.limiter), String(key)]) {
       expect(text).not.toContain(KEY_B64);
     }
+  });
+});
+
+describe('M01-D-ADMIN-1B invitation settings', () => {
+  it('defaults the invitation TTL to 72 hours when ADMIN_INVITATION_TTL_HOURS is absent', () => {
+    const result = loadAdminAuthConfig(ENABLED);
+    if (!result.ok || result.config === undefined) throw new Error('expected valid');
+    expect(result.config.invitationTtlSeconds).toBe(72 * 3600);
+    expect(result.config.activationOrigin).toBe('https://admin.example.test');
+  });
+
+  it.each([
+    ['1', 3600],
+    ['72', 72 * 3600],
+    ['168', 168 * 3600],
+  ])('accepts ADMIN_INVITATION_TTL_HOURS=%s', (raw, seconds) => {
+    const result = loadAdminAuthConfig({ ...ENABLED, ADMIN_INVITATION_TTL_HOURS: raw });
+    if (!result.ok || result.config === undefined) throw new Error('expected valid');
+    expect(result.config.invitationTtlSeconds).toBe(seconds);
+  });
+
+  it.each(['0', '169', '-1', '1.5', '01', ' 72', '72h', '', SECRET])(
+    'refuses ADMIN_INVITATION_TTL_HOURS=%p by name only',
+    (raw) => {
+      expect(invalidOf({ ...ENABLED, ADMIN_INVITATION_TTL_HOURS: raw })).toEqual(['ADMIN_INVITATION_TTL_HOURS']);
+    },
+  );
+
+  it('requires ADMIN_ACTIVATION_ORIGIN when enabled and never chooses one, even with a single allowed origin', () => {
+    const { ADMIN_ACTIVATION_ORIGIN: _omitted, ...withoutOrigin } = ENABLED;
+    expect(_omitted).toBeDefined();
+    expect(invalidOf(withoutOrigin)).toEqual(['ADMIN_ACTIVATION_ORIGIN']);
+  });
+
+  it.each([
+    'https://other.example.test',
+    'http://admin.example.test',
+    'https://admin.example.test/',
+    'https://admin.example.test/activate',
+    `https://${SECRET}.example.test`,
+  ])('refuses an activation origin outside the allowlist or not canonical: %p', (origin) => {
+    const invalid = invalidOf({ ...ENABLED, ADMIN_ACTIVATION_ORIGIN: origin });
+    expect(invalid).toEqual(['ADMIN_ACTIVATION_ORIGIN']);
+    const loaded = loadConfig({ ...BASE, ...ENABLED, ADMIN_ACTIVATION_ORIGIN: origin });
+    if (loaded.ok) throw new Error('expected rejection');
+    expect(formatInvalidConfigMessage(loaded.invalid)).not.toContain(SECRET);
+  });
+
+  it('accepts any one of several allowed origins', () => {
+    const result = loadAdminAuthConfig({
+      ...ENABLED,
+      ADMIN_AUTH_ALLOWED_ORIGINS: '["https://admin.example.test","https://ops.example.test"]',
+      ADMIN_ACTIVATION_ORIGIN: 'https://ops.example.test',
+    });
+    if (!result.ok || result.config === undefined) throw new Error('expected valid');
+    expect(result.config.activationOrigin).toBe('https://ops.example.test');
+  });
+
+  it('stays disabled and unvalidated when ADMIN_AUTH_ENABLED is not true', () => {
+    expect(loadAdminAuthConfig({ ADMIN_INVITATION_TTL_HOURS: 'junk', ADMIN_ACTIVATION_ORIGIN: 'junk' })).toEqual({
+      ok: true,
+      config: undefined,
+    });
   });
 });

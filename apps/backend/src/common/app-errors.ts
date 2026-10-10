@@ -78,6 +78,18 @@ export const APP_ERROR_DEFINITIONS = {
   ADMIN_CSRF_INVALID: { status: 403, message: 'The request could not be verified' },
   ADMIN_SESSION_INVALID: { status: 401, message: 'The administration session is not valid' },
   ADMIN_ENROLLMENT_NOT_ALLOWED: { status: 409, message: 'Authenticator setup is not available' },
+
+  // ADMIN invitations by the SYSTEM administrator (M01-D-ADMIN-1B, contract section 12). Same rule: fixed messages that
+  // echo nothing the client sent (no phone, name, note, reason, token or link) and never say why a step-up failed.
+  ADMIN_INPUT_INVALID: { status: 400, message: 'The administration request is not valid' },
+  ADMIN_FORBIDDEN: { status: 403, message: 'This administration action is not allowed for this account' },
+  ADMIN_STEP_UP_REQUIRED: { status: 403, message: 'A fresh authentication confirmation is required' },
+  ADMIN_INVITATION_NOT_FOUND: { status: 404, message: 'The invitation was not found' },
+  ADMIN_VERSION_CONFLICT: { status: 409, message: 'The invitation was changed by another request' },
+  ADMIN_INVITATION_NOT_PENDING: { status: 409, message: 'The invitation is no longer pending' },
+  ADMIN_INVITATION_NOT_REPLAYABLE: { status: 409, message: 'The invitation link can no longer be shown again' },
+  ADMIN_INVITATION_PENDING_EXISTS: { status: 409, message: 'A pending invitation already exists for this phone number' },
+  ADMIN_PHONE_CONFLICT: { status: 409, message: 'This phone number already belongs to an account' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;

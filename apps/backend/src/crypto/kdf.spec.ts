@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { deriveSubkeys, HKDF_SALT } from './kdf';
+import { deriveSubkeys, HKDF_INFO_ADMIN_OPERATION_HMAC, HKDF_SALT } from './kdf';
 import { FIXTURE_MASTER_K1 } from './test-keys.fixture';
 
 describe('HKDF-SHA-256 subkey derivation — known answers (C25)', () => {
@@ -38,7 +38,21 @@ describe('HKDF-SHA-256 subkey derivation — known answers (C25)', () => {
       subkeys.adminPasswordBinding,
       subkeys.adminCsrf,
       subkeys.adminTotpEncryption,
+      subkeys.adminOperation,
     ].map((key) => key.toString('hex'));
-    expect(new Set(all).size).toBe(5);
+    expect(new Set(all).size).toBe(6);
+  });
+
+  it('M01-D-ADMIN-1B adds the operation subkey without changing any earlier derivation', () => {
+    const subkeys = deriveSubkeys(FIXTURE_MASTER_K1);
+    expect(HKDF_INFO_ADMIN_OPERATION_HMAC.toString('utf8')).toBe('admin-operation-hmac.v1');
+    expect(subkeys.adminOperation.toString('hex')).toBe(
+      '0eeb10368925f909014ff4f40a2c702adb662e3f5b44ec4c96cc08400021fb19',
+    );
+    // The earlier vectors above are asserted unchanged in the same file; repeated here for the reviewer.
+    expect(subkeys.requestHmac.toString('hex')).toBe('691ebe6c1637bb0f16920fdacb2ea52a65ae17227bbfa66075dfa7325a625a14');
+    expect(subkeys.adminTotpEncryption.toString('hex')).toBe(
+      'f4d5dc4a1e6f9d12cdecd6458b85f917952a967389d612297d4053e92d54f152',
+    );
   });
 });

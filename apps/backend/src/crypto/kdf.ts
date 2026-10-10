@@ -9,6 +9,9 @@ export const HKDF_INFO_REPLAY_ENCRYPTION = Buffer.from('replay-aes-gcm.v1', 'utf
 export const HKDF_INFO_ADMIN_PASSWORD_BINDING = Buffer.from('admin-password-binding.v1', 'utf8');
 export const HKDF_INFO_ADMIN_CSRF = Buffer.from('admin-csrf.v1', 'utf8');
 export const HKDF_INFO_ADMIN_TOTP_ENCRYPTION = Buffer.from('admin-totp-aes-gcm.v1', 'utf8');
+// M01-D-ADMIN-1B: the step-up operation fingerprint has its own purpose subkey. Added after the others; the existing
+// derivations above are unchanged (their known-answer vectors in kdf.spec.ts still hold).
+export const HKDF_INFO_ADMIN_OPERATION_HMAC = Buffer.from('admin-operation-hmac.v1', 'utf8');
 export const MASTER_KEY_BYTES = 32;
 export const SUBKEY_BYTES = 32;
 
@@ -18,6 +21,7 @@ export interface DerivedSubkeys {
   readonly adminPasswordBinding: Buffer;
   readonly adminCsrf: Buffer;
   readonly adminTotpEncryption: Buffer;
+  readonly adminOperation: Buffer;
 }
 
 export function deriveSubkeys(master: Buffer): DerivedSubkeys {
@@ -33,5 +37,6 @@ export function deriveSubkeys(master: Buffer): DerivedSubkeys {
     adminTotpEncryption: Buffer.from(
       hkdfSync('sha256', master, HKDF_SALT, HKDF_INFO_ADMIN_TOTP_ENCRYPTION, SUBKEY_BYTES),
     ),
+    adminOperation: Buffer.from(hkdfSync('sha256', master, HKDF_SALT, HKDF_INFO_ADMIN_OPERATION_HMAC, SUBKEY_BYTES)),
   };
 }

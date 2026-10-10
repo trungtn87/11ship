@@ -62,6 +62,44 @@ export interface AdminAuthConfig {
   /** Exact proxy addresses whose single X-Forwarded-For entry is believed. Default: none. */
   readonly trustedProxyIps: readonly string[];
   readonly limiter: AdminLimiterConfig;
+  /**
+   * M01-D-ADMIN-1B. Lifetime of a NEW invitation, snapshotted into its expires_at at creation (changing it never extends
+   * an existing invitation). ADMIN_INVITATION_TTL_HOURS: default 72, an integer 1..168.
+   */
+  readonly invitationTtlSeconds: number;
+  /**
+   * M01-D-ADMIN-1B. Origin of the activation link (`<origin>/activate#t=<token>`). ADMIN_ACTIVATION_ORIGIN is REQUIRED
+   * when the module is enabled and must be one of allowedOrigins; it is never chosen automatically.
+   */
+  readonly activationOrigin: string;
+}
+
+export const DEFAULT_INVITATION_TTL_HOURS = 72;
+export const MIN_INVITATION_TTL_HOURS = 1;
+export const MAX_INVITATION_TTL_HOURS = 168;
+const TTL_HOURS_SHAPE = /^[1-9][0-9]{0,2}$/;
+
+/** Hours as seconds; absent -> the default; anything that is not a canonical integer 1..168 -> undefined. */
+export function parseInvitationTtlHours(raw: string | undefined): number | undefined {
+  if (raw === undefined) {
+    return DEFAULT_INVITATION_TTL_HOURS * 3600;
+  }
+  if (!TTL_HOURS_SHAPE.test(raw)) {
+    return undefined;
+  }
+  const hours = Number(raw);
+  return hours >= MIN_INVITATION_TTL_HOURS && hours <= MAX_INVITATION_TTL_HOURS ? hours * 3600 : undefined;
+}
+
+/** Required, a canonical HTTPS origin, and (when the allowlist itself is valid) one of the allowed origins. */
+export function parseActivationOrigin(raw: string | undefined, allowedOrigins: readonly string[] | undefined): string | undefined {
+  if (raw === undefined || !isCanonicalHttpsOrigin(raw)) {
+    return undefined;
+  }
+  if (allowedOrigins !== undefined && !allowedOrigins.includes(raw)) {
+    return undefined;
+  }
+  return raw;
 }
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -188,8 +226,9 @@ export function parseTrustedProxyIps(raw: string | undefined): readonly string[]
 
 /**
  * ADMIN_AUTH_ENABLED (default false). Disabled: the module is not wired, nothing is validated beyond the flag itself
- * and no limiter is created. Enabled: ADMIN_AUTH_ALLOWED_ORIGINS, ADMIN_RATE_LIMIT_HMAC_KEY and ADMIN_RATE_LIMIT_KEY_ID
- * are required and ADMIN_AUTH_TRUSTED_PROXY_IPS (default []) must be valid when set.
+ * and no limiter is created. Enabled: ADMIN_AUTH_ALLOWED_ORIGINS, ADMIN_RATE_LIMIT_HMAC_KEY, ADMIN_RATE_LIMIT_KEY_ID and
+ * (M01-D-ADMIN-1B) ADMIN_ACTIVATION_ORIGIN are required; ADMIN_AUTH_TRUSTED_PROXY_IPS (default []) and
+ * ADMIN_INVITATION_TTL_HOURS (default 72) must be valid when set.
  */
 export function loadAdminAuthConfig(
   env: EnvSource,
@@ -214,8 +253,26 @@ export function loadAdminAuthConfig(
   if (!limiter.ok) {
     invalid.push(...limiter.invalid);
   }
-  if (invalid.length > 0 || allowedOrigins === undefined || trustedProxyIps === undefined || !limiter.ok) {
+  const activationOrigin = parseActivationOrigin(env.ADMIN_ACTIVATION_ORIGIN, allowedOrigins);
+  if (activationOrigin === undefined) {
+    invalid.push('ADMIN_ACTIVATION_ORIGIN');
+  }
+  const invitationTtlSeconds = parseInvitationTtlHours(env.ADMIN_INVITATION_TTL_HOURS);
+  if (invitationTtlSeconds === undefined) {
+    invalid.push('ADMIN_INVITATION_TTL_HOURS');
+  }
+  if (
+    invalid.length > 0 ||
+    allowedOrigins === undefined ||
+    trustedProxyIps === undefined ||
+    !limiter.ok ||
+    activationOrigin === undefined ||
+    invitationTtlSeconds === undefined
+  ) {
     return { ok: false, invalid };
   }
-  return { ok: true, config: { allowedOrigins, trustedProxyIps, limiter: limiter.limiter } };
+  return {
+    ok: true,
+    config: { allowedOrigins, trustedProxyIps, limiter: limiter.limiter, invitationTtlSeconds, activationOrigin },
+  };
 }

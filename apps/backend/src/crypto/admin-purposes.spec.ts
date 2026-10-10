@@ -93,3 +93,47 @@ describe('administration TOTP secret sealing', () => {
     expect(() => key.sealAdminTotpSecret(BINDING, secret)).toThrow(CryptoError);
   });
 });
+
+describe('administration step-up operation fingerprint (M01-D-ADMIN-1B)', () => {
+  const key = fixtureKeyring('k1').active();
+  const payload = { invitation_id: USER, expected_version: 3, reason: 'lost link', permissions: null };
+
+  it('is a stable lowercase-hex digest bound to the action and to every payload value', () => {
+    const a = key.adminOperationFingerprint('REISSUE_INVITATION', payload);
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
+    expect(key.adminOperationFingerprint('REISSUE_INVITATION', { ...payload })).toBe(a);
+    expect(key.adminOperationFingerprint('REVOKE_INVITATION', payload)).not.toBe(a);
+    expect(key.adminOperationFingerprint('REISSUE_INVITATION', { ...payload, expected_version: 4 })).not.toBe(a);
+    expect(key.adminOperationFingerprint('REISSUE_INVITATION', { ...payload, reason: 'lost link.' })).not.toBe(a);
+  });
+
+  it('distinguishes "copy the old permissions" (null) from an explicit list equal to the old one', () => {
+    const copy = key.adminOperationFingerprint('REISSUE_INVITATION', payload);
+    const explicit = key.adminOperationFingerprint('REISSUE_INVITATION', {
+      ...payload,
+      permissions: [{ app: 'SHOP', can_view: true, can_review_profile: false, can_lock: false }],
+    });
+    expect(explicit).not.toBe(copy);
+  });
+
+  it('is independent of key order (canonical JSON) and differs per key version', () => {
+    const reordered = { reason: 'lost link', permissions: null, expected_version: 3, invitation_id: USER };
+    expect(key.adminOperationFingerprint('REISSUE_INVITATION', reordered)).toBe(
+      key.adminOperationFingerprint('REISSUE_INVITATION', payload),
+    );
+    expect(fixtureKeyring('k2').active().adminOperationFingerprint('REISSUE_INVITATION', payload)).not.toBe(
+      key.adminOperationFingerprint('REISSUE_INVITATION', payload),
+    );
+  });
+
+  it('is not the idempotency request fingerprint of the same tuple', () => {
+    expect(key.adminOperationFingerprint('REISSUE_INVITATION', payload)).not.toBe(
+      key.fingerprint(['admin-operation.v1', 'REISSUE_INVITATION', payload]),
+    );
+  });
+
+  it('refuses an empty action or a payload that is not JSON with a CryptoError', () => {
+    expect(() => key.adminOperationFingerprint('', payload)).toThrow(CryptoError);
+    expect(() => key.adminOperationFingerprint('CREATE_INVITATION', { bad: undefined })).toThrow(CryptoError);
+  });
+});

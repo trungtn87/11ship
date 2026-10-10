@@ -1,7 +1,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { TechnicalError } from '../common/app-errors';
 import { CryptoError } from '../crypto/crypto-error';
-import { AdminTotpBinding, KeyVersion, ReplayEnvelope } from '../crypto/key-version';
+import { AdminTotpBinding, fingerprintsEqual, KeyVersion, ReplayEnvelope } from '../crypto/key-version';
 import { Keyring } from '../crypto/keyring';
 import { TOTP_SECRET_BYTES } from './admin-auth-constants';
 
@@ -101,6 +101,26 @@ export class AdminCrypto {
 
   openTotpSecret(keyId: string, binding: AdminTotpBinding, envelope: ReplayEnvelope): Buffer {
     return this.#guard(() => this.#version(keyId).openAdminTotpSecret(binding, envelope));
+  }
+
+  /** M01-D-ADMIN-1B: fingerprint of a step-up operation payload under the ACTIVE key, with the key id to store. */
+  operationFingerprint(action: string, canonicalPayload: unknown): { fingerprint: string; keyId: string } {
+    const version = this.#keyring.active();
+    return {
+      fingerprint: this.#guard(() => version.adminOperationFingerprint(action, canonicalPayload)),
+      keyId: version.id,
+    };
+  }
+
+  /**
+   * Recomputes the fingerprint with the key the operation was stored with (never the active one) and compares in
+   * constant time. A missing historical key fails closed (generic 503).
+   */
+  operationFingerprintMatches(input: { keyId: string; action: string; canonicalPayload: unknown; stored: string }): boolean {
+    const expected = this.#guard(() =>
+      this.#version(input.keyId).adminOperationFingerprint(input.action, input.canonicalPayload),
+    );
+    return fingerprintsEqual(expected, input.stored);
   }
 }
 
