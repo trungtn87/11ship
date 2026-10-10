@@ -90,6 +90,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | admin_auth_limits | SELECT, INSERT, UPDATE |
 | admin_invitations | SELECT, INSERT, UPDATE (no DELETE: a trigger refuses it; UPDATE is the seal, the terminal transition and `FOR UPDATE`) |
 | admin_invitation_permissions | SELECT, INSERT (snapshot rows are immutable) |
+| admin_sensitive_operations | SELECT, INSERT, UPDATE (no DELETE: a trigger refuses it; UPDATE is the replace/verify/consume/attempt transition and `FOR UPDATE`) |
 
 ```sql
 -- example shape, repeat per row of the table above
@@ -129,6 +130,15 @@ Two operator commands run from a controlled machine, never from Render and never
 
 Do not run step 3 until the owner has approved the account; there is no recovery path in this slice (a lost password or
 authenticator on the only SYSTEM account needs a separate, reviewed procedure).
+
+M01-D-ADMIN-1B (ADMIN invitations) adds, when `ADMIN_AUTH_ENABLED=true`:
+
+- `ADMIN_ACTIVATION_ORIGIN` - **required**; must be exactly one of `ADMIN_AUTH_ALLOWED_ORIGINS`. The service refuses to
+  start when it is missing or not allowed (it never picks an origin by itself). Activation links are
+  `<origin>/activate#t=<token>`; the token is shown once to the SYSTEM administrator and only its SHA-256 is stored.
+- `ADMIN_INVITATION_TTL_HOURS` - optional, integer 1..168, default 72. It applies to NEW invitations only (snapshotted
+  into `expires_at`); a change never extends an existing invitation.
+- The table `admin_sensitive_operations` (grant row above). Apply the migration before deploying the code that uses it.
 
 ## 4. Migration procedure
 

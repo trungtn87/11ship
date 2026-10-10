@@ -14,6 +14,11 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
   const sql = readFileSync(path.join(dir, FILE), 'utf8');
   const upSql = (sql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const downSql = sql.split('-- Down Migration')[1] as string;
+  // M01-D-ADMIN-1B references app.admin_invitations, so its Down runs before ours and its Up after ours.
+  const OPERATIONS_FILE = '1792195200000_create-admin-sensitive-operations.sql';
+  const operationsSql = readFileSync(path.join(dir, OPERATIONS_FILE), 'utf8');
+  const operationsUpSql = (operationsSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+  const operationsDownSql = operationsSql.split('-- Down Migration')[1] as string;
   let client: Client;
 
   const code = (text: string): string =>
@@ -54,7 +59,7 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
     return result.rows.map((row) => row.item);
   }
 
-  it('is the newest migration, a NEW file (no applied migration is edited), and states which design it implements', () => {
+  it('is a NEW file (no applied migration is edited) and states which design it implements', () => {
     expect(sql).toContain('-- Up Migration');
     expect(sql).toContain('-- Down Migration');
     expect(sql).toContain('01-Technical/01-schema-design.sql');
@@ -133,10 +138,12 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
     expect(before.length).toBeGreaterThan(0);
     await client.query('BEGIN');
     try {
+      await client.query(operationsDownSql);
       await client.query(downSql);
       expect(await inventory()).toEqual([]);
       await client.query(upSql);
       expect(await inventory()).toEqual(before);
+      await client.query(operationsUpSql);
     } finally {
       await client.query('ROLLBACK');
     }

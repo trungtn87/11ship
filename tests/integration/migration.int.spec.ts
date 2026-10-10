@@ -300,7 +300,7 @@ describe('F03 / C23 — migrations on the guarded test database', () => {
       const result = await client.query<{ n: number }>(
         `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
           JOIN pg_namespace n ON n.oid = c.relnamespace
-         WHERE n.nspname = 'app' AND NOT t.tgisinternal AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions')`,
+         WHERE n.nspname = 'app' AND NOT t.tgisinternal AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations')`,
       );
       return (result.rows[0] as { n: number }).n;
     }
@@ -481,7 +481,7 @@ describe('F03 / C23 — migrations on the guarded test database', () => {
       );
       const trigger = await client.query<{ tgname: string; tgtype: number; relname: string }>(
         `SELECT t.tgname, t.tgtype, c.relname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-           JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions')`,
+           JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations')`,
       );
       expect(trigger.rows).toHaveLength(1);
       expect(trigger.rows[0]?.tgname).toBe('audit_logs_append_only');

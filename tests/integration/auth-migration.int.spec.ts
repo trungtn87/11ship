@@ -34,6 +34,12 @@ describe('M01-A1 — Auth Core migration', () => {
   const invitationsSql = readFileSync(path.join(migrationsDir, `${INVITATIONS}.sql`), 'utf8');
   const invitationsUpSql = (invitationsSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const invitationsDownSql = invitationsSql.split('-- Down Migration')[1] as string;
+  // M01-D-ADMIN-1B adds the step-up operations after the invitations (they reference admin_memberships, admin_sessions
+  // and admin_invitations), so they go down first and come back up last.
+  const OPERATIONS = names.find((name) => name.endsWith('create-admin-sensitive-operations')) as string;
+  const operationsSql = readFileSync(path.join(migrationsDir, `${OPERATIONS}.sql`), 'utf8');
+  const operationsUpSql = (operationsSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+  const operationsDownSql = operationsSql.split('-- Down Migration')[1] as string;
   const adminSql = readFileSync(path.join(migrationsDir, `${ADMIN}.sql`), 'utf8');
   const adminUpSql = (adminSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const adminDownSql = adminSql.split('-- Down Migration')[1] as string;
@@ -99,7 +105,7 @@ describe('M01-A1 — Auth Core migration', () => {
     expect(AUTH).toBeDefined();
     expect(M00.length).toBeGreaterThanOrEqual(3);
     // Auth directly follows M00; the only migration after it is the M01-A2S Shop one.
-    expect(names.slice(M00.length)).toEqual([AUTH, SHOP, DRIVER, HOURS, ORIGIN, ADMIN, INVITATIONS]);
+    expect(names.slice(M00.length)).toEqual([AUTH, SHOP, DRIVER, HOURS, ORIGIN, ADMIN, INVITATIONS, OPERATIONS]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });
 
@@ -199,6 +205,7 @@ describe('M01-A1 — Auth Core migration', () => {
     try {
       // The Shop and Driver migrations reference app.users, so they go down first and come back up last. The invitation
       // tables, the admin tables and the account origin are the newest: they go down before everything else.
+      await client.query(operationsDownSql);
       await client.query(invitationsDownSql);
       await client.query(adminDownSql);
       await client.query(originDownSql);
@@ -220,6 +227,7 @@ describe('M01-A1 — Auth Core migration', () => {
       await client.query(originUpSql);
       await client.query(adminUpSql);
       await client.query(invitationsUpSql);
+      await client.query(operationsUpSql);
       expect(await presentTables()).toEqual([...TABLES].sort());
     } finally {
       await client.query('ROLLBACK');
@@ -238,7 +246,7 @@ describe('M01-A1 — Auth Core migration', () => {
     expect(owners.rows).toEqual([{ owner: 'ship11_test' }]);
     const triggers = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions')`,
+         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations')`,
     );
     expect(triggers.rows[0]?.n).toBe(1); // only audit_logs_append_only
   });
