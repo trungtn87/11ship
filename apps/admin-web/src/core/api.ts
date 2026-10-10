@@ -41,14 +41,24 @@ export interface SessionData {
  */
 export type ApiResult<T> =
   | { readonly kind: 'ok'; readonly data: T }
-  | { readonly kind: 'error'; readonly status: number; readonly code: string; readonly retryAfterSeconds?: number }
+  | {
+      readonly kind: 'error';
+      readonly status: number;
+      readonly code: string;
+      readonly retryAfterSeconds?: number;
+      /** `error.details` when the backend sent a non-empty object (only ADMIN_ACTIVATION_STEP_INVALID does). */
+      readonly details?: Readonly<Record<string, unknown>>;
+    }
   | { readonly kind: 'network' };
 
 export interface TransportRequest {
   readonly method: 'GET' | 'POST';
+  /** Path under the transport's base (may carry a query string for GET). */
   readonly path: string;
   readonly body?: unknown;
   readonly csrf?: string;
+  /** `Idempotency-Key` of a 1B mutation. One key per logical request: the caller keeps it, a timeout never makes a new one. */
+  readonly idempotencyKey?: string;
 }
 
 export interface TransportResponse {
@@ -125,7 +135,11 @@ async function readBody(response: Response, signal: AbortSignal): Promise<string
  * the response headers AND the whole body: when it passes, the request is aborted (and the body stream cancelled), the
  * call rejects, and the timer is always cleared. Nothing here ever repeats a request.
  */
-export function fetchTransport(fetchImpl: typeof fetch, options: { timeoutMs?: number; timers?: TransportTimers } = {}): Transport {
+export function fetchTransport(
+  fetchImpl: typeof fetch,
+  options: { timeoutMs?: number; timers?: TransportTimers; base?: string } = {},
+): Transport {
+  const base = options.base ?? API_BASE;
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
   const timers = options.timers ?? defaultTimers;
   return async (request) => {
@@ -138,12 +152,15 @@ export function fetchTransport(fetchImpl: typeof fetch, options: { timeoutMs?: n
     if (request.csrf !== undefined) {
       headers['x-csrf-token'] = request.csrf;
     }
+    if (request.idempotencyKey !== undefined) {
+      headers['idempotency-key'] = request.idempotencyKey;
+    }
     const controller = new AbortController();
     const timer = timers.setTimeout(() => controller.abort(), timeoutMs);
     let response: Response | undefined;
     try {
       response = await untilAborted(
-        fetchImpl(`${API_BASE}${request.path}`, {
+        fetchImpl(`${base}${request.path}`, {
           method: request.method,
           headers,
           body,
@@ -183,11 +200,11 @@ export function fetchTransport(fetchImpl: typeof fetch, options: { timeoutMs?: n
 const NEXT_STEPS: readonly string[] = ['ENROLL_TOTP', 'VERIFY_TOTP'];
 const ROLES: readonly string[] = ['SYSTEM', 'ADMIN'];
 
-function record(value: unknown): Record<string, unknown> | undefined {
+export function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
-function str(value: unknown): string | undefined {
+export function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
@@ -200,11 +217,68 @@ export function parseRetryAfter(header: string | null): number | undefined {
   return seconds >= 1 ? seconds : undefined;
 }
 
-export class AdminAuthApi {
-  constructor(private readonly transport: Transport) {}
+/**
+ * What every API client of the administration web shares: one transport, a closed result type, and the error mapping.
+ * `call` turns a response into `ok` (one of `okStatuses` and a body the parser accepts), `error` (the backend's error
+ * envelope) or `network` (no usable answer: the server may or may not have executed the request).
+ */
+export class ApiClient {
+  constructor(protected readonly transport: Transport) {}
 
+  protected async call<T>(
+    request: TransportRequest,
+    parse: (data: Record<string, unknown>) => T | undefined,
+    okStatuses: readonly number[] = [200],
+  ): Promise<ApiResult<T>> {
+    let response: TransportResponse;
+    try {
+      response = await this.transport(request);
+    } catch {
+      return { kind: 'network' };
+    }
+    if (okStatuses.includes(response.status)) {
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        return { kind: 'network' };
+      }
+      const data = record(record(body)?.data);
+      const parsed = data === undefined ? undefined : parse(data);
+      return parsed === undefined ? { kind: 'network' } : { kind: 'ok', data: parsed };
+    }
+    return this.error(response);
+  }
+
+  protected async error(response: TransportResponse): Promise<ApiResult<never>> {
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      body = undefined;
+    }
+    const envelope = record(record(body)?.error);
+    const code = str(envelope?.code);
+    if (code === undefined) {
+      // A bare 5xx (proxy down, gateway error) is the generic unavailable answer; anything else unexplained is unusable.
+      return response.status >= 500 ? { kind: 'error', status: response.status, code: 'SERVICE_UNAVAILABLE' } : { kind: 'network' };
+    }
+    const retryAfterSeconds = response.status === 429 ? parseRetryAfter(response.header('retry-after')) : undefined;
+    const rawDetails = record(envelope?.details);
+    const details = rawDetails !== undefined && Object.keys(rawDetails).length > 0 ? rawDetails : undefined;
+    return {
+      kind: 'error',
+      status: response.status,
+      code,
+      ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+      ...(details === undefined ? {} : { details }),
+    };
+  }
+}
+
+export class AdminAuthApi extends ApiClient {
   state(): Promise<ApiResult<StateData>> {
-    return this.#call({ method: 'GET', path: '/state' }, (data) => {
+    return this.call({ method: 'GET', path: '/state' }, (data) => {
       const state = data.state;
       const expiresAt = str(data.expires_at);
       const csrfToken = str(data.csrf_token);
@@ -222,7 +296,7 @@ export class AdminAuthApi {
   }
 
   login(phone: string, password: string, deviceId: string): Promise<ApiResult<LoginData>> {
-    return this.#call(
+    return this.call(
       {
         method: 'POST',
         path: '/login',
@@ -241,7 +315,7 @@ export class AdminAuthApi {
   }
 
   startEnrollment(csrf: string): Promise<ApiResult<EnrollmentData>> {
-    return this.#call({ method: 'POST', path: '/totp/enrollment', body: {}, csrf }, (data) => {
+    return this.call({ method: 'POST', path: '/totp/enrollment', body: {}, csrf }, (data) => {
       const secret = str(data.secret);
       const otpauthUri = str(data.otpauth_uri);
       const expiresAt = str(data.expires_at);
@@ -253,15 +327,15 @@ export class AdminAuthApi {
   }
 
   completeEnrollment(csrf: string, code: string): Promise<ApiResult<SessionData>> {
-    return this.#call({ method: 'POST', path: '/totp/enrollment/verify', body: { code }, csrf }, sessionData);
+    return this.call({ method: 'POST', path: '/totp/enrollment/verify', body: { code }, csrf }, sessionData);
   }
 
   verify(csrf: string, code: string): Promise<ApiResult<SessionData>> {
-    return this.#call({ method: 'POST', path: '/totp/verify', body: { code }, csrf }, sessionData);
+    return this.call({ method: 'POST', path: '/totp/verify', body: { code }, csrf }, sessionData);
   }
 
   me(): Promise<ApiResult<SessionData>> {
-    return this.#call({ method: 'GET', path: '/me' }, sessionData);
+    return this.call({ method: 'GET', path: '/me' }, sessionData);
   }
 
   /** 204 is the only success. */
@@ -275,46 +349,7 @@ export class AdminAuthApi {
     if (response.status === 204) {
       return { kind: 'ok', data: null };
     }
-    return this.#error(response);
-  }
-
-  async #call<T>(request: TransportRequest, parse: (data: Record<string, unknown>) => T | undefined): Promise<ApiResult<T>> {
-    let response: TransportResponse;
-    try {
-      response = await this.transport(request);
-    } catch {
-      return { kind: 'network' };
-    }
-    if (response.status === 200) {
-      let body: unknown;
-      try {
-        body = await response.json();
-      } catch {
-        return { kind: 'network' };
-      }
-      const data = record(record(body)?.data);
-      const parsed = data === undefined ? undefined : parse(data);
-      return parsed === undefined ? { kind: 'network' } : { kind: 'ok', data: parsed };
-    }
-    return this.#error(response);
-  }
-
-  async #error(response: TransportResponse): Promise<ApiResult<never>> {
-    let body: unknown;
-    try {
-      body = await response.json();
-    } catch {
-      body = undefined;
-    }
-    const code = str(record(record(body)?.error)?.code);
-    if (code === undefined) {
-      // A bare 5xx (proxy down, gateway error) is the generic unavailable answer; anything else unexplained is unusable.
-      return response.status >= 500 ? { kind: 'error', status: response.status, code: 'SERVICE_UNAVAILABLE' } : { kind: 'network' };
-    }
-    const retryAfterSeconds = response.status === 429 ? parseRetryAfter(response.header('retry-after')) : undefined;
-    return retryAfterSeconds === undefined
-      ? { kind: 'error', status: response.status, code }
-      : { kind: 'error', status: response.status, code, retryAfterSeconds };
+    return this.error(response);
   }
 }
 
