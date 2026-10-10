@@ -73,6 +73,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
     expect(names.slice(names.indexOf(DRIVER))).toEqual([
       DRIVER,
       '1791763200000_create-shop-business-hours',
+      '1791849600000_add-users-account-origin',
       '1791936000000_add-users-account-origin',
       '1792022400000_create-admin-auth',
     ]);
