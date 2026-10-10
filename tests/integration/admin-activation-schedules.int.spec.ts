@@ -5,6 +5,7 @@ import { AdminActivationService } from '../../apps/backend/src/admin-activation/
 import { poolClientSource } from '../../apps/backend/src/transaction/pg-client-source';
 import { TransactionClientSource } from '../../apps/backend/src/transaction/transaction-manager';
 import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
+import { waitForBlockedBackends } from './support/lock-fixtures';
 import { ADMIN_PASSWORD, adminData, totpNow } from './support/admin-fixtures';
 import {
   ATTEMPT_X,
@@ -28,6 +29,7 @@ import {
   ok,
   post,
   schedule,
+  settle,
   sendOtp,
   Settled,
   startActivationApp,
@@ -35,7 +37,7 @@ import {
   Act,
   Invite,
 } from './support/activation-fixtures';
-import { directServices, invitationRow, stepUp, SystemSession, systemSession } from './support/provisioning-fixtures';
+import { gatedSource, newGate, directServices, invitationRow, stepUp, SystemSession, systemSession } from './support/provisioning-fixtures';
 
 // M01-D-ADMIN-1C - the concurrent schedules the contract requires, decided by BARRIERS and run in BOTH orders.
 // FIRST request is parked right after PostgreSQL granted the lock it needs to hold; SECOND starts only then and the
@@ -329,23 +331,38 @@ describe('M01-D-ADMIN-1C - barrier schedules, both orders', () => {
     expect(await users(invite.phone.normalized)).toBe(1);
   });
 
-  it('K14 (first enrollment, complete arrives): the complete is refused by the committed state at once (409 PASSWORD_SET), then completes on the issued secret', async () => {
+  it('K14 (first enrollment, complete arrives): the complete WAITS (invitation X behind the enrollment S), then runs on TOTP_ISSUED: a wrong code is counted once, the right one completes', async () => {
     const { invite, session } = await fresh('PASSWORD_SET');
     const run = await schedule(
       ctx,
       ATTEMPT_X,
       (gated) => svc(gated).issueTotp(session.cookie, session.csrf, META),
-      (plain) => svc(plain).complete(session.cookie, session.csrf, '123456', META),
-      { expectBlocked: false },
+      (plain) => svc(plain).complete(session.cookie, session.csrf, '000000', META),
     );
-    // The complete reads the committed PASSWORD_SET snapshot and is refused without waiting for the parked enrollment.
-    const early = await run.second;
-    expect(codeOf(early)).toBe(STEP_INVALID);
     run.release();
     const issued = answerOf(await run.first);
     const secret = (issued.body as { data: { secret: string } }).data.secret;
+    // Committed TOTP_ISSUED was what the waiting complete found: it opened the secret and compared the wrong code.
+    expect(codeOf(await run.second)).toBe('ADMIN_TOTP_INVALID');
+    expect((await attemptsOf(ctx.pool, invite.invitationId))[0]?.totp_attempt_count).toBe(1);
     ok(await post(ctx.app, '/complete', session, { code: totpNow(secret) }));
     expect(await users(invite.phone.normalized)).toBe(1);
+  });
+
+  it('K14 (complete arrives first at PASSWORD_SET): the complete is refused by the committed state (409, nothing counted) and the enrollment that waited then issues the secret', async () => {
+    const { invite, session } = await fresh('PASSWORD_SET');
+    const run = await schedule(
+      ctx,
+      INVITATION_X,
+      (gated) => svc(gated).complete(session.cookie, session.csrf, '000000', META),
+      (plain) => svc(plain).issueTotp(session.cookie, session.csrf, META),
+    );
+    run.release();
+    expect(codeOf(await run.first)).toBe(STEP_INVALID);
+    const issued = answerOf(await run.second);
+    expect(String((issued.body as { data: { secret: string } }).data.secret).length).toBeGreaterThan(15);
+    expect((await attemptsOf(ctx.pool, invite.invitationId))[0]?.totp_attempt_count).toBe(0);
+    expect(await bucketFailures(ctx.pool, 'ACTIVATION_TOTP')).toBe(0);
   });
 
   it('K14 (two first enrollments): both get the SAME secret and one is stored', async () => {
@@ -610,34 +627,46 @@ describe('M01-D-ADMIN-1C - barrier schedules, both orders', () => {
     }
   });
 
-  it.each(['old cookie first', 'new cookie first'] as const)('K11 (b): both attempts reach TOTP_ISSUED in turn, then both complete - %s', async (order) => {
-    const invite = await newInvite(ctx.app, system);
-    const old = await advance(deps(), invite, 'TOTP_ISSUED');
-    // The second link opening replaces the first attempt, which had already issued its secret.
-    const next = await advance(deps(), invite, 'TOTP_ISSUED');
-    expect(next.session.cookie).not.toBe(old.session.cookie);
-    expect(await statusesOf(invite.invitationId)).toEqual(['INVALIDATED:SUPERSEDED', 'TOTP_ISSUED:']);
-    const completeOld = (source: TransactionClientSource): Promise<unknown> =>
-      svc(source).complete(old.session.cookie, old.session.csrf, totpNow(String(old.secret)), META);
-    const completeNew = (source: TransactionClientSource): Promise<unknown> =>
-      svc(source).complete(next.session.cookie, next.session.csrf, totpNow(String(next.secret)), META);
-    const oldFirst = order === 'old cookie first';
-    const run = await schedule(
-      ctx,
-      INVITATION_X,
-      (gated) => (oldFirst ? completeOld(gated) : completeNew(gated)),
-      (plain) => (oldFirst ? completeNew(plain) : completeOld(plain)),
-    );
-    run.release();
-    const [first, second] = [await run.first, await run.second];
-    const [oldResult, newResult] = oldFirst ? [first, second] : [second, first];
-    expect(newResult.ok).toBe(true);
-    expect([STEP_INVALID, 'ADMIN_ACTIVATION_LINK_INVALID']).toContain(codeOf(oldResult));
-    expect(await users(invite.phone.normalized)).toBe(1);
-    expect(await statusesOf(invite.invitationId)).toEqual(['INVALIDATED:SUPERSEDED', 'COMPLETED:']);
-    expect(await invitationStatus(ctx.pool, invite.invitationId)).toBe('ACCEPTED');
-    expect(await bucketFailures(ctx.pool, 'ACTIVATION_TOTP')).toBe(0);
-  });
+  it.each(['old reaches the locks first', 'new reaches the locks first'] as const)(
+    'K11 (b): the old attempt passed its read while LIVE, a new attempt replaced it, both complete - %s',
+    async (order) => {
+      const invite = await newInvite(ctx.app, system);
+      const old = await advance(deps(), invite, 'TOTP_ISSUED');
+      const completeOld = (source: TransactionClientSource): Promise<unknown> =>
+        svc(source).complete(old.session.cookie, old.session.csrf, totpNow(String(old.secret)), META);
+      const oldFirst = order === 'old reaches the locks first';
+      // OLD is parked where it is still a live attempt: right after taking the TOTP bucket lock (first order) or right after
+      // its read-only snapshot, before any lock (second order). Only then is it replaced by a new attempt.
+      const oldGate = newGate();
+      const oldRun = settle(completeOld(gatedSource(ctx.pool, oldFirst ? /admin_auth_limits[\s\S]*FOR UPDATE/ : /a\.token_digest = \$1/, oldGate)));
+      await oldGate.reached.promise;
+      const next = await advance(deps(), invite, 'TOTP_ISSUED');
+      expect(next.session.cookie).not.toBe(old.session.cookie);
+      expect(await statusesOf(invite.invitationId)).toEqual(['INVALIDATED:SUPERSEDED', 'TOTP_ISSUED:']);
+      const completeNew = (source: TransactionClientSource): Promise<unknown> =>
+        svc(source).complete(next.session.cookie, next.session.csrf, totpNow(String(next.secret)), META);
+      let newRun: Promise<Settled<unknown>>;
+      if (oldFirst) {
+        newRun = settle(completeNew(poolClientSource(ctx.pool)));
+        await waitForBlockedBackends(ctx.pool); // NEW waits behind OLD on the shared TOTP bucket
+        oldGate.release.resolve();
+      } else {
+        const newGateHold = newGate();
+        newRun = settle(completeNew(gatedSource(ctx.pool, INVITATION_X, newGateHold)));
+        await newGateHold.reached.promise; // NEW holds bucket, phone and the invitation X
+        oldGate.release.resolve();
+        await waitForBlockedBackends(ctx.pool); // OLD now waits behind NEW
+        newGateHold.release.resolve();
+      }
+      const [oldResult, newResult] = [await oldRun, await newRun];
+      expect(newResult.ok).toBe(true);
+      expect(codeOf(oldResult)).toBe(STEP_INVALID);
+      expect(await users(invite.phone.normalized)).toBe(1);
+      expect(await statusesOf(invite.invitationId)).toEqual(['INVALIDATED:SUPERSEDED', 'COMPLETED:']);
+      expect(await invitationStatus(ctx.pool, invite.invitationId)).toBe('ACCEPTED');
+      expect(await bucketFailures(ctx.pool, 'ACTIVATION_TOTP')).toBe(0);
+    },
+  );
 
   it('K11 (c): the schema itself makes a second live or a second COMPLETED attempt of one invitation, and a revived terminal one, impossible', async () => {
     const { invite } = await fresh('TOTP_ISSUED');

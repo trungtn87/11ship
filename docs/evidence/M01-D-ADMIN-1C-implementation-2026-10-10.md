@@ -7,13 +7,14 @@ Người thực hiện: Claude. Môi trường test chính thức: GitHub Action
 | Mốc | SHA |
 |---|---|
 | Hợp đồng 1C đã duyệt (head #44, **base** của PR này) | `2e63da58ffb946ae0af5eced178a32bcc93a82d9` (= `802b334` đã duyệt + commit tài liệu ghi quyết định Owner OD-1…OD-16) |
-| `main` lúc preflight | `e43083a1ba7c5e0d5d944ca2820fb530a4935c97` |
-| Head code đã chạy CI đạt (trước commit tài liệu này) | `d602c061db64fa722b89da291c6c59588422fe09` |
-| Final head (sau commit tài liệu này, chỉ thêm tài liệu) | ghi ở mô tả PR #45 cùng kết quả CI đúng SHA đó |
+| **Baseline test = code 1B cuối** | `4f9bfab79eb85de991a19d33382ea48802f5d339` (CI run 38016242293: unit **1587**/76 suite, integration CI mode **1109**/65 suite, 0 pending). Cây code của `2e63da5` **giống hệt** `4f9bfab` (`git diff --name-only 4f9bfab 2e63da5` chỉ có tệp dưới `docs/`), nên đây là baseline của 1C. `d5cc580` (1097) là mốc **cũ hơn** của 1B, không phải baseline |
+| `main` lúc preflight vòng 1 | `e43083a1ba7c5e0d5d944ca2820fb530a4935c97` |
+| Head code vòng triển khai (CI đạt) | `d602c061db64fa722b89da291c6c59588422fe09` |
+| Head PR lúc mở vòng kiểm chứng này | `115ecf14425ef28ca1d9877892e088b2decd1b72` (preflight vòng 2: head và base không đổi so với mốc được giao) |
+| Head code sau vòng kiểm chứng (CI đạt) | `<<CODE_HEAD>>` |
+| Final head (thêm tài liệu) | ghi ở mô tả PR #45 cùng kết quả CI đúng SHA đó |
 
-CI trên `d602c06`: **success** — lint, typecheck, build, deploy-config tests, migrations smoke; unit **1634/1634** (83 suite); integration CI mode **1169/1169** (70 suite); local mode 1164 đạt + 5 pending theo thiết kế. So với bằng chứng 1B (`d5cc580`: unit 1587, 76 suite; integration 1097, 65 suite): **+47 test unit (+7 suite)**, **+72 test integration (+5 suite)**.
-
-Preflight: head #44 trùng mốc đã duyệt (`802b334`) + 1 commit tài liệu ghi quyết định Owner (đã làm trước khi code). Không có khác biệt cần đối chiếu.
+**Đếm test (đã sửa).** Vòng triển khai (`d602c06`): unit 1634/83 suite, integration 1169/70 suite ⇒ so với baseline `4f9bfab`: **+47 unit (+7 suite), +60 integration (+5 suite)**. Bản trước của tài liệu này ghi nhầm “+72” vì lấy mốc 1097 của `d5cc580`; con số đúng là **+60**. Sau vòng kiểm chứng (`<<CODE_HEAD>>`): unit <<UNIT>>/<<UNIT_SUITES>> suite, integration <<INT>>/<<INT_SUITES>> suite ⇒ **+<<UNIT_DELTA>> unit, +<<INT_DELTA>> integration** so với baseline.
 
 ## 2. Đã triển khai
 
@@ -34,57 +35,113 @@ Kích hoạt nguyên tử: user + membership + profile + quyền + factor `ACTIV
 
 ## 3. Đối chiếu hợp đồng ↔ code ↔ test
 
-Viết tắt test (tất cả trong `tests/integration/` trừ khi ghi khác): **F** = `admin-activation.int.spec.ts` (luồng, transport, CSRF, OTP, K28); **C** = `admin-activation-concurrency.int.spec.ts`; **T** = `admin-activation-faults.int.spec.ts` (trace khóa, lỗi COMMIT, rò rỉ); **B** = `admin-activation-barriers.int.spec.ts`; **M** = `admin-activation-migration.int.spec.ts`; **U** = unit trong `apps/backend/src/admin-activation/*.spec.ts` và `config/admin-activation-config.spec.ts`, `crypto/*.spec.ts`.
+Viết tắt test (tất cả trong `tests/integration/` trừ khi ghi khác): **F** `admin-activation.int.spec.ts` (luồng, transport, CSRF, OTP, K28); **C** `admin-activation-concurrency.int.spec.ts` (chạy song song `Promise.all` — **bổ sung**, xem dưới); **S** `admin-activation-schedules.int.spec.ts` (lịch barrier, cả hai thứ tự); **D** `admin-activation-delivery.int.spec.ts` (K18, bảng K27); **X** `admin-activation-matrix.int.spec.ts` (ma trận §11.2, hết hạn cookie, Retry-After); **T** `admin-activation-faults.int.spec.ts` (trace khóa, lỗi COMMIT, rò rỉ); **B** `admin-activation-barriers.int.spec.ts` (K2, K15, K16); **M** `admin-activation-migration.int.spec.ts`; **U** unit trong `apps/backend/src/admin-activation/*.spec.ts`, `config/admin-activation-config.spec.ts`, `crypto/*.spec.ts`.
 
-| Mục hợp đồng | Code | Test / bằng chứng |
-|---|---|---|
-| §5 DDL, CHECK, trigger, Down; Up→Down→Up | migration A/B/C | M: hình thức file, byte-equal DDL, kind limiter nhận 4 loại và từ chối lạ (23514), Down B từ chối khi còn bucket (P0001), Down C,B,A→Up trong txn rollback; `docs/verification/m01-d-admin-1c-ddl/run.sh` (65 PASS, PG16 cục bộ); các suite migration cũ cập nhật danh sách/trigger/Down-Up |
-| §6.1 transport: Origin chính xác, JSON ≤ 4 KiB, no-store, không ETag/304, không CORS | controller + `activationTransportMiddleware` | F "Origin", "POST must be JSON…", "every response carries no-store…" (kể cả lỗi/401, điều kiện `If-None-Match` không cho 304); U transport, boundary |
-| §6.1 cookie `__Host-` HttpOnly Secure SameSite=Strict Path=/ không Domain; token chỉ ở body `start` | `admin-activation-cookies.ts` | F "cookie is __Host-…", "token travels only in the body"; U cookies |
-| §6.1.1 CSRF + ma trận trạng thái → có CSRF không | `admin-activation-views.ts` | F "CSRF: every session POST…" (6 route × 4 sai), F T-CSRF-MATRIX (9 ô: 4 sống + ATTEMPTS_EXHAUSTED có; COMPLETED, SUPERSEDED, INVITATION_CLOSED, PHONE_CONFLICT không); U views |
-| §6.2 `start`: token sai/đóng/hết hạn một 404; cookie tiếp tục/thay thế | `service.start` | F "start: a wrong…", "start: twice…"; C K5, K21, K24(d) |
-| §6.2 `restart` từ ATTEMPTS_EXHAUSTED, OTP lại, không reset bucket | `service.restart` | F K28 (a)–(c) (bucket TOTP trước/sau giống hệt, 429 khi bucket còn khóa, thành công sau khi hết khóa), C K24, C K3 (restart từ INVITATION_CLOSED → 409) |
-| §6.3 GET state, không lộ SĐT/tên/id/bí mật | `views`, `service.state` | F state ở mọi bước; T "no response, state or log…"; U views |
-| §7 TTL/bộ đếm: OTP 5 sai → LOCKED, resend 60 s, TOTP 5 sai → ATTEMPTS_EXHAUSTED, ingress 30/60 s, link 10/15 phút khóa 15 phút | constants + service/limiter | F "OTP: request needs STARTED…", "ingress quota…", "wrong invitation tokens lock…", K28; C K8 (7 song song → đếm đúng 5, INVALIDATED một lần, bucket 5) |
-| §8 bucket R0/L2, ingress quota trong txn riêng đã commit, replay vẫn +1 | controller `#post`, limiter | F quota; C K26 (`ACTIVATION_REQUEST_IP` +1 mỗi request, mọi bucket khác không đổi) |
-| §9 thứ tự khóa R0<S0<L2<L3<L8<L9a<L9b<L10; L8 X cho start/restart/otp-request/complete, S cho verify/password/enrollment | service `#run` (lock_timeout trước), repository | T trace từng route qua service thật trên PostgreSQL thật: thứ tự không giảm, `lock_timeout` trước khóa đầu, writer không có `FOR SHARE` lời mời, reader không có X, repeat `complete` và `state` không có khóa/ghi; TL (1B) cập nhật thêm L9a cho reissue/revoke; U boundary |
-| §10.1–10.7 từng endpoint, TX-P đọc thuần, kiểm lại dưới khóa, giờ DB sau khóa cuối, từ chối thuần = ROLLBACK | service | F/C/B như trên; C K25/K29 (cookie hết hạn × 7 route → 401, start bỏ qua cookie hết hạn, PHONE_CONFLICT trước/sau `expires_at`, không audit); B K15 (chờ khóa attempt qua `expires_at` → 401, không ghi, không gửi OTP), B K16 (chờ khóa lời mời qua `expires_at` → 404 chuẩn, không attempt) |
-| §10.4/§10.5 password argon2id ngoài transaction, enrollment phát lại cùng bí mật | service | F "enrollment replays the SAME secret…", F steps in order |
-| §10.6 `complete` nguyên tử | `service.complete` + repository | F "activates an invitation atomically…" (trước bước cuối 0 user/factor; sau: user ACTIVE `ADMIN_PROVISIONED`, membership ADMIN ACTIVE, profile, quyền, factor ACTIVE với id đã cấp sẵn, lời mời ACCEPTED, attempt COMPLETED, password_hash/ciphertext đã xoá, không có phiên admin, đăng nhập bằng mật khẩu + TOTP thành công); C K1 (2 complete song song → 1 user, cả hai 200 COMPLETED); K22; T "failing audit write rolls the completion back" |
-| §11.2 replay/ma trận 6 trạng thái × 8 route | service | C K25/K26/K29, F steps in order, F K28; **một phần** — xem mục 6 |
-| §12 móc 1B | `admin-activation-invalidator.ts` + gọi trong `admin-invitation-service` | C K4 (reissue: attempt + challenge → INVALIDATED, session cũ thấy `LINK_UNAVAILABLE`, token cũ 404), C K3 (revoke khi đã TOTP_ISSUED: complete → 409, không user), TL 1B reissue/revoke thêm `L9a` |
-| §13 OTP: bảng kết quả provider, không gửi mù, PENDING_DELIVERY mồ côi | `activation-otp-providers.ts`, `service.#deliver` | F "OTP provider outcomes" (REJECTED → DELIVERY_FAILED + 503, gửi lại ngay được; UNKNOWN chấp nhận và mã đã “gửi” dùng được; THROW = UNKNOWN, không gọi lần hai); C K6 (2 request → 1 lần gửi); T K17 trong ân hạn không đếm/không promote, sau ân hạn promote rồi so mã; U providers |
-| §14 commit-then-throw; unknown COMMIT | service `#run`, `thenThrow` | T K10 (verify/password/enrollment/complete: mất ack → `TRANSACTION_OUTCOME_UNKNOWN`, đúng 1 COMMIT, `GET state` phản ánh kết quả thật, gọi lại không tạo tài khoản thứ hai), T K9 (mất kết nối trước COMMIT → rollback hoàn toàn, mã TOTP chưa bị đốt, thử lại thành công); F/C TOTP sai commit rồi mới trả lỗi (đếm lưu) |
-| §15 audit không chứa bí mật | `ACTIVATION_AUDIT_ACTIONS` | F "records audit rows…" (không token/mật khẩu/bí mật TOTP/SĐT/cookie), T leak scan (response + log) |
-| §16 cấu hình | `admin-activation-config.ts` | U config (mặc định, miền giá trị, chế độ thử bị cấm ngoài development/test, SMS), U boundary (không fallback) |
-| K2 `complete` ∥ `/auth/register` | unique `users.phone_normalized` | B K2: giữ INSERT user của bên kia — commit → `complete` 409 `ADMIN_PHONE_CONFLICT`, lời mời PHONE_CONFLICT, không membership; rollback → `complete` 200, đúng 1 user |
-| K7, K13, K22 | | C K7 (LOCKED không bị ghi đè bởi VERIFIED), C K13 (resend ∥ verify), C K22 |
-| K23 PHONE_CONFLICT | `#phoneConflict` | C K23 (otp/request với SĐT đã thuộc `users`: 409, lời mời PHONE_CONFLICT một lần, attempt INVALIDATED, không gửi OTP), T trace (không `FOR SHARE` lời mời ở route ghi) |
-| K24, K27 (một phần) | | C K24 (quá 600 s → 409 `restart_required`, restart không token, OTP cũ vô dụng, hoàn tất được), F K27 (5 sai → LOCKED; verify thứ 6 giữ nguyên hàng/đếm/audit) |
+**Mức bằng chứng** (cột cuối): **B2** = barrier xác định, chạy cả hai thứ tự; **B1** = barrier xác định, một thứ tự (nêu lý do); **Σ** = tuần tự/xác định nhờ trạng thái hoặc giờ DB, không cần đua; **Tr** = trace câu lệnh/khóa qua service thật; **Sc** = bất biến schema/DB; **P** = `Promise.all` thật qua HTTP, **không** phải bằng chứng thứ tự khóa. Cơ chế barrier: `gatedSource` giữ request thứ nhất **ngay sau khi PostgreSQL cấp khóa cần giữ**; request thứ hai chỉ bắt đầu khi request thứ nhất đã đỗ ở đó và lịch chỉ tiếp tục khi `pg_stat_activity` cho thấy request thứ hai **đang chờ khóa** (`wait_event_type='Lock'`); test mới thả request thứ nhất. Khoảng giữa txn1 → provider → txn2 của `otp/request` dùng `FakeActivationOtpProvider.holdSends()`. Hết hạn đi qua **giờ DB** (`clock_timestamp()`), không sleep, không UPDATE cột bất biến.
+
+### 3.1 Theo mục hợp đồng
+
+| Mục hợp đồng | Code | Test | Mức |
+|---|---|---|---|
+| §5 DDL, CHECK, trigger, Down; Up→Down→Up | migration A/B/C | M (hình thức file, byte-equal DDL, kind limiter 4 loại + từ chối lạ 23514, Down B từ chối khi còn bucket, Down C,B,A→Up); `docs/verification/m01-d-admin-1c-ddl/run.sh` (65 PASS, PG16 cục bộ); S K11(c) (unique live/COMPLETED = 23505, attempt cuối không sống lại = 23001) | Sc |
+| §6.1 transport: Origin, JSON ≤ 4 KiB, no-store, không ETag/304, không CORS; cookie `__Host-`; token chỉ ở body `start` | controller + `activationTransportMiddleware`, `admin-activation-cookies.ts` | F "Origin", "POST must be JSON…", "every response carries no-store…", "cookie is __Host-…", "token travels only in the body"; X malformed JSON; U transport, cookies, boundary | Σ |
+| §6.1.1 hàng 0: cookie sai/hết hạn ⇒ 401 mọi trạng thái, trừ `start` | `service.#precheck`, TX-P | F (cookie lạ, hết hạn, sai loại); C K25/K29; **X** "cookie hết hạn": COMPLETED thật (invitation TTL 45 s) + 5 trạng thái dựng bằng INSERT `expires_at`, đi qua hạn bằng giờ DB ⇒ 401 mọi route, `start` 404 (ACCEPTED), không ghi | Σ |
+| §6.1.1 CSRF theo trạng thái | `admin-activation-views.ts` | F "CSRF: every session POST…", T-CSRF-MATRIX (9 ô); U views | Σ |
+| §6.2 `start`, `restart`, §6.3 GET state | `service.start/restart/state` | F, C K5/K21/K24/K28; S K5, K21; X ma trận | Σ/B2 |
+| §7 TTL/ngưỡng | `admin-activation-constants.ts` | F quota, link, OTP, K28; C K8; bảng đối chiếu giá trị ở mục 5 (sai khác #2) | Σ |
+| §8 limiter, commit-then-throw, ingress +1 mọi POST kể cả replay/401/409 | controller `#post`, limiter | C K26; X: 31 POST ⇒ 429 + `Retry-After` ∈ (0,60]; 10 token sai ⇒ 429 + `Retry-After`; lần TOTP sai thứ 5 ⇒ 429 + `Retry-After`, 4 lần đầu 400 | Σ |
+| §9 thứ tự khóa R0<S0<L2<L3<L8<L9a<L9b<L10 | service `#run`, repository | T trace từng route (thứ tự không giảm, `lock_timeout` trước khóa đầu, writer = X lời mời, reader = S), S (mọi lịch dưới đây xác nhận thứ tự bằng chờ khóa thật) | Tr |
+| §10.x endpoint, TX-P đọc thuần | service | F/C/B/S/X; S "GET state không chờ writer đang giữ khóa" (đọc thuần, `expectBlocked:false`) | Σ/B1 |
+| §10.6 `complete` nguyên tử | `service.complete` | F "activates an invitation atomically…" (tài khoản, membership, profile, quyền, factor ACTIVE, lời mời ACCEPTED, attempt COMPLETED, dữ liệu nhạy cảm đã xoá, đăng nhập được); T audit lỗi ⇒ rollback | Σ |
+| §11.2 ma trận 6 trạng thái × 8 route | service | **X**: mỗi trạng thái dựng bằng **thao tác thật** (STARTED, OTP_VERIFIED, PASSWORD_SET, TOTP_ISSUED, COMPLETED; INVALIDATED × 4 lý do: SUPERSEDED bằng `start` thứ hai, INVITATION_CLOSED bằng 1B revoke thật, PHONE_CONFLICT bằng SĐT đã thuộc `users`, ATTEMPTS_EXHAUSTED bằng 5 TOTP sai); 8 route (verify, password, enrollment, complete, otp/request, restart, start+cookie hợp lệ, GET state). Ô “xử lý” bỏ qua (đã có F/S/D); ô “—” khẳng định **đúng mã** và **không đổi** attempts/challenges (xmin), lời mời, users, audit, bucket nghiệp vụ (trừ ingress), số lần gọi provider; enrollment lặp ⇒ cùng bí mật; `complete` lặp trên COMPLETED ⇒ 200 kể cả khi bucket `ACTIVATION_TOTP` bị khóa (bucket không đổi); `start`+cookie sai ⇒ 201 (PENDING) hoặc 404 (ACCEPTED/đóng) | Σ |
+| §12 móc 1B | `admin-activation-invalidator.ts` + 1B | S K3/K4/K20 (dưới); C K3/K4 (tuần tự); TL 1B (thêm L9a) | B2 |
+| §13 OTP/provider | `activation-otp-providers.ts`, `#deliver` | F provider outcomes (K19); T K17; D K18; U providers | Σ/B2 |
+| §14 commit-then-throw, unknown COMMIT, PHONE_CONFLICT | service `#run`, `#phoneConflict` | T K9/K10; S K23(b)(c); C K23(a) | Σ/B2 |
+| §15 audit không chứa bí mật | `ACTIVATION_AUDIT_ACTIONS` | F audit rows; T leak scan (response + log) | Σ |
+| §16 cấu hình | `admin-activation-config.ts` | U config, boundary; **sai khác #2** | Σ |
+
+### 3.2 Theo ID kiểm thử của hợp đồng (§17)
+
+| ID | Lịch hợp đồng yêu cầu | Test chốt (bằng chứng chính) | Mức | Ghi chú trung thực |
+|---|---|---|---|---|
+| K1 | complete ∥ complete | S "K1" (hai complete cùng mã; một user, cả hai 200); C K1 (P, bổ sung) | B2* | *Hai request **giống hệt nhau**: “cả hai thứ tự” là cùng một lịch đổi nhãn; lịch ghi nhận bên thua đọc kết quả dưới khóa |
+| K2 | complete ∥ `/auth/register` | B K2 (giữ INSERT user: commit ⇒ 409 PHONE_CONFLICT; rollback ⇒ 200, 1 user) | B2 | Hai nhánh của giao dịch bên kia = hai thứ tự quan sát được |
+| K3 | complete ∥ revoke | S K3 (revoke trước / complete trước, `directServices` + barrier); C K3 (tuần tự) | B2 | |
+| K4 | complete ∥ reissue | S K4 (như K3); C K4 (tuần tự) | B2 | |
+| K5 | start ∥ start (không cookie) | S K5 (barrier L8 X); C K5 (P) | B2* | *Đối xứng như K1 |
+| K6 | otp/request ∥ otp/request | S K6 (barrier; 1 lần gửi, bên kia `OTP_RATE_LIMITED`, provider chỉ 1 lần); C K6 (P) | B2* | *Đối xứng |
+| K7 | verify sai lần 5 ∥ verify đúng | S K7 (sai trước / đúng trước; LOCKED không bị ghi đè); C K7 (P) | B2 | |
+| K8 | TOTP sai ×N | C K8 (7 song song ⇒ đếm đúng 5, INVALIDATED 1 lần, bucket 5) | **P** | **Không phải bằng chứng thứ tự khóa**; kiểm bất biến đếm. Thứ tự hai-request của cùng loại được phủ bởi S K22 |
+| K9 | kill giữa complete trước COMMIT | T K9 (mất kết nối trước COMMIT ⇒ rollback, mã chưa đốt, thử lại được) | Σ | Cắt kết nối bằng fault injection, không `pg_terminate_backend` ngẫu nhiên |
+| K10 | COMMIT timeout từng route | T K10 (verify/password/enrollment/complete: `TRANSACTION_OUTCOME_UNKNOWN`, đúng 1 COMMIT, GET state phản ánh thật) | Σ | `otp/request`, `start`, `restart` chưa có ca K10 riêng (chỉ GET-state recovery theo hợp đồng §11.3) |
+| K11 | complete ∥ complete **khác attempt** cùng lời mời | S K11(a) start ∥ complete của attempt sống (cả hai thứ tự); S K11(b) attempt cũ bị thay bởi attempt mới, **cả hai lần lượt tới TOTP_ISSUED rồi complete đua nhau** (cookie cũ trước / cookie mới trước): đúng 1 user, 1 COMPLETED, bên kia nhận trạng thái cuối, không đếm; S K11(c) schema | B2 + Sc | Fixture “hai attempt **sống** cùng lúc” **bất khả thi theo schema**: unique index live (23505) và unique COMPLETED chặn tại INSERT — K11(c) chứng minh bằng 3 INSERT/UPDATE bị từ chối; lịch hợp lệ gần nhất (K11(a)(b)) đã chạy bằng barrier |
+| K12 | trace khóa Auth↔1C | T (thứ tự không giảm), TL 1B | Tr | |
+| K13 | resend ∥ verify | S K13 (verify trước; resend trước) + `holdSends` cho khoảng txn1→provider→txn2; C K13 (P) | B2 | Challenge cũ hợp lệ dựng bằng INSERT (`created_at` 120 s trước, cooldown 60 s) |
+| K14 | enrollment ∥ complete | S K14 ×4: enrollment trước, complete trước, enrollment đầu tiên ∥ complete, hai enrollment đầu tiên | B2 | |
+| K15 | hết hạn attempt sau khóa | B K15 (chờ khóa attempt qua `expires_at` bằng giờ DB ⇒ 401, không ghi, không gửi OTP) | B1 | Một thứ tự: kết quả chỉ có một đáp án theo `T` đọc sau khóa |
+| K16 | hết hạn lời mời sau khóa | B K16 | B1 | như trên |
+| K17 | PENDING_DELIVERY mồ côi | T K17 (trong ân hạn 409 không đếm; ngoài ân hạn promote rồi so mã); D (bảng K27: cả hai ca) | Σ | |
+| K18 | txn2 CAS ∥ verify promote | **D**: (1) verify promote **trong lúc** request giữ ở provider (`holdSends`), thả provider ⇒ txn2 CAS 0 hàng + audit anomaly + 202; (2) txn2 giữ khóa challenge (barrier `lockChallenge`), verify chờ L9b, thả ⇒ txn2 promote, verify thấy PENDING, đếm +1, **không** promote, không anomaly. Ân hạn 1 s qua cấu hình `promoteGraceMs=1000`, đi qua bằng giờ DB | B2 | |
+| K19 | provider UNKNOWN/REJECTED/ACCEPTED | F "OTP provider outcomes" | Σ | |
+| K20 | hook 1B ∥ otp-request / verify | S K20 ×4: reissue trước verify, verify trước reissue, reissue trước otp-request, otp-request trước reissue (hook chạy khi SMS đang chờ, outcome muộn không hồi sinh challenge) | B2 | |
+| K21 | start tiếp tục ∥ start mới | S K21 (resume trước / start mới trước); C K21 (P) | B2 | |
+| K22 | complete sai ∥ đúng | S K22 (sai trước / đúng trước); C K22 (P) | B2 | |
+| K23 | PHONE_CONFLICT | (a) C K23 (tuần tự, otp-request/start); (b) S K23(b) (otp-request trước / start trước; một lần đóng, không 40P01); (c) S K23(c) (revoke trước / request trước) | B2 | `restart`/`complete` nhánh PHONE_CONFLICT: X (state PHONE_CONFLICT dựng bằng `complete`), F |
+| K24 | quá deadline → restart | C K24, K24(d) | Σ | giờ DB |
+| K25 | cookie COMPLETED, hết hạn mọi trạng thái, ma trận | C K25/K29; **X** (ma trận đủ ô + hết hạn) | Σ | |
+| K26 | complete lặp trên COMPLETED | C K26; X (kể cả bucket TOTP bị khóa) | Σ | |
+| K27 | verify × challenge mới nhất | F K27 (5 sai ⇒ LOCKED, verify thứ 6 không đổi hàng/đếm/audit); **D** bảng đầy đủ: không challenge, PENDING_DELIVERY trong ân hạn, ngoài ân hạn (mã đúng ⇒ VERIFIED; mã sai ⇒ promote + đếm 1), PENDING hết hạn, DELIVERY_FAILED, INVALIDATED, LOCKED, **PENDING cũ + LOCKED mới hơn** (chọn mới nhất). Ô chỉ-từ-chối so sánh `xmin` và số audit trước/sau | Σ | |
+| K28 | phục hồi sau TOTP sai lần 5 | F K28 (a)–(c) | Σ | (d)(e)(f): F/X |
+| K29 | TX-P bằng giờ DB | C K25/K29; X hết hạn qua INSERT + giờ DB | Σ | |
 
 ## 4. Kết luận protocol khóa
 
 - **Call graph (đọc code)**: toàn bộ SQL của 1C nằm trong `admin-activation-repository.ts` (khẳng định bằng U boundary); khóa chỉ đi qua `lockBuckets` (L2), `lockPhone` (L3, cùng miền với 1B), participant 1A `lock` / reader `lockShared` (L8 X/S), `lockAttempt(s)` (L9a), challenge (L9b). Hook 1B lấy L9a rồi L9b sau L3/L8 X của reissue/revoke.
-- **Trace thực tế (CI)**: mỗi route có trace từng câu lệnh qua service thật; thứ tự không giảm; `lock_timeout` đặt trước khóa đầu; không có khóa ngoài bảng hạng.
-- **Barrier (CI)**: K2, K15, K16 quyết định bằng khóa do test giữ + đồng hồ DB, không sleep; K1/K5/K6/K7/K8/K13/K21/K22 là chạy song song thật qua HTTP, khẳng định bất biến cho mọi thứ tự hợp lệ; không có `40P01`.
-- **Trạng thái**: `LOCK_PROTOCOL=NOT_FINAL`. Chưa chạy race ngẫu nhiên N=100 (kiểm tra bổ sung, không phải chứng minh).
+- **Trace thực tế (CI)**: mỗi route có trace từng câu lệnh qua service thật; thứ tự không giảm; `lock_timeout` đặt trước khóa đầu.
+- **Lịch đồng thời**: các cặp K1, K3, K4, K5, K6, K7, K11, K13, K14, K18, K20, K21, K22, K23(b)(c) được quyết định bằng **barrier xác định** và chạy cả hai thứ tự (bảng 3.2, cột Mức). K2, K15, K16 dùng khóa do test giữ + giờ DB. `Promise.all` (C) còn lại chỉ là kiểm bổ sung; **K8 chỉ có bằng chứng loại P** (bất biến đếm), không dùng làm bằng chứng thứ tự khóa. Không có `40P01` trong bất kỳ lịch nào.
+- **Chưa chứng minh**: hai request giống hệt nhau (K1, K5, K6) chỉ có một lịch (đối xứng, xem ghi chú); các lịch có ba request trở lên, và các lịch với **ba** điểm dừng (ví dụ hook ∥ otp-request ∥ verify) chưa dựng; chưa chạy race ngẫu nhiên N=100 (sẽ chỉ là kiểm bổ sung). Vì vậy giữ **`LOCK_PROTOCOL=NOT_FINAL`** cho tới khi ChatGPT review xác nhận bảng 3.2.
 
-## 5. Điểm diễn giải / sai khác so với hợp đồng (cần ChatGPT xác nhận, không đổi nghiệp vụ)
+## 5. Đối chiếu 8 sai khác với hợp đồng (cần ChatGPT/Owner quyết; không tự diễn giải)
 
-1. **Dạng JSON**: phản hồi dùng `data` envelope và khoá `snake_case` như toàn bộ API quản trị hiện có (`csrf_token`, `restart_required`, `can_restart`, `attempts_left`…), không phải camelCase như một số chỗ ví dụ trong hợp đồng.
-2. **Hằng số thay vì cấu hình** cho TTL/bộ đếm (đúng tinh thần OD-9: chỉ timeout provider, ân hạn promote và chế độ OTP là cấu hình); CHECK trong DB giới hạn trần.
-3. **Factor không có cột ràng buộc mật khẩu**: `admin_totp_factors` hiện hữu không có cột này, 1C không đổi bảng 1A/login; mật khẩu gắn với user mới tạo cùng transaction.
-4. Kiểm tra `Content-Type`/kích thước chạy **trước** quota ingress (không tốn truy vấn DB); JSON hỏng trả `400` chung của framework (không phải `ADMIN_INPUT_INVALID`).
-5. `GET state` không có quota ingress (chỉ POST theo hợp đồng); đọc COMPLETED mà lời mời không ACCEPTED (bất khả thi theo trigger 1A) → 500 nội bộ, không audit.
-6. `password` ở trạng thái khác `OTP_VERIFIED` trả 409 trước khi băm (đúng §10.4).
-7. **Lần sai TOTP thứ 5** commit INVALIDATED + khoá bucket rồi trả `429 ADMIN_AUTH_RATE_LIMITED` (4 lần đầu `400 ADMIN_TOTP_INVALID`); bốn lần đầu và lần thứ 5 đều đã được đếm bền vững.
-8. `restart` từ INVALIDATED không phải ATTEMPTS_EXHAUSTED trả 409 `STEP_INVALID` (state: `can_restart=false`), đúng K24.
+Cột “Kết luận” phân biệt **sai khác thật** (cần quyết định) với **khớp hợp đồng** (ghi lại để review, không cần đổi).
+
+| # | Nội dung | Hợp đồng nói | Code làm | Kết luận / đề xuất |
+|---|---|---|---|---|
+| 1 | Dạng JSON | §6.3, §10: khoá camelCase (`csrfToken`, `expiresAt`, `restartRequired`, `canRestart`, `passwordDeadline`, `resendAt`…) và ví dụ phản hồi trần (`{state:"…"}`) | Phong bì `{data:{…}}` và khoá `snake_case` (`csrf_token`, `expires_at`, `restart_required`, `can_restart`…) như toàn bộ API quản trị 1A/1B | **Sai khác thật.** Đề xuất **chấp nhận** snake_case + `data` (một dạng chung cho UI/ứng dụng khác; đổi sau khi có UI tốn hơn). Cần ChatGPT sửa câu chữ §6.3/§10 và các ví dụ để UI bám đúng khoá. Chưa đổi code |
+| 2 | TTL/ngưỡng | §7: bảng “Giá trị đề xuất”, OD-7 duyệt “như bảng”; §16 (OD-9): cấu hình gồm **“các TTL/ngưỡng §7”**, mặc định như §7, ép trần theo CHECK DB | **Hằng số** trong `admin-activation-constants.ts`; chỉ `OTP_MODE`, timeout provider, ân hạn promote là cấu hình. *(Bản trước viết “đúng tinh thần OD-9” — không đúng với chữ của §16; sửa lại ở đây.)* | **Sai khác thật so với §16.** **Giá trị bằng đúng §7** (kiểm từng dòng ở bảng dưới). Hai lựa chọn để quyết: **(A)** giữ hằng số (cùng cách 1A/1B; không biến môi trường nào nới được cổng) và sửa §16/OD-9 bỏ cụm “các TTL/ngưỡng §7”; **(B)** làm cấu hình thật với mặc định = §7 và trần/sàn nêu cụ thể (ví dụ `ADMIN_ACTIVATION_ATTEMPT_TTL_SECONDS` 60…3600; `…_OTP_TTL_SECONDS` 60…600; `…_PASSWORD_DEADLINE_SECONDS`; `…_REQUEST_LIMIT`/`…_WINDOW_SECONDS`; v.v.; riêng giới hạn sai OTP/TOTP **cố định 5** vì CHECK DB `attempt_count`/`totp_attempt_count` ≤ 5 nên chỉ có thể hạ, không nâng). (B) thêm bề mặt cấu hình + bộ test miền giá trị; cần Owner duyệt tên biến và biên. Chưa đổi code |
+| 3 | Ràng buộc mật khẩu của factor | §10.6 bước 5: factor ACTIVE có “ràng buộc mật khẩu theo (`user_id`, `password_hash`)” | `admin_totp_factors` của 1A **không có cột này**; 1C không đổi bảng 1A/login. User, hash mật khẩu và factor được tạo **cùng một transaction** từ cùng attempt | **Sai khác thật.** Lựa chọn: **(A)** chấp nhận (ràng buộc là ngầm: cùng transaction, cùng `user_id`), sửa câu §10.6; **(B)** thêm migration cột ràng buộc + sửa login 1A — ngoài phạm vi 1C, cần task riêng. Đề xuất (A). Chưa đổi code |
+| 4 | JSON hỏng | §6.1 “sai ⇒ 400 `ADMIN_INPUT_INVALID`”; §9 R0: `transport → Origin → quota → parse` | Sai Content-Type / quá 4 KiB / khoá thừa / sai kiểu ⇒ `400 ADMIN_INPUT_INVALID` (đúng, test F). **JSON cú pháp hỏng** bị bộ parse của framework từ chối **trước** controller ⇒ `400 BAD_REQUEST` chung, **không** tiêu quota ingress | **Sai khác nhỏ.** Test X ghi lại hành vi (400 `BAD_REQUEST`, bucket không đổi). Lựa chọn: chấp nhận (không tốn DB, không rò rỉ) hoặc đổi sang `ADMIN_INPUT_INVALID` + tiêu quota (cần chặn lỗi parse trong middleware). Chưa đổi code |
+| 5 | GET state không quota | §8: “**Mọi request**, kể cả replay, 401 và 409 (sau kiểm `Origin`)” ⇒ `ACTIVATION_REQUEST_IP`; nhưng §9 R0 “**mọi POST**”, §6.3/§10.7 “GET state là **đọc thuần**: không khóa, không ghi, không đếm”, §11.3 dùng GET state làm đường phục hồi | `GET state` **không** có quota ingress (đọc thuần, một SELECT); mọi POST có (+1 kể cả 401/409/replay) | **Mâu thuẫn nội bộ của hợp đồng** (§8 vs §9/§10.7). Test X ghi lại hiện trạng (40 GET liên tiếp đều 401, không bucket nào đổi) và test K26 (POST). Lựa chọn: **(A)** giữ, sửa §8 thành “mọi POST” (đúng §9/§10.7, GET vẫn pure read, đường phục hồi không bị 429); **(B)** thêm quota cho GET: GET trở thành có ghi (UPSERT bucket ở transaction R0 riêng) và có thể trả 429 trên đường phục hồi — trái §10.7, cần sửa §6.3/§10.7. Cookie 256 bit nên GET không giúp đoán; rủi ro chỉ là tải. Đề xuất (A) |
+| 6 | `password` sai bước ⇒ 409 trước khi băm | §10.4: “cổng chạy trước hashing; cổng hỏng không tốn hash” | Đúng như vậy | **Khớp hợp đồng.** Không cần quyết |
+| 7 | Lần sai TOTP thứ 5 ⇒ 429 | §8: “TOTP sai lần 5 … commit rồi ném (**429 nếu bucket cũng khóa**)”; §7: bucket 5 sai/15 phút khóa 15 phút; §6.1: 429 kèm `Retry-After` | Lần 1–4: `400 ADMIN_TOTP_INVALID`; lần 5: attempt INVALIDATED + bucket khóa ⇒ `429 ADMIN_AUTH_RATE_LIMITED` + `Retry-After` > 0; cả 5 lần đều được đếm bền | **Khớp hợp đồng** (bucket cùng ngưỡng 5 nên luôn khóa ở lần 5). Test X ép đúng 4×400 rồi 429 + `Retry-After` |
+| 8 | `restart` từ INVALIDATED không phải ATTEMPTS_EXHAUSTED ⇒ 409 | §11.2 hàng restart; K24 | Đúng như vậy (`can_restart=false`) | **Khớp hợp đồng**; test X (SUPERSEDED, INVITATION_CLOSED, PHONE_CONFLICT) |
+
+Ngoài tám mục: đọc COMPLETED mà lời mời không ACCEPTED (bất khả thi theo trigger 1A) ⇒ lỗi nội bộ 500, không audit — không có câu trong hợp đồng; đề xuất giữ.
+
+**Đối chiếu giá trị mục #2 với §7** (code = hằng số; test = nơi hành vi được kiểm):
+
+| §7 | Giá trị | Hằng số | Kiểm bởi |
+|---|---|---|---|
+| Vòng đời attempt | 30 phút (≤ hạn lời mời) | `ATTEMPT_TTL_MS` | X (attempt bị chặn bởi TTL lời mời), C K25, DDL ≤ 1 giờ |
+| OTP hiệu lực | 300 s | `OTP_TTL_MS` | D (PENDING hết hạn), F |
+| Cooldown gửi lại | 60 s | `OTP_RESEND_COOLDOWN_MS` | F, S K13 |
+| Sai OTP / challenge | 5 | `OTP_WRONG_LIMIT` | F K27, S K7 |
+| Gửi OTP | 5 / giờ / lời mời | `OTP_SEND_LIMIT`, `…WINDOW` | F |
+| Đặt mật khẩu sau OTP | ≤ 600 s | `PASSWORD_DEADLINE_MS` | C K24 |
+| Sai TOTP / attempt | 5 | `TOTP_WRONG_LIMIT` | F K28, C K8, X |
+| Ingress | 30 / 60 s / IP | `ACTIVATION_REQUEST_LIMIT` | X (31 POST ⇒ 429) |
+| Sai token ở `start` | 10 / 15 phút, khóa 15 phút | `LINK_FAILURE_*` | F, X |
+| Sai TOTP bucket | 5 / 15 phút, khóa 15 phút | `TOTP_FAILURE_*` | F K28, X |
+| Timeout provider | 8 s (cấu hình) | `providerTimeoutMs` | U config, T |
+| Ân hạn promote | 10 s (cấu hình) | `promoteGraceMs` | T K17, D K18 (1 s) |
 
 ## 6. Giới hạn kiểm chứng (nói rõ)
 
-- **Môi trường**: không `npm install` được (chính sách tổ chức) nên không chạy được jest/Nest cục bộ; kiểm chứng cục bộ = PostgreSQL 16 cho SQL (`run.sh`: 65 PASS, Up/Down/Up) + typecheck bằng stub. **Nguồn sự thật là CI.** Log job không tải được, chỉ đọc được annotation (số tổng + lỗi đầu tiên), nên các lỗi trong quá trình làm được sửa theo từng vòng; lần chạy cuối xanh toàn bộ.
-- **Chưa có test (ghi nhận, không tuyên bố đã đạt)**: K11 ngoài phạm vi K5 (không dựng được hai attempt khác nhau cùng lời mời); K18 (txn2 CAS ∥ verify promote); K20 hook ∥ otp-request/verify chạy song song (chỉ có trace thứ tự + K4/K3 tuần tự); K23(b)(c) PHONE_CONFLICT đồng thời / ∥ revoke (chỉ có (a) cho otp-request và trace); bảng K27 đầy đủ (chỉ có “5 sai → LOCKED → verify thứ 6”, “không có challenge”, “challenge mồ côi trong/ngoài ân hạn”; thiếu `PENDING` hết hạn, `DELIVERY_FAILED`, `INVALIDATED`, và ca challenge cũ PENDING + mới LOCKED); ma trận §11.2 đủ 6×8 ô (chỉ các ô nêu ở K25/K26/K29, steps-in-order, K28); TOTP COMPLETED hết hạn (không dựng được vì `created_at/expires_at` bất biến và COMPLETED cần lời mời ACCEPTED thật).
-- **Chưa kiểm thử**: không SMS thật, không UI, không thiết bị thật, không staging; quyền bảng runbook chỉ được kiểm bằng test `remote-migration-fresh-db` (suy ra từ đọc code, **D4 phải kiểm bằng endpoint thật**).
+- **Môi trường**: không `npm install` được (chính sách tổ chức) nên không chạy được jest/Nest cục bộ; kiểm chứng cục bộ = PostgreSQL 16 cho SQL (`run.sh`: 65 PASS, Up/Down/Up) + typecheck bằng stub. **Nguồn sự thật là CI.** Log job không tải được, chỉ đọc được annotation (số tổng + lỗi đầu tiên), nên lỗi được sửa theo từng vòng; lần chạy cuối xanh toàn bộ.
+- **Bằng chứng loại P, không phải thứ tự khóa**: K8 (7 TOTP sai song song) và các bản `Promise.all` của K1/K5/K6/K7/K13/K21/K22 trong C.
+- **Đối xứng**: K1, K5, K6 chỉ có một lịch (hai request cùng loại là hoán đổi được).
+- **Chưa dựng**: fixture “hai attempt sống cùng lúc” (bất khả thi theo schema — thay bằng K11(a)(b)(c)); K10 cho `otp/request`/`start`/`restart` (chỉ phục hồi bằng GET state theo §11.3); lịch ba request; race ngẫu nhiên N=100; hết hạn `invitation` giữa chừng cho mọi route (chỉ K16 cho `start`).
+- **Chưa kiểm thử**: không SMS thật, không UI, không thiết bị thật, không staging; quyền bảng runbook chỉ được kiểm bằng `remote-migration-fresh-db` (**D4 phải kiểm bằng endpoint thật**).
 - Không merge, không deploy, không đóng M01, không tuyên bố Owner nghiệm thu.
 
 ## 7. Checklist giao đoạn (theo `docs/templates/module-delivery-checklist.md`)

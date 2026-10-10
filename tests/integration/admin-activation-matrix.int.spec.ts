@@ -15,6 +15,7 @@ import {
   attemptsOf,
   auditCount,
   begin,
+  bucketFailures,
   bucketRows,
   challengesOf,
   cookiesOf,
@@ -212,7 +213,9 @@ describe('M01-D-ADMIN-1C - contract 11.2 matrix (8 routes x 6 states, INVALIDATE
       invitation: await invitationStatus(ctx.pool, invite.invitationId),
       users: await users(invite.phone.normalized),
       audit: await auditCount(ctx.pool, ''),
-      buckets: await bucketRows(ctx.pool, 'ACTIVATION_REQUEST_IP'),
+      buckets: (
+        await ctx.pool.query("SELECT * FROM app.admin_auth_limits WHERE kind NOT IN ('ACTIVATION_REQUEST_IP', 'ACTIVATION_LINK_IP') ORDER BY bucket_key")
+      ).rows,
       sends: ctx.provider.sendStarted(),
     };
   }
@@ -247,6 +250,7 @@ describe('M01-D-ADMIN-1C - contract 11.2 matrix (8 routes x 6 states, INVALIDATE
       }
       await ctx.app.clearLimits();
       const before = await footprint(invite);
+      const linkBefore = await bucketFailures(ctx.pool, 'ACTIVATION_LINK_IP');
       const response = await call(route, invite, session);
       const cell = { label, route, status: response.status, code: adminErrorCode(response) };
       expect(cell).toEqual({ label, route, status: want.status, code: want.code });
@@ -254,6 +258,10 @@ describe('M01-D-ADMIN-1C - contract 11.2 matrix (8 routes x 6 states, INVALIDATE
         expect({ label, route, state: adminData(response).state }).toEqual({ label, route, state: want.state });
       }
       expect({ label, route, footprint: await footprint(invite) }).toEqual({ label, route, footprint: before });
+      // DEVIATION 9 (documented): the uniform 404 of start counts ONE link failure (contract 10.1 step 6 and 8), although the
+      // 11.2 legend writes "-" for these cells. Nothing else may change.
+      const countsLink = route === 'start (valid cookie)' && want.code === LINK;
+      expect({ label, route, link: await bucketFailures(ctx.pool, 'ACTIVATION_LINK_IP') }).toEqual({ label, route, link: linkBefore + (countsLink ? 1 : 0) });
     }
   });
 
@@ -298,9 +306,11 @@ describe('M01-D-ADMIN-1C - contract 11.2 matrix (8 routes x 6 states, INVALIDATE
       for (const invite of [accepted, closed]) {
         await ctx.app.clearLimits();
         const before = await footprint(invite);
+        const linkBefore = await bucketFailures(ctx.pool, 'ACTIVATION_LINK_IP');
         const refusedStart = await act(ctx.app, 'POST', '/start', { body: { token: invite.token }, cookies: { [ACTIVATION_COOKIE]: 'c'.repeat(43) } });
         expect({ status: refusedStart.status, code: adminErrorCode(refusedStart) }).toEqual({ status: 404, code: LINK });
         expect(await footprint(invite)).toEqual(before);
+        expect(await bucketFailures(ctx.pool, 'ACTIVATION_LINK_IP')).toBe(linkBefore + 1);
       }
     });
 
@@ -367,8 +377,7 @@ describe('M01-D-ADMIN-1C - the session cookie expires (row 0), in every state, d
   let system: SystemSession;
 
   beforeAll(async () => {
-    // A short invitation lifetime caps the attempt lifetime, so the COMPLETED attempt itself can really expire.
-    ctx = await startActivationApp({ invitationTtlSeconds: 45 });
+    ctx = await startActivationApp();
     system = await systemSession(ctx.app);
   });
   afterAll(async () => {
@@ -412,22 +421,24 @@ describe('M01-D-ADMIN-1C - the session cookie expires (row 0), in every state, d
 
   it('COMPLETED: after the attempt expiry every route is 401, start is 404 (ACCEPTED) and nothing is written', async () => {
     const invite = await newInvite(ctx.app, system);
-    const progress = await advance({ app: ctx.app, provider: ctx.provider }, invite, 'TOTP_ISSUED');
-    ok(await post(ctx.app, '/complete', progress.session, { code: totpNow(String(progress.secret)) }));
-    const [attempt] = await attemptsOf(ctx.pool, invite.invitationId);
-    // Before the expiry the COMPLETED answer is still 200 (TX-P).
-    const still = ok(await getState(ctx.app, progress.session));
-    expect(adminData(still).state).toBe('COMPLETED');
+    // The attempt lifetime is 30 minutes and expires_at is immutable, so the COMPLETED attempt of this test is born from an
+    // INSERT at PASSWORD_SET with a 20 s lifetime; enrollment and complete are then the REAL routes.
+    const row = await insertAttempt(ctx.pool, { invitationId: invite.invitationId, status: 'PASSWORD_SET', createdAgoSeconds: 5, expiresInSeconds: 20 });
+    const state = adminData(ok(await getState(ctx.app, { cookie: row.cookie, csrf: '' })));
+    const session: Act = { cookie: row.cookie, csrf: String(state.csrf_token) };
+    const issued = ok(await post(ctx.app, '/totp/enrollment', session));
+    ok(await post(ctx.app, '/complete', session, { code: totpNow(String(adminData(issued).secret)) }));
+    expect(adminData(ok(await getState(ctx.app, session))).state).toBe('COMPLETED'); // before the expiry the answer is still 200 (TX-P)
+    expect(await invitationStatus(ctx.pool, invite.invitationId)).toBe('ACCEPTED');
     await eventually(
       async () =>
-        (await ctx.pool.query<{ past: boolean }>('SELECT clock_timestamp() > expires_at AS past FROM app.admin_activation_attempts WHERE attempt_id = $1::uuid', [attempt?.attempt_id])).rows[0]
+        (await ctx.pool.query<{ past: boolean }>('SELECT clock_timestamp() > expires_at AS past FROM app.admin_activation_attempts WHERE attempt_id = $1::uuid', [row.attemptId])).rows[0]
           ?.past === true,
       'the database clock to pass the COMPLETED attempt expiry',
-      70_000,
+      30_000,
     );
-    expect(await invitationStatus(ctx.pool, invite.invitationId)).toBe('ACCEPTED');
-    await expectExpired(invite, progress.session, 'COMPLETED');
-  }, 120_000);
+    await expectExpired(invite, session, 'COMPLETED');
+  }, 60_000);
 
   it('STARTED, OTP_VERIFIED, PASSWORD_SET, TOTP_ISSUED and INVALIDATED: expires_at chosen at INSERT, the DB clock walks past it, then 401 everywhere', async () => {
     const statuses = ['STARTED', 'OTP_VERIFIED', 'PASSWORD_SET', 'TOTP_ISSUED'] as const;
