@@ -107,7 +107,17 @@ jobs:
       # M00-L: structure checks plus the launcher behaviour suite under PowerShell 7 (real git, faked Docker/npm).
       # The Windows-only parts (cmd wrappers, double-click) run in the launcher-windows job below.
       - name: Local launcher tests (behaviour suite under PowerShell 7)
+        id: launcher
         run: npm run launcher:test
+
+      - name: Annotate launcher test failure
+        if: ${{ failure() && steps.launcher.conclusion == 'failure' }}
+        run: node scripts/annotate-log.js "Launcher behaviour (PowerShell 7)" .test-results/launcher-behaviour.log 60
+
+      - name: Report launcher behaviour counts
+        if: ${{ always() && hashFiles('.test-results/launcher-behaviour.log') != '' }}
+        shell: bash
+        run: echo "::notice title=Launcher behaviour (PowerShell 7)::$(grep -E '^(POWERSHELL|SUMMARY|SKIP)' .test-results/launcher-behaviour.log | tr '\n' ';')"
 
       - name: Create restricted test role, database and wrong-user fixture
         # PGPASSWORD (the service admin password) exists only in this step. The tests never see it.
@@ -229,5 +239,15 @@ jobs:
         run: npm ci
 
       - name: Launcher behaviour suite and Windows wrapper runs
+        id: launcher
         shell: powershell
         run: npm run launcher:test
+
+      - name: Annotate launcher test failure
+        if: ${{ failure() && steps.launcher.conclusion == 'failure' }}
+        run: node scripts/annotate-log.js "Launcher behaviour (Windows PowerShell 5.1)" .test-results/launcher-behaviour.log 60
+
+      - name: Report launcher behaviour counts
+        if: ${{ always() && hashFiles('.test-results/launcher-behaviour.log') != '' }}
+        shell: bash
+        run: echo "::notice title=Launcher behaviour (Windows PowerShell 5.1)::$(grep -E '^(POWERSHELL|SUMMARY|SKIP|     run record)' .test-results/launcher-behaviour.log | tr '\n' ';')"

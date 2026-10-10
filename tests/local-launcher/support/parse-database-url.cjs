@@ -6,12 +6,27 @@ const { createRequire } = require('node:module');
 const path = require('node:path');
 
 const repo = process.env.T_REPO || path.resolve(__dirname, '..', '..', '..');
-let parse;
-try {
-  const fromRepo = createRequire(path.join(repo, 'package.json'));
-  const pg = createRequire(fromRepo.resolve('pg/package.json'));
-  ({ parse } = pg('pg-connection-string'));
-} catch {
+// pg-connection-string is a dependency of pg (apps/backend). Try the hoisted copy first, then resolve it from pg.
+function loadParser() {
+  const bases = [path.join(repo, 'package.json'), path.join(repo, 'apps', 'backend', 'package.json')];
+  for (const base of bases) {
+    const fromBase = createRequire(base);
+    try {
+      return fromBase('pg-connection-string').parse;
+    } catch {
+      // not hoisted next to this base; look next to pg itself
+    }
+    try {
+      return createRequire(fromBase.resolve('pg'))('pg-connection-string').parse;
+    } catch {
+      // pg is not installed for this base
+    }
+  }
+  return null;
+}
+
+const parse = loadParser();
+if (typeof parse !== 'function') {
   process.stdout.write('MISSING');
   process.exit(0);
 }

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
@@ -34,6 +35,10 @@ test('launcher behaviour suite (real git, faked Docker/npm) passes under PowerSh
   );
   const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
   const summary = /SUMMARY pass=(\d+) fail=(\d+) skip=(\d+)/.exec(output);
+  // Everything except the PASS lines, kept for CI annotations (the job log itself cannot always be downloaded).
+  const report = [`POWERSHELL ${shell.version} exit=${run.status}`, ...output.split(/\r?\n/).filter((l) => l.trim() && !l.startsWith('PASS '))];
+  mkdirSync(path.join(root, '.test-results'), { recursive: true });
+  writeFileSync(path.join(root, '.test-results', 'launcher-behaviour.log'), `${report.join('\n')}\n`);
   t.diagnostic(`PowerShell ${shell.version}: ${summary ? summary[0] : 'no summary line'}`);
   for (const line of output.split(/\r?\n/).filter((l) => l.startsWith('SKIP ') || l.startsWith('FAIL '))) t.diagnostic(line);
   assert.equal(run.status, 0, output.split(/\r?\n/).filter((l) => !l.startsWith('PASS ')).join('\n'));
