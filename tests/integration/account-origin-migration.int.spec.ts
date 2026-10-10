@@ -17,7 +17,9 @@ describe('M00-D2 — account_origin migration', () => {
     .filter((file) => file.endsWith('.sql'))
     .sort()
     .map((file) => file.replace(/\.sql$/, ''));
-  const ACCT = names.find((name) => name.endsWith('add-users-account-origin')) as string;
+  const ACCT = '1791849600000_add-users-account-origin';
+  const ACCT_INDEX = names.indexOf(ACCT);
+  const THROUGH_D2 = String(ACCT_INDEX + 1);
   const acctSql = readFileSync(path.join(migrationsDir, `${ACCT}.sql`), 'utf8');
   const downSql = acctSql.split('-- Down Migration')[1] as string;
   const HASH = '$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHRzYWx0$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhc2g';
@@ -70,16 +72,19 @@ describe('M00-D2 — account_origin migration', () => {
     }
   });
 
-  it('is the LAST migration and is new (applied migrations are never edited)', () => {
-    expect(ACCT).toBeDefined();
-    expect(names[names.length - 1]).toBe(ACCT);
-    expect(names.filter((name) => name.endsWith('add-users-account-origin'))).toHaveLength(1);
+  it('is followed by an additive Admin origin-constraint extension, never a second ADD COLUMN', () => {
+    expect(ACCT_INDEX).toBeGreaterThan(0);
+    expect(names.slice(ACCT_INDEX)).toEqual([
+      ACCT,
+      '1791936000000_add-users-account-origin',
+      '1792022400000_create-admin-auth',
+    ]);
   });
 
   it('a REAL upgrade keeps every existing verified user as PHONE_VERIFIED with its proof time and data untouched', async () => {
     await reset();
-    expect(migrate([String(names.length - 1)]).status).toBe(0);
-    expect(await historyNames()).toEqual(names.slice(0, -1));
+    expect(migrate([String(ACCT_INDEX)]).status).toBe(0);
+    expect(await historyNames()).toEqual(names.slice(0, ACCT_INDEX));
     const before = await client.query('SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2', ['app', 'users']);
     expect(before.rows.map((row: { column_name: string }) => row.column_name)).not.toContain('account_origin');
 
@@ -89,8 +94,8 @@ describe('M00-D2 — account_origin migration', () => {
       'SELECT user_id, phone_normalized, password_hash, phone_verified_at, status, version FROM app.users ORDER BY phone_normalized',
     );
 
-    expect(migrate().status).toBe(0);
-    expect(await historyNames()).toEqual(names);
+    expect(migrate([THROUGH_D2]).status).toBe(0);
+    expect(await historyNames()).toEqual(names.slice(0, ACCT_INDEX + 1));
 
     const after = await client.query(
       'SELECT user_id, phone_normalized, password_hash, phone_verified_at, status, version, account_origin FROM app.users ORDER BY phone_normalized',
@@ -104,9 +109,9 @@ describe('M00-D2 — account_origin migration', () => {
     expect(withoutOrigin).toEqual(snapshot.rows);
   });
 
-  it('a second up is a no-op (history rows untouched)', async () => {
+  it('a second D2 up is a no-op (history rows untouched before Admin extension)', async () => {
     const before = await client.query('SELECT id, name, run_on FROM public.pgmigrations ORDER BY id');
-    expect(migrate().status).toBe(0);
+    expect(migrate([THROUGH_D2]).status).toBe(0);
     const after = await client.query('SELECT id, name, run_on FROM public.pgmigrations ORDER BY id');
     expect(after.rows).toEqual(before.rows);
   });
