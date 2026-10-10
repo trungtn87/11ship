@@ -160,7 +160,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#38](https://github.com/trungtn87/11ship/pull/38) docs(M01-D-ADMIN-1B): hợp đồng kỹ thuật tạo/cấp lại/thu hồi… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `ba0884b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#39](https://github.com/trungtn87/11ship/pull/39) docs(m00): thiết kế Local Test Launcher cho Owner | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `e3e0b90` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#40](https://github.com/trungtn87/11ship/pull/40) feat(m00): Windows Local Test Launcher | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `235d069` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#41](https://github.com/trungtn87/11ship/pull/41) feat(admin-provisioning): M01-D-ADMIN-1B — step-up SYSTEM v… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `ad9b092` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#41](https://github.com/trungtn87/11ship/pull/41) feat(admin-provisioning): M01-D-ADMIN-1B — step-up SYSTEM v… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `4f9bfab` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
