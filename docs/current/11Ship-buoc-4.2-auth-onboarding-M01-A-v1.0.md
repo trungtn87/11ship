@@ -1,6 +1,8 @@
 # 11Ship — Bước 4.2
 ## Đặc tả đăng ký, đăng nhập và onboarding — M01-A v1.0
 
+> **Bổ sung được Owner duyệt 10/10/2026 — Reset mật khẩu M01:** xem [M01-B-RESET: USER/ADMIN dùng chung OTP SMS, SYSTEM khôi phục qua server có email xác minh phụ tùy chọn](../tasks/M01-B-RESET-password-recovery-design.md). Tính năng **đổi mật khẩu riêng** không nằm trong phạm vi mới. Đây là **thiết kế chờ triển khai**, không phải bằng chứng code/test. Phần đặc tả mới này ưu tiên so với mô tả kế hoạch "đổi/quên mật khẩu" cũ.
+
 **Trạng thái:** DESIGN — register replay addendum ADR-003 v0.3 được Owner duyệt 07/10/2026; Auth implementation vẫn chờ toàn bộ M00-C1  
 **Phụ thuộc:** Bước 4.1 — M00-A  
 **Mục tiêu:** khóa contract đủ chi tiết để giao Claude triển khai theo gói nhỏ, không tự diễn giải nghiệp vụ.
