@@ -194,6 +194,13 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
         AND scope_id IN (SELECT proof_id::text FROM app.verification_proofs WHERE phone_normalized = $1)`,
     [normalizedPhone],
   );
+  // M01-D-LOGIN: the administration state of the user (factor -> challenge, session, membership), before the user.
+  for (const table of ['admin_totp_factors', 'admin_auth_challenges', 'admin_sessions', 'admin_memberships']) {
+    await pool.query(
+      `DELETE FROM app.${table} WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)`,
+      [normalizedPhone],
+    );
+  }
   await pool.query(
     'DELETE FROM app.sessions WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],

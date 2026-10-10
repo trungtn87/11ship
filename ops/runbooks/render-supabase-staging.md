@@ -82,6 +82,12 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | idempotency_records | SELECT, INSERT, UPDATE, DELETE |
 | outbox_events | SELECT, INSERT, UPDATE |
 | audit_logs | INSERT only |
+| admin_memberships | SELECT, UPDATE (UPDATE only because `FOR UPDATE/SHARE` needs it; rows are created by the operator command) |
+| admin_auth_challenges | SELECT, INSERT, UPDATE |
+| admin_totp_factors | SELECT, INSERT, UPDATE, DELETE |
+| admin_sessions | SELECT, INSERT, UPDATE |
+| admin_auth_limit_config | SELECT only (written once by the operator command) |
+| admin_auth_limits | SELECT, INSERT, UPDATE |
 
 ```sql
 -- example shape, repeat per row of the table above
@@ -98,6 +104,29 @@ Verification queries (run as admin; expected result: no access / not exposed):
 SELECT has_schema_privilege(r, 'app', 'USAGE') FROM unnest(ARRAY['anon','authenticated','service_role']) r;  -- all false
 SHOW pgrst.db_schemas;   -- or Dashboard → API settings: schema "app" must not be an exposed schema
 ```
+
+### Administration authentication (M01-D-LOGIN)
+
+The administration web login is **off by default** (`ADMIN_AUTH_ENABLED` unset or `false`: no route is mounted and no
+admin variable is read). The account-origin migration changes `app.users` (`phone_verified_at` becomes nullable, a new
+`account_origin` column defaults to `PHONE_VERIFIED`), so apply the migrations **before** deploying the code that reads
+it. The rows of the table above for `admin_*` are likewise derived from reading the source and must be verified in D4.
+
+Two operator commands run from a controlled machine, never from Render and never at build or start. They use the
+**migration** credential and the same target rules as `db:migrate:remote` (`APP_ENV=staging`, `MIGRATION_DATABASE_URL`,
+`DATABASE_URL`, a CA variable, `MIGRATION_CONFIRM_TARGET`) plus the limiter key variables, set in the shell only:
+
+1. `ADMIN_RATE_LIMIT_HMAC_KEY` (base64, 32 random bytes) and `ADMIN_RATE_LIMIT_KEY_ID`. The same pair must be set on the
+   Render service when `ADMIN_AUTH_ENABLED=true`; the service refuses to start if it differs from the stored one.
+2. `npm run admin-auth:init-limit-config` - writes the limiter configuration row once; a second run with the same key
+   says `unchanged`, a different key is refused.
+3. `npm run admin-auth:bootstrap-system` - creates the single SYSTEM account. The credentials come from **standard
+   input only**, as one JSON object `{"phone": "...", "password": "..."}` (no argument, no environment variable). Feed it
+   from a protected file that you delete afterwards, for example `npm run admin-auth:bootstrap-system < /secure/path`.
+   The command prints one fixed word (`created` / `unchanged`) or one refusal code, never the phone, password or ids.
+
+Do not run step 3 until the owner has approved the account; there is no recovery path in this slice (a lost password or
+authenticator on the only SYSTEM account needs a separate, reviewed procedure).
 
 ## 4. Migration procedure
 

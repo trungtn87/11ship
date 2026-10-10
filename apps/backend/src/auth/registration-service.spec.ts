@@ -97,7 +97,7 @@ function rig(options: {
       events.push('user.lock');
       return options.replay && 'user' in options.replay
         ? options.replay.user
-        : ({ userId: USER_ID, phoneNormalized: PHONE, passwordHash: 'h', status: 'ACTIVE' } as UserRow);
+        : ({ userId: USER_ID, phoneNormalized: PHONE, passwordHash: 'h', status: 'ACTIVE', accountOrigin: 'PHONE_VERIFIED' } as UserRow);
     },
   } as unknown as UserRepository;
   const sessions = {
@@ -338,7 +338,7 @@ describe('RegistrationService — the replay authorization hook (task section 9.
   });
 
   it('denies a disabled or missing user with ACCOUNT_DISABLED', async () => {
-    const disabled = { userId: USER_ID, phoneNormalized: PHONE, passwordHash: 'h', status: 'DISABLED' } as UserRow;
+    const disabled = { userId: USER_ID, phoneNormalized: PHONE, passwordHash: 'h', status: 'DISABLED', accountOrigin: 'PHONE_VERIFIED' } as UserRow;
     expect(await codeOf(() => authorize(rig({ replay: { user: disabled } })))).toBe('ACCOUNT_DISABLED');
     expect(await codeOf(() => authorize(rig({ replay: { user: undefined } })))).toBe('ACCOUNT_DISABLED');
   });

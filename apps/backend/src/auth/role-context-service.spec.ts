@@ -21,7 +21,7 @@ const PRINCIPAL: AuthPrincipal = {
   activeRole: null,
   phoneNormalized: '+84987654321',
 };
-const USER: UserRow = { userId: PRINCIPAL.userId, phoneNormalized: PRINCIPAL.phoneNormalized, passwordHash: 'h', status: 'ACTIVE' };
+const USER: UserRow = { userId: PRINCIPAL.userId, phoneNormalized: PRINCIPAL.phoneNormalized, passwordHash: 'h', status: 'ACTIVE', accountOrigin: 'PHONE_VERIFIED' };
 const SESSION: LockedSession = { sessionId: PRINCIPAL.sessionId, userId: PRINCIPAL.userId, activeRole: null, revoked: false, expiresAtMs: NOW + 60_000 };
 
 interface Rig {

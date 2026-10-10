@@ -16,4 +16,4 @@ build/
 *.mobileprovision
 .test-results/
 .11ship-local/
-.11ship-local/
+.local/

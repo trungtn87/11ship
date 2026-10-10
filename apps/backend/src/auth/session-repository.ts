@@ -5,6 +5,7 @@ import { TransactionContext } from '../transaction/transaction-context';
 import { CLOCK_CTE, epochMs, toSafeInteger } from './auth-db';
 import { DeviceInfo } from './auth-validation';
 import { generateToken } from './tokens';
+import { AccountOrigin } from './user-repository';
 
 export interface CreatedSession {
   readonly sessionId: string;
@@ -20,6 +21,7 @@ export interface SessionView {
   readonly expired: boolean;
   readonly userStatus: string;
   readonly phoneNormalized: string;
+  readonly accountOrigin: AccountOrigin;
 }
 
 /**
@@ -82,11 +84,12 @@ export class SessionRepository {
       expired: boolean;
       status: string;
       phone_normalized: string;
+      account_origin: AccountOrigin;
     }>(
       `SELECT s.session_id, s.user_id, s.active_role,
               s.revoked_at IS NOT NULL AS revoked,
               s.expires_at <= clock_timestamp() AS expired,
-              u.status, u.phone_normalized
+              u.status, u.phone_normalized, u.account_origin
          FROM app.sessions s
          JOIN app.users u ON u.user_id = s.user_id
         WHERE s.token_digest = $1`,
@@ -104,6 +107,7 @@ export class SessionRepository {
       expired: row.expired,
       userStatus: row.status,
       phoneNormalized: row.phone_normalized,
+      accountOrigin: row.account_origin,
     };
   }
 

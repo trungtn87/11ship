@@ -124,7 +124,8 @@ describe('Onboarding coordinator boundary', () => {
 
   it('AppModule builds Auth once and hands the same object to Onboarding', () => {
     const app = codeOf('app.module.ts');
-    expect(app.split('AuthModule.register(').length - 1).toBe(1);
+    // AdminAuthModule.register(auth) re-uses the same object; only ONE Auth Core is ever built.
+    expect(app.match(/(?<![A-Za-z])AuthModule\.register\(/g)).toHaveLength(1);
     expect(app).toContain('OnboardingModule.register(auth)');
   });
 });

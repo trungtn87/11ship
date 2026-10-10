@@ -30,6 +30,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
       error_class: safeErrorClass(exception),
     });
 
+    if (classified.retryAfterSeconds !== undefined) {
+      // Only the typed administration rate-limit error carries this value; it is a finite integer >= 1.
+      this.httpAdapterHost.httpAdapter.setHeader(response, 'Retry-After', String(classified.retryAfterSeconds));
+    }
     this.httpAdapterHost.httpAdapter.reply(
       response,
       buildErrorBody(classified, requestId),

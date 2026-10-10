@@ -17,7 +17,7 @@ const ACTOR: SessionActor = {
   sessionId: '623e4567-e89b-42d3-a456-426614174000',
 };
 const OTHER_USER = '723e4567-e89b-42d3-a456-426614174000';
-const USER: UserRow = { userId: ACTOR.userId, phoneNormalized: '+84987654321', passwordHash: 'h', status: 'ACTIVE' };
+const USER: UserRow = { userId: ACTOR.userId, phoneNormalized: '+84987654321', passwordHash: 'h', status: 'ACTIVE', accountOrigin: 'PHONE_VERIFIED' };
 const SESSION: SharedLockedSession = {
   sessionId: ACTOR.sessionId,
   userId: ACTOR.userId,
@@ -113,6 +113,13 @@ describe('SessionAuthorizationParticipant.lockAuthorizedActor (writers)', () => 
     );
     const after = rig({ session: { ...SESSION, expiresAtMs: NOW + 1 } });
     expect(await codeOf(() => after.participant.lockAuthorizedActor(fakeContext(NOW, after.events), ACTOR))).toBe('OK');
+  });
+
+  it('refuses an administration account with SESSION_INVALID, before revoked/expired/disabled', async () => {
+    const admin = { ...USER, accountOrigin: 'ADMIN_PROVISIONED' as const };
+    const { participant, events } = rig({ user: admin, session: { ...SESSION, revoked: true } });
+    expect(await codeOf(() => participant.lockAuthorizedActor(fakeContext(NOW, events), ACTOR))).toBe('SESSION_INVALID');
+    expect(await codeOf(() => participant.lockAuthorizedActorShared(fakeContext(NOW, events), ACTOR))).toBe('SESSION_INVALID');
   });
 
   it('refuses a DISABLED user with ACCOUNT_DISABLED', async () => {

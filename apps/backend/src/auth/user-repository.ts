@@ -6,11 +6,19 @@ import { CLOCK_CTE } from './auth-db';
 
 export type UserStatus = 'ACTIVE' | 'DISABLED';
 
+/**
+ * Where an account came from. It carries NO privilege. The application (customer/shop/driver) Auth only accepts
+ * PHONE_VERIFIED accounts; ADMIN_PROVISIONED accounts exist for the administration web and are refused by every
+ * application login and session check.
+ */
+export type AccountOrigin = 'PHONE_VERIFIED' | 'ADMIN_PROVISIONED';
+
 export interface UserRow {
   readonly userId: string;
   readonly phoneNormalized: string;
   readonly passwordHash: string;
   readonly status: UserStatus;
+  readonly accountOrigin: AccountOrigin;
 }
 
 interface RawUser {
@@ -18,6 +26,7 @@ interface RawUser {
   phone_normalized: string;
   password_hash: string;
   status: UserStatus;
+  account_origin: AccountOrigin;
 }
 
 function toUser(row: RawUser): UserRow {
@@ -26,6 +35,7 @@ function toUser(row: RawUser): UserRow {
     phoneNormalized: row.phone_normalized,
     passwordHash: row.password_hash,
     status: row.status,
+    accountOrigin: row.account_origin,
   };
 }
 
@@ -41,7 +51,7 @@ export class UserRepository {
 
   async findByPhone(context: TransactionContext, phoneNormalized: string): Promise<UserRow | undefined> {
     const result = await context.query<RawUser>(
-      `SELECT user_id, phone_normalized, password_hash, status
+      `SELECT user_id, phone_normalized, password_hash, status, account_origin
          FROM app.users WHERE phone_normalized = $1`,
       [phoneNormalized],
     );
@@ -51,7 +61,7 @@ export class UserRepository {
 
   async lockById(context: TransactionContext, userId: string): Promise<UserRow | undefined> {
     const result = await context.query<RawUser>(
-      `SELECT user_id, phone_normalized, password_hash, status
+      `SELECT user_id, phone_normalized, password_hash, status, account_origin
          FROM app.users WHERE user_id = $1::uuid FOR UPDATE`,
       [userId],
     );
@@ -66,7 +76,7 @@ export class UserRepository {
    */
   async lockByIdForShare(context: TransactionContext, userId: string): Promise<UserRow | undefined> {
     const result = await context.query<RawUser>(
-      `SELECT user_id, phone_normalized, password_hash, status
+      `SELECT user_id, phone_normalized, password_hash, status, account_origin
          FROM app.users WHERE user_id = $1::uuid FOR SHARE`,
       [userId],
     );
@@ -76,7 +86,7 @@ export class UserRepository {
 
   async findById(context: TransactionContext, userId: string): Promise<UserRow | undefined> {
     const result = await context.query<RawUser>(
-      `SELECT user_id, phone_normalized, password_hash, status
+      `SELECT user_id, phone_normalized, password_hash, status, account_origin
          FROM app.users WHERE user_id = $1::uuid`,
       [userId],
     );
@@ -95,9 +105,10 @@ export class UserRepository {
   ): Promise<boolean> {
     const result = await context.query(
       `INSERT INTO app.users (
-         user_id, phone_normalized, password_hash, phone_verified_at, status, version, created_at, updated_at
+         user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version,
+         created_at, updated_at
        )
-       SELECT $1::uuid, $2, $3, v.verified_at, 'ACTIVE', 1, clock.t, clock.t
+       SELECT $1::uuid, $2, $3, v.verified_at, 'PHONE_VERIFIED', 'ACTIVE', 1, clock.t, clock.t
          FROM app.verification_proofs p
          JOIN app.phone_verifications v ON v.verification_id = p.verification_id
         CROSS JOIN (${CLOCK_CTE}) AS clock
@@ -115,6 +126,27 @@ export class UserRepository {
       throw new TechnicalError('internal', 'User was not written');
     }
     return false;
+  }
+
+  /**
+   * Creates an ACTIVE administration-provisioned account (no phone verification: phone_verified_at stays NULL and
+   * no proof is invented). Returns false when the phone number already belongs to a user. No role is written.
+   */
+  async insertAdminProvisioned(
+    context: TransactionContext,
+    input: { userId: string; phoneNormalized: string; passwordHash: string },
+  ): Promise<boolean> {
+    const result = await context.query(
+      `INSERT INTO app.users (
+         user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version,
+         created_at, updated_at
+       )
+       SELECT $1::uuid, $2, $3, NULL, 'ADMIN_PROVISIONED', 'ACTIVE', 1, clock.t, clock.t
+         FROM (${CLOCK_CTE}) AS clock
+       ON CONFLICT (phone_normalized) DO NOTHING`,
+      [input.userId, input.phoneNormalized, input.passwordHash],
+    );
+    return result.rowCount === 1;
   }
 
   /** Sorted supported business roles of the user (SHOP, DRIVER). */

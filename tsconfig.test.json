@@ -4,5 +4,9 @@
     "rootDir": ".",
     "outDir": ".test-dist"
   },
-  "include": ["apps/backend/src/**/*.ts", "tests/integration/**/*.ts"]
+  "include": [
+    "apps/backend/src/**/*.ts",
+    "tests/integration/**/*.ts",
+    "apps/admin-web/src/core/**/*.ts"
+  ]
 }

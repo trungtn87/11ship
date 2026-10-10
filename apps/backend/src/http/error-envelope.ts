@@ -1,5 +1,6 @@
 import { HttpException } from '@nestjs/common';
 import {
+  AdminAuthRateLimitError,
   APP_ERROR_DEFINITIONS,
   AppError,
   isAppErrorCode,
@@ -19,6 +20,8 @@ export interface ClassifiedError {
   status: number;
   code: string;
   message: string;
+  /** Set only for the typed AdminAuthRateLimitError: seconds for the Retry-After header. */
+  retryAfterSeconds?: number;
 }
 
 // Messages are fixed strings per status. The message of the original exception is never used,
@@ -65,6 +68,15 @@ export function classifyException(exception: unknown): ClassifiedError {
   // Typed errors are classified by their CLASS, and the public code/status/message come from the
   // fixed registry. An arbitrary exception that merely has a `code` or `status` property is never
   // trusted to name its own public code.
+  if (exception instanceof AdminAuthRateLimitError) {
+    const definition = APP_ERROR_DEFINITIONS.ADMIN_AUTH_RATE_LIMITED;
+    return {
+      status: definition.status,
+      code: 'ADMIN_AUTH_RATE_LIMITED',
+      message: definition.message,
+      retryAfterSeconds: exception.retryAfterSeconds,
+    };
+  }
   if (exception instanceof AppError && isAppErrorCode(exception.code)) {
     const definition = APP_ERROR_DEFINITIONS[exception.code];
     return { status: definition.status, code: exception.code, message: definition.message };
