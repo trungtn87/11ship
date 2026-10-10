@@ -70,6 +70,7 @@ describe('M02-A — Shop business-hours migration', () => {
     // M01-D-LOGIN adds the account-origin and the admin migrations after it (applied migrations are never edited).
     expect(names.slice(names.indexOf(HOURS))).toEqual([
       HOURS,
+      '1791849600000_add-users-account-origin',
       '1791936000000_add-users-account-origin',
       '1792022400000_create-admin-auth',
     ]);
