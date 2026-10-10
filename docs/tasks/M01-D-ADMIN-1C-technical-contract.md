@@ -1,8 +1,8 @@
 # M01-D-ADMIN-1C — Hợp đồng kỹ thuật kích hoạt ADMIN từ lời mời
 
-> **Trạng thái:** DRAFT v4 (xử lý F1–F6 trên `45a261c`, G1–G4 trên `2b36ddc`, H1–H4 trên `90f852c`), chỉ tài liệu. Không có code sản phẩm. `LOCK_PROTOCOL = NOT_FINAL`. Chưa merge, chưa deploy, chưa đóng M01, chưa có Owner acceptance.
-> **Trung thực về nguồn:** "câu lệnh 1C" gốc không có trong repo hay hội thoại làm việc. Mọi điểm Claude suy ra từ 1A/1B/#34 và PR #30/#33/#36/#43 mang nhãn **[ĐX]** (đề xuất). **Mọi OD ở §21 chưa được Owner chốt; phần [ĐX] không phải quyết định đã duyệt.**
-> **Kiểm chứng DDL:** chạy cục bộ trên PostgreSQL 16 bằng script nằm trong PR (`docs/verification/m01-d-admin-1c-ddl/`), kết quả thực tế ở §5.4. **Không phải CI.**
+> **Trạng thái:** **ĐÃ DUYỆT bởi Owner tại head `802b334a4c854c5517d50b651442a073103b22ea`; OD-1…OD-16 đã được Owner chốt theo đề xuất ghi trong §21** (ghi nhận ở §22, commit tài liệu riêng). Triển khai ở PR implementation stacked trên PR này. `LOCK_PROTOCOL = NOT_FINAL` tới khi ChatGPT review code/test. Chưa merge, chưa deploy, chưa đóng M01; **chưa có Owner nghiệm thu triển khai**.
+> **Trung thực về nguồn:** "câu lệnh 1C" gốc không có trong repo hay hội thoại làm việc. Các điểm Claude suy ra mang nhãn **[ĐX]**; nay các [ĐX] liên quan OD-1…OD-16 là quyết định của Owner (§22). Điểm [ĐX] nào **không** thuộc OD nào vẫn cần ChatGPT xác nhận khi review code.
+> **Kiểm chứng DDL:** chạy cục bộ trên PostgreSQL 16 bằng script trong `docs/verification/m01-d-admin-1c-ddl/`, kết quả ở §5.4. **Không phải CI.**
 
 ## 0. Nguồn và mốc
 
@@ -799,7 +799,7 @@ Test khác: lịch xem xét khóa — mỗi route chạy dưới `log_statement`
 
 Tài liệu này không có code, chưa chạy CI, không phải quyết định đã duyệt. Kiểm DDL chỉ ở mức cục bộ (§5.4). Câu lệnh 1C gốc không có trong tay; chỗ nào lệch cần ChatGPT chỉ ra.
 
-## 21. Quyết định còn mở (OD) — tất cả là **đề xuất**, chưa Owner chốt
+## 21. Quyết định mở (OD) — nội dung đề xuất; Owner đã chốt toàn bộ theo cột "Đề xuất" (§22)
 
 | OD | Câu hỏi | Đề xuất |
 |---|---|---|
@@ -819,3 +819,13 @@ Tài liệu này không có code, chưa chạy CI, không phải quyết định
 | OD-14 | `start` tiếp tục attempt sống khi còn cookie hợp lệ | Có |
 | OD-15 | Timeout provider 8 s, ân hạn promote 10 s | Như §7 |
 | OD-16 | Thêm route `restart` không cần token (token đã bị xóa khỏi URL) và cho phép restart từ `ATTEMPTS_EXHAUSTED` | Có; nếu Owner không muốn thêm route, phương án thay thế: SPA giữ token trong `sessionStorage` tới khi COMPLETED (rủi ro lưu token) — **cần Owner chọn** |
+
+## 22. Quyết định của Owner (ghi nhận khi bắt đầu triển khai)
+
+| Mục | Nội dung |
+|---|---|
+| Ngày / nguồn | 2026-10-10, thông báo của Owner trong phiên làm việc triển khai |
+| Mốc được duyệt | Hợp đồng tại head `802b334a4c854c5517d50b651442a073103b22ea` (base `4ab9c9cff8db730699d234c56bacf567506c5bbf`) |
+| OD đã chốt | **OD-1 … OD-16: chốt theo đúng cột "Đề xuất" ở §21**, không sửa đổi. Cụ thể: OTP FAKE/TEST_DISPLAY chỉ non-production, SMS chờ M01-C (OD-1); sau `complete` về trang đăng nhập, không tự cấp phiên (OD-2); `phone_verified_at` ở profile (OD-3); bật trigger origin guard C (OD-4); idempotency theo trạng thái, không dùng executor (OD-5); mở CHECK kind limiter (OD-6); các con số §7 (OD-7); gộp thông điệp hết hạn/thu hồi (OD-8); tên cấu hình §16 (OD-9); 404 đồng nhất (OD-10); `/admin-auth/me` ngoài 1C (OD-11); không hiện SĐT/quyền ở trang kích hoạt (OD-12); hướng dẫn đăng nhập khi cookie hết hạn (OD-13); `start` tiếp tục attempt resumable (OD-14); timeout provider 8 s / ân hạn 10 s (OD-15); thêm route `restart` không cần token (OD-16) |
+| Phạm vi triển khai | Migration A/B/C, 8 route, cookie/CSRF, cấu hình, limiter, cổng OTP, audit, mã lỗi, móc `invalidateActivationFor` trong 1B. **Không**: SMS thật, UI, reset mật khẩu, recovery |
+| Điều kiện giữ nguyên | `LOCK_PROTOCOL=NOT_FINAL` tới khi ChatGPT review code/test; OTP thử chỉ bật bằng cấu hình tường minh ở môi trường test, **không tự fallback** khi thiếu provider SMS; không merge/deploy/đóng M01; Owner nghiệm thu là quyết định riêng sau này |
