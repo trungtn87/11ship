@@ -24,7 +24,7 @@ services:
     # Pinned toolchain: Node from .node-version (24.21.0) via NODE_VERSION below, and npm 11.9.0 (packageManager)
     # through npx so no global install is needed. `--include=dev` is required because NODE_ENV=production would
     # otherwise skip the TypeScript compiler that `npm run build` needs. Migrations are NOT part of the build.
-    buildCommand: npx --yes npm@11.9.0 ci --include=dev && npx --yes npm@11.9.0 run build
+    buildCommand: npx --yes npm@11.9.0 ci --include=dev && npx --yes npm@11.9.0 run build && npx --yes npm@11.9.0 run build:admin-web
     startCommand: npm start
 
     # Readiness, not liveness: a deploy only counts as healthy when the database answers (200 with DB, 503 without).
@@ -50,6 +50,20 @@ services:
       # TLS handshake plus pooler authentication across regions needs more than the 1000 ms local default.
       - key: DB_CONNECT_TIMEOUT_MS
         value: "5000"
+      # Staging Admin page is served by the same Nest process on the Render HTTPS origin.
+      # Fails closed when admin auth or the built assets are absent; no local self-signed proxy.
+      - key: ADMIN_WEB_STAGING_ENABLED
+        value: "true"
+      - key: ADMIN_AUTH_ENABLED
+        value: "true"
+      - key: ADMIN_AUTH_TRUSTED_PROXY_IPS
+        value: "[]"
+      - key: ADMIN_RATE_LIMIT_KEY_ID
+        value: limiter-1
+      # No SMS adapter exists yet. App registration remains unavailable; fixture login
+      # is enabled only for operator-allowlisted numbers and never grants ADMIN/SYSTEM.
+      - key: AUTH_STAGING_FIXTURES_ENABLED
+        value: "true"
 
       # --- Secrets: values are entered in the Render dashboard, never committed. ---
       # Runtime-role URL of the Supabase SESSION pooler. No query string (the application refuses one).
@@ -64,4 +78,11 @@ services:
       - key: CRYPTO_ACTIVE_KEY_ID
         sync: false
       - key: CRYPTO_KEYRING
+        sync: false
+      # Allowlist and Admin origin are entered after Render assigns the real HTTPS URL.
+      - key: AUTH_STAGING_ALLOWED_PHONES
+        sync: false
+      - key: ADMIN_AUTH_ALLOWED_ORIGINS
+        sync: false
+      - key: ADMIN_RATE_LIMIT_HMAC_KEY
         sync: false
