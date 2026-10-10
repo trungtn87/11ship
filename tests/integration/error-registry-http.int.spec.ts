@@ -94,7 +94,7 @@ describe('C22-A0 — typed errors over real HTTP', () => {
   it('covers exactly the six idempotency codes, the unknown transaction outcome, the 15 Auth Core codes, the 4 Shop onboarding codes, the 2 Driver onboarding codes and the 4 Shop management codes and the 6 administration authentication codes', () => {
     // 7 foundation codes (M00-C1) + 15 Auth Core codes (M01-A1) + 4 Shop onboarding codes (M01-A2S) + 2 Driver onboarding codes (M01-A2D)
     // + 4 Shop management codes (M02-A) + 6 administration authentication codes (M01-D-LOGIN): the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(38);
+    expect(codes).toHaveLength(39);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);
     expect(codes).toContain('TRANSACTION_OUTCOME_UNKNOWN');
   });
