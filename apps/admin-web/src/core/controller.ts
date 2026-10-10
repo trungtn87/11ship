@@ -1,5 +1,5 @@
 import { AdminAuthApi, AdminRole, ApiResult, NextStep, StateData } from './api.js';
-import { COPY } from './messages.js';
+import { ADMIN_COPY, COPY } from './messages.js';
 import { isCompleteCode, isValidPhone } from './inputs.js';
 
 // The administration login flow as a small state machine, free of DOM so it can be unit tested in Node.
@@ -108,6 +108,40 @@ export class AdminAuthController {
       return 0;
     }
     return Math.max(0, Math.ceil((lock.untilMs - this.clock.now()) / 1000));
+  }
+
+  /** The SESSION csrf token for `/v1/admin/*` calls: only while the shell is shown, only from GET /me. */
+  get sessionCsrf(): string | undefined {
+    return this.#screen.name === 'shell' ? this.#memory.csrf : undefined;
+  }
+
+  /** A `/v1/admin/*` call answered 401: the session is gone. Back to login with a notice; nothing is retried. */
+  sessionLost(): void {
+    if (this.#screen.name === 'shell') {
+      this.#toLogin(ADMIN_COPY.sessionEnded);
+    }
+  }
+
+  /**
+   * After ADMIN_CSRF_INVALID on a `/v1/admin/*` call: read GET /me for a fresh SESSION token. Returns false when the
+   * session is gone (the user is then sent to login) or the read failed. The failed mutation is never repeated here.
+   */
+  async refreshSession(): Promise<boolean> {
+    if (this.#screen.name !== 'shell') {
+      return false;
+    }
+    const me = await this.api.me();
+    if (this.#screen.name !== 'shell') {
+      return false;
+    }
+    if (me.kind === 'ok') {
+      this.#remember(me.data.csrfToken, me.data.expiresAt);
+      return true;
+    }
+    if (me.kind === 'error' && me.status === 401) {
+      this.#toLogin(ADMIN_COPY.sessionEnded);
+    }
+    return false;
   }
 
   /** Page open or reload: ask the server where this browser stands. Neutral "checking" until it answers. */
