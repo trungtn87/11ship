@@ -115,7 +115,7 @@ describe('activation state view (contract 6.3, 6.1.1)', () => {
     const text = JSON.stringify(
       stateBody({ attempt: attempt({ status: 'TOTP_ISSUED', passwordHash: '$argon2id$x' }), newestChallenge: challenge(), invitation, nowMs: NOW }, 'csrf'),
     );
-    for (const forbidden of ['+84901234567', '$argon2id$', 'a"', '"u"', '"f"', 'otpDigest', 'tokenDigest']) {
+    for (const forbidden of ['+84901234567', '$argon2id$', 'otpDigest', 'tokenDigest', 'user_id', 'factor_id']) {
       expect(text).not.toContain(forbidden);
     }
   });
