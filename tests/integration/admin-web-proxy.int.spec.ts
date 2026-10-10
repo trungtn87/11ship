@@ -157,10 +157,28 @@ describe('M01-D-LOGIN-UI - local HTTPS front: upstream timeout and cleanup', () 
     expect(event?.headers.origin).toBe(`https://localhost:${String(port)}`);
   });
 
-  it('only /v1/admin-auth/* reaches the backend', async () => {
+  it('only the three administration API prefixes reach the backend', async () => {
     const before = events.length;
-    const outcome = await call('GET', '/v1/health');
-    expect(outcome.status).toBe(404);
+    for (const path of ['/v1/health', '/v1/administrators', '/v1/admin', '/v1/users/me']) {
+      const outcome = await call('GET', path);
+      expect(outcome.status).toBe(404);
+    }
+    expect(events.length).toBe(before);
+    for (const path of ['/v1/admin-auth/other', '/v1/admin/invitations', '/v1/admin-activation/other']) {
+      const outcome = await call('GET', path);
+      expect(outcome.status).toBe(200);
+      expect(events.some((event) => event.path === path)).toBe(true);
+    }
+  });
+
+  it('serves the page for its client-side routes and nothing else', async () => {
+    const before = events.length;
+    for (const path of ['/activate', '/invitations', '/invitations/new', '/invitations/0b8f7a1e-2f4c-4d3a-9a55-2f0a5b7d1c11/revoke']) {
+      const outcome = await call('GET', path);
+      expect(outcome.status).toBe(200);
+      expect(outcome.headers?.['cache-control']).toBe('no-store');
+    }
+    expect((await call('GET', '/js/nothing.js')).status).toBe(404);
     expect(events.length).toBe(before);
   });
 });

@@ -2,7 +2,7 @@
 // Local HTTPS front for the administration web (M01-D-LOGIN-UI). LOCAL DEVELOPMENT AND TESTS ONLY - never deployed.
 //
 // One HTTPS origin (default https://localhost:8443) serves the built page from apps/admin-web/dist and forwards ONLY
-// /v1/admin-auth/* to the backend over loopback HTTP. Same origin is what the backend's cookies need: __Host-11admin
+// /v1/admin-auth/*, /v1/admin/* and /v1/admin-activation/* to the backend over loopback HTTP. Same origin is what the backend's cookies need: __Host-11admin
 // and __Host-11admin-pre are Secure + HttpOnly + SameSite=Strict + Path=/, and every POST must carry an Origin that is
 // exactly one of ADMIN_AUTH_ALLOWED_ORIGINS. Nothing here weakens that:
 //   * cookies, Origin, x-csrf-token and Set-Cookie pass through unchanged (the browser sets Origin, not this script);
@@ -41,7 +41,11 @@ const SECURITY_HEADERS = {
   'cache-control': 'no-store',
 };
 
-const API_PREFIX = '/v1/admin-auth/';
+// Client-side routes of the page (see apps/admin-web/src/core/routes.ts): the page is served, and it decides what to show.
+const APP_ROUTES = /^\/(?:activate|invitations(?:\/.*)?)$/;
+
+// Login (#34), invitation management (1B) and activation (1C). Nothing else of the backend is reachable through this front.
+const API_PREFIXES = ['/v1/admin-auth/', '/v1/admin-activation/', '/v1/admin/'];
 
 // Request headers never forwarded: hop-by-hop ones, and every client-supplied forwarding header (the backend must not
 // be able to believe an address the browser made up).
@@ -77,7 +81,7 @@ export function createAdminWebServer({ distDir, backendUrl, key, cert, upstreamT
 
   return https.createServer({ key, cert, minVersion: 'TLSv1.2' }, (request, response) => {
     const url = new URL(request.url ?? '/', 'https://front.invalid');
-    if (url.pathname.startsWith(API_PREFIX)) {
+    if (API_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) {
       forward(request, response, backend, upstreamTimeoutMs);
       return;
     }
@@ -183,6 +187,15 @@ function serveStatic(pathname, request, response, distRoot) {
   } catch {
     file = undefined;
   }
+  if ((file === undefined || !statSync(file).isFile()) && APP_ROUTES.test(relative)) {
+    // Application routes (/activate, /invitations/...) are client-side: the page itself is served, the server never
+    // decides what it may show. Anything else that does not exist stays 404.
+    try {
+      file = realpathSync(join(distRoot, 'index.html'));
+    } catch {
+      file = undefined;
+    }
+  }
   if (file === undefined || (file !== distRoot && !file.startsWith(distRoot + sep)) || !statSync(file).isFile()) {
     response.writeHead(404, { ...SECURITY_HEADERS, 'content-type': 'text/plain; charset=utf-8' });
     response.end('Not found');
@@ -220,7 +233,7 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
   const server = createAdminWebServer({ distDir, backendUrl, key: readFileSync(keyPath), cert: readFileSync(certPath), upstreamTimeoutMs });
   server.listen(port, host === 'localhost' ? '127.0.0.1' : host, () => {
     const origin = `https://${host}${port === 443 ? '' : `:${port}`}`;
-    console.log(`admin web: ${origin}  ->  backend ${backendUrl}${API_PREFIX}`);
+    console.log(`admin web: ${origin}  ->  backend ${backendUrl} (${API_PREFIXES.join(' ')})`);
     console.log(`backend must have ADMIN_AUTH_ALLOWED_ORIGINS=["${origin}"] and ADMIN_AUTH_TRUSTED_PROXY_IPS=[]`);
   });
 }
