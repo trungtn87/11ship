@@ -164,6 +164,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#42](https://github.com/trungtn87/11ship/pull/42) WIP(m00): staging integration for M01 Admin Web — backend/U… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `13a5962` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#43](https://github.com/trungtn87/11ship/pull/43) docs(m01): chốt thiết kế reset mật khẩu USER / ADMIN / SYST… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `b853c88` | ⚠️ không tính — label module:M01-B-RESET không khớp task nào trong plan.yml; PR không được tính. |
 | [#44](https://github.com/trungtn87/11ship/pull/44) docs(M01-D-ADMIN-1C): hợp đồng kỹ thuật kích hoạt ADMIN (Dr… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `2e63da5` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#45](https://github.com/trungtn87/11ship/pull/45) feat(M01-D-ADMIN-1C): admin account activation (implementat… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `e58824c` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
@@ -186,6 +187,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 - `UNCLASSIFIED_PR` PR #42: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNKNOWN_MODULE` PR #43: label module:M01-B-RESET không khớp task nào trong plan.yml; PR không được tính.
 - `UNCLASSIFIED_PR` PR #44: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #45: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
