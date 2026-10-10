@@ -88,6 +88,8 @@ export interface AdminCallOptions {
   readonly cookies?: Readonly<Record<string, string>>;
   /** Default: the allowed origin for POST, none for GET. null = send no Origin at all. */
   readonly origin?: string | null;
+  /** Default '/v1/admin-auth'. M01-D-ADMIN-1B routes live under '/v1/admin'. */
+  readonly basePath?: string;
   readonly csrf?: string;
   readonly contentType?: string | null;
 }
@@ -98,7 +100,7 @@ export function adminCall(
   path: string,
   options: AdminCallOptions = {},
 ): Promise<AdminResponse> {
-  const url = new URL(`${baseUrl}${BASE}${path}`);
+  const url = new URL(`${baseUrl}${options.basePath ?? BASE}${path}`);
   const headers: Record<string, string> = {};
   let payload: string | undefined;
   if (options.rawBody !== undefined) {
@@ -202,6 +204,10 @@ export interface StartAdminOptions {
   readonly keyring?: Keyring;
   /** Do not clear the rate-limit state at start (a restart keeps its locks). */
   readonly keepLimits?: boolean;
+  /** M01-D-ADMIN-1B: lock_timeout of business row locks (executor and 1B transactions). Default 10 s for barrier tests. */
+  readonly businessLockTimeoutMs?: number;
+  /** M01-D-ADMIN-1B: lifetime of a new invitation. Default 72 hours. */
+  readonly invitationTtlSeconds?: number;
 }
 
 export async function startAdminApp(options: StartAdminOptions = {}): Promise<AdminApp> {
@@ -219,12 +225,15 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
     allowedOrigins: [ADMIN_ORIGIN],
     trustedProxyIps: options.trustedProxyIps ?? [],
     limiter: limiter.limiter,
+    invitationTtlSeconds: options.invitationTtlSeconds ?? 72 * 3600,
+    activationOrigin: ADMIN_ORIGIN,
   };
   const config: AppConfig = {
     ...loaded,
     // Roomier than the production defaults: Argon2 and several lock waits happen in one test.
     database: { ...loaded.database, queryTimeoutMs: 20_000, statementTimeoutMs: 15_000 },
     transaction: { timeoutMs: 25_000, idleInTransactionTimeoutMs: 10_000 },
+    idempotency: { ...loaded.idempotency, businessLockTimeoutMs: options.businessLockTimeoutMs ?? 10_000 },
     crypto: options.keyring ?? fixtureKeyring(options.activeKeyId ?? 'k1'),
     auth: authTestConfig(),
     adminAuth,
