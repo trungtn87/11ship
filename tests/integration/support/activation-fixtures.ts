@@ -1,6 +1,10 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { Type } from '@nestjs/common';
+import { AppError } from '../../../apps/backend/src/common/app-errors';
+import { poolClientSource } from '../../../apps/backend/src/transaction/pg-client-source';
+import { waitForBlockedBackends } from './lock-fixtures';
+import { newGate, gatedSource } from './provisioning-fixtures';
 import { AdminCrypto } from '../../../apps/backend/src/admin-auth/admin-crypto';
 import { AdminLimitsRepository } from '../../../apps/backend/src/admin-auth/admin-limits-repository';
 import { AdminInvitationParticipant } from '../../../apps/backend/src/admin-invitations/admin-invitation-participant';
@@ -238,26 +242,37 @@ export async function insertAttempt(
   pool: Pool,
   input: {
     invitationId: string;
-    status: 'STARTED' | 'OTP_VERIFIED' | 'COMPLETED' | 'INVALIDATED';
+    status: 'STARTED' | 'OTP_VERIFIED' | 'PASSWORD_SET' | 'TOTP_ISSUED' | 'COMPLETED' | 'INVALIDATED';
     reason?: 'SUPERSEDED' | 'INVITATION_CLOSED' | 'PHONE_CONFLICT' | 'ATTEMPTS_EXHAUSTED';
     createdAgoSeconds: number;
+    /** Negative: already expired. The column is immutable, so it is chosen here, at INSERT. */
     expiresInSeconds: number;
     otpVerifiedAgoSeconds?: number;
   },
-): Promise<{ attemptId: string; cookie: string }> {
+): Promise<{ attemptId: string; cookie: string; userId: string; factorId: string }> {
   const cookie = generateToken().token;
   const attemptId = randomUUID();
+  const userId = randomUUID();
+  const factorId = randomUUID();
   const generation = await pool.query<{ generation_id: string }>('SELECT generation_id FROM app.admin_invitations WHERE invitation_id = $1::uuid', [
     input.invitationId,
   ]);
-  const verified = input.otpVerifiedAgoSeconds;
+  const status = input.status;
+  const verified = status === 'STARTED' || (status === 'INVALIDATED' && input.otpVerifiedAgoSeconds === undefined) ? null : (input.otpVerifiedAgoSeconds ?? 1);
+  const passwordSet = status === 'PASSWORD_SET' || status === 'TOTP_ISSUED' || status === 'COMPLETED';
+  const sealed = status === 'TOTP_ISSUED';
   await pool.query(
     `INSERT INTO app.admin_activation_attempts
        (attempt_id, invitation_id, generation_id, user_id, factor_id, token_digest, csrf_nonce, csrf_key_id, status,
-        invalidated_reason, otp_verified_at, password_set_at, created_at, expires_at, completed_at, invalidated_at)
+        invalidated_reason, otp_verified_at, password_set_at, password_hash,
+        totp_key_id, totp_ciphertext, totp_iv, totp_tag, totp_issued_at,
+        created_at, expires_at, completed_at, invalidated_at)
      VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, 'k1', $8::varchar, $9::varchar,
              CASE WHEN $10::int IS NULL THEN NULL ELSE now() - make_interval(secs => $10::int) END,
-             CASE WHEN $8::varchar = 'COMPLETED' THEN now() - make_interval(secs => $10::int) ELSE NULL END,
+             CASE WHEN $13::boolean THEN now() - make_interval(secs => COALESCE($10::int, 1)) ELSE NULL END,
+             CASE WHEN $8::varchar IN ('PASSWORD_SET', 'TOTP_ISSUED') THEN '$argon2id$v=19$fixture' ELSE NULL END,
+             CASE WHEN $14::boolean THEN 'k1' ELSE NULL END, $15, $16, $17,
+             CASE WHEN $14::boolean THEN now() - make_interval(secs => COALESCE($10::int, 1)) ELSE NULL END,
              now() - make_interval(secs => $11::int), now() + make_interval(secs => $12::int),
              CASE WHEN $8::varchar = 'COMPLETED' THEN now() - make_interval(secs => $11::int) ELSE NULL END,
              CASE WHEN $8::varchar = 'INVALIDATED' THEN now() - make_interval(secs => $11::int) ELSE NULL END)`,
@@ -265,18 +280,136 @@ export async function insertAttempt(
       attemptId,
       input.invitationId,
       generation.rows[0]?.generation_id,
-      randomUUID(),
-      randomUUID(),
+      userId,
+      factorId,
       digestToken(cookie),
       randomBytes(32),
-      input.status,
+      status,
       input.reason ?? null,
-      input.status === 'OTP_VERIFIED' || input.status === 'COMPLETED' ? (verified ?? 1) : null,
+      verified,
       input.createdAgoSeconds,
       input.expiresInSeconds,
+      passwordSet,
+      sealed,
+      sealed ? randomBytes(20) : null,
+      sealed ? randomBytes(12) : null,
+      sealed ? randomBytes(16) : null,
     ],
   );
-  return { attemptId, cookie };
+  return { attemptId, cookie, userId, factorId };
+}
+
+/**
+ * A challenge written directly with times chosen at INSERT (created_at / expires_at / resend_not_before are immutable). The
+ * digest is the real one for `otp`, so a verify can match it. Test database only.
+ */
+export async function insertChallenge(
+  ctx: ActivationApp,
+  input: {
+    attemptId: string;
+    phoneNormalized: string;
+    otp: string;
+    status: 'PENDING_DELIVERY' | 'PENDING' | 'LOCKED' | 'INVALIDATED' | 'DELIVERY_FAILED';
+    createdAgoSeconds: number;
+    expiresInSeconds: number;
+    /** Seconds after created_at before a resend is allowed (>= 1). */
+    cooldownSeconds?: number;
+    attemptCount?: number;
+  },
+): Promise<string> {
+  const challengeId = randomUUID();
+  const crypto = ctx.app.running.app.get(AdminCrypto, { strict: false });
+  const digest = crypto.activationOtpDigest(challengeId, input.phoneNormalized, input.otp);
+  const ended = input.status === 'LOCKED' || input.status === 'INVALIDATED' || input.status === 'DELIVERY_FAILED';
+  await ctx.pool.query(
+    `INSERT INTO app.admin_activation_otp_challenges
+       (challenge_id, attempt_id, phone_normalized, otp_digest, digest_key_id, status, attempt_count,
+        created_at, expires_at, resend_not_before, ended_at)
+     VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::varchar, $7::int,
+             now() - make_interval(secs => $8::int), now() + make_interval(secs => $9::int),
+             now() - make_interval(secs => $8::int) + make_interval(secs => $10::int),
+             CASE WHEN $11::boolean THEN now() - make_interval(secs => $8::int) ELSE NULL END)`,
+    [
+      challengeId,
+      input.attemptId,
+      input.phoneNormalized,
+      digest.digest,
+      digest.keyId,
+      input.status,
+      input.status === 'LOCKED' ? 5 : (input.attemptCount ?? 0),
+      input.createdAgoSeconds,
+      input.expiresInSeconds,
+      input.cooldownSeconds ?? 60,
+      ended,
+    ],
+  );
+  return challengeId;
+}
+
+// ----- deterministic schedules ----------------------------------------------------------------------------------
+
+export type Settled<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: unknown };
+
+export function settle<T>(run: Promise<T>): Promise<Settled<T>> {
+  return run.then(
+    (value): Settled<T> => ({ ok: true, value }),
+    (error: unknown): Settled<T> => ({ ok: false, error }),
+  );
+}
+
+export function codeOf(result: Settled<unknown>): string | undefined {
+  return !result.ok && result.error instanceof AppError ? result.error.code : undefined;
+}
+
+export function answerOf<T>(result: Settled<T>): T {
+  if (!result.ok) {
+    throw result.error instanceof Error ? result.error : new Error('unexpected failure');
+  }
+  return result.value;
+}
+
+export const INVITATION_X = /FROM app\.admin_invitations[\s\S]*FOR UPDATE/;
+export const ATTEMPT_X = /FROM app\.admin_activation_attempts[\s\S]*FOR UPDATE/;
+export const CHALLENGE_X = /FROM app\.admin_activation_otp_challenges[\s\S]*FOR UPDATE/;
+
+export interface Schedule<A, B> {
+  readonly first: Promise<Settled<A>>;
+  readonly second: Promise<Settled<B>>;
+  /** Lets the paused FIRST request continue. */
+  release(): void;
+}
+
+/**
+ * A deterministic interleaving. FIRST runs over a source that pauses it right AFTER PostgreSQL answered the statement
+ * matching `pattern` (so the lock is held). Only when FIRST is really parked there does SECOND start; the schedule
+ * returns once SECOND is blocked on a lock (or, with `expectBlocked: false`, once SECOND has been started). The test
+ * decides when FIRST continues. No sleep orders anything.
+ */
+export async function schedule<A, B>(
+  ctx: ActivationApp,
+  pattern: RegExp,
+  first: (gated: TransactionClientSource, plain: TransactionClientSource) => Promise<A>,
+  second: (plain: TransactionClientSource) => Promise<B>,
+  options: { expectBlocked?: boolean } = {},
+): Promise<Schedule<A, B>> {
+  const gate = newGate();
+  const gated = gatedSource(ctx.pool, pattern, gate);
+  const plain = poolClientSource(ctx.pool);
+  const p1 = settle(first(gated, plain));
+  try {
+    const reached = await Promise.race([gate.reached.promise.then(() => 'gate' as const), p1.then(() => 'finished' as const)]);
+    if (reached === 'finished') {
+      throw new Error('the first request finished without reaching the gate');
+    }
+    const p2 = settle(second(plain));
+    if (options.expectBlocked !== false) {
+      await waitForBlockedBackends(ctx.pool);
+    }
+    return { first: p1, second: p2, release: () => gate.release.resolve() };
+  } catch (error) {
+    gate.release.resolve();
+    throw error;
+  }
 }
 
 // ----- the real service over a chosen transaction source (trace and fault injection) -------------------------------
