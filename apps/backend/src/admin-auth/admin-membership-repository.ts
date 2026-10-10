@@ -59,13 +59,16 @@ export class AdminMembershipRepository {
     return row === undefined ? undefined : toMembership(row);
   }
 
-  /** The one SYSTEM membership (whatever its status), locked FOR UPDATE, for the serialized bootstrap. */
-  async lockSystem(context: TransactionContext): Promise<MembershipRow | undefined> {
-    const result = await context.query<RawMembership>(
-      `SELECT user_id, admin_role, status, version FROM app.admin_memberships WHERE admin_role = 'SYSTEM' FOR UPDATE`,
+  /**
+   * The user id of the one SYSTEM membership (whatever its status), read WITHOUT a lock. The serialized bootstrap uses
+   * it only to learn WHICH account to lock; it then locks the user, then that membership, and re-checks the role under
+   * the lock, so the administration lock order (user, then membership) is never inverted.
+   */
+  async findSystemUserId(context: TransactionContext): Promise<string | undefined> {
+    const result = await context.query<{ user_id: string }>(
+      `SELECT user_id FROM app.admin_memberships WHERE admin_role = 'SYSTEM'`,
     );
-    const row = result.rows[0];
-    return row === undefined ? undefined : toMembership(row);
+    return result.rows[0]?.user_id;
   }
 
   async insertSystem(context: TransactionContext, userId: string): Promise<void> {
