@@ -501,13 +501,15 @@ Vì bộ đếm lỗi phải commit rồi mới ném, `IdempotencyExecutor` (rol
 | L9b | `admin_activation_otp_challenges` của attempt: challenge **mới nhất** (`created_at DESC, challenge_id DESC LIMIT 1`) cho otp/request và otp/verify; challenge sống (nếu có) cho start/restart/hook khi vô hiệu | X | otp/request, otp/verify, start, restart (khi supersede) |
 | L10 | hàng mới của chính transaction | — | ghi cuối |
 
+**Quy tắc `T` sau mọi khóa có thể chờ (K31).** Mọi hàng mà transaction sẽ *ghi* hoặc cần *chờ* phải được khóa **trước** khi đọc `T`. Cụ thể L9b: txn2 của otp/request (kết quả giao OTP muộn) chỉ khóa hàng challenge, **không** khóa attempt, nên start/restart/complete/hook phải khóa challenge sống của mọi attempt sống (theo `attempt_id` tăng dần) ngay sau L9a và **trước** `T`. Các helper ghi (`#supersede`, `#phoneConflict`, hook 1B) **không tự lấy khóa**: chúng nhận các hàng đã khóa từ caller và ghi bằng đúng `T` của caller. Nhờ đó không có chờ nào xảy ra giữa `T` và các ghi dùng `T`.
+
 Thứ tự đầy đủ: **R0 < S0 < L2 < L3 < L8 < L9a < L9b < L10**. Không route nào dùng L1, L4–L7, L9 (1C không có actor đã đăng nhập). Mỗi hàng bị khóa **một chế độ** trong một transaction (không bao giờ nâng S→X); route nào *có nhánh* ghi vào hàng đó lấy X từ đầu, kể cả khi nhánh ghi hiếm (G1). Hệ quả: mọi người giữ hàng attempt của lời mời `I` đều đã giữ L8(`I`) trước; vì start/restart/otp-request/complete/hook giữ **X** nên chúng loại trừ lẫn nhau và loại trừ verify/password/enrollment, nên khóa nhiều hàng attempt trong cùng một transaction không thể tạo chu trình.
 
 **Gợi ý khóa không khóa.** Khóa L2/L3 cần `invitation_id` và SĐT trước khi khóa L8. Chúng được lấy bằng đọc thường các cột **bất biến** (`attempt.invitation_id`; `invitation.phone_normalized` bất biến theo trigger 1A; `start`: lời mời tra bằng `token_digest`, cũng bất biến). Gợi ý chỉ chọn *khóa nào*, không bao giờ quyết định nghiệp vụ: mọi điều kiện được đọc lại sau khi giữ khóa.
 
 **Nhánh PHONE_CONFLICT (G1).** Chỉ start, restart, otp/request, complete kiểm SĐT và có thể ghi `PENDING → PHONE_CONFLICT`; cả bốn lấy L8 **X** ngay sau L3, trước mọi đọc lời mời cần quyết định. verify/password/enrollment không kiểm SĐT, không ghi lời mời nên giữ S. Không có đường nào đọc lời mời bằng `FOR SHARE` rồi `UPDATE`.
 
-**Móc 1B `invalidateActivationFor(context, invitationId)`** (1B §8.8): chạy trong transaction của reissue/revoke khi đã giữ L3 và L8 X (và L9 nếu có); lấy L9a X rồi L9b X (nếu challenge sống) ⇒ `INVALIDATED(INVITATION_CLOSED)` / challenge `INVALIDATED`, audit cùng transaction. Thứ tự L8 < L9 < L9a < L9b nhất quán với bảng trên.
+**Móc 1B `invalidateActivationFor(context, invitationId)`** (1B §8.8): chạy trong transaction của reissue/revoke khi đã giữ L3 và L8 X (và L9 nếu có); lấy L9a X rồi L9b X (nếu challenge sống), **sau đó mới đọc `T`** (đã đúng từ trước; K31 khóa lại bằng test: hook chờ challenge do txn2 giữ, `T` đọc sau khi chờ) ⇒ `INVALIDATED(INVITATION_CLOSED)` / challenge `INVALIDATED`, audit cùng transaction. Thứ tự L8 < L9 < L9a < L9b nhất quán với bảng trên.
 
 ### 9.1 Khóa ẩn (FK, unique, trigger)
 
@@ -545,7 +547,7 @@ Thứ tự đầy đủ: **R0 < S0 < L2 < L3 < L8 < L9a < L9b < L10**. Không ro
 2. TX-P (đọc thuần, bước 0 §10.0: cookie hợp lệ theo giờ DB): lời mời theo `token_digest` (gợi ý `invitation_id`, SĐT, trạng thái) và attempt theo cookie. Nếu cookie hợp lệ → attempt `COMPLETED` **và** `attempt.invitation_id` = lời mời của token ⇒ trả 200 `{COMPLETED, next:"LOGIN"}` ngay: **không** bucket, không audit, không ghi (sự thật bất biến). Nếu cookie → attempt cuối khác hoặc hết hạn: bỏ qua cookie, tiếp tục. Mọi thứ còn lại bỏ, coordinator đọc lại.
 3. Coordinator: S0 → L2 `ACTIVATION_LINK_IP` X. Đang khóa ⇒ commit rỗng, 429.
 4. Token **không khớp** (không có gợi ý) ⇒ `recordFailure(LINK_IP)`, commit, 404 (không có L3).
-5. Có gợi ý: L3 SĐT → L8 lời mời **X** (G1) → L9a: attempt của cookie (nếu hợp lệ & cùng lời mời) và attempt sống của lời mời, `FOR UPDATE`, thứ tự `attempt_id` tăng dần → `T`.
+5. Có gợi ý: L3 SĐT → L8 lời mời **X** (G1) → L9a: attempt của cookie (nếu hợp lệ & cùng lời mời) và attempt sống của lời mời, `FOR UPDATE`, thứ tự `attempt_id` tăng dần → **L9b: challenge sống của mọi attempt sống, `FOR UPDATE`, cùng thứ tự** → `T`. Đây là điều kiện để quy tắc "start có thể thay attempt cũ hết hạn khi lời mời còn hợp lệ" dùng `T` đọc sau mọi chờ.
 6. Kiểm dưới khóa: nếu attempt của cookie nay `COMPLETED` (đua) ⇒ ROLLBACK, 200 COMPLETED như bước 2. Lời mời phải `PENDING`, `generation_id` khớp, `T < invitation.expires_at`; sai ⇒ `recordFailure(LINK_IP)`, commit, 404 `LINK_INVALID`. **Mỗi request `start` kết thúc 404 đếm `LINK_IP` đúng một lần** (bước 4 hoặc bước này, không bao giờ cả hai). SĐT đã thuộc `users` ⇒ §14 (ghi dưới X đã giữ, không nâng khóa).
 7. Quyết định theo bảng §6.2: *resumable* ⇒ trả trạng thái (200); không ghi, không audit ⇒ ROLLBACK. Ngược lại: mọi attempt sống của lời mời → `INVALIDATED(SUPERSEDED)` (CAS, kèm challenge sống); INSERT attempt mới (`user_id`, `factor_id` ngẫu nhiên; `expires_at = T + 30 phút`, không vượt `invitation.expires_at` — OD-7); audit; commit; phát cookie.
 
@@ -553,7 +555,7 @@ Thứ tự đầy đủ: **R0 < S0 < L2 < L3 < L8 < L9a < L9b < L10**. Không ro
 
 1. R0: Origin; CSRF (cột bất biến); `reserveRequest(ACTIVATION_REQUEST_IP)`; tra attempt theo cookie.
 2. TX-P (bước 0 §10.0): cookie không hợp lệ theo giờ DB (§6.1.1) ⇒ 401; chỉ khi hợp lệ: attempt `COMPLETED` hoặc `INVALIDATED` với lý do ≠ `ATTEMPTS_EXHAUSTED` ⇒ 409 S (sự thật bất biến), không khóa.
-3. Coordinator: S0 → L3 SĐT → L8 lời mời **X** → L9a attempt của cookie và attempt sống của lời mời (`attempt_id` tăng dần) → `T`. (Không L2: không đếm lỗi nào.)
+3. Coordinator: S0 → L3 SĐT → L8 lời mời **X** → L9a attempt của cookie và attempt sống của lời mời (`attempt_id` tăng dần) → **L9b challenge sống của các attempt sống** → `T`. (Không L2: không đếm lỗi nào.) `restart` vẫn cần cookie còn hiệu lực **tại `T` đọc sau mọi chờ**: cookie hết hạn trong lúc chờ ⇒ 401, không tạo attempt.
 4. Kiểm dưới khóa: cookie còn hợp lệ tại `T`; trạng thái thuộc tập cho phép (§6.2); lời mời `PENDING`, `T < invitation.expires_at`; SĐT chưa thuộc `users` (có ⇒ §14).
 5. Mọi attempt sống → `INVALIDATED(SUPERSEDED)` (kèm challenge sống → `INVALIDATED`); INSERT attempt mới; audit; commit; phát cookie mới (cookie cũ hết tác dụng vì attempt cũ cuối hoặc hết hạn).
 
@@ -734,6 +736,7 @@ Quy tắc cấm: không có vòng retry gọi provider, không có job nền t�
 
 Phát hiện ở `start`, `otp/request` (kiểm sớm) và `complete` (quyết định, dưới L3, **trước** khi mở bí mật).
 
+- **Giờ ghi:** nhánh nhận challenge sống đã khóa từ caller (L9b trước `T`) và dùng đúng `T` của caller; hết hạn attempt/lời mời tại `T` được kiểm **trước** nhánh này (hết hạn ⇒ 401/404, không PHONE_CONFLICT). Với `complete`, `T` ở đây là `doneMs` (§10.6).
 - Điều kiện: SĐT lời mời đã thuộc `users` khác. Nhánh này chạy trong start, restart, otp/request, complete — cả bốn đã giữ L3 và L8 **X** từ đầu (G1), nên ghi lời mời không phải nâng khóa.
 - Hiệu ứng trong **một** transaction: lời mời PENDING → PHONE_CONFLICT (CAS), attempt sống → `INVALIDATED(PHONE_CONFLICT)` (và challenge sống → INVALIDATED), audit; **COMMIT**; rồi ném 409 `ADMIN_PHONE_CONFLICT` (commit-then-throw). Thân lỗi không nêu danh tính tài khoản trùng.
 - Lặp lại: attempt đã INVALIDATED(PHONE_CONFLICT) ⇒ `complete` trả lại đúng 409 này (§11.2); `GET state` ⇒ `reason:"PHONE_CONFLICT"`.
@@ -791,6 +794,7 @@ Mỗi lịch barrier dùng nhiều phiên DB thật, ép thứ tự bằng advis
 | K17 | PENDING_DELIVERY mồ côi (chết sau txn1) + verify trong/ngoài ân hạn | trong ân hạn 409 không đếm; ngoài ân hạn promote rồi so mã |
 | K18 | txn2 (CAS) ∥ verify promote | đúng một bên đổi trạng thái; bên kia 0 hàng, không lỗi |
 | K19 | provider `UNKNOWN`/`REJECTED`/`ACCEPTED` (stub) | đúng bảng §13.2; không gọi provider lần hai |
+| **K31** | **Chờ khóa challenge sau `T`:** txn2 OTP giữ challenge sống; `start`/`restart` chờ; đồng hồ DB đi qua hạn lời mời hoặc cookie; thả khóa. Cũng với SĐT đã thuộc `users`, và hook 1B revoke | Hạn lời mời ⇒ 404 và không attempt mới/không supersede/không audit; `start` với cookie hết hạn, lời mời còn ⇒ attempt cũ thay thế + attempt mới (201) bằng giờ sau chờ; `restart` cookie hết hạn ⇒ 401; SĐT đã thuộc `users` + hết hạn ⇒ 404/401, **không** PHONE_CONFLICT; không hạn ⇒ PHONE_CONFLICT với giờ ghi ≥ lúc thả khóa; hook ghi bằng giờ ≥ lúc thả khóa |
 | K20 | hook 1B `invalidateActivationFor` ∥ `otp/request`/`verify` | thứ tự L8<L9a<L9b; không deadlock; challenge không VERIFIED sau khi INVALIDATED |
 | K21 | `start` tiếp tục (cookie) ∥ `start` mới | tuần tự hóa; không hai attempt sống |
 | K22 | `complete` TOTP sai ∥ `complete` TOTP đúng | tuần tự hóa theo L9a; đếm không mất cập nhật |
