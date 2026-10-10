@@ -113,6 +113,17 @@ describe('Shop onboarding error registry (M01-A2S)', () => {
   });
 });
 
+describe('Staging fixture registration error (M00-D2)', () => {
+  it('AUTH_REGISTRATION_UNAVAILABLE is a fixed 503 that names no phone, account or configuration', () => {
+    const definition = APP_ERROR_DEFINITIONS.AUTH_REGISTRATION_UNAVAILABLE;
+    expect(definition.status).toBe(503);
+    expect(definition.message).not.toMatch(/[{}$%<>]|undefined|null|fixture|staging|allowlist|phone number/i);
+    const classified = classifyException(new AppError('AUTH_REGISTRATION_UNAVAILABLE'));
+    expect([classified.status, classified.code]).toEqual([503, 'AUTH_REGISTRATION_UNAVAILABLE']);
+    expect(buildErrorBody(classified, '123e4567-e89b-42d3-a456-426614174000').error.details).toEqual({});
+  });
+});
+
 describe('Auth error registry', () => {
   it('registers exactly the 15 locked codes with the locked statuses', () => {
     for (const [code, status] of AUTH_ERRORS) {

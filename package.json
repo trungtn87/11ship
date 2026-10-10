@@ -33,7 +33,8 @@
     "admin-web:cert": "node scripts/admin-web-cert.mjs",
     "admin-web:dev": "node scripts/admin-web-dev.mjs",
     "admin-auth:init-limit-config": "node scripts/admin-auth-init-limit-config.js",
-    "admin-auth:bootstrap-system": "node scripts/admin-auth-bootstrap-system.js"
+    "admin-auth:bootstrap-system": "node scripts/admin-auth-bootstrap-system.js",
+    "staging:seed-fixtures": "node scripts/staging-seed-fixtures.js"
   },
   "devDependencies": {
     "@jest/globals": "30.5.2",

@@ -3,6 +3,7 @@ import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
 import { SUPPORTED_ROLES } from './auth-constants';
 import { CLOCK_CTE } from './auth-db';
+import { isAccountOrigin } from './account-origin';
 
 export type UserStatus = 'ACTIVE' | 'DISABLED';
 
@@ -11,7 +12,7 @@ export type UserStatus = 'ACTIVE' | 'DISABLED';
  * PHONE_VERIFIED accounts; ADMIN_PROVISIONED accounts exist for the administration web and are refused by every
  * application login and session check.
  */
-export type AccountOrigin = 'PHONE_VERIFIED' | 'ADMIN_PROVISIONED';
+export type AccountOrigin = import('./account-origin').AccountOrigin;
 
 export interface UserRow {
   readonly userId: string;
@@ -26,10 +27,13 @@ interface RawUser {
   phone_normalized: string;
   password_hash: string;
   status: UserStatus;
-  account_origin: AccountOrigin;
+  account_origin: string;
 }
 
 function toUser(row: RawUser): UserRow {
+  if (!isAccountOrigin(row.account_origin)) {
+    throw new TechnicalError('internal', 'Database returned an unexpected account origin');
+  }
   return {
     userId: row.user_id,
     phoneNormalized: row.phone_normalized,
@@ -142,6 +146,28 @@ export class UserRepository {
          created_at, updated_at
        )
        SELECT $1::uuid, $2, $3, NULL, 'ADMIN_PROVISIONED', 'ACTIVE', 1, clock.t, clock.t
+         FROM (${CLOCK_CTE}) AS clock
+       ON CONFLICT (phone_normalized) DO NOTHING`,
+      [input.userId, input.phoneNormalized, input.passwordHash],
+    );
+    return result.rowCount === 1;
+  }
+
+  /**
+   * Creates one ACTIVE STAGING_FIXTURE account: roleless, phone_verified_at NULL (the phone was never proven),
+   * timestamps from the database clock. Returns false when the phone number already belongs to a user (the UNIQUE
+   * constraint decided); an existing account is NEVER touched: no password reset, no status change, no role.
+   * Used only by the operator seed command (M00-D2); no HTTP path reaches it.
+   */
+  async insertStagingFixture(
+    context: TransactionContext,
+    input: { userId: string; phoneNormalized: string; passwordHash: string },
+  ): Promise<boolean> {
+    const result = await context.query(
+      `INSERT INTO app.users (
+         user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at
+       )
+       SELECT $1::uuid, $2, $3, NULL, 'STAGING_FIXTURE', 'ACTIVE', 1, clock.t, clock.t
          FROM (${CLOCK_CTE}) AS clock
        ON CONFLICT (phone_normalized) DO NOTHING`,
       [input.userId, input.phoneNormalized, input.passwordHash],

@@ -6,6 +6,7 @@ import { DriverOnboardingState, OwnerDriverEligibility } from '../driver/driver-
 import { ShopEligibilityReader } from '../shop/shop-eligibility-reader';
 import { OwnerShopEligibility, ShopOnboardingState } from '../shop/shop-types';
 import { TransactionManager } from '../transaction/transaction-manager';
+import { PhoneVerificationStatus } from './account-origin';
 import { effectiveActiveRole, roleContext } from './available-roles';
 import { AUDIT_ACTIONS, isSupportedRole } from './auth-constants';
 import { actorOf, AuthPrincipal } from './auth-principal';
@@ -34,6 +35,8 @@ export interface OnboardingProjection {
 
 export interface MeProjection extends MeResult {
   readonly onboarding: OnboardingProjection;
+  /** Display only (M00-D2), from the LOCKED user row: VERIFIED or UNVERIFIED_TEST. */
+  readonly phone_verification_status: PhoneVerificationStatus;
 }
 
 /** /me and role selection (task sections 12 and 13). */
@@ -67,11 +70,14 @@ export class RoleContextService {
    */
   async me(principal: AuthPrincipal): Promise<MeProjection> {
     const view = await this.transactions.withTransaction(async (context) => {
-      const { activeRole } = await this.sessionAuth.lockAuthorizedActorShared(context, actorOf(principal));
+      const { activeRole, phoneVerificationStatus } = await this.sessionAuth.lockAuthorizedActorShared(
+        context,
+        actorOf(principal),
+      );
       const held = await this.users.supportedRoles(context, principal.userId);
       const shop = await this.shops.ownerShopEligibility(context, principal.userId);
       const driver = await this.drivers.ownerDriverEligibility(context, principal.userId);
-      return { held, shop, driver, activeRole };
+      return { held, shop, driver, activeRole, phoneVerificationStatus };
     });
     return {
       ...this.#shape(
@@ -83,6 +89,7 @@ export class RoleContextService {
         view.activeRole,
       ),
       onboarding: { shop: view.shop.onboarding, driver: view.driver.onboarding },
+      phone_verification_status: view.phoneVerificationStatus,
     };
   }
 

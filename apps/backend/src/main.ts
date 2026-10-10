@@ -26,9 +26,10 @@ async function bootstrap(): Promise<void> {
     logger.log('info', 'db_tls_verify_full');
   }
 
-  // Auth Core needs an explicit OTP provider. bindOtpProvider refuses staging/production (no production SMS
-  // adapter exists yet) before anything is opened, naming only OTP_PROVIDER.
-  const otpProvider = bindOtpProvider(config.appEnv);
+  // Auth Core needs an explicit OTP provider. bindOtpProvider refuses production, and staging unless the fixture
+  // mode is on (then the explicit DisabledOtpProvider, never a fake), before anything is opened, naming only
+  // OTP_PROVIDER.
+  const otpProvider = bindOtpProvider(config.appEnv, { stagingFixtureMode: config.stagingFixtures !== undefined });
 
   // The database is NOT contacted here and migrations are NOT run on startup.
   // abortOnError: false lets a startup failure (for example a module that needs a missing keyring)

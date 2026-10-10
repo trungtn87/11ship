@@ -119,4 +119,46 @@ describe('M01-A1 — Auth configuration stops the process and leaks nothing', ()
       expect(result.stdout).not.toContain('server_listening');
     },
   );
+
+  // M00-D2: the staging fixture mode switch is validated at startup, names only its own variable, never a value.
+  describe('M00-D2 staging fixture mode', () => {
+    const PHONE = '+84901234567';
+    const stagingEnv = (extra: Record<string, string | undefined>) => ({
+      ...base,
+      APP_ENV: 'staging',
+      DB_SSL_CA: createTestPki().caPem,
+      AUTH_OTP_HMAC_SECRET: validSecret,
+      CRYPTO_KEYRING: FIXTURE_KEYRING_ENV,
+      CRYPTO_ACTIVE_KEY_ID: 'k1',
+      ...extra,
+    });
+
+    it('production refuses AUTH_STAGING_FIXTURES_ENABLED=true and names only that variable', () => {
+      const result = startMain(
+        stagingEnv({ APP_ENV: 'production', AUTH_STAGING_FIXTURES_ENABLED: 'true', AUTH_STAGING_ALLOWED_PHONES: JSON.stringify([PHONE]) }),
+      );
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('AUTH_STAGING_FIXTURES_ENABLED');
+      expect(result.stderr).not.toContain(PHONE);
+      expect(result.stderr).not.toContain(SECRET);
+      expect(result.stdout).not.toContain('server_listening');
+    });
+
+    it.each([
+      ['staging with the mode on and no allowlist', { AUTH_STAGING_FIXTURES_ENABLED: 'true' }],
+      ['staging with the mode on and an empty allowlist', { AUTH_STAGING_FIXTURES_ENABLED: 'true', AUTH_STAGING_ALLOWED_PHONES: '[]' }],
+      ['staging with the mode off and an allowlist present', { AUTH_STAGING_FIXTURES_ENABLED: 'false', AUTH_STAGING_ALLOWED_PHONES: JSON.stringify([PHONE]) }],
+      ['staging with a local-form phone in the allowlist', { AUTH_STAGING_FIXTURES_ENABLED: 'true', AUTH_STAGING_ALLOWED_PHONES: JSON.stringify(['0901234567']) }],
+      ['staging with an unknown flag spelling', { AUTH_STAGING_FIXTURES_ENABLED: 'TRUE', AUTH_STAGING_ALLOWED_PHONES: JSON.stringify([PHONE]) }],
+    ])('%s: exits 1 without echoing any value', (_name, extra) => {
+      const result = startMain(stagingEnv(extra));
+      expect(result.status).toBe(1);
+      expect(result.stderr).toMatch(/AUTH_STAGING_(FIXTURES_ENABLED|ALLOWED_PHONES)/);
+      expect(result.stderr).not.toContain('0901234567');
+      expect(result.stderr).not.toContain(PHONE);
+      expect(result.stderr).not.toContain('DATABASE_URL');
+      expect(result.stderr).not.toContain(validSecret);
+      expect(result.stdout).not.toContain('server_listening');
+    });
+  });
 });

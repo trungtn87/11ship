@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { TechnicalError } from '../common/app-errors';
+import { AccountOrigin, isAccountOrigin } from './account-origin';
 import { TransactionContext } from '../transaction/transaction-context';
 import { CLOCK_CTE, epochMs, toSafeInteger } from './auth-db';
 import { DeviceInfo } from './auth-validation';
@@ -98,6 +99,9 @@ export class SessionRepository {
     const row = result.rows[0];
     if (row === undefined) {
       return undefined;
+    }
+    if (!isAccountOrigin(row.account_origin)) {
+      throw new TechnicalError('internal', 'Database returned an unexpected account origin');
     }
     return {
       sessionId: row.session_id,

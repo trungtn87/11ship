@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { StandaloneAuditRecorder } from '../audit/standalone-audit-recorder';
 import { AppError, TechnicalError } from '../common/app-errors';
 import { AuthConfig } from '../config/auth-config';
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
+import { ACCOUNT_ORIGIN_POLICY, AccountOriginPolicy, standardAccountOriginPolicy } from './account-origin';
 import { AUDIT_ACTIONS, OTP_PROVIDER_TIMEOUT_MS, REGISTER_PURPOSE } from './auth-constants';
 import { AUTH_CONFIG } from './auth-config.provider';
 import { computeOtpDigest, digestsEqual, generateOtp } from './otp';
@@ -52,9 +53,12 @@ export class VerificationService {
     private readonly recorder: StandaloneAuditRecorder,
     @Inject(AUTH_CONFIG) private readonly config: AuthConfig,
     @Inject(OTP_PROVIDER) private readonly provider: OtpProvider,
+    @Optional() @Inject(ACCOUNT_ORIGIN_POLICY) private readonly policy: AccountOriginPolicy = standardAccountOriginPolicy(),
   ) {}
 
   async requestOtp(phoneNormalized: string, purpose: string): Promise<OtpRequestResult> {
+    // Staging fixture mode (M00-D2): closed at the service boundary, before the database, a digest or the provider.
+    this.policy.assertRegistrationOpen();
     const verificationId = randomUUID();
     const otp = generateOtp();
     const otpDigest = computeOtpDigest(this.config.otpHmacKey, verificationId, phoneNormalized, purpose, otp);
@@ -102,6 +106,8 @@ export class VerificationService {
   }
 
   async verifyOtp(verificationId: string, otp: string, requestId: string): Promise<OtpVerifyResult> {
+    // Same boundary as requestOtp: nothing is read or counted while the fixture mode is on.
+    this.policy.assertRegistrationOpen();
     const outcome = await this.transactions.withTransaction((context) =>
       this.#verifyInTransaction(context, verificationId, otp),
     );

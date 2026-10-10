@@ -1,5 +1,6 @@
 import { AdminAuthConfig, loadAdminAuthConfig } from './admin-auth-config';
 import { Keyring, parseKeyringConfig } from '../crypto/keyring';
+import { parseStagingFixtures, StagingFixturesConfig } from './staging-fixtures-config';
 import { DatabaseTls, resolveDatabaseTls } from '../database/tls-config';
 import {
   AuthConfig,
@@ -115,6 +116,11 @@ export interface AppConfig {
    * variable is valid; absent otherwise (the module is then not wired and exposes nothing).
    */
   adminAuth?: AdminAuthConfig;
+  /**
+   * Staging fixture mode (M00-D2). Present ONLY when AUTH_STAGING_FIXTURES_ENABLED=true, which is valid only for
+   * APP_ENV=staging and then requires a valid AUTH_STAGING_ALLOWED_PHONES. Absent everywhere else.
+   */
+  stagingFixtures?: StagingFixturesConfig;
 }
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -523,6 +529,16 @@ export function loadConfig(env: EnvSource): ConfigResult {
     adminAuthResult.invalid.forEach(flag);
   }
 
+  // Staging fixture mode (M00-D2): fail closed in every environment. Names only, never a value.
+  const stagingFixtures = parseStagingFixtures({
+    appEnv,
+    enabledRaw: env.AUTH_STAGING_FIXTURES_ENABLED,
+    phonesRaw: env.AUTH_STAGING_ALLOWED_PHONES,
+  });
+  if (!stagingFixtures.ok) {
+    stagingFixtures.invalid.forEach(flag);
+  }
+
   if (invalid.length > 0 || appEnv === undefined || databaseUrl === undefined) {
     return { ok: false, invalid };
   }
@@ -557,6 +573,9 @@ export function loadConfig(env: EnvSource): ConfigResult {
       crypto,
       auth,
       ...(adminAuth === undefined ? {} : { adminAuth }),
+      ...(stagingFixtures.ok && stagingFixtures.config !== undefined
+        ? { stagingFixtures: stagingFixtures.config }
+        : {}),
     },
   };
 }
