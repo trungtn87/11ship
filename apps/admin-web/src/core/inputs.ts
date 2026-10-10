@@ -39,3 +39,102 @@ export function isCompleteCode(code: string): boolean {
 export function groupSecret(secret: string): string {
   return secret.replace(/(.{4})(?=.)/g, '$1 ');
 }
+
+// ---- Rules of the invitation form (1B) and of the activation password (1C). They mirror the backend validators
+// (admin-provisioning-validation.ts, the registration password rule) so the form refuses what the server would refuse. ----
+
+export const FULL_NAME_MAX = 120;
+export const NOTE_MAX = 1000;
+export const REASON_MAX = 500;
+export const PASSWORD_MIN = 8;
+export const PASSWORD_MAX = 128;
+
+function codePoints(text: string): number {
+  return [...text].length;
+}
+
+/** The server trims; so do we, and the trimmed value is what is sent. */
+export function normalizeFullName(input: string): string | undefined {
+  const trimmed = input.trim();
+  const length = codePoints(trimmed);
+  return length >= 1 && length <= FULL_NAME_MAX ? trimmed : undefined;
+}
+
+/** The note is optional and kept as typed; empty means "no note" (null). undefined = too long. */
+export function normalizeNote(input: string): string | null | undefined {
+  if (codePoints(input) > NOTE_MAX) {
+    return undefined;
+  }
+  return input.length === 0 ? null : input;
+}
+
+export function normalizeReason(input: string): string | undefined {
+  const trimmed = input.trim();
+  const length = codePoints(trimmed);
+  return length >= 1 && length <= REASON_MAX ? trimmed : undefined;
+}
+
+/** True when `text` has no lone surrogate (the backend refuses ill-formed strings). */
+function isWellFormed(text: string): boolean {
+  for (let index = 0; index < text.length; index += 1) {
+    const unit = text.charCodeAt(index);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = text.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) {
+        return false;
+      }
+      index += 1;
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** 8-128 code points, well-formed. The password is never trimmed or changed. */
+export function isValidPassword(password: string): boolean {
+  const length = codePoints(password);
+  return length >= PASSWORD_MIN && length <= PASSWORD_MAX && isWellFormed(password);
+}
+
+export interface PermissionDraft {
+  readonly canView: boolean;
+  readonly canReviewProfile: boolean;
+  readonly canLock: boolean;
+}
+
+export type PermissionsDraft = Readonly<Record<'CUSTOMER' | 'SHOP' | 'DRIVER', PermissionDraft>>;
+
+export const EMPTY_PERMISSIONS: PermissionsDraft = {
+  CUSTOMER: { canView: false, canReviewProfile: false, canLock: false },
+  SHOP: { canView: false, canReviewProfile: false, canLock: false },
+  DRIVER: { canView: false, canReviewProfile: false, canLock: false },
+};
+
+/**
+ * Applies one checkbox the way the backend rules read: REVIEW/LOCK need VIEW (removing VIEW removes them, adding them
+ * adds VIEW), and the CUSTOMER app has no REVIEW.
+ */
+export function togglePermission(
+  draft: PermissionsDraft,
+  app: 'CUSTOMER' | 'SHOP' | 'DRIVER',
+  right: 'canView' | 'canReviewProfile' | 'canLock',
+  value: boolean,
+): PermissionsDraft {
+  if (app === 'CUSTOMER' && right === 'canReviewProfile') {
+    return draft;
+  }
+  const current = draft[app];
+  let next: PermissionDraft = { ...current, [right]: value };
+  if (right === 'canView' && !value) {
+    next = { canView: false, canReviewProfile: false, canLock: false };
+  } else if (right !== 'canView' && value) {
+    next = { ...next, canView: true };
+  }
+  return { ...draft, [app]: next };
+}
+
+/** At least one app with VIEW; apps without VIEW are not sent at all. */
+export function hasAnyPermission(draft: PermissionsDraft): boolean {
+  return draft.CUSTOMER.canView || draft.SHOP.canView || draft.DRIVER.canView;
+}
