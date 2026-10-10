@@ -10,6 +10,8 @@ import { AdminSessionRepository } from '../../../apps/backend/src/admin-auth/adm
 import { AdminInvitationParticipant } from '../../../apps/backend/src/admin-invitations/admin-invitation-participant';
 import { AdminInvitationRepository } from '../../../apps/backend/src/admin-invitations/admin-invitation-repository';
 import { AdminInvitationReader } from '../../../apps/backend/src/admin-provisioning/admin-invitation-reader';
+import { AdminActivationInvalidator } from '../../../apps/backend/src/admin-activation/admin-activation-invalidator';
+import { AdminActivationRepository } from '../../../apps/backend/src/admin-activation/admin-activation-repository';
 import { AdminInvitationService } from '../../../apps/backend/src/admin-provisioning/admin-invitation-service';
 import { AdminOperationRepository } from '../../../apps/backend/src/admin-provisioning/admin-operation-repository';
 import { AdminOperationService } from '../../../apps/backend/src/admin-provisioning/admin-operation-service';
@@ -355,6 +357,7 @@ export function directServices(
     identities,
     crypto,
     audit,
+    new AdminActivationInvalidator(new AdminActivationRepository(), audit),
     adminConfig.limiter.key,
     config,
     adminConfig,
@@ -394,6 +397,12 @@ export function lockRank(statement: string, seenAdvisory: boolean): { rank: numb
   }
   if (/FROM app\.admin_sensitive_operations\b/.test(statement)) {
     return { rank: 9, name: 'L9 admin_sensitive_operations' };
+  }
+  if (/FROM app\.admin_activation_attempts\b/.test(statement)) {
+    return { rank: 9.5, name: 'L9a admin_activation_attempts' };
+  }
+  if (/FROM app\.admin_activation_otp_challenges\b/.test(statement)) {
+    return { rank: 9.6, name: 'L9b admin_activation_otp_challenges' };
   }
   return { rank: 99, name: `unranked lock: ${statement.slice(0, 80)}` };
 }

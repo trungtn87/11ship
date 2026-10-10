@@ -1,4 +1,11 @@
-import { DynamicModule, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { DynamicModule, Inject, MiddlewareConsumer, Module, NestModule, Optional } from '@nestjs/common';
+import { ActivationOtpProvider, ACTIVATION_OTP_PROVIDER } from '../admin-activation/activation-otp-provider';
+import { adminActivationConfigProvider } from '../admin-activation/admin-activation-config.provider';
+import { AdminActivationInvalidator } from '../admin-activation/admin-activation-invalidator';
+import { AdminActivationLimiter } from '../admin-activation/admin-activation-limiter';
+import { AdminActivationRepository } from '../admin-activation/admin-activation-repository';
+import { AdminActivationService } from '../admin-activation/admin-activation-service';
+import { activationTransportMiddleware, AdminActivationController } from '../admin-activation/admin-activation.controller';
 import { AdminInvitationParticipant } from '../admin-invitations/admin-invitation-participant';
 import { AdminInvitationRepository } from '../admin-invitations/admin-invitation-repository';
 import { AdminInvitationReader } from '../admin-provisioning/admin-invitation-reader';
@@ -37,14 +44,25 @@ import { AdminTotpService } from './admin-totp-service';
  * AdminPasswordVerifier. Nothing imports it, so the graph is acyclic and needs no forwardRef. The keyring is required
  * (startup stops naming only the two variables), and the limiter configuration row is verified before listening.
  */
+/** Present only when ADMIN_ACTIVATION_ENABLED=true and the OTP provider was bound explicitly (M01-D-ADMIN-1C). */
+export interface AdminActivationWiring {
+  readonly otpProvider: ActivationOtpProvider;
+}
+
+/** Injection token telling configure() that the activation routes are wired. */
+const ADMIN_ACTIVATION_WIRING = Symbol('ADMIN_ACTIVATION_WIRING');
+
 @Module({})
 export class AdminAuthModule implements NestModule {
-  static register(auth: DynamicModule): DynamicModule {
+  constructor(@Optional() @Inject(ADMIN_ACTIVATION_WIRING) private readonly activation?: AdminActivationWiring) {}
+
+  static register(auth: DynamicModule, activation?: AdminActivationWiring): DynamicModule {
     return {
       module: AdminAuthModule,
       imports: [auth, TransactionModule, AuditModule, IdempotencyModule],
       // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
-      controllers: [AdminAuthController, AdminProvisioningController],
+      // M01-D-ADMIN-1C: the activation routes under /v1/admin-activation exist only when explicitly enabled.
+      controllers: [AdminAuthController, AdminProvisioningController, ...(activation === undefined ? [] : [AdminActivationController])],
       providers: [
         adminAuthConfigProvider,
         {
@@ -78,11 +96,26 @@ export class AdminAuthModule implements NestModule {
         AdminSystemActor,
         AdminOperationService,
         AdminInvitationService,
+        // The 1B section 8.8 hook is always present (1B calls it); it is a no-op when no activation attempt exists.
+        AdminActivationRepository,
+        AdminActivationInvalidator,
+        ...(activation === undefined
+          ? []
+          : [
+              { provide: ADMIN_ACTIVATION_WIRING, useValue: activation },
+              { provide: ACTIVATION_OTP_PROVIDER, useValue: activation.otpProvider },
+              adminActivationConfigProvider,
+              AdminActivationLimiter,
+              AdminActivationService,
+            ]),
       ],
     };
   }
 
   configure(consumer: MiddlewareConsumer): void {
     consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController);
+    if (this.activation !== undefined) {
+      consumer.apply(activationTransportMiddleware).forRoutes(AdminActivationController);
+    }
   }
 }

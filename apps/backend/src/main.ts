@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { configureApp } from './app.setup';
+import { bindActivationOtpProvider } from './admin-activation/activation-otp-providers';
 import { bindOtpProvider } from './auth/otp-provider-binding';
 import { formatInvalidConfigMessage, loadConfig } from './config/app-config';
 import { describeStartupFailure } from './config/startup-failure';
@@ -30,13 +31,26 @@ async function bootstrap(): Promise<void> {
   // adapter exists yet) before anything is opened, naming only OTP_PROVIDER.
   const otpProvider = bindOtpProvider(config.appEnv);
 
+  // The activation OTP provider is bound the same way: explicitly, from ADMIN_ACTIVATION_OTP_MODE, with no fallback. SMS has
+  // no adapter yet, so that mode refuses startup (naming only the variable) before anything is opened.
+  const activationOtpProvider =
+    config.adminActivation === undefined ? undefined : bindActivationOtpProvider(config.adminActivation);
+
   // The database is NOT contacted here and migrations are NOT run on startup.
   // abortOnError: false lets a startup failure (for example a module that needs a missing keyring)
   // reach the catch below, which prints only variable names, instead of Nest exiting silently.
-  const app = await NestFactory.create(AppModule.register({ config, logger, auth: { otpProvider } }), {
-    logger: false,
-    abortOnError: false,
-  });
+  const app = await NestFactory.create(
+    AppModule.register({
+      config,
+      logger,
+      auth: { otpProvider },
+      ...(activationOtpProvider === undefined ? {} : { activationOtpProvider }),
+    }),
+    {
+      logger: false,
+      abortOnError: false,
+    },
+  );
 
   try {
     configureApp(app);

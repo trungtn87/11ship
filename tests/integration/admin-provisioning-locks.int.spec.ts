@@ -215,7 +215,8 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
         randomUUID(),
         meta(),
       );
-      expectAuthorizedThenMutation(reissue.trace, mutation);
+      // M01-D-ADMIN-1C: the 1B section 8.8 hook now takes L9a (the live attempt of the invitation) after L8 and L9.
+      expectAuthorizedThenMutation(reissue.trace, [...mutation, 'L9a admin_activation_attempts']);
 
       const successor = String(((reissued.payload as Record<string, unknown>).invitation as Record<string, unknown>).invitation_id);
       await app.clearLimits();
@@ -228,7 +229,7 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
         randomUUID(),
         meta(),
       );
-      expectAuthorizedThenMutation(revoke.trace, mutation);
+      expectAuthorizedThenMutation(revoke.trace, [...mutation, 'L9a admin_activation_attempts']);
     });
 
     it('the three reads take shared locks in the same order and set lock_timeout first', async () => {

@@ -4,6 +4,7 @@ import { ADMIN_AUTH_CONFIG } from '../admin-auth/admin-auth-config.provider';
 import { AdminCrypto } from '../admin-auth/admin-crypto';
 import { ADMIN_LIMITER_KEY } from '../admin-auth/admin-limiter';
 import { SessionLookup } from '../admin-auth/admin-session-repository';
+import { AdminActivationInvalidator } from '../admin-activation/admin-activation-invalidator';
 import { AdminInvitationParticipant } from '../admin-invitations/admin-invitation-participant';
 import { InvitationPermission } from '../admin-invitations/admin-invitation-repository';
 import { AdminIdentityParticipant } from '../auth/admin-identity-participant';
@@ -73,6 +74,8 @@ export class AdminInvitationService {
     private readonly identities: AdminIdentityParticipant,
     private readonly crypto: AdminCrypto,
     private readonly audit: AuditWriter,
+    // M01-D-ADMIN-1C: the 1B section 8.8 hook that ends a live activation when its invitation is closed.
+    private readonly activation: AdminActivationInvalidator,
     @Inject(ADMIN_LIMITER_KEY) private readonly limiterKey: AdminLimiterKey,
     @Inject(APP_CONFIG) appConfig: AppConfig,
     @Inject(ADMIN_AUTH_CONFIG) adminConfig: AdminAuthConfig,
@@ -122,6 +125,7 @@ export class AdminInvitationService {
           if (version === undefined) {
             throw new TechnicalError('internal', 'Locked pending invitation could not be expired');
           }
+          await this.activation.invalidateActivationFor(context, pending.invitationId, { requestId: meta.requestId, actorId: known.userId });
           await this.#audit(context, meta, known.userId, PROVISIONING_AUDIT_ACTIONS.expired, pending.invitationId, version, {
             invitation_id: pending.invitationId,
             version,
@@ -228,6 +232,7 @@ export class AdminInvitationService {
         if (superseded === undefined) {
           throw new AppError('ADMIN_VERSION_CONFLICT');
         }
+        await this.activation.invalidateActivationFor(context, payload.invitationId, { requestId: meta.requestId, actorId: known.userId });
         const created = await this.#insertInvitation(
           context,
           known.userId,
@@ -309,6 +314,7 @@ export class AdminInvitationService {
         if (version === undefined) {
           throw new AppError('ADMIN_VERSION_CONFLICT');
         }
+        await this.activation.invalidateActivationFor(context, payload.invitationId, { requestId: meta.requestId, actorId: known.userId });
         await this.#consume(context, input.operationId);
         await this.#audit(context, meta, known.userId, PROVISIONING_AUDIT_ACTIONS.revoked, payload.invitationId, version, {
           invitation_id: payload.invitationId,
