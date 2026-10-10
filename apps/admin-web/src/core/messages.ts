@@ -85,6 +85,7 @@ export const ADMIN_COPY = {
   otpSent: 'Mã đã được gửi tới số điện thoại của bạn.',
   otpTestDisplay: 'Môi trường thử nghiệm: mã không gửi tin nhắn thật.',
   passwordInvalid: 'Mật khẩu cần từ 8 đến 128 ký tự.',
+  passwordExpired: 'Đã quá thời hạn đặt mật khẩu. Hãy bắt đầu lại.',
   passwordMismatch: 'Hai mật khẩu chưa khớp.',
   activationDone: 'Tài khoản đã được kích hoạt.',
   activationDoneHelp: 'Hãy đăng nhập bằng số điện thoại, mật khẩu và mã Authenticator.',

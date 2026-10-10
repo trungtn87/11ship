@@ -123,6 +123,13 @@ export class ActivationController {
     await this.#start(generation);
   }
 
+  /** A fragment was present but is not a well-formed token: the same answer the server gives, without sending anything. */
+  rejectLink(): void {
+    this.#advance();
+    this.#forget();
+    this.#set({ name: 'link-invalid' });
+  }
+
   /** "Thử lại" on the unavailable screen: repeats the read, or the first start if its answer was lost. */
   async retry(): Promise<void> {
     const screen = this.#screen;
@@ -286,7 +293,10 @@ export class ActivationController {
   async restart(): Promise<void> {
     const screen = this.#screen;
     const csrf = this.#csrf;
-    if (screen.name !== 'invalidated' || screen.pending || !screen.canRestart || csrf === undefined) {
+    const allowed =
+      (screen.name === 'invalidated' && screen.canRestart && !screen.pending) ||
+      (screen.name === 'password' && screen.restartRequired && !screen.pending);
+    if (!allowed || csrf === undefined || (screen.name !== 'invalidated' && screen.name !== 'password')) {
       return;
     }
     const generation = this.#generation;
@@ -302,8 +312,9 @@ export class ActivationController {
     if (result.kind === 'error' && (await this.#handleCommonError(generation, result))) {
       return;
     }
-    if (this.#screen.name === 'invalidated') {
-      this.#set({ ...this.#screen, pending: false, error: ADMIN_COPY.stepChangedAdmin });
+    const current = this.#screen;
+    if (current.name === 'invalidated' || current.name === 'password') {
+      this.#set({ ...current, pending: false, error: ADMIN_COPY.stepChangedAdmin });
     }
   }
 
