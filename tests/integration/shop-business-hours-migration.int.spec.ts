@@ -74,6 +74,9 @@ describe('M02-A — Shop business-hours migration', () => {
       '1792022400000_create-admin-auth',
       '1792108800000_create-admin-invitations',
       '1792195200000_create-admin-sensitive-operations',
+      '1792281600000_create-admin-activation',
+      '1792368000000_extend-admin-auth-limits-activation',
+      '1792454400000_create-admin-membership-origin-guard',
     ]);
     expect(HOURS).toBe('1791763200000_create-shop-business-hours');
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-driver-onboarding')).toBe(true);
@@ -206,7 +209,7 @@ describe('M02-A — Shop business-hours migration', () => {
     expect(owners.rows).toEqual([{ owner: 'ship11_test' }]);
     const triggers = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations')`,
+         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles') AND t.tgname <> 'admin_membership_origin_guard'`,
     );
     expect(triggers.rows[0]?.n).toBe(1);
   });

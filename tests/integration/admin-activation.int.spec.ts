@@ -9,6 +9,7 @@ import {
   cookieFrom,
   loginStep,
   preauthCookies,
+  rewindAcceptedStep,
   totpNow,
 } from './support/admin-fixtures';
 import {
@@ -116,6 +117,8 @@ describe('M01-D-ADMIN-1C - activation flow, transport and the CSRF/state matrix'
     // The activated administrator signs in with the chosen password, then the TOTP of the secret shown at enrollment.
     const account2 = { phone: invite.phone, password: ADMIN_PASSWORD, userId: String(attempt?.user_id) };
     const preauth = await loginStep(app, account2);
+    // The completion consumed this 30-second step; a later step is simulated like every login suite does.
+    await rewindAcceptedStep(app, String(attempt?.user_id));
     const verified = await app.call('POST', '/totp/verify', { body: { code: totpNow(secret) }, cookies: preauthCookies(preauth), csrf: preauth.csrf });
     expect(verified.status).toBe(200);
     expect(cookieFrom(verified, ADMIN_SESSION_COOKIE)).toBeTruthy();

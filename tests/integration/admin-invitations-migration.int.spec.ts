@@ -1,3 +1,4 @@
+import { ACTIVATION_DOWN_SQL, ACTIVATION_UP_SQL } from './support/activation-migration-sql';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
@@ -138,12 +139,18 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
     expect(before.length).toBeGreaterThan(0);
     await client.query('BEGIN');
     try {
+      for (const statement of ACTIVATION_DOWN_SQL) {
+        await client.query(statement);
+      }
       await client.query(operationsDownSql);
       await client.query(downSql);
       expect(await inventory()).toEqual([]);
       await client.query(upSql);
       expect(await inventory()).toEqual(before);
       await client.query(operationsUpSql);
+      for (const statement of ACTIVATION_UP_SQL) {
+        await client.query(statement);
+      }
     } finally {
       await client.query('ROLLBACK');
     }
