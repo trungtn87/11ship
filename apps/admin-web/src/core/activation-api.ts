@@ -23,16 +23,16 @@ export interface OtpInfo {
 
 /** What `GET /state` (and the richer start/restart answers, and STEP_INVALID details) say. Never a phone, name or id. */
 export type ActivationView =
-  | { readonly state: 'STARTED'; readonly expiresAt: string; readonly csrfToken?: string; readonly otp?: OtpInfo }
+  | { readonly state: 'STARTED'; readonly expiresAt?: string; readonly csrfToken?: string; readonly otp?: OtpInfo }
   | {
       readonly state: 'OTP_VERIFIED';
-      readonly expiresAt: string;
+      readonly expiresAt?: string;
       readonly csrfToken?: string;
       readonly passwordDeadline?: string;
       readonly restartRequired: boolean;
     }
-  | { readonly state: 'PASSWORD_SET'; readonly expiresAt: string; readonly csrfToken?: string }
-  | { readonly state: 'TOTP_ISSUED'; readonly expiresAt: string; readonly csrfToken?: string; readonly totpAttemptsLeft?: number }
+  | { readonly state: 'PASSWORD_SET'; readonly expiresAt?: string; readonly csrfToken?: string }
+  | { readonly state: 'TOTP_ISSUED'; readonly expiresAt?: string; readonly csrfToken?: string; readonly totpAttemptsLeft?: number }
   | { readonly state: 'COMPLETED' }
   | { readonly state: 'INVALIDATED'; readonly reason: InvalidatedReason; readonly canRestart: boolean; readonly csrfToken?: string };
 
@@ -74,40 +74,33 @@ function otpOf(value: unknown): OtpInfo | undefined {
 export function parseActivationView(data: Record<string, unknown>): ActivationView | undefined {
   const csrf = str(data.csrf_token);
   const withCsrf = csrf === undefined ? {} : { csrfToken: csrf };
-  const expiresAt = str(data.expires_at);
+  const expiresAtValue = str(data.expires_at);
+  // The answers of the steps themselves ({state:"OTP_VERIFIED"}, {state:"PASSWORD_SET"}) carry no expiry: the page keeps the one it has.
+  const expires = expiresAtValue === undefined ? {} : { expiresAt: expiresAtValue };
   switch (data.state) {
     case 'STARTED': {
-      if (expiresAt === undefined) {
-        return undefined;
-      }
       // The 201 of start/restart carries no `otp`; GET state does.
       const otp = data.otp === undefined ? undefined : otpOf(data.otp);
       if (data.otp !== undefined && otp === undefined) {
         return undefined;
       }
-      return { state: 'STARTED', expiresAt, ...withCsrf, ...(otp === undefined ? {} : { otp }) };
+      return { state: 'STARTED', ...expires, ...withCsrf, ...(otp === undefined ? {} : { otp }) };
     }
     case 'OTP_VERIFIED': {
-      if (expiresAt === undefined) {
-        return undefined;
-      }
       const passwordDeadline = str(data.password_deadline);
       return {
         state: 'OTP_VERIFIED',
-        expiresAt,
+        ...expires,
         ...withCsrf,
         ...(passwordDeadline === undefined ? {} : { passwordDeadline }),
         restartRequired: data.restart_required === true,
       };
     }
     case 'PASSWORD_SET':
-      return expiresAt === undefined ? undefined : { state: 'PASSWORD_SET', expiresAt, ...withCsrf };
+      return { state: 'PASSWORD_SET', ...expires, ...withCsrf };
     case 'TOTP_ISSUED': {
-      if (expiresAt === undefined) {
-        return undefined;
-      }
       const totpAttemptsLeft = posInt(data.totp_attempts_left);
-      return { state: 'TOTP_ISSUED', expiresAt, ...withCsrf, ...(totpAttemptsLeft === undefined ? {} : { totpAttemptsLeft }) };
+      return { state: 'TOTP_ISSUED', ...expires, ...withCsrf, ...(totpAttemptsLeft === undefined ? {} : { totpAttemptsLeft }) };
     }
     case 'COMPLETED':
       return { state: 'COMPLETED' };

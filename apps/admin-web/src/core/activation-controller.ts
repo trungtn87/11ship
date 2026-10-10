@@ -521,7 +521,7 @@ export class ActivationController {
     if ('csrfToken' in view && view.csrfToken !== undefined) {
       this.#csrf = view.csrfToken;
     }
-    if ('expiresAt' in view) {
+    if ('expiresAt' in view && view.expiresAt !== undefined) {
       const ms = Date.parse(view.expiresAt);
       this.#expiresAtMs = Number.isFinite(ms) ? ms : undefined;
       this.#armExpiryTimer();

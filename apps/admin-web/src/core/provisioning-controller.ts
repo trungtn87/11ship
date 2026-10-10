@@ -419,6 +419,8 @@ export class ProvisioningController {
   /** The user leaves the result page: the link and the flow are dropped. */
   clear(): void {
     this.#reset();
+    // No emit: nobody is looking. The result (with the link) must not stay in memory after the page is left.
+    this.#screen = { name: 'list', filter: 'ALL', items: [], nextCursor: null, loading: false, loadingMore: false };
   }
 
   // ---- internals ----
