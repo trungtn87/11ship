@@ -176,6 +176,9 @@ export class AdminActivationService {
       // The cookie's attempt only counts when it belongs to THIS invitation (another invitation's cookie is ignored).
       const cookieAttemptId = candidate?.attempt.invitationId === hint.invitationId ? candidate.attempt.attemptId : undefined;
       const attempts = await this.repo.lockAttempts(context, { invitationId: invitation.invitationId, cookieAttemptId });
+      // L9b before `T`: the live challenge of every live attempt is locked HERE, because a late delivery outcome (txn2 of
+      // otp/request) holds it without the attempt lock and any wait for it after `T` would act on a stale clock.
+      const challenges = await this.#lockLiveChallenges(context, attempts);
       const nowMs = await freshClockMs(context);
 
       const cookieAttempt = attempts.find((attempt) => attempt.attemptId === cookieAttemptId);
@@ -188,7 +191,7 @@ export class AdminActivationService {
         return failLink();
       }
       if (await this.#phoneTaken(context, invitation.phoneNormalized)) {
-        return this.#phoneConflict(context, meta, invitation, attempts, nowMs);
+        return this.#phoneConflict(context, meta, invitation, attempts, challenges, nowMs);
       }
 
       const live = attempts.filter(isLive);
@@ -197,7 +200,7 @@ export class AdminActivationService {
         const view: ViewInput = { attempt: cookieAttempt, newestChallenge: newest, invitation, nowMs };
         throw new ReplayAnswer({ status: 200, body: this.#stateEnvelope(view, this.#csrfOf(cookieAttempt)) } satisfies Answer);
       }
-      await this.#supersede(context, meta, live, nowMs);
+      await this.#supersede(context, meta, live, challenges, nowMs);
       const created = await this.#newAttempt(context, meta, invitation, nowMs, ACTIVATION_AUDIT_ACTIONS.attemptStarted);
       return value(created);
     });
@@ -221,6 +224,7 @@ export class AdminActivationService {
       await lockPhone(context, this.limiterKey, phone);
       const invitation = await this.invitations.lock(context, invitationId);
       const attempts = await this.repo.lockAttempts(context, { invitationId, cookieAttemptId: attemptId });
+      const challenges = await this.#lockLiveChallenges(context, attempts); // L9b before `T` (see start)
       const nowMs = await freshClockMs(context);
       const own = attempts.find((attempt) => attempt.attemptId === attemptId);
       if (own === undefined || nowMs >= own.expiresAtMs) {
@@ -234,9 +238,9 @@ export class AdminActivationService {
         throw linkInvalid();
       }
       if (await this.#phoneTaken(context, invitation.phoneNormalized)) {
-        return this.#phoneConflict(context, meta, invitation, attempts, nowMs);
+        return this.#phoneConflict(context, meta, invitation, attempts, challenges, nowMs);
       }
-      await this.#supersede(context, meta, attempts.filter(isLive), nowMs);
+      await this.#supersede(context, meta, attempts.filter(isLive), challenges, nowMs);
       return value(await this.#newAttempt(context, meta, invitation, nowMs, ACTIVATION_AUDIT_ACTIONS.attemptRestarted));
     });
   }
@@ -295,7 +299,9 @@ export class AdminActivationService {
         throw linkInvalid();
       }
       if (await this.#phoneTaken(context, invitation.phoneNormalized)) {
-        return this.#phoneConflict(context, meta, invitation, [attempt], nowMs);
+        // The live challenge is the newest one, already locked above (L9b) before `T`.
+        const held = newest !== undefined && (newest.status === 'PENDING_DELIVERY' || newest.status === 'PENDING') ? [newest] : [];
+        return this.#phoneConflict(context, meta, invitation, [attempt], new Map(held.map((row) => [row.attemptId, row])), nowMs);
       }
       if (newest !== undefined && newest.status !== 'DELIVERY_FAILED' && newest.resendNotBeforeMs > nowMs) {
         throw new AppError('OTP_RATE_LIMITED');
@@ -606,6 +612,7 @@ export class AdminActivationService {
       await lockPhone(context, this.limiterKey, phone);
       const invitation = await this.invitations.lock(context, invitationId);
       const attempt = await this.repo.lockAttempt(context, attemptId);
+      const challenges = await this.#lockLiveChallenges(context, attempt === undefined ? [] : [attempt]); // L9b before `T`
       const nowMs = await freshClockMs(context);
 
       // The gates, in order. A refusal here ROLLS BACK: nothing is counted and the secret is not opened.
@@ -631,7 +638,7 @@ export class AdminActivationService {
         return thenThrow(new AdminAuthRateLimitError(bucket.lockedRemainingSeconds));
       }
       if (await this.#phoneTaken(context, invitation.phoneNormalized)) {
-        return this.#phoneConflict(context, meta, invitation, [attempt], nowMs);
+        return this.#phoneConflict(context, meta, invitation, [attempt], challenges, nowMs);
       }
       if (attempt.totpKeyId === null || attempt.totpEnvelope === null || attempt.passwordHash === null || attempt.otpVerifiedAtMs === null) {
         throw new TechnicalError('internal', 'Attempt is incomplete');
@@ -683,7 +690,7 @@ export class AdminActivationService {
       }
       if (!inserted) {
         // Lost a race with /auth/register on the unique phone while still valid: the same closing path, the code is NOT counted.
-        return this.#phoneConflict(context, meta, invitation, [attempt], doneMs);
+        return this.#phoneConflict(context, meta, invitation, [attempt], challenges, doneMs);
       }
       await this.repo.insertMembership(context, { userId: attempt.userId, atMs: doneMs });
       await this.repo.insertProfile(context, {
@@ -839,9 +846,30 @@ export class AdminActivationService {
   }
 
   /** Live attempts of the invitation -> INVALIDATED(SUPERSEDED), each with its live challenge (L9b after L9a). */
-  async #supersede(context: TransactionContext, meta: RequestMeta, attempts: readonly AttemptRow[], nowMs: number): Promise<void> {
-    for (const attempt of attempts) {
+  /**
+   * L9b for every LIVE attempt, in `attempt_id` order, taken before `T` is read. The mutation helpers below take NO lock:
+   * they are handed the rows locked here, so no wait can happen between `T` and the writes that use it.
+   */
+  async #lockLiveChallenges(context: TransactionContext, attempts: readonly AttemptRow[]): Promise<ReadonlyMap<string, ChallengeRow>> {
+    const held = new Map<string, ChallengeRow>();
+    for (const attempt of attempts.filter(isLive)) {
       const challenge = await this.repo.lockLiveChallenge(context, attempt.attemptId);
+      if (challenge !== undefined) {
+        held.set(attempt.attemptId, challenge);
+      }
+    }
+    return held;
+  }
+
+  async #supersede(
+    context: TransactionContext,
+    meta: RequestMeta,
+    attempts: readonly AttemptRow[],
+    challenges: ReadonlyMap<string, ChallengeRow>,
+    nowMs: number,
+  ): Promise<void> {
+    for (const attempt of attempts) {
+      const challenge = challenges.get(attempt.attemptId);
       if (challenge !== undefined) {
         await this.repo.invalidateChallenge(context, { challengeId: challenge.challengeId, atMs: nowMs });
       }
@@ -903,6 +931,7 @@ export class AdminActivationService {
     meta: RequestMeta,
     invitation: InvitationRow,
     attempts: readonly AttemptRow[],
+    challenges: ReadonlyMap<string, ChallengeRow>,
     nowMs: number,
   ): Promise<Outcome<never>> {
     const version = await this.invitations.transition(context, invitation.invitationId, invitation.version, { to: 'PHONE_CONFLICT' });
@@ -910,7 +939,7 @@ export class AdminActivationService {
       throw new TechnicalError('internal', 'Locked invitation could not be closed');
     }
     for (const attempt of attempts.filter(isLive)) {
-      const challenge = await this.repo.lockLiveChallenge(context, attempt.attemptId);
+      const challenge = challenges.get(attempt.attemptId);
       if (challenge !== undefined) {
         await this.repo.invalidateChallenge(context, { challengeId: challenge.challengeId, atMs: nowMs });
       }
