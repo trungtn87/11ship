@@ -670,18 +670,20 @@ export class AdminActivationService {
         phoneNormalized: invitation.phoneNormalized,
         passwordHash: attempt.passwordHash,
       });
-      if (!inserted) {
-        // Lost a race with /auth/register on the unique phone: the same closing path, and the code is NOT counted.
-        return this.#phoneConflict(context, meta, invitation, [attempt], nowMs);
-      }
       // The INSERT above may have WAITED on users.phone_normalized behind a competing registration, so `T` is stale: the
-      // clock is read again after the wait and both expiries are re-checked. A refusal rolls back every row made so far.
+      // clock is read again BEFORE the outcome is interpreted, and both expiries are re-checked first. An expired
+      // attempt/invitation is refused whether the registration then rolled back or committed (no PHONE_CONFLICT closing,
+      // no invalidation, no audit); the refusal rolls back every row made so far.
       const doneMs = await freshClockMs(context);
       if (doneMs >= attempt.expiresAtMs) {
         throw sessionInvalid();
       }
       if (doneMs >= invitation.expiresAtMs) {
         throw linkInvalid();
+      }
+      if (!inserted) {
+        // Lost a race with /auth/register on the unique phone while still valid: the same closing path, the code is NOT counted.
+        return this.#phoneConflict(context, meta, invitation, [attempt], doneMs);
       }
       await this.repo.insertMembership(context, { userId: attempt.userId, atMs: doneMs });
       await this.repo.insertProfile(context, {
