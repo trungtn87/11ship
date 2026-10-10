@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { AdminIdentityParticipant } from '../auth/admin-identity-participant';
 import { AdminPasswordVerifier } from '../auth/admin-password-verifier';
 import { AuditWriter } from '../audit/audit-writer';
+import { TechnicalError } from '../common/app-errors';
 import { AdminLimiterConfig } from '../config/admin-auth-config';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { ADMIN_AUDIT_ACTIONS, BOOTSTRAP_LOCK_KEY } from './admin-auth-constants';
@@ -46,10 +47,18 @@ export class AdminBootstrapService {
         throw new AdminCliError('LIMIT_CONFIG_MISMATCH');
       }
 
-      const system = await this.memberships.lockSystem(context);
-      if (system !== undefined) {
-        const holder = await this.identities.lockById(context, system.userId);
-        if (holder !== undefined && holder.phoneNormalized === input.phoneNormalized) {
+      // Lock order of the whole administration module: user, THEN membership (as login, TOTP and session do). The
+      // SYSTEM user id is read without a lock only to know which account to lock; the role is re-checked under the
+      // locks, so a concurrent writer of that account can never meet this transaction in the opposite order.
+      const systemUserId = await this.memberships.findSystemUserId(context);
+      if (systemUserId !== undefined) {
+        const holder = await this.identities.lockById(context, systemUserId);
+        const system = holder === undefined ? undefined : await this.memberships.lock(context, systemUserId);
+        if (holder === undefined || system === undefined || system.adminRole !== 'SYSTEM') {
+          // Not reachable while memberships are never deleted and a role never changes; fail closed, write nothing.
+          throw new TechnicalError('internal', 'SYSTEM membership changed during bootstrap');
+        }
+        if (holder.phoneNormalized === input.phoneNormalized) {
           return 'UNCHANGED';
         }
         throw new AdminCliError('SYSTEM_ACCOUNT_DIFFERENT');
