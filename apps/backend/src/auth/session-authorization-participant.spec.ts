@@ -173,11 +173,12 @@ describe('SessionAuthorizationParticipant.lockAuthorizedActorShared (readers)', 
     const { participant, events } = rig({ session: { ...SESSION, activeRole: 'DRIVER' } });
     await expect(participant.lockAuthorizedActorShared(fakeContext(NOW, events), ACTOR)).resolves.toEqual({
       activeRole: 'DRIVER',
+      phoneVerificationStatus: 'VERIFIED',
     });
     const roleless = rig();
     await expect(
       roleless.participant.lockAuthorizedActorShared(fakeContext(NOW, roleless.events), ACTOR),
-    ).resolves.toEqual({ activeRole: null });
+    ).resolves.toEqual({ activeRole: null, phoneVerificationStatus: 'VERIFIED' });
   });
 
   it('applies the same checks and precedence as the writer variant', async () => {
