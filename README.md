@@ -25,9 +25,14 @@ Bằng chứng: [M00-B1](docs/evidence/M00-B1.md), [M01-A1](docs/evidence/M01-A1
 
 ## Staging (Render + Supabase) — cấu hình, chưa triển khai
 
-M00-D1 chỉ chuẩn bị cấu hình: `render.yaml` (một web service Render Free, không tự deploy), kết nối PostgreSQL qua TLS xác minh đầy đủ (`DB_SSL_CA` hoặc `DB_SSL_CA_FILE`; staging/production không khởi động nếu thiếu) và lệnh migration từ xa riêng `npm run db:migrate:remote`. **Chưa deploy, chưa migrate Supabase thật**, và dịch vụ chưa thể chạy thật cho đến khi có M00-D2 (OTP staging). Hướng dẫn: [runbook](ops/runbooks/render-supabase-staging.md), bằng chứng: [M00-D1](docs/evidence/M00-D1.md).
+M00-D1 chỉ chuẩn bị cấu hình: `render.yaml` (một web service Render Free, không tự deploy), kết nối PostgreSQL qua TLS xác minh đầy đủ (`DB_SSL_CA` hoặc `DB_SSL_CA_FILE`; staging/production không khởi động nếu thiếu) và lệnh migration từ xa riêng `npm run db:migrate:remote`. **Chưa deploy, chưa migrate Supabase thật**, và staging chỉ có thể khởi động với cấu hình fixture M00-D2 được bật rõ ràng (OTP bị vô hiệu hóa). Hướng dẫn: [runbook](ops/runbooks/render-supabase-staging.md), bằng chứng: [M00-D1](docs/evidence/M00-D1.md).
 
 ## Cách làm việc
+
+Quy trình bắt buộc: [phân công và gate nghiệm thu](docs/process/11ship-delivery-workflow.md), [hướng dẫn agent](AGENTS.md), [mẫu checklist từng module](docs/templates/module-delivery-checklist.md).
+
+Nghiệp vụ + ảnh UI (ChatGPT, Owner duyệt) → code/test (Claude) → review (ChatGPT) → Owner test local và sửa → test điện thoại thật → Owner nghiệm thu, duyệt merge/đóng module. Backend merge/CI xanh chưa phải module hoàn tất.
+
 
 ChatGPT thiết kế, chia task và review. Claude code từng task. Owner test nghiệp vụ và duyệt. Mỗi gói dùng nhánh riêng, giữ base/head commit và bằng chứng test. Chưa merge khi chưa PASS.
 

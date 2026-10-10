@@ -850,3 +850,28 @@ Bổ sung cho §8, §10 và §12; không viết lại evidence lịch sử ([A2S
 - Mọi lệnh onboarding (shop save, shop complete, driver create) và replay nhạy cảm xác thực lại user VÀ session HIỆN TẠI bên trong transaction nghiệp vụ: user FOR UPDATE, session FOR UPDATE, rồi đồng hồ PostgreSQL mới; replay chạy cùng participant trước khi decrypt. SessionAuthGuard chỉ còn là precheck.
 - `sessionId` không thuộc scope, replay guard hay logical request; session thay thế hợp lệ của cùng user vẫn replay được, session đã revoke hoặc hết hạn thì không.
 - `RoleGrantParticipant.grant()` không còn tự khóa user; user lock nằm ở participant trên.
+
+## Quy trình và phân công giai đoạn — Owner chốt 09/10/2026
+
+Áp dụng [quy trình bắt buộc](../process/11ship-delivery-workflow.md), [AGENTS.md](../../AGENTS.md) và [mẫu module](../templates/module-delivery-checklist.md). Mục này điều chỉnh phân công/gate; giữ nguyên phạm vi kỹ thuật và evidence lịch sử ở trên.
+
+| Giai đoạn | Thực hiện | Gate chuyển |
+|---|---|---|
+| Nghiệp vụ/API/dữ liệu | ChatGPT thiết kế | Owner duyệt |
+| Ảnh UI chi tiết và trạng thái liên quan | ChatGPT thiết kế | Owner duyệt UI; backend-only ghi N/A có lý do |
+| Gói giao task | ChatGPT | Scope/base/hợp đồng/checklist đã rõ |
+| Code/build/test/CI và sửa finding | Claude | CI đúng final head + ChatGPT review đạt |
+| Test local, phản hồi/sửa | Owner test; ChatGPT phân tích; Claude sửa | Owner xác nhận local đạt |
+| Bản web/điện thoại test | Claude chuẩn bị | Local đạt, bản/SHA hiện tại review đạt |
+| Test thiết bị thật và liên thông | Owner | Từng app liên quan đạt |
+| Nghiệm thu/merge/đóng | Owner quyết định | Đủ gate và bằng chứng; không suy từ backend DONE |
+
+Checklist gate mới (chưa kiểm chứng, không phủ nhận kết quả test kỹ thuật lịch sử):
+- [ ] Xác định task con và ứng dụng liên quan; điền ma trận theo mẫu.
+- [ ] Ghi link Owner duyệt nghiệp vụ/UI, hoặc N/A có lý do.
+- [ ] Claude cung cấp bản local, hướng dẫn và bằng chứng đúng SHA; ChatGPT review.
+- [ ] Owner test local, sửa phản hồi và xác nhận đạt.
+- [ ] Owner test thiết bị thật riêng từng app và liên thông, xác nhận đạt.
+- [ ] Owner quyết định phạm vi nghiệm thu, merge và đóng M01 khi đủ các task liên quan.
+
+M01 phải đối chiếu toàn bộ nghiệp vụ đã có, không giới hạn login. Checklist riêng web quản trị + Khách/Quán/Xế; ADMIN/2FA, khôi phục mật khẩu và các API chưa có phải ghi thiếu/giao thiết kế bổ sung, không dùng UI giả để đạt.

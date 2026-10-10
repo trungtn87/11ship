@@ -37,3 +37,28 @@ No secret/password values in commit, output, evidence or PR body.
 Run lint, typecheck, build, unit and integration suites on isolated PostgreSQL 17.
 Validate Blueprint with official tool when available; otherwise report validation not performed.
 Record limitations honestly. Keep PR Draft and return exact SHA, CI link and files changed for ChatGPT review.
+
+## Quy trình và phân công giai đoạn — Owner chốt 09/10/2026
+
+Áp dụng [quy trình bắt buộc](../process/11ship-delivery-workflow.md), [AGENTS.md](../../AGENTS.md) và [mẫu module](../templates/module-delivery-checklist.md). Mục này điều chỉnh phân công/gate; giữ nguyên phạm vi kỹ thuật và evidence lịch sử ở trên.
+
+| Giai đoạn | Thực hiện | Gate chuyển |
+|---|---|---|
+| Nghiệp vụ/API/dữ liệu | ChatGPT thiết kế | Owner duyệt |
+| Ảnh UI chi tiết và trạng thái liên quan | ChatGPT thiết kế | Owner duyệt UI; backend-only ghi N/A có lý do |
+| Gói giao task | ChatGPT | Scope/base/hợp đồng/checklist đã rõ |
+| Code/build/test/CI và sửa finding | Claude | CI đúng final head + ChatGPT review đạt |
+| Test local, phản hồi/sửa | Owner test; ChatGPT phân tích; Claude sửa | Owner xác nhận local đạt |
+| Bản web/điện thoại test | Claude chuẩn bị | Local đạt, bản/SHA hiện tại review đạt |
+| Test thiết bị thật và liên thông | Owner | Từng app liên quan đạt |
+| Nghiệm thu/merge/đóng | Owner quyết định | Đủ gate và bằng chứng; không suy từ backend DONE |
+
+Checklist gate mới (chưa kiểm chứng, không phủ nhận kết quả test kỹ thuật lịch sử):
+- [ ] Xác định task con và ứng dụng liên quan; điền ma trận theo mẫu.
+- [ ] Ghi link Owner duyệt nghiệp vụ/UI, hoặc N/A có lý do.
+- [ ] Claude cung cấp bản local, hướng dẫn và bằng chứng đúng SHA; ChatGPT review.
+- [ ] Owner test local, sửa phản hồi và xác nhận đạt.
+- [ ] Owner test thiết bị thật riêng từng app và liên thông, xác nhận đạt.
+- [ ] Owner quyết định phạm vi nghiệm thu, merge và đóng M00 khi đủ các task liên quan.
+
+M00 phải tách môi trường Owner test local khỏi DB test tự động; bổ sung task local và gói giao Claude trước triển khai. Cấu hình staging hoặc CI đạt không thay nghiệm thu local/thiết bị.

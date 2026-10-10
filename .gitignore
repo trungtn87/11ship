@@ -15,3 +15,5 @@ build/
 *.p12
 *.mobileprovision
 .test-results/
+.11ship-local/
+.11ship-local/

@@ -326,7 +326,7 @@ describe('combined_design_implementation: present means boolean (null included)'
   test('rejects null on an ordinary task too, and reads null from real YAML', async () => {
     const { parseYaml } = await import('../../scripts/progress/yaml-subset.mjs');
     const { readFileSync } = await import('node:fs');
-    const text = readFileSync(new URL('../../docs/progress/plan.yml', import.meta.url), 'utf8').replace(
+    const text = readFileSync(new URL('../../docs/progress/plan.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n').replace(
       /(  - id: M01-A2S\n)/,
       '$1    combined_design_implementation: null\n',
     );

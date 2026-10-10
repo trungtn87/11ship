@@ -133,3 +133,28 @@ Replace the current-plan test asserting that #19 must be pinned only as design. 
 Regenerate the Vietnamese dashboard from real GitHub data. While #19 is Draft, it must identify Claude implementation as in progress (or the actual CI/error state), rather than say Claude has not started. Do not manually patch generated status/percentages or report full M01 completed.
 
 Update repair evidence to remove the deferred linkage gap and accurately record the correction, test mapping, actual code/final heads and CI. Preserve prior audit/CI history. Run progress tests/check plus required repository CI on the new final head. Keep PR #19 Draft, do not merge/mark Ready/start M02 code, and hand back the new SHA and evidence for independent re-audit.
+
+## Quy trình và phân công giai đoạn — Owner chốt 09/10/2026
+
+Áp dụng [quy trình bắt buộc](../process/11ship-delivery-workflow.md), [AGENTS.md](../../AGENTS.md) và [mẫu module](../templates/module-delivery-checklist.md). Mục này điều chỉnh phân công/gate; giữ nguyên phạm vi kỹ thuật và evidence lịch sử ở trên.
+
+| Giai đoạn | Thực hiện | Gate chuyển |
+|---|---|---|
+| Nghiệp vụ/API/dữ liệu | ChatGPT thiết kế | Owner duyệt |
+| Ảnh UI chi tiết và trạng thái liên quan | ChatGPT thiết kế | Owner duyệt UI; backend-only ghi N/A có lý do |
+| Gói giao task | ChatGPT | Scope/base/hợp đồng/checklist đã rõ |
+| Code/build/test/CI và sửa finding | Claude | CI đúng final head + ChatGPT review đạt |
+| Test local, phản hồi/sửa | Owner test; ChatGPT phân tích; Claude sửa | Owner xác nhận local đạt |
+| Bản web/điện thoại test | Claude chuẩn bị | Local đạt, bản/SHA hiện tại review đạt |
+| Test thiết bị thật và liên thông | Owner | Từng app liên quan đạt |
+| Nghiệm thu/merge/đóng | Owner quyết định | Đủ gate và bằng chứng; không suy từ backend DONE |
+
+Checklist gate mới (chưa kiểm chứng, không phủ nhận kết quả test kỹ thuật lịch sử):
+- [ ] Xác định task con và ứng dụng liên quan; điền ma trận theo mẫu.
+- [ ] Ghi link Owner duyệt nghiệp vụ/UI, hoặc N/A có lý do.
+- [ ] Claude cung cấp bản local, hướng dẫn và bằng chứng đúng SHA; ChatGPT review.
+- [ ] Owner test local, sửa phản hồi và xác nhận đạt.
+- [ ] Owner test thiết bị thật riêng từng app và liên thông, xác nhận đạt.
+- [ ] Owner quyết định phạm vi nghiệm thu, merge và đóng M01 khi đủ các task liên quan.
+
+M01 phải đối chiếu toàn bộ nghiệp vụ đã có, không giới hạn login. Checklist riêng web quản trị + Khách/Quán/Xế; ADMIN/2FA, khôi phục mật khẩu và các API chưa có phải ghi thiếu/giao thiết kế bổ sung, không dùng UI giả để đạt.

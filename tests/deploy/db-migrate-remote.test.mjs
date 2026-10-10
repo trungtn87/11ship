@@ -5,6 +5,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const { main, parseDatabaseUrl, checkSessionPoolerTarget, listMigrationFiles } = require('../../scripts/db-migrate-remote.js');
@@ -65,7 +66,7 @@ function harness({ state = { applied: ['100_a', '200_b'] }, versionNum = 170011,
       if (migrateError) throw migrateError;
       return ['300_c'];
     },
-    migrationsDir: new URL('../../database/migrations', import.meta.url).pathname,
+    migrationsDir: fileURLToPath(new URL('../../database/migrations', import.meta.url)),
   };
   return { log, deps, client };
 }
