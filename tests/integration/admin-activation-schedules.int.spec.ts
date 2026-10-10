@@ -32,7 +32,6 @@ import {
   Settled,
   startActivationApp,
   Stage,
-  verifyOtp,
   Act,
   Invite,
 } from './support/activation-fixtures';
