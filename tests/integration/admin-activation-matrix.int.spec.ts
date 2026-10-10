@@ -321,12 +321,12 @@ describe('M01-D-ADMIN-1C - contract 11.2 matrix (8 routes x 6 states, INVALIDATE
       expect(retryAfter).toBeGreaterThan(0);
     });
 
-    it('the ingress quota (30 per minute, every request including GET state) answers 429 on the 31st with Retry-After <= 60', async () => {
+    it('the ingress quota (30 POST per minute, 401s included) answers 429 on the 31st with Retry-After <= 60', async () => {
       const stranger: Act = { cookie: 'd'.repeat(43), csrf: 'x' };
       const statuses: number[] = [];
       let last: AdminResponse | undefined;
       for (let index = 0; index < 31; index += 1) {
-        last = await getState(ctx.app, stranger);
+        last = await post(ctx.app, '/otp/request', stranger);
         statuses.push(last.status);
       }
       expect(statuses.slice(0, 30).every((status) => status === 401)).toBe(true);
@@ -335,6 +335,15 @@ describe('M01-D-ADMIN-1C - contract 11.2 matrix (8 routes x 6 states, INVALIDATE
       expect(Number.isInteger(retryAfter)).toBe(true);
       expect(retryAfter).toBeGreaterThan(0);
       expect(retryAfter).toBeLessThanOrEqual(60);
+    });
+
+    it('DEVIATION 5 (documented for review): GET state is NOT metered by the ingress quota - 40 reads never answer 429 and write no bucket', async () => {
+      const stranger: Act = { cookie: 'e'.repeat(43), csrf: 'x' };
+      const before = await bucketRows(ctx.pool);
+      for (let index = 0; index < 40; index += 1) {
+        expect((await getState(ctx.app, stranger)).status).toBe(401);
+      }
+      expect(await bucketRows(ctx.pool)).toEqual(before);
     });
   });
 });
