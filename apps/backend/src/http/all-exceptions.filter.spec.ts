@@ -177,6 +177,7 @@ describe('AllExceptionsFilter', () => {
         'ADMIN_PREAUTH_INVALID',
         'ADMIN_SESSION_INVALID',
         'ADMIN_TOTP_INVALID',
+        'AUTH_REGISTRATION_UNAVAILABLE',
         'DRIVER_PENDING_APPROVAL',
         'DRIVER_PROFILE_EXISTS',
         'IDEMPOTENCY_BUSY',
