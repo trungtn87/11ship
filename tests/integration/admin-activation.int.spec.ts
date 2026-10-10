@@ -96,8 +96,8 @@ describe('M01-D-ADMIN-1C - activation flow, transport and the CSRF/state matrix'
     expect(profile.rows[0]?.full_name).toBe('Nguyễn Văn Quản Trị');
     const permissions = await pool.query<{ app: string; can_view: boolean }>('SELECT app, can_view FROM app.admin_app_permissions WHERE user_id = $1::uuid', [attempt?.user_id]);
     expect(permissions.rows).toEqual([{ app: 'SHOP', can_view: true }]);
-    const factor = await pool.query<{ status: string; user_id: string }>('SELECT status, user_id FROM app.admin_totp_factors WHERE factor_id = $1::uuid', [attempt?.factor_id]);
-    expect(factor.rows).toEqual([{ status: 'ACTIVE', user_id: attempt?.user_id }]);
+    const factor = await pool.query<{ state: string; user_id: string }>('SELECT state, user_id FROM app.admin_totp_factors WHERE factor_id = $1::uuid', [attempt?.factor_id]);
+    expect(factor.rows).toEqual([{ state: 'ACTIVE', user_id: attempt?.user_id }]);
     expect(await invitationStatus(pool, invite.invitationId)).toBe('ACCEPTED');
     expect((await attemptsOf(pool, invite.invitationId)).map((row) => row.status)).toEqual(['COMPLETED']);
     // The secret and the password hash are gone from the attempt once it is COMPLETED.
@@ -465,7 +465,8 @@ describe('M01-D-ADMIN-1C - activation flow, transport and the CSRF/state matrix'
     for (let index = 0; index < 5; index += 1) {
       statuses.push((await post(app, '/complete', session, { code: wrongCode })).status);
     }
-    expect(statuses).toEqual([400, 400, 400, 400, 400]);
+    // The fifth wrong code commits the invalidation and the bucket lock, and is answered as the rate limit.
+    expect(statuses).toEqual([400, 400, 400, 400, 429]);
     const [attempt] = await attemptsOf(pool, invite.invitationId);
     expect(attempt).toMatchObject({ status: 'INVALIDATED', invalidated_reason: 'ATTEMPTS_EXHAUSTED', totp_attempt_count: 5 });
     // The page is reloaded: only the cookie is left. GET state still gives the recovery CSRF token.

@@ -243,12 +243,12 @@ export async function insertAttempt(
     `INSERT INTO app.admin_activation_attempts
        (attempt_id, invitation_id, generation_id, user_id, factor_id, token_digest, csrf_nonce, csrf_key_id, status,
         invalidated_reason, otp_verified_at, password_set_at, created_at, expires_at, completed_at, invalidated_at)
-     VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, 'k1', $8, $9,
+     VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, 'k1', $8::varchar, $9::varchar,
              CASE WHEN $10::int IS NULL THEN NULL ELSE now() - make_interval(secs => $10::int) END,
-             CASE WHEN $8 = 'COMPLETED' THEN now() - make_interval(secs => $10::int) ELSE NULL END,
+             CASE WHEN $8::varchar = 'COMPLETED' THEN now() - make_interval(secs => $10::int) ELSE NULL END,
              now() - make_interval(secs => $11::int), now() + make_interval(secs => $12::int),
-             CASE WHEN $8 = 'COMPLETED' THEN now() - make_interval(secs => $11::int) ELSE NULL END,
-             CASE WHEN $8 = 'INVALIDATED' THEN now() - make_interval(secs => $11::int) ELSE NULL END)`,
+             CASE WHEN $8::varchar = 'COMPLETED' THEN now() - make_interval(secs => $11::int) ELSE NULL END,
+             CASE WHEN $8::varchar = 'INVALIDATED' THEN now() - make_interval(secs => $11::int) ELSE NULL END)`,
     [
       attemptId,
       input.invitationId,

@@ -95,8 +95,9 @@ describe('M01-D-ADMIN-1C - races, expiry by the database clock and replay', () =
     const { session, secret } = await advance(deps(), invite, 'TOTP_ISSUED');
     const wrongCode = totpNow(String(secret), 9);
     const results = await Promise.all(Array.from({ length: 7 }, () => post(app, '/complete', session, { code: wrongCode })));
+    // Four wrong codes are answered 400; the fifth commits the invalidation and the bucket lock (429), later ones 429 or 409.
     const counted = results.filter((r) => r.status === 400 && adminErrorCode(r) === 'ADMIN_TOTP_INVALID');
-    expect(counted).toHaveLength(5);
+    expect(counted).toHaveLength(4);
     expect(results.filter((r) => ![400, 409, 429].includes(r.status))).toEqual([]);
     const attempts = await attemptsOf(app.pool, invite.invitationId);
     expect(attempts).toHaveLength(1);
