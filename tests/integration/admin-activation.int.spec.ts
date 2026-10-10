@@ -62,7 +62,7 @@ describe('M01-D-ADMIN-1C - activation flow, transport and the CSRF/state matrix'
   // ----- the whole flow and the atomic account creation -----------------------------------------------------------
 
   it('activates an invitation atomically: no account before the last step, then login with password + TOTP, no session issued', async () => {
-    const { app, pool } = { app: ctx.app, pool: ctx.app.pool };
+    const { app, pool } = ctx;
     const invite = await newInvite(app, system);
     const users = async (): Promise<number> =>
       Number((await pool.query<{ n: string }>('SELECT count(*)::text AS n FROM app.users WHERE phone_normalized = $1', [invite.phone.normalized])).rows[0]?.n);

@@ -25,12 +25,13 @@ export { ACTIVATION_COOKIE };
 export interface ActivationApp {
   readonly app: AdminApp;
   readonly provider: FakeActivationOtpProvider;
+  readonly pool: Pool;
 }
 
 export async function startActivationApp(options: StartAdminOptions = {}): Promise<ActivationApp> {
   const provider = new FakeActivationOtpProvider();
   const app = await startAdminApp({ ...options, activationProvider: provider });
-  return { app, provider };
+  return { app, provider, pool: app.pool };
 }
 
 export function act(app: AdminApp, method: 'GET' | 'POST', path: string, options: AdminCallOptions = {}): Promise<AdminResponse> {
