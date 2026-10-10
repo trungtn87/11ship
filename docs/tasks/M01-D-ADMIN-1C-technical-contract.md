@@ -1,6 +1,6 @@
 # M01-D-ADMIN-1C — Hợp đồng kỹ thuật kích hoạt ADMIN từ lời mời
 
-> **Trạng thái:** DRAFT v3 (xử lý F1–F6 trên `45a261c`, G1–G4 trên `2b36ddc`), chỉ tài liệu. Không có code sản phẩm. `LOCK_PROTOCOL = NOT_FINAL`. Chưa merge, chưa deploy, chưa đóng M01, chưa có Owner acceptance.
+> **Trạng thái:** DRAFT v4 (xử lý F1–F6 trên `45a261c`, G1–G4 trên `2b36ddc`, H1–H4 trên `90f852c`), chỉ tài liệu. Không có code sản phẩm. `LOCK_PROTOCOL = NOT_FINAL`. Chưa merge, chưa deploy, chưa đóng M01, chưa có Owner acceptance.
 > **Trung thực về nguồn:** "câu lệnh 1C" gốc không có trong repo hay hội thoại làm việc. Mọi điểm Claude suy ra từ 1A/1B/#34 và PR #30/#33/#36/#43 mang nhãn **[ĐX]** (đề xuất). **Mọi OD ở §21 chưa được Owner chốt; phần [ĐX] không phải quyết định đã duyệt.**
 > **Kiểm chứng DDL:** chạy cục bộ trên PostgreSQL 16 bằng script nằm trong PR (`docs/verification/m01-d-admin-1c-ddl/`), kết quả thực tế ở §5.4. **Không phải CI.**
 
@@ -12,6 +12,7 @@
 | Base của PR #44 | `feat/m01-d-admin-1b-provisioning` @ `4ab9c9cff8db730699d234c56bacf567506c5bbf` (PR #41) |
 | Mốc review v1 | `45a261cbe903600ecabc13be185517341b8713bc` |
 | Mốc review v2 | `2b36ddc172af1673cdf2be877646eade5a73e575` |
+| Mốc review v3 | `90f852cbbd279b946094265634180c86925a6bc4` |
 | Chuỗi PR | #34 login backend → #37 1A invitations → #38 hợp đồng 1B → #41 triển khai 1B (Draft) → #44 hợp đồng 1C (Draft) |
 | Nguồn nghiệp vụ | PR #30, #33, #36 (preflight), #43 (reset). "Mật khẩu tạm" trong #30 **bị thay** bằng luồng lời mời → OTP → tự đặt mật khẩu → 2FA |
 | Hợp đồng đối chiếu | `docs/tasks/M01-D-ADMIN-1B-technical-contract.md` (khóa L1–L10, §8.8) |
@@ -35,6 +36,15 @@
 | G2 | Hết `passwordDeadline` thì `start` tiếp tục cookie hiện tại ⇒ kẹt tới hết hạn attempt | §6.2 (định nghĩa **resumable**; route `restart`), §6.3 (`restartRequired`), §10.1, §10.1A, §11.2 | K24 (quá deadline → restart → OTP mới → hoàn tất) |
 | G3 | start/GET/complete không đồng bộ ở COMPLETED và cookie hết hạn; repeat complete có thể tạo/cập nhật bucket | §6.1.1 (**một** quy tắc hiệu lực cookie), §6.3, §10.0 (TX-P đọc thuần, ranh giới transaction, kiểm lại dưới khóa, từ chối thuần = ROLLBACK), §10.1, §10.6, §11.2 | K25 (start token + cookie COMPLETED; cookie hết hạn ở mọi trạng thái × mọi route), K26 (repeat complete không đổi bucket/counter/audit/hàng) |
 | G4 | verify dựa vào challenge sống thay vì challenge mới nhất; LOCKED/terminal chưa phân loại | §10.3 (chọn challenge **mới nhất**, bảng phân loại từng trạng thái), §6.3 (`otp.status`) | K27 (verify sau lần sai thứ 5 ⇒ `OTP_RATE_LIMITED`, không đổi counter; bảng challenge mới nhất × trạng thái) |
+
+### 1.2 Bảng finding H1–H4 → mục sửa → test dự kiến
+
+| # | Finding | Mục sửa | Test dự kiến |
+|---|---|---|---|
+| H1 | Quy tắc CSRF: `GET state` phải trả `csrfToken` cho attempt sống **và** `INVALIDATED(ATTEMPTS_EXHAUSTED)` (được phép `restart`); COMPLETED và INVALIDATED khác không cần | §6.1.1 mục 4 (bảng "trạng thái → có csrf không"), §6.2, §6.3, §6.4 | K28 (a)(e); T-CSRF-MATRIX (6 trạng thái + 4 lý do INVALIDATED) |
+| H2 | Thiếu test: TOTP sai lần 5 → tải lại → lấy CSRF → restart → OTP lại; cookie hết hạn; lời mời đóng; bucket TOTP khóa không bị restart reset | §6.2 (restart không đụng limiter), §8, §17 | K28 (a)–(f) |
+| H3 | TX-P: mọi nhánh trả lời sớm phải kiểm hiệu lực cookie bằng giờ DB trước khi trả trạng thái, kể cả `otp/request` | §10.0 (quy tắc TX-P bước 0), §10.1 bước 2, §10.1A bước 2, §10.2, §10.6, §11.2 | K29 (mọi nhánh trả lời sớm ở T ngay trước/ngay sau `expires_at`) |
+| H4 | "Không ghi khi replay" phải nói rõ: không ghi bucket nghiệp vụ, counter, audit; quota ingress vẫn áp dụng | §10.0 (định nghĩa), §11.2 (quy ước), §8, §6.2 | K26 (sửa: bucket nghiệp vụ không đổi; `ACTIVATION_REQUEST_IP` **vẫn +1**) |
 
 ## 2. Quyết định đã có (không đổi trong tài liệu này)
 
@@ -359,7 +369,16 @@ Cookie ánh xạ tới attempt `A` bằng digest. Tại `T` (đồng hồ DB):
 1. Không có cookie, không khớp digest, hoặc `T ≥ A.expires_at` — **ở mọi trạng thái, kể cả COMPLETED và INVALIDATED** — ⇒ cookie **không hợp lệ**.
 2. Cookie không hợp lệ: `GET state`, `restart`, `otp/*`, `password`, `totp/enrollment`, `complete` ⇒ 401 `ADMIN_ACTIVATION_SESSION_INVALID` (xóa cookie). `start` **không bao giờ** trả 401 vì cookie: nó bỏ qua cookie không hợp lệ và xử lý như "không có cookie" (chỉ dựa vào token).
 3. Cookie hợp lệ ⇒ route xử lý theo trạng thái của `A` (§11.2). Trạng thái cuối (COMPLETED/INVALIDATED) **vẫn** là cookie hợp lệ tới `A.expires_at`.
-4. CSRF chỉ do route POST yêu cầu và chỉ tính từ cột bất biến; `csrfToken` được trả trong `start`/`restart`/`GET state` **chỉ khi attempt chưa ở trạng thái cuối** (COMPLETED/INVALIDATED không nhận thêm hành động nào cần CSRF, ngoại trừ `restart` từ `ATTEMPTS_EXHAUSTED` và `complete` lặp mà client đã giữ token từ trước; client không có token ⇒ 403 `ADMIN_CSRF_INVALID`).
+4. CSRF chỉ do route POST yêu cầu và chỉ tính từ cột bất biến (nên kiểm được ở mọi trạng thái). `csrfToken` được trả trong `start`/`restart`/`GET state` theo **một** bảng, khi cookie hợp lệ (mục 1):
+
+   | Trạng thái attempt | Trả `csrfToken`? | Lý do |
+   |---|---|---|
+   | STARTED, OTP_VERIFIED, PASSWORD_SET, TOTP_ISSUED (sống) | **Có** | còn POST bước tiếp / `restart` |
+   | INVALIDATED(`ATTEMPTS_EXHAUSTED`) | **Có** | được phép `POST /restart`; tải lại trang phải lấy lại được token |
+   | COMPLETED | Không | không còn hành động cần CSRF |
+   | INVALIDATED(`SUPERSEDED` \| `INVITATION_CLOSED` \| `PHONE_CONFLICT`) | Không | không được `restart` |
+
+   Client không có token ⇒ POST nhận 403 `ADMIN_CSRF_INVALID`. (`complete` lặp trên COMPLETED vẫn nhận token đã giữ từ trước; không có thì 403 — chấp nhận, vì `GET state` là đường phục hồi.) Việc `GET state` trả `csrfToken` cho ATTEMPTS_EXHAUSTED không cấp thêm quyền: `restart` vẫn phải qua cookie hợp lệ, lời mời `PENDING` và mọi cổng §6.2.
 
 ### 6.2 Danh sách route
 
@@ -382,7 +401,7 @@ Cookie ánh xạ tới attempt `A` bằng digest. Tại `T` (đồng hồ DB):
 |---|---|---|
 | hợp lệ, cùng lời mời, `A` **resumable** | bất kỳ trạng thái lời mời | (lời mời phải `PENDING`; xem dưới) 200 tiếp tục: trả trạng thái hiện tại + csrf, **không** đổi gì |
 | hợp lệ, cùng lời mời, `A` sống nhưng **không resumable** (quá `passwordDeadline`) | lời mời `PENDING` | tạo attempt mới (201), `A → INVALIDATED(SUPERSEDED)`, cookie mới ⇒ **không kẹt** |
-| hợp lệ, cùng lời mời, `A = COMPLETED` | lời mời `ACCEPTED` (cùng `accepted_user_id`) | 200 `{state:"COMPLETED", next:"LOGIN"}`; **không ghi, không bucket, không audit** |
+| hợp lệ, cùng lời mời, `A = COMPLETED` | lời mời `ACCEPTED` (cùng `accepted_user_id`) | 200 `{state:"COMPLETED", next:"LOGIN"}`; **không ghi, không bucket nghiệp vụ, không audit nghiệp vụ** (quota ingress vẫn áp dụng) |
 | hợp lệ, cùng lời mời, `A = INVALIDATED(SUPERSEDED \| ATTEMPTS_EXHAUSTED)` | `PENDING` | tạo attempt mới (201) |
 | hợp lệ, cùng lời mời, `A = INVALIDATED(INVITATION_CLOSED \| PHONE_CONFLICT)` | không `PENDING` | 404 `LINK_INVALID` đồng nhất (đếm `LINK_IP`) |
 | không hợp lệ hoặc khác lời mời | `PENDING`, chưa hết hạn | tạo attempt mới (201); attempt sống cũ của lời mời (nếu có) → SUPERSEDED |
@@ -390,11 +409,11 @@ Cookie ánh xạ tới attempt `A` bằng digest. Tại `T` (đồng hồ DB):
 
 Điều kiện "lời mời `PENDING`" của dòng đầu: tiếp tục chỉ khi lời mời còn `PENDING`, chưa hết hạn tại `T` và SĐT chưa thuộc `users`; ngược lại áp dụng nhánh tương ứng (404 / PHONE_CONFLICT §14).
 
-**`restart`** [ĐX — OD-16]: dùng khi token đã bị xóa khỏi URL (fragment) nên không thể gọi lại `start`. Yêu cầu cookie hợp lệ + CSRF; `A` thuộc một trong: sống (mọi bước, kể cả quá `passwordDeadline`) hoặc `INVALIDATED(ATTEMPTS_EXHAUSTED)`; lời mời `PENDING`, chưa hết hạn, SĐT chưa thuộc `users`. Hiệu ứng: `A` (nếu sống) → `INVALIDATED(SUPERSEDED)`, attempt sống khác của lời mời (nếu có) → SUPERSEDED, tạo attempt mới `STARTED` với `user_id`/`factor_id`/cookie/CSRF mới; **bắt buộc OTP lại** (challenge mới, theo trần gửi OTP). `A` ở COMPLETED, `INVALIDATED(SUPERSEDED | INVITATION_CLOSED | PHONE_CONFLICT)` ⇒ 409 `STEP_INVALID` kèm `state` (người dùng quay về đăng nhập hoặc liên hệ SYSTEM).
+**`restart`** [ĐX — OD-16]: dùng khi token đã bị xóa khỏi URL (fragment) nên không thể gọi lại `start`. Yêu cầu cookie hợp lệ + CSRF; `A` thuộc một trong: sống (mọi bước, kể cả quá `passwordDeadline`) hoặc `INVALIDATED(ATTEMPTS_EXHAUSTED)`; lời mời `PENDING`, chưa hết hạn, SĐT chưa thuộc `users`. Hiệu ứng: `A` (nếu sống) → `INVALIDATED(SUPERSEDED)`, attempt sống khác của lời mời (nếu có) → SUPERSEDED, tạo attempt mới `STARTED` với `user_id`/`factor_id`/cookie/CSRF mới; **bắt buộc OTP lại** (challenge mới, theo trần gửi OTP). **`restart` không bao giờ đọc, ghi hay reset limiter** (`ACTIVATION_LINK_IP`, `ACTIVATION_OTP_SEND`, `ACTIVATION_TOTP`): bucket `ACTIVATION_TOTP` đang khóa vẫn khóa `complete` của attempt mới tới hết thời gian khóa (người dùng phải đợi, dù đã OTP lại), và trần gửi OTP vẫn tính theo lời mời, không theo attempt. `A` ở COMPLETED, `INVALIDATED(SUPERSEDED | INVITATION_CLOSED | PHONE_CONFLICT)` ⇒ 409 `STEP_INVALID` kèm `state` (người dùng quay về đăng nhập hoặc liên hệ SYSTEM).
 
 ### 6.3 `GET /admin-activation/state` — chỉ dữ liệu không nhạy cảm (F2, G3)
 
-Chỉ nhận cookie (không cần CSRF). Áp §6.1.1 trước: cookie không hợp lệ ⇒ 401 cho **mọi** trạng thái. Thân luôn gồm `state`, `expiresAt` và (nếu attempt chưa cuối) `csrfToken`. **Không bao giờ** trả: SĐT (kể cả che một phần — OD-12), họ tên, ghi chú, `user_id`, `factor_id`, quyền, mật khẩu/hash, bí mật TOTP, nội dung OTP, token lời mời.
+Chỉ nhận cookie (không cần CSRF). Áp §6.1.1 trước: cookie không hợp lệ ⇒ 401 cho **mọi** trạng thái. Thân luôn gồm `state`, `expiresAt` và `csrfToken` **chỉ** theo bảng §6.1.1 mục 4 (attempt sống hoặc `INVALIDATED(ATTEMPTS_EXHAUSTED)`). **Không bao giờ** trả: SĐT (kể cả che một phần — OD-12), họ tên, ghi chú, `user_id`, `factor_id`, quyền, mật khẩu/hash, bí mật TOTP, nội dung OTP, token lời mời.
 
 | Trạng thái attempt (cookie hợp lệ tại `T`) | Phản hồi |
 |---|---|
@@ -404,7 +423,7 @@ Chỉ nhận cookie (không cần CSRF). Áp §6.1.1 trước: cookie không h�
 | TOTP_ISSUED | 200 `{state:"TOTP_ISSUED", totpAttemptsLeft}` — **không** trả lại bí mật (chỉ `totp/enrollment`) |
 | COMPLETED (lời mời `ACCEPTED`, `accepted_user_id` = `user_id` của attempt) | 200 `{state:"COMPLETED", next:"LOGIN"}` — không thêm trường nào, không csrf |
 | COMPLETED nhưng lời mời **không** `ACCEPTED` hoặc `accepted_user_id` khác | Không thể xảy ra (cùng transaction, trigger 1A). Nếu gặp: 500 + audit cảnh báo; **không** trả COMPLETED |
-| INVALIDATED | 200 `{state:"INVALIDATED", reason:"REPLACED"\|"LINK_UNAVAILABLE"\|"PHONE_CONFLICT"\|"ATTEMPTS_EXHAUSTED", canRestart}` (SUPERSEDED→REPLACED; INVITATION_CLOSED→LINK_UNAVAILABLE — OD-8; `canRestart` chỉ `true` với ATTEMPTS_EXHAUSTED) |
+| INVALIDATED | 200 `{state:"INVALIDATED", reason:"REPLACED"\|"LINK_UNAVAILABLE"\|"PHONE_CONFLICT"\|"ATTEMPTS_EXHAUSTED", canRestart, csrfToken?}` (SUPERSEDED→REPLACED; INVITATION_CLOSED→LINK_UNAVAILABLE — OD-8). `csrfToken` **chỉ** khi `reason=ATTEMPTS_EXHAUSTED`; `canRestart=true` chỉ khi đó **và** lời mời còn `PENDING`, chưa hết hạn tại `T` (gợi ý, `restart` vẫn kiểm lại dưới khóa) |
 
 `GET state` là **đọc thuần**: một câu SELECT kèm `clock_timestamp()` (ảnh chụp nhất quán), không khóa, không ghi, không audit, không đếm, không thăng cấp challenge. Cookie hết hạn sau COMPLETED ⇒ 401 và UI hướng dẫn "nếu đã kích hoạt, hãy đăng nhập" (OD-13). Đây là đường phục hồi chung cho mất response/unknown COMMIT (§11).
 
@@ -413,7 +432,7 @@ Chỉ nhận cookie (không cần CSRF). Áp §6.1.1 trước: cookie không h�
 | Route | Thành công | Lỗi nghiệp vụ chính |
 |---|---|---|
 | start | 201 `{state, csrfToken, expiresAt}` + Set-Cookie (mới); 200 (tiếp tục) hoặc 200 `{COMPLETED}` theo bảng §6.2 | không khớp / lời mời không PENDING / sai generation / `T ≥ invitation.expires_at` ⇒ **cùng** 404 `ADMIN_ACTIVATION_LINK_INVALID`; SĐT đã thuộc `users` ⇒ đóng lời mời PHONE_CONFLICT rồi 409 `ADMIN_PHONE_CONFLICT` (§14) |
-| restart | 201 `{state:"STARTED", csrfToken, expiresAt}` + Set-Cookie mới | cookie ⇒ 401; trạng thái không cho phép ⇒ 409 S; lời mời đóng ⇒ 404 `LINK_INVALID`; SĐT trùng ⇒ 409 `ADMIN_PHONE_CONFLICT` |
+| restart | 201 `{state:"STARTED", csrfToken, expiresAt}` + Set-Cookie mới (cookie/CSRF cũ vô hiệu vì attempt cũ ở trạng thái cuối) | cookie ⇒ 401; trạng thái không cho phép ⇒ 409 S; lời mời đóng ⇒ 404 `LINK_INVALID`; SĐT trùng ⇒ 409 `ADMIN_PHONE_CONFLICT` |
 | otp/request | 202 `{resendAt, delivery:"SUBMITTED", displayedCode?}` (`displayedCode` chỉ ở `TEST_DISPLAY`) | còn cooldown / vượt trần gửi ⇒ 429 `OTP_RATE_LIMITED`; provider từ chối ⇒ 503 `SERVICE_UNAVAILABLE`; sai bước ⇒ 409; SĐT trùng ⇒ 409 `ADMIN_PHONE_CONFLICT` |
 | otp/verify | 200 `{state:"OTP_VERIFIED"}` | sai ⇒ 400 `OTP_INVALID` (commit-then-throw); hết hạn ⇒ `OTP_EXPIRED`; challenge mới nhất `LOCKED` ⇒ `OTP_RATE_LIMITED` (không ghi); chưa có OTP / `DELIVERY_FAILED` ⇒ 409; sai bước ⇒ 409 |
 | password | 200 `{state:"PASSWORD_SET"}` | quá `passwordDeadline` ⇒ 409 `STEP_INVALID` kèm `restartRequired:true`; vi phạm chính sách ⇒ 400 `ADMIN_INPUT_INVALID` |
@@ -447,7 +466,7 @@ Quy tắc chung: **đồng hồ quyết định luôn là `T`** (§10.0). Bộ �
 
 | Sự kiện | Bộ đếm | Commit |
 |---|---|---|
-| Mọi request (trừ lỗi transport) | `ACTIVATION_REQUEST_IP` quota | transaction riêng (R0), commit trước nghiệp vụ |
+| Mọi request, kể cả replay, 401 và 409 (sau kiểm `Origin`) | `ACTIVATION_REQUEST_IP` quota | transaction riêng (R0), commit trước nghiệp vụ |
 | Token sai ở `start` | `ACTIVATION_LINK_IP` +1 | commit rồi ném 404 |
 | Bucket `LINK_IP` đang khóa | không đếm thêm, không tra token | commit (rỗng) rồi ném 429 (hàng bucket đã tồn tại, không đổi) |
 | Gửi OTP (mỗi lần tạo challenge) | `ACTIVATION_OTP_SEND` +1 | trong txn1 |
@@ -457,7 +476,7 @@ Quy tắc chung: **đồng hồ quyết định luôn là `T`** (§10.0). Bộ �
 | TOTP sai lần 5 | attempt INVALIDATED(ATTEMPTS_EXHAUSTED), xóa bí mật | commit rồi ném (429 nếu bucket cũng khóa) |
 | `complete`: SĐT trùng | lời mời PHONE_CONFLICT + attempt INVALIDATED | commit rồi ném 409 |
 | Thất bại **trước** khi mở bí mật (sai bước, hết hạn, lời mời đóng) | **không đếm gì**, không ghi gì | **ROLLBACK** (huỷ cả hàng bucket mới tạo bởi `lockBuckets`) rồi ném |
-| Replay trên trạng thái cuối (`complete` lặp, `start` + cookie COMPLETED) | **không** tạo/cập nhật bucket, không audit | trả từ TX-P (đọc thuần) hoặc ROLLBACK nếu phát hiện dưới khóa (§10.0) |
+| Replay trên trạng thái cuối (`complete` lặp, `start` + cookie COMPLETED) | **không** tạo/cập nhật bucket nghiệp vụ, không audit nghiệp vụ; `ACTIVATION_REQUEST_IP` vẫn +1 ở R0 | trả từ TX-P (đọc thuần) hoặc ROLLBACK nếu phát hiện dưới khóa (§10.0) |
 | `restart` thành công | không đổi bucket đếm lỗi; challenge mới sẽ tính `OTP_SEND` khi `otp/request` | cùng transaction với attempt mới |
 | Thành công | không tăng; không reset bucket đang khóa | — |
 | `lock_timeout` / lỗi hạ tầng trước COMMIT | không đếm | rollback hoàn toàn, 503 `SERVICE_UNAVAILABLE` |
@@ -512,13 +531,14 @@ Thứ tự đầy đủ: **R0 < S0 < L2 < L3 < L8 < L9a < L9b < L10**. Không ro
 - Thất bại trước COMMIT ⇒ rollback toàn bộ. Chỉ các nhánh nêu ở §8 là commit-then-throw.
 - Nhánh "kiểm trước, đếm sau": cổng (gate) gồm trạng thái, hạn, lời mời, bucket, `attempt_count`. **Chưa qua cổng thì không mở bí mật, không so OTP/TOTP, không đếm.**
 - Mọi audit ghi cùng transaction (§15).
+- **"Không ghi khi replay" nghĩa là gì (H4).** Replay/early-answer **không**: ghi hay khóa hàng `admin_auth_limits` của bucket nghiệp vụ (`ACTIVATION_LINK_IP`, `ACTIVATION_OTP_SEND`, `ACTIVATION_TOTP`), tăng counter (`attempt_count`, `totp_attempt_count`), ghi audit nghiệp vụ, hay đổi hàng attempt/challenge/lời mời/user/factor. **Quota ingress `ACTIVATION_REQUEST_IP` (R0, transaction riêng đã commit) vẫn áp dụng và vẫn đếm cho mọi request** — kể cả replay, 401 do cookie hết hạn và 409; đó là thiết kế, không phải ghi nghiệp vụ.
 - **Từ chối thuần ⇒ ROLLBACK.** COMMIT chỉ khi có ghi phải giữ: bộ đếm lỗi (commit-then-throw), đóng PHONE_CONFLICT, chuyển trạng thái, ghi mới. Từ chối thuần (sai bước, hết hạn, lời mời đóng, replay trạng thái cuối phát hiện dưới khóa) rollback toàn bộ, kể cả hàng bucket vừa được `lockBuckets` tạo.
-- **TX-P — transaction đọc phân loại trước (G3).** Với `start`, `complete` (và `otp/request` cho trạng thái "đã qua STARTED") có thể chạy trước coordinator một *transaction/câu lệnh chỉ đọc* TX-P: READ COMMITTED, **không khóa, không ghi, không audit, không bucket**, một câu SELECT kèm `clock_timestamp()`; kết thúc (commit/rollback chỉ đọc) **trước** khi coordinator bắt đầu — không giữ gì sang coordinator. TX-P chỉ được **trả lời thay** coordinator cho những sự thật **bất biến/đơn điệu**: (i) attempt ở trạng thái cuối `COMPLETED`/`INVALIDATED` (trigger cấm rời trạng thái cuối); (ii) attempt đã vượt `STARTED` (trạng thái chỉ đi tới). Mọi kết luận khác (live, sắp hết hạn, lời mời PENDING…) bị **bỏ**, coordinator đọc lại hết dưới khóa. Nếu coordinator, dưới khóa, thấy trạng thái cuối mà TX-P chưa thấy (đua), nó **ROLLBACK** và trả đúng câu trả lời replay của §11.2 — không tin TX-P, không ghi bucket/audit.
+- **TX-P — transaction đọc phân loại trước (G3).** Với `start`, `complete` (và `otp/request` cho trạng thái "đã qua STARTED") có thể chạy trước coordinator một *transaction/câu lệnh chỉ đọc* TX-P: READ COMMITTED, **không khóa, không ghi, không audit, không bucket**, một câu SELECT kèm `clock_timestamp()`; kết thúc (commit/rollback chỉ đọc) **trước** khi coordinator bắt đầu — không giữ gì sang coordinator. **Bước 0 bắt buộc của mọi nhánh trả lời sớm (H3):** trước khi trả bất kỳ trạng thái nào, TX-P kiểm hiệu lực cookie theo §6.1.1 bằng `T` = `clock_timestamp()` của **chính câu SELECT** (`T < attempt.expires_at`, ở mọi trạng thái kể cả cuối). Không hợp lệ ⇒ 401 (riêng `start`: bỏ qua cookie, không trả lời sớm theo cookie). Không nhánh nào được trả `COMPLETED`/`409 S`/`PHONE_CONFLICT` dựa trên trạng thái attempt khi `T ≥ expires_at`. Áp cho: `start` (COMPLETED), `complete` (COMPLETED/INVALIDATED), `restart` (409 S), `otp/request` (đã qua STARTED / cuối). TX-P chỉ được **trả lời thay** coordinator cho những sự thật **bất biến/đơn điệu**: (i) attempt ở trạng thái cuối `COMPLETED`/`INVALIDATED` (trigger cấm rời trạng thái cuối); (ii) attempt đã vượt `STARTED` (trạng thái chỉ đi tới). Mọi kết luận khác (live, sắp hết hạn, lời mời PENDING…) bị **bỏ**, coordinator đọc lại hết dưới khóa. Nếu coordinator, dưới khóa, thấy trạng thái cuối mà TX-P chưa thấy (đua), nó **ROLLBACK** và trả đúng câu trả lời replay của §11.2 — không tin TX-P, không ghi bucket/audit.
 
 ### 10.1 `POST /start`
 
 1. R0: Origin; parse; `reserveRequest(ACTIVATION_REQUEST_IP)`; digest token; digest cookie nếu có.
-2. TX-P (đọc thuần): lời mời theo `token_digest` (gợi ý `invitation_id`, SĐT, trạng thái) và attempt theo cookie. Nếu cookie → attempt `COMPLETED` (còn `T < expires_at`) **và** `attempt.invitation_id` = lời mời của token ⇒ trả 200 `{COMPLETED, next:"LOGIN"}` ngay: **không** bucket, không audit, không ghi (sự thật bất biến). Nếu cookie → attempt cuối khác hoặc hết hạn: bỏ qua cookie, tiếp tục. Mọi thứ còn lại bỏ, coordinator đọc lại.
+2. TX-P (đọc thuần, bước 0 §10.0: cookie hợp lệ theo giờ DB): lời mời theo `token_digest` (gợi ý `invitation_id`, SĐT, trạng thái) và attempt theo cookie. Nếu cookie hợp lệ → attempt `COMPLETED` **và** `attempt.invitation_id` = lời mời của token ⇒ trả 200 `{COMPLETED, next:"LOGIN"}` ngay: **không** bucket, không audit, không ghi (sự thật bất biến). Nếu cookie → attempt cuối khác hoặc hết hạn: bỏ qua cookie, tiếp tục. Mọi thứ còn lại bỏ, coordinator đọc lại.
 3. Coordinator: S0 → L2 `ACTIVATION_LINK_IP` X. Đang khóa ⇒ commit rỗng, 429.
 4. Token **không khớp** (không có gợi ý) ⇒ `recordFailure(LINK_IP)`, commit, 404 (không có L3).
 5. Có gợi ý: L3 SĐT → L8 lời mời **X** (G1) → L9a: attempt của cookie (nếu hợp lệ & cùng lời mời) và attempt sống của lời mời, `FOR UPDATE`, thứ tự `attempt_id` tăng dần → `T`.
@@ -528,7 +548,7 @@ Thứ tự đầy đủ: **R0 < S0 < L2 < L3 < L8 < L9a < L9b < L10**. Không ro
 ### 10.1A `POST /restart` (G2)
 
 1. R0: Origin; CSRF (cột bất biến); `reserveRequest(ACTIVATION_REQUEST_IP)`; tra attempt theo cookie.
-2. TX-P: cookie không hợp lệ (§6.1.1) ⇒ 401; attempt `COMPLETED` hoặc `INVALIDATED` với lý do ≠ `ATTEMPTS_EXHAUSTED` ⇒ 409 S (sự thật bất biến), không khóa.
+2. TX-P (bước 0 §10.0): cookie không hợp lệ theo giờ DB (§6.1.1) ⇒ 401; chỉ khi hợp lệ: attempt `COMPLETED` hoặc `INVALIDATED` với lý do ≠ `ATTEMPTS_EXHAUSTED` ⇒ 409 S (sự thật bất biến), không khóa.
 3. Coordinator: S0 → L3 SĐT → L8 lời mời **X** → L9a attempt của cookie và attempt sống của lời mời (`attempt_id` tăng dần) → `T`. (Không L2: không đếm lỗi nào.)
 4. Kiểm dưới khóa: cookie còn hợp lệ tại `T`; trạng thái thuộc tập cho phép (§6.2); lời mời `PENDING`, `T < invitation.expires_at`; SĐT chưa thuộc `users` (có ⇒ §14).
 5. Mọi attempt sống → `INVALIDATED(SUPERSEDED)` (kèm challenge sống → `INVALIDATED`); INSERT attempt mới; audit; commit; phát cookie mới (cookie cũ hết tác dụng vì attempt cũ cuối hoặc hết hạn).
@@ -537,7 +557,7 @@ Kết quả: sau `passwordDeadline`, UI (đọc `restartRequired`) gọi `restar
 
 ### 10.2 `POST /otp/request`
 
-TX-P: attempt đã vượt `STARTED` hoặc ở trạng thái cuối ⇒ trả 409 S ngay (sự thật đơn điệu), không bucket.
+TX-P (bước 0 §10.0 trước): cookie không hợp lệ theo giờ DB ⇒ 401; chỉ khi cookie hợp lệ và attempt đã vượt `STARTED` hoặc ở trạng thái cuối ⇒ 409 S ngay (sự thật đơn điệu), không bucket.
 Txn1: S0 → L2 `ACTIVATION_OTP_SEND` → L3 SĐT → L8 lời mời **X** (G1: nhánh PHONE_CONFLICT có thể ghi lời mời) → L9a attempt X → L9b challenge **mới nhất** của attempt X → `T`.
 Cổng: attempt `STARTED` và `T < expires_at`; lời mời `PENDING` và `T < invitation.expires_at`; cooldown (áp khi challenge mới nhất **không** ở `DELIVERY_FAILED`): `resend_not_before > T` ⇒ 429 `OTP_RATE_LIMITED` (không đếm thêm); bucket `OTP_SEND` khóa/vượt trần ⇒ 429; SĐT chưa thuộc `users` (nếu có ⇒ §14, ghi dưới X đã giữ). Sai bước dưới khóa ⇒ ROLLBACK (không để lại hàng bucket).
 Ghi: challenge sống cũ (kể cả `PENDING_DELIVERY`) ⇒ `INVALIDATED`; INSERT challenge mới `PENDING_DELIVERY` (digest HMAC; `expires_at = T+300s`, `resend_not_before = T+60s`); `recordSend(OTP_SEND)`; audit; **commit (txn1)**.
@@ -585,7 +605,7 @@ Txn: S0 → L8 S → L9a X → `T`. Cổng: trạng thái `PASSWORD_SET` (hoặc
 ### 10.6 `POST /complete` — kích hoạt nguyên tử
 
 R0: Origin; CSRF; shape mã 6 chữ số; `reserveRequest`.
-TX-P (đọc thuần, §10.0): cookie không hợp lệ ⇒ 401; attempt `COMPLETED` ⇒ 200 `{COMPLETED}`; `INVALIDATED(PHONE_CONFLICT)` ⇒ 409 `ADMIN_PHONE_CONFLICT`; `INVALIDATED` khác ⇒ 409 S. **Repeat complete kết thúc ở đây: không L2 (không tạo/cập nhật bucket), không audit, không ghi, không so TOTP.** Còn lại → coordinator.
+TX-P (đọc thuần, bước 0 §10.0): cookie không hợp lệ theo giờ DB ⇒ 401; chỉ khi hợp lệ: attempt `COMPLETED` ⇒ 200 `{COMPLETED}`; `INVALIDATED(PHONE_CONFLICT)` ⇒ 409 `ADMIN_PHONE_CONFLICT`; `INVALIDATED` khác ⇒ 409 S. **Repeat complete kết thúc ở đây: không L2 (không tạo/cập nhật bucket), không audit, không ghi, không so TOTP.** Còn lại → coordinator.
 Coordinator (txn đơn, **không** executor): S0 → L2 `ACTIVATION_TOTP` (theo `invitation_id` gợi ý) → L3 SĐT → L8 lời mời **X** → L9a attempt X → `T`.
 **Cổng** (theo thứ tự; hỏng ở đây ⇒ ROLLBACK, **không đếm, không mở bí mật**; riêng bucket đang khóa ⇒ commit rỗng + 429):
 1. Attempt `COMPLETED` (đua với complete khác) ⇒ **ROLLBACK** (huỷ hàng bucket nếu mới tạo), 200 `{COMPLETED}` — không so mã, không ghi, không audit.
@@ -633,7 +653,7 @@ Không có `Idempotency-Key`, không có `idempotency_records`. Bất biến duy
 
 ### 11.2 Ma trận route × trạng thái attempt (tại `T`, sau khóa)
 
-Quy ước: "—" = không ghi, không đếm, không audit nghiệp vụ, **không tạo/cập nhật bucket**. "S" = kèm `{state}` an toàn (§6.3). **Hàng 0 áp trước mọi cột (§6.1.1):** cookie không hợp lệ hoặc `T ≥ expires_at` ở *mọi* trạng thái (kể cả COMPLETED/INVALIDATED) ⇒ 401 `SESSION_INVALID`, ngoại trừ `start` (bỏ qua cookie).
+Quy ước: "—" = không ghi counter, không audit nghiệp vụ, **không tạo/cập nhật bucket nghiệp vụ**, không đổi hàng nghiệp vụ; quota ingress `ACTIVATION_REQUEST_IP` **vẫn áp dụng** như mọi request (§10.0, H4). "S" = kèm `{state}` an toàn (§6.3). **Hàng 0 áp trước mọi cột (§6.1.1):** cookie không hợp lệ hoặc `T ≥ expires_at` ở *mọi* trạng thái (kể cả COMPLETED/INVALIDATED) ⇒ 401 `SESSION_INVALID`, ngoại trừ `start` (bỏ qua cookie).
 
 | Route \ Trạng thái | STARTED | OTP_VERIFIED | PASSWORD_SET | TOTP_ISSUED | COMPLETED | INVALIDATED |
 |---|---|---|---|---|---|---|
@@ -758,8 +778,10 @@ Mỗi lịch barrier dùng nhiều phiên DB thật, ép thứ tự bằng advis
 | **K23** | **PHONE_CONFLICT ở start / restart / otp-request / complete (G1):** (a) mỗi route với SĐT đã thuộc `users`; (b) hai request đồng thời cùng lời mời đi nhánh này; (c) ∥ 1B `revoke` | Trace `pg_locks` + log câu lệnh: lời mời chỉ bị khóa **một lần, chế độ X, ngay sau L3**; **không** có `FOR SHARE`/`FOR KEY SHARE` lời mời đứng trước `UPDATE` trong các route này; (b),(c) không có `40P01`; kết quả: lời mời `PHONE_CONFLICT` một lần, attempt INVALIDATED, 409 |
 | **K24** | **Quá `passwordDeadline` → restart (G2):** đưa attempt tới `OTP_VERIFIED`, tua đồng hồ DB quá 600 s; (a) `password` ⇒ 409 `restartRequired`; (b) `GET state.restartRequired = true`; (c) `restart` (không token) ⇒ attempt mới `STARTED`, cũ SUPERSEDED; (d) `start` với token + cookie cũ ⇒ cũng attempt mới (không resume); (e) OTP mới → verify → password → enrollment → complete ⇒ `COMPLETED` | không kẹt; OTP cũ không dùng lại được; còn trong deadline thì `start` + cookie resume (200, không đổi gì); `restart` từ `ATTEMPTS_EXHAUSTED` hoạt động, từ `PHONE_CONFLICT`/`INVITATION_CLOSED` ⇒ 409 |
 | **K25** | **(a)** `start` token đúng + cookie `COMPLETED` còn hạn ⇒ 200 `{COMPLETED}`; token của lời mời khác ⇒ như không cookie. **(b)** Cookie hết hạn (`T ≥ expires_at`) ở **mọi** trạng thái × **mọi** route ⇒ 401 (trừ `start` bỏ qua cookie). **(c)** `GET state`/`start`/`complete` nhất quán ở COMPLETED | Bảng 6 trạng thái × 8 route khớp §11.2 từng ô; không route nào trả COMPLETED cho cookie hết hạn; `start` + cookie COMPLETED không ghi |
-| **K26** | **Repeat `complete`** trên `COMPLETED` (lặp ×N, ∥ `complete` đầu tiên, và khi bucket `ACTIVATION_TOTP` đang khóa) | Trước/sau: `admin_auth_limits` (số hàng, mọi cột), `totp_attempt_count`, `audit_logs` (số hàng), `xmin` của attempt/lời mời/user/factor **không đổi**; luôn 200; ca đua: người thua ROLLBACK và vẫn 200 |
+| **K26** | **Repeat `complete`** trên `COMPLETED` (lặp ×N, ∥ `complete` đầu tiên, và khi bucket `ACTIVATION_TOTP` đang khóa) | Trước/sau: các hàng `admin_auth_limits` **trừ** kind `ACTIVATION_REQUEST_IP` (số hàng, mọi cột), `totp_attempt_count`, `audit_logs` (số hàng), `xmin` của attempt/lời mời/user/factor **không đổi**; riêng `ACTIVATION_REQUEST_IP` của IP đó **tăng đúng +1 mỗi request**; luôn 200; ca đua: người thua ROLLBACK và vẫn 200 |
 | **K27** | **Verify sau lần sai thứ 5 và bảng challenge mới nhất (G4):** 5 lần sai ⇒ challenge `LOCKED`; lần verify thứ 6 (mã đúng hoặc sai) | `OTP_RATE_LIMITED`, `attempt_count` vẫn 5, không audit mới, `xmin` challenge không đổi; thêm từng ca: không có challenge, `PENDING_DELIVERY` trong/ngoài ân hạn, `PENDING` hết hạn, `DELIVERY_FAILED`, `INVALIDATED`, và ca có challenge cũ `PENDING` giả lập "sống" nhưng challenge mới nhất là `LOCKED` ⇒ chọn đúng mới nhất |
+| **K28** | **Phục hồi sau TOTP sai lần 5 (H1, H2):** (a) 5 lần `complete` sai ⇒ attempt `INVALIDATED(ATTEMPTS_EXHAUSTED)`, bucket `ACTIVATION_TOTP` khóa; tải lại trang (mất state client) ⇒ `GET state` trả `INVALIDATED`, `canRestart:true`, **có `csrfToken`**; (b) `restart` với token đó ⇒ 201 attempt mới `STARTED`, cookie mới, **phải OTP lại** (không kế thừa `otp_verified_at`/mật khẩu); (c) đi hết OTP → mật khẩu → enrollment → `complete` ngay ⇒ 429 `ADMIN_AUTH_RATE_LIMITED` (bucket TOTP vẫn khóa; snapshot `admin_auth_limits` TOTP trước/sau `restart` **giống hệt**), hết thời gian khóa ⇒ `complete` đúng thành công; (d) cookie hết hạn ⇒ `GET state`/`restart` 401; (e) ma trận CSRF §6.1.1: `GET state` **không** trả `csrfToken` cho COMPLETED và INVALIDATED(`SUPERSEDED`/`INVITATION_CLOSED`/`PHONE_CONFLICT`), **có** cho 4 trạng thái sống và `ATTEMPTS_EXHAUSTED`; (f) lời mời đóng (`REVOKED`/`SUPERSEDED`/`EXPIRED`/`PHONE_CONFLICT`/`ACCEPTED`) ⇒ `restart` từ ATTEMPTS_EXHAUSTED thất bại (404 `LINK_INVALID`), `canRestart:false`, không tạo attempt, không đổi limiter | Đúng như cột trái; `restart` không tạo/đổi/reset hàng limiter nào; audit chỉ có chuyển trạng thái attempt và tạo attempt mới |
+| **K29** | **TX-P kiểm cookie bằng giờ DB (H3):** fixture attempt có `created_at`/`expires_at` trong quá khứ (các cột này bất biến nên dựng bằng INSERT, không giả clock Node) và cặp ngay-trước / ngay-sau `expires_at` cho **từng** nhánh trả lời sớm: `start`+cookie COMPLETED, `complete` lặp trên COMPLETED, `complete` trên INVALIDATED(PHONE_CONFLICT), `restart` trên COMPLETED/INVALIDATED không restart được, `otp/request` trên attempt đã qua STARTED / cuối | Trước `expires_at`: câu trả lời replay đúng bảng §11.2; từ `expires_at`: 401 (`start`: bỏ qua cookie → theo token), **không** trả `COMPLETED`/409 S/PHONE_CONFLICT; mọi ca vẫn không ghi nghiệp vụ và quota ingress +1 |
 
 Test khác: lịch xem xét khóa — mỗi route chạy dưới `log_statement` + `pg_locks` để chứng minh chuỗi hạng khóa của §9 và không có nâng khóa; DDL (script trong PR, mở rộng thành test migration ở PR triển khai), ma trận §11.2 (mọi ô), GET state theo trạng thái (không lộ trường nhạy cảm), header (no-store, nosniff, Referrer-Policy trên **mọi** mã trả về), cookie (thuộc tính, xóa khi 401), CSRF/Origin, `start` không log token, 404 đồng nhất, vector TOTP RFC 6238, không-log (quét log), giờ DB (không dùng clock của Node).
 
