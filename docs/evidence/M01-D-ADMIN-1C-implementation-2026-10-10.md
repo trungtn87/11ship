@@ -160,6 +160,13 @@ Ngoài chín mục: đọc COMPLETED mà lời mời không ACCEPTED (bất kh�
 - **Test W (9)**: xem K31 ở bảng; mọi lịch giữ challenge bằng khóa hàng, chờ chặn thật, đồng hồ DB đi qua hạn, thả khóa; kiểm response, không attempt mới/supersede/audit khi hết hạn, và giờ ghi ≥ lúc thả khóa khi có ghi.
 - **Giới hạn**: txn2 được mô phỏng bằng khóa hàng giống hệt thứ nó giữ, không chạy lại txn2 thật cho các lịch này (K18 đã có lịch txn2 thật). Kết quả CI và đếm test ở mô tả PR.
 
+## 10. Vòng 5 — gate transport trước body parser
+
+- **Kiểm tra**: header transport của `/v1/admin-activation/*` được áp bằng middleware của module (`consumer.apply(...).forRoutes`). Middleware module chạy **sau** body parser của framework, nên JSON cú pháp hỏng (400) và body quá giới hạn parser (413, mặc định 100 KB, khác giới hạn 4 KiB của controller) được parser trả lời trước, thiếu `Cache-Control: no-store`, `Pragma`, `Referrer-Policy`, `X-Content-Type-Options` (lập luận từ thứ tự middleware; chưa có lần chạy đỏ trên code cũ — nhánh scratch chỉ-có-test không được CI chạy nên không có bằng chứng đỏ).
+- **Sửa**: middleware `activationTransportMiddleware` được áp trong `configureApp` (`app.use('/v1/admin-activation', …)`) — hàm dùng chung với `main.ts` và harness test, đặt trước body parser (parser đăng ký lúc init). Bỏ áp ở `AdminAuthModule.configure` để không chạy hai lần. Pipeline các route khác không đổi. Mã lỗi JSON hỏng vẫn là 400 chung `BAD_REQUEST` trước quota (đã được chấp nhận).
+- **Test** `admin-activation-transport.int.spec.ts` (HTTP thô qua AppModule + `configureApp`): 7 route POST × JSON cú pháp hỏng (400 `BAD_REQUEST`) và × body 120 KB (413 `CLIENT_ERROR`); mỗi lần kiểm bốn header, không `ETag`/`Last-Modified`, có `X-Request-ID`, thân phản hồi và toàn bộ log không chứa token/mật khẩu/thân request, bucket giới hạn không đổi; cộng control 404/400 qua controller và GET có `If-None-Match`/`If-Modified-Since` không ra 304.
+- **Giới hạn**: chỉ activation được sửa; `/v1/admin-auth` và `/v1/admin` (middleware `noStoreMiddleware` của module) có cùng thứ tự với parser nên cùng đặc điểm với 400/413 của parser — ngoài phạm vi yêu cầu này, ghi để ChatGPT quyết.
+
 ## 7. Checklist giao đoạn (theo `docs/templates/module-delivery-checklist.md`)
 
 Task: M01-D-ADMIN-1C; base: head #44 `2e63da5`; nguồn nghiệp vụ: `docs/tasks/M01-D-ADMIN-1C-technical-contract.md` (Owner đã duyệt, OD-1…OD-16).
