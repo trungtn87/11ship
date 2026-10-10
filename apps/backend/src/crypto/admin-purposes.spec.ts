@@ -137,3 +137,27 @@ describe('administration step-up operation fingerprint (M01-D-ADMIN-1B)', () => 
     expect(() => key.adminOperationFingerprint('CREATE_INVITATION', { bad: undefined })).toThrow(CryptoError);
   });
 });
+
+describe('M01-D-ADMIN-1C activation purposes', () => {
+  const key = fixtureKeyring('k1').active();
+
+  it('the ACTIVATION CSRF type is a third, separate derivation (existing types unchanged)', () => {
+    const activation = key.adminCsrfToken('ACTIVATION', FACTOR, NONCE);
+    expect(activation).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(activation).not.toBe(key.adminCsrfToken('SESSION', FACTOR, NONCE));
+    expect(activation).not.toBe(key.adminCsrfToken('PREAUTH', FACTOR, NONCE));
+    expect(key.adminCsrfToken('ACTIVATION', FACTOR, NONCE)).toBe(activation);
+    // @ts-expect-error an unknown credential type is refused
+    expect(() => key.adminCsrfToken('OTHER', FACTOR, NONCE)).toThrow(CryptoError);
+  });
+
+  it('the activation OTP digest is bound to challenge, phone and code, and differs per key version', () => {
+    const digest = key.adminActivationOtpDigest(USER, '+84901234567', '123456');
+    expect(digest).toMatch(/^[0-9a-f]{64}$/);
+    expect(key.adminActivationOtpDigest(USER, '+84901234567', '123456')).toBe(digest);
+    expect(key.adminActivationOtpDigest(FACTOR, '+84901234567', '123456')).not.toBe(digest);
+    expect(key.adminActivationOtpDigest(USER, '+84901234568', '123456')).not.toBe(digest);
+    expect(key.adminActivationOtpDigest(USER, '+84901234567', '123457')).not.toBe(digest);
+    expect(fixtureKeyring('k2').active().adminActivationOtpDigest(USER, '+84901234567', '123456')).not.toBe(digest);
+  });
+});

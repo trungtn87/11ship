@@ -6,7 +6,14 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
-import { AdminAuthRateLimitError, APP_ERROR_DEFINITIONS, AppError, AppErrorCode, TechnicalError } from '../common/app-errors';
+import {
+  ActivationStateError,
+  AdminAuthRateLimitError,
+  APP_ERROR_DEFINITIONS,
+  AppError,
+  AppErrorCode,
+  TechnicalError,
+} from '../common/app-errors';
 import { CryptoError } from '../crypto/crypto-error';
 import { JsonLogger, LOG_META_WHITELIST } from '../logging/json-logger';
 import { JsonValidationError } from '../shared/json/safe-json';
@@ -168,9 +175,12 @@ describe('AllExceptionsFilter', () => {
   describe('typed error registry', () => {
     const codes = Object.keys(APP_ERROR_DEFINITIONS) as AppErrorCode[];
 
-    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes, the Shop onboarding codes, the Driver onboarding codes, the Shop management codes, the administration login codes and the ADMIN invitation codes', () => {
+    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes, the Shop onboarding codes, the Driver onboarding codes, the Shop management codes, the administration login codes the ADMIN invitation codes and the administration activation codes', () => {
       expect([...codes].sort()).toEqual([
         'ACCOUNT_DISABLED',
+        'ADMIN_ACTIVATION_LINK_INVALID',
+        'ADMIN_ACTIVATION_SESSION_INVALID',
+        'ADMIN_ACTIVATION_STEP_INVALID',
         'ADMIN_AUTH_RATE_LIMITED',
         'ADMIN_CSRF_INVALID',
         'ADMIN_ENROLLMENT_NOT_ALLOWED',
@@ -234,6 +244,15 @@ describe('AllExceptionsFilter', () => {
       const entry = JSON.parse(logs[0] ?? '{}') as Record<string, unknown>;
       expect(entry.code).toBe(code);
       expect(entry.error_class).toBe('AppError');
+    });
+
+    it('puts the safe state details of the typed activation state error in the envelope, and only those', () => {
+      const { reply } = run(new ActivationStateError({ state: 'OTP_VERIFIED', restartRequired: true }));
+      expect(reply.status).toBe(409);
+      expect(reply.body.error.code).toBe('ADMIN_ACTIVATION_STEP_INVALID');
+      expect(reply.body.error.details).toEqual({ state: 'OTP_VERIFIED', restartRequired: true });
+      const impostor = Object.assign(new AppError('ADMIN_ACTIVATION_STEP_INVALID'), { details: { leaked: SECRET } });
+      expect(run(impostor).reply.body.error.details).toEqual({});
     });
 
     it('uses the documented statuses', () => {

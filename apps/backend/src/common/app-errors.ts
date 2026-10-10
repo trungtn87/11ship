@@ -90,6 +90,13 @@ export const APP_ERROR_DEFINITIONS = {
   ADMIN_INVITATION_NOT_REPLAYABLE: { status: 409, message: 'The invitation link can no longer be shown again' },
   ADMIN_INVITATION_PENDING_EXISTS: { status: 409, message: 'A pending invitation already exists for this phone number' },
   ADMIN_PHONE_CONFLICT: { status: 409, message: 'This phone number already belongs to an account' },
+
+  // Administration account activation (M01-D-ADMIN-1C, contract section 16). Same rule: fixed messages that echo nothing
+  // the client sent. A bad or closed link is ONE uniform 404 (it never says which). OTP_*, ADMIN_TOTP_INVALID,
+  // ADMIN_AUTH_RATE_LIMITED, ADMIN_PHONE_CONFLICT, ADMIN_CSRF_INVALID and ADMIN_INPUT_INVALID (above) are reused.
+  ADMIN_ACTIVATION_LINK_INVALID: { status: 404, message: 'The activation link is not valid' },
+  ADMIN_ACTIVATION_SESSION_INVALID: { status: 401, message: 'The activation session is not valid' },
+  ADMIN_ACTIVATION_STEP_INVALID: { status: 409, message: 'This activation step is not available' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;
@@ -128,6 +135,23 @@ export class AdminAuthRateLimitError extends AppError {
     this.name = 'AdminAuthRateLimitError';
     this.retryAfterSeconds =
       Number.isSafeInteger(retryAfterSeconds) && retryAfterSeconds >= 1 ? retryAfterSeconds : 1;
+  }
+}
+
+/** The safe, non-sensitive facts a 409 ADMIN_ACTIVATION_STEP_INVALID carries so the client needs no extra call. */
+export type ActivationErrorDetails = Readonly<Record<string, string | number | boolean | null | Readonly<Record<string, string | number | boolean | null>>>>;
+
+/**
+ * 409 ADMIN_ACTIVATION_STEP_INVALID with the current safe state (contract section 6.4). `details` is built only from
+ * values the service computed (enums, booleans, ISO times, counters): never a phone, a name, a token or an id.
+ */
+export class ActivationStateError extends AppError {
+  readonly details: ActivationErrorDetails;
+
+  constructor(details: ActivationErrorDetails) {
+    super('ADMIN_ACTIVATION_STEP_INVALID');
+    this.name = 'ActivationStateError';
+    this.details = details;
   }
 }
 

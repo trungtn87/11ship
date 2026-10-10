@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { deriveSubkeys, HKDF_INFO_ADMIN_OPERATION_HMAC, HKDF_SALT } from './kdf';
+import { deriveSubkeys, HKDF_INFO_ADMIN_ACTIVATION_OTP_HMAC, HKDF_INFO_ADMIN_OPERATION_HMAC, HKDF_SALT } from './kdf';
 import { FIXTURE_MASTER_K1 } from './test-keys.fixture';
 
 describe('HKDF-SHA-256 subkey derivation — known answers (C25)', () => {
@@ -54,5 +54,16 @@ describe('HKDF-SHA-256 subkey derivation — known answers (C25)', () => {
     expect(subkeys.adminTotpEncryption.toString('hex')).toBe(
       'f4d5dc4a1e6f9d12cdecd6458b85f917952a967389d612297d4053e92d54f152',
     );
+  });
+
+  it('M01-D-ADMIN-1C adds the activation OTP subkey without changing any earlier derivation', () => {
+    const subkeys = deriveSubkeys(FIXTURE_MASTER_K1);
+    expect(HKDF_INFO_ADMIN_ACTIVATION_OTP_HMAC.toString('utf8')).toBe('admin-activation-otp-hmac.v1');
+    expect(subkeys.adminActivationOtp.toString('hex')).toBe(
+      '2ea507cb507b424c99ecaffd89e1b07b2fad2e53df53d41a0f62786e3cb47ee5',
+    );
+    expect(subkeys.adminOperation.toString('hex')).toBe('0eeb10368925f909014ff4f40a2c702adb662e3f5b44ec4c96cc08400021fb19');
+    const all = Object.values(subkeys).map((key) => key.toString('hex'));
+    expect(new Set(all).size).toBe(7);
   });
 });

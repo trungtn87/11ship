@@ -1,7 +1,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { TechnicalError } from '../common/app-errors';
 import { CryptoError } from '../crypto/crypto-error';
-import { AdminTotpBinding, fingerprintsEqual, KeyVersion, ReplayEnvelope } from '../crypto/key-version';
+import { AdminCsrfType, AdminTotpBinding, fingerprintsEqual, KeyVersion, ReplayEnvelope } from '../crypto/key-version';
 import { Keyring } from '../crypto/keyring';
 import { TOTP_SECRET_BYTES } from './admin-auth-constants';
 
@@ -81,17 +81,31 @@ export class AdminCrypto {
     return { nonce: this.randomBytes(32), keyId: this.#keyring.activeKeyId };
   }
 
-  csrfToken(input: { type: 'PREAUTH' | 'SESSION'; credentialId: string; nonce: Buffer; keyId: string }): string {
+  csrfToken(input: { type: AdminCsrfType; credentialId: string; nonce: Buffer; keyId: string }): string {
     return this.#guard(() => this.#version(input.keyId).adminCsrfToken(input.type, input.credentialId, input.nonce));
   }
 
   /** Constant-time check of the presented X-CSRF-Token against the token derived from the stored nonce and key. */
   csrfMatches(
-    input: { type: 'PREAUTH' | 'SESSION'; credentialId: string; nonce: Buffer; keyId: string },
+    input: { type: AdminCsrfType; credentialId: string; nonce: Buffer; keyId: string },
     presented: unknown,
   ): boolean {
     const expected = this.csrfToken(input);
     return typeof presented === 'string' && safeEqualText(expected, presented);
+  }
+
+  /** M01-D-ADMIN-1C: digest of an activation OTP under the ACTIVE key, with the key id to store next to it. */
+  activationOtpDigest(challengeId: string, phoneNormalized: string, otp: string): { digest: string; keyId: string } {
+    const version = this.#keyring.active();
+    return { digest: this.#guard(() => version.adminActivationOtpDigest(challengeId, phoneNormalized, otp)), keyId: version.id };
+  }
+
+  /** Recomputes the digest under the key it was stored with (never the active one); a missing key fails closed. */
+  activationOtpMatches(input: { keyId: string; challengeId: string; phoneNormalized: string; otp: string; stored: string }): boolean {
+    const expected = this.#guard(() =>
+      this.#version(input.keyId).adminActivationOtpDigest(input.challengeId, input.phoneNormalized, input.otp),
+    );
+    return fingerprintsEqual(expected, input.stored);
   }
 
   sealTotpSecret(binding: AdminTotpBinding, secret: Buffer): { keyId: string; envelope: ReplayEnvelope } {
