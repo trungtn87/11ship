@@ -180,9 +180,16 @@ describe('M01-D-ADMIN-1C - contract 11.2 matrix (8 routes x 6 states, INVALIDATE
       case 'ATTEMPTS_EXHAUSTED': {
         const progress = await advance(deps(), invite, 'TOTP_ISSUED');
         for (let step = 9; step < 14; step += 1) {
-          await ctx.app.clearLimits();
           const response = await post(ctx.app, '/complete', progress.session, { code: totpNow(String(progress.secret), step) });
-          expect([400, 429]).toContain(response.status);
+          if (step < 13) {
+            expect(response.status).toBe(400);
+            expect(adminErrorCode(response)).toBe('ADMIN_TOTP_INVALID');
+          } else {
+            // The fifth wrong code invalidates the attempt AND fills the 5/15 min TOTP bucket: contract section 8, 429.
+            expect(response.status).toBe(429);
+            expect(adminErrorCode(response)).toBe('ADMIN_AUTH_RATE_LIMITED');
+            expect(Number(response.headers['retry-after'])).toBeGreaterThan(0);
+          }
         }
         return { invite, session: progress.session };
       }
@@ -308,6 +315,13 @@ describe('M01-D-ADMIN-1C - contract 11.2 matrix (8 routes x 6 states, INVALIDATE
   });
 
   describe('429 carries Retry-After', () => {
+    it('DEVIATION 4 (documented for review): a malformed JSON body is the framework 400 BAD_REQUEST, rejected before the quota', async () => {
+      const before = await bucketRows(ctx.pool);
+      const response = await act(ctx.app, 'POST', '/start', { rawBody: '{"token":' });
+      expect({ status: response.status, code: adminErrorCode(response) }).toEqual({ status: 400, code: 'BAD_REQUEST' });
+      expect(await bucketRows(ctx.pool)).toEqual(before);
+    });
+
     it('the invitation-link quota (10 wrong tokens) answers 429 ADMIN_AUTH_RATE_LIMITED with a positive integer Retry-After', async () => {
       const invite = await newInvite(ctx.app, system);
       for (let index = 0; index < 10; index += 1) {
