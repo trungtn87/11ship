@@ -545,7 +545,7 @@ select {
 }
 
 .step-label {
-  margin: 0 0 4px;
+  margin: 0 0 12px;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -858,7 +858,8 @@ select {
   text-align: left;
 }
 
-.perm-edit td {
+.perm-edit td,
+.perm-edit th:not(:first-child) {
   text-align: center;
 }
 

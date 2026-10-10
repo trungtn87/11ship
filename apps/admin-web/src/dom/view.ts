@@ -329,7 +329,7 @@ export class AdminView {
     const notice = message('notice', 'shell-notice');
     const error = message('error', 'shell-error');
     const content = h('div', { class: 'content-area', id: 'content', tabindex: '-1' });
-    const sidebar = h('aside', { class: 'sidebar' }, brand(), nav, h('div', { class: 'sidebar-foot' }, role, logout));
+    const sidebar = h('aside', { class: 'sidebar' }, brand(), nav, h('div', { class: 'sidebar-foot topbar-actions' }, role, logout));
     this.root.replaceChildren(h('div', { class: 'shell' }, sidebar, h('main', { class: 'shell-main' }, notice, error, content)));
     let mountedRole: AdminRole | undefined;
     return {
