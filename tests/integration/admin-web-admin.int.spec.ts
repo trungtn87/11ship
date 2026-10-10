@@ -658,11 +658,12 @@ describe('M01-D-ADMIN-WEB - SYSTEM invitations and ADMIN activation in a real br
   }, 180_000);
 
   it('too many wrong links lock the address: the page shows the wait taken from Retry-After and sends nothing more', async () => {
-    // Every attempt goes through the local front, so they all count against the same address bucket.
+    // Every attempt goes through the local front, so they all count against the same address bucket. The tokens are
+    // canonical base64url of 32 bytes (the last character of 43 must be one of these), unknown to the backend: a counted failure.
     let page: Page | undefined;
     for (let index = 0; index <= LINK_FAILURE_LIMIT + 1; index += 1) {
       await page?.close();
-      page = await openAt(`${origin}/activate#t=${String.fromCharCode(66 + index).repeat(43)}`);
+      page = await openAt(`${origin}/activate#t=${'AEIMQUYcgkosw048'.charAt(index).repeat(43)}`);
       await page.waitFor(`document.body.innerText.includes(${JSON.stringify(ADMIN_COPY.linkInvalid)}) || document.body.innerText.includes('thử lại sau')`);
       if ((await bodyText(page)).includes('thử lại sau')) {
         break;
