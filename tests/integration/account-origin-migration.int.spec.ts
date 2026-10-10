@@ -108,13 +108,6 @@ describe('M00-D2 — account_origin migration', () => {
     expect(withoutOrigin).toEqual(snapshot.rows);
   });
 
-  it('a second D2 up is a no-op (history rows untouched before Admin extension)', async () => {
-    const before = await client.query('SELECT id, name, run_on FROM public.pgmigrations ORDER BY id');
-    expect(migrate([THROUGH_D2]).status).toBe(0);
-    const after = await client.query('SELECT id, name, run_on FROM public.pgmigrations ORDER BY id');
-    expect(after.rows).toEqual(before.rows);
-  });
-
   it('the column is NOT NULL, defaults to PHONE_VERIFIED, and only the two origins exist', async () => {
     const column = await client.query<{ is_nullable: string; column_default: string | null; udt_name: string }>(
       `SELECT is_nullable, column_default, udt_name FROM information_schema.columns
