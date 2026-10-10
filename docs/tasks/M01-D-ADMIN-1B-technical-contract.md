@@ -384,7 +384,7 @@ Mọi quyết định hết hạn (phiên, operation, `expired` của lời mờ
 
 - **Kết luận thiết kế (rà lại sau khi sửa B-1):** thứ tự L1…L10 nhất quán cho mọi route 1B, mọi đường đi đăng nhập/phiên, bootstrap (sau sửa), executor, participant 1A, và đã rà khóa ngầm (mục 8.2). Rà lại bằng grep toàn `apps/backend/src`: không còn truy vấn khóa membership trước user (`lockSystem` đã xóa). **Không còn đường đi đảo thứ tự nào đã biết.**
 - **Bằng chứng runtime:** chỉ có (a) hai phiên SQL xen kẽ cho B-1 (cục bộ) và (b) spec barrier của B-1 chờ CI. **Chưa có code 1B**, chưa có trace khóa và chưa có test S1–S12 của 1B. Phần còn lại là suy luận từ đọc code.
-- **Trạng thái:** `LOCK_PROTOCOL = NOT_FINAL`. Điều kiện để gọi `LOCK_PROTOCOL_FINAL`: (1) ChatGPT review bản sửa B-1 và CI xanh trên head cuối của nó (đã xử lý B-1 theo quyết định của Owner); (2) bảng L1…L10 và mục 8.2 được ChatGPT chấp thuận; (3) bộ test có barrier S1–S12 của 1B (mục 15) và test trace thứ tự khóa đều đạt trên CI ở head cuối; (4) 1C có phân tích call graph riêng cho các đường đi kích hoạt trước khi mở route nào của nó.
+- **Trạng thái:** `LOCK_PROTOCOL = NOT_FINAL`. Điều kiện để gọi `LOCK_PROTOCOL_FINAL`: (1) ~~ChatGPT review bản sửa B-1 và CI xanh trên head cuối của nó~~ — **đã đạt** (#34 `08910ed`); (2) bảng L1…L10 và mục 8.2 được ChatGPT chấp thuận; (3) bộ test có barrier S1–S12 của 1B (mục 15) và test trace thứ tự khóa đều đạt trên CI ở head cuối; (4) 1C có phân tích call graph riêng cho các đường đi kích hoạt trước khi mở route nào của nó.
 
 ### 8.8 Điểm mở rộng cho 1C
 Hàm `invalidateActivationFor(context, invitationId)` đặt sau khóa lời mời trong reissue/revoke (không làm gì ở 1B). 1C thêm vô hiệu attempt/OTP challenge bằng khóa theo UUID tăng dần **sau L8**, không đổi thứ tự trên; mọi đường 1C ghi PENDING/ACCEPTED theo SĐT phải lấy L3 trước.
@@ -527,10 +527,10 @@ Không sửa: migration đã apply, `/admin-auth/*`, bất kỳ route app Khách
 
 | Giai đoạn | Người | Trạng thái |
 |---|---|---|
-| Hợp đồng 1B (tài liệu này, v2) | Claude soạn → ChatGPT review head mới | **Chờ review** |
-| Sửa B-1 (bootstrap SYSTEM) trong phạm vi riêng | Owner đã cho phép; Claude sửa; ChatGPT review | **Đã sửa** ở `38bb8c7`; chờ CI trên head cuối và review của ChatGPT |
-| Code + test 1B | Claude | Chưa bắt đầu; chỉ sau khi review đạt |
-| Review diff đúng SHA | ChatGPT | Chưa |
+| Hợp đồng 1B (tài liệu này, v2.1) | Claude soạn → ChatGPT review | **ChatGPT duyệt kỹ thuật** tại #38 `ba0884bf53cf985c12f9ce69be868755349d19c2`; Owner đồng ý triển khai (10/10/2026). Thiết kế 1B **đã được duyệt để implementation** |
+| Sửa B-1 (bootstrap SYSTEM) trong phạm vi riêng | Owner cho phép; Claude sửa; ChatGPT review | **CI đạt** (#34 `08910ed`, #37 `c93c051`, #38 `ba0884b`) và **ChatGPT review đạt** tại #34 `08910ed92608d102da29d45ae1a8e5afd14dbcd1` |
+| Code + test 1B | Claude | Đang triển khai trên nhánh `feat/m01-d-admin-1b-provisioning` (Draft PR riêng, stacked trên #38); chờ CI trên final head |
+| Review diff đúng SHA | ChatGPT | Chưa (sau khi bàn giao PR implementation) |
 | Test local, Authenticator thật | Owner | Chưa (cần UI SYSTEM — gói riêng) |
 
 | Ứng dụng | Phạm vi 1B | Ghi chú |
@@ -542,10 +542,10 @@ Không sửa: migration đã apply, `/admin-auth/*`, bất kỳ route app Khách
 
 ## 18. Giới hạn và những gì còn thiếu
 
-- Chưa có code, migration chạy thật, test hay CI nào cho 1B; mọi mục trên là **thiết kế** dựa trên đọc code #34/#37. Không có bằng chứng runtime về thứ tự khóa.
-- `LOCK_PROTOCOL = NOT_FINAL` (mục 8.7): B-1 đã sửa nhưng chưa có CI/review, và chưa có code hay test barrier của 1B.
+- Thiết kế 1B đã được duyệt; code, migration và test 1B được bàn giao ở PR implementation riêng. Bằng chứng runtime (CI) ghi ở PR đó, đúng head SHA.
+- `LOCK_PROTOCOL = NOT_FINAL` (mục 8.7) **cho tới khi code 1B và các test khóa (trace + S1–S11, S12 ở tầng 1A) đạt trên CI ở final head và ChatGPT review đạt**. B-1 đã CI đạt và ChatGPT review đạt.
 - Đã được Owner chốt (không còn là điểm mở): thu hồi chỉ `PENDING`; `ADMIN_ACTIVATION_ORIGIN` bắt buộc/allowlist/không tự chọn; `ADMIN_INVITATION_NOT_REPLAYABLE`; `lock_timeout` bằng `set_config(…, true)` với `businessLockTimeoutMs`; GET kiểm factor.
-- Còn thiếu: review B-1 và hợp đồng của ChatGPT; CI xanh trên final head (ghi ở PR); test barrier S1–S12 cho code 1B (chưa có code).
+- Còn thiếu: CI xanh trên final head của PR implementation; review của ChatGPT cho code 1B; test local của Owner (cần UI SYSTEM — gói riêng).
 - Chưa kiểm lịch sử migration DB Owner/staging (không có quyền operator read-only); migration 1B chỉ chạy trên DB test, không deploy.
 - Kích hoạt (1C) sẽ cần phân tích call graph khóa riêng; tài liệu này chỉ đặt ràng buộc (mục 8.8).
 - Chưa có Owner nghiệm thu, chưa đóng M01, chưa deploy.
