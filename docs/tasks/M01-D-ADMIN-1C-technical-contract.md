@@ -624,7 +624,7 @@ Coordinator (txn đơn, **không** executor): S0 → L2 `ACTIVATION_TOTP` (theo 
 
 **Sai** ⇒ `totp_attempt_count + 1` (lần 5 ⇒ `INVALIDATED(ATTEMPTS_EXHAUSTED)`, xóa `password_hash` & bí mật cùng UPDATE), `recordFailure(ACTIVATION_TOTP)`, audit; **commit**; ném `ADMIN_TOTP_INVALID` (hoặc 429).
 **Đúng** (cùng transaction, thứ tự ghi cố định):
-1. `INSERT users … ON CONFLICT DO NOTHING RETURNING` qua `insertProvisioned` (`user_id` của attempt, `password_hash` của attempt, `phone_verified_at` NULL, `ADMIN_PROVISIONED`). 0 hàng ⇒ §14. **INSERT này có thể chờ** unique `users.phone_normalized` (register đang giữ). Vì vậy sau INSERT, `complete` **đọc lại giờ DB** (`doneMs`) và kiểm lại: `doneMs ≥ attempt.expires_at` ⇒ 401 `SESSION_INVALID`; `doneMs ≥ invitation.expires_at` ⇒ 404 `LINK_INVALID`; cả hai ⇒ ROLLBACK toàn bộ hàng vừa tạo (user, membership, profile, permission, factor chưa có). Các ghi sau đó dùng `doneMs`, không dùng `T` cũ. Test K30.
+1. `INSERT users … ON CONFLICT DO NOTHING RETURNING` qua `insertProvisioned` (`user_id` của attempt, `password_hash` của attempt, `phone_verified_at` NULL, `ADMIN_PROVISIONED`). 0 hàng ⇒ §14 (sau kiểm hạn bên dưới). **INSERT này có thể chờ** unique `users.phone_normalized` (register đang giữ). Vì vậy **ngay sau INSERT và trước khi diễn giải kết quả** (trước nhánh 0 hàng), `complete` **đọc lại giờ DB** (`doneMs`) và kiểm lại: `doneMs ≥ attempt.expires_at` ⇒ 401 `SESSION_INVALID`; `doneMs ≥ invitation.expires_at` ⇒ 404 `LINK_INVALID`; cả hai ⇒ ROLLBACK toàn bộ hàng vừa tạo (user, membership, profile, permission, factor chưa có). Hạn được kiểm **dù register cuối cùng ROLLBACK hay COMMIT**: nếu register COMMIT mà attempt/lời mời đã hết hạn thì vẫn 401/404, **không** đóng lời mời sang PHONE_CONFLICT, không invalidation, không audit nghiệp vụ (chỉ rollback). Chỉ khi còn hạn mà 0 hàng ⇒ §14 PHONE_CONFLICT, dùng `doneMs` làm giờ ghi. Các ghi sau đó dùng `doneMs`, không dùng `T` cũ. Test K30 (4 biến thể hạn × kết thúc) và K2 (còn hạn: COMMIT ⇒ PHONE_CONFLICT; ROLLBACK ⇒ thành công).
 2. `admin_memberships` (ADMIN, ACTIVE, version 1).
 3. `admin_profiles` (`phone_verified_at = attempt.otp_verified_at` — OD-3).
 4. `admin_app_permissions` sao chép từ snapshot lời mời.
@@ -751,7 +751,7 @@ Mới: `ADMIN_ACTIVATION_LINK_INVALID` (404), `ADMIN_ACTIVATION_SESSION_INVALID`
 
 Cấu hình **[ĐX — OD-9]**: `ADMIN_ACTIVATION_ENABLED` (mặc định false; yêu cầu `ADMIN_AUTH_ENABLED`), `ADMIN_ACTIVATION_OTP_MODE` (`FAKE|TEST_DISPLAY|SMS`), `ADMIN_ACTIVATION_OTP_PROVIDER_TIMEOUT_MS`, `ADMIN_ACTIVATION_OTP_PROMOTE_GRACE_MS`, các TTL/ngưỡng §7, `ADMIN_ACTIVATION_ORIGIN`. Mặc định như §7, ép trần theo CHECK DB.
 
-**Cấu hình TTL/ngưỡng §7 — đã triển khai (PR #45); tên biến và miền hợp lệ CHỜ ChatGPT/Owner xác nhận, KHÔNG phải giá trị Owner đã duyệt.** Mặc định = đúng §7. Mọi biến là số nguyên dương; ngoài miền hoặc không phải số nguyên ⇒ khởi động thất bại (không fallback).
+**Cấu hình TTL/ngưỡng §7 — đã triển khai (PR #45). ChatGPT (10/10/2026) chấp nhận tên biến và miền hiện tại như giới hạn kỹ thuật của triển khai; đây KHÔNG phải con số nghiệp vụ do Owner duyệt, và mặc định không đổi (= §7).** Mặc định = đúng §7. Mọi biến là số nguyên dương; ngoài miền hoặc không phải số nguyên ⇒ khởi động thất bại (không fallback).
 
 | Biến (`ADMIN_ACTIVATION_…`) | Mặc định (§7) | Miền triển khai | Nguồn trần |
 |---|---|---|---|
@@ -764,7 +764,7 @@ Cấu hình **[ĐX — OD-9]**: `ADMIN_ACTIVATION_ENABLED` (mặc định false;
 | `LINK_FAILURE_LIMIT` / `_WINDOW_SECONDS` / `_LOCK_SECONDS` | 10 / 900 / 900 | 1..1000 / 1..86400 / 1..86400 | kỹ thuật |
 | `TOTP_FAILURE_WINDOW_SECONDS` / `_LOCK_SECONDS` | 900 / 900 | 1..86400 | kỹ thuật |
 
-**Cố định theo schema, không cấu hình được:** sai OTP / challenge = 5, sai TOTP / attempt = 5, ngưỡng bucket `ACTIVATION_TOTP` = 5. Các trần "kỹ thuật" là lựa chọn triển khai để chặn giá trị vô nghĩa, cần ChatGPT/Owner xác nhận hoặc đổi. Test biên: mỗi biến được kiểm min, max, min−1, max+1, không nguyên, rỗng.
+**Cố định theo schema, không cấu hình được:** sai OTP / challenge = 5, sai TOTP / attempt = 5, ngưỡng bucket `ACTIVATION_TOTP` = 5. Các trần "kỹ thuật" chỉ để chặn giá trị vô nghĩa (giới hạn kỹ thuật được ChatGPT chấp nhận); đổi chúng là thay đổi cấu hình, không phải đổi hợp đồng nghiệp vụ. Test biên: mỗi biến được kiểm min, max, min−1, max+1, không nguyên, rỗng.
 
 ## 17. Kế hoạch test
 
@@ -848,7 +848,8 @@ Tài liệu này không có code, chưa chạy CI, không phải quyết định
 | `GET state` | đọc thuần, không quota DB | §6.3, §8, §10.7 |
 | `start` 404 | đếm `LINK_IP` đúng một lần; `restart` 404 không đếm | §8, §10.1, §11.2 |
 | Factor | tạo cùng transaction/user từ attempt; không thêm cột ràng buộc mật khẩu | §10.6 |
-| Bổ sung triển khai (chưa duyệt) | `complete` đọc lại giờ DB sau chờ unique `users`; cấu hình §7 (tên/miền ở §16) | §10.6, §16 |
+| Kiểm hạn sau chờ unique | `complete` đọc lại giờ DB ngay sau `insertProvisioned`, **trước** nhánh 0 hàng; hết hạn ⇒ 401/404 dù register COMMIT hay ROLLBACK, không PHONE_CONFLICT | §10.6 |
+| Cấu hình §7 | Chấp nhận tên biến và miền hiện tại **như giới hạn kỹ thuật** (không phải số nghiệp vụ Owner duyệt); mặc định không đổi | §16 |
 
 ## 22. Quyết định của Owner (ghi nhận khi bắt đầu triển khai)
 
