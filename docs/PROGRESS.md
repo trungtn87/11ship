@@ -161,7 +161,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#39](https://github.com/trungtn87/11ship/pull/39) docs(m00): thiết kế Local Test Launcher cho Owner | Đã merge (`MERGED`) | — | — | — | `e3e0b90` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#40](https://github.com/trungtn87/11ship/pull/40) feat(m00): Windows Local Test Launcher | Đã merge (`MERGED`) | — | — | — | `26c796f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#41](https://github.com/trungtn87/11ship/pull/41) feat(admin-provisioning): M01-D-ADMIN-1B — step-up SYSTEM v… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `4f9bfab` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#42](https://github.com/trungtn87/11ship/pull/42) WIP(m00): staging integration for M01 Admin Web — backend/U… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `800fbec` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#42](https://github.com/trungtn87/11ship/pull/42) WIP(m00): staging integration for M01 Admin Web — backend/U… | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `800fbec` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
