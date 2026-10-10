@@ -94,7 +94,7 @@ describe('M01-A1 — Auth Core migration', () => {
     expect(AUTH).toBeDefined();
     expect(M00.length).toBeGreaterThanOrEqual(3);
     // Auth directly follows M00; the only migration after it is the M01-A2S Shop one.
-    expect(names.slice(M00.length)).toEqual([AUTH, SHOP, DRIVER, HOURS, ORIGIN, ADMIN]);
+    expect(names.slice(M00.length)).toEqual([AUTH, SHOP, DRIVER, HOURS, ORIGIN, '1791936000000_add-users-account-origin', ADMIN]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });
 
