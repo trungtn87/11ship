@@ -63,8 +63,18 @@ function settle<T>(run: Promise<T>): Promise<Settled<T>> {
   );
 }
 
-function pgCode(error: unknown): string | undefined {
-  const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+/**
+ * The SQLSTATE of a failed transaction. TransactionManager translates a deadlock into a TransactionError
+ * (reason DEADLOCK_DETECTED, sqlState 40P01); a raw driver error carries it in `code`.
+ */
+function sqlStateOf(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) {
+    return undefined;
+  }
+  const { sqlState, code } = error as { sqlState?: unknown; code?: unknown };
+  if (typeof sqlState === 'string') {
+    return sqlState;
+  }
   return typeof code === 'string' ? code : undefined;
 }
 
@@ -224,7 +234,9 @@ describe('M01-D-ADMIN-1B B-1 - the SYSTEM bootstrap takes locks in the module or
     const failures = results.filter((result) => !result.ok);
     expect(failures).toHaveLength(1);
     const failure = failures[0];
-    expect(failure !== undefined && !failure.ok ? pgCode(failure.error) : undefined).toBe('40P01');
+    const error = failure !== undefined && !failure.ok ? failure.error : undefined;
+    expect(sqlStateOf(error)).toBe('40P01');
+    expect((error as { reason?: unknown }).reason).toBe('DEADLOCK_DETECTED');
   });
 
   it('writer holds the user, bootstrap arrives: bootstrap waits, then both finish; same phone is UNCHANGED', async () => {
