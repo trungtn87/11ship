@@ -6,6 +6,7 @@ import { bindOtpProvider } from './auth/otp-provider-binding';
 import { formatInvalidConfigMessage, loadConfig } from './config/app-config';
 import { describeStartupFailure } from './config/startup-failure';
 import { JsonLogger } from './logging/json-logger';
+import { installStagingAdminWeb } from './http/staging-admin-web';
 
 async function bootstrap(): Promise<void> {
   const result = loadConfig(process.env);
@@ -41,6 +42,11 @@ async function bootstrap(): Promise<void> {
 
   try {
     configureApp(app);
+    installStagingAdminWeb(app, {
+      appEnv: config.appEnv,
+      adminAuthEnabled: config.adminAuth !== undefined,
+      enabledFlag: process.env.ADMIN_WEB_STAGING_ENABLED,
+    });
     // SIGTERM/SIGINT close the HTTP server first, then the database pool.
     app.enableShutdownHooks();
     await app.listen(config.port, config.host);
