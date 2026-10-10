@@ -35,6 +35,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\local\11ship-launcher.
 
 - `Test gần nhất: PASS/FAIL` chỉ hiện khi summary thuộc đúng commit đang checkout. Sau Update hoặc commit mới, Status hiện `STALE` cho tới khi chạy lại Test.
 - Mỗi lỗi có `mã lỗi` cố định, ví dụ `DIRTY_TRACKED`, `UNTRACKED_COLLISION`, `DETACHED_HEAD`, `NO_UPSTREAM`, `NON_FAST_FORWARD`, `DOCKER_UNAVAILABLE`, `MIGRATION_DECLINED`, `PORT_IN_USE`, `TEST_TARGET_GUARD`. Gửi mã này khi cần hỗ trợ.
+- `11Ship-Test` luôn xóa tạm `TEST_WRONG_USER_DATABASE_URL`, `TEST_REMOTE_PATH_DATABASE_URL`, `TEST_REMOTE_PATH_RUNTIME_URL` và `PGPASSWORD` khỏi môi trường của mọi bước npm (kể cả khi terminal của bạn đang đặt các biến này) rồi khôi phục nguyên trạng sau khi xong hoặc khi lỗi. Các biến này chỉ dành cho CI; Test local chỉ chạm `ship11_test` cổng 5433.
 - Mật khẩu DB TEST có thể chứa ký tự đặc biệt (`@ / # : %`...). Launcher lấy mật khẩu từ container `ship11-db-test` đang chạy và mã hóa URI trước khi tạo `DATABASE_URL`.
 
 Launcher không chạy remote migration, không dùng staging/production, không tự stash/reset và không xóa volume. Khi FAIL, đọc đường dẫn log được in; không gửi `.env` cho người khác.

@@ -367,14 +367,19 @@ function Update-Launcher {
 function Test-Launcher {
   Ensure-Dirs; Assert-Tools; $null = Assert-LocalEnv
   Compose @('up','-d','db-test'); Wait-ContainerHealthy 'ship11-db-test'
-  Ensure-Dependencies
+  # G01: variables that CI uses to reach extra fixture databases (or to authenticate psql) must never be
+  # inherited from the Owner's terminal. Local Test means ship11_test on 127.0.0.1:5433 and nothing else.
+  # They are removed for every npm step (npm ci included) and restored afterwards, also when a step fails.
+  $ciOnly = @{ TEST_WRONG_USER_DATABASE_URL=$null; TEST_REMOTE_PATH_DATABASE_URL=$null; TEST_REMOTE_PATH_RUNTIME_URL=$null; PGPASSWORD=$null }
+  Invoke-WithEnv $ciOnly { Ensure-Dependencies }
   $testUrl = Get-TestDatabaseUrl
   $secrets = Get-KnownSecrets
   $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $sha = Capture 'git.exe' @('-C',$script:Repo,'rev-parse','HEAD')
   # A list, not an array: the steps run inside a child scope and must add to this same object.
   $summary = New-Object 'Collections.Generic.List[object]'
   Write-Info 'Đích test: ship11_test@127.0.0.1:5433/ship11_test (mật khẩu được ẩn). DB DEV không bị đụng tới.'
-  Invoke-WithEnv @{ APP_ENV='test'; NODE_ENV='test'; DATABASE_URL=$testUrl } {
+  Invoke-WithEnv (@{ APP_ENV='test'; NODE_ENV='test'; DATABASE_URL=$testUrl } + $ciOnly) {
+    foreach ($name in @($ciOnly.Keys)) { if ([Environment]::GetEnvironmentVariable($name, 'Process')) { Fail "Guard TEST: biến $name vẫn còn trong môi trường test." 'TEST_ENV_GUARD' } }
     if ($env:APP_ENV -cne 'test' -or $env:DATABASE_URL -cne $testUrl -or $env:DATABASE_URL -notmatch '^postgres://ship11_test:[A-Za-z0-9\-._~%]*@127\.0\.0\.1:5433/ship11_test$') {
       Fail 'Guard TEST từ chối môi trường test trước khi chạy suite.' 'TEST_TARGET_GUARD'
     }

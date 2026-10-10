@@ -44,7 +44,7 @@ test('launcher behaviour suite (real git, faked Docker/npm) passes under PowerSh
   assert.equal(run.status, 0, output.split(/\r?\n/).filter((l) => !l.startsWith('PASS ')).join('\n'));
   assert.ok(summary, 'behaviour suite printed its summary');
   assert.equal(Number(summary[2]), 0);
-  assert.ok(Number(summary[1]) >= 150, `expected at least 150 behaviour checks, got ${summary[1]}`);
+  assert.ok(Number(summary[1]) >= 165, `expected at least 165 behaviour checks, got ${summary[1]}`);
   if (process.platform === 'win32') {
     assert.ok(!/SKIP real Windows wrapper runs/.test(output), 'Windows wrapper runs must not be skipped on Windows');
   }

@@ -11,7 +11,7 @@ $realRepo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $onWindows = ($env:OS -eq 'Windows_NT')
 if (!$onWindows) { Set-Alias -Name git.exe -Value git }
 $savedEnv = @{}
-foreach ($name in @('OS','APP_ENV','NODE_ENV','DATABASE_URL','GITHUB_TOKEN','GH_TOKEN','SHIP11_NO_PAUSE')) { $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
+foreach ($name in @('OS','APP_ENV','NODE_ENV','DATABASE_URL','GITHUB_TOKEN','GH_TOKEN','SHIP11_NO_PAUSE','TEST_WRONG_USER_DATABASE_URL','TEST_REMOTE_PATH_DATABASE_URL','TEST_REMOTE_PATH_RUNTIME_URL','PGPASSWORD')) { $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 $env:OS = 'Windows_NT'
 . $scriptPath
 
@@ -80,6 +80,7 @@ function npm.cmd {
   $global:LASTEXITCODE = 0
   if ($line -eq '--version') { return '11.9.0' }
   if ($line -eq 'ci') {
+    $script:NpmCiSawCiOnly = Get-CiOnlySnapshot
     if ($script:NpmCiFails) { $global:LASTEXITCODE = 1; return }
     New-Item -ItemType Directory -Force -Path (Join-Path $script:Repo 'node_modules') | Out-Null
     return
@@ -97,7 +98,7 @@ function Start-BackendProcess([string]$Stdout,[string]$Stderr) {
 }
 function Start-NpmStep([string[]]$NpmArgs,[string]$Stdout,[string]$Stderr) {
   $name = $NpmArgs[$NpmArgs.Count - 1]
-  $script:Steps.Add([pscustomobject]@{ Name = $name; AppEnv = $env:APP_ENV; NodeEnv = $env:NODE_ENV; DatabaseUrl = $env:DATABASE_URL })
+  $script:Steps.Add([pscustomobject]@{ Name = $name; AppEnv = $env:APP_ENV; NodeEnv = $env:NODE_ENV; DatabaseUrl = $env:DATABASE_URL; CiOnly = (Get-CiOnlySnapshot) })
   # A noisy step that prints every secret it can see, the way a failing tool might.
   $noise = @("step $name", "connecting to $env:DATABASE_URL", "raw password $script:TestPassword", "encoded $(ConvertTo-UriComponent $script:TestPassword)") + $script:EnvSecrets
   [IO.File]::WriteAllLines($Stdout, [string[]]$noise)
@@ -105,7 +106,11 @@ function Start-NpmStep([string[]]$NpmArgs,[string]$Stdout,[string]$Stderr) {
   if ($script:StepExit.ContainsKey($name)) { return $script:StepExit[$name] }
   return 0
 }
+$ciOnlyNames = @('TEST_WRONG_USER_DATABASE_URL','TEST_REMOTE_PATH_DATABASE_URL','TEST_REMOTE_PATH_RUNTIME_URL','PGPASSWORD')
+# What a child process would inherit: "NAME=value" for every CI-only variable that is set, '' when none is.
+function Get-CiOnlySnapshot { return (@($ciOnlyNames | ForEach-Object { $v = [Environment]::GetEnvironmentVariable($_, 'Process'); if ($v) { "$_=$v" } }) -join ';') }
 function Reset-Fakes {
+  $script:NpmCiSawCiOnly = $null
   $script:HostLog.Clear()
   $script:Prompts = New-Object 'Collections.Generic.List[string]'
   $script:Answers = New-Object 'Collections.Generic.Queue[object]'
@@ -567,6 +572,59 @@ try {
   $script:HostLog.Clear()
   try { throw "boom $($script:DevPassword) postgres://ship11_dev:$($script:DevPassword)@127.0.0.1:5432/ship11_dev" } catch { Write-Failure $_ }
   Check ($script:HostLog.Count -eq 1 -and !$script:HostLog[0].Contains($script:DevPassword) -and $script:HostLog[0].Contains('***')) 'an unexpected error message is redacted before it is printed'
+
+  # =============================================================================================
+  Section 'G01 CI-only variables from the terminal never reach the Test steps'
+  # =============================================================================================
+  # Fake values only: a second "fixture" pointing at DEV, a remote host and an admin password.
+  $ciOnlyValues = @{
+    TEST_WRONG_USER_DATABASE_URL = 'postgres://ship11_dev:g01-wrong-user-pw@127.0.0.1:5432/ship11_dev'
+    TEST_REMOTE_PATH_DATABASE_URL = 'postgres://migrator:g01-remote-path-pw@db.example.invalid:5432/postgres'
+    TEST_REMOTE_PATH_RUNTIME_URL = 'postgres://runtime:g01-runtime-pw@db.example.invalid:5432/postgres'
+    PGPASSWORD = 'g01-admin-password'
+  }
+  function Set-CiOnly { foreach ($name in $ciOnlyNames) { [Environment]::SetEnvironmentVariable($name, $ciOnlyValues[$name], 'Process') } }
+  function Test-CiOnlyRestored { return (@($ciOnlyNames | Where-Object { [Environment]::GetEnvironmentVariable($_, 'Process') -cne $ciOnlyValues[$_] }).Count -eq 0) }
+  function Test-NoCiOnlyLeak {
+    $files = @(Get-ChildItem -LiteralPath $script:Logs -File | ForEach-Object { Get-Content -Raw -LiteralPath $_.FullName })
+    $text = ($files + @(Get-Content -Raw -LiteralPath $script:LastTest) + @($script:HostLog)) -join "`n"
+    return (@(@('g01-wrong-user-pw','g01-remote-path-pw','g01-runtime-pw','g01-admin-password','db.example.invalid') | Where-Object { $text.Contains($_) }).Count -eq 0)
+  }
+  $env:GITHUB_TOKEN = $null; $env:GH_TOKEN = $null
+
+  New-GitSandbox   # no recorded install: npm ci runs too and must not see the variables either
+  New-Item -ItemType Directory -Force -Path (Join-Path $script:Repo 'node_modules') | Out-Null
+  Set-CiOnly
+  Check ((Get-CiOnlySnapshot).Split(';').Count -eq 4) 'G01 precondition: all four CI-only variables are set in the calling terminal'
+  Test-Launcher | Out-Null
+  Check ($script:NpmCiSawCiOnly -eq '') 'G01: npm ci does not inherit any CI-only variable'
+  Check ($script:Steps.Count -eq 9 -and @($script:Steps | Where-Object { $_.CiOnly -ne '' }).Count -eq 0) 'G01: none of the nine npm steps (migration and integration included) sees a CI-only variable when Test PASSes'
+  Check (@($script:Steps | Where-Object { $_.AppEnv -cne 'test' -or $_.DatabaseUrl -cnotmatch '^postgres://ship11_test:[A-Za-z0-9\-._~%]*@127\.0\.0\.1:5433/ship11_test$' }).Count -eq 0) 'G01: steps still run with APP_ENV=test on ship11_test@127.0.0.1:5433 only'
+  Check (Test-CiOnlyRestored) 'G01: the four variables are restored exactly after a PASS'
+  Check (Test-NoCiOnlyLeak) 'G01: no CI-only value appears in logs, summary or console after a PASS'
+
+  Reset-Fakes; $script:StepExit['test:integration'] = 1
+  Expect-Fail 'TEST_FAILED' 'G01: Test still fails when integration fails' { Test-Launcher }
+  Check ($script:Steps.Count -eq 8 -and @($script:Steps | Where-Object { $_.CiOnly -ne '' }).Count -eq 0) 'G01: no step sees a CI-only variable when Test FAILs'
+  Check (Test-CiOnlyRestored) 'G01: the four variables are restored exactly after a FAIL'
+  Check (Test-NoCiOnlyLeak) 'G01: no CI-only value appears in logs, summary or console after a FAIL'
+
+  Reset-Fakes; $script:TestPortBinding = '127.0.0.1:5432'
+  Expect-Fail 'TEST_TARGET_GUARD' 'G01: target guard still refuses the DEV port' { Test-Launcher }
+  Check ($script:Steps.Count -eq 0 -and (Test-CiOnlyRestored)) 'G01: variables are restored when Test stops before any step'
+
+  Reset-Fakes; $script:NpmCiFails = $true
+  Remove-Item -LiteralPath $script:InstallState -Force -ErrorAction SilentlyContinue
+  $message = Get-FailMessage { Test-Launcher }
+  Check ($message -ne '' -and $script:NpmCiSawCiOnly -eq '' -and (Test-CiOnlyRestored)) 'G01: variables are hidden from a failing npm ci and restored afterwards'
+
+  # Only one variable set: the others must stay unset afterwards (restore, not overwrite).
+  Reset-Fakes; Record-Install
+  foreach ($name in $ciOnlyNames) { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }
+  $env:PGPASSWORD = 'g01-admin-password'
+  Test-Launcher | Out-Null
+  Check (@($script:Steps | Where-Object { $_.CiOnly -ne '' }).Count -eq 0 -and (Get-CiOnlySnapshot) -eq 'PGPASSWORD=g01-admin-password') 'G01: an unset variable stays unset and a set one comes back unchanged'
+  foreach ($name in $ciOnlyNames) { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }
 
   # =============================================================================================
   Section 'F04 Status: PASS only for the commit that is checked out'
