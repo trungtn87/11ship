@@ -59,11 +59,7 @@ describe('M01-D-ADMIN-1C - activation migrations', () => {
     expect(code(up(sql))).not.toMatch(/\bINSERT\s+INTO\b/i);
   });
 
-  it.each([
-    ['A', 'A'],
-    ['B', 'B'],
-    ['C', 'C'],
-  ] as const)('migration %s is byte-equal to the verified DDL (no drift)', (name) => {
+  it.each(['A', 'B', 'C'] as const)('migration %s is byte-equal to the verified DDL (no drift)', (name) => {
     const sql = read(FILES[name]);
     expect(up(sql).trim().endsWith(readFileSync(path.join(verified, `${name}-up.sql`), 'utf8').trim())).toBe(true);
     expect(down(sql).trim()).toBe(readFileSync(path.join(verified, `${name}-down.sql`), 'utf8').trim());
