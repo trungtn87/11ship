@@ -152,6 +152,7 @@ describe('LoginService (task section 11)', () => {
       active_role: null,
       onboarding_required: true,
       role_selection_required: false,
+      phone_verification_status: 'VERIFIED',
       access_token: 'T'.repeat(43),
     });
     expect(r.audits).toHaveLength(1);
