@@ -19,7 +19,6 @@ describe('M00-D2 — account_origin migration', () => {
     .map((file) => file.replace(/\.sql$/, ''));
   const ACCT = '1791849600000_add-users-account-origin';
   const ACCT_INDEX = names.indexOf(ACCT);
-  const THROUGH_D2 = String(ACCT_INDEX + 1);
   const acctSql = readFileSync(path.join(migrationsDir, `${ACCT}.sql`), 'utf8');
   const downSql = acctSql.split('-- Down Migration')[1] as string;
   const HASH = '$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHRzYWx0$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhc2g';
@@ -94,7 +93,7 @@ describe('M00-D2 — account_origin migration', () => {
       'SELECT user_id, phone_normalized, password_hash, phone_verified_at, status, version FROM app.users ORDER BY phone_normalized',
     );
 
-    expect(migrate([THROUGH_D2]).status).toBe(0);
+    expect(migrate(['1']).status).toBe(0);
     expect(await historyNames()).toEqual(names.slice(0, ACCT_INDEX + 1));
 
     const after = await client.query(
@@ -171,5 +170,14 @@ describe('M00-D2 — account_origin migration', () => {
     }
     const restored = await client.query("SELECT count(*)::int AS n FROM app.users WHERE account_origin = 'STAGING_FIXTURE'");
     expect(restored.rows[0]?.n).toBe(1);
+  });
+
+  it('a repeated up after D2 and Admin migrations is a no-op (history rows untouched)', async () => {
+    expect(migrate().status).toBe(0);
+    expect(await historyNames()).toEqual(names);
+    const before = await client.query('SELECT id, name, run_on FROM public.pgmigrations ORDER BY id');
+    expect(migrate().status).toBe(0);
+    const after = await client.query('SELECT id, name, run_on FROM public.pgmigrations ORDER BY id');
+    expect(after.rows).toEqual(before.rows);
   });
 });
