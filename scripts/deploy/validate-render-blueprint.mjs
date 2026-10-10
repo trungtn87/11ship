@@ -17,6 +17,9 @@ export const REQUIRED_SECRET_KEYS = [
   'AUTH_OTP_HMAC_SECRET',
   'CRYPTO_ACTIVE_KEY_ID',
   'CRYPTO_KEYRING',
+  'AUTH_STAGING_ALLOWED_PHONES',
+  'ADMIN_AUTH_ALLOWED_ORIGINS',
+  'ADMIN_RATE_LIMIT_HMAC_KEY',
 ];
 
 // Any key that looks like a secret must be sync: false, whatever its name is spelled like.
