@@ -37,7 +37,13 @@ Nguồn: review của ChatGPT, Owner duyệt toàn bộ đề xuất Q1–Q11 v�
 | Q11 | Subkey riêng `adminOperation`; **không đổi dẫn xuất khóa cũ.** | 7.2, 13 |
 | — | Replay 900 giây; dedupe 86400 giây. | 9 |
 
-Hệ quả suy ra từ Q2 cần ChatGPT xác nhận khi review: **thu hồi** cũng chỉ áp dụng cho `PENDING` (kể cả quá hạn chưa terminal); lời mời đã terminal trả `ADMIN_INVITATION_NOT_PENDING`.
+Quyết định bổ sung của Owner (duyệt kết luận review tại head `3fd5d22`, 10/10/2026):
+- **Thu hồi chỉ áp dụng cho `PENDING`, kể cả `PENDING` đã quá hạn nhưng chưa terminal**; lời mời đã terminal trả `ADMIN_INVITATION_NOT_PENDING` (mục 8.4.3).
+- **Khi `ADMIN_AUTH_ENABLED=true`, `ADMIN_ACTIVATION_ORIGIN` là bắt buộc và phải thuộc allowlist; thiếu hoặc sai ⇒ từ chối khởi động, không tự chọn origin** (mục 13).
+- **Chấp nhận `409 ADMIN_INVITATION_NOT_REPLAYABLE`**, trả **trước** khi giải mã link (mục 9.3, 12).
+- **Transaction 1B không qua executor đặt `lock_timeout` bằng `set_config('lock_timeout', …, true)` ngay trước khóa đầu tiên, giá trị lấy từ `businessLockTimeoutMs` đã validate; không sửa `TransactionManager` toàn cục** (mục 8.5).
+- **Mọi GET lời mời (chi tiết và danh sách) kiểm factor ACTIVE đúng `factor_id/factor_version` của phiên dưới khóa**, thứ tự user → membership → factor → session → mục tiêu nếu cần (mục 6.0, 8.3.3).
+- **B-1 được Owner cho phép sửa trong phạm vi riêng** (bootstrap SYSTEM và test liên quan), xem mục 8.6–8.7.
 
 ## 2. Sáu finding của ChatGPT → nơi đã sửa
 
@@ -171,7 +177,7 @@ Runbook grants thêm: `admin_sensitive_operations: SELECT, INSERT, UPDATE` (kh�
 
 **Mọi POST 1B**, theo đúng thứ tự: (1) **transport**: `Origin` phải bằng đúng một origin cấu hình (thiếu hoặc sai → `ADMIN_CSRF_INVALID`), `Content-Type: application/json`; (2) **quota** `reserveTotpRequest(ip)` (transaction riêng, commit); (3) **parser** strict của body; (4) **tiền kiểm không khóa**: đọc cookie `__Host-11admin` → `findByDigest` → so CSRF (`x-csrf-token`) với nonce lưu; (5) **coordinator** (executor hoặc `withTransaction`) với toàn bộ kiểm quyền lặp lại dưới khóa. Tiền kiểm chỉ để từ chối sớm; không bao giờ là quyết định cuối.
 
-**Mọi GET 1B** (F5): không quota mới, không CSRF. **`Origin` là tùy chọn**: GET cùng-origin không bắt buộc có header `Origin`; nếu header **có mặt** mà không thuộc allowlist → `ADMIN_CSRF_INVALID`. Cookie phiên vẫn bắt buộc; phiên/quyền hiện tại vẫn được kiểm **dưới khóa** (`FOR SHARE`) như POST. GET không ghi gì và không bao giờ đổi trạng thái.
+**Mọi GET 1B** (F5): không quota mới, không CSRF. **`Origin` là tùy chọn**: GET cùng-origin không bắt buộc có header `Origin`; nếu header **có mặt** mà không thuộc allowlist → `ADMIN_CSRF_INVALID`. Cookie phiên vẫn bắt buộc; phiên/quyền hiện tại vẫn được kiểm **dưới khóa** (`FOR SHARE`) như POST. GET không ghi gì và không bao giờ đổi trạng thái. **Mọi GET lời mời (chi tiết, danh sách) và GET operation kiểm factor `ACTIVE` đúng `factor_id/factor_version` của phiên, dưới khóa**: user → membership → factor → session → mục tiêu nếu cần (mục 8.3.3). Factor không ACTIVE hoặc lệch với phiên ⇒ `ADMIN_SESSION_INVALID`.
 
 Chung: JSON strict (khóa lạ → `ADMIN_INPUT_INVALID`; cấm client gửi `role`, `account_origin`, `user_id`, `status`, `generation_id`, `expires_at`, `token`, `created_by`); response `{ "data": … }`; thời gian ISO-8601 UTC; `Cache-Control: no-store`. Chỉ phiên **SYSTEM** (membership ACTIVE, `admin_role='SYSTEM'`): phiên ADMIN → `ADMIN_FORBIDDEN`; không có cookie/phiên sai → `ADMIN_SESSION_INVALID`. Token của app Khách/Quán/Xế không phải cookie quản trị nên không qua được.
 
@@ -268,13 +274,13 @@ Mọi transaction 1B phải là chuỗi con **không giảm** của bảng này.
 | L3 | advisory SĐT: miền `11ship.admin-provisioning.phone.v1`, `deriveLockKey(domain,[limiterKey.bucketKey('PROVISIONING_PHONE', phone)])` | exclusive | create / reissue / revoke |
 | L4 | `users` của actor | **X** cho writer (create-op, verify, create, reissue, revoke); **S** cho reader (GET, replay hook) | mọi route |
 | L5 | `admin_memberships` của actor | như L4 | mọi route |
-| L6 | `admin_totp_factors` của actor | **X** chỉ verify (`advanceStep`); S ở nơi còn lại | create-op, verify, create, reissue, revoke, GET operation, replay hook |
+| L6 | `admin_totp_factors` của actor | **X** chỉ verify (`advanceStep`); S ở nơi còn lại | create-op, verify, create, reissue, revoke, **mọi GET** (operation, một lời mời, danh sách), replay hook |
 | L7 | `admin_sessions` của phiên request | S | mọi route |
 | L8 | `admin_invitations` mục tiêu / PENDING theo SĐT | **X** cho create (PENDING-by-phone), reissue, revoke; **S** cho create-op, verify, GET một lời mời, replay hook | tuỳ route |
 | L9 | `admin_sensitive_operations` theo id / hàng sống của actor | **X** cho create-op, verify, create, reissue, revoke; S cho GET | tuỳ route |
 | L10 | hàng **mới** của chính transaction: `admin_invitations`, `admin_invitation_permissions`, `admin_sensitive_operations`, `audit_logs`, `idempotency_records` | không ai khác thấy được | ghi cuối |
 
-Khớp #34 (bucket → user → membership → factor → session) và Technical Design 1A. Ghi chú: L1/L3 không bao giờ cùng L2 trong một route. Không route nào lấy khóa hạng thấp hơn sau khi đã giữ khóa hạng cao hơn. `GET /admin/invitations` (danh sách) chỉ lấy L4 S → L5 S → L7 S rồi một câu SELECT không khóa hàng.
+Khớp #34 (bucket → user → membership → factor → session) và Technical Design 1A. Ghi chú: L1/L3 không bao giờ cùng L2 trong một route. Không route nào lấy khóa hạng thấp hơn sau khi đã giữ khóa hạng cao hơn. `GET /admin/invitations` (danh sách) lấy L4 S → L5 S → L6 S → L7 S rồi một câu SELECT không khóa hàng lời mời.
 
 ### 8.2 Khóa ngầm (FK, unique, trigger) và cách xử lý
 
@@ -316,7 +322,7 @@ Hai request create-operation đồng thời **không bao giờ cùng ở bước
 5. Sai ⇒ `recordFailure(bucket)`; `attempt_count + 1` (lần 5 ⇒ `INVALIDATED(ATTEMPTS_EXHAUSTED)` cùng UPDATE); audit DENIED; **commit**; sau commit mới ném 400/429. Đúng ⇒ `advanceStep`; operation `VERIFIED` (`verified_at` từ đồng hồ DB, CAS có `clock.t < expires_at`; không hàng ⇒ `STEP_UP_REQUIRED`/rollback); audit SUCCESS; commit.
 
 #### 8.3.3 `GET /admin/operations/:id`, `GET /admin/invitations/:id`, `GET /admin/invitations`
-Một transaction chỉ đọc: L4 S → L5 S → (operation: L6 S) → L7 S → (mục tiêu: L8 S) → (operation: L9 S) → `T` → tính `expired/verifiable/usable` → trả. Không UPDATE, không INSERT, không audit. Reader chờ writer đang giữ khóa (nên không bao giờ thấy trạng thái nửa chừng).
+Một transaction chỉ đọc, **cùng chuỗi cho cả ba GET**: L4 S → L5 S (`lockAndCheck(read)`) → **L6 S (factor)** → L7 S → (mục tiêu: L8 S) → (operation: L9 S) → `T` → kiểm: user/membership ACTIVE, **factor `ACTIVE` và `factor_id/factor_version` bằng giá trị lưu trong phiên**, phiên chưa thu hồi/chưa hết hạn tại `T` (sai ⇒ `ADMIN_SESSION_INVALID`) → tính `expired/verifiable/usable` (chỉ GET operation) → trả. Không UPDATE, không INSERT, không audit. Reader chờ writer đang giữ khóa (nên không bao giờ thấy trạng thái nửa chừng).
 
 ### 8.4 Route nghiệp vụ (qua executor) — thứ tự kiểm
 
@@ -345,8 +351,10 @@ Executor: L1 (advisory rồi record `FOR UPDATE`), đồng hồ DB, rồi **ho�
 #### 8.4.3 `POST /admin/invitations/:id/revoke` — callback
 L3 → L4 X → L5 X → L6 S → L7 S → L8 mục tiêu X → L9 X → `T` → (a) authz, (b) step-up, (c) tồn tại / `PENDING` / version → `transition(old → REVOKED)` → CAS tiêu thụ → audit `revoked` → record → commit.
 
-### 8.5 Đồng hồ DB và hết hạn
+### 8.5 Đồng hồ DB, hết hạn và `lock_timeout`
 Mọi quyết định hết hạn (phiên, operation, `expired` của lời mời, cửa sổ replay) dùng giờ DB đọc **sau khóa cuối**; mọi CAS ghi mốc thời gian lấy `clock.t` trong chính câu UPDATE và kèm điều kiện `clock.t < expires_at` ở nơi mốc đó không được vượt hạn. Replay có hai lần đọc (executor: trước hook và ngay trước khi giải mã) và hook có lần đọc riêng sau khóa của nó.
+
+**`lock_timeout` (Owner đã quyết).** Route qua executor dùng ngân sách của executor (đặt sau advisory lock). Mọi transaction 1B **không** qua executor (create-operation, verify, ba GET) tự đặt `SELECT set_config('lock_timeout', '<businessLockTimeoutMs>ms', true)` — `is_local = true`, chết cùng transaction — **ngay trước khóa đầu tiên** của transaction (verify: trước `lockBuckets`; create-op/GET: trước L4). Giá trị lấy từ cấu hình `businessLockTimeoutMs` đã được validate khi khởi động; không thêm biến môi trường; **không sửa `TransactionManager` toàn cục**. Hết thời gian chờ (`55P03`) đi qua xử lý lỗi kỹ thuật hiện có (503 chung), không retry phía server; test khẳng định timeout không bị nhầm với deadlock `40P01`.
 
 ### 8.6 Rà soát call graph (kết luận thiết kế, không phải bằng chứng runtime)
 
@@ -439,7 +447,7 @@ Không audit khi bucket đang khóa (giống #34: nhánh `limited` không ghi); 
 | 404 | `ADMIN_INVITATION_NOT_FOUND` | **mới**, chỉ cho SYSTEM đã xác thực |
 | 409 | `ADMIN_VERSION_CONFLICT` | **mới** |
 | 409 | `ADMIN_INVITATION_NOT_PENDING` | **mới**; thu hồi/cấp lại một lời mời đã terminal |
-| 409 | `ADMIN_INVITATION_NOT_REPLAYABLE` | **mới**; replay create/reissue khi lời mời không còn PENDING hoặc đã quá `expires_at` |
+| 409 | `ADMIN_INVITATION_NOT_REPLAYABLE` | **mới (Owner chấp nhận)**; replay create/reissue khi lời mời không còn PENDING hoặc đã quá `expires_at`; trả **trước** giải mã link |
 | 409 | `ADMIN_INVITATION_PENDING_EXISTS` | **mới**; SĐT đã có lời mời PENDING còn hạn |
 | 409 | `ADMIN_PHONE_CONFLICT` | **mới** |
 | 429 | `ADMIN_AUTH_RATE_LIMITED` | đã có; kèm `Retry-After` |
@@ -450,8 +458,9 @@ Không audit khi bucket đang khóa (giống #34: nhánh `limited` không ghi); 
 ## 13. Cấu hình
 
 - `ADMIN_INVITATION_TTL_HOURS`: **mặc định 72**, số nguyên 1–168. **Thiếu ⇒ dùng mặc định**; giá trị có mặt nhưng sai (không phải số nguyên, ngoài khoảng) ⇒ **từ chối khởi động**, chỉ nêu tên biến.
-- `ADMIN_ACTIVATION_ORIGIN`: phải **thuộc allowlist** `ADMIN_AUTH_ALLOWED_ORIGINS` (HTTPS ở staging/production); link = `<origin>/activate#t=<token>`. Sai (ngoài allowlist) ⇒ từ chối khởi động. *Chưa được Owner nêu rõ:* khi thiếu biến, đề xuất dùng origin duy nhất nếu allowlist chỉ có một, ngược lại từ chối khởi động — cần ChatGPT xác nhận.
+- `ADMIN_ACTIVATION_ORIGIN`: **bắt buộc khi `ADMIN_AUTH_ENABLED=true`** (Owner đã quyết); phải **thuộc allowlist** `ADMIN_AUTH_ALLOWED_ORIGINS` (HTTPS ở staging/production); link = `<origin>/activate#t=<token>`. **Thiếu hoặc sai (ngoài allowlist) ⇒ từ chối khởi động, chỉ nêu tên biến; không bao giờ tự chọn origin** (kể cả khi allowlist chỉ có một origin).
 - Chỉ đọc khi `ADMIN_AUTH_ENABLED=true`. TTL được chụp vào `expires_at` lúc tạo (participant 1A nhận `ttlSeconds`); đổi cấu hình **không** kéo dài lời mời cũ. Replay 900 s / dedupe 86400 s là hằng số trong code (không env).
+- `lock_timeout` của transaction 1B không qua executor: xem mục 8.5 (dùng `businessLockTimeoutMs` đã validate, không thêm biến mới).
 - Keyring: thêm mục đích `adminOperation` (Q11). Cập nhật `.env.example`, README/runbook, test cấu hình.
 
 ## 14. Khôi phục khi mất response (F6)
@@ -459,7 +468,7 @@ Không audit khi bucket đang khóa (giống #34: nhánh `limited` không ghi); 
 | Tình huống | Hành vi đúng |
 |---|---|
 | Mất response của **create-operation** | An toàn gọi lại `POST /admin/operations`: nó vô hiệu bản cũ (`REPLACED`) và tạo bản mới; không tiêu hao TOTP, không ghi mutation. Client không biết `operation_id` của bản mất nên không dùng lại. |
-| Mất response / unknown COMMIT của **verify** | **Không bao giờ gửi lại mã tự động** (server không retry; client không auto-retry). Nếu lần trước đã commit thành công thì `last_accepted_step` đã tiến, gửi lại cùng mã sẽ bị so sánh và tính **một lần sai**. Cách đúng: `GET /admin/operations/:id` — `usable=true` ⇒ đi tiếp; `verifiable=true` ⇒ **người dùng nhập một mã mới** (`attempts_remaining` cho biết còn mấy lần); cả hai `false` ⇒ tạo operation mới. |
+| Mất response / unknown COMMIT của **verify** (`VERIFIED` ⇒ từ chối trước khi so mã, không đếm; không tự retry; GET quyết định) | **Không bao giờ gửi lại mã tự động** (server không retry; client không auto-retry). Nếu lần trước đã commit thành công thì operation đã `VERIFIED`; một lần gửi lại sẽ bị **từ chối trước khi so mã** (`ADMIN_STEP_UP_REQUIRED`, không mở secret, **không tăng counter**). Nếu operation vẫn `PENDING`, một mã gửi lại có thể bị so sánh và tính **một lần sai** — vì vậy **không tự retry TOTP**. Cách đúng: dùng `GET /admin/operations/:id` để xác định kết quả: — `usable=true` ⇒ đi tiếp; `verifiable=true` ⇒ **người dùng nhập một mã mới** (`attempts_remaining` cho biết còn mấy lần); cả hai `false` ⇒ tạo operation mới. |
 | Mất response của create/reissue/revoke | Gọi lại với **cùng `Idempotency-Key` và cùng `operation_id`** trong 15 phút: nhận đúng kết quả cũ (kèm link với create/reissue) hoặc, nếu transaction đã rollback, thực thi lại nếu operation còn `usable`. Quá 15 phút không lấy lại link: dùng `GET /admin/invitations` (SĐT che) để xem trạng thái, rồi **cấp lại**. |
 | Phiên bị thu hồi giữa chừng | Operation gắn phiên cũ trở thành không dùng được (binding); đăng nhập lại, tạo operation mới. Replay link vẫn khả dụng trong 15 phút với phiên mới của cùng SYSTEM (hook mục 9.3). |
 
@@ -480,7 +489,7 @@ Unit: parser/chuẩn hóa (kể cả `permissions` vắng/null/mảng của reis
 | S5 | như S4 cho reissue và revoke | sau L4 | đúng một thành công, hàng cũ chuyển đúng một lần |
 | S6 | verify × verify, cùng operation | sau L2 | một `VERIFIED`; request kia `STEP_UP_REQUIRED`, **không** cộng bộ đếm, không mở secret |
 | S7 | verify × create-op | sau L4 | hai thứ tự: verify trước ⇒ op `VERIFIED` rồi bị `REPLACED`; create-op trước ⇒ verify `STEP_UP_REQUIRED` không đếm |
-| S8 | GET operation × verify | sau L4 | GET chờ, rồi thấy `VERIFIED/usable=true`; không bao giờ trạng thái trung gian |
+| S8 | GET operation × verify | sau L4 (hai thứ tự) | **Verify trước:** GET chờ, rồi thấy `VERIFIED` (`usable=true`). **GET trước:** GET có thể thấy `PENDING` (`verifiable=true`), verify chạy sau và thành công. Không yêu cầu cả hai lịch đều thấy `VERIFIED`; chỉ yêu cầu không bao giờ thấy trạng thái trung gian/nửa chừng |
 | S9 | **BOOT (bootstrap CLI) × create-op** | BOOT sau `lockSystem` | **kết quả hiện tại dự kiến: `40P01`** (chứng minh B-1); sau khi sửa B-1 phải xanh. Test này quyết định điều kiện FINAL. |
 | S10 | login (revoke phiên) × business route | sau L4 | route chờ rồi thấy phiên đã thu hồi ⇒ 401; không mutation |
 | S11 | replay hook × reissue/revoke cùng lời mời | sau L8 | replay không bao giờ giải mã link của lời mời đã SUPERSEDED/REVOKED/quá hạn |
@@ -489,7 +498,7 @@ Unit: parser/chuẩn hóa (kể cả `permissions` vắng/null/mảng của reis
 Ngoài ra chạy race ngẫu nhiên có seed (N=100) trộn create-op/verify/mutation/login/logout làm **kiểm tra bổ sung**, khẳng định 0 lần `40P01` và bất biến cuối. **Không** dùng nó làm chứng minh không deadlock; chứng minh là bảng thứ tự + trace + lịch barrier ở trên.
 
 Nhóm test chức năng:
-- **AZ:** ADMIN-role ⇒ `ADMIN_FORBIDDEN` mọi route; không cookie / token app Khách-Quán-Xế / cookie sai ⇒ `ADMIN_SESSION_INVALID`; POST Origin sai/thiếu hoặc CSRF thiếu ⇒ 403; **GET không có Origin ⇒ thành công; GET có Origin sai ⇒ 403**; user/membership `DISABLED`, đổi mật khẩu (binding lệch), phiên thu hồi hoặc hết hạn *trong lúc chờ khóa* ⇒ 401.
+- **AZ:** ADMIN-role ⇒ `ADMIN_FORBIDDEN` mọi route; không cookie / token app Khách-Quán-Xế / cookie sai ⇒ `ADMIN_SESSION_INVALID`; POST Origin sai/thiếu hoặc CSRF thiếu ⇒ 403; **GET không có Origin ⇒ thành công; GET có Origin sai ⇒ 403**; user/membership `DISABLED`, đổi mật khẩu (binding lệch), phiên thu hồi hoặc hết hạn *trong lúc chờ khóa* ⇒ 401; **mọi GET (chi tiết, danh sách, operation) với factor không ACTIVE hoặc lệch `factor_id/version` của phiên ⇒ 401**; trace khóa của từng GET phát ra user → membership → factor → session.
 - **SU:** sai mã tăng bộ đếm bucket và `attempt_count` và **được commit** (đọc lại sau lỗi); lần 5 ⇒ `INVALIDATED(ATTEMPTS_EXHAUSTED)`; **các trường hợp không đếm** (body sai, bucket khóa, operation sai/hết hạn/lệch binding) giữ nguyên cả hai bộ đếm; bucket khóa ⇒ 429 + `Retry-After` trước khi mở secret (spy `openTotpSecret` = 0 lần); mã vừa dùng đăng nhập bị từ chối (và được đếm vì đã so sánh); mã step trước/sau cửa sổ; operation hết hạn trong lúc chờ khóa; sai target/body/version/action; dùng lại sau `CONSUMED`; đăng nhập lại / đổi factor / tăng version membership ⇒ operation không dùng được nhưng `status` lưu **không đổi** (kiểm chứng "chỉ từ chối, không ghi"); tạo operation thứ hai ⇒ cái cũ `REPLACED`.
 - **ST (trạng thái, F5):** `VERIFIED` quá 120 s ⇒ GET `usable=false, expired=true, status='VERIFIED'` và **không** có UPDATE nào do GET; lệch binding ⇒ `usable=false`; `PENDING` ⇒ `verifiable=true`, `attempts_remaining` đúng.
 - **CR (create):** thành công (lời mời + snapshot + digest, link không có trong DB/audit/log, một audit, một record idempotency); PENDING còn hạn ⇒ `PENDING_EXISTS`; PENDING quá hạn ⇒ `EXPIRED` + audit rồi tạo mới; SĐT đã là user ⇒ `ADMIN_PHONE_CONFLICT`; ưu tiên lỗi authz > step-up > nghiệp vụ; audit lỗi ⇒ rollback toàn bộ.
@@ -514,7 +523,7 @@ Không sửa: migration đã apply, `/admin-auth/*`, bất kỳ route app Khách
 | Giai đoạn | Người | Trạng thái |
 |---|---|---|
 | Hợp đồng 1B (tài liệu này, v2) | Claude soạn → ChatGPT review head mới | **Chờ review** |
-| Quyết định B-1 (bootstrap) | ChatGPT/Owner | **Chờ quyết định** |
+| Sửa B-1 (bootstrap SYSTEM) trong phạm vi riêng | Owner đã cho phép; Claude sửa; ChatGPT review | **Đang sửa** trong commit/nhánh riêng (kết quả được cập nhật ở mục 8.7 sau khi có CI) |
 | Code + test 1B | Claude | Chưa bắt đầu; chỉ sau khi review đạt |
 | Review diff đúng SHA | ChatGPT | Chưa |
 | Test local, Authenticator thật | Owner | Chưa (cần UI SYSTEM — gói riêng) |
@@ -530,7 +539,8 @@ Không sửa: migration đã apply, `/admin-auth/*`, bất kỳ route app Khách
 
 - Chưa có code, migration chạy thật, test hay CI nào cho 1B; mọi mục trên là **thiết kế** dựa trên đọc code #34/#37. Không có bằng chứng runtime về thứ tự khóa.
 - `LOCK_PROTOCOL = NOT_FINAL` (mục 8.7), vì finding **B-1** (bootstrap CLI khóa membership trước user) chưa có quyết định, và chưa có test barrier chạy.
-- Điểm cần ChatGPT/Owner xác nhận: (1) cách xử lý B-1; (2) thu hồi chỉ áp dụng cho `PENDING` (suy ra từ Q2); (3) hành vi khi thiếu `ADMIN_ACTIVATION_ORIGIN` (mục 13); (4) mã lỗi mới `ADMIN_INVITATION_NOT_REPLAYABLE`; (5) cách đặt `lock_timeout` cho các transaction không qua executor (create-op, verify, GET) — đề xuất dùng cùng `businessLockTimeoutMs` của executor; chưa xác minh #34 hiện làm gì.
+- Đã được Owner chốt (không còn là điểm mở): thu hồi chỉ `PENDING`; `ADMIN_ACTIVATION_ORIGIN` bắt buộc/allowlist/không tự chọn; `ADMIN_INVITATION_NOT_REPLAYABLE`; `lock_timeout` bằng `set_config(…, true)` với `businessLockTimeoutMs`; GET kiểm factor.
+- Còn thiếu: review B-1 của ChatGPT; CI trên final head của bản sửa B-1; test barrier S1–S12 cho code 1B (chưa có code).
 - Chưa kiểm lịch sử migration DB Owner/staging (không có quyền operator read-only); migration 1B chỉ chạy trên DB test, không deploy.
 - Kích hoạt (1C) sẽ cần phân tích call graph khóa riêng; tài liệu này chỉ đặt ràng buộc (mục 8.8).
 - Chưa có Owner nghiệm thu, chưa đóng M01, chưa deploy.
