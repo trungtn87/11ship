@@ -167,7 +167,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#45](https://github.com/trungtn87/11ship/pull/45) feat(M01-D-ADMIN-1C): admin account activation (implementat… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `f37c1ad` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#46](https://github.com/trungtn87/11ship/pull/46) M00: three Windows launchers for Admin, 11Food and 11Ship | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `cf9eeca` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#47](https://github.com/trungtn87/11ship/pull/47) feat(admin-web): SYSTEM invitations and ADMIN activation UI… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `618d35d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#48](https://github.com/trungtn87/11ship/pull/48) docs: thiết kế 1 Web + 2 App, M00 launcher và handoff Claud… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `fd38e53` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#48](https://github.com/trungtn87/11ship/pull/48) docs: thiết kế 1 Web + 2 App, M00 launcher và handoff Claud… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `5e351f5` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
