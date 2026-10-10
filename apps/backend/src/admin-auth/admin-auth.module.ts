@@ -1,11 +1,11 @@
-import { DynamicModule, Inject, MiddlewareConsumer, Module, NestModule, Optional } from '@nestjs/common';
+import { DynamicModule, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ActivationOtpProvider, ACTIVATION_OTP_PROVIDER } from '../admin-activation/activation-otp-provider';
 import { adminActivationConfigProvider } from '../admin-activation/admin-activation-config.provider';
 import { AdminActivationInvalidator } from '../admin-activation/admin-activation-invalidator';
 import { AdminActivationLimiter } from '../admin-activation/admin-activation-limiter';
 import { AdminActivationRepository } from '../admin-activation/admin-activation-repository';
 import { AdminActivationService } from '../admin-activation/admin-activation-service';
-import { activationTransportMiddleware, AdminActivationController } from '../admin-activation/admin-activation.controller';
+import { AdminActivationController } from '../admin-activation/admin-activation.controller';
 import { AdminInvitationParticipant } from '../admin-invitations/admin-invitation-participant';
 import { AdminInvitationRepository } from '../admin-invitations/admin-invitation-repository';
 import { AdminInvitationReader } from '../admin-provisioning/admin-invitation-reader';
@@ -49,13 +49,8 @@ export interface AdminActivationWiring {
   readonly otpProvider: ActivationOtpProvider;
 }
 
-/** Injection token telling configure() that the activation routes are wired. */
-const ADMIN_ACTIVATION_WIRING = Symbol('ADMIN_ACTIVATION_WIRING');
-
 @Module({})
 export class AdminAuthModule implements NestModule {
-  constructor(@Optional() @Inject(ADMIN_ACTIVATION_WIRING) private readonly activation?: AdminActivationWiring) {}
-
   static register(auth: DynamicModule, activation?: AdminActivationWiring): DynamicModule {
     return {
       module: AdminAuthModule,
@@ -102,7 +97,6 @@ export class AdminAuthModule implements NestModule {
         ...(activation === undefined
           ? []
           : [
-              { provide: ADMIN_ACTIVATION_WIRING, useValue: activation },
               { provide: ACTIVATION_OTP_PROVIDER, useValue: activation.otpProvider },
               adminActivationConfigProvider,
               AdminActivationLimiter,
@@ -114,8 +108,7 @@ export class AdminAuthModule implements NestModule {
 
   configure(consumer: MiddlewareConsumer): void {
     consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController);
-    if (this.activation !== undefined) {
-      consumer.apply(activationTransportMiddleware).forRoutes(AdminActivationController);
-    }
+    // The activation transport headers are an application-level middleware in configureApp (app.setup.ts): it must precede
+    // the body parser, which module middleware does not.
   }
 }
