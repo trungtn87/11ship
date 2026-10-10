@@ -1,5 +1,7 @@
 # M01-D-ADMIN-1B — bằng chứng triển khai (10/10/2026)
 
+> **Cập nhật vòng sửa finding phân quyền (mục 7).** Review code tại `ad9b092` nêu một finding: reissue/revoke đọc SĐT lời mời trước khi kiểm quyền SYSTEM nên ADMIN nhận 404 (id không tồn tại) nhưng 403 (id tồn tại). Đã sửa ở commit riêng `4f9bfab`; các mục 1–6 dưới đây giữ nguyên là bằng chứng của `d5cc580`/`ad9b092`, riêng điểm diễn giải 5 ở mục 5 được thay thế bởi mục 7.
+
 Người thực hiện: Claude. Môi trường test chính thức: GitHub Actions CI (Node 24, PostgreSQL 17, DB test có guard). **Không phải nghiệm thu**: chưa có review của ChatGPT cho code 1B, chưa có test local của Owner (cần UI SYSTEM — gói riêng), chưa deploy, M01 chưa đóng.
 
 ## 1. Mốc
@@ -76,10 +78,37 @@ Tên file test viết tắt: **H** = `tests/integration/admin-provisioning.int.s
 2. Logical request của idempotency có dạng `{ operation_id, payload: <canonical payload §6.3> }` cho cả ba route — cùng nội dung với §9.1 (kể cả `permissions` của reissue), chỉ khác cách lồng.
 3. Phần đọc lời mời nằm trong `admin-provisioning/admin-invitation-reader.ts` thay vì thêm hàm vào repository 1A (§16 dự kiến): file 1A giữ nguyên.
 4. `Content-Type` không phải JSON → `400` chung (như #34), không phải `ADMIN_INPUT_INVALID`.
-5. Reissue/revoke với id không tồn tại trả 404 ở bước tiền kiểm (cần SĐT bất biến để lấy khóa L3) — một phiên ADMIN-role đã xác thực có thể biết một id có tồn tại hay không trước khi bị 403. Có thể đổi thứ tự nếu ChatGPT yêu cầu.
+5. ~~Reissue/revoke với id không tồn tại trả 404 ở bước tiền kiểm~~ — **đã sửa** (finding review `ad9b092`, mục 7): kiểm quyền SYSTEM dưới khóa chạy trước khi tra mục tiêu.
+
+Bốn diễn giải 1–4 **đã được chấp nhận** và được ghi vào hợp đồng tại mục 6.10 (hợp đồng v2.2).
 
 ## 6. Giới hạn
 
 - Môi trường của Claude không cài được dependency (registry npm bị chặn) nên không chạy được jest/eslint cục bộ. Bằng chứng cục bộ: typecheck bằng TypeScript 6 với stub cho `@nestjs/*`, `pg`, `@jest/globals` (chỉ lỗi do stub); SQL của migration, repository và reader chạy thử trên PostgreSQL 16 cục bộ (DB nháp). **Bằng chứng chính thức là CI.**
 - Không chạy gì trên DB Owner/staging; migration chỉ chạy trên DB test của CI và DB nháp cục bộ.
 - Theo từng ứng dụng: Web quản trị — backend API đã code + CI, **chưa có UI**, chưa test local/thiết bị; Khách/Quán/Xế — N/A (chỉ dùng app; test âm tính xác nhận không vào được) — quyết định N/A thuộc Owner; App quản lý — N/A trong 1B; Liên thông — kích hoạt là 1C, chưa kiểm chứng.
+
+## 7. Sửa finding phân quyền của reissue/revoke (review `ad9b092`)
+
+**Finding.** `reissue()`/`revoke()` gọi tra SĐT mục tiêu (đọc không khóa) trước mọi kiểm quyền dưới khóa. Phiên ADMIN-role nhận `404 ADMIN_INVITATION_NOT_FOUND` với id không tồn tại nhưng `403 ADMIN_FORBIDDEN` với id tồn tại: lộ sự tồn tại. Cùng lỗ hổng với phiên đã hết hạn/thu hồi/lệch factor hoặc membership.
+
+**Sửa (commit riêng `4f9bfab`, đã push không force-push).** Thêm một transaction authorization chỉ đọc chạy **trước** việc tra mục tiêu: `lock_timeout` (`set_config(..., true)`) → L4 `users` S → L5 `memberships` S → L6 factor S → L7 phiên S → giờ DB → `assertLive` (ADMIN ⇒ 403, hết hạn/thu hồi/lệch ⇒ 401) → chỉ khi đạt mới đọc thường SĐT bất biến (không có ⇒ 404 cho SYSTEM hợp lệ). Transaction này commit trước coordinator nên không giữ khóa nào khi coordinator lấy L1/L3; coordinator và hook replay giữ nguyên kiểm actor/session/factor/membership của chúng dưới khóa và thứ tự đã duyệt. Hợp đồng cập nhật ở mục 6.0, 6.8, 6.9, 8.1, 8.3.4, 8.4, 8.5, 8.6, 15 (nhóm AZ-R) và mục 6.10 mới.
+
+### Bảng finding → code → regression test
+
+| Yêu cầu | Code | Regression test |
+|---|---|---|
+| ADMIN + id tồn tại **và** không tồn tại ⇒ 403 `ADMIN_FORBIDDEN` (cả hai route) | `admin-invitation-service.ts`: `#authorizeAndTargetPhone` thay `#targetPhone` ở `reissue` và `revoke` | `admin-provisioning.int.spec.ts` › "reissue/revoke authorize the session BEFORE looking the target up" › "an ADMIN-role session gets 403 ADMIN_FORBIDDEN for an existing AND an unknown id" (`it.each` reissue, revoke; body không chứa `NOT_FOUND`) |
+| SYSTEM hợp lệ + id không tồn tại ⇒ vẫn 404 | cùng hàm: đọc `peekPhone` chỉ sau `assertLive` | "a valid SYSTEM session still gets 404 for an unknown id" (reissue, revoke) |
+| Phiên thu hồi / hết hạn; version factor lệch; version membership lệch; membership `DISABLED` ⇒ 401 `ADMIN_SESSION_INVALID`, id tồn tại và không tồn tại | `actor.lock(..., { user: 'read', factor: 'read' })` + `freshClockMs` + `assertLive` | "refused with 401 when …" — 8 ca (4 điều kiện × reissue/revoke), mỗi ca cho cả hai loại id |
+| Không đổi lời mời, operation, bộ đếm TOTP, audit nghiệp vụ, record idempotency khi bị từ chối | transaction authorization chỉ đọc, không audit | `snapshot()` (lời mời, `admin_sensitive_operations` gồm `status/attempt_count`, số audit `admin_invitation.%`, số record `admin_user`, bucket TOTP) so bằng nhau trước/sau ở mọi ca trên |
+| Kiểm actor/session/factor/membership trong coordinator và replay còn nguyên; thứ tự khóa đã duyệt giữ nguyên | coordinator (`executor.execute`) và `#authorizeReplay` **không đổi** | `admin-provisioning-locks.int.spec.ts` › `expectAuthorizedThenMutation`: 2 transaction; authorization = `L4,L5,L6,L7` chỉ `FOR SHARE`, không advisory, `lock_timeout` trước khóa đầu; coordinator không giảm và đúng danh sách khóa cũ; authorization kết thúc trước coordinator; test replay/RP, S1–S11 và các trace khác giữ nguyên và xanh |
+| Barrier / `lock_timeout` | `setBusinessLockTimeout` trước khóa đầu của transaction authorization | trace ở trên; test `55P03` hiện có không đổi |
+
+**Mốc.** Head được review: `ad9b092959e60adab5a9f5ef6919082feb2fe7ba`; base (hợp đồng #38): `ba0884bf53cf985c12f9ce69be868755349d19c2` (không đổi). Head lúc nhận việc là `4f9bfab79eb85de991a19d33382ea48802f5d339` (đã chứa bản sửa, 3 file: service, 2 spec); đối chiếu diff `ad9b092..4f9bfab` trước khi làm tiếp: chỉ đúng phạm vi finding, không file nào khác.
+
+**CI trên `4f9bfab`** (code, trước commit tài liệu của vòng này): **success** — https://github.com/trungtn87/11ship/actions/runs/38016242293 — lint, typecheck, build, deploy-config, migrations smoke; unit **1587/1587** (76 suite); integration CI mode **1109/1109** (65 suite, 0 pending); local mode 1104 đạt + 5 pending theo thiết kế. So với `d5cc580` (1097 integration): +12 test, đúng bằng 2 + 2 + 8 ca regression ở trên. CI trên final head (sau commit tài liệu) ghi ở mô tả PR.
+
+**Giữ nguyên.** PR Draft; `LOCK_PROTOCOL = NOT_FINAL` (điều kiện 2 và 4 của mục 8.7 hợp đồng chưa đạt); chưa triển khai 1C; không merge, không deploy, không nghiệm thu, không đóng M01; PR #40/G01 đã merge và không bị sửa lại.
+
+**Giới hạn của vòng này.** Môi trường của Claude không chạy được jest/eslint cục bộ (registry npm bị chặn): bằng chứng chính thức là CI đúng SHA; không chạm DB Owner/staging.
