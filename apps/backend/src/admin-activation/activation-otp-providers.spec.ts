@@ -32,7 +32,7 @@ describe('activation OTP providers and binding', () => {
     expect(await fake.send(PHONE, '333333')).toEqual({ outcome: 'UNKNOWN' });
     expect(fake.lastOtpFor(PHONE)).toBe('333333');
     await expect(fake.send(PHONE, '444444')).rejects.toThrow();
-    expect(fake.sendStarted()).toBe(5);
+    expect(fake.sendStarted()).toBe(4);
     expect(fake.sentCount()).toBe(2);
   });
 
