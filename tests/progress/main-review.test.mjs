@@ -339,7 +339,7 @@ describe('reset-review: cleanup of review labels when the head changes (defense 
 // ---------------------------------------------------------------------------------------------
 
 describe('workflow wiring (static checks)', () => {
-  const text = readFileSync(resolve(root, '.github/workflows/update-progress.yml'), 'utf8');
+  const text = readFileSync(resolve(root, '.github/workflows/update-progress.yml'), 'utf8').replaceAll('\r\n', '\n');
   const jobBlock = (name) => {
     const start = text.indexOf(`\n  ${name}:`);
     assert.notEqual(start, -1, `job ${name} exists`);
