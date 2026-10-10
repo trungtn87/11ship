@@ -78,7 +78,7 @@ describe('M01-D-LOGIN - administration schema', () => {
   it('the origin down migration refuses to run while an administration-provisioned account exists', () => {
     const down = originSql.split('-- Down Migration')[1] as string;
     expect(down).toMatch(/RAISE\s+EXCEPTION/i);
-    expect(down).toMatch(/account_origin\s*<>\s*'PHONE_VERIFIED'/);
+    expect(down).toMatch(/account_origin\s*=\s*'ADMIN_PROVISIONED'/);
   });
 
   it('pairs the account origin with the phone verification', async () => {
