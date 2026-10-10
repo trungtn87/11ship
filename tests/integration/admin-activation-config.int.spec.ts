@@ -70,7 +70,7 @@ describe('M01-D-ADMIN-1C - configured TTLs and thresholds drive the behaviour', 
     const [attempt] = await attemptsOf(ctx.pool, invite.invitationId);
     const [challenge] = await challengesOf(ctx.pool, String(attempt?.attempt_id));
     const times = await ctx.pool.query<{ ttl: string; cooldown: string }>(
-      `SELECT extract(epoch FROM expires_at - created_at)::text AS ttl, extract(epoch FROM resend_not_before - created_at)::text AS cooldown
+      `SELECT extract(epoch FROM expires_at - created_at)::int::text AS ttl, extract(epoch FROM resend_not_before - created_at)::int::text AS cooldown
          FROM app.admin_activation_otp_challenges WHERE challenge_id = $1::uuid`,
       [challenge?.challenge_id],
     );
