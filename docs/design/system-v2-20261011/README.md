@@ -2,6 +2,8 @@
 
 Phiên bản **2.0.0**, ngày **11/10/2026 (Asia/Saigon)**. Trạng thái **DESIGN_REVIEW / NOT_LOCKED**. Base kiểm kê: `e5b50e8567b8928646c83648dd70f577915dc14f`. Quyền thiết kế: nhiệm vụ Owner ngày 11/10/2026. ChatGPT thiết kế và review; Claude code/test/build; Owner duyệt UI, test và quyết định merge/LOCK.
 
+PR thiết kế [#48](https://github.com/trungtn87/11ship/pull/48), nhánh `docs/three-app-system-design-20261011`, trạng thái Draft. PR này lưu bộ bàn giao; việc tạo PR không thay thế phê duyệt UI hoặc nghiệm thu module.
+
 ## Cách dùng bộ bàn giao
 
 1. Đọc [kiểm kê](00-audit.md), [quyết định/độ sẵn sàng](06-decisions-and-gates.md).

@@ -1,6 +1,6 @@
 # Chỉ mục nguồn, PR và phiên bản
 
-Phiên bản **2.0.0**; **SOURCE_TRACE / NOT_ACCEPTANCE**. Repo [trungtn87/11ship](https://github.com/trungtn87/11ship); nhánh main kiểm kê [e5b50e8567b8928646c83648dd70f577915dc14f](https://github.com/trungtn87/11ship/commit/e5b50e8567b8928646c83648dd70f577915dc14f). Source design hiện được chuẩn bị trên nhánh docs/three-app-system-design-20261011, chưa tự Owner approve.
+Phiên bản **2.0.0**; **SOURCE_TRACE / NOT_ACCEPTANCE**. Repo [trungtn87/11ship](https://github.com/trungtn87/11ship); nhánh main kiểm kê [e5b50e8567b8928646c83648dd70f577915dc14f](https://github.com/trungtn87/11ship/commit/e5b50e8567b8928646c83648dd70f577915dc14f). Bộ thiết kế được lưu tại [PR #48](https://github.com/trungtn87/11ship/pull/48), nhánh `docs/three-app-system-design-20261011`, trạng thái Draft và chờ Owner duyệt.
 
 ## 1. Nguồn main được kế thừa
 
