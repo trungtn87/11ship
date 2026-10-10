@@ -1,0 +1,768 @@
+{
+  "audited_at": "2026-10-11T01:02:29+07:00",
+  "observed_at": "2026-10-10T18:07:41.591Z",
+  "main": "e5b50e8567b8928646c83648dd70f577915dc14f",
+  "pr_snapshots": [
+    {
+      "number": 46,
+      "title": "M00: three Windows launchers for Admin, 11Food and 11Ship",
+      "state": "open",
+      "draft": true,
+      "head": "cf9eecadb6d50ec061d525d1bdf9b3f50d6d062b",
+      "base": "main",
+      "branch": "feat/m00-three-app-launchers",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/46",
+      "checks": [
+        {
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38072423169/job/114272444016",
+          "completed": "2026-10-10T17:36:25Z"
+        },
+        {
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38072423169/job/114272427547",
+          "completed": "2026-10-10T17:36:25Z"
+        },
+        {
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38072423169/job/114272411320",
+          "completed": "2026-10-10T17:36:25Z"
+        },
+        {
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38072423169/job/114272410515",
+          "completed": "2026-10-10T17:36:50Z"
+        },
+        {
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38072423130/job/114272410323",
+          "completed": "2026-10-10T17:36:25Z"
+        },
+        {
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38072423130/job/114272410173",
+          "completed": "2026-10-10T17:36:25Z"
+        },
+        {
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38072423130/job/114272409968",
+          "completed": "2026-10-10T17:36:25Z"
+        },
+        {
+          "name": "Launcher behaviour (Windows PowerShell 5.1)",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38072423120/job/114272409345",
+          "completed": "2026-10-10T17:38:13Z"
+        },
+        {
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38072423130/job/114272409199",
+          "completed": "2026-10-10T17:36:47Z"
+        },
+        {
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38072423120/job/114272409163",
+          "completed": "2026-10-10T17:37:25Z"
+        }
+      ]
+    },
+    {
+      "number": 45,
+      "title": "feat(M01-D-ADMIN-1C): admin account activation (implementation) [Draft]",
+      "state": "open",
+      "draft": true,
+      "head": "f37c1ad6ad5a5b2e7a6cadabe12f13c02f0ace10",
+      "base": "docs/m01-d-admin-1c-contract",
+      "branch": "feat/m01-d-admin-1c-activation",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/45",
+      "checks": [
+        {
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38070066984/job/114265523214",
+          "completed": "2026-10-10T17:02:33Z"
+        },
+        {
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38070069061/job/114265519341",
+          "completed": "2026-10-10T17:01:55Z"
+        },
+        {
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38070069062/job/114265496639",
+          "completed": "2026-10-10T17:14:20Z"
+        },
+        {
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38070069061/job/114265487899",
+          "completed": "2026-10-10T17:01:55Z"
+        },
+        {
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38070069061/job/114265487304",
+          "completed": "2026-10-10T17:01:55Z"
+        },
+        {
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38070069061/job/114265486232",
+          "completed": "2026-10-10T17:02:23Z"
+        },
+        {
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38070066984/job/114265481635",
+          "completed": "2026-10-10T17:01:54Z"
+        },
+        {
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38070066984/job/114265481609",
+          "completed": "2026-10-10T17:01:54Z"
+        },
+        {
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38070066984/job/114265480677",
+          "completed": "2026-10-10T17:02:05Z"
+        }
+      ]
+    },
+    {
+      "number": 44,
+      "title": "docs(M01-D-ADMIN-1C): hợp đồng kỹ thuật kích hoạt ADMIN (Draft, chỉ tài liệu)",
+      "state": "open",
+      "draft": true,
+      "head": "2e63da58ffb946ae0af5eced178a32bcc93a82d9",
+      "base": "feat/m01-d-admin-1b-provisioning",
+      "branch": "docs/m01-d-admin-1c-contract",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/44"
+    },
+    {
+      "number": 43,
+      "title": "docs(m01): chốt thiết kế reset mật khẩu USER / ADMIN / SYSTEM (chờ triển khai)",
+      "state": "open",
+      "draft": false,
+      "head": "b853c88f8f7f54b7ecb8a74df67f75ca807aeb33",
+      "base": "main",
+      "branch": "design/m01-password-reset-20261010",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/43"
+    },
+    {
+      "number": 41,
+      "title": "feat(admin-provisioning): M01-D-ADMIN-1B — step-up SYSTEM và tạo/cấp lại/thu hồi lời mời ADMIN (Draft)",
+      "state": "open",
+      "draft": true,
+      "head": "4ab9c9cff8db730699d234c56bacf567506c5bbf",
+      "base": "docs/m01-d-admin-1b-contract",
+      "branch": "feat/m01-d-admin-1b-provisioning",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/41",
+      "checks": [
+        {
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38034960344/job/114163404293",
+          "completed": "2026-10-10T07:36:20Z"
+        },
+        {
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38034962143/job/114163396630",
+          "completed": "2026-10-10T07:35:44Z"
+        },
+        {
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38034962143/job/114163372526",
+          "completed": "2026-10-10T07:35:44Z"
+        },
+        {
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38034962143/job/114163372392",
+          "completed": "2026-10-10T07:35:44Z"
+        },
+        {
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38034962143/job/114163371795",
+          "completed": "2026-10-10T07:36:10Z"
+        },
+        {
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38034962128/job/114163371780",
+          "completed": "2026-10-10T07:43:53Z"
+        },
+        {
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38034960344/job/114163367497",
+          "completed": "2026-10-10T07:35:43Z"
+        },
+        {
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38034960344/job/114163367272",
+          "completed": "2026-10-10T07:35:43Z"
+        },
+        {
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38034960344/job/114163366762",
+          "completed": "2026-10-10T07:35:55Z"
+        }
+      ]
+    },
+    {
+      "number": 42,
+      "title": "WIP(m00): staging integration for M01 Admin Web — backend/UI + D2 reconciler",
+      "state": "open",
+      "draft": true,
+      "head": "13a596254fed75544bfc1f461d48086c863e4c43",
+      "base": "main",
+      "branch": "codex/m00-staging-admin-integration",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/42",
+      "checks": [
+        {
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38025106064/job/114134216415",
+          "completed": "2026-10-10T04:45:17Z"
+        },
+        {
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38025107219/job/114134192443",
+          "completed": "2026-10-10T04:52:07Z"
+        },
+        {
+          "name": "Launcher behaviour (Windows PowerShell 5.1)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38025107219/job/114134192308",
+          "completed": "2026-10-10T04:45:57Z"
+        },
+        {
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38025107234/job/114134189533",
+          "completed": "2026-10-10T04:44:23Z"
+        },
+        {
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38025107234/job/114134189489",
+          "completed": "2026-10-10T04:44:23Z"
+        },
+        {
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38025107234/job/114134189365",
+          "completed": "2026-10-10T04:44:23Z"
+        },
+        {
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38025107234/job/114134188493",
+          "completed": "2026-10-10T04:44:44Z"
+        },
+        {
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38025106064/job/114134186454",
+          "completed": "2026-10-10T04:44:22Z"
+        },
+        {
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38025106064/job/114134186231",
+          "completed": "2026-10-10T04:44:22Z"
+        },
+        {
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38025106064/job/114134185575",
+          "completed": "2026-10-10T04:44:32Z"
+        }
+      ]
+    },
+    {
+      "number": 27,
+      "title": "feat(M00-D2): staging accounts without SMS (fixture mode, seed command)",
+      "state": "open",
+      "draft": true,
+      "head": "18cb54b6afc524655c075958bb61b84164e43532",
+      "base": "main",
+      "branch": "feat/m00-d2-staging-fixtures",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/27",
+      "checks": [
+        {
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38019644273/job/114117596286",
+          "completed": "2026-10-10T03:11:20Z"
+        },
+        {
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38019646604/job/114117573726",
+          "completed": "2026-10-10T03:10:48Z"
+        },
+        {
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38019646604/job/114117573698",
+          "completed": "2026-10-10T03:10:48Z"
+        },
+        {
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38019646604/job/114117573562",
+          "completed": "2026-10-10T03:10:48Z"
+        },
+        {
+          "name": "Launcher behaviour (Windows PowerShell 5.1)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38019646570/job/114117573098",
+          "completed": "2026-10-10T03:12:42Z"
+        },
+        {
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38019646570/job/114117572928",
+          "completed": "2026-10-10T03:15:04Z"
+        },
+        {
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38019646604/job/114117572873",
+          "completed": "2026-10-10T03:11:09Z"
+        },
+        {
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38019644273/job/114117567300",
+          "completed": "2026-10-10T03:10:46Z"
+        },
+        {
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38019644273/job/114117567161",
+          "completed": "2026-10-10T03:10:46Z"
+        },
+        {
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38019644273/job/114117566465",
+          "completed": "2026-10-10T03:10:56Z"
+        }
+      ]
+    },
+    {
+      "number": 40,
+      "title": "feat(m00): Windows Local Test Launcher",
+      "state": "closed",
+      "draft": false,
+      "head": "26c796fff76ecd2037841447445b1187a716e00b",
+      "base": "main",
+      "branch": "codex/m00-local-launcher",
+      "merged_at": "2026-10-10T02:33:17Z",
+      "url": "https://github.com/trungtn87/11ship/pull/40"
+    },
+    {
+      "number": 39,
+      "title": "docs(m00): thiết kế Local Test Launcher cho Owner",
+      "state": "closed",
+      "draft": true,
+      "head": "e3e0b90329049c1b6c4ec9a6fc336f7724cadb8c",
+      "base": "main",
+      "branch": "design/m00-local-test-launcher",
+      "merged_at": "2026-10-10T02:33:19Z",
+      "url": "https://github.com/trungtn87/11ship/pull/39"
+    },
+    {
+      "number": 37,
+      "title": "feat(admin-invitations): M01-D-ADMIN-1A — nền dữ liệu lời mời ADMIN (Draft, stacked trên #34)",
+      "state": "open",
+      "draft": true,
+      "head": "c93c05148768b25d162e50c7d70d73d522de586e",
+      "base": "feat/m01-d-login-backend",
+      "branch": "feat/m01-d-admin-1a-invitations",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/37"
+    },
+    {
+      "number": 34,
+      "title": "feat(admin-auth): M01-D-LOGIN backend (Draft)",
+      "state": "open",
+      "draft": true,
+      "head": "08910ed92608d102da29d45ae1a8e5afd14dbcd1",
+      "base": "main",
+      "branch": "feat/m01-d-login-backend",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/34",
+      "checks": [
+        {
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38010971799/job/114090669093",
+          "completed": "2026-10-10T00:54:17Z"
+        },
+        {
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38010973523/job/114090642074",
+          "completed": "2026-10-10T00:53:39Z"
+        },
+        {
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38010973523/job/114090641971",
+          "completed": "2026-10-10T00:53:39Z"
+        },
+        {
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38010973523/job/114090641844",
+          "completed": "2026-10-10T00:53:39Z"
+        },
+        {
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38010973541/job/114090641060",
+          "completed": "2026-10-10T01:00:40Z"
+        },
+        {
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38010973523/job/114090641029",
+          "completed": "2026-10-10T00:54:07Z"
+        },
+        {
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38010971799/job/114090636271",
+          "completed": "2026-10-10T00:53:38Z"
+        },
+        {
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38010971799/job/114090636261",
+          "completed": "2026-10-10T00:53:38Z"
+        },
+        {
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/38010971799/job/114090635358",
+          "completed": "2026-10-10T00:53:47Z"
+        }
+      ]
+    },
+    {
+      "number": 38,
+      "title": "docs(M01-D-ADMIN-1B): hợp đồng kỹ thuật tạo/cấp lại/thu hồi lời mời (Draft, chờ review)",
+      "state": "open",
+      "draft": true,
+      "head": "ba0884bf53cf985c12f9ce69be868755349d19c2",
+      "base": "feat/m01-d-admin-1a-invitations",
+      "branch": "docs/m01-d-admin-1b-contract",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/38"
+    },
+    {
+      "number": 36,
+      "title": "docs(M01-D-ADMIN): kiểm kê backend và đề xuất gói tạo/kích hoạt ADMIN (Draft)",
+      "state": "open",
+      "draft": true,
+      "head": "101daa8a53788b788c835fa53b3668733f1b359b",
+      "base": "main",
+      "branch": "docs/m01-d-admin-provisioning-preflight",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/36"
+    },
+    {
+      "number": 35,
+      "title": "M01-D-LOGIN-UI: web quản trị — đăng nhập, Authenticator, F5, shell, đăng xuất (Draft, phụ thuộc #34)",
+      "state": "open",
+      "draft": true,
+      "head": "7b116c3d4551bf0028fa544278449598acf5991c",
+      "base": "feat/m01-d-login-backend",
+      "branch": "feat/m01-d-login-ui",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/35",
+      "checks": [
+        {
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/37919466485/job/113783699386",
+          "completed": "2026-10-09T10:45:22Z"
+        },
+        {
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/37919466485/job/113783670030",
+          "completed": "2026-10-09T10:44:42Z"
+        },
+        {
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/37919470826/job/113783650396",
+          "completed": "2026-10-09T10:44:45Z"
+        },
+        {
+          "name": "Publish docs/PROGRESS.md",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/37919470826/job/113783650052",
+          "completed": "2026-10-09T10:44:45Z"
+        },
+        {
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/37919470826/job/113783649956",
+          "completed": "2026-10-09T10:44:45Z"
+        },
+        {
+          "name": "Verify (Node 24, PostgreSQL 17)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/37919470840/job/113783648779",
+          "completed": "2026-10-09T10:52:22Z"
+        },
+        {
+          "name": "Test and preview (read-only)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/37919470826/job/113783648222",
+          "completed": "2026-10-09T10:45:08Z"
+        },
+        {
+          "name": "Bind review label to the head SHA (commit status)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/37919466485/job/113783634784",
+          "completed": "2026-10-09T10:44:42Z"
+        },
+        {
+          "name": "Reset review labels (head changed; cleanup only)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/trungtn87/11ship/actions/runs/37919466485/job/113783633694",
+          "completed": "2026-10-09T10:44:53Z"
+        }
+      ]
+    },
+    {
+      "number": 30,
+      "title": "docs(M01): roadmap đầy đủ SYSTEM, ADMIN và Auth từng ứng dụng",
+      "state": "open",
+      "draft": true,
+      "head": "bb5d6c97ab2f1b2853765d218ad76cc9816c9952",
+      "base": "main",
+      "branch": "design/m01-complete-roadmap",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/30"
+    },
+    {
+      "number": 33,
+      "title": "design: bổ sung M00 local trước vòng test M01 theo quy trình mới",
+      "state": "open",
+      "draft": true,
+      "head": "aa7082b42c65deaa247ade16e3e2b5071d5cf619",
+      "base": "main",
+      "branch": "design/m00-local-m01-restart",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/33"
+    },
+    {
+      "number": 32,
+      "title": "docs: khóa phân công và gate local/điện thoại cho từng module",
+      "state": "closed",
+      "draft": false,
+      "head": "0206918162097184ae53ef5da0ed286b3f7644a6",
+      "base": "main",
+      "branch": "docs/owner-delivery-workflow",
+      "merged_at": "2026-10-09T04:13:53Z",
+      "url": "https://github.com/trungtn87/11ship/pull/32"
+    },
+    {
+      "number": 31,
+      "title": "feat(M01): bước 1 — khung web admin và 3 app Android test",
+      "state": "open",
+      "draft": true,
+      "head": "be45bee840945a189668b459427afcd433dc09d8",
+      "base": "main",
+      "branch": "feat/m01-step1-four-app-foundation",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/31"
+    },
+    {
+      "number": 29,
+      "title": "feat(web): M01 test UI — login, session router, role select, shop/driver onboarding (DRAFT)",
+      "state": "open",
+      "draft": true,
+      "head": "363a526b68c6db4488c3a8b19108271c47be9aa4",
+      "base": "main",
+      "branch": "feat/m01-ui-web",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/29"
+    },
+    {
+      "number": 28,
+      "title": "design: roadmap tổng thể 11Ship và gate nghiệm thu theo từng phần",
+      "state": "open",
+      "draft": true,
+      "head": "cdf030d28c85b6ecf9e9143e1e63b4a165ddb4c1",
+      "base": "main",
+      "branch": "design/project-roadmap",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/28"
+    },
+    {
+      "number": 26,
+      "title": "design(M00-D2): tài khoản staging chưa xác minh SĐT",
+      "state": "open",
+      "draft": true,
+      "head": "fe235cc15452bb2cee01526aa5b1af27e07b5f8b",
+      "base": "main",
+      "branch": "design/m00-d2-staging-fixtures",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/26"
+    },
+    {
+      "number": 25,
+      "title": "feat(M00-D1): Render Free blueprint, strict Supabase TLS, remote migration path",
+      "state": "closed",
+      "draft": false,
+      "head": "44dbf10c6d7ef6ccc3f7eb812d6488a172c2fb65",
+      "base": "main",
+      "branch": "feat/m00-d1-render-supabase",
+      "merged_at": "2026-10-09T01:01:44Z",
+      "url": "https://github.com/trungtn87/11ship/pull/25"
+    },
+    {
+      "number": 24,
+      "title": "design(M01-FE0): responsive frontend foundation and session client",
+      "state": "open",
+      "draft": true,
+      "head": "ef297175004b0fa4b99413ccba52d8e40bf8764a",
+      "base": "main",
+      "branch": "design/m01-frontend-foundation",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/24"
+    },
+    {
+      "number": 23,
+      "title": "design(M02-A-UI): shop profile and weekly schedule screens",
+      "state": "open",
+      "draft": true,
+      "head": "8a0bafebbbf4dc5a3b9817c4d0c9cc9304cb3c3b",
+      "base": "main",
+      "branch": "design/m02-a-ui-contract",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/23"
+    },
+    {
+      "number": 7,
+      "title": "docs(m03-m04): financial consistency, withdrawal reconciliation and safe closure",
+      "state": "open",
+      "draft": true,
+      "head": "645a59b80e850893282a44c0dc3080014f09f6b1",
+      "base": "main",
+      "branch": "docs/m03-m04-financial-consistency",
+      "merged_at": null,
+      "url": "https://github.com/trungtn87/11ship/pull/7"
+    }
+  ],
+  "limitations": [
+    "Read-only source/PR/CI audit; no product code, no DB live data audit, no deploy, no Owner acceptance inferred.",
+    "Main is pinned; branches are evaluated separately. UI previews are design evidence only."
+  ],
+  "main_refresh": {
+    "sha": "6aa363ce7b2d412fd2ee1fcd5c2ea3ab2132811e",
+    "change_since_audit": "Only docs/PROGRESS.md, no product/schema/API changes",
+    "verified_at": "2026-10-10T18:57:17.425282+00:00",
+    "pr_heads_34_35_46_unchanged": true
+  }
+}
