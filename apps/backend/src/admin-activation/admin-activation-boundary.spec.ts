@@ -56,8 +56,8 @@ describe('ADMIN activation boundary (M01-D-ADMIN-1C)', () => {
 
   it('has no SMS adapter and no automatic fallback to a fake provider', () => {
     const providers = codeOf('admin-activation/activation-otp-providers.ts');
-    expect(providers).toContain("'SMS'");
-    expect(providers).toMatch(/StartupConfigError/);
+    // Only the two named test modes bind a provider; everything else (SMS) falls through to a startup refusal.
+    expect(providers).toMatch(/otpMode === 'FAKE'[\s\S]*otpMode === 'TEST_DISPLAY'[\s\S]*throw new StartupConfigError\(\['ADMIN_ACTIVATION_OTP_MODE'\]\)/);
     expect(codeOf('app.module.ts')).toMatch(/activationOtpProvider === undefined/);
   });
 
