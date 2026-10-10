@@ -1,94 +1,23 @@
+import { AdminRole } from '../core/api.js';
 import { AdminAuthController, Screen } from '../core/controller.js';
 import { COPY, formatCountdown } from '../core/messages.js';
-import { encodeQr, qrPath } from '../core/qr.js';
+import { h, eyeIcon, brand, message, setMessage, field, primary, secondary, renderQr } from './dom.js';
 import { groupSecret, isCompleteCode, sanitizeCodeInput } from '../core/inputs.js';
 
 // DOM rendering of the controller's screens. Every node is built with createElement/textContent (no innerHTML), so no
 // server value can become markup. A screen is built once when its name changes and then patched in place, so focus,
 // caret and typed values survive the updates.
 
-type Attrs = Record<string, string | boolean | undefined>;
 
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = {}, ...children: (Node | string | undefined)[]): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tag);
-  for (const [name, value] of Object.entries(attrs)) {
-    if (value === undefined || value === false) {
-      continue;
-    }
-    element.setAttribute(name, value === true ? '' : value);
-  }
-  for (const child of children) {
-    if (child !== undefined) {
-      element.append(child);
-    }
-  }
-  return element;
-}
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
-
-function svg(tag: string, attrs: Record<string, string>, ...children: SVGElement[]): SVGElement {
-  const element = document.createElementNS(SVG_NS, tag);
-  for (const [name, value] of Object.entries(attrs)) {
-    element.setAttribute(name, value);
-  }
-  element.append(...children);
-  return element;
-}
-
-/** 24x24, stroke 2, round caps: the brand icon grid. */
-function eyeIcon(open: boolean): SVGElement {
-  const paths = [
-    svg('path', { d: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z' }),
-    svg('circle', { cx: '12', cy: '12', r: '3' }),
-  ];
-  if (!open) {
-    paths.push(svg('path', { d: 'M3 3l18 18' }));
-  }
-  return svg(
-    'svg',
-    { viewBox: '0 0 24 24', width: '24', height: '24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true', focusable: 'false' },
-    ...paths,
-  );
-}
-
-/**
- * The brand slot. The official "11" logo asset is not in the repository yet (brand guideline section 12: logo SVG/PNG is
- * an open item) and the logo must not be redrawn, so this shows the plain text "11" as a placeholder. When the asset is
- * added (for example public/brand/logo-11.svg) this is the only place to change.
- */
-function brand(): HTMLElement {
-  return h('div', { class: 'brand' }, h('span', { class: 'brand-fallback', 'aria-label': '11' }, '11'), h('span', { class: 'brand-name' }, 'Quản trị'));
-}
-
-function message(kind: 'error' | 'notice' | 'warning', id: string): HTMLElement {
-  // Live regions exist from the first render (empty) so screen readers announce later changes.
-  return h('p', { id, class: `message message-${kind}`, role: kind === 'error' ? 'alert' : 'status', hidden: true });
-}
-
-function setMessage(element: HTMLElement, text: string | undefined): void {
-  const value = text ?? '';
-  if (element.textContent !== value) {
-    element.textContent = value;
-  }
-  element.hidden = value === '';
-}
-
-function field(label: string, id: string, input: HTMLInputElement, extra?: HTMLElement, after?: HTMLElement): HTMLElement {
-  const wrap = h('div', { class: 'input-wrap' }, input, extra);
-  return h('div', { class: 'field' }, h('label', { for: id, class: 'label' }, label), wrap, after);
-}
-
-function primary(label: string, type: 'submit' | 'button' = 'submit'): HTMLButtonElement {
-  return h('button', { type, class: 'btn btn-primary' }, label);
-}
-
-function secondary(label: string): HTMLButtonElement {
-  return h('button', { type: 'button', class: 'btn btn-secondary' }, label);
+/** What the shell shows inside its layout. Mounted when the shell appears, unmounted when it goes away. */
+export interface ShellHost {
+  mount(parts: { readonly content: HTMLElement; readonly nav: HTMLElement; readonly role: AdminRole }): void;
+  unmount(): void;
 }
 
 interface Mounted {
   readonly name: Screen['name'];
+  dispose?(): void;
   update(screen: Screen): void;
   focus(): void;
 }
@@ -100,10 +29,12 @@ export class AdminView {
   constructor(
     private readonly root: HTMLElement,
     private readonly controller: AdminAuthController,
+    private readonly host?: ShellHost,
   ) {}
 
   render(screen: Screen): void {
     if (this.#mounted?.name !== screen.name) {
+      this.#mounted?.dispose?.();
       this.#mounted = this.#mount(screen);
       this.#mounted.update(screen);
       this.#mounted.focus();
@@ -367,17 +298,7 @@ export class AdminView {
             shownUri = s.otpauthUri;
             qrBox.replaceChildren();
             if (s.otpauthUri !== undefined) {
-              const matrix = encodeQr(s.otpauthUri);
-              const quiet = 4;
-              const box = String(matrix.size + quiet * 2);
-              qrBox.append(
-                svg(
-                  'svg',
-                  { viewBox: `0 0 ${box} ${box}`, width: '208', height: '208', 'shape-rendering': 'crispEdges', 'aria-hidden': 'true', focusable: 'false' },
-                  svg('rect', { width: box, height: box, fill: '#FFFFFF' }),
-                  svg('path', { d: qrPath(matrix, quiet), fill: '#2A2A2E' }),
-                ),
-              );
+              qrBox.append(renderQr(s.otpauthUri));
             }
           }
           qrBox.classList.toggle('qr-loading', s.loadingSecret);
@@ -404,30 +325,35 @@ export class AdminView {
     const logout = secondary('Đăng xuất');
     logout.classList.add('btn-compact');
     logout.addEventListener('click', () => void this.controller.logout());
-    const title = h('h1', { class: 'title', tabindex: '-1', id: 'shell-title' }, 'Đăng nhập thành công');
-    const roleLine = h('p', { class: 'lead lead-last' }, 'Vai trò: ', role.cloneNode() as HTMLElement);
-    const roleText = roleLine.lastChild as HTMLElement;
+    const nav = h('nav', { class: 'nav', 'aria-label': 'Chức năng quản trị' });
     const notice = message('notice', 'shell-notice');
     const error = message('error', 'shell-error');
-    this.#page(
-      h('section', { class: 'card', 'aria-labelledby': 'shell-title' }, title, roleLine, notice, error),
-      h('div', { class: 'topbar-actions' }, role, logout),
-    );
+    const content = h('div', { class: 'content-area', id: 'content', tabindex: '-1' });
+    const sidebar = h('aside', { class: 'sidebar' }, brand(), nav, h('div', { class: 'sidebar-foot' }, role, logout));
+    this.root.replaceChildren(h('div', { class: 'shell' }, sidebar, h('main', { class: 'shell-main' }, notice, error, content)));
+    let mountedRole: AdminRole | undefined;
     return {
       name: 'shell',
+      dispose: () => {
+        mountedRole = undefined;
+        this.host?.unmount();
+      },
       update: (s) => {
         if (s.name !== 'shell') {
           return;
         }
         role.textContent = s.role;
-        roleText.textContent = s.role;
         setMessage(notice, s.notice);
         setMessage(error, s.error);
         logout.disabled = s.pending;
         logout.textContent = s.pending ? 'Đang đăng xuất…' : 'Đăng xuất';
         logout.setAttribute('aria-busy', String(s.pending));
+        if (mountedRole !== s.role) {
+          mountedRole = s.role;
+          this.host?.mount({ content, nav, role: s.role });
+        }
       },
-      focus: () => title.focus(),
+      focus: () => content.focus(),
     };
   }
 }
