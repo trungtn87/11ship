@@ -9,12 +9,14 @@ Trạng thái: `DESIGN v2 — chờ ChatGPT review head mới`. Các quyết đ�
 | Nguồn | SHA đã đọc |
 |---|---|
 | #38 (tài liệu này) — head đã review, trước bản v2 | `76884c9f08e382e2f6c2257a9b4f98d4da99ead7` |
-| #37 — gói 1A (schema lời mời + participant), Draft, ChatGPT đã duyệt kỹ thuật; base của #38 | `fa11ee5c0a26f34c22e1ad97caa94857f363b134` |
-| #34 — M01-D-LOGIN backend (base của #37) | `4d20660eb3b0656b626a084df6e55d4385ee405a` |
+| #37 — gói 1A, head **trước** khi nhận bản sửa B-1 (ChatGPT đã duyệt kỹ thuật tại SHA này) | `fa11ee5c0a26f34c22e1ad97caa94857f363b134` |
+| #37 — head **sau** khi merge bản sửa B-1 (merge commit, không force-push); **base mới của #38** | `81732370e1dd90e213be0ffee5ec075b1f4a2535` |
+| #34 — M01-D-LOGIN backend, head **trước** bản sửa B-1 | `4d20660eb3b0656b626a084df6e55d4385ee405a` |
+| #34 — head **sau** bản sửa B-1 (fast-forward, commit `fix(admin-auth): bootstrap SYSTEM locks user before membership (B-1)`) | `38bb8c7c196f9824b52827d703b9fa91c2ddbe05` |
 | #35 — UI đăng nhập (không dùng cho 1B) | `7b116c3d4551bf0028fa544278449598acf5991c` |
 | #36 — kiểm kê/đề xuất ADMIN | `101daa8a53788b788c835fa53b3668733f1b359b` |
 
-Head/base của #38 được kiểm lại trước khi sửa: khớp mốc đã review (không có diff phát sinh). #38 vẫn là PR xếp chồng trên #37; không tự merge phụ thuộc. Nguồn nghiệp vụ: Activation Contract v1 + Technical Design 1A + 6 bộ UI Owner đã duyệt (UI-06: màn "Lời mời đã tạo", "ADMIN chờ kích hoạt", popup xác nhận gồm **lý do bắt buộc + mã 2FA mới của SYSTEM**).
+Head/base của #38 được kiểm lại trước khi sửa: khớp mốc đã review (`3fd5d22` / `fa11ee5`). Sau đó Owner cho phép sửa B-1 trong phạm vi riêng: bản sửa nằm ở **commit riêng trên nhánh #34**, được đưa lên #37 và #38 bằng **merge commit** (không rebase, không force-push). #38 vẫn là PR xếp chồng trên #37, nay với base mới ở bảng trên; không tự merge phụ thuộc. Nguồn nghiệp vụ: Activation Contract v1 + Technical Design 1A + 6 bộ UI Owner đã duyệt (UI-06: màn "Lời mời đã tạo", "ADMIN chờ kích hoạt", popup xác nhận gồm **lý do bắt buộc + mã 2FA mới của SYSTEM**).
 
 Nguyên tắc không đổi: **web quản trị chỉ dành cho ADMIN/SYSTEM; Khách, Quán và Xế chỉ dùng app riêng.** 1B **không** có UI, OTP, kích hoạt tài khoản, trang kích hoạt công khai, user/membership ADMIN, khôi phục 2FA, hay quản lý tài khoản Khách/Quán/Xế.
 
@@ -371,15 +373,17 @@ Mọi quyết định hết hạn (phiên, operation, `expired` của lời mờ
 | Outbox dispatcher | `FOR UPDATE SKIP LOCKED` | Không chờ, không liên quan bảng admin. |
 | Auth core, onboarding, shop, driver | `users` X → `sessions` → các bảng `app.*` khác | **Không** chạm bảng `admin_*` (đã grep) và 1B chỉ khóa `users` của SYSTEM; không có cạnh đảo. |
 | CLI limit-config | advisory `limit-config` | Không giữ hàng 1B. |
-| **CLI bootstrap SYSTEM** (#34, `admin-bootstrap-service.ts`) | advisory `bootstrap` → advisory `limit-config` → **`memberships.lockSystem` (membership X)** → **`identities.lockById` (user X)** | **⚠ Đảo thứ tự (finding B-1)**. Xem dưới. |
+| **CLI bootstrap SYSTEM** (#34, `admin-bootstrap-service.ts`) | **Trước sửa:** advisory `bootstrap` → (đọc cấu hình limiter, không khóa) → `lockSystem` (**membership X**) → `lockById` (**user X**) ⇒ đảo. **Sau sửa (`38bb8c7`):** advisory `bootstrap` → (đọc cấu hình) → đọc id SYSTEM **không khóa** → user X → membership X → kiểm lại role | Đã nhất quán với L4 < L5. Đường tạo mới (chưa có SYSTEM) chỉ INSERT hàng mới. |
 
-**Finding B-1 (mới, ngoài 6 finding của ChatGPT).** Khi đã tồn tại SYSTEM, lệnh bootstrap khóa **membership trước, user sau** — ngược thứ tự user → membership của đăng nhập và của mọi route 1B. Nếu chạy đồng thời với một writer của SYSTEM (create-op, verify, mutation hoặc đăng nhập) trên cùng tài khoản: bootstrap giữ membership chờ user, writer giữ user chờ membership ⇒ chu trình ⇒ PostgreSQL sẽ phát hiện và hủy một bên bằng `40P01`. Hiện nay đây là lệnh operator ngoại tuyến nên rủi ro thực tế thấp, nhưng **không thể** tuyên bố không deadlock khi còn đường đi này. Đề xuất sửa (chạm code #34, nên cần ChatGPT/Owner chấp thuận): bootstrap đọc user id của SYSTEM **không khóa**, khóa `users` X rồi mới `memberships.lock(userId)` và kiểm lại `admin_role='SYSTEM'`; kèm test lịch chạy BOOT × create-op (S9). Phương án thay thế (kém hơn): ghi vào runbook rằng bootstrap chỉ chạy khi web không nhận request. **Tôi không tự sửa #34.**
+**Finding B-1 — ĐÃ SỬA ở commit riêng `38bb8c7` (trên nhánh #34), chờ CI và review.** Trước sửa, khi đã có SYSTEM, bootstrap khóa **membership trước, user sau**, ngược thứ tự user → membership của đăng nhập và mọi route 1B; chạy đồng thời với một writer của SYSTEM tạo chu trình (`40P01`). Cách sửa (Owner cho phép, phạm vi: bootstrap và test): giữ advisory `bootstrap` và đọc cấu hình limiter như cũ → đọc id SYSTEM **không khóa** → khóa user → khóa membership → kiểm lại membership vẫn là SYSTEM và đúng tài khoản; cùng SĐT ⇒ `UNCHANGED` (không đổi mật khẩu), SĐT khác ⇒ `SYSTEM_ACCOUNT_DIFFERENT`, chưa có SYSTEM ⇒ đường tạo mới giữ nguyên; `lockSystem` bị xóa để không ai dùng lại thứ tự đảo. Không đụng route `/admin-auth` hay migration.
+
+*Bằng chứng cũ → mới.* (1) **Mức SQL, chạy cục bộ** trên PostgreSQL 16 (`deadlock_timeout=1s`), hai phiên xen kẽ có kiểm soát: thứ tự cũ (membership theo `admin_role='SYSTEM'` rồi user) đối với writer user → membership ⇒ `ERROR: deadlock detected`; thứ tự mới ⇒ cả hai phiên lấy đủ khóa, không lỗi. (2) **Test tích hợp có barrier** `tests/integration/admin-bootstrap-lock-order.int.spec.ts`: ca tham chiếu dựng lại thứ tự cũ và khẳng định `40P01`; ba lịch chạy thật của service mới (writer giữ user; bootstrap giữ user; bootstrap giữ cả hai) và một ca SĐT khác đều không deadlock và giữ nguyên nghiệp vụ. Ngân sách timeout của test (statement 20 s, query 25 s, transaction 30 s) lớn hơn xa `deadlock_timeout`, và test khẳng định `deadlock_timeout ≤ 5 s`, nên lock/statement timeout không che được deadlock. (3) Máy của Claude không chạy được jest (registry bị chặn): **bằng chứng test chính thức là CI** trên head cuối, ghi ở PR.
 
 ### 8.7 Trạng thái của protocol khóa
 
-- **Kết luận thiết kế:** thứ tự L1…L10 nhất quán cho mọi route 1B, mọi đường đi đăng nhập/phiên đã đọc, executor, participant 1A, và đã rà khóa ngầm (mục 8.2). Chỉ còn **một** đường đi đảo thứ tự: B-1.
-- **Bằng chứng runtime: chưa có.** Chưa có code 1B, chưa chạy test nào, chưa có trace khóa. Mọi kết luận ở trên là suy luận từ đọc code.
-- **Trạng thái:** `LOCK_PROTOCOL = NOT_FINAL`. Điều kiện để gọi `LOCK_PROTOCOL_FINAL`: (1) ChatGPT/Owner quyết định xử lý B-1 (sửa hoặc ghi nhận ngoại lệ có chủ ý); (2) bảng L1…L10 và mục 8.2 được ChatGPT chấp thuận; (3) bộ test có barrier S1–S12 (mục 15) và test trace thứ tự khóa đều đạt trên CI ở head cuối; (4) 1C có phân tích call graph riêng cho các đường đi kích hoạt trước khi mở route nào của nó.
+- **Kết luận thiết kế (rà lại sau khi sửa B-1):** thứ tự L1…L10 nhất quán cho mọi route 1B, mọi đường đi đăng nhập/phiên, bootstrap (sau sửa), executor, participant 1A, và đã rà khóa ngầm (mục 8.2). Rà lại bằng grep toàn `apps/backend/src`: không còn truy vấn khóa membership trước user (`lockSystem` đã xóa). **Không còn đường đi đảo thứ tự nào đã biết.**
+- **Bằng chứng runtime:** chỉ có (a) hai phiên SQL xen kẽ cho B-1 (cục bộ) và (b) spec barrier của B-1 chờ CI. **Chưa có code 1B**, chưa có trace khóa và chưa có test S1–S12 của 1B. Phần còn lại là suy luận từ đọc code.
+- **Trạng thái:** `LOCK_PROTOCOL = NOT_FINAL`. Điều kiện để gọi `LOCK_PROTOCOL_FINAL`: (1) ChatGPT review bản sửa B-1 và CI xanh trên head cuối của nó (đã xử lý B-1 theo quyết định của Owner); (2) bảng L1…L10 và mục 8.2 được ChatGPT chấp thuận; (3) bộ test có barrier S1–S12 của 1B (mục 15) và test trace thứ tự khóa đều đạt trên CI ở head cuối; (4) 1C có phân tích call graph riêng cho các đường đi kích hoạt trước khi mở route nào của nó.
 
 ### 8.8 Điểm mở rộng cho 1C
 Hàm `invalidateActivationFor(context, invitationId)` đặt sau khóa lời mời trong reissue/revoke (không làm gì ở 1B). 1C thêm vô hiệu attempt/OTP challenge bằng khóa theo UUID tăng dần **sau L8**, không đổi thứ tự trên; mọi đường 1C ghi PENDING/ACCEPTED theo SĐT phải lấy L3 trước.
@@ -490,7 +494,7 @@ Unit: parser/chuẩn hóa (kể cả `permissions` vắng/null/mảng của reis
 | S6 | verify × verify, cùng operation | sau L2 | một `VERIFIED`; request kia `STEP_UP_REQUIRED`, **không** cộng bộ đếm, không mở secret |
 | S7 | verify × create-op | sau L4 | hai thứ tự: verify trước ⇒ op `VERIFIED` rồi bị `REPLACED`; create-op trước ⇒ verify `STEP_UP_REQUIRED` không đếm |
 | S8 | GET operation × verify | sau L4 (hai thứ tự) | **Verify trước:** GET chờ, rồi thấy `VERIFIED` (`usable=true`). **GET trước:** GET có thể thấy `PENDING` (`verifiable=true`), verify chạy sau và thành công. Không yêu cầu cả hai lịch đều thấy `VERIFIED`; chỉ yêu cầu không bao giờ thấy trạng thái trung gian/nửa chừng |
-| S9 | **BOOT (bootstrap CLI) × create-op** | BOOT sau `lockSystem` | **kết quả hiện tại dự kiến: `40P01`** (chứng minh B-1); sau khi sửa B-1 phải xanh. Test này quyết định điều kiện FINAL. |
+| S9 | **BOOT (bootstrap) × writer / create-op** | BOOT sau khóa user (và sau khóa membership) | Đã có ở spec B-1 (`admin-bootstrap-lock-order.int.spec.ts`: ca tham chiếu thứ tự cũ ⇒ `40P01`; thứ tự mới ⇒ không deadlock, `UNCHANGED`). Khi có create-op thật ở 1B, thêm lịch BOOT × create-op với cùng kỹ thuật |
 | S10 | login (revoke phiên) × business route | sau L4 | route chờ rồi thấy phiên đã thu hồi ⇒ 401; không mutation |
 | S11 | replay hook × reissue/revoke cùng lời mời | sau L8 | replay không bao giờ giải mã link của lời mời đã SUPERSEDED/REVOKED/quá hạn |
 | S12 | create (cùng SĐT) × create (cùng SĐT), khác key, **khác operation** | — | được dựng **ở tầng participant 1A** (giữ test đua unique SĐT có sẵn), không dựng hai operation sống ở tầng route |
@@ -515,7 +519,7 @@ CI phải đạt trên final head; lint, typecheck, build bắt buộc. Môi tr�
 ## 16. File dự kiến (đổi khi review)
 
 Mới: migration `*_create-admin-sensitive-operations.sql`; `apps/backend/src/admin-provisioning/` (controller, `admin-operation-service`, `admin-invitation-service`, participant actor SYSTEM dùng `lockAndCheck`, repository operation, validation/chuẩn hóa, `activation-link` builder, hằng số); các spec và `tests/integration/admin-provisioning-*.int.spec.ts` (+ harness barrier/trace).
-Sửa: `common/app-errors.ts` (mã mới) và test registry; `crypto/key-version.ts` + `keyring.ts` (`adminOperation`) + `admin-purposes.spec.ts`; `config/admin-auth-config.ts` (+spec, `.env.example`); `app.module.ts` (mount có điều kiện); `admin-invitations/admin-invitation-repository.ts` (thêm **một** hàm đọc quyền của lời mời, chỉ đọc, cho reissue sao chép); `ops/runbooks/render-supabase-staging.md` (grants + biến mới); các test migration/trigger liệt kê migration mới; dọn dữ liệu test cho bảng mới. **Có thể** (nếu được duyệt, B-1) `admin-auth/admin-bootstrap-service.ts`.
+Sửa: `common/app-errors.ts` (mã mới) và test registry; `crypto/key-version.ts` + `keyring.ts` (`adminOperation`) + `admin-purposes.spec.ts`; `config/admin-auth-config.ts` (+spec, `.env.example`); `app.module.ts` (mount có điều kiện); `admin-invitations/admin-invitation-repository.ts` (thêm **một** hàm đọc quyền của lời mời, chỉ đọc, cho reissue sao chép); `ops/runbooks/render-supabase-staging.md` (grants + biến mới); các test migration/trigger liệt kê migration mới; dọn dữ liệu test cho bảng mới. B-1 đã sửa riêng ở `38bb8c7` (`admin-bootstrap-service.ts`, `admin-membership-repository.ts`, một spec mới); 1B không sửa lại các file đó.
 Không sửa: migration đã apply, `/admin-auth/*`, bất kỳ route app Khách/Quán/Xế.
 
 ## 17. Gate và ma trận từng ứng dụng
@@ -523,7 +527,7 @@ Không sửa: migration đã apply, `/admin-auth/*`, bất kỳ route app Khách
 | Giai đoạn | Người | Trạng thái |
 |---|---|---|
 | Hợp đồng 1B (tài liệu này, v2) | Claude soạn → ChatGPT review head mới | **Chờ review** |
-| Sửa B-1 (bootstrap SYSTEM) trong phạm vi riêng | Owner đã cho phép; Claude sửa; ChatGPT review | **Đang sửa** trong commit/nhánh riêng (kết quả được cập nhật ở mục 8.7 sau khi có CI) |
+| Sửa B-1 (bootstrap SYSTEM) trong phạm vi riêng | Owner đã cho phép; Claude sửa; ChatGPT review | **Đã sửa** ở `38bb8c7`; chờ CI trên head cuối và review của ChatGPT |
 | Code + test 1B | Claude | Chưa bắt đầu; chỉ sau khi review đạt |
 | Review diff đúng SHA | ChatGPT | Chưa |
 | Test local, Authenticator thật | Owner | Chưa (cần UI SYSTEM — gói riêng) |
@@ -538,9 +542,9 @@ Không sửa: migration đã apply, `/admin-auth/*`, bất kỳ route app Khách
 ## 18. Giới hạn và những gì còn thiếu
 
 - Chưa có code, migration chạy thật, test hay CI nào cho 1B; mọi mục trên là **thiết kế** dựa trên đọc code #34/#37. Không có bằng chứng runtime về thứ tự khóa.
-- `LOCK_PROTOCOL = NOT_FINAL` (mục 8.7), vì finding **B-1** (bootstrap CLI khóa membership trước user) chưa có quyết định, và chưa có test barrier chạy.
+- `LOCK_PROTOCOL = NOT_FINAL` (mục 8.7): B-1 đã sửa nhưng chưa có CI/review, và chưa có code hay test barrier của 1B.
 - Đã được Owner chốt (không còn là điểm mở): thu hồi chỉ `PENDING`; `ADMIN_ACTIVATION_ORIGIN` bắt buộc/allowlist/không tự chọn; `ADMIN_INVITATION_NOT_REPLAYABLE`; `lock_timeout` bằng `set_config(…, true)` với `businessLockTimeoutMs`; GET kiểm factor.
-- Còn thiếu: review B-1 của ChatGPT; CI trên final head của bản sửa B-1; test barrier S1–S12 cho code 1B (chưa có code).
+- Còn thiếu: review B-1 và hợp đồng của ChatGPT; CI xanh trên final head (ghi ở PR); test barrier S1–S12 cho code 1B (chưa có code).
 - Chưa kiểm lịch sử migration DB Owner/staging (không có quyền operator read-only); migration 1B chỉ chạy trên DB test, không deploy.
 - Kích hoạt (1C) sẽ cần phân tích call graph khóa riêng; tài liệu này chỉ đặt ràng buộc (mục 8.8).
 - Chưa có Owner nghiệm thu, chưa đóng M01, chưa deploy.
