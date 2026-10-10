@@ -1,4 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
+import { DEFAULT_ACTIVATION_LIMITS } from '../config/admin-activation-config';
 import { StartupConfigError } from '../config/startup-config-error';
 import { bindActivationOtpProvider, FakeActivationOtpProvider, TestDisplayActivationOtpProvider } from './activation-otp-providers';
 
@@ -6,15 +7,15 @@ const PHONE = '+84901234567';
 
 describe('activation OTP providers and binding', () => {
   it('binds FAKE and TEST_DISPLAY only by explicit mode', () => {
-    expect(bindActivationOtpProvider({ otpMode: 'FAKE', providerTimeoutMs: 8000, promoteGraceMs: 10_000 })).toBeInstanceOf(FakeActivationOtpProvider);
-    expect(bindActivationOtpProvider({ otpMode: 'TEST_DISPLAY', providerTimeoutMs: 8000, promoteGraceMs: 10_000 })).toBeInstanceOf(
+    expect(bindActivationOtpProvider({ otpMode: 'FAKE', providerTimeoutMs: 8000, promoteGraceMs: 10_000, limits: DEFAULT_ACTIVATION_LIMITS })).toBeInstanceOf(FakeActivationOtpProvider);
+    expect(bindActivationOtpProvider({ otpMode: 'TEST_DISPLAY', providerTimeoutMs: 8000, promoteGraceMs: 10_000, limits: DEFAULT_ACTIVATION_LIMITS })).toBeInstanceOf(
       TestDisplayActivationOtpProvider,
     );
   });
 
   it('SMS has no adapter: startup is refused naming only the variable, never a fallback to a fake', () => {
     try {
-      bindActivationOtpProvider({ otpMode: 'SMS', providerTimeoutMs: 8000, promoteGraceMs: 10_000 });
+      bindActivationOtpProvider({ otpMode: 'SMS', providerTimeoutMs: 8000, promoteGraceMs: 10_000, limits: DEFAULT_ACTIVATION_LIMITS });
       throw new Error('expected a refusal');
     } catch (error) {
       expect(error).toBeInstanceOf(StartupConfigError);
