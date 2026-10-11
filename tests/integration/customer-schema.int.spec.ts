@@ -219,8 +219,10 @@ describe('M01.02 — customer tables and CUSTOMER participant', () => {
 
     it('allows only the FOOD and SHIP client apps', async () => {
       const userId = await createUser();
-      for (const bad of ['WEB', 'food', 'SHIP ', '']) {
-        expect([bad, await insertConsent(userId, 't1', 'p1', bad)]).toEqual([bad, bad === 'SHIP ' ? '22001' : '23514']);
+      // (PostgreSQL silently drops trailing SPACES that overflow a varchar(n), so 'SHIP ' is stored as 'SHIP'; the
+      // participant refuses it earlier, see its unit spec.)
+      for (const bad of ['WEB', 'food', 'Ship', '']) {
+        expect([bad, await insertConsent(userId, 't1', 'p1', bad)]).toEqual([bad, '23514']);
       }
       expect(await insertConsent(userId, 't1', 'p1', 'FOODX')).toBe('22001');
       expect(await insertConsent(userId, 't1', 'p1', 'FOOD')).toBeUndefined();
