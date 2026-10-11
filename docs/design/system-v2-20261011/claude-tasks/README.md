@@ -1,6 +1,6 @@
 # Giao Claude từng gói nhỏ
 
-Phiên bản **2.0.1**; **DESIGN_REVIEW / NOT_LOCKED**. Mở [danh mục và thứ tự](../08-work-packages.md), chọn một gói và chỉ gửi file gói đó. Các ID Mxx.NN là alias giao việc, không thay ID roadmap/plan.yml hiện hành.
+Phiên bản **2.0.2**; **DESIGN_REVIEW / NOT_LOCKED**. Mở [danh mục và thứ tự](../08-work-packages.md), chọn một gói và chỉ gửi file gói đó. Các ID Mxx.NN là alias giao việc, không thay ID roadmap/plan.yml hiện hành.
 
 ## Cách giao và giữ scope
 
@@ -10,9 +10,13 @@ Phiên bản **2.0.1**; **DESIGN_REVIEW / NOT_LOCKED**. Mở [danh mục và th�
 4. CODE/CI review đạt → bản Owner local → native/test build khi local được chấp nhận → Owner thiết bị thật. CODE_READY chỉ là contract đủ, không là acceptance. Backend-only không đóng module thiếu UI/phone.
 5. Chỉ Owner quyết định merge/LOCK. UAT actual để Chưa chạy trước kết quả thật; CI hoặc bot progress không thay quyết định. N/A cũng cần lý do/Owner scope.
 
+## Revision M01 v2.0.2
+
+Áp dụng [USER Admin và SMS test](../09-m01-user-admin-test-sms.md). M01.29–.33 đưa quản lý USER cơ bản vào M01; read không mở quyền mutation. D15 chỉ chặn khóa/mở identity. M01.22 đổi thành inbox test local; M12.12 giữ SMS vendor thật cuối dự án. Không chờ D04 SMS vendor để Owner test Auth M01; vẫn cần OTP core thật/Authenticator/PC/phone. Test acceptance không production ready. M01 có33 gói, cả danh mục108. Các gói chưa sửa giữ handoff2.0.1 nhưng phải đọc revision khi liên quan; manifest ghi phiên bản từng gói.
+
 ## Preflight cho mọi gói
 
-Fetch main và design PR48 cùng PR dependencies được nêu; ghi full SHA. Không code sản phẩm trên branch design. Nguồn của danh mục là design5e351f5 và main891a73b (khác audit chỉ PROGRESS bot); kiểm diff mới khi bắt đầu. PR46 còn Draft cf9eecad và chưa thể coi CI/ba app PASS. Head thay đổi phải review lại; audit snapshot cũ không chứng nhận head mới.
+Fetch main và design PR48 cùng PR dependencies được nêu; ghi full SHA. Không code sản phẩm trên branch design. Nguồn gốc v2.0.1 là design5e351f5/main891a73b; revision2.0.2 đọc main f90b78a cho USER/OTP (Admin Auth/invitations đã có trên main). Trạng thái PR/source audit cũ chỉ là lịch sử; kiểm diff mới khi bắt đầu. PR46 còn Draft cf9eecad và chưa thể coi CI/ba app PASS. Head thay đổi phải review lại; audit snapshot cũ không chứng nhận head mới.
 
 Chỉ đọc đúng parent/contract/screens cần cho gói. PR có code sẵn thì reuse/reconcile thay vì viết lại. Branch có dependency Draft dùng integration base được duyệt hoặc báo BLOCKED; không tự merge cả #42/#41/#45.
 

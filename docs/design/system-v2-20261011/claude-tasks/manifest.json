@@ -1,5 +1,5 @@
 {
-  "version": "2.0.1",
+  "version": "2.0.2",
   "status": "DESIGN_REVIEW / NOT_LOCKED",
   "source_design_version": "2.0.0",
   "source_design_sha": "5e351f5a570aac096c1ebb3504aa788cfd06822d",
@@ -11,7 +11,7 @@
   "acceptance": "All new package gates unverified; no module closed",
   "counts": {
     "M00": 13,
-    "M01": 28,
+    "M01": 33,
     "M02": 5,
     "M03": 6,
     "M04": 8,
@@ -22,7 +22,7 @@
     "M09": 5,
     "M10": 5,
     "M11": 3,
-    "M12": 11
+    "M12": 12
   },
   "dependency_order": [
     "M00.01",
@@ -41,6 +41,7 @@
     "M00.13",
     "M01.02",
     "M01.13",
+    "M01.22",
     "M02.01",
     "M12.11",
     "M01.03",
@@ -48,32 +49,35 @@
     "M01.15",
     "M02.02",
     "M01.04",
+    "M01.29",
     "M02.03",
-    "M12.01",
     "M01.05",
     "M01.06",
     "M01.16",
     "M01.21",
-    "M12.02",
-    "M12.08",
+    "M12.01",
     "M01.07",
     "M01.08",
     "M01.09",
     "M01.17",
     "M01.19",
     "M01.20",
-    "M01.22",
+    "M01.30",
     "M03.01",
     "M05.01",
+    "M12.08",
     "M01.10",
     "M01.11",
     "M01.18",
     "M01.24",
+    "M01.31",
+    "M01.32",
     "M03.02",
     "M04.01",
     "M05.02",
     "M01.12",
     "M01.25",
+    "M01.33",
     "M04.02",
     "M06.01",
     "M08.01",
@@ -84,6 +88,7 @@
     "M04.04",
     "M06.02",
     "M08.02",
+    "M12.02",
     "M01.28",
     "M02.05",
     "M03.03",
@@ -126,7 +131,8 @@
     "M12.06",
     "M11.03",
     "M12.09",
-    "M12.10"
+    "M12.10",
+    "M12.12"
   ],
   "tasks": [
     {
@@ -156,7 +162,8 @@
       "external_sources": [
         "PR46",
         "PR40"
-      ]
+      ],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M00.02",
@@ -187,7 +194,8 @@
       "external_sources": [
         "PR46",
         "PR40"
-      ]
+      ],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M00.03",
@@ -218,7 +226,8 @@
       "external_sources": [
         "PR46",
         "PR40"
-      ]
+      ],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M00.04",
@@ -245,7 +254,8 @@
       "inherit": "Palette/font/brand guideline và PDF tám trang đã bàn giao.",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Login/register/reset, wallet/order/GPS nghiệp vụ.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M00.05",
@@ -278,7 +288,8 @@
       "external_sources": [
         "PR35",
         "PR46"
-      ]
+      ],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M00.06",
@@ -305,7 +316,8 @@
       "inherit": "",
       "flow": "Launcher Food → home guest → chọn tab/account → diagnostics → retry khi mất kết nối.",
       "outside": "Đăng ký/login/OTP, thực đơn, cart/order, hồ sơ quán thật.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M00.07",
@@ -331,7 +343,8 @@
       "inherit": "",
       "flow": "Launcher Ship → home chưa login → tab đơn/thu nhập/ví/tài khoản → kiểm kết nối.",
       "outside": "Hồ sơ/bank/approval, GPS nền, commission, payout, delivery.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M00.08",
@@ -362,7 +375,8 @@
         "PR34",
         "PR35",
         "PR42"
-      ]
+      ],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M00.09",
@@ -394,7 +408,8 @@
       "inherit": "Tích hợp kết quả .01-.08; không lấy isolated mocks làm chứng cứ app thật.",
       "flow": "Ba shortcut → một orchestration/backend → ba frontends đúng SHA → mở ba browser → Status/Stop bảo toàn DEV.",
       "outside": "Nghiệp vụ M01/M02+, phone acceptance hoặc tự ghi Owner PASS.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M00.10",
@@ -422,7 +437,8 @@
       "inherit": "",
       "flow": "Candidate review đạt → Owner PC01-PC20 → finding → Claude sửa ở gói liên quan → review/retest → Owner quyết định M00-PC.",
       "outside": "Không tự sửa product code trong gói UAT; tạo finding/fix task đúng scope.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M00.11",
@@ -451,7 +467,8 @@
       "outside": "Không apply migration, deploy production hoặc gửi SMS thật tự động.",
       "external_sources": [
         "PR42"
-      ]
+      ],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M00.12",
@@ -478,7 +495,8 @@
       "outside": "Không App Quán riêng, không runtime giả lập làm physical PASS.",
       "external_sources": [
         "PR31"
-      ]
+      ],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M00.13",
@@ -504,7 +522,8 @@
       "outside": "Không App Quản lý hoặc App Xế flavor legacy thứ ba.",
       "external_sources": [
         "PR31"
-      ]
+      ],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.01",
@@ -536,7 +555,8 @@
         "PR27",
         "PR34",
         "PR42"
-      ]
+      ],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.02",
@@ -565,15 +585,17 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Không phone reset/change-phone, driver bank hoặc ordinary UI.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.03",
-      "title": "Đăng ký CUSTOMER qua OTP thật ở backend",
+      "title": "Đăng ký CUSTOMER và xác minh OTP phía backend",
       "module": "M01",
       "kind": "BE",
       "dependencies": [
-        "M01.02"
+        "M01.02",
+        "M01.22"
       ],
       "applications": [
         "FOOD_CUSTOMER",
@@ -585,14 +607,15 @@
         "apps/backend/src/auth/verification-service.ts",
         "tests/integration/"
       ],
-      "work": "POST client-auth/register dùng primitives REGISTER OTP đã có; consume proof/create USER+CUSTOMER+profile+consent+session/audit/outbox atomic. OTP request/verify giữ parser main, không nhận role/driver_type/permission từ app.",
+      "work": "POST client-auth/register dùng primitives REGISTER OTP đã có; consume proof/create USER+CUSTOMER+profile+consent+session/audit/outbox atomic. OTP request/verify giữ parser main, không nhận role/driver_type/permission từ app. Trong Owner test dùng adapter/inbox M01.22 theo revision09; verify/proof/TTL/rate giữ nguyên, không đợi SMS vendor.",
       "contract": "Spec04 §4.1 exact phone/password/verification_token/device/full_name/consent +Idempotency-Key. Old /auth/register response giữ; password8-128 Unicode codepoints không trim; proof purpose/once.",
       "tests": "Proof REGISTER/expired/used/wrong purpose; phone race old/new; duplicate submit same key/body; rollback participant; CUSTOMER role server; privilege injection; PG17 grants.",
-      "gates": "Contract .01 CODE_READY; SMS fixture chỉ isolated/labeled test, không chứng nhận SMS production.",
+      "gates": "Contract .01 CODE_READY; SMS fixture chỉ isolated/labeled test, không chứng nhận SMS production. C13: SMS thật deferred M12.12; test kênh inbox có nhãn, không proof telecom.",
       "inherit": "",
       "flow": "REGISTER OTP proof → validate fields → một transaction consume/create/grant/profile/consent/session → trả identity CUSTOMER.",
       "outside": "Login/context/logout, UI đăng ký, reset hoặc tự ACTIVE quán/xế.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.2"
     },
     {
       "id": "M01.04",
@@ -620,7 +643,8 @@
       "inherit": "",
       "flow": "Password login → authorize identity/capabilities → me/context hợp lệ → logout revoke; session cũ không khôi phục state.",
       "outside": "JWT/refresh token, default privilege theo app, phone change/reset.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.05",
@@ -647,7 +671,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Driver edit/bank/approval/Online, customer addresses hoặc change-phone.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.06",
@@ -674,7 +699,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Không tự thêm Google/OTP login, Remember me, reset API hoặc actual app router.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.07",
@@ -698,7 +724,8 @@
       "inherit": "",
       "flow": "F11 nhập form → request REGISTER OTP → F12 verify → client register → F01 CUSTOMER; sai/hết hạn theo server.",
       "outside": "Login/account/reset/shop onboarding hoặc Google login.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.08",
@@ -725,7 +752,8 @@
       "inherit": "",
       "flow": "F10 login → F16 account → F17 profile hoặc quản lý quán → F18 xác nhận logout → guest.",
       "outside": "Hồ sơ quán thực, addresses/menu/order và reset implementation.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.09",
@@ -749,7 +777,8 @@
       "inherit": "",
       "flow": "Ship register/login → server me → chưa driver thì onboarding, có driver thì own status; không chọn privilege từ app.",
       "outside": "Driver onboarding/bank/approval, income/wallet/reset.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.10",
@@ -775,7 +804,8 @@
       "inherit": "",
       "flow": "Chưa driver → nhập name/plate → POST onboarding → PENDING → own GET resume → account/logout.",
       "outside": "Driver profile edit/bank, ACTIVE approval, actual Online/GPS/wallet.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.11",
@@ -799,7 +829,8 @@
       "inherit": "",
       "flow": "Quản lý cửa hàng → GET own draft → create/edit → lưu nháp → lần sau tiếp tục từ server.",
       "outside": "Complete quán, map/provider policy, menu/hours/order.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.12",
@@ -827,7 +858,8 @@
       "inherit": "",
       "flow": "Actual tọa độ quán → resolve → save → complete kiểm lại geometry/version → SHOP_OWNER+CUSTOMER → shop shell.",
       "outside": "Admin area CRUD, weekly hours, manual switch hoặc businessmenu/order.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.13",
@@ -855,7 +887,8 @@
       "external_sources": [
         "PR41",
         "PR44"
-      ]
+      ],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.14",
@@ -882,7 +915,8 @@
       "external_sources": [
         "PR41",
         "PR44"
-      ]
+      ],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.15",
@@ -890,7 +924,8 @@
       "module": "M01",
       "kind": "UI/INTEGRATION",
       "dependencies": [
-        "M01.13"
+        "M01.13",
+        "M01.22"
       ],
       "applications": [
         "ADMIN"
@@ -899,17 +934,18 @@
         "apps/admin-web/src/admin-activation/",
         "tests/admin-web/"
       ],
-      "work": "Start/state/restart → OTP → mật khẩu → TOTP enrollment → complete theo #45. Xóa token khỏi URL sau khi nhập; không lộ qua referrer/log. Dùng cookie/CSRF riêng; mất response đọc GET state, không tự lặp POST complete.",
+      "work": "Start/state/restart → OTP → mật khẩu → TOTP enrollment → complete theo #45. Xóa token khỏi URL sau khi nhập; không lộ qua referrer/log. Dùng cookie/CSRF riêng; mất response đọc GET state, không tự lặp POST complete. Trong Owner test dùng adapter/inbox M01.22 theo revision09; verify/proof/TTL/rate giữ nguyên, không đợi SMS vendor.",
       "contract": "Reuse exact admin-activation API #44/#45 và cookie __Host-11admin-act. Regular register không tạo ADMIN; pending/expired/revoked chưa có SESSION.",
       "tests": "Expiry/revoke/complete race; cookie/state isolation; Origin/CSRF; OTP purpose; TOTP replay và mất response enrollment; protected URL; evidence không secret.",
-      "gates": "Reviewed #45 dependency; Owner UI activation.",
+      "gates": "Reviewed #45 dependency; Owner UI activation. C13: SMS thật deferred M12.12; test kênh inbox có nhãn, không proof telecom.",
       "inherit": "",
       "flow": "Invitation link → start/state → SMS OTP → password → Authenticator enrollment → complete → Admin login/session theo contract.",
       "outside": "Tạo/reissue invitations, password reset, tự gửi SMS thật.",
       "external_sources": [
         "PR44",
         "PR45"
-      ]
+      ],
+      "handoff_version": "2.0.2"
     },
     {
       "id": "M01.16",
@@ -919,7 +955,8 @@
       "dependencies": [
         "M01.01",
         "M01.04",
-        "M00.08"
+        "M00.08",
+        "M01.22"
       ],
       "applications": [
         "ADMIN",
@@ -934,17 +971,18 @@
         "migration append-only hiện hành",
         "tests/integration/"
       ],
-      "work": "Complete đổi mật khẩu, revoke mọi app/admin session, PREAUTH và challenges/activation attempts liên quan, cùng audit trong một transaction theo contract cuối. RESET_PASSWORD purpose, credential epoch, grant một lần; hash ngoài lock, recheck dưới user lock. Giữ TOTP/role/status; không tự login.",
+      "work": "Complete đổi mật khẩu, revoke mọi app/admin session, PREAUTH và challenges/activation attempts liên quan, cùng audit trong một transaction theo contract cuối. RESET_PASSWORD purpose, credential epoch, grant một lần; hash ngoài lock, recheck dưới user lock. Giữ TOTP/role/status; không tự login. Trong Owner test dùng adapter/inbox M01.22 theo revision09; verify/proof/TTL/rate giữ nguyên, không đợi SMS vendor.",
       "contract": "Nghiệp vụ Owner #43, spec04 §4.3: /password-resets request/verify/complete+key; response chung cho phone không tồn tại/SYSTEM. Defaults OTP300s/resend60s/maxwrong5; security contract phải CODE_READY trước code.",
       "tests": "Từ chối REGISTER proof; expired/used/concurrent reset/login race; account khóa vẫn khóa; mọi USER/ADMIN session/PREAUTH bị revoke; replay chỉ acknowledgement; unknown commit; chống enumeration.",
-      "gates": "ChatGPT review security, physical schema và error contract; reset #43 đã chốt, không hỏi lại nghiệp vụ.",
+      "gates": "ChatGPT review security, physical schema và error contract; reset #43 đã chốt, không hỏi lại nghiệp vụ. C13: SMS thật deferred M12.12; test kênh inbox có nhãn, không proof telecom.",
       "inherit": "",
       "flow": "Request generic → RESET_PASSWORD OTP verify → scoped grant → atomic password/revoke/audit → acknowledgement, login required.",
       "outside": "Public SYSTEM reset, bỏ qua TOTP, Change Password, adapter SMS production.",
       "external_sources": [
         "PR43",
         "PR34"
-      ]
+      ],
+      "handoff_version": "2.0.2"
     },
     {
       "id": "M01.17",
@@ -971,7 +1009,8 @@
       "inherit": "",
       "flow": "F13 phone → F14 OTP → F15 mật khẩu mới → success → F10; không tự login.",
       "outside": "Login OTP, ChangePassword hoặc SYSTEM recovery.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.18",
@@ -997,7 +1036,8 @@
       "inherit": "",
       "flow": "S15 phone → S16 OTP → S17 mật khẩu mới → login; roles/status/driver profile giữ.",
       "outside": "Reset ngân hàng, duyệt xế hoặc Change Password.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.19",
@@ -1023,7 +1063,8 @@
       "inherit": "",
       "flow": "Admin reset form → SMS OTP → mật khẩu mới → Admin login → Authenticator; SYSTEM recovery ngoài public flow.",
       "outside": "Reset Authenticator, tạo SYSTEM hoặc public SYSTEM reset.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.20",
@@ -1054,7 +1095,8 @@
       "outside": "Break-glass chưa được Owner duyệt hoặc thực thi recovery production.",
       "external_sources": [
         "PR43"
-      ]
+      ],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.21",
@@ -1084,17 +1126,17 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Tự chọn one-session policy mới, JWT/refresh hoặc GPS ingress.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.22",
-      "title": "Adapter SMS thật và kiểm chứng OTP trên môi trường test",
+      "title": "Backend hộp SMS test và công cụ lấy OTP trên PC",
       "module": "M01",
-      "kind": "BE/PROVIDER",
+      "kind": "BE/TOOL",
       "dependencies": [
-        "M01.03",
-        "M01.16",
-        "M01.15"
+        "M01.01",
+        "M00.08"
       ],
       "applications": [
         "ADMIN",
@@ -1103,19 +1145,24 @@
         "SHIP"
       ],
       "files": [
-        "apps/backend/src/auth/otp-provider.ts",
-        "apps/backend/src/auth/ (SMS adapter/binding mới)",
-        "ops/runbooks/",
-        "tests/integration/"
+        "apps/backend/src/test-sms/ (dự kiến)",
+        "apps/backend/src/auth/otp-provider-binding.ts",
+        "apps/backend/src/admin-activation/activation-otp-providers.ts",
+        "apps/backend/src/config/",
+        "tools/local/11ship-test-sms.cmd",
+        "scripts/test-sms-inbox.mjs",
+        "tests/integration/",
+        "ops/runbooks/"
       ],
-      "work": "Nối provider được cấp credential; timeout/backoff/rate theo port contract, không fallback fake production. Owner cấp số test/target/chi phí; tách harness kỹ thuật với gate SMS thật cho register/reset/activation.",
-      "contract": "Reuse challenge/resend/attempts/proof; không tạo proof store thứ hai hoặc gửi SMS trong transaction lock. Fixture UNVERIFIED_TEST không trở thành phone verified thật.",
-      "tests": "Provider fault/timeout/quota/mất response; request status không giả SMS delivery; secrets masked; SMS thật chỉ gửi số test được cấp quyền; tránh resend storm.",
-      "gates": "D04 provider/budget/test recipients; Owner cho phép real SMS checks.",
-      "inherit": "",
-      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
-      "outside": "Broadcast SMS production, payment/email provider hoặc giả phone verified.",
-      "external_sources": []
+      "work": "Revision09 §5: TEST_INBOX explicit dev/test local; core OTP thật, memory inbox dùng chung REGISTER/ADMIN_ACTIVATION và port để reset .16 nối. Listener loopback riêng/token private và tool double-click chỉ đọc mã. Không đợi .03/.15/.16; không claim reset đã code. SMS vendor chuyển M12.12.",
+      "contract": "Reuse provider ports, CSPRNG6/TTL/cooldown/attempts/proof/transaction hiện hành. Không public OTP/test_code/log secret. APP_ENV staging/production reject TEST_INBOX, không fallback fake hoặc thay APP_ENV remote. Inbox TTL10p/cap100 không thay expiry challenge. Tool API local /messages và /messages/:id, Bearer token riêng, private ACL/PID/start-time/repo, no-store/deny browser Origin. Không DB business migration.",
+      "tests": "TS01–TS07 revision09; REGISTER/activation adapter success/reject/unknown/timeout/race; loopback/token/ACL/no-log/startup production deny; Windows double-click/restart/reconnect; future reset test khi .16 có code, không mock thành PASS.",
+      "gates": "C13 đã chốt ưu tiên test; không chờ D04 SMS vendor. Contract/security review và local test target guard; không public remote inbox. Owner local/phone actual theo luồng đã triển khai.",
+      "inherit": "FakeOtpProvider và activation FAKE/TEST_DISPLAY ở main f90b78a; revision09 pin source. Giữ FAKE/test controls tương thích.",
+      "flow": "App request OTP → core tạo mã → adapter append inbox → Owner mở tool PC lấy mã → nhập app → core verify thật.",
+      "outside": "SMS vendor/telecom thật, gateway/modem, OTP fixed/auto-verify, public inbox, bypass TOTP, deploy/đổi môi trường remote.",
+      "external_sources": [],
+      "handoff_version": "2.0.2"
     },
     {
       "id": "M01.23",
@@ -1139,7 +1186,9 @@
         "M01.25",
         "M01.26",
         "M01.27",
-        "M01.28"
+        "M01.28",
+        "M01.31",
+        "M01.33"
       ],
       "applications": [
         "ADMIN",
@@ -1154,14 +1203,15 @@
         "docs/evidence/M01-UAT.md",
         "ops/runbooks/"
       ],
-      "work": "E2E register/login/reset/logout/shop context/driver resume/admin invitation/TOTP/scopes. Kiểm bypass qua API; chuẩn bị PC → phone → SMS thật và Owner actual. Thiếu native/provider/emergency contract phải ghi gate còn mở.",
-      "contract": "Legacy/new API compatible; CUSTOMER+SHOP_OWNER được giữ; không mở rộng quyền tài chính. Staging/production acceptance tách theo spec02. Dependencies là coverage đầy đủ; có thể chuẩn bị test sớm nhưng không claim PASS phần thiếu.",
-      "tests": "Unit/integration PG17/browser E2E/Android thực; reset/login/PREAUTH races; disabled/revoked permissions; mobile storage/network; fresh/upgrade migration; CI exact head.",
-      "gates": "Owner actual PC/phone/SMS và security review; D05 emergency mở thì full recovery/LOCK còn BLOCKED.",
+      "work": "E2E register/login/reset/logout/shop context/driver resume/admin invitation/TOTP/scopes và USER Admin list/detail/lock/unlock. Owner PC → phone/browser với hộp SMS test M01.22; SMS vendor M12.12 ngoài M01 test acceptance. Giữ các native/recovery/device/UI gates còn mở, không giả Owner PASS.",
+      "contract": "Revision09 §6 M01-TEST-ACCEPTED chỉ khi Owner thực tế chấp nhận đúng scope; USER permissions và legacy/new API compatible. Không production ready từ test OTP. M12.12 sau test/release-prep, không dependency ngược gây cycle.",
+      "tests": "Unit/integration PG17/browser E2E/Android thực; reset/login/PREAUTH races; disabled/revoked permissions; mobile storage/network; fresh/upgrade migration; CI exact head. UA01–UA08/TS01–TS07 theo đường đã code; SMS thật RS01 thuộc M12.12.",
+      "gates": "Owner actual PC/phone/browser, USER Admin và security review; OTP dùng inbox có nhãn. D05 emergency/D02/D03/D15 còn mở chặn đúng scope; M12.12 không chặn M01 test acceptance hoặc Owner LOCK phạm vi test, nhưng chặn production release.",
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
-      "outside": "Menu/Order/Delivery/ví/GPS nghiệp vụ; không ghi Owner PASS từ CI.",
-      "external_sources": []
+      "outside": "Menu/Order/Delivery/ví/GPS mới hoặc tự chạy SMS vendor; không nhận Owner PASS từ CI.",
+      "external_sources": [],
+      "handoff_version": "2.0.2"
     },
     {
       "id": "M01.24",
@@ -1183,11 +1233,12 @@
       "work": "Port F11/F12 đã qua local sang runtime Android được duyệt; shared password/OTP/accessibility và secure session adapter. Backend/API giữ nguyên, không tạo thuật toán OTP/native Auth thứ hai.",
       "contract": "M01.03/.21 và UI F11/F12; signup identity CUSTOMER, password/proof memory, token OS storage.",
       "tests": "Keyboard/autofill/paste/back/cold start/process death/network/OTP expiry; actual phone and server role proof.",
-      "gates": "D03 runtime và Owner local F11/F12; D04 SMS thật khi kiểm gate provider.",
+      "gates": "D03 runtime và Owner local F11/F12; C13 dùng inbox M01.22, SMS thật deferred M12.12.",
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Quán onboarding, driver UI hoặc giả phone verified.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.2"
     },
     {
       "id": "M01.25",
@@ -1214,7 +1265,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Menu/addresses/order hoặc public SYSTEM reset.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.26",
@@ -1240,7 +1292,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Thực đơn/Order hoặc manual online switch quán.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.27",
@@ -1268,7 +1321,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Driver approval/Online/GPS nghiệp vụ hoặc app quản lý.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M01.28",
@@ -1293,7 +1347,149 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Bank/approval/Online/wallet hoặc fake status ACTIVE.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
+    },
+    {
+      "id": "M01.29",
+      "title": "Chốt hợp đồng quản lý USER và quyền khóa identity",
+      "module": "M01",
+      "kind": "CONTRACT",
+      "dependencies": [
+        "M01.01",
+        "M01.14"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "docs/design/system-v2-20261011/09-m01-user-admin-test-sms.md",
+        "docs/design/system-v2-20261011/04-data-api.md",
+        "docs/evidence/M01-USER-ADMIN-CONTRACT.md"
+      ],
+      "work": "Preflight read-only main/PR mới: users/version/origin, memberships/scopes, profile projection, guards/lock order/idempotency/command lookup. Báo mapping và gaps theo revision09 §2/4; ChatGPT chốt exact schema/codes/replay và Owner D15. Read contract có thể CODE_READY độc lập mutation.",
+      "contract": "Không tự tạo quyền mới: CUSTOMER/SHOP/DRIVER view/review/lock hiện có; SHOP_OWNER alias SHOP; loại ADMIN_PROVISIONED hoặc có admin membership. Read projection theo scope; global identity lock khác profile suspend. D15 cho nhiều role. Mutation physical DDL/grants/command lookup phải pin trước .32.",
+      "tests": "Bằng chứng cột/index/grants/guards từ code; matrix nhiều role/privileged/legacy/no-role; target/actor lock order và races; source diff đúng main/final dependency SHA.",
+      "gates": "ChatGPT chốt CODE_READY cho read; D15 Owner trước mutation. Không chờ M12 capabilities tiền/config/export để thiết kế read USER.",
+      "inherit": "Main f90b78a có Admin Auth/scopes, chưa USER accounts UI/API; theo revision 09 v2.0.2.",
+      "flow": "Đọc main/scopes → mapping read và mutation riêng → báo gaps → ChatGPT contract → Owner policy D15.",
+      "outside": "Không code API/UI, mở quyền, khóa tài khoản thật hoặc thiết kế tiền/Order thay Owner.",
+      "external_sources": [],
+      "handoff_version": "2.0.2"
+    },
+    {
+      "id": "M01.30",
+      "title": "Backend danh sách và chi tiết USER theo scope",
+      "module": "M01",
+      "kind": "BE",
+      "dependencies": [
+        "M01.29",
+        "M01.05",
+        "M00.08"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/admin-users/ (dự kiến)",
+        "apps/backend/src/admin-auth/ guards có review",
+        "tests/integration/",
+        "database/migrations/ chỉ index nếu cần"
+      ],
+      "work": "Revision09 §4.1: GET list/detail/account-events, search tên/SĐT, role/status/date và keyset; một USER một dòng, projection theo domain. Exclude privileged cả disabled membership; allowed_actions chỉ action đã đủ guard, lock không ready thì không cấp.",
+      "contract": "Proposal additive /v1/admin/users, /:id, /:id/account-events; cookie/TOTP/Origin session guard, version số nguyên an toàn theo mapper repo, ISO ngày Cao Bằng, cursor bind filter/actor permission version. Không extra fields/password/bank/GPS/proof/role grant; SQL parameterized, EXISTS chống duplicate. .29 exact errors/grants trước code.",
+      "tests": "UA01–UA05; scope negative HTTP/PII, cursor filter/version, search không dấu, ngày UTC+7, empty legacy name, actor revoke/factor change; EXPLAIN và fresh/upgrade/grants nếu index migration.",
+      "gates": "Read contract M01.29 CODE_READY; UI không trong gói. D15 chưa chốt không chặn read nhưng lock/unlock chưa được bật.",
+      "inherit": "Main f90b78a có Admin Auth/scopes, chưa USER accounts UI/API; theo revision 09 v2.0.2.",
+      "flow": "Admin TOTP → guard scope → filters/cursor → đọc projection → envelope không secret.",
+      "outside": "Mutation lock/unlock, direct role/password/phone edit, export, tiền/GPS hoặc tạo accounts trùng users.",
+      "external_sources": [],
+      "handoff_version": "2.0.2"
+    },
+    {
+      "id": "M01.31",
+      "title": "Web Admin danh sách và chi tiết tài khoản USER",
+      "module": "M01",
+      "kind": "UI",
+      "dependencies": [
+        "M01.30"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/admin-web/src/core/user-accounts-{api,controller}.ts (dự kiến)",
+        "apps/admin-web/src/core/routes.ts",
+        "apps/admin-web/src/dom/user-accounts-view.ts",
+        "apps/admin-web/src/dom/shell-app.ts",
+        "tests/admin-web/"
+      ],
+      "work": "D81/D86 revision09 §2.3 và board SVG: menu Tài khoản→Người dùng, filters/search/pagination/list/detail, phần hồ sơ theo projection, quay lại giữ filter. Loading/empty/offline/timeout/401/403/404/429, generation tránh stale PII. Chỉ read; actions lock disabled/hidden tới gói .33.",
+      "contract": "Chỉ GET API .30, cookie/transport hiện có, không client-computed permission. Route /accounts/users và /accounts/users/:id. Guard server thật; không fake names/status/rows; không tự tăng profile view theo role CUSTOMER.",
+      "tests": "UA01–UA05 browser+API/DB thật, typed parser/error map/generation, keyboard/focus/touch44, PC1366/1024 và responsive; không mang PII cũ qua 401/403.",
+      "gates": "Owner duyệt D81/D86 và board v2.0.2 trước code UI; .30 review exact SHA; Owner PC/browser UAT.",
+      "inherit": "Main f90b78a có Admin Auth/scopes, chưa USER accounts UI/API; theo revision 09 v2.0.2.",
+      "flow": "Menu Người dùng → lọc/tìm → chi tiết → quay lại danh sách giữ trạng thái.",
+      "outside": "Lock/unlock dialogs, tạo USER, sửa mật khẩu/SĐT/role, xóa/export, dashboard/audit toàn hệ thống.",
+      "external_sources": [],
+      "handoff_version": "2.0.2"
+    },
+    {
+      "id": "M01.32",
+      "title": "Backend khóa và mở USER có audit, thu hồi phiên",
+      "module": "M01",
+      "kind": "BE/SECURITY",
+      "dependencies": [
+        "M01.29",
+        "M01.30",
+        "M01.04"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/admin-users/ (dự kiến)",
+        "apps/backend/src/auth/session-repository.ts",
+        "apps/backend/src/auth/session-authorization-participant.ts",
+        "tests/integration/",
+        "database/migrations/ theo DDL đã duyệt"
+      ],
+      "work": "Revision09 §4.3: lock/unlock USER thường, expected_version/reason/key, revoke mọi phiên thường khi lock; audit/outbox/replay/command lookup atomic. Actor permissions recheck sau lock. Multi-role, operational impact guard theo D15; chỉ test M01 không hàng/hold, UNKNOWN deny.",
+      "contract": "POST /v1/admin/users/:id/lock|unlock, GET /v1/admin/user-account-commands/:command_id theo contract .29; no privileged target. Không restore session khi unlock, không tự ACTIVE profile/funds/COD hoặc bypass TOTP. Identity version và lock order tương thích core; physical command DDL/grants phải đủ trước code.",
+      "tests": "UA03/UA06–UA08: lock-login/context/revoke race, exact replay/key mismatch, audit/outbox rollback, disabled reset stays disabled, old token không sống lại, all-domain lock perms/unknown impact/privileged denied.",
+      "gates": "D15 Owner policy và .29 mutation contract CODE_READY. Không tự quyết mọi-domain vs một-domain, custody impact hay step-up. Read/UI độc lập tiếp tục khi mutation blocked.",
+      "inherit": "Main f90b78a có Admin Auth/scopes, chưa USER accounts UI/API; theo revision 09 v2.0.2.",
+      "flow": "Nhận intent/key/version → lock theo order → recheck actor/target/impact → atomic state+revoke+audit → command acknowledgement.",
+      "outside": "Profile suspend/approve, xóa identity, direct role/password edit, cancel Delivery/Order, sửa ví, khóa SYSTEM/ADMIN, rollout production khi impact chưa có.",
+      "external_sources": [],
+      "handoff_version": "2.0.2"
+    },
+    {
+      "id": "M01.33",
+      "title": "Web Admin xác nhận khóa và mở tài khoản USER",
+      "module": "M01",
+      "kind": "UI",
+      "dependencies": [
+        "M01.31",
+        "M01.32"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/admin-web/src/core/user-accounts-controller.ts (dự kiến)",
+        "apps/admin-web/src/dom/user-accounts-view.ts",
+        "tests/admin-web/"
+      ],
+      "work": "D87/D88: CTA theo allowed_actions, dialog mục tiêu/lý do/tác động toàn identity, nút Hủy/Khóa hoặc Mở. Không optimistic trạng thái; timeout giữ intent/key, đọc command outcome; version conflict refetch và yêu cầu Owner kiểm lại mục tiêu.",
+      "contract": "API .32, reason1–500 codepoints, version/key bất biến theo intent. Mở khóa không hồi sinh phiên/hồ sơ/ví; toast đúng server. UI không tự khóa nếu backend action deny; giữ cookie/CSRF/TOTP existing contract.",
+      "tests": "UA05–UA08 E2E double-click/lost response/version conflict/revoked actor/cancel/focus/keyboard, command current state không suy commit từ badge; không stale allowed_actions sau refresh.",
+      "gates": "D15 + .32 review exact SHA; Owner duyệt D87/D88 trước UI code; Owner local/browser actual.",
+      "inherit": "Main f90b78a có Admin Auth/scopes, chưa USER accounts UI/API; theo revision 09 v2.0.2.",
+      "flow": "Chi tiết → action được cấp → lý do/xác nhận → command → đọc outcome nếu chưa rõ → refetch/toast.",
+      "outside": "Thay quyền/guard, tự unlock profile/funds, tạo/xóa USER hoặc mutation không contract.",
+      "external_sources": [],
+      "handoff_version": "2.0.2"
     },
     {
       "id": "M02.01",
@@ -1318,7 +1514,8 @@
       "inherit": "Bảng service_areas và M02-A auto-hours main.",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Code resolver/area UI, dispatch hoặc policy vùng xế.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M02.02",
@@ -1345,7 +1542,8 @@
       "inherit": "",
       "flow": "Tọa độ thật → server resolve ACTIVE geometry → save/complete recheck current version → hợp lệ hoặc lỗi vùng.",
       "outside": "Full Admin area CRUD, shop hours hoặc manual switch.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M02.03",
@@ -1372,7 +1570,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Registered areas xế D13, dispatch hoặc hủy delivery khi tắt vùng.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M02.04",
@@ -1396,7 +1595,8 @@
       "inherit": "Backend M02-A đã merge; chỉ sửa backend nếu có finding cụ thể.",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Hours editor, menu/order hoặc customer account edits.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M02.05",
@@ -1420,7 +1620,8 @@
       "inherit": "Auto-hours Owner08/10 đã chốt, không hỏi lại.",
       "flow": "Đọc tuần → sửa/copy intervals → validate → save version → availability đọc từ clock server.",
       "outside": "Ngày nghỉ đặc biệt, override thủ công hoặc scheduled Order policy D14.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M03.01",
@@ -1445,7 +1646,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Không code lifecycle hoặc chọn policy mới.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M03.02",
@@ -1472,7 +1674,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Admin approval, Online, withdrawal hoặc đổi login phone.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M03.03",
@@ -1501,7 +1704,8 @@
       "inherit": "",
       "flow": "PENDING + hồ sơ/funding đủ → approve mode hợp lệ → credit nếu NEW_TOPUP đúng một lần → ACTIVE, chưa Online.",
       "outside": "Suspend/resume/type/closure, auto Online hoặc thu lại activation khi resume.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M03.04",
@@ -1527,7 +1731,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Forced dispatch hoặc tự miễn funds/batching/GPS cho PLATFORM.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M03.05",
@@ -1553,7 +1758,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Accept delivery, GPS OS adapter hoặc bank payout.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M03.06",
@@ -1582,7 +1788,8 @@
       "inherit": "",
       "flow": "Request → CLOSING/tắt nhận → chờ goods/holds/payout → cancel hợp lệ hoặc finalize khi balance0 → CLOSED giữ history.",
       "outside": "Auto withdrawal hoặc pretend custody/balance zero.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M04.01",
@@ -1608,7 +1815,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Không code money transactions hoặc đổi chính sách tiền.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M04.02",
@@ -1634,7 +1842,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Topup/payout/commission API hoặc số dư demo.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M04.03",
@@ -1660,7 +1869,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Production commission source chưa có assignment FK hoặc public driver money mutation.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M04.04",
@@ -1688,7 +1898,8 @@
       "inherit": "",
       "flow": "Operator xác nhận tiền nhận/bank reference → registry unique → atomic credit/ledger/audit → own ví đọc số dư.",
       "outside": "Auto bank transfer, driver topup mutation, COD hoặc activation tự động.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M04.05",
@@ -1715,7 +1926,8 @@
       "inherit": "",
       "flow": "Operator create → reserve+bank snapshot → PENDING → cancel nếu hợp lệ/release; xế chỉ đọc.",
       "outside": "Chuyển tiền/process/reconcile, auto driver withdrawal.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M04.06",
@@ -1742,7 +1954,8 @@
       "inherit": "",
       "flow": "PENDING → PROCESSING giữ hold → paid/capture hoặc RECONCILIATION → paid hoặc confirmed-not-sent/cancel.",
       "outside": "Automatic payout API, lease takeover hoặc coi timeout là chưa chuyển.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M04.07",
@@ -1769,7 +1982,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Money mutation, fake bankQR hoặc income credit vào ví.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M04.08",
@@ -1797,7 +2011,8 @@
       "inherit": "",
       "flow": "Assignment FK đủ → accept reserve → completed capture hoặc failed/cancel release → ledger/source history một lần.",
       "outside": "Accept command UI, COD/phí ship credit hoặc refund do report tự động.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M05.01",
@@ -1822,7 +2037,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Checkout/Order create hoặc đổi login phone.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M05.02",
@@ -1846,7 +2062,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Cart/checkout, hệ thống liên hệ công khai hoặc phone identity.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M06.01",
@@ -1874,7 +2091,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Tự chọn fee boundary hoặc straight-line fallback.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M06.02",
@@ -1901,7 +2119,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Accept/commission, routing active aggregate hoặc order submit.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M06.03",
@@ -1931,7 +2150,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Accept API, forced delivery order hoặc giả route success.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M06.04",
@@ -1957,7 +2177,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Contact/map trước accept, fake orders hoặc accepting khi thiếu commission bridge.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M07.01",
@@ -1985,7 +2206,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Full Order, money source placeholder hoặc public accept chưa reserve.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M07.02",
@@ -2013,7 +2235,8 @@
       "inherit": "",
       "flow": "Quán tạo direct → waiting_driver với deadline create30p → accept hoặc deadline worker search_stopped, không reset.",
       "outside": "Customer createDelivery, auto choose driver, Order link hoặc reset deadline.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M07.03",
@@ -2040,7 +2263,8 @@
       "inherit": "",
       "flow": "Eligible evaluation → lock/recheck → reserve+assignment/accepted → return trước pickup → waiting nếu còn hạn, search_stopped nếu hết.",
       "outside": "Pickup/complete/fail, xế hủy sau nhận hàng hoặc forced dispatch.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M07.04",
@@ -2065,7 +2289,8 @@
       "inherit": "",
       "flow": "Current accepted → actual điểm/fee → location_confirmed → nút Đã nhận hàng → milestones atomic/delivering.",
       "outside": "Terminal result, admin fee correction chưa có capability, fake GPS.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M07.05",
@@ -2093,7 +2318,8 @@
       "inherit": "",
       "flow": "Delivering → completed/capture hoặc failed/release+custody → resolve incident → retry ID mới khi hàng ở quán.",
       "outside": "Tự đánh lostgoods/refund, replay oldcomplete hoặc fake hàng ở quán.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M07.06",
@@ -2118,7 +2344,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Customer tạo delivery, map fake hoặc Order checkout.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M07.07",
@@ -2143,7 +2370,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Forced route ordering, COD wallet hoặc giả GPS/assignment.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M08.01",
@@ -2170,7 +2398,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Native sampling, scoped map read hoặc dùng PC thay phone evidence.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M08.02",
@@ -2195,7 +2424,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Fake GPS trên PC hoặc tracking vượt phạm vi cho phép.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M08.03",
@@ -2222,7 +2452,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Public vị trí xế hoặc cấp quyền đọc history rộng.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M08.04",
@@ -2253,7 +2484,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Fake publisher production hoặc push tự tạo business transition.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M08.05",
@@ -2281,7 +2513,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Cron bật quán, deadline thứ hai hoặc nhắc sau terminal.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M09.01",
@@ -2309,7 +2542,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Topping/size/voucher/freeship hoặc thay Order lịch sử.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M09.02",
@@ -2334,7 +2568,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Demo ảnh thành asset nghiệp vụ hoặc upload public không kiểm dữ liệu.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M09.03",
@@ -2358,7 +2593,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Cart/checkout/voucher hoặc kho/cost của dự án Ốc11.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M09.04",
@@ -2384,7 +2620,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Checkout hoặc favorites/discount chưa có contract.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M09.05",
@@ -2410,7 +2647,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Quản trị cost/voucher hoặc xóa cascade history.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M10.01",
@@ -2439,7 +2677,8 @@
       "inherit": "",
       "flow": "Cart/recipient → revalidate menu/totals → snapshot+address/default+Order atomic → pending_confirmation.",
       "outside": "Call driver, auto dispatch hoặc giá lịch sử mutable.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M10.02",
@@ -2464,7 +2703,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Call-driver link, customer cancel hoặc mở khóa confirmed content.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M10.03",
@@ -2491,7 +2731,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Voucher/COD ledger hoặc tự dispatch.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M10.04",
@@ -2515,7 +2756,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Delivery retry/custody policy hoặc App Quán riêng.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M10.05",
@@ -2544,7 +2786,8 @@
       "inherit": "",
       "flow": "Confirmed Order → chủ quán call driver → một current attempt → completed/current thì Order completed; terminal khác giữ attention/history.",
       "outside": "Khách trực tiếp tạo delivery hoặc hồi sinh terminal/reset deadline.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M11.01",
@@ -2574,7 +2817,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Phạt tiền hoặc tự refund vì điểm thấp.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M11.02",
@@ -2603,7 +2847,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Tự phạt/refund hoặc xóa bằng chứng gốc.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M11.03",
@@ -2633,7 +2878,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Tự quyết định tiền hoặc cấp quyền quán xóa đánh giá.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M12.01",
@@ -2641,7 +2887,8 @@
       "module": "M12",
       "kind": "CONTRACT",
       "dependencies": [
-        "M01.14"
+        "M01.14",
+        "M01.29"
       ],
       "applications": [
         "ADMIN"
@@ -2650,24 +2897,24 @@
         "docs/design/system-v2-20261011/04-data-api.md",
         "docs/evidence/M12-CAPABILITY-PREFLIGHT.md"
       ],
-      "work": "Preflight permission store CUSTOMER/SHOP/DRIVER view/review/lock; báo gaps money/config/export/audit/ops. ChatGPT lập action-resource matrix, Owner duyệt quyền; scope cũ không tự cấp quyền mới.",
+      "work": "Preflight permission store CUSTOMER/SHOP/DRIVER view/review/lock; báo gaps money/config/export/audit/ops. ChatGPT lập action-resource matrix, Owner duyệt quyền; scope cũ không tự cấp quyền mới. Reuse USER read/lock matrix đã chốt ở M01.29; không lập policy thứ hai cho cùng action.",
       "contract": "D11 default deny, capability explicit; membership SYSTEM/ADMIN hiện hành; revoke race và backward compatibility.",
       "tests": "Positive/negative từng domain/action, Food grouping không mở scope; migration/old API compatibility.",
       "gates": "D11 Owner duyệt capabilities.",
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Code mở quyền hoặc thay số lượng SYSTEM.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.2"
     },
     {
       "id": "M12.02",
-      "title": "Admin: tài khoản và lock/unlock có audit",
+      "title": "Admin: mở rộng xử lý tác động vận hành khi quản lý tài khoản",
       "module": "M12",
       "kind": "BE/UI",
       "dependencies": [
         "M12.01",
-        "M01.04",
-        "M00.08"
+        "M01.33"
       ],
       "applications": [
         "ADMIN"
@@ -2677,14 +2924,15 @@
         "apps/admin-web/src/accounts/",
         "tests/integration/"
       ],
-      "work": "D81 list/search/phone/roles/status/origin/scope/detail, lock/unlock có reason/version. Lock revoke session và tạo operational case nếu có hàng/tiền; không cancel delivery hoặc xóa SYSTEM.",
-      "contract": "Identity owner M01, scoped commands/default deny; không grant role trực tiếp ngoài invite flow.",
-      "tests": "Scope/revoked actor, lock vs login/accept, goods/money case, no SYSTEM delete, cursor/filters/PII.",
-      "gates": "D11 capabilities và Owner UI D81.",
+      "work": "USER list/detail/lock/unlock và D81 đã ở M01.29–.33, không viết lại. Chỉ mở rộng impact adapters/operational cases khi có hàng/hold/tiền, rà lock với các module đã triển khai; projection và privileged management theo contract riêng. Không cancel hàng, release hold hoặc hồi sinh phiên bằng account lock.",
+      "contract": "Reuse Identity/API/permission owner M01; M12 owner domain impact ports và operational case. Exact case DDL/scopes/custody workflow phải đủ; không mở global lock nếu UNKNOWN impact.",
+      "tests": "Account lock vs active delivery/custody/holds, case creation atomic/no money mutation, scope/revoked actor, regression USER M01 không đổi contract.",
+      "gates": "D11/case workflow và D15 impact policy; Owner UI chỉ phần bổ sung, không yêu cầu viết lại D81.",
       "inherit": "",
-      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
-      "outside": "Direct role grant, bank/money changes hoặc destructive delete.",
-      "external_sources": []
+      "flow": "USER command M01 → domain impact evaluate → operational case khi đủ policy → account effect vẫn atomic.",
+      "outside": "Viết lại USER API/UI M01, direct role grant, bank/money change, force cancel hoặc destructive delete.",
+      "external_sources": [],
+      "handoff_version": "2.0.2"
     },
     {
       "id": "M12.03",
@@ -2712,7 +2960,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Viết lại bank verification hoặc tự cấp finance policy.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M12.04",
@@ -2738,7 +2987,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Direct status patch, chọn xế hoặc bypass custody/funds.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M12.05",
@@ -2764,7 +3014,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Direct ledger edit hoặc code payout lần nữa.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M12.06",
@@ -2792,7 +3043,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Fake KPI, nguồn dữ liệu thứ hai hoặc PII export chưa duyệt.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M12.07",
@@ -2818,7 +3070,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Đổi giá/commission/radius ngầm hoặc edit secrets runtime.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M12.08",
@@ -2843,7 +3096,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Xóa/sửa audit hoặc export chưa có quyền.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M12.09",
@@ -2869,7 +3123,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "PII download public hoặc raw database dump.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M12.10",
@@ -2900,7 +3155,8 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Tự deploy production/merge/LOCK hoặc destructive test vào DB Owner.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
     },
     {
       "id": "M12.11",
@@ -2929,7 +3185,57 @@
       "inherit": "",
       "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
       "outside": "Bot tự đánh LOCK/DONE module hoặc thay evidence lịch sử.",
-      "external_sources": []
+      "external_sources": [],
+      "handoff_version": "2.0.1"
+    },
+    {
+      "id": "M12.12",
+      "title": "SMS nhà cung cấp thật và hồi quy trước phát hành",
+      "module": "M12",
+      "kind": "BE/PROVIDER",
+      "dependencies": [
+        "M01.23",
+        "M01.22",
+        "M12.10"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/auth/ provider thật theo repo",
+        "apps/backend/src/admin-activation/ provider adapter",
+        "apps/backend/src/password-reset/ delivery adapter",
+        "ops/runbooks/",
+        "tests/integration/",
+        "docs/evidence/M12-REAL-SMS.md"
+      ],
+      "work": "Cuối dự án, sau ứng dụng đã test và release-prep: Owner chốt provider/credential/số nhận/chi phí; nối SMS thật cho REGISTER/RESET_PASSWORD/ADMIN_ACTIVATION, đo send outcomes/provider limits và Owner nhận mã trên điện thoại. Thay test-mode trong cấu hình thật, không bỏ core verify hoặc rewrite Auth.",
+      "contract": "D04 provider port/timeouts/rate/unknown giữ nguyên; SMS delivery acceptance không đồng nghĩa handset delivered nếu provider không xác nhận. Staging/production không TEST_INBOX/FAKE/TEST_DISPLAY; không public OTP và không fallback fake. Thực hiện trên target test được cấp quyền, production deploy quyết định riêng.",
+      "tests": "RS01 và hồi quy TS/UA áp dụng: mã thật/expiry/resend/wrong attempts/replay/reset-session/TOTP; quota/reject/timeout/unknown/no-send retry storm; startup fail closed/không test listener; evidence handset redacted và CI final SHA.",
+      "gates": "D04 provider/budget/test recipients và Owner cho phép kiểm SMS thật; cuối dự án trước production release. M01 test acceptance không phải evidence telecom.",
+      "inherit": "Provider ports/main hiện có, M01.22 transport test và Auth UAT. Chuyển scope SMS vendor từ M01.22 v2.0.1 theo C13 Owner.",
+      "flow": "Owner provider/target → adapter thật → số test nhận SMS → nhập app → verify/hồi quy → Owner release decision.",
+      "outside": "SMS broadcast, chọn vendor/chi phí thay Owner, thay TTL/TOTP/security policy, production deploy/merge/LOCK tự động.",
+      "external_sources": [],
+      "handoff_version": "2.0.2"
     }
-  ]
+  ],
+  "revision": {
+    "date": "2026-10-11",
+    "source_design_sha": "80938a32b9b6fdb469346fb1183891e751a4d936",
+    "observed_main": "f90b78a938036aa169179185aba6adab81e6d473",
+    "spec": "09-m01-user-admin-test-sms.md",
+    "decisions": [
+      "C12",
+      "C13"
+    ],
+    "pending": [
+      "D15",
+      "Owner UI D81/D86/D87/D88"
+    ],
+    "scope": "USER Admin cơ bản vào M01; OTP inbox test ở M01.22; SMS vendor M12.12 cuối dự án trước production. Main observed trước revision là chứng cứ lịch sử, không trạng thái hiện tại."
+  }
 }

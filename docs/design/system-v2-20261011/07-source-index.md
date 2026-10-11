@@ -1,6 +1,20 @@
 # Chỉ mục nguồn, PR và phiên bản
 
-Phiên bản **2.0.0**; **SOURCE_TRACE / NOT_ACCEPTANCE**. Repo [trungtn87/11ship](https://github.com/trungtn87/11ship); nhánh main kiểm kê [e5b50e8567b8928646c83648dd70f577915dc14f](https://github.com/trungtn87/11ship/commit/e5b50e8567b8928646c83648dd70f577915dc14f). Bộ thiết kế được lưu tại [PR #48](https://github.com/trungtn87/11ship/pull/48), nhánh `docs/three-app-system-design-20261011`, trạng thái Draft và chờ Owner duyệt.
+Phiên bản **2.0.2**; **SOURCE_TRACE / NOT_ACCEPTANCE**. Repo [trungtn87/11ship](https://github.com/trungtn87/11ship); nhánh main kiểm kê gốc [e5b50e8567b8928646c83648dd70f577915dc14f](https://github.com/trungtn87/11ship/commit/e5b50e8567b8928646c83648dd70f577915dc14f). Bộ thiết kế được lưu tại [PR #48](https://github.com/trungtn87/11ship/pull/48), nhánh `docs/three-app-system-design-20261011`, trạng thái Draft và chờ Owner duyệt. Trạng thái các PR bên dưới là **tại audit gốc**, không trạng thái hôm nay; nguồn revision USER/OTP xem bảng mới.
+
+## Nguồn revision USER Admin/SMS test v2.0.2
+
+Owner11/10 yêu cầu đưa quản lý USER vào M01, SMS dịch vụ về cuối dự án và backend có kênh test trước. Source design `80938a32b9b6fdb469346fb1183891e751a4d936`; main đã đọc `f90b78a938036aa169179185aba6adab81e6d473`. [Đặc tả09](09-m01-user-admin-test-sms.md), [board](assets/m01-user-admin-v2.0.2.svg), [danh mục108 gói](08-work-packages.md); M01 có33/M12 có12. Không chạy app/DB/Owner UAT mới.
+
+| Nguồn main đã đọc | Phát hiện và kế thừa |
+|---|---|
+| [Admin routes](https://github.com/trungtn87/11ship/blob/f90b78a938036aa169179185aba6adab81e6d473/apps/admin-web/src/core/routes.ts) và [shell](https://github.com/trungtn87/11ship/blob/f90b78a938036aa169179185aba6adab81e6d473/apps/admin-web/src/dom/shell-app.ts) | Có home/invitations/activate, chưa USER accounts route |
+| [OTP binding](https://github.com/trungtn87/11ship/blob/f90b78a938036aa169179185aba6adab81e6d473/apps/backend/src/auth/otp-provider-binding.ts) | Register fake chỉ dev/test; staging/production startup refuse khi thiếu adapter |
+| [Activation providers](https://github.com/trungtn87/11ship/blob/f90b78a938036aa169179185aba6adab81e6d473/apps/backend/src/admin-activation/activation-otp-providers.ts) và [config](https://github.com/trungtn87/11ship/blob/f90b78a938036aa169179185aba6adab81e6d473/apps/backend/src/config/admin-activation-config.ts) | FAKE/TEST_DISPLAY explicit dev/test; accepted/rejected/unknown giữ contract; mode SMS chưa binding |
+| [Auth Core DDL](https://github.com/trungtn87/11ship/blob/f90b78a938036aa169179185aba6adab81e6d473/database/migrations/1791504000000_create-auth-core.sql), [origin DDL](https://github.com/trungtn87/11ship/blob/f90b78a938036aa169179185aba6adab81e6d473/database/migrations/1791936000000_add-users-account-origin.sql), [Admin Auth DDL](https://github.com/trungtn87/11ship/blob/f90b78a938036aa169179185aba6adab81e6d473/database/migrations/1792022400000_create-admin-auth.sql) | users status/version, PHONE_VERIFIED/ADMIN_PROVISIONED, admin_memberships; không dùng origin thay permission |
+| [Invitation DDL](https://github.com/trungtn87/11ship/blob/f90b78a938036aa169179185aba6adab81e6d473/database/migrations/1792108800000_create-admin-invitations.sql), [activation DDL](https://github.com/trungtn87/11ship/blob/f90b78a938036aa169179185aba6adab81e6d473/database/migrations/1792281600000_create-admin-activation.sql) | CUSTOMER/SHOP/DRIVER scopes, view/review/lock, admin_permissions; M01.29 phải pin authorization/target lock semantics trước mutation |
+
+Các file source/API mới trong09 là proposal, chưa là implementation. Chỉ docs được sửa ở revision; không sửa evidence/PROGRESS hoặc nhận các gói đã PASS.
 
 ## 1. Nguồn main được kế thừa
 

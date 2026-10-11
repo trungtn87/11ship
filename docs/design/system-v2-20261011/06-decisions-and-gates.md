@@ -1,6 +1,6 @@
 # Quyết định, tương thích và gate
 
-Phiên bản **2.0.0**; **OPEN_DECISIONS / NOT_LOCKED**. Không hỏi lại quyết định đã chốt. Nguồn tại [07](07-source-index.md); exact PR/CI heads tại audit-snapshot.json. Các quyết định mở chỉ chặn slice liên quan.
+Phiên bản **2.0.2**; **OPEN_DECISIONS / NOT_LOCKED**. Không hỏi lại quyết định đã chốt. Nguồn tại [07](07-source-index.md); exact PR/CI heads tại audit-snapshot.json là lịch sử. [Revision USER/SMS test](09-m01-user-admin-test-sms.md) pin main mới cho phạm vi đó. Các quyết định mở chỉ chặn slice liên quan.
 
 ## 1. Đã chốt và áp dụng
 
@@ -17,6 +17,8 @@ Phiên bản **2.0.0**; **OPEN_DECISIONS / NOT_LOCKED**. Không hỏi lại quy�
 | C09 | Tiền thủ công, ví không COD/phí ship; operator ghi topup và tạo withdrawal | S01 B03/B06–B09; ADR004 #7 | Xế chỉ đọc ví/giao dịch và liên hệ operator |
 | C10 | Baseline hiện tại không API khách sửa/hủy Order sau submit | S01 §1.1/2.1, manifest4.1 | Giữ mặc định; thay quyền chỉ qua D06 |
 | C11 | Activation100k là funding net và available lần đầu; topup đúng actual60k+40k/150k; rút ≥10k; hoa hồng1k/delivery thành công | S01 A35–A39 và ADR004 §6/7 | Không ép minimum100k mỗi topup; không thu lại activation khi resume |
+| C12 | Quản lý USER cơ bản trên Web Admin thuộc M01 | Owner11/10 phản hồi sau danh mục M01 | M01.29–.33; M12.02 chỉ mở rộng tác động vận hành, không viết lại core |
+| C13 | SMS nhà cung cấp chuyển cuối dự án; backend có kênh giao OTP test trước | Owner11/10 cùng phản hồi C12 | M01.22 TEST_INBOX local; M12.12 SMS thật trước production; không chặn M01 test vì vendor |
 
 C09/C11 là nguồn thiết kế nghiệp vụ, chưa chứng nhận controller/schema money tồn tại hoặc ADR004 đã LOCKED. Capability operator vẫn qua D11.
 
@@ -38,6 +40,9 @@ C09/C11 là nguồn thiết kế nghiệp vụ, chưa chứng nhận controller/
 | D12 | Release budget/load/RPO/RTO/field targets chưa có số liệu | Đo/duyệt targets trước load/restore/release; Free staging không chứng minh HA | M12 production |
 | D13 | A2D main bỏ driver areas; baseline EXTERNAL≤3/vùng đăng ký và PLATFORM chỉ miễn count/registered-area | Kế thừa policy baseline như proposal; Owner reconcile vùng/binding theo main và exemption trước M06. Search radius khác registered-area; không tự miễn funds/active/batching hoặc thêm bank guard vào accept | M03/M06 eligibility |
 | D14 | Baseline cho đặt hẹn khi hiện tại đóng nếu bật nhận; main auto-hours không switch | Đề nghị cho scheduled Order khi thời điểm hẹn thuộc giờ và quán/user/vùng hợp lệ; đặt ngay vẫn cần open. Đây là thay đổi availability Order phải duyệt trước checkout | M10 scheduled Order |
+| D15 | Cần chốt khóa identity USER có CUSTOMER/SHOP/DRIVER, khác suspend từng profile | Proposal: SYSTEM khóa USER thường; ADMIN cần view+lock mọi domain thuộc identity; giữ goods/funds và deny impact UNKNOWN. Read-only dùng view scope hiện có, không chờ mutation policy | M01.32/.33 và rollout account mutation; không chặn .30/.31/.22 |
+
+D04 SMS provider/budget/recipient chỉ chặn **M12.12/release thật** theo C13. D04 map/geometry/push/bank vẫn áp dụng module tương ứng. TEST_INBOX là delivery mô phỏng dev/test local, không thay OTP core/TOTP hoặc cho staging/production test fallback. Owner duyệt D81/D86/D87/D88 trước code UI; C12 không tự phê duyệt mọi quyền lock mới.
 
 D02/D06/D08/D09/D13 có nguồn xung đột được ghi trong roadmap Draft, không nhận memory là quy tắc đã xác minh lại. Chúng không chặn M00. Không dùng D07 để hỏi Owner lại một quyết định đã rõ.
 

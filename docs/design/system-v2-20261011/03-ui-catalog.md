@@ -1,6 +1,6 @@
 # Danh mục màn hình và UI/UX
 
-Phiên bản **2.0.0**; **VISUAL_DESIGN_CANDIDATE / WAITING_OWNER_REVIEW**. Source: brand main, ảnh đã xem, API main/PR, thiết kế01/02/04/05. Mã màn hình dùng trong PR, screenshot, E2E và Owner finding. Board 8trang là mẫu duyệt, không ảnh app đang chạy.
+Phiên bản **2.0.2**, các màn nền giữ **2.0.0**; **VISUAL_DESIGN_CANDIDATE / WAITING_OWNER_REVIEW**. Source: brand main, ảnh đã xem, API main/PR, thiết kế01/02/04/05 và [revision USER/SMS test](09-m01-user-admin-test-sms.md). Mã màn hình dùng trong PR, screenshot, E2E và Owner finding. Board 8trang và board USER mới là mẫu duyệt, không ảnh app đang chạy.
 
 ## 1. Design system
 
@@ -115,6 +115,12 @@ Bottom Ship: Trang chủ / Đơn hàng / Thu nhập / Ví / Tài khoản. Online
 | D07 activation | Invitationstatus→SMS OTP→password→TOTP→complete | #45 state/cookie flow | Revoke/expiry/phone conflict/races |
 | D08 reset ADMIN | Phone→OTP→newpwd/confirm | Public reset→D00 | TOTP giữ; SYSTEM không dùng flow này |
 | D09 SYSTEM recovery | Masked verified email/status/help server procedure | D05 decision gate | Không public bypass/reset bootstrap |
+| D81 USER list `/accounts/users` | Tên/SĐT/roles_visible/status/created; search/role/status/date/cursor; Xem | M01.30 read API; M01.31 UI | Một identity một dòng; loại SYSTEM/ADMIN; không tạo/xóa/export |
+| D86 USER detail `/accounts/users/:id` | Identity/version/profile đúng scope; account timeline; Quay lại/Làm mới | Read .30; action .32/.33 sau D15 | Không bank/GPS/password/token; hồ sơ riêng khác account status |
+| D87 khóa USER dialog | Mục tiêu/lý do/cảnh báo mất phiên hai app; Hủy/Khóa | Mutation .32 và UI .33 sau D15 | Scope mọi role theo policy duyệt; timeout đọc command, không new intent |
+| D88 mở USER dialog | Mục tiêu/lý do/giải thích login lại; Hủy/Mở khóa | Mutation .32 và UI .33 | Không restore phiên, profile, funds; no optimistic state |
+
+[Board USER Admin v2.0.2](assets/m01-user-admin-v2.0.2.svg) và revision09 §2.3 là nguồn UI mới, chờ Owner duyệt. D81 trước nằm M12 nay thuộc M01; M12 chỉ mở rộng case/tác động vận hành. Auth test banner “SMS mô phỏng — môi trường test” và hướng dẫn mở tool PC; OTP không hiện trên public Auth UI. SMS vendor copy/handset delivery đến M12.12; không SMS thay Authenticator.
 
 M00 chỉ reuse D00–D03. Invitations/activation/reset riêng M01; full business menus riêng module owner. Local HTTPS8443/cookie/Origin/CSRF giữ nguyên. QR secret không xuất bản vào screenshot evidence.
 

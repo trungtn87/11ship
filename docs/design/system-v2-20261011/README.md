@@ -1,10 +1,10 @@
 # 11Ship - Thiết kế hệ thống 1 Web + 2 App
 
-Phiên bản **2.0.0**, ngày **11/10/2026 (Asia/Saigon)**. Trạng thái **DESIGN_REVIEW / NOT_LOCKED**. Base kiểm kê: `e5b50e8567b8928646c83648dd70f577915dc14f`. Quyền thiết kế: nhiệm vụ Owner ngày 11/10/2026. ChatGPT thiết kế và review; Claude code/test/build; Owner duyệt UI, test và quyết định merge/LOCK.
+Phiên bản hiện tại **2.0.2**, ngày **11/10/2026 (Asia/Ho_Chi_Minh)**; các phần nền chưa sửa kế thừa **2.0.0**. Trạng thái **DESIGN_REVIEW / NOT_LOCKED**. Base kiểm kê gốc: `e5b50e8567b8928646c83648dd70f577915dc14f`; revision USER/OTP đã đọc main `f90b78a938036aa169179185aba6adab81e6d473`. Quyền thiết kế: nhiệm vụ Owner ngày 11/10/2026. ChatGPT thiết kế và review; Claude code/test/build; Owner duyệt UI, test và quyết định merge/LOCK.
 
 PR thiết kế [#48](https://github.com/trungtn87/11ship/pull/48), nhánh `docs/three-app-system-design-20261011`, trạng thái Draft. PR này lưu bộ bàn giao; việc tạo PR không thay thế phê duyệt UI hoặc nghiệm thu module.
 
-Bổ sung giao việc **v2.0.1**: [gói nhỏ theo module](08-work-packages.md), [quy tắc giao Claude](claude-tasks/README.md). Bắt đầu [M00.01](claude-tasks/M00.01.md), không giao cả M00/M01 trong một lệnh. Thiết kế nghiệp vụ v2.0.0 giữ nguyên.
+Bổ sung **v2.0.2 theo Owner**: [quản lý USER trên Admin và SMS test](09-m01-user-admin-test-sms.md). M01 có **33 gói**, toàn danh mục **108 gói**; USER cơ bản M01.29–.33, M01.22 là hộp SMS test, SMS nhà cung cấp M12.12 cuối dự án trước production. [Danh mục](08-work-packages.md), [quy tắc giao Claude](claude-tasks/README.md). Không giao cả M00/M01 bằng một lệnh. M00 và nghiệp vụ ngoài revision này giữ thiết kế nền; D15/UI mới chờ duyệt.
 
 ## Cách dùng bộ bàn giao
 

@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1520" height="1120" viewBox="0 0 1520 1120">
+  <title>11Ship Admin — quản lý USER M01 v2.0.2</title>
+  <desc>Mẫu thiết kế danh sách, chi tiết, xác nhận khóa và hướng dẫn SMS test. Các dòng là placeholder demo thiết kế, chưa có app chạy hoặc Owner duyệt. Logo sản phẩm phải dùng asset thương hiệu hiện có.</desc>
+  <defs>
+    <style>
+      text{font-family:'Plus Jakarta Sans','DejaVu Sans',sans-serif;fill:#2A2A2E;font-size:14px}
+      .title{font-size:27px;font-weight:700}.h{font-size:20px;font-weight:700}.b{font-weight:700}.muted{fill:#73737B}.small{font-size:12px}.white{fill:#FFFFFF}.red{fill:#C62828}.green{fill:#2E7D32}.mono{font-family:monospace;font-size:14px}.line{stroke:#DCDCD8;stroke-width:1}.bg{fill:#F2F1EE}.yellow{fill:#D8AD18}.black{fill:#2A2A2E}.card{fill:#FFFFFF;stroke:#DCDCD8;stroke-width:1}
+    </style>
+  </defs>
+  <rect width="1520" height="1120" fill="#F2F1EE"/>
+  <text x="40" y="53" class="title">11Ship Admin · Người dùng</text>
+  <text x="40" y="80" class="muted">M01.29–M01.33 · Thiết kế v2.0.2 · 1 Web + 2 App · API/DB chung</text>
+  <rect x="1110" y="28" width="370" height="44" rx="12" class="yellow"/>
+  <text x="1130" y="55" class="b small">DEMO THIẾT KẾ · CHƯA TRIỂN KHAI</text>
+
+  <text x="40" y="130" class="h">D81 · Danh sách USER</text>
+  <text x="780" y="130" class="h">D86 · Chi tiết USER</text>
+  <rect x="40" y="149" width="700" height="535" rx="16" class="card"/>
+  <path d="M56 149H200V684H56Q40 684 40 668V165Q40 149 56 149" class="black"/>
+  <rect x="59" y="171" width="122" height="50" rx="8" fill="#FFFFFF" fill-opacity=".12"/>
+  <text x="78" y="192" class="white small">Logo từ repo</text>
+  <text x="70" y="211" class="white small">11Ship Admin</text>
+  <text x="61" y="257" class="white">Tổng quan</text>
+  <text x="61" y="297" class="white b">Tài khoản</text>
+  <rect x="55" y="311" width="130" height="44" rx="8" class="yellow"/>
+  <text x="71" y="339" class="b">Người dùng</text>
+  <text x="61" y="389" class="white small">Lời mời ADMIN</text>
+  <text x="61" y="640" class="white small">SYSTEM · TOTP</text>
+  <text x="220" y="185" class="muted small">Tài khoản / Người dùng</text>
+  <text x="220" y="219" class="h">Người dùng</text>
+  <text x="220" y="245" class="muted small">Khách, chủ quán và xế theo phạm vi quyền.</text>
+  <rect x="220" y="263" width="490" height="44" rx="8" fill="#F8F8F6" stroke="#DCDCD8"/>
+  <text x="235" y="291" class="muted">Tìm theo tên hoặc số điện thoại</text>
+  <rect x="220" y="320" width="152" height="43" rx="8" fill="#FFFFFF" stroke="#DCDCD8"/>
+  <text x="232" y="347" class="small">Vai trò: được phép ▾</text>
+  <rect x="382" y="320" width="164" height="43" rx="8" fill="#FFFFFF" stroke="#DCDCD8"/>
+  <text x="394" y="347" class="small">Trạng thái: tất cả ▾</text>
+  <rect x="556" y="320" width="154" height="43" rx="8" fill="#FFFFFF" stroke="#DCDCD8"/>
+  <text x="568" y="347" class="small">Ngày đăng ký ▾</text>
+  <rect x="220" y="376" width="125" height="44" rx="8" class="yellow"/>
+  <text x="250" y="404" class="b">Áp dụng</text>
+  <text x="367" y="404" class="muted">Xóa lọc</text>
+  <rect x="220" y="438" width="490" height="38" rx="6" class="bg"/>
+  <text x="234" y="462" class="small b">Tài khoản</text>
+  <text x="390" y="462" class="small b">Vai trò</text>
+  <text x="552" y="462" class="small b">Trạng thái</text>
+  <text x="234" y="502" class="small">Tên từ API</text>
+  <text x="234" y="523" class="muted small">SĐT thử nghiệm</text>
+  <text x="390" y="512" class="small">Khách</text>
+  <text x="552" y="512" class="small green">Hoạt động</text>
+  <text x="675" y="512" class="small b">Xem</text>
+  <line x1="220" y1="538" x2="710" y2="538" class="line"/>
+  <text x="234" y="564" class="small">Tên từ API</text>
+  <text x="234" y="585" class="muted small">SĐT thử nghiệm</text>
+  <text x="390" y="574" class="small">Khách · Chủ quán</text>
+  <text x="552" y="574" class="small red">Đã khóa</text>
+  <text x="675" y="574" class="small b">Xem</text>
+  <line x1="220" y1="601" x2="710" y2="601" class="line"/>
+  <text x="220" y="643" class="muted small">Mỗi USER một dòng · Không tạo/xóa hộ</text>
+  <text x="574" y="643" class="small">‹ Trước</text>
+  <text x="652" y="643" class="small b">Tiếp ›</text>
+
+  <rect x="780" y="149" width="700" height="535" rx="16" class="card"/>
+  <text x="806" y="185" class="muted small">← Danh sách · Giữ bộ lọc khi quay lại</text>
+  <text x="806" y="221" class="h">Chi tiết tài khoản</text>
+  <rect x="1300" y="191" width="151" height="42" rx="8" class="yellow"/>
+  <text x="1328" y="218" class="b">Làm mới</text>
+  <rect x="806" y="246" width="645" height="121" rx="10" fill="#F8F8F6"/>
+  <text x="824" y="276" class="b">Tên từ API / Chưa cập nhật</text>
+  <text x="824" y="303" class="muted">SĐT · ID · Ngày đăng ký · Version từ server</text>
+  <text x="824" y="339" class="small">Vai trò được xem: Khách · Chủ quán</text>
+  <text x="1290" y="339" class="green small b">Hoạt động</text>
+  <text x="806" y="401" class="b">Hồ sơ trong phạm vi quyền</text>
+  <text x="806" y="433" class="muted small">Hồ sơ khách / quán / xế chỉ hiện nếu có quyền tương ứng.</text>
+  <text x="806" y="458" class="muted small">Khóa identity khác đình chỉ hồ sơ; không hiển thị bank/GPS.</text>
+  <line x1="806" y1="476" x2="1451" y2="476" class="line"/>
+  <text x="806" y="508" class="b">Lịch sử quản lý tài khoản</text>
+  <text x="806" y="539" class="muted small">Thời điểm · Người thao tác · Hành động · Lý do</text>
+  <text x="806" y="566" class="muted small">Chưa có lịch sử → trạng thái trống có giải thích.</text>
+  <rect x="806" y="602" width="190" height="46" rx="8" fill="#FFF5F3" stroke="#C62828"/>
+  <text x="830" y="631" class="red b">Khóa tài khoản</text>
+  <text x="1016" y="631" class="muted small">Chỉ hiện khi backend cấp allowed_actions</text>
+
+  <text x="40" y="731" class="h">D87/D88 · Xác nhận thao tác</text>
+  <text x="780" y="731" class="h">M01.22 · Hộp SMS test trên PC</text>
+  <rect x="40" y="750" width="700" height="275" rx="16" class="card"/>
+  <text x="65" y="788" class="h">Khóa tài khoản người dùng?</text>
+  <text x="65" y="820">Mục tiêu: tên và SĐT đang xem · Không đổi role/profile.</text>
+  <text x="65" y="848" class="red small">Các phiên của cả 11Food và 11Ship sẽ bị thu hồi.</text>
+  <rect x="65" y="865" width="650" height="67" rx="8" fill="#F8F8F6" stroke="#DCDCD8"/>
+  <text x="80" y="892" class="muted">Lý do bắt buộc · Tối đa 500 ký tự</text>
+  <rect x="436" y="951" width="107" height="47" rx="8" fill="#F2F1EE"/>
+  <text x="474" y="980" class="b">Hủy</text>
+  <rect x="559" y="951" width="156" height="47" rx="8" class="yellow"/>
+  <text x="581" y="980" class="b">Khóa tài khoản</text>
+
+  <rect x="780" y="750" width="700" height="275" rx="16" class="black"/>
+  <rect x="798" y="767" width="664" height="36" rx="6" class="yellow"/>
+  <text x="815" y="791" class="b small">SMS TEST — KHÔNG GỬI SMS TỚI ĐIỆN THOẠI</text>
+  <text x="808" y="834" class="white mono">REGISTER / RESET_PASSWORD / ADMIN_ACTIVATION</text>
+  <text x="808" y="866" class="white">1. Yêu cầu OTP trong app.</text>
+  <text x="808" y="898" class="white">2. Double-click công cụ SMS test trên PC, chọn tin.</text>
+  <text x="808" y="930" class="white">3. Lấy mã backend vừa tạo và tự nhập vào app.</text>
+  <text x="808" y="970" class="white small">Loopback + token private · OTP/proof/TTL/rate thật · Không public OTP</text>
+  <text x="808" y="998" class="white small">SMS vendor thật: M12.12 · Cuối dự án, trước phát hành production</text>
+  <text x="40" y="1063" class="muted small">State: skeleton → dữ liệu / empty / không có kết quả; offline/timeout có retry; 401/403 xóa dữ liệu không còn quyền.</text>
+  <text x="40" y="1090" class="muted small">Khóa/mở chờ D15; code UI chờ Owner duyệt. Mọi dòng trên là placeholder thiết kế, không dữ liệu nghiệp vụ/ảnh app đã chạy.</text>
+</svg>

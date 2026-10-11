@@ -1,6 +1,8 @@
 # Dữ liệu và hợp đồng API
 
-Phiên bản **2.0.0**; **CURRENT_CONTRACT + ADDITIVE_PROPOSALS**. Nguồn: main đã pin, PR Auth Admin và manifest/ADR được ghi ở [07](07-source-index.md). Mỗi nhóm ghi Main/PR/Proposal; không có SQL/migration nào được thực thi trong phiên thiết kế.
+Phiên bản **2.0.2**, phần nền giữ **2.0.0**; **CURRENT_CONTRACT + ADDITIVE_PROPOSALS**. Nguồn: main đã pin, PR Auth Admin và manifest/ADR được ghi ở [07](07-source-index.md). Mỗi nhóm ghi Main/PR/Proposal; không có SQL/migration nào được thực thi trong phiên thiết kế.
+
+Revision áp dụng: [USER Admin và SMS test v2.0.2](09-m01-user-admin-test-sms.md) §4/5. M01.29 chốt exact contracts read/mutation độc lập; các path USER ở revision là proposal additive, chưa có trên main f90b78a đã đọc. Hộp SMS test chỉ listener loopback riêng, không public Auth API/test_code và không DB nghiệp vụ; REGISTER/reset/activation core giữ nguyên. SMS vendor chuyển M12.12 cuối dự án; mô tả provider gate trước đây không chặn M01 test local.
 
 ## 1. Quy ước giữ nguyên
 

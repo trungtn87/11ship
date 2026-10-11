@@ -1,8 +1,8 @@
 # Danh mục gói nhỏ giao Claude
 
-Phiên bản **2.0.1**; **DESIGN_REVIEW / NOT_LOCKED**. Bổ sung cho thiết kế2.0.0 tại [PR48](https://github.com/trungtn87/11ship/pull/48); không đổi nghiệp vụ hay ID roadmap.
+Phiên bản **2.0.2**; **DESIGN_REVIEW / NOT_LOCKED**. Bổ sung cho thiết kế2.0.0 tại [PR48](https://github.com/trungtn87/11ship/pull/48); giữ ID roadmap; revision USER/SMS test theo C12/C13 Owner tại [09](09-m01-user-admin-test-sms.md).
 
-Tổng **102 gói**, gồm M00-PC 10 gói, M00 remote/native 3 gói, M01 28 gói và các backlog M02–M12. Mỗi file có inventory/scope/flow/API-files/errors-tests/PASS-FAIL/prompt/gates. [Quy tắc giao](claude-tasks/README.md); [manifest](claude-tasks/manifest.json).
+Tổng **108 gói**, gồm M00-PC 10 gói, M00 remote/native 3 gói, M01 33 gói và các backlog M02–M12. Mỗi file có inventory/scope/flow/API-files/errors-tests/PASS-FAIL/prompt/gates. [Quy tắc giao](claude-tasks/README.md); [manifest](claude-tasks/manifest.json).
 
 ## 1. Giao việc theo một gói
 
@@ -10,7 +10,7 @@ Giao **M00.01 trước**. Sau PR/review, mở gói kế tiếp đủ dependency/
 
 M00-PC theo thứ tự .01→.02→.03, rồi .04/.05, .06→.07→.08, .09→.10. UI có approval gate riêng. M00.11–.13 là remote/native; không chặn chuẩn bị các M01 contract độc lập, nhưng chặn acceptance/phone liên quan.
 
-M01 bắt đầu contract.01 rồi schema.02/register.03/session.04/read-model.05/shared.06; Food.07/.08, Ship.09/.10, shop.11/.12; Admin.13–.15; reset.16–.20; binding.21/SMS.22/native.24–.28; regression/UAT.23 cuối. Đọc dependencies từng dòng, số ID không tự chứng minh ready.
+M01 bắt đầu contract.01 rồi schema.02/register.03/session.04/read-model.05/shared.06; Food.07/.08, Ship.09/.10, shop.11/.12; Admin.13–.15; reset.16–.20; binding.21/inbox SMS test.22/native.24–.28; USER Admin.29–.33; regression/UAT.23 cuối. SMS vendor M12.12 cuối dự án, trước production; không chặn M01 test acceptance. Đọc dependencies từng dòng, số ID không tự chứng minh ready.
 
 M02 resolver.01/.02 là prerequisite nhỏ của M01.12. Financial capabilities contract M12.01 có thể chuẩn bị sớm khi M03/M04 cần D11; không chờ dashboard/report mới chốt quyền.
 
@@ -46,13 +46,13 @@ Các gói future cần contract CODE_READY của slice trước code. Gói đư�
 | [M00.12](claude-tasks/M00.12.md) | Bản Android chẩn đoán 11Food | NATIVE | M00.10 | D03 runtime/package/native storage/network; D04 test URL/provider khi áp dụng; Owner UI/local trước phone. |
 | [M00.13](claude-tasks/M00.13.md) | Bản Android chẩn đoán 11Ship | NATIVE | M00.10 | D03 runtime/package; Owner UI/local trước phone. Shared foundation thay đổi phải retest Food. |
 
-### M01 — 28 gói
+### M01 — 33 gói
 
 | Gói/prompt | Phạm vi | Loại | Dependencies | Gate/chặn |
 |---|---|---|---|---|
 | [M01.01](claude-tasks/M01.01.md) | Chốt hợp đồng tương thích tài khoản cho hai app | CONTRACT | M00.09 | ChatGPT CODE_READY contract; Owner quyết định D02/D03 cho slice liên quan, không chặn preflight độc lập. |
 | [M01.02](claude-tasks/M01.02.md) | Schema CUSTOMER, hồ sơ khách và consent | BE/SCHEMA | M01.01, M00.10 | Contract .01 và consent content/version đã duyệt; Owner local M00 gate trước triển khai M01. |
-| [M01.03](claude-tasks/M01.03.md) | Đăng ký CUSTOMER qua OTP thật ở backend | BE | M01.02 | Contract .01 CODE_READY; SMS fixture chỉ isolated/labeled test, không chứng nhận SMS production. |
+| [M01.03](claude-tasks/M01.03.md) | Đăng ký CUSTOMER và xác minh OTP phía backend | BE | M01.02, M01.22 | Contract .01 CODE_READY; SMS fixture chỉ isolated/labeled test, không chứng nhận SMS production. C13: SMS thật deferred M12.12; test kênh inbox có nhãn, không proof telecom. |
 | [M01.04](claude-tasks/M01.04.md) | Login, me, context và logout phía server | BE | M01.03 | Đừng thực thi policy physical-device mới khi D02 chưa có contract. |
 | [M01.05](claude-tasks/M01.05.md) | Read model hồ sơ khách và hồ sơ xế để resume | BE | M01.04 | Workflow/dependency review |
 | [M01.06](claude-tasks/M01.06.md) | Transport và component Auth dùng chung | UI/SHARED | M01.03, M01.04 | Owner duyệt component/UI Auth M01 v2. |
@@ -64,20 +64,25 @@ Các gói future cần contract CODE_READY của slice trước code. Gói đư�
 | [M01.12](claude-tasks/M01.12.md) | 11Food: vị trí quán và hoàn tất SHOP_OWNER | UI/INTEGRATION | M01.11, M02.02 | D04 polygon/provider; Owner UI F22/F23; resolver exact contract approved. |
 | [M01.13](claude-tasks/M01.13.md) | SYSTEM: danh sách và tạo lời mời ADMIN | UI/INTEGRATION | M00.08, M01.01 | Reviewed #41 dependency và Owner UI D10/D11. |
 | [M01.14](claude-tasks/M01.14.md) | SYSTEM: cấp lại, thu hồi và quản lý scope lời mời | UI/INTEGRATION | M01.13 | Owner UI task, reviewed #41/#44 contract. |
-| [M01.15](claude-tasks/M01.15.md) | ADMIN: kích hoạt lời mời bằng OTP và Authenticator | UI/INTEGRATION | M01.13 | Reviewed #45 dependency; Owner UI activation. |
-| [M01.16](claude-tasks/M01.16.md) | Reset mật khẩu USER/ADMIN phía backend | BE/SECURITY | M01.01, M01.04, M00.08 | ChatGPT review security, physical schema và error contract; reset #43 đã chốt, không hỏi lại nghiệp vụ. |
+| [M01.15](claude-tasks/M01.15.md) | ADMIN: kích hoạt lời mời bằng OTP và Authenticator | UI/INTEGRATION | M01.13, M01.22 | Reviewed #45 dependency; Owner UI activation. C13: SMS thật deferred M12.12; test kênh inbox có nhãn, không proof telecom. |
+| [M01.16](claude-tasks/M01.16.md) | Reset mật khẩu USER/ADMIN phía backend | BE/SECURITY | M01.01, M01.04, M00.08, M01.22 | ChatGPT review security, physical schema và error contract; reset #43 đã chốt, không hỏi lại nghiệp vụ. C13: SMS thật deferred M12.12; test kênh inbox có nhãn, không proof telecom. |
 | [M01.17](claude-tasks/M01.17.md) | 11Food: form lấy lại mật khẩu | UI | M01.16, M01.06 | Owner UI F13-F15. |
 | [M01.18](claude-tasks/M01.18.md) | 11Ship: form lấy lại mật khẩu | UI | M01.16, M01.06, M01.17 | Owner UI S15-S17. |
 | [M01.19](claude-tasks/M01.19.md) | Admin Web: form reset mật khẩu bằng SMS OTP | UI | M01.16, M00.08 | Owner duyệt UI Admin reset và public proxy security contract. |
 | [M01.20](claude-tasks/M01.20.md) | SYSTEM: recovery server và email xác minh | BE/CLI | M01.16, M00.08 | D05 operator/email technical contract; emergency custody/verification chưa duyệt thì BLOCKED. Provider email thật được cấp quyền. |
 | [M01.21](claude-tasks/M01.21.md) | Phiên một thiết bị và binding của hai app Android | BE/NATIVE | M01.04, M00.12, M00.13 | D02 policy và binding proof; D03 runtime/storage; Owner phone test. |
-| [M01.22](claude-tasks/M01.22.md) | Adapter SMS thật và kiểm chứng OTP trên môi trường test | BE/PROVIDER | M01.03, M01.16, M01.15 | D04 provider/budget/test recipients; Owner cho phép real SMS checks. |
-| [M01.23](claude-tasks/M01.23.md) | Hồi quy Auth, phân quyền và nghiệm thu từng app | UAT/REGRESSION | M01.07, M01.08, M01.10, M01.12, M01.14, M01.15, M01.17, M01.18, M01.19, M01.20, M01.21, M01.22, M01.24, M01.25, M01.26, M01.27, M01.28 | Owner actual PC/phone/SMS và security review; D05 emergency mở thì full recovery/LOCK còn BLOCKED. |
-| [M01.24](claude-tasks/M01.24.md) | Android 11Food: đăng ký và OTP | NATIVE | M00.12, M01.07, M01.21 | D03 runtime và Owner local F11/F12; D04 SMS thật khi kiểm gate provider. |
+| [M01.22](claude-tasks/M01.22.md) | Backend hộp SMS test và công cụ lấy OTP trên PC | BE/TOOL | M01.01, M00.08 | C13 đã chốt ưu tiên test; không chờ D04 SMS vendor. Contract/security review và local test target guard; không public remote inbox. Owner local/phone actual theo luồng đã triển khai. |
+| [M01.23](claude-tasks/M01.23.md) | Hồi quy Auth, phân quyền và nghiệm thu từng app | UAT/REGRESSION | M01.07, M01.08, M01.10, M01.12, M01.14, M01.15, M01.17, M01.18, M01.19, M01.20, M01.21, M01.22, M01.24, M01.25, M01.26, M01.27, M01.28, M01.31, M01.33 | Owner actual PC/phone/browser, USER Admin và security review; OTP dùng inbox có nhãn. D05 emergency/D02/D03/D15 còn mở chặn đúng scope; M12.12 không chặn M01 test acceptance nhưng chặn production release. |
+| [M01.24](claude-tasks/M01.24.md) | Android 11Food: đăng ký và OTP | NATIVE | M00.12, M01.07, M01.21 | D03 runtime và Owner local F11/F12; C13 dùng inbox M01.22, SMS thật deferred M12.12. |
 | [M01.25](claude-tasks/M01.25.md) | Android 11Food: login, tài khoản và reset | NATIVE | M01.24, M01.08, M01.17 | D03, Owner local các màn áp dụng, D02 binding. |
 | [M01.26](claude-tasks/M01.26.md) | Android 11Food: hồ sơ quán và chuyển giao diện | NATIVE | M01.25, M01.12 | D03/D04 và Owner local F20-F23; map/provider approved. |
 | [M01.27](claude-tasks/M01.27.md) | Android 11Ship: Auth, tài khoản và reset | NATIVE | M00.13, M01.09, M01.18, M01.21, M01.25 | D02/D03, Owner local Ship Auth/reset và phone test. |
 | [M01.28](claude-tasks/M01.28.md) | Android 11Ship: onboarding và hồ sơ chờ duyệt | NATIVE | M01.27, M01.10 | Owner local S12-S14/S19; D03 runtime. |
+| [M01.29](claude-tasks/M01.29.md) | Chốt hợp đồng quản lý USER và quyền khóa identity | CONTRACT | M01.01, M01.14 | ChatGPT chốt CODE_READY cho read; D15 Owner trước mutation. Không chờ M12 capabilities tiền/config/export để thiết kế read USER. |
+| [M01.30](claude-tasks/M01.30.md) | Backend danh sách và chi tiết USER theo scope | BE | M01.29, M01.05, M00.08 | Read contract M01.29 CODE_READY; UI không trong gói. D15 chưa chốt không chặn read nhưng lock/unlock chưa được bật. |
+| [M01.31](claude-tasks/M01.31.md) | Web Admin danh sách và chi tiết tài khoản USER | UI | M01.30 | Owner duyệt D81/D86 và board v2.0.2 trước code UI; .30 review exact SHA; Owner PC/browser UAT. |
+| [M01.32](claude-tasks/M01.32.md) | Backend khóa và mở USER có audit, thu hồi phiên | BE/SECURITY | M01.29, M01.30, M01.04 | D15 Owner policy và .29 mutation contract CODE_READY. Không tự quyết mọi-domain vs một-domain, custody impact hay step-up. Read/UI độc lập tiếp tục khi mutation blocked. |
+| [M01.33](claude-tasks/M01.33.md) | Web Admin xác nhận khóa và mở tài khoản USER | UI | M01.31, M01.32 | D15 + .32 review exact SHA; Owner duyệt D87/D88 trước UI code; Owner local/browser actual. |
 
 ### M02 — 5 gói
 
@@ -179,12 +184,12 @@ Các gói future cần contract CODE_READY của slice trước code. Gói đư�
 | [M11.02](claude-tasks/M11.02.md) | Backend phản ánh và correction ports có quyền | BE | M11.01, M04.01 | D11 moderation/correction và financial adjustment contract. |
 | [M11.03](claude-tasks/M11.03.md) | UI phản ánh và hàng đợi xử lý Admin | UI | M11.02 | Owner UI F93/S71/D70 và D11. |
 
-### M12 — 11 gói
+### M12 — 12 gói
 
 | Gói/prompt | Phạm vi | Loại | Dependencies | Gate/chặn |
 |---|---|---|---|---|
-| [M12.01](claude-tasks/M12.01.md) | Hợp đồng capabilities quản trị theo domain/action | CONTRACT | M01.14 | D11 Owner duyệt capabilities. |
-| [M12.02](claude-tasks/M12.02.md) | Admin: tài khoản và lock/unlock có audit | BE/UI | M12.01, M01.04, M00.08 | D11 capabilities và Owner UI D81. |
+| [M12.01](claude-tasks/M12.01.md) | Hợp đồng capabilities quản trị theo domain/action | CONTRACT | M01.14, M01.29 | D11 Owner duyệt capabilities. |
+| [M12.02](claude-tasks/M12.02.md) | Admin: mở rộng xử lý tác động vận hành khi quản lý tài khoản | BE/UI | M12.01, M01.33 | D11/case workflow và D15 impact policy; Owner UI chỉ phần bổ sung, không yêu cầu viết lại D81. |
 | [M12.03](claude-tasks/M12.03.md) | Admin: danh sách quán, xế và khách theo scope | BE/UI | M12.01, M03.04, M02.04, M01.05 | D11 PII/review scopes và Owner UI. |
 | [M12.04](claude-tasks/M12.04.md) | Admin: giám sát Order và Delivery | BE/UI | M12.01, M10.05 | D11 scopes và Owner UI monitor. |
 | [M12.05](claude-tasks/M12.05.md) | Admin: giao dịch ví và hàng đợi tài chính | BE/UI | M12.01, M04.06 | D11 financial read/actions và Owner UI. |
@@ -194,10 +199,11 @@ Các gói future cần contract CODE_READY của slice trước code. Gói đư�
 | [M12.09](claude-tasks/M12.09.md) | Export báo cáo theo job và download có quyền | BE/UI | M12.06, M12.08 | D11 export capability/columns, storage/budget và Owner UI. |
 | [M12.10](claude-tasks/M12.10.md) | Vận hành: backup/restore, tải và bản phát hành test | OPS/REVIEW | M12.09, M08.02, M08.04, M11.03 | D12 targets/approved test target và restore/load scope; Owner release riêng. |
 | [M12.11](claude-tasks/M12.11.md) | Dashboard tiến độ biểu diễn gate và migration schema | BE/TOOL | M01.01, M00.10 | Approved progress schema/process contract; không bịa Owner PASS. |
+| [M12.12](claude-tasks/M12.12.md) | SMS nhà cung cấp thật và hồi quy trước phát hành | BE/PROVIDER | M01.23, M01.22, M12.10 | D04 provider/budget/test recipients và Owner cho phép kiểm SMS thật; cuối dự án trước production release. M01 test acceptance không phải evidence telecom. |
 
 ## 4. Trạng thái và nghiệm thu
 
-Mọi gói mới ở DESIGN_REVIEW/candidate/backlog. Source main refresh891a73b chỉ PROGRESS bot so audit e5b50e8; design source5e351f5, PR46headcf9eecad không đổi. Claude fetch/review diff mới trước sửa. Không có Windows/Android/provider/Owner UAT mới trong việc chia gói này.
+Mọi gói mới ở DESIGN_REVIEW/candidate/backlog. Revision2.0.2 đối chiếu main f90b78a cho USER/OTP; [09](09-m01-user-admin-test-sms.md) là nguồn mới, D15/UI còn chờ duyệt; không code/test/UAT mới. Các số SHA tiếp theo là lịch sử của v2.0.1. Source main refresh891a73b chỉ PROGRESS bot so audit e5b50e8; design source5e351f5, PR46headcf9eecad không đổi. Claude fetch/review diff mới trước sửa. Không có Windows/Android/provider/Owner UAT mới trong việc chia gói này.
 
 Nghiệm thu theo từng app: Admin Web, Food khách, Food quán, Ship, liên thông. Không App Quán/App Quản lý riêng. Owner có thể defer/N/A có lý do đúng phạm vi; không tự dùng một UAT gate để đóng toàn M00/M01.
 
