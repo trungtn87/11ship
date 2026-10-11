@@ -428,6 +428,7 @@ jobs:
       - name: Publish checksum in the job summary
         shell: bash
         run: |
+          echo "::notice title=Ubuntu artifact::sha=${{ steps.build.outputs.sha }} file=11ship-${{ steps.build.outputs.sha }}-ubuntu24-amd64.tar.gz sha256=$(cut -d' ' -f1 "artifact-out/11ship-${{ steps.build.outputs.sha }}-ubuntu24-amd64.tar.gz.sha256") bytes=$(stat -c %s "artifact-out/11ship-${{ steps.build.outputs.sha }}-ubuntu24-amd64.tar.gz")"
           {
             echo "### Ubuntu/VinaHost artifact"
             echo "- source SHA: \`${{ steps.build.outputs.sha }}\`"
