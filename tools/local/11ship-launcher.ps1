@@ -520,7 +520,8 @@ function Write-TextAtomic([string]$Path,[string]$Text) {
     [IO.File]::WriteAllText($temporary, $Text, (New-Object Text.UTF8Encoding($false)))
     for ($attempt = 1; $true; $attempt++) {
       try {
-        if (Test-Path -LiteralPath $Path -PathType Leaf) { [IO.File]::Replace($temporary, $Path, $null) } else { [IO.File]::Move($temporary, $Path) }
+        # [NullString]::Value: a plain $null would reach .NET as an EMPTY string (an illegal path) instead of "no backup file".
+        if (Test-Path -LiteralPath $Path -PathType Leaf) { [IO.File]::Replace($temporary, $Path, [NullString]::Value) } else { [IO.File]::Move($temporary, $Path) }
         break
       } catch {
         # A reader (Status) may hold the file for a moment on Windows; anything lasting longer is an error.
