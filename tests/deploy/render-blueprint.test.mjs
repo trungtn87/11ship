@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { validateRenderBlueprint, REQUIRED_SECRET_KEYS } from '../../scripts/deploy/validate-render-blueprint.mjs';
 
 const root = new URL('../../', import.meta.url);
-const read = (path) => readFileSync(fileURLToPath(new URL(path, root)), 'utf8');
+const read = (path) => readFileSync(fileURLToPath(new URL(path, root)), 'utf8').replaceAll('\r\n', '\n');
 const shipped = read('render.yaml');
 const nodeVersion = read('.node-version').trim();
 
