@@ -1,0 +1,234 @@
+/* Design preview page (design.html). Not part of the real apps: only present in preview builds. */
+
+.dv {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--c-bg);
+}
+
+.dv-banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  padding: 10px var(--pad);
+  background: var(--c-black);
+  color: var(--c-white);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.dv-banner strong {
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--c-yellow);
+  color: var(--c-black);
+}
+
+.dv-layout {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--gap-4);
+  padding: var(--gap-4);
+}
+
+@media (min-width: 900px) {
+  .dv-layout {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+}
+
+.dv-nav-details {
+  flex: none;
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-card);
+  background: var(--c-white);
+}
+
+.dv-nav-details > summary {
+  min-height: var(--tap-min);
+  padding: 10px var(--gap-4);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@media (min-width: 900px) {
+  .dv-nav-details {
+    position: sticky;
+    top: 56px;
+    width: 280px;
+    max-height: calc(100vh - 72px);
+    overflow-y: auto;
+  }
+}
+
+.dv-nav {
+  padding: 0 var(--gap-3) var(--gap-3);
+}
+
+.dv-group__title {
+  margin: var(--gap-3) 0 var(--gap-1);
+  padding: 0 var(--gap-2);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-ink-3);
+}
+
+.dv-group__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dv-link {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  min-height: 40px;
+  padding: 0 var(--gap-2);
+  border-radius: 10px;
+  color: var(--c-ink);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.dv-link:hover {
+  background: var(--c-field);
+}
+
+.dv-link[aria-current='page'] {
+  background: var(--c-yellow);
+  font-weight: 800;
+}
+
+.dv-code {
+  display: inline-block;
+  min-width: 34px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--c-ink-3);
+}
+
+.dv-link[aria-current='page'] .dv-code {
+  color: var(--c-black);
+}
+
+.dv-main {
+  flex: 1;
+  min-width: 0;
+  outline: 0;
+}
+
+.dv-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-ink-3);
+}
+
+.dv-title {
+  margin: 2px 0 var(--gap-3);
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.dv-title .dv-code {
+  min-width: 0;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--c-yellow);
+  color: var(--c-black);
+}
+
+.dv-variants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-3);
+}
+
+.dv-variant {
+  min-height: var(--tap-min);
+  padding: 0 var(--gap-4);
+  border: 1.5px solid var(--c-line-strong);
+  border-radius: var(--r-pill);
+  background: var(--c-white);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dv-variant[aria-pressed='true'] {
+  border-color: var(--c-black);
+  background: var(--c-black);
+  color: var(--c-white);
+}
+
+.dv-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-3);
+  align-items: center;
+  margin-bottom: var(--gap-3);
+}
+
+.dv-stage {
+  display: flex;
+  justify-content: center;
+  padding-bottom: var(--gap-8);
+}
+
+.dv-frame {
+  position: relative;
+  background: var(--c-white);
+  overflow: hidden;
+  transform: translateZ(0);
+}
+
+.dv-frame--phone {
+  width: 390px;
+  max-width: 100%;
+  height: 844px;
+  max-height: calc(100vh - 160px);
+  min-height: 560px;
+  border: 10px solid var(--c-black);
+  border-radius: 44px;
+  box-shadow: 0 16px 48px rgba(42, 42, 46, 0.25);
+}
+
+.dv-frame--phone .dv-surface {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.dv-frame--phone .c-app {
+  min-height: 100%;
+  max-width: none;
+  box-shadow: none;
+}
+
+@media (max-width: 480px) {
+  .dv-frame--phone {
+    width: 100%;
+    height: auto;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .dv-frame--phone .dv-surface {
+    height: auto;
+    overflow: visible;
+  }
+}
+
+.dv-frame--desktop {
+  width: 100%;
+  min-height: 640px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(42, 42, 46, 0.15);
+}
