@@ -176,7 +176,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#56](https://github.com/trungtn87/11ship/pull/56) feat(ui): nền giao diện dùng chung + xem thử thiết kế (M01,… | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `eeefabd` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#57](https://github.com/trungtn87/11ship/pull/57) feat(food-web): giao diện 11Food M01 (PR 2/4, xếp chồng trê… | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `1fc75db` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#58](https://github.com/trungtn87/11ship/pull/58) feat(ship-web): giao diện 11Ship M01 (PR 3/4, xếp chồng trê… | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `4447c30` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#59](https://github.com/trungtn87/11ship/pull/59) docs(M01.01): tích hợp contract đã review và bàn giao đóng… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `3e2c9bf` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#59](https://github.com/trungtn87/11ship/pull/59) docs(M01.01): tích hợp contract đã review và bàn giao đóng… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `3e2c9bf` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
