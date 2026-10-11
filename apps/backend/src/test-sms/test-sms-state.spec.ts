@@ -97,8 +97,9 @@ describe('strict state parser', () => {
     expect(parsed.host).toBe('127.0.0.1');
   });
 
-  function mutated(mutator: (o: Record<string, any>) => void): string {
-    const parsed = JSON.parse(serializeState(sampleState())) as Record<string, any>;
+  type Mutable = Record<string, unknown> & { backend: Record<string, unknown>; repo: Record<string, unknown>; user: Record<string, unknown> };
+  function mutated(mutator: (o: Mutable) => void): string {
+    const parsed = JSON.parse(serializeState(sampleState())) as Mutable;
     mutator(parsed);
     return JSON.stringify(parsed);
   }
