@@ -43,6 +43,10 @@ export class SessionService {
     if (view === undefined) {
       throw new AppError('SESSION_INVALID');
     }
+    // An administration account has no application session; refuse it whatever the token says.
+    if (view.accountOrigin !== 'PHONE_VERIFIED') {
+      throw new AppError('SESSION_INVALID');
+    }
     // Order matters only for which single error is reported: revoked, then expired, then disabled.
     if (view.revoked) {
       throw new AppError('SESSION_REVOKED');

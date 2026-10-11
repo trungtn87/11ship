@@ -82,6 +82,19 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | idempotency_records | SELECT, INSERT, UPDATE, DELETE |
 | outbox_events | SELECT, INSERT, UPDATE |
 | audit_logs | INSERT only |
+| admin_memberships | SELECT, INSERT, UPDATE (INSERT: the activation (M01-D-ADMIN-1C) creates ADMIN-role rows; the SYSTEM row is created by the operator command; UPDATE also because `FOR UPDATE/SHARE` needs it) |
+| admin_auth_challenges | SELECT, INSERT, UPDATE |
+| admin_totp_factors | SELECT, INSERT, UPDATE, DELETE |
+| admin_sessions | SELECT, INSERT, UPDATE |
+| admin_auth_limit_config | SELECT only (written once by the operator command) |
+| admin_auth_limits | SELECT, INSERT, UPDATE |
+| admin_invitations | SELECT, INSERT, UPDATE (no DELETE: a trigger refuses it; UPDATE is the seal, the terminal transition and `FOR UPDATE`) |
+| admin_invitation_permissions | SELECT, INSERT (snapshot rows are immutable) |
+| admin_sensitive_operations | SELECT, INSERT, UPDATE (no DELETE: a trigger refuses it; UPDATE is the replace/verify/consume/attempt transition and `FOR UPDATE`) |
+| admin_activation_attempts | SELECT, INSERT, UPDATE (no DELETE: a trigger refuses it; UPDATE is the state transition, the wrong-TOTP counter and `FOR UPDATE`) |
+| admin_activation_otp_challenges | SELECT, INSERT, UPDATE (no DELETE: a trigger refuses it; UPDATE is promote/verify/lock/invalidate and `FOR UPDATE`) |
+| admin_profiles | SELECT, INSERT (written once at activation) |
+| admin_app_permissions | SELECT, INSERT (written once at activation) |
 
 ```sql
 -- example shape, repeat per row of the table above
@@ -98,6 +111,45 @@ Verification queries (run as admin; expected result: no access / not exposed):
 SELECT has_schema_privilege(r, 'app', 'USAGE') FROM unnest(ARRAY['anon','authenticated','service_role']) r;  -- all false
 SHOW pgrst.db_schemas;   -- or Dashboard → API settings: schema "app" must not be an exposed schema
 ```
+
+### Administration authentication (M01-D-LOGIN)
+
+The administration web login is **off by default** (`ADMIN_AUTH_ENABLED` unset or `false`: no route is mounted and no
+admin variable is read). The account-origin migration changes `app.users` (`phone_verified_at` becomes nullable, a new
+`account_origin` column defaults to `PHONE_VERIFIED`), so apply the migrations **before** deploying the code that reads
+it. The rows of the table above for `admin_*` are likewise derived from reading the source and must be verified in D4.
+
+Two operator commands run from a controlled machine, never from Render and never at build or start. They use the
+**migration** credential and the same target rules as `db:migrate:remote` (`APP_ENV=staging`, `MIGRATION_DATABASE_URL`,
+`DATABASE_URL`, a CA variable, `MIGRATION_CONFIRM_TARGET`) plus the limiter key variables, set in the shell only:
+
+1. `ADMIN_RATE_LIMIT_HMAC_KEY` (base64, 32 random bytes) and `ADMIN_RATE_LIMIT_KEY_ID`. The same pair must be set on the
+   Render service when `ADMIN_AUTH_ENABLED=true`; the service refuses to start if it differs from the stored one.
+2. `npm run admin-auth:init-limit-config` - writes the limiter configuration row once; a second run with the same key
+   says `unchanged`, a different key is refused.
+3. `npm run admin-auth:bootstrap-system` - creates the single SYSTEM account. The credentials come from **standard
+   input only**, as one JSON object `{"phone": "...", "password": "..."}` (no argument, no environment variable). Feed it
+   from a protected file that you delete afterwards, for example `npm run admin-auth:bootstrap-system < /secure/path`.
+   The command prints one fixed word (`created` / `unchanged`) or one refusal code, never the phone, password or ids.
+
+Do not run step 3 until the owner has approved the account; there is no recovery path in this slice (a lost password or
+authenticator on the only SYSTEM account needs a separate, reviewed procedure).
+
+M01-D-ADMIN-1B (ADMIN invitations) adds, when `ADMIN_AUTH_ENABLED=true`:
+
+- `ADMIN_ACTIVATION_ORIGIN` - **required**; must be exactly one of `ADMIN_AUTH_ALLOWED_ORIGINS`. The service refuses to
+  start when it is missing or not allowed (it never picks an origin by itself). Activation links are
+  `<origin>/activate#t=<token>`; the token is shown once to the SYSTEM administrator and only its SHA-256 is stored.
+- `ADMIN_INVITATION_TTL_HOURS` - optional, integer 1..168, default 72. It applies to NEW invitations only (snapshotted
+  into `expires_at`); a change never extends an existing invitation.
+- The table `admin_sensitive_operations` (grant row above). Apply the migration before deploying the code that uses it.
+
+M01-D-ADMIN-1C (account activation) adds, **off by default** (`ADMIN_ACTIVATION_ENABLED` unset or `false`: no route is mounted):
+
+- Three migrations (activation tables, limiter kinds, membership origin guard) and the four tables with the grant rows above. Apply the migrations **before** deploying the code that uses them. The grant of `admin_memberships` gains `INSERT`.
+- `ADMIN_ACTIVATION_ENABLED=true` needs `ADMIN_AUTH_ENABLED=true` and an **explicit** `ADMIN_ACTIVATION_OTP_MODE`. There is no real SMS adapter yet, so `SMS` refuses startup; `FAKE` and `TEST_DISPLAY` are accepted **only** with `APP_ENV` of `development` or `test` and never in staging/production, and nothing falls back to a test provider.
+- Optional: `ADMIN_ACTIVATION_OTP_PROVIDER_TIMEOUT_MS` (500..30000, default 8000) and `ADMIN_ACTIVATION_OTP_PROMOTE_GRACE_MS` (1000..60000, default 10000). The section 7 TTLs and thresholds are optional variables whose defaults ARE the approved section 7 values (`ADMIN_ACTIVATION_ATTEMPT_TTL_SECONDS` 1800, `…_OTP_TTL_SECONDS` 300, `…_OTP_RESEND_COOLDOWN_SECONDS` 60, `…_PASSWORD_DEADLINE_SECONDS` 600, `…_OTP_SEND_LIMIT` 5, `…_OTP_SEND_WINDOW_SECONDS` 3600, `…_REQUEST_LIMIT` 30, `…_REQUEST_WINDOW_SECONDS` 60, `…_LINK_FAILURE_LIMIT` 10, `…_LINK_FAILURE_WINDOW_SECONDS` 900, `…_LINK_FAILURE_LOCK_SECONDS` 900, `…_TOTP_FAILURE_WINDOW_SECONDS` 900, `…_TOTP_FAILURE_LOCK_SECONDS` 900). Leave them unset unless the Owner changes a value. An invalid value stops startup naming the variable only. The wrong-code limits (OTP 5, TOTP 5) are fixed by the database schema and are not variables.
+- Down migration B refuses to run while activation limiter buckets exist (by design): clear them with the operator procedure first.
 
 ## 4. Migration procedure
 

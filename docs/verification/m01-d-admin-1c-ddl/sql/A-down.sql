@@ -1,0 +1,10 @@
+DROP TRIGGER admin_profile_requires_view ON app.admin_profiles;
+DROP FUNCTION app.admin_profile_requires_view();
+DROP TABLE app.admin_app_permissions;
+DROP TABLE app.admin_profiles;
+DROP TRIGGER admin_activation_otp_challenge_transition_guard ON app.admin_activation_otp_challenges;
+DROP FUNCTION app.admin_activation_otp_challenge_transition_guard();
+DROP TABLE app.admin_activation_otp_challenges;
+DROP TRIGGER admin_activation_attempt_transition_guard ON app.admin_activation_attempts;
+DROP FUNCTION app.admin_activation_attempt_transition_guard();
+DROP TABLE app.admin_activation_attempts;

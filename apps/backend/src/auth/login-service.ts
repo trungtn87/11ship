@@ -51,7 +51,7 @@ export class LoginService {
     const user = await this.transactions.withTransaction((context) =>
       this.users.findByPhone(context, input.phoneNormalized),
     );
-    if (user === undefined) {
+    if (user === undefined || user.accountOrigin !== 'PHONE_VERIFIED') {
       // Same work as a real verification, same answer as a wrong password.
       await this.hasher.verifyAgainstDummy(input.password);
       throw new AppError('INVALID_CREDENTIALS');
@@ -62,7 +62,11 @@ export class LoginService {
 
     const outcome = await this.transactions.withTransaction(async (context): Promise<LoginOutcome> => {
       const locked = await this.users.lockById(context, user.userId);
-      if (locked === undefined || locked.passwordHash !== user.passwordHash) {
+      if (
+        locked === undefined ||
+        locked.passwordHash !== user.passwordHash ||
+        locked.accountOrigin !== 'PHONE_VERIFIED'
+      ) {
         // The credentials that were just verified are no longer the current ones.
         return { kind: 'changed' };
       }

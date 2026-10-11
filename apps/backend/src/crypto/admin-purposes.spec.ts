@@ -1,0 +1,163 @@
+import { describe, expect, it } from '@jest/globals';
+import { CryptoError } from './crypto-error';
+import { fixtureKeyring } from './test-keys.fixture';
+
+const USER = '123e4567-e89b-42d3-a456-426614174000';
+const FACTOR = '223e4567-e89b-42d3-a456-426614174000';
+const BINDING = { userId: USER, factorId: FACTOR, factorVersion: 1 };
+const NONCE = Buffer.alloc(32, 7);
+
+describe('administration password binding', () => {
+  const key = fixtureKeyring('k1').active();
+
+  it('is a stable lowercase-hex digest that changes with the user or the password hash', () => {
+    const a = key.adminPasswordBinding(USER, '$argon2id$one');
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
+    expect(key.adminPasswordBinding(USER, '$argon2id$one')).toBe(a);
+    expect(key.adminPasswordBinding(USER, '$argon2id$two')).not.toBe(a);
+    expect(key.adminPasswordBinding(FACTOR, '$argon2id$one')).not.toBe(a);
+  });
+
+  it('differs per key version and never contains the password hash', () => {
+    const k2 = fixtureKeyring('k2').active();
+    expect(k2.adminPasswordBinding(USER, '$argon2id$one')).not.toBe(key.adminPasswordBinding(USER, '$argon2id$one'));
+    expect(key.adminPasswordBinding(USER, '$argon2id$one')).not.toContain('argon2id');
+  });
+});
+
+describe('administration CSRF token', () => {
+  const key = fixtureKeyring('k1').active();
+
+  it('is deterministic base64url of 32 bytes and bound to type, credential and nonce', () => {
+    const token = key.adminCsrfToken('SESSION', FACTOR, NONCE);
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(key.adminCsrfToken('SESSION', FACTOR, NONCE)).toBe(token);
+    expect(key.adminCsrfToken('PREAUTH', FACTOR, NONCE)).not.toBe(token);
+    expect(key.adminCsrfToken('SESSION', USER, NONCE)).not.toBe(token);
+    expect(key.adminCsrfToken('SESSION', FACTOR, Buffer.alloc(32, 8))).not.toBe(token);
+  });
+
+  it('is not the password-binding derivation and differs per key version', () => {
+    expect(key.adminCsrfToken('SESSION', FACTOR, NONCE)).not.toBe(fixtureKeyring('k2').active().adminCsrfToken('SESSION', FACTOR, NONCE));
+  });
+
+  it('refuses a malformed nonce or type with a CryptoError', () => {
+    expect(() => key.adminCsrfToken('SESSION', FACTOR, Buffer.alloc(31))).toThrow(CryptoError);
+    expect(() => key.adminCsrfToken('OTHER' as 'SESSION', FACTOR, NONCE)).toThrow(CryptoError);
+  });
+});
+
+describe('administration TOTP secret sealing', () => {
+  const secret = Buffer.from('12345678901234567890');
+
+  it('round-trips, never leaves the secret in the ciphertext and uses a fresh IV', () => {
+    const key = fixtureKeyring('k1').active();
+    const one = key.sealAdminTotpSecret(BINDING, secret);
+    const two = key.sealAdminTotpSecret(BINDING, secret);
+    expect(key.openAdminTotpSecret(BINDING, one).equals(secret)).toBe(true);
+    expect(one.ciphertext.includes(secret)).toBe(false);
+    expect(one.iv.equals(two.iv)).toBe(false);
+  });
+
+  it.each([
+    ['user', { ...BINDING, userId: FACTOR }],
+    ['factor id', { ...BINDING, factorId: USER }],
+    ['factor version', { ...BINDING, factorVersion: 2 }],
+  ])('fails closed when the %s differs (associated data)', (_name, other) => {
+    const key = fixtureKeyring('k1').active();
+    const sealed = key.sealAdminTotpSecret(BINDING, secret);
+    expect(() => key.openAdminTotpSecret(other, sealed)).toThrow(CryptoError);
+  });
+
+  it('fails closed on a corrupt ciphertext, tag or iv, and under a different key version', () => {
+    const key = fixtureKeyring('k1').active();
+    const sealed = key.sealAdminTotpSecret(BINDING, secret);
+    const flip = (buffer: Buffer): Buffer => {
+      const copy = Buffer.from(buffer);
+      copy[0] = (copy[0] as number) ^ 1;
+      return copy;
+    };
+    expect(() => key.openAdminTotpSecret(BINDING, { ...sealed, ciphertext: flip(sealed.ciphertext) })).toThrow(CryptoError);
+    expect(() => key.openAdminTotpSecret(BINDING, { ...sealed, tag: flip(sealed.tag) })).toThrow(CryptoError);
+    expect(() => key.openAdminTotpSecret(BINDING, { ...sealed, iv: flip(sealed.iv) })).toThrow(CryptoError);
+    expect(() => key.openAdminTotpSecret(BINDING, { ...sealed, iv: Buffer.alloc(8) })).toThrow(CryptoError);
+    expect(() => fixtureKeyring('k2').active().openAdminTotpSecret(BINDING, sealed)).toThrow(CryptoError);
+  });
+
+  it('turns an RNG failure into a CryptoError', () => {
+    const key = fixtureKeyring('k1', {
+      randomBytes: () => {
+        throw new Error('rng down');
+      },
+    }).active();
+    expect(() => key.sealAdminTotpSecret(BINDING, secret)).toThrow(CryptoError);
+  });
+});
+
+describe('administration step-up operation fingerprint (M01-D-ADMIN-1B)', () => {
+  const key = fixtureKeyring('k1').active();
+  const payload = { invitation_id: USER, expected_version: 3, reason: 'lost link', permissions: null };
+
+  it('is a stable lowercase-hex digest bound to the action and to every payload value', () => {
+    const a = key.adminOperationFingerprint('REISSUE_INVITATION', payload);
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
+    expect(key.adminOperationFingerprint('REISSUE_INVITATION', { ...payload })).toBe(a);
+    expect(key.adminOperationFingerprint('REVOKE_INVITATION', payload)).not.toBe(a);
+    expect(key.adminOperationFingerprint('REISSUE_INVITATION', { ...payload, expected_version: 4 })).not.toBe(a);
+    expect(key.adminOperationFingerprint('REISSUE_INVITATION', { ...payload, reason: 'lost link.' })).not.toBe(a);
+  });
+
+  it('distinguishes "copy the old permissions" (null) from an explicit list equal to the old one', () => {
+    const copy = key.adminOperationFingerprint('REISSUE_INVITATION', payload);
+    const explicit = key.adminOperationFingerprint('REISSUE_INVITATION', {
+      ...payload,
+      permissions: [{ app: 'SHOP', can_view: true, can_review_profile: false, can_lock: false }],
+    });
+    expect(explicit).not.toBe(copy);
+  });
+
+  it('is independent of key order (canonical JSON) and differs per key version', () => {
+    const reordered = { reason: 'lost link', permissions: null, expected_version: 3, invitation_id: USER };
+    expect(key.adminOperationFingerprint('REISSUE_INVITATION', reordered)).toBe(
+      key.adminOperationFingerprint('REISSUE_INVITATION', payload),
+    );
+    expect(fixtureKeyring('k2').active().adminOperationFingerprint('REISSUE_INVITATION', payload)).not.toBe(
+      key.adminOperationFingerprint('REISSUE_INVITATION', payload),
+    );
+  });
+
+  it('is not the idempotency request fingerprint of the same tuple', () => {
+    expect(key.adminOperationFingerprint('REISSUE_INVITATION', payload)).not.toBe(
+      key.fingerprint(['admin-operation.v1', 'REISSUE_INVITATION', payload]),
+    );
+  });
+
+  it('refuses an empty action or a payload that is not JSON with a CryptoError', () => {
+    expect(() => key.adminOperationFingerprint('', payload)).toThrow(CryptoError);
+    expect(() => key.adminOperationFingerprint('CREATE_INVITATION', { bad: undefined })).toThrow(CryptoError);
+  });
+});
+
+describe('M01-D-ADMIN-1C activation purposes', () => {
+  const key = fixtureKeyring('k1').active();
+
+  it('the ACTIVATION CSRF type is a third, separate derivation (existing types unchanged)', () => {
+    const activation = key.adminCsrfToken('ACTIVATION', FACTOR, NONCE);
+    expect(activation).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(activation).not.toBe(key.adminCsrfToken('SESSION', FACTOR, NONCE));
+    expect(activation).not.toBe(key.adminCsrfToken('PREAUTH', FACTOR, NONCE));
+    expect(key.adminCsrfToken('ACTIVATION', FACTOR, NONCE)).toBe(activation);
+    // @ts-expect-error an unknown credential type is refused
+    expect(() => key.adminCsrfToken('OTHER', FACTOR, NONCE)).toThrow(CryptoError);
+  });
+
+  it('the activation OTP digest is bound to challenge, phone and code, and differs per key version', () => {
+    const digest = key.adminActivationOtpDigest(USER, '+84901234567', '123456');
+    expect(digest).toMatch(/^[0-9a-f]{64}$/);
+    expect(key.adminActivationOtpDigest(USER, '+84901234567', '123456')).toBe(digest);
+    expect(key.adminActivationOtpDigest(FACTOR, '+84901234567', '123456')).not.toBe(digest);
+    expect(key.adminActivationOtpDigest(USER, '+84901234568', '123456')).not.toBe(digest);
+    expect(key.adminActivationOtpDigest(USER, '+84901234567', '123457')).not.toBe(digest);
+    expect(fixtureKeyring('k2').active().adminActivationOtpDigest(USER, '+84901234567', '123456')).not.toBe(digest);
+  });
+});

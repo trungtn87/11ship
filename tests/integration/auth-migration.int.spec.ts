@@ -1,3 +1,4 @@
+import { ACTIVATION_DOWN_SQL, ACTIVATION_UP_SQL } from './support/activation-migration-sql';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -23,6 +24,26 @@ describe('M01-A1 — Auth Core migration', () => {
   const DRIVER = names.find((name) => name.endsWith('create-driver-onboarding')) as string;
   const M00 = names.slice(0, names.indexOf(AUTH));
   const HOURS = names.find((name) => name.endsWith('create-shop-business-hours')) as string;
+  // M01-D-LOGIN adds two more migrations after the business-hours one: the account origin of app.users, then the admin tables.
+  const ORIGIN = names.find((name) => name.endsWith('add-users-account-origin')) as string;
+  const ADMIN = names.find((name) => name.endsWith('create-admin-auth')) as string;
+  const originSql = readFileSync(path.join(migrationsDir, `${ORIGIN}.sql`), 'utf8');
+  const originUpSql = (originSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+  const originDownSql = originSql.split('-- Down Migration')[1] as string;
+  // M01-D-ADMIN-1A adds the invitation tables after the admin ones (they reference app.admin_memberships and app.users).
+  const INVITATIONS = names.find((name) => name.endsWith('create-admin-invitations')) as string;
+  const invitationsSql = readFileSync(path.join(migrationsDir, `${INVITATIONS}.sql`), 'utf8');
+  const invitationsUpSql = (invitationsSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+  const invitationsDownSql = invitationsSql.split('-- Down Migration')[1] as string;
+  // M01-D-ADMIN-1B adds the step-up operations after the invitations (they reference admin_memberships, admin_sessions
+  // and admin_invitations), so they go down first and come back up last.
+  const OPERATIONS = names.find((name) => name.endsWith('create-admin-sensitive-operations')) as string;
+  const operationsSql = readFileSync(path.join(migrationsDir, `${OPERATIONS}.sql`), 'utf8');
+  const operationsUpSql = (operationsSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+  const operationsDownSql = operationsSql.split('-- Down Migration')[1] as string;
+  const adminSql = readFileSync(path.join(migrationsDir, `${ADMIN}.sql`), 'utf8');
+  const adminUpSql = (adminSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+  const adminDownSql = adminSql.split('-- Down Migration')[1] as string;
   const hoursSql = readFileSync(path.join(migrationsDir, `${HOURS}.sql`), 'utf8');
   const hoursUpSql = (hoursSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const hoursDownSql = hoursSql.split('-- Down Migration')[1] as string;
@@ -84,8 +105,20 @@ describe('M01-A1 — Auth Core migration', () => {
   it('is a NEW migration after every M00 migration (applied migrations are never edited)', () => {
     expect(AUTH).toBeDefined();
     expect(M00.length).toBeGreaterThanOrEqual(3);
-    // Auth directly follows M00; the only migration after it is the M01-A2S Shop one.
-    expect(names.slice(M00.length)).toEqual([AUTH, SHOP, DRIVER, HOURS]);
+    // Auth directly follows M00; the Shop, Driver, hours, origin, admin, invitation, operation and 1C migrations follow it.
+    expect(names.slice(M00.length)).toEqual([
+      AUTH,
+      SHOP,
+      DRIVER,
+      HOURS,
+      ORIGIN,
+      ADMIN,
+      INVITATIONS,
+      OPERATIONS,
+      '1792281600000_create-admin-activation',
+      '1792368000000_extend-admin-auth-limits-activation',
+      '1792454400000_create-admin-membership-origin-guard',
+    ]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });
 
@@ -183,7 +216,15 @@ describe('M01-A1 — Auth Core migration', () => {
     expect(migrate().status).toBe(0);
     await client.query('BEGIN');
     try {
-      // The Shop and Driver migrations reference app.users, so they go down first and come back up last.
+      // The Shop and Driver migrations reference app.users, so they go down first and come back up last. The invitation
+      // tables, the admin tables and the account origin are the newest: they go down before everything else.
+      for (const statement of ACTIVATION_DOWN_SQL) {
+        await client.query(statement);
+      }
+      await client.query(operationsDownSql);
+      await client.query(invitationsDownSql);
+      await client.query(adminDownSql);
+      await client.query(originDownSql);
       await client.query(hoursDownSql);
       await client.query(driverDownSql);
       await client.query(shopDownSql);
@@ -199,6 +240,13 @@ describe('M01-A1 — Auth Core migration', () => {
       await client.query(shopUpSql);
       await client.query(driverUpSql);
       await client.query(hoursUpSql);
+      await client.query(originUpSql);
+      await client.query(adminUpSql);
+      await client.query(invitationsUpSql);
+      await client.query(operationsUpSql);
+      for (const statement of ACTIVATION_UP_SQL) {
+        await client.query(statement);
+      }
       expect(await presentTables()).toEqual([...TABLES].sort());
     } finally {
       await client.query('ROLLBACK');
@@ -217,7 +265,7 @@ describe('M01-A1 — Auth Core migration', () => {
     expect(owners.rows).toEqual([{ owner: 'ship11_test' }]);
     const triggers = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal`,
+         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles') AND t.tgname <> 'admin_membership_origin_guard'`,
     );
     expect(triggers.rows[0]?.n).toBe(1); // only audit_logs_append_only
   });
@@ -249,6 +297,9 @@ describe('M01-A1 — Auth Core migration', () => {
           'users_status_ck',
           'users_version_ck',
           'users_time_order_ck',
+          // M01-D-LOGIN: account origin (added by its own migration after this one).
+          'users_account_origin_ck',
+          'users_origin_verified_ck',
         ].sort(),
       );
       expect(await constraintNames('user_roles')).toEqual(['user_roles_pkey', 'user_roles_role_ck', 'user_roles_user_fk']);

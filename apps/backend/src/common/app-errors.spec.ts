@@ -2,6 +2,8 @@ import { describe, expect, it } from '@jest/globals';
 import {
   APP_ERROR_CODES,
   APP_ERROR_DEFINITIONS,
+  ActivationStateError,
+  AdminAuthRateLimitError,
   AppError,
   isAppErrorCode,
   TechnicalError,
@@ -27,6 +29,25 @@ describe('application error registry', () => {
     expect(error.code).toBe('IDEMPOTENCY_BUSY');
     expect(error.status).toBe(409);
     expect(error.message).toBe(APP_ERROR_DEFINITIONS.IDEMPOTENCY_BUSY.message);
+  });
+
+  it('carries the Retry-After seconds only on the typed administration rate-limit error', () => {
+    const error = new AdminAuthRateLimitError(30);
+    expect(error).toBeInstanceOf(AppError);
+    expect(error.code).toBe('ADMIN_AUTH_RATE_LIMITED');
+    expect(error.status).toBe(429);
+    expect(error.retryAfterSeconds).toBe(30);
+    expect(new AdminAuthRateLimitError(0).retryAfterSeconds).toBe(1);
+    expect(new AppError('ADMIN_AUTH_RATE_LIMITED')).not.toHaveProperty('retryAfterSeconds');
+  });
+
+  it('carries safe state details only on the typed activation state error (409 STEP_INVALID)', () => {
+    const error = new ActivationStateError({ state: 'STARTED', restartRequired: false });
+    expect(error).toBeInstanceOf(AppError);
+    expect(error.code).toBe('ADMIN_ACTIVATION_STEP_INVALID');
+    expect(error.status).toBe(409);
+    expect(error.details).toEqual({ state: 'STARTED', restartRequired: false });
+    expect(new AppError('ADMIN_ACTIVATION_STEP_INVALID')).not.toHaveProperty('details');
   });
 
   it('recognizes registered codes strictly', () => {

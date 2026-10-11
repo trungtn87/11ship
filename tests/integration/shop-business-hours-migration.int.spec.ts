@@ -67,7 +67,17 @@ describe('M02-A — Shop business-hours migration', () => {
 
   it('is a NEW last migration after M00, Auth, Shop and Driver onboarding (applied migrations are never edited)', () => {
     expect(HOURS).toBeDefined();
-    expect(names[names.length - 1]).toBe(HOURS);
+    // M01-D-LOGIN adds the account-origin and the admin migrations after it (applied migrations are never edited).
+    expect(names.slice(names.indexOf(HOURS))).toEqual([
+      HOURS,
+      '1791936000000_add-users-account-origin',
+      '1792022400000_create-admin-auth',
+      '1792108800000_create-admin-invitations',
+      '1792195200000_create-admin-sensitive-operations',
+      '1792281600000_create-admin-activation',
+      '1792368000000_extend-admin-auth-limits-activation',
+      '1792454400000_create-admin-membership-origin-guard',
+    ]);
     expect(HOURS).toBe('1791763200000_create-shop-business-hours');
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-driver-onboarding')).toBe(true);
     expect(names.filter((name) => name.endsWith('create-shop-business-hours'))).toHaveLength(1);
@@ -199,7 +209,7 @@ describe('M02-A — Shop business-hours migration', () => {
     expect(owners.rows).toEqual([{ owner: 'ship11_test' }]);
     const triggers = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal`,
+         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles') AND t.tgname <> 'admin_membership_origin_guard'`,
     );
     expect(triggers.rows[0]?.n).toBe(1);
   });

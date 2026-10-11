@@ -194,6 +194,45 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
         AND scope_id IN (SELECT proof_id::text FROM app.verification_proofs WHERE phone_normalized = $1)`,
     [normalizedPhone],
   );
+  // M01-D-ADMIN-1B: the SYSTEM-scoped idempotency records of the invitation routes.
+  await pool.query(
+    `DELETE FROM app.idempotency_records
+      WHERE scope_type = 'admin_user'
+        AND scope_id IN (SELECT user_id::text FROM app.users WHERE phone_normalized = $1)`,
+    [normalizedPhone],
+  );
+  // M01-D-ADMIN-1A/1B: invitations and step-up operations reference the SYSTEM membership/session (and, later, an
+  // accepted user). Their tables refuse DELETE by trigger, so when any row still points at this user the three tables
+  // are emptied with TRUNCATE (test database only; the integration suites run one at a time).
+  const provisioning = await pool.query(
+    `SELECT 1 FROM app.admin_sensitive_operations
+      WHERE actor_user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)
+     UNION ALL
+     SELECT 1 FROM app.admin_invitations
+      WHERE created_by IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)
+         OR accepted_user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)
+     LIMIT 1`,
+    [normalizedPhone],
+  );
+  if ((provisioning.rowCount ?? 0) > 0) {
+    await pool.query(
+      'TRUNCATE app.admin_app_permissions, app.admin_profiles, app.admin_activation_otp_challenges, app.admin_activation_attempts, app.admin_sensitive_operations, app.admin_invitation_permissions, app.admin_invitations',
+    );
+  }
+  // M01-D-LOGIN: the administration state of the user (factor -> challenge, session, membership), before the user.
+  for (const table of [
+    'admin_app_permissions',
+    'admin_profiles',
+    'admin_totp_factors',
+    'admin_auth_challenges',
+    'admin_sessions',
+    'admin_memberships',
+  ]) {
+    await pool.query(
+      `DELETE FROM app.${table} WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)`,
+      [normalizedPhone],
+    );
+  }
   await pool.query(
     'DELETE FROM app.sessions WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],

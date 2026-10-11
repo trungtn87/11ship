@@ -14,6 +14,7 @@ const VIEW: SessionView = {
   expired: false,
   userStatus: 'ACTIVE',
   phoneNormalized: '+84987654321',
+  accountOrigin: 'PHONE_VERIFIED',
 };
 
 describe('bearerTokenFrom', () => {
@@ -108,5 +109,13 @@ describe('SessionService.authenticate', () => {
     expect(await codeOf(() => serviceFor({ ...VIEW, userStatus: 'DISABLED' }).service.authenticate(header))).toBe('ACCOUNT_DISABLED');
     expect(await codeOf(() => serviceFor({ ...VIEW, revoked: true, expired: true }).service.authenticate(header))).toBe('SESSION_REVOKED');
     expect(await codeOf(() => serviceFor({ ...VIEW, expired: true, userStatus: 'DISABLED' }).service.authenticate(header))).toBe('SESSION_EXPIRED');
+  });
+
+  it('refuses a session of an administration account, whatever else is true', async () => {
+    const { token } = generateToken();
+    const header = `Bearer ${token}`;
+    const admin = { ...VIEW, accountOrigin: 'ADMIN_PROVISIONED' as const };
+    expect(await codeOf(() => serviceFor(admin).service.authenticate(header))).toBe('SESSION_INVALID');
+    expect(await codeOf(() => serviceFor({ ...admin, revoked: true }).service.authenticate(header))).toBe('SESSION_INVALID');
   });
 });

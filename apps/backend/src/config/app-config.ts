@@ -1,3 +1,5 @@
+import { AdminActivationConfig, loadAdminActivationConfig } from './admin-activation-config';
+import { AdminAuthConfig, loadAdminAuthConfig } from './admin-auth-config';
 import { Keyring, parseKeyringConfig } from '../crypto/keyring';
 import { DatabaseTls, resolveDatabaseTls } from '../database/tls-config';
 import {
@@ -109,6 +111,16 @@ export interface AppConfig {
    * refuses to start without it, naming only the variable). The other AUTH_* variables are always validated.
    */
   auth: AuthConfig | undefined;
+  /**
+   * Administration web authentication (M01-D-LOGIN). Present only when ADMIN_AUTH_ENABLED=true and every required
+   * variable is valid; absent otherwise (the module is then not wired and exposes nothing).
+   */
+  adminAuth?: AdminAuthConfig;
+  /**
+   * Administration account activation (M01-D-ADMIN-1C). Present only when ADMIN_ACTIVATION_ENABLED=true (which also
+   * requires ADMIN_AUTH_ENABLED=true) and every variable is valid; absent otherwise (nothing is wired or exposed).
+   */
+  adminActivation?: AdminActivationConfig;
 }
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -508,6 +520,24 @@ export function loadConfig(env: EnvSource): ConfigResult {
     }
   }
 
+  // Administration web authentication (M01-D-LOGIN). Names only; disabled by default.
+  const adminAuthResult = loadAdminAuthConfig(env);
+  let adminAuth: AdminAuthConfig | undefined;
+  if (adminAuthResult.ok) {
+    adminAuth = adminAuthResult.config;
+  } else {
+    adminAuthResult.invalid.forEach(flag);
+  }
+
+  // Administration activation (M01-D-ADMIN-1C). Names only; disabled by default; needs the administration module.
+  const adminActivationResult = loadAdminActivationConfig(env, appEnv, !adminAuthResult.ok || adminAuth !== undefined);
+  let adminActivation: AdminActivationConfig | undefined;
+  if (adminActivationResult.ok) {
+    adminActivation = adminActivationResult.config;
+  } else {
+    adminActivationResult.invalid.forEach(flag);
+  }
+
   if (invalid.length > 0 || appEnv === undefined || databaseUrl === undefined) {
     return { ok: false, invalid };
   }
@@ -541,6 +571,8 @@ export function loadConfig(env: EnvSource): ConfigResult {
       },
       crypto,
       auth,
+      ...(adminAuth === undefined ? {} : { adminAuth }),
+      ...(adminActivation === undefined ? {} : { adminActivation }),
     },
   };
 }

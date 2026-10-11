@@ -1,5 +1,7 @@
 import { HttpException } from '@nestjs/common';
 import {
+  ActivationStateError,
+  AdminAuthRateLimitError,
   APP_ERROR_DEFINITIONS,
   AppError,
   isAppErrorCode,
@@ -11,7 +13,7 @@ export interface ErrorBody {
     code: string;
     message: string;
     request_id: string;
-    details: Record<string, never>;
+    details: Record<string, unknown>;
   };
 }
 
@@ -19,6 +21,10 @@ export interface ClassifiedError {
   status: number;
   code: string;
   message: string;
+  /** Set only for the typed AdminAuthRateLimitError: seconds for the Retry-After header. */
+  retryAfterSeconds?: number;
+  /** Set only for the typed ActivationStateError: the safe state facts the client needs. */
+  details?: Readonly<Record<string, unknown>>;
 }
 
 // Messages are fixed strings per status. The message of the original exception is never used,
@@ -65,6 +71,19 @@ export function classifyException(exception: unknown): ClassifiedError {
   // Typed errors are classified by their CLASS, and the public code/status/message come from the
   // fixed registry. An arbitrary exception that merely has a `code` or `status` property is never
   // trusted to name its own public code.
+  if (exception instanceof AdminAuthRateLimitError) {
+    const definition = APP_ERROR_DEFINITIONS.ADMIN_AUTH_RATE_LIMITED;
+    return {
+      status: definition.status,
+      code: 'ADMIN_AUTH_RATE_LIMITED',
+      message: definition.message,
+      retryAfterSeconds: exception.retryAfterSeconds,
+    };
+  }
+  if (exception instanceof ActivationStateError) {
+    const definition = APP_ERROR_DEFINITIONS.ADMIN_ACTIVATION_STEP_INVALID;
+    return { status: definition.status, code: 'ADMIN_ACTIVATION_STEP_INVALID', message: definition.message, details: exception.details };
+  }
   if (exception instanceof AppError && isAppErrorCode(exception.code)) {
     const definition = APP_ERROR_DEFINITIONS[exception.code];
     return { status: definition.status, code: exception.code, message: definition.message };
@@ -99,7 +118,7 @@ export function buildErrorBody(classified: ClassifiedError, requestId: string): 
       code: classified.code,
       message: classified.message,
       request_id: requestId,
-      details: {},
+      details: classified.details === undefined ? {} : { ...classified.details },
     },
   };
 }

@@ -69,6 +69,34 @@ export const APP_ERROR_DEFINITIONS = {
   SHOP_ROLE_REQUIRED: { status: 403, message: 'The shop role is required for this request' },
   SHOP_DISABLED: { status: 403, message: 'The shop is disabled' },
   INVALID_BUSINESS_HOURS: { status: 400, message: 'The business hours are not valid' },
+
+  // Administration web authentication (M01-D-LOGIN). Fixed messages that never echo what the client sent and never
+  // say whether an account, a membership or a factor exists. Crypto/storage failures use the generic 503.
+  ADMIN_PREAUTH_INVALID: { status: 401, message: 'The authentication step is not valid' },
+  ADMIN_TOTP_INVALID: { status: 400, message: 'The authentication code is not valid' },
+  ADMIN_AUTH_RATE_LIMITED: { status: 429, message: 'Too many authentication attempts; try again later' },
+  ADMIN_CSRF_INVALID: { status: 403, message: 'The request could not be verified' },
+  ADMIN_SESSION_INVALID: { status: 401, message: 'The administration session is not valid' },
+  ADMIN_ENROLLMENT_NOT_ALLOWED: { status: 409, message: 'Authenticator setup is not available' },
+
+  // ADMIN invitations by the SYSTEM administrator (M01-D-ADMIN-1B, contract section 12). Same rule: fixed messages that
+  // echo nothing the client sent (no phone, name, note, reason, token or link) and never say why a step-up failed.
+  ADMIN_INPUT_INVALID: { status: 400, message: 'The administration request is not valid' },
+  ADMIN_FORBIDDEN: { status: 403, message: 'This administration action is not allowed for this account' },
+  ADMIN_STEP_UP_REQUIRED: { status: 403, message: 'A fresh authentication confirmation is required' },
+  ADMIN_INVITATION_NOT_FOUND: { status: 404, message: 'The invitation was not found' },
+  ADMIN_VERSION_CONFLICT: { status: 409, message: 'The invitation was changed by another request' },
+  ADMIN_INVITATION_NOT_PENDING: { status: 409, message: 'The invitation is no longer pending' },
+  ADMIN_INVITATION_NOT_REPLAYABLE: { status: 409, message: 'The invitation link can no longer be shown again' },
+  ADMIN_INVITATION_PENDING_EXISTS: { status: 409, message: 'A pending invitation already exists for this phone number' },
+  ADMIN_PHONE_CONFLICT: { status: 409, message: 'This phone number already belongs to an account' },
+
+  // Administration account activation (M01-D-ADMIN-1C, contract section 16). Same rule: fixed messages that echo nothing
+  // the client sent. A bad or closed link is ONE uniform 404 (it never says which). OTP_*, ADMIN_TOTP_INVALID,
+  // ADMIN_AUTH_RATE_LIMITED, ADMIN_PHONE_CONFLICT, ADMIN_CSRF_INVALID and ADMIN_INPUT_INVALID (above) are reused.
+  ADMIN_ACTIVATION_LINK_INVALID: { status: 404, message: 'The activation link is not valid' },
+  ADMIN_ACTIVATION_SESSION_INVALID: { status: 401, message: 'The activation session is not valid' },
+  ADMIN_ACTIVATION_STEP_INVALID: { status: 409, message: 'This activation step is not available' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;
@@ -91,6 +119,39 @@ export class AppError extends Error {
     this.name = 'AppError';
     this.code = code;
     this.status = APP_ERROR_DEFINITIONS[code].status;
+  }
+}
+
+/**
+ * The administration rate-limit refusal. It is the ONLY error that makes the HTTP layer send a Retry-After header, and
+ * the header value comes only from this typed field (never from a message, a property of some other exception or the
+ * request): a finite integer number of seconds >= 1 that the caller computed from the database clock.
+ */
+export class AdminAuthRateLimitError extends AppError {
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number) {
+    super('ADMIN_AUTH_RATE_LIMITED');
+    this.name = 'AdminAuthRateLimitError';
+    this.retryAfterSeconds =
+      Number.isSafeInteger(retryAfterSeconds) && retryAfterSeconds >= 1 ? retryAfterSeconds : 1;
+  }
+}
+
+/** The safe, non-sensitive facts a 409 ADMIN_ACTIVATION_STEP_INVALID carries so the client needs no extra call. */
+export type ActivationErrorDetails = Readonly<Record<string, string | number | boolean | null | Readonly<Record<string, string | number | boolean | null>>>>;
+
+/**
+ * 409 ADMIN_ACTIVATION_STEP_INVALID with the current safe state (contract section 6.4). `details` is built only from
+ * values the service computed (enums, booleans, ISO times, counters): never a phone, a name, a token or an id.
+ */
+export class ActivationStateError extends AppError {
+  readonly details: ActivationErrorDetails;
+
+  constructor(details: ActivationErrorDetails) {
+    super('ADMIN_ACTIVATION_STEP_INVALID');
+    this.name = 'ActivationStateError';
+    this.details = details;
   }
 }
 
