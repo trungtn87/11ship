@@ -44,7 +44,7 @@ export interface AccountView {
   /** Shop owner only. */
   readonly shop?: { readonly state: 'NONE' | 'DRAFT' | 'COMPLETE'; readonly name?: string };
   /** Driver only. */
-  readonly driver?: { readonly status: 'NONE' | 'PENDING' | 'ACTIVE'; readonly legalName?: string; readonly plate?: string | null };
+  readonly driver?: { readonly status: 'NONE' | 'PENDING' | 'ACTIVE'; readonly kind?: 'EXTERNAL' | 'PLATFORM'; readonly legalName?: string; readonly plate?: string | null };
 }
 
 export interface ScreenEnv {
