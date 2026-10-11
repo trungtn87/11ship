@@ -599,7 +599,8 @@ describe('M01.03 — client register', () => {
       const created = await call(body(phone, proof.proofToken));
       const meNew = await app.call('GET', '/auth/me', { bearer: String(dataOf(created).access_token) });
       expect(meNew.status).toBe(200);
-      expect(dataOf(meNew).available_roles).toEqual(['CUSTOMER']);
+      // The legacy /auth/me is unchanged: it does not know the CUSTOMER context (that belongs to the later client me/context slice).
+      expect(dataOf(meNew).available_roles).toEqual([]);
       const login = await app.call('POST', '/auth/login', {
         body: { phone: phone.local, password: PASSWORD, device: { device_id: 'device-test-0001', platform: 'ANDROID', app: 'SHIP11' } },
       });
