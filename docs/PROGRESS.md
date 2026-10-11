@@ -5,7 +5,7 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo main HEAD `1be9e6f` · CI main: ⏳ Đang chạy (`RUNNING`)
+> Dữ liệu theo main HEAD `c077710` · CI main: ⏳ Đang chạy (`RUNNING`)
 
 ## 🎯 VIỆC ĐANG LÀM
 
@@ -108,7 +108,7 @@ flowchart TD
 | &nbsp;&nbsp;M01-A2D · Onboarding tài xế (Driver) | ✅ Hoàn thành (`DONE`) | — | [#17](https://github.com/trungtn87/11ship/pull/17) | ✅ Đạt (`PASS`) | `c37082a` | A2S Hoàn thành (DONE) | — |
 | M01-R1 · Sửa sau merge (session, rollback, router, tiến độ) | ✅ Hoàn thành (`DONE`) | — | [#19](https://github.com/trungtn87/11ship/pull/19) | ✅ Đạt (`PASS`) | `cd0e6de` | A2 Hoàn thành (DONE) | — |
 | **M00-D** thiết kế · Render Free + Supabase staging | 🔒 Thiết kế đã khóa (`DESIGN_LOCKED`) | — | [#22](https://github.com/trungtn87/11ship/pull/22) | ✅ Đạt (`PASS`) | `a846a68` | C1C Hoàn thành (DONE) | Tiếp tục các task con |
-| &nbsp;&nbsp;M00-D1 · Connection and deploy configuration | 🟦 Sẵn sàng giao Claude (`READY_FOR_CLAUDE`) | Claude | — | — | main HEAD `1be9e6f` | — | Claude triển khai |
+| &nbsp;&nbsp;M00-D1 · Connection and deploy configuration | 🟦 Sẵn sàng giao Claude (`READY_FOR_CLAUDE`) | Claude | — | — | main HEAD `c077710` | — | Claude triển khai |
 | &nbsp;&nbsp;M00-D2 · Test accounts without real SMS | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D1 Sẵn sàng giao Claude (READY_FOR_CLAUDE) | Chờ D1 |
 | &nbsp;&nbsp;M00-D3 · Operations and portability | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D1 Sẵn sàng giao Claude (READY_FOR_CLAUDE) | Chờ D1 |
 | &nbsp;&nbsp;M00-D4 · Remote deployment acceptance | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D2 Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY), D3 Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY) | Chờ D2, D3 |
@@ -155,7 +155,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#33](https://github.com/trungtn87/11ship/pull/33) design: bổ sung M00 local trước vòng test M01 theo quy trìn… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `aa7082b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#34](https://github.com/trungtn87/11ship/pull/34) feat(admin-auth): M01-D-LOGIN backend (Draft) | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `08910ed` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#35](https://github.com/trungtn87/11ship/pull/35) M01-D-LOGIN-UI: web quản trị — đăng nhập, Authenticator, F5… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `7b116c3` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#36](https://github.com/trungtn87/11ship/pull/36) docs(M01-D-ADMIN): kiểm kê backend và đề xuất gói tạo/kích… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `101daa8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#36](https://github.com/trungtn87/11ship/pull/36) docs(M01-D-ADMIN): kiểm kê backend và đề xuất gói tạo/kích… | Đã merge (`MERGED`) | — | — | — | `101daa8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#37](https://github.com/trungtn87/11ship/pull/37) feat(admin-invitations): M01-D-ADMIN-1A — nền dữ liệu lời m… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `c93c051` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#38](https://github.com/trungtn87/11ship/pull/38) docs(M01-D-ADMIN-1B): hợp đồng kỹ thuật tạo/cấp lại/thu hồi… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `ba0884b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#39](https://github.com/trungtn87/11ship/pull/39) docs(m00): thiết kế Local Test Launcher cho Owner | Đã merge (`MERGED`) | — | — | — | `e3e0b90` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
@@ -164,7 +164,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#42](https://github.com/trungtn87/11ship/pull/42) WIP(m00): staging integration for M01 Admin Web — backend/U… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `13a5962` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#43](https://github.com/trungtn87/11ship/pull/43) docs(m01): chốt thiết kế reset mật khẩu USER / ADMIN / SYST… | Đã merge (`MERGED`) | — | — | ✅ Đạt (`PASS`) | `b853c88` | ⚠️ không tính — label module:M01-B-RESET không khớp task nào trong plan.yml; PR không được tính. |
 | [#44](https://github.com/trungtn87/11ship/pull/44) docs(M01-D-ADMIN-1C): hợp đồng kỹ thuật kích hoạt ADMIN (Dr… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `2e63da5` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#45](https://github.com/trungtn87/11ship/pull/45) feat(M01-D-ADMIN-1C): admin account activation (implementat… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `60ce126` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#45](https://github.com/trungtn87/11ship/pull/45) feat(admin): integrate reviewed authentication, invitations… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `60ce126` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#46](https://github.com/trungtn87/11ship/pull/46) M00: three Windows launchers for Admin, 11Food and 11Ship | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `cf9eeca` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#47](https://github.com/trungtn87/11ship/pull/47) feat(admin-web): SYSTEM invitations and ADMIN activation UI… | Đã merge (`MERGED`) | — | — | — | `fd3f91f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#48](https://github.com/trungtn87/11ship/pull/48) docs: thiết kế 1 Web + 2 App, M00 launcher và handoff Claud… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `5e351f5` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
@@ -183,7 +183,6 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 - `UNCLASSIFIED_PR` PR #33: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #34: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #35: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
-- `UNCLASSIFIED_PR` PR #36: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #37: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #38: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #41: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
