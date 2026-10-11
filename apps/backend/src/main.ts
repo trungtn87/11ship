@@ -6,6 +6,7 @@ import { bindActivationOtpProvider } from './admin-activation/activation-otp-pro
 import { bindOtpProvider } from './auth/otp-provider-binding';
 import { formatInvalidConfigMessage, loadConfig } from './config/app-config';
 import { describeStartupFailure } from './config/startup-failure';
+import { installAdminWebHosting } from './http/admin-web-hosting';
 import { JsonLogger } from './logging/json-logger';
 
 async function bootstrap(): Promise<void> {
@@ -27,9 +28,10 @@ async function bootstrap(): Promise<void> {
     logger.log('info', 'db_tls_verify_full');
   }
 
-  // Auth Core needs an explicit OTP provider. bindOtpProvider refuses staging/production (no production SMS
-  // adapter exists yet) before anything is opened, naming only OTP_PROVIDER.
-  const otpProvider = bindOtpProvider(config.appEnv);
+  // Auth Core needs an explicit OTP provider. bindOtpProvider refuses production, and staging unless the fixture
+  // mode is on (then the explicit DisabledOtpProvider, never a fake), before anything is opened, naming only
+  // OTP_PROVIDER.
+  const otpProvider = bindOtpProvider(config.appEnv, { stagingFixtureMode: config.stagingFixtures !== undefined });
 
   // The activation OTP provider is bound the same way: explicitly, from ADMIN_ACTIVATION_OTP_MODE, with no fallback. SMS has
   // no adapter yet, so that mode refuses startup (naming only the variable) before anything is opened.
@@ -54,6 +56,11 @@ async function bootstrap(): Promise<void> {
 
   try {
     configureApp(app);
+    // Same-origin hosting of the administration web (ADMIN_WEB_STAGING_ENABLED=true on staging, validated by
+    // loadConfig). Installed BEFORE the application initializes (app.listen), so it sits in front of the body parser.
+    if (config.adminWebHosting !== undefined) {
+      installAdminWebHosting(app, { appEnv: config.appEnv });
+    }
     // SIGTERM/SIGINT close the HTTP server first, then the database pool.
     app.enableShutdownHooks();
     await app.listen(config.port, config.host);
