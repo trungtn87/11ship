@@ -11,7 +11,7 @@ import {
 } from './support/auth-fixtures';
 import { containsCode, InboxAuthApp, readOtp, startInboxAuthApp } from './support/test-sms-fixtures';
 
-// M01.22 (TS01, TS03, TS04, TS05-privacy) — REGISTER through the REAL Nest pipeline and REAL PostgreSQL with the OTP
+// M01.22 (TS01, TS03, TS04, TS06-privacy) — REGISTER through the REAL Nest pipeline and REAL PostgreSQL with the OTP
 // delivered into the TEST_INBOX and read back through the real private listener, as the PC tool reads it. The OTP core
 // (digest, TTL, cooldown, attempts, one-use proof) must behave exactly as with the in-memory fake.
 describe('M01.22 — REGISTER OTP through the test inbox', () => {
@@ -202,7 +202,7 @@ describe('M01.22 — REGISTER OTP through the test inbox', () => {
     expect((await rowsOf(phone.normalized)).map((row) => row.status)).toEqual(['DELIVERY_FAILED']);
   }, 30_000);
 
-  it('TS05: no code reaches the database, the audit log, the outbox, the application log or any API answer', async () => {
+  it('TS06: no code reaches the database, the audit log, the outbox, the application log or any API answer', async () => {
     const phone = randomPhone();
     const requested = await requestOtp(phone);
     const id = String(dataOf(requested).verification_id);

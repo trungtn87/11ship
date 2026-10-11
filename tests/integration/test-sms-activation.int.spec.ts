@@ -12,7 +12,7 @@ import { adminData, adminErrorCode, AdminApp, startAdminApp } from './support/ad
 import { SystemSession, systemSession } from './support/provisioning-fixtures';
 import { containsCode, InboxHarness, readOtp, ScriptedActivationInbox, startInboxHarness } from './support/test-sms-fixtures';
 
-// M01.22 (TS02, TS03, TS04, TS05-privacy) — ADMIN_ACTIVATION through the REAL Nest pipeline and REAL PostgreSQL with
+// M01.22 (TS02, TS03, TS04, TS06-privacy) — ADMIN_ACTIVATION through the REAL Nest pipeline and REAL PostgreSQL with
 // ADMIN_ACTIVATION_OTP_MODE=TEST_INBOX: the code goes to the inbox only, never to the HTTP answer (unlike
 // TEST_DISPLAY), and the activation OTP rules are untouched.
 describe('M01.22 — ADMIN_ACTIVATION OTP through the test inbox', () => {
@@ -137,7 +137,7 @@ describe('M01.22 — ADMIN_ACTIVATION OTP through the test inbox', () => {
     expect((await challengesOf(app.pool, String(attempt?.attempt_id))).map((row) => row.status)).toEqual(['PENDING']);
   });
 
-  it('TS05: the code is in no database row, audit row, application log or API answer', async () => {
+  it('TS06: the code is in no database row, audit row, application log or API answer', async () => {
     const invite = await newInvite(app, system);
     const session = await begin(app, invite);
     const requested = ok(await post(app, '/otp/request', session), 202);
