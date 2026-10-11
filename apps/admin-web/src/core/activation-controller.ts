@@ -571,10 +571,13 @@ export class ActivationController {
       this.#remember(view);
       // The read can say the password window has closed (restart_required) since the screen was built: follow it.
       const deadline = view.passwordDeadline === undefined ? undefined : Date.parse(view.passwordDeadline);
-      const { passwordDeadlineMs: _old, ...rest } = screen;
       this.#set({
-        ...rest,
+        name: 'password',
+        pending: screen.pending,
         restartRequired: view.restartRequired,
+        ...(screen.error === undefined ? {} : { error: screen.error }),
+        ...(screen.notice === undefined ? {} : { notice: screen.notice }),
+        ...(screen.stateUnknown === undefined ? {} : { stateUnknown: screen.stateUnknown }),
         ...(deadline !== undefined && Number.isFinite(deadline) ? { passwordDeadlineMs: deadline } : {}),
       });
       return;
