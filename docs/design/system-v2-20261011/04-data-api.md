@@ -157,3 +157,9 @@ Mỗi endpoint proposal trước CODE_READY phải có operation_id, exact reque
 Append-only; fresh/upgrade test; runtime grants; backfill counts; prereq schema SHA; lock/index plan; old/new compatibility; fix-forward recovery. Không sửa migration đã apply hoặc đổi enum/field tại chỗ. account_origin #27/#34 trùng cột phải reconcile với schema tích hợp thật, #42 chỉ là nguồn tham khảo đã code.
 
 DEV giữ migration confirmation/target guard; remote apply có authorization riêng, không chạy trong phiên thiết kế. Runtime không DDL/migration credentials. Events version khi meaning đổi, consumer replay/dedupe test. Main SHA không chứng minh deployed runtime; evidence phải ghi frontend/backend/build fingerprint thật.
+
+## Revision M01.01 hoàn thiện — 11/10/2026
+
+Đọc bắt buộc [contract10](10-m01-client-contract.md) và [contract11](11-m01-session-device-contract.md); contract11 ưu tiên cho login/me/context/capabilities, đăng ký SHIP, replay token, logout và binding Android.
+
+M01.01: preflight #52 đã bàn giao; schema .02 đã merge #53; phần thiết kế còn thiếu đã hoàn thiện. CODE_READY_LOCAL cho phạm vi BE .03/.04 sau dependency và consent test; không cần chờ D03 để code/test web local. Android proof không được bỏ qua: native rollout cần runtime/package/cert config và verifier/native/phone tests trước release. Chế độ local web không chứng nhận one-device Android. Không tự đóng toàn M01 hoặc ghi Owner actual.
