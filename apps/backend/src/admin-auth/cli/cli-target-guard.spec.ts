@@ -1,6 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
 import {
-  SELF_HOSTED_IDENTITY_SQL,
   SELF_HOSTED_TARGET,
   connectedIdentityMatches,
   resolveCliTarget,
@@ -219,10 +218,5 @@ describe('selfHostedIdentityProblem — the server must report the operator targ
       expect([name, typeof problem]).toEqual([name, 'string']);
       expect(problem).not.toContain('SECRET_ROW_MARKER');
     }
-  });
-
-  it('uses a read-only query', () => {
-    expect(SELF_HOSTED_IDENTITY_SQL).toMatch(/^SELECT /);
-    expect(SELF_HOSTED_IDENTITY_SQL).not.toMatch(/\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT)\b/i);
   });
 });

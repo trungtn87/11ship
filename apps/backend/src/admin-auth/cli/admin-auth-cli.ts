@@ -16,13 +16,22 @@ import { AdminLimitConfigService } from '../admin-limit-config-service';
 import { AdminMembershipRepository } from '../admin-membership-repository';
 import {
   CliEnvSource,
-  SELF_HOSTED_IDENTITY_SQL,
   SelfHostedIdentityRow,
   connectedIdentityMatches,
   resolveCliTarget,
   selfHostedIdentityProblem,
 } from './cli-target-guard';
 import { CliInputError, readBootstrapInput } from './stdin-input';
+
+/**
+ * What the SERVER says about the open connection. Read-only. Identical to SELF_HOSTED_IDENTITY_SQL in
+ * scripts/db-remote-target.js (the parity test compares the two texts).
+ */
+export const SELF_HOSTED_IDENTITY_SQL =
+  'SELECT current_database() AS database_name, current_user AS user_name, session_user AS session_user_name, ' +
+  'inet_server_port() AS server_port, ' +
+  'COALESCE((SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()), false) AS tls, ' +
+  '(SELECT rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls FROM pg_roles WHERE rolname = current_user) AS privileged';
 
 export type AdminCliCommand = 'init-limit-config' | 'bootstrap-system';
 

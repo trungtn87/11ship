@@ -17,10 +17,14 @@ const require = createRequire(import.meta.url);
 const root = (relative) => fileURLToPath(new URL(`../../${relative}`, import.meta.url));
 
 const guardFile = root('apps/backend/dist/admin-auth/cli/cli-target-guard.js');
+const cliFile = root('apps/backend/dist/admin-auth/cli/admin-auth-cli.js');
 const tlsFile = root('apps/backend/dist/database/tls-config.js');
-assert.ok(existsSync(guardFile) && existsSync(tlsFile), 'the compiled application is missing: run "npm run build" first');
+assert.ok(existsSync(guardFile) && existsSync(tlsFile) && existsSync(cliFile), 'the compiled application is missing: run "npm run build" first');
 const tsGuard = require(guardFile);
 const tsTls = require(tlsFile);
+// The CLI module pulls in Nest decorators; load reflect-metadata from the backend's own resolution scope.
+createRequire(cliFile)('reflect-metadata');
+const tsCli = require(cliFile);
 const jsTarget = require('../../scripts/db-remote-target.js');
 const migrate = require('../../scripts/db-migrate-remote.js');
 const seed = require('../../scripts/staging-seed-fixtures.js');
@@ -193,7 +197,7 @@ describe('the constants, the identity query and the identity verdict are the sam
   });
 
   test('the identity query text is identical (read-only SELECT)', () => {
-    assert.equal(jsTarget.SELF_HOSTED_IDENTITY_SQL, tsGuard.SELF_HOSTED_IDENTITY_SQL);
+    assert.equal(jsTarget.SELF_HOSTED_IDENTITY_SQL, tsCli.SELF_HOSTED_IDENTITY_SQL);
     assert.match(jsTarget.SELF_HOSTED_IDENTITY_SQL, /^SELECT /);
     assert.doesNotMatch(jsTarget.SELF_HOSTED_IDENTITY_SQL, /\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT)\b/i);
   });
