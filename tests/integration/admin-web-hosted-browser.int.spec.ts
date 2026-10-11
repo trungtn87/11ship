@@ -94,7 +94,10 @@ describe('issue #49 — hosted admin web (new hosting, same origin as the API) i
       source: `window.__csp = []; document.addEventListener('securitypolicyviolation', (e) => window.__csp.push(e.violatedDirective + ' ' + e.blockedURI));`,
     });
     page.on('Network.loadingFailed', (params) => {
-      failed.push(JSON.stringify(params).slice(0, 300));
+      // A fetch cancelled by the test's own navigation (goto/reload) is not a failure; a blocked or failed load is.
+      if (params.canceled !== true) {
+        failed.push(JSON.stringify(params).slice(0, 300));
+      }
       if (params.blockedReason !== undefined) {
         blocked.push(String(params.blockedReason));
       }
