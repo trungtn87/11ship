@@ -57,6 +57,30 @@ Real databases on the D2/#42 history need an **operator gate** with read-only qu
    browser suite on the local HTTPS front, not end to end on staging.
 3. The M00-D2 design (PR #26) states it must merge before code; it is referenced, not changed, here.
 
+## Follow-up F1/F2 (review of PR #51, after the first green CI)
+
+CI was green on `849764264b20ed8e00dd1e71beb1e347644dafee` (Verify Node 24 / PostgreSQL 17; Windows PowerShell 5.1 launcher). That result
+does NOT cover what follows; the final SHA of this follow-up is reported in the PR.
+
+- **F1 transport headers before the body parser.** `configureApp` now installs `adminTransportMiddleware` with `app.use` for
+  `/v1/admin-auth` and `/v1/admin` (like `/v1/admin-activation`, per
+  `docs/tasks/M01-D-ADMIN-BACKEND-transport-headers-followup.md`). It only sets `Cache-Control: no-store`, `Pragma`,
+  `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`; Auth/Origin/CSRF are untouched (module middleware kept).
+  Test: `admin-transport.int.spec.ts` (broken JSON → 400 `BAD_REQUEST`, body over the limit → 413 `CLIENT_ERROR`, standard
+  envelope + headers, on both prefixes; health, `/v1/auth` and `/v1/administrator` unaffected; wrong Origin/no session unchanged).
+- **F2 browser evidence for the NEW hosting.** `admin-web-hosted-browser.int.spec.ts` serves the built frontend with
+  `installAdminWebHosting` from the same Nest process as the Admin API and PostgreSQL, behind a byte-copying TLS terminator
+  (not `scripts/admin-web-dev.mjs`). It checks login → TOTP → `GET /me` → shell → deep-link reload of `/invitations` and
+  `/invitations/new` → logout; the CSP the browser enforces equals the hosting's; no CSP violation, blocked or failed request,
+  console error or off-origin request; `__Host-` cookie attributes; no credential in storage; unknown path = 404 with headers; `/v1`
+  not intercepted.
+- **Older browser suites** (`admin-web-browser`, `admin-web-admin`, `admin-web-proxy`) still use the local HTTPS front proxy. They
+  prove the frontend and the Admin API, NOT the hosting middleware; they are not evidence for it.
+- **Not accepted:** activation on staging. The activation API is not enabled there (no OTP adapter; no fake OTP is enabled
+  on staging), and F2 does not run an activation. Activation on the hosted page remains un-accepted until a real OTP adapter exists.
+- **DB history gate unchanged:** the D2/#42 history check stays read-only (runbook §10); nothing in the history was edited
+  and no database was deleted.
+
 ## Tests
 
 Local sandbox limits: the npm registry is blocked (no `npm ci`), Node 22 instead of 24, PostgreSQL 16 instead of 17. Locally
