@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from '@jest/globals';
@@ -459,7 +459,6 @@ describe('4. crash, stale owner and PID reuse', () => {
     const repo = await resolveRepo(owner, root);
     const claim = await claimOwnership(owner, repo);
     await publishState(owner, repo, claim, { port: 40001, token: 'S'.repeat(43) });
-    const { lstat } = await import('node:fs/promises');
     expect((await lstat(repo.location.dir)).mode & 0o777).toBe(0o700);
     expect((await lstat(path.join(repo.location.dir, 'owner.1.lock'))).mode & 0o777).toBe(0o600);
     expect(await readFile(path.join(repo.location.dir, 'owner.1.lock'), 'utf8')).not.toContain('S'.repeat(43));
