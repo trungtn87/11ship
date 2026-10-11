@@ -396,7 +396,7 @@ function Invoke-LauncherRelaunch([string]$CommandName,[string]$FromSha,[string]$
     # The new process owns the lock now (or has finished): the gate is no longer needed.
     if ($gate) { $gate.Dispose() }
   }
-  $process.WaitForExit()
+  $null = $process.WaitForExit()
   $code = [int]$process.ExitCode
   $script:RelaunchExitCode = $code
   return $code

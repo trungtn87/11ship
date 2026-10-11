@@ -329,6 +329,10 @@ try {
   $before = Head
   Write-Text (Join-Path $script:Repo 'package-lock.json') '{"owner":"local edit"}'
   Expect-Fail 'DIRTY_TRACKED' 'Update stops on a dirty tracked file' { Update-Launcher }
+  # TEMP-DIAG
+  Say ("DIAG repo=[$script:Repo] cwd=[$((Get-Location).Path)] gitdir=[$(& git.exe -C $script:Repo rev-parse --git-dir 2>&1 | Out-String)] exit=$LASTEXITCODE")
+  Say ("DIAG env: " + ((Get-ChildItem Env: | Where-Object { $_.Name -like 'GIT*' } | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ';'))
+  Say ("DIAG ls: " + ((Get-ChildItem -Force -LiteralPath $script:Repo | ForEach-Object { $_.Name }) -join ','))
   Check ((Get-Content -Raw -LiteralPath (Join-Path $script:Repo 'package-lock.json')) -eq '{"owner":"local edit"}') 'dirty tracked file is left exactly as the Owner wrote it'
   Check ((Invoke-Git $script:Repo @('stash','list')) -eq '') 'no stash was created'
   Check ((Head) -eq $before) 'HEAD did not move'
@@ -995,7 +999,7 @@ try {
     } else { $script:Skipped.Add('aged lock file check - this OS refuses to change the time of a file that is held open') }
 
     Reset-Fakes
-    foreach ($name in @('Update','Start','Test','Stop')) { Expect-Fail 'LAUNCH_LOCK_TIMEOUT' "$name waits for the lock, then stops" { Invoke-LauncherCommand $name } }
+    foreach ($commandName in @('Update','Start','Test','Stop')) { Expect-Fail 'LAUNCH_LOCK_TIMEOUT' "$commandName waits for the lock, then stops" { Invoke-LauncherCommand $commandName } }
     Check ((Head) -eq $headBefore -and $script:DockerCalls.Count -eq 0 -and $script:NpmCalls.Count -eq 0 -and $script:SqlCalls.Count -eq 0 -and $script:BackendStarts -eq 0 -and !(Test-Path -LiteralPath $script:StateFile)) 'steps that did not get the lock changed nothing (no git update, Docker, npm, SQL or backend)'
 
     $env:SHIP11_LOCK_TIMEOUT_SECONDS = '60'
@@ -1076,7 +1080,7 @@ try {
   $env:APP_ENV = 'development'; $env:NODE_ENV = 'development'; $env:DATABASE_URL = "postgres://ship11_dev:$($script:DevPassword)@127.0.0.1:5432/ship11_dev"
   $env:GITHUB_TOKEN = $null; $env:GH_TOKEN = $null
   Test-Launcher | Out-Null
-  Assert-AllHeld 'Test' @('npm step lint','npm step progress-test')
+  Assert-AllHeld 'Test' @('npm step lint','npm step progress:test')
   Check (@($script:LockObs | Where-Object { $_.What -like 'npm step *' }).Count -eq 9) 'Test: all nine npm steps were observed under the lock'
 
   New-GitSandbox
@@ -1159,7 +1163,7 @@ try {
   Write-UatPin ('{"sha":"' + $pinned + '"}')
   Reset-Fakes
   Status-Launcher | Out-Null
-  $modeLines = @($script:HostLog | Where-Object { $_ -match '^Ch.{1,3} d.{1,3} c.{1,3}p nh.{1,3}t: ' })
+  $modeLines = @($script:HostLog | Where-Object { $_ -match '^Ch.{1,3} .{1,3} c.{1,3}p nh.{1,3}t: ' })
   Check ($modeLines.Count -eq 1 -and $modeLines[0].Contains('UAT')) 'Status shows the update mode line with UAT'
 
   New-GitSandbox; Record-Install
@@ -1198,7 +1202,7 @@ try {
   Check ((Get-UpdateModeText (Head)).Contains('main')) 'without a pin file the mode text says main'
   Reset-Fakes
   Status-Launcher | Out-Null
-  $modeLines = @($script:HostLog | Where-Object { $_ -match '^Ch.{1,3} d.{1,3} c.{1,3}p nh.{1,3}t: ' })
+  $modeLines = @($script:HostLog | Where-Object { $_ -match '^Ch.{1,3} .{1,3} c.{1,3}p nh.{1,3}t: ' })
   Check ($modeLines.Count -eq 1 -and $modeLines[0].Contains('main')) 'Status shows the update mode line with main'
 
   # =============================================================================================
