@@ -1,3 +1,4 @@
+import { describe, expect, it, jest } from '@jest/globals';
 import { CLIENT_AUTH_ROUTE_PREFIX, clientAuthTransportMiddleware } from './client-auth-transport.middleware';
 
 describe('clientAuthTransportMiddleware', () => {
