@@ -198,6 +198,53 @@ describe('11Food live build', () => {
   });
 });
 
+describe('11Ship live build', () => {
+  let live;
+  before(() => {
+    live = mkdtempSync(join(tmpdir(), 'ship-live-'));
+    buildClientWeb('ship-web', { outDir: live, quiet: true });
+  });
+  after(() => rmSync(live, { recursive: true, force: true }));
+  const files = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(join(d, e.name)) : [join(d, e.name)]));
+  const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('ships no design preview, no sample data, no browser storage', () => {
+    for (const f of files(live)) {
+      assert.doesNotMatch(f, /design/i, f);
+      if (/\.(js|html|css)$/.test(f)) {
+        const text = strip(readFileSync(f, 'utf8'));
+        assert.doesNotMatch(text, /Nguyễn Văn A|Quán Cơm Nhà|098 •••• 123/, `sample data in ${f}`);
+        assert.doesNotMatch(text, /localStorage|sessionStorage|indexedDB|document\.cookie/, `browser storage in ${f}`);
+      }
+    }
+  });
+
+  it('driver routes need a session; register leads to the driver profile; tabs are the five approved ones', async () => {
+    const at = (name) => import(pathToFileURL(join(live, 'js', ...name.split('/'))).href);
+    const { routeTable } = await at('client-shared/src/app.js');
+    const { resolveRoute } = await at('client-shared/src/router.js');
+    const { SHIP_DEFINITION } = await at('ship-web/src/screens.js');
+    const table = routeTable(SHIP_DEFINITION);
+    const state = { signedIn: false, flows: new Set() };
+    for (const path of ['/driver/onboarding', '/driver/status']) {
+      assert.equal(resolveRoute(path, table, state).to, '/login', path);
+    }
+    for (const path of ['/', '/orders', '/income', '/wallet', '/account', '/login', '/register']) {
+      assert.equal(resolveRoute(path, table, state).kind, 'render', path);
+    }
+    const text = readFileSync(join(live, 'js', 'ship-web', 'src', 'screens.js'), 'utf8');
+    assert.deepEqual([...text.matchAll(/label: '([^']+)', icon: '[A-Za-z]+', href: '\//g)].map((m) => m[1]), ['Trang chủ', 'Đơn hàng', 'Thu nhập', 'Ví', 'Tài khoản']);
+    assert.match(text, /afterRegister: \{ id: 'driver-onboarding' \}/);
+  });
+
+  it('the online switch can never be turned on in M01', () => {
+    const text = readFileSync(join(live, 'js', 'ship-web', 'src', 'screens.js'), 'utf8');
+    assert.match(text, /role: 'switch', 'aria-checked': 'false'/);
+    assert.match(text, /'aria-disabled': 'true'/);
+    assert.doesNotMatch(text, /'aria-checked': 'true'|setAttribute\('aria-checked'/);
+  });
+});
+
 describe('C08: dirty form, Back and navigation', () => {
   const fakeInput = (type, value = '', checked = false) => {
     const events = [];
@@ -333,5 +380,10 @@ describe('C08: dirty form, Back and navigation', () => {
   it('11Food forms with unsaved input (profile, shop profile) are guarded', () => {
     const source = readFileSync(new URL('../../apps/food-web/src/screens.ts', import.meta.url), 'utf8');
     assert.equal((source.match(/guardForm\(env, form\)/g) ?? []).length, 2);
+  });
+
+  it('11Ship driver profile form is guarded', () => {
+    const source = readFileSync(new URL('../../apps/ship-web/src/screens.ts', import.meta.url), 'utf8');
+    assert.equal((source.match(/guardForm\(env, form\)/g) ?? []).length, 1);
   });
 });
