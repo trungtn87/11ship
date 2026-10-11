@@ -195,5 +195,141 @@ describe('11Food live build', () => {
     const text = readFileSync(join(live, 'js', 'food-web', 'src', 'screens.js'), 'utf8');
     const labels = [...text.matchAll(/label: '([^']+)', icon: '[a-z]+', href: '\//g)].map((m) => m[1]);
     assert.deepEqual(labels, ['Trang chủ', 'Tìm kiếm', 'Đơn hàng', 'Tài khoản']);
+
+describe('C08: dirty form, Back and navigation', () => {
+  const fakeInput = (type, value = '', checked = false) => {
+    const events = [];
+    return { type, value, checked, readOnly: false, disabled: false, events, dispatchEvent: (event) => events.push(event.type) };
+  };
+  const fakeForm = (inputs) => ({ querySelectorAll: () => inputs });
+  const fakeEnv = () => {
+    const registered = [];
+    const flows = new Set(['reset-password', 'reset-otp']);
+    return {
+      registered,
+      flows,
+      env: {
+        guard: (guard) => {
+          registered.push(guard);
+          return { release: () => guard.wipe() };
+        },
+        flows: { end: (name) => flows.delete(name) },
+      },
+    };
+  };
+  const asker = (answer) => {
+    const log = { asked: 0 };
+    const ask = (host, answers) => {
+      log.asked += 1;
+      if (answer === 'stay') answers.stay();
+      if (answer === 'leave') answers.leave();
+      if (answer !== 'pending') answers.closed();
+    };
+    return { log, ask };
+  };
+
+  it('does not ask when nothing was typed, and still wipes (ends the flow) on leaving', async () => {
+    const { LeaveController } = await load('leave.js');
+    const { guardForm } = await load('screens/layout.js');
+    const { env, flows } = fakeEnv();
+    const a = asker('stay');
+    const leave = new LeaveController(a.ask);
+    const env2 = { ...env, guard: (g) => leave.register(g) };
+    guardForm(env2, fakeForm([fakeInput('password')]), { flows: ['reset-password'] });
+    let moved = 0;
+    leave.request(() => (moved += 1));
+    assert.equal(moved, 1);
+    assert.equal(a.log.asked, 0);
+    assert.equal(flows.has('reset-password'), false, 'the flow ends when the person leaves');
+  });
+
+  it('asks when typed; "Ở lại" keeps the content and does not navigate', async () => {
+    const { LeaveController } = await load('leave.js');
+    const { guardForm } = await load('screens/layout.js');
+    const { env, flows } = fakeEnv();
+    const password = fakeInput('password');
+    const a = asker('stay');
+    const leave = new LeaveController(a.ask);
+    guardForm({ ...env, guard: (g) => leave.register(g) }, fakeForm([password]), { flows: ['reset-password'] });
+    password.value = 'mat-khau-dang-go';
+    assert.equal(leave.dirty(), true);
+    let moved = 0;
+    leave.request(() => (moved += 1));
+    assert.equal(a.log.asked, 1);
+    assert.equal(moved, 0);
+    assert.equal(password.value, 'mat-khau-dang-go');
+    assert.equal(flows.has('reset-password'), true);
+    assert.equal(leave.dirty(), true, 'still guarded after staying');
+  });
+
+  it('"Thoát" wipes password/OTP and the flow, then navigates', async () => {
+    const { LeaveController } = await load('leave.js');
+    const { guardForm } = await load('screens/layout.js');
+    const { env, flows } = fakeEnv();
+    const password = fakeInput('password');
+    const otp = fakeInput('text');
+    const consent = fakeInput('checkbox');
+    const a = asker('leave');
+    const leave = new LeaveController(a.ask);
+    guardForm({ ...env, guard: (g) => leave.register(g) }, fakeForm([password, otp, consent]), { flows: ['reset-password'] });
+    password.value = 'abc12345';
+    otp.value = '123456';
+    consent.checked = true;
+    let moved = 0;
+    leave.request(() => (moved += 1));
+    assert.equal(moved, 1);
+    assert.equal(password.value, '');
+    assert.equal(otp.value, '');
+    assert.equal(consent.checked, false);
+    assert.equal(flows.has('reset-password'), false);
+    assert.equal(leave.dirty(), false);
+  });
+
+  it('a second request while the question is open does not open another one', async () => {
+    const { LeaveController } = await load('leave.js');
+    const { guardForm } = await load('screens/layout.js');
+    const { env } = fakeEnv();
+    const input = fakeInput('text');
+    const a = asker('pending');
+    const leave = new LeaveController(a.ask);
+    guardForm({ ...env, guard: (g) => leave.register(g) }, fakeForm([input]));
+    input.value = 'x';
+    leave.request(() => undefined);
+    leave.request(() => undefined);
+    assert.equal(a.log.asked, 1);
+  });
+
+  it('release (success) wipes and stops asking; typed values are never put in the URL or storage by this code', async () => {
+    const { LeaveController } = await load('leave.js');
+    const { guardForm } = await load('screens/layout.js');
+    const { env } = fakeEnv();
+    const password = fakeInput('password');
+    const a = asker('stay');
+    const leave = new LeaveController(a.ask);
+    const handle = guardForm({ ...env, guard: (g) => leave.register(g) }, fakeForm([password]));
+    password.value = 'x1234567';
+    handle.release();
+    assert.equal(password.value, '');
+    let moved = 0;
+    leave.request(() => (moved += 1));
+    assert.equal(moved, 1);
+    assert.equal(a.log.asked, 0);
+    for (const file of ['leave.js', 'screens/layout.js', 'app.js']) {
+      const text = readFileSync(join(lib, file), 'utf8');
+      assert.ok(!/localStorage|sessionStorage|document\.cookie/.test(text), file);
+    }
+    assert.ok(!/pushState\([^)]*(value|password|otp)/i.test(readFileSync(join(lib, 'app.js'), 'utf8')));
+  });
+
+  it('every form with a password or code is guarded, and the preview has the C08 screen', async () => {
+    const auth = readFileSync(join(lib, 'screens/auth.js'), 'utf8');
+    assert.equal((auth.match(/guardForm\(env/g) ?? []).length, 5, 'login, register, OTP, reset, reset-password');
+    const found = readFileSync(join(lib, 'design/foundation.js'), 'utf8');
+    assert.match(found, /code: 'C08'/);
+  });
+
+  it('11Food forms with unsaved input (profile, shop profile) are guarded', () => {
+    const source = readFileSync(new URL('../../apps/food-web/src/screens.ts', import.meta.url), 'utf8');
+    assert.equal((source.match(/guardForm\(env, form\)/g) ?? []).length, 2);
   });
 });

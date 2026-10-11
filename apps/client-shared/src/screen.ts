@@ -1,6 +1,7 @@
 import type { AppBrand } from './brand.js';
 import type { FeatureId } from './features.js';
 import type { ClientPorts } from './ports.js';
+import type { GuardHandle, LeaveGuard } from './leave.js';
 import type { Access } from './router.js';
 
 // What a screen is, and what it may use. The SAME screen code runs in two places: the real app (mode `live`) and the
@@ -57,6 +58,11 @@ export interface ScreenEnv {
   /** Go to a screen by its id. Live: pushes the real path. Design: switches the previewed screen. */
   go(id: string, variant?: string): void;
   back(): void;
+  /**
+   * C08: a screen with a form registers how to tell it is dirty and how to wipe it. Every in-app navigation (go, back), the
+   * browser Back button and closing the page then ask "Bỏ thay đổi?" first; leaving for real wipes the form.
+   */
+  guard(guard: LeaveGuard): GuardHandle;
   toast(text: string): void;
   /** Where dialogs are mounted: the phone frame in the preview, the page body (undefined) in the app. */
   readonly dialogHost: HTMLElement | undefined;
