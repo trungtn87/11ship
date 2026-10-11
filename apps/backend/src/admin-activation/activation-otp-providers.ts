@@ -90,12 +90,19 @@ export class TestDisplayActivationOtpProvider implements ActivationOtpProvider {
  * environment (the configuration loader already refused them elsewhere). SMS has no provider yet: startup is refused,
  * naming only the variable, so there is no silent fallback to a test provider.
  */
-export function bindActivationOtpProvider(config: AdminActivationConfig): ActivationOtpProvider {
+export function bindActivationOtpProvider(
+  config: AdminActivationConfig,
+  options: { readonly testInboxProvider?: ActivationOtpProvider } = {},
+): ActivationOtpProvider {
   if (config.otpMode === 'FAKE') {
     return new FakeActivationOtpProvider();
   }
   if (config.otpMode === 'TEST_DISPLAY') {
     return new TestDisplayActivationOtpProvider();
+  }
+  // TEST_INBOX (M01.22): only with the adapter main.ts built after the explicit selection was accepted.
+  if (config.otpMode === 'TEST_INBOX' && options.testInboxProvider !== undefined) {
+    return options.testInboxProvider;
   }
   throw new StartupConfigError(['ADMIN_ACTIVATION_OTP_MODE']);
 }

@@ -11,6 +11,7 @@ import { JsonLogger } from './logging/json-logger';
 import { LoggingModule } from './logging/logging.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { ShopManagementModule } from './shop-management/shop-management.module';
+import { StoppableRuntime, TestSmsModule } from './test-sms/test-sms.module';
 import { TransactionModule } from './transaction/transaction.module';
 
 export interface AppModuleOptions {
@@ -26,6 +27,11 @@ export interface AppModuleOptions {
    * activation is enabled and no provider is bound, startup stops (no fallback to a fake).
    */
   activationOtpProvider?: ActivationOtpProvider;
+  /**
+   * The test SMS inbox runtime (M01.22). Passed by main.ts ONLY when TEST_INBOX is active (explicit, development/test,
+   * loopback): it ties the private listener and its discovery state to the application's shutdown.
+   */
+  testSms?: StoppableRuntime;
 }
 
 @Module({})
@@ -46,6 +52,7 @@ export class AppModule {
       module: AppModule,
       imports: [
         ConfigModule.forRoot(options.config),
+        ...(options.testSms === undefined ? [] : [TestSmsModule.register(options.testSms)]),
         LoggingModule.forRoot(options.logger),
         DatabaseModule,
         TransactionModule,
