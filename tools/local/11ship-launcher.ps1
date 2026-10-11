@@ -76,6 +76,12 @@ function File-HashOrEmpty([string]$Path) {
   return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
 }
 
+# M00.02 F1: the identity of the launcher code THIS process loaded (SHA-256 of the file as it was at load time).
+# Another launcher may replace the file while this process waits for the lock; the lock code compares this value with
+# the file on disk once it owns the lock, before any step runs.
+function Get-LauncherIdentity { return (File-HashOrEmpty $script:LauncherPath) }
+$script:LoadedLauncherHash = Get-LauncherIdentity
+
 # ---------------------------------------------------------------------------------------------
 # .env and secrets
 # ---------------------------------------------------------------------------------------------
@@ -269,6 +275,14 @@ function Enter-LaunchLock([string]$Step) {
   Ensure-Dirs
   $handle = Wait-ForLaunchLock $Step ([bool]$script:TakeoverPending)
   $script:TakeoverPending = $false
+  # F1: we own the lock now. Before anything runs, the code we loaded must still be the code on disk: another launcher
+  # may have updated the checkout while we waited. Old code never runs a step; the lock is given back at once.
+  $onDisk = Get-LauncherIdentity
+  if (!$script:LoadedLauncherHash -or !$onDisk -or $onDisk -ne $script:LoadedLauncherHash) {
+    $script:LauncherStale = $true
+    try { $handle.Dispose() } catch { }
+    Fail 'Mã launcher đang chạy trong cửa sổ này khác bản launcher hiện có trên đĩa (checkout đã được cập nhật trong lúc chờ khóa, hoặc không đọc được file launcher). Chưa làm gì cả. Hãy đóng cửa sổ này rồi mở lại launcher để dùng bản mới.' 'LAUNCHER_RELOAD_REQUIRED'
+  }
   $script:LockHandle = $handle
   $script:LockDepth = 1
   $script:LockStep = $Step
@@ -648,14 +662,18 @@ function Assert-GitSafeState([string]$Pin) {
     if ($branch -cne 'main') { Fail "Chế độ main chỉ cập nhật nhánh main; đang ở nhánh '$branch'. Launcher không tự chuyển nhánh." 'NOT_MAIN_BRANCH' }
     if ($upstreamName -cne 'origin/main') { Fail "Nhánh main phải theo dõi origin/main; hiện theo dõi '$upstreamName'." 'UPSTREAM_MISMATCH' }
   }
-  if ((Capture 'git.exe' @('status','--porcelain','--untracked-files=no'))) { Fail 'Có thay đổi tracked chưa commit; launcher không tự stash.' 'DIRTY_TRACKED' }
+  # A failed read is not an empty answer: Capture returns $null for exit != 0 and '' for a clean tree.
+  $status = Capture 'git.exe' @('status','--porcelain','--untracked-files=no')
+  if ($null -eq $status) { Fail 'Không đọc được trạng thái Git (git status lỗi); dừng an toàn, chưa cập nhật gì.' 'GIT_STATE_UNREADABLE' }
+  if ($status) { Fail 'Có thay đổi tracked chưa commit; launcher không tự stash.' 'DIRTY_TRACKED' }
   $head = Capture 'git.exe' @('rev-parse','HEAD')
   if ("$head" -notmatch '^[0-9a-f]{40}$') { Fail 'Không đọc được commit hiện tại.' 'GIT_STATE_UNREADABLE' }
   return $head
 }
+# Returns the number of new migrations, or $null when Git could not be read (never 0 for "unknown").
 function Get-AddedMigrationCount([string]$FromSha,[string]$ToSha) {
   $names = Capture 'git.exe' @('-c','core.quotepath=false','diff','--no-renames','--name-only','--diff-filter=A',$FromSha,$ToSha,'--','database/migrations')
-  if ($names -eq $null) { return 0 }
+  if ($null -eq $names) { return $null }
   return @("$names" -split "`r?`n" | Where-Object { $_ -match '\.sql$' }).Count
 }
 # Runs inside the repository with the caller's Git location variables removed. Result goes to $script:UpdateResult.
@@ -678,10 +696,14 @@ function Invoke-GitSourceUpdate {
     return
   }
   & git.exe merge-base --is-ancestor $head $upstream
-  if ($LASTEXITCODE -ne 0) { Fail 'Không thể fast-forward tới upstream (lịch sử local đã rẽ nhánh hoặc đi trước).' 'NON_FAST_FORWARD' }
+  # exit 1 = HEAD is not an ancestor (history diverged); any other failure means Git could not tell.
+  if ($LASTEXITCODE -eq 1) { Fail 'Không thể fast-forward tới upstream (lịch sử local đã rẽ nhánh hoặc đi trước).' 'NON_FAST_FORWARD' }
+  if ($LASTEXITCODE -ne 0) { Fail 'Không kiểm tra được quan hệ lịch sử với upstream (git merge-base lỗi); dừng an toàn, chưa cập nhật gì.' 'GIT_STATE_UNREADABLE' }
   # A file the update would ADD must not already exist on disk, tracked or not: an untracked file, or an ignored one such
   # as .env, is never overwritten.
-  $added = @("$(Capture 'git.exe' @('-c','core.quotepath=false','diff','--no-renames','--name-only','--diff-filter=A',$head,$upstream))" -split "`r?`n" | Where-Object { $_ })
+  $addedText = Capture 'git.exe' @('-c','core.quotepath=false','diff','--no-renames','--name-only','--diff-filter=A',$head,$upstream)
+  if ($null -eq $addedText) { Fail 'Không đọc được danh sách file mà bản cập nhật sẽ thêm (git diff lỗi); dừng trước khi merge để không ghi đè file local (kể cả .env).' 'GIT_DIFF_UNREADABLE' }
+  $added = @("$addedText" -split "`r?`n" | Where-Object { $_ })
   foreach ($path in $added) {
     if (Test-Path -LiteralPath (Join-Path $script:Repo $path)) { Fail 'File untracked sẽ bị upstream ghi đè; dừng an toàn, không xóa hay di chuyển file.' 'UNTRACKED_COLLISION' }
   }
@@ -729,7 +751,8 @@ function Update-Launcher {
     Ensure-Dependencies
     $script:AddedMigrations = 0
     if ($result.OldHead -ne $result.NewHead) { Invoke-InRepo { $script:AddedMigrations = Get-AddedMigrationCount $result.OldHead $result.NewHead } }
-    if ($script:AddedMigrations -gt 0) { Write-WarnLine "Bản cập nhật có $($script:AddedMigrations) migration mới. Start sẽ kiểm tra DB DEV và hỏi trước khi áp dụng." }
+    if ($null -eq $script:AddedMigrations) { Write-WarnLine 'MIGRATION_COUNT_UNREADABLE: không đọc được số migration mới của bản cập nhật (git diff lỗi). Không có nghĩa là 0; Start vẫn kiểm tra DB DEV và hỏi trước khi áp dụng.' }
+    elseif ($script:AddedMigrations -gt 0) { Write-WarnLine "Bản cập nhật có $($script:AddedMigrations) migration mới. Start sẽ kiểm tra DB DEV và hỏi trước khi áp dụng." }
     if ($result.Mode -eq 'UAT') { Write-Ok 'Kiểm tra checkout UAT hoàn tất' }
     elseif ($result.Moved -or $result.Mode -eq 'relaunch') { Write-Ok 'Cập nhật fast-forward hoàn tất' }
     else { Write-Ok 'Cập nhật hoàn tất: đã ở commit mới nhất của origin/main' }

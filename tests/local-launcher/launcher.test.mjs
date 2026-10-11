@@ -100,11 +100,17 @@ test('M00.02: the shared lock is an exclusive OS handle, never a file age, and n
 
 test('M00.02: Git update modes and the hand-over to the new launcher are in place', () => {
   for (const code of ['NOT_MAIN_BRANCH', 'UPSTREAM_MISMATCH', 'GIT_FETCH_FAILED', 'GIT_UPDATE_FAILED', 'GIT_OPERATION_IN_PROGRESS', 'UAT_SHA_MISMATCH', 'UAT_PIN_INVALID',
-    'RELAUNCH_FAILED', 'RELAUNCH_LIMIT', 'RELAUNCH_SHA_MISMATCH', 'RELAUNCH_LAUNCHER_MISMATCH', 'RELAUNCH_CHILD_FAILED', 'LAUNCHER_RELOAD_REQUIRED']) {
+    'GIT_STATE_UNREADABLE', 'GIT_DIFF_UNREADABLE', 'RELAUNCH_FAILED', 'RELAUNCH_LIMIT', 'RELAUNCH_SHA_MISMATCH', 'RELAUNCH_LAUNCHER_MISMATCH', 'RELAUNCH_CHILD_FAILED', 'LAUNCHER_RELOAD_REQUIRED']) {
     assert.ok(script.includes(`'${code}'`), code);
   }
   for (const name of ['RelaunchToken', 'RelaunchFromSha', 'RelaunchToSha', 'RelaunchLauncherHash']) assert.match(script, new RegExp(`\\[string\\]\\$${name}`));
   assert.ok(script.includes("@('merge','--ff-only',$upstream)"), 'fast-forward only');
+  // F1: the code a process loaded is compared with the file on disk once the lock is owned; F2: failed Git reads are not empty answers.
+  assert.ok(script.includes('MIGRATION_COUNT_UNREADABLE'), 'unknown migration count is reported, never as 0');
+  assert.match(script, /\$script:LoadedLauncherHash = Get-LauncherIdentity/);
+  assert.match(script, /\$onDisk -ne \$script:LoadedLauncherHash/);
+  assert.doesNotMatch(script, /if \(\(Capture 'git\.exe' @\('status'/);
+  assert.doesNotMatch(script, /return 0 \}\s*\n\s*return @\("\$names"/);
   assert.ok(script.includes('uat-pin.json'), 'UAT pin file');
   // Any npm/build/backend work runs inside the repository that holds the script, whatever the caller folder is.
   assert.match(script, /function Invoke-InRepo\(\[scriptblock\]\$Body\) \{ Push-Location -LiteralPath \$script:Repo/);
