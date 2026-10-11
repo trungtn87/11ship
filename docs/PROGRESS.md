@@ -168,7 +168,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#46](https://github.com/trungtn87/11ship/pull/46) M00: three Windows launchers for Admin, 11Food and 11Ship | 🚫 Đã hủy / bỏ qua (`CANCELLED / IGNORED`) | — | — | — | `cf9eeca` | 🚫 không tính (đã hủy) — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#47](https://github.com/trungtn87/11ship/pull/47) feat(admin-web): SYSTEM invitations and ADMIN activation UI… | Đã merge (`MERGED`) | — | — | — | `fd3f91f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#48](https://github.com/trungtn87/11ship/pull/48) docs: thiết kế 1 Web + 2 App và 102 gói giao Claude v2.0.1 | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `80938a3` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#51](https://github.com/trungtn87/11ship/pull/51) M00 follow-up: reconcile staging fixtures and hosted Admin… | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `ec35c9f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#51](https://github.com/trungtn87/11ship/pull/51) M00 follow-up: reconcile staging fixtures and hosted Admin… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `3c6ba87` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
