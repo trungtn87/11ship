@@ -7,20 +7,46 @@ param(
   [switch]$Yes,
   [switch]$KeepDatabases,
   [switch]$ForceDependencies,
-  [switch]$NoPause
+  [switch]$NoPause,
+  # Set only by a launcher that re-runs itself after Update replaced the launcher code (M00.02). Never typed by hand.
+  [string]$RelaunchToken,
+  [string]$RelaunchFromSha,
+  [string]$RelaunchToSha,
+  [string]$RelaunchLauncherHash
 )
 
 $ErrorActionPreference = 'Stop'
-$script:Repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$script:StateDir = Join-Path $script:Repo '.11ship-local'
-$script:StateFile = Join-Path $script:StateDir 'backend.json'
-$script:InstallState = Join-Path $script:StateDir 'installed-lock.sha256'
-$script:LastTest = Join-Path $script:StateDir 'last-test.json'
-$script:LastRun = Join-Path $script:StateDir 'last-run.json'
-$script:Logs = Join-Path $script:StateDir 'logs'
-$script:Compose = Join-Path $script:Repo 'compose.dev.yml'
-$script:EnvFile = Join-Path $script:Repo '.env'
+# Every path is derived from one repository root, so tests can point the launcher functions at a sandbox checkout.
+function Initialize-LauncherPaths([string]$Repo) {
+  $script:Repo = $Repo
+  $script:StateDir = Join-Path $Repo '.11ship-local'
+  $script:StateFile = Join-Path $script:StateDir 'backend.json'
+  $script:InstallState = Join-Path $script:StateDir 'installed-lock.sha256'
+  $script:LastTest = Join-Path $script:StateDir 'last-test.json'
+  $script:LastRun = Join-Path $script:StateDir 'last-run.json'
+  $script:Logs = Join-Path $script:StateDir 'logs'
+  $script:Compose = Join-Path $Repo 'compose.dev.yml'
+  $script:EnvFile = Join-Path $Repo '.env'
+  # M00.02: shared lock, hand-over gate, display-only holder info, UAT pin and the launcher file itself.
+  $script:LockFile = Join-Path $script:StateDir 'launch.lock'
+  $script:GateFile = Join-Path $script:StateDir 'launch.gate'
+  $script:LockInfoFile = Join-Path $script:StateDir 'launch.lock.info.json'
+  $script:UatPinFile = Join-Path $script:StateDir 'uat-pin.json'
+  $script:LauncherPath = Join-Path (Join-Path (Join-Path $Repo 'tools') 'local') '11ship-launcher.ps1'
+  $script:RelaunchScript = $script:LauncherPath
+}
+Initialize-LauncherPaths ((Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path)
 $script:ExtraSecrets = @()
+# Shared lock state of THIS process. The OS file handle is the only owner of the lock; the rest is bookkeeping.
+$script:LockHandle = $null
+$script:LockDepth = 0
+$script:LockStep = ''
+$script:TakeoverPending = $false
+$script:IsRelaunched = $false
+$script:LauncherStale = $false
+$script:RelaunchExitCode = 0
+$script:RelaunchTakeoverSeconds = 60
+$script:UpdateResult = $null
 
 function Write-Info([string]$Message) { Write-Host "[11Ship] $Message" -ForegroundColor Cyan }
 function Write-Ok([string]$Message) { Write-Host "[PASS] $Message" -ForegroundColor Green }
@@ -49,6 +75,12 @@ function File-HashOrEmpty([string]$Path) {
   if (!(Test-Path -LiteralPath $Path)) { return '' }
   return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
 }
+
+# M00.02 F1: the identity of the launcher code THIS process loaded (SHA-256 of the file as it was at load time).
+# Another launcher may replace the file while this process waits for the lock; the lock code compares this value with
+# the file on disk once it owns the lock, before any step runs.
+function Get-LauncherIdentity { return (File-HashOrEmpty $script:LauncherPath) }
+$script:LoadedLauncherHash = Get-LauncherIdentity
 
 # ---------------------------------------------------------------------------------------------
 # .env and secrets
@@ -136,15 +168,277 @@ function Wait-ContainerHealthy([string]$Name,[int]$TimeoutSeconds=90) {
   Fail "$Name không healthy sau $TimeoutSeconds giây." 'CONTAINER_UNHEALTHY'
 }
 # Runs a block with some process environment variables replaced ($null removes one), then restores them.
+# A null or empty value REMOVES the variable. On Linux an empty value would stay set, and Git reads GIT_DIR="" as a path.
+function Set-ProcessEnv([string]$Name,$Value) {
+  if ($null -eq $Value -or "$Value" -eq '') { Remove-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue }
+  else { [Environment]::SetEnvironmentVariable($Name, [string]$Value, 'Process') }
+}
 function Invoke-WithEnv([hashtable]$Variables,[scriptblock]$Body) {
   $saved = @{}
   foreach ($name in @($Variables.Keys)) { $saved[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
   try {
-    foreach ($name in @($Variables.Keys)) { [Environment]::SetEnvironmentVariable($name, $Variables[$name], 'Process') }
+    foreach ($name in @($Variables.Keys)) { Set-ProcessEnv $name $Variables[$name] }
     & $Body
   } finally {
-    foreach ($name in @($saved.Keys)) { [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process') }
+    foreach ($name in @($saved.Keys)) { Set-ProcessEnv $name $saved[$name] }
   }
+}
+
+# ---------------------------------------------------------------------------------------------
+# Shared exclusive lock (M00.02)
+# ---------------------------------------------------------------------------------------------
+# One lock per checkout covers update, dependency install, build, migration and process-state work, so two launches
+# (three app wrappers started together, Update next to Start...) never run those steps at the same time.
+#  - The OWNER of the lock is an exclusive OS file handle (FileShare.None) held for the whole operation. A crashed
+#    process loses its handles, so the lock frees itself. Nothing here decides ownership from a file's age or contents,
+#    and nothing ever stops the process that holds it.
+#  - launch.lock.info.json only tells a WAITING launcher who is busy. It is display text: stale, missing or forged
+#    content never grants or denies the lock.
+#  - Calls nest (Start -> migrations -> dependencies): the process counts its own depth and takes the OS lock once.
+#  - launch.gate exists for the hand-over to a new launcher process (Invoke-LauncherRelaunch). Normal acquirers pass
+#    through it for one non-blocking try; the hand-over keeps it while the lock changes hands, so nobody slips in.
+$script:StaleMessage = 'Launcher này đã được thay bằng bản mới sau Update và sẽ không chạy thêm lệnh nào. Hãy đóng cửa sổ rồi mở lại launcher để dùng bản mới.'
+function Test-IsWindows { return ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) }
+function Get-LockWaitSeconds {
+  # The wait is 120 seconds. The environment variable can only SHORTEN it (a test aid); it can never extend it.
+  $seconds = 120
+  $raw = [Environment]::GetEnvironmentVariable('SHIP11_LOCK_TIMEOUT_SECONDS', 'Process')
+  $parsed = 0
+  if ($raw -and [int]::TryParse($raw, [ref]$parsed) -and $parsed -ge 1 -and $parsed -lt 120) { $seconds = $parsed }
+  return $seconds
+}
+# Returns an exclusive handle, or $null while someone else holds the file. Any other failure is an error, not "busy".
+function Open-ExclusiveFile([string]$Path) {
+  try {
+    return [IO.File]::Open($Path, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+  } catch {
+    $inner = $_.Exception
+    while ($inner.InnerException) { $inner = $inner.InnerException }
+    $busy = ($inner -is [IO.IOException]) -and !($inner -is [IO.FileNotFoundException]) -and !($inner -is [IO.DirectoryNotFoundException]) -and !($inner -is [IO.PathTooLongException])
+    if ($busy) { return $null }
+    Fail "Không mở được tệp khóa $([IO.Path]::GetFileName($Path)): $($inner.Message)" 'LAUNCH_LOCK_UNAVAILABLE'
+  }
+}
+function Write-LockInfo([string]$Step) {
+  try {
+    $info = [ordered]@{ pid = $PID; step = $Step; sinceUtc = [DateTime]::UtcNow.ToString('o'); repo = $script:Repo }
+    $temporary = "$($script:LockInfoFile).$PID.tmp"
+    [IO.File]::WriteAllText($temporary, ($info | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
+    Move-Item -LiteralPath $temporary -Destination $script:LockInfoFile -Force
+  } catch { }
+}
+function Remove-LockInfo { try { Remove-Item -LiteralPath $script:LockInfoFile -Force -ErrorAction SilentlyContinue } catch { } }
+function Get-LockInfoText {
+  try {
+    if (!(Test-Path -LiteralPath $script:LockInfoFile)) { return '' }
+    $info = Get-Content -Raw -LiteralPath $script:LockInfoFile | ConvertFrom-Json
+    return "thao tác '$($info.step)', PID $($info.pid), từ $($info.sinceUtc) UTC (chỉ để hiển thị, có thể đã cũ)"
+  } catch { return '' }
+}
+# Waits for the lock. A normal acquirer takes the gate for one non-blocking try at the lock and lets go of it at once.
+# A launcher that was started by a hand-over ($Takeover) takes the lock directly: its parent keeps the gate meanwhile.
+function Wait-ForLaunchLock([string]$Step,[bool]$Takeover) {
+  $timeout = Get-LockWaitSeconds
+  $started = [DateTime]::UtcNow
+  $deadline = $started.AddSeconds($timeout)
+  $lastNote = $started
+  $announced = $false
+  $pause = 250
+  if ($Takeover) { $pause = 100 }
+  while ($true) {
+    $handle = $null
+    if ($Takeover) { $handle = Open-ExclusiveFile $script:LockFile }
+    else {
+      $gate = Open-ExclusiveFile $script:GateFile
+      if ($gate) {
+        try { $handle = Open-ExclusiveFile $script:LockFile } finally { $gate.Dispose() }
+      }
+    }
+    if ($handle) { return $handle }
+    $now = [DateTime]::UtcNow
+    $timedOut = ($now -ge $deadline)
+    if ($timedOut -or !$announced -or ($now - $lastNote).TotalSeconds -ge 15) {
+      $who = Get-LockInfoText
+      $detail = ''
+      if ($who) { $detail = " Đang giữ khóa: $who." }
+      if ($timedOut) {
+        Fail "Đã chờ $timeout giây mà chưa lấy được khóa dùng chung của checkout này (bước '$Step').$detail Launcher không chiếm khóa và không dừng tiến trình đang giữ khóa; hãy đợi thao tác đó xong rồi chạy lại." 'LAUNCH_LOCK_TIMEOUT'
+      }
+      Write-Info "Đang chờ khóa dùng chung (LAUNCH_LOCK_WAIT) trước bước '$Step'; tối đa $timeout giây.$detail"
+      $announced = $true
+      $lastNote = $now
+    }
+    Start-Sleep -Milliseconds $pause
+  }
+}
+function Enter-LaunchLock([string]$Step) {
+  Ensure-Dirs
+  $handle = Wait-ForLaunchLock $Step ([bool]$script:TakeoverPending)
+  $script:TakeoverPending = $false
+  # The handle is a local until ownership is handed to the lock state below. ANY failure before that point (an unreadable
+  # launcher file, a mismatch, an unexpected exception) disposes it here, so a failed step can never leave the lock held
+  # until a garbage collection: the caller's try/finally does not exist yet.
+  $owned = $false
+  try {
+    # F1: we own the lock now. Before anything runs, the code we loaded must still be the code on disk: another launcher
+    # may have updated the checkout while we waited. Old code never runs a step; the lock is given back at once.
+    $onDisk = ''
+    try { $onDisk = Get-LauncherIdentity }
+    catch {
+      # F3: not being able to read the file proves nothing about its content, so nothing protected runs. This is not
+      # "stale": once the file can be read again this same launcher continues normally.
+      Fail "Không đọc được file launcher để xác minh mã đang chạy ($($_.Exception.Message)). Chưa làm gì cả và khóa đã được trả; hãy thử lại sau khi file không còn bị chương trình khác giữ." 'LAUNCHER_IDENTITY_UNREADABLE'
+    }
+    if (!$script:LoadedLauncherHash -or !$onDisk -or $onDisk -ne $script:LoadedLauncherHash) {
+      $script:LauncherStale = $true
+      Fail 'Mã launcher đang chạy trong cửa sổ này khác bản launcher hiện có trên đĩa (checkout đã được cập nhật trong lúc chờ khóa, hoặc không đọc được file launcher). Chưa làm gì cả. Hãy đóng cửa sổ này rồi mở lại launcher để dùng bản mới.' 'LAUNCHER_RELOAD_REQUIRED'
+    }
+    $script:LockHandle = $handle
+    $script:LockDepth = 1
+    $script:LockStep = $Step
+    $owned = $true
+  } finally {
+    if (!$owned) { try { $handle.Dispose() } catch { } }
+  }
+  Write-LockInfo $Step
+}
+function Exit-LaunchLock {
+  $handle = $script:LockHandle
+  $script:LockHandle = $null
+  $script:LockDepth = 0
+  $script:LockStep = ''
+  if ($handle) {
+    # The display text goes first, while we still own the lock, so we never delete the next owner's text.
+    Remove-LockInfo
+    try { $handle.Dispose() } catch { }
+  }
+}
+# Runs $Body while this process owns the lock. Safe to call again from inside $Body (same process, any depth).
+# After a hand-over this process holds nothing but still counts a depth: every further use fails closed.
+function Use-LaunchLock([string]$Step,[scriptblock]$Body) {
+  if ($script:LauncherStale) { Fail $script:StaleMessage 'LAUNCHER_RELOAD_REQUIRED' }
+  if ($script:LockDepth -gt 0) {
+    if (!$script:LockHandle) { Fail $script:StaleMessage 'LAUNCHER_RELOAD_REQUIRED' }
+    $outerStep = $script:LockStep
+    $script:LockDepth++
+    $script:LockStep = $Step
+    Write-LockInfo $Step
+    try { & $Body }
+    finally {
+      $script:LockDepth--
+      $script:LockStep = $outerStep
+      if ($script:LockHandle) { Write-LockInfo $outerStep }
+    }
+    return
+  }
+  Enter-LaunchLock $Step
+  try { & $Body }
+  finally { Exit-LaunchLock }
+}
+
+# ---------------------------------------------------------------------------------------------
+# Re-running the launcher after Update replaced it (M00.02)
+# ---------------------------------------------------------------------------------------------
+# Update changes the launcher's own file while the OLD code is still running. The old process then starts the new
+# launcher exactly once, hands the lock to it without a gap and waits for it. Rules:
+#  1. The old process keeps the GATE, starts the new one, then lets go of the LOCK. The new process takes the lock
+#     without using the gate; every other launcher needs the gate for its try, so none can run between the two owners.
+#  2. The old process never waits for the new one while holding the lock (it released it before waiting), and the new
+#     process never needs the gate, so the two cannot block each other.
+#  3. The new process starts with -RelaunchToken/-RelaunchFromSha/-RelaunchToSha/-RelaunchLauncherHash. That is the
+#     cycle guard: it re-checks branch, SHA and launcher file under the lock, does NOT fetch or update again, and
+#     can never re-run itself (so it cannot loop). Anything that differs stops it.
+#  4. The old process owns the console, the pause decision and the run record; the new one is started with -NoPause.
+#  5. From the moment of the hand-over the old process is "stale" and refuses every further lock use.
+function ConvertTo-QuotedArgument([string]$Value) {
+  if ($Value -eq '') { return '""' }
+  if ($Value -notmatch '[\s"]') { return $Value }
+  return '"' + $Value.Replace('"', '\"') + '"'
+}
+function Get-RelaunchArguments([string]$CommandName,[string]$Token,[string]$FromSha,[string]$ToSha,[string]$LauncherHash) {
+  $list = New-Object 'Collections.Generic.List[string]'
+  $list.Add('-Command'); $list.Add($CommandName)
+  if ($CommandName -eq 'App' -and $App) { $list.Add('-App'); $list.Add([string]$App) }
+  if ($Yes) { $list.Add('-Yes') }
+  if ($KeepDatabases) { $list.Add('-KeepDatabases') }
+  if ($ForceDependencies) { $list.Add('-ForceDependencies') }
+  $list.Add('-NoPause')
+  $list.Add('-RelaunchToken'); $list.Add($Token)
+  $list.Add('-RelaunchFromSha'); $list.Add($FromSha)
+  $list.Add('-RelaunchToSha'); $list.Add($ToSha)
+  $list.Add('-RelaunchLauncherHash'); $list.Add($LauncherHash)
+  return @($list.ToArray())
+}
+function Start-LauncherProcess([string[]]$Arguments) {
+  $exe = (Get-Process -Id $PID).Path
+  if (!$exe) { if (Test-IsWindows) { $exe = 'powershell.exe' } else { $exe = 'pwsh' } }
+  $parts = @('-NoProfile','-ExecutionPolicy','Bypass','-File',(ConvertTo-QuotedArgument $script:RelaunchScript)) + @($Arguments | ForEach-Object { ConvertTo-QuotedArgument $_ })
+  # No -Wait: it would also wait for the backend the new launcher may leave running. The new process shares this console.
+  if (Test-IsWindows) { $process = Start-Process -FilePath $exe -ArgumentList $parts -NoNewWindow -PassThru }
+  else { $process = Start-Process -FilePath $exe -ArgumentList $parts -PassThru }
+  $null = $process.Handle   # without a cached handle ExitCode can stay empty for a process started with -PassThru
+  return $process
+}
+function Open-GateWithin([int]$Seconds) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+  while ($true) {
+    $gate = Open-ExclusiveFile $script:GateFile
+    if ($gate) { return $gate }
+    if ([DateTime]::UtcNow -ge $deadline) { return $null }
+    Start-Sleep -Milliseconds 50
+  }
+}
+# Called while this process owns the lock. Returns the new launcher's exit code once it has finished.
+function Invoke-LauncherRelaunch([string]$CommandName,[string]$FromSha,[string]$ToSha,[string]$LauncherHash) {
+  if ($script:IsRelaunched) { Fail 'Bản launcher mới không được tự chạy lại lần nữa (chỉ một lần cho mỗi Update).' 'RELAUNCH_LIMIT' }
+  if (!$script:LockHandle -or $script:LockDepth -lt 1) { Fail 'Chỉ chạy lại launcher khi đang giữ khóa dùng chung.' 'RELAUNCH_FAILED' }
+  # From here this process runs OLD launcher code on a checkout that holds NEW code: it must not run anything else.
+  $script:LauncherStale = $true
+  $token = [Guid]::NewGuid().ToString('N')
+  $arguments = Get-RelaunchArguments $CommandName $token $FromSha $ToSha $LauncherHash
+  $gate = Open-GateWithin 30
+  if (!$gate) { Fail 'Không lấy được cổng bàn giao khóa trong 30 giây; không chạy lại launcher.' 'RELAUNCH_FAILED' }
+  $process = $null
+  $childHolds = $false
+  try {
+    try { $process = Start-LauncherProcess $arguments }
+    catch { Fail "Không khởi động được bản launcher mới: $($_.Exception.Message)" 'RELAUNCH_FAILED' }
+    # Give the lock away while still holding the gate. The new process takes it without the gate; all others need the gate.
+    $handle = $script:LockHandle
+    $script:LockHandle = $null
+    Remove-LockInfo
+    $handle.Dispose()
+    $deadline = [DateTime]::UtcNow.AddSeconds($script:RelaunchTakeoverSeconds)
+    while ($true) {
+      if ($process.HasExited) { break }
+      $probe = Open-ExclusiveFile $script:LockFile
+      if ($probe) { $probe.Dispose() } else { $childHolds = $true; break }
+      if ([DateTime]::UtcNow -ge $deadline) { break }
+      Start-Sleep -Milliseconds 100
+    }
+    if (!$childHolds -and !$process.HasExited) {
+      # The new process did not take over in time. Only it could have: take the lock back. If that fails it took it just now.
+      $back = Open-ExclusiveFile $script:LockFile
+      if ($back) {
+        $script:LockHandle = $back
+        try { $process.Kill() } catch { }
+        Fail "Bản launcher mới không nhận khóa trong $($script:RelaunchTakeoverSeconds) giây; đã dừng nó và trả khóa. Chưa chạy bước nào bằng bản mới." 'RELAUNCH_FAILED'
+      }
+    }
+  } finally {
+    # The new process owns the lock now (or has finished): the gate is no longer needed.
+    if ($gate) { $gate.Dispose() }
+  }
+  $null = $process.WaitForExit()
+  $code = [int]$process.ExitCode
+  $script:RelaunchExitCode = $code
+  return $code
+}
+function Assert-RelaunchParameters {
+  if ("$RelaunchToken" -cnotmatch '^[0-9a-f]{32}$' -or "$RelaunchFromSha" -cnotmatch '^[0-9a-f]{40}$' -or "$RelaunchToSha" -cnotmatch '^[0-9a-f]{40}$' -or "$RelaunchLauncherHash" -cnotmatch '^[0-9a-f]{64}$') {
+    Fail 'Tham số chạy lại launcher không hợp lệ.' 'RELAUNCH_ARGUMENTS_INVALID'
+  }
+  if ($Command -ne 'Update') { Fail 'Chỉ lệnh Update được chạy lại sau khi cập nhật launcher.' 'RELAUNCH_ARGUMENTS_INVALID' }
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -198,7 +492,8 @@ function Get-DependencyState {
   if ($saved -ne (File-HashOrEmpty (Join-Path $script:Repo 'package-lock.json'))) { return 'changed' }
   return 'ok'
 }
-function Ensure-Dependencies {
+function Ensure-Dependencies { Use-LaunchLock 'dependencies' { Ensure-DependenciesLocked } }
+function Ensure-DependenciesLocked {
   $state = Get-DependencyState
   if (!$ForceDependencies -and $state -eq 'ok') { Write-Ok 'Dependency khớp lockfile đã ghi nhận'; return }
   $reason = if ($ForceDependencies) { 'Owner yêu cầu -ForceDependencies' }
@@ -242,7 +537,8 @@ function Get-MigrationPlan {
     Unknown = @($applied | Where-Object { $files -notcontains $_ })
   }
 }
-function Confirm-DevMigrations {
+function Confirm-DevMigrations { Use-LaunchLock 'migration' { Confirm-DevMigrationsLocked } }
+function Confirm-DevMigrationsLocked {
   $plan = Get-MigrationPlan
   if ($plan.Unknown.Count) { Write-WarnLine "DB DEV có $($plan.Unknown.Count) migration không có trong mã nguồn hiện tại. Launcher không sửa hoặc xóa dữ liệu." }
   if (!$plan.Pending.Count) { Write-Ok "DB DEV đã áp dụng đủ $($plan.Files.Count) migration (kiểm tra trực tiếp trong PostgreSQL)"; return }
@@ -323,7 +619,8 @@ function Invoke-LoggedStep([string[]]$NpmArgs,[string]$Log,[string[]]$Secrets) {
 # ---------------------------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------------------------
-function Start-Launcher {
+function Start-Launcher { Use-LaunchLock 'start' { Start-LauncherLocked } }
+function Start-LauncherLocked {
   Ensure-Dirs; Assert-Tools; $null = Assert-LocalEnv
   Compose @('up','-d','db-dev','db-test')
   Wait-ContainerHealthy 'ship11-db-dev'; Wait-ContainerHealthy 'ship11-db-test'
@@ -341,32 +638,142 @@ function Start-Launcher {
   }
   Wait-Backend
 }
+# ---------------------------------------------------------------------------------------------
+# Git update (M00.02)
+# ---------------------------------------------------------------------------------------------
+# Two modes, chosen by the checkout itself:
+#  - main (default): only branch main that tracks origin/main, fast-forward only. Never switches branch, never
+#    discards or hides local changes, never deletes or overwrites an untracked or ignored file.
+#  - UAT: a separate checkout whose .11ship-local\uat-pin.json holds ONE full commit SHA. Update only verifies that HEAD
+#    is that commit; it does not fetch, pull or check out. A pin file that is unreadable is an error, never "main".
+function Get-UatPin {
+  if (!(Test-Path -LiteralPath $script:UatPinFile)) { return $null }
+  $sha = ''
+  try { $pin = Get-Content -Raw -LiteralPath $script:UatPinFile | ConvertFrom-Json; $sha = "$($pin.sha)".Trim() } catch { }
+  if ($sha -notmatch '^[0-9a-fA-F]{40}$') { Fail 'Tệp pin UAT (.11ship-local\uat-pin.json) hỏng hoặc không chứa SHA đầy đủ 40 ký tự. Launcher không tự quay về chế độ main.' 'UAT_PIN_INVALID' }
+  return $sha.ToLowerInvariant()
+}
+function Get-UpdateModeText([string]$Head) {
+  try { $pin = Get-UatPin } catch { return 'UAT — tệp pin không hợp lệ (UAT_PIN_INVALID); Update sẽ từ chối' }
+  if (!$pin) { return 'main — chỉ fast-forward nhánh main từ origin/main' }
+  $short = 'không xác định'
+  if ("$Head".Length -ge 7) { $short = "$Head".Substring(0, 7) }
+  if ($pin -eq $Head) { return "UAT — pin $($pin.Substring(0, 7)), HEAD khớp; không tự pull" }
+  return "UAT — pin $($pin.Substring(0, 7)) nhưng HEAD là $short; Update sẽ từ chối"
+}
+# Runs inside the repository. Changes nothing. Returns the current HEAD.
+function Assert-GitSafeState([string]$Pin) {
+  $gitDir = Capture 'git.exe' @('rev-parse','--git-dir')
+  if ($gitDir -eq $null) { Fail 'Không phải Git repo.' 'NOT_A_GIT_REPO' }
+  foreach ($marker in @('MERGE_HEAD','rebase-merge','rebase-apply','CHERRY_PICK_HEAD','REVERT_HEAD','BISECT_LOG','sequencer')) {
+    if (Test-Path -LiteralPath (Join-Path $gitDir $marker)) { Fail "Git operation đang dở: $marker" 'GIT_OPERATION_IN_PROGRESS' }
+  }
+  if (!$Pin) {
+    $branch = Capture 'git.exe' @('symbolic-ref','--short','HEAD')
+    if ($branch -eq $null) { Fail 'Đang detached HEAD; hãy chuyển về nhánh main (launcher không tự chuyển nhánh).' 'DETACHED_HEAD' }
+    $upstreamName = Capture 'git.exe' @('rev-parse','--abbrev-ref','--symbolic-full-name','@{u}')
+    if ($upstreamName -eq $null) { Fail 'Branch chưa có upstream.' 'NO_UPSTREAM' }
+    if ($branch -cne 'main') { Fail "Chế độ main chỉ cập nhật nhánh main; đang ở nhánh '$branch'. Launcher không tự chuyển nhánh." 'NOT_MAIN_BRANCH' }
+    if ($upstreamName -cne 'origin/main') { Fail "Nhánh main phải theo dõi origin/main; hiện theo dõi '$upstreamName'." 'UPSTREAM_MISMATCH' }
+  }
+  # A failed read is not an empty answer: Capture returns $null for exit != 0 and '' for a clean tree.
+  $status = Capture 'git.exe' @('status','--porcelain','--untracked-files=no')
+  if ($null -eq $status) { Fail 'Không đọc được trạng thái Git (git status lỗi); dừng an toàn, chưa cập nhật gì.' 'GIT_STATE_UNREADABLE' }
+  if ($status) { Fail 'Có thay đổi tracked chưa commit; launcher không tự stash.' 'DIRTY_TRACKED' }
+  $head = Capture 'git.exe' @('rev-parse','HEAD')
+  if ("$head" -notmatch '^[0-9a-f]{40}$') { Fail 'Không đọc được commit hiện tại.' 'GIT_STATE_UNREADABLE' }
+  return $head
+}
+# Returns the number of new migrations, or $null when Git could not be read (never 0 for "unknown").
+function Get-AddedMigrationCount([string]$FromSha,[string]$ToSha) {
+  $names = Capture 'git.exe' @('-c','core.quotepath=false','diff','--no-renames','--name-only','--diff-filter=A',$FromSha,$ToSha,'--','database/migrations')
+  if ($null -eq $names) { return $null }
+  return @("$names" -split "`r?`n" | Where-Object { $_ -match '\.sql$' }).Count
+}
+# Runs inside the repository with the caller's Git location variables removed. Result goes to $script:UpdateResult.
+function Invoke-GitSourceUpdate {
+  $pin = Get-UatPin
+  $head = Assert-GitSafeState $pin
+  if ($pin) {
+    if ($head -ne $pin) { Fail "Chế độ UAT: HEAD $($head.Substring(0, 7)) khác SHA đã pin $($pin.Substring(0, 7)). Launcher không tự pull và không tự checkout; hãy dùng đúng checkout UAT đã pin." 'UAT_SHA_MISMATCH' }
+    $script:UpdateResult = [pscustomobject]@{ Mode = 'UAT'; Moved = $false; OldHead = $head; NewHead = $head; OldLauncherHash = '' }
+    Write-Ok "Chế độ UAT: HEAD khớp SHA đã pin ($($pin.Substring(0, 7))); không fetch, không cập nhật mã"
+    return
+  }
+  $oldLauncher = File-HashOrEmpty $script:LauncherPath
+  & git.exe fetch --prune origin
+  if ($LASTEXITCODE -ne 0) { Fail 'git fetch thất bại; không cập nhật và không báo thành công. Kiểm tra mạng rồi chạy lại.' 'GIT_FETCH_FAILED' }
+  $upstream = Capture 'git.exe' @('rev-parse','@{u}')
+  if ("$upstream" -notmatch '^[0-9a-f]{40}$') { Fail 'Không đọc được commit của origin/main sau khi fetch.' 'GIT_FETCH_FAILED' }
+  if ($upstream -eq $head) {
+    $script:UpdateResult = [pscustomobject]@{ Mode = 'main'; Moved = $false; OldHead = $head; NewHead = $head; OldLauncherHash = $oldLauncher }
+    return
+  }
+  & git.exe merge-base --is-ancestor $head $upstream
+  # exit 1 = HEAD is not an ancestor (history diverged); any other failure means Git could not tell.
+  if ($LASTEXITCODE -eq 1) { Fail 'Không thể fast-forward tới upstream (lịch sử local đã rẽ nhánh hoặc đi trước).' 'NON_FAST_FORWARD' }
+  if ($LASTEXITCODE -ne 0) { Fail 'Không kiểm tra được quan hệ lịch sử với upstream (git merge-base lỗi); dừng an toàn, chưa cập nhật gì.' 'GIT_STATE_UNREADABLE' }
+  # A file the update would ADD must not already exist on disk, tracked or not: an untracked file, or an ignored one such
+  # as .env, is never overwritten.
+  $addedText = Capture 'git.exe' @('-c','core.quotepath=false','diff','--no-renames','--name-only','--diff-filter=A',$head,$upstream)
+  if ($null -eq $addedText) { Fail 'Không đọc được danh sách file mà bản cập nhật sẽ thêm (git diff lỗi); dừng trước khi merge để không ghi đè file local (kể cả .env).' 'GIT_DIFF_UNREADABLE' }
+  $added = @("$addedText" -split "`r?`n" | Where-Object { $_ })
+  foreach ($path in $added) {
+    if (Test-Path -LiteralPath (Join-Path $script:Repo $path)) { Fail 'File untracked sẽ bị upstream ghi đè; dừng an toàn, không xóa hay di chuyển file.' 'UNTRACKED_COLLISION' }
+  }
+  $mergeArguments = @('merge','--ff-only',$upstream)
+  & git.exe @mergeArguments
+  if ($LASTEXITCODE -ne 0) { Fail 'git merge --ff-only thất bại; mã nguồn giữ nguyên trạng thái trước đó.' 'GIT_UPDATE_FAILED' }
+  $newHead = Capture 'git.exe' @('rev-parse','HEAD')
+  if ($newHead -ne $upstream) { Fail 'Sau cập nhật HEAD không khớp origin/main.' 'GIT_UPDATE_FAILED' }
+  $script:UpdateResult = [pscustomobject]@{ Mode = 'main'; Moved = $true; OldHead = $head; NewHead = $newHead; OldLauncherHash = $oldLauncher }
+}
+# The re-run launcher does not update again. Under the lock it only re-checks that the checkout is exactly what the
+# first launcher produced, and stops on any difference.
+function Confirm-RelaunchedCheckout {
+  $pin = Get-UatPin
+  $head = Assert-GitSafeState $pin
+  if ($head -ne $RelaunchToSha) { Fail "Bản launcher mới thấy HEAD $($head.Substring(0, 7)) khác commit đã cập nhật $($RelaunchToSha.Substring(0, 7)); dừng, không chạy tiếp." 'RELAUNCH_SHA_MISMATCH' }
+  if ((File-HashOrEmpty $script:LauncherPath) -ne $RelaunchLauncherHash) { Fail 'Mã launcher trên đĩa khác bản đã cập nhật; dừng, không chạy tiếp.' 'RELAUNCH_LAUNCHER_MISMATCH' }
+  $script:UpdateResult = [pscustomobject]@{ Mode = 'relaunch'; Moved = $false; OldHead = $RelaunchFromSha; NewHead = $head; OldLauncherHash = '' }
+  Write-Ok "Bản launcher mới đã nhận khóa và xác minh checkout $($head.Substring(0, 7)); tiếp tục các bước còn lại"
+}
 function Update-Launcher {
-  Ensure-Dirs; Assert-Tools; $null = Assert-LocalEnv
-  Invoke-InRepo {
-    $gitDir = Capture 'git.exe' @('rev-parse','--git-dir')
-    if ($gitDir -eq $null) { Fail 'Không phải Git repo.' 'NOT_A_GIT_REPO' }
-    foreach ($marker in @('MERGE_HEAD','rebase-merge','rebase-apply','CHERRY_PICK_HEAD','REVERT_HEAD')) { if (Test-Path (Join-Path $gitDir $marker)) { Fail "Git operation đang dở: $marker" 'GIT_OPERATION_IN_PROGRESS' } }
-    if ((Capture 'git.exe' @('symbolic-ref','--short','HEAD')) -eq $null) { Fail 'Đang detached HEAD; hãy chuyển về một branch có upstream.' 'DETACHED_HEAD' }
-    if ((Capture 'git.exe' @('rev-parse','--abbrev-ref','--symbolic-full-name','@{u}')) -eq $null) { Fail 'Branch chưa có upstream.' 'NO_UPSTREAM' }
-    if ((Capture 'git.exe' @('status','--porcelain','--untracked-files=no'))) { Fail 'Có thay đổi tracked chưa commit; launcher không tự stash.' 'DIRTY_TRACKED' }
-    $oldMigrations = @(Get-MigrationFiles)
-    Run 'git.exe' @('fetch','--prune','origin')
-    $upstream = Capture 'git.exe' @('rev-parse','@{u}')
-    & git.exe merge-base --is-ancestor HEAD $upstream; if ($LASTEXITCODE -ne 0) { Fail 'Không thể fast-forward tới upstream (lịch sử local đã rẽ nhánh hoặc đi trước).' 'NON_FAST_FORWARD' }
-    $incoming = @("$(Capture 'git.exe' @('-c','core.quotepath=false','diff','--name-only','HEAD',$upstream))" -split "`r?`n")
-    $untracked = @("$(Capture 'git.exe' @('-c','core.quotepath=false','ls-files','--others','--exclude-standard'))" -split "`r?`n")
-    if (@($incoming | Where-Object { $_ -and $_ -in $untracked }).Count) { Fail 'File untracked sẽ bị upstream ghi đè; dừng an toàn, không xóa hay di chuyển file.' 'UNTRACKED_COLLISION' }
-    Run 'git.exe' @('merge','--ff-only','@{u}')
+  Use-LaunchLock 'update' {
+    Ensure-Dirs; Assert-Tools; $null = Assert-LocalEnv
+    $script:UpdateResult = $null
+    $gitEnvironment = @{ GIT_DIR = $null; GIT_WORK_TREE = $null; GIT_INDEX_FILE = $null }
+    Invoke-InRepo {
+      Invoke-WithEnv $gitEnvironment {
+        if ($script:IsRelaunched) { Confirm-RelaunchedCheckout } else { Invoke-GitSourceUpdate }
+      }
+    }
+    $result = $script:UpdateResult
+    if (!$result) { Fail 'Cập nhật không trả kết quả; dừng an toàn.' 'GIT_UPDATE_FAILED' }
+    if ($result.Moved) {
+      $newLauncher = File-HashOrEmpty $script:LauncherPath
+      if ($newLauncher -ne $result.OldLauncherHash) {
+        Write-Info 'Bản cập nhật thay đổi chính launcher; chạy lại bước này bằng bản mới (đúng một lần).'
+        $code = Invoke-LauncherRelaunch 'Update' $result.OldHead $result.NewHead $newLauncher
+        if ($code -ne 0) { Fail "Bản launcher mới kết thúc với lỗi (exit $code); xem thông báo ngay phía trên." 'RELAUNCH_CHILD_FAILED' }
+        Write-WarnLine 'Launcher đã được cập nhật và bản mới đã chạy lại bước Update. Tiến trình này dùng mã cũ nên sẽ không chạy thêm lệnh nào; nếu đang ở menu, chọn 0 rồi mở lại launcher.'
+        return
+      }
+    }
     # F01: always let Ensure-Dependencies decide from the recorded lock hash. A machine that already has
     # node_modules but no recorded state (first run) must not report success without recording one.
     Ensure-Dependencies
-    $newMigrations = @(Get-MigrationFiles | Where-Object { $oldMigrations -notcontains $_ })
-    if ($newMigrations.Count) { Write-WarnLine "Bản cập nhật có $($newMigrations.Count) migration mới. Start sẽ kiểm tra DB DEV và hỏi trước khi áp dụng." }
+    $script:AddedMigrations = 0
+    if ($result.OldHead -ne $result.NewHead) { Invoke-InRepo { $script:AddedMigrations = Get-AddedMigrationCount $result.OldHead $result.NewHead } }
+    if ($null -eq $script:AddedMigrations) { Write-WarnLine 'MIGRATION_COUNT_UNREADABLE: không đọc được số migration mới của bản cập nhật (git diff lỗi). Không có nghĩa là 0; Start vẫn kiểm tra DB DEV và hỏi trước khi áp dụng.' }
+    elseif ($script:AddedMigrations -gt 0) { Write-WarnLine "Bản cập nhật có $($script:AddedMigrations) migration mới. Start sẽ kiểm tra DB DEV và hỏi trước khi áp dụng." }
+    if ($result.Mode -eq 'UAT') { Write-Ok 'Kiểm tra checkout UAT hoàn tất' }
+    elseif ($result.Moved -or $result.Mode -eq 'relaunch') { Write-Ok 'Cập nhật fast-forward hoàn tất' }
+    else { Write-Ok 'Cập nhật hoàn tất: đã ở commit mới nhất của origin/main' }
   }
-  Write-Ok 'Cập nhật fast-forward hoàn tất'
 }
-function Test-Launcher {
+function Test-Launcher { Use-LaunchLock 'test' { Test-LauncherLocked } }
+function Test-LauncherLocked {
   Ensure-Dirs; Assert-Tools; $null = Assert-LocalEnv
   Compose @('up','-d','db-test'); Wait-ContainerHealthy 'ship11-db-test'
   # G01: variables that CI uses to reach extra fixture databases (or to authenticate psql) must never be
@@ -406,7 +813,8 @@ function Test-Launcher {
   if ($result -ne 'PASS') { Fail "Test FAIL; xem log trong $script:Logs." 'TEST_FAILED' }
   Write-Ok "Toàn bộ local test PASS cho commit $sha"
 }
-function Stop-Launcher {
+function Stop-Launcher { Use-LaunchLock 'stop' { Stop-LauncherLocked } }
+function Stop-LauncherLocked {
   Ensure-Dirs
   $p = Get-OwnedBackendProcess
   if ($p) { Stop-Process -Id $p.Id; $p.WaitForExit(10000) | Out-Null; Write-Ok 'Đã dừng backend do launcher quản lý' }
@@ -438,6 +846,7 @@ function Status-Launcher {
   $dirty = [bool](Capture 'git.exe' @('-C',$script:Repo,'status','--porcelain'))
   $aheadBehind = if ($up) { "$(Capture 'git.exe' @('-C',$script:Repo,'rev-list','--left-right','--count','HEAD...@{u}'))" -replace '\s+','/' } else { 'N/A' }
   Write-Host "Git: branch=$branch upstream=$up ahead/behind=$aheadBehind commit=$head dirty=$dirty"
+  Write-Host "Chế độ cập nhật: $(Get-UpdateModeText $head)"
   foreach ($pair in @(@('Node','node.exe','--version'),@('npm','npm.cmd','--version'),@('Docker','docker.exe','--version'))) { if (Command-Exists $pair[1]) { Write-Host "$($pair[0]): $(Capture $pair[1] @($pair[2]))" } else { Write-Host "$($pair[0]): không có" } }
   $ps = if (Command-Exists 'docker.exe') { Capture 'docker.exe' @('compose','--env-file',$script:EnvFile,'-f',$script:Compose,'ps') } else { $null }
   if ($ps -eq $null) { Write-Host 'Database: không đọc được — Docker chưa chạy hoặc thiếu .env' } else { Write-Host $ps }
@@ -455,19 +864,21 @@ function Install-Shortcut {
 # Applications (M00.01): entry for the three PC surfaces behind 11Ship-Admin / -Food / -Ship
 # ---------------------------------------------------------------------------------------------
 # The wrappers only choose the app; everything else is shared. This package ships the entry point and its
-# refusal path, not the launch sequence: opening an app needs the shared lock (M00.02), artifact/process
-# identity (M00.03) and a real local server for the surface (M00.05 and later). Until each of those exists the
-# launcher says so and exits with a non-zero code, BEFORE it updates code, starts a database or backend, or
-# opens a browser. A design preview or any answer on a port is not the application (design M00 v2.1, R05/R08).
+# refusal path, not the launch sequence: opening an app needs the shared lock (M00.02, now in place), artifact/process
+# identity (M00.03) and a real local server for the surface (M00.05 and later). While any of those is missing the
+# launcher says so and exits with a non-zero code, BEFORE it takes the lock, updates code, starts a database or backend,
+# or opens a browser. A design preview or any answer on a port is not the application (design M00 v2.1, R05/R08).
 # Runtime = repo-relative entry of the real local server for that surface; $null means none exists yet.
 $script:AppCatalog = [ordered]@{
   Admin = [pscustomobject]@{ Name = 'Web Admin';             Url = 'https://localhost:8443'; Runtime = 'scripts/admin-web-dev.mjs'; Package = 'M00.05/M00.08' }
   Food  = [pscustomobject]@{ Name = '11Food (khách + quán)'; Url = 'https://localhost:8444'; Runtime = $null;                        Package = 'M00.05/M00.06' }
   Ship  = [pscustomobject]@{ Name = '11Ship (xế)';           Url = 'https://localhost:8445'; Runtime = $null;                        Package = 'M00.05/M00.07' }
 }
-# What the shared orchestrator guarantees today. A later package flips its entry to Ready when it really exists.
+# What the shared orchestrator guarantees today. A package flips its entry to Ready only when it is integrated and verified.
+# ExclusiveLock (M00.02): Start, Update, Test, Stop, dependency and migration steps all run under Use-LaunchLock; the behaviour
+# suite proves that from inside each step. ArtifactIdentity stays not ready until M00.03.
 $script:OrchestratorCapabilities = [ordered]@{
-  ExclusiveLock    = [pscustomobject]@{ Ready = $false; Code = 'LAUNCH_LOCK_MISSING';       Package = 'M00.02'; Text = 'chưa có khóa độc quyền dùng chung cho update/build/migration/process' }
+  ExclusiveLock    = [pscustomobject]@{ Ready = $true;  Code = 'LAUNCH_LOCK_MISSING';       Package = 'M00.02'; Text = 'chưa có khóa độc quyền dùng chung cho update/build/migration/process' }
   ArtifactIdentity = [pscustomobject]@{ Ready = $false; Code = 'ARTIFACT_IDENTITY_MISSING'; Package = 'M00.03'; Text = 'chưa có định danh artifact/process để xác minh đúng bản đang chạy' }
 }
 function Get-AppLaunchBlockers([string]$AppId) {
@@ -496,6 +907,8 @@ function Open-AppLauncher([string]$AppId) {
   Fail "$($entry.Name): các điều kiện đã khai báo sẵn sàng nhưng trình tự mở ứng dụng chưa được triển khai." 'APP_LAUNCH_NOT_IMPLEMENTED'
 }
 function Invoke-LauncherCommand([string]$Name) {
+  # After a hand-over this process holds OLD launcher code: it refuses every command, in the menu as well.
+  if ($script:LauncherStale) { Fail $script:StaleMessage 'LAUNCHER_RELOAD_REQUIRED' }
   switch ($Name) { 'Start' { Start-Launcher } 'Update' { Update-Launcher } 'Test' { Test-Launcher } 'Stop' { Stop-Launcher } 'Status' { Status-Launcher } 'InstallShortcut' { Install-Shortcut } 'App' { Open-AppLauncher $App } default { Menu } }
 }
 function Write-Failure($ErrorRecord) { Write-Host (Protect-Text "$($ErrorRecord.Exception.Message)" (Get-KnownSecrets)) -ForegroundColor Red }
@@ -572,10 +985,21 @@ function Write-RunRecord([string]$Name,[int]$ExitCode,$PauseState) {
   } catch { }
 }
 
-if ($MyInvocation.InvocationName -ne '.') {
+# The entry point is a function so the launcher that is re-run after an Update (and the tests) use the very same code path.
+function Invoke-LauncherMain {
+  $script:IsRelaunched = [bool]$RelaunchToken
+  $script:TakeoverPending = $script:IsRelaunched
   $exitCode = 0
-  try { Invoke-LauncherCommand $Command } catch { Write-Failure $_; $exitCode = 1 }
+  try {
+    if ($script:IsRelaunched) { Assert-RelaunchParameters }
+    Invoke-LauncherCommand $Command
+  } catch { Write-Failure $_; $exitCode = 1 }
+  # A new launcher that failed reports its own code; the first launcher exits with that same code.
+  if ($exitCode -ne 0 -and $script:RelaunchExitCode -ne 0) { $exitCode = $script:RelaunchExitCode }
   if ($Command -ne 'Menu') {
+    # A launcher started by a hand-over only continues the work: the first launcher prints the result, decides the pause
+    # (it is the one a double-click started) and writes the run record.
+    if ($script:IsRelaunched) { exit $exitCode }
     $label = if ($Command -eq 'App') { "App $App".Trim() } else { $Command }
     if ($exitCode -eq 0) { Write-Host "Kết quả ${label}: THÀNH CÔNG (exit 0)" -ForegroundColor Green }
     else { Write-Host "Kết quả ${label}: THẤT BẠI (exit $exitCode)" -ForegroundColor Red }
@@ -585,3 +1009,5 @@ if ($MyInvocation.InvocationName -ne '.') {
   }
   exit $exitCode
 }
+
+if ($MyInvocation.InvocationName -ne '.') { Invoke-LauncherMain }
