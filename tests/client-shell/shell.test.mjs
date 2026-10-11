@@ -195,6 +195,8 @@ describe('11Food live build', () => {
     const text = readFileSync(join(live, 'js', 'food-web', 'src', 'screens.js'), 'utf8');
     const labels = [...text.matchAll(/label: '([^']+)', icon: '[a-z]+', href: '\//g)].map((m) => m[1]);
     assert.deepEqual(labels, ['Trang chủ', 'Tìm kiếm', 'Đơn hàng', 'Tài khoản']);
+  });
+});
 
 describe('C08: dirty form, Back and navigation', () => {
   const fakeInput = (type, value = '', checked = false) => {
