@@ -237,3 +237,15 @@ export function breadcrumb(route: Route): readonly string[] {
 export function allLeaves(): readonly MenuLeaf[] {
   return MENU.flatMap((group) => group.items.flatMap((item) => [item, ...(item.children ?? [])]));
 }
+
+/**
+ * The sidebar has two separate modes: the desktop rail (a saved choice, 64 px, icons only) and the phone/tablet drawer (always
+ * the full menu, with its sub-entries, opened by the top bar). The saved "collapsed" choice only applies to the desktop rail:
+ * in drawer mode the menu is never compact, and the choice comes back untouched when the window is wide again.
+ */
+export function compactSidebar(collapsedChoice: boolean, drawerMode: boolean): boolean {
+  return collapsedChoice && !drawerMode;
+}
+
+/** Width at which the sidebar becomes a drawer. Keep in step with the `max-width` media query of styles.css. */
+export const DRAWER_QUERY = '(max-width: 900px)';

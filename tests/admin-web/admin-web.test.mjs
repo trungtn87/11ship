@@ -66,6 +66,25 @@ describe('menu by permission', () => {
   });
 });
 
+describe('sidebar modes (F1)', () => {
+  it('the collapsed rail is desktop-only: the drawer is never compact, and the choice survives a round trip', async () => {
+    const m = await load(real, 'core/menu.js');
+    assert.equal(m.compactSidebar(true, false), true, 'desktop + collapsed -> rail');
+    assert.equal(m.compactSidebar(true, true), false, 'phone + collapsed choice -> full drawer');
+    assert.equal(m.compactSidebar(false, true), false);
+    assert.equal(m.compactSidebar(true, false), true, 'back on desktop the rail returns');
+  });
+  it('the drawer breakpoint of the script matches the stylesheet', async () => {
+    const m = await load(real, 'core/menu.js');
+    const css = readFileSync(join(real, 'styles.css'), 'utf8');
+    assert.equal(m.DRAWER_QUERY, '(max-width: 900px)');
+    assert.ok(css.includes('@media (max-width: 900px)'));
+    const layout = readFileSync(join(real, 'js', 'dom', 'shell-layout.js'), 'utf8');
+    assert.match(layout, /compactSidebar\(collapsed/);
+    assert.match(layout, /addEventListener\('change'/);
+  });
+});
+
 describe('accounts source', () => {
   it('is not wired: no screen can report data or success', async () => {
     const a = await load(real, 'core/accounts.js');
@@ -98,12 +117,19 @@ describe('design preview', () => {
     assert.ok(existsSync(join(design, 'design.html')));
     assert.ok(readFileSync(join(design, 'js', 'design', 'viewer.js'), 'utf8').includes('Dữ liệu minh họa'));
   });
-  it('lists the catalog screens with their codes', async () => {
-    const s = await load(design, 'design/screens.js').catch(() => undefined);
-    // screens.js touches the DOM only when rendering; importing the list must work in Node.
-    if (s === undefined) return;
-    const codes = s.SCREENS.map((screen) => screen.code);
-    for (const code of ['D00', 'D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08', 'D09', 'D81', 'D86', 'D87', 'D88', 'D89']) assert.ok(codes.includes(code), code);
+  it('lists every catalog screen with its code (an import failure FAILS this test)', async () => {
+    const screens = await load(design, 'design/screens.js');
+    const byCode = new Map(screens.SCREENS.map((screen) => [screen.code, screen]));
+    const expected = ['D00', 'D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08', 'D09', 'D81', 'D86', 'D87', 'D88', 'D89', 'C01–C10'];
+    for (const code of expected) {
+      assert.ok(byCode.has(code), `missing screen code ${code}`);
+    }
+    assert.equal(byCode.get('D89').id, 'administrators');
+    assert.match(byCode.get('D89').title, /Quản trị viên/);
+    assert.equal(byCode.get('D89').group, 'Tài khoản');
+    for (const screen of screens.SCREENS) {
+      assert.ok(screen.id && screen.title && screen.variants.length > 0, `incomplete screen ${screen.code}`);
+    }
   });
   it('is served read-only (POST refused) with a CSP that forbids network calls', async () => {
     const server = makeServer(design);

@@ -1358,10 +1358,9 @@ select {
   background: rgb(26 26 30 / 0.5);
 }
 
-/* Narrow screens: the sidebar is a drawer opened by the top bar's menu button; the collapsed rail does not apply. */
+/* Narrow screens: the sidebar is a drawer opened by the top bar's menu button; the collapsed rail is desktop-only (the script never sets .shell-collapsed in drawer mode). */
 @media (max-width: 900px) {
-  .shell,
-  .shell-collapsed {
+  .shell {
     --sidebar-width: 280px;
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1396,52 +1395,6 @@ select {
 
   .shell-main {
     padding: 16px 16px 40px;
-  }
-
-  .shell-collapsed .brand-name,
-  .shell-collapsed .side-label,
-  .shell-collapsed .side-badge,
-  .shell-collapsed .side-heading,
-  .shell-collapsed .side-chevron,
-  .shell-collapsed .side-account {
-    display: revert;
-  }
-
-  .shell-collapsed .side-sub:not([hidden]) {
-    display: block;
-  }
-
-  .shell-collapsed .side-rule {
-    display: none;
-  }
-
-  .shell-collapsed .side-link {
-    justify-content: flex-start;
-    padding: 0 12px;
-  }
-
-  .shell-collapsed .side-child {
-    padding-left: 48px;
-  }
-
-  .shell-collapsed .side-head {
-    flex-direction: row;
-    justify-content: space-between;
-    padding: 0 12px 0 20px;
-    min-height: 64px;
-  }
-
-  .shell-collapsed .side-foot {
-    flex-direction: row;
-    justify-content: flex-start;
-    padding: 12px 12px 12px 16px;
-  }
-
-  .shell-collapsed .account-menu {
-    left: 12px;
-    right: 12px;
-    bottom: calc(100% + 6px);
-    width: auto;
   }
 
   .shellbar-role {

@@ -1,5 +1,5 @@
 import { AdminRole } from '../core/api.js';
-import { breadcrumb, Grants, MenuGroup, visibleMenu } from '../core/menu.js';
+import { breadcrumb, compactSidebar, DRAWER_QUERY, Grants, MenuGroup, visibleMenu } from '../core/menu.js';
 import { formatRoute, Route } from '../core/routes.js';
 import { brand, h, message } from './dom.js';
 import { icon } from './icons.js';
@@ -23,6 +23,14 @@ export interface ShellOptions {
   readonly store?: KeyValueStore;
   /** Preview only: start collapsed or with the drawer open. */
   readonly initial?: { readonly collapsed?: boolean; readonly drawerOpen?: boolean; readonly accountMenuOpen?: boolean };
+  /** Tells whether the window is narrow (drawer mode). Default: the browser's `matchMedia(DRAWER_QUERY)`. */
+  readonly viewport?: DrawerViewport;
+}
+
+export interface DrawerViewport {
+  readonly matches: boolean;
+  addEventListener(type: 'change', listener: () => void): void;
+  removeEventListener(type: 'change', listener: () => void): void;
 }
 
 export interface ShellState {
@@ -73,6 +81,9 @@ export function buildShell(options: ShellOptions): ShellLayout {
   let accountOpen = options.initial?.accountMenuOpen ?? false;
   const expanded = new Set<string>(['users']);
   let last: ShellState | undefined;
+  const viewport: DrawerViewport | undefined = options.viewport ?? (typeof window.matchMedia === 'function' ? window.matchMedia(DRAWER_QUERY) : undefined);
+  // The rail (collapsed) is a desktop-only mode; in drawer mode the menu is always shown in full.
+  const compact = (): boolean => compactSidebar(collapsed, viewport?.matches === true);
 
   const root = h('div', { class: 'shell' });
   const nav = h('nav', { class: 'side-nav', id: 'side-nav', 'aria-label': 'Chức năng quản trị' });
@@ -123,7 +134,7 @@ export function buildShell(options: ShellOptions): ShellLayout {
     accountButton.setAttribute('aria-expanded', 'false');
   };
   const apply = (): void => {
-    root.classList.toggle('shell-collapsed', collapsed);
+    root.classList.toggle('shell-collapsed', compact());
     root.classList.toggle('shell-drawer-open', drawerOpen);
     toggle.setAttribute('aria-expanded', String(!collapsed));
     toggle.setAttribute('aria-label', collapsed ? 'Mở rộng menu' : 'Thu gọn menu');
@@ -143,7 +154,7 @@ export function buildShell(options: ShellOptions): ShellLayout {
     renderMenu(nav, {
       groups,
       route: state.route,
-      collapsed,
+      collapsed: compact(),
       expanded,
       navigate: (route) => {
         drawerOpen = false;
@@ -210,6 +221,14 @@ export function buildShell(options: ShellOptions): ShellLayout {
     }
   };
   document.addEventListener('click', outside);
+  // Crossing the breakpoint switches mode: the drawer starts closed on the way in and out, and the saved rail choice is kept.
+  const onViewport = (): void => {
+    drawerOpen = false;
+    closeAccountMenu();
+    apply();
+    redraw();
+  };
+  viewport?.addEventListener('change', onViewport);
   // Actions that are only announced never run.
   root.addEventListener('click', (event) => {
     if (event.target instanceof Element && event.target.closest('[aria-disabled="true"]') !== null) {
@@ -229,7 +248,10 @@ export function buildShell(options: ShellOptions): ShellLayout {
       drawerOpen = open;
       apply();
     },
-    dispose: () => document.removeEventListener('click', outside),
+    dispose: () => {
+      document.removeEventListener('click', outside);
+      viewport?.removeEventListener('change', onViewport);
+    },
     render: (state) => {
       last = state;
       const account = accountOf(state.role);
