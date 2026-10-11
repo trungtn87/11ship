@@ -584,8 +584,10 @@ describe('M01.03 — client register', () => {
     it('legacy register still returns a roleless session and the legacy wire shape; login/me work for a new-route user too', async () => {
       const legacy = await registerUser(app);
       const data = dataOf(legacy.response);
-      expect(Object.keys(data)).not.toContain('available_roles');
-      expect(Object.keys(data)).not.toContain('profile');
+      // The legacy wire shape, byte for byte in its key set: nothing of the new identity block leaks into it.
+      expect(Object.keys(data).sort()).toEqual(['access_token', 'active_role', 'available_roles', 'onboarding_required', 'phone_normalized', 'user_id']);
+      expect(data.active_role).toBeNull();
+      expect(data.available_roles).toEqual([]);
       expect(await countRows(app.pool, 'SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [legacy.userId])).toBe(0);
       expect(await countRows(app.pool, 'SELECT 1 FROM app.sessions WHERE user_id = $1::uuid AND active_role IS NULL', [legacy.userId])).toBe(1);
       expect(await countRows(app.pool, 'SELECT 1 FROM app.user_consents WHERE user_id = $1::uuid', [legacy.userId])).toBe(0);
