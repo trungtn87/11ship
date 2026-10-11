@@ -1214,6 +1214,14 @@ try {
       $seamNode.WaitForExit(15000) | Out-Null
       Check ($seamNode.HasExited -and !$intruder.HasExited) 'real: Stop ended exactly the recorded node process and no other node process'
       Check (!(Test-Path -LiteralPath $script:StateFile)) 'real: the record was removed after the stop'
+      # F2 on the real OS: a stop names the verified start time; another start time (a recycled PID) is never terminated.
+      Check ((Stop-OwnedProcess $intruder.Id '2001-01-01T00:00:00.0000000Z') -ceq 'REPLACED' -and !$intruder.HasExited) 'real F2: a PID whose start time differs from the verified one is not terminated (REPLACED)'
+      Check ((Stop-OwnedProcess $seamNode.Id $details.StartUtc) -ceq 'STOPPED') 'real F2: a process that already exited (handle still open) is reported as stopped, nothing else is touched'
+      Check ((Stop-OwnedProcess 2147480000 $details.StartUtc) -ceq 'NOT_FOUND') 'real F2: a PID that does not exist is NOT_FOUND'
+      Check ((Stop-OwnedProcess $intruder.Id ([DateTime]::UtcNow.AddYears(-30).ToString('o'))) -ceq 'REPLACED' -and !$intruder.HasExited) 'real F2: still alive after a wrong start time'
+      Check ((Stop-OwnedProcess $intruder.Id $intruder.StartTime.ToUniversalTime().ToString('o')) -ceq 'STOPPED') 'real F2: the verified start time is accepted and the process is terminated'
+      $intruder.WaitForExit(15000) | Out-Null
+      Check ($intruder.HasExited) 'real F2: and it has exited'
     } finally {
       $env:SEAM_PORT = $null
       Stop-Quietly $seamNode; Stop-Quietly $intruder

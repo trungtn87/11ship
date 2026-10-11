@@ -751,8 +751,8 @@ function Get-ScriptArgument($Arguments) {
   }
   return ''
 }
-# $null = no such process. Inspectable = $false = the process exists but cannot be inspected the way the launcher's own
-# process (same user) always can, so it is not ours. Throws when the operating system cannot answer at all.
+# $null = no such process. Inspectable = $false = the process EXISTS but its identity cannot be read (start time, path or
+# command line): an unknown identity, which is neither "ours" nor proof that anything ended. Throws when the OS cannot answer at all.
 function Get-ProcessDetails([int]$ProcessId) {
   if (!(Test-IsWindows)) { throw 'Kiểm tra process chỉ được hỗ trợ trên Windows.' }
   $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
@@ -788,10 +788,59 @@ function Get-PortListeners([int]$Port) {
   }
   return [pscustomobject]@{ Readable = $true; Items = @($items.ToArray()); Detail = '' }
 }
-# Stops exactly this PID. The caller has proven it is the launcher's own process; nothing here chooses a process.
-function Stop-OwnedProcess([int]$ProcessId) {
-  try { Stop-Process -Id $ProcessId -ErrorAction Stop }
-  catch { if (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) { throw } }
+# Windows only: stop a process through ONE open handle. While the handle is open the process object (and so its PID) cannot be
+# recycled, so the start time that is checked and the process that is terminated are the same instance.
+function Initialize-ProcessNative {
+  if ('ShipLauncher.ProcessNative' -as [type]) { return }
+  Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace ShipLauncher {
+  public static class ProcessNative {
+    [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr OpenProcess(uint access, bool inherit, int processId);
+    [DllImport("kernel32.dll", SetLastError = true)] public static extern bool GetProcessTimes(IntPtr handle, out long creation, out long exit, out long kernel, out long user);
+    [DllImport("kernel32.dll", SetLastError = true)] public static extern bool TerminateProcess(IntPtr handle, uint exitCode);
+    [DllImport("kernel32.dll")] public static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+    [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr handle);
+  }
+}
+'@
+}
+# Ends the process behind $ProcessId ONLY IF its start time is $ExpectedStartUtc (the instance the caller verified).
+# Returns 'STOPPED' (the process has exited), 'NOT_FOUND' (no such process) or 'REPLACED' (the PID belongs to a process with
+# another start time: nothing was touched). Throws when the process cannot be ended.
+function Stop-OwnedProcess([int]$ProcessId,[string]$ExpectedStartUtc) {
+  if (!(Test-IsWindows)) { throw 'Dừng process chỉ được hỗ trợ trên Windows.' }
+  $expected = ConvertTo-UtcText $ExpectedStartUtc
+  if (!$expected) { throw 'Thiếu giờ khởi động đã xác minh của process; không dừng theo PID đơn lẻ.' }
+  Initialize-ProcessNative
+  # PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE
+  $handle = [ShipLauncher.ProcessNative]::OpenProcess([uint32]0x00101001, $false, $ProcessId)
+  if ($handle -eq [IntPtr]::Zero) {
+    $code = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    if ($code -eq 87) { return 'NOT_FOUND' }
+    throw "OpenProcess lỗi (mã Win32 $code)"
+  }
+  try {
+    $creation = [long]0; $exited = [long]0; $kernel = [long]0; $user = [long]0
+    if (![ShipLauncher.ProcessNative]::GetProcessTimes($handle, [ref]$creation, [ref]$exited, [ref]$kernel, [ref]$user)) {
+      throw "GetProcessTimes lỗi (mã Win32 $([Runtime.InteropServices.Marshal]::GetLastWin32Error()))"
+    }
+    if ([DateTime]::FromFileTimeUtc($creation).ToString('o') -cne $expected) { return 'REPLACED' }
+    if (![ShipLauncher.ProcessNative]::TerminateProcess($handle, [uint32]1)) {
+      $code = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+      # Already exited (the handle still exists): that is the outcome we want.
+      if ([ShipLauncher.ProcessNative]::WaitForSingleObject($handle, [uint32]0) -ne 0) { throw "TerminateProcess lỗi (mã Win32 $code)" }
+      return 'STOPPED'
+    }
+    if ([ShipLauncher.ProcessNative]::WaitForSingleObject($handle, [uint32]10000) -ne 0) { throw 'process chưa thoát sau lệnh dừng' }
+    return 'STOPPED'
+  } finally { [void][ShipLauncher.ProcessNative]::CloseHandle($handle) }
+}
+# Ends a process that THIS launcher just created, through the object Start-Process returned. That object keeps its own handle
+# to the original process, so it can never end whoever holds the PID later. Never looks anything up by PID.
+function Stop-StartedChild($Child) {
+  try { if ($Child -and !$Child.HasExited) { $Child.Kill() } } catch { }
 }
 
 # ---- ownership: who is behind the registry and who is behind the port ----
@@ -822,7 +871,8 @@ function Get-TargetOwnership($Target) {
   try { $details = Get-ProcessDetails ([int]$record.pid) }
   catch { return (New-Ownership 'UNVERIFIED' "không kiểm tra được process PID $($record.pid) ($($_.Exception.Message))" $record $null) }
   if ($null -eq $details) { return (New-Ownership 'STALE' "process PID $($record.pid) đã kết thúc" $record $null) }
-  if (!$details.Inspectable) { return (New-Ownership 'STALE' "PID $($record.pid) hiện thuộc một process khác (không kiểm tra được như process của launcher)" $record $details) }
+  # The PID exists but its identity cannot be read: unknown, so neither "ours" nor "gone" (the registry must be kept).
+  if (!$details.Inspectable) { return (New-Ownership 'UNVERIFIED' "process PID $($record.pid) đang tồn tại nhưng không đọc được định danh (giờ khởi động, đường dẫn, dòng lệnh)" $record $details) }
   if ((ConvertTo-UtcText $details.StartUtc) -cne $record.started_utc) { return (New-Ownership 'STALE' "PID $($record.pid) đã được dùng lại bởi process khác (giờ khởi động khác bản ghi)" $record $details) }
   if (!(Test-SamePath $details.Executable $record.executable) -or !(Test-ProcessMatchesTarget $details $Target)) {
     return (New-Ownership 'UNVERIFIED' "process PID $($record.pid) có đúng giờ khởi động nhưng không phải node chạy script build của checkout này" $record $details)
@@ -879,8 +929,10 @@ function Wait-ProcessGone($Record,[int]$Seconds) {
     $known = $true
     try { $details = Get-ProcessDetails ([int]$Record.pid) } catch { $known = $false }
     if ($known) {
-      # Gone, or the PID now belongs to another process (different start time): in both cases the recorded process has ended.
-      if ($null -eq $details -or !$details.Inspectable -or (ConvertTo-UtcText $details.StartUtc) -cne $Record.started_utc) { return $true }
+      # Gone (absent), or the PID now belongs to another process (a start time that was READ and differs): only these two
+      # observations prove the recorded process ended. A process that exists but cannot be inspected proves nothing.
+      if ($null -eq $details) { return $true }
+      if ($details.Inspectable -and (ConvertTo-UtcText $details.StartUtc) -cne $Record.started_utc) { return $true }
     }
     Start-Sleep -Milliseconds 100
   } while ([DateTime]::UtcNow -lt $until)
@@ -898,8 +950,20 @@ function Stop-TargetProcess($Target,$Ownership) {
     return
   }
   if ($again.Status -ne 'OWNED' -or [int]$again.Registry.pid -ne [int]$record.pid) { Fail (Get-UnverifiedText $Target $again 'dừng process') 'PROCESS_IDENTITY_UNVERIFIED' }
-  try { Stop-OwnedProcess ([int]$record.pid) }
+  # The stop names the start time that was just verified, so it can only end that very instance.
+  $outcome = ''
+  try { $outcome = "$(Stop-OwnedProcess ([int]$record.pid) $record.started_utc)" }
   catch { Fail "Không dừng được backend PID $($record.pid): $($_.Exception.Message). Bản ghi được giữ nguyên." 'PROCESS_STOP_FAILED' }
+  if ($outcome -eq 'NOT_FOUND' -or $outcome -eq 'REPLACED') {
+    # Nothing was ended by this call. Only a fresh observation of absence / another start time counts as "it ended".
+    $after = Get-TargetOwnership $Target
+    if ($after.Status -eq 'NONE' -or $after.Status -eq 'STALE') {
+      Write-Info "Backend PID $($record.pid) đã kết thúc (PID không còn thuộc process đã ghi); không dừng process nào, chỉ dọn bản ghi."
+      Remove-TargetRegistry $Target
+      return
+    }
+    Fail "Không xác nhận được backend PID $($record.pid) đã kết thúc ($($after.Text)). Launcher không dừng process nào khác; bản ghi được giữ nguyên." 'PROCESS_STOP_FAILED'
+  }
   if (!(Wait-ProcessGone $record $script:ProcessStopSeconds)) {
     Fail "Backend PID $($record.pid) vẫn chạy sau $($script:ProcessStopSeconds) giây. Launcher không dùng cách mạnh hơn và không đụng process khác; bản ghi được giữ nguyên." 'PROCESS_STOP_FAILED'
   }
@@ -954,7 +1018,10 @@ function Get-OwnedBackendProcess {
 # names exactly which build it runs; the working folder is still the repository for .env.
 function Get-BackendStartArguments { return @('--env-file-if-exists=.env', (ConvertTo-QuotedArgument $script:BackendScript)) }
 function Start-BackendProcess([string]$Stdout,[string]$Stderr) {
-  return Start-Process -FilePath 'node.exe' -ArgumentList (Get-BackendStartArguments) -WorkingDirectory $script:Repo -RedirectStandardOutput $Stdout -RedirectStandardError $Stderr -PassThru -WindowStyle Hidden
+  $child = Start-Process -FilePath 'node.exe' -ArgumentList (Get-BackendStartArguments) -WorkingDirectory $script:Repo -RedirectStandardOutput $Stdout -RedirectStandardError $Stderr -PassThru -WindowStyle Hidden
+  # Cache the OS handle now: from here on this object refers to exactly this process, also after it exits and its PID is reused.
+  if ($child) { $null = $child.Handle }
+  return $child
 }
 # Ready means: the process we started is alive with the same start time, THE PORT BELONGS TO IT (not to someone who also
 # answers), and both health endpoints return their agreed body.
@@ -1037,21 +1104,27 @@ function Start-NewBackendProcess($Target,$Manifest) {
   catch { Fail "Không khởi động được backend: $($_.Exception.Message)" 'BACKEND_START_FAILED' }
   if (!$process -or !$process.Id) { Fail 'Không khởi động được backend (không có process trả về).' 'BACKEND_START_FAILED' }
   $startedProcessId = [int]$process.Id
-  # The process was created by this launcher a moment ago, so it is certain to be ours; if it cannot be proven as the
-  # expected node + script it is stopped (by that PID) instead of being left running unrecorded.
+  # The process was created by this launcher a moment ago. Its OWN start time comes from the object Start-Process returned (it
+  # holds a handle to the original process). The lookup by PID below only counts when it reports that same start time: if the
+  # child already exited and Windows gave its PID to another process, that process is not ours and is never touched.
+  # Every cleanup goes through $process itself (Stop-StartedChild), never through a PID.
+  $ownStartUtc = $null
+  try { $ownStartUtc = ConvertTo-UtcText $process.StartTime.ToUniversalTime().ToString('o') } catch { $ownStartUtc = $null }
   $details = $null
   try { $details = Get-ProcessDetails $startedProcessId } catch { $details = $null }
   $problem = ''
-  if (!$details -or !$details.Inspectable) { $problem = 'process vừa khởi động đã thoát hoặc không kiểm tra được' }
+  if (!$ownStartUtc) { $problem = 'không đọc được giờ khởi động của process vừa tạo' }
+  elseif (!$details -or !$details.Inspectable) { $problem = 'process vừa khởi động đã thoát hoặc không kiểm tra được' }
+  elseif ((ConvertTo-UtcText $details.StartUtc) -cne $ownStartUtc) { $problem = 'process vừa tạo đã thoát và PID hiện thuộc process khác (không đụng tới process đó)' }
   elseif (!(Test-ProcessMatchesTarget $details $Target)) { $problem = 'process vừa khởi động không phải node chạy script build của checkout này' }
   if ($problem) {
-    try { Stop-OwnedProcess $startedProcessId } catch { }
-    Fail "Backend vừa khởi động không xác minh được ($problem); đã dừng đúng process do launcher vừa tạo. Xem log trong $script:Logs." 'BACKEND_NOT_READY'
+    Stop-StartedChild $process
+    Fail "Backend vừa khởi động không xác minh được ($problem); chỉ process do launcher vừa tạo (nếu còn chạy) bị dừng. Xem log trong $script:Logs." 'BACKEND_NOT_READY'
   }
   try { Write-TargetRegistry $Target $details $Manifest $stdout $stderr }
   catch {
     $writeError = $_
-    try { Stop-OwnedProcess $startedProcessId } catch { }
+    Stop-StartedChild $process
     throw $writeError
   }
   Wait-Backend $Target $startedProcessId (ConvertTo-UtcText $details.StartUtc)

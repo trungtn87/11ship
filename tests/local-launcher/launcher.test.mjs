@@ -139,14 +139,28 @@ test('M00.03: artifact and process identity - stable codes, one place that kills
     assert.ok(script.includes(code), code);
   }
   const code = script.split(/\r?\n/).filter((line) => !line.trim().startsWith('#')).join('\n');
-  // The only call that ends a process is Stop-OwnedProcess; it is reached after the ownership proof, by one PID.
-  const stops = code.match(/Stop-Process\b[^\n]*/g) ?? [];
-  assert.equal(stops.length, 1, `exactly one Stop-Process call, found: ${stops.join(' | ')}`);
-  assert.match(stops[0], /Stop-Process -Id \$ProcessId -ErrorAction Stop/);
+  // The only call that ends a looked-up process is TerminateProcess inside Stop-OwnedProcess: one handle, start time checked first.
+  assert.doesNotMatch(code, /Stop-Process\b/, 'no Stop-Process (it would end whatever holds the PID)');
+  const terminates = code.match(/ProcessNative\]::TerminateProcess\(/g) ?? [];
+  assert.equal(terminates.length, 1, 'exactly one TerminateProcess call');
+  const stopFunction = code.slice(code.indexOf('function Stop-OwnedProcess'), code.indexOf('function Stop-StartedChild'));
+  assert.ok(stopFunction.indexOf('GetProcessTimes') < stopFunction.indexOf('TerminateProcess(') && stopFunction.includes("'REPLACED'"), 'start time is compared before the termination');
+  assert.match(stopFunction, /ExpectedStartUtc/);
+  // Cleanup of a process this launcher just created goes through the Start-Process object, never through a PID lookup.
+  const newProcess = code.slice(code.indexOf('function Start-NewBackendProcess'), code.indexOf('function Start-OrReuseBackend'));
+  assert.doesNotMatch(newProcess, /Stop-OwnedProcess/);
+  assert.equal((newProcess.match(/Stop-StartedChild \$process/g) ?? []).length, 2);
   assert.doesNotMatch(code, /taskkill|Stop-Process\s+-Name|Get-Process\s+-Name|Get-Process\s+node|Get-Process\s+\|/i, 'no stop by image name or by force');
-  // The one other Kill() ends the launcher child that Invoke-LauncherRelaunch itself created (M00.02), never a looked-up process.
+  // The only Kill() calls end processes this launcher created itself: the hand-over child and the backend it just started.
   const kills = code.match(/\.Kill\(\)/g) ?? [];
-  assert.ok(kills.length <= 1 && code.slice(code.indexOf('function Invoke-LauncherRelaunch'), code.indexOf('function Assert-RelaunchParameters')).includes('$process.Kill()'), 'only the hand-over child may be killed');
+  assert.equal(kills.length, 2);
+  assert.ok(code.slice(code.indexOf('function Invoke-LauncherRelaunch'), code.indexOf('function Assert-RelaunchParameters')).includes('$process.Kill()'));
+  assert.ok(code.slice(code.indexOf('function Stop-StartedChild'), code.indexOf('# ---- ownership')).includes('$Child.Kill()'));
+  // An existing process whose identity cannot be read is UNVERIFIED, and only absence or a different start time proves an exit.
+  const ownershipText = code.slice(code.indexOf('function Get-TargetOwnership'), code.indexOf('function Test-ConflictingListener'));
+  assert.match(ownershipText, /if \(!\$details\.Inspectable\) \{ return \(New-Ownership 'UNVERIFIED'/);
+  const goneText = code.slice(code.indexOf('function Wait-ProcessGone'), code.indexOf('function Stop-TargetProcess'));
+  assert.doesNotMatch(goneText, /!\$details\.Inspectable/);
   assert.doesNotMatch(code, /Get-NetTCPConnection[^\n]*\|\s*(Stop|Remove)/, 'a port owner is never stopped');
   // A health answer alone never decides ownership: ownership code does not call HTTP.
   const ownership = code.slice(code.indexOf('function Get-TargetOwnership'), code.indexOf('function Test-ConflictingListener'));
@@ -167,7 +181,7 @@ test('contains the approved destructive-operation guards', () => {
   for (const forbidden of ['reset --hard', 'down -v', 'db:migrate:remote', 'git stash', 'push --force', 'audit fix']) {
     assert.equal(script.includes(forbidden), false, forbidden);
   }
-  for (const required of ["'--ff-only'", "'ship11_test'", "'ship11_dev'", 'Stop-Process', 'Start-Process']) {
+  for (const required of ["'--ff-only'", "'ship11_test'", "'ship11_dev'", 'TerminateProcess', 'Start-Process']) {
     assert.equal(script.includes(required), true, required);
   }
 });
