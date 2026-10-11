@@ -3,6 +3,7 @@ import { FlowStore, ScreenDef, ScreenEnv } from '../screen.js';
 import { featureStatus, isWired } from '../features.js';
 import { NOT_WIRED_PORTS } from '../ports.js';
 import { AccountView } from '../screen.js';
+import { SAMPLE } from './samples.js';
 import { DesignViewer, PreviewContext } from './viewer.js';
 
 // Starts the design preview of an app. Design-only: the live build removes this whole folder.
@@ -38,6 +39,7 @@ export function startDesign(root: HTMLElement, app: DesignApp): DesignViewer {
       isWired,
       featureReason: (feature) => featureStatus(feature).reason,
       testSmsNotice: app.definition.testSmsNotice,
+      sample: SAMPLE,
     }),
   });
   viewer.mount();

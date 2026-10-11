@@ -64,6 +64,8 @@ export interface ScreenEnv {
   featureReason(feature: FeatureId): string;
   /** Test build: OTP screens tell the person the SMS is simulated and where the code is read (PC tool), never show the code. */
   readonly testSmsNotice: boolean;
+  /** Preview only. */
+  readonly sample?: SampleData;
 }
 
 export interface VariantDef {
@@ -88,5 +90,12 @@ export interface ScreenDef {
 
 export const DEFAULT_VARIANT: VariantDef = { id: 'default', label: 'Mặc định' };
 
-/** Sample persona of the preview, labelled as sample data wherever it is shown. */
-export const SAMPLE_PERSON = { fullName: 'Nguyễn Văn A', phoneMasked: '098 •••• 123' } as const;
+/**
+ * Sample data of the design preview (client-shared/src/design/samples.ts). `ScreenEnv.sample` is undefined in the real app, so
+ * no sample person, shop or address can ever be shown (or even be present in the real build's code) outside the preview.
+ */
+export interface SampleData {
+  readonly person: { readonly fullName: string; readonly phoneMasked: string };
+  readonly shop: { readonly name: string; readonly phone: string; readonly address: string };
+  readonly location: { readonly accuracy: string; readonly measured: string };
+}
