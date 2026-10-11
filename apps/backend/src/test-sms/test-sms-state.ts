@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
-import { lstat, open, readFile, realpath, rename, unlink } from 'node:fs/promises';
+import { link, lstat, open, readFile, readdir, realpath, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { Platform } from './test-sms-platform';
 import {
@@ -32,7 +32,8 @@ export type StateFailure =
   | 'FOREIGN_USER'
   | 'STALE'
   | 'IN_USE'
-  | 'WRITE_FAILED';
+  | 'WRITE_FAILED'
+  | 'LOST_OWNERSHIP';
 
 export class StateError extends Error {
   readonly failure: StateFailure;
@@ -195,72 +196,255 @@ async function fileExists(location: StateLocation): Promise<boolean> {
   }
 }
 
+
+// ===== Cross-process ownership (F1) ==========================================================================================
+//
+// Only ONE backend instance of a repository may own the discovery state at a time, and ownership covers the whole
+// lifetime: claim -> publish -> cleanup. A "check, then rename" is not enough (two starters both pass the check), so
+// ownership is an append-only chain of generation files in the private directory:
+//
+//   owner.<n>.lock   created ATOMICALLY and COMPLETE (written to a temp file, then link()ed to its final name: link fails
+//                    with EEXIST when the name exists, so exactly one racer creates generation n, and a reader never sees
+//                    a half-written file). Nothing ever overwrites or deletes the highest generation of someone else.
+//
+// The owner is the holder of the HIGHEST generation, if its record is live (PID + start time still match) and not released.
+// To take over (nothing, released, malformed or stale-by-PID/start-time) a starter creates generation highest+1; if two
+// starters race for it, link() lets one win and the other re-evaluates and sees a live owner -> refused (IN_USE). Release
+// is a "released" tombstone at generation n+1 (never an empty directory, so a late racer cannot re-create a lower number).
+// Every mutation of state.json (publish, remove) re-checks that this instance still holds the highest generation. A loser
+// never holds a claim, so it can neither publish nor remove anything of the winner. Fail closed: if liveness cannot be
+// determined the owner is assumed live.
+
+const LOCK_NAME = /^owner\.([0-9]{1,12})\.lock$/;
+const MAX_LOCK_BYTES = 1024;
+const MAX_CLAIM_ATTEMPTS = 6;
+
+/** Test seams: deterministic barriers at the exact points where processes can interleave. Never set by main.ts. */
+export interface StateHooks {
+  /** After the owner of generation n was judged absent/stale/released, immediately before generation n+1 is created. */
+  beforeClaimCreate?(): Promise<void>;
+  /** After the new state was written to its temp file, immediately before it is renamed into place. */
+  beforePublishRename?(): Promise<void>;
+  /** Immediately before cleanup removes state.json. */
+  beforeRemoveState?(): Promise<void>;
+  /** After cleanup, immediately before the released tombstone is written. */
+  beforeRelease?(): Promise<void>;
+}
+
+export interface OwnerClaim {
+  readonly instanceId: string;
+  readonly generation: number;
+  readonly backendPid: number;
+  readonly backendStartedAtMs: number;
+}
+
+interface LockRecord {
+  readonly instanceId: string;
+  readonly pid: number;
+  readonly startedAtMs: number;
+  readonly released: boolean;
+}
+
+function lockFileName(generation: number): string {
+  return `owner.${generation}.lock`;
+}
+
+function serializeLock(record: LockRecord): string {
+  return `${JSON.stringify({
+    protocol_version: TEST_SMS_PROTOCOL_VERSION,
+    instance_id: record.instanceId,
+    pid: record.pid,
+    started_at: new Date(record.startedAtMs).toISOString(),
+    released: record.released,
+  })}\n`;
+}
+
+/** Strict parse; undefined = malformed (treated as a broken, hence stale, claim: it can never be a live owner). */
+function parseLock(text: string): LockRecord | undefined {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (!isPlainObject(raw) || !hasExactKeys(raw, ['protocol_version', 'instance_id', 'pid', 'started_at', 'released'])) {
+    return undefined;
+  }
+  const startedAtMs = typeof raw.started_at === 'string' ? Date.parse(raw.started_at) : Number.NaN;
+  if (
+    raw.protocol_version !== TEST_SMS_PROTOCOL_VERSION ||
+    typeof raw.instance_id !== 'string' || !INSTANCE_SHAPE.test(raw.instance_id) ||
+    typeof raw.pid !== 'number' || !Number.isSafeInteger(raw.pid) || raw.pid <= 0 ||
+    !Number.isFinite(startedAtMs) ||
+    typeof raw.released !== 'boolean'
+  ) {
+    return undefined;
+  }
+  return { instanceId: raw.instance_id, pid: raw.pid, startedAtMs, released: raw.released };
+}
+
+async function listGenerations(location: StateLocation): Promise<number[]> {
+  let names: string[];
+  try {
+    names = await readdir(location.dir);
+  } catch {
+    throw new StateError('NOT_PRIVATE');
+  }
+  const generations: number[] = [];
+  for (const name of names) {
+    const match = LOCK_NAME.exec(name);
+    if (match !== null) {
+      generations.push(Number(match[1]));
+    }
+  }
+  return generations.sort((a, b) => b - a);
+}
+
+/** Reads one generation. 'GONE' = no such file; undefined = malformed/oversized. A link or non-file is refused. */
+async function readLock(location: StateLocation, generation: number): Promise<LockRecord | undefined | 'GONE'> {
+  const file = path.join(location.dir, lockFileName(generation));
+  try {
+    const before = await lstat(file);
+    if (!before.isFile()) {
+      throw new StateError('NOT_PRIVATE');
+    }
+    if (before.size > MAX_LOCK_BYTES) {
+      return undefined;
+    }
+    const handle = await open(file, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+    try {
+      const buffer = Buffer.alloc(Math.min(before.size, MAX_LOCK_BYTES));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      return parseLock(buffer.subarray(0, bytesRead).toString('utf8'));
+    } finally {
+      await handle.close();
+    }
+  } catch (error) {
+    if (error instanceof StateError) {
+      throw error;
+    }
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return 'GONE';
+    }
+    throw new StateError('NOT_PRIVATE');
+  }
+}
+
+/** Atomically creates generation `generation` with COMPLETE content. false = somebody else created it first. */
+async function createLock(location: StateLocation, generation: number, record: LockRecord): Promise<boolean> {
+  const temp = path.join(location.dir, `owner.${generation}.${randomUUID()}.tmp`);
+  try {
+    const handle = await open(temp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL, 0o600);
+    try {
+      await handle.writeFile(serializeLock(record), 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await link(temp, path.join(location.dir, lockFileName(generation)));
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      return false;
+    }
+    throw new StateError('WRITE_FAILED');
+  } finally {
+    await unlink(temp).catch(() => undefined);
+  }
+}
+
+async function pruneBelow(location: StateLocation, generation: number): Promise<void> {
+  for (const known of await listGenerations(location).catch(() => [] as number[])) {
+    if (known < generation) {
+      await unlink(path.join(location.dir, lockFileName(known))).catch(() => undefined);
+    }
+  }
+}
+
+/** True when the record names a process that is (or might be) alive with the recorded start time. Unknowable = alive. */
+async function ownerIsLive(platform: Platform, record: LockRecord): Promise<boolean> {
+  let startedAt: number | undefined;
+  try {
+    startedAt = await platform.processStartTime(record.pid);
+  } catch {
+    return true;
+  }
+  return startedAt !== undefined && startedAt === record.startedAtMs;
+}
+
+/** Throws unless this claim still holds the highest generation (and it is not released). */
+async function assertStillOwner(repo: ResolvedRepo, claim: OwnerClaim): Promise<void> {
+  const generations = await listGenerations(repo.location);
+  if (generations[0] !== claim.generation) {
+    throw new StateError('LOST_OWNERSHIP');
+  }
+  const record = await readLock(repo.location, claim.generation);
+  if (record === 'GONE' || record === undefined || record.released || record.instanceId !== claim.instanceId) {
+    throw new StateError('LOST_OWNERSHIP');
+  }
+}
+
 /**
- * Backend side, before the listener opens: creates/verifies the private directory and checks what is already there.
- * A live OTHER backend instance of this repository owns the state: refuse (never overwrite it). A stale or malformed
- * file is left to be replaced by the atomic publish. A file that is not private (or a link) is never touched.
+ * Backend side, before the listener opens: creates/verifies the private directory and CLAIMS ownership of the state
+ * (see the chain above). Refuses with IN_USE while another live instance of this repository owns it, whatever the
+ * interleaving. A state file that is not private (or a link) is never touched: the claim is released and it is refused.
  */
-export async function prepareStateForStart(platform: Platform, repo: ResolvedRepo): Promise<void> {
+export async function claimOwnership(platform: Platform, repo: ResolvedRepo, hooks: StateHooks = {}): Promise<OwnerClaim> {
   try {
     await ensureStateDir(platform, repo.location);
   } catch (error) {
     throw mapPrivacy(error);
   }
-  if (!(await fileExists(repo.location))) {
-    return;
+  const startedAtMs = await platform.processStartTime(platform.pid);
+  if (startedAtMs === undefined) {
+    throw new StateError('WRITE_FAILED');
   }
-  try {
-    await verifyStateFile(platform, repo.location);
-  } catch (error) {
-    throw mapPrivacy(error);
-  }
-  let existing: DiscoveryState | undefined;
-  try {
-    existing = parseStateFile(await readStateText(repo.location));
-  } catch (error) {
-    if (error instanceof StateError && error.failure === 'MALFORMED') {
-      return;
+  const instanceId = randomUUID();
+  const record: LockRecord = { instanceId, pid: platform.pid, startedAtMs, released: false };
+
+  for (let attempt = 0; attempt < MAX_CLAIM_ATTEMPTS; attempt += 1) {
+    const generations = await listGenerations(repo.location);
+    const highest = generations[0] ?? 0;
+    if (highest > 0) {
+      const current = await readLock(repo.location, highest);
+      if (current !== 'GONE' && current !== undefined && !current.released && (await ownerIsLive(platform, current))) {
+        throw new StateError('IN_USE');
+      }
     }
-    throw error instanceof StateError ? error : new StateError('NOT_PRIVATE');
+    await hooks.beforeClaimCreate?.();
+    if (!(await createLock(repo.location, highest + 1, record))) {
+      continue; // somebody else created generation highest+1 first: look again (a live owner now -> IN_USE)
+    }
+    const claim: OwnerClaim = { instanceId, generation: highest + 1, backendPid: platform.pid, backendStartedAtMs: startedAtMs };
+    await pruneBelow(repo.location, claim.generation);
+    try {
+      if (await fileExists(repo.location)) {
+        await verifyStateFile(platform, repo.location);
+      }
+    } catch (error) {
+      await releaseOwnership(platform, repo, claim);
+      throw error instanceof StateError ? error : mapPrivacy(error);
+    }
+    return claim;
   }
-  if (existing === undefined || existing.backendPid === platform.pid) {
-    return;
-  }
-  let startedAt: number | undefined;
-  try {
-    startedAt = await platform.processStartTime(existing.backendPid);
-  } catch {
-    // Cannot tell: do not overwrite what might be a live instance.
-    throw new StateError('IN_USE');
-  }
-  if (startedAt !== undefined && startedAt === existing.backendStartedAtMs) {
-    throw new StateError('IN_USE');
-  }
+  throw new StateError('IN_USE');
 }
 
-export interface PublishedState {
-  readonly instanceId: string;
-  readonly backendPid: number;
-  readonly backendStartedAtMs: number;
-}
-
-/** Publishes the state atomically (temp file in the same private directory, fsync, rename). Call after the listener is ready. */
+/** Publishes the state atomically (temp file, fsync, rename) while holding the claim. Call after the listener is ready. */
 export async function publishState(
   platform: Platform,
   repo: ResolvedRepo,
+  claim: OwnerClaim,
   input: { readonly port: number; readonly token: string },
-): Promise<PublishedState> {
-  const pid = platform.pid;
-  const startedAt = await platform.processStartTime(pid);
-  if (startedAt === undefined) {
-    throw new StateError('WRITE_FAILED');
-  }
+  hooks: StateHooks = {},
+): Promise<void> {
+  await assertStillOwner(repo, claim);
   const state: DiscoveryState = {
-    instanceId: randomUUID(),
+    instanceId: claim.instanceId,
     port: input.port,
     token: input.token,
-    backendPid: pid,
-    backendStartedAtMs: startedAt,
+    backendPid: claim.backendPid,
+    backendStartedAtMs: claim.backendStartedAtMs,
     repoIdentity: repo.identity,
     userId: await platform.currentUserId(),
     createdAtMs: Date.now(),
@@ -274,30 +458,33 @@ export async function publishState(
     } finally {
       await handle.close();
     }
+    await hooks.beforePublishRename?.();
+    await assertStillOwner(repo, claim);
     await rename(temp, repo.location.file);
-  } catch {
+  } catch (error) {
     await unlink(temp).catch(() => undefined);
-    throw new StateError('WRITE_FAILED');
+    throw error instanceof StateError ? error : new StateError('WRITE_FAILED');
   }
   try {
     await verifyStateFile(platform, repo.location);
   } catch (error) {
-    await unlink(repo.location.file).catch(() => undefined);
+    await removeOwnState(platform, repo, claim);
     throw mapPrivacy(error);
   }
-  return { instanceId: state.instanceId, backendPid: pid, backendStartedAtMs: startedAt };
 }
 
-/** Removes the state file only when it still belongs to this exact instance. Returns whether it removed it. */
-export async function removeOwnState(platform: Platform, repo: ResolvedRepo, own: PublishedState): Promise<boolean> {
+/** Removes state.json only while this claim still owns it AND the file carries this instance id. Returns whether it did. */
+export async function removeOwnState(platform: Platform, repo: ResolvedRepo, claim: OwnerClaim, hooks: StateHooks = {}): Promise<boolean> {
   try {
+    await hooks.beforeRemoveState?.();
+    await assertStillOwner(repo, claim);
     await verifyStateFile(platform, repo.location);
     const current = parseStateFile(await readStateText(repo.location));
     if (
       current === undefined ||
-      current.instanceId !== own.instanceId ||
-      current.backendPid !== own.backendPid ||
-      current.backendStartedAtMs !== own.backendStartedAtMs
+      current.instanceId !== claim.instanceId ||
+      current.backendPid !== claim.backendPid ||
+      current.backendStartedAtMs !== claim.backendStartedAtMs
     ) {
       return false;
     }
@@ -305,6 +492,19 @@ export async function removeOwnState(platform: Platform, repo: ResolvedRepo, own
     return true;
   } catch {
     return false;
+  }
+}
+
+/** Gives ownership up: a "released" tombstone at generation+1 (EEXIST = somebody already took over: nothing to do). */
+export async function releaseOwnership(_platform: Platform, repo: ResolvedRepo, claim: OwnerClaim, hooks: StateHooks = {}): Promise<void> {
+  try {
+    await hooks.beforeRelease?.();
+    const tombstone: LockRecord = { instanceId: claim.instanceId, pid: claim.backendPid, startedAtMs: claim.backendStartedAtMs, released: true };
+    if (await createLock(repo.location, claim.generation + 1, tombstone)) {
+      await unlink(path.join(repo.location.dir, lockFileName(claim.generation))).catch(() => undefined);
+    }
+  } catch {
+    // Best effort: if the tombstone cannot be written the claim simply goes stale when this process exits.
   }
 }
 

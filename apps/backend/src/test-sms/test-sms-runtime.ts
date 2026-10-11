@@ -7,12 +7,14 @@ import { TestSmsInbox } from './test-sms-inbox';
 import { Platform, createPlatform } from './test-sms-platform';
 import { TestInboxActivationOtpProvider, TestInboxOtpProvider } from './test-sms-providers';
 import {
-  PublishedState,
+  OwnerClaim,
   ResolvedRepo,
   StateError,
   StateFailure,
-  prepareStateForStart,
+  StateHooks,
+  claimOwnership,
   publishState,
+  releaseOwnership,
   removeOwnState,
   resolveRepo,
 } from './test-sms-state';
@@ -38,6 +40,8 @@ export interface TestSmsRuntimeOptions {
   readonly inbox?: TestSmsInbox;
   /** Seam for automated isolated tests only (main.ts never passes it). */
   readonly startListener?: typeof startTestSmsListener;
+  /** Seam for automated isolated tests only: deterministic barriers inside claim/publish/cleanup. */
+  readonly stateHooks?: StateHooks;
 }
 
 const FAILURE_CODES: Readonly<Record<StateFailure, TestSmsStartupCode>> = {
@@ -51,6 +55,7 @@ const FAILURE_CODES: Readonly<Record<StateFailure, TestSmsStartupCode>> = {
   STALE: 'TEST_INBOX_STATE_NOT_PRIVATE',
   IN_USE: 'TEST_INBOX_STATE_IN_USE',
   WRITE_FAILED: 'TEST_INBOX_STATE_WRITE_FAILED',
+  LOST_OWNERSHIP: 'TEST_INBOX_STATE_IN_USE',
 };
 
 function startupError(error: unknown): TestSmsStartupError {
@@ -82,7 +87,9 @@ export class TestSmsRuntime {
   readonly #startListener: typeof startTestSmsListener;
   #repo: ResolvedRepo | undefined;
   #listener: RunningTestSmsListener | undefined;
-  #published: PublishedState | undefined;
+  readonly #hooks: StateHooks;
+  #claim: OwnerClaim | undefined;
+  #published = false;
   #started = false;
 
   constructor(options: TestSmsRuntimeOptions) {
@@ -100,6 +107,7 @@ export class TestSmsRuntime {
     this.#platform = options.platform ?? createPlatform();
     this.#repoRoot = options.repoRoot ?? process.cwd();
     this.#startListener = options.startListener ?? startTestSmsListener;
+    this.#hooks = options.stateHooks ?? {};
   }
 
   /** Port of the private listener once started (never published anywhere except the private state file). */
@@ -113,14 +121,15 @@ export class TestSmsRuntime {
     }
     try {
       this.#repo = await resolveRepo(this.#platform, this.#repoRoot);
-      await prepareStateForStart(this.#platform, this.#repo);
+      this.#claim = await claimOwnership(this.#platform, this.#repo, this.#hooks);
       const token = randomBytes(32).toString('base64url');
       try {
         this.#listener = await this.#startListener({ inbox: this.inbox, token });
       } catch {
         throw new TestSmsStartupError('TEST_INBOX_LISTENER_FAILED');
       }
-      this.#published = await publishState(this.#platform, this.#repo, { port: this.#listener.port, token });
+      await publishState(this.#platform, this.#repo, this.#claim, { port: this.#listener.port, token }, this.#hooks);
+      this.#published = true;
       this.#started = true;
     } catch (error) {
       await this.stop();
@@ -128,21 +137,29 @@ export class TestSmsRuntime {
     }
   }
 
-  /** Idempotent. Removes only this instance's state, closes the listener and empties the inbox. */
+  /**
+   * Idempotent. Order matters: remove this instance's state, close the listener, empty the inbox, and only then give the
+   * ownership up. A runtime that never obtained the claim (it lost the race) touches NOTHING on disk.
+   */
   async stop(): Promise<void> {
+    const claim = this.#claim;
     const published = this.#published;
     const repo = this.#repo;
     const listener = this.#listener;
-    this.#published = undefined;
+    this.#claim = undefined;
+    this.#published = false;
     this.#listener = undefined;
     this.#started = false;
-    if (published !== undefined && repo !== undefined) {
-      await removeOwnState(this.#platform, repo, published);
+    if (claim !== undefined && repo !== undefined && published) {
+      await removeOwnState(this.#platform, repo, claim, this.#hooks);
     }
     if (listener !== undefined) {
       await listener.stop().catch(() => undefined);
     }
     this.inbox.clear();
+    if (claim !== undefined && repo !== undefined) {
+      await releaseOwnership(this.#platform, repo, claim, this.#hooks);
+    }
   }
 }
 

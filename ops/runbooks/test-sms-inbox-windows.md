@@ -41,6 +41,7 @@ Mã chỉ nằm trên màn hình: không tự sao chép clipboard, không ghi fi
 | "Backend đã dừng hoặc khởi động lại" | State cũ | Chạy Start lại |
 | "Thông tin kết nối không an toàn…" | Quyền thư mục/file sai hoặc không thuộc bạn/repo | Xoá thư mục `.11ship-local\test-sms` khi backend dừng rồi Start lại |
 | "Chưa build backend" | Thiếu `apps\backend\dist` | `npm run build` hoặc `11Ship-Update.cmd` |
+| Backend thứ hai của cùng repo báo `STATE_IN_USE` | Mỗi repo chỉ một backend TEST_INBOX; backend thứ nhất không bị ảnh hưởng | Dừng backend đang chạy trước khi bật cái khác |
 | Backend không lên, log `Startup failed (TEST_INBOX_…)` | Mã cố định: `NOT_LOCAL`, `REPO_UNRESOLVED`, `STATE_NOT_PRIVATE`, `STATE_IN_USE` (đã có backend khác của repo này đang chạy), `STATE_WRITE_FAILED`, `LISTENER_FAILED`, `PLATFORM_UNSUPPORTED` | Theo mã; không cần gửi token |
 
 ## Kiểm thử

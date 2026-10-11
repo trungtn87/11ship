@@ -59,6 +59,7 @@ const FAILURE_TEXT: Readonly<Record<StateFailure, string>> = {
   STALE: TOOL_TEXT.stale,
   IN_USE: TOOL_TEXT.unsafe,
   WRITE_FAILED: TOOL_TEXT.unsafe,
+  LOST_OWNERSHIP: TOOL_TEXT.unsafe,
 };
 
 function timeOf(iso: string): string {

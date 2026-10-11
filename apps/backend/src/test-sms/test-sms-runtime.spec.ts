@@ -164,7 +164,11 @@ describe('lifecycle', () => {
     await first.start();
     const state = await readFile(path.join(dir, '.11ship-local', 'test-sms', 'state.json'), 'utf8');
     // The same OS process cannot play "another backend": pretend to be the real parent process (alive, other start time).
-    const other = make(dir, { platform: { ...platform, pid: process.pid + 100_000 } });
+    const pretenderPid = process.pid + 100_000;
+    const ownStart = await platform.processStartTime(process.pid);
+    const other = make(dir, {
+      platform: { ...platform, pid: pretenderPid, processStartTime: (pid) => (pid === pretenderPid ? Promise.resolve((ownStart ?? 0) + 1) : platform.processStartTime(pid)) },
+    });
     // Real PID of this process is in the state; the pretender has a different PID, so the state is "owned by a live other".
     expect(await startupCode(other.start())).toBe('TEST_INBOX_STATE_IN_USE');
     expect(await readFile(path.join(dir, '.11ship-local', 'test-sms', 'state.json'), 'utf8')).toBe(state);
@@ -183,19 +187,24 @@ describe('startup failures close everything that was opened', () => {
     await expect(readFile(path.join(dir, '.11ship-local', 'test-sms', 'state.json'))).rejects.toThrow();
   });
 
-  it('state publish failure after the listener opened -> the listener is closed again', async () => {
+  it('state publish failure after the listener opened -> the listener is closed again and the claim is released', async () => {
     if (!posix) {
       return;
     }
     const dir = await repoDir();
     let stopped = 0;
     const runtime = make(dir, {
-      platform: { ...createPlatform(), processStartTime: () => Promise.resolve(undefined) },
+      stateHooks: { beforePublishRename: () => Promise.reject(new Error('disk full')) },
       startListener: () => Promise.resolve({ host: '127.0.0.1', port: 40000, stop: () => { stopped += 1; return Promise.resolve(); } }),
     });
     expect(await startupCode(runtime.start())).toBe('TEST_INBOX_STATE_WRITE_FAILED');
     expect(stopped).toBe(1);
     expect(runtime.inbox.size()).toBe(0);
+    await expect(readFile(path.join(dir, '.11ship-local', 'test-sms', 'state.json'))).rejects.toThrow();
+    // The failed start gave its ownership up: another backend can start at once.
+    const next = make(dir);
+    await next.start();
+    expect(next.listenerPort).toBeGreaterThan(0);
   });
 
   it('an unresolvable repository -> TEST_INBOX_REPO_UNRESOLVED before any listener opens', async () => {
