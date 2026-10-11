@@ -1,4 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
+import { ADMIN_COPY } from './messages';
 import { ActivationController, ActivationScreen } from './activation-controller';
 import {
   ACT_SECRET,
@@ -382,5 +383,104 @@ describe('activation - password and Authenticator', () => {
     await settle();
     expect(controller.screen.name).toBe('session-expired');
     expect(server.requests.filter((request) => request.method === 'POST')).toEqual([]);
+  });
+});
+
+describe('activation - restart whose answer is lost (F1): recovered by GET /state, never re-posted', () => {
+  const exhausted = (csrf: string) => actState('INVALIDATED', { reason: 'ATTEMPTS_EXHAUSTED', can_restart: true, csrf_token: csrf });
+
+  it('the restart was committed but its answer was lost: GET /state returns the NEW attempt, with its own CSRF', async () => {
+    const server = new FakeServer()
+      .on('GET', '/state', exhausted('csrf-old'), actState('STARTED', { csrf_token: 'csrf-new', otp: { status: 'NONE' } }))
+      .on('POST', '/restart', 'network')
+      .on('POST', '/otp/request', { status: 202, body: { data: { delivery: 'SUBMITTED', resend_at: '2999-01-01T00:00:00.000Z' } } });
+    const { controller } = setup(server);
+    await controller.begin(undefined);
+    await controller.restart();
+    await settle();
+    expect(controller.screen).toMatchObject({ name: 'otp', pending: false });
+    expect(server.count('POST', '/restart')).toBe(1);
+    expect(server.count('GET', '/state')).toBe(2);
+    await controller.requestOtp();
+    expect(server.requests.find((request) => request.path === '/otp/request')).toMatchObject({ csrf: 'csrf-new' });
+  });
+
+  it('the restart was NOT committed (5xx): GET /state returns the old attempt, nothing is re-posted; the user may press again', async () => {
+    const server = new FakeServer()
+      .on('GET', '/state', exhausted('csrf-old'), exhausted('csrf-old-2'), otpStatus('NONE'))
+      .on('POST', '/restart', fail(503, 'SERVICE_UNAVAILABLE'), startedFresh());
+    const { controller } = setup(server);
+    await controller.begin(undefined);
+    await controller.restart();
+    await settle();
+    expect(controller.screen).toMatchObject({ name: 'invalidated', reason: 'ATTEMPTS_EXHAUSTED', canRestart: true, pending: false });
+    expect((controller.screen as { stateUnknown?: boolean }).stateUnknown).toBeUndefined();
+    expect(server.count('POST', '/restart')).toBe(1); // no automatic second POST
+    await controller.restart(); // the user's own decision, with the CSRF of the latest read
+    await settle();
+    expect(server.requests.filter((request) => request.path === '/restart').map((request) => request.csrf)).toEqual(['csrf-old', 'csrf-old-2']);
+    expect(controller.screen.name).toBe('otp');
+  });
+
+  it('both the POST and the GET are lost: the outcome is unknown, only a READ can be repeated, never the POST', async () => {
+    const server = new FakeServer()
+      .on('GET', '/state', exhausted('csrf-old'), 'network', fail(503, 'SERVICE_UNAVAILABLE'), actState('STARTED', { csrf_token: 'csrf-new', otp: { status: 'NONE' } }))
+      .on('POST', '/restart', 'network');
+    const { controller, clock } = setup(server);
+    await controller.begin(undefined);
+    await controller.restart();
+    expect(controller.screen).toMatchObject({ name: 'invalidated', pending: false, stateUnknown: true, error: ADMIN_COPY.restartUnknown });
+    await controller.restart(); // not offered while the outcome is unknown
+    clock.advance(120_000);
+    await settle();
+    expect(server.count('POST', '/restart')).toBe(1);
+    await controller.retryRead(); // the read fails again
+    expect(controller.screen).toMatchObject({ name: 'invalidated', stateUnknown: true });
+    expect(server.count('GET', '/state')).toBe(3);
+    await controller.retryRead(); // the read works: the new attempt
+    expect(controller.screen).toMatchObject({ name: 'otp' });
+    expect(server.count('POST', '/restart')).toBe(1);
+    expect(server.count('GET', '/state')).toBe(4);
+  });
+
+  it('a restart from the password step (deadline passed) is recovered the same way', async () => {
+    const closed = actState('OTP_VERIFIED', { password_deadline: '2000-01-01T00:00:00.000Z', restart_required: true });
+    const server = new FakeServer().on('GET', '/state', closed, otpStatus('NONE')).on('POST', '/restart', 'network');
+    const { controller } = setup(server);
+    await controller.begin(undefined);
+    await controller.restart();
+    await settle();
+    expect(controller.screen.name).toBe('otp');
+    expect(server.count('POST', '/restart')).toBe(1);
+  });
+});
+
+describe('activation - a read that finds the password window closed (F3)', () => {
+  it('GET /state moves restartRequired from false to true: the form is closed and the restart is offered', async () => {
+    const server = new FakeServer();
+    const { controller } = await toPassword(server);
+    expect(controller.screen).toMatchObject({ name: 'password', restartRequired: false });
+    server
+      .on('POST', '/password', 'network')
+      .on('GET', '/state', actState('OTP_VERIFIED', { password_deadline: '2000-01-01T00:00:00.000Z', restart_required: true }))
+      .on('POST', '/restart', startedFresh())
+      .on('GET', '/state', otpStatus('NONE'));
+    await controller.submitPassword('Correct-Horse-1', 'Correct-Horse-1');
+    await settle();
+    expect(controller.screen).toMatchObject({ name: 'password', restartRequired: true, pending: false, passwordDeadlineMs: Date.parse('2000-01-01T00:00:00.000Z') });
+    expect(await controller.submitPassword('Correct-Horse-1', 'Correct-Horse-1')).toBe('ignored');
+    expect(server.count('POST', '/password')).toBe(1);
+    await controller.restart();
+    await settle();
+    expect(controller.screen.name).toBe('otp');
+  });
+
+  it('a read that still says OTP_VERIFIED updates the password deadline', async () => {
+    const server = new FakeServer();
+    const { controller } = await toPassword(server);
+    server.on('POST', '/password', 'network').on('GET', '/state', actState('OTP_VERIFIED', { password_deadline: '2998-01-01T00:00:00.000Z', restart_required: false }));
+    await controller.submitPassword('Correct-Horse-1', 'Correct-Horse-1');
+    await settle();
+    expect(controller.screen).toMatchObject({ name: 'password', restartRequired: false, passwordDeadlineMs: Date.parse('2998-01-01T00:00:00.000Z') });
   });
 });

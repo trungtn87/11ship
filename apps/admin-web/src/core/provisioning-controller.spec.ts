@@ -201,6 +201,43 @@ describe('create invitation (step-up)', () => {
     expect(server.count('POST', '/operations')).toBe(1);
   });
 
+  it('retry inside Retry-After sends nothing; after it, the SAME key, operation id and payload go again (F2)', async () => {
+    const server = new FakeServer()
+      .on('POST', `/operations/${OPERATION_ID}/verify`, operationVerified())
+      .on('POST', '/invitations', 'network', fail(429, 'ADMIN_AUTH_RATE_LIMITED', { 'retry-after': '20' }), issuedCreated());
+    const { controller, clock } = await toCodeStep(server);
+    await controller.submitCode('123456');
+    expect(compose(controller)).toMatchObject({ phase: 'retry', pending: false });
+    await controller.retryBusiness(); // 429 with Retry-After: 20
+    expect(compose(controller)).toMatchObject({ phase: 'retry', pending: false });
+    expect(controller.lockRemainingSeconds()).toBe(20);
+    expect(server.count('POST', '/invitations')).toBe(2);
+
+    await controller.retryBusiness(); // still locked: ignored
+    clock.advance(10_000);
+    await controller.retryBusiness();
+    await settle();
+    expect(server.count('POST', '/invitations')).toBe(2);
+    expect(controller.lockRemainingSeconds()).toBe(10);
+    expect(compose(controller).phase).toBe('retry');
+
+    clock.advance(11_000); // the wait is over: the button opens, nothing is sent by itself
+    await settle();
+    expect(controller.lockRemainingSeconds()).toBe(0);
+    expect(compose(controller).lockUntilMs).toBeUndefined();
+    expect(server.count('POST', '/invitations')).toBe(2);
+
+    await controller.retryBusiness();
+    expect(compose(controller).phase).toBe('done');
+    const posts = server.requests.filter((request) => request.path === '/invitations');
+    expect(posts).toHaveLength(3);
+    expect(posts.map((request) => request.idempotencyKey)).toEqual([KEY_1, KEY_1, KEY_1]);
+    expect(posts[1]?.body).toEqual(posts[0]?.body);
+    expect(posts[2]?.body).toEqual(posts[0]?.body);
+    expect(server.count('POST', `/operations/${OPERATION_ID}/verify`)).toBe(1);
+    expect(server.count('POST', '/operations')).toBe(1);
+  });
+
   it('503 TRANSACTION_OUTCOME_UNKNOWN is treated like a lost answer', async () => {
     const server = new FakeServer().on('POST', `/operations/${OPERATION_ID}/verify`, operationVerified()).on('POST', '/invitations', fail(503, 'TRANSACTION_OUTCOME_UNKNOWN'), issuedCreated());
     const { controller } = await toCodeStep(server);
