@@ -225,7 +225,7 @@ describe('staging:db-upgrade-from-42 pure parts', () => {
     assert.equal(upSection('-- Up Migration\nSELECT 1;\n-- Down Migration\nSELECT 2;\n').trim(), 'SELECT 1;');
     assert.equal(upSection('-- Up Migration\nSELECT 1;\n').trim(), 'SELECT 1;');
     assert.throws(() => upSection('SELECT 1;'), /Up section/);
-    for (const name of ['1792022400000_create-admin-auth', '1792540800000_allow-staging-fixture-account-origin']) {
+    for (const name of ['1792022400000_create-admin-auth', '1792627200000_allow-staging-fixture-account-origin']) {
       const sql = readFileSync(join(process.cwd(), 'database', 'migrations', `${name}.sql`), 'utf8');
       assert.doesNotMatch(upSection(sql), /Down Migration/i);
       assert.ok(upSection(sql).trim().length > 0);
