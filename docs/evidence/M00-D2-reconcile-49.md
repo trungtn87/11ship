@@ -39,7 +39,8 @@ green CI is not Owner acceptance.
 **Timestamp (sync with main after M01.02).** Main gained `1792540800000_create-customer-profiles-consents` (M01.02), the same timestamp this PR's
 unapplied fixture migration used. The fixture migration was never applied anywhere, so it was renamed to the next free slot
 `1792627200000_allow-staging-fixture-account-origin` (after the last migration of main); the applied/merged migrations are untouched. Both migrations are kept,
-the four history pins (auth, driver, shop, business-hours) list customer then fixture, and the M01.02 suite pins customer as the newest M01.02 migration followed by the fixture one.
+the four history pins (auth, driver, shop, business-hours) list customer then fixture, and the M01.02 suite pins customer as the newest M01.02 migration followed by the fixture one (its `BEFORE` history now ends before the customer migration, not before the last file).
+Main's new `customer-legacy-compat` suite pinned the exact `/auth/login` and `/auth/me` keys of the time; this PR adds the additive field `phone_verification_status` to both (already in the PR's contract), so those two pins list it. `/auth/register` is unchanged.
 
 Main's history is canonical; the earlier `1791849600000_add-users-account-origin` is NOT part of the repository (next to
 `1791936000000` it would add the column twice). History matrix (`tests/integration/staging-fixture-migration.int.spec.ts`):
