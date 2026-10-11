@@ -463,8 +463,12 @@ describe('issue #49 — staging DB upgrade from the PR #42 history (PostgreSQL)'
     const make = (): unknown => {
       const real = new Client({ connectionString: databaseUrl });
       return {
-        on: (event: string, listener: (...args: unknown[]) => void): unknown => real.on(event, listener),
-        connect: (): Promise<void> => real.connect(),
+        on: (): void => {
+          real.on('error', () => undefined);
+        },
+        connect: async (): Promise<void> => {
+          await real.connect();
+        },
         end: (): Promise<void> => real.end(),
         query: async (text: string, values?: unknown[]): Promise<unknown> => {
           seen.push(text);
