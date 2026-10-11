@@ -372,6 +372,79 @@ jobs:
         if: ${{ always() }}
         run: docker rm -f pg17-selfhosted || true
 
+  # M00-VPS-01 gói B: the release artifact for the Ubuntu 24.04 / VinaHost VPS. Built from the EXACT head commit of the pull
+  # request (not the merge commit), verified the way the operator will use it, and uploaded with its checksum. No database,
+  # no secret, no deployment: nothing here touches the VPS.
+  ubuntu-artifact:
+    name: Ubuntu/VinaHost artifact (M00-VPS-01)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Pin npm from packageManager
+        run: npm install --global npm@11.9.0
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      - name: Build the artifact
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          test "${sha}" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          node scripts/deploy/build-ubuntu-artifact.mjs --out artifact-out --sha "${sha}" | tee artifact-out.log
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify the artifact as extracted on a clean tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/deploy/verify-ubuntu-artifact.mjs "artifact-out/11ship-${{ steps.build.outputs.sha }}-ubuntu24-amd64.tar.gz" "${{ steps.build.outputs.sha }}"
+          ( cd artifact-out && sha256sum -c "11ship-${{ steps.build.outputs.sha }}-ubuntu24-amd64.tar.gz.sha256" )
+
+      - name: Rebuild is byte-identical (reproducible archive)
+        shell: bash
+        run: |
+          set -euo pipefail
+          first="$(cut -d' ' -f1 "artifact-out/11ship-${{ steps.build.outputs.sha }}-ubuntu24-amd64.tar.gz.sha256")"
+          node scripts/deploy/build-ubuntu-artifact.mjs --out artifact-out-2 --sha "${{ steps.build.outputs.sha }}" --skip-build >/dev/null
+          second="$(cut -d' ' -f1 "artifact-out-2/11ship-${{ steps.build.outputs.sha }}-ubuntu24-amd64.tar.gz.sha256")"
+          echo "first=${first} second=${second}"
+          test "${first}" = "${second}"
+
+      - name: Publish checksum in the job summary
+        shell: bash
+        run: |
+          {
+            echo "### Ubuntu/VinaHost artifact"
+            echo "- source SHA: \`${{ steps.build.outputs.sha }}\`"
+            echo "- file: \`11ship-${{ steps.build.outputs.sha }}-ubuntu24-amd64.tar.gz\`"
+            echo "- SHA-256: \`$(cut -d' ' -f1 "artifact-out/11ship-${{ steps.build.outputs.sha }}-ubuntu24-amd64.tar.gz.sha256")\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload the archive and its checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: 11ship-${{ steps.build.outputs.sha }}-ubuntu24-amd64
+          path: |
+            artifact-out/*.tar.gz
+            artifact-out/*.tar.gz.sha256
+          retention-days: 14
+          if-no-files-found: error
+
   # M00-L: the launcher is a Windows tool, so its behaviour suite also runs on real Windows with Windows
   # PowerShell 5.1 (the shell the .cmd wrappers call), including the cmd wrappers started the way a double-click
   # starts them. No database and no secrets: Docker and npm are faked inside the suite.

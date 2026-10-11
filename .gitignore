@@ -18,3 +18,4 @@ build/
 .test-results/
 .local/
 .11ship-local/
+artifact-out*/
