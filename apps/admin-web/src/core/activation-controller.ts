@@ -304,8 +304,8 @@ export class ActivationController {
     const screen = this.#screen;
     const csrf = this.#csrf;
     const allowed =
-      (screen.name === 'invalidated' && screen.canRestart && !screen.pending) ||
-      (screen.name === 'password' && screen.restartRequired && !screen.pending);
+      (screen.name === 'invalidated' && screen.canRestart && !screen.pending && screen.stateUnknown !== true) ||
+      (screen.name === 'password' && screen.restartRequired && !screen.pending && screen.stateUnknown !== true);
     if (!allowed || csrf === undefined || (screen.name !== 'invalidated' && screen.name !== 'password')) {
       return;
     }
