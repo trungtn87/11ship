@@ -74,7 +74,7 @@ const noSecrets = (h) => {
 
 describe('staging:db-upgrade-from-42 gates (nothing is connected before every gate passes)', () => {
   test('accepts only --apply or --restore-snapshot, never both and never a free argument', async () => {
-    for (const argv of [['x'], ['--force'], [PASSWORD], ['--apply', '--restore-snapshot'], ['--apply', '--dry-run']]) {
+    for (const argv of [['x'], ['--force'], [PASSWORD], ['--apply', '--restore-snapshot'], ['--apply', '--dry-run'], ['--verify', '--apply'], ['--verify', '--verify']]) {
       const h = harness();
       assert.equal(await run(GOOD_ENV, argv, h), 1, argv.join(' '));
       assert.match(printed(h), /No other argument exists/);
@@ -182,6 +182,26 @@ describe('staging:db-upgrade-from-42 gates (nothing is connected before every ga
       assert.equal(await run(env, ['--restore-snapshot'], h), 1);
       assert.match(printed(h), /SNAPSHOT_MISSING/);
       assert.equal(h.log.clients.length, 0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('--verify (read-only check after an unknown COMMIT outcome) needs the existing snapshot and the key, and no confirmation', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'upgrade-gates-'));
+    try {
+      const file = join(dir, 'snapshot.bin');
+      const base = { ...GOOD_ENV, STAGING_UPGRADE_SNAPSHOT_KEY: SNAPSHOT_KEY, STAGING_UPGRADE_SNAPSHOT_FILE: file };
+      const missing = harness();
+      assert.equal(await run(base, ['--verify'], missing), 1);
+      assert.match(printed(missing), /SNAPSHOT_MISSING/);
+      const noKey = harness();
+      assert.equal(await run({ ...base, STAGING_UPGRADE_SNAPSHOT_KEY: undefined }, ['--verify'], noKey), 1);
+      assert.match(printed(noKey), /STAGING_UPGRADE_SNAPSHOT_KEY/);
+      for (const h of [missing, noKey]) {
+        assert.equal(h.log.clients.length, 0);
+        noSecrets(h);
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

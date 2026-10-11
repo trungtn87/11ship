@@ -16,8 +16,9 @@
 //     the tool proves that the stored TOTP factor decrypts with it, before and after. Keys are never changed.
 //   - the whole rebuild is ONE transaction: drop every object of schema app (except the history table), empty the history table,
 //     execute every migration file of this checkout in order and record each in the history, restore the SYSTEM rows, restore the
-//     table grants, verify, write one audit row, COMMIT. Any failure rolls the whole thing back and the database is exactly as it
-//     was. The history is never edited to hide a difference: it is rebuilt by really executing every migration.
+//     table grants, verify, write one audit row, COMMIT. A failure BEFORE COMMIT rolls the whole thing back (the database is as it
+//     was). A failure DURING COMMIT (lost connection or lost acknowledgement) leaves the outcome UNKNOWN: the tool says so (code
+//     COMMIT_OUTCOME_UNKNOWN, exit 2), never retries a write, and --verify (read-only) tells which state the database is in. The history is never edited to hide a difference: it is rebuilt by really executing every migration.
 //   - the SYSTEM rows are first written to an encrypted snapshot (AES-256-GCM, file mode 0600, created exclusively). The snapshot
 //     is the recovery path (--restore-snapshot) if the database is ever found migrated but without its SYSTEM administrator.
 //   - prints only counts and fixed codes: never a phone number, id, hash, ciphertext, key, URL or the snapshot path.
@@ -78,6 +79,8 @@ const PROBLEMS = {
   KEYRING_CANNOT_DECRYPT: 'the TOTP factor does not decrypt with the current keyring',
   SERVER_VERSION: 'PostgreSQL 17 or newer is required',
   SCHEMA_MISSING: 'schema app does not exist',
+  EXTERNAL_DEPENDENCY: 'an object outside schema app (a view or a foreign key of another schema) depends on a table of schema app; the rebuild never drops objects outside app',
+  COMMIT_OUTCOME_UNKNOWN: 'the connection failed while COMMIT was in flight: it is NOT known whether the change was committed',
 };
 
 const IDENT = /^[a-z_][a-z0-9_]*$/;
@@ -129,6 +132,38 @@ async function readInventory(client, historyTable) {
     other: other.rows.map((row) => row.label),
     functions: functions.rows.map((row) => row.proname),
   };
+}
+
+/**
+ * Objects OUTSIDE schema app that depend on a table of schema app: views/rules and foreign keys of other schemas. The rebuild drops
+ * tables with RESTRICT, so PostgreSQL refuses any dependency (this check only gives an early, readable answer and also covers the dry-run).
+ */
+async function countExternalDependents(client) {
+  const result = await client.query(
+    `SELECT
+       (SELECT count(DISTINCT r.ev_class)
+          FROM pg_depend d JOIN pg_rewrite r ON d.classid = 'pg_rewrite'::regclass AND d.objid = r.oid
+          JOIN pg_class t ON d.refclassid = 'pg_class'::regclass AND d.refobjid = t.oid
+          JOIN pg_class v ON v.oid = r.ev_class
+         WHERE t.relnamespace = $1::regnamespace AND t.relkind IN ('r', 'p') AND v.relnamespace <> $1::regnamespace)::int
+     + (SELECT count(*)
+          FROM pg_constraint c JOIN pg_class t ON t.oid = c.confrelid JOIN pg_class o ON o.oid = c.conrelid
+         WHERE c.contype = 'f' AND t.relnamespace = $1::regnamespace AND o.relnamespace <> $1::regnamespace)::int AS n`,
+    [APP_SCHEMA],
+  );
+  return result.rows[0].n;
+}
+
+/** Runs a DROP; a dependency refusal (2BP01, RESTRICT) becomes the fixed code EXTERNAL_DEPENDENCY. */
+async function dropRestrict(client, sql) {
+  try {
+    await client.query(sql);
+  } catch (error) {
+    if (error && error.code === '2BP01') {
+      throw new RebuildError('EXTERNAL_DEPENDENCY');
+    }
+    throw error;
+  }
 }
 
 const USER_COLUMNS =
@@ -244,6 +279,10 @@ async function inspect(client, { files, historyTable = `${MIGRATIONS_SCHEMA}.${M
   }
   if (problems.includes('MISSING_OBJECTS')) {
     return { state: 'STOP', problems, history, inventory };
+  }
+
+  if ((await countExternalDependents(client)) > 0) {
+    problems.push('EXTERNAL_DEPENDENCY');
   }
 
   const shape = await client.query(
@@ -451,12 +490,17 @@ async function rebuild(client, { identity, files, dir = MIGRATIONS_DIR, historyT
     }
     const grants = await captureGrants(client, historyTable);
 
-    // Drop everything except the history table. CASCADE is deliberate here: the whole schema content is being replaced.
-    for (const table of before.tables) {
-      await client.query(`DROP TABLE app.${quoteIdent(table)} CASCADE`);
+    // Drop everything of schema app except the history table (no CASCADE).
+    if ((await countExternalDependents(client)) > 0) {
+      throw new RebuildError('EXTERNAL_DEPENDENCY');
+    }
+    // ONE statement, RESTRICT: PostgreSQL resolves the dependencies between the tables of the list and REFUSES any dependency from
+    // outside the list (a view, a foreign key or a function body in another schema). Nothing outside schema app is ever dropped.
+    if (before.tables.length > 0) {
+      await dropRestrict(client, `DROP TABLE ${before.tables.map((name) => `app.${quoteIdent(name)}`).join(', ')} RESTRICT`);
     }
     for (const fn of before.functions) {
-      await client.query(`DROP FUNCTION app.${quoteIdent(fn)}()`);
+      await dropRestrict(client, `DROP FUNCTION app.${quoteIdent(fn)}() RESTRICT`);
     }
     const after = await readInventory(client, historyTable);
     if (after.tables.length + after.other.length + after.functions.length !== 0) {
@@ -510,14 +554,28 @@ async function rebuild(client, { identity, files, dir = MIGRATIONS_DIR, historyT
         },
       );
     }
-    await client.query('COMMIT');
-    open = false;
+    await commitOrUnknown(client, () => {
+      open = false;
+    });
     return { counts, migrations: files.length, grants: granted };
   } catch (error) {
     if (open) {
       await client.query('ROLLBACK').catch(() => undefined);
     }
     throw error;
+  }
+}
+
+/**
+ * COMMIT is the only statement whose failure does not say what happened: the server may have committed and the acknowledgement may
+ * have been lost. No ROLLBACK is sent and nothing is retried; the caller gets COMMIT_OUTCOME_UNKNOWN and the read-only --verify decides.
+ */
+async function commitOrUnknown(client, markClosed) {
+  markClosed();
+  try {
+    await client.query('COMMIT');
+  } catch {
+    throw new RebuildError('COMMIT_OUTCOME_UNKNOWN');
   }
 }
 
@@ -559,13 +617,63 @@ async function restoreFromSnapshot(client, { identity, files, historyTable = `${
         throw new RebuildError(decrypt);
       }
     }
-    await client.query('COMMIT');
-    open = false;
+    await commitOrUnknown(client, () => {
+      open = false;
+    });
   } catch (error) {
     if (open) {
       await client.query('ROLLBACK').catch(() => undefined);
     }
     throw error;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Read-only verification after an unknown outcome
+
+/**
+ * Tells which state the database is in, comparing the SYSTEM identity with the snapshot (a complete history alone proves nothing
+ * about the identity). One REPEATABLE READ READ ONLY transaction: it cannot change anything.
+ *   PRE_UNCHANGED            the PR #42 history, SYSTEM identical to the snapshot: the earlier run did not commit
+ *   UPGRADED_OK              the history of this checkout, exactly one SYSTEM identical to the snapshot, factor decrypts, no sessions
+ *   MIGRATED_WITHOUT_SYSTEM  the history of this checkout and no administrator at all: --restore-snapshot is the next step
+ *   ABNORMAL                 anything else: stop
+ */
+async function verify(client, { files, historyTable = `${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}`, keyring, snapshot }) {
+  await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+  try {
+    const history = await readHistory(client, historyTable);
+    if (sameList(history, EXPECTED_PRE_HISTORY)) {
+      const state = await inspect(client, { files, historyTable, keyring });
+      if (state.state === 'PRE' && identityDigest(state.identity) === identityDigest(snapshot)) {
+        return { state: 'PRE_UNCHANGED', problems: [] };
+      }
+      return { state: 'ABNORMAL', problems: state.problems.length > 0 ? state.problems : ['IDENTITY_DIFFERS'] };
+    }
+    if (!sameList(history, files)) {
+      return { state: 'ABNORMAL', problems: ['HISTORY_UNKNOWN'] };
+    }
+    const rows = await client.query(
+      `SELECT (SELECT count(*) FROM app.users)::int AS users, (SELECT count(*) FROM app.admin_memberships)::int AS memberships,
+              (SELECT count(*) FROM app.admin_totp_factors)::int AS factors, (SELECT count(*) FROM app.admin_sessions)::int AS admin_sessions,
+              (SELECT count(*) FROM app.sessions)::int AS sessions`,
+    );
+    const n = rows.rows[0];
+    if (n.users === 0 && n.memberships === 0 && n.factors === 0) {
+      return { state: 'MIGRATED_WITHOUT_SYSTEM', problems: [] };
+    }
+    const found = await readSystemIdentity(client);
+    const problems = [];
+    if (found.identity === undefined || identityDigest(found.identity) !== identityDigest(snapshot)) {
+      problems.push('IDENTITY_DIFFERS');
+    } else if (n.users !== 1 || n.memberships !== 1 || n.factors !== 1) {
+      problems.push('UNEXPECTED_ROWS');
+    } else if (keyring !== undefined && checkFactorDecrypts(keyring, found.identity) !== undefined) {
+      problems.push('KEYRING_CANNOT_DECRYPT');
+    }
+    return problems.length === 0 ? { state: 'UPGRADED_OK', problems, sessions: n.admin_sessions + n.sessions } : { state: 'ABNORMAL', problems };
+  } finally {
+    await client.query('ROLLBACK').catch(() => undefined);
   }
 }
 
@@ -601,12 +709,13 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
     err(`${PROGRAM}: ${message}`);
     return 1;
   };
-  const known = new Set(['--apply', '--restore-snapshot']);
-  if (argv.some((arg) => !known.has(arg)) || (argv.includes('--apply') && argv.includes('--restore-snapshot'))) {
-    return fail('options: none (dry-run: checks only), --apply (rebuild), or --restore-snapshot (recovery). No other argument exists.');
+  const known = new Set(['--apply', '--restore-snapshot', '--verify']);
+  if (argv.some((arg) => !known.has(arg)) || new Set(argv).size !== argv.length || argv.length > 1) {
+    return fail('options: none (dry-run: checks only), --apply (rebuild), --restore-snapshot (recovery) or --verify (read-only check after an unknown COMMIT outcome). One option at most. No other argument exists.');
   }
   const apply = argv.includes('--apply');
   const restore = argv.includes('--restore-snapshot');
+  const verifyOnly = argv.includes('--verify');
 
   if (env.APP_ENV !== 'staging') {
     return fail('APP_ENV must be staging. This tool never runs against production.');
@@ -640,14 +749,14 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
   const keyring = parsedKeyring.keyring;
 
   let snapshotKey;
-  if (apply || restore) {
+  if (apply || restore || verifyOnly) {
     snapshotKey = parseSnapshotKey(env.STAGING_UPGRADE_SNAPSHOT_KEY);
     if (snapshotKey === undefined) {
       return fail('invalid or missing configuration. Check environment variable(s): STAGING_UPGRADE_SNAPSHOT_KEY (base64 of exactly 32 random bytes)');
     }
-    const pathProblem = checkSnapshotPath(env.STAGING_UPGRADE_SNAPSHOT_FILE, { mustExist: restore });
+    const pathProblem = checkSnapshotPath(env.STAGING_UPGRADE_SNAPSHOT_FILE, { mustExist: restore || verifyOnly });
     if (pathProblem !== undefined) {
-      return fail(`STAGING_UPGRADE_SNAPSHOT_FILE refused (${pathProblem}): it must be an absolute path outside the repository${restore ? ' of an existing snapshot' : ' of a file that does not exist yet, in an existing folder'}.`);
+      return fail(`STAGING_UPGRADE_SNAPSHOT_FILE refused (${pathProblem}): it must be an absolute path outside the repository${restore || verifyOnly ? ' of an existing snapshot' : ' of a file that does not exist yet, in an existing folder'}.`);
     }
   }
   if (apply && env.STAGING_UPGRADE_CONFIRM !== CONFIRM_PHRASE) {
@@ -664,9 +773,28 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
     await client.connect();
     stage = 'identity';
     const who = await client.query('SELECT current_user AS role, current_database() AS db');
-    out(`${PROGRAM}: connected over verified TLS to ${expectedTarget} as role ${who.rows[0].role} (${restore ? 'restore' : apply ? 'APPLY' : 'dry-run'})`);
+    out(`${PROGRAM}: connected over verified TLS to ${expectedTarget} as role ${who.rows[0].role} (${restore ? 'restore' : verifyOnly ? 'verify, read-only' : apply ? 'APPLY' : 'dry-run'})`);
 
     stage = 'inspect';
+    if (verifyOnly) {
+      const snapshot = decryptSnapshot(fs.readFileSync(env.STAGING_UPGRADE_SNAPSHOT_FILE), snapshotKey);
+      stage = 'verify';
+      const result = await verify(client, { files, historyTable, keyring, snapshot });
+      if (result.state === 'PRE_UNCHANGED') {
+        out(`${PROGRAM}: PRE_UNCHANGED: the database is still on the PR #42 history and the SYSTEM is identical to the snapshot. The earlier run did NOT commit. Keep that snapshot and its key; a new --apply needs a NEW snapshot file.`);
+      } else if (result.state === 'UPGRADED_OK') {
+        out(`${PROGRAM}: UPGRADED_OK: complete history of this checkout (${files.length} migrations), exactly one SYSTEM identical to the snapshot, the TOTP factor decrypts with the keyring. The earlier run DID commit. Do not run --apply again.`);
+      } else if (result.state === 'MIGRATED_WITHOUT_SYSTEM') {
+        out(`${PROGRAM}: MIGRATED_WITHOUT_SYSTEM: complete history and no administrator. Run --restore-snapshot with this snapshot and key.`);
+      } else {
+        err(`${PROGRAM}: ABNORMAL, STOP; do not run any write. Report to ChatGPT/Owner; the provider backup is the way back.`);
+        for (const code of result.problems) {
+          err(`${PROGRAM}:   ${code}: ${PROBLEMS[code] ?? 'the identity or the history is not what the snapshot and this checkout expect'}`);
+        }
+        return 1;
+      }
+      return 0;
+    }
     if (restore) {
       const snapshot = decryptSnapshot(fs.readFileSync(env.STAGING_UPGRADE_SNAPSHOT_FILE), snapshotKey);
       stage = 'restore';
@@ -721,8 +849,13 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
     return 0;
   } catch (error) {
     const code = error instanceof RebuildError ? error.code : deps.safeErrorCode(error);
+    if (code === 'COMMIT_OUTCOME_UNKNOWN') {
+      err(`${PROGRAM}: COMMIT_OUTCOME_UNKNOWN: the connection failed while COMMIT was in flight; it is NOT known whether the ${stage} was committed.`);
+      err(`${PROGRAM}: do NOT run any write command again, do NOT delete the snapshot file or its key. Run the read-only check: npm run staging:db-upgrade-from-42 -- --verify`);
+      return 2;
+    }
     if (stage === 'rebuild' || stage === 'restore') {
-      return fail(`${stage} failed (code ${code}). The transaction was rolled back: the database is exactly as it was before this run.`);
+      return fail(`${stage} failed (code ${code}). The transaction never reached COMMIT, so nothing was committed (PostgreSQL discards an unfinished transaction). Confirm with the dry-run.`);
     }
     return fail(`${stage} failed (code ${code}). Nothing was changed.`);
   } finally {
@@ -731,7 +864,7 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
 }
 
 module.exports = {
-  main, inspect, rebuild, restoreFromSnapshot, readSystemIdentity, insertIdentity, checkFactorDecrypts, encryptSnapshot, decryptSnapshot,
+  main, inspect, verify, rebuild, restoreFromSnapshot, readSystemIdentity, insertIdentity, checkFactorDecrypts, encryptSnapshot, decryptSnapshot,
   writeSnapshotFile, checkSnapshotPath, parseSnapshotKey, upSection, RebuildError,
   EXPECTED_PRE_HISTORY, EXPECTED_PRE_TABLES, EXPECTED_PRE_FUNCTIONS, PROBLEMS, CONFIRM_PHRASE,
 };
