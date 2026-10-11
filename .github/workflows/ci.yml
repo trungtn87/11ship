@@ -112,6 +112,11 @@ jobs:
         if: ${{ failure() && steps.testsms.conclusion == 'failure' }}
         run: node scripts/annotate-log.js "Test SMS inbox tool" .test-results/test-sms.log 60
 
+      - name: Report test SMS inbox tool counts
+        if: ${{ always() && hashFiles('.test-results/test-sms.log') != '' }}
+        shell: bash
+        run: echo "::notice title=Test SMS inbox tool (Linux)::$(grep -E '^# (tests|pass|fail|skipped)|^not ok|SKIP' .test-results/test-sms.log | tr '\n' ';')"
+
       # M00-D1: render.yaml stays inside the authorized scope and the remote migration command keeps its gates.
       # Pure Node, no database. This is a structural check; Render's own Blueprint validation is a separate step.
       - name: Deploy configuration tests (Render Blueprint, remote migration gates)
@@ -268,6 +273,11 @@ jobs:
       - name: Annotate test SMS inbox tool failure (Windows)
         if: ${{ failure() && steps.testsms.conclusion == 'failure' }}
         run: node scripts/annotate-log.js "Test SMS inbox tool (Windows)" .test-results/test-sms.log 60
+
+      - name: Report test SMS inbox tool counts (Windows)
+        if: ${{ always() && hashFiles('.test-results/test-sms.log') != '' }}
+        shell: bash
+        run: echo "::notice title=Test SMS inbox tool (Windows)::$(grep -E '^# (tests|pass|fail|skipped)|^not ok|SKIP' .test-results/test-sms.log | tr '\n' ';')"
 
       - name: Launcher behaviour suite and Windows wrapper runs
         id: launcher
