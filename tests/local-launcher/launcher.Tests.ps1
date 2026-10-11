@@ -1453,13 +1453,13 @@ try {
   # git diff (files the update would add) fails while upstream adds an ignored .env that already exists.
   New-GitSandbox; Record-Install
   $envBefore = File-HashOrEmpty $script:EnvFile
-  $envLength = (Get-Item -LiteralPath $script:EnvFile).Length
+  $envLength = ([IO.FileInfo]$script:EnvFile).Length
   Push-UpstreamIgnored '.env' 'UPSTREAM=would overwrite the Owner secrets'
   $before = Head
   $script:GitFaults['added'] = $faultAdded
   Expect-Fail 'GIT_DIFF_UNREADABLE' 'a failing diff of the added files is not read as "no collision"' { Update-Launcher }
   Assert-NothingHappened 'diff read fails' $before
-  Check ((File-HashOrEmpty $script:EnvFile) -eq $envBefore -and (Get-Item -LiteralPath $script:EnvFile).Length -eq $envLength) 'diff read fails: the ignored .env is byte-for-byte intact (same SHA-256 and length)'
+  Check ((File-HashOrEmpty $script:EnvFile) -eq $envBefore -and ([IO.FileInfo]$script:EnvFile).Length -eq $envLength) 'diff read fails: the ignored .env is byte-for-byte intact (same SHA-256 and length)'
   $script:GitFaults.Clear()
   Expect-Fail 'UNTRACKED_COLLISION' 'with Git answering again the same upstream change is still refused as a collision' { Update-Launcher }
   Check ((File-HashOrEmpty $script:EnvFile) -eq $envBefore -and (Head) -eq $before) 'the ignored .env is still protected after the fault is gone'
