@@ -9,7 +9,7 @@ UI chưa phải kết quả nghiệp vụ; **M01 chưa đóng**. Chưa merge/dep
 | [#56](https://github.com/trungtn87/11ship/pull/56) nền UI | `main` | `feat/ui-m01-foundation` | `04629bc0a6352d6c238dc44711f19bc0dce27515` |
 | [#57](https://github.com/trungtn87/11ship/pull/57) 11Food | `feat/ui-m01-foundation` | `feat/ui-m01-food` | `5e137fb1ecd94ac20ab5389360cb388fc9e53f59` |
 | [#58](https://github.com/trungtn87/11ship/pull/58) 11Ship | `feat/ui-m01-food` | `feat/ui-m01-ship` | `e3a8d07e6c0ced5c4df3a6140ffbfcb44d73c797` |
-| [#61](https://github.com/trungtn87/11ship/pull/61) Web quản trị | `feat/ui-m01-ship` | `feat/ui-m01-admin` | mã `b22d2b19d540d7477447c49483b27289d1d7df70` (+ commit tài liệu, SHA cuối ghi trong PR) |
+| [#61](https://github.com/trungtn87/11ship/pull/61) Web quản trị | `feat/ui-m01-ship` | `feat/ui-m01-admin` | mã `32c9635ab0cfed4deb0d89b8dc5831aa1357ee01` |
 
 ## Vòng sửa review (F1–F3)
 
