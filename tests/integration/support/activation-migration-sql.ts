@@ -11,8 +11,9 @@ const FILES = [
   '1792281600000_create-admin-activation.sql',
   '1792368000000_extend-admin-auth-limits-activation.sql',
   '1792454400000_create-admin-membership-origin-guard.sql',
-  // Issue #49: the staging-fixture origin replaces the two account-origin CHECKs; newest, so down first and up last.
-  '1792540800000_allow-staging-fixture-account-origin.sql',
+  // Issue #49: the staging-fixture origin replaces the two account-origin CHECKs; newest, so down first and up last. It touches
+  // only those two CHECKs of app.users, so it is independent of the M01.02 customer migration that sits before it.
+  '1792627200000_allow-staging-fixture-account-origin.sql',
 ] as const;
 
 const parts = FILES.map((file) => {

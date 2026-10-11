@@ -14,6 +14,20 @@ export function isSupportedRole(value: unknown): value is SupportedRole {
   return typeof value === 'string' && (SUPPORTED_ROLES as readonly string[]).includes(value);
 }
 
+/**
+ * M01.02: the storage role of a customer. It is deliberately NOT part of SUPPORTED_ROLES: the legacy /auth routes
+ * (login, me, role/select) keep offering exactly DRIVER and SHOP, so a CUSTOMER row is invisible to them. SHOP stays the
+ * storage name of the shop owner; SHOP_OWNER is a public alias of the new client API only and is never stored.
+ */
+export const CUSTOMER_ROLE = 'CUSTOMER';
+
+/** M01.02: the client apps a consent row may name. Mirrors the schema CHECK user_consents_client_app_ck. */
+export const CONSENT_CLIENT_APPS = ['FOOD', 'SHIP'] as const;
+export type ConsentClientApp = (typeof CONSENT_CLIENT_APPS)[number];
+
+/** M01.02: grammar of one consent version token. Mirrors the schema CHECKs on terms_version and privacy_version. */
+export const CONSENT_VERSION_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+
 /** The only verification purpose A1 issues. */
 export const REGISTER_PURPOSE = 'REGISTER';
 

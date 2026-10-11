@@ -188,6 +188,71 @@ describeWithFixture('M00-D1 — remote migration path on a fresh disposable Post
     );
     expect(privilege.rows[0]).toEqual({ ins: true, del: false, hist: false });
     await expect(runtime.query('CREATE TABLE app.runtime_must_not_create (id int)')).rejects.toMatchObject({ code: '42501' });
+
+    // M01.02 — the effective privileges of the REAL restricted runtime role on EVERY table equal the runbook row: the
+    // new customer tables get exactly what the matrix says, and no other table (the administration ones included)
+    // gained anything.
+    const kinds = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'];
+    for (const [table, privileges] of grants) {
+      const effective = await migrator.query<{ kind: string; granted: boolean }>(
+        `SELECT k AS kind, has_table_privilege($1, 'app.' || $2, k) AS granted FROM unnest($3::text[]) AS k ORDER BY k`,
+        [RUNTIME_ROLE, table, kinds],
+      );
+      const granted = effective.rows.filter((row) => row.granted).map((row) => row.kind);
+      expect([table, granted]).toEqual([table, kinds.filter((kind) => privileges.includes(kind)).sort()]);
+    }
+
+    // M01.02 — what the runtime may do with the customer tables, as the runtime role itself.
+    const userId = '0192b1c0-0000-4000-8000-00000000f102';
+    try {
+      await migrator.query(
+        `INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version,
+                                created_at, updated_at)
+         VALUES ($1::uuid, '+84900000102', '$argon2id$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA', clock_timestamp(), 'PHONE_VERIFIED', 'ACTIVE', 1, clock_timestamp(), clock_timestamp())`,
+        [userId],
+      );
+      await runtime.query('INSERT INTO app.customer_profiles (user_id) VALUES ($1::uuid)', [userId]);
+      await expect(
+        runtime.query('SELECT user_id, version FROM app.customer_profiles WHERE user_id = $1::uuid FOR UPDATE', [userId]),
+      ).resolves.toMatchObject({ rowCount: 1 });
+      await expect(
+        runtime.query(
+          `UPDATE app.customer_profiles SET full_name = 'Nguyen Van A', version = version + 1, updated_at = clock_timestamp()
+            WHERE user_id = $1::uuid AND version = 1`,
+          [userId],
+        ),
+      ).resolves.toMatchObject({ rowCount: 1 });
+      await expect(runtime.query('DELETE FROM app.customer_profiles WHERE user_id = $1::uuid', [userId])).rejects.toMatchObject({
+        code: '42501',
+      });
+
+      await runtime.query(
+        `INSERT INTO app.user_consents (id, user_id, terms_version, privacy_version, accepted_at, client_app)
+         VALUES ('0192b1c0-0000-4000-8000-00000000f103'::uuid, $1::uuid, 'terms-1', 'privacy-1', clock_timestamp(), 'FOOD')`,
+        [userId],
+      );
+      await expect(runtime.query('SELECT id FROM app.user_consents WHERE user_id = $1::uuid', [userId])).resolves.toMatchObject({
+        rowCount: 1,
+      });
+      await expect(
+        runtime.query("UPDATE app.user_consents SET client_app = 'SHIP' WHERE user_id = $1::uuid", [userId]),
+      ).rejects.toMatchObject({ code: '42501' });
+      await expect(runtime.query('DELETE FROM app.user_consents WHERE user_id = $1::uuid', [userId])).rejects.toMatchObject({
+        code: '42501',
+      });
+      await expect(runtime.query('TRUNCATE app.user_consents')).rejects.toMatchObject({ code: '42501' });
+      // Out of scope: DDL on the new tables and any change of the administration tables stay denied.
+      await expect(runtime.query('ALTER TABLE app.user_consents DISABLE TRIGGER user_consents_immutable')).rejects.toMatchObject({
+        code: '42501',
+      });
+      await expect(runtime.query('DROP TABLE app.customer_profiles')).rejects.toMatchObject({ code: '42501' });
+      await expect(runtime.query('DELETE FROM app.admin_memberships')).rejects.toMatchObject({ code: '42501' });
+      await expect(runtime.query('UPDATE app.admin_app_permissions SET user_id = user_id')).rejects.toMatchObject({ code: '42501' });
+    } finally {
+      await migrator.query('TRUNCATE app.user_consents');
+      await migrator.query('DELETE FROM app.customer_profiles WHERE user_id = $1::uuid', [userId]);
+      await migrator.query('DELETE FROM app.users WHERE user_id = $1::uuid', [userId]);
+    }
   });
 });
 

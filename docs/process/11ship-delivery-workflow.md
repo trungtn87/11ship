@@ -49,3 +49,13 @@ M00: nền kỹ thuật, môi trường Owner test local, môi trường test t�
 M01: khung ứng dụng, tạo tài khoản/OTP/mật khẩu, login/quyền/phiên, khôi phục mật khẩu, onboarding, quản trị/2FA và hồi quy phải được đối chiếu backend thực tế; chưa có backend thì thiết kế/giao việc bổ sung, không dùng UI giả để đạt.
 M02: backend hồ sơ/giờ hoạt động và các task UI/local/điện thoại liên quan phải tách rõ; backend-only slice không đóng toàn module.
 PR #31 do ChatGPT triển khai trước chỉ đạo này cần review và Owner quyết định riêng; không coi là Claude thực hiện hoặc tự merge. Tài liệu này không thay đổi PR đó.
+
+## Bổ sung Owner 11/10/2026 — merge từng gói nhỏ
+
+Nguồn chỉ đạo trực tiếp 11/10/2026 10:59 Asia/Ho_Chi_Minh: “Mình muốn xong mỗi module nhỏ merge luôn vào main”. Áp dụng từ đây cho từng gói nhỏ; thay yêu cầu phải xin phép merge lại hoặc chờ nghiệm thu cả module trước tích hợp gói.
+
+Claude triển khai gói riêng và tạo Draft PR; CI/checks phù hợp phải đạt đúng final SHA; ChatGPT review không còn blocker, kiểm tra dependency tương thích và trạng thái merge sạch, rồi được Owner ủy quyền merge gói vào main ngay, không hỏi lại cho từng gói. Không merge khi còn blocker, thiếu contract bắt buộc hoặc CI đỏ. Không bật auto-merge thay review.
+
+Merge là tích hợp mã nguồn, không phải Owner đã test local/điện thoại, không tự đóng/LOCK module lớn. Các gate local, thiết bị thật và nghiệm thu vẫn ghi theo evidence thật và tiếp tục ở gói tương ứng. Không suy ra quyền deploy, apply migration remote hoặc sửa code sản phẩm thay Claude từ ủy quyền merge này.
+
+Áp dụng đầu tiên: PR #53 M01.02, reviewed head a3521ad9109188d9d3c94ea8f793c6df5ea7cf6a, merge commit 88c3d3d39c96c78a79fa2823a7587eb216c81739. M01 chưa đóng; remote migration chưa được áp trong hành động merge.

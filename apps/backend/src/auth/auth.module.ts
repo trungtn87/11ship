@@ -9,6 +9,8 @@ import { TransactionModule } from '../transaction/transaction.module';
 import { ACCOUNT_ORIGIN_POLICY, AccountOriginPolicy, createAccountOriginPolicy } from './account-origin';
 import { authConfigProvider } from './auth-config.provider';
 import { AuthController } from './auth.controller';
+import { CustomerProfileRepository } from './customer-profile-repository';
+import { CustomerProvisioningParticipant } from './customer-provisioning-participant';
 import { AdminIdentityParticipant } from './admin-identity-participant';
 import { AdminPasswordVerifier } from './admin-password-verifier';
 import { LoginService } from './login-service';
@@ -75,6 +77,7 @@ export class AuthModule {
         VerificationRepository,
         ProofRepository,
         UserRepository,
+        CustomerProfileRepository,
         SessionRepository,
         VerificationService,
         RegistrationService,
@@ -82,6 +85,7 @@ export class AuthModule {
         SessionService,
         RoleContextService,
         RoleGrantParticipant,
+        CustomerProvisioningParticipant,
         SessionAuthorizationParticipant,
         SessionAuthGuard,
         AdminIdentityParticipant,
@@ -93,6 +97,7 @@ export class AuthModule {
         SessionAuthGuard,
         SessionService,
         RoleGrantParticipant,
+        CustomerProvisioningParticipant,
         SessionAuthorizationParticipant,
         AdminIdentityParticipant,
         AdminPasswordVerifier,

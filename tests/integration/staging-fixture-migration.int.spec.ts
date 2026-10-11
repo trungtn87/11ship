@@ -11,7 +11,7 @@ import { minimalChildEnv, REPO_ROOT, runNpmScript } from './support/test-helpers
 // Issue #49 — the STAGING_FIXTURE account origin and the migration-history matrix of account_origin.
 //
 // Two earlier branches (PR #27 and PR #42) added the same column under another timestamp (1791849600000). The current
-// main owns 1791936000000_add-users-account-origin, and ONE new forward-only migration (1792540800000) replaces the two
+// main owns 1791936000000_add-users-account-origin, and ONE new forward-only migration (1792627200000) replaces the two
 // CHECK constraints. This suite builds every database history that matters and states what happens on each:
 //   fresh            -> applies cleanly, the column exists exactly once;
 //   main history     -> upgrades in place, every existing row keeps its origin and its verification time;
@@ -21,7 +21,7 @@ import { minimalChildEnv, REPO_ROOT, runNpmScript } from './support/test-helpers
 
 const FILES = readdirSync(path.join(REPO_ROOT, 'database', 'migrations')).filter((file) => file.endsWith('.sql')).sort();
 const NAMES = FILES.map((file) => file.replace(/\.sql$/, ''));
-const NEW = '1792540800000_allow-staging-fixture-account-origin';
+const NEW = '1792627200000_allow-staging-fixture-account-origin';
 const ORIGIN = '1791936000000_add-users-account-origin';
 const sqlOf = (name: string): { up: string; down: string } => {
   const text = readFileSync(path.join(REPO_ROOT, 'database', 'migrations', `${name}.sql`), 'utf8');
