@@ -1,9 +1,15 @@
 # Render Blueprint — 11Ship staging API (M00-D1).
 #
 # STATUS: configuration only. Nothing here has been deployed or validated by Render's own tooling. Deploying is a
-# separate, controlled step after review (see ops/runbooks/render-supabase-staging.md); this service also cannot
-# come up live until M00-D2 exists, because staging currently refuses to start without an OTP provider
-# (bindOtpProvider rejects APP_ENV=staging). Do NOT set APP_ENV=development here to get around that.
+# separate, controlled step after review (see ops/runbooks/render-supabase-staging.md). Staging refuses to start
+# without an OTP provider (bindOtpProvider), so it runs in the staging FIXTURE mode (AUTH_STAGING_FIXTURES_ENABLED,
+# issue #49): operator-seeded fixture accounts, OTP/registration closed (DisabledOtpProvider). Do NOT set
+# APP_ENV=development here to get around that.
+#
+# The same Node process serves the Admin web (apps/admin-web, built by `npm run build:admin-web` in the build command)
+# and the API on ONE origin: the administration cookies are __Host-* cookies. Render terminates HTTPS. The activation
+# of invited administrators (ADMIN_ACTIVATION_ENABLED) stays OFF here: it needs an OTP adapter that does not exist yet
+# and the application refuses to start with it on staging.
 #
 # Authorized scope: ONE Render Free web service. No Render database, no worker, no cron job, no paid plan.
 # The database is the separate Supabase project, reached through its SESSION pooler over TLS (runtime role only).
@@ -24,7 +30,7 @@ services:
     # Pinned toolchain: Node from .node-version (24.21.0) via NODE_VERSION below, and npm 11.9.0 (packageManager)
     # through npx so no global install is needed. `--include=dev` is required because NODE_ENV=production would
     # otherwise skip the TypeScript compiler that `npm run build` needs. Migrations are NOT part of the build.
-    buildCommand: npx --yes npm@11.9.0 ci --include=dev && npx --yes npm@11.9.0 run build
+    buildCommand: npx --yes npm@11.9.0 ci --include=dev && npx --yes npm@11.9.0 run build && npx --yes npm@11.9.0 run build:admin-web
     startCommand: npm start
 
     # Readiness, not liveness: a deploy only counts as healthy when the database answers (200 with DB, 503 without).
@@ -51,6 +57,20 @@ services:
       - key: DB_CONNECT_TIMEOUT_MS
         value: "5000"
 
+      # Staging fixture mode (issue #49): the ONLY way staging accepts logins before an SMS provider exists. Verified
+      # accounts are not accepted while it is on. Fixtures are created by `npm run staging:seed-fixtures` from an operator
+      # machine (never from this service) for the phone numbers of AUTH_STAGING_ALLOWED_PHONES, and they never hold
+      # an administration role.
+      - key: AUTH_STAGING_FIXTURES_ENABLED
+        value: "true"
+      # Same-origin Admin web + API (needs ADMIN_AUTH_ENABLED below).
+      - key: ADMIN_WEB_STAGING_ENABLED
+        value: "true"
+      - key: ADMIN_AUTH_ENABLED
+        value: "true"
+      - key: ADMIN_RATE_LIMIT_KEY_ID
+        value: limiter-1
+
       # --- Secrets: values are entered in the Render dashboard, never committed. ---
       # Runtime-role URL of the Supabase SESSION pooler. No query string (the application refuses one).
       - key: DATABASE_URL
@@ -64,4 +84,16 @@ services:
       - key: CRYPTO_ACTIVE_KEY_ID
         sync: false
       - key: CRYPTO_KEYRING
+        sync: false
+      # JSON array of the exact https origin(s) of THIS service, for example ["https://<service>.onrender.com"]. The
+      # public URL is known only after the service exists, so it is entered in the dashboard.
+      - key: ADMIN_AUTH_ALLOWED_ORIGINS
+        sync: false
+      # One of ADMIN_AUTH_ALLOWED_ORIGINS (the origin the invitation link is built on).
+      - key: ADMIN_ACTIVATION_ORIGIN
+        sync: false
+      - key: ADMIN_RATE_LIMIT_HMAC_KEY
+        sync: false
+      # JSON array of normalized +84 phone numbers (at most 20): the fixture allowlist. Personal data: not in the file.
+      - key: AUTH_STAGING_ALLOWED_PHONES
         sync: false

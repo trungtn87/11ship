@@ -11,8 +11,9 @@ Tokyo (ap-northeast-1). Render: one Free web service from `render.yaml` (`11ship
 
 | Item | State |
 |---|---|
-| M00-D2 (staging OTP binding) | **Not done.** `APP_ENV=staging` refuses to start without an OTP provider, so the service cannot become live until D2. Do not set `APP_ENV=development` on Render to get around it. |
-| Frontend / app for the Owner | None. |
+| M00-D2 (staging fixtures, OTP binding) | **Implemented in code (issue #49), not deployed.** `APP_ENV=staging` starts only in the staging fixture mode (§8). Do not set `APP_ENV=development` on Render to get around it. |
+| Admin web hosted by the service | **Implemented in code (issue #49), not deployed.** Same origin as the API (§9). |
+| Frontend / app for the Owner | The Admin web only; no mobile app. |
 | Remote migrations | Not applied. |
 | Render deploy | Not performed. `autoDeployTrigger` is `off`. |
 
@@ -174,11 +175,12 @@ Run from a controlled machine, never from Render, never at build or start.
 
 `npm run db:migrate` refuses `APP_ENV=staging|production`.
 
-## 5. Deploy on Render (manual, after D2)
+## 5. Deploy on Render (manual, after the Owner accepted the issue #49 PR)
 
 1. Dashboard → New → Blueprint → select the repo; review the plan (one Free web service).
 2. Enter secret values: `DATABASE_URL` (runtime role), `DB_SSL_CA`, `AUTH_OTP_HMAC_SECRET`, `CRYPTO_ACTIVE_KEY_ID`,
-   `CRYPTO_KEYRING`. Never the migration credential.
+   `CRYPTO_KEYRING`, `ADMIN_RATE_LIMIT_HMAC_KEY`, `AUTH_STAGING_ALLOWED_PHONES`, `ADMIN_AUTH_ALLOWED_ORIGINS` and
+   `ADMIN_ACTIVATION_ORIGIN` (§8, §9). Never the migration credential.
 3. Manual deploy of the exact commit whose migrations were applied in §4.
 4. Success = `/v1/health/ready` returns 200 (database reachable over verified TLS). 503 means the database is not
    reachable or TLS verification failed; the log shows safe codes only.
@@ -211,3 +213,79 @@ real services). Each must be confirmed in D2/D4 or at first manual deploy:
 - node-pg-migrate 8.0.4 `runner` option names (`dbClient`, `migrationsSchema`, `createMigrationsSchema`) — exercised
   only by CI (`remote-migration-runner.int.spec.ts`).
 - Grants matrix in §3 (static analysis only).
+- The whole of §8 and §9 on a real Render service and the real Supabase project (nothing was deployed, seeded or
+  migrated remotely by issue #49).
+
+## 8. Staging fixtures (issue #49, from M00-D2)
+
+Staging has no SMS provider, so the service runs in a **closed fixture mode**: `AUTH_STAGING_FIXTURES_ENABLED=true` (in
+`render.yaml`) and `AUTH_STAGING_ALLOWED_PHONES` (dashboard; JSON array of at most 20 normalized `+84…` numbers).
+
+- `DisabledOtpProvider` is bound; registration and OTP request/verify answer `503 AUTH_REGISTRATION_UNAVAILABLE`.
+- Only accounts with `account_origin = 'STAGING_FIXTURE'` whose phone is in the allowlist can sign in through the
+  application Auth, and verified (`PHONE_VERIFIED`) accounts are **not** accepted while the mode is on. Removing a number
+  from the allowlist (or switching the mode off) invalidates that account's existing sessions at the next request: the
+  policy is applied again at every bearer authentication and under the row locks of every command.
+- A fixture has no role, no profile and no session until it logs in, and it can **never** hold an administration
+  membership (the database refuses it; see `1792454400000`). `ADMIN`/`SYSTEM` are never created by the seed.
+- Production: the flag is refused at startup (`APP_ENV=production` + the flag stops the process naming the variable),
+  and the policy ignores it a second time.
+- The mode is for the Owner's staging only; it is not a way to test real OTP.
+
+Seed (operator machine, **never** Render, **never** run by the assistant against the Owner's database):
+
+1. `npm ci && npm run build`; set the same shell variables as §4 plus `AUTH_STAGING_FIXTURES_ENABLED=true` and
+   `AUTH_STAGING_ALLOWED_PHONES`.
+2. Apply the migrations first (§4). The seed checks that `users_account_origin_ck` accepts `STAGING_FIXTURE` and stops
+   otherwise.
+3. Pipe the accounts on standard input (no argument exists, so nothing reaches a process list):
+   `printf '%s' '[{"phone":"+84…","password":"…"}]' | npm run staging:seed-fixtures`
+4. The command prints only counts. One transaction, one advisory lock: a batch that meets a verified or an
+   administration account writes nothing; an existing fixture is left unchanged (re-running is safe, passwords are not
+   reset).
+
+## 9. Admin web on the same origin (issue #49, from PR #42)
+
+The Node process serves `apps/admin-web/dist` (built by the build command, `npm run build:admin-web`) and the API on one
+origin; Render terminates HTTPS. This is required because the administration cookies are `__Host-*` cookies (Secure,
+`Path=/`, no `Domain`) and the page calls the API with `credentials: 'same-origin'`.
+
+- Enabled by `ADMIN_WEB_STAGING_ENABLED=true`, valid only for `APP_ENV=staging` **and** `ADMIN_AUTH_ENABLED=true`
+  (otherwise startup stops naming the variable). `ADMIN_AUTH_ALLOWED_ORIGINS` = `["https://<service>.onrender.com"]` and
+  `ADMIN_ACTIVATION_ORIGIN` = that same origin.
+- Served: an explicit allowlist of built files and the exact browser routes of the frontend (`/`, `/activate`,
+  `/invitations`, `/invitations/new`, `/invitations/<uuid>[/reissue|/revoke]`). Everything else is `404` with the security
+  headers (CSP `default-src 'none'`, `no-store`, `nosniff`, …). `GET`/`HEAD` only (`405` otherwise). Nothing under
+  `/v1` is ever answered by the hosting, including health. It is installed before the body parser.
+- `ADMIN_ACTIVATION_ENABLED` stays **off** on Render: activation needs an OTP adapter that does not exist yet (the
+  application refuses `SMS`, and `FAKE`/`TEST_DISPLAY` outside development/test). The `/activate` page is served, but its
+  API is not exposed on staging until that adapter exists. Local activation testing uses the local HTTPS front.
+- The SYSTEM administrator is created by the operator command `admin-auth:bootstrap-system` (not by this issue).
+
+## 10. Migration history of `account_origin` (issue #49)
+
+Two histories exist for the same column:
+
+| History | Migrations that touch `account_origin` | Where it can exist |
+|---|---|---|
+| current main | `1791936000000_add-users-account-origin` then `1792540800000_allow-staging-fixture-account-origin` | fresh databases, databases migrated from main |
+| D2 (PR #27) | `1791849600000_add-users-account-origin` (PHONE_VERIFIED/STAGING_FIXTURE only) | only a database that applied PR #27's branch |
+| #42 | `1791849600000_…` + its own `1791936000000_…` | only a database that applied PR #42's branch |
+
+The repository contains only the main history. The runner refuses (names an applied migration it does not know), loudly
+and without changing anything, on a D2/#42 database. **Operator gate — not performed by the assistant.** To recognise
+which history a REAL database has, run these **read-only** queries with the operator role and record the results in the
+evidence (never paste URLs or credentials):
+
+```sql
+SELECT name FROM app.pgmigrations WHERE name LIKE '%add-users-account-origin' ORDER BY id;
+SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint
+ WHERE conrelid = 'app.users'::regclass AND conname IN ('users_account_origin_ck', 'users_origin_verified_ck');
+SELECT account_origin, count(*) FROM app.users GROUP BY 1;
+```
+
+- Only `…1791936000000_add-users-account-origin` listed (or nothing, on a fresh database): the normal path, §4.
+- `…1791849600000_…` is listed: the database is on the D2/#42 history. If it is a disposable staging database, recreate
+  it (or drop schema `app` and the history table) and apply §4 from scratch; **any fixture or administration row in it is
+  lost, so decide with the Owner first**. If it holds data that must be kept, **stop**: report to ChatGPT/Owner; a
+  hand-written reconciliation of `app.pgmigrations` is an operator decision with a backup, and is outside this issue.

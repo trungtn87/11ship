@@ -17,10 +17,15 @@ export const REQUIRED_SECRET_KEYS = [
   'AUTH_OTP_HMAC_SECRET',
   'CRYPTO_ACTIVE_KEY_ID',
   'CRYPTO_KEYRING',
+  // Issue #49 (same-origin Admin web, staging fixtures): origins and phone numbers are entered in the dashboard.
+  'ADMIN_AUTH_ALLOWED_ORIGINS',
+  'ADMIN_ACTIVATION_ORIGIN',
+  'ADMIN_RATE_LIMIT_HMAC_KEY',
+  'AUTH_STAGING_ALLOWED_PHONES',
 ];
 
 // Any key that looks like a secret must be sync: false, whatever its name is spelled like.
-const SECRET_LOOKING_KEY = /(SECRET|PASSWORD|TOKEN|KEYRING|DATABASE_URL|DB_SSL_CA|PRIVATE|CREDENTIAL)/i;
+const SECRET_LOOKING_KEY = /(SECRET|PASSWORD|TOKEN|KEYRING|HMAC|DATABASE_URL|DB_SSL_CA|PRIVATE|CREDENTIAL)/i;
 // Literals that must never appear anywhere in the file, comments included.
 const FORBIDDEN_LITERALS = [
   [/postgres(ql)?:\/\//i, 'a database connection URL'],
@@ -68,7 +73,8 @@ export function validateRenderBlueprint(text, { nodeVersion } = {}) {
 
   const build = String(service.buildCommand ?? '');
   if (!/\bci\b[^&|;]*--include=dev/.test(build)) bad('buildCommand must run npm ci with --include=dev');
-  if (!/\brun build\b/.test(build)) bad('buildCommand must run npm run build');
+  if (!/\brun build\b(?!:)/.test(build)) bad('buildCommand must run npm run build');
+  if (!/\brun build:admin-web\b/.test(build)) bad('buildCommand must run npm run build:admin-web (the Admin web is served by this service)');
   for (const [label, command] of [['buildCommand', build], ['startCommand', String(service.startCommand ?? '')]]) {
     if (/migrat/i.test(command)) bad(`${label} must not run migrations (they run explicitly, never at build or start)`);
   }
@@ -96,6 +102,15 @@ export function validateRenderBlueprint(text, { nodeVersion } = {}) {
   expectValue('NODE_ENV', 'production');
   expectValue('HOST', '0.0.0.0');
   expectValue('DB_POOL_MAX', '2');
+  // Issue #49: fixture mode and the same-origin Admin web are how this service starts on staging. The activation of
+  // invited administrators has no OTP adapter on staging (the application refuses to start), so it may not be switched
+  // on here; and no fake/test OTP mode may be set on Render.
+  expectValue('AUTH_STAGING_FIXTURES_ENABLED', 'true');
+  expectValue('ADMIN_WEB_STAGING_ENABLED', 'true');
+  expectValue('ADMIN_AUTH_ENABLED', 'true');
+  for (const key of ['ADMIN_ACTIVATION_ENABLED', 'ADMIN_ACTIVATION_OTP_MODE']) {
+    if (byKey.has(key)) bad(`${key} must not be set on Render (activation has no OTP adapter on staging yet)`);
+  }
   if (nodeVersion !== undefined) expectValue('NODE_VERSION', nodeVersion);
   if (byKey.has('PORT')) bad('PORT is supplied by Render and must not be set here');
 
