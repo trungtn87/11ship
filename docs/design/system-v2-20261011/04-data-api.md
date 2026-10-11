@@ -44,7 +44,7 @@ GET shop profile fields: shop_id/name/contact_phone/zalo/facebook/address_text/p
 
 **Source files phải đọc trước client:** auth/auth-validation.ts; onboarding/shop-onboarding-validation.ts, driver-onboarding-validation.ts; shop-management/shop-management-validation.ts; controllers/services tương ứng. Không tự thêm full_name/consent/CUSTOMER vào old register.
 
-## 3. Admin API trong PR, chưa main
+## 3. Admin API đã có trên main tại audit #52
 
 | Nhóm | Contract giữ nguyên | PR |
 |---|---|---|
@@ -60,6 +60,8 @@ Exact route prefixes/response schemas/error registry từ refreshed head, không
 Invitation permissions entries exact `{app,can_view,can_review_profile,can_lock}`, app enum CUSTOMER/SHOP/DRIVER. Gộp Food UI không gộp FOOD permission domain. Financial/config quyền chưa có contract Owner duyệt D11.
 
 ## 4. M01 — proposal tương thích
+
+Bổ sung [contract sau preflight #52](10-m01-client-contract.md) ưu tiên khi có mâu thuẫn, đặc biệt backfill chỉ PHONE_VERIFIED đã xác minh, schema/grants, validation, event và D02. Các phần API chưa CODE_READY được ghi rõ trong bổ sung; không triển khai theo giả định.
 
 ### 4.1 Client identity adapter
 
@@ -85,7 +87,7 @@ customer_profiles: user_id UUID PK/FK users, full_name varchar120 nullable cho e
 
 Backfill CUSTOMER idempotent cho ordinary PHONE_VERIFIED và STAGING_FIXTURE đã review; loại trừ actual admin membership và ADMIN_PROVISIONED, không suy privilege từ origin. Fixture UNVERIFIED_TEST vẫn phone_verified_at null. Origin schema phải reconcile #27/#34/#42 trước migration; không silent IF EXISTS để giấu drift. CUSTOMER và user creation cùng transaction. Sau loại bỏ legacy client, storage canonicalization là task migration riêng, không bắt buộc M01.
 
-Logout phải revoke phía server; offline xóa local cache không chứng minh revoke remote. Web token memory, F5 phải login lại theo limitation PC; native secure storage chờ D03. D02 chưa approved không đổi policy device_id thành physical proof giả.
+Logout phải revoke phía server; offline xóa local cache không chứng minh revoke remote. Web token memory, F5 phải login lại theo limitation PC; native secure storage chờ D03. D02 đã được Owner duyệt; device_id client vẫn không chứng minh thiết bị vật lý. Xem bổ sung contract10.
 
 ### 4.3 Reset proposal
 
