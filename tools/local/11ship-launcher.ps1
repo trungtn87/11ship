@@ -1,7 +1,9 @@
 ﻿[CmdletBinding()]
 param(
-  [ValidateSet('Menu','Start','Update','Test','Stop','Status','InstallShortcut')]
+  [ValidateSet('Menu','Start','Update','Test','Stop','Status','InstallShortcut','App')]
   [string]$Command = 'Menu',
+  [ValidateSet('Admin','Food','Ship')]
+  [string]$App,
   [switch]$Yes,
   [switch]$KeepDatabases,
   [switch]$ForceDependencies,
@@ -448,8 +450,53 @@ function Install-Shortcut {
   $desktop = [Environment]::GetFolderPath('Desktop'); $target = Join-Path $PSScriptRoot '11Ship.cmd'; $link = Join-Path $desktop '11Ship Test.lnk'
   $shell = New-Object -ComObject WScript.Shell; $shortcut = $shell.CreateShortcut($link); $shortcut.TargetPath = $target; $shortcut.WorkingDirectory = $script:Repo; $shortcut.Save(); Write-Ok "Đã tạo shortcut: $link"
 }
+
+# ---------------------------------------------------------------------------------------------
+# Applications (M00.01): entry for the three PC surfaces behind 11Ship-Admin / -Food / -Ship
+# ---------------------------------------------------------------------------------------------
+# The wrappers only choose the app; everything else is shared. This package ships the entry point and its
+# refusal path, not the launch sequence: opening an app needs the shared lock (M00.02), artifact/process
+# identity (M00.03) and a real local server for the surface (M00.05 and later). Until each of those exists the
+# launcher says so and exits with a non-zero code, BEFORE it updates code, starts a database or backend, or
+# opens a browser. A design preview or any answer on a port is not the application (design M00 v2.1, R05/R08).
+# Runtime = repo-relative entry of the real local server for that surface; $null means none exists yet.
+$script:AppCatalog = [ordered]@{
+  Admin = [pscustomobject]@{ Name = 'Web Admin';             Url = 'https://localhost:8443'; Runtime = 'scripts/admin-web-dev.mjs'; Package = 'M00.05/M00.08' }
+  Food  = [pscustomobject]@{ Name = '11Food (khách + quán)'; Url = 'https://localhost:8444'; Runtime = $null;                        Package = 'M00.05/M00.06' }
+  Ship  = [pscustomobject]@{ Name = '11Ship (xế)';           Url = 'https://localhost:8445'; Runtime = $null;                        Package = 'M00.05/M00.07' }
+}
+# What the shared orchestrator guarantees today. A later package flips its entry to Ready when it really exists.
+$script:OrchestratorCapabilities = [ordered]@{
+  ExclusiveLock    = [pscustomobject]@{ Ready = $false; Code = 'LAUNCH_LOCK_MISSING';       Package = 'M00.02'; Text = 'chưa có khóa độc quyền dùng chung cho update/build/migration/process' }
+  ArtifactIdentity = [pscustomobject]@{ Ready = $false; Code = 'ARTIFACT_IDENTITY_MISSING'; Package = 'M00.03'; Text = 'chưa có định danh artifact/process để xác minh đúng bản đang chạy' }
+}
+function Get-AppLaunchBlockers([string]$AppId) {
+  $entry = $script:AppCatalog[$AppId]
+  if (!$entry) { Fail "Ứng dụng không hợp lệ: $AppId. Chỉ có Admin, Food, Ship." 'APP_UNKNOWN' }
+  $blockers = New-Object 'Collections.Generic.List[object]'
+  if (!$entry.Runtime -or !(Test-Path -LiteralPath (Join-Path $script:Repo $entry.Runtime) -PathType Leaf)) {
+    $blockers.Add([pscustomobject]@{ Code = 'APP_RUNTIME_MISSING'; Package = $entry.Package; Text = "chưa có máy chủ chạy thật cho $($entry.Name) (không dùng bản xem thử thay thế)" })
+  }
+  foreach ($capability in @($script:OrchestratorCapabilities.Values)) {
+    if (!$capability.Ready) { $blockers.Add([pscustomobject]@{ Code = $capability.Code; Package = $capability.Package; Text = $capability.Text }) }
+  }
+  return @($blockers.ToArray())
+}
+function Open-AppLauncher([string]$AppId) {
+  if (!$AppId) { Fail 'Thiếu tên ứng dụng. Hãy mở 11Ship-Admin.cmd, 11Ship-Food.cmd hoặc 11Ship-Ship.cmd.' 'APP_NOT_SPECIFIED' }
+  $entry = $script:AppCatalog[$AppId]
+  if (!$entry) { Fail "Ứng dụng không hợp lệ: $AppId. Chỉ có Admin, Food, Ship." 'APP_UNKNOWN' }
+  $blockers = @(Get-AppLaunchBlockers $AppId)
+  if ($blockers.Count) {
+    $lines = @($blockers | ForEach-Object { "  - $($_.Code): $($_.Text) (gói $($_.Package))" }) -join [Environment]::NewLine
+    $nl = [Environment]::NewLine
+    Fail ("$($entry.Name) chưa sẵn sàng để mở ($($entry.Url)). Còn thiếu:$nl$lines${nl}Chưa làm gì: không cập nhật mã, không bật database hoặc backend, không mở trình duyệt.") 'APP_NOT_READY'
+  }
+  # Every prerequisite is declared ready, yet this package has no launch sequence: refuse instead of guessing.
+  Fail "$($entry.Name): các điều kiện đã khai báo sẵn sàng nhưng trình tự mở ứng dụng chưa được triển khai." 'APP_LAUNCH_NOT_IMPLEMENTED'
+}
 function Invoke-LauncherCommand([string]$Name) {
-  switch ($Name) { 'Start' { Start-Launcher } 'Update' { Update-Launcher } 'Test' { Test-Launcher } 'Stop' { Stop-Launcher } 'Status' { Status-Launcher } 'InstallShortcut' { Install-Shortcut } default { Menu } }
+  switch ($Name) { 'Start' { Start-Launcher } 'Update' { Update-Launcher } 'Test' { Test-Launcher } 'Stop' { Stop-Launcher } 'Status' { Status-Launcher } 'InstallShortcut' { Install-Shortcut } 'App' { Open-AppLauncher $App } default { Menu } }
 }
 function Write-Failure($ErrorRecord) { Write-Host (Protect-Text "$($ErrorRecord.Exception.Message)" (Get-KnownSecrets)) -ForegroundColor Red }
 # F05: the menu stays open until Owner chooses 0, so a result is never lost with the window.
@@ -529,10 +576,11 @@ if ($MyInvocation.InvocationName -ne '.') {
   $exitCode = 0
   try { Invoke-LauncherCommand $Command } catch { Write-Failure $_; $exitCode = 1 }
   if ($Command -ne 'Menu') {
-    if ($exitCode -eq 0) { Write-Host "Kết quả ${Command}: THÀNH CÔNG (exit 0)" -ForegroundColor Green }
-    else { Write-Host "Kết quả ${Command}: THẤT BẠI (exit $exitCode)" -ForegroundColor Red }
+    $label = if ($Command -eq 'App') { "App $App".Trim() } else { $Command }
+    if ($exitCode -eq 0) { Write-Host "Kết quả ${label}: THÀNH CÔNG (exit 0)" -ForegroundColor Green }
+    else { Write-Host "Kết quả ${label}: THẤT BẠI (exit $exitCode)" -ForegroundColor Red }
     $pauseState = Get-PauseState
-    Write-RunRecord $Command $exitCode $pauseState
+    Write-RunRecord $label $exitCode $pauseState
     if ($pauseState.Wait) { Write-Host ''; [void](Read-Host 'Nhấn Enter để đóng cửa sổ') }
   }
   exit $exitCode
