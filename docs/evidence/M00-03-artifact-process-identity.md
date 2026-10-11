@@ -68,6 +68,17 @@ Ngày: 12/10/2026 (Asia/Ho_Chi_Minh). Người thực hiện: Claude. Thiết k�
 - Mục lối vào ứng dụng: không còn mã `ARTIFACT_IDENTITY_MISSING` (đã sẵn sàng); thêm kỳ vọng `APP_LAUNCH_SEQUENCE_MISSING`; kiểm `ArtifactIdentity.Ready = $true` và `AppLaunchSequence.Ready = $false`. Kiểm tĩnh `launcher.test.mjs` tương ứng.
 - Hai kiểm "Update không báo hoàn tất khi lỗi" đổi chuỗi dò sang `(fast-forward)` vì thông báo thành công đổi lời.
 
+## Sửa theo review ChatGPT (F1, F2) trên head 636cbb2e
+
+| Phát hiện | Sửa | Test hồi quy |
+|---|---|---|
+| F1: process tồn tại nhưng không đọc được định danh bị coi là "đã thoát" khi cổng trống | `Get-TargetOwnership` trả `UNVERIFIED` (giữ registry, không dừng, không khởi động); `Wait-ProcessGone` chỉ coi là thoát khi **không còn process** hoặc **đọc được** giờ khởi động khác; không đọc được / lỗi ≠ đã thoát | uninspectable + cổng trống; lỗi inspection sau Stop (Stop báo `PROCESS_STOP_FAILED`, registry giữ nguyên) |
+| F2: cleanup/Stop nhắm theo PID, có thể giết occupant mới của PID tái sử dụng | `Stop-OwnedProcess(pid, started_utc)` dùng một handle OS (mở, so giờ khởi động, terminate, chờ trên cùng handle) → `STOPPED`/`REPLACED`/`NOT_FOUND`; process vừa khởi động được dọn qua chính đối tượng `Start-Process` (`Stop-StartedChild`), không tra theo PID; kiểm tra giờ khởi động của chính child trước khi nhận | PID bị thay trước identity-check; PID bị thay trước cleanup khi ghi registry lỗi; kiểm tra Windows thật cho `Stop-OwnedProcess` |
+
+Red-first: commit chỉ-test `ad81d09aa11e64a54b6002eca784a558e43fb17a` chạy trên CI Windows PS5.1 cho `pass=886 fail=27` và Verify đỏ; commit sửa `c52fd4a8…` đưa test về xanh (kết quả CI trên final SHA xem mô tả PR). Test M00.02 F1/F2/F3 giữ nguyên.
+
+Giới hạn đã biết: giờ khởi động đọc qua đồng hồ cục bộ; trường hợp mơ hồ do chuyển giờ mùa hè (DST) được chuẩn hóa về UTC nhưng không có test riêng. `design_version = 2.0.1` là nhãn của handoff PR #48, không phải thiết kế v2.1.
+
 ## Kiểm thử đã chạy
 
 Môi trường container: Node v22.22.0 (repo ghim 24.21.0), **không có PowerShell** (không pwsh, không Windows PowerShell; tải từ GitHub release bị chặn 403 theo chính sách egress — không vượt chính sách; npm registry không tới được).

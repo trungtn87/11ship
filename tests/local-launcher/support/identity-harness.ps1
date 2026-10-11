@@ -138,12 +138,13 @@ function Start-BackendProcess([string]$Stdout,[string]$Stderr) {
   Write-FakeLines 'procs' (@(Read-FakeLines 'procs') + ('{0}|{1}|{2}|{3}' -f $newId, $startUtc, $exe, $command))
   Write-FakeLines 'listeners' (@(Read-FakeLines 'listeners') + ('127.0.0.1|{0}|3000' -f $newId))
   if ($delay -gt 0) { Start-Sleep -Milliseconds $delay }
-  return [pscustomobject]@{ Id = $newId; StartTime = [DateTime]::UtcNow }
+  return [pscustomobject]@{ Id = $newId; StartTime = [DateTime]::Parse($startUtc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind) }
 }
-function Stop-OwnedProcess([int]$ProcessId) {
+function Stop-OwnedProcess([int]$ProcessId,[string]$ExpectedStartUtc) {
   Write-Call ('backend stop pid={0} lockheld={1}' -f $ProcessId, (Test-HarnessLockHeld))
   Write-FakeLines 'procs' @(Read-FakeLines 'procs' | Where-Object { $_.Split('|')[0] -ne "$ProcessId" })
   Write-FakeLines 'listeners' @(Read-FakeLines 'listeners' | Where-Object { $_.Split('|')[1] -ne "$ProcessId" })
+  return 'STOPPED'
 }
 function Get-HttpResult([string]$Url) {
   $listening = @(Read-FakeLines 'listeners' | Where-Object { $_.EndsWith('|3000') }).Count -gt 0
