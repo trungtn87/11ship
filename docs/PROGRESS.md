@@ -179,6 +179,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#59](https://github.com/trungtn87/11ship/pull/59) docs(M01.01): tích hợp contract đã review và bàn giao đóng… | Đã merge (`MERGED`) | — | — | — | `3e2c9bf` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#60](https://github.com/trungtn87/11ship/pull/60) docs(M01.01): ghi nhận Owner đóng phạm vi CONTRACT | Đã merge (`MERGED`) | — | — | — | `64ac0fd` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#61](https://github.com/trungtn87/11ship/pull/61) feat(admin-web): giao diện M01 Web quản trị (UI trước, chưa… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `821345a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#62](https://github.com/trungtn87/11ship/pull/62) docs(M01.03): gói đăng ký CUSTOMER local và nội dung consen… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `ae15e27` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
@@ -197,6 +198,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 - `UNCLASSIFIED_PR` PR #57: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #58: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #61: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #62: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
