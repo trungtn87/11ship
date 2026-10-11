@@ -611,7 +611,7 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
   if (env.APP_ENV !== 'staging') {
     return fail('APP_ENV must be staging. This tool never runs against production.');
   }
-  if (deps === undefined) {
+  if (deps === undefined || deps === null) {
     return fail('the compiled application is missing. Run "npm run build" first.');
   }
   const targets = checkRemoteTargets(env);

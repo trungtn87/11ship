@@ -92,9 +92,9 @@ describe('staging:db-upgrade-from-42 gates (nothing is connected before every ga
     }
   });
 
-  test('refuses a missing compiled application', async () => {
+  test('refuses a missing compiled application (null deps: what loadDefaultDeps returns without a build)', async () => {
     const h = harness();
-    assert.equal(await main({ argv: [], env: GOOD_ENV, deps: undefined, out: (m) => h.log.out.push(m), err: (m) => h.log.err.push(m) }), 1);
+    assert.equal(await main({ argv: [], env: GOOD_ENV, deps: null, out: (m) => h.log.out.push(m), err: (m) => h.log.err.push(m) }), 1);
     assert.match(printed(h), /npm run build/);
   });
 
