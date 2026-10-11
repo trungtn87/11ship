@@ -408,7 +408,7 @@ const administrators: DesignScreen = {
   code: 'D89',
   title: 'Quản trị viên — danh sách',
   group: 'Tài khoản',
-  note: 'Chỉ SYSTEM. Mã D89 là mã ĐỀ XUẤT (chưa có trong catalog, không trùng mã nào) và chưa có ảnh duyệt riêng; bố cục theo D81. Bản thật chưa nối vì chưa có hợp đồng API đọc danh sách quản trị viên; không tạo/sửa/xóa ở đây.',
+  note: 'Chỉ SYSTEM. Mã D89 do Owner chốt (đã thêm vào catalog) và chưa có ảnh duyệt riêng; bố cục theo D81. Bản thật chưa nối vì chưa có hợp đồng API đọc danh sách quản trị viên; không tạo/sửa/xóa ở đây.',
   variants: variants(['rows', 'Có dữ liệu'], ['empty', 'Trống'], ['no-match', 'Không khớp tìm kiếm'], ['loading', 'Đang tải'], ['error', 'Lỗi tải'], ['live', 'Bản thật (chưa nối)']),
   render: (context, variant) =>
     shellPage(context, { name: 'administrators' }, (content) => {

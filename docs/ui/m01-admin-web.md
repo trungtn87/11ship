@@ -17,7 +17,7 @@ và bị xoá khỏi bản thật (`npm run build:admin-web`; build thất bại
 | D81 | Người dùng — danh sách / đang khóa | `/accounts/users[?status=LOCKED]` | trạng thái "Chưa kết nối máy chủ" | chờ M01.30 / M01.31 |
 | D86 | Chi tiết người dùng | `/accounts/users/:id` | như trên | chờ M01.30 |
 | D87 / D88 | Hộp khóa / mở khóa | trong D86 | nút xác nhận khóa, không báo "đã khóa" | chờ M01.32 / M01.33 |
-| D89 (đề xuất) | Quản trị viên (SYSTEM): danh sách, tìm kiếm, lọc trạng thái, trống/không khớp/tải/lỗi | `/accounts/administrators` | "Chưa kết nối", tìm kiếm/lọc khóa kèm lý do; chỉ SYSTEM | **thiếu hợp đồng API đọc** |
+| D89 | Quản trị viên (SYSTEM): danh sách, tìm kiếm, lọc trạng thái, trống/không khớp/tải/lỗi | `/accounts/administrators` | "Chưa kết nối", tìm kiếm/lọc khóa kèm lý do; chỉ SYSTEM | **thiếu hợp đồng API đọc** |
 | C01–C10 | Trạng thái chung: tải, trống, lỗi, mất mạng, hết phiên, không có quyền, giới hạn, xung đột phiên bản, kết quả chưa rõ | trong các trang | có | — |
 
 Menu theo đặc tả (Tổng quan; TÀI KHOẢN; VẬN HÀNH; TÀI CHÍNH; HỆ THỐNG). Mục chưa làm hiện nhãn **"Sắp có"** và không điều hướng (không có trang trắng).
@@ -25,12 +25,14 @@ Quản trị viên và Lời mời Admin chỉ SYSTEM thấy; ADMIN chỉ thấy
 
 ## Quyết định của Owner/ChatGPT (2026-10-11) và phần còn chờ
 
-- **D89**: mã màn đề xuất cho trang Quản trị viên (nhóm Tài khoản, SYSTEM-only). Mã chưa trùng mã nào trong catalog (D00–D09, D14, D15, D18, D20…D88). Catalog nằm ở PR #48 / nhánh `docs-three`, không nằm trong chuỗi PR này, nên cần ChatGPT thêm dòng D89 vào catalog. Chưa có API: không có dữ liệu thật, không thao tác nghiệp vụ.
+- **D89**: Owner đã chốt là màn Quản trị viên (SYSTEM-only); dòng D89 đã được thêm vào catalog trên nhánh thiết kế hiện hành `docs/three-app-system-design-20261011` (PR #48). Trước đó là mã đề xuất cho trang Quản trị viên (nhóm Tài khoản, SYSTEM-only). Mã chưa trùng mã nào trong catalog (D00–D09, D14, D15, D18, D20…D88). Catalog nằm ở PR #48, không nằm trong chuỗi PR này. Chưa có API: không có dữ liệu thật, không thao tác nghiệp vụ.
 - **Quyền ADMIN**: bản thật chỉ dùng quyền backend. Backend hiện **chưa gửi** quyền (grants) cho trang nên ADMIN thật chỉ thấy "Tổng quan" (giới hạn hiện tại, an toàn). Cần nối sau: backend trả danh sách quyền ADMIN trong `state/me` (hoặc tương đương) → ánh xạ sang `GrantId` trong `core/menu.ts` → truyền vào `ShellApp` (tham số `grants`). Persona "ADMIN có quyền mẫu" chỉ có trong chế độ xem thiết kế và không có trong bản thật (có test).
-- **Logo gốc**: chưa có file logo trong repo hay trong phiên (chỉ có 2 bảng mockup tổng hợp, không dùng cắt ảnh từ mockup vì sẽ mờ và là vẽ lại). Cần Owner cung cấp: `11ship-logo` (11Ship, chữ + biểu tượng "11" nghiêng, vàng/đen) và `11food-logo` (11Food + khẩu hiệu "Thèm là có"), định dạng SVG (ưu tiên) hoặc PNG nền trong suốt ≥ 1024 px chiều rộng; thêm slogan "Gọi là có" cho Ship nếu là một phần của logo. Chữ "11" tạm vẫn dùng đến khi có file; nơi thay: `apps/admin-web/public` (tên quản trị) và `apps/client-shared/src` (Food/Ship), giữ tỷ lệ.
+- **Logo gốc** (không chặn bàn giao): Owner đã nêu file `1000002796.jpg` làm nguồn logo hệ 11, nhưng phiên này không truy cập được file đó; giữ placeholder chữ "11" và dùng file ngay khi truy cập được (không vẽ lại wordmark). Trước đó chưa có file logo trong repo hay trong phiên (chỉ có 2 bảng mockup tổng hợp, không dùng cắt ảnh từ mockup vì sẽ mờ và là vẽ lại). Cần Owner cung cấp: `11ship-logo` (11Ship, chữ + biểu tượng "11" nghiêng, vàng/đen) và `11food-logo` (11Food + khẩu hiệu "Thèm là có"), định dạng SVG (ưu tiên) hoặc PNG nền trong suốt ≥ 1024 px chiều rộng; thêm slogan "Gọi là có" cho Ship nếu là một phần của logo. Chữ "11" tạm vẫn dùng đến khi có file; nơi thay: `apps/admin-web/public` (tên quản trị) và `apps/client-shared/src` (Food/Ship), giữ tỷ lệ.
 - Hồ sơ cá nhân trong menu tài khoản: "Sắp có". Đặt lại mật khẩu SYSTEM: khóa ("Máy chủ").
 - Không có dữ liệu giả ở bản thật; không dùng localStorage cho dữ liệu nghiệp vụ (chỉ nhớ trạng thái thu gọn sidebar, khóa `11admin.sidebar`).
 
 ## Kiểm tra
 
 `npm run typecheck`, `npm run lint`, `npm run admin-web:test` (menu/quyền/"Sắp có"/bản thật không chứa dữ liệu minh họa/preview chỉ đọc), `npm run client-shell:test`.
+
+Bằng chứng (ảnh chụp, bảng đối chiếu, phạm vi kiểm tra stub so với CI thật): `docs/evidence/M01-UI/README.md`.
