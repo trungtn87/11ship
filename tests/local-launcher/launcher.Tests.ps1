@@ -1447,8 +1447,8 @@ try {
   Assert-NothingHappened 'status read fails' $before
   Check (@($script:GitCalls | Where-Object { $_ -match '^fetch ' }).Count -eq 0) 'status read fails: it stopped before fetching'
   $script:GitFaults.Clear()
-  Update-Launcher | Out-Null
-  Check ((Head) -ne $before) 'status read fails: the same Update works once Git answers again'
+  $message = Get-FailMessage { Update-Launcher }
+  Check ($message -eq '' -and (Head) -ne $before) 'status read fails: the same Update works once Git answers again'
 
   # git diff (files the update would add) fails while upstream adds an ignored .env that already exists.
   New-GitSandbox; Record-Install
@@ -1484,8 +1484,8 @@ try {
   New-GitSandbox; Record-Install
   Push-Upstream 'database/migrations/1000_first.sql' 'SELECT 1; -- edited upstream'
   $before = Head
-  Update-Launcher | Out-Null
-  Check ((Head) -ne $before -and (Head) -eq (Invoke-Git $script:Seed @('rev-parse','HEAD'))) 'valid empty: an update that adds no file still fast-forwards'
+  $message = Get-FailMessage { Update-Launcher }
+  Check ($message -eq '' -and (Head) -ne $before -and (Head) -eq (Invoke-Git $script:Seed @('rev-parse','HEAD'))) 'valid empty: an update that adds no file still fast-forwards'
   Check ($script:AddedMigrations -is [int] -and $script:AddedMigrations -eq 0) 'valid empty: zero new migrations is reported as 0'
   Check (@($script:HostLog | Where-Object { $_.Contains('UNREADABLE') }).Count -eq 0) 'valid empty: nothing is reported as unreadable'
 
@@ -1493,7 +1493,8 @@ try {
   New-GitSandbox; Record-Install
   Push-Upstream 'database/migrations/3000_third.sql' 'SELECT 3;'
   $script:GitFaults['migrations'] = $faultMigrations
-  Update-Launcher | Out-Null
+  $message = Get-FailMessage { Update-Launcher }
+  Check ($message -eq '') 'migration count unreadable: Update itself succeeds'
   Check ((Head) -eq (Invoke-Git $script:Seed @('rev-parse','HEAD'))) 'migration count unreadable: the code update itself is complete'
   Check ($null -eq $script:AddedMigrations) 'migration count unreadable: the count is unknown (null), not 0'
   Check (@($script:HostLog | Where-Object { $_.Contains('MIGRATION_COUNT_UNREADABLE') }).Count -eq 1 -and @($script:HostLog | Where-Object { $_ -match '\d+ migration' }).Count -eq 0) 'migration count unreadable: the Owner is told it could not be read and no count is claimed'
@@ -1541,8 +1542,8 @@ try {
   # Identity that did not change: everything still runs (control).
   New-GitSandbox; Record-Install
   Push-Upstream 'docs/note.md' 'pending'
-  Update-Launcher | Out-Null
-  Check ((Head) -eq (Invoke-Git $script:Seed @('rev-parse','HEAD'))) 'control: with unchanged launcher code Update still works'
+  $message = Get-FailMessage { Update-Launcher }
+  Check ($message -eq '' -and (Head) -eq (Invoke-Git $script:Seed @('rev-parse','HEAD'))) 'control: with unchanged launcher code Update still works'
 
   # =============================================================================================
   Section 'M00.02 F1: barrier with real processes - B loaded v1, A updates to v2 while B waits, B must not act with v1'
