@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { join, relative, sep } from 'node:path';
+import { formatRoute, parseRoute, Route } from '../../apps/admin-web/src/core/routes';
 import { installAdminWebHosting, publicAdminAsset } from '../../apps/backend/src/http/admin-web-hosting';
 import { runScript } from './support/admin-web-harness';
 import { loadIntegrationConfig, REPO_ROOT, RunningApp, startApp } from './support/test-helpers';
@@ -160,6 +161,28 @@ describe('issue #49 — Admin web hosted on the API origin', () => {
     expect(absolute).toEqual([]);
     const html = readFileSync(join(DIST, 'index.html'), 'utf8');
     expect(html).not.toMatch(/(?:src|href)=["']https?:/i);
+  });
+
+  // The server list and the frontend router must not drift: every route the frontend can format is served, and a path
+  // the frontend would only map to its "home" fallback (an unknown path) is NOT turned into the application.
+  it('is pinned to the frontend router (routes.ts): every formatted route resolves, every fallback does not', () => {
+    const routes: Route[] = [
+      { name: 'activate' },
+      { name: 'invitations' },
+      { name: 'invitations', status: 'PENDING' },
+      { name: 'invitation-new' },
+      { name: 'invitation', id: UUID },
+      { name: 'invitation-reissue', id: UUID },
+      { name: 'invitation-revoke', id: UUID },
+    ];
+    for (const route of routes) {
+      const [pathname] = formatRoute(route).split('?');
+      expect(publicAdminAsset(pathname ?? '')).toBe('index.html');
+    }
+    for (const pathname of ['/invitations/not-a-uuid', '/nothing', '/invitations/new/x', `/invitations/${UUID}/bogus`]) {
+      expect(parseRoute(pathname)).toEqual({ name: 'home' });
+      expect(publicAdminAsset(pathname)).toBeUndefined();
+    }
   });
 
   it('refuses production at install time, and a missing build, whatever the caller passes', () => {

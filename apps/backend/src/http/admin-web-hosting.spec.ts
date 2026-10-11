@@ -5,7 +5,6 @@ import { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { INestApplication } from '@nestjs/common';
-import { formatRoute, parseRoute, Route } from '../../../admin-web/src/core/routes';
 import { StartupConfigError } from '../config/startup-config-error';
 import { installAdminWebHosting, publicAdminAsset } from './admin-web-hosting';
 
@@ -72,28 +71,6 @@ describe('administration web hosting: what a path may resolve to', () => {
       `/invitations/${UUID.toUpperCase()}`,
     ]) {
       expect(publicAdminAsset(path)).toBe('index.html');
-    }
-  });
-
-  // The server list and the frontend router must not drift: every route the frontend can format is served, and a path
-  // the frontend would only map to its "home" fallback (an unknown path) is NOT turned into the application.
-  it('is pinned to the frontend router (routes.ts): every formatted route resolves, every fallback does not', () => {
-    const routes: Route[] = [
-      { name: 'activate' },
-      { name: 'invitations' },
-      { name: 'invitations', status: 'PENDING' },
-      { name: 'invitation-new' },
-      { name: 'invitation', id: UUID },
-      { name: 'invitation-reissue', id: UUID },
-      { name: 'invitation-revoke', id: UUID },
-    ];
-    for (const route of routes) {
-      const [pathname] = formatRoute(route).split('?');
-      expect(publicAdminAsset(pathname ?? '')).toBe('index.html');
-    }
-    for (const pathname of ['/invitations/not-a-uuid', '/nothing', '/invitations/new/x', `/invitations/${UUID}/bogus`]) {
-      expect(parseRoute(pathname)).toEqual({ name: 'home' });
-      expect(publicAdminAsset(pathname)).toBeUndefined();
     }
   });
 });
