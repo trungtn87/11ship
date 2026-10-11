@@ -699,7 +699,8 @@ try {
   # =============================================================================================
   $source = Get-Content -Raw -Encoding UTF8 -LiteralPath $scriptPath
   foreach ($forbidden in @('reset --hard','down -v','db:migrate:remote','git stash','push --force','audit fix')) { Check (!$source.Contains($forbidden)) "source excludes forbidden operation: $forbidden" }
-  $wrappers = @(Get-ChildItem -LiteralPath (Split-Path $scriptPath) -Filter '*.cmd')
+  # M01.22: the test SMS inbox reader is a separate tool (not a launcher wrapper); tests/test-sms-tool covers it.
+  $wrappers = @(Get-ChildItem -LiteralPath (Split-Path $scriptPath) -Filter '*.cmd' | Where-Object { $_.Name -ne '11ship-test-sms.cmd' })
   Check ($wrappers.Count -eq 6) 'menu plus five command wrappers exist'
   foreach ($wrapper in $wrappers) {
     $text = Get-Content -Raw -LiteralPath $wrapper.FullName

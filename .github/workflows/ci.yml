@@ -99,6 +99,19 @@ jobs:
         if: ${{ failure() && steps.build.conclusion == 'failure' }}
         run: node scripts/annotate-log.js Build .test-results/build.log 60
 
+      # M01.22: the read-only test SMS inbox reader against the compiled backend (real private state, real listener).
+      - name: Test SMS inbox tool (compiled backend, real listener and private state)
+        id: testsms
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p .test-results
+          npm run test-sms:test 2>&1 | tee .test-results/test-sms.log
+
+      - name: Annotate test SMS inbox tool failure
+        if: ${{ failure() && steps.testsms.conclusion == 'failure' }}
+        run: node scripts/annotate-log.js "Test SMS inbox tool" .test-results/test-sms.log 60
+
       # M00-D1: render.yaml stays inside the authorized scope and the remote migration command keeps its gates.
       # Pure Node, no database. This is a structural check; Render's own Blueprint validation is a separate step.
       - name: Deploy configuration tests (Render Blueprint, remote migration gates)
@@ -237,6 +250,24 @@ jobs:
       # Needed only so the suite can check the generated TEST DATABASE_URL with the real PostgreSQL driver parser.
       - name: Install dependencies (npm ci)
         run: npm ci
+
+      # M01.22: the test SMS inbox on real Windows: private state ACL (PowerShell), process start time, and the
+      # real .cmd wrapper started the way a double-click starts it.
+      - name: Build backend (for the test SMS inbox tool)
+        shell: powershell
+        run: npm run build
+
+      - name: Test SMS inbox tool and private state on Windows
+        id: testsms
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p .test-results
+          npm run test-sms:test 2>&1 | tee .test-results/test-sms.log
+
+      - name: Annotate test SMS inbox tool failure (Windows)
+        if: ${{ failure() && steps.testsms.conclusion == 'failure' }}
+        run: node scripts/annotate-log.js "Test SMS inbox tool (Windows)" .test-results/test-sms.log 60
 
       - name: Launcher behaviour suite and Windows wrapper runs
         id: launcher
