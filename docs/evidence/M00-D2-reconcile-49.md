@@ -16,7 +16,7 @@ green CI is not Owner acceptance.
 ## What was reconciled
 
 - **Account origin.** Main already has `account_origin` (`PHONE_VERIFIED` / `ADMIN_PROVISIONED`, migration `1791936000000`) and
-  the membership origin guard (`1792454400000`). One new forward-only migration `1792540800000_allow-staging-fixture-account-origin`
+  the membership origin guard (`1792454400000`). One new forward-only migration `1792627200000_allow-staging-fixture-account-origin`
   replaces `users_account_origin_ck` and `users_origin_verified_ck` so `STAGING_FIXTURE` (no `phone_verified_at`) is accepted.
   It adds no column, uses no `IF [NOT] EXISTS`, no `CASCADE`; its down refuses while a fixture exists.
 - **Application Auth.** `AccountOriginPolicy` decides, for every origin, whether an account may use the application Auth
@@ -35,6 +35,11 @@ green CI is not Owner acceptance.
   (`sync: false` for origins, limiter key, phone allowlist); the blueprint validator and its tests were extended.
 
 ## Migration decision
+
+**Timestamp (sync with main after M01.02).** Main gained `1792540800000_create-customer-profiles-consents` (M01.02), the same timestamp this PR's
+unapplied fixture migration used. The fixture migration was never applied anywhere, so it was renamed to the next free slot
+`1792627200000_allow-staging-fixture-account-origin` (after the last migration of main); the applied/merged migrations are untouched. Both migrations are kept,
+the four history pins (auth, driver, shop, business-hours) list customer then fixture, and the M01.02 suite pins customer as the newest M01.02 migration followed by the fixture one.
 
 Main's history is canonical; the earlier `1791849600000_add-users-account-origin` is NOT part of the repository (next to
 `1791936000000` it would add the column twice). History matrix (`tests/integration/staging-fixture-migration.int.spec.ts`):

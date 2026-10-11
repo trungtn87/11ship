@@ -1,4 +1,5 @@
 import { ACTIVATION_DOWN_SQL, ACTIVATION_UP_SQL } from './support/activation-migration-sql';
+import { CUSTOMER_DOWN_SQL, CUSTOMER_UP_SQL } from './support/customer-migration-sql';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -118,7 +119,8 @@ describe('M01-A1 — Auth Core migration', () => {
       '1792281600000_create-admin-activation',
       '1792368000000_extend-admin-auth-limits-activation',
       '1792454400000_create-admin-membership-origin-guard',
-      '1792540800000_allow-staging-fixture-account-origin',
+      '1792540800000_create-customer-profiles-consents',
+      '1792627200000_allow-staging-fixture-account-origin',
     ]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });
@@ -219,6 +221,8 @@ describe('M01-A1 — Auth Core migration', () => {
     try {
       // The Shop and Driver migrations reference app.users, so they go down first and come back up last. The invitation
       // tables, the admin tables and the account origin are the newest: they go down before everything else.
+      // The M01.02 customer tables reference app.users and are the very newest: they go down first and come back up last.
+      await client.query(CUSTOMER_DOWN_SQL);
       for (const statement of ACTIVATION_DOWN_SQL) {
         await client.query(statement);
       }
@@ -248,6 +252,7 @@ describe('M01-A1 — Auth Core migration', () => {
       for (const statement of ACTIVATION_UP_SQL) {
         await client.query(statement);
       }
+      await client.query(CUSTOMER_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES].sort());
     } finally {
       await client.query('ROLLBACK');
@@ -266,7 +271,7 @@ describe('M01-A1 — Auth Core migration', () => {
     expect(owners.rows).toEqual([{ owner: 'ship11_test' }]);
     const triggers = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles') AND t.tgname <> 'admin_membership_origin_guard'`,
+         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard'`,
     );
     expect(triggers.rows[0]?.n).toBe(1); // only audit_logs_append_only
   });
