@@ -56,7 +56,7 @@ describe('parseClientRegisterBody', () => {
       { ...valid(), consent: { terms_version: 'bad value', privacy_version: 'ok' } },
       { ...valid(), verification_token: 'x'.repeat(257) },
       { ...valid(), verification_token: 5 },
-      (({ consent: _c, ...rest }) => rest)(valid()),
+      Object.fromEntries(Object.entries(valid()).filter(([key]) => key !== 'consent')),
       [],
       null,
       'text',
