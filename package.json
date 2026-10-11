@@ -18,6 +18,8 @@
     "typecheck": "tsc -p apps/backend/tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p apps/admin-web/tsconfig.json --noEmit && tsc -p apps/ui-foundation/tsconfig.json --noEmit && tsc -p apps/food-web/tsconfig.json --noEmit && tsc -p apps/ship-web/tsconfig.json --noEmit",
     "build": "npm run build --workspace apps/backend",
     "build:admin-web": "node scripts/admin-web-build.mjs",
+    "build:admin-web:design": "node scripts/admin-web-build.mjs --design",
+    "admin-web:test": "node --test \"tests/admin-web/*.test.mjs\"",
     "build:ui-foundation": "node scripts/client-web-build.mjs ui-foundation --design",
     "build:food-web": "node scripts/client-web-build.mjs food-web",
     "build:food-web:design": "node scripts/client-web-build.mjs food-web --design",
