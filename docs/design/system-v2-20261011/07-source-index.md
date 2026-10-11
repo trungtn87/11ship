@@ -58,3 +58,9 @@ Deliverable trực quan riêng: **11Ship_UI_M00_M01_v2.pdf**,8trang, DESIGN_CAND
 Đã đọc repository/migrations/PR diff/CI logs; chưa xác minh DB live data/migration history từ xa, Windows PC của Owner hoặc app Android. Không tự build/test triển khai thay Claude, deploy/merge/LOCK. Không sửa product source, migration, runtime/deploy config, PROGRESS hoặc plan.yml.
 
 Review tiếp theo phải refresh main/PR head, kiểm diff sau audit và ghi design version mới nếu contract thay. Owner UI/business decision phải trỏ đúng scope/version/head; không dùng silent assumption.
+
+## 6. Bổ sung chia gói giao Claude v2.0.1
+
+[Danh mục gói nhỏ](08-work-packages.md), [quy tắc giao](claude-tasks/README.md), [manifest phụ thuộc](claude-tasks/manifest.json). IDs Mxx.NN chỉ là alias giao việc, không thay roadmap hay plan.yml. Nguồn thiết kế trước bổ sung: commit `5e351f5a570aac096c1ebb3504aa788cfd06822d` của PR48. Main kiểm lại `891a73b10b470b0a3a751c389e502eac576196bb` chỉ khác audit ở PROGRESS bot, không đổi code/schema/API; PR46 head vẫn `cf9eecadb6d50ec061d525d1bdf9b3f50d6d062b`.
+
+Việc chia gói không đổi nghiệp vụ/UI v2.0.0, không tự đánh CODE_READY các API future hoặc nghiệm thu module. Mỗi gói có prompt riêng, dependencies và gate của app liên quan; gửi một gói mỗi lượt.

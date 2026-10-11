@@ -4,6 +4,8 @@ Phiên bản **2.0.0**, ngày **11/10/2026 (Asia/Saigon)**. Trạng thái **DESI
 
 PR thiết kế [#48](https://github.com/trungtn87/11ship/pull/48), nhánh `docs/three-app-system-design-20261011`, trạng thái Draft. PR này lưu bộ bàn giao; việc tạo PR không thay thế phê duyệt UI hoặc nghiệm thu module.
 
+Bổ sung giao việc **v2.0.1**: [gói nhỏ theo module](08-work-packages.md), [quy tắc giao Claude](claude-tasks/README.md). Bắt đầu [M00.01](claude-tasks/M00.01.md), không giao cả M00/M01 trong một lệnh. Thiết kế nghiệp vụ v2.0.0 giữ nguyên.
+
 ## Cách dùng bộ bàn giao
 
 1. Đọc [kiểm kê](00-audit.md), [quyết định/độ sẵn sàng](06-decisions-and-gates.md).

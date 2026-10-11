@@ -1,0 +1,2935 @@
+{
+  "version": "2.0.1",
+  "status": "DESIGN_REVIEW / NOT_LOCKED",
+  "source_design_version": "2.0.0",
+  "source_design_sha": "5e351f5a570aac096c1ebb3504aa788cfd06822d",
+  "design_pr": 48,
+  "observed_main": "891a73b10b470b0a3a751c389e502eac576196bb",
+  "main_diff_from_audit": [
+    "docs/PROGRESS.md"
+  ],
+  "acceptance": "All new package gates unverified; no module closed",
+  "counts": {
+    "M00": 13,
+    "M01": 28,
+    "M02": 5,
+    "M03": 6,
+    "M04": 8,
+    "M05": 2,
+    "M06": 4,
+    "M07": 7,
+    "M08": 5,
+    "M09": 5,
+    "M10": 5,
+    "M11": 3,
+    "M12": 11
+  },
+  "dependency_order": [
+    "M00.01",
+    "M00.02",
+    "M00.03",
+    "M00.04",
+    "M00.05",
+    "M00.06",
+    "M00.07",
+    "M00.08",
+    "M00.09",
+    "M00.10",
+    "M00.11",
+    "M01.01",
+    "M00.12",
+    "M00.13",
+    "M01.02",
+    "M01.13",
+    "M02.01",
+    "M12.11",
+    "M01.03",
+    "M01.14",
+    "M01.15",
+    "M02.02",
+    "M01.04",
+    "M02.03",
+    "M12.01",
+    "M01.05",
+    "M01.06",
+    "M01.16",
+    "M01.21",
+    "M12.02",
+    "M12.08",
+    "M01.07",
+    "M01.08",
+    "M01.09",
+    "M01.17",
+    "M01.19",
+    "M01.20",
+    "M01.22",
+    "M03.01",
+    "M05.01",
+    "M01.10",
+    "M01.11",
+    "M01.18",
+    "M01.24",
+    "M03.02",
+    "M04.01",
+    "M05.02",
+    "M01.12",
+    "M01.25",
+    "M04.02",
+    "M06.01",
+    "M08.01",
+    "M01.26",
+    "M01.27",
+    "M02.04",
+    "M04.03",
+    "M04.04",
+    "M06.02",
+    "M08.02",
+    "M01.28",
+    "M02.05",
+    "M03.03",
+    "M04.05",
+    "M07.01",
+    "M01.23",
+    "M03.04",
+    "M03.05",
+    "M04.06",
+    "M04.07",
+    "M04.08",
+    "M07.02",
+    "M09.01",
+    "M06.03",
+    "M09.02",
+    "M09.04",
+    "M09.05",
+    "M10.01",
+    "M12.03",
+    "M12.05",
+    "M06.04",
+    "M07.03",
+    "M09.03",
+    "M10.02",
+    "M12.07",
+    "M07.04",
+    "M10.03",
+    "M10.04",
+    "M07.05",
+    "M03.06",
+    "M07.06",
+    "M07.07",
+    "M08.03",
+    "M08.04",
+    "M10.05",
+    "M08.05",
+    "M11.01",
+    "M12.04",
+    "M11.02",
+    "M12.06",
+    "M11.03",
+    "M12.09",
+    "M12.10"
+  ],
+  "tasks": [
+    {
+      "id": "M00.01",
+      "title": "Sửa ba wrapper và lỗi kiểm thử launcher",
+      "module": "M00",
+      "kind": "BE/TOOL",
+      "dependencies": [],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "tools/local/11Ship-{Admin,Food,Ship}.cmd",
+        "tools/local/11ship-app-launch.ps1",
+        "tests/local-launcher/"
+      ],
+      "work": "Sửa findings L01/L05 trong audit: wrapper gọi đúng app, exit code được giữ, cwd luôn repo kể cả Desktop/path có dấu/khoảng trắng. Xác định bốn test đỏ của #46; sửa hành vi và assertions có lý do. Không chỉ đổi số wrapper 6 thành 9.",
+      "contract": "Giữ CLI/exit codes launcher nền #40. Không endpoint hoặc migration mới. Food/Ship chưa chạy được ở gói này là thiếu đã biết, không coi toàn ba app PASS.",
+      "tests": "npm run launcher:test; PowerShell 5.1 trên Windows và 7 khi phù hợp; behavior cả wrapper cũ/mới, nonzero exit, caller cwd khác, paths Unicode/spaces.",
+      "gates": "",
+      "inherit": "Main #39/#40 và code Draft #46; không dựng launcher mới.",
+      "flow": "Double-click wrapper → xác định repo → truyền đúng app/cwd → nhận đúng exit code.",
+      "outside": "Shell Food/Ship, Auth, lock/process orchestration mới, migration nghiệp vụ.",
+      "external_sources": [
+        "PR46",
+        "PR40"
+      ]
+    },
+    {
+      "id": "M00.02",
+      "title": "Khóa chung, Git update và chạy lại launcher mới",
+      "module": "M00",
+      "kind": "BE/TOOL",
+      "dependencies": [
+        "M00.01"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "tools/local/11ship-app-launch.ps1",
+        "tools/local/11ship-launcher.ps1",
+        "tests/local-launcher/"
+      ],
+      "work": "Một lock cho update/build/migration/process-state; chờ tối đa120s, stale lock kiểm PID/start time. Giữ fast-forward và dirty/diverged guards, UAT pin full SHA; re-exec script vừa cập nhật đúng một chu kỳ.",
+      "contract": "State local atomic; main auto-update và UAT pin là hai mode rõ. Git fail dừng trước build; không reset/stash hoặc tiếp tục stale source tự động. Không thay DEV/TEST guard.",
+      "tests": "Ba launch đồng thời; timeout lock; stale PID/reused PID; clean/dirty/diverged/untracked collision/network/detached/upstream; script đổi và re-exec một lần.",
+      "gates": "",
+      "inherit": "Update guards main và #46; L07/L08.",
+      "flow": "Giữ lock → kiểm checkout → fast-forward main hoặc verify UAT SHA → re-exec script nếu đổi → nhả lock; lỗi dừng trước build.",
+      "outside": "Process readiness và UI; không tạo DDL.",
+      "external_sources": [
+        "PR46",
+        "PR40"
+      ]
+    },
+    {
+      "id": "M00.03",
+      "title": "Xác minh process, phiên bản build và restart an toàn",
+      "module": "M00",
+      "kind": "BE/TOOL",
+      "dependencies": [
+        "M00.02"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "tools/local/11ship-launcher.ps1",
+        "tools/local/11ship-app-launch.ps1",
+        "tests/local-launcher/"
+      ],
+      "work": "Process registry xác minh PID/start UTC/repo/executable-script/port/source SHA/fingerprint. Reuse khi cả SHA và fingerprint khớp; thay một trong hai thì rebuild/restart đúng owned process. Health HTTP200 đơn lẻ không đủ.",
+      "contract": "Manifest app_id/source_sha/build_fingerprint/built_at/design_version; local state temp+rename. Backend live/ready giữ endpoint/body. Chưa có frontend ở gói này thì kiểm bằng isolated harness, không ghi app đã chạy.",
+      "tests": "Old owned backend; same-source reuse; PID reuse/corrupt state; foreign HTTP200; build fail không ghi fingerprint; Stop không kill node/process lạ; DEV sentinel còn.",
+      "gates": "",
+      "inherit": "Ownership backend main; findings L02/L03. M00.05 nối manifest của frontend.",
+      "flow": "Đọc registry → xác minh ownership và artifact → reuse hoặc restart owned → kiểm identity/health → ghi state atomic.",
+      "outside": "Không sửa policy Auth hay schema health/business.",
+      "external_sources": [
+        "PR46",
+        "PR40"
+      ]
+    },
+    {
+      "id": "M00.04",
+      "title": "Bộ UI chung, brand và trạng thái kết nối",
+      "module": "M00",
+      "kind": "UI/SHARED",
+      "dependencies": [
+        "M00.03"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/client-shared/src/",
+        "apps/client-shared/public/brand/",
+        "tests/client-shell/"
+      ],
+      "work": "Tokens vàng#D8AD18/đen#2A2A2E/trắng, logo nguyên gốc/font local+OFL; components navigation/loading/empty/banner/diagnostics. Health timeout5s, no-store, generation chống response cũ; copy báo lỗi được sanitize.",
+      "contract": "GET /v1/health/live→data.status=ok; /ready→ready hoặc503. F05/F06/S06, C01-C03/C07/C10. Không token/Auth transport hoặc số liệu nghiệp vụ giả.",
+      "tests": "Unit timeout/generation/error copy/sanitization; browser360/390/430 và PC1366, keyboard/focus/touch44px; live OK/ready503; offline và retry.",
+      "gates": "OWNER_UI: mẫu M00 v2 và trạng thái liên quan được duyệt trước code UI.",
+      "inherit": "Palette/font/brand guideline và PDF tám trang đã bàn giao.",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Login/register/reset, wallet/order/GPS nghiệp vụ.",
+      "external_sources": []
+    },
+    {
+      "id": "M00.05",
+      "title": "Build và HTTPS runtime cho ba entry PC",
+      "module": "M00",
+      "kind": "BE/RUNTIME",
+      "dependencies": [
+        "M00.03"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "scripts/{food-web,ship-web}-{build,dev}.mjs",
+        "apps/{food-web,ship-web}/package.json",
+        "package.json",
+        "tools/local/11ship-app-launch.ps1",
+        "tests/client-shell/"
+      ],
+      "work": "Build entry Food/Ship và manifest đúng artifact; HTTPS loopback8444/8445, Admin8443 giữ server đã có. Route local /__11ship/runtime và health proxy allowlist. Quy trình cert một lần, verify chain hoặc pin leaf; không arbitrary -k/global bypass.",
+      "contract": "Backend127.0.0.1:3000, DEV5432/TEST5433. Runtime local read-only trả app identity/version, không DSN/secret. Admin upstream/Auth proxy giữ allowlist #35, chưa nối ở gói này.",
+      "tests": "Build/types; cert missing/expired/SAN mismatch; correct app manifest; foreign port; upstream timeout/malformed body; không wildcard proxy; .gitignore cert/key/state.",
+      "gates": "Certificate trust chỉ ở setup được Owner chấp thuận; không tự cài CA hệ thống.",
+      "inherit": "Build/server/cert procedure Admin #35, orchestration #46.",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Không tạo business endpoint hoặc form Auth mới.",
+      "external_sources": [
+        "PR35",
+        "PR46"
+      ]
+    },
+    {
+      "id": "M00.06",
+      "title": "Khung 11Food chạy thử trên PC",
+      "module": "M00",
+      "kind": "UI",
+      "dependencies": [
+        "M00.04",
+        "M00.05"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "apps/food-web/public/",
+        "apps/food-web/src/",
+        "tests/client-shell/"
+      ],
+      "work": "F00-F06: home/search/orders/account guest, bốn tab và back/navigation thật, diagnostics/health thật. Account đặt đúng vị trí entry quản lý quán cho M01; chưa có Auth thì các CTA disabled với lý do. Empty dùng dữ liệu chưa có, không fake quán/ưu đãi.",
+      "contract": "Chỉ health/runtime manifest M00.05. Catalog03 §3 và PDF trang1/3; auth/membership không giả lập. Search giữ text nhưng không tạo business search results.",
+      "tests": "Browser bốn tab/deep-link/F5/back; layout360/390/430; loading/offline/timeout/stale retry; không gọi business mutation hoặc hiện authenticated owner giả.",
+      "gates": "OWNER_UI: F00-F06 được duyệt.",
+      "inherit": "",
+      "flow": "Launcher Food → home guest → chọn tab/account → diagnostics → retry khi mất kết nối.",
+      "outside": "Đăng ký/login/OTP, thực đơn, cart/order, hồ sơ quán thật.",
+      "external_sources": []
+    },
+    {
+      "id": "M00.07",
+      "title": "Khung 11Ship chạy thử trên PC",
+      "module": "M00",
+      "kind": "UI",
+      "dependencies": [
+        "M00.04",
+        "M00.05"
+      ],
+      "applications": [
+        "SHIP"
+      ],
+      "files": [
+        "apps/ship-web/public/",
+        "apps/ship-web/src/",
+        "tests/client-shell/"
+      ],
+      "work": "S00-S06: home/orders/income/wallet/account guest, năm tab; Online/Auth/nhận đơn chưa nối disabled rõ. Wallet/income unknown không ghi0; không vẽ GPS hoặc bản đồ động giả. Health/diagnostics thật.",
+      "contract": "Chỉ health/runtime manifest; catalog03 §5 và PDF trang2/3. PLATFORM/EXTERNAL chỉ là nhãn khi sau này API có dữ liệu, không self-grant.",
+      "tests": "Browser năm tab/back/deep-link/F5; small screens; offline/timeout/retry; không balance/GPS/orders/demo user trong DB hoặc online mutation.",
+      "gates": "OWNER_UI: S00-S06 được duyệt.",
+      "inherit": "",
+      "flow": "Launcher Ship → home chưa login → tab đơn/thu nhập/ví/tài khoản → kiểm kết nối.",
+      "outside": "Hồ sơ/bank/approval, GPS nền, commission, payout, delivery.",
+      "external_sources": []
+    },
+    {
+      "id": "M00.08",
+      "title": "Tích hợp Admin login và Authenticator đã có",
+      "module": "M00",
+      "kind": "INTEGRATION",
+      "dependencies": [
+        "M00.05"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/admin-web/",
+        "apps/backend/src/admin-auth/",
+        "tools/local/11ship-app-launch.ps1",
+        "tests/admin-web/",
+        "ops/runbooks/"
+      ],
+      "work": "Chọn reviewed dependency từ #34/#35; đối chiếu #42, reconcile origin migration/fixture nếu integration có dùng. Khởi tạo SYSTEM/limit config bằng công cụ hiện có qua stdin; login→PREAUTH→TOTP→shell→logout thật và F5/state.",
+      "contract": "Giữ exact /v1/admin-auth endpoints, __Host cookies/Origin/CSRF/TOTP/lost-response. Migration Admin Auth chỉ kế thừa dependency đã review, giữ xác nhận DEV; không migration Auth mới cho M00.",
+      "tests": "PREAUTH deny; enrollment/verify/state/F5/logout; POST TOTP timeout→GET state; CSRF/origin/proxy negative; bootstrap repeat unchanged; log không secret; fresh/upgrade nếu tích hợp migration.",
+      "gates": "Reviewed #34/#35 dependency; Owner duyệt UI slice Admin theo workflow.",
+      "inherit": "Admin code đã có, không viết lại login/TOTP. #42 là integration reference, không cherry-pick toàn bộ.",
+      "flow": "Launcher Admin → kiểm local config → password login → PREAUTH → enroll/verify Authenticator → session shell → server logout.",
+      "outside": "Invitations, activation, reset password, full admin management.",
+      "external_sources": [
+        "PR34",
+        "PR35",
+        "PR42"
+      ]
+    },
+    {
+      "id": "M00.09",
+      "title": "Tích hợp ba shortcut, Status/Stop và bản Windows",
+      "module": "M00",
+      "kind": "INTEGRATION",
+      "dependencies": [
+        "M00.06",
+        "M00.07",
+        "M00.08"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "tools/local/",
+        "tests/local-launcher/",
+        "tests/client-shell/",
+        "ops/runbooks/three-app-local-test.md",
+        "docs/evidence/M00-3APP.md"
+      ],
+      "work": "Nối ba entry runtime vào orchestrator; tạo Desktop shortcuts từ đúng repo path, Status đủ ba app và SHA, Stop chỉ owned frontends/backend và giữ DEV. Chứng minh simultaneous launch có một backend; đóng browser không dừng backend.",
+      "contract": "8443/8444/8445 chung3000 và DEV; UAT SHA pin giữ nguyên; Test dùng5433. Không đổi schema nghiệp vụ. Manifest từ runtime đúng build đang phục vụ.",
+      "tests": "Verify+Windows trên exact HEAD; real API/PG17 smoke; foreign ports, update/fingerprint, migration decline/fail, unicode cwd; TEST/Stop bảo toàn DEV sentinel; ba browser thật.",
+      "gates": "",
+      "inherit": "Tích hợp kết quả .01-.08; không lấy isolated mocks làm chứng cứ app thật.",
+      "flow": "Ba shortcut → một orchestration/backend → ba frontends đúng SHA → mở ba browser → Status/Stop bảo toàn DEV.",
+      "outside": "Nghiệp vụ M01/M02+, phone acceptance hoặc tự ghi Owner PASS.",
+      "external_sources": []
+    },
+    {
+      "id": "M00.10",
+      "title": "Gói Owner nghiệm thu PC và vòng sửa M00",
+      "module": "M00",
+      "kind": "UAT",
+      "dependencies": [
+        "M00.09"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "docs/evidence/M00-3APP.md",
+        "ops/runbooks/three-app-local-test.md",
+        "docs/design/system-v2-20261011/M00-UAT.md"
+      ],
+      "work": "Chuẩn bị version/full SHA, dependencies, machine/env và lệnh dùng một lần; giao bản cho Owner double-click ba shortcut. PC01-PC20 ghi actual từ Owner, lỗi được ChatGPT phân tích rồi giao fix Claude ở đúng gói phát sinh. Bản chưa test ghi Chưa chạy.",
+      "contract": "M00-PC-ACCEPTED chỉ có sau Owner quyết định đúng SHA. Không suy whole-module LOCK từ PC, CI hoặc backend đã merge.",
+      "tests": "20 ca PC theo M00-UAT; retest affected cases khi head đổi; ảnh app đang chạy/manifest/CI liên kết đúng SHA; dữ liệu DEV không bị reset.",
+      "gates": "Owner thực hiện test local và xác nhận; Claude chỉ chuẩn bị/check kỹ thuật, không test thay Owner hoặc ghi hộ PASS.",
+      "inherit": "",
+      "flow": "Candidate review đạt → Owner PC01-PC20 → finding → Claude sửa ở gói liên quan → review/retest → Owner quyết định M00-PC.",
+      "outside": "Không tự sửa product code trong gói UAT; tạo finding/fix task đúng scope.",
+      "external_sources": []
+    },
+    {
+      "id": "M00.11",
+      "title": "Kiểm chứng môi trường test từ xa hiện có",
+      "module": "M00",
+      "kind": "REVIEW",
+      "dependencies": [
+        "M00.09"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "ops/runbooks/",
+        "docs/evidence/M00-REMOTE.md"
+      ],
+      "work": "Rà evidence #42/D2 và deployment Owner đã thực hiện; kiểm endpoint/build/schema history/health trên target test được cấp quyền. Đọc trạng thái thật, đối chiếu local và môi trường; không coi code config là deploy evidence.",
+      "contract": "Read-only; URL/env/CA/runtime SHA từ cấu hình được cấp, không suy từ Git HEAD. Các app chưa được host ghi thiếu. Chuẩn bị yêu cầu sửa riêng nếu có finding.",
+      "tests": "Live/ready/version/TLS/DB migration history theo quyền; auth smoke có tài khoản test được Owner cấp; không leak credential hoặc reset remote DB.",
+      "gates": "Target/credential test được cấp; thay đổi/deploy có gói và authorization riêng.",
+      "inherit": "#42 và staging runbook/evidence; không triển khai lại từ đầu.",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Không apply migration, deploy production hoặc gửi SMS thật tự động.",
+      "external_sources": [
+        "PR42"
+      ]
+    },
+    {
+      "id": "M00.12",
+      "title": "Bản Android chẩn đoán 11Food",
+      "module": "M00",
+      "kind": "NATIVE",
+      "dependencies": [
+        "M00.10"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "Android source theo runtime/package contract đã duyệt",
+        "docs/evidence/M00-FOOD-ANDROID.md"
+      ],
+      "work": "Sau D03, tạo hoặc kế thừa native diagnostics phù hợp runtime đã chốt; chỉ Food package. Brand/home/navigation/health cùng M00 PC, kết nối backend test thực theo network/CA config an toàn. Build APK/version/checksum; Owner test thiết bị.",
+      "contract": "Không tự chọn Flutter/Java/WebView trước D03; PR31 Java chỉ diagnostics, topology ba flavor cũ phải reconcile thành hai app. Không Auth/menu/orders nghiệp vụ trong gói này.",
+      "tests": "Real Android install/cold start/back/keyboard/network/offline/TLS/fonts; SHA/checksum và thiết bị; PC shell không thay phone evidence.",
+      "gates": "D03 runtime/package/native storage/network; D04 test URL/provider khi áp dụng; Owner UI/local trước phone.",
+      "inherit": "#31 diagnostics sau review và M00 Food shell.",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Không App Quán riêng, không runtime giả lập làm physical PASS.",
+      "external_sources": [
+        "PR31"
+      ]
+    },
+    {
+      "id": "M00.13",
+      "title": "Bản Android chẩn đoán 11Ship",
+      "module": "M00",
+      "kind": "NATIVE",
+      "dependencies": [
+        "M00.10"
+      ],
+      "applications": [
+        "SHIP"
+      ],
+      "files": [
+        "Android source theo runtime/package contract đã duyệt",
+        "docs/evidence/M00-SHIP-ANDROID.md"
+      ],
+      "work": "Ship package riêng dùng runtime đã duyệt, không tạo app quản lý. Brand/năm tab/health cùng PC guest shell; build APK/version/checksum và Owner device smoke.",
+      "contract": "Cùng backend/API/DB với Food/Admin; chỉ diagnostics, không GPS nền/driver activation/delivery. Reuse shared Android foundation từ gói Food nếu đã được review.",
+      "tests": "Install/cold start/back/offline/TLS/layout thực tế; side-by-side với Food cùng điện thoại; đúng brand/package/URL/SHA.",
+      "gates": "D03 runtime/package; Owner UI/local trước phone. Shared foundation thay đổi phải retest Food.",
+      "inherit": "#31 phần diagnostics hợp lệ; M00 Ship shell.",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Không App Quản lý hoặc App Xế flavor legacy thứ ba.",
+      "external_sources": [
+        "PR31"
+      ]
+    },
+    {
+      "id": "M01.01",
+      "title": "Chốt hợp đồng tương thích tài khoản cho hai app",
+      "module": "M01",
+      "kind": "CONTRACT",
+      "dependencies": [
+        "M00.09"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "docs/design/system-v2-20261011/04-data-api.md",
+        "docs/design/system-v2-20261011/06-decisions-and-gates.md",
+        "docs/evidence/M01-CLIENT-PREFLIGHT.md"
+      ],
+      "work": "Claude preflight read-only: đối chiếu origin/membership #27/#34/#42, old parsers và SHOP select, new client-auth proposal, grants/migration prerequisites. Báo gaps và ví dụ request/response từ code; ChatGPT chốt contract/API/DDL phù hợp rồi Owner duyệt điểm policy. Không code API trong gói này.",
+      "contract": "CUSTOMER server grant; storage SHOP giữ, public alias SHOP_OWNER; không gộp scopes CUSTOMER/SHOP/DRIVER thànhFOOD. Exact schema/error/replay/capabilities/backfill rules là đầu vào trước .02-.05.",
+      "tests": "Matrix old/new client và origin; privileged exclusion; một-device hiện mới SHOP-context. Phân loại safe compatibility với D02/D03 chưa quyết định; source diff sau audit.",
+      "gates": "ChatGPT CODE_READY contract; Owner quyết định D02/D03 cho slice liên quan, không chặn preflight độc lập.",
+      "inherit": "Auth/onboarding main, #27/#34/#42 và spec04 §4.",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Không tự đổi password/role/session policy hoặc thiết kế nghiệp vụ thay ChatGPT.",
+      "external_sources": [
+        "PR27",
+        "PR34",
+        "PR42"
+      ]
+    },
+    {
+      "id": "M01.02",
+      "title": "Schema CUSTOMER, hồ sơ khách và consent",
+      "module": "M01",
+      "kind": "BE/SCHEMA",
+      "dependencies": [
+        "M01.01",
+        "M00.10"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "database/migrations/",
+        "apps/backend/src/auth/",
+        "database/runtime grants theo cấu trúc repo",
+        "tests/integration/"
+      ],
+      "work": "Append customer_profiles/user_consents và storage CUSTOMER tương thích; backfill ordinary origins/membership đã review, loại privileged. Existing full_name nullable, không bịa tên/phone_verified_at. Chuẩn bị participant cho register một transaction.",
+      "contract": "Spec04 §4.2; user/profile PK FK; version positive, name≤120; consent immutable versioned. Reconcile origin drift tường minh, không IF EXISTS che conflict. API register cũ chưa đổi.",
+      "tests": "Fresh/upgrade/backfill counts/repeat guard/runtime grants; privileged excluded; old register/SHOP/DRIVER regression; no fake profile/name.",
+      "gates": "Contract .01 và consent content/version đã duyệt; Owner local M00 gate trước triển khai M01.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Không phone reset/change-phone, driver bank hoặc ordinary UI.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.03",
+      "title": "Đăng ký CUSTOMER qua OTP thật ở backend",
+      "module": "M01",
+      "kind": "BE",
+      "dependencies": [
+        "M01.02"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/client-auth/ (mới)",
+        "apps/backend/src/auth/registration-service.ts",
+        "apps/backend/src/auth/verification-service.ts",
+        "tests/integration/"
+      ],
+      "work": "POST client-auth/register dùng primitives REGISTER OTP đã có; consume proof/create USER+CUSTOMER+profile+consent+session/audit/outbox atomic. OTP request/verify giữ parser main, không nhận role/driver_type/permission từ app.",
+      "contract": "Spec04 §4.1 exact phone/password/verification_token/device/full_name/consent +Idempotency-Key. Old /auth/register response giữ; password8-128 Unicode codepoints không trim; proof purpose/once.",
+      "tests": "Proof REGISTER/expired/used/wrong purpose; phone race old/new; duplicate submit same key/body; rollback participant; CUSTOMER role server; privilege injection; PG17 grants.",
+      "gates": "Contract .01 CODE_READY; SMS fixture chỉ isolated/labeled test, không chứng nhận SMS production.",
+      "inherit": "",
+      "flow": "REGISTER OTP proof → validate fields → một transaction consume/create/grant/profile/consent/session → trả identity CUSTOMER.",
+      "outside": "Login/context/logout, UI đăng ký, reset hoặc tự ACTIVE quán/xế.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.04",
+      "title": "Login, me, context và logout phía server",
+      "module": "M01",
+      "kind": "BE",
+      "dependencies": [
+        "M01.03"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/client-auth/",
+        "apps/backend/src/auth/session-service.ts",
+        "apps/backend/src/auth/role-context-service.ts",
+        "tests/integration/"
+      ],
+      "work": "Nối client-auth login/me/context/logout theo capabilities; alias SHOP→SHOP_OWNER, không grant qua context. Logout revoke current session thật; stale request/revoked role recheck dưới transaction. Giữ enforcement thiết bị cũ cho đến D02 approved.",
+      "contract": "Spec04 §4.1; opaque bearer, absolute expiry không refresh. New me không token; server boolean capabilities chỉ quyền đã có; quán disabled không tự khóa CUSTOMER.",
+      "tests": "Old/new login/select; disabled/status; foreign context deny; session expiry/revocation/logout repeated/lost response; role change waiting lock; no privilege from app/device_id.",
+      "gates": "Đừng thực thi policy physical-device mới khi D02 chưa có contract.",
+      "inherit": "",
+      "flow": "Password login → authorize identity/capabilities → me/context hợp lệ → logout revoke; session cũ không khôi phục state.",
+      "outside": "JWT/refresh token, default privilege theo app, phone change/reset.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.05",
+      "title": "Read model hồ sơ khách và hồ sơ xế để resume",
+      "module": "M01",
+      "kind": "BE",
+      "dependencies": [
+        "M01.04"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/customer-profile/ (mới)",
+        "apps/backend/src/driver/",
+        "tests/integration/"
+      ],
+      "work": "GET/PUT customer/me/profile chỉ full_name và version; GET driver/me own fields/status/version hoặcnull. Name khách không sửa legal/bank name xế. Driver PENDING/SUSPENDED vẫn đọc own status theo capability.",
+      "contract": "Spec04 own profile PUT{full_name,expected_version}+key; driver own read không wallet/bank verification giả; current EXTERNAL/PENDING enum giữ nguyên.",
+      "tests": "Foreign user/driver ID deny; null profile; Unicode/name120; version/key replay; customer edit không đổi driver/bank; cold-start read status.",
+      "gates": "",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Driver edit/bank/approval/Online, customer addresses hoặc change-phone.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.06",
+      "title": "Transport và component Auth dùng chung",
+      "module": "M01",
+      "kind": "UI/SHARED",
+      "dependencies": [
+        "M01.03",
+        "M01.04"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/client-shared/src/auth/ (mới)",
+        "tests/client-shell/"
+      ],
+      "work": "Memory bearer, session generation, typed error mapping, OTP một input accessible trình bày6ô, password eye, countdown expiry/resend theo server. Idempotency giữ cùng intent/body; logout clear PII, stale response không restore account.",
+      "contract": "Client-auth và REGISTER OTP contracts; C01-C09; password/proof không URL/localStorage/telemetry. PC F5 cần login lại là limitation đã ghi; native storage chờ D03.",
+      "tests": "OTP paste/autofill/clock resume/429; double submit/lost response; stale login sau logout; password Unicode không trim; shared components keyboard/focus/screens360.",
+      "gates": "Owner duyệt component/UI Auth M01 v2.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Không tự thêm Google/OTP login, Remember me, reset API hoặc actual app router.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.07",
+      "title": "11Food: đăng ký và xác minh OTP",
+      "module": "M01",
+      "kind": "UI",
+      "dependencies": [
+        "M01.06"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER"
+      ],
+      "files": [
+        "apps/food-web/src/auth/",
+        "tests/client-shell/"
+      ],
+      "work": "F11/F12: name/phone/password/confirm/terms → request OTP → verify → client-auth/register → home CUSTOMER. Resend/đổi phone/Back/expiry/wrong code và mất response đúng shared contract.",
+      "contract": "Catalog F11/F12, spec02 §3,03 §4; API .03 và primitives OTP. Token/profile lấy server, không role lựa chọn ở register.",
+      "tests": "API/DB real register; OTP invalid/expired/used/rate/provider fail; two submits; password cleared exit/success; screen360/390/430 and mobile keyboard.",
+      "gates": "Owner UI F11/F12; consent text/version nguồn đã duyệt.",
+      "inherit": "",
+      "flow": "F11 nhập form → request REGISTER OTP → F12 verify → client register → F01 CUSTOMER; sai/hết hạn theo server.",
+      "outside": "Login/account/reset/shop onboarding hoặc Google login.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.08",
+      "title": "11Food: login, tài khoản, hồ sơ và logout",
+      "module": "M01",
+      "kind": "UI",
+      "dependencies": [
+        "M01.06",
+        "M01.05"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "apps/food-web/src/auth/",
+        "apps/food-web/src/account/",
+        "tests/client-shell/"
+      ],
+      "work": "F10/F16/F17/F18: password login, own account/profile name, role labels từ API, xác nhận logout thật. Entry quản lý cửa hàng đúng Tài khoản; reset link chưa API/UI thì gate sang .17, không fake form hoạt động.",
+      "contract": "API .04/.05; F5 ordinary memory phải login lại; SESSION_* clear sensitive cache; SHOP disabled giữ CUSTOMER nếu user active.",
+      "tests": "Valid/invalid login/nonexist genericcopy; me/session expired; profile conflict; protected direct URL; logout online/offline/lost response; stale response; actor permissions.",
+      "gates": "Owner UI F10/F16-F18.",
+      "inherit": "",
+      "flow": "F10 login → F16 account → F17 profile hoặc quản lý quán → F18 xác nhận logout → guest.",
+      "outside": "Hồ sơ quán thực, addresses/menu/order và reset implementation.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.09",
+      "title": "11Ship: đăng ký, OTP và login",
+      "module": "M01",
+      "kind": "UI",
+      "dependencies": [
+        "M01.06"
+      ],
+      "applications": [
+        "SHIP"
+      ],
+      "files": [
+        "apps/ship-web/src/auth/",
+        "tests/client-shell/"
+      ],
+      "work": "S10/S11/S18: shared Auth components với brandShip; register cấp CUSTOMER như identity chung; login/me dẫn driver onboarding hoặc own existing profile theo server. Không chọn role SYSTEM/ADMIN/PLATFORM.",
+      "contract": "API .03/.04; register/login contract giốngFood; no Google/OTP login, no bank/GPS ở registration.",
+      "tests": "Cross-app same phone/credentials; server roles preserved; OTP/lost response/session expired; no role/driver_type injection; mobile keyboard/layout.",
+      "gates": "Owner UI S10/S11/S18.",
+      "inherit": "",
+      "flow": "Ship register/login → server me → chưa driver thì onboarding, có driver thì own status; không chọn privilege từ app.",
+      "outside": "Driver onboarding/bank/approval, income/wallet/reset.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.10",
+      "title": "11Ship: onboarding, hồ sơ chờ duyệt và tài khoản",
+      "module": "M01",
+      "kind": "UI",
+      "dependencies": [
+        "M01.09",
+        "M01.05"
+      ],
+      "applications": [
+        "SHIP"
+      ],
+      "files": [
+        "apps/ship-web/src/driver-profile/",
+        "apps/ship-web/src/account/",
+        "tests/client-shell/"
+      ],
+      "work": "S12/S13/S14/S19: POST onboardingdriver tên/plateoptional → EXTERNAL/PENDING, đọc driver/me để resume. Account/logout và pending reason; bank/online/wallet links chưa module thì unavailable rõ. DRIVER được server cấp, không auto approve.",
+      "contract": "Main POST /v1/onboarding/driver body full_name/plate_number+key; response driver_id/type/status/accepting_deliveries/role_granted/version. GET own .05; no full_name giả trong POST response.",
+      "tests": "No profile vs existing/PENDING/SUSPENDED; duplicate409→own GET; lost response samekey; customer profile name independent; PLATFORM injection and auth guard.",
+      "gates": "Owner UI S12-S14/S19.",
+      "inherit": "",
+      "flow": "Chưa driver → nhập name/plate → POST onboarding → PENDING → own GET resume → account/logout.",
+      "outside": "Driver profile edit/bank, ACTIVE approval, actual Online/GPS/wallet.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.11",
+      "title": "11Food: tạo và tiếp tục hồ sơ quán nháp",
+      "module": "M01",
+      "kind": "UI",
+      "dependencies": [
+        "M01.08"
+      ],
+      "applications": [
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "apps/food-web/src/shop-onboarding/",
+        "tests/client-shell/"
+      ],
+      "work": "F20/F21: read own draft/start/resume; name/contact/address/Zalo/Facebook, lưu thiếuGPS theo main. Dirty Back và version conflict. Nếu resolver chưa có, complete disabled lý do; không field UUID hoặc region giả.",
+      "contract": "Main GET/PUT /v1/onboarding/shop/profile, strict parser04; lat/lng pair optional, service_area_id legacy chỉ gửi từ trusted resolver ở .12.",
+      "tests": "Create/update/draft version; validation phone/text limits; GPS denied still save; conflict read/diff; duplicate draft; app return restore từ API.",
+      "gates": "Owner UI F20/F21; role/membership lấy API.",
+      "inherit": "",
+      "flow": "Quản lý cửa hàng → GET own draft → create/edit → lưu nháp → lần sau tiếp tục từ server.",
+      "outside": "Complete quán, map/provider policy, menu/hours/order.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.12",
+      "title": "11Food: vị trí quán và hoàn tất SHOP_OWNER",
+      "module": "M01",
+      "kind": "UI/INTEGRATION",
+      "dependencies": [
+        "M01.11",
+        "M02.02"
+      ],
+      "applications": [
+        "FOOD_SHOP",
+        "FOOD_CUSTOMER"
+      ],
+      "files": [
+        "apps/food-web/src/shop-onboarding/",
+        "apps/backend/src/onboarding/ phần resolver participant",
+        "tests/integration/",
+        "tests/client-shell/"
+      ],
+      "work": "F22/F23: actual map/GPS vị trí tại quán→server resolver→profile save/complete. Complete re-resolve active geometry, append SHOP alias SHOP_OWNER và giữ CUSTOMER; về shop shell hoặc guest-context customer đúng server.",
+      "contract": "Legacy complete{expected_version}+key; minimal server resolver M02.02; no UUID user input/mapcenter default. ACTIVE profile khác schedule online.",
+      "tests": "Actual/outside/boundary/area disabled; denied GPS retains draft; region changes save-complete race; version/key lost response; CUSTOMER remains; same user crosscontexts.",
+      "gates": "D04 polygon/provider; Owner UI F22/F23; resolver exact contract approved.",
+      "inherit": "",
+      "flow": "Actual tọa độ quán → resolve → save → complete kiểm lại geometry/version → SHOP_OWNER+CUSTOMER → shop shell.",
+      "outside": "Admin area CRUD, weekly hours, manual switch hoặc businessmenu/order.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.13",
+      "title": "SYSTEM: danh sách và tạo lời mời ADMIN",
+      "module": "M01",
+      "kind": "UI/INTEGRATION",
+      "dependencies": [
+        "M00.08",
+        "M01.01"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/admin-web/src/admin-invitations/",
+        "tests/admin-web/"
+      ],
+      "work": "Danh sách/chi tiết/tạo lời mời với full_name, phone, note và permissions. TOTP step-up: tạo operation → verify → create; timeout thì đọc state. Link lời mời và evidence được xử lý để không lộ secret.",
+      "contract": "Reuse parser #41; domains CUSTOMER/SHOP/DRIVER và can_view/can_review_profile/can_lock. Chỉ SYSTEM tạo; không đổi domain thành FOOD.",
+      "tests": "SYSTEM được phép, ADMIN bị chặn; operation hết hạn/TOTP replay/mất response; duplicate key; parser injection; permissions đúng head nguồn.",
+      "gates": "Reviewed #41 dependency và Owner UI D10/D11.",
+      "inherit": "Provisioning backend đã code, không viết lại.",
+      "flow": "SYSTEM list → form scope → operation TOTP step-up → create invitation → đọc result/detail; mất response đọc operation.",
+      "outside": "Reissue/revoke, activation UI, financial/config permissions.",
+      "external_sources": [
+        "PR41",
+        "PR44"
+      ]
+    },
+    {
+      "id": "M01.14",
+      "title": "SYSTEM: cấp lại, thu hồi và quản lý scope lời mời",
+      "module": "M01",
+      "kind": "UI/INTEGRATION",
+      "dependencies": [
+        "M01.13"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/admin-web/src/admin-invitations/",
+        "tests/admin-web/"
+      ],
+      "work": "Xác nhận cấp lại/thu hồi với lý do, version và permissions được phép. Step-up action phải khớp payload; conflict thì đọc version mới. Có bộ lọc, chi tiết, lịch sử và trạng thái trống/lỗi.",
+      "contract": "Reuse exact parser #41: operation_id/expected_version/reason/permissions nếu route cho phép, cùng key. Link cũ vô hiệu sau cấp lại/thu hồi; không tự gửi lại TOTP.",
+      "tests": "Cấp lại đua với kích hoạt/thu hồi; expiry/used/version conflict; operation payload cũ; actor bị revoke; mất response phải đọc lại; link cũ không dùng được.",
+      "gates": "Owner UI task, reviewed #41/#44 contract.",
+      "inherit": "",
+      "flow": "Invitation detail → reissue/revoke confirmation → operation/verify → command version/key → đọc lại status.",
+      "outside": "Quyền finance/config, thay trực tiếp account SYSTEM hoặc activation form.",
+      "external_sources": [
+        "PR41",
+        "PR44"
+      ]
+    },
+    {
+      "id": "M01.15",
+      "title": "ADMIN: kích hoạt lời mời bằng OTP và Authenticator",
+      "module": "M01",
+      "kind": "UI/INTEGRATION",
+      "dependencies": [
+        "M01.13"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/admin-web/src/admin-activation/",
+        "tests/admin-web/"
+      ],
+      "work": "Start/state/restart → OTP → mật khẩu → TOTP enrollment → complete theo #45. Xóa token khỏi URL sau khi nhập; không lộ qua referrer/log. Dùng cookie/CSRF riêng; mất response đọc GET state, không tự lặp POST complete.",
+      "contract": "Reuse exact admin-activation API #44/#45 và cookie __Host-11admin-act. Regular register không tạo ADMIN; pending/expired/revoked chưa có SESSION.",
+      "tests": "Expiry/revoke/complete race; cookie/state isolation; Origin/CSRF; OTP purpose; TOTP replay và mất response enrollment; protected URL; evidence không secret.",
+      "gates": "Reviewed #45 dependency; Owner UI activation.",
+      "inherit": "",
+      "flow": "Invitation link → start/state → SMS OTP → password → Authenticator enrollment → complete → Admin login/session theo contract.",
+      "outside": "Tạo/reissue invitations, password reset, tự gửi SMS thật.",
+      "external_sources": [
+        "PR44",
+        "PR45"
+      ]
+    },
+    {
+      "id": "M01.16",
+      "title": "Reset mật khẩu USER/ADMIN phía backend",
+      "module": "M01",
+      "kind": "BE/SECURITY",
+      "dependencies": [
+        "M01.01",
+        "M01.04",
+        "M00.08"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/password-reset/ (mới)",
+        "apps/backend/src/auth/",
+        "apps/backend/src/admin-auth/",
+        "migration append-only hiện hành",
+        "tests/integration/"
+      ],
+      "work": "Complete đổi mật khẩu, revoke mọi app/admin session, PREAUTH và challenges/activation attempts liên quan, cùng audit trong một transaction theo contract cuối. RESET_PASSWORD purpose, credential epoch, grant một lần; hash ngoài lock, recheck dưới user lock. Giữ TOTP/role/status; không tự login.",
+      "contract": "Nghiệp vụ Owner #43, spec04 §4.3: /password-resets request/verify/complete+key; response chung cho phone không tồn tại/SYSTEM. Defaults OTP300s/resend60s/maxwrong5; security contract phải CODE_READY trước code.",
+      "tests": "Từ chối REGISTER proof; expired/used/concurrent reset/login race; account khóa vẫn khóa; mọi USER/ADMIN session/PREAUTH bị revoke; replay chỉ acknowledgement; unknown commit; chống enumeration.",
+      "gates": "ChatGPT review security, physical schema và error contract; reset #43 đã chốt, không hỏi lại nghiệp vụ.",
+      "inherit": "",
+      "flow": "Request generic → RESET_PASSWORD OTP verify → scoped grant → atomic password/revoke/audit → acknowledgement, login required.",
+      "outside": "Public SYSTEM reset, bỏ qua TOTP, Change Password, adapter SMS production.",
+      "external_sources": [
+        "PR43",
+        "PR34"
+      ]
+    },
+    {
+      "id": "M01.17",
+      "title": "11Food: form lấy lại mật khẩu",
+      "module": "M01",
+      "kind": "UI",
+      "dependencies": [
+        "M01.16",
+        "M01.06"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "apps/food-web/src/password-reset/",
+        "apps/client-shared/src/auth/reset-components.ts (dự kiến)",
+        "tests/client-shell/"
+      ],
+      "work": "F13-F15: phone → OTP → mật khẩu mới/confirm → thành công → login. Shared reset components hỗ trợ mất response và resend theo server; password/proof chỉ trong memory. Thông báo các phiên cũ sẽ kết thúc.",
+      "contract": "API M01.16; không REGISTER proof hoặc auto-login. Response không lộ tồn tại tài khoản; retry complete dùng cùng key/body khi contract cho phép, không đổi key sau timeout.",
+      "tests": "Sai/hết hạn/đã dùng OTP, resend, provider429; timeout trước/sau commit; old sessions bị chặn; giữ bank/name/status; keyboard/layout trên mobile.",
+      "gates": "Owner UI F13-F15.",
+      "inherit": "",
+      "flow": "F13 phone → F14 OTP → F15 mật khẩu mới → success → F10; không tự login.",
+      "outside": "Login OTP, ChangePassword hoặc SYSTEM recovery.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.18",
+      "title": "11Ship: form lấy lại mật khẩu",
+      "module": "M01",
+      "kind": "UI",
+      "dependencies": [
+        "M01.16",
+        "M01.06",
+        "M01.17"
+      ],
+      "applications": [
+        "SHIP"
+      ],
+      "files": [
+        "apps/ship-web/src/password-reset/",
+        "tests/client-shell/"
+      ],
+      "work": "S15-S17 dùng components đã review ở M01.17, đúng brand/router/context Ship. Thành công về login; driver profile/status/bank/wallet không đổi. Không sao chép thuật toán OTP.",
+      "contract": "API M01.16; reset identity dùng chung Food/Ship. Driver chưa được duyệt không tự ACTIVE sau reset.",
+      "tests": "Reset trên Ship rồi login Food; mọi old session revoked; pending/suspended giữ nguyên; OTP/mất response/mobile layout; không giả wallet state.",
+      "gates": "Owner UI S15-S17.",
+      "inherit": "",
+      "flow": "S15 phone → S16 OTP → S17 mật khẩu mới → login; roles/status/driver profile giữ.",
+      "outside": "Reset ngân hàng, duyệt xế hoặc Change Password.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.19",
+      "title": "Admin Web: form reset mật khẩu bằng SMS OTP",
+      "module": "M01",
+      "kind": "UI",
+      "dependencies": [
+        "M01.16",
+        "M00.08"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/admin-web/src/password-reset/",
+        "apps/admin-web proxyallowlist theo approvedroute",
+        "tests/admin-web/"
+      ],
+      "work": "Form phone/OTP/mật khẩu mới cho ADMIN dùng public reset backend; session/PREAUTH cũ hết hiệu lực. Sau reset: Admin login → TOTP vẫn bắt buộc. SYSTEM chỉ có hướng dẫn recovery server theo contract.",
+      "contract": "API M01.16; bổ sung proxy allowlist đúng reset paths, giữ Origin/CSRF của Admin protected routes; không wildcard.",
+      "tests": "Reset ADMIN rồi login TOTP; old PREAUTH/session denied; SYSTEM nhận response chung nhưng không reset; invalid OTP; không reset enrollment; proxy/malformed/timeout.",
+      "gates": "Owner duyệt UI Admin reset và public proxy security contract.",
+      "inherit": "",
+      "flow": "Admin reset form → SMS OTP → mật khẩu mới → Admin login → Authenticator; SYSTEM recovery ngoài public flow.",
+      "outside": "Reset Authenticator, tạo SYSTEM hoặc public SYSTEM reset.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.20",
+      "title": "SYSTEM: recovery server và email xác minh",
+      "module": "M01",
+      "kind": "BE/CLI",
+      "dependencies": [
+        "M01.16",
+        "M00.08"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "scripts/admin-auth/ (CLI mới sau contract)",
+        "apps/backend/src/admin-auth/",
+        "apps/backend/src/email/ (dự kiến)",
+        "database/migrations/",
+        "ops/runbooks/",
+        "tests/integration/"
+      ],
+      "work": "Recovery server theo #43 khi exact operator authentication, target guard và email contract được chốt. Verified email tùy chọn là bước OTP phụ; begin/verify/commit không giữ DB lock chờ email; password qua stdin; revoke/audit atomic; giữ TOTP. Emergency mất email cần task thiết kế sau D05.",
+      "contract": "Không public API reset SYSTEM; bootstrap lại không reset. Email proof/custody/version/grants phải CODE_READY; CLI cần operator credential và target test được cấp quyền.",
+      "tests": "Sai target/operator, email OTP hết hạn/replay; bootstrap unchanged; log không secret; mọi session revoked/TOTP giữ; provider failure; non-SYSTEM target guard.",
+      "gates": "D05 operator/email technical contract; emergency custody/verification chưa duyệt thì BLOCKED. Provider email thật được cấp quyền.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Break-glass chưa được Owner duyệt hoặc thực thi recovery production.",
+      "external_sources": [
+        "PR43"
+      ]
+    },
+    {
+      "id": "M01.21",
+      "title": "Phiên một thiết bị và binding của hai app Android",
+      "module": "M01",
+      "kind": "BE/NATIVE",
+      "dependencies": [
+        "M01.04",
+        "M00.12",
+        "M00.13"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/auth/session-service.ts",
+        "apps/backend/src/device-binding/ (dự kiến)",
+        "native Food/Ship storage theo D03",
+        "tests/integration/"
+      ],
+      "work": "Sau D02/D03, enforce policy đã duyệt cho một identity/một thiết bị và hai app cùng phone. Server trusted binding/epoch và invalidation; device_id tự khai không chứng minh physical device. Native OS lưu opaque token, không password.",
+      "contract": "Giữ opaque/absolute expiry/no refresh. Main hiện chỉ SHOP-context replacement; không đổi ngầm khi D02 pending. Exact binding proof/threat model/errors/reinstall policy cần contract duyệt.",
+      "tests": "Hai app một phone; phone thứ hai; logout/reset/reinstall/cold start; forged device_id; concurrent login/revoked binding; evidence OS storage thực.",
+      "gates": "D02 policy và binding proof; D03 runtime/storage; Owner phone test.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Tự chọn one-session policy mới, JWT/refresh hoặc GPS ingress.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.22",
+      "title": "Adapter SMS thật và kiểm chứng OTP trên môi trường test",
+      "module": "M01",
+      "kind": "BE/PROVIDER",
+      "dependencies": [
+        "M01.03",
+        "M01.16",
+        "M01.15"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/auth/otp-provider.ts",
+        "apps/backend/src/auth/ (SMS adapter/binding mới)",
+        "ops/runbooks/",
+        "tests/integration/"
+      ],
+      "work": "Nối provider được cấp credential; timeout/backoff/rate theo port contract, không fallback fake production. Owner cấp số test/target/chi phí; tách harness kỹ thuật với gate SMS thật cho register/reset/activation.",
+      "contract": "Reuse challenge/resend/attempts/proof; không tạo proof store thứ hai hoặc gửi SMS trong transaction lock. Fixture UNVERIFIED_TEST không trở thành phone verified thật.",
+      "tests": "Provider fault/timeout/quota/mất response; request status không giả SMS delivery; secrets masked; SMS thật chỉ gửi số test được cấp quyền; tránh resend storm.",
+      "gates": "D04 provider/budget/test recipients; Owner cho phép real SMS checks.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Broadcast SMS production, payment/email provider hoặc giả phone verified.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.23",
+      "title": "Hồi quy Auth, phân quyền và nghiệm thu từng app",
+      "module": "M01",
+      "kind": "UAT/REGRESSION",
+      "dependencies": [
+        "M01.07",
+        "M01.08",
+        "M01.10",
+        "M01.12",
+        "M01.14",
+        "M01.15",
+        "M01.17",
+        "M01.18",
+        "M01.19",
+        "M01.20",
+        "M01.21",
+        "M01.22",
+        "M01.24",
+        "M01.25",
+        "M01.26",
+        "M01.27",
+        "M01.28"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "tests/integration/",
+        "tests/client-shell/",
+        "tests/admin-web/",
+        "docs/evidence/M01-UAT.md",
+        "ops/runbooks/"
+      ],
+      "work": "E2E register/login/reset/logout/shop context/driver resume/admin invitation/TOTP/scopes. Kiểm bypass qua API; chuẩn bị PC → phone → SMS thật và Owner actual. Thiếu native/provider/emergency contract phải ghi gate còn mở.",
+      "contract": "Legacy/new API compatible; CUSTOMER+SHOP_OWNER được giữ; không mở rộng quyền tài chính. Staging/production acceptance tách theo spec02. Dependencies là coverage đầy đủ; có thể chuẩn bị test sớm nhưng không claim PASS phần thiếu.",
+      "tests": "Unit/integration PG17/browser E2E/Android thực; reset/login/PREAUTH races; disabled/revoked permissions; mobile storage/network; fresh/upgrade migration; CI exact head.",
+      "gates": "Owner actual PC/phone/SMS và security review; D05 emergency mở thì full recovery/LOCK còn BLOCKED.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Menu/Order/Delivery/ví/GPS nghiệp vụ; không ghi Owner PASS từ CI.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.24",
+      "title": "Android 11Food: đăng ký và OTP",
+      "module": "M01",
+      "kind": "NATIVE",
+      "dependencies": [
+        "M00.12",
+        "M01.07",
+        "M01.21"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER"
+      ],
+      "files": [
+        "Native Food Auth UI và shared components theo D03",
+        "docs/evidence/M01-FOOD-REGISTER-ANDROID.md"
+      ],
+      "work": "Port F11/F12 đã qua local sang runtime Android được duyệt; shared password/OTP/accessibility và secure session adapter. Backend/API giữ nguyên, không tạo thuật toán OTP/native Auth thứ hai.",
+      "contract": "M01.03/.21 và UI F11/F12; signup identity CUSTOMER, password/proof memory, token OS storage.",
+      "tests": "Keyboard/autofill/paste/back/cold start/process death/network/OTP expiry; actual phone and server role proof.",
+      "gates": "D03 runtime và Owner local F11/F12; D04 SMS thật khi kiểm gate provider.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Quán onboarding, driver UI hoặc giả phone verified.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.25",
+      "title": "Android 11Food: login, tài khoản và reset",
+      "module": "M01",
+      "kind": "NATIVE",
+      "dependencies": [
+        "M01.24",
+        "M01.08",
+        "M01.17"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "Native Food account/session/reset UI theo D03",
+        "docs/evidence/M01-FOOD-ACCOUNT-ANDROID.md"
+      ],
+      "work": "Port login/account/profile/logout/reset đã qua PC; secure token từ M01.21, stale response không phục hồi identity sau logout. Customer name độc lập driver legal name; reset vẫn revoke các phiên.",
+      "contract": "M01.04/.05/.16/.21 và F10/F13-F18; không JWT/refresh/Remember me password.",
+      "tests": "Cold start/token expired, cross-device/reinstall theo approved policy, logout offline, profile conflict, reset lost response và real phone UI.",
+      "gates": "D03, Owner local các màn áp dụng, D02 binding.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Menu/addresses/order hoặc public SYSTEM reset.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.26",
+      "title": "Android 11Food: hồ sơ quán và chuyển giao diện",
+      "module": "M01",
+      "kind": "NATIVE",
+      "dependencies": [
+        "M01.25",
+        "M01.12"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "Native Food shop onboarding/map/context UI theo D03",
+        "docs/evidence/M01-FOOD-SHOP-ANDROID.md"
+      ],
+      "work": "Port F20-F23, Tài khoản→Quản lý cửa hàng; actual GPS tại quán/resolver, draft khi denied và complete thật. Context/quyền server; SHOP_OWNER giữ CUSTOMER. Không App Quán riêng.",
+      "contract": "M02.02 resolver, onboarding main và M01 adapter; geometry/permission/provider/version cùng PC.",
+      "tests": "Physical GPS/permission/background resume/map fail, wrong/outside area, draft/complete race, switch khách/quán và Customer retained.",
+      "gates": "D03/D04 và Owner local F20-F23; map/provider approved.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Thực đơn/Order hoặc manual online switch quán.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.27",
+      "title": "Android 11Ship: Auth, tài khoản và reset",
+      "module": "M01",
+      "kind": "NATIVE",
+      "dependencies": [
+        "M00.13",
+        "M01.09",
+        "M01.18",
+        "M01.21",
+        "M01.25"
+      ],
+      "applications": [
+        "SHIP"
+      ],
+      "files": [
+        "Native Ship Auth/account/reset UI và shared components theo D03",
+        "docs/evidence/M01-SHIP-AUTH-ANDROID.md"
+      ],
+      "work": "Reuse native shared Auth components đã review, đúng brand Ship. Register/login/reset theo identity chung; server quyết định driver route. Hai app cùng phone theo D02, OS storage thật.",
+      "contract": "M01.03/.04/.16/.21; S10/S11/S15-S18 và account logout. Không chọn SYSTEM/ADMIN/PLATFORM.",
+      "tests": "Food/Ship cùng phone, second-device policy, password/OTP keyboard, reset cross-app, logout/stale response, cold start actual phone.",
+      "gates": "D02/D03, Owner local Ship Auth/reset và phone test.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Driver approval/Online/GPS nghiệp vụ hoặc app quản lý.",
+      "external_sources": []
+    },
+    {
+      "id": "M01.28",
+      "title": "Android 11Ship: onboarding và hồ sơ chờ duyệt",
+      "module": "M01",
+      "kind": "NATIVE",
+      "dependencies": [
+        "M01.27",
+        "M01.10"
+      ],
+      "applications": [
+        "SHIP"
+      ],
+      "files": [
+        "Native Ship driver profile/account UI theo D03",
+        "docs/evidence/M01-SHIP-PROFILE-ANDROID.md"
+      ],
+      "work": "Port S12-S14/S19 đã qua PC: tên/plate optional, onboarding EXTERNAL/PENDING và own resume đọc API. Online/bank/wallet chức năng chưa tới module có lý do; không tự approve.",
+      "contract": "Main driver onboarding và M01.05 own read; Customer name không đổi bank/driver name; capabilities từ server.",
+      "tests": "Submit/lost response/resume/process death/pending/suspended, actual plate/name validation, server role/type proof và phone layout.",
+      "gates": "Owner local S12-S14/S19; D03 runtime.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Bank/approval/Online/wallet hoặc fake status ACTIVE.",
+      "external_sources": []
+    },
+    {
+      "id": "M02.01",
+      "title": "Hợp đồng geometry và quản trị khu vực",
+      "module": "M02",
+      "kind": "CONTRACT",
+      "dependencies": [
+        "M01.01"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "docs/design/system-v2-20261011/04-data-api.md",
+        "docs/evidence/M02-AREA-PREFLIGHT.md"
+      ],
+      "work": "Preflight vùng main chỉ id/code/name/status; báo phương án append geometry/version, overlap/boundary rules, writer permission và tác động quán hiện có. ChatGPT hoàn thiện exact DDL/API trước code; Owner cấp polygon pilot thật.",
+      "contract": "Spec04 §5 và05 M02; không tự bật PostGIS, tạo polygon Cao Bằng hoặc thay radius/search policy.",
+      "tests": "Mẫu geometry invalid/ring/boundary/overlap; schema/grants/upgrade plan và phiên bản nguồn polygon.",
+      "gates": "D04 polygon/provider; Owner quyền publish vùng.",
+      "inherit": "Bảng service_areas và M02-A auto-hours main.",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Code resolver/area UI, dispatch hoặc policy vùng xế.",
+      "external_sources": []
+    },
+    {
+      "id": "M02.02",
+      "title": "Resolver vùng và kiểm lại khi lưu/complete quán",
+      "module": "M02",
+      "kind": "BE",
+      "dependencies": [
+        "M02.01"
+      ],
+      "applications": [
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "apps/backend/src/shop/",
+        "apps/backend/src/onboarding/",
+        "apps/backend/src/service-areas/ (dự kiến)",
+        "database/migrations/",
+        "tests/integration/"
+      ],
+      "work": "Server point-in-polygon nhận tọa độ, trả vùng/version; draft/complete kiểm lại ACTIVE và geometry hiện hành, không tin area_id/cached result từ app. Đây là prerequisite nhỏ của M01.12, không chờ toàn M02.",
+      "contract": "Proposal POST /v1/service-areas/resolve {lat,lng}→in_area/service_area_id/name/geometry_version. Giữ legacy profile parser qua adapter tương thích đã review.",
+      "tests": "Inside/outside/boundary/overlap/off; resolve-save-complete race; version/ownership; fresh/upgrade/grants; không fake GPS hoặc UUID nhập tay.",
+      "gates": "D04 và exact contract M02.01.",
+      "inherit": "",
+      "flow": "Tọa độ thật → server resolve ACTIVE geometry → save/complete recheck current version → hợp lệ hoặc lỗi vùng.",
+      "outside": "Full Admin area CRUD, shop hours hoặc manual switch.",
+      "external_sources": []
+    },
+    {
+      "id": "M02.03",
+      "title": "Admin: tạo, sửa và publish vùng hoạt động",
+      "module": "M02",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M02.02",
+        "M00.08"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/admin-service-areas/ (dự kiến)",
+        "apps/admin-web/src/service-areas/",
+        "tests/integration/",
+        "tests/admin-web/"
+      ],
+      "work": "D20/D21 list/search/status, polygon editor và impact preview quán; publish version có reason/key. Vùng ngừng chặn nhận mới, giữ delivery/history đang có; không direct SQL sửa vùng không audit.",
+      "contract": "Proposal GET/POST /admin/service-areas, PUT/:id geometry/name/status/expected_version/reason; SYSTEM hoặc capability được Owner duyệt.",
+      "tests": "Malformed geometry, overlap, publish race, impact count, stale version, unauthorized writer; Admin responsive and field validation.",
+      "gates": "D04 geometry/provider, Owner UI và writer capability.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Registered areas xế D13, dispatch hoặc hủy delivery khi tắt vùng.",
+      "external_sources": []
+    },
+    {
+      "id": "M02.04",
+      "title": "11Food quán: hồ sơ active và trạng thái khả dụng",
+      "module": "M02",
+      "kind": "UI",
+      "dependencies": [
+        "M01.12"
+      ],
+      "applications": [
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "apps/food-web/src/shop-profile/",
+        "tests/client-shell/"
+      ],
+      "work": "F30/F32 dùng GET shop/me và PUT profile hiện có: contact riêng login, GPS/vùng thật, version conflict/diff. Hiển thị availability.online/reason/evaluated_at từ server.",
+      "contract": "Main shop-management parser và resolver M02.02. Không lấy accepting_orders ở onboarding làm operational status; không thêm switch.",
+      "tests": "Read/edit active profile; full replacement fields; area off/user locked; version conflict; contact/Zalo/Facebook bounds; no manual toggle.",
+      "gates": "Owner UI F30/F32.",
+      "inherit": "Backend M02-A đã merge; chỉ sửa backend nếu có finding cụ thể.",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Hours editor, menu/order hoặc customer account edits.",
+      "external_sources": []
+    },
+    {
+      "id": "M02.05",
+      "title": "11Food quán: lịch tuần và mở cửa tự động",
+      "module": "M02",
+      "kind": "UI",
+      "dependencies": [
+        "M02.04"
+      ],
+      "applications": [
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "apps/food-web/src/shop-business-hours/",
+        "tests/client-shell/"
+      ],
+      "work": "F31 nhập tuần/copy cả tuần/sửa từng ngày; qua đêm/CN→T2; [] đóng cả tuần. Preview lấy clock server; quán không cần mở app để cập nhật online.",
+      "contract": "Main PUT shop/me/business-hours exact expected_version/intervals; max28; Asia/Ho_Chi_Minh, start inclusive/end exclusive.",
+      "tests": "Overlap/invalid minutes/offset/max28; boundaries/overnight/week wrap; save conflict/lost response; server status refresh; không switch nhận đơn.",
+      "gates": "Owner UI F31.",
+      "inherit": "Auto-hours Owner08/10 đã chốt, không hỏi lại.",
+      "flow": "Đọc tuần → sửa/copy intervals → validate → save version → availability đọc từ clock server.",
+      "outside": "Ngày nghỉ đặc biệt, override thủ công hoặc scheduled Order policy D14.",
+      "external_sources": []
+    },
+    {
+      "id": "M03.01",
+      "title": "Hợp đồng hồ sơ xế, bank và lifecycle",
+      "module": "M03",
+      "kind": "CONTRACT",
+      "dependencies": [
+        "M01.05"
+      ],
+      "applications": [
+        "ADMIN",
+        "SHIP"
+      ],
+      "files": [
+        "docs/design/system-v2-20261011/04-data-api.md",
+        "docs/evidence/M03-LIFECYCLE-PREFLIGHT.md"
+      ],
+      "work": "Đối chiếu enum main với ADR004, quyền bank verification/approve/suspend/resume/type, activation và closure ports. ChatGPT chốt transition/parser/DDL/grants; D13 registered areas phải được reconcile riêng.",
+      "contract": "Main EXTERNAL/PENDING; PLATFORM không quyền quản trị; không gửi REJECTED hoặc trạng thái ADR mới vào enum main khi chưa migration.",
+      "tests": "State/permission matrix, compatibility và guard funds/custody; enum upgrade/old-client plan.",
+      "gates": "D11 capabilities, D13 khi chạm vùng/count; exact contract CODE_READY.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Không code lifecycle hoặc chọn policy mới.",
+      "external_sources": []
+    },
+    {
+      "id": "M03.02",
+      "title": "11Ship: hồ sơ và ngân hàng của xế",
+      "module": "M03",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M03.01"
+      ],
+      "applications": [
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/driver/",
+        "apps/backend/src/driver-bank/ (dự kiến)",
+        "database/migrations/",
+        "apps/ship-web/src/driver-profile/",
+        "tests/integration/"
+      ],
+      "work": "S20/S21 own profile và bank read/edit, account masked, tên holder đối chiếu chuẩn hóa được duyệt. Đổi legal name/bank thu hồi verification liên quan; giữ customer profile độc lập.",
+      "contract": "Proposal PUT driver/me/profile và /bank với expected_version/key; full_name120/plate32; bank proof/version riêng.",
+      "tests": "Foreign access, name mismatch, Unicode normalization, bank edit race, stale version; masking/log sanitization; no self PLATFORM/verified flag.",
+      "gates": "Owner UI S20/S21; bank technical/verification contract và dữ liệu ngân hàng thật.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Admin approval, Online, withdrawal hoặc đổi login phone.",
+      "external_sources": []
+    },
+    {
+      "id": "M03.03",
+      "title": "Admin: xác minh và kích hoạt xế lần đầu",
+      "module": "M03",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M03.02",
+        "M04.04"
+      ],
+      "applications": [
+        "ADMIN",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/driver/",
+        "apps/backend/src/driver-approval/ (dự kiến)",
+        "apps/backend/src/wallet/ (approved participants)",
+        "apps/admin-web/src/driver-approval/",
+        "tests/integration/"
+      ],
+      "work": "D30 approve PENDING bằng NEW_TOPUP hoặc EXISTING_FUNDS theo ADR004; kiểm hồ sơ/funding net/available≥100k lần đầu. NEW_TOPUP credit đúng một lần trong transaction; ACTIVE chưa tự Online.",
+      "contract": "Reason/version/key/capability; topup participant M04.04 và bank verification contract. Không coi minimum100k là mỗi lần nạp; 60k+40k hoặc150k được tính actual.",
+      "tests": "Approve replay/race/topup rollback; name/bank edit; insufficient available; exact threshold; unauthorized actor; no double credit.",
+      "gates": "D11 approval/verification capability và contract atomic đã review.",
+      "inherit": "",
+      "flow": "PENDING + hồ sơ/funding đủ → approve mode hợp lệ → credit nếu NEW_TOPUP đúng một lần → ACTIVE, chưa Online.",
+      "outside": "Suspend/resume/type/closure, auto Online hoặc thu lại activation khi resume.",
+      "external_sources": []
+    },
+    {
+      "id": "M03.04",
+      "title": "Admin: đình chỉ, khôi phục và phân loại xế",
+      "module": "M03",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M03.03"
+      ],
+      "applications": [
+        "ADMIN",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/driver/",
+        "apps/admin-web/src/driver-management/",
+        "tests/integration/"
+      ],
+      "work": "Command riêng suspend/resume/change-type có reason/version/key. Suspend chặn nhận mới nhưng giữ trách nhiệm; resume không thu lại activation. PLATFORM chỉ exemptions đã chốt, không mở quyền Admin.",
+      "contract": "Exact command contracts trước code; giữ assignment hiện hữu; type changes không hủy đơn cũ; không generic PATCH status.",
+      "tests": "Suspend vs accept, resumed restrictions, type injection/permission, repeated command/version conflict; no extra activation credit.",
+      "gates": "D11 capability; D13 exemption policy khi áp dụng; Owner UI.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Forced dispatch hoặc tự miễn funds/batching/GPS cho PLATFORM.",
+      "external_sources": []
+    },
+    {
+      "id": "M03.05",
+      "title": "11Ship: Online/Offline với guard server",
+      "module": "M03",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M03.03",
+        "M08.01"
+      ],
+      "applications": [
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/driver/",
+        "apps/ship-web/src/availability/",
+        "tests/integration/"
+      ],
+      "work": "Online/Offline thật theo driver status/session/location và policy đủ điều kiện. Pending/suspended/closing có reason. Offline không bỏ tracking trách nhiệm hàng đang giữ.",
+      "contract": "Proposal PUT driver/me/availability {accepting_deliveries,expected_version}+key; server guard, không UI tự gán ACTIVE.",
+      "tests": "Pending/suspended/closed/funds/location stale; race với suspend/reset/accept; offline khi active assignment; layout/status refresh.",
+      "gates": "D13 eligibility, D09 location policy và Owner UI.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Accept delivery, GPS OS adapter hoặc bank payout.",
+      "external_sources": []
+    },
+    {
+      "id": "M03.06",
+      "title": "11Ship: xin ngừng, hủy yêu cầu và đóng hồ sơ",
+      "module": "M03",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M03.04",
+        "M04.06",
+        "M07.05"
+      ],
+      "applications": [
+        "SHIP",
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/driver-closure/ (dự kiến)",
+        "apps/ship-web/src/closure/",
+        "apps/admin-web/src/driver-management/",
+        "tests/integration/"
+      ],
+      "work": "S22/S23 request closure→CLOSING; cancel theo prior state và restrictions hiện tại. Finalize chỉ khi không hàng/incident/hold/payout unknown và balance0; dưới10k chờ xử lý số dư, không xóa ví/user.",
+      "contract": "M04 funding/payout ports và M07 custody port; thiếu adapter fail closed. Closure one open, version/key/reason/history.",
+      "tests": "Closure vs pickup/hold/suspension; cancel không vượt suspension; unknown payout và custody block; balance dưới10k giữ; no duplicate closure.",
+      "gates": "Exact closure/enum compatibility contract; D11 operator capability; Owner UI.",
+      "inherit": "",
+      "flow": "Request → CLOSING/tắt nhận → chờ goods/holds/payout → cancel hợp lệ hoặc finalize khi balance0 → CLOSED giữ history.",
+      "outside": "Auto withdrawal hoặc pretend custody/balance zero.",
+      "external_sources": []
+    },
+    {
+      "id": "M04.01",
+      "title": "Hợp đồng schema tiền và quyền operator",
+      "module": "M04",
+      "kind": "CONTRACT",
+      "dependencies": [
+        "M03.01",
+        "M01.01"
+      ],
+      "applications": [
+        "ADMIN",
+        "SHIP"
+      ],
+      "files": [
+        "docs/design/system-v2-20261011/04-data-api.md",
+        "docs/evidence/M04-MONEY-PREFLIGHT.md"
+      ],
+      "work": "ADR004 physical schema/check/FK/source/lock-order/grants/rollout plan và actor permissions. Chốt typed sources, shared bank IN/OUT registry, replay/unknown outcome. ChatGPT review và chốt trước DDL/code.",
+      "contract": "Wallet/ledger/holds/topup/withdrawal/adjustment canonical names; JSON safe integer, DB/application bigint. COD/phí ship nằm ngoài ví. Operator tạo nạp/rút; xế read only.",
+      "tests": "Invariants B≥H≥0, available=B-H, typed source/amount/wallet, ledger totals, bank uniqueness và upgrade plan.",
+      "gates": "D11 financial capability/operator, bank config/evidence; ADR004 Draft chưa là schema LOCKED.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Không code money transactions hoặc đổi chính sách tiền.",
+      "external_sources": []
+    },
+    {
+      "id": "M04.02",
+      "title": "Ví zero, ledger core và khóa tiền",
+      "module": "M04",
+      "kind": "BE",
+      "dependencies": [
+        "M04.01"
+      ],
+      "applications": [
+        "SHIP",
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/wallet/ (dự kiến)",
+        "database/migrations/",
+        "tests/integration/"
+      ],
+      "work": "Tạo ví zero theo driver và ledger immutable/core money parser/lock participant. Append migration/grants theo schema đã chốt, không fake opening balance. Chưa mở credit/debit source chưa có typed constraints/participant.",
+      "contract": "Canonical driver_wallets/wallet_ledger_entries; safe integer bound; zero≤held≤balance. Source scaffolding phải nằm trong approved physical plan, không FK placeholder được dùng cho tiền thật.",
+      "tests": "Money bounds/overflow; initialize once; wallet ownership/locks; zero wallet/ledger invariant; runtime grants; fresh/upgrade; unsupported source fail closed.",
+      "gates": "Physical schema M04.01 CODE_READY.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Topup/payout/commission API hoặc số dư demo.",
+      "external_sources": []
+    },
+    {
+      "id": "M04.03",
+      "title": "Hold primitives cho withdrawal và source constraints",
+      "module": "M04",
+      "kind": "BE",
+      "dependencies": [
+        "M04.02"
+      ],
+      "applications": [
+        "SHIP",
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/wallet/holds/ (dự kiến)",
+        "database/migrations/",
+        "tests/integration/"
+      ],
+      "work": "Reserve/capture/release internal theo state; WITHDRAWAL typed source phải có schema/FK được review trước dùng. COMMISSION chưa mở trước M04.08. Giữ lịch sử và amount/wallet binding.",
+      "contract": "wallet_holds, source/hold/ledger contracts ADR004; không generic hold source vô chủ. Payout commands sẽ ở M04.05/.06.",
+      "tests": "Double reserve/capture/release, insufficient available, wrong source/wallet/amount, held=sum active holds; transaction rollback/unknown commit.",
+      "gates": "Typed withdrawal schema/FK và hold contracts approved.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Production commission source chưa có assignment FK hoặc public driver money mutation.",
+      "external_sources": []
+    },
+    {
+      "id": "M04.04",
+      "title": "Operator: ghi nạp tiền thực nhận",
+      "module": "M04",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M04.02",
+        "M03.02"
+      ],
+      "applications": [
+        "ADMIN",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/wallet/topups/ (dự kiến)",
+        "apps/backend/src/wallet/bank-transactions/ (dự kiến)",
+        "apps/admin-web/src/wallet-topups/",
+        "tests/integration/"
+      ],
+      "work": "D40 operator ghi target/actual amount/canonical bank transaction/received_at/evidence/note; credit và ledger/audit/outbox atomic. Shared bank identity unique xuyên IN/OUT và target.",
+      "contract": "POST admin topup proposal; positive actual VND, không minimum100k mỗi topup. 60k+40k/150k hợp lệ; 100k activation do M03.03 kiểm riêng.",
+      "tests": "Duplicate bank cross-target/routes, same-key replay, two actual deposits, rollback/crash/unknown commit; ledger credit once; operator permission.",
+      "gates": "D11 financial capability; bank config/evidence thật; Owner UI D40.",
+      "inherit": "",
+      "flow": "Operator xác nhận tiền nhận/bank reference → registry unique → atomic credit/ledger/audit → own ví đọc số dư.",
+      "outside": "Auto bank transfer, driver topup mutation, COD hoặc activation tự động.",
+      "external_sources": []
+    },
+    {
+      "id": "M04.05",
+      "title": "Operator: tạo và hủy yêu cầu rút",
+      "module": "M04",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M04.03",
+        "M04.04"
+      ],
+      "applications": [
+        "ADMIN",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/wallet/withdrawals/ (dự kiến)",
+        "apps/admin-web/src/withdrawals/",
+        "tests/integration/"
+      ],
+      "work": "Operator create PENDING reserve amount≥10k với bank verified snapshot tại create; cancel PENDING→CANCELLED release. Xế chỉ xem/ liên hệ, không POST withdrawal.",
+      "contract": "wallet_withdrawals typed source; wallet/bank expected versions; available enough, key/reason/history. Two withdrawals có thể hợp lệ nếu đủ tiền.",
+      "tests": "Create vs bank edit, concurrent reserve/accept, two payouts, insufficient/below10k, duplicate intent, snapshot stale, unauthorized driver.",
+      "gates": "D11 payout capability; Owner UI D41 và approved bank snapshot contract.",
+      "inherit": "",
+      "flow": "Operator create → reserve+bank snapshot → PENDING → cancel nếu hợp lệ/release; xế chỉ đọc.",
+      "outside": "Chuyển tiền/process/reconcile, auto driver withdrawal.",
+      "external_sources": []
+    },
+    {
+      "id": "M04.06",
+      "title": "Operator: xử lý payout và đối soát kết quả chưa rõ",
+      "module": "M04",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M04.05"
+      ],
+      "applications": [
+        "ADMIN",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/wallet/withdrawals/ (dự kiến)",
+        "apps/admin-web/src/withdrawals/",
+        "ops/runbooks/",
+        "tests/integration/"
+      ],
+      "work": "PENDING→PROCESSING chốt owner/attempt; paid capture/debit một lần; unknown→RECONCILIATION giữ hold. Chỉ confirmed not-sent final mới cancel/release; không tự takeover/retry transfer do timeout.",
+      "contract": "ADR004 payout states uppercase; reason/version/key/evidence theo action, bank registry IN/OUT chung. Bank network ngoài DB lock; manual money giữ.",
+      "tests": "Lost response/crash, two operators, confirm paid replay, uncertain transfer, mismatched evidence, duplicate bank IN/OUT, reconcile once; ledger/holds reconcile.",
+      "gates": "D11 operator/processing ownership và settlement contract; Owner UI/runbook.",
+      "inherit": "",
+      "flow": "PENDING → PROCESSING giữ hold → paid/capture hoặc RECONCILIATION → paid hoặc confirmed-not-sent/cancel.",
+      "outside": "Automatic payout API, lease takeover hoặc coi timeout là chưa chuyển.",
+      "external_sources": []
+    },
+    {
+      "id": "M04.07",
+      "title": "11Ship: ví và giao dịch chỉ đọc",
+      "module": "M04",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M04.04",
+        "M04.05"
+      ],
+      "applications": [
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/wallet/queries/ (dự kiến)",
+        "apps/ship-web/src/wallet/",
+        "tests/integration/",
+        "tests/client-shell/"
+      ],
+      "work": "S30-S33 balance/held/available, lịch sử cursor/filter, hướng dẫn nạp đúng bank config, own withdrawal status và liên hệ operator. Unknown khác0; chỉ dữ liệu ledger thật.",
+      "contract": "GET driver/me/wallet, transactions, withdrawals; owner-only masked bank; no driver money POST. Phí giao/COD không tự cộng ví.",
+      "tests": "Foreign wallet deny; cursor/filter stability; ledger totals; null/unavailable/offline; no edit balance/driver withdrawal button; small screens.",
+      "gates": "Owner UI S30-S33; nạp/payout instructions được xác nhận.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Money mutation, fake bankQR hoặc income credit vào ví.",
+      "external_sources": []
+    },
+    {
+      "id": "M04.08",
+      "title": "Nối hoa hồng với assignment delivery bằng typed FK",
+      "module": "M04",
+      "kind": "BE/INTEGRATION",
+      "dependencies": [
+        "M04.03",
+        "M07.01"
+      ],
+      "applications": [
+        "SHIP",
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/wallet/participants/ (dự kiến)",
+        "apps/backend/src/deliveries/ports/ (dự kiến)",
+        "database/migrations/",
+        "tests/integration/"
+      ],
+      "work": "Sau schema assignment M07.01, bật COMMISSION reserve/capture/release binding assignment/wallet/amount thật. Reserve khi accept, capture completed, release failed/cancel; 1000đ mỗi successful delivery theo baseline.",
+      "contract": "ADR004 lock order và typed assignment FK. Đây là bridge prerequisite M07.03; chưa có FK/participant thì accept BLOCKED, không dùng hold source placeholder.",
+      "tests": "Capture/release once; wrong assignment/wallet/amount; rollback/commit unknown; completed complaint không auto refund; sums ledger/holds.",
+      "gates": "Contract source/FK/commission approved; D11 quyền adjustment nếu liên quan.",
+      "inherit": "",
+      "flow": "Assignment FK đủ → accept reserve → completed capture hoặc failed/cancel release → ledger/source history một lần.",
+      "outside": "Accept command UI, COD/phí ship credit hoặc refund do report tự động.",
+      "external_sources": []
+    },
+    {
+      "id": "M05.01",
+      "title": "Backend địa chỉ own và địa chỉ mặc định",
+      "module": "M05",
+      "kind": "BE",
+      "dependencies": [
+        "M01.05"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER"
+      ],
+      "files": [
+        "apps/backend/src/customer-addresses/ (dự kiến)",
+        "database/migrations/",
+        "tests/integration/"
+      ],
+      "work": "Own CRUD/default, người đặt khác người nhận; GPS optional, partial unique một default active/user. Sửa/xóa không chạm historical Order snapshot. Chuẩn bị transaction participant cho M10, không fake Order trong M05.",
+      "contract": "Spec05 M05 proposed fields/bounds; phone VN, lat/lng pair, version/key/ownership. Exact delete/default errors và DDL phải chốt trước code.",
+      "tests": "Foreign ID, concurrent default/delete, no GPS, map fail, replay/version; runtime grants/freshupgrade; stable cursors.",
+      "gates": "Final address CRUD/default contract; không cần policy mới để tạo contact riêng.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Checkout/Order create hoặc đổi login phone.",
+      "external_sources": []
+    },
+    {
+      "id": "M05.02",
+      "title": "11Food: danh sách và sửa địa chỉ người nhận",
+      "module": "M05",
+      "kind": "UI",
+      "dependencies": [
+        "M05.01"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER"
+      ],
+      "files": [
+        "apps/food-web/src/addresses/",
+        "tests/client-shell/"
+      ],
+      "work": "F40/F41 label/recipient/phone/address/default; thêm/sửa/xóa/default với xác nhận thay default. Text save không GPS; map permission/dirty Back; lịch sử Order không thay.",
+      "contract": "Own address API M05.01; UI nói rõ default và người nhận, không share contacts theo phone.",
+      "tests": "API real CRUD/default/conflict; keyboard/empty/offline/mapdeny; default deleted/replaced; foreign ID via HTTP deny.",
+      "gates": "Owner UI F40/F41.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Cart/checkout, hệ thống liên hệ công khai hoặc phone identity.",
+      "external_sources": []
+    },
+    {
+      "id": "M06.01",
+      "title": "Chốt hợp đồng phí, routing và eligibility",
+      "module": "M06",
+      "kind": "CONTRACT",
+      "dependencies": [
+        "M02.02",
+        "M03.01",
+        "M04.01"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "docs/design/system-v2-20261011/04-data-api.md",
+        "docs/evidence/M06-ROUTING-PREFLIGHT.md"
+      ],
+      "work": "Đối chiếu D08 fee boundaries và D13 driver areas/count/exemptions; ChatGPT chốt policy version, routing/provider budget/TTL/bindings/ETA và parser. Owner chọn điểm policy còn xung đột.",
+      "contract": "Pickup shop GPS; search radius/registered area khác nhau; PLATFORM chỉ count/registered-area exemptions. Batching tổng tăng ETA≤300s, không reset baseline.",
+      "tests": "Fee4999/5000/5001/9999/10000/10001m; unknown destination/fee; PLATFORM guards; route evaluation versions/expiry; source/provider contract.",
+      "gates": "D04 provider, D08 pricing, D13 eligibility; không code policy khi pending.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Tự chọn fee boundary hoặc straight-line fallback.",
+      "external_sources": []
+    },
+    {
+      "id": "M06.02",
+      "title": "Shipping quote theo provider và snapshot policy",
+      "module": "M06",
+      "kind": "BE",
+      "dependencies": [
+        "M06.01"
+      ],
+      "applications": [
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/shipping-quotes/ (dự kiến)",
+        "apps/backend/src/routing/ (dự kiến)",
+        "database/migrations/",
+        "tests/integration/"
+      ],
+      "work": "Quote outside transaction lock, lưu immutable input/binding/policy/expiry; SYSTEM_DISTANCE/AGREED tách. Unknown fee là null, không estimate giả; fee>500k theo confirmation/reason baseline.",
+      "contract": "Proposal POST shipping-quotes spec05 M06; provider calls không dưới DB lock; pickup stored shopGPS; safe VND integer.",
+      "tests": "Provider fail/timeout/quota, boundary tariff, quote expiry, stale policy/inputbinding, fee mode change; no straightline pretendroute.",
+      "gates": "Provider/budget và pricing contract CODE_READY.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Accept/commission, routing active aggregate hoặc order submit.",
+      "external_sources": []
+    },
+    {
+      "id": "M06.03",
+      "title": "Eligibility và batching trước accept",
+      "module": "M06",
+      "kind": "BE",
+      "dependencies": [
+        "M06.02",
+        "M03.05",
+        "M04.03",
+        "M08.01",
+        "M07.01"
+      ],
+      "applications": [
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/routing/ (dự kiến)",
+        "apps/backend/src/driver/ports/ (dự kiến)",
+        "database/migrations/",
+        "tests/integration/"
+      ],
+      "work": "Eligible candidate evaluation dựa status/funds/currentGPS/area/count/route versions, batching bảo vệ ETA gốc và tổng tăng≤300s. Commit recheck dùng binding; không hold/assignment trong evaluator.",
+      "contract": "Spec05 M06 và ADR004; PLATFORM còn active/funds/GPS/batching guards. Unknown destination/fee chỉ xế trống theo contract đã chốt.",
+      "tests": "EXTERNAL3/4 race, PLATFORM>3, missingpoint busy deny, ETA3p rồi tổng7p deny, staleGPS/policy/funds/session; provider inconclusive deny.",
+      "gates": "D13 và evaluator physical/version contract.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Accept API, forced delivery order hoặc giả route success.",
+      "external_sources": []
+    },
+    {
+      "id": "M06.04",
+      "title": "11Ship: danh sách đơn khả dụng được lọc dữ liệu",
+      "module": "M06",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M06.03",
+        "M07.02"
+      ],
+      "applications": [
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/deliveries/queries/ (dự kiến)",
+        "apps/ship-web/src/available-deliveries/",
+        "tests/integration/"
+      ],
+      "work": "S40 eligible projection distance/value/fee/status với cursor/refresh; trước accept không exact map/contact khách. Accept CTA chỉ nối sau M07.03, chưa có thì disabled; không tự select assignment.",
+      "contract": "Scoped query lấy authoritative M07 aggregate và evaluator; không leak shop/customer private fields qua API.",
+      "tests": "Privacy HTTP/DOM, stale/unavailable candidates, cursor/refresh/offline; eligibility changes; accept route pending gate rõ.",
+      "gates": "Owner UI S40; final projection/schema/errors và D13.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Contact/map trước accept, fake orders hoặc accepting khi thiếu commission bridge.",
+      "external_sources": []
+    },
+    {
+      "id": "M07.01",
+      "title": "Delivery aggregate, assignment và history schema",
+      "module": "M07",
+      "kind": "BE/SCHEMA",
+      "dependencies": [
+        "M04.03",
+        "M03.01"
+      ],
+      "applications": [
+        "FOOD_SHOP",
+        "SHIP",
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/deliveries/ (dự kiến)",
+        "database/migrations/",
+        "tests/integration/"
+      ],
+      "work": "DDL aggregate/items/assignment/events/incident theo frozen contract; current assignment và source FKs, deadline cố định; base query/history. Chưa expose accept/pickup/terminal command trước participants.",
+      "contract": "Spec05 M07 và ADR004; delivery attempt khác Order; direct không fake Order. Assignment FK là prerequisite M04.08, tránh module import cycle.",
+      "tests": "Partial uniqueness/current assignment, FK/source/version/events/audit, freshupgrade/runtime grants; unavailable port fail closed.",
+      "gates": "Physical state/schema/lock-order contract CODE_READY.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Full Order, money source placeholder hoặc public accept chưa reserve.",
+      "external_sources": []
+    },
+    {
+      "id": "M07.02",
+      "title": "Quán tạo direct delivery và worker hết hạn tìm xế",
+      "module": "M07",
+      "kind": "BE",
+      "dependencies": [
+        "M07.01",
+        "M06.02"
+      ],
+      "applications": [
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/deliveries/creation/ (dự kiến)",
+        "apps/backend/src/deliveries/search/ (dự kiến)",
+        "apps/backend/src/outbox/",
+        "tests/integration/"
+      ],
+      "work": "Quán tạo direct snapshot recipient/items/value/pickup GPS, waiting_driver và deadline30p tại create. Deadline worker recheck authoritative state và dừng tìm; terminal không hồi sinh. Reminder5/15/pickup worker thuộc M08.05, không nhân đôi deadline logic.",
+      "contract": "Proposal shop/me/deliveries external mode+key/version; Order mode chỉ mở khi M10.05 ready. Một source/result/audit/outbox transaction.",
+      "tests": "Create duplicate/ownership, deadline clock/restart/stalejob, malformed recipient/value, quote stale; worker race với accept; no dispatch outside shop.",
+      "gates": "Final create/worker contract; D08 fee khi áp dụng.",
+      "inherit": "",
+      "flow": "Quán tạo direct → waiting_driver với deadline create30p → accept hoặc deadline worker search_stopped, không reset.",
+      "outside": "Customer createDelivery, auto choose driver, Order link hoặc reset deadline.",
+      "external_sources": []
+    },
+    {
+      "id": "M07.03",
+      "title": "Xế nhận và trả đơn trước pickup",
+      "module": "M07",
+      "kind": "BE",
+      "dependencies": [
+        "M07.02",
+        "M06.03",
+        "M04.08"
+      ],
+      "applications": [
+        "SHIP",
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "apps/backend/src/deliveries/commands/ (dự kiến)",
+        "tests/integration/"
+      ],
+      "work": "Accept recheck auth/driver/wallet/routing/delivery dưới đúng lock-order; reserve commission+assignment atomic. Return trước pickup release/clear assignment, waiting_driver nếu còn hạn hoặc search_stopped nếu hết; không reset create deadline.",
+      "contract": "Version/key/action commands; current assignment scope; không network trong DB lock; reject accept nếu typed hold source chưa đủ.",
+      "tests": "20drivers accept, accept-vs-expiry/suspend/withdraw; return phút30; samekey replay/unknown commit; rollback giữ B/H; no staleassignment privilege.",
+      "gates": "M04.08 bridge và D13 evaluator contract approved.",
+      "inherit": "",
+      "flow": "Eligible evaluation → lock/recheck → reserve+assignment/accepted → return trước pickup → waiting nếu còn hạn, search_stopped nếu hết.",
+      "outside": "Pickup/complete/fail, xế hủy sau nhận hàng hoặc forced dispatch.",
+      "external_sources": []
+    },
+    {
+      "id": "M07.04",
+      "title": "Chốt điểm giao, phí và pickup một thao tác",
+      "module": "M07",
+      "kind": "BE",
+      "dependencies": [
+        "M07.03"
+      ],
+      "applications": [
+        "SHIP",
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "apps/backend/src/deliveries/commands/ (dự kiến)",
+        "tests/integration/"
+      ],
+      "work": "Current xế xác nhận destination/fee trước pickup; unknownpoint bắt buộc map thật. Nút Đã nhận hàng ghi các milestones hợp lệ atomic tới delivering; không nút Start phụ. Sau pickup khóa fee theo contract.",
+      "contract": "S41/S51 backend fields/version/key theo final contract; không tự route/money amount từ client; fee>500k confirmation/reason đã chốt.",
+      "tests": "No point/fee, wrongassignment, return/cancel/pickup race, double pickup, providerfail, fee edit sau pickup deny; version/lostresponse.",
+      "gates": "D08 fee và confirm/pickup contract.",
+      "inherit": "",
+      "flow": "Current accepted → actual điểm/fee → location_confirmed → nút Đã nhận hàng → milestones atomic/delivering.",
+      "outside": "Terminal result, admin fee correction chưa có capability, fake GPS.",
+      "external_sources": []
+    },
+    {
+      "id": "M07.05",
+      "title": "Hoàn tất, thất bại và trách nhiệm hàng",
+      "module": "M07",
+      "kind": "BE",
+      "dependencies": [
+        "M07.04"
+      ],
+      "applications": [
+        "SHIP",
+        "FOOD_SHOP",
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/deliveries/custody/ (dự kiến)",
+        "apps/backend/src/deliveries/commands/ (dự kiến)",
+        "apps/backend/src/wallet/participants/ (dự kiến)",
+        "tests/integration/"
+      ],
+      "work": "Completed capture commission; failed release và custody incident/evidence; atomic state+money+events. Incident unresolved chặn closure/redispatch; resolve có proof/reason/history. Retry terminal tạo ID mới khi hàng sẵn ở quán.",
+      "contract": "Complete/fail/cancel/retry/resolve typed commands/version/key; report sau completed không auto refund; Order completion adapter chưa nối trước M10.05.",
+      "tests": "Complete-vs-fail, cancel-vs-pickup, capture/release exactly once, crash/unknown commit, custody/notatshop retrydeny, oldterminalevent stale.",
+      "gates": "Final custody/actions/capability contract; money bridge review.",
+      "inherit": "",
+      "flow": "Delivering → completed/capture hoặc failed/release+custody → resolve incident → retry ID mới khi hàng ở quán.",
+      "outside": "Tự đánh lostgoods/refund, replay oldcomplete hoặc fake hàng ở quán.",
+      "external_sources": []
+    },
+    {
+      "id": "M07.06",
+      "title": "11Food quán: gọi xế và theo dõi delivery",
+      "module": "M07",
+      "kind": "UI",
+      "dependencies": [
+        "M07.05",
+        "M06.04"
+      ],
+      "applications": [
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "apps/food-web/src/deliveries/",
+        "tests/client-shell/"
+      ],
+      "work": "F50-F52 direct call→waiting/deadline→driver accepted/timeline→outcome. Cancel/retry theo server status/custody; giữ lịch sử attempt. Tracking map nối M08.03 sau, chưa có thì unavailable.",
+      "contract": "M07 own read/commands, quotes M06.02; contact/history scope; Order link chỉ sau M10.05.",
+      "tests": "Real direct flow, no driver/timeout30p, duplicate/lost response, retryfailed custody, foreigndelivery; mobile/offline/banner/version.",
+      "gates": "Owner UI F50-F52.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Customer tạo delivery, map fake hoặc Order checkout.",
+      "external_sources": []
+    },
+    {
+      "id": "M07.07",
+      "title": "11Ship: giao hàng, lịch sử và kết quả",
+      "module": "M07",
+      "kind": "UI",
+      "dependencies": [
+        "M07.05",
+        "M06.04"
+      ],
+      "applications": [
+        "SHIP"
+      ],
+      "files": [
+        "apps/ship-web/src/deliveries/",
+        "tests/client-shell/"
+      ],
+      "work": "S41/S50-S53 available→accept→point/fee→pickup→complete/fail; active list theo thời gian nhận nhưng xế tự chọn thứ tự. Contact/navigation chỉ currentassignment, return trướcpickup; offline không queue money/status mutation.",
+      "contract": "M07 commands và scoped query; income derived actual fee/commission, không tự credit fee vào wallet. Phone/maps đúng provider, current contactscope.",
+      "tests": "Success/failed/return, twoassignments order, lostresponse/samekey, revokedassignment/session, missingpoint/fee; actual mobile network/lifecycle.",
+      "gates": "Owner UI S41/S50-S53; native/provider khi đến phone.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Forced route ordering, COD wallet hoặc giả GPS/assignment.",
+      "external_sources": []
+    },
+    {
+      "id": "M08.01",
+      "title": "Server binding, location ingress và latest/history",
+      "module": "M08",
+      "kind": "BE",
+      "dependencies": [
+        "M01.21",
+        "M03.02"
+      ],
+      "applications": [
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/driver-locations/ (dự kiến)",
+        "apps/backend/src/device-binding/ (dự kiến)",
+        "database/migrations/",
+        "tests/integration/"
+      ],
+      "work": "Nhận sequence, recorded_at, lat/lng, accuracy và binding; latest không bị sample cũ ghi đè. Server kiểm thời gian/quyền và giữ history theo policy duyệt. Binding tự khai không là chứng cứ thiết bị.",
+      "contract": "Proposal driver/me/locations; D09 interval/retention/quality. Setup sample trước Online chỉ khi contract cho phép; ingress không phụ thuộc M03.05 để tránh cycle.",
+      "tests": "Duplicate/out-of-order sequence, future/stale/low accuracy, session/binding revoked, chênh clock, retention/grants/ownership.",
+      "gates": "D02 binding proof, D09 GPS policy và exact schema/API.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Native sampling, scoped map read hoặc dùng PC thay phone evidence.",
+      "external_sources": []
+    },
+    {
+      "id": "M08.02",
+      "title": "Android xế: GPS nền, quyền và trạng thái OS",
+      "module": "M08",
+      "kind": "NATIVE",
+      "dependencies": [
+        "M08.01",
+        "M00.13"
+      ],
+      "applications": [
+        "SHIP"
+      ],
+      "files": [
+        "Native Ship location/permissions/storage adapter theo D03",
+        "docs/evidence/M08-ANDROID-GPS.md"
+      ],
+      "work": "S60 quyền OS, accuracy, background, battery và last sample. Sample khi online hoặc còn trách nhiệm hàng theo policy; logout/rebind đúng server. Mất mạng xử lý sequence/stale sample; không hứa OS luôn đảm bảo chu kỳ.",
+      "contract": "M08.01 input authoritative, runtime D03 và sampling D09. Offline/suspended còn hàng không bỏ tracking cần thiết.",
+      "tests": "Android thật: background/screen off/4G/reboot/battery/permission denied/revoked; timestamp/GPS thực và mất mạng.",
+      "gates": "D03/D09, Owner UI và test điện thoại.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Fake GPS trên PC hoặc tracking vượt phạm vi cho phép.",
+      "external_sources": []
+    },
+    {
+      "id": "M08.03",
+      "title": "Tracking cho quán/khách liên quan delivery",
+      "module": "M08",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M08.01",
+        "M07.05"
+      ],
+      "applications": [
+        "FOOD_SHOP",
+        "FOOD_CUSTOMER"
+      ],
+      "files": [
+        "apps/backend/src/tracking/ (dự kiến)",
+        "apps/food-web/src/tracking/",
+        "tests/integration/"
+      ],
+      "work": "F60 map last seen/accuracy/stale cho quan hệ delivery hiện hành. Khách chỉ được xem khi Order link M10.05 có thật; xế đã return mất quyền liên quan. Không giả marker chuyển động.",
+      "contract": "GET tracking theo quan hệ authoritative; history riêng không public. Customer mode chờ M10.05, shop mode có thể làm trước.",
+      "tests": "Foreign relation, return/reassign, stale sample; thiếu Order link phải chặn khách; outage/map provider lỗi; test mobile.",
+      "gates": "D04 map provider, D09 retention/scope và Owner UI F60.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Public vị trí xế hoặc cấp quyền đọc history rộng.",
+      "external_sources": []
+    },
+    {
+      "id": "M08.04",
+      "title": "Inbox, push binding và archive TTL",
+      "module": "M08",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M01.21",
+        "M07.05"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/notifications/ (dự kiến)",
+        "apps/backend/src/push/ (dự kiến)",
+        "apps/food-web/src/inbox/",
+        "apps/ship-web/src/inbox/",
+        "apps/backend/src/outbox/",
+        "tests/integration/"
+      ],
+      "work": "F61/S61 inbox cursor/unread/read/deep-link. Outbox dedupe tới inbox/push, kiểm lại binding trước gửi; logout/rebind không gửi account cũ. Archive trước TTL delete; mở phải fetch resource và kiểm quyền.",
+      "contract": "Push token được bảo vệ; installation binding/notification deliveries. Adapter network ngoài transaction lock; TTL/content/privacy có contract cuối.",
+      "tests": "Dedupe/restart/dead letter, logout/account switch race, link hết hạn/forbidden/resource gone, TTL/archive, provider fault; không secret trong log.",
+      "gates": "D04 push provider, native permissions và Owner UI.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Fake publisher production hoặc push tự tạo business transition.",
+      "external_sources": []
+    },
+    {
+      "id": "M08.05",
+      "title": "Reminder jobs theo thời gian và trạng thái thật",
+      "module": "M08",
+      "kind": "BE/WORKER",
+      "dependencies": [
+        "M07.02",
+        "M07.04",
+        "M08.04"
+      ],
+      "applications": [
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/reminders/ (dự kiến)",
+        "tests/integration/",
+        "ops/runbooks/"
+      ],
+      "work": "Nhắc tìm xế/pickup theo D09; job gắn resource/deadline và kiểm state hiện tại. Scheduled Order chưa tới giờ không cảnh báo theo contract. Restart/dedupe không nhắc attempt cũ hoặc đã terminal.",
+      "contract": "M07.02 sở hữu deadline tìm xế30p; reminder không reset deadline, hủy hoặc dispatch. Server clock/outbox version; Order reminders chờ schedule contract.",
+      "tests": "Các mốc policy đã duyệt; accepted/terminal/return/retry races; stale jobs sau restart; scheduled boundary; không thông báo trùng.",
+      "gates": "D09 reminder policy; M10 contract khi mở Order reminders.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Cron bật quán, deadline thứ hai hoặc nhắc sau terminal.",
+      "external_sources": []
+    },
+    {
+      "id": "M09.01",
+      "title": "Contract category và menu CRUD backend",
+      "module": "M09",
+      "kind": "BE",
+      "dependencies": [
+        "M01.12",
+        "M02.05"
+      ],
+      "applications": [
+        "FOOD_SHOP",
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/menu/ (dự kiến)",
+        "apps/backend/src/categories/ (dự kiến)",
+        "database/migrations/",
+        "tests/integration/"
+      ],
+      "work": "Categories hệ thống/quán độc lập; own menu name/photo/price/category và visible/available/deleted riêng. Soft delete/hide giữ snapshots; category ngừng không làm mất món, fallback nhóm Khác theo contract.",
+      "contract": "Spec05 M09: CRUD/status proposal, ownership/version/key và price safe integer. Writer system category có quyền đã duyệt; exact DDL/API/errors trước code.",
+      "tests": "Cross-shop/invalid category, hidden/out-of-stock/delete, category duplicate/stop, price/version race, fresh/upgrade/grants.",
+      "gates": "Final menu/category contract và D11 system category writer.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Topping/size/voucher/freeship hoặc thay Order lịch sử.",
+      "external_sources": []
+    },
+    {
+      "id": "M09.02",
+      "title": "Upload ảnh món và kiểm dữ liệu file",
+      "module": "M09",
+      "kind": "BE",
+      "dependencies": [
+        "M09.01"
+      ],
+      "applications": [
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "apps/backend/src/uploads/ (dự kiến)",
+        "database/migrations/",
+        "tests/integration/"
+      ],
+      "work": "Create/complete upload kiểm bytes/decode/type/size/owner thật; JPEG/PNG/WebP≤5MiB theo baseline. URL tùy ý không là proof. Upload lỗi giữ draft text và không publish asset hỏng.",
+      "contract": "upload_assets/image relation; storage/access/orphan cleanup/retry có contract cuối. Blob I/O ngoài DB lock.",
+      "tests": "Foreign asset/magic type/oversize/decompression bomb/corrupt image, timeout/replay/orphan, storage grants; ảnh thật trên mobile.",
+      "gates": "Storage/provider/budget và asset contract; Owner xác nhận nếu khác baseline.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Demo ảnh thành asset nghiệp vụ hoặc upload public không kiểm dữ liệu.",
+      "external_sources": []
+    },
+    {
+      "id": "M09.03",
+      "title": "11Food quán: danh sách và sửa thực đơn",
+      "module": "M09",
+      "kind": "UI",
+      "dependencies": [
+        "M09.02"
+      ],
+      "applications": [
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "apps/food-web/src/menu-management/",
+        "tests/client-shell/"
+      ],
+      "work": "F70/F71 search/category/status, create/edit/upload và xác nhận hide/show/available/delete. Value/state/version từ API; không tự sửa giá vì cost hay ảnh giả.",
+      "contract": "M09.01/.02; name≤120, price safe integer; soft delete và history giữ.",
+      "tests": "Ảnh/save/status thật; empty/offline/dirty Back/upload lỗi/version diff; foreign shop bị chặn qua HTTP; mobile keyboard.",
+      "gates": "Owner UI F70/F71.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Cart/checkout/voucher hoặc kho/cost của dự án Ốc11.",
+      "external_sources": []
+    },
+    {
+      "id": "M09.04",
+      "title": "11Food khách: tìm quán và xem menu công khai",
+      "module": "M09",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M09.01",
+        "M02.05"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER"
+      ],
+      "files": [
+        "apps/backend/src/discovery/ (dự kiến)",
+        "apps/food-web/src/discovery/",
+        "tests/integration/"
+      ],
+      "work": "Home/search/F72 hiển thị quán/menu/categories/availability thật với cursor và scope. Hidden/deleted không đặt mới; hết món theo policy. Cart action chờ M10.03.",
+      "contract": "Public safe projection không phone private/PII; availability theo lịch. Không quán/promo/rating giả.",
+      "tests": "Private fields bị che, disabled/hours boundary, hidden/price change, paging/search Unicode; offline/empty/loading.",
+      "gates": "Public discovery API contract và Owner UI F01/F02/F72.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Checkout hoặc favorites/discount chưa có contract.",
+      "external_sources": []
+    },
+    {
+      "id": "M09.05",
+      "title": "Admin: nhóm món hệ thống",
+      "module": "M09",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M09.01",
+        "M00.08"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/categories/ (dự kiến)",
+        "apps/admin-web/src/menu-categories/",
+        "tests/integration/"
+      ],
+      "work": "D60 create/edit/order/status; ngừng category giữ món và Order history, public fallback đúng contract. Writer có capability, reason/version/audit.",
+      "contract": "Reuse system_categories của M09; không store thứ hai. Unique/name/sort policy có contract cuối.",
+      "tests": "Unauthorized writer/version race, ngừng category và tác động thật, sort/cursor; Admin layout.",
+      "gates": "D11 writer và Owner UI D60.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Quản trị cost/voucher hoặc xóa cascade history.",
+      "external_sources": []
+    },
+    {
+      "id": "M10.01",
+      "title": "Backend checkout, Order snapshot và địa chỉ participant",
+      "module": "M10",
+      "kind": "BE",
+      "dependencies": [
+        "M05.01",
+        "M09.01",
+        "M02.05"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "apps/backend/src/orders/ (dự kiến)",
+        "apps/backend/src/customer-addresses/ (participant)",
+        "database/migrations/",
+        "tests/integration/"
+      ],
+      "work": "One-shop items, recipient oneOf saved/inline; server kiểm menu/price/totals rồi snapshot. Inline address/default+Order cùng transaction. Pending confirmation; schedule theo D14; chưa customer cancel/edit.",
+      "contract": "Spec05 M10; exact DDL/OpenAPI/errors/replay trước code. M05 CRUD không chờ Order; confirmed content immutable.",
+      "tests": "Mixed shop/tampered total, hidden/price change/menu off, address/default race, same key một Order, schedule/clock, history độc lập menu/address.",
+      "gates": "D14 scheduled availability; giữ C10, D06 chỉ khi muốn đổi policy.",
+      "inherit": "",
+      "flow": "Cart/recipient → revalidate menu/totals → snapshot+address/default+Order atomic → pending_confirmation.",
+      "outside": "Call driver, auto dispatch hoặc giá lịch sử mutable.",
+      "external_sources": []
+    },
+    {
+      "id": "M10.02",
+      "title": "Backend quán sửa, xác nhận, từ chối và hủy Order",
+      "module": "M10",
+      "kind": "BE",
+      "dependencies": [
+        "M10.01"
+      ],
+      "applications": [
+        "FOOD_SHOP",
+        "FOOD_CUSTOMER"
+      ],
+      "files": [
+        "apps/backend/src/orders/commands/ (dự kiến)",
+        "tests/integration/"
+      ],
+      "work": "Pending sửa quantity/unit price/agreed total sau trao đổi, có reason/version/history; confirm khóa content, reject có lý do. Merchant cancel phải qua custody/current delivery guard; thiếu adapter trước M10.05 thì fail closed.",
+      "contract": "State pending/confirmed/rejected/cancelled_by_merchant; scopes/key/version. Không generic PATCH status hoặc customer mutation.",
+      "tests": "Edit/confirm/reject races, total bounds, foreign shop, session revoked, version/key, cancel/pickup và adapter thiếu.",
+      "gates": "State/cascade/custody contract; D06 nếu thay baseline.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Call-driver link, customer cancel hoặc mở khóa confirmed content.",
+      "external_sources": []
+    },
+    {
+      "id": "M10.03",
+      "title": "11Food khách: giỏ, checkout và theo dõi Order",
+      "module": "M10",
+      "kind": "UI",
+      "dependencies": [
+        "M10.02",
+        "M05.02",
+        "M09.04"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER"
+      ],
+      "files": [
+        "apps/food-web/src/cart/",
+        "apps/food-web/src/orders/",
+        "tests/client-shell/"
+      ],
+      "work": "F80-F82 cart một quán, confirm clear khi đổi quán, qty/note/recipient/schedule/default effects. Price/menu conflict hiện diff; totals server; submit cùng intent; timeline/detail. Giữ C10 không customer cancel.",
+      "contract": "M10 backend/own addresses/public menu; cart local không authoritative; offline không queue Order mutation.",
+      "tests": "Đặt hộ/không GPS/hẹn giờ/default, price change/hide/mất response, phiên/quyền; mobile layout/keyboard.",
+      "gates": "Owner UI F80-F82 và D14; D06 nếu đổi quyền khách.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Voucher/COD ledger hoặc tự dispatch.",
+      "external_sources": []
+    },
+    {
+      "id": "M10.04",
+      "title": "11Food quán: nhận và xử lý Order",
+      "module": "M10",
+      "kind": "UI",
+      "dependencies": [
+        "M10.02"
+      ],
+      "applications": [
+        "FOOD_SHOP"
+      ],
+      "files": [
+        "apps/food-web/src/shop-orders/",
+        "tests/client-shell/"
+      ],
+      "work": "F83/F84 list pending/confirmed/history, filters; item revision/reason/confirm/reject và conflict diff. F85 giữ snapshot; CTA gọi xế chờ M10.05, hẹn giờ không tự call.",
+      "contract": "M10.02 shop commands; status/version từ server, không overwrite totals mù.",
+      "tests": "Refresh/freshness, revision/confirm race, reject, confirmed read-only, foreign Order HTTP deny, empty/offline/keyboard.",
+      "gates": "Owner UI F83-F85.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Delivery retry/custody policy hoặc App Quán riêng.",
+      "external_sources": []
+    },
+    {
+      "id": "M10.05",
+      "title": "Nối Order và delivery attempts",
+      "module": "M10",
+      "kind": "BE/INTEGRATION",
+      "dependencies": [
+        "M10.02",
+        "M07.05"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/orders/participants/ (dự kiến)",
+        "apps/backend/src/deliveries/ports/ (dự kiến)",
+        "apps/food-web/src/shop-orders/",
+        "tests/integration/"
+      ],
+      "work": "Confirmed Order chủ động call driver, tối đa một current delivery và history0..n. Current completed→Order completed; failed/search stopped/cancel delivery giữ confirmed+attention. Merchant cancel trước pickup cascade atomic, giữ history.",
+      "contract": "M07 Order mode create; current/latest IDs/partial uniqueness/FKs; stale event attempt cũ không complete Order.",
+      "tests": "Call hai lần/timeout/retry, one current, old terminal event, cancel/pickup/hold atomic, item/recipient snapshots và failed custody→retry.",
+      "gates": "Final Order participant/cascade contract, Owner UI nút F85.",
+      "inherit": "",
+      "flow": "Confirmed Order → chủ quán call driver → một current attempt → completed/current thì Order completed; terminal khác giữ attention/history.",
+      "outside": "Khách trực tiếp tạo delivery hoặc hồi sinh terminal/reset deadline.",
+      "external_sources": []
+    },
+    {
+      "id": "M11.01",
+      "title": "Đánh giá quán/xế và lịch sử phản hồi",
+      "module": "M11",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M10.05",
+        "M07.05"
+      ],
+      "applications": [
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/ratings/ (dự kiến)",
+        "apps/food-web/src/ratings/",
+        "apps/ship-web/src/ratings/",
+        "database/migrations/",
+        "tests/integration/"
+      ],
+      "work": "F90 shop rating own completed Order một lần1-5; quán chỉ reply/update có history. F91/S70 driver rating do quán sau completed/failed, một/delivery. Không thêm customer driver rating hoặc quyền quán xóa/báo cáo shop rating khách.",
+      "contract": "Baseline eligibility/uniqueness/author scope; public projection sanitized, original retained, aggregate từ dữ liệu thật.",
+      "tests": "Duplicate/foreign/nonterminal, failed driver eligible, reply history, original không xóa, không PII; UI/offline/version.",
+      "gates": "Final rating contract và Owner UI F90-F92/S70.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Phạt tiền hoặc tự refund vì điểm thấp.",
+      "external_sources": []
+    },
+    {
+      "id": "M11.02",
+      "title": "Backend phản ánh và correction ports có quyền",
+      "module": "M11",
+      "kind": "BE",
+      "dependencies": [
+        "M11.01",
+        "M04.01"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/backend/src/reports/ (dự kiến)",
+        "apps/backend/src/corrections/ (dự kiến)",
+        "tests/integration/"
+      ],
+      "work": "Report pending→under_review→resolved/rejected có reason/evidence/history. Original terminal giữ; correction qua approved domain port/source-linked ledger delta. Thiếu quyền/funds thì case chưa effect; không auto refund/penalty.",
+      "contract": "Spec05 M11; không replay complete hoặc direct ledger edit. Adjustment schema/capability phải CODE_READY trong slice.",
+      "tests": "Foreign resource/unsafe asset, duplicate report/review race, insufficient debit giữ case, delta một lần, effective outcome/rating history.",
+      "gates": "D11 moderation/correction và financial adjustment contract.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Tự phạt/refund hoặc xóa bằng chứng gốc.",
+      "external_sources": []
+    },
+    {
+      "id": "M11.03",
+      "title": "UI phản ánh và hàng đợi xử lý Admin",
+      "module": "M11",
+      "kind": "UI",
+      "dependencies": [
+        "M11.02"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "apps/food-web/src/reports/",
+        "apps/ship-web/src/reports/",
+        "apps/admin-web/src/reports/",
+        "tests/client-shell/",
+        "tests/admin-web/"
+      ],
+      "work": "F93/S71 report own resource/type/text/evidence/status; D70 queue/filter/review/actions/timeline. Actions theo capability, giải thích effect/reason/version; cache UI không chứng nhận resolved.",
+      "contract": "M11.02, evidence ownership/PII masking và upload adapter được duyệt.",
+      "tests": "Attachment invalid/version conflict/foreign scope, review flow thật/correction gate, role revocation, empty/offline/mất response.",
+      "gates": "Owner UI F93/S71/D70 và D11.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Tự quyết định tiền hoặc cấp quyền quán xóa đánh giá.",
+      "external_sources": []
+    },
+    {
+      "id": "M12.01",
+      "title": "Hợp đồng capabilities quản trị theo domain/action",
+      "module": "M12",
+      "kind": "CONTRACT",
+      "dependencies": [
+        "M01.14"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "docs/design/system-v2-20261011/04-data-api.md",
+        "docs/evidence/M12-CAPABILITY-PREFLIGHT.md"
+      ],
+      "work": "Preflight permission store CUSTOMER/SHOP/DRIVER view/review/lock; báo gaps money/config/export/audit/ops. ChatGPT lập action-resource matrix, Owner duyệt quyền; scope cũ không tự cấp quyền mới.",
+      "contract": "D11 default deny, capability explicit; membership SYSTEM/ADMIN hiện hành; revoke race và backward compatibility.",
+      "tests": "Positive/negative từng domain/action, Food grouping không mở scope; migration/old API compatibility.",
+      "gates": "D11 Owner duyệt capabilities.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Code mở quyền hoặc thay số lượng SYSTEM.",
+      "external_sources": []
+    },
+    {
+      "id": "M12.02",
+      "title": "Admin: tài khoản và lock/unlock có audit",
+      "module": "M12",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M12.01",
+        "M01.04",
+        "M00.08"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/admin-accounts/ (dự kiến)",
+        "apps/admin-web/src/accounts/",
+        "tests/integration/"
+      ],
+      "work": "D81 list/search/phone/roles/status/origin/scope/detail, lock/unlock có reason/version. Lock revoke session và tạo operational case nếu có hàng/tiền; không cancel delivery hoặc xóa SYSTEM.",
+      "contract": "Identity owner M01, scoped commands/default deny; không grant role trực tiếp ngoài invite flow.",
+      "tests": "Scope/revoked actor, lock vs login/accept, goods/money case, no SYSTEM delete, cursor/filters/PII.",
+      "gates": "D11 capabilities và Owner UI D81.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Direct role grant, bank/money changes hoặc destructive delete.",
+      "external_sources": []
+    },
+    {
+      "id": "M12.03",
+      "title": "Admin: danh sách quán, xế và khách theo scope",
+      "module": "M12",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M12.01",
+        "M03.04",
+        "M02.04",
+        "M01.05"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/admin-profiles/ (dự kiến)",
+        "apps/admin-web/src/profiles/",
+        "tests/integration/"
+      ],
+      "work": "Scoped list/detail/filter quán/xế/khách với status reason/history và links tới module owner. Không profile store thứ hai; can_view không cấp quyền verify bank.",
+      "contract": "Read projection M01/M02/M03; review/lock qua approved ports, cursor và restricted existence policy.",
+      "tests": "Positive/negative ba domains, contacts masked/PII, pagination/version freshness, action link không bypass quyền.",
+      "gates": "D11 PII/review scopes và Owner UI.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Viết lại bank verification hoặc tự cấp finance policy.",
+      "external_sources": []
+    },
+    {
+      "id": "M12.04",
+      "title": "Admin: giám sát Order và Delivery",
+      "module": "M12",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M12.01",
+        "M10.05"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/admin-orders/ (dự kiến)",
+        "apps/admin-web/src/order-monitor/",
+        "tests/integration/"
+      ],
+      "work": "D50 filter/time/shop/driver/status, snapshot/events/current attempt/incident/drill-down. Read/case/correction ports theo quyền; không forced dispatch.",
+      "contract": "M07/M10 owner stores, cursor/current/latest history; phone/GPS đúng scope/retention.",
+      "tests": "Foreign domain denied, stale attempt/history, terminal/custody view, UTC date filters; unavailable khác0.",
+      "gates": "D11 scopes và Owner UI monitor.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Direct status patch, chọn xế hoặc bypass custody/funds.",
+      "external_sources": []
+    },
+    {
+      "id": "M12.05",
+      "title": "Admin: giao dịch ví và hàng đợi tài chính",
+      "module": "M12",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M12.01",
+        "M04.06"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/admin-wallet/ (dự kiến)",
+        "apps/admin-web/src/wallet-monitor/",
+        "tests/integration/"
+      ],
+      "work": "List target/amount/type/state/date/masked bank/reference/version, drill-down ledger/holds/payout; links tới M04 commands. Reconciliation unknown rõ; không ledger thứ hai.",
+      "contract": "M04 owner ports/financial capabilities; can_view không là quyền tiền.",
+      "tests": "Scopes/PII/filter/cursor, ledger/holds reconcile, processing owner/takeover denied; không edit balance.",
+      "gates": "D11 financial read/actions và Owner UI.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Direct ledger edit hoặc code payout lần nữa.",
+      "external_sources": []
+    },
+    {
+      "id": "M12.06",
+      "title": "Dashboard và chỉ số báo cáo từ dữ liệu thật",
+      "module": "M12",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M12.02",
+        "M12.03",
+        "M12.04",
+        "M12.05"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/reporting/ (dự kiến)",
+        "apps/admin-web/src/dashboard/",
+        "tests/integration/"
+      ],
+      "work": "D80 Order/Delivery/alerts/payout pending/GPS stale thật, drill-down cùng filter/time. KPI unavailable khác0; sums reconcile owner stores, không COD thành wallet revenue.",
+      "contract": "Read projection và versioned metric definitions từ module owner; giờ VN/[from,to) UTC; không default số giả.",
+      "tests": "Isolated test data có nhãn, ledger/Order totals, date boundaries/cursor/scopes, outage/partial unavailable.",
+      "gates": "Metric definitions/permissions và Owner UI dashboard.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Fake KPI, nguồn dữ liệu thứ hai hoặc PII export chưa duyệt.",
+      "external_sources": []
+    },
+    {
+      "id": "M12.07",
+      "title": "Tham số vận hành và publish policy version",
+      "module": "M12",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M12.01",
+        "M06.03"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/routing/policy/ (approved owner)",
+        "apps/admin-web/src/parameters/",
+        "tests/integration/"
+      ],
+      "work": "D82 read/validate/impact preview/publish value/unit/version/effective_at/reason; in-flight quote/delivery giữ snapshot. Tham số đã chốt không đổi để tiện UI.",
+      "contract": "SYSTEM hoặc capability approved; version/key/audit; reuse M06 policy_versions, không config store thứ hai.",
+      "tests": "Bounds/dependencies/snapshots, concurrent publish/revoked actor, stale quote/replay; không public secret config.",
+      "gates": "D11 config writer, exact contract; Owner duyệt khi đổi business value.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Đổi giá/commission/radius ngầm hoặc edit secrets runtime.",
+      "external_sources": []
+    },
+    {
+      "id": "M12.08",
+      "title": "Nhật ký audit, tìm kiếm và masking",
+      "module": "M12",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M12.01"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/audit/ (read projection)",
+        "apps/admin-web/src/audit/",
+        "tests/integration/"
+      ],
+      "work": "D83 filters actor/action/resource/outcome/date/request_id, cursor và detail. Audit read-only; PII masked, không password/token/OTP/TOTP/DB credential.",
+      "contract": "Main audit owner store, approved capability, error/source correlation; không audit ledger thứ hai.",
+      "tests": "Scope/revoked actor/cursor/date/search, secrets redacted, correlation theo request_id và read-only grants.",
+      "gates": "D11 audit/PII capability, Owner UI D83.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Xóa/sửa audit hoặc export chưa có quyền.",
+      "external_sources": []
+    },
+    {
+      "id": "M12.09",
+      "title": "Export báo cáo theo job và download có quyền",
+      "module": "M12",
+      "kind": "BE/UI",
+      "dependencies": [
+        "M12.06",
+        "M12.08"
+      ],
+      "applications": [
+        "ADMIN"
+      ],
+      "files": [
+        "apps/backend/src/report-exports/ (dự kiến)",
+        "apps/admin-web/src/report-export/",
+        "tests/integration/"
+      ],
+      "work": "D84 filters/columns→job/status→authorized download có expiry. Recheck quyền/PII lúc create/run/download; URL secret không thay resource auth; rate/budget/failure controls.",
+      "contract": "Approved report projections; column/TTL/limits/grants/storage contract trước code.",
+      "tests": "Revoke scope trong job/download, expiry/oversize/failure/replay, CSV formula injection escaping, totals/filter match.",
+      "gates": "D11 export capability/columns, storage/budget và Owner UI.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "PII download public hoặc raw database dump.",
+      "external_sources": []
+    },
+    {
+      "id": "M12.10",
+      "title": "Vận hành: backup/restore, tải và bản phát hành test",
+      "module": "M12",
+      "kind": "OPS/REVIEW",
+      "dependencies": [
+        "M12.09",
+        "M08.02",
+        "M08.04",
+        "M11.03"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "ops/runbooks/",
+        "tests/performance theoapprovedplan",
+        "docs/evidence/M12-OPS.md"
+      ],
+      "work": "D85 health/outbox/dead jobs evidence; backup/restore trên isolated target, đo RPO/RTO/load/mobile/provider/security. Chuẩn bị release candidate/checksum/rollback plan; production deploy là quyết định riêng Owner.",
+      "contract": "D12 targets/budget; backup credential private; không reset DEV/staging hoặc destructive UI bypass. Reuse deployment configuration.",
+      "tests": "Isolated restore/sentinel, measured targets, outbox dedupe, workload phù hợp, exact SHA/build/mobile evidence; Free staging không chứng minh HA.",
+      "gates": "D12 targets/approved test target và restore/load scope; Owner release riêng.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Tự deploy production/merge/LOCK hoặc destructive test vào DB Owner.",
+      "external_sources": []
+    },
+    {
+      "id": "M12.11",
+      "title": "Dashboard tiến độ biểu diễn gate và migration schema",
+      "module": "M12",
+      "kind": "BE/TOOL",
+      "dependencies": [
+        "M01.01",
+        "M00.10"
+      ],
+      "applications": [
+        "ADMIN",
+        "FOOD_CUSTOMER",
+        "FOOD_SHOP",
+        "SHIP"
+      ],
+      "files": [
+        "scripts/generate-progress.mjs",
+        "tests/progress/",
+        "docs/progress/ (schema/task mapping sau contract)"
+      ],
+      "work": "ChatGPT chốt progress schema contract mới rồi Claude code parser/migration cho design/UI/code/CI/review/local/phone/Owner accept/LOCK. Giữ technical DONE lịch sử khác module closure, backward compatibility và regenerate.",
+      "contract": "Workflow C06; plan.yml v1 chưa hỗ trợ gate fields. Không thêm trước schema/parser review hoặc sửa tay PROGRESS. IDs .NN ở đây chỉ metadata giao việc.",
+      "tests": "Old/new parser upgrade, idempotent generate, invalid gate/head mismatch, CI không kéo LOCK; progress:test/progress:check với fixtures.",
+      "gates": "Approved progress schema/process contract; không bịa Owner PASS.",
+      "inherit": "",
+      "flow": "Kiểm tra nguồn và điều kiện → thực hiện phạm vi gói → kiểm tra kết quả → giao bản review đúng SHA.",
+      "outside": "Bot tự đánh LOCK/DONE module hoặc thay evidence lịch sử.",
+      "external_sources": []
+    }
+  ]
+}
