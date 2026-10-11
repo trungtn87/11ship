@@ -4,6 +4,7 @@ import { AdminWebHostingConfig, parseAdminWebHosting } from './admin-web-hosting
 import { Keyring, parseKeyringConfig } from '../crypto/keyring';
 import { DatabaseTls, resolveDatabaseTls } from '../database/tls-config';
 import { parseStagingFixtures, StagingFixturesConfig } from './staging-fixtures-config';
+import { loadTestInboxConfig, TestInboxConfig } from '../test-sms/test-sms-config';
 import {
   AuthConfig,
   DEFAULT_AUTH_OTP_MAX_ATTEMPTS,
@@ -133,6 +134,12 @@ export interface AppConfig {
    * valid only for APP_ENV=staging with the administration web authentication enabled. Absent everywhere else.
    */
   adminWebHosting?: AdminWebHostingConfig;
+  /**
+   * Test SMS inbox (M01.22). Present ONLY when TEST_INBOX was selected explicitly (OTP_PROVIDER=TEST_INBOX for REGISTER
+   * and/or ADMIN_ACTIVATION_OTP_MODE=TEST_INBOX with the activation enabled) in a development/test environment on a
+   * loopback target. Absent everywhere else: nothing of the test inbox is then created, and no listener is opened.
+   */
+  testInbox?: TestInboxConfig;
 }
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -570,6 +577,21 @@ export function loadConfig(env: EnvSource): ConfigResult {
     adminWebHosting.invalid.forEach(flag);
   }
 
+  // Test SMS inbox (M01.22): explicit, development/test and loopback only. Names only, never a value.
+  const testInboxResult = loadTestInboxConfig({
+    env,
+    appEnv,
+    host,
+    databaseUrl,
+    activationEnabled: adminActivation !== undefined,
+  });
+  let testInbox: TestInboxConfig | undefined;
+  if (testInboxResult.ok) {
+    testInbox = testInboxResult.config;
+  } else {
+    testInboxResult.invalid.forEach(flag);
+  }
+
   if (invalid.length > 0 || appEnv === undefined || databaseUrl === undefined) {
     return { ok: false, invalid };
   }
@@ -611,6 +633,7 @@ export function loadConfig(env: EnvSource): ConfigResult {
       ...(adminWebHosting.ok && adminWebHosting.config !== undefined
         ? { adminWebHosting: adminWebHosting.config }
         : {}),
+      ...(testInbox === undefined ? {} : { testInbox }),
     },
   };
 }

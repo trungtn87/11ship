@@ -52,7 +52,7 @@ test('launcher behaviour suite (real git, faked Docker/npm) passes under PowerSh
 });
 
 test('ships one menu, five command wrappers and three app wrappers that preserve exit codes and never pause on their own', async () => {
-  const wrappers = (await readdir(local)).filter((name) => name.endsWith('.cmd')).sort();
+  const wrappers = (await readdir(local)).filter((name) => name.endsWith('.cmd') && name !== '11ship-test-sms.cmd').sort(); // the SMS reader: tests/test-sms-tool
   assert.deepEqual(wrappers, [
     '11Ship-Admin.cmd', '11Ship-Food.cmd', '11Ship-Ship.cmd', '11Ship-Start.cmd', '11Ship-Status.cmd', '11Ship-Stop.cmd',
     '11Ship-Test.cmd', '11Ship-Update.cmd', '11Ship.cmd',

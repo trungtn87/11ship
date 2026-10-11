@@ -809,7 +809,8 @@ try {
   # =============================================================================================
   $source = Get-Content -Raw -Encoding UTF8 -LiteralPath $scriptPath
   foreach ($forbidden in @('reset --hard','down -v','db:migrate:remote','git stash','push --force','audit fix')) { Check (!$source.Contains($forbidden)) "source excludes forbidden operation: $forbidden" }
-  $wrappers = @(Get-ChildItem -LiteralPath (Split-Path $scriptPath) -Filter '*.cmd')
+  # M01.22: the test SMS inbox reader is a separate tool (not a launcher wrapper); tests/test-sms-tool covers it.
+  $wrappers = @(Get-ChildItem -LiteralPath (Split-Path $scriptPath) -Filter '*.cmd' | Where-Object { $_.Name -ne '11ship-test-sms.cmd' })
   Check ($wrappers.Count -eq 9) 'menu, five command wrappers and three app wrappers exist'
   $expectedWrappers = @('11Ship.cmd','11Ship-Start.cmd','11Ship-Update.cmd','11Ship-Test.cmd','11Ship-Stop.cmd','11Ship-Status.cmd','11Ship-Admin.cmd','11Ship-Food.cmd','11Ship-Ship.cmd')
   Check ((@($wrappers | ForEach-Object { $_.Name } | Sort-Object) -join '|') -ceq (@($expectedWrappers | Sort-Object) -join '|')) 'wrapper inventory is exactly the nine expected names (no separate shop-owner app)'

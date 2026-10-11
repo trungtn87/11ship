@@ -7,6 +7,11 @@ import { OtpProvider } from './otp-provider';
 export interface OtpBindingOptions {
   /** True only when loadConfig produced a staging fixture mode (AUTH_STAGING_FIXTURES_ENABLED=true on staging). */
   readonly stagingFixtureMode?: boolean;
+  /**
+   * The test inbox adapter (M01.22). Supplied by main.ts ONLY when the explicit TEST_INBOX selection was accepted; it is
+   * honoured in development/test and refused everywhere else, so no environment can reach it by accident.
+   */
+  readonly testInboxProvider?: OtpProvider;
 }
 
 /**
@@ -18,7 +23,11 @@ export interface OtpBindingOptions {
  */
 export function bindOtpProvider(appEnv: AppEnvironment, options: OtpBindingOptions = {}): OtpProvider {
   if (appEnv === 'development' || appEnv === 'test') {
-    return new FakeOtpProvider();
+    return options.testInboxProvider ?? new FakeOtpProvider();
+  }
+  // The test inbox adapter outside development/test is never honoured, with or without the staging fixture mode.
+  if (options.testInboxProvider !== undefined) {
+    throw new StartupConfigError(['OTP_PROVIDER']);
   }
   if (appEnv === 'staging' && options.stagingFixtureMode === true) {
     return new DisabledOtpProvider();
