@@ -33,7 +33,15 @@ export type ActivationScreen =
   | { readonly name: 'link-invalid' }
   | { readonly name: 'session-expired' }
   | { readonly name: 'rate-limited'; readonly untilMs: number }
-  | { readonly name: 'invalidated'; readonly reason: InvalidatedReason; readonly canRestart: boolean; readonly pending: boolean; readonly error?: string }
+  | {
+      readonly name: 'invalidated';
+      readonly reason: InvalidatedReason;
+      readonly canRestart: boolean;
+      readonly pending: boolean;
+      readonly error?: string;
+      /** A restart whose outcome could not be read (its answer was lost and GET /state failed too): only a READ may follow. */
+      readonly stateUnknown?: boolean;
+    }
   | {
       readonly name: 'otp';
       readonly otp?: OtpInfo;
@@ -53,6 +61,8 @@ export type ActivationScreen =
       readonly restartRequired: boolean;
       readonly passwordDeadlineMs?: number;
       readonly notice?: string;
+      /** Same as on `invalidated`: the restart outcome is unknown; the only action is to read the state again. */
+      readonly stateUnknown?: boolean;
     }
   | {
       readonly name: 'enroll';
@@ -309,12 +319,59 @@ export class ActivationController {
       this.#enter(result.data, undefined);
       return;
     }
-    if (result.kind === 'error' && (await this.#handleCommonError(generation, result))) {
+    if (result.kind === 'error' && result.status < 500) {
+      // A refusal: the server did not restart anything. Common codes resync; otherwise say the step changed.
+      if (await this.#handleCommonError(generation, result)) {
+        return;
+      }
+      const current = this.#screen;
+      if (current.name === 'invalidated' || current.name === 'password') {
+        this.#set({ ...current, pending: false, error: ADMIN_COPY.stepChangedAdmin });
+      }
+      return;
+    }
+    // Network error or 5xx: the restart may have been committed. NEVER send the POST again; read where the attempt is.
+    await this.#readAfterRestart(generation);
+  }
+
+  /** "Kiểm tra lại trạng thái": repeats the READ (GET /state) after a restart whose outcome is unknown. Never a POST. */
+  async retryRead(): Promise<void> {
+    const screen = this.#screen;
+    if ((screen.name !== 'invalidated' && screen.name !== 'password') || screen.stateUnknown !== true || screen.pending) {
+      return;
+    }
+    const generation = this.#generation;
+    this.#set({ ...screen, pending: true, error: undefined });
+    await this.#readAfterRestart(generation);
+  }
+
+  /**
+   * GET /state after a restart with no usable answer. The server's answer decides the screen: a new attempt (the restart
+   * was committed) or the old one (it was not), each with its own CSRF token. If the read fails too, the screen says the
+   * outcome is unknown and offers only to read again.
+   */
+  async #readAfterRestart(generation: number): Promise<void> {
+    const result = await this.api.state();
+    if (!this.#current(generation)) {
+      return;
+    }
+    if (result.kind === 'ok') {
+      this.#enter(result.data, undefined);
+      return;
+    }
+    if (result.kind === 'error' && (result.status === 401 || result.code === 'ADMIN_ACTIVATION_SESSION_INVALID')) {
+      this.#forget();
+      this.#set({ name: 'session-expired' });
+      return;
+    }
+    if (result.kind === 'error' && result.status === 429) {
+      this.#set({ name: 'rate-limited', untilMs: this.clock.now() + (result.retryAfterSeconds ?? 60) * 1000 });
+      this.#armStepTimer();
       return;
     }
     const current = this.#screen;
     if (current.name === 'invalidated' || current.name === 'password') {
-      this.#set({ ...current, pending: false, error: ADMIN_COPY.stepChangedAdmin });
+      this.#set({ ...current, pending: false, stateUnknown: true, error: ADMIN_COPY.restartUnknown });
     }
   }
 
@@ -512,6 +569,14 @@ export class ActivationController {
     }
     if (view.state === 'OTP_VERIFIED' && screen.name === 'password') {
       this.#remember(view);
+      // The read can say the password window has closed (restart_required) since the screen was built: follow it.
+      const deadline = view.passwordDeadline === undefined ? undefined : Date.parse(view.passwordDeadline);
+      const { passwordDeadlineMs: _old, ...rest } = screen;
+      this.#set({
+        ...rest,
+        restartRequired: view.restartRequired,
+        ...(deadline !== undefined && Number.isFinite(deadline) ? { passwordDeadlineMs: deadline } : {}),
+      });
       return;
     }
     this.#enter(view, undefined);

@@ -29,6 +29,7 @@ interface ComposeParts {
   readonly working: HTMLElement;
   readonly retryPart: HTMLElement;
   readonly retryText: HTMLElement;
+  readonly retryButton: HTMLButtonElement;
   readonly donePart: HTMLElement;
   readonly doneTitle: HTMLElement;
   readonly doneSummary: HTMLElement;
@@ -442,6 +443,7 @@ export class ProvisioningView {
           working,
           retryPart,
           retryText,
+          retryButton,
           donePart,
           doneTitle,
           doneSummary,
@@ -502,7 +504,10 @@ export class ProvisioningView {
     donePart.hidden = s.phase !== 'done';
     setMessage(notice, s.notice);
     setMessage(formError, s.phase === 'form' ? s.formError : undefined);
-    retryText.textContent = s.phase === 'retry' ? (s.formError ?? ADMIN_COPY.outcomeUnknown) : '';
+    const retryWait = this.controller.lockRemainingSeconds();
+    retryText.textContent = s.phase === 'retry' ? (s.formError ?? ADMIN_COPY.outcomeUnknown) + (retryWait > 0 ? ` ${ADMIN_COPY.retryWait(formatCountdown(retryWait))}` : '') : '';
+    parts.retryButton.disabled = s.pending || retryWait > 0;
+    parts.retryButton.textContent = s.pending ? 'Đang kiểm tra…' : 'Kiểm tra lại';
     const fe = s.fieldErrors;
     setMessage(errors.fullNameError, fe.fullName);
     setMessage(errors.phoneError, fe.phone);

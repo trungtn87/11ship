@@ -134,7 +134,11 @@ export class ActivationPage {
     const restart = primary(ADMIN_COPY.restart, 'button');
     restart.id = 'act-restart';
     restart.addEventListener('click', () => void this.controller.restart());
-    this.#page(h('section', { class: 'card' }, title, text, help, error, restart));
+    const reread = secondary(ADMIN_COPY.rereadState);
+    reread.id = 'act-reread';
+    reread.hidden = true;
+    reread.addEventListener('click', () => void this.controller.retryRead());
+    this.#page(h('section', { class: 'card' }, title, text, help, error, restart, reread));
     return {
       name: 'invalidated',
       update: (s) => {
@@ -149,9 +153,14 @@ export class ActivationPage {
         }[s.reason];
         text.textContent = copy[0] ?? '';
         help.textContent = copy[1] ?? '';
-        restart.hidden = !s.canRestart;
+        const unknown = s.stateUnknown === true;
+        // After a restart whose outcome is unknown only a READ is offered, never the restart POST again.
+        restart.hidden = !s.canRestart || unknown;
         restart.disabled = s.pending;
         restart.textContent = s.pending ? 'Đang xử lý…' : ADMIN_COPY.restart;
+        reread.hidden = !unknown;
+        reread.disabled = s.pending;
+        reread.textContent = s.pending ? 'Đang kiểm tra…' : ADMIN_COPY.rereadState;
         setMessage(error, s.error);
       },
       focus: () => title.focus(),
@@ -261,7 +270,11 @@ export class ActivationPage {
     restart.id = 'act-pw-restart';
     restart.hidden = true;
     restart.addEventListener('click', () => void this.controller.restart());
-    const form = h('form', { class: 'form', novalidate: true }, field('Mật khẩu mới', 'act-pw', password, eye, hint), field('Nhập lại mật khẩu', 'act-pw2', confirm), error, submit, restart);
+    const reread = secondary(ADMIN_COPY.rereadState);
+    reread.id = 'act-pw-reread';
+    reread.hidden = true;
+    reread.addEventListener('click', () => void this.controller.retryRead());
+    const form = h('form', { class: 'form', novalidate: true }, field('Mật khẩu mới', 'act-pw', password, eye, hint), field('Nhập lại mật khẩu', 'act-pw2', confirm), error, submit, restart, reread);
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       const typed = password.value;
@@ -288,14 +301,17 @@ export class ActivationPage {
           return;
         }
         setMessage(notice, s.notice);
-        setMessage(error, s.restartRequired ? ADMIN_COPY.passwordExpired : s.error);
+        setMessage(error, s.stateUnknown === true ? s.error : s.restartRequired ? ADMIN_COPY.passwordExpired : s.error);
         password.setAttribute('aria-invalid', String(s.error !== undefined));
         submit.disabled = s.pending || s.restartRequired;
         submit.textContent = s.pending ? 'Đang lưu…' : 'Tiếp tục';
         password.readOnly = s.pending || s.restartRequired;
         confirm.readOnly = s.pending || s.restartRequired;
-        restart.hidden = !s.restartRequired;
+        restart.hidden = !s.restartRequired || s.stateUnknown === true;
         restart.disabled = s.pending;
+        reread.hidden = s.stateUnknown !== true;
+        reread.disabled = s.pending;
+        reread.textContent = s.pending ? 'Đang kiểm tra…' : ADMIN_COPY.rereadState;
       },
       focus: () => password.focus(),
     };

@@ -403,8 +403,13 @@ export class ProvisioningController {
     if (screen.name !== 'compose' || screen.phase !== 'retry' || screen.pending || this.#flow?.operationId === undefined) {
       return;
     }
+    // Retry-After is respected: nothing is sent while the wait runs (the button is disabled too). Key, operation id and
+    // payload stay those of the flow.
+    if (this.#locked(screen)) {
+      return;
+    }
     const generation = this.#generation;
-    this.#set({ ...screen, pending: true, formError: undefined });
+    this.#set({ ...screen, pending: true, formError: undefined, lockUntilMs: undefined });
     await this.#runBusiness(generation);
   }
 
