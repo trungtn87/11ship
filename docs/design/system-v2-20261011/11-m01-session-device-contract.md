@@ -89,8 +89,8 @@ Cùng phone khác signing cert/environment không join; debug/test signer riêng
 
 Protocol endpoints prefix /v1/client-auth/device:
 POST /challenges exact {app:"FOOD"|"SHIP",purpose:"ENROLL"|"JOIN"|"AUTH",key_id:UUID|null};201 {challenge_id:UUID,nonce:base64url32bytes,expires_at}, expiry120s, limit10/minute/key or network bucket, max body64KiB, no user lookup response.
-POST /registrations Idempotency-Key, exact {challenge_id,app,certificate_chain:base64DER[],public_key_spki:base64DER,signature:base64DER,join:null|{binding_id,authorizer_key_id,signature}};201 {device_registration_token,expires_at}. Chain1..8 max total48KiB. Temporary token256-bit random digest store,120s, one-use, app/key/join-bound, not account session.
-AUTH registered key flow uses same /registrations with stored attested chain key match; no generate fresh key each login.
+POST /registrations Idempotency-Key, exact {challenge_id,app,certificate_chain:base64DER[],public_key_spki:base64DER,signature:base64DER,join:null|{binding_id,authorizer_key_id,signature}};201 {device_registration_token,key_id,expires_at}. Chain1..8 max total48KiB. Temporary token256-bit random digest store,120s, one-use, app/key/join-bound, not account session.
+AUTH registered key flow uses same /registrations with stored attested chain key match; no generate fresh key each login. AUTH verifies the fresh challenge SIGNATURE with stored key, not equality of fresh challenge to original certificate attestationChallenge. ENROLL/JOIN require fresh certificate attestationChallenge=server nonce; AUTH checks original verified attestation provenance, current revocation/signer trust and key possession.
 Login/register ANDROID headers X-Device-Registration:<token>, X-Device-Signature:<sig>; signature message UTF8 canonical lines "11SHIP-AUTH-V1",environment,method,path,SHA256(raw-body bytes),SHA256(Idempotency-Key bytes),SHA256(registration-token bytes). ECDSA DER base64url, server hashes SHA256 and verifies against key in registration record. Never password hash in logs.
 Successful auth transaction consumes registration token, verifies same user for JOIN, assigns key/session/binding atomically. On idempotent auth replay token consumed allowed only exact original operation/key/body/session/key; no fresh issuance. Replays still require fresh request proof §8 to avoid arbitrary captured request reuse.
 For enrollment new logical binding server-generated UUID, no claimed binding accepted. JOIN not same user403 DEVICE_PROOF_INVALID fixed generic.
@@ -129,3 +129,12 @@ Local .03/.04: exact parser/errors; legacy response; context eligibility/stale s
 Native .21: valid/bad/expired/revoked chains, trust root rollover, failed cache, unsupported TEE; challenge/key/app/env substitution; generic signing IPC refused; caller UID/signature spoof; same-phone two apps same device coexist; two physical phones replace; same device app-login only replaces app; clear/reinstall/factory reset/work-profile; replay nonce/body/query tamper; stolen token without key denied; crash/lost response no duplicate issuance; legacy bypass denied; local web unreachable on production.
 Phone actual Owner on two phones, both app install orders, Android background/offline recovery; no PC equivalence claim.
 G4 test consent content/version remains explicit prerequisite .03; production consent/SMS deferred release. D03 runtime/package/cert values must be selected by native build task before phone code; protocol decisions now exact and framework-neutral. M01.01 contract work complete, no claim app code/local/phone or module LOCK.
+
+## 11. Nguồn kỹ thuật
+
+- https://developer.android.com/privacy-and-security/security-key-attestation — server-side certificate chain/root/revocation validation, attestation trust level; không dùng attestation làm hardware UUID.
+- https://developer.android.com/guide/topics/permissions/overview — signature permission cho giao tiếp app cùng signer.
+- https://developer.android.com/reference/android/os/Binder#getCallingUid() — caller UID khi thực hiện IPC.
+- https://developer.android.com/about/versions/oreo/android-8.0-changes — ANDROID_ID scoped signer/user/device; không là proof chống giả mạo do client gửi.
+
+Đây là thiết kế ứng dụng dựa trên primitives Android, không phải Android đảm bảo policy one-account-one-device của 11Ship tự động.
