@@ -2,7 +2,7 @@
 
 Phiên bản 2.0.3, ngày 11/10/2026. ChatGPT thiết kế; Claude code/test; Owner duyệt policy, local/phone, merge/LOCK. Không migration hoặc code sản phẩm nào được chạy bởi tài liệu này.
 Nguồn mã: main 3d0212f6e4cb0096218e69f29408808ef38b4a6f; báo cáo #52 head 537d0ebb7ea4d60434b156abc5411bcb39a87e00. Claude phải refresh/diff main trước triển khai.
-Ưu tiên tài liệu này so với mô tả mâu thuẫn trong 04 §4. Phạm vi schema M01.02 được chốt kỹ thuật dưới đây; rollout vẫn phải thỏa dependency. Toàn M01.01 chưa CODE_READY: API login/context/native binding còn cần contract riêng.
+Ưu tiên tài liệu này so với mô tả mâu thuẫn trong 04 §4. Phạm vi schema M01.02 được chốt kỹ thuật dưới đây; rollout vẫn phải thỏa dependency. Các điểm login/context/native binding được hoàn thiện trong [contract11](11-m01-session-device-contract.md); đọc contract11 để biết CODE_READY_LOCAL và native rollout gates.
 
 ## 1. Tương thích và backfill (G1/G2/G11/G12/G14)
 
@@ -17,7 +17,7 @@ Migration M01.02 kiểm prerequisite explicit, fail transaction nếu schema sai
 
 Schema app; append-only migration sau timestamp cuối integration base thật, không chỉ sau mốc audit.
 customer_profiles:
-- user_id UUID PRIMARY KEY REFERENCES app.users(id) ON DELETE RESTRICT.
+- user_id UUID PRIMARY KEY REFERENCES app.users(user_id) ON DELETE RESTRICT.
 - full_name varchar(120) NULL.
 - version bigint NOT NULL DEFAULT 1 CHECK version BETWEEN 1 AND 9007199254740991.
 - created_at/updated_at timestamptz NOT NULL DEFAULT transaction_timestamp().
@@ -26,7 +26,7 @@ customer_profiles:
 
 user_consents:
 - id UUID PRIMARY KEY, UUID do server tạo.
-- user_id UUID NOT NULL REFERENCES app.users(id) ON DELETE RESTRICT.
+- user_id UUID NOT NULL REFERENCES app.users(user_id) ON DELETE RESTRICT.
 - terms_version/privacy_version varchar(64) NOT NULL, mỗi token dạng [A-Za-z0-9._-], dài 1–64.
 - accepted_at timestamptz NOT NULL, thời gian DB tại acceptance.
 - client_app varchar(4) NOT NULL CHECK IN ('FOOD','SHIP').
@@ -34,7 +34,7 @@ user_consents:
 - Index(user_id,accepted_at,id) để đọc lịch sử own.
 - Không chứa OTP, password, token, IP hoặc tên khách. Không sửa/xóa bằng runtime. Trigger DB reject UPDATE/DELETE, migration-owner fix-forward theo runbook riêng nếu thật sự cần.
 
-user_roles: mở CHECK role để có CUSTOMER và các giá trị hiện có; giữ PK/unique/foreign keys hiện tại. Không tạo constraint mới làm mất giá trị hợp lệ đang có. Không lưu SHOP_OWNER hoặc FOOD.
+user_roles: CHECK token main đã cho phép CUSTOMER; không ALTER CHECK khi đã hợp lệ; giữ PK/unique/foreign keys hiện tại. Không tạo constraint mới làm mất giá trị hợp lệ đang có. Không lưu SHOP_OWNER hoặc FOOD.
 Runtime grants: customer_profiles SELECT/INSERT/UPDATE; user_consents SELECT/INSERT; không DELETE/DDL. user_roles giữ quyền cũ, không cấp thêm quyền admin. Runbook phải thêm đúng hàng grants và test dưới restricted runtime role; migration credential riêng.
 
 Participant cấp CUSTOMER/profile không tự commit; chạy trên transaction caller, cùng root user lock và lock order hiện hành. Trả lỗi nếu origin/membership privileged không hợp lệ. Transaction rollback phải loại bỏ toàn bộ user/role/profile/consent mới.
@@ -57,11 +57,11 @@ Cùng key/body: replay theo engine, không consume proof lần hai. Khác body c
 Unique phone xử lý race cũ/mới. Hai proof khác nhau cùng phone: đúng một create thành công, ca còn lại PHONE_ALREADY_REGISTERED409; không half-created profile.
 Audit action client.auth.register.v1; outbox type client.auth.user_registered.v1, event_id UUID server, occurred_at DB time, payload exact {user_id,client_app,granted_role:"CUSTOMER",terms_version,privacy_version}. Không phone/name/proof/token/password. Producer một event trong commit; consumer dedupe event_id, không thay event legacy.
 Success201 data exact: user_id,phone_normalized,available_roles:["CUSTOMER"],active_role:"CUSTOMER",onboarding_required:false,role_selection_required:false,access_token,profile:{full_name,version:1},capabilities:{customer_access:true,shop_profile_read:false,shop_manage:false,driver_profile_read:false},onboarding:{shop:"NOT_STARTED",driver:"NOT_STARTED"}.
-New endpoint chưa được phép code cho đến khi session/client-auth contract đầy đủ được chốt.
+Contract11 hoàn thiện session/client-auth; code theo boundary/dependency và consent gates tại contract11.
 
 Errors reuse full registry: BAD_REQUEST400 (HTTP parser), INVALID_PHONE400; VERIFICATION_PROOF_INVALID400, VERIFICATION_PROOF_USED409, VERIFICATION_PURPOSE_MISMATCH400; PHONE_ALREADY_REGISTERED409; IDEMPOTENCY_KEY_REQUIRED400, INVALID_IDEMPOTENCY_KEY400, IDEMPOTENCY_KEY_REUSED409, IDEMPOTENCY_BUSY409, IDEMPOTENCY_REPLAY_EXPIRED409, IDEMPOTENCY_KEY_UNAVAILABLE503, TRANSACTION_OUTCOME_UNKNOWN503; SERVICE_UNAVAILABLE503/INTERNAL_ERROR500 infrastructure envelope.
 Add proposal CONSENT_VERSION_UNSUPPORTED409 with fixed message "The consent versions are not supported"; malformed version/name/device uses BAD_REQUEST. Errors never echo inputs. Invalid proof primitive retains current expiry classification; không tự thêm error alias.
-Unknown result giữ original key/body; không coi mutation thất bại chắc chắn. Replay phải recheck account/session eligibility, không trả lại usable revoked token; exact rule sẽ chốt ở session contract trước M01.03.
+Unknown result giữ original key/body; không coi mutation thất bại chắc chắn. Replay phải recheck account/session eligibility, không trả lại usable revoked token; exact rule tại contract11 §5.
 
 ## 5. Logout và D02 (G5/G9)
 
@@ -86,5 +86,5 @@ ChatGPT review; Owner local/phone/acceptance đều Chưa chạy. Không code UI
 
 ## 8. Trạng thái G1–G14
 
-G1/G2/G3/G6/G7/G8/G9/G10/G11/G14: contract bổ sung như trên; G7/G9 session replay details chưa code-ready toàn API.
+G1/G2/G3/G6/G7/G8/G9/G10/G11/G14: contract bổ sung như trên; G7/G9 session replay details được chốt trong contract11; native rollout vẫn có gate riêng.
 G5: policy D02 approved, implementation chưa có. G4: production consent chưa duyệt; test content chưa duyệt. G12: remote migration cần operator/#49 evidence. G13: dependency M00 giữ gate cũ; không waived.
