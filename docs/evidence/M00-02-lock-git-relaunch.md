@@ -52,6 +52,14 @@ Lịch sử CI (không phải kết quả cuối): lần chạy đầu đỏ vì
 
 **Chứng minh test bắt lỗi trên bản trước sửa.** Commit chỉ chứa test (launcher chưa sửa) `d807432ef41cf6d59245547fe4f0f2a477fb889e` (SHA trước khi nhánh được rebase lên main mới; run CI của nó vẫn còn trên GitHub Actions, job `Launcher behaviour (Windows PowerShell 5.1)` 114514010758): job Windows PowerShell 5.1 đỏ với `pass=492 fail=44`: Update vẫn merge và relaunch khi `git status` lỗi; `.env` ignored bị ghi đè khi `git diff` lỗi; Start/Update/menu cũ chạy 7/3/7 bước Docker/npm bằng mã v1 và `npm ci` bị chạy bởi v1. Commit sửa launcher làm cùng các test đó xanh (kết quả trên final SHA: mô tả PR).
 
+## Sửa theo re-review (F3) trên head `3fba6fb0cc3751de4ee79d40a52ca971ef3ee029`
+
+| Finding | Sửa | Test |
+|---|---|---|
+| F3 [P2] đọc identity ném exception sau khi đã lấy handle thì handle không được đóng (nằm chờ GC, khóa kẹt) | `Enter-LaunchLock` giữ handle là biến cục bộ cho tới khi bàn giao sang trạng thái khóa; mọi lỗi trước đó (đọc identity, lệch identity, exception bất ngờ) đóng handle trong `finally`. Lỗi đọc identity có mã `LAUNCHER_IDENTITY_UNREADABLE`, dừng trước mọi thao tác được bảo vệ, không đánh dấu launcher là cũ nên khi file đọc được lại thì chạy tiếp bình thường | Ép `Get-LauncherIdentity` ném lỗi sau khi lấy khóa cho Start/Update/Test/Stop, bước dependency và migration, và menu còn sống: kiểm khóa trống NGAY (không ép GC), không Git/npm/Docker/SQL/backend, HEAD không đổi; một process thật thứ hai lấy khóa ngay; hết lỗi thì Update chạy bình thường. Thêm ca thật: file launcher bị process khác giữ độc quyền |
+
+**Chứng minh đỏ trước sửa**: commit chỉ có test `150d5f3f068aa7ff30f821da31d1ec293ce4f5de` (launcher chưa sửa): job Windows PowerShell 5.1 114522286083 đỏ `pass=561 fail=19` (khóa còn bị giữ, process thứ hai hết hạn chờ, không phục hồi). Test F1/F2 giữ nguyên. Kết quả xanh trên final SHA: mô tả PR/comment.
+
 ## Gate theo từng bề mặt
 
 | Bề mặt | Thiết kế | Code | CI | Review | Local Owner | Phone | Nghiệm thu |

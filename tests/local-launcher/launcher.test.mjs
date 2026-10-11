@@ -100,7 +100,7 @@ test('M00.02: the shared lock is an exclusive OS handle, never a file age, and n
 
 test('M00.02: Git update modes and the hand-over to the new launcher are in place', () => {
   for (const code of ['NOT_MAIN_BRANCH', 'UPSTREAM_MISMATCH', 'GIT_FETCH_FAILED', 'GIT_UPDATE_FAILED', 'GIT_OPERATION_IN_PROGRESS', 'UAT_SHA_MISMATCH', 'UAT_PIN_INVALID',
-    'GIT_STATE_UNREADABLE', 'GIT_DIFF_UNREADABLE', 'RELAUNCH_FAILED', 'RELAUNCH_LIMIT', 'RELAUNCH_SHA_MISMATCH', 'RELAUNCH_LAUNCHER_MISMATCH', 'RELAUNCH_CHILD_FAILED', 'LAUNCHER_RELOAD_REQUIRED']) {
+    'GIT_STATE_UNREADABLE', 'GIT_DIFF_UNREADABLE', 'LAUNCHER_IDENTITY_UNREADABLE', 'RELAUNCH_FAILED', 'RELAUNCH_LIMIT', 'RELAUNCH_SHA_MISMATCH', 'RELAUNCH_LAUNCHER_MISMATCH', 'RELAUNCH_CHILD_FAILED', 'LAUNCHER_RELOAD_REQUIRED']) {
     assert.ok(script.includes(`'${code}'`), code);
   }
   for (const name of ['RelaunchToken', 'RelaunchFromSha', 'RelaunchToSha', 'RelaunchLauncherHash']) assert.match(script, new RegExp(`\\[string\\]\\$${name}`));
@@ -109,6 +109,9 @@ test('M00.02: Git update modes and the hand-over to the new launcher are in plac
   assert.ok(script.includes('MIGRATION_COUNT_UNREADABLE'), 'unknown migration count is reported, never as 0');
   assert.match(script, /\$script:LoadedLauncherHash = Get-LauncherIdentity/);
   assert.match(script, /\$onDisk -ne \$script:LoadedLauncherHash/);
+  // F3: the handle is disposed in a finally unless ownership was handed to the lock state.
+  assert.match(script, /\$owned = \$false\s+try \{/);
+  assert.match(script, /if \(!\$owned\) \{ try \{ \$handle\.Dispose\(\) \} catch \{ \} \}/);
   assert.doesNotMatch(script, /if \(\(Capture 'git\.exe' @\('status'/);
   assert.doesNotMatch(script, /return 0 \}\s*\n\s*return @\("\$names"/);
   assert.ok(script.includes('uat-pin.json'), 'UAT pin file');

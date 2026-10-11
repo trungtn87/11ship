@@ -275,17 +275,31 @@ function Enter-LaunchLock([string]$Step) {
   Ensure-Dirs
   $handle = Wait-ForLaunchLock $Step ([bool]$script:TakeoverPending)
   $script:TakeoverPending = $false
-  # F1: we own the lock now. Before anything runs, the code we loaded must still be the code on disk: another launcher
-  # may have updated the checkout while we waited. Old code never runs a step; the lock is given back at once.
-  $onDisk = Get-LauncherIdentity
-  if (!$script:LoadedLauncherHash -or !$onDisk -or $onDisk -ne $script:LoadedLauncherHash) {
-    $script:LauncherStale = $true
-    try { $handle.Dispose() } catch { }
-    Fail 'Mã launcher đang chạy trong cửa sổ này khác bản launcher hiện có trên đĩa (checkout đã được cập nhật trong lúc chờ khóa, hoặc không đọc được file launcher). Chưa làm gì cả. Hãy đóng cửa sổ này rồi mở lại launcher để dùng bản mới.' 'LAUNCHER_RELOAD_REQUIRED'
+  # The handle is a local until ownership is handed to the lock state below. ANY failure before that point (an unreadable
+  # launcher file, a mismatch, an unexpected exception) disposes it here, so a failed step can never leave the lock held
+  # until a garbage collection: the caller's try/finally does not exist yet.
+  $owned = $false
+  try {
+    # F1: we own the lock now. Before anything runs, the code we loaded must still be the code on disk: another launcher
+    # may have updated the checkout while we waited. Old code never runs a step; the lock is given back at once.
+    $onDisk = ''
+    try { $onDisk = Get-LauncherIdentity }
+    catch {
+      # F3: not being able to read the file proves nothing about its content, so nothing protected runs. This is not
+      # "stale": once the file can be read again this same launcher continues normally.
+      Fail "Không đọc được file launcher để xác minh mã đang chạy ($($_.Exception.Message)). Chưa làm gì cả và khóa đã được trả; hãy thử lại sau khi file không còn bị chương trình khác giữ." 'LAUNCHER_IDENTITY_UNREADABLE'
+    }
+    if (!$script:LoadedLauncherHash -or !$onDisk -or $onDisk -ne $script:LoadedLauncherHash) {
+      $script:LauncherStale = $true
+      Fail 'Mã launcher đang chạy trong cửa sổ này khác bản launcher hiện có trên đĩa (checkout đã được cập nhật trong lúc chờ khóa, hoặc không đọc được file launcher). Chưa làm gì cả. Hãy đóng cửa sổ này rồi mở lại launcher để dùng bản mới.' 'LAUNCHER_RELOAD_REQUIRED'
+    }
+    $script:LockHandle = $handle
+    $script:LockDepth = 1
+    $script:LockStep = $Step
+    $owned = $true
+  } finally {
+    if (!$owned) { try { $handle.Dispose() } catch { } }
   }
-  $script:LockHandle = $handle
-  $script:LockDepth = 1
-  $script:LockStep = $Step
   Write-LockInfo $Step
 }
 function Exit-LaunchLock {
