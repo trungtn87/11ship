@@ -328,3 +328,7 @@ SELECT account_origin, count(*) FROM app.users GROUP BY 1;
   it (or drop schema `app` and the history table) and apply §4 from scratch; **any fixture or administration row in it is
   lost, so decide with the Owner first**. If it holds data that must be kept, **stop**: report to ChatGPT/Owner; a
   hand-written reconciliation of `app.pgmigrations` is an operator decision with a backup, and is outside this issue.
+
+  For a disposable staging database whose Owner decision is "keep only the SYSTEM account", use the prepared operator tool
+  and its runbook instead of a hand-written repair: [staging-db-upgrade-from-42.md](staging-db-upgrade-from-42.md)
+  (`npm run staging:db-upgrade-from-42`; dry-run by default; one transaction; not executed by the assistant).
