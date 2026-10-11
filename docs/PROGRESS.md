@@ -181,6 +181,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#61](https://github.com/trungtn87/11ship/pull/61) feat(admin-web): giao diện M01 Web quản trị (UI trước, chưa… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `821345a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#62](https://github.com/trungtn87/11ship/pull/62) docs(M01.03): gói đăng ký CUSTOMER local và nội dung consen… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `4af8102` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#63](https://github.com/trungtn87/11ship/pull/63) docs(M01.22): hộp OTP test local và công cụ PC cho M01.03 | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `1146a8e` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#64](https://github.com/trungtn87/11ship/pull/64) feat(M01.22): hộp OTP test local và công cụ PC (TEST_INBOX) | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `7694206` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
@@ -201,6 +202,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 - `UNCLASSIFIED_PR` PR #61: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #62: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #63: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #64: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
