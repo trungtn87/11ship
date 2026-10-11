@@ -29,7 +29,15 @@ check row). Other test data may be dropped; old sessions are revoked. Password a
   order; the result is compared with a database migrated by the real runner (schema fingerprint: columns, constraints, indexes,
   triggers, functions; history ids and names).
 - **One transaction** with the runner's advisory lock, `lock_timeout` 10 s, `ACCESS EXCLUSIVE` on the tables, the identity re-read and
-  compared with the snapshot under the locks. Any failure rolls back; the database is as before.
+  compared with the snapshot under the locks. A failure before COMMIT rolls back; the database is as before.
+- **COMMIT outcome unknown (review finding F1).** A failure of the `COMMIT` statement itself (lost connection or lost acknowledgement) is reported as the fixed code
+  `COMMIT_OUTCOME_UNKNOWN`, exit code 2, for `--apply` and `--restore-snapshot`. The tool does not claim a rollback, sends nothing after the COMMIT
+  (no ROLLBACK, no retry), and keeps the snapshot and key. `--verify` (read-only, REPEATABLE READ READ ONLY) classifies `PRE_UNCHANGED` /
+  `UPGRADED_OK` / `MIGRATED_WITHOUT_SYSTEM` / `ABNORMAL` by comparing the SYSTEM identity with the snapshot (a complete history alone is not accepted).
+- **No CASCADE (review finding F2).** All target tables are dropped by ONE `DROP TABLE … RESTRICT` statement and the function by `DROP FUNCTION … RESTRICT`.
+  PostgreSQL resolves the dependencies between the tables of the list and refuses any dependency from outside (`2BP01` → `EXTERNAL_DEPENDENCY`, transaction
+  rolled back). An early check (also in the dry-run) reports views/rules and foreign keys of other schemas. Checked on the 15 real migrations: all 19+ tables drop in
+  one RESTRICT statement; a view in `public` over `app.users` makes it fail.
 - **Identity preserved exactly** (ids, versions, factor ciphertext/iv/tag, key id, `last_accepted_step`). The factor is proven to decrypt with the
   provided keyring before and after (AAD binds key id, user id, factor id, factor version).
 - **Snapshot**: AES-256-GCM, exclusive create, mode 0600, outside the repository, read back; used only by `--restore-snapshot` on a migrated,
@@ -46,11 +54,15 @@ rejected; `admin_sessions`/`sessions`/test data are empty; schema and history eq
 audit row; dry-run changes nothing; a failing migration (middle/last), a failing audit write, a busy advisory lock, a busy table and a changed
 identity each leave the whole database state unchanged (and the same database then upgrades); snapshot is encrypted (no hash/phone in the file),
 0600, decrypts to the identity, and recovers a lost SYSTEM; each stop condition above changes nothing and writes no snapshot.
+Follow-up suite: COMMIT succeeded with the ACK lost, and the connection terminated before COMMIT, for both `--apply` and `--restore-snapshot` (exit 2, fixed code, no
+"rolled back" claim, COMMIT asked once and nothing sent after it, snapshot kept, `--verify` reports the true state and changes nothing, `--verify` is `ABNORMAL` for a
+different identity or a second user although the history is complete); a view outside `app`, a foreign key from a table outside `app`, and a function body in another schema
+each make the tool refuse (dry-run/`--apply`/`rebuild()`), the transaction rolls back, and objects and data outside `app` are unchanged; independent outside objects survive an upgrade.
 
 ## Local verification limits
 
 The npm registry is blocked in the sandbox (no `npm ci`, no `pg`), Node 22, PostgreSQL 16. Verified locally: `node --test tests/deploy`
-(73 pass), and a `psql` rehearsal of the core rebuild SQL (drop every table of `app` with CASCADE + execute all 15 Up sections) on a database
+(74 pass), and a `psql` rehearsal of the core rebuild SQL (drop every table of `app` in one RESTRICT statement + execute all 15 Up sections; a view outside `app` makes the drop fail) on a database
 built with the exact PR #42 history: its schema fingerprint equals a fresh database. The JavaScript tool and the integration suite are
 **verified by CI on the exact final SHA only**.
 
