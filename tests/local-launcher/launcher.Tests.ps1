@@ -70,7 +70,7 @@ function New-FakeChild([int]$ExitCode=0,[bool]$Exited=$true) {
 }
 function Start-LauncherProcess([string[]]$Arguments) {
   $script:SpawnedArguments = @($Arguments)
-  $script:SpawnObservations = [pscustomobject]@{ LockHeld = (Test-LockHeld); GateHeld = (Test-GateHeld) }
+  $script:SpawnObservations = [pscustomobject]@{ LockHeld = (Test-LockHeld); GateHeld = (Test-GateHeld); DockerCount = $script:DockerCalls.Count }
   if ($script:SpawnThrows) { throw 'simulated spawn failure' }
   return $script:FakeChild
 }
@@ -329,10 +329,6 @@ try {
   $before = Head
   Write-Text (Join-Path $script:Repo 'package-lock.json') '{"owner":"local edit"}'
   Expect-Fail 'DIRTY_TRACKED' 'Update stops on a dirty tracked file' { Update-Launcher }
-  # TEMP-DIAG
-  Say ("DIAG repo=[$script:Repo] cwd=[$((Get-Location).Path)] gitdir=[$(& git.exe -C $script:Repo rev-parse --git-dir 2>&1 | Out-String)] exit=$LASTEXITCODE")
-  Say ("DIAG env: " + ((Get-ChildItem Env: | Where-Object { $_.Name -like 'GIT*' } | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ';'))
-  Say ("DIAG ls: " + ((Get-ChildItem -Force -LiteralPath $script:Repo | ForEach-Object { $_.Name }) -join ','))
   Check ((Get-Content -Raw -LiteralPath (Join-Path $script:Repo 'package-lock.json')) -eq '{"owner":"local edit"}') 'dirty tracked file is left exactly as the Owner wrote it'
   Check ((Invoke-Git $script:Repo @('stash','list')) -eq '') 'no stash was created'
   Check ((Head) -eq $before) 'HEAD did not move'
@@ -1232,12 +1228,13 @@ try {
   Check ((Arg-After $spawn '-RelaunchToken') -match '^[0-9a-f]{32}$') 'the guard carries a fresh token'
   Check ($script:SpawnObservations.LockHeld -and $script:SpawnObservations.GateHeld) 'while the new launcher is started the old one holds the lock and the hand-over gate'
   Check (!(Test-LockHeld) -and !(Test-GateHeld)) 'after the hand-over the old launcher holds neither (the new process owns what it needs)'
-  Check ((NpmCount 'ci') -eq 0 -and $script:DockerCalls.Count -eq 0) 'the old launcher ran no dependency install or Docker step after the hand-over'
+  Check ((NpmCount 'ci') -eq 0 -and $script:DockerCalls.Count -eq $script:SpawnObservations.DockerCount) 'the old launcher ran no dependency install or Docker step after the hand-over'
+  $dockerAfterHandOver = $script:DockerCalls.Count
   Check ($script:LauncherStale -and $script:RelaunchExitCode -eq 0) 'the old launcher is marked stale; the child exit code is 0'
   Expect-Fail 'LAUNCHER_RELOAD_REQUIRED' 'a stale launcher refuses Start' { Start-Launcher }
   Expect-Fail 'LAUNCHER_RELOAD_REQUIRED' 'a stale launcher refuses a second Update (no loop)' { Update-Launcher }
   Expect-Fail 'LAUNCHER_RELOAD_REQUIRED' 'a stale launcher refuses menu commands too' { Invoke-LauncherCommand 'Status' }
-  Check ($script:DockerCalls.Count -eq 0 -and $script:SpawnedArguments.Count -eq $spawn.Count) 'refused commands ran nothing and started no second launcher'
+  Check ($script:DockerCalls.Count -eq $dockerAfterHandOver -and (NpmCount 'ci') -eq 0 -and $script:SpawnedArguments.Count -eq $spawn.Count) 'refused commands ran nothing and started no second launcher'
   Check ((Head) -eq $newHead) 'HEAD is the new commit'
 
   New-GitSandbox; Record-Install

@@ -162,14 +162,19 @@ function Wait-ContainerHealthy([string]$Name,[int]$TimeoutSeconds=90) {
   Fail "$Name không healthy sau $TimeoutSeconds giây." 'CONTAINER_UNHEALTHY'
 }
 # Runs a block with some process environment variables replaced ($null removes one), then restores them.
+# A null or empty value REMOVES the variable. On Linux an empty value would stay set, and Git reads GIT_DIR="" as a path.
+function Set-ProcessEnv([string]$Name,$Value) {
+  if ($null -eq $Value -or "$Value" -eq '') { Remove-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue }
+  else { [Environment]::SetEnvironmentVariable($Name, [string]$Value, 'Process') }
+}
 function Invoke-WithEnv([hashtable]$Variables,[scriptblock]$Body) {
   $saved = @{}
   foreach ($name in @($Variables.Keys)) { $saved[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
   try {
-    foreach ($name in @($Variables.Keys)) { [Environment]::SetEnvironmentVariable($name, $Variables[$name], 'Process') }
+    foreach ($name in @($Variables.Keys)) { Set-ProcessEnv $name $Variables[$name] }
     & $Body
   } finally {
-    foreach ($name in @($saved.Keys)) { [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process') }
+    foreach ($name in @($saved.Keys)) { Set-ProcessEnv $name $saved[$name] }
   }
 }
 
@@ -402,7 +407,7 @@ function Invoke-LauncherRelaunch([string]$CommandName,[string]$FromSha,[string]$
   return $code
 }
 function Assert-RelaunchParameters {
-  if ("$RelaunchToken" -notmatch '^[0-9a-f]{32}$' -or "$RelaunchFromSha" -notmatch '^[0-9a-f]{40}$' -or "$RelaunchToSha" -notmatch '^[0-9a-f]{40}$' -or "$RelaunchLauncherHash" -notmatch '^[0-9a-f]{64}$') {
+  if ("$RelaunchToken" -cnotmatch '^[0-9a-f]{32}$' -or "$RelaunchFromSha" -cnotmatch '^[0-9a-f]{40}$' -or "$RelaunchToSha" -cnotmatch '^[0-9a-f]{40}$' -or "$RelaunchLauncherHash" -cnotmatch '^[0-9a-f]{64}$') {
     Fail 'Tham số chạy lại launcher không hợp lệ.' 'RELAUNCH_ARGUMENTS_INVALID'
   }
   if ($Command -ne 'Update') { Fail 'Chỉ lệnh Update được chạy lại sau khi cập nhật launcher.' 'RELAUNCH_ARGUMENTS_INVALID' }
