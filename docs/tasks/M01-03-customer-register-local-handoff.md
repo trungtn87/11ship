@@ -1,6 +1,6 @@
 # M01.03 — đăng ký CUSTOMER, gói backend local
 
-Ngày 11/10/2026; revision 2.0.5. DESIGN_REVIEW / HANDOFF_CONDITIONAL.
+Ngày 11/10/2026; revision 2.0.6. CONSENT_TEST_APPROVED / HANDOFF_CONDITIONAL (.22).
 Base kiểm kê main: 9eff7c538e8bd04a15aa4eef53d76826e1a54bee.
 ChatGPT thiết kế/review; Claude code/test/build; Owner duyệt nội dung test, local/phone và nghiệm thu.
 Áp dụng [quy trình](../process/11ship-delivery-workflow.md), [mẫu gate](../templates/module-delivery-checklist.md).
@@ -31,15 +31,15 @@ Scope: backend đăng ký mới cho FOOD/SHIP; reuse OTP request/verify cũ. Kh�
 
 1. M01.01 contract đã tích hợp; M01.02 đã tích hợp.
 2. M01.22 phải có PR riêng, CI/review đúng SHA trước integration đăng ký bằng inbox. Hiện chưa có bằng chứng triển khai ở main đã đọc. Không viết inbox vào PR .03.
-3. Owner duyệt nội dung/cặp consent test ở §3 trước code register slice có acceptance. Trong lúc chờ, Claude chỉ preflight/read-only; không tự coi lời “tiếp” là duyệt nội dung chưa trình bày.
+3. Owner đã duyệt nội dung/cặp consent test ở §3 ngày 11/10/2026 13:47 Asia/Ho_Chi_Minh bằng phản hồi “Ok” trực tiếp cho yêu cầu duyệt mục 3 của PR #62. Gate consent test đã đạt; dependency .22 vẫn cần CI/review trước integration.
 4. M01.03 implementation branch riêng từ main sau dependencies hoặc integration candidate được duyệt. Không làm lại migration schema .02.
 5. Sau CI/review hết blocker, ChatGPT được merge gói nhỏ theo ủy quyền 11/10. Local/phone/đóng toàn M01 vẫn chưa đạt.
 
 Backend local .03 không bị native .21 hoặc SMS production chặn. ANDROID fail closed theo contract11; không giả one-device bằng device_id.
 
-## 3. Đề xuất nội dung chấp thuận dùng thử — CHƯA OWNER DUYỆT
+## 3. Nội dung chấp thuận dùng thử — OWNER ĐÃ DUYỆT
 
-Cặp cấu hình server đề xuất:
+Cặp cấu hình server được duyệt cho local dev/test:
 - terms_version: test-terms-20261011-v1
 - privacy_version: test-privacy-20261011-v1
 
@@ -54,7 +54,7 @@ Nhãn checkbox đề xuất cho task UI nối sau:
 
 Checkbox mặc định bỏ chọn; hai nội dung đọc được trước khi gửi. Không giả Owner đã duyệt UI từ đề xuất nhãn này. Backend chỉ nhận cặp phiên bản, không nhận accepted_at hoặc accepted_by. Version mapping từ config server, không hard-code bypass. Thiếu config hợp lệ phải fail closed trước tạo tài khoản; mapping startup/service error theo config/error conventions hiện hành. Đổi cặp server: request cũ chưa commit trả CONSENT_VERSION_UNSUPPORTED; replay đã commit theo §6 vẫn dựa acceptance lịch sử.
 Không dùng cặp test trên staging/production; policy môi trường là gate local contract11. Không thêm endpoint public consent trong gói .03; UI task sau phải có nguồn hiển thị khớp cặp server được duyệt.
-Owner approval: CHƯA CÓ. Production consent: CHƯA DUYỆT.
+Owner approval: ĐÃ DUYỆT nội dung điều khoản test, thông tin dữ liệu test và cặp phiên bản trên; nguồn là phản hồi “Ok” ngày 11/10/2026 13:47 Asia/Ho_Chi_Minh, trả lời câu hỏi duyệt mục 3 của PR #62. Không suy ra duyệt bố cục UI, nghiệm thu local/phone hoặc production. Production consent: CHƯA DUYỆT.
 
 ## 4. API và validation
 
@@ -139,14 +139,14 @@ Context/login/logout/reset tests chưa endpoint phải ghi chưa triển khai; c
 
 Lint/typecheck/build/unit và PG17 integration/CI mode phù hợp phải PASS exact final SHA. Target guard DEV5432/TEST5433; destructive suite chỉ TEST. Không chạy trên Owner data/remote.
 Báo evidence base/dependency/final SHAs, commands/results/CI, changed files, rollback/race proof, restricted grants và gaps. Không sửa tests chỉ để xanh.
-Nội dung test đang là proposal; R01/R14 Owner acceptance chưa chạy. CI không nghiệm thu app/module.
+Nội dung/cặp consent test đã được Owner duyệt; R01/R14 Owner acceptance chức năng chưa chạy. CI không nghiệm thu app/module.
 
 ## 8. Gói giao Claude
 
-Sau Owner duyệt §3 và dependency .22 được review:
+§3 đã được Owner duyệt. Giao code khi dependency .22 được review; trước đó giao preflight-only:
 > Làm duy nhất M01.03 backend local theo docs/tasks/M01-03-customer-register-local-handoff.md, contract10/11 trên main và task .03 revision2.0.2 trên PR#48 nếu không mâu thuẫn. Đọc AGENTS/CLAUDE/workflow. Fetch main và .22; báo base/dependency/source SHA, mapping file thật và gaps trước code. Branch implementation riêng; không sửa branch tài liệu. Giữ legacy và primitives; atomic register CUSTOMER/name v1/consent/session/audit/outbox; sensitive replay CURRENT identity; WEB chỉ explicit local, ANDROID fail closed. Không .04/UI/native/inbox code trong PR này. Chạy R01–R15 với API/PG17 thật và restricted role, CI final SHA; trả Draft PR/evidence. Nếu dependency hoặc consent approval thiếu chỉ preflight/read-only. Không deploy/apply remote/auto-merge/LOCK hoặc tự sang gói khác.
 
-Trước approval có thể giao preflight-only đúng tài liệu này, không claim CODE_READY.
+Gate consent test đã đạt. Dependency .22 chưa có bằng chứng đạt ở base kiểm kê; có thể giao preflight-only, chưa claim CODE_READY cho integration đầy đủ.
 ChatGPT review đúng SHA; sửa finding do Claude; merge gói nhỏ theo workflow hiện hành sau PASS.
 
 ## 9. Gate từng app
