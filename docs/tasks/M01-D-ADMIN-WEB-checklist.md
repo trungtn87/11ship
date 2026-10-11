@@ -27,6 +27,17 @@ Tài liệu này ghi trạng thái, KHÔNG phải nghiệm thu. Kết quả CI t
 - Liên kết, token, mật khẩu, mã, secret, nguồn QR không vào storage/log, bị bỏ khi không còn cần. Token đọc từ `#t=` và xóa bằng `history.replaceState` trước mọi request.
 - Kích hoạt xong không tự đăng nhập.
 
+## Vòng sửa review PR #47 (baseline `618d35d495394f9df7fa219379f97a8ad225eb3a`)
+| Finding | Sửa | Regression test (unit, `activation-controller.spec.ts` / `provisioning-controller.spec.ts`) |
+|---|---|---|
+| F1. Restart gặp lỗi mạng/5xx không được tự POST lại | Chỉ `GET /state`; màn, CSRF và cookie đồng bộ theo câu trả lời. Nếu GET cũng lỗi: màn báo chưa rõ kết quả, ẩn "Bắt đầu lại", chỉ còn nút "Kiểm tra lại trạng thái" (đọc lại, không POST). | restart đã commit nhưng mất response → GET trả attempt mới (dùng CSRF mới); restart chưa commit (5xx) → GET trả trạng thái cũ, chỉ POST lại khi người dùng bấm; POST và GET đều mất → `stateUnknown`, đọc lại hai lần, đúng 1 POST; restart từ bước mật khẩu |
+| F2. `retryBusiness` phải tôn trọng Retry-After | Không gửi khi còn `lockUntilMs`; nút "Kiểm tra lại" disabled khi đang xử lý hoặc còn chờ, hiện thời gian chờ; hết giờ chỉ mở nút. Key, operation_id, payload giữ nguyên. | 429 khi retry → khóa 20 s; bấm trong lúc khóa không có POST; hết giờ không tự gửi; bấm lại gửi cùng Idempotency-Key/body, 1 verify, 1 operation |
+| F3. `#merge` ở OTP_VERIFIED | Cập nhật `restartRequired` và `passwordDeadline` từ GET state; `restartRequired=true` khóa form mật khẩu và hiện "Bắt đầu lại". | GET chuyển `restartRequired` false → true (form bị bỏ qua, restart chạy được); GET vẫn false cập nhật hạn |
+
+- Cả 7 test mới đỏ trên mã baseline và xanh sau sửa (chạy bằng bộ shim local: 133 → 140 test).
+- Câu chữ mới (cần Owner duyệt): `ADMIN_COPY.restartUnknown`, `rereadState`, `retryWait`.
+- Chưa có test browser riêng cho F1–F3; CI trên đúng SHA cuối được ghi trong mô tả PR.
+
 ## Câu chữ không có trong thiết kế đã duyệt (cần Owner duyệt)
 Gom trong `ADMIN_COPY` của `apps/admin-web/src/core/messages.ts`: màn step-up, xung đột nghiệp vụ, kết quả/sao chép liên kết, các màn khôi phục kích hoạt, dòng TEST_DISPLAY, hạn đặt mật khẩu. Menu bên trái và bố cục shell mới theo mô tả "nền sáng, sidebar xám đậm, nhấn vàng"; chưa có ảnh UI chốt để đối chiếu.
 
