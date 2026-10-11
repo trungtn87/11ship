@@ -42,7 +42,8 @@ export function windowHistory(): HistoryPort {
 export function startLive(root: HTMLElement, definition: AppDefinition): Router {
   const flows = new FlowStore();
   const table = routeTable(definition);
-  let router: Router | undefined;
+  // The screens' `go` is needed before the router exists (it is built from the same table), so it reads the router through this holder.
+  const routerRef: { current: Router | undefined } = { current: undefined };
   const env: ScreenEnv = {
     mode: 'live',
     brand: definition.brand,
@@ -50,12 +51,12 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
     flows,
     // Nobody can be signed in yet: there is no login backend, so no screen ever receives an account.
     account: undefined,
-    go: (id) => router?.go(id),
+    go: (id) => routerRef.current?.go(id),
     back: () => {
       if (window.history.length > 1) {
         window.history.back();
       } else {
-        router?.go(definition.homeId);
+        routerRef.current?.go(definition.homeId);
       }
     },
     toast: (text) => toast(text),
@@ -65,7 +66,7 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
     testSmsNotice: definition.testSmsNotice,
   };
   let first = true;
-  router = new Router(table, windowHistory(), {
+  const router = new Router(table, windowHistory(), {
     state: () => ({ signedIn: false, flows: flows.names() }),
     render: (route) => {
       const screen = definition.screens.find((candidate) => candidate.id === route.id);
@@ -86,6 +87,7 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
       first = false;
     },
   });
+  routerRef.current = router;
   router.start();
   return router;
 }
