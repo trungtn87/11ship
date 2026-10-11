@@ -4,8 +4,10 @@
 //   - no HTTP endpoint, never part of build or start, never run from Render; the service does not hold its credential;
 //   - APP_ENV=staging only, and only with the fixture mode configured (AUTH_STAGING_FIXTURES_ENABLED=true and a valid
 //     AUTH_STAGING_ALLOWED_PHONES), exactly as the application validates them;
-//   - the SAME target gates as db:migrate:remote (shared code): Supabase session pooler on port 5432, runtime and
-//     operator URLs name the same host/port/database/project with different roles, MIGRATION_CONFIRM_TARGET typed;
+//   - the SAME target gates as db:migrate:remote (shared code): the Supabase session pooler on port 5432 (runtime and
+//     operator URLs name the same host/port/database/project with different roles), or, with DB_REMOTE_TARGET=
+//     SELF_HOSTED, the one self-hosted staging PostgreSQL (localhost:5432/ship11_staging, whose connected database,
+//     role and TLS are also verified from the server before the transaction opens); MIGRATION_CONFIRM_TARGET typed;
 //   - the operator credential is MIGRATION_DATABASE_URL; strict TLS from the same compiled rules as the application;
 //   - the account data comes from STDIN as JSON [{"phone": "+84...", "password": "..."}] (at most 20, strict keys,
 //     phones inside the allowlist). There is NO argument at all, so no password can reach a process list or history;
@@ -17,7 +19,8 @@
 const { existsSync } = require('node:fs');
 const { randomUUID } = require('node:crypto');
 const path = require('node:path');
-const { checkRemoteTargets } = require('./db-migrate-remote.js');
+const { checkRemoteTargets, checkConnectedIdentity } = require('./db-migrate-remote.js');
+const { TARGET_SELF_HOSTED } = require('./db-remote-target.js');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const PROGRAM = 'staging:seed-fixtures';
@@ -109,7 +112,7 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
   if (targets.problem !== undefined) {
     return fail(targets.problem);
   }
-  const { target, rawUrl } = targets;
+  const { kind, rawUrl, confirmTarget: expectedTarget } = targets;
 
   // The fixture mode must be configured exactly as the application validates it: the seed refuses to create
   // accounts that the running service would then refuse to log in.
@@ -131,7 +134,6 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
     return fail(`invalid or missing configuration. Check environment variable(s): ${names.join(', ')}`);
   }
 
-  const expectedTarget = `${target.host}:${target.port}/${target.database}/${target.projectRef}`;
   if (env.MIGRATION_CONFIRM_TARGET !== expectedTarget) {
     return fail(`confirm the target by setting MIGRATION_CONFIRM_TARGET=${expectedTarget}`);
   }
@@ -172,6 +174,15 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
   let transactionOpen = false;
   try {
     await client.connect();
+
+    if (kind === TARGET_SELF_HOSTED) {
+      // The URL is only a claim: the server must itself say ship11_staging / ship11_migrator / TLS before anything is read.
+      stage = 'identity';
+      const identityProblem = await checkConnectedIdentity(client);
+      if (identityProblem !== undefined) {
+        return fail(identityProblem);
+      }
+    }
 
     stage = 'preflight';
     const info = await client.query(

@@ -14,7 +14,14 @@ import { AdminCliError } from '../admin-cli-errors';
 import { AdminLimitConfigRepository } from '../admin-limit-config-repository';
 import { AdminLimitConfigService } from '../admin-limit-config-service';
 import { AdminMembershipRepository } from '../admin-membership-repository';
-import { CliEnvSource, connectedIdentityMatches, resolveCliTarget } from './cli-target-guard';
+import {
+  CliEnvSource,
+  SELF_HOSTED_IDENTITY_SQL,
+  SelfHostedIdentityRow,
+  connectedIdentityMatches,
+  resolveCliTarget,
+  selfHostedIdentityProblem,
+} from './cli-target-guard';
 import { CliInputError, readBootstrapInput } from './stdin-input';
 
 export type AdminCliCommand = 'init-limit-config' | 'bootstrap-system';
@@ -72,12 +79,22 @@ export async function runAdminAuthCli(command: string, io: AdminCliIo): Promise<
   pool.on('error', () => undefined);
 
   try {
-    const identity = await pool.query<{ database_name: string; user_name: string }>(
-      'SELECT current_database() AS database_name, current_user AS user_name',
-    );
-    const reported = identity.rows[0];
-    if (reported === undefined || !connectedIdentityMatches(target, { database: reported.database_name, user: reported.user_name })) {
-      return fail('refused: the connected database and role are not the allowed target for this APP_ENV');
+    if (target.selfHosted) {
+      // Self-hosted staging: the server itself must report ship11_staging / ship11_migrator / port 5432 / TLS in use /
+      // no elevated role attribute, before anything is read or written.
+      const identity = await pool.query<SelfHostedIdentityRow>(SELF_HOSTED_IDENTITY_SQL);
+      const problem = selfHostedIdentityProblem(identity.rows[0]);
+      if (problem !== undefined) {
+        return fail(problem);
+      }
+    } else {
+      const identity = await pool.query<{ database_name: string; user_name: string }>(
+        'SELECT current_database() AS database_name, current_user AS user_name',
+      );
+      const reported = identity.rows[0];
+      if (reported === undefined || !connectedIdentityMatches(target, { database: reported.database_name, user: reported.user_name })) {
+        return fail('refused: the connected database and role are not the allowed target for this APP_ENV');
+      }
     }
 
     const transactions = new TransactionManager(poolClientSource(pool), { timeoutMs: 30_000, idleInTransactionTimeoutMs: 15_000 });

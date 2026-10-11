@@ -4,6 +4,9 @@ Status: **prepared, not executed.** Nothing in this runbook has been run against
 No secret value belongs in this file, in a commit, in a log, in evidence, or in a PR. Every `<placeholder>` below is
 entered by the operator in a shell or in the Render dashboard.
 
+> Self-hosted alternative (PostgreSQL 17 on the staging VPS, selected with `DB_REMOTE_TARGET=SELF_HOSTED`): see
+> `ops/runbooks/selfhosted-postgres-staging.md`. Not setting `DB_REMOTE_TARGET` keeps everything below exactly as it is.
+
 Target (non-secret facts from the task spec): Supabase project ref `blavybabrrhfudxxrqlz`, PostgreSQL 17.11, region
 Tokyo (ap-northeast-1). Render: one Free web service from `render.yaml` (`11ship-api-staging`).
 
@@ -107,6 +110,10 @@ GRANT SELECT, INSERT, UPDATE ON app.users TO ship11_app;
 This matrix is derived from reading the source (static analysis), not from running the application against a
 restricted role. **D4 must verify it** by exercising the real endpoints. Row locks (`FOR UPDATE/SHARE`) need UPDATE,
 and `ON CONFLICT (cols)` needs SELECT; a missing grant shows up as `42501`.
+
+The same matrix is also kept as SQL in `ops/selfhosted/02-runtime-grants.sql` for the self-hosted staging database
+(M00-VPS-01, `selfhosted-postgres-staging.md`). `tests/deploy/selfhosted-grants.test.mjs` fails when the two differ or
+when either stops matching the tables the migrations create: a new table needs its row in BOTH places in the same change.
 
 Verification queries (run as admin; expected result: no access / not exposed):
 

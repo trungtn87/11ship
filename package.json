@@ -39,6 +39,7 @@
     "admin-auth:bootstrap-system": "node scripts/admin-auth-bootstrap-system.js",
     "deploy:validate": "node scripts/deploy/validate-render-blueprint.mjs",
     "deploy:test": "node --test \"tests/deploy/*.test.mjs\"",
+    "selfhosted:test": "node --test --test-concurrency=1 \"tests/selfhosted/*.test.mjs\"",
     "test-sms:test": "node --test \"tests/test-sms-tool/*.test.mjs\"",
     "launcher:test": "node --test \"tests/local-launcher/*.test.mjs\"",
     "test:unit": "npm run build:test && jest --config jest.unit.config.js",
