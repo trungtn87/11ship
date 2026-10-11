@@ -386,7 +386,7 @@ export interface AppBarOptions {
 export function appBar(options: AppBarOptions): HTMLElement {
   const variant = options.variant === 'yellow' ? ' c-appbar--yellow' : '';
   if (options.logo !== undefined) {
-    return h('header', { class: `c-appbar c-appbar--logo${variant}` }, options.logo, h('div', { class: 'c-appbar__side' }, options.right));
+    return h('header', { class: `c-appbar c-appbar--logo${variant}` }, options.logo, options.title === undefined ? undefined : h('h1', { class: 'c-visually-hidden' }, options.title), h('div', { class: 'c-appbar__side' }, options.right));
   }
   const back =
     options.onBack === undefined

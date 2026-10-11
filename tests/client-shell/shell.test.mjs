@@ -150,6 +150,54 @@ describe('preview server', () => {
   });
 });
 
+describe('11Food live build', () => {
+  let live;
+  before(() => {
+    live = mkdtempSync(join(tmpdir(), 'food-live-'));
+    buildClientWeb('food-web', { outDir: live, quiet: true });
+  });
+  after(() => rmSync(live, { recursive: true, force: true }));
+  const files = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(join(d, e.name)) : [join(d, e.name)]));
+
+  it('ships no design preview, no sample data and no inline style', () => {
+    const all = files(live);
+    assert.ok(all.some((f) => f.endsWith('index.html')));
+    for (const f of all) {
+      assert.doesNotMatch(f, /design/i, f);
+      if (/\.(js|html|css)$/.test(f)) {
+        const text = readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+        assert.doesNotMatch(text, /Nguyễn Văn A|Quán Cơm Nhà|Kim Đồng|098 •••• 123/, `sample data in ${f}`);
+        assert.doesNotMatch(text, /localStorage|sessionStorage|indexedDB|document\.cookie/, `browser storage in ${f}`);
+      }
+    }
+    assert.equal(JSON.parse(readFileSync(join(live, 'build-manifest.json'), 'utf8')).mode, 'live');
+  });
+
+  it('nobody is signed in: every authed route goes to login, flow routes go back to their start', async () => {
+    const { routeTable } = await import(pathToFileURL(join(live, 'js', 'client-shared', 'src', 'app.js')).href);
+    const { resolveRoute } = await import(pathToFileURL(join(live, 'js', 'client-shared', 'src', 'router.js')).href);
+    const { FOOD_DEFINITION } = await import(pathToFileURL(join(live, 'js', 'food-web', 'src', 'screens.js')).href);
+    const table = routeTable(FOOD_DEFINITION);
+    const state = { signedIn: false, flows: new Set() };
+    for (const path of ['/account/profile', '/shop/start', '/shop/onboarding', '/shop/location', '/shop/home']) {
+      const r = resolveRoute(path, table, state);
+      assert.deepEqual([r.kind, r.to, r.reason], ['redirect', '/login', 'login'], path);
+    }
+    for (const path of ['/', '/search', '/orders', '/account', '/welcome', '/login', '/register', '/reset']) {
+      assert.equal(resolveRoute(path, table, state).kind, 'render', path);
+    }
+    assert.equal(resolveRoute('/register/otp', table, state).to, '/register');
+    assert.equal(resolveRoute('/reset/otp', table, state).to, '/reset');
+    assert.equal(resolveRoute('/reset/password', table, state).to, '/reset');
+  });
+
+  it('bottom navigation has exactly the four approved tabs', async () => {
+    const text = readFileSync(join(live, 'js', 'food-web', 'src', 'screens.js'), 'utf8');
+    const labels = [...text.matchAll(/label: '([^']+)', icon: '[a-z]+', href: '\//g)].map((m) => m[1]);
+    assert.deepEqual(labels, ['Trang chủ', 'Tìm kiếm', 'Đơn hàng', 'Tài khoản']);
+  });
+});
+
 describe('C08: dirty form, Back and navigation', () => {
   const fakeInput = (type, value = '', checked = false) => {
     const events = [];
@@ -280,5 +328,10 @@ describe('C08: dirty form, Back and navigation', () => {
     assert.equal((auth.match(/guardForm\(env/g) ?? []).length, 5, 'login, register, OTP, reset, reset-password');
     const found = readFileSync(join(lib, 'design/foundation.js'), 'utf8');
     assert.match(found, /code: 'C08'/);
+  });
+
+  it('11Food forms with unsaved input (profile, shop profile) are guarded', () => {
+    const source = readFileSync(new URL('../../apps/food-web/src/screens.ts', import.meta.url), 'utf8');
+    assert.equal((source.match(/guardForm\(env, form\)/g) ?? []).length, 2);
   });
 });

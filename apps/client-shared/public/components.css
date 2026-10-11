@@ -1043,3 +1043,4 @@ button.c-item:hover:not(:disabled) {
 .c-skeleton--w2 { width: 64%; }
 .c-skeleton--w3 { width: 46%; }
 .c-skeleton--w4 { width: 28%; }
+.c-title--sm { font-size: 16px; }

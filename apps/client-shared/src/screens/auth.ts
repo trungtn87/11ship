@@ -2,7 +2,7 @@ import { AppBrand, logo } from '../brand.js';
 import { banner, checkbox, countdown, button, otpField, passwordField, setBusy, setButtonLabel, textField, textLink } from '../components.js';
 import { formatCountdown, h } from '../dom.js';
 import { icon, IconName } from '../icons.js';
-import { SAMPLE_PERSON, ScreenDef, ScreenEnv, VariantDef } from '../screen.js';
+import { ScreenDef, ScreenEnv, VariantDef } from '../screen.js';
 import { STATE_COPY } from '../states.js';
 import { isCompleteOtp, isValidPassword, isValidPhone, maskPhone, normalizePersonName } from '../validation.js';
 import { failureBanner } from './feedback.js';
@@ -333,13 +333,13 @@ function registerScreen(brand: AppBrand): ScreenDef {
         password.setError(STATE_COPY.passwordRule);
         confirm.setError(STATE_COPY.passwordMismatch);
       } else if (variant === 'consent') {
-        name.input.value = SAMPLE_PERSON.fullName;
+        name.input.value = env.sample?.person.fullName ?? '';
         phone.input.value = '0981234123';
         password.input.value = 'matkhau-dai-hon-8';
         confirm.input.value = 'matkhau-dai-hon-8';
         consent.setError(STATE_COPY.consentRequired);
       } else if (variant === 'phone-registered') {
-        name.input.value = SAMPLE_PERSON.fullName;
+        name.input.value = env.sample?.person.fullName ?? '';
         phone.input.value = '0981234123';
         password.input.value = 'matkhau-dai-hon-8';
         confirm.input.value = 'matkhau-dai-hon-8';
@@ -381,7 +381,7 @@ function otpScreen(config: OtpConfig): ScreenDef {
     variants: [v('default', 'Mặc định'), v('wrong', 'Mã sai'), v('expired', 'Mã hết hạn'), v('locked', 'Nhập sai nhiều lần'), v('rate-limited', 'Giới hạn gửi mã'), v('verifying', 'Đang xác minh')],
     render(env, variant) {
       const flowData = env.flows.data<{ phone: string }>(config.flow);
-      const masked = (flowData === undefined ? undefined : maskPhone(flowData.phone)) ?? SAMPLE_PERSON.phoneMasked;
+      const masked = (flowData === undefined ? undefined : maskPhone(flowData.phone)) ?? env.sample?.person.phoneMasked ?? '••• •••• •••';
       const otp = otpField({ id: 'otp', label: 'Mã OTP 6 số' });
       const status = h('p', { class: 'c-caption c-center', 'aria-live': 'off' });
       const feedback = h('div', { class: 'c-stack', 'aria-live': 'polite' });
