@@ -108,6 +108,10 @@ jobs:
       - name: Client shell tests (phone UI foundation)
         run: npm run client-shell:test
 
+      # M01-UI: web administration menu by permission, "Sắp có" entries, real build free of preview data, read-only preview.
+      - name: Admin web UI tests (menu, permissions, preview isolation)
+        run: npm run admin-web:test
+
       # M00-L: structure checks plus the launcher behaviour suite under PowerShell 7 (real git, faked Docker/npm).
       # The Windows-only parts (cmd wrappers, double-click) run in the launcher-windows job below.
       - name: Local launcher tests (behaviour suite under PowerShell 7)

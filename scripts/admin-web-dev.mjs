@@ -42,7 +42,7 @@ const SECURITY_HEADERS = {
 };
 
 // Client-side routes of the page (see apps/admin-web/src/core/routes.ts): the page is served, and it decides what to show.
-const APP_ROUTES = /^\/(?:activate|invitations(?:\/.*)?)$/;
+const APP_ROUTES = /^\/(?:activate|reset|invitations(?:\/.*)?|accounts(?:\/.*)?)$/;
 
 // Login (#34), invitation management (1B) and activation (1C). Nothing else of the backend is reachable through this front.
 const API_PREFIXES = ['/v1/admin-auth/', '/v1/admin-activation/', '/v1/admin/'];
