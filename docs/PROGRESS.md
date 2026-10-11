@@ -181,7 +181,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#61](https://github.com/trungtn87/11ship/pull/61) feat(admin-web): giao diện M01 Web quản trị (UI trước, chưa… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `821345a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#62](https://github.com/trungtn87/11ship/pull/62) docs(M01.03): gói đăng ký CUSTOMER local và nội dung consen… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `4af8102` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#63](https://github.com/trungtn87/11ship/pull/63) docs(M01.22): hộp OTP test local và công cụ PC cho M01.03 | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `1146a8e` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#64](https://github.com/trungtn87/11ship/pull/64) feat(M01.22): hộp OTP test local và công cụ PC (TEST_INBOX) | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `ef7953b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#64](https://github.com/trungtn87/11ship/pull/64) feat(M01.22): hộp OTP test local và công cụ PC (TEST_INBOX) | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `2437d1e` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
