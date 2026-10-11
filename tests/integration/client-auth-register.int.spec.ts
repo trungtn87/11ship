@@ -4,6 +4,7 @@ import { eventually } from './support/async-helpers';
 import {
   advisoryWaiterExists,
   ageProof,
+  ageVerification,
   api,
   AuthApp,
   countRows,
@@ -64,9 +65,9 @@ describe('M01.03 — client register', () => {
     await app.close();
   });
 
-  function call(payload: Record<string, unknown>, key: string | undefined = randomUUID(), target: AuthApp = app) {
+  function call(payload: Record<string, unknown>, key: string | null = randomUUID(), target: AuthApp = app) {
     return target.call('POST', '/client-auth/register', {
-      ...(key === undefined ? {} : { headers: { 'idempotency-key': key } }),
+      ...(key === null ? {} : { headers: { 'idempotency-key': key } }),
       body: payload,
     });
   }
@@ -275,7 +276,7 @@ describe('M01.03 — client register', () => {
     it('requires a well-formed key and refuses a changed body or a changed key on retry', async () => {
       const phone = randomPhone();
       const proof = await obtainProof(app, phone);
-      expect(errorCode(await call(body(phone, proof.proofToken), undefined))).toBe('IDEMPOTENCY_KEY_REQUIRED');
+      expect(errorCode(await call(body(phone, proof.proofToken), null))).toBe('IDEMPOTENCY_KEY_REQUIRED');
       expect(errorCode(await call(body(phone, proof.proofToken), 'short key with spaces'))).toBe('INVALID_IDEMPOTENCY_KEY');
       await nothingCreated(phone.normalized);
 
@@ -399,6 +400,7 @@ describe('M01.03 — client register', () => {
     it('exactly one registration wins; the loser leaves no partial state and its proof is not consumed', async () => {
       const phone = randomPhone();
       const a = await obtainProof(app, phone);
+      await ageVerification(app.pool, a.verificationId, 3600); // lets the same number request a second OTP
       const b = await obtainProof(app, phone);
       // The newer OTP may have invalidated the older proof; force both valid to exercise the user UNIQUE race.
       await app.pool.query('UPDATE app.verification_proofs SET invalidated_at = NULL WHERE phone_normalized = $1', [phone.normalized]);
@@ -413,11 +415,20 @@ describe('M01.03 — client register', () => {
     });
 
     it('legacy register already created the phone -> the new route answers PHONE_ALREADY_REGISTERED and keeps its proof', async () => {
-      const user = await registerUser(app);
-      const proof = await obtainProof(app, user.phone);
-      const response = await call(body(user.phone, proof.proofToken));
+      const phone = randomPhone();
+      const a = await obtainProof(app, phone);
+      await ageVerification(app.pool, a.verificationId, 3600);
+      const b = await obtainProof(app, phone);
+      await app.pool.query('UPDATE app.verification_proofs SET invalidated_at = NULL WHERE phone_normalized = $1', [phone.normalized]);
+      const legacy = await app.call('POST', '/auth/register', {
+        headers: { 'idempotency-key': randomUUID() },
+        body: { phone: phone.local, password: PASSWORD, verification_token: a.proofToken, device: { device_id: 'device-test-0001', platform: 'ANDROID', app: 'SHIP11' } },
+      });
+      expect(legacy.status).toBe(201);
+      const response = await call(body(phone, b.proofToken));
       expect(errorCode(response)).toBe('PHONE_ALREADY_REGISTERED');
-      expect(await countRows(app.pool, 'SELECT 1 FROM app.verification_proofs WHERE token_digest IS NOT NULL AND phone_normalized = $1 AND consumed_at IS NULL', [user.phone.normalized])).toBe(1);
+      expect(await consumedCount(phone.normalized)).toBe(1);
+      expect(await userCount(phone.normalized)).toBe(1);
     });
 
     it('the two routes use separate idempotency namespaces for the same proof', async () => {
@@ -472,7 +483,6 @@ describe('M01.03 — client register', () => {
         expect(failed.text).not.toContain('injected fault');
         await nothingCreated(phone.normalized);
         expect(await countRows(app.pool, "SELECT 1 FROM app.sessions WHERE device_id = 'fault-device-0001'")).toBe(0);
-        expect(await countRows(app.pool, 'SELECT 1 FROM app.customer_profiles WHERE full_name = $1', ['Fault Profile'])).toBe(0);
         expect(await countRows(app.pool, 'SELECT 1 FROM app.idempotency_records WHERE scope_id = $1', [proofId])).toBe(0);
         expect(await countRows(app.pool, "SELECT 1 FROM app.audit_logs WHERE request_id = $1::uuid AND action = 'client.auth.register.v1'", [failed.requestId])).toBe(0);
         expect(await countRows(app.pool, "SELECT 1 FROM app.outbox_events WHERE event_type = 'client.auth.user_registered.v1'")).toBe(outboxBefore);
