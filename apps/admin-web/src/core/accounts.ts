@@ -115,8 +115,16 @@ export interface AdministratorRow {
   readonly createdAt: string;
 }
 
+export interface AdministratorFilter {
+  readonly query: string;
+  readonly status: AdministratorStatus | 'ALL';
+}
+
+export const EMPTY_ADMIN_FILTER: AdministratorFilter = { query: '', status: 'ALL' };
+
 export interface AdministratorsScreen {
   readonly name: 'administrators';
+  readonly filter?: AdministratorFilter;
   readonly state: ListState<AdministratorRow>;
 }
 

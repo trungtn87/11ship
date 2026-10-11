@@ -85,6 +85,12 @@ describe('real build', () => {
     const html = readFileSync(join(real, 'index.html'), 'utf8');
     assert.ok(!html.includes('Dữ liệu minh họa'));
   });
+  it('has no persona picker and no way to grant rights from the page', () => {
+    for (const file of ['dom/main.js', 'dom/shell-app.js', 'dom/view.js', 'core/menu.js']) {
+      const text = readFileSync(join(real, 'js', file), 'utf8');
+      assert.ok(!/admin-granted|admin-empty|persona|SAMPLE_GRANTS/.test(text), file);
+    }
+  });
 });
 
 describe('design preview', () => {
@@ -97,7 +103,7 @@ describe('design preview', () => {
     // screens.js touches the DOM only when rendering; importing the list must work in Node.
     if (s === undefined) return;
     const codes = s.SCREENS.map((screen) => screen.code);
-    for (const code of ['D00', 'D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08', 'D09', 'D81', 'D86', 'D87', 'D88']) assert.ok(codes.includes(code), code);
+    for (const code of ['D00', 'D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08', 'D09', 'D81', 'D86', 'D87', 'D88', 'D89']) assert.ok(codes.includes(code), code);
   });
   it('is served read-only (POST refused) with a CSP that forbids network calls', async () => {
     const server = makeServer(design);

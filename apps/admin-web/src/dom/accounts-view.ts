@@ -1,7 +1,9 @@
 import {
   ADMINISTRATOR_STATUS_LABEL,
+  AdministratorFilter,
   AdministratorRow,
   AdministratorsScreen,
+  EMPTY_ADMIN_FILTER,
   ListState,
   LockDialog,
   REASON_MAX,
@@ -408,13 +410,25 @@ export function openLockDialog(user: UserDetail, dialog: LockDialog, hooks: Lock
 
 // ---- Administrators --------------------------------------------------------------------------------------------------
 
+export interface AdministratorsHooks extends Pick<AccountsHooks, 'retry' | 'login' | 'home'> {
+  invite(): void;
+  /** false = no data source yet: search and filter are disabled (the not-wired panel says why). */
+  readonly wired: boolean;
+  filter(filter: AdministratorFilter): void;
+  refresh(): void;
+}
+
 export class AdministratorsView {
+  readonly #search: HTMLInputElement;
+  readonly #status: HTMLSelectElement;
+  readonly #refresh: HTMLButtonElement;
+  readonly #hint: HTMLElement;
+  readonly #results: HTMLElement;
+
   constructor(
     private readonly root: HTMLElement,
-    private readonly hooks: Pick<AccountsHooks, 'retry' | 'login' | 'home'> & { invite(): void },
-  ) {}
-
-  render(screen: AdministratorsScreen): void {
+    private readonly hooks: AdministratorsHooks,
+  ) {
     const invite = h('a', { href: formatRoute({ name: 'invitation-new' }), class: 'btn btn-primary btn-inline btn-anchor' }, icon('mail', 18), 'Tạo lời mời');
     invite.addEventListener('click', (event) => {
       if (!event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
@@ -422,9 +436,45 @@ export class AdministratorsView {
         this.hooks.invite();
       }
     });
+    this.#search = h('input', { id: 'admins-search', type: 'search', class: 'search-input', placeholder: 'Tìm theo tên hoặc số điện thoại', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Tìm theo tên hoặc số điện thoại', maxlength: '120' });
+    this.#status = h(
+      'select',
+      { id: 'admins-status', class: 'select', 'aria-label': 'Trạng thái' },
+      h('option', { value: 'ALL' }, 'Trạng thái'),
+      ...(['ACTIVE', 'PENDING', 'LOCKED'] as const).map((status) => h('option', { value: status }, ADMINISTRATOR_STATUS_LABEL[status])),
+    );
+    this.#refresh = h('button', { type: 'button', class: 'btn btn-secondary btn-inline' }, icon('refresh', 18), 'Làm mới');
+    this.#hint = message('notice', 'admins-hint');
+    this.#results = h('div', { class: 'results' });
+    const emit = (): void => this.hooks.filter(this.#read());
+    this.#search.addEventListener('input', emit);
+    this.#status.addEventListener('change', emit);
+    this.#refresh.addEventListener('click', () => this.hooks.refresh());
+    const toolbar = h('div', { class: 'toolbar toolbar-filters', role: 'search' }, h('div', { class: 'search' }, icon('search', 18), this.#search), this.#status, this.#refresh);
+    root.replaceChildren(h('section', { class: 'content content-wide', 'aria-labelledby': 'admins-title' }, pageHead('Quản trị viên', 'Quản lý tài khoản quản trị và phạm vi quyền được cấp', 'admins-title', invite), toolbar, this.#hint, this.#results));
+  }
+
+  #read(): AdministratorFilter {
+    const status = this.#status.value;
+    return { query: this.#search.value, status: status === 'ACTIVE' || status === 'PENDING' || status === 'LOCKED' ? status : 'ALL' };
+  }
+
+  render(screen: AdministratorsScreen): void {
+    const filter = screen.filter ?? EMPTY_ADMIN_FILTER;
+    if (this.#search !== document.activeElement && this.#search.value !== filter.query) {
+      this.#search.value = filter.query;
+    }
+    this.#status.value = filter.status;
+    const usable = this.hooks.wired && screen.state.kind !== 'not-wired';
+    for (const control of [this.#search, this.#status]) {
+      control.disabled = !usable;
+    }
+    this.#refresh.disabled = !usable || screen.state.kind === 'loading';
+    setMessage(this.#hint, screen.state.kind === 'not-wired' ? 'Tìm kiếm và bộ lọc sẽ dùng được khi danh sách được nối với máy chủ.' : undefined);
     const columns: readonly Column[] = [{ label: 'Họ tên' }, { label: 'Số điện thoại' }, { label: 'Phạm vi quyền' }, { label: 'Trạng thái' }, { label: 'Ngày tạo' }];
     const caption = 'Danh sách quản trị viên';
     const state = screen.state;
+    const filtered = filter.query.trim() !== '' || filter.status !== 'ALL';
     let table: HTMLElement;
     switch (state.kind) {
       case 'not-wired':
@@ -434,7 +484,9 @@ export class AdministratorsView {
         table = tableCard(caption, columns, { panel: skeleton() });
         break;
       case 'empty':
-        table = tableCard(caption, columns, { panel: emptyPanel('Chưa có quản trị viên', 'Quản trị viên xuất hiện ở đây sau khi kích hoạt lời mời.') });
+        table = tableCard(caption, columns, {
+          panel: filtered ? emptyPanel('Không tìm thấy quản trị viên', 'Thử đổi từ khóa hoặc bộ lọc trạng thái.') : emptyPanel('Chưa có quản trị viên', 'Quản trị viên xuất hiện ở đây sau khi kích hoạt lời mời.'),
+        });
         break;
       case 'failed':
         table = tableCard(caption, columns, { panel: failurePanel(state.failure, { retry: () => this.hooks.retry(), login: () => this.hooks.login(), home: () => this.hooks.home() }, state.retryAfterSec) });
@@ -443,6 +495,6 @@ export class AdministratorsView {
         table = tableCard(caption, columns, { rows: state.rows.map((row: AdministratorRow) => h('tr', {}, cell('Họ tên', row.fullName), cell('Số điện thoại', row.phoneMasked), cell('Phạm vi quyền', h('span', { class: 'chips' }, ...row.scopes.map((scope) => h('span', { class: 'chip' }, scope)))), cell('Trạng thái', statusBadge(row.status, ADMINISTRATOR_STATUS_LABEL[row.status])), cell('Ngày tạo', formatDateVn(row.createdAt)))) });
         break;
     }
-    this.root.replaceChildren(h('section', { class: 'content content-wide', 'aria-labelledby': 'admins-title' }, pageHead('Quản trị viên', 'Quản lý tài khoản quản trị và phạm vi quyền được cấp', 'admins-title', invite), table));
+    this.#results.replaceChildren(table);
   }
 }

@@ -1,4 +1,4 @@
-import { LockDialog, UserDetail, UserDetailState, UsersScreen, UserFilter, EMPTY_USER_FILTER, ListState, UserRow, AdministratorRow } from '../core/accounts.js';
+import { AdministratorFilter, AdministratorRow, EMPTY_ADMIN_FILTER, EMPTY_USER_FILTER, ListState, LockDialog, NOT_WIRED_REASON, UserDetail, UserDetailState, UserFilter, UserRow, UsersScreen } from '../core/accounts.js';
 import { ActivationScreen } from '../core/activation-controller.js';
 import { AdminAuthController, Clock, Screen } from '../core/controller.js';
 import { ActivationController } from '../core/activation-controller.js';
@@ -405,11 +405,11 @@ const userUnlock = lockScreen('UNLOCK', 'D88', 'Mở khóa người dùng — h�
 
 const administrators: DesignScreen = {
   id: 'administrators',
-  code: '—',
-  title: 'Quản trị viên',
+  code: 'D89',
+  title: 'Quản trị viên — danh sách',
   group: 'Tài khoản',
-  note: 'Chỉ SYSTEM. Danh mục UI chưa gán mã màn và chưa có ảnh duyệt riêng cho trang này; bố cục theo D81. Bản thật chưa nối vì chưa có hợp đồng API đọc danh sách quản trị viên.',
-  variants: variants(['rows', 'Có dữ liệu'], ['empty', 'Trống'], ['loading', 'Đang tải'], ['live', 'Bản thật (chưa nối)']),
+  note: 'Chỉ SYSTEM. Mã D89 là mã ĐỀ XUẤT (chưa có trong catalog, không trùng mã nào) và chưa có ảnh duyệt riêng; bố cục theo D81. Bản thật chưa nối vì chưa có hợp đồng API đọc danh sách quản trị viên; không tạo/sửa/xóa ở đây.',
+  variants: variants(['rows', 'Có dữ liệu'], ['empty', 'Trống'], ['no-match', 'Không khớp tìm kiếm'], ['loading', 'Đang tải'], ['error', 'Lỗi tải'], ['live', 'Bản thật (chưa nối)']),
   render: (context, variant) =>
     shellPage(context, { name: 'administrators' }, (content) => {
       if (context.role !== 'SYSTEM') {
@@ -417,19 +417,29 @@ const administrators: DesignScreen = {
         return;
       }
       const demo = (): void => context.toast(DEMO_NOTICE);
-      const view = new AdministratorsView(content, { retry: demo, login: () => context.go('login'), home: () => context.go('overview'), invite: () => context.go('invitation-new') });
-      const rows: readonly AdministratorRow[] = SAMPLE_ADMINISTRATORS;
-      view.render({
-        name: 'administrators',
-        state:
-          variant === 'empty'
-            ? { kind: 'empty' }
-            : variant === 'loading'
-              ? { kind: 'loading' }
-              : variant === 'live'
-                ? { kind: 'not-wired', reason: 'Danh sách quản trị viên chưa có giao diện lập trình để đọc. Cần bổ sung hợp đồng trước khi nối.' }
-                : { kind: 'rows', rows, nextCursor: null },
+      let filter: AdministratorFilter = variant === 'no-match' ? { query: 'zzz', status: 'ALL' } : EMPTY_ADMIN_FILTER;
+      const stateFor = (): ListState<AdministratorRow> => {
+        if (variant === 'empty') return { kind: 'empty' };
+        if (variant === 'loading') return { kind: 'loading' };
+        if (variant === 'error') return { kind: 'failed', failure: 'offline' };
+        if (variant === 'live') return { kind: 'not-wired', reason: NOT_WIRED_REASON.administrators };
+        const query = filter.query.trim().toLowerCase();
+        const rows = SAMPLE_ADMINISTRATORS.filter((row) => (filter.status === 'ALL' || row.status === filter.status) && (query === '' || row.fullName.toLowerCase().includes(query) || row.phoneMasked.includes(query)));
+        return rows.length === 0 ? { kind: 'empty' } : { kind: 'rows', rows, nextCursor: null };
+      };
+      const view: AdministratorsView = new AdministratorsView(content, {
+        retry: demo,
+        login: () => context.go('login'),
+        home: () => context.go('overview'),
+        invite: () => context.go('invitation-new'),
+        wired: variant !== 'live',
+        filter: (next) => {
+          filter = next;
+          view.render({ name: 'administrators', filter, state: stateFor() });
+        },
+        refresh: demo,
       });
+      view.render({ name: 'administrators', filter, state: stateFor() });
     }),
 };
 

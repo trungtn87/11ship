@@ -198,6 +198,10 @@ export class ShellApp implements ShellHost {
       login: () => this.history.restart(),
       home: () => this.go({ name: 'home' }),
       invite: () => this.go({ name: 'invitation-new' }),
+      // No data source yet (no API contract): search and filter stay disabled until the source is wired.
+      wired: false,
+      filter: () => undefined,
+      refresh: () => load(),
     });
     const load = (): void => {
       view.render({ name: 'administrators', state: { kind: 'loading' } });
