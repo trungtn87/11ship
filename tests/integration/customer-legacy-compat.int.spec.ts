@@ -87,6 +87,7 @@ describe('M01.02 — legacy /auth API with a CUSTOMER row present', () => {
       'active_role',
       'available_roles',
       'onboarding_required',
+      'phone_verification_status', // issue #49: additive field of /auth/login (VERIFIED / UNVERIFIED_TEST), see AccountOriginPolicy
       'role_selection_required',
       'user_id',
     ]);
@@ -107,6 +108,7 @@ describe('M01.02 — legacy /auth API with a CUSTOMER row present', () => {
       available_roles: [],
       active_role: null,
       onboarding_required: true,
+      phone_verification_status: 'VERIFIED', // issue #49: additive field of /auth/me
       role_selection_required: false,
       onboarding: { shop: 'NOT_STARTED', driver: 'NOT_STARTED' },
     });

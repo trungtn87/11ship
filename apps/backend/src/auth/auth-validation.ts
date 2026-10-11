@@ -30,7 +30,7 @@ function reject(): never {
   throw new BadRequestException();
 }
 
-function exactObject(value: unknown, keys: readonly string[]): Record<string, unknown> {
+export function exactObject(value: unknown, keys: readonly string[]): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return reject();
   }

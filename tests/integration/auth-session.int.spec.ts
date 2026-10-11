@@ -75,9 +75,11 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
         'active_role',
         'available_roles',
         'onboarding_required',
+        'phone_verification_status', // issue #49: display value only (VERIFIED for a registered account)
         'role_selection_required',
         'user_id',
       ]);
+      expect(data.phone_verification_status).toBe('VERIFIED');
       expect(data.user_id).toBe(user.userId);
       expect(data.available_roles).toEqual([]);
       expect(data.active_role).toBeNull();
@@ -211,6 +213,7 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
       expect(dataOf(response)).toEqual({
         user_id: user.userId,
         phone_normalized: user.phone.normalized,
+        phone_verification_status: 'VERIFIED', // issue #49: display value only, never an authorization source
         available_roles: [],
         active_role: null,
         onboarding_required: true,

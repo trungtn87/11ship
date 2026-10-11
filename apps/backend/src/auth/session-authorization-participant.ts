@@ -1,8 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { AppError } from '../common/app-errors';
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { TransactionContext } from '../transaction/transaction-context';
+import {
+  ACCOUNT_ORIGIN_POLICY,
+  AccountOriginPolicy,
+  PhoneVerificationStatus,
+  phoneVerificationStatusOf,
+  standardAccountOriginPolicy,
+} from './account-origin';
 import { LockedSession, SessionRepository } from './session-repository';
 import { UserRepository, UserRow } from './user-repository';
 
@@ -21,6 +28,8 @@ const SHOP_ROLE = 'SHOP';
 /** What a reader gets back from the shared variant: the session's CURRENT active role. */
 export interface AuthorizedSessionState {
   readonly activeRole: string | null;
+  /** Display only: derived from the LOCKED user row's account origin. Never an authorization source. */
+  readonly phoneVerificationStatus: PhoneVerificationStatus;
 }
 
 /**
@@ -48,6 +57,8 @@ export class SessionAuthorizationParticipant {
   constructor(
     private readonly users: UserRepository,
     private readonly sessions: SessionRepository,
+    // Without an explicit binding the standard policy applies: verified accounts only, never a fixture.
+    @Optional() @Inject(ACCOUNT_ORIGIN_POLICY) private readonly policy: AccountOriginPolicy = standardAccountOriginPolicy(),
   ) {}
 
   /** For a command that writes: user FOR UPDATE, then session FOR UPDATE. */
@@ -71,11 +82,14 @@ export class SessionAuthorizationParticipant {
     const user = await this.users.lockByIdForShare(context, actor.userId);
     const session = user === undefined ? undefined : await this.sessions.lockByIdForShare(context, actor.sessionId);
     await this.#decide(context, actor, user, session);
-    if (session === undefined) {
-      // Unreachable: #decide refuses a missing session. Kept so the type narrows without a cast.
+    if (session === undefined || user === undefined) {
+      // Unreachable: #decide refuses a missing user or session. Kept so the types narrow without a cast.
       throw new AppError('SESSION_INVALID');
     }
-    return { activeRole: session.activeRole };
+    return {
+      activeRole: session.activeRole,
+      phoneVerificationStatus: phoneVerificationStatusOf(user.accountOrigin),
+    };
   }
 
   /**
@@ -128,8 +142,12 @@ export class SessionAuthorizationParticipant {
     if (user === undefined || session === undefined || session.userId !== actor.userId) {
       throw new AppError('SESSION_INVALID');
     }
-    // Re-checked under the locks: an administration account never acts through an application session.
-    if (user.accountOrigin !== 'PHONE_VERIFIED') {
+    // Account origin policy, decided on the LOCKED user row after the user and session locks were taken and before
+    // anything else: a guard that passed a moment ago is only a precheck. An administration account never acts through
+    // an application session, and a fixture whose mode was switched off, whose phone left the allowlist, or that is
+    // read in production is refused here, so a command that waited behind a lock cannot act for it. Same answer as an
+    // unknown session; nothing is disclosed.
+    if (!this.policy.allows(user)) {
       throw new AppError('SESSION_INVALID');
     }
     if (session.revoked) {

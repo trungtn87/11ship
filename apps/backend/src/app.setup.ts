@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import { activationTransportMiddleware } from './admin-activation/admin-activation.controller';
 import { ACTIVATION_ROUTE_PREFIX } from './admin-activation/admin-activation-constants';
+import { ADMIN_AUTH_ROUTE_PREFIX, ADMIN_ROUTE_PREFIX, adminTransportMiddleware } from './http/admin-transport.middleware';
 import { AllExceptionsFilter } from './http/all-exceptions.filter';
 import { createRequestContextMiddleware } from './http/request-context.middleware';
 import { JsonLogger } from './logging/json-logger';
@@ -22,6 +23,10 @@ export function configureApp(app: INestApplication): void {
   const logger = app.get<JsonLogger>(APP_LOGGER);
   app.use(createRequestContextMiddleware(logger));
   app.use(`/${GLOBAL_PREFIX}/${ACTIVATION_ROUTE_PREFIX}`, activationTransportMiddleware);
+  // Same reason for /v1/admin-auth and /v1/admin (issue #49). Express matches a prefix on whole path segments, so
+  // '/v1/admin' does not cover '/v1/admin-auth' or '/v1/admin-activation': each prefix is installed on its own.
+  app.use(`/${GLOBAL_PREFIX}/${ADMIN_AUTH_ROUTE_PREFIX}`, adminTransportMiddleware);
+  app.use(`/${GLOBAL_PREFIX}/${ADMIN_ROUTE_PREFIX}`, adminTransportMiddleware);
   app.setGlobalPrefix(GLOBAL_PREFIX);
   app.useGlobalFilters(new AllExceptionsFilter(app.get(HttpAdapterHost), logger));
 }

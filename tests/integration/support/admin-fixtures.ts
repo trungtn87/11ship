@@ -1,3 +1,4 @@
+import type { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { Readable } from 'node:stream';
@@ -217,6 +218,8 @@ export interface StartAdminOptions {
   readonly allowedOrigins?: readonly string[];
   /** Origin the invitation link is built on (default: ADMIN_ORIGIN). The browser test passes its local HTTPS front. */
   readonly activationOrigin?: string;
+  /** Issue #49: runs after configureApp and before init, where main.ts installs the Admin web hosting. */
+  readonly beforeListen?: (app: INestApplication) => void;
 }
 
 export async function startAdminApp(options: StartAdminOptions = {}): Promise<AdminApp> {
@@ -261,6 +264,7 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
   const running = await startApp(config, {
     auth: { otpProvider: new FakeOtpProvider() },
     ...(options.activationProvider === undefined ? {} : { activationOtpProvider: options.activationProvider }),
+    ...(options.beforeListen === undefined ? {} : { beforeListen: options.beforeListen }),
   });
   const pool = testPool(loaded.database, { poolMax: 6 });
   const tracked = new Set<string>();

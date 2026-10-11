@@ -1,7 +1,9 @@
 import { AdminActivationConfig, loadAdminActivationConfig } from './admin-activation-config';
 import { AdminAuthConfig, loadAdminAuthConfig } from './admin-auth-config';
+import { AdminWebHostingConfig, parseAdminWebHosting } from './admin-web-hosting-config';
 import { Keyring, parseKeyringConfig } from '../crypto/keyring';
 import { DatabaseTls, resolveDatabaseTls } from '../database/tls-config';
+import { parseStagingFixtures, StagingFixturesConfig } from './staging-fixtures-config';
 import {
   AuthConfig,
   DEFAULT_AUTH_OTP_MAX_ATTEMPTS,
@@ -121,6 +123,16 @@ export interface AppConfig {
    * requires ADMIN_AUTH_ENABLED=true) and every variable is valid; absent otherwise (nothing is wired or exposed).
    */
   adminActivation?: AdminActivationConfig;
+  /**
+   * Staging fixture mode (M00-D2). Present ONLY when AUTH_STAGING_FIXTURES_ENABLED=true, which is valid only for
+   * APP_ENV=staging and then requires a valid AUTH_STAGING_ALLOWED_PHONES. Absent everywhere else.
+   */
+  stagingFixtures?: StagingFixturesConfig;
+  /**
+   * Same-origin hosting of the administration web (issue #49). Present ONLY when ADMIN_WEB_STAGING_ENABLED=true, which is
+   * valid only for APP_ENV=staging with the administration web authentication enabled. Absent everywhere else.
+   */
+  adminWebHosting?: AdminWebHostingConfig;
 }
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -538,6 +550,26 @@ export function loadConfig(env: EnvSource): ConfigResult {
     adminActivationResult.invalid.forEach(flag);
   }
 
+  // Staging fixture mode (M00-D2): fail closed in every environment. Names only, never a value.
+  const stagingFixtures = parseStagingFixtures({
+    appEnv,
+    enabledRaw: env.AUTH_STAGING_FIXTURES_ENABLED,
+    phonesRaw: env.AUTH_STAGING_ALLOWED_PHONES,
+  });
+  if (!stagingFixtures.ok) {
+    stagingFixtures.invalid.forEach(flag);
+  }
+
+  // Same-origin hosting of the administration web (issue #49): fail closed in every environment. Names only.
+  const adminWebHosting = parseAdminWebHosting({
+    appEnv,
+    enabledRaw: env.ADMIN_WEB_STAGING_ENABLED,
+    adminAuthEnabled: adminAuth !== undefined,
+  });
+  if (!adminWebHosting.ok) {
+    adminWebHosting.invalid.forEach(flag);
+  }
+
   if (invalid.length > 0 || appEnv === undefined || databaseUrl === undefined) {
     return { ok: false, invalid };
   }
@@ -573,6 +605,12 @@ export function loadConfig(env: EnvSource): ConfigResult {
       auth,
       ...(adminAuth === undefined ? {} : { adminAuth }),
       ...(adminActivation === undefined ? {} : { adminActivation }),
+      ...(stagingFixtures.ok && stagingFixtures.config !== undefined
+        ? { stagingFixtures: stagingFixtures.config }
+        : {}),
+      ...(adminWebHosting.ok && adminWebHosting.config !== undefined
+        ? { adminWebHosting: adminWebHosting.config }
+        : {}),
     },
   };
 }

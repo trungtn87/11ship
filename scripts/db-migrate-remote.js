@@ -78,6 +78,37 @@ function checkSessionPoolerTarget(raw, variable) {
   return { target };
 }
 
+/**
+ * The shared target gates of every remote operator command (db:migrate:remote, staging:seed-fixtures): both URLs are
+ * the Supabase SESSION pooler on port 5432 with <role>.<project ref> user names; the runtime DATABASE_URL is
+ * REQUIRED and must name the same host, port, database and project as MIGRATION_DATABASE_URL, with a different
+ * role. Pure; names only, never a value. Returns { problem } or { target, runtime, rawUrl }.
+ */
+function checkRemoteTargets(env) {
+  const rawUrl = env.MIGRATION_DATABASE_URL;
+  const migration = checkSessionPoolerTarget(rawUrl, 'MIGRATION_DATABASE_URL');
+  if (migration.target === undefined) {
+    return { problem: migration.problem };
+  }
+  const target = migration.target;
+
+  // The runtime URL is REQUIRED and must describe the same database as the migration URL, with a different role.
+  // Without it the role split (and the project check) could not be proven, so the command stops.
+  const runtimeCheck = checkSessionPoolerTarget(env.DATABASE_URL, 'DATABASE_URL');
+  if (runtimeCheck.target === undefined) {
+    return { problem: runtimeCheck.problem };
+  }
+  const runtime = runtimeCheck.target;
+  const different = ['host', 'port', 'database', 'projectRef'].filter((key) => runtime[key] !== target[key]);
+  if (different.length > 0) {
+    return { problem: `DATABASE_URL and MIGRATION_DATABASE_URL must point at the same host, port, database and project; they differ in: ${different.join(', ')}.` };
+  }
+  if (runtime.role === target.role) {
+    return { problem: 'MIGRATION_DATABASE_URL and DATABASE_URL use the same role. Migration and runtime credentials must differ.' };
+  }
+  return { target, runtime, rawUrl };
+}
+
 function listMigrationFiles(dir = MIGRATIONS_DIR) {
   return readdirSync(dir)
     .filter((name) => name.endsWith('.sql'))
@@ -173,27 +204,11 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
     return fail('the compiled application is missing. Run "npm run build" first (the TLS rules are compiled from apps/backend/src).');
   }
 
-  const rawUrl = env.MIGRATION_DATABASE_URL;
-  const migration = checkSessionPoolerTarget(rawUrl, 'MIGRATION_DATABASE_URL');
-  if (migration.target === undefined) {
-    return fail(migration.problem);
+  const targets = checkRemoteTargets(env);
+  if (targets.problem !== undefined) {
+    return fail(targets.problem);
   }
-  const target = migration.target;
-
-  // The runtime URL is REQUIRED and must describe the same database as the migration URL, with a different role.
-  // Without it the role split (and the project check) could not be proven, so the command stops.
-  const runtimeCheck = checkSessionPoolerTarget(env.DATABASE_URL, 'DATABASE_URL');
-  if (runtimeCheck.target === undefined) {
-    return fail(runtimeCheck.problem);
-  }
-  const runtime = runtimeCheck.target;
-  const different = ['host', 'port', 'database', 'projectRef'].filter((key) => runtime[key] !== target[key]);
-  if (different.length > 0) {
-    return fail(`DATABASE_URL and MIGRATION_DATABASE_URL must point at the same host, port, database and project; they differ in: ${different.join(', ')}.`);
-  }
-  if (runtime.role === target.role) {
-    return fail('MIGRATION_DATABASE_URL and DATABASE_URL use the same role. Migration and runtime credentials must differ.');
-  }
+  const { target, rawUrl } = targets;
 
   const tls = deps.resolveDatabaseTls({ env, required: true, databaseUrl: rawUrl });
   if (!tls.ok || tls.tls === undefined) {
@@ -262,7 +277,7 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
   }
 }
 
-module.exports = { main, parseDatabaseUrl, checkSessionPoolerTarget, listMigrationFiles, readMigrationState, schemaExists, defaultRunMigrations, MIGRATIONS_TABLE, MIGRATIONS_SCHEMA };
+module.exports = { main, parseDatabaseUrl, checkSessionPoolerTarget, checkRemoteTargets, listMigrationFiles, readMigrationState, schemaExists, defaultRunMigrations, MIGRATIONS_TABLE, MIGRATIONS_SCHEMA };
 
 if (require.main === module) {
   main({ argv: process.argv.slice(2), env: process.env }).then(

@@ -51,6 +51,8 @@ export interface StartAppOptions {
   readonly auth?: AuthModuleOptions;
   /** M01-D-ADMIN-1C: the explicitly bound activation OTP provider (only used when config.adminActivation is set). */
   readonly activationOtpProvider?: ActivationOtpProvider;
+  /** Runs after configureApp and BEFORE the application initializes (listen), exactly where main.ts installs the Admin hosting. */
+  readonly beforeListen?: (app: INestApplication) => void;
 }
 
 /** Boots the real AppModule through the same HTTP pipeline as main.ts, on a random free port. */
@@ -73,6 +75,7 @@ export async function startApp(config: AppConfig, options: StartAppOptions = {})
 
   const app = moduleRef.createNestApplication({ logger: false });
   configureApp(app);
+  options.beforeListen?.(app);
   await app.listen(0, '127.0.0.1');
 
   const address = app.getHttpServer().address() as AddressInfo;

@@ -23,7 +23,7 @@ describe('M01.02 — customer schema migration', () => {
   const files = readdirSync(migrationsDir).filter((file) => file.endsWith('.sql')).sort();
   const names = files.map((file) => file.replace(/\.sql$/, ''));
   const NEW_NAME = CUSTOMER_MIGRATION_FILE.replace(/\.sql$/, '');
-  const BEFORE = names.slice(0, names.length - 1);
+  const BEFORE = names.slice(0, names.indexOf(NEW_NAME)); // issue #49: the fixture-origin migration follows this one
   const TABLES = ['customer_profiles', 'user_consents'] as const;
   const HASH = '$argon2id$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA';
   const id = (n: number): string => `00000000-0000-4000-8000-00000000000${n}`;
@@ -185,9 +185,10 @@ describe('M01.02 — customer schema migration', () => {
     }
   });
 
-  it('is the NEWEST migration, a NEW file after every applied one, and obeys the repository rules', () => {
+  it('is the newest M01.02 migration, a NEW file after every applied one, and obeys the repository rules', () => {
     expect(NEW_NAME).toBe('1792540800000_create-customer-profiles-consents');
-    expect(names[names.length - 1]).toBe(NEW_NAME);
+    // Issue #49: the staging-fixture origin migration (1792627200000) was moved AFTER this one; nothing else follows it.
+    expect(names.slice(names.indexOf(NEW_NAME))).toEqual([NEW_NAME, '1792627200000_allow-staging-fixture-account-origin']);
     expect(names.filter((name) => name === NEW_NAME)).toHaveLength(1);
     expect(Number(NEW_NAME.split('_')[0])).toBeGreaterThan(Number((BEFORE[BEFORE.length - 1] as string).split('_')[0]));
     expect(CUSTOMER_MIGRATION_SQL).toContain('-- Up Migration');
