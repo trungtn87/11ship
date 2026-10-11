@@ -81,6 +81,46 @@ test('each app wrapper hands exactly its own app to the one shared launcher, fro
   assert.match(script, /\[ValidateSet\('Menu','Start','Update','Test','Stop','Status','InstallShortcut','App'\)\]/);
 });
 
+test('M00.02: the shared lock is an exclusive OS handle, never a file age, and nothing stops or deletes the holder', async () => {
+  assert.ok(script.includes('[IO.FileShare]::None'), 'lock file opened with FileShare.None');
+  assert.match(script, /function Use-LaunchLock/);
+  assert.match(script, /'LAUNCH_LOCK_TIMEOUT'/);
+  assert.match(script, /'LAUNCH_LOCK_UNAVAILABLE'/);
+  // The lock and gate files are never deleted or aged out by the launcher; only the display file is removed.
+  assert.doesNotMatch(script, /Remove-Item[^\n]*\$script:(LockFile|GateFile)/);
+  assert.doesNotMatch(script, /LastWriteTime|CreationTime/);
+  // The re-run launcher needs our lock, so the old one never waits for it with -Wait (that would also wait for its backend).
+  const spawnFunction = script.slice(script.indexOf('function Start-LauncherProcess'), script.indexOf('function Open-GateWithin'));
+  assert.ok(spawnFunction.includes('Start-Process'));
+  assert.doesNotMatch(spawnFunction.split(/\r?\n/).filter((line) => !line.trim().startsWith('#')).join('\n'), /-Wait\b/);
+  assert.match(script, /ExclusiveLock\s*=\s*\[pscustomobject\]@\{ Ready = \$true;/);
+  assert.match(script, /ArtifactIdentity\s*=\s*\[pscustomobject\]@\{ Ready = \$false;/);
+});
+
+test('M00.02: Git update modes and the hand-over to the new launcher are in place', () => {
+  for (const code of ['NOT_MAIN_BRANCH', 'UPSTREAM_MISMATCH', 'GIT_FETCH_FAILED', 'GIT_UPDATE_FAILED', 'GIT_OPERATION_IN_PROGRESS', 'UAT_SHA_MISMATCH', 'UAT_PIN_INVALID',
+    'RELAUNCH_FAILED', 'RELAUNCH_LIMIT', 'RELAUNCH_SHA_MISMATCH', 'RELAUNCH_LAUNCHER_MISMATCH', 'RELAUNCH_CHILD_FAILED', 'LAUNCHER_RELOAD_REQUIRED']) {
+    assert.ok(script.includes(`'${code}'`), code);
+  }
+  for (const name of ['RelaunchToken', 'RelaunchFromSha', 'RelaunchToSha', 'RelaunchLauncherHash']) assert.match(script, new RegExp(`\\[string\\]\\$${name}`));
+  assert.ok(script.includes("@('merge','--ff-only',$upstream)"), 'fast-forward only');
+  assert.ok(script.includes('uat-pin.json'), 'UAT pin file');
+  // Any npm/build/backend work runs inside the repository that holds the script, whatever the caller folder is.
+  assert.match(script, /function Invoke-InRepo\(\[scriptblock\]\$Body\) \{ Push-Location -LiteralPath \$script:Repo/);
+  assert.ok(script.includes('-WorkingDirectory $script:Repo'), 'child processes start in the repository');
+});
+
+test('M00.02: test support scripts exist and stay ASCII (Windows PowerShell 5.1 reads a BOM-less file as ANSI)', async () => {
+  for (const name of ['lock-holder.ps1', 'relaunch-harness.ps1']) {
+    const bytes = await readFile(path.join(root, 'tests', 'local-launcher', 'support', name));
+    assert.ok(bytes.every((byte) => byte < 0x80), `${name} is ASCII`);
+  }
+  const bytes = await readFile(path.join(root, 'tests', 'local-launcher', 'launcher.Tests.ps1'));
+  assert.ok(bytes.every((byte) => byte < 0x80), 'launcher.Tests.ps1 is ASCII');
+  const launcher = await readFile(path.join(local, '11ship-launcher.ps1'));
+  assert.deepEqual([...launcher.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'launcher keeps its UTF-8 BOM');
+});
+
 test('contains the approved destructive-operation guards', () => {
   for (const forbidden of ['reset --hard', 'down -v', 'db:migrate:remote', 'git stash', 'push --force', 'audit fix']) {
     assert.equal(script.includes(forbidden), false, forbidden);

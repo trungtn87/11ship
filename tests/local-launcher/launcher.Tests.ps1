@@ -11,9 +11,13 @@ $realRepo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $onWindows = ($env:OS -eq 'Windows_NT')
 if (!$onWindows) { Set-Alias -Name git.exe -Value git }
 $savedEnv = @{}
-foreach ($name in @('OS','APP_ENV','NODE_ENV','DATABASE_URL','GITHUB_TOKEN','GH_TOKEN','SHIP11_NO_PAUSE','TEST_WRONG_USER_DATABASE_URL','TEST_REMOTE_PATH_DATABASE_URL','TEST_REMOTE_PATH_RUNTIME_URL','PGPASSWORD')) { $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
+foreach ($name in @('OS','APP_ENV','NODE_ENV','DATABASE_URL','GITHUB_TOKEN','GH_TOKEN','SHIP11_NO_PAUSE','TEST_WRONG_USER_DATABASE_URL','TEST_REMOTE_PATH_DATABASE_URL','TEST_REMOTE_PATH_RUNTIME_URL','PGPASSWORD','SHIP11_LOCK_TIMEOUT_SECONDS','SHIP11_HARNESS_DELAY_MS','SHIP11_HARNESS_NPM_FAIL','GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE')) { $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 $env:OS = 'Windows_NT'
 . $scriptPath
+$psExe = (Get-Process -Id $PID).Path
+$supportDir = Join-Path $PSScriptRoot 'support'
+$lockHolderScript = Join-Path $supportDir 'lock-holder.ps1'
+$harnessScript = Join-Path $supportDir 'relaunch-harness.ps1'
 
 $failures = New-Object 'Collections.Generic.List[string]'
 $script:Passed = 0
@@ -46,9 +50,35 @@ function Read-Host { param($Prompt)
   if ($script:Answers.Count) { return $script:Answers.Dequeue() }
   return $null
 }
+# M00.02: every fake that stands for a shared step records whether the shared lock was held at that moment.
+function Test-LockHeld {
+  $probe = Open-ExclusiveFile $script:LockFile
+  if ($probe) { $probe.Dispose(); return $false }
+  return $true
+}
+function Test-GateHeld {
+  $probe = Open-ExclusiveFile $script:GateFile
+  if ($probe) { $probe.Dispose(); return $false }
+  return $true
+}
+# A stand-in for the process the old launcher starts after an Update. Real processes are covered by the harness section.
+function New-FakeChild([int]$ExitCode=0,[bool]$Exited=$true) {
+  $child = [pscustomobject]@{ Id = 424242; HasExited = $Exited; ExitCode = $ExitCode; Killed = $false }
+  $child | Add-Member -MemberType ScriptMethod -Name Kill -Value { $this.Killed = $true; $this.HasExited = $true }
+  $child | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value { param($Milliseconds) $this.HasExited = $true; return $true }
+  return $child
+}
+function Start-LauncherProcess([string[]]$Arguments) {
+  $script:SpawnedArguments = @($Arguments)
+  $script:SpawnObservations = [pscustomobject]@{ LockHeld = (Test-LockHeld); GateHeld = (Test-GateHeld) }
+  if ($script:SpawnThrows) { throw 'simulated spawn failure' }
+  return $script:FakeChild
+}
+function Add-LockObservation([string]$What) { $script:LockObs.Add([pscustomobject]@{ What = $What; Held = (Test-LockHeld) }) }
 function docker.exe {
   $line = ($args -join ' ')
   $script:DockerCalls.Add($line); $script:AllDocker.Add($line)
+  Add-LockObservation "docker $line"
   $global:LASTEXITCODE = 0
   if ($script:DockerDown) { $global:LASTEXITCODE = 1; return }
   if ($args[0] -eq 'info') { return '29.8.2' }
@@ -79,6 +109,8 @@ function npm.cmd {
   $script:NpmCalls.Add($line)
   $global:LASTEXITCODE = 0
   if ($line -eq '--version') { return '11.9.0' }
+  Add-LockObservation "npm $line"
+  $script:NpmCwds.Add((Split-Path -Leaf (Get-Location).Path))
   if ($line -eq 'ci') {
     $script:NpmCiSawCiOnly = Get-CiOnlySnapshot
     if ($script:NpmCiFails) { $global:LASTEXITCODE = 1; return }
@@ -94,10 +126,12 @@ function node.exe { $global:LASTEXITCODE = 0; if (($args -join ' ') -eq '--versi
 function Http-Status([string]$Url) { $script:HttpCalls.Add($Url); if ($script:BackendStarts -gt 0) { return 200 }; return $script:HttpCode }
 function Start-BackendProcess([string]$Stdout,[string]$Stderr) {
   $script:BackendStarts++
+  Add-LockObservation 'backend start'
   return [pscustomobject]@{ Id = 999999; StartTime = [DateTime]::UtcNow }
 }
 function Start-NpmStep([string[]]$NpmArgs,[string]$Stdout,[string]$Stderr) {
   $name = $NpmArgs[$NpmArgs.Count - 1]
+  Add-LockObservation "npm step $name"
   $script:Steps.Add([pscustomobject]@{ Name = $name; AppEnv = $env:APP_ENV; NodeEnv = $env:NODE_ENV; DatabaseUrl = $env:DATABASE_URL; CiOnly = (Get-CiOnlySnapshot) })
   # A noisy step that prints every secret it can see, the way a failing tool might.
   $noise = @("step $name", "connecting to $env:DATABASE_URL", "raw password $script:TestPassword", "encoded $(ConvertTo-UriComponent $script:TestPassword)") + $script:EnvSecrets
@@ -111,6 +145,15 @@ $ciOnlyNames = @('TEST_WRONG_USER_DATABASE_URL','TEST_REMOTE_PATH_DATABASE_URL',
 function Get-CiOnlySnapshot { return (@($ciOnlyNames | ForEach-Object { $v = [Environment]::GetEnvironmentVariable($_, 'Process'); if ($v) { "$_=$v" } }) -join ';') }
 function Reset-Fakes {
   $script:NpmCiSawCiOnly = $null
+  # M00.02: a test never inherits a held lock, a hand-over state or a recorded observation from the previous one.
+  if ($script:LockHandle) { try { $script:LockHandle.Dispose() } catch { } }
+  $script:LockHandle = $null; $script:LockDepth = 0; $script:LockStep = ''
+  $script:TakeoverPending = $false; $script:IsRelaunched = $false; $script:LauncherStale = $false; $script:RelaunchExitCode = 0
+  $script:RelaunchTakeoverSeconds = 60; $script:UpdateResult = $null; $script:AddedMigrations = 0
+  foreach ($relaunchName in @('RelaunchToken','RelaunchFromSha','RelaunchToSha','RelaunchLauncherHash')) { Set-Variable -Scope Script -Name $relaunchName -Value '' }
+  $script:LockObs = New-Object 'Collections.Generic.List[object]'
+  $script:NpmCwds = New-Object 'Collections.Generic.List[string]'
+  $script:SpawnedArguments = $null; $script:SpawnObservations = $null; $script:UseRealSpawn = $false; $script:FakeChild = $null; $script:SpawnThrows = $false
   $script:HostLog.Clear()
   $script:Prompts = New-Object 'Collections.Generic.List[string]'
   $script:Answers = New-Object 'Collections.Generic.Queue[object]'
@@ -142,6 +185,8 @@ $keyringKey = 'a2V5cmluZy1zZWNyZXQta2V5cmluZy1zZWNyZXQtMTI='
 $script:EnvSecrets = @($script:DevPassword, $otpSecret, $keyringKey, "local-key-1:$keyringKey")
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("11ship launcher tests " + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
+$callerFolder = Join-Path $tempRoot 'harness caller'
+New-Item -ItemType Directory -Force -Path $callerFolder | Out-Null
 $script:SandboxIndex = 0
 function Write-Text([string]$Path,[string]$Text) {
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
@@ -156,15 +201,7 @@ function Write-EnvFile([string]$AppEnv='development',[string]$DatabaseUrl='') {
   ) -join "`n")
 }
 function Use-Repo([string]$Repo) {
-  $script:Repo = $Repo
-  $script:StateDir = Join-Path $Repo '.11ship-local'
-  $script:StateFile = Join-Path $script:StateDir 'backend.json'
-  $script:InstallState = Join-Path $script:StateDir 'installed-lock.sha256'
-  $script:LastTest = Join-Path $script:StateDir 'last-test.json'
-  $script:LastRun = Join-Path $script:StateDir 'last-run.json'
-  $script:Logs = Join-Path $script:StateDir 'logs'
-  $script:Compose = Join-Path $Repo 'compose.dev.yml'
-  $script:EnvFile = Join-Path $Repo '.env'
+  Initialize-LauncherPaths $Repo
   Reset-Fakes
   Ensure-Dirs
   Write-EnvFile
@@ -186,6 +223,10 @@ function New-GitSandbox {
   Write-Text (Join-Path $script:Seed 'package-lock.json') '{"lockfileVersion":3,"revision":1}'
   Write-Text (Join-Path $script:Seed 'database/migrations/1000_first.sql') 'SELECT 1;'
   Write-Text (Join-Path $script:Seed 'database/migrations/2000_second.sql') 'SELECT 2;'
+  # M00.02: the checkout carries its own copy of the launcher (the file the hand-over compares) and the test harness.
+  New-Item -ItemType Directory -Force -Path (Join-Path $script:Seed 'tools/local') | Out-Null
+  Copy-Item -LiteralPath $scriptPath -Destination (Join-Path $script:Seed 'tools/local/11ship-launcher.ps1')
+  Copy-Item -LiteralPath $harnessScript -Destination (Join-Path $script:Seed 'tools/local/relaunch-harness.ps1')
   Invoke-Git $script:Seed @('add','-A') | Out-Null
   Invoke-Git $script:Seed @('commit','-m','init') | Out-Null
   Invoke-Git $script:Seed @('remote','add','origin',$script:Origin) | Out-Null
@@ -199,7 +240,72 @@ function Push-Upstream([string]$RelativePath,[string]$Text) {
   Invoke-Git $script:Seed @('commit','-m',"upstream $RelativePath") | Out-Null
   Invoke-Git $script:Seed @('push','origin','main') | Out-Null
 }
+# M00.02: upstream changes the launcher file itself (a comment plus a marker the harness prints).
+function Push-UpstreamLauncher([string]$Marker) {
+  $path = Join-Path $script:Seed 'tools/local/11ship-launcher.ps1'
+  [IO.File]::AppendAllText($path, "`n# upstream launcher change $Marker`n`$script:TestMarker = '$Marker'`n")
+  Invoke-Git $script:Seed @('add','-A') | Out-Null
+  Invoke-Git $script:Seed @('commit','-m',"upstream launcher $Marker") | Out-Null
+  Invoke-Git $script:Seed @('push','origin','main') | Out-Null
+}
+# Upstream adds a file that .gitignore hides in the owner's copy (git add -f), the way a tracked .env would.
+function Push-UpstreamIgnored([string]$RelativePath,[string]$Text) {
+  Write-Text (Join-Path $script:Seed $RelativePath) $Text
+  Invoke-Git $script:Seed @('add','-f',$RelativePath) | Out-Null
+  Invoke-Git $script:Seed @('commit','-m',"upstream ignored $RelativePath") | Out-Null
+  Invoke-Git $script:Seed @('push','origin','main') | Out-Null
+}
 function Head { return Invoke-Git $script:Repo @('rev-parse','HEAD') }
+function Write-UatPin([string]$Text) { Write-Text $script:UatPinFile $Text }
+# Real child processes (lock holders, probes, launchers): arguments are quoted by hand because Windows PowerShell 5.1
+# joins Start-Process arguments without quoting them.
+function Quote-Arg([string]$Value) {
+  if ($Value -match '[\s"]') { return '"' + $Value.Replace('"', '\"') + '"' }
+  return $Value
+}
+function Start-Helper([string]$HelperScript,[string[]]$HelperArgs) {
+  $parts = @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',(Quote-Arg $HelperScript)) + @($HelperArgs | ForEach-Object { Quote-Arg $_ })
+  $stem = Join-Path $tempRoot ('helper-' + [Guid]::NewGuid().ToString('N'))
+  $params = @{ FilePath = $psExe; ArgumentList = $parts; PassThru = $true; RedirectStandardOutput = "$stem.out"; RedirectStandardError = "$stem.err" }
+  if ($onWindows) { $params['WindowStyle'] = 'Hidden' }
+  $process = Start-Process @params
+  $null = $process.Handle   # without a cached handle ExitCode stays empty for a process started with -PassThru
+  return $process
+}
+function Start-LockHolder([string]$Id,[string]$Step,[int]$HoldMs,[string]$ReadyFile='',[string]$EventFile='',[int]$StartDelayMs=0) {
+  $holderArgs = @('-Launcher',$script:LauncherPath,'-Id',$Id,'-Step',$Step,'-HoldMs',"$HoldMs",'-StartDelayMs',"$StartDelayMs")
+  if ($ReadyFile) { $holderArgs += @('-ReadyFile',$ReadyFile) }
+  if ($EventFile) { $holderArgs += @('-EventFile',$EventFile) }
+  return (Start-Helper $lockHolderScript $holderArgs)
+}
+function Wait-ForFile([string]$Path,[int]$Seconds=90) {
+  $until = [DateTime]::UtcNow.AddSeconds($Seconds)
+  while (!(Test-Path -LiteralPath $Path) -and [DateTime]::UtcNow -lt $until) { Start-Sleep -Milliseconds 100 }
+  return (Test-Path -LiteralPath $Path)
+}
+function Read-Events([string]$Path) {
+  if (!(Test-Path -LiteralPath $Path)) { return @() }
+  return @(Get-Content -LiteralPath $Path | Where-Object { $_ } | ForEach-Object { $f = $_.Split(' '); [pscustomobject]@{ Ticks = [int64]$f[0]; Id = $f[1]; What = $f[2] } } | Sort-Object Ticks)
+}
+# Runs the sandbox's own copy of the harness as a real launcher process from ANOTHER working folder; returns code + text.
+function Invoke-Harness([string[]]$Arguments) {
+  $harness = Join-Path (Join-Path (Join-Path $script:Repo 'tools') 'local') 'relaunch-harness.ps1'
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'   # Windows PowerShell 5.1 turns native stderr into an error under 'Stop'
+  Push-Location -LiteralPath $callerFolder
+  try {
+    $text = (& $psExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $harness @Arguments 2>&1 | Out-String)
+    return [pscustomobject]@{ Code = $LASTEXITCODE; Text = $text }
+  } finally { Pop-Location; $ErrorActionPreference = $previous }
+}
+function Read-HarnessCalls {
+  $path = Join-Path $script:StateDir 'harness-calls.log'
+  if (!(Test-Path -LiteralPath $path)) { return @() }
+  return @(Get-Content -LiteralPath $path | Where-Object { $_ } | ForEach-Object {
+    $m = [regex]::Match($_, '^(\d+) pid=(\d+) (.*)$')
+    [pscustomobject]@{ Ticks = [int64]$m.Groups[1].Value; ProcessId = [int]$m.Groups[2].Value; Text = $m.Groups[3].Value }
+  })
+}
 function Record-Install {
   New-Item -ItemType Directory -Force -Path (Join-Path $script:Repo 'node_modules') | Out-Null
   Write-Text $script:InstallState (File-HashOrEmpty (Join-Path $script:Repo 'package-lock.json'))
@@ -712,12 +818,13 @@ try {
       Reset-Fakes
       $message = Get-FailMessage { Open-AppLauncher $appName }
       Check ($message.Contains(': APP_NOT_READY)')) "$appName -> APP_NOT_READY"
-      Check ($message.Contains('LAUNCH_LOCK_MISSING') -and $message.Contains('ARTIFACT_IDENTITY_MISSING')) "$appName message names the missing lock (M00.02) and artifact identity (M00.03)"
+      Check (!$message.Contains('LAUNCH_LOCK_MISSING') -and $message.Contains('ARTIFACT_IDENTITY_MISSING')) "$appName message no longer lists the lock (M00.02 is in place) and still names the missing artifact identity (M00.03)"
       Check ($message.Contains($appUrl[$appName])) "$appName message names its own address $($appUrl[$appName])"
       $runtimeBlocked = $message.Contains('APP_RUNTIME_MISSING')
       Check ($runtimeBlocked -eq ($appName -ne 'Admin')) "$appName runtime blocker is derived from the repository (present only when the app has no local server)"
       Check ($script:DockerCalls.Count -eq 0 -and $script:NpmCalls.Count -eq 0 -and $script:HttpCalls.Count -eq 0 -and $script:SqlCalls.Count -eq 0) "$appName refusal runs no Docker, npm, HTTP or SQL"
       Check ($script:BackendStarts -eq 0 -and $script:ProcessStarts.Count -eq 0) "$appName refusal starts no backend, frontend or browser"
+      Check (!(Test-Path -LiteralPath $script:LockFile) -and !(Test-Path -LiteralPath $script:GateFile) -and !(Test-Path -LiteralPath $script:LockInfoFile)) "$appName refusal happens before any lock is taken (no lock files created)"
     }
     Check ($script:AllDocker.Count -eq $dockerBefore -and $script:AllSql.Count -eq $sqlBefore) 'no app refusal touched the databases'
     Check ((Head) -eq $appHead -and !(Test-Path -LiteralPath $script:StateFile)) 'no app refusal updated the code or recorded a backend'
@@ -747,7 +854,7 @@ try {
       foreach ($capability in @($script:OrchestratorCapabilities.Values)) { $capability.Ready = $savedReady[$i]; $i++ }
     }
     Check ($script:BackendStarts -eq 0 -and $script:ProcessStarts.Count -eq 0 -and $script:DockerCalls.Count -eq 0) 'the fail-closed path also starts and opens nothing'
-    Check (@($script:OrchestratorCapabilities.Values | Where-Object { $_.Ready }).Count -eq 0) 'prerequisites are back to not ready after the fail-closed check'
+    Check ($script:OrchestratorCapabilities['ExclusiveLock'].Ready -eq $true -and $script:OrchestratorCapabilities['ArtifactIdentity'].Ready -eq $false) 'prerequisites are back to: lock ready (M00.02 integrated and verified here), artifact identity not ready (M00.03)'
   } finally {
     Remove-Item -Path function:Start-Process -ErrorAction SilentlyContinue
   }
@@ -796,6 +903,7 @@ try {
     $record = if (Test-Path -LiteralPath $childRecord) { Get-Content -Raw -LiteralPath $childRecord | ConvertFrom-Json } else { $null }
     Check ($record -and $record.command -ceq "App $appName" -and $record.exitCode -eq 1 -and $record.waitedForOwner -eq $false) "$appName run record is written next to the script, names the app and did not wait for a key"
     Check (!(Test-Path -LiteralPath (Join-Path $callerCwd '.11ship-local')) -and !(Test-Path -LiteralPath (Join-Path (Join-Path $childRepo '.11ship-local') 'backend.json'))) "$appName state goes to the script's repo, never the caller's folder, and no backend is recorded"
+    Check (!(Test-Path -LiteralPath (Join-Path (Join-Path $childRepo '.11ship-local') 'launch.lock')) -and !(Test-Path -LiteralPath (Join-Path (Join-Path $childRepo '.11ship-local') 'launch.gate'))) "$appName refusal in a real process creates no lock files"
   }
   $r = Invoke-Child @('-Command','App')
   Check ($r.Code -eq 1 -and $r.Text.Contains(': APP_NOT_SPECIFIED)')) '-Command App without -App exits 1 with APP_NOT_SPECIFIED'
@@ -803,6 +911,493 @@ try {
   Check ($r.Code -ne 0 -and $r.Text.Contains('Shop')) 'an app outside Admin/Food/Ship is rejected before anything runs (non-zero exit)'
   $r = Invoke-Child @('-Command','App','-App','Food','-NoPause')
   Check ($r.Code -eq 1 -and $r.Text.Contains(': APP_NOT_READY)')) 'extra launcher arguments (-NoPause) are accepted next to -App'
+
+  # =============================================================================================
+  Section 'M00.02 shared lock: wait limit, release, nesting, display-only metadata'
+  # =============================================================================================
+  New-GitSandbox
+  $env:SHIP11_LOCK_TIMEOUT_SECONDS = $null
+  Check ((Get-LockWaitSeconds) -eq 120) 'the default wait for the lock is 120 seconds'
+  foreach ($case in @(@('5',5),@('119',119),@('120',120),@('0',120),@('-3',120),@('500',120),@('abc',120))) {
+    $env:SHIP11_LOCK_TIMEOUT_SECONDS = $case[0]
+    Check ((Get-LockWaitSeconds) -eq $case[1]) "SHIP11_LOCK_TIMEOUT_SECONDS='$($case[0])' gives $($case[1]) seconds (the variable can only shorten the wait)"
+  }
+  $env:SHIP11_LOCK_TIMEOUT_SECONDS = $null
+
+  $message = Get-FailMessage { Use-LaunchLock 'boom-test' { throw 'boom inside the lock' } }
+  Check ($message.Contains('boom inside the lock')) 'an exception inside the lock reaches the caller unchanged'
+  Check (!(Test-LockHeld) -and $script:LockDepth -eq 0 -and !$script:LockHandle) 'the lock is released after an exception'
+  Check (!(Test-Path -LiteralPath $script:LockInfoFile)) 'the display file is removed after an exception'
+
+  $trace = New-Object 'Collections.Generic.List[string]'
+  $watch = [Diagnostics.Stopwatch]::StartNew()
+  Use-LaunchLock 'outer' {
+    $outerHandle = $script:LockHandle
+    $trace.Add("a d=$($script:LockDepth) held=$(Test-LockHeld) step=$($script:LockStep)")
+    Use-LaunchLock 'inner' {
+      $trace.Add("b d=$($script:LockDepth) held=$(Test-LockHeld) step=$($script:LockStep) same=$($outerHandle -eq $script:LockHandle)")
+      $trace.Add("c info=$((Get-Content -Raw -LiteralPath $script:LockInfoFile | ConvertFrom-Json).step)")
+      Use-LaunchLock 'innermost' { $trace.Add("d d=$($script:LockDepth) held=$(Test-LockHeld)") }
+    }
+    $trace.Add("e d=$($script:LockDepth) held=$(Test-LockHeld) step=$($script:LockStep) info=$((Get-Content -Raw -LiteralPath $script:LockInfoFile | ConvertFrom-Json).step)")
+    try { Use-LaunchLock 'bad' { throw 'inner boom' } } catch { $trace.Add("f caught=$($_.Exception.Message)") }
+    $trace.Add("g d=$($script:LockDepth) held=$(Test-LockHeld)")
+  }
+  $watch.Stop()
+  Check ($watch.Elapsed.TotalSeconds -lt 20) 'nested use of the lock in one process does not wait for itself (no deadlock)'
+  Check ($trace[0] -ceq 'a d=1 held=True step=outer') 'outer call owns the lock at depth 1'
+  Check ($trace[1] -ceq 'b d=2 held=True step=inner same=True') 'nested call reuses the same OS handle at depth 2'
+  Check ($trace[2] -ceq 'c info=inner' -and $trace[3] -ceq 'd d=3 held=True') 'metadata follows the innermost step; depth 3 still holds'
+  Check ($trace[4] -ceq 'e d=1 held=True step=outer info=outer') 'after the nested call the outer step and its metadata are restored'
+  Check ($trace[5] -ceq 'f caught=inner boom' -and $trace[6] -ceq 'g d=1 held=True') 'an exception in a nested call leaves the outer lock held'
+  Check (!(Test-LockHeld) -and $script:LockDepth -eq 0 -and !(Test-Path -LiteralPath $script:LockInfoFile)) 'the lock and its display file are gone after the outer call'
+  $script:MetaInfo = $null
+  Use-LaunchLock 'meta' { $script:MetaInfo = Get-Content -Raw -LiteralPath $script:LockInfoFile | ConvertFrom-Json }
+  $info = $script:MetaInfo
+  Check ($info.pid -eq $PID -and $info.step -ceq 'meta' -and $info.sinceUtc -and $info.repo -ceq $script:Repo) 'display metadata names this process, the step, the start time and the repo'
+
+  # --- another REAL process holds the lock -------------------------------------------------------
+  New-GitSandbox; Record-Install
+  Push-Upstream 'docs/note.md' 'pending upstream change'
+  $headBefore = Head
+  $ready = Join-Path $tempRoot 'holder-a.ready'
+  $holderA = Start-LockHolder 'A' 'update' 60000 $ready
+  try {
+    Check (Wait-ForFile $ready) 'a second real process took the shared lock'
+    Check (Test-LockHeld) 'the OS lock is held by that other process'
+    $env:SHIP11_LOCK_TIMEOUT_SECONDS = '3'
+    $script:Entered = $false
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $message = Get-FailMessage { Use-LaunchLock 'start' { $script:Entered = $true } }
+    $watch.Stop()
+    Check ($message.Contains(': LAUNCH_LOCK_TIMEOUT)') -and !$script:Entered) 'a competitor waits, then stops with LAUNCH_LOCK_TIMEOUT without running its step'
+    Check ($watch.Elapsed.TotalSeconds -ge 2.5 -and $watch.Elapsed.TotalSeconds -lt 30) 'the competitor really waited for the limit'
+    Check ($message.Contains("PID $($holderA.Id)") -and $message.Contains("'update'")) 'the timeout message names the holder (PID and step) from the display file'
+    Check (@($script:HostLog | Where-Object { $_.Contains('LAUNCH_LOCK_WAIT') }).Count -ge 1) 'the competitor printed a waiting notice (LAUNCH_LOCK_WAIT) while it waited'
+    Check (Test-LockHeld) 'the holder still holds the lock after the competitor gave up (nobody takes it over)'
+
+    $env:SHIP11_LOCK_TIMEOUT_SECONDS = '1'
+    foreach ($case in @('deleted','forged','corrupt','empty')) {
+      if ($case -eq 'deleted') { Remove-Item -LiteralPath $script:LockInfoFile -Force -ErrorAction SilentlyContinue }
+      elseif ($case -eq 'forged') { Write-Text $script:LockInfoFile '{"pid":999999,"step":"ghost","sinceUtc":"2001-01-01T00:00:00.0000000Z"}' }
+      elseif ($case -eq 'corrupt') { Write-Text $script:LockInfoFile '{ not json' }
+      else { Write-Text $script:LockInfoFile '' }
+      $script:Entered = $false
+      $message = Get-FailMessage { Use-LaunchLock 'start' { $script:Entered = $true } }
+      Check ($message.Contains(': LAUNCH_LOCK_TIMEOUT)') -and !$script:Entered) "display file $case: the lock is still held by the OS handle, nobody gets in"
+    }
+    $aged = $false
+    try { [IO.File]::SetLastWriteTimeUtc($script:LockFile, (Get-Date '2001-01-01').ToUniversalTime()); $aged = $true } catch { }
+    if ($aged) {
+      $script:Entered = $false
+      $message = Get-FailMessage { Use-LaunchLock 'start' { $script:Entered = $true } }
+      Check ($message.Contains(': LAUNCH_LOCK_TIMEOUT)') -and !$script:Entered) 'an old lock file (modified in 2001) does not free a lock that is still held'
+    } else { $script:Skipped.Add('aged lock file check - this OS refuses to change the time of a file that is held open') }
+
+    Reset-Fakes
+    foreach ($name in @('Update','Start','Test','Stop')) { Expect-Fail 'LAUNCH_LOCK_TIMEOUT' "$name waits for the lock, then stops" { Invoke-LauncherCommand $name } }
+    Check ((Head) -eq $headBefore -and $script:DockerCalls.Count -eq 0 -and $script:NpmCalls.Count -eq 0 -and $script:SqlCalls.Count -eq 0 -and $script:BackendStarts -eq 0 -and !(Test-Path -LiteralPath $script:StateFile)) 'steps that did not get the lock changed nothing (no git update, Docker, npm, SQL or backend)'
+
+    $env:SHIP11_LOCK_TIMEOUT_SECONDS = '60'
+    Reset-Fakes
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    Status-Launcher | Out-Null
+    $message = Get-FailMessage { Open-AppLauncher 'Admin' }
+    $watch.Stop()
+    Check ($watch.Elapsed.TotalSeconds -lt 20 -and $message.Contains(': APP_NOT_READY)') -and @($script:HostLog | Where-Object { $_.Contains('LAUNCH_LOCK_WAIT') }).Count -eq 0) 'Status and the App refusal take no lock: they answer at once while another process holds it'
+
+    # A crash: the holder dies without cleaning up. Its display file stays behind, the OS frees the lock.
+    Write-Text $script:LockInfoFile '{"pid":999999,"step":"ghost","sinceUtc":"2001-01-01T00:00:00.0000000Z"}'
+    Stop-Quietly $holderA
+    Check ($holderA.HasExited) 'the holder process was killed'
+    Check (Test-Path -LiteralPath $script:LockInfoFile) 'its stale display file is still on disk'
+    $env:SHIP11_LOCK_TIMEOUT_SECONDS = '30'
+    $script:Entered = $false; $script:SeenPid = 0
+    Use-LaunchLock 'after-crash' { $script:Entered = $true; $script:SeenPid = (Get-Content -Raw -LiteralPath $script:LockInfoFile | ConvertFrom-Json).pid }
+    Check ($script:Entered -and $script:SeenPid -eq $PID) 'after the crash the lock is free again and the stale display file is replaced by the new owner'
+    Check (!(Test-LockHeld) -and !(Test-Path -LiteralPath $script:LockInfoFile)) 'the new owner leaves no lock and no display file behind'
+    Reset-Fakes
+    Update-Launcher | Out-Null
+    Check ((Head) -eq (Invoke-Git $script:Seed @('rev-parse','HEAD'))) 'a real Update runs normally after the crashed holder'
+  } finally {
+    Stop-Quietly $holderA
+    $env:SHIP11_LOCK_TIMEOUT_SECONDS = $null
+  }
+
+  # --- three real processes compete at once ------------------------------------------------------
+  New-GitSandbox
+  $events = Join-Path $tempRoot 'concurrent-events.txt'
+  $procs = @((Start-LockHolder 'P1' 'start' 1200 '' $events), (Start-LockHolder 'P2' 'update' 1200 '' $events), (Start-LockHolder 'P3' 'test' 1200 '' $events))
+  foreach ($p in $procs) { if (!$p.WaitForExit(180000)) { Stop-Quietly $p } }
+  Check (@($procs | Where-Object { $_.HasExited -and $_.ExitCode -eq 0 }).Count -eq 3) 'all three processes finished and each one got the lock in turn'
+  $ev = Read-Events $events
+  $spans = New-Object 'Collections.Generic.List[object]'
+  foreach ($id in @('P1','P2','P3')) {
+    $in = @($ev | Where-Object { $_.Id -eq $id -and $_.What -eq 'enter' }); $out = @($ev | Where-Object { $_.Id -eq $id -and $_.What -eq 'exit' })
+    if ($in.Count -eq 1 -and $out.Count -eq 1) { $spans.Add([pscustomobject]@{ Id = $id; In = $in[0].Ticks; Out = $out[0].Ticks }) }
+  }
+  $ordered = @($spans | Sort-Object In)
+  Check ($ordered.Count -eq 3) 'each process recorded one enter and one exit'
+  $overlap = $false
+  for ($i = 1; $i -lt $ordered.Count; $i++) { if ($ordered[$i].In -lt $ordered[$i - 1].Out) { $overlap = $true } }
+  Check (!$overlap -and $ordered.Count -eq 3) 'no two processes were ever inside the lock at the same time'
+  Check (!(Test-LockHeld)) 'the lock is free after all of them'
+
+  # =============================================================================================
+  Section 'M00.02 lock integration: update, dependencies, migration, build, process and test steps all run under the lock'
+  # =============================================================================================
+  function Assert-AllHeld([string]$Name,[string[]]$Expected) {
+    $held = @($script:LockObs | Where-Object { $_.Held })
+    Check ($script:LockObs.Count -gt 0 -and $held.Count -eq $script:LockObs.Count) "$Name`: every step ran with the lock held ($($script:LockObs.Count) observed)"
+    foreach ($what in $Expected) { Check (@($script:LockObs | Where-Object { $_.What -eq $what }).Count -ge 1) "$Name`: observed '$what'" }
+    Check (!(Test-LockHeld) -and $script:LockDepth -eq 0) "$Name`: the lock is released afterwards"
+  }
+  New-GitSandbox; Record-Install; $script:DbHasTable = $true; $script:DbApplied = @(Get-MigrationFiles)
+  Push-Location -LiteralPath $callerFolder
+  try { Start-Launcher | Out-Null } finally { Pop-Location }
+  Assert-AllHeld 'Start' @('npm run build','backend start')
+  Check ($script:NpmCwds.Count -ge 1 -and @($script:NpmCwds | Where-Object { $_ -ne 'owner repo' }).Count -eq 0) 'Start: npm ran inside the repository that holds the script, not in the caller folder'
+
+  New-GitSandbox; Record-Install
+  $script:DbHasTable = $false; Set-Variable -Scope Script -Name Yes -Value $true
+  Push-Location -LiteralPath $callerFolder
+  try { Start-Launcher | Out-Null } finally { Pop-Location }
+  Assert-AllHeld 'Start with migrations' @('npm run db:migrate','npm run build')
+  Check (@($script:NpmCwds | Where-Object { $_ -ne 'owner repo' }).Count -eq 0) 'Start with migrations: db:migrate ran inside the script repository'
+
+  New-GitSandbox; Record-Install
+  Push-Upstream 'package-lock.json' '{"lockfileVersion":3,"revision":3}'
+  Push-Location -LiteralPath $callerFolder
+  try { Update-Launcher | Out-Null } finally { Pop-Location }
+  Assert-AllHeld 'Update' @('npm ci')
+  Check ($script:NpmCwds.Count -eq 1 -and $script:NpmCwds[0] -ceq 'owner repo') 'Update: npm ci ran inside the script repository'
+
+  New-GitSandbox; Record-Install
+  $env:APP_ENV = 'development'; $env:NODE_ENV = 'development'; $env:DATABASE_URL = "postgres://ship11_dev:$($script:DevPassword)@127.0.0.1:5432/ship11_dev"
+  $env:GITHUB_TOKEN = $null; $env:GH_TOKEN = $null
+  Test-Launcher | Out-Null
+  Assert-AllHeld 'Test' @('npm step lint','npm step progress-test')
+  Check (@($script:LockObs | Where-Object { $_.What -like 'npm step *' }).Count -eq 9) 'Test: all nine npm steps were observed under the lock'
+
+  New-GitSandbox
+  Stop-Launcher | Out-Null
+  Assert-AllHeld 'Stop' @('docker compose --env-file ' + $script:EnvFile + ' -f ' + $script:Compose + ' stop db-dev db-test')
+
+  # =============================================================================================
+  Section 'M00.02 safe Git update: main mode'
+  # =============================================================================================
+  New-GitSandbox; Record-Install
+  Invoke-Git $script:Repo @('checkout','-b','feature/x','--track','origin/main') | Out-Null
+  Push-Upstream 'docs/note.md' 'x'
+  $before = Head
+  Expect-Fail 'NOT_MAIN_BRANCH' 'Update refuses a branch that is not main, even when it tracks origin/main' { Update-Launcher }
+  Check ((Head) -eq $before -and (Invoke-Git $script:Repo @('rev-parse','--abbrev-ref','HEAD')) -ceq 'feature/x') 'no automatic branch switch, HEAD unchanged'
+
+  New-GitSandbox; Record-Install
+  Invoke-Git $script:Seed @('push','origin','main:other') | Out-Null
+  Invoke-Git $script:Repo @('fetch','origin') | Out-Null
+  Invoke-Git $script:Repo @('branch','--set-upstream-to=origin/other','main') | Out-Null
+  Push-Upstream 'docs/note.md' 'x'
+  $before = Head
+  Expect-Fail 'UPSTREAM_MISMATCH' 'Update refuses main when it tracks something other than origin/main' { Update-Launcher }
+  Check ((Head) -eq $before) 'HEAD unchanged on a wrong upstream'
+
+  New-GitSandbox; Record-Install
+  Push-Upstream 'docs/note.md' 'x'
+  $before = Head
+  Write-Text (Join-Path $script:Repo '.git/MERGE_HEAD') $before
+  Expect-Fail 'GIT_OPERATION_IN_PROGRESS' 'Update refuses while a merge is in progress' { Update-Launcher }
+  Check ((Head) -eq $before) 'HEAD unchanged while a Git operation is unfinished'
+  Remove-Item -LiteralPath (Join-Path $script:Repo '.git/MERGE_HEAD') -Force
+
+  New-GitSandbox; Record-Install
+  Push-Upstream 'docs/note.md' 'x'
+  $before = Head
+  Invoke-Git $script:Repo @('remote','set-url','origin',(Join-Path $tempRoot 'there is no such origin.git')) | Out-Null
+  Expect-Fail 'GIT_FETCH_FAILED' 'Update stops when git fetch fails' { Update-Launcher }
+  Check ((Head) -eq $before -and (NpmCount 'ci') -eq 0 -and @($script:HostLog | Where-Object { $_.Contains('fast-forward ho') }).Count -eq 0) 'a failed fetch changes nothing and never reports success'
+
+  New-GitSandbox; Record-Install
+  $envBefore = File-HashOrEmpty $script:EnvFile
+  Push-UpstreamIgnored '.env' 'UPSTREAM=would overwrite the Owner secrets'
+  $before = Head
+  Expect-Fail 'UNTRACKED_COLLISION' 'an ignored local file (.env) that upstream would add is protected too' { Update-Launcher }
+  Check ((File-HashOrEmpty $script:EnvFile) -eq $envBefore -and (Head) -eq $before) '.env is byte-for-byte intact and HEAD did not move'
+
+  New-GitSandbox; Record-Install
+  Push-Upstream 'docs/note.md' 'moves on'
+  $decoy = Join-Path $tempRoot 'decoy.git'
+  $env:GIT_DIR = $decoy
+  try { Update-Launcher | Out-Null; $restored = ($env:GIT_DIR -ceq $decoy) } finally { $env:GIT_DIR = $null }
+  Check ($restored) 'GIT_DIR from the terminal is ignored during Update and put back afterwards'
+  Check ((Head) -eq (Invoke-Git $script:Seed @('rev-parse','HEAD'))) 'with a decoy GIT_DIR the update still fast-forwarded the launcher repository'
+
+  New-GitSandbox; Record-Install
+  $before = Head
+  Push-Upstream 'docs/note.md' 'fast forward'
+  Update-Launcher | Out-Null
+  $after = Head
+  Check ($after -ne $before -and $after -eq (Invoke-Git $script:Seed @('rev-parse','HEAD'))) 'main + origin/main + clean: a normal fast-forward still works'
+  Check ((Invoke-Git $script:Repo @('rev-list','--count','--merges','HEAD')) -eq '0') 'the fast-forward made no merge commit'
+
+  # =============================================================================================
+  Section 'M00.02 safe Git update: UAT pin (verify only, never pull)'
+  # =============================================================================================
+  New-GitSandbox; Record-Install
+  $pinned = Head
+  Write-UatPin ('{ "sha": "' + $pinned + '" }')
+  Push-Upstream 'docs/note.md' 'upstream moves on'
+  $originRef = Invoke-Git $script:Repo @('rev-parse','origin/main')
+  Update-Launcher | Out-Null
+  Check ((Head) -eq $pinned -and (Invoke-Git $script:Seed @('rev-parse','HEAD')) -ne $pinned) 'UAT: HEAD equals the pin, so Update succeeds and does not pull the newer upstream commit'
+  Check ((Invoke-Git $script:Repo @('rev-parse','origin/main')) -eq $originRef) 'UAT: Update did not even fetch (origin/main did not move)'
+  Check (@($script:HostLog | Where-Object { $_.Contains('UAT') }).Count -ge 1) 'UAT: the output says the checkout was verified in UAT mode'
+  Reset-Fakes
+  Write-UatPin ('{"sha":"' + $pinned.ToUpperInvariant() + '"}')
+  Update-Launcher | Out-Null
+  Check ((Head) -eq $pinned) 'UAT: an upper-case pin SHA is accepted'
+  Write-UatPin ('{"sha":"' + $pinned + '"}')
+  Reset-Fakes
+  Status-Launcher | Out-Null
+  $modeLines = @($script:HostLog | Where-Object { $_ -match '^Ch.{1,3} d.{1,3} c.{1,3}p nh.{1,3}t: ' })
+  Check ($modeLines.Count -eq 1 -and $modeLines[0].Contains('UAT')) 'Status shows the update mode line with UAT'
+
+  New-GitSandbox; Record-Install
+  $pinned = Head
+  Write-UatPin ('{"sha":"' + $pinned + '"}')
+  Push-Upstream 'docs/note.md' 'upstream moves on'
+  Invoke-Git $script:Repo @('checkout','--detach',$pinned) | Out-Null
+  Update-Launcher | Out-Null
+  Check ((Head) -eq $pinned) 'UAT: a detached HEAD on the pinned commit is correct and is accepted'
+
+  New-GitSandbox; Record-Install
+  $pinned = Head
+  Write-UatPin ('{"sha":"' + ('a' * 40) + '"}')
+  Push-Upstream 'docs/note.md' 'upstream moves on'
+  $originRef = Invoke-Git $script:Repo @('rev-parse','origin/main')
+  Expect-Fail 'UAT_SHA_MISMATCH' 'UAT: HEAD that differs from the pin is refused' { Update-Launcher }
+  Check ((Head) -eq $pinned -and (Invoke-Git $script:Repo @('rev-parse','origin/main')) -eq $originRef -and (NpmCount 'ci') -eq 0) 'UAT mismatch: no pull, no checkout, no fetch, no install'
+
+  foreach ($bad in @('{ not json', '{"sha":"abc123"}', '{"sha":""}', '{}', ('{"sha":"' + ('g' * 40) + '"}'), '')) {
+    New-GitSandbox; Record-Install
+    Write-UatPin $bad
+    Push-Upstream 'docs/note.md' 'upstream moves on'
+    $before = Head
+    Expect-Fail 'UAT_PIN_INVALID' "UAT: an unusable pin file is an error, not a silent return to main: [$bad]" { Update-Launcher }
+    Check ((Head) -eq $before) "UAT: unusable pin [$bad] leaves HEAD where it was (no fallback pull)"
+  }
+  Check ((Get-UpdateModeText $before).Contains('UAT_PIN_INVALID')) 'the mode text names UAT_PIN_INVALID for an unusable pin'
+
+  New-GitSandbox; Record-Install
+  $pinned = Head
+  Write-UatPin ('{"sha":"' + $pinned + '"}')
+  Write-Text (Join-Path $script:Repo 'package-lock.json') '{"owner":"local edit"}'
+  Expect-Fail 'DIRTY_TRACKED' 'UAT: a modified tracked file still stops Update' { Update-Launcher }
+
+  New-GitSandbox; Record-Install
+  Check ((Get-UpdateModeText (Head)).Contains('main')) 'without a pin file the mode text says main'
+  Reset-Fakes
+  Status-Launcher | Out-Null
+  $modeLines = @($script:HostLog | Where-Object { $_ -match '^Ch.{1,3} d.{1,3} c.{1,3}p nh.{1,3}t: ' })
+  Check ($modeLines.Count -eq 1 -and $modeLines[0].Contains('main')) 'Status shows the update mode line with main'
+
+  # =============================================================================================
+  Section 'M00.02 relaunch after Update changed the launcher (in-process, fake child)'
+  # =============================================================================================
+  function Arg-After([string[]]$List,[string]$Name) {
+    $i = [Array]::IndexOf($List, $Name)
+    if ($i -lt 0 -or ($i + 1) -ge $List.Count) { return $null }
+    return $List[$i + 1]
+  }
+  New-GitSandbox; Record-Install
+  Push-UpstreamLauncher 'v2'
+  $oldHead = Head
+  $newHead = Invoke-Git $script:Seed @('rev-parse','HEAD')
+  Set-Variable -Scope Script -Name Yes -Value $true
+  Set-Variable -Scope Script -Name KeepDatabases -Value $true
+  Set-Variable -Scope Script -Name ForceDependencies -Value $true
+  $script:FakeChild = New-FakeChild 0
+  Push-Location -LiteralPath $callerFolder
+  try { Update-Launcher | Out-Null } finally { Pop-Location }
+  $spawn = @($script:SpawnedArguments)
+  $newHash = File-HashOrEmpty $script:LauncherPath
+  Check ($spawn.Count -gt 0 -and @($spawn | Where-Object { $_ -ceq '-RelaunchToken' }).Count -eq 1) 'a changed launcher is started exactly once'
+  Check ((Arg-After $spawn '-Command') -ceq 'Update' -and $spawn -contains '-NoPause') 'the new launcher repeats Update and is told not to pause (the old one owns the window)'
+  Check ($spawn -contains '-Yes' -and $spawn -contains '-KeepDatabases' -and $spawn -contains '-ForceDependencies' -and $spawn -notcontains '-App') 'the options the Owner gave (-Yes, -KeepDatabases, -ForceDependencies) are passed on'
+  Check ((Arg-After $spawn '-RelaunchFromSha') -ceq $oldHead -and (Arg-After $spawn '-RelaunchToSha') -ceq $newHead -and (Arg-After $spawn '-RelaunchLauncherHash') -ceq $newHash) 'the guard carries the SHA before, the SHA after and the hash of the new launcher file'
+  Check ((Arg-After $spawn '-RelaunchToken') -match '^[0-9a-f]{32}$') 'the guard carries a fresh token'
+  Check ($script:SpawnObservations.LockHeld -and $script:SpawnObservations.GateHeld) 'while the new launcher is started the old one holds the lock and the hand-over gate'
+  Check (!(Test-LockHeld) -and !(Test-GateHeld)) 'after the hand-over the old launcher holds neither (the new process owns what it needs)'
+  Check ((NpmCount 'ci') -eq 0 -and $script:DockerCalls.Count -eq 0) 'the old launcher ran no dependency install or Docker step after the hand-over'
+  Check ($script:LauncherStale -and $script:RelaunchExitCode -eq 0) 'the old launcher is marked stale; the child exit code is 0'
+  Expect-Fail 'LAUNCHER_RELOAD_REQUIRED' 'a stale launcher refuses Start' { Start-Launcher }
+  Expect-Fail 'LAUNCHER_RELOAD_REQUIRED' 'a stale launcher refuses a second Update (no loop)' { Update-Launcher }
+  Expect-Fail 'LAUNCHER_RELOAD_REQUIRED' 'a stale launcher refuses menu commands too' { Invoke-LauncherCommand 'Status' }
+  Check ($script:DockerCalls.Count -eq 0 -and $script:SpawnedArguments.Count -eq $spawn.Count) 'refused commands ran nothing and started no second launcher'
+  Check ((Head) -eq $newHead) 'HEAD is the new commit'
+
+  New-GitSandbox; Record-Install
+  Push-Upstream 'docs/note.md' 'not the launcher'
+  $script:FakeChild = New-FakeChild 0
+  Update-Launcher | Out-Null
+  Check ($null -eq $script:SpawnedArguments -and !$script:LauncherStale) 'an update that does not change the launcher starts no second launcher'
+
+  New-GitSandbox; Record-Install
+  Check ($null -eq $script:SpawnedArguments) 'no update at all starts no second launcher'
+  Update-Launcher | Out-Null
+  Check ($null -eq $script:SpawnedArguments -and !$script:LauncherStale) 'already up to date: no second launcher'
+
+  New-GitSandbox; Record-Install
+  Push-UpstreamLauncher 'v2'
+  $script:FakeChild = New-FakeChild 7
+  $message = Get-FailMessage { Update-Launcher }
+  Check ($message.Contains(': RELAUNCH_CHILD_FAILED)') -and $message.Contains('7')) 'a failing new launcher makes Update fail with its exit code'
+  Check ($script:RelaunchExitCode -eq 7 -and !(Test-LockHeld)) 'the child exit code is kept for the first launcher to return, and no lock is left'
+
+  New-GitSandbox; Record-Install
+  Push-UpstreamLauncher 'v2'
+  $script:SpawnThrows = $true
+  Expect-Fail 'RELAUNCH_FAILED' 'a new launcher that cannot be started fails closed' { Update-Launcher }
+  Check (!(Test-LockHeld) -and !(Test-GateHeld) -and (NpmCount 'ci') -eq 0) 'after a failed start no lock or gate is left, and no step ran with the old code'
+
+  New-GitSandbox; Record-Install
+  Push-UpstreamLauncher 'v2'
+  $script:RelaunchTakeoverSeconds = 2
+  $script:FakeChild = New-FakeChild 0 $false
+  $watch = [Diagnostics.Stopwatch]::StartNew()
+  Expect-Fail 'RELAUNCH_FAILED' 'a new launcher that never takes the lock is stopped and reported' { Update-Launcher }
+  $watch.Stop()
+  Check ($script:FakeChild.Killed -and $watch.Elapsed.TotalSeconds -ge 1.5 -and $watch.Elapsed.TotalSeconds -lt 30) 'that new launcher was killed after the hand-over wait'
+  Check (!(Test-LockHeld) -and !(Test-GateHeld)) 'the old launcher took the lock back and released everything'
+
+  New-GitSandbox
+  $script:IsRelaunched = $true
+  Expect-Fail 'RELAUNCH_LIMIT' 'a launcher that was itself started by a hand-over cannot start another one' { Use-LaunchLock 'x' { Invoke-LauncherRelaunch 'Update' ('a' * 40) ('b' * 40) ('c' * 64) } }
+  Check ($null -eq $script:SpawnedArguments) 'RELAUNCH_LIMIT started nothing'
+  $script:IsRelaunched = $false
+
+  New-GitSandbox
+  Set-Variable -Scope Script -Name Command -Value 'Update'
+  try {
+    foreach ($pair in @(@('RelaunchToken',('a' * 32)),@('RelaunchFromSha',('b' * 40)),@('RelaunchToSha',('c' * 40)),@('RelaunchLauncherHash',('d' * 64)))) { Set-Variable -Scope Script -Name $pair[0] -Value $pair[1] }
+    Check ((Get-FailMessage { Assert-RelaunchParameters }) -eq '') 'well-formed re-run arguments are accepted'
+    foreach ($pair in @(@('RelaunchToken','zz'),@('RelaunchFromSha',('b' * 39)),@('RelaunchToSha',''),@('RelaunchLauncherHash',('D' * 64)))) {
+      $keep = Get-Variable -Scope Script -Name $pair[0] -ValueOnly
+      Set-Variable -Scope Script -Name $pair[0] -Value $pair[1]
+      Expect-Fail 'RELAUNCH_ARGUMENTS_INVALID' "malformed $($pair[0]) is refused" { Assert-RelaunchParameters }
+      Set-Variable -Scope Script -Name $pair[0] -Value $keep
+    }
+    Set-Variable -Scope Script -Name Command -Value 'Start'
+    Expect-Fail 'RELAUNCH_ARGUMENTS_INVALID' 'a re-run for any command other than Update is refused' { Assert-RelaunchParameters }
+  } finally { Set-Variable -Scope Script -Name Command -Value 'Menu' }
+
+  New-GitSandbox; Record-Install
+  $okHead = Head
+  Set-Variable -Scope Script -Name RelaunchFromSha -Value $okHead
+  Set-Variable -Scope Script -Name RelaunchToSha -Value $okHead
+  Set-Variable -Scope Script -Name RelaunchLauncherHash -Value (File-HashOrEmpty $script:LauncherPath)
+  Push-Upstream 'docs/note.md' 'newer than the re-run'
+  $originRef = Invoke-Git $script:Repo @('rev-parse','origin/main')
+  Check ((Get-FailMessage { Invoke-InRepo { Confirm-RelaunchedCheckout } }) -eq '') 'the re-run launcher accepts the checkout the first launcher produced'
+  Check ((Head) -eq $okHead -and (Invoke-Git $script:Repo @('rev-parse','origin/main')) -eq $originRef) 'verification neither fetches nor merges'
+  Set-Variable -Scope Script -Name RelaunchToSha -Value ('f' * 40)
+  Expect-Fail 'RELAUNCH_SHA_MISMATCH' 'a different HEAD stops the re-run launcher' { Invoke-InRepo { Confirm-RelaunchedCheckout } }
+  Set-Variable -Scope Script -Name RelaunchToSha -Value $okHead
+  Set-Variable -Scope Script -Name RelaunchLauncherHash -Value ('e' * 64)
+  Expect-Fail 'RELAUNCH_LAUNCHER_MISMATCH' 'a different launcher file stops the re-run launcher' { Invoke-InRepo { Confirm-RelaunchedCheckout } }
+  Set-Variable -Scope Script -Name RelaunchLauncherHash -Value (File-HashOrEmpty $script:LauncherPath)
+  Write-Text (Join-Path $script:Repo 'package-lock.json') '{"owner":"local edit"}'
+  Expect-Fail 'DIRTY_TRACKED' 'a modified tracked file stops the re-run launcher' { Invoke-InRepo { Confirm-RelaunchedCheckout } }
+
+  New-GitSandbox; Record-Install
+  $okHead = Head
+  Push-Upstream 'docs/note.md' 'newer than the re-run'
+  $originRef = Invoke-Git $script:Repo @('rev-parse','origin/main')
+  $script:IsRelaunched = $true; $script:TakeoverPending = $true
+  Set-Variable -Scope Script -Name RelaunchFromSha -Value $okHead
+  Set-Variable -Scope Script -Name RelaunchToSha -Value $okHead
+  Set-Variable -Scope Script -Name RelaunchLauncherHash -Value (File-HashOrEmpty $script:LauncherPath)
+  Update-Launcher | Out-Null
+  Check ((Head) -eq $okHead -and (Invoke-Git $script:Repo @('rev-parse','origin/main')) -eq $originRef -and $null -eq $script:SpawnedArguments) 'the re-run Update continues the work without updating again or starting a third launcher'
+  Check (!$script:TakeoverPending -and !(Test-LockHeld)) 'the re-run launcher took the lock directly and released it at the end'
+  Check ((Get-DependencyState) -eq 'ok') 'the re-run launcher left dependencies recorded as ok'
+
+  # =============================================================================================
+  Section 'M00.02 two real launcher processes: Update replaces the launcher and hands the lock over'
+  # =============================================================================================
+  New-GitSandbox; Record-Install
+  Push-UpstreamLauncher 'v2'
+  $newHead = Invoke-Git $script:Seed @('rev-parse','HEAD')
+  $r = Invoke-Harness @('-Command','Update','-Yes','-ForceDependencies','-NoPause')
+  $calls = @(Read-HarnessCalls)
+  $starts = @($calls | Where-Object { $_.Text.StartsWith('start ') })
+  if ($r.Code -ne 0) { Say $r.Text }
+  Check ($r.Code -eq 0) 'process level: the first launcher exits 0 after the new one succeeded'
+  Check ($starts.Count -eq 2) 'process level: exactly two launcher processes ran (the old one, the new one once)'
+  if ($starts.Count -eq 2) {
+    Check ($starts[0].Text -match 'marker= command=Update' -and $starts[1].Text -match 'marker=v2 command=Update') 'process level: the second process runs the NEW launcher code'
+    Check ($starts[0].ProcessId -ne $starts[1].ProcessId -and $starts[0].Text -notmatch 'token=[0-9a-f]{32}' -and $starts[1].Text -match 'token=[0-9a-f]{32}') 'process level: only the second process carries the re-run token'
+    Check ($starts[1].Text -match 'yes=True' -and $starts[1].Text -match 'force=True' -and $starts[1].Text -match 'nopause=True') 'process level: the new process kept -Yes and -ForceDependencies and was told -NoPause'
+    $ci = @($calls | Where-Object { $_.Text -match '^npm ci ' })
+    Check ($ci.Count -eq 1 -and $ci[0].ProcessId -eq $starts[1].ProcessId) 'process level: npm ci ran exactly once, in the new process'
+    Check ($ci.Count -eq 1 -and $ci[0].Text -match 'lockheld=True' -and $ci[0].Text -match 'cwd=owner repo') 'process level: that npm ci ran under the lock, inside the repository of the script (caller folder was different)'
+  }
+  Check ((Head) -eq $newHead -and (Get-DependencyState) -eq 'ok') 'process level: code and dependency state are current'
+  Check (([regex]::Matches($r.Text, '\(exit 0\)')).Count -eq 1) 'process level: only the first launcher printed the result line'
+  $record = if (Test-Path -LiteralPath $script:LastRun) { Get-Content -Raw -LiteralPath $script:LastRun | ConvertFrom-Json } else { $null }
+  Check ($record -and $record.command -ceq 'Update' -and $record.exitCode -eq 0) 'process level: the first launcher wrote the run record'
+  Check (!(Test-LockHeld) -and !(Test-GateHeld)) 'process level: no lock or gate is left behind'
+
+  New-GitSandbox; Record-Install
+  Push-UpstreamLauncher 'v2'
+  $env:SHIP11_HARNESS_NPM_FAIL = '1'
+  try { $r = Invoke-Harness @('-Command','Update','-Yes','-ForceDependencies','-NoPause') } finally { $env:SHIP11_HARNESS_NPM_FAIL = $null }
+  $calls = @(Read-HarnessCalls)
+  Check ($r.Code -eq 1 -and $r.Text.Contains('RELAUNCH_CHILD_FAILED')) 'process level: a failing new launcher gives exit 1 and RELAUNCH_CHILD_FAILED'
+  Check (@($calls | Where-Object { $_.Text.StartsWith('start ') }).Count -eq 2 -and @($calls | Where-Object { $_.Text -match '^npm ci ' }).Count -eq 1) 'process level: after the failure nothing was run again (no loop, no retry)'
+  $record = if (Test-Path -LiteralPath $script:LastRun) { Get-Content -Raw -LiteralPath $script:LastRun | ConvertFrom-Json } else { $null }
+  Check ($record -and $record.exitCode -eq 1) 'process level: the run record keeps exit code 1'
+  Check (!(Test-LockHeld) -and !(Test-GateHeld)) 'process level: no lock or gate is left behind after a failure'
+
+  New-GitSandbox; Record-Install
+  Push-Upstream 'docs/note.md' 'not the launcher'
+  $r = Invoke-Harness @('-Command','Update','-NoPause')
+  $calls = @(Read-HarnessCalls)
+  Check ($r.Code -eq 0 -and @($calls | Where-Object { $_.Text.StartsWith('start ') }).Count -eq 1 -and @($calls | Where-Object { $_.Text -match '^npm ' }).Count -eq 0) 'process level: an update that leaves the launcher alone runs one process and no install'
+
+  # No gap: while the new process is still starting up, a third launcher must not get the lock.
+  New-GitSandbox; Record-Install
+  Push-UpstreamLauncher 'v2'
+  $env:SHIP11_HARNESS_DELAY_MS = '12000'
+  $events = Join-Path $tempRoot 'gap-events.txt'
+  $harnessInSandbox = Join-Path (Join-Path (Join-Path $script:Repo 'tools') 'local') 'relaunch-harness.ps1'
+  $oldProcess = Start-Helper $harnessInSandbox @('-Command','Update','-Yes','-ForceDependencies','-NoPause')
+  $competitor = $null
+  try {
+    $until = [DateTime]::UtcNow.AddSeconds(120)
+    $childStarted = $false
+    while (!$childStarted -and !$oldProcess.HasExited -and [DateTime]::UtcNow -lt $until) {
+      try { $childStarted = (@(Read-HarnessCalls | Where-Object { $_.Text -match 'token=[0-9a-f]{32}' }).Count -gt 0) } catch { }
+      if (!$childStarted) { Start-Sleep -Milliseconds 100 }
+    }
+    Check $childStarted 'gap test: the new launcher process started (and is now waiting before it asks for the lock)'
+    $competitor = Start-LockHolder 'C' 'start' 300 '' $events
+    if (!$oldProcess.WaitForExit(240000)) { Stop-Quietly $oldProcess }
+    if (!$competitor.WaitForExit(240000)) { Stop-Quietly $competitor }
+    Check ($oldProcess.HasExited -and $oldProcess.ExitCode -eq 0 -and $competitor.HasExited -and $competitor.ExitCode -eq 0) 'gap test: both finished successfully'
+    $calls = @(Read-HarnessCalls)
+    $ci = @($calls | Where-Object { $_.Text -match '^npm ci ' })
+    $ev = Read-Events $events
+    $tried = @($ev | Where-Object { $_.What -eq 'try' }); $entered = @($ev | Where-Object { $_.What -eq 'enter' })
+    Check ($ci.Count -eq 1 -and $tried.Count -eq 1 -and $entered.Count -eq 1) 'gap test: one npm ci by the new launcher, one attempt and one entry by the competitor'
+    if ($ci.Count -eq 1 -and $tried.Count -eq 1 -and $entered.Count -eq 1) {
+      Check ($tried[0].Ticks -lt $ci[0].Ticks) 'gap test: the competitor asked for the lock BEFORE the new launcher did its work (while the lock was between owners)'
+      Check ($entered[0].Ticks -gt $ci[0].Ticks) 'gap test: the competitor got in only AFTER the new launcher finished its work, never in the gap'
+    }
+  } finally {
+    $env:SHIP11_HARNESS_DELAY_MS = $null
+    Stop-Quietly $oldProcess; if ($competitor) { Stop-Quietly $competitor }
+  }
 
   # =============================================================================================
   Section 'Wrappers and real Windows double-click behaviour'
