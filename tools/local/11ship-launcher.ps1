@@ -1420,7 +1420,9 @@ function Update-Launcher {
     if ($null -eq $script:AddedMigrations) { Write-WarnLine 'MIGRATION_COUNT_UNREADABLE: không đọc được số migration mới của bản cập nhật (git diff lỗi). Không có nghĩa là 0; Start vẫn kiểm tra DB DEV và hỏi trước khi áp dụng.' }
     elseif ($script:AddedMigrations -gt 0) { Write-WarnLine "Bản cập nhật có $($script:AddedMigrations) migration mới. Start sẽ kiểm tra DB DEV và hỏi trước khi áp dụng." }
     # M00.03: the source moved, the running backend did not. Say so instead of leaving a "success" that hides an old version.
-    $oldBackend = Write-BackendUpdateNotice (Get-HeadSha)
+    # The HEAD Update itself verified (no second Git read, so a Git hiccup after a good update cannot turn it into a failure).
+    $noticeHead = "$($result.NewHead)"
+    if ($noticeHead -cmatch '^[0-9a-f]{40}$') { $null = Write-BackendUpdateNotice $noticeHead }
     if ($result.Mode -eq 'UAT') { Write-Ok 'Kiểm tra checkout UAT hoàn tất (chỉ mã nguồn; chưa build hay chạy lại backend)' }
     elseif ($result.Moved -or $result.Mode -eq 'relaunch') { Write-Ok 'Cập nhật MÃ NGUỒN và dependency hoàn tất (fast-forward). Update không build lại hay chạy lại backend: dùng Start để có artifact và process mới.' }
     else { Write-Ok 'Cập nhật mã nguồn hoàn tất: đã ở commit mới nhất của origin/main (chưa build hay chạy lại backend)' }
