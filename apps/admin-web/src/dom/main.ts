@@ -6,6 +6,7 @@ import { AdminProvisioningApi, PROVISIONING_BASE } from '../core/provisioning-ap
 import { ProvisioningController } from '../core/provisioning-controller.js';
 import { parseRoute, tokenFromFragment } from '../core/routes.js';
 import { ActivationPage } from './activation-view.js';
+import { ResetPage } from './reset-view.js';
 import { ShellApp } from './shell-app.js';
 import { AdminView } from './view.js';
 
@@ -64,6 +65,24 @@ function startActivation(host: HTMLElement): void {
   void controller.begin(token);
 }
 
+/**
+ * The public "forgot password" page of an ADMIN. The backend for it does not exist yet (M01.16, form M01.19), so the page is
+ * drawn with its send/verify buttons disabled and says why; it sends nothing and shows no result it did not receive.
+ */
+function startReset(host: HTMLElement): void {
+  const nothing = (): void => undefined;
+  const page = new ResetPage(host, {
+    wired: false,
+    testSmsNotice: false,
+    sendCode: nothing,
+    verify: nothing,
+    resend: nothing,
+    setPassword: nothing,
+    toLogin: () => window.location.assign('/'),
+  });
+  page.render({ name: 'phone', phone: '', pending: false });
+}
+
 function startAdmin(host: HTMLElement): void {
   let cachedDeviceId: string | undefined;
   const api = new AdminAuthApi(fetchTransport(window.fetch.bind(window)));
@@ -84,6 +103,7 @@ function startAdmin(host: HTMLElement): void {
         window.addEventListener('popstate', listener);
         return () => window.removeEventListener('popstate', listener);
       },
+      restart: () => window.location.assign('/'),
     },
     clock,
   );
@@ -99,8 +119,11 @@ function startAdmin(host: HTMLElement): void {
 }
 
 if (root !== null) {
-  if (parseRoute(window.location.pathname).name === 'activate') {
+  const entry = parseRoute(window.location.pathname).name;
+  if (entry === 'activate') {
     startActivation(root);
+  } else if (entry === 'reset') {
+    startReset(root);
   } else {
     startAdmin(root);
   }

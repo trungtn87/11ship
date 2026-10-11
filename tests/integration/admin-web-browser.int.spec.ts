@@ -186,8 +186,35 @@ describe('M01-D-LOGIN-UI - admin web in a real browser against the real backend'
     await page.waitFor(`document.querySelector('#shell-title')`);
     expect(await count(app.pool, 'SELECT 1 FROM app.admin_sessions WHERE user_id = $1::uuid', [system.userId])).toBe(1);
 
+    // Sidebar modes: the collapsed rail is desktop-only; at phone width the drawer shows the full menu with its sub-entries.
+    await page.click('.side-toggle');
+    expect(await page.evaluate<boolean>(`document.querySelector('.shell').classList.contains('shell-collapsed')`)).toBe(true);
+    await page.viewport(MOBILE.width, MOBILE.height, MOBILE.mobile);
+    await page.waitFor(`!document.querySelector('.shell').classList.contains('shell-collapsed')`);
+    await page.click('.shellbar-menu');
+    await page.waitFor(`document.querySelector('.shell').classList.contains('shell-drawer-open')`);
+    // Let the 180 ms slide-in finish so the sub-entries sit still before they are clicked.
+    await page.evaluate('new Promise((resolve) => setTimeout(resolve, 400))');
+    expect(
+      await page.evaluate<string[]>(
+        `[...document.querySelectorAll('.side-sub a')].filter((a) => a.getBoundingClientRect().width > 0).map((a) => a.textContent.trim())`,
+      ),
+    ).toEqual(['Danh sách', 'Đang khóa']);
+    await page.click('.side-sub a[href="/accounts/users?status=LOCKED"]');
+    await page.waitFor(`document.querySelector('#users-search')`);
+    expect(await page.evaluate<boolean>(`!document.querySelector('.shell').classList.contains('shell-drawer-open')`)).toBe(true);
+    // Back to desktop width: the rail returns (the choice was kept) and the drawer is closed.
+    await page.viewport(DESKTOP.width, DESKTOP.height, DESKTOP.mobile);
+    await page.waitFor(`document.querySelector('.shell').classList.contains('shell-collapsed')`);
+    expect(await page.evaluate<boolean>(`!document.querySelector('.shell').classList.contains('shell-drawer-open')`)).toBe(true);
+    await page.click('.side-toggle');
+    await page.waitFor(`!document.querySelector('.shell').classList.contains('shell-collapsed')`);
+
     // Logout: 204, cookies gone, the session row revoked, F5 stays on login.
-    await page.click('.topbar-actions .btn');
+    // The logout item lives in the account menu of the sidebar footer (D03): open the menu, then choose "Đăng xuất".
+    await page.click('.side-more');
+    await page.waitFor(`document.querySelector('#account-menu') && !document.querySelector('#account-menu').hidden`);
+    await page.click('#account-menu .menu-item-danger');
     await page.waitFor(`document.querySelector('#login-title')`);
     expect((await ourCookies(page)).size).toBe(0);
     expect(
