@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
 import { AppError, TechnicalError } from '../common/app-errors';
 import { AuthConfig } from '../config/auth-config';
@@ -18,6 +18,7 @@ import {
   USER_REGISTERED_EVENT_SCHEMA_VERSION,
   USER_REGISTERED_EVENT_TYPE,
 } from './auth-constants';
+import { ACCOUNT_ORIGIN_POLICY, AccountOriginPolicy, standardAccountOriginPolicy } from './account-origin';
 import { AUTH_CONFIG } from './auth-config.provider';
 import { RegisterInput } from './auth-validation';
 import { PASSWORD_HASHER, PasswordHasher } from './password-hasher';
@@ -56,6 +57,7 @@ export class RegistrationService {
     private readonly outbox: OutboxWriter,
     @Inject(AUTH_CONFIG) private readonly config: AuthConfig,
     @Inject(PASSWORD_HASHER) private readonly hasher: PasswordHasher,
+    @Optional() @Inject(ACCOUNT_ORIGIN_POLICY) private readonly policy: AccountOriginPolicy = standardAccountOriginPolicy(),
   ) {}
 
   async register(
@@ -63,6 +65,9 @@ export class RegistrationService {
     idempotencyKey: string | readonly string[] | undefined,
     requestId: string,
   ): Promise<RegisterOutcome> {
+    // Staging fixture mode (M00-D2): closed before the idempotency key is read, any database access, any hash or
+    // any executor call, so nothing can be created, replayed or consumed.
+    this.policy.assertRegistrationOpen();
     // The executor validates the key again; doing it first only avoids a database round trip and an Argon2
     // hash for a request that can never succeed.
     parseIdempotencyKey(idempotencyKey);

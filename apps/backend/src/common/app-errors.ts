@@ -49,6 +49,12 @@ export const APP_ERROR_DEFINITIONS = {
   SESSION_INVALID: { status: 401, message: 'The session is not valid' },
   SESSION_REVOKED: { status: 401, message: 'The session was revoked' },
   SESSION_EXPIRED: { status: 401, message: 'The session has expired' },
+  // M00-D2: staging fixture mode closes OTP request/verify and register (no SMS exists there yet). Fixed message:
+  // it says nothing about phones, accounts or configuration.
+  AUTH_REGISTRATION_UNAVAILABLE: {
+    status: 503,
+    message: 'Registration and phone verification are temporarily unavailable',
+  },
 
   // Shop onboarding (M01-A2S, handoff section 10). Fixed messages: they never echo what the client sent,
   // never name a database constraint and never reveal another account's data.

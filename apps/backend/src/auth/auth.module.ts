@@ -1,10 +1,12 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
+import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { DriverModule } from '../driver/driver.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OutboxModule } from '../outbox/outbox.module';
 import { ShopModule } from '../shop/shop.module';
 import { TransactionModule } from '../transaction/transaction.module';
+import { ACCOUNT_ORIGIN_POLICY, AccountOriginPolicy, createAccountOriginPolicy } from './account-origin';
 import { authConfigProvider } from './auth-config.provider';
 import { AuthController } from './auth.controller';
 import { AdminIdentityParticipant } from './admin-identity-participant';
@@ -27,6 +29,12 @@ import { VerificationService } from './verification-service';
 export interface AuthModuleOptions {
   /** Explicit OTP provider binding. There is deliberately no default and no fake fallback. */
   readonly otpProvider: OtpProvider;
+  /**
+   * Test harness only (M00-D2): an account origin policy to use instead of the one derived from the validated
+   * configuration. The factory createAccountOriginPolicy still refuses fixtures outside APP_ENV=staging, so this
+   * cannot open production. main.ts never sets it.
+   */
+  readonly accountOriginPolicy?: AccountOriginPolicy;
 }
 
 /**
@@ -50,6 +58,19 @@ export class AuthModule {
       providers: [
         authConfigProvider,
         { provide: OTP_PROVIDER, useValue: options.otpProvider },
+        // The account origin policy comes from the validated configuration (APP_ENV, fixture mode, allowlist).
+        options.accountOriginPolicy === undefined
+          ? {
+              provide: ACCOUNT_ORIGIN_POLICY,
+              inject: [APP_CONFIG],
+              useFactory: (config: AppConfig): AccountOriginPolicy =>
+                createAccountOriginPolicy({
+                  appEnv: config.appEnv,
+                  fixtureModeEnabled: config.stagingFixtures !== undefined,
+                  allowedPhones: config.stagingFixtures?.allowedPhones,
+                }),
+            }
+          : { provide: ACCOUNT_ORIGIN_POLICY, useValue: options.accountOriginPolicy },
         { provide: PASSWORD_HASHER, useFactory: () => new Argon2idPasswordHasher() },
         VerificationRepository,
         ProofRepository,

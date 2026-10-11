@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
+import { AccountOrigin, isAccountOrigin } from './account-origin';
 import { CLOCK_CTE, epochMs, toSafeInteger } from './auth-db';
 import { DeviceInfo } from './auth-validation';
 import { generateToken } from './tokens';
-import { AccountOrigin } from './user-repository';
 
 export interface CreatedSession {
   readonly sessionId: string;
@@ -21,6 +21,7 @@ export interface SessionView {
   readonly expired: boolean;
   readonly userStatus: string;
   readonly phoneNormalized: string;
+  /** The owner's account origin, read in the same statement; the bearer policy decides on it. */
   readonly accountOrigin: AccountOrigin;
 }
 
@@ -84,7 +85,7 @@ export class SessionRepository {
       expired: boolean;
       status: string;
       phone_normalized: string;
-      account_origin: AccountOrigin;
+      account_origin: string;
     }>(
       `SELECT s.session_id, s.user_id, s.active_role,
               s.revoked_at IS NOT NULL AS revoked,
@@ -98,6 +99,9 @@ export class SessionRepository {
     const row = result.rows[0];
     if (row === undefined) {
       return undefined;
+    }
+    if (!isAccountOrigin(row.account_origin)) {
+      throw new TechnicalError('internal', 'Database returned an unexpected account origin');
     }
     return {
       sessionId: row.session_id,

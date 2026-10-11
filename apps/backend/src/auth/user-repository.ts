@@ -1,17 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
+import { AccountOrigin, isAccountOrigin } from './account-origin';
 import { SUPPORTED_ROLES } from './auth-constants';
 import { CLOCK_CTE } from './auth-db';
 
 export type UserStatus = 'ACTIVE' | 'DISABLED';
 
 /**
- * Where an account came from. It carries NO privilege. The application (customer/shop/driver) Auth only accepts
- * PHONE_VERIFIED accounts; ADMIN_PROVISIONED accounts exist for the administration web and are refused by every
- * application login and session check.
+ * Where an account came from. It carries NO privilege (see account-origin.ts, which owns the type and the policy):
+ * the application (customer/shop/driver) Auth accepts PHONE_VERIFIED accounts, and STAGING_FIXTURE accounts only in
+ * staging fixture mode; ADMIN_PROVISIONED accounts exist for the administration web and are refused by every
+ * application login and session check. Re-exported so the modules that already import it from here keep working.
  */
-export type AccountOrigin = 'PHONE_VERIFIED' | 'ADMIN_PROVISIONED';
+export type { AccountOrigin } from './account-origin';
 
 export interface UserRow {
   readonly userId: string;
@@ -26,10 +28,14 @@ interface RawUser {
   phone_normalized: string;
   password_hash: string;
   status: UserStatus;
-  account_origin: AccountOrigin;
+  account_origin: string;
 }
 
 function toUser(row: RawUser): UserRow {
+  if (!isAccountOrigin(row.account_origin)) {
+    // The CHECK constraint makes this unreachable; refuse rather than guess an origin.
+    throw new TechnicalError('internal', 'Database returned an unexpected account origin');
+  }
   return {
     userId: row.user_id,
     phoneNormalized: row.phone_normalized,
@@ -142,6 +148,29 @@ export class UserRepository {
          created_at, updated_at
        )
        SELECT $1::uuid, $2, $3, NULL, 'ADMIN_PROVISIONED', 'ACTIVE', 1, clock.t, clock.t
+         FROM (${CLOCK_CTE}) AS clock
+       ON CONFLICT (phone_normalized) DO NOTHING`,
+      [input.userId, input.phoneNormalized, input.passwordHash],
+    );
+    return result.rowCount === 1;
+  }
+
+  /**
+   * Creates one ACTIVE STAGING_FIXTURE account: roleless, phone_verified_at NULL (the phone was never proven),
+   * timestamps from the database clock. Returns false when the phone number already belongs to a user (the UNIQUE
+   * constraint decided); an existing account is NEVER touched: no password reset, no status change, no role.
+   * Used only by the operator seed command (M00-D2); no HTTP path reaches it.
+   */
+  async insertStagingFixture(
+    context: TransactionContext,
+    input: { userId: string; phoneNormalized: string; passwordHash: string },
+  ): Promise<boolean> {
+    const result = await context.query(
+      `INSERT INTO app.users (
+         user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version,
+         created_at, updated_at
+       )
+       SELECT $1::uuid, $2, $3, NULL, 'STAGING_FIXTURE', 'ACTIVE', 1, clock.t, clock.t
          FROM (${CLOCK_CTE}) AS clock
        ON CONFLICT (phone_normalized) DO NOTHING`,
       [input.userId, input.phoneNormalized, input.passwordHash],
