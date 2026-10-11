@@ -119,6 +119,7 @@ Bottom Ship: Trang chủ / Đơn hàng / Thu nhập / Ví / Tài khoản. Online
 | D86 USER detail `/accounts/users/:id` | Identity/version/profile đúng scope; account timeline; Quay lại/Làm mới | Read .30; action .32/.33 sau D15 | Không bank/GPS/password/token; hồ sơ riêng khác account status |
 | D87 khóa USER dialog | Mục tiêu/lý do/cảnh báo mất phiên hai app; Hủy/Khóa | Mutation .32 và UI .33 sau D15 | Scope mọi role theo policy duyệt; timeout đọc command, không new intent |
 | D88 mở USER dialog | Mục tiêu/lý do/giải thích login lại; Hủy/Mở khóa | Mutation .32 và UI .33 | Không restore phiên, profile, funds; no optimistic state |
+| D89 ADMINISTRATORS list `/accounts/administrators` | Tên/SĐT masked/phạm vi quyền/status/created; search tên-SĐT, lọc status; trạng thái trống/không khớp/tải/lỗi/chưa kết nối; entry “Tạo lời mời” → D05 | SYSTEM-only (menu TÀI KHOẢN → Quản trị viên). Read API chưa có hợp đồng: UI chờ gói backend riêng, chưa tạo/sửa/xóa/khóa ở màn này | Chốt Owner 2026-10-11; layout theo D81, chưa có ảnh duyệt riêng; bản thật hiện “Chưa kết nối máy chủ”, không dữ liệu giả; ADMIN không thấy menu/route |
 
 [Board USER Admin v2.0.2](assets/m01-user-admin-v2.0.2.svg) và revision09 §2.3 là nguồn UI mới, chờ Owner duyệt. D81 trước nằm M12 nay thuộc M01; M12 chỉ mở rộng case/tác động vận hành. Auth test banner “SMS mô phỏng — môi trường test” và hướng dẫn mở tool PC; OTP không hiện trên public Auth UI. SMS vendor copy/handset delivery đến M12.12; không SMS thay Authenticator.
 
