@@ -103,9 +103,12 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
       const { up, down } = sqlOf(NEW);
       for (const text of [up, down]) {
         const code = stripComments(text);
-        expect(code).not.toMatch(/IF\s+NOT\s+EXISTS|IF\s+EXISTS|CASCADE/i);
+        expect(code).not.toMatch(/IF\s+NOT\s+EXISTS|DROP\s+\w+\s+IF\s+EXISTS|CASCADE/i);
         expect(code).not.toMatch(/ADD\s+COLUMN|DROP\s+COLUMN|\bUPDATE\b|\bDELETE\b|\bINSERT\b/i);
       }
+      // The only IF EXISTS in the file is the PL/pgSQL guard of the down migration (a SELECT, not DDL).
+      expect(stripComments(up)).not.toMatch(/IF\s+EXISTS/i);
+      expect(stripComments(down).match(/IF\s+EXISTS/gi)).toHaveLength(1);
       expect(stripComments(up)).toContain("'STAGING_FIXTURE'");
     });
 
