@@ -54,6 +54,7 @@ interface Inspection {
 interface Tool {
   main(options: { argv: string[]; env: Record<string, string | undefined>; deps: object; out: (m: string) => void; err: (m: string) => void }): Promise<number>;
   inspect(client: Client, options: { files: string[]; historyTable: string; keyring: Keyring }): Promise<Inspection>;
+  verify(client: Client, options: { files: string[]; historyTable: string; keyring: Keyring; snapshot: Identity }): Promise<{ state: string; problems: string[] }>;
   rebuild(client: Client, options: Record<string, unknown>): Promise<unknown>;
   readSystemIdentity(client: Client): Promise<{ problems: string[]; identity?: Identity }>;
   insertIdentity(client: Client, identity: Identity): Promise<void>;
@@ -200,12 +201,12 @@ describe('issue #49 — staging DB upgrade from the PR #42 history (PostgreSQL)'
   });
   const applyEnv = (file: string, extra: Record<string, string | undefined> = {}): Record<string, string | undefined> =>
     env({ STAGING_UPGRADE_SNAPSHOT_KEY: SNAPSHOT_KEY, STAGING_UPGRADE_SNAPSHOT_FILE: file, STAGING_UPGRADE_CONFIRM: tool.CONFIRM_PHRASE, ...extra });
-  const deps = (options: { keyring?: Keyring; dir?: string; audit?: () => unknown } = {}): object => ({
+  const deps = (options: { keyring?: Keyring; dir?: string; audit?: () => unknown; client?: () => unknown } = {}): object => ({
     resolveDatabaseTls: () => ({ ok: true, tls: { ca: 'not-used', rejectUnauthorized: true } }),
     parseKeyringConfig: () => ({ ok: true, keyring: options.keyring ?? fixtureKeyring('k1') }),
     safeErrorCode: (error: unknown) => (error as { code?: string }).code ?? 'UNKNOWN',
     createAudit: options.audit ?? ((): AuditWriter => new AuditWriter()),
-    createClient: () => new Client({ connectionString: databaseUrl }),
+    createClient: options.client ?? ((): Client => new Client({ connectionString: databaseUrl })),
     migrationsDir: options.dir ?? MIGRATIONS_DIR,
     historyTable: HISTORY_TABLE,
   });
@@ -374,7 +375,7 @@ describe('issue #49 — staging DB upgrade from the PR #42 history (PostgreSQL)'
       for (const [label, index] of [['middle', 3], ['last', NAMES.length - 1]] as const) {
         const dir = brokenMigrations(NAMES[index] as string, label);
         expect(await run(['--apply'], applyEnv(snapshotFile(`${label}.snapshot`)), { dir })).toBe(1);
-        expect(printed()).toContain('rolled back');
+        expect(printed()).toContain('never reached COMMIT');
         expect(await wholeState()).toBe(before);
       }
       // Recoverable: the same database upgrades with the real files and a new snapshot path.
@@ -448,6 +449,263 @@ describe('issue #49 — staging DB upgrade from the PR #42 history (PostgreSQL)'
       expect(await run(['--restore-snapshot'], applyEnv(file))).toBe(0);
       expect(await currentIdentity()).toEqual(identity);
       expect(await schemaFingerprint()).toBe(freshSchema);
+    });
+  });
+
+  /**
+   * A connection whose COMMIT misbehaves, the only statement that is altered:
+   *  LOST_ACK     the COMMIT really reaches the server and succeeds, the acknowledgement is lost (the caller sees a connection error);
+   *  LOST_BEFORE  the backend is terminated just before COMMIT, so the COMMIT can never succeed (the caller sees a connection error).
+   * It records every statement so a test can prove that nothing was retried.
+   */
+  function faultyClient(mode: 'LOST_ACK' | 'LOST_BEFORE'): { make: () => unknown; seen: string[] } {
+    const seen: string[] = [];
+    const make = (): unknown => {
+      const real = new Client({ connectionString: databaseUrl });
+      return {
+        on: (event: string, listener: (...args: unknown[]) => void): unknown => real.on(event, listener),
+        connect: (): Promise<void> => real.connect(),
+        end: (): Promise<void> => real.end(),
+        query: async (text: string, values?: unknown[]): Promise<unknown> => {
+          seen.push(text);
+          if (text !== 'COMMIT') {
+            return real.query(text, values);
+          }
+          if (mode === 'LOST_ACK') {
+            await real.query('COMMIT');
+            throw new Error('Connection terminated unexpectedly');
+          }
+          const pid = (await real.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]?.pid;
+          const killer = new Client({ connectionString: databaseUrl });
+          await killer.connect();
+          try {
+            await killer.query('SELECT pg_terminate_backend($1::int)', [pid]);
+          } finally {
+            await killer.end();
+          }
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          throw new Error('Connection terminated unexpectedly');
+        },
+      };
+    };
+    return { make, seen };
+  }
+  const writes = (seen: string[], pattern: RegExp): number => seen.filter((text) => pattern.test(text)).length;
+  /** Statements sent AFTER the COMMIT was asked: there must be none (no ROLLBACK, no retry). */
+  const afterCommit = (seen: string[]): string[] => seen.slice(seen.indexOf('COMMIT') + 1);
+  const verifyEnv = (file: string): Record<string, string | undefined> => applyEnv(file, { STAGING_UPGRADE_CONFIRM: undefined });
+
+  describe('COMMIT outcome unknown (lost acknowledgement / lost connection)', () => {
+    const expectUnknown = (seen: string[]): void => {
+      expect(printed()).toContain('COMMIT_OUTCOME_UNKNOWN');
+      expect(printed()).toContain('do NOT run any write command again');
+      expect(printed()).toContain('-- --verify');
+      expect(printed()).not.toMatch(/rolled back|never reached COMMIT|exactly as it was/);
+      expect(writes(seen, /^COMMIT$/)).toBe(1); // asked once, never retried
+      expect(afterCommit(seen)).toEqual([]); // nothing is sent after a COMMIT of unknown outcome
+      expect(writes(seen, /^BEGIN$/)).toBe(1);
+    };
+
+    it('rebuild, COMMIT succeeded but the ACK was lost: exit 2, fixed code, snapshot kept, --verify says UPGRADED_OK (read-only)', async () => {
+      await seed42();
+      const file = snapshotFile('ack.snapshot');
+      const faulty = faultyClient('LOST_ACK');
+      expect(await run(['--apply'], applyEnv(file), { client: faulty.make })).toBe(2);
+      expectUnknown(faulty.seen);
+      expect(existsSync(file)).toBe(true);
+
+      // The database really changed: complete history and the same SYSTEM.
+      const after = await wholeState();
+      expect(await run(['--verify'], verifyEnv(file))).toBe(0);
+      expect(printed()).toContain('UPGRADED_OK');
+      expect(await wholeState()).toBe(after); // --verify is read-only
+      expect(await schemaFingerprint()).toBe(freshSchema);
+      expect(await currentIdentity()).toEqual(identity);
+      // A second --apply would be refused (existing snapshot file) and a new one is a no-op ("nothing to do").
+      expect(await run(['--apply'], applyEnv(snapshotFile('ack-again.snapshot')))).toBe(0);
+      expect(printed()).toContain('nothing to do');
+    });
+
+    it('rebuild, connection lost before COMMIT could succeed: exit 2, --verify says PRE_UNCHANGED and the whole state is untouched; a new --apply then works', async () => {
+      await seed42();
+      const before = await wholeState();
+      const file = snapshotFile('lost.snapshot');
+      const faulty = faultyClient('LOST_BEFORE');
+      expect(await run(['--apply'], applyEnv(file), { client: faulty.make })).toBe(2);
+      expect(printed()).toContain('COMMIT_OUTCOME_UNKNOWN');
+      expect(printed()).not.toMatch(/rolled back|never reached COMMIT|exactly as it was/);
+      expect(writes(faulty.seen, /^COMMIT$/)).toBe(1);
+      expect(afterCommit(faulty.seen)).toEqual([]);
+      expect(existsSync(file)).toBe(true);
+
+      expect(await run(['--verify'], verifyEnv(file))).toBe(0);
+      expect(printed()).toContain('PRE_UNCHANGED');
+      expect(await wholeState()).toBe(before);
+      expect(await run(['--apply'], applyEnv(file))).toBe(1); // the kept snapshot is never overwritten
+      expect(printed()).toContain('SNAPSHOT_EXISTS');
+      expect(await run(['--apply'], applyEnv(snapshotFile('lost-2.snapshot')))).toBe(0);
+      expect(await currentIdentity()).toEqual(identity);
+    });
+
+    it('restore, COMMIT succeeded but the ACK was lost: exit 2, --verify says UPGRADED_OK', async () => {
+      await seed42();
+      const file = snapshotFile('restore-ack.snapshot');
+      expect(await run(['--apply'], applyEnv(file))).toBe(0);
+      await client.query('DELETE FROM app.admin_totp_factors');
+      await client.query('DELETE FROM app.admin_memberships');
+      await client.query('DELETE FROM app.users');
+      const faulty = faultyClient('LOST_ACK');
+      expect(await run(['--restore-snapshot'], applyEnv(file), { client: faulty.make })).toBe(2);
+      expect(printed()).toContain('COMMIT_OUTCOME_UNKNOWN');
+      expect(printed()).not.toMatch(/rolled back|never reached COMMIT|exactly as it was/);
+      expect(writes(faulty.seen, /^COMMIT$/)).toBe(1);
+      expect(afterCommit(faulty.seen)).toEqual([]);
+      expect(existsSync(file)).toBe(true);
+      expect(await run(['--verify'], verifyEnv(file))).toBe(0);
+      expect(printed()).toContain('UPGRADED_OK');
+      expect(await currentIdentity()).toEqual(identity);
+    });
+
+    it('restore, connection lost before COMMIT could succeed: exit 2, --verify says MIGRATED_WITHOUT_SYSTEM; the restore then succeeds', async () => {
+      await seed42();
+      const file = snapshotFile('restore-lost.snapshot');
+      expect(await run(['--apply'], applyEnv(file))).toBe(0);
+      await client.query('DELETE FROM app.admin_totp_factors');
+      await client.query('DELETE FROM app.admin_memberships');
+      await client.query('DELETE FROM app.users');
+      const faulty = faultyClient('LOST_BEFORE');
+      expect(await run(['--restore-snapshot'], applyEnv(file), { client: faulty.make })).toBe(2);
+      expect(printed()).toContain('COMMIT_OUTCOME_UNKNOWN');
+      expect(writes(faulty.seen, /^COMMIT$/)).toBe(1);
+      expect(existsSync(file)).toBe(true);
+      const before = await wholeState();
+      expect(await run(['--verify'], verifyEnv(file))).toBe(0);
+      expect(printed()).toContain('MIGRATED_WITHOUT_SYSTEM');
+      expect(await wholeState()).toBe(before);
+      expect(await run(['--restore-snapshot'], applyEnv(file))).toBe(0);
+      expect(await currentIdentity()).toEqual(identity);
+    });
+
+    it('a complete history alone is not enough: --verify reports ABNORMAL when the SYSTEM differs from the snapshot, or there is a second user', async () => {
+      await seed42();
+      const file = snapshotFile('abnormal.snapshot');
+      expect(await run(['--apply'], applyEnv(file))).toBe(0);
+      await client.query(`UPDATE app.users SET password_hash = password_hash || 'x'`);
+      let before = await wholeState();
+      expect(await run(['--verify'], verifyEnv(file))).toBe(1);
+      expect(printed()).toContain('ABNORMAL');
+      expect(printed()).toContain('IDENTITY_DIFFERS');
+      expect(await wholeState()).toBe(before);
+
+      await client.query(`UPDATE app.users SET password_hash = left(password_hash, -1)`);
+      await client.query(
+        `INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at)
+         VALUES ($1::uuid, $2, '$argon2id$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA', NULL, 'STAGING_FIXTURE', 'ACTIVE', 1, now(), now())`,
+        [randomUUID(), randomPhone().normalized],
+      );
+      before = await wholeState();
+      expect(await run(['--verify'], verifyEnv(file))).toBe(1);
+      expect(printed()).toContain('UNEXPECTED_ROWS');
+      expect(await wholeState()).toBe(before);
+    });
+
+    it('--verify on a history that is neither #42 nor complete is ABNORMAL; it needs the snapshot, takes no other option and changes nothing', async () => {
+      await seed42();
+      const file = snapshotFile('verify-gates.snapshot');
+      expect(await run(['--apply'], applyEnv(file))).toBe(0);
+      await client.query(`DELETE FROM public.pgmigrations WHERE name = $1`, [NAMES[NAMES.length - 1]]);
+      const before = await wholeState();
+      expect(await run(['--verify'], verifyEnv(file))).toBe(1);
+      expect(printed()).toContain('HISTORY_UNKNOWN');
+      expect(await run(['--verify'], verifyEnv(snapshotFile('does-not-exist.snapshot')))).toBe(1);
+      expect(printed()).toContain('SNAPSHOT_MISSING');
+      expect(await run(['--verify', '--apply'], verifyEnv(file))).toBe(1);
+      expect(await wholeState()).toBe(before);
+    });
+  });
+
+  describe('nothing outside schema app is ever dropped (DROP TABLE … RESTRICT, no CASCADE)', () => {
+    const cleanup = async (): Promise<void> => {
+      await client.query('DROP VIEW IF EXISTS public.ext_view_of_app');
+      await client.query('DROP FUNCTION IF EXISTS public.ext_fn_of_app()');
+      await client.query('DROP TABLE IF EXISTS public.ext_ref_to_app');
+    };
+    const externalState = async (): Promise<string> => {
+      const parts: unknown[] = [];
+      for (const sql of [
+        `SELECT pg_get_viewdef('public.ext_view_of_app'::regclass) AS d`,
+        `SELECT pg_get_functiondef('public.ext_fn_of_app()'::regprocedure) AS d`,
+        `SELECT string_agg(pg_get_constraintdef(oid), '|' ORDER BY conname) AS d FROM pg_constraint WHERE conrelid = 'public.ext_ref_to_app'::regclass`,
+        `SELECT count(*)::text AS d FROM public.ext_ref_to_app`,
+      ]) {
+        try {
+          parts.push((await client.query<{ d: string }>(sql)).rows[0]?.d);
+        } catch {
+          parts.push('absent');
+        }
+      }
+      return JSON.stringify(parts);
+    };
+
+    const cases: Array<[string, string, string]> = [
+      ['a view outside app that reads a table of app', 'EXTERNAL_DEPENDENCY', 'CREATE VIEW public.ext_view_of_app AS SELECT user_id FROM app.users'],
+      ['a foreign key from a table outside app to a table of app', 'EXTERNAL_DEPENDENCY', 'CREATE TABLE public.ext_ref_to_app (user_id uuid REFERENCES app.users (user_id))'],
+    ];
+    it.each(cases)('%s: dry-run and --apply refuse, no snapshot, the whole database (app and outside) is unchanged', async (_label, code, ddl) => {
+      await seed42();
+      try {
+        await client.query(ddl);
+        if (ddl.includes('ext_ref_to_app')) {
+          await client.query('INSERT INTO public.ext_ref_to_app SELECT user_id FROM app.users LIMIT 1');
+        }
+        const before = await wholeState();
+        const outside = await externalState();
+        const state = await tool.inspect(client, { files: NAMES, historyTable: HISTORY_TABLE, keyring: fixtureKeyring('k1') });
+        expect(state.state).toBe('STOP');
+        expect(state.problems).toContain(code);
+        expect(await run([], env())).toBe(1);
+        expect(printed()).toContain(code);
+        const file = snapshotFile(`external-${code}.snapshot`);
+        expect(await run(['--apply'], applyEnv(file))).toBe(1);
+        expect(printed()).toContain(code);
+        expect(existsSync(file)).toBe(false);
+        expect(await wholeState()).toBe(before);
+        expect(await externalState()).toBe(outside);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('the database itself is the backstop: a dependency the early check does not know (a function body in another schema) makes rebuild() fail with EXTERNAL_DEPENDENCY, and the transaction rolls back', async () => {
+      await seed42();
+      try {
+        await client.query('CREATE FUNCTION public.ext_fn_of_app() RETURNS bigint LANGUAGE sql BEGIN ATOMIC SELECT count(*) FROM app.users; END');
+        const before = await wholeState();
+        const outside = await externalState();
+        await expect(
+          tool.rebuild(client, { identity, files: NAMES, dir: MIGRATIONS_DIR, historyTable: HISTORY_TABLE, keyring: fixtureKeyring('k1') }),
+        ).rejects.toMatchObject({ code: 'EXTERNAL_DEPENDENCY' });
+        expect(await wholeState()).toBe(before);
+        expect(await externalState()).toBe(outside);
+        expect((await client.query('SELECT public.ext_fn_of_app() AS n')).rows[0]).toEqual({ n: '2' });
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('objects outside app that do NOT depend on app survive a successful upgrade untouched', async () => {
+      await seed42();
+      try {
+        await client.query('CREATE TABLE public.ext_ref_to_app (user_id uuid)');
+        await client.query('INSERT INTO public.ext_ref_to_app VALUES (gen_random_uuid())');
+        await client.query('CREATE VIEW public.ext_view_of_app AS SELECT user_id FROM public.ext_ref_to_app');
+        const outside = await externalState();
+        expect(await run(['--apply'], applyEnv(snapshotFile('independent.snapshot')))).toBe(0);
+        expect(await externalState()).toBe(outside);
+        expect(await schemaFingerprint()).toBe(freshSchema);
+      } finally {
+        await cleanup();
+      }
     });
   });
 
