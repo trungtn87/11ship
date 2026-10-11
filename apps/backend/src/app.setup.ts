@@ -3,6 +3,7 @@ import { HttpAdapterHost } from '@nestjs/core';
 import { activationTransportMiddleware } from './admin-activation/admin-activation.controller';
 import { ACTIVATION_ROUTE_PREFIX } from './admin-activation/admin-activation-constants';
 import { ADMIN_AUTH_ROUTE_PREFIX, ADMIN_ROUTE_PREFIX, adminTransportMiddleware } from './http/admin-transport.middleware';
+import { CLIENT_AUTH_ROUTE_PREFIX, clientAuthTransportMiddleware } from './http/client-auth-transport.middleware';
 import { AllExceptionsFilter } from './http/all-exceptions.filter';
 import { createRequestContextMiddleware } from './http/request-context.middleware';
 import { JsonLogger } from './logging/json-logger';
@@ -27,6 +28,8 @@ export function configureApp(app: INestApplication): void {
   // '/v1/admin' does not cover '/v1/admin-auth' or '/v1/admin-activation': each prefix is installed on its own.
   app.use(`/${GLOBAL_PREFIX}/${ADMIN_AUTH_ROUTE_PREFIX}`, adminTransportMiddleware);
   app.use(`/${GLOBAL_PREFIX}/${ADMIN_ROUTE_PREFIX}`, adminTransportMiddleware);
+  // Same reason for /v1/client-auth (M01.03): credentials and session tokens, never cached.
+  app.use(`/${GLOBAL_PREFIX}/${CLIENT_AUTH_ROUTE_PREFIX}`, clientAuthTransportMiddleware);
   app.setGlobalPrefix(GLOBAL_PREFIX);
   app.useGlobalFilters(new AllExceptionsFilter(app.get(HttpAdapterHost), logger));
 }

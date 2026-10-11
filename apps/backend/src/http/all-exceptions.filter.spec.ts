@@ -175,7 +175,7 @@ describe('AllExceptionsFilter', () => {
   describe('typed error registry', () => {
     const codes = Object.keys(APP_ERROR_DEFINITIONS) as AppErrorCode[];
 
-    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes, the Shop onboarding codes, the Driver onboarding codes, the Shop management codes, the administration login codes the ADMIN invitation codes, the administration activation codes and the staging-fixture registration code', () => {
+    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes, the Shop onboarding codes, the Driver onboarding codes, the Shop management codes, the administration login codes the ADMIN invitation codes, the administration activation codes, the staging-fixture registration code and the client registration codes', () => {
       expect([...codes].sort()).toEqual([
         'ACCOUNT_DISABLED',
         'ADMIN_ACTIVATION_LINK_INVALID',
@@ -197,6 +197,9 @@ describe('AllExceptionsFilter', () => {
         'ADMIN_TOTP_INVALID',
         'ADMIN_VERSION_CONFLICT',
         'AUTH_REGISTRATION_UNAVAILABLE',
+        'AUTH_RESULT_NOT_REPLAYABLE',
+        'CONSENT_VERSION_UNSUPPORTED',
+        'DEVICE_PROOF_REQUIRED',
         'DRIVER_PENDING_APPROVAL',
         'DRIVER_PROFILE_EXISTS',
         'IDEMPOTENCY_BUSY',

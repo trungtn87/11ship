@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
 import { ConsentClientApp } from './auth-constants';
 
@@ -13,6 +14,12 @@ interface RawEligibility {
   account_origin: string;
   phone_verified: boolean;
   has_admin_membership: boolean;
+}
+
+/** The CURRENT customer profile (M01.03 identity). `fullName` is null for a profile that never got a name. */
+export interface CustomerProfileRow {
+  readonly fullName: string | null;
+  readonly version: number;
 }
 
 export interface ConsentRecord {
@@ -57,16 +64,35 @@ export class CustomerProfileRepository {
   }
 
   /**
-   * Creates the empty profile (full_name NULL, version 1) unless one exists. An existing profile is never touched, so a
-   * repeat can neither duplicate it nor overwrite a name or a version. True when this call created it.
+   * Creates the profile (version 1) unless one exists. Without `initialFullName` it is the empty profile of M01.02
+   * (full_name NULL). With it (M01.03, a NEW customer registering) the already normalized name is written at once with
+   * version 1: this is initialization, never an update, so the version does not move to 2. An existing profile is never
+   * touched, so a repeat can neither duplicate it nor overwrite a name or a version. True when this call created it.
    */
-  async insertProfileIfAbsent(context: TransactionContext, userId: string): Promise<boolean> {
+  async insertProfileIfAbsent(context: TransactionContext, userId: string, initialFullName?: string): Promise<boolean> {
     const result = await context.query(
-      `INSERT INTO app.customer_profiles (user_id) VALUES ($1::uuid)
+      `INSERT INTO app.customer_profiles (user_id, full_name) VALUES ($1::uuid, $2::varchar)
        ON CONFLICT (user_id) DO NOTHING`,
-      [userId],
+      [userId, initialFullName ?? null],
     );
     return result.rowCount === 1;
+  }
+
+  /** The CURRENT profile of a user, or undefined when none exists. Pure read; the caller holds the user lock. */
+  async findProfile(context: TransactionContext, userId: string): Promise<CustomerProfileRow | undefined> {
+    const result = await context.query<{ full_name: string | null; version: string }>(
+      `SELECT full_name, version::text AS version FROM app.customer_profiles WHERE user_id = $1::uuid`,
+      [userId],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      return undefined;
+    }
+    const version = Number(row.version);
+    if (!Number.isSafeInteger(version) || version < 1) {
+      throw new TechnicalError('internal', 'Database returned an unexpected profile version');
+    }
+    return { fullName: row.full_name, version };
   }
 
   /**

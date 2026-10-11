@@ -42,6 +42,8 @@ export interface ApiResponse {
   readonly status: number;
   readonly requestId: string;
   readonly text: string;
+  /** Response headers (M01.03: no-store on the client-auth routes). */
+  readonly headers: Headers;
   readonly body: {
     data?: Record<string, unknown>;
     error?: { code: string; message: string; request_id: string; details: unknown };
@@ -86,7 +88,7 @@ export async function api(
   } catch {
     // not JSON (for example an empty body): leave {}
   }
-  return { status: response.status, requestId: response.headers.get('x-request-id') ?? '', text, body };
+  return { status: response.status, requestId: response.headers.get('x-request-id') ?? '', text, headers: response.headers, body };
 }
 
 export function errorCode(response: ApiResponse): string | undefined {
@@ -113,7 +115,13 @@ export interface AuthApp {
 
 export async function startAuthApp(
   authOverrides: Partial<AuthConfig> = {},
-  extra: { activeKeyId?: string; relaxTimeouts?: boolean; fixturePolicy?: AccountOriginPolicy } = {},
+  extra: {
+    activeKeyId?: string;
+    relaxTimeouts?: boolean;
+    fixturePolicy?: AccountOriginPolicy;
+    /** M01.03: configuration fields to override on top of the loaded one (clientAuth, host, appEnv). */
+    configOverride?: Partial<AppConfig>;
+  } = {},
 ): Promise<AuthApp> {
   const loaded = loadIntegrationConfig();
   // Concurrency tests hold locks for a moment on purpose. The production defaults (800 ms statement timeout,
@@ -130,6 +138,7 @@ export async function startAuthApp(
     ...base,
     crypto: fixtureKeyring(extra.activeKeyId ?? 'k1'),
     auth: authTestConfig(authOverrides),
+    ...(extra.configOverride ?? {}),
   };
   const provider = new FakeOtpProvider();
   // Issue #49: with a fixture policy the app is bound exactly as staging fixture mode binds it (DisabledOtpProvider + the policy).
@@ -198,7 +207,7 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
   );
   await pool.query(
     `DELETE FROM app.idempotency_records
-      WHERE scope_type = 'verification_proof'
+      WHERE scope_type IN ('verification_proof', 'client_verification_proof')
         AND scope_id IN (SELECT proof_id::text FROM app.verification_proofs WHERE phone_normalized = $1)`,
     [normalizedPhone],
   );
@@ -563,11 +572,15 @@ export async function ageRegisterRecord(pool: Pool, proofId: string, window: 're
 }
 
 /** Installs a stall: a row trigger on app.audit_logs that waits for an advisory lock a test holds. */
-export async function installRegisterAuditStall(pool: Pool, key: readonly [number, number]): Promise<void> {
+export async function installRegisterAuditStall(
+  pool: Pool,
+  key: readonly [number, number],
+  action = 'auth.register.v1',
+): Promise<void> {
   await pool.query(
     `CREATE FUNCTION app.test_stall_register_audit() RETURNS trigger LANGUAGE plpgsql AS $$
      BEGIN
-       IF NEW.action = 'auth.register.v1' THEN
+       IF NEW.action = '${action}' THEN
          PERFORM pg_advisory_xact_lock(${key[0]}, ${key[1]});
        END IF;
        RETURN NEW;

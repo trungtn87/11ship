@@ -216,8 +216,9 @@ jobs:
         if: ${{ always() && hashFiles('.test-results/integration-local.log') != '' }}
         run: |
           node scripts/report-test-counts.js "Integration (local mode)" .test-results/integration-local.json --log .test-results/integration-local.log \
-            --max-pending 5 --expect "real PostgreSQL server user is outside the allowlist=pending" \
-            --expect "applies every migration as the non-superuser migrator=pending"
+            --max-pending 6 --expect "real PostgreSQL server user is outside the allowlist=pending" \
+            --expect "applies every migration as the non-superuser migrator=pending" \
+            --expect "M01.03 client registration succeeds as the restricted runtime role=pending"
 
       # CI mode: same suite plus the real wrong-user fixture. Nothing may be skipped.
       - name: Integration tests, CI mode (real wrong-user fixture)
@@ -240,7 +241,8 @@ jobs:
             --max-pending 0 --expect "real PostgreSQL server user is outside the allowlist=passed" \
             --expect "applies every migration as the non-superuser migrator=passed" \
             --expect "finds nothing to do on a second run=passed" \
-            --expect "runbook per-table grants cover exactly the tables=passed"
+            --expect "runbook per-table grants cover exactly the tables=passed" \
+            --expect "M01.03 client registration succeeds as the restricted runtime role=passed"
 
   # M00-L: the launcher is a Windows tool, so its behaviour suite also runs on real Windows with Windows
   # PowerShell 5.1 (the shell the .cmd wrappers call), including the cmd wrappers started the way a double-click

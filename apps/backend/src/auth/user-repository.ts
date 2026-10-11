@@ -189,6 +189,20 @@ export class UserRepository {
     return result.rows.map((row) => row.role);
   }
 
+  /**
+   * The roles of the given set the user holds, sorted. Pure membership read (M01.03 identity): whether a role is
+   * SELECTABLE is decided elsewhere, from the owners' eligibility ports.
+   */
+  async rolesAmong(context: TransactionContext, userId: string, roles: readonly string[]): Promise<string[]> {
+    const result = await context.query<{ role: string }>(
+      `SELECT role FROM app.user_roles
+        WHERE user_id = $1::uuid AND role = ANY($2::text[])
+        ORDER BY role`,
+      [userId, [...roles]],
+    );
+    return result.rows.map((row) => row.role);
+  }
+
   async hasRole(context: TransactionContext, userId: string, role: string): Promise<boolean> {
     const result = await context.query('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid AND role = $2', [
       userId,

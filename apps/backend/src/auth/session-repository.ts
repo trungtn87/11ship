@@ -11,6 +11,8 @@ export interface CreatedSession {
   readonly sessionId: string;
   /** Plaintext access token: returned to the client once, never stored. */
   readonly accessToken: string;
+  /** The absolute expiry the database wrote, as epoch milliseconds (the client API reports it as ISO UTC). */
+  readonly expiresAtMs: number;
 }
 
 export interface SessionView {
@@ -44,21 +46,25 @@ export type SharedLockedSession = LockedSession;
 /** SQL for sessions. The plaintext token exists only inside create(); the table gets the SHA-256 digest. */
 @Injectable()
 export class SessionRepository {
-  /** Creates a roleless session (active_role NULL) with an absolute expiry. */
+  /**
+   * Creates a session with an absolute expiry. It is roleless (active_role NULL) unless the caller names an `activeRole`
+   * on purpose: only the client registration does (M01.03, CUSTOMER), so the default of every legacy caller is unchanged.
+   */
   async create(
     context: TransactionContext,
-    input: { userId: string; device: DeviceInfo; ttlSeconds: number },
+    input: { userId: string; device: DeviceInfo; ttlSeconds: number; activeRole?: string },
   ): Promise<CreatedSession> {
     const sessionId = randomUUID();
     const { token, digest } = generateToken();
-    const result = await context.query(
+    const result = await context.query<{ expires_ms: string }>(
       `INSERT INTO app.sessions (
          session_id, user_id, token_digest, device_id, platform, app, active_role,
          expires_at, revoked_at, created_at, updated_at
        )
-       SELECT $1::uuid, $2::uuid, $3, $4, $5, $6, NULL,
+       SELECT $1::uuid, $2::uuid, $3, $4, $5, $6, $8::varchar,
               clock.t + make_interval(secs => $7::double precision), NULL, clock.t, clock.t
-         FROM (${CLOCK_CTE}) AS clock`,
+         FROM (${CLOCK_CTE}) AS clock
+       RETURNING ${epochMs('expires_at')} AS expires_ms`,
       [
         sessionId,
         input.userId,
@@ -67,12 +73,14 @@ export class SessionRepository {
         input.device.platform,
         input.device.app,
         input.ttlSeconds,
+        input.activeRole ?? null,
       ],
     );
-    if (result.rowCount !== 1) {
+    const row = result.rows[0];
+    if (result.rowCount !== 1 || row === undefined) {
       throw new TechnicalError('internal', 'Session was not written');
     }
-    return { sessionId, accessToken: token };
+    return { sessionId, accessToken: token, expiresAtMs: toSafeInteger(row.expires_ms) };
   }
 
   /** Authentication read: the session joined with its user, with revoked/expired decided by the database. */

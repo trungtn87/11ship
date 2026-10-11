@@ -20,7 +20,9 @@ function rig(eligibility: CustomerEligibility | null = ELIGIBLE) {
   const lockEligibility = jest.fn<(context: TransactionContext, userId: string) => Promise<CustomerEligibility | undefined>>(
     async () => eligibility ?? undefined,
   );
-  const insertProfileIfAbsent = jest.fn<(context: TransactionContext, userId: string) => Promise<boolean>>(async () => true);
+  const insertProfileIfAbsent = jest.fn<(context: TransactionContext, userId: string, initialFullName?: string) => Promise<boolean>>(
+    async () => true,
+  );
   const insertConsentIfAbsent = jest.fn<(context: TransactionContext, input: ConsentRecord) => Promise<boolean>>(async () => true);
   const grantRole = jest.fn<(context: TransactionContext, userId: string, role: string) => Promise<boolean>>(async () => true);
   const participant = new CustomerProvisioningParticipant(
@@ -175,6 +177,53 @@ describe('CustomerProvisioningParticipant.provision — malformed input is refus
     expect(grantRole).not.toHaveBeenCalled();
     expect(insertProfileIfAbsent).not.toHaveBeenCalled();
     expect(insertConsentIfAbsent).not.toHaveBeenCalled();
+  });
+});
+
+describe('CustomerProvisioningParticipant.provision — initial name of a NEW profile (M01.03)', () => {
+  it('hands the already normalized name to the profile initialization together with the user id', async () => {
+    const { participant, insertProfileIfAbsent } = rig();
+    await expect(participant.provision(CONTEXT, USER_ID, CONSENT, { initialFullName: 'Nguyễn Văn A' })).resolves.toEqual({
+      roleGranted: true,
+      profileCreated: true,
+      consentRecorded: true,
+    });
+    expect(insertProfileIfAbsent).toHaveBeenCalledWith(CONTEXT, USER_ID, 'Nguyễn Văn A');
+  });
+
+  it('keeps the exact M01.02 call (no third argument) when no initial name is given', async () => {
+    const { participant, insertProfileIfAbsent } = rig();
+    await participant.provision(CONTEXT, USER_ID, CONSENT, {});
+    expect(insertProfileIfAbsent).toHaveBeenCalledWith(CONTEXT, USER_ID);
+    expect(insertProfileIfAbsent.mock.calls[0]).toHaveLength(2);
+  });
+
+  it('reports the profile as NOT created when one already exists: the repository never overwrites it', async () => {
+    const { participant, insertProfileIfAbsent } = rig();
+    insertProfileIfAbsent.mockResolvedValue(false);
+    await expect(participant.provision(CONTEXT, USER_ID, CONSENT, { initialFullName: 'Tên Mới' })).resolves.toMatchObject({
+      profileCreated: false,
+    });
+  });
+
+  it.each([['an empty name', ''], ['a name of 121 code points', 'a'.repeat(121)]])(
+    'refuses %s before the lock or any write',
+    async (_label, initialFullName) => {
+      const { participant, lockEligibility, grantRole, insertProfileIfAbsent } = rig();
+      const failure = await failureOf(participant.provision(CONTEXT, USER_ID, CONSENT, { initialFullName }));
+      expect(failure).toBeInstanceOf(TechnicalError);
+      expect(lockEligibility).not.toHaveBeenCalled();
+      expect(grantRole).not.toHaveBeenCalled();
+      expect(insertProfileIfAbsent).not.toHaveBeenCalled();
+    },
+  );
+
+  it('counts the length in code points, so 120 astral characters are accepted', async () => {
+    const { participant, insertProfileIfAbsent } = rig();
+    const name = '𝒜'.repeat(120);
+    expect(name.length).toBe(240);
+    await participant.provision(CONTEXT, USER_ID, CONSENT, { initialFullName: name });
+    expect(insertProfileIfAbsent).toHaveBeenCalledWith(CONTEXT, USER_ID, name);
   });
 });
 

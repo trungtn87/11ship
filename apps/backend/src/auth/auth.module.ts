@@ -1,6 +1,10 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
+import { ClientAuthController } from '../client-auth/client-auth.controller';
+import { CLIENT_AUTH_SETTINGS, clientAuthSettingsFrom } from '../client-auth/client-auth-policy';
+import { ClientIdentityReader } from '../client-auth/client-identity-reader';
+import { ClientRegistrationService } from '../client-auth/client-registration-service';
 import { DriverModule } from '../driver/driver.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OutboxModule } from '../outbox/outbox.module';
@@ -56,7 +60,7 @@ export class AuthModule {
     return {
       module: AuthModule,
       imports: [TransactionModule, IdempotencyModule, AuditModule, OutboxModule, ShopModule, DriverModule],
-      controllers: [AuthController],
+      controllers: [AuthController, ClientAuthController],
       providers: [
         authConfigProvider,
         { provide: OTP_PROVIDER, useValue: options.otpProvider },
@@ -74,6 +78,9 @@ export class AuthModule {
             }
           : { provide: ACCOUNT_ORIGIN_POLICY, useValue: options.accountOriginPolicy },
         { provide: PASSWORD_HASHER, useFactory: () => new Argon2idPasswordHasher() },
+        { provide: CLIENT_AUTH_SETTINGS, inject: [APP_CONFIG], useFactory: clientAuthSettingsFrom },
+        ClientIdentityReader,
+        ClientRegistrationService,
         VerificationRepository,
         ProofRepository,
         UserRepository,
