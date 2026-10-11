@@ -23,7 +23,7 @@ describe('M01.02 — customer schema migration', () => {
   const files = readdirSync(migrationsDir).filter((file) => file.endsWith('.sql')).sort();
   const names = files.map((file) => file.replace(/\.sql$/, ''));
   const NEW_NAME = CUSTOMER_MIGRATION_FILE.replace(/\.sql$/, '');
-  const BEFORE = names.slice(0, names.length - 1);
+  const BEFORE = names.slice(0, names.indexOf(NEW_NAME)); // issue #49: the fixture-origin migration follows this one
   const TABLES = ['customer_profiles', 'user_consents'] as const;
   const HASH = '$argon2id$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA';
   const id = (n: number): string => `00000000-0000-4000-8000-00000000000${n}`;
