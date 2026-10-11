@@ -1,4 +1,5 @@
 import { safeErrorCode } from '../common/safe-error';
+import { TestSmsStartupError } from '../test-sms/test-sms-types';
 import { StartupConfigError } from './startup-config-error';
 
 /**
@@ -8,6 +9,10 @@ import { StartupConfigError } from './startup-config-error';
 export function describeStartupFailure(error: unknown): string {
   if (error instanceof StartupConfigError) {
     return error.message;
+  }
+  // A fixed code that names the class of failure only (no path, user or token).
+  if (error instanceof TestSmsStartupError) {
+    return `Startup failed (${error.code}).`;
   }
   return `Startup failed (${safeErrorCode(error)}).`;
 }

@@ -1,0 +1,270 @@
+/* Design preview page (design.html) of the administration web. Not part of the real app: only present in preview builds. */
+
+.dv {
+  min-height: 100vh;
+  background: var(--surface);
+}
+
+.dv-banner {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  padding: 10px 16px;
+  background: var(--charcoal);
+  color: var(--white);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.dv-banner strong {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--yellow);
+  color: var(--charcoal);
+}
+
+.dv-bar {
+  position: sticky;
+  top: 40px;
+  z-index: 190;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 16px;
+  background: var(--white);
+  border-bottom: 1px solid var(--line);
+}
+
+.dv-eyebrow {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dv-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.dv-select {
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0 12px;
+  background: var(--white);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  font-size: 15px;
+}
+
+.dv-btn,
+.dv-seg,
+.dv-variant {
+  min-height: 44px;
+  padding: 0 14px;
+  background: var(--white);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dv-btn {
+  min-width: 44px;
+  font-size: 20px;
+}
+
+.dv-segment {
+  display: inline-flex;
+}
+
+.dv-seg {
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.dv-seg:first-child {
+  margin-left: 0;
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
+}
+
+.dv-seg:last-child {
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+}
+
+.dv-seg[aria-pressed='true'],
+.dv-variant[aria-pressed='true'] {
+  background: var(--charcoal);
+  border-color: var(--charcoal);
+  color: var(--white);
+}
+
+.dv-btn:focus-visible,
+.dv-seg:focus-visible,
+.dv-variant:focus-visible,
+.dv-select:focus-visible,
+.dv-link:focus-visible,
+.dv-details summary:focus-visible {
+  outline: 3px solid var(--charcoal);
+  outline-offset: 2px;
+}
+
+.dv-details {
+  margin: 12px 16px 0;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.dv-details summary {
+  min-height: 44px;
+  padding: 10px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dv-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px 24px;
+  padding: 0 16px 16px;
+}
+
+.dv-group-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dv-group-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dv-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--charcoal);
+  text-decoration: none;
+}
+
+.dv-link:hover,
+.dv-link[aria-current='page'] {
+  background: var(--surface);
+  font-weight: 700;
+}
+
+.dv-code {
+  display: inline-block;
+  min-width: 44px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--yellow);
+  color: var(--charcoal);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.dv-head {
+  padding: 16px 16px 8px;
+}
+
+.dv-title {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.dv-note {
+  margin: 0 0 10px;
+  max-width: 900px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.dv-variants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dv-stage {
+  padding: 8px 16px 40px;
+}
+
+.dv-frame {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.dv-frame .shell,
+.dv-frame .page {
+  min-height: 70vh;
+}
+
+.dv-frame .sidebar {
+  height: 70vh;
+}
+
+.dv-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 300;
+  max-width: calc(100vw - 32px);
+  padding: 12px 18px;
+  transform: translateX(-50%);
+  border-radius: var(--radius-control);
+  background: var(--charcoal);
+  color: var(--white);
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  .dv-banner,
+  .dv-bar {
+    position: static;
+  }
+
+  .dv-controls {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .dv-select {
+    flex: 1 1 160px;
+    min-width: 0;
+  }
+
+  .dv-segment {
+    width: 100%;
+  }
+
+  .dv-seg {
+    flex: 1 1 0;
+    padding: 0 6px;
+    font-size: 13px;
+  }
+
+  /* The drawer of the real shell is fixed to the browser window; inside the preview it is fixed to the window too. */
+  .dv-frame .sidebar {
+    height: 100vh;
+  }
+}

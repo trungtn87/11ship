@@ -7,7 +7,7 @@
 // never their values.
 import { EnvSource } from './admin-auth-config';
 
-export const ACTIVATION_OTP_MODES = ['FAKE', 'TEST_DISPLAY', 'SMS'] as const;
+export const ACTIVATION_OTP_MODES = ['FAKE', 'TEST_DISPLAY', 'TEST_INBOX', 'SMS'] as const;
 export type ActivationOtpMode = (typeof ACTIVATION_OTP_MODES)[number];
 
 export const DEFAULT_PROVIDER_TIMEOUT_MS = 8000;
@@ -71,7 +71,7 @@ export const DEFAULT_ACTIVATION_LIMITS: ActivationLimits = Object.freeze(
 
 export interface AdminActivationConfig {
   /**
-   * ADMIN_ACTIVATION_OTP_MODE. FAKE / TEST_DISPLAY are for a non-production test or development environment ONLY and are
+   * ADMIN_ACTIVATION_OTP_MODE. FAKE / TEST_DISPLAY / TEST_INBOX are for a non-production test or development environment ONLY and are
    * never a default or a fallback: the mode must be named explicitly. SMS has no provider yet (a later task), so it
    * refuses startup instead of delivering codes nowhere.
    */
@@ -117,7 +117,7 @@ export function loadAdminActivationConfig(
   const invalid: string[] = [];
   const rawMode = env.ADMIN_ACTIVATION_OTP_MODE;
   const otpMode = ACTIVATION_OTP_MODES.find((mode) => mode === rawMode);
-  const testMode = otpMode === 'FAKE' || otpMode === 'TEST_DISPLAY';
+  const testMode = otpMode === 'FAKE' || otpMode === 'TEST_DISPLAY' || otpMode === 'TEST_INBOX';
   if (otpMode === undefined || (testMode && appEnv !== 'development' && appEnv !== 'test')) {
     invalid.push('ADMIN_ACTIVATION_OTP_MODE');
   }

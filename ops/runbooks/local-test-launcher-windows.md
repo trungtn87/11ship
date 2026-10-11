@@ -10,12 +10,29 @@ Task M00-L. Chỉ hỗ trợ Windows; chạy từ `tools\local`. Repo hiện ch�
 - `11Ship-Test.cmd`: chạy kiểm tra kỹ thuật với riêng `ship11_test` cổng 5433, lưu log đã ẩn secret trong `.11ship-local\logs`.
 - `11Ship-Stop.cmd`: dừng backend và DB nhưng giữ volume DEV. Thêm `-KeepDatabases` để chỉ dừng backend.
 - `11Ship-Status.cmd`: xem Git, toolchain, DB, backend và test gần nhất.
+- `11Ship-Admin.cmd`, `11Ship-Food.cmd`, `11Ship-Ship.cmd` (gói M00.01): ba lối vào riêng cho Web Admin, 11Food (khách + quán) và 11Ship (xế). **Hiện chưa mở được ứng dụng nào**: lệnh dừng ngay với exit code 1 và mã `APP_NOT_READY`, nói rõ còn thiếu gì và chưa làm gì cả. Xem mục "Ba lối vào ứng dụng".
 
 Có thể tạo shortcut bằng mục 6 trong menu hoặc:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\local\11ship-launcher.ps1 -Command InstallShortcut
 ```
+
+## Ba lối vào ứng dụng (M00.01)
+
+Ba file `.cmd` chỉ chọn app rồi gọi **cùng một** launcher (`11ship-launcher.ps1 -Command App -App <tên>`). Repo được xác định từ vị trí script, nên chạy từ thư mục nào, kể cả đường dẫn có dấu hoặc khoảng trắng, đều dùng đúng checkout chứa wrapper.
+
+| Lối vào | Ứng dụng | Địa chỉ dự kiến | Trạng thái hiện tại |
+|---|---|---|---|
+| `11Ship-Admin.cmd` | Web Admin | https://localhost:8443 | Chưa mở được: `LAUNCH_LOCK_MISSING` (M00.02), `ARTIFACT_IDENTITY_MISSING` (M00.03) |
+| `11Ship-Food.cmd` | 11Food (khách + quán) | https://localhost:8444 | Chưa mở được: hai mã trên và `APP_RUNTIME_MISSING` (chưa có máy chủ chạy thật; M00.05/M00.06) |
+| `11Ship-Ship.cmd` | 11Ship (xế) | https://localhost:8445 | Chưa mở được: hai mã trên và `APP_RUNTIME_MISSING` (M00.05/M00.07) |
+
+- Khi chưa sẵn sàng, launcher thoát với **exit code 1** trước mọi tác động: không cập nhật mã, không bật database hoặc backend, không mở trình duyệt, không đụng tới `.env` hay database (chỉ ghi bản ghi kết quả `.11ship-local\last-run.json`). Nó không bao giờ báo "đã chạy".
+- Không có app "Quán" riêng: quán thuộc 11Food, 11Ship chỉ dành cho xế.
+- Web Admin chưa mở dù đã có `scripts/admin-web-dev.mjs`: khi chưa có khóa dùng chung và chưa xác minh được process/cổng thuộc launcher, một dịch vụ lạ trên cổng 8443 có thể bị nhận nhầm là Admin. Bản xem thử `Xem-Giao-Dien.cmd` (dữ liệu minh họa) không phải ứng dụng và không được dùng thay.
+- Double-click: cửa sổ giữ lại để đọc lỗi; từ terminal lệnh kết thúc ngay; `-NoPause` dùng được như các lệnh khác. Kết quả ghi ở `.11ship-local\last-run.json` với `command` là `App Admin`, `App Food` hoặc `App Ship`.
+- Các gói sau (M00.02, M00.03, M00.05 đến M00.09) lần lượt thêm khóa, định danh artifact/process và máy chủ rồi mới bật việc mở ứng dụng; gói M00.01 không làm các việc đó.
 
 ## Mở bằng double-click hay từ terminal
 
@@ -35,6 +52,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\local\11ship-launcher.
 
 - `Test gần nhất: PASS/FAIL` chỉ hiện khi summary thuộc đúng commit đang checkout. Sau Update hoặc commit mới, Status hiện `STALE` cho tới khi chạy lại Test.
 - Mỗi lỗi có `mã lỗi` cố định, ví dụ `DIRTY_TRACKED`, `UNTRACKED_COLLISION`, `DETACHED_HEAD`, `NO_UPSTREAM`, `NON_FAST_FORWARD`, `DOCKER_UNAVAILABLE`, `MIGRATION_DECLINED`, `PORT_IN_USE`, `TEST_TARGET_GUARD`. Gửi mã này khi cần hỗ trợ.
+- Ba lối vào ứng dụng thêm các mã: `APP_NOT_READY` (kèm danh sách còn thiếu), `APP_RUNTIME_MISSING`, `LAUNCH_LOCK_MISSING`, `ARTIFACT_IDENTITY_MISSING`, `APP_NOT_SPECIFIED`, `APP_UNKNOWN`, `APP_LAUNCH_NOT_IMPLEMENTED`.
 - `11Ship-Test` luôn xóa tạm `TEST_WRONG_USER_DATABASE_URL`, `TEST_REMOTE_PATH_DATABASE_URL`, `TEST_REMOTE_PATH_RUNTIME_URL` và `PGPASSWORD` khỏi môi trường của mọi bước npm (kể cả khi terminal của bạn đang đặt các biến này) rồi khôi phục nguyên trạng sau khi xong hoặc khi lỗi. Các biến này chỉ dành cho CI; Test local chỉ chạm `ship11_test` cổng 5433.
 - Mật khẩu DB TEST có thể chứa ký tự đặc biệt (`@ / # : %`...). Launcher lấy mật khẩu từ container `ship11-db-test` đang chạy và mã hóa URI trước khi tạo `DATABASE_URL`.
 

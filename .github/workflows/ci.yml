@@ -99,10 +99,36 @@ jobs:
         if: ${{ failure() && steps.build.conclusion == 'failure' }}
         run: node scripts/annotate-log.js Build .test-results/build.log 60
 
+      # M01.22: the read-only test SMS inbox reader against the compiled backend (real private state, real listener).
+      - name: Test SMS inbox tool (compiled backend, real listener and private state)
+        id: testsms
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p .test-results
+          npm run test-sms:test 2>&1 | tee .test-results/test-sms.log
+
+      - name: Annotate test SMS inbox tool failure
+        if: ${{ failure() && steps.testsms.conclusion == 'failure' }}
+        run: node scripts/annotate-log.js "Test SMS inbox tool" .test-results/test-sms.log 60
+
+      - name: Report test SMS inbox tool counts
+        if: ${{ always() && hashFiles('.test-results/test-sms.log') != '' }}
+        shell: bash
+        run: echo "::notice title=Test SMS inbox tool (Linux)::$(grep -E 'ℹ (tests|suites|pass|fail|cancelled|skipped|todo)|✖|SKIP' .test-results/test-sms.log | tr '\n' ';')"
+
       # M00-D1: render.yaml stays inside the authorized scope and the remote migration command keeps its gates.
       # Pure Node, no database. This is a structural check; Render's own Blueprint validation is a separate step.
       - name: Deploy configuration tests (Render Blueprint, remote migration gates)
         run: npm run deploy:test
+
+      # M01-UI: shared phone UI foundation (validation, route guards, ports never answering ok, design preview isolation).
+      - name: Client shell tests (phone UI foundation)
+        run: npm run client-shell:test
+
+      # M01-UI: web administration menu by permission, "Sắp có" entries, real build free of preview data, read-only preview.
+      - name: Admin web UI tests (menu, permissions, preview isolation)
+        run: npm run admin-web:test
 
       # M00-L: structure checks plus the launcher behaviour suite under PowerShell 7 (real git, faked Docker/npm).
       # The Windows-only parts (cmd wrappers, double-click) run in the launcher-windows job below.
@@ -237,6 +263,29 @@ jobs:
       # Needed only so the suite can check the generated TEST DATABASE_URL with the real PostgreSQL driver parser.
       - name: Install dependencies (npm ci)
         run: npm ci
+
+      # M01.22: the test SMS inbox on real Windows: private state ACL (PowerShell), process start time, and the
+      # real .cmd wrapper started the way a double-click starts it.
+      - name: Build backend (for the test SMS inbox tool)
+        shell: powershell
+        run: npm run build
+
+      - name: Test SMS inbox tool and private state on Windows
+        id: testsms
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p .test-results
+          npm run test-sms:test 2>&1 | tee .test-results/test-sms.log
+
+      - name: Annotate test SMS inbox tool failure (Windows)
+        if: ${{ failure() && steps.testsms.conclusion == 'failure' }}
+        run: node scripts/annotate-log.js "Test SMS inbox tool (Windows)" .test-results/test-sms.log 60
+
+      - name: Report test SMS inbox tool counts (Windows)
+        if: ${{ always() && hashFiles('.test-results/test-sms.log') != '' }}
+        shell: bash
+        run: echo "::notice title=Test SMS inbox tool (Windows)::$(grep -E 'ℹ (tests|suites|pass|fail|cancelled|skipped|todo)|✖|SKIP' .test-results/test-sms.log | tr '\n' ';')"
 
       - name: Launcher behaviour suite and Windows wrapper runs
         id: launcher

@@ -1,0 +1,83 @@
+/* Design tokens of 11Food and 11Ship (design set v2.0.2, 03-ui-catalog section 1).
+   Colours, font, 4px grid, 48px controls and 12px radius are fixed by the Owner; change them only on a new Owner decision. */
+
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  src: url('/fonts/PlusJakartaSans-wght.woff2') format('woff2');
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Brand */
+  --c-yellow: #d8ad18;
+  --c-yellow-strong: #b88f0a; /* pressed / text-on-white accent, AA on white */
+  --c-yellow-soft: #fbf1cf; /* notices, soft highlights */
+  --c-yellow-faint: #fdf8e6;
+  --c-black: #2a2a2e;
+  --c-white: #ffffff;
+  --c-bg: #f2f1ee;
+
+  /* Neutrals */
+  --c-ink: var(--c-black);
+  --c-ink-2: #55555b; /* secondary text, 7.3:1 on white */
+  --c-ink-3: #6f6f75; /* captions, 4.9:1 on white */
+  --c-line: #e3e1db;
+  --c-line-strong: #cfccc3;
+  --c-surface: var(--c-white);
+  --c-field: #f7f6f3;
+  --c-disabled-bg: #ebe9e4;
+  --c-disabled-ink: #8a8a8f;
+
+  /* Status (always paired with text and an icon, never colour alone) */
+  --c-success: #2e7d32;
+  --c-success-soft: #e6f3e7;
+  --c-error: #c62828;
+  --c-error-soft: #fbe9e9;
+  --c-info: #2563eb;
+  --c-info-soft: #e8effd;
+
+  /* Shape and spacing (4px grid) */
+  --r-control: 12px;
+  --r-card: 16px;
+  --r-pill: 999px;
+  --control-h: 48px;
+  --tap-min: 44px;
+  --gap-1: 4px;
+  --gap-2: 8px;
+  --gap-3: 12px;
+  --gap-4: 16px;
+  --gap-6: 24px;
+  --gap-8: 32px;
+  --pad: 16px;
+
+  /* Type */
+  --font: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --fs-body: 15px;
+  --fs-caption: 13px;
+  --fs-title: 22px;
+  --fs-h2: 18px;
+
+  /* Elevation */
+  --shadow-card: 0 1px 2px rgba(42, 42, 46, 0.06), 0 4px 12px rgba(42, 42, 46, 0.05);
+  --shadow-sheet: 0 -8px 32px rgba(42, 42, 46, 0.18);
+  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.55);
+
+  /* Safe areas (phones with a notch / gesture bar) */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  color-scheme: light;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -695,15 +695,134 @@ try {
   Set-Item -Path function:Invoke-LauncherCommand -Value $realInvoke
 
   # =============================================================================================
+  Section 'M00.01 app entry: Admin, Food and Ship refuse safely until their prerequisites exist'
+  # =============================================================================================
+  New-GitSandbox
+  $appHead = Head
+  $dockerBefore = $script:AllDocker.Count
+  $sqlBefore = $script:AllSql.Count
+  $script:ProcessStarts = New-Object 'Collections.Generic.List[string]'
+  # Nothing may be started or opened (no backend, no frontend, no browser): record any attempt instead of doing it.
+  function Start-Process { $script:ProcessStarts.Add(($args -join ' ')) | Out-Null }
+  $adminRuntime = Join-Path $script:Repo 'scripts/admin-web-dev.mjs'
+  try {
+    Write-Text $adminRuntime '// stand-in for the real Admin local server'
+    $appUrl = @{ Admin = 'https://localhost:8443'; Food = 'https://localhost:8444'; Ship = 'https://localhost:8445' }
+    foreach ($appName in @('Admin','Food','Ship')) {
+      Reset-Fakes
+      $message = Get-FailMessage { Open-AppLauncher $appName }
+      Check ($message.Contains(': APP_NOT_READY)')) "$appName -> APP_NOT_READY"
+      Check ($message.Contains('LAUNCH_LOCK_MISSING') -and $message.Contains('ARTIFACT_IDENTITY_MISSING')) "$appName message names the missing lock (M00.02) and artifact identity (M00.03)"
+      Check ($message.Contains($appUrl[$appName])) "$appName message names its own address $($appUrl[$appName])"
+      $runtimeBlocked = $message.Contains('APP_RUNTIME_MISSING')
+      Check ($runtimeBlocked -eq ($appName -ne 'Admin')) "$appName runtime blocker is derived from the repository (present only when the app has no local server)"
+      Check ($script:DockerCalls.Count -eq 0 -and $script:NpmCalls.Count -eq 0 -and $script:HttpCalls.Count -eq 0 -and $script:SqlCalls.Count -eq 0) "$appName refusal runs no Docker, npm, HTTP or SQL"
+      Check ($script:BackendStarts -eq 0 -and $script:ProcessStarts.Count -eq 0) "$appName refusal starts no backend, frontend or browser"
+    }
+    Check ($script:AllDocker.Count -eq $dockerBefore -and $script:AllSql.Count -eq $sqlBefore) 'no app refusal touched the databases'
+    Check ((Head) -eq $appHead -and !(Test-Path -LiteralPath $script:StateFile)) 'no app refusal updated the code or recorded a backend'
+
+    Remove-Item -LiteralPath $adminRuntime -Force
+    $message = Get-FailMessage { Open-AppLauncher 'Admin' }
+    Check ($message.Contains('APP_RUNTIME_MISSING')) 'Admin without its local server file reports APP_RUNTIME_MISSING (not assumed present)'
+
+    $script:App = 'Food'
+    $message = Get-FailMessage { Invoke-LauncherCommand 'App' }
+    Check ($message.Contains(': APP_NOT_READY)') -and $message.Contains('11Food') -and !$message.Contains('11Ship (') -and !$message.Contains('Web Admin')) 'the App command dispatches the selected app (Food) and only that one'
+    # The dot-sourced -App parameter keeps its ValidateSet, so it is removed (not set to $null) to mean 'no app given'.
+    Remove-Variable -Name App -Scope Script -ErrorAction SilentlyContinue
+    Expect-Fail 'APP_NOT_SPECIFIED' 'App command without an app name' { Invoke-LauncherCommand 'App' }
+    Expect-Fail 'APP_NOT_SPECIFIED' 'empty app name' { Open-AppLauncher '' }
+    Expect-Fail 'APP_UNKNOWN' 'unknown app name (there is no separate shop app)' { Open-AppLauncher 'Shop' }
+
+    # Fail closed: even when every prerequisite is declared ready this package has no launch sequence, so it never reports success.
+    Write-Text $adminRuntime '// stand-in for the real Admin local server'
+    $savedReady = @($script:OrchestratorCapabilities.Values | ForEach-Object { $_.Ready })
+    try {
+      foreach ($capability in @($script:OrchestratorCapabilities.Values)) { $capability.Ready = $true }
+      Expect-Fail 'APP_NOT_READY' 'Food stays refused when only the orchestrator is declared ready (no local server for it)' { Open-AppLauncher 'Food' }
+      Expect-Fail 'APP_LAUNCH_NOT_IMPLEMENTED' 'Admin with every prerequisite declared ready still fails closed' { Open-AppLauncher 'Admin' }
+    } finally {
+      $i = 0
+      foreach ($capability in @($script:OrchestratorCapabilities.Values)) { $capability.Ready = $savedReady[$i]; $i++ }
+    }
+    Check ($script:BackendStarts -eq 0 -and $script:ProcessStarts.Count -eq 0 -and $script:DockerCalls.Count -eq 0) 'the fail-closed path also starts and opens nothing'
+    Check (@($script:OrchestratorCapabilities.Values | Where-Object { $_.Ready }).Count -eq 0) 'prerequisites are back to not ready after the fail-closed check'
+  } finally {
+    Remove-Item -Path function:Start-Process -ErrorAction SilentlyContinue
+  }
+
+  Check ((@($script:AppCatalog.Keys) -join ',') -ceq 'Admin,Food,Ship') 'the catalog has exactly Admin, Food and Ship (11Food covers customer and shop; 11Ship is the driver app)'
+  $ports = @($script:AppCatalog.Values | ForEach-Object { ([Uri]$_.Url).Port })
+  Check (($ports -join ',') -eq '8443,8444,8445' -and @($script:AppCatalog.Values | Where-Object { $_.Url -notmatch '^https://localhost:' }).Count -eq 0) 'catalog addresses follow the approved table (https://localhost:8443/8444/8445)'
+  $appParameter = (Get-Command -Name $scriptPath).Parameters['App']
+  $validApps = @($appParameter.Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] } | ForEach-Object { $_.ValidValues })
+  Check (($validApps -join ',') -ceq 'Admin,Food,Ship') 'the -App parameter accepts exactly the catalog apps'
+
+  # =============================================================================================
+  Section 'M00.01 launcher process: app argument, caller folder, exit code, folder with spaces and Vietnamese letters'
+  # =============================================================================================
+  # The real script runs in a child process of the SAME PowerShell edition, copied into a folder whose name has spaces and
+  # Vietnamese letters (built from code points: this file stays ASCII), and is started from a DIFFERENT working directory.
+  $psExe = (Get-Process -Id $PID).Path
+  $accentName = 'Th' + [char]0x01B0 + ' m' + [char]0x1EE5 + 'c 11 Ship'
+  $childRepo = Join-Path $tempRoot $accentName
+  $childLocal = Join-Path (Join-Path $childRepo 'tools') 'local'
+  New-Item -ItemType Directory -Force -Path $childLocal | Out-Null
+  Copy-Item -LiteralPath $scriptPath -Destination $childLocal
+  $childScript = Join-Path $childLocal '11ship-launcher.ps1'
+  $callerCwd = Join-Path $tempRoot 'caller cwd'
+  New-Item -ItemType Directory -Force -Path $callerCwd | Out-Null
+  # Present and secret-bearing on purpose: a refusal must neither depend on it nor print it.
+  Write-Text (Join-Path $childRepo '.env') "APP_ENV=development`nDEV_DB_PASSWORD=$($script:DevPassword)"
+  function Invoke-Child([string[]]$Arguments) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'   # Windows PowerShell 5.1 turns native stderr into an error under 'Stop'
+    Push-Location -LiteralPath $callerCwd
+    try {
+      $text = (& $psExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $childScript @Arguments 2>&1 | Out-String)
+      return [pscustomobject]@{ Code = $LASTEXITCODE; Text = $text }
+    } finally { Pop-Location; $ErrorActionPreference = $previous }
+  }
+  $childRecord = Join-Path (Join-Path $childRepo '.11ship-local') 'last-run.json'
+  foreach ($case in @(@('Admin','Web Admin'),@('Food','11Food'),@('Ship','11Ship'))) {
+    $appName = $case[0]
+    Remove-Item -LiteralPath (Join-Path $childRepo '.11ship-local') -Recurse -Force -ErrorAction SilentlyContinue
+    $r = Invoke-Child @('-Command','App','-App',$appName)
+    Check ($r.Code -eq 1) "$appName from another folder exits with code 1"
+    Check ($r.Text.Contains(': APP_NOT_READY)') -and $r.Text.Contains($case[1])) "$appName output names the app and APP_NOT_READY"
+    Check ($r.Text.Contains("App ${appName}:") -and $r.Text.Contains('(exit 1)')) "$appName output ends with its own failure line and exit code"
+    Check (!$r.Text.Contains($script:DevPassword) -and !$r.Text.Contains('ENV_FILE_MISSING')) "$appName refusal prints no secret and does not depend on .env"
+    $record = if (Test-Path -LiteralPath $childRecord) { Get-Content -Raw -LiteralPath $childRecord | ConvertFrom-Json } else { $null }
+    Check ($record -and $record.command -ceq "App $appName" -and $record.exitCode -eq 1 -and $record.waitedForOwner -eq $false) "$appName run record is written next to the script, names the app and did not wait for a key"
+    Check (!(Test-Path -LiteralPath (Join-Path $callerCwd '.11ship-local')) -and !(Test-Path -LiteralPath (Join-Path (Join-Path $childRepo '.11ship-local') 'backend.json'))) "$appName state goes to the script's repo, never the caller's folder, and no backend is recorded"
+  }
+  $r = Invoke-Child @('-Command','App')
+  Check ($r.Code -eq 1 -and $r.Text.Contains(': APP_NOT_SPECIFIED)')) '-Command App without -App exits 1 with APP_NOT_SPECIFIED'
+  $r = Invoke-Child @('-Command','App','-App','Shop')
+  Check ($r.Code -ne 0 -and $r.Text.Contains('Shop')) 'an app outside Admin/Food/Ship is rejected before anything runs (non-zero exit)'
+  $r = Invoke-Child @('-Command','App','-App','Food','-NoPause')
+  Check ($r.Code -eq 1 -and $r.Text.Contains(': APP_NOT_READY)')) 'extra launcher arguments (-NoPause) are accepted next to -App'
+
+  # =============================================================================================
   Section 'Wrappers and real Windows double-click behaviour'
   # =============================================================================================
   $source = Get-Content -Raw -Encoding UTF8 -LiteralPath $scriptPath
   foreach ($forbidden in @('reset --hard','down -v','db:migrate:remote','git stash','push --force','audit fix')) { Check (!$source.Contains($forbidden)) "source excludes forbidden operation: $forbidden" }
-  $wrappers = @(Get-ChildItem -LiteralPath (Split-Path $scriptPath) -Filter '*.cmd')
-  Check ($wrappers.Count -eq 6) 'menu plus five command wrappers exist'
+  # M01.22: the test SMS inbox reader is a separate tool (not a launcher wrapper); tests/test-sms-tool covers it.
+  $wrappers = @(Get-ChildItem -LiteralPath (Split-Path $scriptPath) -Filter '*.cmd' | Where-Object { $_.Name -ne '11ship-test-sms.cmd' })
+  Check ($wrappers.Count -eq 9) 'menu, five command wrappers and three app wrappers exist'
+  $expectedWrappers = @('11Ship.cmd','11Ship-Start.cmd','11Ship-Update.cmd','11Ship-Test.cmd','11Ship-Stop.cmd','11Ship-Status.cmd','11Ship-Admin.cmd','11Ship-Food.cmd','11Ship-Ship.cmd')
+  Check ((@($wrappers | ForEach-Object { $_.Name } | Sort-Object) -join '|') -ceq (@($expectedWrappers | Sort-Object) -join '|')) 'wrapper inventory is exactly the nine expected names (no separate shop-owner app)'
   foreach ($wrapper in $wrappers) {
     $text = Get-Content -Raw -LiteralPath $wrapper.FullName
     Check ($text.Contains('powershell.exe -NoProfile -ExecutionPolicy Bypass') -and $text.Contains('exit /b %code%') -and $text -notmatch '(?im)^\s*pause\b') "$($wrapper.Name) calls Windows PowerShell, preserves the exit code and has no unconditional pause"
+  }
+  foreach ($appName in @('Admin','Food','Ship')) {
+    $text = Get-Content -Raw -LiteralPath (Join-Path (Split-Path $scriptPath) "11Ship-$appName.cmd")
+    $named = @([regex]::Matches($text, '-App\s+(\S+)'))
+    Check ($named.Count -eq 1 -and $named[0].Groups[1].Value -ceq $appName) "11Ship-$appName.cmd passes exactly -App $appName"
+    Check ($text.Contains('-Command App -App') -and $text.Contains('"%~dp011ship-launcher.ps1"') -and $text.Contains('%*')) "11Ship-$appName.cmd uses the shared launcher next to itself (not the caller folder) and forwards extra arguments"
   }
 
   if (!$onWindows) { $script:Skipped.Add('real Windows wrapper runs (cmd.exe double-click simulation) - not Windows') }
@@ -743,6 +862,31 @@ try {
       Check ($record -and $record.waitedForOwner -eq $true) 'F05: double-clicked Status decided to keep the window open'
       Check (!$p.HasExited) 'F05: the window is still open 5 seconds after a SUCCESSFUL double-clicked Status'
     } finally { if (!$p.HasExited) { & taskkill.exe /PID $p.Id /T /F | Out-Null } }
+
+    # M00.01: the three app wrappers themselves, in a folder with a space and Vietnamese letters, started from ANOTHER folder.
+    $appRepo = Join-Path $tempRoot ('Th' + [char]0x01B0 + ' m' + [char]0x1EE5 + 'c wrappers')
+    $appLocal = Join-Path (Join-Path $appRepo 'tools') 'local'
+    New-Item -ItemType Directory -Force -Path $appLocal | Out-Null
+    Copy-Item -Path (Join-Path (Split-Path $scriptPath) '*') -Destination $appLocal
+    $otherCwd = Join-Path $tempRoot 'other cwd'
+    New-Item -ItemType Directory -Force -Path $otherCwd | Out-Null
+    $appRecord = Join-Path (Join-Path $appRepo '.11ship-local') 'last-run.json'
+    foreach ($appName in @('Admin','Food','Ship')) {
+      Remove-Item -LiteralPath (Join-Path $appRepo '.11ship-local') -Recurse -Force -ErrorAction SilentlyContinue
+      $appWrapper = Join-Path $appLocal "11Ship-$appName.cmd"
+      $appOut = Join-Path $tempRoot "app-$appName-output.txt"
+      $p = Start-Process -FilePath 'cmd.exe' -ArgumentList ('/c ""{0}" -NoPause"' -f $appWrapper) -WorkingDirectory $otherCwd -RedirectStandardInput $emptyInput -RedirectStandardOutput $appOut -PassThru -WindowStyle Hidden
+      $null = $p.Handle
+      $finished = $p.WaitForExit(180000)
+      if (!$finished) { & taskkill.exe /PID $p.Id /T /F | Out-Null }
+      Check $finished "M00.01: 11Ship-$appName.cmd finishes by itself when its streams are redirected"
+      Check ($finished -and $p.ExitCode -eq 1) "M00.01: 11Ship-$appName.cmd returns the launcher exit code 1 (not ready), not 0"
+      $outText = if (Test-Path -LiteralPath $appOut) { Get-Content -Raw -LiteralPath $appOut } else { '' }
+      Check ($outText.Contains(': APP_NOT_READY)')) "M00.01: 11Ship-$appName.cmd output reached the caller with APP_NOT_READY"
+      $record = if (Test-Path -LiteralPath $appRecord) { Get-Content -Raw -LiteralPath $appRecord | ConvertFrom-Json } else { $null }
+      Check ($record -and $record.command -ceq "App $appName" -and $record.exitCode -eq 1) "M00.01: 11Ship-$appName.cmd ran the right app from a folder with spaces and Vietnamese letters"
+      Check (!(Test-Path -LiteralPath (Join-Path $otherCwd '.11ship-local'))) "M00.01: 11Ship-$appName.cmd ignores the caller's working folder"
+    }
   }
 }
 finally {

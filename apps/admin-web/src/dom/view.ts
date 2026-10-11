@@ -3,6 +3,7 @@ import { AdminAuthController, Screen } from '../core/controller.js';
 import { COPY, formatCountdown } from '../core/messages.js';
 import { h, eyeIcon, brand, message, setMessage, field, primary, secondary, renderQr } from './dom.js';
 import { groupSecret, isCompleteCode, sanitizeCodeInput } from '../core/inputs.js';
+import { buildShell, KeyValueStore, ShellLayout } from './shell-layout.js';
 
 // DOM rendering of the controller's screens. Every node is built with createElement/textContent (no innerHTML), so no
 // server value can become markup. A screen is built once when its name changes and then patched in place, so focus,
@@ -11,8 +12,17 @@ import { groupSecret, isCompleteCode, sanitizeCodeInput } from '../core/inputs.j
 
 /** What the shell shows inside its layout. Mounted when the shell appears, unmounted when it goes away. */
 export interface ShellHost {
-  mount(parts: { readonly content: HTMLElement; readonly nav: HTMLElement; readonly role: AdminRole }): void;
+  mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void;
   unmount(): void;
+}
+
+/** The browser's local storage, or nothing when it is blocked (only the sidebar's collapsed/expanded choice goes there). */
+function pageStorage(): KeyValueStore | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
 }
 
 interface Mounted {
@@ -155,6 +165,7 @@ export class AdminView {
       formError,
       lockMessage,
       submit,
+      h('a', { href: '/reset', class: 'link-btn link-center' }, 'Quên mật khẩu?'),
     );
     form.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -321,39 +332,31 @@ export class AdminView {
   }
 
   #mountShell(): Mounted {
-    const role = h('span', { class: 'role-badge' });
-    const logout = secondary('Đăng xuất');
-    logout.classList.add('btn-compact');
-    logout.addEventListener('click', () => void this.controller.logout());
-    const nav = h('nav', { class: 'nav', 'aria-label': 'Chức năng quản trị' });
-    const notice = message('notice', 'shell-notice');
-    const error = message('error', 'shell-error');
-    const content = h('div', { class: 'content-area', id: 'content', tabindex: '-1' });
-    const sidebar = h('aside', { class: 'sidebar' }, brand(), nav, h('div', { class: 'sidebar-foot topbar-actions' }, role, logout));
-    this.root.replaceChildren(h('div', { class: 'shell' }, sidebar, h('main', { class: 'shell-main' }, notice, error, content)));
+    const layout = buildShell({ onLogout: () => void this.controller.logout(), store: pageStorage() });
+    this.root.replaceChildren(layout.root);
     let mountedRole: AdminRole | undefined;
     return {
       name: 'shell',
       dispose: () => {
         mountedRole = undefined;
         this.host?.unmount();
+        layout.dispose();
       },
       update: (s) => {
         if (s.name !== 'shell') {
           return;
         }
-        role.textContent = s.role;
-        setMessage(notice, s.notice);
-        setMessage(error, s.error);
-        logout.disabled = s.pending;
-        logout.textContent = s.pending ? 'Đang đăng xuất…' : 'Đăng xuất';
-        logout.setAttribute('aria-busy', String(s.pending));
+        setMessage(layout.notice, s.notice);
+        setMessage(layout.error, s.error);
+        layout.logout.disabled = s.pending;
+        layout.logoutLabel.textContent = s.pending ? 'Đang đăng xuất…' : 'Đăng xuất';
+        layout.logout.setAttribute('aria-busy', String(s.pending));
         if (mountedRole !== s.role) {
           mountedRole = s.role;
-          this.host?.mount({ content, nav, role: s.role });
+          this.host?.mount({ layout, role: s.role });
         }
       },
-      focus: () => content.focus(),
+      focus: () => layout.content.focus(),
     };
   }
 }

@@ -11,12 +11,32 @@ export type Route =
   | { readonly name: 'invitation'; readonly id: string }
   | { readonly name: 'invitation-reissue'; readonly id: string }
   | { readonly name: 'invitation-revoke'; readonly id: string }
-  | { readonly name: 'activate' };
+  | { readonly name: 'activate' }
+  | { readonly name: 'reset' }
+  | { readonly name: 'users'; readonly status?: UserStatusFilter }
+  | { readonly name: 'user'; readonly id: string }
+  | { readonly name: 'administrators' };
+
+/** The only status filter with its own menu entry ("Đang khóa"); any other value of ?status= is ignored. */
+export type UserStatusFilter = 'LOCKED';
 
 export function parseRoute(pathname: string, search = ''): Route {
   const path = pathname.replace(/\/+$/, '') || '/';
   if (path === '/activate') {
     return { name: 'activate' };
+  }
+  if (path === '/reset') {
+    return { name: 'reset' };
+  }
+  if (path === '/accounts/users') {
+    return new URLSearchParams(search).get('status') === 'LOCKED' ? { name: 'users', status: 'LOCKED' } : { name: 'users' };
+  }
+  if (path === '/accounts/administrators') {
+    return { name: 'administrators' };
+  }
+  const user = /^\/accounts\/users\/([^/]+)$/.exec(path);
+  if (user !== null && isUuid(user[1])) {
+    return { name: 'user', id: user[1] };
   }
   if (path === '/invitations') {
     const status = new URLSearchParams(search).get('status');
@@ -47,6 +67,14 @@ export function formatRoute(route: Route): string {
       return '/';
     case 'activate':
       return '/activate';
+    case 'reset':
+      return '/reset';
+    case 'users':
+      return route.status === undefined ? '/accounts/users' : `/accounts/users?status=${route.status}`;
+    case 'user':
+      return `/accounts/users/${route.id}`;
+    case 'administrators':
+      return '/accounts/administrators';
     case 'invitations':
       return route.status === undefined ? '/invitations' : `/invitations?status=${route.status}`;
     case 'invitation-new':
