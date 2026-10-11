@@ -44,8 +44,9 @@ test('launcher behaviour suite (real git, faked Docker/npm) passes under PowerSh
   assert.equal(run.status, 0, output.split(/\r?\n/).filter((l) => !l.startsWith('PASS ')).join('\n'));
   assert.ok(summary, 'behaviour suite printed its summary');
   assert.equal(Number(summary[2]), 0);
-  // 165 before M00.01 plus the 63 checks it added (app entry, child-process and Windows wrapper runs): the suite must not shrink.
-  assert.ok(Number(summary[1]) >= 228, `expected at least 228 behaviour checks, got ${summary[1]}`);
+  // 165 before M00.01, 250 after it (Linux), and M00.02 added the lock, Git, UAT and hand-over checks (460 on Windows PowerShell 5.1
+  // at the first green run, including the Windows-only wrapper runs). The suite must not shrink.
+  assert.ok(Number(summary[1]) >= 400, `expected at least 400 behaviour checks, got ${summary[1]}`);
   if (process.platform === 'win32') {
     assert.ok(!/SKIP real Windows wrapper runs/.test(output), 'Windows wrapper runs must not be skipped on Windows');
   }

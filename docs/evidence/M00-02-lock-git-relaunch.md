@@ -35,9 +35,9 @@ Môi trường container: Node v22.22.0 (repo ghim 24.21.0), **không có PowerS
 | `node --test tests/local-launcher/launcher.test.mjs` | các kiểm tra tĩnh PASS (8 pass, 1 skip: bộ hành vi cần PowerShell) |
 | Kiểm cân bằng ngoặc/chuỗi/here-string cho launcher, test và hai script hỗ trợ (công cụ tự viết, đã thử đột biến) | OK |
 | Kiểm các file test/hỗ trợ là ASCII, launcher còn BOM UTF-8 và LF | OK |
-| Bộ hành vi PowerShell (PS7 / PS5.1) | **CHƯA CHẠY CỤC BỘ — BLOCKED**; chạy ở CI, kết quả ghi trong mô tả PR theo đúng final SHA |
+| Bộ hành vi PowerShell (PS7 / PS5.1) | **CHƯA CHẠY CỤC BỘ — BLOCKED**; chạy ở CI |
 
-Không có kết luận "PASS" nào về hành vi được ghi ở đây khi CI chưa xanh.
+Lịch sử CI (không phải kết quả cuối): lần chạy đầu đỏ vì lỗi cú pháp trong test (`"$case:"`); lần hai tìm ra lỗi thật trên Linux: `Invoke-WithEnv` để lại biến rỗng `GIT_DIR=` (Git đọc là đường dẫn rỗng) — đã sửa bằng cách xóa hẳn biến; và lỗi thật khác: tham số chạy lại chưa phân biệt hoa/thường (`-notmatch` mặc định không phân biệt) — đã sửa bằng `-cnotmatch`. Commit `2b67a979ddf2e239499105cf1a52f86be7526c13`: job Windows PowerShell 5.1 `pass=460 fail=0 skip=1` (skip: không đổi được giờ của file đang bị giữ mở), job Ubuntu (PowerShell 7 + toàn bộ verify) xanh. Con số cuối cùng trên final SHA nằm trong mô tả PR.
 
 ### Chưa chạy
 - Smoke của Owner trên Windows thật (hai cửa sổ tranh khóa, Update đổi launcher, UAT pin): **CHƯA CHẠY**.
