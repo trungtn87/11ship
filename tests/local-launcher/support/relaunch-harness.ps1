@@ -42,8 +42,10 @@ function Test-HarnessLockHeld {
 }
 function docker.exe {
   $global:LASTEXITCODE = 0
+  Write-Call ('docker {0}' -f ($args -join ' '))
   if ($args[0] -eq 'info') { return '29.8.2' }
   if ($args[0] -eq 'compose' -and $args -contains 'version') { return 'Docker Compose version v5.5.1' }
+  if ($args[0] -eq 'inspect') { return 'healthy' }
 }
 function node.exe { $global:LASTEXITCODE = 0; if (($args -join ' ') -eq '--version') { return 'v24.21.0' } }
 function npm.cmd {
@@ -72,9 +74,19 @@ $RelaunchToSha = $given.To
 $RelaunchLauncherHash = $given.Hash
 # The launcher re-runs itself through this file, so the new process gets the same fakes.
 $script:RelaunchScript = $harnessPath
+function Start-BackendProcess([string]$Stdout,[string]$Stderr) {
+  Write-Call 'backend start'
+  return [pscustomobject]@{ Id = 999999; StartTime = [DateTime]::UtcNow }
+}
 
 Write-Call ('start marker={0} command={1} yes={2} keep={3} force={4} nopause={5} token={6}' -f $script:TestMarker, $Command, $Yes, $KeepDatabases, $ForceDependencies, $NoPause, $RelaunchToken)
 $delay = 0
 # Only the re-run launcher waits, so the suite can look at the moment between the two owners of the lock.
 if ($RelaunchToken -and [int]::TryParse([string]$env:SHIP11_HARNESS_DELAY_MS, [ref]$delay) -and $delay -gt 0) { Start-Sleep -Milliseconds $delay }
+# Test barrier (F1): this process has loaded the launcher code that is on disk NOW. It waits here, before it asks for the
+# lock, until the suite creates the file; by then another launcher may have replaced the code on disk.
+if (!$RelaunchToken -and $env:SHIP11_HARNESS_WAIT_FILE) {
+  $until = [DateTime]::UtcNow.AddSeconds(240)
+  while (!(Test-Path -LiteralPath $env:SHIP11_HARNESS_WAIT_FILE) -and [DateTime]::UtcNow -lt $until) { Start-Sleep -Milliseconds 100 }
+}
 Invoke-LauncherMain

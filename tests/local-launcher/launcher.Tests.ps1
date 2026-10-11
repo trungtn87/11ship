@@ -9,7 +9,17 @@ $ErrorActionPreference = 'Stop'
 $scriptPath = (Resolve-Path (Join-Path $PSScriptRoot '..\..\tools\local\11ship-launcher.ps1')).Path
 $realRepo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $onWindows = ($env:OS -eq 'Windows_NT')
-if (!$onWindows) { Set-Alias -Name git.exe -Value git }
+# Every launcher Git call goes through this wrapper: it records the call and can make chosen reads fail (exit 128) so the
+# suite can prove the launcher treats a failed read differently from an empty one. Real Git does the rest.
+$script:RealGit = (Get-Command git -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+$script:GitFaults = @{}
+$script:GitCalls = New-Object 'Collections.Generic.List[string]'
+function git.exe {
+  $line = ($args -join ' ')
+  $script:GitCalls.Add($line)
+  foreach ($pattern in @($script:GitFaults.Values)) { if ($line -cmatch $pattern) { $global:LASTEXITCODE = 128; return } }
+  & $script:RealGit @args
+}
 $savedEnv = @{}
 foreach ($name in @('OS','APP_ENV','NODE_ENV','DATABASE_URL','GITHUB_TOKEN','GH_TOKEN','SHIP11_NO_PAUSE','TEST_WRONG_USER_DATABASE_URL','TEST_REMOTE_PATH_DATABASE_URL','TEST_REMOTE_PATH_RUNTIME_URL','PGPASSWORD','SHIP11_LOCK_TIMEOUT_SECONDS','SHIP11_HARNESS_DELAY_MS','SHIP11_HARNESS_NPM_FAIL','GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE')) { $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 $env:OS = 'Windows_NT'
@@ -153,6 +163,7 @@ function Reset-Fakes {
   foreach ($relaunchName in @('RelaunchToken','RelaunchFromSha','RelaunchToSha','RelaunchLauncherHash')) { Set-Variable -Scope Script -Name $relaunchName -Value '' }
   $script:LockObs = New-Object 'Collections.Generic.List[object]'
   $script:NpmCwds = New-Object 'Collections.Generic.List[string]'
+  $script:GitFaults = @{}; $script:GitCalls = New-Object 'Collections.Generic.List[string]'
   $script:SpawnedArguments = $null; $script:SpawnObservations = $null; $script:UseRealSpawn = $false; $script:FakeChild = $null; $script:SpawnThrows = $false
   $script:HostLog.Clear()
   $script:Prompts = New-Object 'Collections.Generic.List[string]'
@@ -202,6 +213,8 @@ function Write-EnvFile([string]$AppEnv='development',[string]$DatabaseUrl='') {
 }
 function Use-Repo([string]$Repo) {
   Initialize-LauncherPaths $Repo
+  # The code this process 'loaded' is the code of this checkout (the sandbox copy of the launcher), as in a real launch.
+  $script:LoadedLauncherHash = File-HashOrEmpty $script:LauncherPath
   Reset-Fakes
   Ensure-Dirs
   Write-EnvFile
@@ -263,14 +276,25 @@ function Quote-Arg([string]$Value) {
   if ($Value -match '[\s"]') { return '"' + $Value.Replace('"', '\"') + '"' }
   return $Value
 }
-function Start-Helper([string]$HelperScript,[string[]]$HelperArgs) {
-  $parts = @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',(Quote-Arg $HelperScript)) + @($HelperArgs | ForEach-Object { Quote-Arg $_ })
+function Start-Helper([string]$HelperScript,[string[]]$HelperArgs,[string]$StdinFile='') {
+  # -NonInteractive makes Read-Host fail even with redirected input, so a helper that reads answers (the menu) runs without it.
+  $parts = @('-NoProfile')
+  if (!$StdinFile) { $parts += '-NonInteractive' }
+  $parts += @('-ExecutionPolicy','Bypass','-File',(Quote-Arg $HelperScript)) + @($HelperArgs | ForEach-Object { Quote-Arg $_ })
   $stem = Join-Path $tempRoot ('helper-' + [Guid]::NewGuid().ToString('N'))
   $params = @{ FilePath = $psExe; ArgumentList = $parts; PassThru = $true; RedirectStandardOutput = "$stem.out"; RedirectStandardError = "$stem.err" }
+  if ($StdinFile) { $params['RedirectStandardInput'] = $StdinFile }
   if ($onWindows) { $params['WindowStyle'] = 'Hidden' }
   $process = Start-Process @params
   $null = $process.Handle   # without a cached handle ExitCode stays empty for a process started with -PassThru
+  $process | Add-Member -NotePropertyName OutFile -NotePropertyValue "$stem.out"
+  $process | Add-Member -NotePropertyName ErrFile -NotePropertyValue "$stem.err"
   return $process
+}
+function Get-HelperText($Process) {
+  $text = ''
+  foreach ($file in @($Process.OutFile, $Process.ErrFile)) { if (Test-Path -LiteralPath $file) { $text += (Get-Content -Raw -LiteralPath $file) } }
+  return "$text"
 }
 function Start-LockHolder([string]$Id,[string]$Step,[int]$HoldMs,[string]$ReadyFile='',[string]$EventFile='',[int]$StartDelayMs=0) {
   $holderArgs = @('-Launcher',$script:LauncherPath,'-Id',$Id,'-Step',$Step,'-HoldMs',"$HoldMs",'-StartDelayMs',"$StartDelayMs")
@@ -1398,6 +1422,193 @@ try {
   } finally {
     $env:SHIP11_HARNESS_DELAY_MS = $null
     Stop-Quietly $oldProcess; if ($competitor) { Stop-Quietly $competitor }
+  }
+
+  # =============================================================================================
+  Section 'M00.02 F2: a failed Git read stops the update; an empty answer still works'
+  # =============================================================================================
+  $faultStatus = '^status --porcelain --untracked-files=no$'
+  $faultAdded = '^-c core\.quotepath=false diff --no-renames --name-only --diff-filter=A [0-9a-f]{40} [0-9a-f]{40}$'
+  $faultMigrations = '^-c core\.quotepath=false diff --no-renames --name-only --diff-filter=A [0-9a-f]{40} [0-9a-f]{40} -- database/migrations$'
+  function Assert-NothingHappened([string]$Name,[string]$HeadBefore) {
+    Check ((Head) -eq $HeadBefore) "$Name`: HEAD did not move"
+    Check (@($script:GitCalls | Where-Object { $_ -match '^merge ' }).Count -eq 0) "$Name`: git merge was never run"
+    Check ((NpmCount 'ci') -eq 0 -and @($script:NpmCalls | Where-Object { $_ -ne '--version' }).Count -eq 0 -and $null -eq $script:SpawnedArguments -and !$script:LauncherStale) "$Name`: no npm step and no second launcher followed"
+    Check (!(Test-LockHeld) -and !(Test-GateHeld)) "$Name`: no lock or gate is left"
+  }
+
+  # git status fails (exit 128): that is NOT "clean".
+  New-GitSandbox; Record-Install
+  Push-UpstreamLauncher 'v2'
+  $before = Head
+  $script:FakeChild = New-FakeChild 0
+  $script:GitFaults['status'] = $faultStatus
+  Expect-Fail 'GIT_STATE_UNREADABLE' 'git status failing is not read as a clean tree' { Update-Launcher }
+  Assert-NothingHappened 'status read fails' $before
+  Check (@($script:GitCalls | Where-Object { $_ -match '^fetch ' }).Count -eq 0) 'status read fails: it stopped before fetching'
+  $script:GitFaults.Clear()
+  Update-Launcher | Out-Null
+  Check ((Head) -ne $before) 'status read fails: the same Update works once Git answers again'
+
+  # git diff (files the update would add) fails while upstream adds an ignored .env that already exists.
+  New-GitSandbox; Record-Install
+  $envBefore = File-HashOrEmpty $script:EnvFile
+  $envLength = (Get-Item -LiteralPath $script:EnvFile).Length
+  Push-UpstreamIgnored '.env' 'UPSTREAM=would overwrite the Owner secrets'
+  $before = Head
+  $script:GitFaults['added'] = $faultAdded
+  Expect-Fail 'GIT_DIFF_UNREADABLE' 'a failing diff of the added files is not read as "no collision"' { Update-Launcher }
+  Assert-NothingHappened 'diff read fails' $before
+  Check ((File-HashOrEmpty $script:EnvFile) -eq $envBefore -and (Get-Item -LiteralPath $script:EnvFile).Length -eq $envLength) 'diff read fails: the ignored .env is byte-for-byte intact (same SHA-256 and length)'
+  $script:GitFaults.Clear()
+  Expect-Fail 'UNTRACKED_COLLISION' 'with Git answering again the same upstream change is still refused as a collision' { Update-Launcher }
+  Check ((File-HashOrEmpty $script:EnvFile) -eq $envBefore -and (Head) -eq $before) 'the ignored .env is still protected after the fault is gone'
+
+  # Diff fails on an update that adds an ordinary file: also stops before merge.
+  New-GitSandbox; Record-Install
+  Push-Upstream 'docs/note.md' 'new file'
+  $before = Head
+  $script:GitFaults['added'] = $faultAdded
+  Expect-Fail 'GIT_DIFF_UNREADABLE' 'a failing diff stops an ordinary update too' { Update-Launcher }
+  Assert-NothingHappened 'diff read fails (plain file)' $before
+
+  # merge-base: exit 1 = not an ancestor (diverged); anything else = could not tell.
+  New-GitSandbox; Record-Install
+  Push-Upstream 'docs/note.md' 'x'
+  $before = Head
+  $script:GitFaults['ancestor'] = '^merge-base --is-ancestor '
+  Expect-Fail 'GIT_STATE_UNREADABLE' 'a failing ancestry check is reported as unreadable, not as diverged history' { Update-Launcher }
+  Assert-NothingHappened 'ancestry check fails' $before
+
+  # Valid empty answers must keep working: nothing added, nothing dirty.
+  New-GitSandbox; Record-Install
+  Push-Upstream 'database/migrations/1000_first.sql' 'SELECT 1; -- edited upstream'
+  $before = Head
+  Update-Launcher | Out-Null
+  Check ((Head) -ne $before -and (Head) -eq (Invoke-Git $script:Seed @('rev-parse','HEAD'))) 'valid empty: an update that adds no file still fast-forwards'
+  Check ($script:AddedMigrations -is [int] -and $script:AddedMigrations -eq 0) 'valid empty: zero new migrations is reported as 0'
+  Check (@($script:HostLog | Where-Object { $_.Contains('UNREADABLE') }).Count -eq 0) 'valid empty: nothing is reported as unreadable'
+
+  # Migration count: a failed read must not be reported as "0 new migrations".
+  New-GitSandbox; Record-Install
+  Push-Upstream 'database/migrations/3000_third.sql' 'SELECT 3;'
+  $script:GitFaults['migrations'] = $faultMigrations
+  Update-Launcher | Out-Null
+  Check ((Head) -eq (Invoke-Git $script:Seed @('rev-parse','HEAD'))) 'migration count unreadable: the code update itself is complete'
+  Check ($null -eq $script:AddedMigrations) 'migration count unreadable: the count is unknown (null), not 0'
+  Check (@($script:HostLog | Where-Object { $_.Contains('MIGRATION_COUNT_UNREADABLE') }).Count -eq 1 -and @($script:HostLog | Where-Object { $_ -match '\d+ migration' }).Count -eq 0) 'migration count unreadable: the Owner is told it could not be read and no count is claimed'
+  $script:GitFaults.Clear()
+  Check ((Invoke-InRepo { Get-AddedMigrationCount (Invoke-Git $script:Seed @('rev-parse','HEAD~1')) (Invoke-Git $script:Seed @('rev-parse','HEAD')) }) -eq 1) 'migration count readable: one new migration is counted'
+  $script:GitFaults['migrations'] = $faultMigrations
+  Check ($null -eq (Invoke-InRepo { Get-AddedMigrationCount (Invoke-Git $script:Seed @('rev-parse','HEAD~1')) (Invoke-Git $script:Seed @('rev-parse','HEAD')) })) 'migration count unreadable: Get-AddedMigrationCount returns null'
+  $script:GitFaults.Clear()
+
+  # =============================================================================================
+  Section 'M00.02 F1: a launcher that loaded old code refuses to act once the code on disk changed (in-process)'
+  # =============================================================================================
+  New-GitSandbox; Record-Install
+  Push-Upstream 'docs/note.md' 'pending'
+  $before = Head
+  $originRef = Invoke-Git $script:Repo @('rev-parse','origin/main')
+  # Another launcher replaced this file after this process loaded it.
+  [IO.File]::AppendAllText($script:LauncherPath, "`n# replaced by another launcher after this process loaded its code`n")
+  Check ($script:LoadedLauncherHash -and (File-HashOrEmpty $script:LauncherPath) -ne $script:LoadedLauncherHash) 'precondition: the launcher on disk differs from the code this process loaded'
+  foreach ($commandName in @('Start','Update','Test','Stop')) {
+    Reset-Fakes
+    Expect-Fail 'LAUNCHER_RELOAD_REQUIRED' "$commandName with old code is refused after it got the lock" { Invoke-LauncherCommand $commandName }
+    Check ($script:DockerCalls.Count -eq 0 -and $script:NpmCalls.Count -eq 0 -and $script:SqlCalls.Count -eq 0 -and $script:BackendStarts -eq 0 -and !(Test-Path -LiteralPath $script:StateFile)) "$commandName with old code: no Docker, npm, SQL or backend"
+    $gitCallsMade = $script:GitCalls.Count
+    Check ($gitCallsMade -eq 0 -and (Head) -eq $before -and (Invoke-Git $script:Repo @('rev-parse','origin/main')) -eq $originRef) "$commandName with old code: no Git read or write either (no fetch, no merge)"
+    Check (!(Test-LockHeld) -and $script:LockDepth -eq 0) "$commandName with old code: the lock was given back at once"
+  }
+  foreach ($stepName in @('Ensure-Dependencies','Confirm-DevMigrations')) {
+    Reset-Fakes
+    Expect-Fail 'LAUNCHER_RELOAD_REQUIRED' "$stepName with old code is refused" ([scriptblock]::Create($stepName))
+    Check ($script:DockerCalls.Count -eq 0 -and $script:NpmCalls.Count -eq 0 -and $script:SqlCalls.Count -eq 0) "$stepName with old code: no Docker, npm or SQL"
+  }
+  Reset-Fakes
+  Status-Launcher | Out-Null
+  Check ($script:HostLog.Count -gt 0) 'Status (read only, no lock) still answers with old code'
+
+  # The menu was opened before the update: every action it offers is refused, none of them runs old code.
+  Reset-Fakes
+  foreach ($answer in @('1','2','3','4','0')) { $script:Answers.Enqueue($answer) }
+  Menu | Out-Null
+  Check (@($script:HostLog | Where-Object { $_.Contains('LAUNCHER_RELOAD_REQUIRED') }).Count -eq 4) 'old menu: Start, Update, Test and Stop were each refused with LAUNCHER_RELOAD_REQUIRED'
+  Check ($script:DockerCalls.Count -eq 0 -and $script:NpmCalls.Count -eq 0 -and $script:SqlCalls.Count -eq 0 -and $script:BackendStarts -eq 0 -and $script:GitCalls.Count -eq 0 -and $script:Answers.Count -eq 0) 'old menu: no Docker, npm, SQL, backend or Git, and the menu still ended on 0'
+  Check (!(Test-LockHeld)) 'old menu: no lock left'
+
+  # Identity that did not change: everything still runs (control).
+  New-GitSandbox; Record-Install
+  Push-Upstream 'docs/note.md' 'pending'
+  Update-Launcher | Out-Null
+  Check ((Head) -eq (Invoke-Git $script:Seed @('rev-parse','HEAD'))) 'control: with unchanged launcher code Update still works'
+
+  # =============================================================================================
+  Section 'M00.02 F1: barrier with real processes - B loaded v1, A updates to v2 while B waits, B must not act with v1'
+  # =============================================================================================
+  New-GitSandbox; Record-Install
+  Push-UpstreamLauncher 'v2'
+  $newHead = Invoke-Git $script:Seed @('rev-parse','HEAD')
+  $barrier = Join-Path $tempRoot 'f1-barrier.txt'
+  Remove-Item -LiteralPath $barrier -Force -ErrorAction SilentlyContinue
+  $harnessInSandbox = Join-Path (Join-Path (Join-Path $script:Repo 'tools') 'local') 'relaunch-harness.ps1'
+  $menuAnswers = Join-Path $tempRoot 'f1-menu-answers.txt'
+  [IO.File]::WriteAllText($menuAnswers, "1`n2`n0`n")
+  $procB = @{}
+  $procA = $null
+  try {
+    # B processes: they load the launcher that is on disk now (v1), then wait before asking for the lock.
+    $env:SHIP11_HARNESS_WAIT_FILE = $barrier
+    $procB['start'] = Start-Helper $harnessInSandbox @('-Command','Start','-NoPause')
+    $procB['update'] = Start-Helper $harnessInSandbox @('-Command','Update','-Yes','-ForceDependencies','-NoPause')
+    $procB['menu'] = Start-Helper $harnessInSandbox @() $menuAnswers
+    $env:SHIP11_HARNESS_WAIT_FILE = $null
+    $until = [DateTime]::UtcNow.AddSeconds(180)
+    $loaded = 0
+    while ($loaded -lt 3 -and [DateTime]::UtcNow -lt $until) {
+      try { $loaded = @(Read-HarnessCalls | Where-Object { $_.Text.StartsWith('start ') }).Count } catch { }
+      if ($loaded -lt 3) { Start-Sleep -Milliseconds 100 }
+    }
+    Check ($loaded -eq 3) 'barrier: three launcher processes loaded v1 and are waiting before they ask for the lock'
+    Check (@(Read-HarnessCalls | Where-Object { $_.Text -match 'marker=v2' }).Count -eq 0) 'barrier: none of them has v2 code'
+
+    # A updates the checkout to v2 (its new launcher holds the lock while the work runs).
+    $env:SHIP11_HARNESS_DELAY_MS = '5000'
+    $procA = Start-Helper $harnessInSandbox @('-Command','Update','-Yes','-ForceDependencies','-NoPause')
+    $env:SHIP11_HARNESS_DELAY_MS = $null
+    $until = [DateTime]::UtcNow.AddSeconds(240)
+    $v2Started = $false
+    while (!$v2Started -and !$procA.HasExited -and [DateTime]::UtcNow -lt $until) {
+      try { $v2Started = (@(Read-HarnessCalls | Where-Object { $_.Text -match 'marker=v2' -and $_.Text -match 'token=[0-9a-f]{32}' }).Count -gt 0) } catch { }
+      if (!$v2Started) { Start-Sleep -Milliseconds 100 }
+    }
+    Check $v2Started 'barrier: A put v2 on disk and started the v2 launcher'
+    # Release the old processes now: they ask for the lock while v2 is working, and get it when v2 is done.
+    [IO.File]::WriteAllText($barrier, 'go')
+    foreach ($proc in @($procA) + @($procB.Values)) { if (!$proc.WaitForExit(300000)) { Stop-Quietly $proc } }
+
+    $calls = @(Read-HarnessCalls)
+    Check ($procA.HasExited -and $procA.ExitCode -eq 0) 'barrier: A (Update) finished with exit 0'
+    $v2Process = @($calls | Where-Object { $_.Text -match 'marker=v2' } | Select-Object -First 1)
+    $ci = @($calls | Where-Object { $_.Text -match '^npm ci ' })
+    Check ($ci.Count -eq 1 -and $v2Process.Count -eq 1 -and $ci[0].ProcessId -eq $v2Process[0].ProcessId) 'barrier: npm ci ran exactly once, by the v2 launcher (nobody ran it with v1)'
+    foreach ($key in @('start','update','menu')) {
+      $proc = $procB[$key]
+      $mine = @($calls | Where-Object { $_.ProcessId -eq $proc.Id -and !$_.Text.StartsWith('start ') })
+      $text = Get-HelperText $proc
+      Check ($proc.HasExited -and $mine.Count -eq 0) "barrier: old $key launcher ran no Docker, npm, build, migration or backend step ($($mine.Count) found)"
+      Check ($text.Contains('LAUNCHER_RELOAD_REQUIRED')) "barrier: old $key launcher said LAUNCHER_RELOAD_REQUIRED"
+    }
+    Check ($procB['start'].ExitCode -eq 1 -and $procB['update'].ExitCode -eq 1) 'barrier: old Start and old Update exit 1 (refused)'
+    Check ($procB['menu'].ExitCode -eq 0 -and ([regex]::Matches((Get-HelperText $procB['menu']), 'LAUNCHER_RELOAD_REQUIRED')).Count -ge 2) 'barrier: the old menu refused both actions it was asked for and ended normally'
+    Check (@($calls | Where-Object { $_.Text.StartsWith('start ') }).Count -eq 5 -and @($calls | Where-Object { $_.Text -match 'token=[0-9a-f]{32}' }).Count -eq 1) 'barrier: five launcher processes in all, exactly one hand-over, no relaunch loop'
+    Check ((Head) -eq $newHead) 'barrier: HEAD is the v2 commit'
+    Check (!(Test-LockHeld) -and !(Test-GateHeld)) 'barrier: no lock or gate is left behind'
+  } finally {
+    $env:SHIP11_HARNESS_WAIT_FILE = $null; $env:SHIP11_HARNESS_DELAY_MS = $null
+    if (!(Test-Path -LiteralPath $barrier)) { [IO.File]::WriteAllText($barrier, 'go') }
+    foreach ($proc in @($procA) + @($procB.Values)) { if ($proc) { Stop-Quietly $proc } }
   }
 
   # =============================================================================================
