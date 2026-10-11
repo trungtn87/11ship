@@ -288,6 +288,15 @@ describe('issue #49 — staging DB upgrade from the PR #42 history (PostgreSQL)'
     expect(await run(['--apply'], applyEnv(file))).toBe(0);
     expect(printed()).toContain('committed');
 
+    // M01.02 and the fixture migration are part of the standard history now: the upgrade creates the customer tables (empty).
+    expect(NAMES).toHaveLength(16);
+    expect(NAMES).toContain('1792540800000_create-customer-profiles-consents');
+    expect(NAMES[NAMES.length - 1]).toBe('1792627200000_allow-staging-fixture-account-origin');
+    const customerTables = await client.query<{ profiles: number; consents: number }>(
+      `SELECT (SELECT count(*) FROM app.customer_profiles)::int AS profiles, (SELECT count(*) FROM app.user_consents)::int AS consents`,
+    );
+    expect(customerTables.rows[0]).toEqual({ profiles: 0, consents: 0 });
+
     // Same schema, same history (ids and names) as a database built by the real runner.
     expect(await schemaFingerprint()).toBe(freshSchema);
     expect(await historyRows()).toBe(freshHistory);

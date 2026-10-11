@@ -11,6 +11,12 @@ Owner acceptance and green CI is not Owner acceptance.
 | Branch | `ops/staging-db-upgrade-from-42-49` |
 | Final head | the PR head SHA in the PR and the hand-over report |
 
+## Sync with main after M01.02
+
+Main gained `1792540800000_create-customer-profiles-consents`; PR #51 moved its unapplied fixture migration to `1792627200000_allow-staging-fixture-account-origin`.
+The standard history is now 16 migrations. The tool executes every migration file of the checkout, so the upgrade now also creates `customer_profiles` and `user_consents`
+(empty: the SYSTEM is ADMIN_PROVISIONED and is never backfilled as a customer). The suite pins the 16-name history, the two M01.02 tables, and compares schema/history with a fresh database.
+
 ## Owner decision implemented
 
 Keep only the current SYSTEM account (user, phone, password hash, SYSTEM membership, TOTP factor and its anti-replay step, limiter
@@ -62,7 +68,7 @@ each make the tool refuse (dry-run/`--apply`/`rebuild()`), the transaction rolls
 ## Local verification limits
 
 The npm registry is blocked in the sandbox (no `npm ci`, no `pg`), Node 22, PostgreSQL 16. Verified locally: `node --test tests/deploy`
-(74 pass), and a `psql` rehearsal of the core rebuild SQL (drop every table of `app` in one RESTRICT statement + execute all 15 Up sections; a view outside `app` makes the drop fail) on a database
+(74 pass), and a `psql` rehearsal of the core rebuild SQL (drop every table of `app` in one RESTRICT statement + execute all 15 Up sections (before M01.02 was merged; CI now runs the 16); a view outside `app` makes the drop fail) on a database
 built with the exact PR #42 history: its schema fingerprint equals a fresh database. The JavaScript tool and the integration suite are
 **verified by CI on the exact final SHA only**.
 

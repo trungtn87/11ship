@@ -7,7 +7,7 @@ after ChatGPT's review of the PR and after the PR is merged (or the reviewed com
 
 `npm run staging:db-upgrade-from-42` moves a **disposable staging database** whose migration history comes from PR #42
 (10 migrations, including `1791849600000_add-users-account-origin` and PR #42's own `1791936000000_add-users-account-origin`)
-onto the history and schema of this checkout (15 migrations, the standard history). Owner's decision it implements: keep
+onto the history and schema of this checkout (16 migrations, the standard history: it includes the M01.02 customer migration `1792540800000_create-customer-profiles-consents`, so `app.customer_profiles` and `app.user_consents` exist and are empty afterwards, and the staging-fixture origin migration `1792627200000_allow-staging-fixture-account-origin`). Owner's decision it implements: keep
 **only the current SYSTEM administrator**; every other test row is dropped; old login sessions are not carried over.
 
 Kept bit for bit: the `users` row (id, phone, argon2id hash, origin, status, version, timestamps), the SYSTEM membership,
@@ -71,14 +71,14 @@ It prints only counts and fixed codes.
 npm run staging:db-upgrade-from-42 -- --apply
 ```
 with `STAGING_UPGRADE_CONFIRM=rebuild-keep-system-service-suspended` set. Order inside the command: gates → inspection →
-encrypted snapshot written (mode 0600, created exclusively, read back) → the transaction. Expect `committed. 15 migrations applied`. Exit code 2 and `COMMIT_OUTCOME_UNKNOWN` instead means the outcome is not known: go to section 5, do not run any write again.
-If the output says `N table(s) have no runtime grant yet`, those are the tables of newer migrations: apply the §3 grant rows
-for them (runtime role) **before** starting the service.
+encrypted snapshot written (mode 0600, created exclusively, read back) → the transaction. Expect `committed. 16 migrations applied`. Exit code 2 and `COMMIT_OUTCOME_UNKNOWN` instead means the outcome is not known: go to section 5, do not run any write again.
+If the output says `N table(s) have no runtime grant yet`, those are the tables of newer migrations (among them `customer_profiles` and `user_consents` of M01.02, and the admin tables newer than PR #42): apply the §3 grant rows
+for them (runtime role, including the M01.02 customer grants of the main runbook) **before** starting the service.
 
 ## 4. After it
 
 1. `npm run db:migrate:remote` must report nothing pending (history equals the files).
-2. Re-run the section 1 queries: now 15 migrations, `has_d2_name` false, one SYSTEM, one active factor; `app.admin_sessions` and `app.sessions` empty.
+2. Re-run the section 1 queries: now 16 migrations, `has_d2_name` false, one SYSTEM, one active factor; `app.admin_sessions` and `app.sessions` empty.
 3. Apply missing runtime grants (§3), start the service (§5), and let the Owner log in with the **old** phone/password and the **old** Authenticator.
    Re-seed fixtures if the Owner wants them (§8). Staging activation remains un-accepted (no OTP adapter).
 4. Keep the snapshot file and the key (in separate places) until the Owner accepts the staging login, then delete both. After a `COMMIT_OUTCOME_UNKNOWN` never delete them before `--verify` has said `UPGRADED_OK`.
