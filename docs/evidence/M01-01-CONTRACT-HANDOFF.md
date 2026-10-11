@@ -1,7 +1,8 @@
 # M01.01 — bàn giao đóng phạm vi CONTRACT
 
-Ngày 11/10/2026. Trạng thái READY_FOR_OWNER_CLOSE (CONTRACT); không phải M01 DONE/LOCK.
-Nguồn: Owner yêu cầu review/tích hợp/chuẩn bị đóng qua “Ok tiếp” 11/10 11:13. Chưa ghi Owner quyết định LOCK; ủy quyền merge gói nhỏ không tự thay quyền đóng module/gói.
+Ngày 11/10/2026. Trạng thái CLOSED (CONTRACT/handoff); không phải M01 DONE/LOCK.
+Nguồn quyết định trực tiếp của Owner trong phiên ngày 11/10/2026: “Ok đóng và merge vào main”, trả lời yêu cầu xác nhận đóng M01.01 phạm vi CONTRACT. Đây là quyết định đóng gói thiết kế/handoff, không phải nghiệm thu implementation hoặc toàn M01.
+Bản contract đã tích hợp qua PR #59, CI success run38110955370 trên head 3e2c9bfc6e7d4d6039743e9d29b1e081dab854c0, squash merge e04343efadf0f45ab71752949b940ca02dadfbd2.
 
 ## Phạm vi đã hoàn thiện
 
@@ -30,7 +31,7 @@ Nguồn: Owner yêu cầu review/tích hợp/chuẩn bị đóng qua “Ok tiế
 
 PASS trong phạm vi thiết kế hợp đồng/handoff: phạm vi gói CONTRACT đã đủ đầu ra và phân công gaps. CODE_READY_LOCAL là conditional theo consent/dependency; không CODE_READY_NATIVE hoặc certification thiết bị từ bản thiết kế.
 Bản tích hợp chỉ tài liệu; không product code, migration apply, deploy, sửa PROGRESS.md/plan.yml. CI của PR tài liệu chỉ kiểm nền không bị phá, không chứng minh behavior future.
-Sau khi PR tích hợp merge, Owner có thể quyết định đóng M01.01 với wording: “Đóng M01.01 phạm vi CONTRACT/handoff, tiếp tục implementation/UAT theo gói; không đóng M01”. Chỉ ghi CLOSED khi có quyết định đó.
+Owner đã quyết định đóng M01.01 phạm vi CONTRACT/handoff. Implementation/UAT tiếp tục theo các gói trong bảng trên; toàn M01 vẫn chưa đóng.
 
 ## Phân công/gate
 
