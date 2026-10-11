@@ -233,6 +233,20 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
       [normalizedPhone],
     );
   }
+  // M01.02: a customer profile or a consent row that references the user must go before the user (both foreign keys are
+  // RESTRICT). A consent refuses DELETE by trigger for every role, so when one exists for this phone the test-only table
+  // is emptied with TRUNCATE (test database only; the integration suites run one at a time).
+  const consents = await pool.query(
+    'SELECT 1 FROM app.user_consents WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1) LIMIT 1',
+    [normalizedPhone],
+  );
+  if ((consents.rowCount ?? 0) > 0) {
+    await pool.query('TRUNCATE app.user_consents');
+  }
+  await pool.query(
+    'DELETE FROM app.customer_profiles WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
+    [normalizedPhone],
+  );
   await pool.query(
     'DELETE FROM app.sessions WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],

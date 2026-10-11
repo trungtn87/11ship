@@ -95,6 +95,8 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | admin_activation_otp_challenges | SELECT, INSERT, UPDATE (no DELETE: a trigger refuses it; UPDATE is promote/verify/lock/invalidate and `FOR UPDATE`) |
 | admin_profiles | SELECT, INSERT (written once at activation) |
 | admin_app_permissions | SELECT, INSERT (written once at activation) |
+| customer_profiles | SELECT, INSERT, UPDATE (M01.02: UPDATE is the version-checked profile edit and `FOR UPDATE`; no DELETE: a customer profile is never removed by the runtime) |
+| user_consents | SELECT, INSERT (M01.02: append-only; a trigger refuses UPDATE and DELETE for every role, and the runtime has neither privilege nor TRUNCATE) |
 
 ```sql
 -- example shape, repeat per row of the table above
@@ -150,6 +152,43 @@ M01-D-ADMIN-1C (account activation) adds, **off by default** (`ADMIN_ACTIVATION_
 - `ADMIN_ACTIVATION_ENABLED=true` needs `ADMIN_AUTH_ENABLED=true` and an **explicit** `ADMIN_ACTIVATION_OTP_MODE`. There is no real SMS adapter yet, so `SMS` refuses startup; `FAKE` and `TEST_DISPLAY` are accepted **only** with `APP_ENV` of `development` or `test` and never in staging/production, and nothing falls back to a test provider.
 - Optional: `ADMIN_ACTIVATION_OTP_PROVIDER_TIMEOUT_MS` (500..30000, default 8000) and `ADMIN_ACTIVATION_OTP_PROMOTE_GRACE_MS` (1000..60000, default 10000). The section 7 TTLs and thresholds are optional variables whose defaults ARE the approved section 7 values (`ADMIN_ACTIVATION_ATTEMPT_TTL_SECONDS` 1800, `…_OTP_TTL_SECONDS` 300, `…_OTP_RESEND_COOLDOWN_SECONDS` 60, `…_PASSWORD_DEADLINE_SECONDS` 600, `…_OTP_SEND_LIMIT` 5, `…_OTP_SEND_WINDOW_SECONDS` 3600, `…_REQUEST_LIMIT` 30, `…_REQUEST_WINDOW_SECONDS` 60, `…_LINK_FAILURE_LIMIT` 10, `…_LINK_FAILURE_WINDOW_SECONDS` 900, `…_LINK_FAILURE_LOCK_SECONDS` 900, `…_TOTP_FAILURE_WINDOW_SECONDS` 900, `…_TOTP_FAILURE_LOCK_SECONDS` 900). Leave them unset unless the Owner changes a value. An invalid value stops startup naming the variable only. The wrong-code limits (OTP 5, TOTP 5) are fixed by the database schema and are not variables.
 - Down migration B refuses to run while activation limiter buckets exist (by design): clear them with the operator procedure first.
+
+### Customer schema (M01.02)
+
+Migration `1792540800000_create-customer-profiles-consents` adds `app.customer_profiles` and `app.user_consents`, accepts the
+storage role `CUSTOMER` (the role CHECK was already open) and backfills ordinary phone-verified accounts. **Not applied to
+any remote database by this package**; the Owner decides when. Procedure when the time comes:
+
+1. Apply the migration with `db:migrate:remote` **before** deploying code that uses the participant. The legacy `/auth`
+   routes ignore `CUSTOMER`, so old code keeps working against the new schema.
+2. The migration refuses to run (message starting `M01.02 prerequisite failed:`) when `app.users`, `app.user_roles`,
+   `app.admin_memberships`, `users.account_origin` or the role CHECK are not what it expects. That is schema drift:
+   stop and report it (issue #49); never mask it with `IF EXISTS` or a hand-made enum/fixture.
+3. Grant the runtime role exactly the two new rows of the table above, as admin:
+
+```sql
+GRANT SELECT, INSERT, UPDATE ON app.customer_profiles TO ship11_app;
+GRANT SELECT, INSERT ON app.user_consents TO ship11_app;
+```
+
+4. Backfill report (counts only, no phone, name or id), read-only:
+
+```sql
+SELECT (SELECT count(*) FROM app.user_roles WHERE role = 'CUSTOMER')   AS customer_roles,
+       (SELECT count(*) FROM app.customer_profiles)                    AS profiles,
+       (SELECT count(*) FROM app.customer_profiles WHERE full_name IS NOT NULL) AS named_profiles,
+       (SELECT count(*) FROM app.user_consents)                        AS consents;
+```
+
+   The migration also prints one `NOTICE` with `users / eligible / excluded / customer_roles_inserted /
+   customer_profiles_inserted`. Eligible means `account_origin = 'PHONE_VERIFIED'`, `phone_verified_at` set and **no**
+   `app.admin_memberships` row. Backfilled profiles have `full_name = NULL` (no driver name is copied) and no consent is
+   invented. Re-running the backfill adds nothing and overwrites nothing.
+5. Consents are append-only: a trigger refuses `UPDATE` and `DELETE` for every role, and the runtime has no `TRUNCATE`.
+   A wrong consent row is corrected forward by a new migration or a reviewed one-off by the schema owner, never by the
+   application.
+6. **Never run the Down migration on a remote database.** It refuses while a consent or a named/edited profile exists;
+   the fix for a defect is a new forward migration.
 
 ## 4. Migration procedure
 

@@ -1,4 +1,5 @@
 import { ACTIVATION_DOWN_SQL, ACTIVATION_UP_SQL } from './support/activation-migration-sql';
+import { CUSTOMER_DOWN_SQL, CUSTOMER_UP_SQL } from './support/customer-migration-sql';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -118,6 +119,7 @@ describe('M01-A1 — Auth Core migration', () => {
       '1792281600000_create-admin-activation',
       '1792368000000_extend-admin-auth-limits-activation',
       '1792454400000_create-admin-membership-origin-guard',
+      '1792540800000_create-customer-profiles-consents',
     ]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });
@@ -218,6 +220,8 @@ describe('M01-A1 — Auth Core migration', () => {
     try {
       // The Shop and Driver migrations reference app.users, so they go down first and come back up last. The invitation
       // tables, the admin tables and the account origin are the newest: they go down before everything else.
+      // The M01.02 customer tables reference app.users and are the very newest: they go down first and come back up last.
+      await client.query(CUSTOMER_DOWN_SQL);
       for (const statement of ACTIVATION_DOWN_SQL) {
         await client.query(statement);
       }
@@ -247,6 +251,7 @@ describe('M01-A1 — Auth Core migration', () => {
       for (const statement of ACTIVATION_UP_SQL) {
         await client.query(statement);
       }
+      await client.query(CUSTOMER_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES].sort());
     } finally {
       await client.query('ROLLBACK');
