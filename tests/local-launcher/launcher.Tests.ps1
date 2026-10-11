@@ -984,7 +984,7 @@ try {
       else { Write-Text $script:LockInfoFile '' }
       $script:Entered = $false
       $message = Get-FailMessage { Use-LaunchLock 'start' { $script:Entered = $true } }
-      Check ($message.Contains(': LAUNCH_LOCK_TIMEOUT)') -and !$script:Entered) "display file $case: the lock is still held by the OS handle, nobody gets in"
+      Check ($message.Contains(': LAUNCH_LOCK_TIMEOUT)') -and !$script:Entered) "display file ${case}: the lock is still held by the OS handle, nobody gets in"
     }
     $aged = $false
     try { [IO.File]::SetLastWriteTimeUtc($script:LockFile, (Get-Date '2001-01-01').ToUniversalTime()); $aged = $true } catch { }
