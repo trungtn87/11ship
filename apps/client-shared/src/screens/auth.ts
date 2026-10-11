@@ -6,7 +6,7 @@ import { SAMPLE_PERSON, ScreenDef, ScreenEnv, VariantDef } from '../screen.js';
 import { STATE_COPY } from '../states.js';
 import { isCompleteOtp, isValidPassword, isValidPhone, maskPhone, normalizePersonName } from '../validation.js';
 import { failureBanner } from './feedback.js';
-import { actionButton, appPage, designOnly } from './layout.js';
+import { actionButton, appPage, designOnly, guardForm } from './layout.js';
 
 // Auth screens shared by 11Food and 11Ship (register, login, OTP, forgot and reset password). Display + form validation
 // only. Every business action is gated until its backend exists (features.ts); in the preview it runs as a harmless demo.
@@ -142,6 +142,7 @@ function loginScreen(brand: AppBrand, routes: AuthRoutes): ScreenDef {
         }
         if (env.mode === 'design') {
           designOnly(env, STATE_COPY.designNoSend);
+          guard.release();
           go(env, routes.afterLogin);
           return;
         }
@@ -151,12 +152,15 @@ function loginScreen(brand: AppBrand, routes: AuthRoutes): ScreenDef {
         password.input.value = '';
         setBusy(submit.button, false, 'Đăng nhập', 'Đang kiểm tra…');
         if (outcome.kind === 'ok') {
+          guard.release();
           go(env, routes.afterLogin);
           return;
         }
         feedback.replaceChildren(failureBanner(outcome.code, { retryAfterSeconds: outcome.retryAfterSeconds }));
       };
       const form = h('form', { class: 'c-stack', novalidate: true }, phone.root, password.root, forgot, feedback, submit.node);
+      // C08: typed phone/password are asked about before leaving and wiped on exit.
+      const guard = guardForm(env, form);
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         void run();
@@ -251,6 +255,7 @@ function registerScreen(brand: AppBrand): ScreenDef {
         if (env.mode === 'design') {
           designOnly(env, STATE_COPY.designNoSend);
           env.flows.start('register-otp', { phone: phone.input.value.trim() });
+          guard.release();
           env.go('register-otp');
           return;
         }
@@ -261,6 +266,7 @@ function registerScreen(brand: AppBrand): ScreenDef {
         setBusy(submit.button, false, food ? 'Tiếp tục' : 'Đăng ký', 'Đang xử lý…');
         if (outcome.kind === 'ok') {
           env.flows.start('register-otp', { phone: phone.input.value.trim() });
+          guard.release();
           env.go('register-otp');
           return;
         }
@@ -282,6 +288,7 @@ function registerScreen(brand: AppBrand): ScreenDef {
         feedback,
         submit.node,
       );
+      const guard = guardForm(env, form);
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         void run();
@@ -446,6 +453,7 @@ function otpScreen(config: OtpConfig): ScreenDef {
         }
         if (env.mode === 'design') {
           designOnly(env, STATE_COPY.designNoSend);
+          guard.release();
           config.onVerified(env);
           return;
         }
@@ -455,6 +463,7 @@ function otpScreen(config: OtpConfig): ScreenDef {
         otp.clear();
         setBusy(verify.button, false, 'Xác minh', 'Đang xác minh…');
         if (outcome.kind === 'ok') {
+          guard.release();
           config.onVerified(env);
           return;
         }
@@ -466,6 +475,8 @@ function otpScreen(config: OtpConfig): ScreenDef {
         feedback.replaceChildren(failureBanner(outcome.code, { retryAfterSeconds: outcome.retryAfterSeconds }));
       };
       const form = h('form', { class: 'c-stack', novalidate: true }, otp.root, status, feedback, verify.node);
+      // C08: leaving the OTP step wipes the code and ends this OTP flow (back to the start of the flow).
+      const guard = guardForm(env, form, { flows: [config.flow] });
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         void run();
@@ -553,6 +564,7 @@ function resetScreen(brand: AppBrand): ScreenDef {
         if (env.mode === 'design') {
           designOnly(env, STATE_COPY.designNoSend);
           env.flows.start('reset-otp', { phone: phone.input.value.trim() });
+          guard.release();
           env.go('reset-otp');
           return;
         }
@@ -561,12 +573,14 @@ function resetScreen(brand: AppBrand): ScreenDef {
         setBusy(submit.button, false, 'Gửi mã OTP', 'Đang gửi…');
         if (outcome.kind === 'ok') {
           env.flows.start('reset-otp', { phone: phone.input.value.trim() });
+          guard.release();
           env.go('reset-otp');
           return;
         }
         feedback.replaceChildren(failureBanner(outcome.code, { retryAfterSeconds: outcome.retryAfterSeconds }));
       };
       const form = h('form', { class: 'c-stack', novalidate: true }, phone.root, feedback, submit.node);
+      const guard = guardForm(env, form);
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         void run();
@@ -643,6 +657,7 @@ function resetPasswordScreen(brand: AppBrand): ScreenDef {
         }
         if (env.mode === 'design') {
           designOnly(env, STATE_COPY.designNoSend);
+          guard.release();
           env.go('reset-password', 'done');
           return;
         }
@@ -652,7 +667,7 @@ function resetPasswordScreen(brand: AppBrand): ScreenDef {
         confirm.input.value = '';
         setBusy(submit.button, false, 'Đặt lại mật khẩu', 'Đang xử lý…');
         if (outcome.kind === 'ok') {
-          env.flows.end('reset-password');
+          guard.release();
           env.go('login');
           return;
         }
@@ -667,6 +682,8 @@ function resetPasswordScreen(brand: AppBrand): ScreenDef {
         feedback,
         submit.node,
       );
+      // C08: the new password and the reset proof (this flow) are wiped when the person leaves.
+      const guard = guardForm(env, form, { flows: ['reset-password'] });
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         void run();

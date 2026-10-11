@@ -1,6 +1,7 @@
 import { appBar, button, ButtonOptions, gate } from '../components.js';
 import { Child, h } from '../dom.js';
 import type { FeatureId } from '../features.js';
+import type { GuardHandle } from '../leave.js';
 import type { ScreenEnv } from '../screen.js';
 
 // Page scaffolding shared by the screens of both apps.
@@ -48,4 +49,34 @@ export function actionButton(
 /** The harmless "demo" result of an action in the design preview. Never worded as a real result. */
 export function designOnly(env: ScreenEnv, text: string): void {
   env.toast(text);
+}
+
+/**
+ * C08 for a form: registers the form's editable fields with the environment. "Dirty" = a field differs from what it held
+ * when this was called (so call it right after the fields are built, before any sample/variant content is put in).
+ * Wiping (on a real exit, or `release()` after success) empties password/OTP/text fields and ends the named in-memory flows.
+ */
+export function guardForm(env: ScreenEnv, form: HTMLElement, options: { readonly flows?: readonly string[] } = {}): GuardHandle {
+  const fields = Array.from(form.querySelectorAll<HTMLInputElement>('input')).filter((input) => !input.readOnly && !input.disabled && input.type !== 'hidden' && input.type !== 'submit' && input.type !== 'button');
+  const baseline = fields.map((input) => (input.type === 'checkbox' || input.type === 'radio' ? String(input.checked) : input.value));
+  const current = (input: HTMLInputElement): string => (input.type === 'checkbox' || input.type === 'radio' ? String(input.checked) : input.value);
+  return env.guard({
+    dirty: () => fields.some((input, index) => current(input) !== baseline[index]),
+    wipe: () => {
+      fields.forEach((input, index) => {
+        if (current(input) === baseline[index]) {
+          return;
+        }
+        if (input.type === 'checkbox' || input.type === 'radio') {
+          input.checked = baseline[index] === 'true';
+        } else {
+          input.value = baseline[index];
+        }
+        input.dispatchEvent(new Event('input'));
+      });
+      for (const flow of options.flows ?? []) {
+        env.flows.end(flow);
+      }
+    },
+  });
 }
