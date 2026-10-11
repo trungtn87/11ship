@@ -171,20 +171,46 @@ function Remove-FakeProcess([int]$ProcessId) {
 }
 function Get-ProcessDetails([int]$ProcessId) {
   if ($script:ProcessReadFails) { throw 'simulated: the process list cannot be read' }
-  if ($script:FakeProcs.ContainsKey($ProcessId)) { return $script:FakeProcs[$ProcessId] }
-  return $null
+  $found = $null
+  if ($script:FakeProcs.ContainsKey($ProcessId)) { $found = $script:FakeProcs[$ProcessId] }
+  # One-shot: runs right AFTER this answer was computed, i.e. between a check and whatever the launcher does next.
+  if ($script:DetailsHook) { $hook = $script:DetailsHook; $script:DetailsHook = $null; & $hook $ProcessId }
+  return $found
 }
 function Get-PortListeners([int]$Port) {
   if ($script:ListenersUnreadable) { return [pscustomobject]@{ Readable = $false; Items = @(); Detail = 'simulated: access denied' } }
   $rows = @($script:FakeListeners | Where-Object { $_.Port -eq $Port } | ForEach-Object { [pscustomobject]@{ Address = $_.Address; ProcessId = $_.ProcessId } })
   return [pscustomobject]@{ Readable = $true; Items = $rows; Detail = '' }
 }
-function Stop-OwnedProcess([int]$ProcessId) {
-  $script:StopCalls.Add($ProcessId)
+# Same contract as the production seam: ends the process only when the process behind the PID still has the expected start time.
+# An empty expected start time means 'whatever occupies the PID' (the old, unsafe call) and is killed.
+function Stop-OwnedProcess([int]$ProcessId,[string]$ExpectedStartUtc='') {
   Add-LockObservation "backend stop $ProcessId"
-  if ($script:StopThrows) { throw 'simulated: access denied' }
-  if ($script:StopIgnored) { return }
+  if ($script:StopThrows) { $script:StopCalls.Add($ProcessId); throw 'simulated: access denied' }
+  if (!$script:FakeProcs.ContainsKey($ProcessId)) { return 'NOT_FOUND' }
+  if ($ExpectedStartUtc -and (ConvertTo-UtcText $script:FakeProcs[$ProcessId].StartUtc) -cne (ConvertTo-UtcText $ExpectedStartUtc)) { return 'REPLACED' }
+  $script:StopCalls.Add($ProcessId)
+  if ($script:StopIgnored) { return 'STOPPED' }
+  if ($script:StopMode -eq 'uninspectable') {
+    # The process is gone for real but the launcher can no longer read it: exists-but-unreadable.
+    $entry = $script:FakeProcs[$ProcessId]
+    $script:FakeProcs[$ProcessId] = [pscustomobject]@{ ProcessId = $ProcessId; Name = $entry.Name; Inspectable = $false; StartUtc = ''; Executable = ''; CommandLine = ''; Arguments = @() }
+    return 'STOPPED'
+  }
   Remove-FakeProcess $ProcessId
+  if ($script:StopMode -eq 'unreadable') { $script:ProcessReadFails = $true }
+  return 'STOPPED'
+}
+# The object Start-Process returns: it keeps pointing at ITS process even after the PID was reused (like an OS handle).
+function New-FakeBackendChild([int]$ChildId,[string]$OwnStartUtc) {
+  $child = [pscustomobject]@{ Id = $ChildId; OwnStartUtc = $OwnStartUtc; StartTime = [DateTime]::Parse($OwnStartUtc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind) }
+  $child | Add-Member -MemberType ScriptProperty -Name HasExited -Value {
+    if (!$script:FakeProcs.ContainsKey($this.Id)) { $true } else { (ConvertTo-UtcText $script:FakeProcs[$this.Id].StartUtc) -cne (ConvertTo-UtcText $this.OwnStartUtc) }
+  }
+  $child | Add-Member -MemberType ScriptMethod -Name Kill -Value {
+    if (!$this.HasExited) { $script:StopCalls.Add($this.Id); Remove-FakeProcess $this.Id }
+  }
+  return $child
 }
 function Get-HttpResult([string]$Url) {
   $script:HttpCalls.Add($Url)
@@ -205,7 +231,13 @@ function Start-BackendProcess([string]$Stdout,[string]$Stderr) {
   $script:FakePidCounter++
   $newId = $script:FakePidCounter
   $startUtc = [DateTime]::UtcNow.AddMilliseconds($newId).ToString('o')
-  if (!$script:StartVanishes) {
+  if ($script:StartReplacedBy) {
+    # The child already exited and Windows gave its PID to someone else before the launcher looked: the occupant has another start time.
+    $otherStart = [DateTime]::UtcNow.AddHours(-3).ToString('o')
+    if ($script:StartReplacedBy -eq 'lookalike') { Add-FakeProcess $newId $otherStart } else { Add-FakeProcess $newId $otherStart '' @($script:FakeNodeExe, 'unrelated-service.js') }
+    Add-FakeListener '127.0.0.1' $newId
+  }
+  elseif (!$script:StartVanishes) {
     $arguments = @($script:FakeNodeExe) + @(Get-BackendStartArguments)
     if ($script:StartScript) { $arguments = @($script:FakeNodeExe, '--env-file-if-exists=.env', $script:StartScript) }
     # The command line is what Windows reports: quoted when it has a space, split back into arguments by the launcher.
@@ -213,7 +245,7 @@ function Start-BackendProcess([string]$Stdout,[string]$Stderr) {
     Add-FakeProcess $newId $startUtc $script:FakeNodeExe @(Split-CommandLine $commandLine)
     if ($script:StartListens) { Add-FakeListener '127.0.0.1' $newId }
   }
-  return [pscustomobject]@{ Id = $newId; StartTime = [DateTime]::UtcNow }
+  return (New-FakeBackendChild $newId $startUtc)
 }
 function Start-NpmStep([string[]]$NpmArgs,[string]$Stdout,[string]$Stderr) {
   $name = $NpmArgs[$NpmArgs.Count - 1]
@@ -258,6 +290,7 @@ function Reset-Fakes {
   $script:FakeProcs = @{}; $script:FakeListeners = @(); $script:FakePidCounter = 40000; $script:StopCalls = New-Object 'Collections.Generic.List[int]'
   $script:ProcessReadFails = $false; $script:ListenersUnreadable = $false; $script:StopThrows = $false; $script:StopIgnored = $false
   $script:StartThrows = $false; $script:StartVanishes = $false; $script:StartListens = $true; $script:StartScript = ''; $script:StartHook = $null
+  $script:StartReplacedBy = ''; $script:DetailsHook = $null; $script:StopMode = ''
   $script:BuildFails = $false; $script:BuildNoOutput = $false; $script:BuildHook = $null; $script:BuildContent = 'console.log("build one");'
   $script:HealthMode = 'ok'; $script:MigrateAliveProcesses = -1
   $script:BackendPollMilliseconds = 10; $script:BackendReadySeconds = 1; $script:ProcessStopSeconds = 1
@@ -739,14 +772,19 @@ try {
     Assert-StopRefused $label
     Check ($script:FakeProcs.ContainsKey(7300)) "$label`: not killed"
   }
-  # A process the launcher cannot inspect is not "ours"; if it holds the port the port check refuses, otherwise Start proceeds.
-  New-StartSandbox
-  Add-FakeProcess 7400 '' '' @() $false 'System'
-  Write-RegistryFor 7400 $now
-  Check ((Get-TargetOwnership (Get-BackendTarget)).Status -eq 'STALE') 'a process that cannot be inspected is never treated as ours'
-  Add-FakeListener '127.0.0.1' 7400
-  Expect-Fail 'PORT_IN_USE' 'an uninspectable process that holds the port is a foreign owner' { Start-Launcher }
-  Check ($script:StopCalls.Count -eq 0 -and $script:FakeProcs.ContainsKey(7400)) 'the uninspectable process was not touched'
+  # Review F1: a process that EXISTS but cannot be inspected is an unknown identity - neither ours nor proven gone.
+  foreach ($withListener in @($false, $true)) {
+    $where = if ($withListener) { 'holding the port' } else { 'with the port free' }
+    New-StartSandbox
+    Add-FakeProcess 7400 '' '' @() $false 'System'
+    if ($withListener) { Add-FakeListener '127.0.0.1' 7400 }
+    Write-RegistryFor 7400 $now
+    Check ((Get-TargetOwnership (Get-BackendTarget)).Status -eq 'UNVERIFIED') "F1: an existing process that cannot be inspected is UNVERIFIED, not STALE ($where)"
+    Assert-StartRefused "F1: uninspectable recorded process $where" 'PROCESS_IDENTITY_UNVERIFIED'
+    Assert-StopRefused "F1: uninspectable recorded process $where"
+    Check ((Test-Path -LiteralPath $script:StateFile -PathType Leaf) -and $script:FakeProcs.ContainsKey(7400)) "F1: the registry is retained and the process untouched ($where)"
+    Check ((Get-BackendIdentityLines (Head)) -join ' ' -match 'PROCESS_IDENTITY_UNVERIFIED') "F1: Status reports it ($where)"
+  }
   # The recorded process has ended: Start replaces the record; Stop only cleans it up.
   New-StartSandbox
   Write-RegistryFor 7500 $now
@@ -934,6 +972,82 @@ try {
   Expect-Fail 'STATE_WRITE_FAILED' 'registry that cannot be written' { Start-Launcher }
   Check ($script:StopCalls.Count -eq 1 -and $script:FakeProcs.Count -eq 0) 'the process started a moment ago is stopped, not left running unrecorded'
   Check (@(Get-ChildItem -LiteralPath $script:StateDir -Filter '*.tmp' -ErrorAction SilentlyContinue).Count -eq 0) 'no temporary state file is left behind'
+
+  # =============================================================================================
+  Section 'M00.03 review F1: exit is confirmed only by absence or a positively different start time'
+  # =============================================================================================
+  New-StartSandbox
+  $goneRecord = [pscustomobject]@{ pid = 7600; started_utc = $now }
+  Check ((Wait-ProcessGone $goneRecord 1)) 'F1: a process that is absent has ended'
+  Add-FakeProcess 7600 '2001-01-01T00:00:00.0000000Z'
+  Check ((Wait-ProcessGone $goneRecord 1)) 'F1: the PID now has a positively different start time -> the recorded process has ended'
+  Add-FakeProcess 7600 '' '' @() $false 'System'
+  Check (!(Wait-ProcessGone $goneRecord 1)) 'F1: an existing but uninspectable process is NOT proof of exit'
+  Remove-FakeProcess 7600; Add-FakeProcess 7600 $now
+  $script:ProcessReadFails = $true
+  Check (!(Wait-ProcessGone $goneRecord 1)) 'F1: a failing process read is NOT proof of exit'
+  $script:ProcessReadFails = $false
+
+  foreach ($mode in @('unreadable','uninspectable')) {
+    # Stop: the OS accepted the stop but the launcher cannot confirm the exit.
+    New-StartSandbox
+    Start-Launcher | Out-Null
+    $script:StopMode = $mode; $script:StopCalls.Clear(); $script:DockerCalls.Clear()
+    Expect-Fail 'PROCESS_STOP_FAILED' "F1: Stop whose exit cannot be confirmed ($mode) does not claim success" { Stop-Launcher }
+    Check ((Test-Path -LiteralPath $script:StateFile -PathType Leaf) -and @($script:DockerCalls | Where-Object { $_ -match 'compose.* stop ' }).Count -eq 0) "F1: registry kept and databases not stopped ($mode)"
+    Check (@($script:HostLog | Where-Object { $_ -match 'd.ng .ng backend' }).Count -eq 0) "F1: no stop success is announced ($mode)"
+
+    # Migration: the old backend must be confirmed gone before db:migrate.
+    New-StartSandbox
+    Start-Launcher | Out-Null
+    Push-Upstream 'database/migrations/3000_third.sql' 'SELECT 3;'
+    Update-Launcher | Out-Null
+    $script:DbApplied = @('1000_first','2000_second'); $script:Answers.Enqueue('y')
+    $script:StopMode = $mode; $startsBefore = $script:BackendStarts
+    Expect-Fail 'PROCESS_STOP_FAILED' "F1: unconfirmed stop blocks the migration ($mode)" { Start-Launcher }
+    Check ((NpmCount 'run db:migrate') -eq 0 -and $script:BackendStarts -eq $startsBefore -and (Test-Path -LiteralPath $script:StateFile -PathType Leaf)) "F1: no migration, no new backend, registry kept ($mode)"
+
+    # Restart (artifact changed): the old backend must be confirmed gone before a new one starts.
+    New-StartSandbox
+    Start-Launcher | Out-Null
+    $script:BuildContent = 'console.log("changed");'; $script:StopMode = $mode; $startsBefore = $script:BackendStarts
+    Expect-Fail 'PROCESS_STOP_FAILED' "F1: unconfirmed stop blocks the restart ($mode)" { Start-Launcher }
+    Check ($script:BackendStarts -eq $startsBefore -and (Test-Path -LiteralPath $script:StateFile -PathType Leaf)) "F1: no second backend and registry kept ($mode)"
+  }
+
+  # =============================================================================================
+  Section 'M00.03 review F2: termination targets the process instance that was verified, never a recycled PID'
+  # =============================================================================================
+  foreach ($kind in @('lookalike','other')) {
+    New-StartSandbox
+    $script:StartReplacedBy = $kind
+    Expect-Fail 'BACKEND_NOT_READY' "F2: the new child exited and its PID went to another process ($kind) before identity inspection" { Start-Launcher }
+    $occupant = $script:FakeProcs[$script:FakePidCounter]
+    Check ($script:StopCalls.Count -eq 0 -and $occupant -and $script:FakeProcs.Count -eq 1) "F2: the replacement ($kind) survives and nothing was stopped"
+    Check (!(Test-Path -LiteralPath $script:StateFile -PathType Leaf)) "F2: no registry claims the replacement ($kind)"
+  }
+  # Registry write fails after the identity check, and the child's PID is replaced in between.
+  New-StartSandbox
+  $script:StartHook = { New-Item -ItemType Directory -Force -Path $script:StateFile | Out-Null }
+  $script:DetailsHook = { param($id) Add-FakeProcess $id ([DateTime]::UtcNow.AddHours(-2).ToString('o')) }
+  Expect-Fail 'STATE_WRITE_FAILED' 'F2: registry-write cleanup after the child''s PID was replaced' { Start-Launcher }
+  Check ($script:StopCalls.Count -eq 0 -and $script:FakeProcs.ContainsKey($script:FakePidCounter) -and !(Test-Path -LiteralPath $script:StateFile -PathType Leaf)) 'F2: the replacement survives the cleanup and no registry names it'
+  # The real child is still cleaned up (regression for the existing behaviour).
+  New-StartSandbox
+  $script:StartHook = { New-Item -ItemType Directory -Force -Path $script:StateFile | Out-Null }
+  Expect-Fail 'STATE_WRITE_FAILED' 'F2: registry-write cleanup of the real child' { Start-Launcher }
+  Check ($script:StopCalls.Count -eq 1 -and $script:FakeProcs.Count -eq 0) 'F2: the actual child is stopped'
+  # Normal Stop: the PID changes hands between the last ownership proof and the termination.
+  New-StartSandbox
+  Start-Launcher | Out-Null
+  $target = Get-BackendTarget
+  $ownership = Get-TargetOwnership $target
+  $ownedPid = [int]$ownership.Registry.pid
+  $script:StopCalls.Clear()
+  $script:DetailsHook = { param($id) Add-FakeProcess $id ([DateTime]::UtcNow.AddHours(-2).ToString('o')) }
+  Use-LaunchLock 'test' { Stop-TargetProcess $target $ownership }
+  Check ($script:StopCalls.Count -eq 0 -and $script:FakeProcs.ContainsKey($ownedPid)) 'F2: PID replaced after the last proof: the termination targets the verified instance, so the replacement survives'
+  Check (!(Test-Path -LiteralPath $script:StateFile -PathType Leaf)) 'F2: the registry of the ended process is dropped and does not claim the replacement'
 
   # =============================================================================================
   Section 'M00.03 shared lock: every artifact/process-changing step refuses to run without it'
