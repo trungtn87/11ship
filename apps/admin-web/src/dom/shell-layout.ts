@@ -223,10 +223,14 @@ export function buildShell(options: ShellOptions): ShellLayout {
   document.addEventListener('click', outside);
   // Crossing the breakpoint switches mode: the drawer starts closed on the way in and out, and the saved rail choice is kept.
   const onViewport = (): void => {
+    // No slide animation while the mode changes: a sidebar that is still sliding away (or kept visible by the delayed
+    // visibility transition) would sit on top of the menu button for a moment and swallow the first tap.
+    root.classList.add('shell-instant');
     drawerOpen = false;
     closeAccountMenu();
     apply();
     redraw();
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => root.classList.remove('shell-instant')));
   };
   viewport?.addEventListener('change', onViewport);
   // Actions that are only announced never run.

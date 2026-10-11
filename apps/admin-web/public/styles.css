@@ -1381,6 +1381,11 @@ select {
     transition: transform 180ms ease;
   }
 
+  /* Crossing the breakpoint switches the mode at once (no sliding, no delayed visibility). */
+  .shell-instant .sidebar {
+    transition: none;
+  }
+
   .side-toggle {
     display: none;
   }

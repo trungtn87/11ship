@@ -9,7 +9,7 @@ và bị xoá khỏi bản thật (`npm run build:admin-web`; build thất bại
 | Mã | Màn | Route | Bản thật | Nối API |
 |---|---|---|---|---|
 | D00 / D01 / D02 | Đăng nhập / TOTP / đăng ký Authenticator | `/` | đã nối sẵn từ trước, giữ nguyên luồng | đã có |
-| D03 | Khung quản trị: sidebar 240/64 px, drawer ≤900 px, menu tài khoản | mọi trang sau đăng nhập | có | — |
+| D03 | Khung quản trị: sidebar 240/64 px (thu gọn chỉ ở desktop), drawer ≤900 px luôn đầy đủ gồm mục con “Danh sách / Đang khóa”, menu tài khoản | mọi trang sau đăng nhập | có | — |
 | D04–D06 | Lời mời Admin: danh sách / tạo / chi tiết | `/invitations…` | giữ luồng cũ trong khung mới | đã có |
 | D07 | Kích hoạt | `/activate` | giữ nguyên | đã có |
 | D08 | Đặt lại mật khẩu ADMIN | `/reset` | giao diện; nút gửi khóa kèm lý do | chờ M01.16 / M01.19 |

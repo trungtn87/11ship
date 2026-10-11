@@ -1,15 +1,25 @@
 # M01 UI — bằng chứng chuỗi PR #56 → #57 → #58 → #61 (Draft, chỉ UI)
 
-UI chưa phải kết quả nghiệp vụ; **M01 chưa đóng**. Chưa merge/deploy. Ảnh dưới đây chụp từ mã tại SHA `2ce81b6122e2f7bac96b6a3a5d63a514a6966f3b` (đỉnh chuỗi, chứa nguyên mã của #56–#58); commit thêm tài liệu này không đổi mã sản phẩm.
+UI chưa phải kết quả nghiệp vụ; **M01 chưa đóng**. Chưa merge/deploy. Bộ ảnh tổng hợp bên dưới chụp từ mã tại `2ce81b6…` (trước vòng sửa F1–F3); riêng ảnh F1/F2 chụp từ mã sau sửa (xem mục "Vòng sửa review"). Commit tài liệu không đổi mã sản phẩm.
 
 ## Chuỗi PR
 
 | PR | Base | Head | Final SHA (mã) |
 |---|---|---|---|
-| [#56](https://github.com/trungtn87/11ship/pull/56) nền UI | `main` | `feat/ui-m01-foundation` | `96f359eb48cfb0f5a10d313a331d8c6cce81e413` |
-| [#57](https://github.com/trungtn87/11ship/pull/57) 11Food | `feat/ui-m01-foundation` | `feat/ui-m01-food` | `7397eec6aed802748569156b2d7371a238ceef6f` |
-| [#58](https://github.com/trungtn87/11ship/pull/58) 11Ship | `feat/ui-m01-food` | `feat/ui-m01-ship` | `0d14307a8ba633a3671318d89793858fcf65bb7e` |
-| [#61](https://github.com/trungtn87/11ship/pull/61) Web quản trị | `feat/ui-m01-ship` | `feat/ui-m01-admin` | `2ce81b6122e2f7bac96b6a3a5d63a514a6966f3b` (+ commit tài liệu, xem PR) |
+| [#56](https://github.com/trungtn87/11ship/pull/56) nền UI | `main` | `feat/ui-m01-foundation` | `04629bc0a6352d6c238dc44711f19bc0dce27515` |
+| [#57](https://github.com/trungtn87/11ship/pull/57) 11Food | `feat/ui-m01-foundation` | `feat/ui-m01-food` | `5e137fb1ecd94ac20ab5389360cb388fc9e53f59` |
+| [#58](https://github.com/trungtn87/11ship/pull/58) 11Ship | `feat/ui-m01-food` | `feat/ui-m01-ship` | `e3a8d07e6c0ced5c4df3a6140ffbfcb44d73c797` |
+| [#61](https://github.com/trungtn87/11ship/pull/61) Web quản trị | `feat/ui-m01-ship` | `feat/ui-m01-admin` | mã `b22d2b19d540d7477447c49483b27289d1d7df70` (+ commit tài liệu, SHA cuối ghi trong PR) |
+
+## Vòng sửa review (F1–F3)
+
+| Finding | Sửa | Kiểm tra |
+|---|---|---|
+| **F1** (#61) thu gọn desktop làm drawer mobile hiện rail, không mở được "Danh sách / Đang khóa" | Tách hai chế độ: chế độ "thu gọn" chỉ áp dụng cho rail desktop (`compactSidebar(collapsed, drawerMode)`); ở ≤900 px menu luôn đầy đủ; vượt ngưỡng thì vẽ lại và đóng drawer; lựa chọn thu gọn được giữ khi quay về desktop. Bỏ các ghi đè CSS chết. | `admin-web:test` (2 test chế độ sidebar); test tích hợp CDP trên CI (`admin-web-browser`: thu gọn → 390 px → drawer hiện Danh sách/Đang khóa → bấm "Đang khóa" → quay lại 1280 px → rail trở lại); chạy Playwright cục bộ cả hai chiều desktop→phone và phone→desktop. Ảnh: [F1_sidebar_modes](img/F1_sidebar_modes.jpg) |
+| **F2** (#56 → #57/#58/#61) thiếu C08 | `LeaveController` + `guardForm`: bấm Quay lại, đổi màn hình trong app, nút Back của trình duyệt và đóng/tải lại trang đều hỏi "Bỏ thay đổi?" khi đang nhập. "Ở lại" (hoặc Esc) giữ nguyên nội dung; "Thoát" xóa mật khẩu/OTP và kết thúc luồng trong bộ nhớ. Back của trình duyệt được hoàn tác đúng vị trí lịch sử trong lúc hỏi. Không lưu gì vào URL, localStorage, sessionStorage, cookie hay `history.state` (chỉ số vị trí). Áp dụng cho đăng nhập, đăng ký, OTP đăng ký/đặt lại, quên mật khẩu, đặt lại mật khẩu (cả hai app), hồ sơ cá nhân và hồ sơ cửa hàng (11Food), hồ sơ xế (11Ship). Màn xem thiết kế **C08**. | `client-shell:test` (7 test C08 gồm: không hỏi khi chưa nhập, Ở lại giữ nội dung, Thoát xóa mật khẩu/OTP/flow, không mở hộp thứ hai, release khi thành công, không dùng storage); Playwright trên bản thật 11Ship (12 kiểm tra: hỏi khi Back trong app, hỏi khi bấm liên kết, hỏi khi Back trình duyệt và URL được giữ, Ở lại giữ nội dung, Thoát xóa trường mật khẩu, `beforeunload` chỉ hỏi khi đang nhập, không có gì trong URL/storage/cookie). Ảnh: [F2_C08_dirty_leave](img/F2_C08_dirty_leave.jpg) |
+| **F3** (#61) test catalog nuốt lỗi import | Bỏ `catch`-và-`return`; import lỗi làm test FAIL; kiểm đủ mã D00–D09, D81, D86–D89, C01–C10 và D89 = `administrators`, nhóm Tài khoản | `admin-web:test` |
+
+Lưu ý phạm vi: C08 chưa áp dụng cho form lời mời của Web quản trị (catalog ghi C08 cho Back/logout của app; Web quản trị dùng trang riêng) — nếu Owner muốn áp dụng, cần quyết định riêng.
 
 ## Cách mở bản thử
 

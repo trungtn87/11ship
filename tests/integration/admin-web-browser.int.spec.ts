@@ -193,6 +193,8 @@ describe('M01-D-LOGIN-UI - admin web in a real browser against the real backend'
     await page.waitFor(`!document.querySelector('.shell').classList.contains('shell-collapsed')`);
     await page.click('.shellbar-menu');
     await page.waitFor(`document.querySelector('.shell').classList.contains('shell-drawer-open')`);
+    // Let the 180 ms slide-in finish so the sub-entries sit still before they are clicked.
+    await page.evaluate('new Promise((resolve) => setTimeout(resolve, 400))');
     expect(
       await page.evaluate<string[]>(
         `[...document.querySelectorAll('.side-sub a')].filter((a) => a.getBoundingClientRect().width > 0).map((a) => a.textContent.trim())`,
