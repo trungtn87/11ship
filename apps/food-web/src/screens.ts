@@ -6,7 +6,7 @@ import { icon } from '../../client-shared/src/icons.js';
 import { ScreenDef, ScreenEnv, VariantDef } from '../../client-shared/src/screen.js';
 import { authScreens } from '../../client-shared/src/screens/auth.js';
 import { failureBanner } from '../../client-shared/src/screens/feedback.js';
-import { actionButton, appPage, designOnly, isGated } from '../../client-shared/src/screens/layout.js';
+import { actionButton, appPage, designOnly, guardForm, isGated } from '../../client-shared/src/screens/layout.js';
 import { STATE_COPY } from '../../client-shared/src/states.js';
 import { normalizeOptionalLink, normalizePersonName, normalizeRequiredText, isValidPhone, ADDRESS_MAX, FACEBOOK_MAX, SHOP_NAME_MAX, ZALO_MAX } from '../../client-shared/src/validation.js';
 
@@ -224,6 +224,8 @@ const profile: ScreenDef = {
     } else if (variant === 'saving') {
       setBusy(save.button, true, 'Lưu thay đổi', 'Đang gửi…');
     }
+    // C08: edits not yet saved are asked about before leaving (the baseline is what the screen shows now).
+    guardForm(env, form);
     return appPage({ title: 'Thông tin cá nhân', onBack: () => env.go('account'), bodyClass: 'c-stack', body: [form] });
   },
 };
@@ -318,6 +320,8 @@ const shopOnboarding: ScreenDef = {
     } else if (variant === 'conflict') {
       feedback.replaceChildren(failureBanner('VERSION_CONFLICT', { onRetry: () => designOnly(env, STATE_COPY.designNoSend) }));
     }
+    // C08: unsaved shop details are asked about before leaving (the baseline is what the screen shows now).
+    guardForm(env, form);
     return appPage({ title: 'Hồ sơ cửa hàng', onBack: () => env.go('shop-start'), bodyClass: 'c-stack', body: [env.mode === 'design' ? chip(STATE_COPY.designBanner, 'warn') : undefined, form] });
   },
 };

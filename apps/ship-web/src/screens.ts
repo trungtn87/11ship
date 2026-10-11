@@ -6,7 +6,7 @@ import { icon } from '../../client-shared/src/icons.js';
 import { ScreenDef, ScreenEnv, VariantDef } from '../../client-shared/src/screen.js';
 import { authScreens } from '../../client-shared/src/screens/auth.js';
 import { failureBanner } from '../../client-shared/src/screens/feedback.js';
-import { actionButton, appPage, designOnly } from '../../client-shared/src/screens/layout.js';
+import { actionButton, appPage, designOnly, guardForm } from '../../client-shared/src/screens/layout.js';
 import { STATE_COPY } from '../../client-shared/src/states.js';
 import { normalizePersonName, normalizePlate } from '../../client-shared/src/validation.js';
 
@@ -254,10 +254,13 @@ const driverOnboarding: ScreenDef = {
     };
     const submit = actionButton(env, 'driver.submit', { label: 'Gửi hồ sơ', type: 'submit', id: 'driver-submit', onBlocked: () => void check() });
     const form = h('form', { class: 'c-stack', novalidate: true }, name.root, plate.root, feedback, submit.node);
+    // C08: a driver profile being typed is asked about before leaving; the form starts empty.
+    const guard = guardForm(env, form);
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       if (check() && env.mode === 'design') {
         designOnly(env, STATE_COPY.designNoSend);
+        guard.release();
         env.go('driver-status');
       }
     });

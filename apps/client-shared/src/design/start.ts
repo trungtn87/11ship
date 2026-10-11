@@ -1,4 +1,5 @@
 import { AppDefinition } from '../app.js';
+import { LeaveController } from '../leave.js';
 import { FlowStore, ScreenDef, ScreenEnv } from '../screen.js';
 import { featureStatus, isWired } from '../features.js';
 import { NOT_WIRED_PORTS } from '../ports.js';
@@ -19,28 +20,34 @@ export interface DesignApp {
 }
 
 export function startDesign(root: HTMLElement, app: DesignApp): DesignViewer {
+  // C08 in the preview: the same rule as the real app for the buttons of the phone frame (the preview's own toolbar is not a screen).
+  const leave = new LeaveController();
   const viewer = new DesignViewer(root, {
     title: app.title,
     subtitle: app.subtitle,
     frame: 'phone',
     screens: [...app.definition.screens, ...app.extras],
     defaultScreen: app.definition.homeId,
-    makeEnv: (context: PreviewContext): ScreenEnv => ({
-      mode: 'design',
-      brand: app.definition.brand,
-      // The preview calls no backend: these ports answer "not wired" and are never reached (preview actions are demos).
-      ports: NOT_WIRED_PORTS,
-      flows: new FlowStore(),
-      account: app.account(context.screen, context.variant),
-      go: (id, variant) => context.go(id, variant),
-      back: () => context.back(),
-      toast: (text) => context.toast(text),
-      dialogHost: context.host,
-      isWired,
-      featureReason: (feature) => featureStatus(feature).reason,
-      testSmsNotice: app.definition.testSmsNotice,
-      sample: SAMPLE,
-    }),
+    makeEnv: (context: PreviewContext): ScreenEnv => {
+      leave.clear();
+      return {
+        mode: 'design',
+        brand: app.definition.brand,
+        // The preview calls no backend: these ports answer "not wired" and are never reached (preview actions are demos).
+        ports: NOT_WIRED_PORTS,
+        flows: new FlowStore(),
+        account: app.account(context.screen, context.variant),
+        go: (id, variant) => leave.request(() => context.go(id, variant), context.host),
+        back: () => leave.request(() => context.back(), context.host),
+        guard: (guard) => leave.register(guard),
+        toast: (text) => context.toast(text),
+        dialogHost: context.host,
+        isWired,
+        featureReason: (feature) => featureStatus(feature).reason,
+        testSmsNotice: app.definition.testSmsNotice,
+        sample: SAMPLE,
+      };
+    },
   });
   viewer.mount();
   return viewer;

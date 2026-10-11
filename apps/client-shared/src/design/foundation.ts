@@ -5,7 +5,7 @@ import { icon } from '../icons.js';
 import { ScreenDef, ScreenEnv, VariantDef } from '../screen.js';
 import { failureMessage, STATE_COPY } from '../states.js';
 import { failureBanner } from '../screens/feedback.js';
-import { appPage, designOnly } from '../screens/layout.js';
+import { appPage, designOnly, guardForm } from '../screens/layout.js';
 
 // "Trạng thái chung" (C01-C10 of the design catalog) and a gallery of the shared components. These screens exist so every
 // state can be reviewed without causing a real failure. In the real app the same banners/pages are produced by the
@@ -128,6 +128,38 @@ export function stateScreens(brand: AppBrand): readonly ScreenDef[] {
       variants: [v('default', 'Mặc định')],
       render(env) {
         return statePage(env, [failureBanner('OUTCOME_UNKNOWN', { onRetry: () => designOnly(env, STATE_COPY.designNoSend) }), h('p', { class: 'c-caption' }, 'Hệ thống không tự gửi lại bằng khóa mới và không báo thất bại khi chưa chắc chắn.')], 'Gửi hồ sơ');
+      },
+    },
+    {
+      id: 'state-dirty-leave',
+      code: 'C08',
+      title: 'Xác nhận bỏ thay đổi',
+      group: 'Trạng thái chung',
+      access: 'public',
+      variants: [v('form', 'Đang nhập (bấm Quay lại)'), v('dialog', 'Hộp xác nhận')],
+      render(env, variant) {
+        const phone = textField({ id: 'sample-phone', label: 'Số điện thoại', icon: 'phone', type: 'tel', inputMode: 'tel' });
+        const password = passwordField({ id: 'sample-password', label: 'Mật khẩu', autocomplete: 'new-password' });
+        const otp = otpField({ id: 'sample-code', label: 'Mã OTP 6 số' });
+        const form = h('form', { class: 'c-stack', novalidate: true }, phone.root, password.root, otp.root);
+        // The guard is registered while the form is still empty, so what is typed below counts as "đang nhập".
+        guardForm(env, form, { flows: ['sample-flow'] });
+        phone.input.value = '0981234123';
+        password.input.value = 'mat-khau-dang-nhap';
+        otp.input.value = '123';
+        otp.input.dispatchEvent(new Event('input'));
+        const page = statePage(
+          env,
+          [
+            h('p', { class: 'c-lead' }, 'Khi đang nhập mà bấm Quay lại, chuyển màn hình hoặc nút Back của trình duyệt, ứng dụng hỏi trước khi bỏ. “Ở lại” giữ nguyên nội dung; “Thoát” xóa mật khẩu và mã OTP đã nhập. Chúng không được lưu vào địa chỉ trang hay bộ nhớ trình duyệt.'),
+            form,
+          ],
+          'Đang nhập',
+        );
+        if (variant === 'dialog') {
+          env.back();
+        }
+        return page;
       },
     },
     {
