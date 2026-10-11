@@ -34,6 +34,10 @@ function Initialize-LauncherPaths([string]$Repo) {
   $script:UatPinFile = Join-Path $script:StateDir 'uat-pin.json'
   $script:LauncherPath = Join-Path (Join-Path (Join-Path $Repo 'tools') 'local') '11ship-launcher.ps1'
   $script:RelaunchScript = $script:LauncherPath
+  # M00.03: the backend build output, its manifest and its absolute entry script (the process identity is checked against it).
+  $script:BackendDist = Join-Path (Join-Path (Join-Path $Repo 'apps') 'backend') 'dist'
+  $script:BackendScript = Join-Path $script:BackendDist 'main.js'
+  $script:BackendManifestFile = Join-Path $script:BackendDist 'build-manifest.json'
 }
 Initialize-LauncherPaths ((Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path)
 $script:ExtraSecrets = @()
@@ -442,38 +446,685 @@ function Assert-RelaunchParameters {
 }
 
 # ---------------------------------------------------------------------------------------------
-# Backend process ownership
+# Artifact and process identity (M00.03)
 # ---------------------------------------------------------------------------------------------
-function Get-BackendState {
-  if (!(Test-Path -LiteralPath $script:StateFile)) { return $null }
-  try { return Get-Content -Raw -LiteralPath $script:StateFile | ConvertFrom-Json } catch { return $null }
+# Three things are kept apart and never assumed equal:
+#   SOURCE    the commit that is checked out (git HEAD);
+#   ARTIFACT  what was built from it: the files of the build folder, described by a manifest that is written only after a
+#             successful build (app_id, source_sha, build_fingerprint = SHA-256 over every built file, built_at, design_version);
+#   PROCESS   what is running: recorded in the process registry at the moment the launcher starts it (pid, start time UTC,
+#             repo, executable, script, host and port, source_sha, build_fingerprint).
+# "Update succeeded" says something about the SOURCE only. A running process is whatever the registry recorded when it was
+# started: it is never given the SHA of a newer build.
+#
+# A PID that exists, or a port that answers HTTP 200, proves nothing. A process is OWNED only when all of this holds: the
+# registry is complete and belongs to this checkout and this target; the PID is alive with exactly the recorded start time;
+# its executable is the recorded node and its script argument is this checkout's build output. The port is OURS only when
+# every loopback or wildcard listener on it is that same PID. What cannot be proven is refused with a stable code and
+# nothing is stopped: never by PID alone, by port, or by image name.
+# Everything that changes an artifact, the registry or a process runs under the shared lock (Assert-LockHeld).
+$script:BackendHost = '127.0.0.1'
+$script:BackendPort = 3000
+$script:ArtifactDesignVersion = '2.0.1'
+$script:ProcessStopSeconds = 10
+$script:BackendReadySeconds = 45
+$script:BackendPollMilliseconds = 2000
+$script:BuildExitCode = 0
+
+function ConvertTo-Hex([byte[]]$Bytes) { return ([BitConverter]::ToString($Bytes).Replace('-', '').ToLowerInvariant()) }
+function Test-Hex($Value,[int]$Length) {
+  if ($Value -isnot [string]) { return $false }
+  return ($Value -cmatch ('^[0-9a-f]{' + $Length + '}$'))
 }
-function Get-OwnedBackendProcess {
-  $state = Get-BackendState
-  if (!$state -or !$state.pid) { return $null }
-  $process = Get-Process -Id $state.pid -ErrorAction SilentlyContinue
-  if (!$process) { return $null }
-  # PowerShell 7 parses ISO timestamps in JSON into DateTime; Windows PowerShell 5.1 keeps the string.
-  $recorded = if ($state.startedUtc -is [DateTime]) { $state.startedUtc.ToUniversalTime().ToString('o') } else { "$($state.startedUtc)" }
-  if ($process.ProcessName -ne 'node' -or $process.StartTime.ToUniversalTime().ToString('o') -ne $recorded) { return $null }
-  return $process
+function Test-Property($Object,[string]$Name) { return [bool]($Object -and $Object.PSObject.Properties[$Name]) }
+function Test-IntegerValue($Value) { return ($Value -is [int] -or $Value -is [long]) }
+# PowerShell 7 turns ISO timestamps inside JSON into DateTime, Windows PowerShell 5.1 keeps the text: both end up as the same text.
+function ConvertTo-UtcText($Value) {
+  if ($null -eq $Value) { return $null }
+  if ($Value -is [DateTime]) { return $Value.ToUniversalTime().ToString('o') }
+  if ($Value -isnot [string] -or $Value -cnotmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$') { return $null }
+  $parsed = [DateTime]::MinValue
+  if ([DateTime]::TryParse($Value, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$parsed)) { return $parsed.ToUniversalTime().ToString('o') }
+  return $null
 }
-function Start-BackendProcess([string]$Stdout,[string]$Stderr) {
-  return Start-Process -FilePath 'node.exe' -ArgumentList @('--env-file-if-exists=.env','apps/backend/dist/main.js') -WorkingDirectory $script:Repo -RedirectStandardOutput $Stdout -RedirectStandardError $Stderr -PassThru -WindowStyle Hidden
+function ConvertTo-ComparablePath([string]$Path) {
+  if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+  try { return [IO.Path]::GetFullPath($Path).TrimEnd([char[]]'\/') } catch { return '' }
 }
-function Http-Status([string]$Url) {
-  try { return [int](Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 3).StatusCode } catch {
-    if ($_.Exception.Response) { return [int]$_.Exception.Response.StatusCode }
-    return 0
+function Test-SamePath([string]$Left,[string]$Right) {
+  $a = ConvertTo-ComparablePath $Left
+  $b = ConvertTo-ComparablePath $Right
+  if (!$a -or !$b) { return $false }
+  return [string]::Equals($a, $b, [StringComparison]::OrdinalIgnoreCase)
+}
+function Format-ShortSha([string]$Value) {
+  if ("$Value".Length -ge 7) { return "$Value".Substring(0, 7) }
+  return 'không rõ'
+}
+function Format-ShortFingerprint([string]$Value) {
+  if ("$Value".Length -ge 12) { return "$Value".Substring(0, 12) }
+  return 'không rõ'
+}
+# Defence in depth: the callers below already run inside Use-LaunchLock; a future caller that forgets it fails closed.
+function Assert-LockHeld([string]$What) {
+  if ($script:LauncherStale -or $script:LockDepth -lt 1 -or !$script:LockHandle) {
+    Fail "Thao tác '$What' đổi artifact hoặc process nên chỉ được chạy khi đang giữ khóa dùng chung của checkout; chưa làm gì cả." 'LAUNCH_LOCK_REQUIRED'
   }
 }
-function Wait-Backend([int]$TimeoutSeconds=45) {
-  $until = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+# Temp file in the same folder, then rename over the target: a reader sees the old file or the new one, never half of one.
+# When the rename fails the old file is untouched and no temp file is left behind.
+function Write-TextAtomic([string]$Path,[string]$Text) {
+  $directory = Split-Path -Parent $Path
+  $temporary = Join-Path $directory ([IO.Path]::GetFileName($Path) + '.' + [Guid]::NewGuid().ToString('N') + '.tmp')
+  try {
+    [IO.File]::WriteAllText($temporary, $Text, (New-Object Text.UTF8Encoding($false)))
+    for ($attempt = 1; $true; $attempt++) {
+      try {
+        if (Test-Path -LiteralPath $Path -PathType Leaf) { [IO.File]::Replace($temporary, $Path, $null) } else { [IO.File]::Move($temporary, $Path) }
+        break
+      } catch {
+        # A reader (Status) may hold the file for a moment on Windows; anything lasting longer is an error.
+        if ($attempt -ge 5) { throw }
+        Start-Sleep -Milliseconds 100
+      }
+    }
+  } catch {
+    $reason = $_.Exception.Message
+    Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+    Fail "Không ghi được tệp trạng thái '$([IO.Path]::GetFileName($Path))' (ghi tạm rồi đổi tên thất bại; tệp cũ được giữ nguyên): $reason" 'STATE_WRITE_FAILED'
+  }
+}
+# State: MISSING | UNREADABLE | INVALID | OK. A file that cannot be read is not the same as a file that is not there.
+function Read-JsonObject([string]$Path) {
+  if (!(Test-Path -LiteralPath $Path)) { return [pscustomobject]@{ State = 'MISSING'; Data = $null; Detail = '' } }
+  $text = $null
+  try { $text = [IO.File]::ReadAllText($Path, (New-Object Text.UTF8Encoding($false))) }
+  catch { return [pscustomobject]@{ State = 'UNREADABLE'; Data = $null; Detail = "$($_.Exception.Message)" } }
+  $data = $null
+  try { $data = $text | ConvertFrom-Json } catch { return [pscustomobject]@{ State = 'INVALID'; Data = $null; Detail = 'không phải JSON hợp lệ' } }
+  if ($null -eq $data -or $data -isnot [pscustomobject]) { return [pscustomobject]@{ State = 'INVALID'; Data = $null; Detail = 'không phải một đối tượng JSON' } }
+  return [pscustomobject]@{ State = 'OK'; Data = $data; Detail = '' }
+}
+
+# A target is one local server the launcher can build and run. Only the backend exists today; the frontends of later
+# packages describe themselves the same way, so the same identity code serves them.
+function Get-BackendTarget {
+  return [pscustomobject]@{
+    AppId = 'BACKEND'
+    Name = 'backend'
+    Host = [string]$script:BackendHost
+    Port = [int]$script:BackendPort
+    Script = $script:BackendScript
+    ArtifactDir = $script:BackendDist
+    ManifestFile = $script:BackendManifestFile
+    RegistryFile = $script:StateFile
+  }
+}
+function Get-HeadSha {
+  $sha = Capture 'git.exe' @('-C', $script:Repo, 'rev-parse', 'HEAD')
+  if ("$sha" -cnotmatch '^[0-9a-f]{40}$') { Fail 'Không đọc được commit hiện tại (git rev-parse HEAD lỗi); dừng an toàn, chưa build hay chạy gì cả.' 'GIT_STATE_UNREADABLE' }
+  return $sha
+}
+
+# ---- artifact: fingerprint and manifest ----
+# SHA-256 over the lines "<relative path>|<SHA-256 of the file>" of every file below the build folder (ordinal order, '/'
+# separators), except the manifest at its root. Content, names, added and removed files all change it. $null = no files.
+function Get-ArtifactFingerprint([string]$Directory) {
+  if (!(Test-Path -LiteralPath $Directory -PathType Container)) { return $null }
+  $root = (Resolve-Path -LiteralPath $Directory).Path.TrimEnd([char[]]'\/')
+  $names = New-Object 'Collections.Generic.List[string]'
+  $fullPaths = New-Object 'Collections.Generic.Dictionary[string,string]'
+  foreach ($file in @(Get-ChildItem -LiteralPath $root -Recurse -File -Force)) {
+    $relative = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
+    if ($relative -ceq 'build-manifest.json') { continue }
+    $names.Add($relative)
+    $fullPaths[$relative] = $file.FullName
+  }
+  if (!$names.Count) { return $null }
+  $ordered = $names.ToArray()
+  [Array]::Sort($ordered, [StringComparer]::Ordinal)
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try {
+    $lines = New-Object 'Collections.Generic.List[string]'
+    foreach ($relative in $ordered) { $lines.Add($relative + '|' + (ConvertTo-Hex ($sha.ComputeHash([IO.File]::ReadAllBytes($fullPaths[$relative]))))) }
+    return (ConvertTo-Hex ($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($lines.ToArray() -join "`n")))))
+  } finally { $sha.Clear() }
+}
+# Empty text = valid. Extra properties are tolerated (a frontend manifest carries more); the five required ones are strict.
+function Get-ManifestProblem($Data,[string]$AppId) {
+  foreach ($name in @('app_id', 'source_sha', 'build_fingerprint', 'built_at', 'design_version')) {
+    if (!(Test-Property $Data $name)) { return "thiếu trường $name" }
+  }
+  if ($Data.app_id -isnot [string] -or $Data.app_id -cne $AppId) { return "app_id không phải $AppId" }
+  if (!(Test-Hex $Data.source_sha 40)) { return 'source_sha phải là 40 ký tự hex thường' }
+  if (!(Test-Hex $Data.build_fingerprint 64)) { return 'build_fingerprint phải là 64 ký tự hex thường' }
+  if (!(ConvertTo-UtcText $Data.built_at)) { return 'built_at không phải thời điểm UTC hợp lệ' }
+  if ($Data.design_version -isnot [string] -or $Data.design_version -cnotmatch '^[0-9A-Za-z._-]{1,32}$') { return 'design_version không hợp lệ' }
+  return ''
+}
+function Write-BuildManifest($Target,[string]$SourceSha,[string]$Fingerprint) {
+  Assert-LockHeld 'ghi manifest artifact'
+  $manifest = [ordered]@{
+    app_id = $Target.AppId
+    source_sha = $SourceSha
+    build_fingerprint = $Fingerprint
+    built_at = [DateTime]::UtcNow.ToString('o')
+    design_version = $script:ArtifactDesignVersion
+  }
+  Write-TextAtomic $Target.ManifestFile (($manifest | ConvertTo-Json) + "`n")
+  return [pscustomobject]$manifest
+}
+# State: MISSING | UNREADABLE | INVALID | OK
+function Read-BuildManifest($Target) {
+  $read = Read-JsonObject $Target.ManifestFile
+  if ($read.State -eq 'MISSING') { return [pscustomobject]@{ State = 'MISSING'; Manifest = $null; Detail = '' } }
+  if ($read.State -ne 'OK') { return [pscustomobject]@{ State = $read.State; Manifest = $null; Detail = $read.Detail } }
+  $problem = Get-ManifestProblem $read.Data $Target.AppId
+  if ($problem) { return [pscustomobject]@{ State = 'INVALID'; Manifest = $null; Detail = $problem } }
+  $data = $read.Data
+  $manifest = [pscustomobject]@{
+    app_id = [string]$data.app_id
+    source_sha = [string]$data.source_sha
+    build_fingerprint = [string]$data.build_fingerprint
+    built_at = (ConvertTo-UtcText $data.built_at)
+    design_version = [string]$data.design_version
+  }
+  return [pscustomobject]@{ State = 'OK'; Manifest = $manifest; Detail = '' }
+}
+# What the build folder is right now compared with its manifest.
+# State: MISSING | UNREADABLE | INVALID | NO_ARTIFACT | CHANGED | OK
+function Get-ArtifactState($Target) {
+  $read = Read-BuildManifest $Target
+  if ($read.State -eq 'MISSING') { return [pscustomobject]@{ State = 'MISSING'; Manifest = $null; Text = 'chưa có manifest (chưa build bằng launcher, hoặc lần build gần nhất lỗi)' } }
+  if ($read.State -ne 'OK') { return [pscustomobject]@{ State = $read.State; Manifest = $null; Text = "manifest không dùng được ($($read.Detail))" } }
+  $fingerprint = $null
+  try { $fingerprint = Get-ArtifactFingerprint $Target.ArtifactDir }
+  catch { return [pscustomobject]@{ State = 'UNREADABLE'; Manifest = $read.Manifest; Text = "không đọc được file build ($($_.Exception.Message))" } }
+  if (!$fingerprint) { return [pscustomobject]@{ State = 'NO_ARTIFACT'; Manifest = $read.Manifest; Text = 'thư mục build trống hoặc không tồn tại' } }
+  if ($fingerprint -cne $read.Manifest.build_fingerprint) { return [pscustomobject]@{ State = 'CHANGED'; Manifest = $read.Manifest; Text = 'file build đã đổi sau lần ghi manifest (manifest cũ, không còn mô tả đúng thư mục build)' } }
+  return [pscustomobject]@{ State = 'OK'; Manifest = $read.Manifest; Text = '' }
+}
+
+# ---- process registry ----
+# Empty text = valid. Every field the identity check needs is required and typed.
+function Get-RegistryProblem($Data,$Target) {
+  foreach ($name in @('schema', 'app_id', 'pid', 'started_utc', 'repo', 'executable', 'script', 'host', 'port', 'source_sha', 'build_fingerprint', 'built_at', 'design_version')) {
+    if (!(Test-Property $Data $name)) { return "thiếu trường $name" }
+  }
+  if (!(Test-IntegerValue $Data.schema) -or [long]$Data.schema -ne 1) { return 'schema không được hỗ trợ' }
+  if ($Data.app_id -isnot [string] -or $Data.app_id -cne $Target.AppId) { return "app_id không phải $($Target.AppId)" }
+  if (!(Test-IntegerValue $Data.pid) -or [long]$Data.pid -lt 1 -or [long]$Data.pid -gt 2147483647) { return 'pid không hợp lệ' }
+  if (!(ConvertTo-UtcText $Data.started_utc)) { return 'started_utc không phải thời điểm UTC hợp lệ' }
+  foreach ($name in @('repo', 'executable', 'script', 'host')) {
+    if ($Data.$name -isnot [string] -or [string]::IsNullOrWhiteSpace($Data.$name)) { return "$name không hợp lệ" }
+  }
+  if (!(Test-IntegerValue $Data.port) -or [long]$Data.port -lt 1 -or [long]$Data.port -gt 65535) { return 'port không hợp lệ' }
+  if (!(Test-Hex $Data.source_sha 40)) { return 'source_sha phải là 40 ký tự hex thường' }
+  if (!(Test-Hex $Data.build_fingerprint 64)) { return 'build_fingerprint phải là 64 ký tự hex thường' }
+  if (!(ConvertTo-UtcText $Data.built_at)) { return 'built_at không phải thời điểm UTC hợp lệ' }
+  if ($Data.design_version -isnot [string] -or $Data.design_version -cnotmatch '^[0-9A-Za-z._-]{1,32}$') { return 'design_version không hợp lệ' }
+  return ''
+}
+# State: NONE | UNREADABLE | CORRUPT | LEGACY | OK. LEGACY = valid JSON from an older launcher that recorded no identity.
+function Read-TargetRegistry($Target) {
+  $read = Read-JsonObject $Target.RegistryFile
+  if ($read.State -eq 'MISSING') { return [pscustomobject]@{ State = 'NONE'; Record = $null; Detail = '' } }
+  if ($read.State -eq 'UNREADABLE') { return [pscustomobject]@{ State = 'UNREADABLE'; Record = $null; Detail = $read.Detail } }
+  if ($read.State -ne 'OK') { return [pscustomobject]@{ State = 'CORRUPT'; Record = $null; Detail = $read.Detail } }
+  if (!(Test-Property $read.Data 'schema')) { return [pscustomobject]@{ State = 'LEGACY'; Record = $null; Detail = '' } }
+  $problem = Get-RegistryProblem $read.Data $Target
+  if ($problem) { return [pscustomobject]@{ State = 'CORRUPT'; Record = $null; Detail = $problem } }
+  $data = $read.Data
+  $record = [pscustomobject]@{
+    schema = [int]$data.schema
+    app_id = [string]$data.app_id
+    pid = [int]$data.pid
+    started_utc = (ConvertTo-UtcText $data.started_utc)
+    repo = [string]$data.repo
+    executable = [string]$data.executable
+    script = [string]$data.script
+    host = [string]$data.host
+    port = [int]$data.port
+    source_sha = [string]$data.source_sha
+    build_fingerprint = [string]$data.build_fingerprint
+    built_at = (ConvertTo-UtcText $data.built_at)
+    design_version = [string]$data.design_version
+  }
+  return [pscustomobject]@{ State = 'OK'; Record = $record; Detail = '' }
+}
+function Write-TargetRegistry($Target,$Details,$Manifest,[string]$Stdout,[string]$Stderr) {
+  Assert-LockHeld 'ghi bản ghi process'
+  $record = [ordered]@{
+    schema = 1
+    app_id = $Target.AppId
+    pid = [int]$Details.ProcessId
+    started_utc = (ConvertTo-UtcText $Details.StartUtc)
+    repo = $script:Repo
+    executable = [string]$Details.Executable
+    script = $Target.Script
+    host = $Target.Host
+    port = [int]$Target.Port
+    source_sha = $Manifest.source_sha
+    build_fingerprint = $Manifest.build_fingerprint
+    built_at = $Manifest.built_at
+    design_version = $Manifest.design_version
+    stdout = $Stdout
+    stderr = $Stderr
+  }
+  Write-TextAtomic $Target.RegistryFile (($record | ConvertTo-Json) + "`n")
+}
+function Remove-TargetRegistry($Target) {
+  Assert-LockHeld 'xóa bản ghi process'
+  try { Remove-Item -LiteralPath $Target.RegistryFile -Force -ErrorAction Stop }
+  catch {
+    if (Test-Path -LiteralPath $Target.RegistryFile) { Fail "Không xóa được bản ghi process '$([IO.Path]::GetFileName($Target.RegistryFile))': $($_.Exception.Message)" 'STATE_WRITE_FAILED' }
+  }
+}
+
+# ---- what the operating system says about a process and a port (seams: tests replace these) ----
+# Windows command line -> arguments (quotes group, spaces separate). Element 0 is the executable.
+function Split-CommandLine([string]$Text) {
+  $tokens = New-Object 'Collections.Generic.List[string]'
+  $builder = New-Object Text.StringBuilder
+  $inQuotes = $false
+  $started = $false
+  foreach ($character in "$Text".ToCharArray()) {
+    if ($character -eq [char]'"') { $inQuotes = !$inQuotes; $started = $true; continue }
+    if (!$inQuotes -and [char]::IsWhiteSpace($character)) {
+      if ($started) { $tokens.Add($builder.ToString()); [void]$builder.Clear(); $started = $false }
+      continue
+    }
+    [void]$builder.Append($character)
+    $started = $true
+  }
+  if ($started) { $tokens.Add($builder.ToString()) }
+  return @($tokens.ToArray())
+}
+# The first argument after the executable that is not an option: for "node --env-file-if-exists=.env <script>" the script.
+function Get-ScriptArgument($Arguments) {
+  if ($null -eq $Arguments) { return '' }
+  $list = @($Arguments)
+  for ($index = 1; $index -lt $list.Count; $index++) {
+    $token = "$($list[$index])"
+    if ($token -and !$token.StartsWith('-')) { return $token }
+  }
+  return ''
+}
+# $null = no such process. Inspectable = $false = the process exists but cannot be inspected the way the launcher's own
+# process (same user) always can, so it is not ours. Throws when the operating system cannot answer at all.
+function Get-ProcessDetails([int]$ProcessId) {
+  if (!(Test-IsWindows)) { throw 'Kiểm tra process chỉ được hỗ trợ trên Windows.' }
+  $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+  if (!$process) { return $null }
+  $start = $null
+  try { $start = $process.StartTime.ToUniversalTime().ToString('o') } catch { }
+  $cim = $null
+  try { $cim = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction Stop } catch { }
+  if (!$start -or !$cim -or !$cim.ExecutablePath) {
+    if (!(Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)) { return $null }
+    return [pscustomobject]@{ ProcessId = $ProcessId; Name = "$($process.ProcessName)"; Inspectable = $false; StartUtc = ''; Executable = ''; CommandLine = ''; Arguments = @() }
+  }
+  return [pscustomobject]@{
+    ProcessId = $ProcessId
+    Name = "$($process.ProcessName)"
+    Inspectable = $true
+    StartUtc = $start
+    Executable = "$($cim.ExecutablePath)"
+    CommandLine = "$($cim.CommandLine)"
+    Arguments = @(Split-CommandLine "$($cim.CommandLine)")
+  }
+}
+# Every listening TCP socket on the port as { Address; ProcessId }. Readable = $false means the answer is unknown: it is
+# never read as "nobody listens". (An empty list is returned inside the object, so it cannot be mistaken for $null.)
+function Get-PortListeners([int]$Port) {
+  if (!(Test-IsWindows)) { return [pscustomobject]@{ Readable = $false; Items = @(); Detail = 'chỉ hỗ trợ Windows' } }
+  $rows = $null
+  try { $rows = @(Get-NetTCPConnection -State Listen -ErrorAction Stop) }
+  catch { return [pscustomobject]@{ Readable = $false; Items = @(); Detail = "$($_.Exception.Message)" } }
+  $items = New-Object 'Collections.Generic.List[object]'
+  foreach ($row in $rows) {
+    if ([int]$row.LocalPort -eq $Port) { $items.Add([pscustomobject]@{ Address = "$($row.LocalAddress)"; ProcessId = [int]$row.OwningProcess }) }
+  }
+  return [pscustomobject]@{ Readable = $true; Items = @($items.ToArray()); Detail = '' }
+}
+# Stops exactly this PID. The caller has proven it is the launcher's own process; nothing here chooses a process.
+function Stop-OwnedProcess([int]$ProcessId) {
+  try { Stop-Process -Id $ProcessId -ErrorAction Stop }
+  catch { if (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) { throw } }
+}
+
+# ---- ownership: who is behind the registry and who is behind the port ----
+function Test-ProcessMatchesTarget($Details,$Target) {
+  if (!$Details -or !$Details.Inspectable) { return $false }
+  if ([IO.Path]::GetFileName("$($Details.Executable)") -cnotmatch '(?i)^node(\.exe)?$') { return $false }
+  $scriptArgument = Get-ScriptArgument $Details.Arguments
+  if (!$scriptArgument) { return $false }
+  return (Test-SamePath $scriptArgument $Target.Script)
+}
+function New-Ownership([string]$Status,[string]$Text,$Registry,$Details) {
+  return [pscustomobject]@{ Status = $Status; Text = $Text; Registry = $Registry; Details = $Details }
+}
+# Status: NONE (no record) | STALE (the recorded process is gone, or its PID now belongs to another process; nothing to stop)
+#         | UNVERIFIED (cannot be proven either way: nothing may be stopped or replaced) | OWNED (proven ours).
+function Get-TargetOwnership($Target) {
+  $registry = Read-TargetRegistry $Target
+  if ($registry.State -eq 'NONE') { return (New-Ownership 'NONE' 'không có bản ghi process do launcher quản lý' $null $null) }
+  if ($registry.State -eq 'UNREADABLE') { return (New-Ownership 'UNVERIFIED' "không đọc được tệp trạng thái ($($registry.Detail))" $null $null) }
+  if ($registry.State -eq 'CORRUPT') { return (New-Ownership 'UNVERIFIED' "tệp trạng thái hỏng hoặc thiếu trường ($($registry.Detail))" $null $null) }
+  if ($registry.State -eq 'LEGACY') { return (New-Ownership 'UNVERIFIED' 'tệp trạng thái do bản launcher cũ ghi, không có định danh (repo, lệnh chạy, commit, fingerprint)' $null $null) }
+  $record = $registry.Record
+  if (!(Test-SamePath $record.repo $script:Repo)) { return (New-Ownership 'UNVERIFIED' "bản ghi thuộc checkout khác ($($record.repo))" $record $null) }
+  if (!(Test-SamePath $record.script $Target.Script) -or [int]$record.port -ne [int]$Target.Port -or $record.host -cne $Target.Host) {
+    return (New-Ownership 'UNVERIFIED' 'bản ghi dùng script, host hoặc cổng khác cấu hình hiện tại' $record $null)
+  }
+  $details = $null
+  try { $details = Get-ProcessDetails ([int]$record.pid) }
+  catch { return (New-Ownership 'UNVERIFIED' "không kiểm tra được process PID $($record.pid) ($($_.Exception.Message))" $record $null) }
+  if ($null -eq $details) { return (New-Ownership 'STALE' "process PID $($record.pid) đã kết thúc" $record $null) }
+  if (!$details.Inspectable) { return (New-Ownership 'STALE' "PID $($record.pid) hiện thuộc một process khác (không kiểm tra được như process của launcher)" $record $details) }
+  if ((ConvertTo-UtcText $details.StartUtc) -cne $record.started_utc) { return (New-Ownership 'STALE' "PID $($record.pid) đã được dùng lại bởi process khác (giờ khởi động khác bản ghi)" $record $details) }
+  if (!(Test-SamePath $details.Executable $record.executable) -or !(Test-ProcessMatchesTarget $details $Target)) {
+    return (New-Ownership 'UNVERIFIED' "process PID $($record.pid) có đúng giờ khởi động nhưng không phải node chạy script build của checkout này" $record $details)
+  }
+  return (New-Ownership 'OWNED' "process PID $($record.pid) khớp bản ghi" $record $details)
+}
+function Test-ConflictingListener([string]$Address) {
+  return ("$Address" -in @('127.0.0.1', '0.0.0.0', '::', '::1', '[::]', '[::1]'))
+}
+# State: FREE | OURS (every loopback or wildcard listener is $OwnerProcessId) | FOREIGN | UNREADABLE (never treated as FREE).
+# HTTP is not asked at all: a foreign process that answers 200 with the right body is still foreign.
+function Get-TargetPortState($Target,[int]$OwnerProcessId) {
+  $probe = $null
+  try { $probe = Get-PortListeners ([int]$Target.Port) } catch { $probe = $null }
+  if (!$probe -or !$probe.Readable) { return [pscustomobject]@{ State = 'UNREADABLE'; Foreign = @(); Owners = @() } }
+  $relevant = @($probe.Items | Where-Object { Test-ConflictingListener $_.Address })
+  if (!$relevant.Count) { return [pscustomobject]@{ State = 'FREE'; Foreign = @(); Owners = @() } }
+  $owners = @($relevant | ForEach-Object { [int]$_.ProcessId } | Sort-Object -Unique)
+  $foreign = @($owners | Where-Object { $OwnerProcessId -le 0 -or $_ -ne $OwnerProcessId })
+  if ($foreign.Count) { return [pscustomobject]@{ State = 'FOREIGN'; Foreign = $foreign; Owners = $owners } }
+  return [pscustomobject]@{ State = 'OURS'; Foreign = @(); Owners = $owners }
+}
+function Get-ProcessLabel([int]$ProcessId) {
+  try {
+    $details = Get-ProcessDetails $ProcessId
+    if ($details) { return "PID $ProcessId ($($details.Name))" }
+  } catch { }
+  return "PID $ProcessId"
+}
+function Get-UnverifiedText($Target,$Ownership,[string]$Action) {
+  return ("Không xác minh được process $($Target.Name) do launcher quản lý: $($Ownership.Text). Launcher dừng an toàn ($Action): không build, không migration, không khởi động hay dừng process nào và giữ nguyên tệp trạng thái. PID tồn tại hoặc cổng $($Target.Port) trả HTTP 200 không phải bằng chứng. Nếu chắc chắn không còn backend 11Ship nào đang chạy: đóng process node đang giữ cổng $($Target.Port) (nếu có), xóa .11ship-local\backend.json rồi chạy lại.")
+}
+function Get-PortInUseText($Target,$Port) {
+  $labels = @($Port.Foreign | ForEach-Object { Get-ProcessLabel ([int]$_) })
+  return ("Cổng $($Target.Port) đang do process không thuộc launcher chiếm ($($labels -join ', ')). Launcher chỉ dừng process đã chứng minh là của mình nên không đụng tới nó, kể cả khi nó trả HTTP 200 đúng như backend. Hãy tự đóng dịch vụ đó rồi chạy lại. Chưa build, chưa migration, chưa khởi động hay dừng gì cả.")
+}
+# Ownership and port together, failing closed on anything that cannot be proven.
+function Get-TargetSituation($Target,[string]$Action) {
+  $ownership = Get-TargetOwnership $Target
+  if ($ownership.Status -eq 'UNVERIFIED') { Fail (Get-UnverifiedText $Target $ownership $Action) 'PROCESS_IDENTITY_UNVERIFIED' }
+  $ownerProcessId = 0
+  if ($ownership.Status -eq 'OWNED') { $ownerProcessId = [int]$ownership.Registry.pid }
+  $port = Get-TargetPortState $Target $ownerProcessId
+  if ($port.State -eq 'UNREADABLE') { Fail "Không đọc được process đang lắng nghe cổng $($Target.Port). Không chứng minh được cổng thuộc launcher nên dừng an toàn ($Action): chưa build, chưa migration, chưa khởi động hay dừng gì cả." 'PORT_OWNER_UNREADABLE' }
+  if ($port.State -eq 'FOREIGN') { Fail (Get-PortInUseText $Target $port) 'PORT_IN_USE' }
+  return [pscustomobject]@{ Ownership = $ownership; Port = $port }
+}
+
+# ---- stopping: only what was proven, only that PID ----
+function Wait-ProcessGone($Record,[int]$Seconds) {
+  $until = [DateTime]::UtcNow.AddSeconds($Seconds)
   do {
-    if ((Http-Status 'http://127.0.0.1:3000/v1/health/live') -eq 200 -and (Http-Status 'http://127.0.0.1:3000/v1/health/ready') -eq 200) { Write-Ok 'Backend live và ready: http://127.0.0.1:3000/v1/health/ready'; return }
-    Start-Sleep -Seconds 2
+    $details = $null
+    $known = $true
+    try { $details = Get-ProcessDetails ([int]$Record.pid) } catch { $known = $false }
+    if ($known) {
+      # Gone, or the PID now belongs to another process (different start time): in both cases the recorded process has ended.
+      if ($null -eq $details -or !$details.Inspectable -or (ConvertTo-UtcText $details.StartUtc) -cne $Record.started_utc) { return $true }
+    }
+    Start-Sleep -Milliseconds 100
   } while ([DateTime]::UtcNow -lt $until)
-  Fail "Backend chưa ready; xem log trong $script:Logs." 'BACKEND_NOT_READY'
+  return $false
+}
+function Stop-TargetProcess($Target,$Ownership) {
+  Assert-LockHeld 'dừng process'
+  if ($Ownership.Status -ne 'OWNED') { Fail 'Chỉ được dừng process đã xác minh là của launcher.' 'PROCESS_IDENTITY_UNVERIFIED' }
+  $record = $Ownership.Registry
+  # Proven again immediately before the kill: the process may have ended and its PID been reused since the first check.
+  $again = Get-TargetOwnership $Target
+  if ($again.Status -eq 'NONE' -or $again.Status -eq 'STALE') {
+    Write-Info "Backend PID $($record.pid) đã kết thúc trước khi dừng; chỉ dọn bản ghi."
+    Remove-TargetRegistry $Target
+    return
+  }
+  if ($again.Status -ne 'OWNED' -or [int]$again.Registry.pid -ne [int]$record.pid) { Fail (Get-UnverifiedText $Target $again 'dừng process') 'PROCESS_IDENTITY_UNVERIFIED' }
+  try { Stop-OwnedProcess ([int]$record.pid) }
+  catch { Fail "Không dừng được backend PID $($record.pid): $($_.Exception.Message). Bản ghi được giữ nguyên." 'PROCESS_STOP_FAILED' }
+  if (!(Wait-ProcessGone $record $script:ProcessStopSeconds)) {
+    Fail "Backend PID $($record.pid) vẫn chạy sau $($script:ProcessStopSeconds) giây. Launcher không dùng cách mạnh hơn và không đụng process khác; bản ghi được giữ nguyên." 'PROCESS_STOP_FAILED'
+  }
+  Remove-TargetRegistry $Target
+}
+function Stop-TargetIfOwned($Target,[string]$Why) {
+  $ownership = Get-TargetOwnership $Target
+  if ($ownership.Status -eq 'UNVERIFIED') { Fail (Get-UnverifiedText $Target $ownership $Why) 'PROCESS_IDENTITY_UNVERIFIED' }
+  if ($ownership.Status -ne 'OWNED') { return $false }
+  Write-Info "Dừng backend do launcher quản lý (PID $($ownership.Registry.pid)) $Why."
+  Stop-TargetProcess $Target $ownership
+  return $true
+}
+
+# ---- backend: health, start, build ----
+function Get-BackendUrl([string]$Kind) { return ('http://' + $script:BackendHost + ':' + $script:BackendPort + '/v1/health/' + $Kind) }
+function Get-HttpResult([string]$Url) {
+  try {
+    $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 3
+    return [pscustomobject]@{ Status = [int]$response.StatusCode; Body = "$($response.Content)" }
+  } catch {
+    if ($_.Exception.Response) { return [pscustomobject]@{ Status = [int]$_.Exception.Response.StatusCode; Body = '' } }
+    return [pscustomobject]@{ Status = 0; Body = '' }
+  }
+}
+function Http-Status([string]$Url) { return (Get-HttpResult $Url).Status }
+# The health endpoints keep their agreed body: {"data":{"status":"ok"}} and {"data":{"status":"ready"}}.
+function Test-HealthBody($Result,[string]$Expected) {
+  if (!$Result -or [int]$Result.Status -ne 200) { return $false }
+  $json = $null
+  try { $json = "$($Result.Body)" | ConvertFrom-Json } catch { return $false }
+  if (!$json -or !(Test-Property $json 'data') -or !$json.data -or !(Test-Property $json.data 'status')) { return $false }
+  return ("$($json.data.status)" -ceq $Expected)
+}
+function Get-BackendHealth {
+  $live = Get-HttpResult (Get-BackendUrl 'live')
+  $ready = Get-HttpResult (Get-BackendUrl 'ready')
+  return [pscustomobject]@{ LiveOk = (Test-HealthBody $live 'ok'); ReadyOk = (Test-HealthBody $ready 'ready'); LiveStatus = [int]$live.Status; ReadyStatus = [int]$ready.Status }
+}
+# Compatibility readers (older callers and tests): the registry data, or the proven process; $null for anything else.
+function Get-BackendState {
+  $registry = Read-TargetRegistry (Get-BackendTarget)
+  if ($registry.State -ne 'OK') { return $null }
+  return $registry.Record
+}
+function Get-OwnedBackendProcess {
+  $ownership = Get-TargetOwnership (Get-BackendTarget)
+  if ($ownership.Status -ne 'OWNED') { return $null }
+  return [pscustomobject]@{ Id = [int]$ownership.Registry.pid; Name = $ownership.Details.Name }
+}
+# The entry script is passed as an ABSOLUTE path (quoted when it has spaces) so the command line of the running process
+# names exactly which build it runs; the working folder is still the repository for .env.
+function Get-BackendStartArguments { return @('--env-file-if-exists=.env', (ConvertTo-QuotedArgument $script:BackendScript)) }
+function Start-BackendProcess([string]$Stdout,[string]$Stderr) {
+  return Start-Process -FilePath 'node.exe' -ArgumentList (Get-BackendStartArguments) -WorkingDirectory $script:Repo -RedirectStandardOutput $Stdout -RedirectStandardError $Stderr -PassThru -WindowStyle Hidden
+}
+# Ready means: the process we started is alive with the same start time, THE PORT BELONGS TO IT (not to someone who also
+# answers), and both health endpoints return their agreed body.
+function Wait-Backend($Target,[int]$ExpectedProcessId,[string]$ExpectedStartUtc) {
+  $until = [DateTime]::UtcNow.AddSeconds($script:BackendReadySeconds)
+  $problem = 'chưa phản hồi'
+  $code = 'BACKEND_NOT_READY'
+  do {
+    $details = $null
+    try { $details = Get-ProcessDetails $ExpectedProcessId } catch { $details = $null }
+    if (!$details -or !$details.Inspectable -or (ConvertTo-UtcText $details.StartUtc) -cne $ExpectedStartUtc) {
+      $problem = "process backend PID $ExpectedProcessId đã thoát sớm"
+      $code = 'BACKEND_NOT_READY'
+      break
+    }
+    $port = Get-TargetPortState $Target $ExpectedProcessId
+    if ($port.State -eq 'FOREIGN') { $problem = "cổng $($Target.Port) còn do process khác giữ nên không chứng minh được phản hồi là của backend này"; $code = 'PORT_IN_USE' }
+    elseif ($port.State -eq 'UNREADABLE') { $problem = "không đọc được process đang giữ cổng $($Target.Port)"; $code = 'PORT_OWNER_UNREADABLE' }
+    elseif ($port.State -eq 'FREE') { $problem = "process chưa lắng nghe cổng $($Target.Port)"; $code = 'BACKEND_NOT_READY' }
+    else {
+      $health = Get-BackendHealth
+      if ($health.LiveOk -and $health.ReadyOk) { Write-Ok "Backend live và ready (đúng process PID $ExpectedProcessId giữ cổng): $(Get-BackendUrl 'ready')"; return }
+      $problem = "health chưa đúng (live=$($health.LiveStatus) ready=$($health.ReadyStatus), body phải là status ok / ready)"
+      $code = 'BACKEND_NOT_READY'
+    }
+    Start-Sleep -Milliseconds $script:BackendPollMilliseconds
+  } while ([DateTime]::UtcNow -lt $until)
+  Fail "Backend chưa ready ($problem); xem log trong $script:Logs." $code
+}
+# A manifest describes a FINISHED build, so it is removed before the build starts: a build that fails leaves no manifest
+# and therefore no fingerprint that could be mistaken for a ready artifact. The process that is running is not touched.
+function Build-BackendArtifact($Target,[string]$Head) {
+  Assert-LockHeld 'build backend'
+  try { Remove-Item -LiteralPath $Target.ManifestFile -Force -ErrorAction Stop }
+  catch {
+    if (Test-Path -LiteralPath $Target.ManifestFile) { Fail "Không xóa được manifest cũ trước khi build: $($_.Exception.Message)" 'STATE_WRITE_FAILED' }
+  }
+  $script:BuildExitCode = 0
+  Invoke-InRepo { & npm.cmd run build | Out-Host; $script:BuildExitCode = $LASTEXITCODE }
+  if ($script:BuildExitCode -ne 0) {
+    Fail "Build backend thất bại (npm.cmd exit $($script:BuildExitCode)). Launcher không ghi manifest hay fingerprint mới; backend đang chạy (nếu có) không bị đụng tới và vẫn là bản cũ." 'APP_BUILD_FAILED'
+  }
+  if (!(Test-Path -LiteralPath $Target.Script -PathType Leaf)) {
+    Fail "Build báo thành công nhưng không có file chạy $($Target.Script); không ghi manifest." 'APP_BUILD_FAILED'
+  }
+  $fingerprint = $null
+  try { $fingerprint = Get-ArtifactFingerprint $Target.ArtifactDir }
+  catch { Fail "Không đọc được file build để tính fingerprint: $($_.Exception.Message)" 'ARTIFACT_UNREADABLE' }
+  if (!$fingerprint) { Fail 'Thư mục build không có file nào sau khi build; không ghi manifest.' 'APP_BUILD_FAILED' }
+  $manifest = Write-BuildManifest $Target $Head $fingerprint
+  Write-Ok "Build backend xong: commit $(Format-ShortSha $Head), fingerprint $(Format-ShortFingerprint $fingerprint)"
+  return $manifest
+}
+function Get-RestartReasons($Situation,$Manifest,[string]$Head) {
+  $reasons = New-Object 'Collections.Generic.List[string]'
+  $record = $Situation.Ownership.Registry
+  if ($Situation.Port.State -ne 'OURS') { $reasons.Add('process không lắng nghe cổng đã ghi') }
+  if ($record.source_sha -cne $Manifest.source_sha -or $record.source_sha -cne $Head) {
+    $reasons.Add("khác commit (process chạy $(Format-ShortSha $record.source_sha), mã nguồn và artifact mới $(Format-ShortSha $Head))")
+  }
+  if ($record.build_fingerprint -cne $Manifest.build_fingerprint) {
+    $reasons.Add("khác fingerprint artifact (process $(Format-ShortFingerprint $record.build_fingerprint), artifact mới $(Format-ShortFingerprint $Manifest.build_fingerprint))")
+  }
+  if (!$reasons.Count) {
+    $health = Get-BackendHealth
+    if (!$health.LiveOk -or !$health.ReadyOk) { $reasons.Add("health không đúng (live=$($health.LiveStatus) ready=$($health.ReadyStatus) hoặc body sai)") }
+  }
+  return @($reasons.ToArray())
+}
+function Start-NewBackendProcess($Target,$Manifest) {
+  Assert-LockHeld 'khởi động backend'
+  $port = Get-TargetPortState $Target 0
+  if ($port.State -eq 'UNREADABLE') { Fail "Không đọc được process đang lắng nghe cổng $($Target.Port); không khởi động backend." 'PORT_OWNER_UNREADABLE' }
+  if ($port.State -ne 'FREE') { Fail (Get-PortInUseText $Target $port) 'PORT_IN_USE' }
+  $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+  $stdout = Join-Path $script:Logs "backend-$stamp.log"
+  $stderr = Join-Path $script:Logs "backend-$stamp.err.log"
+  $process = $null
+  try { $process = Start-BackendProcess $stdout $stderr }
+  catch { Fail "Không khởi động được backend: $($_.Exception.Message)" 'BACKEND_START_FAILED' }
+  if (!$process -or !$process.Id) { Fail 'Không khởi động được backend (không có process trả về).' 'BACKEND_START_FAILED' }
+  $startedProcessId = [int]$process.Id
+  # The process was created by this launcher a moment ago, so it is certain to be ours; if it cannot be proven as the
+  # expected node + script it is stopped (by that PID) instead of being left running unrecorded.
+  $details = $null
+  try { $details = Get-ProcessDetails $startedProcessId } catch { $details = $null }
+  $problem = ''
+  if (!$details -or !$details.Inspectable) { $problem = 'process vừa khởi động đã thoát hoặc không kiểm tra được' }
+  elseif (!(Test-ProcessMatchesTarget $details $Target)) { $problem = 'process vừa khởi động không phải node chạy script build của checkout này' }
+  if ($problem) {
+    try { Stop-OwnedProcess $startedProcessId } catch { }
+    Fail "Backend vừa khởi động không xác minh được ($problem); đã dừng đúng process do launcher vừa tạo. Xem log trong $script:Logs." 'BACKEND_NOT_READY'
+  }
+  try { Write-TargetRegistry $Target $details $Manifest $stdout $stderr }
+  catch {
+    $writeError = $_
+    try { Stop-OwnedProcess $startedProcessId } catch { }
+    throw $writeError
+  }
+  Wait-Backend $Target $startedProcessId (ConvertTo-UtcText $details.StartUtc)
+  Write-Ok "Backend do launcher quản lý đã sẵn sàng và được xác minh: PID $startedProcessId, commit $(Format-ShortSha $Manifest.source_sha), fingerprint $(Format-ShortFingerprint $Manifest.build_fingerprint)"
+}
+# Decides between reuse, restart of the launcher's own process, and a fresh start. A process is reused ONLY when it is
+# proven ours, listens on the port, runs exactly this source SHA and fingerprint, and answers the health bodies.
+function Start-OrReuseBackend($Target,$Manifest,[string]$Head) {
+  $situation = Get-TargetSituation $Target 'khởi động backend'
+  $ownership = $situation.Ownership
+  if ($ownership.Status -eq 'OWNED') {
+    $reasons = @(Get-RestartReasons $situation $Manifest $Head)
+    if (!$reasons.Count) {
+      Write-Ok "Backend do launcher quản lý đang chạy đúng bản (PID $($ownership.Registry.pid), commit $(Format-ShortSha $Head), fingerprint $(Format-ShortFingerprint $Manifest.build_fingerprint)); dùng lại, không mở thêm bản thứ hai."
+      return
+    }
+    Write-Info "Backend đang chạy (PID $($ownership.Registry.pid)) không khớp bản mong đợi: $($reasons -join '; '). Dừng đúng process do launcher quản lý rồi khởi động lại."
+    Stop-TargetProcess $Target $ownership
+  }
+  Start-NewBackendProcess $Target $Manifest
+}
+# Update only moves the SOURCE. It never builds or restarts, so it must say plainly when a launcher-owned backend still
+# runs an older build. Returns $true in that case. Changes nothing.
+function Write-BackendUpdateNotice([string]$Head) {
+  $target = Get-BackendTarget
+  $ownership = Get-TargetOwnership $target
+  if ($ownership.Status -eq 'UNVERIFIED') {
+    Write-WarnLine "PROCESS_IDENTITY_UNVERIFIED: không xác minh được backend đang chạy ($($ownership.Text)). Update không đụng tới process nào; xem runbook trước khi chạy Start."
+    return $false
+  }
+  if ($ownership.Status -ne 'OWNED') { return $false }
+  $record = $ownership.Registry
+  if ($record.source_sha -ceq $Head) {
+    Write-Info "Backend do launcher quản lý (PID $($record.pid)) chạy artifact build từ đúng commit $(Format-ShortSha $Head). Update không build lại hay khởi động lại; Start sẽ xác minh lại artifact và process."
+    return $false
+  }
+  Write-WarnLine "BACKEND_RUNNING_OLD_VERSION: mã nguồn đã ở commit $(Format-ShortSha $Head) nhưng backend do launcher quản lý (PID $($record.pid)) vẫn chạy artifact build từ commit $(Format-ShortSha $record.source_sha) (fingerprint $(Format-ShortFingerprint $record.build_fingerprint)). Update chỉ cập nhật mã nguồn và dependency, không build lại hay khởi động lại process. Hãy chạy Start: launcher sẽ build, xác minh rồi chỉ khởi động lại đúng process này."
+  return $true
+}
+# Three layers for Status (read-only: it writes, removes and stops nothing, and never takes the lock).
+function Get-BackendIdentityLines([string]$Head) {
+  $lines = New-Object 'Collections.Generic.List[string]'
+  $target = Get-BackendTarget
+  $lines.Add("Backend - nguồn (HEAD): $Head")
+  $artifact = $null
+  try { $artifact = Get-ArtifactState $target }
+  catch { $artifact = [pscustomobject]@{ State = 'UNREADABLE'; Manifest = $null; Text = "không đọc được ($($_.Exception.Message))" } }
+  if ($artifact.State -eq 'OK') {
+    $text = "OK - build từ commit $(Format-ShortSha $artifact.Manifest.source_sha), fingerprint $(Format-ShortFingerprint $artifact.Manifest.build_fingerprint)"
+    if ($artifact.Manifest.source_sha -cne $Head) { $text += " - KHÁC HEAD ($(Format-ShortSha $Head)): artifact cũ so với mã nguồn, Start sẽ build lại" }
+  } else { $text = "$($artifact.State) - $($artifact.Text)" }
+  $lines.Add("Backend - artifact: $text")
+  $ownership = $null
+  try { $ownership = Get-TargetOwnership $target }
+  catch { $ownership = New-Ownership 'UNVERIFIED' "không kiểm tra được ($($_.Exception.Message))" $null $null }
+  $ownerProcessId = 0
+  if ($ownership.Status -eq 'OWNED') {
+    $ownerProcessId = [int]$ownership.Registry.pid
+    $record = $ownership.Registry
+    $text = "do launcher quản lý, PID $($record.pid), commit $(Format-ShortSha $record.source_sha), fingerprint $(Format-ShortFingerprint $record.build_fingerprint)"
+    if ($artifact.State -eq 'OK' -and $record.source_sha -ceq $artifact.Manifest.source_sha -and $record.build_fingerprint -ceq $artifact.Manifest.build_fingerprint -and $record.source_sha -ceq $Head) { $text += ' - KHỚP artifact và mã nguồn hiện tại' }
+    else { $text += ' - KHÁC artifact hoặc mã nguồn hiện tại: Start sẽ build, xác minh rồi restart đúng process này' }
+  }
+  elseif ($ownership.Status -eq 'UNVERIFIED') { $text = "KHÔNG XÁC MINH ĐƯỢC (mã PROCESS_IDENTITY_UNVERIFIED) - $($ownership.Text); launcher sẽ không dừng, thay hay chạy gì" }
+  elseif ($ownership.Status -eq 'STALE') { $text = "bản ghi cũ - $($ownership.Text); Start sẽ thay" }
+  else { $text = 'không có process do launcher quản lý' }
+  $lines.Add("Backend - process: $text")
+  $port = Get-TargetPortState $target $ownerProcessId
+  if ($port.State -eq 'FREE') { $text = 'trống' }
+  elseif ($port.State -eq 'OURS') { $text = "đúng process của launcher (PID $ownerProcessId)" }
+  elseif ($port.State -eq 'FOREIGN') { $text = "đang do process KHÔNG thuộc launcher chiếm (PID $($port.Foreign -join ', ')); launcher sẽ từ chối với PORT_IN_USE, kể cả khi nó trả HTTP 200" }
+  else { $text = 'không đọc được process đang giữ cổng (PORT_OWNER_UNREADABLE)' }
+  $lines.Add("Backend - cổng $($target.Port): $text")
+  return @($lines.ToArray())
 }
 function Test-InputRedirected { try { return [Console]::IsInputRedirected } catch { return $true } }
 function Test-OutputRedirected { try { return [Console]::IsOutputRedirected } catch { return $true } }
@@ -537,8 +1188,10 @@ function Get-MigrationPlan {
     Unknown = @($applied | Where-Object { $files -notcontains $_ })
   }
 }
-function Confirm-DevMigrations { Use-LaunchLock 'migration' { Confirm-DevMigrationsLocked } }
-function Confirm-DevMigrationsLocked {
+function Confirm-DevMigrations([scriptblock]$BeforeApply) { Use-LaunchLock 'migration' { Confirm-DevMigrationsLocked $BeforeApply } }
+# $BeforeApply (M00.03) runs only after Owner confirmed and before the first migration statement: Start uses it to stop the
+# old backend so it never serves a database schema it was not built for.
+function Confirm-DevMigrationsLocked([scriptblock]$BeforeApply) {
   $plan = Get-MigrationPlan
   if ($plan.Unknown.Count) { Write-WarnLine "DB DEV có $($plan.Unknown.Count) migration không có trong mã nguồn hiện tại. Launcher không sửa hoặc xóa dữ liệu." }
   if (!$plan.Pending.Count) { Write-Ok "DB DEV đã áp dụng đủ $($plan.Files.Count) migration (kiểm tra trực tiếp trong PostgreSQL)"; return }
@@ -547,6 +1200,7 @@ function Confirm-DevMigrationsLocked {
   $sha = Capture 'git.exe' @('-C',$script:Repo,'rev-parse','--short','HEAD')
   Write-Info "Đích: DEV local — database=ship11_dev user=ship11_dev host=127.0.0.1:5432 (mật khẩu được ẩn); commit=$sha"
   if (!(Confirm-Step 'Áp dụng các migration trên vào ship11_dev local?')) { Fail 'Đã hủy trước khi chạy backend vì migration DEV chưa được xác nhận.' 'MIGRATION_DECLINED' }
+  if ($BeforeApply) { & $BeforeApply }
   # db:migrate reads .env itself; clear inherited variables so a stray shell value can never redirect it.
   Invoke-WithEnv @{ APP_ENV=$null; NODE_ENV=$null; DATABASE_URL=$null } { Invoke-InRepo { Run 'npm.cmd' @('run','db:migrate') } }
   $after = Get-MigrationPlan
@@ -625,18 +1279,15 @@ function Start-LauncherLocked {
   Compose @('up','-d','db-dev','db-test')
   Wait-ContainerHealthy 'ship11-db-dev'; Wait-ContainerHealthy 'ship11-db-test'
   if ((Get-DependencyState) -ne 'ok') { Fail 'Dependency thiếu hoặc chưa khớp lockfile đã ghi nhận. Hãy chạy 11Ship-Update trước.' 'DEPENDENCIES_NOT_READY' }
-  Invoke-InRepo { Run 'npm.cmd' @('run','build') }
-  Confirm-DevMigrations
-  $owned = Get-OwnedBackendProcess
-  if ($owned) { Write-Info "Backend do launcher quản lý đang chạy (PID $($owned.Id)); không mở thêm bản thứ hai." }
-  else {
-    if ((Http-Status 'http://127.0.0.1:3000/v1/health/live') -ne 0) { Fail 'Cổng 3000 đã có dịch vụ không do launcher quản lý. Launcher không dừng process lạ; hãy tự đóng dịch vụ đó.' 'PORT_IN_USE' }
-    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $stdout = Join-Path $script:Logs "backend-$stamp.log"; $stderr = Join-Path $script:Logs "backend-$stamp.err.log"
-    $p = Start-BackendProcess $stdout $stderr
-    @{ pid=$p.Id; startedUtc=$p.StartTime.ToUniversalTime().ToString('o'); commit=(Capture 'git.exe' @('-C',$script:Repo,'rev-parse','HEAD')); stdout=$stdout; stderr=$stderr } | ConvertTo-Json | Set-Content -Encoding utf8 -LiteralPath $script:StateFile
-  }
-  Wait-Backend
+  $target = Get-BackendTarget
+  $head = Get-HeadSha
+  # M00.03: identity first. A process or a port that cannot be proven ours stops everything BEFORE a build or a migration
+  # touches anything (PROCESS_IDENTITY_UNVERIFIED / PORT_IN_USE / PORT_OWNER_UNREADABLE).
+  $null = Get-TargetSituation $target 'khởi động backend'
+  $manifest = Build-BackendArtifact $target $head
+  # A pending migration is applied only after Owner confirmed; the launcher-owned old backend is stopped first.
+  Confirm-DevMigrations { $null = Stop-TargetIfOwned $target 'trước khi áp dụng migration DEV' }
+  Start-OrReuseBackend $target $manifest $head
 }
 # ---------------------------------------------------------------------------------------------
 # Git update (M00.02)
@@ -767,9 +1418,11 @@ function Update-Launcher {
     if ($result.OldHead -ne $result.NewHead) { Invoke-InRepo { $script:AddedMigrations = Get-AddedMigrationCount $result.OldHead $result.NewHead } }
     if ($null -eq $script:AddedMigrations) { Write-WarnLine 'MIGRATION_COUNT_UNREADABLE: không đọc được số migration mới của bản cập nhật (git diff lỗi). Không có nghĩa là 0; Start vẫn kiểm tra DB DEV và hỏi trước khi áp dụng.' }
     elseif ($script:AddedMigrations -gt 0) { Write-WarnLine "Bản cập nhật có $($script:AddedMigrations) migration mới. Start sẽ kiểm tra DB DEV và hỏi trước khi áp dụng." }
-    if ($result.Mode -eq 'UAT') { Write-Ok 'Kiểm tra checkout UAT hoàn tất' }
-    elseif ($result.Moved -or $result.Mode -eq 'relaunch') { Write-Ok 'Cập nhật fast-forward hoàn tất' }
-    else { Write-Ok 'Cập nhật hoàn tất: đã ở commit mới nhất của origin/main' }
+    # M00.03: the source moved, the running backend did not. Say so instead of leaving a "success" that hides an old version.
+    $oldBackend = Write-BackendUpdateNotice (Get-HeadSha)
+    if ($result.Mode -eq 'UAT') { Write-Ok 'Kiểm tra checkout UAT hoàn tất (chỉ mã nguồn; chưa build hay chạy lại backend)' }
+    elseif ($result.Moved -or $result.Mode -eq 'relaunch') { Write-Ok 'Cập nhật MÃ NGUỒN và dependency hoàn tất (fast-forward). Update không build lại hay chạy lại backend: dùng Start để có artifact và process mới.' }
+    else { Write-Ok 'Cập nhật mã nguồn hoàn tất: đã ở commit mới nhất của origin/main (chưa build hay chạy lại backend)' }
   }
 }
 function Test-Launcher { Use-LaunchLock 'test' { Test-LauncherLocked } }
@@ -816,11 +1469,12 @@ function Test-LauncherLocked {
 function Stop-Launcher { Use-LaunchLock 'stop' { Stop-LauncherLocked } }
 function Stop-LauncherLocked {
   Ensure-Dirs
-  $p = Get-OwnedBackendProcess
-  if ($p) { Stop-Process -Id $p.Id; $p.WaitForExit(10000) | Out-Null; Write-Ok 'Đã dừng backend do launcher quản lý' }
-  elseif (Test-Path -LiteralPath $script:StateFile) { Write-WarnLine 'State backend cũ/không khớp (PID đã đổi chủ hoặc đã tắt); không dừng process khác.' }
+  $target = Get-BackendTarget
+  $ownership = Get-TargetOwnership $target
+  if ($ownership.Status -eq 'UNVERIFIED') { Fail (Get-UnverifiedText $target $ownership 'dừng backend') 'PROCESS_IDENTITY_UNVERIFIED' }
+  if ($ownership.Status -eq 'OWNED') { Stop-TargetProcess $target $ownership; Write-Ok 'Đã dừng đúng backend do launcher quản lý (đã xác minh PID, giờ khởi động, node và script build)' }
+  elseif ($ownership.Status -eq 'STALE') { Write-WarnLine "Bản ghi backend cũ ($($ownership.Text)); không dừng process nào, chỉ dọn bản ghi."; Remove-TargetRegistry $target }
   else { Write-Info 'Không có backend nào do launcher quản lý đang chạy.' }
-  Remove-Item -LiteralPath $script:StateFile -Force -ErrorAction SilentlyContinue
   if (!$KeepDatabases) { $null = Assert-LocalEnv; Assert-Docker; Compose @('stop','db-dev','db-test'); Write-Ok 'Đã dừng DB; volume DEV được giữ nguyên' }
 }
 # F04: a result is only reported as PASS/FAIL when it belongs to the commit that is checked out now.
@@ -850,8 +1504,9 @@ function Status-Launcher {
   foreach ($pair in @(@('Node','node.exe','--version'),@('npm','npm.cmd','--version'),@('Docker','docker.exe','--version'))) { if (Command-Exists $pair[1]) { Write-Host "$($pair[0]): $(Capture $pair[1] @($pair[2]))" } else { Write-Host "$($pair[0]): không có" } }
   $ps = if (Command-Exists 'docker.exe') { Capture 'docker.exe' @('compose','--env-file',$script:EnvFile,'-f',$script:Compose,'ps') } else { $null }
   if ($ps -eq $null) { Write-Host 'Database: không đọc được — Docker chưa chạy hoặc thiếu .env' } else { Write-Host $ps }
-  $p = Get-OwnedBackendProcess; Write-Host "Backend launcher PID: $(if($p){$p.Id}else{'không chạy'})"
-  Write-Host "Health live=$(Http-Status 'http://127.0.0.1:3000/v1/health/live') ready=$(Http-Status 'http://127.0.0.1:3000/v1/health/ready')"
+  # M00.03: source, artifact, process and port are reported separately; Status is read-only (no lock, no write, no stop).
+  foreach ($line in @(Get-BackendIdentityLines $head)) { Write-Host $line }
+  Write-Host "Health (chỉ để tham khảo, không chứng minh quyền sở hữu) live=$(Http-Status (Get-BackendUrl 'live')) ready=$(Http-Status (Get-BackendUrl 'ready'))"
   Write-Host 'Web quản trị / Khách / Quán / Xế / App quản lý: N/A — chưa có trong repo'
   Write-Host "Test gần nhất: $((Get-LastTestStatus $script:LastTest $head).Text)"
 }
@@ -876,10 +1531,15 @@ $script:AppCatalog = [ordered]@{
 }
 # What the shared orchestrator guarantees today. A package flips its entry to Ready only when it is integrated and verified.
 # ExclusiveLock (M00.02): Start, Update, Test, Stop, dependency and migration steps all run under Use-LaunchLock; the behaviour
-# suite proves that from inside each step. ArtifactIdentity stays not ready until M00.03.
+# suite proves that from inside each step. ArtifactIdentity (M00.03): manifest + process registry + ownership/port proof for
+# the backend target (Get-BackendTarget); a frontend target of a later package describes itself the same way. Ready is claimed
+# only for what the behaviour suite proves in CI; the Owner smoke on a real PC is a separate, still open gate.
 $script:OrchestratorCapabilities = [ordered]@{
   ExclusiveLock    = [pscustomobject]@{ Ready = $true;  Code = 'LAUNCH_LOCK_MISSING';       Package = 'M00.02'; Text = 'chưa có khóa độc quyền dùng chung cho update/build/migration/process' }
-  ArtifactIdentity = [pscustomobject]@{ Ready = $false; Code = 'ARTIFACT_IDENTITY_MISSING'; Package = 'M00.03'; Text = 'chưa có định danh artifact/process để xác minh đúng bản đang chạy' }
+  ArtifactIdentity = [pscustomobject]@{ Ready = $true;  Code = 'ARTIFACT_IDENTITY_MISSING'; Package = 'M00.03'; Text = 'chưa có định danh artifact/process để xác minh đúng bản đang chạy' }
+  # Identity of the BACKEND is proven; opening a surface (HTTPS, its own server, browser) is a later package. Until it lands,
+  # an app entry keeps refusing with APP_NOT_READY instead of falling through to the catch-all APP_LAUNCH_NOT_IMPLEMENTED.
+  AppLaunchSequence = [pscustomobject]@{ Ready = $false; Code = 'APP_LAUNCH_SEQUENCE_MISSING'; Package = 'M00.05'; Text = 'chưa có trình tự mở ứng dụng (HTTPS local, máy chủ riêng của bề mặt, trình duyệt)' }
 }
 function Get-AppLaunchBlockers([string]$AppId) {
   $entry = $script:AppCatalog[$AppId]
