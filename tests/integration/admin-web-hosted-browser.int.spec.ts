@@ -186,7 +186,7 @@ describe('issue #49 — hosted admin web (new hosting, same origin as the API) i
     await page.click('.topbar-actions .btn');
     await page.waitFor(`document.querySelector('#login-title')`);
     expect((await ourCookies(page)).size).toBe(0);
-    expect(await count(app.pool, 'SELECT 1 FROM app.admin_sessions WHERE user_id = $1::uuid AND revoked_at IS NOT NULL', [system.userId])).toBe(1);
+    expect(await count(app.pool, 'SELECT 1 FROM app.admin_sessions WHERE user_id = $1::uuid AND revoked_at IS NOT NULL', [system.userId])).toBe(2); // the API-prepared session (replaced by the browser login) + the browser session (logout)
     await page.reload();
     await page.waitFor(`document.querySelector('#login-title')`);
 
