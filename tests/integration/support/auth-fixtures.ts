@@ -1,5 +1,7 @@
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
+import { AccountOriginPolicy } from '../../../apps/backend/src/auth/account-origin';
+import { DisabledOtpProvider } from '../../../apps/backend/src/auth/disabled-otp-provider';
 import { FakeOtpProvider } from '../../../apps/backend/src/auth/fake-otp-provider';
 import { AppConfig } from '../../../apps/backend/src/config/app-config';
 import { AuthConfig, OtpHmacKey } from '../../../apps/backend/src/config/auth-config';
@@ -111,7 +113,7 @@ export interface AuthApp {
 
 export async function startAuthApp(
   authOverrides: Partial<AuthConfig> = {},
-  extra: { activeKeyId?: string; relaxTimeouts?: boolean } = {},
+  extra: { activeKeyId?: string; relaxTimeouts?: boolean; fixturePolicy?: AccountOriginPolicy } = {},
 ): Promise<AuthApp> {
   const loaded = loadIntegrationConfig();
   // Concurrency tests hold locks for a moment on purpose. The production defaults (800 ms statement timeout,
@@ -130,7 +132,13 @@ export async function startAuthApp(
     auth: authTestConfig(authOverrides),
   };
   const provider = new FakeOtpProvider();
-  const running = await startApp(config, { auth: { otpProvider: provider } });
+  // Issue #49: with a fixture policy the app is bound exactly as staging fixture mode binds it (DisabledOtpProvider + the policy).
+  const running = await startApp(config, {
+    auth:
+      extra.fixturePolicy === undefined
+        ? { otpProvider: provider }
+        : { otpProvider: new DisabledOtpProvider(), accountOriginPolicy: extra.fixturePolicy },
+  });
   const pool = testPool(loaded.database, { poolMax: 6 });
   const tracked = new Set<string>();
 
