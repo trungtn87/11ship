@@ -66,6 +66,12 @@ function Test-LockHeld {
   if ($probe) { $probe.Dispose(); return $false }
   return $true
 }
+# F3: the identity read can be made to fail AFTER the lock was taken (the real cause: the launcher file is held by another process).
+$script:IdentityFault = $false
+function Get-LauncherIdentity {
+  if ($script:IdentityFault) { throw 'simulated: the launcher file cannot be read right now' }
+  return (File-HashOrEmpty $script:LauncherPath)
+}
 function Test-GateHeld {
   $probe = Open-ExclusiveFile $script:GateFile
   if ($probe) { $probe.Dispose(); return $false }
@@ -163,6 +169,7 @@ function Reset-Fakes {
   foreach ($relaunchName in @('RelaunchToken','RelaunchFromSha','RelaunchToSha','RelaunchLauncherHash')) { Set-Variable -Scope Script -Name $relaunchName -Value '' }
   $script:LockObs = New-Object 'Collections.Generic.List[object]'
   $script:NpmCwds = New-Object 'Collections.Generic.List[string]'
+  $script:IdentityFault = $false
   $script:GitFaults = @{}; $script:GitCalls = New-Object 'Collections.Generic.List[string]'
   $script:SpawnedArguments = $null; $script:SpawnObservations = $null; $script:UseRealSpawn = $false; $script:FakeChild = $null; $script:SpawnThrows = $false
   $script:HostLog.Clear()
@@ -1611,6 +1618,83 @@ try {
     if (!(Test-Path -LiteralPath $barrier)) { [IO.File]::WriteAllText($barrier, 'go') }
     foreach ($proc in @($procA) + @($procB.Values)) { if ($proc) { Stop-Quietly $proc } }
   }
+
+  # =============================================================================================
+  Section 'M00.02 F3: a failed identity read after the lock was taken gives the lock back at once'
+  # =============================================================================================
+  function Assert-IdentityFaultClean([string]$Name,[string]$HeadBefore,[string]$OriginBefore) {
+    # Checked first and right away: a leaked handle would still hold the lock here (nothing forces a garbage collection).
+    $held = Test-LockHeld
+    $gitCallsMade = $script:GitCalls.Count
+    Check (!$held) "$Name`: the lock is free immediately (no handle left for the garbage collector)"
+    Check ($script:LockDepth -eq 0 -and !$script:LockHandle -and !$script:LauncherStale) "$Name`: no lock state is left and the launcher is not marked stale (it can recover)"
+    Check ($script:DockerCalls.Count -eq 0 -and @($script:NpmCalls).Count -eq 0 -and $script:SqlCalls.Count -eq 0 -and $script:BackendStarts -eq 0 -and $gitCallsMade -eq 0 -and !(Test-Path -LiteralPath $script:StateFile)) "$Name`: no Git, npm, Docker, migration or backend step ran"
+    Check ((Head) -eq $HeadBefore -and (Invoke-Git $script:Repo @('rev-parse','origin/main')) -eq $OriginBefore) "$Name`: HEAD and origin/main did not move"
+  }
+  # A short wait keeps a launcher that leaks its handle from stalling the whole run for 120 seconds per step.
+  $env:SHIP11_LOCK_TIMEOUT_SECONDS = '3'
+  New-GitSandbox; Record-Install
+  Push-Upstream 'docs/note.md' 'pending'
+  $before = Head
+  $originRef = Invoke-Git $script:Repo @('rev-parse','origin/main')
+  foreach ($commandName in @('Start','Update','Test','Stop')) {
+    Reset-Fakes
+    $script:IdentityFault = $true
+    Expect-Fail 'LAUNCHER_IDENTITY_UNREADABLE' "$commandName with an unreadable launcher file stops with a stable code" { Invoke-LauncherCommand $commandName }
+    Assert-IdentityFaultClean $commandName $before $originRef
+  }
+  foreach ($stepName in @('Ensure-Dependencies','Confirm-DevMigrations')) {
+    Reset-Fakes
+    $script:IdentityFault = $true
+    Expect-Fail 'LAUNCHER_IDENTITY_UNREADABLE' "$stepName with an unreadable launcher file stops with a stable code" ([scriptblock]::Create($stepName))
+    Assert-IdentityFaultClean $stepName $before $originRef
+  }
+
+  # The first process (here: the menu) stays alive; a second REAL process must get the lock at once.
+  Reset-Fakes
+  $script:IdentityFault = $true
+  foreach ($answer in @('1','2','0')) { $script:Answers.Enqueue($answer) }
+  Menu | Out-Null
+  Check (@($script:HostLog | Where-Object { $_.Contains('LAUNCHER_IDENTITY_UNREADABLE') }).Count -eq 2 -and $script:Answers.Count -eq 0) 'live menu: Start and Update were each refused with LAUNCHER_IDENTITY_UNREADABLE and the menu kept running until 0'
+  Assert-IdentityFaultClean 'live menu' $before $originRef
+  $env:SHIP11_LOCK_TIMEOUT_SECONDS = '10'
+  try {
+    $second = Start-LockHolder 'second' 'start' 200
+    $finished = $second.WaitForExit(120000)
+    if (!$finished) { Stop-Quietly $second }
+    Check ($finished -and $second.ExitCode -eq 0) 'a second real process got the lock immediately while the first process is still alive (no LAUNCH_LOCK_TIMEOUT)'
+  } finally { $env:SHIP11_LOCK_TIMEOUT_SECONDS = '3' }
+
+  # Readable again: the same launcher runs normally.
+  $script:IdentityFault = $false
+  Reset-Fakes
+  $message = Get-FailMessage { Update-Launcher }
+  Check ($message -eq '' -and (Head) -eq (Invoke-Git $script:Seed @('rev-parse','HEAD'))) 'once the launcher file is readable again the same process runs Update normally'
+  Check (!(Test-LockHeld)) 'and gives the lock back afterwards'
+
+  # The real cause: another process holds the launcher file open exclusively.
+  New-GitSandbox; Record-Install
+  $before = Head
+  $originRef = Invoke-Git $script:Repo @('rev-parse','origin/main')
+  $blocker = $null
+  try { $blocker = [IO.File]::Open($script:LauncherPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None) } catch { }
+  $blocked = $false
+  if ($blocker) { try { [void](Get-FileHash -Algorithm SHA256 -LiteralPath $script:LauncherPath) } catch { $blocked = $true } }
+  if (!$blocked) {
+    $script:Skipped.Add('F3 with a really locked launcher file - this OS does not stop another reader of a file held open')
+    if ($blocker) { $blocker.Dispose() }
+  } else {
+    try {
+      Reset-Fakes
+      Expect-Fail 'LAUNCHER_IDENTITY_UNREADABLE' 'a launcher file held open by another process stops Start with a stable code' { Start-Launcher }
+      Assert-IdentityFaultClean 'locked launcher file' $before $originRef
+    } finally { $blocker.Dispose() }
+    Reset-Fakes
+    $script:DbHasTable = $true; $script:DbApplied = @(Get-MigrationFiles)
+    $message = Get-FailMessage { Start-Launcher }
+    Check ($message -eq '' -and $script:BackendStarts -eq 1) 'after the other process let go of the file, Start runs normally'
+  }
+  $env:SHIP11_LOCK_TIMEOUT_SECONDS = $null
 
   # =============================================================================================
   Section 'Wrappers and real Windows double-click behaviour'
