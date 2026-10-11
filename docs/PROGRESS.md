@@ -5,7 +5,7 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo mã main `44391d7` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ⏳ Đang chạy (`RUNNING`)
+> Dữ liệu theo mã main `44391d7` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ✅ Đạt (`PASS`)
 
 ## 🎯 VIỆC ĐANG LÀM
 
@@ -184,7 +184,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#64](https://github.com/trungtn87/11ship/pull/64) feat(M01.22): hộp OTP test local và công cụ PC (TEST_INBOX) | Đã merge (`MERGED`) | — | — | — | `7255576` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#65](https://github.com/trungtn87/11ship/pull/65) test(admin-web): sửa logout trong hosted browser spec theo… | Đã merge (`MERGED`) | — | — | — | `954b9d6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#66](https://github.com/trungtn87/11ship/pull/66) feat(M00.01): ba wrapper Admin/Food/Ship gọi chung launcher… | Đã merge (`MERGED`) | — | — | — | `a20ccd0` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#67](https://github.com/trungtn87/11ship/pull/67) M00.02: shared lock, safe Git update, relaunch of the new l… | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `150d5f3` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#67](https://github.com/trungtn87/11ship/pull/67) M00.02: shared lock, safe Git update, relaunch of the new l… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `08beb56` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
