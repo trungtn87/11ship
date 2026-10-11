@@ -1,6 +1,6 @@
 # Quyết định, tương thích và gate
 
-Phiên bản **2.0.2**; **OPEN_DECISIONS / NOT_LOCKED**. Không hỏi lại quyết định đã chốt. Nguồn tại [07](07-source-index.md); exact PR/CI heads tại audit-snapshot.json là lịch sử. [Revision USER/SMS test](09-m01-user-admin-test-sms.md) pin main mới cho phạm vi đó. Các quyết định mở chỉ chặn slice liên quan.
+Phiên bản **2.0.3**; **OPEN_DECISIONS / NOT_LOCKED**. Không hỏi lại quyết định đã chốt. Nguồn tại [07](07-source-index.md); exact PR/CI heads tại audit-snapshot.json là lịch sử. [Revision USER/SMS test](09-m01-user-admin-test-sms.md) pin main mới cho phạm vi đó. Các quyết định mở chỉ chặn slice liên quan.
 
 ## 1. Đã chốt và áp dụng
 
@@ -27,7 +27,7 @@ C09/C11 là nguồn thiết kế nghiệp vụ, chưa chứng nhận controller/
 | ID | Trạng thái và vấn đề | Phương án/giới hạn | Gate |
 |---|---|---|---|
 | D01 | M00-PC là web shell; toàn M00 có remote/native/gate thiết bị | Chấp nhận mốc M00-PC riêng; native/phone là slice riêng. Phạm vi LOCK hoặc N/A phải có lời quyết định Owner | Không chặn shell; chặn tự đóng toàn M00 |
-| D02 | Code chỉ revoke phiên SHOP-context; roadmap O09 ghi policy1account1device, chưa định nghĩa hai app cùng phone | Ưu tiên một thiết bị vật lý cho identity và hai app cùng thiết bị, cần binding đáng tin. Không đổi enforcement từ client-controlled device_id; one-session toàn account là phương án khác phải duyệt riêng | M01 session/native |
+| D02 | **OWNER_APPROVED — 11/10/2026 09:44 Asia/Ho_Chi_Minh**: một tài khoản trên một thiết bị; Food và Ship được dùng đồng thời trên cùng điện thoại | Mỗi app có phiên/ngữ cảnh riêng; chuyển CUSTOMER↔SHOP_OWNER trong Food không đăng xuất Ship. Đăng nhập thiết bị mới thay thế binding cũ và thu hồi mọi phiên app của thiết bị cũ. Web local chỉ phiên trình duyệt, chưa chứng nhận giới hạn thiết bị vật lý. Không tin riêng device_id do client gửi; binding Android phải có technical contract trước code | Policy đã duyệt; implementation/binding và native D03 chưa CODE_READY, chưa nghiệm thu |
 | D03 | 4.1 từng đề xuất Flutter; #31 Java chỉ diagnostics; Android product runtime chưa khóa | M00 PC TS/HTML nhỏ, kế thừa build Admin. Với Android ưu tiên đánh giá Flutter đã có trong thiết kế trước framework mới; chốt runtime và storage/GPS/push/package contract trước code phone | M00-NATIVE/M01 phone |
 | D04 | Geometry vùng/provider/SMS/map/push/ngân hàng chưa có cấu hình thật được xác minh | Dùng dữ liệu/provider được Owner xác nhận; server resolve GPS. Không tự tạo polygon Cao Bằng, UUID nhập tay hoặc bank demo trong thật | M02 resolver/M06/M08/production SMS-money |
 | D05 | SYSTEM mất recovery email/TOTP chưa có emergency technical contract | Server CLI audited/operator verification; password reset giữ TOTP. Không public bypass hoặc bootstrap reset. Emergency tách riêng để duyệt custody/verification | SYSTEM emergency recovery |
@@ -44,7 +44,7 @@ C09/C11 là nguồn thiết kế nghiệp vụ, chưa chứng nhận controller/
 
 D04 SMS provider/budget/recipient chỉ chặn **M12.12/release thật** theo C13. D04 map/geometry/push/bank vẫn áp dụng module tương ứng. TEST_INBOX là delivery mô phỏng dev/test local, không thay OTP core/TOTP hoặc cho staging/production test fallback. Owner duyệt D81/D86/D87/D88 trước code UI; C12 không tự phê duyệt mọi quyền lock mới.
 
-D02/D06/D08/D09/D13 có nguồn xung đột được ghi trong roadmap Draft, không nhận memory là quy tắc đã xác minh lại. Chúng không chặn M00. Không dùng D07 để hỏi Owner lại một quyết định đã rõ.
+D02 đã được Owner giải quyết theo quyết định 11/10/2026 09:44; không hỏi lại policy này. D06/D08/D09/D13 có nguồn xung đột được ghi trong roadmap Draft, không nhận memory là quy tắc đã xác minh lại. Chúng không chặn M00. Không dùng D07 để hỏi Owner lại một quyết định đã rõ.
 
 ## 3. Quy trình triển khai và LOCK
 
@@ -61,3 +61,11 @@ Thiết kế có phiên bản → Owner duyệt UI/nghiệp vụ áp dụng → 
 | LOCK | Tất cả mandatory slice đủ gate, deferred/waiver rõ | Một task backend DONE |
 
 N/A cần lý do và Owner quyết định. Code đổi sau UAT phải xác định affected cases và retest; không mang acceptance SHA cũ sang head mới. Bảng ba bề mặt gồm Admin, Food (khách/quán), Ship và liên thông. Mọi actual trong bộ này chưa chạy.
+
+## 4. Ghi nhận duyệt D02
+
+Nguồn: Owner trả lời **“Ok duyệt”** ngày 11/10/2026 09:44 (Asia/Ho_Chi_Minh), sau phương án phiên cụ thể trong cuộc trao đổi M01.01/PR #52. Phạm vi duyệt: policy phiên D02; không suy ra duyệt runtime Android D03, consent production, CODE_READY cho toàn M01.01, merge/deploy hoặc LOCK.
+
+Đăng xuất app chỉ thu hồi phiên hiện tại; chính sách thay thiết bị phải áp dụng phía server với binding đã thiết kế và kiểm thử. Các phiên Admin giữ contract riêng. Hiện tại code chỉ giới hạn SHOP-context; quyết định này chưa chứng nhận enforcement đã được triển khai.
+
+ChatGPT hoàn thiện contract; Claude code/test; ChatGPT review đúng SHA; Owner test local/điện thoại, quyết định merge và đóng. Mọi gate code/local/phone/acceptance cho D02 vẫn chưa đạt.
