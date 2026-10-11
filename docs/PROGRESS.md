@@ -183,7 +183,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#63](https://github.com/trungtn87/11ship/pull/63) docs(M01.22): hộp OTP test local và công cụ PC cho M01.03 | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `1146a8e` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#64](https://github.com/trungtn87/11ship/pull/64) feat(M01.22): hộp OTP test local và công cụ PC (TEST_INBOX) | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `9d9ed93` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#65](https://github.com/trungtn87/11ship/pull/65) test(admin-web): sửa logout trong hosted browser spec theo… | Đã merge (`MERGED`) | — | — | — | `954b9d6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#66](https://github.com/trungtn87/11ship/pull/66) feat(M00.01): ba wrapper Admin/Food/Ship gọi chung launcher… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `a20ccd0` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#66](https://github.com/trungtn87/11ship/pull/66) feat(M00.01): ba wrapper Admin/Food/Ship gọi chung launcher… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `a20ccd0` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
