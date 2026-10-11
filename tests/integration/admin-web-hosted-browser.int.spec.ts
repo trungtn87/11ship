@@ -186,7 +186,10 @@ describe('issue #49 — hosted admin web (new hosting, same origin as the API) i
     // Logout through the shell (back on /): 204, cookies gone, the session revoked, a reload stays on login.
     await page.goto(`${origin}/`);
     await page.waitFor(`document.querySelector('#shell-title')`);
-    await page.click('.topbar-actions .btn');
+    // The logout item lives in the account menu of the sidebar footer (D03): open the menu, then choose "Đăng xuất".
+    await page.click('.side-more');
+    await page.waitFor(`document.querySelector('#account-menu') && !document.querySelector('#account-menu').hidden`);
+    await page.click('#account-menu .menu-item-danger');
     await page.waitFor(`document.querySelector('#login-title')`);
     expect((await ourCookies(page)).size).toBe(0);
     expect(await count(app.pool, 'SELECT 1 FROM app.admin_sessions WHERE user_id = $1::uuid AND revoked_at IS NOT NULL', [system.userId])).toBe(2); // the API-prepared session (replaced by the browser login) + the browser session (logout)
