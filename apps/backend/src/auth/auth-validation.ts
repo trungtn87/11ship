@@ -47,7 +47,8 @@ export interface DeviceInfo {
   readonly app: string;
 }
 
-function parseDevice(value: unknown): DeviceInfo {
+/** The device object exactly as the legacy routes parse it; the client API (M01.03) narrows platform and app on top. */
+export function parseDevice(value: unknown): DeviceInfo {
   const device = exactObject(value, ['device_id', 'platform', 'app']);
   const { device_id: deviceId, platform, app } = device;
   if (

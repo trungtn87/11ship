@@ -154,9 +154,12 @@ export interface InboxAuthApp {
 }
 
 /** Same wiring as startAuthApp, except the OTP provider is the TEST_INBOX adapter (REGISTER). */
-export async function startInboxAuthApp(authOverrides: Partial<AuthConfig> = {}): Promise<InboxAuthApp> {
+export async function startInboxAuthApp(
+  authOverrides: Partial<AuthConfig> = {},
+  configOverride: Partial<AppConfig> = {},
+): Promise<InboxAuthApp> {
   const loaded = loadIntegrationConfig();
-  const config: AppConfig = { ...loaded, crypto: fixtureKeyring('k1'), auth: authTestConfig(authOverrides) };
+  const config: AppConfig = { ...loaded, crypto: fixtureKeyring('k1'), auth: authTestConfig(authOverrides), ...configOverride };
   const harness = await startInboxHarness();
   const provider = new ScriptedRegisterInbox(harness.inbox);
   const running = await startApp(config, { auth: { otpProvider: provider } });

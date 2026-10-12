@@ -19,6 +19,12 @@ export interface CustomerConsentInput {
   readonly clientApp: ConsentClientApp;
 }
 
+/** Optional initialization of the profile of a NEW customer (M01.03). It never touches an existing profile. */
+export interface CustomerProvisioningOptions {
+  /** The already normalized full name (NFC, collapsed whitespace, 1..120 code points), written with version 1. */
+  readonly initialFullName?: string;
+}
+
 export interface CustomerProvisioningResult {
   /** True when this call created the CUSTOMER role row. */
   readonly roleGranted: boolean;
@@ -42,7 +48,8 @@ export interface CustomerProvisioningResult {
  * Locking: it takes the ROOT user row lock through CustomerProfileRepository.lockEligibility, which is re-entrant for a
  * transaction that already holds it and takes no other lock, so the existing lock order is unchanged.
  *
- * It is idempotent: a repeat adds no row and overwrites no name, version or earlier consent. It issues no endpoint, no
+ * It is idempotent: a repeat adds no row and overwrites no name, version or earlier consent. The optional initial name
+ * (M01.03) is written ONLY into a profile this call creates, with version 1; an existing profile keeps its name and version. It issues no endpoint, no
  * session change and no audit/outbox row; those belong to the later register slice.
  */
 @Injectable()
@@ -56,6 +63,7 @@ export class CustomerProvisioningParticipant {
     context: TransactionContext,
     userId: string,
     consent?: CustomerConsentInput,
+    options: CustomerProvisioningOptions = {},
   ): Promise<CustomerProvisioningResult> {
     // Shape errors first: nothing is read or written for an input the caller should never have built.
     if (!isCanonicalUuid(userId)) {
@@ -63,6 +71,9 @@ export class CustomerProvisioningParticipant {
     }
     if (consent !== undefined && !isValidConsent(consent)) {
       throw new TechnicalError('internal', 'Customer provisioning got an invalid consent input');
+    }
+    if (options.initialFullName !== undefined && !isValidInitialName(options.initialFullName)) {
+      throw new TechnicalError('internal', 'Customer provisioning got an invalid initial name');
     }
 
     const eligibility = await this.customers.lockEligibility(context, userId);
@@ -76,7 +87,11 @@ export class CustomerProvisioningParticipant {
     }
 
     const roleGranted = await this.users.grantRole(context, userId, CUSTOMER_ROLE);
-    const profileCreated = await this.customers.insertProfileIfAbsent(context, userId);
+    // Without a name the call is exactly the M01.02 one (the empty profile); with one it initializes the NEW profile.
+    const profileCreated =
+      options.initialFullName === undefined
+        ? await this.customers.insertProfileIfAbsent(context, userId)
+        : await this.customers.insertProfileIfAbsent(context, userId, options.initialFullName);
     const consentRecorded =
       consent === undefined
         ? false
@@ -90,6 +105,15 @@ export class CustomerProvisioningParticipant {
 
     return { roleGranted, profileCreated, consentRecorded };
   }
+}
+
+/** The service normalizes the name before it gets here; this only refuses what the schema CHECK would refuse anyway. */
+function isValidInitialName(name: string): boolean {
+  if (typeof name !== 'string') {
+    return false;
+  }
+  const length = [...name].length;
+  return length >= 1 && length <= 120;
 }
 
 function isValidConsent(consent: CustomerConsentInput): boolean {

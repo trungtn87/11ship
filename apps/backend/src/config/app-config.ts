@@ -6,6 +6,12 @@ import { DatabaseTls, resolveDatabaseTls } from '../database/tls-config';
 import { parseStagingFixtures, StagingFixturesConfig } from './staging-fixtures-config';
 import { loadTestInboxConfig, TestInboxConfig } from '../test-sms/test-sms-config';
 import {
+  CLIENT_AUTH_PRIVACY_VERSION_ENV,
+  CLIENT_AUTH_TERMS_VERSION_ENV,
+  ClientAuthConfig,
+  parseClientAuth,
+} from './client-auth-config';
+import {
   AuthConfig,
   DEFAULT_AUTH_OTP_MAX_ATTEMPTS,
   DEFAULT_AUTH_OTP_RESEND_SECONDS,
@@ -140,6 +146,12 @@ export interface AppConfig {
    * loopback target. Absent everywhere else: nothing of the test inbox is then created, and no listener is opened.
    */
   testInbox?: TestInboxConfig;
+  /**
+   * Client registration consent pair (M01.03). Present ONLY when CLIENT_AUTH_TERMS_VERSION and CLIENT_AUTH_PRIVACY_VERSION
+   * are both set and valid, which is accepted in development/test only. Absent everywhere else: the client registration
+   * endpoint then stays closed (a first execution answers SERVICE_UNAVAILABLE before it writes anything).
+   */
+  clientAuth?: ClientAuthConfig;
 }
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -592,6 +604,19 @@ export function loadConfig(env: EnvSource): ConfigResult {
     testInboxResult.invalid.forEach(flag);
   }
 
+  // Client registration consent pair (M01.03): both or neither, local development/test only. Names only, never a value.
+  const clientAuthResult = parseClientAuth({
+    appEnv,
+    termsRaw: env[CLIENT_AUTH_TERMS_VERSION_ENV],
+    privacyRaw: env[CLIENT_AUTH_PRIVACY_VERSION_ENV],
+  });
+  let clientAuth: ClientAuthConfig | undefined;
+  if (clientAuthResult.ok) {
+    clientAuth = clientAuthResult.config;
+  } else {
+    clientAuthResult.invalid.forEach(flag);
+  }
+
   if (invalid.length > 0 || appEnv === undefined || databaseUrl === undefined) {
     return { ok: false, invalid };
   }
@@ -634,6 +659,7 @@ export function loadConfig(env: EnvSource): ConfigResult {
         ? { adminWebHosting: adminWebHosting.config }
         : {}),
       ...(testInbox === undefined ? {} : { testInbox }),
+      ...(clientAuth === undefined ? {} : { clientAuth }),
     },
   };
 }

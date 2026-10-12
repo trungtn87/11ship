@@ -1,0 +1,119 @@
+import { Injectable } from '@nestjs/common';
+import { CustomerProfileRepository } from '../auth/customer-profile-repository';
+import { CUSTOMER_ROLE } from '../auth/auth-constants';
+import { UserRepository } from '../auth/user-repository';
+import { DriverEligibilityReader } from '../driver/driver-eligibility-reader';
+import { DriverOnboardingState } from '../driver/driver-types';
+import { ShopEligibilityReader } from '../shop/shop-eligibility-reader';
+import { ShopOnboardingState } from '../shop/shop-types';
+import { TransactionContext } from '../transaction/transaction-context';
+import { ClientApp, PUBLIC_CUSTOMER, PUBLIC_DRIVER, PUBLIC_SHOP_OWNER } from './client-auth-constants';
+
+/** The identity block of every client-auth success response (contract11 section 2). */
+export interface ClientIdentity {
+  readonly user_id: string;
+  readonly phone_normalized: string;
+  /** SELECTABLE contexts, in the fixed order CUSTOMER, SHOP_OWNER, DRIVER. */
+  readonly available_roles: string[];
+  /** The EFFECTIVE active context: the stored one while it is still selectable, otherwise null. */
+  readonly active_role: string | null;
+  readonly profile: { readonly full_name: string | null; readonly version: number | null };
+  readonly capabilities: {
+    readonly customer_access: boolean;
+    readonly shop_profile_read: boolean;
+    readonly shop_manage: boolean;
+    readonly driver_profile_read: boolean;
+  };
+  readonly onboarding: { readonly shop: ShopOnboardingState; readonly driver: DriverOnboardingState };
+  readonly onboarding_required: boolean;
+  readonly role_selection_required: boolean;
+}
+
+export interface ClientIdentityInput {
+  readonly userId: string;
+  readonly phoneNormalized: string;
+  /** The client app of the request: it only decides the routing hint onboarding_required, never a right. */
+  readonly app: ClientApp;
+  /**
+   * True when the CALLER, holding the user row lock, has established that the account is an ordinary enabled one (ACTIVE,
+   * PHONE_VERIFIED, no administration membership, an origin the process policy allows). Every capability needs it.
+   */
+  readonly enabled: boolean;
+  /** The role stored on the CURRENT session row (the caller holds the session lock), or null for a roleless session. */
+  readonly storedActiveRole: string | null;
+}
+
+/** Storage role -> public context name. SHOP_OWNER exists only in the client API; SHOP is what the database stores. */
+function publicNameOf(storageRole: string): string | undefined {
+  switch (storageRole) {
+    case CUSTOMER_ROLE:
+      return PUBLIC_CUSTOMER;
+    case 'SHOP':
+      return PUBLIC_SHOP_OWNER;
+    case 'DRIVER':
+      return PUBLIC_DRIVER;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Builds the CURRENT identity of one user from the roles, the customer profile and the Shop and Driver eligibility ports
+ * (contract11 sections 1-2). It is a pure read: it issues no write, takes no lock and opens no transaction; it runs on the
+ * caller's TransactionContext, which must already hold the user root lock (and, for the session role, the session lock) so
+ * that roles, profile and statuses are one coherent state. The register response and every replay of it go through here,
+ * which is why a replay never serves a snapshot of rights taken at registration (R15). It is written to be shared by the
+ * later login/me/context slice; it opens no endpoint itself.
+ */
+@Injectable()
+export class ClientIdentityReader {
+  constructor(
+    private readonly users: UserRepository,
+    private readonly customers: CustomerProfileRepository,
+    private readonly shops: ShopEligibilityReader,
+    private readonly drivers: DriverEligibilityReader,
+  ) {}
+
+  async read(context: TransactionContext, input: ClientIdentityInput): Promise<ClientIdentity> {
+    const held = new Set(await this.users.rolesAmong(context, input.userId, [CUSTOMER_ROLE, 'SHOP', 'DRIVER']));
+    const profile = await this.customers.findProfile(context, input.userId);
+    const shop = await this.shops.ownerShopEligibility(context, input.userId);
+    const driver = await this.drivers.ownerDriverEligibility(context, input.userId);
+
+    // available_roles lists what is SELECTABLE, not what is held: SHOP_OWNER needs an ACTIVE owned shop, DRIVER a profile
+    // that is not CLOSED; a stray membership without its profile is not offered.
+    const available: string[] = [];
+    if (held.has(CUSTOMER_ROLE)) {
+      available.push(PUBLIC_CUSTOMER);
+    }
+    if (held.has('SHOP') && shop.selectable) {
+      available.push(PUBLIC_SHOP_OWNER);
+    }
+    if (held.has('DRIVER') && driver.selectable) {
+      available.push(PUBLIC_DRIVER);
+    }
+
+    const storedPublic = input.storedActiveRole === null ? undefined : publicNameOf(input.storedActiveRole);
+    const activeRole = storedPublic !== undefined && available.includes(storedPublic) ? storedPublic : null;
+
+    const onboardingRequired =
+      input.app === 'FOOD' ? !(held.has(CUSTOMER_ROLE) && profile !== undefined) : driver.onboarding === 'NOT_STARTED';
+
+    return {
+      user_id: input.userId,
+      phone_normalized: input.phoneNormalized,
+      available_roles: available,
+      active_role: activeRole,
+      profile: { full_name: profile?.fullName ?? null, version: profile?.version ?? null },
+      capabilities: {
+        customer_access: input.enabled && held.has(CUSTOMER_ROLE),
+        shop_profile_read: input.enabled && shop.onboarding !== 'NOT_STARTED',
+        shop_manage: input.enabled && held.has('SHOP') && shop.selectable,
+        driver_profile_read: input.enabled && driver.onboarding !== 'NOT_STARTED',
+      },
+      onboarding: { shop: shop.onboarding, driver: driver.onboarding },
+      onboarding_required: onboardingRequired,
+      role_selection_required: available.length > 0 && activeRole === null,
+    };
+  }
+}

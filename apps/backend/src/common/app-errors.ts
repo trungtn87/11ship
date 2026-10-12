@@ -103,6 +103,14 @@ export const APP_ERROR_DEFINITIONS = {
   ADMIN_ACTIVATION_LINK_INVALID: { status: 404, message: 'The activation link is not valid' },
   ADMIN_ACTIVATION_SESSION_INVALID: { status: 401, message: 'The activation session is not valid' },
   ADMIN_ACTIVATION_STEP_INVALID: { status: 409, message: 'This activation step is not available' },
+
+  // Client registration (M01.03, contract10 section 4 and contract11 sections 5-7). Fixed messages that echo nothing the
+  // client sent. CONSENT_VERSION_UNSUPPORTED and AUTH_RESULT_NOT_REPLAYABLE carry the exact messages of the contracts;
+  // DEVICE_PROOF_REQUIRED is the one code of the native device-proof family that the local registration needs (a WEB
+  // client outside the explicit local mode): the other DEVICE_PROOF_* codes belong to the native binding slice.
+  CONSENT_VERSION_UNSUPPORTED: { status: 409, message: 'The consent versions are not supported' },
+  AUTH_RESULT_NOT_REPLAYABLE: { status: 409, message: 'The authentication result can no longer be replayed' },
+  DEVICE_PROOF_REQUIRED: { status: 403, message: 'A device proof is required for this request' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;

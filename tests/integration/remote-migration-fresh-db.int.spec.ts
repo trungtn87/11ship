@@ -5,7 +5,10 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Client } from 'pg';
-import { REPO_ROOT } from './support/test-helpers';
+import { FakeOtpProvider } from '../../apps/backend/src/auth/fake-otp-provider';
+import { fixtureKeyring } from '../../apps/backend/src/crypto/test-keys.fixture';
+import { api, authTestConfig, randomPhone } from './support/auth-fixtures';
+import { configWithDatabaseUrl, loadIntegrationConfig, REPO_ROOT, startApp } from './support/test-helpers';
 
 // M00-D1 — the remote migration path end to end, on a DISPOSABLE PostgreSQL 17 database (never Supabase).
 //
@@ -252,6 +255,72 @@ describeWithFixture('M00-D1 — remote migration path on a fresh disposable Post
       await migrator.query('TRUNCATE app.user_consents');
       await migrator.query('DELETE FROM app.customer_profiles WHERE user_id = $1::uuid', [userId]);
       await migrator.query('DELETE FROM app.users WHERE user_id = $1::uuid', [userId]);
+    }
+  });
+
+  // M01.03 / R10 — the REAL restricted runtime role runs the client registration end to end. It runs after the grants test
+  // above (stateful suite: the grants are applied there), through the real Nest pipeline with the runtime URL as DATABASE_URL.
+  it('M01.03 client registration succeeds as the restricted runtime role, which still cannot update/delete consent or run DDL', async () => {
+    const base = loadIntegrationConfig();
+    const config = {
+      ...configWithDatabaseUrl(base, RUNTIME_URL),
+      crypto: fixtureKeyring('k1'),
+      auth: authTestConfig(),
+      clientAuth: { termsVersion: 'test-terms-20261011-v1', privacyVersion: 'test-privacy-20261011-v1' },
+    };
+    const otp = new FakeOtpProvider();
+    const running = await startApp(config, { auth: { otpProvider: otp } });
+    const phone = randomPhone();
+    try {
+      const requested = await api(running.baseUrl, 'POST', '/auth/phone-verifications', { body: { phone: phone.local, purpose: 'REGISTER' } });
+      expect(requested.status).toBe(201);
+      const verified = await api(running.baseUrl, 'POST', `/auth/phone-verifications/${String(requested.body.data?.verification_id)}/verify`, {
+        body: { otp: otp.lastOtpFor(phone.normalized) },
+      });
+      expect(verified.status).toBe(200);
+      const registered = await api(running.baseUrl, 'POST', '/client-auth/register', {
+        headers: { 'idempotency-key': '0192b1c0-0000-4000-8000-00000000f110' },
+        body: {
+          phone: phone.local,
+          password: 'Correct-Horse-Battery-9',
+          verification_token: verified.body.data?.verification_token,
+          device: { device_id: 'web-r10-0001', platform: 'WEB', app: 'FOOD' },
+          full_name: 'Nguyễn Văn R10',
+          consent: { terms_version: 'test-terms-20261011-v1', privacy_version: 'test-privacy-20261011-v1' },
+        },
+      });
+      expect([registered.status, registered.text.slice(0, 200)]).toEqual([201, registered.text.slice(0, 200)]);
+      const userId = String(registered.body.data?.user_id);
+      const replay = await api(running.baseUrl, 'POST', '/client-auth/register', {
+        headers: { 'idempotency-key': '0192b1c0-0000-4000-8000-00000000f110' },
+        body: {
+          phone: phone.local,
+          password: 'Correct-Horse-Battery-9',
+          verification_token: verified.body.data?.verification_token,
+          device: { device_id: 'web-r10-0001', platform: 'WEB', app: 'FOOD' },
+          full_name: 'Nguyễn Văn R10',
+          consent: { terms_version: 'test-terms-20261011-v1', privacy_version: 'test-privacy-20261011-v1' },
+        },
+      });
+      expect(replay.status).toBe(201);
+
+      const consent = await migrator.query('SELECT 1 FROM app.user_consents WHERE user_id = $1::uuid', [userId]);
+      expect(consent.rowCount).toBe(1);
+      await expect(runtime.query("UPDATE app.user_consents SET client_app = 'SHIP' WHERE user_id = $1::uuid", [userId])).rejects.toMatchObject({ code: '42501' });
+      await expect(runtime.query('DELETE FROM app.user_consents WHERE user_id = $1::uuid', [userId])).rejects.toMatchObject({ code: '42501' });
+      await expect(runtime.query('TRUNCATE app.user_consents')).rejects.toMatchObject({ code: '42501' });
+      await expect(runtime.query('ALTER TABLE app.user_consents DISABLE TRIGGER user_consents_immutable')).rejects.toMatchObject({ code: '42501' });
+      await expect(runtime.query('CREATE TABLE app.runtime_must_not_create_r10 (id int)')).rejects.toMatchObject({ code: '42501' });
+    } finally {
+      await running.app.close();
+      await migrator.query("DELETE FROM app.idempotency_records WHERE scope_type = 'client_verification_proof'");
+      await migrator.query('TRUNCATE app.user_consents');
+      for (const table of ['customer_profiles', 'sessions', 'user_roles']) {
+        await migrator.query(`DELETE FROM app.${table} WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)`, [phone.normalized]);
+      }
+      await migrator.query('DELETE FROM app.users WHERE phone_normalized = $1', [phone.normalized]);
+      await migrator.query('DELETE FROM app.verification_proofs WHERE phone_normalized = $1', [phone.normalized]);
+      await migrator.query('DELETE FROM app.phone_verifications WHERE phone_normalized = $1', [phone.normalized]);
     }
   });
 });
