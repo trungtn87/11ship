@@ -111,7 +111,7 @@ jobs:
             --dart-define=SOURCE_SHA="$SOURCE_SHA" \
             --dart-define=BUILT_AT="$(date -u +%Y-%m-%dT%H:%MZ)" \
             --dart-define=SIGNING_MODE="$signing" \
-            --dart-define=FLUTTER_VERSION="$fv" 2>&1 | tee "$RUNNER_TEMP/b.log" || {
+            --dart-define=BUILD_FLUTTER="$fv" 2>&1 | tee "$RUNNER_TEMP/b.log" || {
               echo "::error title=build failed::$(tail -n 25 "$RUNNER_TEMP/b.log" | cut -c1-220 | tr '\n' '|' | head -c 2500)"; exit 1; }
 
       - name: Sign

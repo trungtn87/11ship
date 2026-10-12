@@ -76,7 +76,7 @@ class AppConfig {
         sourceSha: const String.fromEnvironment('SOURCE_SHA', defaultValue: 'unknown'),
         builtAt: const String.fromEnvironment('BUILT_AT'),
         signing: SigningMode.parse(const String.fromEnvironment('SIGNING_MODE')),
-        flutterVersion: const String.fromEnvironment('FLUTTER_VERSION'),
+        flutterVersion: const String.fromEnvironment('BUILD_FLUTTER'),
       );
 
   final String apiBaseUrl;
