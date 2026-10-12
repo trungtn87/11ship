@@ -8,15 +8,21 @@
 //   * GET /__11ship/runtime: which build is running (app, source commit, build fingerprint, design version) - infrastructure
 //     metadata only: no session, no right, no path, no secret, no connection string;
 //   * GET /v1/health/live and GET /v1/health/ready, forwarded to the backend over loopback HTTP;
-//   * 11Food only (M01.07): exactly four routes of the register flow, forwarded to the backend over loopback HTTP:
+//   * 11Food and 11Ship (M01.07 + the account/session package): exactly these routes of the client account, forwarded to the backend
+//     over loopback HTTP (CLIENT_AUTH_ROUTES, the same table for both apps):
 //       POST /v1/auth/phone-verifications
 //       POST /v1/auth/phone-verifications/<uuid>/verify
 //       POST /v1/client-auth/register            (Idempotency-Key forwarded, the body byte for byte)
 //       GET  /v1/client-auth/config              (no query, no body: which registration mode the server runs)
-//     See forwardAuth (POST) and forwardConfig (GET) for the rules (same origin, JSON, size, deadline, no cookie, no-store). NOTHING else of /v1 is reachable:
-//     not a prefix, not a wildcard, not another method, not a query string, and 11Ship has none of the three. Login, account and
-//     the other business routes are opened by later packages after their own review (the Admin front keeps its own allowlist in
-//     admin-web-dev.mjs).
+//       POST /v1/client-auth/login               (Idempotency-Key)
+//       GET  /v1/client-auth/me                  (Authorization: Bearer)
+//       POST /v1/client-auth/logout              (Authorization: Bearer, body {}, 204)
+//       GET  /v1/customer/me/profile             (Authorization: Bearer)
+//       PUT  /v1/customer/me/profile             (Authorization: Bearer, Idempotency-Key)
+//     See forwardAuth and forwardConfig for the rules (same origin, JSON, size, deadline, no cookie, no-store; only the Bearer and the
+//     Idempotency-Key of the browser are passed on, nothing else of its headers). NOTHING else of /v1 is reachable: not a prefix, not a
+//     wildcard, not another method, not a query string. Other business routes are opened by later packages after their own review (the
+//     Admin front keeps its own allowlist in admin-web-dev.mjs).
 //
 // What the server refuses to start with: a certificate that is missing, expired, not yet valid, not naming localhost and
 // 127.0.0.1, or whose key does not belong to it; a build folder without a valid manifest or whose files no longer match the
@@ -54,12 +60,20 @@ export const HEALTH_ROUTES = new Map([
  * trailing slash, no query string.
  */
 const UUID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
-export const FOOD_AUTH_ROUTES = [
+export const CLIENT_AUTH_ROUTES = [
   { id: 'otp-request', match: (path) => path === '/v1/auth/phone-verifications', keyed: false },
   { id: 'otp-verify', match: (path) => new RegExp(`^/v1/auth/phone-verifications/${UUID}/verify$`).test(path), keyed: false },
   { id: 'register', match: (path) => path === '/v1/client-auth/register', keyed: true },
   { id: 'config', match: (path) => path === '/v1/client-auth/config', keyed: false, method: 'GET' },
+  { id: 'login', match: (path) => path === '/v1/client-auth/login', keyed: true },
+  // `bearer`: the browser's Authorization: Bearer <token> is required and passed on (nothing else of its headers).
+  { id: 'me', match: (path) => path === '/v1/client-auth/me', keyed: false, method: 'GET', bearer: true },
+  { id: 'logout', match: (path) => path === '/v1/client-auth/logout', keyed: false, bearer: true, noContent: true },
+  { id: 'profile-read', match: (path) => path === '/v1/customer/me/profile', keyed: false, method: 'GET', bearer: true },
+  { id: 'profile-save', match: (path) => path === '/v1/customer/me/profile', keyed: true, method: 'PUT', bearer: true },
 ];
+/** The routes of the 11Food front under their former name. */
+export const FOOD_AUTH_ROUTES = CLIENT_AUTH_ROUTES;
 /** Largest request body the front forwards: the biggest real body (register) is under 2 KB. */
 export const MAX_AUTH_REQUEST_BYTES = 8192;
 /** Largest backend answer it passes on: the sign-in answer (identity + token) is a few KB. */
@@ -199,11 +213,13 @@ export function createClientWebServer({ app, distDir, backendUrl, key, cert, ups
       forwardHealth(request, response, backend, url.pathname, route, upstreamTimeoutMs);
       return;
     }
-    const authRoute = app === 'food-web' ? FOOD_AUTH_ROUTES.find((candidate) => candidate.match(url.pathname)) : undefined;
+    // One path may carry two methods (the profile: GET and PUT): the route is chosen by path AND method, a third method is a 405.
+    const pathRoutes = app === 'food-web' || app === 'ship-web' ? CLIENT_AUTH_ROUTES.filter((candidate) => candidate.match(url.pathname)) : [];
+    const authRoute = pathRoutes.find((candidate) => (candidate.method ?? 'POST') === request.method) ?? pathRoutes[0];
     if (authRoute !== undefined) {
       const allowed = authRoute.method ?? 'POST';
       if (request.method !== allowed) {
-        response.writeHead(405, { ...SECURITY_HEADERS, allow: allowed, 'content-type': 'text/plain; charset=utf-8' });
+        response.writeHead(405, { ...SECURITY_HEADERS, allow: [...new Set(pathRoutes.map((candidate) => candidate.method ?? 'POST'))].join(', '), 'content-type': 'text/plain; charset=utf-8' });
         response.end();
         return;
       }
@@ -211,7 +227,7 @@ export function createClientWebServer({ app, distDir, backendUrl, key, cert, ups
         sendError(response, 404, 'NOT_FOUND');
         return;
       }
-      if (allowed === 'GET') {
+      if (authRoute.id === 'config') {
         forwardConfig(request, response, backend, url.pathname, upstreamTimeoutMs);
         return;
       }
@@ -434,6 +450,7 @@ function forwardConfig(request, response, backend, path, timeoutMs) {
 
 const JSON_CONTENT_TYPE = /^application\/json(?:\s*;\s*charset=utf-8)?$/i;
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{1,128}$/;
+const BEARER = /^Bearer [A-Za-z0-9._~+/=-]{16,512}$/;
 // Retry-After as the backend sends it: whole seconds or an HTTP date. Nothing else is passed on.
 const RETRY_AFTER = /^(?:[0-9]{1,6}|[A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT)$/;
 
@@ -477,16 +494,38 @@ function forwardAuth(request, response, backend, path, route, timeoutMs) {
     const value = request.headers[name];
     return typeof value === 'string' ? value : undefined;
   };
-  // Same origin only: a browser page of another site cannot make this front call the backend for it.
-  if (header('origin') !== `https://${request.headers.host}` || (header('sec-fetch-site') !== undefined && header('sec-fetch-site') !== 'same-origin')) {
+  const method = route.method ?? 'POST';
+  const hasBody = method !== 'GET';
+  // Same origin only: a browser page of another site cannot make this front call the backend for it. A same-origin GET carries no
+  // Origin header (browsers add it to POST/PUT only), so for a GET an Origin that IS present must match.
+  const origin = header('origin');
+  if ((hasBody ? origin !== `https://${request.headers.host}` : origin !== undefined && origin !== `https://${request.headers.host}`) || (header('sec-fetch-site') !== undefined && header('sec-fetch-site') !== 'same-origin')) {
     request.resume();
     sendError(response, 403, 'ORIGIN_NOT_ALLOWED', { 'cache-control': 'no-store' });
     return;
   }
-  if (!JSON_CONTENT_TYPE.test(header('content-type') ?? '')) {
+  if (hasBody && !JSON_CONTENT_TYPE.test(header('content-type') ?? '')) {
     request.resume();
     sendError(response, 415, 'UNSUPPORTED_MEDIA_TYPE', { 'cache-control': 'no-store' });
     return;
+  }
+  if (!hasBody) {
+    const declaredLength = request.headers['content-length'];
+    if ((declaredLength !== undefined && declaredLength !== '0') || request.headers['transfer-encoding'] !== undefined) {
+      request.resume();
+      sendError(response, 400, 'BAD_REQUEST', { 'cache-control': 'no-store' });
+      return;
+    }
+  }
+  // Only the bearer of the person is passed on, and only to the routes that need it; a missing or malformed one is refused here.
+  let bearer;
+  if (route.bearer === true) {
+    bearer = header('authorization');
+    if (bearer === undefined || !BEARER.test(bearer)) {
+      request.resume();
+      sendError(response, 401, 'SESSION_INVALID', { 'cache-control': 'no-store' });
+      return;
+    }
   }
   let key;
   if (route.keyed) {
@@ -532,16 +571,30 @@ function forwardAuth(request, response, backend, path, route, timeoutMs) {
       return;
     }
     const body = Buffer.concat(chunks);
-    if (body.length === 0) {
+    if (hasBody ? body.length === 0 : body.length !== 0) {
       fail(400, 'BAD_REQUEST');
       return;
     }
-    const headers = { accept: 'application/json', 'content-type': 'application/json', 'content-length': String(body.length), host: backend.host, connection: 'close' };
+    const headers = { accept: 'application/json', host: backend.host, connection: 'close' };
+    if (hasBody) {
+      headers['content-type'] = 'application/json';
+      headers['content-length'] = String(body.length);
+    }
     if (key !== undefined) {
       headers['idempotency-key'] = key;
     }
-    upstream = http.request({ hostname: backend.hostname.replace(/^\[|\]$/g, ''), port: backend.port || 80, method: 'POST', path, headers }, (answer) => {
+    if (bearer !== undefined) {
+      headers.authorization = bearer;
+    }
+    upstream = http.request({ hostname: backend.hostname.replace(/^\[|\]$/g, ''), port: backend.port || 80, method, path, headers }, (answer) => {
       const status = answer.statusCode ?? 0;
+      if (route.noContent === true && status === 204) {
+        answer.resume();
+        finish();
+        response.writeHead(204, SECURITY_HEADERS);
+        response.end();
+        return;
+      }
       if (status < 200 || (status >= 300 && status < 400) || status > 599 || !/^application\/json\b/i.test(String(answer.headers['content-type'] ?? ''))) {
         answer.resume();
         fail(502, 'BAD_GATEWAY');
@@ -573,7 +626,7 @@ function forwardAuth(request, response, backend, path, route, timeoutMs) {
       });
     });
     upstream.on('error', () => fail(502, 'BAD_GATEWAY'));
-    upstream.end(body);
+    hasBody ? upstream.end(body) : upstream.end();
   });
 }
 

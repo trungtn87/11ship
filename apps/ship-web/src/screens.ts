@@ -1,10 +1,13 @@
 import { AppDefinition } from '../../client-shared/src/app.js';
+import { FOOD_TEST_CONSENT } from '../../client-shared/src/consent.js';
 import { logo, SHIP_BRAND } from '../../client-shared/src/brand.js';
 import { banner, bottomNav, button, chip, emptyState, gate, list, listItem, openDialog, reasonNote, setBusy, TabDef, textField } from '../../client-shared/src/components.js';
 import { h } from '../../client-shared/src/dom.js';
 import { icon } from '../../client-shared/src/icons.js';
 import { ScreenDef, ScreenEnv, VariantDef } from '../../client-shared/src/screen.js';
 import { authScreens } from '../../client-shared/src/screens/auth.js';
+import { liveProfileForm } from '../../client-shared/src/screens/profile-live.js';
+import { signOutLive } from '../../client-shared/src/screens/logout-live.js';
 import { diagnosticsScreen } from '../../client-shared/src/screens/diagnostics.js';
 import { failureBanner } from '../../client-shared/src/screens/feedback.js';
 import { actionButton, appPage, designOnly, guardForm } from '../../client-shared/src/screens/layout.js';
@@ -166,7 +169,10 @@ function openLogout(env: ScreenEnv): void {
           if (env.mode === 'design') {
             designOnly(env, STATE_COPY.designNoSend);
             env.go('account', 'guest');
+            return;
           }
+          // Live: the local session is dropped first; the notice says whether the server confirmed the revoke.
+          void signOutLive(env, 'account');
         },
       },
     ],
@@ -186,6 +192,10 @@ const account: ScreenDef = {
   render: (env, variant) => {
     const me = env.account;
     let page: HTMLElement;
+    // Live: ask the server about this session when the account opens; a session it calls invalid ends in app.ts (login screen).
+    if (env.mode === 'live' && me !== undefined) {
+      void env.auth?.me();
+    }
     if (me === undefined || variant === 'guest') {
       page = appPage({
         title: 'Tài khoản',
@@ -220,10 +230,13 @@ const account: ScreenDef = {
           ),
           list([
             listItem({ icon: 'user', title: 'Hồ sơ xế', sub: status === 'NONE' ? 'Chưa gửi hồ sơ — gửi ngay' : 'Xem trạng thái hồ sơ', onClick: () => env.go(status === 'NONE' ? 'driver-onboarding' : 'driver-status') }),
+            listItem({ icon: 'user', title: 'Thông tin cá nhân', sub: 'Họ tên và số điện thoại đăng nhập', onClick: () => env.go('profile') }),
             listItem({ icon: 'banknote', title: 'Tài khoản ngân hàng', soon: true }),
             listItem({ icon: 'wallet', title: 'Ví', soon: true }),
             listItem({ icon: 'key', title: 'Đặt lại mật khẩu', onClick: () => env.go('reset') }),
-            listItem({ icon: 'logout', title: 'Đăng xuất', tone: 'danger', onClick: () => openLogout(env) }),
+            env.mode === 'live' && !env.isWired('auth.logout')
+              ? listItem({ icon: 'logout', title: 'Đăng xuất', sub: env.featureReason('auth.logout'), soon: true })
+              : listItem({ icon: 'logout', title: 'Đăng xuất', tone: 'danger', onClick: () => openLogout(env) }),
           ]),
         ],
       });
@@ -232,6 +245,33 @@ const account: ScreenDef = {
       openLogout(env);
     }
     return page;
+  },
+};
+
+// ---- personal profile (shared with 11Food F17) ----------------------------------------------------------------------
+
+const profile: ScreenDef = {
+  id: 'profile',
+  code: 'S05',
+  title: 'Thông tin cá nhân',
+  group: 'Tài khoản',
+  path: '/account/profile',
+  access: 'authed',
+  variants: DEFAULT,
+  render: (env) => {
+    if (env.mode === 'live' && env.auth !== undefined) {
+      return appPage({ title: 'Thông tin cá nhân', onBack: () => env.go('account'), bodyClass: 'c-stack', body: [liveProfileForm(env).form] });
+    }
+    // Without a connected server the screen only explains: the name is the server's, nothing is edited or saved here.
+    const me = env.account;
+    const name = textField({ id: 'full-name', label: 'Họ và tên', icon: 'user', value: me?.fullName ?? '', readOnly: true });
+    const phone = textField({ id: 'phone', label: 'Số điện thoại đăng nhập', icon: 'phone', value: me?.phoneMasked ?? '', readOnly: true });
+    return appPage({
+      title: 'Thông tin cá nhân',
+      onBack: () => env.go('account'),
+      bodyClass: 'c-stack',
+      body: [designChip(env), h('div', { class: 'c-stack' }, name.root, phone.root), reasonNote(env.featureReason('customer.profileSave'))],
+    });
   },
 };
 
@@ -329,7 +369,7 @@ export function shipScreens(): ScreenDef[] {
   // A new driver goes from the verified registration straight to the driver profile form (S12).
   const routes = { afterLogin: { id: 'home' }, afterRegister: { id: 'driver-onboarding' }, guestHome: { id: 'home' } };
   const diagnostics = diagnosticsScreen({ brand: SHIP_BRAND, code: 'S06', nav: (env) => nav(env, 'account') });
-  return [...authScreens(SHIP_BRAND, routes), home, orders, income, wallet, account, diagnostics, driverOnboarding, driverStatus];
+  return [...authScreens(SHIP_BRAND, routes), home, orders, income, wallet, account, profile, diagnostics, driverOnboarding, driverStatus];
 }
 
 export const SHIP_DEFINITION: AppDefinition = {
@@ -340,4 +380,6 @@ export const SHIP_DEFINITION: AppDefinition = {
   loginPath: '/login',
   flowStart: { 'register-otp': '/register', 'reset-otp': '/reset', 'reset-password': '/reset' },
   testSmsNotice: true,
+  // The register flow of #82 (OTP, or none in DISABLED_TEST), connected on a local https runtime. The approved test texts name 11Ship/11Food.
+  register: { consent: FOOD_TEST_CONSENT },
 };

@@ -10,6 +10,8 @@ import { FailureCode } from '../states.js';
 //                  GET  /v1/client-auth/me        (Bearer)                                                                              -> 200 identity + session
 //                  POST /v1/client-auth/context   (Bearer, Idempotency-Key) {context}                                                   -> 200 identity + session
 //                  POST /v1/client-auth/logout    (Bearer) {}                                                                           -> 204
+//   profile        GET  /v1/customer/me/profile   (Bearer, no query/body)                                                               -> 200 {data:{user_id, full_name, version}} | {data:null}
+//                  PUT  /v1/customer/me/profile   (Bearer, Idempotency-Key) {full_name, expected_version}                              -> 200 {data:{user_id, full_name, version}}
 // Errors: {error:{code, message, request_id, details}}. Only `code` is read, and only from a closed list per operation;
 // `message`, `details` and `request_id` are never shown, stored or logged.
 //
@@ -28,6 +30,7 @@ export const AUTH_PATHS = {
   me: '/v1/client-auth/me',
   context: '/v1/client-auth/context',
   logout: '/v1/client-auth/logout',
+  profile: '/v1/customer/me/profile',
 } as const;
 
 export const REGISTER_PURPOSE = 'REGISTER';
@@ -174,6 +177,31 @@ export function parseIdentityResponse(body: unknown): { readonly identity: AuthI
   return identity === undefined || session === undefined ? undefined : { identity, session };
 }
 
+// ---- own customer profile -----------------------------------------------------------------------------------------
+
+/** The server's own customer profile: the name and the version the next update must name (expected_version). */
+export interface ProfileWire {
+  readonly userId: string;
+  readonly fullName: string;
+  readonly version: number;
+}
+
+/** GET/PUT /v1/customer/me/profile: exactly {data:{user_id, full_name, version}}. `null` = a GET answered {data:null} (no profile row). */
+export function parseProfileResponse(body: unknown): ProfileWire | null | undefined {
+  if (isRecord(body) && hasExactKeys(body, ['data']) && body.data === null) {
+    return null;
+  }
+  const data = dataOf(body);
+  if (data === undefined || !hasExactKeys(data, ['user_id', 'full_name', 'version'])) {
+    return undefined;
+  }
+  const { user_id: userId, full_name: fullName, version } = data;
+  if (!isUuid(userId) || typeof fullName !== 'string' || fullName.length < 1 || fullName.length > 480 || typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) {
+    return undefined;
+  }
+  return { userId, fullName, version };
+}
+
 // ---- registration config ------------------------------------------------------------------------------------------
 
 /** What the server says about the phone verification of a registration. The client never guesses it. */
@@ -239,7 +267,7 @@ export function errorCodeOf(body: unknown): string | undefined {
   return typeof code === 'string' && ERROR_CODE.test(code) ? code : undefined;
 }
 
-export type AuthOperation = 'config' | 'otpRequest' | 'otpVerify' | 'register' | 'login' | 'me' | 'context' | 'logout';
+export type AuthOperation = 'config' | 'otpRequest' | 'otpVerify' | 'register' | 'login' | 'me' | 'context' | 'logout' | 'profileRead' | 'profileSave';
 
 export interface MappedFailure {
   readonly code: FailureCode;
@@ -314,10 +342,12 @@ const TABLES: Readonly<Record<AuthOperation, Readonly<Record<string, Row>>>> = {
   me: { ACCOUNT_DISABLED: ['ACCOUNT_DISABLED'], SERVICE_UNAVAILABLE: ['SERVICE_UNAVAILABLE'], INTERNAL_ERROR: ['UNKNOWN'] },
   context: { ...KEYED, ROLE_NOT_AVAILABLE: ['ROLE_NOT_AVAILABLE'], ACCOUNT_DISABLED: ['ACCOUNT_DISABLED'] },
   logout: { BAD_REQUEST: ['BAD_REQUEST'], SERVICE_UNAVAILABLE: ['SERVICE_UNAVAILABLE'], INTERNAL_ERROR: ['UNKNOWN'] },
+  profileRead: { ACCOUNT_DISABLED: ['ACCOUNT_DISABLED'], ROLE_NOT_AVAILABLE: ['ROLE_NOT_AVAILABLE'], SERVICE_UNAVAILABLE: ['SERVICE_UNAVAILABLE'], INTERNAL_ERROR: ['UNKNOWN'] },
+  profileSave: { ...KEYED, VERSION_CONFLICT: ['VERSION_CONFLICT'], ACCOUNT_DISABLED: ['ACCOUNT_DISABLED'], ROLE_NOT_AVAILABLE: ['ROLE_NOT_AVAILABLE'] },
 };
 
-const KEYED_OPERATIONS: readonly AuthOperation[] = ['register', 'login', 'context'];
-const AUTHENTICATED_OPERATIONS: readonly AuthOperation[] = ['me', 'context', 'logout'];
+const KEYED_OPERATIONS: readonly AuthOperation[] = ['register', 'login', 'context', 'profileSave'];
+const AUTHENTICATED_OPERATIONS: readonly AuthOperation[] = ['me', 'context', 'logout', 'profileRead', 'profileSave'];
 
 /**
  * Server answer -> one typed failure. A code that this operation does not list is NOT trusted: INVALID_CREDENTIALS from a login

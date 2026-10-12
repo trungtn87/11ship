@@ -1,3 +1,4 @@
+import type { AuthClient, LogoutResult } from './auth/client.js';
 import type { AppBrand } from './brand.js';
 import type { ConnectionView } from './connection.js';
 import type { FeatureId } from './features.js';
@@ -77,6 +78,13 @@ export interface ScreenEnv {
    * (app.ts). Undefined everywhere else: the register screens then keep their "chưa nối máy chủ" state and never call anything.
    */
   readonly register?: RegisterController;
+  /**
+   * The real client authentication (login, own profile, logout), present ONLY on a local https runtime of an app that connects it
+   * (app.ts). Screens read the server's answers through it and never see a token. Undefined = those actions stay unavailable.
+   */
+  readonly auth?: AuthClient;
+  /** Signs out: the local session is dropped first, then the server is asked to revoke it. Present with `auth`. */
+  readonly signOut?: () => Promise<LogoutResult>;
   /** Test build: OTP screens tell the person the SMS is simulated and where the code is read (PC tool), never show the code. */
   readonly testSmsNotice: boolean;
   /** Preview only. */

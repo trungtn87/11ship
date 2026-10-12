@@ -6,14 +6,14 @@ Trạng thái: **chỉ UI**, chưa tính là xong nghiệp vụ, M01 chưa đón
 | Mã | Màn | Route | Bản thật hiện tại | Nối API |
 |---|---|---|---|---|
 | S00 | Chào mừng | `/welcome` | có | — |
-| S10 / S11 / S18 | Đăng nhập / Đăng ký / OTP | `/login` `/register` `/register/otp` | có, nút khóa kèm lý do | chờ M01.04 / M01.03 |
+| S10 / S11 / S18 | Đăng nhập / Đăng ký / OTP | `/login` `/register` `/register/otp` | đăng nhập nối ở local (app `SHIP`, không cấp quyền nhận đơn); đăng ký dùng lại luồng #82 | nối (local) |
 | S15–S17 | Quên / OTP / đặt lại mật khẩu | `/reset…` | có, nút khóa kèm lý do | chờ M01.16 |
 | S01 | Trang chủ (khách; chờ duyệt xem ở preview) | `/` | có; công tắc nhận đơn luôn khóa kèm lý do | — |
 | S02 | Đơn hàng | `/orders` | trạng thái trống | — |
 | S03 | Thu nhập | `/income` | "—" (chưa biết ≠ 0), chọn ngày khóa | — |
 | S04 | Ví | `/wallet` | "—", nạp/rút khóa | — |
-| S05 / S14 | Tài khoản (khách / xế) | `/account` | chỉ bản khách; bản xế ở preview | chờ M01.04/.05 |
-| S19 | Hộp đăng xuất | trong S14 | preview | chờ M01.04 |
+| S05 / S14 | Tài khoản (khách / xế) | `/account` | tài khoản đã đăng nhập hiện tên/SĐT từ máy chủ; hồ sơ xế chưa nối nên giữ khóa kèm lý do, không có role DRIVER giả. Thêm S05 `/account/profile` (xem/sửa tên, cùng form với Food) | nối (local) |
+| S19 | Hộp đăng xuất | trong S14 | xác nhận rồi gọi logout như Food | nối (local) |
 | S12 | Hồ sơ xế | `/driver/onboarding` | cần đăng nhập; nút Gửi hồ sơ khóa | chờ M01.10 |
 | S13 | Trạng thái hồ sơ | `/driver/status` | cần đăng nhập | chờ M01.10/.05 |
 

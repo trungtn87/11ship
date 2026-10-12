@@ -1,4 +1,4 @@
-import { createAuthClient } from './auth/client.js';
+import { createAuthClient, LogoutResult } from './auth/client.js';
 import { AuthIdentity } from './auth/contract.js';
 import { AppBrand } from './brand.js';
 import { toast } from './components.js';
@@ -13,6 +13,7 @@ import { LeaveController } from './leave.js';
 import { createRegisterController } from './register-flow.js';
 import { HistoryPort, RouteDef, Router, RouteTable } from './router.js';
 import { AccountView, FlowStore, ScreenDef, ScreenEnv } from './screen.js';
+import { STATE_COPY } from './states.js';
 import { maskPhone } from './validation.js';
 
 // Wires the screens to the real app: router, real paths, no session, ports that answer "not wired". The design preview
@@ -34,14 +35,19 @@ export interface AppDefinition {
   /** Test build: OTP screens show the "SMS mô phỏng" notice. */
   readonly testSmsNotice: boolean;
   /**
-   * Present = this app has a register flow connected to the server (M01.07: 11Food). It is switched on only on a local https
-   * runtime (`isLocalHttpsRuntime`); everywhere else the register screens stay in their "chưa nối máy chủ" state.
+   * Present = this app has a register flow connected to the server (M01.07: 11Food, and 11Ship with the same flow). It is switched
+   * on only on a local https runtime (`isLocalHttpsRuntime`); everywhere else the register screens stay in their "chưa nối máy chủ" state.
    */
   readonly register?: { readonly consent: ConsentOffer };
 }
 
 /** The features the register flow connects when it is on. Nothing else becomes wired by it. */
 const REGISTER_FEATURES: ReadonlySet<FeatureId> = new Set<FeatureId>(['auth.register', 'auth.registerOtp']);
+/** The account features (login, logout, own profile) connected by the same client authentication on a local https runtime. */
+const ACCOUNT_FEATURES: ReadonlySet<FeatureId> = new Set<FeatureId>(['auth.login', 'auth.logout', 'customer.profileSave', 'account.read']);
+
+/** Longest delay setTimeout takes. */
+const MAX_TIMER_MS = 2_147_483_647;
 
 /**
  * The page is served by the local https runtime of this machine (https://localhost:<port>): the only place the front forwards the
@@ -53,7 +59,14 @@ export function isLocalHttpsRuntime(location: { readonly protocol: string; reado
 
 /** What the server says about the signed-in person, as a screen shows it. Roles are the server's list: the client grants nothing. */
 export function accountOf(identity: AuthIdentity): AccountView {
-  return { fullName: identity.profile.fullName, phoneMasked: maskPhone(identity.phoneNormalized) ?? '••• •••• •••', roles: identity.availableRoles };
+  // Only what the server reports. A driver state the screens cannot show yet (and none that is made up) leaves `driver` out.
+  const driverStatus = identity.onboarding.driver === 'NOT_STARTED' ? 'NONE' : identity.onboarding.driver === 'PENDING_APPROVAL' ? 'PENDING' : identity.onboarding.driver === 'ACTIVE' ? 'ACTIVE' : undefined;
+  return {
+    fullName: identity.profile.fullName,
+    phoneMasked: maskPhone(identity.phoneNormalized) ?? '••• •••• •••',
+    roles: identity.availableRoles,
+    ...(driverStatus === undefined ? {} : { driver: { status: driverStatus } }),
+  };
 }
 
 export function routeTable(definition: AppDefinition): RouteTable {
@@ -154,12 +167,24 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
     shouldPoll: () => document.visibilityState !== 'hidden',
   });
   const connection = liveConnection(monitor, window.location.origin);
-  // The register flow (M01.07), only where it is connected. Session in memory only: a reload starts signed out.
+  // The client authentication (register M01.07, login/profile/logout), only on a local https runtime. Session in memory only: a reload starts signed out.
   const auth =
-    definition.register !== undefined && isLocalHttpsRuntime(window.location)
+    isLocalHttpsRuntime(window.location)
       ? createAuthClient({ fetch: (input, init) => window.fetch(input, init), app: definition.brand.id === 'FOOD' ? 'FOOD' : 'SHIP' })
       : undefined;
   const register = auth === undefined || definition.register === undefined ? undefined : createRegisterController({ auth, flows, consent: definition.register.consent });
+  // Signing out on purpose is not "the session ended": the person asked, so no "sign in again" notice follows it.
+  let signingOut = false;
+  const signOut = async (): Promise<LogoutResult> => {
+    if (auth === undefined) {
+      return { hadSession: false, serverRevoked: false };
+    }
+    signingOut = true;
+    const pending = auth.logout();
+    signingOut = false; // the local sign-out (and its notification) happens synchronously inside logout()
+    const result = await pending;
+    return result.kind === 'ok' ? result.value : { hadSession: true, serverRevoked: false };
+  };
   const env: ScreenEnv = {
     mode: 'live',
     brand: definition.brand,
@@ -171,6 +196,7 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
       return identity === undefined ? undefined : accountOf(identity);
     },
     ...(register === undefined ? {} : { register }),
+    ...(auth === undefined ? {} : { auth, signOut }),
     // C08: every in-app navigation first asks about a form that is being filled.
     go: (id) => leave.request(() => routerRef.current?.go(id)),
     back: () =>
@@ -185,7 +211,7 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
     toast: (text) => toast(text),
     dialogHost: undefined,
     connection,
-    isWired: (feature) => (register !== undefined && REGISTER_FEATURES.has(feature)) || isWired(feature),
+    isWired: (feature) => (register !== undefined && REGISTER_FEATURES.has(feature)) || (auth !== undefined && ACCOUNT_FEATURES.has(feature)) || isWired(feature),
     featureReason: (feature) => featureStatus(feature).reason,
     testSmsNotice: definition.testSmsNotice,
   };
@@ -230,6 +256,35 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
     },
   });
   routerRef.current = router;
+  // The session ended without the person asking (the server said invalid/revoked/expired, or its absolute expiry passed): everything
+  // personal is dropped (forms, flows, the account) and the person is taken to the login screen with a notice.
+  if (auth !== undefined) {
+    let wasSignedIn = auth.session.state().kind === 'authenticated';
+    let expiryTimer: ReturnType<typeof setTimeout> | undefined;
+    const watch = (state: ReturnType<typeof auth.session.state>): void => {
+      if (expiryTimer !== undefined) {
+        clearTimeout(expiryTimer);
+        expiryTimer = undefined;
+      }
+      if (state.kind === 'authenticated') {
+        wasSignedIn = true;
+        // Reading the state past the expiry signs out (and notifies), so the screen does not keep a dead session.
+        expiryTimer = setTimeout(() => void auth.session.state(), Math.min(Math.max(state.expiresAtMs - Date.now(), 0) + 50, MAX_TIMER_MS));
+        return;
+      }
+      const ended = wasSignedIn;
+      wasSignedIn = false;
+      if (ended) {
+        flows.clear();
+      }
+      if (ended && !signingOut) {
+        leave.clear();
+        toast(STATE_COPY.sessionExpired.text);
+        router.go('login');
+      }
+    };
+    auth.session.subscribe(watch);
+  }
   // Closing or reloading the page with a form being filled asks the browser's own confirmation.
   window.addEventListener('beforeunload', (event) => {
     if (leave.dirty()) {
