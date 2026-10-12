@@ -36,6 +36,11 @@ Future<void> openTab(WidgetTester tester, String id) async {
   await tester.pump();
 }
 
+String texts(WidgetTester tester) {
+  final String all = tester.widgetList<Text>(find.byType(Text)).map((Text t) => t.data ?? t.textSpan?.toPlainText() ?? '').where((String s) => s.isNotEmpty).join('|');
+  return all.length > 700 ? all.substring(0, 700) : all;
+}
+
 void main() {
   testWidgets('four tabs in the agreed order, ready banner shown', (WidgetTester tester) async {
     await pump(tester, healthy());
@@ -78,7 +83,7 @@ void main() {
     await tester.tap(find.byKey(const Key('connection-retry')));
     await tester.pump();
     await tester.pump();
-    expect(find.text('Không có kết nối mạng'), findsNothing);
+    expect(find.text('Không có kết nối mạng'), findsNothing, reason: texts(tester));
     expect(find.byKey(const Key('connection-banner')), findsNothing);
   });
 
@@ -118,7 +123,7 @@ void main() {
     await tester.tap(find.text('Chẩn đoán kết nối'));
     await tester.pump();
     await tester.pump();
-    expect(find.textContaining('0.1.0'), findsWidgets);
+    expect(find.textContaining('0.1.0'), findsWidgets, reason: texts(tester));
     expect(find.textContaining(sha.substring(0, 12)), findsWidgets);
     expect(find.textContaining('Còn sống'), findsWidgets);
     expect(find.textContaining('Sẵn sàng'), findsWidgets);

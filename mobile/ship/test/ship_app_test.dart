@@ -36,6 +36,11 @@ Future<void> openTab(WidgetTester tester, String id) async {
   await tester.pump();
 }
 
+String texts(WidgetTester tester) {
+  final String all = tester.widgetList<Text>(find.byType(Text)).map((Text t) => t.data ?? t.textSpan?.toPlainText() ?? '').where((String s) => s.isNotEmpty).join('|');
+  return all.length > 700 ? all.substring(0, 700) : all;
+}
+
 void main() {
   testWidgets('five tabs in the agreed order and the 11Ship logo', (WidgetTester tester) async {
     await pump(tester, healthy());
@@ -68,10 +73,10 @@ void main() {
     await pump(tester, healthy());
     await openTab(tester, 'orders');
     expect(find.byKey(const Key('orders-active')), findsOneWidget);
-    expect(find.text('Chưa có đơn hàng'), findsWidgets);
+    expect(find.text('Chưa có đơn hàng'), findsWidgets, reason: texts(tester));
     await tester.tap(find.byKey(const Key('orders-history')));
     await tester.pump();
-    expect(find.text('Chưa có đơn hàng'), findsWidgets);
+    expect(find.text('Chưa có đơn hàng'), findsWidgets, reason: texts(tester));
   });
 
   testWidgets('account: login/register locked with reasons; diagnostics reachable with SHA', (WidgetTester tester) async {
@@ -83,7 +88,7 @@ void main() {
     await tester.tap(find.text('Chẩn đoán kết nối'));
     await tester.pump();
     await tester.pump();
-    expect(find.textContaining(sha.substring(0, 12)), findsWidgets);
+    expect(find.textContaining(sha.substring(0, 12)), findsWidgets, reason: texts(tester));
     expect(find.textContaining('Còn sống'), findsWidgets);
   });
 
