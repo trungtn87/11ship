@@ -1,0 +1,23 @@
+name: food
+description: 11Food test app (frame): brand, navigation and the real server connection check. Login and business features are locked.
+publish_to: none
+# The first part is the version name shown to people; the build number is replaced by CI (--build-number).
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  n11_shared:
+    path: ../packages/n11_shared
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

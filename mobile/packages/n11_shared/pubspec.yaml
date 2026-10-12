@@ -1,0 +1,23 @@
+name: n11_shared
+description: Shared brand, theme, server connection check and widgets of the 11Food and 11Ship test apps.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  assets:
+    - assets/brand/logo-11-ui.png
+    - assets/brand/logo-11food-ui.png
+    - assets/brand/logo-11ship-ui.png

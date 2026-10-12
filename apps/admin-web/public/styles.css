@@ -90,17 +90,9 @@ input {
 
 .brand-logo {
   display: block;
-  width: 40px;
-  height: 40px;
+  width: auto;
+  height: 36px;
   object-fit: contain;
-}
-
-/* Text placeholder until the official logo asset exists in the repository; not a redrawn logo. */
-.brand-fallback {
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1;
 }
 
 .brand-name {
@@ -936,8 +928,12 @@ select {
   padding: 0 12px 0 20px;
 }
 
-.sidebar .brand-fallback {
-  color: var(--yellow);
+/* The logo's ink is dark: on the dark sidebar it sits on a light tile. */
+.sidebar .brand-logo {
+  height: 32px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: var(--white);
 }
 
 .sidebar .brand-name {
