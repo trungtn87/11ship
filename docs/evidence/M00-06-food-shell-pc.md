@@ -25,4 +25,4 @@ Không thêm đăng ký/login/OTP, giỏ hàng, đặt đơn, hồ sơ quán; nh
 [Trang chủ 390](M00-06/img/food-390-home.jpg) · [Tìm kiếm đã gõ 390](M00-06/img/food-390-search-typed.jpg) · [Đơn hàng 390](M00-06/img/food-390-orders.jpg) · [Tài khoản khách 390](M00-06/img/food-390-account-guest.jpg) · [Tìm kiếm 360](M00-06/img/food-360-search.jpg) · [Tài khoản 430](M00-06/img/food-430-account.jpg)
 
 ## Cách mở
-Double-click `tools/local/11Ship-Food.cmd` (cập nhật, build, mở `https://localhost:8444`). Lần đầu cần chứng chỉ theo `ops/runbooks/local-https-runtime.md` (Owner tự quyết tin cậy).
+Chạy `tools/local/11Ship-Update.cmd` rồi `tools/local/11Ship-Food.cmd` (build, mở `https://localhost:8444`); Food chưa tự cập nhật Git. Lần đầu cần chứng chỉ theo `ops/runbooks/local-https-runtime.md` (Owner tự quyết tin cậy).

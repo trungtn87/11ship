@@ -114,7 +114,7 @@ function Get-KnownSecrets {
   try {
     $envMap = Read-DotEnvFile
     foreach ($key in @($envMap.Keys)) {
-      if ($key -notmatch '(?i)(PASSWORD|SECRET|KEYRING|TOKEN|DATABASE_URL)') { continue }
+      if ($key -notmatch '(?i)(PASSWORD|SECRET|KEYRING|TOKEN|DATABASE_URL|HMAC_KEY)') { continue }
       $value = [string]$envMap[$key]
       # A URL is kept readable in logs; only its password is a secret.
       if ($key -notmatch '(?i)DATABASE_URL') { $list += $value }
@@ -1250,6 +1250,7 @@ function Get-ProbeFailCode([string]$Code) {
   if ($Code -eq 'PROBE_IDENTITY_MISMATCH') { return 'APP_IDENTITY_MISMATCH' }
   if ($Code -eq 'HEALTH_NOT_READY') { return 'BACKEND_NOT_READY' }
   if ($Code -eq 'HEALTH_FAILED') { return 'APP_HEALTH_FAILED' }
+  if ($Code -eq 'ADMIN_AUTH_UNAVAILABLE') { return 'ADMIN_AUTH_UNAVAILABLE' }
   return 'APP_START_FAILED'
 }
 function Start-AppProcess($Target,[string]$Stdout,[string]$Stderr) {
@@ -1291,6 +1292,9 @@ function Wait-App($Target,$Manifest,[int]$ExpectedProcessId,[string]$ExpectedSta
       $code = Get-ProbeFailCode $probe.Code
       # A different certificate or a different app on a port WE hold cannot heal by waiting.
       if ($probe.Code -in @('TLS_PIN_MISMATCH', 'PROBE_IDENTITY_MISMATCH')) { break }
+      # The backend that is running was started without administration login (for example before .env had the Admin settings):
+      # waiting does not change that. Only the Owner can restart it, through the launcher's own Stop.
+      if ($probe.Code -eq 'ADMIN_AUTH_UNAVAILABLE') { $problem += '; backend đang chạy chưa bật đăng nhập Admin - hãy chạy 11Ship-Stop.cmd rồi 11Ship-Admin.cmd để backend đọc lại .env'; break }
     }
     Start-Sleep -Milliseconds $script:AppPollMilliseconds
   } while ([DateTime]::UtcNow -lt $until)
@@ -1330,6 +1334,7 @@ function Open-ClientApp([string]$AppId) {
   # Read-only pre-flight, BEFORE the lock and before anything is changed: tools, then the certificate.
   Assert-Tools
   Assert-AppCertificate
+  if ($AppId -eq 'Admin') { Assert-AdminEnv }
   Use-LaunchLock 'app' { Open-ClientAppLocked $AppId }
 }
 function Open-ClientAppLocked([string]$AppId) {
@@ -1340,16 +1345,124 @@ function Open-ClientAppLocked([string]$AppId) {
   # database, the backend or a build is touched.
   $null = Get-TargetSituation $target $target.Action
   Write-Info "Mở $($entry.Name): bật database và backend, build rồi chạy máy chủ HTTPS $($entry.Url)."
-  Start-LauncherLocked
+  if ($AppId -eq 'Admin') { Start-LauncherLocked { Initialize-AdminAuth } } else { Start-LauncherLocked }
   $head = Get-HeadSha
   $manifest = Build-AppArtifact $target $head
   Start-OrReuseBackend $target $manifest $head
   Write-Ok "$($entry.Name) đã sẵn sàng tại $($entry.Url)."
   Open-AppBrowser $entry
 }
+# ---------------------------------------------------------------------------------------------
+# Web Admin (M00.08): what the phone apps do not need - administration login settings, limiter configuration, SYSTEM account
+# ---------------------------------------------------------------------------------------------
+# The login, the Authenticator step, the sessions and the Origin/CSRF rules are the existing backend (admin-auth) and the existing
+# front (scripts/admin-web-dev.mjs, which forwards ONLY /v1/admin-auth, /v1/admin and /v1/admin-activation and passes cookies,
+# Origin and x-csrf-token through unchanged). The launcher adds nothing to them: it checks that .env is set for this origin,
+# runs the two existing operator commands when they are needed, and proves the front and the login through the HTTPS port.
+$script:AdminOrigin = 'https://localhost:8443'
+# Read-only: lists the names of the .env settings that do not fit https://localhost:8443. Never returns a value.
+function Get-AdminEnvProblems($EnvMap) {
+  $problems = New-Object 'Collections.Generic.List[string]'
+  if ("$($EnvMap['ADMIN_AUTH_ENABLED'])".Trim() -cne 'true') { $problems.Add('ADMIN_AUTH_ENABLED (phải là true)') }
+  $origins = $null
+  try { $origins = @("$($EnvMap['ADMIN_AUTH_ALLOWED_ORIGINS'])" | ConvertFrom-Json) } catch { $origins = $null }
+  if ($null -eq $origins -or $origins.Count -ne 1 -or "$($origins[0])" -cne $script:AdminOrigin) { $problems.Add("ADMIN_AUTH_ALLOWED_ORIGINS (phải đúng một origin: [`"$script:AdminOrigin`"])") }
+  if ($EnvMap.ContainsKey('ADMIN_AUTH_TRUSTED_PROXY_IPS') -and "$($EnvMap['ADMIN_AUTH_TRUSTED_PROXY_IPS'])".Trim() -cne '[]') { $problems.Add('ADMIN_AUTH_TRUSTED_PROXY_IPS (phải là [] - front local không dùng proxy tin cậy)') }
+  $key = $null
+  try { $key = [Convert]::FromBase64String("$($EnvMap['ADMIN_RATE_LIMIT_HMAC_KEY'])".Trim()) } catch { $key = $null }
+  if ($null -eq $key -or $key.Length -ne 32) { $problems.Add('ADMIN_RATE_LIMIT_HMAC_KEY (base64 của đúng 32 byte ngẫu nhiên)') }
+  if ([string]::IsNullOrWhiteSpace("$($EnvMap['ADMIN_RATE_LIMIT_KEY_ID'])")) { $problems.Add('ADMIN_RATE_LIMIT_KEY_ID (ví dụ local-limiter-1)') }
+  return @($problems.ToArray())
+}
+# Before anything is changed. The launcher never writes .env (it holds the Owner's secrets) and never invents the limiter key.
+function Assert-AdminEnv {
+  $problems = @(Get-AdminEnvProblems (Read-DotEnvNames))
+  if (!$problems.Count) { return }
+  $nl = [Environment]::NewLine
+  $lines = @($problems | ForEach-Object { "  - $_" }) -join $nl
+  Fail ("Web Admin: .env chưa có cấu hình đăng nhập Admin cho $script:AdminOrigin. Cần sửa:$nl$lines${nl}Thêm vào .env (launcher không tự ghi .env; không commit file này):$nl  ADMIN_AUTH_ENABLED=true$nl  ADMIN_AUTH_ALLOWED_ORIGINS=[`"$script:AdminOrigin`"]$nl  ADMIN_AUTH_TRUSTED_PROXY_IPS=[]$nl  ADMIN_RATE_LIMIT_HMAC_KEY=<base64 của 32 byte ngẫu nhiên>$nl  ADMIN_RATE_LIMIT_KEY_ID=local-limiter-1${nl}Sinh khóa: node -e `"console.log(require('crypto').randomBytes(32).toString('base64'))`"${nl}Chưa làm gì: không cập nhật mã, không bật database hoặc backend, không mở trình duyệt.") 'ADMIN_ENV_INVALID'
+}
+# Runs one of the existing operator commands (scripts/admin-auth-*.js) with .env loaded by node itself. Credentials, if any, go
+# through STANDARD INPUT only - never an argument, an environment variable, a file or a log. The commands print one fixed word
+# or one fixed refusal code, and that text is redacted again here before it is shown.
+function Invoke-AdminCli([string]$ScriptName,[string]$StdinText='') {
+  $scriptPath = Join-Path (Join-Path $script:Repo 'scripts') $ScriptName
+  if (!(Test-Path -LiteralPath $scriptPath -PathType Leaf)) { Fail "Thiếu $scriptPath." 'APP_RUNTIME_MISSING' }
+  $previous = $ErrorActionPreference
+  $previousEncoding = $OutputEncoding
+  $ErrorActionPreference = 'Continue'
+  $lines = @()
+  $code = 1
+  try {
+    $OutputEncoding = New-Object Text.UTF8Encoding($false)
+    Push-Location -LiteralPath $script:Repo
+    try {
+      if ($StdinText) { $lines = @($StdinText | & node.exe '--env-file=.env' $scriptPath 2>&1) }
+      else { $lines = @(& node.exe '--env-file=.env' $scriptPath 2>&1) }
+      $code = $LASTEXITCODE
+    } finally { Pop-Location }
+  } catch { $lines = @(); $code = 1 }
+  finally { $OutputEncoding = $previousEncoding; $ErrorActionPreference = $previous }
+  $text = Protect-Text ((@($lines | ForEach-Object { "$_" }) -join ' ').Trim()) (Get-KnownSecrets)
+  return [pscustomobject]@{ ExitCode = $code; Text = $text }
+}
+function Get-AdminCliOutcome([string]$Text,[string]$Program) {
+  $m = [regex]::Match("$Text", '(^|\s)' + [regex]::Escape($Program) + ':\s*(created|unchanged)(\s|$)')
+  if ($m.Success) { return $m.Groups[2].Value }
+  return $null
+}
+function ConvertFrom-SecureStringPlain([Security.SecureString]$Secure) {
+  $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Secure)
+  try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
+}
+function Read-SystemPhone { return "$(Read-Host 'Số điện thoại tài khoản SYSTEM')".Trim() }
+function Read-SystemPassword([string]$Prompt) { return (Read-Host $Prompt -AsSecureString) }
+# Creates the SYSTEM account only when the DEV database has none. Interactive on purpose: the phone and the password are typed
+# by the Owner, held in memory, sent to the existing command on standard input and dropped. An account that exists is never
+# touched, so there is nothing to overwrite.
+function New-SystemAccount {
+  $nl = [Environment]::NewLine
+  if (Test-InputRedirected) {
+    Fail "DB DEV chưa có tài khoản SYSTEM và launcher không thể hỏi số điện thoại/mật khẩu khi đầu vào bị chuyển hướng.${nl}Hãy chạy lại 11Ship-Admin.cmd bằng cách bấm đúp (cửa sổ thường) để nhập; hoặc chạy thủ công theo ops\runbooks\local-https-runtime.md." 'ADMIN_SYSTEM_MISSING'
+  }
+  if (!(Confirm-Step 'DB DEV chưa có tài khoản SYSTEM (quản trị cao nhất). Tạo bây giờ?')) {
+    Fail 'Không có tài khoản SYSTEM thì không đăng nhập Web Admin được. Chưa tạo gì; chạy lại 11Ship-Admin.cmd khi sẵn sàng.' 'ADMIN_SYSTEM_MISSING'
+  }
+  $phone = Read-SystemPhone
+  $first = Read-SystemPassword 'Mật khẩu (không hiện khi gõ)'
+  $second = Read-SystemPassword 'Nhập lại mật khẩu'
+  $password = ConvertFrom-SecureStringPlain $first
+  $again = ConvertFrom-SecureStringPlain $second
+  if ([string]::IsNullOrEmpty($phone) -or [string]::IsNullOrEmpty($password)) { Fail 'Cần nhập cả số điện thoại và mật khẩu.' 'ADMIN_SYSTEM_INPUT_INVALID' }
+  if ($password -cne $again) { Fail 'Hai lần nhập mật khẩu không giống nhau. Chưa tạo gì.' 'ADMIN_SYSTEM_INPUT_INVALID' }
+  # Known to the redaction from now on, so no message of this run can ever echo it.
+  $script:ExtraSecrets = @($script:ExtraSecrets + @($password))
+  $json = ([ordered]@{ phone = $phone; password = $password } | ConvertTo-Json -Compress)
+  $result = $null
+  try { $result = Invoke-AdminCli 'admin-auth-bootstrap-system.js' $json }
+  finally { $json = $null; $password = $null; $again = $null; $first = $null; $second = $null }
+  $outcome = Get-AdminCliOutcome $result.Text 'admin-auth:bootstrap-system'
+  if ($result.ExitCode -ne 0 -or !$outcome) {
+    Fail "Không tạo được tài khoản SYSTEM ($($result.Text)). Chạy lại 11Ship-Admin.cmd để nhập lại; số điện thoại và mật khẩu không được lưu ở đâu cả." 'ADMIN_SYSTEM_BOOTSTRAP_FAILED'
+  }
+  Write-Ok "Tài khoản SYSTEM: $outcome (mật khẩu không được ghi vào log hay tệp nào)"
+}
+# Runs under the launch lock, after the migrations and before the backend starts.
+function Initialize-AdminAuth {
+  $limit = Invoke-AdminCli 'admin-auth-init-limit-config.js'
+  $outcome = Get-AdminCliOutcome $limit.Text 'admin-auth:init-limit-config'
+  if ($limit.ExitCode -ne 0 -or !$outcome) {
+    Fail "Không khởi tạo được cấu hình giới hạn đăng nhập Admin ($($limit.Text)). Kiểm tra ADMIN_RATE_LIMIT_HMAC_KEY/ADMIN_RATE_LIMIT_KEY_ID trong .env: nếu đã đổi khóa sau lần khởi tạo đầu thì DB DEV đang giữ khóa cũ." 'ADMIN_LIMIT_CONFIG_FAILED'
+  }
+  Write-Ok "Cấu hình giới hạn đăng nhập Admin: $outcome"
+  $count = Invoke-DevSql "SELECT count(*) FROM app.admin_memberships WHERE admin_role = 'SYSTEM'"
+  if ($null -eq $count) { Fail 'Không đọc được bảng quản trị của DB DEV (app.admin_memberships); migration đã áp dụng chưa?' 'ADMIN_STATE_UNAVAILABLE' }
+  if ("$count".Trim() -cne '0') { Write-Ok 'Tài khoản SYSTEM đã có trong DB DEV: giữ nguyên, không tạo lại và không đổi mật khẩu.'; return }
+  New-SystemAccount
+}
 function Get-AppStatusLines([string]$Head) {
   $lines = New-Object 'Collections.Generic.List[string]'
-  foreach ($appId in @('Food', 'Ship')) {
+  foreach ($appId in @('Admin', 'Food', 'Ship')) {
     $entry = $script:AppCatalog[$appId]
     $text = ''
     try {
@@ -1579,7 +1692,7 @@ function Invoke-LoggedStep([string[]]$NpmArgs,[string]$Log,[string[]]$Secrets) {
 # Commands
 # ---------------------------------------------------------------------------------------------
 function Start-Launcher { Use-LaunchLock 'start' { Start-LauncherLocked } }
-function Start-LauncherLocked {
+function Start-LauncherLocked([scriptblock]$BeforeBackend=$null) {
   Ensure-Dirs; Assert-Tools; $null = Assert-LocalEnv
   Compose @('up','-d','db-dev','db-test')
   Wait-ContainerHealthy 'ship11-db-dev'; Wait-ContainerHealthy 'ship11-db-test'
@@ -1592,6 +1705,9 @@ function Start-LauncherLocked {
   $manifest = Build-BackendArtifact $target $head
   # A pending migration is applied only after Owner confirmed; the launcher-owned old backend is stopped first.
   Confirm-DevMigrations { $null = Stop-TargetIfOwned $target 'trước khi áp dụng migration DEV' }
+  # M00.08: Web Admin needs the limiter configuration (and a SYSTEM account) BEFORE the backend starts with administration login on:
+  # it refuses to listen without the configuration row. Needs the migrated schema and the backend build, so it runs exactly here.
+  if ($BeforeBackend) { & $BeforeBackend }
   Start-OrReuseBackend $target $manifest $head
 }
 # ---------------------------------------------------------------------------------------------
@@ -1777,7 +1893,7 @@ function Stop-Launcher { Use-LaunchLock 'stop' { Stop-LauncherLocked } }
 function Stop-LauncherLocked {
   Ensure-Dirs
   # M00.05: the HTTPS fronts of the apps first (they only forward to the backend), each only if proven the launcher's own.
-  foreach ($appId in @('Food', 'Ship')) { Stop-AppTarget $appId }
+  foreach ($appId in @('Admin', 'Food', 'Ship')) { Stop-AppTarget $appId }
   $target = Get-BackendTarget
   $ownership = Get-TargetOwnership $target
   if ($ownership.Status -eq 'UNVERIFIED') { Fail (Get-UnverifiedText $target $ownership 'dừng backend') 'PROCESS_IDENTITY_UNVERIFIED' }
@@ -1836,9 +1952,9 @@ function Install-Shortcut {
 # or opens a browser. A design preview or any answer on a port is not the application (design M00 v2.1, R05/R08).
 # Runtime = repo-relative entry of the real local server for that surface; $null means none exists yet.
 $script:AppCatalog = [ordered]@{
-  # Launch = 'client': the launcher builds, runs, proves and opens the app (M00.05). Admin keeps its existing local server
-  # (scripts/admin-web-dev.mjs) but cannot be opened by the launcher until its own package (M00.08) provides what it needs.
-  Admin = [pscustomobject]@{ Name = 'Web Admin';             Url = 'https://localhost:8443'; Runtime = 'scripts/admin-web-dev.mjs'; Package = 'M00.05/M00.08'; Launch = '';       Key = '';         Short = 'Web Admin'; BuildScript = '';           Pending = 'khởi tạo SYSTEM/limit-config, ADMIN_AUTH_ALLOWED_ORIGINS cho https://localhost:8443 và cookie Secure chưa nằm trong trình tự mở của launcher' }
+  # Launch = 'client': the launcher builds, runs, proves and opens the app (M00.05; Web Admin since M00.08, with the extra
+  # Admin steps of Open-ClientApp / Initialize-AdminAuth: .env check, limiter configuration, SYSTEM account).
+  Admin = [pscustomobject]@{ Name = 'Web Admin';             Url = 'https://localhost:8443'; Runtime = 'scripts/admin-web-dev.mjs'; Package = 'M00.05/M00.08'; Launch = 'client'; Key = 'admin-web'; Short = 'Web Admin'; BuildScript = 'build:admin-web'; Pending = '' }
   Food  = [pscustomobject]@{ Name = '11Food (khách + quán)'; Url = 'https://localhost:8444'; Runtime = 'scripts/food-web-dev.mjs';  Package = 'M00.05/M00.06'; Launch = 'client'; Key = 'food-web'; Short = '11Food';    BuildScript = 'build:food-web'; Pending = '' }
   Ship  = [pscustomobject]@{ Name = '11Ship (xế)';           Url = 'https://localhost:8445'; Runtime = 'scripts/ship-web-dev.mjs';  Package = 'M00.05/M00.07'; Launch = 'client'; Key = 'ship-web'; Short = '11Ship';    BuildScript = 'build:ship-web'; Pending = '' }
 }
@@ -1851,7 +1967,7 @@ $script:OrchestratorCapabilities = [ordered]@{
   ExclusiveLock    = [pscustomobject]@{ Ready = $true;  Code = 'LAUNCH_LOCK_MISSING';       Package = 'M00.02'; Text = 'chưa có khóa độc quyền dùng chung cho update/build/migration/process' }
   ArtifactIdentity = [pscustomobject]@{ Ready = $true;  Code = 'ARTIFACT_IDENTITY_MISSING'; Package = 'M00.03'; Text = 'chưa có định danh artifact/process để xác minh đúng bản đang chạy' }
   # M00.05: the launch sequence of the phone apps (certificate check, backend, build, HTTPS front, proof, browser). An entry
-  # whose surface has no launch (Admin, until M00.08) still refuses with APP_NOT_READY and names what is missing.
+  # whose surface has no launch (none today; Admin got its own in M00.08) still refuses with APP_NOT_READY and names what is missing.
   AppLaunchSequence = [pscustomobject]@{ Ready = $true;  Code = 'APP_LAUNCH_SEQUENCE_MISSING'; Package = 'M00.05'; Text = 'chưa có trình tự mở ứng dụng (HTTPS local, máy chủ riêng của bề mặt, trình duyệt)' }
 }
 function Get-AppLaunchBlockers([string]$AppId) {
@@ -1860,7 +1976,9 @@ function Get-AppLaunchBlockers([string]$AppId) {
   $blockers = New-Object 'Collections.Generic.List[object]'
   $runtimeMissing = (!$entry.Runtime -or !(Test-Path -LiteralPath (Join-Path $script:Repo $entry.Runtime) -PathType Leaf))
   if (!$runtimeMissing -and $entry.Launch -eq 'client') {
-    foreach ($helper in @('scripts/client-web-check.mjs', 'scripts/client-web-build.mjs')) { if (!(Test-Path -LiteralPath (Join-Path $script:Repo $helper) -PathType Leaf)) { $runtimeMissing = $true } }
+    $helpers = @('scripts/client-web-check.mjs', 'scripts/client-web-build.mjs')
+    if ($AppId -eq 'Admin') { $helpers = @('scripts/client-web-check.mjs', 'scripts/admin-web-build.mjs', 'scripts/admin-auth-init-limit-config.js', 'scripts/admin-auth-bootstrap-system.js') }
+    foreach ($helper in $helpers) { if (!(Test-Path -LiteralPath (Join-Path $script:Repo $helper) -PathType Leaf)) { $runtimeMissing = $true } }
   }
   if ($runtimeMissing) {
     $blockers.Add([pscustomobject]@{ Code = 'APP_RUNTIME_MISSING'; Package = $entry.Package; Text = "chưa có máy chủ chạy thật cho $($entry.Name) (không dùng bản xem thử thay thế)" })

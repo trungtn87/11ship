@@ -25,10 +25,15 @@ import { defaultTlsPaths, inspectTlsFiles } from './lib/local-tls.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-/** The phone apps that have a PC runtime. Admin keeps scripts/admin-web-dev.mjs. */
+/**
+ * The apps that have a PC runtime and are described by a build manifest. The phone apps are served by this file; Web Admin
+ * (M00.08) keeps its own server, scripts/admin-web-dev.mjs, but reports the same identity, so it shares the manifest reader
+ * and the launcher's probe.
+ */
 export const CLIENT_RUNTIMES = {
   'food-web': { runtimeAppId: 'FOOD_WEB', port: 8444, name: '11Food' },
   'ship-web': { runtimeAppId: 'SHIP_WEB', port: 8445, name: '11Ship' },
+  'admin-web': { runtimeAppId: 'ADMIN_WEB', port: 8443, name: 'Web Admin', serve: false },
 };
 export const RUNTIME_PATH = '/__11ship/runtime';
 /** The ONLY backend routes reachable through the front, with the exact status/body each may carry. */
@@ -325,8 +330,8 @@ function serveStatic(pathname, request, response, distRoot) {
  */
 export function runClientWebDev(app, env = process.env) {
   const runtime = CLIENT_RUNTIMES[app];
-  if (runtime === undefined) {
-    console.error(`usage: client-web-dev <${Object.keys(CLIENT_RUNTIMES).join('|')}>`);
+  if (runtime === undefined || runtime.serve === false) {
+    console.error(`usage: client-web-dev <${Object.keys(CLIENT_RUNTIMES).filter((name) => CLIENT_RUNTIMES[name].serve !== false).join('|')}>`);
     process.exit(2);
   }
   const stop = (code, errorCode, message) => {

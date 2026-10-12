@@ -87,8 +87,10 @@ describe('issue #49 — Admin web hosted on the API origin', () => {
         expect(reply.body.equals(readFileSync(file))).toBe(true);
       }
     }
-    // Everything the browser needs is served; what is left is build residue that must not be public.
-    expect(unserved.filter((url) => !/(?:\.(?:map|d\.ts|ts|tsbuildinfo)|\/README\.md)$/.test(url))).toEqual([]);
+    // Everything the browser needs is served; what is left is build residue that must not be public. The build manifest (M00.08:
+    // commit and fingerprint for the local launcher) is part of that residue: it is never served by the hosted backend.
+    expect(unserved.filter((url) => !/(?:\.(?:map|d\.ts|ts|tsbuildinfo)|\/README\.md)$|^\/build-manifest\.json$/.test(url))).toEqual([]);
+    expect(unserved).toContain('/build-manifest.json');
     for (const url of ['/styles.css', '/js/dom/main.js']) {
       expect((await send('GET', url)).status).toBe(200);
     }
