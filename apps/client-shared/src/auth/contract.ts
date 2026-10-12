@@ -12,6 +12,10 @@ import { FailureCode } from '../states.js';
 //                  POST /v1/client-auth/logout    (Bearer) {}                                                                           -> 204
 //   profile        GET  /v1/customer/me/profile   (Bearer, no query/body)                                                               -> 200 {data:{user_id, full_name, version}} | {data:null}
 //                  PUT  /v1/customer/me/profile   (Bearer, Idempotency-Key) {full_name, expected_version}                              -> 200 {data:{user_id, full_name, version}}
+//   shop (11Food)  GET  /v1/onboarding/shop/profile       (Bearer, no query/body)                                                     -> 200 {data:null} | {data:{shop_id, name, contact_phone, zalo, facebook, address_text, pickup_lat, pickup_lng, service_area_id, status, accepting_orders, version}}
+//                  PUT  /v1/onboarding/shop/profile       (Bearer, Idempotency-Key) {name, contact_phone, address_text, zalo?, facebook?, pickup_lat?, pickup_lng?, service_area_id?, expected_version?} -> 201 (created) | 200 (updated) {data:{shop_id, status:"INCOMPLETE", version, role_granted:false}}
+//                  POST /v1/onboarding/shop/complete      (Bearer, Idempotency-Key) {expected_version}                                -> 200 {data:{shop_id, status:"ACTIVE", accepting_orders:false, role_granted:true, version}}
+//                  GET  /v1/onboarding/shop/service-areas (Bearer, no query/body)                                                     -> 200 {data:[{service_area_id, name}]}
 // Errors: {error:{code, message, request_id, details}}. Only `code` is read, and only from a closed list per operation;
 // `message`, `details` and `request_id` are never shown, stored or logged.
 //
@@ -31,6 +35,9 @@ export const AUTH_PATHS = {
   context: '/v1/client-auth/context',
   logout: '/v1/client-auth/logout',
   profile: '/v1/customer/me/profile',
+  shopProfile: '/v1/onboarding/shop/profile',
+  shopComplete: '/v1/onboarding/shop/complete',
+  shopServiceAreas: '/v1/onboarding/shop/service-areas',
 } as const;
 
 export const REGISTER_PURPOSE = 'REGISTER';
@@ -202,6 +209,132 @@ export function parseProfileResponse(body: unknown): ProfileWire | null | undefi
   return { userId, fullName, version };
 }
 
+// ---- shop onboarding (11Food) -------------------------------------------------------------------------------------
+
+export type ShopStatusWire = 'INCOMPLETE' | 'ACTIVE' | 'DISABLED';
+const SHOP_STATUS_VALUES: readonly string[] = ['INCOMPLETE', 'ACTIVE', 'DISABLED'];
+
+/** The owned shop as the server holds it. `version` is the expected_version of the next save / of completion. */
+export interface ShopProfileWire {
+  readonly shopId: string;
+  readonly name: string;
+  readonly contactPhone: string;
+  readonly zalo: string | null;
+  readonly facebook: string | null;
+  readonly addressText: string;
+  readonly pickupLat: number | null;
+  readonly pickupLng: number | null;
+  readonly serviceAreaId: string | null;
+  readonly status: ShopStatusWire;
+  readonly acceptingOrders: boolean;
+  readonly version: number;
+}
+
+const SHOP_KEYS = ['shop_id', 'name', 'contact_phone', 'zalo', 'facebook', 'address_text', 'pickup_lat', 'pickup_lng', 'service_area_id', 'status', 'accepting_orders', 'version'] as const;
+
+const isVersion = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
+const nullableText = (value: unknown, max: number): value is string | null => value === null || (typeof value === 'string' && value.length <= max * 2);
+
+/** GET /v1/onboarding/shop/profile: `null` = no shop yet ({data:null}); undefined = not this contract. */
+export function parseShopProfileResponse(body: unknown): ShopProfileWire | null | undefined {
+  if (isRecord(body) && hasExactKeys(body, ['data']) && body.data === null) {
+    return null;
+  }
+  const data = dataOf(body);
+  if (data === undefined || !hasExactKeys(data, SHOP_KEYS)) {
+    return undefined;
+  }
+  const { shop_id: shopId, name, contact_phone: phone, zalo, facebook, address_text: address, pickup_lat: lat, pickup_lng: lng, service_area_id: areaId, status, accepting_orders: accepting, version } = data;
+  const pointOk = (lat === null && lng === null) || (typeof lat === 'number' && Number.isFinite(lat) && Math.abs(lat) <= 90 && typeof lng === 'number' && Number.isFinite(lng) && Math.abs(lng) <= 180);
+  if (
+    !isUuid(shopId) ||
+    typeof name !== 'string' ||
+    name.length < 1 ||
+    name.length > 240 ||
+    typeof phone !== 'string' ||
+    !/^\+84[0-9]{9}$/.test(phone) ||
+    !nullableText(zalo, 160) ||
+    !nullableText(facebook, 300) ||
+    typeof address !== 'string' ||
+    address.length < 1 ||
+    address.length > 1000 ||
+    !pointOk ||
+    !(areaId === null || isUuid(areaId)) ||
+    typeof status !== 'string' ||
+    !SHOP_STATUS_VALUES.includes(status) ||
+    typeof accepting !== 'boolean' ||
+    !isVersion(version)
+  ) {
+    return undefined;
+  }
+  return {
+    shopId,
+    name,
+    contactPhone: phone,
+    zalo: zalo as string | null,
+    facebook: facebook as string | null,
+    addressText: address,
+    pickupLat: lat as number | null,
+    pickupLng: lng as number | null,
+    serviceAreaId: areaId as string | null,
+    status: status as ShopStatusWire,
+    acceptingOrders: accepting,
+    version,
+  };
+}
+
+export interface ShopSavedWire {
+  readonly shopId: string;
+  readonly version: number;
+}
+
+/** PUT /v1/onboarding/shop/profile: exactly {data:{shop_id, status:"INCOMPLETE", version, role_granted:false}}. */
+export function parseShopSaveResponse(body: unknown): ShopSavedWire | undefined {
+  const data = dataOf(body);
+  if (data === undefined || !hasExactKeys(data, ['shop_id', 'status', 'version', 'role_granted'])) {
+    return undefined;
+  }
+  return isUuid(data.shop_id) && data.status === 'INCOMPLETE' && isVersion(data.version) && data.role_granted === false ? { shopId: data.shop_id, version: data.version } : undefined;
+}
+
+export interface ShopCompletedWire {
+  readonly shopId: string;
+  readonly version: number;
+}
+
+/** POST /v1/onboarding/shop/complete: exactly {data:{shop_id, status:"ACTIVE", accepting_orders:false, role_granted:true, version}}. */
+export function parseShopCompleteResponse(body: unknown): ShopCompletedWire | undefined {
+  const data = dataOf(body);
+  if (data === undefined || !hasExactKeys(data, ['shop_id', 'status', 'accepting_orders', 'role_granted', 'version'])) {
+    return undefined;
+  }
+  return isUuid(data.shop_id) && data.status === 'ACTIVE' && data.accepting_orders === false && data.role_granted === true && isVersion(data.version) ? { shopId: data.shop_id, version: data.version } : undefined;
+}
+
+export interface ServiceAreaWire {
+  readonly serviceAreaId: string;
+  readonly name: string;
+}
+
+const MAX_SERVICE_AREAS = 500;
+
+/** GET /v1/onboarding/shop/service-areas: exactly {data:[{service_area_id, name}]}; each id once. */
+export function parseServiceAreasResponse(body: unknown): readonly ServiceAreaWire[] | undefined {
+  if (!isRecord(body) || !hasExactKeys(body, ['data']) || !Array.isArray(body.data) || body.data.length > MAX_SERVICE_AREAS) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const rows: ServiceAreaWire[] = [];
+  for (const row of body.data as unknown[]) {
+    if (!isRecord(row) || !hasExactKeys(row, ['service_area_id', 'name']) || !isUuid(row.service_area_id) || typeof row.name !== 'string' || row.name.length < 1 || row.name.length > 400 || seen.has(row.service_area_id)) {
+      return undefined;
+    }
+    seen.add(row.service_area_id);
+    rows.push({ serviceAreaId: row.service_area_id, name: row.name });
+  }
+  return rows;
+}
+
 // ---- registration config ------------------------------------------------------------------------------------------
 
 /** What the server says about the phone verification of a registration. The client never guesses it. */
@@ -267,7 +400,7 @@ export function errorCodeOf(body: unknown): string | undefined {
   return typeof code === 'string' && ERROR_CODE.test(code) ? code : undefined;
 }
 
-export type AuthOperation = 'config' | 'otpRequest' | 'otpVerify' | 'register' | 'login' | 'me' | 'context' | 'logout' | 'profileRead' | 'profileSave';
+export type AuthOperation = 'config' | 'otpRequest' | 'otpVerify' | 'register' | 'login' | 'me' | 'context' | 'logout' | 'profileRead' | 'profileSave' | 'shopRead' | 'shopSave' | 'shopComplete' | 'shopAreas';
 
 export interface MappedFailure {
   readonly code: FailureCode;
@@ -344,10 +477,30 @@ const TABLES: Readonly<Record<AuthOperation, Readonly<Record<string, Row>>>> = {
   logout: { BAD_REQUEST: ['BAD_REQUEST'], SERVICE_UNAVAILABLE: ['SERVICE_UNAVAILABLE'], INTERNAL_ERROR: ['UNKNOWN'] },
   profileRead: { ACCOUNT_DISABLED: ['ACCOUNT_DISABLED'], ROLE_NOT_AVAILABLE: ['ROLE_NOT_AVAILABLE'], SERVICE_UNAVAILABLE: ['SERVICE_UNAVAILABLE'], INTERNAL_ERROR: ['UNKNOWN'] },
   profileSave: { ...KEYED, VERSION_CONFLICT: ['VERSION_CONFLICT'], ACCOUNT_DISABLED: ['ACCOUNT_DISABLED'], ROLE_NOT_AVAILABLE: ['ROLE_NOT_AVAILABLE'] },
+  shopRead: { ACCOUNT_DISABLED: ['ACCOUNT_DISABLED'], ROLE_NOT_AVAILABLE: ['ROLE_NOT_AVAILABLE'], SERVICE_UNAVAILABLE: ['SERVICE_UNAVAILABLE'], INTERNAL_ERROR: ['UNKNOWN'] },
+  shopSave: {
+    ...KEYED,
+    INVALID_PHONE: ['INVALID_PHONE'],
+    VERSION_CONFLICT: ['VERSION_CONFLICT'],
+    SHOP_ONBOARDING_EXISTS: ['SHOP_EXISTS'],
+    INVALID_SERVICE_AREA: ['AREA_INVALID'],
+    ACCOUNT_DISABLED: ['ACCOUNT_DISABLED'],
+    ROLE_NOT_AVAILABLE: ['ROLE_NOT_AVAILABLE'],
+  },
+  shopComplete: {
+    ...KEYED,
+    VERSION_CONFLICT: ['VERSION_CONFLICT'],
+    SHOP_ONBOARDING_EXISTS: ['SHOP_EXISTS'],
+    SHOP_PROFILE_INCOMPLETE: ['SHOP_INCOMPLETE'],
+    INVALID_SERVICE_AREA: ['AREA_INVALID'],
+    ACCOUNT_DISABLED: ['ACCOUNT_DISABLED'],
+    ROLE_NOT_AVAILABLE: ['ROLE_NOT_AVAILABLE'],
+  },
+  shopAreas: { ACCOUNT_DISABLED: ['ACCOUNT_DISABLED'], ROLE_NOT_AVAILABLE: ['ROLE_NOT_AVAILABLE'], SERVICE_UNAVAILABLE: ['SERVICE_UNAVAILABLE'], INTERNAL_ERROR: ['UNKNOWN'] },
 };
 
-const KEYED_OPERATIONS: readonly AuthOperation[] = ['register', 'login', 'context', 'profileSave'];
-const AUTHENTICATED_OPERATIONS: readonly AuthOperation[] = ['me', 'context', 'logout', 'profileRead', 'profileSave'];
+const KEYED_OPERATIONS: readonly AuthOperation[] = ['register', 'login', 'context', 'profileSave', 'shopSave', 'shopComplete'];
+const AUTHENTICATED_OPERATIONS: readonly AuthOperation[] = ['me', 'context', 'logout', 'profileRead', 'profileSave', 'shopRead', 'shopSave', 'shopComplete', 'shopAreas'];
 
 /**
  * Server answer -> one typed failure. A code that this operation does not list is NOT trusted: INVALID_CREDENTIALS from a login

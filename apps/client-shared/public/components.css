@@ -150,6 +150,11 @@ button {
   gap: var(--gap-3);
 }
 
+/* A row of chips that may continue on a second line instead of running off a narrow screen. */
+.c-row-flex--wrap {
+  flex-wrap: wrap;
+}
+
 /* ---- Brand block ------------------------------------------------------------------------------------------------ */
 
 /* Text placeholder: the original logo asset is not in the repository and must not be redrawn (brand guideline). */

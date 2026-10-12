@@ -10,9 +10,11 @@ export const CLIENT_AUTH_ROUTE_PREFIX = 'client-auth';
 
 /**
  * The own-profile routes (M01.05) answer personal data of the caller, so every response of them, errors included, takes the
- * same transport headers. Each is a whole-segment prefix: '/v1/driver/me' does not cover any other '/v1/driver/...' route.
+ * same transport headers. So does the one read of Shop onboarding that is not a profile: the list of ACTIVE service areas a
+ * signed-in person may choose from. Each is a whole-segment prefix: '/v1/driver/me' does not cover any other '/v1/driver/...'
+ * route, and the Shop onboarding profile, save and complete routes are not covered by this entry.
  */
-export const CLIENT_PROFILE_ROUTE_PREFIXES: readonly string[] = ['customer/me/profile', 'driver/me'];
+export const CLIENT_PROFILE_ROUTE_PREFIXES: readonly string[] = ['customer/me/profile', 'driver/me', 'onboarding/shop/service-areas'];
 
 export function clientAuthTransportMiddleware(_request: unknown, response: MiddlewareResponse, next: () => void): void {
   response.setHeader('Cache-Control', 'no-store');

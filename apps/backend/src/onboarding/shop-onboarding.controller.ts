@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Body, Controller, Get, Headers, HttpCode, Post, Put, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { actorOf, AuthenticatedRequest } from '../auth/auth-principal';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
 import { ShopOnboardingService } from './shop-onboarding-service';
-import { parseShopCompleteBody, parseShopProfileBody } from './shop-onboarding-validation';
+import { ShopServiceAreaQueryService } from './shop-service-area-query-service';
+import { parseShopCompleteBody, parseShopProfileBody, rejectQueryAndBody } from './shop-onboarding-validation';
 import { ShopProfileQueryService } from './shop-profile-query-service';
 
 interface StatusSettableResponse {
@@ -25,6 +26,7 @@ export class ShopOnboardingController {
   constructor(
     private readonly onboarding: ShopOnboardingService,
     private readonly profiles: ShopProfileQueryService,
+    private readonly serviceAreas: ShopServiceAreaQueryService,
   ) {}
 
   /**
@@ -68,6 +70,17 @@ export class ShopOnboardingController {
     const input = parseShopCompleteBody(body);
     const outcome = await this.onboarding.complete(actorOf(principal), input, idempotencyKey, requestIdOf(request));
     return { data: outcome.payload };
+  }
+
+  /**
+   * The ACTIVE service areas a draft can name, so a client picks a real identifier. Read-only (no Idempotency-Key, no audit,
+   * no outbox), no query and no body. The transport headers (Cache-Control: no-store ...) come from
+   * clientAuthTransportMiddleware, installed in front of the body parser by configureApp.
+   */
+  @Get('service-areas')
+  async readServiceAreas(@Req() request: AuthenticatedRequest, @Query() query: unknown) {
+    rejectQueryAndBody(request, query);
+    return { data: await this.serviceAreas.activeChoices(this.#principal(request)) };
   }
 
   #principal(request: AuthenticatedRequest) {

@@ -23,7 +23,7 @@ describe('clientAuthTransportMiddleware', () => {
     expect(CLIENT_AUTH_ROUTE_PREFIX).toBe('client-auth');
   });
 
-  it('also covers exactly the own-profile routes (M01.05), each as a whole-segment prefix', () => {
-    expect([...CLIENT_PROFILE_ROUTE_PREFIXES]).toEqual(['customer/me/profile', 'driver/me']);
+  it('also covers exactly the own-profile routes (M01.05) and the Shop onboarding service-area list, each as a whole-segment prefix', () => {
+    expect([...CLIENT_PROFILE_ROUTE_PREFIXES]).toEqual(['customer/me/profile', 'driver/me', 'onboarding/shop/service-areas']);
   });
 });
