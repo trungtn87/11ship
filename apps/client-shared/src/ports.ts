@@ -4,9 +4,11 @@ import { FailureCode } from './states.js';
 // never builds a URL or reads a cookie. When a backend piece becomes available, only the port implementation and the flag
 // in features.ts change, the screens stay.
 //
-// The request/response shapes below are PROPOSALS written from the design set (10-m01-client-contract, 04-data-api). The
-// backend contract for the client auth endpoints is not published yet (M01.03/.04/.16), so nothing here is a promise about
-// the wire format; the real adapter will map the real contract onto these small types.
+// The request/response shapes below are the OLD PROPOSALS written from the design set before the backend existed. They are NOT
+// the wire format and they are too small for it: no verification_id, no phone proof, no consent versions, no device, no
+// identity/session. The real, tested adapter of the backend that is on main now is apps/client-shared/src/auth (createAuthClient);
+// its types are the reference. The screens keep using these ports (all NOT_WIRED) until the packages that connect them (M01.07-.10)
+// map the screen inputs onto the adapter, so nothing here changes in this package.
 
 export type Outcome<T> =
   | { readonly kind: 'ok'; readonly value: T }

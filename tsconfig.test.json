@@ -11,6 +11,9 @@
     "apps/client-shared/src/health.ts",
     "apps/client-shared/src/errors.ts",
     "apps/client-shared/src/environment.ts",
-    "apps/client-shared/src/connection.ts"
+    "apps/client-shared/src/connection.ts",
+    "apps/client-shared/src/validation.ts",
+    "apps/client-shared/src/states.ts",
+    "apps/client-shared/src/auth/**/*.ts"
   ]
 }
