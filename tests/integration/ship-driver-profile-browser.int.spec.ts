@@ -202,7 +202,7 @@ describe('M01 — 11Ship driver profile in a real browser against the real backe
       await again.fill('#phone', phone.local);
       await again.fill('#password', PASSWORD);
       await again.click('#login-submit');
-      await again.waitFor(`location.pathname === '/' && document.body.innerText.includes('Đã có hồ sơ xế')`);
+      await again.waitFor(`location.pathname === '/' && document.body.innerText.includes('Hồ sơ đang chờ duyệt')`);
       await again.click('a[href="/account"]');
       await again.waitFor(`location.pathname === '/account'`);
       await clickRow(again, 'Hồ sơ xế');
