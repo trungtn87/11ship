@@ -120,7 +120,7 @@ jobs:
             printf '%s' "$ANDROID_TEST_KEYSTORE_BASE64" | base64 -d > "$work/test.jks"
             ks_pass="$ANDROID_TEST_KEYSTORE_PASSWORD"; key_alias="$ANDROID_TEST_KEY_ALIAS"; key_pass="$ANDROID_TEST_KEY_PASSWORD"
           else
-            ks_pass="$(head -c 18 /dev/urandom | base64 | tr -d '/+=\n')"; key_alias=ci-throwaway; key_pass="$ks_pass"
+            ks_pass="$(openssl rand -hex 16)"; key_alias=ci-throwaway; key_pass="$ks_pass"
             keytool -genkeypair -keystore "$work/test.jks" -storetype PKCS12 -alias "$key_alias" -keyalg RSA -keysize 2048 -validity 30 \
               -dname "CN=11Ship CI throwaway" -storepass "$ks_pass" -keypass "$key_pass"
           fi

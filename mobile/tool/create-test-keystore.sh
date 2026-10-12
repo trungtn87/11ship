@@ -7,7 +7,7 @@ repo="${1:-trungtn87/11ship}"
 alias_name="n11-test"
 dir="$(mktemp -d)"
 store="$dir/n11-test.jks"
-password="$(head -c 24 /dev/urandom | base64 | tr -d '/+=\n' | head -c 24)"
+password="$(openssl rand -hex 16)"
 
 keytool -genkeypair -v -keystore "$store" -storetype PKCS12 -alias "$alias_name" -keyalg RSA -keysize 2048 -validity 10000 \
   -dname "CN=11Ship test, O=11Ship" -storepass "$password" -keypass "$password" >/dev/null
