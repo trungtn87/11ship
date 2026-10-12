@@ -1724,7 +1724,7 @@ try {
       Add-FakeProcess 7901 ([DateTime]::UtcNow.ToString('o')) '' @($script:FakeNodeExe, 'x.js')
       Add-FakeListener $address 7901 8445
       Expect-Fail 'PORT_IN_USE' "Ship refuses a port held on $address by another process" { Open-AppLauncher 'Ship' }
-      Check ($script:AppStarts.Count -eq 0 -and $script:Browser.Count -eq 0 -and $script:StopCalls.Count -eq 0) "foreign listener on $address: nothing started, opened or stopped"
+      Check ($script:AppStarts.Count -eq 0 -and $script:Browser.Count -eq 0 -and $script:StopCalls.Count -eq 0) "foreign listener on ${address}: nothing started, opened or stopped"
     }
     New-AppSandbox
     $script:ListenersUnreadable = $true
@@ -1737,10 +1737,10 @@ try {
       Write-Text (Get-AppTarget 'Food').RegistryFile $bad
       $message = Get-FailMessage { Open-AppLauncher 'Food' }
       Check ($message.Contains(': PROCESS_IDENTITY_UNVERIFIED)') -and $message.Contains('food-web.json')) "unprovable record $bad -> PROCESS_IDENTITY_UNVERIFIED naming food-web.json"
-      Check ((Get-ComposeUps) -eq 0 -and $script:BackendStarts -eq 0 -and $script:AppBuilds.Count -eq 0 -and $script:AppStarts.Count -eq 0 -and $script:Browser.Count -eq 0) "unprovable record $bad: no database, backend, build, front or browser"
-      Check ((Get-Content -Raw -LiteralPath (Get-AppTarget 'Food').RegistryFile) -ceq $bad) "unprovable record $bad: kept as it was"
+      Check ((Get-ComposeUps) -eq 0 -and $script:BackendStarts -eq 0 -and $script:AppBuilds.Count -eq 0 -and $script:AppStarts.Count -eq 0 -and $script:Browser.Count -eq 0) "unprovable record ${bad}: no database, backend, build, front or browser"
+      Check ((Get-Content -Raw -LiteralPath (Get-AppTarget 'Food').RegistryFile) -ceq $bad) "unprovable record ${bad}: kept as it was"
       $stopMessage = Get-FailMessage { Stop-Launcher }
-      Check ($stopMessage.Contains(': PROCESS_IDENTITY_UNVERIFIED)') -and $script:StopCalls.Count -eq 0) "unprovable record $bad: Stop stops nothing"
+      Check ($stopMessage.Contains(': PROCESS_IDENTITY_UNVERIFIED)') -and $script:StopCalls.Count -eq 0) "unprovable record ${bad}: Stop stops nothing"
     }
 
     # ---- a record of an ended process is replaced
