@@ -10,16 +10,18 @@
 // Design build (--design): apps/<app>/dist-design. Adds design.html (the preview page). The preview is a separate page that
 // creates no session and calls no backend.
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { artifactFingerprint } from './lib/artifact-fingerprint.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const CLIENT_APPS = ['food-web', 'ship-web', 'ui-foundation'];
 /** Apps that exist only as a design preview (no real entry page). */
 const DESIGN_ONLY = new Set(['ui-foundation']);
+/** Label of the design package the build follows (the launcher records the same value for the backend). */
+export const DESIGN_VERSION = '2.0.1';
 
 function walk(dir) {
   const out = [];
@@ -90,16 +92,21 @@ export function buildClientWeb(app, { design = false, outDir, quiet = false } = 
     throw new Error(`${app} build output is incomplete: ${entry} is missing`);
   }
 
-  // Fingerprint of the exact output, so an old build can never be mistaken for a new one.
-  const hash = createHash('sha256');
-  for (const file of walk(dist).sort()) {
-    if (file.endsWith('build-manifest.json')) {
-      continue;
-    }
-    hash.update(relative(dist, file));
-    hash.update(readFileSync(file));
-  }
-  const manifest = { app_id: app, mode: design ? 'design' : 'live', source_sha: sourceSha(), fingerprint: hash.digest('hex'), files: walk(dist).length };
+  // Fingerprint of the exact output, so an old build can never be mistaken for a new one. Same algorithm as the local launcher
+  // (scripts/lib/artifact-fingerprint.mjs), which recomputes it to prove that the folder it serves is the one described here.
+  // The manifest carries what the diagnostics screen reads (app_id, mode, source_sha, fingerprint) and what the launcher and
+  // /__11ship/runtime need (build_fingerprint = fingerprint, built_at, design_version).
+  const fingerprint = artifactFingerprint(dist);
+  const manifest = {
+    app_id: app,
+    mode: design ? 'design' : 'live',
+    source_sha: sourceSha(),
+    fingerprint,
+    build_fingerprint: fingerprint,
+    built_at: new Date().toISOString(),
+    design_version: DESIGN_VERSION,
+    files: walk(dist).length,
+  };
   writeFileSync(join(dist, 'build-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   return { dist, manifest, size: walk(dist).reduce((sum, file) => sum + statSync(file).size, 0) };
 }

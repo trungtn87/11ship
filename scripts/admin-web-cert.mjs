@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Creates a self-signed certificate for the LOCAL admin web front (https://localhost:8443) in .local/admin-web-tls,
+// Creates a self-signed certificate for the LOCAL web fronts (admin https://localhost:8443, 11Food :8444, 11Ship :8445) in .local/admin-web-tls,
 // valid 30 days, for localhost and 127.0.0.1. Needs the openssl command. A browser will warn about it once; a locally
-// trusted certificate (for example from mkcert) can be used instead through ADMIN_WEB_TLS_CERT/ADMIN_WEB_TLS_KEY.
+// trusted certificate (for example from mkcert) can be used instead through ADMIN_WEB_TLS_CERT/ADMIN_WEB_TLS_KEY (Food/Ship: CLIENT_WEB_TLS_CERT/KEY).
 // The key never leaves .local/ (git-ignored).
 import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdirSync } from 'node:fs';
