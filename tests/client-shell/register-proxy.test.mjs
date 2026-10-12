@@ -136,13 +136,23 @@ const ROUTES = [
 const TOKEN = 'ACCESS_TOKEN_' + 'a'.repeat(30);
 const LOGIN_BODY = JSON.stringify({ phone: '0987654321', password: 'Mật khẩu  có dấu cách ', device: { device_id: 'web-1', platform: 'WEB', app: 'FOOD' } });
 const PROFILE_BODY = JSON.stringify({ full_name: 'Nguyễn Văn An', expected_version: 1 });
+const CONTEXT_BODY = JSON.stringify({ context: 'SHOP_OWNER' });
+const SHOP_BODY = JSON.stringify({ name: 'Quán A', contact_phone: '0987654321', address_text: '1 Đường A', zalo: null, facebook: null, pickup_lat: null, pickup_lng: null, service_area_id: null, expected_version: null });
+const COMPLETE_BODY = JSON.stringify({ expected_version: 1 });
 const ACCOUNT_ROUTES = [
   { name: 'login', method: 'POST', path: '/v1/client-auth/login', body: LOGIN_BODY, keyed: true, bearer: false },
   { name: 'me', method: 'GET', path: '/v1/client-auth/me', keyed: false, bearer: true },
   { name: 'logout', method: 'POST', path: '/v1/client-auth/logout', body: '{}', keyed: false, bearer: true, noContent: true },
   { name: 'profile read', method: 'GET', path: '/v1/customer/me/profile', keyed: false, bearer: true },
   { name: 'profile save', method: 'PUT', path: '/v1/customer/me/profile', body: PROFILE_BODY, keyed: true, bearer: true },
+  { name: 'context', method: 'POST', path: '/v1/client-auth/context', body: CONTEXT_BODY, keyed: true, bearer: true },
+  // The shop onboarding of 11Food (and only 11Food: see the 11Ship test below).
+  { name: 'shop profile read', method: 'GET', path: '/v1/onboarding/shop/profile', keyed: false, bearer: true },
+  { name: 'shop profile save', method: 'PUT', path: '/v1/onboarding/shop/profile', body: SHOP_BODY, keyed: true, bearer: true },
+  { name: 'shop complete', method: 'POST', path: '/v1/onboarding/shop/complete', body: COMPLETE_BODY, keyed: true, bearer: true },
+  { name: 'shop service areas', method: 'GET', path: '/v1/onboarding/shop/service-areas', keyed: false, bearer: true },
 ];
+const SHOP_ONLY_PATHS = ['/v1/onboarding/shop/profile', '/v1/onboarding/shop/complete', '/v1/onboarding/shop/service-areas'];
 
 describe('11Food front: exactly the register routes (+ the read-only mode route) and the account routes', () => {
   let backend;
@@ -157,7 +167,7 @@ describe('11Food front: exactly the register routes (+ the read-only mode route)
   });
 
   it('the route table is the register routes, the config and the account routes - nothing else', () => {
-    assert.deepEqual(FOOD_AUTH_ROUTES.map((route) => route.id), ['otp-request', 'otp-verify', 'register', 'config', 'login', 'me', 'logout', 'profile-read', 'profile-save']);
+    assert.deepEqual(FOOD_AUTH_ROUTES.map((route) => route.id), ['otp-request', 'otp-verify', 'register', 'config', 'login', 'me', 'logout', 'profile-read', 'profile-save', 'context', 'shop-profile-read', 'shop-profile-save', 'shop-complete', 'shop-service-areas']);
   });
 
   for (const route of ROUTES) {
@@ -246,7 +256,10 @@ describe('11Food front: exactly the register routes (+ the read-only mode route)
       '/v1/auth/phone-verifications/../login',
       '/v1/auth/login',
       '/v1/auth/password-resets',
-      '/v1/client-auth/context',
+      '/v1/onboarding',
+      '/v1/onboarding/shop',
+      '/v1/onboarding/shop/profile/x',
+      '/v1/onboarding/driver/profile',
       '/v1/customer/me',
       '/v1/customer/me/profile/x',
       '/v1/customer/me/driver-profile',
@@ -392,10 +405,17 @@ describe('11Ship front: the same account routes as 11Food and nothing else', () 
         assert.equal(backend.seen.length, 1, route.path);
       }
       backend.seen.length = 0;
-      for (const path of ['/v1/client-auth/context', '/v1/orders', '/v1/drivers/me', '/v1/admin-auth/state']) {
-        assert.equal((await call(front.port, path, { body: OTP_BODY, headers: { 'idempotency-key': KEY } })).status, 404, path);
+      for (const path of [...SHOP_ONLY_PATHS, '/v1/orders', '/v1/drivers/me', '/v1/admin-auth/state']) {
+        for (const method of ['GET', 'POST', 'PUT']) {
+          const answer = await call(front.port, path, { method, ...(method === 'GET' ? { contentType: null, origin: null } : { body: OTP_BODY }), headers: { 'idempotency-key': KEY, authorization: `Bearer ${TOKEN}` } });
+          assert.equal(answer.status, 404, `${method} ${path}`);
+        }
       }
-      assert.equal(backend.seen.length, 0);
+      assert.equal(backend.seen.length, 0, 'the shop onboarding is 11Food only: 11Ship never reaches it');
+      // The context switch is a client-auth route, shared by both apps.
+      const context = await call(front.port, '/v1/client-auth/context', { body: CONTEXT_BODY, headers: { 'idempotency-key': KEY, authorization: `Bearer ${TOKEN}` } });
+      assert.equal(context.status, 201);
+      assert.equal(backend.seen.length, 1);
     } finally {
       await front.stop();
       await backend.stop();

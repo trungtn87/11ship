@@ -5,6 +5,7 @@ import type { FeatureId } from './features.js';
 import type { ClientPorts } from './ports.js';
 import type { GuardHandle, LeaveGuard } from './leave.js';
 import type { RegisterController } from './register-flow.js';
+import type { ShopController } from './shop-flow.js';
 import type { Access } from './router.js';
 
 // What a screen is, and what it may use. The SAME screen code runs in two places: the real app (mode `live`) and the
@@ -45,6 +46,8 @@ export interface AccountView {
   readonly fullName: string | null;
   readonly phoneMasked: string;
   readonly roles: readonly string[];
+  /** The context the server selected for this session (CUSTOMER, SHOP_OWNER, DRIVER), or null when none is selected. */
+  readonly activeRole?: string | null;
   /** Shop owner only. */
   readonly shop?: { readonly state: 'NONE' | 'DRAFT' | 'COMPLETE'; readonly name?: string };
   /** Driver only. */
@@ -83,6 +86,11 @@ export interface ScreenEnv {
    * (app.ts). Screens read the server's answers through it and never see a token. Undefined = those actions stay unavailable.
    */
   readonly auth?: AuthClient;
+  /**
+   * The real shop onboarding (F20-F23: save/resume the profile, pickup position, area, complete, switch context), present ONLY where it
+   * is connected: the 11Food app on a local https runtime (app.ts). Undefined = those actions stay unavailable with their reason.
+   */
+  readonly shop?: ShopController;
   /** Signs out: the local session is dropped first, then the server is asked to revoke it. Present with `auth`. */
   readonly signOut?: () => Promise<LogoutResult>;
   /** Test build: OTP screens tell the person the SMS is simulated and where the code is read (PC tool), never show the code. */

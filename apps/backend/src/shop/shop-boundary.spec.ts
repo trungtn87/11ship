@@ -61,28 +61,31 @@ describe('Onboarding coordinator boundary', () => {
     expect(all).toEqual([]);
   });
 
-  it('Auth does not import Onboarding, and Onboarding imports Auth only for the guard, the participants and two pure helpers', () => {
+  it('Auth does not import Onboarding, and Onboarding imports Auth only for the guard, the participants, the CUSTOMER role read of the service-area list and two pure helpers', () => {
     const authFiles = filesOf('auth').filter((file) => /from '\.\.\/onboarding\//.test(codeOf(file)));
     expect(authFiles).toEqual([]);
     const imports = codeIn('onboarding').match(/from '\.\.\/auth\/[^']+'/g) ?? [];
     // Besides the guard and the participants (role grant, session authorization), the strict body parsers reuse Auth's text and phone helpers.
+    // The service-area list (read side) also asks the user repository whether the caller holds the CUSTOMER role.
     expect([...new Set(imports)].sort()).toEqual([
+      "from '../auth/auth-constants'",
       "from '../auth/auth-principal'",
       "from '../auth/auth-validation'",
       "from '../auth/phone'",
       "from '../auth/role-grant-participant'",
       "from '../auth/session-auth.guard'",
       "from '../auth/session-authorization-participant'",
+      "from '../auth/user-repository'",
     ]);
   });
 
   it('issues no SQL itself: it composes repositories and participants inside the executor transaction', () => {
     const code = codeIn('onboarding');
     expect(code).not.toMatch(/\.query\(|DATABASE_POOL|from 'pg'|BEGIN|COMMIT|ROLLBACK/);
-    // Commands never open a transaction of their own. The single exception is the read side (resume), which
-    // has no idempotency record to run under: only that file may name the transaction manager.
+    // Commands never open a transaction of their own. The exceptions are the two read sides (resume, and the list of
+    // ACTIVE service areas), which have no idempotency record to run under: only those files may name the transaction manager.
     const openers = filesOf('onboarding').filter((file) => /TransactionManager|withTransaction/.test(codeOf(file)));
-    expect(openers).toEqual(['onboarding/shop-profile-query-service.ts']);
+    expect([...openers].sort()).toEqual(['onboarding/shop-profile-query-service.ts', 'onboarding/shop-service-area-query-service.ts']);
   });
 
   it('the read side is one read: a single transaction, a single M02 query, no executor, audit, outbox or role grant', () => {
@@ -96,6 +99,29 @@ describe('Onboarding coordinator boundary', () => {
     const read = controller.slice(controller.indexOf("@Get('profile')"), controller.indexOf("@Put('profile')"));
     expect(read).toContain('this.profiles.ownedProfile(principal.userId)');
     expect(read).not.toMatch(/idempotency|@Body|this\.onboarding\./i);
+  });
+
+  it('the service-area list is one read: a single transaction, the client session authority, the CUSTOMER role and one M02 read; no executor, audit, outbox or role grant', () => {
+    const query = codeOf('onboarding/shop-service-area-query-service.ts');
+    expect(query.split('withTransaction(').length - 1).toBe(1);
+    expect(query.split('this.serviceAreas.').length - 1).toBe(1);
+    expect(query).toContain('this.serviceAreas.listActive(context)');
+    expect(query).toContain("this.authority.lock(context, principal, 'share')");
+    expect(query).not.toMatch(/Idempotency|AuditWriter|OutboxWriter|RoleGrantParticipant|lockShared|lockOwnedShop|FOR (UPDATE|SHARE)/);
+
+    const controller = codeOf('onboarding/shop-onboarding.controller.ts');
+    const read = controller.slice(controller.indexOf("@Get('service-areas')"), controller.indexOf('#principal(request: AuthenticatedRequest)'));
+    expect(read).toContain('this.serviceAreas.activeChoices(');
+    expect(read).toContain('rejectQueryAndBody(request, query)');
+    expect(read).not.toMatch(/idempotency|@Body|this\.onboarding\./i);
+  });
+
+  it('the active-area read of M02 is one plain statement: only ACTIVE rows, a stable order, no lock and no write', () => {
+    const repository = codeOf('shop/service-area-repository.ts');
+    const list = repository.slice(repository.indexOf('async listActive('));
+    expect(list.split('context.query').length - 1).toBe(1);
+    expect(list).toMatch(/WHERE status = 'ACTIVE'\s+ORDER BY name ASC, service_area_id ASC/);
+    expect(list).not.toMatch(/FOR (UPDATE|SHARE)|\b(INSERT|UPDATE|DELETE)\b/);
   });
 
   it('M02 reads the owned shop in ONE joined statement that takes no lock', () => {

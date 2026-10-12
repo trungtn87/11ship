@@ -1,6 +1,6 @@
 import { REAL_TIMERS, Timers } from '../health.js';
 import { FailureCode } from '../states.js';
-import { isCompleteOtp, isValidPassword, isValidPhone, isWellFormed, normalizePersonName } from '../validation.js';
+import { ADDRESS_MAX, FACEBOOK_MAX, isCompleteOtp, isValidCoordinatePair, isValidPassword, isValidPhone, isWellFormed, normalizeOptionalLink, normalizePersonName, normalizeRequiredText, SHOP_NAME_MAX, ZALO_MAX } from '../validation.js';
 import {
   AUTH_PATHS,
   AuthIdentity,
@@ -15,6 +15,10 @@ import {
   MappedFailure,
   parseIdentityResponse,
   parseProfileResponse,
+  parseServiceAreasResponse,
+  parseShopCompleteResponse,
+  parseShopProfileResponse,
+  parseShopSaveResponse,
   parseOtpIssued,
   parseOtpVerified,
   parseSignInResponse,
@@ -24,6 +28,8 @@ import {
   REGISTER_PURPOSE,
   ProfileWire,
   RegistrationVerificationMode,
+  ServiceAreaWire,
+  ShopProfileWire,
 } from './contract.js';
 import { FlowGeneration, SessionListener, SessionState, SessionStore, SessionTicket } from './session.js';
 import { AUTH_TIMEOUT_MS, createTransport, TransportRequest, TransportResult } from './transport.js';
@@ -90,6 +96,33 @@ export interface ProfileView {
   readonly version: number;
 }
 
+/** The owned shop as the server holds it (GET /v1/onboarding/shop/profile). */
+export type ShopView = ShopProfileWire;
+export type ServiceAreaChoice = ServiceAreaWire;
+
+export interface ShopSaveInput {
+  readonly name: string;
+  readonly contactPhone: string;
+  readonly addressText: string;
+  readonly zalo: string | null;
+  readonly facebook: string | null;
+  /** Both or neither. Only a position the person took and confirmed. */
+  readonly pickup: { readonly lat: number; readonly lng: number } | null;
+  readonly serviceAreaId: string | null;
+  /** null = create the draft; the exact current version = update it. */
+  readonly expectedVersion: number | null;
+}
+
+export interface ShopSaved {
+  readonly shopId: string;
+  readonly version: number;
+}
+
+export interface ShopCompleted {
+  readonly shopId: string;
+  readonly version: number;
+}
+
 export interface RegisterInput {
   readonly phone: string;
   /** Sent exactly as typed: not trimmed, not normalized. */
@@ -148,6 +181,17 @@ export interface AuthClient {
    * overwritten, the screen reads the current profile and lets the person decide. A saved name is taken from the server's answer.
    */
   saveProfile(input: { readonly fullName: string; readonly expectedVersion: number }): Promise<AuthResult<ProfileView>>;
+  /** GET /v1/onboarding/shop/profile. `null` = this person has no shop yet. */
+  readShop(): Promise<AuthResult<ShopView | null>>;
+  /** GET /v1/onboarding/shop/service-areas: the ACTIVE areas, in the server's order. An empty list is a valid answer. */
+  readServiceAreas(): Promise<AuthResult<readonly ServiceAreaChoice[]>>;
+  /**
+   * PUT /v1/onboarding/shop/profile. One intent = one Idempotency-Key + body: an unknown outcome keeps both and the next call with
+   * the SAME input re-sends them (never automatically). VERSION_CONFLICT overwrites nothing.
+   */
+  saveShop(input: ShopSaveInput): Promise<AuthResult<ShopSaved>>;
+  /** POST /v1/onboarding/shop/complete {expected_version}. Same one-intent rule. It mints no token and selects no context. */
+  completeShop(input: { readonly expectedVersion: number }): Promise<AuthResult<ShopCompleted>>;
   /** Drops the session, the pending intents and every in-flight answer (the app closing a screen tree). */
   dispose(): void;
 }
@@ -165,7 +209,7 @@ export interface AuthClientOptions {
   readonly deviceId?: string;
 }
 
-type Intent = 'register' | 'login' | 'context' | 'profile';
+type Intent = 'register' | 'login' | 'context' | 'profile' | 'shopSave' | 'shopComplete';
 const NO_RETRY: undefined = undefined;
 
 const fail = (code: FailureCode, unresolved = false, retryAfterSeconds?: number): AuthResult<never> =>
@@ -222,6 +266,8 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
       seenGeneration = generation;
       intents.delete('context');
       intents.delete('profile');
+      intents.delete('shopSave');
+      intents.delete('shopComplete');
     }
   });
 
@@ -241,8 +287,8 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     return promise;
   }
 
-  function classify<B>(operation: AuthOperation, result: TransportResult, expectedStatus: number, parse: (body: unknown) => B | undefined): Classified<B> {
-    const keyed = operation === 'register' || operation === 'login' || operation === 'context' || operation === 'profileSave';
+  function classify<B>(operation: AuthOperation, result: TransportResult, expectedStatus: number | readonly number[], parse: (body: unknown) => B | undefined): Classified<B> {
+    const keyed = operation === 'register' || operation === 'login' || operation === 'context' || operation === 'profileSave' || operation === 'shopSave' || operation === 'shopComplete';
     switch (result.kind) {
       case 'aborted':
         return { kind: 'aborted' };
@@ -251,7 +297,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
       case 'network':
         return { kind: 'failure', result: fail('OFFLINE', keyed), mapped: undefined };
       case 'response': {
-        if (result.status === expectedStatus) {
+        if (typeof expectedStatus === 'number' ? result.status === expectedStatus : expectedStatus.includes(result.status)) {
           const parsed = parse(result.body);
           return parsed === undefined ? { kind: 'failure', result: fail('BAD_RESPONSE', keyed), mapped: undefined } : { kind: 'ok', body: parsed };
         }
@@ -559,6 +605,103 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     });
   }
 
+  // ---- own shop (11Food onboarding) ------------------------------------------------------------------------------
+  /** One authenticated shop call: the answer is applied to nothing in the session, only returned, and only if the session is still the one that asked. */
+  async function shopCall<T>(
+    operation: 'shopRead' | 'shopSave' | 'shopComplete' | 'shopAreas',
+    request: Omit<TransportRequest, 'bearer' | 'signal'>,
+    expectedStatus: number | readonly number[],
+    parse: (body: unknown) => T | undefined,
+    pending: { readonly intent: Intent; readonly entry: IntentEntry } | undefined,
+  ): Promise<AuthResult<T>> {
+    const ticket = store.ticket();
+    const bearer = store.bearer();
+    if (bearer === undefined) {
+      return fail('SESSION_EXPIRED');
+    }
+    const controller = new AbortController();
+    const untrack = store.track(controller);
+    let result: TransportResult;
+    try {
+      result = await transport.send({ ...request, bearer, signal: controller.signal });
+    } finally {
+      untrack();
+    }
+    const outcome = classify<T>(operation, result, expectedStatus, parse);
+    if (outcome.kind === 'aborted' || !store.isCurrent(ticket)) {
+      return { kind: 'stale' };
+    }
+    if (outcome.kind === 'failure') {
+      if (outcome.mapped?.sessionInvalid === true) {
+        store.invalidate(ticket);
+      }
+      if (pending !== undefined) {
+        settle(pending.intent, pending.entry, outcome.result);
+      }
+      return outcome.result as AuthResult<T>;
+    }
+    if (pending !== undefined) {
+      dropIntent(pending.intent, pending.entry);
+    }
+    return { kind: 'ok', value: outcome.body };
+  }
+
+  function readShop(): Promise<AuthResult<ShopView | null>> {
+    return single('shopRead', '', () => shopCall<ShopView | null>('shopRead', { method: 'GET', path: AUTH_PATHS.shopProfile }, 200, parseShopProfileResponse, NO_RETRY));
+  }
+
+  function readServiceAreas(): Promise<AuthResult<readonly ServiceAreaChoice[]>> {
+    return single('shopAreas', '', () => shopCall<readonly ServiceAreaChoice[]>('shopAreas', { method: 'GET', path: AUTH_PATHS.shopServiceAreas }, 200, parseServiceAreasResponse, NO_RETRY));
+  }
+
+  function saveShop(input: ShopSaveInput): Promise<AuthResult<ShopSaved>> {
+    const name = typeof input.name === 'string' ? normalizeRequiredText(input.name, SHOP_NAME_MAX) : undefined;
+    const address = typeof input.addressText === 'string' ? normalizeRequiredText(input.addressText, ADDRESS_MAX) : undefined;
+    if (typeof input.contactPhone !== 'string' || !isValidPhone(input.contactPhone)) {
+      return Promise.resolve(fail('INVALID_PHONE'));
+    }
+    const zalo = input.zalo === null ? ({ ok: true, value: null } as const) : normalizeOptionalLink(input.zalo, ZALO_MAX);
+    const facebook = input.facebook === null ? ({ ok: true, value: null } as const) : normalizeOptionalLink(input.facebook, FACEBOOK_MAX);
+    if (
+      name === undefined ||
+      address === undefined ||
+      !zalo.ok ||
+      !facebook.ok ||
+      (input.pickup !== null && !isValidCoordinatePair(input.pickup.lat, input.pickup.lng)) ||
+      !(input.serviceAreaId === null || isUuid(input.serviceAreaId)) ||
+      !(input.expectedVersion === null || (Number.isSafeInteger(input.expectedVersion) && input.expectedVersion >= 1))
+    ) {
+      return Promise.resolve(fail('BAD_REQUEST'));
+    }
+    // Fixed key order: the same input always serializes to the same bytes. null expected_version = create.
+    const body = JSON.stringify({
+      name,
+      contact_phone: input.contactPhone.trim(),
+      address_text: address,
+      zalo: zalo.value,
+      facebook: facebook.value,
+      pickup_lat: input.pickup === null ? null : input.pickup.lat,
+      pickup_lng: input.pickup === null ? null : input.pickup.lng,
+      service_area_id: input.serviceAreaId,
+      expected_version: input.expectedVersion,
+    });
+    return single('shopSave', body, async () => {
+      const entry = keyFor('shopSave', body);
+      return shopCall<ShopSaved>('shopSave', { method: 'PUT', path: AUTH_PATHS.shopProfile, body, idempotencyKey: entry.key }, [200, 201], parseShopSaveResponse, { intent: 'shopSave', entry });
+    });
+  }
+
+  function completeShop(input: { readonly expectedVersion: number }): Promise<AuthResult<ShopCompleted>> {
+    if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) {
+      return Promise.resolve(fail('BAD_REQUEST'));
+    }
+    const body = JSON.stringify({ expected_version: input.expectedVersion });
+    return single('shopComplete', body, async () => {
+      const entry = keyFor('shopComplete', body);
+      return shopCall<ShopCompleted>('shopComplete', { method: 'POST', path: AUTH_PATHS.shopComplete, body, idempotencyKey: entry.key }, 200, parseShopCompleteResponse, { intent: 'shopComplete', entry });
+    });
+  }
+
   // ---- logout ----------------------------------------------------------------------------------------------------
   function logout(): Promise<AuthResult<LogoutResult>> {
     const token = store.bearer();
@@ -619,7 +762,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     running.delete('register');
   }
 
-  return { session, registrationConfig, requestRegisterOtp, verifyRegisterOtp, resetRegisterFlow, register: registerUser, registerWithoutProof, login, me, selectContext, logout, readProfile, saveProfile, dispose };
+  return { session, registrationConfig, requestRegisterOtp, verifyRegisterOtp, resetRegisterFlow, register: registerUser, registerWithoutProof, login, me, selectContext, logout, readProfile, saveProfile, readShop, readServiceAreas, saveShop, completeShop, dispose };
 }
 
 export type { SessionTicket };

@@ -8,6 +8,7 @@ import { ScreenDef, ScreenEnv, VariantDef } from '../../client-shared/src/screen
 import { authScreens } from '../../client-shared/src/screens/auth.js';
 import { liveProfileForm } from '../../client-shared/src/screens/profile-live.js';
 import { signOutLive } from '../../client-shared/src/screens/logout-live.js';
+import { enterShopContext, liveShopHome, liveShopLocation, liveShopOnboarding, liveShopStart } from '../../client-shared/src/screens/shop-live.js';
 import { diagnosticsScreen } from '../../client-shared/src/screens/diagnostics.js';
 import { failureBanner } from '../../client-shared/src/screens/feedback.js';
 import { actionButton, appPage, designOnly, guardForm, isGated } from '../../client-shared/src/screens/layout.js';
@@ -179,7 +180,9 @@ function shopEntry(env: ScreenEnv): HTMLElement {
   const shop = env.account?.shop;
   const target = shop?.state === 'COMPLETE' ? 'shop-home' : shop?.state === 'DRAFT' ? 'shop-onboarding' : 'shop-start';
   const sub = shop?.state === 'COMPLETE' ? shop.name ?? 'Cửa hàng của bạn' : shop?.state === 'DRAFT' ? 'Hồ sơ đang soạn dở — tiếp tục' : 'Đăng ký bán hàng trên 11Food';
-  return listItem({ icon: 'store', title: 'Quản lý cửa hàng', sub, onClick: () => env.go(target) });
+  // Live: entering a completed shop selects the SHOP_OWNER context on the server first (the server decides whether the person may).
+  const enter = (): void => (shop?.state === 'COMPLETE' && env.mode === 'live' && env.shop !== undefined ? void enterShopContext(env) : env.go(target));
+  return listItem({ icon: 'store', title: 'Quản lý cửa hàng', sub, onClick: enter });
 }
 
 const account: ScreenDef = {
@@ -308,6 +311,9 @@ const shopStart: ScreenDef = {
   access: 'authed',
   variants: [v('default', 'Chưa có hồ sơ'), v('draft', 'Có hồ sơ nháp')],
   render: (env, variant) => {
+    if (env.mode === 'live' && env.shop !== undefined) {
+      return liveShopStart(env, env.shop);
+    }
     const draft = variant === 'draft' || env.account?.shop?.state === 'DRAFT';
     const benefits = [
       { icon: 'store' as const, text: 'Một tài khoản, một cửa hàng' },
@@ -339,6 +345,9 @@ const shopOnboarding: ScreenDef = {
   access: 'authed',
   variants: [v('default', 'Trống'), v('draft', 'Nháp đã có'), v('invalid', 'Thiếu thông tin'), v('conflict', 'Xung đột cập nhật'), v('no-gps', 'Chưa có vị trí')],
   render: (env, variant) => {
+    if (env.mode === 'live' && env.shop !== undefined) {
+      return liveShopOnboarding(env, env.shop);
+    }
     const name = textField({ id: 'shop-name', label: 'Tên quán', icon: 'store', maxLength: SHOP_NAME_MAX, placeholder: 'Tên quán của bạn' });
     const phone = textField({ id: 'shop-phone', label: 'Số điện thoại liên hệ', icon: 'phone', type: 'tel', inputMode: 'tel', placeholder: 'Số điện thoại quán', hint: 'Không thay đổi số điện thoại đăng nhập.' });
     const address = textField({ id: 'shop-address', label: 'Địa chỉ', icon: 'mapPin', maxLength: ADDRESS_MAX, placeholder: 'Số nhà, đường, phường/xã' });
@@ -404,6 +413,9 @@ const shopLocation: ScreenDef = {
   access: 'authed',
   variants: [v('default', 'Chưa lấy vị trí'), v('locating', 'Đang định vị'), v('denied', 'Từ chối quyền'), v('ready', 'Đã có vị trí (mẫu)')],
   render: (env, variant) => {
+    if (env.mode === 'live' && env.shop !== undefined) {
+      return liveShopLocation(env, env.shop);
+    }
     const map = h('div', { class: 'c-map', role: 'img', 'aria-label': 'Khung bản đồ' }, variant === 'ready' ? h('span', { class: 'c-map__pin' }, icon('mapPin', 36)) : undefined, h('p', { class: 'c-map__note' }, 'Bản đồ thật hiện vị trí đo tại quán. Khung này không phải vị trí thật.'));
     const info = h('div', { class: 'c-stack c-stack--tight' });
     if (variant === 'denied') {
@@ -431,6 +443,9 @@ const shopHome: ScreenDef = {
   access: 'authed',
   variants: [v('default', 'Hồ sơ hoàn tất'), v('disabled', 'Cửa hàng bị khóa')],
   render: (env, variant) => {
+    if (env.mode === 'live' && env.shop !== undefined) {
+      return liveShopHome(env, env.shop);
+    }
     const shop = env.account?.shop;
     const disabled = variant === 'disabled';
     return appPage({
@@ -470,4 +485,6 @@ export const FOOD_DEFINITION: AppDefinition = {
   testSmsNotice: true,
   // M01.07: register + OTP are connected here (only on a local https runtime, see client-shared/src/app.ts).
   register: { consent: FOOD_TEST_CONSENT },
+  // F20-F23 are connected to the shop onboarding (only on a local https runtime, see client-shared/src/app.ts). 11Ship does not set this.
+  shopOnboarding: true,
 };

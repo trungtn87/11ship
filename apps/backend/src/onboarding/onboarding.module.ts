@@ -10,6 +10,7 @@ import { DriverOnboardingService } from './driver-onboarding-service';
 import { ShopOnboardingController } from './shop-onboarding.controller';
 import { ShopOnboardingService } from './shop-onboarding-service';
 import { ShopProfileQueryService } from './shop-profile-query-service';
+import { ShopServiceAreaQueryService } from './shop-service-area-query-service';
 
 /**
  * Onboarding coordinator (M01-A2S, M01-A2D). It sits ABOVE Auth (M01), Shop (M02) and Driver (M03): it imports the
@@ -17,8 +18,9 @@ import { ShopProfileQueryService } from './shop-profile-query-service';
  * Shop repositories and the service-area lock port) and DriverModule (for the Driver repository). None of them
  * imports it, so the graph is acyclic and needs no forwardRef.
  *
- * Commands run inside the transaction the M00 IdempotencyExecutor opens. The one read endpoint (resume) has no
- * idempotency record, so ShopProfileQueryService opens its own short read transaction through TransactionModule.
+ * Commands run inside the transaction the M00 IdempotencyExecutor opens. The read endpoints (resume, and the list of ACTIVE
+ * service areas) have no idempotency record, so ShopProfileQueryService and ShopServiceAreaQueryService each open their own
+ * short read transaction through TransactionModule.
  *
  * `auth` must be the very same object AppModule passes to its own imports, so Nest sees one AuthModule.
  */
@@ -29,7 +31,7 @@ export class OnboardingModule {
       module: OnboardingModule,
       imports: [auth, ShopModule, DriverModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
       controllers: [ShopOnboardingController, DriverOnboardingController],
-      providers: [ShopOnboardingService, ShopProfileQueryService, DriverOnboardingService],
+      providers: [ShopOnboardingService, ShopProfileQueryService, ShopServiceAreaQueryService, DriverOnboardingService],
     };
   }
 }

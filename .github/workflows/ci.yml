@@ -257,6 +257,15 @@ jobs:
           path: .test-results/food-register-shots
           retention-days: 14
 
+      # M01 (shop onboarding): images of the real 11Food F20-F23 journey (real Chrome, real front, real backend and PostgreSQL).
+      - name: Upload 11Food shop onboarding screenshots
+        if: ${{ always() && hashFiles('.test-results/food-shop-shots/*.webp') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: food-shop-shots
+          path: .test-results/food-shop-shots
+          retention-days: 14
+
   # M00-L: the launcher is a Windows tool, so its behaviour suite also runs on real Windows with Windows
   # PowerShell 5.1 (the shell the .cmd wrappers call), including the cmd wrappers started the way a double-click
   # starts them. No database and no secrets: Docker and npm are faked inside the suite.
