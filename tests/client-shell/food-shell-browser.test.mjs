@@ -69,10 +69,15 @@ class Cdp {
     });
     return new Cdp(socket);
   }
-  send(method, params = {}, sessionId = undefined) {
+  send(method, params = {}, sessionId = undefined, timeoutMs = 15_000) {
     const id = ++this.nextId;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, method });
+      // A command whose answer is lost (page navigating away, browser gone) must end as an error, not wait forever.
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`${method}: no answer from the browser within ${timeoutMs} ms`));
+      }, timeoutMs);
+      this.pending.set(id, { resolve: (value) => (clearTimeout(timer), resolve(value)), reject: (error) => (clearTimeout(timer), reject(error)), method });
       this.socket.send(JSON.stringify({ id, method, params, sessionId }));
     });
   }
@@ -112,7 +117,7 @@ class Page {
     return this.cdp.send(method, params, this.sessionId);
   }
   async evaluate(expression) {
-    const result = await this.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+    const result = await this.cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, this.sessionId, 5000);
     if (result.exceptionDetails !== undefined) {
       throw new Error(`evaluate failed: ${result.exceptionDetails.exception?.description ?? result.exceptionDetails.text}\n${expression}`);
     }
@@ -140,6 +145,20 @@ class Page {
   async goto(url) {
     await this.send('Page.navigate', { url });
     await this.waitFor(`document.readyState === 'complete' && document.querySelector('#app')?.children.length > 0`, `app rendered at ${url}`);
+  }
+  async reload() {
+    const loaded = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => (off(), reject(new Error('reload: no load event within 10 s'))), 10_000);
+      const off = this.cdp.on((message) => {
+        if (message.sessionId === this.sessionId && message.method === 'Page.loadEventFired') {
+          clearTimeout(timer);
+          off();
+          resolve();
+        }
+      });
+    });
+    await this.send('Page.reload');
+    await loaded;
   }
   async press(key) {
     const code = key === 'Tab' ? 9 : 13;
@@ -258,17 +277,20 @@ before(async () => {
   const built = buildClientWeb('food-web', { outDir: join(out, 'food'), quiet: true });
   site = await startServer(built.dist);
   await launchBrowser();
-});
+}, { timeout: 90_000 });
 
 after(async () => {
   cdp?.close();
   chrome?.kill('SIGKILL');
+  // Browser helper processes can outlive the main one and keep its stderr pipe open; release it so this process can end.
+  chrome?.stderr?.destroy();
+  chrome?.unref();
   await site?.close();
   rmSync(out, { recursive: true, force: true });
   if (profileDir !== undefined) {
     rmSync(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
-});
+}, { timeout: 30_000 });
 
 async function withPage(width, run) {
   const page = await newPage();
@@ -298,7 +320,7 @@ const nothingBusiness = () =>
     return !(isAppFile || isHealth);
   });
 
-describe('11Food guest shell in a browser (M00.06)', () => {
+describe('11Food guest shell in a browser (M00.06)', { timeout: 240_000 }, () => {
   it('opens each of the four tabs, goes Back and Forward, opens deep links and survives a reload', async () => {
     await withPage(390, async (page) => {
       await page.goto(`${site.base}/`);
@@ -318,7 +340,7 @@ describe('11Food guest shell in a browser (M00.06)', () => {
       for (const [path, title] of [['/search', 'Tìm kiếm'], ['/orders', 'Đơn hàng'], ['/account', 'Tài khoản'], ['/diagnostics', 'Chẩn đoán kết nối']]) {
         await page.goto(`${site.base}${path}`);
         assert.equal(await page.evaluate(heading), title, `deep link ${path}`);
-        await page.send('Page.reload');
+        await page.reload();
         await page.waitFor(`document.readyState === 'complete' && ${here} === '${path}' && ${heading} === '${title}'`, `reload ${path}`);
       }
       await page.goto(`${site.base}/no-such-screen`);
