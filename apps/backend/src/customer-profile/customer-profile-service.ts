@@ -91,7 +91,10 @@ export class CustomerProfileService {
       },
       (context) => this.#update(context, principal, input, requestId),
     );
-    return outcome.payload as CustomerProfileView;
+    // The stored result comes back with canonically sorted keys; rebuilding it keeps the documented key order for the first
+    // execution and for every replay alike (the values are exactly the stored ones).
+    const stored = outcome.payload as CustomerProfileView;
+    return viewOf(stored.user_id, stored.full_name, stored.version);
   }
 
   async #update(context: TransactionContext, principal: AuthPrincipal, input: CustomerProfileUpdateInput, requestId: string) {
