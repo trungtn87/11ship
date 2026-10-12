@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # CI only (GitHub Actions, Ubuntu 24.04, disposable runner; review F4 of PR #71): installs the REAL ops/vinahost/11ship-staging.service,
 # unmodified, over a throw-away fake release and proves, with real systemd, that
-#   - a service that fails at once is restarted a FINITE number of times and then stays failed (start-limit-hit);
+#   - a service that fails at once is restarted a FINITE number of times and then stays failed ("Start request repeated too quickly");
 #   - fixing the environment and `reset-failed` + `start` recovers it;
 #   - it runs as the unprivileged user from the release root with SIGTERM, and stops gracefully (exit 0) on `systemctl stop`.
 # The fake application is a few lines of Node; it touches no database and no real unit or data. Run:
@@ -67,11 +67,14 @@ for _ in $(seq 1 90); do
   state="$(prop ActiveState)"; [ "$state" = "failed" ] && break; sleep 1
 done
 [ "$state" = "failed" ] || die "service did not reach the failed state within 90 s (state=$state): the restart loop is not bounded"
+# Depending on the systemd build the property reads start-limit-hit or the last failure (exit-code); the journal line below is
+# what systemd writes when it refuses the next start, and is the evidence of the limit.
 result="$(prop Result)"
-[ "$result" = "start-limit-hit" ] || die "expected Result=start-limit-hit, got $result"
+case "$result" in start-limit-hit | exit-code) ;; *) die "unexpected Result=$result" ;; esac
+journalctl -u "$unit" --no-pager | grep -q 'Start request repeated too quickly' || die "systemd did not report the start limit being hit"
 restarts="$(prop NRestarts)"
 [ "$restarts" -ge 3 ] && [ "$restarts" -le 5 ] || die "unexpected NRestarts=$restarts"
-ok "failing service stopped after a finite number of attempts (NRestarts=$restarts, Result=$result)"
+ok "failing service stopped after a finite number of attempts (NRestarts=$restarts; systemd: Start request repeated too quickly)"
 sleep 20
 [ "$(prop NRestarts)" = "$restarts" ] && [ "$(prop ActiveState)" = "failed" ] || die "the service restarted again after the limit was hit"
 journalctl -u "$unit" --no-pager | grep -q 'Check environment variable' || die "the failure reason is not in the journal"

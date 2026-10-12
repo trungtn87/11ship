@@ -140,17 +140,17 @@ Dịch vụ từ chối khởi động nếu cấu hình sai và chỉ nêu **t�
 
 Unit tự đặt `Restart=on-failure`, `RestartSec=5`, `StartLimitIntervalSec=300`, `StartLimitBurst=5` (không phụ thuộc cấu hình
 systemd của nhà cung cấp): dịch vụ lỗi ngay khi khởi động chỉ được thử tối đa 5 lần trong 300 giây (~25 giây), sau đó dừng ở trạng
-thái `failed` với `Result=start-limit-hit` và **không tự chạy lại**. Đây là chủ đích: sửa cấu hình, không để vòng lỗi chạy mãi.
+thái `failed` (journal ghi `Start request repeated too quickly`; tùy bản systemd, `Result` hiện `start-limit-hit` hoặc `exit-code`) và **không tự chạy lại**. Đây là chủ đích: sửa cấu hình, không để vòng lỗi chạy mãi.
 
 ```bash
-systemctl status 11ship-staging --no-pager              # "failed (Result: start-limit-hit)" = đã chạm giới hạn
+systemctl status 11ship-staging --no-pager              # "failed" + journal "Start request repeated too quickly" = đã chạm giới hạn
 journalctl -u 11ship-staging -n 60 --no-pager           # dòng "invalid or missing configuration. Check environment variable(s): <TÊN>"
 ${EDITOR:-nano} /etc/11ship/staging.env                 # sửa đúng biến được nêu tên (không dán giá trị vào chat/log)
 systemctl reset-failed 11ship-staging                   # xóa trạng thái failed và bộ đếm giới hạn
 systemctl start 11ship-staging && sleep 3 && curl -fsS http://127.0.0.1:3000/v1/health/ready
 ```
 
-`systemctl start`/`restart` khi vẫn đang ở `start-limit-hit` bị từ chối ("Start request repeated too quickly"): phải `reset-failed` trước.
+`systemctl start`/`restart` khi vẫn đang bị giới hạn khởi động bị từ chối ("Start request repeated too quickly"): phải `reset-failed` trước.
 Chỉ khi `/v1/health/ready` trả 200 mới coi là phục hồi; 503 nghĩa là ứng dụng chạy nhưng chưa nối được cơ sở dữ liệu (xem gói A).
 
 ## 7. nginx và HTTPS
@@ -229,7 +229,7 @@ Chỉ khi schema hiện tại tương thích với release cũ. Release cũ gặ
 ## 12. CI đã và chưa chứng minh
 
 **Đã (trong CI, trên runner Ubuntu 24.04):** unit systemd thật, nguyên văn, trên một bản release giả: lỗi ngay → số lần thử hữu hạn → `failed`
-(`start-limit-hit`) → sửa env + `reset-failed` + `start` phục hồi; chạy bằng `ship11` tại thư mục release, giới hạn heap, SIGTERM dừng sạch;
+("Start request repeated too quickly") → sửa env + `reset-failed` + `start` phục hồi; chạy bằng `ship11` tại thư mục release, giới hạn heap, SIGTERM dừng sạch;
 dựng artifact từ commit; checksum khớp; cây thư mục đúng một gốc theo SHA; manifest khớp
 từng file; không source map/`.env`/khóa/design preview; ứng dụng đã biên dịch và các công cụ operator tải được từ cây đã giải nén;
 Argon2 native băm và xác minh được; các lệnh operator từ chối (mã 1) khi thiếu đích; mẫu systemd/nginx/env qua kiểm tra tĩnh
