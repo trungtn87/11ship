@@ -65,18 +65,26 @@ jobs:
 
       - name: Dependencies
         run: |
-          (cd mobile/packages/n11_shared && flutter pub get)
-          (cd mobile/${{ matrix.app }} && flutter pub get)
+          for d in mobile/packages/n11_shared mobile/${{ matrix.app }}; do
+            (cd "$d" && flutter pub get) 2>&1 | tee "$RUNNER_TEMP/pub.log" || {
+              echo "::error title=pub get failed in $d::$(tail -c 900 "$RUNNER_TEMP/pub.log" | tr '\n' ' ')"; exit 1; }
+          done
 
       - name: Analyze
         run: |
-          (cd mobile/packages/n11_shared && flutter analyze)
-          (cd mobile/${{ matrix.app }} && flutter analyze)
+          for d in mobile/packages/n11_shared mobile/${{ matrix.app }}; do
+            (cd "$d" && flutter analyze) 2>&1 | tee "$RUNNER_TEMP/an.log" || {
+              echo "::error title=analyze failed in $d::$(grep -E '(error|warning|info) •' "$RUNNER_TEMP/an.log" | head -12 | tr '\n' '|' | head -c 1500)"; exit 1; }
+          done
 
       - name: Test
         run: |
-          if [ "${{ matrix.app }}" = "food" ]; then (cd mobile/packages/n11_shared && flutter test); fi
-          (cd mobile/${{ matrix.app }} && flutter test)
+          dirs="mobile/${{ matrix.app }}"
+          if [ "${{ matrix.app }}" = "food" ]; then dirs="mobile/packages/n11_shared $dirs"; fi
+          for d in $dirs; do
+            (cd "$d" && flutter test --reporter expanded) 2>&1 | tee "$RUNNER_TEMP/t.log" || {
+              echo "::error title=tests failed in $d::$(grep -E '\[E\]|Expected|Actual|Which:|══|failed' "$RUNNER_TEMP/t.log" | head -14 | tr '\n' '|' | head -c 1800)"; exit 1; }
+          done
 
       - name: Prepare Android project
         run: mobile/tool/prepare-android.sh ${{ matrix.app }}
