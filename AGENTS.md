@@ -11,3 +11,7 @@ Use the short task checklist for small changes; use the per-app acceptance check
 Claude tests the affected behavior; ChatGPT reuses valid test/CI evidence and reviews the diff. Additional testing requires a named unresolved risk, failure or relevant change. Stop when suitable checks pass and blockers are resolved. Pure documentation changes need documentation review, not product tests.
 
 Owner's standing authorization (2026-10-11) allows ChatGPT to merge reviewed small packages when applicable required checks pass and dependencies/merge are compatible, without asking again. Do not enable auto-merge or claim local/device acceptance or module closure from a merge. Deploy and remote migration require their own authorization.
+
+## Owner priority — 2026-10-12
+
+“Nhanh, đủ, đúng” means deliver a working test build and fix observable user problems first. Owner explicitly asks to save tokens: keep handoffs, progress updates and reports short; reuse available context and valid evidence instead of repeated reading, reporting or testing. Do not expand scope with speculative edge cases or optional improvements. Deep tests need a concrete material risk to money, data, security or the requested behavior. When relevant checks pass, deliver and move on. ChatGPT is responsible for keeping the work proportionate; Owner should not need to repeat this instruction.
