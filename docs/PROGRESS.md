@@ -203,6 +203,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#83](https://github.com/trungtn87/11ship/pull/83) feat(client): M01 tài khoản khách và phiên Food/Ship (đăng… | Đã merge (`MERGED`) | — | — | — | `2358d58` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#84](https://github.com/trungtn87/11ship/pull/84) fix(client): Food/Ship trở về Trang chủ sau đăng xuất | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `117e8f1` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#85](https://github.com/trungtn87/11ship/pull/85) feat(m01): nối hồ sơ quán 11Food F20–F23 + GET shop/service… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `d32d51d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#86](https://github.com/trungtn87/11ship/pull/86) docs(M01): APK WebView test, cập nhật giao diện qua VPS | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `8902532` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
@@ -222,6 +223,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 - `UNCLASSIFIED_PR` PR #71: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #84: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #85: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #86: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
