@@ -249,6 +249,14 @@ jobs:
         if: ${{ always() && hashFiles('.test-results/food-register-shots/*.webp') != '' }}
         run: node scripts/ci-print-shots.mjs food-register-shot .test-results/food-register-shots f01-signed-in f12-register-outcome-unknown f11-filled f12-waiting-for-code f12-wrong-code
 
+      - name: Upload 11Food register screenshots
+        if: ${{ always() && hashFiles('.test-results/food-register-shots/*.webp') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: food-register-shots
+          path: .test-results/food-register-shots
+          retention-days: 14
+
   # M00-L: the launcher is a Windows tool, so its behaviour suite also runs on real Windows with Windows
   # PowerShell 5.1 (the shell the .cmd wrappers call), including the cmd wrappers started the way a double-click
   # starts them. No database and no secrets: Docker and npm are faked inside the suite.
