@@ -87,7 +87,7 @@ jobs:
           if [ "${{ matrix.app }}" = "food" ]; then dirs="mobile/packages/n11_shared $dirs"; fi
           for d in $dirs; do
             (cd "$d" && flutter test --reporter expanded) 2>&1 | tee "$RUNNER_TEMP/t.log" || {
-              echo "::error title=tests failed in $d::$(grep -E '\[E\]|Expected|Actual|Which:|Reason|failed' "$RUNNER_TEMP/t.log" | head -20 | tr '\n' '|' | head -c 4000)"; exit 1; }
+              echo "::error title=tests failed in $d::$(grep -E -A1 'Which:|\[E\]' "$RUNNER_TEMP/t.log" | head -24 | tr '\n' '|' | head -c 4000)"; exit 1; }
           done
 
       - name: Prepare Android project
