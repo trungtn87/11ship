@@ -432,6 +432,8 @@ class _NavTab extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 56),
           child: Column(
+            // Without min the bar would grow to the whole screen height (Scaffold gives its bottom bar loose, tall constraints).
+            mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
               Container(

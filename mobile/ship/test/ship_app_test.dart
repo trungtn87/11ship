@@ -73,12 +73,10 @@ void main() {
     await pump(tester, healthy());
     await openTab(tester, 'orders');
     expect(find.byKey(const Key('orders-active')), findsOneWidget);
-    final String dbg = <String>['home', 'orders', 'income', 'wallet', 'account'].map((String id) => '$id=${tester.getCenter(find.byKey(Key('tab-$id')))}').join(' ');
-    expect(find.text('Chưa có đơn hàng'), findsWidgets, reason: '$dbg ${texts(tester).substring(0, 60)} n=${tester.widgetList(find.byType(Text)).length}');
-    final String where = 'btn=${tester.getCenter(find.byKey(const Key('orders-history')))} scaffold=${tester.getSize(find.byType(Scaffold).first)} view=${tester.view.physicalSize} dpr=${tester.view.devicePixelRatio} nav=${tester.getTopLeft(find.byType(N11BottomNav))}';
+    expect(find.text('Chưa có đơn hàng'), findsWidgets);
     await tester.tap(find.byKey(const Key('orders-history')));
     await tester.pump();
-    expect(find.text('Chưa có đơn hàng'), findsWidgets, reason: '$where ${texts(tester).substring(0, 40)}');
+    expect(find.text('Chưa có đơn hàng'), findsWidgets);
   });
   testWidgets('account: login/register locked with reasons; diagnostics reachable with SHA', (WidgetTester tester) async {
     await pump(tester, healthy());
