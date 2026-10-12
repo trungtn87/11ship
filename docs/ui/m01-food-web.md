@@ -11,9 +11,9 @@ Trạng thái: **chỉ UI**, chưa tính là xong nghiệp vụ, M01 chưa đón
 | F12 | OTP đăng ký | `/register/otp` | chỉ vào được qua luồng đăng ký | chờ M01.03 |
 | F13–F15 | Quên / OTP / đặt lại mật khẩu | `/reset…` | có, nút khóa kèm lý do | chờ M01.16 |
 | F01 | Trang chủ | `/` | có, trạng thái trống, "Sắp có" | — (không có dữ liệu quán) |
-| F02 | Tìm kiếm | `/search` | có, ô tìm khóa | — |
+| F02 | Tìm kiếm | `/search` | có; gõ/xóa được, giữ chữ khi đổi tab/Back, chọn Món/Quán; không có kết quả giả | — (chờ M09) |
 | F03 | Đơn hàng | `/orders` | có, trạng thái trống | — |
-| F04/F16 | Tài khoản (khách / đã đăng nhập) | `/account` | chỉ bản khách; bản đã đăng nhập xem ở preview | chờ M01.04/.05 |
+| F04/F16 | Tài khoản (khách / đã đăng nhập) | `/account` | chỉ bản khách, có dòng "Quản lý cửa hàng" khóa kèm lý do (F07); bản đã đăng nhập xem ở preview | chờ M01.04/.05 |
 | F17 | Thông tin cá nhân | `/account/profile` | cần đăng nhập → về `/login` | chờ M01.05 |
 | F18 | Hộp đăng xuất | trong F16 | preview | chờ M01.04 |
 | F20 | Bán hàng trên 11Food | `/shop/start` | cần đăng nhập | chờ M01.11 |

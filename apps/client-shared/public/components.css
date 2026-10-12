@@ -430,6 +430,16 @@ button {
   margin-right: -8px;
 }
 
+.c-input .c-iconbtn--tap {
+  width: var(--tap-min);
+  height: var(--tap-min);
+  margin-right: -10px;
+}
+
+.c-iconbtn[hidden] {
+  display: none;
+}
+
 .c-error {
   display: flex;
   gap: 6px;
