@@ -10,12 +10,20 @@
 //     proxy (ADMIN_AUTH_TRUSTED_PROXY_IPS stays []) and sees every local request as 127.0.0.1;
 //   * any other path of the backend is not reachable through this front.
 //
-// Usage: npm run admin-web:cert (once), npm run build, then npm run admin-web:dev. See docs/tasks/M01-D-LOGIN-UI-local-run.md.
+// M00.08: the build carries a build-manifest.json (scripts/admin-web-build.mjs). Started the way the launcher starts it
+// (`node scripts/admin-web-dev.mjs`), the front refuses a certificate that is unusable (exit 3), a build without a valid
+// manifest or whose files no longer match it (exit 4) and a port someone else holds (exit 5), and it answers
+// GET /__11ship/runtime with the identity of the build it serves (app, commit, fingerprint) so the launcher can prove it.
+//
+// Usage: npm run admin-web:cert (once), npm run build:admin-web, then npm run admin-web:dev. Normally `11Ship-Admin.cmd` does all of
+// it (ops/runbooks/local-https-runtime.md). See docs/tasks/M01-D-LOGIN-UI-local-run.md.
 import { createReadStream, existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { RUNTIME_PATH, readBuildIdentity, RuntimeStartError } from './client-web-dev.mjs';
+import { defaultTlsPaths, inspectTlsFiles } from './lib/local-tls.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -66,13 +74,14 @@ const DROPPED_REQUEST_HEADERS = new Set([
 ]);
 const DROPPED_RESPONSE_HEADERS = new Set(['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'trailer']);
 
-/**
- * @param {{ distDir: string, backendUrl: string, key: string | Buffer, cert: string | Buffer, upstreamTimeoutMs?: number }} options
- * @returns {import('node:https').Server}
- */
 export const UPSTREAM_TIMEOUT_MS = 15_000;
 
-export function createAdminWebServer({ distDir, backendUrl, key, cert, upstreamTimeoutMs = UPSTREAM_TIMEOUT_MS }) {
+/**
+ * @param {{ distDir: string, backendUrl: string, key: string | Buffer, cert: string | Buffer, upstreamTimeoutMs?: number, identity?: object }} options
+ *   `identity` (optional): what GET /__11ship/runtime reports (infrastructure metadata only). Without it the route does not exist.
+ * @returns {import('node:https').Server}
+ */
+export function createAdminWebServer({ distDir, backendUrl, key, cert, upstreamTimeoutMs = UPSTREAM_TIMEOUT_MS, identity }) {
   const backend = new URL(backendUrl);
   if (backend.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(backend.hostname)) {
     throw new Error('the backend must be a loopback http URL (this front is for local use only)');
@@ -81,6 +90,16 @@ export function createAdminWebServer({ distDir, backendUrl, key, cert, upstreamT
 
   return https.createServer({ key, cert, minVersion: 'TLSv1.2' }, (request, response) => {
     const url = new URL(request.url ?? '/', 'https://front.invalid');
+    if (identity !== undefined && url.pathname === RUNTIME_PATH) {
+      if (request.method !== 'GET') {
+        response.writeHead(405, { ...SECURITY_HEADERS, allow: 'GET', 'content-type': 'text/plain; charset=utf-8' });
+        response.end();
+        return;
+      }
+      response.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ data: identity }));
+      return;
+    }
     if (API_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) {
       forward(request, response, backend, upstreamTimeoutMs);
       return;
@@ -180,6 +199,12 @@ function serveStatic(pathname, request, response, distRoot) {
   if (relative === '/' || relative === '') {
     relative = '/index.html';
   }
+  // The build manifest is for the launcher and /__11ship/runtime, not for the browser (the hosted backend does not serve it either).
+  if (relative === '/build-manifest.json') {
+    response.writeHead(404, { ...SECURITY_HEADERS, 'content-type': 'text/plain; charset=utf-8' });
+    response.end('Not found');
+    return;
+  }
   const candidate = normalize(join(distRoot, relative));
   let file;
   try {
@@ -210,30 +235,55 @@ function serveStatic(pathname, request, response, distRoot) {
 }
 
 if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const tlsDir = join(root, '.local', 'admin-web-tls');
-  const certPath = process.env.ADMIN_WEB_TLS_CERT ?? join(tlsDir, 'cert.pem');
-  const keyPath = process.env.ADMIN_WEB_TLS_KEY ?? join(tlsDir, 'key.pem');
-  const distDir = join(root, 'apps', 'admin-web', 'dist');
-  if (!existsSync(certPath) || !existsSync(keyPath)) {
-    console.error(`No TLS certificate at ${certPath}. Run "npm run admin-web:cert" or set ADMIN_WEB_TLS_CERT/ADMIN_WEB_TLS_KEY (for example mkcert files).`);
-    process.exit(1);
+  const stop = (code, errorCode, message) => {
+    console.error(`Web Admin: ${errorCode}: ${message}`);
+    process.exit(code);
+  };
+  const tls = defaultTlsPaths(root);
+  const inspected = inspectTlsFiles(tls);
+  if (!inspected.ok) {
+    stop(3, inspected.code, `${inspected.message}. Run "npm run admin-web:cert" or set ADMIN_WEB_TLS_CERT/ADMIN_WEB_TLS_KEY (for example mkcert files); see ops/runbooks/local-https-runtime.md`);
   }
+  const distDir = process.env.ADMIN_WEB_DIST ?? join(root, 'apps', 'admin-web', 'dist');
   if (!existsSync(join(distDir, 'index.html'))) {
-    console.error('apps/admin-web/dist is missing. Run "npm run build" first.');
-    process.exit(1);
+    stop(4, 'ARTIFACT_MISSING', 'apps/admin-web/dist is missing. Run "npm run build:admin-web" first.');
   }
   const host = process.env.ADMIN_WEB_HOST ?? 'localhost';
   const port = Number(process.env.ADMIN_WEB_PORT ?? '8443');
   const backendUrl = process.env.ADMIN_WEB_BACKEND ?? 'http://127.0.0.1:3000';
   const upstreamTimeoutMs = Number(process.env.ADMIN_WEB_UPSTREAM_TIMEOUT_MS ?? String(UPSTREAM_TIMEOUT_MS));
   if (!Number.isSafeInteger(upstreamTimeoutMs) || upstreamTimeoutMs < 100) {
-    console.error('ADMIN_WEB_UPSTREAM_TIMEOUT_MS must be an integer number of milliseconds >= 100.');
-    process.exit(1);
+    stop(2, 'CONFIG_INVALID', 'ADMIN_WEB_UPSTREAM_TIMEOUT_MS must be an integer number of milliseconds >= 100.');
   }
-  const server = createAdminWebServer({ distDir, backendUrl, key: readFileSync(keyPath), cert: readFileSync(certPath), upstreamTimeoutMs });
+  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+    stop(2, 'CONFIG_INVALID', 'ADMIN_WEB_PORT must be a port number.');
+  }
+  let server;
+  try {
+    const identity = readBuildIdentity(realpathSync(distDir), 'admin-web');
+    server = createAdminWebServer({ distDir, backendUrl, key: readFileSync(tls.key), cert: readFileSync(tls.cert), upstreamTimeoutMs, identity });
+    server.identity = identity;
+  } catch (error) {
+    if (error instanceof RuntimeStartError) {
+      stop(error.code.startsWith('ARTIFACT') ? 4 : 2, error.code, `${error.message} (npm run build:admin-web)`);
+    }
+    throw error;
+  }
+  server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE' || error.code === 'EACCES') {
+      stop(5, 'PORT_IN_USE', `port ${String(port)} is held by another process or not allowed`);
+    }
+    stop(1, 'SERVER_ERROR', String(error.code ?? 'unknown'));
+  });
   server.listen(port, host === 'localhost' ? '127.0.0.1' : host, () => {
-    const origin = `https://${host}${port === 443 ? '' : `:${port}`}`;
+    const actual = server.address().port;
+    const origin = `https://${host}${actual === 443 ? '' : `:${String(actual)}`}`;
     console.log(`admin web: ${origin}  ->  backend ${backendUrl} (${API_PREFIXES.join(' ')})`);
     console.log(`backend must have ADMIN_AUTH_ALLOWED_ORIGINS=["${origin}"] and ADMIN_AUTH_TRUSTED_PROXY_IPS=[]`);
+    // One machine-readable line, like the phone apps: the tests read the port and identity from it.
+    console.log(JSON.stringify({ event: 'listening', app: 'admin-web', origin, port: actual, ...server.identity }));
   });
+  const shutdown = () => server.close(() => process.exit(0));
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }

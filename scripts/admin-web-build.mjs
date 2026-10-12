@@ -9,10 +9,12 @@
 // build fails if anything left still refers to them or carries the preview's sample data. The design build adds them. The
 // preview is a separate page that creates no session and calls no backend (see scripts/ui-preview.mjs: connect-src 'none').
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DESIGN_VERSION } from './client-web-build.mjs';
+import { artifactFingerprint } from './lib/artifact-fingerprint.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const app = join(root, 'apps', 'admin-web');
@@ -40,6 +42,14 @@ function compile(dist, quiet) {
 /** What must never be in a real build: the preview's folder, page, styles, and its invented people. */
 const PREVIEW_MARKERS = [/\/design\/|design\.(html|css)/, /Dữ liệu minh họa/, /MINHHOA/];
 
+function sourceSha() {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return 'unknown';
+  }
+}
+
 export function buildAdminWeb({ quiet = false, outDir } = {}) {
   const dist = outDir ?? join(app, 'dist');
   compile(dist, quiet);
@@ -59,6 +69,21 @@ export function buildAdminWeb({ quiet = false, outDir } = {}) {
   if (!existsSync(join(dist, 'index.html')) || !existsSync(join(dist, 'js', 'dom', 'main.js'))) {
     throw new Error('admin-web build output is incomplete');
   }
+  // M00.08: the same build manifest as the phone apps (scripts/client-web-build.mjs), written LAST so the fingerprint covers
+  // exactly the files served. The local launcher proves the folder against it and scripts/admin-web-dev.mjs reports it at
+  // /__11ship/runtime. It holds no secret, session or path.
+  const fingerprint = artifactFingerprint(dist);
+  const manifest = {
+    app_id: 'admin-web',
+    mode: 'live',
+    source_sha: sourceSha(),
+    fingerprint,
+    build_fingerprint: fingerprint,
+    built_at: new Date().toISOString(),
+    design_version: DESIGN_VERSION,
+    files: walk(dist).length,
+  };
+  writeFileSync(join(dist, 'build-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   return dist;
 }
 

@@ -123,6 +123,7 @@ function docker.exe {
     if ($script:DbDown) { $global:LASTEXITCODE = 2; return }
     if ($sql.Contains('to_regclass')) { if ($script:DbHasTable) { return 't' } else { return 'f' } }
     if ($sql.StartsWith('SELECT name')) { return $script:DbApplied }
+    if ($sql.Contains('app.admin_memberships')) { return $script:SystemCount }
   }
 }
 function npm.cmd {
@@ -148,7 +149,7 @@ function npm.cmd {
     if ($script:BuildHook) { & $script:BuildHook }
     return
   }
-  if ($line -match '^run build:(food|ship)-web$') {
+  if ($line -match '^run build:(food|ship|admin)-web$') {
     $appKey = "$($Matches[1])-web"
     $script:AppBuilds.Add($appKey)
     if ($script:AppBuildFails) { $global:LASTEXITCODE = 1; return }
@@ -355,6 +356,8 @@ function Reset-Fakes {
   $script:CertMode = 'ok'; $script:CertSawComposeUp = -1; $script:CertSawLock = $null; $script:ProbeMode = 'ok'; $script:ProbeCount = 0
   $script:AppBuildFails = $false; $script:AppBuildNoOutput = $false; $script:AppManifestMode = ''; $script:AppManifestSha = ''; $script:AppBuildContent = 'app build one'
   $script:AppStartListens = $true; $script:AppStartVanishes = $false; $script:AppStartThrows = $false
+  # M00.08
+  $script:SystemCount = '1'
   $env:SHIP11_NO_BROWSER = $null
   $script:BackendPollMilliseconds = 10; $script:BackendReadySeconds = 1; $script:ProcessStopSeconds = 1
   $script:TestPortBinding = '127.0.0.1:5433'
@@ -413,7 +416,7 @@ function New-GitSandbox {
   New-Item -ItemType Directory -Force -Path $script:Seed | Out-Null
   if ($null -eq (Capture 'git.exe' @('init','--bare','--initial-branch=main',$script:Origin))) { throw 'git init --bare failed' }
   if ($null -eq (Capture 'git.exe' @('init','--initial-branch=main',$script:Seed))) { throw 'git init failed' }
-  Write-Text (Join-Path $script:Seed '.gitignore') ".env`nnode_modules/`n.11ship-local/`napps/backend/dist/`napps/food-web/dist/`napps/ship-web/dist/`n"
+  Write-Text (Join-Path $script:Seed '.gitignore') ".env`nnode_modules/`n.11ship-local/`napps/backend/dist/`napps/food-web/dist/`napps/ship-web/dist/`napps/admin-web/dist/`n"
   Write-Text (Join-Path $script:Seed 'package-lock.json') '{"lockfileVersion":3,"revision":1}'
   Write-Text (Join-Path $script:Seed 'database/migrations/1000_first.sql') 'SELECT 1;'
   Write-Text (Join-Path $script:Seed 'database/migrations/2000_second.sql') 'SELECT 2;'
@@ -1565,10 +1568,9 @@ try {
       $message = Get-FailMessage { Open-AppLauncher $appName }
       Check ($message.Contains(': APP_NOT_READY)')) "$appName -> APP_NOT_READY"
       Check (!$message.Contains('LAUNCH_LOCK_MISSING') -and !$message.Contains('ARTIFACT_IDENTITY_MISSING') -and !$message.Contains('APP_LAUNCH_SEQUENCE_MISSING')) "$appName message no longer lists the lock (M00.02), the artifact identity (M00.03) or the launch sequence (M00.05) as missing"
-      if ($appName -eq 'Admin') { Check ($message.Contains('APP_LAUNCH_PACKAGE_MISSING') -and $message.Contains('M00.08') -and !$message.Contains('APP_RUNTIME_MISSING')) 'Admin names what its own package (M00.08) still has to provide, not a missing local server' }
+      Check (!$message.Contains('APP_LAUNCH_PACKAGE_MISSING')) "$appName no longer waits for a launch package (M00.08 gave Admin its launch)"
       Check ($message.Contains($appUrl[$appName])) "$appName message names its own address $($appUrl[$appName])"
-      $runtimeBlocked = $message.Contains('APP_RUNTIME_MISSING')
-      Check ($runtimeBlocked -eq ($appName -ne 'Admin')) "$appName runtime blocker is derived from the repository (present only when the app has no local server)"
+      Check ($message.Contains('APP_RUNTIME_MISSING')) "$appName runtime blocker is derived from the repository (this sandbox has no complete local server for it)"
       Check ($script:DockerCalls.Count -eq 0 -and $script:NpmCalls.Count -eq 0 -and $script:HttpCalls.Count -eq 0 -and $script:SqlCalls.Count -eq 0) "$appName refusal runs no Docker, npm, HTTP or SQL"
       Check ($script:BackendStarts -eq 0 -and $script:ProcessStarts.Count -eq 0) "$appName refusal starts no backend, frontend or browser"
       Check (!(Test-Path -LiteralPath $script:LockFile) -and !(Test-Path -LiteralPath $script:GateFile) -and !(Test-Path -LiteralPath $script:LockInfoFile)) "$appName refusal happens before any lock is taken (no lock files created)"
@@ -1589,13 +1591,13 @@ try {
     Expect-Fail 'APP_NOT_SPECIFIED' 'empty app name' { Open-AppLauncher '' }
     Expect-Fail 'APP_UNKNOWN' 'unknown app name (there is no separate shop app)' { Open-AppLauncher 'Shop' }
 
-    # Fail closed: even when every prerequisite is declared ready this package has no launch sequence, so it never reports success.
+    # Fail closed: the orchestrator being ready is not enough, the surface itself must have its files.
     Write-Text $adminRuntime '// stand-in for the real Admin local server'
     $savedReady = @($script:OrchestratorCapabilities.Values | ForEach-Object { $_.Ready })
     try {
       foreach ($capability in @($script:OrchestratorCapabilities.Values)) { $capability.Ready = $true }
       Expect-Fail 'APP_NOT_READY' 'Food stays refused when only the orchestrator is declared ready (no local server for it)' { Open-AppLauncher 'Food' }
-      Expect-Fail 'APP_NOT_READY' 'Admin with every orchestrator prerequisite ready still refuses: its own launch package (M00.08) is missing' { Open-AppLauncher 'Admin' }
+      Expect-Fail 'APP_NOT_READY' 'Admin stays refused when only the orchestrator is declared ready (its build and operator scripts are missing here)' { Open-AppLauncher 'Admin' }
     } finally {
       $i = 0
       foreach ($capability in @($script:OrchestratorCapabilities.Values)) { $capability.Ready = $savedReady[$i]; $i++ }
@@ -1794,6 +1796,198 @@ try {
     Remove-Item -LiteralPath (Join-Path (Join-Path $script:Repo 'scripts') 'client-web-check.mjs') -Force
     $message = Get-FailMessage { Open-AppLauncher 'Food' }
     Check ($message.Contains(': APP_NOT_READY)') -and $message.Contains('APP_RUNTIME_MISSING') -and $script:ClientChecks.Count -eq 0 -and !(Test-Path -LiteralPath $script:LockFile)) 'a missing checker script is APP_RUNTIME_MISSING and nothing runs'
+
+    # =========================================================================================
+    Section 'M00.08 Web Admin launch: .env gate, limiter configuration, SYSTEM only when missing, proof, no secret in output'
+    # =========================================================================================
+    $adminKey = [Convert]::ToBase64String([byte[]](1..32))
+    $adminPhone = '0900000001'
+    $adminPassword = 'Sys-T3st-P@ss-9921'
+    function Write-AdminEnv([hashtable]$Override=@{}) {
+      $values = [ordered]@{
+        ADMIN_AUTH_ENABLED = 'true'
+        ADMIN_AUTH_ALLOWED_ORIGINS = '["https://localhost:8443"]'
+        ADMIN_AUTH_TRUSTED_PROXY_IPS = '[]'
+        ADMIN_RATE_LIMIT_HMAC_KEY = $adminKey
+        ADMIN_RATE_LIMIT_KEY_ID = 'local-limiter-1'
+      }
+      foreach ($name in @($Override.Keys)) { $values[$name] = $Override[$name] }
+      $lines = @(Get-Content -LiteralPath $script:EnvFile) + @($values.Keys | Where-Object { $null -ne $values[$_] } | ForEach-Object { "$_=$($values[$_])" })
+      Write-Text $script:EnvFile ($lines -join "`n")
+    }
+    function New-AdminSandbox([hashtable]$Override=@{}) {
+      New-AppSandbox
+      foreach ($name in @('admin-web-dev.mjs','admin-web-build.mjs','admin-auth-init-limit-config.js','admin-auth-bootstrap-system.js')) { Write-Text (Join-Path (Join-Path $script:Repo 'scripts') $name) "// stand-in for $name" }
+      Write-AdminEnv $Override
+      $script:AdminCli = New-Object 'Collections.Generic.List[object]'
+      $script:AdminCliMode = 'ok'
+      $script:AdminBootstrapMode = 'ok'
+    }
+    function Get-AdminRecord { return (Read-TargetRegistry (Get-AppTarget 'Admin')).Record }
+    # The operator commands are a seam here; the real one is exercised below with a stand-in node.exe.
+    $realInvokeAdminCli = ${function:Invoke-AdminCli}
+    $realRequestPassword = ${function:Read-SystemPassword}
+    $realRequestPhone = ${function:Read-SystemPhone}
+    function Invoke-AdminCli([string]$ScriptName,[string]$StdinText='') {
+      $kind = if ($ScriptName -like '*bootstrap*') { 'bootstrap' } else { 'init' }
+      $script:AdminCli.Add([pscustomobject]@{ Kind = $kind; Stdin = $StdinText; Held = (Test-LockHeld); Backends = $script:BackendStarts })
+      Add-LockObservation "admin cli $kind"
+      if ($kind -eq 'init') {
+        if ($script:AdminCliMode -ne 'ok') { return [pscustomobject]@{ ExitCode = 1; Text = 'admin-auth:init-limit-config: invalid or missing configuration. Check environment variable(s): ADMIN_RATE_LIMIT_HMAC_KEY' } }
+        return [pscustomobject]@{ ExitCode = 0; Text = 'admin-auth:init-limit-config: unchanged' }
+      }
+      if ($script:AdminBootstrapMode -ne 'ok') { return [pscustomobject]@{ ExitCode = 1; Text = 'admin-auth:bootstrap-system: refused: PASSWORD_POLICY' } }
+      return [pscustomobject]@{ ExitCode = 0; Text = 'admin-auth:bootstrap-system: created' }
+    }
+    function Read-SystemPhone { $script:Prompts.Add('phone'); return "$($script:Answers.Dequeue())" }
+    function Read-SystemPassword([string]$Prompt) { $script:Prompts.Add($Prompt); return (ConvertTo-SecureString "$($script:Answers.Dequeue())" -AsPlainText -Force) }
+    function Test-AdminNothingStarted { return ((Get-ComposeUps) -eq 0 -and $script:BackendStarts -eq 0 -and $script:AppBuilds.Count -eq 0 -and $script:AppStarts.Count -eq 0 -and $script:Browser.Count -eq 0 -and $script:AdminCli.Count -eq 0) }
+    try {
+      # ---- .env gate: refused before the lock, any database, build, process or browser; .env is never written
+      foreach ($case in @(
+        @('administration login not enabled', @{ ADMIN_AUTH_ENABLED = 'false' }, 'ADMIN_AUTH_ENABLED'),
+        @('no administration settings at all', @{ ADMIN_AUTH_ENABLED = $null; ADMIN_AUTH_ALLOWED_ORIGINS = $null; ADMIN_AUTH_TRUSTED_PROXY_IPS = $null; ADMIN_RATE_LIMIT_HMAC_KEY = $null; ADMIN_RATE_LIMIT_KEY_ID = $null }, 'ADMIN_RATE_LIMIT_KEY_ID'),
+        @('another origin', @{ ADMIN_AUTH_ALLOWED_ORIGINS = '["https://localhost:9443"]' }, 'ADMIN_AUTH_ALLOWED_ORIGINS'),
+        @('an extra origin', @{ ADMIN_AUTH_ALLOWED_ORIGINS = '["https://localhost:8443","https://evil.example"]' }, 'ADMIN_AUTH_ALLOWED_ORIGINS'),
+        @('origin without TLS', @{ ADMIN_AUTH_ALLOWED_ORIGINS = '["http://localhost:8443"]' }, 'ADMIN_AUTH_ALLOWED_ORIGINS'),
+        @('a trusted proxy', @{ ADMIN_AUTH_TRUSTED_PROXY_IPS = '["10.0.0.1"]' }, 'ADMIN_AUTH_TRUSTED_PROXY_IPS'),
+        @('a key that is not 32 bytes', @{ ADMIN_RATE_LIMIT_HMAC_KEY = 'c2hvcnQ=' }, 'ADMIN_RATE_LIMIT_HMAC_KEY'),
+        @('an empty key id', @{ ADMIN_RATE_LIMIT_KEY_ID = '' }, 'ADMIN_RATE_LIMIT_KEY_ID')
+      )) {
+        New-AdminSandbox $case[1]
+        $envBefore = File-HashOrEmpty $script:EnvFile
+        $message = Get-FailMessage { Open-AppLauncher 'Admin' }
+        Check ($message.Contains(': ADMIN_ENV_INVALID)') -and $message.Contains($case[2]) ) "Admin .env gate: $($case[0]) -> ADMIN_ENV_INVALID naming $($case[2])"
+        Check (!$message.Contains($adminKey) -and !$message.Contains($script:DevPassword)) "Admin .env gate: $($case[0]): the message prints no value of .env"
+        Check (!(Test-LockHeld) -and (Test-AdminNothingStarted) -and !(Test-Path -LiteralPath $script:StateFile)) "Admin .env gate: $($case[0]): no lock, database, build, process, operator command or browser"
+        Check ((File-HashOrEmpty $script:EnvFile) -ceq $envBefore) "Admin .env gate: $($case[0]): .env is not touched"
+      }
+
+      # ---- first launch with a SYSTEM account already in the DEV database: nothing is created, order and proof as for the phone apps
+      New-AdminSandbox
+      $head = Head
+      $script:SystemCount = '1'
+      Open-AppLauncher 'Admin'
+      $record = Get-AdminRecord
+      $state = Get-ArtifactState (Get-AppTarget 'Admin')
+      Check ($script:Events[0] -ceq 'cert' -and $script:CertSawLock -eq $false -and $script:CertSawComposeUp -eq 0) 'Admin: certificate first, before the lock and any database'
+      Check ($script:AdminCli.Count -eq 1 -and $script:AdminCli[0].Kind -ceq 'init' -and $script:AdminCli[0].Held -eq $true) 'Admin: the limiter configuration is initialised once, under the shared lock'
+      Check (@($script:SqlCalls | Where-Object { $_.Contains('app.admin_memberships') -and $_.Contains("'SYSTEM'") -and $_.StartsWith('SELECT') }).Count -eq 1) 'Admin: the SYSTEM account is looked up with one read-only query'
+      $order = @($script:LockObs | ForEach-Object { $_.What })
+      Check ($order.IndexOf('admin cli init') -ge 0 -and $order.IndexOf('npm run build') -lt $order.IndexOf('admin cli init') -and $order.IndexOf('admin cli init') -lt $order.IndexOf('backend start') -and $order.IndexOf('backend start') -lt $order.IndexOf('app start admin-web')) 'Admin: backend build, then limiter configuration, THEN the backend starts (it refuses to listen without the configuration), then the front'
+      Check ($script:AdminCli[0].Backends -eq 0 -and $script:BackendStarts -eq 1 -and $script:AppStarts.Count -eq 1 -and $script:AppStarts[0] -ceq 'admin-web') 'Admin: one backend and one Admin front were started, the front after the configuration'
+      Check ($script:AppBuilds.Count -eq 1 -and $script:AppBuilds[0] -ceq 'admin-web' -and (NpmCount 'run build:admin-web') -eq 1 -and (NpmCount 'run build:food-web') -eq 0) 'Admin: only the Admin build ran'
+      Check ($state.State -eq 'OK' -and $state.Manifest.app_id -ceq 'admin-web' -and $state.Manifest.source_sha -ceq $head) 'Admin: the manifest is the launcher-verified manifest of this commit and folder'
+      Check ($record -and $record.app_id -ceq 'admin-web' -and $record.port -eq 8443 -and $record.script -ceq (Join-Path (Join-Path $script:Repo 'scripts') 'admin-web-dev.mjs') -and $record.source_sha -ceq $head) 'Admin: the registry names the Admin front, port 8443, its absolute script and the commit'
+      Check ((Get-TargetOwnership (Get-AppTarget 'Admin')).Status -eq 'OWNED') 'Admin: the recorded process is proven ours'
+      $probeLine = @($script:ClientChecks | Where-Object { $_.StartsWith('probe') })[0]
+      Check ($probeLine.Contains('--app admin-web') -and $probeLine.Contains('--port 8443') -and $probeLine.Contains("--expect-sha $head") -and $probeLine.Contains("--expect-fingerprint $($state.Manifest.build_fingerprint)")) 'Admin: the probe asks for the Admin front, port 8443, this commit and this fingerprint'
+      Check ($script:Browser.Count -eq 1 -and $script:Browser[0] -ceq 'https://localhost:8443' -and $script:Events.IndexOf('browser') -gt $script:Events.IndexOf('probe')) 'Admin: the browser opens https://localhost:8443 once, after the proof'
+      Check (!(@($script:HostLog) -join "`n").Contains($adminKey) -and !(@($script:HostLog) -join "`n").Contains($script:DevPassword) -and !(Test-LockHeld)) 'Admin: nothing printed contains a secret; the lock is released'
+
+      # ---- repeat: idempotent configuration, the account is not touched, the running front is reused
+      $firstPid = [int]$record.pid
+      Open-AppLauncher 'Admin'
+      Check ($script:AdminCli.Count -eq 2 -and @($script:AdminCli | Where-Object { $_.Kind -eq 'bootstrap' }).Count -eq 0 -and $script:AppStarts.Count -eq 1 -and [int](Get-AdminRecord).pid -eq $firstPid -and $script:StopCalls.Count -eq 0) 'Admin repeat: configuration re-checked (unchanged), no account command, front and backend reused'
+
+      # ---- the SYSTEM account is missing: asked in the console, sent on standard input only, nothing kept
+      New-AdminSandbox
+      $script:SystemCount = '0'
+      $script:InputRedirected = $false
+      foreach ($answer in @('y', $adminPhone, $adminPassword, $adminPassword)) { $script:Answers.Enqueue($answer) }
+      Open-AppLauncher 'Admin'
+      $bootstrap = @($script:AdminCli | Where-Object { $_.Kind -eq 'bootstrap' })
+      $payload = $null
+      try { $payload = $bootstrap[0].Stdin | ConvertFrom-Json } catch { }
+      Check ($bootstrap.Count -eq 1 -and $bootstrap[0].Held -eq $true -and $bootstrap[0].Backends -eq 0) 'SYSTEM missing: one bootstrap, under the lock, before the backend starts'
+      Check ($payload -and $payload.phone -ceq $adminPhone -and $payload.password -ceq $adminPassword -and @($payload.PSObject.Properties).Count -eq 2) 'SYSTEM missing: the command receives exactly {phone, password} on standard input'
+      $everything = (@($script:HostLog) + @($script:Prompts) + @($script:ClientChecks) + @($script:NpmCalls) + @($script:DockerCalls) + @($script:SqlCalls)) -join "`n"
+      Check (!$everything.Contains($adminPassword) -and !$everything.Contains($adminKey)) 'SYSTEM missing: the password appears in no output, prompt, argument, SQL or log'
+      Check (@(Get-ChildItem -LiteralPath $script:Repo -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } | Select-String -SimpleMatch -Pattern $adminPassword -List).Count -eq 0) 'SYSTEM missing: the password was written to no file of the checkout (logs included)'
+      Check ($script:ExtraSecrets -contains $adminPassword) 'SYSTEM missing: the password is registered for redaction for the rest of the run'
+      Check ($script:Browser.Count -eq 1 -and $script:AppStarts.Count -eq 1) 'SYSTEM missing: after the account exists the launch goes on and opens the browser'
+
+      foreach ($case in @(
+        @('the Owner declines', @('n'), 'ADMIN_SYSTEM_MISSING', $false),
+        @('the passwords differ', @('y', $adminPhone, $adminPassword, 'other-password-0'), 'ADMIN_SYSTEM_INPUT_INVALID', $false),
+        @('the phone is empty', @('y', '', $adminPassword, $adminPassword), 'ADMIN_SYSTEM_INPUT_INVALID', $false),
+        @('input is redirected', @(), 'ADMIN_SYSTEM_MISSING', $true)
+      )) {
+        New-AdminSandbox
+        $script:SystemCount = '0'
+        $script:InputRedirected = $case[3]
+        foreach ($answer in $case[1]) { $script:Answers.Enqueue($answer) }
+        Expect-Fail $case[2] "SYSTEM missing, $($case[0])" { Open-AppLauncher 'Admin' }
+        Check (@($script:AdminCli | Where-Object { $_.Kind -eq 'bootstrap' }).Count -eq 0 -and $script:BackendStarts -eq 0 -and $script:AppStarts.Count -eq 0 -and $script:Browser.Count -eq 0 -and !(Test-LockHeld)) "SYSTEM missing, $($case[0]): no account created, no backend, no front, no browser, lock released"
+        $script:InputRedirected = $false
+      }
+      New-AdminSandbox
+      $script:SystemCount = '0'
+      $script:AdminBootstrapMode = 'refused'
+      foreach ($answer in @('y', $adminPhone, $adminPassword, $adminPassword)) { $script:Answers.Enqueue($answer) }
+      $message = Get-FailMessage { Open-AppLauncher 'Admin' }
+      Check ($message.Contains(': ADMIN_SYSTEM_BOOTSTRAP_FAILED)') -and $message.Contains('PASSWORD_POLICY') -and !$message.Contains($adminPassword) -and $script:BackendStarts -eq 0 -and $script:Browser.Count -eq 0) 'SYSTEM refused by the command: reported with its fixed code, no password echoed, backend and browser not reached'
+
+      # ---- limiter configuration refused: the backend is not started with a login that cannot work
+      New-AdminSandbox
+      $script:AdminCliMode = 'refused'
+      $message = Get-FailMessage { Open-AppLauncher 'Admin' }
+      Check ($message.Contains(': ADMIN_LIMIT_CONFIG_FAILED)') -and $message.Contains('ADMIN_RATE_LIMIT_HMAC_KEY') -and $script:BackendStarts -eq 0 -and $script:AppStarts.Count -eq 0 -and $script:Browser.Count -eq 0 -and @($script:SqlCalls | Where-Object { $_.Contains('admin_memberships') }).Count -eq 0) 'limiter configuration refused: ADMIN_LIMIT_CONFIG_FAILED, no account query, no backend, no front, no browser'
+
+      # ---- the backend that is running has no administration login (started before .env had the settings)
+      New-AdminSandbox
+      $script:ProbeMode = 'ADMIN_AUTH_UNAVAILABLE'
+      $message = Get-FailMessage { Open-AppLauncher 'Admin' }
+      Check ($message.Contains(': ADMIN_AUTH_UNAVAILABLE)') -and $message.Contains('11Ship-Stop.cmd') -and $script:ProbeCount -eq 1 -and $script:Browser.Count -eq 0) 'backend without administration login: ADMIN_AUTH_UNAVAILABLE at once, tells to Stop and start again, browser never opened'
+      $script:ProbeMode = 'ok'
+
+      # ---- Status and Stop include the Admin front, and only what is proven ours
+      New-AdminSandbox
+      Open-AppLauncher 'Admin'
+      $adminPid = [int](Get-AdminRecord).pid
+      $script:HostLog.Clear()
+      Status-Launcher
+      Check ((@($script:HostLog) -join "`n") -match 'Web Admin - https://localhost:8443: ' -and (@($script:HostLog) -join "`n").Contains("PID $adminPid")) 'Status reports the Admin front with its PID'
+      Stop-Launcher
+      Check (!$script:FakeProcs.ContainsKey($adminPid) -and !(Test-Path -LiteralPath (Get-AppTarget 'Admin').RegistryFile)) 'Stop ends the Admin front and removes its record'
+
+      # ---- a build problem of the Admin app leaves the running front alone
+      New-AdminSandbox
+      Open-AppLauncher 'Admin'
+      $runningPid = [int](Get-AdminRecord).pid
+      $script:AppBuildFails = $true
+      Expect-Fail 'APP_BUILD_FAILED' 'Admin: a failing build is reported' { Open-AppLauncher 'Admin' }
+      Check ($script:FakeProcs.ContainsKey($runningPid) -and $script:StopCalls.Count -eq 0) 'Admin: a failing build leaves the running front untouched'
+      $script:AppBuildFails = $false
+
+      # ---- the real operator-command runner: .env is loaded by node, credentials only on standard input, output redacted
+      Set-Item -Path function:Invoke-AdminCli -Value $realInvokeAdminCli
+      New-AdminSandbox
+      $script:NodeCalls = New-Object 'Collections.Generic.List[object]'
+      $realNode = ${function:node.exe}
+      function node.exe { $global:LASTEXITCODE = 0; $script:NodeCalls.Add([pscustomobject]@{ Arguments = @($args); Stdin = @($input) -join "`n" }); "admin-auth:bootstrap-system: unchanged"; "echo of $($script:ExtraSecrets -join '')" }
+      try {
+        $script:ExtraSecrets = @($adminPassword)
+        $json = ([ordered]@{ phone = $adminPhone; password = $adminPassword } | ConvertTo-Json -Compress)
+        $run = Invoke-AdminCli 'admin-auth-bootstrap-system.js' $json
+        $call = $script:NodeCalls[0]
+        Check ($run.ExitCode -eq 0 -and (Get-AdminCliOutcome $run.Text 'admin-auth:bootstrap-system') -ceq 'unchanged') 'operator runner: exit code and the one fixed word are read back'
+        Check ($call.Arguments.Count -eq 2 -and $call.Arguments[0] -ceq '--env-file=.env' -and $call.Arguments[1] -ceq (Join-Path (Join-Path $script:Repo 'scripts') 'admin-auth-bootstrap-system.js')) 'operator runner: node loads .env itself; the only arguments are --env-file=.env and the script'
+        Check ($call.Stdin.Contains($adminPassword) -and !(($call.Arguments -join ' ').Contains($adminPassword))) 'operator runner: the password goes through standard input and never through an argument'
+        Check (!$run.Text.Contains($adminPassword)) 'operator runner: a command that echoes the password is redacted before the text is returned'
+        $null = Invoke-AdminCli 'admin-auth-init-limit-config.js'
+        Check ($script:NodeCalls.Count -eq 2 -and $script:NodeCalls[1].Stdin -ceq '') 'operator runner: the limiter command gets no standard input'
+      } finally {
+        Remove-Item -Path function:node.exe -ErrorAction SilentlyContinue
+        Set-Item -Path function:node.exe -Value $realNode
+        $script:ExtraSecrets = @()
+      }
+    } finally {
+      Set-Item -Path function:Invoke-AdminCli -Value $realInvokeAdminCli
+      Set-Item -Path function:Read-SystemPassword -Value $realRequestPassword
+      Set-Item -Path function:Read-SystemPhone -Value $realRequestPhone
+      $script:InputRedirected = $false
+    }
   } finally {
     Remove-Item -Path function:Start-Process -ErrorAction SilentlyContinue
   }

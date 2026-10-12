@@ -1,5 +1,7 @@
 # M01-D-LOGIN-UI — chạy web quản trị local qua HTTPS
 
+> Từ M00.08, cách chạy bình thường là `tools\local\11Ship-Admin.cmd` (xem `ops/runbooks/local-https-runtime.md`, mục Web Admin). Các bước tay dưới đây vẫn đúng khi không dùng launcher; `npm run build:admin-web` giờ ghi thêm `build-manifest.json` và front từ chối khởi động nếu thiếu hoặc không khớp nội dung build.
+
 Tài liệu cho Owner/dev chạy thử trên máy mình. Đây là hướng dẫn, không phải bằng chứng đã test local.
 Web quản trị phụ thuộc backend PR #34 (nhánh `feat/m01-d-login-backend`), PR đó chưa merge. Chạy từ nhánh UI là có đủ backend.
 

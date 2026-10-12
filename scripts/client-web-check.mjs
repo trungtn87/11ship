@@ -2,13 +2,16 @@
 // Checks of the local HTTPS runtime for the launcher and for people (M00.05). Prints ONE JSON line and exits 0 (ok) or 1.
 //
 //   node scripts/client-web-check.mjs cert  [--cert <file> --key <file>]
-//   node scripts/client-web-check.mjs probe --app <food-web|ship-web> --port <n> --cert <file>
+//   node scripts/client-web-check.mjs probe --app <food-web|ship-web|admin-web> --port <n> --cert <file>
 //                                           [--expect-sha <40 hex> --expect-fingerprint <64 hex>] [--no-health]
 //
 // `cert` validates the certificate files (exists, readable, in date, names localhost and 127.0.0.1, key belongs to it).
 // `probe` asks the running front for /__11ship/runtime over TLS, accepting only the pinned leaf of --cert (no verification
 // switched off, no trust store touched), checks it is the expected app and build, and then reads /v1/health/live and
 // /v1/health/ready THROUGH the front and requires the agreed bodies. Nothing secret is read or printed.
+// Web Admin (--app admin-web, M00.08) does not forward health: its front forwards only the admin API, so instead of health the
+// probe sends ONE cookie-less GET /v1/admin-auth/state through it and requires the backend's own 401 ADMIN_SESSION_INVALID -
+// which only a running backend with administration login enabled and a reachable database answers (a disabled login is 404).
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { CLIENT_RUNTIMES, RUNTIME_PATH } from './client-web-dev.mjs';
@@ -72,6 +75,9 @@ export async function probeRuntime({ app, port, certPath, expectSha, expectFinge
   if (!health) {
     return result(true, 'OK', 'identity verified', base);
   }
+  if (app === 'admin-web') {
+    return probeAdminAuth(get, base);
+  }
   const expected = [['/v1/health/live', 'ok'], ['/v1/health/ready', 'ready']];
   for (const [path, status] of expected) {
     const reply = await get(path);
@@ -87,6 +93,26 @@ export async function probeRuntime({ app, port, certPath, expectSha, expectFinge
     }
   }
   return result(true, 'OK', 'identity and health through the front verified', base);
+}
+
+/** The backend behind the Admin front, seen through it: no cookie, no credential, no write. */
+async function probeAdminAuth(get, base) {
+  const path = '/v1/admin-auth/state';
+  const reply = await get(path);
+  if (reply.failure) {
+    return reply.failure;
+  }
+  const { status, body } = reply.answer;
+  if (status === 401 && parseJson(body)?.error?.code === 'ADMIN_SESSION_INVALID') {
+    return result(true, 'OK', 'identity verified and the administration login answers through the front', base);
+  }
+  if (status === 404) {
+    return result(false, 'ADMIN_AUTH_UNAVAILABLE', 'the backend does not serve the administration login (it was started without ADMIN_AUTH_ENABLED=true, or is an older build)', base);
+  }
+  if (status === 502 || status === 503 || status === 504) {
+    return result(false, 'HEALTH_NOT_READY', `the front is up but the backend did not answer ${path} (HTTP ${String(status)})`, base);
+  }
+  return result(false, 'HEALTH_FAILED', `${path} through the front did not answer the agreed HTTP 401 ADMIN_SESSION_INVALID (HTTP ${String(status)})`, base);
 }
 
 function option(args, name) {
