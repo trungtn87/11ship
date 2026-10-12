@@ -111,7 +111,7 @@ export class ClientLoginService {
           replay: {
             kind: 'sensitive',
             authorize: async (context, guard) => {
-              await this.#authorizeReplay(context, guard, input, capture);
+              await this.#authorizeReplay(context, guard, input, user.passwordHash, capture);
               return true;
             },
           },
@@ -241,13 +241,15 @@ export class ClientLoginService {
   /**
    * Replay authorization (contract11 section 5). Same TransactionContext as the executor; locks user then session IN THE
    * ORDER of the first execution, reads the state after the locks and stays read-only. Only after this resolves does the
-   * engine decrypt the stored result. Every denial is AUTH_RESULT_NOT_REPLAYABLE: the token is not returned, not restored
-   * and not distinguishable by cause.
+   * engine decrypt the stored result. Every denial is AUTH_RESULT_NOT_REPLAYABLE (token not returned, not restored, not
+   * distinguishable by cause), except a password hash that differs from the one this request verified: INVALID_CREDENTIALS,
+   * as for a new login.
    */
   async #authorizeReplay(
     context: TransactionContext,
     guard: JsonObject,
     input: ClientLoginInput,
+    verifiedPasswordHash: string,
     capture: IdentityCapture,
   ): Promise<void> {
     const { user_id: userId, session_id: sessionId } = guard;
@@ -264,6 +266,11 @@ export class ClientLoginService {
       !this.originPolicy.allows({ accountOrigin: user.accountOrigin, phoneNormalized: user.phoneNormalized })
     ) {
       throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
+    }
+    // The password this request just proved is the one the user holds NOW. A hash that changed while the request waited for
+    // the lock means the proof is stale: same answer as a new login with a wrong password, and nothing is decrypted.
+    if (user.passwordHash !== verifiedPasswordHash) {
+      throw new AppError('INVALID_CREDENTIALS');
     }
     const eligibility = await this.customers.lockEligibility(context, userId);
     if (

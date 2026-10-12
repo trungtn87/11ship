@@ -379,6 +379,35 @@ describe('M01.04 — client login, me, context, logout', () => {
       expect(await sessionCount(user.userId)).toBe(before);
       expect(await loginRecords(user.userId)).toBe(0);
     });
+
+    it('a REPLAY whose verified password hash changed while it waited for the lock is INVALID_CREDENTIALS and returns no token', async () => {
+      const user = await newCustomer();
+      const first = await loginOk(user);
+      const sessions = await sessionCount(user.userId);
+      const audits = await auditCount(user.userId, 'client.auth.login.v1');
+      const replacement = await new Argon2idPasswordHasher().hash(OTHER_PASSWORD);
+
+      const holder = await LockHolder.begin(app.pool);
+      let response: Awaited<ReturnType<typeof login>>;
+      try {
+        await holder.query('SELECT 1 FROM app.users WHERE user_id = $1::uuid FOR UPDATE', [user.userId]);
+        // The same key and body: the password verifies against the OLD hash, then the replay waits for the user lock.
+        const pending = login(user, { key: first.key });
+        await eventually(async () => (await rowLockWaiters(app.pool)) >= 1, 'the replay waits on the user row lock');
+        await holder.query('UPDATE app.users SET password_hash = $2, updated_at = clock_timestamp() WHERE user_id = $1::uuid', [user.userId, replacement]);
+        await holder.commit();
+        response = await pending;
+      } finally {
+        await holder.rollback();
+      }
+
+      // The session is still valid, yet the proof is stale: refused like a new login with a wrong password.
+      expect([response.status, errorCode(response)]).toEqual([401, 'INVALID_CREDENTIALS']);
+      expect(response.text).not.toContain(String(first.data.access_token));
+      expect((await me(first.token)).status).toBe(200);
+      expect(await sessionCount(user.userId)).toBe(sessions);
+      expect(await auditCount(user.userId, 'client.auth.login.v1')).toBe(audits);
+    });
   });
 
   describe('L — replay', () => {
