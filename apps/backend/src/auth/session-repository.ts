@@ -40,6 +40,17 @@ export interface LockedSession {
   readonly expiresAtMs: number;
 }
 
+/**
+ * The immutable birth facts of a session plus the role stored on it, for the client API (M01.04). app, platform and the
+ * expiry never change after creation, and the caller holds the session lock, so a plain read is coherent.
+ */
+export interface ClientSessionView {
+  readonly app: string;
+  readonly platform: string;
+  readonly activeRole: string | null;
+  readonly expiresAtMs: number;
+}
+
 /** The shared-lock variant returns the same shape; the alias keeps the name the readers already use. */
 export type SharedLockedSession = LockedSession;
 
@@ -202,6 +213,45 @@ export class SessionRepository {
       [userId, currentSessionId],
     );
     return result.rows.map((row) => row.session_id).sort();
+  }
+
+  /** See ClientSessionView. Undefined when the session does not exist. */
+  async readClientView(context: TransactionContext, sessionId: string): Promise<ClientSessionView | undefined> {
+    const result = await context.query<{
+      app: string;
+      platform: string;
+      active_role: string | null;
+      expires_ms: string;
+    }>(
+      `SELECT app, platform, active_role, ${epochMs('expires_at')} AS expires_ms
+         FROM app.sessions WHERE session_id = $1::uuid`,
+      [sessionId],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      return undefined;
+    }
+    return {
+      app: row.app,
+      platform: row.platform,
+      activeRole: row.active_role,
+      expiresAtMs: toSafeInteger(row.expires_ms),
+    };
+  }
+
+  /**
+   * Revokes ONE session by id (client logout, M01.04). The caller holds the user and session locks. True when THIS call
+   * changed it from active to revoked; false when it was already revoked (so a retry changes and audits nothing).
+   */
+  async revokeById(context: TransactionContext, sessionId: string): Promise<boolean> {
+    const result = await context.query(
+      `UPDATE app.sessions
+          SET revoked_at = date_trunc('milliseconds', clock_timestamp()),
+              updated_at = date_trunc('milliseconds', clock_timestamp())
+        WHERE session_id = $1::uuid AND revoked_at IS NULL`,
+      [sessionId],
+    );
+    return result.rowCount === 1;
   }
 
   async setActiveRole(context: TransactionContext, sessionId: string, role: string): Promise<void> {

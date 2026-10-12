@@ -1,6 +1,7 @@
 import { AppError, TechnicalError } from '../common/app-errors';
 import { AppConfig } from '../config/app-config';
 import { ClientAuthConfig, isLocalWebMode } from '../config/client-auth-config';
+import { ClientPlatform } from './client-auth-constants';
 import { ClientConsentInput, ClientDevice } from './client-auth-validation';
 
 // Server-side policy of the client registration (M01.03), decided from the validated startup configuration and never from
@@ -28,10 +29,19 @@ export function clientAuthSettingsFrom(config: AppConfig): ClientAuthSettings {
  *    proof that WEB cannot give: DEVICE_PROOF_REQUIRED (403).
  */
 export function assertDeviceAllowed(settings: ClientAuthSettings, device: ClientDevice): void {
-  if (device.platform === 'ANDROID') {
+  assertPlatformAllowed(settings, device.platform);
+}
+
+/**
+ * The same gate by platform alone. The endpoints that take a Bearer token (me, context, logout; M01.04) apply it to the
+ * platform RECORDED on the session, so a session of a platform that this process cannot vouch for is never served: not an
+ * ANDROID one (no verifier), and not a WEB one outside the explicit local mode.
+ */
+export function assertPlatformAllowed(settings: ClientAuthSettings, platform: ClientPlatform): void {
+  if (platform === 'ANDROID') {
     throw new TechnicalError('unavailable', 'The Android device proof verifier is not available');
   }
-  if (device.platform === 'WEB' && settings.localWeb) {
+  if (platform === 'WEB' && settings.localWeb) {
     return;
   }
   throw new AppError('DEVICE_PROOF_REQUIRED');

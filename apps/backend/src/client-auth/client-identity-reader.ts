@@ -8,6 +8,7 @@ import { ShopEligibilityReader } from '../shop/shop-eligibility-reader';
 import { ShopOnboardingState } from '../shop/shop-types';
 import { TransactionContext } from '../transaction/transaction-context';
 import { ClientApp, PUBLIC_CUSTOMER, PUBLIC_DRIVER, PUBLIC_SHOP_OWNER } from './client-auth-constants';
+import { publicContextOf } from './client-context';
 
 /** The identity block of every client-auth success response (contract11 section 2). */
 export interface ClientIdentity {
@@ -43,27 +44,12 @@ export interface ClientIdentityInput {
   readonly storedActiveRole: string | null;
 }
 
-/** Storage role -> public context name. SHOP_OWNER exists only in the client API; SHOP is what the database stores. */
-function publicNameOf(storageRole: string): string | undefined {
-  switch (storageRole) {
-    case CUSTOMER_ROLE:
-      return PUBLIC_CUSTOMER;
-    case 'SHOP':
-      return PUBLIC_SHOP_OWNER;
-    case 'DRIVER':
-      return PUBLIC_DRIVER;
-    default:
-      return undefined;
-  }
-}
-
 /**
  * Builds the CURRENT identity of one user from the roles, the customer profile and the Shop and Driver eligibility ports
  * (contract11 sections 1-2). It is a pure read: it issues no write, takes no lock and opens no transaction; it runs on the
  * caller's TransactionContext, which must already hold the user root lock (and, for the session role, the session lock) so
  * that roles, profile and statuses are one coherent state. The register response and every replay of it go through here,
- * which is why a replay never serves a snapshot of rights taken at registration (R15). It is written to be shared by the
- * later login/me/context slice; it opens no endpoint itself.
+ * which is why a replay never serves a snapshot of rights taken at registration (R15). Login, me and context (M01.04) share it.
  */
 @Injectable()
 export class ClientIdentityReader {
@@ -74,6 +60,18 @@ export class ClientIdentityReader {
     private readonly drivers: DriverEligibilityReader,
   ) {}
 
+  /**
+   * The SELECTABLE contexts of a user, in the fixed order, from the same rule as read(). Login uses it to pick the context
+   * BEFORE the session row is written (the session stores the chosen role from its first instant), and the context switch
+   * uses it to decide a request. Same locking contract as read(): the caller holds the user root lock.
+   */
+  async selectableContexts(context: TransactionContext, userId: string): Promise<string[]> {
+    const held = new Set(await this.users.rolesAmong(context, userId, [CUSTOMER_ROLE, 'SHOP', 'DRIVER']));
+    const shop = await this.shops.ownerShopEligibility(context, userId);
+    const driver = await this.drivers.ownerDriverEligibility(context, userId);
+    return selectableOf(held, shop.selectable, driver.selectable);
+  }
+
   async read(context: TransactionContext, input: ClientIdentityInput): Promise<ClientIdentity> {
     const held = new Set(await this.users.rolesAmong(context, input.userId, [CUSTOMER_ROLE, 'SHOP', 'DRIVER']));
     const profile = await this.customers.findProfile(context, input.userId);
@@ -82,18 +80,9 @@ export class ClientIdentityReader {
 
     // available_roles lists what is SELECTABLE, not what is held: SHOP_OWNER needs an ACTIVE owned shop, DRIVER a profile
     // that is not CLOSED; a stray membership without its profile is not offered.
-    const available: string[] = [];
-    if (held.has(CUSTOMER_ROLE)) {
-      available.push(PUBLIC_CUSTOMER);
-    }
-    if (held.has('SHOP') && shop.selectable) {
-      available.push(PUBLIC_SHOP_OWNER);
-    }
-    if (held.has('DRIVER') && driver.selectable) {
-      available.push(PUBLIC_DRIVER);
-    }
+    const available = selectableOf(held, shop.selectable, driver.selectable);
 
-    const storedPublic = input.storedActiveRole === null ? undefined : publicNameOf(input.storedActiveRole);
+    const storedPublic = input.storedActiveRole === null ? undefined : publicContextOf(input.storedActiveRole);
     const activeRole = storedPublic !== undefined && available.includes(storedPublic) ? storedPublic : null;
 
     const onboardingRequired =
@@ -116,4 +105,19 @@ export class ClientIdentityReader {
       role_selection_required: available.length > 0 && activeRole === null,
     };
   }
+}
+
+/** The one rule of "selectable": a held role, plus an ACTIVE owned shop for SHOP_OWNER and a not-CLOSED profile for DRIVER. */
+function selectableOf(held: ReadonlySet<string>, shopSelectable: boolean, driverSelectable: boolean): string[] {
+  const available: string[] = [];
+  if (held.has(CUSTOMER_ROLE)) {
+    available.push(PUBLIC_CUSTOMER);
+  }
+  if (held.has('SHOP') && shopSelectable) {
+    available.push(PUBLIC_SHOP_OWNER);
+  }
+  if (held.has('DRIVER') && driverSelectable) {
+    available.push(PUBLIC_DRIVER);
+  }
+  return available;
 }

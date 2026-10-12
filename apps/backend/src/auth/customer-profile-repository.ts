@@ -64,6 +64,30 @@ export class CustomerProfileRepository {
   }
 
   /**
+   * The same facts as lockEligibility, WITHOUT taking a lock (M01.04 /me). A reader that holds the user row FOR SHARE must
+   * not upgrade it to FOR UPDATE (two readers doing so would deadlock), and the row it holds cannot change under it.
+   */
+  async readEligibility(context: TransactionContext, userId: string): Promise<CustomerEligibility | undefined> {
+    const result = await context.query<RawEligibility>(
+      `SELECT u.account_origin,
+              (u.phone_verified_at IS NOT NULL) AS phone_verified,
+              EXISTS (SELECT 1 FROM app.admin_memberships m WHERE m.user_id = u.user_id) AS has_admin_membership
+         FROM app.users u
+        WHERE u.user_id = $1::uuid`,
+      [userId],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      return undefined;
+    }
+    return {
+      accountOrigin: row.account_origin,
+      phoneVerified: row.phone_verified,
+      hasAdminMembership: row.has_admin_membership,
+    };
+  }
+
+  /**
    * Creates the profile (version 1) unless one exists. Without `initialFullName` it is the empty profile of M01.02
    * (full_name NULL). With it (M01.03, a NEW customer registering) the already normalized name is written at once with
    * version 1: this is initialization, never an update, so the version does not move to 2. An existing profile is never

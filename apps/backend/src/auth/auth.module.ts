@@ -4,7 +4,10 @@ import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { ClientAuthController } from '../client-auth/client-auth.controller';
 import { CLIENT_AUTH_SETTINGS, clientAuthSettingsFrom } from '../client-auth/client-auth-policy';
 import { ClientIdentityReader } from '../client-auth/client-identity-reader';
+import { ClientLoginService } from '../client-auth/client-login-service';
 import { ClientRegistrationService } from '../client-auth/client-registration-service';
+import { ClientSessionAuthority } from '../client-auth/client-session-authority';
+import { ClientSessionService } from '../client-auth/client-session-service';
 import { DriverModule } from '../driver/driver.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OutboxModule } from '../outbox/outbox.module';
@@ -81,6 +84,9 @@ export class AuthModule {
         { provide: CLIENT_AUTH_SETTINGS, inject: [APP_CONFIG], useFactory: clientAuthSettingsFrom },
         ClientIdentityReader,
         ClientRegistrationService,
+        ClientLoginService,
+        ClientSessionAuthority,
+        ClientSessionService,
         VerificationRepository,
         ProofRepository,
         UserRepository,

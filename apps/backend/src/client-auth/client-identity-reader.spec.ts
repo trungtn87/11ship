@@ -62,4 +62,18 @@ describe('ClientIdentityReader', () => {
     const identity = await reader({ roles: ['CUSTOMER'], profile: { fullName: 'An', version: 1 } }).read(CONTEXT, { ...base, enabled: false });
     expect(Object.values(identity.capabilities)).toEqual([false, false, false, false]);
   });
+
+  it('selectableContexts is the same rule as available_roles', async () => {
+    const options = {
+      roles: ['DRIVER', 'SHOP', 'CUSTOMER'],
+      profile: { fullName: 'An', version: 1 },
+      shop: { onboarding: 'INCOMPLETE', selectable: false },
+      driver: { onboarding: 'PENDING_APPROVAL', selectable: true },
+    };
+    const subject = reader(options);
+    const identity = await subject.read(CONTEXT, base);
+    expect(await subject.selectableContexts(CONTEXT, 'u-1')).toEqual(identity.available_roles);
+    expect(identity.available_roles).toEqual(['CUSTOMER', 'DRIVER']);
+  });
 });
+

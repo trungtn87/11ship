@@ -9,6 +9,7 @@ import {
 import { CONSENT_VERSION_PATTERN } from '../auth/auth-constants';
 import { requireNormalizedPhone } from '../auth/phone';
 import { ClientApp, ClientPlatform, CLIENT_APPS, CLIENT_PLATFORMS } from './client-auth-constants';
+import { isPublicContext, PublicContext } from './client-context';
 
 // Strict request-body parser of POST /v1/client-auth/register (task M01.03 section 4, contract10 section 3). Pure: no
 // I/O, no Nest pipeline magic. The body is accepted only when it is a plain JSON object whose keys are EXACTLY the six
@@ -123,4 +124,45 @@ export function parseClientRegisterBody(body: unknown): ClientRegisterInput {
     fullName: normalizeFullName(parsed.full_name),
     consent: parseConsent(parsed.consent),
   };
+}
+
+export interface ClientLoginInput {
+  readonly phoneNormalized: string;
+  /** Exactly as sent. Login does not apply the registration length policy: a wrong-length password is a wrong password. */
+  readonly password: string;
+  readonly device: ClientDevice;
+}
+
+/**
+ * POST /v1/client-auth/login (contract11 section 3): exact {phone, password, device}. As in the legacy login only the type
+ * and the encoding of the password are checked, so the response never reveals the password policy.
+ */
+export function parseClientLoginBody(body: unknown): ClientLoginInput {
+  const parsed = exactObject(body, ['phone', 'password', 'device']);
+  if (typeof parsed.password !== 'string' || !isWellFormed(parsed.password) || parsed.password.length > 1024) {
+    return reject();
+  }
+  return {
+    phoneNormalized: requireNormalizedPhone(parsed.phone),
+    password: parsed.password,
+    device: parseClientDevice(parsed.device),
+  };
+}
+
+export interface ClientContextInput {
+  readonly context: PublicContext;
+}
+
+/** POST /v1/client-auth/context: exact {context} with one of the three public contexts. Anything else is a malformed body. */
+export function parseClientContextBody(body: unknown): ClientContextInput {
+  const parsed = exactObject(body, ['context']);
+  if (!isPublicContext(parsed.context)) {
+    return reject();
+  }
+  return { context: parsed.context };
+}
+
+/** POST /v1/client-auth/logout: exact {} (contract10 section 5). No field is accepted, so none can be mistaken for an identity. */
+export function parseClientLogoutBody(body: unknown): void {
+  exactObject(body, []);
 }

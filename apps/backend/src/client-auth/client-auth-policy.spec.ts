@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { AppError, TechnicalError } from '../common/app-errors';
-import { assertConsentSupported, assertDeviceAllowed, ClientAuthSettings } from './client-auth-policy';
+import { assertConsentSupported, assertDeviceAllowed, assertPlatformAllowed, ClientAuthSettings } from './client-auth-policy';
 
 const PAIR = { termsVersion: 'test-terms-20261011-v1', privacyVersion: 'test-privacy-20261011-v1' };
 const web = { deviceId: 'd-1', platform: 'WEB', app: 'FOOD' } as const;
@@ -20,6 +20,16 @@ describe('assertDeviceAllowed', () => {
   it('answers unavailable for ANDROID whatever the mode (no verifier, no fallback)', () => {
     for (const localWeb of [true, false]) {
       expect(() => assertDeviceAllowed({ consent: PAIR, localWeb }, android)).toThrow(TechnicalError);
+    }
+  });
+});
+
+describe('assertPlatformAllowed (the platform recorded on a session)', () => {
+  it('serves WEB only in LOCAL_WEB mode and never ANDROID', () => {
+    expect(() => assertPlatformAllowed({ consent: PAIR, localWeb: true }, 'WEB')).not.toThrow();
+    expect(() => assertPlatformAllowed({ consent: PAIR, localWeb: false }, 'WEB')).toThrow(AppError);
+    for (const localWeb of [true, false]) {
+      expect(() => assertPlatformAllowed({ consent: PAIR, localWeb }, 'ANDROID')).toThrow(TechnicalError);
     }
   });
 });
