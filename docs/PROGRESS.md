@@ -202,7 +202,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#82](https://github.com/trungtn87/11ship/pull/82) M01.07: 11Food register — OTP + DISABLED_TEST (no-OTP test… | Đã merge (`MERGED`) | — | — | — | `7a22a72` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#83](https://github.com/trungtn87/11ship/pull/83) feat(client): M01 tài khoản khách và phiên Food/Ship (đăng… | Đã merge (`MERGED`) | — | — | — | `2358d58` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#84](https://github.com/trungtn87/11ship/pull/84) fix(client): Food/Ship trở về Trang chủ sau đăng xuất | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `117e8f1` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#85](https://github.com/trungtn87/11ship/pull/85) feat(m01): nối hồ sơ quán 11Food F20–F23 + GET shop/service… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `e6e2c8f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#85](https://github.com/trungtn87/11ship/pull/85) feat(m01): nối hồ sơ quán 11Food F20–F23 + GET shop/service… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `d32d51d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
