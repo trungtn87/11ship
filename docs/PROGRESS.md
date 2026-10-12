@@ -5,7 +5,7 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo mã main `a7a8587` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ⏳ Đang chạy (`RUNNING`)
+> Dữ liệu theo mã main `a7a8587` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ✅ Đạt (`PASS`)
 
 ## 🎯 VIỆC ĐANG LÀM
 
@@ -204,7 +204,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#84](https://github.com/trungtn87/11ship/pull/84) fix(client): Food/Ship trở về Trang chủ sau đăng xuất | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `117e8f1` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#85](https://github.com/trungtn87/11ship/pull/85) feat(m01): nối hồ sơ quán 11Food F20–F23 + GET shop/service… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `d32d51d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#86](https://github.com/trungtn87/11ship/pull/86) (HỦY) docs(M01): phương án APK WebView test | 🚫 Đã hủy / bỏ qua (`CANCELLED / IGNORED`) | — | — | — | `8902532` | 🚫 không tính (đã hủy) — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#87](https://github.com/trungtn87/11ship/pull/87) M00-VPS-01: cập nhật VPS staging — gói A+B (#70/#71) trên m… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `327e124` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#87](https://github.com/trungtn87/11ship/pull/87) M00-VPS-01: cập nhật VPS staging — gói A+B (#70/#71) trên m… | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `327e124` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
