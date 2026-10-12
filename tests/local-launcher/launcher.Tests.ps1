@@ -21,7 +21,7 @@ function git.exe {
   & $script:RealGit @args
 }
 $savedEnv = @{}
-foreach ($name in @('OS','APP_ENV','NODE_ENV','DATABASE_URL','GITHUB_TOKEN','GH_TOKEN','SHIP11_NO_PAUSE','TEST_WRONG_USER_DATABASE_URL','TEST_REMOTE_PATH_DATABASE_URL','TEST_REMOTE_PATH_RUNTIME_URL','PGPASSWORD','SHIP11_LOCK_TIMEOUT_SECONDS','SHIP11_HARNESS_DELAY_MS','SHIP11_HARNESS_NPM_FAIL','GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE')) { $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
+foreach ($name in @('OS','APP_ENV','NODE_ENV','DATABASE_URL','GITHUB_TOKEN','GH_TOKEN','SHIP11_NO_PAUSE','TEST_WRONG_USER_DATABASE_URL','TEST_REMOTE_PATH_DATABASE_URL','TEST_REMOTE_PATH_RUNTIME_URL','PGPASSWORD','SHIP11_LOCK_TIMEOUT_SECONDS','SHIP11_NO_BROWSER','SHIP11_HARNESS_DELAY_MS','SHIP11_HARNESS_NPM_FAIL','GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE')) { $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 $env:OS = 'Windows_NT'
 . $scriptPath
 # M00.03: the production operating-system seams, kept for the Windows-only section before the fakes below replace them.
@@ -148,6 +148,13 @@ function npm.cmd {
     if ($script:BuildHook) { & $script:BuildHook }
     return
   }
+  if ($line -match '^run build:(food|ship)-web$') {
+    $appKey = "$($Matches[1])-web"
+    $script:AppBuilds.Add($appKey)
+    if ($script:AppBuildFails) { $global:LASTEXITCODE = 1; return }
+    if (!$script:AppBuildNoOutput) { Write-FakeAppBuild $appKey }
+    return
+  }
   if ($line -eq 'run db:migrate') {
     $script:MigrateAliveProcesses = $script:FakeProcs.Count
     $script:MigrateEnv = "APP_ENV=[$env:APP_ENV] DATABASE_URL=[$env:DATABASE_URL]"
@@ -258,6 +265,54 @@ function Start-NpmStep([string[]]$NpmArgs,[string]$Stdout,[string]$Stderr) {
   if ($script:StepExit.ContainsKey($name)) { return $script:StepExit[$name] }
   return 0
 }
+# ---- M00.05: the checker (scripts/client-web-check.mjs), the app process and the browser. The OS seams are the table above. ----
+function New-CheckResult([bool]$Ok,[string]$Code,[string]$Message='simulated') { return [pscustomobject]@{ Ok = $Ok; Code = $Code; Message = $Message } }
+function Invoke-ClientCheck([string[]]$Arguments) {
+  $script:ClientChecks.Add(($Arguments -join ' '))
+  if ($Arguments[0] -eq 'cert') {
+    $script:CertSawComposeUp = @($script:DockerCalls | Where-Object { $_ -match 'compose.* up ' -or $_.EndsWith(' up') -or $_ -match ' up -d' }).Count
+    $script:CertSawLock = (Test-LockHeld)
+    $script:Events.Add('cert')
+    if ($script:CertMode -eq 'ok') { return (New-CheckResult $true 'OK') }
+    return (New-CheckResult $false $script:CertMode)
+  }
+  Add-LockObservation 'client probe'
+  $script:ProbeCount++
+  $script:Events.Add('probe')
+  if ($script:ProbeMode -ne 'ok') { return (New-CheckResult $false $script:ProbeMode) }
+  # An honest probe: something must hold the port.
+  $port = [int]$Arguments[([array]::IndexOf($Arguments, '--port') + 1)]
+  if (@($script:FakeListeners | Where-Object { $_.Port -eq $port }).Count -eq 0) { return (New-CheckResult $false 'PROBE_UNREACHABLE') }
+  return (New-CheckResult $true 'OK')
+}
+function Write-FakeAppBuild([string]$AppKey) {
+  $dist = Join-Path (Join-Path (Join-Path $script:Repo 'apps') $AppKey) 'dist'
+  New-Item -ItemType Directory -Force -Path (Join-Path $dist 'js') | Out-Null
+  [IO.File]::WriteAllText((Join-Path $dist 'index.html'), '<!doctype html>')
+  [IO.File]::WriteAllText((Join-Path (Join-Path $dist 'js') 'main.js'), $script:AppBuildContent)
+  if ($script:AppManifestMode -eq 'none') { return }
+  $fingerprint = Get-ArtifactFingerprint $dist
+  if ($script:AppManifestMode -eq 'badfp') { $fingerprint = ('0' * 64) }
+  $sha = if ($script:AppManifestSha) { $script:AppManifestSha } else { Head }
+  $manifest = [ordered]@{ app_id = $AppKey; mode = 'live'; source_sha = $sha; fingerprint = $fingerprint; build_fingerprint = $fingerprint; built_at = [DateTime]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'"); design_version = '2.0.1'; files = 2 }
+  [IO.File]::WriteAllText((Join-Path $dist 'build-manifest.json'), (($manifest | ConvertTo-Json) + "`n"), (New-Object Text.UTF8Encoding($false)))
+}
+function Start-AppProcess($Target,[string]$Stdout,[string]$Stderr) {
+  $script:AppStarts.Add($Target.AppId)
+  Add-LockObservation "app start $($Target.AppId)"
+  $script:Events.Add("start $($Target.AppId)")
+  if ($script:AppStartThrows) { throw 'simulated: node.exe cannot be started' }
+  $script:FakePidCounter++
+  $newId = $script:FakePidCounter
+  $startUtc = [DateTime]::UtcNow.AddMilliseconds($newId).ToString('o')
+  if (!$script:AppStartVanishes) {
+    # The command line is what Windows reports: the executable, then the script as the only argument (quoted when it has a space).
+    $commandLine = '"' + $script:FakeNodeExe + '" ' + (ConvertTo-QuotedArgument $Target.Script)
+    Add-FakeProcess $newId $startUtc $script:FakeNodeExe @(Split-CommandLine $commandLine)
+    if ($script:AppStartListens) { Add-FakeListener '127.0.0.1' $newId ([int]$Target.Port) }
+  }
+  return (New-FakeBackendChild $newId $startUtc)
+}
 $ciOnlyNames = @('TEST_WRONG_USER_DATABASE_URL','TEST_REMOTE_PATH_DATABASE_URL','TEST_REMOTE_PATH_RUNTIME_URL','PGPASSWORD')
 # What a child process would inherit: "NAME=value" for every CI-only variable that is set, '' when none is.
 function Get-CiOnlySnapshot { return (@($ciOnlyNames | ForEach-Object { $v = [Environment]::GetEnvironmentVariable($_, 'Process'); if ($v) { "$_=$v" } }) -join ';') }
@@ -293,6 +348,14 @@ function Reset-Fakes {
   $script:StartReplacedBy = ''; $script:DetailsHook = $null; $script:StopMode = ''
   $script:BuildFails = $false; $script:BuildNoOutput = $false; $script:BuildHook = $null; $script:BuildContent = 'console.log("build one");'
   $script:HealthMode = 'ok'; $script:MigrateAliveProcesses = -1
+  # M00.05
+  $script:AppReadySeconds = 1; $script:AppPollMilliseconds = 10
+  $script:ClientChecks = New-Object 'Collections.Generic.List[string]'; $script:Events = New-Object 'Collections.Generic.List[string]'
+  $script:AppBuilds = New-Object 'Collections.Generic.List[string]'; $script:AppStarts = New-Object 'Collections.Generic.List[string]'; $script:Browser = New-Object 'Collections.Generic.List[string]'
+  $script:CertMode = 'ok'; $script:CertSawComposeUp = -1; $script:CertSawLock = $null; $script:ProbeMode = 'ok'; $script:ProbeCount = 0
+  $script:AppBuildFails = $false; $script:AppBuildNoOutput = $false; $script:AppManifestMode = ''; $script:AppManifestSha = ''; $script:AppBuildContent = 'app build one'
+  $script:AppStartListens = $true; $script:AppStartVanishes = $false; $script:AppStartThrows = $false
+  $env:SHIP11_NO_BROWSER = $null
   $script:BackendPollMilliseconds = 10; $script:BackendReadySeconds = 1; $script:ProcessStopSeconds = 1
   $script:TestPortBinding = '127.0.0.1:5433'
   $script:TestContainerEnv = @('PATH=/usr/bin', 'POSTGRES_USER=ship11_test', "POSTGRES_PASSWORD=$script:TestPassword", 'POSTGRES_DB=ship11_test')
@@ -350,7 +413,7 @@ function New-GitSandbox {
   New-Item -ItemType Directory -Force -Path $script:Seed | Out-Null
   if ($null -eq (Capture 'git.exe' @('init','--bare','--initial-branch=main',$script:Origin))) { throw 'git init --bare failed' }
   if ($null -eq (Capture 'git.exe' @('init','--initial-branch=main',$script:Seed))) { throw 'git init failed' }
-  Write-Text (Join-Path $script:Seed '.gitignore') ".env`nnode_modules/`n.11ship-local/`napps/backend/dist/`n"
+  Write-Text (Join-Path $script:Seed '.gitignore') ".env`nnode_modules/`n.11ship-local/`napps/backend/dist/`napps/food-web/dist/`napps/ship-web/dist/`n"
   Write-Text (Join-Path $script:Seed 'package-lock.json') '{"lockfileVersion":3,"revision":1}'
   Write-Text (Join-Path $script:Seed 'database/migrations/1000_first.sql') 'SELECT 1;'
   Write-Text (Join-Path $script:Seed 'database/migrations/2000_second.sql') 'SELECT 2;'
@@ -1501,7 +1564,8 @@ try {
       Reset-Fakes
       $message = Get-FailMessage { Open-AppLauncher $appName }
       Check ($message.Contains(': APP_NOT_READY)')) "$appName -> APP_NOT_READY"
-      Check (!$message.Contains('LAUNCH_LOCK_MISSING') -and !$message.Contains('ARTIFACT_IDENTITY_MISSING') -and $message.Contains('APP_LAUNCH_SEQUENCE_MISSING')) "$appName message no longer lists the lock (M00.02) or the artifact identity (M00.03) and names the launch sequence that is still missing"
+      Check (!$message.Contains('LAUNCH_LOCK_MISSING') -and !$message.Contains('ARTIFACT_IDENTITY_MISSING') -and !$message.Contains('APP_LAUNCH_SEQUENCE_MISSING')) "$appName message no longer lists the lock (M00.02), the artifact identity (M00.03) or the launch sequence (M00.05) as missing"
+      if ($appName -eq 'Admin') { Check ($message.Contains('APP_LAUNCH_PACKAGE_MISSING') -and $message.Contains('M00.08') -and !$message.Contains('APP_RUNTIME_MISSING')) 'Admin names what its own package (M00.08) still has to provide, not a missing local server' }
       Check ($message.Contains($appUrl[$appName])) "$appName message names its own address $($appUrl[$appName])"
       $runtimeBlocked = $message.Contains('APP_RUNTIME_MISSING')
       Check ($runtimeBlocked -eq ($appName -ne 'Admin')) "$appName runtime blocker is derived from the repository (present only when the app has no local server)"
@@ -1531,13 +1595,13 @@ try {
     try {
       foreach ($capability in @($script:OrchestratorCapabilities.Values)) { $capability.Ready = $true }
       Expect-Fail 'APP_NOT_READY' 'Food stays refused when only the orchestrator is declared ready (no local server for it)' { Open-AppLauncher 'Food' }
-      Expect-Fail 'APP_LAUNCH_NOT_IMPLEMENTED' 'Admin with every prerequisite declared ready still fails closed' { Open-AppLauncher 'Admin' }
+      Expect-Fail 'APP_NOT_READY' 'Admin with every orchestrator prerequisite ready still refuses: its own launch package (M00.08) is missing' { Open-AppLauncher 'Admin' }
     } finally {
       $i = 0
       foreach ($capability in @($script:OrchestratorCapabilities.Values)) { $capability.Ready = $savedReady[$i]; $i++ }
     }
     Check ($script:BackendStarts -eq 0 -and $script:ProcessStarts.Count -eq 0 -and $script:DockerCalls.Count -eq 0) 'the fail-closed path also starts and opens nothing'
-    Check ($script:OrchestratorCapabilities['ExclusiveLock'].Ready -eq $true -and $script:OrchestratorCapabilities['ArtifactIdentity'].Ready -eq $true -and $script:OrchestratorCapabilities['AppLaunchSequence'].Ready -eq $false) 'prerequisites are back to: lock ready (M00.02), artifact identity ready (M00.03), app launch sequence not ready'
+    Check ($script:OrchestratorCapabilities['ExclusiveLock'].Ready -eq $true -and $script:OrchestratorCapabilities['ArtifactIdentity'].Ready -eq $true -and $script:OrchestratorCapabilities['AppLaunchSequence'].Ready -eq $true) 'prerequisites are: lock ready (M00.02), artifact identity ready (M00.03), app launch sequence ready (M00.05)'
   } finally {
     Remove-Item -Path function:Start-Process -ErrorAction SilentlyContinue
   }
@@ -1548,6 +1612,191 @@ try {
   $appParameter = (Get-Command -Name $scriptPath).Parameters['App']
   $validApps = @($appParameter.Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] } | ForEach-Object { $_.ValidValues })
   Check (($validApps -join ',') -ceq 'Admin,Food,Ship') 'the -App parameter accepts exactly the catalog apps'
+
+  # =============================================================================================
+  Section 'M00.05 launch of 11Food / 11Ship: certificate, backend, build, HTTPS front, proof, browser'
+  # the same value is pinned by the Node build suite: both sides must compute one fingerprint
+  $fpDir = Join-Path $tempRoot 'fp-pin'
+  New-Item -ItemType Directory -Force -Path (Join-Path $fpDir 'sub') | Out-Null
+  [IO.File]::WriteAllBytes((Join-Path $fpDir 'a.txt'), [byte[]][char[]]'a')
+  [IO.File]::WriteAllBytes((Join-Path $fpDir 'sub\b.txt'), [byte[]][char[]]'b')
+  Check ((Get-ArtifactFingerprint $fpDir) -ceq '67307b9269c97d70e6591b918f30a9b5dc19eb5d1866b508e289c14cc2c097aa') 'artifact fingerprint equals the value pinned by the Node build'
+  # =============================================================================================
+  function New-AppSandbox {
+    New-StartSandbox
+    foreach ($name in @('food-web-dev.mjs','ship-web-dev.mjs','client-web-check.mjs','client-web-build.mjs')) { Write-Text (Join-Path (Join-Path $script:Repo 'scripts') $name) "// stand-in for $name" }
+  }
+  function Get-AppRecord([string]$AppName) { return (Read-TargetRegistry (Get-AppTarget $AppName)).Record }
+  function Get-ComposeUps { return @($script:DockerCalls | Where-Object { $_ -match ' up ' -or $_.EndsWith(' up') }).Count }
+  # The browser is Start-Process; a recording stand-in, so nothing is ever opened.
+  function Start-Process { $script:Browser.Add(($args -join ' ')) | Out-Null; $script:Events.Add('browser') | Out-Null }
+  try {
+    # ---- first launch: everything in order, under the lock, proven before the browser opens
+    New-AppSandbox
+    $head = Head
+    Open-AppLauncher 'Food'
+    $target = Get-AppTarget 'Food'
+    $record = Get-AppRecord 'Food'
+    $state = Get-ArtifactState $target
+    Check ($script:Events.Count -ge 4 -and $script:Events[0] -ceq 'cert') 'Food: the certificate is checked first'
+    Check ($script:CertSawComposeUp -eq 0 -and $script:CertSawLock -eq $false) 'Food: the certificate check happens before the lock is taken and before any database is started'
+    Check ($script:BackendStarts -eq 1 -and $script:AppStarts.Count -eq 1 -and $script:AppStarts[0] -ceq 'food-web') 'Food: one backend and one Food front were started'
+    Check ($script:AppBuilds.Count -eq 1 -and $script:AppBuilds[0] -ceq 'food-web' -and (NpmCount 'run build:food-web') -eq 1 -and (NpmCount 'run build:ship-web') -eq 0) 'Food: only the Food build ran'
+    Check ($state.State -eq 'OK' -and $state.Manifest.app_id -ceq 'food-web' -and $state.Manifest.source_sha -ceq $head) 'Food: the manifest is the launcher-verified manifest of this commit and this exact folder'
+    Check ($record -and $record.app_id -ceq 'food-web' -and $record.port -eq 8444 -and $record.host -ceq '127.0.0.1' -and $record.schema -eq 1) 'Food: the registry names the app, host and port 8444'
+    Check ($record.script -ceq (Join-Path (Join-Path $script:Repo 'scripts') 'food-web-dev.mjs') -and $record.repo -ceq $script:Repo) 'Food: the registry records the absolute script and the checkout'
+    Check ($record.source_sha -ceq $head -and $record.build_fingerprint -ceq $state.Manifest.build_fingerprint -and $record.design_version -ceq '2.0.1') 'Food: the registry records the commit and fingerprint of the artifact it was started from'
+    Check ($script:FakeProcs.ContainsKey([int]$record.pid) -and $record.started_utc -ceq $script:FakeProcs[[int]$record.pid].StartUtc) 'Food: the registry records the exact start time of the process it started'
+    Check ((Get-TargetOwnership $target).Status -eq 'OWNED') 'Food: the recorded process is proven ours'
+    $probeLine = @($script:ClientChecks | Where-Object { $_.StartsWith('probe') })[0]
+    Check ($probeLine -and $probeLine.Contains('--app food-web') -and $probeLine.Contains('--port 8444') -and $probeLine.Contains("--expect-sha $head") -and $probeLine.Contains("--expect-fingerprint $($state.Manifest.build_fingerprint)")) 'Food: the probe asks for this app, this port, this commit and this fingerprint'
+    Check ($script:Events.IndexOf('probe') -gt $script:Events.IndexOf('start food-web') -and $script:Events.IndexOf('browser') -gt $script:Events.IndexOf('probe')) 'Food: order is certificate, start, proof, browser'
+    Check ($script:Browser.Count -eq 1 -and $script:Browser[0] -ceq 'https://localhost:8444') 'Food: the browser opens exactly https://localhost:8444 once'
+    Check (@($script:LockObs | Where-Object { $_.What -eq 'npm run build:food-web' -and $_.Held }).Count -eq 1 -and @($script:LockObs | Where-Object { $_.What -eq 'app start food-web' -and $_.Held }).Count -eq 1 -and @($script:LockObs | Where-Object { $_.What -eq 'client probe' -and $_.Held }).Count -ge 1) 'Food: build, process start and proof all ran while the shared lock was held'
+    Check (!(@($script:HostLog) -join "`n").Contains($script:DevPassword)) 'Food: nothing printed contains a secret'
+    Check (!(Test-LockHeld)) 'Food: the lock is released afterwards'
+
+    # ---- repeated launch: same artifact, healthy front -> reused, nothing stopped, nothing started twice
+    $firstPid = [int]$record.pid
+    Open-AppLauncher 'Food'
+    $again = Get-AppRecord 'Food'
+    Check ($script:AppStarts.Count -eq 1 -and $script:BackendStarts -eq 1 -and $script:StopCalls.Count -eq 0) 'repeat: the running Food front and backend are reused (no second start, nothing stopped)'
+    Check ($script:AppBuilds.Count -eq 2 -and [int]$again.pid -eq $firstPid) 'repeat: the app is rebuilt every time (a changed artifact can never be missed) and the same process stays'
+    Check ($script:Browser.Count -eq 2) 'repeat: the browser is opened again'
+
+    # ---- changed artifact: only the launcher-owned front is replaced; a bystander and the backend are untouched
+    $bystander = 7101
+    Add-FakeProcess $bystander ([DateTime]::UtcNow.ToString('o')) '' @($script:FakeNodeExe, 'other-project.js')
+    $script:AppBuildContent = 'app build two'
+    Open-AppLauncher 'Food'
+    $replaced = Get-AppRecord 'Food'
+    Check ($script:AppStarts.Count -eq 2 -and [int]$replaced.pid -ne $firstPid -and $replaced.build_fingerprint -cne $record.build_fingerprint) 'changed artifact: the front is restarted from the new artifact'
+    Check ($script:StopCalls.Count -eq 1 -and $script:StopCalls[0] -eq $firstPid -and $script:FakeProcs.ContainsKey($bystander) -and $script:BackendStarts -eq 1) 'changed artifact: only the old Food front was stopped; the bystander and the backend were not touched'
+
+    # ---- a front that stopped answering correctly is replaced even though the artifact is the same
+    $script:ProbeMode = 'HEALTH_FAILED'
+    $before = $script:AppStarts.Count
+    Expect-Fail 'APP_HEALTH_FAILED' 'a front whose proof fails is restarted and, still failing, reported' { Open-AppLauncher 'Food' }
+    Check ($script:AppStarts.Count -eq $before + 1) 'a front that fails its proof is restarted once (not left running unproven)'
+    $script:ProbeMode = 'ok'
+
+    # ---- Ship: its own port, script and record; Food is not touched
+    $foodPid = [int](Get-AppRecord 'Food').pid
+    $stopsBefore = $script:StopCalls.Count
+    Open-AppLauncher 'Ship'
+    $shipRecord = Get-AppRecord 'Ship'
+    Check ($shipRecord -and $shipRecord.app_id -ceq 'ship-web' -and $shipRecord.port -eq 8445 -and $shipRecord.script -ceq (Join-Path (Join-Path $script:Repo 'scripts') 'ship-web-dev.mjs')) 'Ship: own record, script and port 8445'
+    Check ($script:Browser[$script:Browser.Count - 1] -ceq 'https://localhost:8445' -and $script:StopCalls.Count -eq $stopsBefore -and $script:FakeProcs.ContainsKey($foodPid)) 'Ship: opens https://localhost:8445 and leaves Food alone'
+    Check ((NpmCount 'run build:ship-web') -eq 1) 'Ship: only the Ship build ran for Ship'
+
+    # ---- Status shows both fronts without writing anything
+    $script:HostLog.Clear()
+    Status-Launcher
+    $status = @($script:HostLog) -join "`n"
+    Check ($status -match '11Food - https://localhost:8444: ' -and $status -match '11Ship - https://localhost:8445: ' -and $status.Contains("PID $foodPid")) 'Status reports both fronts with their PID'
+
+    # ---- Stop: the fronts first, only what is proven ours
+    Stop-Launcher
+    Check (!$script:FakeProcs.ContainsKey($foodPid) -and !$script:FakeProcs.ContainsKey([int]$shipRecord.pid) -and $script:FakeProcs.ContainsKey($bystander)) 'Stop ends both fronts and leaves the bystander'
+    Check (!(Test-Path -LiteralPath (Get-AppTarget 'Food').RegistryFile) -and !(Test-Path -LiteralPath (Get-AppTarget 'Ship').RegistryFile) -and !(Test-Path -LiteralPath $script:StateFile)) 'Stop removes the records of both fronts and of the backend'
+
+    # ---- certificate problems stop everything BEFORE the lock, a database, a build or a browser
+    foreach ($case in @(@('TLS_CERT_MISSING','APP_CERT_MISSING'),@('TLS_KEY_MISSING','APP_CERT_MISSING'),@('TLS_CERT_EXPIRED','APP_CERT_EXPIRED'),@('TLS_CERT_SAN_MISMATCH','APP_CERT_SAN_MISMATCH'),@('TLS_KEY_MISMATCH','APP_CERT_INVALID'),@('TLS_CERT_NOT_YET_VALID','APP_CERT_INVALID'),@('CHECK_UNAVAILABLE','APP_CERT_INVALID'))) {
+      New-AppSandbox
+      $script:CertMode = $case[0]
+      $message = Get-FailMessage { Open-AppLauncher 'Food' }
+      Check ($message.Contains(": $($case[1]))") -and $message.Contains($case[0]) -and $message.Contains('local-https-runtime.md')) "certificate $($case[0]) -> $($case[1]) with the runbook named"
+      Check (!(Test-LockHeld) -and (Get-ComposeUps) -eq 0 -and $script:BackendStarts -eq 0 -and $script:AppBuilds.Count -eq 0 -and $script:AppStarts.Count -eq 0 -and $script:Browser.Count -eq 0 -and (NpmCount 'run build') -eq 0) "certificate $($case[0]): no lock, no database, no build, no process, no browser"
+      Check (!(Test-Path -LiteralPath $script:StateFile) -and !(Test-Path -LiteralPath (Get-AppTarget 'Food').RegistryFile)) "certificate $($case[0]): nothing recorded"
+      Check (!$message.Contains('--insecure') -and $message.Contains('Launcher')) "certificate $($case[0]): the message does not suggest switching verification off"
+    }
+
+    # ---- a foreign process on the port is never touched, even if it answers like our front
+    New-AppSandbox
+    Add-FakeProcess 7900 ([DateTime]::UtcNow.ToString('o')) '' @($script:FakeNodeExe, 'someone-elses-server.js')
+    Add-FakeListener '127.0.0.1' 7900 8444
+    Expect-Fail 'PORT_IN_USE' 'Food refuses a port held by a process the launcher did not start' { Open-AppLauncher 'Food' }
+    Check ($script:StopCalls.Count -eq 0 -and $script:FakeProcs.ContainsKey(7900)) 'foreign port: the other process was not stopped'
+    Check ((Get-ComposeUps) -eq 0 -and $script:BackendStarts -eq 0 -and $script:AppBuilds.Count -eq 0 -and $script:AppStarts.Count -eq 0 -and $script:Browser.Count -eq 0 -and $script:ProbeCount -eq 0 -and $script:HttpCalls.Count -eq 0) 'foreign port: no database, backend, build, front, probe, HTTP or browser'
+    Check (!(Test-Path -LiteralPath (Get-AppTarget 'Food').RegistryFile)) 'foreign port: nothing recorded'
+    foreach ($address in @('0.0.0.0','::1','::')) {
+      New-AppSandbox
+      Add-FakeProcess 7901 ([DateTime]::UtcNow.ToString('o')) '' @($script:FakeNodeExe, 'x.js')
+      Add-FakeListener $address 7901 8445
+      Expect-Fail 'PORT_IN_USE' "Ship refuses a port held on $address by another process" { Open-AppLauncher 'Ship' }
+      Check ($script:AppStarts.Count -eq 0 -and $script:Browser.Count -eq 0 -and $script:StopCalls.Count -eq 0) "foreign listener on ${address}: nothing started, opened or stopped"
+    }
+    New-AppSandbox
+    $script:ListenersUnreadable = $true
+    Expect-Fail 'PORT_OWNER_UNREADABLE' 'an unreadable port is never treated as free' { Open-AppLauncher 'Food' }
+    Check ($script:AppStarts.Count -eq 0 -and $script:Browser.Count -eq 0) 'unreadable port: nothing started or opened'
+
+    # ---- records that cannot be proven fail closed, before anything else
+    foreach ($bad in @('{"pid":123,"startedUtc":"2026-01-01T00:00:00Z"}', 'not json at all', '[]', '{"schema":1,"app_id":"food-web"}')) {
+      New-AppSandbox
+      Write-Text (Get-AppTarget 'Food').RegistryFile $bad
+      $message = Get-FailMessage { Open-AppLauncher 'Food' }
+      Check ($message.Contains(': PROCESS_IDENTITY_UNVERIFIED)') -and $message.Contains('food-web.json')) "unprovable record $bad -> PROCESS_IDENTITY_UNVERIFIED naming food-web.json"
+      Check ((Get-ComposeUps) -eq 0 -and $script:BackendStarts -eq 0 -and $script:AppBuilds.Count -eq 0 -and $script:AppStarts.Count -eq 0 -and $script:Browser.Count -eq 0) "unprovable record ${bad}: no database, backend, build, front or browser"
+      Check ((Get-Content -Raw -LiteralPath (Get-AppTarget 'Food').RegistryFile) -ceq $bad) "unprovable record ${bad}: kept as it was"
+      $stopMessage = Get-FailMessage { Stop-Launcher }
+      Check ($stopMessage.Contains(': PROCESS_IDENTITY_UNVERIFIED)') -and $script:StopCalls.Count -eq 0) "unprovable record ${bad}: Stop stops nothing"
+    }
+
+    # ---- a record of an ended process is replaced
+    New-AppSandbox
+    Open-AppLauncher 'Food'
+    $endedPid = [int](Get-AppRecord 'Food').pid
+    Remove-FakeProcess $endedPid
+    Open-AppLauncher 'Food'
+    Check ($script:AppStarts.Count -eq 2 -and [int](Get-AppRecord 'Food').pid -ne $endedPid -and $script:StopCalls.Count -eq 0) 'stale record: a new front is started and nothing was stopped'
+
+    # ---- the proof fails after the process started: reported with its own code, browser never opened
+    foreach ($case in @(@('TLS_PIN_MISMATCH','APP_TLS_MISMATCH',$false),@('PROBE_IDENTITY_MISMATCH','APP_IDENTITY_MISMATCH',$false),@('HEALTH_NOT_READY','BACKEND_NOT_READY',$true),@('HEALTH_FAILED','APP_HEALTH_FAILED',$true),@('PROBE_UNREACHABLE','APP_START_FAILED',$true),@('PROBE_TIMEOUT','APP_START_FAILED',$true),@('CHECK_UNAVAILABLE','APP_START_FAILED',$true))) {
+      New-AppSandbox
+      $script:ProbeMode = $case[0]
+      Expect-Fail $case[1] "proof $($case[0])" { Open-AppLauncher 'Food' }
+      Check ($script:Browser.Count -eq 0) "proof $($case[0]): the browser is never opened"
+      if ($case[2]) { Check ($script:ProbeCount -gt 1) "proof $($case[0]): retried until the limit" } else { Check ($script:ProbeCount -eq 1) "proof $($case[0]): a certificate/app mismatch on a port we hold is final at once" }
+    }
+
+    # ---- the process does not come up
+    foreach ($case in @(@('AppStartThrows'),@('AppStartVanishes'),@('AppStartListens'))) {
+      New-AppSandbox
+      if ($case[0] -eq 'AppStartListens') { $script:AppStartListens = $false } else { Set-Variable -Scope Script -Name $case[0] -Value $true }
+      Expect-Fail 'APP_START_FAILED' "front that does not come up ($($case[0]))" { Open-AppLauncher 'Food' }
+      Check ($script:Browser.Count -eq 0 -and $script:ProbeCount -eq 0) "front that does not come up ($($case[0])): no proof asked, no browser"
+    }
+
+    # ---- build problems: the running front is not touched, and no unproven artifact is run
+    function Reset-BuildFaults { $script:AppBuildFails = $false; $script:AppBuildNoOutput = $false; $script:AppManifestMode = ''; $script:AppManifestSha = '' }
+    New-AppSandbox
+    Open-AppLauncher 'Food'
+    $runningPid = [int](Get-AppRecord 'Food').pid
+    $browserCount = $script:Browser.Count
+    foreach ($case in @(@('AppBuildFails',$true,'build exits with an error'),@('AppBuildNoOutput',$true,'build leaves no artifact'),@('AppManifestMode','none','build writes no manifest'),@('AppManifestMode','badfp','manifest does not describe the folder'),@('AppManifestSha',('a' * 40),'manifest names another commit'))) {
+      Set-Variable -Scope Script -Name $case[0] -Value $case[1]
+      Expect-Fail 'APP_BUILD_FAILED' "Food: $($case[2])" { Open-AppLauncher 'Food' }
+      Check ($script:FakeProcs.ContainsKey($runningPid) -and $script:StopCalls.Count -eq 0 -and $script:AppStarts.Count -eq 1 -and $script:Browser.Count -eq $browserCount) "Food: $($case[2]): the running front is untouched, nothing new started or opened"
+      Check ((Get-AppRecord 'Food').pid -eq $runningPid) "Food: $($case[2]): the record still names the running front"
+      Reset-BuildFaults
+    }
+
+    # ---- no browser when asked not to (for unattended runs), the front is still proven
+    New-AppSandbox
+    $env:SHIP11_NO_BROWSER = '1'
+    Open-AppLauncher 'Ship'
+    Check ($script:Browser.Count -eq 0 -and $script:ProbeCount -ge 1 -and (Get-AppRecord 'Ship')) 'SHIP11_NO_BROWSER=1: proven and recorded, but no browser'
+    $env:SHIP11_NO_BROWSER = $null
+
+    # ---- a launcher or checker file that is not there is reported as a missing runtime, before anything runs
+    New-AppSandbox
+    Remove-Item -LiteralPath (Join-Path (Join-Path $script:Repo 'scripts') 'client-web-check.mjs') -Force
+    $message = Get-FailMessage { Open-AppLauncher 'Food' }
+    Check ($message.Contains(': APP_NOT_READY)') -and $message.Contains('APP_RUNTIME_MISSING') -and $script:ClientChecks.Count -eq 0 -and !(Test-Path -LiteralPath $script:LockFile)) 'a missing checker script is APP_RUNTIME_MISSING and nothing runs'
+  } finally {
+    Remove-Item -Path function:Start-Process -ErrorAction SilentlyContinue
+  }
 
   # =============================================================================================
   Section 'M00.01 launcher process: app argument, caller folder, exit code, folder with spaces and Vietnamese letters'

@@ -24,15 +24,16 @@ Ba file `.cmd` chỉ chọn app rồi gọi **cùng một** launcher (`11ship-la
 
 | Lối vào | Ứng dụng | Địa chỉ dự kiến | Trạng thái hiện tại |
 |---|---|---|---|
-| `11Ship-Admin.cmd` | Web Admin | https://localhost:8443 | Chưa mở được: `APP_LAUNCH_SEQUENCE_MISSING` (trình tự mở ứng dụng, M00.05) |
-| `11Ship-Food.cmd` | 11Food (khách + quán) | https://localhost:8444 | Chưa mở được: mã trên và `APP_RUNTIME_MISSING` (chưa có máy chủ chạy thật; M00.05/M00.06) |
-| `11Ship-Ship.cmd` | 11Ship (xế) | https://localhost:8445 | Chưa mở được: mã trên và `APP_RUNTIME_MISSING` (M00.05/M00.07) |
+| `11Ship-Admin.cmd` | Web Admin | https://localhost:8443 | Chưa mở được: `APP_LAUNCH_PACKAGE_MISSING` (gói M00.08) |
+| `11Ship-Food.cmd` | 11Food (khách + quán) | https://localhost:8444 | Mở được từ M00.05 (cần chứng chỉ local, xem `local-https-runtime.md`) |
+| `11Ship-Ship.cmd` | 11Ship (xế) | https://localhost:8445 | Mở được từ M00.05 (như trên) |
 
-- Khi chưa sẵn sàng, launcher thoát với **exit code 1** trước mọi tác động: không cập nhật mã, không bật database hoặc backend, không mở trình duyệt, không đụng tới `.env` hay database (chỉ ghi bản ghi kết quả `.11ship-local\last-run.json`). Nó không bao giờ báo "đã chạy".
+- Food/Ship (M00.05): launcher kiểm tra chứng chỉ trước, lấy khóa dùng chung, bảo đảm backend chạy, build đúng commit, chạy máy chủ HTTPS local của app, **chứng minh** nó (đúng chứng chỉ, đúng định danh `/__11ship/runtime`, health qua proxy) rồi mới mở trình duyệt. Cổng đang bị tiến trình lạ giữ thì dừng (`PORT_IN_USE`), không dừng tiến trình lạ. `SHIP11_NO_BROWSER=1` bỏ bước mở trình duyệt. Hướng dẫn và bảng mã lỗi: `ops/runbooks/local-https-runtime.md`.
+- Khi không mở được, launcher thoát với **exit code 1** và nói rõ chưa làm gì; nó không bao giờ báo "đã chạy" khi chưa chứng minh được.
 - Không có app "Quán" riêng: quán thuộc 11Food, 11Ship chỉ dành cho xế.
-- Web Admin chưa mở dù đã có `scripts/admin-web-dev.mjs`: khóa dùng chung (M00.02) và định danh artifact/process của backend (M00.03) đã có, nhưng trình tự mở ứng dụng (HTTPS local, máy chủ riêng của bề mặt, trình duyệt; M00.05) chưa có. Một dịch vụ lạ trên cổng 8443 có thể bị nhận nhầm là Admin nếu mở bây giờ. Bản xem thử `Xem-Giao-Dien.cmd` (dữ liệu minh họa) không phải ứng dụng và không được dùng thay.
+- Web Admin chưa mở dù đã có `scripts/admin-web-dev.mjs`: máy chủ Admin cần cùng cơ chế định danh/artifact và trình tự mở (gói M00.08), nên lối vào Admin vẫn từ chối. Một dịch vụ lạ trên cổng 8443 có thể bị nhận nhầm là Admin nếu mở bây giờ. Bản xem thử `Xem-Giao-Dien.cmd` (dữ liệu minh họa) không phải ứng dụng và không được dùng thay.
 - Double-click: cửa sổ giữ lại để đọc lỗi; từ terminal lệnh kết thúc ngay; `-NoPause` dùng được như các lệnh khác. Kết quả ghi ở `.11ship-local\last-run.json` với `command` là `App Admin`, `App Food` hoặc `App Ship`.
-- Ba lối vào này vẫn từ chối **trước khi** lấy khóa: không Update, không Start, không tạo `launch.lock`. Các gói sau (M00.05 đến M00.09) lần lượt thêm máy chủ và trình tự mở rồi mới bật việc mở ứng dụng.
+- Lối vào Admin vẫn từ chối **trước khi** lấy khóa (không Update, không Start, không `launch.lock`) cho tới gói M00.08.
 
 ## Khóa dùng chung, cập nhật Git an toàn và chạy lại launcher (M00.02)
 
@@ -57,7 +58,7 @@ Lỗi dừng an toàn (không đổi gì): `DIRTY_TRACKED`, `DETACHED_HEAD`, `NO
 
 Nếu không đọc được số migration mới sau Update, launcher in `MIGRATION_COUNT_UNREADABLE` (không phải "0 migration"); Start vẫn kiểm tra DB DEV và hỏi trước khi áp dụng.
 
-Chưa nằm trong gói này: HTTPS local và trình tự mở ứng dụng (M00.05). Ba lối vào `Admin/Food/Ship` vẫn từ chối bằng `APP_NOT_READY`.
+HTTPS local và trình tự mở 11Food/11Ship nằm ở gói M00.05; Admin chờ M00.08.
 
 ## Định danh artifact và process (M00.03)
 

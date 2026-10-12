@@ -95,9 +95,9 @@ test('M00.02: the shared lock is an exclusive OS handle, never a file age, and n
   assert.ok(spawnFunction.includes('Start-Process'));
   assert.doesNotMatch(spawnFunction.split(/\r?\n/).filter((line) => !line.trim().startsWith('#')).join('\n'), /-Wait\b/);
   assert.match(script, /ExclusiveLock\s*=\s*\[pscustomobject\]@\{ Ready = \$true;/);
-  // M00.03 flips the artifact identity prerequisite; the launch sequence of an app surface (M00.05) is still missing.
+  // M00.03 flips the artifact identity prerequisite; M00.05 flips the launch sequence of the Food/Ship surfaces.
   assert.match(script, /ArtifactIdentity\s*=\s*\[pscustomobject\]@\{ Ready = \$true;/);
-  assert.match(script, /AppLaunchSequence\s*=\s*\[pscustomobject\]@\{ Ready = \$false;/);
+  assert.match(script, /AppLaunchSequence\s*=\s*\[pscustomobject\]@\{ Ready = \$true;/);
 });
 
 test('M00.02: Git update modes and the hand-over to the new launcher are in place', () => {
@@ -190,9 +190,23 @@ test('keeps state local and documents unavailable applications as N/A', async ()
   const ignore = await readFile(path.join(root, '.gitignore'), 'utf8');
   const runbook = await readFile(path.join(root, 'ops', 'runbooks', 'local-test-launcher-windows.md'), 'utf8');
   assert.match(ignore, /^\.11ship-local\/$/m);
-  assert.match(script, /N\/A — chưa có trong repo/);
+  assert.match(script, /N\/A — launcher chưa mở được/);
   assert.match(runbook, /không xóa volume/);
   assert.match(script, /Bỏ qua progress-check vì máy Owner không có GitHub token/);
+});
+
+test('M00.05: the HTTPS front launch is in place and never weakens TLS', async () => {
+  for (const code of ['APP_CERT_MISSING', 'APP_CERT_EXPIRED', 'APP_CERT_SAN_MISMATCH', 'APP_CERT_INVALID', 'APP_TLS_MISMATCH', 'APP_IDENTITY_MISMATCH',
+    'APP_HEALTH_FAILED', 'APP_START_FAILED', 'APP_BUILD_FAILED', 'APP_LAUNCH_PACKAGE_MISSING']) {
+    assert.ok(script.includes(`'${code}'`), `${code} is reported by the launcher`);
+  }
+  const sources = [script];
+  for (const name of ['client-web-dev.mjs', 'client-web-check.mjs', 'food-web-dev.mjs', 'ship-web-dev.mjs']) {
+    sources.push(await readFile(path.join(root, 'scripts', name), 'utf8'));
+  }
+  for (const text of sources) {
+    assert.doesNotMatch(text, /-SkipCertificateCheck|ServerCertificateValidationCallback|Import-Certificate|certutil|Cert:\\|NODE_TLS_REJECT_UNAUTHORIZED|--insecure|rejectUnauthorized\s*:\s*false/i);
+  }
 });
 
 test('CI and package scripts execute launcher tests, including on real Windows', async () => {
