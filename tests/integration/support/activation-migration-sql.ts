@@ -14,6 +14,8 @@ const FILES = [
   // Issue #49: the staging-fixture origin replaces the two account-origin CHECKs; newest, so down first and up last. It touches
   // only those two CHECKs of app.users, so it is independent of the M01.02 customer migration that sits before it.
   '1792627200000_allow-staging-fixture-account-origin.sql',
+  // DISABLED_TEST registration: the test-unverified origin extends the same two CHECKs again; newest, so down first and up last.
+  '1792713600000_allow-test-unverified-account-origin.sql',
 ] as const;
 
 const parts = FILES.map((file) => {
