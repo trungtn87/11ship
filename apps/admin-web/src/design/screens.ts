@@ -214,7 +214,7 @@ const recovery: DesignScreen = {
     h(
       'div',
       { class: 'page' },
-      h('header', { class: 'topbar' }, h('div', { class: 'brand' }, h('span', { class: 'brand-fallback' }, '11'), h('span', { class: 'brand-name' }, 'Quản trị'))),
+      h('header', { class: 'topbar' }, h('div', { class: 'brand' }, h('img', { class: 'brand-logo', src: '/logo-11-ui.png', alt: '11' }), h('span', { class: 'brand-name' }, 'Quản trị'))),
       h(
         'main',
         { class: 'main' },

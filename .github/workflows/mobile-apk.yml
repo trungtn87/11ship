@@ -1,0 +1,164 @@
+name: Mobile APK
+
+# Builds the two Android test APKs (11Food-test.apk, 11Ship-test.apk). Run it by hand from the Actions tab
+# ("Run workflow") or it runs on pull requests that touch mobile/ or the brand assets.
+# Signing: the stable test key comes from the GitHub Secrets ANDROID_TEST_KEYSTORE_BASE64, ANDROID_TEST_KEYSTORE_PASSWORD,
+# ANDROID_TEST_KEY_ALIAS and ANDROID_TEST_KEY_PASSWORD (create them once with mobile/tool/create-test-keystore.sh). If a secret
+# is missing the APK is signed with a throw-away key and the job summary and the diagnostics screen say so.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-apk.yml'
+      - 'tools/brand/**'
+      - 'docs/brand/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  API_BASE_URL: https://103.9.78.67.sslip.io
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  apk:
+    name: ${{ matrix.label }} APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: food
+            label: 11Food
+            app_id: vn.eleven.food.test
+          - app: ship
+            label: 11Ship
+            app_id: vn.eleven.ship.test
+    env:
+      ANDROID_TEST_KEYSTORE_BASE64: ${{ secrets.ANDROID_TEST_KEYSTORE_BASE64 }}
+      ANDROID_TEST_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_TEST_KEYSTORE_PASSWORD }}
+      ANDROID_TEST_KEY_ALIAS: ${{ secrets.ANDROID_TEST_KEY_ALIAS }}
+      ANDROID_TEST_KEY_PASSWORD: ${{ secrets.ANDROID_TEST_KEY_PASSWORD }}
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Dependencies
+        run: |
+          for d in mobile/packages/n11_shared mobile/${{ matrix.app }}; do
+            (cd "$d" && flutter pub get) 2>&1 | tee "$RUNNER_TEMP/pub.log" || {
+              echo "::error title=pub get failed in $d::$(head -c 1400 "$RUNNER_TEMP/pub.log" | tr '\n' ' ')"; exit 1; }
+          done
+
+      - name: Analyze
+        run: |
+          for d in mobile/packages/n11_shared mobile/${{ matrix.app }}; do
+            (cd "$d" && flutter analyze) 2>&1 | tee "$RUNNER_TEMP/an.log" || {
+              echo "::error title=analyze failed in $d::$(grep -E '(error|warning|info) •' "$RUNNER_TEMP/an.log" | head -12 | tr '\n' '|' | head -c 1500)"; exit 1; }
+          done
+
+      - name: Test
+        run: |
+          dirs="mobile/${{ matrix.app }}"
+          if [ "${{ matrix.app }}" = "food" ]; then dirs="mobile/packages/n11_shared $dirs"; fi
+          for d in $dirs; do
+            (cd "$d" && flutter test --reporter expanded) 2>&1 | tee "$RUNNER_TEMP/t.log" || {
+              echo "::error title=tests failed in $d::$(grep -E -A1 'Which:|\[E\]' "$RUNNER_TEMP/t.log" | head -24 | tr '\n' '|' | head -c 4000)"; exit 1; }
+          done
+
+      - name: Prepare Android project
+        run: mobile/tool/prepare-android.sh ${{ matrix.app }}
+
+      - name: Build release APK
+        run: |
+          signing=ephemeral
+          if [ -n "$ANDROID_TEST_KEYSTORE_BASE64" ] && [ -n "$ANDROID_TEST_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_TEST_KEY_ALIAS" ] && [ -n "$ANDROID_TEST_KEY_PASSWORD" ]; then signing=stable; fi
+          echo "SIGNING_MODE=$signing" >> "$GITHUB_ENV"
+          version="$(sed -n 's/^version: *\([0-9.]*\)+.*/\1/p' mobile/${{ matrix.app }}/pubspec.yaml)"
+          cd mobile/${{ matrix.app }}
+          fv="$(flutter --version --machine | python3 -c 'import json,sys; print(json.load(sys.stdin)["frameworkVersion"])' 2>/dev/null)" || fv=unknown
+          flutter build apk --release \
+            --build-name="$version" --build-number="${{ github.run_number }}" \
+            --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --dart-define=APP_ID="${{ matrix.app_id }}" \
+            --dart-define=APP_VERSION="$version" \
+            --dart-define=BUILD_NUMBER="${{ github.run_number }}" \
+            --dart-define=CI_RUN="${{ github.run_id }}" \
+            --dart-define=SOURCE_SHA="$SOURCE_SHA" \
+            --dart-define=BUILT_AT="$(date -u +%Y-%m-%dT%H:%MZ)" \
+            --dart-define=SIGNING_MODE="$signing" \
+            --dart-define=BUILD_FLUTTER="$fv" 2>&1 | tee "$RUNNER_TEMP/b.log" || {
+              echo "::error title=build failed::$(tail -n 25 "$RUNNER_TEMP/b.log" | cut -c1-220 | tr '\n' '|' | head -c 2500)"; exit 1; }
+
+      - name: Sign
+        run: |
+          set -euo pipefail
+          trap 'echo "::error title=sign failed::line $LINENO: $BASH_COMMAND"' ERR
+          bt="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)"
+          work="$RUNNER_TEMP/sign"; mkdir -p "$work"
+          if [ "$SIGNING_MODE" = stable ]; then
+            printf '%s' "$ANDROID_TEST_KEYSTORE_BASE64" | base64 -d > "$work/test.jks"
+            ks_pass="$ANDROID_TEST_KEYSTORE_PASSWORD"; key_alias="$ANDROID_TEST_KEY_ALIAS"; key_pass="$ANDROID_TEST_KEY_PASSWORD"
+          else
+            ks_pass="$(openssl rand -hex 16)"; key_alias=ci-throwaway; key_pass="$ks_pass"
+            keytool -genkeypair -keystore "$work/test.jks" -storetype PKCS12 -alias "$key_alias" -keyalg RSA -keysize 2048 -validity 30 \
+              -dname "CN=11Ship CI throwaway" -storepass "$ks_pass" -keypass "$key_pass"
+          fi
+          src="mobile/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk"
+          out="${{ matrix.label }}-test.apk"
+          if [ ! -f "$src" ]; then
+            echo "::error title=apk not found::$(find . -name '*.apk' -not -path './.git/*' 2>/dev/null | head -8 | tr '\n' '|') build dirs: $(find mobile -maxdepth 3 -type d -name build | tr '\n' '|') flutter-apk: $(ls mobile/${{ matrix.app }}/build/app/outputs 2>&1 | tr '\n' '|')"
+            exit 1
+          fi
+          echo "apk: $src"
+          cp "$src" "$work/unsigned.apk"
+          zip -q -d "$work/unsigned.apk" 'META-INF/*' || true
+          "$bt/zipalign" -f -p 4 "$work/unsigned.apk" "$work/aligned.apk"
+          "$bt/apksigner" sign --ks "$work/test.jks" --ks-key-alias "$key_alias" --ks-pass "pass:$ks_pass" --key-pass "pass:$key_pass" \
+            --out "$out" "$work/aligned.apk"
+          "$bt/apksigner" verify --verbose "$out" > "$work/verify.txt"
+          head -5 "$work/verify.txt"
+          "$bt/aapt2" dump badging "$out" > "$work/badging.txt"
+          grep -E "^package: |application-label:|uses-permission" "$work/badging.txt"
+          grep -q "name='${{ matrix.app_id }}'" "$work/badging.txt"
+          if grep -qE "uses-permission: name='android.permission.(ACCESS|CAMERA|READ_|WRITE_)" "$work/badging.txt"; then echo "unexpected permission" >&2; exit 1; fi
+          sha256sum "$out"
+          {
+            echo "### ${{ matrix.label }}-test.apk"
+            echo "- applicationId: \`${{ matrix.app_id }}\`, build ${{ github.run_number }}, source \`$SOURCE_SHA\`"
+            if [ "$SIGNING_MODE" = stable ]; then echo "- Signed with the stable test key from GitHub Secrets: updates install over older builds."
+            else echo "- **Signed with a throw-away CI key** (GitHub Secrets for the test key are missing): uninstall the previous build before installing this one. Run mobile/tool/create-test-keystore.sh once to fix this."; fi
+            echo "- sha256: \`$(sha256sum "$out" | cut -d' ' -f1)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.label }}-test.apk
+          path: ${{ matrix.label }}-test.apk
+          if-no-files-found: error
+          retention-days: 30

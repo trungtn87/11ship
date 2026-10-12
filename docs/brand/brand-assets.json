@@ -1,0 +1,138 @@
+{
+  "alpha": {
+    "logo-11": {
+      "alpha_1_15_pixels": 16304,
+      "alpha_240_254_pixels": 357215,
+      "alpha_255_pixels": 3072,
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "has_alpha_channel": true,
+      "median_alpha_of_ink": 254,
+      "size": [
+        1254,
+        1254
+      ],
+      "transparent_share": 0.7545,
+      "visible_bbox": [
+        66,
+        268,
+        1210,
+        1015
+      ]
+    },
+    "logo-11food": {
+      "alpha_1_15_pixels": 16124,
+      "alpha_240_254_pixels": 315768,
+      "alpha_255_pixels": 4264,
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "has_alpha_channel": true,
+      "median_alpha_of_ink": 254,
+      "size": [
+        1983,
+        793
+      ],
+      "transparent_share": 0.778,
+      "visible_bbox": [
+        195,
+        113,
+        1846,
+        679
+      ]
+    },
+    "logo-11ship": {
+      "alpha_1_15_pixels": 23234,
+      "alpha_240_254_pixels": 296401,
+      "alpha_255_pixels": 2601,
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "has_alpha_channel": true,
+      "median_alpha_of_ink": 253,
+      "size": [
+        1774,
+        887
+      ],
+      "transparent_share": 0.7865,
+      "visible_bbox": [
+        210,
+        192,
+        1659,
+        719
+      ]
+    }
+  },
+  "android": {
+    "mobile/food/android_overlay/res/drawable-hdpi/splash_icon.png": "83aac4428458a16b1f61a954eee257f9052fe3fd8b3f3e38ea8a3149d486f4db",
+    "mobile/food/android_overlay/res/drawable-hdpi/splash_logo.png": "069fefc2f2790c738739f42f519a8e2a35a47041f57c33978e93061c372abd35",
+    "mobile/food/android_overlay/res/drawable-mdpi/splash_icon.png": "7407e4c540c44c74d8286c4d26209fdec8715d08151cdeb8224627ef66beaf7f",
+    "mobile/food/android_overlay/res/drawable-mdpi/splash_logo.png": "d174909a65074162569d174f35cad296aba4364009ea3bb2daa89d9c2e54820d",
+    "mobile/food/android_overlay/res/drawable-xhdpi/splash_icon.png": "93ddd5f827a1919d4f2316987c80ebb8d96679ac501c9e54e8a4e01c1c4392c3",
+    "mobile/food/android_overlay/res/drawable-xhdpi/splash_logo.png": "e2ae606a09638e6e8ade81469ca00ca501d6db400fa1f9ce12a305911a60635b",
+    "mobile/food/android_overlay/res/drawable-xxhdpi/splash_icon.png": "2d5cf23cfe51e28ce1b3d2da1379c619c3fbb7ae77f298fcf78e050721deabae",
+    "mobile/food/android_overlay/res/drawable-xxhdpi/splash_logo.png": "131459f6215e94b5f7af30dcba990506af541c9ebc342601833dbfc4a7fe60b5",
+    "mobile/food/android_overlay/res/drawable-xxxhdpi/splash_icon.png": "a8d2969996adda8eefd4173648e83ce0ab6ff7a1a9ba54e502b4a9c71cfc62b1",
+    "mobile/food/android_overlay/res/drawable-xxxhdpi/splash_logo.png": "f0618786173ec0bb5e077402487dceffd92be70dd18bbc73614199c292c26ad6",
+    "mobile/food/android_overlay/res/mipmap-anydpi-v26/ic_launcher.xml": "d03d20b2e161527e98cc63433fceead6b4f748e3c4952c2af9bcfcf555fbf7c3",
+    "mobile/food/android_overlay/res/mipmap-hdpi/ic_launcher.png": "0c6971377d6a37d91bfc882437432a6a77edb8c7188f6de5c46a48874fc1d8d2",
+    "mobile/food/android_overlay/res/mipmap-hdpi/ic_launcher_foreground.png": "83aac4428458a16b1f61a954eee257f9052fe3fd8b3f3e38ea8a3149d486f4db",
+    "mobile/food/android_overlay/res/mipmap-mdpi/ic_launcher.png": "fef0b5d8b7f199f41d8f10e34e0d7316ebe0c3c73bdabad4c32e6b5f37178e1c",
+    "mobile/food/android_overlay/res/mipmap-mdpi/ic_launcher_foreground.png": "7407e4c540c44c74d8286c4d26209fdec8715d08151cdeb8224627ef66beaf7f",
+    "mobile/food/android_overlay/res/mipmap-xhdpi/ic_launcher.png": "1e5838b3dc67a1865040b47ef5f28d821d3fa0d2317d32ac833e58ad9c4dd248",
+    "mobile/food/android_overlay/res/mipmap-xhdpi/ic_launcher_foreground.png": "93ddd5f827a1919d4f2316987c80ebb8d96679ac501c9e54e8a4e01c1c4392c3",
+    "mobile/food/android_overlay/res/mipmap-xxhdpi/ic_launcher.png": "e514244432c23e649aa149234720ba2a6c11aeff523ea4568fc3c2c88b0a5d6f",
+    "mobile/food/android_overlay/res/mipmap-xxhdpi/ic_launcher_foreground.png": "2d5cf23cfe51e28ce1b3d2da1379c619c3fbb7ae77f298fcf78e050721deabae",
+    "mobile/food/android_overlay/res/mipmap-xxxhdpi/ic_launcher.png": "d9742d27e6cafc22372f0ad4a3ed90ac453e3601d1c7b1c2b0ebd0464412bf0c",
+    "mobile/food/android_overlay/res/mipmap-xxxhdpi/ic_launcher_foreground.png": "a8d2969996adda8eefd4173648e83ce0ab6ff7a1a9ba54e502b4a9c71cfc62b1",
+    "mobile/food/android_overlay/res/values/colors.xml": "4fcadd442914bc8a678006ba717d23284647ea8bfb0929f5da9a2f995f86daf7",
+    "mobile/ship/android_overlay/res/drawable-hdpi/splash_icon.png": "6e9394e0587b4c8dd80c12516ffaf2232278384f58cf588a7c28b442125a7162",
+    "mobile/ship/android_overlay/res/drawable-hdpi/splash_logo.png": "66991e6866127e13e318080a23f3763c4b52c241c9ef9844565ff0d91613c218",
+    "mobile/ship/android_overlay/res/drawable-mdpi/splash_icon.png": "889e57c704c71e3c401b4ddcb97cb3fa95c502f4209415045c7d2932c8faa7d7",
+    "mobile/ship/android_overlay/res/drawable-mdpi/splash_logo.png": "76dfc3a35cdd2a662ac7826bbbb5f4878236d298fa8189dc4cef06ae26281630",
+    "mobile/ship/android_overlay/res/drawable-xhdpi/splash_icon.png": "66a1f3f6289fb43c4b01b6c250ec685ec045e5251e601ed0923328a89ac70fc8",
+    "mobile/ship/android_overlay/res/drawable-xhdpi/splash_logo.png": "2437f56c308835212d40fc2c70e6a7788be4c8ba8f5bbaffeeeec775752fd169",
+    "mobile/ship/android_overlay/res/drawable-xxhdpi/splash_icon.png": "cb4a5d72ef6bfbb0f25642f18be9fb077c407bce300e8109feb786c9370702c0",
+    "mobile/ship/android_overlay/res/drawable-xxhdpi/splash_logo.png": "5aa31ba6344e3a2b569a75194f175044bf053ea584773616efd4de3e243d772d",
+    "mobile/ship/android_overlay/res/drawable-xxxhdpi/splash_icon.png": "5f835997d036fa13c9e651564a6404779c974d6a714f599d5ffae5606946ab37",
+    "mobile/ship/android_overlay/res/drawable-xxxhdpi/splash_logo.png": "fe52e717efe412d761558cea0bd79732cdd5bf1d197801b7802e8dafe58a61bd",
+    "mobile/ship/android_overlay/res/mipmap-anydpi-v26/ic_launcher.xml": "d03d20b2e161527e98cc63433fceead6b4f748e3c4952c2af9bcfcf555fbf7c3",
+    "mobile/ship/android_overlay/res/mipmap-hdpi/ic_launcher.png": "bc105a5093a62c88066bd4568117bed42e1dab9f516b8a987ec46719742835d8",
+    "mobile/ship/android_overlay/res/mipmap-hdpi/ic_launcher_foreground.png": "6e9394e0587b4c8dd80c12516ffaf2232278384f58cf588a7c28b442125a7162",
+    "mobile/ship/android_overlay/res/mipmap-mdpi/ic_launcher.png": "82cb6a375f8ce20e33cf6353d86ab7ba645ba5677b537920fe9f5fe5af3891a3",
+    "mobile/ship/android_overlay/res/mipmap-mdpi/ic_launcher_foreground.png": "889e57c704c71e3c401b4ddcb97cb3fa95c502f4209415045c7d2932c8faa7d7",
+    "mobile/ship/android_overlay/res/mipmap-xhdpi/ic_launcher.png": "d0fb23f094696b36dcacc7062928402a1248e1959a81c67482d26b2a34e9835f",
+    "mobile/ship/android_overlay/res/mipmap-xhdpi/ic_launcher_foreground.png": "66a1f3f6289fb43c4b01b6c250ec685ec045e5251e601ed0923328a89ac70fc8",
+    "mobile/ship/android_overlay/res/mipmap-xxhdpi/ic_launcher.png": "0069527ae0804c4e45af891506404659c49f11655ee3bef4426aaa28b3260992",
+    "mobile/ship/android_overlay/res/mipmap-xxhdpi/ic_launcher_foreground.png": "cb4a5d72ef6bfbb0f25642f18be9fb077c407bce300e8109feb786c9370702c0",
+    "mobile/ship/android_overlay/res/mipmap-xxxhdpi/ic_launcher.png": "8dcfbcc299cae14b5f59b818206b62e31f31371080196948d52237cfd6d9ff11",
+    "mobile/ship/android_overlay/res/mipmap-xxxhdpi/ic_launcher_foreground.png": "5f835997d036fa13c9e651564a6404779c974d6a714f599d5ffae5606946ab37",
+    "mobile/ship/android_overlay/res/values/colors.xml": "b069083f3c3c8d5001b9a3ac1a3a994e23e3bb90f80731eb188f6193d2a57f25"
+  },
+  "derived": {
+    "apps/admin-web/public/logo-11-ui.png": "6dd788cc2b358dd8298e4d56bf271f680ba6f61adb0596834b92a9576d41fa04",
+    "apps/client-shared/public/brand/logo-11-ui.png": "6dd788cc2b358dd8298e4d56bf271f680ba6f61adb0596834b92a9576d41fa04",
+    "apps/client-shared/public/brand/logo-11food-ui.png": "c2e9c492a3c2edf800e740bd48ac37f829775a6e95b4e54480deeacd1858f216",
+    "apps/client-shared/public/brand/logo-11ship-ui.png": "bcef50458be85a9493c32466f84549c49cc211d45967dc3f6a21fd22323cbed8",
+    "mobile/packages/n11_shared/assets/brand/logo-11-ui.png": "6dd788cc2b358dd8298e4d56bf271f680ba6f61adb0596834b92a9576d41fa04",
+    "mobile/packages/n11_shared/assets/brand/logo-11food-ui.png": "c2e9c492a3c2edf800e740bd48ac37f829775a6e95b4e54480deeacd1858f216",
+    "mobile/packages/n11_shared/assets/brand/logo-11ship-ui.png": "bcef50458be85a9493c32466f84549c49cc211d45967dc3f6a21fd22323cbed8"
+  },
+  "originals": {
+    "icon-11food.png": "14f989cbd575255ae0745519edf4aa621345808c34b49b2c100d6f69babfc768",
+    "icon-11ship.png": "9a49272c0dbc89500f7160b9cbced6c56ea8119118e4c7d6e87853d6b18ffe26",
+    "logo-11.png": "b2352713707c542458183230523dc440bfc026bde8d8447281ebdccb08168743",
+    "logo-11food.png": "6b0397b0e8f9ae4abf121d09c5ecc2cf406cf99eb945355ee38db6481a4463b3",
+    "logo-11ship.png": "1f6882d5d57e7009e2f341b7f5c11bd19d46da1c35fbbd3643f8d3202fbd440a"
+  }
+}

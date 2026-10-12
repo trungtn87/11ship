@@ -166,6 +166,24 @@ button {
   font-size: 40px;
 }
 
+/* The approved logo image (transparent PNG, ink is dark: it needs a light background). */
+img.c-logo {
+  display: block;
+  width: auto;
+  height: 32px;
+  max-width: 100%;
+}
+
+img.c-logo--large {
+  height: 64px;
+}
+
+.c-appbar--yellow img.c-logo {
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--c-white);
+}
+
 .c-slogan {
   margin: 0;
   font-size: var(--fs-caption);
