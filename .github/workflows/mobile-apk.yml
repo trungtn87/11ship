@@ -113,7 +113,7 @@ jobs:
       - name: Sign
         run: |
           set -euo pipefail
-          trap 'echo "::error title=sign failed::line $LINENO"' ERR
+          trap 'echo "::error title=sign failed::line $LINENO: $BASH_COMMAND"' ERR
           bt="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)"
           work="$RUNNER_TEMP/sign"; mkdir -p "$work"
           if [ "$SIGNING_MODE" = stable ]; then
