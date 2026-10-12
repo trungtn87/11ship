@@ -97,16 +97,11 @@ describe('M01 — 11Food shop onboarding in a real browser against the real back
     shots.push({ name, data: await page.screenshot() });
   }
 
-  const here = (page: Page): Promise<string> => page.evaluate<string>('location.pathname');
   const mainText = (page: Page): Promise<string> => page.evaluate<string>(`document.querySelector('main')?.innerText ?? ''`);
 
   /** Clicks the list row (a button) of the page whose title is `title`. */
   async function clickRow(page: Page, title: string): Promise<void> {
     await page.evaluate(`(() => { const row = [...document.querySelectorAll('.c-item')].find((e) => e.querySelector('.c-item__title')?.textContent.trim() === ${JSON.stringify(title)}); if (!row) throw new Error('no row ${title}'); row.click(); })()`);
-  }
-
-  async function clickButtonByText(page: Page, text: string): Promise<void> {
-    await page.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((e) => e.textContent.trim() === ${JSON.stringify(text)}); if (!b) throw new Error('no button ${text}'); b.click(); })()`);
   }
 
   /** The device position is the only stub: the answer of navigator.geolocation.getCurrentPosition. `calls` proves when it was asked. */
