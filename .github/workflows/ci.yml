@@ -17,7 +17,7 @@ jobs:
   verify:
     name: Verify (Node 24, PostgreSQL 17)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -243,6 +243,11 @@ jobs:
             --expect "finds nothing to do on a second run=passed" \
             --expect "runbook per-table grants cover exactly the tables=passed" \
             --expect "M01.03 client registration succeeds as the restricted runtime role=passed"
+
+      # M01.07: images of the real 11Food register flow (real Chrome, real front, real backend and PostgreSQL), as annotations.
+      - name: Publish 11Food register screenshots (annotations)
+        if: ${{ always() && hashFiles('.test-results/food-register-shots/*.webp') != '' }}
+        run: node scripts/ci-print-shots.mjs food-register-shot .test-results/food-register-shots f01-signed-in f12-register-outcome-unknown f11-filled f12-waiting-for-code f12-wrong-code
 
   # M00-L: the launcher is a Windows tool, so its behaviour suite also runs on real Windows with Windows
   # PowerShell 5.1 (the shell the .cmd wrappers call), including the cmd wrappers started the way a double-click

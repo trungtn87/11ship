@@ -242,9 +242,8 @@ describe('M01.07 — 11Food register in a real browser against the real backend 
 });
 
 /**
- * Writes the screenshots to .test-results/food-register-shots. On GitHub Actions it also prints as many as fit as annotations
- * (title "food-register-shot", image data, not a problem), like the Admin web shots: GitHub keeps at most 4096 characters per
- * annotation and 10 per level and step, so the images go out whole, in order, while they fit.
+ * Writes the screenshots to .test-results/food-register-shots. On GitHub Actions the CI step "Publish 11Food register
+ * screenshots" prints the main ones as annotations (scripts/ci-print-shots.mjs), like the Admin web shots.
  */
 function publishShots(shots: readonly Shot[]): void {
   if (shots.length === 0) {
@@ -255,28 +254,4 @@ function publishShots(shots: readonly Shot[]): void {
   for (const item of shots) {
     writeFileSync(join(directory, `${item.name}.webp`), item.data);
   }
-  if (process.env.GITHUB_ACTIONS !== 'true') {
-    return;
-  }
-  const ciMode = process.env.TEST_REMOTE_PATH_DATABASE_URL !== undefined;
-  const part = 4_000;
-  const capacity = 9 + 10;
-  const chosen = shots.filter((_, index) => (index % 2 === 1) === ciMode);
-  const lines: string[] = [];
-  const manifest: string[] = [];
-  for (const item of chosen) {
-    const encoded = item.data.toString('base64');
-    const total = Math.ceil(encoded.length / part);
-    if (lines.length + total > capacity) {
-      continue;
-    }
-    manifest.push(`${item.name}=${String(total)}`);
-    for (let index = 0; index < total; index += 1) {
-      lines.push(`title=food-register-shot ${item.name} ${String(index + 1)}/${String(total)} (image data)::${encoded.slice(index * part, (index + 1) * part)}`);
-    }
-  }
-  process.stdout.write(`::notice title=food-register-shot manifest::${manifest.join(' ')}\n`);
-  lines.forEach((line, index) => {
-    process.stdout.write(`::${index < 9 ? 'notice' : 'warning'} ${line}\n`);
-  });
 }
