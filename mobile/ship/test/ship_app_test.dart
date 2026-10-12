@@ -73,7 +73,8 @@ void main() {
     await pump(tester, healthy());
     await openTab(tester, 'orders');
     expect(find.byKey(const Key('orders-active')), findsOneWidget);
-    expect(find.text('Chưa có đơn hàng'), findsWidgets, reason: texts(tester));
+    final String dbg = <String>['home', 'orders', 'income', 'wallet', 'account'].map((String id) => '$id=${tester.getCenter(find.byKey(Key('tab-$id')))}').join(' ');
+    expect(find.text('Chưa có đơn hàng'), findsWidgets, reason: '$dbg ${texts(tester).substring(0, 60)} n=${tester.widgetList(find.byType(Text)).length}');
     await tester.tap(find.byKey(const Key('orders-history')));
     await tester.pump();
     expect(find.text('Chưa có đơn hàng'), findsWidgets, reason: texts(tester));
