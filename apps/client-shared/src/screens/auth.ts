@@ -1,5 +1,6 @@
 import { AppBrand, logo } from '../brand.js';
 import { banner, checkbox, countdown, button, otpField, passwordField, setBusy, setButtonLabel, textField, textLink } from '../components.js';
+import { FOOD_TEST_CONSENT } from '../consent.js';
 import { formatCountdown, h } from '../dom.js';
 import { icon, IconName } from '../icons.js';
 import { ScreenDef, ScreenEnv, VariantDef } from '../screen.js';
@@ -7,6 +8,7 @@ import { STATE_COPY } from '../states.js';
 import { isCompleteOtp, isValidPassword, isValidPhone, maskPhone, normalizePersonName } from '../validation.js';
 import { failureBanner } from './feedback.js';
 import { actionButton, appPage, designOnly, guardForm } from './layout.js';
+import { liveRegisterOtp } from './register-live.js';
 
 // Auth screens shared by 11Food and 11Ship (register, login, OTP, forgot and reset password). Display + form validation
 // only. Every business action is gated until its backend exists (features.ts); in the preview it runs as a harmless demo.
@@ -206,7 +208,7 @@ function loginScreen(brand: AppBrand, routes: AuthRoutes): ScreenDef {
 
 // ---- Register -----------------------------------------------------------------------------------------------------
 
-function registerScreen(brand: AppBrand): ScreenDef {
+function registerScreen(brand: AppBrand, routes: AuthRoutes): ScreenDef {
   const food = brand.id === 'FOOD';
   return {
     id: 'register',
@@ -221,10 +223,26 @@ function registerScreen(brand: AppBrand): ScreenDef {
       const phone = textField({ id: 'phone', label: 'Số điện thoại', icon: 'phone', type: 'tel', inputMode: 'tel', autocomplete: 'username', placeholder: 'Nhập số điện thoại để nhận mã xác thực' });
       const password = passwordField({ id: 'password', label: 'Mật khẩu', autocomplete: 'new-password', placeholder: 'Tạo mật khẩu', hint: '8 đến 128 ký tự.' });
       const confirm = passwordField({ id: 'password-confirm', label: 'Nhập lại mật khẩu', autocomplete: 'new-password', placeholder: 'Nhập lại mật khẩu' });
-      // The Terms/Privacy text has no approved content or version yet, so it is NOT a link to an empty page.
-      const consent = checkbox({ id: 'consent', label: food ? 'Tôi đồng ý với Điều khoản sử dụng' : 'Tôi đồng ý với Điều khoản dịch vụ và Chính sách bảo mật của 11Ship' });
-      const consentNote = h('p', { class: 'c-hint' }, 'Nội dung Điều khoản đang chờ duyệt, liên kết sẽ có khi được duyệt.');
+      // 11Food: the two texts the Owner approved for the test build are shown IN FULL above the checkbox, which starts unchecked
+      // (consent.ts). 11Ship has no approved text yet, so it keeps its label and the "chờ duyệt" note (no link to an empty page).
+      const offer = food ? env.register?.consent ?? FOOD_TEST_CONSENT : undefined;
+      const consent = checkbox({ id: 'consent', label: offer?.checkboxLabel ?? 'Tôi đồng ý với Điều khoản dịch vụ và Chính sách bảo mật của 11Ship' });
+      const consentBlock =
+        offer === undefined
+          ? h('p', { class: 'c-hint' }, 'Nội dung Điều khoản đang chờ duyệt, liên kết sẽ có khi được duyệt.')
+          : h(
+              'div',
+              { class: 'c-stack c-stack--tight', id: 'consent-texts' },
+              h('section', { class: 'c-card c-card--soft c-stack c-stack--tight' }, h('h2', { class: 'c-h2' }, offer.termsTitle), h('p', { class: 'c-lead' }, offer.termsText)),
+              h('section', { class: 'c-card c-card--soft c-stack c-stack--tight' }, h('h2', { class: 'c-h2' }, offer.privacyTitle), h('p', { class: 'c-lead' }, offer.privacyText)),
+            );
       const feedback = h('div', { class: 'c-stack', 'aria-live': 'polite' });
+      // Connected register (live Food): the server says how a registration is verified (GET /v1/client-auth/config). Until it
+      // answers - and after any failed answer - the submit stays locked: nothing is guessed, no default is assumed.
+      const connected = env.mode === 'live' && env.register !== undefined;
+      const modeStatus = h('p', { class: 'c-caption', id: 'register-mode-status', 'aria-live': 'polite' });
+      const modeNote = h('p', { class: 'c-hint', id: 'register-mode-note' }, 'Bản test: tạm không xác minh số điện thoại');
+      modeNote.hidden = true;
       const submit = actionButton(env, 'auth.register', {
         label: food ? 'Tiếp tục' : 'Đăng ký',
         type: 'submit',
@@ -248,6 +266,10 @@ function registerScreen(brand: AppBrand): ScreenDef {
         first?.focus();
         return first === undefined;
       };
+      let submitting = false;
+      // Set just before the screen hands over on purpose (to the code step, or signed in): the guard's wipe then must not cancel the
+      // flow that was just started. A real exit (a confirmed "leave", or the screen being replaced) leaves it false and cancels.
+      let proceeding = false;
       const run = async (): Promise<void> => {
         if (!validate()) {
           return;
@@ -257,6 +279,68 @@ function registerScreen(brand: AppBrand): ScreenDef {
           env.flows.start('register-otp', { phone: phone.input.value.trim() });
           guard.release();
           env.go('register-otp');
+          return;
+        }
+        if (env.register !== undefined) {
+          const serverMode = env.register.mode();
+          if (serverMode === undefined) {
+            // The server's configuration has not been read (or could not be): the form is locked, nothing is sent.
+            return;
+          }
+          if (submitting) {
+            return;
+          }
+          if (serverMode === 'DISABLED_TEST') {
+            // Test build without phone verification: ONE call registers straight from this form (no code, no F12). The same form
+            // submitted again after an unknown answer re-sends the SAME request (same key and body).
+            submitting = true;
+            feedback.replaceChildren();
+            setBusy(submit.button, true, 'Đăng ký', 'Đang xử lý…');
+            const step = await env.register.registerDirect({ fullName: normalizePersonName(name.input.value) ?? name.input.value, phone: phone.input.value.trim(), password: password.input.value });
+            submitting = false;
+            if (step.kind === 'stale') {
+              return;
+            }
+            if (step.kind === 'ok') {
+              password.input.value = '';
+              confirm.input.value = '';
+              proceeding = true;
+              guard.release();
+              go(env, routes.afterRegister);
+              return;
+            }
+            setBusy(submit.button, false, 'Đăng ký', 'Đang xử lý…');
+            if (step.code === 'PHONE_ALREADY_REGISTERED') {
+              phone.setError(STATE_COPY.phoneRegistered);
+              phone.input.focus();
+              return;
+            }
+            feedback.replaceChildren(failureBanner(step.code, { retryAfterSeconds: step.retryAfterSeconds, ...(step.unresolved ? { onRetry: () => void run() } : {}) }));
+            return;
+          }
+          // Real flow: the controller keeps the form (name, phone, password, consent pair) in memory while the code is asked for
+          // and verified, so the final register sends exactly what was typed here. The fields are wiped when this screen is left.
+          submitting = true;
+          feedback.replaceChildren();
+          setBusy(submit.button, true, 'Tiếp tục', 'Đang xử lý…');
+          const started = await env.register.begin({ fullName: normalizePersonName(name.input.value) ?? name.input.value, phone: phone.input.value.trim(), password: password.input.value });
+          submitting = false;
+          if (started.kind === 'stale') {
+            return;
+          }
+          setBusy(submit.button, false, 'Tiếp tục', 'Đang xử lý…');
+          if (started.kind === 'ok') {
+            proceeding = true;
+            guard.release();
+            env.go('register-otp');
+            return;
+          }
+          if (started.code === 'PHONE_ALREADY_REGISTERED') {
+            phone.setError(STATE_COPY.phoneRegistered);
+            phone.input.focus();
+            return;
+          }
+          feedback.replaceChildren(failureBanner(started.code, { retryAfterSeconds: started.retryAfterSeconds }));
           return;
         }
         setBusy(submit.button, true, food ? 'Tiếp tục' : 'Đăng ký', 'Đang xử lý…');
@@ -284,11 +368,19 @@ function registerScreen(brand: AppBrand): ScreenDef {
         phone.root,
         password.root,
         confirm.root,
-        h('div', { class: 'c-stack c-stack--tight' }, consent.root, consentNote),
+        h('div', { class: 'c-stack c-stack--tight' }, consentBlock, consent.root),
+        ...(connected ? [modeStatus, modeNote] : []),
         feedback,
         submit.node,
       );
-      const guard = guardForm(env, form);
+      // Leaving the screen drops what a direct register kept in memory and makes its answer stale (no session from it).
+      const guard = guardForm(env, form, {
+        onWipe: () => {
+          if (!proceeding) {
+            env.register?.cancel();
+          }
+        },
+      });
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         void run();
@@ -308,6 +400,36 @@ function registerScreen(brand: AppBrand): ScreenDef {
       live(password, () => (isValidPassword(password.input.value) ? undefined : STATE_COPY.passwordRule));
       live(confirm, () => (confirm.input.value === password.input.value ? undefined : STATE_COPY.passwordMismatch));
       consent.input.addEventListener('change', () => consent.setError(consent.input.checked ? undefined : STATE_COPY.consentRequired));
+
+      // Asks the server how a registration is verified and shapes the screen by the answer. Locked until a valid answer; a failed
+      // answer shows the error with "Thử lại" and keeps the form locked.
+      const applyMode = (): void => {
+        const registerController = env.register;
+        if (!connected || registerController === undefined) {
+          return;
+        }
+        submit.button.disabled = true;
+        modeNote.hidden = true;
+        modeStatus.textContent = 'Đang kiểm tra cấu hình đăng ký…';
+        void registerController.loadMode().then((result) => {
+          if (result.kind === 'stale') {
+            return;
+          }
+          if (result.kind === 'failure') {
+            modeStatus.textContent = '';
+            feedback.replaceChildren(failureBanner(result.code, { onRetry: () => { feedback.replaceChildren(); applyMode(); } }));
+            return;
+          }
+          modeStatus.textContent = '';
+          feedback.replaceChildren();
+          const direct = result.value === 'DISABLED_TEST';
+          modeNote.hidden = !direct;
+          setButtonLabel(submit.button, direct ? 'Đăng ký' : 'Tiếp tục');
+          phone.input.placeholder = direct ? 'Nhập số điện thoại' : 'Nhập số điện thoại để nhận mã xác thực';
+          submit.button.disabled = false;
+        });
+      };
+      applyMode();
 
       const intro = food
         ? h('p', { class: 'c-lead' }, 'Đăng ký để đặt món hoặc quản lý cửa hàng.')
@@ -380,6 +502,10 @@ function otpScreen(config: OtpConfig): ScreenDef {
     flow: config.flow,
     variants: [v('default', 'Mặc định'), v('wrong', 'Mã sai'), v('expired', 'Mã hết hạn'), v('locked', 'Nhập sai nhiều lần'), v('rate-limited', 'Giới hạn gửi mã'), v('verifying', 'Đang xác minh')],
     render(env, variant) {
+      // Connected register flow (M01.07): its own screen body, driven by the server's answers.
+      if (env.mode === 'live' && config.feature === 'auth.registerOtp' && env.register !== undefined) {
+        return liveRegisterOtp(env, env.register, { back: config.back, onDone: config.onVerified });
+      }
       const flowData = env.flows.data<{ phone: string }>(config.flow);
       const masked = (flowData === undefined ? undefined : maskPhone(flowData.phone)) ?? env.sample?.person.phoneMasked ?? '••• •••• •••';
       const otp = otpField({ id: 'otp', label: 'Mã OTP 6 số' });
@@ -730,7 +856,7 @@ export function authScreens(brand: AppBrand, routes: AuthRoutes): readonly Scree
   return [
     welcomeScreen(brand, routes),
     loginScreen(brand, routes),
-    registerScreen(brand),
+    registerScreen(brand, routes),
     otpScreen({
       id: 'register-otp',
       code: c.registerOtp,

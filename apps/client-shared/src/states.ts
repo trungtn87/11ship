@@ -63,7 +63,7 @@ export const STATE_COPY = {
   passwordRule: 'Mật khẩu cần từ 8 đến 128 ký tự.',
   passwordMismatch: 'Hai mật khẩu chưa khớp.',
   nameInvalid: 'Nhập họ tên (tối đa 120 ký tự).',
-  consentRequired: 'Bạn cần đồng ý với Điều khoản sử dụng để tiếp tục.',
+  consentRequired: 'Bạn cần đồng ý với điều khoản để tiếp tục.',
   required: 'Vui lòng nhập thông tin này.',
   linkInvalid: 'Liên kết chưa hợp lệ. Hãy nhập đường dẫn bắt đầu bằng https://.',
   tooLong: (max: number) => `Tối đa ${max} ký tự.`,

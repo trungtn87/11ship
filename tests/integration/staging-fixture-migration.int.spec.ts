@@ -22,6 +22,8 @@ import { minimalChildEnv, REPO_ROOT, runNpmScript } from './support/test-helpers
 const FILES = readdirSync(path.join(REPO_ROOT, 'database', 'migrations')).filter((file) => file.endsWith('.sql')).sort();
 const NAMES = FILES.map((file) => file.replace(/\.sql$/, ''));
 const NEW = '1792627200000_allow-staging-fixture-account-origin';
+// The test-unverified origin migration (DISABLED_TEST registration) is the next, newest one; it keeps every origin of NEW.
+const TEST_ORIGIN = '1792713600000_allow-test-unverified-account-origin';
 const ORIGIN = '1791936000000_add-users-account-origin';
 const sqlOf = (name: string): { up: string; down: string } => {
   const text = readFileSync(path.join(REPO_ROOT, 'database', 'migrations', `${name}.sql`), 'utf8');
@@ -93,8 +95,8 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
   });
 
   describe('the file', () => {
-    it('is the newest migration, a NEW file after the applied ones, and the repository has exactly ONE account_origin column migration', () => {
-      expect(NAMES[NAMES.length - 1]).toBe(NEW);
+    it('is a NEW file after the applied ones (only the test-unverified origin migration follows it), and the repository has exactly ONE account_origin column migration', () => {
+      expect(NAMES.slice(NAMES.indexOf(NEW))).toEqual([NEW, TEST_ORIGIN]);
       expect(NAMES.filter((name) => name.endsWith('add-users-account-origin'))).toEqual([ORIGIN]);
       expect(NAMES).not.toContain(D2_ORIGIN_NAME);
     });
@@ -168,8 +170,9 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
     });
 
     it('down then up (rolled back) works on a database without fixtures and restores the same constraints', async () => {
+      // Taken at the state this migration produced (the newer test-unverified migration is not applied yet).
       await reset();
-      expect(migrate().status).toBe(0);
+      migrateFirst(NAMES.indexOf(NEW) + 1);
       const before = await originConstraints();
       const { up, down } = sqlOf(NEW);
       await client.query('BEGIN');
@@ -187,8 +190,8 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
   describe('main history (the history of the current main, upgraded in place)', () => {
     it('keeps every existing row, its origin and its verification time, and activates the fixture origin', async () => {
       await reset();
-      migrateFirst(NAMES.length - 1);
-      expect(await history()).toEqual(NAMES.slice(0, -1));
+      migrateFirst(NAMES.indexOf(NEW));
+      expect(await history()).toEqual(NAMES.slice(0, NAMES.indexOf(NEW)));
       const verified = await insertUser('PHONE_VERIFIED', true);
       const provisioned = await insertUser('ADMIN_PROVISIONED', false);
       await expect(insertUser('STAGING_FIXTURE', false)).rejects.toMatchObject({ code: '23514' });
@@ -205,11 +208,11 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
 
     it('schema drift is NOT hidden: a missing constraint fails the new migration atomically', async () => {
       await reset();
-      migrateFirst(NAMES.length - 1);
+      migrateFirst(NAMES.indexOf(NEW));
       await client.query('ALTER TABLE app.users DROP CONSTRAINT users_origin_verified_ck');
       const before = await originConstraints();
       expect(migrate().status).not.toBe(0);
-      expect(await history()).toEqual(NAMES.slice(0, -1));
+      expect(await history()).toEqual(NAMES.slice(0, NAMES.indexOf(NEW)));
       expect(await originConstraints()).toEqual(before);
     });
   });
@@ -235,7 +238,7 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
   describe('#42 history (PR #42: 1791849600000 and its own 1791936000000 applied)', () => {
     it('the runner refuses, and the new migration SQL converges that structure to the fresh constraints', async () => {
       await reset();
-      expect(migrate().status).toBe(0);
+      migrateFirst(NAMES.indexOf(NEW) + 1);
       const fresh = await originConstraints();
 
       await reset();
@@ -254,6 +257,45 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
       await client.query(sqlOf(NEW).up);
       expect(await originConstraints()).toEqual(fresh);
       await reset();
+    });
+  });
+
+  describe('TEST_UNVERIFIED (DISABLED_TEST registration, migration 1792713600000)', () => {
+    it('is accepted only without a verification time, is not a fixture, and can never become an administration member', async () => {
+      await reset();
+      expect(migrate().status).toBe(0);
+      expect((await originConstraints()).users_account_origin_ck).toContain('TEST_UNVERIFIED');
+      const userId = await insertUser('TEST_UNVERIFIED', false);
+      await expect(insertUser('TEST_UNVERIFIED', true)).rejects.toMatchObject({ code: '23514' });
+      for (const kind of ['ADMIN', 'SYSTEM']) {
+        await expect(
+          client.query(
+            `INSERT INTO app.admin_memberships (user_id, admin_role, status, version, created_at, updated_at) VALUES ($1::uuid, $2, 'ACTIVE', 1, now(), now())`,
+            [userId, kind],
+          ),
+        ).rejects.toMatchObject({ code: '23514' });
+      }
+    });
+
+    it('the down refuses while a test-unverified account exists and, without one, restores the previous constraints (rolled back)', async () => {
+      const { up, down } = sqlOf(TEST_ORIGIN);
+      const withTest = await originConstraints();
+      await client.query('BEGIN');
+      try {
+        await expect(client.query(down)).rejects.toThrow(/test-unverified accounts exist/);
+      } finally {
+        await client.query('ROLLBACK');
+      }
+      await client.query(`DELETE FROM app.users WHERE account_origin = 'TEST_UNVERIFIED'`);
+      await client.query('BEGIN');
+      try {
+        await client.query(down);
+        expect((await originConstraints()).users_account_origin_ck).not.toContain('TEST_UNVERIFIED');
+        await client.query(up);
+        expect(await originConstraints()).toEqual(withTest);
+      } finally {
+        await client.query('ROLLBACK');
+      }
     });
   });
 });

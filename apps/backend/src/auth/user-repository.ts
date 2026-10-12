@@ -9,8 +9,8 @@ export type UserStatus = 'ACTIVE' | 'DISABLED';
 
 /**
  * Where an account came from. It carries NO privilege (see account-origin.ts, which owns the type and the policy):
- * the application (customer/shop/driver) Auth accepts PHONE_VERIFIED accounts, and STAGING_FIXTURE accounts only in
- * staging fixture mode; ADMIN_PROVISIONED accounts exist for the administration web and are refused by every
+ * the application (customer/shop/driver) Auth accepts PHONE_VERIFIED accounts, STAGING_FIXTURE accounts only in
+ * staging fixture mode and TEST_UNVERIFIED accounts only in the no-proof test mode; ADMIN_PROVISIONED accounts exist for the administration web and are refused by every
  * application login and session check. Re-exported so the modules that already import it from here keep working.
  */
 export type { AccountOrigin } from './account-origin';
@@ -171,6 +171,29 @@ export class UserRepository {
          created_at, updated_at
        )
        SELECT $1::uuid, $2, $3, NULL, 'STAGING_FIXTURE', 'ACTIVE', 1, clock.t, clock.t
+         FROM (${CLOCK_CTE}) AS clock
+       ON CONFLICT (phone_normalized) DO NOTHING`,
+      [input.userId, input.phoneNormalized, input.passwordHash],
+    );
+    return result.rowCount === 1;
+  }
+
+  /**
+   * Creates one ACTIVE TEST_UNVERIFIED account for the no-proof test registration (CLIENT_AUTH_PHONE_VERIFICATION_MODE=
+   * DISABLED_TEST): phone_verified_at stays NULL (the phone was never proven and no proof is invented), timestamps come from
+   * the database clock. Returns false when the phone number already belongs to a user (the UNIQUE constraint decided, possibly
+   * a race); an existing account is NEVER touched. No role is written here.
+   */
+  async insertUnverifiedTest(
+    context: TransactionContext,
+    input: { userId: string; phoneNormalized: string; passwordHash: string },
+  ): Promise<boolean> {
+    const result = await context.query(
+      `INSERT INTO app.users (
+         user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version,
+         created_at, updated_at
+       )
+       SELECT $1::uuid, $2, $3, NULL, 'TEST_UNVERIFIED', 'ACTIVE', 1, clock.t, clock.t
          FROM (${CLOCK_CTE}) AS clock
        ON CONFLICT (phone_normalized) DO NOTHING`,
       [input.userId, input.phoneNormalized, input.passwordHash],

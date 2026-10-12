@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { loadConfig } from './app-config';
-import { isLocalWebMode, parseClientAuth } from './client-auth-config';
+import { isDisabledTestAllowed, isLocalWebMode, parseClientAuth, parseClientPhoneVerificationMode } from './client-auth-config';
 
 // M01.03: the consent pair is configuration, fail-closed, local/test only, and only variable NAMES are ever reported.
 const TERMS = 'test-terms-20261011-v1';
@@ -70,6 +70,104 @@ describe('loadConfig client auth', () => {
     expect(bad.ok).toBe(false);
     if (!bad.ok) {
       expect(bad.invalid).toEqual(expect.arrayContaining(['CLIENT_AUTH_TERMS_VERSION', 'CLIENT_AUTH_PRIVACY_VERSION']));
+    }
+  });
+});
+
+describe('parseClientPhoneVerificationMode (CLIENT_AUTH_PHONE_VERIFICATION_MODE)', () => {
+  const NAME = ['CLIENT_AUTH_PHONE_VERIFICATION_MODE'];
+
+  it('defaults to REQUIRED when unset, in every environment', () => {
+    for (const appEnv of ['development', 'test', 'staging', 'production', undefined]) {
+      expect(parseClientPhoneVerificationMode({ appEnv, host: '0.0.0.0', modeRaw: undefined })).toEqual({ ok: true, mode: 'REQUIRED' });
+    }
+  });
+
+  it('accepts an explicit REQUIRED anywhere', () => {
+    for (const appEnv of ['development', 'test', 'staging', 'production']) {
+      expect(parseClientPhoneVerificationMode({ appEnv, host: '0.0.0.0', modeRaw: 'REQUIRED' })).toEqual({ ok: true, mode: 'REQUIRED' });
+    }
+  });
+
+  it('accepts DISABLED_TEST only in development/test on a loopback bind', () => {
+    for (const appEnv of ['development', 'test']) {
+      for (const host of ['127.0.0.1', 'localhost', '::1']) {
+        expect(parseClientPhoneVerificationMode({ appEnv, host, modeRaw: 'DISABLED_TEST' })).toEqual({ ok: true, mode: 'DISABLED_TEST' });
+      }
+    }
+    expect(isDisabledTestAllowed('test', '127.0.0.1')).toBe(true);
+  });
+
+  it('refuses DISABLED_TEST in staging and production, and on a non-loopback bind, naming only the variable', () => {
+    for (const [appEnv, host] of [
+      ['staging', '127.0.0.1'],
+      ['production', '127.0.0.1'],
+      ['development', '0.0.0.0'],
+      ['test', '192.168.1.5'],
+      ['test', '::'],
+    ] as const) {
+      expect(parseClientPhoneVerificationMode({ appEnv, host, modeRaw: 'DISABLED_TEST' })).toEqual({ ok: false, invalid: NAME });
+    }
+  });
+
+  it('refuses any other value (case, spaces, empty, lookalikes) without echoing it', () => {
+    for (const bad of ['', 'disabled_test', 'required', ' DISABLED_TEST', 'DISABLED_TEST ', 'OFF', 'true', 'NONE', 'DISABLED']) {
+      const result = parseClientPhoneVerificationMode({ appEnv: 'test', host: '127.0.0.1', modeRaw: bad });
+      expect(result).toEqual({ ok: false, invalid: NAME });
+      expect(JSON.stringify(result)).not.toContain(bad === '' ? 'zzz-never' : bad.trim());
+    }
+  });
+
+  it('leaves an invalid APP_ENV to its own report', () => {
+    expect(parseClientPhoneVerificationMode({ appEnv: undefined, host: '127.0.0.1', modeRaw: 'DISABLED_TEST' })).toEqual({ ok: true, mode: 'REQUIRED' });
+  });
+});
+
+describe('loadConfig phone verification mode', () => {
+  const base = {
+    DATABASE_URL: 'postgres://u:p@127.0.0.1:5433/ship11_test',
+    APP_ENV: 'test',
+    AUTH_OTP_HMAC_SECRET: Buffer.alloc(32, 1).toString('base64'),
+  };
+
+  it('carries no mode by default (REQUIRED) and DISABLED_TEST only when valid', () => {
+    const none = loadConfig({ ...base });
+    expect(none.ok).toBe(true);
+    if (none.ok) {
+      expect(none.config.clientPhoneVerificationMode).toBeUndefined();
+    }
+    const on = loadConfig({ ...base, CLIENT_AUTH_PHONE_VERIFICATION_MODE: 'DISABLED_TEST' });
+    expect(on.ok).toBe(true);
+    if (on.ok) {
+      expect(on.config.clientPhoneVerificationMode).toBe('DISABLED_TEST');
+    }
+    const required = loadConfig({ ...base, CLIENT_AUTH_PHONE_VERIFICATION_MODE: 'REQUIRED' });
+    expect(required.ok).toBe(true);
+    if (required.ok) {
+      expect(required.config.clientPhoneVerificationMode).toBeUndefined();
+    }
+  });
+
+  it('stops startup for DISABLED_TEST in staging/production and for a non-loopback HOST, naming only the variable', () => {
+    for (const env of [
+      { APP_ENV: 'production' },
+      { APP_ENV: 'staging' },
+      { HOST: '0.0.0.0' },
+      { HOST: '10.0.0.5' },
+    ]) {
+      const result = loadConfig({ ...base, ...env, CLIENT_AUTH_PHONE_VERIFICATION_MODE: 'DISABLED_TEST' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.invalid).toContain('CLIENT_AUTH_PHONE_VERIFICATION_MODE');
+      }
+    }
+  });
+
+  it('stops startup for an unknown value', () => {
+    const result = loadConfig({ ...base, CLIENT_AUTH_PHONE_VERIFICATION_MODE: 'MAYBE' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.invalid).toContain('CLIENT_AUTH_PHONE_VERIFICATION_MODE');
     }
   });
 });

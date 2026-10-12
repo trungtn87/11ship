@@ -1,14 +1,19 @@
+import { createAuthClient } from './auth/client.js';
+import { AuthIdentity } from './auth/contract.js';
 import { AppBrand } from './brand.js';
 import { toast } from './components.js';
+import { ConsentOffer } from './consent.js';
 import { liveConnection } from './connection.js';
 import { ConnectionBanner, createConnectionBanner } from './connection-ui.js';
 import { loadBuildInfo } from './environment.js';
-import { featureStatus, isWired } from './features.js';
+import { FeatureId, featureStatus, isWired } from './features.js';
 import { HealthMonitor } from './health.js';
 import { NOT_WIRED_PORTS } from './ports.js';
 import { LeaveController } from './leave.js';
+import { createRegisterController } from './register-flow.js';
 import { HistoryPort, RouteDef, Router, RouteTable } from './router.js';
-import { FlowStore, ScreenDef, ScreenEnv } from './screen.js';
+import { AccountView, FlowStore, ScreenDef, ScreenEnv } from './screen.js';
+import { maskPhone } from './validation.js';
 
 // Wires the screens to the real app: router, real paths, no session, ports that answer "not wired". The design preview
 // (design/start.ts) is a separate module that the live build removes.
@@ -28,6 +33,27 @@ export interface AppDefinition {
   readonly flowStart: Readonly<Record<string, string>>;
   /** Test build: OTP screens show the "SMS mô phỏng" notice. */
   readonly testSmsNotice: boolean;
+  /**
+   * Present = this app has a register flow connected to the server (M01.07: 11Food). It is switched on only on a local https
+   * runtime (`isLocalHttpsRuntime`); everywhere else the register screens stay in their "chưa nối máy chủ" state.
+   */
+  readonly register?: { readonly consent: ConsentOffer };
+}
+
+/** The features the register flow connects when it is on. Nothing else becomes wired by it. */
+const REGISTER_FEATURES: ReadonlySet<FeatureId> = new Set<FeatureId>(['auth.register', 'auth.registerOtp']);
+
+/**
+ * The page is served by the local https runtime of this machine (https://localhost:<port>): the only place the front forwards the
+ * three register routes. A page from any other origin (a deployed test server, a plain http preview) never turns the flow on.
+ */
+export function isLocalHttpsRuntime(location: { readonly protocol: string; readonly hostname: string }): boolean {
+  return location.protocol === 'https:' && (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.hostname === '[::1]');
+}
+
+/** What the server says about the signed-in person, as a screen shows it. Roles are the server's list: the client grants nothing. */
+export function accountOf(identity: AuthIdentity): AccountView {
+  return { fullName: identity.profile.fullName, phoneMasked: maskPhone(identity.phoneNormalized) ?? '••• •••• •••', roles: identity.availableRoles };
 }
 
 export function routeTable(definition: AppDefinition): RouteTable {
@@ -128,13 +154,23 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
     shouldPoll: () => document.visibilityState !== 'hidden',
   });
   const connection = liveConnection(monitor, window.location.origin);
+  // The register flow (M01.07), only where it is connected. Session in memory only: a reload starts signed out.
+  const auth =
+    definition.register !== undefined && isLocalHttpsRuntime(window.location)
+      ? createAuthClient({ fetch: (input, init) => window.fetch(input, init), app: definition.brand.id === 'FOOD' ? 'FOOD' : 'SHIP' })
+      : undefined;
+  const register = auth === undefined || definition.register === undefined ? undefined : createRegisterController({ auth, flows, consent: definition.register.consent });
   const env: ScreenEnv = {
     mode: 'live',
     brand: definition.brand,
     ports: NOT_WIRED_PORTS,
     flows,
-    // Nobody can be signed in yet: there is no login backend, so no screen ever receives an account.
-    account: undefined,
+    // Only a session the server established (register) gives an account; the login screens are still not connected.
+    get account(): AccountView | undefined {
+      const identity = auth?.session.identity();
+      return identity === undefined ? undefined : accountOf(identity);
+    },
+    ...(register === undefined ? {} : { register }),
     // C08: every in-app navigation first asks about a form that is being filled.
     go: (id) => leave.request(() => routerRef.current?.go(id)),
     back: () =>
@@ -149,7 +185,7 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
     toast: (text) => toast(text),
     dialogHost: undefined,
     connection,
-    isWired,
+    isWired: (feature) => (register !== undefined && REGISTER_FEATURES.has(feature)) || isWired(feature),
     featureReason: (feature) => featureStatus(feature).reason,
     testSmsNotice: definition.testSmsNotice,
   };
@@ -163,7 +199,7 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
     }
   };
   const router = new Router(table, guardedHistory(leave), {
-    state: () => ({ signedIn: false, flows: flows.names() }),
+    state: () => ({ signedIn: auth?.session.state().kind === 'authenticated', flows: flows.names() }),
     render: (route) => {
       const screen = definition.screens.find((candidate) => candidate.id === route.id);
       if (screen === undefined) {

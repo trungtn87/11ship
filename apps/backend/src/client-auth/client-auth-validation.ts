@@ -45,6 +45,18 @@ export interface ClientRegisterInput {
   readonly consent: ClientConsentInput;
 }
 
+/**
+ * The registration input of the no-proof test mode (CLIENT_AUTH_PHONE_VERIFICATION_MODE=DISABLED_TEST). There is no
+ * verification_token, no OTP and no flag a client could send to bypass anything: the server mode decides.
+ */
+export interface ClientUnverifiedRegisterInput {
+  readonly phoneNormalized: string;
+  readonly password: string;
+  readonly device: ClientDevice;
+  readonly fullName: string;
+  readonly consent: ClientConsentInput;
+}
+
 function reject(): never {
   throw new BadRequestException();
 }
@@ -120,6 +132,21 @@ export function parseClientRegisterBody(body: unknown): ClientRegisterInput {
     phoneNormalized: requireNormalizedPhone(parsed.phone),
     password: parsePassword(parsed.password),
     verificationToken: parsed.verification_token,
+    device: parseClientDevice(parsed.device),
+    fullName: normalizeFullName(parsed.full_name),
+    consent: parseConsent(parsed.consent),
+  };
+}
+
+/**
+ * POST /v1/client-auth/register in DISABLED_TEST mode: exact {phone, password, device, full_name, consent}. A verification_token,
+ * a role, a permission, an accepted_at or any other key is a plain 400 BAD_REQUEST, never ignored.
+ */
+export function parseClientUnverifiedRegisterBody(body: unknown): ClientUnverifiedRegisterInput {
+  const parsed = exactObject(body, ['phone', 'password', 'device', 'full_name', 'consent']);
+  return {
+    phoneNormalized: requireNormalizedPhone(parsed.phone),
+    password: parsePassword(parsed.password),
     device: parseClientDevice(parsed.device),
     fullName: normalizeFullName(parsed.full_name),
     consent: parseConsent(parsed.consent),

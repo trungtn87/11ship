@@ -6,6 +6,7 @@ import {
   parseClientLoginBody,
   parseClientLogoutBody,
   parseClientRegisterBody,
+  parseClientUnverifiedRegisterBody,
 } from './client-auth-validation';
 
 const valid = () => ({
@@ -132,6 +133,36 @@ describe('parseClientLogoutBody', () => {
   it('refuses any key, a missing body and non-objects', () => {
     for (const candidate of [{ user_id: 'x' }, undefined, null, [], 'text']) {
       expect(() => parseClientLogoutBody(candidate)).toThrow();
+    }
+  });
+});
+
+describe('parseClientUnverifiedRegisterBody', () => {
+  const noToken = () => {
+    return Object.fromEntries(Object.entries(valid()).filter(([key]) => key !== 'verification_token'));
+  };
+
+  it('accepts exactly the five keys of the DISABLED_TEST body', () => {
+    const parsed = parseClientUnverifiedRegisterBody({ ...noToken(), full_name: '  An   Binh ' });
+    expect(parsed.fullName).toBe('An Binh');
+    expect(parsed).not.toHaveProperty('verificationToken');
+  });
+
+  it('refuses a token, role, permission, accepted_at, an unknown key or a missing field', () => {
+    const cases: unknown[] = [
+      valid(),
+      { ...noToken(), verification_token: 'abc' },
+      { ...noToken(), role: 'ADMIN' },
+      { ...noToken(), permission: 'x' },
+      { ...noToken(), consent: { ...valid().consent, accepted_at: '2026-10-12T00:00:00Z' } },
+      { ...noToken(), accepted_at: '2026-10-12T00:00:00Z' },
+      { ...noToken(), extra: 1 },
+      Object.fromEntries(Object.entries(noToken()).filter(([key]) => key !== 'consent')),
+      [],
+      null,
+    ];
+    for (const candidate of cases) {
+      expect(() => parseClientUnverifiedRegisterBody(candidate)).toThrow(BadRequestException);
     }
   });
 });

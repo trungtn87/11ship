@@ -30,6 +30,16 @@ export const CLIENT_REGISTER_AUDIT_ACTION = 'client.auth.register.v1';
 export const CLIENT_USER_REGISTERED_EVENT_TYPE = 'client.auth.user_registered.v1';
 export const CLIENT_USER_REGISTERED_EVENT_SCHEMA_VERSION = 1;
 
+/**
+ * Idempotency identity of the no-proof test registration (CLIENT_AUTH_PHONE_VERIFICATION_MODE=DISABLED_TEST). Its scope type
+ * and operation are its own, so a record of this branch is never found, replayed or fingerprint-compared by the REQUIRED
+ * or the legacy registration (and the other way round). The scope id is a stable server-side identifier derived from the
+ * normalized phone (see unverifiedTestScopeId), never random per request and never a client-supplied id.
+ */
+export const CLIENT_REGISTER_UNVERIFIED_TEST_SCOPE_TYPE = 'client_unverified_test_phone';
+export const CLIENT_REGISTER_UNVERIFIED_TEST_OPERATION_ID = 'client.auth.register.unverified_test.v1';
+export const CLIENT_REGISTER_UNVERIFIED_TEST_AUDIT_ACTION = 'client.auth.register.unverified_test.v1';
+
 /** Public names of the selectable contexts, in the order of the role array (contract11 section 1). */
 export const PUBLIC_CUSTOMER = 'CUSTOMER';
 export const PUBLIC_SHOP_OWNER = 'SHOP_OWNER';

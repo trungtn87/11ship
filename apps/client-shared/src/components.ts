@@ -164,7 +164,7 @@ export function textField(options: FieldOptions): FieldHandle {
 }
 
 export function passwordField(options: Omit<FieldOptions, 'type' | 'trailing' | 'icon'> & { readonly autocomplete: 'current-password' | 'new-password' }): FieldHandle {
-  const toggle = h('button', { type: 'button', class: 'c-iconbtn', 'aria-label': 'Hiện mật khẩu', 'aria-pressed': 'false', 'aria-controls': options.id }, icon('eye', 20));
+  const toggle = h('button', { type: 'button', class: 'c-iconbtn c-iconbtn--tap', 'aria-label': 'Hiện mật khẩu', 'aria-pressed': 'false', 'aria-controls': options.id }, icon('eye', 20));
   // The value is whatever was typed, byte for byte: no trim, no normalization, no length cap here (the form checks the length).
   const field = textField({ ...options, type: 'password', icon: 'lock', trailing: toggle, autocapitalize: 'off' });
   toggle.addEventListener('click', () => {

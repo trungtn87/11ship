@@ -77,6 +77,7 @@ export class AuthModule {
                   appEnv: config.appEnv,
                   fixtureModeEnabled: config.stagingFixtures !== undefined,
                   allowedPhones: config.stagingFixtures?.allowedPhones,
+                  unverifiedTestModeEnabled: config.clientPhoneVerificationMode === 'DISABLED_TEST',
                 }),
             }
           : { provide: ACCOUNT_ORIGIN_POLICY, useValue: options.accountOriginPolicy },

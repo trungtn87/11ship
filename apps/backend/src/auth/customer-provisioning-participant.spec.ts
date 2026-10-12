@@ -1,6 +1,7 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
+import { AccountOriginPolicy, createAccountOriginPolicy } from './account-origin';
 import { CUSTOMER_ROLE, SUPPORTED_ROLES } from './auth-constants';
 import { ConsentRecord, CustomerEligibility, CustomerProfileRepository } from './customer-profile-repository';
 import { CustomerConsentInput, CustomerProvisioningParticipant } from './customer-provisioning-participant';
@@ -16,7 +17,7 @@ const CONSENT: CustomerConsentInput = { termsVersion: 'terms-2026.10', privacyVe
 const ELIGIBLE: CustomerEligibility = { accountOrigin: 'PHONE_VERIFIED', phoneVerified: true, hasAdminMembership: false };
 
 // null stands for "no such user" (an explicit undefined would pick the default eligible account).
-function rig(eligibility: CustomerEligibility | null = ELIGIBLE) {
+function rig(eligibility: CustomerEligibility | null = ELIGIBLE, policy?: AccountOriginPolicy) {
   const lockEligibility = jest.fn<(context: TransactionContext, userId: string) => Promise<CustomerEligibility | undefined>>(
     async () => eligibility ?? undefined,
   );
@@ -28,6 +29,7 @@ function rig(eligibility: CustomerEligibility | null = ELIGIBLE) {
   const participant = new CustomerProvisioningParticipant(
     { grantRole } as unknown as UserRepository,
     { lockEligibility, insertProfileIfAbsent, insertConsentIfAbsent } as unknown as CustomerProfileRepository,
+    policy,
   );
   return { participant, lockEligibility, insertProfileIfAbsent, insertConsentIfAbsent, grantRole };
 }
@@ -237,5 +239,50 @@ describe('CustomerProvisioningParticipant — boundaries', () => {
   it('does not widen the legacy selectable roles: CUSTOMER is a storage role, not a SUPPORTED_ROLES entry', () => {
     expect([...SUPPORTED_ROLES]).toEqual(['DRIVER', 'SHOP']);
     expect(CUSTOMER_ROLE).toBe('CUSTOMER');
+  });
+});
+
+// No-OTP test registration: a TEST_UNVERIFIED account (phone_verified_at NULL) is provisioned only while the validated no-proof
+// test policy is on; a verification time on it, an admin membership, or the policy being off refuses it before any write.
+describe('CustomerProvisioningParticipant.provision — TEST_UNVERIFIED account', () => {
+  const TEST_ACCOUNT: CustomerEligibility = { accountOrigin: 'TEST_UNVERIFIED', phoneVerified: false, hasAdminMembership: false };
+  const testPolicy = createAccountOriginPolicy({ appEnv: 'test', fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: true });
+
+  it('is provisioned under the no-proof test policy', async () => {
+    const { participant, grantRole, insertProfileIfAbsent } = rig(TEST_ACCOUNT, testPolicy);
+    await expect(participant.provision(CONTEXT, USER_ID, CONSENT, { initialFullName: 'Nguyễn Văn An' })).resolves.toEqual({
+      roleGranted: true,
+      profileCreated: true,
+      consentRecorded: true,
+    });
+    expect(grantRole).toHaveBeenCalledWith(CONTEXT, USER_ID, CUSTOMER_ROLE);
+    expect(insertProfileIfAbsent).toHaveBeenCalledWith(CONTEXT, USER_ID, 'Nguyễn Văn An');
+  });
+
+  it('is refused without the policy (the default policy, or the mode switched off), before any write', async () => {
+    for (const policy of [
+      undefined,
+      createAccountOriginPolicy({ appEnv: 'test', fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: false }),
+      // The mode is honoured for development/test only, whatever else is passed.
+      createAccountOriginPolicy({ appEnv: 'production', fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: true }),
+      createAccountOriginPolicy({ appEnv: 'staging', fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: true }),
+    ]) {
+      const { participant, grantRole, insertProfileIfAbsent, insertConsentIfAbsent } = rig(TEST_ACCOUNT, policy);
+      expect(await failureOf(participant.provision(CONTEXT, USER_ID, CONSENT))).toBeInstanceOf(TechnicalError);
+      expect(grantRole).not.toHaveBeenCalled();
+      expect(insertProfileIfAbsent).not.toHaveBeenCalled();
+      expect(insertConsentIfAbsent).not.toHaveBeenCalled();
+    }
+  });
+
+  it('refuses a TEST_UNVERIFIED row that carries a verification time or an administration membership, even under the policy', async () => {
+    for (const eligibility of [
+      { ...TEST_ACCOUNT, phoneVerified: true },
+      { ...TEST_ACCOUNT, hasAdminMembership: true },
+    ]) {
+      const { participant, grantRole } = rig(eligibility, testPolicy);
+      expect(await failureOf(participant.provision(CONTEXT, USER_ID, CONSENT))).toBeInstanceOf(TechnicalError);
+      expect(grantRole).not.toHaveBeenCalled();
+    }
   });
 });

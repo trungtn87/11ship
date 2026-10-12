@@ -34,4 +34,28 @@ Phạm vi: gọi API `POST /v1/client-auth/register` trên máy local/TEST. Đâ
 | Replay khi session đã hết hạn/thu hồi hoặc tài khoản bị khóa | 409 `AUTH_RESULT_NOT_REPLAYABLE` |
 | Số đã đăng ký | 409 `PHONE_ALREADY_REGISTERED` |
 
-Trạng thái: chưa có UI, login/me/context/logout mới, reset mật khẩu, onboarding quán/xế, native binding hay SMS nhà mạng trong gói này. Kết quả thử tay của Owner phải ghi theo thực tế, không suy ra từ CI.
+Trạng thái của mục 1–3 (API): chưa có UI, login/me/context/logout mới, reset mật khẩu, onboarding quán/xế, native binding hay SMS nhà mạng trong gói này. Kết quả thử tay của Owner phải ghi theo thực tế, không suy ra từ CI.
+
+## 4. Thử bằng giao diện 11Food (M01.07, local) — chế độ REQUIRED (có OTP)
+
+Luồng thật: F11 (họ tên, SĐT, mật khẩu, nhập lại, đồng ý) → F12 (mã OTP) → tài khoản được tạo → F01 đã đăng nhập bằng phiên/danh tính do máy chủ trả. Chỉ chạy ở local; **không** mở trên VPS test (xác minh OTP ở VPS vẫn đóng).
+
+1. `.env` local có `OTP_PROVIDER=TEST_INBOX`, cặp `CLIENT_AUTH_TERMS_VERSION` / `CLIENT_AUTH_PRIVACY_VERSION` ở mục 1, `APP_ENV=development`, `HOST=127.0.0.1`; backend chạy trên DB local.
+2. Chạy `tools\local\11Ship-Update.cmd`, rồi `11Ship-Food.cmd` (mở https://localhost:8444; chứng chỉ theo [local-https-runtime.md](local-https-runtime.md)).
+3. Mở **Tài khoản → Đăng ký**, đọc hai nội dung chấp thuận thử, nhập thông tin, tick đồng ý, bấm **Tiếp tục**.
+4. Lấy mã: chạy `tools\local\11ship-test-sms.cmd`, chọn tin REGISTER của số vừa nhập (màn hình không hiện mã). Nhập mã vào F12, bấm **Xác minh**.
+5. Thành công: về trang chủ với tên bạn nhập. F5 trả về khách (phiên chỉ nằm trong bộ nhớ trang).
+
+Nếu mất phản hồi ở bước tạo tài khoản, F12 hiện **Thử lại**: gửi lại đúng yêu cầu cũ (cùng `Idempotency-Key`), không cần mã mới. Rời màn hình (Quay lại/Đổi số) sẽ hỏi "Bỏ thay đổi?" rồi xóa mật khẩu, mã và bằng chứng xác minh khỏi bộ nhớ.
+
+## 5. Thử bằng giao diện 11Food không OTP (DISABLED_TEST, chỉ local)
+
+Dùng khi chưa có SMS nhà mạng. Tài khoản tạo ra có `account_origin = TEST_UNVERIFIED`, `phone_verified_at` rỗng, hiển thị là **chưa xác minh (test)** — không bao giờ là "đã xác minh", không có quyền quản trị (ADMIN/SYSTEM vẫn cần TOTP) và gate thiết bị Android vẫn đóng.
+
+1. `.env` local như mục 4 nhưng **không** cần `OTP_PROVIDER=TEST_INBOX`; thêm `CLIENT_AUTH_PHONE_VERIFICATION_MODE=DISABLED_TEST`. Bắt buộc `APP_ENV=development` (hoặc `test`) và `HOST=127.0.0.1`; giá trị khác, hoặc staging/production/host không loopback, làm backend từ chối khởi động.
+2. Chạy `tools\local\11Ship-Update.cmd`, rồi `11Ship-Food.cmd` (https://localhost:8444). F11 hỏi `GET /v1/client-auth/config`; nếu không nhận được câu trả lời hợp lệ, nút đăng ký bị khóa kèm "Thử lại".
+3. Mở **Tài khoản → Đăng ký**: nút là **Đăng ký**, kèm ghi chú "Bản test: tạm không xác minh số điện thoại". Nhập thông tin, tick đồng ý, bấm **Đăng ký**: về F01 đã đăng nhập, không có F12, không đếm ngược, không gửi lại mã.
+4. Mất phản hồi: màn hình hiện **Thử lại**, gửi lại đúng yêu cầu cũ (cùng `Idempotency-Key`), không tạo thêm tài khoản. Tắt chế độ hoặc thu hồi/hết hạn phiên thì replay không trả token nữa.
+5. Tắt chế độ (bỏ biến, chạy lại backend) quay về REQUIRED: tài khoản test không đăng nhập được và token cũ bị từ chối.
+
+Gọi API trực tiếp: `POST /v1/client-auth/register` nhận đúng `{phone,password,device,full_name,consent}`; có `verification_token`, `role`, `permission` hay `accepted_at` là 400.

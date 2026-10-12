@@ -1,5 +1,6 @@
 import { AppDefinition } from '../../client-shared/src/app.js';
 import { FOOD_BRAND, logo } from '../../client-shared/src/brand.js';
+import { FOOD_TEST_CONSENT } from '../../client-shared/src/consent.js';
 import { banner, bottomNav, button, chip, emptyState, gate, list, listItem, openDialog, reasonNote, setBusy, TabDef, textField, textLink } from '../../client-shared/src/components.js';
 import { h } from '../../client-shared/src/dom.js';
 import { icon } from '../../client-shared/src/icons.js';
@@ -220,7 +221,10 @@ const account: ScreenDef = {
             shopEntry(env),
             listItem({ icon: 'mapPin', title: 'Địa chỉ nhận hàng', soon: true }),
             listItem({ icon: 'key', title: 'Đặt lại mật khẩu', onClick: () => env.go('reset') }),
-            listItem({ icon: 'logout', title: 'Đăng xuất', tone: 'danger', onClick: () => openLogout(env) }),
+            // Live: the session came from register and logout is not connected yet (M01.04): the row says so instead of doing nothing.
+            env.mode === 'live' && !env.isWired('auth.logout')
+              ? listItem({ icon: 'logout', title: 'Đăng xuất', sub: env.featureReason('auth.logout'), soon: true })
+              : listItem({ icon: 'logout', title: 'Đăng xuất', tone: 'danger', onClick: () => openLogout(env) }),
           ]),
         ],
       });
@@ -453,4 +457,6 @@ export const FOOD_DEFINITION: AppDefinition = {
   loginPath: '/login',
   flowStart: { 'register-otp': '/register', 'reset-otp': '/reset', 'reset-password': '/reset' },
   testSmsNotice: true,
+  // M01.07: register + OTP are connected here (only on a local https runtime, see client-shared/src/app.ts).
+  register: { consent: FOOD_TEST_CONSENT },
 };

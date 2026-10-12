@@ -17,9 +17,11 @@ import {
   parseOtpIssued,
   parseOtpVerified,
   parseSignInResponse,
+  parseRegistrationConfig,
   PUBLIC_CONTEXTS,
   PublicContext,
   REGISTER_PURPOSE,
+  RegistrationVerificationMode,
 } from './contract.js';
 import { FlowGeneration, SessionListener, SessionState, SessionStore, SessionTicket } from './session.js';
 import { AUTH_TIMEOUT_MS, createTransport, TransportRequest, TransportResult } from './transport.js';
@@ -90,6 +92,9 @@ export interface RegisterInput {
   readonly consent: { readonly termsVersion: string; readonly privacyVersion: string };
 }
 
+/** The registration of the no-proof test mode: the same fields without the phone proof. */
+export type RegisterWithoutProofInput = Omit<RegisterInput, 'verificationToken'>;
+
 export interface LoginInput {
   readonly phone: string;
   /** Sent exactly as typed: not trimmed, not normalized. */
@@ -105,11 +110,24 @@ export interface AuthSessionView {
 
 export interface AuthClient {
   readonly session: AuthSessionView;
+  /**
+   * GET /v1/client-auth/config: what the server says about the phone verification of a registration. Only the two known values
+   * are accepted; anything else is a failure and the register screen stays locked (nothing is guessed or defaulted).
+   */
+  registrationConfig(): Promise<AuthResult<RegistrationVerificationMode>>;
   requestRegisterOtp(input: { readonly phone: string }): Promise<AuthResult<OtpIssued>>;
   verifyRegisterOtp(input: { readonly verificationId: string; readonly code: string }): Promise<AuthResult<OtpVerified>>;
-  /** Restarting or leaving the register flow: every OTP answer still on its way becomes stale. */
+  /**
+   * Restarting or leaving the register flow: every OTP answer AND a register answer still on its way becomes stale (no session is
+   * established from it), and the kept key + body of an unresolved register (it holds the password and the phone proof) are dropped.
+   */
   resetRegisterFlow(): void;
   register(input: RegisterInput): Promise<AuthResult<SignedIn>>;
+  /**
+   * Registration WITHOUT a phone proof, valid only when the server reported DISABLED_TEST. Same one-intent/one-key rules as
+   * `register`: an unknown outcome keeps the key and the exact body, and the next call with the same input re-sends them.
+   */
+  registerWithoutProof(input: RegisterWithoutProofInput): Promise<AuthResult<SignedIn>>;
   login(input: LoginInput): Promise<AuthResult<SignedIn>>;
   me(): Promise<AuthResult<SignedIn>>;
   selectContext(context: PublicContext): Promise<AuthResult<SignedIn>>;
@@ -236,6 +254,18 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     }
   }
 
+  // ---- registration config ---------------------------------------------------------------------------------------
+  function registrationConfig(): Promise<AuthResult<RegistrationVerificationMode>> {
+    return single('config', '', async () => {
+      const result = await transport.send({ method: 'GET', path: AUTH_PATHS.config });
+      const outcome = classify('config', result, 200, parseRegistrationConfig);
+      if (outcome.kind === 'aborted') {
+        return { kind: 'stale' };
+      }
+      return outcome.kind === 'failure' ? (outcome.result as AuthResult<RegistrationVerificationMode>) : { kind: 'ok', value: outcome.body };
+    });
+  }
+
   // ---- REGISTER OTP ----------------------------------------------------------------------------------------------
   function requestRegisterOtp(input: { readonly phone: string }): Promise<AuthResult<OtpIssued>> {
     if (typeof input.phone !== 'string' || !isValidPhone(input.phone)) {
@@ -298,8 +328,14 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
   function signIn(intent: 'register' | 'login', path: string, body: string): Promise<AuthResult<SignedIn>> {
     return single(intent, body, async () => {
       const ticket = store.ticket();
+      // A register belongs to the register flow it started in: leaving or restarting that flow (resetRegisterFlow) makes its answer stale.
+      const flowTicket = registerFlow.ticket();
       const entry = keyFor(intent, body);
       const result = await transport.send({ method: 'POST', path, body, idempotencyKey: entry.key });
+      if (intent === 'register' && !registerFlow.isCurrent(flowTicket)) {
+        dropIntent(intent, entry);
+        return { kind: 'stale' };
+      }
       const outcome = classify(intent, result, intent === 'register' ? 201 : 200, parseSignInResponse);
       if (outcome.kind === 'aborted') {
         return { kind: 'stale' };
@@ -347,6 +383,31 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
       phone: input.phone.trim(),
       password: input.password,
       verification_token: input.verificationToken,
+      device,
+      full_name: fullName,
+      consent: { terms_version: input.consent.termsVersion, privacy_version: input.consent.privacyVersion },
+    });
+    return signIn('register', AUTH_PATHS.register, body);
+  }
+
+  function registerWithoutProof(input: RegisterWithoutProofInput): Promise<AuthResult<SignedIn>> {
+    const fullName = typeof input.fullName === 'string' ? normalizePersonName(input.fullName) : undefined;
+    if (typeof input.phone !== 'string' || !isValidPhone(input.phone)) {
+      return Promise.resolve(fail('INVALID_PHONE'));
+    }
+    if (
+      typeof input.password !== 'string' ||
+      !isValidPassword(input.password) ||
+      fullName === undefined ||
+      !isConsentVersion(input.consent?.termsVersion) ||
+      !isConsentVersion(input.consent?.privacyVersion)
+    ) {
+      return Promise.resolve(fail('BAD_REQUEST'));
+    }
+    // Exactly the five fields of the DISABLED_TEST body, in a fixed order: no verification_token, no flag, no role.
+    const body = JSON.stringify({
+      phone: input.phone.trim(),
+      password: input.password,
       device,
       full_name: fullName,
       consent: { terms_version: input.consent.termsVersion, privacy_version: input.consent.privacyVersion },
@@ -470,7 +531,13 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     subscribe: (listener) => store.subscribe(listener),
   };
 
-  return { session, requestRegisterOtp, verifyRegisterOtp, resetRegisterFlow: () => registerFlow.reset(), register: registerUser, login, me, selectContext, logout, dispose };
+  function resetRegisterFlow(): void {
+    registerFlow.reset();
+    intents.delete('register');
+    running.delete('register');
+  }
+
+  return { session, registrationConfig, requestRegisterOtp, verifyRegisterOtp, resetRegisterFlow, register: registerUser, registerWithoutProof, login, me, selectContext, logout, dispose };
 }
 
 export type { SessionTicket };

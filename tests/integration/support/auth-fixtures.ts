@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { AccountOriginPolicy } from '../../../apps/backend/src/auth/account-origin';
 import { DisabledOtpProvider } from '../../../apps/backend/src/auth/disabled-otp-provider';
 import { FakeOtpProvider } from '../../../apps/backend/src/auth/fake-otp-provider';
+import { unverifiedTestScopeId } from '../../../apps/backend/src/client-auth/client-registration-service';
 import { AppConfig } from '../../../apps/backend/src/config/app-config';
 import { AuthConfig, OtpHmacKey } from '../../../apps/backend/src/config/auth-config';
 import { fixtureKeyring } from '../../../apps/backend/src/crypto/test-keys.fixture';
@@ -210,6 +211,11 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
       WHERE scope_type IN ('verification_proof', 'client_verification_proof')
         AND scope_id IN (SELECT proof_id::text FROM app.verification_proofs WHERE phone_normalized = $1)`,
     [normalizedPhone],
+  );
+  // DISABLED_TEST register: its idempotency scope is the hash of the normalized phone, not a proof.
+  await pool.query(
+    `DELETE FROM app.idempotency_records WHERE scope_type = 'client_unverified_test_phone' AND scope_id = $1`,
+    [unverifiedTestScopeId(normalizedPhone)],
   );
   // M01-D-ADMIN-1B: the SYSTEM-scoped idempotency records of the invitation routes.
   await pool.query(
