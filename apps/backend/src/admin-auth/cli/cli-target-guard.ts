@@ -115,6 +115,17 @@ export function resolveCliTarget(env: CliEnvSource): CliTargetResult {
     return { ok: false, problem: 'APP_ENV must be development, test or staging' };
   }
 
+  // The selector is validated BEFORE any environment-specific path: a value that is not exactly SUPABASE or SELF_HOSTED
+  // (empty, other case, a typo) is refused in every environment, and SELF_HOSTED is refused outside staging, so the
+  // local development/test path can never swallow a selector that the remote operator tools would refuse.
+  const selector = env[SELECTOR_VARIABLE];
+  if (selector !== undefined && selector !== 'SUPABASE' && selector !== 'SELF_HOSTED') {
+    return { ok: false, problem: `${SELECTOR_VARIABLE} must be SUPABASE or SELF_HOSTED (or not set, which means SUPABASE)` };
+  }
+  if (selector === 'SELF_HOSTED' && appEnv !== 'staging') {
+    return { ok: false, problem: `${SELECTOR_VARIABLE}=SELF_HOSTED is allowed only with APP_ENV=staging` };
+  }
+
   if (appEnv === 'development' || appEnv === 'test') {
     const parsed = parseUrl(env.DATABASE_URL);
     if (parsed === undefined) {
@@ -136,11 +147,7 @@ export function resolveCliTarget(env: CliEnvSource): CliTargetResult {
     };
   }
 
-  // staging: the operator picks the target. Not set means SUPABASE; anything else but SELF_HOSTED is refused here.
-  const selector = env[SELECTOR_VARIABLE];
-  if (selector !== undefined && selector !== 'SUPABASE' && selector !== 'SELF_HOSTED') {
-    return { ok: false, problem: `${SELECTOR_VARIABLE} must be SUPABASE or SELF_HOSTED (or not set, which means SUPABASE)` };
-  }
+  // staging: the operator picks the target (the selector was validated above). Not set means SUPABASE.
   if (selector === 'SELF_HOSTED') {
     return resolveSelfHostedTarget(env);
   }
