@@ -1,5 +1,5 @@
 name: food
-description: 11Food test app (frame): brand, navigation and the real server connection check. Login and business features are locked.
+description: 11Food test app (frame) - brand, navigation and the real server connection check. Login and business features are locked.
 publish_to: none
 # The first part is the version name shown to people; the build number is replaced by CI (--build-number).
 version: 0.1.0+1
