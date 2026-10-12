@@ -58,6 +58,23 @@ const home: ScreenDef = {
     }),
 };
 
+// F02 keeps what the person typed (and the Món/Quán choice) while they move between screens and tabs and when they press Back.
+// It lives only in memory of this page: not in the URL, not in storage, never sent anywhere. There is no search API yet (M09),
+// so nothing here ever produces a result: no shop, dish or offer is invented.
+type SearchScope = 'dish' | 'shop';
+const searchMemory: { query: string; scope: SearchScope } = { query: '', scope: 'dish' };
+const SEARCH_MAX = 100;
+const SEARCH_SCOPES: ReadonlyArray<{ readonly id: SearchScope; readonly label: string }> = [
+  { id: 'dish', label: 'Món' },
+  { id: 'shop', label: 'Quán' },
+];
+
+function searchOutcome(query: string): HTMLElement {
+  return query.trim() === ''
+    ? emptyState({ icon: 'search', title: 'Chưa có kết quả', text: STATE_COPY.empty })
+    : emptyState({ icon: 'search', title: 'Chưa tìm được kết quả', text: 'Chưa có dữ liệu quán và món để tìm. Từ khóa chỉ nằm trên màn hình này, chưa gửi tới máy chủ.' });
+}
+
 const search: ScreenDef = {
   id: 'search',
   code: 'F02',
@@ -67,13 +84,41 @@ const search: ScreenDef = {
   access: 'public',
   variants: DEFAULT,
   render: (env) => {
-    const box = textField({ id: 'search', label: 'Tìm món hoặc quán', icon: 'search', placeholder: 'Tìm món hoặc quán', readOnly: true });
-    box.input.setAttribute('aria-disabled', 'true');
+    const clear = h('button', { type: 'button', class: 'c-iconbtn c-iconbtn--tap', id: 'search-clear', 'aria-label': 'Xóa nội dung tìm kiếm', hidden: searchMemory.query === '' }, icon('close', 20));
+    const box = textField({ id: 'search', label: 'Tìm món hoặc quán', icon: 'search', placeholder: 'Tìm món hoặc quán', maxLength: SEARCH_MAX, autocomplete: 'off', inputMode: 'search', value: searchMemory.query, trailing: clear });
+    const outcome = h('div', { class: 'c-stack', 'aria-live': 'polite' }, searchOutcome(searchMemory.query));
+    const refresh = (): void => {
+      searchMemory.query = box.input.value;
+      clear.hidden = searchMemory.query === '';
+      outcome.replaceChildren(searchOutcome(searchMemory.query));
+    };
+    box.input.addEventListener('input', refresh);
+    clear.addEventListener('click', () => {
+      box.input.value = '';
+      refresh();
+      box.input.focus();
+    });
+    const scopeButtons = SEARCH_SCOPES.map((scope) => {
+      const element = button({ label: scope.label, kind: scope.id === searchMemory.scope ? 'primary' : 'secondary', compact: true, id: `search-scope-${scope.id}` });
+      element.setAttribute('aria-pressed', String(scope.id === searchMemory.scope));
+      element.addEventListener('click', () => {
+        searchMemory.scope = scope.id;
+        SEARCH_SCOPES.forEach((other, index) => {
+          const on = other.id === scope.id;
+          scopeButtons[index].className = `c-btn c-btn--${on ? 'primary' : 'secondary'} c-btn--compact`;
+          scopeButtons[index].setAttribute('aria-pressed', String(on));
+        });
+      });
+      return element;
+    });
+    // Enter must not submit anything: there is no search to run.
+    const form = h('form', { class: 'c-stack', role: 'search', novalidate: true }, box.root, h('div', { class: 'c-row-flex', role: 'group', 'aria-label': 'Tìm theo' }, ...scopeButtons));
+    form.addEventListener('submit', (event) => event.preventDefault());
     return appPage({
       title: 'Tìm kiếm',
       nav: nav(env, 'search'),
       bodyClass: 'c-stack',
-      body: [box.root, reasonNote('Tìm kiếm sẽ có khi dữ liệu quán và món sẵn sàng.'), emptyState({ icon: 'search', title: 'Chưa có kết quả', text: STATE_COPY.empty })],
+      body: [form, reasonNote('Tìm kiếm sẽ có khi dữ liệu quán và món sẵn sàng.'), outcome, h('div', { class: 'c-center' }, textLink('Về trang chủ', () => env.go('home')))],
     });
   },
 };
@@ -153,6 +198,8 @@ const account: ScreenDef = {
           button({ label: 'Đăng nhập', kind: 'primary', id: 'account-login', onClick: () => env.go('login') }),
           button({ label: 'Đăng ký', kind: 'secondary', id: 'account-register', onClick: () => env.go('register') }),
           list([
+            // F07: where the shop entry lives for M01. Nobody is signed in, so it is not a link and shows no role or shop.
+            listItem({ icon: 'store', title: 'Quản lý cửa hàng', sub: `Cần đăng nhập. ${env.featureReason('auth.login')}`, soon: true, trailing: chip('Cần đăng nhập', 'soon') }),
             listItem({ icon: 'help', title: 'Trợ giúp', soon: true }),
             listItem({ icon: 'shield', title: 'Chính sách và điều khoản', soon: true }),
             listItem({ icon: 'activity', title: 'Chẩn đoán kết nối', sub: 'Kiểm tra kết nối với máy chủ', onClick: () => env.go('diagnostics') }),
