@@ -25,6 +25,10 @@ concurrency:
 env:
   API_BASE_URL: https://103.9.78.67.sslip.io
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   apk:
     name: ${{ matrix.label }} APK
