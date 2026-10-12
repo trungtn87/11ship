@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data' show BytesBuilder;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';

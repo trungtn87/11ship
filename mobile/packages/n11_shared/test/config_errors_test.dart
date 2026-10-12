@@ -43,7 +43,7 @@ void main() {
     test('redacts long opaque runs, drops stack lines, caps length, tolerates non-strings', () {
       expect(sanitizeDiagnosticText('k ${'a' * 40}'), isNot(contains('aaaa')));
       expect(sanitizeDiagnosticText('ok\n  at Foo.bar (x.js:1)'), 'ok');
-      expect(sanitizeDiagnosticText('b' * 5 + ' ' + 'c' * 500, maxLength: 20).length, lessThanOrEqualTo(20));
+      expect(sanitizeDiagnosticText("${'b' * 5} ${'c' * 500}", maxLength: 20).length, lessThanOrEqualTo(20));
       expect(sanitizeDiagnosticText(null), '');
     });
   });
