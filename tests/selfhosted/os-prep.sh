@@ -96,8 +96,14 @@ step "TCP + TLS 1.3 + SCRAM with the passwords from the ORIGINAL files, for both
 login() { # role, file, db, trust
   PGSSLROOTCERT="$4" PGPASSWORD="$(cat "$2")" psql -X -Atq "host=localhost port=5432 dbname=$3 user=$1 sslmode=verify-full" -c "select current_user || ' tls=' || (select ssl from pg_stat_ssl where pid=pg_backend_pid())"
 }
-[ "$(login ship11_migrator "$secrets/migrator.pw" ship11_staging /etc/11ship/db-ca.crt)" = "ship11_migrator tls=t" ] || die "migrator login"
-[ "$(login ship11_app "$secrets/app.pw" ship11_staging /etc/11ship/db-ca.crt)" = "ship11_app tls=t" ] || die "app login"
+# On a failure show psql's own message (it never contains the password) before stopping.
+expect_login() { # role, file, trust, expected output
+  local got
+  got="$(login "$1" "$2" ship11_staging "$3" 2>/tmp/os-prep.login.err)" || { cat /tmp/os-prep.login.err >&2; die "login of $1 failed"; }
+  [ "$got" = "$4" ] || die "login of $1 returned an unexpected identity"
+}
+expect_login ship11_migrator "$secrets/migrator.pw" /etc/11ship/db-ca.crt "ship11_migrator tls=t"
+expect_login ship11_app "$secrets/app.pw" /etc/11ship/db-ca.crt "ship11_app tls=t"
 if PGSSLROOTCERT=/etc/11ship/db-ca.crt PGPASSWORD="$(cat "$secrets/migrator.pw")" psql -X -Atq "host=localhost port=5432 dbname=ship11_staging user=ship11_app sslmode=verify-full" -c 'select 1' >/dev/null 2>&1; then die "app role accepted the migrator password"; fi
 ok "both roles log in over verified TLS with SCRAM; a crossed password is refused"
 
@@ -112,7 +118,7 @@ install -o postgres -g postgres -m 644 /root/ship11-pki-renewed/server.crt /etc/
 install -o postgres -g postgres -m 600 /root/ship11-pki-renewed/server.key /etc/postgresql/17/main/tls/server.key
 systemctl reload postgresql@17-main; sleep 2
 [ "$(sha256sum /etc/11ship/db-ca.crt | cut -d' ' -f1)" = "$trust_before" ] || die "db-ca.crt changed"
-[ "$(login ship11_app "$secrets/app.pw" ship11_staging /etc/11ship/db-ca.crt)" = "ship11_app tls=t" ] || die "login after leaf renewal"
+expect_login ship11_app "$secrets/app.pw" /etc/11ship/db-ca.crt "ship11_app tls=t"
 ok "leaf renewed under the same CA; unchanged trust store still verifies the server"
 
 step "F3 on the real server: CA rotation: a new CA's certificate is refused until the client trusts that CA"
@@ -126,10 +132,10 @@ systemctl reload postgresql@17-main; sleep 2
 if login ship11_app "$secrets/app.pw" ship11_staging /root/old-ca.crt >/dev/null 2>&1; then die "a client trusting only the old CA accepted the new CA's certificate"; fi
 ok "old trust store refuses the new CA's certificate (verification stays on)"
 cat /root/old-ca.crt /root/ship11-pki-rotated/ca.crt > /root/bundle-ca.crt
-[ "$(login ship11_app "$secrets/app.pw" ship11_staging /root/bundle-ca.crt)" = "ship11_app tls=t" ] || die "bundle trust"
+expect_login ship11_app "$secrets/app.pw" /root/bundle-ca.crt "ship11_app tls=t"
 ok "a trust bundle with both CAs accepts the new certificate"
 install -m 644 /root/ship11-pki-rotated/ca.crt /etc/11ship/db-ca.crt
-[ "$(login ship11_app "$secrets/app.pw" ship11_staging /etc/11ship/db-ca.crt)" = "ship11_app tls=t" ] || die "new CA only"
+expect_login ship11_app "$secrets/app.pw" /etc/11ship/db-ca.crt "ship11_app tls=t"
 ok "new CA alone verifies; the old CA is retired"
 
 echo; echo "os-prep: $pass checks passed"
