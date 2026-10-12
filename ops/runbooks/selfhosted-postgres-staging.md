@@ -32,8 +32,8 @@ Các lệnh dưới đây chạy từ thư mục release (`/opt/11ship/current`,
 
 | Bước | Người thao tác | User / thư mục | Dừng khi |
 |---|---|---|---|
-| 2–4 CA, chứng chỉ, cấu hình PostgreSQL | người vận hành | `root` trên VPS, `/root/ship11-pki`, `/etc/postgresql/17/main` | bất kỳ lệnh nào trả lỗi; **không** reload nếu `pg_hba.conf` mới chưa kiểm tra |
-| 5 role/database/schema | người vận hành | `sudo -u postgres psql` | lỗi "already exists" (không chạy lại để "sửa") |
+| 2–3 CA, chứng chỉ (gia hạn: 2a; xoay CA: 2b), cấu hình PostgreSQL | người vận hành | `root` trên VPS, `/root/ship11-pki`, `/etc/postgresql/17/main` | bất kỳ lệnh nào trả lỗi; **không** reload nếu `pg_hba.conf` mới chưa kiểm tra |
+| 4 role/database/schema | người vận hành | `root`: `sudo ./ops/selfhosted/run-roles-database.sh` (root đọc bí mật, `psql` chạy bằng `postgres`) | mọi dòng `refused`; lỗi "already exists" (không chạy lại để "sửa") |
 | 6–10 lệnh operator | người vận hành | `root` (hoặc user operator), thư mục release | mọi dòng `refused` / `failed` |
 
 Giữ phiên SSH hiện có mở trong suốt khi sửa `pg_hba.conf`/cấu hình; mở phiên thứ hai để kiểm tra trước khi đóng phiên cũ.
@@ -42,7 +42,7 @@ Không mở cổng 5432 trên firewall: PostgreSQL chỉ lắng nghe `localhost`
 ## 2. CA riêng và chứng chỉ server
 
 ```bash
-sudo ./ops/selfhosted/make-pki.sh /root/ship11-pki          # thư mục phải chưa tồn tại; chỉ in fingerprint SHA-256
+sudo ./ops/selfhosted/make-pki.sh new /root/ship11-pki      # CA MỚI + chứng chỉ server; thư mục phải chưa tồn tại; chỉ in fingerprint SHA-256
 sudo install -d -o postgres -g postgres -m 750 /etc/postgresql/17/main/tls
 sudo install -o postgres -g postgres -m 644 /root/ship11-pki/server.crt /etc/postgresql/17/main/tls/server.crt
 sudo install -o postgres -g postgres -m 600 /root/ship11-pki/server.key /etc/postgresql/17/main/tls/server.key
@@ -52,8 +52,46 @@ sudo install -m 644 /root/ship11-pki/ca.crt /etc/11ship/db-ca.crt     # CA công
 
 - Chứng chỉ server chỉ có SAN `DNS:localhost` (không có IP) nên host `127.0.0.1` bị từ chối khi xác minh — đúng chủ đích.
 - Ghi fingerprint do script in vào hồ sơ vận hành (không phải bí mật). `ca.key` cất offline sau bước này; không cần lúc chạy.
-- Hạn: CA 3650 ngày, server 825 ngày. Đổi chứng chỉ server: chạy lại script vào thư mục **mới**, thay hai file, reload PostgreSQL
-  (cùng CA nên không phải đổi `db-ca.crt`). Đổi CA = thay mọi bản `db-ca.crt`.
+- Hạn: CA 3650 ngày, server 825 ngày. Ghi ngày hết hạn của cả hai vào hồ sơ vận hành và đặt nhắc việc trước ≥ 60 ngày.
+
+### 2a. Gia hạn chứng chỉ server GIỮ NGUYÊN CA (thủ tục thường dùng — `db-ca.crt` không đổi)
+
+`make-pki.sh new` luôn tạo **CA mới**; chạy lại nó rồi chỉ thay hai file server sẽ làm PostgreSQL trình chứng chỉ của CA mới trong
+khi backend/operator vẫn chỉ tin CA cũ (kết nối bị từ chối). Để gia hạn, dùng `renew-leaf` với CA hiện có:
+
+```bash
+# 1) Lấy ca.key từ nơi cất offline vào một thư mục tạm CHỈ root đọc được (cùng ca.crt hiện tại), ca.key quyền 600.
+sudo install -d -m 700 /root/ship11-ca-restore && sudo install -m 644 <ca.crt> /root/ship11-ca-restore/ca.crt && sudo install -m 600 <ca.key> /root/ship11-ca-restore/ca.key
+# 2) Cấp cặp khóa + chứng chỉ server MỚI vào thư mục MỚI (không ghi đè gì; ca.key không được sao chép sang đó)
+sudo ./ops/selfhosted/make-pki.sh renew-leaf /root/ship11-ca-restore /root/ship11-pki-$(date -u +%Y%m%d)
+# 3) Xóa ngay bản ca.key đã khôi phục (cất lại offline)
+sudo shred -u /root/ship11-ca-restore/ca.key && sudo rm -rf /root/ship11-ca-restore
+# 4) Giữ bản cũ để quay lại, rồi cài hai file mới
+sudo cp -p /etc/postgresql/17/main/tls/server.crt /etc/postgresql/17/main/tls/server.key /root/ship11-pki-previous/   # thư mục 700 tạo trước
+sudo install -o postgres -g postgres -m 644 /root/ship11-pki-<ngày>/server.crt /etc/postgresql/17/main/tls/server.crt
+sudo install -o postgres -g postgres -m 600 /root/ship11-pki-<ngày>/server.key /etc/postgresql/17/main/tls/server.key
+sudo systemctl reload postgresql@17-main
+```
+
+Kiểm tra (phải qua trước khi coi là xong): lệnh `check` của operator (`node scripts/db-migrate-remote.js`, mục 6) kết nối thành công,
+`journalctl -u 11ship-staging` không có lỗi TLS, `curl http://127.0.0.1:3000/v1/health/ready` = 200. Nếu lỗi: chép lại hai file cũ từ
+`/root/ship11-pki-previous/`, `reload`, kiểm tra lại. `ca.crt` không đổi nên **không** đụng tới `/etc/11ship/db-ca.crt` và không
+cần khởi động lại dịch vụ.
+
+### 2b. Xoay CA (CA mới; chỉ khi CA bị lộ hoặc sắp hết hạn)
+
+Thứ tự bắt buộc — mỗi bước kiểm tra xong mới sang bước sau; trust store luôn là tập con/hợp của thứ server đang trình ra:
+
+1. Tạo PKI mới vào thư mục mới: `sudo ./ops/selfhosted/make-pki.sh new /root/ship11-pki-<ngày>` (CA mới + chứng chỉ server mới).
+2. **Tin cả hai CA trước:** `cat <ca.crt cũ> /root/ship11-pki-<ngày>/ca.crt | sudo tee /etc/11ship/db-ca.crt.new >/dev/null`, kiểm tra
+   là PEM hợp lệ, `sudo mv /etc/11ship/db-ca.crt.new /etc/11ship/db-ca.crt` (644), `sudo systemctl restart 11ship-staging`. Server vẫn
+   trình chứng chỉ cũ → kết nối phải vẫn thành công (operator `check` + `/v1/health/ready` = 200). Nếu không: trả lại bundle cũ.
+3. **Đổi server sang chứng chỉ mới:** sao lưu hai file cũ như 2a, cài `server.crt`/`server.key` mới, `reload`. Kiểm tra lại operator +
+   health. Lỗi → chép lại hai file cũ, `reload` (bundle hai CA vẫn tin cả hai nên quay lại an toàn).
+4. **Thu hồi CA cũ:** đặt `/etc/11ship/db-ca.crt` chỉ còn CA mới, `restart` dịch vụ, kiểm tra lại. Hủy `ca.key` cũ và mọi bản sao;
+   chỉ cất `ca.key` mới offline.
+
+Không bao giờ tắt xác minh chuỗi/host name để "vượt qua" bước nào ở trên.
 
 ## 3. Cấu hình PostgreSQL (loopback, TLS 1.3, SCRAM)
 
@@ -79,22 +117,44 @@ Cấu hình bộ nhớ (`shared_buffers=128MB`, `max_connections=20`) là giá t
 
 ## 4. Role, database, schema
 
-Sinh mật khẩu vào file riêng, quyền 600 (hex để không cần percent-encode trong URL), không in ra màn hình:
+Sinh mật khẩu vào file riêng, quyền 600 trong thư mục root 700 (hex 48 ký tự, không cần percent-encode trong URL), không in ra màn hình:
 
 ```bash
 sudo install -d -m 700 /root/ship11-secrets
 ( umask 077; openssl rand -hex 24 > /root/ship11-secrets/migrator.pw; openssl rand -hex 24 > /root/ship11-secrets/app.pw )
-sudo -u postgres psql -v ON_ERROR_STOP=1 -d postgres
+sudo ./ops/selfhosted/run-roles-database.sh        # từ /opt/11ship/current; đọc /root/ship11-secrets/*.pw
 ```
 
-Trong phiên `psql` vừa mở (mật khẩu không xuất hiện trong argv, history của shell hay file SQL):
+**Đây là cách duy nhất được hỗ trợ.** `psql` chạy bằng user OS `postgres` (peer authentication) không đọc được `/root/ship11-secrets`,
+và dấu backtick trong `psql` chạy shell *của chính user đó*, nên đường cũ (đặt `\set` bằng một lệnh `cat` trong backtick trỏ vào `/root/ship11-secrets`) không chạy được. Script bọc chạy bằng root: root
+đọc và kiểm tra file (thư mục `root:root 700`, file `root:root 600`, đúng 32–128 ký tự hex, hai mật khẩu khác nhau), rồi đưa hai dòng
+`\set` + nội dung `01-roles-database.sql` vào `psql` (chạy bằng `postgres`) qua một **pipe** dựng bằng lệnh builtin của shell — mật
+khẩu không có trong argv, file, history hay log của shell; SQL cũng tắt ghi statement vào log máy chủ cho phiên này. Giữ nguyên peer
+authentication; không mở `/root`, không hạ quyền file bí mật.
 
+Mọi lỗi chuẩn bị đều **trước** `CREATE ROLE`/`CREATE DATABASE` và thoát với mã khác 0, không in giá trị:
+
+| Thông báo | Nguyên nhân | Việc cần làm |
+|---|---|---|
+| `refused: run as root` / `secrets directory must be owned by root with mode 700` | sai người chạy / sai quyền thư mục | chạy bằng `sudo`; `chmod 700` |
+| `<file> is missing` / `must be owned by root with mode 600` | thiếu file hoặc sai chủ/quyền | tạo lại file theo lệnh trên; không `chmod 644` để "cho chạy" |
+| `<file> must hold 32..128 lower-case hex characters` | file rỗng, có ký tự lạ, quá ngắn | sinh lại bằng `openssl rand -hex 24` (chưa có role nào được tạo) |
+| `migrator.pw and app.pw must differ` | hai file giống nhau | sinh lại một file |
+| `ERROR: refused: ... psql variable ... is not set` / `both passwords must be ...` (mã 3) | chạy SQL trực tiếp mà không qua script | chạy bằng `run-roles-database.sh` |
+| `ERROR: role "ship11_migrator" already exists` (mã 3) | đã chạy một phần/đủ ở lần trước | **không** reset mật khẩu, **không** drop; chẩn đoán bên dưới |
+
+Chẩn đoán trạng thái (chỉ đọc; chạy bằng `sudo -u postgres psql`) khi lần chuẩn bị trước dừng giữa chừng hoặc đã làm ở máy khác:
+
+```bash
+sudo -u postgres psql -Atc "select rolname, rolsuper, rolcanlogin from pg_roles where rolname like 'ship11\_%' order by 1"
+sudo -u postgres psql -Atc "select datname from pg_database where datname = 'ship11_staging'"
+sudo -u postgres psql -d ship11_staging -Atc "select nspname, pg_get_userbyid(nspowner) from pg_namespace where nspname = 'app'"
 ```
-\set migrator_password `cat /root/ship11-secrets/migrator.pw`
-\set app_password      `cat /root/ship11-secrets/app.pw`
-\i /opt/11ship/current/ops/selfhosted/01-roles-database.sql
-\q
-```
+
+Trạng thái đủ (2 role không superuser + database + schema `app` thuộc `ship11_migrator`) và mật khẩu hiện có đúng với
+`/root/ship11-secrets/*.pw` (kiểm bằng đăng nhập TCP/TLS ở mục 5–6 — nếu sai, dừng và báo Owner thay vì đổi mật khẩu tại chỗ) thì
+**bỏ qua** bước này. Trạng thái thiếu một phần (ví dụ có role nhưng chưa có database/schema): báo Owner để chọn cách hoàn tất có
+kiểm soát; script này cố ý không tự sửa.
 
 Kết quả mong đợi cuối script: `database_name = ship11_staging`, `non_superuser_roles = 2`, `schema_app_owner = ship11_migrator`.
 Script cố ý **không idempotent**: chạy lần hai dừng ở `CREATE ROLE` ("already exists") thay vì âm thầm đổi mật khẩu/quyền.

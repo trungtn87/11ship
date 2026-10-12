@@ -130,10 +130,37 @@ describe('resolveCliTarget — DB_REMOTE_TARGET', () => {
     }
   });
 
-  it('SELF_HOSTED never reaches production, and development/test ignore the selector', () => {
+  it('SELF_HOSTED never reaches production, development or test', () => {
     expect(resolveCliTarget({ ...SH_ENV, APP_ENV: 'production' })).toMatchObject({ ok: false });
-    const dev = resolveCliTarget({ APP_ENV: 'development', DB_REMOTE_TARGET: 'SELF_HOSTED', DATABASE_URL: 'postgres://ship11_dev:p@localhost:5432/ship11_dev' });
-    expect(dev).toMatchObject({ ok: true, target: { appEnv: 'development', selfHosted: false } });
+    for (const appEnv of ['development', 'test']) {
+      const refused = resolveCliTarget({ APP_ENV: appEnv, DB_REMOTE_TARGET: 'SELF_HOSTED', DATABASE_URL: 'postgres://ship11_dev:p@localhost:5432/ship11_dev' });
+      expect(refused).toMatchObject({ ok: false });
+      // Even the exact self-hosted staging variables are refused when APP_ENV is not staging.
+      expect(resolveCliTarget({ ...SH_ENV, APP_ENV: appEnv })).toMatchObject({ ok: false });
+    }
+  });
+
+  it('an invalid selector is refused in development and test too, before any local rule, without echoing it', () => {
+    for (const appEnv of ['development', 'test']) {
+      for (const selector of ['', 'self_hosted', ' SELF_HOSTED', 'SELF-HOSTED', 'LOCAL_SECRET_SELECTOR']) {
+        const result = resolveCliTarget({ APP_ENV: appEnv, DB_REMOTE_TARGET: selector, DATABASE_URL: 'postgres://ship11_dev:p@localhost:5432/ship11_dev' });
+        expect([appEnv, selector, result.ok]).toEqual([appEnv, selector, false]);
+        expect(JSON.stringify(result)).not.toContain('LOCAL_SECRET_SELECTOR');
+      }
+    }
+  });
+
+  it('development and test keep their local path when no remote target is chosen (unset or SUPABASE)', () => {
+    for (const selector of [undefined, 'SUPABASE']) {
+      expect(resolveCliTarget({ APP_ENV: 'development', DB_REMOTE_TARGET: selector, DATABASE_URL: 'postgres://ship11_dev:p@localhost:5432/ship11_dev' })).toMatchObject({
+        ok: true,
+        target: { appEnv: 'development', selfHosted: false },
+      });
+      expect(resolveCliTarget({ APP_ENV: 'test', DB_REMOTE_TARGET: selector, DATABASE_URL: 'postgres://ship11_test:p@localhost:5432/ship11_test' })).toMatchObject({
+        ok: true,
+        target: { appEnv: 'test', selfHosted: false },
+      });
+    }
   });
 
   it('refuses every URL that is not the one target, naming the variable and never the value', () => {

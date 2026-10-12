@@ -2,16 +2,22 @@
 -- database ship11_staging and schema app owned by the migration role. Mirrors "Roles and schema" of
 -- ops/runbooks/render-supabase-staging.md section 3, for a plain PostgreSQL instead of Supabase.
 --
--- Run ONCE, as the PostgreSQL superuser, on the same machine as the service. The two passwords come from psql variables
--- that you set interactively from protected files, so they never appear in a process list, a shell history or this file:
+-- Run ONCE, as the PostgreSQL superuser, on the same machine as the service, through the wrapper that gives the two passwords
+-- to psql with the right permissions:
 --
---   sudo -u postgres psql -v ON_ERROR_STOP=1 -d postgres
---   postgres=# \set migrator_password `cat /root/ship11-secrets/migrator.pw`
---   postgres=# \set app_password      `cat /root/ship11-secrets/app.pw`
---   postgres=# \i /opt/11ship/releases/<sha>/ops/selfhosted/01-roles-database.sql
+--   sudo ops/selfhosted/run-roles-database.sh            # reads /root/ship11-secrets/{migrator,app}.pw as ROOT
+--
+-- Why a wrapper: psql runs as the OS user "postgres" (peer authentication), which cannot read root-owned secret files, and a
+-- backtick inside psql runs in THAT user's shell. So root reads the files, checks them, and streams the two `\set` lines and
+-- this file to `psql` through a pipe: the values are never in argv, in a file, in a shell history or in a log. Running this
+-- file any other way is supported only if both psql variables migrator_password and app_password are set first.
+--
+-- Both passwords are validated BEFORE the first CREATE: missing, empty, not 32..128 lower-case hex characters, or identical
+-- -> the script raises an error (psql exits with a non-zero status) and nothing has been created. Values are never printed.
 --
 -- Not idempotent on purpose: CREATE ROLE / CREATE DATABASE fail when they already exist, so a second run stops at the
--- first statement instead of silently resetting a password or a privilege. (CI runs it once on a fresh container.)
+-- first statement instead of silently resetting a password or a privilege. If an earlier run stopped half way, diagnose
+-- with the read-only queries in the runbook; do not reset a password or drop a role to "retry".
 --
 -- Role model:
 --   ship11_migrator  operator role. Owns schema app and every object in it, owns the migration history app.pgmigrations,
@@ -22,15 +28,31 @@
 --
 -- Contains no secret.
 
+\set ON_ERROR_STOP on
+
+-- An unset variable is an error, not a silent skip: RAISE makes psql exit non-zero (ON_ERROR_STOP).
 \if :{?migrator_password}
 \else
-  \echo 'refused: set the psql variable migrator_password first (see the header of this file)'
-  \quit
+  DO $$ BEGIN RAISE EXCEPTION 'refused: the psql variable migrator_password is not set'; END $$;
 \endif
 \if :{?app_password}
 \else
-  \echo 'refused: set the psql variable app_password first (see the header of this file)'
-  \quit
+  DO $$ BEGIN RAISE EXCEPTION 'refused: the psql variable app_password is not set'; END $$;
+\endif
+
+-- The statements below carry the passwords as literals. Keep them out of the server log, including the failing statement that
+-- PostgreSQL logs by default on an error such as "role already exists" (superuser-only settings, this session only).
+SET log_statement = 'none';
+SET log_min_error_statement = 'panic';
+SET log_min_duration_statement = -1;
+
+-- Format and distinctness. The comparison happens on the server but only yields a boolean; no value is echoed.
+SELECT (:'migrator_password' ~ '^[0-9a-f]{32,128}$'
+        AND :'app_password' ~ '^[0-9a-f]{32,128}$'
+        AND :'migrator_password' <> :'app_password') AS passwords_ok \gset
+\if :passwords_ok
+\else
+  DO $$ BEGIN RAISE EXCEPTION 'refused: both passwords must be 32..128 lower-case hex characters (openssl rand -hex 24) and differ from each other'; END $$;
 \endif
 
 CREATE ROLE ship11_migrator LOGIN PASSWORD :'migrator_password'

@@ -239,3 +239,64 @@ describe('the constants, the identity query and the identity verdict are the sam
     });
   }
 });
+
+describe('development and test never reach a remote target, and the selector is validated before the local path (review F2)', () => {
+  const LOCAL = { development: 'postgres://ship11_dev:SECRET_MARKER_PARITY_71c@localhost:5432/ship11_dev', test: 'postgres://ship11_test:SECRET_MARKER_PARITY_71c@localhost:5432/ship11_test' };
+  const REFUSED_SELECTORS = ['SELF_HOSTED', '', 'self_hosted', ' SELF_HOSTED', 'SELF_HOSTED ', 'SELF-HOSTED', 'LOCAL', 'supabase'];
+
+  for (const appEnv of ['development', 'test']) {
+    for (const selector of REFUSED_SELECTORS) {
+      test(`${appEnv} + DB_REMOTE_TARGET=${JSON.stringify(selector)} is refused by all three before any connection`, async () => {
+        const env = { APP_ENV: appEnv, DB_REMOTE_TARGET: selector, DATABASE_URL: LOCAL[appEnv], MIGRATION_DATABASE_URL: MIGRATION_URL, MIGRATION_CONFIRM_TARGET: 'localhost:5432/ship11_staging', DB_SSL_CA: CA };
+        assert.equal(tsAccepts(env), false);
+        assert.equal(await migrateAccepts(env), false);
+        assert.equal(await seedAccepts(env), false);
+      });
+    }
+
+    test(`${appEnv} + SELF_HOSTED with the exact staging variables is still refused by all three`, async () => {
+      const env = { ...GOOD, APP_ENV: appEnv };
+      assert.equal(tsAccepts(env), false);
+      assert.equal(await migrateAccepts(env), false);
+      assert.equal(await seedAccepts(env), false);
+    });
+
+    for (const selector of [undefined, 'SUPABASE']) {
+      test(`${appEnv} keeps its local path for the TypeScript CLI when the selector is ${String(selector)}`, () => {
+        const env = { APP_ENV: appEnv, DATABASE_URL: LOCAL[appEnv], ...(selector === undefined ? {} : { DB_REMOTE_TARGET: selector }) };
+        assert.equal(tsAccepts(env), true);
+      });
+    }
+  }
+
+  test('the real admin CLI stops before reading stdin, opening a pool or writing anything', async () => {
+    createRequire(cliFile)('reflect-metadata');
+    const { Readable } = require('node:stream');
+    for (const command of ['init-limit-config', 'bootstrap-system']) {
+      for (const [appEnv, selector] of [['development', 'SELF_HOSTED'], ['test', 'SELF_HOSTED'], ['development', 'BAD_SELECTOR'], ['test', '']]) {
+        let stdinTouched = false;
+        const stdin = new Readable({
+          read() {
+            stdinTouched = true;
+            this.push('{"phone":"+84900000001","password":"SECRET_MARKER_PARITY_71c"}');
+            this.push(null);
+          },
+        });
+        const out = [];
+        const err = [];
+        const code = await tsCli.runAdminAuthCli(command, {
+          env: { APP_ENV: appEnv, DB_REMOTE_TARGET: selector, DATABASE_URL: LOCAL[appEnv], ADMIN_RATE_LIMIT_KEY_ID: 'k1', ADMIN_RATE_LIMIT_HMAC_KEY: Buffer.alloc(32, 1).toString('base64') },
+          stdin,
+          out: (line) => out.push(line),
+          err: (line) => err.push(line),
+        });
+        const label = `${command} ${appEnv} ${JSON.stringify(selector)}`;
+        assert.equal(code, 1, label);
+        assert.equal(stdinTouched, false, `${label}: stdin must not be read`);
+        assert.deepEqual(out, [], label);
+        assert.match(err.join('\n'), /DB_REMOTE_TARGET/, label);
+        assert.doesNotMatch(err.join('\n'), /SECRET_MARKER_PARITY_71c|BAD_SELECTOR/, label);
+      }
+    }
+  });
+});
