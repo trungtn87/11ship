@@ -3,6 +3,7 @@ import type { ConnectionView } from './connection.js';
 import type { FeatureId } from './features.js';
 import type { ClientPorts } from './ports.js';
 import type { GuardHandle, LeaveGuard } from './leave.js';
+import type { RegisterController } from './register-flow.js';
 import type { Access } from './router.js';
 
 // What a screen is, and what it may use. The SAME screen code runs in two places: the real app (mode `live`) and the
@@ -38,7 +39,7 @@ export class FlowStore {
   }
 }
 
-/** The account a screen shows. In live mode this is always undefined until a real login exists. */
+/** The account a screen shows: what the server reported for the signed-in person (live), or the sample (preview). Undefined = nobody is signed in. */
 export interface AccountView {
   readonly fullName: string | null;
   readonly phoneMasked: string;
@@ -71,6 +72,11 @@ export interface ScreenEnv {
   featureReason(feature: FeatureId): string;
   /** Whether the server is reachable (health), as the connection banner and the diagnostics screen show it. Live: real checks. Design: a fixed example. */
   readonly connection: ConnectionView;
+  /**
+   * The real register flow (F11 -> F12 -> signed in), present ONLY where it is connected: the 11Food app on a local https runtime
+   * (app.ts). Undefined everywhere else: the register screens then keep their "chưa nối máy chủ" state and never call anything.
+   */
+  readonly register?: RegisterController;
   /** Test build: OTP screens tell the person the SMS is simulated and where the code is read (PC tool), never show the code. */
   readonly testSmsNotice: boolean;
   /** Preview only. */

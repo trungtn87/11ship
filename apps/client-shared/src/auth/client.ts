@@ -107,7 +107,10 @@ export interface AuthClient {
   readonly session: AuthSessionView;
   requestRegisterOtp(input: { readonly phone: string }): Promise<AuthResult<OtpIssued>>;
   verifyRegisterOtp(input: { readonly verificationId: string; readonly code: string }): Promise<AuthResult<OtpVerified>>;
-  /** Restarting or leaving the register flow: every OTP answer still on its way becomes stale. */
+  /**
+   * Restarting or leaving the register flow: every OTP answer AND a register answer still on its way becomes stale (no session is
+   * established from it), and the kept key + body of an unresolved register (it holds the password and the phone proof) are dropped.
+   */
   resetRegisterFlow(): void;
   register(input: RegisterInput): Promise<AuthResult<SignedIn>>;
   login(input: LoginInput): Promise<AuthResult<SignedIn>>;
@@ -298,8 +301,14 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
   function signIn(intent: 'register' | 'login', path: string, body: string): Promise<AuthResult<SignedIn>> {
     return single(intent, body, async () => {
       const ticket = store.ticket();
+      // A register belongs to the register flow it started in: leaving or restarting that flow (resetRegisterFlow) makes its answer stale.
+      const flowTicket = registerFlow.ticket();
       const entry = keyFor(intent, body);
       const result = await transport.send({ method: 'POST', path, body, idempotencyKey: entry.key });
+      if (intent === 'register' && !registerFlow.isCurrent(flowTicket)) {
+        dropIntent(intent, entry);
+        return { kind: 'stale' };
+      }
       const outcome = classify(intent, result, intent === 'register' ? 201 : 200, parseSignInResponse);
       if (outcome.kind === 'aborted') {
         return { kind: 'stale' };
@@ -470,7 +479,13 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     subscribe: (listener) => store.subscribe(listener),
   };
 
-  return { session, requestRegisterOtp, verifyRegisterOtp, resetRegisterFlow: () => registerFlow.reset(), register: registerUser, login, me, selectContext, logout, dispose };
+  function resetRegisterFlow(): void {
+    registerFlow.reset();
+    intents.delete('register');
+    running.delete('register');
+  }
+
+  return { session, requestRegisterOtp, verifyRegisterOtp, resetRegisterFlow, register: registerUser, login, me, selectContext, logout, dispose };
 }
 
 export type { SessionTicket };

@@ -10,7 +10,7 @@ Dành cho Owner chạy thử bản PC trên máy mình, kết nối backend th�
 | 11Food | https://localhost:8444 | Mở được (M00.05) |
 | 11Ship | https://localhost:8445 | Mở được (M00.05) |
 
-Máy chủ 11Food/11Ship chỉ lắng nghe `127.0.0.1`, từ chối Host lạ (421) và chỉ phục vụ: file tĩnh của app (kèm SPA fallback), `GET /__11ship/runtime`, `GET /v1/health/live`, `GET /v1/health/ready`. Mọi đường dẫn `/v1/*` khác trả 404; không có proxy tổng quát. Máy chủ Web Admin cũng chỉ nghe `127.0.0.1` và chỉ chuyển tiếp `/v1/admin-auth/*`, `/v1/admin-activation/*`, `/v1/admin/*` (xem mục Web Admin).
+Máy chủ 11Food/11Ship chỉ lắng nghe `127.0.0.1`, từ chối Host lạ (421) và chỉ phục vụ: file tĩnh của app (kèm SPA fallback), `GET /__11ship/runtime`, `GET /v1/health/live`, `GET /v1/health/ready`. **Riêng 11Food (M01.07)** chuyển tiếp thêm đúng ba route đăng ký, chỉ `POST`: `/v1/auth/phone-verifications`, `/v1/auth/phone-verifications/{uuid}/verify`, `/v1/client-auth/register` (yêu cầu Origin cùng nguồn, `Content-Type: application/json`, thân ≤ 8 KB, hạn 12 giây; chuyển nguyên văn thân và `Idempotency-Key`; không chuyển cookie/Authorization/Origin; trả `Cache-Control: no-store`). 11Ship không có route nào trong ba route này. Mọi đường dẫn `/v1/*` khác trả 404; không có proxy tổng quát. Máy chủ Web Admin cũng chỉ nghe `127.0.0.1` và chỉ chuyển tiếp `/v1/admin-auth/*`, `/v1/admin-activation/*`, `/v1/admin/*` (xem mục Web Admin).
 
 ## Chứng chỉ: làm một lần
 
