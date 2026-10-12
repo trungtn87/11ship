@@ -393,6 +393,11 @@ jobs:
           sudo apt-get install -y postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y postgresql-17
+          # The runner image ships a PostgreSQL 16 cluster definition and may not create a 17 cluster at install time: remove the
+          # 16 one (disposable runner) and make a fresh 17/main on 5432, like the VPS's Ubuntu package default.
+          sudo pg_dropcluster --stop 16 main || true
+          pg_lsclusters | grep -q '^17 ' || sudo pg_createcluster 17 main --port 5432 --start
+          sudo systemctl start postgresql@17-main || true
           pg_lsclusters
 
       - name: Runbook preparation, refusals, TCP/TLS/SCRAM login, certificate renewal and rotation
