@@ -10,9 +10,9 @@ Task M00-L. Chỉ hỗ trợ Windows; chạy từ `tools\local`. Repo hiện ch�
 - `11Ship-Test.cmd`: chạy kiểm tra kỹ thuật với riêng `ship11_test` cổng 5433, lưu log đã ẩn secret trong `.11ship-local\logs`.
 - `11Ship-Stop.cmd`: chỉ dừng đúng backend đã được chứng minh là của launcher, rồi dừng DB nhưng giữ volume DEV. Thêm `-KeepDatabases` để chỉ dừng backend. Không chứng minh được thì **không dừng gì cả** (xem "Định danh artifact và process").
 - `11Ship-Status.cmd`: xem Git, toolchain, DB, backend (bốn lớp: nguồn, artifact, process, cổng) và test gần nhất. Status chỉ đọc: không khóa, không ghi, không dừng gì.
-- `11Ship-Admin.cmd`, `11Ship-Food.cmd`, `11Ship-Ship.cmd` (gói M00.01): ba lối vào riêng cho Web Admin, 11Food (khách + quán) và 11Ship (xế). **Hiện chưa mở được ứng dụng nào**: lệnh dừng ngay với exit code 1 và mã `APP_NOT_READY`, nói rõ còn thiếu gì và chưa làm gì cả. Xem mục "Ba lối vào ứng dụng".
+- `11Ship-Admin.cmd`, `11Ship-Food.cmd`, `11Ship-Ship.cmd` (gói M00.01): ba lối vào riêng cho Web Admin, 11Food (khách + quán) và 11Ship (xế). Từ M00.05–M00.08 cả ba mở được app qua HTTPS local (xem `local-https-runtime.md`); thiếu điều kiện thì dừng với `APP_NOT_READY`/mã lỗi riêng, chưa làm gì. Cả ba dùng chung một backend; đóng trình duyệt không dừng gì, chỉ `11Ship-Stop.cmd` dừng (các app, backend, DB; dữ liệu DEV được giữ).
 
-Có thể tạo shortcut bằng mục 6 trong menu hoặc:
+Shortcut Desktop (M00.09) bằng mục 6 trong menu hoặc lệnh dưới đây: tạo `11Ship Test`, `11Ship Admin`, `11Ship Food`, `11Ship Ship`, mỗi cái trỏ đúng wrapper của checkout này; chạy lại chỉ ghi đè bốn file đó. Nếu chuyển repo sang thư mục khác thì chạy lại để cập nhật.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\local\11ship-launcher.ps1 -Command InstallShortcut

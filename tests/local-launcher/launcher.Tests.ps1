@@ -1960,6 +1960,78 @@ try {
       Check ($script:FakeProcs.ContainsKey($runningPid) -and $script:StopCalls.Count -eq 0) 'Admin: a failing build leaves the running front untouched'
       $script:AppBuildFails = $false
 
+      # =======================================================================================
+      Section 'M00.09 three apps on one backend, Status with versions, Stop keeps DEV data, Desktop shortcuts'
+      # =======================================================================================
+      New-AdminSandbox
+      $head = Head
+      $bystander = 7301
+      Add-FakeProcess $bystander ([DateTime]::UtcNow.ToString('o')) '' @($script:FakeNodeExe, 'other-project.js')
+      foreach ($appName in @('Admin','Food','Ship')) { Open-AppLauncher $appName }
+      $backendPid = @($script:FakeProcs.Values | Where-Object { $_.CommandLine -match 'main\.js' })[0].ProcessId
+      Check ($script:BackendStarts -eq 1 -and $script:AppStarts.Count -eq 3 -and (($script:AppStarts | Sort-Object) -join ',') -ceq 'admin-web,food-web,ship-web') 'Admin, Food and Ship opened one after the other share ONE backend (one start) and run three fronts'
+      Check ((($script:Browser | Sort-Object) -join ',') -ceq 'https://localhost:8443,https://localhost:8444,https://localhost:8445') 'each app opened its own address once'
+      Check ($script:StopCalls.Count -eq 0 -and $script:FakeProcs.ContainsKey($backendPid)) 'opening the next app stops nothing: the backend and the earlier fronts keep running'
+      # A browser window is not a launcher process: it can close at any time without any effect on what the launcher runs.
+      Check (@($script:FakeProcs.Keys | Where-Object { $_ -ne $bystander }).Count -eq 4 -and (Get-TargetOwnership (Get-BackendTarget)).Status -eq 'OWNED') 'with every browser closed (nothing of the launcher depends on it) backend and three fronts are still proven ours'
+
+      $script:HostLog.Clear()
+      Status-Launcher
+      $status = @($script:HostLog) -join "`n"
+      $short = $head.Substring(0, 7)
+      foreach ($line in @('Web Admin - https://localhost:8443: ', '11Food - https://localhost:8444: ', '11Ship - https://localhost:8445: ')) {
+        $row = @($script:HostLog | Where-Object { $_.StartsWith($line) })[0]
+        Check ($row -and $row.Contains("commit $short") -and $row.Contains('fingerprint ') -and $row -notmatch 'KH.C HEAD') "Status: $line... shows PID, commit and fingerprint of the running build"
+      }
+      Check (!$status.Contains('M00.08') -and $status -notmatch 'launcher ch.a m') 'Status no longer says Web Admin cannot be opened'
+
+      $dockerBefore = $script:DockerCalls.Count
+      Stop-Launcher
+      $stopCalls = @($script:DockerCalls | Select-Object -Skip $dockerBefore)
+      Check (@($script:FakeProcs.Keys).Count -eq 1 -and $script:FakeProcs.ContainsKey($bystander)) 'Stop ends the three fronts and the backend, and only those (the bystander lives)'
+      Check (@($stopCalls | Where-Object { $_ -match ' stop db-dev db-test$' }).Count -eq 1 -and @($stopCalls | Where-Object { $_ -match ' down|volume| rm | -v' }).Count -eq 0) 'Stop only STOPS the databases (no down, no volume removal): DEV data stays'
+      Check (!(Test-Path -LiteralPath (Get-AppTarget 'Admin').RegistryFile) -and !(Test-Path -LiteralPath (Get-AppTarget 'Food').RegistryFile) -and !(Test-Path -LiteralPath (Get-AppTarget 'Ship').RegistryFile) -and !(Test-Path -LiteralPath $script:StateFile)) 'Stop leaves no record of a process that is gone'
+
+      # ---- Desktop shortcuts: one per app plus the menu, all pointing at THIS checkout
+      New-AdminSandbox
+      $local = Join-Path (Join-Path $script:Repo 'tools') 'local'
+      foreach ($wrapper in @('11Ship.cmd','11Ship-Admin.cmd','11Ship-Food.cmd','11Ship-Ship.cmd')) { Write-Text (Join-Path $local $wrapper) '@echo off' }
+      $realDesktop = ${function:Get-DesktopFolder}
+      $realSave = ${function:Save-DesktopShortcut}
+      $fakeDesktop = Join-Path $tempRoot 'fake desktop'
+      New-Item -ItemType Directory -Force -Path $fakeDesktop | Out-Null
+      $script:Links = New-Object 'Collections.Generic.List[object]'
+      function Get-DesktopFolder { return $script:DesktopPath }
+      function Save-DesktopShortcut([string]$Link,[string]$Target,[string]$WorkingDirectory) { $script:Links.Add([pscustomobject]@{ Link = $Link; Target = $Target; Dir = $WorkingDirectory }) }
+      try {
+        $script:DesktopPath = $fakeDesktop
+        Install-Shortcut
+        Install-Shortcut
+        $first = @($script:Links | Select-Object -First 4)
+        Check ((@($first | ForEach-Object { Split-Path -Leaf $_.Link }) -join ',') -ceq '11Ship Test.lnk,11Ship Admin.lnk,11Ship Food.lnk,11Ship Ship.lnk') 'Install-Shortcut makes the menu shortcut and one each for Admin, Food and Ship'
+        Check ((@($first | ForEach-Object { Split-Path -Leaf $_.Target }) -join ',') -ceq '11Ship.cmd,11Ship-Admin.cmd,11Ship-Food.cmd,11Ship-Ship.cmd' -and @($first | Where-Object { (Split-Path -Parent $_.Target) -ne $local -or $_.Dir -ne $script:Repo -or (Split-Path -Parent $_.Link) -ne $fakeDesktop }).Count -eq 0) 'each shortcut targets the wrapper of this checkout, starts in this checkout and lives on the Desktop'
+        Check ($script:Links.Count -eq 8 -and (@($script:Links | Select-Object -Skip 4 | ForEach-Object { $_.Link }) -join '|') -ceq (@($first | ForEach-Object { $_.Link }) -join '|')) 'running it again writes the same four links (idempotent, nothing else)'
+        $script:Links.Clear()
+        Remove-Item -LiteralPath (Join-Path $local '11Ship-Food.cmd') -Force
+        Expect-Fail 'SHORTCUT_TARGET_MISSING' 'a missing wrapper stops before any shortcut is made' { Install-Shortcut }
+        Check ($script:Links.Count -eq 0) 'no half set of shortcuts after that refusal'
+        Write-Text (Join-Path $local '11Ship-Food.cmd') '@echo off'
+        $script:DesktopPath = Join-Path $tempRoot 'no such desktop'
+        Expect-Fail 'SHORTCUT_DESKTOP_MISSING' 'no Desktop folder is reported, not created' { Install-Shortcut }
+        Check ($script:Links.Count -eq 0 -and !(Test-Path -LiteralPath $script:DesktopPath)) 'and nothing was made'
+        if ([Environment]::OSVersion.Platform -eq 'Win32NT') {
+          Set-Item -Path function:Save-DesktopShortcut -Value $realSave
+          $script:DesktopPath = $fakeDesktop
+          Install-Shortcut
+          $shell = New-Object -ComObject WScript.Shell
+          $made = $shell.CreateShortcut((Join-Path $fakeDesktop '11Ship Admin.lnk'))
+          Check ($made.TargetPath -ceq (Join-Path $local '11Ship-Admin.cmd') -and $made.WorkingDirectory -ceq $script:Repo) 'real .lnk (Windows): Admin shortcut resolves to this checkout wrapper and folder'
+        } else { $script:Skipped.Add('real .lnk files - not Windows') }
+      } finally {
+        Set-Item -Path function:Get-DesktopFolder -Value $realDesktop
+        Set-Item -Path function:Save-DesktopShortcut -Value $realSave
+      }
+
       # ---- the real operator-command runner: .env is loaded by node, credentials only on standard input, output redacted
       Set-Item -Path function:Invoke-AdminCli -Value $realInvokeAdminCli
       New-AdminSandbox

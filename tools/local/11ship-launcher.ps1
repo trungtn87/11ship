@@ -1932,14 +1932,38 @@ function Status-Launcher {
   # M00.03: source, artifact, process and port are reported separately; Status is read-only (no lock, no write, no stop).
   foreach ($line in @(Get-BackendIdentityLines $head)) { Write-Host $line }
   Write-Host "Health (chỉ để tham khảo, không chứng minh quyền sở hữu) live=$(Http-Status (Get-BackendUrl 'live')) ready=$(Http-Status (Get-BackendUrl 'ready'))"
-  # M00.05: the HTTPS fronts of 11Food and 11Ship (read-only, like the backend lines above).
+  # M00.05/M00.08: the HTTPS fronts of Web Admin, 11Food and 11Ship, each with its commit and fingerprint (read-only, like the backend lines above).
   foreach ($line in @(Get-AppStatusLines $head)) { Write-Host $line }
-  Write-Host 'Web quản trị / App quản lý: N/A — launcher chưa mở được (gói M00.08)'
   Write-Host "Test gần nhất: $((Get-LastTestStatus $script:LastTest $head).Text)"
 }
+# M00.09: Desktop shortcuts. One for the test menu (as before) and one per app, each pointing at the wrapper of THIS checkout
+# (absolute path of the repo it was installed from; nothing machine-specific is committed). Re-running overwrites only these
+# four .lnk files, so it is idempotent. Seams: the Desktop folder and the .lnk writer, so tests never touch a real Desktop.
+function Get-DesktopFolder { return [Environment]::GetFolderPath('Desktop') }
+function Save-DesktopShortcut([string]$Link,[string]$Target,[string]$WorkingDirectory) {
+  $shell = New-Object -ComObject WScript.Shell
+  $shortcut = $shell.CreateShortcut($Link); $shortcut.TargetPath = $Target; $shortcut.WorkingDirectory = $WorkingDirectory; $shortcut.Save()
+}
+function Get-ShortcutPlan {
+  $local = Join-Path (Join-Path $script:Repo 'tools') 'local'
+  return @(
+    [pscustomobject]@{ Name = '11Ship Test.lnk';  Target = (Join-Path $local '11Ship.cmd') },
+    [pscustomobject]@{ Name = '11Ship Admin.lnk'; Target = (Join-Path $local '11Ship-Admin.cmd') },
+    [pscustomobject]@{ Name = '11Ship Food.lnk';  Target = (Join-Path $local '11Ship-Food.cmd') },
+    [pscustomobject]@{ Name = '11Ship Ship.lnk';  Target = (Join-Path $local '11Ship-Ship.cmd') }
+  )
+}
 function Install-Shortcut {
-  $desktop = [Environment]::GetFolderPath('Desktop'); $target = Join-Path $PSScriptRoot '11Ship.cmd'; $link = Join-Path $desktop '11Ship Test.lnk'
-  $shell = New-Object -ComObject WScript.Shell; $shortcut = $shell.CreateShortcut($link); $shortcut.TargetPath = $target; $shortcut.WorkingDirectory = $script:Repo; $shortcut.Save(); Write-Ok "Đã tạo shortcut: $link"
+  $plan = @(Get-ShortcutPlan)
+  # Check everything first: no half-made set of shortcuts that point at a missing file.
+  foreach ($item in $plan) { if (!(Test-Path -LiteralPath $item.Target -PathType Leaf)) { Fail "Thiếu $($item.Target); không tạo shortcut." 'SHORTCUT_TARGET_MISSING' } }
+  $desktop = Get-DesktopFolder
+  if (!$desktop -or !(Test-Path -LiteralPath $desktop -PathType Container)) { Fail 'Không tìm thấy thư mục Desktop; không tạo shortcut.' 'SHORTCUT_DESKTOP_MISSING' }
+  foreach ($item in $plan) {
+    $link = Join-Path $desktop $item.Name
+    Save-DesktopShortcut $link $item.Target $script:Repo
+    Write-Ok "Đã tạo shortcut: $link -> $($item.Target)"
+  }
 }
 
 # ---------------------------------------------------------------------------------------------
