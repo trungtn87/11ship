@@ -113,6 +113,7 @@ jobs:
       - name: Sign
         run: |
           set -euo pipefail
+          trap 'echo "::error title=sign failed::line $LINENO"' ERR
           bt="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)"
           work="$RUNNER_TEMP/sign"; mkdir -p "$work"
           if [ "$SIGNING_MODE" = stable ]; then
@@ -130,10 +131,12 @@ jobs:
           "$bt/zipalign" -f -p 4 "$work/unsigned.apk" "$work/aligned.apk"
           "$bt/apksigner" sign --ks "$work/test.jks" --ks-key-alias "$key_alias" --ks-pass "pass:$ks_pass" --key-pass "pass:$key_pass" \
             --out "$out" "$work/aligned.apk"
-          "$bt/apksigner" verify --verbose "$out" | head -5
-          "$bt/aapt2" dump badging "$out" | grep -E "^package: |application-label:|uses-permission"
-          "$bt/aapt2" dump badging "$out" | grep -q "name='${{ matrix.app_id }}'"
-          if "$bt/aapt2" dump badging "$out" | grep -q "uses-permission: name='android.permission.\(ACCESS\|CAMERA\|READ_\|WRITE_\)"; then echo "unexpected permission" >&2; exit 1; fi
+          "$bt/apksigner" verify --verbose "$out" > "$work/verify.txt"
+          head -5 "$work/verify.txt"
+          "$bt/aapt2" dump badging "$out" > "$work/badging.txt"
+          grep -E "^package: |application-label:|uses-permission" "$work/badging.txt"
+          grep -q "name='${{ matrix.app_id }}'" "$work/badging.txt"
+          if grep -qE "uses-permission: name='android.permission.(ACCESS|CAMERA|READ_|WRITE_)" "$work/badging.txt"; then echo "unexpected permission" >&2; exit 1; fi
           sha256sum "$out"
           {
             echo "### ${{ matrix.label }}-test.apk"
