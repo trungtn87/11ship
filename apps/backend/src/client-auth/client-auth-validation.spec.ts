@@ -139,8 +139,7 @@ describe('parseClientLogoutBody', () => {
 
 describe('parseClientUnverifiedRegisterBody', () => {
   const noToken = () => {
-    const { verification_token: _token, ...rest } = valid();
-    return rest;
+    return Object.fromEntries(Object.entries(valid()).filter(([key]) => key !== 'verification_token'));
   };
 
   it('accepts exactly the five keys of the DISABLED_TEST body', () => {
