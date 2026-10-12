@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
-import { ChildProcess, execFileSync, spawn, spawnSync } from 'node:child_process';
+import { ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import https from 'node:https';
 import { AddressInfo, createServer } from 'node:net';
@@ -80,13 +80,24 @@ function get(port: number, path: string): Promise<{ status: number; body: string
   });
 }
 
-function probe(port: number, identity: Front['identity']): { ok: boolean; code: string } {
-  const run = spawnSync(
-    process.execPath,
-    [join(REPO_ROOT, 'scripts', 'client-web-check.mjs'), 'probe', '--app', 'food-web', '--port', String(port), '--cert', certFile, '--expect-sha', identity.source_sha, '--expect-fingerprint', identity.build_fingerprint],
-    { cwd: REPO_ROOT, encoding: 'utf8', env: minimalChildEnv({}), timeout: 30_000 },
-  );
-  return JSON.parse(run.stdout.trim()) as { ok: boolean; code: string };
+// Asynchronous on purpose: the real backend runs inside THIS process, so a blocking spawnSync would freeze the very server the front asks.
+function probe(port: number, identity: Front['identity']): Promise<{ ok: boolean; code: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [join(REPO_ROOT, 'scripts', 'client-web-check.mjs'), 'probe', '--app', 'food-web', '--port', String(port), '--cert', certFile, '--expect-sha', identity.source_sha, '--expect-fingerprint', identity.build_fingerprint],
+      { cwd: REPO_ROOT, env: minimalChildEnv({}), stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    let out = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => { out += chunk; });
+    const timer = setTimeout(() => { child.kill(); reject(new Error('probe timed out')); }, 30_000);
+    child.on('error', (error) => { clearTimeout(timer); reject(error); });
+    child.on('close', () => {
+      clearTimeout(timer);
+      try { resolve(JSON.parse(out.trim()) as { ok: boolean; code: string }); } catch (error) { reject(error as Error); }
+    });
+  });
 }
 
 beforeAll(() => {
@@ -142,8 +153,8 @@ describe('M00.05 — HTTPS front against the real backend, PostgreSQL available'
     }
   });
 
-  it('the launcher probe (pinned certificate) accepts this front and checks health through it', () => {
-    expect(probe(front.port, front.identity)).toMatchObject({ ok: true, code: 'OK' });
+  it('the launcher probe (pinned certificate) accepts this front and checks health through it', async () => {
+    expect(await probe(front.port, front.identity)).toMatchObject({ ok: true, code: 'OK' });
   });
 });
 
@@ -175,8 +186,8 @@ describe('M00.05 — HTTPS front against the real backend, PostgreSQL unreachabl
     }
   });
 
-  it('the launcher probe reports the backend as not ready, never as success', () => {
-    expect(probe(front.port, front.identity)).toMatchObject({ ok: false, code: 'HEALTH_NOT_READY' });
+  it('the launcher probe reports the backend as not ready, never as success', async () => {
+    expect(await probe(front.port, front.identity)).toMatchObject({ ok: false, code: 'HEALTH_NOT_READY' });
   });
 });
 
@@ -192,7 +203,7 @@ describe('M00.05 — HTTPS front against the real backend, backend stopped', () 
         expect(answer.status).toBe(502);
         expect(answer.body).not.toContain('ECONNREFUSED');
       }
-      expect(probe(front.port, front.identity).ok).toBe(false);
+      expect((await probe(front.port, front.identity)).ok).toBe(false);
     } finally {
       await stopFront(front);
     }
