@@ -152,18 +152,33 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
   const device = { device_id: deviceId, platform: 'WEB', app: options.app } as const;
 
   // ---- intents (key + exact body of an unresolved attempt) and in-flight calls --------------------------------------
-  const intents = new Map<Intent, { readonly key: string; readonly body: string }>();
+  interface IntentEntry {
+    readonly key: string;
+    readonly body: string;
+  }
+  const intents = new Map<Intent, IntentEntry>();
   const running = new Map<string, { readonly body: string; readonly promise: Promise<AuthResult<unknown>> }>();
-  let logoutRun: Promise<AuthResult<LogoutResult>> | undefined;
+  // The logout in progress belongs to the session it signs out (its token). A logout of a LATER session never joins it.
+  interface LogoutEntry {
+    readonly token: string;
+    readonly promise: Promise<AuthResult<LogoutResult>>;
+  }
+  let logoutRun: LogoutEntry | undefined;
 
-  const keyFor = (intent: Intent, body: string): string => {
+  const keyFor = (intent: Intent, body: string): IntentEntry => {
     const current = intents.get(intent);
     if (current !== undefined && current.body === body) {
-      return current.key;
+      return current;
     }
-    const key = newKey();
-    intents.set(intent, { key, body });
-    return key;
+    const entry: IntentEntry = { key: newKey(), body };
+    intents.set(intent, entry);
+    return entry;
+  };
+  /** Removes the intent only if it is still THE entry of the request that asks: an old request never ends a newer one's key. */
+  const dropIntent = (intent: Intent, entry: IntentEntry): void => {
+    if (intents.get(intent) === entry) {
+      intents.delete(intent);
+    }
   };
   // A context request belongs to the session it was made in: when WHO is signed in changes, its key and body are dropped.
   let seenGeneration = store.ticket().generation;
@@ -215,9 +230,9 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
   }
 
   /** Applies the intent bookkeeping after an attempt: a definite answer ends the intent, an unresolved one keeps it. */
-  function settle(intent: Intent, answer: AuthResult<unknown>): void {
+  function settle(intent: Intent, entry: IntentEntry, answer: AuthResult<unknown>): void {
     if (answer.kind !== 'failure' || !answer.unresolved) {
-      intents.delete(intent);
+      dropIntent(intent, entry);
     }
   }
 
@@ -232,6 +247,9 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
       const ticket = registerFlow.ticket();
       const startedAt = timers.now();
       const result = await transport.send({ method: 'POST', path: AUTH_PATHS.requestOtp, body });
+      // The server counted its cooldown from when it created the code, somewhere between sending and this answer. Anchoring
+      // at the answer can only make "send again" later than the server's rule, never earlier.
+      const receivedAt = timers.now();
       if (!registerFlow.isCurrent(ticket)) {
         return { kind: 'stale' };
       }
@@ -244,7 +262,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
       }
       return {
         kind: 'ok',
-        value: { verificationId: outcome.body.verificationId, expiresAtMs: deadlineAfter(startedAt, outcome.body.expiresInSeconds), resendAtMs: deadlineAfter(startedAt, outcome.body.resendAfterSeconds) },
+        value: { verificationId: outcome.body.verificationId, expiresAtMs: deadlineAfter(startedAt, outcome.body.expiresInSeconds), resendAtMs: deadlineAfter(receivedAt, outcome.body.resendAfterSeconds) },
       };
     });
   }
@@ -280,8 +298,8 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
   function signIn(intent: 'register' | 'login', path: string, body: string): Promise<AuthResult<SignedIn>> {
     return single(intent, body, async () => {
       const ticket = store.ticket();
-      const key = keyFor(intent, body);
-      const result = await transport.send({ method: 'POST', path, body, idempotencyKey: key });
+      const entry = keyFor(intent, body);
+      const result = await transport.send({ method: 'POST', path, body, idempotencyKey: entry.key });
       const outcome = classify(intent, result, intent === 'register' ? 201 : 200, parseSignInResponse);
       if (outcome.kind === 'aborted') {
         return { kind: 'stale' };
@@ -299,10 +317,10 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
       }
       if (answer.kind === 'failure' && !store.isCurrent(ticket)) {
         // The session changed while this attempt ran: whatever it answered is not about the current session.
-        intents.delete(intent);
+        dropIntent(intent, entry);
         return { kind: 'stale' };
       }
-      settle(intent, answer);
+      settle(intent, entry, answer);
       return answer;
     });
   }
@@ -348,7 +366,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
 
   // ---- authenticated calls ---------------------------------------------------------------------------------------
   /** One authenticated request whose answer is an identity (me, context). */
-  async function identityCall(operation: 'me' | 'context', request: Omit<TransportRequest, 'bearer' | 'signal'>, intent: Intent | undefined): Promise<AuthResult<SignedIn>> {
+  async function identityCall(operation: 'me' | 'context', request: Omit<TransportRequest, 'bearer' | 'signal'>, pending: { readonly intent: Intent; readonly entry: IntentEntry } | undefined): Promise<AuthResult<SignedIn>> {
     const ticket = store.ticket();
     const bearer = store.bearer();
     if (bearer === undefined) {
@@ -371,14 +389,14 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
       if (outcome.mapped?.sessionInvalid === true) {
         store.invalidate(ticket);
       }
-      if (intent !== undefined) {
-        settle(intent, outcome.result);
+      if (pending !== undefined) {
+        settle(pending.intent, pending.entry, outcome.result);
       }
       return outcome.result as AuthResult<SignedIn>;
     }
     const applied = store.refresh(ticket, outcome.body.identity, outcome.body.session.expiresAtMs);
-    if (intent !== undefined) {
-      intents.delete(intent);
+    if (pending !== undefined) {
+      dropIntent(pending.intent, pending.entry);
     }
     return applied ? { kind: 'ok', value: { identity: outcome.body.identity, expiresAtMs: outcome.body.session.expiresAtMs } } : { kind: 'stale' };
   }
@@ -393,17 +411,19 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     }
     const body = JSON.stringify({ context });
     return single('context', body, () => {
-      const key = keyFor('context', body);
-      return identityCall('context', { method: 'POST', path: AUTH_PATHS.context, body, idempotencyKey: key }, 'context');
+      const entry = keyFor('context', body);
+      return identityCall('context', { method: 'POST', path: AUTH_PATHS.context, body, idempotencyKey: entry.key }, { intent: 'context', entry });
     });
   }
 
   // ---- logout ----------------------------------------------------------------------------------------------------
   function logout(): Promise<AuthResult<LogoutResult>> {
-    if (logoutRun !== undefined) {
-      return logoutRun;
-    }
     const token = store.bearer();
+    // Joins a logout only while it is still the same sign-out: a second tap, or no session left. A session that signed in
+    // after it (token defined, different) gets its own logout.
+    if (logoutRun !== undefined && (token === undefined || token === logoutRun.token)) {
+      return logoutRun.promise;
+    }
     // Local first and unconditionally: token and personal data are gone before the network is touched, running
     // authenticated calls are cancelled, and every sign-in still on its way is stale (the generation moved).
     store.clear();
@@ -429,9 +449,11 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
       // The local sign-out stands; the server's session is NOT proven revoked, and the result says so.
       return { kind: 'ok', value: { hadSession: true, serverRevoked: false, unconfirmedReason: reason } };
     })().finally(() => {
-      logoutRun = undefined;
+      if (logoutRun?.promise === run) {
+        logoutRun = undefined;
+      }
     });
-    logoutRun = run;
+    logoutRun = { token, promise: run };
     return run;
   }
 

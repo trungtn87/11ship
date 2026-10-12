@@ -151,6 +151,20 @@ describe('mapping to the backend contract', () => {
     assert.equal(calls[1].body, '{"otp":"012345"}', 'the leading zero survives');
   });
 
+  it('the resend deadline is counted from the ANSWER, so time spent waiting for the server is not taken off the cooldown', async () => {
+    let clockRef;
+    const { client, clock } = await make(() => {
+      clockRef.advance(10_000);
+      return reply(201, { data: { verification_id: VERIFICATION, expires_in_seconds: 300, resend_after_seconds: 60 } });
+    });
+    clockRef = clock;
+    const start = clock.timers.now();
+    const issued = await client.requestRegisterOtp({ phone: '0987654321' });
+    assert.equal(issued.kind, 'ok');
+    assert.equal(issued.value.resendAtMs, start + 10_000 + 60_000, 'the full 60 s are waited after the answer');
+    assert.equal(issued.value.expiresAtMs, start + 300_000, 'expiry stays counted from the request start (the safe, earlier side)');
+  });
+
   it('register sends exactly the six backend fields with device, consent and the Idempotency-Key header; login the three', async () => {
     const { client, calls } = await make((call) => (call.url.endsWith('/register') ? reply(201, signInBody()) : reply(200, signInBody(TOKEN_B))));
     const registered = await client.register(REGISTER);
@@ -432,6 +446,75 @@ describe('double submit and lost response', () => {
 // ---- generation: stale responses -------------------------------------------------------------------------------------
 
 describe('stale responses', () => {
+  for (const lateAnswer of ['success', 'failure']) {
+    it(`an old login answered (${lateAnswer}) while a newer login runs never ends the newer intent: its lost response keeps key and bytes`, async () => {
+      const gate = deferred();
+      const B = { phone: '0987654321', password: 'Mật-khẩu-khác' };
+      let bAttempts = 0;
+      const { client, calls } = await make(async (call) => {
+        if (call.url.endsWith('/logout')) {
+          return reply(204);
+        }
+        if (JSON.parse(call.body).password === LOGIN.password) {
+          await gate.promise;
+          return lateAnswer === 'success' ? reply(200, signInBody(TOKEN_A)) : reply(401, errorBody('INVALID_CREDENTIALS'));
+        }
+        bAttempts += 1;
+        return bAttempts === 1 ? new TypeError('fetch failed') : reply(200, signInBody(TOKEN_B));
+      });
+      const pendingA = client.login(LOGIN);
+      await tick();
+      await client.logout();
+      const lostB = await client.login(B);
+      assert.equal(lostB.unresolved, true);
+      gate.resolve();
+      assert.deepEqual(await pendingA, { kind: 'stale' });
+      assert.deepEqual(client.session.state(), { kind: 'anonymous' });
+      const retryB = await client.login(B);
+      assert.equal(retryB.kind, 'ok');
+      const bCalls = calls.filter((c) => c.url.endsWith('/login') && JSON.parse(c.body).password === B.password);
+      assert.equal(bCalls.length, 2);
+      assert.equal(bCalls[1].headers['idempotency-key'], bCalls[0].headers['idempotency-key'], 'B keeps its key');
+      assert.equal(bCalls[1].body, bCalls[0].body, 'B keeps its bytes');
+    });
+  }
+
+  it('a logout of an older session is not reused for a newer session: logging B out clears it at once and sends the Bearer of B', async () => {
+    const gate = deferred();
+    let logins = 0;
+    const { client, calls } = await make(async (call) => {
+      if (call.url.endsWith('/login')) {
+        logins += 1;
+        return reply(200, signInBody(logins === 1 ? TOKEN_A : TOKEN_B));
+      }
+      if (call.headers.authorization === `Bearer ${TOKEN_A}`) {
+        await gate.promise;
+      }
+      return reply(204);
+    });
+    assert.equal((await client.login(LOGIN)).kind, 'ok');
+    const logoutA = client.logout();
+    await tick();
+    assert.deepEqual(client.session.state(), { kind: 'anonymous' });
+    assert.equal((await client.login(LOGIN)).kind, 'ok');
+    assert.equal(client.session.state().kind, 'authenticated');
+    const logoutB = client.logout();
+    assert.deepEqual(client.session.state(), { kind: 'anonymous' }, 'personal data gone immediately');
+    assert.equal(client.session.identity(), undefined);
+    await tick();
+    const logoutCalls = calls.filter((c) => c.url.endsWith('/logout'));
+    assert.deepEqual(logoutCalls.map((c) => c.headers.authorization), [`Bearer ${TOKEN_A}`, `Bearer ${TOKEN_B}`]);
+    assert.notEqual(logoutA, logoutB);
+    assert.deepEqual((await logoutB).value, { hadSession: true, serverRevoked: true });
+    gate.resolve();
+    assert.deepEqual((await logoutA).value, { hadSession: true, serverRevoked: true });
+    // A second tap during ONE logout still shares it.
+    assert.equal((await client.login(LOGIN)).kind, 'ok');
+    const first = client.logout();
+    assert.equal(client.logout(), first);
+    await first;
+  });
+
   it('a sign-in answered after a logout does not bring the session back', async () => {
     const gate = deferred();
     const { client, calls } = await make(async (call) => (call.url.endsWith('/login') ? (await gate.promise, reply(200, signInBody())) : reply(204)));
