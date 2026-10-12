@@ -24,10 +24,15 @@ $savedEnv = @{}
 foreach ($name in @('OS','APP_ENV','NODE_ENV','DATABASE_URL','GITHUB_TOKEN','GH_TOKEN','SHIP11_NO_PAUSE','TEST_WRONG_USER_DATABASE_URL','TEST_REMOTE_PATH_DATABASE_URL','TEST_REMOTE_PATH_RUNTIME_URL','PGPASSWORD','SHIP11_LOCK_TIMEOUT_SECONDS','SHIP11_HARNESS_DELAY_MS','SHIP11_HARNESS_NPM_FAIL','GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE')) { $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 $env:OS = 'Windows_NT'
 . $scriptPath
+# M00.03: the production operating-system seams, kept for the Windows-only section before the fakes below replace them.
+$script:RealGetProcessDetails = ${function:Get-ProcessDetails}
+$script:RealGetPortListeners = ${function:Get-PortListeners}
+$script:RealStopOwnedProcess = ${function:Stop-OwnedProcess}
 $psExe = (Get-Process -Id $PID).Path
 $supportDir = Join-Path $PSScriptRoot 'support'
 $lockHolderScript = Join-Path $supportDir 'lock-holder.ps1'
 $harnessScript = Join-Path $supportDir 'relaunch-harness.ps1'
+$identityHarnessScript = Join-Path $supportDir 'identity-harness.ps1'
 
 $failures = New-Object 'Collections.Generic.List[string]'
 $script:Passed = 0
@@ -133,17 +138,114 @@ function npm.cmd {
     New-Item -ItemType Directory -Force -Path (Join-Path $script:Repo 'node_modules') | Out-Null
     return
   }
+  if ($line -eq 'run build') {
+    if ($script:BuildFails) { $global:LASTEXITCODE = 1; return }
+    if (!$script:BuildNoOutput) {
+      New-Item -ItemType Directory -Force -Path (Join-Path $script:BackendDist 'sub') | Out-Null
+      [IO.File]::WriteAllText((Join-Path $script:BackendDist 'main.js'), $script:BuildContent)
+      [IO.File]::WriteAllText((Join-Path (Join-Path $script:BackendDist 'sub') 'a.js'), 'module.a')
+    }
+    if ($script:BuildHook) { & $script:BuildHook }
+    return
+  }
   if ($line -eq 'run db:migrate') {
+    $script:MigrateAliveProcesses = $script:FakeProcs.Count
     $script:MigrateEnv = "APP_ENV=[$env:APP_ENV] DATABASE_URL=[$env:DATABASE_URL]"
     if ($script:MigrateApplies) { $script:DbHasTable = $true; $script:DbApplied = @(Get-MigrationFiles) }
   }
 }
 function node.exe { $global:LASTEXITCODE = 0; if (($args -join ' ') -eq '--version') { return 'v24.21.0' } }
-function Http-Status([string]$Url) { $script:HttpCalls.Add($Url); if ($script:BackendStarts -gt 0) { return 200 }; return $script:HttpCode }
+# ---- M00.03: the operating-system seams (processes, listening ports, HTTP) are an in-memory fake table ----
+# Nothing here can reach a real process or port. The launcher's own identity logic runs on top of these answers.
+function Add-FakeProcess([int]$ProcessId,[string]$StartUtc,[string]$Executable='',$Arguments=$null,[bool]$Inspectable=$true,[string]$Name='node') {
+  if (!$Executable) { $Executable = $script:FakeNodeExe }
+  if ($null -eq $Arguments) { $Arguments = @($Executable, '--env-file-if-exists=.env', $script:BackendScript) }
+  $script:FakeProcs[$ProcessId] = [pscustomobject]@{ ProcessId = $ProcessId; Name = $Name; Inspectable = $Inspectable; StartUtc = $StartUtc; Executable = $Executable; CommandLine = (@($Arguments) -join ' '); Arguments = @($Arguments) }
+}
+function Add-FakeListener([string]$Address,[int]$ProcessId,[int]$Port=3000) {
+  $script:FakeListeners = @($script:FakeListeners) + @([pscustomobject]@{ Address = $Address; ProcessId = $ProcessId; Port = $Port })
+}
+function Remove-FakeProcess([int]$ProcessId) {
+  $script:FakeProcs.Remove($ProcessId)
+  $script:FakeListeners = @($script:FakeListeners | Where-Object { $_.ProcessId -ne $ProcessId })
+}
+function Get-ProcessDetails([int]$ProcessId) {
+  if ($script:ProcessReadFails) { throw 'simulated: the process list cannot be read' }
+  $found = $null
+  if ($script:FakeProcs.ContainsKey($ProcessId)) { $found = $script:FakeProcs[$ProcessId] }
+  # One-shot: runs right AFTER this answer was computed, i.e. between a check and whatever the launcher does next.
+  if ($script:DetailsHook) { $hook = $script:DetailsHook; $script:DetailsHook = $null; & $hook $ProcessId }
+  return $found
+}
+function Get-PortListeners([int]$Port) {
+  if ($script:ListenersUnreadable) { return [pscustomobject]@{ Readable = $false; Items = @(); Detail = 'simulated: access denied' } }
+  $rows = @($script:FakeListeners | Where-Object { $_.Port -eq $Port } | ForEach-Object { [pscustomobject]@{ Address = $_.Address; ProcessId = $_.ProcessId } })
+  return [pscustomobject]@{ Readable = $true; Items = $rows; Detail = '' }
+}
+# Same contract as the production seam: ends the process only when the process behind the PID still has the expected start time.
+# An empty expected start time means 'whatever occupies the PID' (the old, unsafe call) and is killed.
+function Stop-OwnedProcess([int]$ProcessId,[string]$ExpectedStartUtc='') {
+  Add-LockObservation "backend stop $ProcessId"
+  if ($script:StopThrows) { $script:StopCalls.Add($ProcessId); throw 'simulated: access denied' }
+  if (!$script:FakeProcs.ContainsKey($ProcessId)) { return 'NOT_FOUND' }
+  if ($ExpectedStartUtc -and (ConvertTo-UtcText $script:FakeProcs[$ProcessId].StartUtc) -cne (ConvertTo-UtcText $ExpectedStartUtc)) { return 'REPLACED' }
+  $script:StopCalls.Add($ProcessId)
+  if ($script:StopIgnored) { return 'STOPPED' }
+  if ($script:StopMode -eq 'uninspectable') {
+    # The process is gone for real but the launcher can no longer read it: exists-but-unreadable.
+    $entry = $script:FakeProcs[$ProcessId]
+    $script:FakeProcs[$ProcessId] = [pscustomobject]@{ ProcessId = $ProcessId; Name = $entry.Name; Inspectable = $false; StartUtc = ''; Executable = ''; CommandLine = ''; Arguments = @() }
+    return 'STOPPED'
+  }
+  Remove-FakeProcess $ProcessId
+  if ($script:StopMode -eq 'unreadable') { $script:ProcessReadFails = $true }
+  return 'STOPPED'
+}
+# The object Start-Process returns: it keeps pointing at ITS process even after the PID was reused (like an OS handle).
+function New-FakeBackendChild([int]$ChildId,[string]$OwnStartUtc) {
+  $child = [pscustomobject]@{ Id = $ChildId; OwnStartUtc = $OwnStartUtc; StartTime = [DateTime]::Parse($OwnStartUtc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind) }
+  $child | Add-Member -MemberType ScriptProperty -Name HasExited -Value {
+    if (!$script:FakeProcs.ContainsKey($this.Id)) { $true } else { (ConvertTo-UtcText $script:FakeProcs[$this.Id].StartUtc) -cne (ConvertTo-UtcText $this.OwnStartUtc) }
+  }
+  $child | Add-Member -MemberType ScriptMethod -Name Kill -Value {
+    if (!$this.HasExited) { $script:StopCalls.Add($this.Id); Remove-FakeProcess $this.Id }
+  }
+  return $child
+}
+function Get-HttpResult([string]$Url) {
+  $script:HttpCalls.Add($Url)
+  $listening = @($script:FakeListeners | Where-Object { $_.Port -eq 3000 }).Count -gt 0
+  $kind = if ($Url.EndsWith('/live')) { 'live' } else { 'ready' }
+  if ($script:HealthMode -eq 'never' -or !$listening) { return [pscustomobject]@{ Status = 0; Body = '' } }
+  if ($script:HealthMode -eq 'wrongbody') { return [pscustomobject]@{ Status = 200; Body = '{"data":{"status":"starting"}}' } }
+  if ($script:HealthMode -eq 'html') { return [pscustomobject]@{ Status = 200; Body = '<html>welcome</html>' } }
+  if ($script:HealthMode -eq 'ready503' -and $kind -eq 'ready') { return [pscustomobject]@{ Status = 503; Body = '' } }
+  $body = if ($kind -eq 'live') { '{"data":{"status":"ok"}}' } else { '{"data":{"status":"ready"}}' }
+  return [pscustomobject]@{ Status = 200; Body = $body }
+}
 function Start-BackendProcess([string]$Stdout,[string]$Stderr) {
   $script:BackendStarts++
   Add-LockObservation 'backend start'
-  return [pscustomobject]@{ Id = 999999; StartTime = [DateTime]::UtcNow }
+  if ($script:StartHook) { & $script:StartHook }
+  if ($script:StartThrows) { throw 'simulated: node.exe cannot be started' }
+  $script:FakePidCounter++
+  $newId = $script:FakePidCounter
+  $startUtc = [DateTime]::UtcNow.AddMilliseconds($newId).ToString('o')
+  if ($script:StartReplacedBy) {
+    # The child already exited and Windows gave its PID to someone else before the launcher looked: the occupant has another start time.
+    $otherStart = [DateTime]::UtcNow.AddHours(-3).ToString('o')
+    if ($script:StartReplacedBy -eq 'lookalike') { Add-FakeProcess $newId $otherStart } else { Add-FakeProcess $newId $otherStart '' @($script:FakeNodeExe, 'unrelated-service.js') }
+    Add-FakeListener '127.0.0.1' $newId
+  }
+  elseif (!$script:StartVanishes) {
+    $arguments = @($script:FakeNodeExe) + @(Get-BackendStartArguments)
+    if ($script:StartScript) { $arguments = @($script:FakeNodeExe, '--env-file-if-exists=.env', $script:StartScript) }
+    # The command line is what Windows reports: quoted when it has a space, split back into arguments by the launcher.
+    $commandLine = '"' + $script:FakeNodeExe + '" ' + ((@($arguments)[1..(@($arguments).Count - 1)]) -join ' ')
+    Add-FakeProcess $newId $startUtc $script:FakeNodeExe @(Split-CommandLine $commandLine)
+    if ($script:StartListens) { Add-FakeListener '127.0.0.1' $newId }
+  }
+  return (New-FakeBackendChild $newId $startUtc)
 }
 function Start-NpmStep([string[]]$NpmArgs,[string]$Stdout,[string]$Stderr) {
   $name = $NpmArgs[$NpmArgs.Count - 1]
@@ -183,7 +285,15 @@ function Reset-Fakes {
   $script:StepExit = @{}
   $script:DockerDown = $false; $script:InspectFails = $false; $script:DbDown = $false
   $script:DbHasTable = $false; $script:DbApplied = @(); $script:MigrateApplies = $true; $script:MigrateEnv = ''
-  $script:NpmCiFails = $false; $script:HttpCode = 0; $script:BackendStarts = 0
+  $script:NpmCiFails = $false; $script:BackendStarts = 0
+  # M00.03: a fresh, empty fake operating system for every test; fast timers so a refused/timed-out wait costs ~1 second.
+  $script:FakeProcs = @{}; $script:FakeListeners = @(); $script:FakePidCounter = 40000; $script:StopCalls = New-Object 'Collections.Generic.List[int]'
+  $script:ProcessReadFails = $false; $script:ListenersUnreadable = $false; $script:StopThrows = $false; $script:StopIgnored = $false
+  $script:StartThrows = $false; $script:StartVanishes = $false; $script:StartListens = $true; $script:StartScript = ''; $script:StartHook = $null
+  $script:StartReplacedBy = ''; $script:DetailsHook = $null; $script:StopMode = ''
+  $script:BuildFails = $false; $script:BuildNoOutput = $false; $script:BuildHook = $null; $script:BuildContent = 'console.log("build one");'
+  $script:HealthMode = 'ok'; $script:MigrateAliveProcesses = -1
+  $script:BackendPollMilliseconds = 10; $script:BackendReadySeconds = 1; $script:ProcessStopSeconds = 1
   $script:TestPortBinding = '127.0.0.1:5433'
   $script:TestContainerEnv = @('PATH=/usr/bin', 'POSTGRES_USER=ship11_test', "POSTGRES_PASSWORD=$script:TestPassword", 'POSTGRES_DB=ship11_test')
   $script:ExtraSecrets = @()
@@ -206,6 +316,7 @@ New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
 $callerFolder = Join-Path $tempRoot 'harness caller'
 New-Item -ItemType Directory -Force -Path $callerFolder | Out-Null
 $script:SandboxIndex = 0
+$script:FakeNodeExe = Join-Path (Join-Path $tempRoot 'fake node') 'node.exe'
 function Write-Text([string]$Path,[string]$Text) {
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
   [IO.File]::WriteAllText($Path, $Text, (New-Object Text.UTF8Encoding($false)))
@@ -239,7 +350,7 @@ function New-GitSandbox {
   New-Item -ItemType Directory -Force -Path $script:Seed | Out-Null
   if ($null -eq (Capture 'git.exe' @('init','--bare','--initial-branch=main',$script:Origin))) { throw 'git init --bare failed' }
   if ($null -eq (Capture 'git.exe' @('init','--initial-branch=main',$script:Seed))) { throw 'git init failed' }
-  Write-Text (Join-Path $script:Seed '.gitignore') ".env`nnode_modules/`n.11ship-local/`n"
+  Write-Text (Join-Path $script:Seed '.gitignore') ".env`nnode_modules/`n.11ship-local/`napps/backend/dist/`n"
   Write-Text (Join-Path $script:Seed 'package-lock.json') '{"lockfileVersion":3,"revision":1}'
   Write-Text (Join-Path $script:Seed 'database/migrations/1000_first.sql') 'SELECT 1;'
   Write-Text (Join-Path $script:Seed 'database/migrations/2000_second.sql') 'SELECT 2;'
@@ -247,6 +358,7 @@ function New-GitSandbox {
   New-Item -ItemType Directory -Force -Path (Join-Path $script:Seed 'tools/local') | Out-Null
   Copy-Item -LiteralPath $scriptPath -Destination (Join-Path $script:Seed 'tools/local/11ship-launcher.ps1')
   Copy-Item -LiteralPath $harnessScript -Destination (Join-Path $script:Seed 'tools/local/relaunch-harness.ps1')
+  Copy-Item -LiteralPath $identityHarnessScript -Destination (Join-Path $script:Seed 'tools/local/identity-harness.ps1')
   Invoke-Git $script:Seed @('add','-A') | Out-Null
   Invoke-Git $script:Seed @('commit','-m','init') | Out-Null
   Invoke-Git $script:Seed @('remote','add','origin',$script:Origin) | Out-Null
@@ -346,10 +458,8 @@ function Start-IdleNode {
   if ($onWindows) { return Start-Process -FilePath $nodeApp.Source -ArgumentList @('-e','setTimeout(function(){},120000)') -PassThru -WindowStyle Hidden }
   return Start-Process -FilePath $nodeApp.Source -ArgumentList @('-e','setTimeout(function(){},120000)') -PassThru
 }
-function Write-BackendState($Process,[string]$StartedUtc='') {
-  if (!$StartedUtc) { $StartedUtc = $Process.StartTime.ToUniversalTime().ToString('o') }
-  Write-Text $script:StateFile (@{ pid = $Process.Id; startedUtc = $StartedUtc } | ConvertTo-Json)
-}
+# A checkout that is ready for Start: dependencies recorded, DEV database fully migrated.
+function New-StartSandbox { New-GitSandbox; Record-Install; $script:DbHasTable = $true; $script:DbApplied = @(Get-MigrationFiles) }
 function Stop-Quietly($Process) { try { if ($Process -and !$Process.HasExited) { $Process.Kill(); $Process.WaitForExit(5000) | Out-Null } } catch { } }
 
 try {
@@ -447,7 +557,7 @@ try {
   $message = Get-FailMessage { Update-Launcher }
   Check ($message -ne '') 'failed npm ci makes Update fail'
   Check (!(Test-Path -LiteralPath $script:InstallState)) 'failed npm ci records no dependency state'
-  Check (@($script:HostLog | Where-Object { $_.Contains('fast-forward ho') }).Count -eq 0) 'failed Update never announces completion'
+  Check (@($script:HostLog | Where-Object { $_.Contains('(fast-forward)') }).Count -eq 0) 'failed Update never announces completion'
 
   New-GitSandbox; Record-Install
   Set-Variable -Scope Script -Name ForceDependencies -Value $true
@@ -516,69 +626,611 @@ try {
   Check (@($script:AllDocker | Where-Object { $_.StartsWith('exec') -and !$_.StartsWith('exec ship11-db-dev psql ') }).Count -eq 0) 'migration state is read from the DEV container only'
 
   # =============================================================================================
-  Section 'Start when a backend is already running / stale PID / foreign service on the port'
+  Section 'M00.03 Start: a recorded backend is reused only when it is proven ours, current and healthy'
   # =============================================================================================
-  if (!$nodeApp) { Check $false 'node is required for process ownership tests' }
-  else {
-    New-GitSandbox; Record-Install; $script:DbHasTable = $true; $script:DbApplied = @(Get-MigrationFiles)
-    $idle = Start-IdleNode
-    # Linux only: Node 24 names its main thread "MainThread", which is what the OS then reports as the process
-    # name. The launcher is a Windows tool (image name "node"), so there these checks always run.
-    Start-Sleep -Milliseconds 1500   # the rename happens a moment after the process starts
-    $idleName = (Get-Process -Id $idle.Id).ProcessName
-    try {
-     if ($idleName -ne 'node') {
-      if ($onWindows) { Check $false "node process is reported as '$idleName' on Windows" }
-      else { $script:Skipped.Add("live backend ownership checks - this OS reports the node process as '$idleName' (Windows job covers them)") }
-     } else {
-      Write-BackendState $idle
-      $ownedProcess = Get-OwnedBackendProcess
-      Check ($ownedProcess -and $ownedProcess.Id -eq $idle.Id) 'a recorded node process with matching start time is owned'
-      $script:HttpCode = 200
-      Start-Launcher | Out-Null
-      Check ($script:BackendStarts -eq 0) 'Start with a running launcher backend does not start a second one'
-      Check (!$idle.HasExited) 'the running backend was not restarted or killed by Start'
+  New-StartSandbox
+  $startedBefore = $script:BackendStarts
+  Start-Launcher | Out-Null
+  $record = (Read-TargetRegistry (Get-BackendTarget)).Record
+  $manifestRead = Read-BuildManifest (Get-BackendTarget)
+  Check ($script:BackendStarts -eq 1) 'first Start starts exactly one backend'
+  Check ($manifestRead.State -eq 'OK' -and $manifestRead.Manifest.app_id -ceq 'BACKEND' -and $manifestRead.Manifest.source_sha -ceq (Head) -and $manifestRead.Manifest.design_version -ceq '2.0.1') 'the build manifest names the app, the exact HEAD and the design version'
+  Check ($manifestRead.Manifest.build_fingerprint -cmatch '^[0-9a-f]{64}$') 'the manifest carries a 64-hex build fingerprint'
+  Check ($record -and $record.app_id -ceq 'BACKEND' -and $record.schema -eq 1 -and $record.source_sha -ceq (Head) -and $record.build_fingerprint -ceq $manifestRead.Manifest.build_fingerprint) 'the process registry records the source SHA and the fingerprint of the artifact it was started from'
+  Check ($record.repo -ceq $script:Repo -and $record.script -ceq $script:BackendScript -and $record.host -ceq '127.0.0.1' -and $record.port -eq 3000) 'the registry records checkout, absolute script, host and port'
+  Check ($script:FakeProcs.ContainsKey([int]$record.pid) -and $record.started_utc -ceq $script:FakeProcs[[int]$record.pid].StartUtc) 'the registry records the exact start time of the process it started'
+  Check (@($script:LockObs | Where-Object { $_.What -eq 'npm run build' -and $_.Held }).Count -eq 1 -and @($script:LockObs | Where-Object { $_.What -eq 'backend start' -and $_.Held }).Count -eq 1) 'build and process start both ran while the shared lock was held'
+  Check ((Get-OwnedBackendProcess).Id -eq [int]$record.pid) 'ownership: the recorded process is proven ours'
+  $firstPid = [int]$record.pid
+  $buildsBefore = NpmCount 'run build'
 
-      # Stale PID: same live PID, different start time => the PID now belongs to someone else.
-      Write-BackendState $idle '2001-01-01T00:00:00.0000000Z'
-      Check ($null -eq (Get-OwnedBackendProcess)) 'stale state (PID reused, other start time) is not owned'
-      Set-Variable -Scope Script -Name KeepDatabases -Value $true
-      $script:DockerCalls.Clear()
-      Stop-Launcher | Out-Null
-      Check (!$idle.HasExited) 'Stop does not kill a process it does not own'
-      Check (!(Test-Path -LiteralPath $script:StateFile)) 'Stop clears the stale state file'
-      Check (@($script:DockerCalls | Where-Object { $_.StartsWith('compose') }).Count -eq 0) '-KeepDatabases leaves Docker alone'
+  # Repeated Start: same source, same artifact, healthy process -> reuse; no second backend, no kill.
+  Start-Launcher | Out-Null
+  $again = (Read-TargetRegistry (Get-BackendTarget)).Record
+  Check ($script:BackendStarts -eq 1 -and $script:StopCalls.Count -eq 0) 'repeated Start with the same artifact reuses the running backend (no second start, nothing stopped)'
+  Check ((NpmCount 'run build') -eq $buildsBefore + 1) 'repeated Start still rebuilds, so a changed artifact can never be missed'
+  Check ([int]$again.pid -eq $firstPid -and $again.started_utc -ceq $record.started_utc) 'the registry still names the same process'
 
-      # Foreign service on the port, no launcher state.
-      Reset-Fakes; $script:DbHasTable = $true; $script:DbApplied = @(Get-MigrationFiles); $script:HttpCode = 200
-      Expect-Fail 'PORT_IN_USE' 'Start refuses a port owned by a foreign service' { Start-Launcher }
-      Check ($script:BackendStarts -eq 0 -and !$idle.HasExited) 'the foreign process is left alone and nothing is started'
+  # Changed artifact (same source): the launcher-owned process is replaced, nothing else is touched.
+  $bystander = 7001
+  Add-FakeProcess $bystander ([DateTime]::UtcNow.ToString('o')) '' @($script:FakeNodeExe, 'other-project.js')
+  $script:BuildContent = 'console.log("build two");'
+  Start-Launcher | Out-Null
+  $replaced = (Read-TargetRegistry (Get-BackendTarget)).Record
+  $newManifest = (Read-BuildManifest (Get-BackendTarget)).Manifest
+  Check ($script:BackendStarts -eq 2 -and $script:StopCalls.Count -eq 1 -and $script:StopCalls[0] -eq $firstPid) 'a different artifact fingerprint restarts exactly the recorded process'
+  Check ($script:FakeProcs.ContainsKey($bystander) -and $script:StopCalls -notcontains $bystander) 'an unrelated node process is never touched'
+  Check ([int]$replaced.pid -ne $firstPid -and $replaced.build_fingerprint -ceq $newManifest.build_fingerprint -and !$script:FakeProcs.ContainsKey($firstPid)) 'the registry now names the new process and the new fingerprint; the old process is gone'
+  Check (@($script:LockObs | Where-Object { $_.What -like 'backend stop*' -and !$_.Held }).Count -eq 0) 'the stop happened under the shared lock'
 
-      # The current PowerShell is alive with a matching start time but is not node.
-      $self = Get-Process -Id $PID
-      Write-BackendState $self
-      Check ($null -eq (Get-OwnedBackendProcess)) 'a non-node process is never treated as the backend'
+  # Same fingerprint but a different source SHA (a new commit with identical build output) is still "an older version".
+  $script:BuildContent = 'console.log("build two");'
+  Push-Upstream 'docs/note.md' 'new commit'
+  Update-Launcher | Out-Null
+  $oldNotice = @($script:HostLog | Where-Object { $_.Contains('BACKEND_RUNNING_OLD_VERSION') })
+  Check ($oldNotice.Count -eq 1 -and $script:StopCalls.Count -eq 1 -and $script:BackendStarts -eq 2) 'Update with a running older backend warns BACKEND_RUNNING_OLD_VERSION and stops/starts nothing'
+  Check (@($script:HostLog | Where-Object { $_.Contains('(fast-forward). Update') }).Count -eq 1) 'Update says it moved the source only (no claim that the new version is running)'
+  Check ((Read-TargetRegistry (Get-BackendTarget)).Record.source_sha -cne (Head)) 'the registry still says which (older) commit the process was built from'
+  Start-Launcher | Out-Null
+  $afterUpdate = (Read-TargetRegistry (Get-BackendTarget)).Record
+  Check ($script:BackendStarts -eq 3 -and $script:StopCalls.Count -eq 2 -and $afterUpdate.source_sha -ceq (Head)) 'Start after Update replaces the backend with one built from the new commit even though the fingerprint is the same'
+  $script:HostLog.Clear()
+  Update-Launcher | Out-Null
+  Check (@($script:HostLog | Where-Object { $_.Contains('BACKEND_RUNNING_OLD_VERSION') }).Count -eq 0) 'no old-version warning when the running backend was built from HEAD'
 
-      # Owned process is stopped by Stop.
-      Reset-Fakes; Set-Variable -Scope Script -Name KeepDatabases -Value $true
-      Write-BackendState $idle
-      Stop-Launcher | Out-Null
-      $idle.WaitForExit(10000) | Out-Null
-      Check ($idle.HasExited) 'Stop ends the backend it owns'
-     }
-    } finally { Stop-Quietly $idle }
-
-    # Stale PID of a process that no longer exists: Start replaces the state and starts one backend.
-    New-GitSandbox; Record-Install; $script:DbHasTable = $true; $script:DbApplied = @(Get-MigrationFiles)
-    $dead = Start-IdleNode; $deadStarted = $dead.StartTime.ToUniversalTime().ToString('o'); Stop-Quietly $dead
-    Write-Text $script:StateFile (@{ pid = $dead.Id; startedUtc = $deadStarted } | ConvertTo-Json)
-    Check ($null -eq (Get-OwnedBackendProcess)) 'state pointing at an exited process is not owned'
-    Start-Launcher | Out-Null
-    Check ($script:BackendStarts -eq 1) 'Start with a stale PID starts exactly one backend'
-    Check ((Get-BackendState).pid -eq 999999) 'the stale state file is replaced by the new backend'
+  # Health mismatch on an otherwise proven process: restart, then still fail when the new one is unhealthy as well.
+  $script:HealthMode = 'wrongbody'
+  $stopsBefore = $script:StopCalls.Count
+  Expect-Fail 'BACKEND_NOT_READY' 'HTTP 200 with the wrong body is not ready (restart attempted, then refused)' { Start-Launcher }
+  Check ($script:StopCalls.Count -eq $stopsBefore + 1) 'a proven but unhealthy backend was restarted (only that process)'
+  foreach ($mode in @('ready503','html','never')) {
+    New-StartSandbox
+    $script:HealthMode = $mode
+    Expect-Fail 'BACKEND_NOT_READY' "health mode '$mode' never counts as ready" { Start-Launcher }
   }
-  Write-Text $script:StateFile '{ not json'
-  Check ($null -eq (Get-BackendState)) 'corrupt backend state is treated as no state'
+
+  # =============================================================================================
+  Section 'M00.03 identity: PID reuse, a process that is not ours, metadata that is missing/old/corrupt'
+  # =============================================================================================
+  function Write-RegistryFor([int]$ProcessId,[string]$StartUtc,[hashtable]$Override=@{}) {
+    $fields = [ordered]@{
+      schema = 1; app_id = 'BACKEND'; pid = $ProcessId; started_utc = $StartUtc; repo = $script:Repo; executable = $script:FakeNodeExe
+      script = $script:BackendScript; host = '127.0.0.1'; port = 3000; source_sha = (Head); build_fingerprint = ('b' * 64)
+      built_at = [DateTime]::UtcNow.ToString('o'); design_version = '2.0.1'
+    }
+    foreach ($key in @($Override.Keys)) { if ($null -eq $Override[$key]) { $fields.Remove($key) } else { $fields[$key] = $Override[$key] } }
+    Write-Text $script:StateFile ($fields | ConvertTo-Json)
+  }
+  function Assert-StartRefused([string]$Name,[string]$Code) {
+    $registryBefore = if (Test-Path -LiteralPath $script:StateFile -PathType Leaf) { File-HashOrEmpty $script:StateFile } else { 'directory' }
+    $processesBefore = $script:FakeProcs.Count
+    Expect-Fail $Code "$Name -> Start" { Start-Launcher }
+    $registryAfter = if (Test-Path -LiteralPath $script:StateFile -PathType Leaf) { File-HashOrEmpty $script:StateFile } else { 'directory' }
+    Check ((NpmCount 'run build') -eq 0 -and (NpmCount 'run db:migrate') -eq 0 -and $script:BackendStarts -eq 0 -and $script:StopCalls.Count -eq 0) "$Name`: nothing was built, migrated, started or stopped"
+    Check ($script:FakeProcs.Count -eq $processesBefore -and $registryAfter -eq $registryBefore) "$Name`: every process and the state file are exactly as before"
+    Check (!(Test-Path -LiteralPath $script:BackendManifestFile)) "$Name`: no manifest was written"
+  }
+  function Assert-StopRefused([string]$Name) {
+    $script:DockerCalls.Clear()
+    Expect-Fail 'PROCESS_IDENTITY_UNVERIFIED' "$Name -> Stop" { Stop-Launcher }
+    Check ($script:StopCalls.Count -eq 0 -and @($script:DockerCalls | Where-Object { $_ -match 'compose.* stop ' }).Count -eq 0) "$Name`: Stop killed nothing and stopped no database"
+  }
+  $liveStart = [DateTime]::UtcNow.ToString('o')
+  $badRegistries = [ordered]@{
+    'legacy state from the previous launcher (pid + startedUtc only)' = { Write-Text $script:StateFile ('{"pid":7100,"startedUtc":"' + $liveStart + '"}') }
+    'registry that is not JSON' = { Write-Text $script:StateFile '{ not json' }
+    'empty registry file' = { Write-Text $script:StateFile '' }
+    'registry holding a JSON array' = { Write-Text $script:StateFile '[1,2,3]' }
+    'registry without build_fingerprint' = { Write-RegistryFor 7100 $liveStart @{ build_fingerprint = $null } }
+    'registry with a text pid' = { Write-RegistryFor 7100 $liveStart @{ pid = 'seven' } }
+    'registry with another app_id' = { Write-RegistryFor 7100 $liveStart @{ app_id = 'ADMIN' } }
+    'registry with a short source_sha' = { Write-RegistryFor 7100 $liveStart @{ source_sha = 'abc123' } }
+    'registry with an unknown schema' = { Write-RegistryFor 7100 $liveStart @{ schema = 9 } }
+    'registry of another checkout' = { Write-RegistryFor 7100 $liveStart @{ repo = (Join-Path $tempRoot 'some other checkout') } }
+    'registry for another script' = { Write-RegistryFor 7100 $liveStart @{ script = (Join-Path $tempRoot 'other\dist\main.js') } }
+    'registry for another port' = { Write-RegistryFor 7100 $liveStart @{ port = 3001 } }
+    'registry that cannot be read (a folder in its place)' = { New-Item -ItemType Directory -Force -Path $script:StateFile | Out-Null }
+  }
+  foreach ($label in @($badRegistries.Keys)) {
+    New-StartSandbox
+    # A live node process that happens to be on the port and has the PID the (bad) registry names.
+    Add-FakeProcess 7100 $liveStart
+    Add-FakeListener '127.0.0.1' 7100
+    & $badRegistries[$label]
+    Assert-StartRefused $label 'PROCESS_IDENTITY_UNVERIFIED'
+    Assert-StopRefused $label
+    Check ($script:FakeProcs.ContainsKey(7100)) "$label`: the live process is still alive"
+    Check ($script:HttpCalls.Count -eq 0) "$label`: no HTTP answer was used as evidence"
+    $status = @(Get-BackendIdentityLines (Head)) -join "`n"
+    Check ($status.Contains('PROCESS_IDENTITY_UNVERIFIED')) "$label`: Status reports PROCESS_IDENTITY_UNVERIFIED"
+    if (Test-Path -LiteralPath $script:StateFile -PathType Container) { Remove-Item -LiteralPath $script:StateFile -Recurse -Force }
+  }
+
+  # PID reused: the recorded PID is alive but started at another time -> the recorded process is gone (STALE), the new owner of the PID is not touched.
+  New-StartSandbox
+  Add-FakeProcess 7200 ([DateTime]::UtcNow.ToString('o'))
+  Write-RegistryFor 7200 '2001-01-01T00:00:00.0000000Z'
+  Check ((Get-TargetOwnership (Get-BackendTarget)).Status -eq 'STALE') 'PID reuse (other start time) is STALE, not owned'
+  Start-Launcher | Out-Null
+  Check ($script:BackendStarts -eq 1 -and $script:StopCalls.Count -eq 0 -and $script:FakeProcs.ContainsKey(7200)) 'stale record: Start launches its own backend and never kills the process that now has that PID'
+  Check ((Read-TargetRegistry (Get-BackendTarget)).Record.pid -ne 7200) 'the registry no longer names the reused PID'
+
+  # PID alive, same start time, but it is not node / not our script.
+  $now = [DateTime]::UtcNow.ToString('o')
+  $impostors = [ordered]@{
+    'a non-node process with the recorded start time' = { Add-FakeProcess 7300 $now (Join-Path $tempRoot 'powershell.exe') @((Join-Path $tempRoot 'powershell.exe'), '-NoProfile') $true 'powershell' }
+    'node running another project script' = { Add-FakeProcess 7300 $now '' @($script:FakeNodeExe, '--env-file-if-exists=.env', (Join-Path $tempRoot 'other project\apps\backend\dist\main.js')) }
+    'node with no script argument' = { Add-FakeProcess 7300 $now '' @($script:FakeNodeExe) }
+    'node from another install than the recorded executable' = { Add-FakeProcess 7300 $now (Join-Path $tempRoot 'elsewhere\node.exe') @((Join-Path $tempRoot 'elsewhere\node.exe'), $script:BackendScript) }
+  }
+  foreach ($label in @($impostors.Keys)) {
+    New-StartSandbox
+    & $impostors[$label]
+    Add-FakeListener '127.0.0.1' 7300
+    Write-RegistryFor 7300 $now
+    Assert-StartRefused $label 'PROCESS_IDENTITY_UNVERIFIED'
+    Assert-StopRefused $label
+    Check ($script:FakeProcs.ContainsKey(7300)) "$label`: not killed"
+  }
+  # Review F1: a process that EXISTS but cannot be inspected is an unknown identity - neither ours nor proven gone.
+  foreach ($withListener in @($false, $true)) {
+    $where = if ($withListener) { 'holding the port' } else { 'with the port free' }
+    New-StartSandbox
+    Add-FakeProcess 7400 '' '' @() $false 'System'
+    if ($withListener) { Add-FakeListener '127.0.0.1' 7400 }
+    Write-RegistryFor 7400 $now
+    Check ((Get-TargetOwnership (Get-BackendTarget)).Status -eq 'UNVERIFIED') "F1: an existing process that cannot be inspected is UNVERIFIED, not STALE ($where)"
+    Assert-StartRefused "F1: uninspectable recorded process $where" 'PROCESS_IDENTITY_UNVERIFIED'
+    Assert-StopRefused "F1: uninspectable recorded process $where"
+    Check ((Test-Path -LiteralPath $script:StateFile -PathType Leaf) -and $script:FakeProcs.ContainsKey(7400)) "F1: the registry is retained and the process untouched ($where)"
+    Check ((Get-BackendIdentityLines (Head)) -join ' ' -match 'PROCESS_IDENTITY_UNVERIFIED') "F1: Status reports it ($where)"
+  }
+  # The recorded process has ended: Start replaces the record; Stop only cleans it up.
+  New-StartSandbox
+  Write-RegistryFor 7500 $now
+  $script:DockerCalls.Clear()
+  Set-Variable -Scope Script -Name KeepDatabases -Value $true
+  Stop-Launcher | Out-Null
+  Check ($script:StopCalls.Count -eq 0 -and !(Test-Path -LiteralPath $script:StateFile)) 'Stop with a record of an ended process kills nothing and removes the record'
+  Write-RegistryFor 7500 $now
+  Start-Launcher | Out-Null
+  Check ($script:BackendStarts -eq 1 -and $script:StopCalls.Count -eq 0 -and (Read-TargetRegistry (Get-BackendTarget)).Record.pid -ne 7500) 'Start with a record of an ended process starts one backend and records it'
+  # The operating system cannot answer about processes: not "gone", not "ours".
+  New-StartSandbox
+  Write-RegistryFor 7600 $now
+  $script:ProcessReadFails = $true
+  Assert-StartRefused 'process list unreadable' 'PROCESS_IDENTITY_UNVERIFIED'
+  Assert-StopRefused 'process list unreadable'
+
+  # =============================================================================================
+  Section 'M00.03 port: a foreign process on the port is refused, also when it answers HTTP 200'
+  # =============================================================================================
+  foreach ($address in @('127.0.0.1','0.0.0.0','::','::1')) {
+    New-StartSandbox
+    Add-FakeProcess 7700 $now '' @($script:FakeNodeExe, 'some-other-server.js')
+    Add-FakeListener $address 7700
+    Expect-Fail 'PORT_IN_USE' "foreign listener on $address (it even answers the health URLs with 200 and the right body)" { Start-Launcher }
+    Check ((NpmCount 'run build') -eq 0 -and $script:BackendStarts -eq 0 -and $script:StopCalls.Count -eq 0 -and $script:FakeProcs.ContainsKey(7700)) "foreign listener on $address`: no build, no start, nothing stopped"
+    Check ($script:HttpCalls.Count -eq 0 -and !(Test-Path -LiteralPath $script:StateFile)) "foreign listener on $address`: HTTP was not used as proof and nothing was recorded"
+    Set-Variable -Scope Script -Name KeepDatabases -Value $true
+    Stop-Launcher | Out-Null
+    Check ($script:StopCalls.Count -eq 0 -and $script:FakeProcs.ContainsKey(7700)) "foreign listener on $address`: Stop without a record kills nothing"
+  }
+  New-StartSandbox
+  Add-FakeProcess 7710 $now '' @($script:FakeNodeExe, 'some-other-server.js')
+  Add-FakeListener '192.168.1.20' 7710
+  Start-Launcher | Out-Null
+  Check ($script:BackendStarts -eq 1) 'a listener bound to a LAN address only does not block 127.0.0.1:3000'
+  # Our own process plus a foreign listener on the same port.
+  New-StartSandbox
+  Start-Launcher | Out-Null
+  $ours = [int](Read-TargetRegistry (Get-BackendTarget)).Record.pid
+  Add-FakeProcess 7720 $now '' @($script:FakeNodeExe, 'intruder.js')
+  Add-FakeListener '0.0.0.0' 7720
+  $buildsBefore = NpmCount 'run build'
+  Expect-Fail 'PORT_IN_USE' 'our process plus a foreign listener on the same port is refused' { Start-Launcher }
+  Check ($script:StopCalls.Count -eq 0 -and $script:FakeProcs.ContainsKey($ours) -and $script:FakeProcs.ContainsKey(7720) -and (NpmCount 'run build') -eq $buildsBefore) 'neither our backend nor the intruder was stopped, and nothing was rebuilt'
+  # The port owner cannot be read: never "free".
+  New-StartSandbox
+  $script:ListenersUnreadable = $true
+  Expect-Fail 'PORT_OWNER_UNREADABLE' 'unreadable port owner is a refusal, not a free port' { Start-Launcher }
+  Check ((NpmCount 'run build') -eq 0 -and $script:BackendStarts -eq 0) 'unreadable port owner: nothing built or started'
+  $script:HostLog.Clear()
+  $statusText = @(Get-BackendIdentityLines (Head)) -join "`n"
+  Check ($statusText.Contains('PORT_OWNER_UNREADABLE')) 'Status reports the unreadable port owner'
+  # Wait-Backend itself: the right process is alive but another process holds the port and answers perfectly.
+  New-StartSandbox
+  Add-FakeProcess 7800 $now
+  Add-FakeProcess 7810 $now '' @($script:FakeNodeExe, 'intruder.js')
+  Add-FakeListener '127.0.0.1' 7810
+  Expect-Fail 'PORT_IN_USE' 'Wait-Backend: an answer from a different process than the one we started is not ready' { Wait-Backend (Get-BackendTarget) 7800 $now }
+  Remove-FakeProcess 7810
+  Expect-Fail 'BACKEND_NOT_READY' 'Wait-Backend: the process does not listen yet -> not ready' { Wait-Backend (Get-BackendTarget) 7800 $now }
+  Add-FakeListener '127.0.0.1' 7800
+  Wait-Backend (Get-BackendTarget) 7800 $now
+  Check $true 'Wait-Backend: the right process holds the port and both health bodies match -> ready'
+  Expect-Fail 'BACKEND_NOT_READY' 'Wait-Backend: the process has another start time (PID reused) -> not ready' { Wait-Backend (Get-BackendTarget) 7800 '2001-01-01T00:00:00.0000000Z' }
+
+  # =============================================================================================
+  Section 'M00.03 Stop: only the recorded, proven process, only that PID'
+  # =============================================================================================
+  New-StartSandbox
+  Start-Launcher | Out-Null
+  $ours = [int](Read-TargetRegistry (Get-BackendTarget)).Record.pid
+  Add-FakeProcess 7900 $now '' @($script:FakeNodeExe, 'bystander-a.js')
+  Add-FakeProcess 7901 $now '' @($script:FakeNodeExe, '--env-file-if-exists=.env', (Join-Path $tempRoot 'copy of repo\apps\backend\dist\main.js'))
+  Add-FakeListener '127.0.0.1' 7901 8080
+  Set-Variable -Scope Script -Name KeepDatabases -Value $true
+  Stop-Launcher | Out-Null
+  Check ($script:StopCalls.Count -eq 1 -and $script:StopCalls[0] -eq $ours -and !$script:FakeProcs.ContainsKey($ours)) 'Stop ends exactly the recorded process'
+  Check ($script:FakeProcs.ContainsKey(7900) -and $script:FakeProcs.ContainsKey(7901)) 'other node processes (even another checkout''s backend) are left running'
+  Check (!(Test-Path -LiteralPath $script:StateFile) -and @($script:LockObs | Where-Object { $_.What -eq "backend stop $ours" -and $_.Held }).Count -eq 1) 'the registry was removed after the stop, and the stop ran under the shared lock'
+  Stop-Launcher | Out-Null
+  Check ($script:StopCalls.Count -eq 1) 'a second Stop finds nothing to stop and kills nothing'
+  Set-Variable -Scope Script -Name KeepDatabases -Value $false
+  Start-Launcher | Out-Null
+  $script:DockerCalls.Clear()
+  Stop-Launcher | Out-Null
+  Check (@($script:DockerCalls | Where-Object { $_.EndsWith(' stop db-dev db-test') }).Count -eq 1) 'Stop without -KeepDatabases still stops the databases (volume kept)'
+
+  # The stop is re-proven right before the kill: the PID may have been reused since the first look.
+  New-StartSandbox
+  Start-Launcher | Out-Null
+  $target = Get-BackendTarget
+  $ownership = Get-TargetOwnership $target
+  $ownedPid = [int]$ownership.Registry.pid
+  Check ($ownership.Status -eq 'OWNED') 'precondition: the backend is owned'
+  Add-FakeProcess $ownedPid '2001-01-01T00:00:00.0000000Z'
+  $script:StopCalls.Clear()
+  Use-LaunchLock 'test' { Stop-TargetProcess $target $ownership }
+  Check ($script:StopCalls.Count -eq 0 -and $script:FakeProcs.ContainsKey($ownedPid) -and !(Test-Path -LiteralPath $script:StateFile)) 'PID reused between the check and the kill: nothing is killed, the old record is dropped'
+  New-StartSandbox
+  Start-Launcher | Out-Null
+  $ownership = Get-TargetOwnership (Get-BackendTarget)
+  $ownedPid = [int]$ownership.Registry.pid
+  Add-FakeProcess $ownedPid $ownership.Registry.started_utc (Join-Path $tempRoot 'powershell.exe') @((Join-Path $tempRoot 'powershell.exe'), '-NoProfile')
+  $script:StopCalls.Clear()
+  Expect-Fail 'PROCESS_IDENTITY_UNVERIFIED' 'same PID and start time but no longer our node -> refused at the last moment' { Use-LaunchLock 'test' { Stop-TargetProcess (Get-BackendTarget) $ownership } }
+  Check ($script:StopCalls.Count -eq 0 -and (Test-Path -LiteralPath $script:StateFile)) 'nothing killed and the record is kept for the Owner to look at'
+  # Stop that fails or does not take effect keeps the record and never escalates.
+  New-StartSandbox
+  Start-Launcher | Out-Null
+  $script:StopThrows = $true
+  Expect-Fail 'PROCESS_STOP_FAILED' 'a refused stop is reported' { Stop-Launcher }
+  Check ((Test-Path -LiteralPath $script:StateFile) -and $script:StopCalls.Count -eq 1) 'refused stop: record kept, one attempt only'
+  $script:StopThrows = $false; $script:StopIgnored = $true; $script:StopCalls.Clear()
+  Expect-Fail 'PROCESS_STOP_FAILED' 'a process that keeps running after the stop is reported' { Stop-Launcher }
+  Check ((Test-Path -LiteralPath $script:StateFile) -and $script:StopCalls.Count -eq 1) 'process still running: record kept, no escalation to another PID'
+
+  # =============================================================================================
+  Section 'M00.03 migration: the launcher-owned old backend is stopped only after the Owner confirmed'
+  # =============================================================================================
+  New-StartSandbox
+  Start-Launcher | Out-Null
+  $ours = [int](Read-TargetRegistry (Get-BackendTarget)).Record.pid
+  Push-Upstream 'database/migrations/3000_third.sql' 'SELECT 3;'
+  Update-Launcher | Out-Null
+  $script:DbApplied = @('1000_first','2000_second'); $script:Answers.Enqueue('n')
+  $script:StopCalls.Clear()
+  Expect-Fail 'MIGRATION_DECLINED' 'declined migration with a backend running' { Start-Launcher }
+  Check ($script:StopCalls.Count -eq 0 -and $script:FakeProcs.ContainsKey($ours) -and (NpmCount 'run db:migrate') -eq 0) 'declined: the running backend stays up and nothing is migrated'
+  $script:Answers.Enqueue('y')
+  Start-Launcher | Out-Null
+  Check ($script:StopCalls.Count -eq 1 -and $script:StopCalls[0] -eq $ours) 'accepted: the old backend is stopped'
+  Check ($script:MigrateAliveProcesses -eq 0) 'the old backend was already stopped when db:migrate ran (it never serves a schema it was not built for)'
+  Check ((Read-TargetRegistry (Get-BackendTarget)).Record.source_sha -ceq (Head) -and $script:FakeProcs.Count -eq 1) 'a new backend built from the new commit is recorded and is the only one'
+
+  # =============================================================================================
+  Section 'M00.03 build, start and state errors'
+  # =============================================================================================
+  New-StartSandbox
+  Start-Launcher | Out-Null
+  $before = Read-TargetRegistry (Get-BackendTarget)
+  $oldManifestText = File-HashOrEmpty $script:BackendManifestFile
+  Check ($oldManifestText -ne '') 'precondition: a manifest exists'
+  $script:BuildFails = $true; $script:BuildContent = 'broken'
+  $startsBefore = $script:BackendStarts; $script:StopCalls.Clear()
+  Expect-Fail 'APP_BUILD_FAILED' 'build failure' { Start-Launcher }
+  Check (!(Test-Path -LiteralPath $script:BackendManifestFile)) 'a failed build leaves no manifest (no old fingerprint can be mistaken for the new build)'
+  Check ($script:BackendStarts -eq $startsBefore -and $script:StopCalls.Count -eq 0 -and (Get-OwnedBackendProcess).Id -eq [int]$before.Record.pid) 'a failed build does not touch the running backend'
+  Check ((Read-TargetRegistry (Get-BackendTarget)).Record.build_fingerprint -ceq $before.Record.build_fingerprint -and (NpmCount 'run db:migrate') -eq 0) 'the registry still describes the (old) running build and no migration ran'
+  $script:BuildFails = $false; $script:BuildNoOutput = $true
+  Remove-Item -LiteralPath $script:BackendDist -Recurse -Force
+  Expect-Fail 'APP_BUILD_FAILED' 'build that reports success but produces no entry script' { Start-Launcher }
+  Check (!(Test-Path -LiteralPath $script:BackendManifestFile)) 'no manifest without a build output'
+  $script:BuildNoOutput = $false
+  # A manifest that cannot be written.
+  $script:BuildHook = { New-Item -ItemType Directory -Force -Path $script:BackendManifestFile | Out-Null }
+  Expect-Fail 'STATE_WRITE_FAILED' 'manifest that cannot be written' { Start-Launcher }
+  Check (@(Get-ChildItem -LiteralPath $script:BackendDist -Filter '*.tmp' -ErrorAction SilentlyContinue).Count -eq 0) 'no temporary file is left behind'
+  Remove-Item -LiteralPath $script:BackendManifestFile -Recurse -Force -ErrorAction SilentlyContinue
+  $script:BuildHook = $null
+  # The process cannot be started / does not look like what we asked for / vanishes.
+  New-StartSandbox
+  $script:StartThrows = $true
+  Expect-Fail 'BACKEND_START_FAILED' 'node cannot be started' { Start-Launcher }
+  Check (!(Test-Path -LiteralPath $script:StateFile)) 'no registry for a process that never started'
+  New-StartSandbox
+  $script:StartVanishes = $true
+  Expect-Fail 'BACKEND_NOT_READY' 'the new process is gone before it can be recorded' { Start-Launcher }
+  Check (!(Test-Path -LiteralPath $script:StateFile)) 'no registry for a vanished process'
+  New-StartSandbox
+  $script:StartScript = (Join-Path $tempRoot 'somewhere else\main.js')
+  Expect-Fail 'BACKEND_NOT_READY' 'a process that is not node running this checkout''s script is not accepted' { Start-Launcher }
+  Check ($script:StopCalls.Count -eq 1 -and $script:FakeProcs.Count -eq 0 -and !(Test-Path -LiteralPath $script:StateFile)) 'the unexpected process the launcher itself just created is stopped (by that PID) and nothing is recorded'
+  New-StartSandbox
+  $script:StartListens = $false
+  Expect-Fail 'BACKEND_NOT_READY' 'a started process that never listens' { Start-Launcher }
+  Check ((Get-TargetOwnership (Get-BackendTarget)).Status -eq 'OWNED') 'it stays recorded (proven ours) so the next Start can replace it'
+  $stuckPid = [int](Read-TargetRegistry (Get-BackendTarget)).Record.pid
+  $script:StartListens = $true; $script:StopCalls.Clear()
+  Start-Launcher | Out-Null
+  Check ($script:StopCalls.Count -eq 1 -and $script:StopCalls[0] -eq $stuckPid -and (Get-TargetPortState (Get-BackendTarget) ([int](Read-TargetRegistry (Get-BackendTarget)).Record.pid)).State -eq 'OURS') 'the next Start replaces that stuck process and the new one holds the port'
+  # The registry cannot be written after the process was started: the process must not be left running unrecorded.
+  New-StartSandbox
+  $script:StartHook = { New-Item -ItemType Directory -Force -Path $script:StateFile | Out-Null }
+  Expect-Fail 'STATE_WRITE_FAILED' 'registry that cannot be written' { Start-Launcher }
+  Check ($script:StopCalls.Count -eq 1 -and $script:FakeProcs.Count -eq 0) 'the process started a moment ago is stopped, not left running unrecorded'
+  Check (@(Get-ChildItem -LiteralPath $script:StateDir -Filter '*.tmp' -ErrorAction SilentlyContinue).Count -eq 0) 'no temporary state file is left behind'
+
+  # =============================================================================================
+  Section 'M00.03 review F1: exit is confirmed only by absence or a positively different start time'
+  # =============================================================================================
+  New-StartSandbox
+  $goneRecord = [pscustomobject]@{ pid = 7600; started_utc = $now }
+  Check ((Wait-ProcessGone $goneRecord 1)) 'F1: a process that is absent has ended'
+  Add-FakeProcess 7600 '2001-01-01T00:00:00.0000000Z'
+  Check ((Wait-ProcessGone $goneRecord 1)) 'F1: the PID now has a positively different start time -> the recorded process has ended'
+  Add-FakeProcess 7600 '' '' @() $false 'System'
+  Check (!(Wait-ProcessGone $goneRecord 1)) 'F1: an existing but uninspectable process is NOT proof of exit'
+  Remove-FakeProcess 7600; Add-FakeProcess 7600 $now
+  $script:ProcessReadFails = $true
+  Check (!(Wait-ProcessGone $goneRecord 1)) 'F1: a failing process read is NOT proof of exit'
+  $script:ProcessReadFails = $false
+
+  foreach ($mode in @('unreadable','uninspectable')) {
+    # Stop: the OS accepted the stop but the launcher cannot confirm the exit.
+    New-StartSandbox
+    Start-Launcher | Out-Null
+    $script:StopMode = $mode; $script:StopCalls.Clear(); $script:DockerCalls.Clear()
+    Expect-Fail 'PROCESS_STOP_FAILED' "F1: Stop whose exit cannot be confirmed ($mode) does not claim success" { Stop-Launcher }
+    Check ((Test-Path -LiteralPath $script:StateFile -PathType Leaf) -and @($script:DockerCalls | Where-Object { $_ -match 'compose.* stop ' }).Count -eq 0) "F1: registry kept and databases not stopped ($mode)"
+    Check (@($script:HostLog | Where-Object { $_ -match 'd.ng .ng backend' }).Count -eq 0) "F1: no stop success is announced ($mode)"
+
+    # Migration: the old backend must be confirmed gone before db:migrate.
+    New-StartSandbox
+    Start-Launcher | Out-Null
+    Push-Upstream 'database/migrations/3000_third.sql' 'SELECT 3;'
+    Update-Launcher | Out-Null
+    $script:DbApplied = @('1000_first','2000_second'); $script:Answers.Enqueue('y')
+    $script:StopMode = $mode; $startsBefore = $script:BackendStarts
+    Expect-Fail 'PROCESS_STOP_FAILED' "F1: unconfirmed stop blocks the migration ($mode)" { Start-Launcher }
+    Check ((NpmCount 'run db:migrate') -eq 0 -and $script:BackendStarts -eq $startsBefore -and (Test-Path -LiteralPath $script:StateFile -PathType Leaf)) "F1: no migration, no new backend, registry kept ($mode)"
+
+    # Restart (artifact changed): the old backend must be confirmed gone before a new one starts.
+    New-StartSandbox
+    Start-Launcher | Out-Null
+    $script:BuildContent = 'console.log("changed");'; $script:StopMode = $mode; $startsBefore = $script:BackendStarts
+    Expect-Fail 'PROCESS_STOP_FAILED' "F1: unconfirmed stop blocks the restart ($mode)" { Start-Launcher }
+    Check ($script:BackendStarts -eq $startsBefore -and (Test-Path -LiteralPath $script:StateFile -PathType Leaf)) "F1: no second backend and registry kept ($mode)"
+  }
+
+  # =============================================================================================
+  Section 'M00.03 review F2: termination targets the process instance that was verified, never a recycled PID'
+  # =============================================================================================
+  foreach ($kind in @('lookalike','other')) {
+    New-StartSandbox
+    $script:StartReplacedBy = $kind
+    Expect-Fail 'BACKEND_NOT_READY' "F2: the new child exited and its PID went to another process ($kind) before identity inspection" { Start-Launcher }
+    $occupant = $script:FakeProcs[$script:FakePidCounter]
+    Check ($script:StopCalls.Count -eq 0 -and $occupant -and $script:FakeProcs.Count -eq 1) "F2: the replacement ($kind) survives and nothing was stopped"
+    Check (!(Test-Path -LiteralPath $script:StateFile -PathType Leaf)) "F2: no registry claims the replacement ($kind)"
+  }
+  # Registry write fails after the identity check, and the child's PID is replaced in between.
+  New-StartSandbox
+  $script:StartHook = { New-Item -ItemType Directory -Force -Path $script:StateFile | Out-Null }
+  $script:DetailsHook = { param($id) Add-FakeProcess $id ([DateTime]::UtcNow.AddHours(-2).ToString('o')) }
+  Expect-Fail 'STATE_WRITE_FAILED' 'F2: registry-write cleanup after the child''s PID was replaced' { Start-Launcher }
+  Check ($script:StopCalls.Count -eq 0 -and $script:FakeProcs.ContainsKey($script:FakePidCounter) -and !(Test-Path -LiteralPath $script:StateFile -PathType Leaf)) 'F2: the replacement survives the cleanup and no registry names it'
+  # The real child is still cleaned up (regression for the existing behaviour).
+  New-StartSandbox
+  $script:StartHook = { New-Item -ItemType Directory -Force -Path $script:StateFile | Out-Null }
+  Expect-Fail 'STATE_WRITE_FAILED' 'F2: registry-write cleanup of the real child' { Start-Launcher }
+  Check ($script:StopCalls.Count -eq 1 -and $script:FakeProcs.Count -eq 0) 'F2: the actual child is stopped'
+  # Normal Stop: the PID changes hands between the last ownership proof and the termination.
+  New-StartSandbox
+  Start-Launcher | Out-Null
+  $target = Get-BackendTarget
+  $ownership = Get-TargetOwnership $target
+  $ownedPid = [int]$ownership.Registry.pid
+  $script:StopCalls.Clear()
+  $script:DetailsHook = { param($id) Add-FakeProcess $id ([DateTime]::UtcNow.AddHours(-2).ToString('o')) }
+  Use-LaunchLock 'test' { Stop-TargetProcess $target $ownership }
+  Check ($script:StopCalls.Count -eq 0 -and $script:FakeProcs.ContainsKey($ownedPid)) 'F2: PID replaced after the last proof: the termination targets the verified instance, so the replacement survives'
+  Check (!(Test-Path -LiteralPath $script:StateFile -PathType Leaf)) 'F2: the registry of the ended process is dropped and does not claim the replacement'
+
+  # =============================================================================================
+  Section 'M00.03 shared lock: every artifact/process-changing step refuses to run without it'
+  # =============================================================================================
+  New-StartSandbox
+  $target = Get-BackendTarget
+  $fake = [pscustomobject]@{ Status = 'OWNED'; Registry = [pscustomobject]@{ pid = 1 }; Text = '' }
+  $manifestStub = [pscustomobject]@{ source_sha = ('a' * 40); build_fingerprint = ('b' * 64); built_at = [DateTime]::UtcNow.ToString('o'); design_version = '2.0.1' }
+  Expect-Fail 'LAUNCH_LOCK_REQUIRED' 'Build-BackendArtifact without the lock' { Build-BackendArtifact $target (Head) }
+  Expect-Fail 'LAUNCH_LOCK_REQUIRED' 'Write-BuildManifest without the lock' { Write-BuildManifest $target (Head) ('b' * 64) }
+  Expect-Fail 'LAUNCH_LOCK_REQUIRED' 'Write-TargetRegistry without the lock' { Write-TargetRegistry $target ([pscustomobject]@{ ProcessId = 1; StartUtc = $now; Executable = $script:FakeNodeExe }) $manifestStub '' '' }
+  Expect-Fail 'LAUNCH_LOCK_REQUIRED' 'Remove-TargetRegistry without the lock' { Remove-TargetRegistry $target }
+  Expect-Fail 'LAUNCH_LOCK_REQUIRED' 'Stop-TargetProcess without the lock' { Stop-TargetProcess $target $fake }
+  Expect-Fail 'LAUNCH_LOCK_REQUIRED' 'Start-NewBackendProcess without the lock' { Start-NewBackendProcess $target $manifestStub }
+  Check ($script:NpmCalls.Count -eq 0 -and $script:BackendStarts -eq 0 -and $script:StopCalls.Count -eq 0 -and !(Test-Path -LiteralPath $script:BackendManifestFile) -and !(Test-Path -LiteralPath $script:StateFile)) 'none of them changed anything'
+  Check (!(Test-LockHeld)) 'no lock is left behind'
+
+  # =============================================================================================
+  Section 'M00.03 Status: source, artifact, process and port are reported separately and Status changes nothing'
+  # =============================================================================================
+  New-StartSandbox
+  $lines = @(Get-BackendIdentityLines (Head))
+  Check ($lines.Count -eq 4 -and $lines[0].StartsWith('Backend - ') -and (($lines -join "`n").Contains('MISSING'))) 'before any build: source, artifact (MISSING), process and port lines'
+  Start-Launcher | Out-Null
+  $statusPath = $script:StateFile; $registryHash = File-HashOrEmpty $statusPath; $manifestHash = File-HashOrEmpty $script:BackendManifestFile
+  $script:HostLog.Clear(); $script:StopCalls.Clear(); $script:NpmCalls.Clear()
+  Status-Launcher | Out-Null
+  $text = $script:HostLog -join "`n"
+  Check ($text -match 'artifact: OK' -and $text -match 'process: .*PID \d+') 'Status shows the artifact as OK and the process with its PID'
+  Check ((File-HashOrEmpty $statusPath) -eq $registryHash -and (File-HashOrEmpty $script:BackendManifestFile) -eq $manifestHash -and $script:StopCalls.Count -eq 0 -and (NpmCount 'run build') -eq 0) 'Status wrote, removed and stopped nothing'
+  Check (!(Test-LockHeld)) 'Status does not leave the lock held'
+  Push-Upstream 'docs/note.md' 'newer'
+  Update-Launcher | Out-Null
+  $script:HostLog.Clear(); Status-Launcher | Out-Null
+  $text = $script:HostLog -join "`n"
+  Check ($text -match 'artifact: OK' -and $text.Contains('Start')) 'after Update Status still shows the OLD process/artifact commit next to the new HEAD'
+  # Tampered, deleted and corrupt artifacts.
+  $manifestFile = $script:BackendManifestFile
+  Check ((Get-ArtifactState (Get-BackendTarget)).State -eq 'OK') 'artifact state OK before tampering'
+  [IO.File]::AppendAllText($script:BackendScript, '// tampered')
+  Check ((Get-ArtifactState (Get-BackendTarget)).State -eq 'CHANGED') 'a changed build file makes the manifest stale (CHANGED)'
+  Remove-Item -LiteralPath $script:BackendDist -Recurse -Force
+  Check ((Get-ArtifactState (Get-BackendTarget)).State -eq 'MISSING') 'a deleted build folder takes its manifest with it (MISSING)'
+  $validManifest = '{"app_id":"BACKEND","source_sha":"' + ('a' * 40) + '","build_fingerprint":"' + ('b' * 64) + '","built_at":"2026-01-01T00:00:00Z","design_version":"2.0.1"}'
+  Write-Text $manifestFile $validManifest
+  Check ((Get-ArtifactState (Get-BackendTarget)).State -eq 'NO_ARTIFACT') 'a valid manifest in a folder without build files is NO_ARTIFACT'
+  Write-Text (Join-Path $script:BackendDist 'main.js') 'x'
+  Check ((Get-ArtifactState (Get-BackendTarget)).State -eq 'CHANGED') 'a manifest whose fingerprint does not describe the files is CHANGED'
+  foreach ($case in @(@('{ not json','INVALID'),@('','INVALID'),@('[]','INVALID'),@('{"app_id":"BACKEND"}','INVALID'),@(('{"app_id":"ADMIN","source_sha":"' + ('a' * 40) + '","build_fingerprint":"' + ('b' * 64) + '","built_at":"2026-01-01T00:00:00Z","design_version":"2.0.1"}'),'INVALID'),@(('{"app_id":"BACKEND","source_sha":"short","build_fingerprint":"' + ('b' * 64) + '","built_at":"2026-01-01T00:00:00Z","design_version":"2.0.1"}'),'INVALID'),@(('{"app_id":"BACKEND","source_sha":"' + ('a' * 40) + '","build_fingerprint":"' + ('b' * 64) + '","built_at":"not a date","design_version":"2.0.1"}'),'INVALID'))) {
+    Write-Text $manifestFile $case[0]
+    Check ((Read-BuildManifest (Get-BackendTarget)).State -eq $case[1]) "manifest '$($case[0])' is $($case[1])"
+  }
+  Remove-Item -LiteralPath $manifestFile -Force
+  Check ((Read-BuildManifest (Get-BackendTarget)).State -eq 'MISSING') 'no manifest is MISSING'
+  New-Item -ItemType Directory -Force -Path $manifestFile | Out-Null
+  Check ((Read-BuildManifest (Get-BackendTarget)).State -eq 'UNREADABLE') 'a manifest that cannot be read is UNREADABLE, not MISSING'
+  Remove-Item -LiteralPath $manifestFile -Recurse -Force
+
+  # Update while the registry is unprovable: it warns and still touches nothing.
+  New-StartSandbox
+  Write-Text $script:StateFile ('{"pid":7100,"startedUtc":"' + $liveStart + '"}')
+  Push-Upstream 'docs/note.md' 'newer'
+  Update-Launcher | Out-Null
+  Check (@($script:HostLog | Where-Object { $_.Contains('PROCESS_IDENTITY_UNVERIFIED') }).Count -eq 1 -and $script:StopCalls.Count -eq 0 -and (Test-Path -LiteralPath $script:StateFile)) 'Update warns about an unprovable backend record, stops nothing and keeps the record'
+
+  # =============================================================================================
+  Section 'M00.03 two real launchers at the same time (file-backed fake process table)'
+  # =============================================================================================
+  function Get-IdentityHarness { return (Join-Path (Join-Path (Join-Path $script:Repo 'tools') 'local') 'identity-harness.ps1') }
+  function Get-FakeOsLines([string]$Name) {
+    $path = Join-Path $script:StateDir ('fakeos.' + $Name)
+    if (!(Test-Path -LiteralPath $path)) { return @() }
+    return @(Get-Content -LiteralPath $path | Where-Object { $_ })
+  }
+  function Wait-Helpers($Processes) { foreach ($proc in @($Processes)) { if (!$proc.WaitForExit(300000)) { Stop-Quietly $proc } } }
+  New-StartSandbox
+  $env:SHIP11_HARNESS_START_DELAY_MS = '1500'
+  $racers = @()
+  try {
+    $racers = @((Start-Helper (Get-IdentityHarness) @('-Command','Start','-NoPause')), (Start-Helper (Get-IdentityHarness) @('-Command','Start','-NoPause')), (Start-Helper (Get-IdentityHarness) @('-Command','Start','-NoPause')))
+    Wait-Helpers $racers
+  } finally { $env:SHIP11_HARNESS_START_DELAY_MS = $null; foreach ($proc in $racers) { Stop-Quietly $proc } }
+  $calls = @(Read-HarnessCalls)
+  Check (@($racers | Where-Object { $_.HasExited -and $_.ExitCode -eq 0 }).Count -eq 3) 'three launchers started together all finish with exit 0'
+  Check (@($calls | Where-Object { $_.Text.StartsWith('backend start') }).Count -eq 1) 'exactly one backend was started for the three launchers'
+  Check (@($calls | Where-Object { $_.Text -match '^npm run build ' }).Count -eq 3 -and @($calls | Where-Object { $_.Text -match '^(npm run build|backend start|backend stop)' -and $_.Text -notmatch 'lockheld=True' }).Count -eq 0) 'every build/start/stop ran while the shared lock was held'
+  Check (@(Get-FakeOsLines 'procs').Count -eq 1 -and @(Get-FakeOsLines 'listeners').Count -eq 1) 'one process and one listener exist in the fake machine'
+  $raceRecord = (Read-TargetRegistry (Get-BackendTarget))
+  Check ($raceRecord.State -eq 'OK' -and (@(Get-FakeOsLines 'procs')[0].Split('|')[0] -eq "$($raceRecord.Record.pid)")) 'the single registry names the single process'
+  Check (!(Test-LockHeld) -and !(Test-GateHeld)) 'no lock or gate is left behind'
+
+  # Start and Stop together: whichever goes second sees the result of the first; the end state is consistent.
+  New-StartSandbox
+  $env:SHIP11_HARNESS_START_DELAY_MS = '1000'
+  $racers = @()
+  try {
+    $racers = @((Start-Helper (Get-IdentityHarness) @('-Command','Start','-NoPause')), (Start-Helper (Get-IdentityHarness) @('-Command','Stop','-KeepDatabases','-NoPause')), (Start-Helper (Get-IdentityHarness) @('-Command','Start','-NoPause')))
+    Wait-Helpers $racers
+  } finally { $env:SHIP11_HARNESS_START_DELAY_MS = $null; foreach ($proc in $racers) { Stop-Quietly $proc } }
+  $calls = @(Read-HarnessCalls)
+  $registryNow = Read-TargetRegistry (Get-BackendTarget)
+  $procCount = @(Get-FakeOsLines 'procs').Count
+  Check (@($racers | Where-Object { $_.HasExited -and $_.ExitCode -eq 0 }).Count -eq 3) 'Start, Stop and Start together all finish with exit 0'
+  Check (@($calls | Where-Object { $_.Text -match '^(backend start|backend stop)' -and $_.Text -notmatch 'lockheld=True' }).Count -eq 0) 'every start and stop ran while the shared lock was held'
+  Check (($registryNow.State -eq 'OK' -and $procCount -eq 1) -or ($registryNow.State -eq 'NONE' -and $procCount -eq 0)) "the end state is consistent: registry $($registryNow.State), $procCount process(es), never a process without a record or the reverse"
+  Check (@($calls | Where-Object { $_.Text.StartsWith('backend start') }).Count -le 2) 'no more than two backends were ever started (each Stop can cost one restart, never a pile of them)'
+
+  # =============================================================================================
+  Section 'M00.03 real Windows seams: process details, listening port, ownership and stop on REAL node processes'
+  # =============================================================================================
+  if (!$onWindows -or !$nodeApp) { $script:Skipped.Add('M00.03 real process/port seams - needs Windows and node (the launcher-windows job runs them)') }
+  else {
+    New-GitSandbox
+    $fakeDetails = ${function:Get-ProcessDetails}; $fakePorts = ${function:Get-PortListeners}; $fakeStop = ${function:Stop-OwnedProcess}
+    $seamFolder = Join-Path $tempRoot ('Th' + [char]0x01B0 + ' m' + [char]0x1EE5 + 'c seam')
+    New-Item -ItemType Directory -Force -Path $seamFolder | Out-Null
+    $seamScript = Join-Path $seamFolder 'main.js'
+    Write-Text $seamScript 'const net = require("net"); const server = net.createServer(); server.listen(Number(process.env.SEAM_PORT), "127.0.0.1"); setTimeout(function () {}, 120000);'
+    $finder = New-Object Net.Sockets.TcpListener ([Net.IPAddress]::Loopback), 0
+    $finder.Start(); $seamPort = $finder.LocalEndpoint.Port; $finder.Stop()
+    $seamNode = $null; $intruder = $null
+    $savedPort = $script:BackendPort; $savedScript = $script:BackendScript
+    $script:ProcessStopSeconds = 15   # a real process on a busy runner needs more than the 1 second the fast fakes use
+    try {
+      Set-Item -Path function:Get-ProcessDetails -Value $script:RealGetProcessDetails
+      Set-Item -Path function:Get-PortListeners -Value $script:RealGetPortListeners
+      Set-Item -Path function:Stop-OwnedProcess -Value $script:RealStopOwnedProcess
+      $env:SEAM_PORT = "$seamPort"
+      $seamNode = Start-Process -FilePath $nodeApp.Source -ArgumentList @('--env-file-if-exists=.env', (Quote-Arg $seamScript)) -WorkingDirectory $seamFolder -PassThru -WindowStyle Hidden
+      $env:SEAM_PORT = $null
+      $until = [DateTime]::UtcNow.AddSeconds(30)
+      do { Start-Sleep -Milliseconds 200; $probe = Get-PortListeners $seamPort } while (@($probe.Items).Count -eq 0 -and [DateTime]::UtcNow -lt $until)
+      $details = Get-ProcessDetails $seamNode.Id
+      Check ($details -and $details.Inspectable) 'real: Get-ProcessDetails can inspect a node process started by this user'
+      Check ($details.StartUtc -ceq $seamNode.StartTime.ToUniversalTime().ToString('o')) 'real: the start time equals the one Windows reports for the process'
+      Check ([IO.Path]::GetFileName($details.Executable) -ieq 'node.exe' -and (Test-SamePath (Get-ScriptArgument $details.Arguments) $seamScript)) 'real: executable is node.exe and the script argument is the quoted path with spaces and Vietnamese letters'
+      Check ($probe.Readable -and @($probe.Items | Where-Object { $_.ProcessId -eq $seamNode.Id -and $_.Address -eq '127.0.0.1' }).Count -eq 1) 'real: Get-PortListeners names the node process as the owner of the loopback listener'
+      Check ($null -eq (Get-ProcessDetails 2147480000)) 'real: a PID that does not exist is $null (gone), not an error'
+
+      $script:BackendPort = $seamPort; $script:BackendScript = $seamScript
+      $seamTarget = Get-BackendTarget
+      Check (Test-ProcessMatchesTarget $details $seamTarget) 'real: the process matches the target script'
+      Check (!(Test-ProcessMatchesTarget $details ([pscustomobject]@{ Script = (Join-Path $seamFolder 'other.js') }))) 'real: the same process does not match another script'
+      $foreignState = Get-TargetPortState $seamTarget 0
+      Check ($foreignState.State -eq 'FOREIGN' -and $foreignState.Foreign -contains $seamNode.Id) 'real: without a record the listener is FOREIGN'
+      Check ((Get-TargetPortState $seamTarget $seamNode.Id).State -eq 'OURS') 'real: with the right owner PID the same listener is OURS'
+      Expect-Fail 'PORT_IN_USE' 'real: Start refuses a port held by a process the launcher did not record' { Get-TargetSituation $seamTarget 'test' }
+
+      Write-RegistryFor $seamNode.Id $details.StartUtc @{ executable = $details.Executable; script = $seamScript; port = $seamPort }
+      $owned = Get-TargetOwnership $seamTarget
+      Check ($owned.Status -eq 'OWNED') 'real: a complete record with the real PID, start time, node and script is OWNED'
+      Check ((Get-TargetSituation $seamTarget 'test').Port.State -eq 'OURS') 'real: and the port is OURS'
+      Write-RegistryFor $seamNode.Id '2001-01-01T00:00:00.0000000Z' @{ executable = $details.Executable; script = $seamScript; port = $seamPort }
+      Check ((Get-TargetOwnership $seamTarget).Status -eq 'STALE') 'real: the same PID with another recorded start time is STALE (PID reuse)'
+      Write-RegistryFor $seamNode.Id $details.StartUtc @{ executable = $details.Executable; script = (Join-Path $seamFolder 'other.js'); port = $seamPort }
+      Check ((Get-TargetOwnership $seamTarget).Status -eq 'UNVERIFIED') 'real: a record for another script is UNVERIFIED'
+
+      # A second, unrelated node process answering on another port is never touched by a stop of the recorded one.
+      $env:SEAM_PORT = "$($seamPort + 1)"
+      $intruder = Start-Process -FilePath $nodeApp.Source -ArgumentList @('-e','setTimeout(function(){},120000)') -PassThru -WindowStyle Hidden
+      $env:SEAM_PORT = $null
+      Write-RegistryFor $seamNode.Id $details.StartUtc @{ executable = $details.Executable; script = $seamScript; port = $seamPort }
+      Use-LaunchLock 'test' { Stop-TargetProcess $seamTarget (Get-TargetOwnership $seamTarget) }
+      $seamNode.WaitForExit(15000) | Out-Null
+      Check ($seamNode.HasExited -and !$intruder.HasExited) 'real: Stop ended exactly the recorded node process and no other node process'
+      Check (!(Test-Path -LiteralPath $script:StateFile)) 'real: the record was removed after the stop'
+      # F2 on the real OS: a stop names the verified start time; another start time (a recycled PID) is never terminated.
+      Check ((Stop-OwnedProcess $intruder.Id '2001-01-01T00:00:00.0000000Z') -ceq 'REPLACED' -and !$intruder.HasExited) 'real F2: a PID whose start time differs from the verified one is not terminated (REPLACED)'
+      Check ((Stop-OwnedProcess $seamNode.Id $details.StartUtc) -ceq 'STOPPED') 'real F2: a process that already exited (handle still open) is reported as stopped, nothing else is touched'
+      Check ((Stop-OwnedProcess 2147480000 $details.StartUtc) -ceq 'NOT_FOUND') 'real F2: a PID that does not exist is NOT_FOUND'
+      Check ((Stop-OwnedProcess $intruder.Id ([DateTime]::UtcNow.AddYears(-30).ToString('o'))) -ceq 'REPLACED' -and !$intruder.HasExited) 'real F2: still alive after a wrong start time'
+      Check ((Stop-OwnedProcess $intruder.Id $intruder.StartTime.ToUniversalTime().ToString('o')) -ceq 'STOPPED') 'real F2: the verified start time is accepted and the process is terminated'
+      $intruder.WaitForExit(15000) | Out-Null
+      Check ($intruder.HasExited) 'real F2: and it has exited'
+    } finally {
+      $env:SEAM_PORT = $null
+      Stop-Quietly $seamNode; Stop-Quietly $intruder
+      $script:BackendPort = $savedPort; $script:BackendScript = $savedScript
+      Set-Item -Path function:Get-ProcessDetails -Value $fakeDetails
+      Set-Item -Path function:Get-PortListeners -Value $fakePorts
+      Set-Item -Path function:Stop-OwnedProcess -Value $fakeStop
+    }
+  }
 
   # =============================================================================================
   Section 'Stop keeps the DEV volume'
@@ -849,7 +1501,7 @@ try {
       Reset-Fakes
       $message = Get-FailMessage { Open-AppLauncher $appName }
       Check ($message.Contains(': APP_NOT_READY)')) "$appName -> APP_NOT_READY"
-      Check (!$message.Contains('LAUNCH_LOCK_MISSING') -and $message.Contains('ARTIFACT_IDENTITY_MISSING')) "$appName message no longer lists the lock (M00.02 is in place) and still names the missing artifact identity (M00.03)"
+      Check (!$message.Contains('LAUNCH_LOCK_MISSING') -and !$message.Contains('ARTIFACT_IDENTITY_MISSING') -and $message.Contains('APP_LAUNCH_SEQUENCE_MISSING')) "$appName message no longer lists the lock (M00.02) or the artifact identity (M00.03) and names the launch sequence that is still missing"
       Check ($message.Contains($appUrl[$appName])) "$appName message names its own address $($appUrl[$appName])"
       $runtimeBlocked = $message.Contains('APP_RUNTIME_MISSING')
       Check ($runtimeBlocked -eq ($appName -ne 'Admin')) "$appName runtime blocker is derived from the repository (present only when the app has no local server)"
@@ -885,7 +1537,7 @@ try {
       foreach ($capability in @($script:OrchestratorCapabilities.Values)) { $capability.Ready = $savedReady[$i]; $i++ }
     }
     Check ($script:BackendStarts -eq 0 -and $script:ProcessStarts.Count -eq 0 -and $script:DockerCalls.Count -eq 0) 'the fail-closed path also starts and opens nothing'
-    Check ($script:OrchestratorCapabilities['ExclusiveLock'].Ready -eq $true -and $script:OrchestratorCapabilities['ArtifactIdentity'].Ready -eq $false) 'prerequisites are back to: lock ready (M00.02 integrated and verified here), artifact identity not ready (M00.03)'
+    Check ($script:OrchestratorCapabilities['ExclusiveLock'].Ready -eq $true -and $script:OrchestratorCapabilities['ArtifactIdentity'].Ready -eq $true -and $script:OrchestratorCapabilities['AppLaunchSequence'].Ready -eq $false) 'prerequisites are back to: lock ready (M00.02), artifact identity ready (M00.03), app launch sequence not ready'
   } finally {
     Remove-Item -Path function:Start-Process -ErrorAction SilentlyContinue
   }
@@ -1146,7 +1798,7 @@ try {
   $before = Head
   Invoke-Git $script:Repo @('remote','set-url','origin',(Join-Path $tempRoot 'there is no such origin.git')) | Out-Null
   Expect-Fail 'GIT_FETCH_FAILED' 'Update stops when git fetch fails' { Update-Launcher }
-  Check ((Head) -eq $before -and (NpmCount 'ci') -eq 0 -and @($script:HostLog | Where-Object { $_.Contains('fast-forward ho') }).Count -eq 0) 'a failed fetch changes nothing and never reports success'
+  Check ((Head) -eq $before -and (NpmCount 'ci') -eq 0 -and @($script:HostLog | Where-Object { $_.Contains('(fast-forward)') }).Count -eq 0) 'a failed fetch changes nothing and never reports success'
 
   New-GitSandbox; Record-Install
   $envBefore = File-HashOrEmpty $script:EnvFile

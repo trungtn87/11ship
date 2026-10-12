@@ -5,11 +5,11 @@ Task M00-L. Chỉ hỗ trợ Windows; chạy từ `tools\local`. Repo hiện ch�
 ## Dùng hằng ngày
 
 - `11Ship.cmd`: menu một cửa. Nhập số rồi Enter; sau mỗi việc menu hiện lại kèm kết quả THÀNH CÔNG/THẤT BẠI, chọn `0` để thoát.
-- `11Ship-Start.cmd`: bật hai DB, build và chạy backend. Launcher đọc trạng thái migration **trực tiếp trong PostgreSQL DEV** (bảng `public.pgmigrations`), liệt kê migration còn thiếu và luôn hỏi trước khi áp dụng.
+- `11Ship-Start.cmd`: bật hai DB, build, xác minh artifact và process rồi chạy (hoặc dùng lại) backend. Launcher đọc trạng thái migration **trực tiếp trong PostgreSQL DEV** (bảng `public.pgmigrations`), liệt kê migration còn thiếu và luôn hỏi trước khi áp dụng.
 - `11Ship-Update.cmd`: fetch và chỉ fast-forward nhánh `main` theo `origin/main` (hoặc kiểm tra pin ở checkout UAT); dừng nếu local changes không an toàn. Nếu bản mới thay chính launcher, launcher cũ chạy bản mới đúng một lần (xem "Khóa dùng chung, cập nhật Git an toàn và chạy lại launcher"). Tự chạy `npm ci` khi lockfile khác lần cài đã ghi nhận, thiếu `node_modules` hoặc launcher chưa ghi nhận lần cài nào (lần chạy đầu).
 - `11Ship-Test.cmd`: chạy kiểm tra kỹ thuật với riêng `ship11_test` cổng 5433, lưu log đã ẩn secret trong `.11ship-local\logs`.
-- `11Ship-Stop.cmd`: dừng backend và DB nhưng giữ volume DEV. Thêm `-KeepDatabases` để chỉ dừng backend.
-- `11Ship-Status.cmd`: xem Git, toolchain, DB, backend và test gần nhất.
+- `11Ship-Stop.cmd`: chỉ dừng đúng backend đã được chứng minh là của launcher, rồi dừng DB nhưng giữ volume DEV. Thêm `-KeepDatabases` để chỉ dừng backend. Không chứng minh được thì **không dừng gì cả** (xem "Định danh artifact và process").
+- `11Ship-Status.cmd`: xem Git, toolchain, DB, backend (bốn lớp: nguồn, artifact, process, cổng) và test gần nhất. Status chỉ đọc: không khóa, không ghi, không dừng gì.
 - `11Ship-Admin.cmd`, `11Ship-Food.cmd`, `11Ship-Ship.cmd` (gói M00.01): ba lối vào riêng cho Web Admin, 11Food (khách + quán) và 11Ship (xế). **Hiện chưa mở được ứng dụng nào**: lệnh dừng ngay với exit code 1 và mã `APP_NOT_READY`, nói rõ còn thiếu gì và chưa làm gì cả. Xem mục "Ba lối vào ứng dụng".
 
 Có thể tạo shortcut bằng mục 6 trong menu hoặc:
@@ -24,15 +24,15 @@ Ba file `.cmd` chỉ chọn app rồi gọi **cùng một** launcher (`11ship-la
 
 | Lối vào | Ứng dụng | Địa chỉ dự kiến | Trạng thái hiện tại |
 |---|---|---|---|
-| `11Ship-Admin.cmd` | Web Admin | https://localhost:8443 | Chưa mở được: `ARTIFACT_IDENTITY_MISSING` (M00.03) |
+| `11Ship-Admin.cmd` | Web Admin | https://localhost:8443 | Chưa mở được: `APP_LAUNCH_SEQUENCE_MISSING` (trình tự mở ứng dụng, M00.05) |
 | `11Ship-Food.cmd` | 11Food (khách + quán) | https://localhost:8444 | Chưa mở được: mã trên và `APP_RUNTIME_MISSING` (chưa có máy chủ chạy thật; M00.05/M00.06) |
 | `11Ship-Ship.cmd` | 11Ship (xế) | https://localhost:8445 | Chưa mở được: mã trên và `APP_RUNTIME_MISSING` (M00.05/M00.07) |
 
 - Khi chưa sẵn sàng, launcher thoát với **exit code 1** trước mọi tác động: không cập nhật mã, không bật database hoặc backend, không mở trình duyệt, không đụng tới `.env` hay database (chỉ ghi bản ghi kết quả `.11ship-local\last-run.json`). Nó không bao giờ báo "đã chạy".
 - Không có app "Quán" riêng: quán thuộc 11Food, 11Ship chỉ dành cho xế.
-- Web Admin chưa mở dù đã có `scripts/admin-web-dev.mjs`: khóa dùng chung (M00.02) đã có nhưng chưa xác minh được process/cổng thuộc launcher (M00.03), một dịch vụ lạ trên cổng 8443 có thể bị nhận nhầm là Admin. Bản xem thử `Xem-Giao-Dien.cmd` (dữ liệu minh họa) không phải ứng dụng và không được dùng thay.
+- Web Admin chưa mở dù đã có `scripts/admin-web-dev.mjs`: khóa dùng chung (M00.02) và định danh artifact/process của backend (M00.03) đã có, nhưng trình tự mở ứng dụng (HTTPS local, máy chủ riêng của bề mặt, trình duyệt; M00.05) chưa có. Một dịch vụ lạ trên cổng 8443 có thể bị nhận nhầm là Admin nếu mở bây giờ. Bản xem thử `Xem-Giao-Dien.cmd` (dữ liệu minh họa) không phải ứng dụng và không được dùng thay.
 - Double-click: cửa sổ giữ lại để đọc lỗi; từ terminal lệnh kết thúc ngay; `-NoPause` dùng được như các lệnh khác. Kết quả ghi ở `.11ship-local\last-run.json` với `command` là `App Admin`, `App Food` hoặc `App Ship`.
-- Ba lối vào này vẫn từ chối **trước khi** lấy khóa: không Update, không Start, không tạo `launch.lock`. Các gói sau (M00.03, M00.05 đến M00.09) lần lượt thêm định danh artifact/process và máy chủ rồi mới bật việc mở ứng dụng.
+- Ba lối vào này vẫn từ chối **trước khi** lấy khóa: không Update, không Start, không tạo `launch.lock`. Các gói sau (M00.05 đến M00.09) lần lượt thêm máy chủ và trình tự mở rồi mới bật việc mở ứng dụng.
 
 ## Khóa dùng chung, cập nhật Git an toàn và chạy lại launcher (M00.02)
 
@@ -57,7 +57,40 @@ Lỗi dừng an toàn (không đổi gì): `DIRTY_TRACKED`, `DETACHED_HEAD`, `NO
 
 Nếu không đọc được số migration mới sau Update, launcher in `MIGRATION_COUNT_UNREADABLE` (không phải "0 migration"); Start vẫn kiểm tra DB DEV và hỏi trước khi áp dụng.
 
-Chưa nằm trong gói này: định danh artifact/process và restart đúng tiến trình (M00.03), HTTPS local (M00.05). Ba lối vào `Admin/Food/Ship` vẫn từ chối bằng `APP_NOT_READY`.
+Chưa nằm trong gói này: HTTPS local và trình tự mở ứng dụng (M00.05). Ba lối vào `Admin/Food/Ship` vẫn từ chối bằng `APP_NOT_READY`.
+
+## Định danh artifact và process (M00.03)
+
+Launcher tách **bốn lớp** và không bao giờ coi chúng là một:
+
+| Lớp | Là gì | Lưu ở đâu |
+|---|---|---|
+| Nguồn | commit đang checkout (`git HEAD`) | Git |
+| Artifact | kết quả build `apps\backend\dist` | `apps\backend\dist\build-manifest.json`: `app_id`, `source_sha`, `build_fingerprint` (SHA-256 của mọi file build), `built_at`, `design_version`. Chỉ được ghi **sau** build thành công; build lỗi thì manifest cũ bị xóa trước khi build, không để lại fingerprint nhầm. |
+| Process | tiến trình backend đang chạy | `.11ship-local\backend.json` (ghi lúc khởi động): `pid`, `started_utc`, `repo`, `executable`, `script`, `host`, `port`, `source_sha`, `build_fingerprint`, `built_at`, `design_version` |
+| Cổng | ai đang lắng nghe `127.0.0.1:3000` | hệ điều hành (`Get-NetTCPConnection`) |
+
+**Một process chỉ là "của launcher" khi tất cả đều đúng:** bản ghi đầy đủ và đúng kiểu, thuộc checkout này, cùng script/host/cổng hiện tại; PID còn sống **với đúng giờ khởi động đã ghi**; chương trình là `node` và đối số script là đúng `apps\backend\dist\main.js` của checkout này. Process còn tồn tại nhưng **không đọc được định danh** là chưa xác minh (`PROCESS_IDENTITY_UNVERIFIED`), không phải đã thoát; chỉ việc process biến mất hoặc có giờ khởi động khác (đọc được) mới chứng minh đã thoát. Stop và dọn dẹp nhắm đúng process đã xác minh (cùng handle, so giờ khởi động); nếu PID đã thuộc process khác thì không đụng tới, nếu không dừng được thì `PROCESS_STOP_FAILED` và chặn migration/restart. **Cổng là của launcher** chỉ khi mọi socket lắng nghe loopback/wildcard trên cổng đó đều thuộc đúng PID ấy. PID còn tồn tại, hoặc cổng trả HTTP 200 đúng nội dung `{"data":{"status":"ok"}}`, **không phải bằng chứng**: một dịch vụ lạ trả 200 vẫn bị từ chối.
+
+**Start** làm theo thứ tự: kiểm tra định danh process/cổng (lỗi thì dừng, chưa build, chưa migration) -> build và ghi manifest -> (nếu còn migration) hỏi Owner, **sau khi Owner đồng ý** mới dừng backend cũ của launcher rồi áp dụng migration -> dùng lại backend nếu đã chứng minh là của launcher, đúng commit, đúng fingerprint, lắng nghe đúng cổng và health đúng nội dung; ngược lại dừng đúng process đó rồi khởi động lại -> chờ cho tới khi **chính process vừa khởi động** giữ cổng và cả hai health trả đúng nội dung. Mọi bước đổi artifact/process nằm dưới khóa dùng chung (M00.02).
+
+**Update chỉ cập nhật mã nguồn và dependency.** Nó không build lại, không khởi động lại backend. Nếu backend của launcher đang chạy artifact build từ commit cũ, Update in `BACKEND_RUNNING_OLD_VERSION` (backend vẫn là bản cũ); chạy `11Ship-Start` để build, xác minh và khởi động lại đúng process đó. Update không bao giờ báo "đã chạy bản mới".
+
+| Mã | Nghĩa | Việc cần làm |
+|---|---|---|
+| `PROCESS_IDENTITY_UNVERIFIED` | không chứng minh được backend đang ghi nhận là của launcher (bản ghi thiếu/hỏng/cũ, thuộc checkout khác, không đọc được, PID đúng giờ nhưng không phải node chạy script này) | launcher **không build, không migration, không dừng, không khởi động**, giữ nguyên bản ghi. Nếu chắc chắn không còn backend 11Ship nào: đóng process node đang giữ cổng 3000 (nếu có), xóa `.11ship-local\backend.json` rồi chạy lại |
+| `PORT_IN_USE` | cổng 3000 do process không thuộc launcher giữ (kể cả khi nó trả HTTP 200) | tự đóng dịch vụ đó rồi chạy lại; launcher không bao giờ dừng nó |
+| `PORT_OWNER_UNREADABLE` | không đọc được ai đang giữ cổng | chạy lại bằng PowerShell/Windows đủ quyền; launcher không coi cổng là trống |
+| `APP_BUILD_FAILED` | `npm run build` lỗi hoặc không tạo ra file chạy | backend đang chạy (nếu có) không bị đụng tới; sửa lỗi build rồi Start lại |
+| `ARTIFACT_UNREADABLE` | không đọc được file build để tính fingerprint | đóng chương trình đang giữ file rồi chạy lại |
+| `BACKEND_START_FAILED` / `BACKEND_NOT_READY` | không khởi động được; process thoát sớm; không giữ cổng; health sai nội dung hoặc quá `45` giây | xem log trong `.11ship-local\logs` |
+| `PROCESS_STOP_FAILED` | Windows từ chối dừng, hoặc process vẫn chạy sau 10 giây | bản ghi được giữ; không dùng cách mạnh hơn, không đụng process khác |
+| `STATE_WRITE_FAILED` | không ghi được manifest/bản ghi (ghi tạm rồi đổi tên; tệp cũ giữ nguyên) | kiểm tra quyền ghi `.11ship-local` và `apps\backend\dist` |
+| `LAUNCH_LOCK_REQUIRED` | lỗi lập trình: một bước đổi artifact/process bị gọi khi chưa giữ khóa | báo lại; chưa làm gì cả |
+
+**Chi phí một lần khi nâng cấp từ launcher cũ:** `backend.json` cũ chỉ có `pid` và `startedUtc` nên không đủ để chứng minh. Nếu lúc nâng cấp backend vẫn đang chạy, Start và Stop sẽ dừng với `PROCESS_IDENTITY_UNVERIFIED` (đúng thiết kế: launcher không tắt process mà nó không chứng minh được). Hãy đóng cửa sổ/process node của backend cũ, xóa `.11ship-local\backend.json`, rồi Start lại một lần.
+
+Giới hạn hiện tại: định danh áp dụng cho **backend**. Các bề mặt web (Admin/Food/Ship) dùng cùng cơ chế khi chúng có máy chủ riêng (M00.05 trở đi). Smoke test trên máy Owner chưa chạy; xem `docs/evidence/M00-03-artifact-process-identity.md`.
 
 ## Mở bằng double-click hay từ terminal
 
@@ -77,7 +110,7 @@ Chưa nằm trong gói này: định danh artifact/process và restart đúng ti
 
 - `Test gần nhất: PASS/FAIL` chỉ hiện khi summary thuộc đúng commit đang checkout. Sau Update hoặc commit mới, Status hiện `STALE` cho tới khi chạy lại Test.
 - Mỗi lỗi có `mã lỗi` cố định, ví dụ `DIRTY_TRACKED`, `UNTRACKED_COLLISION`, `DETACHED_HEAD`, `NO_UPSTREAM`, `NON_FAST_FORWARD`, `LAUNCH_LOCK_TIMEOUT`, `DOCKER_UNAVAILABLE`, `MIGRATION_DECLINED`, `PORT_IN_USE`, `TEST_TARGET_GUARD`. Gửi mã này khi cần hỗ trợ.
-- Ba lối vào ứng dụng thêm các mã: `APP_NOT_READY` (kèm danh sách còn thiếu), `APP_RUNTIME_MISSING`, `ARTIFACT_IDENTITY_MISSING`, `APP_NOT_SPECIFIED`, `APP_UNKNOWN`, `APP_LAUNCH_NOT_IMPLEMENTED`.
+- Ba lối vào ứng dụng thêm các mã: `APP_NOT_READY` (kèm danh sách còn thiếu), `APP_RUNTIME_MISSING`, `APP_LAUNCH_SEQUENCE_MISSING`, `APP_NOT_SPECIFIED`, `APP_UNKNOWN`, `APP_LAUNCH_NOT_IMPLEMENTED`.
 - `11Ship-Test` luôn xóa tạm `TEST_WRONG_USER_DATABASE_URL`, `TEST_REMOTE_PATH_DATABASE_URL`, `TEST_REMOTE_PATH_RUNTIME_URL` và `PGPASSWORD` khỏi môi trường của mọi bước npm (kể cả khi terminal của bạn đang đặt các biến này) rồi khôi phục nguyên trạng sau khi xong hoặc khi lỗi. Các biến này chỉ dành cho CI; Test local chỉ chạm `ship11_test` cổng 5433.
 - Mật khẩu DB TEST có thể chứa ký tự đặc biệt (`@ / # : %`...). Launcher lấy mật khẩu từ container `ship11-db-test` đang chạy và mã hóa URI trước khi tạo `DATABASE_URL`.
 

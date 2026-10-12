@@ -95,7 +95,9 @@ test('M00.02: the shared lock is an exclusive OS handle, never a file age, and n
   assert.ok(spawnFunction.includes('Start-Process'));
   assert.doesNotMatch(spawnFunction.split(/\r?\n/).filter((line) => !line.trim().startsWith('#')).join('\n'), /-Wait\b/);
   assert.match(script, /ExclusiveLock\s*=\s*\[pscustomobject\]@\{ Ready = \$true;/);
-  assert.match(script, /ArtifactIdentity\s*=\s*\[pscustomobject\]@\{ Ready = \$false;/);
+  // M00.03 flips the artifact identity prerequisite; the launch sequence of an app surface (M00.05) is still missing.
+  assert.match(script, /ArtifactIdentity\s*=\s*\[pscustomobject\]@\{ Ready = \$true;/);
+  assert.match(script, /AppLaunchSequence\s*=\s*\[pscustomobject\]@\{ Ready = \$false;/);
 });
 
 test('M00.02: Git update modes and the hand-over to the new launcher are in place', () => {
@@ -121,7 +123,7 @@ test('M00.02: Git update modes and the hand-over to the new launcher are in plac
 });
 
 test('M00.02: test support scripts exist and stay ASCII (Windows PowerShell 5.1 reads a BOM-less file as ANSI)', async () => {
-  for (const name of ['lock-holder.ps1', 'relaunch-harness.ps1']) {
+  for (const name of ['lock-holder.ps1', 'relaunch-harness.ps1', 'identity-harness.ps1']) {
     const bytes = await readFile(path.join(root, 'tests', 'local-launcher', 'support', name));
     assert.ok(bytes.every((byte) => byte < 0x80), `${name} is ASCII`);
   }
@@ -131,11 +133,55 @@ test('M00.02: test support scripts exist and stay ASCII (Windows PowerShell 5.1 
   assert.deepEqual([...launcher.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'launcher keeps its UTF-8 BOM');
 });
 
+test('M00.03: artifact and process identity - stable codes, one place that kills, never by name/port/PID alone', () => {
+  for (const code of ['PROCESS_IDENTITY_UNVERIFIED', 'PORT_IN_USE', 'PORT_OWNER_UNREADABLE', 'APP_BUILD_FAILED', 'ARTIFACT_UNREADABLE', 'BACKEND_START_FAILED',
+    'BACKEND_NOT_READY', 'PROCESS_STOP_FAILED', 'STATE_WRITE_FAILED', 'LAUNCH_LOCK_REQUIRED', 'BACKEND_RUNNING_OLD_VERSION']) {
+    assert.ok(script.includes(code), code);
+  }
+  const code = script.split(/\r?\n/).filter((line) => !line.trim().startsWith('#')).join('\n');
+  // The only call that ends a looked-up process is TerminateProcess inside Stop-OwnedProcess: one handle, start time checked first.
+  assert.doesNotMatch(code, /Stop-Process\b/, 'no Stop-Process (it would end whatever holds the PID)');
+  const terminates = code.match(/ProcessNative\]::TerminateProcess\(/g) ?? [];
+  assert.equal(terminates.length, 1, 'exactly one TerminateProcess call');
+  const stopFunction = code.slice(code.indexOf('function Stop-OwnedProcess'), code.indexOf('function Stop-StartedChild'));
+  assert.ok(stopFunction.indexOf('GetProcessTimes') < stopFunction.indexOf('TerminateProcess(') && stopFunction.includes("'REPLACED'"), 'start time is compared before the termination');
+  assert.match(stopFunction, /ExpectedStartUtc/);
+  // Cleanup of a process this launcher just created goes through the Start-Process object, never through a PID lookup.
+  const newProcess = code.slice(code.indexOf('function Start-NewBackendProcess'), code.indexOf('function Start-OrReuseBackend'));
+  assert.doesNotMatch(newProcess, /Stop-OwnedProcess/);
+  assert.equal((newProcess.match(/Stop-StartedChild \$process/g) ?? []).length, 2);
+  assert.doesNotMatch(code, /taskkill|Stop-Process\s+-Name|Get-Process\s+-Name|Get-Process\s+node|Get-Process\s+\|/i, 'no stop by image name or by force');
+  // The only Kill() calls end processes this launcher created itself: the hand-over child and the backend it just started.
+  const kills = code.match(/\.Kill\(\)/g) ?? [];
+  assert.equal(kills.length, 2);
+  assert.ok(code.slice(code.indexOf('function Invoke-LauncherRelaunch'), code.indexOf('function Assert-RelaunchParameters')).includes('$process.Kill()'));
+  assert.ok(code.slice(code.indexOf('function Stop-StartedChild'), code.indexOf('# ---- ownership')).includes('$Child.Kill()'));
+  // An existing process whose identity cannot be read is UNVERIFIED, and only absence or a different start time proves an exit.
+  const ownershipText = code.slice(code.indexOf('function Get-TargetOwnership'), code.indexOf('function Test-ConflictingListener'));
+  assert.match(ownershipText, /if \(!\$details\.Inspectable\) \{ return \(New-Ownership 'UNVERIFIED'/);
+  const goneText = code.slice(code.indexOf('function Wait-ProcessGone'), code.indexOf('function Stop-TargetProcess'));
+  assert.doesNotMatch(goneText, /!\$details\.Inspectable/);
+  assert.doesNotMatch(code, /Get-NetTCPConnection[^\n]*\|\s*(Stop|Remove)/, 'a port owner is never stopped');
+  // A health answer alone never decides ownership: ownership code does not call HTTP.
+  const ownership = code.slice(code.indexOf('function Get-TargetOwnership'), code.indexOf('function Test-ConflictingListener'));
+  assert.doesNotMatch(ownership, /Http|Invoke-WebRequest|Get-HttpResult/);
+  const situation = code.slice(code.indexOf('function Get-TargetPortState'), code.indexOf('function Get-ProcessLabel'));
+  assert.doesNotMatch(situation, /Http|Invoke-WebRequest|Get-HttpResult/);
+  // Every function that changes an artifact, the registry or a process asserts the shared lock first.
+  for (const name of ['Write-BuildManifest', 'Write-TargetRegistry', 'Remove-TargetRegistry', 'Stop-TargetProcess', 'Build-BackendArtifact', 'Start-NewBackendProcess']) {
+    const start = code.indexOf(`function ${name}`);
+    assert.notEqual(start, -1, name);
+    assert.match(code.slice(start, start + 260), /Assert-LockHeld/, `${name} asserts the lock`);
+  }
+  // Health keeps its agreed bodies and the backend sources are untouched by this package.
+  assert.ok(script.includes("Test-HealthBody $live 'ok'") && script.includes("Test-HealthBody $ready 'ready'"));
+});
+
 test('contains the approved destructive-operation guards', () => {
   for (const forbidden of ['reset --hard', 'down -v', 'db:migrate:remote', 'git stash', 'push --force', 'audit fix']) {
     assert.equal(script.includes(forbidden), false, forbidden);
   }
-  for (const required of ["'--ff-only'", "'ship11_test'", "'ship11_dev'", 'Stop-Process', 'Start-Process']) {
+  for (const required of ["'--ff-only'", "'ship11_test'", "'ship11_dev'", 'TerminateProcess', 'Start-Process']) {
     assert.equal(script.includes(required), true, required);
   }
 });
