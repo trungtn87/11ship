@@ -7,6 +7,12 @@ export interface ServiceAreaRow {
   readonly status: ServiceAreaStatus;
 }
 
+/** What a client may choose from: an ACTIVE area's identifier and its display name, nothing else (no code, no geometry). */
+export interface ActiveServiceAreaRow {
+  readonly serviceAreaId: string;
+  readonly name: string;
+}
+
 /** SQL for app.service_areas. M02 owns the table; A2S only reads it (there is no management API yet). */
 @Injectable()
 export class ServiceAreaRepository {
@@ -27,5 +33,20 @@ export class ServiceAreaRepository {
     );
     const row = result.rows[0];
     return row === undefined ? undefined : { serviceAreaId: row.service_area_id, status: row.status };
+  }
+
+  /**
+   * The ACTIVE areas a shop can pick during onboarding, by name and then by identifier so that the order is the same on
+   * every call. A plain read: no lock (a later deactivation is caught by the FOR SHARE re-check of save and complete),
+   * no write, and no row of any other table.
+   */
+  async listActive(context: TransactionContext): Promise<ActiveServiceAreaRow[]> {
+    const result = await context.query<{ service_area_id: string; name: string }>(
+      `SELECT service_area_id, name
+         FROM app.service_areas
+        WHERE status = 'ACTIVE'
+        ORDER BY name ASC, service_area_id ASC`,
+    );
+    return result.rows.map((row) => ({ serviceAreaId: row.service_area_id, name: row.name }));
   }
 }

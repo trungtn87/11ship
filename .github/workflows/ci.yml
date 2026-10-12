@@ -257,6 +257,15 @@ jobs:
           path: .test-results/food-register-shots
           retention-days: 14
 
+      # M01 (shop onboarding): images of the real 11Food F20-F23 journey (real Chrome, real front, real backend and PostgreSQL).
+      - name: Upload 11Food shop onboarding screenshots
+        if: ${{ always() && hashFiles('.test-results/food-shop-shots/*.webp') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: food-shop-shots
+          path: .test-results/food-shop-shots
+          retention-days: 14
+
   # M00-VPS-01 package A: the self-hosted staging path on a THROWAWAY PostgreSQL 17 with TLS. It builds the same private CA
   # and server certificate as ops/selfhosted/make-pki.sh (the certificate names only localhost), starts postgres:17.11 with
   # TLS 1.3 and an hba file that mirrors ops/selfhosted/pg_hba.conf (hostssl + SCRAM only), prepares roles, database and schema

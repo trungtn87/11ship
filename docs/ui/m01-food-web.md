@@ -16,14 +16,14 @@ Trạng thái: **chỉ UI**, chưa tính là xong nghiệp vụ, M01 chưa đón
 | F04/F16 | Tài khoản (khách / đã đăng nhập) | `/account` | bản khách có dòng "Quản lý cửa hàng" khóa kèm lý do (F07); sau đăng ký/đăng nhập ở local thì hiện tên/SĐT che từ máy chủ (`GET /v1/client-auth/me`), dòng "Đăng xuất" gọi `POST /v1/client-auth/logout` | nối (local) |
 | F17 | Thông tin cá nhân | `/account/profile` | cần đăng nhập → về `/login`; đã đăng nhập đọc `GET /v1/customer/me/profile`, lưu `PUT` với `expected_version`, `VERSION_CONFLICT` tải bản hiện tại và không ghi đè | nối (local) |
 | F18 | Hộp đăng xuất | trong F16 | xác nhận rồi gọi logout; offline thì xóa phiên local và không nói máy chủ đã thu hồi | nối (local) |
-| F20 | Bán hàng trên 11Food | `/shop/start` | cần đăng nhập | chờ M01.11 |
-| F21 | Hồ sơ cửa hàng | `/shop/onboarding` | cần đăng nhập; Lưu/Hoàn tất khóa | chờ M01.11/.12 |
-| F22 | Vị trí lấy hàng | `/shop/location` | cần đăng nhập; không có bản đồ giả | chờ M01.12 |
-| F23 | Cửa hàng của tôi | `/shop/home` | cần đăng nhập; mục nghiệp vụ "Sắp có" | chờ M01.12 |
+| F20 | Bán hàng trên 11Food | `/shop/start` | cần đăng nhập; đọc hồ sơ từ máy chủ: chưa có → "Đăng ký cửa hàng", nháp → "Tiếp tục hồ sơ", đã có → "Mở Cửa hàng của tôi" | nối (local): `GET /v1/onboarding/shop/profile` |
+| F21 | Hồ sơ cửa hàng | `/shop/onboarding` | cần đăng nhập; lưu nháp (không cần vị trí), tiếp tục nháp, chọn khu vực **từ danh sách máy chủ** (không gõ tay), Hoàn tất chỉ mở khi đã lưu đủ thông tin + vị trí + khu vực (lý do hiện ngay cạnh nút); hồ sơ ACTIVE/DISABLED chỉ đọc; dữ liệu đang gõ giữ khi sang F22 và quay lại, thoát thật có hỏi "Bỏ thay đổi?" | nối (local): `GET/PUT /v1/onboarding/shop/profile`, `GET /v1/onboarding/shop/service-areas`, `POST /v1/onboarding/shop/complete`; hoàn tất xong gọi `GET /v1/client-auth/me` |
+| F22 | Vị trí lấy hàng | `/shop/location` | cần đăng nhập; chỉ lấy vị trí khi bấm "Lấy vị trí hiện tại" (geolocation thật của trình duyệt, https local), hiện tọa độ/độ chính xác/thời điểm đo, "Dùng vị trí này" mới đưa vào hồ sơ; từ chối/hết giờ/không có thì không có vị trí; bản đồ chưa nối (không vẽ bản đồ giả) | nối (local): vị trí gửi cùng `PUT /v1/onboarding/shop/profile` |
+| F23 | Cửa hàng của tôi | `/shop/home` | cần đăng nhập; trạng thái thật từ máy chủ (hoàn tất / bị khóa / chưa nhận đơn), mục Menu/Đơn/Doanh thu "Sắp có"; vào quản lý chọn context SHOP_OWNER, "Về giao diện khách hàng" chọn lại CUSTOMER (vẫn giữ quyền khách) | nối (local): `GET /v1/onboarding/shop/profile`, `POST /v1/client-auth/context` |
 
 Không có: số dư, doanh thu, đơn hàng, trạng thái hoạt động giả. Dữ liệu minh họa nằm riêng ở
 `apps/client-shared/src/design/samples.ts` và bị xoá khỏi bản thật (có test).
 
-Chưa có hợp đồng backend (xem `docs/design/system-v2-20261011/10-m01-client-contract.md`): client-auth (đăng ký/OTP/đăng nhập/đặt lại),
-đọc/lưu hồ sơ khách, hồ sơ cửa hàng nháp/hoàn tất, xác nhận vị trí. Hình dạng cổng (`ports.ts`) chỉ là đề xuất.
+Còn chờ backend (xem `docs/design/system-v2-20261011/10-m01-client-contract.md`): đặt lại mật khẩu, hồ sơ xế. Hình dạng cổng (`ports.ts`) chỉ là đề xuất cũ; phần nối thật dùng `apps/client-shared/src/auth` và `shop-flow.ts`.
+Hồ sơ cửa hàng chỉ nối trên https://localhost của 11Food (11Ship không nối); GPS thật trên thiết bị chưa thử, bản đồ chưa nối.
 Máy chủ tĩnh cần trả `index.html` cho mọi đường dẫn của app (SPA) — việc của bước triển khai.

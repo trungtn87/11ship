@@ -19,6 +19,12 @@
 //       POST /v1/client-auth/logout              (Authorization: Bearer, body {}, 204)
 //       GET  /v1/customer/me/profile             (Authorization: Bearer)
 //       PUT  /v1/customer/me/profile             (Authorization: Bearer, Idempotency-Key)
+//       POST /v1/client-auth/context             (Authorization: Bearer, Idempotency-Key): the CUSTOMER / SHOP_OWNER switch
+//     and, for 11Food ONLY (11Ship does not connect the shop onboarding), the shop onboarding of the owner:
+//       GET  /v1/onboarding/shop/profile         (Authorization: Bearer)
+//       PUT  /v1/onboarding/shop/profile         (Authorization: Bearer, Idempotency-Key)
+//       POST /v1/onboarding/shop/complete        (Authorization: Bearer, Idempotency-Key)
+//       GET  /v1/onboarding/shop/service-areas   (Authorization: Bearer, no query/body)
 //     See forwardAuth and forwardConfig for the rules (same origin, JSON, size, deadline, no cookie, no-store; only the Bearer and the
 //     Idempotency-Key of the browser are passed on, nothing else of its headers). NOTHING else of /v1 is reachable: not a prefix, not a
 //     wildcard, not another method, not a query string. Other business routes are opened by later packages after their own review (the
@@ -71,6 +77,12 @@ export const CLIENT_AUTH_ROUTES = [
   { id: 'logout', match: (path) => path === '/v1/client-auth/logout', keyed: false, bearer: true, noContent: true },
   { id: 'profile-read', match: (path) => path === '/v1/customer/me/profile', keyed: false, method: 'GET', bearer: true },
   { id: 'profile-save', match: (path) => path === '/v1/customer/me/profile', keyed: true, method: 'PUT', bearer: true },
+  { id: 'context', match: (path) => path === '/v1/client-auth/context', keyed: true, bearer: true },
+  // `apps`: only these fronts forward the route. The shop onboarding is 11Food's; 11Ship never reaches it.
+  { id: 'shop-profile-read', match: (path) => path === '/v1/onboarding/shop/profile', keyed: false, method: 'GET', bearer: true, apps: ['food-web'] },
+  { id: 'shop-profile-save', match: (path) => path === '/v1/onboarding/shop/profile', keyed: true, method: 'PUT', bearer: true, apps: ['food-web'] },
+  { id: 'shop-complete', match: (path) => path === '/v1/onboarding/shop/complete', keyed: true, bearer: true, apps: ['food-web'] },
+  { id: 'shop-service-areas', match: (path) => path === '/v1/onboarding/shop/service-areas', keyed: false, method: 'GET', bearer: true, apps: ['food-web'] },
 ];
 /** The routes of the 11Food front under their former name. */
 export const FOOD_AUTH_ROUTES = CLIENT_AUTH_ROUTES;
@@ -214,7 +226,7 @@ export function createClientWebServer({ app, distDir, backendUrl, key, cert, ups
       return;
     }
     // One path may carry two methods (the profile: GET and PUT): the route is chosen by path AND method, a third method is a 405.
-    const pathRoutes = app === 'food-web' || app === 'ship-web' ? CLIENT_AUTH_ROUTES.filter((candidate) => candidate.match(url.pathname)) : [];
+    const pathRoutes = app === 'food-web' || app === 'ship-web' ? CLIENT_AUTH_ROUTES.filter((candidate) => candidate.match(url.pathname) && (candidate.apps === undefined || candidate.apps.includes(app))) : [];
     const authRoute = pathRoutes.find((candidate) => (candidate.method ?? 'POST') === request.method) ?? pathRoutes[0];
     if (authRoute !== undefined) {
       const allowed = authRoute.method ?? 'POST';

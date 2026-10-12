@@ -167,3 +167,21 @@ export function parseShopCompleteBody(body: unknown): ShopCompleteInput {
   const parsed = objectWithKeys(body, ['expected_version'], []);
   return { expectedVersion: positiveVersion(parsed.expected_version) };
 }
+
+interface HeaderBag {
+  readonly headers: Record<string, string | string[] | undefined>;
+}
+
+/**
+ * A GET of Shop onboarding that takes neither a query nor a body (GET /v1/onboarding/shop/service-areas). A body is
+ * recognized by its framing headers: a Content-Length other than 0 or a Transfer-Encoding. Nothing is echoed back.
+ */
+export function rejectQueryAndBody(request: HeaderBag, query: unknown): void {
+  if (query !== undefined && (typeof query !== 'object' || query === null || Object.keys(query).length > 0)) {
+    reject();
+  }
+  const length = request.headers['content-length'];
+  if (request.headers['transfer-encoding'] !== undefined || (length !== undefined && length !== '0')) {
+    reject();
+  }
+}

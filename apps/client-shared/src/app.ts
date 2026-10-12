@@ -11,6 +11,7 @@ import { HealthMonitor } from './health.js';
 import { NOT_WIRED_PORTS } from './ports.js';
 import { LeaveController } from './leave.js';
 import { createRegisterController } from './register-flow.js';
+import { browserGeolocation, createShopController } from './shop-flow.js';
 import { HistoryPort, RouteDef, Router, RouteTable } from './router.js';
 import { AccountView, FlowStore, ScreenDef, ScreenEnv } from './screen.js';
 import { STATE_COPY } from './states.js';
@@ -39,12 +40,16 @@ export interface AppDefinition {
    * on only on a local https runtime (`isLocalHttpsRuntime`); everywhere else the register screens stay in their "chưa nối máy chủ" state.
    */
   readonly register?: { readonly consent: ConsentOffer };
+  /** Present = this app connects the shop onboarding (11Food only; 11Ship never does). Same local-https-only rule as the account features. */
+  readonly shopOnboarding?: true;
 }
 
 /** The features the register flow connects when it is on. Nothing else becomes wired by it. */
 const REGISTER_FEATURES: ReadonlySet<FeatureId> = new Set<FeatureId>(['auth.register', 'auth.registerOtp']);
 /** The account features (login, logout, own profile) connected by the same client authentication on a local https runtime. */
 const ACCOUNT_FEATURES: ReadonlySet<FeatureId> = new Set<FeatureId>(['auth.login', 'auth.logout', 'customer.profileSave', 'account.read']);
+/** The shop onboarding features, connected by the shop controller (11Food, local https runtime). */
+const SHOP_FEATURES: ReadonlySet<FeatureId> = new Set<FeatureId>(['shop.draftSave', 'shop.location', 'shop.complete']);
 
 /** Longest delay setTimeout takes. */
 const MAX_TIMER_MS = 2_147_483_647;
@@ -61,10 +66,14 @@ export function isLocalHttpsRuntime(location: { readonly protocol: string; reado
 export function accountOf(identity: AuthIdentity): AccountView {
   // Only what the server reports. A driver state the screens cannot show yet (and none that is made up) leaves `driver` out.
   const driverStatus = identity.onboarding.driver === 'NOT_STARTED' ? 'NONE' : identity.onboarding.driver === 'PENDING_APPROVAL' ? 'PENDING' : identity.onboarding.driver === 'ACTIVE' ? 'ACTIVE' : undefined;
+  // The shop state the server reports for this person (never a made-up shop); its name is read from the profile when F23 opens.
+  const shopState = identity.onboarding.shop === 'COMPLETED' ? 'COMPLETE' : identity.onboarding.shop === 'INCOMPLETE' ? 'DRAFT' : 'NONE';
   return {
     fullName: identity.profile.fullName,
     phoneMasked: maskPhone(identity.phoneNormalized) ?? '••• •••• •••',
     roles: identity.availableRoles,
+    activeRole: identity.activeRole,
+    shop: { state: shopState },
     ...(driverStatus === undefined ? {} : { driver: { status: driverStatus } }),
   };
 }
@@ -173,6 +182,7 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
       ? createAuthClient({ fetch: (input, init) => window.fetch(input, init), app: definition.brand.id === 'FOOD' ? 'FOOD' : 'SHIP' })
       : undefined;
   const register = auth === undefined || definition.register === undefined ? undefined : createRegisterController({ auth, flows, consent: definition.register.consent });
+  const shop = auth === undefined || definition.shopOnboarding !== true ? undefined : createShopController({ auth, geo: browserGeolocation(window.navigator) });
   // Signing out on purpose is not "the session ended": the person asked, so no "sign in again" notice follows it.
   let signingOut = false;
   const signOut = async (): Promise<LogoutResult> => {
@@ -197,6 +207,7 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
     },
     ...(register === undefined ? {} : { register }),
     ...(auth === undefined ? {} : { auth, signOut }),
+    ...(shop === undefined ? {} : { shop }),
     // C08: every in-app navigation first asks about a form that is being filled.
     go: (id) => leave.request(() => routerRef.current?.go(id)),
     back: () =>
@@ -211,7 +222,7 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
     toast: (text) => toast(text),
     dialogHost: undefined,
     connection,
-    isWired: (feature) => (register !== undefined && REGISTER_FEATURES.has(feature)) || (auth !== undefined && ACCOUNT_FEATURES.has(feature)) || isWired(feature),
+    isWired: (feature) => (register !== undefined && REGISTER_FEATURES.has(feature)) || (auth !== undefined && ACCOUNT_FEATURES.has(feature)) || (shop !== undefined && SHOP_FEATURES.has(feature)) || isWired(feature),
     featureReason: (feature) => featureStatus(feature).reason,
     testSmsNotice: definition.testSmsNotice,
   };
