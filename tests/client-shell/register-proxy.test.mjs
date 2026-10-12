@@ -63,6 +63,11 @@ async function startBackend() {
           return response.end('{}');
         case 'huge':
           return json(200, JSON.stringify({ data: { pad: 'x'.repeat(40_000) } }));
+        case 'ok200':
+          return json(200, { data: { echoed: true } }, { 'set-cookie': 'sid=SECRET_COOKIE; HttpOnly', 'x-powered-by': 'backend-internal' });
+        case 'nocontent':
+          response.writeHead(204, { 'set-cookie': 'sid=SECRET_COOKIE' });
+          return response.end();
         case 'config':
           return json(200, { data: { registration_verification: 'DISABLED_TEST' } }, { 'set-cookie': 'sid=SECRET_COOKIE', 'cache-control': 'public, max-age=600' });
         case 'config-extra':
@@ -128,7 +133,18 @@ const ROUTES = [
   { name: 'register', path: '/v1/client-auth/register', body: REGISTER_BODY, keyed: true },
 ];
 
-describe('11Food front: exactly the three register routes (+ the read-only mode route)', () => {
+const TOKEN = 'ACCESS_TOKEN_' + 'a'.repeat(30);
+const LOGIN_BODY = JSON.stringify({ phone: '0987654321', password: 'Mật khẩu  có dấu cách ', device: { device_id: 'web-1', platform: 'WEB', app: 'FOOD' } });
+const PROFILE_BODY = JSON.stringify({ full_name: 'Nguyễn Văn An', expected_version: 1 });
+const ACCOUNT_ROUTES = [
+  { name: 'login', method: 'POST', path: '/v1/client-auth/login', body: LOGIN_BODY, keyed: true, bearer: false },
+  { name: 'me', method: 'GET', path: '/v1/client-auth/me', keyed: false, bearer: true },
+  { name: 'logout', method: 'POST', path: '/v1/client-auth/logout', body: '{}', keyed: false, bearer: true, noContent: true },
+  { name: 'profile read', method: 'GET', path: '/v1/customer/me/profile', keyed: false, bearer: true },
+  { name: 'profile save', method: 'PUT', path: '/v1/customer/me/profile', body: PROFILE_BODY, keyed: true, bearer: true },
+];
+
+describe('11Food front: exactly the register routes (+ the read-only mode route) and the account routes', () => {
   let backend;
   let front;
   before(async () => {
@@ -140,8 +156,8 @@ describe('11Food front: exactly the three register routes (+ the read-only mode 
     await backend.stop();
   });
 
-  it('the route table is the three routes and nothing else', () => {
-    assert.deepEqual(FOOD_AUTH_ROUTES.map((route) => route.id), ['otp-request', 'otp-verify', 'register', 'config']);
+  it('the route table is the register routes, the config and the account routes - nothing else', () => {
+    assert.deepEqual(FOOD_AUTH_ROUTES.map((route) => route.id), ['otp-request', 'otp-verify', 'register', 'config', 'login', 'me', 'logout', 'profile-read', 'profile-save']);
   });
 
   for (const route of ROUTES) {
@@ -230,10 +246,10 @@ describe('11Food front: exactly the three register routes (+ the read-only mode 
       '/v1/auth/phone-verifications/../login',
       '/v1/auth/login',
       '/v1/auth/password-resets',
-      '/v1/client-auth/login',
-      '/v1/client-auth/me',
-      '/v1/client-auth/logout',
       '/v1/client-auth/context',
+      '/v1/customer/me',
+      '/v1/customer/me/profile/x',
+      '/v1/customer/me/driver-profile',
       '/v1/client-auth',
       '/v1',
       '/v1/admin-auth/state',
@@ -242,6 +258,63 @@ describe('11Food front: exactly the three register routes (+ the read-only mode 
       const answer = await call(front.port, path, { body: OTP_BODY, headers: { 'idempotency-key': KEY } });
       assert.equal(answer.status, 404, path);
     }
+    assert.equal(backend.seen.length, 0, 'none of these reached the backend');
+  });
+
+  for (const route of ACCOUNT_ROUTES) {
+    it(`${route.name}: ${route.method} forwarded with the method, the key and the bearer only where they belong, nothing else of the browser`, async () => {
+      backend.seen.length = 0;
+      backend.behaviour.mode = route.noContent ? 'nocontent' : route.method === 'POST' ? 'ok' : 'ok200';
+      const answer = await call(front.port, route.path, {
+        method: route.method,
+        ...(route.body === undefined ? { contentType: null } : { body: route.body }),
+        ...(route.method === 'GET' ? { origin: null } : {}),
+        headers: {
+          ...(route.keyed ? { 'idempotency-key': KEY } : { 'idempotency-key': 'must-not-pass' }),
+          authorization: `Bearer ${TOKEN}`,
+          cookie: 'sid=BROWSER_COOKIE',
+          referer: 'https://localhost/x',
+          'x-forwarded-for': '203.0.113.9',
+        },
+      });
+      assert.equal(answer.status, route.noContent ? 204 : route.method === 'POST' ? 201 : 200);
+      assert.equal(backend.seen.length, 1);
+      const [seen] = backend.seen;
+      assert.equal(seen.method, route.method);
+      assert.equal(seen.url, route.path);
+      assert.equal(seen.body.toString('utf8'), route.body ?? '', 'the body is forwarded exactly');
+      assert.equal(seen.headers['idempotency-key'], route.keyed ? KEY : undefined);
+      assert.equal(seen.headers.authorization, route.bearer ? `Bearer ${TOKEN}` : undefined);
+      for (const name of ['cookie', 'origin', 'referer', 'x-forwarded-for']) {
+        assert.equal(seen.headers[name], undefined, `${name} is not forwarded`);
+      }
+      assert.equal(answer.headers['cache-control'], 'no-store');
+      assert.equal(answer.headers['set-cookie'], undefined);
+      assert.doesNotMatch(answer.text, /SECRET_COOKIE/);
+      backend.behaviour.mode = 'ok';
+    });
+  }
+
+  it('account routes: a missing or malformed bearer, another site, a wrong method or a keyless save are refused before the backend', async () => {
+    backend.seen.length = 0;
+    const withoutBearer = await call(front.port, '/v1/client-auth/me', { method: 'GET', contentType: null, origin: null });
+    assert.equal(withoutBearer.status, 401);
+    const badBearer = await call(front.port, '/v1/customer/me/profile', { method: 'GET', contentType: null, origin: null, headers: { authorization: 'Bearer short' } });
+    assert.equal(badBearer.status, 401);
+    const otherSite = await call(front.port, '/v1/customer/me/profile', { method: 'PUT', body: PROFILE_BODY, origin: 'https://evil.example', headers: { authorization: `Bearer ${TOKEN}`, 'idempotency-key': KEY } });
+    assert.equal(otherSite.status, 403);
+    const noKey = await call(front.port, '/v1/customer/me/profile', { method: 'PUT', body: PROFILE_BODY, headers: { authorization: `Bearer ${TOKEN}` } });
+    assert.equal(noKey.status, 400);
+    const noKeyLogin = await call(front.port, '/v1/client-auth/login', { body: LOGIN_BODY });
+    assert.equal(noKeyLogin.status, 400);
+    const getWithBody = await call(front.port, '/v1/client-auth/me', { method: 'GET', body: '{}', origin: null, headers: { authorization: `Bearer ${TOKEN}` } });
+    assert.equal(getWithBody.status, 400);
+    for (const method of ['POST', 'DELETE', 'PATCH']) {
+      const answer = await call(front.port, '/v1/customer/me/profile', { method, body: '{}', headers: { authorization: `Bearer ${TOKEN}` } });
+      assert.equal(answer.status, 405, method);
+      assert.equal(answer.headers.allow, 'GET, PUT');
+    }
+    assert.equal((await call(front.port, '/v1/customer/me/profile?x=1', { method: 'GET', contentType: null, origin: null, headers: { authorization: `Bearer ${TOKEN}` } })).status, 404);
     assert.equal(backend.seen.length, 0, 'none of these reached the backend');
   });
 
@@ -307,14 +380,20 @@ describe('11Food front: exactly the three register routes (+ the read-only mode 
   });
 });
 
-describe('11Ship front: none of the register routes', () => {
-  it('answers 404 to all three and never reaches the backend', async () => {
+describe('11Ship front: the same account routes as 11Food and nothing else', () => {
+  it('forwards register and login, and answers 404 to any other /v1 route without reaching the backend', async () => {
     const backend = await startBackend();
     const front = await startFront('ship-web', backend.url);
     try {
-      for (const route of ROUTES) {
+      for (const route of [...ROUTES, ACCOUNT_ROUTES[0]]) {
+        backend.seen.length = 0;
         const answer = await call(front.port, route.path, { body: route.body, headers: { 'idempotency-key': KEY } });
-        assert.equal(answer.status, 404, route.path);
+        assert.equal(answer.status, 201, route.path);
+        assert.equal(backend.seen.length, 1, route.path);
+      }
+      backend.seen.length = 0;
+      for (const path of ['/v1/client-auth/context', '/v1/orders', '/v1/drivers/me', '/v1/admin-auth/state']) {
+        assert.equal((await call(front.port, path, { body: OTP_BODY, headers: { 'idempotency-key': KEY } })).status, 404, path);
       }
       assert.equal(backend.seen.length, 0);
     } finally {

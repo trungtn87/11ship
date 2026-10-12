@@ -24,7 +24,7 @@ export interface TransportOptions {
 }
 
 export interface TransportRequest {
-  readonly method: 'GET' | 'POST';
+  readonly method: 'GET' | 'POST' | 'PUT';
   readonly path: string;
   /** The exact JSON text to send. The caller serializes once, so a retry of the same intent sends the same bytes. */
   readonly body?: string;

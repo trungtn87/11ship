@@ -639,3 +639,135 @@ describe('transport', () => {
     assert.deepEqual([calls[0].options.redirect, calls[0].options.credentials, calls[0].options.referrerPolicy, calls[0].options.cache], ['error', 'omit', 'no-referrer', 'no-store']);
   });
 });
+
+// ---- account package: own profile, wrong password, session end ----------------------------------------------------------
+
+const profileBody = (name = 'Nguyễn Văn An', version = 1, user = USER) => ({ data: { user_id: user, full_name: name, version } });
+const isProfile = (call) => call.url.endsWith('/v1/customer/me/profile');
+
+describe('own profile (GET and PUT /v1/customer/me/profile)', () => {
+  it('reads with the bearer and no body/key, and the shown name follows the server', async () => {
+    const { client, calls } = await make((call) => (isProfile(call) ? reply(200, profileBody('Trần Thị Bình', 3)) : reply(200, signInBody())));
+    await client.login(LOGIN);
+    const read = await client.readProfile();
+    assert.deepEqual(read, { kind: 'ok', value: { fullName: 'Trần Thị Bình', version: 3 } });
+    const call = calls.at(-1);
+    assert.equal(call.method, 'GET');
+    assert.equal(call.body, undefined);
+    assert.equal(call.headers.authorization, `Bearer ${TOKEN_A}`);
+    assert.equal(call.headers['idempotency-key'], undefined);
+    assert.equal(client.session.identity().profile.fullName, 'Trần Thị Bình');
+    assert.equal(client.session.identity().profile.version, 3);
+  });
+
+  it('{data:null} is "no profile", another user or a wrong shape is BAD_RESPONSE and changes nothing', async () => {
+    for (const [answer, expected] of [
+      [{ data: null }, { kind: 'ok', value: null }],
+      [profileBody('X', 1, '99999999-9999-4999-8999-999999999999'), { kind: 'failure', code: 'BAD_RESPONSE', unresolved: false }],
+      [{ data: { user_id: USER, full_name: 'X', version: 0 } }, { kind: 'failure', code: 'BAD_RESPONSE', unresolved: false }],
+      [{ data: { user_id: USER, full_name: 'X', version: 1, extra: 1 } }, { kind: 'failure', code: 'BAD_RESPONSE', unresolved: false }],
+    ]) {
+      const { client } = await make((call) => (isProfile(call) ? reply(200, answer) : reply(200, signInBody())));
+      await client.login(LOGIN);
+      assert.deepEqual(await client.readProfile(), expected);
+      assert.equal(client.session.identity().profile.fullName, 'Nguyễn Văn An');
+    }
+  });
+
+  it('saves exactly {full_name, expected_version} with a key; the name shown afterwards is the server result', async () => {
+    const { client, calls } = await make((call) => (isProfile(call) ? reply(200, profileBody('Lê Văn Cường', 2)) : reply(200, signInBody())));
+    await client.login(LOGIN);
+    const saved = await client.saveProfile({ fullName: '  Lê   Văn Cường ', expectedVersion: 1 });
+    assert.deepEqual(saved, { kind: 'ok', value: { fullName: 'Lê Văn Cường', version: 2 } });
+    const call = calls.at(-1);
+    assert.equal(call.method, 'PUT');
+    assert.equal(call.body, JSON.stringify({ full_name: 'Lê Văn Cường', expected_version: 1 }));
+    assert.match(call.headers['idempotency-key'], /^00000000-0000-4000-8000-/);
+    assert.equal(call.headers.authorization, `Bearer ${TOKEN_A}`);
+    assert.equal(client.session.identity().profile.fullName, 'Lê Văn Cường');
+    assert.equal(client.session.identity().profile.version, 2);
+  });
+
+  it('refuses an invalid name or version before any request', async () => {
+    const { client, calls } = await make(() => reply(200, signInBody()));
+    await client.login(LOGIN);
+    for (const input of [{ fullName: '', expectedVersion: 1 }, { fullName: 'A', expectedVersion: 0 }, { fullName: 'A', expectedVersion: 1.5 }, { fullName: 'x'.repeat(121), expectedVersion: 1 }]) {
+      assert.equal((await client.saveProfile(input)).code, 'BAD_REQUEST');
+    }
+    assert.equal(calls.length, 1);
+  });
+
+  it('a lost answer keeps key AND bytes: the same input re-sends the same request; a conflict is definite and ends the intent', async () => {
+    let n = 0;
+    const { client, calls } = await make((call) => {
+      if (!isProfile(call)) {
+        return reply(200, signInBody());
+      }
+      n += 1;
+      return n === 1 ? new TypeError('fetch failed') : n === 2 ? reply(200, profileBody('Mới', 2)) : reply(409, errorBody('VERSION_CONFLICT'));
+    });
+    await client.login(LOGIN);
+    const lost = await client.saveProfile({ fullName: 'Mới', expectedVersion: 1 });
+    assert.equal(lost.kind, 'failure');
+    assert.equal(lost.unresolved, true);
+    assert.equal((await client.saveProfile({ fullName: 'Mới', expectedVersion: 1 })).kind, 'ok');
+    const [first, second] = calls.filter(isProfile);
+    assert.equal(first.headers['idempotency-key'], second.headers['idempotency-key']);
+    assert.equal(first.body, second.body);
+    const conflict = await client.saveProfile({ fullName: 'Khác', expectedVersion: 2 });
+    assert.deepEqual(conflict, { kind: 'failure', code: 'VERSION_CONFLICT', unresolved: false });
+    assert.equal(client.session.identity().profile.fullName, 'Mới', 'a conflict overwrites nothing');
+  });
+
+  it('a session the server calls invalid ends the local session; the answer is SESSION_EXPIRED', async () => {
+    for (const code of ['SESSION_INVALID', 'SESSION_REVOKED', 'SESSION_EXPIRED']) {
+      const { client } = await make((call) => (isProfile(call) ? reply(401, errorBody(code)) : reply(200, signInBody())));
+      await client.login(LOGIN);
+      const states = [];
+      client.session.subscribe((state) => states.push(state.kind));
+      const answer = await client.readProfile();
+      assert.equal(answer.code, 'SESSION_EXPIRED');
+      assert.equal(client.session.state().kind, 'anonymous');
+      assert.equal(states.at(-1), 'anonymous');
+      assert.equal(client.session.identity(), undefined);
+    }
+  });
+
+  it('a profile answer that arrives after a sign-out is stale and restores nothing', async () => {
+    const gate = deferred();
+    const { client } = await make(async (call) => (isProfile(call) ? (await gate.promise, reply(200, profileBody('Muộn', 9))) : reply(200, signInBody())));
+    await client.login(LOGIN);
+    const pending = client.readProfile();
+    await tick();
+    await client.logout();
+    gate.resolve();
+    assert.equal((await pending).kind, 'stale');
+    assert.equal(client.session.state().kind, 'anonymous');
+  });
+});
+
+describe('login failures and logout', () => {
+  it('a wrong password is INVALID_CREDENTIALS (a login failure), never a session expiry, and no session is created', async () => {
+    const { client } = await make(() => reply(401, errorBody('INVALID_CREDENTIALS')));
+    const answer = await client.login(LOGIN);
+    assert.deepEqual(answer, { kind: 'failure', code: 'INVALID_CREDENTIALS', unresolved: false });
+    assert.equal(client.session.state().kind, 'anonymous');
+  });
+
+  it('logout: 204 is the only proof of revoke; offline clears locally and says it is not confirmed; the call carries {} and the bearer', async () => {
+    const ok = await make((call) => (call.url.endsWith('/logout') ? reply(204, null) : reply(200, signInBody())));
+    await ok.client.login(LOGIN);
+    const done = await ok.client.logout();
+    assert.deepEqual(done, { kind: 'ok', value: { hadSession: true, serverRevoked: true } });
+    const call = ok.calls.at(-1);
+    assert.deepEqual([call.method, call.body, call.headers.authorization], ['POST', '{}', `Bearer ${TOKEN_A}`]);
+    assert.equal(ok.client.session.state().kind, 'anonymous');
+
+    const offline = await make((call) => (call.url.endsWith('/logout') ? new TypeError('offline') : reply(200, signInBody())));
+    await offline.client.login(LOGIN);
+    const result = await offline.client.logout();
+    assert.equal(result.value.serverRevoked, false);
+    assert.equal(result.value.unconfirmedReason, 'OFFLINE');
+    assert.equal(offline.client.session.state().kind, 'anonymous', 'the local session is gone even though the server was not reached');
+  });
+});

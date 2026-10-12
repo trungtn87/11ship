@@ -14,6 +14,7 @@ import {
   mapHttpFailure,
   MappedFailure,
   parseIdentityResponse,
+  parseProfileResponse,
   parseOtpIssued,
   parseOtpVerified,
   parseSignInResponse,
@@ -21,6 +22,7 @@ import {
   PUBLIC_CONTEXTS,
   PublicContext,
   REGISTER_PURPOSE,
+  ProfileWire,
   RegistrationVerificationMode,
 } from './contract.js';
 import { FlowGeneration, SessionListener, SessionState, SessionStore, SessionTicket } from './session.js';
@@ -82,6 +84,12 @@ export interface LogoutResult {
   readonly unconfirmedReason?: FailureCode;
 }
 
+/** The person's own profile as the server holds it. `version` is what the next save must name as expected_version. */
+export interface ProfileView {
+  readonly fullName: string;
+  readonly version: number;
+}
+
 export interface RegisterInput {
   readonly phone: string;
   /** Sent exactly as typed: not trimmed, not normalized. */
@@ -132,6 +140,14 @@ export interface AuthClient {
   me(): Promise<AuthResult<SignedIn>>;
   selectContext(context: PublicContext): Promise<AuthResult<SignedIn>>;
   logout(): Promise<AuthResult<LogoutResult>>;
+  /** GET /v1/customer/me/profile. `null` = the server has no profile row for this person. Updates the name the session shows. */
+  readProfile(): Promise<AuthResult<ProfileView | null>>;
+  /**
+   * PUT /v1/customer/me/profile {full_name, expected_version}. One intent = one Idempotency-Key + body: an unknown outcome keeps both
+   * and the next call with the SAME input re-sends them (never automatically). VERSION_CONFLICT is a definite answer: nothing is
+   * overwritten, the screen reads the current profile and lets the person decide. A saved name is taken from the server's answer.
+   */
+  saveProfile(input: { readonly fullName: string; readonly expectedVersion: number }): Promise<AuthResult<ProfileView>>;
   /** Drops the session, the pending intents and every in-flight answer (the app closing a screen tree). */
   dispose(): void;
 }
@@ -149,7 +165,7 @@ export interface AuthClientOptions {
   readonly deviceId?: string;
 }
 
-type Intent = 'register' | 'login' | 'context';
+type Intent = 'register' | 'login' | 'context' | 'profile';
 const NO_RETRY: undefined = undefined;
 
 const fail = (code: FailureCode, unresolved = false, retryAfterSeconds?: number): AuthResult<never> =>
@@ -205,6 +221,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     if (generation !== seenGeneration) {
       seenGeneration = generation;
       intents.delete('context');
+      intents.delete('profile');
     }
   });
 
@@ -225,7 +242,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
   }
 
   function classify<B>(operation: AuthOperation, result: TransportResult, expectedStatus: number, parse: (body: unknown) => B | undefined): Classified<B> {
-    const keyed = operation === 'register' || operation === 'login' || operation === 'context';
+    const keyed = operation === 'register' || operation === 'login' || operation === 'context' || operation === 'profileSave';
     switch (result.kind) {
       case 'aborted':
         return { kind: 'aborted' };
@@ -477,6 +494,71 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     });
   }
 
+  // ---- own profile -----------------------------------------------------------------------------------------------
+  /** One authenticated profile call: the answer is checked against the signed-in person and applied to the session only if it is still current. */
+  async function profileCall(
+    operation: 'profileRead' | 'profileSave',
+    request: Omit<TransportRequest, 'bearer' | 'signal'>,
+    pending: { readonly intent: Intent; readonly entry: IntentEntry } | undefined,
+  ): Promise<AuthResult<ProfileView | null>> {
+    const ticket = store.ticket();
+    const bearer = store.bearer();
+    const identity = store.identity();
+    if (bearer === undefined || identity === undefined) {
+      return fail('SESSION_EXPIRED');
+    }
+    const controller = new AbortController();
+    const untrack = store.track(controller);
+    let result: TransportResult;
+    try {
+      result = await transport.send({ ...request, bearer, signal: controller.signal });
+    } finally {
+      untrack();
+    }
+    const outcome = classify<ProfileWire | null>(operation, result, 200, parseProfileResponse);
+    if (outcome.kind === 'aborted' || !store.isCurrent(ticket)) {
+      return { kind: 'stale' };
+    }
+    if (outcome.kind === 'failure') {
+      if (outcome.mapped?.sessionInvalid === true) {
+        store.invalidate(ticket);
+      }
+      if (pending !== undefined) {
+        settle(pending.intent, pending.entry, outcome.result);
+      }
+      return outcome.result as AuthResult<ProfileView | null>;
+    }
+    if (pending !== undefined) {
+      dropIntent(pending.intent, pending.entry);
+    }
+    const profile = outcome.body;
+    // A profile of another user, or a save that answers "no profile", is not this contract.
+    if ((profile !== null && profile.userId !== identity.userId) || (profile === null && operation === 'profileSave')) {
+      return fail('BAD_RESPONSE');
+    }
+    if (profile === null) {
+      return { kind: 'ok', value: null };
+    }
+    return store.updateProfile(ticket, profile.fullName, profile.version) ? { kind: 'ok', value: { fullName: profile.fullName, version: profile.version } } : { kind: 'stale' };
+  }
+
+  function readProfile(): Promise<AuthResult<ProfileView | null>> {
+    return single('profileRead', '', () => profileCall('profileRead', { method: 'GET', path: AUTH_PATHS.profile }, NO_RETRY));
+  }
+
+  function saveProfile(input: { readonly fullName: string; readonly expectedVersion: number }): Promise<AuthResult<ProfileView>> {
+    const fullName = typeof input.fullName === 'string' ? normalizePersonName(input.fullName) : undefined;
+    if (fullName === undefined || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) {
+      return Promise.resolve(fail('BAD_REQUEST'));
+    }
+    const body = JSON.stringify({ full_name: fullName, expected_version: input.expectedVersion });
+    return single('profileSave', body, async () => {
+      const entry = keyFor('profile', body);
+      const answer = await profileCall('profileSave', { method: 'PUT', path: AUTH_PATHS.profile, body, idempotencyKey: entry.key }, { intent: 'profile', entry });
+      return answer as AuthResult<ProfileView>;
+    });
+  }
+
   // ---- logout ----------------------------------------------------------------------------------------------------
   function logout(): Promise<AuthResult<LogoutResult>> {
     const token = store.bearer();
@@ -537,7 +619,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     running.delete('register');
   }
 
-  return { session, registrationConfig, requestRegisterOtp, verifyRegisterOtp, resetRegisterFlow, register: registerUser, registerWithoutProof, login, me, selectContext, logout, dispose };
+  return { session, registrationConfig, requestRegisterOtp, verifyRegisterOtp, resetRegisterFlow, register: registerUser, registerWithoutProof, login, me, selectContext, logout, readProfile, saveProfile, dispose };
 }
 
 export type { SessionTicket };

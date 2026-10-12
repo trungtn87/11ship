@@ -148,6 +148,37 @@ function loginScreen(brand: AppBrand, routes: AuthRoutes): ScreenDef {
           go(env, routes.afterLogin);
           return;
         }
+        if (env.auth !== undefined) {
+          // Connected login (local https runtime): the adapter keeps ONE Idempotency-Key + body for an attempt whose outcome is unknown,
+          // so "Thử lại" (or pressing the button again with the same input) re-sends the SAME request; nothing is re-sent by itself.
+          if (signingIn) {
+            return;
+          }
+          signingIn = true;
+          feedback.replaceChildren();
+          setBusy(submit.button, true, 'Đăng nhập', 'Đang kiểm tra…');
+          const typed = { phone: phone.input.value.trim(), password: password.input.value };
+          const answer = await env.auth.login(typed);
+          signingIn = false;
+          setBusy(submit.button, false, 'Đăng nhập', 'Đang kiểm tra…');
+          if (answer.kind === 'stale') {
+            return;
+          }
+          if (answer.kind === 'ok') {
+            // The password never outlives the submit.
+            password.input.value = '';
+            guard.release();
+            go(env, routes.afterLogin);
+            return;
+          }
+          // A wrong password is a login failure shown here, never "the session expired". The typed password stays for a retry only
+          // when the outcome is unknown (the same request is re-sent); a definite refusal asks for it again.
+          if (!answer.unresolved) {
+            password.input.value = '';
+          }
+          feedback.replaceChildren(failureBanner(answer.code, { retryAfterSeconds: answer.retryAfterSeconds, ...(answer.unresolved ? { onRetry: () => void run() } : {}) }));
+          return;
+        }
         setBusy(submit.button, true, 'Đăng nhập', 'Đang kiểm tra…');
         const outcome = await env.ports.auth.login({ phone: phone.input.value.trim(), password: password.input.value });
         // The password never outlives the submit.
@@ -160,6 +191,7 @@ function loginScreen(brand: AppBrand, routes: AuthRoutes): ScreenDef {
         }
         feedback.replaceChildren(failureBanner(outcome.code, { retryAfterSeconds: outcome.retryAfterSeconds }));
       };
+      let signingIn = false;
       const form = h('form', { class: 'c-stack', novalidate: true }, phone.root, password.root, forgot, feedback, submit.node);
       // C08: typed phone/password are asked about before leaving and wiped on exit.
       const guard = guardForm(env, form);
@@ -225,7 +257,8 @@ function registerScreen(brand: AppBrand, routes: AuthRoutes): ScreenDef {
       const confirm = passwordField({ id: 'password-confirm', label: 'Nhập lại mật khẩu', autocomplete: 'new-password', placeholder: 'Nhập lại mật khẩu' });
       // 11Food: the two texts the Owner approved for the test build are shown IN FULL above the checkbox, which starts unchecked
       // (consent.ts). 11Ship has no approved text yet, so it keeps its label and the "chờ duyệt" note (no link to an empty page).
-      const offer = food ? env.register?.consent ?? FOOD_TEST_CONSENT : undefined;
+      // The approved test texts cover 11Ship as well ("bản thử nghiệm 11Ship/11Food"): a connected register shows them in either app.
+      const offer = food ? env.register?.consent ?? FOOD_TEST_CONSENT : env.register?.consent;
       const consent = checkbox({ id: 'consent', label: offer?.checkboxLabel ?? 'Tôi đồng ý với Điều khoản dịch vụ và Chính sách bảo mật của 11Ship' });
       const consentBlock =
         offer === undefined

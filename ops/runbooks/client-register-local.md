@@ -34,7 +34,7 @@ Phạm vi: gọi API `POST /v1/client-auth/register` trên máy local/TEST. Đâ
 | Replay khi session đã hết hạn/thu hồi hoặc tài khoản bị khóa | 409 `AUTH_RESULT_NOT_REPLAYABLE` |
 | Số đã đăng ký | 409 `PHONE_ALREADY_REGISTERED` |
 
-Trạng thái của mục 1–3 (API): chưa có UI, login/me/context/logout mới, reset mật khẩu, onboarding quán/xế, native binding hay SMS nhà mạng trong gói này. Kết quả thử tay của Owner phải ghi theo thực tế, không suy ra từ CI.
+Trạng thái của mục 1–3 (API): chưa có UI (xem mục 6 cho đăng nhập/hồ sơ/đăng xuất), context mới, reset mật khẩu, onboarding quán/xế, native binding hay SMS nhà mạng trong gói này. Kết quả thử tay của Owner phải ghi theo thực tế, không suy ra từ CI.
 
 ## 4. Thử bằng giao diện 11Food (M01.07, local) — chế độ REQUIRED (có OTP)
 
@@ -59,3 +59,15 @@ Dùng khi chưa có SMS nhà mạng. Tài khoản tạo ra có `account_origin =
 5. Tắt chế độ (bỏ biến, chạy lại backend) quay về REQUIRED: tài khoản test không đăng nhập được và token cũ bị từ chối.
 
 Gọi API trực tiếp: `POST /v1/client-auth/register` nhận đúng `{phone,password,device,full_name,consent}`; có `verification_token`, `role`, `permission` hay `accepted_at` là 400.
+
+## 6. Đăng nhập, xem/sửa tên, đăng xuất (Food 8444, Ship 8445; chỉ local)
+
+Dùng tài khoản vừa đăng ký ở mục 4 hoặc 5 (cả Ship dùng lại đăng ký này). Phiên chỉ nằm trong bộ nhớ trang: F5 là đăng nhập lại; mật khẩu và token không vào URL, storage hay log.
+
+1. Chạy `tools\local\11Ship-Update.cmd`, rồi `11Ship-Food.cmd` (https://localhost:8444) hoặc `11Ship-Ship.cmd` (https://localhost:8445).
+2. **Tài khoản → Đăng nhập**: SĐT + mật khẩu. Sai mật khẩu hiện lỗi đăng nhập (không phải "phiên hết hạn"). Đăng nhập Ship không cấp quyền nhận đơn; hồ sơ xế vẫn khóa kèm lý do.
+3. **Tài khoản → Thông tin cá nhân** (Food F17, Ship S05 `/account/profile`): đổi họ tên rồi **Lưu thay đổi**; tên hiển thị lấy từ kết quả máy chủ. Nếu hồ sơ đã đổi ở nơi khác (`VERSION_CONFLICT`), màn hình tải bản hiện tại để bạn sửa lại, không tự ghi đè. Mất phản hồi: **Thử lại** gửi lại đúng yêu cầu cũ (cùng `Idempotency-Key`).
+4. **Đăng xuất**: có hộp xác nhận. Máy chủ trả 204 thì báo đã đăng xuất; offline thì chỉ báo đã xóa phiên trên máy này, chưa xác nhận với máy chủ.
+5. Phiên bị thu hồi/hết hạn (kể cả thu hồi từ nơi khác): lần gọi tiếp theo xóa dữ liệu nhạy cảm và về màn đăng nhập.
+
+Proxy local chỉ chuyển các route đã liệt kê (OTP/đăng ký, config, login, me, logout, `GET|PUT /v1/customer/me/profile`), chỉ kèm Bearer/Idempotency-Key khi cần, không cookie. Gate Android/production không đổi; chạy web local không chứng minh chính sách trên điện thoại.

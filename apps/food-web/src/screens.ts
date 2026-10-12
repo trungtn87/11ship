@@ -6,6 +6,8 @@ import { h } from '../../client-shared/src/dom.js';
 import { icon } from '../../client-shared/src/icons.js';
 import { ScreenDef, ScreenEnv, VariantDef } from '../../client-shared/src/screen.js';
 import { authScreens } from '../../client-shared/src/screens/auth.js';
+import { liveProfileForm } from '../../client-shared/src/screens/profile-live.js';
+import { signOutLive } from '../../client-shared/src/screens/logout-live.js';
 import { diagnosticsScreen } from '../../client-shared/src/screens/diagnostics.js';
 import { failureBanner } from '../../client-shared/src/screens/feedback.js';
 import { actionButton, appPage, designOnly, guardForm, isGated } from '../../client-shared/src/screens/layout.js';
@@ -163,8 +165,10 @@ function openLogout(env: ScreenEnv): void {
           if (env.mode === 'design') {
             designOnly(env, STATE_COPY.designNoSend);
             env.go('account', 'guest');
+            return;
           }
-          // Live: unreachable until a login exists (no account => no logout row). The call goes through env.ports.auth.logout.
+          // Live: the local session is dropped first; the notice says whether the server confirmed the revoke.
+          void signOutLive(env, 'account');
         },
       },
     ],
@@ -189,6 +193,10 @@ const account: ScreenDef = {
   render: (env, variant) => {
     const me = env.account;
     let page: HTMLElement;
+    // Live: ask the server about this session when the account opens; a session it calls invalid ends in app.ts (login screen).
+    if (env.mode === 'live' && me !== undefined) {
+      void env.auth?.me();
+    }
     if (me === undefined || variant === 'guest') {
       page = appPage({
         title: 'Tài khoản',
@@ -200,7 +208,7 @@ const account: ScreenDef = {
           button({ label: 'Đăng ký', kind: 'secondary', id: 'account-register', onClick: () => env.go('register') }),
           list([
             // F07: where the shop entry lives for M01. Nobody is signed in, so it is not a link and shows no role or shop.
-            listItem({ icon: 'store', title: 'Quản lý cửa hàng', sub: `Cần đăng nhập. ${env.featureReason('auth.login')}`, soon: true, trailing: chip('Cần đăng nhập', 'soon') }),
+            listItem({ icon: 'store', title: 'Quản lý cửa hàng', sub: env.isWired('auth.login') ? 'Cần đăng nhập. Quản lý cửa hàng chưa nối trong bản này.' : `Cần đăng nhập. ${env.featureReason('auth.login')}`, soon: true, trailing: chip('Cần đăng nhập', 'soon') }),
             listItem({ icon: 'help', title: 'Trợ giúp', soon: true }),
             listItem({ icon: 'shield', title: 'Chính sách và điều khoản', soon: true }),
             listItem({ icon: 'activity', title: 'Chẩn đoán kết nối', sub: 'Kiểm tra kết nối với máy chủ', onClick: () => env.go('diagnostics') }),
@@ -221,7 +229,7 @@ const account: ScreenDef = {
             shopEntry(env),
             listItem({ icon: 'mapPin', title: 'Địa chỉ nhận hàng', soon: true }),
             listItem({ icon: 'key', title: 'Đặt lại mật khẩu', onClick: () => env.go('reset') }),
-            // Live: the session came from register and logout is not connected yet (M01.04): the row says so instead of doing nothing.
+            // Live: logout is connected when the auth client exists; otherwise the row says why it does nothing.
             env.mode === 'live' && !env.isWired('auth.logout')
               ? listItem({ icon: 'logout', title: 'Đăng xuất', sub: env.featureReason('auth.logout'), soon: true })
               : listItem({ icon: 'logout', title: 'Đăng xuất', tone: 'danger', onClick: () => openLogout(env) }),
@@ -248,6 +256,9 @@ const profile: ScreenDef = {
   variants: [v('default', 'Mặc định'), v('invalid-name', 'Tên sai'), v('conflict', 'Xung đột cập nhật'), v('offline', 'Mất kết nối'), v('saving', 'Đang gửi')],
   render: (env, variant) => {
     const me = env.account;
+    if (env.mode === 'live' && env.auth !== undefined) {
+      return appPage({ title: 'Thông tin cá nhân', onBack: () => env.go('account'), bodyClass: 'c-stack', body: [liveProfileForm(env).form] });
+    }
     const name = textField({ id: 'full-name', label: 'Họ và tên', icon: 'user', autocomplete: 'name', value: me?.fullName ?? '', maxLength: 120 });
     const phone = textField({ id: 'phone', label: 'Số điện thoại đăng nhập', icon: 'phone', value: me?.phoneMasked ?? '', readOnly: true, hint: 'Không đổi được ở đây.' });
     const feedback = h('div', { class: 'c-stack', 'aria-live': 'polite' });

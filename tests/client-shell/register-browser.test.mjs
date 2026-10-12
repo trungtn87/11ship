@@ -42,7 +42,7 @@ const identity = () => ({
 // ---- the stand-in backend ------------------------------------------------------------------------------------------------
 
 async function startBackend() {
-  const state = { seen: [], mode: 'REQUIRED', configSeen: 0, issued: 0, expires: 180, resend: 60, delayMs: 0, queue: { otp: [], verify: [], register: [] } };
+  const state = { seen: [], mode: 'REQUIRED', configSeen: 0, issued: 0, expires: 180, resend: 60, delayMs: 0, queue: { otp: [], verify: [], register: [], other: [] }, name: NAME, version: 1, revoked: false };
   const reset = () => {
     state.seen.length = 0;
     state.mode = 'REQUIRED';
@@ -51,13 +51,52 @@ async function startBackend() {
     state.expires = 180;
     state.resend = 60;
     state.delayMs = 0;
-    state.queue = { otp: [], verify: [], register: [] };
+    state.queue = { otp: [], verify: [], register: [], other: [] };
+    state.name = NAME;
+    state.version = 1;
+    state.revoked = false;
   };
   const send = (response, status, body, headers = {}) => {
     response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', ...headers });
     response.end(JSON.stringify(body));
   };
   const err = (code) => ({ error: { code, message: 'RAW_SERVER_TEXT_MARKER', request_id: 'r', details: {} } });
+  const who = () => ({ ...identity(), profile: { full_name: state.name, version: state.version } });
+  // The account routes of the real backend that the connected screens use (login, me, profile, logout).
+  const account = (request, response, body) => {
+    const bearer = request.headers.authorization === `Bearer ${ACCESS}` && !state.revoked;
+    if (request.method === 'POST' && request.url === '/v1/client-auth/login') {
+      const sent = JSON.parse(body);
+      if (sent.password !== PASSWORD) {
+        send(response, 401, err('INVALID_CREDENTIALS'));
+        return;
+      }
+      send(response, 200, { data: { ...who(), access_token: ACCESS, session: { expires_at: new Date(Date.now() + 7 * 86_400_000).toISOString() } } });
+    } else if (request.url === '/v1/client-auth/me' || request.url === '/v1/customer/me/profile' || request.url === '/v1/client-auth/logout') {
+      if (!bearer) {
+        send(response, 401, err('SESSION_INVALID'));
+      } else if (request.url === '/v1/client-auth/me') {
+        send(response, 200, { data: who() });
+      } else if (request.url === '/v1/client-auth/logout') {
+        state.revoked = true;
+        response.writeHead(204);
+        response.end();
+      } else if (request.method === 'GET') {
+        send(response, 200, { data: { user_id: USER, full_name: state.name, version: state.version } });
+      } else {
+        const sent = JSON.parse(body);
+        if (sent.expected_version !== state.version) {
+          send(response, 409, err('VERSION_CONFLICT'));
+          return;
+        }
+        state.name = sent.full_name;
+        state.version += 1;
+        send(response, 200, { data: { user_id: USER, full_name: state.name, version: state.version } });
+      }
+    } else {
+      send(response, 404, err('NOT_FOUND'));
+    }
+  };
   const server = http.createServer((request, response) => {
     const chunks = [];
     request.on('data', (chunk) => chunks.push(chunk));
@@ -92,7 +131,7 @@ async function startBackend() {
         } else if (kind === 'register') {
           send(response, 201, { data: { ...identity(), access_token: ACCESS, session: { expires_at: new Date(Date.now() + 7 * 86_400_000).toISOString() } } });
         } else {
-          send(response, 404, err('NOT_FOUND'));
+          account(request, response, body);
         }
       };
       state.delayMs > 0 ? setTimeout(respond, state.delayMs) : respond();
@@ -119,11 +158,13 @@ let backend;
 let front;
 let origin;
 let browser;
+let tls;
 
 before(async () => {
   work = mkdtempSync(join(tmpdir(), 'register-browser-'));
   const made = createLocalCertificate(join(work, 'tls'), 30);
   const pem = readFileSync(made.cert);
+  tls = { key: readFileSync(made.key), cert: pem };
   const dist = buildClientWeb('food-web', { outDir: join(work, 'food'), quiet: true }).dist;
   backend = await startBackend();
   front = createClientWebServer({ app: 'food-web', distDir: dist, backendUrl: backend.url, key: readFileSync(made.key), cert: pem, authTimeoutMs: 4000 });
@@ -269,14 +310,13 @@ describe('the whole flow: F11 -> code -> account -> F01, with what the server sa
       assert.equal(await page.evaluate('localStorage.length + sessionStorage.length'), 0);
       assert.equal(await page.evaluate('document.querySelectorAll("input").length > 0 ? [...document.querySelectorAll("input")].some((i) => i.value !== "") : false'), false);
 
-      // The account screen shows what the server reported; logout is honestly not connected yet (no dead button).
+      // The account screen shows what the server reported; logout is connected.
       await page.click('a[href="/account"]');
       await waitPath(page, '/account');
       const account = await page.evaluate(text('main'));
       assert.match(account, new RegExp(NAME));
       assert.match(account, /098 •••• 321/);
-      assert.match(account, /Chưa nối máy chủ: đăng xuất/);
-      assert.equal(await page.evaluate(`[...document.querySelectorAll('button')].some((b) => b.textContent.includes('Đăng xuất'))`), false);
+      assert.equal(await page.evaluate(`[...document.querySelectorAll('button')].some((b) => b.textContent.includes('Đăng xuất'))`), true, 'logout is connected');
       await page.shot(shots, 'food-390-f04-signed-in');
     });
   });
@@ -590,6 +630,150 @@ describe('DISABLED_TEST: F11 registers without OTP and goes straight to F01', ()
       assert.equal(first.headers['idempotency-key'], second.headers['idempotency-key']);
       assert.equal(first.body, second.body);
       assert.equal(backend.count('otp') + backend.count('verify'), 0);
+    });
+  });
+});
+
+describe('M01 account: login -> read/edit the name -> logout, and an invalid session (Food, stand-in backend)', () => {
+  const submitProfile = async (page, value) => {
+    await page.waitFor(`document.querySelector('#profile-save')?.disabled === false`, 'profile loaded');
+    await page.fill('#full-name', value);
+    await page.click('#profile-save');
+  };
+  const login = async (page) => {
+    await page.goto(`${origin}/login`);
+    await page.fill('#phone', PHONE);
+    await page.fill('#password', PASSWORD);
+    await page.click('#login-submit');
+    await waitPath(page, '/');
+  };
+  const clickButton = (page, label) => page.evaluate(`(() => { const b = [...document.querySelectorAll('button')].filter((x) => x.textContent.trim() === ${JSON.stringify(label)}).pop(); if (b === undefined) { throw new Error('no button ${label}'); } b.click(); return true; })()`);
+  const openProfile = (page) => page.evaluate(`[...document.querySelectorAll('a,button')].find((x) => x.textContent.includes('Thông tin cá nhân'))?.click()`);
+
+  it('a wrong password is a login error, not an expired session', async () => {
+    await withPage(390, async (page) => {
+      await page.goto(`${origin}/login`);
+      await page.fill('#phone', PHONE);
+      await page.fill('#password', 'sai mật khẩu 999');
+      await page.click('#login-submit');
+      await page.waitFor(`document.body.innerText.toLowerCase().includes('không đúng')`, 'login error');
+      assert.equal(await page.evaluate(path), '/login');
+      assert.equal(await page.evaluate(`document.body.innerText.includes('hết hạn')`), false);
+    });
+  });
+
+  it('logs in with the exact body, edits the name from the server value, takes a version conflict without overwriting, and logs out with a confirmed revoke', async () => {
+    await withPage(390, async (page) => {
+      await login(page);
+      const sent = backend.state.seen.find((e) => e.url === '/v1/client-auth/login');
+      assert.deepEqual(Object.keys(JSON.parse(sent.body)).sort(), ['device', 'password', 'phone']);
+      assert.match(sent.headers['idempotency-key'], /^[0-9a-f-]{36}$/);
+      assert.equal(JSON.parse(sent.body).device.app, 'FOOD');
+
+      await page.click('a[href="/account"]');
+      await waitPath(page, '/account');
+      await openProfile(page);
+      await page.waitFor(`document.querySelector('#profile-save') !== null`, 'F17 live form');
+      assert.equal(await page.evaluate(`document.querySelector('#full-name').value`), NAME);
+
+      await submitProfile(page, 'Trần Thị Bình');
+      await page.waitFor(`document.body.innerText.includes('Đã lưu')`, 'saved');
+      const put = backend.state.seen.filter((e) => e.method === 'PUT' && e.url === '/v1/customer/me/profile');
+      assert.equal(put.length, 1);
+      assert.deepEqual(JSON.parse(put[0].body), { full_name: 'Trần Thị Bình', expected_version: 1 });
+      assert.match(put[0].headers['idempotency-key'], /^[0-9a-f-]{36}$/);
+      assert.equal(await page.evaluate(`document.querySelector('#full-name').value`), 'Trần Thị Bình');
+
+      // Someone else saved meanwhile: the old version is refused and nothing is overwritten.
+      backend.state.name = 'Tên từ nơi khác';
+      backend.state.version = 5;
+      await submitProfile(page, 'Lê Văn Cường');
+      await page.waitFor(`document.body.innerText.includes('Thử lại') || document.body.innerText.includes('Tải lại') || document.body.innerText.includes('đã thay đổi')`, 'conflict shown');
+      assert.equal(backend.state.name, 'Tên từ nơi khác', 'a conflict never overwrites');
+      await page.evaluate(`[...document.querySelectorAll('#app button')].filter((x) => x.textContent.trim() === 'Thử lại').pop()?.click()`);
+      await page.waitFor(`document.querySelector('#full-name')?.value === 'Tên từ nơi khác'`, 'current profile loaded');
+      assert.equal(backend.state.name, 'Tên từ nơi khác');
+    });
+  });
+
+  it('logout asks first, sends exact {} with the bearer, and the server revokes', async () => {
+    await withPage(390, async (page) => {
+      await login(page);
+      await page.click('a[href="/account"]');
+      await waitPath(page, '/account');
+      await clickButton(page, 'Đăng xuất');
+      await page.waitFor(`[...document.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Đăng xuất').length >= 2`, 'dialog');
+      await clickButton(page, 'Đăng xuất');
+      await page.waitFor(`!document.body.innerText.includes(${JSON.stringify(NAME)}) && [...document.querySelectorAll('button')].every((b) => b.textContent.trim() !== 'Đăng xuất')`, 'signed out');
+      const out = backend.state.seen.filter((e) => e.url === '/v1/client-auth/logout');
+      assert.equal(out.length, 1);
+      assert.equal(out[0].body, '{}');
+      assert.equal(backend.state.revoked, true);
+      assert.equal(await page.evaluate(`document.body.innerText.includes(${JSON.stringify(NAME)})`), false);
+    });
+  });
+
+  it('an invalid session on an authenticated call wipes the screen and goes to login', async () => {
+    await withPage(390, async (page) => {
+      await login(page);
+      await page.click('a[href="/account"]');
+      await waitPath(page, '/account');
+      backend.state.revoked = true;
+      await openProfile(page);
+      await waitPath(page, '/login');
+      assert.equal(await page.evaluate(`document.body.innerText.includes(${JSON.stringify(NAME)})`), false);
+      assert.equal(await page.evaluate('localStorage.length + sessionStorage.length'), 0);
+    });
+  });
+});
+
+describe('M01 account on 11Ship: the same login, S05 name edit and logout with app SHIP (one smoke, not the Food matrix)', () => {
+  let shipFront;
+  let shipOrigin;
+  let shipDir;
+  before(async () => {
+    shipDir = mkdtempSync(join(tmpdir(), 'register-browser-ship-'));
+    const dist = buildClientWeb('ship-web', { outDir: join(shipDir, 'ship'), quiet: true }).dist;
+    // The same certificate as the Food front: Chrome trusts one public-key hash per launch.
+    shipFront = createClientWebServer({ app: 'ship-web', distDir: dist, backendUrl: backend.url, key: tls.key, cert: tls.cert, authTimeoutMs: 4000 });
+    await new Promise((resolve) => shipFront.listen(0, '127.0.0.1', resolve));
+    shipOrigin = `https://localhost:${String(shipFront.address().port)}`;
+  });
+  after(async () => {
+    shipFront?.closeAllConnections?.();
+    await new Promise((resolve) => (shipFront === undefined ? resolve() : shipFront.close(() => resolve())));
+    rmSync(shipDir, { recursive: true, force: true });
+  });
+
+  it('logs in as SHIP, edits the name on S05, and logs out with a confirmed revoke; sign-in grants no driver status', async () => {
+    await withPage(390, async (page) => {
+      await page.goto(`${shipOrigin}/login`);
+      await page.fill('#phone', PHONE);
+      await page.fill('#password', PASSWORD);
+      await page.click('#login-submit');
+      await page.waitFor(`location.pathname !== '/login' && document.querySelector('#app')?.children.length > 0`, 'left the login screen');
+      const sent = JSON.parse(backend.state.seen.find((e) => e.url === '/v1/client-auth/login').body);
+      assert.equal(sent.device.app, 'SHIP');
+      assert.deepEqual(Object.keys(sent).sort(), ['device', 'password', 'phone']);
+
+      await page.click('a[href="/account"]');
+      await waitPath(page, '/account');
+      await page.evaluate(`[...document.querySelectorAll('a,button')].filter((x) => x.textContent.includes('Thông tin cá nhân')).pop()?.click()`);
+      await waitPath(page, '/account/profile');
+      await page.waitFor(`document.querySelector('#profile-save')?.disabled === false`, 'S05 loaded');
+      await page.fill('#full-name', 'Phạm Quốc Dũng');
+      await page.click('#profile-save');
+      await page.waitFor(`document.body.innerText.includes('Đã lưu')`, 'saved');
+      assert.equal(backend.state.name, 'Phạm Quốc Dũng');
+      assert.deepEqual(JSON.parse(backend.state.seen.find((e) => e.method === 'PUT').body), { full_name: 'Phạm Quốc Dũng', expected_version: 1 });
+
+      await page.evaluate(`history.back()`);
+      await waitPath(page, '/account');
+      await page.evaluate(`[...document.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Đăng xuất').pop()?.click()`);
+      await page.waitFor(`[...document.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Đăng xuất').length >= 2`, 'dialog');
+      await page.evaluate(`[...document.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Đăng xuất').pop().click()`);
+      await page.waitFor(`!document.body.innerText.includes('Phạm Quốc Dũng') && [...document.querySelectorAll('button')].every((b) => b.textContent.trim() !== 'Đăng xuất')`, 'signed out');
+      assert.equal(backend.state.revoked, true);
     });
   });
 });

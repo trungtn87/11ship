@@ -98,6 +98,16 @@ export class SessionStore {
     return true;
   }
 
+  /** The server reported this person's own profile (read, or after a save): the shown name and version follow it. Stale or signed-out calls change nothing. */
+  updateProfile(ticket: SessionTicket, fullName: string, version: number): boolean {
+    if (!this.isCurrent(ticket) || this.#token === undefined || this.#identity === undefined) {
+      return false;
+    }
+    this.#identity = { ...this.#identity, profile: { fullName, version } };
+    this.#emit();
+    return true;
+  }
+
   /** The server called THIS session invalid. Clears only if the ticket is still current, so an old answer cannot end a newer session. */
   invalidate(ticket: SessionTicket): boolean {
     if (!this.isCurrent(ticket)) {
