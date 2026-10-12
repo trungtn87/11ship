@@ -16,6 +16,8 @@ import { FailureCode } from '../states.js';
 //                  PUT  /v1/onboarding/shop/profile       (Bearer, Idempotency-Key) {name, contact_phone, address_text, zalo?, facebook?, pickup_lat?, pickup_lng?, service_area_id?, expected_version?} -> 201 (created) | 200 (updated) {data:{shop_id, status:"INCOMPLETE", version, role_granted:false}}
 //                  POST /v1/onboarding/shop/complete      (Bearer, Idempotency-Key) {expected_version}                                -> 200 {data:{shop_id, status:"ACTIVE", accepting_orders:false, role_granted:true, version}}
 //                  GET  /v1/onboarding/shop/service-areas (Bearer, no query/body)                                                     -> 200 {data:[{service_area_id, name}]}
+//   driver (11Ship) GET /v1/driver/me                 (Bearer, no query/body)                                                     -> 200 {data:null} | {data:{driver_id, user_id, full_name, plate_number, driver_type, status, accepting_deliveries, version}}
+//                  POST /v1/onboarding/driver            (Bearer, Idempotency-Key) {full_name, plate_number?}                        -> 201 {data:{driver_id, driver_type:"EXTERNAL", status:"PENDING", accepting_deliveries:false, role_granted:true, version:1}}
 // Errors: {error:{code, message, request_id, details}}. Only `code` is read, and only from a closed list per operation;
 // `message`, `details` and `request_id` are never shown, stored or logged.
 //
@@ -38,6 +40,8 @@ export const AUTH_PATHS = {
   shopProfile: '/v1/onboarding/shop/profile',
   shopComplete: '/v1/onboarding/shop/complete',
   shopServiceAreas: '/v1/onboarding/shop/service-areas',
+  driverMe: '/v1/driver/me',
+  driverOnboarding: '/v1/onboarding/driver',
 } as const;
 
 export const REGISTER_PURPOSE = 'REGISTER';
@@ -392,6 +396,69 @@ export function parseOtpVerified(body: unknown): OtpVerifiedWire | undefined {
 const ERROR_CODE = /^[A-Z][A-Z0-9_]{1,63}$/;
 
 /** The `code` of an error envelope, or undefined when the body is not one. Nothing else of the body is read. */
+// ---- driver profile (11Ship) --------------------------------------------------------------------------------------
+
+export type DriverStatusWire = 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'CLOSING' | 'CLOSED';
+export type DriverTypeWire = 'EXTERNAL' | 'PLATFORM';
+const DRIVER_STATUS_VALUES: readonly string[] = ['PENDING', 'ACTIVE', 'SUSPENDED', 'CLOSING', 'CLOSED'];
+const DRIVER_TYPE_VALUES: readonly string[] = ['EXTERNAL', 'PLATFORM'];
+
+/** The caller's own driver profile as the server holds it. Stored values only: nothing is derived or made up. */
+export interface DriverProfileWire {
+  readonly driverId: string;
+  readonly userId: string;
+  readonly fullName: string;
+  readonly plateNumber: string | null;
+  readonly driverType: DriverTypeWire;
+  readonly status: DriverStatusWire;
+  readonly acceptingDeliveries: boolean;
+  readonly version: number;
+}
+
+const DRIVER_KEYS = ['driver_id', 'user_id', 'full_name', 'plate_number', 'driver_type', 'status', 'accepting_deliveries', 'version'] as const;
+
+/** GET /v1/driver/me: `null` = no driver profile ({data:null}); undefined = not this contract. */
+export function parseDriverProfileResponse(body: unknown): DriverProfileWire | null | undefined {
+  if (isRecord(body) && hasExactKeys(body, ['data']) && body.data === null) {
+    return null;
+  }
+  const data = dataOf(body);
+  if (data === undefined || !hasExactKeys(data, DRIVER_KEYS)) {
+    return undefined;
+  }
+  const { driver_id: driverId, user_id: userId, full_name: fullName, plate_number: plate, driver_type: type, status, accepting_deliveries: accepting, version } = data;
+  if (
+    !isUuid(driverId) ||
+    !isUuid(userId) ||
+    typeof fullName !== 'string' ||
+    fullName.length < 1 ||
+    fullName.length > 480 ||
+    !nullableText(plate, 32) ||
+    typeof type !== 'string' ||
+    !DRIVER_TYPE_VALUES.includes(type) ||
+    typeof status !== 'string' ||
+    !DRIVER_STATUS_VALUES.includes(status) ||
+    typeof accepting !== 'boolean' ||
+    !isVersion(version)
+  ) {
+    return undefined;
+  }
+  return { driverId, userId, fullName, plateNumber: plate as string | null, driverType: type as DriverTypeWire, status: status as DriverStatusWire, acceptingDeliveries: accepting, version };
+}
+
+export interface DriverSubmittedWire {
+  readonly driverId: string;
+}
+
+/** POST /v1/onboarding/driver: exactly {data:{driver_id, driver_type:"EXTERNAL", status:"PENDING", accepting_deliveries:false, role_granted:true, version:1}}. */
+export function parseDriverSubmitResponse(body: unknown): DriverSubmittedWire | undefined {
+  const data = dataOf(body);
+  if (data === undefined || !hasExactKeys(data, ['driver_id', 'driver_type', 'status', 'accepting_deliveries', 'role_granted', 'version'])) {
+    return undefined;
+  }
+  return isUuid(data.driver_id) && data.driver_type === 'EXTERNAL' && data.status === 'PENDING' && data.accepting_deliveries === false && data.role_granted === true && data.version === 1 ? { driverId: data.driver_id } : undefined;
+}
+
 export function errorCodeOf(body: unknown): string | undefined {
   if (!isRecord(body) || !isRecord(body.error)) {
     return undefined;
@@ -400,7 +467,7 @@ export function errorCodeOf(body: unknown): string | undefined {
   return typeof code === 'string' && ERROR_CODE.test(code) ? code : undefined;
 }
 
-export type AuthOperation = 'config' | 'otpRequest' | 'otpVerify' | 'register' | 'login' | 'me' | 'context' | 'logout' | 'profileRead' | 'profileSave' | 'shopRead' | 'shopSave' | 'shopComplete' | 'shopAreas';
+export type AuthOperation = 'config' | 'otpRequest' | 'otpVerify' | 'register' | 'login' | 'me' | 'context' | 'logout' | 'profileRead' | 'profileSave' | 'shopRead' | 'shopSave' | 'shopComplete' | 'shopAreas' | 'driverRead' | 'driverSubmit';
 
 export interface MappedFailure {
   readonly code: FailureCode;
@@ -496,11 +563,13 @@ const TABLES: Readonly<Record<AuthOperation, Readonly<Record<string, Row>>>> = {
     ACCOUNT_DISABLED: ['ACCOUNT_DISABLED'],
     ROLE_NOT_AVAILABLE: ['ROLE_NOT_AVAILABLE'],
   },
+  driverRead: { ACCOUNT_DISABLED: ['ACCOUNT_DISABLED'], SERVICE_UNAVAILABLE: ['SERVICE_UNAVAILABLE'], INTERNAL_ERROR: ['UNKNOWN'] },
+  driverSubmit: { ...KEYED, DRIVER_PROFILE_EXISTS: ['DRIVER_EXISTS'], ACCOUNT_DISABLED: ['ACCOUNT_DISABLED'] },
   shopAreas: { ACCOUNT_DISABLED: ['ACCOUNT_DISABLED'], ROLE_NOT_AVAILABLE: ['ROLE_NOT_AVAILABLE'], SERVICE_UNAVAILABLE: ['SERVICE_UNAVAILABLE'], INTERNAL_ERROR: ['UNKNOWN'] },
 };
 
-const KEYED_OPERATIONS: readonly AuthOperation[] = ['register', 'login', 'context', 'profileSave', 'shopSave', 'shopComplete'];
-const AUTHENTICATED_OPERATIONS: readonly AuthOperation[] = ['me', 'context', 'logout', 'profileRead', 'profileSave', 'shopRead', 'shopSave', 'shopComplete', 'shopAreas'];
+const KEYED_OPERATIONS: readonly AuthOperation[] = ['register', 'login', 'context', 'profileSave', 'shopSave', 'shopComplete', 'driverSubmit'];
+const AUTHENTICATED_OPERATIONS: readonly AuthOperation[] = ['me', 'context', 'logout', 'profileRead', 'profileSave', 'shopRead', 'shopSave', 'shopComplete', 'shopAreas', 'driverRead', 'driverSubmit'];
 
 /**
  * Server answer -> one typed failure. A code that this operation does not list is NOT trusted: INVALID_CREDENTIALS from a login

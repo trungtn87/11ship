@@ -1,6 +1,6 @@
 import { REAL_TIMERS, Timers } from '../health.js';
 import { FailureCode } from '../states.js';
-import { ADDRESS_MAX, FACEBOOK_MAX, isCompleteOtp, isValidCoordinatePair, isValidPassword, isValidPhone, isWellFormed, normalizeOptionalLink, normalizePersonName, normalizeRequiredText, SHOP_NAME_MAX, ZALO_MAX } from '../validation.js';
+import { ADDRESS_MAX, FACEBOOK_MAX, isCompleteOtp, isValidCoordinatePair, isValidPassword, isValidPhone, isWellFormed, normalizeOptionalLink, normalizePersonName, normalizePlate, normalizeRequiredText, SHOP_NAME_MAX, ZALO_MAX } from '../validation.js';
 import {
   AUTH_PATHS,
   AuthIdentity,
@@ -13,6 +13,8 @@ import {
   isUuid,
   mapHttpFailure,
   MappedFailure,
+  parseDriverProfileResponse,
+  parseDriverSubmitResponse,
   parseIdentityResponse,
   parseProfileResponse,
   parseServiceAreasResponse,
@@ -26,6 +28,7 @@ import {
   PUBLIC_CONTEXTS,
   PublicContext,
   REGISTER_PURPOSE,
+  DriverProfileWire,
   ProfileWire,
   RegistrationVerificationMode,
   ServiceAreaWire,
@@ -123,6 +126,15 @@ export interface ShopCompleted {
   readonly version: number;
 }
 
+/** The caller's own driver profile as the server holds it (GET /v1/driver/me). */
+export type DriverView = DriverProfileWire;
+
+export interface DriverSubmitInput {
+  readonly fullName: string;
+  /** null = no plate yet (it can be added later). */
+  readonly plateNumber: string | null;
+}
+
 export interface RegisterInput {
   readonly phone: string;
   /** Sent exactly as typed: not trimmed, not normalized. */
@@ -192,6 +204,13 @@ export interface AuthClient {
   saveShop(input: ShopSaveInput): Promise<AuthResult<ShopSaved>>;
   /** POST /v1/onboarding/shop/complete {expected_version}. Same one-intent rule. It mints no token and selects no context. */
   completeShop(input: { readonly expectedVersion: number }): Promise<AuthResult<ShopCompleted>>;
+  /** GET /v1/driver/me. `null` = this person has no driver profile yet. Needs no DRIVER context and grants nothing. */
+  readDriver(): Promise<AuthResult<DriverView | null>>;
+  /**
+   * POST /v1/onboarding/driver {full_name, plate_number}. One intent = one Idempotency-Key + body: an unknown outcome keeps both and the
+   * next call with the SAME input re-sends them (never automatically). It mints no token and selects no context; CUSTOMER stays.
+   */
+  submitDriver(input: DriverSubmitInput): Promise<AuthResult<{ readonly driverId: string }>>;
   /** Drops the session, the pending intents and every in-flight answer (the app closing a screen tree). */
   dispose(): void;
 }
@@ -209,7 +228,7 @@ export interface AuthClientOptions {
   readonly deviceId?: string;
 }
 
-type Intent = 'register' | 'login' | 'context' | 'profile' | 'shopSave' | 'shopComplete';
+type Intent = 'register' | 'login' | 'context' | 'profile' | 'shopSave' | 'shopComplete' | 'driverSubmit';
 const NO_RETRY: undefined = undefined;
 
 const fail = (code: FailureCode, unresolved = false, retryAfterSeconds?: number): AuthResult<never> =>
@@ -268,6 +287,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
       intents.delete('profile');
       intents.delete('shopSave');
       intents.delete('shopComplete');
+      intents.delete('driverSubmit');
     }
   });
 
@@ -288,7 +308,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
   }
 
   function classify<B>(operation: AuthOperation, result: TransportResult, expectedStatus: number | readonly number[], parse: (body: unknown) => B | undefined): Classified<B> {
-    const keyed = operation === 'register' || operation === 'login' || operation === 'context' || operation === 'profileSave' || operation === 'shopSave' || operation === 'shopComplete';
+    const keyed = operation === 'register' || operation === 'login' || operation === 'context' || operation === 'profileSave' || operation === 'shopSave' || operation === 'shopComplete' || operation === 'driverSubmit';
     switch (result.kind) {
       case 'aborted':
         return { kind: 'aborted' };
@@ -608,7 +628,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
   // ---- own shop (11Food onboarding) ------------------------------------------------------------------------------
   /** One authenticated shop call: the answer is applied to nothing in the session, only returned, and only if the session is still the one that asked. */
   async function shopCall<T>(
-    operation: 'shopRead' | 'shopSave' | 'shopComplete' | 'shopAreas',
+    operation: 'shopRead' | 'shopSave' | 'shopComplete' | 'shopAreas' | 'driverRead' | 'driverSubmit',
     request: Omit<TransportRequest, 'bearer' | 'signal'>,
     expectedStatus: number | readonly number[],
     parse: (body: unknown) => T | undefined,
@@ -702,6 +722,25 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     });
   }
 
+  // ---- own driver profile (11Ship) -------------------------------------------------------------------------------
+  function readDriver(): Promise<AuthResult<DriverView | null>> {
+    return single('driverRead', '', () => shopCall<DriverView | null>('driverRead', { method: 'GET', path: AUTH_PATHS.driverMe }, 200, parseDriverProfileResponse, NO_RETRY));
+  }
+
+  function submitDriver(input: DriverSubmitInput): Promise<AuthResult<{ readonly driverId: string }>> {
+    const fullName = typeof input.fullName === 'string' ? normalizePersonName(input.fullName) : undefined;
+    const plate = input.plateNumber === null ? ({ ok: true, value: null } as const) : typeof input.plateNumber === 'string' ? normalizePlate(input.plateNumber) : ({ ok: false } as const);
+    if (fullName === undefined || !plate.ok) {
+      return Promise.resolve(fail('BAD_REQUEST'));
+    }
+    // Fixed key order: the same input always serializes to the same bytes.
+    const body = JSON.stringify({ full_name: fullName, plate_number: plate.value });
+    return single('driverSubmit', body, async () => {
+      const entry = keyFor('driverSubmit', body);
+      return shopCall<{ readonly driverId: string }>('driverSubmit', { method: 'POST', path: AUTH_PATHS.driverOnboarding, body, idempotencyKey: entry.key }, 201, parseDriverSubmitResponse, { intent: 'driverSubmit', entry });
+    });
+  }
+
   // ---- logout ----------------------------------------------------------------------------------------------------
   function logout(): Promise<AuthResult<LogoutResult>> {
     const token = store.bearer();
@@ -762,7 +801,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     running.delete('register');
   }
 
-  return { session, registrationConfig, requestRegisterOtp, verifyRegisterOtp, resetRegisterFlow, register: registerUser, registerWithoutProof, login, me, selectContext, logout, readProfile, saveProfile, readShop, readServiceAreas, saveShop, completeShop, dispose };
+  return { session, registrationConfig, requestRegisterOtp, verifyRegisterOtp, resetRegisterFlow, register: registerUser, registerWithoutProof, login, me, selectContext, logout, readProfile, saveProfile, readShop, readServiceAreas, saveShop, completeShop, readDriver, submitDriver, dispose };
 }
 
 export type { SessionTicket };

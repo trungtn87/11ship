@@ -10,6 +10,7 @@ import { FeatureId, featureStatus, isWired } from './features.js';
 import { HealthMonitor } from './health.js';
 import { NOT_WIRED_PORTS } from './ports.js';
 import { LeaveController } from './leave.js';
+import { createDriverController } from './driver-flow.js';
 import { createRegisterController } from './register-flow.js';
 import { browserGeolocation, createShopController } from './shop-flow.js';
 import { HistoryPort, RouteDef, Router, RouteTable } from './router.js';
@@ -42,6 +43,8 @@ export interface AppDefinition {
   readonly register?: { readonly consent: ConsentOffer };
   /** Present = this app connects the shop onboarding (11Food only; 11Ship never does). Same local-https-only rule as the account features. */
   readonly shopOnboarding?: true;
+  /** Present = this app connects the driver profile (S12 submit, S13 status): 11Ship only. Same local-https-only rule. */
+  readonly driverProfile?: true;
 }
 
 /** The features the register flow connects when it is on. Nothing else becomes wired by it. */
@@ -50,6 +53,9 @@ const REGISTER_FEATURES: ReadonlySet<FeatureId> = new Set<FeatureId>(['auth.regi
 const ACCOUNT_FEATURES: ReadonlySet<FeatureId> = new Set<FeatureId>(['auth.login', 'auth.logout', 'customer.profileSave', 'account.read']);
 /** The shop onboarding features, connected by the shop controller (11Food, local https runtime). */
 const SHOP_FEATURES: ReadonlySet<FeatureId> = new Set<FeatureId>(['shop.draftSave', 'shop.location', 'shop.complete']);
+
+/** The driver profile features, connected by the driver controller (11Ship, local https runtime). */
+const DRIVER_FEATURES: ReadonlySet<FeatureId> = new Set<FeatureId>(['driver.submit', 'driver.statusRead']);
 
 /** Longest delay setTimeout takes. */
 const MAX_TIMER_MS = 2_147_483_647;
@@ -64,8 +70,9 @@ export function isLocalHttpsRuntime(location: { readonly protocol: string; reado
 
 /** What the server says about the signed-in person, as a screen shows it. Roles are the server's list: the client grants nothing. */
 export function accountOf(identity: AuthIdentity): AccountView {
-  // Only what the server reports. A driver state the screens cannot show yet (and none that is made up) leaves `driver` out.
-  const driverStatus = identity.onboarding.driver === 'NOT_STARTED' ? 'NONE' : identity.onboarding.driver === 'PENDING_APPROVAL' ? 'PENDING' : identity.onboarding.driver === 'ACTIVE' ? 'ACTIVE' : undefined;
+  // Only what the server reports: the stored driver state, one to one (none is made up).
+  const driverStates = { NOT_STARTED: 'NONE', PENDING_APPROVAL: 'PENDING', ACTIVE: 'ACTIVE', SUSPENDED: 'SUSPENDED', CLOSING: 'CLOSING', CLOSED: 'CLOSED' } as const;
+  const driverStatus = driverStates[identity.onboarding.driver];
   // The shop state the server reports for this person (never a made-up shop); its name is read from the profile when F23 opens.
   const shopState = identity.onboarding.shop === 'COMPLETED' ? 'COMPLETE' : identity.onboarding.shop === 'INCOMPLETE' ? 'DRAFT' : 'NONE';
   return {
@@ -183,6 +190,7 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
       : undefined;
   const register = auth === undefined || definition.register === undefined ? undefined : createRegisterController({ auth, flows, consent: definition.register.consent });
   const shop = auth === undefined || definition.shopOnboarding !== true ? undefined : createShopController({ auth, geo: browserGeolocation(window.navigator) });
+  const driver = auth === undefined || definition.driverProfile !== true ? undefined : createDriverController({ auth });
   // Signing out on purpose is not "the session ended": the person asked, so no "sign in again" notice follows it.
   let signingOut = false;
   const signOut = async (): Promise<LogoutResult> => {
@@ -208,6 +216,7 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
     ...(register === undefined ? {} : { register }),
     ...(auth === undefined ? {} : { auth, signOut }),
     ...(shop === undefined ? {} : { shop }),
+    ...(driver === undefined ? {} : { driver }),
     // C08: every in-app navigation first asks about a form that is being filled.
     go: (id) => leave.request(() => routerRef.current?.go(id)),
     back: () =>
@@ -222,7 +231,7 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
     toast: (text) => toast(text),
     dialogHost: undefined,
     connection,
-    isWired: (feature) => (register !== undefined && REGISTER_FEATURES.has(feature)) || (auth !== undefined && ACCOUNT_FEATURES.has(feature)) || (shop !== undefined && SHOP_FEATURES.has(feature)) || isWired(feature),
+    isWired: (feature) => (register !== undefined && REGISTER_FEATURES.has(feature)) || (auth !== undefined && ACCOUNT_FEATURES.has(feature)) || (shop !== undefined && SHOP_FEATURES.has(feature)) || (driver !== undefined && DRIVER_FEATURES.has(feature)) || isWired(feature),
     featureReason: (feature) => featureStatus(feature).reason,
     testSmsNotice: definition.testSmsNotice,
   };

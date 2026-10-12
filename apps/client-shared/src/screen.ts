@@ -5,6 +5,7 @@ import type { FeatureId } from './features.js';
 import type { ClientPorts } from './ports.js';
 import type { GuardHandle, LeaveGuard } from './leave.js';
 import type { RegisterController } from './register-flow.js';
+import type { DriverController } from './driver-flow.js';
 import type { ShopController } from './shop-flow.js';
 import type { Access } from './router.js';
 
@@ -51,7 +52,7 @@ export interface AccountView {
   /** Shop owner only. */
   readonly shop?: { readonly state: 'NONE' | 'DRAFT' | 'COMPLETE'; readonly name?: string };
   /** Driver only. */
-  readonly driver?: { readonly status: 'NONE' | 'PENDING' | 'ACTIVE'; readonly kind?: 'EXTERNAL' | 'PLATFORM'; readonly legalName?: string; readonly plate?: string | null };
+  readonly driver?: { readonly status: 'NONE' | 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'CLOSING' | 'CLOSED'; readonly kind?: 'EXTERNAL' | 'PLATFORM'; readonly legalName?: string; readonly plate?: string | null };
 }
 
 export interface ScreenEnv {
@@ -91,6 +92,11 @@ export interface ScreenEnv {
    * is connected: the 11Food app on a local https runtime (app.ts). Undefined = those actions stay unavailable with their reason.
    */
   readonly shop?: ShopController;
+  /**
+   * The real driver profile (S12 submit, S13 status), present ONLY where it is connected: the 11Ship app on a local https runtime
+   * (app.ts). Undefined = those actions stay unavailable with their reason.
+   */
+  readonly driver?: DriverController;
   /** Signs out: the local session is dropped first, then the server is asked to revoke it. Present with `auth`. */
   readonly signOut?: () => Promise<LogoutResult>;
   /** Test build: OTP screens tell the person the SMS is simulated and where the code is read (PC tool), never show the code. */
