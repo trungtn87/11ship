@@ -271,7 +271,7 @@ function Invoke-ClientCheck([string[]]$Arguments) {
   $script:ClientChecks.Add(($Arguments -join ' '))
   if ($Arguments[0] -eq 'cert') {
     $script:CertSawComposeUp = @($script:DockerCalls | Where-Object { $_ -match 'compose.* up ' -or $_.EndsWith(' up') -or $_ -match ' up -d' }).Count
-    $script:CertSawLock = (Test-Path -LiteralPath $script:LockFile)
+    $script:CertSawLock = (Test-LockHeld)
     $script:Events.Add('cert')
     if ($script:CertMode -eq 'ok') { return (New-CheckResult $true 'OK') }
     return (New-CheckResult $false $script:CertMode)
@@ -1706,7 +1706,7 @@ try {
       $script:CertMode = $case[0]
       $message = Get-FailMessage { Open-AppLauncher 'Food' }
       Check ($message.Contains(": $($case[1]))") -and $message.Contains($case[0]) -and $message.Contains('local-https-runtime.md')) "certificate $($case[0]) -> $($case[1]) with the runbook named"
-      Check (!(Test-Path -LiteralPath $script:LockFile) -and (Get-ComposeUps) -eq 0 -and $script:BackendStarts -eq 0 -and $script:AppBuilds.Count -eq 0 -and $script:AppStarts.Count -eq 0 -and $script:Browser.Count -eq 0 -and (NpmCount 'run build') -eq 0) "certificate $($case[0]): no lock, no database, no build, no process, no browser"
+      Check (!(Test-LockHeld) -and (Get-ComposeUps) -eq 0 -and $script:BackendStarts -eq 0 -and $script:AppBuilds.Count -eq 0 -and $script:AppStarts.Count -eq 0 -and $script:Browser.Count -eq 0 -and (NpmCount 'run build') -eq 0) "certificate $($case[0]): no lock, no database, no build, no process, no browser"
       Check (!(Test-Path -LiteralPath $script:StateFile) -and !(Test-Path -LiteralPath (Get-AppTarget 'Food').RegistryFile)) "certificate $($case[0]): nothing recorded"
       Check (!$message.Contains('--insecure') -and $message.Contains('Launcher')) "certificate $($case[0]): the message does not suggest switching verification off"
     }
