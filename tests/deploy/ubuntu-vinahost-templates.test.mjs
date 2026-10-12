@@ -45,9 +45,35 @@ describe('systemd unit', () => {
     assert.match(service, /^NoNewPrivileges=true$/m);
     assert.match(service, /^ProtectSystem=strict$/m);
     assert.match(service, /^Restart=on-failure$/m);
+    assert.match(service, /^RestartSec=5$/m);
     const inline = service.split('\n').filter((l) => /^Environment=/.test(l));
     assert.deepEqual(inline, ['Environment=NODE_OPTIONS=--max-old-space-size=384']);
     assert.doesNotMatch(code(service), /password|secret|DATABASE_URL|KEYRING/i);
+  });
+});
+
+describe('systemd restart limit (review F4)', () => {
+  const value = (key) => Number((new RegExp(`^${key}=(\\d+)$`, 'm').exec(service) ?? [])[1]);
+
+  test('the unit bounds its own restart loop, whatever the provider systemd.conf says', () => {
+    assert.match(service, /^\[Unit\][\s\S]*^StartLimitIntervalSec=\d+$/m);
+    assert.match(service, /^StartLimitBurst=\d+$/m);
+    const interval = value('StartLimitIntervalSec');
+    const burst = value('StartLimitBurst');
+    const restartSec = value('RestartSec');
+    assert.ok(interval > 0 && burst > 0 && restartSec > 0);
+    // The limit must be reachable: `burst` restarts, each `restartSec` apart, fit inside the interval. (systemd's default of
+    // 5 starts in 10 s is NOT reachable with RestartSec=5.)
+    assert.ok(burst * restartSec < interval, `${burst} x ${restartSec} s must fit in ${interval} s`);
+    // And it is finite and small: at most one restart per minute on average would be weaker than the intent.
+    assert.ok(burst <= 10);
+    assert.match(service, /reset-failed 11ship-staging/, 'the recovery command is next to the limit');
+  });
+
+  test('the runbook tells the operator how to read the error, fix the environment and recover', () => {
+    for (const needle of ['start-limit-hit', 'reset-failed', 'journalctl -u 11ship-staging', '/etc/11ship/staging.env']) {
+      assert.ok(runbook.includes(needle), `runbook must mention ${needle}`);
+    }
   });
 });
 

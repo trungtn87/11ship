@@ -8,7 +8,7 @@
 // codes, when no target is configured. It starts no server and contacts no database.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
@@ -81,6 +81,11 @@ try {
   }
   if (existsSync(join(rel, 'apps/admin-web/dist/design.html')) || existsSync(join(rel, 'apps/admin-web/dist/js/design'))) {
     fail('the Admin web in the artifact is not the real build');
+  }
+  for (const script of ['ops/selfhosted/run-roles-database.sh', 'ops/selfhosted/make-pki.sh']) {
+    if ((statSync(join(rel, script)).mode & 0o111) === 0) {
+      fail(`${script} lost its executable bit in the artifact`);
+    }
   }
   for (const dev of ['typescript', 'jest', 'eslint']) {
     if (existsSync(join(rel, 'node_modules', dev))) {

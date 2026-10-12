@@ -492,6 +492,43 @@ jobs:
         shell: bash
         run: echo "::notice title=Self-hosted preparation on Ubuntu::$(grep -E '^os-prep:|NOT OK' .test-results/os-prep.log | tr '\n' ';')"
 
+  # M00-VPS-01 review F4: the REAL systemd unit (unmodified) over a throw-away fake release on a disposable Ubuntu 24.04 runner:
+  # a service that fails at once restarts a finite number of times and then stays failed (start-limit-hit); fixing the
+  # environment + reset-failed + start recovers; it runs as the unprivileged user from the release root; SIGTERM stops it
+  # cleanly. No database, no real unit, no real data.
+  systemd-restart-probe:
+    name: systemd restart limit probe (M00-VPS-01)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Restart-limit probe with real systemd
+        id: probe
+        env:
+          SYSTEMD_PROBE_CONFIRM: disposable-ci-runner
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p .test-results
+          sudo -E env "PATH=${PATH}" bash tests/vps/systemd-restart-probe.sh 2>&1 | tee .test-results/systemd-probe.log
+
+      - name: Annotate failure
+        if: ${{ failure() && steps.probe.conclusion == 'failure' }}
+        run: node scripts/annotate-log.js "systemd restart limit probe" .test-results/systemd-probe.log 60
+
+      - name: Report counts
+        if: ${{ always() && hashFiles('.test-results/systemd-probe.log') != '' }}
+        shell: bash
+        run: echo "::notice title=systemd restart limit probe::$(grep -E '^systemd-probe:|NOT OK' .test-results/systemd-probe.log | tr '\n' ';')"
+
   # M00-L: the launcher is a Windows tool, so its behaviour suite also runs on real Windows with Windows
   # PowerShell 5.1 (the shell the .cmd wrappers call), including the cmd wrappers started the way a double-click
   # starts them. No database and no secrets: Docker and npm are faked inside the suite.
