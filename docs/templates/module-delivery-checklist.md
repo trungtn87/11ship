@@ -1,35 +1,40 @@
-# Mẫu triển khai module / task — bắt buộc
-Quy trình: [quyền hạn và gate](../process/11ship-delivery-workflow.md).
-Module/task: …; base SHA: …; nguồn nghiệp vụ: …; giai đoạn hiện tại: ….
-Đây là mẫu trống, không phải bằng chứng đã hoàn thành.
+# Checklist task nhỏ và nghiệm thu module
 
-## Phân công
-ChatGPT: thiết kế nghiệp vụ/UI chi tiết, giao task, review.
-Claude: code/build/test/sửa finding, chuẩn bị bản local và điện thoại.
-Owner: duyệt nghiệp vụ/UI, test local, test thiết bị thật, quyết định merge/nghiệm thu/đóng.
-Ghi task con, người thực hiện, đầu ra, dependency và gate chuyển cho mỗi giai đoạn.
+Áp dụng quy trình [12/10/2026](../process/11ship-delivery-workflow.md). Đây là mẫu trống, không phải bằng chứng hoàn thành. Chỉ điền phần phù hợp; không lặp ma trận module ở mỗi task.
 
-## Checklist
-- [ ] Kiểm kê nguồn và backend thực tế; ghi phần thiếu.
-- [ ] Owner duyệt nghiệp vụ/API/dữ liệu và ca lỗi.
-- [ ] ChatGPT gửi ảnh UI chi tiết; Owner duyệt các màn hình và trạng thái liên quan.
-- [ ] Gói giao Claude xác định base, scope, giới hạn, hợp đồng, test và đầu ra.
-- [ ] Claude code, test, build; CI trên final head đạt.
-- [ ] ChatGPT review đúng SHA; Claude sửa hết finding bắt buộc.
-- [ ] Owner chạy local; phản hồi được sửa và test lại; Owner xác nhận đạt.
-- [ ] Bản điện thoại/web test có version/SHA và hướng dẫn.
-- [ ] Owner kiểm tra thiết bị thật từng app liên quan.
-- [ ] Kiểm tra liên thông và hồi quy đạt.
-- [ ] Owner quyết định nghiệm thu/merge và đóng module; không suy từ CI.
+## A. Task nhỏ / sửa lỗi / gói tích hợp
 
-## Ma trận từng ứng dụng
-| Ứng dụng | Phạm vi/task con | Nghiệp vụ/UI duyệt | Code/CI/review | Local | Thiết bị thật | Owner nghiệm thu |
+Task: …; nguồn thiết kế đã duyệt: …; base/code SHA: ….
+Phạm vi và app/luồng bị ảnh hưởng: ….
+ChatGPT thiết kế/giao việc/review; Claude code/test/build; Owner duyệt thay đổi nghiệp vụ/UI và nghiệm thu khi tới giai đoạn.
+
+- [ ] Phạm vi rõ, dùng lại thiết kế đã duyệt; ghi quyết định còn thiếu nếu có.
+- [ ] Claude triển khai đúng phạm vi.
+- [ ] Kiểm tra phù hợp phần ảnh hưởng đạt; dẫn link kết quả và code SHA.
+- [ ] ChatGPT review; blocker được sửa, góp ý không chặn ghi riêng.
+- [ ] Checks bắt buộc áp dụng đạt, dependency tương thích, merge sạch; merge theo ủy quyền thường trực.
+- [ ] Bản chạy/hướng dẫn khi cần bàn giao Owner test; nếu chưa tới giai đoạn thì ghi rõ.
+
+Test dự kiến: …; kết quả/link: …; lỗi mở: ….
+Test thêm/test lại (chỉ nếu cần): thay đổi/rủi ro chưa được giải quyết …; kiểm tra sẽ chạy ….
+Đổi tài liệu sau test: ghi SHA code đã test và SHA tài liệu cuối; không chạy lại test sản phẩm chỉ vì SHA tài liệu đổi.
+N/A: ghi lý do, không cần xin duyệt riêng. Tài liệu thuần túy chỉ cần review nội dung/link/nhất quán.
+
+## B. Nghiệm thu module / phát hành — tổng hợp một lần
+
+Module/phiên bản/code SHA: …; phạm vi phát hành: ….
+
+- [ ] Thiết kế/nghiệp vụ/UI liên quan được Owner duyệt.
+- [ ] Các task cần thiết đã code, kiểm tra, review và tích hợp.
+- [ ] Bản local ổn định, hướng dẫn chạy; Owner xác nhận local đạt.
+- [ ] Bản thiết bị thật phù hợp có version/SHA; Owner thử các app liên quan.
+- [ ] Liên thông và hồi quy phạm vi phát hành đạt.
+- [ ] Lỗi còn mở và giới hạn ghi rõ; Owner quyết định nghiệm thu/đóng module.
+
+Chỉ thêm hàng cho app/luồng thực sự liên quan; không mặc định liệt kê toàn bộ app.
+
+| App/luồng liên quan | Phạm vi | Thiết kế duyệt | Code/CI/review | Local | Thiết bị thật | Owner nghiệm thu |
 |---|---|---|---|---|---|---|
-| Web quản trị | Chưa xác định | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng |
-| Khách | Chưa xác định | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng |
-| Quán | Chưa xác định | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng |
-| Xế | Chưa xác định | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng |
-| App quản lý | Chưa xác định | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng |
-| Liên thông | Chưa xác định | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng |
+| … | … | Link/kết quả | Link/kết quả | Link/kết quả | Link/kết quả hoặc N/A có lý do | Quyết định |
 
-N/A: lý do + quyết định Owner. Mỗi kết quả dẫn tới evidence: SHA/version, môi trường, ca test, người test/ngày, link bằng chứng và quyết định. Ghi lỗi mở và phạm vi kiểm tra lại sau mỗi thay đổi.
+Bằng chứng: version/code SHA, môi trường, ca/luồng, kết quả, người test/ngày và link quyết định Owner. Dùng lại link bằng chứng hiện có, không chép lặp. Phần chưa chạy ghi CHƯA KIỂM CHỨNG; merge/CI không tự chứng minh nghiệm thu. Sau thay đổi chỉ xác định và kiểm tra lại phần chịu ảnh hưởng.

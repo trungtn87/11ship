@@ -1,61 +1,88 @@
 # Quy trình triển khai và quyền hạn 11Ship
-Ngày chốt: 09/10/2026. Nguồn: chỉ đạo trực tiếp của Owner trong phiên này.
-Áp dụng cho mọi module, task con và ứng dụng. Bổ sung quy trình, không thay đổi nghiệp vụ/schema/API đã chốt.
 
-## Phân công bắt buộc
-| Giai đoạn | Người thực hiện | Đầu ra | Người duyệt / điều kiện chuyển |
-|---|---|---|---|
-| Kiểm kê, thiết kế nghiệp vụ | ChatGPT | Nguồn đã đọc, phạm vi, quy tắc, API/dữ liệu, ca lỗi, phần còn thiếu | Owner duyệt nghiệp vụ |
-| Thiết kế UI chi tiết | ChatGPT | Ảnh từng màn hình, trạng thái, luồng và nội dung tiếng Việt; mẫu HTML khi cần | Owner duyệt UI trước code UI |
-| Giao task | ChatGPT | Gói giao Claude: base, phạm vi, file, hợp đồng, checklist, bằng chứng yêu cầu | Đúng thiết kế đã duyệt |
-| Code và test kỹ thuật | Claude | Code, migration, build, test, CI, hướng dẫn chạy, bằng chứng đúng SHA | ChatGPT review; Claude sửa finding |
-| Review và tích hợp | ChatGPT | Finding và kết luận đúng head SHA; kiểm tra từng app và liên thông | Review đạt trước bản Owner test |
-| Test local và chỉnh sửa | Owner test; ChatGPT phân tích; Claude sửa code | Bản chạy local, phản hồi và bằng chứng kiểm tra lại | Owner xác nhận local đạt |
-| Triển khai bản test điện thoại | Claude chuẩn bị/build; người vận hành triển khai theo phạm vi được duyệt | Web test, APK, version/SHA, cấu hình môi trường | Local đạt và review bản hiện tại đạt |
-| Test thiết bị thật | Owner | Kết quả từng app và liên thông, lỗi thiết bị/mạng/quyền hệ điều hành | Owner xác nhận đạt |
-| Nghiệm thu, merge, đóng module | Owner quyết định; ChatGPT cập nhật tài liệu theo quyết định | Bằng chứng, phạm vi nghiệm thu, quyết định đóng | Đủ các gate áp dụng; không suy diễn từ CI/merge |
+Cập nhật: 12/10/2026, Asia/Saigon.
+Nguồn: Owner yêu cầu kiểm tra việc test lặp lại và “cập nhật lại quy trình” sau khi thống nhất rút gọn trong cuộc trao đổi ngày 12/10/2026.
 
-## Giới hạn vai trò
-- ChatGPT được sửa tài liệu thiết kế, kế hoạch, checklist, gói giao việc và evidence dựa trên sự thật; đọc code, chạy kiểm tra để review. Mẫu UI phục vụ duyệt thiết kế không phải code sản phẩm.
-- ChatGPT không tự viết/sửa code sản phẩm, test triển khai, migration, cấu hình build/deploy hoặc tự build triển khai thay Claude. Finding phải giao Claude sửa.
-- Claude không tự đổi nghiệp vụ, UI đã duyệt hoặc mở rộng phạm vi; gặp thiếu thiết kế thì trả về ChatGPT/Owner.
-- Không tự merge, bật auto-merge, đóng module hoặc ghi Owner đã nghiệm thu. Quyền đó thuộc Owner.
-- Chỉ đạo rõ ràng mới của Owner có thể cho ngoại lệ cụ thể; ghi phạm vi và nguồn cho task đó, không lan ngoại lệ sang task/module khác. Các lời “tiếp”, “triển khai” trong quy trình này không tự chuyển quyền code từ Claude sang ChatGPT.
-- Task cũ hoặc câu “task ưu tiên cao nhất” không được dùng để bỏ qua giới hạn vai trò và gate nghiệm thu mới này. Giữ nguyên bằng chứng lịch sử, không viết lại thành nghiệm thu mới.
+Quy trình này thay thế các yêu cầu quy trình xung đột trong bản 09/10, bổ sung 11/10 và các task/gói giao việc cũ. Giữ nguyên nghiệp vụ, schema, API và bằng chứng lịch sử. Không cần sửa đồng loạt mọi task cũ để bắt đầu áp dụng.
 
-## Môi trường test local bắt buộc
-M00 phải có task thiết kế và gói giao Claude cho môi trường Owner test: backend + DB local, web quản trị và cách kiểm tra app Khách/Quán/Xế trên máy tính; app quản lý khi tới phạm vi đó.
-Yêu cầu hỗ trợ cập nhật nhanh trong vòng sửa UI/nghiệp vụ, dữ liệu thử ổn định và hướng dẫn khởi động dễ dùng. Công nghệ cụ thể phải đối chiếu code hiện có trước khi chốt.
-Bản xem trên trình duyệt không thay thế kiểm tra runtime Android. Ghi rõ phương thức local (web dùng chung mã nguồn hay giả lập Android), phần tương đương và giới hạn; không gọi ảnh/mock là test nghiệp vụ.
-Tách DB Owner test khỏi DB integration có thể bị reset. Không chạy suite phá dữ liệu vào DB Owner test/staging.
-Không cần cài lại APK sau mọi chỉnh sửa local; vẫn phải build/cài lại khi thay đổi native yêu cầu và ở vòng nghiệm thu điện thoại.
+## Phân công và luồng làm việc
 
-## Gate cho từng app và liên thông
-Mỗi giai đoạn phải chỉ rõ ứng dụng liên quan: web quản trị, Khách, Quán, Xế, app quản lý.
-Ghi riêng thiết kế/UI/code/CI/review/local/thiết bị thật/nghiệm thu cho từng app. Một app đạt không kéo cả bước đạt.
-N/A phải có lý do và được Owner duyệt; backend-only có thể không có màn hình nhưng module nghiệp vụ vẫn cần các task UI và nghiệm thu liên quan.
-Nếu local hoặc thiết bị thật có lỗi: ChatGPT phân tích/thiết kế điều chỉnh, Claude sửa/test, ChatGPT review head mới, Owner test lại. Thay đổi nghiệp vụ/UI cần Owner duyệt lại trước code.
-Bằng chứng phải ghi version/head SHA, môi trường, ca test, kết quả, người test, ngày và link quyết định Owner. Sửa code sau nghiệm thu phải xác định phạm vi test lại; nghiệm thu SHA cũ không mặc nhiên áp dụng.
+| Bước | Người thực hiện | Điều kiện hoàn tất |
+|---|---|---|
+| Chốt phạm vi/nghiệp vụ/UI | ChatGPT thiết kế, Owner duyệt | Phạm vi và hành vi rõ; dùng lại thiết kế đã duyệt |
+| Triển khai và kiểm tra | Claude | Code đúng phạm vi, kiểm tra phù hợp phần bị ảnh hưởng |
+| Review | ChatGPT | Review diff, dùng bằng chứng hiện có; hết blocker |
+| Tích hợp | ChatGPT theo ủy quyền Owner | Checks bắt buộc áp dụng đạt, dependency tương thích, merge sạch |
+| Thử bản chạy | Claude chuẩn bị, Owner thử | Bản chạy và hướng dẫn phù hợp giai đoạn |
+| Nghiệm thu module/phát hành | Owner | Các app/luồng liên quan được nghiệm thu; Owner quyết định đóng |
 
-## Trạng thái và dashboard
-Phân biệt: đã thiết kế; Owner duyệt thiết kế; đã code; CI đạt; review đạt; local đạt; đã deploy bản test; thiết bị thật đạt; Owner nghiệm thu; module đóng.
-Schema dashboard v1 hiện suy ra DONE từ task implementation đã merge + CI + dependency, chưa biểu diễn đủ các gate trên. DONE đó chỉ là trạng thái task kỹ thuật, không chứng minh module đóng.
-Không sửa tay docs/PROGRESS.md, không thêm trạng thái/field không được parser hỗ trợ vào plan.yml. Claude triển khai mở rộng dashboard sau gói thiết kế riêng; trước đó dùng checklist gate trong module.
-Không đánh dấu toàn M00/M01 hoàn thành vì backend đã merge; phần thiếu ghi CHƯA KIỂM CHỨNG hoặc CHƯA TRIỂN KHAI theo bằng chứng.
+ChatGPT được sửa tài liệu, đọc code và chạy kiểm tra để review. ChatGPT không tự sửa code sản phẩm, test triển khai, migration, cấu hình build/deploy hoặc build triển khai thay Claude, trừ ngoại lệ cụ thể do Owner chỉ đạo. Claude không tự đổi nghiệp vụ/UI đã duyệt; tự quyết lựa chọn kỹ thuật thông thường trong phạm vi.
 
-## Áp dụng vào tài liệu hiện có
-Tất cả tài liệu docs/tasks đã được gắn phân công/gate. Module tương lai bắt buộc dùng [mẫu module](../templates/module-delivery-checklist.md).
-M00: nền kỹ thuật, môi trường Owner test local, môi trường test từ xa và hướng dẫn vận hành là các đầu việc riêng.
-M01: khung ứng dụng, tạo tài khoản/OTP/mật khẩu, login/quyền/phiên, khôi phục mật khẩu, onboarding, quản trị/2FA và hồi quy phải được đối chiếu backend thực tế; chưa có backend thì thiết kế/giao việc bổ sung, không dùng UI giả để đạt.
-M02: backend hồ sơ/giờ hoạt động và các task UI/local/điện thoại liên quan phải tách rõ; backend-only slice không đóng toàn module.
-PR #31 do ChatGPT triển khai trước chỉ đạo này cần review và Owner quyết định riêng; không coi là Claude thực hiện hoặc tự merge. Tài liệu này không thay đổi PR đó.
+Chỉ duyệt lại thiết kế khi thay đổi hành vi/nghiệp vụ/UI đã chốt. Sửa lỗi để đáp ứng thiết kế hiện có không cần mở lại toàn bộ vòng thiết kế.
 
-## Bổ sung Owner 11/10/2026 — merge từng gói nhỏ
+## Hai mức checklist
 
-Nguồn chỉ đạo trực tiếp 11/10/2026 10:59 Asia/Ho_Chi_Minh: “Mình muốn xong mỗi module nhỏ merge luôn vào main”. Áp dụng từ đây cho từng gói nhỏ; thay yêu cầu phải xin phép merge lại hoặc chờ nghiệm thu cả module trước tích hợp gói.
+- Task nhỏ: phạm vi, phần ảnh hưởng, code SHA, kiểm tra phù hợp, review/blocker và bản chạy khi cần. Không mang đủ ma trận nghiệm thu module.
+- Module/phát hành: tổng hợp một lần thiết kế, local, thiết bị thật và liên thông cho các app thực sự liên quan. Backend-only task không tự đóng module nghiệp vụ.
+- N/A ghi lý do; người giao task/review xác định theo phạm vi, không xin Owner duyệt riêng từng N/A. Nếu việc bỏ một gate làm thay đổi phạm vi nghiệm thu đã chốt thì cần Owner quyết định.
+- Dùng [mẫu checklist](../templates/module-delivery-checklist.md); bằng chứng liên kết lại, không chép lặp nhiều tài liệu.
 
-Claude triển khai gói riêng và tạo Draft PR; CI/checks phù hợp phải đạt đúng final SHA; ChatGPT review không còn blocker, kiểm tra dependency tương thích và trạng thái merge sạch, rồi được Owner ủy quyền merge gói vào main ngay, không hỏi lại cho từng gói. Không merge khi còn blocker, thiếu contract bắt buộc hoặc CI đỏ. Không bật auto-merge thay review.
+## Chọn kiểm tra theo thay đổi
 
-Merge là tích hợp mã nguồn, không phải Owner đã test local/điện thoại, không tự đóng/LOCK module lớn. Các gate local, thiết bị thật và nghiệm thu vẫn ghi theo evidence thật và tiếp tục ở gói tương ứng. Không suy ra quyền deploy, apply migration remote hoặc sửa code sản phẩm thay Claude từ ủy quyền merge này.
+| Thay đổi | Kiểm tra phù hợp |
+|---|---|
+| Tài liệu thuần túy | Review nội dung, link và tính nhất quán; không yêu cầu test sản phẩm |
+| UI nhỏ, không đổi logic | Build/typecheck phần liên quan và kiểm tra màn hình/luồng đã sửa |
+| Logic nghiệp vụ/API | Test ca đã đổi/lỗi vừa sửa, các luồng liên quan; integration khi có tác động liên thông |
+| Quyền, OTP, tiền, migration, quản lý process | Test kỹ rủi ro cụ thể, tích hợp và nền tảng chịu ảnh hưởng; hồi quy rộng khi tác động dùng chung |
+| Nghiệm thu module/phát hành | Hồi quy đầy đủ trong phạm vi phát hành và thử thiết bị thật liên quan |
 
-Áp dụng đầu tiên: PR #53 M01.02, reviewed head a3521ad9109188d9d3c94ea8f793c6df5ea7cf6a, merge commit 88c3d3d39c96c78a79fa2823a7587eb216c81739. M01 chưa đóng; remote migration chưa được áp trong hành động merge.
+Không viết test chỉ để lặp lại cấu trúc implementation hoặc tăng số lượng bằng chứng. Giữ coverage có giá trị cho hành vi, lỗi thật và rủi ro.
+
+## Không test lặp và điều kiện dừng
+
+1. Claude chạy focused tests trong khi sửa; gom thành một gói nhất quán trước khi push. CI phù hợp trên code cuối là gate tích hợp. Không mặc định bắt chạy full suite local, CI, rồi ChatGPT chạy lại cùng suite.
+2. ChatGPT đọc diff và dùng kết quả Claude/CI còn hiệu lực. Chạy thêm phải nêu trước: rủi ro/ca còn thiếu, lý do bằng chứng hiện có chưa đủ và kiểm tra sẽ giải quyết điều gì.
+3. Chỉ test lại khi có thay đổi liên quan, lỗi mới, môi trường/nền tảng khác cần kiểm chứng, hoặc nghi vấn cụ thể chưa giải quyết. Sau fix, ưu tiên ca lỗi và phần ảnh hưởng; full suite chỉ khi tác động rộng hoặc checks bắt buộc yêu cầu.
+4. Không push commit cố tình làm CI đỏ chỉ để lấy bằng chứng RED. Khi khả thi, chứng minh test hồi quy bắt được lỗi cũ bằng focused test local; thiếu môi trường thì ghi rõ và kiểm chứng bản sửa bằng CI phù hợp.
+5. CI lỗi hạ tầng/flaky: xác định nguyên nhân và retry job lỗi khi phù hợp. Không chạy lặp đến xanh rồi bỏ qua nguyên nhân.
+6. Chỉ đổi tài liệu không làm mất hiệu lực test của code không đổi. Ghi code SHA đã test và SHA tài liệu cuối nếu khác; không đòi full test chỉ vì SHA tài liệu đổi. Vẫn phải đáp ứng checks mà GitHub đang bắt buộc.
+7. Khi kiểm tra phù hợp đạt, review hết blocker và có đầu ra yêu cầu thì chuyển bước. Không bổ sung gate/bằng chứng chỉ để “chắc hơn” nếu không có lý do cụ thể.
+
+## Review và finding
+
+ChatGPT gom finding trong một lượt review; sau sửa review delta và phần liên quan. Finding mới ở lượt sau phải nêu lỗi mới phát hiện hoặc phát sinh từ sửa đổi.
+
+Blocker: lỗi chức năng/nghiệp vụ, an toàn dữ liệu, bảo mật, contract bắt buộc, hoặc thiếu kiểm chứng khiến chưa đánh giá được một rủi ro trọng yếu. Góp ý cách trình bày, tổ chức code/tài liệu và cải tiến ngoài phạm vi ghi riêng, không bắt sửa trước merge nếu không gây lỗi.
+
+Không gộp kết quả test local/thiết bị thật của Owner vào CI. Báo cáo ngắn: thay đổi, code SHA, checks/kết quả/link, lỗi còn mở và cách chạy bản test. Không bắt tạo riêng nhiều báo cáo có cùng nội dung.
+
+## Merge, local, thiết bị thật và đóng module
+
+Ủy quyền Owner ngày 11/10/2026 (“Mình muốn xong mỗi module nhỏ merge luôn vào main”) tiếp tục hiệu lực: ChatGPT merge từng gói đã review, không blocker, checks bắt buộc áp dụng đạt, dependency tương thích và merge sạch; không hỏi lại từng gói, không bật auto-merge thay review.
+
+Merge là tích hợp mã nguồn, không phải Owner đã nghiệm thu local/điện thoại hoặc module đã đóng. Không suy quyền deploy/apply migration remote từ quyền merge. CI đỏ bắt buộc chưa giải quyết thì không merge.
+
+Owner thử local trước nghiệm thu thiết bị thật. Gom bản chạy theo tính năng/đợt phù hợp; không bắt Owner thử đủ mọi app sau từng sửa nhỏ. Lỗi mới chỉ yêu cầu thử lại phần ảnh hưởng; thay đổi native cần build/cài APK lại, đổi backend hoặc tài liệu không mặc định cần cài lại APK.
+
+Bản trình duyệt/mock không thay thế Android runtime. Ghi giới hạn thực tế và phần chưa kiểm chứng. Tách DB Owner test khỏi DB integration có thể bị reset; không chạy suite phá dữ liệu vào DB Owner test/staging.
+
+Nghiệm thu module ghi version/code SHA, app/luồng, môi trường, kết quả, người test/ngày và quyết định Owner. Bằng chứng cũ dùng cho phần không đổi sau khi đánh giá tác động; không mặc nhiên nghiệm thu phần đã đổi. Owner quyết định đóng/LOCK module.
+
+## CI hiện có và gói tối ưu giao Claude
+
+Tài liệu này không tự sửa cấu hình CI hay bỏ required checks hiện hữu. Claude thực hiện tối ưu CI thành gói riêng:
+
+- Tách kiểm tra theo phần/nền tảng bị ảnh hưởng khi dependency cho phép; giữ hồi quy rộng cho code dùng chung và phát hành.
+- Một lượt integration đầy đủ; kiểm tra riêng phần khác biệt local-mode/CI-mode thay vì chạy lại toàn suite. Giữ coverage của guard, credential isolation, wrong-user và remote-migration fixtures.
+- Giữ PS5.1/PS7 cho thay đổi launcher/Windows hoặc dependency liên quan; không bỏ coverage nền tảng cần thiết.
+- Tài liệu thuần túy dùng kiểm tra tài liệu phù hợp. Xác minh required-check/branch-protection tương thích trước đổi routing; không làm check bắt buộc treo vì job bị bỏ.
+- Acceptance: chứng minh coverage hiện có còn được thực thi ở phạm vi thích hợp, job cần thiết được chọn đúng và giảm chạy trùng. Không yêu cầu full-CI RED commit.
+
+Trong khi chưa cập nhật CI, các job hiện hữu vẫn tự chạy; không yêu cầu Claude chạy thêm bản sao thủ công.
+
+## Trạng thái và lịch sử
+
+Phân biệt code/CI/review/merge với local/thiết bị thật/nghiệm thu/đóng module. Dashboard DONE kỹ thuật không chứng minh module đóng. Không sửa tay docs/PROGRESS.md hay thêm field parser chưa hỗ trợ vào plan.yml.
+
+Quy tắc M00 môi trường Owner test, M01 auth/account/onboarding và M02 hồ sơ/giờ hoạt động vẫn theo phạm vi đã chốt. Không dùng UI giả để báo backend thật đã đạt. PR #31 trước phân công 09/10 vẫn cần xử lý theo bằng chứng và quyết định riêng, không đổi tác giả lịch sử. PR #53 là gói đầu tiên theo ủy quyền merge 11/10; không viết lại thành nghiệm thu cả M01.
