@@ -126,6 +126,8 @@ jobs:
           fi
           src="mobile/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk"
           out="${{ matrix.label }}-test.apk"
+          [ -f "$src" ] || src="$(find mobile/${{ matrix.app }}/build -name '*.apk' -path '*release*' | head -1)"
+          echo "apk: $src"
           cp "$src" "$work/unsigned.apk"
           zip -q -d "$work/unsigned.apk" 'META-INF/*' || true
           "$bt/zipalign" -f -p 4 "$work/unsigned.apk" "$work/aligned.apk"
