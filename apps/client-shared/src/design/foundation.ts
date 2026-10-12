@@ -1,4 +1,6 @@
 import { AppBrand, logo } from '../brand.js';
+import { staticConnection } from '../connection.js';
+import { createConnectionBanner } from '../connection-ui.js';
 import { banner, button, checkbox, chip, countdown, emptyState, gate, list, listItem, openDialog, otpField, passwordField, skeleton, textField } from '../components.js';
 import { formatCountdown, h } from '../dom.js';
 import { icon } from '../icons.js';
@@ -6,6 +8,7 @@ import { ScreenDef, ScreenEnv, VariantDef } from '../screen.js';
 import { failureMessage, STATE_COPY } from '../states.js';
 import { failureBanner } from '../screens/feedback.js';
 import { appPage, designOnly, guardForm } from '../screens/layout.js';
+import { connectionFixture } from './samples.js';
 
 // "Trạng thái chung" (C01-C10 of the design catalog) and a gallery of the shared components. These screens exist so every
 // state can be reviewed without causing a real failure. In the real app the same banners/pages are produced by the
@@ -59,6 +62,25 @@ export function stateScreens(brand: AppBrand): readonly ScreenDef[] {
       render(env) {
         const name = textField({ id: 'sample-name', label: 'Họ và tên', icon: 'user', value: 'Nguyễn Văn A' });
         return statePage(env, [failureBanner('OFFLINE'), name.root, button({ label: STATE_COPY.retry, icon: 'refresh', onClick: () => designOnly(env, STATE_COPY.designNoSend) })], 'Đăng ký');
+      },
+    },
+    {
+      id: 'state-connection',
+      code: 'F06',
+      title: 'Banner kết nối',
+      group: 'Trạng thái chung',
+      access: 'public',
+      variants: [v('default', 'Sẵn sàng (không có banner)'), v('checking', 'Đang kiểm tra'), v('backend-not-ready', 'Backend chưa ready'), v('offline', 'Offline'), v('timeout', 'Quá thời gian chờ'), v('bad-response', 'Phản hồi sai nội dung')],
+      render(env, variant) {
+        // The banner follows a fixed example here; in the real app it follows real health checks (health.ts).
+        const shown = createConnectionBanner(staticConnection(connectionFixture(variant, food ? 'food-web' : 'ship-web')));
+        const draft = textField({ id: 'sample-draft', label: 'Nội dung đang soạn', icon: 'user', value: 'Nguyễn Văn A' });
+        return appPage({
+          title: 'Kết nối',
+          onBack: () => env.back(),
+          bodyClass: 'c-stack',
+          body: [chip(STATE_COPY.designBanner, 'warn'), shown.element, draft.root, h('p', { class: 'c-caption' }, 'Điều hướng và nội dung đang soạn được giữ nguyên khi mất kết nối; không có gì tự gửi lại sau đó.')],
+        });
       },
     },
     {

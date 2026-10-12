@@ -7,6 +7,10 @@
   "include": [
     "apps/backend/src/**/*.ts",
     "tests/integration/**/*.ts",
-    "apps/admin-web/src/core/**/*.ts"
+    "apps/admin-web/src/core/**/*.ts",
+    "apps/client-shared/src/health.ts",
+    "apps/client-shared/src/errors.ts",
+    "apps/client-shared/src/environment.ts",
+    "apps/client-shared/src/connection.ts"
   ]
 }

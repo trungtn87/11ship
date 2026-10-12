@@ -1,10 +1,11 @@
 import { AppDefinition } from '../app.js';
+import { staticConnection } from '../connection.js';
 import { LeaveController } from '../leave.js';
 import { FlowStore, ScreenDef, ScreenEnv } from '../screen.js';
 import { featureStatus, isWired } from '../features.js';
 import { NOT_WIRED_PORTS } from '../ports.js';
 import { AccountView } from '../screen.js';
-import { SAMPLE } from './samples.js';
+import { connectionFixture, SAMPLE } from './samples.js';
 import { DesignViewer, PreviewContext } from './viewer.js';
 
 // Starts the design preview of an app. Design-only: the live build removes this whole folder.
@@ -42,6 +43,8 @@ export function startDesign(root: HTMLElement, app: DesignApp): DesignViewer {
         guard: (guard) => leave.register(guard),
         toast: (text) => context.toast(text),
         dialogHost: context.host,
+        // A fixed example, never a real check: the preview calls no server. Only the diagnostics screen reads its variant.
+        connection: staticConnection(connectionFixture(context.screen.id === 'diagnostics' ? context.variant : 'default', app.definition.brand.id === 'FOOD' ? 'food-web' : 'ship-web')),
         isWired,
         featureReason: (feature) => featureStatus(feature).reason,
         testSmsNotice: app.definition.testSmsNotice,
