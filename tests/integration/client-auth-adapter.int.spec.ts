@@ -13,7 +13,7 @@ const PRIVACY = 'test-privacy-20261011-v1';
 
 function ok<T>(result: AuthResult<T>): T {
   if (result.kind !== 'ok') {
-    throw new Error(`expected ok, got ${result.code}`);
+    throw new Error(`expected ok, got ${result.kind === 'failure' ? result.code : result.kind}`);
   }
   return result.value;
 }
