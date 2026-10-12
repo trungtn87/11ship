@@ -191,7 +191,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#71](https://github.com/trungtn87/11ship/pull/71) M00-VPS-01 B: Ubuntu/VinaHost artifact and runbook (draft,… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `75a0a29` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#72](https://github.com/trungtn87/11ship/pull/72) feat(M00.04): bộ UI chung, brand và trạng thái kết nối | Đã merge (`MERGED`) | — | — | — | `10b5989` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#73](https://github.com/trungtn87/11ship/pull/73) docs: rút gọn quy trình task và kiểm tra theo phần ảnh hưởng | Đã merge (`MERGED`) | — | — | — | `13be76c` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#74](https://github.com/trungtn87/11ship/pull/74) feat(m00-05): HTTPS local runtime for 11Food/11Ship | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `064778d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#74](https://github.com/trungtn87/11ship/pull/74) feat(m00-05): HTTPS local runtime for 11Food/11Ship | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `064778d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
