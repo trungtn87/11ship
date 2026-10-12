@@ -126,7 +126,10 @@ jobs:
           fi
           src="mobile/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk"
           out="${{ matrix.label }}-test.apk"
-          [ -f "$src" ] || src="$(find mobile/${{ matrix.app }}/build -name '*.apk' -path '*release*' | head -1)"
+          if [ ! -f "$src" ]; then
+            echo "::error title=apk not found::$(find . -name '*.apk' -not -path './.git/*' 2>/dev/null | head -8 | tr '\n' '|') build dirs: $(find mobile -maxdepth 3 -type d -name build | tr '\n' '|') flutter-apk: $(ls mobile/${{ matrix.app }}/build/app/outputs 2>&1 | tr '\n' '|')"
+            exit 1
+          fi
           echo "apk: $src"
           cp "$src" "$work/unsigned.apk"
           zip -q -d "$work/unsigned.apk" 'META-INF/*' || true
