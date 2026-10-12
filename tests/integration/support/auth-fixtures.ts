@@ -264,6 +264,20 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
     'DELETE FROM app.customer_profiles WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],
   );
+  // M01.04: the idempotency records of client login (scope = the user) and of the context switch (scope = the session).
+  await pool.query(
+    `DELETE FROM app.idempotency_records
+      WHERE scope_type = 'client_login'
+        AND scope_id IN (SELECT user_id::text FROM app.users WHERE phone_normalized = $1)`,
+    [normalizedPhone],
+  );
+  await pool.query(
+    `DELETE FROM app.idempotency_records
+      WHERE scope_type = 'client_session'
+        AND scope_id IN (SELECT session_id::text FROM app.sessions
+                          WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1))`,
+    [normalizedPhone],
+  );
   await pool.query(
     'DELETE FROM app.sessions WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],

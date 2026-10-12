@@ -1,6 +1,12 @@
 import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it } from '@jest/globals';
-import { normalizeFullName, parseClientRegisterBody } from './client-auth-validation';
+import {
+  normalizeFullName,
+  parseClientContextBody,
+  parseClientLoginBody,
+  parseClientLogoutBody,
+  parseClientRegisterBody,
+} from './client-auth-validation';
 
 const valid = () => ({
   phone: '0912345678',
@@ -63,6 +69,69 @@ describe('parseClientRegisterBody', () => {
     ];
     for (const candidate of cases) {
       expect(() => parseClientRegisterBody(candidate)).toThrow();
+    }
+  });
+});
+
+describe('parseClientLoginBody', () => {
+  const login = () => ({
+    phone: '0912345678',
+    password: 'whatever',
+    device: { device_id: 'web-device-0001', platform: 'WEB', app: 'SHIP' },
+  });
+
+  it('parses exactly {phone,password,device} and keeps the password untouched', () => {
+    const parsed = parseClientLoginBody({ ...login(), password: ' x ' });
+    expect(parsed.phoneNormalized).toBe('+84912345678');
+    expect(parsed.password).toBe(' x ');
+    expect(parsed.device).toEqual({ deviceId: 'web-device-0001', platform: 'WEB', app: 'SHIP' });
+  });
+
+  it('does not apply the registration length policy (a short password is just a wrong password)', () => {
+    expect(parseClientLoginBody({ ...login(), password: 'x' }).password).toBe('x');
+  });
+
+  it('refuses extra or missing keys, bad device enums, lone surrogates and oversized passwords', () => {
+    const cases: unknown[] = [
+      { ...login(), role: 'DRIVER' },
+      { ...login(), device: { ...login().device, x: 1 } },
+      { ...login(), device: { ...login().device, platform: 'IOS' } },
+      { ...login(), device: { ...login().device, app: 'SHIP11' } },
+      { ...login(), password: '\ud800' },
+      { ...login(), password: 'x'.repeat(1025) },
+      { ...login(), password: 5 },
+      Object.fromEntries(Object.entries(login()).filter(([key]) => key !== 'device')),
+      [],
+      null,
+    ];
+    for (const candidate of cases) {
+      expect(() => parseClientLoginBody(candidate)).toThrow();
+    }
+  });
+});
+
+describe('parseClientContextBody', () => {
+  it('accepts exactly one of the three public contexts', () => {
+    for (const context of ['CUSTOMER', 'SHOP_OWNER', 'DRIVER']) {
+      expect(parseClientContextBody({ context })).toEqual({ context });
+    }
+  });
+
+  it('refuses the storage name SHOP, other values, extra keys and non-objects', () => {
+    for (const candidate of [{ context: 'SHOP' }, { context: 'ADMIN' }, { context: 1 }, {}, { context: 'CUSTOMER', x: 1 }, [], null]) {
+      expect(() => parseClientContextBody(candidate)).toThrow();
+    }
+  });
+});
+
+describe('parseClientLogoutBody', () => {
+  it('accepts exactly {}', () => {
+    expect(() => parseClientLogoutBody({})).not.toThrow();
+  });
+
+  it('refuses any key, a missing body and non-objects', () => {
+    for (const candidate of [{ user_id: 'x' }, undefined, null, [], 'text']) {
+      expect(() => parseClientLogoutBody(candidate)).toThrow();
     }
   });
 });

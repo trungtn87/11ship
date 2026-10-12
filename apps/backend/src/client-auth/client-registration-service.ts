@@ -34,24 +34,14 @@ import {
   ClientAuthSettings,
 } from './client-auth-policy';
 import { ClientRegisterInput } from './client-auth-validation';
-import { ClientIdentity, ClientIdentityReader } from './client-identity-reader';
+import { IdentityCapture, requireIdentity, responseOf, storedResultOf } from './client-auth-result';
+import { ClientIdentityReader } from './client-identity-reader';
 
 export interface ClientRegisterOutcome {
   readonly status: number;
   /** The `data` of the success envelope: CURRENT identity + the original access token and expiry. */
   readonly payload: JsonObject;
   readonly replayed: boolean;
-}
-
-/** What the idempotency record stores (encrypted): ONLY the secret and the instant, never a snapshot of rights. */
-interface StoredResult {
-  readonly accessToken: string;
-  readonly expiresAt: string;
-}
-
-/** The CURRENT identity read inside the transaction of the first execution or of the replay authorization. */
-interface IdentityCapture {
-  identity: ClientIdentity | undefined;
 }
 
 /**
@@ -156,11 +146,7 @@ export class ClientRegistrationService {
     );
 
     const stored = storedResultOf(outcome.payload);
-    if (capture.identity === undefined) {
-      // Unreachable: both paths fill it before the executor returns. Fail closed rather than answer without an identity.
-      throw new TechnicalError('internal', 'The registration identity was not read');
-    }
-    return { status: outcome.status, payload: responseOf(capture.identity, stored), replayed: outcome.replayed };
+    return { status: outcome.status, payload: responseOf(requireIdentity(capture), stored), replayed: outcome.replayed };
   }
 
   async #registerNew(
@@ -336,32 +322,4 @@ export class ClientRegistrationService {
       storedActiveRole: session.activeRole,
     });
   }
-}
-
-function storedResultOf(payload: unknown): StoredResult {
-  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-    throw new TechnicalError('internal', 'Invalid stored registration result');
-  }
-  const { access_token: accessToken, expires_at: expiresAt } = payload as Record<string, unknown>;
-  if (typeof accessToken !== 'string' || typeof expiresAt !== 'string') {
-    throw new TechnicalError('internal', 'Invalid stored registration result');
-  }
-  return { accessToken, expiresAt };
-}
-
-/** The exact success `data` of contract10 section 4 + contract11 section 3 (identity, access_token, session). */
-function responseOf(identity: ClientIdentity, stored: StoredResult): JsonObject {
-  return {
-    user_id: identity.user_id,
-    phone_normalized: identity.phone_normalized,
-    available_roles: identity.available_roles,
-    active_role: identity.active_role,
-    profile: { full_name: identity.profile.full_name, version: identity.profile.version },
-    capabilities: { ...identity.capabilities },
-    onboarding: { ...identity.onboarding },
-    onboarding_required: identity.onboarding_required,
-    role_selection_required: identity.role_selection_required,
-    access_token: stored.accessToken,
-    session: { expires_at: stored.expiresAt },
-  };
 }
