@@ -71,7 +71,7 @@ jobs:
         run: |
           for d in mobile/packages/n11_shared mobile/${{ matrix.app }}; do
             (cd "$d" && flutter pub get) 2>&1 | tee "$RUNNER_TEMP/pub.log" || {
-              echo "::error title=pub get failed in $d::$(tail -c 900 "$RUNNER_TEMP/pub.log" | tr '\n' ' ')"; exit 1; }
+              echo "::error title=pub get failed in $d::$(head -c 1400 "$RUNNER_TEMP/pub.log" | tr '\n' ' ')"; exit 1; }
           done
 
       - name: Analyze
