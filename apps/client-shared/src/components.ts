@@ -1,6 +1,6 @@
 import { Child, h } from './dom.js';
 import { icon, IconName } from './icons.js';
-import { sanitizeOtp, OTP_LENGTH } from './validation.js';
+import { extractOtp, OTP_LENGTH } from './validation.js';
 import { STATE_COPY } from './states.js';
 
 // Display components of the phone apps. Pure presentation: they hold no business rule and call no backend.
@@ -103,6 +103,7 @@ export interface FieldOptions {
   readonly type?: string;
   readonly inputMode?: string;
   readonly autocomplete?: string;
+  readonly autocapitalize?: string;
   readonly placeholder?: string;
   readonly value?: string;
   readonly readOnly?: boolean;
@@ -132,6 +133,7 @@ export function textField(options: FieldOptions): FieldHandle {
     type: options.type ?? 'text',
     inputmode: options.inputMode,
     autocomplete: options.autocomplete,
+    autocapitalize: options.autocapitalize,
     placeholder: options.placeholder,
     maxlength: options.maxLength === undefined ? undefined : String(options.maxLength),
     readonly: options.readOnly === true,
@@ -163,7 +165,8 @@ export function textField(options: FieldOptions): FieldHandle {
 
 export function passwordField(options: Omit<FieldOptions, 'type' | 'trailing' | 'icon'> & { readonly autocomplete: 'current-password' | 'new-password' }): FieldHandle {
   const toggle = h('button', { type: 'button', class: 'c-iconbtn', 'aria-label': 'Hiện mật khẩu', 'aria-pressed': 'false', 'aria-controls': options.id }, icon('eye', 20));
-  const field = textField({ ...options, type: 'password', icon: 'lock', trailing: toggle });
+  // The value is whatever was typed, byte for byte: no trim, no normalization, no length cap here (the form checks the length).
+  const field = textField({ ...options, type: 'password', icon: 'lock', trailing: toggle, autocapitalize: 'off' });
   toggle.addEventListener('click', () => {
     const show = field.input.type === 'password';
     field.input.type = show ? 'text' : 'password';
@@ -185,7 +188,9 @@ export interface OtpHandle {
 
 /**
  * Six digits. ONE real input carries the value (keyboard, paste, SMS autofill, screen reader); six decorative cells only
- * show the digits. Anything that is not an ASCII digit is dropped, leading zeros are kept (the value is a string).
+ * show the digits. Anything that is not an ASCII digit is dropped, leading zeros are kept (the value is a string). A pasted or
+ * autofilled whole message ("11Ship: 012345 ...") yields the standalone six-digit code in it, not the digits of its first words,
+ * and the input has no maxlength so a long message is not cut before the code.
  */
 export function otpField(options: { readonly id: string; readonly label: string; readonly onChange?: (value: string) => void }): OtpHandle {
   const errorId = `${options.id}-error`;
@@ -196,7 +201,6 @@ export function otpField(options: { readonly id: string; readonly label: string;
     inputmode: 'numeric',
     autocomplete: 'one-time-code',
     pattern: '[0-9]*',
-    maxlength: '12',
     class: 'c-otp__input',
     spellcheck: 'false',
     'aria-describedby': errorId,
@@ -217,13 +221,24 @@ export function otpField(options: { readonly id: string; readonly label: string;
       cell.setAttribute('data-active', String(focused && index === Math.min(value.length, OTP_LENGTH - 1)));
     });
   };
-  input.addEventListener('input', () => {
-    const clean = sanitizeOtp(input.value);
+  const apply = (raw: string): void => {
+    const clean = extractOtp(raw);
     if (clean !== input.value) {
       input.value = clean;
     }
     paint();
     options.onChange?.(clean);
+  };
+  input.addEventListener('input', () => apply(input.value));
+  input.addEventListener('paste', (event) => {
+    const pasted = event.clipboardData?.getData('text') ?? '';
+    if (pasted === '') {
+      return;
+    }
+    event.preventDefault();
+    // A pasted code is the whole code. A short paste (a few digits) continues what is already typed.
+    const whole = extractOtp(pasted);
+    apply(whole.length === OTP_LENGTH ? whole : extractOtp(`${input.value}${whole}`));
   });
   input.addEventListener('focus', paint);
   input.addEventListener('blur', paint);
@@ -550,21 +565,102 @@ export const WINDOW_TICKER: Ticker = {
   clearInterval: (handle) => window.clearInterval(handle),
 };
 
-/** Counts down whole seconds from `seconds`; calls `onTick(remaining)` immediately and every second, `onDone` at zero. */
-export function countdown(seconds: number, onTick: (remaining: number) => void, onDone: () => void, ticker: Ticker = WINDOW_TICKER): { stop(): void } {
-  let remaining = Math.max(0, Math.floor(seconds));
-  onTick(remaining);
-  if (remaining === 0) {
-    onDone();
-    return { stop: () => undefined };
-  }
-  const handle = ticker.setInterval(() => {
-    remaining -= 1;
-    onTick(remaining);
-    if (remaining <= 0) {
+/** Wall clock in epoch ms: it keeps counting while a tab sleeps, which is what "the server's deadline passed" means. */
+export interface Clock {
+  now(): number;
+}
+
+export const WALL_CLOCK: Clock = { now: () => Date.now() };
+
+/** Tells a countdown that the page is back (tab visible again, page restored from the back/forward cache, window focused). */
+export interface ResumeSource {
+  subscribe(callback: () => void): () => void;
+}
+
+export const WINDOW_RESUME: ResumeSource = {
+  subscribe(callback) {
+    if (typeof document === 'undefined' || typeof window === 'undefined') {
+      return () => undefined;
+    }
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'visible') {
+        callback();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pageshow', callback);
+    window.addEventListener('focus', callback);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pageshow', callback);
+      window.removeEventListener('focus', callback);
+    };
+  },
+};
+
+export interface CountdownOptions {
+  readonly ticker?: Ticker;
+  readonly clock?: Clock;
+  readonly resume?: ResumeSource;
+}
+
+/** Polling step. The shown number is always recomputed from the deadline, so a late or skipped step never drifts it. */
+const COUNTDOWN_STEP_MS = 250;
+
+/**
+ * Counts down to `deadlineMs` (epoch ms, from a server value). The remaining whole seconds are RECOMPUTED from the clock on every
+ * step and whenever the page resumes, never decremented, so a throttled background tab or a sleeping phone shows the true time
+ * when it comes back. `onTick(remaining)` runs immediately and whenever the number changes; `onDone` runs once at zero.
+ * It never sends anything and never starts another countdown: what happens at zero (for example enabling "send again") is the
+ * caller's decision.
+ */
+export function countdownUntil(deadlineMs: number, onTick: (remaining: number) => void, onDone: () => void, options: CountdownOptions = {}): { stop(): void } {
+  const ticker = options.ticker ?? WINDOW_TICKER;
+  const clock = options.clock ?? WALL_CLOCK;
+  const resume = options.resume ?? WINDOW_RESUME;
+  const startedAt = clock.now();
+  // A clock moved backwards must not make the time left grow past what was asked for.
+  const ceiling = Math.max(0, Math.ceil((deadlineMs - startedAt) / 1000));
+  let shown = -1;
+  let finished = false;
+  let handle: number | undefined;
+  let unsubscribe: (() => void) | undefined;
+
+  const stop = (): void => {
+    finished = true;
+    if (handle !== undefined) {
       ticker.clearInterval(handle);
+      handle = undefined;
+    }
+    unsubscribe?.();
+    unsubscribe = undefined;
+  };
+  const refresh = (): void => {
+    if (finished) {
+      return;
+    }
+    const remaining = Math.min(ceiling, Math.max(0, Math.ceil((deadlineMs - clock.now()) / 1000)));
+    if (remaining !== shown) {
+      shown = remaining;
+      onTick(remaining);
+    }
+    if (remaining === 0 && !finished) {
+      stop();
       onDone();
     }
-  }, 1000);
-  return { stop: () => ticker.clearInterval(handle) };
+  };
+
+  refresh();
+  if (!finished) {
+    handle = ticker.setInterval(refresh, COUNTDOWN_STEP_MS);
+    unsubscribe = resume.subscribe(refresh);
+  }
+  return { stop };
+}
+
+/** Counts down `seconds` from now. Same behaviour as `countdownUntil` with the deadline taken at the call. */
+export function countdown(seconds: number, onTick: (remaining: number) => void, onDone: () => void, ticker: Ticker = WINDOW_TICKER, options: Omit<CountdownOptions, 'ticker'> = {}): { stop(): void } {
+  const clock = options.clock ?? WALL_CLOCK;
+  const whole = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0));
+  return countdownUntil(clock.now() + whole * 1000, onTick, onDone, { ...options, ticker, clock });
 }

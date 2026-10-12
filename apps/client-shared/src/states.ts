@@ -18,6 +18,21 @@ export type FailureCode =
   | 'PHONE_ALREADY_REGISTERED'
   | 'PROVIDER_UNAVAILABLE'
   | 'NOT_WIRED' // C10: the backend contract for this action does not exist yet
+  // Codes of the real client-auth adapter (apps/client-shared/src/auth). Each has ONE fixed copy below: nothing the server
+  // wrote is ever shown.
+  | 'OTP_ALREADY_USED'
+  | 'PROOF_INVALID' // the phone proof is missing, wrong, expired or for another purpose: verify the phone again
+  | 'PROOF_USED' // the phone proof was already consumed by another request
+  | 'ACCOUNT_DISABLED'
+  | 'ROLE_NOT_AVAILABLE'
+  | 'CONSENT_UNSUPPORTED'
+  | 'RESULT_NOT_REPLAYABLE' // the earlier result cannot be shown again: the person signs in again
+  | 'DEVICE_PROOF_REQUIRED'
+  | 'SERVICE_UNAVAILABLE'
+  | 'REGISTRATION_UNAVAILABLE'
+  | 'BAD_REQUEST'
+  | 'BAD_RESPONSE' // the server answered with something that is not the agreed shape
+  | 'IN_PROGRESS' // another request of the same kind is still running
   | 'UNKNOWN';
 
 export const STATE_COPY = {
@@ -43,6 +58,8 @@ export const STATE_COPY = {
   invalidCredentials: 'Thông tin đăng nhập không đúng.',
   phoneRegistered: 'Số điện thoại này đã có tài khoản.',
   providerUnavailable: 'Chưa gửi được mã lúc này. Vui lòng thử lại sau.',
+  loggedOut: 'Đã đăng xuất khỏi ứng dụng.',
+  loggedOutUnconfirmed: 'Đã xóa phiên trên thiết bị này. Chưa xác nhận được với máy chủ nên phiên có thể còn hiệu lực cho đến khi hết hạn.',
   passwordRule: 'Mật khẩu cần từ 8 đến 128 ký tự.',
   passwordMismatch: 'Hai mật khẩu chưa khớp.',
   nameInvalid: 'Nhập họ tên (tối đa 120 ký tự).',
@@ -87,6 +104,32 @@ export function failureMessage(code: FailureCode, retryAfterSeconds?: number): {
       return { title: STATE_COPY.phoneRegistered, text: 'Hãy đăng nhập, hoặc dùng số điện thoại khác.' };
     case 'PROVIDER_UNAVAILABLE':
       return { title: 'Chưa gửi được mã', text: STATE_COPY.providerUnavailable };
+    case 'OTP_ALREADY_USED':
+      return { title: 'Mã đã được dùng', text: 'Hãy yêu cầu mã mới.' };
+    case 'PROOF_INVALID':
+      return { title: 'Cần xác minh lại số điện thoại', text: 'Phiên xác minh không còn hiệu lực. Vui lòng xác minh số điện thoại lại.' };
+    case 'PROOF_USED':
+      return { title: 'Xác minh đã được sử dụng', text: 'Vui lòng xác minh số điện thoại lại.' };
+    case 'ACCOUNT_DISABLED':
+      return { title: 'Tài khoản đang bị khóa', text: 'Vui lòng liên hệ bộ phận hỗ trợ.' };
+    case 'ROLE_NOT_AVAILABLE':
+      return { title: 'Chưa chọn được vai trò này', text: 'Tài khoản của bạn chưa dùng được vai trò vừa chọn.' };
+    case 'CONSENT_UNSUPPORTED':
+      return { title: 'Điều khoản đã được cập nhật', text: 'Vui lòng mở lại màn hình đăng ký để xem phiên bản mới.' };
+    case 'RESULT_NOT_REPLAYABLE':
+      return { title: 'Vui lòng đăng nhập', text: 'Kết quả trước đó không còn dùng được. Hãy đăng nhập bằng số điện thoại và mật khẩu.' };
+    case 'DEVICE_PROOF_REQUIRED':
+      return { title: 'Cần xác thực thiết bị', text: 'Phiên bản này chưa được phép dùng trên máy chủ này.' };
+    case 'SERVICE_UNAVAILABLE':
+      return { title: 'Máy chủ tạm thời chưa phục vụ được', text: 'Vui lòng thử lại sau ít phút.' };
+    case 'REGISTRATION_UNAVAILABLE':
+      return { title: 'Đăng ký tạm thời chưa mở', text: 'Máy chủ này chưa nhận đăng ký mới. Vui lòng thử lại sau.' };
+    case 'BAD_REQUEST':
+      return { title: 'Thông tin chưa hợp lệ', text: 'Vui lòng kiểm tra lại các trường đã nhập.' };
+    case 'BAD_RESPONSE':
+      return { title: 'Máy chủ phản hồi chưa đúng', text: 'Phản hồi không như mong đợi. Vui lòng thử lại.' };
+    case 'IN_PROGRESS':
+      return { title: STATE_COPY.working, text: 'Yêu cầu trước vẫn đang chạy. Vui lòng chờ.' };
     case 'NOT_WIRED':
       return { title: STATE_COPY.notWiredTitle, text: 'Chức năng này chưa có máy chủ phục vụ.' };
     case 'UNKNOWN':

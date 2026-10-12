@@ -1,0 +1,454 @@
+import { REAL_TIMERS, Timers } from '../health.js';
+import { FailureCode } from '../states.js';
+import { isCompleteOtp, isValidPassword, isValidPhone, isWellFormed, normalizePersonName } from '../validation.js';
+import {
+  AUTH_PATHS,
+  AuthIdentity,
+  AuthOperation,
+  ClientApp,
+  deadlineAfter,
+  errorCodeOf,
+  isConsentVersion,
+  isDeviceId,
+  isUuid,
+  mapHttpFailure,
+  MappedFailure,
+  parseIdentityResponse,
+  parseOtpIssued,
+  parseOtpVerified,
+  parseSignInResponse,
+  PUBLIC_CONTEXTS,
+  PublicContext,
+  REGISTER_PURPOSE,
+} from './contract.js';
+import { FlowGeneration, SessionListener, SessionState, SessionStore, SessionTicket } from './session.js';
+import { AUTH_TIMEOUT_MS, createTransport, TransportRequest, TransportResult } from './transport.js';
+
+// The client authentication of the phone apps, as one object: REGISTER OTP, register, login, me, context, logout.
+//
+// What the screens get: typed results (never a raw server message), the identity (never the bearer token), and the three
+// guarantees below. What this file does NOT do: route, render, choose a feature flag, store anything outside memory, retry a
+// POST by itself, or invent a cooldown. Wiring a screen to it is a later package.
+//
+// 1. STALE RESPONSES. Every call notes the session generation (or, for the OTP steps, the flow generation) when it starts. A
+//    response that arrives after a sign-out, after another sign-in, or after the flow was reset answers `{kind:'stale'}`:
+//    nothing was applied and the screen must show nothing.
+// 2. ONE INTENT, ONE KEY. register, login and context carry an Idempotency-Key. The key and the exact body of an attempt whose
+//    outcome is unknown (timeout, dropped connection, 5xx, busy) are kept; the NEXT call with the SAME input re-sends that key
+//    and those bytes. A different input, or a definite answer, starts a new intent with a new key. Nothing is re-sent
+//    automatically: the person decides.
+// 3. NO DOUBLE SUBMIT. While a call of one kind runs, the same call returns the same promise (no second request) and a
+//    different input answers IN_PROGRESS.
+
+export type AuthResult<T> =
+  | { readonly kind: 'ok'; readonly value: T }
+  | {
+      readonly kind: 'failure';
+      readonly code: FailureCode;
+      /** Seconds from the server's Retry-After, only when the server gave one. The client never invents a cooldown. */
+      readonly retryAfterSeconds?: number;
+      /** The server may or may not have done the work: calling again with the same input re-sends the SAME request. */
+      readonly unresolved: boolean;
+    }
+  | { readonly kind: 'stale' };
+
+export interface OtpIssued {
+  readonly verificationId: string;
+  /** Epoch ms when the code stops being valid, from the server's value counted from the moment the request started. */
+  readonly expiresAtMs: number;
+  /** Epoch ms from which a new code may be asked. The screen enables "send again" at this instant and not before. */
+  readonly resendAtMs: number;
+}
+
+export interface OtpVerified {
+  /** The one-use phone proof for register. Keep it in memory only and hand it to `register` once. */
+  readonly verificationToken: string;
+  readonly expiresAtMs: number;
+}
+
+export interface SignedIn {
+  readonly identity: AuthIdentity;
+  readonly expiresAtMs: number;
+}
+
+export interface LogoutResult {
+  /** False when nobody was signed in. */
+  readonly hadSession: boolean;
+  /** True ONLY when the server answered 204. Offline, timeout and every error leave it false: the local session is gone, the server's is not proven revoked. */
+  readonly serverRevoked: boolean;
+  /** Why the server did not confirm, when it did not. */
+  readonly unconfirmedReason?: FailureCode;
+}
+
+export interface RegisterInput {
+  readonly phone: string;
+  /** Sent exactly as typed: not trimmed, not normalized. */
+  readonly password: string;
+  readonly verificationToken: string;
+  readonly fullName: string;
+  /** The pair the server publishes (the register screen shows it). The client never invents or fixes it. */
+  readonly consent: { readonly termsVersion: string; readonly privacyVersion: string };
+}
+
+export interface LoginInput {
+  readonly phone: string;
+  /** Sent exactly as typed: not trimmed, not normalized. */
+  readonly password: string;
+}
+
+/** What the screens may read of the session. No token, no way to establish one. */
+export interface AuthSessionView {
+  state(): SessionState;
+  identity(): AuthIdentity | undefined;
+  subscribe(listener: SessionListener): () => void;
+}
+
+export interface AuthClient {
+  readonly session: AuthSessionView;
+  requestRegisterOtp(input: { readonly phone: string }): Promise<AuthResult<OtpIssued>>;
+  verifyRegisterOtp(input: { readonly verificationId: string; readonly code: string }): Promise<AuthResult<OtpVerified>>;
+  /** Restarting or leaving the register flow: every OTP answer still on its way becomes stale. */
+  resetRegisterFlow(): void;
+  register(input: RegisterInput): Promise<AuthResult<SignedIn>>;
+  login(input: LoginInput): Promise<AuthResult<SignedIn>>;
+  me(): Promise<AuthResult<SignedIn>>;
+  selectContext(context: PublicContext): Promise<AuthResult<SignedIn>>;
+  logout(): Promise<AuthResult<LogoutResult>>;
+  /** Drops the session, the pending intents and every in-flight answer (the app closing a screen tree). */
+  dispose(): void;
+}
+
+export interface AuthClientOptions {
+  readonly fetch: typeof fetch;
+  readonly app: ClientApp;
+  /** '' = same origin. No trailing slash. */
+  readonly baseUrl?: string;
+  readonly timers?: Timers;
+  readonly timeoutMs?: number;
+  /** A fresh canonical UUID. Default: crypto.randomUUID(). Tests inject a counter. */
+  readonly newKey?: () => string;
+  /** The WEB device id of this page load. Default: `web-` + a random UUID. Never stored. */
+  readonly deviceId?: string;
+}
+
+type Intent = 'register' | 'login' | 'context';
+const NO_RETRY: undefined = undefined;
+
+const fail = (code: FailureCode, unresolved = false, retryAfterSeconds?: number): AuthResult<never> =>
+  retryAfterSeconds === undefined ? { kind: 'failure', code, unresolved } : { kind: 'failure', code, unresolved, retryAfterSeconds };
+
+type Classified<B> = { readonly kind: 'ok'; readonly body: B } | { readonly kind: 'failure'; readonly result: AuthResult<never>; readonly mapped: MappedFailure | undefined } | { readonly kind: 'aborted' };
+
+export function createAuthClient(options: AuthClientOptions): AuthClient {
+  const timers = options.timers ?? REAL_TIMERS;
+  const store = new SessionStore(() => timers.now());
+  const registerFlow = new FlowGeneration();
+  const transport = createTransport({ fetch: options.fetch, ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }), timers, timeoutMs: options.timeoutMs ?? AUTH_TIMEOUT_MS });
+  const newKey = options.newKey ?? ((): string => crypto.randomUUID());
+  const deviceId = options.deviceId ?? `web-${crypto.randomUUID()}`;
+  if (!isDeviceId(deviceId)) {
+    throw new RangeError('deviceId does not match the device id grammar');
+  }
+  const device = { device_id: deviceId, platform: 'WEB', app: options.app } as const;
+
+  // ---- intents (key + exact body of an unresolved attempt) and in-flight calls --------------------------------------
+  const intents = new Map<Intent, { readonly key: string; readonly body: string }>();
+  const running = new Map<string, { readonly body: string; readonly promise: Promise<AuthResult<unknown>> }>();
+  let logoutRun: Promise<AuthResult<LogoutResult>> | undefined;
+
+  const keyFor = (intent: Intent, body: string): string => {
+    const current = intents.get(intent);
+    if (current !== undefined && current.body === body) {
+      return current.key;
+    }
+    const key = newKey();
+    intents.set(intent, { key, body });
+    return key;
+  };
+  // A context request belongs to the session it was made in: when WHO is signed in changes, its key and body are dropped.
+  let seenGeneration = store.ticket().generation;
+  store.subscribe(() => {
+    const generation = store.ticket().generation;
+    if (generation !== seenGeneration) {
+      seenGeneration = generation;
+      intents.delete('context');
+    }
+  });
+
+  /** Single flight per call kind: the same input shares the running promise, another input answers IN_PROGRESS. */
+  function single<T>(name: string, body: string, start: () => Promise<AuthResult<T>>): Promise<AuthResult<T>> {
+    const current = running.get(name);
+    if (current !== undefined) {
+      return current.body === body ? (current.promise as Promise<AuthResult<T>>) : Promise.resolve(fail('IN_PROGRESS'));
+    }
+    const promise: Promise<AuthResult<T>> = start().finally(() => {
+      // A sign-out empties `running`; an old call finishing late must not remove the entry of a newer one.
+      if (running.get(name)?.promise === promise) {
+        running.delete(name);
+      }
+    });
+    running.set(name, { body, promise });
+    return promise;
+  }
+
+  function classify<B>(operation: AuthOperation, result: TransportResult, expectedStatus: number, parse: (body: unknown) => B | undefined): Classified<B> {
+    const keyed = operation === 'register' || operation === 'login' || operation === 'context';
+    switch (result.kind) {
+      case 'aborted':
+        return { kind: 'aborted' };
+      case 'timeout':
+        return { kind: 'failure', result: fail('TIMEOUT', keyed), mapped: undefined };
+      case 'network':
+        return { kind: 'failure', result: fail('OFFLINE', keyed), mapped: undefined };
+      case 'response': {
+        if (result.status === expectedStatus) {
+          const parsed = parse(result.body);
+          return parsed === undefined ? { kind: 'failure', result: fail('BAD_RESPONSE', keyed), mapped: undefined } : { kind: 'ok', body: parsed };
+        }
+        if (result.status >= 200 && result.status < 300) {
+          return { kind: 'failure', result: fail('BAD_RESPONSE', keyed), mapped: undefined };
+        }
+        const mapped = mapHttpFailure(operation, result.status, errorCodeOf(result.body));
+        return { kind: 'failure', result: fail(mapped.code, mapped.unresolved, mapped.code === 'RATE_LIMITED' ? result.retryAfterSeconds : undefined), mapped };
+      }
+    }
+  }
+
+  /** Applies the intent bookkeeping after an attempt: a definite answer ends the intent, an unresolved one keeps it. */
+  function settle(intent: Intent, answer: AuthResult<unknown>): void {
+    if (answer.kind !== 'failure' || !answer.unresolved) {
+      intents.delete(intent);
+    }
+  }
+
+  // ---- REGISTER OTP ----------------------------------------------------------------------------------------------
+  function requestRegisterOtp(input: { readonly phone: string }): Promise<AuthResult<OtpIssued>> {
+    if (typeof input.phone !== 'string' || !isValidPhone(input.phone)) {
+      return Promise.resolve(fail('INVALID_PHONE'));
+    }
+    const phone = input.phone.trim();
+    const body = JSON.stringify({ phone, purpose: REGISTER_PURPOSE });
+    return single('otpRequest', body, async () => {
+      const ticket = registerFlow.ticket();
+      const startedAt = timers.now();
+      const result = await transport.send({ method: 'POST', path: AUTH_PATHS.requestOtp, body });
+      if (!registerFlow.isCurrent(ticket)) {
+        return { kind: 'stale' };
+      }
+      const outcome = classify('otpRequest', result, 201, parseOtpIssued);
+      if (outcome.kind === 'aborted') {
+        return { kind: 'stale' };
+      }
+      if (outcome.kind === 'failure') {
+        return outcome.result as AuthResult<OtpIssued>;
+      }
+      return {
+        kind: 'ok',
+        value: { verificationId: outcome.body.verificationId, expiresAtMs: deadlineAfter(startedAt, outcome.body.expiresInSeconds), resendAtMs: deadlineAfter(startedAt, outcome.body.resendAfterSeconds) },
+      };
+    });
+  }
+
+  function verifyRegisterOtp(input: { readonly verificationId: string; readonly code: string }): Promise<AuthResult<OtpVerified>> {
+    // The id goes into the URL path, so it must be a canonical UUID. The code goes only in the body.
+    if (!isUuid(input.verificationId)) {
+      return Promise.resolve(fail('OTP_INVALID'));
+    }
+    if (typeof input.code !== 'string' || !isCompleteOtp(input.code)) {
+      return Promise.resolve(fail('OTP_INVALID'));
+    }
+    const body = JSON.stringify({ otp: input.code });
+    return single(`otpVerify:${input.verificationId}`, body, async () => {
+      const ticket = registerFlow.ticket();
+      const startedAt = timers.now();
+      const result = await transport.send({ method: 'POST', path: AUTH_PATHS.verifyOtp(input.verificationId), body });
+      if (!registerFlow.isCurrent(ticket)) {
+        return { kind: 'stale' };
+      }
+      const outcome = classify('otpVerify', result, 200, parseOtpVerified);
+      if (outcome.kind === 'aborted') {
+        return { kind: 'stale' };
+      }
+      if (outcome.kind === 'failure') {
+        return outcome.result as AuthResult<OtpVerified>;
+      }
+      return { kind: 'ok', value: { verificationToken: outcome.body.verificationToken, expiresAtMs: deadlineAfter(startedAt, outcome.body.expiresInSeconds) } };
+    });
+  }
+
+  // ---- sign-in (register, login) ---------------------------------------------------------------------------------
+  function signIn(intent: 'register' | 'login', path: string, body: string): Promise<AuthResult<SignedIn>> {
+    return single(intent, body, async () => {
+      const ticket = store.ticket();
+      const key = keyFor(intent, body);
+      const result = await transport.send({ method: 'POST', path, body, idempotencyKey: key });
+      const outcome = classify(intent, result, intent === 'register' ? 201 : 200, parseSignInResponse);
+      if (outcome.kind === 'aborted') {
+        return { kind: 'stale' };
+      }
+      const answer: AuthResult<SignedIn> =
+        outcome.kind === 'failure'
+          ? (outcome.result as AuthResult<SignedIn>)
+          : (() => {
+              // Apply only if the session did not change meanwhile. A sign-in that lost that race is dropped here, token included.
+              const applied = store.establish(ticket, outcome.body.accessToken, outcome.body.identity, outcome.body.session.expiresAtMs);
+              return applied ? { kind: 'ok', value: { identity: outcome.body.identity, expiresAtMs: outcome.body.session.expiresAtMs } } : { kind: 'stale' };
+            })();
+      if (answer.kind === 'ok' && intent === 'register') {
+        registerFlow.reset();
+      }
+      if (answer.kind === 'failure' && !store.isCurrent(ticket)) {
+        // The session changed while this attempt ran: whatever it answered is not about the current session.
+        intents.delete(intent);
+        return { kind: 'stale' };
+      }
+      settle(intent, answer);
+      return answer;
+    });
+  }
+
+  function registerUser(input: RegisterInput): Promise<AuthResult<SignedIn>> {
+    const fullName = typeof input.fullName === 'string' ? normalizePersonName(input.fullName) : undefined;
+    if (typeof input.phone !== 'string' || !isValidPhone(input.phone)) {
+      return Promise.resolve(fail('INVALID_PHONE'));
+    }
+    if (
+      typeof input.password !== 'string' ||
+      !isValidPassword(input.password) ||
+      fullName === undefined ||
+      typeof input.verificationToken !== 'string' ||
+      input.verificationToken.length < 1 ||
+      input.verificationToken.length > 256 ||
+      !isConsentVersion(input.consent?.termsVersion) ||
+      !isConsentVersion(input.consent?.privacyVersion)
+    ) {
+      return Promise.resolve(fail('BAD_REQUEST'));
+    }
+    // Key order is fixed, so the same input always serializes to the same bytes.
+    const body = JSON.stringify({
+      phone: input.phone.trim(),
+      password: input.password,
+      verification_token: input.verificationToken,
+      device,
+      full_name: fullName,
+      consent: { terms_version: input.consent.termsVersion, privacy_version: input.consent.privacyVersion },
+    });
+    return signIn('register', AUTH_PATHS.register, body);
+  }
+
+  function login(input: LoginInput): Promise<AuthResult<SignedIn>> {
+    if (typeof input.phone !== 'string' || !isValidPhone(input.phone)) {
+      return Promise.resolve(fail('INVALID_PHONE'));
+    }
+    if (typeof input.password !== 'string' || input.password.length < 1 || input.password.length > 1024 || !isWellFormed(input.password)) {
+      return Promise.resolve(fail('BAD_REQUEST'));
+    }
+    return signIn('login', AUTH_PATHS.login, JSON.stringify({ phone: input.phone.trim(), password: input.password, device }));
+  }
+
+  // ---- authenticated calls ---------------------------------------------------------------------------------------
+  /** One authenticated request whose answer is an identity (me, context). */
+  async function identityCall(operation: 'me' | 'context', request: Omit<TransportRequest, 'bearer' | 'signal'>, intent: Intent | undefined): Promise<AuthResult<SignedIn>> {
+    const ticket = store.ticket();
+    const bearer = store.bearer();
+    if (bearer === undefined) {
+      return fail('SESSION_EXPIRED');
+    }
+    const controller = new AbortController();
+    const untrack = store.track(controller);
+    let result: TransportResult;
+    try {
+      result = await transport.send({ ...request, bearer, signal: controller.signal });
+    } finally {
+      untrack();
+    }
+    const outcome = classify(operation, result, 200, parseIdentityResponse);
+    if (outcome.kind === 'aborted' || !store.isCurrent(ticket)) {
+      // A sign-out or a newer session happened while this ran: its answer must not touch anything.
+      return { kind: 'stale' };
+    }
+    if (outcome.kind === 'failure') {
+      if (outcome.mapped?.sessionInvalid === true) {
+        store.invalidate(ticket);
+      }
+      if (intent !== undefined) {
+        settle(intent, outcome.result);
+      }
+      return outcome.result as AuthResult<SignedIn>;
+    }
+    const applied = store.refresh(ticket, outcome.body.identity, outcome.body.session.expiresAtMs);
+    if (intent !== undefined) {
+      intents.delete(intent);
+    }
+    return applied ? { kind: 'ok', value: { identity: outcome.body.identity, expiresAtMs: outcome.body.session.expiresAtMs } } : { kind: 'stale' };
+  }
+
+  function me(): Promise<AuthResult<SignedIn>> {
+    return single('me', '', () => identityCall('me', { method: 'GET', path: AUTH_PATHS.me }, NO_RETRY));
+  }
+
+  function selectContext(context: PublicContext): Promise<AuthResult<SignedIn>> {
+    if (!(PUBLIC_CONTEXTS as readonly string[]).includes(context)) {
+      return Promise.resolve(fail('BAD_REQUEST'));
+    }
+    const body = JSON.stringify({ context });
+    return single('context', body, () => {
+      const key = keyFor('context', body);
+      return identityCall('context', { method: 'POST', path: AUTH_PATHS.context, body, idempotencyKey: key }, 'context');
+    });
+  }
+
+  // ---- logout ----------------------------------------------------------------------------------------------------
+  function logout(): Promise<AuthResult<LogoutResult>> {
+    if (logoutRun !== undefined) {
+      return logoutRun;
+    }
+    const token = store.bearer();
+    // Local first and unconditionally: token and personal data are gone before the network is touched, running
+    // authenticated calls are cancelled, and every sign-in still on its way is stale (the generation moved).
+    store.clear();
+    intents.clear();
+    running.clear();
+    registerFlow.reset();
+    if (token === undefined) {
+      return Promise.resolve({ kind: 'ok', value: { hadSession: false, serverRevoked: false } });
+    }
+    const run = (async (): Promise<AuthResult<LogoutResult>> => {
+      const result = await transport.send({ method: 'POST', path: AUTH_PATHS.logout, body: '{}', bearer: token });
+      if (result.kind === 'response' && result.status === 204) {
+        return { kind: 'ok', value: { hadSession: true, serverRevoked: true } };
+      }
+      const reason: FailureCode =
+        result.kind === 'timeout'
+          ? 'TIMEOUT'
+          : result.kind === 'network'
+            ? 'OFFLINE'
+            : result.kind === 'response'
+              ? mapHttpFailure('logout', result.status, errorCodeOf(result.body)).code
+              : 'UNKNOWN';
+      // The local sign-out stands; the server's session is NOT proven revoked, and the result says so.
+      return { kind: 'ok', value: { hadSession: true, serverRevoked: false, unconfirmedReason: reason } };
+    })().finally(() => {
+      logoutRun = undefined;
+    });
+    logoutRun = run;
+    return run;
+  }
+
+  function dispose(): void {
+    store.clear();
+    intents.clear();
+    running.clear();
+    registerFlow.reset();
+  }
+
+  const session: AuthSessionView = {
+    state: () => store.state(),
+    identity: () => store.identity(),
+    subscribe: (listener) => store.subscribe(listener),
+  };
+
+  return { session, requestRegisterOtp, verifyRegisterOtp, resetRegisterFlow: () => registerFlow.reset(), register: registerUser, login, me, selectContext, logout, dispose };
+}
+
+export type { SessionTicket };

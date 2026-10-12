@@ -45,6 +45,15 @@ export function sanitizeOtp(raw: string): string {
   return digits;
 }
 
+/**
+ * The code in what the person pasted or what autofill wrote. A standalone run of exactly six digits wins ("11Ship: 012345" is
+ * 012345, not 111234); otherwise the digits are collected as `sanitizeOtp` does ("123 456", "12-34-56"). Always a string.
+ */
+export function extractOtp(raw: string): string {
+  const standalone = /(?<![0-9])[0-9]{6}(?![0-9])/.exec(raw);
+  return standalone === null ? sanitizeOtp(raw) : standalone[0];
+}
+
 export function isCompleteOtp(code: string): boolean {
   return /^[0-9]{6}$/.test(code);
 }
