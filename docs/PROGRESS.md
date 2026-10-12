@@ -197,8 +197,8 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#77](https://github.com/trungtn87/11ship/pull/77) M00.08: mở Web Admin qua launcher local | Đã merge (`MERGED`) | — | — | — | `8bc9039` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#78](https://github.com/trungtn87/11ship/pull/78) M01.05: hồ sơ khách và hồ sơ xế (read model, backend) | Đã merge (`MERGED`) | — | — | — | `fe4313c` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#79](https://github.com/trungtn87/11ship/pull/79) M00.09: shortcut Desktop cho Admin/Food/Ship, Status gọn | Đã merge (`MERGED`) | — | — | — | `a844ed5` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#80](https://github.com/trungtn87/11ship/pull/80) feat(client-shared): M01.06 shared client-auth transport/st… | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `5081dee` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#81](https://github.com/trungtn87/11ship/pull/81) Logos and Flutter test APKs (11Food, 11Ship) | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `8e822cc` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#80](https://github.com/trungtn87/11ship/pull/80) feat(client-shared): M01.06 shared client-auth transport/st… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `5081dee` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#81](https://github.com/trungtn87/11ship/pull/81) Logos and Flutter test APKs (11Food, 11Ship) | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `c55f716` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
