@@ -106,6 +106,8 @@ export class AuthModule {
       ],
       // A guard named in @UseGuards() of another module is built in THAT module, from its imports, so the
       // SessionService it depends on has to be exported together with the guard.
+      // M01.05: the own-profile coordinator (customer-profile/) re-authorizes through the client session authority and reads
+      // the CUSTOMER role and the customer profile through their Auth-owned repositories; nothing else is added.
       exports: [
         SessionAuthGuard,
         SessionService,
@@ -114,6 +116,9 @@ export class AuthModule {
         SessionAuthorizationParticipant,
         AdminIdentityParticipant,
         AdminPasswordVerifier,
+        ClientSessionAuthority,
+        CustomerProfileRepository,
+        UserRepository,
       ],
     };
   }

@@ -70,6 +70,22 @@ export class DriverRepository {
   }
 
   /**
+   * The user's own Driver row exactly as stored, or undefined (M01.05 GET /driver/me). A plain read that takes no lock: the
+   * caller holds the user row lock (every writer of a driver takes it first, as the eligibility port relies on) and never
+   * changes anything here. Status and type are returned as stored, never translated.
+   */
+  async findByUserId(context: TransactionContext, userId: string): Promise<DriverRow | undefined> {
+    const result = await context.query<RawDriver>(
+      `SELECT driver_id, user_id, full_name, plate_number, driver_type, status, accepting_deliveries, version
+         FROM app.drivers
+        WHERE user_id = $1::uuid`,
+      [userId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toDriver(row);
+  }
+
+  /**
    * Inserts the one shape self-onboarding may create: EXTERNAL, PENDING, not accepting deliveries, version 1.
    * The four fixed values are literals in the statement, not parameters: nothing a caller passes can change
    * them. Returns false when the user already has a Driver (the UNIQUE(user_id) rule decided, which only a

@@ -22,6 +22,19 @@ export interface CustomerProfileRow {
   readonly version: number;
 }
 
+interface RawProfile {
+  full_name: string | null;
+  version: string;
+}
+
+function profileOf(row: RawProfile): CustomerProfileRow {
+  const version = Number(row.version);
+  if (!Number.isSafeInteger(version) || version < 1) {
+    throw new TechnicalError('internal', 'Database returned an unexpected profile version');
+  }
+  return { fullName: row.full_name, version };
+}
+
 export interface ConsentRecord {
   readonly consentId: string;
   readonly userId: string;
@@ -117,6 +130,48 @@ export class CustomerProfileRepository {
       throw new TechnicalError('internal', 'Database returned an unexpected profile version');
     }
     return { fullName: row.full_name, version };
+  }
+
+  /**
+   * The CURRENT profile of a user FOR UPDATE, or undefined when none exists (M01.05 PUT). The caller already holds the user
+   * and session row locks, so this is the last lock of the order idempotency, user, session, profile. Nothing is created.
+   */
+  async lockProfile(context: TransactionContext, userId: string): Promise<CustomerProfileRow | undefined> {
+    const result = await context.query<RawProfile>(
+      `SELECT full_name, version::text AS version
+         FROM app.customer_profiles
+        WHERE user_id = $1::uuid
+          FOR UPDATE`,
+      [userId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : profileOf(row);
+  }
+
+  /**
+   * Replaces the name and raises the version by exactly 1, only while the stored version is still `expectedVersion` (M01.05).
+   * `fullName` is already normalized by the caller. updated_at never goes below created_at (the table CHECK), whatever the
+   * transaction start time. Returns the profile after the change, or undefined when no row matched (the caller treats it as
+   * a version conflict). The row is not created and created_at is not touched.
+   */
+  async updateFullName(
+    context: TransactionContext,
+    userId: string,
+    fullName: string,
+    expectedVersion: number,
+  ): Promise<CustomerProfileRow | undefined> {
+    const result = await context.query<RawProfile>(
+      `UPDATE app.customer_profiles
+          SET full_name = $2::varchar,
+              version = version + 1,
+              updated_at = GREATEST(created_at, clock_timestamp())
+        WHERE user_id = $1::uuid
+          AND version = $3::bigint
+        RETURNING full_name, version::text AS version`,
+      [userId, fullName, expectedVersion],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : profileOf(row);
   }
 
   /**

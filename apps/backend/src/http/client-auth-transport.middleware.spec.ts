@@ -1,5 +1,9 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { CLIENT_AUTH_ROUTE_PREFIX, clientAuthTransportMiddleware } from './client-auth-transport.middleware';
+import {
+  CLIENT_AUTH_ROUTE_PREFIX,
+  CLIENT_PROFILE_ROUTE_PREFIXES,
+  clientAuthTransportMiddleware,
+} from './client-auth-transport.middleware';
 
 describe('clientAuthTransportMiddleware', () => {
   it('sets the no-store transport headers and continues', () => {
@@ -17,5 +21,9 @@ describe('clientAuthTransportMiddleware', () => {
 
   it('uses the client-auth prefix', () => {
     expect(CLIENT_AUTH_ROUTE_PREFIX).toBe('client-auth');
+  });
+
+  it('also covers exactly the own-profile routes (M01.05), each as a whole-segment prefix', () => {
+    expect([...CLIENT_PROFILE_ROUTE_PREFIXES]).toEqual(['customer/me/profile', 'driver/me']);
   });
 });
