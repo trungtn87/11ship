@@ -86,3 +86,12 @@ Trong khi chưa cập nhật CI, các job hiện hữu vẫn tự chạy; không
 Phân biệt code/CI/review/merge với local/thiết bị thật/nghiệm thu/đóng module. Dashboard DONE kỹ thuật không chứng minh module đóng. Không sửa tay docs/PROGRESS.md hay thêm field parser chưa hỗ trợ vào plan.yml.
 
 Quy tắc M00 môi trường Owner test, M01 auth/account/onboarding và M02 hồ sơ/giờ hoạt động vẫn theo phạm vi đã chốt. Không dùng UI giả để báo backend thật đã đạt. PR #31 trước phân công 09/10 vẫn cần xử lý theo bằng chứng và quyết định riêng, không đổi tác giả lịch sử. PR #53 là gói đầu tiên theo ủy quyền merge 11/10; không viết lại thành nghiệm thu cả M01.
+
+## M01 — điều chỉnh Owner ngày 12/10/2026: chia theo luồng, review cuối module
+
+Áp dụng [kế hoạch M01 theo luồng](../current/M01-workstreams-20261012.md). Đây là chỉ đạo mới hơn, ưu tiên hơn yêu cầu review tìm lỗi độc lập từng gói ở các mục trên và handoff cũ.
+
+- Tách tài liệu UI khỏi nghiệp vụ; mỗi luồng chỉ tham chiếu đúng tài liệu/mục và điểm vào code. Ghi đã có/còn thiếu, dùng lại bằng chứng; không kiểm kê toàn module mỗi lần giao việc.
+- Trong lúc làm, Claude kiểm tra phần vừa làm chạy được và sửa lỗi quan sát được. Trước merge kiểm phạm vi/dependency, lỗi đã biết và checks bắt buộc; không tổ chức audit tìm lỗi sâu cho từng gói nhỏ.
+- Sau khi M01 triển khai và nối xong, thực hiện một đợt review tìm lỗi toàn module và kiểm tra liên thông. Gom một danh sách finding và một báo cáo nghiệm thu; sau fix chỉ review delta/kiểm lại phần ảnh hưởng.
+- Không yêu cầu full suite local + CI + ChatGPT lặp cùng nội dung. Checks CI hiện hữu vẫn áp dụng, chưa thay cấu hình bằng tài liệu này. Không hoãn sửa lỗi đã biết đến cuối và không suy ra module đóng nếu còn blocker hoặc thiếu nghiệm thu Owner.
