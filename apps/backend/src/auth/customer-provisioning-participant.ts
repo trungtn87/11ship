@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { TechnicalError } from '../common/app-errors';
+import {
+  ACCOUNT_ORIGIN_POLICY,
+  AccountOriginPolicy,
+  isOrdinaryClientAccount,
+  standardAccountOriginPolicy,
+} from './account-origin';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { TransactionContext } from '../transaction/transaction-context';
 import {
@@ -42,8 +48,9 @@ export interface CustomerProvisioningResult {
  * that also creates the user, the session, the audit row and the outbox event).
  *
  * It does not authorize the caller and it does not create the user. It re-checks the one thing it must never get wrong:
- * the target account is an ordinary PHONE_VERIFIED account with a verification time and no administration membership
- * at all. Anything else is refused as a programming error of the caller (never client input), before any write.
+ * the target account is an ordinary client account (PHONE_VERIFIED with a verification time, or TEST_UNVERIFIED without
+ * one while the process runs the validated no-proof test policy) and has no administration membership at all. Anything
+ * else is refused as a programming error of the caller (never client input), before any write.
  *
  * Locking: it takes the ROOT user row lock through CustomerProfileRepository.lockEligibility, which is re-entrant for a
  * transaction that already holds it and takes no other lock, so the existing lock order is unchanged.
@@ -57,6 +64,8 @@ export class CustomerProvisioningParticipant {
   constructor(
     private readonly users: UserRepository,
     private readonly customers: CustomerProfileRepository,
+    // Without an explicit binding the standard policy applies: no test-unverified account is ever provisioned.
+    @Optional() @Inject(ACCOUNT_ORIGIN_POLICY) private readonly policy: AccountOriginPolicy = standardAccountOriginPolicy(),
   ) {}
 
   async provision(
@@ -79,9 +88,8 @@ export class CustomerProvisioningParticipant {
     const eligibility = await this.customers.lockEligibility(context, userId);
     if (
       eligibility === undefined ||
-      eligibility.accountOrigin !== 'PHONE_VERIFIED' ||
-      !eligibility.phoneVerified ||
-      eligibility.hasAdminMembership
+      !isOrdinaryClientAccount(eligibility) ||
+      (eligibility.accountOrigin === 'TEST_UNVERIFIED' && !this.policy.unverifiedTestMode)
     ) {
       throw new TechnicalError('internal', 'Account is not eligible for the customer role');
     }

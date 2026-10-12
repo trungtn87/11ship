@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
 import { ACCOUNT_ORIGIN_POLICY, AccountOriginPolicy, standardAccountOriginPolicy } from '../auth/account-origin';
@@ -18,12 +18,16 @@ import { parseIdempotencyKey } from '../idempotency/idempotency-key';
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { OutboxWriter } from '../outbox/outbox-writer';
 import { isCanonicalUuid } from '../shared/identifiers';
+import { isOrdinaryClientAccount } from '../auth/account-origin';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import {
   CLIENT_REGISTER_AUDIT_ACTION,
   CLIENT_REGISTER_OPERATION_ID,
   CLIENT_REGISTER_SCOPE_TYPE,
+  CLIENT_REGISTER_UNVERIFIED_TEST_AUDIT_ACTION,
+  CLIENT_REGISTER_UNVERIFIED_TEST_OPERATION_ID,
+  CLIENT_REGISTER_UNVERIFIED_TEST_SCOPE_TYPE,
   CLIENT_USER_REGISTERED_EVENT_SCHEMA_VERSION,
   CLIENT_USER_REGISTERED_EVENT_TYPE,
 } from './client-auth-constants';
@@ -33,7 +37,7 @@ import {
   CLIENT_AUTH_SETTINGS,
   ClientAuthSettings,
 } from './client-auth-policy';
-import { ClientRegisterInput } from './client-auth-validation';
+import { ClientRegisterInput, ClientUnverifiedRegisterInput } from './client-auth-validation';
 import { IdentityCapture, requireIdentity, responseOf, storedResultOf } from './client-auth-result';
 import { ClientIdentityReader } from './client-identity-reader';
 
@@ -143,6 +147,72 @@ export class ClientRegistrationService {
         },
       },
       (context) => this.#registerNew(context, { input, proofId, passwordHash, requestId }, capture),
+    );
+
+    const stored = storedResultOf(outcome.payload);
+    return { status: outcome.status, payload: responseOf(requireIdentity(capture), stored), replayed: outcome.replayed };
+  }
+
+  /**
+   * Registration WITHOUT a proof (CLIENT_AUTH_PHONE_VERIFICATION_MODE=DISABLED_TEST, development/test on loopback only).
+   * Nothing here requests, verifies, creates or consumes an OTP or a proof, and nothing pretends the phone was verified: the
+   * user is TEST_UNVERIFIED with phone_verified_at NULL. The route stays the same and so do the executor, the password hash,
+   * the repositories and the transaction; only the idempotency namespace, the user insert and the audit action are the branch's
+   * own, so a record of this branch is never replayed by the REQUIRED or the legacy registration.
+   *
+   * The same device gate, consent comparison and replay semantics as the REQUIRED branch apply: ONE transaction claims the key,
+   * creates the user (unique phone), CUSTOMER, profile v1 and consent, the session, the audit row and the outbox event, and
+   * stores the encrypted result. A replay returns the ORIGINAL token and expiry with the CURRENT identity, and only while the
+   * mode is still on, the user ACTIVE, ordinary and TEST_UNVERIFIED, and the session neither revoked nor expired.
+   */
+  async registerUnverifiedTest(
+    input: ClientUnverifiedRegisterInput,
+    idempotencyKey: string | readonly string[] | undefined,
+    requestId: string,
+  ): Promise<ClientRegisterOutcome> {
+    // Staging fixture mode closes every registration, and this branch exists only while the server runs the validated
+    // no-proof test policy: a process without it answers closed before the key is read, any hash or any database access.
+    this.originPolicy.assertRegistrationOpen();
+    if (this.settings.phoneVerificationMode !== 'DISABLED_TEST' || !this.originPolicy.unverifiedTestMode) {
+      throw new AppError('AUTH_REGISTRATION_UNAVAILABLE');
+    }
+    assertDeviceAllowed(this.settings, input.device);
+    parseIdempotencyKey(idempotencyKey);
+
+    const passwordHash = await this.hasher.hash(input.password);
+    const capture: IdentityCapture = { identity: undefined };
+
+    const outcome = await this.executor.execute(
+      {
+        scopeType: CLIENT_REGISTER_UNVERIFIED_TEST_SCOPE_TYPE,
+        scopeId: unverifiedTestScopeId(input.phoneNormalized),
+        operationId: CLIENT_REGISTER_UNVERIFIED_TEST_OPERATION_ID,
+        idempotencyKey,
+        // Every logical input plus the mode; the password is only HMAC-fingerprinted by the executor, never stored or logged.
+        logicalRequest: {
+          mode: 'DISABLED_TEST',
+          phone_normalized: input.phoneNormalized,
+          full_name: input.fullName,
+          password: input.password,
+          device: {
+            device_id: input.device.deviceId,
+            platform: input.device.platform,
+            app: input.device.app,
+          },
+          consent: {
+            terms_version: input.consent.termsVersion,
+            privacy_version: input.consent.privacyVersion,
+          },
+        },
+        replay: {
+          kind: 'sensitive',
+          authorize: async (context, guard) => {
+            await this.#authorizeUnverifiedTestReplay(context, guard, input, capture);
+            return true;
+          },
+        },
+      },
+      (context) => this.#registerUnverifiedTestNew(context, { input, passwordHash, requestId }, capture),
     );
 
     const stored = storedResultOf(outcome.payload);
@@ -322,4 +392,149 @@ export class ClientRegistrationService {
       storedActiveRole: session.activeRole,
     });
   }
+  async #registerUnverifiedTestNew(
+    context: TransactionContext,
+    args: { input: ClientUnverifiedRegisterInput; passwordHash: string; requestId: string },
+    capture: IdentityCapture,
+  ) {
+    const { input, passwordHash, requestId } = args;
+
+    // 1. The consent pair of THIS first execution, compared before any row is written. A replay never gets here.
+    const consent = assertConsentSupported(this.settings, input.consent);
+
+    // 2. The TEST_UNVERIFIED user (phone_verified_at NULL; no proof exists or is invented). The UNIQUE phone constraint decides
+    // a race with any other registration route.
+    const userId = randomUUID();
+    const created = await this.users.insertUnverifiedTest(context, {
+      userId,
+      phoneNormalized: input.phoneNormalized,
+      passwordHash,
+    });
+    if (!created) {
+      throw new AppError('PHONE_ALREADY_REGISTERED');
+    }
+
+    // 3. CUSTOMER, the profile (normalized name, version 1) and the consent (database time) through the same participant, on THIS
+    // transaction. Everything is new, so everything must have been created: anything else rolls the registration back.
+    const provisioned = await this.customer.provision(
+      context,
+      userId,
+      { termsVersion: consent.termsVersion, privacyVersion: consent.privacyVersion, clientApp: input.device.app },
+      { initialFullName: input.fullName },
+    );
+    if (!provisioned.roleGranted || !provisioned.profileCreated || !provisioned.consentRecorded) {
+      throw new TechnicalError('internal', 'A new customer was not fully provisioned');
+    }
+
+    // 4. The CUSTOMER session and its plaintext token (returned once, stored only as a digest).
+    const session = await this.sessions.create(context, {
+      userId,
+      device: { deviceId: input.device.deviceId, platform: input.device.platform, app: input.device.app },
+      ttlSeconds: this.config.sessionTtlSeconds,
+      activeRole: CUSTOMER_ROLE,
+    });
+
+    // 5. Audit (this branch's own action) and ONE outbox event with the approved payload, same transaction. Safe fields only:
+    // no phone, name, password, proof or token.
+    await this.audit.append(context, {
+      requestId,
+      actorType: 'USER',
+      actorId: userId,
+      action: CLIENT_REGISTER_UNVERIFIED_TEST_AUDIT_ACTION,
+      resourceType: 'user',
+      resourceId: userId,
+      resourceVersion: 1,
+      outcome: 'SUCCESS',
+      metadata: { session_id: session.sessionId, client_app: input.device.app },
+    });
+    await this.outbox.append(context, {
+      eventType: CLIENT_USER_REGISTERED_EVENT_TYPE,
+      eventSchemaVersion: CLIENT_USER_REGISTERED_EVENT_SCHEMA_VERSION,
+      resourceType: 'user',
+      resourceId: userId,
+      resourceVersion: 1,
+      payload: {
+        user_id: userId,
+        client_app: input.device.app,
+        granted_role: CUSTOMER_ROLE,
+        terms_version: consent.termsVersion,
+        privacy_version: consent.privacyVersion,
+      },
+    });
+
+    // 6. The identity as it stands at commit, read in this very transaction (the user and session locks are held).
+    capture.identity = await this.identityReader.read(context, {
+      userId,
+      phoneNormalized: input.phoneNormalized,
+      app: input.device.app,
+      enabled: true,
+      storedActiveRole: CUSTOMER_ROLE,
+    });
+
+    return {
+      status: 201,
+      replayGuard: { user_id: userId, session_id: session.sessionId },
+      payload: { access_token: session.accessToken, expires_at: new Date(session.expiresAtMs).toISOString() },
+    };
+  }
+
+  /**
+   * Replay authorization of the no-proof branch (contract11 section 5): user then session, the order of the first execution,
+   * state read after the locks, read-only. The mode must STILL be on in this process (the origin policy refuses a
+   * TEST_UNVERIFIED account otherwise), so turning the mode off, a revoked or expired session or a disabled user never returns
+   * the token: AUTH_RESULT_NOT_REPLAYABLE, not distinguishable by cause.
+   */
+  async #authorizeUnverifiedTestReplay(
+    context: TransactionContext,
+    guard: JsonObject,
+    input: ClientUnverifiedRegisterInput,
+    capture: IdentityCapture,
+  ): Promise<void> {
+    const { user_id: userId, session_id: sessionId } = guard;
+    if (!isCanonicalUuid(userId) || !isCanonicalUuid(sessionId)) {
+      throw new TechnicalError('internal', 'Invalid replay guard');
+    }
+
+    const user = await this.users.lockById(context, userId);
+    if (
+      user === undefined ||
+      user.status !== 'ACTIVE' ||
+      user.accountOrigin !== 'TEST_UNVERIFIED' ||
+      !this.originPolicy.allows({ accountOrigin: user.accountOrigin, phoneNormalized: user.phoneNormalized })
+    ) {
+      throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
+    }
+    const eligibility = await this.customers.lockEligibility(context, userId);
+    if (eligibility === undefined || !isOrdinaryClientAccount(eligibility)) {
+      throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
+    }
+    const session = await this.sessions.lockById(context, sessionId);
+    if (session === undefined || session.userId !== userId || session.revoked) {
+      throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
+    }
+    const nowMs = await freshClockMs(context);
+    if (session.expiresAtMs <= nowMs) {
+      throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
+    }
+
+    capture.identity = await this.identityReader.read(context, {
+      userId,
+      phoneNormalized: user.phoneNormalized,
+      app: input.device.app,
+      enabled: true,
+      storedActiveRole: session.activeRole,
+    });
+  }
+}
+
+/**
+ * The stable server-side scope id of the no-proof registration: SHA-256 (hex, 64 characters, inside the 128 of the engine) of
+ * the normalized phone under a namespace of its own. It is the same for every request for the same phone, so a retry with
+ * the same key meets the same record, and it is not a user id the client could pick. The phone is no secret in this store
+ * (app.users keeps it in plaintext); the namespace only keeps this scope disjoint from every other scope type.
+ */
+export function unverifiedTestScopeId(phoneNormalized: string): string {
+  return createHash('sha256')
+    .update(`client.auth.register.unverified_test.phone.v1\u0000${phoneNormalized}`, 'utf8')
+    .digest('hex');
 }

@@ -422,3 +422,117 @@ describe('where the real register flow is switched on', () => {
     assert.equal(isLocalHttpsRuntime({ protocol: 'https:', hostname: 'localhost.evil.example' }), false);
   });
 });
+
+// ---- DISABLED_TEST: registration without OTP (docs/tasks/M01-food-register-disabled-test-handoff-20261012.md) ----
+const isConfig = (call) => call.url.endsWith('/v1/client-auth/config');
+const config = (mode) => reply(200, { data: { registration_verification: mode } }, { 'cache-control': 'no-store' });
+const direct = (call) => (isConfig(call) ? config('DISABLED_TEST') : reply(201, signIn()));
+
+describe('register flow without OTP (server mode DISABLED_TEST)', () => {
+  it('asks the server for the mode with a bodyless GET and keeps no mode on a failed or invalid answer', async () => {
+    for (const answer of [reply(503, errorBody('SERVICE_UNAVAILABLE')), reply(200, { data: { registration_verification: 'OFF' } }), reply(200, { data: { registration_verification: 'DISABLED_TEST', x: 1 } }), new Error('offline')]) {
+      const { controller, http } = await setup(() => answer.clone?.() ?? answer);
+      const result = await controller.loadMode();
+      assert.notEqual(result.kind, 'ok');
+      assert.equal(controller.mode(), undefined, 'no guessed mode');
+      assert.equal(http.calls[0].method, 'GET');
+      assert.equal(http.calls[0].body, undefined);
+      assert.equal((await controller.registerDirect(FORM)).kind, 'failure', 'the direct branch is closed without a valid DISABLED_TEST answer');
+      assert.equal(http.calls.filter(isRegister).length, 0);
+    }
+  });
+
+  it('REQUIRED mode never opens the direct branch', async () => {
+    const { controller, http } = await setup((call) => (isConfig(call) ? config('REQUIRED') : reply(201, signIn())));
+    assert.equal((await controller.loadMode()).kind, 'ok');
+    assert.equal(controller.mode(), 'REQUIRED');
+    assert.equal((await controller.registerDirect(FORM)).kind, 'failure');
+    assert.equal(http.calls.filter(isRegister).length, 0);
+  });
+
+  it('registers straight from the form: no OTP request, no verify, no token, no F12 flow; session from the server', async () => {
+    const { controller, http, flows, REGISTER_FLOW, consent, auth } = await setup(direct);
+    await controller.loadMode();
+    assert.equal(controller.mode(), 'DISABLED_TEST');
+    const done = await controller.registerDirect(FORM);
+    assert.equal(done.kind, 'ok');
+    assert.equal(http.calls.filter(isOtpRequest).length + http.calls.filter(isVerify).length, 0);
+    assert.equal(flows.has(REGISTER_FLOW), false, 'F12 never opens');
+    const register = http.calls.find(isRegister);
+    assert.deepEqual(JSON.parse(register.body), {
+      phone: PHONE,
+      password: PASSWORD,
+      device: { device_id: 'web-test-device', platform: 'WEB', app: 'FOOD' },
+      full_name: 'Nguyễn Văn An',
+      consent: { terms_version: consent.termsVersion, privacy_version: consent.privacyVersion },
+    });
+    assert.equal(controller.view(), undefined, 'nothing of the form stays in the controller');
+    assert.equal(auth.session.state().kind, 'authenticated');
+  });
+
+  it('a double press shares one request; another form while it runs is refused', async () => {
+    let release;
+    const gate = new Promise((resolve) => (release = resolve));
+    const { controller, http } = await setup(async (call) => {
+      if (isConfig(call)) {
+        return config('DISABLED_TEST');
+      }
+      await gate;
+      return reply(201, signIn());
+    });
+    await controller.loadMode();
+    const first = controller.registerDirect(FORM);
+    const second = controller.registerDirect(FORM);
+    const other = await controller.registerDirect({ ...FORM, phone: '0911111111' });
+    assert.equal(other.code, 'IN_PROGRESS');
+    release();
+    assert.equal((await first).kind, 'ok');
+    assert.equal((await second).kind, 'ok');
+    assert.equal(http.calls.filter(isRegister).length, 1);
+  });
+
+  it('a lost answer is retried with the SAME key and body', async () => {
+    let n = 0;
+    const { controller, http } = await setup((call) => {
+      if (isConfig(call)) {
+        return config('DISABLED_TEST');
+      }
+      return ++n === 1 ? new Error('connection lost') : reply(201, signIn());
+    });
+    await controller.loadMode();
+    const lost = await controller.registerDirect(FORM);
+    assert.equal(lost.kind, 'failure');
+    assert.equal(lost.unresolved, true);
+    assert.equal((await controller.registerDirect(FORM)).kind, 'ok');
+    const sent = http.calls.filter(isRegister);
+    assert.equal(sent.length, 2);
+    assert.equal(sent[0].headers['idempotency-key'], sent[1].headers['idempotency-key']);
+    assert.equal(sent[0].body, sent[1].body);
+  });
+
+  it('cancel while the request runs makes the late answer stale: no session, nothing shown', async () => {
+    let release;
+    const gate = new Promise((resolve) => (release = resolve));
+    const { controller, auth } = await setup(async (call) => {
+      if (isConfig(call)) {
+        return config('DISABLED_TEST');
+      }
+      await gate;
+      return reply(201, signIn());
+    });
+    await controller.loadMode();
+    const pending = controller.registerDirect(FORM);
+    controller.cancel();
+    release();
+    assert.equal((await pending).kind, 'stale');
+    assert.equal(auth.session.state().kind, 'anonymous');
+  });
+
+  it('a taken phone is a failure the screen can show, never a session', async () => {
+    const { controller } = await setup((call) => (isConfig(call) ? config('DISABLED_TEST') : reply(409, errorBody('PHONE_ALREADY_REGISTERED'))));
+    await controller.loadMode();
+    const taken = await controller.registerDirect(FORM);
+    assert.equal(taken.kind, 'failure');
+    assert.equal(taken.code, 'PHONE_ALREADY_REGISTERED');
+  });
+});

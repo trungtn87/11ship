@@ -4,7 +4,7 @@ import { createHash, X509Certificate } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomPhone } from './support/auth-fixtures';
+import { AuthApp, randomPhone, startAuthApp } from './support/auth-fixtures';
 import { freePort, repoRoot } from './support/admin-web-harness';
 import { Browser, launchChrome, Page } from './support/cdp';
 import { InboxAuthApp, readOtp, startInboxAuthApp } from './support/test-sms-fixtures';
@@ -30,7 +30,9 @@ interface Shot {
 
 describe('M01.07 — 11Food register in a real browser against the real backend and PostgreSQL', () => {
   let inbox: InboxAuthApp;
-  let front: ChildProcess | undefined;
+  const fronts: ChildProcess[] = [];
+  let testApp: AuthApp;
+  let testOrigin: string;
   let browser: Browser;
   let origin: string;
   let work: string;
@@ -46,47 +48,57 @@ describe('M01.07 — 11Food register in a real browser against the real backend 
     const spki = new X509Certificate(readFileSync(certPath)).publicKey.export({ type: 'spki', format: 'der' });
     const spkiHash = createHash('sha256').update(spki).digest('base64');
 
+    async function startFront(backendUrl: string): Promise<string> {
+      const port = await freePort();
+      const child = spawn(process.execPath, [join(root, 'scripts', 'food-web-dev.mjs')], {
+        cwd: root,
+        env: minimalChildEnv({ CLIENT_WEB_PORT: String(port), CLIENT_WEB_DIST: dist, CLIENT_WEB_BACKEND: backendUrl, CLIENT_WEB_TLS_CERT: certPath, CLIENT_WEB_TLS_KEY: join(work, 'tls', 'key.pem') }),
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      fronts.push(child);
+      let stderr = '';
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`the front did not start in time: ${stderr}`)), 20_000);
+        child.stdout?.once('data', () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        child.once('exit', (code) => {
+          clearTimeout(timer);
+          reject(new Error(`the front exited with ${String(code)}: ${stderr}`));
+        });
+      });
+      return `https://localhost:${String(port)}`;
+    }
+
     // The real backend with the approved test consent pair and the TEST_INBOX OTP provider (the Owner's local setup).
     inbox = await startInboxAuthApp({}, { clientAuth: { termsVersion: TERMS, privacyVersion: PRIVACY } });
 
-    const port = await freePort();
-    origin = `https://localhost:${String(port)}`;
-    front = spawn(process.execPath, [join(root, 'scripts', 'food-web-dev.mjs')], {
-      cwd: root,
-      env: minimalChildEnv({ CLIENT_WEB_PORT: String(port), CLIENT_WEB_DIST: dist, CLIENT_WEB_BACKEND: inbox.running.baseUrl, CLIENT_WEB_TLS_CERT: certPath, CLIENT_WEB_TLS_KEY: join(work, 'tls', 'key.pem') }),
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stderr = '';
-    front.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-    const started = front;
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`the front did not start in time: ${stderr}`)), 20_000);
-      started.stdout?.once('data', () => {
-        clearTimeout(timer);
-        resolve();
-      });
-      started.once('exit', (code) => {
-        clearTimeout(timer);
-        reject(new Error(`the front exited with ${String(code)}: ${stderr}`));
-      });
-    });
+    origin = await startFront(inbox.running.baseUrl);
+    // The DISABLED_TEST backend (no OTP) behind its own front: same build, same routes, only the server mode differs.
+    testApp = await startAuthApp({}, { relaxTimeouts: true, configOverride: { clientAuth: { termsVersion: TERMS, privacyVersion: PRIVACY }, clientPhoneVerificationMode: 'DISABLED_TEST' } });
+    testOrigin = await startFront(testApp.running.baseUrl);
     browser = await launchChrome(spkiHash);
   }, 180_000);
 
   afterAll(async () => {
     await browser?.close();
-    front?.kill('SIGTERM');
+    for (const child of fronts) {
+      child.kill('SIGTERM');
+    }
+    await testApp?.close();
     await inbox?.close();
     rmSync(work, { recursive: true, force: true });
     publishShots(shots);
   });
 
-  async function openPage(path: string): Promise<Page> {
+  async function openPage(path: string, base: string = origin): Promise<Page> {
     const page = await browser.newPage();
     await page.viewport(MOBILE.width, MOBILE.height, MOBILE.mobile);
-    await page.goto(`${origin}${path}`);
+    await page.goto(`${base}${path}`);
     await page.waitFor(`document.querySelector('#app')?.children.length > 0`);
     return page;
   }
@@ -97,6 +109,8 @@ describe('M01.07 — 11Food register in a real browser against the real backend 
   }
 
   async function fillForm(page: Page, phoneLocal: string): Promise<void> {
+    // F11 keeps its submit locked until the server has said how a registration is verified (GET /v1/client-auth/config).
+    await page.waitFor(`document.querySelector('#register-submit')?.disabled === false`);
     await page.fill('#full-name', NAME);
     await page.fill('#phone', phoneLocal);
     await page.fill('#password', PASSWORD);
@@ -235,6 +249,65 @@ describe('M01.07 — 11Food register in a real browser against the real backend 
       const user = await inbox.pool.query<{ user_id: string }>('SELECT user_id FROM app.users WHERE phone_normalized = $1', [phone.normalized]);
       expect(await countRows('SELECT 1 FROM app.user_consents WHERE user_id = $1::uuid', [user.rows[0]?.user_id])).toBe(1);
       expect(page.consoleErrors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 120_000);
+  it('DISABLED_TEST: F11 registers without any OTP request and lands on F01; the account is TEST_UNVERIFIED with no verified time, no proof and no F12', async () => {
+    const phone = randomPhone();
+    testApp.track(phone.normalized);
+    const page = await openPage('/register', testOrigin);
+    try {
+      await page.waitFor(`document.querySelector('#register-submit')?.disabled === false`);
+      expect(await page.evaluate<string>(`document.querySelector('#register-submit').innerText.trim()`)).toBe('Đăng ký');
+      expect(await page.evaluate<boolean>(`document.body.innerText.includes('Bản test: tạm không xác minh số điện thoại')`)).toBe(true);
+      await shot(page, 'f11-disabled-test');
+      await fillForm(page, phone.local);
+      await page.click('#register-submit');
+      await page.waitFor(`location.pathname === '/' && document.body.innerText.includes(${JSON.stringify(NAME)})`);
+      await shot(page, 'f01-disabled-test-signed-in');
+      expect(page.posts('/v1/auth/phone-verifications')).toBe(0);
+      expect(page.requests.filter((request) => /\/phone-verifications\//.test(request.url)).length).toBe(0);
+      expect(page.posts('/v1/client-auth/register')).toBe(1);
+      expect(await page.evaluate<boolean>(`location.pathname.includes('otp')`)).toBe(false);
+
+      const user = await testApp.pool.query<{ account_origin: string; verified: boolean }>(
+        'SELECT account_origin, phone_verified_at IS NOT NULL AS verified FROM app.users WHERE phone_normalized = $1',
+        [phone.normalized],
+      );
+      expect(user.rows).toEqual([{ account_origin: 'TEST_UNVERIFIED', verified: false }]);
+      expect((await testApp.pool.query('SELECT 1 FROM app.verification_proofs WHERE phone_normalized = $1', [phone.normalized])).rowCount).toBe(0);
+      expect((await testApp.pool.query('SELECT 1 FROM app.phone_verifications WHERE phone_normalized = $1', [phone.normalized])).rowCount).toBe(0);
+      const leaks = await page.evaluate<string[]>(`(() => {
+        const haystack = [location.href, JSON.stringify(history.state), JSON.stringify({ ...localStorage }), JSON.stringify({ ...sessionStorage }), document.cookie, document.documentElement.outerHTML].join('\\n');
+        return [${JSON.stringify(PASSWORD)}].filter((secret) => haystack.includes(secret));
+      })()`);
+      expect(leaks).toEqual([]);
+      expect(page.consoleErrors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 120_000);
+
+  it('DISABLED_TEST: a register whose answer is lost after the commit is retried with the same request; one account, no OTP', async () => {
+    const phone = randomPhone();
+    testApp.track(phone.normalized);
+    const page = await openPage('/register', testOrigin);
+    try {
+      await fillForm(page, phone.local);
+      await page.interceptResponses('*client-auth/register*');
+      await page.click('#register-submit');
+      const paused = await page.nextPausedResponse();
+      expect(paused.status).toBe(201);
+      await page.failResponse(paused.requestId);
+      await page.stopIntercepting();
+      await page.waitFor(`document.querySelector('#register-retry') !== null || document.body.innerText.includes('Thử lại')`);
+      expect((await testApp.pool.query('SELECT 1 FROM app.users WHERE phone_normalized = $1', [phone.normalized])).rowCount).toBe(1);
+      await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Thử lại')?.click()`);
+      await page.waitFor(`location.pathname === '/' && document.body.innerText.includes(${JSON.stringify(NAME)})`);
+      expect(page.posts('/v1/client-auth/register')).toBe(2);
+      expect(page.posts('/v1/auth/phone-verifications')).toBe(0);
+      expect((await testApp.pool.query('SELECT 1 FROM app.users WHERE phone_normalized = $1', [phone.normalized])).rowCount).toBe(1);
     } finally {
       await page.close();
     }

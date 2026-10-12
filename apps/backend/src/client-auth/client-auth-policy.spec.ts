@@ -1,6 +1,13 @@
 import { describe, expect, it } from '@jest/globals';
 import { AppError, TechnicalError } from '../common/app-errors';
-import { assertConsentSupported, assertDeviceAllowed, assertPlatformAllowed, ClientAuthSettings } from './client-auth-policy';
+import { AppConfig } from '../config/app-config';
+import {
+  assertConsentSupported,
+  assertDeviceAllowed,
+  assertPlatformAllowed,
+  ClientAuthSettings,
+  clientAuthSettingsFrom,
+} from './client-auth-policy';
 
 const PAIR = { termsVersion: 'test-terms-20261011-v1', privacyVersion: 'test-privacy-20261011-v1' };
 const web = { deviceId: 'd-1', platform: 'WEB', app: 'FOOD' } as const;
@@ -8,10 +15,10 @@ const android = { deviceId: 'd-2', platform: 'ANDROID', app: 'SHIP' } as const;
 
 describe('assertDeviceAllowed', () => {
   it('accepts WEB only in LOCAL_WEB mode', () => {
-    expect(() => assertDeviceAllowed({ consent: PAIR, localWeb: true }, web)).not.toThrow();
-    expect(() => assertDeviceAllowed({ consent: PAIR, localWeb: false }, web)).toThrow(AppError);
+    expect(() => assertDeviceAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb: true }, web)).not.toThrow();
+    expect(() => assertDeviceAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb: false }, web)).toThrow(AppError);
     try {
-      assertDeviceAllowed({ consent: PAIR, localWeb: false }, web);
+      assertDeviceAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb: false }, web);
     } catch (error) {
       expect((error as AppError).code).toBe('DEVICE_PROOF_REQUIRED');
     }
@@ -19,23 +26,23 @@ describe('assertDeviceAllowed', () => {
 
   it('answers unavailable for ANDROID whatever the mode (no verifier, no fallback)', () => {
     for (const localWeb of [true, false]) {
-      expect(() => assertDeviceAllowed({ consent: PAIR, localWeb }, android)).toThrow(TechnicalError);
+      expect(() => assertDeviceAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb }, android)).toThrow(TechnicalError);
     }
   });
 });
 
 describe('assertPlatformAllowed (the platform recorded on a session)', () => {
   it('serves WEB only in LOCAL_WEB mode and never ANDROID', () => {
-    expect(() => assertPlatformAllowed({ consent: PAIR, localWeb: true }, 'WEB')).not.toThrow();
-    expect(() => assertPlatformAllowed({ consent: PAIR, localWeb: false }, 'WEB')).toThrow(AppError);
+    expect(() => assertPlatformAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb: true }, 'WEB')).not.toThrow();
+    expect(() => assertPlatformAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb: false }, 'WEB')).toThrow(AppError);
     for (const localWeb of [true, false]) {
-      expect(() => assertPlatformAllowed({ consent: PAIR, localWeb }, 'ANDROID')).toThrow(TechnicalError);
+      expect(() => assertPlatformAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb }, 'ANDROID')).toThrow(TechnicalError);
     }
   });
 });
 
 describe('assertConsentSupported', () => {
-  const settings: ClientAuthSettings = { consent: PAIR, localWeb: true };
+  const settings: ClientAuthSettings = { consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb: true };
   it('returns the configured pair on an exact match', () => {
     expect(assertConsentSupported(settings, PAIR)).toEqual(PAIR);
   });
@@ -49,6 +56,26 @@ describe('assertConsentSupported', () => {
     }
   });
   it('fails closed when no pair is configured', () => {
-    expect(() => assertConsentSupported({ consent: undefined, localWeb: true }, PAIR)).toThrow(TechnicalError);
+    expect(() => assertConsentSupported({ consent: undefined, phoneVerificationMode: 'REQUIRED', localWeb: true }, PAIR)).toThrow(TechnicalError);
+  });
+});
+
+describe('clientAuthSettingsFrom (the phone verification mode comes from the validated startup configuration only)', () => {
+  const base = { appEnv: 'test', host: '127.0.0.1' } as unknown as AppConfig;
+
+  it('is REQUIRED when the configuration carries no mode', () => {
+    expect(clientAuthSettingsFrom(base).phoneVerificationMode).toBe('REQUIRED');
+  });
+
+  it('is DISABLED_TEST only when the configuration says so', () => {
+    expect(clientAuthSettingsFrom({ ...base, clientPhoneVerificationMode: 'DISABLED_TEST' }).phoneVerificationMode).toBe('DISABLED_TEST');
+  });
+
+  it('keeps the LOCAL_WEB device gate independent of the mode (no proof of phone is not a proof of device)', () => {
+    const settings = clientAuthSettingsFrom({ ...base, clientPhoneVerificationMode: 'DISABLED_TEST' });
+    expect(() => assertDeviceAllowed(settings, web)).not.toThrow();
+    expect(() => assertDeviceAllowed(settings, android)).toThrow(TechnicalError);
+    const remote = clientAuthSettingsFrom({ ...base, host: '0.0.0.0', clientPhoneVerificationMode: 'DISABLED_TEST' });
+    expect(() => assertDeviceAllowed(remote, web)).toThrow(AppError);
   });
 });

@@ -1,6 +1,6 @@
 import { AppError, TechnicalError } from '../common/app-errors';
 import { AppConfig } from '../config/app-config';
-import { ClientAuthConfig, isLocalWebMode } from '../config/client-auth-config';
+import { ClientAuthConfig, ClientPhoneVerificationMode, isLocalWebMode } from '../config/client-auth-config';
 import { ClientPlatform } from './client-auth-constants';
 import { ClientConsentInput, ClientDevice } from './client-auth-validation';
 
@@ -15,10 +15,20 @@ export interface ClientAuthSettings {
   readonly consent: ClientAuthConfig | undefined;
   /** LOCAL_WEB: explicit development/test AND a loopback bind (contract11 section 6). */
   readonly localWeb: boolean;
+  /**
+   * REQUIRED (a registration needs a proof) or DISABLED_TEST (no proof, TEST_UNVERIFIED account). Decided once from the
+   * validated startup configuration; DISABLED_TEST exists only in development/test on a loopback bind. It is what
+   * GET /v1/client-auth/config reports and what selects the registration body of POST /v1/client-auth/register.
+   */
+  readonly phoneVerificationMode: ClientPhoneVerificationMode;
 }
 
 export function clientAuthSettingsFrom(config: AppConfig): ClientAuthSettings {
-  return { consent: config.clientAuth, localWeb: isLocalWebMode(config.appEnv, config.host) };
+  return {
+    consent: config.clientAuth,
+    localWeb: isLocalWebMode(config.appEnv, config.host),
+    phoneVerificationMode: config.clientPhoneVerificationMode ?? 'REQUIRED',
+  };
 }
 
 /**

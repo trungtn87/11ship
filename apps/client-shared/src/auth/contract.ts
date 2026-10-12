@@ -4,6 +4,8 @@ import { FailureCode } from '../states.js';
 //   REGISTER OTP   POST /v1/auth/phone-verifications               {phone, purpose:"REGISTER"}  -> 201 {data:{verification_id, expires_in_seconds, resend_after_seconds}}
 //                  POST /v1/auth/phone-verifications/:id/verify    {otp}                        -> 200 {data:{verification_token, purpose, expires_in_seconds}}
 //   client-auth    POST /v1/client-auth/register  (Idempotency-Key) {phone, password, verification_token, device, full_name, consent} -> 201 identity + access_token + session
+//                  POST /v1/client-auth/register  (Idempotency-Key) {phone, password, device, full_name, consent}  (DISABLED_TEST mode only: no token) -> 201 identity + access_token + session
+//                  GET  /v1/client-auth/config    (public, no query/body)                                                              -> 200 {data:{registration_verification:"REQUIRED"|"DISABLED_TEST"}}
 //                  POST /v1/client-auth/login     (Idempotency-Key) {phone, password, device}                                          -> 200 identity + access_token + session
 //                  GET  /v1/client-auth/me        (Bearer)                                                                              -> 200 identity + session
 //                  POST /v1/client-auth/context   (Bearer, Idempotency-Key) {context}                                                   -> 200 identity + session
@@ -21,6 +23,7 @@ export const AUTH_PATHS = {
   requestOtp: '/v1/auth/phone-verifications',
   verifyOtp: (verificationId: string): string => `/v1/auth/phone-verifications/${verificationId}/verify`,
   register: '/v1/client-auth/register',
+  config: '/v1/client-auth/config',
   login: '/v1/client-auth/login',
   me: '/v1/client-auth/me',
   context: '/v1/client-auth/context',
@@ -171,6 +174,21 @@ export function parseIdentityResponse(body: unknown): { readonly identity: AuthI
   return identity === undefined || session === undefined ? undefined : { identity, session };
 }
 
+// ---- registration config ------------------------------------------------------------------------------------------
+
+/** What the server says about the phone verification of a registration. The client never guesses it. */
+export type RegistrationVerificationMode = 'REQUIRED' | 'DISABLED_TEST';
+
+/** GET /v1/client-auth/config: exactly {data:{registration_verification}} with one of the two known values, else no usable answer. */
+export function parseRegistrationConfig(body: unknown): RegistrationVerificationMode | undefined {
+  const data = dataOf(body);
+  if (data === undefined || !hasExactKeys(data, ['registration_verification'])) {
+    return undefined;
+  }
+  const mode = data.registration_verification;
+  return mode === 'REQUIRED' || mode === 'DISABLED_TEST' ? mode : undefined;
+}
+
 // ---- REGISTER OTP -------------------------------------------------------------------------------------------------
 
 export interface OtpIssuedWire {
@@ -221,7 +239,7 @@ export function errorCodeOf(body: unknown): string | undefined {
   return typeof code === 'string' && ERROR_CODE.test(code) ? code : undefined;
 }
 
-export type AuthOperation = 'otpRequest' | 'otpVerify' | 'register' | 'login' | 'me' | 'context' | 'logout';
+export type AuthOperation = 'config' | 'otpRequest' | 'otpVerify' | 'register' | 'login' | 'me' | 'context' | 'logout';
 
 export interface MappedFailure {
   readonly code: FailureCode;
@@ -253,6 +271,7 @@ const KEYED: Readonly<Record<string, Row>> = {
 };
 
 const TABLES: Readonly<Record<AuthOperation, Readonly<Record<string, Row>>>> = {
+  config: { SERVICE_UNAVAILABLE: ['SERVICE_UNAVAILABLE'], INTERNAL_ERROR: ['UNKNOWN'] },
   otpRequest: {
     BAD_REQUEST: ['BAD_REQUEST'],
     INVALID_PHONE: ['INVALID_PHONE'],

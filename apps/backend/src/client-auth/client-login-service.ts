@@ -1,7 +1,13 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
 import { StandaloneAuditRecorder } from '../audit/standalone-audit-recorder';
-import { ACCOUNT_ORIGIN_POLICY, AccountOriginPolicy, standardAccountOriginPolicy } from '../auth/account-origin';
+import {
+  ACCOUNT_ORIGIN_POLICY,
+  AccountOriginPolicy,
+  isClientLoginOrigin,
+  isOrdinaryClientAccount,
+  standardAccountOriginPolicy,
+} from '../auth/account-origin';
 import { AUTH_CONFIG } from '../auth/auth-config.provider';
 import { CustomerProfileRepository } from '../auth/customer-profile-repository';
 import { PASSWORD_HASHER, PasswordHasher } from '../auth/password-hasher';
@@ -39,7 +45,7 @@ export interface ClientLoginOutcome {
  * Order of events:
  *  1. cheap refusals before any I/O: the device gate (ANDROID has no verifier, WEB only in LOCAL_WEB mode) and the
  *     Idempotency-Key shape;
- *  2. the credentials, OUTSIDE any transaction (Argon2): an unknown phone, an administration or non-PHONE_VERIFIED account
+ *  2. the credentials, OUTSIDE any transaction (Argon2): an unknown phone, an administration, fixture or other non-client account
  *     and a wrong password are one answer, INVALID_CREDENTIALS, after the same amount of hashing work. Nothing about the
  *     account is disclosed to someone who does not hold its password, and no idempotency record exists before this passes, so
  *     the key cannot be used to probe an account;
@@ -146,9 +152,10 @@ export class ClientLoginService {
     const user = await this.transactions.withTransaction((context) =>
       this.users.findByPhone(context, input.phoneNormalized),
     );
-    if (user === undefined || user.accountOrigin !== 'PHONE_VERIFIED') {
+    if (user === undefined || !isClientLoginOrigin(user.accountOrigin)) {
       // An administration or fixture account has no client login in ANY mode: it is treated exactly like an unknown phone,
-      // its own hash is never verified.
+      // its own hash is never verified. A TEST_UNVERIFIED account reaches the password check; the origin policy below
+      // refuses it (same answer) unless the no-proof test mode is on in this process.
       await this.hasher.verifyAgainstDummy(input.password);
       throw new AppError('INVALID_CREDENTIALS');
     }
@@ -177,12 +184,7 @@ export class ClientLoginService {
       throw new AppError('INVALID_CREDENTIALS');
     }
     const eligibility = await this.customers.lockEligibility(context, user.userId);
-    if (
-      eligibility === undefined ||
-      eligibility.accountOrigin !== 'PHONE_VERIFIED' ||
-      !eligibility.phoneVerified ||
-      eligibility.hasAdminMembership
-    ) {
+    if (eligibility === undefined || !isOrdinaryClientAccount(eligibility)) {
       throw new AppError('INVALID_CREDENTIALS');
     }
     if (locked.status !== 'ACTIVE') {
@@ -262,7 +264,7 @@ export class ClientLoginService {
     if (
       user === undefined ||
       user.status !== 'ACTIVE' ||
-      user.accountOrigin !== 'PHONE_VERIFIED' ||
+      !isClientLoginOrigin(user.accountOrigin) ||
       !this.originPolicy.allows({ accountOrigin: user.accountOrigin, phoneNormalized: user.phoneNormalized })
     ) {
       throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
@@ -273,12 +275,7 @@ export class ClientLoginService {
       throw new AppError('INVALID_CREDENTIALS');
     }
     const eligibility = await this.customers.lockEligibility(context, userId);
-    if (
-      eligibility === undefined ||
-      eligibility.accountOrigin !== 'PHONE_VERIFIED' ||
-      !eligibility.phoneVerified ||
-      eligibility.hasAdminMembership
-    ) {
+    if (eligibility === undefined || !isOrdinaryClientAccount(eligibility)) {
       throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
     }
     const session = await this.sessions.lockById(context, sessionId);

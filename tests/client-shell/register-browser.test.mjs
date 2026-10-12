@@ -42,9 +42,11 @@ const identity = () => ({
 // ---- the stand-in backend ------------------------------------------------------------------------------------------------
 
 async function startBackend() {
-  const state = { seen: [], issued: 0, expires: 180, resend: 60, delayMs: 0, queue: { otp: [], verify: [], register: [] } };
+  const state = { seen: [], mode: 'REQUIRED', configSeen: 0, issued: 0, expires: 180, resend: 60, delayMs: 0, queue: { otp: [], verify: [], register: [] } };
   const reset = () => {
     state.seen.length = 0;
+    state.mode = 'REQUIRED';
+    state.configSeen = 0;
     state.issued = 0;
     state.expires = 180;
     state.resend = 60;
@@ -64,6 +66,12 @@ async function startBackend() {
       // The app asks the server's health in the background; the answer is a plain "up" and is not recorded as business traffic.
       if (request.url === '/v1/health/live' || request.url === '/v1/health/ready') {
         send(response, 200, { data: { status: request.url.endsWith('live') ? 'ok' : 'ready' } });
+        return;
+      }
+      // GET /v1/client-auth/config: how a registration is verified (the real backend's answer, scripted by state.mode).
+      if (request.url === '/v1/client-auth/config') {
+        state.configSeen += 1;
+        send(response, state.mode === undefined ? 503 : 200, state.mode === undefined ? err('SERVICE_UNAVAILABLE') : { data: { registration_verification: state.mode } }, { 'cache-control': 'no-store' });
         return;
       }
       const entry = { method: request.method, url: request.url, headers: request.headers, body };
@@ -156,6 +164,8 @@ const path = `location.pathname`;
 const waitPath = (page, expected) => page.waitFor(`location.pathname === ${JSON.stringify(expected)} && document.querySelector('#app')?.children.length > 0`, `path ${expected}`);
 
 async function fillRegister(page, { name = NAME, phone = PHONE, password = PASSWORD, confirm = password, consent = true } = {}) {
+  // F11 locks its submit until the server has said how a registration is verified (GET /v1/client-auth/config).
+  await page.waitFor(`document.querySelector('#register-submit')?.disabled === false`, 'F11 unlocked by the server mode');
   await page.fill('#full-name', name);
   await page.fill('#phone', phone);
   await page.fill('#password', password);
@@ -516,6 +526,70 @@ describe('double submit, lost answers, keyboard', () => {
       await page.fill('#otp', CODE);
       await page.press('Enter');
       await waitPath(page, '/');
+    });
+  });
+});
+
+describe('DISABLED_TEST: F11 registers without OTP and goes straight to F01', () => {
+  const NOTE = 'Bản test: tạm không xác minh số điện thoại';
+  const configRequests = () => backend.state.configSeen;
+
+  it('shows the test note and "Đăng ký", sends one register without any token and no OTP request, never opens F12', async () => {
+    await withPage(390, async (page) => {
+      backend.state.mode = 'DISABLED_TEST';
+      await page.goto(`${origin}/register`);
+      await page.waitFor(`document.querySelector('#register-submit')?.disabled === false`, 'mode loaded');
+      assert.equal((await page.evaluate(text('#register-submit'))).trim(), 'Đăng ký');
+      assert.ok((await page.evaluate(`document.body.innerText`)).includes(NOTE));
+      await fillRegister(page);
+      await page.click('#register-submit');
+      await waitPath(page, '/');
+      assert.equal(backend.count('otp'), 0);
+      assert.equal(backend.count('verify'), 0);
+      assert.equal(backend.count('register'), 1);
+      const sent = JSON.parse(backend.of('register')[0].body);
+      assert.deepEqual(Object.keys(sent), ['phone', 'password', 'device', 'full_name', 'consent']);
+      assert.equal(sent.password, PASSWORD);
+      assert.ok(configRequests() >= 1);
+    });
+  });
+
+  it('REQUIRED keeps the OTP flow and the usual label', async () => {
+    await withPage(390, async (page) => {
+      await page.goto(`${origin}/register`);
+      await page.waitFor(`document.querySelector('#register-submit')?.disabled === false`, 'mode loaded');
+      assert.equal((await page.evaluate(`document.body.innerText`)).includes(NOTE), false);
+      await fillRegister(page);
+      await page.click('#register-submit');
+      await waitPath(page, '/register/otp');
+      assert.equal(backend.count('otp'), 1);
+    });
+  });
+
+  it('without a valid mode answer the submit stays locked and nothing is sent', async () => {
+    await withPage(390, async (page) => {
+      backend.state.mode = undefined;
+      await page.goto(`${origin}/register`);
+      await page.waitFor(`document.body.innerText.includes('Thử lại')`, 'the failure with a retry is shown');
+      assert.equal(await page.evaluate(`document.querySelector('#register-submit').disabled`), true);
+      assert.equal(business(), 0);
+    });
+  });
+
+  it('a lost register answer is retried with the SAME key and body, and still reaches F01 without OTP', async () => {
+    await withPage(390, async (page) => {
+      backend.state.mode = 'DISABLED_TEST';
+      backend.state.queue.register.push(({ response }) => response.destroy());
+      await page.goto(`${origin}/register`);
+      await fillRegister(page);
+      await page.click('#register-submit');
+      await page.waitFor(`document.body.innerText.includes('Thử lại')`, 'unknown outcome offers a retry');
+      await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Thử lại')?.click()`);
+      await waitPath(page, '/');
+      const [first, second] = backend.of('register');
+      assert.equal(first.headers['idempotency-key'], second.headers['idempotency-key']);
+      assert.equal(first.body, second.body);
+      assert.equal(backend.count('otp') + backend.count('verify'), 0);
     });
   });
 });

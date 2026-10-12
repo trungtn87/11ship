@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { isOrdinaryClientAccount } from '../auth/account-origin';
 import { CustomerProfileRepository } from '../auth/customer-profile-repository';
 import { actorOf, AuthPrincipal } from '../auth/auth-principal';
 import { SessionAuthorizationParticipant } from '../auth/session-authorization-participant';
@@ -31,7 +32,8 @@ export type ClientActorLock = 'update' | 'share';
  *    is simply not a valid session of this API;
  *  - the platform gate applies to the platform RECORDED on the session (ANDROID: no verifier, 503; WEB outside LOCAL_WEB mode:
  *    DEVICE_PROOF_REQUIRED), so nothing is served on a platform this process cannot vouch for;
- *  - the account must be an ORDINARY one (PHONE_VERIFIED, phone verified, no administration membership), otherwise the session
+ *  - the account must be an ORDINARY one (PHONE_VERIFIED with a verification time, or TEST_UNVERIFIED without one; the process
+ *    policy already refused the latter outside the no-proof test mode; no administration membership), otherwise the session
  *    is invalid, with the same answer as an unknown one.
  * It is a participant: it opens no transaction and issues no lock beyond the two rows the participant takes. In the shared mode it
  * never upgrades the user row lock (readEligibility takes none).
@@ -69,12 +71,7 @@ export class ClientSessionAuthority {
 
   async #requireOrdinary(context: TransactionContext, userId: string): Promise<void> {
     const eligibility = await this.customers.readEligibility(context, userId);
-    if (
-      eligibility === undefined ||
-      eligibility.accountOrigin !== 'PHONE_VERIFIED' ||
-      !eligibility.phoneVerified ||
-      eligibility.hasAdminMembership
-    ) {
+    if (eligibility === undefined || !isOrdinaryClientAccount(eligibility)) {
       throw new AppError('SESSION_INVALID');
     }
   }

@@ -8,11 +8,12 @@
 //   * GET /__11ship/runtime: which build is running (app, source commit, build fingerprint, design version) - infrastructure
 //     metadata only: no session, no right, no path, no secret, no connection string;
 //   * GET /v1/health/live and GET /v1/health/ready, forwarded to the backend over loopback HTTP;
-//   * 11Food only (M01.07): exactly three POST routes of the register flow, forwarded to the backend over loopback HTTP:
+//   * 11Food only (M01.07): exactly four routes of the register flow, forwarded to the backend over loopback HTTP:
 //       POST /v1/auth/phone-verifications
 //       POST /v1/auth/phone-verifications/<uuid>/verify
 //       POST /v1/client-auth/register            (Idempotency-Key forwarded, the body byte for byte)
-//     See forwardAuth for the rules (same origin, JSON, size, deadline, no cookie, no-store). NOTHING else of /v1 is reachable:
+//       GET  /v1/client-auth/config              (no query, no body: which registration mode the server runs)
+//     See forwardAuth (POST) and forwardConfig (GET) for the rules (same origin, JSON, size, deadline, no cookie, no-store). NOTHING else of /v1 is reachable:
 //     not a prefix, not a wildcard, not another method, not a query string, and 11Ship has none of the three. Login, account and
 //     the other business routes are opened by later packages after their own review (the Admin front keeps its own allowlist in
 //     admin-web-dev.mjs).
@@ -48,14 +49,16 @@ export const HEALTH_ROUTES = new Map([
   ['/v1/health/ready', { status: 'ready', accepted: [200, 503] }],
 ]);
 /**
- * The three register routes of the 11Food front (M01.07), nothing else. `keyed` = the route needs (and forwards) an
- * Idempotency-Key. The match is on the exact path: no prefix, no trailing slash, no query string.
+ * The register routes of the 11Food front (M01.07), nothing else. `keyed` = the route needs (and forwards) an
+ * Idempotency-Key. `method` defaults to POST; the config route is the one GET. The match is on the exact path: no prefix, no
+ * trailing slash, no query string.
  */
 const UUID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
 export const FOOD_AUTH_ROUTES = [
   { id: 'otp-request', match: (path) => path === '/v1/auth/phone-verifications', keyed: false },
   { id: 'otp-verify', match: (path) => new RegExp(`^/v1/auth/phone-verifications/${UUID}/verify$`).test(path), keyed: false },
   { id: 'register', match: (path) => path === '/v1/client-auth/register', keyed: true },
+  { id: 'config', match: (path) => path === '/v1/client-auth/config', keyed: false, method: 'GET' },
 ];
 /** Largest request body the front forwards: the biggest real body (register) is under 2 KB. */
 export const MAX_AUTH_REQUEST_BYTES = 8192;
@@ -198,13 +201,18 @@ export function createClientWebServer({ app, distDir, backendUrl, key, cert, ups
     }
     const authRoute = app === 'food-web' ? FOOD_AUTH_ROUTES.find((candidate) => candidate.match(url.pathname)) : undefined;
     if (authRoute !== undefined) {
-      if (request.method !== 'POST') {
-        response.writeHead(405, { ...SECURITY_HEADERS, allow: 'POST', 'content-type': 'text/plain; charset=utf-8' });
+      const allowed = authRoute.method ?? 'POST';
+      if (request.method !== allowed) {
+        response.writeHead(405, { ...SECURITY_HEADERS, allow: allowed, 'content-type': 'text/plain; charset=utf-8' });
         response.end();
         return;
       }
       if (url.search !== '' || (request.url ?? '') !== url.pathname) {
         sendError(response, 404, 'NOT_FOUND');
+        return;
+      }
+      if (allowed === 'GET') {
+        forwardConfig(request, response, backend, url.pathname, upstreamTimeoutMs);
         return;
       }
       forwardAuth(request, response, backend, url.pathname, authRoute, authTimeoutMs);
@@ -309,6 +317,112 @@ function forwardHealth(request, response, backend, path, route, timeoutMs) {
   }, timeoutMs);
   upstream.on('error', () => fail(502, 'BAD_GATEWAY'));
   // The browser went away first: stop waiting for the backend.
+  response.on('close', () => {
+    if (!response.writableFinished) {
+      finish();
+      upstream.destroy();
+    }
+  });
+  upstream.end();
+}
+
+const CONFIG_MODES = new Set(['REQUIRED', 'DISABLED_TEST']);
+/** The config answer is a few dozen bytes; anything bigger is not what the backend agreed to say. */
+const MAX_CONFIG_BYTES = 1024;
+
+/**
+ * Forwards GET /v1/client-auth/config (no-OTP test build). The upstream request is built here from scratch: GET, the fixed path,
+ * `Accept` and a fixed Host - never the browser's cookies, Authorization, Origin, forwarding headers or a query/body. Refused here,
+ * before the backend is touched: another site (an Origin that is not this front's own, or a Sec-Fetch-Site other than same-origin) 403;
+ * a request that carries a body 400. One deadline covers the whole exchange. The answer is released only if it is exactly
+ * {"data":{"registration_verification":"REQUIRED"|"DISABLED_TEST"}} with a 200 and a JSON type, at most 1 KB, and it is re-serialised
+ * from what was validated (never the backend's bytes). Anything else is a 502, a silent backend a 504 - with a fixed body: the app
+ * then keeps the register form locked instead of guessing a mode.
+ */
+function forwardConfig(request, response, backend, path, timeoutMs) {
+  const origin = request.headers.origin;
+  const site = request.headers['sec-fetch-site'];
+  if ((typeof origin === 'string' && origin !== `https://${request.headers.host}`) || (typeof site === 'string' && site !== 'same-origin')) {
+    request.resume();
+    sendError(response, 403, 'ORIGIN_NOT_ALLOWED', { 'cache-control': 'no-store' });
+    return;
+  }
+  const declared = request.headers['content-length'];
+  if ((declared !== undefined && declared !== '0') || request.headers['transfer-encoding'] !== undefined) {
+    request.resume();
+    sendError(response, 400, 'BAD_REQUEST', { 'cache-control': 'no-store' });
+    return;
+  }
+  let finished = false;
+  let timer;
+  const finish = () => {
+    finished = true;
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+  };
+  const noStore = { 'cache-control': 'no-store' };
+  const fail = (status, code) => {
+    if (finished) {
+      return;
+    }
+    finish();
+    upstream.destroy();
+    if (!response.headersSent) {
+      sendError(response, status, code, noStore);
+    } else {
+      response.destroy();
+    }
+  };
+  const upstream = http.request(
+    { hostname: backend.hostname.replace(/^\[|\]$/g, ''), port: backend.port || 80, method: 'GET', path, headers: { accept: 'application/json', host: backend.host, connection: 'close' } },
+    (answer) => {
+      if (answer.statusCode !== 200 || !/^application\/json\b/i.test(String(answer.headers['content-type'] ?? ''))) {
+        answer.resume();
+        fail(502, 'BAD_GATEWAY');
+        return;
+      }
+      const chunks = [];
+      let size = 0;
+      answer.on('data', (chunk) => {
+        size += chunk.length;
+        if (size > MAX_CONFIG_BYTES) {
+          fail(502, 'BAD_GATEWAY');
+          return;
+        }
+        chunks.push(chunk);
+      });
+      answer.on('error', () => fail(502, 'BAD_GATEWAY'));
+      answer.on('end', () => {
+        if (finished) {
+          return;
+        }
+        let parsed;
+        try {
+          parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        } catch {
+          fail(502, 'BAD_GATEWAY');
+          return;
+        }
+        const exact =
+          typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) && Object.keys(parsed).length === 1 &&
+          typeof parsed.data === 'object' && parsed.data !== null && !Array.isArray(parsed.data) && Object.keys(parsed.data).length === 1 &&
+          CONFIG_MODES.has(parsed.data.registration_verification);
+        if (!exact) {
+          fail(502, 'BAD_GATEWAY');
+          return;
+        }
+        finish();
+        sendJson(response, 200, { data: { registration_verification: parsed.data.registration_verification } }, noStore);
+      });
+    },
+  );
+  timer = setTimeout(() => {
+    timer = undefined;
+    fail(504, 'GATEWAY_TIMEOUT');
+  }, timeoutMs);
+  upstream.on('error', () => fail(502, 'BAD_GATEWAY'));
   response.on('close', () => {
     if (!response.writableFinished) {
       finish();

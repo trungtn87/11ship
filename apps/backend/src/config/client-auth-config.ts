@@ -78,3 +78,53 @@ export function parseClientAuth(input: ClientAuthConfigInput): ClientAuthConfigR
 export function isLocalWebMode(appEnv: string, host: string): boolean {
   return (appEnv === 'development' || appEnv === 'test') && isLoopbackHost(host);
 }
+
+// Phone verification mode of the client registration (M01 Food register, no-OTP test build).
+//
+//   CLIENT_AUTH_PHONE_VERIFICATION_MODE  REQUIRED (default when unset) | DISABLED_TEST
+//
+// REQUIRED is the contract of M01.03: a registration needs a valid REGISTER proof. DISABLED_TEST registers an account
+// WITHOUT any proof and records it as TEST_UNVERIFIED (phone_verified_at NULL); it exists for local development and test
+// only: APP_ENV must be development or test AND the server must be bound to a loopback address (a test VPS reaches it
+// through a reverse proxy on the loopback interface). Any other value, and DISABLED_TEST anywhere else, stops startup
+// naming only the variable. Nothing about a request (header, app label, body field) can switch the mode.
+
+export const CLIENT_AUTH_PHONE_VERIFICATION_MODE_ENV = 'CLIENT_AUTH_PHONE_VERIFICATION_MODE';
+
+export const CLIENT_PHONE_VERIFICATION_MODES = ['REQUIRED', 'DISABLED_TEST'] as const;
+export type ClientPhoneVerificationMode = (typeof CLIENT_PHONE_VERIFICATION_MODES)[number];
+
+export type ClientPhoneVerificationModeResult =
+  | { readonly ok: true; readonly mode: ClientPhoneVerificationMode }
+  | { readonly ok: false; readonly invalid: readonly string[] };
+
+export interface ClientPhoneVerificationModeInput {
+  /** Undefined when APP_ENV itself is invalid (that variable is reported on its own). */
+  readonly appEnv: string | undefined;
+  readonly host: string;
+  readonly modeRaw: string | undefined;
+}
+
+export function parseClientPhoneVerificationMode(
+  input: ClientPhoneVerificationModeInput,
+): ClientPhoneVerificationModeResult {
+  if (input.modeRaw === undefined || input.modeRaw === 'REQUIRED') {
+    return { ok: true, mode: 'REQUIRED' };
+  }
+  if (input.modeRaw !== 'DISABLED_TEST') {
+    return { ok: false, invalid: [CLIENT_AUTH_PHONE_VERIFICATION_MODE_ENV] };
+  }
+  // An invalid APP_ENV is reported by its own name; the mode is only judged against a known environment.
+  if (input.appEnv === undefined) {
+    return { ok: true, mode: 'REQUIRED' };
+  }
+  if (!isDisabledTestAllowed(input.appEnv, input.host)) {
+    return { ok: false, invalid: [CLIENT_AUTH_PHONE_VERIFICATION_MODE_ENV] };
+  }
+  return { ok: true, mode: 'DISABLED_TEST' };
+}
+
+/** The one rule: explicit development/test AND a loopback bind. Same shape as LOCAL_WEB, decided from startup config only. */
+export function isDisabledTestAllowed(appEnv: string, host: string): boolean {
+  return isLocalWebMode(appEnv, host);
+}

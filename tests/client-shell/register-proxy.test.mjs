@@ -63,6 +63,14 @@ async function startBackend() {
           return response.end('{}');
         case 'huge':
           return json(200, JSON.stringify({ data: { pad: 'x'.repeat(40_000) } }));
+        case 'config':
+          return json(200, { data: { registration_verification: 'DISABLED_TEST' } }, { 'set-cookie': 'sid=SECRET_COOKIE', 'cache-control': 'public, max-age=600' });
+        case 'config-extra':
+          return json(200, { data: { registration_verification: 'DISABLED_TEST', other: 1 } });
+        case 'config-unknown':
+          return json(200, { data: { registration_verification: 'ENABLED' } });
+        case 'config-error':
+          return json(503, { error: { code: 'SERVICE_UNAVAILABLE', message: 'x', request_id: 'r', details: {} } });
         case 'hang':
           return undefined;
         default:
@@ -120,7 +128,7 @@ const ROUTES = [
   { name: 'register', path: '/v1/client-auth/register', body: REGISTER_BODY, keyed: true },
 ];
 
-describe('11Food front: exactly the three register routes', () => {
+describe('11Food front: exactly the three register routes (+ the read-only mode route)', () => {
   let backend;
   let front;
   before(async () => {
@@ -133,7 +141,7 @@ describe('11Food front: exactly the three register routes', () => {
   });
 
   it('the route table is the three routes and nothing else', () => {
-    assert.deepEqual(FOOD_AUTH_ROUTES.map((route) => route.id), ['otp-request', 'otp-verify', 'register']);
+    assert.deepEqual(FOOD_AUTH_ROUTES.map((route) => route.id), ['otp-request', 'otp-verify', 'register', 'config']);
   });
 
   for (const route of ROUTES) {
@@ -235,6 +243,48 @@ describe('11Food front: exactly the three register routes', () => {
       assert.equal(answer.status, 404, path);
     }
     assert.equal(backend.seen.length, 0, 'none of these reached the backend');
+  });
+
+  it('GET /v1/client-auth/config: forwarded as a bodyless GET, the shape re-serialised, no-store, nothing of the backend headers', async () => {
+    backend.seen.length = 0;
+    backend.behaviour.mode = 'config';
+    const answer = await call(front.port, '/v1/client-auth/config', { method: 'GET', contentType: null });
+    assert.equal(answer.status, 200);
+    assert.deepEqual(JSON.parse(answer.text), { data: { registration_verification: 'DISABLED_TEST' } });
+    assert.equal(answer.headers['cache-control'], 'no-store');
+    assert.equal(answer.headers['set-cookie'], undefined);
+    assert.equal(backend.seen.length, 1);
+    assert.equal(backend.seen[0].method, 'GET');
+    assert.equal(backend.seen[0].url, '/v1/client-auth/config');
+    assert.equal(backend.seen[0].body.length, 0);
+    assert.equal(backend.seen[0].headers.cookie, undefined);
+    backend.behaviour.mode = 'ok';
+  });
+
+  it('GET /v1/client-auth/config: another site, other methods, a query, a trailing slash and a body are refused before the backend', async () => {
+    backend.seen.length = 0;
+    backend.behaviour.mode = 'config';
+    assert.equal((await call(front.port, '/v1/client-auth/config', { method: 'GET', contentType: null, origin: 'https://evil.example' })).status >= 400, true);
+    for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) {
+      const answer = await call(front.port, '/v1/client-auth/config', { method, body: '{}' });
+      assert.equal(answer.status, 405, method);
+      assert.equal(answer.headers.allow, 'GET');
+    }
+    assert.equal((await call(front.port, '/v1/client-auth/config?x=1', { method: 'GET', contentType: null })).status, 404);
+    assert.equal((await call(front.port, '/v1/client-auth/config/', { method: 'GET', contentType: null })).status, 404);
+    assert.equal(backend.seen.length, 0, 'none of these reached the backend');
+    backend.behaviour.mode = 'ok';
+  });
+
+  it('GET /v1/client-auth/config: an extra key, an unknown mode, an error or an oversized answer is 502 and its content is never passed on', async () => {
+    for (const mode of ['config-extra', 'config-unknown', 'config-error', 'html', 'huge', 'redirect']) {
+      backend.behaviour.mode = mode;
+      const answer = await call(front.port, '/v1/client-auth/config', { method: 'GET', contentType: null });
+      assert.equal(answer.status, 502, mode);
+      assert.equal(answer.text.includes('SECRET_MARKER'), false, mode);
+      assert.equal(answer.text.includes('ENABLED'), false, mode);
+    }
+    backend.behaviour.mode = 'ok';
   });
 
   it('a silent backend ends as 504 within the deadline; a non-JSON, a redirect or an oversized answer is 502 and its content is never passed on', async () => {

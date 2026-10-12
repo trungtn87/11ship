@@ -6,10 +6,13 @@ import { DatabaseTls, resolveDatabaseTls } from '../database/tls-config';
 import { parseStagingFixtures, StagingFixturesConfig } from './staging-fixtures-config';
 import { loadTestInboxConfig, TestInboxConfig } from '../test-sms/test-sms-config';
 import {
+  CLIENT_AUTH_PHONE_VERIFICATION_MODE_ENV,
   CLIENT_AUTH_PRIVACY_VERSION_ENV,
   CLIENT_AUTH_TERMS_VERSION_ENV,
   ClientAuthConfig,
+  ClientPhoneVerificationMode,
   parseClientAuth,
+  parseClientPhoneVerificationMode,
 } from './client-auth-config';
 import {
   AuthConfig,
@@ -152,6 +155,11 @@ export interface AppConfig {
    * endpoint then stays closed (a first execution answers SERVICE_UNAVAILABLE before it writes anything).
    */
   clientAuth?: ClientAuthConfig;
+  /**
+   * Phone verification mode of the client registration. Present ONLY as DISABLED_TEST, which is valid only for APP_ENV
+   * development/test on a loopback bind; absent everywhere else, which means REQUIRED (a registration needs a proof).
+   */
+  clientPhoneVerificationMode?: Exclude<ClientPhoneVerificationMode, 'REQUIRED'>;
 }
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -617,6 +625,19 @@ export function loadConfig(env: EnvSource): ConfigResult {
     clientAuthResult.invalid.forEach(flag);
   }
 
+  // Phone verification mode (no-OTP test build): REQUIRED by default, DISABLED_TEST only for development/test on loopback.
+  const phoneVerificationResult = parseClientPhoneVerificationMode({
+    appEnv,
+    host,
+    modeRaw: env[CLIENT_AUTH_PHONE_VERIFICATION_MODE_ENV],
+  });
+  let clientPhoneVerificationMode: ClientPhoneVerificationMode = 'REQUIRED';
+  if (phoneVerificationResult.ok) {
+    clientPhoneVerificationMode = phoneVerificationResult.mode;
+  } else {
+    phoneVerificationResult.invalid.forEach(flag);
+  }
+
   if (invalid.length > 0 || appEnv === undefined || databaseUrl === undefined) {
     return { ok: false, invalid };
   }
@@ -660,6 +681,7 @@ export function loadConfig(env: EnvSource): ConfigResult {
         : {}),
       ...(testInbox === undefined ? {} : { testInbox }),
       ...(clientAuth === undefined ? {} : { clientAuth }),
+      ...(clientPhoneVerificationMode === 'DISABLED_TEST' ? { clientPhoneVerificationMode } : {}),
     },
   };
 }

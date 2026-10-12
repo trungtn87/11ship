@@ -1,13 +1,15 @@
-import { Body, Controller, Get, Headers, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Inject, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AuthenticatedRequest, AuthPrincipal } from '../auth/auth-principal';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
+import { CLIENT_AUTH_SETTINGS, ClientAuthSettings } from './client-auth-policy';
 import {
   parseClientContextBody,
   parseClientLoginBody,
   parseClientLogoutBody,
   parseClientRegisterBody,
+  parseClientUnverifiedRegisterBody,
 } from './client-auth-validation';
 import { ClientLoginService } from './client-login-service';
 import { ClientRegistrationService } from './client-registration-service';
@@ -29,7 +31,21 @@ export class ClientAuthController {
     private readonly registration: ClientRegistrationService,
     private readonly login: ClientLoginService,
     private readonly sessions: ClientSessionService,
+    @Inject(CLIENT_AUTH_SETTINGS) private readonly settings: ClientAuthSettings,
   ) {}
+
+  /**
+   * Public client configuration (no session, no query, no body): the registration verification mode the server runs, taken
+   * from the validated startup configuration. It carries no secret and grants nothing; a client that cannot read it must not
+   * guess. The transport middleware adds Cache-Control: no-store like for every /v1/client-auth route.
+   */
+  @Get('config')
+  config(@Query() query: unknown, @Body() body: unknown) {
+    if (!isEmptyObject(query) || !(body === undefined || isEmptyObject(body))) {
+      throw new BadRequestException();
+    }
+    return { data: { registration_verification: this.settings.phoneVerificationMode } };
+  }
 
   @Post('register')
   async register(
@@ -38,8 +54,13 @@ export class ClientAuthController {
     @Req() request: AuthenticatedRequest,
     @Res({ passthrough: true }) response: StatusSettableResponse,
   ) {
-    const input = parseClientRegisterBody(body);
-    const outcome = await this.registration.register(input, idempotencyKey, request.requestId ?? randomUUID());
+    const requestId = request.requestId ?? randomUUID();
+    // The body shape follows the SERVER mode, never anything the request says about itself: REQUIRED takes the six-field proof
+    // body, DISABLED_TEST the five-field body without a token (a token, a role or a bypass flag is a plain 400 there).
+    const outcome =
+      this.settings.phoneVerificationMode === 'DISABLED_TEST'
+        ? await this.registration.registerUnverifiedTest(parseClientUnverifiedRegisterBody(body), idempotencyKey, requestId)
+        : await this.registration.register(parseClientRegisterBody(body), idempotencyKey, requestId);
     response.status(outcome.status);
     return { data: outcome.payload };
   }
@@ -103,4 +124,8 @@ export class ClientAuthController {
     }
     return request.auth;
   }
+}
+
+function isEmptyObject(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).length === 0;
 }

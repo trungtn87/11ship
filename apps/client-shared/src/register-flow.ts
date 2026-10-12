@@ -1,5 +1,5 @@
 import { AuthClient, AuthResult, OtpIssued, SignedIn } from './auth/client.js';
-import { deadlineAfter } from './auth/contract.js';
+import { deadlineAfter, RegistrationVerificationMode } from './auth/contract.js';
 import { ConsentOffer } from './consent.js';
 import { FlowStore } from './screen.js';
 import { FailureCode } from './states.js';
@@ -20,6 +20,13 @@ import { FailureCode } from './states.js';
 // * Leaving (cancel) drops the form, the proof and the challenge and makes every answer still on its way stale - including a
 //   register answer, which then establishes no session.
 // * A 429 shortens nothing and invents nothing: the screen gets the server's Retry-After when there is one.
+//
+// No-proof test registration (server mode DISABLED_TEST, GET /v1/client-auth/config): the SAME controller registers straight from
+// the F11 form - no OTP request, no verify, no code step (F12 is never opened) and no invented proof. Which mode applies is the
+// server's answer and nothing else: until a valid answer arrived (or after a failed one) the mode is unknown and neither branch
+// may be taken, so the screen keeps its submit locked instead of guessing. The direct branch keeps the same rules: one call at a
+// time, one intent per input (an unknown answer is retried with the SAME key and body when the person submits the same form
+// again), a left flow makes its answer stale (no session), and the password lives only in memory.
 
 export const REGISTER_FLOW = 'register-otp';
 
@@ -50,6 +57,19 @@ export type RegisterStepResult =
 
 export interface RegisterController {
   readonly consent: ConsentOffer;
+  /**
+   * F11 opens by asking the server how a registration is verified. Each call asks again (the server may have changed); a valid
+   * answer sets `mode()`, a failure clears it. Concurrent calls share one request.
+   */
+  loadMode(): Promise<AuthResult<RegistrationVerificationMode>>;
+  /** The server's answer of the latest `loadMode`, or undefined while it has none (never a default). */
+  mode(): RegistrationVerificationMode | undefined;
+  /**
+   * DISABLED_TEST only: registers directly from the form (no code step). Refused without a DISABLED_TEST answer from the server.
+   * The same form while a call runs shares that call; another form answers IN_PROGRESS. A success establishes the session and
+   * wipes the flow; an unresolved failure keeps the intent so submitting the same form again re-sends the SAME request.
+   */
+  registerDirect(form: RegisterForm): Promise<RegisterStepResult>;
   /** F11: asks for a REGISTER code. On success the flow exists (F12 may open). */
   begin(form: RegisterForm): Promise<AuthResult<OtpIssued>>;
   view(): RegisterView | undefined;
@@ -87,10 +107,14 @@ export function createRegisterController(options: RegisterControllerOptions): Re
   const now = options.now ?? ((): number => Date.now());
   let state: State | undefined;
   let beginRun: { readonly phone: string; readonly promise: Promise<AuthResult<OtpIssued>> } | undefined;
+  let serverMode: RegistrationVerificationMode | undefined;
+  let modeRun: Promise<AuthResult<RegistrationVerificationMode>> | undefined;
+  let directRun: { readonly form: RegisterForm; readonly promise: Promise<RegisterStepResult> } | undefined;
 
   const wipe = (): void => {
     state = undefined;
     beginRun = undefined;
+    directRun = undefined;
     flows.end(REGISTER_FLOW);
   };
 
@@ -109,6 +133,66 @@ export function createRegisterController(options: RegisterControllerOptions): Re
           busy: state.busy,
           ...(state.failure === undefined ? {} : { failure: { code: state.failure } }),
         };
+
+  function loadMode(): Promise<AuthResult<RegistrationVerificationMode>> {
+    if (modeRun !== undefined) {
+      return modeRun;
+    }
+    const run: Promise<AuthResult<RegistrationVerificationMode>> = auth.registrationConfig().then((result) => {
+      if (modeRun === run) {
+        modeRun = undefined;
+      }
+      // A valid answer is the mode; anything else leaves NO mode, so nothing downstream guesses one.
+      serverMode = result.kind === 'ok' ? result.value : undefined;
+      return result;
+    });
+    modeRun = run;
+    return run;
+  }
+
+  function registerDirect(form: RegisterForm): Promise<RegisterStepResult> {
+    if (serverMode !== 'DISABLED_TEST') {
+      return Promise.resolve({ kind: 'failure', where: 'register', code: 'UNKNOWN', unresolved: false });
+    }
+    const phone = form.phone.trim();
+    const current = directRun;
+    if (current !== undefined) {
+      const same = current.form.phone === phone && current.form.fullName === form.fullName && current.form.password === form.password;
+      return same ? current.promise : Promise.resolve({ kind: 'failure', where: 'register', code: 'IN_PROGRESS', unresolved: false });
+    }
+    const kept: RegisterForm = { fullName: form.fullName, phone, password: form.password };
+    const promise: Promise<RegisterStepResult> = auth
+      .registerWithoutProof({
+        phone,
+        password: form.password,
+        fullName: form.fullName,
+        consent: { termsVersion: consent.termsVersion, privacyVersion: consent.privacyVersion },
+      })
+      .then((result): RegisterStepResult => {
+        if (directRun?.promise !== promise) {
+          // The flow was left (or restarted) while this ran: nothing of it may show or stay.
+          return { kind: 'stale' };
+        }
+        directRun = undefined;
+        if (result.kind === 'stale') {
+          return { kind: 'stale' };
+        }
+        if (result.kind === 'ok') {
+          // Account created and session established by the adapter. The form is dropped here; the session stays.
+          wipe();
+          return { kind: 'ok', value: result.value };
+        }
+        return {
+          kind: 'failure',
+          where: 'register',
+          code: result.code,
+          unresolved: result.unresolved,
+          ...(result.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: result.retryAfterSeconds }),
+        };
+      });
+    directRun = { form: kept, promise };
+    return promise;
+  }
 
   function begin(form: RegisterForm): Promise<AuthResult<OtpIssued>> {
     const phone = form.phone.trim();
@@ -229,5 +313,5 @@ export function createRegisterController(options: RegisterControllerOptions): Re
     return result;
   }
 
-  return { consent, begin, view, verify, retryRegister, resend, cancel };
+  return { consent, loadMode, mode: () => serverMode, registerDirect, begin, view, verify, retryRegister, resend, cancel };
 }

@@ -4,6 +4,8 @@ import { PhoneAllowlist } from '../config/staging-fixtures-config';
 import {
   createAccountOriginPolicy,
   isAccountOrigin,
+  isClientLoginOrigin,
+  isOrdinaryClientAccount,
   phoneVerificationStatusOf,
   standardAccountOriginPolicy,
 } from './account-origin';
@@ -85,9 +87,12 @@ describe('account origin policy (M00-D2 design section 4, reconciled with the ad
     expect(standardAccountOriginPolicy().allows({ accountOrigin: 'SOMETHING_ELSE' as never, phoneNormalized: PHONE })).toBe(false);
   });
 
-  it('maps origin to the display status, and recognises exactly the three origins', () => {
+  it('maps origin to the display status, and recognises exactly the four origins', () => {
     expect(phoneVerificationStatusOf('PHONE_VERIFIED')).toBe('VERIFIED');
     expect(phoneVerificationStatusOf('STAGING_FIXTURE')).toBe('UNVERIFIED_TEST');
+    // A no-proof test account is never shown as VERIFIED.
+    expect(phoneVerificationStatusOf('TEST_UNVERIFIED')).toBe('UNVERIFIED_TEST');
+    expect(isAccountOrigin('TEST_UNVERIFIED')).toBe(true);
     expect(isAccountOrigin('PHONE_VERIFIED')).toBe(true);
     expect(isAccountOrigin('STAGING_FIXTURE')).toBe(true);
     expect(isAccountOrigin('ADMIN_PROVISIONED')).toBe(true);
@@ -135,5 +140,64 @@ describe('bindOtpProvider with the staging fixture mode (M00-D2 section 3)', () 
     } catch (error) {
       expect(String((error as Error).message)).not.toMatch(/977777777|987654/);
     }
+  });
+});
+
+const testUnverified = { accountOrigin: 'TEST_UNVERIFIED', phoneNormalized: PHONE } as const;
+
+describe('account origin policy — TEST_UNVERIFIED (no-OTP test registration)', () => {
+  it('is allowed only while the no-proof test mode is on in development/test', () => {
+    for (const appEnv of ['development', 'test'] as const) {
+      const on = createAccountOriginPolicy({ appEnv, fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: true });
+      expect(on.unverifiedTestMode).toBe(true);
+      expect(on.allows(testUnverified)).toBe(true);
+      // Verified accounts keep working next to it; registration stays open.
+      expect(on.allows(verified)).toBe(true);
+      expect(() => on.assertRegistrationOpen()).not.toThrow();
+      const off = createAccountOriginPolicy({ appEnv, fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: false });
+      expect(off.unverifiedTestMode).toBe(false);
+      expect(off.allows(testUnverified)).toBe(false);
+    }
+  });
+
+  it('is never allowed in staging, production or an unknown environment, whatever is passed in', () => {
+    for (const appEnv of ['staging', 'production', undefined] as const) {
+      const policy = createAccountOriginPolicy({ appEnv, fixtureModeEnabled: true, allowedPhones: allowlist, unverifiedTestModeEnabled: true });
+      expect(policy.unverifiedTestMode).toBe(false);
+      expect(policy.allows(testUnverified)).toBe(false);
+    }
+    expect(standardAccountOriginPolicy().unverifiedTestMode).toBe(false);
+    expect(standardAccountOriginPolicy().allows(testUnverified)).toBe(false);
+  });
+
+  it('does not change who a fixture or an administration account is', () => {
+    const policy = createAccountOriginPolicy({ appEnv: 'test', fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: true });
+    expect(policy.allows(fixture)).toBe(false);
+    expect(policy.allows(administration)).toBe(false);
+  });
+});
+
+describe('isOrdinaryClientAccount / isClientLoginOrigin (the one row-shape rule of a client account)', () => {
+  it('accepts a verified account with a time and a test account without one, never with an administration membership', () => {
+    expect(isOrdinaryClientAccount({ accountOrigin: 'PHONE_VERIFIED', phoneVerified: true, hasAdminMembership: false })).toBe(true);
+    expect(isOrdinaryClientAccount({ accountOrigin: 'TEST_UNVERIFIED', phoneVerified: false, hasAdminMembership: false })).toBe(true);
+    expect(isOrdinaryClientAccount({ accountOrigin: 'PHONE_VERIFIED', phoneVerified: true, hasAdminMembership: true })).toBe(false);
+    expect(isOrdinaryClientAccount({ accountOrigin: 'TEST_UNVERIFIED', phoneVerified: false, hasAdminMembership: true })).toBe(false);
+  });
+
+  it('refuses a corrupt pairing and every other origin', () => {
+    expect(isOrdinaryClientAccount({ accountOrigin: 'PHONE_VERIFIED', phoneVerified: false, hasAdminMembership: false })).toBe(false);
+    expect(isOrdinaryClientAccount({ accountOrigin: 'TEST_UNVERIFIED', phoneVerified: true, hasAdminMembership: false })).toBe(false);
+    for (const accountOrigin of ['ADMIN_PROVISIONED', 'STAGING_FIXTURE', 'SOMETHING_ELSE']) {
+      expect(isOrdinaryClientAccount({ accountOrigin, phoneVerified: false, hasAdminMembership: false })).toBe(false);
+      expect(isOrdinaryClientAccount({ accountOrigin, phoneVerified: true, hasAdminMembership: false })).toBe(false);
+    }
+  });
+
+  it('lets only the two client origins reach a password check', () => {
+    expect(isClientLoginOrigin('PHONE_VERIFIED')).toBe(true);
+    expect(isClientLoginOrigin('TEST_UNVERIFIED')).toBe(true);
+    expect(isClientLoginOrigin('ADMIN_PROVISIONED')).toBe(false);
+    expect(isClientLoginOrigin('STAGING_FIXTURE')).toBe(false);
   });
 });

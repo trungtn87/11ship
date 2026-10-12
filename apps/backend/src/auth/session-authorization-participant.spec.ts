@@ -359,6 +359,7 @@ describe('SessionAuthorizationParticipant account origin policy (M00-D2)', () =>
       get fixtureMode() {
         return mode;
       },
+      unverifiedTestMode: false,
       allows: (subject) => subject.accountOrigin === 'STAGING_FIXTURE' && mode,
       assertRegistrationOpen: () => undefined,
     };

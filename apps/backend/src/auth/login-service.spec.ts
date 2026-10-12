@@ -315,6 +315,7 @@ describe('LoginService account origin policy (M00-D2)', () => {
     let consulted = 0;
     const spy: AccountOriginPolicy = {
       fixtureMode: true,
+      unverifiedTestMode: false,
       allows: () => {
         consulted += 1;
         return true;
