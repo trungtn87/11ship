@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -43,7 +42,8 @@ void main() {
     for (final String label in <String>['Trang chủ', 'Tìm kiếm', 'Đơn hàng', 'Tài khoản']) {
       expect(find.descendant(of: find.byType(N11BottomNav), matching: find.text(label)), findsOneWidget, reason: label);
     }
-    expect(find.text('Máy chủ sẵn sàng'), findsWidgets);
+    // Ready is quiet: no banner is shown when the server is fine (the diagnostics screen shows the details).
+    expect(find.byKey(const Key('connection-banner')), findsNothing);
   });
 
   testWidgets('home shows the approved logo asset and a test notice, no invented shops', (WidgetTester tester) async {
@@ -79,7 +79,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.text('Không có kết nối mạng'), findsNothing);
-    expect(find.text('Máy chủ sẵn sàng'), findsWidgets);
+    expect(find.byKey(const Key('connection-banner')), findsNothing);
   });
 
   testWidgets('backend not ready (503) is told apart from offline', (WidgetTester tester) async {

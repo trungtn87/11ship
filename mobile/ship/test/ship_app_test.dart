@@ -44,7 +44,7 @@ void main() {
     }
     final Iterable<Image> images = tester.widgetList<Image>(find.byType(Image));
     expect(images.any((Image i) => i.image is AssetImage && (i.image as AssetImage).assetName == 'assets/brand/logo-11ship-ui.png'), isTrue);
-    expect(find.text('Máy chủ sẵn sàng'), findsWidgets);
+    expect(find.byKey(const Key('connection-banner')), findsNothing);
   });
 
   testWidgets('online switch is disabled: no GPS, no fake status', (WidgetTester tester) async {
@@ -67,10 +67,11 @@ void main() {
   testWidgets('orders view toggles between active and history, both empty', (WidgetTester tester) async {
     await pump(tester, healthy());
     await openTab(tester, 'orders');
-    expect(find.text('Chưa có đơn hàng'), findsOneWidget);
+    expect(find.byKey(const Key('orders-active')), findsOneWidget);
+    expect(find.text('Chưa có đơn hàng'), findsWidgets);
     await tester.tap(find.byKey(const Key('orders-history')));
     await tester.pump();
-    expect(find.text('Chưa có đơn hàng'), findsOneWidget);
+    expect(find.text('Chưa có đơn hàng'), findsWidgets);
   });
 
   testWidgets('account: login/register locked with reasons; diagnostics reachable with SHA', (WidgetTester tester) async {
@@ -99,6 +100,6 @@ void main() {
     await tester.tap(find.byKey(const Key('connection-retry')));
     await tester.pump();
     await tester.pump();
-    expect(find.text('Máy chủ sẵn sàng'), findsWidgets);
+    expect(find.byKey(const Key('connection-banner')), findsNothing);
   });
 }
