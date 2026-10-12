@@ -49,12 +49,12 @@ export function eyeIcon(open: boolean): SVGElement {
 }
 
 /**
- * The brand slot. The official "11" logo asset is not in the repository yet (brand guideline section 12: logo SVG/PNG is
- * an open item) and the logo must not be redrawn, so this shows the plain text "11" as a placeholder. When the asset is
- * added (for example public/brand/logo-11.svg) this is the only place to change.
+ * The brand slot: the Owner-approved "11" logo (public/logo-11-ui.png, cropped and resized from docs/brand/originals by
+ * tools/brand/build-brand-assets.py; never redrawn) followed by the name of this console. The logo has dark ink, so on the dark
+ * sidebar it sits on a light tile (see styles.css).
  */
 export function brand(): HTMLElement {
-  return h('div', { class: 'brand' }, h('span', { class: 'brand-fallback', 'aria-label': '11' }, '11'), h('span', { class: 'brand-name' }, 'Quản trị'));
+  return h('div', { class: 'brand' }, h('img', { class: 'brand-logo', src: '/logo-11-ui.png', alt: '11' }), h('span', { class: 'brand-name' }, 'Quản trị'));
 }
 
 export function message(kind: 'error' | 'notice' | 'warning', id: string): HTMLElement {

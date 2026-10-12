@@ -1,0 +1,15 @@
+# Flutter / Dart build output
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+*.iml
+.metadata
+# The Android project is generated in CI by tool/prepare-android.sh (flutter create + android_overlay), never committed.
+food/android/
+ship/android/
+# Signing material never enters the repository.
+*.jks
+*.keystore
+key.properties
