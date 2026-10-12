@@ -5,6 +5,7 @@ import { h } from '../../client-shared/src/dom.js';
 import { icon } from '../../client-shared/src/icons.js';
 import { ScreenDef, ScreenEnv, VariantDef } from '../../client-shared/src/screen.js';
 import { authScreens } from '../../client-shared/src/screens/auth.js';
+import { diagnosticsScreen } from '../../client-shared/src/screens/diagnostics.js';
 import { failureBanner } from '../../client-shared/src/screens/feedback.js';
 import { actionButton, appPage, designOnly, guardForm } from '../../client-shared/src/screens/layout.js';
 import { STATE_COPY } from '../../client-shared/src/states.js';
@@ -194,7 +195,11 @@ const account: ScreenDef = {
           h('div', { class: 'c-hero' }, logo(SHIP_BRAND, true), h('p', { class: 'c-slogan' }, SHIP_BRAND.slogan)),
           button({ label: 'Đăng nhập', kind: 'primary', id: 'account-login', onClick: () => env.go('login') }),
           button({ label: 'Đăng ký làm xế', kind: 'secondary', id: 'account-register', onClick: () => env.go('register') }),
-          list([listItem({ icon: 'help', title: 'Trợ giúp', soon: true }), listItem({ icon: 'shield', title: 'Chính sách và điều khoản', soon: true })]),
+          list([
+            listItem({ icon: 'help', title: 'Trợ giúp', soon: true }),
+            listItem({ icon: 'shield', title: 'Chính sách và điều khoản', soon: true }),
+            listItem({ icon: 'activity', title: 'Chẩn đoán kết nối', sub: 'Kiểm tra kết nối với máy chủ', onClick: () => env.go('diagnostics') }),
+          ]),
         ],
       });
     } else {
@@ -323,7 +328,8 @@ const driverStatus: ScreenDef = {
 export function shipScreens(): ScreenDef[] {
   // A new driver goes from the verified registration straight to the driver profile form (S12).
   const routes = { afterLogin: { id: 'home' }, afterRegister: { id: 'driver-onboarding' }, guestHome: { id: 'home' } };
-  return [...authScreens(SHIP_BRAND, routes), home, orders, income, wallet, account, driverOnboarding, driverStatus];
+  const diagnostics = diagnosticsScreen({ brand: SHIP_BRAND, code: 'S06', nav: (env) => nav(env, 'account') });
+  return [...authScreens(SHIP_BRAND, routes), home, orders, income, wallet, account, diagnostics, driverOnboarding, driverStatus];
 }
 
 export const SHIP_DEFINITION: AppDefinition = {

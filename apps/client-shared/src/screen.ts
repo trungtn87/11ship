@@ -1,4 +1,5 @@
 import type { AppBrand } from './brand.js';
+import type { ConnectionView } from './connection.js';
 import type { FeatureId } from './features.js';
 import type { ClientPorts } from './ports.js';
 import type { GuardHandle, LeaveGuard } from './leave.js';
@@ -68,6 +69,8 @@ export interface ScreenEnv {
   readonly dialogHost: HTMLElement | undefined;
   isWired(feature: FeatureId): boolean;
   featureReason(feature: FeatureId): string;
+  /** Whether the server is reachable (health), as the connection banner and the diagnostics screen show it. Live: real checks. Design: a fixed example. */
+  readonly connection: ConnectionView;
   /** Test build: OTP screens tell the person the SMS is simulated and where the code is read (PC tool), never show the code. */
   readonly testSmsNotice: boolean;
   /** Preview only. */
@@ -90,6 +93,8 @@ export interface ScreenDef {
   readonly path?: string;
   readonly access: Access;
   readonly flow?: string;
+  /** The screen shows the connection state itself (diagnostics), so the shared banner is not added above it. */
+  readonly hideConnectionBanner?: boolean;
   readonly variants: readonly VariantDef[];
   render(env: ScreenEnv, variant: string): HTMLElement;
 }

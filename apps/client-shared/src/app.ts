@@ -1,6 +1,10 @@
 import { AppBrand } from './brand.js';
 import { toast } from './components.js';
+import { liveConnection } from './connection.js';
+import { ConnectionBanner, createConnectionBanner } from './connection-ui.js';
+import { loadBuildInfo } from './environment.js';
 import { featureStatus, isWired } from './features.js';
+import { HealthMonitor } from './health.js';
 import { NOT_WIRED_PORTS } from './ports.js';
 import { LeaveController } from './leave.js';
 import { HistoryPort, RouteDef, Router, RouteTable } from './router.js';
@@ -8,6 +12,9 @@ import { FlowStore, ScreenDef, ScreenEnv } from './screen.js';
 
 // Wires the screens to the real app: router, real paths, no session, ports that answer "not wired". The design preview
 // (design/start.ts) is a separate module that the live build removes.
+
+/** How often a running app asks the server again while the page is visible (and no check was asked for sooner). */
+export const HEALTH_POLL_MS = 30_000;
 
 export interface AppDefinition {
   readonly brand: AppBrand;
@@ -114,6 +121,13 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
   // The screens' `go` is needed before the router exists (it is built from the same table), so it reads the router through this holder.
   const routerRef: { current: Router | undefined } = { current: undefined };
   const leave = new LeaveController();
+  // Health of the server: real requests, same origin, no cache, no credentials (see health.ts). Nothing but reachability.
+  const monitor = new HealthMonitor({
+    fetch: (input, init) => window.fetch(input, init),
+    intervalMs: HEALTH_POLL_MS,
+    shouldPoll: () => document.visibilityState !== 'hidden',
+  });
+  const connection = liveConnection(monitor, window.location.origin);
   const env: ScreenEnv = {
     mode: 'live',
     brand: definition.brand,
@@ -134,11 +148,20 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
     guard: (guard) => leave.register(guard),
     toast: (text) => toast(text),
     dialogHost: undefined,
+    connection,
     isWired,
     featureReason: (feature) => featureStatus(feature).reason,
     testSmsNotice: definition.testSmsNotice,
   };
   let first = true;
+  let connectionBanner: ConnectionBanner | undefined;
+  const focusHeading = (content: HTMLElement): void => {
+    const heading = content.querySelector<HTMLElement>('h1');
+    if (heading !== null) {
+      heading.setAttribute('tabindex', '-1');
+      heading.focus({ preventScroll: true });
+    }
+  };
   const router = new Router(table, guardedHistory(leave), {
     state: () => ({ signedIn: false, flows: flows.names() }),
     render: (route) => {
@@ -150,14 +173,22 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
       leave.clear();
       const content = screen.render(env, 'default');
       root.replaceChildren(content);
+      // The connection banner sits under the app bar of every screen that does not show the connection state itself.
+      connectionBanner?.dispose();
+      connectionBanner = undefined;
+      if (screen.hideConnectionBanner !== true) {
+        connectionBanner = createConnectionBanner(connection, { focusFallback: () => focusHeading(content) });
+        const bar = content.querySelector(':scope > header');
+        if (bar === null) {
+          content.prepend(connectionBanner.element);
+        } else {
+          bar.after(connectionBanner.element);
+        }
+      }
       document.title = `${screen.title} · ${definition.brand.name}`;
       window.scrollTo(0, 0);
       if (!first) {
-        const heading = content.querySelector<HTMLElement>('h1');
-        if (heading !== null) {
-          heading.setAttribute('tabindex', '-1');
-          heading.focus({ preventScroll: true });
-        }
+        focusHeading(content);
       }
       first = false;
     },
@@ -171,5 +202,16 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
     }
   });
   router.start();
+  // Connection state: ask now; ask again when the network returns or the page becomes visible; show "offline" at once when
+  // the browser says the network is gone (no waiting for a timeout). A stale answer can never overwrite a newer check.
+  window.addEventListener('offline', () => monitor.markOffline());
+  window.addEventListener('online', () => void monitor.check());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      void monitor.check();
+    }
+  });
+  monitor.start();
+  void loadBuildInfo({ fetch: (input, init) => window.fetch(input, init) }).then((build) => connection.setBuild(build));
   return router;
 }

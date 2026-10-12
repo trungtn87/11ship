@@ -5,6 +5,7 @@ import { h } from '../../client-shared/src/dom.js';
 import { icon } from '../../client-shared/src/icons.js';
 import { ScreenDef, ScreenEnv, VariantDef } from '../../client-shared/src/screen.js';
 import { authScreens } from '../../client-shared/src/screens/auth.js';
+import { diagnosticsScreen } from '../../client-shared/src/screens/diagnostics.js';
 import { failureBanner } from '../../client-shared/src/screens/feedback.js';
 import { actionButton, appPage, designOnly, guardForm, isGated } from '../../client-shared/src/screens/layout.js';
 import { STATE_COPY } from '../../client-shared/src/states.js';
@@ -151,7 +152,11 @@ const account: ScreenDef = {
           h('div', { class: 'c-hero' }, logo(FOOD_BRAND, true), h('p', { class: 'c-slogan' }, FOOD_BRAND.slogan)),
           button({ label: 'Đăng nhập', kind: 'primary', id: 'account-login', onClick: () => env.go('login') }),
           button({ label: 'Đăng ký', kind: 'secondary', id: 'account-register', onClick: () => env.go('register') }),
-          list([listItem({ icon: 'help', title: 'Trợ giúp', soon: true }), listItem({ icon: 'shield', title: 'Chính sách và điều khoản', soon: true })]),
+          list([
+            listItem({ icon: 'help', title: 'Trợ giúp', soon: true }),
+            listItem({ icon: 'shield', title: 'Chính sách và điều khoản', soon: true }),
+            listItem({ icon: 'activity', title: 'Chẩn đoán kết nối', sub: 'Kiểm tra kết nối với máy chủ', onClick: () => env.go('diagnostics') }),
+          ]),
         ],
       });
     } else {
@@ -389,7 +394,8 @@ const shopHome: ScreenDef = {
 
 export function foodScreens(): ScreenDef[] {
   const routes = { afterLogin: { id: 'home' }, afterRegister: { id: 'home' }, guestHome: { id: 'home' } };
-  return [...authScreens(FOOD_BRAND, routes), home, search, orders, account, profile, shopStart, shopOnboarding, shopLocation, shopHome];
+  const diagnostics = diagnosticsScreen({ brand: FOOD_BRAND, code: 'F05', nav: (env) => nav(env, 'account') });
+  return [...authScreens(FOOD_BRAND, routes), home, search, orders, account, diagnostics, profile, shopStart, shopOnboarding, shopLocation, shopHome];
 }
 
 export const FOOD_DEFINITION: AppDefinition = {
