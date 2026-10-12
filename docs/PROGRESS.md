@@ -204,7 +204,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#84](https://github.com/trungtn87/11ship/pull/84) fix(client): Food/Ship trở về Trang chủ sau đăng xuất | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `117e8f1` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#85](https://github.com/trungtn87/11ship/pull/85) feat(m01): nối hồ sơ quán 11Food F20–F23 + GET shop/service… | Đã merge (`MERGED`) | — | — | — | `d32d51d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#86](https://github.com/trungtn87/11ship/pull/86) (HỦY) docs(M01): phương án APK WebView test | 🚫 Đã hủy / bỏ qua (`CANCELLED / IGNORED`) | — | — | — | `8902532` | 🚫 không tính (đã hủy) — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#87](https://github.com/trungtn87/11ship/pull/87) M00-VPS-01: cập nhật VPS staging — gói A+B (#70/#71) trên m… | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `327e124` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#87](https://github.com/trungtn87/11ship/pull/87) M00-VPS-01: cập nhật VPS staging — gói A+B (#70/#71) trên m… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `1f9c8d0` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
