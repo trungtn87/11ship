@@ -186,11 +186,11 @@ test('contains the approved destructive-operation guards', () => {
   }
 });
 
-test('keeps state local and documents unavailable applications as N/A', async () => {
+test('keeps state local; Status no longer reports Web Admin as unavailable (M00.09)', async () => {
   const ignore = await readFile(path.join(root, '.gitignore'), 'utf8');
   const runbook = await readFile(path.join(root, 'ops', 'runbooks', 'local-test-launcher-windows.md'), 'utf8');
   assert.match(ignore, /^\.11ship-local\/$/m);
-  assert.match(script, /N\/A — launcher chưa mở được/);
+  assert.doesNotMatch(script, /N\/A — launcher chưa mở được/);
   assert.match(runbook, /không xóa volume/);
   assert.match(script, /Bỏ qua progress-check vì máy Owner không có GitHub token/);
 });
