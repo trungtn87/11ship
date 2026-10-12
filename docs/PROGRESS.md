@@ -189,7 +189,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#69](https://github.com/trungtn87/11ship/pull/69) M00.03: artifact/process identity, ownership of process and… | Đã merge (`MERGED`) | — | — | — | `847e807` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#70](https://github.com/trungtn87/11ship/pull/70) M00-VPS-01 gói A: PostgreSQL 17 tự lưu trữ cho staging (DB_… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `c739e29` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#71](https://github.com/trungtn87/11ship/pull/71) M00-VPS-01 B: Ubuntu/VinaHost artifact and runbook (draft,… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `2b4af2b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#72](https://github.com/trungtn87/11ship/pull/72) feat(M00.04): bộ UI chung, brand và trạng thái kết nối | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `10b5989` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#72](https://github.com/trungtn87/11ship/pull/72) feat(M00.04): bộ UI chung, brand và trạng thái kết nối | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `10b5989` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
