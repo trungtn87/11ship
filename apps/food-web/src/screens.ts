@@ -164,11 +164,11 @@ function openLogout(env: ScreenEnv): void {
         onClick: () => {
           if (env.mode === 'design') {
             designOnly(env, STATE_COPY.designNoSend);
-            env.go('account', 'guest');
+            env.go('home', 'guest');
             return;
           }
           // Live: the local session is dropped first; the notice says whether the server confirmed the revoke.
-          void signOutLive(env, 'account');
+          void signOutLive(env);
         },
       },
     ],

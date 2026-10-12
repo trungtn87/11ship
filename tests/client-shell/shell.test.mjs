@@ -104,6 +104,22 @@ describe('ports and features', () => {
   });
 });
 
+describe('logout returns to the public home', () => {
+  for (const serverRevoked of [true, false]) {
+    it(`returns home with accurate revoke notice (serverRevoked=${serverRevoked})`, async () => {
+      const { signOutLive } = await load('screens/logout-live.js');
+      const { STATE_COPY } = await load('states.js');
+      const actions = [];
+      await signOutLive({
+        signOut: async () => ({ hadSession: true, serverRevoked }),
+        toast: (message) => actions.push(message),
+        go: (id) => actions.push(id),
+      });
+      assert.deepEqual(actions, [serverRevoked ? STATE_COPY.loggedOut : STATE_COPY.loggedOutUnconfirmed, 'home']);
+    });
+  }
+});
+
 describe('builds', () => {
   it('live build contains no design preview', () => {
     const live = mkdtempSync(join(tmpdir(), 'client-live-'));
