@@ -278,6 +278,13 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
                           WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1))`,
     [normalizedPhone],
   );
+  // M01.05: the idempotency records of the own-profile update (scope = the user).
+  await pool.query(
+    `DELETE FROM app.idempotency_records
+      WHERE scope_type = 'customer_profile'
+        AND scope_id IN (SELECT user_id::text FROM app.users WHERE phone_normalized = $1)`,
+    [normalizedPhone],
+  );
   await pool.query(
     'DELETE FROM app.sessions WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],

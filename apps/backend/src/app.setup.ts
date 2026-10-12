@@ -3,7 +3,11 @@ import { HttpAdapterHost } from '@nestjs/core';
 import { activationTransportMiddleware } from './admin-activation/admin-activation.controller';
 import { ACTIVATION_ROUTE_PREFIX } from './admin-activation/admin-activation-constants';
 import { ADMIN_AUTH_ROUTE_PREFIX, ADMIN_ROUTE_PREFIX, adminTransportMiddleware } from './http/admin-transport.middleware';
-import { CLIENT_AUTH_ROUTE_PREFIX, clientAuthTransportMiddleware } from './http/client-auth-transport.middleware';
+import {
+  CLIENT_AUTH_ROUTE_PREFIX,
+  CLIENT_PROFILE_ROUTE_PREFIXES,
+  clientAuthTransportMiddleware,
+} from './http/client-auth-transport.middleware';
 import { AllExceptionsFilter } from './http/all-exceptions.filter';
 import { createRequestContextMiddleware } from './http/request-context.middleware';
 import { JsonLogger } from './logging/json-logger';
@@ -30,6 +34,10 @@ export function configureApp(app: INestApplication): void {
   app.use(`/${GLOBAL_PREFIX}/${ADMIN_ROUTE_PREFIX}`, adminTransportMiddleware);
   // Same reason for /v1/client-auth (M01.03): credentials and session tokens, never cached.
   app.use(`/${GLOBAL_PREFIX}/${CLIENT_AUTH_ROUTE_PREFIX}`, clientAuthTransportMiddleware);
+  // Same headers for the own-profile routes (M01.05): personal data, never cached.
+  for (const prefix of CLIENT_PROFILE_ROUTE_PREFIXES) {
+    app.use(`/${GLOBAL_PREFIX}/${prefix}`, clientAuthTransportMiddleware);
+  }
   app.setGlobalPrefix(GLOBAL_PREFIX);
   app.useGlobalFilters(new AllExceptionsFilter(app.get(HttpAdapterHost), logger));
 }

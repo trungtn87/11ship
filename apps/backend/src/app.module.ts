@@ -3,6 +3,7 @@ import { ActivationOtpProvider } from './admin-activation/activation-otp-provide
 import { AdminAuthModule } from './admin-auth/admin-auth.module';
 import { AuthModule, AuthModuleOptions } from './auth/auth.module';
 import { AppConfig } from './config/app-config';
+import { CustomerProfileModule } from './customer-profile/customer-profile.module';
 import { ConfigModule } from './config/config.module';
 import { StartupConfigError } from './config/startup-config-error';
 import { DatabaseModule } from './database/database.module';
@@ -57,7 +58,9 @@ export class AppModule {
         DatabaseModule,
         TransactionModule,
         HealthModule,
-        ...(auth === undefined ? [] : [auth, OnboardingModule.register(auth), ShopManagementModule.register(auth)]),
+        ...(auth === undefined
+          ? []
+          : [auth, OnboardingModule.register(auth), ShopManagementModule.register(auth), CustomerProfileModule.register(auth)]),
         // Administration web authentication: only when ADMIN_AUTH_ENABLED=true (config.adminAuth is then present),
         // on top of the one Auth module object above. Disabled (the default): nothing is wired or exposed.
         ...(auth === undefined || options.config.adminAuth === undefined ? [] : [AdminAuthModule.register(auth, activation)]),
