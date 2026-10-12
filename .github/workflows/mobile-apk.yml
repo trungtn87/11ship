@@ -96,6 +96,7 @@ jobs:
           echo "SIGNING_MODE=$signing" >> "$GITHUB_ENV"
           version="$(sed -n 's/^version: *\([0-9.]*\)+.*/\1/p' mobile/${{ matrix.app }}/pubspec.yaml)"
           cd mobile/${{ matrix.app }}
+          fv="$(flutter --version --machine | python3 -c 'import json,sys; print(json.load(sys.stdin)["frameworkVersion"])' 2>/dev/null)" || fv=unknown
           flutter build apk --release \
             --build-name="$version" --build-number="${{ github.run_number }}" \
             --dart-define=API_BASE_URL="$API_BASE_URL" \
@@ -106,7 +107,8 @@ jobs:
             --dart-define=SOURCE_SHA="$SOURCE_SHA" \
             --dart-define=BUILT_AT="$(date -u +%Y-%m-%dT%H:%MZ)" \
             --dart-define=SIGNING_MODE="$signing" \
-            --dart-define=FLUTTER_VERSION="$(flutter --version --machine | python3 -c 'import json,sys; print(json.load(sys.stdin)["frameworkVersion"])')"
+            --dart-define=FLUTTER_VERSION="$fv" 2>&1 | tee "$RUNNER_TEMP/b.log" || {
+              echo "::error title=build failed::$(grep -iE 'error|wrong|failed|not found|exception' "$RUNNER_TEMP/b.log" | head -14 | tr '\n' '|' | head -c 2500)"; exit 1; }
 
       - name: Sign
         run: |
