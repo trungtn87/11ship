@@ -25,6 +25,9 @@ import {
   parseOtpVerified,
   parseSignInResponse,
   parseRegistrationConfig,
+  parseRecoveryAck,
+  parseRecoveryConfig,
+  RecoveryMode,
   PUBLIC_CONTEXTS,
   PublicContext,
   REGISTER_PURPOSE,
@@ -168,6 +171,17 @@ export interface AuthClient {
    * are accepted; anything else is a failure and the register screen stays locked (nothing is guessed or defaulted).
    */
   registrationConfig(): Promise<AuthResult<RegistrationVerificationMode>>;
+  /** GET /v1/account-recovery/config: whether the no-OTP test password reset is on. Anything but the two known values is a failure. */
+  recoveryConfig(): Promise<AuthResult<RecoveryMode>>;
+  /**
+   * POST /v1/account-recovery/reset-test {phone, password}: the no-OTP test password reset (server mode DISABLED_TEST only). One
+   * intent = one Idempotency-Key + body: an unknown outcome keeps both and the next call with the SAME input re-sends them (never
+   * automatically). The answer is the same for every phone, so `ok` means "the request was processed", not "this account exists".
+   * It never signs in and never touches the current session.
+   */
+  resetPasswordTest(input: { readonly phone: string; readonly password: string }): Promise<AuthResult<'LOGIN'>>;
+  /** The person left the reset: drops the kept key + body (they hold the new password) and makes an answer still on its way stale. */
+  cancelPasswordReset(): void;
   requestRegisterOtp(input: { readonly phone: string }): Promise<AuthResult<OtpIssued>>;
   verifyRegisterOtp(input: { readonly verificationId: string; readonly code: string }): Promise<AuthResult<OtpVerified>>;
   /**
@@ -228,7 +242,7 @@ export interface AuthClientOptions {
   readonly deviceId?: string;
 }
 
-type Intent = 'register' | 'login' | 'context' | 'profile' | 'shopSave' | 'shopComplete' | 'driverSubmit';
+type Intent = 'recoveryReset' | 'register' | 'login' | 'context' | 'profile' | 'shopSave' | 'shopComplete' | 'driverSubmit';
 const NO_RETRY: undefined = undefined;
 
 const fail = (code: FailureCode, unresolved = false, retryAfterSeconds?: number): AuthResult<never> =>
@@ -308,7 +322,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
   }
 
   function classify<B>(operation: AuthOperation, result: TransportResult, expectedStatus: number | readonly number[], parse: (body: unknown) => B | undefined): Classified<B> {
-    const keyed = operation === 'register' || operation === 'login' || operation === 'context' || operation === 'profileSave' || operation === 'shopSave' || operation === 'shopComplete' || operation === 'driverSubmit';
+    const keyed = operation === 'recoveryReset' || operation === 'register' || operation === 'login' || operation === 'context' || operation === 'profileSave' || operation === 'shopSave' || operation === 'shopComplete' || operation === 'driverSubmit';
     switch (result.kind) {
       case 'aborted':
         return { kind: 'aborted' };
@@ -347,6 +361,54 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
       }
       return outcome.kind === 'failure' ? (outcome.result as AuthResult<RegistrationVerificationMode>) : { kind: 'ok', value: outcome.body };
     });
+  }
+
+  // ---- account recovery (no-OTP test build) ----------------------------------------------------------------------
+  function recoveryConfig(): Promise<AuthResult<RecoveryMode>> {
+    return single('recoveryConfig', '', async () => {
+      const result = await transport.send({ method: 'GET', path: AUTH_PATHS.recoveryConfig });
+      const outcome = classify('recoveryConfig', result, 200, parseRecoveryConfig);
+      if (outcome.kind === 'aborted') {
+        return { kind: 'stale' };
+      }
+      return outcome.kind === 'failure' ? (outcome.result as AuthResult<RecoveryMode>) : { kind: 'ok', value: outcome.body };
+    });
+  }
+
+  // Bumped by cancelPasswordReset: an answer that belongs to an older generation is dropped (stale).
+  let recoveryGeneration = 0;
+
+  function resetPasswordTest(input: { readonly phone: string; readonly password: string }): Promise<AuthResult<'LOGIN'>> {
+    if (typeof input.phone !== 'string' || !isValidPhone(input.phone)) {
+      return Promise.resolve(fail('INVALID_PHONE'));
+    }
+    if (typeof input.password !== 'string' || !isValidPassword(input.password)) {
+      return Promise.resolve(fail('BAD_REQUEST'));
+    }
+    // Exactly {phone, password}, fixed order: no code, proof, token or role.
+    const body = JSON.stringify({ phone: input.phone.trim(), password: input.password });
+    return single('recoveryReset', body, async () => {
+      const generation = recoveryGeneration;
+      const entry = keyFor('recoveryReset', body);
+      const result = await transport.send({ method: 'POST', path: AUTH_PATHS.recoveryReset, body, idempotencyKey: entry.key });
+      if (generation !== recoveryGeneration) {
+        dropIntent('recoveryReset', entry);
+        return { kind: 'stale' };
+      }
+      const outcome = classify('recoveryReset', result, 200, parseRecoveryAck);
+      if (outcome.kind === 'aborted') {
+        return { kind: 'stale' };
+      }
+      const answer: AuthResult<'LOGIN'> = outcome.kind === 'failure' ? (outcome.result as AuthResult<'LOGIN'>) : { kind: 'ok', value: outcome.body };
+      settle('recoveryReset', entry, answer);
+      return answer;
+    });
+  }
+
+  function cancelPasswordReset(): void {
+    recoveryGeneration += 1;
+    intents.delete('recoveryReset');
+    running.delete('recoveryReset');
   }
 
   // ---- REGISTER OTP ----------------------------------------------------------------------------------------------
@@ -787,6 +849,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     intents.clear();
     running.clear();
     registerFlow.reset();
+    recoveryGeneration += 1;
   }
 
   const session: AuthSessionView = {
@@ -801,7 +864,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     running.delete('register');
   }
 
-  return { session, registrationConfig, requestRegisterOtp, verifyRegisterOtp, resetRegisterFlow, register: registerUser, registerWithoutProof, login, me, selectContext, logout, readProfile, saveProfile, readShop, readServiceAreas, saveShop, completeShop, readDriver, submitDriver, dispose };
+  return { session, recoveryConfig, resetPasswordTest, cancelPasswordReset, registrationConfig, requestRegisterOtp, verifyRegisterOtp, resetRegisterFlow, register: registerUser, registerWithoutProof, login, me, selectContext, logout, readProfile, saveProfile, readShop, readServiceAreas, saveShop, completeShop, readDriver, submitDriver, dispose };
 }
 
 export type { SessionTicket };

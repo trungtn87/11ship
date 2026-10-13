@@ -11,6 +11,7 @@ import { HealthMonitor } from './health.js';
 import { NOT_WIRED_PORTS } from './ports.js';
 import { LeaveController } from './leave.js';
 import { createDriverController } from './driver-flow.js';
+import { createRecoveryController } from './recovery-flow.js';
 import { createRegisterController } from './register-flow.js';
 import { browserGeolocation, createShopController } from './shop-flow.js';
 import { HistoryPort, RouteDef, Router, RouteTable } from './router.js';
@@ -50,7 +51,7 @@ export interface AppDefinition {
 /** The features the register flow connects when it is on. Nothing else becomes wired by it. */
 const REGISTER_FEATURES: ReadonlySet<FeatureId> = new Set<FeatureId>(['auth.register', 'auth.registerOtp']);
 /** The account features (login, logout, own profile) connected by the same client authentication on a local https runtime. */
-const ACCOUNT_FEATURES: ReadonlySet<FeatureId> = new Set<FeatureId>(['auth.login', 'auth.logout', 'customer.profileSave', 'account.read']);
+const ACCOUNT_FEATURES: ReadonlySet<FeatureId> = new Set<FeatureId>(['auth.resetRequest', 'auth.login', 'auth.logout', 'customer.profileSave', 'account.read']);
 /** The shop onboarding features, connected by the shop controller (11Food, local https runtime). */
 const SHOP_FEATURES: ReadonlySet<FeatureId> = new Set<FeatureId>(['shop.draftSave', 'shop.location', 'shop.complete']);
 
@@ -189,6 +190,7 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
       ? createAuthClient({ fetch: (input, init) => window.fetch(input, init), app: definition.brand.id === 'FOOD' ? 'FOOD' : 'SHIP' })
       : undefined;
   const register = auth === undefined || definition.register === undefined ? undefined : createRegisterController({ auth, flows, consent: definition.register.consent });
+  const recovery = auth === undefined ? undefined : createRecoveryController({ auth });
   const shop = auth === undefined || definition.shopOnboarding !== true ? undefined : createShopController({ auth, geo: browserGeolocation(window.navigator) });
   const driver = auth === undefined || definition.driverProfile !== true ? undefined : createDriverController({ auth });
   // Signing out on purpose is not "the session ended": the person asked, so no "sign in again" notice follows it.
@@ -214,6 +216,7 @@ export function startLive(root: HTMLElement, definition: AppDefinition): Router 
       return identity === undefined ? undefined : accountOf(identity);
     },
     ...(register === undefined ? {} : { register }),
+    ...(recovery === undefined ? {} : { recovery }),
     ...(auth === undefined ? {} : { auth, signOut }),
     ...(shop === undefined ? {} : { shop }),
     ...(driver === undefined ? {} : { driver }),

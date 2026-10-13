@@ -7,7 +7,8 @@ Trạng thái: **chỉ UI**, chưa tính là xong nghiệp vụ, M01 chưa đón
 |---|---|---|---|---|
 | S00 | Chào mừng | `/welcome` | có | — |
 | S10 / S11 / S18 | Đăng nhập / Đăng ký / OTP | `/login` `/register` `/register/otp` | đăng nhập nối ở local (app `SHIP`, không cấp quyền nhận đơn); đăng ký dùng lại luồng #82 | nối (local) |
-| S15–S17 | Quên / OTP / đặt lại mật khẩu | `/reset…` | có, nút khóa kèm lý do | chờ M01.16 |
+| S15 | Quên mật khẩu (bản test không OTP) | `/reset` | **một form** SĐT + mật khẩu mới + nhập lại, cùng luồng với F13; xong hiện “Yêu cầu đã xử lý…” + nút Đăng nhập | đã nối bản test, chờ Owner nghiệm thu |
+| S16–S17 | OTP / đặt lại mật khẩu (bản có OTP) | `/reset/otp`, `/reset/password` | không mở ở bản test; giữ nguyên cho dịch vụ OTP thật | chờ M01.16 |
 | S01 | Trang chủ (khách; chờ duyệt xem ở preview) | `/` | có; công tắc nhận đơn luôn khóa kèm lý do; banner theo trạng thái hồ sơ xế do máy chủ báo | nối (local) |
 | S02 | Đơn hàng | `/orders` | trạng thái trống | — |
 | S03 | Thu nhập | `/income` | "—" (chưa biết ≠ 0), chọn ngày khóa | — |

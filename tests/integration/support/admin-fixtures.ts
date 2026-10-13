@@ -225,6 +225,8 @@ export interface StartAdminOptions {
   readonly activationOrigin?: string;
   /** M01-ADMIN lock / unlock (D15): opens ADMIN_USER_ACCOUNT_MUTATIONS_ENABLED for this local test application. Default: closed. */
   readonly userAccountMutations?: boolean;
+  /** M01-RESET: ACCOUNT_RECOVERY_MODE=DISABLED_TEST for this local test application. Default: closed (UNAVAILABLE). */
+  readonly accountRecovery?: boolean;
   /** Issue #49: runs after configureApp and before init, where main.ts installs the Admin web hosting. */
   readonly beforeListen?: (app: INestApplication) => void;
 }
@@ -256,6 +258,7 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
     crypto: options.keyring ?? fixtureKeyring(options.activeKeyId ?? 'k1'),
     auth: authTestConfig(),
     adminAuth,
+    ...(options.accountRecovery === true ? { accountRecoveryMode: 'DISABLED_TEST' as const } : {}),
     ...(options.userAccountMutations === true ? { adminUserAccountMutations: { enabled: true as const } } : {}),
     ...(options.activationProvider === undefined && options.activationDisabledTest !== true
       ? {}

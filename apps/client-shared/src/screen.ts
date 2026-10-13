@@ -4,6 +4,7 @@ import type { ConnectionView } from './connection.js';
 import type { FeatureId } from './features.js';
 import type { ClientPorts } from './ports.js';
 import type { GuardHandle, LeaveGuard } from './leave.js';
+import type { RecoveryController } from './recovery-flow.js';
 import type { RegisterController } from './register-flow.js';
 import type { DriverController } from './driver-flow.js';
 import type { ShopController } from './shop-flow.js';
@@ -82,6 +83,11 @@ export interface ScreenEnv {
    * (app.ts). Undefined everywhere else: the register screens then keep their "chưa nối máy chủ" state and never call anything.
    */
   readonly register?: RegisterController;
+  /**
+   * The no-OTP test password reset (F13 / S15), present ONLY where it is connected: a local https runtime (app.ts). Undefined
+   * everywhere else: the reset screens then keep their design / "chưa nối máy chủ" state and never call anything.
+   */
+  readonly recovery?: RecoveryController;
   /**
    * The real client authentication (login, own profile, logout), present ONLY on a local https runtime of an app that connects it
    * (app.ts). Screens read the server's answers through it and never see a token. Undefined = those actions stay unavailable.

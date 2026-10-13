@@ -9,6 +9,7 @@ import { isCompleteOtp, isValidPassword, isValidPhone, maskPhone, normalizePerso
 import { failureBanner } from './feedback.js';
 import { actionButton, appPage, designOnly, guardForm } from './layout.js';
 import { liveRegisterOtp } from './register-live.js';
+import { liveResetScreen } from './reset-live.js';
 
 // Auth screens shared by 11Food and 11Ship (register, login, OTP, forgot and reset password). Display + form validation
 // only. Every business action is gated until its backend exists (features.ts); in the preview it runs as a harmless demo.
@@ -699,6 +700,10 @@ function resetScreen(brand: AppBrand): ScreenDef {
     access: 'public',
     variants: [v('default', 'Mặc định'), v('invalid-phone', 'Số điện thoại sai'), v('rate-limited', 'Giới hạn gửi mã'), v('provider-down', 'Chưa gửi được mã')],
     render(env, variant) {
+      // Connected (local https runtime): the no-OTP test reset is ONE form and the code screens are never opened (M01-RESET).
+      if (env.mode === 'live' && env.recovery !== undefined) {
+        return liveResetScreen(env, env.recovery);
+      }
       const phone = textField({ id: 'phone', label: 'Số điện thoại', icon: 'phone', type: 'tel', inputMode: 'tel', autocomplete: 'username', placeholder: 'Nhập số điện thoại' });
       const feedback = h('div', { class: 'c-stack', 'aria-live': 'polite' });
       const submit = actionButton(env, 'auth.resetRequest', {

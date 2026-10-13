@@ -1,5 +1,6 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { ActivationOtpProvider } from './admin-activation/activation-otp-provider';
+import { AccountRecoveryModule } from './account-recovery/account-recovery.module';
 import { AdminAuthModule } from './admin-auth/admin-auth.module';
 import { AuthModule, AuthModuleOptions } from './auth/auth.module';
 import { AppConfig } from './config/app-config';
@@ -68,7 +69,7 @@ export class AppModule {
         HealthModule,
         ...(auth === undefined
           ? []
-          : [auth, OnboardingModule.register(auth), ShopManagementModule.register(auth), CustomerProfileModule.register(auth)]),
+          : [auth, OnboardingModule.register(auth), ShopManagementModule.register(auth), CustomerProfileModule.register(auth), AccountRecoveryModule.register(auth)]),
         // Administration web authentication: only when ADMIN_AUTH_ENABLED=true (config.adminAuth is then present),
         // on top of the one Auth module object above. Disabled (the default): nothing is wired or exposed.
         ...(auth === undefined || options.config.adminAuth === undefined ? [] : [AdminAuthModule.register(auth, activation)]),
