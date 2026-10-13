@@ -10,13 +10,13 @@ Quy trình này thay thế các yêu cầu quy trình xung đột trong bản 09
 | Bước | Người thực hiện | Điều kiện hoàn tất |
 |---|---|---|
 | Chốt phạm vi/nghiệp vụ/UI | ChatGPT thiết kế, Owner duyệt | Phạm vi và hành vi rõ; dùng lại thiết kế đã duyệt |
-| Triển khai và kiểm tra | Claude | Code đúng phạm vi, kiểm tra phù hợp phần bị ảnh hưởng |
-| Review | ChatGPT | Review diff, dùng bằng chứng hiện có; hết blocker |
+| Triển khai và kiểm tra | Claude mặc định; Codex khi được giao phần độc lập | Code đúng phạm vi, kiểm tra phù hợp phần bị ảnh hưởng |
+| Review | ChatGPT; Codex chỉ khi được giao review trọng điểm | Review diff, dùng bằng chứng hiện có; hết blocker |
 | Tích hợp | ChatGPT theo ủy quyền Owner | Checks bắt buộc áp dụng đạt, dependency tương thích, merge sạch |
 | Thử bản chạy | Claude chuẩn bị, Owner thử | Bản chạy và hướng dẫn phù hợp giai đoạn |
 | Nghiệm thu module/phát hành | Owner | Các app/luồng liên quan được nghiệm thu; Owner quyết định đóng |
 
-ChatGPT được sửa tài liệu, đọc code và chạy kiểm tra để review. ChatGPT không tự sửa code sản phẩm, test triển khai, migration, cấu hình build/deploy hoặc build triển khai thay Claude, trừ ngoại lệ cụ thể do Owner chỉ đạo. Claude không tự đổi nghiệp vụ/UI đã duyệt; tự quyết lựa chọn kỹ thuật thông thường trong phạm vi.
+ChatGPT được sửa tài liệu, đọc code và chạy kiểm tra để review. ChatGPT không tự sửa code sản phẩm, test triển khai, migration, cấu hình build/deploy hoặc build triển khai thay AI được giao, trừ ngoại lệ cụ thể do Owner chỉ đạo. AI triển khai không tự đổi nghiệp vụ/UI đã duyệt; tự quyết lựa chọn kỹ thuật thông thường trong phạm vi. Codex khi làm code áp dụng cùng quy tắc kiểm tra, báo cáo, PR và CI như Claude; không chạy vòng test/review trùng nếu không có rủi ro cụ thể. Xem AGENTS.md cho mẫu giao việc Cloud ngắn.
 
 Chỉ duyệt lại thiết kế khi thay đổi hành vi/nghiệp vụ/UI đã chốt. Sửa lỗi để đáp ứng thiết kế hiện có không cần mở lại toàn bộ vòng thiết kế.
 
