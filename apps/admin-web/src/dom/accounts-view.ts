@@ -328,6 +328,8 @@ export interface LockHooks {
   cancel(): void;
   /** After "unknown outcome": read the user's current state, never send the command again by itself. */
   recheck(): void;
+  /** After "unknown outcome": the admin chose to ask again. The caller sends the SAME intent (same key, body and version). */
+  retry(): void;
   /** After a version conflict: load the user again. */
   reload(): void;
 }
@@ -361,10 +363,14 @@ export function openLockDialog(user: UserDetail, dialog: LockDialog, hooks: Lock
   cancel.disabled = working;
   cancel.addEventListener('click', () => hooks.cancel());
   let confirm: HTMLButtonElement;
+  const extra: HTMLElement[] = [];
   if (dialog.phase === 'unknown') {
-    confirm = primary('Kiểm tra lại trạng thái', 'button');
-    confirm.addEventListener('click', () => hooks.recheck());
-    setMessage(status, 'Chưa xác nhận được kết quả. Hãy kiểm tra lại trạng thái tài khoản trước khi làm lại; yêu cầu này không bị gửi lại tự động.');
+    confirm = primary('Thử lại', 'button');
+    confirm.addEventListener('click', () => hooks.retry());
+    const recheck = secondary('Kiểm tra lại trạng thái');
+    recheck.addEventListener('click', () => hooks.recheck());
+    extra.push(recheck);
+    setMessage(status, 'Chưa xác nhận được kết quả. Hãy kiểm tra lại trạng thái tài khoản; yêu cầu này không bị gửi lại tự động. “Thử lại” gửi đúng yêu cầu cũ, không tạo thêm thay đổi.');
   } else if (dialog.phase === 'conflict') {
     confirm = primary('Tải lại chi tiết', 'button');
     confirm.addEventListener('click', () => hooks.reload());
@@ -407,7 +413,7 @@ export function openLockDialog(user: UserDetail, dialog: LockDialog, hooks: Lock
       h('div', { class: 'field' }, h('label', { for: 'lock-reason', class: 'label' }, 'Lý do'), reason, reasonError, count),
       status,
     ],
-    actions: [cancel, confirm],
+    actions: [cancel, ...extra, confirm],
   });
 }
 

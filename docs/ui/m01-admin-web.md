@@ -14,9 +14,9 @@ và bị xoá khỏi bản thật (`npm run build:admin-web`; build thất bại
 | D07 | Kích hoạt | `/activate` | giữ nguyên | đã có |
 | D08 | Đặt lại mật khẩu ADMIN | `/reset` | giao diện; nút gửi khóa kèm lý do | chờ M01.16 / M01.19 |
 | D09 | Khôi phục SYSTEM (chỉ thông tin) | chỉ preview | không có trang thật | chờ M01.20 |
-| D81 | Người dùng — danh sách / đang khóa | `/accounts/users[?status=LOCKED]` | **đã nối** `GET /v1/admin/users`: tìm kiếm, lọc vai trò/trạng thái, "Tải thêm" phía máy chủ; bộ lọc được giữ khi Back từ chi tiết | đọc xong; khóa chờ M01.32 |
-| D86 | Chi tiết người dùng | `/accounts/users/:id` | **đã nối** `GET /v1/admin/users/:id` (hồ sơ trong phạm vi); không có dòng thời gian | khóa chờ M01.32 |
-| D87 / D88 | Hộp khóa / mở khóa | trong D86 | nút khóa/mở khóa **không hoạt động** (`allowed_actions` luôn rỗng; chính sách D15 chưa chốt) | chờ D15, M01.32 / M01.33 |
+| D81 | Người dùng — danh sách / đang khóa | `/accounts/users[?status=LOCKED]` | **đã nối** `GET /v1/admin/users`: tìm kiếm, lọc vai trò/trạng thái, "Tải thêm" phía máy chủ; bộ lọc được giữ khi Back từ chi tiết | đọc xong |
+| D86 | Chi tiết người dùng | `/accounts/users/:id` | **đã nối** `GET /v1/admin/users/:id` (hồ sơ trong phạm vi); không có dòng thời gian; nút Khóa/Mở khóa theo `allowed_actions` của máy chủ | đã nối cùng D87/D88 |
+| D87 / D88 | Hộp khóa / mở khóa | trong D86 | **đã nối** `POST /v1/admin/users/:id/lock\|unlock` ([handoff D15](../tasks/M01-admin-account-lock-handoff-20261013.md)): bắt buộc lý do + xác nhận, khóa nút khi gửi, không sửa nhãn lạc quan; kết quả chưa rõ giữ nguyên yêu cầu/Idempotency-Key và chỉ gửi lại khi bấm “Thử lại” (“Kiểm tra lại trạng thái” chỉ đọc lại); xung đột phiên bản/trạng thái ⇒ tải lại chi tiết; sau xác nhận luôn đọc lại chi tiết HIỆN TẠI. Chỉ mở khi gate backend bật (local) | đã nối, chờ Owner nghiệm thu |
 | D89 | Quản trị viên (SYSTEM): danh sách, tìm kiếm, lọc trạng thái, trống/không khớp/tải/lỗi | `/accounts/administrators` | **đã nối** `GET /v1/admin/administrators` (chỉ SYSTEM): ADMIN đã kích hoạt, phạm vi quyền bằng chữ; không có lọc "Chờ kích hoạt" (lời mời đang chờ ở Lời mời Admin) | đọc xong |
 | C01–C10 | Trạng thái chung: tải, trống, lỗi, mất mạng, hết phiên, không có quyền, giới hạn, xung đột phiên bản, kết quả chưa rõ | trong các trang | có | — |
 

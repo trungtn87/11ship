@@ -265,4 +265,24 @@ export class SessionRepository {
       throw new TechnicalError('internal', 'Session role was not set');
     }
   }
+
+  /**
+   * Revokes EVERY unrevoked session of the user (Food, Ship and legacy alike) and returns how many. The rows are locked in
+   * session_id order first, so two revokers never wait on each other in different orders. Rows stay (TTL and history are
+   * kept); only revoked_at changes. The caller holds the user row FOR UPDATE.
+   */
+  async revokeAllForUser(context: TransactionContext, userId: string): Promise<number> {
+    const result = await context.query(
+      `WITH locked AS (
+         SELECT session_id FROM app.sessions WHERE user_id = $1::uuid AND revoked_at IS NULL ORDER BY session_id FOR UPDATE
+       )
+       UPDATE app.sessions s
+          SET revoked_at = date_trunc('milliseconds', clock_timestamp()),
+              updated_at = date_trunc('milliseconds', clock_timestamp())
+         FROM locked
+        WHERE s.session_id = locked.session_id`,
+      [userId],
+    );
+    return result.rowCount ?? 0;
+  }
 }

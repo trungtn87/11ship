@@ -223,6 +223,8 @@ export interface StartAdminOptions {
   readonly allowedOrigins?: readonly string[];
   /** Origin the invitation link is built on (default: ADMIN_ORIGIN). The browser test passes its local HTTPS front. */
   readonly activationOrigin?: string;
+  /** M01-ADMIN lock / unlock (D15): opens ADMIN_USER_ACCOUNT_MUTATIONS_ENABLED for this local test application. Default: closed. */
+  readonly userAccountMutations?: boolean;
   /** Issue #49: runs after configureApp and before init, where main.ts installs the Admin web hosting. */
   readonly beforeListen?: (app: INestApplication) => void;
 }
@@ -254,6 +256,7 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
     crypto: options.keyring ?? fixtureKeyring(options.activeKeyId ?? 'k1'),
     auth: authTestConfig(),
     adminAuth,
+    ...(options.userAccountMutations === true ? { adminUserAccountMutations: { enabled: true as const } } : {}),
     ...(options.activationProvider === undefined && options.activationDisabledTest !== true
       ? {}
       : {

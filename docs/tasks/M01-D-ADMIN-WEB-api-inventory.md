@@ -54,14 +54,27 @@ Cookie phiên ADMIN (đã xong TOTP), `Cache-Control: no-store`, không CSRF, `O
 |---|---|---|---|
 | `GET /v1/admin-auth/permissions` | — | `{admin_role, permissions:[{app, can_view, can_review_profile, can_lock}]}` (SYSTEM: 3 app, mọi quyền true) | 401 |
 | `GET /v1/admin/users` | `q` (≤120 ký tự, không phân biệt hoa/thường và dấu tiếng Việt, `%` `_` là ký tự thường; tên, tên quán, tên xế, SĐT), `role` ∈ `CUSTOMER` `SHOP_OWNER` `DRIVER`, `status` ∈ `ACTIVE` `DISABLED`, `limit` 1–50 (mặc định 20), `cursor` | `{items:[{user_id, display_name, phone_masked, roles_visible[], account_status, created_at}], next_cursor, available_role_filters[]}` | 400 `ADMIN_INPUT_INVALID`; 403 `ADMIN_FORBIDDEN` (không có quyền xem nào, hoặc `role` ngoài phạm vi) |
-| `GET /v1/admin/users/:user_id` | — | mục trên + `{updated_at, version, profiles:{customer?:{full_name}, shop?:{name,status}, driver?:{status}}, allowed_actions:[]}` | 404 `USER_NOT_AVAILABLE` (id không tồn tại và id ngoài phạm vi giống hệt nhau); 403 |
+| `GET /v1/admin/users/:user_id` | — | mục trên + `{updated_at, version, profiles:{customer?:{full_name}, shop?:{name,status}, driver?:{status}}, allowed_actions:[]\|["LOCK"]\|["UNLOCK"]}` | 404 `USER_NOT_AVAILABLE` (id không tồn tại và id ngoài phạm vi giống hệt nhau); 403 |
 | `GET /v1/admin/administrators` | `q`, `status` ∈ `ACTIVE` `DISABLED`, `limit`, `cursor` | `{items:[{user_id, full_name, phone_masked, admin_role:"ADMIN", status, permissions[], created_at}], next_cursor}` | 403 `ADMIN_FORBIDDEN` với ADMIN |
 
 - USER = tài khoản không phải `ADMIN_PROVISIONED` và không có `admin_memberships` (kể cả membership DISABLED). Vai trò: CUSTOMER→CUSTOMER, SHOP→`SHOP_OWNER`, DRIVER→DRIVER. ADMIN chỉ thấy user có ≥1 vai trò trong phạm vi; `roles_visible`, hồ sơ, tìm kiếm bị giới hạn theo phạm vi ngay trong SQL. SYSTEM còn thấy tài khoản cũ không có vai trò.
 - `display_name`: tên khách (góc nhìn CUSTOMER), rồi tên quán, rồi tên xế; không có ⇒ `null`. SĐT luôn là `phone_masked`; không trả mật khẩu, OTP, TOTP, token, ngân hàng, GPS.
 - Danh sách quản trị viên: chỉ ADMIN đã kích hoạt (có membership và hồ sơ); không có SYSTEM, không có lời mời đang chờ. `status` hiệu lực = `DISABLED` nếu tài khoản hoặc membership bị khóa.
 - `cursor` opaque, keyset `(created_at, user_id)` giảm dần, ràng buộc bằng HMAC vào endpoint, bộ lọc, actor, vân tay quyền và phiên bản membership. Đổi bộ lọc/quyền/actor hoặc cursor giả ⇒ 400 `ADMIN_INPUT_INVALID`; trang bỏ cursor và đọc lại trang 1.
-- `allowed_actions` luôn `[]`: khóa/mở khóa chưa có (chính sách nhiều vai trò D15 chưa chốt; `can_lock` đã lưu không phải quyền chạy mutation).
+- `allowed_actions`: gợi ý cho UI, `["LOCK"]` khi tài khoản ACTIVE, `["UNLOCK"]` khi DISABLED, `[]` khi thiếu quyền theo D15, tài khoản không thuộc loại thường mà policy hiện hành chấp nhận, hoặc gate khóa/mở đang đóng (mục 2c). Mutation luôn kiểm lại.
+
+## 2c. Khóa / mở khóa USER (D15, 2026-10-13)
+
+Nguồn hiện hành: [M01-admin-account-lock-handoff-20261013](M01-admin-account-lock-handoff-20261013.md). SYSTEM khóa/mở mọi tài khoản thường (kể cả chưa có vai trò); ADMIN cần `can_view` **và** `can_lock` cho TẤT CẢ domain của target (CUSTOMER, SHOP, DRIVER), không suy từ vai trò đang chọn. Không target ADMIN/SYSTEM (kể cả membership DISABLED) hay origin ngoài policy hiện hành. Khóa thu hồi mọi phiên Food/Ship chưa thu hồi của target trong cùng giao dịch (giữ dòng/TTL, không đụng `admin_sessions`); mở khóa không cấp vai trò, không sửa hồ sơ, không khôi phục phiên.
+
+| Route | Header / thân | Thành công | Lỗi chính |
+|---|---|---|---|
+| `POST /v1/admin/users/:user_id/lock` và `/unlock` | cookie SESSION đã TOTP, `Origin` đúng, `Content-Type: application/json`, `x-csrf-token` SESSION, `Idempotency-Key` UUID; thân đúng `{expected_version, reason}` (reason 1..500 code point sau trim) | 200 `{command_id, user_id, account_status:"ACTIVE"\|"DISABLED", version, changed_at}` (xác nhận ý định, không phải trạng thái hiện tại) | 400 `ADMIN_INPUT_INVALID` / `IDEMPOTENCY_KEY_REQUIRED` / `INVALID_IDEMPOTENCY_KEY`; 401 `ADMIN_SESSION_INVALID`; 403 `ADMIN_CSRF_INVALID`, `ADMIN_FORBIDDEN` (nhìn được nhưng thiếu view+lock một domain); 404 `USER_NOT_AVAILABLE` (không có / ADMIN / SYSTEM / ngoài policy / ADMIN không đọc được); 409 `USER_ACCOUNT_VERSION_CONFLICT`, `USER_ACCOUNT_ALREADY_IN_STATE` (version đúng, trạng thái đích đã có), `USER_ACCOUNT_IMPACT_REVIEW_REQUIRED` (gate đóng), `IDEMPOTENCY_KEY_REUSED`; 429 `ADMIN_AUTH_RATE_LIMITED` |
+
+- Executor idempotency hiện có: operation `admin.user.lock.v1` / `admin.user.unlock.v1`, scope `admin_user` theo UUID actor, fingerprint gồm target, `expected_version`, lý do đã chuẩn hóa. Cùng key + cùng thân = trả lại xác nhận gốc, sau khi kiểm lại actor/phiên/quyền hiện tại/target thường/toàn bộ vai trò; không chạy lại version check, update, thu hồi, audit hay outbox. Khác thân cùng key ⇒ `IDEMPOTENCY_KEY_REUSED`. Không có bảng/migration mới.
+- Thứ tự khóa: idempotency → actor (user, membership, factor, session; chia sẻ) → target `users` FOR UPDATE → vai trò → giờ DB → quyền/gate → version/trạng thái → `users` UPDATE + thu hồi phiên theo `session_id` → audit → outbox → bản ghi idempotency. Lỗi bất kỳ ⇒ rollback toàn bộ.
+- Audit `admin.user.lock.v1` / `admin.user.unlock.v1` (actor SYSTEM|ADMIN, target, from/to, version, lý do, số phiên thu hồi khi khóa) đúng một lần. Outbox `user.account.locked.v1` / `unlocked.v1` schema 1, payload `{user_id, account_status, version}` (không SĐT, token, lý do).
+- Gate: `ADMIN_USER_ACCOUNT_MUTATIONS_ENABLED` mặc định false ⇒ mutation trả 409 `USER_ACCOUNT_IMPACT_REVIEW_REQUIRED` và detail không có action. `true` chỉ hợp lệ khi `APP_ENV` development/test, `HOST` loopback và `ADMIN_AUTH_ENABLED=true`; giá trị lạ hoặc bật ngoài môi trường đó ⇒ backend từ chối khởi động (chỉ nêu tên biến). UI không tự bật. M01 không hủy đơn, xử lý tiền hay nghĩa vụ giao hàng; impact thật thuộc module sau.
 
 ## 3. `/v1/admin-activation` (1C) — công khai, cookie ACTIVATION + CSRF ACTIVATION (không đăng nhập admin)
 
@@ -94,5 +107,5 @@ Mọi 4xx/5xx và 2xx có no-store. `ADMIN_ACTIVATION_STEP_INVALID` (409) mang `
 
 ## 4. Khoảng trống đã xác nhận (không giả lập thành chức năng sản phẩm)
 
-Không có API cho: khóa/mở khóa ADMIN, đổi quyền sau kích hoạt, khôi phục 2FA, nhật ký, quản lý người dùng app (Khách/Quán/Xế), danh sách tài khoản ADMIN đã kích hoạt.
+Không có API cho: khóa/mở khóa ADMIN (khóa/mở USER thường: mục 2c), đổi quyền sau kích hoạt, khôi phục 2FA, nhật ký, quản lý người dùng app (Khách/Quán/Xế), danh sách tài khoản ADMIN đã kích hoạt.
 `GET /invitations/:id` luôn trả `activation.state = "NONE"` (1B); trạng thái kích hoạt thật chỉ ở `/v1/admin-activation/state` của người được mời.

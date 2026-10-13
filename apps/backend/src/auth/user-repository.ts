@@ -45,6 +45,18 @@ function toUser(row: RawUser): UserRow {
   };
 }
 
+/** What the administration lock/unlock (M01-ADMIN, D15) needs to decide on one ordinary account. Nothing secret. */
+export interface AdminLockTargetRow {
+  readonly userId: string;
+  readonly phoneNormalized: string;
+  readonly status: UserStatus;
+  readonly version: number;
+  readonly accountOrigin: AccountOrigin;
+  /** phone_verified_at is set: one input of the ordinary-account row-shape rule. */
+  readonly phoneVerified: boolean;
+  readonly hasAdminMembership: boolean;
+}
+
 /** SQL for users and user_roles. */
 @Injectable()
 export class UserRepository {
@@ -248,5 +260,69 @@ export class UserRepository {
       [userId, role],
     );
     return result.rowCount === 1;
+  }
+
+  /**
+   * The account that an administrator wants to lock or unlock, never an administration account: an ADMIN_PROVISIONED row is
+   * not selected at all (so it is not locked either), and the database already refuses a membership on any other origin.
+   * 'write' = FOR UPDATE, 'read' = FOR SHARE (replay authorization). The caller applies the account origin policy.
+   */
+  async lockAdminTarget(context: TransactionContext, userId: string, mode: 'write' | 'read'): Promise<AdminLockTargetRow | undefined> {
+    const columns = `SELECT u.user_id, u.phone_normalized, u.status, u.version::text AS version, u.account_origin,
+              (u.phone_verified_at IS NOT NULL) AS phone_verified,
+              EXISTS (SELECT 1 FROM app.admin_memberships am WHERE am.user_id = u.user_id) AS has_membership
+         FROM app.users u
+        WHERE u.user_id = $1::uuid AND u.account_origin <> 'ADMIN_PROVISIONED'`;
+    // Two fixed statements (never an interpolated lock clause): the writer lock of the command, the shared lock of a replay check.
+    const result = await context.query<{
+      user_id: string;
+      phone_normalized: string;
+      status: UserStatus;
+      version: string;
+      account_origin: string;
+      phone_verified: boolean;
+      has_membership: boolean;
+    }>(mode === 'write' ? columns + ' FOR UPDATE OF u' : columns + ' FOR SHARE OF u', [userId]);
+    const row = result.rows[0];
+    if (row === undefined) {
+      return undefined;
+    }
+    if (!isAccountOrigin(row.account_origin)) {
+      throw new TechnicalError('internal', 'Database returned an unexpected account origin');
+    }
+    return {
+      userId: row.user_id,
+      phoneNormalized: row.phone_normalized,
+      status: row.status,
+      version: Number(row.version),
+      accountOrigin: row.account_origin,
+      phoneVerified: row.phone_verified,
+      hasAdminMembership: row.has_membership,
+    };
+  }
+
+  /** Every role row of the user (sorted), whatever its name: the lock decision looks at the FULL set. */
+  async allRoles(context: TransactionContext, userId: string): Promise<string[]> {
+    const result = await context.query<{ role: string }>('SELECT role FROM app.user_roles WHERE user_id = $1::uuid ORDER BY role', [userId]);
+    return result.rows.map((row) => row.role);
+  }
+
+  /**
+   * ACTIVE <-> DISABLED at the expected version, version + 1, database time. The caller holds the row FOR UPDATE; undefined
+   * means the row no longer matches (nothing was written). Roles, profile and password are not touched.
+   */
+  async setAccountStatus(
+    context: TransactionContext,
+    input: { userId: string; from: UserStatus; to: UserStatus; expectedVersion: number },
+  ): Promise<{ version: number; changedAtMs: number } | undefined> {
+    const result = await context.query<{ version: string; changed_ms: string }>(
+      `UPDATE app.users
+          SET status = $3, version = version + 1, updated_at = date_trunc('milliseconds', clock_timestamp())
+        WHERE user_id = $1::uuid AND status = $2 AND version = $4::bigint
+        RETURNING version::text AS version, (extract(epoch FROM updated_at) * 1000)::bigint::text AS changed_ms`,
+      [input.userId, input.from, input.to, input.expectedVersion],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : { version: Number(row.version), changedAtMs: Number(row.changed_ms) };
   }
 }

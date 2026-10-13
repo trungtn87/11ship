@@ -370,14 +370,15 @@ describe('RoleContextService.me (task section 13)', () => {
     const userShare = users.slice(users.indexOf('async lockByIdForShare('), users.indexOf('async findById('));
     expect(userShare).toMatch(/FROM app\.users WHERE user_id = \$1::uuid FOR SHARE/);
     expect(userShare).not.toMatch(/FOR UPDATE|INSERT|UPDATE app|DELETE/);
-    // The exclusive lock of the mutations is untouched.
-    expect(users.split('FOR UPDATE').length - 1).toBe(1);
+    // The exclusive lock of the mutations is untouched; the only addition is the administration lock target (M01-ADMIN, D15).
+    expect(users.split('FOR UPDATE').length - 1).toBe(2);
 
     const sessions = sourceOf('auth/session-repository.ts');
     const sessionShare = sessions.slice(sessions.indexOf('async lockByIdForShare('), sessions.indexOf('async revokeOtherShopSessions('));
     expect(sessionShare).toMatch(/FROM app\.sessions WHERE session_id = \$1::uuid FOR SHARE/);
     expect(sessionShare).not.toMatch(/FOR UPDATE|INSERT|UPDATE app|DELETE/);
-    expect(sessions.split('FOR UPDATE').length - 1).toBe(1);
+    // + the revoke-all of the administration lock (rows locked in session_id order, then updated).
+    expect(sessions.split('FOR UPDATE').length - 1).toBe(2);
 
     const service = sourceOf('auth/role-context-service.ts');
     const me = service.slice(service.indexOf('async me('), service.indexOf('async selectRole('));

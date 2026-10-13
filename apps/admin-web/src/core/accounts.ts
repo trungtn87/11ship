@@ -1,8 +1,8 @@
 // Models of the account pages of the administration web: users (D81), a user's detail (D86) with the lock/unlock dialogs
 // (D87/D88) and the administrators list (D89). They are PLAIN DATA: the views in dom/accounts-view.ts only draw them, and
 // `AccountsSource` supplies them. The real source (core/accounts-api.ts) reads the read-only account endpoints; the
-// NOT_WIRED_SOURCE answers "not wired" and never invents a row, a name or a status. Lock/unlock stays inactive (policy D15
-// pending). The design preview (src/design) builds the same models from clearly labelled sample data; that data lives only
+// NOT_WIRED_SOURCE answers "not wired" and never invents a row, a name or a status. Lock/unlock follows decision D15 (handoff
+// docs/tasks/M01-admin-account-lock-handoff-20261013.md): the server says per user which action is allowed. The design preview (src/design) builds the same models from clearly labelled sample data; that data lives only
 // in that folder, which the real build removes.
 
 import { Grants } from './menu.js';
@@ -134,8 +134,45 @@ export interface AdministratorsScreen {
 /** What is missing, in words, per page. Shown on the page and listed in docs/ui/m01-admin-web.md. */
 export const NOT_WIRED_REASON = {
   users: 'Danh sách người dùng chờ máy chủ (gói M01.30). Chưa có dữ liệu thật nên không hiển thị dòng nào.',
-  user: 'Chi tiết người dùng chờ máy chủ (gói M01.30). Khóa và mở khóa chờ gói M01.32.',
+  user: 'Chi tiết người dùng chờ máy chủ (gói M01.30).',
   administrators: 'Danh sách quản trị viên chưa có giao diện lập trình để đọc. Cần bổ sung hợp đồng trước khi nối.',
+} as const;
+
+/** What the server answered to a lock / unlock. The page never decides anything from it except what to say next. */
+export type LockResult =
+  | { readonly kind: 'ok' }
+  /** USER_ACCOUNT_VERSION_CONFLICT or USER_ACCOUNT_ALREADY_IN_STATE: the account is not what the page showed. Nothing was changed. */
+  | { readonly kind: 'conflict' }
+  /** USER_ACCOUNT_IMPACT_REVIEW_REQUIRED: the gate is closed. Nothing was changed. */
+  | { readonly kind: 'review-required' }
+  | { readonly kind: 'not-found' }
+  | { readonly kind: 'forbidden' }
+  | { readonly kind: 'session-expired' }
+  | { readonly kind: 'rate-limited'; readonly retryAfterSec?: number }
+  /** Any other definitive refusal (a 4xx before anything ran). */
+  | { readonly kind: 'rejected' }
+  /** The answer was lost (network, timeout, 5xx, a refreshed CSRF): the command MAY have been executed. Retry with the same key only. */
+  | { readonly kind: 'unknown' }
+  | { readonly kind: 'not-wired' };
+
+export interface LockCommand {
+  readonly id: string;
+  readonly action: 'LOCK' | 'UNLOCK';
+  /** The version of the detail the admin looked at. */
+  readonly version: number;
+  /** Already trimmed and validated (1..500 code points). */
+  readonly reason: string;
+  /** Idempotency-Key of THIS intent. A retry after an unknown outcome sends the same one. */
+  readonly key: string;
+}
+
+/** Wording of the dialog when the server refuses. Shown in the status area of the dialog, never as a toast. */
+export const LOCK_MESSAGE = {
+  reviewRequired: 'Chưa thể khóa hoặc mở khóa tài khoản này vì tác động tới nghiệp vụ chưa được rà soát. Không có thay đổi nào được ghi.',
+  forbidden: 'Bạn không có quyền khóa hoặc mở khóa tài khoản này (cần quyền Xem và Khóa ở mọi ứng dụng của tài khoản).',
+  rateLimited: 'Thao tác quá nhanh. Vui lòng thử lại sau ít phút.',
+  rejected: 'Yêu cầu không hợp lệ. Hãy kiểm tra lại lý do và thử lại.',
+  notWired: 'Khóa và mở khóa chưa được nối với máy chủ.',
 } as const;
 
 /** A page of a list: a normal list state, or "the cursor no longer fits" (filter or rights changed): start again from page 1. */
@@ -152,6 +189,8 @@ export interface AccountsSource {
   users(filter: UserFilter, cursor: string | null): Promise<PageState<UserRow>>;
   user(id: string): Promise<UserDetailState>;
   administrators(filter: AdministratorFilter, cursor: string | null): Promise<PageState<AdministratorRow>>;
+  /** Lock / unlock one user. Sends exactly one request per call and never repeats it by itself. */
+  lock(command: LockCommand): Promise<LockResult>;
 }
 
 /** Nothing wired: every page says so. It never answers with data and never throws. */
@@ -160,6 +199,7 @@ export const NOT_WIRED_SOURCE: AccountsSource = {
   users: () => Promise.resolve({ kind: 'not-wired', reason: NOT_WIRED_REASON.users }),
   user: () => Promise.resolve({ kind: 'not-wired', reason: NOT_WIRED_REASON.user }),
   administrators: () => Promise.resolve({ kind: 'not-wired', reason: NOT_WIRED_REASON.administrators }),
+  lock: () => Promise.resolve({ kind: 'not-wired' }),
 };
 
 /** A reason is 1..500 Unicode code points after trimming (the same rule as the invitation reasons and the lock/unlock contract). */

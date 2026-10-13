@@ -100,6 +100,10 @@ export const APP_ERROR_DEFINITIONS = {
   // Administration account reads (M01-ADMIN account read). One answer for an id that does not exist and for one outside the
   // actor's scope, so the id's existence is never revealed.
   USER_NOT_AVAILABLE: { status: 404, message: 'The account is not available' },
+  // Lock / unlock of a USER account (M01-ADMIN, D15). Fixed messages: nothing the client sent (reason, id) is echoed.
+  USER_ACCOUNT_VERSION_CONFLICT: { status: 409, message: 'The account was changed by another request' },
+  USER_ACCOUNT_ALREADY_IN_STATE: { status: 409, message: 'The account is already in the requested state' },
+  USER_ACCOUNT_IMPACT_REVIEW_REQUIRED: { status: 409, message: 'This account change is not available until its business impact is reviewed' },
 
   // Administration account activation (M01-D-ADMIN-1C, contract section 16). Same rule: fixed messages that echo nothing
   // the client sent. A bad or closed link is ONE uniform 404 (it never says which). OTP_*, ADMIN_TOTP_INVALID,

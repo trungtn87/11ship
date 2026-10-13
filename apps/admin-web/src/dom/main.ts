@@ -107,8 +107,12 @@ function startAdmin(host: HTMLElement): void {
       restart: () => window.location.assign('/'),
     },
     clock,
-    createAccountsSource(new AdminAccountsApi(fetchTransport(window.fetch.bind(window), { base: ACCOUNTS_BASE }))),
+    createAccountsSource(new AdminAccountsApi(fetchTransport(window.fetch.bind(window), { base: ACCOUNTS_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
     () => controller.sessionLost(),
+    () => window.crypto.randomUUID(),
   );
   const view = new AdminView(host, controller, shell);
   controller.subscribe((screen) => view.render(screen));

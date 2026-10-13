@@ -392,7 +392,7 @@ function lockScreen(action: 'LOCK' | 'UNLOCK', code: string, title: string, form
       const dialog = table[pick(variant, table, 'form')]!;
       const demo = (): void => context.toast(DEMO_NOTICE);
       return detailPage(context, { kind: 'ready', user }, (detail) => {
-        openLockDialog(detail, dialog, { submit: demo, cancel: () => context.go('user-detail'), recheck: demo, reload: demo }, context.frame);
+        openLockDialog(detail, dialog, { submit: demo, cancel: () => context.go('user-detail'), recheck: demo, retry: demo, reload: demo }, context.frame);
       });
     },
   };
