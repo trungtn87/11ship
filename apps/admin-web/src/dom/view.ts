@@ -1,7 +1,7 @@
 import { AdminRole } from '../core/api.js';
 import { AdminAuthController, Screen } from '../core/controller.js';
 import { COPY, formatCountdown } from '../core/messages.js';
-import { h, eyeIcon, brand, message, setMessage, field, primary, secondary, renderQr } from './dom.js';
+import { h, eyeIcon, authPage, message, setMessage, field, primary, secondary, renderQr } from './dom.js';
 import { groupSecret, isCompleteCode, sanitizeCodeInput } from '../core/inputs.js';
 import { buildShell, KeyValueStore, ShellLayout } from './shell-layout.js';
 
@@ -72,10 +72,8 @@ export class AdminView {
     return COPY.rateLimited(formatCountdown(this.controller.lockRemainingSeconds()));
   }
 
-  #page(card: HTMLElement, headerExtra?: HTMLElement): void {
-    const header = h('header', { class: 'topbar' }, brand(), headerExtra);
-    const main = h('main', { class: 'main' }, card);
-    this.root.replaceChildren(h('div', { class: 'page' }, header, main));
+  #page(card: HTMLElement): void {
+    this.root.replaceChildren(authPage(card));
   }
 
   #mount(screen: Screen): Mounted {

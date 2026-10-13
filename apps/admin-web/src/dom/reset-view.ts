@@ -1,6 +1,6 @@
 import { ADMIN_COPY, formatCountdown } from '../core/messages.js';
 import { isCompleteCode, isValidPassword, isValidPhone, sanitizeCodeInput } from '../core/inputs.js';
-import { brand, codeInput, eyeIcon, field, h, message, primary, secondary, setMessage } from './dom.js';
+import { authPage, codeInput, eyeIcon, field, h, message, primary, secondary, setMessage } from './dom.js';
 import { statePanel } from './states.js';
 
 // DOM of the public page that resets a forgotten ADMIN password (/reset): phone -> SMS code -> new password. The TOTP
@@ -97,7 +97,7 @@ export class ResetPage {
   }
 
   #page(card: HTMLElement, title: string): void {
-    this.root.replaceChildren(h('div', { class: 'page' }, h('header', { class: 'topbar' }, brand()), h('main', { class: 'main' }, h('section', { class: 'card', 'aria-label': title }, card))));
+    this.root.replaceChildren(authPage(h('section', { class: 'card', 'aria-label': title }, card)));
     document.title = `${title} · Quản trị · 11`;
   }
 

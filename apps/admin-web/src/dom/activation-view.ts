@@ -1,7 +1,7 @@
 import { ActivationController, ActivationScreen } from '../core/activation-controller.js';
 import { groupSecret, isCompleteCode, sanitizeCodeInput } from '../core/inputs.js';
 import { ADMIN_COPY, COPY, formatCountdown } from '../core/messages.js';
-import { brand, codeInput, eyeIcon, field, h, message, primary, renderQr, secondary, setMessage, stepLabel } from './dom.js';
+import { authPage, codeInput, eyeIcon, field, h, message, primary, renderQr, secondary, setMessage, stepLabel } from './dom.js';
 
 // DOM of the public ADMIN activation page (/activate). A screen is built once when its name changes and then patched in
 // place, so focus and typed values survive updates. Passwords, codes, the secret and the QR are never written to storage;
@@ -46,7 +46,7 @@ export class ActivationPage {
   }
 
   #page(card: HTMLElement): void {
-    this.root.replaceChildren(h('div', { class: 'page' }, h('header', { class: 'topbar' }, brand()), h('main', { class: 'main' }, card)));
+    this.root.replaceChildren(authPage(card));
   }
 
   #mount(screen: ActivationScreen): Mounted {

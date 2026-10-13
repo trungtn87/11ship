@@ -4,6 +4,14 @@ Trạng thái: **chỉ UI**, chưa tính là xong nghiệp vụ, M01 chưa đón
 Chế độ xem thiết kế (`design.html`) luôn mang nhãn **"Dữ liệu minh họa"**, không tạo phiên, không cấp quyền, không gọi máy chủ (CSP `connect-src 'none'`),
 và bị xoá khỏi bản thật (`npm run build:admin-web`; build thất bại nếu còn dấu vết; có test trong `tests/admin-web`).
 
+## Giao diện theo M01 Design (issue #98)
+
+Áp dụng `AdminView.dc.html` (M01 Design đã duyệt) và Brand Board v1.1, **chỉ phần trình bày**: vàng UI `#E2B81F` (hover `#D8AD18`, nhấn `#B88F0A`), than `#2A2A2E`, nền `#F2F1EE`, viền `#E3E1DB`, chữ phụ `#55555B`, Plus Jakarta Sans tự host, bo góc control 14 / card 16; logo gốc không đổi (đặt trên ô trắng ở nền tối).
+- Trang chưa đăng nhập (đăng nhập, TOTP, kích hoạt, đặt lại mật khẩu): bảng than bên trái có nhãn **ADMIN**, “Quản trị hệ sinh thái 11”, slogan “11 — Cần là có”; ≤900 px thu thành dải trên cùng.
+- Khung sau đăng nhập: sidebar than 232 px, ô logo trắng + “11 Admin / Quản trị”, mục đang chọn nền vàng; bảng có tiêu đề nền `#FDF8E6`; chip trạng thái/vai trò dạng viên (Chủ quán vàng, Xế than, Khách hàng xám); banner lỗi/thành công/cảnh báo/thông tin theo design.
+- Ảnh chụp bản xem thiết kế (dữ liệu minh họa): `docs/ui/admin-web-m01/`.
+- Không đổi controller, API, phiên, TOTP, lời mời, quyền hay dữ liệu; mục chưa có API vẫn “Sắp có”.
+
 ## Màn đã làm (mã theo `docs/design/system-v2-20261011/03-ui-catalog.md`)
 
 | Mã | Màn | Route | Bản thật | Nối API |
