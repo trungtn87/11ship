@@ -161,7 +161,7 @@ describe('admin account read (API + one real browser smoke)', () => {
     const spkiHash = createHash('sha256').update(spki).digest('base64');
     const port = await freePort();
     origin = `https://localhost:${String(port)}`;
-    app = await startAdminApp({ allowedOrigins: [origin, ADMIN_ORIGIN], activationOrigin: origin, activationDisabledTest: true });
+    app = await startAdminApp({ allowedOrigins: [origin, ADMIN_ORIGIN], activationDisabledTest: true });
     front = await startFront({
       ADMIN_WEB_PORT: String(port),
       ADMIN_WEB_HOST: 'localhost',
