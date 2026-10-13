@@ -5,7 +5,7 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo main HEAD `c15eb20` · CI main: ⏳ Đang chạy (`RUNNING`)
+> Dữ liệu theo mã main `c15eb20` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ✅ Đạt (`PASS`)
 
 ## 🎯 VIỆC ĐANG LÀM
 
@@ -108,7 +108,7 @@ flowchart TD
 | &nbsp;&nbsp;M01-A2D · Onboarding tài xế (Driver) | ✅ Hoàn thành (`DONE`) | — | [#17](https://github.com/trungtn87/11ship/pull/17) | ✅ Đạt (`PASS`) | `c37082a` | A2S Hoàn thành (DONE) | — |
 | M01-R1 · Sửa sau merge (session, rollback, router, tiến độ) | ✅ Hoàn thành (`DONE`) | — | [#19](https://github.com/trungtn87/11ship/pull/19) | ✅ Đạt (`PASS`) | `cd0e6de` | A2 Hoàn thành (DONE) | — |
 | **M00-D** thiết kế · Render Free + Supabase staging | 🔒 Thiết kế đã khóa (`DESIGN_LOCKED`) | — | [#22](https://github.com/trungtn87/11ship/pull/22) | ✅ Đạt (`PASS`) | `a846a68` | C1C Hoàn thành (DONE) | Tiếp tục các task con |
-| &nbsp;&nbsp;M00-D1 · Connection and deploy configuration | 🟦 Sẵn sàng giao Claude (`READY_FOR_CLAUDE`) | Claude | — | — | main HEAD `c15eb20` | — | Claude triển khai |
+| &nbsp;&nbsp;M00-D1 · Connection and deploy configuration | 🟦 Sẵn sàng giao Claude (`READY_FOR_CLAUDE`) | Claude | — | — | mã main `c15eb20` | — | Claude triển khai |
 | &nbsp;&nbsp;M00-D2 · Test accounts without real SMS | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D1 Sẵn sàng giao Claude (READY_FOR_CLAUDE) | Chờ D1 |
 | &nbsp;&nbsp;M00-D3 · Operations and portability | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D1 Sẵn sàng giao Claude (READY_FOR_CLAUDE) | Chờ D1 |
 | &nbsp;&nbsp;M00-D4 · Remote deployment acceptance | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D2 Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY), D3 Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY) | Chờ D2, D3 |
@@ -214,7 +214,9 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#94](https://github.com/trungtn87/11ship/pull/94) feat(M01-RESET): local SYSTEM recovery CLI | Đã merge (`MERGED`) | — | — | — | `1c0a5d8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#95](https://github.com/trungtn87/11ship/pull/95) feat(M01-ANDROID): tài khoản/phiên + hồ sơ quán/GPS/context… | Đã merge (`MERGED`) | — | — | — | `5b50644` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#96](https://github.com/trungtn87/11ship/pull/96) ci(mobile-apk): bắt buộc 4 ANDROID_TEST_* Secrets, bỏ khóa… | Đã merge (`MERGED`) | — | — | — | `3cda04f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#97](https://github.com/trungtn87/11ship/pull/97) fix(M01): final review F1–F6 (draft) | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `6bb8381` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#97](https://github.com/trungtn87/11ship/pull/97) fix(M01): final review F1–F6 (draft) | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `8999b94` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#99](https://github.com/trungtn87/11ship/pull/99) feat(M01-UI): thiết kế M01 đã duyệt cho 11Food + 11Ship Flu… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `64dc5b4` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#100](https://github.com/trungtn87/11ship/pull/100) feat(M01-ADMIN-UI): Web quản trị theo M01 Design + Brand Bo… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `c643128` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
@@ -236,6 +238,8 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 - `UNCLASSIFIED_PR` PR #87: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #91: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #97: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #99: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #100: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 

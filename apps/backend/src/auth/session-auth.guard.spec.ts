@@ -1,7 +1,9 @@
 import { describe, expect, it } from '@jest/globals';
 import { ExecutionContext } from '@nestjs/common';
-import { ClientAuthSettings } from '../client-auth/client-auth-policy';
+import { CLIENT_AUTH_SETTINGS, ClientAuthSettings } from '../client-auth/client-auth-policy';
 import { ClientDeviceProofService } from '../client-device/client-device-proof-service';
+import { AuthModule } from './auth.module';
+import { OtpProvider } from './otp-provider';
 import { SessionAuthGuard } from './session-auth.guard';
 import { SessionService } from './session-service';
 
@@ -39,5 +41,17 @@ describe('SessionAuthGuard with the native gate (F1: legacy sessions under anoth
   it('gate off: unchanged (web local compatibility)', async () => {
     await expect(run('WEB', 'FOOD', false).result).resolves.toBe(true);
     await expect(run('IOS', 'FOOD', undefined).result).resolves.toBe(true);
+  });
+});
+
+describe('AuthModule exports for the guard built in other modules (F1 wiring)', () => {
+  it('exports every provider SessionAuthGuard injects, including the native gate settings', () => {
+    const dynamic = AuthModule.register({ otpProvider: {} as OtpProvider });
+    const exported = dynamic.exports ?? [];
+    // A guard named in @UseGuards() of another module is built THERE: whatever it injects (even Optional) must be exported,
+    // otherwise the injection silently resolves to undefined and the policy is off in that module.
+    for (const token of [SessionService, ClientDeviceProofService, CLIENT_AUTH_SETTINGS]) {
+      expect(exported).toContain(token);
+    }
   });
 });

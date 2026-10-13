@@ -144,8 +144,10 @@ export class AuthModule {
       exports: [
         SessionAuthGuard,
         SessionService,
-        // The guard of another module is built there: it needs the native proof service too.
+        // The guard of another module is built there: it needs the native proof service too, AND the native gate settings it
+        // decides with (an Optional injection that is not exported resolves to undefined there and silently turns the policy off).
         ClientDeviceProofService,
+        CLIENT_AUTH_SETTINGS,
         ClientDeviceRepository,
         RoleGrantParticipant,
         CustomerProvisioningParticipant,

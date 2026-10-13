@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { createAccountOriginPolicy } from '../../apps/backend/src/auth/account-origin';
 import { SessionAuthorizationParticipant } from '../../apps/backend/src/auth/session-authorization-participant';
 import { SessionRepository } from '../../apps/backend/src/auth/session-repository';
+import { ShopProfileQueryService } from '../../apps/backend/src/onboarding/shop-profile-query-service';
 import { UserRepository } from '../../apps/backend/src/auth/user-repository';
 import { AppError } from '../../apps/backend/src/common/app-errors';
 import { ClientDeviceRepository } from '../../apps/backend/src/client-device/client-device-repository';
@@ -14,8 +15,11 @@ import {
   ApiResponse,
   countRows,
   dataOf,
+  driverBody,
   errorCode,
   PASSWORD,
+  registerUser,
+  shopProfileBody,
   Phone,
   randomPhone,
   sessionIdOfToken,
@@ -562,6 +566,50 @@ describe('native device binding (fixture attestation)', () => {
         });
         expect([platform, appLabel, legacy.status, errorCode(legacy)]).toEqual([platform, appLabel, 403, 'DEVICE_PROOF_REQUIRED']);
       }
+    });
+
+    it('F1: a legacy session minted under another label BEFORE the gate is refused by every module guard once the gate is on (real modules, shared token)', async () => {
+      // closedApp has the gate OFF and shares the database: it can still mint the ordinary legacy sessions that existed before the rollout.
+      for (const label of [{ platform: 'IOS', app: 'FOOD' }, { platform: 'ANDROID', app: 'OTHER' }]) {
+        const user = await registerUser(closedApp, { device: { device_id: `legacy-${label.platform.toLowerCase()}-0001`, ...label } });
+        const token = user.accessToken;
+        const draft = shopProfileBody({ name: `Legacy ${label.platform}` });
+        const calls: Array<[string, 'GET' | 'PUT' | 'POST', string, unknown?]> = [
+          ['auth (AuthModule guard)', 'GET', '/auth/me'],
+          ['onboarding shop read', 'GET', '/onboarding/shop/profile'],
+          ['onboarding shop mutation', 'PUT', '/onboarding/shop/profile', draft],
+          ['onboarding driver mutation', 'POST', '/onboarding/driver', driverBody()],
+          ['customer profile (customer-profile module)', 'GET', '/customer/me/profile'],
+          ['driver me (customer-profile module)', 'GET', '/driver/me'],
+          ['shop management (shop-management module)', 'GET', '/shop/me'],
+        ];
+        // Control: with the gate off the very same token works, so a refusal below is the gate and not a dead token.
+        const control = await closedApp.call('GET', '/onboarding/shop/profile', { bearer: token });
+        expect([label.platform, control.status]).toEqual([label.platform, 200]);
+        for (const [name, method, path, body] of calls) {
+          const refused = await app.call(method, path, {
+            bearer: token,
+            ...(body === undefined ? {} : { body }),
+            ...(method === 'GET' ? {} : { headers: { 'idempotency-key': randomUUID() } }),
+          });
+          expect([label.platform, name, refused.status, errorCode(refused)]).toEqual([label.platform, name, 403, 'DEVICE_PROOF_REQUIRED']);
+        }
+        // Nothing was written by the refused mutations.
+        expect(await countRows(app.pool, 'SELECT 1 FROM app.shop_members WHERE user_id = $1::uuid', [user.userId])).toBe(0);
+        expect(await countRows(app.pool, 'SELECT 1 FROM app.drivers WHERE user_id = $1::uuid', [user.userId])).toBe(0);
+      }
+    });
+
+    it('F5: the shop profile read re-authorizes the binding inside its transaction (a replacement committed after the guard)', async () => {
+      const food = await registerFood();
+      const profiles = app.running.app.get(ShopProfileQueryService, { strict: false });
+      const actor = { userId: food.userId, sessionId: await sessionIdOfToken(app.pool, food.token) };
+      await expect(profiles.ownedProfile(actor)).resolves.toBeNull();
+      // The session row stays active; only the binding moved on, as in the participant test above.
+      await app.pool.query(`UPDATE app.client_device_key_links SET detached_at = clock_timestamp() WHERE binding_id = $1::uuid`, [food.bindingId]);
+      await app.pool.query(`UPDATE app.client_device_bindings SET deactivated_at = clock_timestamp() WHERE binding_id = $1::uuid`, [food.bindingId]);
+      const error = await failureOf(() => profiles.ownedProfile(actor));
+      expect(error instanceof AppError ? error.code : String(error)).toBe('SESSION_REVOKED');
     });
 
     it('ships no signer or root of its own: the fixture signer is not what the config would pin', () => {
