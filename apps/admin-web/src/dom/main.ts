@@ -1,3 +1,4 @@
+import { ACCOUNTS_BASE, AdminAccountsApi, createAccountsSource } from '../core/accounts-api.js';
 import { ACTIVATION_BASE, AdminActivationApi } from '../core/activation-api.js';
 import { ActivationController } from '../core/activation-controller.js';
 import { AdminAuthApi, fetchTransport } from '../core/api.js';
@@ -106,6 +107,8 @@ function startAdmin(host: HTMLElement): void {
       restart: () => window.location.assign('/'),
     },
     clock,
+    createAccountsSource(new AdminAccountsApi(fetchTransport(window.fetch.bind(window), { base: ACCOUNTS_BASE }))),
+    () => controller.sessionLost(),
   );
   const view = new AdminView(host, controller, shell);
   controller.subscribe((screen) => view.render(screen));

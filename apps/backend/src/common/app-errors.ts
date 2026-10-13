@@ -97,6 +97,10 @@ export const APP_ERROR_DEFINITIONS = {
   ADMIN_INVITATION_PENDING_EXISTS: { status: 409, message: 'A pending invitation already exists for this phone number' },
   ADMIN_PHONE_CONFLICT: { status: 409, message: 'This phone number already belongs to an account' },
 
+  // Administration account reads (M01-ADMIN account read). One answer for an id that does not exist and for one outside the
+  // actor's scope, so the id's existence is never revealed.
+  USER_NOT_AVAILABLE: { status: 404, message: 'The account is not available' },
+
   // Administration account activation (M01-D-ADMIN-1C, contract section 16). Same rule: fixed messages that echo nothing
   // the client sent. A bad or closed link is ONE uniform 404 (it never says which). OTP_*, ADMIN_TOTP_INVALID,
   // ADMIN_AUTH_RATE_LIMITED, ADMIN_PHONE_CONFLICT, ADMIN_CSRF_INVALID and ADMIN_INPUT_INVALID (above) are reused.

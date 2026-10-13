@@ -56,6 +56,8 @@ describe('Driver (M03) module boundary', () => {
   it('only the Driver module issues SQL against its table', () => {
     const outside = productionFiles()
       .filter((name) => !name.startsWith('driver/'))
+      // The one read-only projection of the administration web (M01-ADMIN account read), pinned by its own boundary spec.
+      .filter((name) => name !== 'admin-accounts/admin-account-read-repository.ts')
       .filter((name) => /app\.drivers\b/.test(codeOf(name)));
     expect(outside).toEqual([]);
   });

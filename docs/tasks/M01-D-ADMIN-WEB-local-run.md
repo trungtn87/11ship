@@ -48,6 +48,13 @@ ADMIN_ACTIVATION_PHONE_VERIFICATION_MODE=DISABLED_TEST
 5. **ADMIN đăng nhập:** "Đến trang đăng nhập" → SĐT + mật khẩu vừa đặt → mã Authenticator → shell, vai trò ADMIN, không có menu lời mời.
 6. Thử thêm: F5 ở từng bước kích hoạt; mở liên kết cũ sau khi SYSTEM cấp lại; nhập sai mã Authenticator 5 lần rồi "Bắt đầu lại"; SYSTEM thu hồi lời mời đang chờ.
 
+## Đọc tài khoản (chỉ đọc)
+Không cần cấu hình thêm; các route mới nằm dưới prefix đã có (`/v1/admin-auth/permissions`, `/v1/admin/users`, `/v1/admin/users/:id`, `/v1/admin/administrators`), front không mở prefix mới.
+1. SYSTEM đăng nhập → menu **Người dùng** (`/accounts/users`: tìm kiếm theo tên/SĐT không dấu, lọc, "Tải thêm"; mở một dòng để xem chi tiết) và **Quản trị viên** (`/accounts/administrators`, chỉ ADMIN đã kích hoạt).
+2. ADMIN (sau bước 5 trên) chỉ thấy các mục theo quyền xem được cấp; gọi trực tiếp ngoài phạm vi trả 403/404.
+3. Cần có người dùng trong DB dev (đăng ký từ ứng dụng khách) để thấy dòng; nút Khóa/Mở khóa chưa hoạt động (chờ chính sách D15).
+4. Test: `tests/integration/admin-account-read.int.spec.ts` (API + một smoke Chrome thật) cần DB `ship11_test` và Chrome; chạy trong CI bắt buộc.
+
 ## Giới hạn
 - Dùng chung giới hạn tốc độ theo địa chỉ `127.0.0.1` (front không thêm header chuyển tiếp). Nhập sai liên kết nhiều lần sẽ bị khóa tạm theo Retry-After; chờ hết hoặc xóa trạng thái limiter ở DB dev.
 - Mã Authenticator đã dùng trong cùng một bước 30 giây bị từ chối: đợi mã kế tiếp.

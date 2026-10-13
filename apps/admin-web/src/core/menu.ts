@@ -7,9 +7,9 @@ import { Route } from './routes.js';
 //
 // Who sees what (design "11Ship · Sidebar Web quản trị"):
 //  * SYSTEM sees every entry. Administrators and invitations are SYSTEM-only.
-//  * ADMIN sees only the entries it was granted (VIEW on a domain). The backend does not send the grants to the page yet
-//    (contract missing: docs/ui/m01-admin-web.md), so in the real build an ADMIN sees "Tổng quan" only; the design preview
-//    passes sample grants to show the granted menu. The page never computes a right from anything else.
+//  * ADMIN sees only the entries it was granted (VIEW on a domain). The grants come from GET /v1/admin-auth/permissions
+//    (grantsFromPermissions); until they arrive, or when they cannot be read, an ADMIN sees "Tổng quan" only. The design
+//    preview passes sample grants. The page never computes a right from anything else.
 
 export type IconName =
   | 'home'
@@ -47,8 +47,36 @@ export type GrantId =
 
 export type Grants = ReadonlySet<GrantId>;
 
-/** The real build: the backend does not tell the page what an ADMIN was granted, so nothing is assumed. */
+/** Nothing granted: what an ADMIN is shown until (and unless) the server's permissions arrive. Fail closed. */
 export const NO_GRANTS: Grants = new Set<GrantId>();
+
+/** One row of GET /v1/admin-auth/permissions. */
+export interface AppPermission {
+  readonly app: 'CUSTOMER' | 'SHOP' | 'DRIVER';
+  readonly canView: boolean;
+  readonly canReviewProfile: boolean;
+  readonly canLock: boolean;
+}
+
+/**
+ * Menu grants of an ADMIN from the server's CURRENT can_view rows: CUSTOMER -> users, SHOP -> users + shops,
+ * DRIVER -> users + drivers. Review/lock rights open no menu entry (and no mutation is wired yet).
+ */
+export function grantsFromPermissions(permissions: readonly AppPermission[]): Grants {
+  const grants = new Set<GrantId>();
+  for (const row of permissions) {
+    if (!row.canView) {
+      continue;
+    }
+    grants.add('users');
+    if (row.app === 'SHOP') {
+      grants.add('shops');
+    } else if (row.app === 'DRIVER') {
+      grants.add('drivers');
+    }
+  }
+  return grants;
+}
 
 export type MenuAccess = 'any' | 'system' | GrantId;
 
