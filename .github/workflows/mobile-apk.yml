@@ -6,8 +6,8 @@ name: Mobile APK
 # Signing (Owner decision 2026-10-12, mobile/README.md "update in place"): the persistent test key comes from the GitHub Secrets
 # ANDROID_TEST_KEYSTORE_BASE64, ANDROID_TEST_KEYSTORE_PASSWORD, ANDROID_TEST_KEY_ALIAS and ANDROID_TEST_KEY_PASSWORD (create them
 # once with mobile/tool/create-test-keystore.sh). There is NO fallback: when any of the four is missing the job stops with a clear
-# error naming the missing secret(s), BEFORE anything is signed or uploaded. Analyze and tests run without the secrets; only the
-# distribution stops. No throw-away key is ever generated.
+# error naming the missing secret(s), BEFORE anything is signed or uploaded. Analyze, tests and the (unsigned) compile run without the
+# secrets; only the distribution stops. No throw-away key is ever generated.
 #
 # versionCode = github.run_number (the existing sequence, never reset). A re-run of the same run keeps the same number: it is the
 # same build, not a new version.
@@ -123,20 +123,6 @@ jobs:
               echo "::error title=tests failed in $d::$(grep -E -A1 'Which:|\[E\]' "$RUNNER_TEMP/t.log" | head -24 | tr '\n' '|' | head -c 4000)"; exit 1; }
           done
 
-      # No signing material, no distribution: stop HERE, before a build is signed or uploaded.
-      - name: Require the persistent signing secrets
-        run: |
-          missing=""
-          for name in ANDROID_TEST_KEYSTORE_BASE64 ANDROID_TEST_KEYSTORE_PASSWORD ANDROID_TEST_KEY_ALIAS ANDROID_TEST_KEY_PASSWORD; do
-            if [ -z "${!name:-}" ]; then missing="$missing $name"; fi
-          done
-          if [ -n "$missing" ]; then
-            msg="Missing GitHub Secret(s):$missing. The APK is NOT signed and NOT uploaded; no temporary key is used. Run mobile/tool/create-test-keystore.sh once (and keep a private backup of the key), then re-run."
-            echo "::error title=signing secrets missing::$msg"
-            { echo "### ${{ matrix.label }}: APK not distributed"; echo "- $msg"; echo "- Analyze and tests above ran without the secrets."; } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-
       - name: Prepare Android project
         run: DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" mobile/tool/prepare-android.sh ${{ matrix.app }}
 
@@ -164,6 +150,20 @@ jobs:
             --dart-define=DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" \
             --dart-define=BUILD_FLUTTER="$fv" 2>&1 | tee "$RUNNER_TEMP/b.log" || {
               echo "::error title=build failed::$(tail -n 25 "$RUNNER_TEMP/b.log" | cut -c1-220 | tr '\n' '|' | head -c 2500)"; exit 1; }
+
+      # No signing material, no distribution: stop HERE, before the (already compiled, unsigned) build is signed or uploaded.
+      - name: Require the persistent signing secrets
+        run: |
+          missing=""
+          for name in ANDROID_TEST_KEYSTORE_BASE64 ANDROID_TEST_KEYSTORE_PASSWORD ANDROID_TEST_KEY_ALIAS ANDROID_TEST_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            msg="Missing GitHub Secret(s):$missing. The APK is NOT signed and NOT uploaded; no temporary key is used. Run mobile/tool/create-test-keystore.sh once (and keep a private backup of the key), then re-run."
+            echo "::error title=signing secrets missing::$msg"
+            { echo "### ${{ matrix.label }}: APK not distributed"; echo "- $msg"; echo "- Analyze and tests above ran without the secrets."; } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
       - name: Sign and verify
         run: |
