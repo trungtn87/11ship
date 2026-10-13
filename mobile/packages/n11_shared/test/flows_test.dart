@@ -205,7 +205,7 @@ void main() {
   group('review fixes F2-F4', () {
     test('F3: a gateway 504 / 502 keeps the key and body of the write; retry replays the same intent; a plain 503 or 4xx drops it', () async {
       final t = await signedIn(ClientApp.food);
-      FakeShopServer(t.api);
+      final FakeShopServer server = FakeShopServer(t.api);
       final ShopController shop = ShopController(session: t.session, location: FakeLocationProvider());
       await shop.load();
       shop
@@ -213,14 +213,17 @@ void main() {
         ..contactPhone = '0901234567'
         ..addressText = '12 Đường Làng';
       final FakeHandler committed = t.api.routes['PUT /v1/onboarding/shop/profile']!;
-      int committedCalls = 0;
+      // The server commits the first request, the gateway loses the answer; the retry with the SAME key gets the stored answer back
+      // (what the idempotency record does) and never runs a second mutation.
+      final Map<String, ApiResponse> stored = <String, ApiResponse>{};
       t.api.routes['PUT /v1/onboarding/shop/profile'] = (String m, String p, Map<String, String> h, String b) async {
-        committedCalls++;
-        if (committedCalls == 1) {
-          await committed(m, p, h, b);
-          return apiError(504, 'SERVICE_UNAVAILABLE');
+        final String key = h['idempotency-key']!;
+        final ApiResponse? replay = stored[key];
+        if (replay != null) {
+          return replay;
         }
-        return committed(m, p, h, b);
+        stored[key] = await committed(m, p, h, b);
+        return apiError(504, 'SERVICE_UNAVAILABLE');
       };
       expect(await shop.saveDraft(), isFalse);
       expect(shop.failure!.outcomeUnknown, isTrue);
@@ -230,6 +233,7 @@ void main() {
       expect(puts.length, 2);
       expect(puts[0].headers['idempotency-key'], puts[1].headers['idempotency-key']);
       expect(puts[0].body, puts[1].body);
+      expect(server.puts.length, 1, reason: 'one mutation reached the server logic');
 
       expect(const AuthFailure(AuthFailureKind.serverUnavailable, code: 'SERVICE_UNAVAILABLE', status: 502).outcomeUnknown, isTrue);
       expect(const AuthFailure(AuthFailureKind.serverUnavailable, code: 'SERVICE_UNAVAILABLE', status: 503).outcomeUnknown, isFalse);
@@ -259,7 +263,7 @@ void main() {
       await t.session.selectContext('SHOP_OWNER');
       final List<RecordedRequest> contexts = t.api.to('POST', '/v1/client-auth/context');
       expect(contexts[0].headers['idempotency-key'], contexts[1].headers['idempotency-key']);
-      expect(server.contexts.length, 2);
+      expect(server.contexts.length, 1, reason: 'the lost first request never reached the server logic; the retry carried the same key');
     });
 
     test('F2: leaving the reset form drops the unconfirmed write (and its password); opening again starts clean', () async {

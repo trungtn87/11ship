@@ -476,14 +476,18 @@ class SessionController extends ChangeNotifier {
       }
       rethrow;
     }
-    _contextBody = null;
-    _contextKey = null;
+    final AuthFailure? refusal = response.status == 200 ? null : failureOf(response);
+    // A gateway answer that only says the upstream did not answer (502/504) leaves the outcome unknown: keep the intent.
+    if (refusal == null || !refusal.outcomeUnknown) {
+      _contextBody = null;
+      _contextKey = null;
+    }
     if (epoch != _epoch) {
       return;
     }
-    final Identity? identity = response.status == 200 ? Identity.tryParse(response.data) : null;
+    final Identity? identity = refusal == null ? Identity.tryParse(response.data) : null;
     if (identity == null) {
-      throw response.status == 200 ? const AuthFailure(AuthFailureKind.badResponse) : failureOf(response);
+      throw refusal ?? const AuthFailure(AuthFailureKind.badResponse);
     }
     _identity = identity;
     _profile = identity.profile;
