@@ -3,8 +3,8 @@ name: Mobile APK
 # Builds the two Android test APKs (11Food-test.apk, 11Ship-test.apk). Run it by hand from the Actions tab
 # ("Run workflow") or it runs on pull requests that touch mobile/ or the brand assets.
 # Signing: the stable test key comes from the GitHub Secrets ANDROID_TEST_KEYSTORE_BASE64, ANDROID_TEST_KEYSTORE_PASSWORD,
-# ANDROID_TEST_KEY_ALIAS and ANDROID_TEST_KEY_PASSWORD (create them once with mobile/tool/create-test-keystore.sh). If a secret
-# is missing the APK is signed with a throw-away key and the job summary and the diagnostics screen say so.
+# ANDROID_TEST_KEY_ALIAS and ANDROID_TEST_KEY_PASSWORD (create them once with mobile/tool/create-test-keystore.sh). All four are
+# required: if one is missing the job fails at its first step and nothing is built, signed or uploaded. There is no throw-away key.
 
 on:
   workflow_dispatch:
@@ -51,6 +51,20 @@ jobs:
       ANDROID_TEST_KEY_PASSWORD: ${{ secrets.ANDROID_TEST_KEY_PASSWORD }}
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
+      - name: Require the persistent signing secrets
+        run: |
+          missing=""
+          for name in ANDROID_TEST_KEYSTORE_BASE64 ANDROID_TEST_KEYSTORE_PASSWORD ANDROID_TEST_KEY_ALIAS ANDROID_TEST_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            msg="Missing GitHub Secret(s):$missing. The APK is not built, signed or uploaded, and no temporary key is used. Run mobile/tool/create-test-keystore.sh once, store its four values as repository Secrets (keep a private backup of the key), then re-run."
+            echo "::error title=signing secrets missing::$msg"
+            echo "### ${{ matrix.label }}: APK not built" >> "$GITHUB_STEP_SUMMARY"
+            echo "- $msg" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       - name: Check out
         uses: actions/checkout@v4
 
@@ -95,9 +109,7 @@ jobs:
 
       - name: Build release APK
         run: |
-          signing=ephemeral
-          if [ -n "$ANDROID_TEST_KEYSTORE_BASE64" ] && [ -n "$ANDROID_TEST_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_TEST_KEY_ALIAS" ] && [ -n "$ANDROID_TEST_KEY_PASSWORD" ]; then signing=stable; fi
-          echo "SIGNING_MODE=$signing" >> "$GITHUB_ENV"
+          signing=stable
           version="$(sed -n 's/^version: *\([0-9.]*\)+.*/\1/p' mobile/${{ matrix.app }}/pubspec.yaml)"
           cd mobile/${{ matrix.app }}
           fv="$(flutter --version --machine | python3 -c 'import json,sys; print(json.load(sys.stdin)["frameworkVersion"])' 2>/dev/null)" || fv=unknown
@@ -120,14 +132,9 @@ jobs:
           trap 'echo "::error title=sign failed::line $LINENO: $BASH_COMMAND"' ERR
           bt="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)"
           work="$RUNNER_TEMP/sign"; mkdir -p "$work"
-          if [ "$SIGNING_MODE" = stable ]; then
-            printf '%s' "$ANDROID_TEST_KEYSTORE_BASE64" | base64 -d > "$work/test.jks"
-            ks_pass="$ANDROID_TEST_KEYSTORE_PASSWORD"; key_alias="$ANDROID_TEST_KEY_ALIAS"; key_pass="$ANDROID_TEST_KEY_PASSWORD"
-          else
-            ks_pass="$(openssl rand -hex 16)"; key_alias=ci-throwaway; key_pass="$ks_pass"
-            keytool -genkeypair -keystore "$work/test.jks" -storetype PKCS12 -alias "$key_alias" -keyalg RSA -keysize 2048 -validity 30 \
-              -dname "CN=11Ship CI throwaway" -storepass "$ks_pass" -keypass "$key_pass"
-          fi
+          chmod 700 "$work"
+          printf '%s' "$ANDROID_TEST_KEYSTORE_BASE64" | base64 -d > "$work/test.jks"
+          ks_pass="$ANDROID_TEST_KEYSTORE_PASSWORD"; key_alias="$ANDROID_TEST_KEY_ALIAS"; key_pass="$ANDROID_TEST_KEY_PASSWORD"
           src="mobile/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk"
           out="${{ matrix.label }}-test.apk"
           if [ ! -f "$src" ]; then
@@ -150,8 +157,7 @@ jobs:
           {
             echo "### ${{ matrix.label }}-test.apk"
             echo "- applicationId: \`${{ matrix.app_id }}\`, build ${{ github.run_number }}, source \`$SOURCE_SHA\`"
-            if [ "$SIGNING_MODE" = stable ]; then echo "- Signed with the stable test key from GitHub Secrets: updates install over older builds."
-            else echo "- **Signed with a throw-away CI key** (GitHub Secrets for the test key are missing): uninstall the previous build before installing this one. Run mobile/tool/create-test-keystore.sh once to fix this."; fi
+            echo "- Signed with the stable test key from GitHub Secrets: updates install over older builds."
             echo "- sha256: \`$(sha256sum "$out" | cut -d' ' -f1)\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
