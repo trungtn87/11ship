@@ -15,6 +15,7 @@ import {
   wrongCode,
 } from './support/admin-fixtures';
 import {
+  ACTIVATION_COOKIE,
   act,
   ActivationApp,
   attemptsOf,
@@ -74,7 +75,7 @@ describe('admin activation - phone verification mode', () => {
     expect(adminData(started).state).toBe('STARTED');
     expect(adminData(started).phone_verification_mode).toBe('DISABLED_TEST');
     expect(adminData(started).otp).toBeUndefined();
-    const session = await begin(app, invite);
+    const session = { cookie: String(cookieFrom(started, ACTIVATION_COOKIE)), csrf: String(adminData(started).csrf_token) };
 
     const state = adminData(ok(await getState(app, session)));
     expect(state.phone_verification_mode).toBe('DISABLED_TEST');
@@ -160,8 +161,9 @@ describe('admin activation - phone verification mode', () => {
       invitationId: invite.invitationId,
       status: 'STARTED',
       phoneVerificationMode: 'DISABLED_TEST',
+      // The attempt lifetime is capped at one hour (DDL), so the window is closed by being older than it, not by a long life.
       createdAgoSeconds: DEFAULT_ACTIVATION_LIMITS.passwordDeadlineSeconds + 60,
-      expiresInSeconds: 3600,
+      expiresInSeconds: 600,
     });
     const state = await getState(app, { cookie, csrf: '' });
     expect(state.status).toBe(200);
@@ -193,8 +195,9 @@ describe('admin activation - phone verification mode', () => {
     const started = await act(app, 'POST', '/start', { body: { token: invite.token } });
     expect(started.status).toBe(201);
     expect(adminData(started).phone_verification_mode).toBe('REQUIRED');
-    expect(adminData(started).otp).toEqual({ status: 'NONE' });
+    // The 201 carries no otp block; GET state does.
     const session = await begin(app, invite);
+    expect(adminData(ok(await getState(app, session))).otp).toEqual({ status: 'NONE' });
     const skip = await post(app, '/password', session, { password: ADMIN_PASSWORD });
     expect(skip.status).toBe(409);
     expect(adminErrorCode(skip)).toBe(STEP);
