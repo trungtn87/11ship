@@ -67,6 +67,8 @@ export class SessionService {
       sessionId: view.sessionId,
       activeRole: view.activeRole,
       phoneNormalized: view.phoneNormalized,
+      platform: view.platform,
+      app: view.app,
     };
   }
 }

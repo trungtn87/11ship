@@ -7,6 +7,7 @@ import { Keyring, parseKeyringConfig } from '../crypto/keyring';
 import { DatabaseTls, resolveDatabaseTls } from '../database/tls-config';
 import { parseStagingFixtures, StagingFixturesConfig } from './staging-fixtures-config';
 import { loadTestInboxConfig, TestInboxConfig } from '../test-sms/test-sms-config';
+import { ClientDeviceConfig, parseClientDevice } from './client-device-config';
 import {
   CLIENT_AUTH_PHONE_VERIFICATION_MODE_ENV,
   CLIENT_AUTH_PRIVACY_VERSION_ENV,
@@ -174,6 +175,11 @@ export interface AppConfig {
    * development/test on a loopback bind; absent everywhere else, which means UNAVAILABLE (the reset endpoint is closed).
    */
   accountRecoveryMode?: 'DISABLED_TEST';
+  /**
+   * Native Android binding (M01-ANDROID). Present ONLY when CLIENT_AUTH_ANDROID_ENABLED=true (development/test on a loopback bind)
+   * and the four CLIENT_DEVICE_* trust inputs are valid. Absent everywhere else: every ANDROID request then stays a 503.
+   */
+  clientAndroid?: ClientDeviceConfig;
 }
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -673,6 +679,15 @@ export function loadConfig(env: EnvSource): ConfigResult {
     recoveryResult.invalid.forEach(flag);
   }
 
+  // Native Android binding (M01-ANDROID): off by default; on only for development/test on loopback with the trust inputs valid.
+  const clientDeviceResult = parseClientDevice({ appEnv, host, env });
+  let clientAndroid: ClientDeviceConfig | undefined;
+  if (clientDeviceResult.ok) {
+    clientAndroid = clientDeviceResult.config;
+  } else {
+    clientDeviceResult.invalid.forEach(flag);
+  }
+
   if (invalid.length > 0 || appEnv === undefined || databaseUrl === undefined) {
     return { ok: false, invalid };
   }
@@ -719,6 +734,7 @@ export function loadConfig(env: EnvSource): ConfigResult {
       ...(clientAuth === undefined ? {} : { clientAuth }),
       ...(clientPhoneVerificationMode === 'DISABLED_TEST' ? { clientPhoneVerificationMode } : {}),
       ...(accountRecoveryMode === 'DISABLED_TEST' ? { accountRecoveryMode } : {}),
+      ...(clientAndroid === undefined ? {} : { clientAndroid }),
     },
   };
 }

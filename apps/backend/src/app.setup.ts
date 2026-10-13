@@ -41,6 +41,14 @@ export function configureApp(app: INestApplication): void {
   for (const prefix of CLIENT_PROFILE_ROUTE_PREFIXES) {
     app.use(`/${GLOBAL_PREFIX}/${prefix}`, clientAuthTransportMiddleware);
   }
+  // The exact request bytes, kept BEFORE the JSON parser reads them: the native device proof signs SHA-256 of the raw body and
+  // the exact target, never of a re-serialized object (contract11 section 8). The parser, its limit and its errors are the same
+  // ones the framework would register; this only adds the `verify` hook.
+  (app as unknown as { useBodyParser(type: 'json', options: { verify: (request: { rawBody?: Buffer }, response: unknown, buffer: Buffer) => void }): void }).useBodyParser('json', {
+    verify: (request, _response, buffer) => {
+      request.rawBody = Buffer.from(buffer);
+    },
+  });
   app.setGlobalPrefix(GLOBAL_PREFIX);
   app.useGlobalFilters(new AllExceptionsFilter(app.get(HttpAdapterHost), logger));
 }

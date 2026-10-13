@@ -119,6 +119,12 @@ export const APP_ERROR_DEFINITIONS = {
   CONSENT_VERSION_UNSUPPORTED: { status: 409, message: 'The consent versions are not supported' },
   AUTH_RESULT_NOT_REPLAYABLE: { status: 409, message: 'The authentication result can no longer be replayed' },
   DEVICE_PROOF_REQUIRED: { status: 403, message: 'A device proof is required for this request' },
+  // Native device binding (M01-ANDROID, contract11 section 7). Fixed generic messages: a refusal never says which part of
+  // a proof (signature, chain, key, nonce, binding) failed, and public endpoints never disclose a user or a device.
+  DEVICE_PROOF_INVALID: { status: 403, message: 'The device proof is not valid' },
+  DEVICE_PROOF_EXPIRED: { status: 403, message: 'The device proof has expired' },
+  DEVICE_PROOF_UNSUPPORTED: { status: 403, message: 'This device cannot provide the required proof' },
+  DEVICE_RATE_LIMITED: { status: 429, message: 'Too many device requests; try again later' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;
@@ -155,6 +161,18 @@ export class AdminAuthRateLimitError extends AppError {
   constructor(retryAfterSeconds: number) {
     super('ADMIN_AUTH_RATE_LIMITED');
     this.name = 'AdminAuthRateLimitError';
+    this.retryAfterSeconds =
+      Number.isSafeInteger(retryAfterSeconds) && retryAfterSeconds >= 1 ? retryAfterSeconds : 1;
+  }
+}
+
+/** The native device rate-limit refusal; like the administration one it is the typed carrier of a Retry-After value. */
+export class DeviceRateLimitedError extends AppError {
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number) {
+    super('DEVICE_RATE_LIMITED');
+    this.name = 'DeviceRateLimitedError';
     this.retryAfterSeconds =
       Number.isSafeInteger(retryAfterSeconds) && retryAfterSeconds >= 1 ? retryAfterSeconds : 1;
   }

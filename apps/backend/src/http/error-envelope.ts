@@ -2,6 +2,7 @@ import { HttpException } from '@nestjs/common';
 import {
   ActivationStateError,
   AdminAuthRateLimitError,
+  DeviceRateLimitedError,
   APP_ERROR_DEFINITIONS,
   AppError,
   isAppErrorCode,
@@ -79,6 +80,10 @@ export function classifyException(exception: unknown): ClassifiedError {
       message: definition.message,
       retryAfterSeconds: exception.retryAfterSeconds,
     };
+  }
+  if (exception instanceof DeviceRateLimitedError) {
+    const definition = APP_ERROR_DEFINITIONS.DEVICE_RATE_LIMITED;
+    return { status: definition.status, code: 'DEVICE_RATE_LIMITED', message: definition.message, retryAfterSeconds: exception.retryAfterSeconds };
   }
   if (exception instanceof ActivationStateError) {
     const definition = APP_ERROR_DEFINITIONS.ADMIN_ACTIVATION_STEP_INVALID;

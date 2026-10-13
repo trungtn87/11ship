@@ -61,6 +61,16 @@ export function parseDevice(value: unknown): DeviceInfo {
   return { deviceId, platform, app };
 }
 
+/**
+ * The legacy /auth routes must never become a way around the native device binding (contract11 section 6): they issue no session
+ * for the native Android apps. The Food / Ship ANDROID platform is issued only by /v1/client-auth with a device proof.
+ */
+export function assertLegacyDeviceAllowed(device: DeviceInfo): void {
+  if (device.platform === 'ANDROID' && (device.app === 'FOOD' || device.app === 'SHIP')) {
+    throw new AppError('DEVICE_PROOF_REQUIRED');
+  }
+}
+
 /** The password exactly as sent. Length is counted in code points; a lone surrogate (not valid UTF-8) is refused. */
 export function parsePassword(value: unknown): string {
   if (typeof value !== 'string' || !isWellFormed(value)) {

@@ -1,5 +1,6 @@
 import { TechnicalError } from '../common/app-errors';
 import { JsonObject } from '../idempotency/idempotency-executor';
+import { BindingInfo } from '../client-device/client-device-binding-participant';
 import { ClientIdentity } from './client-identity-reader';
 
 // The success body shared by the client-auth endpoints (contract10 section 4, contract11 sections 3 and 5). Register and
@@ -14,6 +15,8 @@ export interface StoredResult {
 /** The CURRENT identity read inside the transaction of the first execution or of the replay authorization. */
 export interface IdentityCapture {
   identity: ClientIdentity | undefined;
+  /** Native only: the device binding the session was issued to (exposed as response headers, never in the body). */
+  binding?: BindingInfo | undefined;
 }
 
 export function storedResultOf(payload: unknown): StoredResult {

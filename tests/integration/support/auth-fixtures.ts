@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { AccountOriginPolicy } from '../../../apps/backend/src/auth/account-origin';
 import { DisabledOtpProvider } from '../../../apps/backend/src/auth/disabled-otp-provider';
 import { FakeOtpProvider } from '../../../apps/backend/src/auth/fake-otp-provider';
+import { ClientDeviceTrust } from '../../../apps/backend/src/client-device/client-device-trust';
 import { unverifiedTestScopeId } from '../../../apps/backend/src/client-auth/client-registration-service';
 import { AppConfig } from '../../../apps/backend/src/config/app-config';
 import { AuthConfig, OtpHmacKey } from '../../../apps/backend/src/config/auth-config';
@@ -122,6 +123,8 @@ export async function startAuthApp(
     fixturePolicy?: AccountOriginPolicy;
     /** M01.03: configuration fields to override on top of the loaded one (clientAuth, host, appEnv). */
     configOverride?: Partial<AppConfig>;
+    /** M01-ANDROID: the FIXTURE device trust (roots, signers, revocation, clock) injected by dependency injection. */
+    deviceTrust?: ClientDeviceTrust;
   } = {},
 ): Promise<AuthApp> {
   const loaded = loadIntegrationConfig();
@@ -146,7 +149,7 @@ export async function startAuthApp(
   const running = await startApp(config, {
     auth:
       extra.fixturePolicy === undefined
-        ? { otpProvider: provider }
+        ? { otpProvider: provider, ...(extra.deviceTrust === undefined ? {} : { deviceTrust: extra.deviceTrust }) }
         : { otpProvider: new DisabledOtpProvider(), accountOriginPolicy: extra.fixturePolicy },
   });
   const pool = testPool(loaded.database, { poolMax: 6 });
@@ -289,6 +292,25 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
     `DELETE FROM app.idempotency_records
       WHERE scope_type = 'customer_profile'
         AND scope_id IN (SELECT user_id::text FROM app.users WHERE phone_normalized = $1)`,
+    [normalizedPhone],
+  );
+  // M01-ANDROID: the device binding of the user (session bindings -> grants that join it -> key links -> bindings) before the sessions.
+  await pool.query(
+    `DELETE FROM app.client_session_bindings
+      WHERE session_id IN (SELECT session_id FROM app.sessions WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1))`,
+    [normalizedPhone],
+  );
+  await pool.query(
+    `DELETE FROM app.client_device_registration_grants
+      WHERE join_binding_id IN (SELECT binding_id FROM app.client_device_bindings WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1))`,
+    [normalizedPhone],
+  );
+  await pool.query(
+    'DELETE FROM app.client_device_key_links WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
+    [normalizedPhone],
+  );
+  await pool.query(
+    'DELETE FROM app.client_device_bindings WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],
   );
   await pool.query(
