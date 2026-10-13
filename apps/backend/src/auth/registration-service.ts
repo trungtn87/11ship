@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { CLIENT_AUTH_SETTINGS, ClientAuthSettings } from '../client-auth/client-auth-policy';
 import { AuditWriter } from '../audit/audit-writer';
 import { AppError, TechnicalError } from '../common/app-errors';
 import { AuthConfig } from '../config/auth-config';
@@ -58,6 +59,8 @@ export class RegistrationService {
     @Inject(AUTH_CONFIG) private readonly config: AuthConfig,
     @Inject(PASSWORD_HASHER) private readonly hasher: PasswordHasher,
     @Optional() @Inject(ACCOUNT_ORIGIN_POLICY) private readonly policy: AccountOriginPolicy = standardAccountOriginPolicy(),
+    // The native gate of this process; absent (a unit harness without the client API) means the gate is off.
+    @Optional() @Inject(CLIENT_AUTH_SETTINGS) private readonly nativeSettings?: ClientAuthSettings,
   ) {}
 
   async register(
@@ -68,7 +71,7 @@ export class RegistrationService {
     // Staging fixture mode (M00-D2): closed before the idempotency key is read, any database access, any hash or
     // any executor call, so nothing can be created, replayed or consumed.
     this.policy.assertRegistrationOpen();
-    assertLegacyDeviceAllowed(input.device);
+    assertLegacyDeviceAllowed(input.device, this.nativeSettings?.androidEnabled === true);
     // The executor validates the key again; doing it first only avoids a database round trip and an Argon2
     // hash for a request that can never succeed.
     parseIdempotencyKey(idempotencyKey);

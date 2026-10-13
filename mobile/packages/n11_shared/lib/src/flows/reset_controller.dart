@@ -36,6 +36,11 @@ class ResetController extends ChangeNotifier {
   AuthFailure? get failure => _failure;
   bool get hasPendingWrite => _pendingKey != null;
 
+  /// The unconfirmed write is retryable only while the form still shows exactly its intent: an edited phone or password is a
+  /// different intent and must go through [submit] (new key), never through a retry of the hidden old one.
+  bool pendingMatches({required String phone, required String password}) =>
+      _pendingKey != null && _pendingBody == jsonEncode(<String, Object?>{'phone': phone.trim(), 'password': password});
+
   @override
   void dispose() {
     _disposed = true;
@@ -72,10 +77,25 @@ class ResetController extends ChangeNotifier {
     _notify();
   }
 
-  /// The person left the screen: a late answer is dropped.
+  /// A form is opened: one open is one life of the intent. Whatever the previous open left (a success, a failure, an unconfirmed
+  /// write with its phone and password) is gone, so the form is empty AND nothing hidden can be retried. No notification: this runs
+  /// before the first build.
+  void begin() {
+    _discardIntent();
+  }
+
+  /// The person left the screen: a late answer is dropped and so is the intent, including the password it carried.
   void abandon() {
+    _discardIntent();
+  }
+
+  void _discardIntent() {
     _epoch++;
     _busy = false;
+    _done = false;
+    _failure = null;
+    _pendingKey = null;
+    _pendingBody = null;
   }
 
   Future<bool> submit({required String phone, required String password}) async {
@@ -128,8 +148,7 @@ class ResetController extends ChangeNotifier {
       if (epoch != _epoch) {
         return false;
       }
-      final bool unknown = failure.kind == AuthFailureKind.unknownOutcome ||
-          (failure.kind == AuthFailureKind.serverUnavailable && failure.code == 'TRANSACTION_OUTCOME_UNKNOWN');
+      final bool unknown = failure.outcomeUnknown;
       if (!unknown) {
         _pendingBody = null;
         _pendingKey = null;

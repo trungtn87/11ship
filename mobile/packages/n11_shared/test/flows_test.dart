@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
 import 'package:n11_shared/testing.dart';
@@ -199,6 +200,161 @@ void main() {
       expect(await reset.submit(phone: '0901234567', password: 'New-Pass-123'), isTrue);
       expect(t.session.status, SessionStatus.guest);
       expect(t.bridge.token, isNull);
+    });
+  });
+  group('review fixes F2-F4', () {
+    test('F3: a gateway 504 / 502 keeps the key and body of the write; retry replays the same intent; a plain 503 or 4xx drops it', () async {
+      final t = await signedIn(ClientApp.food);
+      final FakeShopServer server = FakeShopServer(t.api);
+      final ShopController shop = ShopController(session: t.session, location: FakeLocationProvider());
+      await shop.load();
+      shop
+        ..name = 'Quán Cô Ba'
+        ..contactPhone = '0901234567'
+        ..addressText = '12 Đường Làng';
+      final FakeHandler committed = t.api.routes['PUT /v1/onboarding/shop/profile']!;
+      // The server commits the first request, the gateway loses the answer; the retry with the SAME key gets the stored answer back
+      // (what the idempotency record does) and never runs a second mutation.
+      final Map<String, ApiResponse> stored = <String, ApiResponse>{};
+      t.api.routes['PUT /v1/onboarding/shop/profile'] = (String m, String p, Map<String, String> h, String b) async {
+        final String key = h['idempotency-key']!;
+        final ApiResponse? replay = stored[key];
+        if (replay != null) {
+          return replay;
+        }
+        stored[key] = await committed(m, p, h, b);
+        return apiError(504, 'SERVICE_UNAVAILABLE');
+      };
+      expect(await shop.saveDraft(), isFalse);
+      expect(shop.failure!.outcomeUnknown, isTrue);
+      expect(shop.hasPendingWrite, isTrue);
+      expect(await shop.retryPending(), isTrue);
+      final List<RecordedRequest> puts = t.api.to('PUT', '/v1/onboarding/shop/profile');
+      expect(puts.length, 2);
+      expect(puts[0].headers['idempotency-key'], puts[1].headers['idempotency-key']);
+      expect(puts[0].body, puts[1].body);
+      expect(server.puts.length, 1, reason: 'one mutation reached the server logic');
+
+      expect(const AuthFailure(AuthFailureKind.serverUnavailable, code: 'SERVICE_UNAVAILABLE', status: 502).outcomeUnknown, isTrue);
+      expect(const AuthFailure(AuthFailureKind.serverUnavailable, code: 'SERVICE_UNAVAILABLE', status: 503).outcomeUnknown, isFalse);
+      expect(const AuthFailure(AuthFailureKind.badRequest, status: 400).outcomeUnknown, isFalse);
+    });
+
+    test('F3: reset and context also keep the intent after a gateway 504', () async {
+      final t = await signedIn(ClientApp.food);
+      final FakeApiTransport open = FakeApiTransport();
+      installResetRoutes(open);
+      final ResetController reset = ResetController(transport: open, session: t.session);
+      await reset.loadConfig();
+      final FakeHandler ok = open.routes['POST /v1/account-recovery/reset-test']!;
+      int calls = 0;
+      open.routes['POST /v1/account-recovery/reset-test'] = (String m, String p, Map<String, String> h, String b) async => ++calls == 1 ? apiError(504, 'SERVICE_UNAVAILABLE') : ok(m, p, h, b);
+      expect(await reset.submit(phone: '0901234567', password: 'New-Pass-123'), isFalse);
+      expect(reset.hasPendingWrite, isTrue);
+      expect(await reset.retryPending(), isTrue);
+      final List<RecordedRequest> posts = open.to('POST', '/v1/account-recovery/reset-test');
+      expect(posts[0].headers['idempotency-key'], posts[1].headers['idempotency-key']);
+
+      final FakeShopServer server = FakeShopServer(t.api)..owner = true;
+      final FakeHandler context = t.api.routes['POST /v1/client-auth/context']!;
+      int contextCalls = 0;
+      t.api.routes['POST /v1/client-auth/context'] = (String m, String p, Map<String, String> h, String b) async => ++contextCalls == 1 ? apiError(504, 'SERVICE_UNAVAILABLE') : context(m, p, h, b);
+      await expectLater(t.session.selectContext('SHOP_OWNER'), throwsA(isA<AuthFailure>()));
+      await t.session.selectContext('SHOP_OWNER');
+      final List<RecordedRequest> contexts = t.api.to('POST', '/v1/client-auth/context');
+      expect(contexts[0].headers['idempotency-key'], contexts[1].headers['idempotency-key']);
+      expect(server.contexts.length, 1, reason: 'the lost first request never reached the server logic; the retry carried the same key');
+    });
+
+    test('F2: leaving the reset form drops the unconfirmed write (and its password); opening again starts clean', () async {
+      final t = await signedIn(ClientApp.food);
+      final FakeApiTransport open = FakeApiTransport();
+      installResetRoutes(open);
+      final ResetController reset = ResetController(transport: open, session: t.session);
+      await reset.loadConfig();
+      open.failNext = const AuthFailure(AuthFailureKind.unknownOutcome);
+      expect(await reset.submit(phone: '0901234567', password: 'New-Pass-123'), isFalse);
+      expect(reset.hasPendingWrite, isTrue);
+      expect(reset.pendingMatches(phone: '0901234567', password: 'New-Pass-123'), isTrue);
+      expect(reset.pendingMatches(phone: '0901234567', password: 'Other-Pass-123'), isFalse, reason: 'an edited form is another intent');
+
+      reset.abandon();
+      reset.begin();
+      expect(reset.hasPendingWrite, isFalse);
+      expect(reset.failure, isNull);
+      expect(await reset.retryPending(), isFalse);
+      expect(open.to('POST', '/v1/account-recovery/reset-test').length, 1, reason: 'the old intent was not sent again');
+    });
+
+    test('F2: after a success, opening the form again shows the form, not the old success', () async {
+      final t = await signedIn(ClientApp.food);
+      final FakeApiTransport open = FakeApiTransport();
+      installResetRoutes(open);
+      final ResetController reset = ResetController(transport: open, session: t.session);
+      await reset.loadConfig();
+      expect(await reset.submit(phone: '0901234567', password: 'New-Pass-123'), isTrue);
+      expect(reset.done, isTrue);
+      reset.abandon();
+      reset.begin();
+      expect(reset.done, isFalse);
+    });
+
+    testWidgets('F2: ResetScreen opened again after a success shows the empty form', (WidgetTester tester) async {
+      final t = await signedIn(ClientApp.food);
+      final FakeApiTransport open = FakeApiTransport();
+      installResetRoutes(open);
+      final ResetController reset = ResetController(transport: open, session: t.session);
+      Widget screen() => MaterialApp(home: ResetScreen(controller: reset, brand: foodBrand));
+      await tester.pumpWidget(screen());
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('reset-phone')), '0901234567');
+      await tester.enterText(find.byKey(const Key('reset-password')), 'New-Pass-123');
+      await tester.enterText(find.byKey(const Key('reset-confirm')), 'New-Pass-123');
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('reset-submit')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('reset-done')), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(screen());
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('reset-done')), findsNothing);
+      expect(find.byKey(const Key('reset-submit')), findsOneWidget);
+    });
+
+    testWidgets('F4: after a version conflict and read-back the form shows v2 and a save keeps the untouched v2 fields', (WidgetTester tester) async {
+      final t = await signedIn(ClientApp.food);
+      final FakeShopServer server = FakeShopServer(t.api);
+      final ShopController shop = ShopController(session: t.session, location: FakeLocationProvider());
+      await shop.load();
+      shop
+        ..name = 'Quán v1'
+        ..contactPhone = '0901234567'
+        ..addressText = '1 Phố Cũ';
+      expect(await shop.saveDraft(), isTrue);
+
+      await tester.pumpWidget(MaterialApp(home: ShopFormScreen(controller: shop)));
+      await tester.pump();
+      // The web edits the shop: v2 on the server, the phone still holds v1.
+      server.profile = <String, Object?>{...server.profile!, 'name': 'Quán v2 (web)', 'address_text': '2 Phố Mới', 'version': 2};
+      // A save from the stale form meets the conflict; the controller reads v2 back.
+      await tester.enterText(find.byKey(const Key('shop-zalo')), 'zalo.moi');
+      await tester.pump();
+      await tester.runAsync(() => shop.saveDraft());
+      await tester.pump();
+      expect(shop.profile!.version, 2);
+      expect(find.widgetWithText(TextField, 'Quán v2 (web)'), findsOneWidget);
+      expect(find.widgetWithText(TextField, '2 Phố Mới'), findsOneWidget);
+
+      // Edit one field only, then save: name and address stay v2.
+      await tester.enterText(find.byKey(const Key('shop-zalo')), 'zalo.sau');
+      await tester.pump();
+      await tester.runAsync(() => shop.saveDraft());
+      await tester.pump();
+      expect(server.puts.last['name'], 'Quán v2 (web)');
+      expect(server.puts.last['address_text'], '2 Phố Mới');
+      expect(server.puts.last['expected_version'], 2);
+      expect(server.profile!['name'], 'Quán v2 (web)');
     });
   });
 }

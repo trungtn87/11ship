@@ -99,7 +99,7 @@ describe('Onboarding coordinator boundary', () => {
 
     const controller = codeOf('onboarding/shop-onboarding.controller.ts');
     const read = controller.slice(controller.indexOf("@Get('profile')"), controller.indexOf("@Put('profile')"));
-    expect(read).toContain('this.profiles.ownedProfile(principal.userId)');
+    expect(read).toContain('this.profiles.ownedProfile(actorOf(principal))');
     expect(read).not.toMatch(/idempotency|@Body|this\.onboarding\./i);
   });
 

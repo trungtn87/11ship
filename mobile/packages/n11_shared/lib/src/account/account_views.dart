@@ -32,7 +32,7 @@ String failureMessage(AuthFailure failure) {
     case AuthFailureKind.deviceProofRefused:
       return 'Máy chủ chưa xác nhận được thiết bị. Hãy kiểm tra giờ của điện thoại rồi thử lại.';
     case AuthFailureKind.serverUnavailable:
-      return failure.code == 'TRANSACTION_OUTCOME_UNKNOWN'
+      return failure.outcomeUnknown
           ? 'Máy chủ chưa xác nhận được kết quả. Nhấn "Thử lại" để gửi lại đúng yêu cầu đó.'
           : 'Máy chủ chưa sẵn sàng cho bản Android. Vui lòng thử lại sau.';
     case AuthFailureKind.versionConflict:
@@ -61,7 +61,7 @@ String failureMessage(AuthFailure failure) {
 }
 
 bool canRetryFailure(AuthFailure? failure) =>
-    failure != null && (failure.kind == AuthFailureKind.unknownOutcome || (failure.kind == AuthFailureKind.serverUnavailable && failure.code == 'TRANSACTION_OUTCOME_UNKNOWN'));
+    failure != null && failure.outcomeUnknown;
 
 Route<void> n11Route(Widget screen) => MaterialPageRoute<void>(builder: (BuildContext context) => screen);
 

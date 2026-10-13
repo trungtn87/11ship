@@ -295,9 +295,23 @@ class SessionController extends ChangeNotifier {
     _loggedOutNotice = false;
     _setBusy(true);
     try {
-      final RegistrationGrant grant = await api.obtainGrant();
-      final PendingAuth pending = PendingAuth(kind: kind, path: path, body: build(await api.deviceBlock()), idempotencyKey: newIdempotencyKey(), grant: grant);
-      return await _send(pending, epoch);
+      // A registration is always a NEW account: it can never be the peer's, so it never joins the peer's binding. A login does not
+      // know yet whose binding the peer holds, so it tries the join first.
+      final RegistrationGrant grant = await api.obtainGrant(allowJoin: kind != PendingKind.register);
+      final String deviceBody = build(await api.deviceBlock());
+      try {
+        return await _send(PendingAuth(kind: kind, path: path, body: deviceBody, idempotencyKey: newIdempotencyKey(), grant: grant), epoch);
+      } on AuthFailure catch (failure) {
+        // A DEFINITE device refusal of a login that used a JOIN grant: the account is another person's than the peer's binding. Redo
+        // it once on this app's own binding with a fresh key. An unknown outcome (or any other failure) is never redone here: the
+        // person's own retry replays the same intent.
+        if (kind != PendingKind.login || !grant.joined || failure.kind != AuthFailureKind.deviceProofRefused || epoch != _epoch) {
+          rethrow;
+        }
+        await api.discardJoinedKey();
+        final RegistrationGrant own = await api.obtainGrant(allowJoin: false);
+        return await _send(PendingAuth(kind: kind, path: path, body: deviceBody, idempotencyKey: newIdempotencyKey(), grant: own), epoch);
+      }
     } on AuthFailure catch (failure) {
       return _fail(failure, epoch);
     } on DeviceBridgeException catch (failure) {
@@ -371,8 +385,7 @@ class SessionController extends ChangeNotifier {
     if (epoch != _epoch) {
       return false;
     }
-    final bool unknown = failure.kind == AuthFailureKind.unknownOutcome ||
-        (failure.kind == AuthFailureKind.serverUnavailable && failure.code == 'TRANSACTION_OUTCOME_UNKNOWN');
+    final bool unknown = failure.outcomeUnknown;
     if (!unknown) {
       _pending = null;
     }
@@ -457,20 +470,24 @@ class SessionController extends ChangeNotifier {
     try {
       response = await protectedCall('POST', '/v1/client-auth/context', body: body, idempotencyKey: key);
     } on AuthFailure catch (failure) {
-      if (failure.kind != AuthFailureKind.unknownOutcome) {
+      if (!failure.outcomeUnknown) {
         _contextBody = null;
         _contextKey = null;
       }
       rethrow;
     }
-    _contextBody = null;
-    _contextKey = null;
+    final AuthFailure? refusal = response.status == 200 ? null : failureOf(response);
+    // A gateway answer that only says the upstream did not answer (502/504) leaves the outcome unknown: keep the intent.
+    if (refusal == null || !refusal.outcomeUnknown) {
+      _contextBody = null;
+      _contextKey = null;
+    }
     if (epoch != _epoch) {
       return;
     }
-    final Identity? identity = response.status == 200 ? Identity.tryParse(response.data) : null;
+    final Identity? identity = refusal == null ? Identity.tryParse(response.data) : null;
     if (identity == null) {
-      throw response.status == 200 ? const AuthFailure(AuthFailureKind.badResponse) : failureOf(response);
+      throw refusal ?? const AuthFailure(AuthFailureKind.badResponse);
     }
     _identity = identity;
     _profile = identity.profile;
@@ -596,7 +613,7 @@ class SessionController extends ChangeNotifier {
       throw failure;
     } on AuthFailure catch (failure) {
       await _handleSessionFailure(failure, epoch);
-      return failure.kind == AuthFailureKind.unknownOutcome ? ProfileSave.unknown : ProfileSave.failed;
+      return failure.outcomeUnknown ? ProfileSave.unknown : ProfileSave.failed;
     } on DeviceBridgeException {
       await _handleSessionFailure(const AuthFailure(AuthFailureKind.deviceProofRefused), epoch);
       return ProfileSave.failed;

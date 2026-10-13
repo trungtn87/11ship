@@ -130,14 +130,37 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
     _address = TextEditingController(text: c.addressText);
     _zalo = TextEditingController(text: c.zalo);
     _facebook = TextEditingController(text: c.facebook);
+    _seenRevision = c.formRevision;
+    c.addListener(_syncFromController);
     c.session.addListener(_leaveWhenSignedOut);
+  }
+
+  int _seenRevision = 0;
+
+  /// The controller replaced its fields (an accepted server snapshot after a save, a conflict or a reload; or a clear): show them,
+  /// otherwise the next edit or save would push the text of an older snapshot over the newer version.
+  void _syncFromController() {
+    final ShopController c = widget.controller;
+    if (c.formRevision == _seenRevision) {
+      return;
+    }
+    _seenRevision = c.formRevision;
+    _name.text = c.name;
+    _phone.text = c.contactPhone;
+    _address.text = c.addressText;
+    _zalo.text = c.zalo;
+    _facebook.text = c.facebook;
   }
 
   @override
   void dispose() {
+    widget.controller.removeListener(_syncFromController);
     widget.controller.session.removeListener(_leaveWhenSignedOut);
-    // What was typed stays in the controller (not lost when the screen is left); nothing is sent by leaving.
-    _push();
+    // What was typed stays in the controller (not lost when the screen is left); nothing is sent by leaving. After the session ended
+    // (the controller was cleared) nothing is pushed back: the old text must not outlive the session it was typed in.
+    if (widget.controller.session.status == SessionStatus.signedIn) {
+      _push();
+    }
     _name.dispose();
     _phone.dispose();
     _address.dispose();

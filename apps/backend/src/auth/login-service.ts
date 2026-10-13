@@ -1,6 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
 import { StandaloneAuditRecorder } from '../audit/standalone-audit-recorder';
+import { CLIENT_AUTH_SETTINGS, ClientAuthSettings } from '../client-auth/client-auth-policy';
 import { AppError } from '../common/app-errors';
 import { AuthConfig } from '../config/auth-config';
 import { DriverEligibilityReader } from '../driver/driver-eligibility-reader';
@@ -56,10 +57,12 @@ export class LoginService {
     private readonly drivers: DriverEligibilityReader,
     // Without an explicit binding the standard policy applies: verified accounts only, never a fixture.
     @Optional() @Inject(ACCOUNT_ORIGIN_POLICY) private readonly policy: AccountOriginPolicy = standardAccountOriginPolicy(),
+    // The native gate of this process; absent (a unit harness without the client API) means the gate is off.
+    @Optional() @Inject(CLIENT_AUTH_SETTINGS) private readonly nativeSettings?: ClientAuthSettings,
   ) {}
 
   async login(input: LoginInput, requestId: string): Promise<LoginResult> {
-    assertLegacyDeviceAllowed(input.device);
+    assertLegacyDeviceAllowed(input.device, this.nativeSettings?.androidEnabled === true);
     const user = await this.transactions.withTransaction((context) =>
       this.users.findByPhone(context, input.phoneNormalized),
     );
