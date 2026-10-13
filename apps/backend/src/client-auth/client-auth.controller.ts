@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { AuthenticatedRequest, AuthPrincipal } from '../auth/auth-principal';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
+import { NativeRequestEvidence } from '../client-device/client-device-proof-service';
+import { BindingInfo } from '../client-device/client-device-binding-participant';
 import { CLIENT_AUTH_SETTINGS, ClientAuthSettings } from './client-auth-policy';
 import {
   parseClientContextBody,
@@ -17,6 +19,25 @@ import { ClientSessionService } from './client-session-service';
 
 interface StatusSettableResponse {
   status(code: number): unknown;
+  setHeader(name: string, value: string): unknown;
+}
+
+/** The exact bytes and target of the request, for the native device proof (never re-serialized). */
+function evidenceOf(request: AuthenticatedRequest): NativeRequestEvidence {
+  return {
+    method: request.method ?? 'GET',
+    url: request.originalUrl ?? '',
+    rawBody: request.rawBody ?? Buffer.alloc(0),
+    headers: request.headers,
+  };
+}
+
+/** Native responses name the binding in headers so the identity body keeps its exact contract shape. */
+function bindingHeaders(response: StatusSettableResponse, binding: BindingInfo | undefined): void {
+  if (binding !== undefined) {
+    response.setHeader('X-Device-Binding-Id', binding.bindingId);
+    response.setHeader('X-Device-Binding-Generation', String(binding.generation));
+  }
 }
 
 /**
@@ -59,9 +80,10 @@ export class ClientAuthController {
     // body, DISABLED_TEST the five-field body without a token (a token, a role or a bypass flag is a plain 400 there).
     const outcome =
       this.settings.phoneVerificationMode === 'DISABLED_TEST'
-        ? await this.registration.registerUnverifiedTest(parseClientUnverifiedRegisterBody(body), idempotencyKey, requestId)
+        ? await this.registration.registerUnverifiedTest(parseClientUnverifiedRegisterBody(body), idempotencyKey, requestId, evidenceOf(request))
         : await this.registration.register(parseClientRegisterBody(body), idempotencyKey, requestId);
     response.status(outcome.status);
+    bindingHeaders(response, 'binding' in outcome ? outcome.binding : undefined);
     return { data: outcome.payload };
   }
 
@@ -71,16 +93,19 @@ export class ClientAuthController {
     @Body() body: unknown,
     @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
     @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: StatusSettableResponse,
   ) {
     const input = parseClientLoginBody(body);
-    const outcome = await this.login.login(input, idempotencyKey, request.requestId ?? randomUUID());
+    const outcome = await this.login.login(input, idempotencyKey, request.requestId ?? randomUUID(), evidenceOf(request));
+    bindingHeaders(response, outcome.binding);
     return { data: outcome.payload };
   }
 
   @Get('me')
   @UseGuards(SessionAuthGuard)
-  async me(@Req() request: AuthenticatedRequest) {
+  async me(@Req() request: AuthenticatedRequest, @Res({ passthrough: true }) response: StatusSettableResponse) {
     const outcome = await this.sessions.me(this.#principal(request));
+    bindingHeaders(response, outcome.binding);
     return { data: outcome.payload };
   }
 
@@ -114,7 +139,7 @@ export class ClientAuthController {
     @Req() request: AuthenticatedRequest,
   ): Promise<void> {
     parseClientLogoutBody(body);
-    await this.sessions.logout(authorization, request.requestId ?? randomUUID());
+    await this.sessions.logout(authorization, request.requestId ?? randomUUID(), evidenceOf(request));
   }
 
   #principal(request: AuthenticatedRequest): AuthPrincipal {

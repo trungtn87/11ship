@@ -16,7 +16,7 @@ import {
 import { roleContext } from './available-roles';
 import { AUDIT_ACTIONS } from './auth-constants';
 import { AUTH_CONFIG } from './auth-config.provider';
-import { LoginInput } from './auth-validation';
+import { assertLegacyDeviceAllowed, LoginInput } from './auth-validation';
 import { PASSWORD_HASHER, PasswordHasher } from './password-hasher';
 import { SessionRepository } from './session-repository';
 import { UserRepository } from './user-repository';
@@ -59,6 +59,7 @@ export class LoginService {
   ) {}
 
   async login(input: LoginInput, requestId: string): Promise<LoginResult> {
+    assertLegacyDeviceAllowed(input.device);
     const user = await this.transactions.withTransaction((context) =>
       this.users.findByPhone(context, input.phoneNormalized),
     );

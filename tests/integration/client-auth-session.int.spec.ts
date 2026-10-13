@@ -325,7 +325,7 @@ describe('M01.04 — client login, me, context, logout', () => {
       });
     }
 
-    it('a legacy session is not a session of this API: other app label -> 401, ANDROID label -> 503', async () => {
+    it('a legacy session is not a session of this API: other app label -> 401; the legacy route issues no native ANDROID session -> 403', async () => {
       const legacy = await registerUser(app);
       const labelled = await api(app.running.baseUrl, 'POST', '/auth/login', {
         body: { phone: legacy.phone.local, password: legacy.password, device: { device_id: 'device-test-0001', platform: 'ANDROID', app: 'SHIP11' } },
@@ -333,12 +333,11 @@ describe('M01.04 — client login, me, context, logout', () => {
       const otherApp = String(dataOf(labelled).access_token);
       const labelledMe = await me(otherApp);
       expect([labelledMe.status, errorCode(labelledMe)]).toEqual([401, 'SESSION_INVALID']);
+      // M01-ANDROID: the legacy login must not become a way around the device binding, so it refuses the native Food / Ship ANDROID labels.
       const androidFood = await api(app.running.baseUrl, 'POST', '/auth/login', {
         body: { phone: legacy.phone.local, password: legacy.password, device: { device_id: 'device-test-0002', platform: 'ANDROID', app: 'FOOD' } },
       });
-      // legacy accounts have no CUSTOMER role, but the gate must answer before anything about the account is read
-      const android = await me(String(dataOf(androidFood).access_token));
-      expect([android.status, errorCode(android)]).toEqual([503, 'SERVICE_UNAVAILABLE']);
+      expect([androidFood.status, errorCode(androidFood)]).toEqual([403, 'DEVICE_PROOF_REQUIRED']);
     });
   });
 

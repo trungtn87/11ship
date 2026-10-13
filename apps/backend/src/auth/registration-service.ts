@@ -20,7 +20,7 @@ import {
 } from './auth-constants';
 import { ACCOUNT_ORIGIN_POLICY, AccountOriginPolicy, standardAccountOriginPolicy } from './account-origin';
 import { AUTH_CONFIG } from './auth-config.provider';
-import { RegisterInput } from './auth-validation';
+import { assertLegacyDeviceAllowed, RegisterInput } from './auth-validation';
 import { PASSWORD_HASHER, PasswordHasher } from './password-hasher';
 import { ProofRepository } from './proof-repository';
 import { SessionRepository } from './session-repository';
@@ -68,6 +68,7 @@ export class RegistrationService {
     // Staging fixture mode (M00-D2): closed before the idempotency key is read, any database access, any hash or
     // any executor call, so nothing can be created, replayed or consumed.
     this.policy.assertRegistrationOpen();
+    assertLegacyDeviceAllowed(input.device);
     // The executor validates the key again; doing it first only avoids a database round trip and an Argon2
     // hash for a request that can never succeed.
     parseIdempotencyKey(idempotencyKey);

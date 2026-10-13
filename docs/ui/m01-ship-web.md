@@ -21,3 +21,5 @@ Trạng thái: **chỉ UI**, chưa tính là xong nghiệp vụ, M01 chưa đón
 Quy tắc đã giữ: xế đã đăng nhập hoặc chờ duyệt **không** tự đủ điều kiện Online; không có số dư, thu nhập, đơn, trạng thái hoạt động giả;
 đăng ký xong dẫn tới S12; lý do/yêu cầu bổ sung từ xét duyệt chưa có hợp đồng nên không bịa. Nhãn "Xế hệ thống" chỉ dùng cho loại PLATFORM, không phải admin.
 S06 (chẩn đoán) thuộc M00, không làm lại ở đây. Dữ liệu minh họa nằm ở `apps/client-shared/src/design/samples.ts`, bị xoá khỏi bản thật (có test).
+
+Android (M01-ANDROID, `mobile/ship`): S05, S10, S11, hồ sơ cá nhân và đăng xuất đã nối máy chủ thật bằng phiên có proof thiết bị (đăng ký luôn là CUSTOMER, không tự tạo hồ sơ xế hay quyền nhận đơn). "Hồ sơ xế", nhận đơn, ví vẫn khóa với lý do "Chưa nối trên Android". Chưa chạy trên điện thoại thật: xem `mobile/README.md`.

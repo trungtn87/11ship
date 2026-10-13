@@ -27,8 +27,14 @@ import { ClientContextInput } from './client-auth-validation';
 import { contextAllowedForApp, isPublicContext, publicContextOf, PublicContext, storageRoleOf } from './client-context';
 import { ClientIdentity, ClientIdentityReader } from './client-identity-reader';
 import { ClientActor, ClientSessionAuthority } from './client-session-authority';
+import { BindingInfo } from '../client-device/client-device-binding-participant';
+import { isNativeSession } from '../client-device/client-device-constants';
+import { ClientDeviceProofService, NativeRequestEvidence } from '../client-device/client-device-proof-service';
+import { ClientDeviceRepository } from '../client-device/client-device-repository';
 
 export interface ClientSessionOutcome {
+  /** Native only: the device binding of the session, for the response headers. */
+  readonly binding?: BindingInfo;
   readonly status: number;
   /** The `data` of the success envelope: CURRENT identity + session{expires_at}. Never a token. */
   readonly payload: JsonObject;
@@ -58,6 +64,8 @@ export class ClientSessionService {
     private readonly users: UserRepository,
     private readonly sessions: SessionRepository,
     private readonly audit: AuditWriter,
+    private readonly deviceProof: ClientDeviceProofService,
+    private readonly devices: ClientDeviceRepository,
     @Inject(CLIENT_AUTH_SETTINGS) private readonly settings: ClientAuthSettings,
     @Optional() @Inject(ACCOUNT_ORIGIN_POLICY) private readonly originPolicy: AccountOriginPolicy = standardAccountOriginPolicy(),
   ) {}
@@ -78,9 +86,14 @@ export class ClientSessionService {
         enabled: true,
         storedActiveRole: actor.storedActiveRole,
       });
-      return { identity, expiresAtMs: actor.expiresAtMs };
+      const bound = isNativeSession(actor.platform, actor.app) ? await this.devices.sessionBinding(context, actor.sessionId) : undefined;
+      return { identity, expiresAtMs: actor.expiresAtMs, binding: bound === undefined ? undefined : { bindingId: bound.bindingId, generation: bound.generation } };
     });
-    return { status: 200, payload: sessionResponseOf(view.identity, view.expiresAtMs) };
+    return {
+      status: 200,
+      payload: sessionResponseOf(view.identity, view.expiresAtMs),
+      ...(view.binding === undefined ? {} : { binding: view.binding }),
+    };
   }
 
   /**
@@ -246,12 +259,36 @@ export class ClientSessionService {
    * The caller's identity is the token alone: nothing the client sends names a user or a session. An account that was
    * disabled meanwhile can still log out (it only removes access).
    */
-  async logout(authorization: string | string[] | undefined, requestId: string): Promise<void> {
+  async logout(
+    authorization: string | string[] | undefined,
+    requestId: string,
+    evidence?: NativeRequestEvidence,
+  ): Promise<void> {
     const token = bearerTokenFrom(authorization);
     if (token === undefined) {
       throw new AppError('SESSION_INVALID');
     }
     const digest = digestToken(token);
+
+    // A native token is useless without the key it was issued to, logout included: the proof is checked before anything is
+    // revoked (outside the transaction below: it opens its own for the nonce). A stale token (binding replaced) may still be
+    // logged out by that same key.
+    const known = await this.transactions.withTransaction((context) => this.sessions.findByDigest(context, digest));
+    if (known !== undefined && isNativeSession(known.platform, known.app)) {
+      if (!this.originPolicy.allows({ accountOrigin: known.accountOrigin, phoneNormalized: known.phoneNormalized })) {
+        throw new AppError('SESSION_INVALID');
+      }
+      assertPlatformAllowed(this.settings, 'ANDROID');
+      if (evidence === undefined) {
+        throw new AppError('DEVICE_PROOF_REQUIRED');
+      }
+      await this.deviceProof.verifyBearerRequest(
+        evidence,
+        token,
+        { sessionId: known.sessionId, platform: known.platform, app: known.app },
+        { allowDetached: true },
+      );
+    }
 
     await this.transactions.withTransaction(async (context) => {
       const found = await this.sessions.findByDigest(context, digest);

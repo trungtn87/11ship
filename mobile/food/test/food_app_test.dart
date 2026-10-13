@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:food/food_tabs.dart';
 import 'package:n11_shared/n11_shared.dart';
+import 'package:n11_shared/testing.dart';
 
 const String sha = '0123456789abcdef0123456789abcdef01234567';
 
@@ -13,7 +14,8 @@ const AppConfig config = AppConfig(
   versionName: '0.1.0',
   buildNumber: '3',
   sourceSha: sha,
-  signing: SigningMode.ephemeral,
+  signing: SigningMode.stable,
+  deviceEnvironment: 'fixture-env',
 );
 
 HealthTransport healthy() => (Uri uri, Duration t) async => RawHealthResponse(
@@ -21,13 +23,20 @@ HealthTransport healthy() => (Uri uri, Duration t) async => RawHealthResponse(
       body: uri.path == kLivePath ? '{"data":{"status":"ok"}}' : '{"data":{"status":"ready"}}',
     );
 
-Future<void> pump(WidgetTester tester, HealthTransport transport, {AppConfig cfg = config}) async {
+Future<SessionController> pump(WidgetTester tester, HealthTransport transport, {AppConfig cfg = config, FakeApiTransport? api, FakeDeviceBridge? bridge}) async {
   tester.view.physicalSize = const Size(1080, 2340);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(N11App(brand: foodBrand, tabs: buildFoodTabs(), config: cfg, transport: transport, pollInterval: Duration.zero));
+  final FakeApiTransport server = api ?? FakeApiTransport();
+  if (api == null) {
+    installAccountRoutes(server);
+  }
+  final SessionController session = createSessionController(ClientApp.food, cfg, transport: server, bridge: bridge ?? FakeDeviceBridge());
+  await session.start();
+  await tester.pumpWidget(N11App(brand: foodBrand, tabs: buildFoodTabs(session), config: cfg, transport: transport, pollInterval: Duration.zero));
   await tester.pump();
   await tester.pump();
+  return session;
 }
 
 Future<void> openTab(WidgetTester tester, String id) async {
@@ -59,15 +68,67 @@ void main() {
     expect(find.text('Chưa có quán để hiển thị'), findsOneWidget);
   });
 
-  testWidgets('account: login locked with its reason, shop management entry needs login', (WidgetTester tester) async {
+  testWidgets('account: login and register are open, shop management is locked "not on Android" and grants nothing', (WidgetTester tester) async {
     await pump(tester, healthy());
     await openTab(tester, 'account');
+    final Finder login = find.byKey(const Key('open-login'));
+    final Finder register = find.byKey(const Key('open-register'));
+    expect(tester.widget<N11Button>(login).onPressed, isNotNull);
+    expect(tester.widget<N11Button>(register).onPressed, isNotNull);
     expect(find.text('Quản lý cửa hàng'), findsOneWidget);
-    expect(find.text('Cần đăng nhập'), findsWidgets);
-    expect(find.text(featureReason(FeatureId.authLogin)), findsWidgets);
-    expect(find.text(featureReason(FeatureId.authRegister)), findsWidgets);
-    final Finder login = find.widgetWithText(GatedButton, 'Đăng nhập');
-    expect(login, findsWidgets);
+    expect(find.text(kNotOnAndroidReason), findsWidgets);
+    expect(find.textContaining('chờ backend'), findsNothing, reason: texts(tester));
+  });
+
+  testWidgets('home guest prompt opens the real login screen; no login without a server address', (WidgetTester tester) async {
+    await pump(tester, healthy());
+    await tester.tap(find.byKey(const Key('guest-login')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('login-submit')), findsOneWidget);
+    expect(tester.widget<N11Button>(find.byKey(const Key('login-submit'))).onPressed, isNull, reason: 'empty form');
+  });
+
+  testWidgets('without a server address the account buttons are unavailable and say why', (WidgetTester tester) async {
+    await pump(tester, (Uri uri, Duration t) async => const RawHealthResponse(status: 200, body: ''), cfg: const AppConfig());
+    await openTab(tester, 'account');
+    expect(tester.widget<N11Button>(find.byKey(const Key('open-login'))).onPressed, isNull);
+    expect(find.text(kNoServerReason), findsWidgets);
+  });
+
+  testWidgets('register (test mode, no OTP) -> signed-in account -> profile -> logout, all on the shell', (WidgetTester tester) async {
+    final FakeApiTransport api = FakeApiTransport();
+    installAccountRoutes(api);
+    final FakeDeviceBridge bridge = FakeDeviceBridge();
+    await pump(tester, healthy(), api: api, bridge: bridge);
+    await openTab(tester, 'account');
+    await tester.tap(find.byKey(const Key('open-register')));
+    await tester.pumpAndSettle();
+    expect(find.text(kTestRegistrationNote), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
+    await tester.enterText(find.byKey(const Key('register-name')), 'Nguyễn Văn An');
+    await tester.enterText(find.byKey(const Key('register-password')), 'Correct-Horse-9');
+    await tester.pump();
+    expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull, reason: 'consent not ticked');
+    await tester.ensureVisible(find.byKey(const Key('register-consent')));
+    await tester.tap(find.byKey(const Key('register-consent')));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('register-submit')));
+    await tester.tap(find.byKey(const Key('register-submit')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('account-name')), findsOneWidget);
+    expect(find.text('Nguyễn Văn An'), findsOneWidget);
+    expect(bridge.token, isNotNull);
+    final String registerBody = api.to('POST', '/v1/client-auth/register').single.body;
+    expect(registerBody, isNot(contains('verification_token')));
+    expect(registerBody, contains('"platform":"ANDROID"'));
+    expect(registerBody, contains('"app":"FOOD"'));
+    await tester.tap(find.byKey(const Key('open-logout')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('logout-confirm')));
+    await tester.pumpAndSettle();
+    expect(bridge.token, isNull);
+    expect(find.byKey(const Key('open-login')), findsOneWidget);
+    expect(find.byKey(const Key('logged-out')), findsOneWidget);
   });
 
   testWidgets('offline then retry recovers', (WidgetTester tester) async {

@@ -1,4 +1,5 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { ClientDeviceRepository } from '../client-device/client-device-repository';
 import { AppError } from '../common/app-errors';
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { isCanonicalUuid } from '../shared/identifiers';
@@ -59,6 +60,8 @@ export class SessionAuthorizationParticipant {
     private readonly sessions: SessionRepository,
     // Without an explicit binding the standard policy applies: verified accounts only, never a fixture.
     @Optional() @Inject(ACCOUNT_ORIGIN_POLICY) private readonly policy: AccountOriginPolicy = standardAccountOriginPolicy(),
+    // The native device binding (M01-ANDROID). Optional only so that a unit test can build the participant without a database.
+    @Optional() private readonly bindings?: ClientDeviceRepository,
   ) {}
 
   /** For a command that writes: user FOR UPDATE, then session FOR UPDATE. */
@@ -160,6 +163,11 @@ export class SessionAuthorizationParticipant {
     }
     if (user.status !== 'ACTIVE') {
       throw new AppError('ACCOUNT_DISABLED');
+    }
+    // A native (ANDROID Food / Ship) session lives only while it sits on the user's CURRENT device binding. Rechecked here, under
+    // the user and session locks, so a request that waited behind a device replacement fails after it (contract11 section 8).
+    if (this.bindings !== undefined && (await this.bindings.nativeSessionState(context, actor.sessionId)) === 'UNBOUND') {
+      throw new AppError('SESSION_REVOKED');
     }
   }
 }

@@ -13,3 +13,4 @@ ship/android/
 *.jks
 *.keystore
 key.properties
+pubspec.lock

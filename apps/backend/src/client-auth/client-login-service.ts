@@ -31,8 +31,12 @@ import { IdentityCapture, requireIdentity, responseOf, storedResultOf } from './
 import { ClientLoginInput } from './client-auth-validation';
 import { defaultContextFor, PublicContext, storageRoleOf } from './client-context';
 import { ClientIdentityReader } from './client-identity-reader';
+import { BindingInfo, ClientDeviceBindingParticipant } from '../client-device/client-device-binding-participant';
+import { ClientDeviceProofService, NativeAuthProof, NativeRequestEvidence } from '../client-device/client-device-proof-service';
 
 export interface ClientLoginOutcome {
+  /** Native only: the binding of the session, for the response headers. */
+  readonly binding?: BindingInfo;
   readonly status: number;
   /** The `data` of the success envelope: CURRENT identity + the original access token and expiry. */
   readonly payload: JsonObject;
@@ -73,6 +77,8 @@ export class ClientLoginService {
     private readonly identityReader: ClientIdentityReader,
     private readonly audit: AuditWriter,
     private readonly recorder: StandaloneAuditRecorder,
+    private readonly deviceProof: ClientDeviceProofService,
+    private readonly deviceBinding: ClientDeviceBindingParticipant,
     @Inject(AUTH_CONFIG) private readonly config: AuthConfig,
     @Inject(PASSWORD_HASHER) private readonly hasher: PasswordHasher,
     @Inject(CLIENT_AUTH_SETTINGS) private readonly settings: ClientAuthSettings,
@@ -83,10 +89,20 @@ export class ClientLoginService {
     input: ClientLoginInput,
     idempotencyKey: string | readonly string[] | undefined,
     requestId: string,
+    evidence?: NativeRequestEvidence,
   ): Promise<ClientLoginOutcome> {
     assertDeviceAllowed(this.settings, input.device);
     // The executor validates the key again; doing it first only avoids a database round trip and an Argon2 verification.
     parseIdempotencyKey(idempotencyKey);
+    // ANDROID: the registration token, its signature, the request time and nonce are verified before any password work. A replay
+    // presents a fresh proof for the same, already consumed, token.
+    let proof: NativeAuthProof | undefined;
+    if (input.device.platform === 'ANDROID') {
+      if (evidence === undefined) {
+        throw new AppError('DEVICE_PROOF_REQUIRED');
+      }
+      proof = await this.deviceProof.verifyAuthRequest(evidence, input.device.app, idempotencyKey);
+    }
 
     const user = await this.#verifiedUser(input);
 
@@ -117,12 +133,12 @@ export class ClientLoginService {
           replay: {
             kind: 'sensitive',
             authorize: async (context, guard) => {
-              await this.#authorizeReplay(context, guard, input, user.passwordHash, capture);
+              await this.#authorizeReplay(context, guard, input, user.passwordHash, capture, proof);
               return true;
             },
           },
         },
-        (context) => this.#loginNew(context, { input, user, requestId }, capture, denied),
+        (context) => this.#loginNew(context, { input, user, requestId, proof }, capture, denied),
       );
     } catch (error) {
       if (denied.disabledUserId !== undefined && error instanceof AppError && error.code === 'ACCOUNT_DISABLED') {
@@ -141,7 +157,12 @@ export class ClientLoginService {
     }
 
     const stored = storedResultOf(outcome.payload);
-    return { status: outcome.status, payload: responseOf(requireIdentity(capture), stored), replayed: outcome.replayed };
+    return {
+      status: outcome.status,
+      payload: responseOf(requireIdentity(capture), stored),
+      replayed: outcome.replayed,
+      ...(capture.binding === undefined ? {} : { binding: capture.binding }),
+    };
   }
 
   /**
@@ -171,11 +192,11 @@ export class ClientLoginService {
 
   async #loginNew(
     context: TransactionContext,
-    args: { input: ClientLoginInput; user: UserRow; requestId: string },
+    args: { input: ClientLoginInput; user: UserRow; requestId: string; proof: NativeAuthProof | undefined },
     capture: IdentityCapture,
     denied: { disabledUserId: string | undefined },
   ) {
-    const { input, user, requestId } = args;
+    const { input, user, requestId, proof } = args;
 
     // 1. The ROOT user lock, then everything that decides the login is read again under it. Anything that moved while the
     // password was being verified is the same answer as a wrong password.
@@ -197,6 +218,10 @@ export class ClientLoginService {
     const selectable = await this.identityReader.selectableContexts(context, locked.userId);
     const chosen: PublicContext | null = defaultContextFor(input.device.app, selectable);
 
+    // 2b. Native: the binding decision (same phone / join / new phone) under the user root lock, before the session exists.
+    const plan =
+      proof === undefined ? undefined : await this.deviceBinding.prepare(context, { userId: locked.userId, app: input.device.app, proof });
+
     // 3. The session and its plaintext token (returned once, stored only as a digest).
     const session = await this.sessions.create(context, {
       userId: locked.userId,
@@ -204,6 +229,10 @@ export class ClientLoginService {
       ttlSeconds: this.config.sessionTtlSeconds,
       ...(chosen === null ? {} : { activeRole: storageRoleOf(chosen) }),
     });
+
+    if (plan !== undefined) {
+      capture.binding = await this.deviceBinding.finish(context, plan, { userId: locked.userId, sessionId: session.sessionId });
+    }
 
     // 4. ONE audit row, same transaction, safe fields only (no phone, password or token). No outbox event: no consumer.
     await this.audit.append(context, {
@@ -218,7 +247,7 @@ export class ClientLoginService {
         user_id: locked.userId,
         session_id: session.sessionId,
         client_app: input.device.app,
-        binding_id: null,
+        binding_id: plan?.bindingId ?? null,
       },
     });
 
@@ -253,6 +282,7 @@ export class ClientLoginService {
     input: ClientLoginInput,
     verifiedPasswordHash: string,
     capture: IdentityCapture,
+    proof: NativeAuthProof | undefined,
   ): Promise<void> {
     const { user_id: userId, session_id: sessionId } = guard;
     if (!isCanonicalUuid(userId) || !isCanonicalUuid(sessionId)) {
@@ -284,6 +314,12 @@ export class ClientLoginService {
     }
     const nowMs = await freshClockMs(context);
     if (session.expiresAtMs <= nowMs) {
+      throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
+    }
+    // Native: still on the current binding, issued to the key that signs THIS replay, with the grant that created it.
+    if (proof !== undefined) {
+      capture.binding = await this.deviceBinding.assertReplayable(context, { sessionId, proof });
+    } else if (input.device.platform === 'ANDROID') {
       throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
     }
 

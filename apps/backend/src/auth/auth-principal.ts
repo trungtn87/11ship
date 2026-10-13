@@ -4,6 +4,9 @@ export interface AuthPrincipal {
   readonly sessionId: string;
   readonly activeRole: string | null;
   readonly phoneNormalized: string;
+  /** The platform and app recorded on the session (immutable); a native session is ANDROID + FOOD/SHIP. */
+  readonly platform?: string;
+  readonly app?: string;
 }
 
 /** Minimal request shape the guard and the controller share (no Express typings needed). */
@@ -11,6 +14,11 @@ export interface AuthenticatedRequest {
   requestId?: string;
   headers: Record<string, string | string[] | undefined>;
   auth?: AuthPrincipal;
+  method?: string;
+  /** Exact request target as received (path and query), for the native request proof. */
+  originalUrl?: string;
+  /** The exact body bytes as received, captured by the JSON parser before it parsed them (native request proof). */
+  rawBody?: Buffer;
 }
 
 /**
