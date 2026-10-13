@@ -72,7 +72,7 @@ Giao diện gồm các bước trên **cùng một form/luồng** (có thể hi�
 | App Quán | **Đã duyệt** | Chưa có ảnh UI được duyệt | Chưa | Chưa | Chưa | Chưa |
 | App Xế | **Đã duyệt** | Chưa có ảnh UI được duyệt | Chưa | Chưa | Chưa | Chưa |
 | App quản lý (nếu tài khoản thông thường sử dụng) | **Đã duyệt** | Chưa có ảnh UI được duyệt | Chưa | Chưa | Chưa | Chưa |
-| SYSTEM (CLI khôi phục / email phụ) | **Đã duyệt nghiệp vụ** | Công cụ, quy trình chi tiết chưa khóa | Chưa | Chưa | N/A (CLI/server) | Chưa |
+| SYSTEM (CLI khôi phục local/CI; email phụ chưa làm) | **Đã duyệt nghiệp vụ** | CLI local `admin-auth:recover-system` đã triển khai (xem [runbook](../../ops/runbooks/system-recovery-local.md)); chưa có email recovery/VPS | Có (local/CI) | Chưa | N/A (CLI/server) | Chưa |
 | Hồi quy liên thông Auth/2FA/session | **Đã duyệt mục tiêu** | Test contract chưa khóa | Chưa | Chưa | Chưa | Chưa |
 
 N/A là đặc tính không có giao diện thiết bị của backend/CLI, **không** miễn kiểm tra nghiệp vụ và bảo mật.

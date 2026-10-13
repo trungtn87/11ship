@@ -51,3 +51,53 @@ export async function readBootstrapInput(stream: Readable): Promise<{ phoneNorma
     throw new CliInputError();
   }
 }
+
+export const SYSTEM_RECOVERY_CONFIRMATION = 'RESET_SYSTEM_LOCAL_TEST';
+
+async function readExactObject(stream: Readable, keys: readonly string[]): Promise<Record<string, unknown>> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readAll(stream));
+  } catch {
+    throw new CliInputError();
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new CliInputError();
+  }
+  const actual = Object.keys(parsed).sort();
+  const expected = [...keys].sort();
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
+    throw new CliInputError();
+  }
+  return parsed as Record<string, unknown>;
+}
+
+/** `--check` input: exactly {"phone"}. */
+export async function readSystemRecoveryCheckInput(stream: Readable): Promise<{ phoneNormalized: string }> {
+  const { phone } = await readExactObject(stream, ['phone']);
+  try {
+    return { phoneNormalized: requireNormalizedPhone(phone) };
+  } catch {
+    throw new CliInputError();
+  }
+}
+
+/** `--apply` input: exactly {"phone","password","expected_version","confirmation"}. */
+export async function readSystemRecoveryApplyInput(
+  stream: Readable,
+): Promise<{ phoneNormalized: string; password: string; expectedVersion: number }> {
+  const { phone, password, expected_version: version, confirmation } = await readExactObject(stream, [
+    'phone',
+    'password',
+    'expected_version',
+    'confirmation',
+  ]);
+  if (confirmation !== SYSTEM_RECOVERY_CONFIRMATION || typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) {
+    throw new CliInputError();
+  }
+  try {
+    return { phoneNormalized: requireNormalizedPhone(phone), password: parsePassword(password), expectedVersion: version };
+  } catch {
+    throw new CliInputError();
+  }
+}

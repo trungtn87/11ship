@@ -334,6 +334,15 @@ export class UserRepository {
    * unlocked, and re-checks the phone here). Any origin is returned, ADMIN_PROVISIONED included: the caller classifies the row.
    */
   async lockResetTarget(context: TransactionContext, userId: string): Promise<ResetTargetRow | undefined> {
+    return this.#resetTarget(context, userId, 'FOR UPDATE OF u');
+  }
+
+  /** The same row as lockResetTarget, read WITHOUT a lock (the read-only check of the local SYSTEM recovery). */
+  async readResetTarget(context: TransactionContext, userId: string): Promise<ResetTargetRow | undefined> {
+    return this.#resetTarget(context, userId, '');
+  }
+
+  async #resetTarget(context: TransactionContext, userId: string, lock: '' | 'FOR UPDATE OF u'): Promise<ResetTargetRow | undefined> {
     const result = await context.query<{
       user_id: string;
       phone_normalized: string;
@@ -348,7 +357,7 @@ export class UserRepository {
               EXISTS (SELECT 1 FROM app.admin_memberships am WHERE am.user_id = u.user_id) AS has_membership
          FROM app.users u
         WHERE u.user_id = $1::uuid
-          FOR UPDATE OF u`,
+          ${lock}`,
       [userId],
     );
     const row = result.rows[0];

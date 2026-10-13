@@ -54,6 +54,7 @@ export const ADMIN_AUDIT_ACTIONS = Object.freeze({
   totpEnrolled: 'admin_auth.totp_enrolled.v1',
   loginCompleted: 'admin_auth.login_completed.v1',
   logout: 'admin_auth.logout.v1',
+  systemPasswordRecovered: 'admin.auth.system_password_recovered.v1',
 });
 
 /** Advisory-lock key text of the serialized operator commands (hashed by PostgreSQL). */

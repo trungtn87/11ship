@@ -6,7 +6,9 @@ export type AdminCliErrorCode =
   | 'LIMIT_CONFIG_MISSING'
   | 'LIMIT_CONFIG_MISMATCH'
   | 'SYSTEM_ACCOUNT_DIFFERENT'
-  | 'PHONE_ALREADY_REGISTERED';
+  | 'PHONE_ALREADY_REGISTERED'
+  | 'SYSTEM_TARGET_NOT_FOUND'
+  | 'VERSION_CONFLICT';
 
 export class AdminCliError extends Error {
   readonly code: AdminCliErrorCode;
