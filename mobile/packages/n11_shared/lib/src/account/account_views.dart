@@ -24,7 +24,7 @@ String failureMessage(AuthFailure failure) {
     case AuthFailureKind.tls:
       return 'Chứng chỉ bảo mật của máy chủ không hợp lệ. Ứng dụng không bỏ qua bước kiểm tra này.';
     case AuthFailureKind.invalidCredentials:
-      return 'Số điện thoại hoặc mật khẩu không đúng.';
+      return 'Số điện thoại hoặc mật khẩu không đúng. Vui lòng thử lại.';
     case AuthFailureKind.sessionEnded:
       return 'Phiên đăng nhập đã kết thúc. Vui lòng đăng nhập lại.';
     case AuthFailureKind.deviceUnsupported:
@@ -99,13 +99,16 @@ class GuestPrompt extends StatelessWidget {
 /// Tài khoản: guest, checking, unverified and signed-in states of one app. [entries] are that app's own rows (shop / driver entry,
 /// help, policy), shown for guests and signed-in people alike and kept locked with their reason.
 class AccountTab extends StatelessWidget {
-  const AccountTab({super.key, required this.session, required this.brand, required this.actions, required this.entries, this.registerLabel = 'Đăng ký', this.signedInEntries = const <Widget>[], this.reset});
+  const AccountTab({super.key, required this.session, required this.brand, required this.actions, required this.entries, this.registerLabel = 'Tạo tài khoản', this.signedInEntries = const <Widget>[], this.signedInTitle = 'Cửa hàng', this.reset});
 
   final SessionController session;
   final ResetController? reset;
 
   /// Rows shown only while signed in (the shop / driver entry), before [entries].
   final List<Widget> signedInEntries;
+
+  /// Heading of the [signedInEntries] group.
+  final String signedInTitle;
   final AppBrand brand;
   final ShellActions actions;
   final List<Widget> entries;
@@ -143,24 +146,24 @@ class AccountTab extends StatelessWidget {
     );
   }
 
+  /// The welcome block of the design (f-welcome / s-welcome): big logo and the approved slogan.
   Widget _hero() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap8, N11Space.pad, N11Space.gap6),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: <Color>[N11Colors.yellowSoft, N11Colors.white]),
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, N11Space.gap4, 0, N11Space.gap2),
       child: Column(
         children: <Widget>[
-          BrandLogo(brand: brand, height: 64),
-          const SizedBox(height: N11Space.gap2),
-          Text(brand.slogan, style: N11Text.captionInk2.copyWith(fontWeight: FontWeight.w600)),
+          BrandLogo(brand: brand, height: 96),
+          const SizedBox(height: N11Space.gap3),
+          Text(brand.slogan, textAlign: TextAlign.center, style: N11Text.display),
+          const SizedBox(height: 6),
+          Text(brand.id == AppId.food ? 'Đặt món từ quán gần bạn.' : 'Ứng dụng dành cho tài xế 11Ship.', textAlign: TextAlign.center, style: N11Text.lead),
         ],
       ),
     );
   }
 
   Widget _tools(BuildContext context, {required bool signedIn}) {
-    return N11List(children: <Widget>[
+    return N11List(title: signedIn ? 'Cài đặt' : null, children: <Widget>[
       if (signedIn)
         N11ListItem(
           key: const Key('open-profile'),
@@ -169,23 +172,24 @@ class AccountTab extends StatelessWidget {
           sub: 'Xem và sửa họ tên',
           onTap: () => Navigator.of(context).push(n11Route(ProfileScreen(session: session))),
         ),
-      if (signedIn) ...signedInEntries,
       ...entries,
       N11ListItem(icon: Icons.network_check, title: 'Chẩn đoán kết nối', sub: 'Kiểm tra kết nối với máy chủ', onTap: actions.openDiagnostics),
-      if (signedIn) N11ListItem(key: const Key('open-logout'), icon: Icons.logout, title: 'Đăng xuất', onTap: () => confirmLogout(context, session)),
     ]);
   }
 
   Widget _guest(BuildContext context) {
+    final bool ended = session.sessionEndedNotice;
     return vstack(<Widget>[
-      _hero(),
-      if (session.sessionEndedNotice)
-        N11Banner(
-          key: const Key('session-ended'),
-          kind: BannerKind.warn,
+      if (ended)
+        // Session ended: the "Phiên hết hạn / thiết bị khác" state of the design, then the same sign-in actions.
+        const N11StateBlock(
+          key: Key('session-ended'),
+          kind: StateKind.warn,
           title: 'Phiên đăng nhập đã kết thúc',
-          text: 'Tài khoản có thể đã đăng nhập trên thiết bị khác hoặc phiên đã hết hạn. Vui lòng đăng nhập lại.',
-        ),
+          text: 'Tài khoản có thể đã đăng nhập trên thiết bị khác hoặc phiên đã hết hạn. Vì an toàn, vui lòng đăng nhập lại.',
+        )
+      else
+        _hero(),
       if (session.loggedOutNotice)
         N11Banner(
           key: const Key('logged-out'),
@@ -194,8 +198,13 @@ class AccountTab extends StatelessWidget {
           text: session.logoutUnconfirmed ? 'Chưa xác nhận được với máy chủ rằng phiên đã bị thu hồi (không có kết nối).' : 'Phiên đã được thu hồi trên máy chủ.',
         ),
       if (!session.ready) const ReasonNote(kNoServerReason),
-      N11Button(key: const Key('open-login'), label: 'Đăng nhập', onPressed: session.ready ? () => Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: brand, reset: reset))) : null),
-      N11Button(key: const Key('open-register'), label: registerLabel, kind: ButtonKind.secondary, onPressed: session.ready ? () => Navigator.of(context).push(n11Route(RegisterScreen(session: session, brand: brand))) : null),
+      if (ended)
+        N11Button(key: const Key('open-login'), label: 'Đăng nhập lại', onPressed: session.ready ? () => Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: brand, reset: reset))) : null)
+      else ...<Widget>[
+        N11Button(key: const Key('open-register'), label: registerLabel, onPressed: session.ready ? () => Navigator.of(context).push(n11Route(RegisterScreen(session: session, brand: brand))) : null),
+        N11Button(key: const Key('open-login'), label: 'Đăng nhập', kind: ButtonKind.secondary, onPressed: session.ready ? () => Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: brand, reset: reset))) : null),
+      ],
+      const SizedBox(height: N11Space.gap1),
       _tools(context, signedIn: false),
     ]);
   }
@@ -203,25 +212,27 @@ class AccountTab extends StatelessWidget {
   Widget _signedIn(BuildContext context) {
     final Identity? identity = session.identity;
     final String name = session.profile?.fullName ?? 'Chưa có tên';
+    final List<String> roles = identity?.availableRoles ?? const <String>[];
     return vstack(<Widget>[
-      N11Card(
-        child: Row(
-          children: <Widget>[
-            const CircleAvatar(radius: 24, backgroundColor: N11Colors.yellowSoft, child: Icon(Icons.person, color: N11Colors.yellowStrong)),
-            const SizedBox(width: N11Space.gap3),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(name, key: const Key('account-name'), style: N11Text.bodyStrong),
-                  Text(identity?.maskedPhone ?? '', key: const Key('account-phone'), style: N11Text.caption),
-                ],
-              ),
-            ),
-          ],
-        ),
+      N11AvatarCard(
+        name: name,
+        phone: identity?.maskedPhone ?? '',
+        nameKey: const Key('account-name'),
+        phoneKey: const Key('account-phone'),
+        chips: <Widget>[
+          const N11Chip('Khách hàng'),
+          if (roles.contains('SHOP_OWNER')) const N11Chip('Chủ quán', kind: ChipKind.yellow),
+          if (roles.contains('DRIVER')) const N11Chip('Tài xế', kind: ChipKind.dark),
+        ],
       ),
+      // Only what the phone knows: a live, server-checked session. It does not claim a verified phone number (the test build
+      // registers without verification).
+      const N11List(title: 'Trạng thái', children: <Widget>[
+        N11ListItem(icon: Icons.check, title: 'Trạng thái tài khoản', sub: 'Phiên đăng nhập đang hoạt động trên máy này', trailing: N11Chip('Hoạt động', kind: ChipKind.ok)),
+      ]),
+      if (signedInEntries.isNotEmpty) N11List(title: signedInTitle, children: signedInEntries),
       _tools(context, signedIn: true),
+      N11Button(key: const Key('open-logout'), label: 'Đăng xuất', kind: ButtonKind.secondary, onPressed: () => confirmLogout(context, session)),
     ]);
   }
 }
@@ -247,62 +258,18 @@ Future<void> confirmLogout(BuildContext context, SessionController session) asyn
 
 // ---- Forms -----------------------------------------------------------------------------------------------------------
 
-class N11Field extends StatelessWidget {
-  const N11Field({super.key, required this.fieldKey, required this.label, required this.controller, this.keyboard, this.obscure = false, this.suffix, this.maxLength, this.onChanged, this.enabled = true});
-
-  final Key fieldKey;
-  final String label;
-  final TextEditingController controller;
-  final TextInputType? keyboard;
-  final bool obscure;
-  final Widget? suffix;
-  final int? maxLength;
-  final VoidCallback? onChanged;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(label, style: N11Text.label),
-        const SizedBox(height: N11Space.gap2),
-        TextField(
-          key: fieldKey,
-          controller: controller,
-          enabled: enabled,
-          keyboardType: keyboard,
-          obscureText: obscure,
-          maxLength: maxLength,
-          autocorrect: false,
-          enableSuggestions: !obscure,
-          onChanged: onChanged == null ? null : (String _) => onChanged!(),
-          decoration: InputDecoration(
-            counterText: '',
-            filled: true,
-            fillColor: N11Colors.field,
-            suffixIcon: suffix,
-            contentPadding: const EdgeInsets.symmetric(horizontal: N11Space.gap3, vertical: 14),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: const BorderSide(color: N11Colors.line, width: 1.5)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: const BorderSide(color: N11Colors.yellow, width: 1.5)),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class N11FormScaffold extends StatelessWidget {
-  const N11FormScaffold({super.key, required this.title, required this.children, required this.session});
+  const N11FormScaffold({super.key, required this.title, required this.children, required this.session, this.background = N11Colors.bg});
 
   final String title;
   final List<Widget> children;
   final SessionController? session;
+  final Color background;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: N11Colors.white,
+      backgroundColor: background,
       body: SafeArea(
         child: Column(
           children: <Widget>[
@@ -329,7 +296,7 @@ Widget _failureBanner(SessionController session) {
   return N11Banner(
     key: const Key('form-error'),
     kind: BannerKind.error,
-    title: failure.kind == AuthFailureKind.invalidCredentials ? 'Không đăng nhập được' : 'Chưa hoàn tất',
+    title: failure.kind == AuthFailureKind.invalidCredentials ? 'Thông tin chưa đúng' : 'Chưa hoàn tất',
     text: failureMessage(failure),
     trailing: canRetryFailure(failure) && session.pending != null
         ? Row(children: <Widget>[
@@ -357,7 +324,6 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _phone = TextEditingController();
   final TextEditingController _password = TextEditingController();
-  bool _show = false;
 
   @override
   void initState() {
@@ -389,46 +355,41 @@ class _LoginScreenState extends State<LoginScreen> {
       listenable: session,
       builder: (BuildContext context, Widget? child) {
         final bool busy = session.busy;
+        final bool wrong = session.lastFailure?.kind == AuthFailureKind.invalidCredentials;
         return N11FormScaffold(
           title: 'Đăng nhập',
           session: session,
           children: <Widget>[
-            Center(child: BrandLogo(brand: widget.brand, height: 48)),
+            N11Heading('Chào mừng trở lại', sub: widget.brand.id == AppId.food ? 'Đăng nhập để tiếp tục với 11Food.' : 'Đăng nhập tài khoản tài xế.'),
             _failureBanner(session),
-            N11Field(fieldKey: const Key('login-phone'), label: 'Số điện thoại', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !busy, onChanged: () => setState(() {})),
+            N11Field(fieldKey: const Key('login-phone'), label: 'Số điện thoại', placeholder: '0912 345 678', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !busy, onChanged: () => setState(() {})),
             N11Field(
               fieldKey: const Key('login-password'),
               label: 'Mật khẩu',
               controller: _password,
-              obscure: !_show,
+              password: true,
               maxLength: 128,
               enabled: !busy,
+              tone: wrong ? FieldTone.error : FieldTone.normal,
               onChanged: () => setState(() {}),
-              suffix: IconButton(tooltip: _show ? 'Ẩn mật khẩu' : 'Hiện mật khẩu', icon: Icon(_show ? Icons.visibility_off : Icons.visibility), onPressed: () => setState(() => _show = !_show)),
             ),
+            if (widget.reset != null)
+              N11Link('Quên mật khẩu?', key: const Key('to-reset'), onPressed: busy ? null : () => Navigator.of(context).push(n11Route(ResetScreen(controller: widget.reset!, brand: widget.brand))))
+            else
+              ReasonNote(kNotOnAndroidReason),
+            const SizedBox(height: N11Space.gap2),
             N11Button(
               key: const Key('login-submit'),
               label: busy ? 'Đang đăng nhập…' : 'Đăng nhập',
+              loading: busy,
               onPressed: busy || !_valid || !session.ready ? null : () => session.login(phone: _phone.text, password: _password.text),
             ),
             if (!session.ready) const ReasonNote(kNoServerReason),
-            if (widget.reset != null)
-              Center(
-                child: TextButton(
-                  key: const Key('to-reset'),
-                  onPressed: busy ? null : () => Navigator.of(context).push(n11Route(ResetScreen(controller: widget.reset!, brand: widget.brand))),
-                  child: const Text('Quên mật khẩu?', style: TextStyle(fontWeight: FontWeight.w700, color: N11Colors.yellowStrong)),
-                ),
-              )
-            else
-              ReasonNote(kNotOnAndroidReason),
-            Center(
-              child: TextButton(
-                key: const Key('to-register'),
-                onPressed: busy ? null : () => Navigator.of(context).pushReplacement(n11Route(RegisterScreen(session: session, brand: widget.brand))),
-                child: const Text('Chưa có tài khoản? Đăng ký', style: TextStyle(fontWeight: FontWeight.w700, color: N11Colors.yellowStrong)),
-              ),
-            ),
+            N11Link('Chưa có tài khoản? Đăng ký', key: const Key('to-register'), onPressed: busy ? null : () {
+              // The login form's refusal must not show on the register form.
+              session.dismissNotices();
+              Navigator.of(context).pushReplacement(n11Route(RegisterScreen(session: session, brand: widget.brand)));
+            }),
           ],
         );
       },
@@ -461,7 +422,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _phone = TextEditingController();
   final TextEditingController _name = TextEditingController();
   final TextEditingController _password = TextEditingController();
-  bool _show = false;
   bool _agree = false;
 
   @override
@@ -498,11 +458,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
         final bool busy = session.busy;
         final RegistrationMode mode = session.registrationMode;
         final bool open = mode == RegistrationMode.disabledTest && session.ready;
+        final bool taken = session.lastFailure?.kind == AuthFailureKind.phoneRegistered;
+        final bool food = widget.brand.id == AppId.food;
         return N11FormScaffold(
           title: 'Đăng ký',
           session: session,
           children: <Widget>[
-            Center(child: BrandLogo(brand: widget.brand, height: 48)),
+            N11Heading(food ? 'Tạo tài khoản 11Food' : 'Tạo tài khoản 11Ship', sub: food ? 'Tài khoản khách hàng dùng để đặt món.' : 'Tài khoản khách hàng; hồ sơ xế gửi sau trong mục Tài khoản.'),
             if (mode == RegistrationMode.disabledTest) const N11Banner(key: Key('test-note'), kind: BannerKind.warn, title: kTestRegistrationNote, text: 'Tài khoản được tạo trực tiếp, không có mã OTP.'),
             if (mode == RegistrationMode.required)
               const N11Banner(key: Key('required-note'), kind: BannerKind.warn, title: 'Chưa hỗ trợ xác minh số điện thoại trên Android', text: 'Máy chủ đang yêu cầu mã OTP; bước này chưa được nối ở bản Android.'),
@@ -515,17 +477,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 trailing: N11Button(key: const Key('reload-config'), label: 'Thử lại', compact: true, kind: ButtonKind.secondary, onPressed: session.loadRegistrationMode),
               ),
             _failureBanner(session),
-            N11Field(fieldKey: const Key('register-phone'), label: 'Số điện thoại', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !busy, onChanged: () => setState(() {})),
+            N11Field(
+              fieldKey: const Key('register-phone'),
+              label: 'Số điện thoại',
+              placeholder: '0912 345 678',
+              controller: _phone,
+              keyboard: TextInputType.phone,
+              maxLength: 20,
+              enabled: !busy,
+              tone: taken ? FieldTone.error : FieldTone.normal,
+              hint: taken ? 'Số điện thoại này đã có tài khoản.' : null,
+              onChanged: () => setState(() {}),
+            ),
             N11Field(fieldKey: const Key('register-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !busy, onChanged: () => setState(() {})),
             N11Field(
               fieldKey: const Key('register-password'),
-              label: 'Mật khẩu (8 đến 128 ký tự)',
+              label: 'Mật khẩu',
               controller: _password,
-              obscure: !_show,
+              password: true,
               maxLength: 128,
               enabled: !busy,
+              hint: 'Dùng từ 8 đến 128 ký tự.',
               onChanged: () => setState(() {}),
-              suffix: IconButton(tooltip: _show ? 'Ẩn mật khẩu' : 'Hiện mật khẩu', icon: Icon(_show ? Icons.visibility_off : Icons.visibility), onPressed: () => setState(() => _show = !_show)),
             ),
             N11Card(
               child: Column(
@@ -545,17 +518,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
               key: const Key('register-consent'),
               contentPadding: EdgeInsets.zero,
               controlAffinity: ListTileControlAffinity.leading,
+              activeColor: N11Colors.yellow,
+              checkColor: N11Colors.black,
+              side: const BorderSide(color: N11Colors.lineStrong, width: 2),
               value: _agree,
               onChanged: busy ? null : (bool? value) => setState(() => _agree = value ?? false),
               title: const Text(kConsentLabel, style: N11Text.body),
             ),
+            N11Banner(
+              kind: BannerKind.info,
+              title: food ? 'Muốn mở quán?' : 'Muốn nhận đơn giao?',
+              text: food
+                  ? 'Mở Quản lý cửa hàng sau khi đăng ký, trong mục Tài khoản. Bạn vẫn giữ vai trò khách hàng.'
+                  : 'Gửi hồ sơ xế sau khi đăng ký, trong mục Tài khoản. Bạn vẫn giữ vai trò khách hàng; nhận đơn chưa mở.',
+            ),
             N11Button(
               key: const Key('register-submit'),
-              label: busy ? 'Đang đăng ký…' : 'Đăng ký',
+              label: busy ? 'Đang đăng ký…' : 'Hoàn tất đăng ký',
+              loading: busy,
               onPressed: busy || !open || !_valid ? null : () => session.register(phone: _phone.text, password: _password.text, fullName: _name.text),
             ),
             if (!session.ready) const ReasonNote(kNoServerReason),
-            const ReasonNote('Tài khoản đăng ký ở đây là tài khoản khách hàng. Cửa hàng và hồ sơ xế chưa nối trên Android.'),
           ],
         );
       },
@@ -647,13 +630,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           title: 'Thông tin cá nhân',
           session: session,
           children: <Widget>[
+            const N11Heading('Thông tin cá nhân', sub: 'Xem và sửa họ tên hiển thị trên tài khoản.'),
             if (_loading) const N11Banner(kind: BannerKind.info, title: 'Đang tải hồ sơ…'),
             if (_message != null) N11Banner(key: const Key('profile-message'), kind: _messageOk ? BannerKind.success : BannerKind.error, title: _message!),
             N11Field(fieldKey: const Key('profile-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !session.busy && !_loading, onChanged: () => setState(() {})),
-            Text('Số điện thoại: ${session.identity?.maskedPhone ?? ''}', style: N11Text.caption),
+            Text('Số điện thoại: ${session.identity?.maskedPhone ?? ''}', key: const Key('profile-phone'), style: N11Text.caption),
             N11Button(
               key: const Key('profile-save'),
               label: session.busy ? 'Đang lưu…' : 'Lưu',
+              loading: session.busy,
               onPressed: session.busy || _loading || !dirty || _name.text.trim().isEmpty ? null : _save,
             ),
           ],

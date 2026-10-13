@@ -118,7 +118,7 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const Key('login-submit')));
     await tester.pumpAndSettle();
-    expect(find.text('Số điện thoại hoặc mật khẩu không đúng.'), findsOneWidget);
+    expect(find.text('Số điện thoại hoặc mật khẩu không đúng. Vui lòng thử lại.'), findsOneWidget);
     expect(find.byKey(const Key('session-ended')), findsNothing);
     expect(bridge.token, isNull);
     await tester.tap(find.byKey(const Key('login-submit')));

@@ -87,3 +87,7 @@ If an already installed first APK was signed with an older throw-away key (no lo
 ## Local
 `flutter pub get && flutter analyze && flutter test` in `packages/n11_shared`, `food`, `ship`. To run on a phone: `DEVICE_ENVIRONMENT=local-test tool/prepare-android.sh food`, then in `food/`
 `flutter run --dart-define=API_BASE_URL=https://<host> --dart-define=DEVICE_ENVIRONMENT=local-test` (a debug build is signed with the debug key: it can not join a release-signed app of the other kind, by design).
+
+## M01 UI (issue #98)
+The Food/Ship screens follow the approved M01 design (Brand Board v1.1: UI yellow #E2B81F, Plus Jakarta Sans bundled in `n11_shared/assets/fonts`, 14 px controls). Only presentation changed; controllers, API calls and sessions are those of the account/flows code above.
+Screenshots (fixture data from the test fakes, regenerate with `N11_SCREENSHOTS=<dir> flutter test test/screenshots_test.dart` in `food/` or `ship/`): `docs/ui/android-m01/`.

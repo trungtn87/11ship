@@ -162,7 +162,7 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
         }
       },
       child: Scaffold(
-        backgroundColor: N11Colors.white,
+        backgroundColor: N11Colors.bg,
         body: SafeArea(
           bottom: false,
           child: Column(

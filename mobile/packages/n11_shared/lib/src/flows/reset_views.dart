@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../account/account_views.dart';
 import '../account/models.dart';
 import '../brand.dart';
+import '../tokens.dart';
 import '../widgets/components.dart';
 import 'reset_controller.dart';
 
@@ -27,7 +28,6 @@ class _ResetScreenState extends State<ResetScreen> {
   final TextEditingController _phone = TextEditingController();
   final TextEditingController _password = TextEditingController();
   final TextEditingController _confirm = TextEditingController();
-  bool _show = false;
 
   @override
   void initState() {
@@ -57,8 +57,10 @@ class _ResetScreenState extends State<ResetScreen> {
           return N11FormScaffold(
             title: 'Quên mật khẩu',
             session: null,
+            background: N11Colors.white,
             children: <Widget>[
-              const N11Banner(key: Key('reset-done'), kind: BannerKind.success, title: kResetDoneTitle, text: kResetDoneText),
+              const N11StateBlock(key: Key('reset-done'), kind: StateKind.ok, title: kResetDoneTitle, text: kResetDoneText),
+              const SizedBox(height: N11Space.gap4),
               N11Button(key: const Key('reset-to-login'), label: 'Đăng nhập', onPressed: () => Navigator.of(context).maybePop()),
             ],
           );
@@ -69,7 +71,7 @@ class _ResetScreenState extends State<ResetScreen> {
           title: 'Quên mật khẩu',
           session: null,
           children: <Widget>[
-            Center(child: BrandLogo(brand: widget.brand, height: 48)),
+            const N11Heading('Đặt lại mật khẩu', sub: 'Nhập số điện thoại đã đăng ký và mật khẩu mới.'),
             if (controller.mode == ResetMode.available) const N11Banner(key: Key('reset-note'), kind: BannerKind.warn, title: kResetTestNote),
             if (controller.mode == ResetMode.closed)
               const N11Banner(key: Key('reset-closed'), kind: BannerKind.warn, title: 'Chưa mở đặt lại mật khẩu', text: 'Máy chủ chưa bật đặt lại mật khẩu cho bản test. Chưa thể gửi yêu cầu.'),
@@ -91,22 +93,32 @@ class _ResetScreenState extends State<ResetScreen> {
                     ? N11Button(key: const Key('retry-pending'), label: 'Thử lại', compact: true, onPressed: busy ? null : controller.retryPending)
                     : null,
               ),
-            N11Field(fieldKey: const Key('reset-phone'), label: 'Số điện thoại', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !busy, onChanged: () => setState(() {})),
+            N11Field(fieldKey: const Key('reset-phone'), label: 'Số điện thoại', placeholder: '0912 345 678', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !busy, onChanged: () => setState(() {})),
             N11Field(
               fieldKey: const Key('reset-password'),
-              label: 'Mật khẩu mới (8 đến 128 ký tự)',
+              label: 'Mật khẩu mới',
               controller: _password,
-              obscure: !_show,
+              password: true,
               maxLength: 128,
               enabled: !busy,
+              hint: 'Dùng từ 8 đến 128 ký tự.',
               onChanged: () => setState(() {}),
-              suffix: IconButton(tooltip: _show ? 'Ẩn mật khẩu' : 'Hiện mật khẩu', icon: Icon(_show ? Icons.visibility_off : Icons.visibility), onPressed: () => setState(() => _show = !_show)),
             ),
-            N11Field(fieldKey: const Key('reset-confirm'), label: 'Nhập lại mật khẩu mới', controller: _confirm, obscure: !_show, maxLength: 128, enabled: !busy, onChanged: () => setState(() {})),
-            if (_confirm.text.isNotEmpty && _confirm.text != _password.text) const ReasonNote('Hai mật khẩu chưa giống nhau.'),
+            N11Field(
+              fieldKey: const Key('reset-confirm'),
+              label: 'Nhập lại mật khẩu mới',
+              controller: _confirm,
+              password: true,
+              maxLength: 128,
+              enabled: !busy,
+              tone: _confirm.text.isNotEmpty && _confirm.text != _password.text ? FieldTone.error : FieldTone.normal,
+              hint: _confirm.text.isNotEmpty && _confirm.text != _password.text ? 'Hai mật khẩu chưa giống nhau.' : null,
+              onChanged: () => setState(() {}),
+            ),
             N11Button(
               key: const Key('reset-submit'),
               label: busy ? 'Đang gửi…' : 'Đặt lại mật khẩu',
+              loading: busy,
               onPressed: busy || !_valid || controller.mode != ResetMode.available ? null : () => controller.submit(phone: _phone.text, password: _password.text),
             ),
           ],
