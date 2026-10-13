@@ -214,7 +214,8 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#94](https://github.com/trungtn87/11ship/pull/94) feat(M01-RESET): local SYSTEM recovery CLI | Đã merge (`MERGED`) | — | — | — | `1c0a5d8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#95](https://github.com/trungtn87/11ship/pull/95) feat(M01-ANDROID): tài khoản/phiên + hồ sơ quán/GPS/context… | Đã merge (`MERGED`) | — | — | — | `5b50644` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#96](https://github.com/trungtn87/11ship/pull/96) ci(mobile-apk): bắt buộc 4 ANDROID_TEST_* Secrets, bỏ khóa… | Đã merge (`MERGED`) | — | — | — | `3cda04f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#97](https://github.com/trungtn87/11ship/pull/97) fix(M01): final review F1–F6 (draft) | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `6bb8381` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#97](https://github.com/trungtn87/11ship/pull/97) fix(M01): final review F1–F6 (draft) | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `6bb8381` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#99](https://github.com/trungtn87/11ship/pull/99) feat(M01-UI): thiết kế M01 đã duyệt cho 11Food + 11Ship Flu… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `64dc5b4` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
@@ -236,6 +237,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 - `UNCLASSIFIED_PR` PR #87: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #91: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #97: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #99: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
