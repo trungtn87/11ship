@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TEST PACKAGE ONLY (vn.eleven.*.test). HTTPS with normal certificate verification is the only transport: no cleartext, no
+     trust-all, no way to switch verification off. A local test server reached from a phone uses a certificate the Owner installed
+     on that phone as a user CA (mobile/README.md); system CAs stay trusted, so the public test server works unchanged.
+     A production application id must NOT ship this file. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="user"/>
+        </trust-anchors>
+    </base-config>
+</network-security-config>

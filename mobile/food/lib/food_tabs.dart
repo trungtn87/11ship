@@ -6,34 +6,27 @@ import 'package:n11_shared/n11_shared.dart';
 // activity: an empty screen says "no data yet".
 
 const String kTestNoticeTitle = 'Bản chạy thử';
-const String kTestNoticeText = 'Giao diện khung để kiểm tra kết nối máy chủ. Đăng nhập và nghiệp vụ chưa nối.';
+const String kTestNoticeText = 'Bản thử nghiệm: đăng ký, đăng nhập và hồ sơ cá nhân đã nối máy chủ. Các nghiệp vụ khác chưa nối.';
 
-List<TabSpec> buildFoodTabs() {
+List<TabSpec> buildFoodTabs(SessionController session) {
   return <TabSpec>[
-    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', showLogo: true, body: _home),
+    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', showLogo: true, body: (BuildContext context, ShellActions actions) => _home(session)),
     TabSpec(id: 'search', label: 'Tìm kiếm', icon: Icons.search, title: 'Tìm kiếm', body: (BuildContext context, ShellActions actions) => SearchBody(actions: actions)),
-    TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: _orders),
-    TabSpec(id: 'account', label: 'Tài khoản', icon: Icons.person_outline, title: 'Tài khoản', body: _account),
+    TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: (BuildContext context, ShellActions actions) => _orders(session)),
+    TabSpec(id: 'account', label: 'Tài khoản', icon: Icons.person_outline, title: 'Tài khoản', body: (BuildContext context, ShellActions actions) => _account(session, actions)),
   ];
 }
 
-Widget _guestPrompt(String text) {
-  return N11Banner(
-    kind: BannerKind.info,
-    title: 'Bạn chưa đăng nhập',
-    text: text,
-    trailing: GatedButton(label: 'Đăng nhập', reason: featureReason(FeatureId.authLogin), kind: ButtonKind.secondary, compact: true),
-  );
-}
+Widget _guestPrompt(SessionController session, String text) => GuestPrompt(session: session, brand: foodBrand, text: text);
 
 Widget _soonChip() => const Center(child: N11Chip('Sắp có', kind: ChipKind.soon));
 
 // ---- F01: home -------------------------------------------------------------------------------------------------------
 
-Widget _home(BuildContext context, ShellActions actions) {
+Widget _home(SessionController session) {
   return vstack(<Widget>[
     const N11Banner(kind: BannerKind.warn, title: kTestNoticeTitle, text: kTestNoticeText),
-    _guestPrompt('Đăng nhập hoặc đăng ký để đặt món khi tính năng sẵn sàng.'),
+    _guestPrompt(session, 'Đăng nhập hoặc đăng ký để đặt món khi tính năng sẵn sàng.'),
     const EmptyState(icon: Icons.restaurant, title: 'Chưa có quán để hiển thị', text: 'Danh sách quán và món sẽ xuất hiện khi tính năng đặt món sẵn sàng.'),
     _soonChip(),
   ]);
@@ -41,9 +34,9 @@ Widget _home(BuildContext context, ShellActions actions) {
 
 // ---- F03: orders -----------------------------------------------------------------------------------------------------
 
-Widget _orders(BuildContext context, ShellActions actions) {
+Widget _orders(SessionController session) {
   return vstack(<Widget>[
-    _guestPrompt('Đăng nhập để xem đơn hàng của bạn.'),
+    _guestPrompt(session, 'Đăng nhập để xem đơn hàng của bạn.'),
     const EmptyState(icon: Icons.receipt_long_outlined, title: 'Chưa có đơn hàng', text: 'Đơn hàng của bạn sẽ hiện ở đây khi tính năng đặt món sẵn sàng.'),
     _soonChip(),
   ]);
@@ -51,37 +44,24 @@ Widget _orders(BuildContext context, ShellActions actions) {
 
 // ---- F04: account (guest) --------------------------------------------------------------------------------------------
 
-Widget _account(BuildContext context, ShellActions actions) {
-  return vstack(<Widget>[
-    Container(
-      padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap8, N11Space.pad, N11Space.gap6),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: <Color>[N11Colors.yellowSoft, N11Colors.white]),
-      ),
-      child: Column(
-        children: <Widget>[
-          const BrandLogo(brand: foodBrand, height: 64),
-          const SizedBox(height: N11Space.gap2),
-          Text(foodBrand.slogan, style: N11Text.captionInk2.copyWith(fontWeight: FontWeight.w600)),
-        ],
-      ),
-    ),
-    GatedButton(label: 'Đăng nhập', reason: featureReason(FeatureId.authLogin)),
-    GatedButton(label: 'Đăng ký', reason: featureReason(FeatureId.authRegister), kind: ButtonKind.secondary),
-    N11List(children: <Widget>[
-      // F07: where the shop entry lives. Nobody is signed in, so it is not a link and shows no role or shop.
+Widget _account(SessionController session, ShellActions actions) {
+  return AccountTab(
+    session: session,
+    brand: foodBrand,
+    actions: actions,
+    entries: <Widget>[
+      // F07: the shop entry. Shop onboarding is not connected on Android: locked, with the reason, and it grants nothing.
       N11ListItem(
         icon: Icons.storefront_outlined,
         title: 'Quản lý cửa hàng',
-        sub: 'Cần đăng nhập. ${featureReason(FeatureId.authLogin)}',
+        sub: featureReason(FeatureId.shopManage),
         soon: true,
-        trailing: const N11Chip('Cần đăng nhập', kind: ChipKind.soon),
+        trailing: const N11Chip('Chưa nối', kind: ChipKind.soon),
       ),
       const N11ListItem(icon: Icons.help_outline, title: 'Trợ giúp', soon: true),
       const N11ListItem(icon: Icons.shield_outlined, title: 'Chính sách và điều khoản', soon: true),
-      N11ListItem(icon: Icons.network_check, title: 'Chẩn đoán kết nối', sub: 'Kiểm tra kết nối với máy chủ', onTap: actions.openDiagnostics),
-    ]),
-  ]);
+    ],
+  );
 }
 
 // ---- F02: search -----------------------------------------------------------------------------------------------------

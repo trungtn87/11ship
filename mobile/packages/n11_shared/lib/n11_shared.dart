@@ -1,6 +1,14 @@
 /// Shared brand, theme, server connection check and widgets of the 11Food and 11Ship test apps.
 library;
 
+export 'src/account/account_views.dart';
+export 'src/account/api_client.dart';
+export 'src/account/device_bridge.dart';
+export 'src/account/device_proof.dart';
+export 'src/account/models.dart';
+export 'src/account/native_auth.dart';
+export 'src/account/session_controller.dart';
+export 'src/account/session_factory.dart';
 export 'src/brand.dart';
 export 'src/config.dart';
 export 'src/connection.dart';

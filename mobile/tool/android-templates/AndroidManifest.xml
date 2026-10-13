@@ -1,12 +1,25 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- The only permission: the health check talks to the server over HTTPS. No location, no storage, no camera. -->
+    <!-- The only Android permission: the app talks to the server over HTTPS. No location, no storage, no camera. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- The signature-level permission of the Binder door between the two 11Ship apps (contract11 section 7): only an app signed with
+         the SAME certificate can hold it, so only the other 11Ship app can even bind to N11PeerService. Declared by both apps. -->
+    <permission android:name="vn.eleven.n11.permission.PEER_ENDORSEMENT" android:protectionLevel="signature"/>
+    <uses-permission android:name="vn.eleven.n11.permission.PEER_ENDORSEMENT"/>
     <application
         android:label="@LABEL@"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/n11_data_extraction_rules"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:usesCleartextTraffic="false">
+        <!-- The non-secret environment identifier the device proofs are signed for (the server pins the same value). -->
+        <meta-data android:name="vn.eleven.n11.DEVICE_ENVIRONMENT" android:value="@DEVICE_ENVIRONMENT@"/>
+        <service
+            android:name="vn.eleven.n11.N11PeerService"
+            android:exported="true"
+            android:permission="vn.eleven.n11.permission.PEER_ENDORSEMENT"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -30,6 +43,8 @@
             android:value="2" />
     </application>
     <queries>
+        <!-- Package visibility (Android 11+) for the explicit bind to the other app. -->
+        <package android:name="@PEER_PACKAGE@"/>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

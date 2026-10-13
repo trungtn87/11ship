@@ -77,10 +77,16 @@ void main() {
     });
   });
 
-  test('features: auth is not wired and says why', () {
-    expect(isWired(FeatureId.authLogin), isFalse);
-    expect(isWired(FeatureId.authRegister), isFalse);
-    expect(featureReason(FeatureId.authLogin), contains('M01.04'));
+  test('features: account flows are wired; everything else says "not on Android" and never "the backend does not exist"', () {
+    for (final FeatureId id in <FeatureId>[FeatureId.authLogin, FeatureId.authRegister, FeatureId.authProfile]) {
+      expect(isWired(id), isTrue, reason: '$id');
+    }
+    for (final FeatureId id in <FeatureId>[FeatureId.shopManage, FeatureId.driverProfile, FeatureId.passwordReset, FeatureId.receiveOrders, FeatureId.wallet]) {
+      expect(isWired(id), isFalse, reason: '$id');
+      expect(featureReason(id), kNotOnAndroidReason);
+      expect(featureReason(id), isNot(contains('backend')));
+    }
+    expect(kNotOnAndroidReason, startsWith('Chưa nối trên Android'));
   });
 
   test('source never disables TLS verification', () {
