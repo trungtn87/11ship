@@ -7,9 +7,9 @@ import { AdminMembershipRepository } from '../../apps/backend/src/admin-auth/adm
 import { AdminSessionRepository } from '../../apps/backend/src/admin-auth/admin-session-repository';
 import { SystemRecoveryService } from '../../apps/backend/src/admin-auth/system-recovery-service';
 import { AuditWriter } from '../../apps/backend/src/audit/audit-writer';
+import { AdminSessionRevocationParticipant } from '../../apps/backend/src/auth/admin-session-revocation-participant';
 import { AdminPasswordVerifier } from '../../apps/backend/src/auth/admin-password-verifier';
 import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
-import { SessionRepository } from '../../apps/backend/src/auth/session-repository';
 import { UserRepository } from '../../apps/backend/src/auth/user-repository';
 import { poolClientSource } from '../../apps/backend/src/transaction/pg-client-source';
 import { TransactionManager } from '../../apps/backend/src/transaction/transaction-manager';
@@ -169,7 +169,7 @@ describe('M01-RESET - local SYSTEM recovery CLI', () => {
       transactions,
       new UserRepository(),
       new AdminMembershipRepository(),
-      new SessionRepository(),
+      new AdminSessionRevocationParticipant(),
       new AdminSessionRepository(),
       new AdminChallengeRepository(),
       new AdminPasswordVerifier(new Argon2idPasswordHasher()),

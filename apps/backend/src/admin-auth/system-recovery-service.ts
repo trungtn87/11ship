@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { AdminSessionRevocationParticipant } from '../auth/admin-session-revocation-participant';
 import { AdminPasswordVerifier } from '../auth/admin-password-verifier';
-import { SessionRepository } from '../auth/session-repository';
 import { UserRepository } from '../auth/user-repository';
 import { AuditWriter } from '../audit/audit-writer';
 import { TechnicalError } from '../common/app-errors';
@@ -23,7 +23,7 @@ export class SystemRecoveryService {
     private readonly transactions: TransactionManager,
     private readonly users: UserRepository,
     private readonly memberships: AdminMembershipRepository,
-    private readonly sessions: SessionRepository,
+    private readonly sessions: AdminSessionRevocationParticipant,
     private readonly adminSessions: AdminSessionRepository,
     private readonly challenges: AdminChallengeRepository,
     private readonly verifier: AdminPasswordVerifier,

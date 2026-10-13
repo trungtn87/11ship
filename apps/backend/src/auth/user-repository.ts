@@ -60,6 +60,34 @@ export interface AdminLockTargetRow {
 /** What the no-OTP test password reset (M01-RESET) classifies on a locked row. Nothing secret. */
 export type ResetTargetRow = AdminLockTargetRow;
 
+interface RawResetTarget {
+  user_id: string;
+  phone_normalized: string;
+  status: UserStatus;
+  version: string;
+  account_origin: string;
+  phone_verified: boolean;
+  has_membership: boolean;
+}
+
+function toResetTarget(row: RawResetTarget | undefined): ResetTargetRow | undefined {
+  if (row === undefined) {
+    return undefined;
+  }
+  if (!isAccountOrigin(row.account_origin)) {
+    throw new TechnicalError('internal', 'Database returned an unexpected account origin');
+  }
+  return {
+    userId: row.user_id,
+    phoneNormalized: row.phone_normalized,
+    status: row.status,
+    version: Number(row.version),
+    accountOrigin: row.account_origin,
+    phoneVerified: row.phone_verified,
+    hasAdminMembership: row.has_membership,
+  };
+}
+
 /** SQL for users and user_roles. */
 @Injectable()
 export class UserRepository {
@@ -334,48 +362,29 @@ export class UserRepository {
    * unlocked, and re-checks the phone here). Any origin is returned, ADMIN_PROVISIONED included: the caller classifies the row.
    */
   async lockResetTarget(context: TransactionContext, userId: string): Promise<ResetTargetRow | undefined> {
-    return this.#resetTarget(context, userId, 'FOR UPDATE OF u');
-  }
-
-  /** The same row as lockResetTarget, read WITHOUT a lock (the read-only check of the local SYSTEM recovery). */
-  async readResetTarget(context: TransactionContext, userId: string): Promise<ResetTargetRow | undefined> {
-    return this.#resetTarget(context, userId, '');
-  }
-
-  async #resetTarget(context: TransactionContext, userId: string, lock: '' | 'FOR UPDATE OF u'): Promise<ResetTargetRow | undefined> {
-    const result = await context.query<{
-      user_id: string;
-      phone_normalized: string;
-      status: UserStatus;
-      version: string;
-      account_origin: string;
-      phone_verified: boolean;
-      has_membership: boolean;
-    }>(
+    const result = await context.query<RawResetTarget>(
       `SELECT u.user_id, u.phone_normalized, u.status, u.version::text AS version, u.account_origin,
               (u.phone_verified_at IS NOT NULL) AS phone_verified,
               EXISTS (SELECT 1 FROM app.admin_memberships am WHERE am.user_id = u.user_id) AS has_membership
          FROM app.users u
         WHERE u.user_id = $1::uuid
-          ${lock}`,
+          FOR UPDATE OF u`,
       [userId],
     );
-    const row = result.rows[0];
-    if (row === undefined) {
-      return undefined;
-    }
-    if (!isAccountOrigin(row.account_origin)) {
-      throw new TechnicalError('internal', 'Database returned an unexpected account origin');
-    }
-    return {
-      userId: row.user_id,
-      phoneNormalized: row.phone_normalized,
-      status: row.status,
-      version: Number(row.version),
-      accountOrigin: row.account_origin,
-      phoneVerified: row.phone_verified,
-      hasAdminMembership: row.has_membership,
-    };
+    return toResetTarget(result.rows[0]);
+  }
+
+  /** The same row as lockResetTarget, read WITHOUT a lock (the read-only check of the local SYSTEM recovery). */
+  async readResetTarget(context: TransactionContext, userId: string): Promise<ResetTargetRow | undefined> {
+    const result = await context.query<RawResetTarget>(
+      `SELECT u.user_id, u.phone_normalized, u.status, u.version::text AS version, u.account_origin,
+              (u.phone_verified_at IS NOT NULL) AS phone_verified,
+              EXISTS (SELECT 1 FROM app.admin_memberships am WHERE am.user_id = u.user_id) AS has_membership
+         FROM app.users u
+        WHERE u.user_id = $1::uuid`,
+      [userId],
+    );
+    return toResetTarget(result.rows[0]);
   }
 
   /**

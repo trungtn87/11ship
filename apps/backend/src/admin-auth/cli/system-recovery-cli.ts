@@ -1,8 +1,8 @@
 import { Pool } from 'pg';
 import { AuditWriter } from '../../audit/audit-writer';
+import { AdminSessionRevocationParticipant } from '../../auth/admin-session-revocation-participant';
 import { AdminPasswordVerifier } from '../../auth/admin-password-verifier';
 import { Argon2idPasswordHasher } from '../../auth/password-hasher';
-import { SessionRepository } from '../../auth/session-repository';
 import { UserRepository } from '../../auth/user-repository';
 import { poolClientSource } from '../../transaction/pg-client-source';
 import { TransactionManager } from '../../transaction/transaction-manager';
@@ -79,7 +79,7 @@ export async function runSystemRecoveryCli(io: AdminCliIo): Promise<number> {
       transactions,
       new UserRepository(),
       new AdminMembershipRepository(),
-      new SessionRepository(),
+      new AdminSessionRevocationParticipant(),
       new AdminSessionRepository(),
       new AdminChallengeRepository(),
       new AdminPasswordVerifier(new Argon2idPasswordHasher()),
