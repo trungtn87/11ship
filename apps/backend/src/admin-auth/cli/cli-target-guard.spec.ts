@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { connectedIdentityMatches, resolveCliTarget } from './cli-target-guard';
+import { connectedIdentityMatches, resolveCliTarget, resolveLocalRecoveryTarget } from './cli-target-guard';
 
 const REF = 'abcdefghijklmnopqrst';
 const RUNTIME = `postgres://app_runtime.${REF}:pw@aws-0-eu.pooler.supabase.com:5432/postgres`;
@@ -53,5 +53,30 @@ describe('resolveCliTarget', () => {
     ).toMatchObject({ ok: false });
     // Without a CA the target is refused before the confirmation is even compared.
     expect(resolveCliTarget({ ...base, MIGRATION_CONFIRM_TARGET: `aws-0-eu.pooler.supabase.com:5432/postgres/${REF}` })).toMatchObject({ ok: false });
+  });
+});
+
+describe('resolveLocalRecoveryTarget (M01-RESET)', () => {
+  const base = { APP_ENV: 'test', HOST: '127.0.0.1', DATABASE_URL: 'postgres://ship11_test:p@127.0.0.1:5432/ship11_test' };
+
+  it('accepts development and test on loopback only', () => {
+    expect(resolveLocalRecoveryTarget(base)).toMatchObject({ ok: true });
+    expect(
+      resolveLocalRecoveryTarget({ ...base, APP_ENV: 'development', DATABASE_URL: 'postgres://ship11_dev:p@localhost/ship11_dev' }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it.each([
+    ['staging', { APP_ENV: 'staging' }],
+    ['production', { APP_ENV: 'production' }],
+    ['missing APP_ENV', { APP_ENV: undefined }],
+    ['remote host', { HOST: '0.0.0.0' }],
+    ['missing HOST', { HOST: undefined }],
+    ['remote database (test)', { DATABASE_URL: 'postgres://ship11_test:p@db.example.test:5432/ship11_test' }],
+    ['missing database url', { DATABASE_URL: undefined }],
+  ])('refuses %s without echoing values', (_name, override) => {
+    const result = resolveLocalRecoveryTarget({ ...base, ...override });
+    expect(result.ok).toBe(false);
+    expect(JSON.stringify(result)).not.toContain('db.example.test');
   });
 });

@@ -79,10 +79,10 @@ Every subsequent test APK must install as an update over the previous build, pre
 - Missing/incomplete signing secrets must stop APK distribution with a clear error. A throw-away signing key is no longer allowed.
 - Preserve local data across updates; future schema changes must migrate existing data rather than requiring a reinstall.
 
-Implemented in M01-ANDROID: the workflow has no ephemeral fallback. It stops with a clear error naming the missing secret(s) before anything is signed or uploaded (analyze and tests still run), checks the APK's applicationId, versionCode (= `github.run_number`, never reset),
+Implemented in M01-ANDROID: the workflow has no ephemeral fallback. Its first step (before checkout) fails with a clear error naming the missing secret(s), so nothing is built, signed or uploaded; the Owner has set all four Secrets. The workflow checks the APK's applicationId, versionCode (= `github.run_number`, never reset),
 and that the APK is signed with the keystore's certificate, and builds exactly the commit it reports (`SOURCE_SHA`).
 
-If an already installed first APK used a throw-away key that was not retained, switching to the persistent key can require a **single initial uninstall**. Thereafter test builds must update in place.
+If an already installed first APK was signed with an older throw-away key (no longer produced by any workflow), switching to the persistent key can require a **single initial uninstall**. Thereafter test builds must update in place.
 
 ## Local
 `flutter pub get && flutter analyze && flutter test` in `packages/n11_shared`, `food`, `ship`. To run on a phone: `DEVICE_ENVIRONMENT=local-test tool/prepare-android.sh food`, then in `food/`

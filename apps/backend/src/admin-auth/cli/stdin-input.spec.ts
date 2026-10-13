@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
 import { describe, expect, it } from '@jest/globals';
-import { CliInputError, readBootstrapInput } from './stdin-input';
+import { CliInputError, readBootstrapInput, readSystemRecoveryApplyInput, readSystemRecoveryCheckInput } from './stdin-input';
 
 const from = (text: string | Buffer[]): Readable => Readable.from(typeof text === 'string' ? [text] : text);
 const GOOD = { phone: '0912345678', password: 'Correct-Horse-Battery-9' };
@@ -40,5 +40,38 @@ describe('readBootstrapInput', () => {
     const big = JSON.stringify({ ...GOOD, padding: 'x'.repeat(5000) });
     await expect(readBootstrapInput(from(big))).rejects.toBeInstanceOf(CliInputError);
     await expect(readBootstrapInput(from([Buffer.alloc(3000), Buffer.alloc(3000)]))).rejects.toBeInstanceOf(CliInputError);
+  });
+});
+
+describe('system recovery input (M01-RESET)', () => {
+  const APPLY = { phone: GOOD.phone, password: GOOD.password, expected_version: 3, confirmation: 'RESET_SYSTEM_LOCAL_TEST' };
+  const fail = (read: () => Promise<unknown>) =>
+    read().then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+
+  it('reads exact check and apply objects', async () => {
+    expect((await readSystemRecoveryCheckInput(from(JSON.stringify({ phone: GOOD.phone })))).phoneNormalized).toMatch(/^\+\d+$/);
+    expect(await readSystemRecoveryApplyInput(from(JSON.stringify(APPLY)))).toMatchObject({ password: GOOD.password, expectedVersion: 3 });
+  });
+
+  it('refuses extra/missing fields, a bad confirmation and a bad version', async () => {
+    const bad: unknown[] = [
+      { ...APPLY, role: 'SYSTEM' },
+      { ...APPLY, confirmation: 'yes' },
+      { ...APPLY, confirmation: undefined },
+      { ...APPLY, expected_version: 0 },
+      { ...APPLY, expected_version: -1 },
+      { ...APPLY, expected_version: 1.5 },
+      { ...APPLY, expected_version: '3' },
+      { ...APPLY, expected_version: Number.MAX_SAFE_INTEGER + 2 },
+      { ...APPLY, password: 'short' },
+    ];
+    for (const value of bad) {
+      expect(await fail(() => readSystemRecoveryApplyInput(from(JSON.stringify(value))))).toBeInstanceOf(CliInputError);
+    }
+    expect(await fail(() => readSystemRecoveryCheckInput(from(JSON.stringify({ phone: GOOD.phone, password: GOOD.password }))))).toBeInstanceOf(CliInputError);
+    expect(await fail(() => readSystemRecoveryCheckInput(from('{}')))).toBeInstanceOf(CliInputError);
   });
 });
