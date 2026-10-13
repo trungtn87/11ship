@@ -45,6 +45,7 @@ describe('Administration authentication boundary (M01-D-LOGIN)', () => {
     const allowed = new Set([
       'admin-identity-participant',
       'admin-password-verifier',
+      'admin-session-revocation-participant',
       'auth-db',
       'auth-validation',
       'password-hasher',
@@ -57,12 +58,14 @@ describe('Administration authentication boundary (M01-D-LOGIN)', () => {
     }
   });
 
-  it('issues SQL only from the repositories, the CLI target query and the bootstrap advisory lock', () => {
+  it('issues SQL only from the repositories, the CLI target queries and the bootstrap advisory lock', () => {
     const sqlFiles = FILES.filter((file) => /\b(SELECT|INSERT INTO|UPDATE|DELETE FROM)\b/.test(codeOf(file)));
     expect(codeOf('admin-auth/admin-bootstrap-service.ts').match(/\b(SELECT|INSERT INTO|UPDATE|DELETE FROM)\b/g)).toEqual(['SELECT']);
     for (const file of sqlFiles) {
-      expect(file).toMatch(/repository\.ts$|admin-auth-cli\.ts$|admin-bootstrap-service\.ts$/);
+      expect(file).toMatch(/repository\.ts$|admin-auth-cli\.ts$|admin-bootstrap-service\.ts$|system-recovery-cli\.ts$/);
     }
+    // The local recovery CLI issues exactly one statement: the connected database/role identity check.
+    expect(codeOf('admin-auth/cli/system-recovery-cli.ts').match(/\b(SELECT|INSERT INTO|UPDATE|DELETE FROM)\b/g)).toEqual(['SELECT']);
   });
 
   it('sets cookies only through the cookie builder (Secure, HttpOnly, SameSite=Strict, no Domain)', () => {

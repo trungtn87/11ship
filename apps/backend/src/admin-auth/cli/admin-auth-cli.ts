@@ -15,12 +15,15 @@ import { AdminLimitConfigRepository } from '../admin-limit-config-repository';
 import { AdminLimitConfigService } from '../admin-limit-config-service';
 import { AdminMembershipRepository } from '../admin-membership-repository';
 import { CliEnvSource, connectedIdentityMatches, resolveCliTarget } from './cli-target-guard';
+import { runSystemRecoveryCli } from './system-recovery-cli';
 import { CliInputError, readBootstrapInput } from './stdin-input';
 
-export type AdminCliCommand = 'init-limit-config' | 'bootstrap-system';
+export type AdminCliCommand = 'init-limit-config' | 'bootstrap-system' | 'recover-system';
 
 export interface AdminCliIo {
   readonly env: CliEnvSource;
+  /** Command-line arguments after the script name (only `recover-system` reads them). */
+  readonly argv?: readonly string[];
   readonly stdin: Readable;
   readonly out: (line: string) => void;
   readonly err: (line: string) => void;
@@ -37,6 +40,9 @@ export async function runAdminAuthCli(command: string, io: AdminCliIo): Promise<
     io.err(`${program}: ${message}`);
     return code;
   };
+  if (command === 'recover-system') {
+    return runSystemRecoveryCli(io);
+  }
   if (command !== 'init-limit-config' && command !== 'bootstrap-system') {
     return fail('unknown command', 2);
   }

@@ -154,3 +154,21 @@ export function connectedIdentityMatches(
   }
   return reported.database === target.expected.database && reported.user === target.expected.user;
 }
+
+/**
+ * Extra guard of the local SYSTEM recovery command only (M01-RESET): development or test, AND a loopback database host
+ * in both. Checked before any connection or any read of a secret; the old commands keep their own scope.
+ */
+export function resolveLocalRecoveryTarget(env: CliEnvSource): CliTargetResult {
+  if (env.APP_ENV !== 'development' && env.APP_ENV !== 'test') {
+    return { ok: false, problem: 'refused: local SYSTEM recovery runs only with APP_ENV=development or test' };
+  }
+  const parsed = parseUrl(env.DATABASE_URL);
+  if (parsed === undefined || !LOOPBACK_HOSTS.has(parsed.host)) {
+    return { ok: false, problem: 'refused: DATABASE_URL must name a loopback host' };
+  }
+  if (env.HOST === undefined || !(LOOPBACK_HOSTS.has(env.HOST) || env.HOST === '::1')) {
+    return { ok: false, problem: 'refused: HOST must be a loopback address' };
+  }
+  return resolveCliTarget(env);
+}
