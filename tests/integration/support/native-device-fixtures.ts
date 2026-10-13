@@ -36,6 +36,12 @@ const bool = (value: boolean): Buffer => tlv(0x01, Buffer.from([value ? 0xff : 0
 const enumerated = (value: number): Buffer => tlv(0x0a, Buffer.from([value]));
 function integer(value: number | Buffer): Buffer {
   if (Buffer.isBuffer(value)) {
+    // Minimal DER: no leading zero octets (a random serial would otherwise be rejected now and then).
+    let start = 0;
+    while (start < value.length - 1 && value[start] === 0) {
+      start += 1;
+    }
+    value = value.subarray(start);
     const padded = (value[0] ?? 0) & 0x80 ? Buffer.concat([Buffer.from([0]), value]) : value;
     return tlv(0x02, padded);
   }
