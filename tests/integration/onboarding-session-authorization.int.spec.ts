@@ -36,6 +36,9 @@ const GPS = { pickup_lat: 21.03, pickup_lng: 105.85 } as const;
 // Statement texts of the two authorization locks (UserRepository.lockById / SessionRepository.lockById).
 const USER_LOCK = '%FROM app.users WHERE user_id = $1::uuid FOR UPDATE%';
 const SESSION_LOCK = '%FROM app.sessions WHERE session_id = $1::uuid FOR UPDATE%';
+// The shared variants the GET shop profile read takes (UserRepository.lockByIdForShare / SessionRepository.lockByIdForShare).
+const USER_SHARE = '%FROM app.users WHERE user_id = $1::uuid FOR SHARE%';
+const SESSION_SHARE = '%FROM app.sessions WHERE session_id = $1::uuid FOR SHARE%';
 
 type Change = 'revoke' | 'expire';
 
@@ -296,6 +299,66 @@ describe('M00/M01 repair §1 — session authorization inside onboarding transac
       });
     });
   }
+
+  describe('GET /onboarding/shop/profile (F5) — the read is authorized again inside its transaction', () => {
+    const read = (token: string): Promise<ApiResponse> => app.call('GET', '/onboarding/shop/profile', { bearer: token });
+
+    it('a roleless draft owner with a valid session still reads their own draft', async () => {
+      const user = await registerUser(app);
+      expect((await put(user.accessToken, shopProfileBody({ name: 'Roleless draft' }), randomUUID())).status).toBe(201);
+      const response = await read(user.accessToken);
+      expect(response.status).toBe(200);
+      expect(dataOf(response).name).toBe('Roleless draft');
+    });
+
+    for (const change of ['revoke', 'expire'] as const) {
+      it(`a session ${change}d AFTER the guard passed and while the read waits returns no profile (revoke/reset/replace all end here)`, async () => {
+        const user = await registerUser(app);
+        expect((await put(user.accessToken, shopProfileBody({ name: 'Private draft' }), randomUUID())).status).toBe(201);
+        const second = await secondSession(user);
+
+        const holder = await holdSession(second.sessionId, change);
+        let released = false;
+        try {
+          const pending = read(second.token);
+          await eventually(waiterOn(SESSION_SHARE), 'the read transaction waits for the session row lock');
+          await holder.commit();
+          released = true;
+          const response = await pending;
+          expect([response.status, errorCode(response)]).toEqual([401, EXPECTED[change]]);
+          expect(response.body.data).toBeUndefined();
+          expect(response.text).not.toContain('Private draft');
+        } finally {
+          if (!released) {
+            await holder.rollback();
+          }
+        }
+        // The owner's other, still valid session reads the same draft.
+        expect((await read(user.accessToken)).status).toBe(200);
+      });
+    }
+
+    it('an account disabled while the read waits for the user row returns no profile', async () => {
+      const user = await registerUser(app);
+      expect((await put(user.accessToken, shopProfileBody({ name: 'Private draft' }), randomUUID())).status).toBe(201);
+      const holder = await LockHolder.begin(app.pool);
+      let released = false;
+      try {
+        await holder.query("UPDATE app.users SET status = 'DISABLED', updated_at = clock_timestamp() WHERE user_id = $1::uuid", [user.userId]);
+        const pending = read(user.accessToken);
+        await eventually(waiterOn(USER_SHARE), 'the read transaction waits for the user row lock');
+        await holder.commit();
+        released = true;
+        const response = await pending;
+        expect([response.status, errorCode(response)]).toEqual([403, 'ACCOUNT_DISABLED']);
+        expect(response.text).not.toContain('Private draft');
+      } finally {
+        if (!released) {
+          await holder.rollback();
+        }
+      }
+    });
+  });
 
   it('an actual SHOP replacement revokes the old SHOP session, and a Driver command pending from it is refused', async () => {
     const user = await registerUser(app);
