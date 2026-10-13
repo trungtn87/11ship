@@ -2,9 +2,14 @@ name: Mobile APK
 
 # Builds the two Android test APKs (11Food-test.apk, 11Ship-test.apk). Run it by hand from the Actions tab
 # ("Run workflow") or it runs on pull requests that touch mobile/ or the brand assets.
-# Signing: the stable test key comes from the GitHub Secrets ANDROID_TEST_KEYSTORE_BASE64, ANDROID_TEST_KEYSTORE_PASSWORD,
-# ANDROID_TEST_KEY_ALIAS and ANDROID_TEST_KEY_PASSWORD (create them once with mobile/tool/create-test-keystore.sh). All four are
-# required: if one is missing the job fails at its first step and nothing is built, signed or uploaded. There is no throw-away key.
+#
+# Signing (Owner decision 2026-10-12, mobile/README.md "update in place"): the persistent test key comes from the GitHub Secrets
+# ANDROID_TEST_KEYSTORE_BASE64, ANDROID_TEST_KEYSTORE_PASSWORD, ANDROID_TEST_KEY_ALIAS and ANDROID_TEST_KEY_PASSWORD (create them
+# once with mobile/tool/create-test-keystore.sh). All four are required, there is NO fallback: when any is missing the job fails at
+# its first step (before checkout), naming the missing secret(s); nothing is built, signed or uploaded. No throw-away key is ever generated.
+#
+# versionCode = github.run_number (the existing sequence, never reset). A re-run of the same run keeps the same number: it is the
+# same build, not a new version.
 
 on:
   workflow_dispatch:
@@ -142,7 +147,6 @@ jobs:
 
       - name: Build release APK
         run: |
-          signing=stable
           version="$(sed -n 's/^version: *\([0-9.]*\)+.*/\1/p' mobile/${{ matrix.app }}/pubspec.yaml)"
           cd mobile/${{ matrix.app }}
           fv="$(flutter --version --machine | python3 -c 'import json,sys; print(json.load(sys.stdin)["frameworkVersion"])' 2>/dev/null)" || fv=unknown
@@ -167,20 +171,6 @@ jobs:
           "$bt/aapt2" dump badging mobile/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk > "$RUNNER_TEMP/unsigned-badging.txt"
           mobile/tool/check-apk-permissions.sh ${{ matrix.app }} "$RUNNER_TEMP/unsigned-badging.txt"
 
-      # No signing material, no distribution: stop HERE, before the (already compiled, unsigned) build is signed or uploaded.
-      - name: Require the persistent signing secrets
-        run: |
-          missing=""
-          for name in ANDROID_TEST_KEYSTORE_BASE64 ANDROID_TEST_KEYSTORE_PASSWORD ANDROID_TEST_KEY_ALIAS ANDROID_TEST_KEY_PASSWORD; do
-            if [ -z "${!name:-}" ]; then missing="$missing $name"; fi
-          done
-          if [ -n "$missing" ]; then
-            msg="Missing GitHub Secret(s):$missing. The APK is NOT signed and NOT uploaded; no temporary key is used. Run mobile/tool/create-test-keystore.sh once (and keep a private backup of the key), then re-run."
-            echo "::error title=signing secrets missing::$msg"
-            { echo "### ${{ matrix.label }}: APK not distributed"; echo "- $msg"; echo "- Analyze and tests above ran without the secrets."; } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-
       - name: Sign and verify
         run: |
           set -euo pipefail
@@ -189,7 +179,6 @@ jobs:
           work="$RUNNER_TEMP/sign"; mkdir -p "$work"
           chmod 700 "$work"
           printf '%s' "$ANDROID_TEST_KEYSTORE_BASE64" | base64 -d > "$work/test.jks"
-          ks_pass="$ANDROID_TEST_KEYSTORE_PASSWORD"; key_alias="$ANDROID_TEST_KEY_ALIAS"; key_pass="$ANDROID_TEST_KEY_PASSWORD"
           src="mobile/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk"
           out="${{ matrix.label }}-test.apk"
           if [ ! -f "$src" ]; then
@@ -213,9 +202,15 @@ jobs:
           mobile/tool/check-apk-permissions.sh ${{ matrix.app }} "$work/badging.txt"
 
           # The signing certificate: the APK's one must be the keystore's one (same persistent key). Only public fingerprints are printed.
-          apk_fp="$(sed -n 's/^Signer #1 certificate SHA-256 digest: *//p' "$work/verify.txt" | head -1 | tr 'A-F' 'a-f')"
+          # apksigner words this line differently per signature scheme ("Signer #1 certificate ..." / "Signer (minSdkVersion=N, ...)
+          # certificate ..."), so the label is not parsed: the 64-hex digest is taken from any digest line. Every signer line must carry
+          # the same digest, and that digest must be the keystore certificate's.
+          apk_fp="$(grep -i 'certificate SHA-256 digest' "$work/verify.txt" | tr 'A-F' 'a-f' | tr -d ':' | grep -oE '[0-9a-f]{64}' | sort -u || true)"
           key_fp="$(keytool -exportcert -keystore "$work/test.jks" -alias "$ANDROID_TEST_KEY_ALIAS" -storepass:env ANDROID_TEST_KEYSTORE_PASSWORD 2>/dev/null | sha256sum | cut -d' ' -f1)"
           if [ -z "$apk_fp" ] || [ "$apk_fp" != "$key_fp" ]; then
+            # Public values only (certificate fingerprints and apksigner's own labels), to tell "no digest line found" from "different key".
+            echo "apksigner digest lines: $(grep -c 'certificate SHA-256 digest' "$work/verify.txt"); APK fingerprint(s): ${apk_fp:-none}; keystore fingerprint: $key_fp"
+            grep -i 'certificate SHA-256 digest' "$work/verify.txt" | cat -A | cut -c1-200
             echo "::error title=signer mismatch::the APK is not signed with the persistent test key"; exit 1
           fi
           rm -f "$work/test.jks"
