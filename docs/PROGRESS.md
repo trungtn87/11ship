@@ -213,7 +213,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#93](https://github.com/trungtn87/11ship/pull/93) feat(M01-RESET): đặt lại mật khẩu USER/ADMIN không OTP (bản… | Đã merge (`MERGED`) | — | — | — | `5272ceb` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#94](https://github.com/trungtn87/11ship/pull/94) feat(M01-RESET): local SYSTEM recovery CLI | Đã merge (`MERGED`) | — | — | — | `1c0a5d8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#95](https://github.com/trungtn87/11ship/pull/95) feat(M01-ANDROID): tài khoản/phiên + hồ sơ quán/GPS/context… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `fe3cae1` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#96](https://github.com/trungtn87/11ship/pull/96) ci(mobile-apk): bắt buộc 4 ANDROID_TEST_* Secrets, bỏ khóa… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `3cda04f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#96](https://github.com/trungtn87/11ship/pull/96) ci(mobile-apk): bắt buộc 4 ANDROID_TEST_* Secrets, bỏ khóa… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `3cda04f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
