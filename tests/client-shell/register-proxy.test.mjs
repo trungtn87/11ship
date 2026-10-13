@@ -70,6 +70,12 @@ async function startBackend() {
           return response.end();
         case 'config':
           return json(200, { data: { registration_verification: 'DISABLED_TEST' } }, { 'set-cookie': 'sid=SECRET_COOKIE', 'cache-control': 'public, max-age=600' });
+        case 'recovery-config':
+          return json(200, { data: { mode: 'DISABLED_TEST' } }, { 'set-cookie': 'sid=SECRET_COOKIE', 'cache-control': 'public, max-age=600' });
+        case 'recovery-config-extra':
+          return json(200, { data: { mode: 'DISABLED_TEST', other: 1 } });
+        case 'recovery-config-unknown':
+          return json(200, { data: { mode: 'ON' } });
         case 'config-extra':
           return json(200, { data: { registration_verification: 'DISABLED_TEST', other: 1 } });
         case 'config-unknown':
@@ -131,6 +137,8 @@ const ROUTES = [
   { name: 'request a code', path: '/v1/auth/phone-verifications', body: OTP_BODY, keyed: false },
   { name: 'verify a code', path: `/v1/auth/phone-verifications/${UUID}/verify`, body: JSON.stringify({ otp: '123456' }), keyed: false },
   { name: 'register', path: '/v1/client-auth/register', body: REGISTER_BODY, keyed: true },
+  // M01-RESET: public, keyed, never carries the browser's cookie or Bearer.
+  { name: 'no-OTP test password reset', path: '/v1/account-recovery/reset-test', body: JSON.stringify({ phone: '0987654321', password: 'Mật khẩu mới có dấu cách ' }), keyed: true },
 ];
 
 const TOKEN = 'ACCESS_TOKEN_' + 'a'.repeat(30);
@@ -172,7 +180,7 @@ describe('11Food front: exactly the register routes (+ the read-only mode route)
   });
 
   it('the route table is the register routes, the config and the account routes - nothing else', () => {
-    assert.deepEqual(FOOD_AUTH_ROUTES.map((route) => route.id), ['otp-request', 'otp-verify', 'register', 'config', 'login', 'me', 'logout', 'profile-read', 'profile-save', 'context', 'shop-profile-read', 'shop-profile-save', 'shop-complete', 'shop-service-areas', 'driver-submit', 'driver-read']);
+    assert.deepEqual(FOOD_AUTH_ROUTES.map((route) => route.id), ['otp-request', 'otp-verify', 'register', 'config', 'recovery-config', 'recovery-reset', 'login', 'me', 'logout', 'profile-read', 'profile-save', 'context', 'shop-profile-read', 'shop-profile-save', 'shop-complete', 'shop-service-areas', 'driver-submit', 'driver-read']);
   });
 
   for (const route of ROUTES) {
@@ -358,6 +366,34 @@ describe('11Food front: exactly the register routes (+ the read-only mode route)
     assert.equal(backend.seen[0].url, '/v1/client-auth/config');
     assert.equal(backend.seen[0].body.length, 0);
     assert.equal(backend.seen[0].headers.cookie, undefined);
+    backend.behaviour.mode = 'ok';
+  });
+
+  it('GET /v1/account-recovery/config: bodyless GET, shape re-serialised, no-store; refusals and bad answers never pass content on', async () => {
+    backend.seen.length = 0;
+    backend.behaviour.mode = 'recovery-config';
+    const answer = await call(front.port, '/v1/account-recovery/config', { method: 'GET', contentType: null });
+    assert.equal(answer.status, 200);
+    assert.deepEqual(JSON.parse(answer.text), { data: { mode: 'DISABLED_TEST' } });
+    assert.equal(answer.headers['cache-control'], 'no-store');
+    assert.equal(answer.headers['set-cookie'], undefined);
+    assert.equal(backend.seen.length, 1);
+    assert.equal(backend.seen[0].url, '/v1/account-recovery/config');
+    assert.equal(backend.seen[0].headers.cookie, undefined);
+    backend.seen.length = 0;
+    assert.equal((await call(front.port, '/v1/account-recovery/config', { method: 'GET', contentType: null, origin: 'https://evil.example' })).status >= 400, true);
+    assert.equal((await call(front.port, '/v1/account-recovery/config', { method: 'POST', body: '{}' })).status, 405);
+    assert.equal((await call(front.port, '/v1/account-recovery/config?x=1', { method: 'GET', contentType: null })).status, 404);
+    assert.equal((await call(front.port, '/v1/account-recovery/reset-test', { method: 'GET', contentType: null })).status, 405);
+    assert.equal((await call(front.port, '/v1/account-recovery/reset-test?x=1', { body: '{}' })).status, 404);
+    assert.equal((await call(front.port, '/v1/account-recovery/other', { body: '{}' })).status, 404);
+    assert.equal(backend.seen.length, 0, 'none of these reached the backend');
+    for (const mode of ['recovery-config-extra', 'recovery-config-unknown', 'config-error', 'html', 'huge', 'redirect']) {
+      backend.behaviour.mode = mode;
+      const bad = await call(front.port, '/v1/account-recovery/config', { method: 'GET', contentType: null });
+      assert.equal(bad.status, 502, mode);
+      assert.equal(bad.text.includes('SECRET_MARKER'), false, mode);
+    }
     backend.behaviour.mode = 'ok';
   });
 

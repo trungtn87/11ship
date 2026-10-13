@@ -370,8 +370,8 @@ describe('RoleContextService.me (task section 13)', () => {
     const userShare = users.slice(users.indexOf('async lockByIdForShare('), users.indexOf('async findById('));
     expect(userShare).toMatch(/FROM app\.users WHERE user_id = \$1::uuid FOR SHARE/);
     expect(userShare).not.toMatch(/FOR UPDATE|INSERT|UPDATE app|DELETE/);
-    // The exclusive lock of the mutations is untouched; the only addition is the administration lock target (M01-ADMIN, D15).
-    expect(users.split('FOR UPDATE').length - 1).toBe(2);
+    // The exclusive lock of the mutations is untouched; the additions are the administration lock target (M01-ADMIN, D15) and the reset target (M01-RESET).
+    expect(users.split('FOR UPDATE').length - 1).toBe(3);
 
     const sessions = sourceOf('auth/session-repository.ts');
     const sessionShare = sessions.slice(sessions.indexOf('async lockByIdForShare('), sessions.indexOf('async revokeOtherShopSessions('));

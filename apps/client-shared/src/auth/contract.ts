@@ -6,6 +6,9 @@ import { FailureCode } from '../states.js';
 //   client-auth    POST /v1/client-auth/register  (Idempotency-Key) {phone, password, verification_token, device, full_name, consent} -> 201 identity + access_token + session
 //                  POST /v1/client-auth/register  (Idempotency-Key) {phone, password, device, full_name, consent}  (DISABLED_TEST mode only: no token) -> 201 identity + access_token + session
 //                  GET  /v1/client-auth/config    (public, no query/body)                                                              -> 200 {data:{registration_verification:"REQUIRED"|"DISABLED_TEST"}}
+//   recovery (no-OTP test build, M01-RESET)
+//                  GET  /v1/account-recovery/config      (public, no query/body)                                                       -> 200 {data:{mode:"DISABLED_TEST"|"UNAVAILABLE"}}
+//                  POST /v1/account-recovery/reset-test  (Idempotency-Key) {phone, password}  (DISABLED_TEST only; no code/proof)       -> 200 {data:{next:"LOGIN"}}
 //                  POST /v1/client-auth/login     (Idempotency-Key) {phone, password, device}                                          -> 200 identity + access_token + session
 //                  GET  /v1/client-auth/me        (Bearer)                                                                              -> 200 identity + session
 //                  POST /v1/client-auth/context   (Bearer, Idempotency-Key) {context}                                                   -> 200 identity + session
@@ -32,6 +35,8 @@ export const AUTH_PATHS = {
   verifyOtp: (verificationId: string): string => `/v1/auth/phone-verifications/${verificationId}/verify`,
   register: '/v1/client-auth/register',
   config: '/v1/client-auth/config',
+  recoveryConfig: '/v1/account-recovery/config',
+  recoveryReset: '/v1/account-recovery/reset-test',
   login: '/v1/client-auth/login',
   me: '/v1/client-auth/me',
   context: '/v1/client-auth/context',
@@ -354,6 +359,26 @@ export function parseRegistrationConfig(body: unknown): RegistrationVerification
   return mode === 'REQUIRED' || mode === 'DISABLED_TEST' ? mode : undefined;
 }
 
+// ---- account recovery (no-OTP test build) -------------------------------------------------------------------------
+
+/** What the server says about the password reset. The client never guesses it. */
+export type RecoveryMode = 'DISABLED_TEST' | 'UNAVAILABLE';
+
+/** GET /v1/account-recovery/config: exactly {data:{mode}} with one of the two known values, else no usable answer. */
+export function parseRecoveryConfig(body: unknown): RecoveryMode | undefined {
+  const data = dataOf(body);
+  if (data === undefined || !hasExactKeys(data, ['mode'])) {
+    return undefined;
+  }
+  return data.mode === 'DISABLED_TEST' || data.mode === 'UNAVAILABLE' ? data.mode : undefined;
+}
+
+/** POST /v1/account-recovery/reset-test: exactly {data:{next:"LOGIN"}}. It says nothing about which account was touched. */
+export function parseRecoveryAck(body: unknown): 'LOGIN' | undefined {
+  const data = dataOf(body);
+  return data !== undefined && hasExactKeys(data, ['next']) && data.next === 'LOGIN' ? 'LOGIN' : undefined;
+}
+
 // ---- REGISTER OTP -------------------------------------------------------------------------------------------------
 
 export interface OtpIssuedWire {
@@ -467,7 +492,7 @@ export function errorCodeOf(body: unknown): string | undefined {
   return typeof code === 'string' && ERROR_CODE.test(code) ? code : undefined;
 }
 
-export type AuthOperation = 'config' | 'otpRequest' | 'otpVerify' | 'register' | 'login' | 'me' | 'context' | 'logout' | 'profileRead' | 'profileSave' | 'shopRead' | 'shopSave' | 'shopComplete' | 'shopAreas' | 'driverRead' | 'driverSubmit';
+export type AuthOperation = 'config' | 'recoveryConfig' | 'recoveryReset' | 'otpRequest' | 'otpVerify' | 'register' | 'login' | 'me' | 'context' | 'logout' | 'profileRead' | 'profileSave' | 'shopRead' | 'shopSave' | 'shopComplete' | 'shopAreas' | 'driverRead' | 'driverSubmit';
 
 export interface MappedFailure {
   readonly code: FailureCode;
@@ -500,6 +525,8 @@ const KEYED: Readonly<Record<string, Row>> = {
 
 const TABLES: Readonly<Record<AuthOperation, Readonly<Record<string, Row>>>> = {
   config: { SERVICE_UNAVAILABLE: ['SERVICE_UNAVAILABLE'], INTERNAL_ERROR: ['UNKNOWN'] },
+  recoveryConfig: { SERVICE_UNAVAILABLE: ['SERVICE_UNAVAILABLE'], INTERNAL_ERROR: ['UNKNOWN'] },
+  recoveryReset: { ...KEYED, INVALID_PHONE: ['INVALID_PHONE'] },
   otpRequest: {
     BAD_REQUEST: ['BAD_REQUEST'],
     INVALID_PHONE: ['INVALID_PHONE'],
@@ -568,7 +595,7 @@ const TABLES: Readonly<Record<AuthOperation, Readonly<Record<string, Row>>>> = {
   shopAreas: { ACCOUNT_DISABLED: ['ACCOUNT_DISABLED'], ROLE_NOT_AVAILABLE: ['ROLE_NOT_AVAILABLE'], SERVICE_UNAVAILABLE: ['SERVICE_UNAVAILABLE'], INTERNAL_ERROR: ['UNKNOWN'] },
 };
 
-const KEYED_OPERATIONS: readonly AuthOperation[] = ['register', 'login', 'context', 'profileSave', 'shopSave', 'shopComplete', 'driverSubmit'];
+const KEYED_OPERATIONS: readonly AuthOperation[] = ['recoveryReset', 'register', 'login', 'context', 'profileSave', 'shopSave', 'shopComplete', 'driverSubmit'];
 const AUTHENTICATED_OPERATIONS: readonly AuthOperation[] = ['me', 'context', 'logout', 'profileRead', 'profileSave', 'shopRead', 'shopSave', 'shopComplete', 'shopAreas', 'driverRead', 'driverSubmit'];
 
 /**

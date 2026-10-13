@@ -71,3 +71,14 @@ Dùng tài khoản vừa đăng ký ở mục 4 hoặc 5 (cả Ship dùng lại 
 5. Phiên bị thu hồi/hết hạn (kể cả thu hồi từ nơi khác): lần gọi tiếp theo xóa dữ liệu nhạy cảm và về màn đăng nhập.
 
 Proxy local chỉ chuyển các route đã liệt kê (OTP/đăng ký, config, login, me, logout, `GET|PUT /v1/customer/me/profile`), chỉ kèm Bearer/Idempotency-Key khi cần, không cookie. Gate Android/production không đổi; chạy web local không chứng minh chính sách trên điện thoại.
+
+## 6. Quên mật khẩu không OTP (bản test, chỉ local) — M01-RESET
+
+Handoff: [`docs/tasks/M01-reset-disabled-test-handoff-20261013.md`](../../docs/tasks/M01-reset-disabled-test-handoff-20261013.md). Owner đã duyệt bỏ OTP ở bản test: **không gửi mã, không chứng minh sở hữu SĐT**.
+
+1. `.env` local: thêm `ACCOUNT_RECOVERY_MODE=DISABLED_TEST` (mặc định/không đặt/`UNAVAILABLE` = đóng, endpoint trả 503). Bắt buộc `APP_ENV=development|test` và `HOST=127.0.0.1`; giá trị khác, staging/production hoặc host không loopback làm backend từ chối khởi động (chỉ in tên biến). Không request/header nào bật được.
+2. Chạy backend và các front như mục 5 (và Web Admin `npm run build:admin-web && npm run admin-web:dev`).
+3. Food/Ship: **Đăng nhập → Quên mật khẩu** (`/reset`) → SĐT + mật khẩu mới + nhập lại → “Yêu cầu đã xử lý…” → **Đăng nhập** bằng mật khẩu mới. Web Admin: `https://localhost:8443/reset` cùng luồng; đăng nhập xong vẫn qua mã Authenticator.
+4. API: `GET /v1/account-recovery/config` → `{data:{mode}}`; `POST /v1/account-recovery/reset-test` (`Idempotency-Key`, body đúng `{phone,password}`) → `200 {data:{next:"LOGIN"}}` **giống hệt** cho tài khoản đã reset, số không có, SYSTEM và tài khoản ngoài phạm vi (các trường hợp sau không đổi gì).
+5. Reset thu hồi mọi phiên Food/Ship/Admin và bước đăng nhập đang chờ của tài khoản; giữ vai trò, trạng thái (tài khoản đang khóa vẫn khóa), hồ sơ và TOTP. Audit `account.password.reset_test.v1` (ID, version, `TEST_NO_PHONE_VERIFICATION`; không SĐT/mật khẩu).
+6. **Chưa test, hoãn đến khi có dịch vụ OTP thật:** gửi OTP, OTP sai/hết hạn, gửi lại, proof RESET_PASSWORD, email/SYSTEM recovery.

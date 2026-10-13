@@ -84,7 +84,7 @@ function runEntry(env) {
   return { child, exited, ready, output: () => ({ stdout, stderr }), stop: async () => { child.kill('SIGTERM'); await exited; } };
 }
 
-function call(port, path, { method = 'GET', headers = {} } = {}) {
+function call(port, path, { method = 'GET', headers = {}, body } = {}) {
   return new Promise((resolve, reject) => {
     const request = https.request({ host: '127.0.0.1', port, servername: 'localhost', ca: readFileSync(tls.cert), method, path, headers: { host: `localhost:${String(port)}`, ...headers } }, (response) => {
       const chunks = [];
@@ -92,7 +92,7 @@ function call(port, path, { method = 'GET', headers = {} } = {}) {
       response.on('end', () => resolve({ status: response.statusCode, headers: response.headers, body: Buffer.concat(chunks).toString('utf8') }));
     });
     request.on('error', reject);
-    request.end();
+    request.end(body);
   });
 }
 
@@ -149,6 +149,42 @@ describe('Admin front as the launcher starts it', () => {
         assert.equal(answer.status, 404, path);
       }
       assert.equal(backend.seen.length, before, 'those paths were not forwarded');
+    } finally {
+      await run.stop();
+      await backend.stop();
+    }
+  });
+
+  it('M01-RESET: exactly the two public account-recovery routes are forwarded, without the admin cookie, CSRF or Authorization', async () => {
+    const backend = await startBackend();
+    const run = runEntry({ ADMIN_WEB_BACKEND: backend.url });
+    try {
+      const listening = await run.ready;
+      const origin = `https://localhost:${String(listening.port)}`;
+      const secrets = { cookie: '__Host-11admin=SESSION', 'x-csrf-token': 'tok', authorization: 'Bearer X', 'x-forwarded-for': '6.6.6.6' };
+      backend.seen.length = 0;
+      const config = await call(listening.port, '/v1/account-recovery/config', { headers: { ...secrets } });
+      assert.equal(config.status, 404, 'the stand-in backend has no such route; what matters is what reached it');
+      const body = JSON.stringify({ phone: '0987654321', password: 'Mật khẩu mới 123' });
+      const reset = await call(listening.port, '/v1/account-recovery/reset-test', { method: 'POST', body, headers: { ...secrets, origin, 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(body)), 'idempotency-key': '00000000-0000-4000-8000-000000000001' } });
+      assert.equal(reset.status, 404);
+      assert.equal(backend.seen.length, 2);
+      for (const seen of backend.seen) {
+        for (const name of ['cookie', 'x-csrf-token', 'authorization', 'x-forwarded-for']) {
+          assert.equal(seen.headers[name], undefined, `${name} is not forwarded to a public recovery route`);
+        }
+      }
+      assert.equal(backend.seen[1].headers['idempotency-key'], '00000000-0000-4000-8000-000000000001');
+
+      // Everything else under the prefix, another method, a query, another site and a missing Origin are refused before the backend.
+      backend.seen.length = 0;
+      assert.equal((await call(listening.port, '/v1/account-recovery/other')).status, 404);
+      assert.equal((await call(listening.port, '/v1/account-recovery/config', { method: 'POST', body: '{}', headers: { origin } })).status, 405);
+      assert.equal((await call(listening.port, '/v1/account-recovery/reset-test')).status, 405);
+      assert.equal((await call(listening.port, '/v1/account-recovery/config?x=1')).status, 404);
+      assert.equal((await call(listening.port, '/v1/account-recovery/reset-test', { method: 'POST', body, headers: { origin: 'https://evil.example', 'content-length': String(Buffer.byteLength(body)) } })).status, 403);
+      assert.equal((await call(listening.port, '/v1/account-recovery/reset-test', { method: 'POST', body, headers: { 'content-length': String(Buffer.byteLength(body)) } })).status, 403);
+      assert.equal(backend.seen.length, 0, 'none of these reached the backend');
     } finally {
       await run.stop();
       await backend.stop();

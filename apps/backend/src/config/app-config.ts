@@ -1,3 +1,4 @@
+import { ACCOUNT_RECOVERY_MODE_ENV, AccountRecoveryMode, parseAccountRecoveryMode } from './account-recovery-config';
 import { AdminActivationConfig, loadAdminActivationConfig } from './admin-activation-config';
 import { AdminAuthConfig, loadAdminAuthConfig } from './admin-auth-config';
 import { AdminUserAccountMutationsConfig, parseAdminUserAccountMutations } from './admin-user-account-mutations-config';
@@ -168,6 +169,11 @@ export interface AppConfig {
    * development/test on a loopback bind; absent everywhere else, which means REQUIRED (a registration needs a proof).
    */
   clientPhoneVerificationMode?: Exclude<ClientPhoneVerificationMode, 'REQUIRED'>;
+  /**
+   * Account recovery mode (M01-RESET). Present ONLY as DISABLED_TEST (password reset by phone without OTP), valid only for APP_ENV
+   * development/test on a loopback bind; absent everywhere else, which means UNAVAILABLE (the reset endpoint is closed).
+   */
+  accountRecoveryMode?: 'DISABLED_TEST';
 }
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -658,6 +664,15 @@ export function loadConfig(env: EnvSource): ConfigResult {
     phoneVerificationResult.invalid.forEach(flag);
   }
 
+  // Account recovery mode (M01-RESET): closed by default, DISABLED_TEST only for development/test on loopback.
+  const recoveryResult = parseAccountRecoveryMode({ appEnv, host, modeRaw: env[ACCOUNT_RECOVERY_MODE_ENV] });
+  let accountRecoveryMode: AccountRecoveryMode = 'UNAVAILABLE';
+  if (recoveryResult.ok) {
+    accountRecoveryMode = recoveryResult.mode;
+  } else {
+    recoveryResult.invalid.forEach(flag);
+  }
+
   if (invalid.length > 0 || appEnv === undefined || databaseUrl === undefined) {
     return { ok: false, invalid };
   }
@@ -703,6 +718,7 @@ export function loadConfig(env: EnvSource): ConfigResult {
       ...(testInbox === undefined ? {} : { testInbox }),
       ...(clientAuth === undefined ? {} : { clientAuth }),
       ...(clientPhoneVerificationMode === 'DISABLED_TEST' ? { clientPhoneVerificationMode } : {}),
+      ...(accountRecoveryMode === 'DISABLED_TEST' ? { accountRecoveryMode } : {}),
     },
   };
 }

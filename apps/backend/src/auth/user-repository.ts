@@ -57,6 +57,9 @@ export interface AdminLockTargetRow {
   readonly hasAdminMembership: boolean;
 }
 
+/** What the no-OTP test password reset (M01-RESET) classifies on a locked row. Nothing secret. */
+export type ResetTargetRow = AdminLockTargetRow;
+
 /** SQL for users and user_roles. */
 @Injectable()
 export class UserRepository {
@@ -324,5 +327,61 @@ export class UserRepository {
     );
     const row = result.rows[0];
     return row === undefined ? undefined : { version: Number(row.version), changedAtMs: Number(row.changed_ms) };
+  }
+
+  /**
+   * The account a no-OTP test password reset (M01-RESET) targets, write-locked by id (the caller found the id by phone,
+   * unlocked, and re-checks the phone here). Any origin is returned, ADMIN_PROVISIONED included: the caller classifies the row.
+   */
+  async lockResetTarget(context: TransactionContext, userId: string): Promise<ResetTargetRow | undefined> {
+    const result = await context.query<{
+      user_id: string;
+      phone_normalized: string;
+      status: UserStatus;
+      version: string;
+      account_origin: string;
+      phone_verified: boolean;
+      has_membership: boolean;
+    }>(
+      `SELECT u.user_id, u.phone_normalized, u.status, u.version::text AS version, u.account_origin,
+              (u.phone_verified_at IS NOT NULL) AS phone_verified,
+              EXISTS (SELECT 1 FROM app.admin_memberships am WHERE am.user_id = u.user_id) AS has_membership
+         FROM app.users u
+        WHERE u.user_id = $1::uuid
+          FOR UPDATE OF u`,
+      [userId],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      return undefined;
+    }
+    if (!isAccountOrigin(row.account_origin)) {
+      throw new TechnicalError('internal', 'Database returned an unexpected account origin');
+    }
+    return {
+      userId: row.user_id,
+      phoneNormalized: row.phone_normalized,
+      status: row.status,
+      version: Number(row.version),
+      accountOrigin: row.account_origin,
+      phoneVerified: row.phone_verified,
+      hasAdminMembership: row.has_membership,
+    };
+  }
+
+  /**
+   * Replaces the password hash of a row the caller holds FOR UPDATE: version + 1, database time. Status, roles, phone and origin
+   * are not touched. Returns the new version, or undefined when the row is gone.
+   */
+  async setPasswordHash(context: TransactionContext, input: { userId: string; passwordHash: string }): Promise<number | undefined> {
+    const result = await context.query<{ version: string }>(
+      `UPDATE app.users
+          SET password_hash = $2, version = version + 1, updated_at = date_trunc('milliseconds', clock_timestamp())
+        WHERE user_id = $1::uuid
+        RETURNING version::text AS version`,
+      [input.userId, input.passwordHash],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : Number(row.version);
   }
 }

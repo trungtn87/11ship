@@ -8,6 +8,7 @@ import {
   CLIENT_PROFILE_ROUTE_PREFIXES,
   clientAuthTransportMiddleware,
 } from './http/client-auth-transport.middleware';
+import { ACCOUNT_RECOVERY_ROUTE_PREFIX } from './account-recovery/account-recovery-constants';
 import { AllExceptionsFilter } from './http/all-exceptions.filter';
 import { createRequestContextMiddleware } from './http/request-context.middleware';
 import { JsonLogger } from './logging/json-logger';
@@ -34,6 +35,8 @@ export function configureApp(app: INestApplication): void {
   app.use(`/${GLOBAL_PREFIX}/${ADMIN_ROUTE_PREFIX}`, adminTransportMiddleware);
   // Same reason for /v1/client-auth (M01.03): credentials and session tokens, never cached.
   app.use(`/${GLOBAL_PREFIX}/${CLIENT_AUTH_ROUTE_PREFIX}`, clientAuthTransportMiddleware);
+  // M01-RESET: the no-OTP test password reset carries credentials, never cached.
+  app.use(`/${GLOBAL_PREFIX}/${ACCOUNT_RECOVERY_ROUTE_PREFIX}`, clientAuthTransportMiddleware);
   // Same headers for the own-profile routes (M01.05): personal data, never cached.
   for (const prefix of CLIENT_PROFILE_ROUTE_PREFIXES) {
     app.use(`/${GLOBAL_PREFIX}/${prefix}`, clientAuthTransportMiddleware);

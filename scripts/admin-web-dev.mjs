@@ -2,7 +2,7 @@
 // Local HTTPS front for the administration web (M01-D-LOGIN-UI). LOCAL DEVELOPMENT AND TESTS ONLY - never deployed.
 //
 // One HTTPS origin (default https://localhost:8443) serves the built page from apps/admin-web/dist and forwards ONLY
-// /v1/admin-auth/*, /v1/admin/* and /v1/admin-activation/* to the backend over loopback HTTP. Same origin is what the backend's cookies need: __Host-11admin
+// /v1/admin-auth/*, /v1/admin/* and /v1/admin-activation/* (plus, M01-RESET, exactly two public account-recovery routes) to the backend over loopback HTTP. Same origin is what the backend's cookies need: __Host-11admin
 // and __Host-11admin-pre are Secure + HttpOnly + SameSite=Strict + Path=/, and every POST must carry an Origin that is
 // exactly one of ADMIN_AUTH_ALLOWED_ORIGINS. Nothing here weakens that:
 //   * cookies, Origin, x-csrf-token and Set-Cookie pass through unchanged (the browser sets Origin, not this script);
@@ -55,6 +55,16 @@ const APP_ROUTES = /^\/(?:activate|reset|invitations(?:\/.*)?|accounts(?:\/.*)?)
 // Login (#34), invitation management (1B) and activation (1C). Nothing else of the backend is reachable through this front.
 const API_PREFIXES = ['/v1/admin-auth/', '/v1/admin-activation/', '/v1/admin/'];
 
+// M01-RESET (no-OTP test build): the public password reset of the forgotten-password page. Exactly these two routes, no prefix, no query.
+// They are PUBLIC: unlike the routes above they never carry the cookie, the x-csrf-token or an Authorization header of another session
+// to the backend (see PUBLIC_FORWARDED_HEADERS); only the Idempotency-Key and the JSON body travel.
+const RECOVERY_ROUTES = new Map([
+  ['/v1/account-recovery/config', 'GET'],
+  ['/v1/account-recovery/reset-test', 'POST'],
+]);
+const PUBLIC_FORWARDED_HEADERS = new Set(['accept', 'content-type', 'content-length', 'idempotency-key']);
+const MAX_RECOVERY_REQUEST_BYTES = 8192;
+
 // Request headers never forwarded: hop-by-hop ones, and every client-supplied forwarding header (the backend must not
 // be able to believe an address the browser made up).
 const DROPPED_REQUEST_HEADERS = new Set([
@@ -100,6 +110,28 @@ export function createAdminWebServer({ distDir, backendUrl, key, cert, upstreamT
       response.end(JSON.stringify({ data: identity }));
       return;
     }
+    if (RECOVERY_ROUTES.has(url.pathname)) {
+      const method = RECOVERY_ROUTES.get(url.pathname);
+      const refuse = (status, code) => {
+        request.resume();
+        response.writeHead(status, { ...SECURITY_HEADERS, 'content-type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: { code, message: 'Not available', request_id: '', details: {} } }));
+      };
+      const origin = request.headers.origin;
+      const declared = Number(request.headers['content-length'] ?? 0);
+      if (request.method !== method) {
+        refuse(405, 'METHOD_NOT_ALLOWED');
+      } else if ((request.url ?? '') !== url.pathname) {
+        refuse(404, 'NOT_FOUND');
+      } else if ((method === 'POST' ? origin !== `https://${request.headers.host}` : origin !== undefined && origin !== `https://${request.headers.host}`) || (request.headers['sec-fetch-site'] !== undefined && request.headers['sec-fetch-site'] !== 'same-origin')) {
+        refuse(403, 'ORIGIN_NOT_ALLOWED');
+      } else if (!Number.isFinite(declared) || declared > MAX_RECOVERY_REQUEST_BYTES || request.headers['transfer-encoding'] !== undefined || (method === 'GET' && declared !== 0)) {
+        refuse(method === 'GET' || !Number.isFinite(declared) ? 400 : 413, 'BAD_REQUEST');
+      } else {
+        forward(request, response, backend, upstreamTimeoutMs, PUBLIC_FORWARDED_HEADERS);
+      }
+      return;
+    }
     if (API_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) {
       forward(request, response, backend, upstreamTimeoutMs);
       return;
@@ -115,10 +147,10 @@ export function createAdminWebServer({ distDir, backendUrl, key, cert, upstreamT
  * request is destroyed too. The timer is cleared in every case. This is a communication timeout of the local front only;
  * it does not change any session or challenge lifetime, and a timed-out request may still have been executed upstream.
  */
-function forward(request, response, backend, timeoutMs) {
+function forward(request, response, backend, timeoutMs, onlyHeaders) {
   const headers = {};
   for (const [name, value] of Object.entries(request.headers)) {
-    if (!DROPPED_REQUEST_HEADERS.has(name) && value !== undefined) {
+    if (!DROPPED_REQUEST_HEADERS.has(name) && value !== undefined && (onlyHeaders === undefined || onlyHeaders.has(name))) {
       headers[name] = value;
     }
   }

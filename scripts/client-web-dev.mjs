@@ -14,6 +14,8 @@
 //       POST /v1/auth/phone-verifications/<uuid>/verify
 //       POST /v1/client-auth/register            (Idempotency-Key forwarded, the body byte for byte)
 //       GET  /v1/client-auth/config              (no query, no body: which registration mode the server runs)
+//       GET  /v1/account-recovery/config         (no query, no body: whether the no-OTP test password reset is on, M01-RESET)
+//       POST /v1/account-recovery/reset-test     (Idempotency-Key, body {phone, password}; no cookie, no Bearer is passed on)
 //       POST /v1/client-auth/login               (Idempotency-Key)
 //       GET  /v1/client-auth/me                  (Authorization: Bearer)
 //       POST /v1/client-auth/logout              (Authorization: Bearer, body {}, 204)
@@ -74,6 +76,9 @@ export const CLIENT_AUTH_ROUTES = [
   { id: 'otp-verify', match: (path) => new RegExp(`^/v1/auth/phone-verifications/${UUID}/verify$`).test(path), keyed: false },
   { id: 'register', match: (path) => path === '/v1/client-auth/register', keyed: true },
   { id: 'config', match: (path) => path === '/v1/client-auth/config', keyed: false, method: 'GET' },
+  // M01-RESET (no-OTP test build): public, so no Bearer is required or forwarded. The backend decides whether the mode is on.
+  { id: 'recovery-config', match: (path) => path === '/v1/account-recovery/config', keyed: false, method: 'GET' },
+  { id: 'recovery-reset', match: (path) => path === '/v1/account-recovery/reset-test', keyed: true },
   { id: 'login', match: (path) => path === '/v1/client-auth/login', keyed: true },
   // `bearer`: the browser's Authorization: Bearer <token> is required and passed on (nothing else of its headers).
   { id: 'me', match: (path) => path === '/v1/client-auth/me', keyed: false, method: 'GET', bearer: true },
@@ -245,8 +250,8 @@ export function createClientWebServer({ app, distDir, backendUrl, key, cert, ups
         sendError(response, 404, 'NOT_FOUND');
         return;
       }
-      if (authRoute.id === 'config') {
-        forwardConfig(request, response, backend, url.pathname, upstreamTimeoutMs);
+      if (authRoute.id === 'config' || authRoute.id === 'recovery-config') {
+        forwardConfig(request, response, backend, url.pathname, upstreamTimeoutMs, authRoute.id === 'config' ? { key: 'registration_verification', modes: CONFIG_MODES } : { key: 'mode', modes: RECOVERY_MODES });
         return;
       }
       forwardAuth(request, response, backend, url.pathname, authRoute, authTimeoutMs);
@@ -361,6 +366,7 @@ function forwardHealth(request, response, backend, path, route, timeoutMs) {
 }
 
 const CONFIG_MODES = new Set(['REQUIRED', 'DISABLED_TEST']);
+const RECOVERY_MODES = new Set(['UNAVAILABLE', 'DISABLED_TEST']);
 /** The config answer is a few dozen bytes; anything bigger is not what the backend agreed to say. */
 const MAX_CONFIG_BYTES = 1024;
 
@@ -373,7 +379,7 @@ const MAX_CONFIG_BYTES = 1024;
  * from what was validated (never the backend's bytes). Anything else is a 502, a silent backend a 504 - with a fixed body: the app
  * then keeps the register form locked instead of guessing a mode.
  */
-function forwardConfig(request, response, backend, path, timeoutMs) {
+function forwardConfig(request, response, backend, path, timeoutMs, shape) {
   const origin = request.headers.origin;
   const site = request.headers['sec-fetch-site'];
   if ((typeof origin === 'string' && origin !== `https://${request.headers.host}`) || (typeof site === 'string' && site !== 'same-origin')) {
@@ -442,13 +448,13 @@ function forwardConfig(request, response, backend, path, timeoutMs) {
         const exact =
           typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) && Object.keys(parsed).length === 1 &&
           typeof parsed.data === 'object' && parsed.data !== null && !Array.isArray(parsed.data) && Object.keys(parsed.data).length === 1 &&
-          CONFIG_MODES.has(parsed.data.registration_verification);
+          shape.modes.has(parsed.data[shape.key]);
         if (!exact) {
           fail(502, 'BAD_GATEWAY');
           return;
         }
         finish();
-        sendJson(response, 200, { data: { registration_verification: parsed.data.registration_verification } }, noStore);
+        sendJson(response, 200, { data: { [shape.key]: parsed.data[shape.key] } }, noStore);
       });
     },
   );

@@ -7,6 +7,8 @@ import { AdminProvisioningApi, PROVISIONING_BASE } from '../core/provisioning-ap
 import { ProvisioningController } from '../core/provisioning-controller.js';
 import { parseRoute, tokenFromFragment } from '../core/routes.js';
 import { ActivationPage } from './activation-view.js';
+import { RecoveryController } from '../core/recovery-controller.js';
+import { AdminRecoveryApi, RECOVERY_BASE } from '../core/recovery-api.js';
 import { ResetPage } from './reset-view.js';
 import { ShellApp } from './shell-app.js';
 import { AdminView } from './view.js';
@@ -67,21 +69,29 @@ function startActivation(host: HTMLElement): void {
 }
 
 /**
- * The public "forgot password" page of an ADMIN. The backend for it does not exist yet (M01.16, form M01.19), so the page is
- * drawn with its send/verify buttons disabled and says why; it sends nothing and shows no result it did not receive.
+ * The public "forgot password" page of an ADMIN, in the no-OTP test build (M01-RESET): the server's mode decides (GET /config), the
+ * page is ONE form and there is no code step. Closed or unknown mode: no form, nothing is sent.
  */
 function startReset(host: HTMLElement): void {
+  const controller = new RecoveryController(new AdminRecoveryApi(fetchTransport(window.fetch.bind(window), { base: RECOVERY_BASE })), () => window.crypto.randomUUID());
   const nothing = (): void => undefined;
   const page = new ResetPage(host, {
-    wired: false,
+    wired: true,
     testSmsNotice: false,
+    submitTest: (phone, password, confirmation) => void controller.submit(phone, password, confirmation),
+    retryConfig: () => void controller.start(),
     sendCode: nothing,
     verify: nothing,
     resend: nothing,
     setPassword: nothing,
-    toLogin: () => window.location.assign('/'),
+    toLogin: () => {
+      controller.leave();
+      window.location.assign('/');
+    },
   });
-  page.render({ name: 'phone', phone: '', pending: false });
+  controller.subscribe((screen) => page.render(screen));
+  page.render(controller.screen);
+  void controller.start();
 }
 
 function startAdmin(host: HTMLElement): void {

@@ -12,7 +12,7 @@ và bị xoá khỏi bản thật (`npm run build:admin-web`; build thất bại
 | D03 | Khung quản trị: sidebar 240/64 px (thu gọn chỉ ở desktop), drawer ≤900 px luôn đầy đủ gồm mục con “Danh sách / Đang khóa”, menu tài khoản | mọi trang sau đăng nhập | có | — |
 | D04–D06 | Lời mời Admin: danh sách / tạo / chi tiết | `/invitations…` | giữ luồng cũ trong khung mới | đã có |
 | D07 | Kích hoạt | `/activate` | giữ nguyên | đã có |
-| D08 | Đặt lại mật khẩu ADMIN | `/reset` | giao diện; nút gửi khóa kèm lý do | chờ M01.16 / M01.19 |
+| D08 | Đặt lại mật khẩu ADMIN | `/reset` | **bản test không OTP** ([handoff](../tasks/M01-reset-disabled-test-handoff-20261013.md)): MỘT form SĐT + mật khẩu mới + xác nhận, ghi chú “Bản test: đặt lại mật khẩu chưa yêu cầu OTP”; chỉ bật khi `GET /v1/account-recovery/config` trả `DISABLED_TEST`, ngược lại hiện “Chưa khả dụng”; luôn kết thúc bằng thông báo “Yêu cầu đã xử lý…” rồi về đăng nhập (không tự đăng nhập; ADMIN vẫn qua TOTP). Màn OTP/mật khẩu cũ chỉ còn trong preview, chờ dịch vụ OTP thật (M01.16/M01.19) | đã nối bản test, chờ Owner nghiệm thu |
 | D09 | Khôi phục SYSTEM (chỉ thông tin) | chỉ preview | không có trang thật | chờ M01.20 |
 | D81 | Người dùng — danh sách / đang khóa | `/accounts/users[?status=LOCKED]` | **đã nối** `GET /v1/admin/users`: tìm kiếm, lọc vai trò/trạng thái, "Tải thêm" phía máy chủ; bộ lọc được giữ khi Back từ chi tiết | đọc xong |
 | D86 | Chi tiết người dùng | `/accounts/users/:id` | **đã nối** `GET /v1/admin/users/:id` (hồ sơ trong phạm vi); không có dòng thời gian; nút Khóa/Mở khóa theo `allowed_actions` của máy chủ | đã nối cùng D87/D88 |

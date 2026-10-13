@@ -125,6 +125,9 @@ export class AuthModule {
         ClientSessionAuthority,
         CustomerProfileRepository,
         UserRepository,
+        // M01-RESET: the no-OTP test password reset revokes sessions with the same repository and hashes with the same hasher.
+        SessionRepository,
+        PASSWORD_HASHER,
       ],
     };
   }

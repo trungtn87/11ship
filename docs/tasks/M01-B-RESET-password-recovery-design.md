@@ -3,6 +3,7 @@
 **Ngày chốt nghiệp vụ:** 10/10/2026  
 **Quyết định:** Owner duyệt các quy tắc dưới đây trong trao đổi thiết kế 11Ship.  
 **Trạng thái:** **OWNER_APPROVED_BUSINESS / WAITING_IMPLEMENTATION** — chỉ lưu thiết kế, chưa code, chưa có CI/test/triển khai/Owner nghiệm thu chức năng.  
+**Cập nhật 13/10/2026:** bước OTP của USER/ADMIN trong bản test nhường [M01-RESET-test no-OTP](M01-reset-disabled-test-handoff-20261013.md) (mọi ràng buộc phiên/role/trạng thái/TOTP ở §2 vẫn giữ; production vẫn theo OTP SMS; §3 SYSTEM không đổi).  
 **Module:** M01 — Authentication. Đây là phần bổ sung cho mục «quên mật khẩu» từng chuyển sang M01-B trong [đặc tả M01-A](../current/11Ship-buoc-4.2-auth-onboarding-M01-A-v1.0.md).  
 **Phân công:** ChatGPT thiết kế và review; Claude triển khai code/test theo gói được giao; Owner test local, điện thoại thật và quyết định merge/nghiệm thu.
 
