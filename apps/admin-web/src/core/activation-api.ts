@@ -15,6 +15,10 @@ const OTP_STATUSES: readonly string[] = ['NONE', 'SUBMITTED', 'EXPIRED', 'LOCKED
 export type InvalidatedReason = 'REPLACED' | 'LINK_UNAVAILABLE' | 'PHONE_CONFLICT' | 'ATTEMPTS_EXHAUSTED';
 const INVALIDATED_REASONS: readonly string[] = ['REPLACED', 'LINK_UNAVAILABLE', 'PHONE_CONFLICT', 'ATTEMPTS_EXHAUSTED'];
 
+/** How the server verifies the phone of this attempt. A missing field means REQUIRED; any other value is refused. */
+export type PhoneVerificationMode = 'REQUIRED' | 'DISABLED_TEST';
+const PHONE_MODES: readonly string[] = ['REQUIRED', 'DISABLED_TEST'];
+
 export interface OtpInfo {
   readonly status: OtpStatus;
   readonly resendAt?: string;
@@ -23,7 +27,16 @@ export interface OtpInfo {
 
 /** What `GET /state` (and the richer start/restart answers, and STEP_INVALID details) say. Never a phone, name or id. */
 export type ActivationView =
-  | { readonly state: 'STARTED'; readonly expiresAt?: string; readonly csrfToken?: string; readonly otp?: OtpInfo }
+  | {
+      readonly state: 'STARTED';
+      readonly expiresAt?: string;
+      readonly csrfToken?: string;
+      readonly otp?: OtpInfo;
+      /** Local test mode: STARTED is already the password step (no OTP), with the same window facts as OTP_VERIFIED. */
+      readonly phoneVerificationMode: PhoneVerificationMode;
+      readonly passwordDeadline?: string;
+      readonly restartRequired: boolean;
+    }
   | {
       readonly state: 'OTP_VERIFIED';
       readonly expiresAt?: string;
@@ -72,6 +85,11 @@ function otpOf(value: unknown): OtpInfo | undefined {
  * then reads GET /state); every success answer of the backend does.
  */
 export function parseActivationView(data: Record<string, unknown>): ActivationView | undefined {
+  // Live attempts say how the phone is verified; an unknown value is a server this page does not understand: refuse it.
+  if (data.phone_verification_mode !== undefined && (typeof data.phone_verification_mode !== 'string' || !PHONE_MODES.includes(data.phone_verification_mode))) {
+    return undefined;
+  }
+  const phoneVerificationMode: PhoneVerificationMode = data.phone_verification_mode === 'DISABLED_TEST' ? 'DISABLED_TEST' : 'REQUIRED';
   const csrf = str(data.csrf_token);
   const withCsrf = csrf === undefined ? {} : { csrfToken: csrf };
   const expiresAtValue = str(data.expires_at);
@@ -84,7 +102,16 @@ export function parseActivationView(data: Record<string, unknown>): ActivationVi
       if (data.otp !== undefined && otp === undefined) {
         return undefined;
       }
-      return { state: 'STARTED', ...expires, ...withCsrf, ...(otp === undefined ? {} : { otp }) };
+      const startedDeadline = str(data.password_deadline);
+      return {
+        state: 'STARTED',
+        ...expires,
+        ...withCsrf,
+        ...(otp === undefined ? {} : { otp }),
+        phoneVerificationMode,
+        ...(startedDeadline === undefined ? {} : { passwordDeadline: startedDeadline }),
+        restartRequired: data.restart_required === true,
+      };
     }
     case 'OTP_VERIFIED': {
       const passwordDeadline = str(data.password_deadline);

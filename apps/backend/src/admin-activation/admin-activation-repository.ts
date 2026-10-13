@@ -3,6 +3,7 @@ import { epochMs, toSafeInteger } from '../auth/auth-db';
 import { TechnicalError } from '../common/app-errors';
 import { ReplayEnvelope } from '../crypto/key-version';
 import { TransactionContext } from '../transaction/transaction-context';
+import { ActivationPhoneVerificationMode } from '../config/admin-activation-config';
 import { AttemptStatus, ChallengeStatus, InvalidatedReason, LIVE_ATTEMPT_STATUSES } from './admin-activation-constants';
 
 // SQL of M01-D-ADMIN-1C for app.admin_activation_attempts, app.admin_activation_otp_challenges, app.admin_profiles and
@@ -27,6 +28,8 @@ export interface AttemptRow {
   readonly csrfNonce: Buffer;
   readonly csrfKeyId: string;
   readonly status: AttemptStatus;
+  /** Recorded when the attempt is created, from the server configuration; immutable (a trigger refuses a change). */
+  readonly phoneVerificationMode: ActivationPhoneVerificationMode;
   readonly invalidatedReason: InvalidatedReason | null;
   readonly otpVerifiedAtMs: number | null;
   readonly passwordHash: string | null;
@@ -65,6 +68,7 @@ export interface NewAttempt {
   readonly tokenDigest: string;
   readonly csrfNonce: Buffer;
   readonly csrfKeyId: string;
+  readonly phoneVerificationMode: ActivationPhoneVerificationMode;
   readonly createdAtMs: number;
   readonly expiresAtMs: number;
 }
@@ -117,13 +121,20 @@ const buf = (value: unknown): Buffer => {
   return value;
 };
 
+function phoneModeOf(value: unknown): ActivationPhoneVerificationMode {
+  if (value === 'REQUIRED' || value === 'DISABLED_TEST') {
+    return value;
+  }
+  throw new TechnicalError('internal', 'Database returned an unexpected value');
+}
+
 function attemptColumns(alias: string, prefix: string): string {
   const col = (name: string): string => `${alias}.${name} AS ${prefix}${name}`;
   const time = (name: string): string => `${epochMs(`${alias}.${name}`)} AS ${prefix}${name}_ms`;
   return [
     'attempt_id', 'invitation_id', 'generation_id', 'user_id', 'factor_id', 'token_digest', 'csrf_nonce', 'csrf_key_id',
-    'status', 'invalidated_reason', 'password_hash', 'totp_key_id', 'totp_ciphertext', 'totp_iv', 'totp_tag',
-    'totp_attempt_count',
+    'status', 'phone_verification_mode', 'invalidated_reason', 'password_hash', 'totp_key_id', 'totp_ciphertext', 'totp_iv',
+    'totp_tag', 'totp_attempt_count',
   ].map(col).concat(
     ['otp_verified_at', 'password_set_at', 'totp_issued_at', 'created_at', 'expires_at', 'completed_at', 'invalidated_at'].map(time),
   ).join(', ');
@@ -142,6 +153,7 @@ function toAttempt(raw: Raw, prefix = ''): AttemptRow {
     csrfNonce: buf(at('csrf_nonce')),
     csrfKeyId: str(at('csrf_key_id')),
     status: str(at('status')) as AttemptStatus,
+    phoneVerificationMode: phoneModeOf(at('phone_verification_mode')),
     invalidatedReason: optStr(at('invalidated_reason')) as InvalidatedReason | null,
     otpVerifiedAtMs: optMs(at('otp_verified_at_ms')),
     passwordHash: optStr(at('password_hash')),
@@ -323,11 +335,11 @@ export class AdminActivationRepository {
     const result = await context.query(
       `INSERT INTO app.admin_activation_attempts
          (attempt_id, invitation_id, generation_id, user_id, factor_id, token_digest, csrf_nonce, csrf_key_id, status,
-          totp_attempt_count, created_at, expires_at)
-       VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8, 'STARTED', 0, ${ts('$9')}, ${ts('$10')})`,
+          phone_verification_mode, totp_attempt_count, created_at, expires_at)
+       VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8, 'STARTED', $11, 0, ${ts('$9')}, ${ts('$10')})`,
       [
         input.attemptId, input.invitationId, input.generationId, input.userId, input.factorId, input.tokenDigest,
-        input.csrfNonce, input.csrfKeyId, input.createdAtMs, input.expiresAtMs,
+        input.csrfNonce, input.csrfKeyId, input.createdAtMs, input.expiresAtMs, input.phoneVerificationMode,
       ],
     );
     this.#one(result.rowCount, 'Attempt was not written');
@@ -357,11 +369,19 @@ export class AdminActivationRepository {
     this.#one(result.rowCount, 'Attempt was not advanced');
   }
 
-  async markPasswordSet(context: TransactionContext, input: { attemptId: string; passwordHash: string; atMs: number }): Promise<void> {
+  /**
+   * REQUIRED attempts go OTP_VERIFIED -> PASSWORD_SET. DISABLED_TEST attempts (no OTP step, otp_verified_at stays NULL) go
+   * STARTED -> PASSWORD_SET directly; the condition names the mode, so a REQUIRED attempt can never skip its OTP here.
+   */
+  async markPasswordSet(
+    context: TransactionContext,
+    input: { attemptId: string; passwordHash: string; atMs: number; from: 'OTP_VERIFIED' | 'STARTED' },
+  ): Promise<void> {
+    const mode = input.from === 'STARTED' ? 'DISABLED_TEST' : 'REQUIRED';
     const result = await context.query(
       `UPDATE app.admin_activation_attempts SET status = 'PASSWORD_SET', password_hash = $2, password_set_at = ${ts('$3')}
-        WHERE attempt_id = $1::uuid AND status = 'OTP_VERIFIED'`,
-      [input.attemptId, input.passwordHash, input.atMs],
+        WHERE attempt_id = $1::uuid AND status = $4 AND phone_verification_mode = $5`,
+      [input.attemptId, input.passwordHash, input.atMs, input.from, mode],
     );
     this.#one(result.rowCount, 'Attempt was not advanced');
   }
@@ -543,7 +563,7 @@ export class AdminActivationRepository {
   /** The profile copies the invitation's name and note; phone_verified_at is the OTP verification of the attempt (OD-3). */
   async insertProfile(
     context: TransactionContext,
-    input: { userId: string; invitationId: string; phoneVerifiedAtMs: number; atMs: number },
+    input: { userId: string; invitationId: string; phoneVerifiedAtMs: number | null; atMs: number },
   ): Promise<void> {
     const result = await context.query(
       `INSERT INTO app.admin_profiles (user_id, invitation_id, full_name, note, phone_verified_at, created_at)

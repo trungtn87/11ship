@@ -74,6 +74,56 @@ describe('activation - opening the link', () => {
     expect(controller.screen.name).toBe('link-invalid');
   });
 
+  it('a route that is not there (404 NOT_FOUND), a bad origin or a 5xx is NEVER shown as an expired link', async () => {
+    for (const scripted of [actError(404, 'NOT_FOUND'), actError(403, 'ADMIN_ORIGIN_INVALID'), actError(400, 'ADMIN_CSRF_INVALID'), fail(503, 'SERVICE_UNAVAILABLE')]) {
+      const server = new FakeServer().on('POST', '/start', scripted, startedFresh()).on('GET', '/state', otpStatus('NONE'));
+      const { controller } = setup(server);
+      await controller.begin(TOKEN);
+      expect(controller.screen).toEqual({ name: 'unavailable', pending: false });
+      // The token was kept for the user's "Thử lại"; the second start is the user's click.
+      await controller.retry();
+      await settle();
+      expect(controller.screen.name).toBe('otp');
+      expect(server.count('POST', '/start')).toBe(2);
+    }
+  });
+
+  it('DISABLED_TEST: STARTED opens the password step, with no OTP screen and no OTP request', async () => {
+    const started = { status: 201, body: { data: { state: 'STARTED', csrf_token: 'csrf-act-1', expires_at: '2999-01-01T00:00:00.000Z', phone_verification_mode: 'DISABLED_TEST' } } };
+    const server = new FakeServer().on('POST', '/start', started).on('POST', '/password', ok({ state: 'PASSWORD_SET' })).on('POST', '/totp/enrollment', actEnrollment());
+    const { controller, screens } = setup(server);
+    await controller.begin(TOKEN);
+    await settle();
+    expect(controller.screen).toMatchObject({ name: 'password', restartRequired: false, pending: false });
+    expect(screens.some((screen) => screen.name === 'otp')).toBe(false);
+    await controller.submitPassword('Correct-Horse-1', 'Correct-Horse-1');
+    await settle();
+    expect(controller.screen.name).toBe('enroll');
+    expect(server.count('POST', '/otp/request')).toBe(0);
+    expect(server.count('POST', '/otp/verify')).toBe(0);
+  });
+
+  it('DISABLED_TEST: a reload reads the state and lands on the password step (with the window); a closed window offers the restart', async () => {
+    const open = actState('STARTED', { expires_at: '2999-01-01T00:00:00.000Z', phone_verification_mode: 'DISABLED_TEST', password_deadline: '2999-01-01T00:00:00.000Z', restart_required: false });
+    const server = new FakeServer().on('GET', '/state', open);
+    const { controller } = setup(server);
+    await controller.begin(undefined);
+    expect(controller.screen).toMatchObject({ name: 'password', restartRequired: false });
+    const closed = actState('STARTED', { expires_at: '2999-01-01T00:00:00.000Z', phone_verification_mode: 'DISABLED_TEST', password_deadline: '2000-01-01T00:00:00.000Z', restart_required: true });
+    const other = new FakeServer().on('GET', '/state', closed);
+    const second = setup(other);
+    await second.controller.begin(undefined);
+    expect(second.controller.screen).toMatchObject({ name: 'password', restartRequired: true });
+  });
+
+  it('an unknown phone_verification_mode is a safe error, not a screen of this page', async () => {
+    const odd = { status: 201, body: { data: { state: 'STARTED', csrf_token: 'c', expires_at: '2999-01-01T00:00:00.000Z', phone_verification_mode: 'SKIP' } } };
+    const server = new FakeServer().on('POST', '/start', odd);
+    const { controller } = setup(server);
+    await controller.begin(TOKEN);
+    expect(controller.screen.name).toBe('unavailable');
+  });
+
   it('a malformed fragment is rejected locally, nothing is sent', () => {
     const server = new FakeServer();
     const { controller } = setup(server);

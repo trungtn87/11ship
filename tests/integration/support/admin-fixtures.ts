@@ -213,6 +213,11 @@ export interface StartAdminOptions {
   readonly invitationTtlSeconds?: number;
   /** M01-D-ADMIN-1C: enables the activation routes with this (fake) provider. Omitted: the routes are not wired. */
   readonly activationProvider?: ActivationOtpProvider;
+  /**
+   * Local test contract (2026-10-13): wires the activation with ADMIN_ACTIVATION_PHONE_VERIFICATION_MODE=DISABLED_TEST. There is
+   * no OTP step and therefore NO provider; combining it with `activationProvider` is a mistake the application refuses.
+   */
+  readonly activationDisabledTest?: boolean;
   readonly activationConfig?: Partial<AdminActivationConfig>;
   /** Exact HTTPS origins accepted on POST (default: ADMIN_ORIGIN). The browser test passes its local HTTPS front. */
   readonly allowedOrigins?: readonly string[];
@@ -249,11 +254,12 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
     crypto: options.keyring ?? fixtureKeyring(options.activeKeyId ?? 'k1'),
     auth: authTestConfig(),
     adminAuth,
-    ...(options.activationProvider === undefined
+    ...(options.activationProvider === undefined && options.activationDisabledTest !== true
       ? {}
       : {
           adminActivation: {
-            otpMode: 'FAKE' as const,
+            phoneVerificationMode: options.activationDisabledTest === true ? ('DISABLED_TEST' as const) : ('REQUIRED' as const),
+            otpMode: options.activationDisabledTest === true ? undefined : ('FAKE' as const),
             providerTimeoutMs: 8000,
             promoteGraceMs: 10_000,
             limits: DEFAULT_ACTIVATION_LIMITS,

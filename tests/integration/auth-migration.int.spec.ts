@@ -122,6 +122,7 @@ describe('M01-A1 — Auth Core migration', () => {
       '1792540800000_create-customer-profiles-consents',
       '1792627200000_allow-staging-fixture-account-origin',
       '1792713600000_allow-test-unverified-account-origin',
+      '1792800000000_add-admin-activation-phone-verification-mode',
     ]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });

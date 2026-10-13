@@ -10,7 +10,7 @@ import { TestInboxActivationOtpProvider, TestInboxOtpProvider } from './test-sms
 const PHONE = '+84901234567';
 
 function activationConfig(otpMode: 'FAKE' | 'TEST_DISPLAY' | 'TEST_INBOX' | 'SMS'): Parameters<typeof bindActivationOtpProvider>[0] {
-  return { otpMode, providerTimeoutMs: 8000, promoteGraceMs: 10_000, limits: DEFAULT_ACTIVATION_LIMITS };
+  return { phoneVerificationMode: 'REQUIRED', otpMode, providerTimeoutMs: 8000, promoteGraceMs: 10_000, limits: DEFAULT_ACTIVATION_LIMITS };
 }
 
 describe('test inbox adapters', () => {

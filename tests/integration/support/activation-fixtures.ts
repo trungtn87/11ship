@@ -50,6 +50,17 @@ export async function startActivationApp(options: StartAdminOptions = {}): Promi
   return { app, provider, pool: app.pool };
 }
 
+export interface DisabledTestActivationApp {
+  readonly app: AdminApp;
+  readonly pool: Pool;
+}
+
+/** The activation wired with the local DISABLED_TEST phone verification: no OTP step, hence no provider is bound. */
+export async function startDisabledTestActivationApp(options: StartAdminOptions = {}): Promise<DisabledTestActivationApp> {
+  const app = await startAdminApp({ ...options, activationDisabledTest: true });
+  return { app, pool: app.pool };
+}
+
 export function act(app: AdminApp, method: 'GET' | 'POST', path: string, options: AdminCallOptions = {}): Promise<AdminResponse> {
   return app.call(method, path, { ...options, basePath: ACTIVATION_BASE });
 }
@@ -248,6 +259,8 @@ export async function insertAttempt(
     /** Negative: already expired. The column is immutable, so it is chosen here, at INSERT. */
     expiresInSeconds: number;
     otpVerifiedAgoSeconds?: number;
+    /** Default REQUIRED (the column default). DISABLED_TEST rows never carry an OTP fact. */
+    phoneVerificationMode?: 'REQUIRED' | 'DISABLED_TEST';
   },
 ): Promise<{ attemptId: string; cookie: string; userId: string; factorId: string }> {
   const cookie = generateToken().token;
@@ -258,7 +271,7 @@ export async function insertAttempt(
     input.invitationId,
   ]);
   const status = input.status;
-  const verified = status === 'STARTED' || (status === 'INVALIDATED' && input.otpVerifiedAgoSeconds === undefined) ? null : (input.otpVerifiedAgoSeconds ?? 1);
+  const verified = status === 'STARTED' || input.phoneVerificationMode === 'DISABLED_TEST' || (status === 'INVALIDATED' && input.otpVerifiedAgoSeconds === undefined) ? null : (input.otpVerifiedAgoSeconds ?? 1);
   const passwordSet = status === 'PASSWORD_SET' || status === 'TOTP_ISSUED' || status === 'COMPLETED';
   const sealed = status === 'TOTP_ISSUED';
   await pool.query(
@@ -266,7 +279,7 @@ export async function insertAttempt(
        (attempt_id, invitation_id, generation_id, user_id, factor_id, token_digest, csrf_nonce, csrf_key_id, status,
         invalidated_reason, otp_verified_at, password_set_at, password_hash,
         totp_key_id, totp_ciphertext, totp_iv, totp_tag, totp_issued_at,
-        created_at, expires_at, completed_at, invalidated_at)
+        created_at, expires_at, completed_at, invalidated_at, phone_verification_mode)
      VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, 'k1', $8::varchar, $9::varchar,
              CASE WHEN $10::int IS NULL THEN NULL ELSE now() - make_interval(secs => $10::int) END,
              CASE WHEN $13::boolean THEN now() - make_interval(secs => COALESCE($10::int, 1)) ELSE NULL END,
@@ -275,7 +288,8 @@ export async function insertAttempt(
              CASE WHEN $14::boolean THEN now() - make_interval(secs => COALESCE($10::int, 1)) ELSE NULL END,
              now() - make_interval(secs => $11::int), now() + make_interval(secs => $12::int),
              CASE WHEN $8::varchar = 'COMPLETED' THEN now() - make_interval(secs => $11::int) ELSE NULL END,
-             CASE WHEN $8::varchar = 'INVALIDATED' THEN now() - make_interval(secs => $11::int) ELSE NULL END)`,
+             CASE WHEN $8::varchar = 'INVALIDATED' THEN now() - make_interval(secs => $11::int) ELSE NULL END,
+             $18::varchar)`,
     [
       attemptId,
       input.invitationId,
@@ -294,6 +308,7 @@ export async function insertAttempt(
       sealed ? randomBytes(20) : null,
       sealed ? randomBytes(12) : null,
       sealed ? randomBytes(16) : null,
+      input.phoneVerificationMode ?? 'REQUIRED',
     ],
   );
   return { attemptId, cookie, userId, factorId };

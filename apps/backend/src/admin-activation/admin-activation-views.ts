@@ -59,7 +59,14 @@ export function stateGetsCsrf(attempt: AttemptRow): boolean {
   return attempt.status !== 'COMPLETED';
 }
 
+/**
+ * When the password step closes. REQUIRED: the window starts at the OTP verification. DISABLED_TEST has no OTP fact to borrow
+ * a timestamp from, so its window starts at the creation of the attempt and never outlives the attempt itself.
+ */
 export function passwordDeadlineMs(attempt: AttemptRow, windowMs: number): number | null {
+  if (attempt.phoneVerificationMode === 'DISABLED_TEST') {
+    return Math.min(attempt.createdAtMs + windowMs, attempt.expiresAtMs);
+  }
   return attempt.otpVerifiedAtMs === null ? null : attempt.otpVerifiedAtMs + windowMs;
 }
 
@@ -71,6 +78,13 @@ export function stateBody(input: ViewInput, csrf: string | undefined, passwordWi
   };
   switch (attempt.status) {
     case 'STARTED': {
+      if (attempt.phoneVerificationMode === 'DISABLED_TEST') {
+        // No OTP step: STARTED is already the password step, with the same window facts as OTP_VERIFIED.
+        const deadline = passwordDeadlineMs(attempt, passwordWindowMs);
+        body.password_deadline = deadline === null ? null : iso(deadline);
+        body.restart_required = deadline !== null && nowMs > deadline;
+        break;
+      }
       const challenge = input.newestChallenge;
       const status = otpStatusOf(challenge, nowMs);
       const otp: Record<string, string | number | boolean | null> = { status };
@@ -104,6 +118,9 @@ export function stateBody(input: ViewInput, csrf: string | undefined, passwordWi
   }
   if (attempt.status !== 'COMPLETED' && attempt.status !== 'INVALIDATED') {
     body.expires_at = iso(attempt.expiresAtMs);
+    // Live attempts only: the page reads the step from the server and never guesses the environment. The terminal
+    // answers keep the shape they have always had.
+    body.phone_verification_mode = attempt.phoneVerificationMode;
   }
   if (csrf !== undefined && stateGetsCsrf(attempt)) {
     body.csrf_token = csrf;

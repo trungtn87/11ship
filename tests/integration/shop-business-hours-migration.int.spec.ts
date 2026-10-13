@@ -80,6 +80,7 @@ describe('M02-A — Shop business-hours migration', () => {
       '1792540800000_create-customer-profiles-consents',
       '1792627200000_allow-staging-fixture-account-origin',
       '1792713600000_allow-test-unverified-account-origin',
+      '1792800000000_add-admin-activation-phone-verification-mode',
     ]);
     expect(HOURS).toBe('1791763200000_create-shop-business-hours');
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-driver-onboarding')).toBe(true);

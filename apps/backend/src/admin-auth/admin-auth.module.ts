@@ -44,9 +44,12 @@ import { AdminTotpService } from './admin-totp-service';
  * AdminPasswordVerifier. Nothing imports it, so the graph is acyclic and needs no forwardRef. The keyring is required
  * (startup stops naming only the two variables), and the limiter configuration row is verified before listening.
  */
-/** Present only when ADMIN_ACTIVATION_ENABLED=true and the OTP provider was bound explicitly (M01-D-ADMIN-1C). */
+/**
+ * Present only when ADMIN_ACTIVATION_ENABLED=true (M01-D-ADMIN-1C). The OTP provider is bound explicitly and exists exactly
+ * when the phone verification is REQUIRED; with the local DISABLED_TEST mode there is no OTP step and no provider.
+ */
 export interface AdminActivationWiring {
-  readonly otpProvider: ActivationOtpProvider;
+  readonly otpProvider?: ActivationOtpProvider;
 }
 
 @Module({})
@@ -97,7 +100,7 @@ export class AdminAuthModule implements NestModule {
         ...(activation === undefined
           ? []
           : [
-              { provide: ACTIVATION_OTP_PROVIDER, useValue: activation.otpProvider },
+              ...(activation.otpProvider === undefined ? [] : [{ provide: ACTIVATION_OTP_PROVIDER, useValue: activation.otpProvider }]),
               adminActivationConfigProvider,
               AdminActivationLimiter,
               AdminActivationService,

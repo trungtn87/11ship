@@ -16,6 +16,8 @@ const FILES = [
   '1792627200000_allow-staging-fixture-account-origin.sql',
   // DISABLED_TEST registration: the test-unverified origin extends the same two CHECKs again; newest, so down first and up last.
   '1792713600000_allow-test-unverified-account-origin.sql',
+  // Local test activation: the phone verification mode of an attempt (DISABLED_TEST); newest, so down first and up last.
+  '1792800000000_add-admin-activation-phone-verification-mode.sql',
 ] as const;
 
 const parts = FILES.map((file) => {

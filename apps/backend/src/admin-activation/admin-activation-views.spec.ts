@@ -19,6 +19,7 @@ function attempt(overrides: Partial<AttemptRow> = {}): AttemptRow {
     csrfNonce: Buffer.alloc(32),
     csrfKeyId: 'k1',
     status: 'STARTED',
+    phoneVerificationMode: 'REQUIRED',
     invalidatedReason: null,
     otpVerifiedAtMs: null,
     passwordHash: null,
@@ -112,6 +113,54 @@ describe('activation state view (contract 6.3, 6.1.1)', () => {
     const replaced = attempt({ status: 'INVALIDATED', invalidatedReason: 'SUPERSEDED' });
     const body = stateBody({ attempt: replaced, newestChallenge: undefined, invitation, nowMs: NOW }, 'c');
     expect(body).toEqual({ state: 'INVALIDATED', reason: 'REPLACED', can_restart: false });
+  });
+
+  it('live views say which phone verification mode the attempt has; terminal ones keep their old shape', () => {
+    for (const status of ['STARTED', 'OTP_VERIFIED', 'PASSWORD_SET', 'TOTP_ISSUED'] as const) {
+      for (const mode of ['REQUIRED', 'DISABLED_TEST'] as const) {
+        const body = stateBody({ attempt: attempt({ status, phoneVerificationMode: mode }), newestChallenge: undefined, invitation, nowMs: NOW }, 'c');
+        expect(body.phone_verification_mode).toBe(mode);
+      }
+    }
+    expect(stateBody({ attempt: attempt({ status: 'COMPLETED' }), newestChallenge: undefined, invitation, nowMs: NOW }, 'c')).not.toHaveProperty('phone_verification_mode');
+    expect(
+      stateBody({ attempt: attempt({ status: 'INVALIDATED', invalidatedReason: 'SUPERSEDED' }), newestChallenge: undefined, invitation, nowMs: NOW }, 'c'),
+    ).not.toHaveProperty('phone_verification_mode');
+  });
+
+  it('DISABLED_TEST STARTED is the password step: no OTP block, a window from created_at that never passes expires_at', () => {
+    const created = NOW - 60_000;
+    const open = stateBody(
+      { attempt: attempt({ phoneVerificationMode: 'DISABLED_TEST', createdAtMs: created, expiresAtMs: NOW + 600_000 }), newestChallenge: undefined, invitation, nowMs: NOW },
+      'csrf',
+    );
+    expect(open).toMatchObject({ state: 'STARTED', phone_verification_mode: 'DISABLED_TEST', restart_required: false, csrf_token: 'csrf' });
+    expect(open).not.toHaveProperty('otp');
+    expect(open.password_deadline).toBe(new Date(created + PASSWORD_DEADLINE_MS).toISOString());
+    // The deadline is never later than the end of the attempt.
+    const capped = stateBody(
+      { attempt: attempt({ phoneVerificationMode: 'DISABLED_TEST', createdAtMs: created, expiresAtMs: created + 1000 }), newestChallenge: undefined, invitation, nowMs: created },
+      undefined,
+    );
+    expect(capped.password_deadline).toBe(new Date(created + 1000).toISOString());
+    // Strictly after the deadline the page is told to restart; AT the deadline it is not.
+    const atDeadline = stateBody(
+      { attempt: attempt({ phoneVerificationMode: 'DISABLED_TEST', createdAtMs: NOW - PASSWORD_DEADLINE_MS, expiresAtMs: NOW + 600_000 }), newestChallenge: undefined, invitation, nowMs: NOW },
+      undefined,
+    );
+    expect(atDeadline.restart_required).toBe(false);
+    const after = stateBody(
+      { attempt: attempt({ phoneVerificationMode: 'DISABLED_TEST', createdAtMs: NOW - PASSWORD_DEADLINE_MS - 1, expiresAtMs: NOW + 600_000 }), newestChallenge: undefined, invitation, nowMs: NOW },
+      undefined,
+    );
+    expect(after.restart_required).toBe(true);
+  });
+
+  it('a REQUIRED STARTED view is unchanged: the OTP block and no password window', () => {
+    const body = stateBody({ attempt: attempt(), newestChallenge: undefined, invitation, nowMs: NOW }, 'csrf');
+    expect(body).toMatchObject({ state: 'STARTED', phone_verification_mode: 'REQUIRED', otp: { status: 'NONE' } });
+    expect(body).not.toHaveProperty('password_deadline');
+    expect(body).not.toHaveProperty('restart_required');
   });
 
   it('the view can never carry a phone, name, id, secret, password or digest', () => {

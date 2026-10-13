@@ -6,7 +6,7 @@ describe('admin web 1C client', () => {
   it('start sends only {token}; 201 carries no otp object, 200 may continue with one', async () => {
     const server = new FakeServer().on('POST', '/start', startedFresh(), ok({ state: 'OTP_VERIFIED', expires_at: '2999-01-01T00:00:00.000Z', csrf_token: 'c', restart_required: false }));
     const api = server.activationApi();
-    expect(await api.start(TOKEN)).toEqual({ kind: 'ok', data: { state: 'STARTED', expiresAt: '2999-01-01T00:00:00.000Z', csrfToken: 'csrf-act-1' } });
+    expect(await api.start(TOKEN)).toEqual({ kind: 'ok', data: { state: 'STARTED', expiresAt: '2999-01-01T00:00:00.000Z', csrfToken: 'csrf-act-1', phoneVerificationMode: 'REQUIRED', restartRequired: false } });
     expect((await api.start(TOKEN)).kind).toBe('ok');
     expect(server.requests[0]).toEqual({ method: 'POST', path: '/start', body: { token: TOKEN } });
   });
@@ -62,5 +62,17 @@ describe('admin web 1C client', () => {
   it('refuses an enrollment answer that is not an otpauth URI', async () => {
     const server = new FakeServer().on('POST', '/totp/enrollment', ok({ state: 'TOTP_ISSUED', otpauth_uri: 'https://x', secret: 'S' }));
     expect((await server.activationApi().enrollment('c')).kind).toBe('network');
+  });
+
+  it('phone_verification_mode: absent means REQUIRED, DISABLED_TEST is read, an unknown value is refused', () => {
+    expect(parseActivationView({ state: 'STARTED', expires_at: 'x', otp: { status: 'NONE' } })).toMatchObject({ phoneVerificationMode: 'REQUIRED' });
+    expect(parseActivationView({ state: 'STARTED', expires_at: 'x', phone_verification_mode: 'REQUIRED', otp: { status: 'NONE' } })).toMatchObject({
+      phoneVerificationMode: 'REQUIRED',
+    });
+    expect(
+      parseActivationView({ state: 'STARTED', expires_at: 'x', phone_verification_mode: 'DISABLED_TEST', password_deadline: 'd', restart_required: true }),
+    ).toMatchObject({ state: 'STARTED', phoneVerificationMode: 'DISABLED_TEST', passwordDeadline: 'd', restartRequired: true });
+    expect(parseActivationView({ state: 'STARTED', expires_at: 'x', phone_verification_mode: 'SKIP' })).toBeUndefined();
+    expect(parseActivationView({ state: 'OTP_VERIFIED', phone_verification_mode: 7 })).toBeUndefined();
   });
 });

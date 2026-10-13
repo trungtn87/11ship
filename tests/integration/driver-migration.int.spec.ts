@@ -83,6 +83,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
       '1792540800000_create-customer-profiles-consents',
       '1792627200000_allow-staging-fixture-account-origin',
       '1792713600000_allow-test-unverified-account-origin',
+      '1792800000000_add-admin-activation-phone-verification-mode',
     ]);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-shop-onboarding')).toBe(true);
