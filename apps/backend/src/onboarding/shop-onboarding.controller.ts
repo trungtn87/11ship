@@ -36,7 +36,7 @@ export class ShopOnboardingController {
   @Get('profile')
   async readProfile(@Req() request: AuthenticatedRequest) {
     const principal = this.#principal(request);
-    return { data: await this.profiles.ownedProfile(principal.userId) };
+    return { data: await this.profiles.ownedProfile(actorOf(principal)) };
   }
 
   @Put('profile')

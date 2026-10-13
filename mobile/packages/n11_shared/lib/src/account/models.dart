@@ -104,6 +104,14 @@ class AuthFailure implements Exception {
   final String? code;
   final int? status;
 
+  /// True when a mutation MAY have committed although no usable answer arrived: no complete answer at all, the server's own
+  /// TRANSACTION_OUTCOME_UNKNOWN, or a gateway answer (502/504) that only says the upstream did not answer in time. A definite refusal
+  /// (any other code, or a 503 the backend sent before doing anything) is not unknown. The key and body of an unknown outcome are
+  /// kept so the person's own retry replays the same intent instead of creating a second one.
+  bool get outcomeUnknown =>
+      kind == AuthFailureKind.unknownOutcome ||
+      (kind == AuthFailureKind.serverUnavailable && (code == 'TRANSACTION_OUTCOME_UNKNOWN' || status == 502 || status == 504));
+
   @override
   String toString() => 'AuthFailure($kind, $code, $status)';
 }

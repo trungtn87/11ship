@@ -24,10 +24,15 @@ enum ClientApp {
 /// A one-use registration token with the key behind it. Consumed by the first login / register that carries it; a replay of that
 /// same request presents it again with a fresh signature.
 class RegistrationGrant {
-  const RegistrationGrant({required this.token, required this.keyId});
+  const RegistrationGrant({required this.token, required this.keyId, this.joined = false});
 
   final String token;
   final String keyId;
+
+  /// True when this grant was endorsed by the other app's binding (JOIN). The server accepts it only for the SAME user as that
+  /// binding, which the app cannot know before the login answers, so a login that is refused for the device after a JOIN may
+  /// be redone once on the app's own binding (see SessionController).
+  final bool joined;
 }
 
 class NativeAuthApi {
@@ -55,7 +60,10 @@ class NativeAuthApi {
   ///    NEW attested key of this app); if it cannot, this app starts its own binding;
   ///  - this app already has a key the server knows: prove it again (AUTH) with the stored chain and a fresh signature;
   ///  - otherwise generate an attested key for the server nonce (ENROLL).
-  Future<RegistrationGrant> obtainGrant() async {
+  ///
+  /// [allowJoin] is false when the account is not known to be the peer's: a REGISTER creates a new account, which can never own the
+  /// peer's binding, so it goes straight to this app's own binding (ENROLL / AUTH) and never joins.
+  Future<RegistrationGrant> obtainGrant({bool allowJoin = true}) async {
     final DeviceKeyState? key = await bridge.currentKey();
     PeerState? peer;
     try {
@@ -63,7 +71,7 @@ class NativeAuthApi {
     } on DeviceBridgeException {
       peer = null;
     }
-    final bool peerHasBinding = peer != null && peer.bindingId != null && peer.keyId != null;
+    final bool peerHasBinding = allowJoin && peer != null && peer.bindingId != null && peer.keyId != null;
     final bool inPeerBinding = key != null && key.keyId != null && peerHasBinding && key.bindingId == peer.bindingId;
 
     if (peerHasBinding && !inPeerBinding) {
@@ -82,6 +90,13 @@ class NativeAuthApi {
       return _enrollOrAuth(await bridge.currentKey());
     }
     return _enrollOrAuth(key);
+  }
+
+  /// A login was refused for the device after a JOIN (the account is not the peer's): drop the key that was minted for the join and
+  /// the binding memory that came with it, so the next grant is a fresh ENROLL on this app's own binding.
+  Future<void> discardJoinedKey() async {
+    await bridge.deleteKey();
+    await bridge.forgetBinding();
   }
 
   Future<RegistrationGrant> _enrollOrAuth(DeviceKeyState? key) async {
@@ -136,7 +151,7 @@ class NativeAuthApi {
     );
     final RegistrationGrant grant = await _register(key, challenge, endorsement);
     await bridge.saveKeyId(grant.keyId);
-    return grant;
+    return RegistrationGrant(token: grant.token, keyId: grant.keyId, joined: true);
   }
 
   Future<RegistrationGrant> _register(DeviceKeyState key, ({String challengeId, String nonce}) challenge, Endorsement? join) async {

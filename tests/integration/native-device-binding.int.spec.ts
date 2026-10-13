@@ -553,6 +553,17 @@ describe('native device binding (fixture attestation)', () => {
       expect([register.status, errorCode(register)]).toEqual([403, 'DEVICE_PROOF_REQUIRED']);
     });
 
+    it('with the native gate on, legacy login issues no session whatever label the body carries (ANDROID/OTHER, IOS/FOOD, WEB/SHIP), so the proof cannot be sidestepped by relabelling', async () => {
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      for (const [platform, appLabel] of [['ANDROID', 'OTHER'], ['IOS', 'FOOD'], ['WEB', 'SHIP'], ['ANDROID', 'ADMIN_WEB']] as const) {
+        const legacy = await app.call('POST', '/auth/login', {
+          body: { phone: phone.local, password: PASSWORD, device: { device_id: 'relabel-device-1', platform, app: appLabel } },
+        });
+        expect([platform, appLabel, legacy.status, errorCode(legacy)]).toEqual([platform, appLabel, 403, 'DEVICE_PROOF_REQUIRED']);
+      }
+    });
+
     it('ships no signer or root of its own: the fixture signer is not what the config would pin', () => {
       expect(FIXTURE_SIGNER).toHaveLength(32);
       expect(trust.roots).toHaveLength(1);

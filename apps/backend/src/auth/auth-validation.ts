@@ -62,11 +62,15 @@ export function parseDevice(value: unknown): DeviceInfo {
 }
 
 /**
- * The legacy /auth routes must never become a way around the native device binding (contract11 section 6): they issue no session
- * for the native Android apps. The Food / Ship ANDROID platform is issued only by /v1/client-auth with a device proof.
+ * The legacy /auth routes must never become a way around the native device binding (contract11 section 6).
+ *
+ * The decision is made by the SERVER, never by the label the client sends: while the native gate is on (nativeGateEnabled, decided from the
+ * validated startup configuration) the legacy routes issue no session at all, whatever platform or app the body claims, because every
+ * customer session must then come from /v1/client-auth with a device proof. The static label check below stays as a second
+ * guard for the gate-off case only; it is not what protects a gate-on process.
  */
-export function assertLegacyDeviceAllowed(device: DeviceInfo): void {
-  if (device.platform === 'ANDROID' && (device.app === 'FOOD' || device.app === 'SHIP')) {
+export function assertLegacyDeviceAllowed(device: DeviceInfo, nativeGateEnabled = false): void {
+  if (nativeGateEnabled || (device.platform === 'ANDROID' && (device.app === 'FOOD' || device.app === 'SHIP'))) {
     throw new AppError('DEVICE_PROOF_REQUIRED');
   }
 }
