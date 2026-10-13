@@ -209,7 +209,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#89](https://github.com/trungtn87/11ship/pull/89) feat(admin): kích hoạt ADMIN không xác minh SĐT ở local tes… | Đã merge (`MERGED`) | — | — | — | `671cbf0` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#90](https://github.com/trungtn87/11ship/pull/90) feat(M01-ADMIN): read-only account data for the administrat… | Đã merge (`MERGED`) | — | — | — | `b7609c4` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#91](https://github.com/trungtn87/11ship/pull/91) docs: streamline Claude Code and Codex Cloud handoffs | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `879d889` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#92](https://github.com/trungtn87/11ship/pull/92) feat(M01-ADMIN): khóa/mở khóa USER thường (D15) | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `068357f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#92](https://github.com/trungtn87/11ship/pull/92) feat(M01-ADMIN): khóa/mở khóa USER thường (D15) | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `068357f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
