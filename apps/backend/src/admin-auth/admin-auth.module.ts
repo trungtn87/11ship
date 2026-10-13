@@ -6,6 +6,8 @@ import { AdminActivationLimiter } from '../admin-activation/admin-activation-lim
 import { AdminActivationRepository } from '../admin-activation/admin-activation-repository';
 import { AdminActivationService } from '../admin-activation/admin-activation-service';
 import { AdminActivationController } from '../admin-activation/admin-activation.controller';
+import { AdminAccountLockService } from '../admin-account-lock/admin-account-lock-service';
+import { AdminAccountLockController } from '../admin-account-lock/admin-account-lock.controller';
 import { AdminAccountReadRepository } from '../admin-accounts/admin-account-read-repository';
 import { AdminAccountReadService } from '../admin-accounts/admin-account-read-service';
 import { AdminAccountReadController, AdminPermissionsController } from '../admin-accounts/admin-account-read.controller';
@@ -18,6 +20,7 @@ import { AdminOperationService } from '../admin-provisioning/admin-operation-ser
 import { AdminProvisioningController } from '../admin-provisioning/admin-provisioning.controller';
 import { AdminSystemActor } from '../admin-provisioning/admin-system-actor';
 import { AuditModule } from '../audit/audit.module';
+import { OutboxModule } from '../outbox/outbox.module';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { AdminAuthConfig } from '../config/admin-auth-config';
 import { IdempotencyModule, requireKeyring } from '../idempotency/idempotency.module';
@@ -60,10 +63,10 @@ export class AdminAuthModule implements NestModule {
   static register(auth: DynamicModule, activation?: AdminActivationWiring): DynamicModule {
     return {
       module: AdminAuthModule,
-      imports: [auth, TransactionModule, AuditModule, IdempotencyModule],
+      imports: [auth, TransactionModule, AuditModule, OutboxModule, IdempotencyModule],
       // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
       // M01-D-ADMIN-1C: the activation routes under /v1/admin-activation exist only when explicitly enabled.
-      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, ...(activation === undefined ? [] : [AdminActivationController])],
+      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, ...(activation === undefined ? [] : [AdminActivationController])],
       providers: [
         adminAuthConfigProvider,
         {
@@ -100,6 +103,8 @@ export class AdminAuthModule implements NestModule {
         // Read-only account projections (M01-ADMIN account read).
         AdminAccountReadRepository,
         AdminAccountReadService,
+        // M01-ADMIN lock / unlock of ordinary USER accounts (D15).
+        AdminAccountLockService,
         // The 1B section 8.8 hook is always present (1B calls it); it is a no-op when no activation attempt exists.
         AdminActivationRepository,
         AdminActivationInvalidator,
@@ -116,7 +121,7 @@ export class AdminAuthModule implements NestModule {
   }
 
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController);
+    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController);
     // The activation transport headers are an application-level middleware in configureApp (app.setup.ts): it must precede
     // the body parser, which module middleware does not.
   }

@@ -6,8 +6,13 @@ import {
   EMPTY_USER_FILTER,
   Failure,
   ListState,
+  LOCK_MESSAGE,
+  LockCommand,
+  LockDialog,
+  LockResult,
   NOT_WIRED_SOURCE,
   PageState,
+  UserDetail,
   UserFilter,
   UserRole,
   UserRow,
@@ -17,7 +22,8 @@ import { Clock } from '../core/controller.js';
 import { breadcrumb, canOpenRoute, Grants, NO_GRANTS } from '../core/menu.js';
 import { ProvisioningController } from '../core/provisioning-controller.js';
 import { formatRoute, parseRoute, Route } from '../core/routes.js';
-import { AccountsHooks, AdministratorsView, renderUserDetail, UsersView } from './accounts-view.js';
+import { AccountsHooks, AdministratorsView, openLockDialog, renderUserDetail, UsersView } from './accounts-view.js';
+import { DialogHandle } from './dialog.js';
 import { h } from './dom.js';
 import { ProvisioningView } from './provisioning-view.js';
 import { ShellLayout } from './shell-layout.js';
@@ -65,6 +71,8 @@ export class ShellApp implements ShellHost {
   /** The users filter, kept only so "Back" from a detail returns to the same list. Dropped with the shell. */
   #usersFilter: UserFilter | undefined;
   #restoreFilter = false;
+  /** The open lock / unlock dialog, if any. Closed with the page: nothing about it outlives the screen or the session. */
+  #dialog: DialogHandle | undefined;
 
   constructor(
     private readonly provisioning: ProvisioningController,
@@ -74,6 +82,8 @@ export class ShellApp implements ShellHost {
     private readonly source: AccountsSource = NOT_WIRED_SOURCE,
     /** An account read answered 401: the session is gone (the caller goes back to login, which unmounts the shell). */
     private readonly onSessionLost: () => void = () => undefined,
+    /** A new Idempotency-Key for a NEW lock / unlock intent. A retry after an unknown outcome never calls it. */
+    private readonly newKey: () => string = () => globalThis.crypto.randomUUID(),
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -156,6 +166,8 @@ export class ShellApp implements ShellHost {
       this.clock.clearTimeout(this.#filterTimer);
       this.#filterTimer = undefined;
     }
+    this.#dialog?.close();
+    this.#dialog = undefined;
     this.#unsubscribe?.();
     this.#unsubscribe = undefined;
     this.#view?.dispose();
@@ -349,10 +361,19 @@ export class ShellApp implements ShellHost {
 
   #user(content: HTMLElement, id: string): void {
     const generation = this.#generation;
+    const live = (): boolean => generation === this.#generation;
+    let current: UserDetail | undefined;
+    /** The user as the admin saw it when opening the dialog: its version is the one the command carries, even if the page reloads behind it. */
+    let target: UserDetail | undefined;
+    /** The lock / unlock the admin confirmed: kept (key, reason, version) only until it is answered, so a retry is the same request. */
+    let intent: LockCommand | undefined;
+    let dialog: LockDialog | undefined;
+
     const load = (): void => {
+      current = undefined;
       draw({ kind: 'loading' });
       void this.source.user(id).then((state) => {
-        if (generation !== this.#generation) {
+        if (!live()) {
           return;
         }
         if (state.kind === 'failed' && state.failure === 'session-expired') {
@@ -361,6 +382,12 @@ export class ShellApp implements ShellHost {
         }
         if (state.kind === 'failed' && state.failure === 'forbidden' && this.#role === 'ADMIN') {
           this.#loadGrants(true);
+        }
+        if (state.kind === 'ready') {
+          current = state.user;
+        } else if (state.kind === 'not-found' || (state.kind === 'failed' && state.failure === 'forbidden')) {
+          // The account or the right to it is gone: nothing may be confirmed on it any more.
+          closeDialog();
         }
         draw(state);
       });
@@ -379,13 +406,116 @@ export class ShellApp implements ShellHost {
             retry: load,
             login: () => this.history.restart(),
             home: () => this.go({ name: 'home' }),
-            // Lock and unlock are not wired (policy D15 pending; backend M01.32, screen M01.33): the buttons stay inactive.
-            action: () => undefined,
+            action: (action) => {
+              if (current !== undefined && this.#wired()) {
+                target = current;
+                intent = undefined;
+                show({ action, reason: '', phase: 'form' });
+              }
+            },
           },
         ),
       );
     };
+    const closeDialog = (): void => {
+      this.#dialog?.close();
+      this.#dialog = undefined;
+      dialog = undefined;
+      intent = undefined;
+      target = undefined;
+    };
+    const show = (next: LockDialog): void => {
+      dialog = next;
+      this.#dialog?.close();
+      this.#dialog = undefined;
+      if (target === undefined) {
+        return;
+      }
+      this.#dialog = openLockDialog(target, next, {
+        submit: (reason) => {
+          if (target === undefined || dialog === undefined) {
+            return;
+          }
+          // A NEW confirmation is a new intent with a new key; only "Thử lại" reuses the key of an unanswered one.
+          intent = { id, action: dialog.action, version: target.version, reason, key: this.newKey() };
+          void send();
+        },
+        cancel: () => closeDialog(),
+        // Read the state again behind the dialog; the unanswered intent (and its key) is kept for an explicit "Thử lại".
+        recheck: () => load(),
+        retry: () => void send(),
+        reload: () => {
+          closeDialog();
+          load();
+        },
+      });
+    };
+    const send = async (): Promise<void> => {
+      const command = intent;
+      if (command === undefined || dialog === undefined) {
+        return;
+      }
+      show({ action: command.action, reason: command.reason, phase: 'working' });
+      const result = await this.source.lock(command);
+      if (!live() || intent !== command) {
+        return;
+      }
+      this.#afterLock(result, {
+        done: () => {
+          closeDialog();
+          // The acknowledgement says the intent happened, not what the account is NOW: read the current detail.
+          load();
+        },
+        phase: (phase, error) => show({ action: command.action, reason: command.reason, phase, ...(error === undefined ? {} : { error }) }),
+        gone: () => {
+          closeDialog();
+          load();
+        },
+      });
+    };
     load();
+  }
+
+  /** What each server answer to a lock / unlock changes on screen. 401 ends the session; 403 re-reads the admin's rights. */
+  #afterLock(
+    result: LockResult,
+    ui: { done(): void; phase(phase: LockDialog['phase'], error?: string): void; gone(): void },
+  ): void {
+    switch (result.kind) {
+      case 'ok':
+        ui.done();
+        return;
+      case 'conflict':
+        ui.phase('conflict');
+        return;
+      case 'unknown':
+        ui.phase('unknown');
+        return;
+      case 'session-expired':
+        this.onSessionLost();
+        return;
+      case 'not-found':
+        ui.gone();
+        return;
+      case 'forbidden':
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+        ui.phase('failed', LOCK_MESSAGE.forbidden);
+        return;
+      case 'review-required':
+        ui.phase('failed', LOCK_MESSAGE.reviewRequired);
+        return;
+      case 'rate-limited':
+        ui.phase('failed', LOCK_MESSAGE.rateLimited);
+        return;
+      case 'not-wired':
+        ui.phase('failed', LOCK_MESSAGE.notWired);
+        return;
+      case 'rejected':
+        ui.phase('failed', LOCK_MESSAGE.rejected);
+        return;
+    }
   }
 
   #administrators(content: HTMLElement): void {

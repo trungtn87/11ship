@@ -1,9 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { detailAllowedActions } from '../admin-account-lock/admin-account-lock-policy';
 import { AdminCrypto } from '../admin-auth/admin-crypto';
 import { AdminRole } from '../admin-auth/admin-auth-constants';
 import { AdminSystemActor, LockedActor } from '../admin-provisioning/admin-system-actor';
 import { setBusinessLockTimeout } from '../admin-provisioning/admin-provisioning-locks';
 import { maskPhone } from '../admin-provisioning/admin-provisioning-views';
+import { ACCOUNT_ORIGIN_POLICY, AccountOriginPolicy } from '../auth/account-origin';
 import { AppError } from '../common/app-errors';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { freshClockMs } from '../idempotency/idempotency-repository';
@@ -65,6 +67,7 @@ function permissionView(row: PermissionRow): JsonObject {
 @Injectable()
 export class AdminAccountReadService {
   readonly #lockTimeoutMs: number;
+  readonly #lockGateOpen: boolean;
 
   constructor(
     private readonly transactions: TransactionManager,
@@ -72,8 +75,10 @@ export class AdminAccountReadService {
     private readonly reader: AdminAccountReadRepository,
     private readonly crypto: AdminCrypto,
     @Inject(APP_CONFIG) appConfig: AppConfig,
+    @Inject(ACCOUNT_ORIGIN_POLICY) private readonly originPolicy: AccountOriginPolicy,
   ) {
     this.#lockTimeoutMs = appConfig.idempotency.businessLockTimeoutMs;
+    this.#lockGateOpen = appConfig.adminUserAccountMutations?.enabled === true;
   }
 
   async permissions(sessionToken: string | undefined): Promise<JsonObject> {
@@ -137,8 +142,9 @@ export class AdminAccountReadService {
         updated_at: iso(row.updatedAtMs),
         version: row.version,
         profiles,
-        // Read only: no action is offered until the lock policy (D15) is decided.
-        allowed_actions: [],
+        // A hint for the screen: the mutation re-checks everything under locks. It follows D15 (full-domain view + lock for an
+        // ADMIN, ordinary accounts only) and the local gate; anything missing means no action.
+        allowed_actions: detailAllowedActions({ policy: this.originPolicy, actor: auth, row, gateOpen: this.#lockGateOpen }),
       };
     });
   }

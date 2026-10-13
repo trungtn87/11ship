@@ -8,6 +8,8 @@ import {
   AdministratorRow,
   Failure,
   GrantsResult,
+  LockCommand,
+  LockResult,
   PageState,
   UserDetail,
   UserDetailState,
@@ -121,6 +123,10 @@ export function parseUserDetail(data: Record<string, unknown>): UserDetail | und
   if (base === undefined || typeof version !== 'number' || !Number.isSafeInteger(version) || profiles === undefined || isoOf(data.updated_at) === undefined) {
     return undefined;
   }
+  const actions = allowedActionsOf(data.allowed_actions);
+  if (actions === undefined) {
+    return undefined;
+  }
   const customer = profiles.customer === undefined ? undefined : record(profiles.customer);
   const shop = profiles.shop === undefined ? undefined : record(profiles.shop);
   const driver = profiles.driver === undefined ? undefined : record(profiles.driver);
@@ -143,10 +149,21 @@ export function parseUserDetail(data: Record<string, unknown>): UserDetail | und
       ...(shop === undefined ? {} : { shop: { name: typeof shopName === 'string' && shopName !== '' ? shopName : null, state: str(shop.status) as string } }),
       ...(driver === undefined ? {} : { driver: { state: str(driver.status) as string } }),
     },
-    // No timeline and no lock/unlock yet: the page shows nothing it did not receive and enables no mutation, whatever the server lists.
+    // No timeline yet: the page shows nothing it did not receive. The actions are exactly what the server allows right now.
     events: [],
-    allowedActions: [],
+    allowedActions: actions,
   };
+}
+
+/** [] | ["LOCK"] | ["UNLOCK"]; anything else is not the documented shape. */
+function allowedActionsOf(value: unknown): readonly ('LOCK' | 'UNLOCK')[] | undefined {
+  if (!Array.isArray(value) || value.length > 1) {
+    return undefined;
+  }
+  if (value.length === 0) {
+    return [];
+  }
+  return value[0] === 'LOCK' || value[0] === 'UNLOCK' ? [value[0]] : undefined;
 }
 
 const RIGHT_LABEL: readonly (readonly [keyof Pick<AppPermission, 'canView' | 'canReviewProfile' | 'canLock'>, string])[] = [
@@ -204,6 +221,40 @@ function query(params: Readonly<Record<string, string | undefined>>): string {
   return parts.length === 0 ? '' : `?${parts.join('&')}`;
 }
 
+export interface LockAcknowledgement {
+  readonly userId: string;
+  readonly accountStatus: 'ACTIVE' | 'DISABLED';
+  readonly version: number;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** {command_id, user_id, account_status, version, changed_at}: an acknowledgement of the intent, not the current state. */
+export function parseLockAcknowledgement(data: Record<string, unknown>): LockAcknowledgement | undefined {
+  const userId = str(data.user_id);
+  const commandId = str(data.command_id);
+  const version = data.version;
+  if (
+    userId === undefined ||
+    commandId === undefined ||
+    !UUID_RE.test(commandId) ||
+    (data.account_status !== 'ACTIVE' && data.account_status !== 'DISABLED') ||
+    typeof version !== 'number' ||
+    !Number.isSafeInteger(version) ||
+    version < 1 ||
+    isoOf(data.changed_at) === undefined
+  ) {
+    return undefined;
+  }
+  return { userId, accountStatus: data.account_status, version };
+}
+
+/** The CSRF token of the shell session (from memory) and the way to read a fresh one. */
+export interface CsrfPort {
+  csrf(): string | undefined;
+  refresh(): Promise<boolean>;
+}
+
 export class AdminAccountsApi extends ApiClient {
   permissions(): Promise<ApiResult<PermissionsData>> {
     return this.call({ method: 'GET', path: '/admin-auth/permissions' }, parsePermissions);
@@ -222,6 +273,20 @@ export class AdminAccountsApi extends ApiClient {
 
   user(id: string): Promise<ApiResult<UserDetail>> {
     return this.call({ method: 'GET', path: `/admin/users/${encodeURIComponent(id)}` }, parseUserDetail);
+  }
+
+  /** POST /v1/admin/users/:id/lock|unlock. One request; the caller owns the key and never repeats the call by itself. */
+  changeLock(csrf: string, command: LockCommand): Promise<ApiResult<LockAcknowledgement>> {
+    return this.call(
+      {
+        method: 'POST',
+        path: `/admin/users/${encodeURIComponent(command.id)}/${command.action === 'LOCK' ? 'lock' : 'unlock'}`,
+        body: { expected_version: command.version, reason: command.reason },
+        csrf,
+        idempotencyKey: command.key,
+      },
+      parseLockAcknowledgement,
+    );
   }
 
   administrators(filter: AdministratorFilter, cursor: string | null): Promise<ApiResult<Page<AdministratorRow>>> {
@@ -262,8 +327,49 @@ const isCursorInvalid = (result: Exclude<ApiResult<unknown>, { kind: 'ok' }>, cu
   cursor !== null && result.kind === 'error' && result.status === 400 && result.code === 'ADMIN_INPUT_INVALID';
 
 /** The real AccountsSource over the read-only endpoints. It keeps nothing: no rows, no cursor, no grants. */
-export function createAccountsSource(api: AdminAccountsApi): AccountsSource {
+export function createAccountsSource(api: AdminAccountsApi, session?: CsrfPort): AccountsSource {
   return {
+    async lock(command): Promise<LockResult> {
+      const csrf = session?.csrf();
+      if (session === undefined) {
+        return { kind: 'not-wired' };
+      }
+      if (csrf === undefined) {
+        return { kind: 'session-expired' };
+      }
+      const result = await api.changeLock(csrf, command);
+      if (result.kind === 'ok') {
+        return { kind: 'ok' };
+      }
+      // No usable answer, or a server fault (503 TRANSACTION_OUTCOME_UNKNOWN included): the command may have been executed.
+      if (result.kind === 'network' || result.status >= 500) {
+        return { kind: 'unknown' };
+      }
+      switch (result.code) {
+        case 'ADMIN_CSRF_INVALID':
+          // Refused before anything ran; a fresh token is read and the admin retries with the SAME key.
+          await session.refresh();
+          return { kind: 'unknown' };
+        case 'ADMIN_SESSION_INVALID':
+          return { kind: 'session-expired' };
+        case 'ADMIN_FORBIDDEN':
+          return { kind: 'forbidden' };
+        case 'USER_NOT_AVAILABLE':
+          return { kind: 'not-found' };
+        case 'USER_ACCOUNT_VERSION_CONFLICT':
+        case 'USER_ACCOUNT_ALREADY_IN_STATE':
+          return { kind: 'conflict' };
+        case 'USER_ACCOUNT_IMPACT_REVIEW_REQUIRED':
+          return { kind: 'review-required' };
+        case 'IDEMPOTENCY_BUSY':
+          // The same key is still being processed: asking again with it is exactly right.
+          return { kind: 'unknown' };
+        case 'ADMIN_AUTH_RATE_LIMITED':
+          return { kind: 'rate-limited', ...(result.retryAfterSeconds === undefined ? {} : { retryAfterSec: result.retryAfterSeconds }) };
+        default:
+          return { kind: 'rejected' };
+      }
+    },
     async grants(): Promise<GrantsResult> {
       const result = await api.permissions();
       if (result.kind !== 'ok') {

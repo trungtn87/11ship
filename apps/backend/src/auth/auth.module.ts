@@ -19,6 +19,7 @@ import { AuthController } from './auth.controller';
 import { CustomerProfileRepository } from './customer-profile-repository';
 import { CustomerProvisioningParticipant } from './customer-provisioning-participant';
 import { AdminIdentityParticipant } from './admin-identity-participant';
+import { AdminUserAccountParticipant } from './admin-user-account-participant';
 import { AdminPasswordVerifier } from './admin-password-verifier';
 import { LoginService } from './login-service';
 import { OTP_PROVIDER, OtpProvider } from './otp-provider';
@@ -104,6 +105,7 @@ export class AuthModule {
         SessionAuthGuard,
         AdminIdentityParticipant,
         AdminPasswordVerifier,
+        AdminUserAccountParticipant,
       ],
       // A guard named in @UseGuards() of another module is built in THAT module, from its imports, so the
       // SessionService it depends on has to be exported together with the guard.
@@ -117,6 +119,9 @@ export class AuthModule {
         SessionAuthorizationParticipant,
         AdminIdentityParticipant,
         AdminPasswordVerifier,
+        // M01-ADMIN lock / unlock (D15): the ordinary-account participant and the policy it decides with (also used by the detail hint).
+        AdminUserAccountParticipant,
+        ACCOUNT_ORIGIN_POLICY,
         ClientSessionAuthority,
         CustomerProfileRepository,
         UserRepository,

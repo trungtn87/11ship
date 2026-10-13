@@ -1,5 +1,6 @@
 import { AdminActivationConfig, loadAdminActivationConfig } from './admin-activation-config';
 import { AdminAuthConfig, loadAdminAuthConfig } from './admin-auth-config';
+import { AdminUserAccountMutationsConfig, parseAdminUserAccountMutations } from './admin-user-account-mutations-config';
 import { AdminWebHostingConfig, parseAdminWebHosting } from './admin-web-hosting-config';
 import { Keyring, parseKeyringConfig } from '../crypto/keyring';
 import { DatabaseTls, resolveDatabaseTls } from '../database/tls-config';
@@ -143,6 +144,13 @@ export interface AppConfig {
    * valid only for APP_ENV=staging with the administration web authentication enabled. Absent everywhere else.
    */
   adminWebHosting?: AdminWebHostingConfig;
+  /**
+   * Lock / unlock of ordinary USER accounts by the administration web (M01-ADMIN, D15). Present ONLY when
+   * ADMIN_USER_ACCOUNT_MUTATIONS_ENABLED=true, valid only for APP_ENV development/test on a loopback bind with the
+   * administration web authentication enabled. Absent everywhere else: the mutation then answers
+   * USER_ACCOUNT_IMPACT_REVIEW_REQUIRED and the detail offers no action.
+   */
+  adminUserAccountMutations?: AdminUserAccountMutationsConfig;
   /**
    * Test SMS inbox (M01.22). Present ONLY when TEST_INBOX was selected explicitly (OTP_PROVIDER=TEST_INBOX for REGISTER
    * and/or ADMIN_ACTIVATION_OTP_MODE=TEST_INBOX with the activation enabled) in a development/test environment on a
@@ -597,6 +605,17 @@ export function loadConfig(env: EnvSource): ConfigResult {
     adminWebHosting.invalid.forEach(flag);
   }
 
+  // Lock / unlock of USER accounts (D15): closed unless explicitly opened for a local development/test bind. Names only.
+  const userMutations = parseAdminUserAccountMutations({
+    appEnv,
+    host,
+    enabledRaw: env.ADMIN_USER_ACCOUNT_MUTATIONS_ENABLED,
+    adminAuthEnabled: adminAuth !== undefined,
+  });
+  if (!userMutations.ok) {
+    userMutations.invalid.forEach(flag);
+  }
+
   // Test SMS inbox (M01.22): explicit, development/test and loopback only. Names only, never a value.
   const testInboxResult = loadTestInboxConfig({
     env,
@@ -680,6 +699,7 @@ export function loadConfig(env: EnvSource): ConfigResult {
       ...(adminWebHosting.ok && adminWebHosting.config !== undefined
         ? { adminWebHosting: adminWebHosting.config }
         : {}),
+      ...(userMutations.ok && userMutations.config !== undefined ? { adminUserAccountMutations: userMutations.config } : {}),
       ...(testInbox === undefined ? {} : { testInbox }),
       ...(clientAuth === undefined ? {} : { clientAuth }),
       ...(clientPhoneVerificationMode === 'DISABLED_TEST' ? { clientPhoneVerificationMode } : {}),

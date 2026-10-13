@@ -53,7 +53,7 @@ describe('admin web account read - parsers', () => {
     expect(parseUserPage({ ...base, items: 'x' })).toBeUndefined();
   });
 
-  it('the detail never enables an action and carries no timeline, whatever the server lists', () => {
+  it('the detail carries no timeline and exactly the action the server allows; any other shape is refused', () => {
     const detail = parseUserDetail({
       ...summary(),
       updated_at: '2026-10-02T00:00:00.000Z',
@@ -61,11 +61,17 @@ describe('admin web account read - parsers', () => {
       profiles: { customer: { full_name: 'Nguyễn Văn A' }, shop: { name: null, status: 'APPROVED' }, driver: { status: 'PENDING' } },
       allowed_actions: ['LOCK'],
     });
-    expect(detail?.allowedActions).toEqual([]);
+    expect(detail?.allowedActions).toEqual(['LOCK']);
     expect(detail?.events).toEqual([]);
     expect(detail?.version).toBe(3);
     expect(detail?.profile).toEqual({ customer: { fullName: 'Nguyễn Văn A' }, shop: { name: null, state: 'APPROVED' }, driver: { state: 'PENDING' } });
-    expect(parseUserDetail({ ...summary(), updated_at: '2026-10-02T00:00:00.000Z', version: '3', profiles: {} })).toBeUndefined();
+    const base = { ...summary(), updated_at: '2026-10-02T00:00:00.000Z', version: 3, profiles: {} };
+    expect(parseUserDetail({ ...base, allowed_actions: [] })?.allowedActions).toEqual([]);
+    expect(parseUserDetail({ ...base, allowed_actions: ['UNLOCK'] })?.allowedActions).toEqual(['UNLOCK']);
+    for (const odd of [undefined, 'LOCK', ['LOCK', 'UNLOCK'], ['DELETE'], [null]]) {
+      expect(parseUserDetail({ ...base, allowed_actions: odd })).toBeUndefined();
+    }
+    expect(parseUserDetail({ ...summary(), updated_at: '2026-10-02T00:00:00.000Z', version: '3', profiles: {}, allowed_actions: [] })).toBeUndefined();
     expect(parseUserDetail({ ...summary(), updated_at: '2026-10-02T00:00:00.000Z', version: 1 })).toBeUndefined();
   });
 
@@ -96,6 +102,70 @@ describe('admin web account read - menu grants', () => {
     expect([...grantsFromPermissions([asked('SHOP', true)])].sort()).toEqual(['shops', 'users']);
     expect([...grantsFromPermissions([asked('DRIVER', true), asked('SHOP', false)])].sort()).toEqual(['drivers', 'users']);
     expect([...grantsFromPermissions([asked('CUSTOMER', false, true), asked('SHOP', false, true)])]).toEqual([]);
+  });
+});
+
+const ACK = { data: { command_id: '22222222-2222-4222-8222-222222222222', user_id: ID, account_status: 'DISABLED', version: 4, changed_at: '2026-10-13T08:00:00.000Z' } };
+const COMMAND = { id: ID, action: 'LOCK' as const, version: 3, reason: 'Vi phạm', key: '33333333-3333-4333-8333-333333333333' };
+const port = (token: string | null = 'csrf-1') => {
+  const calls = { refresh: 0 };
+  return { calls, csrf: () => token ?? undefined, refresh: () => { calls.refresh += 1; return Promise.resolve(true); } };
+};
+
+describe('admin web account lock - source', () => {
+  it('sends exactly one POST with the CSRF token, the idempotency key, the version and the reason - and nothing else', async () => {
+    const { transport, requests } = scripted(reply(200, ACK), reply(200, { data: { ...ACK.data, account_status: 'ACTIVE', version: 5 } }));
+    const source = createAccountsSource(new AdminAccountsApi(transport), port());
+    expect(await source.lock(COMMAND)).toEqual({ kind: 'ok' });
+    expect(await source.lock({ ...COMMAND, action: 'UNLOCK' })).toEqual({ kind: 'ok' });
+    expect(requests).toEqual([
+      { method: 'POST', path: `/admin/users/${ID}/lock`, body: { expected_version: 3, reason: 'Vi phạm' }, csrf: 'csrf-1', idempotencyKey: COMMAND.key },
+      { method: 'POST', path: `/admin/users/${ID}/unlock`, body: { expected_version: 3, reason: 'Vi phạm' }, csrf: 'csrf-1', idempotencyKey: COMMAND.key },
+    ]);
+  });
+
+  it('a lost answer, a 5xx and a malformed acknowledgement are "unknown": the command may have run, nothing is repeated by itself', async () => {
+    const { transport, requests } = scripted('throw', reply(503, errorBody('TRANSACTION_OUTCOME_UNKNOWN')), reply(200, { data: { ...ACK.data, version: 0 } }), reply(409, errorBody('IDEMPOTENCY_BUSY')));
+    const source = createAccountsSource(new AdminAccountsApi(transport), port());
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      expect(await source.lock(COMMAND)).toEqual({ kind: 'unknown' });
+    }
+    expect(requests).toHaveLength(4);
+  });
+
+  it('a CSRF refusal reads a fresh token and is "unknown" so the admin retries with the SAME key', async () => {
+    const session = port();
+    const { transport, requests } = scripted(reply(403, errorBody('ADMIN_CSRF_INVALID')));
+    expect(await createAccountsSource(new AdminAccountsApi(transport), session).lock(COMMAND)).toEqual({ kind: 'unknown' });
+    expect(session.calls.refresh).toBe(1);
+    expect(requests).toHaveLength(1);
+  });
+
+  it('maps every definitive refusal to its own result', async () => {
+    const answers: Array<[number, string, object]> = [
+      [409, 'USER_ACCOUNT_VERSION_CONFLICT', { kind: 'conflict' }],
+      [409, 'USER_ACCOUNT_ALREADY_IN_STATE', { kind: 'conflict' }],
+      [409, 'USER_ACCOUNT_IMPACT_REVIEW_REQUIRED', { kind: 'review-required' }],
+      [404, 'USER_NOT_AVAILABLE', { kind: 'not-found' }],
+      [403, 'ADMIN_FORBIDDEN', { kind: 'forbidden' }],
+      [401, 'ADMIN_SESSION_INVALID', { kind: 'session-expired' }],
+      [400, 'ADMIN_INPUT_INVALID', { kind: 'rejected' }],
+      [409, 'IDEMPOTENCY_KEY_REUSED', { kind: 'rejected' }],
+    ];
+    const { transport } = scripted(...answers.map(([status, code]) => reply(status, errorBody(code))));
+    const source = createAccountsSource(new AdminAccountsApi(transport), port());
+    for (const [, code, expected] of answers) {
+      expect([code, await source.lock(COMMAND)]).toEqual([code, expected]);
+    }
+    const limited = scripted(reply(429, errorBody('ADMIN_AUTH_RATE_LIMITED'), { 'retry-after': '9' }));
+    expect(await createAccountsSource(new AdminAccountsApi(limited.transport), port()).lock(COMMAND)).toEqual({ kind: 'rate-limited', retryAfterSec: 9 });
+  });
+
+  it('without a session token nothing is sent; without a session port the source is not wired for locking', async () => {
+    const { transport, requests } = scripted(reply(200, ACK));
+    expect(await createAccountsSource(new AdminAccountsApi(transport), port(null)).lock(COMMAND)).toEqual({ kind: 'session-expired' });
+    expect(await createAccountsSource(new AdminAccountsApi(transport)).lock(COMMAND)).toEqual({ kind: 'not-wired' });
+    expect(requests).toEqual([]);
   });
 });
 

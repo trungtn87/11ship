@@ -52,8 +52,15 @@ ADMIN_ACTIVATION_PHONE_VERIFICATION_MODE=DISABLED_TEST
 Không cần cấu hình thêm; các route mới nằm dưới prefix đã có (`/v1/admin-auth/permissions`, `/v1/admin/users`, `/v1/admin/users/:id`, `/v1/admin/administrators`), front không mở prefix mới.
 1. SYSTEM đăng nhập → menu **Người dùng** (`/accounts/users`: tìm kiếm theo tên/SĐT không dấu, lọc, "Tải thêm"; mở một dòng để xem chi tiết) và **Quản trị viên** (`/accounts/administrators`, chỉ ADMIN đã kích hoạt).
 2. ADMIN (sau bước 5 trên) chỉ thấy các mục theo quyền xem được cấp; gọi trực tiếp ngoài phạm vi trả 403/404.
-3. Cần có người dùng trong DB dev (đăng ký từ ứng dụng khách) để thấy dòng; nút Khóa/Mở khóa chưa hoạt động (chờ chính sách D15).
+3. Cần có người dùng trong DB dev (đăng ký từ ứng dụng khách) để thấy dòng. Nút Khóa/Mở khóa chỉ hiện khi bật gate (mục dưới).
 4. Test: `tests/integration/admin-account-read.int.spec.ts` (API + một smoke Chrome thật) cần DB `ship11_test` và Chrome; chạy trong CI bắt buộc.
+
+## Khóa / mở khóa USER (D15) — chỉ local
+Thêm vào `.env`: `ADMIN_USER_ACCOUNT_MUTATIONS_ENABLED=true`. Hợp lệ khi `APP_ENV` development/test, `HOST` loopback (127.0.0.1/localhost/::1) và `ADMIN_AUTH_ENABLED=true`; ở staging/production hoặc host khác backend từ chối khởi động, giá trị lạ cũng bị từ chối. Mặc định (không đặt/`false`) mutation trả `USER_ACCOUNT_IMPACT_REVIEW_REQUIRED` và trang không có nút. Front `scripts/admin-web-dev.mjs` không đổi: route mới nằm dưới prefix `/v1/admin/` đã có.
+1. SYSTEM đăng nhập → Người dùng → mở một người dùng thường → **Khóa tài khoản** → nhập lý do → **Khóa**. Mọi phiên Food/Ship của họ bị thu hồi ngay; đăng nhập lại báo tài khoản bị khóa.
+2. **Mở khóa** → lý do → xác nhận: tài khoản ACTIVE, vai trò/hồ sơ giữ nguyên, phiên cũ vẫn chết, đăng nhập mới dùng được.
+3. ADMIN chỉ thấy nút khi có Xem **và** Khóa cho mọi domain của người đó (ví dụ vừa Khách vừa Xế cần cả hai); thiếu một domain ⇒ không có nút, gọi thẳng trả 403. Không khóa được ADMIN/SYSTEM.
+4. Test: `tests/integration/admin-account-lock.int.spec.ts` (API + một smoke Chrome thật qua front) cần DB `ship11_test` và Chrome; chạy trong CI bắt buộc.
 
 ## Giới hạn
 - Dùng chung giới hạn tốc độ theo địa chỉ `127.0.0.1` (front không thêm header chuyển tiếp). Nhập sai liên kết nhiều lần sẽ bị khóa tạm theo Retry-After; chờ hết hoặc xóa trạng thái limiter ở DB dev.

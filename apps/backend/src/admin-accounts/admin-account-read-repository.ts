@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { AccountOrigin, isAccountOrigin } from '../auth/account-origin';
 import { epochMs, toSafeInteger } from '../auth/auth-db';
+import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
 import { FOLD_FROM, FOLD_TO } from './admin-account-read-validation';
 
@@ -47,6 +49,12 @@ export interface UserDetailRow extends UserSummaryRow {
   readonly customer: { readonly fullName: string | null } | undefined;
   readonly shop: { readonly name: string; readonly status: string } | undefined;
   readonly driver: { readonly status: string } | undefined;
+  /** Facts for the lock hint only (never sent): the origin/shape of the account and ALL its roles, not the projection in `roles`. */
+  readonly lock: {
+    readonly accountOrigin: AccountOrigin;
+    readonly phoneVerified: boolean;
+    readonly allRoles: readonly string[];
+  };
 }
 
 export interface AdministratorRow {
@@ -204,6 +212,9 @@ export class AdminAccountReadRepository {
         shop_name: string | null;
         shop_status: string | null;
         driver_status: string | null;
+        account_origin: string;
+        phone_verified: boolean;
+        all_roles: string[];
       }
     >(
       `SELECT u.user_id, u.phone_normalized, u.status, u.version::text AS version,
@@ -212,7 +223,9 @@ export class AdminAccountReadRepository {
               ARRAY(SELECT r.role FROM app.user_roles r WHERE r.user_id = u.user_id AND r.role = ANY($1::text[]) ORDER BY r.role) AS roles,
               COALESCE(CASE WHEN $3::boolean THEN cp.full_name END, CASE WHEN $4::boolean THEN sh.name END, CASE WHEN $5::boolean THEN dr.full_name END) AS display_name,
               (cp.user_id IS NOT NULL) AS has_customer, cp.full_name AS customer_name,
-              sh.name AS shop_name, sh.status AS shop_status, dr.status AS driver_status
+              sh.name AS shop_name, sh.status AS shop_status, dr.status AS driver_status,
+              u.account_origin, (u.phone_verified_at IS NOT NULL) AS phone_verified,
+              ARRAY(SELECT r.role FROM app.user_roles r WHERE r.user_id = u.user_id ORDER BY r.role) AS all_roles
        ${USER_BASE}
         AND ($2::boolean OR EXISTS (SELECT 1 FROM app.user_roles r WHERE r.user_id = u.user_id AND r.role = ANY($1::text[])))
         AND u.user_id = $6::uuid`,
@@ -222,8 +235,12 @@ export class AdminAccountReadRepository {
     if (row === undefined) {
       return undefined;
     }
+    if (!isAccountOrigin(row.account_origin)) {
+      throw new TechnicalError('internal', 'Database returned an unexpected account origin');
+    }
     return {
       ...toSummary(row),
+      lock: { accountOrigin: row.account_origin, phoneVerified: row.phone_verified, allRoles: row.all_roles },
       updatedAtMs: toSafeInteger(row.updated_ms),
       version: toSafeInteger(row.version),
       customer: scope.customer && row.has_customer ? { fullName: row.customer_name } : undefined,
