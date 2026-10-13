@@ -151,6 +151,13 @@ jobs:
             --dart-define=BUILD_FLUTTER="$fv" 2>&1 | tee "$RUNNER_TEMP/b.log" || {
               echo "::error title=build failed::$(tail -n 25 "$RUNNER_TEMP/b.log" | cut -c1-220 | tr '\n' '|' | head -c 2500)"; exit 1; }
 
+      # Exact permission allowlist of the compiled (still unsigned) APK: needs no secret, so it runs for every build.
+      - name: Permission allowlist
+        run: |
+          bt="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)"
+          "$bt/aapt2" dump badging mobile/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk > "$RUNNER_TEMP/unsigned-badging.txt"
+          mobile/tool/check-apk-permissions.sh ${{ matrix.app }} "$RUNNER_TEMP/unsigned-badging.txt"
+
       # No signing material, no distribution: stop HERE, before the (already compiled, unsigned) build is signed or uploaded.
       - name: Require the persistent signing secrets
         run: |
@@ -193,9 +200,7 @@ jobs:
           grep -E "^package: |application-label:|uses-permission" "$work/badging.txt"
           grep -q "package: name='${{ matrix.app_id }}'" "$work/badging.txt" || { echo "::error title=applicationId changed::expected ${{ matrix.app_id }}"; exit 1; }
           grep -q "versionCode='${{ github.run_number }}'" "$work/badging.txt" || { echo "::error title=versionCode mismatch::expected ${{ github.run_number }}"; exit 1; }
-          if grep -qE "uses-permission: name='android.permission.(ACCESS|CAMERA|READ_|WRITE_)" "$work/badging.txt"; then
-            echo "::error title=unexpected permission::an Android permission beyond INTERNET was found"; exit 1
-          fi
+          mobile/tool/check-apk-permissions.sh ${{ matrix.app }} "$work/badging.txt"
 
           # The signing certificate: the APK's one must be the keystore's one (same persistent key). Only public fingerprints are printed.
           apk_fp="$(sed -n 's/^Signer #1 certificate SHA-256 digest: *//p' "$work/verify.txt" | head -1 | tr 'A-F' 'a-f')"

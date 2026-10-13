@@ -78,10 +78,10 @@ void main() {
   });
 
   test('features: account flows are wired; everything else says "not on Android" and never "the backend does not exist"', () {
-    for (final FeatureId id in <FeatureId>[FeatureId.authLogin, FeatureId.authRegister, FeatureId.authProfile]) {
+    for (final FeatureId id in <FeatureId>[FeatureId.authLogin, FeatureId.authRegister, FeatureId.authProfile, FeatureId.shopManage, FeatureId.driverProfile, FeatureId.passwordReset]) {
       expect(isWired(id), isTrue, reason: '$id');
     }
-    for (final FeatureId id in <FeatureId>[FeatureId.shopManage, FeatureId.driverProfile, FeatureId.passwordReset, FeatureId.receiveOrders, FeatureId.wallet]) {
+    for (final FeatureId id in <FeatureId>[FeatureId.receiveOrders, FeatureId.wallet]) {
       expect(isWired(id), isFalse, reason: '$id');
       expect(featureReason(id), kNotOnAndroidReason);
       expect(featureReason(id), isNot(contains('backend')));

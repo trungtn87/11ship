@@ -9,6 +9,11 @@
 //       GET  /v1/client-auth/config, GET /v1/client-auth/me, POST /v1/client-auth/{register,login,logout}
 //       POST /v1/client-auth/device/{challenges,registrations}
 //       GET  /v1/customer/me/profile, PUT /v1/customer/me/profile
+//       Food shop:  GET/PUT /v1/onboarding/shop/profile, GET /v1/onboarding/shop/service-areas, POST /v1/onboarding/shop/complete,
+//                   POST /v1/client-auth/context
+//       Ship driver: GET /v1/driver/me, POST /v1/onboarding/driver
+//       Test password reset (PUBLIC): GET /v1/account-recovery/config, POST /v1/account-recovery/reset-test - these two forward
+//                   ONLY idempotency-key and content-type, never an authorization or device-proof header
 //   * passes the BODY byte for byte and the TARGET unchanged (the proof signs both), and ONLY these request headers:
 //       authorization, idempotency-key, content-type, x-device-registration, x-device-key-id, x-device-time, x-device-nonce,
 //       x-device-signature  (no cookie, no x-forwarded-*, nothing else of the phone's headers);
@@ -45,7 +50,20 @@ export const NATIVE_ROUTES = new Set([
   'POST /v1/client-auth/device/registrations',
   'GET /v1/customer/me/profile',
   'PUT /v1/customer/me/profile',
+  'GET /v1/onboarding/shop/profile',
+  'PUT /v1/onboarding/shop/profile',
+  'GET /v1/onboarding/shop/service-areas',
+  'POST /v1/onboarding/shop/complete',
+  'POST /v1/client-auth/context',
+  'GET /v1/driver/me',
+  'POST /v1/onboarding/driver',
+  'GET /v1/account-recovery/config',
+  'POST /v1/account-recovery/reset-test',
 ]);
+
+/** Public routes: the phone's session and device headers are dropped (a reset must not depend on, or leak, a session). */
+export const PUBLIC_ROUTES = new Set(['GET /v1/account-recovery/config', 'POST /v1/account-recovery/reset-test']);
+export const PUBLIC_FORWARDED_REQUEST_HEADERS = ['idempotency-key', 'content-type'];
 
 export const FORWARDED_REQUEST_HEADERS = [
   'authorization',
@@ -114,7 +132,7 @@ export function createNativeGateway({ backendUrl, key, cert, upstreamTimeoutMs =
       }
       const body = Buffer.concat(chunks);
       const headers = {};
-      for (const name of FORWARDED_REQUEST_HEADERS) {
+      for (const name of PUBLIC_ROUTES.has(`${request.method} ${target}`) ? PUBLIC_FORWARDED_REQUEST_HEADERS : FORWARDED_REQUEST_HEADERS) {
         const value = request.headers[name];
         if (typeof value === 'string') {
           headers[name] = value;

@@ -24,6 +24,8 @@ class Identity {
     required this.onboardingRequired,
     required this.roleSelectionRequired,
     required this.sessionExpiresAt,
+    this.shopOnboarding = 'NOT_STARTED',
+    this.driverOnboarding = 'NOT_STARTED',
   });
 
   final String userId;
@@ -35,6 +37,11 @@ class Identity {
   final bool onboardingRequired;
   final bool roleSelectionRequired;
   final DateTime? sessionExpiresAt;
+
+  /// How far the person got, as the server reports it: NOT_STARTED / INCOMPLETE / COMPLETED for the shop; NOT_STARTED /
+  /// PENDING_APPROVAL / ACTIVE / SUSPENDED / CLOSING / CLOSED for the driver. Display only; it grants nothing.
+  final String shopOnboarding;
+  final String driverOnboarding;
 
   static Identity? tryParse(Object? data) {
     if (data is! Map<String, Object?>) {
@@ -62,7 +69,10 @@ class Identity {
     if (session is Map<String, Object?> && session['expires_at'] is String) {
       expires = DateTime.tryParse(session['expires_at']! as String);
     }
+    final Object? onboarding = data['onboarding'];
     return Identity(
+      shopOnboarding: onboarding is Map<String, Object?> && onboarding['shop'] is String ? onboarding['shop']! as String : 'NOT_STARTED',
+      driverOnboarding: onboarding is Map<String, Object?> && onboarding['driver'] is String ? onboarding['driver']! as String : 'NOT_STARTED',
       userId: userId,
       phoneNormalized: phone,
       availableRoles: <String>[for (final Object? r in roles) if (r is String) r],
@@ -143,4 +153,13 @@ enum AuthFailureKind {
 
   /// The server answer could not be understood.
   badResponse,
+
+  /// 409 DRIVER_PROFILE_EXISTS / SHOP_* state conflicts that the server reports for a profile that already moved on.
+  stateConflict,
+
+  /// 400 INVALID_SERVICE_AREA: the chosen area is not an ACTIVE one any more.
+  invalidServiceArea,
+
+  /// 403 ROLE_NOT_AVAILABLE (a context the account can not wear now).
+  roleNotAvailable,
 }

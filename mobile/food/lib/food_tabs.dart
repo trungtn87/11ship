@@ -8,25 +8,25 @@ import 'package:n11_shared/n11_shared.dart';
 const String kTestNoticeTitle = 'Bản chạy thử';
 const String kTestNoticeText = 'Bản thử nghiệm: đăng ký, đăng nhập và hồ sơ cá nhân đã nối máy chủ. Các nghiệp vụ khác chưa nối.';
 
-List<TabSpec> buildFoodTabs(SessionController session) {
+List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
   return <TabSpec>[
-    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', showLogo: true, body: (BuildContext context, ShellActions actions) => _home(session)),
+    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', showLogo: true, body: (BuildContext context, ShellActions actions) => _home(session, flows)),
     TabSpec(id: 'search', label: 'Tìm kiếm', icon: Icons.search, title: 'Tìm kiếm', body: (BuildContext context, ShellActions actions) => SearchBody(actions: actions)),
-    TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: (BuildContext context, ShellActions actions) => _orders(session)),
-    TabSpec(id: 'account', label: 'Tài khoản', icon: Icons.person_outline, title: 'Tài khoản', body: (BuildContext context, ShellActions actions) => _account(session, actions)),
+    TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: (BuildContext context, ShellActions actions) => _orders(session, flows)),
+    TabSpec(id: 'account', label: 'Tài khoản', icon: Icons.person_outline, title: 'Tài khoản', body: (BuildContext context, ShellActions actions) => _account(session, actions, flows)),
   ];
 }
 
-Widget _guestPrompt(SessionController session, String text) => GuestPrompt(session: session, brand: foodBrand, text: text);
+Widget _guestPrompt(SessionController session, String text, [AppFlows? flows]) => GuestPrompt(session: session, brand: foodBrand, text: text, reset: flows?.reset);
 
 Widget _soonChip() => const Center(child: N11Chip('Sắp có', kind: ChipKind.soon));
 
 // ---- F01: home -------------------------------------------------------------------------------------------------------
 
-Widget _home(SessionController session) {
+Widget _home(SessionController session, AppFlows? flows) {
   return vstack(<Widget>[
     const N11Banner(kind: BannerKind.warn, title: kTestNoticeTitle, text: kTestNoticeText),
-    _guestPrompt(session, 'Đăng nhập hoặc đăng ký để đặt món khi tính năng sẵn sàng.'),
+    _guestPrompt(session, 'Đăng nhập hoặc đăng ký để đặt món khi tính năng sẵn sàng.', flows),
     const EmptyState(icon: Icons.restaurant, title: 'Chưa có quán để hiển thị', text: 'Danh sách quán và món sẽ xuất hiện khi tính năng đặt món sẵn sàng.'),
     _soonChip(),
   ]);
@@ -34,9 +34,9 @@ Widget _home(SessionController session) {
 
 // ---- F03: orders -----------------------------------------------------------------------------------------------------
 
-Widget _orders(SessionController session) {
+Widget _orders(SessionController session, AppFlows? flows) {
   return vstack(<Widget>[
-    _guestPrompt(session, 'Đăng nhập để xem đơn hàng của bạn.'),
+    _guestPrompt(session, 'Đăng nhập để xem đơn hàng của bạn.', flows),
     const EmptyState(icon: Icons.receipt_long_outlined, title: 'Chưa có đơn hàng', text: 'Đơn hàng của bạn sẽ hiện ở đây khi tính năng đặt món sẵn sàng.'),
     _soonChip(),
   ]);
@@ -44,24 +44,37 @@ Widget _orders(SessionController session) {
 
 // ---- F04: account (guest) --------------------------------------------------------------------------------------------
 
-Widget _account(SessionController session, ShellActions actions) {
-  return AccountTab(
+Widget _account(SessionController session, ShellActions actions, AppFlows? flows) {
+  final ShopController? shop = flows?.shop;
+  return Builder(builder: (BuildContext context) => AccountTab(
     session: session,
     brand: foodBrand,
     actions: actions,
+    reset: flows?.reset,
+    signedInEntries: <Widget>[
+      // F07: the shop entry, connected to the server. Having a shop never changes the active context by itself.
+      if (shop != null)
+        N11ListItem(
+          key: const Key('shop-entry'),
+          icon: Icons.storefront_outlined,
+          title: 'Quản lý cửa hàng',
+          sub: 'Hồ sơ quán, vị trí và chuyển chế độ quán.',
+          onTap: () => Navigator.of(context).push(n11Route(ShopStartScreen(controller: shop))),
+        ),
+    ],
     entries: <Widget>[
-      // F07: the shop entry. Shop onboarding is not connected on Android: locked, with the reason, and it grants nothing.
-      N11ListItem(
-        icon: Icons.storefront_outlined,
-        title: 'Quản lý cửa hàng',
-        sub: featureReason(FeatureId.shopManage),
-        soon: true,
-        trailing: const N11Chip('Chưa nối', kind: ChipKind.soon),
-      ),
+      if (shop == null)
+        N11ListItem(
+          icon: Icons.storefront_outlined,
+          title: 'Quản lý cửa hàng',
+          sub: kNotOnAndroidReason,
+          soon: true,
+          trailing: const N11Chip('Chưa nối', kind: ChipKind.soon),
+        ),
       const N11ListItem(icon: Icons.help_outline, title: 'Trợ giúp', soon: true),
       const N11ListItem(icon: Icons.shield_outlined, title: 'Chính sách và điều khoản', soon: true),
     ],
-  );
+  ));
 }
 
 // ---- F02: search -----------------------------------------------------------------------------------------------------

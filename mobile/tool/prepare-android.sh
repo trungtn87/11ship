@@ -42,7 +42,13 @@ find "$res" -name 'ic_launcher*' -delete
 cp -R "$root/$app/android_overlay/res/." "$res/"
 
 mkdir -p "$res/values" "$res/values-v31" "$res/drawable"
-sed -e "s/@LABEL@/$label/g" -e "s/@PEER_PACKAGE@/$peer_id/g" -e "s/@DEVICE_ENVIRONMENT@/$environment/g" \
+# Location permissions exist only in the Food manifest (the owner records the shop position); Ship declares none.
+if [ "$app" = food ]; then
+  location_permissions='<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/><uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>'
+else
+  location_permissions=''
+fi
+sed -e "s/@LABEL@/$label/g" -e "s/@PEER_PACKAGE@/$peer_id/g" -e "s/@DEVICE_ENVIRONMENT@/$environment/g" -e "s#@LOCATION_PERMISSIONS@#$location_permissions#" \
   "$here/android-templates/AndroidManifest.xml" > "$dest/app/src/main/AndroidManifest.xml"
 cp "$here/android-templates/styles.xml" "$res/values/styles.xml"
 cp "$here/android-templates/styles-v31.xml" "$res/values-v31/styles.xml"
@@ -59,7 +65,12 @@ for f in N11DeviceStore N11DeviceKeys N11PeerPolicy N11PeerService N11PeerClient
 done
 mkdir -p "$kt/vn/eleven/$app"
 find "$kt" -name MainActivity.kt -delete
-sed "s/@APP_PACKAGE@/vn.eleven.$app/" "$here/android-templates/kotlin/MainActivity.kt" > "$kt/vn/eleven/$app/MainActivity.kt"
+main_template="MainActivity.kt"
+if [ "$app" = food ]; then
+  main_template="MainActivityFood.kt"
+  cp "$here/android-templates/kotlin/N11LocationChannel.kt" "$kt/vn/eleven/n11/N11LocationChannel.kt"
+fi
+sed "s/@APP_PACKAGE@/vn.eleven.$app/" "$here/android-templates/kotlin/$main_template" > "$kt/vn/eleven/$app/MainActivity.kt"
 # JVM unit test of the Binder join rules (no device needed), run by `./gradlew :app:testDebugUnitTest` in CI.
 mkdir -p "$dest/app/src/test/kotlin/vn/eleven/n11"
 cp "$here/android-templates/kotlin-test/N11PeerPolicyTest.kt" "$dest/app/src/test/kotlin/vn/eleven/n11/N11PeerPolicyTest.kt"
@@ -68,6 +79,6 @@ case "$gradle" in
   *) printf "\ndependencies {\n    testImplementation 'junit:junit:4.13.2'\n}\n" >> "$gradle" ;;
 esac
 rm -rf "$dest/app/src/debug" "$dest/app/src/profile" 2>/dev/null || true
-# keep debug/profile manifests out: INTERNET is declared in the main manifest and nothing else is wanted
+# keep debug/profile manifests out: the permissions are declared in the main manifest only
 
 echo "prepared $dest ($app_id)"

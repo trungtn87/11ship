@@ -9,17 +9,17 @@ const String kTestNoticeTitle = 'Bản chạy thử';
 const String kTestNoticeText = 'Bản thử nghiệm: đăng ký, đăng nhập và hồ sơ cá nhân đã nối máy chủ. Các nghiệp vụ khác chưa nối.';
 const String kOnlineReason = 'Nhận đơn: $kNotOnAndroidReason Cần hồ sơ xế được duyệt.';
 
-List<TabSpec> buildShipTabs(SessionController session) {
+List<TabSpec> buildShipTabs(SessionController session, {AppFlows? flows}) {
   return <TabSpec>[
-    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', showLogo: true, body: (BuildContext context, ShellActions actions) => _home(session)),
+    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', showLogo: true, body: (BuildContext context, ShellActions actions) => _home(session, flows)),
     TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: (BuildContext context, ShellActions actions) => const OrdersBody()),
     TabSpec(id: 'income', label: 'Thu nhập', icon: Icons.bar_chart_outlined, title: 'Thu nhập', body: _income),
     TabSpec(id: 'wallet', label: 'Ví', icon: Icons.account_balance_wallet_outlined, title: 'Ví', body: _wallet),
-    TabSpec(id: 'account', label: 'Tài khoản', icon: Icons.person_outline, title: 'Tài khoản', body: (BuildContext context, ShellActions actions) => _account(session, actions)),
+    TabSpec(id: 'account', label: 'Tài khoản', icon: Icons.person_outline, title: 'Tài khoản', body: (BuildContext context, ShellActions actions) => _account(session, actions, flows)),
   ];
 }
 
-Widget _guestPrompt(SessionController session, String text) => GuestPrompt(session: session, brand: shipBrand, text: text);
+Widget _guestPrompt(SessionController session, String text, [AppFlows? flows]) => GuestPrompt(session: session, brand: shipBrand, text: text, reset: flows?.reset);
 
 Widget _soonChip() => const Center(child: N11Chip('Sắp có', kind: ChipKind.soon));
 
@@ -41,10 +41,10 @@ Widget _unknownFigure({required String label, required String note}) {
 
 // ---- S01: home -------------------------------------------------------------------------------------------------------
 
-Widget _home(SessionController session) {
+Widget _home(SessionController session, AppFlows? flows) {
   return vstack(<Widget>[
     const N11Banner(kind: BannerKind.warn, title: kTestNoticeTitle, text: kTestNoticeText),
-    _guestPrompt(session, 'Đăng nhập để theo dõi tài khoản của bạn. Hồ sơ xế chưa nối trên Android.'),
+    _guestPrompt(session, 'Đăng nhập để theo dõi tài khoản của bạn. Gửi hồ sơ xế trong tab Tài khoản.', flows),
     // Online is only ever possible for an approved, eligible driver; that state does not exist here. Always unavailable.
     N11Card(
       child: Column(
@@ -124,23 +124,36 @@ Widget _wallet(BuildContext context, ShellActions actions) {
 
 // ---- S05: account (guest) --------------------------------------------------------------------------------------------
 
-Widget _account(SessionController session, ShellActions actions) {
-  return AccountTab(
+Widget _account(SessionController session, ShellActions actions, AppFlows? flows) {
+  final DriverController? driver = flows?.driver;
+  return Builder(builder: (BuildContext context) => AccountTab(
     session: session,
     brand: shipBrand,
     actions: actions,
     registerLabel: 'Đăng ký',
+    reset: flows?.reset,
+    signedInEntries: <Widget>[
+      // S12/S13: the driver profile, connected to the server. Sending it never receives orders or changes the context.
+      if (driver != null)
+        N11ListItem(
+          key: const Key('driver-entry'),
+          icon: Icons.badge_outlined,
+          title: 'Hồ sơ xế',
+          sub: 'Gửi và xem hồ sơ xế của bạn.',
+          onTap: () => Navigator.of(context).push(n11Route(DriverProfileScreen(controller: driver))),
+        ),
+    ],
     entries: <Widget>[
-      // S12/S13: the driver profile. Not connected on Android: locked with the reason; an account never receives orders by itself.
-      N11ListItem(
-        icon: Icons.badge_outlined,
-        title: 'Hồ sơ xế',
-        sub: featureReason(FeatureId.driverProfile),
-        soon: true,
-        trailing: const N11Chip('Chưa nối', kind: ChipKind.soon),
-      ),
+      if (driver == null)
+        N11ListItem(
+          icon: Icons.badge_outlined,
+          title: 'Hồ sơ xế',
+          sub: kNotOnAndroidReason,
+          soon: true,
+          trailing: const N11Chip('Chưa nối', kind: ChipKind.soon),
+        ),
       const N11ListItem(icon: Icons.help_outline, title: 'Trợ giúp', soon: true),
       const N11ListItem(icon: Icons.shield_outlined, title: 'Chính sách và điều khoản', soon: true),
     ],
-  );
+  ));
 }

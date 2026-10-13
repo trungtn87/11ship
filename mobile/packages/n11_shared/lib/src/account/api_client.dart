@@ -107,6 +107,12 @@ AuthFailure failureOf(ApiResponse response) {
       kind = AuthFailureKind.notReplayable;
     case 'ACCOUNT_DISABLED':
       kind = AuthFailureKind.accountDisabled;
+    case 'SHOP_ONBOARDING_EXISTS' || 'SHOP_PROFILE_INCOMPLETE' || 'DRIVER_PROFILE_EXISTS' || 'SHOP_DISABLED' || 'DRIVER_PENDING_APPROVAL':
+      kind = AuthFailureKind.stateConflict;
+    case 'INVALID_SERVICE_AREA':
+      kind = AuthFailureKind.invalidServiceArea;
+    case 'ROLE_NOT_AVAILABLE':
+      kind = AuthFailureKind.roleNotAvailable;
     case 'AUTH_REGISTRATION_UNAVAILABLE':
       kind = AuthFailureKind.verificationUnsupported;
     case 'DEVICE_RATE_LIMITED' || 'OTP_RATE_LIMITED':

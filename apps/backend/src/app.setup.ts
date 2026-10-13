@@ -57,6 +57,8 @@ export function configureApp(app: INestApplication): void {
   const captureRawBody = (request: unknown, response: unknown, next: (error?: unknown) => void): void => rawCapturingParser(request, response, next);
   app.use(`/${GLOBAL_PREFIX}/${CLIENT_AUTH_ROUTE_PREFIX}`, captureRawBody);
   app.use(`/${GLOBAL_PREFIX}/customer/me/profile`, captureRawBody);
+  // The shop and driver onboarding writes a phone signs (M01 remaining flows).
+  app.use(`/${GLOBAL_PREFIX}/onboarding`, captureRawBody);
   app.setGlobalPrefix(GLOBAL_PREFIX);
   app.useGlobalFilters(new AllExceptionsFilter(app.get(HttpAdapterHost), logger));
 }

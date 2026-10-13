@@ -31,7 +31,22 @@ Contract: `docs/design/system-v2-20261011/11-m01-session-device-contract.md` sec
   (it signs one fixed message shape, only for the other app, only while it has a binding). Without the other app (or with it cleared) the app logs in on its own binding, like a new phone. A login from another phone replaces the binding
   and ends the sessions of both apps; a login again from one app on the same phone ends only that app's session.
 - **Storage.** The access token is AES-GCM encrypted with a Keystore key in the app's no-backup storage; never in preferences, logs, backups or the Binder. The password is never stored. A 401 clears the token and personal data but keeps the device key. A cold start asks `GET /v1/client-auth/me` before showing anything personal.
-- **Not wired on Android yet** (locked, reason "Chưa nối trên Android"): shop onboarding, driver profile, password reset, receiving orders, wallet.
+- **Not wired on Android yet** (locked, reason "Chưa nối trên Android"): receiving orders, wallet.
+
+### Remaining flows (hand-off `docs/tasks/M01-android-remaining-flows-handoff-20261013.md`)
+All three reuse the session above and the backend that already exists; nothing is created or granted by the app.
+- **Food - shop profile (F20-F23).** *Tài khoản -> Quản lý cửa hàng* (signed in). The app reads `GET /v1/onboarding/shop/profile` first and creates nothing by itself. A draft saves with `PUT` (`expected_version`, `Idempotency-Key`) without a position.
+  *Lấy vị trí tại quán* takes **one** real foreground fix on the button press (Android `LocationManager`, FINE + COARSE foreground permission only, mock providers refused, nothing keeps listening). There is no default, cached or typed position;
+  denied / disabled / timeout leave the draft and block completion. Service areas come only from `GET /v1/onboarding/shop/service-areas` (ACTIVE). *Hoàn tất hồ sơ* calls `POST /v1/onboarding/shop/complete {expected_version}`:
+  the shop becomes ACTIVE with `accepting_orders=false`, SHOP_OWNER is added and CUSTOMER kept. The context changes only when the person taps *Vào quản lý cửa hàng* / *Về giao diện khách hàng* (signed `POST /v1/client-auth/context`).
+  ACTIVE and DISABLED shops are read-only. Every write is read back with `GET`; a lost answer is retried with the same key and body only when the person presses *Thử lại*.
+- **Ship - driver profile (S12-S13).** *Tài khoản -> Hồ sơ xế*. `GET /v1/driver/me` first; one `POST /v1/onboarding/driver {full_name, plate_number?}`; then `driver/me` and `me` are read again. PENDING / ACTIVE / SUSPENDED / CLOSING / CLOSED are shown with *Tải lại*.
+  Sending the profile never changes the context and never enables receiving orders (still locked).
+- **Both - forgotten password (test).** *Đăng nhập -> Quên mật khẩu?*. `GET /v1/account-recovery/config` opens the form only when the server says `DISABLED_TEST`; `POST /v1/account-recovery/reset-test {phone, password}` is **public** (no token, cookie or device proof; the
+  gateway forwards only `Idempotency-Key` and `Content-Type`). The answer is one generic acknowledgement, never an automatic login; the password confirmation is checked only on the phone. The server revokes the account's sessions, so an old session then ends through the normal 401 path.
+  SMS/email recovery is **not** part of this build.
+- **Permissions (exact allowlist, checked in CI by `mobile/tool/check-apk-permissions.sh`).** Food: INTERNET, ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION (+ the signature permission between the two apps). Ship: INTERNET only (+ the signature permission). No background location, camera, contacts or storage.
+- When a session ends (logout, 401, another phone), the shop, driver and reset controllers drop every personal value and any pending write.
 
 ### Server inputs (development/test, loopback bind only)
 `CLIENT_AUTH_ANDROID_ENABLED=true` plus `CLIENT_DEVICE_ENVIRONMENT`, `CLIENT_DEVICE_ALLOWED_SIGNERS_FILE`, `CLIENT_DEVICE_ATTESTATION_ROOTS_FILE`, `CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE` (see `.env.example`). Staging, production or a remote bind with the gate on stop the startup.
@@ -43,14 +58,14 @@ Contract: `docs/design/system-v2-20261011/11-m01-session-device-contract.md` sec
 ### Reaching the PC from a phone (HTTPS, test package only)
 1. Start the backend on loopback with the inputs above and `CLIENT_AUTH_PHONE_VERIFICATION_MODE=DISABLED_TEST`, `CLIENT_AUTH_TERMS_VERSION`, `CLIENT_AUTH_PRIVACY_VERSION`.
 2. `node scripts/native-gateway-cert.mjs <PC-LAN-IP>` then `NATIVE_GATEWAY_HOST=<PC-LAN-IP> node scripts/native-gateway.mjs` (or keep `127.0.0.1` and use `adb reverse tcp:8446 tcp:8446`).
-   The gateway forwards an exact allowlist of routes (device, client-auth, own profile, health), the body byte for byte and only the proof headers; the existing web fronts are untouched.
+   The gateway forwards an exact allowlist of routes (device, client-auth, own profile, shop/driver onboarding, test reset, health), the body byte for byte and only the proof headers; the existing web fronts are untouched.
 3. Copy `.local/native-gateway-tls/cert.pem` to the phone and install it (*Settings -> Security -> Encryption & credentials -> Install a certificate -> CA certificate*). The test APKs trust user CAs through `network_security_config.xml`
    (normal certificate verification; no cleartext, no trust-all). Do not ship that file in a production application id.
 4. Run **Mobile APK** with `api_base_url = https://<PC-LAN-IP>:8446`. The default server (`https://103.9.78.67.sslip.io`) has no native verifier deployed: the account screens then say the server is not ready for Android.
 
 ### What is verified where
-Backend (CI, real PostgreSQL, fixture attestation chains - they prove the server logic, **not a real phone**): `tests/integration/native-device-binding.int.spec.ts`. Dart controller/screens (CI): `flutter test`.
-Binder join rules (CI): `./gradlew :app:testDebugUnitTest`. **Not run by Claude and required from the Owner:** real-hardware attestation, both apps on one phone (both install orders), update-over-install keeping key and token, two phones replacing each other, background/offline recovery.
+Backend (CI, real PostgreSQL, fixture attestation chains - they prove the server logic, **not a real phone**): `tests/integration/native-device-binding.int.spec.ts` and `native-remaining-flows.int.spec.ts` (shop/context/driver with the proof, binding recheck, public reset). Dart controller/screens (CI): `flutter test`.
+Binder join rules (CI): `./gradlew :app:testDebugUnitTest`. **Not run by Claude and required from the Owner:** real-hardware attestation, real GPS at a shop (grant / deny / location off), both apps on one phone (both install orders), update-over-install keeping key and token, two phones replacing each other, background/offline recovery.
 
 ## Signing (once)
 Secrets `ANDROID_TEST_KEYSTORE_BASE64`, `ANDROID_TEST_KEYSTORE_PASSWORD`, `ANDROID_TEST_KEY_ALIAS`, `ANDROID_TEST_KEY_PASSWORD`. Create them with `mobile/tool/create-test-keystore.sh` and keep a private backup of the key file.

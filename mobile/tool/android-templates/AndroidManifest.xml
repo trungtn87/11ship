@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- The only Android permission: the app talks to the server over HTTPS. No location, no storage, no camera. -->
+    <!-- Permissions: INTERNET (HTTPS to the server) for both apps; 11Food additionally gets FOREGROUND fine/coarse location, used once
+         when the owner presses the button at the shop. Never background location, camera, contacts or storage.
+         The marker below is replaced by tool/prepare-android.sh (Food: the two location lines; Ship: nothing). -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    @LOCATION_PERMISSIONS@
     <!-- The signature-level permission of the Binder door between the two 11Ship apps (contract11 section 7): only an app signed with
          the SAME certificate can hold it, so only the other 11Ship app can even bind to N11PeerService. Declared by both apps. -->
     <permission android:name="vn.eleven.n11.permission.PEER_ENDORSEMENT" android:protectionLevel="signature"/>

@@ -393,6 +393,90 @@ class SessionController extends ChangeNotifier {
     }
   }
 
+  // ---- protected calls for the other flows (shop, driver, context) ---------------------------------------------------
+
+  /// Bumps with every login / logout / session end. A flow that started under one value drops its answer when it changed, so a
+  /// late response never builds a profile for another session.
+  int get sessionEpoch => _epoch;
+
+  /// A signed request of the current session (Bearer + device proof, raw bytes). A 401 ends the session exactly like everywhere
+  /// else and surfaces as [AuthFailureKind.sessionEnded]; any other refusal is thrown as the closed [AuthFailure].
+  Future<ApiResponse> protectedCall(String method, String path, {String? body, String? idempotencyKey}) async {
+    if (_status != SessionStatus.signedIn) {
+      throw const AuthFailure(AuthFailureKind.sessionEnded);
+    }
+    final int epoch = _epoch;
+    final String? token = await bridge.readToken();
+    if (token == null) {
+      throw const AuthFailure(AuthFailureKind.sessionEnded);
+    }
+    try {
+      final ApiResponse response = await api.signedCall(method, path, token: token, body: body, idempotencyKey: idempotencyKey);
+      if (epoch != _epoch) {
+        throw const AuthFailure(AuthFailureKind.sessionEnded);
+      }
+      if (response.status == 401) {
+        await _endSession(epoch, notice: true);
+        throw const AuthFailure(AuthFailureKind.sessionEnded);
+      }
+      return response;
+    } on DeviceBridgeException {
+      throw const AuthFailure(AuthFailureKind.deviceProofRefused);
+    }
+  }
+
+  /// Reads `me` again and replaces the identity (after an onboarding step changed what the server says about the person).
+  Future<void> refreshIdentity() async {
+    final int epoch = _epoch;
+    final ApiResponse response = await protectedCall('GET', '/v1/client-auth/me');
+    if (epoch != _epoch) {
+      return;
+    }
+    final Identity? identity = response.status == 200 ? Identity.tryParse(response.data) : null;
+    if (identity == null) {
+      throw response.status == 200 ? const AuthFailure(AuthFailureKind.badResponse) : failureOf(response);
+    }
+    _identity = identity;
+    _profile = identity.profile;
+    _notify();
+  }
+
+  /// POST /v1/client-auth/context: only on the person's own action; the server decides (ROLE_NOT_AVAILABLE) and answers the CURRENT
+  /// identity. Never a grant.
+  String? _contextKey;
+  String? _contextBody;
+
+  Future<void> selectContext(String context) async {
+    final int epoch = _epoch;
+    final String body = jsonEncode(<String, Object?>{'context': context});
+    // A lost answer is retried with the same key and body (the person taps again); any other outcome starts a new intent.
+    final String key = _contextBody == body && _contextKey != null ? _contextKey! : newIdempotencyKey();
+    _contextBody = body;
+    _contextKey = key;
+    final ApiResponse response;
+    try {
+      response = await protectedCall('POST', '/v1/client-auth/context', body: body, idempotencyKey: key);
+    } on AuthFailure catch (failure) {
+      if (failure.kind != AuthFailureKind.unknownOutcome) {
+        _contextBody = null;
+        _contextKey = null;
+      }
+      rethrow;
+    }
+    _contextBody = null;
+    _contextKey = null;
+    if (epoch != _epoch) {
+      return;
+    }
+    final Identity? identity = response.status == 200 ? Identity.tryParse(response.data) : null;
+    if (identity == null) {
+      throw response.status == 200 ? const AuthFailure(AuthFailureKind.badResponse) : failureOf(response);
+    }
+    _identity = identity;
+    _profile = identity.profile;
+    _notify();
+  }
+
   // ---- logout ----------------------------------------------------------------------------------------------------
 
   /// Clears the local session at once; 204 confirms the revoke, anything else says it is NOT confirmed. A late answer to an earlier

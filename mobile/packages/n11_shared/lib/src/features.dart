@@ -27,9 +27,10 @@ const Map<FeatureId, FeatureStatus> kFeatures = <FeatureId, FeatureStatus>{
   FeatureId.authRegister: FeatureStatus(wired: true, reason: '', package: 'M01-ANDROID'),
   FeatureId.authLogin: FeatureStatus(wired: true, reason: '', package: 'M01-ANDROID'),
   FeatureId.authProfile: FeatureStatus(wired: true, reason: '', package: 'M01-ANDROID'),
-  FeatureId.shopManage: FeatureStatus(wired: false, reason: kNotOnAndroidReason, package: 'M01-QUAN'),
-  FeatureId.driverProfile: FeatureStatus(wired: false, reason: kNotOnAndroidReason, package: 'M01-XE'),
-  FeatureId.passwordReset: FeatureStatus(wired: false, reason: kNotOnAndroidReason, package: 'M01-RESET'),
+  // M01-ANDROID remaining flows: shop profile + location + context, driver profile, test password reset.
+  FeatureId.shopManage: FeatureStatus(wired: true, reason: '', package: 'M01-QUAN'),
+  FeatureId.driverProfile: FeatureStatus(wired: true, reason: '', package: 'M01-XE'),
+  FeatureId.passwordReset: FeatureStatus(wired: true, reason: '', package: 'M01-RESET'),
   FeatureId.receiveOrders: FeatureStatus(wired: false, reason: kNotOnAndroidReason, package: 'M01-XE'),
   FeatureId.wallet: FeatureStatus(wired: false, reason: kNotOnAndroidReason, package: 'M04'),
 };

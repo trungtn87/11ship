@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { createLocalCertificate } from '../../scripts/admin-web-cert.mjs';
-import { createNativeGateway, FORWARDED_REQUEST_HEADERS, NATIVE_ROUTES } from '../../scripts/native-gateway.mjs';
+import { createNativeGateway, FORWARDED_REQUEST_HEADERS, NATIVE_ROUTES, PUBLIC_FORWARDED_REQUEST_HEADERS } from '../../scripts/native-gateway.mjs';
 
 // The local native gateway (M01-ANDROID): an exact allowlist, the body byte for byte, the target unchanged, and only the proof
 // headers. Real TLS and real HTTP listeners; the backend is a stand-in that records what reaches it.
@@ -86,8 +86,14 @@ describe('native gateway', () => {
         ['GET', '/v1/client-auth/me/'],
         ['GET', '/v1/client-auth/me?x=1'],
         ['POST', '/v1/client-auth/device/challenges/extra'],
-        ['POST', '/v1/client-auth/context'],
-        ['GET', '/v1/driver/me'],
+        ['GET', '/v1/client-auth/context'],
+        ['POST', '/v1/driver/me'],
+        ['DELETE', '/v1/onboarding/shop/profile'],
+        ['GET', '/v1/onboarding/shop/complete'],
+        ['GET', '/v1/onboarding/shop/profile?x=1'],
+        ['POST', '/v1/account-recovery/config'],
+        ['GET', '/v1/account-recovery/reset-test'],
+        ['POST', '/v1/account-recovery/reset'],
         ['GET', '/'],
       ];
       for (const [method, path] of refused) {
@@ -95,6 +101,49 @@ describe('native gateway', () => {
         assert.equal(result.status, 404, `${method} ${path}`);
       }
       assert.equal(gateway.seen.length, 0);
+    } finally {
+      await gateway.stop();
+    }
+  });
+
+  it('forwards the public reset routes with ONLY idempotency-key and content-type (no authorization, cookie or device proof)', async () => {
+    const gateway = await start(ok);
+    try {
+      const sent = {
+        authorization: 'Bearer abc',
+        'idempotency-key': '11111111-1111-4111-8111-111111111111',
+        'content-type': 'application/json',
+        'x-device-registration': 'reg',
+        'x-device-key-id': 'key',
+        'x-device-time': '1760000000',
+        'x-device-nonce': 'nonce',
+        'x-device-signature': 'sig',
+        cookie: 'session=1',
+      };
+      const body = '{"phone":"0901234567","password":"New-Pass-123"}';
+      assert.equal((await call(gateway.port, 'POST', '/v1/account-recovery/reset-test', { headers: sent, body })).status, 200);
+      assert.equal((await call(gateway.port, 'GET', '/v1/account-recovery/config', { headers: sent })).status, 200);
+      for (const seen of gateway.seen) {
+        assert.deepEqual(Object.keys(seen.headers).filter((name) => FORWARDED_REQUEST_HEADERS.includes(name)).sort().filter((name) => !PUBLIC_FORWARDED_REQUEST_HEADERS.includes(name)), []);
+        assert.equal(seen.headers.cookie, undefined);
+      }
+      assert.equal(gateway.seen[0].headers['idempotency-key'], sent['idempotency-key']);
+      assert.equal(gateway.seen[0].body.toString('utf8'), body);
+    } finally {
+      await gateway.stop();
+    }
+  });
+
+  it('forwards the protected shop and driver routes with the session and device proof headers', async () => {
+    const gateway = await start(ok);
+    try {
+      const sent = { authorization: 'Bearer abc', 'x-device-key-id': 'key', 'x-device-time': '1', 'x-device-nonce': 'n', 'x-device-signature': 'sig', 'content-type': 'application/json' };
+      const result = await call(gateway.port, 'PUT', '/v1/onboarding/shop/profile', { headers: { ...sent, 'idempotency-key': 'k' }, body: '{"name":"Q"}' });
+      assert.equal(result.status, 200);
+      const [seen] = gateway.seen;
+      for (const name of Object.keys(sent)) {
+        assert.equal(seen.headers[name], sent[name], name);
+      }
     } finally {
       await gateway.stop();
     }
