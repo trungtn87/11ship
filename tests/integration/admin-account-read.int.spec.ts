@@ -460,8 +460,9 @@ describe('admin account read (API + one real browser smoke)', () => {
     await rewindAcceptedStep(app, adminCustomer.userId);
     await page.fill('#verify-code', totpNow(adminCustomer.secret));
     await page.pressEnter();
-    await page.waitFor(`document.querySelector('#shell-title')`);
+    // The address is still the administrators page: an ADMIN lands on it with "no permission", never on a blank area.
     await page.waitFor(`document.querySelector('a[href="/accounts/users"]')`);
+    await page.waitFor(`document.body.innerText.includes('Không có quyền')`);
     expect(await page.evaluate<boolean>(`!document.querySelector('a[href="/accounts/administrators"]') && !document.querySelector('a[href="/invitations"]')`)).toBe(true);
     const statuses = await page.evaluate<number[]>(`Promise.all([
       '/v1/admin/users/${driver.id}',
