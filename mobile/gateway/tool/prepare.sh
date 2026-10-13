@@ -2,6 +2,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 flutter create --platforms android --project-name gateway --org vn.eleven --no-pub .
+# Generated template widget test references nonexistent MyApp.
+rm -f test/widget_test.dart
 python3 - <<'PY'
 from pathlib import Path
 import xml.etree.ElementTree as ET
