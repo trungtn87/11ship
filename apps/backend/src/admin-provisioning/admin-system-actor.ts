@@ -90,6 +90,16 @@ export class AdminSystemActor {
     return { known, checked, factor, session };
   }
 
+  /**
+   * The read-only account reads (M01-ADMIN account read) accept SYSTEM and ADMIN alike: same session checks as assertLive,
+   * without its SYSTEM requirement. Each read then authorizes its own scope from the role and the current permissions.
+   */
+  assertSessionLive(actor: LockedActor, nowMs: number): void {
+    if (isExpiredAt(actor.session.expiresAtMs, nowMs)) {
+      throw new AppError('ADMIN_SESSION_INVALID');
+    }
+  }
+
   /** `nowMs` MUST be freshClockMs read after the LAST lock of the transaction (contract section 8.5). */
   assertLive(actor: LockedActor, nowMs: number): void {
     if (isExpiredAt(actor.session.expiresAtMs, nowMs)) {

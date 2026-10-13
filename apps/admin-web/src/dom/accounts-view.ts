@@ -2,6 +2,7 @@ import {
   ADMINISTRATOR_STATUS_LABEL,
   AdministratorFilter,
   AdministratorRow,
+  AdministratorStatus,
   AdministratorsScreen,
   EMPTY_ADMIN_FILTER,
   ListState,
@@ -38,6 +39,8 @@ export interface AccountsHooks {
   home(): void;
   open(id: string): void;
   loadMore(): void;
+  /** Roles the viewing admin may filter by (the server's available_role_filters). Absent = all three (design preview). */
+  readonly roles?: readonly UserRole[];
 }
 
 const TIME_ZONE = 'Asia/Ho_Chi_Minh';
@@ -115,7 +118,7 @@ export class UsersView {
       'select',
       { id: 'users-role', class: 'select', 'aria-label': 'Vai trò' },
       h('option', { value: 'ALL' }, 'Vai trò'),
-      ...(['CUSTOMER', 'SHOP_OWNER', 'DRIVER'] as const).map((role) => h('option', { value: role }, USER_ROLE_LABEL[role])),
+      ...(hooks.roles ?? (['CUSTOMER', 'SHOP_OWNER', 'DRIVER'] as const)).map((role) => h('option', { value: role }, USER_ROLE_LABEL[role])),
     );
     this.#status = h(
       'select',
@@ -416,6 +419,10 @@ export interface AdministratorsHooks extends Pick<AccountsHooks, 'retry' | 'logi
   readonly wired: boolean;
   filter(filter: AdministratorFilter): void;
   refresh(): void;
+  /** false = the live list only has activated accounts, so there is no "Chờ kích hoạt" filter (pending ones are in Lời mời). Absent = true. */
+  readonly pending?: boolean;
+  /** Next page of the live list; absent = the list has no paging (design preview). */
+  loadMore?(): void;
 }
 
 export class AdministratorsView {
@@ -441,7 +448,7 @@ export class AdministratorsView {
       'select',
       { id: 'admins-status', class: 'select', 'aria-label': 'Trạng thái' },
       h('option', { value: 'ALL' }, 'Trạng thái'),
-      ...(['ACTIVE', 'PENDING', 'LOCKED'] as const).map((status) => h('option', { value: status }, ADMINISTRATOR_STATUS_LABEL[status])),
+      ...((hooks.pending === false ? ['ACTIVE', 'LOCKED'] : ['ACTIVE', 'PENDING', 'LOCKED']) as readonly AdministratorStatus[]).map((status) => h('option', { value: status }, ADMINISTRATOR_STATUS_LABEL[status])),
     );
     this.#refresh = h('button', { type: 'button', class: 'btn btn-secondary btn-inline' }, icon('refresh', 18), 'Làm mới');
     this.#hint = message('notice', 'admins-hint');
@@ -491,9 +498,19 @@ export class AdministratorsView {
       case 'failed':
         table = tableCard(caption, columns, { panel: failurePanel(state.failure, { retry: () => this.hooks.retry(), login: () => this.hooks.login(), home: () => this.hooks.home() }, state.retryAfterSec) });
         break;
-      case 'rows':
-        table = tableCard(caption, columns, { rows: state.rows.map((row: AdministratorRow) => h('tr', {}, cell('Họ tên', row.fullName), cell('Số điện thoại', row.phoneMasked), cell('Phạm vi quyền', h('span', { class: 'chips' }, ...row.scopes.map((scope) => h('span', { class: 'chip' }, scope)))), cell('Trạng thái', statusBadge(row.status, ADMINISTRATOR_STATUS_LABEL[row.status])), cell('Ngày tạo', formatDateVn(row.createdAt)))) });
+      case 'rows': {
+        const card = tableCard(caption, columns, { rows: state.rows.map((row: AdministratorRow) => h('tr', {}, cell('Họ tên', row.fullName), cell('Số điện thoại', row.phoneMasked), cell('Phạm vi quyền', h('span', { class: 'chips' }, ...row.scopes.map((scope) => h('span', { class: 'chip' }, scope)))), cell('Trạng thái', statusBadge(row.status, ADMINISTRATOR_STATUS_LABEL[row.status])), cell('Ngày tạo', formatDateVn(row.createdAt)))) });
+        const loadMore = this.hooks.loadMore?.bind(this.hooks);
+        if (state.nextCursor === null || loadMore === undefined) {
+          table = card;
+          break;
+        }
+        const more = secondary(state.loadingMore === true ? 'Đang tải…' : 'Tải thêm');
+        more.disabled = state.loadingMore === true;
+        more.addEventListener('click', () => loadMore());
+        table = h('div', {}, card, h('div', { class: 'more' }, more));
         break;
+      }
     }
     this.#results.replaceChildren(table);
   }

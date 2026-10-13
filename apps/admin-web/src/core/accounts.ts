@@ -1,10 +1,11 @@
 // Models of the account pages of the administration web: users (D81), a user's detail (D86) with the lock/unlock dialogs
-// (D87/D88) and the administrators list. They are PLAIN DATA: the views in dom/accounts-view.ts only draw them, and
-// whoever can supply the data (later: the backend tasks M01.30 / M01.32) fills them in through `AccountsSource`. Today the
-// only source is NOT_WIRED_SOURCE, which always answers "not wired": no row, no name, no status is ever invented, and no
-// button that would change something is enabled. The design preview (src/design) builds the same models from clearly
-// labelled sample data; that data lives only in that folder, which the real build removes.
+// (D87/D88) and the administrators list (D89). They are PLAIN DATA: the views in dom/accounts-view.ts only draw them, and
+// `AccountsSource` supplies them. The real source (core/accounts-api.ts) reads the read-only account endpoints; the
+// NOT_WIRED_SOURCE answers "not wired" and never invents a row, a name or a status. Lock/unlock stays inactive (policy D15
+// pending). The design preview (src/design) builds the same models from clearly labelled sample data; that data lives only
+// in that folder, which the real build removes.
 
+import { Grants } from './menu.js';
 import { normalizeReason, REASON_MAX } from './inputs.js';
 
 export { REASON_MAX };
@@ -137,15 +138,25 @@ export const NOT_WIRED_REASON = {
   administrators: 'Danh sách quản trị viên chưa có giao diện lập trình để đọc. Cần bổ sung hợp đồng trước khi nối.',
 } as const;
 
-/** The seam the later backend tasks plug into: one method per page. The page code does not change when they are wired. */
+/** A page of a list: a normal list state, or "the cursor no longer fits" (filter or rights changed): start again from page 1. */
+export type PageState<Row> = ListState<Row> | { readonly kind: 'cursor-invalid' };
+
+/** What the SERVER says the signed-in admin may read: menu grants and the USER roles the list may be filtered by. */
+export type GrantsResult =
+  | { readonly kind: 'ok'; readonly grants: Grants; readonly roles: readonly UserRole[] }
+  | { readonly kind: 'failed'; readonly failure: Failure; readonly retryAfterSec?: number };
+
+/** The seam to the backend: one method per page. A `cursor` is the opaque `next_cursor` of the previous page of the SAME filter. */
 export interface AccountsSource {
-  users(filter: UserFilter): Promise<ListState<UserRow>>;
+  grants(): Promise<GrantsResult>;
+  users(filter: UserFilter, cursor: string | null): Promise<PageState<UserRow>>;
   user(id: string): Promise<UserDetailState>;
-  administrators(): Promise<ListState<AdministratorRow>>;
+  administrators(filter: AdministratorFilter, cursor: string | null): Promise<PageState<AdministratorRow>>;
 }
 
-/** The real build today: nothing is wired, so every page says so. It never answers with data and never throws. */
+/** Nothing wired: every page says so. It never answers with data and never throws. */
 export const NOT_WIRED_SOURCE: AccountsSource = {
+  grants: () => Promise.resolve({ kind: 'ok', grants: new Set(), roles: [] }),
   users: () => Promise.resolve({ kind: 'not-wired', reason: NOT_WIRED_REASON.users }),
   user: () => Promise.resolve({ kind: 'not-wired', reason: NOT_WIRED_REASON.user }),
   administrators: () => Promise.resolve({ kind: 'not-wired', reason: NOT_WIRED_REASON.administrators }),

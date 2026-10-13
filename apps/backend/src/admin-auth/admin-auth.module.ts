@@ -6,6 +6,9 @@ import { AdminActivationLimiter } from '../admin-activation/admin-activation-lim
 import { AdminActivationRepository } from '../admin-activation/admin-activation-repository';
 import { AdminActivationService } from '../admin-activation/admin-activation-service';
 import { AdminActivationController } from '../admin-activation/admin-activation.controller';
+import { AdminAccountReadRepository } from '../admin-accounts/admin-account-read-repository';
+import { AdminAccountReadService } from '../admin-accounts/admin-account-read-service';
+import { AdminAccountReadController, AdminPermissionsController } from '../admin-accounts/admin-account-read.controller';
 import { AdminInvitationParticipant } from '../admin-invitations/admin-invitation-participant';
 import { AdminInvitationRepository } from '../admin-invitations/admin-invitation-repository';
 import { AdminInvitationReader } from '../admin-provisioning/admin-invitation-reader';
@@ -60,7 +63,7 @@ export class AdminAuthModule implements NestModule {
       imports: [auth, TransactionModule, AuditModule, IdempotencyModule],
       // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
       // M01-D-ADMIN-1C: the activation routes under /v1/admin-activation exist only when explicitly enabled.
-      controllers: [AdminAuthController, AdminProvisioningController, ...(activation === undefined ? [] : [AdminActivationController])],
+      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, ...(activation === undefined ? [] : [AdminActivationController])],
       providers: [
         adminAuthConfigProvider,
         {
@@ -94,6 +97,9 @@ export class AdminAuthModule implements NestModule {
         AdminSystemActor,
         AdminOperationService,
         AdminInvitationService,
+        // Read-only account projections (M01-ADMIN account read).
+        AdminAccountReadRepository,
+        AdminAccountReadService,
         // The 1B section 8.8 hook is always present (1B calls it); it is a no-op when no activation attempt exists.
         AdminActivationRepository,
         AdminActivationInvalidator,
@@ -110,7 +116,7 @@ export class AdminAuthModule implements NestModule {
   }
 
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController);
+    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController);
     // The activation transport headers are an application-level middleware in configureApp (app.setup.ts): it must precede
     // the body parser, which module middleware does not.
   }
