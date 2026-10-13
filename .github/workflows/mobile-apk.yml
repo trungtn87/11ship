@@ -202,14 +202,15 @@ jobs:
           mobile/tool/check-apk-permissions.sh ${{ matrix.app }} "$work/badging.txt"
 
           # The signing certificate: the APK's one must be the keystore's one (same persistent key). Only public fingerprints are printed.
-          # apksigner words this line "Signer #1 certificate ..." for a v1/v2 signer but "Signer (minSdkVersion=N, maxSdkVersion=M)
-          # certificate ..." for a v3 signer (which a minSdk>=24 app gets), so the label is matched loosely. Every signer line must carry
+          # apksigner words this line differently per signature scheme ("Signer #1 certificate ..." / "Signer (minSdkVersion=N, ...)
+          # certificate ..."), so the label is not parsed: the 64-hex digest is taken from any digest line. Every signer line must carry
           # the same digest, and that digest must be the keystore certificate's.
-          apk_fp="$(sed -n -E 's/^Signer .*certificate SHA-256 digest: *//p' "$work/verify.txt" | tr 'A-F' 'a-f' | tr -d ': ' | sort -u)"
+          apk_fp="$(grep -i 'certificate SHA-256 digest' "$work/verify.txt" | tr 'A-F' 'a-f' | tr -d ':' | grep -oE '[0-9a-f]{64}' | sort -u || true)"
           key_fp="$(keytool -exportcert -keystore "$work/test.jks" -alias "$ANDROID_TEST_KEY_ALIAS" -storepass:env ANDROID_TEST_KEYSTORE_PASSWORD 2>/dev/null | sha256sum | cut -d' ' -f1)"
           if [ -z "$apk_fp" ] || [ "$apk_fp" != "$key_fp" ]; then
             # Public values only (certificate fingerprints and apksigner's own labels), to tell "no digest line found" from "different key".
             echo "apksigner digest lines: $(grep -c 'certificate SHA-256 digest' "$work/verify.txt"); APK fingerprint(s): ${apk_fp:-none}; keystore fingerprint: $key_fp"
+            grep -i 'certificate SHA-256 digest' "$work/verify.txt" | cat -A | cut -c1-200
             echo "::error title=signer mismatch::the APK is not signed with the persistent test key"; exit 1
           fi
           rm -f "$work/test.jks"
