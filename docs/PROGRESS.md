@@ -211,7 +211,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#91](https://github.com/trungtn87/11ship/pull/91) docs: streamline Claude Code and Codex Cloud handoffs | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `879d889` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#92](https://github.com/trungtn87/11ship/pull/92) feat(M01-ADMIN): khóa/mở khóa USER thường (D15) | Đã merge (`MERGED`) | — | — | — | `068357f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#93](https://github.com/trungtn87/11ship/pull/93) feat(M01-RESET): đặt lại mật khẩu USER/ADMIN không OTP (bản… | Đã merge (`MERGED`) | — | — | — | `5272ceb` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#94](https://github.com/trungtn87/11ship/pull/94) feat(M01-RESET): local SYSTEM recovery CLI | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `71f6ff4` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#94](https://github.com/trungtn87/11ship/pull/94) feat(M01-RESET): local SYSTEM recovery CLI | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `71f6ff4` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
