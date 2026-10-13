@@ -188,7 +188,7 @@ describe('M01.02 — customer schema migration', () => {
   it('is the newest M01.02 migration, a NEW file after every applied one, and obeys the repository rules', () => {
     expect(NEW_NAME).toBe('1792540800000_create-customer-profiles-consents');
     // Issue #49: the staging-fixture origin migration (1792627200000) was moved AFTER this one; only the test-unverified origin migration follows it.
-    expect(names.slice(names.indexOf(NEW_NAME))).toEqual([NEW_NAME, '1792627200000_allow-staging-fixture-account-origin', '1792713600000_allow-test-unverified-account-origin', '1792800000000_add-admin-activation-phone-verification-mode']);
+    expect(names.slice(names.indexOf(NEW_NAME))).toEqual([NEW_NAME, '1792627200000_allow-staging-fixture-account-origin', '1792713600000_allow-test-unverified-account-origin', '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding']);
     expect(names.filter((name) => name === NEW_NAME)).toHaveLength(1);
     expect(Number(NEW_NAME.split('_')[0])).toBeGreaterThan(Number((BEFORE[BEFORE.length - 1] as string).split('_')[0]));
     expect(CUSTOMER_MIGRATION_SQL).toContain('-- Up Migration');
