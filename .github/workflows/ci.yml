@@ -266,6 +266,15 @@ jobs:
           path: .test-results/food-shop-shots
           retention-days: 14
 
+      # M01 (driver profile): images of the real 11Ship S12 -> S13 journey (real Chrome, real front, real backend and PostgreSQL).
+      - name: Upload 11Ship driver profile screenshots
+        if: ${{ always() && hashFiles('.test-results/ship-driver-shots/*.webp') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ship-driver-shots
+          path: .test-results/ship-driver-shots
+          retention-days: 14
+
   # M00-L: the launcher is a Windows tool, so its behaviour suite also runs on real Windows with Windows
   # PowerShell 5.1 (the shell the .cmd wrappers call), including the cmd wrappers started the way a double-click
   # starts them. No database and no secrets: Docker and npm are faked inside the suite.

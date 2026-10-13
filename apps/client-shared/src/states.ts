@@ -36,6 +36,7 @@ export type FailureCode =
   | 'SHOP_EXISTS' // the shop can no longer be changed through onboarding (it exists in another state)
   | 'SHOP_INCOMPLETE' // completion refused: the draft lacks a field, the pickup point or the area
   | 'AREA_INVALID' // the chosen service area is not an active one any more
+  | 'DRIVER_EXISTS' // this account already has a driver profile: it is read, never created again
   | 'UNKNOWN';
 
 export const STATE_COPY = {
@@ -139,6 +140,8 @@ export function failureMessage(code: FailureCode, retryAfterSeconds?: number): {
       return { title: 'Hồ sơ chưa đủ để hoàn tất', text: 'Cần đủ thông tin, vị trí lấy hàng và khu vực phục vụ đã lưu. Hãy lưu hồ sơ rồi thử lại.' };
     case 'AREA_INVALID':
       return { title: 'Khu vực không còn hoạt động', text: 'Hãy chọn lại khu vực phục vụ trong danh sách.' };
+    case 'DRIVER_EXISTS':
+      return { title: 'Tài khoản đã có hồ sơ xế', text: 'Hồ sơ xế đã được gửi trước đó. Hãy tải lại để xem trạng thái hiện tại.' };
     case 'NOT_WIRED':
       return { title: STATE_COPY.notWiredTitle, text: 'Chức năng này chưa có máy chủ phục vụ.' };
     case 'UNKNOWN':

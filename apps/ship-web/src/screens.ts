@@ -6,6 +6,7 @@ import { h } from '../../client-shared/src/dom.js';
 import { icon } from '../../client-shared/src/icons.js';
 import { ScreenDef, ScreenEnv, VariantDef } from '../../client-shared/src/screen.js';
 import { authScreens } from '../../client-shared/src/screens/auth.js';
+import { liveDriverForm, liveDriverStatus } from '../../client-shared/src/screens/driver-live.js';
 import { liveProfileForm } from '../../client-shared/src/screens/profile-live.js';
 import { signOutLive } from '../../client-shared/src/screens/logout-live.js';
 import { diagnosticsScreen } from '../../client-shared/src/screens/diagnostics.js';
@@ -52,7 +53,14 @@ const home: ScreenDef = {
   render: (env) => {
     const driver = env.account?.driver;
     // Online is only ever possible for an approved, eligible driver; that state does not exist in M01. Always unavailable.
-    const reason = env.account === undefined ? 'Đăng nhập và hoàn tất hồ sơ xế để bật nhận đơn.' : driver?.status === 'PENDING' ? 'Hồ sơ đang chờ duyệt. Bạn chưa thể bật nhận đơn.' : 'Hoàn tất và gửi hồ sơ xế để được duyệt trước khi bật nhận đơn.';
+    const reason =
+      env.account === undefined
+        ? 'Đăng nhập và hoàn tất hồ sơ xế để bật nhận đơn.'
+        : driver?.status === 'PENDING'
+          ? 'Hồ sơ đang chờ duyệt. Bạn chưa thể bật nhận đơn.'
+          : driver !== undefined && driver.status !== 'NONE'
+            ? 'Nhận đơn chưa mở ở phiên bản này. Công tắc vẫn khóa.'
+            : 'Hoàn tất và gửi hồ sơ xế để được duyệt trước khi bật nhận đơn.';
     const toggle = h('button', { type: 'button', class: 'c-switch', role: 'switch', 'aria-checked': 'false', 'aria-label': 'Sẵn sàng nhận đơn', 'aria-describedby': 'online-reason', 'aria-disabled': 'true' });
     toggle.addEventListener('click', (event) => event.preventDefault());
     const status =
@@ -60,7 +68,9 @@ const home: ScreenDef = {
         ? undefined
         : driver?.status === 'PENDING'
           ? banner({ kind: 'info', title: 'Hồ sơ đang chờ duyệt', text: 'Chúng tôi sẽ cập nhật khi hồ sơ được xem xét.', action: { label: 'Xem hồ sơ', onClick: () => env.go('driver-status') } })
-          : banner({ kind: 'warn', title: 'Chưa gửi hồ sơ xế', text: 'Gửi hồ sơ để được xét duyệt.', action: { label: 'Gửi hồ sơ', onClick: () => env.go('driver-onboarding') } });
+          : driver !== undefined && driver.status !== 'NONE'
+            ? banner({ kind: 'info', title: 'Đã có hồ sơ xế', text: 'Xem trạng thái hồ sơ do máy chủ báo.', action: { label: 'Xem hồ sơ', onClick: () => env.go('driver-status') } })
+            : banner({ kind: 'warn', title: 'Chưa gửi hồ sơ xế', text: 'Gửi hồ sơ để được xét duyệt.', action: { label: 'Gửi hồ sơ', onClick: () => env.go('driver-onboarding') } });
     return appPage({
       title: 'Trang chủ',
       logo: logo(SHIP_BRAND),
@@ -179,7 +189,7 @@ function openLogout(env: ScreenEnv): void {
   });
 }
 
-const STATUS_LABEL = { NONE: 'Chưa gửi hồ sơ', PENDING: 'Chờ duyệt', ACTIVE: 'Đã duyệt' } as const;
+const STATUS_LABEL = { NONE: 'Chưa gửi hồ sơ', PENDING: 'Chờ duyệt', ACTIVE: 'Đã duyệt', SUSPENDED: 'Tạm khóa', CLOSING: 'Đang đóng', CLOSED: 'Đã đóng' } as const;
 
 const account: ScreenDef = {
   id: 'account',
@@ -226,7 +236,7 @@ const account: ScreenDef = {
             { class: 'c-card c-stack c-stack--tight' },
             h('p', { class: 'c-title' }, me.fullName ?? 'Chưa có tên'),
             h('p', { class: 'c-lead' }, me.phoneMasked),
-            h('div', { class: 'c-row-flex' }, driver?.kind === 'PLATFORM' ? chip('Xế hệ thống', 'info') : driver?.kind === 'EXTERNAL' ? chip('Xế ngoài', 'info') : undefined, chip(STATUS_LABEL[status], status === 'ACTIVE' ? 'ok' : status === 'PENDING' ? 'warn' : 'soon')),
+            h('div', { class: 'c-row-flex' }, driver?.kind === 'PLATFORM' ? chip('Xế hệ thống', 'info') : driver?.kind === 'EXTERNAL' ? chip('Xế ngoài', 'info') : undefined, chip(STATUS_LABEL[status], status === 'ACTIVE' ? 'ok' : status === 'PENDING' || status === 'SUSPENDED' ? 'warn' : 'soon')),
           ),
           list([
             listItem({ icon: 'user', title: 'Hồ sơ xế', sub: status === 'NONE' ? 'Chưa gửi hồ sơ — gửi ngay' : 'Xem trạng thái hồ sơ', onClick: () => env.go(status === 'NONE' ? 'driver-onboarding' : 'driver-status') }),
@@ -286,6 +296,14 @@ const driverOnboarding: ScreenDef = {
   access: 'authed',
   variants: [v('default', 'Trống'), v('invalid-name', 'Tên sai'), v('invalid-plate', 'Biển số sai'), v('conflict', 'Xung đột cập nhật'), v('offline', 'Mất kết nối'), v('submitting', 'Đang gửi')],
   render: (env, variant) => {
+    if (env.mode === 'live' && env.driver !== undefined) {
+      return appPage({
+        title: 'Hồ sơ xế',
+        onBack: () => env.go('account'),
+        bodyClass: 'c-stack',
+        body: [banner({ kind: 'info', title: 'Gửi hồ sơ để được duyệt', text: 'Sau khi gửi, hồ sơ ở trạng thái chờ duyệt. Chờ duyệt chưa thể nhận đơn.' }), liveDriverForm(env)],
+      });
+    }
     const name = textField({ id: 'legal-name', label: 'Họ tên theo giấy tờ', icon: 'user', autocomplete: 'name', maxLength: 120, placeholder: 'Họ và tên đầy đủ' });
     const plate = textField({ id: 'plate', label: 'Biển số xe', optional: true, icon: 'truck', maxLength: 32, placeholder: 'Có thể bổ sung sau' });
     const feedback = h('div', { class: 'c-stack', 'aria-live': 'polite' });
@@ -344,6 +362,9 @@ const driverStatus: ScreenDef = {
   access: 'authed',
   variants: [v('default', 'Chờ duyệt'), v('offline', 'Mất kết nối')],
   render: (env, variant) => {
+    if (env.mode === 'live' && env.driver !== undefined) {
+      return appPage({ title: 'Trạng thái hồ sơ', onBack: () => env.go('account'), bodyClass: 'c-stack', body: [liveDriverStatus(env)] });
+    }
     const driver = env.account?.driver;
     const rows: ReadonlyArray<readonly [string, string]> = [
       ['Họ tên', driver?.legalName ?? '—'],
@@ -382,4 +403,6 @@ export const SHIP_DEFINITION: AppDefinition = {
   testSmsNotice: true,
   // The register flow of #82 (OTP, or none in DISABLED_TEST), connected on a local https runtime. The approved test texts name 11Ship/11Food.
   register: { consent: FOOD_TEST_CONSENT },
+  // The driver profile (S12/S13) of the existing backend, on a local https runtime.
+  driverProfile: true,
 };

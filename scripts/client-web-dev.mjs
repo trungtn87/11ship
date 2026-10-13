@@ -25,6 +25,9 @@
 //       PUT  /v1/onboarding/shop/profile         (Authorization: Bearer, Idempotency-Key)
 //       POST /v1/onboarding/shop/complete        (Authorization: Bearer, Idempotency-Key)
 //       GET  /v1/onboarding/shop/service-areas   (Authorization: Bearer, no query/body)
+//     and, for 11Ship ONLY (11Food never reaches them), the driver profile:
+//       POST /v1/onboarding/driver               (Authorization: Bearer, Idempotency-Key)
+//       GET  /v1/driver/me                       (Authorization: Bearer, no query/body)
 //     See forwardAuth and forwardConfig for the rules (same origin, JSON, size, deadline, no cookie, no-store; only the Bearer and the
 //     Idempotency-Key of the browser are passed on, nothing else of its headers). NOTHING else of /v1 is reachable: not a prefix, not a
 //     wildcard, not another method, not a query string. Other business routes are opened by later packages after their own review (the
@@ -83,6 +86,9 @@ export const CLIENT_AUTH_ROUTES = [
   { id: 'shop-profile-save', match: (path) => path === '/v1/onboarding/shop/profile', keyed: true, method: 'PUT', bearer: true, apps: ['food-web'] },
   { id: 'shop-complete', match: (path) => path === '/v1/onboarding/shop/complete', keyed: true, bearer: true, apps: ['food-web'] },
   { id: 'shop-service-areas', match: (path) => path === '/v1/onboarding/shop/service-areas', keyed: false, method: 'GET', bearer: true, apps: ['food-web'] },
+  // The driver profile is 11Ship's: submit (keyed) and the own read. 11Food never reaches them.
+  { id: 'driver-submit', match: (path) => path === '/v1/onboarding/driver', keyed: true, bearer: true, apps: ['ship-web'] },
+  { id: 'driver-read', match: (path) => path === '/v1/driver/me', keyed: false, method: 'GET', bearer: true, apps: ['ship-web'] },
 ];
 /** The routes of the 11Food front under their former name. */
 export const FOOD_AUTH_ROUTES = CLIENT_AUTH_ROUTES;
