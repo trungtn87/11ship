@@ -91,7 +91,7 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     expect(body.error.request_id).toBe(header);
   });
 
-  it('covers exactly the six idempotency codes, the unknown transaction outcome, the 15 Auth Core codes, the 4 Shop onboarding codes, the 2 Driver onboarding codes and the 4 Shop management codes, the 6 administration authentication codes, the 9 ADMIN invitation codes and the 3 ADMIN activation codes, the 1 staging-fixture registration code the 3 client registration codes and the 1 account read code', () => {
+  it('covers exactly the six idempotency codes, the unknown transaction outcome, the 15 Auth Core codes, the 4 Shop onboarding codes, the 2 Driver onboarding codes and the 4 Shop management codes, the 6 administration authentication codes, the 9 ADMIN invitation codes and the 3 ADMIN activation codes, the 1 staging-fixture registration code, the 3 client registration codes and the 1 account read code', () => {
     // 7 foundation codes (M00-C1) + 15 Auth Core codes (M01-A1) + 4 Shop onboarding codes (M01-A2S) + 2 Driver onboarding codes (M01-A2D)
     // + 4 Shop management codes (M02-A) + 6 administration authentication codes (M01-D-LOGIN) + 9 ADMIN invitation codes (M01-D-ADMIN-1B) + 3 ADMIN activation codes (M01-D-ADMIN-1C):
     // + 1 AUTH_REGISTRATION_UNAVAILABLE (M00-D2, issue #49)
