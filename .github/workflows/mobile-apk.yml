@@ -8,6 +8,11 @@ name: Mobile APK
 
 on:
   workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: 'Server origin the APKs talk to (https only). Empty = the default test server.'
+        required: false
+        default: ''
   pull_request:
     paths:
       - 'mobile/**'
@@ -23,7 +28,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  API_BASE_URL: https://103.9.78.67.sslip.io
+  # The default test server only serves the health checks until a native verifier is deployed there; the account screens then say
+  # "the server is not ready for Android" (503). A local test build passes api_base_url (workflow_dispatch) instead.
+  API_BASE_URL: ${{ inputs.api_base_url != '' && inputs.api_base_url || 'https://103.9.78.67.sslip.io' }}
+  # Non-secret environment identifier signed into every device proof. The server pins the same value (CLIENT_DEVICE_ENVIRONMENT).
+  DEVICE_ENVIRONMENT: ${{ vars.N11_DEVICE_ENVIRONMENT != '' && vars.N11_DEVICE_ENVIRONMENT || 'ship11-test' }}
 
 defaults:
   run:
@@ -41,9 +50,11 @@ jobs:
           - app: food
             label: 11Food
             app_id: vn.eleven.food.test
+            server: FOOD
           - app: ship
             label: 11Ship
             app_id: vn.eleven.ship.test
+            server: SHIP
     env:
       ANDROID_TEST_KEYSTORE_BASE64: ${{ secrets.ANDROID_TEST_KEYSTORE_BASE64 }}
       ANDROID_TEST_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_TEST_KEYSTORE_PASSWORD }}
@@ -65,8 +76,24 @@ jobs:
             exit 1
           fi
 
-      - name: Check out
+      - name: Check out the exact source commit
         uses: actions/checkout@v4
+        with:
+          # A pull request would otherwise build the merge commit, not the commit the report names.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Source matches SOURCE_SHA
+        run: |
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$SOURCE_SHA" ]; then
+            echo "::error title=source mismatch::checked out $actual but the build is labelled $SOURCE_SHA"; exit 1
+          fi
+
+      - name: Server origin is a plain https origin
+        run: |
+          if ! printf '%s' "$API_BASE_URL" | grep -Eq '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'; then
+            echo "::error title=API_BASE_URL::must be a plain https origin (no path, query or credentials)"; exit 1
+          fi
 
       - uses: actions/setup-java@v4
         with:
@@ -105,7 +132,13 @@ jobs:
           done
 
       - name: Prepare Android project
-        run: mobile/tool/prepare-android.sh ${{ matrix.app }}
+        run: DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" mobile/tool/prepare-android.sh ${{ matrix.app }}
+
+      - name: Native unit tests (Binder join rules)
+        run: |
+          cd mobile/${{ matrix.app }}/android
+          ./gradlew --no-daemon :app:testDebugUnitTest 2>&1 | tee "$RUNNER_TEMP/gradle-test.log" || {
+            echo "::error title=native unit tests failed::$(grep -E 'FAILED|error:|e: ' "$RUNNER_TEMP/gradle-test.log" | head -12 | tr '\n' '|' | head -c 2500)"; exit 1; }
 
       - name: Build release APK
         run: |
@@ -122,11 +155,33 @@ jobs:
             --dart-define=CI_RUN="${{ github.run_id }}" \
             --dart-define=SOURCE_SHA="$SOURCE_SHA" \
             --dart-define=BUILT_AT="$(date -u +%Y-%m-%dT%H:%MZ)" \
-            --dart-define=SIGNING_MODE="$signing" \
+            --dart-define=SIGNING_MODE="stable" \
+            --dart-define=DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" \
             --dart-define=BUILD_FLUTTER="$fv" 2>&1 | tee "$RUNNER_TEMP/b.log" || {
               echo "::error title=build failed::$(tail -n 25 "$RUNNER_TEMP/b.log" | cut -c1-220 | tr '\n' '|' | head -c 2500)"; exit 1; }
 
-      - name: Sign
+      # Exact permission allowlist of the compiled (still unsigned) APK: needs no secret, so it runs for every build.
+      - name: Permission allowlist
+        run: |
+          bt="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)"
+          "$bt/aapt2" dump badging mobile/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk > "$RUNNER_TEMP/unsigned-badging.txt"
+          mobile/tool/check-apk-permissions.sh ${{ matrix.app }} "$RUNNER_TEMP/unsigned-badging.txt"
+
+      # No signing material, no distribution: stop HERE, before the (already compiled, unsigned) build is signed or uploaded.
+      - name: Require the persistent signing secrets
+        run: |
+          missing=""
+          for name in ANDROID_TEST_KEYSTORE_BASE64 ANDROID_TEST_KEYSTORE_PASSWORD ANDROID_TEST_KEY_ALIAS ANDROID_TEST_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            msg="Missing GitHub Secret(s):$missing. The APK is NOT signed and NOT uploaded; no temporary key is used. Run mobile/tool/create-test-keystore.sh once (and keep a private backup of the key), then re-run."
+            echo "::error title=signing secrets missing::$msg"
+            { echo "### ${{ matrix.label }}: APK not distributed"; echo "- $msg"; echo "- Analyze and tests above ran without the secrets."; } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Sign and verify
         run: |
           set -euo pipefail
           trap 'echo "::error title=sign failed::line $LINENO: $BASH_COMMAND"' ERR
@@ -138,27 +193,42 @@ jobs:
           src="mobile/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk"
           out="${{ matrix.label }}-test.apk"
           if [ ! -f "$src" ]; then
-            echo "::error title=apk not found::$(find . -name '*.apk' -not -path './.git/*' 2>/dev/null | head -8 | tr '\n' '|') build dirs: $(find mobile -maxdepth 3 -type d -name build | tr '\n' '|') flutter-apk: $(ls mobile/${{ matrix.app }}/build/app/outputs 2>&1 | tr '\n' '|')"
+            echo "::error title=apk not found::$(find . -name '*.apk' -not -path './.git/*' 2>/dev/null | head -8 | tr '\n' '|')"
             exit 1
           fi
-          echo "apk: $src"
           cp "$src" "$work/unsigned.apk"
           zip -q -d "$work/unsigned.apk" 'META-INF/*' || true
           "$bt/zipalign" -f -p 4 "$work/unsigned.apk" "$work/aligned.apk"
-          "$bt/apksigner" sign --ks "$work/test.jks" --ks-key-alias "$key_alias" --ks-pass "pass:$ks_pass" --key-pass "pass:$key_pass" \
+          "$bt/apksigner" sign --ks "$work/test.jks" --ks-key-alias "$ANDROID_TEST_KEY_ALIAS" \
+            --ks-pass env:ANDROID_TEST_KEYSTORE_PASSWORD --key-pass env:ANDROID_TEST_KEY_PASSWORD \
             --out "$out" "$work/aligned.apk"
-          "$bt/apksigner" verify --verbose "$out" > "$work/verify.txt"
-          head -5 "$work/verify.txt"
+          "$bt/apksigner" verify --verbose --print-certs "$out" > "$work/verify.txt"
+          head -3 "$work/verify.txt"
+
+          # What the APK says it is: applicationId and versionCode are checked, not assumed.
           "$bt/aapt2" dump badging "$out" > "$work/badging.txt"
           grep -E "^package: |application-label:|uses-permission" "$work/badging.txt"
-          grep -q "name='${{ matrix.app_id }}'" "$work/badging.txt"
-          if grep -qE "uses-permission: name='android.permission.(ACCESS|CAMERA|READ_|WRITE_)" "$work/badging.txt"; then echo "unexpected permission" >&2; exit 1; fi
+          grep -q "package: name='${{ matrix.app_id }}'" "$work/badging.txt" || { echo "::error title=applicationId changed::expected ${{ matrix.app_id }}"; exit 1; }
+          grep -q "versionCode='${{ github.run_number }}'" "$work/badging.txt" || { echo "::error title=versionCode mismatch::expected ${{ github.run_number }}"; exit 1; }
+          mobile/tool/check-apk-permissions.sh ${{ matrix.app }} "$work/badging.txt"
+
+          # The signing certificate: the APK's one must be the keystore's one (same persistent key). Only public fingerprints are printed.
+          apk_fp="$(sed -n 's/^Signer #1 certificate SHA-256 digest: *//p' "$work/verify.txt" | head -1 | tr 'A-F' 'a-f')"
+          key_fp="$(keytool -exportcert -keystore "$work/test.jks" -alias "$ANDROID_TEST_KEY_ALIAS" -storepass:env ANDROID_TEST_KEYSTORE_PASSWORD 2>/dev/null | sha256sum | cut -d' ' -f1)"
+          if [ -z "$apk_fp" ] || [ "$apk_fp" != "$key_fp" ]; then
+            echo "::error title=signer mismatch::the APK is not signed with the persistent test key"; exit 1
+          fi
+          rm -f "$work/test.jks"
           sha256sum "$out"
+          printf '{"app":"%s","package_name":"%s","signer_sha256":"%s","version_code":%s,"source_sha":"%s"}\n' \
+            "${{ matrix.server }}" "${{ matrix.app_id }}" "$apk_fp" "${{ github.run_number }}" "$SOURCE_SHA" > "signer-${{ matrix.app }}.json"
           {
             echo "### ${{ matrix.label }}-test.apk"
-            echo "- applicationId: \`${{ matrix.app_id }}\`, build ${{ github.run_number }}, source \`$SOURCE_SHA\`"
-            echo "- Signed with the stable test key from GitHub Secrets: updates install over older builds."
-            echo "- sha256: \`$(sha256sum "$out" | cut -d' ' -f1)\`"
+            echo "- applicationId: \`${{ matrix.app_id }}\`, versionCode ${{ github.run_number }} (run attempt ${{ github.run_attempt }}; a re-run of this run is the same build, not a new version), source \`$SOURCE_SHA\`"
+            echo "- Signed with the persistent test key from GitHub Secrets: it updates over older builds and keeps their data."
+            echo "- Public signing certificate SHA-256 (for CLIENT_DEVICE_ALLOWED_SIGNERS_FILE): \`$apk_fp\`"
+            echo "- API_BASE_URL \`$API_BASE_URL\`, device environment \`$DEVICE_ENVIRONMENT\`"
+            echo "- apk sha256: \`$(sha256sum "$out" | cut -d' ' -f1)\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK
@@ -166,5 +236,45 @@ jobs:
         with:
           name: ${{ matrix.label }}-test.apk
           path: ${{ matrix.label }}-test.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload public signer fingerprint
+        uses: actions/upload-artifact@v4
+        with:
+          name: signer-${{ matrix.app }}
+          path: signer-${{ matrix.app }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  # The two public fingerprints as the file the server pins (CLIENT_DEVICE_ALLOWED_SIGNERS_FILE). It holds no secret.
+  signers:
+    name: Public signer allowlist
+    needs: apk
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: signer-*
+          path: signers
+          merge-multiple: true
+      - name: Build android-signers.json
+        run: |
+          python3 - <<'PY'
+          import json
+          food = json.load(open('signers/signer-food.json'))
+          ship = json.load(open('signers/signer-ship.json'))
+          assert food['signer_sha256'] == ship['signer_sha256'], 'the two apps must share one persistent signer'
+          out = {
+            'FOOD': {'package_name': food['package_name'], 'signer_sha256': food['signer_sha256']},
+            'SHIP': {'package_name': ship['package_name'], 'signer_sha256': ship['signer_sha256']},
+          }
+          json.dump(out, open('android-signers.json', 'w'), indent=2)
+          print(json.dumps(out, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-signers.json
+          path: android-signers.json
           if-no-files-found: error
           retention-days: 30
