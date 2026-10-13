@@ -23,6 +23,8 @@ export interface SessionView {
   readonly expired: boolean;
   readonly userStatus: string;
   readonly phoneNormalized: string;
+  readonly platform: string;
+  readonly app: string;
   /** The owner's account origin, read in the same statement; the bearer policy decides on it. */
   readonly accountOrigin: AccountOrigin;
 }
@@ -105,8 +107,10 @@ export class SessionRepository {
       status: string;
       phone_normalized: string;
       account_origin: string;
+      platform: string;
+      app: string;
     }>(
-      `SELECT s.session_id, s.user_id, s.active_role,
+      `SELECT s.session_id, s.user_id, s.active_role, s.platform, s.app,
               s.revoked_at IS NOT NULL AS revoked,
               s.expires_at <= clock_timestamp() AS expired,
               u.status, u.phone_normalized, u.account_origin
@@ -130,6 +134,8 @@ export class SessionRepository {
       expired: row.expired,
       userStatus: row.status,
       phoneNormalized: row.phone_normalized,
+      platform: row.platform,
+      app: row.app,
       accountOrigin: row.account_origin,
     };
   }

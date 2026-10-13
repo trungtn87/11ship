@@ -21,20 +21,28 @@ export interface ClientAuthSettings {
    * GET /v1/client-auth/config reports and what selects the registration body of POST /v1/client-auth/register.
    */
   readonly phoneVerificationMode: ClientPhoneVerificationMode;
+  /**
+   * The native Android gate (CLIENT_AUTH_ANDROID_ENABLED + valid pinned trust, development/test on loopback only). Absent or
+   * false: every ANDROID request is a fail-closed 503, exactly like before the native binding existed. True does NOT
+   * accept an ANDROID request by itself: the device proof headers are verified on every request (ClientDeviceProofService).
+   */
+  readonly androidEnabled?: boolean;
 }
 
-export function clientAuthSettingsFrom(config: AppConfig): ClientAuthSettings {
+export function clientAuthSettingsFrom(config: AppConfig, deviceTrust?: unknown): ClientAuthSettings {
   return {
     consent: config.clientAuth,
     localWeb: isLocalWebMode(config.appEnv, config.host),
     phoneVerificationMode: config.clientPhoneVerificationMode ?? 'REQUIRED',
+    androidEnabled: deviceTrust !== undefined,
   };
 }
 
 /**
  * The device gate of contract11 sections 6 and 7, applied before anything is read or written:
- *  - ANDROID has no proof verifier in this slice: SERVICE_UNAVAILABLE (503). The platform label is never accepted as a
- *    proof, there is no device_id fallback and no partial native check, so nothing is created or consumed.
+ *  - ANDROID needs the native gate (settings.androidEnabled): without it SERVICE_UNAVAILABLE (503). The platform label is never
+ *    accepted as a proof and there is no device_id fallback; with the gate on, the proof headers are verified by
+ *    ClientDeviceProofService before anything is created or consumed.
  *  - WEB is accepted only in LOCAL_WEB mode; anywhere else (production, staging, a non-loopback bind) it needs a device
  *    proof that WEB cannot give: DEVICE_PROOF_REQUIRED (403).
  */
@@ -49,6 +57,9 @@ export function assertDeviceAllowed(settings: ClientAuthSettings, device: Client
  */
 export function assertPlatformAllowed(settings: ClientAuthSettings, platform: ClientPlatform): void {
   if (platform === 'ANDROID') {
+    if (settings.androidEnabled === true) {
+      return;
+    }
     throw new TechnicalError('unavailable', 'The Android device proof verifier is not available');
   }
   if (platform === 'WEB' && settings.localWeb) {

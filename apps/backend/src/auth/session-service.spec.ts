@@ -16,6 +16,8 @@ const VIEW: SessionView = {
   expired: false,
   userStatus: 'ACTIVE',
   phoneNormalized: '+84987654321',
+  platform: 'WEB',
+  app: 'FOOD',
   accountOrigin: 'PHONE_VERIFIED',
 };
 
@@ -88,6 +90,8 @@ describe('SessionService.authenticate', () => {
       sessionId: VIEW.sessionId,
       activeRole: 'DRIVER',
       phoneNormalized: VIEW.phoneNormalized,
+      platform: VIEW.platform,
+      app: VIEW.app,
     });
   });
 
@@ -149,9 +153,9 @@ describe('SessionService.authenticate account origin policy (M00-D2)', () => {
 
   const header = () => `Bearer ${generateToken().token}`;
 
-  it('a fixture session is accepted on staging, mode on, allowlisted; the principal gains no field', async () => {
+  it('a fixture session is accepted on staging, mode on, allowlisted; the principal gains no field beyond platform and app (device proof routing)', async () => {
     const principal = await serviceFor(FIXTURE_VIEW, STAGING_ON).authenticate(header());
-    expect(Object.keys(principal).sort()).toEqual(['activeRole', 'phoneNormalized', 'sessionId', 'userId']);
+    expect(Object.keys(principal).sort()).toEqual(['activeRole', 'app', 'phoneNormalized', 'platform', 'sessionId', 'userId']);
   });
 
   const denied: ReadonlyArray<readonly [string, AccountOriginPolicy | undefined]> = [

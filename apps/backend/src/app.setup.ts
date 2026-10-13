@@ -41,6 +41,24 @@ export function configureApp(app: INestApplication): void {
   for (const prefix of CLIENT_PROFILE_ROUTE_PREFIXES) {
     app.use(`/${GLOBAL_PREFIX}/${prefix}`, clientAuthTransportMiddleware);
   }
+  // The exact request bytes, kept BEFORE the JSON parser reads them: the native device proof signs SHA-256 of the raw body and the
+  // exact target, never of a re-serialized object (contract11 section 8). Scoped to the routes a phone calls, so nothing else (the
+  // administration hosting, static paths) meets a parser earlier than before. It is the same express JSON parser with the same
+  // default limit and errors; it only adds the `verify` hook, and the framework's own parser then skips the already-parsed body.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const express: { json(options: { verify: (request: { rawBody?: Buffer }, response: unknown, buffer: Buffer) => void }): never } = require('express');
+  const rawCapturingParser = express.json({
+    verify: (request, _response, buffer) => {
+      request.rawBody = Buffer.from(buffer);
+    },
+  }) as unknown as (request: unknown, response: unknown, next: (error?: unknown) => void) => void;
+  // A differently named wrapper on purpose: the framework skips registering ITS parser when it finds one named jsonParser, which
+  // would leave every other route without a body parser.
+  const captureRawBody = (request: unknown, response: unknown, next: (error?: unknown) => void): void => rawCapturingParser(request, response, next);
+  app.use(`/${GLOBAL_PREFIX}/${CLIENT_AUTH_ROUTE_PREFIX}`, captureRawBody);
+  app.use(`/${GLOBAL_PREFIX}/customer/me/profile`, captureRawBody);
+  // The shop and driver onboarding writes a phone signs (M01 remaining flows).
+  app.use(`/${GLOBAL_PREFIX}/onboarding`, captureRawBody);
   app.setGlobalPrefix(GLOBAL_PREFIX);
   app.useGlobalFilters(new AllExceptionsFilter(app.get(HttpAdapterHost), logger));
 }

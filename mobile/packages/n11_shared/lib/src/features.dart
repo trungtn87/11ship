@@ -4,7 +4,7 @@
 //
 // To connect an action later: implement its call, flip `wired` to true here and add the test. The screens do not change.
 
-enum FeatureId { authRegister, authLogin }
+enum FeatureId { authRegister, authLogin, authProfile, shopManage, driverProfile, passwordReset, receiveOrders, wallet }
 
 class FeatureStatus {
   const FeatureStatus({required this.wired, required this.reason, required this.package});
@@ -18,17 +18,21 @@ class FeatureStatus {
   final String package;
 }
 
+/// What an Android action says while it is not connected. The backend for these exists (or is its own package); what is missing is
+/// this app's connection, so the wording says "on Android", never "the backend does not exist".
+const String kNotOnAndroidReason = 'Chưa nối trên Android.';
+
 const Map<FeatureId, FeatureStatus> kFeatures = <FeatureId, FeatureStatus>{
-  FeatureId.authRegister: FeatureStatus(
-    wired: false,
-    reason: 'Chưa nối máy chủ: đăng ký tài khoản đang chờ backend (M01.03).',
-    package: 'M01.03',
-  ),
-  FeatureId.authLogin: FeatureStatus(
-    wired: false,
-    reason: 'Chưa nối máy chủ: đăng nhập đang chờ backend (M01.04).',
-    package: 'M01.04',
-  ),
+  // M01-ANDROID: register, login, own profile and logout are connected to the real server (device-bound session).
+  FeatureId.authRegister: FeatureStatus(wired: true, reason: '', package: 'M01-ANDROID'),
+  FeatureId.authLogin: FeatureStatus(wired: true, reason: '', package: 'M01-ANDROID'),
+  FeatureId.authProfile: FeatureStatus(wired: true, reason: '', package: 'M01-ANDROID'),
+  // M01-ANDROID remaining flows: shop profile + location + context, driver profile, test password reset.
+  FeatureId.shopManage: FeatureStatus(wired: true, reason: '', package: 'M01-QUAN'),
+  FeatureId.driverProfile: FeatureStatus(wired: true, reason: '', package: 'M01-XE'),
+  FeatureId.passwordReset: FeatureStatus(wired: true, reason: '', package: 'M01-RESET'),
+  FeatureId.receiveOrders: FeatureStatus(wired: false, reason: kNotOnAndroidReason, package: 'M01-XE'),
+  FeatureId.wallet: FeatureStatus(wired: false, reason: kNotOnAndroidReason, package: 'M04'),
 };
 
 String featureReason(FeatureId id) => kFeatures[id]!.reason;

@@ -6,7 +6,7 @@ import { SessionAuthorizationParticipant } from '../auth/session-authorization-p
 import { SessionRepository } from '../auth/session-repository';
 import { AppError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
-import { ClientApp, isClientApp, isClientPlatform } from './client-auth-constants';
+import { ClientApp, ClientPlatform, isClientApp, isClientPlatform } from './client-auth-constants';
 import { assertPlatformAllowed, CLIENT_AUTH_SETTINGS, ClientAuthSettings } from './client-auth-policy';
 
 /** What a client endpoint knows about its caller once the user and session rows are locked and validated. */
@@ -18,6 +18,8 @@ export interface ClientActor {
   /** The role stored on the LOCKED session row, or null. */
   readonly storedActiveRole: string | null;
   readonly expiresAtMs: number;
+  /** The platform recorded on the session (immutable). */
+  readonly platform: ClientPlatform;
 }
 
 export type ClientActorLock = 'update' | 'share';
@@ -66,6 +68,7 @@ export class ClientSessionAuthority {
       app: view.app,
       storedActiveRole: view.activeRole,
       expiresAtMs: view.expiresAtMs,
+      platform: view.platform,
     };
   }
 

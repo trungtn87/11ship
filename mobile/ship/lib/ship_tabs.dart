@@ -6,27 +6,20 @@ import 'package:n11_shared/n11_shared.dart';
 // activity status is invented anywhere; empty means "no data yet", unknown is shown as "—", never as 0.
 
 const String kTestNoticeTitle = 'Bản chạy thử';
-const String kTestNoticeText = 'Giao diện khung để kiểm tra kết nối máy chủ. Đăng nhập và nghiệp vụ chưa nối.';
-const String kOnlineReason = 'Đăng nhập và hoàn tất hồ sơ xế để bật nhận đơn.';
+const String kTestNoticeText = 'Bản thử nghiệm: đăng ký, đăng nhập và hồ sơ cá nhân đã nối máy chủ. Các nghiệp vụ khác chưa nối.';
+const String kOnlineReason = 'Nhận đơn: $kNotOnAndroidReason Cần hồ sơ xế được duyệt.';
 
-List<TabSpec> buildShipTabs() {
+List<TabSpec> buildShipTabs(SessionController session, {AppFlows? flows}) {
   return <TabSpec>[
-    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', showLogo: true, body: _home),
+    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', showLogo: true, body: (BuildContext context, ShellActions actions) => _home(session, flows)),
     TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: (BuildContext context, ShellActions actions) => const OrdersBody()),
     TabSpec(id: 'income', label: 'Thu nhập', icon: Icons.bar_chart_outlined, title: 'Thu nhập', body: _income),
     TabSpec(id: 'wallet', label: 'Ví', icon: Icons.account_balance_wallet_outlined, title: 'Ví', body: _wallet),
-    TabSpec(id: 'account', label: 'Tài khoản', icon: Icons.person_outline, title: 'Tài khoản', body: _account),
+    TabSpec(id: 'account', label: 'Tài khoản', icon: Icons.person_outline, title: 'Tài khoản', body: (BuildContext context, ShellActions actions) => _account(session, actions, flows)),
   ];
 }
 
-Widget _guestPrompt(String text) {
-  return N11Banner(
-    kind: BannerKind.info,
-    title: 'Bạn chưa đăng nhập',
-    text: text,
-    trailing: GatedButton(label: 'Đăng nhập', reason: featureReason(FeatureId.authLogin), kind: ButtonKind.secondary, compact: true),
-  );
-}
+Widget _guestPrompt(SessionController session, String text, [AppFlows? flows]) => GuestPrompt(session: session, brand: shipBrand, text: text, reset: flows?.reset);
 
 Widget _soonChip() => const Center(child: N11Chip('Sắp có', kind: ChipKind.soon));
 
@@ -48,10 +41,10 @@ Widget _unknownFigure({required String label, required String note}) {
 
 // ---- S01: home -------------------------------------------------------------------------------------------------------
 
-Widget _home(BuildContext context, ShellActions actions) {
+Widget _home(SessionController session, AppFlows? flows) {
   return vstack(<Widget>[
     const N11Banner(kind: BannerKind.warn, title: kTestNoticeTitle, text: kTestNoticeText),
-    _guestPrompt('Đăng nhập để gửi hồ sơ xế và theo dõi trạng thái.'),
+    _guestPrompt(session, 'Đăng nhập để theo dõi tài khoản của bạn. Gửi hồ sơ xế trong tab Tài khoản.', flows),
     // Online is only ever possible for an approved, eligible driver; that state does not exist here. Always unavailable.
     N11Card(
       child: Column(
@@ -131,27 +124,36 @@ Widget _wallet(BuildContext context, ShellActions actions) {
 
 // ---- S05: account (guest) --------------------------------------------------------------------------------------------
 
-Widget _account(BuildContext context, ShellActions actions) {
-  return vstack(<Widget>[
-    Container(
-      padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap8, N11Space.pad, N11Space.gap6),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: <Color>[N11Colors.yellowSoft, N11Colors.white]),
-      ),
-      child: Column(
-        children: <Widget>[
-          const BrandLogo(brand: shipBrand, height: 64),
-          const SizedBox(height: N11Space.gap2),
-          Text(shipBrand.slogan, style: N11Text.captionInk2.copyWith(fontWeight: FontWeight.w600)),
-        ],
-      ),
-    ),
-    GatedButton(label: 'Đăng nhập', reason: featureReason(FeatureId.authLogin)),
-    GatedButton(label: 'Đăng ký làm xế', reason: featureReason(FeatureId.authRegister), kind: ButtonKind.secondary),
-    N11List(children: <Widget>[
+Widget _account(SessionController session, ShellActions actions, AppFlows? flows) {
+  final DriverController? driver = flows?.driver;
+  return Builder(builder: (BuildContext context) => AccountTab(
+    session: session,
+    brand: shipBrand,
+    actions: actions,
+    registerLabel: 'Đăng ký',
+    reset: flows?.reset,
+    signedInEntries: <Widget>[
+      // S12/S13: the driver profile, connected to the server. Sending it never receives orders or changes the context.
+      if (driver != null)
+        N11ListItem(
+          key: const Key('driver-entry'),
+          icon: Icons.badge_outlined,
+          title: 'Hồ sơ xế',
+          sub: 'Gửi và xem hồ sơ xế của bạn.',
+          onTap: () => Navigator.of(context).push(n11Route(DriverProfileScreen(controller: driver))),
+        ),
+    ],
+    entries: <Widget>[
+      if (driver == null)
+        N11ListItem(
+          icon: Icons.badge_outlined,
+          title: 'Hồ sơ xế',
+          sub: kNotOnAndroidReason,
+          soon: true,
+          trailing: const N11Chip('Chưa nối', kind: ChipKind.soon),
+        ),
       const N11ListItem(icon: Icons.help_outline, title: 'Trợ giúp', soon: true),
       const N11ListItem(icon: Icons.shield_outlined, title: 'Chính sách và điều khoản', soon: true),
-      N11ListItem(icon: Icons.network_check, title: 'Chẩn đoán kết nối', sub: 'Kiểm tra kết nối với máy chủ', onTap: actions.openDiagnostics),
-    ]),
-  ]);
+    ],
+  ));
 }

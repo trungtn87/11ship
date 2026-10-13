@@ -98,11 +98,24 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | admin_app_permissions | SELECT, INSERT (written once at activation) |
 | customer_profiles | SELECT, INSERT, UPDATE (M01.02: UPDATE is the version-checked profile edit and `FOR UPDATE`; no DELETE: a customer profile is never removed by the runtime) |
 | user_consents | SELECT, INSERT (M01.02: append-only; a trigger refuses UPDATE and DELETE for every role, and the runtime has neither privilege nor TRUNCATE) |
+| client_device_keys | SELECT, INSERT, UPDATE (M01-ANDROID: UPDATE only sets `revoked_at`; a trigger refuses every other column change; no DELETE) |
+| client_device_challenges | SELECT, INSERT, UPDATE (UPDATE is `consumed_at` and `FOR UPDATE`; expired rows are removed only by the cleanup credential below) |
+| client_device_registration_grants | SELECT, INSERT, UPDATE (UPDATE is the one-use `consumed_at`; no DELETE) |
+| client_device_bindings | SELECT, INSERT, UPDATE (UPDATE only sets `deactivated_at`; a trigger refuses every other column change; no DELETE) |
+| client_device_key_links | SELECT, INSERT, UPDATE (contract11 section 8: UPDATE only sets `detached_at`, once; a trigger refuses any change of binding, key, user, app or `linked_at`; no DELETE) |
+| client_session_bindings | SELECT, INSERT, UPDATE (UPDATE only clears `is_current`, including from the `app.sessions` revoke trigger; no DELETE) |
+| client_device_request_nonces | SELECT, INSERT (the replay barrier; expired rows are removed only by the cleanup credential below) |
 
 ```sql
 -- example shape, repeat per row of the table above
 GRANT SELECT, INSERT, UPDATE ON app.users TO ship11_app;
 ```
+
+**Device cleanup credential (M01-ANDROID).** A separate role, never the runtime one, may `DELETE` only expired rows of
+`client_device_challenges` and `client_device_request_nonces` (`SELECT, DELETE` on those two tables, nothing else). The runtime role has
+no `DELETE` on any `client_device_*` table, and cleanup is never reachable through an account API. The bounded statement is
+`ClientDeviceRepository.purgeExpired` (rows expired for more than an hour, `LIMIT`ed). Registration grants are kept: a replay of a committed
+login presents the same, already consumed, token inside the idempotency replay window.
 
 This matrix is derived from reading the source (static analysis), not from running the application against a
 restricted role. **D4 must verify it** by exercising the real endpoints. Row locks (`FOR UPDATE/SHARE`) need UPDATE,

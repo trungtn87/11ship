@@ -65,6 +65,7 @@ class AppConfig {
     this.builtAt = '',
     this.signing = SigningMode.unknown,
     this.flutterVersion = '',
+    this.deviceEnvironment = '',
   });
 
   factory AppConfig.fromEnvironment() => AppConfig(
@@ -77,6 +78,7 @@ class AppConfig {
         builtAt: const String.fromEnvironment('BUILT_AT'),
         signing: SigningMode.parse(const String.fromEnvironment('SIGNING_MODE')),
         flutterVersion: const String.fromEnvironment('BUILD_FLUTTER'),
+        deviceEnvironment: const String.fromEnvironment('DEVICE_ENVIRONMENT'),
       );
 
   final String apiBaseUrl;
@@ -88,6 +90,10 @@ class AppConfig {
   final String builtAt;
   final SigningMode signing;
   final String flutterVersion;
+
+  /// The non-secret environment identifier signed into every device proof (the server pins the same value). Empty = this build
+  /// cannot sign in.
+  final String deviceEnvironment;
 
   /// The validated server origin, or null (then no request is made and the screens say the address is missing).
   Uri? get apiUri => parseApiBaseUrl(apiBaseUrl);
