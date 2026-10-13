@@ -32,6 +32,7 @@ class _ResetScreenState extends State<ResetScreen> {
   @override
   void initState() {
     super.initState();
+    widget.controller.begin();
     widget.controller.loadConfig();
   }
 
@@ -86,7 +87,7 @@ class _ResetScreenState extends State<ResetScreen> {
                 kind: BannerKind.error,
                 title: 'Chưa hoàn tất',
                 text: failureMessage(failure),
-                trailing: controller.hasPendingWrite && canRetryFailure(failure)
+                trailing: controller.pendingMatches(phone: _phone.text, password: _password.text) && canRetryFailure(failure)
                     ? N11Button(key: const Key('retry-pending'), label: 'Thử lại', compact: true, onPressed: busy ? null : controller.retryPending)
                     : null,
               ),

@@ -150,6 +150,7 @@ class ShopController extends ChangeNotifier {
   /// Drops the profile, the form, the position and any pending write.
   void clear() {
     _epoch++;
+    _formRevision++;
     _load = ShopLoad.idle;
     _profile = null;
     _areas = const <ServiceArea>[];
@@ -184,7 +185,14 @@ class ShopController extends ChangeNotifier {
     }
   }
 
+  /// Bumps whenever the form fields above are REPLACED by the controller (a server snapshot was accepted, or everything was
+  /// cleared). A screen that keeps its own text controllers re-reads the fields when it changes, so what is displayed is never an
+  /// older snapshot than what the next save will send.
+  int _formRevision = 0;
+  int get formRevision => _formRevision;
+
   void _fillFormFromProfile(ShopProfile profile) {
+    _formRevision++;
     name = profile.name;
     contactPhone = profile.contactPhone;
     addressText = profile.addressText;
@@ -400,8 +408,7 @@ class ShopController extends ChangeNotifier {
       if (epoch != _epoch) {
         return false;
       }
-      final bool unknown = failure.kind == AuthFailureKind.unknownOutcome ||
-          (failure.kind == AuthFailureKind.serverUnavailable && failure.code == 'TRANSACTION_OUTCOME_UNKNOWN');
+      final bool unknown = failure.outcomeUnknown;
       if (!unknown) {
         _pendingKind = null;
         _pendingBody = null;

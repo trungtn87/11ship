@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { SessionActor, SessionAuthorizationParticipant } from '../auth/session-authorization-participant';
 import { ShopRepository, ShopRow } from '../shop/shop-repository';
 import { ShopStatus } from '../shop/shop-types';
 import { TransactionManager } from '../transaction/transaction-manager';
@@ -45,10 +46,10 @@ function toView(shop: ShopRow): ShopProfileView {
 /**
  * Read side of Shop onboarding (A2S review addendum): what makes a saved draft resumable from a new session
  * or another device. It is the ONLY place in the Onboarding module that opens a transaction of its own, and
- * that transaction runs exactly one SELECT owned by M02. It needs no Idempotency-Key and goes nowhere near the
+ * that transaction runs the shared session locks and then exactly one SELECT owned by M02. It needs no Idempotency-Key and goes nowhere near the
  * idempotency executor, the audit log or the outbox: reading a profile leaves no row behind.
  *
- * The user comes only from the authenticated session. A user without a shop gets null; an INCOMPLETE, ACTIVE
+ * The caller comes only from the authenticated session and is re-authorized inside the transaction (lockAuthorizedActorShared). A user without a shop gets null; an INCOMPLETE, ACTIVE
  * or DISABLED owned shop is returned as it is (the mutation rules of save and complete are unchanged).
  */
 @Injectable()
@@ -56,10 +57,16 @@ export class ShopProfileQueryService {
   constructor(
     private readonly transactions: TransactionManager,
     private readonly shops: ShopRepository,
+    private readonly sessionAuth: SessionAuthorizationParticipant,
   ) {}
 
-  async ownedProfile(userId: string): Promise<ShopProfileView | null> {
-    const shop = await this.transactions.withTransaction((context) => this.shops.findOwnedShop(context, userId));
+  async ownedProfile(actor: SessionActor): Promise<ShopProfileView | null> {
+    const shop = await this.transactions.withTransaction(async (context) => {
+      // The guard's check is only a precheck: the session, the user and the device binding are re-authorized here under the
+      // shared locks (user, then session) before the shop row is read. No role is required: a roleless draft owner reads their own.
+      await this.sessionAuth.lockAuthorizedActorShared(context, actor);
+      return this.shops.findOwnedShop(context, actor.userId);
+    });
     return shop === undefined ? null : toView(shop);
   }
 }

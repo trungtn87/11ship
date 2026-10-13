@@ -1,6 +1,7 @@
-import { CanActivate, ExecutionContext, Injectable, Optional } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Inject, Injectable, Optional } from '@nestjs/common';
 import { isNativeSession } from '../client-device/client-device-constants';
 import { ClientDeviceProofService } from '../client-device/client-device-proof-service';
+import { CLIENT_AUTH_SETTINGS, ClientAuthSettings } from '../client-auth/client-auth-policy';
 import { AppError } from '../common/app-errors';
 import { AuthenticatedRequest } from './auth-principal';
 import { SessionService, bearerTokenFrom } from './session-service';
@@ -16,6 +17,7 @@ export class SessionAuthGuard implements CanActivate {
     private readonly sessions: SessionService,
     // Optional so that a module without the native device binding (a unit test) keeps the plain Bearer guard.
     @Optional() private readonly deviceProof?: ClientDeviceProofService,
+    @Optional() @Inject(CLIENT_AUTH_SETTINGS) private readonly nativeSettings?: ClientAuthSettings,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -36,6 +38,10 @@ export class SessionAuthGuard implements CanActivate {
         token,
         { sessionId: principal.sessionId, platform: principal.platform, app: principal.app },
       );
+    } else if (this.nativeSettings?.androidEnabled === true && principal.platform !== 'WEB') {
+      // The native gate is on: a session that is neither a proven native one nor a local web one (an ordinary session minted
+      // earlier under another label, e.g. ANDROID/OTHER or IOS/FOOD) is not served. Fail closed, whatever its label says.
+      throw new AppError('DEVICE_PROOF_REQUIRED');
     }
     request.auth = principal;
     return true;

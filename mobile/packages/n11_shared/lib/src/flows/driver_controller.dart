@@ -214,8 +214,7 @@ class DriverController extends ChangeNotifier {
       if (epoch != _epoch) {
         return false;
       }
-      final bool unknown = failure.kind == AuthFailureKind.unknownOutcome ||
-          (failure.kind == AuthFailureKind.serverUnavailable && failure.code == 'TRANSACTION_OUTCOME_UNKNOWN');
+      final bool unknown = failure.outcomeUnknown;
       if (!unknown) {
         _pendingBody = null;
         _pendingKey = null;

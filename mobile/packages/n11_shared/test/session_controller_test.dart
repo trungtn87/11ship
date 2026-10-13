@@ -229,6 +229,50 @@ void main() {
       expect(registrations, 2);
     });
 
+    test('F6: registering a NEW account never joins the peer binding (ENROLL on its own binding)', () async {
+      final t = build(app: ClientApp.food, bridge: FakeDeviceBridge(peerState: const PeerState(bindingId: 'b-peer', keyId: 'k-peer')));
+      expect(await t.session.register(phone: '0909999999', password: 'Correct-Horse-9', fullName: 'Người Mới'), isTrue);
+      final List<RecordedRequest> challenges = t.api.to('POST', '/v1/client-auth/device/challenges');
+      expect(challenges.single.body, contains('"purpose":"ENROLL"'));
+      expect(t.api.to('POST', '/v1/client-auth/device/registrations').single.body, contains('"join":null'));
+    });
+
+    test('F6: a login of ANOTHER account is refused for the device after a JOIN: redone once on the own binding with a new key; never loops', () async {
+      final t = build(app: ClientApp.ship, bridge: FakeDeviceBridge(peerState: const PeerState(bindingId: 'b-peer', keyId: 'k-peer')));
+      final FakeHandler real = t.api.routes['POST /v1/client-auth/login']!;
+      int logins = 0;
+      t.api.routes['POST /v1/client-auth/login'] = (String m, String p, Map<String, String> h, String b) async => ++logins == 1 ? apiError(403, 'DEVICE_PROOF_INVALID') : real(m, p, h, b);
+      expect(await t.session.login(phone: '0902222222', password: 'Correct-Horse-9'), isTrue);
+      final List<RecordedRequest> challenges = t.api.to('POST', '/v1/client-auth/device/challenges');
+      expect(challenges.map((RecordedRequest r) => r.body.contains('"JOIN"') ? 'JOIN' : 'ENROLL').toList(), <String>['JOIN', 'ENROLL']);
+      final List<RecordedRequest> attempts = t.api.to('POST', '/v1/client-auth/login');
+      expect(attempts.length, 2);
+      expect(attempts[0].headers['idempotency-key'], isNot(attempts[1].headers['idempotency-key']), reason: 'a definite refusal is a finished attempt: the redo is a new one');
+      expect(t.session.pending, isNull);
+    });
+
+    test('F6: a second definite refusal after the own binding is shown, not retried again', () async {
+      final t = build(app: ClientApp.ship, bridge: FakeDeviceBridge(peerState: const PeerState(bindingId: 'b-peer', keyId: 'k-peer')));
+      t.api.routes['POST /v1/client-auth/login'] = (String m, String p, Map<String, String> h, String b) async => apiError(403, 'DEVICE_PROOF_INVALID');
+      expect(await t.session.login(phone: '0902222222', password: 'Correct-Horse-9'), isFalse);
+      expect(t.api.to('POST', '/v1/client-auth/login').length, 2);
+      expect(t.session.lastFailure?.kind, AuthFailureKind.deviceProofRefused);
+    });
+
+    test('F6: an UNKNOWN outcome after a JOIN is not redone: the same key and body are kept for the person\'s retry', () async {
+      final t = build(app: ClientApp.ship, bridge: FakeDeviceBridge(peerState: const PeerState(bindingId: 'b-peer', keyId: 'k-peer')));
+      final FakeHandler real = t.api.routes['POST /v1/client-auth/login']!;
+      int logins = 0;
+      t.api.routes['POST /v1/client-auth/login'] = (String m, String p, Map<String, String> h, String b) async => ++logins == 1 ? apiError(504, 'SERVICE_UNAVAILABLE') : real(m, p, h, b);
+      expect(await t.session.login(phone: '0902222222', password: 'Correct-Horse-9'), isFalse);
+      expect(t.session.pending, isNotNull);
+      expect(t.bridge.generated, 1, reason: 'no second key was minted');
+      expect(await t.session.retryPending(), isTrue);
+      final List<RecordedRequest> attempts = t.api.to('POST', '/v1/client-auth/login');
+      expect(attempts[0].headers['idempotency-key'], attempts[1].headers['idempotency-key']);
+      expect(attempts[0].body, attempts[1].body);
+    });
+
     test('this app is already in the peer binding: it logs in with its own key (same binding, no join)', () async {
       final bridge = FakeDeviceBridge(peerState: const PeerState(bindingId: '33333333-3333-4333-8333-333333333333', keyId: 'k-peer'))
         ..key = const DeviceKeyState(keyId: 'k-mine', publicKeySpki: 'c3Bracw=', chain: <String>['bGVhZg=='], bindingId: '33333333-3333-4333-8333-333333333333', generation: 1);

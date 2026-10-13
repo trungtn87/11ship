@@ -2,6 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import { BadRequestException } from '@nestjs/common';
 import { AppError } from '../common/app-errors';
 import {
+  assertLegacyDeviceAllowed,
   isWellFormed,
   parseLoginBody,
   parseOtpRequestBody,
@@ -208,5 +209,20 @@ describe('isWellFormed', () => {
     expect(isWellFormed('\ud83d')).toBe(false);
     expect(isWellFormed('\ude00')).toBe(false);
     expect(isWellFormed('a\ud83db')).toBe(false);
+  });
+});
+
+describe('assertLegacyDeviceAllowed', () => {
+  const device = (platform: string, app: string) => ({ deviceId: 'device-1', platform, app });
+
+  it('with the native gate on refuses EVERY label: the decision is the server\'s, not the client\'s', () => {
+    for (const [platform, app] of [['ANDROID', 'OTHER'], ['IOS', 'FOOD'], ['WEB', 'SHIP'], ['ANDROID', 'FOOD']]) {
+      expect(() => assertLegacyDeviceAllowed(device(platform, app), true)).toThrow(AppError);
+    }
+  });
+
+  it('with the gate off keeps the web local compatibility and still refuses the native labels', () => {
+    expect(() => assertLegacyDeviceAllowed(device('WEB', 'FOOD'))).not.toThrow();
+    expect(() => assertLegacyDeviceAllowed(device('ANDROID', 'SHIP'))).toThrow(AppError);
   });
 });
