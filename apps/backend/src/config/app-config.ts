@@ -569,7 +569,7 @@ export function loadConfig(env: EnvSource): ConfigResult {
   }
 
   // Administration activation (M01-D-ADMIN-1C). Names only; disabled by default; needs the administration module.
-  const adminActivationResult = loadAdminActivationConfig(env, appEnv, !adminAuthResult.ok || adminAuth !== undefined);
+  const adminActivationResult = loadAdminActivationConfig(env, appEnv, !adminAuthResult.ok || adminAuth !== undefined, host);
   let adminActivation: AdminActivationConfig | undefined;
   if (adminActivationResult.ok) {
     adminActivation = adminActivationResult.config;
@@ -603,7 +603,8 @@ export function loadConfig(env: EnvSource): ConfigResult {
     appEnv,
     host,
     databaseUrl,
-    activationEnabled: adminActivation !== undefined,
+    // The test inbox feeds an activation OTP only; with DISABLED_TEST there is no OTP step and nothing to feed.
+    activationEnabled: adminActivation !== undefined && adminActivation.phoneVerificationMode === 'REQUIRED',
   });
   let testInbox: TestInboxConfig | undefined;
   if (testInboxResult.ok) {

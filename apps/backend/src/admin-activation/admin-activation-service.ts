@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ADMIN_LIMITER_KEY } from '../admin-auth/admin-limiter';
 import { AdminCrypto } from '../admin-auth/admin-crypto';
 import { AdminLimitsRepository } from '../admin-auth/admin-limits-repository';
@@ -22,7 +22,7 @@ import {
   AppError,
   TechnicalError,
 } from '../common/app-errors';
-import { ActivationLimits, AdminActivationConfig } from '../config/admin-activation-config';
+import { ActivationLimits, ActivationPhoneVerificationMode, AdminActivationConfig } from '../config/admin-activation-config';
 import { AdminLimiterKey } from '../config/admin-auth-config';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { freshClockMs } from '../idempotency/idempotency-repository';
@@ -44,7 +44,7 @@ import {
 } from './admin-activation-constants';
 import { AdminActivationLimiter } from './admin-activation-limiter';
 import { AdminActivationRepository, AttemptRow, AttemptSnapshot, ChallengeRow } from './admin-activation-repository';
-import { stateBody, ViewInput } from './admin-activation-views';
+import { passwordDeadlineMs, stateBody, ViewInput } from './admin-activation-views';
 import { ACTIVATION_OTP_PROVIDER, ActivationOtpDelivery, ActivationOtpProvider } from './activation-otp-provider';
 
 // Account activation by the invited ADMIN (M01-D-ADMIN-1C, contract sections 6 and 8-14). Every business transaction
@@ -97,6 +97,8 @@ export class AdminActivationService {
   readonly #providerTimeoutMs: number;
   readonly #promoteGraceMs: number;
   readonly #limits: ActivationLimits;
+  /** The mode of THIS process: every new attempt records it, and a live attempt of another mode is never continued. */
+  readonly #phoneMode: ActivationPhoneVerificationMode;
 
   constructor(
     private readonly transactions: TransactionManager,
@@ -110,7 +112,8 @@ export class AdminActivationService {
     private readonly limiter: AdminActivationLimiter,
     private readonly limits: AdminLimitsRepository,
     @Inject(ADMIN_LIMITER_KEY) private readonly limiterKey: AdminLimiterKey,
-    @Inject(ACTIVATION_OTP_PROVIDER) private readonly otpProvider: ActivationOtpProvider,
+    // Bound only when the phone verification is REQUIRED; DISABLED_TEST has no OTP step and therefore no provider.
+    @Optional() @Inject(ACTIVATION_OTP_PROVIDER) private readonly otpProvider: ActivationOtpProvider | undefined,
     @Inject(APP_CONFIG) appConfig: AppConfig,
     @Inject(ADMIN_ACTIVATION_CONFIG) config: AdminActivationConfig,
   ) {
@@ -118,6 +121,11 @@ export class AdminActivationService {
     this.#providerTimeoutMs = config.providerTimeoutMs;
     this.#promoteGraceMs = config.promoteGraceMs;
     this.#limits = config.limits;
+    this.#phoneMode = config.phoneVerificationMode;
+    if (config.phoneVerificationMode === 'REQUIRED' && otpProvider === undefined) {
+      // Startup refuses this first (AppModule); this keeps the service itself from existing without its provider.
+      throw new TechnicalError('internal', 'Activation OTP provider is missing');
+    }
   }
 
   // ===== POST /start (10.1) ==================================================================================
@@ -195,7 +203,7 @@ export class AdminActivationService {
       }
 
       const live = attempts.filter(isLive);
-      if (cookieValid && isLive(cookieAttempt) && this.#resumable(cookieAttempt, nowMs)) {
+      if (cookieValid && isLive(cookieAttempt) && this.#modeMatches(cookieAttempt) && this.#resumable(cookieAttempt, nowMs)) {
         const newest = await this.repo.peekNewestChallenge(context, cookieAttempt.attemptId);
         const view: ViewInput = { attempt: cookieAttempt, newestChallenge: newest, invitation, nowMs };
         throw new ReplayAnswer({ status: 200, body: this.#stateEnvelope(view, this.#csrfOf(cookieAttempt)) } satisfies Answer);
@@ -255,6 +263,9 @@ export class AdminActivationService {
     if (snapshot === undefined || snapshot.nowMs >= snapshot.attempt.expiresAtMs) {
       throw sessionInvalid();
     }
+    if (isLive(snapshot.attempt) && !this.#modeMatches(snapshot.attempt)) {
+      throw sessionInvalid();
+    }
     if (snapshot.attempt.status === 'COMPLETED') {
       return this.#completedAnswer(snapshot).body;
     }
@@ -265,7 +276,8 @@ export class AdminActivationService {
 
   async requestOtp(cookieToken: string | undefined, csrfHeader: unknown, meta: RequestMeta): Promise<Answer> {
     const snapshot = await this.#precheck(cookieToken, csrfHeader);
-    if (snapshot.attempt.status !== 'STARTED') {
+    // DISABLED_TEST has no OTP step: nothing is requested, delivered or stored, and the answer is the safe current state.
+    if (snapshot.attempt.phoneVerificationMode === 'DISABLED_TEST' || snapshot.attempt.status !== 'STARTED') {
       // Past STARTED, or terminal: both only move forward, so the read-only answer is exact.
       throw this.#stepInvalid(this.#viewOf(snapshot));
     }
@@ -395,7 +407,7 @@ export class AdminActivationService {
 
   async verifyOtp(cookieToken: string | undefined, csrfHeader: unknown, code: string, meta: RequestMeta): Promise<Answer> {
     const snapshot = await this.#precheck(cookieToken, csrfHeader);
-    if (snapshot.attempt.status !== 'STARTED') {
+    if (snapshot.attempt.phoneVerificationMode === 'DISABLED_TEST' || snapshot.attempt.status !== 'STARTED') {
       throw this.#stepInvalid(this.#viewOf(snapshot));
     }
     const attemptId = snapshot.attempt.attemptId;
@@ -487,13 +499,27 @@ export class AdminActivationService {
 
   async setPassword(cookieToken: string | undefined, csrfHeader: unknown, password: string, meta: RequestMeta): Promise<Answer> {
     const snapshot = await this.#precheck(cookieToken, csrfHeader);
-    if (snapshot.attempt.status !== 'OTP_VERIFIED') {
+    // The mode of the process and of the attempt both decide the step the password may come from: REQUIRED goes through the
+    // OTP (OTP_VERIFIED), DISABLED_TEST has none (STARTED). #precheck already refused a live attempt of another mode.
+    const direct = snapshot.attempt.phoneVerificationMode === 'DISABLED_TEST';
+    const from = direct ? 'STARTED' : 'OTP_VERIFIED';
+    const windowMs = this.#limits.passwordDeadlineSeconds * 1000;
+    if (snapshot.attempt.status !== from) {
       // 10.4: the gate runs before the (expensive) hashing; a failed gate costs no hash.
       throw this.#stepInvalid(this.#viewOf(snapshot));
     }
-    const deadline = snapshot.attempt.otpVerifiedAtMs === null ? null : snapshot.attempt.otpVerifiedAtMs + this.#limits.passwordDeadlineSeconds * 1000;
+    const deadline = passwordDeadlineMs(snapshot.attempt, windowMs);
     if (deadline === null || snapshot.nowMs > deadline) {
       throw this.#stepInvalid(this.#viewOf(snapshot));
+    }
+    if (direct) {
+      // No OTP step to have noticed it: the invitation and the phone are checked here, still before the hash.
+      if (snapshot.invitation.status !== 'PENDING' || snapshot.nowMs >= snapshot.invitation.expiresAtMs) {
+        throw linkInvalid();
+      }
+      if (await this.#phoneTakenByInvitation(snapshot.attempt.invitationId)) {
+        throw new AppError('ADMIN_PHONE_CONFLICT');
+      }
     }
     const passwordHash = await this.passwords.hash(password);
     const attemptId = snapshot.attempt.attemptId;
@@ -506,21 +532,30 @@ export class AdminActivationService {
       if (attempt === undefined || nowMs >= attempt.expiresAtMs) {
         throw sessionInvalid();
       }
-      if (attempt.status !== 'OTP_VERIFIED') {
+      // Process mode and attempt mode again under the lock: a mismatch is never continued, in either direction.
+      if (!this.#modeMatches(attempt) || attempt.phoneVerificationMode !== snapshot.attempt.phoneVerificationMode) {
+        throw sessionInvalid();
+      }
+      if (attempt.status !== from) {
         throw this.#stepInvalid(await this.#lockedView(context, attempt, invitation, nowMs));
       }
-      if (attempt.otpVerifiedAtMs === null || nowMs > attempt.otpVerifiedAtMs + this.#limits.passwordDeadlineSeconds * 1000) {
+      const lockedDeadline = passwordDeadlineMs(attempt, windowMs);
+      if (lockedDeadline === null || nowMs > lockedDeadline) {
         throw this.#stepInvalid(await this.#lockedView(context, attempt, invitation, nowMs));
       }
       if (invitation === undefined || invitation.status !== 'PENDING' || nowMs >= invitation.expiresAtMs) {
         throw linkInvalid();
       }
-      await this.repo.markPasswordSet(context, { attemptId, passwordHash, atMs: nowMs });
+      if (direct && (await this.#phoneTaken(context, invitation.phoneNormalized))) {
+        // Nothing is written; the invitation is closed by the next start / restart / complete, which hold the right locks.
+        throw new AppError('ADMIN_PHONE_CONFLICT');
+      }
+      await this.repo.markPasswordSet(context, { attemptId, passwordHash, atMs: nowMs, from });
       await this.#audit(context, meta, {
         action: ACTIVATION_AUDIT_ACTIONS.passwordSet,
         resourceType: RESOURCE_ATTEMPT,
         resourceId: attemptId,
-        metadata: { from_state: 'OTP_VERIFIED', to_state: 'PASSWORD_SET' },
+        metadata: { from_state: from, to_state: 'PASSWORD_SET' },
       });
       return value({ status: 200, body: { data: { state: 'PASSWORD_SET' } } });
     });
@@ -622,6 +657,9 @@ export class AdminActivationService {
       if (attempt.status === 'COMPLETED') {
         throw new ReplayAnswer(await this.#completedAnswerLocked(context, attempt));
       }
+      if (isLive(attempt) && !this.#modeMatches(attempt)) {
+        throw sessionInvalid();
+      }
       if (attempt.status === 'INVALIDATED') {
         throw attempt.invalidatedReason === 'PHONE_CONFLICT'
           ? new AppError('ADMIN_PHONE_CONFLICT')
@@ -640,7 +678,9 @@ export class AdminActivationService {
       if (await this.#phoneTaken(context, invitation.phoneNormalized)) {
         return this.#phoneConflict(context, meta, invitation, [attempt], challenges, nowMs);
       }
-      if (attempt.totpKeyId === null || attempt.totpEnvelope === null || attempt.passwordHash === null || attempt.otpVerifiedAtMs === null) {
+      // REQUIRED has an OTP fact; DISABLED_TEST must not (nothing invents one).
+      const otpFactOk = attempt.phoneVerificationMode === 'DISABLED_TEST' ? attempt.otpVerifiedAtMs === null : attempt.otpVerifiedAtMs !== null;
+      if (attempt.totpKeyId === null || attempt.totpEnvelope === null || attempt.passwordHash === null || !otpFactOk) {
         throw new TechnicalError('internal', 'Attempt is incomplete');
       }
 
@@ -780,6 +820,10 @@ export class AdminActivationService {
     if (!matches) {
       throw new AppError('ADMIN_CSRF_INVALID');
     }
+    // A live attempt made under the other phone verification mode is not continued (the person opens the link again).
+    if (isLive(snapshot.attempt) && !this.#modeMatches(snapshot.attempt)) {
+      throw sessionInvalid();
+    }
     return snapshot;
   }
 
@@ -835,10 +879,29 @@ export class AdminActivationService {
     if (!isLive(attempt) || nowMs >= attempt.expiresAtMs) {
       return false;
     }
+    const windowMs = this.#limits.passwordDeadlineSeconds * 1000;
     if (attempt.status === 'OTP_VERIFIED') {
-      return attempt.otpVerifiedAtMs !== null && nowMs <= attempt.otpVerifiedAtMs + this.#limits.passwordDeadlineSeconds * 1000;
+      return attempt.otpVerifiedAtMs !== null && nowMs <= attempt.otpVerifiedAtMs + windowMs;
+    }
+    if (attempt.status === 'STARTED' && attempt.phoneVerificationMode === 'DISABLED_TEST') {
+      // STARTED is the password step here: it resumes only while that window is open (like OTP_VERIFIED).
+      const deadline = passwordDeadlineMs(attempt, windowMs);
+      return deadline !== null && nowMs <= deadline;
     }
     return true;
+  }
+
+  /** A live attempt is only continued by a process of the SAME phone verification mode (never bypassed, never stranded). */
+  #modeMatches(attempt: AttemptRow): boolean {
+    return attempt.phoneVerificationMode === this.#phoneMode;
+  }
+
+  /** Read-only: is the phone of this invitation already an account? (a hint before the expensive hash) */
+  async #phoneTakenByInvitation(invitationId: string): Promise<boolean> {
+    return this.transactions.withTransaction(async (context) => {
+      const phone = await this.repo.peekInvitationPhone(context, invitationId);
+      return phone !== undefined && (await this.#phoneTaken(context, phone));
+    });
   }
 
   async #phoneTaken(context: TransactionContext, phoneNormalized: string): Promise<boolean> {
@@ -904,6 +967,7 @@ export class AdminActivationService {
       tokenDigest: digestToken(cookieToken),
       csrfNonce: csrf.nonce,
       csrfKeyId: csrf.keyId,
+      phoneVerificationMode: this.#phoneMode,
       createdAtMs: nowMs,
       expiresAtMs,
     });
@@ -916,7 +980,7 @@ export class AdminActivationService {
     const csrfToken = this.crypto.csrfToken({ type: 'ACTIVATION', credentialId: attemptId, nonce: csrf.nonce, keyId: csrf.keyId });
     return {
       status: 201,
-      body: { data: { state: 'STARTED', csrf_token: csrfToken, expires_at: iso(expiresAtMs) } },
+      body: { data: { state: 'STARTED', csrf_token: csrfToken, expires_at: iso(expiresAtMs), phone_verification_mode: this.#phoneMode } },
       cookie: { token: cookieToken, maxAgeSeconds: Math.max(1, Math.floor((expiresAtMs - nowMs) / 1000)) },
     };
   }
@@ -964,6 +1028,9 @@ export class AdminActivationService {
       timer = setTimeout(() => resolve({ outcome: 'UNKNOWN' }), this.#providerTimeoutMs);
     });
     try {
+      if (this.otpProvider === undefined) {
+        throw new TechnicalError('internal', 'Activation OTP provider is missing');
+      }
       const answer = await Promise.race([this.otpProvider.send(phoneNormalized, otp), timeout]);
       const outcome = answer.outcome;
       if (outcome !== 'ACCEPTED' && outcome !== 'REJECTED' && outcome !== 'UNKNOWN') {

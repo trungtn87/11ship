@@ -25,7 +25,8 @@ export interface AppModuleOptions {
   auth?: AuthModuleOptions;
   /**
    * The activation OTP provider (M01-D-ADMIN-1C). Bound EXPLICITLY by main.ts from ADMIN_ACTIVATION_OTP_MODE; when the
-   * activation is enabled and no provider is bound, startup stops (no fallback to a fake).
+   * activation is enabled with REQUIRED phone verification and no provider is bound, startup stops (no fallback to a
+   * fake). With DISABLED_TEST there is no OTP step and binding a provider is refused.
    */
   activationOtpProvider?: ActivationOtpProvider;
   /**
@@ -42,13 +43,20 @@ export class AppModule {
   static register(options: AppModuleOptions): DynamicModule {
     // Built once: Onboarding must import the same Auth module object the application imports.
     const auth = options.auth === undefined ? undefined : AuthModule.register(options.auth);
-    if (options.config.adminActivation !== undefined && options.activationOtpProvider === undefined) {
+    const activationConfig = options.config.adminActivation;
+    // REQUIRED phone verification needs the explicit provider; DISABLED_TEST has no OTP step and must not have one.
+    if (activationConfig !== undefined && activationConfig.phoneVerificationMode === 'REQUIRED' && options.activationOtpProvider === undefined) {
       throw new StartupConfigError(['ADMIN_ACTIVATION_OTP_MODE']);
     }
+    if (activationConfig !== undefined && activationConfig.phoneVerificationMode === 'DISABLED_TEST' && options.activationOtpProvider !== undefined) {
+      throw new StartupConfigError(['ADMIN_ACTIVATION_PHONE_VERIFICATION_MODE']);
+    }
     const activation =
-      options.config.adminActivation === undefined || options.activationOtpProvider === undefined
+      activationConfig === undefined
         ? undefined
-        : { otpProvider: options.activationOtpProvider };
+        : options.activationOtpProvider === undefined
+          ? {}
+          : { otpProvider: options.activationOtpProvider };
     return {
       module: AppModule,
       imports: [

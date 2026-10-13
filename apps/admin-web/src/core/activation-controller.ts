@@ -406,13 +406,13 @@ export class ActivationController {
         this.#armStepTimer();
         return;
       }
-      if (result.status >= 500) {
-        // The token is still needed to repeat the start, so it stays in memory.
-        this.#token = token;
-      } else {
+      if (result.code === 'ADMIN_INPUT_INVALID') {
         this.#set({ name: 'link-invalid' });
         return;
       }
+      // Anything else is NOT a verdict on the link (404 route not wired, CSRF/origin, wrong config, 5xx): the person is told
+      // the service is unavailable, never that the invitation expired. The token stays so "Thử lại" can repeat the start.
+      this.#token = token;
     }
     this.#set({ name: 'unavailable', pending: false });
   }
@@ -549,7 +549,7 @@ export class ActivationController {
    */
   #merge(view: ActivationView): void {
     const screen = this.#screen;
-    if (view.state === 'STARTED' && screen.name === 'otp') {
+    if (view.state === 'STARTED' && view.phoneVerificationMode === 'REQUIRED' && screen.name === 'otp') {
       this.#remember(view);
       const resendMs = view.otp?.resendAt === undefined ? undefined : Date.parse(view.otp.resendAt);
       this.#set({
@@ -567,7 +567,7 @@ export class ActivationController {
       this.#set({ ...screen, ...(view.totpAttemptsLeft === undefined ? {} : { attemptsLeft: view.totpAttemptsLeft }) });
       return;
     }
-    if (view.state === 'OTP_VERIFIED' && screen.name === 'password') {
+    if ((view.state === 'OTP_VERIFIED' || (view.state === 'STARTED' && view.phoneVerificationMode === 'DISABLED_TEST')) && screen.name === 'password') {
       this.#remember(view);
       // The read can say the password window has closed (restart_required) since the screen was built: follow it.
       const deadline = view.passwordDeadline === undefined ? undefined : Date.parse(view.passwordDeadline);
@@ -603,6 +603,19 @@ export class ActivationController {
     this.#clearStepTimer();
     switch (view.state) {
       case 'STARTED': {
+        if (view.phoneVerificationMode === 'DISABLED_TEST') {
+          // No OTP screen: the server says there is no phone step in this environment, so the password is the first step.
+          this.#remember(view);
+          const startedDeadline = view.passwordDeadline === undefined ? undefined : Date.parse(view.passwordDeadline);
+          this.#set({
+            name: 'password',
+            pending: false,
+            restartRequired: view.restartRequired,
+            ...(startedDeadline !== undefined && Number.isFinite(startedDeadline) ? { passwordDeadlineMs: startedDeadline } : {}),
+            ...(notice === undefined ? {} : { notice }),
+          });
+          return;
+        }
         this.#remember(view);
         const resendMs = view.otp?.resendAt === undefined ? undefined : Date.parse(view.otp.resendAt);
         const codeReset = previous.name === 'otp' ? previous.codeReset + 1 : 0;

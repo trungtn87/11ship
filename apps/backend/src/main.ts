@@ -51,9 +51,10 @@ async function bootstrap(): Promise<void> {
   });
 
   // The activation OTP provider is bound the same way: explicitly, from ADMIN_ACTIVATION_OTP_MODE, with no fallback. SMS has
-  // no adapter yet, so that mode refuses startup (naming only the variable) before anything is opened.
+  // no adapter yet, so that mode refuses startup (naming only the variable) before anything is opened. With the local test
+  // contract ADMIN_ACTIVATION_PHONE_VERIFICATION_MODE=DISABLED_TEST the activation has no OTP step: no provider is bound.
   const activationOtpProvider =
-    config.adminActivation === undefined
+    config.adminActivation === undefined || config.adminActivation.phoneVerificationMode === 'DISABLED_TEST'
       ? undefined
       : bindActivationOtpProvider(config.adminActivation, {
           ...(testSms?.activationProvider === undefined ? {} : { testInboxProvider: testSms.activationProvider }),
