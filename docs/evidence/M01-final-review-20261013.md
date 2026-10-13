@@ -1,6 +1,6 @@
 # M01 — review cuối module, 13/10/2026
 
-Trạng thái: **cần sửa F1–F6; chưa đóng M01**. Codex review và chuẩn bị giao sửa; Claude viết code. Phạm vi theo `docs/current/M01-workstreams-20261012.md`. Không triển khai lại, không mở rộng module, không merge/deploy.
+Trạng thái mới nhất (review delta 14/10/2026): **F1 còn mở; F2–F6 đã xử lý ở mức code; chưa đóng M01**. Finding và bằng chứng vòng 13/10 giữ nguyên bên dưới; xem kết quả delta cuối tài liệu. Codex review và chuẩn bị giao sửa; Claude viết code. Phạm vi theo `docs/current/M01-workstreams-20261012.md`. Không triển khai lại, không mở rộng module, không merge/deploy.
 
 ## Mốc review và bằng chứng kế thừa
 
@@ -106,3 +106,47 @@ Không merge, deploy hoặc đóng M01. Codex sau đó chỉ review delta và ph
 ```
 
 Đây là handoff để Owner chuyển cho Claude; Codex chưa gửi thông điệp qua dịch vụ ngoài và chưa sửa code sản phẩm.
+
+## Review delta F1–F6 — 14/10/2026 (Codex, một lượt)
+
+**Kết luận: F1 còn mở; F2–F6 đã xử lý ở mức code trong delta đã kiểm. Không đóng M01.** Các finding gốc phía trên giữ nguyên để truy vết; bảng này là trạng thái mới nhất.
+
+- PR sửa: [#97](https://github.com/trungtn87/11ship/pull/97), OPEN/DRAFT, chưa merge; head review `6bb83813d45ce37d1c971b0e850a675ca4c39313`.
+- Commit sửa F1–F6: `e25c70e346427d8765e8dc6df7491d09f7e4619e`. So với baseline `fe3cae1633307813997a0d6e90c895611eb2fd00`, review chỉ các thay đổi sửa finding và dependency trực tiếp. Các commit SYSTEM recovery/signing/PROGRESS do đồng bộ nhánh không mở lại audit module.
+- PR #95 hiện đã merge, head cuối `5b50644079ccd147acb1e9af7ac9ed74d302d34c`, merge commit `c15eb20e715f485d55526173bf8115d26a65e301`; đây là metadata đọc được, không phải hành động merge của Codex.
+- [CI 38434182758](https://github.com/trungtn87/11ship/actions/runs/38434182758) tại đúng head #97: SUCCESS; lint/typecheck/build/unit/integration local và CI mode xanh. Kế thừa kết quả, không chạy lại full suite.
+- [Mobile APK 38434182859](https://github.com/trungtn87/11ship/actions/runs/38434182859) tại đúng head #97: SUCCESS; cả hai app analyze/test/Binder/build/permission/sign/verify/upload xanh, Public signer allowlist xanh. Thay thế giới hạn thiếu secrets của vòng trước ở mức CI/artifact; không chứng minh cài đè hoặc phần cứng thật.
+- Không poll CI, không kiểm PC/Android thật, không truy cập VPS/DB Owner, không sửa code sản phẩm.
+
+| Finding | Trạng thái delta | Đối chiếu và bằng chứng |
+| --- | --- | --- |
+| F1 | **CHƯA HẾT — P1** | Legacy login/register nhận gate từ settings trong AuthModule và chặn nhãn thay thế khi gate bật; integration regression mới đã nằm trong CI xanh. Nhưng guard ở module khác không được inject settings vì AuthModule không export token; xem phần còn mở bên dưới. |
+| F2 | Đã xử lý ở mức code | ResetScreen gọi begin khi mở, abandon khi rời; cả hai xóa done/failure/key/body và đổi epoch. Retry chỉ hiện nếu phone/password đang hiển thị khớp intent. Regression controller và widget mở lại đã thêm; Mobile tests xanh. |
+| F3 | Đã xử lý tình huống gateway của finding | outcomeUnknown nhận 502/504 SERVICE_UNAVAILABLE từ gateway; auth/shop/driver/reset giữ key/body; context kiểm cả exception và response trước xóa intent. Profile save dùng cùng phân loại. Test gateway 504 cho shop/driver/reset/context và JOIN auth; Mobile tests xanh. Không suy kết quả điện thoại/offline thật. |
+| F4 | Đã xử lý ở mức code | formRevision tăng khi nhận snapshot/clear; view nghe controller và cập nhật text khi revision đổi; dispose không đẩy text sau sign-out. Widget regression v1 → conflict → v2 → sửa một trường giữ nguyên các trường v2 đã thêm; Mobile tests xanh. |
+| F5 | Đã xử lý ở mức code; còn giới hạn bằng chứng | Controller truyền actor; query gọi lockAuthorizedActorShared trước SELECT trong cùng transaction. Participant hiện hành recheck user/session, clock sau lock và native binding; không yêu cầu role nên draft roleless giữ quyền đọc. Unit kiểm authorize trước read và không read khi bị từ chối đã thêm, CI xanh. **Chưa có integration race chuyên biệt giữa guard và service**; PR #97 cũng ghi rõ. |
+| F6 | Đã xử lý ở mức code | Register allowJoin=false; login JOIN bị từ chối xác định cho device thì discard key, lấy grant riêng và thử một lần với key idempotency mới; unknown outcome giữ intent cũ. Backend vẫn kiểm owner/binding và không đổi policy JOIN. Test register, login khác user, lần từ chối thứ hai và unknown retry đã thêm; Mobile tests xanh. Chuỗi Flutter fallback + backend thật chưa có test tích hợp riêng; không suy PASS thiết bị. |
+
+### Phần còn mở của F1 — settings không đến guard ở module sử dụng
+
+- **Mức độ:** P1 (thuộc F1 gốc, không tạo danh sách audit mới).
+- **Vị trí tại head #97:** `apps/backend/src/auth/session-auth.guard.ts:20,41`; `apps/backend/src/auth/auth.module.ts:144` (exports); `apps/backend/src/onboarding/onboarding.module.ts:33–35` (module nhập Auth và dùng controller có guard).
+- **Tình huống:** một phiên ordinary còn hợp lệ mang nhãn IOS/FOOD hoặc ANDROID/OTHER được cấp trước khi bật native gate. Guard trong AuthModule có settings nên từ chối; guard của controller ở module khác được Nest tạo trong module đó chỉ resolve các dependency đã export. CLIENT_AUTH_SETTINGS không có trong exports, injection Optional trở thành undefined và nhánh chặn bị bỏ qua. Read/write onboarding dùng guard đó và authorization participant không áp policy nhãn mới, nên phiên có thể tiếp tục sử dụng bề mặt này khi chưa bị revoke.
+- **Tác động:** sửa issuance không bảo vệ đầy đủ usage của các phiên legacy đã tồn tại; policy mới phụ thuộc endpoint đang ở module nào.
+- **Xác nhận tập trung:** probe Nest TestingModule dùng **SessionAuthGuard đúng nội dung head #97**, settings androidEnabled=true, provider sessions/proof giả và topology export/import tương ứng (không export settings). Kết quả: `authGuardRejects=true`, `consumerGuardAccepts=true`. Không mở listener, không DB; đây là xác nhận wiring/nhánh guard, không test HTTP hoặc thiết bị.
+- **Hướng sửa:** export CLIENT_AUTH_SETTINGS cho các module dựng guard (hoặc cung cấp một dependency policy đã export và dùng nhất quán). Kiểm toàn bộ module dùng SessionAuthGuard; giữ compatibility WEB local theo contract, không hạ yêu cầu proof.
+- **Regression cần thêm:** tạo/cấp phiên với nhãn thay thế trước gate rồi kiểm endpoint Auth và ít nhất GET shop/profile + mutation onboarding sau khi gate bật, dùng module thật để bắt thiếu export. Guard direct-constructor test và test chỉ login mới hiện có chưa bao phủ lỗi này.
+
+### Giao Claude sau lượt delta này
+
+```text
+Claude: trên nhánh sửa PR #97, sửa tiếp phần còn mở F1 — CLIENT_AUTH_SETTINGS chưa export tới SessionAuthGuard ở module sử dụng — theo docs/evidence/M01-final-review-20261013.md, mục Review delta 14/10/2026.
+Thêm regression qua module thật cho phiên nhãn thay thế đã tồn tại; không lặp sửa/audit F2–F6 đã xử lý.
+Bổ sung focused integration race F5 giữa guard và service nếu có harness hiện hành: revoke/reset hoặc thay binding commit trước query, không trả profile; giữ roleless draft read hợp lệ.
+Giữ test không xác minh SĐT/không OTP giả, TOTP ADMIN/SYSTEM và production guards.
+Kế thừa CI xanh đúng SHA, chỉ kiểm phần ảnh hưởng; không full local suite/poll CI, không NOTE thiết bị/VPS/DB Owner.
+Trả fix SHA và diff/test/CI; không merge/deploy/đóng M01. Codex chỉ review delta tiếp theo.
+```
+
+Các NOTE PC/Android phía trên tiếp tục **CHƯA KIỂM — ĐỂ SAU**. Việc ký/upload xanh không thay thế nghiệm thu cài đè, key/token, GPS, hai thứ tự cài, thay điện thoại, nền/offline/khởi động lại.
+
