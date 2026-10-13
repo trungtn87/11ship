@@ -216,7 +216,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#96](https://github.com/trungtn87/11ship/pull/96) ci(mobile-apk): bắt buộc 4 ANDROID_TEST_* Secrets, bỏ khóa… | Đã merge (`MERGED`) | — | — | — | `3cda04f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#97](https://github.com/trungtn87/11ship/pull/97) fix(M01): final review F1–F6 (draft) | Đã merge (`MERGED`) | — | — | — | `8999b94` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#99](https://github.com/trungtn87/11ship/pull/99) feat(M01-UI): thiết kế M01 đã duyệt cho 11Food + 11Ship Flu… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `543bbf3` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#100](https://github.com/trungtn87/11ship/pull/100) feat(M01-ADMIN-UI): Web quản trị theo M01 Design + Brand Bo… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `c643128` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#100](https://github.com/trungtn87/11ship/pull/100) feat(M01-ADMIN-UI): Web quản trị theo M01 Design + Brand Bo… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `c643128` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
