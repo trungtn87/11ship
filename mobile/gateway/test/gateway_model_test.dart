@@ -47,4 +47,12 @@ void main() {
     expect(describeError('SERVER_503'), 'VPS lỗi (503)');
     expect(describeError('WHATEVER'), 'lỗi (WHATEVER)');
   });
+
+  test('a result waiting to be reported is shown as such, with the VPS status code', () {
+    final state = GatewayState.fromMap({'paired': true, 'enabled': true, 'serviceRunning': true, 'lastOkMs': 1, 'lastError': 'ACK_HTTP_429'});
+    expect(state.vpsStatus(), contains('chờ báo kết quả'));
+    expect(state.vpsStatus(), contains('429'));
+    expect(state.vpsStatus(), isNot(contains('Mất kết nối')));
+    expect(describeError('ACK_PENDING'), 'chưa báo được');
+  });
 }
