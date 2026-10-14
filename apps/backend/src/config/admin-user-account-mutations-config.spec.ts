@@ -20,8 +20,13 @@ describe('parseAdminUserAccountMutations (ADMIN_USER_ACCOUNT_MUTATIONS_ENABLED)'
     }
   });
 
+  it('opens for production only on a loopback bind with the administration module (Owner decision 2026-10-14)', () => {
+    expect(parseAdminUserAccountMutations({ appEnv: 'production', host: '127.0.0.1', enabledRaw: 'true', adminAuthEnabled: true })).toEqual({ ok: true, config: { enabled: true } });
+  });
+
   it.each([
-    ['production', '127.0.0.1', true],
+    ['production', '0.0.0.0', true],
+    ['production', '127.0.0.1', false],
     ['staging', '127.0.0.1', true],
     [undefined, '127.0.0.1', true],
     ['test', '0.0.0.0', true],

@@ -20,7 +20,10 @@ const TARGET_SUPABASE = 'SUPABASE';
 const TARGET_SELF_HOSTED = 'SELF_HOSTED';
 
 const SELF_HOSTED = Object.freeze({
-  appEnv: 'staging',
+  // Owner decision 2026-10-14: the VPS is the real operating build and keeps its data, so APP_ENV=production is accepted on
+  // this ONE instance, still under the database name ship11_staging (the name does not decide the environment). Every other
+  // coordinate (host, port, database, roles, TLS, typed confirmation, server-reported identity) stays exact.
+  appEnvs: Object.freeze(['staging', 'production']),
   host: 'localhost',
   port: 5432,
   database: 'ship11_staging',
@@ -85,8 +88,8 @@ function checkSelfHostedUrl(raw, variable) {
  * { kind: 'SELF_HOSTED', target, runtime, rawUrl, confirmTarget } like the Supabase branch of checkRemoteTargets.
  */
 function checkSelfHostedTargets(env) {
-  if (env.APP_ENV !== SELF_HOSTED.appEnv) {
-    return { problem: `${SELECTOR_VARIABLE}=${TARGET_SELF_HOSTED} is only for APP_ENV=${SELF_HOSTED.appEnv}.` };
+  if (!SELF_HOSTED.appEnvs.includes(env.APP_ENV)) {
+    return { problem: `${SELECTOR_VARIABLE}=${TARGET_SELF_HOSTED} is only for APP_ENV=${SELF_HOSTED.appEnvs.join(' or APP_ENV=')}.` };
   }
   const migration = checkSelfHostedUrl(env.MIGRATION_DATABASE_URL, 'MIGRATION_DATABASE_URL');
   if (migration.parsed === undefined) {

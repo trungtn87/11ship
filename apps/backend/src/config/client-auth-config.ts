@@ -6,8 +6,9 @@ import { isLoopbackHost } from '../test-sms/test-sms-config';
 // The consent pair is the one (terms_version, privacy_version) the server accepts for a registration. It is configuration,
 // not code: nothing in the application hard-codes a pair or bypasses the comparison. The pair the Owner approved for local
 // development and test is documented in docs/tasks/M01-03-customer-register-local-handoff.md section 3 and in .env.example;
-// it is NOT valid for staging or production (no production consent content is approved), so the variables are refused there
-// exactly like the other local-only switches (TEST_INBOX): setting them outside development/test stops startup.
+// it is NOT valid for staging. Owner decision 2026-10-14: the VPS is the real operating build (APP_ENV=production), so a
+// production process accepts the pair the Owner approved for it (docs/current/M01-production-profile-20261014.md); the
+// variables are still refused in staging and any unknown environment, exactly like the other local-only switches.
 //
 //   CLIENT_AUTH_TERMS_VERSION    one consent version token, grammar [A-Za-z0-9._-] 1..64 (the user_consents CHECK)
 //   CLIENT_AUTH_PRIVACY_VERSION  the same grammar
@@ -44,8 +45,8 @@ export function parseClientAuth(input: ClientAuthConfigInput): ClientAuthConfigR
     return { ok: true, config: undefined };
   }
 
-  // The test pair exists for local development and test only. An invalid APP_ENV is already reported by its own name.
-  if (input.appEnv !== undefined && input.appEnv !== 'development' && input.appEnv !== 'test') {
+  // Development, test and production only. An invalid APP_ENV is already reported by its own name.
+  if (input.appEnv !== undefined && input.appEnv !== 'development' && input.appEnv !== 'test' && input.appEnv !== 'production') {
     const invalid: string[] = [];
     if (termsSet) {
       invalid.push(CLIENT_AUTH_TERMS_VERSION_ENV);
@@ -77,6 +78,16 @@ export function parseClientAuth(input: ClientAuthConfigInput): ClientAuthConfigR
  */
 export function isLocalWebMode(appEnv: string, host: string): boolean {
   return (appEnv === 'development' || appEnv === 'test') && isLoopbackHost(host);
+}
+
+/**
+ * The real operating build (Owner decision 2026-10-14): APP_ENV=production AND a loopback bind (the service is reached only
+ * through the reverse proxy on the same machine). Decided once from the validated startup configuration, like LOCAL_WEB;
+ * nothing about a request takes part. It opens ONLY the gates that name it explicitly (native Android binding, Admin web
+ * hosting, USER lock); it never turns on LOCAL_WEB, DISABLED_TEST or any test/fixture mode.
+ */
+export function isProductionOnLoopback(appEnv: string, host: string): boolean {
+  return appEnv === 'production' && isLoopbackHost(host);
 }
 
 // Phone verification mode of the client registration (M01 Food register, no-OTP test build).

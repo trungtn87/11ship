@@ -156,8 +156,17 @@ describe('resolveCliTarget — DB_REMOTE_TARGET', () => {
     }
   });
 
-  it('SELF_HOSTED never reaches production, development or test', () => {
-    expect(resolveCliTarget({ ...SH_ENV, APP_ENV: 'production' })).toMatchObject({ ok: false });
+  it('production is accepted ONLY on the exact SELF_HOSTED target, with every other coordinate still exact', () => {
+    const ok = resolveCliTarget({ ...SH_ENV, APP_ENV: 'production' });
+    expect(ok).toMatchObject({ ok: true, target: { appEnv: 'production', selfHosted: true, expected: { database: 'ship11_staging', user: 'ship11_migrator' } } });
+    // Without the selector, or with SUPABASE, production is refused.
+    expect(resolveCliTarget({ ...SH_ENV, APP_ENV: 'production', DB_REMOTE_TARGET: undefined })).toMatchObject({ ok: false });
+    expect(resolveCliTarget({ ...SH_ENV, APP_ENV: 'production', DB_REMOTE_TARGET: 'SUPABASE' })).toMatchObject({ ok: false });
+    // Wrong host / database / role / confirmation / CA are refused exactly as in staging.
+    expect(resolveCliTarget({ ...SH_ENV, APP_ENV: 'production', MIGRATION_DATABASE_URL: SH_MIGRATION.replace('localhost', '127.0.0.1') })).toMatchObject({ ok: false });
+    expect(resolveCliTarget({ ...SH_ENV, APP_ENV: 'production', MIGRATION_DATABASE_URL: SH_MIGRATION.replace('ship11_staging', 'ship11_production') })).toMatchObject({ ok: false });
+    expect(resolveCliTarget({ ...SH_ENV, APP_ENV: 'production', MIGRATION_CONFIRM_TARGET: 'localhost:5432/other' })).toMatchObject({ ok: false });
+    expect(resolveCliTarget({ ...SH_ENV, APP_ENV: 'production', DB_SSL_CA: undefined })).toMatchObject({ ok: false });
     for (const appEnv of ['development', 'test']) {
       const refused = resolveCliTarget({ APP_ENV: appEnv, DB_REMOTE_TARGET: 'SELF_HOSTED', DATABASE_URL: 'postgres://ship11_dev:p@localhost:5432/ship11_dev' });
       expect(refused).toMatchObject({ ok: false });
@@ -233,7 +242,7 @@ describe('resolveCliTarget — DB_REMOTE_TARGET', () => {
 
   it('keeps the contract constants in one place', () => {
     expect(SELF_HOSTED_TARGET).toEqual({
-      appEnv: 'staging',
+      appEnvs: ['staging', 'production'],
       host: 'localhost',
       port: 5432,
       database: 'ship11_staging',

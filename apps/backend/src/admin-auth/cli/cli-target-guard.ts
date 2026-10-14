@@ -16,12 +16,13 @@ import { DatabaseTls, resolveDatabaseTls } from '../../database/tls-config';
 //                database, that role, port 5432, TLS in use and no elevated role attribute. Not set means SUPABASE; any
 //                other value is refused. Twin of scripts/db-remote-target.js (tests/deploy/db-remote-target-parity.test.mjs
 //                runs both on one case matrix).
-//   production   refused in this slice.
+//   production   ONLY with DB_REMOTE_TARGET=SELF_HOSTED (Owner decision 2026-10-14; same instance and database name as staging).
+//                Every other production path is refused.
 
 export type CliEnvSource = Readonly<Record<string, string | undefined>>;
 
 export interface CliTarget {
-  readonly appEnv: 'development' | 'test' | 'staging';
+  readonly appEnv: 'development' | 'test' | 'staging' | 'production';
   readonly connectionString: string;
   readonly tls: DatabaseTls | undefined;
   /** What current_database() / current_user must report once connected (development, test and self-hosted staging). */
@@ -36,7 +37,7 @@ export const SELECTOR_VARIABLE = 'DB_REMOTE_TARGET';
 
 /** The one self-hosted staging target. Mirrors SELF_HOSTED in scripts/db-remote-target.js (parity test). */
 export const SELF_HOSTED_TARGET = {
-  appEnv: 'staging',
+  appEnvs: ['staging', 'production'],
   host: 'localhost',
   port: 5432,
   database: 'ship11_staging',
@@ -108,11 +109,11 @@ function sessionPooler(raw: string | undefined, variable: string): { parsed: Par
 
 export function resolveCliTarget(env: CliEnvSource): CliTargetResult {
   const appEnv = env.APP_ENV;
-  if (appEnv === 'production') {
-    return { ok: false, problem: 'APP_ENV=production is refused: this command is not enabled for production' };
+  if (appEnv !== 'development' && appEnv !== 'test' && appEnv !== 'staging' && appEnv !== 'production') {
+    return { ok: false, problem: 'APP_ENV must be development, test, staging or production' };
   }
-  if (appEnv !== 'development' && appEnv !== 'test' && appEnv !== 'staging') {
-    return { ok: false, problem: 'APP_ENV must be development, test or staging' };
+  if (appEnv === 'production' && env[SELECTOR_VARIABLE] !== 'SELF_HOSTED') {
+    return { ok: false, problem: 'APP_ENV=production is refused unless DB_REMOTE_TARGET=SELF_HOSTED' };
   }
 
   // The selector is validated BEFORE any environment-specific path: a value that is not exactly SUPABASE or SELF_HOSTED
@@ -122,8 +123,8 @@ export function resolveCliTarget(env: CliEnvSource): CliTargetResult {
   if (selector !== undefined && selector !== 'SUPABASE' && selector !== 'SELF_HOSTED') {
     return { ok: false, problem: `${SELECTOR_VARIABLE} must be SUPABASE or SELF_HOSTED (or not set, which means SUPABASE)` };
   }
-  if (selector === 'SELF_HOSTED' && appEnv !== 'staging') {
-    return { ok: false, problem: `${SELECTOR_VARIABLE}=SELF_HOSTED is allowed only with APP_ENV=staging` };
+  if (selector === 'SELF_HOSTED' && appEnv !== 'staging' && appEnv !== 'production') {
+    return { ok: false, problem: `${SELECTOR_VARIABLE}=SELF_HOSTED is allowed only with APP_ENV=staging or production` };
   }
 
   if (appEnv === 'development' || appEnv === 'test') {
@@ -149,7 +150,7 @@ export function resolveCliTarget(env: CliEnvSource): CliTargetResult {
 
   // staging: the operator picks the target (the selector was validated above). Not set means SUPABASE.
   if (selector === 'SELF_HOSTED') {
-    return resolveSelfHostedTarget(env);
+    return resolveSelfHostedTarget(env, appEnv);
   }
 
   const migration = sessionPooler(env.MIGRATION_DATABASE_URL, 'MIGRATION_DATABASE_URL');
@@ -230,7 +231,7 @@ function selfHostedUrl(raw: string | undefined, variable: string): { parsed: Sel
   return { parsed: { username } };
 }
 
-function resolveSelfHostedTarget(env: CliEnvSource): CliTargetResult {
+function resolveSelfHostedTarget(env: CliEnvSource, appEnv: 'staging' | 'production'): CliTargetResult {
   const migration = selfHostedUrl(env.MIGRATION_DATABASE_URL, 'MIGRATION_DATABASE_URL');
   if ('problem' in migration) {
     return { ok: false, problem: migration.problem };
@@ -261,7 +262,7 @@ function resolveSelfHostedTarget(env: CliEnvSource): CliTargetResult {
   return {
     ok: true,
     target: {
-      appEnv: 'staging',
+      appEnv,
       connectionString: env.MIGRATION_DATABASE_URL as string,
       tls: tls.tls,
       expected: { database: SELF_HOSTED_TARGET.database, user: SELF_HOSTED_TARGET.migrationRole },

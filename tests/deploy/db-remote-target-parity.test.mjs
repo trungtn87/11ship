@@ -108,7 +108,10 @@ const CASES = [
   ['selector empty', { DB_REMOTE_TARGET: '' }, false],
   ['selector with a space', { DB_REMOTE_TARGET: ' SELF_HOSTED' }, false],
   ['selector unknown', { DB_REMOTE_TARGET: 'LOCAL' }, false],
-  ['production', { APP_ENV: 'production' }, false],
+  ['production (Owner decision 2026-10-14: same instance, same coordinates)', { APP_ENV: 'production' }, true],
+  ['production without the selector', { APP_ENV: 'production', DB_REMOTE_TARGET: undefined }, false],
+  ['production with a different database', { APP_ENV: 'production', MIGRATION_DATABASE_URL: url({ user: 'ship11_migrator', db: 'ship11_production' }) }, false],
+  ['unknown environment', { APP_ENV: 'prod' }, false],
   ['migration host 127.0.0.1', { MIGRATION_DATABASE_URL: url({ user: 'ship11_migrator', host: '127.0.0.1' }) }, false],
   ['migration host upper case', { MIGRATION_DATABASE_URL: url({ user: 'ship11_migrator', host: 'LOCALHOST' }) }, false],
   ['migration host trailing dot', { MIGRATION_DATABASE_URL: url({ user: 'ship11_migrator', host: 'localhost.' }) }, false],
@@ -158,7 +161,9 @@ describe('one case matrix through db:migrate:remote, staging:seed-fixtures and t
         if (env[key] === undefined) delete env[key];
       }
       const verdicts = { typescript: tsAccepts(env), migrate: await migrateAccepts(env), seed: await seedAccepts(env) };
-      assert.deepEqual(verdicts, { typescript: expected, migrate: expected, seed: expected }, name);
+      // The fixture seed is staging-only by design (production never gets fixture accounts), whatever the target says.
+      const seedExpected = expected && env.APP_ENV !== 'production';
+      assert.deepEqual(verdicts, { typescript: expected, migrate: expected, seed: seedExpected }, name);
       // The pure gate shared by migrate and seed never accepts what the full command refuses for a TARGET reason.
       if (expected) {
         assert.equal(migrate.checkRemoteTargets(env).problem, undefined);

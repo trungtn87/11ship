@@ -415,16 +415,13 @@ describe('db:migrate:remote DB_REMOTE_TARGET=SELF_HOSTED — gates (nothing conn
     }
   });
 
-  test('SELF_HOSTED is only for APP_ENV=staging: production, development, test and unset are refused', async () => {
-    for (const appEnv of ['production', 'development', 'test', undefined, '']) {
+  test('SELF_HOSTED is only for APP_ENV=staging or production: development, test and unset are refused', async () => {
+    for (const appEnv of ['development', 'test', undefined, '']) {
       const h = harness();
       assert.equal(await run({ ...SH_ENV, APP_ENV: appEnv }, ['--apply'], h), 1, String(appEnv));
       assert.match(printed(h), /APP_ENV must be staging or production|only for APP_ENV=staging/);
       refusedBeforeConnecting(h);
     }
-    const h = harness();
-    assert.equal(await run({ ...SH_ENV, APP_ENV: 'production' }, [], h), 1);
-    assert.match(printed(h), /DB_REMOTE_TARGET=SELF_HOSTED is only for APP_ENV=staging/);
   });
 
   test('refuses a URL that does not name localhost:5432/ship11_staging, with the variable and the rule, never the value', async () => {
