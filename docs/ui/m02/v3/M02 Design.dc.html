@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#F2F1EE}a{color:#B88F0A}a:hover{color:#2A2A2E}</style>
+</helmet>
+<div style="font-family:'Plus Jakarta Sans',sans-serif;color:#2A2A2E;background:#F2F1EE;min-height:100vh">
+<header style="background:#fff;border-bottom:1px solid #E3E1DB;position:sticky;top:0;z-index:30">
+<div style="max-width:1400px;margin:0 auto;padding:14px clamp(16px,4vw,48px);display:flex;align-items:center;gap:24px;flex-wrap:wrap;justify-content:space-between">
+<div style="display:flex;align-items:center;gap:12px"><img src="uploads/logo-11.png" alt="11" style="width:40px;height:40px;object-fit:contain"><div><div style="font-weight:800;font-size:16px">M02 · Quản lý quán &amp; thực đơn</div><div style="font-size:12px;color:#55555B">11Food (khách + chủ quán) · Admin web: danh mục · UI v3 — chờ Owner duyệt</div></div></div>
+<nav style="display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ tabs }}" as="t" hint-placeholder-count="7"><div onClick="{{ t.click }}" style="{{ t.st }}">{{ t.l }}</div></sc-for></nav>
+</div>
+</header>
+<main style="max-width:1400px;margin:0 auto;padding:36px clamp(16px,4vw,48px) 80px;display:flex;flex-direction:column;gap:36px">
+
+<sc-if value="{{ isOv }}" hint-placeholder-val="{{ true }}">
+<section style="display:flex;flex-direction:column;gap:10px"><h1 style="margin:0;font-size:clamp(28px,4vw,44px);font-weight:800;letter-spacing:-0.02em">M02 · Báo cáo bàn giao UI v2</h1><p style="margin:0;color:#55555B;line-height:1.6;max-width:820px">Toàn bộ màn Q01–Q07, K01–K02 (điện thoại) và D01–D02 (web Admin) của M02, dựng trên token, logo, font, nút, input, banner, chip, list và shell M01. Chưa đánh dấu UI_LOCKED. Dữ liệu «Ốc 11» chỉ là mẫu.</p></section>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px">
+<sc-for list="{{ report }}" as="r" hint-placeholder-count="4"><div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:10px"><div style="font-size:16px;font-weight:800">{{ r.h }}</div><sc-for list="{{ r.items }}" as="i" hint-placeholder-count="3"><div style="font-size:14px;line-height:1.5;color:#2A2A2E;display:flex;gap:8px"><span style="color:#B88F0A;font-weight:800">•</span><span>{{ i }}</span></div></sc-for></div></sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ isMob }}" hint-placeholder-val="{{ false }}">
+<section style="display:flex;flex-direction:column;gap:10px"><h1 style="margin:0;font-size:clamp(28px,4vw,44px);font-weight:800;letter-spacing:-0.02em">Mobile · 390 × 800</h1><p style="margin:0;color:#55555B;line-height:1.6;max-width:820px">{{ frameCount }} khung màn hình/trạng thái. Form có footer cố định phía trên bàn phím. Chọn nhóm để lọc.</p>
+<div style="display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ gChips }}" as="c" hint-placeholder-count="8"><div onClick="{{ c.click }}" style="{{ c.st }}">{{ c.l }}</div></sc-for></div></section>
+<sc-for list="{{ mobGroups }}" as="g" hint-placeholder-count="2">
+<section style="display:flex;flex-direction:column;gap:20px"><div style="display:flex;align-items:baseline;gap:12px;border-bottom:1px solid #E3E1DB;padding-bottom:10px"><h2 style="margin:0;font-size:22px;font-weight:800">{{ g.title }}</h2><span style="font-size:13px;color:#55555B">{{ g.n }} khung</span></div>
+<div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start"><sc-for list="{{ g.items }}" as="s" hint-placeholder-count="2"><div style="display:flex;flex-direction:column;gap:10px"><dc-import name="Phone" screen="{{ s.def }}" fw="{{ 390 }}" fh="{{ 800 }}" hint-size="390px,800px"></dc-import><div style="font-size:13px;font-weight:700;max-width:390px"><span style="color:#B88F0A">{{ s.id }}</span> · {{ s.l }}</div></div></sc-for></div></section>
+</sc-for>
+</sc-if>
+
+<sc-if value="{{ is360 }}" hint-placeholder-val="{{ false }}">
+<section style="display:flex;flex-direction:column;gap:10px"><h1 style="margin:0;font-size:clamp(28px,4vw,44px);font-weight:800;letter-spacing:-0.02em">Kiểm tra 360 × 780</h1><p style="margin:0;color:#55555B;line-height:1.6;max-width:820px">Các màn nặng nhất ở 360px: tên dài, hai nút footer, form, lịch, hộp thoại.</p></section>
+<div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start"><sc-for list="{{ f360 }}" as="s" hint-placeholder-count="2"><div style="display:flex;flex-direction:column;gap:10px"><dc-import name="Phone" screen="{{ s.def }}" fw="{{ 360 }}" fh="{{ 780 }}" hint-size="360px,780px"></dc-import><div style="font-size:13px;font-weight:700;max-width:360px"><span style="color:#B88F0A">{{ s.id }}</span> · {{ s.l }}</div></div></sc-for></div>
+</sc-if>
+
+<sc-if value="{{ isDlg }}" hint-placeholder-val="{{ false }}">
+<section style="display:flex;flex-direction:column;gap:10px"><h1 style="margin:0;font-size:clamp(28px,4vw,44px);font-weight:800;letter-spacing:-0.02em">Hộp thoại &amp; trạng thái hệ thống</h1><p style="margin:0;color:#55555B;line-height:1.6;max-width:820px">Một component hộp thoại (căn giữa hoặc bottom sheet), một component toast, một banner — dùng chung cho mọi màn.</p></section>
+<div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start"><sc-for list="{{ fDlg }}" as="s" hint-placeholder-count="2"><div style="display:flex;flex-direction:column;gap:10px"><dc-import name="Phone" screen="{{ s.def }}" fw="{{ 390 }}" fh="{{ 800 }}" hint-size="390px,800px"></dc-import><div style="font-size:13px;font-weight:700;max-width:390px"><span style="color:#B88F0A">{{ s.id }}</span> · {{ s.l }}</div></div></sc-for></div>
+</sc-if>
+
+<sc-if value="{{ isWeb }}" hint-placeholder-val="{{ false }}">
+<section style="display:flex;flex-direction:column;gap:10px"><h1 style="margin:0;font-size:clamp(28px,4vw,44px);font-weight:800;letter-spacing:-0.02em">Web · 1280 × 800</h1><p style="margin:0;color:#55555B;line-height:1.6;max-width:820px">Chỉ giữ phụ lục web Admin D01–D02 (có điều kiện). Web Food/Ship ngoài phạm vi; màn chủ quán/khách chỉ có bản điện thoại.</p></section>
+<sc-for list="{{ webGroups }}" as="g" hint-placeholder-count="2">
+<section style="display:flex;flex-direction:column;gap:20px"><h2 style="margin:0;font-size:22px;font-weight:800;border-bottom:1px solid #E3E1DB;padding-bottom:10px">{{ g.title }}</h2>
+<div style="display:flex;gap:24px;flex-wrap:wrap"><sc-for list="{{ g.items }}" as="s" hint-placeholder-count="2"><div style="display:flex;flex-direction:column;gap:10px"><div style="width:640px;max-width:100%;height:400px;overflow:hidden;border-radius:12px;border:1px solid #E3E1DB;background:#fff"><div style="transform:scale(0.5);transform-origin:0 0;width:1280px;height:800px"><dc-import name="WebView" view="{{ s.id }}" cats="{{ s.cats }}" hint-size="1280px,800px"></dc-import></div></div><div style="font-size:13px;font-weight:700"><span style="color:#B88F0A">{{ s.code }}</span> · {{ s.l }}</div></div></sc-for></div></section>
+</sc-for>
+</sc-if>
+
+<sc-if value="{{ isProto }}" hint-placeholder-val="{{ false }}">
+<section style="display:flex;flex-direction:column;gap:10px"><h1 style="margin:0;font-size:clamp(28px,4vw,44px);font-weight:800;letter-spacing:-0.02em">Prototype · luồng F01–F13</h1><p style="margin:0;color:#55555B;line-height:1.6;max-width:820px">Bấm và nhập trực tiếp. Chọn luồng để nạp dữ liệu mẫu và màn bắt đầu; các công tắc «Mô phỏng» tạo lỗi một lần để xem phục hồi. Chỉ là dữ liệu mẫu, chưa nối backend.</p></section>
+<section style="display:flex;gap:36px;flex-wrap:wrap;align-items:flex-start">
+<div style="width:300px;display:flex;flex-direction:column;gap:20px">
+<div style="display:flex;gap:6px"><sc-for list="{{ modeBtns }}" as="m" hint-placeholder-count="2"><div onClick="{{ m.click }}" style="{{ m.st }}">{{ m.l }}</div></sc-for></div>
+<div style="display:flex;flex-direction:column;gap:8px"><div style="font-size:13px;font-weight:700;color:#55555B">Luồng nghiệm thu</div><sc-for list="{{ flowBtns }}" as="f" hint-placeholder-count="6"><div onClick="{{ f.click }}" style="{{ f.st }}"><span style="color:#B88F0A">{{ f.id }}</span> · {{ f.l }}</div></sc-for></div>
+<div style="background:#fff;border:1px solid #E3E1DB;border-radius:14px;padding:14px;font-size:13px;line-height:1.55"><b>{{ flowId }}</b> — {{ flowGuide }}</div>
+<div style="display:flex;flex-direction:column;gap:8px"><div style="font-size:13px;font-weight:700;color:#55555B">Mô phỏng (xảy ra một lần ở lần lưu / thao tác kế)</div><div style="display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ simBtns }}" as="b" hint-placeholder-count="6"><div onClick="{{ b.click }}" style="{{ b.st }}">{{ b.l }}</div></sc-for></div></div>
+<sc-for list="{{ dataGroups }}" as="g" hint-placeholder-count="5"><div style="display:flex;flex-direction:column;gap:6px"><div style="font-size:13px;font-weight:700;color:#55555B">{{ g.h }}</div><div style="display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ g.items }}" as="b" hint-placeholder-count="2"><div onClick="{{ b.click }}" style="{{ b.st }}">{{ b.l }}</div></sc-for></div></div></sc-for>
+</div>
+<sc-if value="{{ protoMob }}" hint-placeholder-val="{{ true }}"><div style="display:flex;flex-direction:column;gap:10px"><dc-import name="Phone" screen="{{ pScreen }}" fw="{{ 390 }}" fh="{{ 800 }}" on-act="{{ pAct }}" hint-size="390px,800px"></dc-import><div style="font-size:13px;font-weight:700;max-width:390px"><span style="color:#B88F0A">{{ pScr }}</span> · phiên bản mô phỏng, nhập liệu thật</div></div></sc-if>
+<sc-if value="{{ protoWeb }}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;gap:10px"><div style="width:1280px;max-width:100%;overflow:auto;border-radius:12px;border:1px solid #E3E1DB"><dc-import name="WebView" view="{{ wView }}" cats="{{ wCats }}" wc="{{ wDraft }}" on-act="{{ wAct }}" hint-size="1280px,800px"></dc-import></div><div style="font-size:13px;font-weight:700"><span style="color:#B88F0A">{{ wView }}</span> · bấm thanh bên để chuyển màn; D01/D02 sửa nhóm thật</div></div></sc-if>
+</section>
+</sc-if>
+
+<sc-if value="{{ isIdx }}" hint-placeholder-val="{{ false }}">
+<section style="display:flex;flex-direction:column;gap:10px"><h1 style="margin:0;font-size:clamp(28px,4vw,44px);font-weight:800;letter-spacing:-0.02em">Index màn &amp; bảng trạng thái</h1></section>
+<section style="display:flex;flex-direction:column;gap:12px"><h2 style="margin:0;font-size:22px;font-weight:800">Màn → khung → hành động → màn đích</h2>
+<div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;overflow-x:auto"><div style="min-width:860px">
+<div style="display:grid;grid-template-columns:70px 1.2fr 1.4fr 1.6fr 1.2fr;gap:12px;padding:12px 18px;background:#FDF8E6;font-size:12px;font-weight:700;color:#55555B"><span>ID</span><span>Màn</span><span>Khung (tab)</span><span>Hành động chính</span><span>Màn đích</span></div>
+<sc-for list="{{ idxRows }}" as="r" hint-placeholder-count="8"><div style="display:grid;grid-template-columns:70px 1.2fr 1.4fr 1.6fr 1.2fr;gap:12px;padding:12px 18px;font-size:13px;line-height:1.45;border-top:1px solid #E3E1DB"><b style="color:#B88F0A">{{ r.a }}</b><span style="font-weight:700">{{ r.b }}</span><span>{{ r.c }}</span><span>{{ r.d }}</span><span>{{ r.e }}</span></div></sc-for></div></div></section>
+<section style="display:flex;flex-direction:column;gap:12px"><h2 style="margin:0;font-size:22px;font-weight:800">Trạng thái → component → nơi xem</h2>
+<div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;overflow-x:auto"><div style="min-width:860px">
+<div style="display:grid;grid-template-columns:1.3fr 1.5fr 1.7fr;gap:12px;padding:12px 18px;background:#FDF8E6;font-size:12px;font-weight:700;color:#55555B"><span>Trạng thái</span><span>Component</span><span>Khung minh họa</span></div>
+<sc-for list="{{ covRows }}" as="r" hint-placeholder-count="8"><div style="display:grid;grid-template-columns:1.3fr 1.5fr 1.7fr;gap:12px;padding:12px 18px;font-size:13px;line-height:1.45;border-top:1px solid #E3E1DB"><b>{{ r.a }}</b><span>{{ r.b }}</span><span>{{ r.c }}</span></div></sc-for></div></div></section>
+<section style="display:flex;flex-direction:column;gap:12px"><h2 style="margin:0;font-size:22px;font-weight:800">Luồng nghiệm thu F01–F13</h2>
+<div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;padding:8px 18px"><sc-for list="{{ flowRows }}" as="f" hint-placeholder-count="13"><div style="display:flex;gap:14px;padding:10px 0;border-top:1px solid #E3E1DB;font-size:13px;line-height:1.5"><b style="color:#B88F0A;width:40px;flex:none">{{ f.id }}</b><span>{{ f.g }}</span></div></sc-for></div></section>
+</sc-if>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{}">
+class Component extends DCLogic {
+  state = { tab: 'ov', gf: 'all', pm: 'mob', P: null, W: 'w-d01', wc: null, flow: 'F01' };
+  days = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ nhật'];
+  cl = x => JSON.parse(JSON.stringify(x));
+  money = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' đ';
+  fmt = s => String(s || '').replace(/\D/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').toLowerCase();
+  tm = t => { const a = t.split(':'); return +a[0] * 60 + +a[1]; };
+  hm = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  rEnd = (d, r) => r.k === 'day' ? d * 1440 + this.tm(r.c) : r.k === 'night' ? (d + 1) * 1440 + this.tm(r.c) : d * 1440 + this.tm(r.o) + 1440;
+  rTxt = r => r.k === '24h' ? r.o + ' → ' + r.o + ' hôm sau (24 giờ)' : (r.k === 'day' && r.o === '00:00' && r.c === '24:00') ? 'Cả ngày (00:00–24:00)' : r.k === 'night' ? r.o + ' → ' + r.c + ' hôm sau' : r.o + ' – ' + r.c;
+  dayTxt = rs => rs.length ? rs.map(this.rTxt).join(' · ') : 'Đóng cửa';
+  okT = (t, a24) => { const x = /^(\d\d):(\d\d)$/.exec(t || ''); if (!x) return false; const h = +x[1], n = +x[2]; if (a24 && h === 24 && n === 0) return true; return h < 24 && n < 60; };
+  uni = sd => sd.every(x => JSON.stringify(x) === JSON.stringify(sd[0]));
+  ddKey = d => JSON.stringify([d.name, d.price, d.cat, d.img]);
+  note = (r, day) => r.k === 'night' ? (day === 'all' ? 'Giờ đóng thuộc ngày hôm sau, áp dụng cho từng ngày.' : 'Giờ đóng thuộc ngày hôm sau (' + this.days[(day + 1) % 7] + ').') : r.k === '24h' ? 'Mở từ ' + r.o + ' đến cùng giờ hôm sau.' : (r.o === '00:00' && r.c === '24:00') ? 'Cả ngày (00:00–24:00).' : '';
+
+  base() {
+    const wk = [{ o: '17:00', c: '23:00', k: 'day' }], sun = [{ o: '17:00', c: '22:00', k: 'day' }];
+    return {
+      shop: { name: 'Ốc 11', phone: '0912 345 678', zalo: '0912 345 678', fb: '', addr: '12 Phố Kim Đồng, P. Hợp Giang, TP. Cao Bằng (địa chỉ minh họa)', lat: '22.6657', lng: '106.2522', area: 'a1' },
+      areas: [{ id: 'a1', n: 'TP. Cao Bằng', on: 1 }, { id: 'a2', n: 'Hòa An', on: 1 }, { id: 'a3', n: 'Trùng Khánh', on: 0 }],
+      srv: 'ACTIVE', hoursSet: true, now: { d: 1, m: 1110 },
+      sched: [wk, wk, wk, wk, wk, wk, sun],
+      cats: [{ id: 'c1', n: 'Ốc', on: 1 }, { id: 'c2', n: 'Hải sản', on: 1 }, { id: 'c3', n: 'Đồ uống', on: 0 }],
+      items: [
+        { id: 'i1', n: 'Ốc hương hấp', p: 120000, cat: 'c1', img: 1, hid: 0, del: 0 },
+        { id: 'i2', n: 'Ngao hấp', p: 60000, cat: 'c2', img: 1, hid: 0, del: 0 },
+        { id: 'i3', n: 'Mực nướng', p: 150000, cat: 'c2', img: 1, hid: 0, del: 0 },
+        { id: 'i4', n: 'Ốc len xào dừa', p: 90000, cat: 'c1', img: 0, hid: 0, del: 0 },
+        { id: 'i5', n: 'Sò điệp nướng mỡ hành phô mai đặc biệt phần lớn ăn kèm bánh tráng', p: 180000, cat: 'c2', img: 1, hid: 0, del: 0 },
+        { id: 'i6', n: 'Ốc móng tay xào tỏi', p: 135000, cat: 'c1', img: 1, hid: 1, del: 0 },
+        { id: 'i7', n: 'Trà đá', p: 5000, cat: 'c3', img: 0, hid: 0, del: 0 }],
+      nid: 20, pd: null, sd: null, ed: null, dd: null, dd0: null,
+      u: { scr: 'acc', stack: [], dlg: null, toast: null, saving: null, net: 'ok', banner: null, flt: 'all', q: '', cat: 'all', kbd: 0, showErr: 0, pdErr: {}, dErr: {}, gps: 'idle', edit: 0, loading: 0, kmode: 'ok', gone: 0, focus: '', cf: null, pendingKind: null },
+      sim: { load: 0, up: 0, conflict: 0, off: 0, sess: 0, unk: 0, gps: 0 }
+    };
+  }
+  srvKey(S) { if (S.srv !== 'ACTIVE') return S.srv; if (!S.hoursSet) return 'NOHOURS'; const t = S.now.d * 1440 + S.now.m; for (let d = 0; d < 7; d++) for (const r of S.sched[d]) { const s = d * 1440 + this.tm(r.o), e = this.rEnd(d, r); if ((t >= s && t < e) || (t + 10080 >= s && t + 10080 < e)) return 'ONLINE'; } return 'OUTSIDE'; }
+  validate(sd) {
+    const iv = [], errs = {}; let total = 0;
+    sd.forEach((rs, d) => rs.forEach((r, i) => { total++; const k = d + ':' + i;
+      if (!this.okT(r.o, 0) || (r.k !== '24h' && !this.okT(r.c, r.k === 'day'))) errs[k] = 'Nhập giờ dạng HH:MM, phút từ 00 đến 59 (giờ đóng 24:00 chỉ dùng cho khoảng trong ngày).';
+      else if (r.k === 'day' && this.tm(r.c) <= this.tm(r.o)) errs[k] = 'Giờ đóng phải sau giờ mở.';
+      else if (r.k === 'night' && this.tm(r.c) >= this.tm(r.o)) errs[k] = 'Qua đêm: giờ đóng (hôm sau) phải sớm hơn giờ mở.';
+      else iv.push({ d, i, k, s: d * 1440 + this.tm(r.o), e: this.rEnd(d, r), r }); }));
+    for (let a = 0; a < iv.length; a++) for (let b = a + 1; b < iv.length; b++) { const A = iv[a], B = iv[b];
+      for (const sh of [-10080, 0, 10080]) if (A.s < B.e + sh && B.s + sh < A.e) {
+        if (!errs[A.k]) errs[A.k] = 'Trùng với ' + this.rTxt(B.r) + ' (' + this.days[B.d] + ')';
+        if (!errs[B.k]) errs[B.k] = 'Trùng với ' + this.rTxt(A.r) + ' (' + this.days[A.d] + ')';
+        break; } }
+    if (total > 28) errs.total = 'Lịch tối đa 28 khoảng giờ cả tuần.';
+    return { errs, total, n: Object.keys(errs).length };
+  }
+
+  scr(S) {
+    const u = S.u, id = u.scr, ro = S.srv === 'DISABLED', D = this;
+    const H = (h, sub, fs) => ({ t: 'h', h, sub, fs: fs || 22 });
+    const BT = (l, go, k, o) => Object.assign({ t: 'btn', l, go, k: k || 'p' }, o);
+    const BN = (k, h, x, a, go) => ({ t: 'banner', k, h, x, a, go });
+    const IN = (label, v, o) => Object.assign({ t: 'in', label, v }, o);
+    const SP = { t: 'sp' }, CAP = x => ({ t: 'cap', x });
+    const bar = (title, o) => Object.assign({ title, back: 'back' }, o);
+    const netB = u.net === 'off' ? [BN('warn', 'Mất kết nối mạng', 'Thay đổi chưa được lưu. Nội dung đang sửa vẫn được giữ trên màn này.', 'Thử lại', 'retry')] : [];
+    const bn = u.banner ? [BN(u.banner.k, u.banner.h, u.banner.x, u.banner.a, u.banner.go)] : [];
+    const act = S.cats.filter(c => c.on), live = S.items.filter(i => !i.del);
+    let def = {};
+    const LE = u.loadErr && ['q01', 'q02', 'q03', 'q05', 'q06', 'q07', 'k01', 'k02'].includes(id);
+    switch (LE ? '_le' : id) {
+      case '_le': def = { bar: bar({ q01: 'Quản lý cửa hàng', q02: 'Hồ sơ quán', q03: 'Giờ hoạt động', q05: 'Thực đơn', q06: 'Món ăn', q07: 'Xem trước thực đơn', k01: 'Quán', k02: 'Giờ hoạt động' }[id]), body: [SP, { t: 'state', k: 'warn', ic: '!', h: 'Không tải được dữ liệu', x: 'Chưa nhận được dữ liệu từ máy chủ nên chưa thể hiển thị hay chỉnh sửa. Chưa có gì bị thay đổi.' }, SP, BT('Thử lại', 'reload'), BT('Quay lại', 'back', 'g')] }; break;
+      case 'acc': def = { bar: { title: 'Tài khoản' }, nav: [{ l: 'Trang chủ', ic: '⌂', go: 'noop' }, { l: 'Tài khoản', ic: '☺', on: true }], body: [{ t: 'avatar', n: 'Nguyễn Minh Anh', p: '+84 912 345 678', chips: [['Khách hàng', 'n'], ['Chủ quán', 'y']] }, { t: 'list', h: 'Cửa hàng', items: [{ t: 'Quản lý cửa hàng', s: S.shop.name + ' · hồ sơ, giờ, thực đơn', ic: '▤', go: 'go:q01' }] }, { t: 'list', h: 'Cài đặt', items: [{ t: 'Thông tin cá nhân', ic: '☺' }, { t: 'Thông báo', ic: '♪' }, { t: 'Ngôn ngữ', s: 'Tiếng Việt', ic: 'A' }] }, BT('Đăng xuất', 'noop', 'g')] }; break;
+      case 'sess': def = { bg: '#fff', body: [SP, { t: 'state', k: 'warn', h: 'Phiên đăng nhập đã hết hạn', x: 'Vì an toàn, vui lòng đăng nhập lại. Nội dung đang sửa chưa được lưu.' }, SP, BT('Đăng nhập lại', 'relogin')] }; break;
+      case 'm01': def = { bar: bar('Hồ sơ cửa hàng'), body: [{ t: 'card', h: S.shop.name, chip: ['Bản nháp', 'warn'] }, { t: 'check', items: [{ t: 'Tên cửa hàng', k: 'ok' }, { t: 'Số điện thoại liên hệ', k: 'ok' }, { t: 'Địa chỉ', k: 'ok' }, { t: 'Vị trí GPS tại quán', k: 'x' }] }, BN('warn', 'Chưa thể kích hoạt', 'Cửa hàng cần có vị trí GPS tại quán để đủ điều kiện hoạt động.'), CAP('Màn của M01 — dùng lại nguyên trạng.'), SP, BT('Thêm vị trí GPS & hoàn tất', 'm01done')] }; break;
+      case 'q01': {
+        const k = D.srvKey(S);
+        const M = { ONLINE: ['on', 'Đang mở cửa', 'Quán tự hoạt động theo lịch đã lưu.'], OUTSIDE: ['off', 'Đã đóng cửa', 'Ngoài giờ hoạt động đã cài đặt.', 'Xem giờ hoạt động', 'go:q03'], NOHOURS: ['warn', 'Chưa cài giờ hoạt động', 'Cài lịch để quán tự mở và đóng cửa.', 'Cài giờ hoạt động', 'go:q03'], INCOMPLETE: ['warn', 'Hồ sơ chưa hoàn tất', 'Hoàn tất hồ sơ để quán bắt đầu hoạt động.', 'Hoàn tất hồ sơ', 'go:m01'], DISABLED: ['err', 'Quán đã bị vô hiệu hóa', 'Bạn chỉ xem được hồ sơ. Mọi thao tác chỉnh sửa đang bị khóa.', 'Xem hồ sơ', 'go:q02'], AREA: ['err', 'Khu vực phục vụ ngừng hoạt động', 'Chọn khu vực phục vụ phù hợp trong hồ sơ quán.', 'Sửa hồ sơ', 'go:q02e'] }[k];
+        const pc = { ONLINE: ['Hồ sơ đầy đủ', 'ok'], OUTSIDE: ['Hồ sơ đầy đủ', 'ok'], NOHOURS: ['Hồ sơ đầy đủ', 'ok'], INCOMPLETE: ['Hồ sơ chưa hoàn tất', 'warn'], DISABLED: ['Bị vô hiệu hóa', 'err'], AREA: ['Cần chọn khu vực', 'warn'] }[k];
+        const hs = !S.hoursSet ? 'Chưa cài' : D.uni(S.sched) ? 'Cả tuần · ' + D.dayTxt(S.sched[0]) : 'Tùy chỉnh theo ngày';
+        const inc = k === 'INCOMPLETE', lock = ['Cần hồ sơ', 'n'];
+        const hid = live.filter(i => i.hid).length;
+        def = { bar: bar('Quản lý cửa hàng'), body: u.loading ? [{ t: 'skel', n: 1, h: 28 }, { t: 'skel', n: 1, h: 120 }, { t: 'skel', n: 4, h: 60 }] : [
+          { t: 'h', h: S.shop.name, sub: '', fs: 26 }, { t: 'chiprow', items: [pc] }].concat(u.net === 'off' ? [BN('warn', 'Chưa cập nhật trạng thái', 'Kiểm tra kết nối. Trạng thái bên dưới có thể đã cũ.', 'Thử lại', 'reload')] : []).concat([
+          { t: 'status', k: M[0], h: M[1], x: M[2], meta: u.net === 'off' ? 'Lần cập nhật gần nhất: 18:30' : 'Cập nhật lúc 18:30', cta: M[3], go: M[4] },
+          { t: 'list', h: 'Quản lý', items: [{ t: 'Hồ sơ quán', s: 'Tên, liên hệ, địa chỉ, vị trí', ic: '▤', go: inc ? 'go:m01' : 'go:q02' }, { t: 'Giờ hoạt động', s: hs, ic: '◷', go: inc ? '' : 'go:q03', c: inc ? lock : null }, { t: 'Thực đơn', s: live.length + ' món · ' + hid + ' đang ẩn', ic: '☰', go: inc ? '' : 'go:q05', c: inc ? lock : null }, { t: 'Xem trước thực đơn', s: 'Như khách sẽ thấy', ic: '◉', go: inc ? '' : 'go:q07', c: inc ? lock : null }] }]) };
+        break; }
+      case 'q02': {
+        const e = u.edit, pd = S.pd || S.shop, er = u.pdErr || {}, f = u.focus;
+        const ar = S.areas.find(a => a.id === S.shop.area);
+        if (!e) { def = { bar: bar('Hồ sơ quán'), body: [].concat(ro ? [BN('info', 'Chỉ đọc', 'Quán đã bị vô hiệu hóa. Bạn không thể chỉnh sửa hồ sơ.')] : []).concat(S.srv === 'AREA' ? [BN('warn', 'Khu vực phục vụ ngừng hoạt động', 'Chọn khu vực hợp lệ khi lưu hồ sơ.')] : []).concat(bn).concat([{ t: 'card', h: S.shop.name, chip: ro ? ['Chỉ đọc', 'n'] : null, rows: [['SĐT liên lạc', S.shop.phone], ['Zalo', S.shop.zalo || '—'], ['Facebook', S.shop.fb || '—'], ['Địa chỉ', S.shop.addr], ['Vị trí lấy hàng', S.shop.lat + ', ' + S.shop.lng], ['Khu vực', ar.n + (ar.on ? '' : ' · ngừng')]] }]), foot: ro ? [] : [{ l: 'Sửa hồ sơ', go: 'edit' }] }; break; }
+        const sv = u.saving === 'pd';
+        def = { bar: bar('Sửa hồ sơ quán'), kbd: 0, body: [].concat(netB).concat(bn).concat([
+          IN('Tên quán', pd.name, { on: 'pd.name', dis: sv, st: er.name ? 'err' : f === 'name' ? 'f' : '', hint: er.name }),
+          IN('SĐT liên lạc của quán', pd.phone, { on: 'pd.phone', dis: sv, im: 'tel', st: er.phone ? 'err' : f === 'phone' ? 'f' : '', hint: er.phone || 'Có thể khác SĐT đăng nhập.' }),
+          IN('Zalo', pd.zalo, { on: 'pd.zalo', dis: sv, opt: 'không bắt buộc', ph: 'Số Zalo của quán' }),
+          IN('Facebook', pd.fb, { on: 'pd.fb', dis: sv, opt: 'không bắt buộc', ph: 'Liên kết trang Facebook' }),
+          IN('Địa chỉ', pd.addr, { on: 'pd.addr', dis: sv, ta: 1, st: er.addr ? 'err' : '', hint: er.addr }),
+          { t: 'card', h: 'Vị trí lấy hàng', chip: u.gps === 'denied' ? ['Chưa cập nhật', 'warn'] : ['Đã có', 'ok'], x: u.gps === 'ok' ? 'Đã cập nhật vị trí hiện tại.' : 'Bấm để lấy vị trí khi bạn đang ở quán.', rows: [['Vĩ độ', pd.lat], ['Kinh độ', pd.lng]] }]).concat(u.gps === 'denied' ? [BN('warn', 'Chưa lấy được vị trí', 'Quyền vị trí bị từ chối hoặc hết thời gian. Tọa độ cũ vẫn được giữ.', 'Thử lại', 'gps')] : []).concat([
+          BT(u.gps === 'loading' ? 'Đang lấy vị trí…' : 'Lấy vị trí hiện tại', sv ? '' : 'gps', 'g', { load: u.gps === 'loading' }),
+          { t: 'h', h: 'Khu vực phục vụ', fs: 14 }]).concat(S.areas.map(a => ({ t: 'choice', h: a.n, x: a.on ? 'Đang hoạt động' : 'Ngừng hoạt động · không chọn được', on: pd.area === a.id, go: a.on && !sv ? 'pd.area=' + a.id : '' }))).concat(er.area ? [BN('err', 'Khu vực không hợp lệ', er.area)] : []),
+          foot: [{ l: 'Bỏ thay đổi', go: 'revert', k: 'g', dis: sv }, { l: sv ? 'Đang lưu…' : 'Lưu hồ sơ', go: 'save', w: 2, load: sv }] };
+        break; }
+      case 'q03': {
+        const sd = S.sd || S.sched, dirty = JSON.stringify(sd) !== JSON.stringify(S.sched), sv = u.saving === 'hours';
+        const fresh = !S.hoursSet && !dirty;
+        const items = [{ d: 'Cả tuần', sub: 'Nhập nhanh', all: 1, go: ro || sv ? '' : 'go:q04:all', lines: D.uni(sd) ? [sd[0].length ? D.dayTxt(sd[0]) : 'Đóng cửa cả tuần'] : [{ t: 'Tùy chỉnh theo ngày', mute: 1 }] }].concat(sd.map((rs, d) => ({ d: D.days[d], go: ro || sv ? '' : 'go:q04:' + d, lines: rs.length ? rs.map(D.rTxt) : [{ t: 'Đóng cửa', mute: 1 }], chip: rs.length ? null : ['Đóng', 'n'] })));
+        def = { bar: bar('Giờ hoạt động'), body: [].concat(ro ? [BN('info', 'Chỉ đọc', 'Quán đã bị vô hiệu hóa. Bạn không thể sửa lịch.')] : []).concat(netB).concat(bn).concat(fresh ? [BN('warn', 'Chưa cài giờ hoạt động', 'Chưa có lịch nên quán được tính là đóng cửa. Chọn «Cả tuần» để nhập nhanh.')] : []).concat([CAP('Giờ Việt Nam. Quán tự mở và đóng theo lịch này — không cần bật/tắt thủ công.'), { t: 'sched', items }, CAP('Ca qua đêm thuộc ngày bắt đầu, ví dụ Chủ nhật 22:00 → Thứ Hai 02:00. Tối đa 28 khoảng giờ mỗi tuần.')]),
+          foot: ro ? [] : dirty || sv ? [{ l: 'Bỏ thay đổi', go: 'revert', k: 'g', dis: sv }, { l: sv ? 'Đang lưu…' : 'Lưu lịch', go: 'savehrs', w: 2, load: sv }] : [{ l: 'Lưu lịch', go: 'savehrs', dis: 1 }] };
+        break; }
+      case 'q04': {
+        const ed = S.ed, all = ed.day === 'all', sd = S.sd || S.sched;
+        const V = D.validate(all ? Array(7).fill(ed.ranges) : sd.map((x, i) => i === ed.day ? ed.ranges : x));
+        const dk = all ? 0 : ed.day, errOf = i => { const m = V.errs[dk + ':' + i]; return m ? (all && m.startsWith('Trùng') ? 'Các khoảng chồng nhau khi áp dụng cho cả 7 ngày (ca qua đêm hoặc 24 giờ lấn sang ngày kế).' : m) : ''; };
+        def = { bar: bar(all ? 'Cả tuần' : D.days[ed.day]), body: [].concat(all ? [BN('info', 'Công cụ nhập nhanh', 'Áp dụng sẽ thay lịch nháp của cả 7 ngày. Bạn vẫn sửa riêng từng ngày sau đó, và lịch chỉ được ghi khi bấm Lưu lịch.')] : [CAP('Giờ Việt Nam. Ca qua đêm thuộc ngày bắt đầu.')]).concat(ed.ranges.map((r, i) => ({ t: 'range', n: 'Khoảng ' + (i + 1), on: 'r' + i, o: r.o, c: r.c, k: r.k, del: 'dr' + i, note: D.note(r, ed.day), err: errOf(i) }))).concat(ed.ranges.length ? [] : [{ t: 'card', h: all ? 'Chưa có khoảng giờ' : 'Ngày này đóng cửa', x: all ? 'Áp dụng khi trống sẽ đặt cả tuần là đóng cửa.' : 'Không có khoảng giờ nào: quán đóng cửa cả ngày.' }]).concat(V.errs.total ? [BN('err', 'Quá số khoảng cho phép', V.errs.total + (all ? ' Cả tuần được nhân bảy.' : ''))] : []).concat([BT('+ Thêm khoảng', 'addr', 'g'), CAP('Tổng ' + V.total + '/28 khoảng giờ trong tuần.')]),
+          foot: [{ l: 'Hủy', go: 'back', k: 'g' }, { l: all ? 'Áp dụng cho cả tuần' : 'Xong', go: all ? 'applyall' : 'done', w: 2, dis: V.n > 0 }] };
+        break; }
+      case 'q05': {
+        const hid = live.filter(i => i.hid).length;
+        let vis = live.filter(i => (u.flt === 'all' || (u.flt === 'on' ? !i.hid : i.hid)) && (u.cat === 'all' || i.cat === u.cat) && (!u.q || D.norm(i.n).includes(D.norm(u.q))));
+        const cn = c => (S.cats.find(x => x.id === c) || {});
+        const rows = vis.map(i => ({ n: i.n, p: D.money(i.p), img: i.img, dim: i.hid, sub: cn(i.cat).n + (cn(i.cat).on ? '' : ' · Ngừng hoạt động'), chip: i.hid ? ['Đang ẩn', 'n'] : ['Đang hiện', 'ok'], go: 'edit:' + i.id }));
+        const fl = ['all', 'on', 'off'];
+        let body = [].concat(ro ? [BN('info', 'Chỉ đọc', 'Quán đã bị vô hiệu hóa. Bạn chỉ xem được thực đơn.')] : []).concat(netB).concat(bn);
+        if (u.loading) body = body.concat([{ t: 'skel', n: 1, h: 46 }, { t: 'skel', n: 5, h: 76 }]);
+        else if (!live.length) body = body.concat([SP, { t: 'state', k: 'warn', ic: '☰', h: 'Chưa có món trong thực đơn', x: 'Thêm món đầu tiên để khách xem được thực đơn của quán.' }, SP], ro ? [] : [BT('Thêm món', 'go:q06a')]);
+        else { body = body.concat([IN('', u.q, { on: 'q', ph: 'Tìm món trong thực đơn' }), { t: 'chips', items: ['Tất cả', 'Đang hiện', 'Đang ẩn'], on: fl.indexOf(u.flt), go: ['flt=all', 'flt=on', 'flt=off'] }]);
+          if (S.cats.length > 1) body.push({ t: 'chips', items: ['Tất cả nhóm'].concat(S.cats.map(c => c.n + (c.on ? '' : ' (ngừng)'))), on: u.cat === 'all' ? 0 : 1 + S.cats.findIndex(c => c.id === u.cat), go: ['cat=all'].concat(S.cats.map(c => 'cat=' + c.id)) });
+          body.push(CAP(live.length + ' món · ' + hid + ' đang ẩn'));
+          if (rows.length) body.push({ t: 'dishes', items: rows }); else body = body.concat([{ t: 'state', k: 'warn', ic: '⌕', h: 'Không tìm thấy món phù hợp', x: 'Thử từ khóa hoặc bộ lọc khác.' }, BT('Xóa bộ lọc', 'clr', 'g')]); }
+        def = { bar: bar('Thực đơn'), body, foot: (live.length && !ro && !u.loading) ? [{ l: '+ Thêm món', go: 'go:q06a' }] : [] };
+        break; }
+      case 'q06': {
+        const dd = S.dd, isNew = !dd.id, locked = ro || u.gone, er = u.dErr || {}, f = u.focus, sv = u.saving === 'dd', lk = locked || sv;
+        if (isNew && !act.length) { def = { bar: bar('Thêm món'), body: [SP, { t: 'state', k: 'warn', ic: '☰', h: 'Chưa có nhóm món để lựa chọn', x: 'Chưa có nhóm món nào được bật nên chưa thể thêm món.' }, SP, BT('Thử lại', 'retry')] }; break; }
+        const cur = S.cats.find(c => c.id === dd.cat);
+        const cats = act.slice(); if (cur && !cur.on) cats.unshift(cur);
+        const upk = dd.up ? dd.up.k : dd.img;
+        const acts = upk === 'ready' ? [['Thay ảnh', 'img:pick'], ['Xóa ảnh', 'img:rm', 'x']] : upk === 'err' ? [['Chọn ảnh khác', 'img:pick'], ['Thử lại', 'img:pick'], ['Bỏ ảnh', 'img:rm', 'x']] : [];
+        const body = [].concat(netB).concat(bn).concat(u.gone ? [BN('err', 'Món không còn trong thực đơn', 'Món đã được xóa ở nơi khác. Không thể lưu lại món này.', 'Về danh sách', 'toList')] : []).concat(ro ? [BN('info', 'Chỉ đọc', 'Quán đã bị vô hiệu hóa nên không thể sửa món.')] : []).concat(isNew ? [] : [{ t: 'chiprow', items: [dd.hid ? ['Đang ẩn', 'n'] : ['Đang hiện', 'ok']] }]).concat([
+          IN('Tên món', dd.name, { on: 'dd.name', ph: 'VD: Ốc hương hấp', st: er.name ? 'err' : f === 'name' ? 'f' : '', hint: er.name, dis: lk }),
+          IN('Giá bán', D.fmt(dd.price), { on: 'dd.price', im: 'numeric', suf: 'đ', ph: '120.000', st: er.price ? 'err' : f === 'price' ? 'f' : '', hint: er.price || 'Nhập số nguyên, ví dụ 120.000 đ.', dis: lk })]);
+        if (cats.length > 1) { body.push({ t: 'h', h: 'Nhóm món', fs: 14 }); cats.forEach(c => body.push({ t: 'choice', h: c.n, x: c.on ? 'Đang hoạt động' : 'Ngừng hoạt động · chỉ giữ liên kết hiện có, không chọn lại sau khi đổi nhóm', on: dd.cat === c.id, go: lk || !c.on ? '' : 'dd.cat=' + c.id })); if (er.cat) body.push(BN('err', 'Chưa chọn nhóm', er.cat)); }
+        else if (cats.length === 1) body.push(CAP('Nhóm món: ' + cats[0].n + ' (tự chọn, chỉ có một nhóm).'));
+        body.push({ t: 'img', k: upk, pct: dd.up && dd.up.pct, errT: 'Không tải được ảnh. Ảnh hiện tại của món vẫn được giữ.', go: lk ? '' : 'img:pick', acts: lk ? [] : acts });
+        if (!isNew && !lk) body.push({ t: 'card', h: 'Hiển thị với khách', x: dd.hid ? 'Món đang ẩn, khách không thấy.' : 'Món đang hiện trong thực đơn của khách.' }, BT(dd.hid ? 'Hiện món' : 'Ẩn món', dd.hid ? 'show' : 'dlg:hide', 'g'));
+        const up = dd.up && dd.up.k === 'up';
+        def = { bar: bar(isNew ? 'Thêm món' : 'Sửa món', lk || isNew ? {} : { act: ['⋯', 'dlg:menu'] }), body, foot: locked ? (u.gone ? [{ l: 'Về danh sách', go: 'toList' }] : []) : (isNew || sv ? [{ l: 'Hủy', go: 'back', k: 'g', dis: sv }] : []).concat([{ l: sv ? 'Đang lưu…' : up ? 'Chờ tải ảnh…' : isNew ? 'Lưu món' : 'Lưu thay đổi', go: 'savedd', w: 2, load: sv, dis: up }]) };
+        break; }
+      case 'q07': case 'k01': {
+        const pv = id === 'q07', k = D.srvKey(S), pub = S.srv === 'ACTIVE';
+        if (!pv && (u.kmode === 'nf' || u.kmode === 'unavail' || !pub)) { const nf = u.kmode === 'nf'; def = { bar: bar(' '), body: [SP, { t: 'state', k: 'warn', ic: nf ? '?' : '!', h: nf ? 'Không tìm thấy quán.' : 'Quán hiện không khả dụng', x: nf ? 'Liên kết có thể đã cũ hoặc quán không còn tồn tại.' : 'Bạn chưa xem được quán này lúc này. Vui lòng thử lại sau.' }, SP].concat(nf ? [BT('Quay lại', 'back')] : [BT('Thử lại', 'retry'), BT('Quay lại', 'back', 'g')]) }; break; }
+        const chip = { ONLINE: ['Đang mở cửa', 'ok'], OUTSIDE: ['Đã đóng cửa', 'n'], NOHOURS: ['Chưa cài giờ hoạt động', 'warn'] }[k] || ['Chưa hiển thị', 'n'];
+        const pubItems = live.filter(i => !i.hid), hidN = live.length - pubItems.length;
+        const body = [].concat(!pv && u.net === 'off' ? [BN('warn', 'Chưa cập nhật', 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.', 'Thử lại', 'reload')] : []).concat(pv && !pub ? [BN('warn', 'Quán hiện chưa hiển thị cho khách', 'Đây là bản xem trước dành cho chủ quán. Khách chưa tìm thấy quán này.')] : []).concat([{ t: 'head', n: S.shop.name, addr: S.shop.addr, chip, tag: pv ? 'Xem trước' : '', link: 'Xem giờ hoạt động ›', go: 'go:k02' }]);
+        let n = 0;
+        S.cats.forEach(c => { const its = pubItems.filter(i => i.cat === c.id); if (its.length) { n++; body.push({ t: 'gh', h: c.n, n: its.length }, { t: 'dishes', cu: 1, items: its.map(i => ({ n: i.n, p: D.money(i.p), img: i.img })) }); } });
+        if (!n) body.push({ t: 'card', h: 'Quán chưa có món để hiển thị.', x: pv ? 'Thêm hoặc hiện món để khách thấy thực đơn.' : '' });
+        if (pv && hidN) body.push(CAP('Món đang ẩn không hiển thị trong bản xem trước.'));
+        def = { bar: bar(pv ? 'Xem trước thực đơn' : S.shop.name), body };
+        break; }
+      case 'k02': {
+        const nd = S.sched.some(r => r.some(x => x.k === 'night'));
+        def = { bar: bar('Giờ hoạt động'), body: [CAP('Giờ Việt Nam · chỉ xem')].concat(S.hoursSet ? [{ t: 'sched', ro: 1, items: S.sched.map((rs, d) => ({ d: D.days[d], today: d === S.now.d, chip: d === S.now.d ? ['Hôm nay', 'y'] : null, lines: rs.length ? rs.map(D.rTxt) : [{ t: 'Đóng cửa', mute: 1 }] })) }].concat(nd ? [CAP('Ca qua đêm: giờ đóng thuộc ngày hôm sau.')] : []) : [SP, { t: 'state', k: 'warn', ic: '◷', h: 'Quán chưa cài giờ hoạt động.', x: 'Bạn vẫn xem được thực đơn của quán.' }, SP]) };
+        break; }
+    }
+    if (S.pend && ['q02', 'q03', 'q04', 'q06'].includes(id) && def.body) {
+      def.body = def.body.map(b => { b = Object.assign({}, b); if (b.t === 'in') b.dis = 1; if (b.t !== 'banner') { if (b.go) b.go = ''; if (b.del) b.del = ''; } if (b.t === 'img') b.acts = []; if (b.t === 'sched') b.items = b.items.map(r => Object.assign({}, r, { go: '' })); if (b.t === 'range') b.dis = 1; return b; });
+      def.body.unshift(BN('warn', 'Chưa xác định kết quả lưu', 'Đang khóa chỉnh sửa, ẩn và xóa cho đến khi xác định kết quả lần lưu trước. Thử lại gửi đúng nội dung cũ.', 'Thử lại', 'retry'));
+      def.foot = [{ l: 'Thử lại lưu lần trước', go: 'retry' }]; if (def.bar) def.bar.act = null;
+    }
+    if (u.dlg) def.dialog = this.dlg(u.dlg, S);
+    if (u.toast) def.toast = u.toast;
+    if (u.kbd) def.kbd = 1;
+    return def;
+  }
+  dlg(n, S) {
+    const T = (h, x, btns) => ({ h, x, btns, row: 1 }), g = (l, go) => ({ l, go, k: 'g' });
+    switch (n) {
+      case 'discard': return T('Bỏ thay đổi chưa lưu?', 'Những chỉnh sửa trên màn này sẽ mất.', [g('Tiếp tục sửa', 'dlgx'), { l: 'Bỏ thay đổi', go: 'discardok', k: 'x' }]);
+      case 'apply7': return T('Thay lịch của cả 7 ngày?', 'Lịch nháp của từng ngày sẽ bị thay bằng lịch Cả tuần. Lịch đã lưu trên máy chủ vẫn giữ nguyên cho đến khi bạn bấm Lưu lịch.', [g('Giữ lịch', 'dlgx'), { l: 'Thay lịch', go: 'applyok' }]);
+      case 'closeall': return T('Đóng cửa cả tuần?', 'Quán sẽ đóng cửa cả tuần theo lịch này.', [g('Quay lại', 'dlgx'), { l: 'Lưu lịch', go: 'closeok' }]);
+      case 'hide': return T('Ẩn món này?', 'Món sẽ không xuất hiện trong thực đơn của khách. Bạn có thể hiện lại.', [g('Giữ món', 'dlgx'), { l: 'Ẩn món', go: 'hideok', k: 'd' }]);
+      case 'del': return T('Xóa món khỏi thực đơn?', 'Món sẽ được đưa khỏi danh sách quản lý và thực đơn của khách.', [g('Giữ món', 'dlgx'), { l: 'Xóa món', go: 'delok', k: 'x' }]);
+      case 'needsave': return T('Lưu hoặc bỏ thay đổi trước', 'Món đang có chỉnh sửa chưa lưu. Hãy lưu hoặc bỏ thay đổi trước khi ẩn hoặc xóa.', [{ l: 'Bỏ thay đổi', go: 'revertdd', k: 'xg' }, { l: 'Tiếp tục sửa', go: 'dlgx' }]);
+      case 'conflict': return T('Dữ liệu đã được cập nhật ở nơi khác.', 'Nội dung bạn đang sửa vẫn được giữ. Tải bản mới sẽ thay thế bản nháp.', [g('Giữ bản nháp', 'keepdraft'), { l: 'Tải bản mới', go: 'dlg:conflict2' }]);
+      case 'conflict2': return T('Thay bản nháp bằng bản mới?', 'Các chỉnh sửa chưa lưu của bạn sẽ mất.', [g('Quay lại', 'dlgx'), { l: 'Tải bản mới', go: 'loadnew' }]);
+      case 'unk': return T('Chưa xác định được kết quả lưu', 'Chưa xác định được kết quả lưu. Thử lại sẽ gửi đúng nội dung của lần lưu trước, không gửi nội dung mới sửa.', [g('Đóng', 'dlgx'), { l: 'Thử lại', go: 'retry' }]);
+      case 'menu': return { h: 'Món ăn', x: S.dd ? S.dd.name : '', sheet: 1, btns: [g(S.dd && S.dd.hid ? 'Hiện món' : 'Ẩn món', S.dd && S.dd.hid ? 'show' : 'dlg:hide'), { l: 'Xóa món', go: 'dlg:del', k: 'xg' }, g('Đóng', 'dlgx')] };
+    }
+    return null;
+  }
+
+  up(fn) { const P = this.cl(this.state.P || this.base()); fn(P); const ac = P.cats.filter(c => c.on); if (P.dd && !P.dd.id && !P.dd.cat && ac.length === 1 && P.u.scr === 'q06') { P.dd.cat = ac[0].id; if (P.dd0) P.dd0.cat = ac[0].id; P.u.banner = { k: 'info', h: 'Chỉ còn một nhóm món', x: 'Đã chọn sẵn nhóm «' + ac[0].n + '» cho món mới.' }; } this.setState({ P }); }
+  act = (a, val) => { if (!a || a === 'noop') return; this.up(P => this.reduce(P, a, val)); };
+  reduce(P, a, val) {
+    if (P.u.saving) return;
+    if (P.pend && !['retry', 'reload', 'dlgx'].includes(a)) return;
+    const u = P.u, cl = this.cl, q = a.split(':');
+    const reset = () => { u.dlg = null; u.toast = null; u.banner = null; u.kbd = 0; u.showErr = 0; u.pdErr = {}; u.dErr = {}; u.cf = null; };
+    const pop = () => { const s = u.stack.pop() || 'acc'; reset(); u.scr = s; };
+    const dirty = () => (u.scr === 'q02' && u.edit && JSON.stringify(P.pd) !== JSON.stringify(P.shop)) || (u.scr === 'q03' && JSON.stringify(P.sd) !== JSON.stringify(P.sched)) || (u.scr === 'q06' && P.dd && this.ddKey(P.dd) !== this.ddKey(P.dd0));
+    const enter = (s, p) => { reset(); u.scr = s; if (P.sim.load && ['q01', 'q02', 'q03', 'q05', 'q02e', 'k01'].includes(s)) { P.sim.load = 0; u.loadErr = 1; }
+      if (s === 'q03') P.sd = cl(P.sched);
+      if (s === 'q02') { u.edit = 0; P.pd = null; u.gps = 'idle'; }
+      if (s === 'q02e') { u.scr = 'q02'; u.edit = 1; P.pd = cl(P.shop); u.gps = 'idle'; }
+      if (s === 'q04') { const d = p === 'all' ? 'all' : +p; P.ed = { day: d, ranges: d === 'all' ? (this.uni(P.sd) ? cl(P.sd[0]) : []) : cl(P.sd[d]) }; }
+      if (s === 'q06a') { u.scr = 'q06'; const ac = P.cats.filter(c => c.on); P.dd = { id: null, name: '', price: '', cat: ac.length === 1 ? ac[0].id : '', img: 'none', up: null, hid: 0 }; P.dd0 = cl(P.dd); u.gone = 0; }
+      if (s === 'q05') { u.loading = 0; } };
+    const commit = (kind, retry) => { if (P.srv === 'DISABLED') return; if (!retry || !P.snap) P.snap = { kind, data: cl(kind === 'pd' ? P.pd : kind === 'hours' ? P.sd : P.dd) }; u.saving = kind; u.pendingKind = kind; u.dlg = null; u.banner = null; setTimeout(() => this.up(Q => this.finish(Q, kind)), 800); };
+    const eq = a.indexOf('=');
+    if (eq > 0) { const k = a.slice(0, eq), v = a.slice(eq + 1); if (k === 'flt') u.flt = v; else if (k === 'cat') u.cat = v; else if (k === 'pd.area') { P.pd.area = v; delete u.pdErr.area; } else if (k === 'dd.cat') { P.dd.cat = v; delete u.dErr.cat; } return; }
+    if (a.startsWith('go:')) { u.stack.push(u.scr); enter(q[1], q[2]); return; }
+    if (a.startsWith('edit:')) { const it = P.items.find(i => i.id === q[1]); u.stack.push(u.scr); reset(); u.scr = 'q06'; P.dd = { id: it.id, name: it.n, price: String(it.p), cat: it.cat, img: it.img ? 'ready' : 'none', up: null, hid: it.hid }; P.dd0 = cl(P.dd); u.gone = 0; return; }
+    if (a.startsWith('dlg:')) { const n = a.slice(4); u.dlg = ((n === 'hide' || n === 'del') && dirty()) ? 'needsave' : n; return; }
+    if (a === 'pd.name' || a === 'pd.phone' || a === 'pd.zalo' || a === 'pd.fb' || a === 'pd.addr') { P.pd[a.slice(3)] = val; delete u.pdErr[a.slice(3)]; u.focus = a.slice(3); return; }
+    if (a === 'dd.name') { P.dd.name = val; delete u.dErr.name; return; }
+    if (a === 'dd.price') { P.dd.price = String(val).replace(/\D/g, ''); delete u.dErr.price; return; }
+    if (a === 'q') { u.q = val; return; }
+    let m;
+    if ((m = a.match(/^dr(\d+)$/))) { P.ed.ranges.splice(+m[1], 1); return; }
+    if ((m = a.match(/^r(\d+):(o|c)$/))) { const r = P.ed.ranges[+m[1]]; const dg = String(val).replace(/\D/g, '').slice(0, 4); r[m[2]] = dg.length > 2 ? dg.slice(0, 2) + ':' + dg.slice(2) : dg; if (r.k === '24h') r.c = r.o; return; }
+    if ((m = a.match(/^r(\d+):k:(day|night|24h)$/))) { const r = P.ed.ranges[+m[1]]; r.k = m[2]; if (r.k === 'night' && this.tm(r.c) >= this.tm(r.o)) r.c = this.tm(r.o) > 120 ? '02:00' : '00:00'; if (r.k === 'day' && this.tm(r.c) <= this.tm(r.o)) r.c = this.hm(Math.min(1440, this.tm(r.o) + 240)); if (r.k === '24h') r.c = r.o; return; }
+    switch (a) {
+      case 'back': if (dirty()) { u.dlg = 'discard'; } else pop(); return;
+      case 'dlgx': u.dlg = null; return;
+      case 'discardok': u.dlg = null; pop(); return;
+      case 'relogin': u.stack = []; reset(); u.scr = 'acc'; return;
+      case 'm01done': P.srv = 'ACTIVE'; u.stack = ['acc']; reset(); u.scr = 'q01'; u.toast = { k: 'ok', t: 'Hồ sơ đã hoàn tất. Giờ hoạt động và thực đơn đã mở khóa.' }; return;
+      case 'edit': u.edit = 1; P.pd = cl(P.shop); return;
+      case 'revert': if (u.scr === 'q02') { P.pd = cl(P.shop); u.pdErr = {}; } else if (u.scr === 'q03') P.sd = cl(P.sched); return;
+      case 'revertdd': u.dlg = null; P.dd = cl(P.dd0); u.dErr = {}; return;
+      case 'save': { const p = P.pd, er = {}; if (!p.name.trim()) er.name = 'Nhập tên quán.'; if (p.phone.replace(/\D/g, '').length < 9) er.phone = 'Số điện thoại chưa hợp lệ.'; if (!p.addr.trim()) er.addr = 'Nhập địa chỉ quán.'; const ar = P.areas.find(x => x.id === p.area); if (!ar || !ar.on) er.area = 'Chọn một khu vực đang hoạt động.'; u.pdErr = er; if (Object.keys(er).length) { u.toast = { k: 'err', t: 'Kiểm tra lại các trường được đánh dấu.' }; return; } commit('pd'); return; }
+      case 'gps': u.gps = 'loading'; setTimeout(() => this.up(Q => { if (Q.sim.gps) { Q.u.gps = 'denied'; Q.sim.gps = 0; } else { Q.u.gps = 'ok'; Q.pd.lat = '22.6660'; Q.pd.lng = '106.2526'; } }), 1000); return;
+      case 'addr': P.ed.ranges.push(P.ed.ranges.length ? { o: '17:00', c: '23:00', k: 'day' } : { o: '10:00', c: '14:00', k: 'day' }); return;
+      case 'done': { const d = P.ed.day, V = this.validate(P.sd.map((x, i) => i === d ? P.ed.ranges : x)); if (V.n) return; P.sd[d] = cl(P.ed.ranges); pop(); return; }
+      case 'applyall': case 'applyok': { const V = this.validate(Array(7).fill(P.ed.ranges)); if (V.n) return; const nw = Array(7).fill(0).map(() => cl(P.ed.ranges)); const own = P.sd.some(x => x.length) && JSON.stringify(P.sd) !== JSON.stringify(nw); if (a === 'applyall' && own) { u.dlg = 'apply7'; return; } P.sd = nw; pop(); u.toast = { k: 'info', t: 'Đã áp dụng cho cả tuần. Chưa lưu — bấm Lưu lịch để ghi.' }; return; }
+      case 'savehrs': { const V = this.validate(P.sd); if (V.n) { u.toast = { k: 'err', t: 'Lịch còn lỗi, chưa thể lưu.' }; return; } if (P.sd.every(x => !x.length)) { u.dlg = 'closeall'; return; } commit('hours'); return; }
+      case 'closeok': commit('hours'); return;
+      case 'clr': u.flt = 'all'; u.q = ''; u.cat = 'all'; return;
+      case 'img:pick': { if (P.srv === 'DISABLED') return; P.dd.up = { k: 'up', pct: 15 }; setTimeout(() => this.up(Q => { if (Q.dd && Q.dd.up) Q.dd.up.pct = 62; }), 600); setTimeout(() => this.up(Q => { if (!Q.dd || !Q.dd.up) return; if (Q.sim.up) { Q.dd.up = { k: 'err' }; Q.sim.up = 0; } else { Q.dd.up = null; Q.dd.img = 'ready'; } }), 1500); return; }
+      case 'img:rm': P.dd.img = 'none'; P.dd.up = null; return;
+      case 'savedd': { const d = P.dd, er = {}, ac = P.cats.filter(c => c.on); if (!d.name.trim()) er.name = 'Nhập tên món.'; if (!(+d.price > 0)) er.price = 'Nhập giá lớn hơn 0.'; if (!d.cat) er.cat = 'Chọn một nhóm món.'; u.dErr = er; if (Object.keys(er).length) { u.toast = { k: 'err', t: 'Kiểm tra lại các trường được đánh dấu.' }; return; } commit('dd'); return; }
+      case 'show': { if (dirty()) { u.dlg = 'needsave'; return; } const it = P.items.find(i => i.id === P.dd.id); it.hid = 0; P.dd.hid = 0; P.dd0.hid = 0; u.dlg = null; u.toast = { k: 'ok', t: 'Món đã hiện lại với khách.' }; return; }
+      case 'hideok': { const it = P.items.find(i => i.id === P.dd.id); it.hid = 1; P.dd.hid = 1; P.dd0.hid = 1; u.dlg = null; u.toast = { k: 'ok', t: 'Đã ẩn món khỏi thực đơn khách.' }; return; }
+      case 'delok': { const it = P.items.find(i => i.id === P.dd.id); it.del = 1; pop(); u.toast = { k: 'ok', t: 'Đã xóa món khỏi thực đơn.' }; return; }
+      case 'toList': pop(); return;
+      case 'keepdraft': u.dlg = null; u.banner = { k: 'warn', h: 'Dữ liệu đã được cập nhật ở nơi khác', x: 'Bản nháp của bạn vẫn được giữ. Tải bản mới để xem thay đổi.', a: 'Tải bản mới', go: 'dlg:conflict2' }; return;
+      case 'loadnew': { const k = u.cf; if (k === 'pd') { P.shop.phone = '0987 654 321'; P.pd = cl(P.shop); } else if (k === 'hours') { P.sched[0] = [{ o: '16:00', c: '23:00', k: 'day' }]; P.sd = cl(P.sched); } else if (k === 'dd') { const it = P.items.find(i => i.id === P.dd.id); if (it) { it.p += 10000; P.dd = { id: it.id, name: it.n, price: String(it.p), cat: it.cat, img: it.img ? 'ready' : 'none', up: null, hid: it.hid }; P.dd0 = cl(P.dd); } } u.dlg = null; u.banner = null; u.toast = { k: 'ok', t: 'Đã tải bản mới.' }; return; }
+      case 'retry': case 'reload': { if (u.loadErr) { u.loadErr = 0; u.dlg = null; u.toast = { k: 'ok', t: 'Đã tải dữ liệu.' }; return; } u.net = 'ok'; u.dlg = null; u.banner = null; if (u.pendingKind && u.scr !== 'k01') commit(u.pendingKind, true); else u.toast = { k: 'info', t: 'Đã tải lại dữ liệu.' }; return; }
+    }
+  }
+  finish(P, kind) {
+    const u = P.u, cl = this.cl, sim = P.sim;
+    u.saving = null;
+    P.pend = null;
+    if (sim.off) { sim.off = 0; u.net = 'off'; return; }
+    if (sim.sess) { sim.sess = 0; u.scr = 'sess'; return; }
+    if (sim.conflict) { sim.conflict = 0; u.dlg = 'conflict'; u.cf = kind; return; }
+    if (sim.unk) { sim.unk = 0; u.dlg = 'unk'; P.pend = { kind }; u.pendingKind = kind; return; }
+    u.pendingKind = null; u.net = 'ok';
+    const pop = () => { const s = u.stack.pop() || 'acc'; u.dlg = null; u.banner = null; u.scr = s; };
+    const sn = P.snap && P.snap.kind === kind ? P.snap.data : null; P.snap = null;
+    if (kind === 'pd') { P.shop = cl(sn || P.pd); const ar = P.areas.find(x => x.id === P.shop.area); if (P.srv === 'AREA' && ar && ar.on) P.srv = 'ACTIVE'; u.edit = 0; P.pd = null; u.toast = { k: 'ok', t: 'Đã lưu hồ sơ quán.' }; }
+    else if (kind === 'hours') { P.sched = cl(sn || P.sd); P.sd = cl(P.sched); P.hoursSet = true; u.toast = { k: 'ok', t: P.sched.every(x => !x.length) ? 'Đã lưu. Quán đóng cửa cả tuần.' : 'Đã lưu lịch hoạt động.' }; }
+    else if (kind === 'dd') { const d = sn || P.dd; if (!d.id) P.items.push({ id: 'i' + (P.nid++), n: d.name.trim(), p: +d.price, cat: d.cat, img: d.img === 'ready' ? 1 : 0, hid: 0, del: 0 }); else { const it = P.items.find(i => i.id === d.id); it.n = d.name.trim(); it.p = +d.price; it.cat = d.cat; it.img = d.img === 'ready' ? 1 : 0; } const nw = !d.id; pop(); u.toast = { k: 'ok', t: nw ? 'Đã thêm món vào thực đơn.' : 'Đã lưu món.' }; }
+  }
+
+  frames() {
+    if (this._fr) return this._fr;
+    const F = [], cl = this.cl, D = this;
+    const wk = { o: '17:00', c: '23:00', k: 'day' };
+    const add = (g, id, l, f, o) => { const S = this.base(); if (f) f(S); F.push(Object.assign({ g, id, l, S, k360: 0 }, o || {})); };
+    const Q = (S, s) => { S.u.scr = s; };
+    const hrs = S => { S.u.scr = 'q03'; S.sd = cl(S.sched); };
+    const ed = (S, day, ranges) => { S.u.scr = 'q04'; S.sd = cl(S.sched); S.ed = { day, ranges }; };
+    const dd = (S, id) => { S.u.scr = 'q06'; const it = S.items.find(i => i.id === id); S.dd = { id: it.id, name: it.n, price: String(it.p), cat: it.cat, img: it.img ? 'ready' : 'none', up: null, hid: it.hid }; S.dd0 = cl(S.dd); };
+    const nw = (S, o) => { S.u.scr = 'q06'; S.dd = Object.assign({ id: null, name: '', price: '', cat: '', img: 'none', up: null, hid: 0 }, o || {}); S.dd0 = cl(S.dd); };
+    const edit = (S, f) => { S.u.scr = 'q02'; S.u.edit = 1; S.pd = cl(S.shop); if (f) f(S.pd); };
+    const custom = [[{ o: '10:00', c: '14:00', k: 'day' }, wk], [], [{ o: '08:00', c: '08:00', k: '24h' }], [{ o: '10:00', c: '24:00', k: 'day' }], [{ o: '00:00', c: '24:00', k: 'day' }], [wk], [{ o: '22:00', c: '02:00', k: 'night' }]];
+    // Q01
+    add('Q01', 'Q01-1', 'Đang mở cửa', S => Q(S, 'q01'), { k360: 1 });
+    add('Q01', 'Q01-2', 'Đã đóng cửa (ngoài giờ)', S => { Q(S, 'q01'); S.now = { d: 1, m: 900 }; });
+    add('Q01', 'Q01-3', 'Chưa cài giờ hoạt động', S => { Q(S, 'q01'); S.hoursSet = false; S.sched = [[], [], [], [], [], [], []]; });
+    add('Q01', 'Q01-4', 'Hồ sơ chưa hoàn tất', S => { Q(S, 'q01'); S.srv = 'INCOMPLETE'; });
+    add('Q01', 'Q01-5', 'Quán bị vô hiệu hóa', S => { Q(S, 'q01'); S.srv = 'DISABLED'; });
+    add('Q01', 'Q01-6', 'Khu vực phục vụ ngừng hoạt động', S => { Q(S, 'q01'); S.srv = 'AREA'; });
+    add('Q01', 'Q01-7', 'Đang tải (skeleton)', S => { Q(S, 'q01'); S.u.loading = 1; });
+    add('Q01', 'Q01-8', 'Mất mạng · dữ liệu cũ', S => { Q(S, 'q01'); S.u.net = 'off'; });
+    add('Q01', 'Q01-10', 'Không tải được dữ liệu lần đầu', S => { Q(S, 'q01'); S.u.loadErr = 1; });
+    add('Q01', 'Q01-9', 'Điểm vào: Tài khoản (M01)', S => Q(S, 'acc'));
+    // Q02
+    add('Q02', 'Q02-1', 'Xem hồ sơ', S => Q(S, 'q02'));
+    add('Q02', 'Q02-2', 'Sửa · bàn phím mở, footer nằm trên bàn phím', S => { edit(S); S.u.kbd = 1; S.u.focus = 'name'; }, { k360: 1 });
+    add('Q02', 'Q02-3', 'Đang lấy vị trí', S => { edit(S); S.u.gps = 'loading'; });
+    add('Q02', 'Q02-4', 'GPS bị từ chối · giữ tọa độ cũ', S => { edit(S); S.u.gps = 'denied'; });
+    add('Q02', 'Q02-5', 'Validation', S => { edit(S, p => { p.name = ''; p.phone = '091'; p.addr = ''; }); S.u.pdErr = { name: 'Nhập tên quán.', phone: 'Số điện thoại chưa hợp lệ.', addr: 'Nhập địa chỉ quán.' }; });
+    add('Q02', 'Q02-6', 'Khu vực ngừng · phải chọn lại', S => { S.srv = 'AREA'; S.shop.area = 'a3'; edit(S, p => { p.area = 'a3'; }); S.u.pdErr = { area: 'Chọn một khu vực đang hoạt động.' }; });
+    add('Q02', 'Q02-7', 'Đang lưu · khóa form, GPS, Bỏ thay đổi', S => { edit(S, p => { p.name = 'Ốc 11 Cao Bằng'; }); S.u.saving = 'pd'; });
+    add('Q02', 'Q02-8', 'Xung đột dữ liệu', S => { edit(S, p => { p.name = 'Ốc 11 Cao Bằng'; }); S.u.dlg = 'conflict'; });
+    add('Q02', 'Q02-9', 'Chỉ đọc (vô hiệu)', S => { S.srv = 'DISABLED'; Q(S, 'q02'); });
+    add('Q02', 'Q02-10', 'Đã lưu, chưa tải lại được', S => { Q(S, 'q02'); S.u.banner = { k: 'warn', h: 'Đã lưu, chưa tải lại được dữ liệu', x: 'Hồ sơ đã được ghi. Tải lại để xem bản mới nhất.', a: 'Tải lại', go: 'reload' }; });
+    add('Q02', 'Q02-12', 'Không tải được hồ sơ · không hiện form trống', S => { Q(S, 'q02'); S.u.loadErr = 1; });
+    add('Q02', 'Q02-11', 'Rời màn khi chưa lưu', S => { edit(S, p => { p.name = 'Ốc 11 Cao Bằng'; }); S.u.dlg = 'discard'; });
+    // Q03
+    add('Q03', 'Q03-1', 'Chưa cài lịch', S => { hrs(S); S.hoursSet = false; S.sched = [[], [], [], [], [], [], []]; S.sd = cl(S.sched); }, { k360: 0 });
+    add('Q03', 'Q03-2', 'Cả tuần 17:00–23:00 · CN 17:00–22:00', S => hrs(S));
+    add('Q03', 'Q03-3', 'Lịch chung cả tuần', S => { S.sched = Array(7).fill([wk]); hrs(S); });
+    add('Q03', 'Q03-4', 'Tùy chỉnh: nhiều ca, 24 giờ, cả ngày, qua đêm CN→T2', S => { S.sched = cl(custom); hrs(S); }, { k360: 1 });
+    add('Q03', 'Q03-5', 'Đóng cả tuần (đã lưu)', S => { S.sched = [[], [], [], [], [], [], []]; hrs(S); });
+    add('Q03', 'Q03-6', 'Có thay đổi chưa lưu', S => { hrs(S); S.sd[6] = [{ o: '17:00', c: '23:00', k: 'day' }]; });
+    add('Q03', 'Q03-7', 'Đang lưu lịch · khóa chạm dòng', S => { hrs(S); S.sd[6] = [wk]; S.u.saving = 'hours'; });
+    add('Q03', 'Q03-8', 'Hộp thoại: đóng cửa cả tuần', S => { hrs(S); S.sd = [[], [], [], [], [], [], []]; S.u.dlg = 'closeall'; });
+    add('Q03', 'Q03-9', 'Hộp thoại: bỏ thay đổi', S => { hrs(S); S.sd[6] = [wk]; S.u.dlg = 'discard'; });
+    add('Q03', 'Q03-10', 'Mất mạng khi lưu · giữ bản nháp', S => { hrs(S); S.sd[6] = [wk]; S.u.net = 'off'; });
+    add('Q03', 'Q03-12', 'Không tải được lịch · không hiện «chưa cài»', S => { hrs(S); S.u.loadErr = 1; });
+    add('Q03', 'Q03-13', 'Phút lẻ 17:15–23:05 · qua đêm 22:45 → 02:10', S => { const x = { o: '17:15', c: '23:05', k: 'day' }; S.sched = [[x], [x], [x], [x], [x], [x], [{ o: '22:45', c: '02:10', k: 'night' }]]; hrs(S); });
+    add('Q03', 'Q03-11', 'Chỉ đọc', S => { S.srv = 'DISABLED'; hrs(S); });
+    // Q04
+    add('Q04', 'Q04-12', 'Nhập phút lẻ 17:15 → 23:05 (bàn phím số)', S => { ed(S, 'all', [{ o: '17:15', c: '23:05', k: 'day' }]); S.u.kbd = 1; }, { k360: 1 });
+    add('Q04', 'Q04-13', 'Qua đêm phút lẻ CN 22:45 → T2 02:10', S => ed(S, 6, [{ o: '22:45', c: '02:10', k: 'night' }]));
+    add('Q04', 'Q04-14', 'Giờ nhập sai định dạng', S => ed(S, 2, [{ o: '17:7', c: '23:75', k: 'day' }]));
+    add('Q04', 'Q04-15', 'Sửa 23:75 → giữ nguyên input, lỗi cạnh trường, khóa Xong', S => ed(S, 'all', [{ o: '17:15', c: '23:75', k: 'day' }]));
+    add('Q04', 'Q04-1', 'Cả tuần · chưa có khoảng', S => ed(S, 'all', []));
+    add('Q04', 'Q04-2', 'Cả tuần 17:00–23:00 → Áp dụng', S => ed(S, 'all', [wk]));
+    add('Q04', 'Q04-3', 'Hộp thoại: thay lịch cả 7 ngày', S => { ed(S, 'all', [wk]); S.u.dlg = 'apply7'; });
+    add('Q04', 'Q04-4', 'Chủ nhật 17:00–22:00 (sửa riêng)', S => ed(S, 6, [{ o: '17:00', c: '22:00', k: 'day' }]));
+    add('Q04', 'Q04-5', 'Nhiều khoảng trong ngày', S => ed(S, 4, [{ o: '10:00', c: '14:00', k: 'day' }, wk]));
+    add('Q04', 'Q04-6', 'Qua đêm CN 22:00 → T2 02:00', S => ed(S, 6, [{ o: '22:00', c: '02:00', k: 'night' }]), { k360: 1 });
+    add('Q04', 'Q04-7', '24 giờ (cùng giờ hôm sau)', S => ed(S, 2, [{ o: '08:00', c: '08:00', k: '24h' }]));
+    add('Q04', 'Q04-8', 'Cả ngày 00:00–24:00', S => ed(S, 3, [{ o: '00:00', c: '24:00', k: 'day' }]));
+    add('Q04', 'Q04-9', 'Đóng ngày (bỏ hết khoảng)', S => ed(S, 5, []));
+    add('Q04', 'Q04-10', 'Lỗi trùng trong ngày', S => ed(S, 0, [wk, { o: '22:00', c: '02:00', k: 'night' }]));
+    add('Q04', 'Q04-11', 'Lỗi trùng CN→T2', S => { ed(S, 0, [{ o: '01:00', c: '05:00', k: 'day' }]); S.sd[6] = [{ o: '22:00', c: '02:00', k: 'night' }]; });
+    // Q05
+    add('Q05', 'Q05-1', 'Có món · nhóm Đồ uống đã ngừng', S => Q(S, 'q05'), { k360: 1 });
+    add('Q05', 'Q05-2', 'Thực đơn rỗng', S => { Q(S, 'q05'); S.items = []; });
+    add('Q05', 'Q05-3', 'Không tìm thấy món phù hợp', S => { Q(S, 'q05'); S.u.q = 'pizza'; });
+    add('Q05', 'Q05-4', 'Lọc Đang ẩn', S => { Q(S, 'q05'); S.u.flt = 'off'; });
+    add('Q05', 'Q05-5', 'Đang tải', S => { Q(S, 'q05'); S.u.loading = 1; });
+    add('Q05', 'Q05-6', 'Mất mạng', S => { Q(S, 'q05'); S.u.net = 'off'; });
+    add('Q05', 'Q05-7', 'Sau xóa · toast', S => { Q(S, 'q05'); S.items[5].del = 1; S.u.toast = { k: 'ok', t: 'Đã xóa món khỏi thực đơn.' }; });
+    add('Q05', 'Q05-9', 'Không tải được thực đơn · không hiện «rỗng»', S => { Q(S, 'q05'); S.u.loadErr = 1; });
+    add('Q05', 'Q05-8', 'Chỉ đọc (vô hiệu)', S => { S.srv = 'DISABLED'; Q(S, 'q05'); });
+    // Q06-A
+    add('Q06-A', 'Q06A-1', 'Thêm món · bàn phím mở', S => { nw(S, {}); S.u.kbd = 1; S.u.focus = 'name'; }, { k360: 1 });
+    add('Q06-A', 'Q06A-2', 'Đã nhập · không ảnh · chọn nhóm', S => nw(S, { name: 'Ốc hương hấp', price: '120000', cat: 'c1' }));
+    add('Q06-A', 'Q06A-3', 'Có ảnh (ảnh mẫu)', S => nw(S, { name: 'Mực nướng', price: '150000', cat: 'c2', img: 'ready' }));
+    add('Q06-A', 'Q06A-4', 'Một nhóm duy nhất · ẩn bộ chọn', S => { S.cats[1].on = 0; nw(S, { cat: 'c1' }); });
+    add('Q06-A', 'Q06A-5', 'Không có nhóm hoạt động', S => { S.cats.forEach(c => c.on = 0); nw(S, {}); });
+    add('Q06-A', 'Q06A-6', 'Validation', S => { nw(S, {}); S.u.dErr = { name: 'Nhập tên món.', price: 'Nhập giá lớn hơn 0.', cat: 'Chọn một nhóm món.' }; });
+    add('Q06-A', 'Q06A-7', 'Đang tải ảnh · khóa Lưu', S => nw(S, { name: 'Ngao hấp', price: '60000', cat: 'c2', up: { k: 'up', pct: 62 } }));
+    add('Q06-A', 'Q06A-8', 'Upload lỗi · bỏ ảnh để lưu', S => nw(S, { name: 'Ngao hấp', price: '60000', cat: 'c2', up: { k: 'err' } }));
+    add('Q06-A', 'Q06A-9', 'Đang lưu · khóa input/ảnh/nhóm', S => { nw(S, { name: 'Ngao hấp', price: '60000', cat: 'c2' }); S.u.saving = 'dd'; });
+    add('Q06-A', 'Q06A-10', 'Mất mạng · giữ bản nháp', S => { nw(S, { name: 'Ngao hấp', price: '60000', cat: 'c2' }); S.u.net = 'off'; });
+    add('Q06-A', 'Q06A-11', 'Chưa xác định kết quả lưu', S => { nw(S, { name: 'Ngao hấp', price: '60000', cat: 'c2' }); S.u.dlg = 'unk'; });
+    add('Q06-A', 'Q06A-12', 'Đã đóng hộp thoại · vẫn khóa ghi mới', S => { nw(S, { name: 'Ngao hấp', price: '60000', cat: 'c2' }); S.pend = { kind: 'dd' }; S.u.pendingKind = 'dd'; S.snap = { kind: 'dd', data: S.dd }; });
+    add('Q03', 'Q03-14', 'Chưa xác định kết quả lưu lịch · khóa', S => { hrs(S); S.sd[6] = [wk]; S.pend = { kind: 'hours' }; S.u.pendingKind = 'hours'; });
+    // Q06-B
+    add('Q06-B', 'Q06B-1', 'Sửa · có ảnh · đang hiện', S => dd(S, 'i1'));
+    add('Q06-B', 'Q06B-2', 'Sửa · không ảnh', S => dd(S, 'i4'));
+    add('Q06-B', 'Q06B-3', 'Món đang ẩn · Hiện món', S => dd(S, 'i6'));
+    add('Q06-B', 'Q06B-4', 'Tên dài (2 dòng)', S => dd(S, 'i5'));
+    add('Q06-B', 'Q06B-5', 'Nhóm cũ ngừng hoạt động · giữ nguyên', S => dd(S, 'i7'));
+    add('Q06-B', 'Q06B-6', 'Upload lỗi · ảnh cũ nguyên', S => { dd(S, 'i1'); S.dd.up = { k: 'err' }; }, { k360: 1 });
+    add('Q06-B', 'Q06B-7', 'Menu phụ (bottom sheet)', S => { dd(S, 'i1'); S.u.dlg = 'menu'; });
+    add('Q06-B', 'Q06B-8', 'Hộp thoại: Ẩn món', S => { dd(S, 'i1'); S.u.dlg = 'hide'; });
+    add('Q06-B', 'Q06B-9', 'Hộp thoại: Xóa món', S => { dd(S, 'i1'); S.u.dlg = 'del'; });
+    add('Q06-B', 'Q06B-10', 'Đang sửa dở → phải Lưu/Bỏ trước', S => { dd(S, 'i1'); S.dd.price = '130000'; S.u.dlg = 'needsave'; });
+    add('Q06-B', 'Q06B-11', 'Xung đột dữ liệu', S => { dd(S, 'i1'); S.dd.price = '130000'; S.u.dlg = 'conflict'; });
+    add('Q06-B', 'Q06B-12', 'Giữ bản nháp · banner xung đột', S => { dd(S, 'i1'); S.dd.price = '130000'; S.u.banner = { k: 'warn', h: 'Dữ liệu đã được cập nhật ở nơi khác', x: 'Bản nháp của bạn vẫn được giữ. Tải bản mới để xem thay đổi.', a: 'Tải bản mới', go: 'dlg:conflict2' }; });
+    add('Q06-B', 'Q06B-13', 'Xác nhận thay bản nháp bằng bản mới', S => { dd(S, 'i1'); S.dd.price = '130000'; S.u.dlg = 'conflict2'; });
+    add('Q06-B', 'Q06B-14', 'Món đã bị xóa ở nơi khác', S => { dd(S, 'i1'); S.u.gone = 1; });
+    add('Q06-B', 'Q06B-16', 'Không tải được món', S => { dd(S, 'i1'); S.u.loadErr = 1; });
+    add('Q06-B', 'Q06B-17', 'Đang lưu · khóa mọi thao tác', S => { dd(S, 'i1'); S.dd.price = '130000'; S.u.saving = 'dd'; });
+    add('Q06-B', 'Q06B-15', 'Chỉ đọc (vô hiệu)', S => { S.srv = 'DISABLED'; dd(S, 'i1'); });
+    // Q07
+    add('Q07', 'Q07-1', 'Quán mở · món ẩn bị loại', S => Q(S, 'q07'), { k360: 1 });
+    add('Q07', 'Q07-2', 'Quán đóng cửa', S => { Q(S, 'q07'); S.now = { d: 1, m: 900 }; });
+    add('Q07', 'Q07-3', 'Chưa cài lịch', S => { Q(S, 'q07'); S.hoursSet = false; });
+    add('Q07', 'Q07-4', 'Thực đơn rỗng', S => { Q(S, 'q07'); S.items = []; });
+    add('Q07', 'Q07-5', 'Quán chưa hiển thị cho khách', S => { Q(S, 'q07'); S.srv = 'AREA'; });
+    // K01
+    add('K01', 'K01-1', 'Quán mở · có/không ảnh món', S => Q(S, 'k01'), { k360: 1 });
+    add('K01', 'K01-2', 'Quán đóng · vẫn xem món', S => { Q(S, 'k01'); S.now = { d: 1, m: 900 }; });
+    add('K01', 'K01-3', 'Chưa cài giờ hoạt động', S => { Q(S, 'k01'); S.hoursSet = false; });
+    add('K01', 'K01-4', 'Thực đơn rỗng', S => { Q(S, 'k01'); S.items = []; });
+    add('K01', 'K01-5', 'Quán không khả dụng', S => { Q(S, 'k01'); S.srv = 'INCOMPLETE'; });
+    add('K01', 'K01-6', 'Không tìm thấy quán', S => { Q(S, 'k01'); S.u.kmode = 'nf'; });
+    add('K01', 'K01-8', 'Không tải được (khác «không tìm thấy quán»)', S => { Q(S, 'k01'); S.u.loadErr = 1; });
+    add('K01', 'K01-7', 'Mất mạng · giữ dữ liệu đã tải', S => { Q(S, 'k01'); S.u.net = 'off'; });
+    // K02
+    add('K02', 'K02-1', 'Lịch tuần · hôm nay', S => Q(S, 'k02'));
+    add('K02', 'K02-2', 'Nhiều ca · 24 giờ · cả ngày · qua đêm CN→T2', S => { S.sched = cl(custom); Q(S, 'k02'); }, { k360: 1 });
+    add('K02', 'K02-4', 'Không tải được lịch', S => { Q(S, 'k02'); S.u.loadErr = 1; });
+    add('K02', 'K02-3', 'Chưa cài giờ', S => { S.hoursSet = false; Q(S, 'k02'); });
+    // X
+    add('Phiên & dùng lại M01', 'X-1', 'Hết phiên đăng nhập (M01)', S => Q(S, 'sess'));
+    add('Phiên & dùng lại M01', 'X-2', 'Hoàn tất hồ sơ — màn M01 dùng lại', S => { S.srv = 'INCOMPLETE'; Q(S, 'm01'); });
+    return (this._fr = F);
+  }
+  gTitles = { 'Q01': 'Q01 · Quản lý cửa hàng', 'Q02': 'Q02 · Hồ sơ quán', 'Q03': 'Q03 · Giờ hoạt động', 'Q04': 'Q04 · Chỉnh giờ', 'Q05': 'Q05 · Quản lý thực đơn', 'Q06-A': 'Q06-A · Thêm món', 'Q06-B': 'Q06-B · Sửa món & ảnh', 'Q07': 'Q07 · Xem trước thực đơn', 'K01': 'K01 · Khách xem quán & thực đơn', 'K02': 'K02 · Lịch hoạt động phía khách', 'Phiên & dùng lại M01': 'Phiên & màn M01 dùng lại' };
+
+  flows() {
+    const wk = { o: '17:00', c: '23:00', k: 'day' };
+    return [
+      ['F01', 'Sửa hồ sơ', 'Tài khoản → Quản lý cửa hàng → Hồ sơ quán → Sửa hồ sơ → đổi tên → Lưu hồ sơ → toast thành công. Thử «Xung đột khi lưu» hoặc «Mất mạng» trước khi lưu.', S => { }],
+      ['F02', 'Hồ sơ chưa xong / vô hiệu', 'Quản lý cửa hàng báo hồ sơ chưa hoàn tất → Hoàn tất hồ sơ (màn M01) → quay về Q01 đã mở khóa. Đổi «Quán: Vô hiệu» ở dưới để xem chế độ chỉ đọc.', S => { S.srv = 'INCOMPLETE'; }],
+      ['F03', 'Cài lịch cả tuần', 'Cài giờ hoạt động → Cả tuần → + Thêm khoảng → đặt 17:00–23:00 → Áp dụng cho cả tuần → mở Chủ nhật → 17:00–22:00 → Xong → Lưu lịch → đọc lại.', S => { S.hoursSet = false; S.sched = [[], [], [], [], [], [], []]; }],
+      ['F04', 'Nhiều ca & qua đêm', 'Mở Chủ nhật → thêm khoảng → chọn «Qua đêm» 22:00→02:00. Mở Thứ Hai → thêm 01:00–05:00 để thấy lỗi trùng → sửa lại → Xong → Lưu lịch.', S => { S.u.scr = 'q01'; }],
+      ['F05', '24 giờ, đóng tuần, rời khi dirty', 'Thử loại «24 giờ». Cả tuần → Xóa hết khoảng → Áp dụng → Lưu lịch → hộp thoại đóng cả tuần. Sửa rồi bấm Quay lại để thấy «Bỏ thay đổi chưa lưu?».', S => { S.u.scr = 'q01'; }],
+      ['F06', 'Thực đơn rỗng → thêm món', 'Thực đơn trống → Thêm món → nhập tên + giá (không ảnh) → Lưu món → quay về danh sách.', S => { S.items = []; S.u.scr = 'q01'; }],
+      ['F07', 'Ảnh món & upload lỗi', 'Mở một món → Chọn ảnh (lần này lỗi) → ảnh cũ vẫn được giữ → Thử lại thành công → Xóa ảnh → Lưu thay đổi.', S => { S.sim.up = 1; S.u.scr = 'q01'; }],
+      ['F08', 'Xung đột khi sửa giá', 'Mở món → đổi giá → Lưu thay đổi → hộp thoại xung đột → Giữ bản nháp → Tải bản mới → xác nhận thay bản nháp.', S => { S.sim.conflict = 1; S.u.scr = 'q01'; }],
+      ['F09', 'Ẩn → xem trước → hiện lại', 'Mở món → Ẩn món → xác nhận → Quay lại → Xem trước thực đơn: không còn món → quay lại → Hiện món → xem trước lại.', S => { S.u.scr = 'q01'; }],
+      ['F10', 'Xóa mềm', 'Mở món → ⋯ → Xóa món → xác nhận → về danh sách, món biến mất. Không có hoàn tác.', S => { S.u.scr = 'q01'; }],
+      ['F11', 'Khách xem quán ngoài giờ', 'Chi tiết quán (đang đóng cửa) vẫn thấy thực đơn → Xem giờ hoạt động → lịch → Quay lại.', S => { S.now = { d: 1, m: 900 }; S.u.scr = 'k01'; S.u.stack = ['acc']; }],
+      ['F12', 'Không nhóm / mạng / phiên / khu vực', 'Nhóm «Không nhóm» → Thêm món báo chưa có nhóm. Dùng «Mất mạng», «Hết phiên khi lưu», «Khu vực ngừng» ở dưới để thử từng lỗi.', S => { S.cats.forEach(c => c.on = 0); S.u.scr = 'q05'; S.u.stack = ['acc']; }],
+      ['F14', 'Lỗi tải lần đầu → thử lại', 'Bật «Lỗi tải lần đầu» → bấm Quản lý cửa hàng → thấy «Không tải được dữ liệu», không có form trống → Thử lại → dữ liệu mẫu hiện ra. Bổ sung ngoài F01–F13.', S => { S.sim.load = 1; S.u.scr = 'acc'; }],
+      ['F13', 'Admin danh mục → owner thấy', 'Chuyển sang «Web» → D01 → bấm một nhóm → Ngừng hoạt động → xác nhận. Quay lại «Mobile» → Sửa món cũ: nhóm giữ nguyên, ghi Ngừng hoạt động.', S => { S.u.scr = 'q01'; }]
+    ];
+  }
+
+  renderVals() {
+    const st = this.state, set = o => this.setState(o);
+    const P = st.P || (this._p0 || (this._p0 = this.base()));
+    const tabs = [['ov', 'Tổng quan'], ['mob', 'Mobile 390'], ['m360', 'Kiểm 360'], ['dlg', 'Hộp thoại'], ['web', 'Web 1280'], ['proto', 'Prototype'], ['idx', 'Index & trạng thái']];
+    const tabSt = on => `padding:10px 16px;border-radius:99px;font-size:14px;font-weight:700;cursor:pointer;${on ? 'background:#E2B81F;color:#2A2A2E' : 'background:#F2F1EE;color:#2A2A2E'}`;
+    const chipSt = on => `padding:8px 14px;border-radius:99px;font-size:13px;font-weight:700;cursor:pointer;${on ? 'background:#2A2A2E;color:#fff' : 'background:#fff;border:1px solid #E3E1DB'}`;
+    const isP = st.tab === 'proto', isMobT = st.tab === 'mob';
+    let fr = [], mobGroups = [], f360 = [], fDlg = [], gChips = [], frameCount = 0;
+    if (isMobT || st.tab === 'm360' || st.tab === 'dlg') {
+      const all = this.frames(); frameCount = all.length;
+      const gl = []; all.forEach(f => { if (!gl.includes(f.g)) gl.push(f.g); });
+      const mk = f => ({ id: f.id, l: f.l, def: this.scr(f.S) });
+      if (isMobT) { gChips = [['all', 'Tất cả']].concat(gl.map(g => [g, g])).map(c => ({ l: c[1], click: () => set({ gf: c[0] }), st: chipSt(st.gf === c[0]) }));
+        mobGroups = gl.filter(g => st.gf === 'all' || st.gf === g).map(g => { const it = all.filter(f => f.g === g); return { title: this.gTitles[g], n: it.length, items: it.map(mk) }; }); }
+      if (st.tab === 'm360') f360 = all.filter(f => f.k360).map(mk);
+      if (st.tab === 'dlg') fDlg = all.filter(f => f.S.u.dlg || f.S.u.toast || f.S.u.net === 'off' || f.id === 'X-1').map(mk);
+    }
+    const Wold = [['Quản lý cửa hàng (chủ quán)', [['w-q01', 'Q01', 'Tổng quan quản lý cửa hàng'], ['w-q02', 'Q02', 'Hồ sơ quán — xem/sửa'], ['w-q03', 'Q03–Q04', 'Giờ hoạt động — timeline tuần + chỉnh giờ'], ['w-q05', 'Q05', 'Quản lý thực đơn — bảng'], ['w-q06', 'Q06-A/B', 'Thêm/sửa món & ảnh'], ['w-q07', 'Q07', 'Xem trước thực đơn']]], ['Khách', [['w-k01', 'K01–K02', 'Chi tiết quán + thực đơn + giờ hoạt động']]], ['Admin Web · phụ lục có điều kiện', [['w-d01', 'D01', 'Danh mục món hệ thống'], ['w-d02', 'D02', 'Thêm/sửa nhóm'], ['w-d02c', 'D02', 'Xác nhận ngừng hoạt động']]]];
+    const W = Wold.slice(2);
+    const baseCats = this.base().cats;
+    const proto = (() => {
+      const flows = this.flows();
+      const loadFlow = f => () => { const S = this.base(); f[3](S); set({ P: S, flow: f[0], pm: 'mob', wc: null }); };
+      const cur = flows.find(f => f[0] === st.flow) || flows[0];
+      const sim = [['load', 'Lỗi tải lần đầu (màn kế)'], ['up', 'Lỗi tải ảnh'], ['conflict', 'Xung đột khi lưu'], ['off', 'Mất mạng khi lưu'], ['sess', 'Hết phiên khi lưu'], ['unk', 'Kết quả không xác định'], ['gps', 'Từ chối GPS']];
+      const D = (h, items) => ({ h, items: items.map(([l, on, fn]) => ({ l, click: () => this.up(fn), st: chipSt(on) })) });
+      const nAct = P.cats.filter(c => c.on).length;
+      return {
+        flowBtns: flows.map(f => ({ id: f[0], l: f[1], click: loadFlow(f), st: `background:${st.flow === f[0] ? '#FBF1CF' : '#fff'};border:1px solid ${st.flow === f[0] ? '#E2B81F' : '#E3E1DB'};border-radius:12px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer` })),
+        flowId: cur[0], flowGuide: cur[2],
+        simBtns: sim.map(([k, l]) => ({ l, click: () => this.up(Q => { Q.sim[k] = Q.sim[k] ? 0 : 1; }), st: chipSt(P.sim[k]) })),
+        dataGroups: [
+          D('Quán', [['Đầy đủ', P.srv === 'ACTIVE', Q => { Q.srv = 'ACTIVE'; }], ['Chưa hoàn tất', P.srv === 'INCOMPLETE', Q => { Q.srv = 'INCOMPLETE'; }], ['Vô hiệu', P.srv === 'DISABLED', Q => { Q.srv = 'DISABLED'; }], ['Khu vực ngừng', P.srv === 'AREA', Q => { Q.srv = 'AREA'; }]]),
+          D('Nhóm món (hệ thống)', [['2 nhóm', nAct === 2, Q => { Q.cats = this.cl(baseCats); }], ['1 nhóm', nAct === 1, Q => { Q.cats = this.cl(baseCats); Q.cats[1].on = 0; }], ['Không nhóm', nAct === 0, Q => { Q.cats.forEach(c => { c.on = 0; }); }]]),
+          D('Thực đơn', [['Có món', P.items.filter(i => !i.del).length > 0, Q => { Q.items = this.base().items; }], ['Rỗng', P.items.filter(i => !i.del).length === 0, Q => { Q.items = []; Q.u.flt = 'all'; Q.u.q = ''; }]]),
+          D('Lịch & giờ máy chủ', [['Chưa cài lịch', !P.hoursSet, Q => { Q.hoursSet = false; Q.sched = [[], [], [], [], [], [], []]; Q.sd = null; }], ['Đã cài', P.hoursSet, Q => { if (!Q.hoursSet) { Q.hoursSet = true; Q.sched = this.base().sched; Q.sd = null; } }], ['Trong giờ', P.now.m === 1110, Q => { Q.now = { d: 1, m: 1110 }; }], ['Ngoài giờ', P.now.m !== 1110, Q => { Q.now = { d: 1, m: 900 }; }]]),
+          D('Màn khởi đầu', [['Tài khoản', false, Q => { Q.u.scr = 'acc'; Q.u.stack = []; Q.u.dlg = null; }], ['K01 khách', false, Q => { Q.u.scr = 'k01'; Q.u.stack = ['acc']; Q.u.kmode = 'ok'; Q.u.dlg = null; }], ['Đặt lại tất cả', false, Q => { Object.assign(Q, this.base()); }]])
+        ],
+        pScreen: this.scr(P), pAct: this.act, pScr: P.u.scr
+      };
+    })();
+    const wView = st.W, wcats = st.wc ? st.wc.cats : P.cats;
+    const wAct = (a, v) => {
+      if (!a) return;
+      if (a.startsWith('view:')) { set({ W: a.slice(5), wc: null }); return; }
+      this.up(Q => {
+        if (a.startsWith('wedit:')) { const c = Q.cats.find(x => x.id === a.slice(6)); this._wc = { id: c.id, n: c.n, on: c.on }; set({ W: 'w-d02' }); }
+        else if (a === 'wnew') { this._wc = { id: null, n: '', on: 1 }; set({ W: 'w-d02' }); }
+        else if (a === 'wc.name') { this._wc.n = v; }
+        else if (a === 'wc.on') { this._wc.on = +v; }
+        else if (a === 'wsave') { const d = this._wc; if (!d.n.trim()) return; const old = d.id ? Q.cats.find(x => x.id === d.id) : null; if (old && old.on && !d.on) { set({ W: 'w-d02c' }); return; } if (old) { old.n = d.n; old.on = d.on; } else Q.cats.push({ id: 'c' + (Q.cats.length + 1), n: d.n.trim(), on: 1 }); set({ W: 'w-d01' }); }
+        else if (a === 'wconfirm') { const d = this._wc, old = Q.cats.find(x => x.id === d.id); old.n = d.n; old.on = 0; set({ W: 'w-d01' }); }
+      });
+      this.forceUpdate();
+    };
+    const report = [
+      { h: 'Đã dựng', items: ['Mobile 390px: Q01–Q07, Q06-A/B, K01–K02 — ' + this.frames().length + ' khung màn/trạng thái, kèm kiểm 360px.', 'Web 1280px: chỉ phụ lục Admin D01, D02 (thêm/sửa + xác nhận ngừng). Web Food/Ship đã bỏ khỏi phạm vi.', 'Prototype đi được F01–F13 với nhập liệu thật, lưu giả lập, lỗi một lần, và dữ liệu mẫu «Ốc 11».', 'Hộp thoại: bỏ thay đổi, áp dụng cả tuần, đóng cả tuần, ẩn, xóa, cần lưu trước, xung đột (2 bước), chưa xác định kết quả, menu phụ.'] },
+      { h: 'Thay đổi v2 (theo review UI v1)', items: ['R01 · Giờ nhập đủ phút 00–59 (HH:MM), giữ Trong ngày/Qua đêm/24 giờ và 24:00; thêm Q03-13, Q04-12/13/14.', 'R02 · Đang lưu khóa input, GPS, ảnh, nhóm, ẩn/xóa, chạm lịch, Bỏ thay đổi và quay lại; Thử lại dùng đúng snapshot lần lưu trước.', 'R03 · Trạng thái «Không tải được dữ liệu» + Thử lại cho Q01/Q02/Q03/Q05/Q06/K01/K02; luồng F14.', 'R04 · Nhóm duy nhất tự chọn thật (kể cả khi dữ liệu nhóm đổi); nhóm cũ ngừng không chọn lại.', 'R05 · Vùng chạm segment giờ và chip lọc ≥44px (cần xác minh bằng render).', 'R06 · Dữ liệu mẫu chuyển sang Cao Bằng (địa chỉ/tọa độ minh họa).'] },
+      { h: 'Thay đổi v3', items: ['V2-01 · Validate chỉ báo lỗi, không sửa giờ đã nhập: 17:15–23:75 giữ nguyên và báo lỗi qua mọi lần render, khóa Xong/Lưu; 17:15–23:05 hợp lệ. Q04-15.', 'V2-02 · «Chưa xác định kết quả lưu» là trạng thái pending: đóng hộp thoại vẫn khóa sửa, đổi payload, ẩn/xóa, quay lại; chỉ Thử lại (đúng snapshot cũ). Kết quả rõ (thành công, xung đột, mất mạng, hết phiên) mới mở khóa. Q06A-12, Q03-14.'] },
+      { h: 'Dùng lại từ M01', items: ['Token: vàng #E2B81F, chữ #2A2A2E, nền #F2F1EE, Plus Jakarta Sans, bo 14/16, chạm ≥44px.', 'Component: app bar, bottom nav, nút (thêm biến thể xóa), input, banner, chip, card, list, state, steps/check.', 'Màn: Tài khoản → Quản lý cửa hàng, hoàn tất hồ sơ + GPS, hết phiên; shell sidebar Admin.', 'Logo chuẩn 11 / 11Food — không vẽ lại.'] },
+      { h: 'Thêm mới (cùng ngôn ngữ M01)', items: ['Thẻ trạng thái hoạt động (đang mở / đóng / chưa cài / khóa).', 'Danh sách lịch tuần, bộ chỉnh khoảng giờ (Trong ngày · Qua đêm · 24 giờ), timeline tuần trên web.', 'Dòng món, ô ảnh món (4 trạng thái), tiêu đề nhóm, footer cố định trên bàn phím, toast, hộp thoại/bottom sheet.'] },
+      { h: 'Quyết định áp dụng', items: ['Chủ quán nằm trong 11Food; 11Ship không có màn M02.', 'Không có công tắc nhận đơn: quán tự mở/đóng theo lịch, trạng thái lấy từ máy chủ (mốc giờ mẫu: Thứ Ba 18:30).', 'Không có giỏ hàng, +, Mua, doanh thu, đánh giá, topping, khoảng cách, «mở lại lúc…».', 'Không in giới hạn độ dài tên/giá/kích thước ảnh vì backend chưa chốt.'] },
+      { h: 'Điểm cần Owner quyết / lưu ý', items: ['Admin web M01 chỉ có mục «Tài khoản»; D01/D02 thêm mục «Danh mục món» vào sidebar. Nếu đã có UI danh mục tương đương thì bỏ phụ lục này.', 'Nhãn: hồ sơ M01 dùng «Đang hoạt động»; M02 dùng «Đang mở cửa/Đã đóng cửa» cho giờ — tách riêng để khỏi nhầm.', 'Lịch rỗng trên máy chủ = đóng tuần; UI chỉ phân biệt «Chưa cài» (chưa lưu lần nào) bằng trạng thái nháp, không thêm trạng thái DB.', 'Không có xung đột nghiệp vụ thật nào được phát hiện.'] },
+      { h: 'Chưa làm / ngoài phạm vi', items: ['Chưa đánh dấu UI_LOCKED.', 'Không backend, API, migration, mã sản phẩm.', 'Ảnh PNG từng màn: chưa xuất tự động — mỗi khung ở các tab Mobile/Web có thể chụp trực tiếp; index và bảng trạng thái ở tab cuối.'] }
+    ];
+    const idx = [['Q01', 'Quản lý cửa hàng', 'Q01-1…10', 'Thẻ trạng thái → CTA; 4 mục quản lý', 'Q02 · Q03 · Q05 · Q07 · M01'], ['Q02', 'Hồ sơ quán', 'Q02-1…11', 'Sửa → Lưu / Bỏ thay đổi / Lấy vị trí', 'Q01 (sau lưu)'], ['Q03', 'Giờ hoạt động', 'Q03-1…11', 'Chạm Cả tuần / ngày → Lưu lịch', 'Q04 · Q01'], ['Q04', 'Chỉnh giờ', 'Q04-1…11', 'Thêm/xóa khoảng · Xong · Áp dụng cả tuần', 'Q03'], ['Q05', 'Quản lý thực đơn', 'Q05-1…8', 'Tìm/lọc · chạm dòng · Thêm món', 'Q06-B · Q06-A'], ['Q06-A', 'Thêm món', 'Q06A-1…12', 'Nhập · chọn ảnh · Lưu món', 'Q05'], ['Q06-B', 'Sửa món & ảnh', 'Q06B-1…15', 'Lưu · ⋯ → Ẩn/Hiện/Xóa', 'Q05'], ['Q07', 'Xem trước thực đơn', 'Q07-1…5', 'Chỉ xem; Xem giờ hoạt động', 'K02 · Q01'], ['K01', 'Chi tiết quán (khách)', 'K01-1…7', 'Xem món · Xem giờ hoạt động', 'K02'], ['K02', 'Lịch phía khách', 'K02-1…3', 'Chỉ xem · Quay lại (giữ vị trí cuộn)', 'K01'], ['D01', 'Danh mục hệ thống', 'Web · w-d01', 'Chạm nhóm · + Thêm nhóm', 'D02'], ['D02', 'Thêm/sửa nhóm', 'Web · w-d02, w-d02c', 'Lưu · Ngừng hoạt động → xác nhận', 'D01']].map(r => ({ a: r[0], b: r[1], c: r[2], d: r[3], e: r[4] }));
+    const cov = [['Đang tải', 'Skeleton', 'Q01-7 · Q05-5'], ['Rỗng', 'State card + CTA', 'Q05-2 · K01-4 · Q07-4'], ['Không khớp lọc', 'State card + Xóa bộ lọc', 'Q05-3'], ['Đang lưu', 'Nút «Đang lưu…» + khóa', 'Q02-7 · Q03-7 · Q06A-9'], ['Validation', 'Input lỗi + banner', 'Q02-5 · Q06A-6 · Q04-10/11'], ['Upload lỗi / đang tải', 'Ô ảnh (up/err)', 'Q06A-7/8 · Q06B-6'], ['Mất mạng', 'Banner + giữ bản nháp', 'Q01-8 · Q02/Q03/Q06A-10 · K01-7'], ['Hết phiên', 'State toàn màn (M01)', 'X-1'], ['Chỉ đọc', 'Banner thông tin + ẩn footer', 'Q02-9 · Q03-11 · Q05-8 · Q06B-15'], ['Xung đột dữ liệu', 'Hộp thoại 2 bước + banner', 'Q02-8 · Q06B-11/12/13'], ['Rời khi chưa lưu', 'Hộp thoại bỏ thay đổi', 'Q02-11 · Q03-9'], ['Áp dụng cả tuần', 'Hộp thoại thay 7 ngày', 'Q04-3'], ['Đóng cả tuần', 'Hộp thoại xác nhận', 'Q03-8'], ['Ẩn / Xóa món', 'Hộp thoại + bottom sheet', 'Q06B-7/8/9/10'], ['Chưa xác định kết quả', 'Hộp thoại thử lại', 'Q06A-11/12 · Q03-14'], ['Quán/khu vực không khả dụng', 'State card khách / banner chủ quán', 'K01-5 · Q07-5 · Q01-4/5/6'], ['Không nhóm hoạt động', 'State card + Thử lại', 'Q06A-5'], ['Nhóm cũ ngừng', 'Nhãn «Ngừng hoạt động»', 'Q05-1 · Q06B-5']].map(r => ({ a: r[0], b: r[1], c: r[2] }));
+    return {
+      tabs: tabs.map(t => ({ l: t[1], st: tabSt(st.tab === t[0]), click: () => set({ tab: t[0] }) })),
+      isOv: st.tab === 'ov', isMob: isMobT, is360: st.tab === 'm360', isDlg: st.tab === 'dlg', isWeb: st.tab === 'web', isProto: isP, isIdx: st.tab === 'idx',
+      report, frameCount, gChips, mobGroups, f360, fDlg,
+      webGroups: W.map(g => ({ title: g[0], items: g[1].map(i => ({ id: i[0], code: i[1], l: i[2], cats: baseCats })) })),
+      modeBtns: [['mob', 'Mobile'], ['web', 'Web']].map(m => ({ l: m[1], click: () => set({ pm: m[0], W: 'w-d01' }), st: chipSt(st.pm === m[0]) })),
+      protoMob: st.pm === 'mob', protoWeb: st.pm === 'web',
+      flowBtns: proto.flowBtns, flowId: proto.flowId, flowGuide: proto.flowGuide, simBtns: proto.simBtns, dataGroups: proto.dataGroups, pScreen: proto.pScreen, pAct: proto.pAct, pScr: proto.pScr,
+      wView, wCats: wcats, wDraft: this._wc || { id: null, n: '', on: 1 }, wAct,
+      idxRows: idx, covRows: cov, flowRows: this.flows().map(f => ({ id: f[0], g: f[1] + ' — ' + f[2] }))
+    };
+  }
+}
+</script>
+</body>
+</html>

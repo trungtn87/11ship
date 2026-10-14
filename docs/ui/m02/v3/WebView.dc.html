@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</helmet>
+<div style="width:1280px;height:800px;display:flex;font-family:'Plus Jakarta Sans',sans-serif;background:#F2F1EE;color:#2A2A2E;overflow:hidden;position:relative">
+
+<sc-if value="{{ isPub }}" hint-placeholder-val="{{ false }}">
+<div style="flex:1;min-width:0;display:flex;flex-direction:column">
+<div style="height:64px;flex:none;background:#fff;border-bottom:1px solid #E3E1DB;display:flex;align-items:center;padding:0 48px;gap:16px"><img src="uploads/logo-11food.png" alt="11Food" style="height:44px;width:auto"><div style="flex:1"></div><div style="font-size:13px;color:#55555B">Trang quán · chỉ xem</div></div>
+<div style="flex:1;min-height:0;overflow:hidden;display:grid;grid-template-columns:1fr 380px;gap:32px;padding:28px 48px;max-width:1280px;box-sizing:border-box;width:100%">
+<div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+<div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;padding:20px 24px;display:flex;flex-direction:column;gap:8px"><div><span style="{{ chipOk }}">Đang mở cửa</span></div><div style="font-size:28px;font-weight:800;letter-spacing:-0.01em">Ốc 11</div><div style="font-size:14px;color:#55555B">12 Phố Kim Đồng, P. Hợp Giang, TP. Cao Bằng (địa chỉ minh họa)</div></div>
+<sc-for list="{{ menu }}" as="g" hint-placeholder-count="2"><div style="display:flex;flex-direction:column;gap:10px"><div style="font-size:18px;font-weight:800">{{ g.h }}<span style="font-size:13px;font-weight:600;color:#55555B"> · {{ g.n }} món</span></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><sc-for list="{{ g.items }}" as="d" hint-placeholder-count="2"><div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;padding:12px;display:flex;gap:12px;align-items:center"><div style="{{ d.imgSt }}">{{ d.imgL }}</div><div style="min-width:0"><div style="font-size:14px;font-weight:700;line-height:1.3">{{ d.n }}</div><div style="font-size:15px;font-weight:800;margin-top:4px">{{ d.p }}</div></div></div></sc-for></div></div></sc-for>
+</div>
+<div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:6px;align-self:start"><div style="font-size:16px;font-weight:800">Giờ hoạt động</div><div style="font-size:12px;color:#55555B;margin-bottom:6px">Giờ Việt Nam</div><sc-for list="{{ week }}" as="r" hint-placeholder-count="7"><div style="{{ r.st }}"><span style="font-weight:700">{{ r.d }}</span><span style="text-align:right">{{ r.t }}</span></div></sc-for></div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isShell }}" hint-placeholder-val="{{ true }}">
+<div style="width:232px;flex:none;background:#2A2A2E;color:#fff;padding:24px 16px;display:flex;flex-direction:column;gap:24px;box-sizing:border-box">
+<div style="display:flex;align-items:center;gap:12px"><div style="width:44px;height:44px;border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center"><img src="uploads/logo-11.png" alt="11" style="width:36px;height:36px;object-fit:contain"></div><div><div style="font-weight:800;font-size:15px">{{ brand }}</div><div style="font-size:12px;color:#E3E1DB">{{ brandSub }}</div></div></div>
+<div style="display:flex;flex-direction:column;gap:4px"><sc-for list="{{ side }}" as="n" hint-placeholder-count="5"><div onClick="{{ n.click }}" style="{{ n.st }}">{{ n.l }}</div></sc-for></div>
+<div style="margin-top:auto;font-size:13px;color:#E3E1DB;padding:0 14px">{{ userL }}<br><span style="font-weight:700;color:#fff">Đăng xuất</span></div>
+</div>
+<div style="flex:1;min-width:0;padding:28px 32px;display:flex;flex-direction:column;gap:18px;box-sizing:border-box;position:relative">
+<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px"><div><div style="font-size:26px;font-weight:800">{{ hTitle }}</div><div style="font-size:14px;color:#55555B;margin-top:4px">{{ hSub }}</div></div><div style="display:flex;gap:10px;align-items:center"><sc-for list="{{ hBtns }}" as="b" hint-placeholder-count="2"><div onClick="{{ b.click }}" style="{{ b.st }}">{{ b.l }}</div></sc-for></div></div>
+
+<sc-if value="{{ vQ01 }}" hint-placeholder-val="{{ false }}">
+<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:20px;align-items:start">
+<div style="display:flex;flex-direction:column;gap:16px">
+<div style="background:#2A2A2E;color:#fff;border-radius:18px;padding:22px;display:flex;flex-direction:column;gap:8px"><div style="display:flex;align-items:center;gap:12px"><div style="width:14px;height:14px;border-radius:50%;background:#E2B81F;box-shadow:0 0 0 4px rgba(226,184,31,.3)"></div><div style="font-size:20px;font-weight:800">Đang mở cửa</div></div><div style="font-size:14px;color:#E3E1DB;line-height:1.5">Quán tự hoạt động theo lịch đã lưu.</div><div style="font-size:12px;font-weight:600;color:#E3E1DB">Cập nhật lúc 18:30</div></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><sc-for list="{{ tiles }}" as="t" hint-placeholder-count="4"><div onClick="{{ t.click }}" style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;padding:18px;display:flex;gap:12px;align-items:center;cursor:pointer"><div style="width:40px;height:40px;border-radius:12px;background:#FBF1CF;display:flex;align-items:center;justify-content:center;font-size:18px;flex:none">{{ t.ic }}</div><div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700">{{ t.t }}</div><div style="font-size:13px;color:#55555B;margin-top:2px">{{ t.s }}</div></div><span style="color:#55555B;font-size:20px">›</span></div></sc-for></div>
+</div>
+<div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:6px"><div style="font-size:15px;font-weight:800">Lịch tuần này</div><div style="font-size:12px;color:#55555B;margin-bottom:6px">Giờ Việt Nam</div><sc-for list="{{ week }}" as="r" hint-placeholder-count="7"><div style="{{ r.st }}"><span style="font-weight:700">{{ r.d }}</span><span>{{ r.t }}</span></div></sc-for></div>
+</div>
+</sc-if>
+
+<sc-if value="{{ vQ02 }}" hint-placeholder-val="{{ false }}">
+<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:20px;align-items:start">
+<div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;padding:24px;display:grid;grid-template-columns:1fr 1fr;gap:16px"><sc-for list="{{ fields }}" as="f" hint-placeholder-count="6"><div style="{{ f.wSt }}"><div style="font-size:13px;font-weight:600">{{ f.l }}<span style="font-weight:500;color:#55555B">{{ f.o }}</span></div><div style="{{ f.bSt }}">{{ f.v }}</div><div style="font-size:12px;color:#55555B">{{ f.h }}</div></div></sc-for></div>
+<div style="display:flex;flex-direction:column;gap:16px"><div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:10px"><div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:15px;font-weight:700">Vị trí lấy hàng</div><span style="{{ chipOk }}">Đã có</span></div><div style="display:flex;justify-content:space-between;font-size:13px;border-top:1px solid #E3E1DB;padding-top:8px"><span style="color:#55555B">Vĩ độ</span><b>22.6657</b></div><div style="display:flex;justify-content:space-between;font-size:13px;border-top:1px solid #E3E1DB;padding-top:8px"><span style="color:#55555B">Kinh độ</span><b>106.2522</b></div><div style="height:44px;border-radius:12px;border:1px solid #E3E1DB;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">Lấy vị trí hiện tại</div></div>
+<div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:10px"><div style="font-size:15px;font-weight:700">Khu vực phục vụ</div><sc-for list="{{ areas }}" as="a" hint-placeholder-count="3"><div style="{{ a.st }}"><div style="{{ a.dot }}"></div><div><div style="font-size:14px;font-weight:700">{{ a.n }}</div><div style="font-size:12px;color:#55555B">{{ a.s }}</div></div></div></sc-for></div></div>
+</div>
+</sc-if>
+
+<sc-if value="{{ vQ03 }}" hint-placeholder-val="{{ false }}">
+<div style="display:grid;grid-template-columns:1.6fr 1fr;gap:20px;align-items:start">
+<div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:6px">
+<div style="display:flex;align-items:center;gap:12px;font-size:12px;color:#55555B;font-weight:600"><span style="width:96px;flex:none">Giờ Việt Nam</span><div style="flex:1;display:flex;justify-content:space-between"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div></div>
+<sc-for list="{{ tl }}" as="r" hint-placeholder-count="8"><div style="{{ r.st }}"><span style="{{ r.dSt }}">{{ r.d }}</span><div style="flex:1;height:30px;border-radius:8px;background:#F2F1EE;position:relative;overflow:hidden"><sc-for list="{{ r.segs }}" as="s" hint-placeholder-count="1"><div style="{{ s.st }}"></div></sc-for></div></div></sc-for>
+<div style="display:flex;gap:16px;font-size:12px;color:#55555B;margin-top:8px"><span style="display:flex;gap:6px;align-items:center"><span style="width:16px;height:10px;border-radius:3px;background:#E2B81F;display:inline-block"></span>Mở cửa</span><span style="display:flex;gap:6px;align-items:center"><span style="width:16px;height:10px;border-radius:3px;background:repeating-linear-gradient(135deg,#E2B81F 0 4px,#FBF1CF 4px 8px);display:inline-block"></span>Phần qua đêm sang hôm sau (CN 22:00 → T2 02:00)</span></div></div>
+<div style="display:flex;flex-direction:column;gap:14px"><div style="font-size:15px;font-weight:800">Chỉnh giờ · Chủ nhật</div>
+<div style="background:#fff;border:2px solid #E2B81F;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px"><div style="font-size:14px;font-weight:800">Khoảng 1</div><div style="display:flex;gap:12px"><div style="flex:1;display:flex;flex-direction:column;gap:4px"><div style="font-size:12px;font-weight:600;color:#55555B">Giờ mở</div><div style="height:48px;border:1px solid #E3E1DB;border-radius:12px;display:flex;align-items:center;padding:0 12px;font-weight:600">22:00</div></div><div style="flex:1;display:flex;flex-direction:column;gap:4px"><div style="font-size:12px;font-weight:600;color:#55555B">Giờ đóng (hôm sau)</div><div style="height:48px;border:1px solid #E3E1DB;border-radius:12px;display:flex;align-items:center;padding:0 12px;font-weight:600">02:00</div></div></div><div style="display:flex;gap:6px"><div style="flex:1;height:40px;border:1px solid #E3E1DB;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">Trong ngày</div><div style="flex:1;height:40px;background:#2A2A2E;color:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">Qua đêm</div><div style="flex:1;height:40px;border:1px solid #E3E1DB;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">24 giờ</div></div><div style="font-size:12px;color:#55555B">Giờ đóng thuộc ngày hôm sau (Thứ Hai). Kiểm với lịch Thứ Hai.</div></div>
+<div style="height:44px;border:1px solid #E3E1DB;background:#fff;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">+ Thêm khoảng</div>
+<div style="background:#FDF8E6;border:1px solid #E3E1DB;border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:8px"><div style="font-size:14px;font-weight:700">Nhập nhanh · Cả tuần</div><div style="font-size:13px;color:#55555B;line-height:1.5">Áp dụng một lịch cho cả 7 ngày, sau đó vẫn sửa riêng từng ngày. Tổng 8/28 khoảng.</div><div style="height:44px;background:#E2B81F;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">Áp dụng cho cả tuần</div></div></div>
+</div>
+</sc-if>
+
+<sc-if value="{{ vQ05 }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;gap:12px;align-items:center"><div style="flex:1;height:44px;background:#fff;border:1px solid #E3E1DB;border-radius:12px;display:flex;align-items:center;padding:0 14px;color:#8C8C92;font-size:14px;box-sizing:border-box">⌕&nbsp; Tìm món trong thực đơn</div><sc-for list="{{ filt }}" as="c" hint-placeholder-count="4"><span style="{{ c.st }}">{{ c.l }}</span></sc-for></div>
+<div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;overflow:hidden">
+<div style="display:grid;grid-template-columns:64px 2.4fr 1fr 1fr 1fr 1fr;gap:14px;padding:12px 20px;background:#FDF8E6;font-size:12px;font-weight:700;color:#55555B"><span>Ảnh</span><span>Tên món</span><span>Nhóm</span><span>Giá</span><span>Trạng thái</span><span>Thao tác</span></div>
+<sc-for list="{{ rows }}" as="r" hint-placeholder-count="6"><div style="{{ r.st }}"><div style="{{ r.imgSt }}">{{ r.imgL }}</div><span style="font-size:14px;font-weight:700;line-height:1.3;{{ r.nSt }}">{{ r.n }}</span><span style="font-size:13px;color:#55555B">{{ r.c }}</span><span style="font-size:14px;font-weight:800">{{ r.p }}</span><span><span style="{{ r.chSt }}">{{ r.ch }}</span></span><span style="font-size:13px;font-weight:700;color:#B88F0A">Sửa · {{ r.hl }}</span></div></sc-for></div>
+</sc-if>
+
+<sc-if value="{{ vQ06 }}" hint-placeholder-val="{{ false }}">
+<div style="display:grid;grid-template-columns:1.2fr 1fr;gap:20px;align-items:start">
+<div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:16px"><div style="display:flex;flex-direction:column;gap:6px"><div style="font-size:13px;font-weight:600">Tên món</div><div style="height:48px;border:2px solid #E2B81F;box-shadow:0 0 0 3px #FBF1CF;border-radius:14px;display:flex;align-items:center;padding:0 14px;font-weight:600;box-sizing:border-box">Ốc hương hấp</div></div><div style="display:flex;flex-direction:column;gap:6px"><div style="font-size:13px;font-weight:600">Giá bán</div><div style="height:48px;border:1px solid #E3E1DB;border-radius:14px;display:flex;align-items:center;padding:0 14px;font-weight:600;box-sizing:border-box"><span style="flex:1">120.000</span><span style="color:#55555B;font-weight:700">đ</span></div><div style="font-size:12px;color:#55555B">Nhập số nguyên, ví dụ 120.000 đ.</div></div><div style="display:flex;flex-direction:column;gap:8px"><div style="font-size:13px;font-weight:600">Nhóm món</div><div style="display:flex;gap:10px"><div style="flex:1;border:2px solid #E2B81F;background:#fff;border-radius:14px;padding:12px 14px;font-weight:700;font-size:14px">Ốc</div><div style="flex:1;border:2px solid #E3E1DB;background:#fff;border-radius:14px;padding:12px 14px;font-weight:700;font-size:14px">Hải sản</div></div></div>
+<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #E3E1DB;padding-top:14px"><div><div style="font-size:14px;font-weight:700">Hiển thị với khách</div><div style="font-size:13px;color:#55555B;margin-top:2px">Món đang hiện trong thực đơn.</div></div><div style="display:flex;gap:10px"><div style="height:44px;padding:0 16px;border:1px solid #E3E1DB;border-radius:12px;display:flex;align-items:center;font-size:14px;font-weight:700">Ẩn món</div><div style="height:44px;padding:0 16px;border:1px solid #E3E1DB;border-radius:12px;display:flex;align-items:center;font-size:14px;font-weight:700;color:#8E2A22">Xóa món</div></div></div></div>
+<div style="display:flex;flex-direction:column;gap:12px"><div style="font-size:13px;font-weight:600">Ảnh món<span style="font-weight:500;color:#55555B"> · không bắt buộc</span></div><div style="height:260px;border-radius:16px;border:1px solid #E3E1DB;background:repeating-linear-gradient(135deg,#F2F1EE 0 8px,#E9E7E1 8px 16px);display:flex;align-items:center;justify-content:center;font:12px ui-monospace,monospace;color:#55555B">ảnh mẫu · dữ liệu minh họa</div><div style="display:flex;gap:8px"><div style="height:44px;padding:0 16px;border:1px solid #E3E1DB;background:#fff;border-radius:12px;display:flex;align-items:center;font-size:14px;font-weight:700">Thay ảnh</div><div style="height:44px;padding:0 16px;border:1px solid #E3E1DB;background:#fff;border-radius:12px;display:flex;align-items:center;font-size:14px;font-weight:700;color:#8E2A22">Xóa ảnh</div></div><div style="background:#FBE9E7;border:1px solid #E9B5AF;color:#8E2A22;border-radius:14px;padding:12px;font-size:13px;line-height:1.5"><b>Khi tải ảnh lỗi:</b> ảnh hiện tại của món vẫn được giữ. Chọn ảnh khác, thử lại hoặc bỏ ảnh để lưu.</div></div>
+</div>
+</sc-if>
+
+<sc-if value="{{ vQ07 }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;gap:24px;align-items:flex-start;justify-content:center">
+<div style="width:520px;display:flex;flex-direction:column;gap:12px"><div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:6px"><div style="display:flex;gap:8px"><span style="{{ chipOk }}">Đang mở cửa</span><span style="font-size:12px;font-weight:800;background:#2A2A2E;color:#fff;padding:4px 10px;border-radius:99px">Xem trước</span></div><div style="font-size:24px;font-weight:800">Ốc 11</div><div style="font-size:13px;color:#55555B">12 Phố Kim Đồng, P. Hợp Giang, TP. Cao Bằng (địa chỉ minh họa)</div></div>
+<sc-for list="{{ menu }}" as="g" hint-placeholder-count="2"><div style="display:flex;flex-direction:column;gap:8px"><div style="font-size:16px;font-weight:800">{{ g.h }}<span style="font-size:12px;font-weight:600;color:#55555B"> · {{ g.n }} món</span></div><div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;overflow:hidden"><sc-for list="{{ g.items }}" as="d" hint-placeholder-count="2"><div style="display:flex;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid #E3E1DB"><div style="{{ d.imgSt }}">{{ d.imgL }}</div><div style="flex:1;min-width:0;font-size:14px;font-weight:700;line-height:1.3">{{ d.n }}</div><div style="font-size:14px;font-weight:800">{{ d.p }}</div></div></sc-for></div></div></sc-for></div>
+<div style="width:300px;display:flex;flex-direction:column;gap:12px"><div style="background:#FBF1CF;border:1px solid #E2B81F;border-radius:14px;padding:14px;font-size:13px;line-height:1.5"><b>Xem trước</b><br>Dữ liệu đã lưu, giống màn khách. Món đang ẩn không hiển thị (1 món đang ẩn).</div><div style="background:#fff;border:1px solid #E3E1DB;border-radius:14px;padding:14px;font-size:13px;line-height:1.5;color:#55555B">Không có nút mua, giỏ hàng hay thanh toán. Chưa lưu thay đổi sẽ không xuất hiện ở đây.</div></div>
+</div>
+</sc-if>
+
+<sc-if value="{{ vD01 }}" hint-placeholder-val="{{ false }}">
+<div style="background:#FDF8E6;border:1px solid #E3E1DB;border-radius:14px;padding:12px 16px;font-size:13px;line-height:1.5">Nhóm không bị xóa. <b>Ngừng hoạt động</b> nghĩa là nhóm không còn được chọn cho món mới; các món đang liên kết được giữ nguyên.</div>
+<div style="background:#fff;border:1px solid #E3E1DB;border-radius:16px;overflow:hidden"><div style="display:grid;grid-template-columns:2fr 1fr 80px;gap:14px;padding:12px 20px;background:#FDF8E6;font-size:12px;font-weight:700;color:#55555B"><span>Tên nhóm</span><span>Trạng thái</span><span></span></div>
+<sc-for list="{{ catRows }}" as="c" hint-placeholder-count="3"><div onClick="{{ c.click }}" style="display:grid;grid-template-columns:2fr 1fr 80px;gap:14px;padding:14px 20px;align-items:center;font-size:14px;border-top:1px solid #E3E1DB;cursor:pointer"><span style="font-weight:700">{{ c.n }}</span><span><span style="{{ c.chSt }}">{{ c.ch }}</span></span><span style="font-weight:700;color:#B88F0A">Sửa</span></div></sc-for></div>
+</sc-if>
+
+<sc-if value="{{ vMod }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;background:rgba(42,42,46,.55);display:flex;align-items:center;justify-content:center;z-index:5"><div style="width:440px;background:#fff;border-radius:20px;padding:26px;display:flex;flex-direction:column;gap:14px;box-sizing:border-box">
+<div style="font-size:20px;font-weight:800;line-height:1.25">{{ mTitle }}</div>
+<sc-if value="{{ isForm }}" hint-placeholder-val="{{ true }}"><div style="display:flex;flex-direction:column;gap:6px"><div style="font-size:13px;font-weight:600">Tên nhóm</div><div style="height:48px;box-sizing:border-box;border:2px solid #E2B81F;box-shadow:0 0 0 3px #FBF1CF;border-radius:14px;display:flex;align-items:center;padding:0 14px"><input value="{{ wcName }}" onChange="{{ nameChg }}" placeholder="VD: Ốc" style="flex:1;min-width:0;border:0;outline:0;background:transparent;font:600 15px 'Plus Jakarta Sans',sans-serif;color:#2A2A2E;height:100%"></div></div>
+<div style="display:flex;flex-direction:column;gap:6px"><div style="font-size:13px;font-weight:600">Trạng thái</div><div style="display:flex;gap:8px"><div onClick="{{ onClick }}" style="{{ stOn }}">Đang hoạt động</div><div onClick="{{ offClick }}" style="{{ stOff }}">Ngừng hoạt động</div></div></div></sc-if>
+<sc-if value="{{ isConf }}" hint-placeholder-val="{{ false }}"><div style="font-size:14px;line-height:1.55;color:#55555B">Nhóm sẽ không còn được chọn cho món mới. Các món đang liên kết được giữ nguyên.</div></sc-if>
+<div style="display:flex;gap:10px;margin-top:4px"><div onClick="{{ mBack }}" style="flex:1;height:48px;border:1px solid #E3E1DB;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;cursor:pointer">{{ mBackL }}</div><div onClick="{{ mOk }}" style="{{ mOkSt }}">{{ mOkL }}</div></div>
+</div></div>
+</sc-if>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:800},&quot;view&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;w-q01&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;w-q01&quot;,&quot;w-q02&quot;,&quot;w-q03&quot;,&quot;w-q05&quot;,&quot;w-q06&quot;,&quot;w-q07&quot;,&quot;w-k01&quot;,&quot;w-d01&quot;,&quot;w-d02&quot;,&quot;w-d02c&quot;]}}">
+class Component extends DCLogic {
+  renderVals() {
+    const v = this.props.view || 'w-q01', act = this.props.onAct, cats = this.props.cats || [{ id: 'c1', n: 'Ốc', on: 1 }, { id: 'c2', n: 'Hải sản', on: 1 }, { id: 'c3', n: 'Đồ uống', on: 0 }];
+    const wcv = this.props.wc && this.props.wc.n !== undefined && (this.props.wc.id || this.props.wc.n) ? this.props.wc : { id: 'c1', n: 'Ốc', on: 1 };
+    const g = x => () => act && act(x);
+    const Y = '#E2B81F', D = '#2A2A2E';
+    const chip = k => { const t = { ok: ['#E4F3EA', '#1F5C38'], n: ['#EFEDE8', '#55555B'], y: [Y, D], d: [D, '#fff'], w: ['#FBF1CF', D] }[k]; return `background:${t[0]};color:${t[1]};font-size:12px;font-weight:700;padding:4px 10px;border-radius:99px;white-space:nowrap`; };
+    const btn = (l, k, to) => ({ l, click: g(to), st: `height:44px;padding:0 20px;box-sizing:border-box;border-radius:12px;display:flex;align-items:center;font-size:14px;font-weight:700;cursor:pointer;${k === 'p' ? 'background:' + Y : 'background:#fff;border:1px solid #E3E1DB'}` });
+    const owner = ['w-q01', 'w-q02', 'w-q03', 'w-q05', 'w-q06', 'w-q07'].includes(v);
+    const adm = ['w-d01', 'w-d02', 'w-d02c'].includes(v);
+    const ownNav = [['w-q01', 'Tổng quan'], ['w-q02', 'Hồ sơ quán'], ['w-q03', 'Giờ hoạt động'], ['w-q05', 'Thực đơn'], ['w-q07', 'Xem trước']];
+    const on = (k, l) => ({ l, click: g('view:' + k), st: `font-size:14px;font-weight:700;padding:12px 14px;border-radius:12px;cursor:pointer;${(v === k || (v === 'w-q06' && k === 'w-q05')) ? 'background:#E2B81F;color:#2A2A2E' : 'color:#fff'}` });
+    const side = owner ? ownNav.map(n => on(n[0], n[1])) : [{ l: 'Tài khoản', click: undefined, st: 'font-size:14px;font-weight:700;padding:12px 14px;border-radius:12px;color:#fff' }, { l: 'Danh mục món', click: g('view:w-d01'), st: 'font-size:14px;font-weight:700;padding:12px 14px;border-radius:12px;background:#E2B81F;color:#2A2A2E;cursor:pointer' }];
+    const H = { 'w-q01': ['Quản lý cửa hàng', 'Ốc 11 · hồ sơ, giờ hoạt động và thực đơn.', []], 'w-q02': ['Hồ sơ quán', 'Chỉnh sửa thông tin hiển thị cho khách và vị trí lấy hàng.', [btn('Bỏ thay đổi', 'g', ''), btn('Lưu hồ sơ', 'p', '')]], 'w-q03': ['Giờ hoạt động', 'Quán tự mở và đóng theo lịch. Giờ Việt Nam.', [btn('Bỏ thay đổi', 'g', ''), btn('Lưu lịch', 'p', '')]], 'w-q05': ['Thực đơn', '7 món · 1 đang ẩn', [btn('+ Thêm món', 'p', 'view:w-q06')]], 'w-q06': ['Sửa món', 'Ốc hương hấp · đang hiện', [btn('Hủy', 'g', 'view:w-q05'), btn('Lưu thay đổi', 'p', 'view:w-q05')]], 'w-q07': ['Xem trước thực đơn', 'Như khách sẽ thấy từ dữ liệu đã lưu.', []], 'w-d01': ['Danh mục món', 'Nhóm món hệ thống dùng cho thực đơn của quán.', [btn('+ Thêm nhóm', 'p', 'wnew')]], 'w-d02': ['Danh mục món', 'Nhóm món hệ thống dùng cho thực đơn của quán.', []], 'w-d02c': ['Danh mục món', 'Nhóm món hệ thống dùng cho thực đơn của quán.', []] }[v] || ['', '', []];
+    const week = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ nhật'].map((d, i) => ({ d, t: i === 6 ? '17:00 – 22:00' : '17:00 – 23:00', st: `display:flex;justify-content:space-between;font-size:13px;padding:9px 8px;border-top:1px solid #E3E1DB;${i === 1 ? 'background:#FBF1CF;border-radius:8px;' : ''}` }));
+    const img = on2 => on2 ? 'background:repeating-linear-gradient(135deg,#F2F1EE 0 6px,#E9E7E1 6px 12px)' : 'background:#F2F1EE;border:1px dashed #C9C6BD';
+    const imS = (s, o) => `width:${s}px;height:${s}px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;box-sizing:border-box;font:9px ui-monospace,monospace;color:#55555B;${img(o)}`;
+    const items = [['Ốc hương hấp', 120000, 'Ốc', 1, 0], ['Ốc len xào dừa', 90000, 'Ốc', 0, 0], ['Ngao hấp', 60000, 'Hải sản', 1, 0], ['Mực nướng', 150000, 'Hải sản', 1, 0], ['Sò điệp nướng mỡ hành phô mai đặc biệt phần lớn ăn kèm bánh tráng', 180000, 'Hải sản', 1, 0], ['Ốc móng tay xào tỏi', 135000, 'Ốc', 1, 1], ['Trà đá', 5000, 'Đồ uống · ngừng', 0, 0]];
+    const mny = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' đ';
+    const grp = [['Ốc', items.filter(i => i[2] === 'Ốc' && !i[4])], ['Hải sản', items.filter(i => i[2] === 'Hải sản')], ['Đồ uống', items.filter(i => i[2].startsWith('Đồ'))]];
+    const menu = grp.map(([h, it]) => ({ h, n: it.length, items: it.map(i => ({ n: i[0], p: mny(i[1]), imgSt: imS(64, i[3]), imgL: i[3] ? 'ảnh mẫu' : 'không ảnh' })) }));
+    const fl = [['Nguyễn Huệ'], 0];
+    const fields = [['Tên quán', 'Ốc 11', '', '', 1], ['SĐT liên lạc của quán', '0912 345 678', '', 'Có thể khác SĐT đăng nhập.', 0], ['Zalo', '0912 345 678', ' · không bắt buộc', '', 0], ['Facebook', 'Chưa nhập', ' · không bắt buộc', '', 0], ['Địa chỉ', '12 Phố Kim Đồng, P. Hợp Giang, TP. Cao Bằng (địa chỉ minh họa)', '', '', 2]].map(f => ({ l: f[0], v: f[1], o: f[2], h: f[3], wSt: `display:flex;flex-direction:column;gap:6px;${f[4] === 2 ? 'grid-column:1/3' : ''}`, bSt: `min-height:48px;box-sizing:border-box;border:${f[4] === 1 ? '2px solid ' + Y : '1px solid #E3E1DB'};${f[4] === 1 ? 'box-shadow:0 0 0 3px #FBF1CF;' : ''}border-radius:14px;display:flex;align-items:center;padding:0 14px;font-weight:600;font-size:15px;${f[1] === 'Chưa nhập' ? 'color:#8C8C92' : ''}` }));
+    const areas = [['TP. Cao Bằng', 'Đang hoạt động', 1, 1], ['Hòa An', 'Đang hoạt động', 0, 1], ['Trùng Khánh', 'Ngừng hoạt động · không chọn được', 0, 0]].map(a => ({ n: a[0], s: a[1], st: `border:2px solid ${a[2] ? Y : '#E3E1DB'};border-radius:14px;padding:12px;display:flex;gap:12px;align-items:center;${a[3] ? '' : 'opacity:.6'}`, dot: `width:20px;height:20px;border-radius:50%;box-sizing:border-box;flex:none;border:${a[2] ? '6px solid ' + Y : '2px solid #E3E1DB'}` }));
+    const bar = (l, w, hatch) => ({ st: `position:absolute;top:4px;bottom:4px;left:${l}%;width:${w}%;border-radius:6px;background:${hatch ? 'repeating-linear-gradient(135deg,#E2B81F 0 4px,#FBF1CF 4px 8px)' : Y}` });
+    const tl = week.map((r, i) => ({ d: r.d, st: `display:flex;align-items:center;gap:12px;padding:5px 0;${i === 6 ? 'background:#FDF8E6;border-radius:10px;' : ''}`, dSt: 'width:96px;flex:none;font-size:13px;font-weight:700;padding-left:6px', segs: i === 0 ? [bar(0, 8.33, 1), bar(70.83, 25)] : i === 6 ? [bar(91.67, 8.33)] : [bar(70.83, 25)] }));
+    tl[6].segs = [bar(91.67, 8.33)];
+    const rows = items.map((i, n) => ({ n: i[0], c: i[2], p: mny(i[1]), imgSt: imS(48, i[3]), imgL: i[3] ? 'ảnh mẫu' : '—', ch: i[4] ? 'Đang ẩn' : 'Đang hiện', chSt: chip(i[4] ? 'n' : 'ok'), hl: i[4] ? 'Hiện' : 'Ẩn', nSt: `display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;${i[4] ? 'color:#55555B' : ''}`, st: `display:grid;grid-template-columns:64px 2.4fr 1fr 1fr 1fr 1fr;gap:14px;padding:10px 20px;align-items:center;border-top:1px solid #E3E1DB;${i[4] ? 'background:#FAF9F6' : ''}` }));
+    const filt = [['Tất cả', 1], ['Đang hiện', 0], ['Đang ẩn', 0], ['Tất cả nhóm ▾', 0]].map(c => ({ l: c[0], st: c[1] ? 'background:#2A2A2E;color:#fff;font-size:13px;font-weight:700;padding:11px 16px;border-radius:99px' : 'background:#fff;border:1px solid #E3E1DB;font-size:13px;font-weight:600;padding:10px 16px;border-radius:99px' }));
+    const tiles = [['Hồ sơ quán', 'Tên, liên hệ, địa chỉ, vị trí', '▤', 'w-q02'], ['Giờ hoạt động', 'Cả tuần · 17:00 – 23:00', '◷', 'w-q03'], ['Thực đơn', '7 món · 1 đang ẩn', '☰', 'w-q05'], ['Xem trước thực đơn', 'Như khách sẽ thấy', '◉', 'w-q07']].map(t => ({ t: t[0], s: t[1], ic: t[2], click: g('view:' + t[3]) }));
+    const catRows = cats.map(c => ({ n: c.n, ch: c.on ? 'Đang hoạt động' : 'Ngừng hoạt động', chSt: chip(c.on ? 'ok' : 'n'), click: g('wedit:' + c.id) }));
+    const seg = on2 => `flex:1;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;cursor:pointer;${on2 ? 'background:#2A2A2E;color:#fff' : 'background:#fff;border:1px solid #E3E1DB'}`;
+    const isConf = v === 'w-d02c', isNew = !wcv.id;
+    return {
+      isPub: v === 'w-k01', isShell: v !== 'w-k01', brand: owner ? 'Ốc 11' : '11 Admin', brandSub: owner ? '11Food · Chủ quán' : 'Quản trị', side, userL: owner ? '0912 345 678' : 'admin@11ship.vn',
+      hTitle: H[0], hSub: H[1], hBtns: H[2],
+      vQ01: v === 'w-q01', vQ02: v === 'w-q02', vQ03: v === 'w-q03', vQ05: v === 'w-q05', vQ06: v === 'w-q06', vQ07: v === 'w-q07', vD01: adm,
+      vMod: v === 'w-d02' || v === 'w-d02c',
+      chipOk: chip('ok'), week, tiles, fields, areas, tl, filt, rows, menu, catRows,
+      isForm: !isConf, isConf, mTitle: isConf ? 'Ngừng hoạt động nhóm này?' : isNew ? 'Thêm nhóm' : 'Sửa nhóm',
+      wcName: wcv.n, nameChg: e => act && act('wc.name', e.target.value), onClick: () => act && act('wc.on', 1), offClick: () => act && act('wc.on', 0), stOn: seg(wcv.on), stOff: seg(!wcv.on),
+      mBack: g(isConf ? 'view:w-d02' : 'view:w-d01'), mBackL: isConf ? 'Quay lại' : 'Hủy', mOk: g(isConf ? 'wconfirm' : 'wsave'),
+      mOkL: isConf ? 'Ngừng hoạt động' : 'Lưu', mOkSt: `flex:1;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;cursor:pointer;${isConf ? 'background:#C23B32;color:#fff' : 'background:#E2B81F;color:#2A2A2E'}`
+    };
+  }
+}
+</script>
+</body>
+</html>
