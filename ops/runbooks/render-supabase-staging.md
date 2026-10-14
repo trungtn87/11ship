@@ -105,6 +105,9 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | client_device_key_links | SELECT, INSERT, UPDATE (contract11 section 8: UPDATE only sets `detached_at`, once; a trigger refuses any change of binding, key, user, app or `linked_at`; no DELETE) |
 | client_session_bindings | SELECT, INSERT, UPDATE (UPDATE only clears `is_current`, including from the `app.sessions` revoke trigger; no DELETE) |
 | client_device_request_nonces | SELECT, INSERT (the replay barrier; expired rows are removed only by the cleanup credential below) |
+| sms_gateway_devices | SELECT, INSERT, UPDATE (issue #102: UPDATE is the heartbeat and the one-way revoke; pairing normally runs through the operator command; no DELETE) |
+| sms_gateway_control | SELECT, INSERT, UPDATE (issue #102: the single kill-switch row, written by the operator command; the API only reads it; no DELETE) |
+| sms_jobs | SELECT, INSERT, UPDATE (issue #102: UPDATE is claim, acknowledgement, lease/expiry and erasing the sealed message; no DELETE) |
 
 ```sql
 -- example shape, repeat per row of the table above
