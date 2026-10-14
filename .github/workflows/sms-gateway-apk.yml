@@ -56,7 +56,7 @@ jobs:
       - name: Build APK
         run: |
           cd mobile/gateway
-          flutter build apk --release --build-name 0.1.0 --build-number ${{ github.run_number }}
+          flutter build apk --release --build-name 0.2.0 --build-number ${{ github.run_number }}
 
       - name: Sign and verify
         run: |
@@ -76,7 +76,11 @@ jobs:
           "$bt/aapt2" dump badging 11Ship-SMS-Gateway-test.apk > "$RUNNER_TEMP/gateway-badging.txt"
           grep -q "package: name='vn.eleven.gateway.test'" "$RUNNER_TEMP/gateway-badging.txt"
           grep -q "versionCode='${{ github.run_number }}'" "$RUNNER_TEMP/gateway-badging.txt"
-          grep -q "uses-permission: name='android.permission.SEND_SMS'" "$RUNNER_TEMP/gateway-badging.txt"
+          for permission in SEND_SMS INTERNET FOREGROUND_SERVICE RECEIVE_BOOT_COMPLETED POST_NOTIFICATIONS; do
+            grep -q "uses-permission: name='android.permission.$permission'" "$RUNNER_TEMP/gateway-badging.txt" \
+              || { echo "::error::Missing permission $permission"; exit 1; }
+          done
+          grep -q "sdkVersion:'24'" "$RUNNER_TEMP/gateway-badging.txt" || { echo "::error::Unexpected minSdk"; exit 1; }
           if grep -qE "uses-permission: name='android.permission.(READ_SMS|RECEIVE_SMS|READ_CONTACTS|READ_PHONE_STATE)'" "$RUNNER_TEMP/gateway-badging.txt"; then
             echo "::error::Unexpected sensitive permission"; exit 1
           fi

@@ -132,6 +132,58 @@ void main() {
     expect(find.byKey(const Key('logged-out')), findsOneWidget);
   });
 
+  testWidgets('register (REQUIRED, issue #102): the code field appears only after the SMS was SENT; the proof rides in the register body', (WidgetTester tester) async {
+    final FakeApiTransport api = FakeApiTransport();
+    installAccountRoutes(api, registration: 'REQUIRED');
+    installOtpRoutes(api);
+    final FakeDeviceBridge bridge = FakeDeviceBridge();
+    await pump(tester, healthy(), api: api, bridge: bridge);
+    await openTab(tester, 'account');
+    await tester.tap(find.byKey(const Key('open-register')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('required-note')), findsOneWidget);
+    expect(find.byKey(const Key('otp-code')), findsNothing);
+    await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
+    await tester.enterText(find.byKey(const Key('register-name')), 'Nguyễn Văn An');
+    await tester.enterText(find.byKey(const Key('register-password')), 'Correct-Horse-9');
+    await tester.ensureVisible(find.byKey(const Key('register-consent')));
+    await tester.tap(find.byKey(const Key('register-consent')));
+    await tester.pump();
+    expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull, reason: 'the phone is not verified yet');
+
+    await tester.ensureVisible(find.byKey(const Key('otp-request')));
+    await tester.tap(find.byKey(const Key('otp-request')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('otp-waiting')), findsOneWidget, reason: 'queued, not sent yet');
+    expect(find.byKey(const Key('otp-code')), findsNothing);
+    // The first poll (3 s) still says PENDING_DELIVERY, the second one SENT.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+    expect(find.byKey(const Key('otp-code')), findsNothing);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+    expect(find.byKey(const Key('otp-code')), findsOneWidget);
+    expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull, reason: 'a sent code is not a verified phone');
+
+    await tester.enterText(find.byKey(const Key('otp-code')), '123456');
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('otp-verify')));
+    await tester.tap(find.byKey(const Key('otp-verify')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('otp-verified')), findsOneWidget);
+
+    // Editing the phone drops the proof and closes the submit again.
+    await tester.enterText(find.byKey(const Key('register-phone')), '0909999999');
+    await tester.pump();
+    expect(find.byKey(const Key('otp-verified')), findsNothing);
+    expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull);
+    await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
+    await tester.pump();
+    expect(find.byKey(const Key('otp-verified')), findsNothing, reason: 'the proof does not come back by typing the number again');
+  });
+
   testWidgets('offline then retry recovers', (WidgetTester tester) async {
     bool online = false;
     await pump(tester, (Uri uri, Duration t) async {

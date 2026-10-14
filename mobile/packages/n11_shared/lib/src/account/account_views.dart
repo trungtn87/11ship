@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../brand.dart';
@@ -8,6 +10,7 @@ import '../widgets/components.dart';
 import '../flows/reset_controller.dart';
 import '../flows/reset_views.dart';
 import 'models.dart';
+import 'phone_verification.dart';
 import 'session_controller.dart';
 
 // Account screens of both phone apps, laid out like the approved web screens (docs/ui/m01-food-web.md F04/F10/F11/F16/F17/F18 and
@@ -57,6 +60,14 @@ String failureMessage(AuthFailure failure) {
       return 'Khu vực đã chọn không còn hợp lệ. Hãy tải lại danh sách khu vực và chọn lại.';
     case AuthFailureKind.roleNotAvailable:
       return 'Tài khoản chưa dùng được chế độ này.';
+    case AuthFailureKind.otpInvalid:
+      return 'Mã xác minh chưa đúng, hoặc tin nhắn chưa được gửi đi. Kiểm tra lại mã trong tin nhắn.';
+    case AuthFailureKind.otpExpired:
+      return 'Mã xác minh đã hết hạn. Hãy gửi mã mới.';
+    case AuthFailureKind.otpAlreadyUsed:
+      return 'Mã xác minh này đã được dùng hoặc bị khóa. Hãy gửi mã mới.';
+    case AuthFailureKind.proofInvalid:
+      return 'Xác minh số điện thoại không còn hiệu lực. Hãy xác minh lại.';
   }
 }
 
@@ -422,23 +433,95 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _phone = TextEditingController();
   final TextEditingController _name = TextEditingController();
   final TextEditingController _password = TextEditingController();
+  final TextEditingController _code = TextEditingController();
+  late final PhoneVerificationController _otp = PhoneVerificationController(transport: widget.session.api.transport);
+  Timer? _tick;
   bool _agree = false;
 
   @override
   void initState() {
     super.initState();
     widget.session.addListener(_leaveWhenSignedIn);
+    _otp.addListener(_otpChanged);
     widget.session.loadRegistrationMode();
   }
 
   @override
   void dispose() {
+    _tick?.cancel();
+    _otp.removeListener(_otpChanged);
+    _otp.dispose();
     widget.session.removeListener(_leaveWhenSignedIn);
     widget.session.abandon();
     _phone.dispose();
     _name.dispose();
     _password.dispose();
+    _code.dispose();
     super.dispose();
+  }
+
+  /// A timer exists only while the "send again" button is locked, so an idle screen schedules nothing.
+  void _otpChanged() {
+    if (_tick == null && !_otp.canResend && _otp.step != OtpStep.verified) {
+      _tick = Timer.periodic(const Duration(seconds: 1), (Timer timer) {
+        if (!mounted || _otp.canResend || _otp.step == OtpStep.verified) {
+          timer.cancel();
+          _tick = null;
+        }
+        if (mounted) {
+          setState(() {});
+        }
+      });
+    }
+  }
+
+  /// The proof belongs to ONE number: editing the phone drops the challenge and the proof.
+  void _phoneEdited() {
+    final String? requestedFor = _otp.phone;
+    if (requestedFor != null && requestedFor != _phone.text.trim()) {
+      _otp.reset();
+      _code.clear();
+    }
+    setState(() {});
+  }
+
+  List<Widget> _otpSection(bool busy) {
+    final bool verified = _otp.step == OtpStep.verified;
+    final AuthFailure? failure = _otp.failure;
+    final String? note = switch (_otp.delivery) {
+      OtpDelivery.failed => 'Không gửi được tin nhắn. Hãy gửi lại mã.',
+      OtpDelivery.expired => 'Mã đã hết hạn hoặc chưa gửi được. Hãy gửi lại mã.',
+      OtpDelivery.uncertain => 'Chưa chắc tin nhắn đã đến. Nếu bạn đã nhận được mã, hãy nhập; nếu không, hãy gửi lại.',
+      OtpDelivery.closed => 'Mã này không dùng được nữa. Hãy gửi mã mới.',
+      _ => null,
+    };
+    return <Widget>[
+      if (verified)
+        const N11Banner(key: Key('otp-verified'), kind: BannerKind.success, title: 'Đã xác minh số điện thoại')
+      else ...<Widget>[
+        const N11Banner(key: Key('required-note'), kind: BannerKind.info, title: 'Xác minh số điện thoại', text: 'Mã gồm 6 số được gửi bằng tin nhắn SMS đến số điện thoại bên dưới.'),
+        if (failure != null) N11Banner(key: const Key('otp-error'), kind: BannerKind.error, title: 'Chưa xác minh được', text: failureMessage(failure)),
+        if (note != null && _otp.step == OtpStep.idle) N11Banner(key: const Key('otp-note'), kind: BannerKind.warn, title: 'Mã chưa dùng được', text: note),
+        if (_otp.step == OtpStep.waiting) const N11Banner(key: Key('otp-waiting'), kind: BannerKind.info, title: 'Đang gửi tin nhắn…', text: 'Vui lòng đợi, chưa nhập mã khi tin nhắn chưa được gửi đi.'),
+        if (_otp.step == OtpStep.sent && note != null) N11Banner(key: const Key('otp-note'), kind: BannerKind.warn, title: 'Lưu ý', text: note),
+        N11Button(
+          key: const Key('otp-request'),
+          label: _otp.step == OtpStep.requesting ? 'Đang gửi…' : (_otp.step == OtpStep.idle && _otp.phone == null ? 'Gửi mã xác minh' : 'Gửi lại mã'),
+          kind: ButtonKind.secondary,
+          loading: _otp.step == OtpStep.requesting,
+          onPressed: busy || _phone.text.trim().isEmpty || !_otp.canResend ? null : () => _otp.request(_phone.text),
+        ),
+        if (_otp.canEnterCode) ...<Widget>[
+          N11Field(fieldKey: const Key('otp-code'), label: 'Mã xác minh', placeholder: '6 số', controller: _code, keyboard: TextInputType.number, maxLength: 6, enabled: _otp.step == OtpStep.sent, onChanged: () => setState(() {})),
+          N11Button(
+            key: const Key('otp-verify'),
+            label: _otp.step == OtpStep.verifying ? 'Đang kiểm tra…' : 'Xác nhận mã',
+            loading: _otp.step == OtpStep.verifying,
+            onPressed: _otp.step != OtpStep.sent || _code.text.trim().length != 6 ? null : () => _otp.verify(_code.text),
+          ),
+        ],
+      ],
+    ];
   }
 
   void _leaveWhenSignedIn() {
@@ -453,11 +536,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Widget build(BuildContext context) {
     final SessionController session = widget.session;
     return ListenableBuilder(
-      listenable: session,
+      listenable: Listenable.merge(<Listenable>[session, _otp]),
       builder: (BuildContext context, Widget? child) {
         final bool busy = session.busy;
         final RegistrationMode mode = session.registrationMode;
-        final bool open = mode == RegistrationMode.disabledTest && session.ready;
+        final bool open = session.ready && (mode == RegistrationMode.disabledTest || (mode == RegistrationMode.required && _otp.token != null));
         final bool taken = session.lastFailure?.kind == AuthFailureKind.phoneRegistered;
         final bool food = widget.brand.id == AppId.food;
         return N11FormScaffold(
@@ -466,8 +549,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           children: <Widget>[
             N11Heading(food ? 'Tạo tài khoản 11Food' : 'Tạo tài khoản 11Ship', sub: food ? 'Tài khoản khách hàng dùng để đặt món.' : 'Tài khoản khách hàng; hồ sơ xế gửi sau trong mục Tài khoản.'),
             if (mode == RegistrationMode.disabledTest) const N11Banner(key: Key('test-note'), kind: BannerKind.warn, title: kTestRegistrationNote, text: 'Tài khoản được tạo trực tiếp, không có mã OTP.'),
-            if (mode == RegistrationMode.required)
-              const N11Banner(key: Key('required-note'), kind: BannerKind.warn, title: 'Chưa hỗ trợ xác minh số điện thoại trên Android', text: 'Máy chủ đang yêu cầu mã OTP; bước này chưa được nối ở bản Android.'),
             if (mode == RegistrationMode.unknown && session.ready)
               N11Banner(
                 key: const Key('config-unknown'),
@@ -487,8 +568,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
               enabled: !busy,
               tone: taken ? FieldTone.error : FieldTone.normal,
               hint: taken ? 'Số điện thoại này đã có tài khoản.' : null,
-              onChanged: () => setState(() {}),
+              onChanged: _phoneEdited,
             ),
+            if (mode == RegistrationMode.required) ..._otpSection(busy),
             N11Field(fieldKey: const Key('register-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !busy, onChanged: () => setState(() {})),
             N11Field(
               fieldKey: const Key('register-password'),
@@ -536,7 +618,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               key: const Key('register-submit'),
               label: busy ? 'Đang đăng ký…' : 'Hoàn tất đăng ký',
               loading: busy,
-              onPressed: busy || !open || !_valid ? null : () => session.register(phone: _phone.text, password: _password.text, fullName: _name.text),
+              onPressed: busy || !open || !_valid ? null : () => session.register(phone: _phone.text, password: _password.text, fullName: _name.text, verificationToken: _otp.token),
             ),
             if (!session.ready) const ReasonNote(kNoServerReason),
           ],

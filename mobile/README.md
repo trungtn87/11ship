@@ -44,7 +44,12 @@ All three reuse the session above and the backend that already exists; nothing i
   Sending the profile never changes the context and never enables receiving orders (still locked).
 - **Both - forgotten password (test).** *Đăng nhập -> Quên mật khẩu?*. `GET /v1/account-recovery/config` opens the form only when the server says `DISABLED_TEST`; `POST /v1/account-recovery/reset-test {phone, password}` is **public** (no token, cookie or device proof; the
   gateway forwards only `Idempotency-Key` and `Content-Type`). The answer is one generic acknowledgement, never an automatic login; the password confirmation is checked only on the phone. The server revokes the account's sessions, so an old session then ends through the normal 401 path.
-  SMS/email recovery is **not** part of this build.
+  With `ACCOUNT_RECOVERY_MODE=SMS_OTP` (issue #102) the same screen becomes phone -> *Gửi mã* -> code from the SMS -> new password: `POST /v1/account-recovery/otp`, `.../otp/{id}/verify`, `.../reset {verification_token, password}`.
+  The code request answers the same for every number ("if the number is registered you will receive an SMS"), the proof is one-use and bound to the number that received the code, and the screen asks for the password only after the code was verified.
+  Email recovery is **not** part of this build.
+- **Both - register with an SMS code (issue #102, server `REQUIRED` mode).** The register screen shows *Gửi mã xác minh* under the phone field: `POST /v1/auth/phone-verifications`, then it polls `GET /v1/auth/phone-verifications/{id}` while the server says `PENDING_DELIVERY`
+  (the SMS is sent by a paired phone; **the code field is offered only once the server says SENT**), then `POST .../verify` gives the one-use `verification_token`, which rides in the signed `POST /v1/client-auth/register` body next to the device proof
+  (the OTP proof does not replace the native device proof). Editing the phone drops the challenge and the proof. Nothing is faked: with no proof the app sends no registration.
 - **Permissions (exact allowlist, checked in CI by `mobile/tool/check-apk-permissions.sh`).** Food: INTERNET, ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION (+ the signature permission between the two apps). Ship: INTERNET only (+ the signature permission). No background location, camera, contacts or storage.
 - When a session ends (logout, 401, another phone), the shop, driver and reset controllers drop every personal value and any pending write.
 

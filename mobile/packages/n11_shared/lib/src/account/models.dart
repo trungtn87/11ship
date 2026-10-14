@@ -170,4 +170,16 @@ enum AuthFailureKind {
 
   /// 403 ROLE_NOT_AVAILABLE (a context the account can not wear now).
   roleNotAvailable,
+
+  /// 400 OTP_INVALID: the code is wrong, or it is not usable yet (still waiting for the SMS to be sent).
+  otpInvalid,
+
+  /// 400 OTP_EXPIRED.
+  otpExpired,
+
+  /// 409 OTP_ALREADY_USED.
+  otpAlreadyUsed,
+
+  /// 400/409 VERIFICATION_PROOF_*: the phone proof is not valid any more (used, expired, other purpose).
+  proofInvalid,
 }

@@ -1,8 +1,12 @@
 package vn.eleven.gateway
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import android.telephony.SmsManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -14,6 +18,8 @@ class MainActivity : FlutterActivity() {
     private var pendingPermission: MethodChannel.Result? = null
     private val requestCode = 1811
     private val smsText = "11Ship SMS Gateway: Tin nhan thu nghiem. Khong phai ma OTP."
+    private val baseUrlPattern = Regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$")
+    private val credentialPattern = Regex("^[A-Za-z0-9_-]{43}$")
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -29,14 +35,14 @@ class MainActivity : FlutterActivity() {
                         )
                     )
                     "requestPermission" -> {
-                        if (hasSmsPermission()) response.success(true)
+                        if (hasSmsPermission() && notificationsGranted()) response.success(true)
                         else if (pendingPermission != null) {
-                            response.error("BUSY", "Đang xin quyền SMS.", null)
+                            response.error("BUSY", "Đang xin quyền.", null)
                         } else {
                             pendingPermission = response
-                            ActivityCompat.requestPermissions(
-                                this, arrayOf(Manifest.permission.SEND_SMS), requestCode
-                            )
+                            val wanted = mutableListOf(Manifest.permission.SEND_SMS)
+                            if (Build.VERSION.SDK_INT >= 33) wanted.add(Manifest.permission.POST_NOTIFICATIONS)
+                            ActivityCompat.requestPermissions(this, wanted.toTypedArray(), requestCode)
                         }
                     }
                     "sendTestSms" -> {
@@ -66,13 +72,114 @@ class MainActivity : FlutterActivity() {
                             }
                         }
                     }
+                    "gatewayState" -> response.success(gatewayState())
+                    "gatewayPair" -> pair(
+                        call.argument<String>("baseUrl") ?: "",
+                        call.argument<String>("credential") ?: "",
+                        response
+                    )
+                    "gatewayUnpair" -> {
+                        GatewayStore.setEnabled(this, false)
+                        GatewayService.stop(this)
+                        GatewayStore.unpair(this)
+                        response.success(true)
+                    }
+                    "gatewaySetEnabled" -> {
+                        val enabled = call.argument<Boolean>("enabled") == true
+                        if (enabled && (!GatewayStore.isPaired(this))) {
+                            response.error("NOT_PAIRED", "Chưa ghép cặp với VPS.", null)
+                        } else {
+                            GatewayStore.setEnabled(this, enabled)
+                            if (enabled) {
+                                GatewayStore.setAuthFailed(this, false)
+                                GatewayService.start(this)
+                            } else {
+                                GatewayService.stop(this)
+                            }
+                            response.success(true)
+                        }
+                    }
+                    "openBatterySettings" -> {
+                        try {
+                            startActivity(
+                                Intent(
+                                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                    Uri.parse("package:$packageName")
+                                )
+                            )
+                        } catch (e: Exception) {
+                            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                        }
+                        response.success(true)
+                    }
                     else -> response.notImplemented()
                 }
             }
     }
 
+    /** Verifies the credential against the VPS first; nothing is stored unless the server accepted it. */
+    private fun pair(baseUrl: String, credential: String, response: MethodChannel.Result) {
+        val url = baseUrl.trim().trimEnd('/')
+        val secret = credential.trim()
+        if (!baseUrlPattern.matches(url)) {
+            response.error("URL", "Địa chỉ VPS phải bắt đầu bằng https://", null)
+            return
+        }
+        if (!credentialPattern.matches(secret)) {
+            response.error("CREDENTIAL", "Mã ghép cặp không đúng định dạng (43 ký tự).", null)
+            return
+        }
+        Thread {
+            var code: String? = null
+            try {
+                GatewayApi(url, secret).heartbeat(versionName(), hasSmsPermission(), true)
+            } catch (e: GatewayApi.Unauthorized) {
+                code = "UNAUTHORIZED"
+            } catch (e: Exception) {
+                code = "NETWORK"
+            }
+            runOnUiThread {
+                if (code == null) {
+                    GatewayStore.setBaseUrl(this, url)
+                    GatewayStore.saveCredential(this, secret)
+                    GatewayStore.setEnabled(this, false)
+                    response.success(true)
+                } else {
+                    response.error(
+                        code,
+                        if (code == "UNAUTHORIZED") "VPS từ chối mã ghép cặp (sai hoặc đã thu hồi)."
+                        else "Không kết nối được VPS qua HTTPS.",
+                        null
+                    )
+                }
+            }
+        }.start()
+    }
+
+    private fun gatewayState(): Map<String, Any?> {
+        val power = getSystemService(POWER_SERVICE) as PowerManager
+        return GatewayStore.snapshot(this) + mapOf(
+            "serviceRunning" to GatewayService.running,
+            "smsGranted" to hasSmsPermission(),
+            "notificationsGranted" to notificationsGranted(),
+            "batteryUnrestricted" to power.isIgnoringBatteryOptimizations(packageName),
+            "appVersion" to versionName(),
+        )
+    }
+
+    private fun versionName(): String = try {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: "0"
+    } catch (e: Exception) {
+        "0"
+    }
+
     private fun hasSmsPermission() =
         ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun notificationsGranted() =
+        Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
 
     override fun onRequestPermissionsResult(

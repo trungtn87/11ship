@@ -36,13 +36,20 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, null);
     });
+    // The page is longer than the default test screen: give it a tall one so the whole list is built.
+    await tester.binding.setSurfaceSize(const Size(800, 4000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(const GatewayApp());
-    await tester.pumpAndSettle();
+    // The state poll timer never settles; pump a few frames instead of pumpAndSettle.
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
     expect(find.textContaining('không khai báo tính năng SMS'), findsOneWidget);
     final button = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Gửi một SMS thử'),
     );
     expect(button.onPressed, isNotNull);
+    // Unmount so the periodic state poll is cancelled before the test ends.
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   test('only a test text can be sent', () {
