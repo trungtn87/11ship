@@ -28,6 +28,8 @@ export const NATIVE_TEST_PACKAGES = { FOOD: 'vn.eleven.food.test', SHIP: 'vn.ele
 const ENVIRONMENT_TOKEN = /^[A-Za-z0-9._-]{1,64}$/;
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 const MAX_JSON_BYTES = 16 * 1024;
+// The official revocation list grows with the device fleet; match the refresh tool's 8 MiB bound.
+const MAX_REVOCATION_JSON_BYTES = 8 * 1024 * 1024;
 
 export interface ClientDeviceSigner {
   readonly packageName: string;
@@ -96,7 +98,7 @@ export function parseClientDevice(input: ClientDeviceConfigInput): ClientDeviceC
   }
 
   const revocationPath = input.env[CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE_ENV];
-  if (readJsonFile(revocationPath, readFile, parseRevocationShape) === undefined) {
+  if (readJsonFile(revocationPath, readFile, parseRevocationShape, MAX_REVOCATION_JSON_BYTES) === undefined) {
     invalid.push(CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE_ENV);
   }
 
@@ -134,9 +136,10 @@ function readJsonFile<T>(
   path: string | undefined,
   readFile: (path: string) => string,
   parse: (value: unknown) => T | undefined,
+  maxBytes = MAX_JSON_BYTES,
 ): T | undefined {
   const text = readText(path, readFile);
-  if (text === undefined || text.length > MAX_JSON_BYTES) {
+  if (text === undefined || Buffer.byteLength(text, 'utf8') > maxBytes) {
     return undefined;
   }
   try {
