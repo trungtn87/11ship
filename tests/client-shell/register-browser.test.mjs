@@ -635,6 +635,18 @@ describe('DISABLED_TEST: F11 registers without OTP and goes straight to F01', ()
 });
 
 describe('M01 account: login -> read/edit the name -> logout, and an invalid session (Food, stand-in backend)', () => {
+  it('opens Food on the guest home before registration; login is an explicit account action', async () => {
+    await withPage(390, async (page) => {
+      await page.goto(`${origin}/`);
+      await waitPath(page, '/');
+      assert.equal(await page.evaluate(`document.querySelector('#login-submit') === null`), true);
+      assert.equal(business(), 0);
+      await page.click('a[href="/account"]');
+      await waitPath(page, '/account');
+      await page.click('#account-login');
+      await waitPath(page, '/login');
+    });
+  });
   const submitProfile = async (page, value) => {
     await page.waitFor(`document.querySelector('#profile-save')?.disabled === false`, 'profile loaded');
     await page.fill('#full-name', value);
@@ -705,6 +717,7 @@ describe('M01 account: login -> read/edit the name -> logout, and an invalid ses
       await page.waitFor(`[...document.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Đăng xuất').length >= 2`, 'dialog');
       await clickButton(page, 'Đăng xuất');
       await page.waitFor(`!document.body.innerText.includes(${JSON.stringify(NAME)}) && [...document.querySelectorAll('button')].every((b) => b.textContent.trim() !== 'Đăng xuất')`, 'signed out');
+      await waitPath(page, '/');
       const out = backend.state.seen.filter((e) => e.url === '/v1/client-auth/logout');
       assert.equal(out.length, 1);
       assert.equal(out[0].body, '{}');
@@ -745,6 +758,18 @@ describe('M01 account on 11Ship: the same login, S05 name edit and logout with a
     rmSync(shipDir, { recursive: true, force: true });
   });
 
+  it('opens Ship on the guest home before registration; login is an explicit account action', async () => {
+    await withPage(390, async (page) => {
+      await page.goto(`${shipOrigin}/`);
+      await waitPath(page, '/');
+      assert.equal(await page.evaluate(`document.querySelector('#login-submit') === null`), true);
+      assert.equal(business(), 0);
+      await page.click('a[href="/account"]');
+      await waitPath(page, '/account');
+      await page.click('#account-login');
+      await waitPath(page, '/login');
+    });
+  });
   it('logs in as SHIP, edits the name on S05, and logs out with a confirmed revoke; sign-in grants no driver status', async () => {
     await withPage(390, async (page) => {
       await page.goto(`${shipOrigin}/login`);
@@ -773,6 +798,7 @@ describe('M01 account on 11Ship: the same login, S05 name edit and logout with a
       await page.waitFor(`[...document.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Đăng xuất').length >= 2`, 'dialog');
       await page.evaluate(`[...document.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Đăng xuất').pop().click()`);
       await page.waitFor(`!document.body.innerText.includes('Phạm Quốc Dũng') && [...document.querySelectorAll('button')].every((b) => b.textContent.trim() !== 'Đăng xuất')`, 'signed out');
+      await waitPath(page, '/');
       assert.equal(backend.state.revoked, true);
     });
   });
