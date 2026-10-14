@@ -69,21 +69,19 @@ function startActivation(host: HTMLElement): void {
 }
 
 /**
- * The public "forgot password" page of an ADMIN, in the no-OTP test build (M01-RESET): the server's mode decides (GET /config), the
- * page is ONE form and there is no code step. Closed or unknown mode: no form, nothing is sent.
+ * The public "forgot password" page of an ADMIN (M01-RESET, issue #102): the server's mode decides (GET /config); phone -> SMS code ->
+ * new password. Closed or unknown mode: no form, nothing is sent.
  */
 function startReset(host: HTMLElement): void {
   const controller = new RecoveryController(new AdminRecoveryApi(fetchTransport(window.fetch.bind(window), { base: RECOVERY_BASE })), () => window.crypto.randomUUID());
-  const nothing = (): void => undefined;
   const page = new ResetPage(host, {
     wired: true,
-    testSmsNotice: false,
-    submitTest: (phone, password, confirmation) => void controller.submit(phone, password, confirmation),
     retryConfig: () => void controller.start(),
-    sendCode: nothing,
-    verify: nothing,
-    resend: nothing,
-    setPassword: nothing,
+    sendCode: (phone) => void controller.sendCode(phone),
+    verify: (code) => void controller.verify(code),
+    // "Gửi lại mã" asks again for the number the code was requested for (the controller keeps it).
+    resend: () => void controller.resend(),
+    setPassword: (password) => void controller.setPassword(password),
     toLogin: () => {
       controller.leave();
       window.location.assign('/');

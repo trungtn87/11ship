@@ -527,6 +527,15 @@ export class ActivationController {
     }
   }
 
+  /** While the SMS gateway has not reported the code as sent: re-reads the state (a pure read, nothing is sent again). */
+  async pollDelivery(): Promise<void> {
+    const screen = this.#screen;
+    if (screen.name !== 'otp' || screen.pending || screen.otp?.delivery !== 'WAITING') {
+      return;
+    }
+    await this.#refreshFromState(this.#generation);
+  }
+
   /** After a step: GET /state and follow it, unless the step's own answer already moved the flow on. */
   async #refreshFromState(generation: number): Promise<void> {
     const result = await this.api.state();

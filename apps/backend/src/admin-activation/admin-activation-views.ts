@@ -89,6 +89,8 @@ export function stateBody(input: ViewInput, csrf: string | undefined, passwordWi
       const status = otpStatusOf(challenge, nowMs);
       const otp: Record<string, string | number | boolean | null> = { status };
       if (status === 'SUBMITTED' && challenge !== undefined) {
+        // WAITING: queued in the SMS gateway, not reported as sent yet (the code cannot be verified); SENT: the code can be entered.
+        otp.delivery = challenge.status === 'PENDING_DELIVERY' ? 'WAITING' : 'SENT';
         otp.resend_at = iso(challenge.resendNotBeforeMs);
         otp.attempts_left = Math.max(0, OTP_WRONG_LIMIT - challenge.attemptCount);
       }

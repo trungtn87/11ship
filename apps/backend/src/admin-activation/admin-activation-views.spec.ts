@@ -82,7 +82,7 @@ describe('activation state view (contract 6.3, 6.1.1)', () => {
     const none = stateBody({ attempt: attempt(), newestChallenge: undefined, invitation, nowMs: NOW }, 'csrf');
     expect(none).toMatchObject({ state: 'STARTED', otp: { status: 'NONE' }, csrf_token: 'csrf' });
     const sent = stateBody({ attempt: attempt(), newestChallenge: challenge({ attemptCount: 2 }), invitation, nowMs: NOW }, undefined);
-    expect(sent.otp).toEqual({ status: 'SUBMITTED', resend_at: new Date(NOW + 50_000).toISOString(), attempts_left: 3 });
+    expect(sent.otp).toEqual({ status: 'SUBMITTED', delivery: 'SENT', resend_at: new Date(NOW + 50_000).toISOString(), attempts_left: 3 });
     expect(sent.csrf_token).toBeUndefined();
   });
 

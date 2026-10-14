@@ -61,7 +61,12 @@ const API_PREFIXES = ['/v1/admin-auth/', '/v1/admin-activation/', '/v1/admin/'];
 const RECOVERY_ROUTES = new Map([
   ['/v1/account-recovery/config', 'GET'],
   ['/v1/account-recovery/reset-test', 'POST'],
+  // SMS_OTP flow (issue #102): request a code, then the one-use proof, then the reset itself.
+  ['/v1/account-recovery/otp', 'POST'],
+  ['/v1/account-recovery/reset', 'POST'],
 ]);
+const RECOVERY_VERIFY = /^\/v1\/account-recovery\/otp\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/verify$/;
+const recoveryMethod = (pathname) => (RECOVERY_VERIFY.test(pathname) ? 'POST' : RECOVERY_ROUTES.get(pathname));
 const PUBLIC_FORWARDED_HEADERS = new Set(['accept', 'content-type', 'content-length', 'idempotency-key']);
 const MAX_RECOVERY_REQUEST_BYTES = 8192;
 
@@ -110,8 +115,8 @@ export function createAdminWebServer({ distDir, backendUrl, key, cert, upstreamT
       response.end(JSON.stringify({ data: identity }));
       return;
     }
-    if (RECOVERY_ROUTES.has(url.pathname)) {
-      const method = RECOVERY_ROUTES.get(url.pathname);
+    if (recoveryMethod(url.pathname) !== undefined) {
+      const method = recoveryMethod(url.pathname);
       const refuse = (status, code) => {
         request.resume();
         response.writeHead(status, { ...SECURITY_HEADERS, 'content-type': 'application/json; charset=utf-8' });
