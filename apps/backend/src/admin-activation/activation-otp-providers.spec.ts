@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import { DEFAULT_ACTIVATION_LIMITS } from '../config/admin-activation-config';
 import { StartupConfigError } from '../config/startup-config-error';
-import { bindActivationOtpProvider, FakeActivationOtpProvider, TestDisplayActivationOtpProvider } from './activation-otp-providers';
+import { ACTIVATION_SMS_GATEWAY_BINDING, bindActivationOtpProvider, FakeActivationOtpProvider, TestDisplayActivationOtpProvider } from './activation-otp-providers';
 
 const PHONE = '+84901234567';
 
@@ -13,7 +13,15 @@ describe('activation OTP providers and binding', () => {
     );
   });
 
-  it('SMS has no adapter: startup is refused naming only the variable, never a fallback to a fake', () => {
+  it('SMS binds the gateway adapter marker ONLY with the SMS gateway configured, and never together with a test inbox', () => {
+    const sms = { phoneVerificationMode: 'REQUIRED', otpMode: 'SMS', providerTimeoutMs: 8000, promoteGraceMs: 10_000, limits: DEFAULT_ACTIVATION_LIMITS } as const;
+    expect(bindActivationOtpProvider(sms, { smsGatewayEnabled: true })).toBe(ACTIVATION_SMS_GATEWAY_BINDING);
+    for (const options of [{ smsGatewayEnabled: false }, {}, { smsGatewayEnabled: true, testInboxProvider: new FakeActivationOtpProvider() }]) {
+      expect(() => bindActivationOtpProvider(sms, options)).toThrow(StartupConfigError);
+    }
+  });
+
+  it('SMS without the gateway: startup is refused naming only the variable, never a fallback to a fake', () => {
     try {
       bindActivationOtpProvider({ phoneVerificationMode: 'REQUIRED', otpMode: 'SMS', providerTimeoutMs: 8000, promoteGraceMs: 10_000, limits: DEFAULT_ACTIVATION_LIMITS });
       throw new Error('expected a refusal');
