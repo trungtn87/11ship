@@ -34,6 +34,7 @@ export const COPY_ENTRIES = [
   ['scripts/staging-seed-fixtures.js', 'scripts/staging-seed-fixtures.js'],
   ['scripts/admin-auth-init-limit-config.js', 'scripts/admin-auth-init-limit-config.js'],
   ['scripts/admin-auth-bootstrap-system.js', 'scripts/admin-auth-bootstrap-system.js'],
+  ['scripts/admin-auth-recover-system.js', 'scripts/admin-auth-recover-system.js'],
   ['scripts/sms-gateway-ctl.js', 'scripts/sms-gateway-ctl.js'],
   ['scripts/android-attestation-refresh.mjs', 'scripts/android-attestation-refresh.mjs'],
   ['ops/selfhosted', 'ops/selfhosted'],
@@ -192,6 +193,7 @@ function runtimePackageJson(sha) {
       'staging:seed-fixtures': 'node scripts/staging-seed-fixtures.js',
       'admin-auth:init-limit-config': 'node scripts/admin-auth-init-limit-config.js',
       'admin-auth:bootstrap-system': 'node scripts/admin-auth-bootstrap-system.js',
+      'admin-auth:recover-system': 'node scripts/admin-auth-recover-system.js',
       'sms-gateway:ctl': 'node scripts/sms-gateway-ctl.js',
     },
   };

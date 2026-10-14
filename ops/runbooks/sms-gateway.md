@@ -43,6 +43,8 @@ There is no HTTP route that creates a device or a job, and the gateway token is 
 -> only then the challenge becomes verifiable (`PENDING`). `SmsManager` returning is not "sent": the sent-intent result decides.
 
 * A job is handed out **once**. A lost acknowledgement (lease ends) or a crash of the phone becomes `UNKNOWN`: it is **never** resent; the code stays usable (it was never shown to anybody else) and the user may ask for a new one.
+* Cleanup does not depend on the phone: a timer in the backend (every 30 s while `SMS_GATEWAY_ENABLED=true`) closes QUEUED jobs whose OTP is (almost) gone (EXPIRED) and CLAIMED jobs whose lease ended (UNKNOWN), erasing the sealed message and never resending. It is idempotent and safe with several processes.
+* On the phone a result that did not reach the server yet is kept in a durable single slot and is **never overwritten**: while it is unreported the app sends heartbeats but claims no new job, and after a restart it reports it first.
 * `FAILED` / `EXPIRED` close the challenge (`DELIVERY_FAILED`); asking again is allowed at once. A job whose OTP has (almost) expired is never handed out.
 * The message is composed only by the backend from two fixed templates (the phone refuses any other text and any recipient that is not `+84` + nine digits). The OTP is not in any log, audit row or notification, and the sealed message is erased from the row when the job is final.
 * Limits (counted before any account lookup, so they answer the same for registered and unknown numbers): per phone per hour/day, whole gateway per day, ALLOWLIST. A gateway that is offline, paused, without SMS permission or switched off gives a 503 — never a fake success.

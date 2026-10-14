@@ -225,14 +225,7 @@ export class SmsQueueService {
       if (!(await this.repository.recordHeartbeat(context, { deviceId, appVersion: null, smsPermission: device.smsPermission, paused: device.paused }))) {
         throw new AppError('GATEWAY_UNAUTHORIZED');
       }
-      const expired = await this.repository.expireQueued(context, SMS_MIN_REMAINING_SECONDS);
-      for (const owner of expired) {
-        await this.#failDelivery(context, owner);
-      }
-      const unknown = await this.repository.expireLeases(context);
-      for (const owner of unknown) {
-        await this.#markPending(context, owner);
-      }
+      await this.#closeExpired(context);
       const sendingEnabled = await this.repository.sendingEnabled(context);
       if (!sendingEnabled || device.paused === true || device.smsPermission === false) {
         return { sendingEnabled, message: undefined };
@@ -268,6 +261,27 @@ export class SmsQueueService {
         },
       };
     });
+  }
+
+  /**
+   * Closes work that can no longer be sent, WITHOUT any gateway polling (review finding B2): QUEUED jobs whose OTP is (almost) gone
+   * become EXPIRED and CLAIMED jobs whose lease ran out become UNKNOWN; in both cases the sealed message is erased and nothing is
+   * ever resent. Idempotent and safe to run from several processes at once: each row is closed by one conditional UPDATE.
+   */
+  async sweep(): Promise<{ readonly closed: number }> {
+    return this.transactions.withTransaction((context) => this.#closeExpired(context));
+  }
+
+  async #closeExpired(context: TransactionContext): Promise<{ readonly closed: number }> {
+    const expired = await this.repository.expireQueued(context, SMS_MIN_REMAINING_SECONDS);
+    for (const owner of expired) {
+      await this.#failDelivery(context, owner);
+    }
+    const unknown = await this.repository.expireLeases(context);
+    for (const owner of unknown) {
+      await this.#markPending(context, owner);
+    }
+    return { closed: expired.length + unknown.length };
   }
 
   /**

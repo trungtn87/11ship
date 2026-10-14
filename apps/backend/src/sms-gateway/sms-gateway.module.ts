@@ -7,6 +7,7 @@ import { SmsGatewayOtpProvider } from './sms-gateway-otp-provider';
 import { SmsGatewayRepository } from './sms-gateway-repository';
 import { SmsGatewayController } from './sms-gateway.controller';
 import { SmsKeyringHolder, SmsQueueService } from './sms-queue-service';
+import { SmsQueueSweeper } from './sms-queue-sweeper';
 
 /**
  * The SMS gateway (issue #102): the PostgreSQL queue, the gateway API and the real OTP adapter. It is imported by AuthModule
@@ -17,7 +18,7 @@ import { SmsKeyringHolder, SmsQueueService } from './sms-queue-service';
 @Module({
   imports: [TransactionModule],
   controllers: [SmsGatewayController],
-  providers: [SmsGatewayRepository, VerificationRepository, SmsKeyringHolder, SmsQueueService, SmsGatewayOtpProvider, SmsGatewayActivationOtpProvider, SmsGatewayAuthGuard],
+  providers: [SmsGatewayRepository, VerificationRepository, SmsKeyringHolder, SmsQueueService, SmsGatewayOtpProvider, SmsGatewayActivationOtpProvider, SmsGatewayAuthGuard, SmsQueueSweeper],
   exports: [SmsGatewayOtpProvider, SmsGatewayActivationOtpProvider, SmsQueueService],
 })
 export class SmsGatewayModule {}

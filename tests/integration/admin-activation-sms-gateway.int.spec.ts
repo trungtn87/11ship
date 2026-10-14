@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
+import { SmsQueueService } from '../../apps/backend/src/sms-gateway/sms-queue-service';
 import { runSmsGatewayCli } from '../../apps/backend/src/sms-gateway/cli/sms-gateway-cli';
 import { SmsGatewayConfig } from '../../apps/backend/src/config/sms-gateway-config';
 import { adminTestEnv } from './support/admin-fixtures';
@@ -121,11 +122,24 @@ describe('admin activation OTP through the SMS gateway (ADMIN_ACTIVATION)', () =
     const attemptId = await attemptOf(invite);
     const job = await claim();
     await app.pool.query(`UPDATE app.sms_jobs SET lease_expires_at = clock_timestamp() - interval '1 second' WHERE job_id = $1::uuid`, [job?.job_id]);
-    expect(await claim()).toBeNull();
+    // The integrated sweeper must dispatch ADMIN_ACTIVATION owners without gateway polling.
+    await app.running.app.get(SmsQueueService).sweep();
     expect((await jobs())[0]).toMatchObject({ status: 'UNKNOWN', has_payload: false });
     expect((await challengesOf(app.pool, attemptId))[0]?.status).toBe('PENDING');
     expect(await claim()).toBeNull();
     ok(await post(app, '/otp/verify', session, { code: otpOf((job as Job).text) }));
+  });
+
+  it('closes an expired queued activation without gateway polling and erases its payload', async () => {
+    const invite = await newInvite(app, system);
+    const session = await begin(app, invite);
+    ok(await post(app, '/otp/request', session), 202);
+    const attemptId = await attemptOf(invite);
+    await app.pool.query(`UPDATE app.sms_jobs SET expires_at = created_at + interval '1 millisecond' WHERE activation_challenge_id = $1::uuid`, [(await challengesOf(app.pool, attemptId))[0]?.challenge_id]);
+    await app.running.app.get(SmsQueueService).sweep();
+    expect((await jobs())[0]).toMatchObject({ status: 'EXPIRED', has_payload: false });
+    expect((await challengesOf(app.pool, attemptId))[0]?.status).toBe('DELIVERY_FAILED');
+    expect(await claim()).toBeNull();
   });
 
   it('refuses honestly when the gateway cannot take the message: nothing queued, challenge DELIVERY_FAILED, no success', async () => {
