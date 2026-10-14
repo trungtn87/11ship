@@ -253,6 +253,302 @@ class FakeShopServer {
       };
 }
 
+/// The shop-management side of the server (GET /v1/shop/me, PUT profile, PUT business-hours) with the real rules a screen depends on:
+/// an exact expected_version, an Idempotency-Key that replays the stored answer without a second effect, DISABLED = no write.
+/// [loseAnswerOnce] commits the next write and then loses the answer (the outcome the app must treat as UNKNOWN).
+class FakeShopOpsServer {
+  FakeShopOpsServer(FakeApiTransport transport) {
+    transport.routes['GET /v1/shop/me'] = (String m, String p, Map<String, String> h, String b) async {
+      reads++;
+      if (readFailure != null) {
+        return apiError(readFailure!, 'SERVICE_UNAVAILABLE');
+      }
+      return json(200, <String, Object?>{'data': view()});
+    };
+    transport.routes['GET /v1/onboarding/shop/service-areas'] = (String m, String p, Map<String, String> h, String b) async =>
+        json(200, <String, Object?>{'data': <Map<String, String>>[<String, String>{'service_area_id': areaId, 'name': 'Khu trung tâm'}, <String, String>{'service_area_id': otherAreaId, 'name': 'Khu Hòa An'}]});
+    transport.routes['PUT /v1/shop/me/profile'] = (String m, String p, Map<String, String> h, String b) => _write(h, b, 'profile', (Map<String, Object?> body) {
+          name = body['name']! as String;
+          phone = body['contact_phone']! as String;
+          zalo = body['zalo'] as String?;
+          facebook = body['facebook'] as String?;
+          address = body['address_text']! as String;
+          lat = (body['pickup_lat']! as num).toDouble();
+          lng = (body['pickup_lng']! as num).toDouble();
+          serviceAreaId = body['service_area_id']! as String;
+        });
+    transport.routes['PUT /v1/shop/me/business-hours'] = (String m, String p, Map<String, String> h, String b) => _write(h, b, 'hours', (Map<String, Object?> body) {
+          hours = <Map<String, Object?>>[for (final Object? i in body['intervals']! as List<Object?>) i! as Map<String, Object?>];
+        });
+  }
+
+  static const String areaId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  static const String otherAreaId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+  String status = 'ACTIVE';
+  String name = 'Ốc 11';
+  String phone = '+84912345678';
+  String? zalo;
+  String? facebook;
+  String address = '12 Phố Kim Đồng';
+  double? lat = 22.6657;
+  double? lng = 106.2522;
+  String serviceAreaId = areaId;
+  int version = 2;
+  List<Map<String, Object?>> hours = <Map<String, Object?>>[];
+  String reason = 'NO_BUSINESS_HOURS';
+  int? readFailure;
+  int reads = 0;
+  bool loseAnswerOnce = false;
+
+  /// Every write that reached the server and had an effect (a replay does not add one).
+  final List<Map<String, Object?>> effects = <Map<String, Object?>>[];
+
+  /// Every write request that arrived, replays included.
+  final List<String> arrived = <String>[];
+  final Map<String, ApiResponse> _byKey = <String, ApiResponse>{};
+  final Map<String, String> _bodyOfKey = <String, String>{};
+
+  Map<String, Object?> view() => <String, Object?>{
+        'shop_id': '44444444-4444-4444-8444-444444444444',
+        'name': name,
+        'contact_phone': phone,
+        'zalo': zalo,
+        'facebook': facebook,
+        'address_text': address,
+        'pickup_lat': lat,
+        'pickup_lng': lng,
+        'service_area_id': serviceAreaId,
+        'status': status,
+        'version': version,
+        'timezone': 'Asia/Ho_Chi_Minh',
+        'hours': hours,
+        'availability': <String, Object?>{'online': reason == 'ONLINE', 'reason': reason, 'evaluated_at': '2026-10-14T11:30:00.000Z'},
+      };
+
+  /// The server edits the shop by itself (another phone): version moves on.
+  void changeElsewhere({String? newName}) {
+    name = newName ?? '$name (sửa nơi khác)';
+    version++;
+  }
+
+  Future<ApiResponse> _write(Map<String, String> headers, String body, String kind, void Function(Map<String, Object?> body) apply) async {
+    final String key = headers['idempotency-key'] ?? '';
+    arrived.add('$kind:$key');
+    final ApiResponse? stored = _byKey[key];
+    if (stored != null) {
+      if (_bodyOfKey[key] != body) {
+        return apiError(409, 'IDEMPOTENCY_KEY_REUSED');
+      }
+      if (loseAnswerOnce) {
+        loseAnswerOnce = false;
+        throw const AuthFailure(AuthFailureKind.unknownOutcome);
+      }
+      return stored;
+    }
+    if (status == 'DISABLED') {
+      return apiError(403, 'SHOP_DISABLED');
+    }
+    final Map<String, Object?> parsed = jsonDecode(body) as Map<String, Object?>;
+    if (parsed['expected_version'] != version) {
+      return apiError(409, 'VERSION_CONFLICT');
+    }
+    apply(parsed);
+    version++;
+    effects.add(<String, Object?>{'kind': kind, 'key': key, ...parsed});
+    final ApiResponse response = json(200, <String, Object?>{'data': <String, Object?>{'shop_id': '44444444-4444-4444-8444-444444444444', 'version': version}});
+    _byKey[key] = response;
+    _bodyOfKey[key] = body;
+    if (loseAnswerOnce) {
+      loseAnswerOnce = false;
+      throw const AuthFailure(AuthFailureKind.unknownOutcome);
+    }
+    return response;
+  }
+}
+
+/// An in-memory [MenuApi] that follows the rules a screen depends on: exact versions, one effect per Idempotency-Key, soft delete,
+/// hidden dishes stay in the owner's list. [loseAnswerOnce] commits the next write and then loses the answer.
+class FakeMenuApi implements MenuApi {
+  FakeMenuApi({List<MenuCategory>? categories, List<MenuItem>? items})
+      : categories = categories ?? <MenuCategory>[const MenuCategory(id: 'c1', name: 'Ốc', active: true), const MenuCategory(id: 'c2', name: 'Hải sản', active: true)],
+        items = items ?? <MenuItem>[];
+
+  List<MenuCategory> categories;
+  List<MenuItem> items;
+  bool loseAnswerOnce = false;
+  bool failUploads = false;
+  bool failLoads = false;
+  int nextId = 1;
+  int loads = 0;
+  final List<String> arrived = <String>[];
+  final List<String> effects = <String>[];
+  final Map<String, MenuItem?> _byKey = <String, MenuItem?>{};
+  final Set<String> deleted = <String>{};
+
+  static MenuItem item(String id, String name, int price, String category, {bool hidden = false, int version = 1, String? image}) =>
+      MenuItem(id: id, name: name, priceVnd: price, categoryId: category, imageRef: image, imageUrl: image == null ? null : 'https://img.test/$image', hidden: hidden, version: version);
+
+  @override
+  Future<MenuSnapshot> load() async {
+    loads++;
+    if (failLoads) {
+      throw const AuthFailure(AuthFailureKind.unknownOutcome);
+    }
+    return MenuSnapshot(categories: List<MenuCategory>.of(categories), items: List<MenuItem>.of(items));
+  }
+
+  @override
+  Future<({String ref, String url})> uploadImage(PickedImage image) async {
+    arrived.add('upload');
+    if (failUploads) {
+      throw const AuthFailure(AuthFailureKind.unknownOutcome);
+    }
+    final String ref = 'img${nextId++}';
+    return (ref: ref, url: 'https://img.test/$ref');
+  }
+
+  Future<MenuItem?> _once(String key, String label, MenuItem? Function() apply) async {
+    arrived.add('$label:$key');
+    if (_byKey.containsKey(key)) {
+      if (loseAnswerOnce) {
+        loseAnswerOnce = false;
+        throw const AuthFailure(AuthFailureKind.unknownOutcome);
+      }
+      return _byKey[key];
+    }
+    final MenuItem? result = apply();
+    effects.add('$label:$key');
+    _byKey[key] = result;
+    if (loseAnswerOnce) {
+      loseAnswerOnce = false;
+      throw const AuthFailure(AuthFailureKind.unknownOutcome);
+    }
+    return result;
+  }
+
+  MenuItem _current(String id, int expectedVersion) {
+    final int index = items.indexWhere((MenuItem i) => i.id == id);
+    if (index < 0 || deleted.contains(id)) {
+      throw const AuthFailure(AuthFailureKind.badRequest, code: 'MENU_ITEM_NOT_FOUND', status: 404);
+    }
+    if (items[index].version != expectedVersion) {
+      throw const AuthFailure(AuthFailureKind.versionConflict, code: 'VERSION_CONFLICT', status: 409);
+    }
+    return items[index];
+  }
+
+  String? _urlOf(String? ref) => ref == null ? null : (items.where((MenuItem i) => i.imageRef == ref).map((MenuItem i) => i.imageUrl).firstOrNull ?? 'https://img.test/$ref');
+
+  void _replace(MenuItem next) => items = <MenuItem>[for (final MenuItem i in items) i.id == next.id ? next : i];
+
+  @override
+  Future<MenuItem> create(MenuItemInput input, {required String key}) async {
+    final MenuItem? made = await _once(key, 'create', () {
+      final MenuItem created = MenuItem(id: 'i${nextId++}', name: input.name, priceVnd: input.priceVnd, categoryId: input.categoryId, imageRef: input.imageRef, imageUrl: _urlOf(input.imageRef), hidden: false, version: 1);
+      items = <MenuItem>[...items, created];
+      return created;
+    });
+    return made!;
+  }
+
+  @override
+  Future<MenuItem> update(String id, MenuItemInput input, {required int expectedVersion, required String key}) async {
+    final MenuItem? made = await _onceChecked(key, 'update', id, expectedVersion, (MenuItem c) {
+      final MenuItem next = MenuItem(id: id, name: input.name, priceVnd: input.priceVnd, categoryId: input.categoryId, imageRef: input.imageRef, imageUrl: _urlOf(input.imageRef), hidden: c.hidden, version: c.version + 1);
+      _replace(next);
+      return next;
+    });
+    return made!;
+  }
+
+  @override
+  Future<MenuItem> setHidden(String id, bool hidden, {required int expectedVersion, required String key}) async {
+    final MenuItem? made = await _onceChecked(key, hidden ? 'hide' : 'show', id, expectedVersion, (MenuItem c) {
+      final MenuItem next = MenuItem(id: id, name: c.name, priceVnd: c.priceVnd, categoryId: c.categoryId, imageRef: c.imageRef, imageUrl: c.imageUrl, hidden: hidden, version: c.version + 1);
+      _replace(next);
+      return next;
+    });
+    return made!;
+  }
+
+  @override
+  Future<void> delete(String id, {required int expectedVersion, required String key}) async {
+    await _onceChecked(key, 'delete', id, expectedVersion, (MenuItem c) {
+      deleted.add(id);
+      items = <MenuItem>[for (final MenuItem i in items) if (i.id != id) i];
+      return null;
+    });
+  }
+
+  Future<MenuItem?> _onceChecked(String key, String label, String id, int expectedVersion, MenuItem? Function(MenuItem current) apply) async {
+    arrived.add('$label:$key');
+    if (_byKey.containsKey(key)) {
+      if (loseAnswerOnce) {
+        loseAnswerOnce = false;
+        throw const AuthFailure(AuthFailureKind.unknownOutcome);
+      }
+      return _byKey[key];
+    }
+    final MenuItem current = _current(id, expectedVersion);
+    final MenuItem? result = apply(current);
+    effects.add('$label:$key');
+    _byKey[key] = result;
+    if (loseAnswerOnce) {
+      loseAnswerOnce = false;
+      throw const AuthFailure(AuthFailureKind.unknownOutcome);
+    }
+    return result;
+  }
+
+  /// Another phone edits a dish: its version moves on.
+  void editElsewhere(String id, {String? name, bool? hidden}) {
+    final MenuItem c = items.firstWhere((MenuItem i) => i.id == id);
+    _replace(MenuItem(id: id, name: name ?? c.name, priceVnd: c.priceVnd, categoryId: c.categoryId, imageRef: c.imageRef, imageUrl: c.imageUrl, hidden: hidden ?? c.hidden, version: c.version + 1));
+  }
+
+  void deleteElsewhere(String id) {
+    deleted.add(id);
+    items = <MenuItem>[for (final MenuItem i in items) if (i.id != id) i];
+  }
+}
+
+class FakeImagePicker implements ImagePickerPort {
+  PickedImage? next = PickedImage(bytes: Uint8List.fromList(<int>[0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]), contentType: 'image/jpeg');
+  bool unreadable = false;
+  int calls = 0;
+
+  @override
+  Future<PickedImage?> pick() async {
+    calls++;
+    if (unreadable) {
+      throw const ImagePickException();
+    }
+    return next;
+  }
+}
+
+class FakePublicShopApi implements PublicShopApi {
+  FakePublicShopApi(this.view);
+
+  ShopMenuView? view;
+  String? failureCode;
+  bool offline = false;
+  int calls = 0;
+
+  @override
+  Future<ShopMenuView> load(String shopId) async {
+    calls++;
+    if (offline) {
+      throw const AuthFailure(AuthFailureKind.unknownOutcome);
+    }
+    if (failureCode != null) {
+      throw AuthFailure(AuthFailureKind.badRequest, code: failureCode, status: 404);
+    }
+    return view!;
+  }
+}
+
 /// The driver side: GET driver/me is null until the one POST; the status is whatever the test sets.
 class FakeDriverServer {
   FakeDriverServer(FakeApiTransport transport) {

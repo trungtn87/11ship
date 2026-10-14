@@ -91,7 +91,7 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
           icon: Icons.storefront_outlined,
           title: 'Quản lý cửa hàng',
           sub: 'Hồ sơ quán, vị trí và chuyển chế độ quán.',
-          onTap: () => Navigator.of(context).push(n11Route(ShopStartScreen(controller: shop))),
+          onTap: () => Navigator.of(context).push(n11Route(ShopStartScreen(controller: shop, m02: flows?.m02))),
         ),
     ],
     entries: <Widget>[

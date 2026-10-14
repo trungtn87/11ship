@@ -4,6 +4,8 @@ import '../account/account_views.dart';
 import '../account/models.dart';
 import '../account/session_controller.dart';
 import '../features.dart';
+import '../m02/m02_flows.dart';
+import '../m02/shop_manage_views.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
 import 'location.dart';
@@ -43,9 +45,12 @@ Widget _shopFailure(ShopController controller) {
 
 /// Opened from Tài khoản -> Quản lý cửa hàng. Reads the server before showing any choice; creates nothing.
 class ShopStartScreen extends StatefulWidget {
-  const ShopStartScreen({super.key, required this.controller});
+  const ShopStartScreen({super.key, required this.controller, this.m02});
 
   final ShopController controller;
+
+  /// The M02 shop-management screens, reached from Cửa hàng của tôi once the shop mode is on.
+  final M02Flows? m02;
 
   @override
   State<ShopStartScreen> createState() => _ShopStartScreenState();
@@ -55,7 +60,8 @@ class _ShopStartScreenState extends State<ShopStartScreen> {
   @override
   void initState() {
     super.initState();
-    widget.controller.load();
+    // After this frame: load() notifies at once, which must not mark a listening screen dirty while it is being built.
+    WidgetsBinding.instance.addPostFrameCallback((_) => widget.controller.load());
     widget.controller.session.addListener(_leaveWhenSignedOut);
   }
 
@@ -96,7 +102,7 @@ class _ShopStartScreenState extends State<ShopStartScreen> {
                 title: 'Bạn chưa có hồ sơ cửa hàng',
                 text: 'Tạo hồ sơ để kích hoạt vai trò Chủ quán. Bạn vẫn là khách hàng như bình thường.',
               ),
-              N11Button(key: const Key('shop-register'), label: 'Tạo hồ sơ cửa hàng', onPressed: () => Navigator.of(context).push(n11Route(ShopFormScreen(controller: controller)))),
+              N11Button(key: const Key('shop-register'), label: 'Tạo hồ sơ cửa hàng', onPressed: () => Navigator.of(context).push(n11Route(ShopFormScreen(controller: controller, m02: widget.m02)))),
             ],
             if (ready && profile != null) ...<Widget>[
               _summary(profile),
@@ -105,9 +111,9 @@ class _ShopStartScreenState extends State<ShopStartScreen> {
                   const N11Banner(kind: BannerKind.success, title: 'Đủ điều kiện để hoàn tất', text: 'Mở hồ sơ rồi bấm Hoàn tất hồ sơ. Sau đó tài khoản có thêm vai trò Chủ quán.')
                 else
                   const N11Banner(kind: BannerKind.warn, title: 'Chưa thể hoàn tất', text: 'Hồ sơ cần đủ thông tin, vị trí GPS tại quán và khu vực. Bạn tiếp tục từ dữ liệu đã lưu trên máy chủ.'),
-                N11Button(key: const Key('shop-continue'), label: 'Tiếp tục hồ sơ', onPressed: () => Navigator.of(context).push(n11Route(ShopFormScreen(controller: controller)))),
+                N11Button(key: const Key('shop-continue'), label: 'Tiếp tục hồ sơ', onPressed: () => Navigator.of(context).push(n11Route(ShopFormScreen(controller: controller, m02: widget.m02)))),
               ] else
-                N11Button(key: const Key('shop-open'), label: 'Mở Cửa hàng của tôi', onPressed: () => Navigator.of(context).push(n11Route(ShopHomeScreen(controller: controller)))),
+                N11Button(key: const Key('shop-open'), label: 'Mở Cửa hàng của tôi', onPressed: () => Navigator.of(context).push(n11Route(ShopHomeScreen(controller: controller, m02: widget.m02)))),
             ],
           ],
         );
@@ -137,9 +143,10 @@ class _ShopStartScreenState extends State<ShopStartScreen> {
 
 /// F21 + F22: the profile form and the pickup position.
 class ShopFormScreen extends StatefulWidget {
-  const ShopFormScreen({super.key, required this.controller});
+  const ShopFormScreen({super.key, required this.controller, this.m02});
 
   final ShopController controller;
+  final M02Flows? m02;
 
   @override
   State<ShopFormScreen> createState() => _ShopFormScreenState();
@@ -266,7 +273,7 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
                     : () async {
                         final bool ok = await c.complete();
                         if (ok && context.mounted) {
-                          Navigator.of(context).pushReplacement(n11Route(ShopHomeScreen(controller: c)));
+                          Navigator.of(context).pushReplacement(n11Route(ShopHomeScreen(controller: c, m02: widget.m02)));
                         }
                       },
               ),
@@ -398,9 +405,10 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
 
 /// F23: the shop as the server holds it, and the person's own switch between customer and shop mode.
 class ShopHomeScreen extends StatefulWidget {
-  const ShopHomeScreen({super.key, required this.controller});
+  const ShopHomeScreen({super.key, required this.controller, this.m02});
 
   final ShopController controller;
+  final M02Flows? m02;
 
   @override
   State<ShopHomeScreen> createState() => _ShopHomeScreenState();
@@ -410,7 +418,8 @@ class _ShopHomeScreenState extends State<ShopHomeScreen> {
   @override
   void initState() {
     super.initState();
-    widget.controller.load();
+    // After this frame: load() notifies at once, which must not mark a listening screen dirty while it is being built.
+    WidgetsBinding.instance.addPostFrameCallback((_) => widget.controller.load());
     widget.controller.session.addListener(_leaveWhenSignedOut);
   }
 
@@ -452,7 +461,6 @@ class _ShopHomeScreenState extends State<ShopHomeScreen> {
                   ('Địa chỉ', profile.addressText),
                   ('GPS', profile.hasLocation ? 'Đã có' : 'Chưa có'),
                   ('Vai trò', canShop ? 'Khách hàng · Chủ quán' : 'Khách hàng'),
-                  ('Nhận đơn', 'Chưa nhận đơn'),
                 ],
               ),
               if (profile.status == 'DISABLED') const N11Banner(kind: BannerKind.warn, title: 'Cửa hàng đang bị khóa', text: 'Chỉ xem. Liên hệ hỗ trợ để biết thêm.'),
@@ -463,7 +471,16 @@ class _ShopHomeScreenState extends State<ShopHomeScreen> {
               if (active == 'SHOP_OWNER') const Center(child: N11Chip('Đang ở chế độ cửa hàng', kind: ChipKind.dark)),
               if (!canShop) const ReasonNote('Chế độ cửa hàng chỉ mở khi máy chủ xác nhận cửa hàng đang hoạt động.'),
               N11List(children: <Widget>[
-                N11ListItem(icon: Icons.restaurant_menu, title: 'Menu', sub: kNotOnAndroidReason, soon: true),
+                if (widget.m02 != null)
+                  N11ListItem(
+                    key: const Key('open-manage'),
+                    icon: Icons.storefront_outlined,
+                    title: 'Quản lý hoạt động quán',
+                    sub: active == 'SHOP_OWNER' ? 'Hồ sơ, giờ hoạt động, thực đơn, xem trước' : 'Chuyển sang chế độ cửa hàng để quản lý.',
+                    onTap: active == 'SHOP_OWNER' && profile.status == 'ACTIVE' ? () => Navigator.of(context).push(n11Route(ShopManageScreen(flows: widget.m02!))) : null,
+                  )
+                else
+                  N11ListItem(icon: Icons.restaurant_menu, title: 'Menu', sub: kNotOnAndroidReason, soon: true),
                 N11ListItem(icon: Icons.receipt_long_outlined, title: 'Đơn hàng', sub: kNotOnAndroidReason, soon: true),
                 N11ListItem(icon: Icons.bar_chart_outlined, title: 'Doanh thu', sub: kNotOnAndroidReason, soon: true),
               ]),
