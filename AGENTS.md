@@ -2,9 +2,16 @@
 
 Read [the delivery workflow](docs/process/11ship-delivery-workflow.md). Owner simplified it on 2026-10-12; its proportional testing rules supersede conflicting process requirements in older task/handoff documents. Approved business/schema/API requirements remain in force.
 
-ChatGPT: business/UI design, task handoff and independent review. Claude: product code, tests, migrations, build/deploy configuration and test builds. Owner: design approval, local/device acceptance and module closure.
+ChatGPT: business/UI design, task handoff and independent review. Claude Code Cloud: default implementation agent (code, tests, migrations, build/deploy configuration and test builds). Codex Cloud: scoped implementation or focused review only when explicitly assigned; implementation follows the same scope and checks as Claude. Owner: design approval, local/device acceptance and module closure.
 
-ChatGPT may change documentation and perform read-only review/checks, but must not implement or repair product code in place of Claude without a specific Owner exception.
+ChatGPT may change documentation and perform read-only review/checks, but must not implement or repair product code in place of the assigned agent without a specific Owner exception.
+
+## Two-cloud-agent handoff — Owner decision 2026-10-13
+
+- One lead agent per task/branch/PR. Claude is the default coder; Codex receives a distinct non-overlapping coding task or a focused review only when assigned. Do not duplicate implementation, routine review or tests across agents.
+- Handoff only: **agent + desired outcome + existing work/PR/SHA (if known) + missing scope + exact reference sections/file entry points + necessary checks**. For M01, use the existing workstream map. Don't reread unrelated documents or recreate finished code.
+- Check latest `main` and related in-progress PR/branch before coding. Continue the existing branch/PR when assigned follow-up work; never silently overwrite the other agent's changes. Parallel tasks must have non-overlapping ownership.
+- Return only **PR/commit SHA + what changed + relevant check evidence + blockers + how Owner can try it**. Use existing CI evidence; no extra audit/test pass without a named risk. Deployment and module closure still require their existing approvals.
 
 Use the short task checklist for small changes; use the per-app acceptance checklist once at module/release level. Include only affected apps. N/A needs a reason, not a separate Owner approval. Do not repeat previously approved design unless behavior changes.
 
