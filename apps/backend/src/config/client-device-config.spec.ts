@@ -35,6 +35,33 @@ const env = (overrides: Record<string, string | undefined> = {}): Record<string,
 });
 
 describe('parseClientDevice', () => {
+  it('accepts the full fleet revocation list above 16 KiB without dropping revoked serials', () => {
+    const entries = Object.fromEntries(Array.from({ length: 1759 }, (_, i) => [
+      (0x100000000000 + i).toString(16), { status: 'REVOKED' },
+    ]));
+    const snapshot = { fetched_at: '2026-10-14T10:26:30.514Z', entries };
+    const json = JSON.stringify(snapshot);
+    expect(Buffer.byteLength(json)).toBeGreaterThan(16 * 1024);
+    const result = parseClientDevice({
+      appEnv: 'production', host: '127.0.0.1', env: env(), readFile: files({ '/revocation.json': json }),
+    });
+    expect(result.ok && result.enabled).toBe(true);
+    expect(parseRevocationSnapshot(snapshot)?.revokedSerials).toEqual(new Set(Object.keys(entries)));
+  });
+
+  it('still refuses oversized revocation and signer files by variable name', () => {
+    const readFile = files();
+    for (const [file, name, size] of [
+      ['/revocation.json', 'CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE', 8 * 1024 * 1024],
+      ['/signers.json', 'CLIENT_DEVICE_ALLOWED_SIGNERS_FILE', 16 * 1024],
+    ] as const) {
+      const oversized = readFile(file) + ' '.repeat(size);
+      expect(parseClientDevice({
+        appEnv: 'production', host: '127.0.0.1', env: env(), readFile: files({ [file]: oversized }),
+      })).toEqual({ ok: false, invalid: [name] });
+    }
+  });
+
   it('is off by default and when explicitly false, and reads no file', () => {
     expect(parseClientDevice({ appEnv: 'test', host: '127.0.0.1', env: {} })).toEqual({ ok: true, enabled: false, config: undefined });
     expect(parseClientDevice({ appEnv: 'production', host: '0.0.0.0', env: { CLIENT_AUTH_ANDROID_ENABLED: 'false' } })).toEqual({ ok: true, enabled: false, config: undefined });
