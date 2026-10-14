@@ -12,11 +12,15 @@ import { isLoopbackHost } from '../test-sms/test-sms-config';
 //   CLIENT_AUTH_TERMS_VERSION    one consent version token, grammar [A-Za-z0-9._-] 1..64 (the user_consents CHECK)
 //   CLIENT_AUTH_PRIVACY_VERSION  the same grammar
 //
+// Staging is a separate explicit opt-in with real SMS, REQUIRED phone verification, no fixtures and a loopback bind.
+// The Owner must approve the actual consent versions before setting CLIENT_AUTH_STAGING_CONSENT_APPROVED=true.
+// Test/local consent identifiers may not be reused in staging; production remains closed.
 // Both unset: the registration endpoint stays closed (a first execution answers SERVICE_UNAVAILABLE before any row is
 // written). Exactly one set, or a bad token: startup is refused, naming only the variable(s).
 
 export const CLIENT_AUTH_TERMS_VERSION_ENV = 'CLIENT_AUTH_TERMS_VERSION';
 export const CLIENT_AUTH_PRIVACY_VERSION_ENV = 'CLIENT_AUTH_PRIVACY_VERSION';
+export const CLIENT_AUTH_STAGING_CONSENT_APPROVED_ENV = 'CLIENT_AUTH_STAGING_CONSENT_APPROVED';
 
 /** Same grammar as the schema CHECKs user_consents_terms_version_ck / user_consents_privacy_version_ck. */
 const CONSENT_VERSION_TOKEN = /^[A-Za-z0-9._-]{1,64}$/;
@@ -35,17 +39,39 @@ export interface ClientAuthConfigInput {
   readonly appEnv: string | undefined;
   readonly termsRaw: string | undefined;
   readonly privacyRaw: string | undefined;
+  readonly host?: string;
+  readonly stagingConsentApprovedRaw?: string;
+  readonly smsGatewayEnabled?: boolean;
+  readonly phoneVerificationMode?: string;
+  readonly stagingFixturesEnabled?: boolean;
 }
 
 export function parseClientAuth(input: ClientAuthConfigInput): ClientAuthConfigResult {
   const termsSet = input.termsRaw !== undefined;
   const privacySet = input.privacyRaw !== undefined;
-  if (!termsSet && !privacySet) {
-    return { ok: true, config: undefined };
+  const approval = input.stagingConsentApprovedRaw;
+  if (approval !== undefined && approval !== 'true' && approval !== 'false') {
+    return { ok: false, invalid: [CLIENT_AUTH_STAGING_CONSENT_APPROVED_ENV] };
+  }
+  if (approval === 'true' && input.appEnv !== 'staging') {
+    return { ok: false, invalid: [CLIENT_AUTH_STAGING_CONSENT_APPROVED_ENV] };
   }
 
-  // The test pair exists for local development and test only. An invalid APP_ENV is already reported by its own name.
-  if (input.appEnv !== undefined && input.appEnv !== 'development' && input.appEnv !== 'test') {
+  const stagingOptIn = approval === 'true';
+  if (!termsSet && !privacySet) {
+    return stagingOptIn
+      ? { ok: false, invalid: [CLIENT_AUTH_TERMS_VERSION_ENV, CLIENT_AUTH_PRIVACY_VERSION_ENV] }
+      : { ok: true, config: undefined };
+  }
+
+  const stagingAllowed = input.appEnv === 'staging'
+    && stagingOptIn
+    && input.host !== undefined
+    && isLoopbackHost(input.host)
+    && input.smsGatewayEnabled === true
+    && input.phoneVerificationMode === 'REQUIRED'
+    && input.stagingFixturesEnabled !== true;
+  if (input.appEnv !== undefined && input.appEnv !== 'development' && input.appEnv !== 'test' && !stagingAllowed) {
     const invalid: string[] = [];
     if (termsSet) {
       invalid.push(CLIENT_AUTH_TERMS_VERSION_ENV);
@@ -53,14 +79,19 @@ export function parseClientAuth(input: ClientAuthConfigInput): ClientAuthConfigR
     if (privacySet) {
       invalid.push(CLIENT_AUTH_PRIVACY_VERSION_ENV);
     }
+    if (stagingOptIn) {
+      invalid.push(CLIENT_AUTH_STAGING_CONSENT_APPROVED_ENV);
+    }
     return { ok: false, invalid };
   }
 
   const invalid: string[] = [];
-  if (!termsSet || !CONSENT_VERSION_TOKEN.test(input.termsRaw ?? '')) {
+  if (!termsSet || !CONSENT_VERSION_TOKEN.test(input.termsRaw ?? '') ||
+      (stagingAllowed && /^(?:test|local)[._-]/i.test(input.termsRaw ?? ''))) {
     invalid.push(CLIENT_AUTH_TERMS_VERSION_ENV);
   }
-  if (!privacySet || !CONSENT_VERSION_TOKEN.test(input.privacyRaw ?? '')) {
+  if (!privacySet || !CONSENT_VERSION_TOKEN.test(input.privacyRaw ?? '') ||
+      (stagingAllowed && /^(?:test|local)[._-]/i.test(input.privacyRaw ?? ''))) {
     invalid.push(CLIENT_AUTH_PRIVACY_VERSION_ENV);
   }
   if (invalid.length > 0) {
