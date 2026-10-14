@@ -21,3 +21,4 @@ build/
 # Local HTTPS certificates and keys (M00.05): never committed, wherever they are written.
 *.pem
 *.key
+artifact-out*/
