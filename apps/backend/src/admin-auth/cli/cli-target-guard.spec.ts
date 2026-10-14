@@ -84,6 +84,9 @@ describe('resolveLocalRecoveryTarget (M01-RESET)', () => {
     const result = resolveLocalRecoveryTarget({ ...base, ...override });
     expect(result.ok).toBe(false);
     expect(JSON.stringify(result)).not.toContain('db.example.test');
+  });
+});
+
 // M00-VPS-01 package A: DB_REMOTE_TARGET selects the target of the staging operator commands. Not set means SUPABASE
 // (the tests above); SELF_HOSTED is the one PostgreSQL 17 on the same machine. tests/deploy/db-remote-target-parity.test.mjs
 // runs a wider case matrix through this guard and the JavaScript operator commands and requires the same verdicts.
