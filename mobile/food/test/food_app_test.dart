@@ -122,6 +122,7 @@ void main() {
     expect(registerBody, isNot(contains('verification_token')));
     expect(registerBody, contains('"platform":"ANDROID"'));
     expect(registerBody, contains('"app":"FOOD"'));
+    await tester.ensureVisible(find.byKey(const Key('open-logout')));
     await tester.tap(find.byKey(const Key('open-logout')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('logout-confirm')));

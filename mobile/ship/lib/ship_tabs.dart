@@ -45,14 +45,26 @@ Widget _home(SessionController session, AppFlows? flows) {
   return vstack(<Widget>[
     const N11Banner(kind: BannerKind.warn, title: kTestNoticeTitle, text: kTestNoticeText),
     _guestPrompt(session, 'Đăng nhập để theo dõi tài khoản của bạn. Gửi hồ sơ xế trong tab Tài khoản.', flows),
-    // Online is only ever possible for an approved, eligible driver; that state does not exist here. Always unavailable.
-    N11Card(
+    // Online is only ever possible for an approved, eligible driver; that state does not exist here. Always unavailable: the block of
+    // the design (s-home-off) with the switch locked and its reason written under it.
+    Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: N11Colors.line), borderRadius: BorderRadius.circular(18)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
             children: <Widget>[
-              const Expanded(child: Text('Sẵn sàng nhận đơn', style: N11Text.bodyStrong)),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text('Đang ngoại tuyến', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: N11Colors.black)),
+                    SizedBox(height: 3),
+                    Text('Sẵn sàng nhận đơn', style: N11Text.caption),
+                  ],
+                ),
+              ),
               Semantics(
                 label: 'Sẵn sàng nhận đơn',
                 toggled: false,
@@ -62,7 +74,7 @@ Widget _home(SessionController session, AppFlows? flows) {
               ),
             ],
           ),
-          const SizedBox(height: N11Space.gap2),
+          const SizedBox(height: N11Space.gap3),
           const ReasonNote(kOnlineReason),
         ],
       ),
@@ -130,7 +142,7 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
     session: session,
     brand: shipBrand,
     actions: actions,
-    registerLabel: 'Đăng ký',
+    signedInTitle: 'Tài xế',
     reset: flows?.reset,
     signedInEntries: <Widget>[
       // S12/S13: the driver profile, connected to the server. Sending it never receives orders or changes the context.
