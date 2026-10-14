@@ -13,6 +13,7 @@ import {
   CLIENT_AUTH_PHONE_VERIFICATION_MODE_ENV,
   CLIENT_AUTH_PRIVACY_VERSION_ENV,
   CLIENT_AUTH_TERMS_VERSION_ENV,
+  CLIENT_AUTH_STAGING_CONSENT_APPROVED_ENV,
   ClientAuthConfig,
   ClientPhoneVerificationMode,
   parseClientAuth,
@@ -182,8 +183,8 @@ export interface AppConfig {
    */
   smsGateway?: SmsGatewayConfig;
   /**
-   * Native Android binding (M01-ANDROID). Present ONLY when CLIENT_AUTH_ANDROID_ENABLED=true (development/test on a loopback bind)
-   * and the four CLIENT_DEVICE_* trust inputs are valid. Absent everywhere else: every ANDROID request then stays a 503.
+   * Native Android binding (M01-ANDROID). Present only with a loopback bind: development/test or staging with real SMS
+   * and REQUIRED OTP, and valid CLIENT_DEVICE_* trust inputs. Production remains closed by this rollout.
    */
   clientAndroid?: ClientDeviceConfig;
 }
@@ -650,11 +651,17 @@ export function loadConfig(env: EnvSource): ConfigResult {
     testInboxResult.invalid.forEach(flag);
   }
 
-  // Client registration consent pair (M01.03): both or neither, local development/test only. Names only, never a value.
+  // Staging registration requires explicitly approved consent, real SMS, REQUIRED OTP and no fixture mode.
+  // Inputs are validated again in their own configurations; no raw flag grants a request-level bypass.
   const clientAuthResult = parseClientAuth({
     appEnv,
+    host,
     termsRaw: env[CLIENT_AUTH_TERMS_VERSION_ENV],
     privacyRaw: env[CLIENT_AUTH_PRIVACY_VERSION_ENV],
+    stagingConsentApprovedRaw: env[CLIENT_AUTH_STAGING_CONSENT_APPROVED_ENV],
+    smsGatewayEnabled: env[SMS_GATEWAY_ENABLED_ENV] === 'true',
+    phoneVerificationMode: env[CLIENT_AUTH_PHONE_VERIFICATION_MODE_ENV] ?? 'REQUIRED',
+    stagingFixturesEnabled: env.AUTH_STAGING_FIXTURES_ENABLED === 'true',
   });
   let clientAuth: ClientAuthConfig | undefined;
   if (clientAuthResult.ok) {
@@ -703,7 +710,7 @@ export function loadConfig(env: EnvSource): ConfigResult {
     recoveryResult.invalid.forEach(flag);
   }
 
-  // Native Android binding (M01-ANDROID): off by default; on only for development/test on loopback with the trust inputs valid.
+  // Native Android binding: off by default; staging needs loopback, real SMS and all native trust inputs.
   const clientDeviceResult = parseClientDevice({ appEnv, host, env });
   let clientAndroid: ClientDeviceConfig | undefined;
   if (clientDeviceResult.ok) {
