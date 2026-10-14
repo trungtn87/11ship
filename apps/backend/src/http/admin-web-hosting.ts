@@ -109,13 +109,10 @@ function pathOf(target: string | undefined): string | undefined {
 
 /**
  * Installs the hosting. Called by main.ts only when loadConfig produced `adminWebHosting` (ADMIN_WEB_STAGING_ENABLED=true
- * on staging with the administration web authentication enabled). The second, independent barrier: production is refused
- * here as well, whatever was passed in. A missing build stops startup instead of serving a broken page.
+ * on staging or production with the administration web authentication enabled). Configuration validation is the environment
+ * gate; this adapter independently requires a complete build and stops startup instead of serving a broken page.
  */
 export function installAdminWebHosting(app: INestApplication, options: AdminWebHostingOptions): void {
-  if (options.appEnv === 'production') {
-    throw new StartupConfigError([ADMIN_WEB_STAGING_ENABLED_VARIABLE]);
-  }
   const root = resolve(options.distDir ?? join(process.cwd(), 'apps', 'admin-web', 'dist'));
   if (!existsSync(join(root, 'index.html')) || !existsSync(join(root, 'js', 'dom', 'main.js'))) {
     // `npm run build:admin-web` is part of the staging build command; without it there is nothing to serve.

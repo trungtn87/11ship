@@ -78,7 +78,7 @@ describe('administration web hosting: what a path may resolve to', () => {
 describe('installAdminWebHosting: fail closed', () => {
   const missingBuild = join(tmpdir(), '11ship-admin-build-that-does-not-exist');
 
-  it('refuses production whatever else was passed, before touching the application', () => {
+  it('accepts production at install time but still refuses a missing build', () => {
     const app = { use: jest.fn() } as unknown as INestApplication;
     expect(() => installAdminWebHosting(app, { appEnv: 'production', distDir: missingBuild })).toThrow(StartupConfigError);
     expect(app.use).not.toHaveBeenCalled();
@@ -110,7 +110,10 @@ describe('installAdminWebHosting: fail closed', () => {
 });
 
 describe('installAdminWebHosting: serving', () => {
-  async function withServer(run: (origin: string, nextCalls: string[], dir: string) => Promise<void>): Promise<void> {
+  async function withServer(
+    run: (origin: string, nextCalls: string[], dir: string) => Promise<void>,
+    appEnv = 'staging',
+  ): Promise<void> {
     const dir = mkdtempSync(join(tmpdir(), '11ship-admin-assets-'));
     mkdirSync(join(dir, 'js', 'dom'), { recursive: true });
     mkdirSync(join(dir, 'js', 'core'), { recursive: true });
@@ -141,7 +144,7 @@ describe('installAdminWebHosting: serving', () => {
       });
     });
     try {
-      installAdminWebHosting(app, { appEnv: 'staging', distDir: dir });
+      installAdminWebHosting(app, { appEnv, distDir: dir });
       await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
       const port = (server.address() as AddressInfo).port;
       await run(`http://127.0.0.1:${port}`, nextCalls, dir);
@@ -189,6 +192,15 @@ describe('installAdminWebHosting: serving', () => {
       expect(head.status).toBe(200);
       expect(await head.text()).toBe('');
     });
+  });
+
+  it('serves the same secured page in the approved production profile', async () => {
+    await withServer(async (origin) => {
+      const page = await fetch(`${origin}/`);
+      expect(page.status).toBe(200);
+      expect(page.headers.get('content-security-policy')).toContain("default-src 'none'");
+      expect(await page.text()).toContain('11Ship test');
+    }, 'production');
   });
 
   it('opens the same page on the frontend routes (activation link, deep link, reload), with the same headers', async () => {
