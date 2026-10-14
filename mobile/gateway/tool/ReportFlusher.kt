@@ -10,8 +10,15 @@ interface PendingStore {
     fun clear()
 }
 
-/** The server answered definitively (404/409): it already holds a final result for this attempt, nothing more can be done. */
-class AckRejected : Exception("rejected")
+/** The server answered /ack with an HTTP status. Only [isTerminalAckStatus] statuses end the report; anything else is kept and retried. */
+class AckHttpError(val status: Int) : Exception("ack http $status")
+
+/**
+ * The only statuses that PROVE the server holds a final answer for this attempt, from the API contract: 404 GATEWAY_JOB_NOT_FOUND
+ * (unknown job/attempt/device) and 409 GATEWAY_ACK_CONFLICT (a different final result already recorded). 408/429 (throttling),
+ * 403 (a proxy/WAF may answer it for a while), 400, 401 and every 5xx or I/O error are NOT terminal: the report is kept and retried.
+ */
+fun isTerminalAckStatus(status: Int): Boolean = status == 404 || status == 409
 
 /**
  * Keeps the "report before anything else" rule of the gateway in ONE place that has no Android dependency (so it is unit tested):
@@ -35,6 +42,10 @@ class ReportFlusher(
         store.save(report)
     }
 
+    /** Why the last flush left the report pending, as a short code for the status line ("ACK_HTTP_429", "ACK_PENDING"); null if delivered. */
+    var lastFailureCode: String? = null
+        private set
+
     /** Tries to deliver the stored report (a few attempts, backing off). True when nothing is pending afterwards. */
     fun flush(): Boolean {
         val report = store.pending() ?: return true
@@ -43,14 +54,20 @@ class ReportFlusher(
             try {
                 ack(report)
                 store.clear()
+                lastFailureCode = null
                 return true
-            } catch (e: AckRejected) {
-                store.clear()
-                return true
+            } catch (e: AckHttpError) {
+                if (isTerminalAckStatus(e.status)) {
+                    store.clear()
+                    lastFailureCode = null
+                    return true
+                }
+                lastFailureCode = "ACK_HTTP_${e.status}"
             } catch (e: Exception) {
-                if (attempt == 4 || !sleep(wait)) return false
-                wait *= 2
+                lastFailureCode = "ACK_PENDING"
             }
+            if (attempt == 4 || !sleep(wait)) return false
+            wait *= 2
         }
         return false
     }

@@ -158,7 +158,9 @@ class GatewayService : Service() {
                 try {
                     client.ack(report.jobId, report.attemptId, report.result, report.errorCode)
                 } catch (e: GatewayApi.Rejected) {
-                    throw AckRejected()
+                    throw AckHttpError(e.status)
+                } catch (e: GatewayApi.ServerError) {
+                    throw AckHttpError(e.status)
                 }
             },
             sleep = { seconds -> sleepSeconds(seconds) },
@@ -187,7 +189,8 @@ class GatewayService : Service() {
                     // A result that did not reach the server yet comes first: no new job is claimed (so the single pending slot
                     // can never be overwritten and lose a sent SMS) until the server has acknowledged it.
                     if (!flusher.mayClaim()) {
-                        GatewayStore.recordConnection(this, true, null, null)
+                        // The report stays stored and visible: the code says why (for example ACK_HTTP_429 or ACK_HTTP_403).
+                        GatewayStore.recordConnection(this, false, flusher.lastFailureCode ?: "ACK_PENDING", null)
                         setStatus("Chờ báo kết quả gửi về VPS, tạm chưa nhận việc mới")
                         if (!sleepSeconds(pollSeconds)) break
                         continue

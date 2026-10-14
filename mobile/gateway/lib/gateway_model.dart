@@ -65,7 +65,11 @@ class GatewayState {
     if (authFailed) return 'VPS từ chối mã ghép cặp. Ghép cặp lại bằng mã mới.';
     if (!enabled) return 'Gateway đang tạm dừng.';
     if (!serviceRunning) return 'Dịch vụ nền chưa chạy. Bấm "Bật gateway".';
-    if (lastError != null) return 'Mất kết nối VPS: ${describeError(lastError)}';
+    final String? error = lastError;
+    if (error != null && error.startsWith('ACK_')) {
+      return 'Đang chờ báo kết quả gửi SMS trước đó về VPS (${describeError(error)}). Chưa nhận việc mới.';
+    }
+    if (error != null) return 'Mất kết nối VPS: ${describeError(error)}';
     if (lastOkMs == null) return 'Đang kết nối VPS...';
     if (serverSendingEnabled == false) return 'Đã kết nối VPS, nhưng VPS đang tắt gửi SMS.';
     return 'Đã kết nối VPS.';
@@ -114,9 +118,14 @@ String describeError(String? code) {
       return 'chưa ghép cặp';
     case 'START_BLOCKED':
       return 'Android không cho tự khởi động';
+    case 'ACK_PENDING':
+      return 'chưa báo được';
     case null:
       return '';
     default:
+      if (code.startsWith('ACK_HTTP_')) {
+        return 'VPS trả mã ${code.substring(9)}';
+      }
       return code.startsWith('SERVER_') ? 'VPS lỗi (${code.substring(7)})' : 'lỗi ($code)';
   }
 }

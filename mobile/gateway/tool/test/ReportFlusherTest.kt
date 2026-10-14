@@ -86,7 +86,7 @@ class ReportFlusherTest {
     @Test
     fun aDefiniteRefusalClearsTheSlotSoTheGatewayIsNotStuckForever() {
         val store = MemoryStore()
-        val flusher = ReportFlusher(store, { throw AckRejected() }, { true })
+        val flusher = ReportFlusher(store, { throw AckHttpError(404) }, { true })
         flusher.record(report("job-1"))
         assertTrue(flusher.mayClaim())
         assertNull(store.slot)
@@ -105,5 +105,60 @@ class ReportFlusherTest {
     fun nothingPendingMeansWorkMayBeClaimed() {
         val flusher = ReportFlusher(MemoryStore(), { fail("nothing to deliver") }, { true })
         assertTrue(flusher.mayClaim())
+    }
+
+    @Test
+    fun onlyProvenTerminalStatusesEndTheReport() {
+        assertTrue(isTerminalAckStatus(404))
+        assertTrue(isTerminalAckStatus(409))
+        for (status in listOf(400, 401, 403, 408, 410, 422, 429, 500, 502, 503, 504)) {
+            assertFalse("HTTP $status is not proven terminal", isTerminalAckStatus(status))
+        }
+    }
+
+    @Test
+    fun throttlingOnAckKeepsTheResultAcrossARestartAndDeliversItAfterRecovery() {
+        val store = MemoryStore()
+        val slow = ReportFlusher(store, { throw AckHttpError(429) }, { true })
+        slow.record(report("job-1", "SENT"))
+        assertFalse("429 must not drop the result", slow.mayClaim())
+        assertEquals("job-1", store.slot?.jobId)
+        assertEquals("ACK_HTTP_429", slow.lastFailureCode)
+
+        // The process restarts while the server is still throttling: nothing is lost and nothing new is claimed.
+        val stillThrottled = ReportFlusher(store, { throw AckHttpError(429) }, { true })
+        assertFalse(stillThrottled.mayClaim())
+        assertEquals("SENT", store.slot?.result)
+
+        // Server recovered.
+        val delivered = ArrayList<PendingReport>()
+        val recovered = ReportFlusher(store, { delivered.add(it) }, { true })
+        assertTrue(recovered.mayClaim())
+        assertEquals(listOf("job-1"), delivered.map { it.jobId })
+        assertNull(store.slot)
+        assertNull(recovered.lastFailureCode)
+    }
+
+    @Test
+    fun everyNonTerminalStatusKeepsTheResultAndSaysWhy() {
+        for (status in listOf(400, 401, 403, 408, 429, 500, 503)) {
+            val store = MemoryStore()
+            val flusher = ReportFlusher(store, { throw AckHttpError(status) }, { true })
+            flusher.record(report("job-$status"))
+            assertFalse("HTTP $status", flusher.mayClaim())
+            assertEquals("HTTP $status", "job-$status", store.slot?.jobId)
+            assertEquals("ACK_HTTP_$status", flusher.lastFailureCode)
+        }
+    }
+
+    @Test
+    fun terminalStatusesClearTheSlot() {
+        for (status in listOf(404, 409)) {
+            val store = MemoryStore()
+            val flusher = ReportFlusher(store, { throw AckHttpError(status) }, { true })
+            flusher.record(report("job-1"))
+            assertTrue(flusher.mayClaim())
+            assertNull(store.slot)
+        }
     }
 }
