@@ -171,3 +171,46 @@ describe('loadConfig phone verification mode', () => {
     }
   });
 });
+
+describe('M01 VPS staging registration consent gate', () => {
+  const staged = {
+    appEnv: 'staging', host: '127.0.0.1',
+    smsGatewayEnabled: true,
+    phoneVerificationMode: 'REQUIRED',
+    stagingFixturesEnabled: false,
+    stagingConsentApprovedRaw: 'true',
+    termsRaw: 'staging-terms-v1',
+    privacyRaw: 'staging-privacy-v1',
+  };
+
+  it('accepts a separate approved staging pair only with real SMS and REQUIRED OTP', () => {
+    expect(parseClientAuth(staged)).toEqual({
+      ok: true,
+      config: { termsVersion: 'staging-terms-v1', privacyVersion: 'staging-privacy-v1' },
+    });
+  });
+
+  it('rejects missing approval, missing versions, test consent and every weaker transport/OTP setting', () => {
+    const rejected = [
+      { ...staged, stagingConsentApprovedRaw: undefined },
+      { ...staged, stagingConsentApprovedRaw: 'yes' },
+      { ...staged, termsRaw: undefined },
+      { ...staged, privacyRaw: undefined },
+      { ...staged, termsRaw: TERMS, privacyRaw: PRIVACY },
+      { ...staged, smsGatewayEnabled: false },
+      { ...staged, phoneVerificationMode: 'DISABLED_TEST' },
+      { ...staged, stagingFixturesEnabled: true },
+      { ...staged, host: '0.0.0.0' },
+      { ...staged, appEnv: 'production' },
+    ];
+    for (const candidate of rejected) {
+      expect(parseClientAuth(candidate).ok).toBe(false);
+    }
+  });
+
+  it('keeps the registration endpoint closed when staging versions and approval are absent', () => {
+    expect(parseClientAuth({ appEnv: 'staging', termsRaw: undefined, privacyRaw: undefined })).toEqual({
+      ok: true, config: undefined,
+    });
+  });
+});
