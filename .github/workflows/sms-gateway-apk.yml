@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - 'mobile/gateway/**'
+      - 'config/endpoints.json'
       - '.github/workflows/sms-gateway-apk.yml'
 
 permissions:
@@ -55,8 +56,11 @@ jobs:
 
       - name: Build APK
         run: |
+          set -euo pipefail
+          # The pairing screen is pre-filled with the server address of config/endpoints.json (the one central place).
+          api="$(jq -er .api_origin config/endpoints.json)"
           cd mobile/gateway
-          flutter build apk --release --build-name 0.2.0 --build-number ${{ github.run_number }}
+          flutter build apk --release --build-name 0.2.0 --build-number ${{ github.run_number }} --dart-define=API_BASE_URL="$api"
 
       - name: Sign and verify
         run: |

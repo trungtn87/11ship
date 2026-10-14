@@ -150,7 +150,7 @@ Map<String, Object?> identityJson({String name = 'Nguyễn Văn An', int version
     };
 
 /// Server doubles for the device protocol and the account endpoints. [registration] is the mode GET /config answers.
-void installAccountRoutes(FakeApiTransport transport, {String registration = 'DISABLED_TEST', String token = 'fake-access-token-0123456789'}) {
+void installAccountRoutes(FakeApiTransport transport, {String registration = 'REQUIRED', String token = 'fake-access-token-0123456789'}) {
   int challenge = 0;
   transport.routes['GET /v1/client-auth/config'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'registration_verification': registration}});
   transport.routes['POST /v1/client-auth/device/challenges'] = (String m, String p, Map<String, String> h, String b) async {
@@ -278,9 +278,8 @@ class FakeDriverServer {
 }
 
 /// The public reset routes. [mode] is what GET config answers.
-void installResetRoutes(FakeApiTransport transport, {String mode = 'DISABLED_TEST'}) {
+void installResetRoutes(FakeApiTransport transport, {String mode = 'SMS_OTP'}) {
   transport.routes['GET /v1/account-recovery/config'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'mode': mode}});
-  transport.routes['POST /v1/account-recovery/reset-test'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'next': 'LOGIN'}});
   // SMS_OTP (issue #102): the same generic answer for every number; the code the fake server accepts is [otp].
   transport.routes['POST /v1/account-recovery/otp'] = (String m, String p, Map<String, String> h, String b) async =>
       json(200, <String, Object?>{'data': <String, Object?>{'verification_id': '44444444-4444-4444-8444-444444444444', 'expires_in_seconds': 300, 'resend_after_seconds': 60, 'delivery_status': 'PENDING_DELIVERY'}});

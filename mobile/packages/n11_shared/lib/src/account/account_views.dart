@@ -408,16 +408,47 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-// The two texts and the checkbox label are the ones the Owner approved for the pair of versions (same as
-// apps/client-shared/src/consent.ts): they are not reworded here because the version identifies the text.
-const String kTermsTitle = 'Điều khoản dùng thử';
+// The two texts and the checkbox label identify the pair of versions kConsentTermsVersion / kConsentPrivacyVersion (same as
+// apps/client-shared/src/consent.ts and docs/current/M01-terms-privacy-20261014.md): they are not reworded here without a new
+// version. They describe what the app really does today and nothing it does not do yet.
+const String kTermsTitle = 'Điều khoản sử dụng';
 const String kTermsText =
-    'Đây là bản thử nghiệm 11Ship/11Food để kiểm tra đăng ký, đăng nhập và quản lý tài khoản. Chỉ sử dụng dữ liệu thử. Mã OTP được lấy từ công cụ SMS test trên máy tính, chưa gửi SMS đến điện thoại. Việc tạo tài khoản chưa kích hoạt cửa hàng hoặc quyền nhận đơn của tài xế.';
-const String kPrivacyTitle = 'Thông tin dữ liệu thử nghiệm';
+    'Bạn dùng 11Food/11Ship đúng pháp luật, cung cấp thông tin đúng sự thật và tự giữ bí mật mật khẩu. Tài khoản gắn với số điện thoại bạn xác minh bằng mã SMS. Hiện ứng dụng có đăng ký, đăng nhập, hồ sơ cá nhân và gửi hồ sơ quán hoặc hồ sơ xế; đặt món, giao hàng, ví và doanh thu chưa hoạt động. Tạo tài khoản hoặc gửi hồ sơ chưa mở quyền bán hàng hay nhận đơn: quyền đó chỉ có sau khi hồ sơ được duyệt. 11Ship có thể khóa tài khoản khi phát hiện gian lận hoặc vi phạm điều khoản.';
+const String kPrivacyTitle = 'Chính sách quyền riêng tư';
 const String kPrivacyText =
-    'Bản thử nghiệm lưu số điện thoại, tên bạn nhập, mật khẩu ở dạng băm, phiên đăng nhập và thời điểm/cặp phiên bản bạn chấp thuận để kiểm tra chức năng tài khoản. Không nhập thông tin nhạy cảm hoặc dùng mật khẩu đang dùng ở dịch vụ khác. Nội dung này chỉ dùng cho môi trường thử nghiệm, chưa phải chính sách phát hành chính thức.';
-const String kConsentLabel = 'Tôi đồng ý với Điều khoản dùng thử và Thông tin dữ liệu thử nghiệm.';
-const String kTestRegistrationNote = 'Bản test: tạm không xác minh số điện thoại';
+    '11Ship lưu số điện thoại, họ tên, mật khẩu ở dạng mã hóa một chiều, phiên đăng nhập, thông tin xác thực thiết bị Android để bảo vệ tài khoản, và thời điểm cùng phiên bản bạn đã chấp thuận. Mã xác minh được gửi bằng tin nhắn SMS tới số bạn nhập. Khi bạn tạo hồ sơ quán, ứng dụng chỉ lấy vị trí một lần lúc bạn bấm nút để ghi vị trí quán; ứng dụng không theo dõi vị trí nền. Hồ sơ xế lưu họ tên và biển số bạn nhập. Dữ liệu dùng để vận hành, bảo mật và hỗ trợ tài khoản.';
+const String kConsentLabel = 'Tôi đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư.';
+
+/// The same two texts, readable without an account (Tài khoản -> Chính sách và điều khoản). Static: it sends nothing.
+class PolicyScreen extends StatelessWidget {
+  const PolicyScreen({super.key, required this.session});
+
+  final SessionController session;
+
+  @override
+  Widget build(BuildContext context) {
+    return N11FormScaffold(
+      title: 'Chính sách và điều khoản',
+      session: session,
+      children: const <Widget>[
+        N11Card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(kTermsTitle, style: N11Text.bodyStrong),
+              SizedBox(height: N11Space.gap2),
+              Text(kTermsText, key: Key('policy-terms'), style: N11Text.caption),
+              SizedBox(height: N11Space.gap3),
+              Text(kPrivacyTitle, style: N11Text.bodyStrong),
+              SizedBox(height: N11Space.gap2),
+              Text(kPrivacyText, key: Key('policy-privacy'), style: N11Text.caption),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key, required this.session, required this.brand});
@@ -540,7 +571,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       builder: (BuildContext context, Widget? child) {
         final bool busy = session.busy;
         final RegistrationMode mode = session.registrationMode;
-        final bool open = session.ready && (mode == RegistrationMode.disabledTest || (mode == RegistrationMode.required && _otp.token != null));
+        final bool open = session.ready && mode == RegistrationMode.required && _otp.token != null;
         final bool taken = session.lastFailure?.kind == AuthFailureKind.phoneRegistered;
         final bool food = widget.brand.id == AppId.food;
         return N11FormScaffold(
@@ -548,7 +579,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           session: session,
           children: <Widget>[
             N11Heading(food ? 'Tạo tài khoản 11Food' : 'Tạo tài khoản 11Ship', sub: food ? 'Tài khoản khách hàng dùng để đặt món.' : 'Tài khoản khách hàng; hồ sơ xế gửi sau trong mục Tài khoản.'),
-            if (mode == RegistrationMode.disabledTest) const N11Banner(key: Key('test-note'), kind: BannerKind.warn, title: kTestRegistrationNote, text: 'Tài khoản được tạo trực tiếp, không có mã OTP.'),
             if (mode == RegistrationMode.unknown && session.ready)
               N11Banner(
                 key: const Key('config-unknown'),

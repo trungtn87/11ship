@@ -60,11 +60,12 @@ void main() {
     expect(find.byKey(const Key('connection-banner')), findsNothing);
   });
 
-  testWidgets('home shows the approved logo asset and a test notice, no invented shops', (WidgetTester tester) async {
+  testWidgets('home shows the approved logo asset, no test banner and no invented shops', (WidgetTester tester) async {
     await pump(tester, healthy());
     final Iterable<Image> images = tester.widgetList<Image>(find.byType(Image));
     expect(images.any((Image i) => i.image is AssetImage && (i.image as AssetImage).assetName == 'assets/brand/logo-11food-ui.png' && (i.image as AssetImage).package == 'n11_shared'), isTrue);
-    expect(find.text(kTestNoticeTitle), findsOneWidget);
+    expect(find.textContaining('thử nghiệm'), findsNothing);
+    expect(find.textContaining('Bản chạy thử'), findsNothing);
     expect(find.text('Chưa có quán để hiển thị'), findsOneWidget);
   });
 
@@ -95,22 +96,38 @@ void main() {
     expect(find.text(kNoServerReason), findsWidgets);
   });
 
-  testWidgets('register (test mode, no OTP) -> signed-in account -> profile -> logout, all on the shell', (WidgetTester tester) async {
+  testWidgets('register (SMS code) -> signed-in account -> profile -> logout, all on the shell', (WidgetTester tester) async {
     final FakeApiTransport api = FakeApiTransport();
     installAccountRoutes(api);
+    installOtpRoutes(api);
     final FakeDeviceBridge bridge = FakeDeviceBridge();
     await pump(tester, healthy(), api: api, bridge: bridge);
     await openTab(tester, 'account');
     await tester.tap(find.byKey(const Key('open-register')));
     await tester.pumpAndSettle();
-    expect(find.text(kTestRegistrationNote), findsOneWidget);
+    expect(find.textContaining('Bản test'), findsNothing);
+    expect(find.textContaining('thử nghiệm'), findsNothing);
     await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
     await tester.enterText(find.byKey(const Key('register-name')), 'Nguyễn Văn An');
     await tester.enterText(find.byKey(const Key('register-password')), 'Correct-Horse-9');
     await tester.pump();
-    expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull, reason: 'consent not ticked');
+    expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull, reason: 'consent not ticked and phone not verified');
     await tester.ensureVisible(find.byKey(const Key('register-consent')));
     await tester.tap(find.byKey(const Key('register-consent')));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('otp-request')));
+    await tester.tap(find.byKey(const Key('otp-request')));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+    await tester.enterText(find.byKey(const Key('otp-code')), '123456');
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('otp-verify')));
+    await tester.tap(find.byKey(const Key('otp-verify')));
+    await tester.pump();
     await tester.pump();
     await tester.ensureVisible(find.byKey(const Key('register-submit')));
     await tester.tap(find.byKey(const Key('register-submit')));
@@ -119,7 +136,7 @@ void main() {
     expect(find.text('Nguyễn Văn An'), findsOneWidget);
     expect(bridge.token, isNotNull);
     final String registerBody = api.to('POST', '/v1/client-auth/register').single.body;
-    expect(registerBody, isNot(contains('verification_token')));
+    expect(registerBody, contains('verification_token'));
     expect(registerBody, contains('"platform":"ANDROID"'));
     expect(registerBody, contains('"app":"FOOD"'));
     await tester.ensureVisible(find.byKey(const Key('open-logout')));
@@ -134,7 +151,7 @@ void main() {
 
   testWidgets('register (REQUIRED, issue #102): the code field appears only after the SMS was SENT; the proof rides in the register body', (WidgetTester tester) async {
     final FakeApiTransport api = FakeApiTransport();
-    installAccountRoutes(api, registration: 'REQUIRED');
+    installAccountRoutes(api);
     installOtpRoutes(api);
     final FakeDeviceBridge bridge = FakeDeviceBridge();
     await pump(tester, healthy(), api: api, bridge: bridge);
@@ -182,6 +199,17 @@ void main() {
     await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
     await tester.pump();
     expect(find.byKey(const Key('otp-verified')), findsNothing, reason: 'the proof does not come back by typing the number again');
+  });
+
+  testWidgets('account: "Chính sách và điều khoản" opens the real terms and privacy texts, without an account', (WidgetTester tester) async {
+    await pump(tester, healthy());
+    await openTab(tester, 'account');
+    await tester.ensureVisible(find.byKey(const Key('policy-entry')));
+    await tester.tap(find.byKey(const Key('policy-entry')));
+    await tester.pumpAndSettle();
+    expect(find.text(kTermsText), findsOneWidget);
+    expect(find.text(kPrivacyText), findsOneWidget);
+    expect(find.textContaining('thử nghiệm'), findsNothing);
   });
 
   testWidgets('offline then retry recovers', (WidgetTester tester) async {

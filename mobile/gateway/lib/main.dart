@@ -48,7 +48,8 @@ class GatewayHome extends StatefulWidget {
 class _GatewayHomeState extends State<GatewayHome> {
   static const _native = MethodChannel('vn.eleven.gateway/sms');
   final _phone = TextEditingController();
-  final _url = TextEditingController();
+  // Pre-filled from the central endpoint (config/endpoints.json, passed as --dart-define by the workflow); the person can still edit it.
+  final _url = TextEditingController(text: const String.fromEnvironment('API_BASE_URL'));
   final _credential = TextEditingController();
   Timer? _poll;
   GatewayState _gateway = const GatewayState();

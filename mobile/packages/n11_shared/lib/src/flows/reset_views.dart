@@ -12,7 +12,6 @@ import 'reset_controller.dart';
 // F13 / S15: forgotten password, test build. One form: phone, new password, confirmation (the confirmation is checked on the phone
 // only and never sent). The submit stays closed until the SERVER says DISABLED_TEST; any other answer closes it with its reason.
 
-const String kResetTestNote = 'Bản test: đặt lại mật khẩu chưa yêu cầu OTP';
 const String kResetOtpSentTitle = 'Đã xử lý yêu cầu';
 const String kResetOtpSentText = 'Nếu số điện thoại đã đăng ký, bạn sẽ nhận tin nhắn SMS chứa mã xác minh trong ít phút. Nhập mã vào ô bên dưới.';
 const String kResetDoneTitle = 'Yêu cầu đã xử lý';
@@ -96,17 +95,16 @@ class _ResetScreenState extends State<ResetScreen> {
         final bool sms = controller.mode == ResetMode.smsOtp;
         // In SMS_OTP mode the password is asked only after the code was verified.
         final bool passwordStep = !sms || controller.otpVerified;
-        final bool open = controller.mode == ResetMode.available || (sms && controller.otpVerified);
+        final bool open = sms && controller.otpVerified;
         return N11FormScaffold(
           title: 'Quên mật khẩu',
           session: null,
           children: <Widget>[
-            N11Heading('Đặt lại mật khẩu', sub: sms ? 'Nhập số điện thoại đã đăng ký, mã xác minh nhận qua SMS, rồi đặt mật khẩu mới.' : 'Nhập số điện thoại đã đăng ký và mật khẩu mới.'),
-            if (controller.mode == ResetMode.available) const N11Banner(key: Key('reset-note'), kind: BannerKind.warn, title: kResetTestNote),
+            N11Heading('Đặt lại mật khẩu', sub: 'Nhập số điện thoại đã đăng ký, mã xác minh nhận qua SMS, rồi đặt mật khẩu mới.'),
             if (sms && controller.otpStep == ResetOtpStep.requested) const N11Banner(key: Key('reset-otp-sent'), kind: BannerKind.info, title: kResetOtpSentTitle, text: kResetOtpSentText),
             if (sms && controller.otpVerified) const N11Banner(key: Key('reset-otp-verified'), kind: BannerKind.success, title: 'Đã xác minh mã'),
             if (controller.mode == ResetMode.closed)
-              const N11Banner(key: Key('reset-closed'), kind: BannerKind.warn, title: 'Chưa mở đặt lại mật khẩu', text: 'Máy chủ chưa bật đặt lại mật khẩu cho bản test. Chưa thể gửi yêu cầu.'),
+              const N11Banner(key: Key('reset-closed'), kind: BannerKind.warn, title: 'Chưa mở đặt lại mật khẩu', text: 'Máy chủ chưa bật đặt lại mật khẩu bằng mã SMS. Chưa thể gửi yêu cầu.'),
             if (controller.mode == ResetMode.unknown)
               N11Banner(
                 key: const Key('reset-unknown'),

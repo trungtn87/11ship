@@ -15,13 +15,14 @@ on:
   workflow_dispatch:
     inputs:
       api_base_url:
-        description: 'Server origin the APKs talk to (https only). Empty = the default test server.'
+        description: 'Server origin the APKs talk to (https only). Empty = config/endpoints.json (the VPS).'
         required: false
         default: ''
   pull_request:
     paths:
       - 'mobile/**'
       - '.github/workflows/mobile-apk.yml'
+      - 'config/endpoints.json'
       - 'tools/brand/**'
       - 'docs/brand/**'
 
@@ -32,12 +33,10 @@ concurrency:
   group: mobile-apk-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # The default test server only serves the health checks until a native verifier is deployed there; the account screens then say
-  # "the server is not ready for Android" (503). A local test build passes api_base_url (workflow_dispatch) instead.
-  API_BASE_URL: ${{ inputs.api_base_url != '' && inputs.api_base_url || 'https://103.9.78.67.sslip.io' }}
-  # Non-secret environment identifier signed into every device proof. The server pins the same value (CLIENT_DEVICE_ENVIRONMENT).
-  DEVICE_ENVIRONMENT: ${{ vars.N11_DEVICE_ENVIRONMENT != '' && vars.N11_DEVICE_ENVIRONMENT || 'ship11-test' }}
+# API_BASE_URL and DEVICE_ENVIRONMENT come from config/endpoints.json (the ONE place the server address is written; the step
+# "Central endpoints" below exports them). A one-off build against another server passes api_base_url (workflow_dispatch).
+# DEVICE_ENVIRONMENT is the non-secret identifier signed into every device proof; the server pins the same value
+# (CLIENT_DEVICE_ENVIRONMENT). It is NOT changed with the environment name: a change would invalidate existing device bindings.
 
 defaults:
   run:
@@ -93,6 +92,17 @@ jobs:
           if [ "$actual" != "$SOURCE_SHA" ]; then
             echo "::error title=source mismatch::checked out $actual but the build is labelled $SOURCE_SHA"; exit 1
           fi
+
+      - name: Central endpoints (config/endpoints.json)
+        env:
+          INPUT_API_BASE_URL: ${{ inputs.api_base_url }}
+          VAR_DEVICE_ENVIRONMENT: ${{ vars.N11_DEVICE_ENVIRONMENT }}
+        run: |
+          set -euo pipefail
+          api="${INPUT_API_BASE_URL:-$(jq -er .api_origin config/endpoints.json)}"
+          device="${VAR_DEVICE_ENVIRONMENT:-$(jq -er .device_environment config/endpoints.json)}"
+          echo "API_BASE_URL=$api" >> "$GITHUB_ENV"
+          echo "DEVICE_ENVIRONMENT=$device" >> "$GITHUB_ENV"
 
       - name: Server origin is a plain https origin
         run: |

@@ -6,17 +6,14 @@ import '../account/api_client.dart';
 import '../account/models.dart';
 import '../account/session_controller.dart';
 
-// Forgotten password (M01-RESET, F13/S15; issue #102). The SERVER mode decides, the app never guesses:
-//   DISABLED_TEST  the test build: POST /v1/account-recovery/reset-test with exactly {phone, password}, no OTP;
-//   SMS_OTP        POST /v1/account-recovery/otp {phone} -> POST .../otp/{id}/verify {otp} -> POST .../reset
-//                  {verification_token, password}. The request answer is the SAME for every number (the app says "if the number is
-//                  registered you will receive an SMS"); the proof is one-use and belongs to the number that received the code.
-// Forgotten password, test build (M01-RESET, F13/S15): GET /v1/account-recovery/config, POST /v1/account-recovery/reset-test with
-// exactly {phone, password}. The route is PUBLIC: no Bearer, no device proof, no key, no login first. The server mode decides; the
-// app only opens the form when the server says DISABLED_TEST. The answer is one generic acknowledgement that says nothing about
-// the account, and it never signs anybody in.
+// Forgotten password (M01-RESET, F13/S15; issue #102). The SERVER mode decides, the app never guesses. The only mode this app
+// uses is SMS_OTP: POST /v1/account-recovery/otp {phone} -> POST .../otp/{id}/verify {otp} -> POST .../reset
+// {verification_token, password}. The request answer is the SAME for every number (the app says "if the number is registered you
+// will receive an SMS"); the proof is one-use and belongs to the number that received the code. Any other server answer (closed,
+// unreadable, a mode this build does not know) opens nothing: there is no reset without the SMS proof, and the answer never signs
+// anybody in.
 
-enum ResetMode { unknown, available, smsOtp, closed }
+enum ResetMode { unknown, smsOtp, closed }
 
 enum ResetOtpStep { idle, requesting, requested, verifying, verified }
 
@@ -58,9 +55,7 @@ class ResetController extends ChangeNotifier {
   DateTime get _now => DateTime.now();
   bool get canResend => _otpStep != ResetOtpStep.requesting && _otpStep != ResetOtpStep.verifying && _otpStep != ResetOtpStep.verified && (_resendAt == null || !_now.isBefore(_resendAt!));
 
-  String _bodyFor(String phone, String password) => _mode == ResetMode.smsOtp
-      ? jsonEncode(<String, Object?>{'verification_token': _proof, 'password': password})
-      : jsonEncode(<String, Object?>{'phone': phone.trim(), 'password': password});
+  String _bodyFor(String phone, String password) => jsonEncode(<String, Object?>{'verification_token': _proof, 'password': password});
 
   /// The unconfirmed write is retryable only while the form still shows exactly its intent: an edited phone or password is a
   /// different intent and must go through [submit] (new key), never through a retry of the hidden old one.
@@ -87,13 +82,11 @@ class ResetController extends ChangeNotifier {
       }
       final Object? data = response.status == 200 ? response.data : null;
       final Object? mode = data is Map<String, Object?> ? data['mode'] : null;
-      _mode = mode == 'DISABLED_TEST'
-          ? ResetMode.available
-          : mode == 'SMS_OTP'
-              ? ResetMode.smsOtp
-              : mode == 'UNAVAILABLE'
-                  ? ResetMode.closed
-                  : ResetMode.unknown;
+      _mode = mode == 'SMS_OTP'
+          ? ResetMode.smsOtp
+          : mode == 'UNAVAILABLE'
+              ? ResetMode.closed
+              : ResetMode.unknown;
     } on AuthFailure catch (failure) {
       if (epoch != _epoch) {
         return;
@@ -232,13 +225,13 @@ class ResetController extends ChangeNotifier {
 
   Future<bool> submit({required String phone, required String password}) async {
     final bool smsReady = _mode == ResetMode.smsOtp && _proof != null && _otpStep == ResetOtpStep.verified;
-    if (_busy || !(_mode == ResetMode.available || smsReady)) {
+    if (_busy || !smsReady) {
       return false;
     }
     final String body = _bodyFor(phone, password);
     // Same intent -> same key (a retry after a lost answer); a changed phone or password is a new intent and a new key.
     final String key = _pendingBody == body && _pendingKey != null ? _pendingKey! : newIdempotencyKey();
-    return _send(body, key, _mode == ResetMode.smsOtp ? '/v1/account-recovery/reset' : '/v1/account-recovery/reset-test');
+    return _send(body, key, '/v1/account-recovery/reset');
   }
 
   Future<bool> retryPending() async {

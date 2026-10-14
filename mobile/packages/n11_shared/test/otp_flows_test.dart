@@ -125,17 +125,6 @@ void main() {
       expect(body.keys.toSet(), <String>{'phone', 'password', 'verification_token', 'device', 'full_name', 'consent'});
       expect(register.headers['x-device-registration'], isNotEmpty, reason: 'the OTP proof does not replace the native device proof');
     });
-
-    test('DISABLED_TEST register keeps its exact body: no verification_token', () async {
-      final FakeApiTransport api = FakeApiTransport();
-      installAccountRoutes(api);
-      final SessionController session = createSessionController(ClientApp.food, config, transport: api, bridge: FakeDeviceBridge());
-      await session.start();
-      await session.loadRegistrationMode();
-      expect(await session.register(phone: '0901234567', password: 'Correct-Horse-9', fullName: 'Nguyễn Văn An', verificationToken: 'ignored'), isTrue);
-      final Map<String, Object?> body = jsonDecode(api.to('POST', '/v1/client-auth/register').single.body) as Map<String, Object?>;
-      expect(body.containsKey('verification_token'), isFalse);
-    });
   });
 
   group('password reset OTP (SMS_OTP)', () {
@@ -175,7 +164,6 @@ void main() {
       expect(posts.length, 2);
       expect(posts[0].headers['idempotency-key'], posts[1].headers['idempotency-key']);
       expect(posts[0].body, jsonEncode(<String, Object?>{'verification_token': 'RESET-PROOF-TOKEN-0123456789', 'password': 'New-Pass-123'}));
-      expect(t.api.to('POST', '/v1/account-recovery/reset-test'), isEmpty, reason: 'the no-OTP route is never used in SMS_OTP mode');
       expect(t.reset.done, isTrue);
       expect(t.reset.otpVerified, isFalse, reason: 'the spent proof is forgotten');
     });
@@ -205,10 +193,12 @@ void main() {
       expect(t.reset.hasPendingWrite, isFalse);
     });
 
-    test('the other modes do not offer the OTP routes', () async {
+    test('the other modes do not offer the OTP routes (a server test mode this build does not know opens nothing)', () async {
       final t = await open(mode: 'DISABLED_TEST');
+      expect(t.reset.mode, ResetMode.unknown);
       expect(await t.reset.requestOtp('0901234567'), isFalse);
       expect(t.api.to('POST', '/v1/account-recovery/otp'), isEmpty);
+      expect(await t.reset.submit(phone: '0901234567', password: 'New-Pass-123'), isFalse);
       final c = await open(mode: 'UNAVAILABLE');
       expect(await c.reset.requestOtp('0901234567'), isFalse);
       expect(c.reset.mode, ResetMode.closed);
@@ -227,7 +217,6 @@ void main() {
 
     expect(find.byKey(const Key('reset-password')), findsNothing, reason: 'the password is asked only after the code is verified');
     expect(find.byKey(const Key('reset-submit')), findsNothing);
-    expect(find.byKey(const Key('reset-note')), findsNothing, reason: 'the "no OTP" test note is for DISABLED_TEST only');
     await tester.enterText(find.byKey(const Key('reset-phone')), '0901234567');
     await tester.pump();
     await tester.tap(find.byKey(const Key('reset-otp-request')));
@@ -252,6 +241,5 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('reset-done')), findsOneWidget);
     expect(api.to('POST', '/v1/account-recovery/reset').single.body, contains('RESET-PROOF-TOKEN-0123456789'));
-    expect(api.to('POST', '/v1/account-recovery/reset-test'), isEmpty);
   });
 }
