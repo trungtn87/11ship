@@ -40,6 +40,8 @@ export function configureApp(app: INestApplication): void {
   // Issue #102: the SMS gateway API carries the message (an OTP) and a device credential, never cached.
   app.use(`/${GLOBAL_PREFIX}/sms-gateway`, clientAuthTransportMiddleware);
   // Same headers for the own-profile routes (M01.05): personal data, never cached.
+  // The own shop and its menu are private to the owner as well (M02).
+  app.use(`/${GLOBAL_PREFIX}/shop/me`, clientAuthTransportMiddleware);
   for (const prefix of CLIENT_PROFILE_ROUTE_PREFIXES) {
     app.use(`/${GLOBAL_PREFIX}/${prefix}`, clientAuthTransportMiddleware);
   }
@@ -48,7 +50,7 @@ export function configureApp(app: INestApplication): void {
   // administration hosting, static paths) meets a parser earlier than before. It is the same express JSON parser with the same
   // default limit and errors; it only adds the `verify` hook, and the framework's own parser then skips the already-parsed body.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const express: { json(options: { verify: (request: { rawBody?: Buffer }, response: unknown, buffer: Buffer) => void }): never } = require('express');
+  const express: { json(options: { limit?: string; verify: (request: { rawBody?: Buffer }, response: unknown, buffer: Buffer) => void }): never } = require('express');
   const rawCapturingParser = express.json({
     verify: (request, _response, buffer) => {
       request.rawBody = Buffer.from(buffer);
@@ -61,6 +63,17 @@ export function configureApp(app: INestApplication): void {
   app.use(`/${GLOBAL_PREFIX}/customer/me/profile`, captureRawBody);
   // The shop and driver onboarding writes a phone signs (M01 remaining flows).
   app.use(`/${GLOBAL_PREFIX}/onboarding`, captureRawBody);
+  // M02: the shop writes a phone signs (profile, schedule, dishes). The picture upload carries a base64 picture: it gets its own,
+  // larger parser FIRST (the first parser to run wins; the later ones skip an already parsed body), everything else keeps the default limit.
+  const pictureParser = express.json({
+    limit: '3.5mb',
+    verify: (request, _response, buffer) => {
+      request.rawBody = Buffer.from(buffer);
+    },
+  }) as unknown as (request: unknown, response: unknown, next: (error?: unknown) => void) => void;
+  const capturePictureBody = (request: unknown, response: unknown, next: (error?: unknown) => void): void => pictureParser(request, response, next);
+  app.use(`/${GLOBAL_PREFIX}/shop/me/menu/images`, capturePictureBody);
+  app.use(`/${GLOBAL_PREFIX}/shop/me`, captureRawBody);
   app.setGlobalPrefix(GLOBAL_PREFIX);
   app.useGlobalFilters(new AllExceptionsFilter(app.get(HttpAdapterHost), logger));
 }

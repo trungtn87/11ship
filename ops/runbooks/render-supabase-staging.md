@@ -111,6 +111,9 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | sms_gateway_devices | SELECT, INSERT, UPDATE (issue #102: UPDATE is the heartbeat and the one-way revoke; pairing normally runs through the operator command; no DELETE) |
 | sms_gateway_control | SELECT, INSERT, UPDATE (issue #102: the single kill-switch row, written by the operator command; the API only reads it; no DELETE) |
 | sms_jobs | SELECT, INSERT, UPDATE (issue #102: UPDATE is claim, acknowledgement, lease/expiry and erasing the sealed message; no DELETE) |
+| menu_categories | SELECT, UPDATE (M02-MON: UPDATE only because `FOR SHARE` needs it; the groups are written by the operator command with the migration role) |
+| menu_images | SELECT, INSERT, UPDATE (M02-MON: immutable rows; UPDATE only because `FOR SHARE` needs it; no DELETE) |
+| menu_items | SELECT, INSERT, UPDATE (M02-MON: the dish edit, hide/show and the soft delete are UPDATEs; no DELETE) |
 
 ```sql
 -- example shape, repeat per row of the table above

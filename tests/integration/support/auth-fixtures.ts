@@ -199,6 +199,15 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
                          WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1))`,
     [normalizedPhone],
   );
+  // M02-MON: the dishes, then the pictures of those shops (both reference the shop deleted below).
+  for (const table of ['menu_items', 'menu_images']) {
+    await pool.query(
+      `DELETE FROM app.${table}
+        WHERE shop_id IN (SELECT shop_id FROM app.shop_members
+                           WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1))`,
+      [normalizedPhone],
+    );
+  }
   // Memberships first, then the shops no member points at any more (a shop of this user has exactly one member).
   await pool.query(
     `WITH owned AS (
