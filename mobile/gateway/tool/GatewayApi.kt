@@ -6,7 +6,7 @@ import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 
 /**
- * HTTPS client of the 11Ship backend (/v1/sms-gateway/*). The phone always connects OUT; nothing listens on the LAN. TLS is the
+ * HTTPS client of the 11Ship backend (/v1/sms-gateway routes). The phone always connects OUT; nothing listens on the LAN. TLS is the
  * platform default: the certificate chain and the host name are verified against the system trust store, there is no custom
  * TrustManager or HostnameVerifier, and redirects are not followed.
  */
