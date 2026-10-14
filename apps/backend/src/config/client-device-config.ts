@@ -1,12 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { parseCaBundle } from '../database/tls-config';
 import { isLocalWebMode } from './client-auth-config';
+import { isLoopbackHost } from '../test-sms/test-sms-config';
 
 // Configuration of the native Android binding (M01-ANDROID; contract11 sections 7 and 9). Pure validation: only the NAMES of
 // invalid variables are ever reported, never a value, a path or a file's content.
 //
-//   CLIENT_AUTH_ANDROID_ENABLED               true | false (default false). true only for APP_ENV development/test AND a
-//                                             loopback bind in this package: staging/production/remote bind + true stops startup.
+//   CLIENT_AUTH_ANDROID_ENABLED               true | false (default false). Development/test requires a loopback bind.
+//                                             Staging requires a loopback bind + the real SMS gateway and REQUIRED OTP,
+//                                             with fixture mode off. Production is not enabled by this change.
 //   CLIENT_DEVICE_ENVIRONMENT                 non-secret identifier signed into every proof (same value in the native build)
 //   CLIENT_DEVICE_ALLOWED_SIGNERS_FILE        JSON exact {FOOD:{package_name,signer_sha256},SHIP:{package_name,signer_sha256}}
 //   CLIENT_DEVICE_ATTESTATION_ROOTS_FILE      PEM of the Android attestation roots the OPERATOR pinned (never the OS roots)
@@ -71,7 +73,14 @@ export function parseClientDevice(input: ClientDeviceConfigInput): ClientDeviceC
   if (input.appEnv === undefined) {
     return { ok: true, enabled: false, config: undefined };
   }
-  if (!isLocalWebMode(input.appEnv, input.host)) {
+  // The public staging API is reached through the trusted HTTPS reverse proxy; Node itself must remain on loopback.
+  // Never turn on the native verifier with unauthenticated test registration or fixture accounts on that endpoint.
+  const stagingWithRealOtp = input.appEnv === 'staging'
+    && isLoopbackHost(input.host)
+    && input.env.SMS_GATEWAY_ENABLED === 'true'
+    && (input.env.CLIENT_AUTH_PHONE_VERIFICATION_MODE === undefined || input.env.CLIENT_AUTH_PHONE_VERIFICATION_MODE === 'REQUIRED')
+    && input.env.AUTH_STAGING_FIXTURES_ENABLED !== 'true';
+  if (!isLocalWebMode(input.appEnv, input.host) && !stagingWithRealOtp) {
     return { ok: false, invalid: [CLIENT_AUTH_ANDROID_ENABLED_ENV] };
   }
 
