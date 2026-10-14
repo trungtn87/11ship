@@ -48,7 +48,8 @@ export class AdminLimitsRepository {
   /**
    * Atomic fixed-window reserve of one request slot. The window starts at the first request and is never extended by a
    * refused request (the counter is capped just above the limit). The slot is NOT given back when the business
-   * request later fails: this is a request quota, not a failure budget.
+   * request later fails: this is a request quota, not a failure budget. The statement clock may be read before a
+   * conflicting insert obtains its row lock; updated_at must never go behind the row that won that race.
    */
   async reserveRequest(
     context: TransactionContext,
@@ -67,7 +68,7 @@ export class AdminLimitsRepository {
          failure_count = CASE
            WHEN l.window_started_at + make_interval(secs => $3::double precision) <= EXCLUDED.window_started_at
              THEN 1 ELSE LEAST(l.failure_count + 1, $4::int + 1) END,
-         updated_at = EXCLUDED.updated_at
+         updated_at = GREATEST(l.updated_at, EXCLUDED.updated_at)
        RETURNING l.failure_count, ${epochMs('l.window_started_at')} AS start_ms, ${epochMs('l.updated_at')} AS now_ms`,
       [input.bucketKey, input.kind, input.windowSeconds, input.limit],
     );
