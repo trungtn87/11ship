@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
-import { ADMIN_ORIGIN, AdminApp, createAdminMember, loginBody, startAdminApp } from './support/admin-fixtures';
+import { ADMIN_ORIGIN, AdminApp, startAdminApp } from './support/admin-fixtures';
 import { freePort, repoRoot, runScript, startFront as startAdminFront } from './support/admin-web-harness';
 import { api, grantRole, PASSWORD, randomPhone } from './support/auth-fixtures';
 import { Browser, launchChrome, Page } from './support/cdp';
