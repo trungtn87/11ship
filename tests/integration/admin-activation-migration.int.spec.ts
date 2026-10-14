@@ -3,6 +3,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Client } from 'pg';
 import { assertTestDatabaseTarget } from './support/assert-test-target';
+import { SMS_GATEWAY_DOWN_SQL, SMS_GATEWAY_UP_SQL } from './support/sms-gateway-migration-sql';
 import { REPO_ROOT } from './support/test-helpers';
 
 // M01-D-ADMIN-1C - migrations A (activation tables), B (limiter kinds), C (membership origin guard). The files obey the
@@ -122,6 +123,8 @@ describe('M01-D-ADMIN-1C - activation migrations', () => {
     await assertTestDatabaseTarget(client);
     await client.query('BEGIN');
     try {
+      // The SMS queue references the activation challenges (ADMIN_ACTIVATION jobs): it is newer, so it goes down first and up last.
+      await client.query(SMS_GATEWAY_DOWN_SQL);
       await client.query(down(read(FILES.C)));
       await client.query(down(read(FILES.B)));
       await client.query(down(read(FILES.A)));
@@ -129,6 +132,7 @@ describe('M01-D-ADMIN-1C - activation migrations', () => {
       await client.query(up(read(FILES.A)));
       await client.query(up(read(FILES.B)));
       await client.query(up(read(FILES.C)));
+      await client.query(SMS_GATEWAY_UP_SQL);
       expect(await tables()).toHaveLength(4);
     } finally {
       await client.query('ROLLBACK');

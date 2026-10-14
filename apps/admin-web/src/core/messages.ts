@@ -86,6 +86,7 @@ export const ADMIN_COPY = {
   otpLocked: 'Đã nhập sai quá số lần. Hãy bắt đầu lại.',
   otpResendWait: (clock: string) => `Có thể gửi lại mã sau ${clock}.`,
   otpSent: 'Mã đã được gửi tới số điện thoại của bạn.',
+  otpDevDisplay: 'Mã (máy chủ phát triển):',
   otpWaitingDelivery: 'Mã đang được gửi bằng tin nhắn SMS. Vui lòng chờ; ô nhập mã sẽ mở khi tin nhắn đã gửi đi.',
   passwordInvalid: 'Mật khẩu cần từ 8 đến 128 ký tự.',
   passwordExpired: 'Đã quá thời hạn đặt mật khẩu. Hãy bắt đầu lại.',

@@ -11,7 +11,8 @@ import { api, grantRole, PASSWORD, randomPhone } from './support/auth-fixtures';
 import { Browser, launchChrome, Page } from './support/cdp';
 import { minimalChildEnv } from './support/test-helpers';
 
-// M01-RESET — the ONE real smoke of the no-OTP test reset: a REAL headless Chrome, the REAL local https fronts of 11Food, 11Ship and
+// M01-RESET — the real smoke of the no-OTP test reset of the (dev/design-only) Food and Ship web fronts. The Web Admin uses the SMS
+// reset since 2026-10-14: see admin-reset-sms-browser.int.spec.ts. This was: a REAL headless Chrome, the REAL local https fronts of 11Food, 11Ship and
 // the Web Admin, the REAL backend (ACCOUNT_RECOVERY_MODE=DISABLED_TEST) and the REAL PostgreSQL (TEST database only). Nothing is
 // mocked: the acknowledgement the page shows is the server's, and the new password is proven by signing in with it.
 
@@ -175,25 +176,5 @@ describe('M01-RESET — no-OTP test password reset in a real browser against the
     }
     expect((await login(user.phoneLocal, PASSWORD, 'SHIP')).status).toBe(401);
     expect((await login(user.phoneLocal, NEW_PASSWORD, 'SHIP')).status).toBe(200);
-  }, 120_000);
-
-  it('Web Admin: /reset is ONE form (no code); the ADMIN signs in with the new password and still needs the Authenticator step', async () => {
-    const admin = await createAdminMember(app);
-    const page = await openPage(adminOrigin, '/reset', '#reset-password', false);
-    try {
-      expect(await page.text('#reset-test-mode')).toContain('Bản test: đặt lại mật khẩu chưa yêu cầu OTP');
-      expect(await page.evaluate<boolean>(`document.querySelector('#reset-code') === null`)).toBe(true);
-      await page.fill('#reset-phone', admin.phone.local);
-      await page.fill('#reset-password', NEW_PASSWORD);
-      await page.fill('#reset-password-confirm', NEW_PASSWORD);
-      await page.evaluate(`document.querySelector('form').requestSubmit()`);
-      await page.waitFor(`document.body.innerText.includes('Yêu cầu đã xử lý')`);
-    } finally {
-      await page.close();
-    }
-    expect((await app.call('POST', '/login', { body: loginBody(admin) })).status).toBe(401);
-    const next = await app.call('POST', '/login', { body: loginBody(admin, { password: NEW_PASSWORD }) });
-    expect(next.status).toBe(200);
-    expect(next.body.data).toMatchObject({ next_step: 'ENROLL_TOTP' });
   }, 120_000);
 });

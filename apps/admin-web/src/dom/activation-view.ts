@@ -171,6 +171,8 @@ export class ActivationPage {
     const title = h('h1', { class: 'title', tabindex: '-1', id: 'act-otp-title' }, TITLE);
     const notice = message('notice', 'act-otp-notice');
     const sendError = message('error', 'act-send-error');
+    // Only a development/test server (TEST_DISPLAY provider) ever answers with a code to show; production never does.
+    const test = h('p', { class: 'test-display', hidden: true });
     const send = primary('Gửi mã xác minh', 'button');
     send.id = 'act-send';
     send.addEventListener('click', () => void this.controller.requestOtp());
@@ -204,6 +206,7 @@ export class ActivationPage {
         notice,
         sendError,
         send,
+        test,
         codeForm,
       ),
     );
@@ -246,6 +249,8 @@ export class ActivationPage {
             : awaiting || s.otp?.status === 'EXPIRED'
               ? 'Gửi lại mã'
               : 'Gửi mã xác minh';
+        test.hidden = s.displayedCode === undefined;
+        test.textContent = s.displayedCode === undefined ? '' : `${ADMIN_COPY.otpDevDisplay} ${s.displayedCode}`;
         codeForm.hidden = !awaiting;
         const errors = { invalid: ADMIN_COPY.otpInvalid, expired: ADMIN_COPY.otpExpired, locked: ADMIN_COPY.otpLocked, unavailable: COPY.unavailable };
         setMessage(codeError, s.codeError === undefined ? undefined : errors[s.codeError]);
