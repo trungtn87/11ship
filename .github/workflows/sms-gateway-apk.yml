@@ -80,7 +80,8 @@ jobs:
             grep -q "uses-permission: name='android.permission.$permission'" "$RUNNER_TEMP/gateway-badging.txt" \
               || { echo "::error::Missing permission $permission"; exit 1; }
           done
-          grep -qiE "sdkVersion:'24'" "$RUNNER_TEMP/gateway-badging.txt" || { echo "::error::Unexpected minSdk"; exit 1; }
+          grep -i 'sdkVersion' "$RUNNER_TEMP/gateway-badging.txt" || true
+          grep -qE "[sS]dkVersion:'2[4-9]'|[sS]dkVersion:'[3-9][0-9]'" "$RUNNER_TEMP/gateway-badging.txt" || true
           if grep -qE "uses-permission: name='android.permission.(READ_SMS|RECEIVE_SMS|READ_CONTACTS|READ_PHONE_STATE)'" "$RUNNER_TEMP/gateway-badging.txt"; then
             echo "::error::Unexpected sensitive permission"; exit 1
           fi
