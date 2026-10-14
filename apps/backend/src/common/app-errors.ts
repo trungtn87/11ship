@@ -56,6 +56,11 @@ export const APP_ERROR_DEFINITIONS = {
     message: 'Registration and phone verification are temporarily unavailable',
   },
 
+  // SMS gateway (issue #102). Fixed messages; a bad, revoked or unknown credential/job is never told apart.
+  GATEWAY_UNAUTHORIZED: { status: 401, message: 'The gateway credential is not valid' },
+  GATEWAY_JOB_NOT_FOUND: { status: 404, message: 'The job was not found for this gateway attempt' },
+  GATEWAY_ACK_CONFLICT: { status: 409, message: 'The job already has a different final result' },
+
   // Shop onboarding (M01-A2S, handoff section 10). Fixed messages: they never echo what the client sent,
   // never name a database constraint and never reveal another account's data.
   SHOP_ONBOARDING_EXISTS: { status: 409, message: 'A shop profile already exists for this account' },

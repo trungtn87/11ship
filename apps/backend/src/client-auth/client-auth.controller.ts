@@ -81,7 +81,7 @@ export class ClientAuthController {
     const outcome =
       this.settings.phoneVerificationMode === 'DISABLED_TEST'
         ? await this.registration.registerUnverifiedTest(parseClientUnverifiedRegisterBody(body), idempotencyKey, requestId, evidenceOf(request))
-        : await this.registration.register(parseClientRegisterBody(body), idempotencyKey, requestId);
+        : await this.registration.register(parseClientRegisterBody(body), idempotencyKey, requestId, evidenceOf(request));
     response.status(outcome.status);
     bindingHeaders(response, 'binding' in outcome ? outcome.binding : undefined);
     return { data: outcome.payload };

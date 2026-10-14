@@ -96,7 +96,7 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
 
   describe('the file', () => {
     it('is a NEW file after the applied ones (only the test-unverified origin and the activation phone-mode migrations follow it), and the repository has exactly ONE account_origin column migration', () => {
-      expect(NAMES.slice(NAMES.indexOf(NEW))).toEqual([NEW, TEST_ORIGIN, '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding']);
+      expect(NAMES.slice(NAMES.indexOf(NEW))).toEqual([NEW, TEST_ORIGIN, '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding', '1792972800000_create-sms-gateway']);
       expect(NAMES.filter((name) => name.endsWith('add-users-account-origin'))).toEqual([ORIGIN]);
       expect(NAMES).not.toContain(D2_ORIGIN_NAME);
     });

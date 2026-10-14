@@ -263,13 +263,20 @@ class SessionController extends ChangeNotifier {
 
   // ---- register / login ------------------------------------------------------------------------------------------
 
-  Future<bool> register({required String phone, required String password, required String fullName}) async {
+  /// [verificationToken] is the one-use proof of the OTP step; it is sent ONLY when the server runs REQUIRED verification (the
+  /// DISABLED_TEST body has no such field and the server refuses one). It rides in the same signed body as everything else, so a
+  /// retry after a lost answer replays the identical request.
+  Future<bool> register({required String phone, required String password, required String fullName, String? verificationToken}) async {
+    if (_registrationMode == RegistrationMode.required && verificationToken == null) {
+      return false;
+    }
     return _begin(
       PendingKind.register,
       '/v1/client-auth/register',
       (Map<String, Object?> device) => jsonEncode(<String, Object?>{
         'phone': phone.trim(),
         'password': password,
+        if (_registrationMode == RegistrationMode.required) 'verification_token': verificationToken,
         'device': device,
         'full_name': fullName,
         'consent': <String, Object?>{'terms_version': kConsentTermsVersion, 'privacy_version': kConsentPrivacyVersion},

@@ -7,19 +7,30 @@ import { freshClockMs } from '../idempotency/idempotency-repository';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { ACCOUNT_ORIGIN_POLICY, AccountOriginPolicy, standardAccountOriginPolicy } from './account-origin';
-import { AUDIT_ACTIONS, OTP_PROVIDER_TIMEOUT_MS, REGISTER_PURPOSE } from './auth-constants';
+import { AUDIT_ACTIONS, OTP_PROVIDER_TIMEOUT_MS, REGISTER_PURPOSE, RESET_PASSWORD_PURPOSE } from './auth-constants';
 import { AUTH_CONFIG } from './auth-config.provider';
 import { computeOtpDigest, digestsEqual, generateOtp } from './otp';
 import { otpRequestLockKey } from './otp-lane-lock';
-import { OTP_PROVIDER, OtpProvider } from './otp-provider';
+import { isQueuedReceipt, OTP_PROVIDER, OtpDelivery, OtpProvider } from './otp-provider';
 import { generateToken } from './tokens';
 import { UserRepository } from './user-repository';
 import { VerificationRepository } from './verification-repository';
 
+/**
+ * `delivery_status` is present ONLY when the code was accepted into the SMS queue and is NOT sent yet (PENDING_DELIVERY): the
+ * code cannot be verified until the phone reports it (GET /auth/phone-verifications/:id). A synchronous provider omits the
+ * field, which keeps the original response shape.
+ */
 export interface OtpRequestResult {
   readonly verification_id: string;
   readonly expires_in_seconds: number;
   readonly resend_after_seconds: number;
+  readonly delivery_status?: 'PENDING_DELIVERY';
+}
+
+/** SENT | PENDING_DELIVERY | UNCERTAIN (the SMS may or may not have left; the code can still be used) | FAILED | EXPIRED | CLOSED */
+export interface OtpDeliveryStatus {
+  readonly delivery_status: 'SENT' | 'PENDING_DELIVERY' | 'UNCERTAIN' | 'FAILED' | 'EXPIRED' | 'CLOSED';
 }
 
 export interface OtpVerifyResult {
@@ -59,6 +70,11 @@ export class VerificationService {
   async requestOtp(phoneNormalized: string, purpose: string): Promise<OtpRequestResult> {
     // Staging fixture mode (M00-D2): closed at the service boundary, before the database, a digest or the provider.
     this.policy.assertRegistrationOpen();
+    // A provider with a queue (the SMS gateway) says BEFORE anything is written whether it can take a message at all.
+    const readiness = await this.provider.assertReady?.(phoneNormalized, REGISTER_PURPOSE);
+    if (readiness !== undefined && !readiness.deliverable) {
+      throw new TechnicalError('unavailable', 'OTP delivery is not available for this number');
+    }
     const verificationId = randomUUID();
     const otp = generateOtp();
     const otpDigest = computeOtpDigest(this.config.otpHmacKey, verificationId, phoneNormalized, purpose, otp);
@@ -83,11 +99,26 @@ export class VerificationService {
     });
 
     // Committed. The provider is called with no transaction open.
+    let queued = false;
     try {
-      await this.#deliver(phoneNormalized, otp);
+      queued = await this.#deliver(phoneNormalized, otp, {
+        verificationId,
+        purpose: REGISTER_PURPOSE,
+        ttlSeconds: this.config.otpTtlSeconds,
+      });
     } catch {
       await this.#markDeliveryFailed(verificationId);
       throw new TechnicalError('unavailable', 'OTP delivery failed');
+    }
+
+    if (queued) {
+      // Only ACCEPTED into the SMS queue: the challenge stays PENDING_DELIVERY (cannot be verified) until the gateway reports.
+      return {
+        verification_id: verificationId,
+        expires_in_seconds: this.config.otpTtlSeconds,
+        resend_after_seconds: this.config.otpResendSeconds,
+        delivery_status: 'PENDING_DELIVERY',
+      };
     }
 
     const marked = await this.transactions.withTransaction((context) =>
@@ -105,18 +136,101 @@ export class VerificationService {
     };
   }
 
-  async verifyOtp(verificationId: string, otp: string, requestId: string): Promise<OtpVerifyResult> {
+  /**
+   * RESET_PASSWORD request (issue #102). The answer never depends on the account: a challenge row is written for EVERY number
+   * (so the cooldown and the per-phone caps behave the same), and only an eligible, allowed number is actually queued.
+   * Pre-flight failures (kill switch, no gateway, caps) are identical for every number. After the pre-flight a failure to queue
+   * is NOT shown either: the challenge is closed and the caller still gets the generic answer.
+   */
+  async requestResetOtp(
+    phoneNormalized: string,
+    isEligible: (context: TransactionContext) => Promise<boolean>,
+  ): Promise<OtpRequestResult> {
+    const sender = this.provider.sendResetOtp?.bind(this.provider);
+    if (sender === undefined) {
+      throw new TechnicalError('unavailable', 'Password reset OTP is not available');
+    }
+    const readiness = await this.provider.assertReady?.(phoneNormalized, RESET_PASSWORD_PURPOSE);
+    if (readiness === undefined) {
+      throw new TechnicalError('unavailable', 'Password reset OTP is not available');
+    }
+    const verificationId = randomUUID();
+    const otp = generateOtp();
+    const otpDigest = computeOtpDigest(this.config.otpHmacKey, verificationId, phoneNormalized, RESET_PASSWORD_PURPOSE, otp);
+
+    const eligible = await this.transactions.withTransaction(async (context) => {
+      await this.verifications.lockLane(context, otpRequestLockKey(phoneNormalized, RESET_PASSWORD_PURPOSE));
+      if (await this.verifications.hasLiveCooldown(context, phoneNormalized, RESET_PASSWORD_PURPOSE)) {
+        throw new AppError('OTP_RATE_LIMITED');
+      }
+      await this.verifications.invalidateLive(context, phoneNormalized, RESET_PASSWORD_PURPOSE);
+      await this.verifications.insertPendingDelivery(context, {
+        verificationId,
+        phoneNormalized,
+        purpose: RESET_PASSWORD_PURPOSE,
+        otpDigest,
+        otpTtlSeconds: this.config.otpTtlSeconds,
+        resendSeconds: this.config.otpResendSeconds,
+      });
+      return (await isEligible(context)) && readiness.deliverable;
+    });
+
+    if (eligible) {
+      try {
+        await this.#withTimeout(
+          sender(phoneNormalized, otp, {
+            verificationId,
+            purpose: RESET_PASSWORD_PURPOSE,
+            ttlSeconds: this.config.otpTtlSeconds,
+          }),
+        );
+      } catch {
+        await this.#markDeliveryFailed(verificationId);
+      }
+    }
+    return {
+      verification_id: verificationId,
+      expires_in_seconds: this.config.otpTtlSeconds,
+      resend_after_seconds: this.config.otpResendSeconds,
+      delivery_status: 'PENDING_DELIVERY',
+    };
+  }
+
+  /** Delivery state of a REGISTER challenge, for the client that created it. Says nothing about any account. */
+  async getDelivery(verificationId: string): Promise<OtpDeliveryStatus> {
+    const view = await this.transactions.withTransaction((context) => this.verifications.deliveryView(context, verificationId));
+    if (view === undefined || view.purpose !== REGISTER_PURPOSE) {
+      throw new AppError('OTP_INVALID');
+    }
+    if (view.status === 'PENDING_DELIVERY') {
+      return { delivery_status: view.expired ? 'EXPIRED' : 'PENDING_DELIVERY' };
+    }
+    if (view.status === 'DELIVERY_FAILED') {
+      return { delivery_status: view.jobStatus === 'EXPIRED' ? 'EXPIRED' : 'FAILED' };
+    }
+    if (view.status === 'PENDING') {
+      return { delivery_status: view.expired ? 'EXPIRED' : view.jobStatus === 'UNKNOWN' ? 'UNCERTAIN' : 'SENT' };
+    }
+    return { delivery_status: 'CLOSED' };
+  }
+
+  async verifyOtp(
+    verificationId: string,
+    otp: string,
+    requestId: string,
+    purpose: string = REGISTER_PURPOSE,
+  ): Promise<OtpVerifyResult> {
     // Same boundary as requestOtp: nothing is read or counted while the fixture mode is on.
     this.policy.assertRegistrationOpen();
     const outcome = await this.transactions.withTransaction((context) =>
-      this.#verifyInTransaction(context, verificationId, otp),
+      this.#verifyInTransaction(context, verificationId, otp, purpose),
     );
 
     switch (outcome.kind) {
       case 'verified':
         return {
           verification_token: outcome.token,
-          purpose: REGISTER_PURPOSE,
+          purpose,
           expires_in_seconds: this.config.proofTtlSeconds,
         };
       case 'wrong':
@@ -143,9 +257,12 @@ export class VerificationService {
     context: TransactionContext,
     verificationId: string,
     otp: string,
+    purpose: string,
   ): Promise<VerifyOutcome> {
     const row = await this.verifications.lockForVerify(context, verificationId);
-    if (row === undefined) {
+    // A challenge of another purpose is indistinguishable from an unknown one: a REGISTER code never resets a password and
+    // the other way round. Nothing is counted against it.
+    if (row === undefined || row.purpose !== purpose) {
       return { kind: 'rejected', code: 'OTP_INVALID' };
     }
     // The clock is read AFTER the lock: the wait for the lock may have lasted past the expiry.
@@ -198,16 +315,23 @@ export class VerificationService {
     return { kind: 'verified', token };
   }
 
-  async #deliver(phoneNormalized: string, otp: string): Promise<void> {
+  /** True when the provider only QUEUED the message (it is not delivered yet). */
+  async #deliver(phoneNormalized: string, otp: string, delivery: OtpDelivery): Promise<boolean> {
+    const result = await this.#withTimeout(
+      (async () => this.provider.sendRegisterOtp(phoneNormalized, otp, delivery))(),
+    );
+    return isQueuedReceipt(result);
+  }
+
+  async #withTimeout<T>(call: Promise<T>): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => reject(new Error('provider timeout')), OTP_PROVIDER_TIMEOUT_MS);
     });
-    const call = (async () => this.provider.sendRegisterOtp(phoneNormalized, otp))();
     // If the timeout wins, a later rejection of the abandoned call must not become an unhandled rejection.
     call.catch(() => undefined);
     try {
-      await Promise.race([call, timeout]);
+      return await Promise.race([call, timeout]);
     } finally {
       clearTimeout(timer);
     }

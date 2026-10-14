@@ -99,8 +99,9 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 1 account read code (M01 account read: USER_NOT_AVAILABLE)
     // + 3 USER lock/unlock codes (M01 account lock, D15: USER_ACCOUNT_VERSION_CONFLICT, USER_ACCOUNT_ALREADY_IN_STATE, USER_ACCOUNT_IMPACT_REVIEW_REQUIRED):
     // + 4 native device codes (M01-ANDROID: DEVICE_PROOF_INVALID, DEVICE_PROOF_EXPIRED, DEVICE_PROOF_UNSUPPORTED, DEVICE_RATE_LIMITED)
+    // + 3 SMS gateway codes (issue #102: GATEWAY_UNAUTHORIZED, GATEWAY_JOB_NOT_FOUND, GATEWAY_ACK_CONFLICT)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(62);
+    expect(codes).toHaveLength(65);
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(18);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);
     expect(codes).toContain('TRANSACTION_OUTCOME_UNKNOWN');

@@ -281,4 +281,26 @@ class FakeDriverServer {
 void installResetRoutes(FakeApiTransport transport, {String mode = 'DISABLED_TEST'}) {
   transport.routes['GET /v1/account-recovery/config'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'mode': mode}});
   transport.routes['POST /v1/account-recovery/reset-test'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'next': 'LOGIN'}});
+  // SMS_OTP (issue #102): the same generic answer for every number; the code the fake server accepts is [otp].
+  transport.routes['POST /v1/account-recovery/otp'] = (String m, String p, Map<String, String> h, String b) async =>
+      json(200, <String, Object?>{'data': <String, Object?>{'verification_id': '44444444-4444-4444-8444-444444444444', 'expires_in_seconds': 300, 'resend_after_seconds': 60, 'delivery_status': 'PENDING_DELIVERY'}});
+  transport.routes['POST /v1/account-recovery/otp/44444444-4444-4444-8444-444444444444/verify'] = (String m, String p, Map<String, String> h, String b) async =>
+      b.contains('"123456"') ? json(200, <String, Object?>{'data': <String, Object?>{'verification_token': 'RESET-PROOF-TOKEN-0123456789', 'purpose': 'RESET_PASSWORD', 'expires_in_seconds': 600}}) : apiError(400, 'OTP_INVALID');
+  transport.routes['POST /v1/account-recovery/reset'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'next': 'LOGIN'}});
+}
+
+/// The REGISTER OTP routes. [queued] = the server accepted the code into the SMS queue (PENDING_DELIVERY, then [deliveries] in
+/// order); otherwise the provider is synchronous and the answer has no delivery_status. The code the fake accepts is 123456.
+void installOtpRoutes(FakeApiTransport transport, {bool queued = true, List<String> deliveries = const <String>['PENDING_DELIVERY', 'SENT']}) {
+  const String id = '55555555-5555-4555-8555-555555555555';
+  int polls = 0;
+  transport.routes['POST /v1/auth/phone-verifications'] = (String m, String p, Map<String, String> h, String b) async =>
+      json(201, <String, Object?>{'data': <String, Object?>{'verification_id': id, 'expires_in_seconds': 300, 'resend_after_seconds': 60, if (queued) 'delivery_status': 'PENDING_DELIVERY'}});
+  transport.routes['GET /v1/auth/phone-verifications/$id'] = (String m, String p, Map<String, String> h, String b) async {
+    final String status = deliveries[polls < deliveries.length ? polls : deliveries.length - 1];
+    polls++;
+    return json(200, <String, Object?>{'data': <String, Object?>{'delivery_status': status}});
+  };
+  transport.routes['POST /v1/auth/phone-verifications/$id/verify'] = (String m, String p, Map<String, String> h, String b) async =>
+      b.contains('"123456"') ? json(200, <String, Object?>{'data': <String, Object?>{'verification_token': 'REGISTER-PROOF-TOKEN-0123456789', 'purpose': 'REGISTER', 'expires_in_seconds': 600}}) : apiError(400, 'OTP_INVALID');
 }

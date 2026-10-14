@@ -323,6 +323,8 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
   );
   await pool.query('DELETE FROM app.users WHERE phone_normalized = $1', [normalizedPhone]);
   await pool.query('DELETE FROM app.verification_proofs WHERE phone_normalized = $1', [normalizedPhone]);
+  // Issue #102: SMS jobs reference the challenge.
+  await pool.query('DELETE FROM app.sms_jobs WHERE phone_normalized = $1', [normalizedPhone]);
   await pool.query('DELETE FROM app.phone_verifications WHERE phone_normalized = $1', [normalizedPhone]);
 }
 

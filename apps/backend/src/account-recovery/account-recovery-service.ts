@@ -7,6 +7,13 @@ import { ACCOUNT_ORIGIN_POLICY, AccountOriginPolicy, isOrdinaryClientAccount } f
 import { PASSWORD_HASHER, PasswordHasher } from '../auth/password-hasher';
 import { SessionRepository } from '../auth/session-repository';
 import { ResetTargetRow, UserRepository } from '../auth/user-repository';
+import { RESET_PASSWORD_PURPOSE } from '../auth/auth-constants';
+import { ProofRepository } from '../auth/proof-repository';
+import { digestToken, parseCanonicalToken } from '../auth/tokens';
+import { OtpRequestResult, OtpVerifyResult, VerificationService } from '../auth/verification-service';
+import { AppError } from '../common/app-errors';
+import { freshClockMs } from '../idempotency/idempotency-repository';
+import { TransactionManager } from '../transaction/transaction-manager';
 import { AuditWriter } from '../audit/audit-writer';
 import { TechnicalError } from '../common/app-errors';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
@@ -19,8 +26,12 @@ import {
   RESET_TEST_OPERATION_ID,
   RESET_TEST_SCOPE_TYPE,
   RESET_TEST_VERIFICATION_MARK,
+  RESET_OTP_AUDIT_ACTION,
+  RESET_OTP_OPERATION_ID,
+  RESET_OTP_SCOPE_TYPE,
+  RESET_OTP_VERIFICATION_MARK,
 } from './account-recovery-constants';
-import { ResetTestInput } from './account-recovery-validation';
+import { ResetOtpInput, ResetTestInput } from './account-recovery-validation';
 
 /** The one answer, identical for a reset account, an unknown phone, SYSTEM and anything outside the test policy. */
 export const RESET_ACK = Object.freeze({ next: 'LOGIN' });
@@ -59,6 +70,9 @@ export class AccountRecoveryService {
     private readonly adminSessions: AdminSessionRepository,
     private readonly challenges: AdminChallengeRepository,
     private readonly audit: AuditWriter,
+    private readonly transactions: TransactionManager,
+    private readonly verification: VerificationService,
+    private readonly proofs: ProofRepository,
     @Inject(PASSWORD_HASHER) private readonly hasher: PasswordHasher,
     @Inject(ACCOUNT_ORIGIN_POLICY) private readonly policy: AccountOriginPolicy,
     @Inject(APP_CONFIG) config: AppConfig,
@@ -71,6 +85,111 @@ export class AccountRecoveryService {
     if (this.mode !== 'DISABLED_TEST') {
       throw new TechnicalError('unavailable', 'Account recovery is not available');
     }
+  }
+
+  /** SMS_OTP mode only (issue #102). Every other mode, including DISABLED_TEST, answers 503 before anything else happens. */
+  assertSmsOtpOpen(): void {
+    if (this.mode !== 'SMS_OTP') {
+      throw new TechnicalError('unavailable', 'Account recovery is not available');
+    }
+  }
+
+  /**
+   * Step 1 of the OTP reset: the generic answer. The challenge exists for every number; the SMS is queued only for a USER or
+   * ADMIN account (never SYSTEM, a fixture or an out-of-policy row) whose number the recipient policy allows.
+   */
+  async requestOtp(phoneNormalized: string): Promise<OtpRequestResult> {
+    this.assertSmsOtpOpen();
+    return this.verification.requestResetOtp(phoneNormalized, async (context) => {
+      const found = await this.users.findByPhone(context, phoneNormalized);
+      if (found === undefined) {
+        return false;
+      }
+      const target = await this.users.readResetTarget(context, found.userId);
+      if (target === undefined || target.phoneNormalized !== phoneNormalized) {
+        return false;
+      }
+      const membership = target.hasAdminMembership ? await this.memberships.find(context, target.userId) : undefined;
+      return this.#classify(target, membership?.adminRole) !== undefined;
+    });
+  }
+
+  /** Step 2: a one-use proof for the RESET_PASSWORD purpose. A REGISTER challenge is rejected as an unknown one. */
+  async verifyOtp(verificationId: string, otp: string, requestId: string): Promise<OtpVerifyResult> {
+    this.assertSmsOtpOpen();
+    return this.verification.verifyOtp(verificationId, otp, requestId, RESET_PASSWORD_PURPOSE);
+  }
+
+  /**
+   * Step 3: sets the new password for the account that owns the proven number. One transaction (opened by the idempotency
+   * executor): proof lock + clock -> user -> membership (admin) -> password + version -> every app / admin session revoked and
+   * every unconsumed admin preauth step superseded -> proof consumed -> audit (no phone, no code, no password).
+   * Roles, status, profile and the TOTP factor are never touched; nothing signs the user in.
+   */
+  async resetWithProof(
+    input: ResetOtpInput,
+    idempotencyKey: string | readonly string[] | undefined,
+    requestId: string,
+  ): Promise<ResetOutcome> {
+    this.assertSmsOtpOpen();
+    parseIdempotencyKey(idempotencyKey);
+    const token = parseCanonicalToken(input.verificationToken);
+    if (token === undefined) {
+      throw new AppError('VERIFICATION_PROOF_INVALID');
+    }
+    const tokenDigest = digestToken(token);
+    const proofId = await this.transactions.withTransaction((context) => this.proofs.findIdByDigest(context, tokenDigest));
+    if (proofId === undefined) {
+      throw new AppError('VERIFICATION_PROOF_INVALID');
+    }
+    const passwordHash = await this.hasher.hash(input.password);
+    const outcome = await this.executor.execute(
+      {
+        scopeType: RESET_OTP_SCOPE_TYPE,
+        scopeId: proofId,
+        operationId: RESET_OTP_OPERATION_ID,
+        idempotencyKey,
+        logicalRequest: { mode: 'SMS_OTP', verification_token: token, password: input.password },
+        replay: { kind: 'non-sensitive' },
+      },
+      (context) => this.#applyWithProof(context, proofId, passwordHash, requestId),
+    );
+    return { status: outcome.status, payload: outcome.payload };
+  }
+
+  async #applyWithProof(context: TransactionContext, proofId: string, passwordHash: string, requestId: string) {
+    const proof = await this.proofs.lockForRegister(context, proofId);
+    if (proof === undefined) {
+      throw new AppError('VERIFICATION_PROOF_INVALID');
+    }
+    const nowMs = await freshClockMs(context);
+    if (proof.purpose !== RESET_PASSWORD_PURPOSE) {
+      throw new AppError('VERIFICATION_PURPOSE_MISMATCH');
+    }
+    if (proof.consumed) {
+      throw new AppError('VERIFICATION_PROOF_USED');
+    }
+    if (proof.invalidated || proof.expiresAtMs <= nowMs) {
+      throw new AppError('VERIFICATION_PROOF_INVALID');
+    }
+    const found = await this.users.findByPhone(context, proof.phoneNormalized);
+    if (found === undefined) {
+      throw new AppError('VERIFICATION_PROOF_INVALID');
+    }
+    // Lock order of the module: user, then membership.
+    const target = await this.users.lockResetTarget(context, found.userId);
+    if (target === undefined || target.phoneNormalized !== proof.phoneNormalized) {
+      throw new AppError('VERIFICATION_PROOF_INVALID');
+    }
+    const membership = target.hasAdminMembership ? await this.memberships.lock(context, target.userId) : undefined;
+    const kind = this.#classify(target, membership?.adminRole);
+    if (kind === undefined) {
+      // SYSTEM, a fixture or an out-of-policy row is never reset by SMS, whatever proof is presented.
+      throw new AppError('VERIFICATION_PROOF_INVALID');
+    }
+    await this.proofs.consume(context, proofId);
+    await this.#changePassword(context, target, kind, passwordHash, requestId, RESET_OTP_AUDIT_ACTION, RESET_OTP_VERIFICATION_MARK);
+    return { status: 200, replayGuard: { kind: 'reset_otp', proof_id: proofId }, payload: { ...RESET_ACK } };
   }
 
   async resetTest(input: ResetTestInput, idempotencyKey: string | readonly string[] | undefined, requestId: string): Promise<ResetOutcome> {
@@ -111,6 +230,19 @@ export class AccountRecoveryService {
     if (kind === undefined) {
       return ack;
     }
+    await this.#changePassword(context, target, kind, passwordHash, requestId, RESET_TEST_AUDIT_ACTION, RESET_TEST_VERIFICATION_MARK);
+    return ack;
+  }
+
+  async #changePassword(
+    context: TransactionContext,
+    target: ResetTargetRow,
+    kind: TargetKind,
+    passwordHash: string,
+    requestId: string,
+    auditAction: string,
+    verificationMark: string,
+  ): Promise<void> {
     const version = await this.users.setPasswordHash(context, { userId: target.userId, passwordHash });
     if (version === undefined) {
       throw new TechnicalError('internal', 'Locked account could not be updated');
@@ -125,7 +257,7 @@ export class AccountRecoveryService {
     await this.audit.append(context, {
       requestId,
       actorType: 'ANONYMOUS',
-      action: RESET_TEST_AUDIT_ACTION,
+      action: auditAction,
       resourceType: 'user',
       resourceId: target.userId,
       resourceVersion: version,
@@ -134,12 +266,11 @@ export class AccountRecoveryService {
         target_user_id: target.userId,
         target_kind: kind,
         version,
-        verification: RESET_TEST_VERIFICATION_MARK,
+        verification: verificationMark,
         revoked_app_sessions: revokedSessions,
         admin_credentials_revoked: adminSessionsRevoked,
       },
     });
-    return ack;
   }
 
   /**

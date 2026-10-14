@@ -52,6 +52,7 @@ export class KeyVersion {
   readonly #adminTotpKey: Buffer;
   readonly #adminOperationKey: Buffer;
   readonly #adminActivationOtpKey: Buffer;
+  readonly #smsPayloadKey: Buffer;
   readonly #random: RandomBytesFn;
 
   constructor(id: string, subkeys: DerivedSubkeys, random: RandomBytesFn) {
@@ -63,6 +64,7 @@ export class KeyVersion {
     this.#adminTotpKey = subkeys.adminTotpEncryption;
     this.#adminOperationKey = subkeys.adminOperation;
     this.#adminActivationOtpKey = subkeys.adminActivationOtp;
+    this.#smsPayloadKey = subkeys.smsPayload;
     this.#random = random;
     Object.freeze(this);
   }
@@ -255,6 +257,61 @@ export class KeyVersion {
     return createHmac('sha256', this.#adminActivationOtpKey)
       .update(JSON.stringify(['11ship.admin-activation.otp.v1', challengeId, phoneNormalized, 'ADMIN_ACTIVATION', otp]), 'utf8')
       .digest('hex');
+  }
+
+  /**
+   * AES-256-GCM seal of a queued SMS (issue #102). The associated data binds the key id, the job id and the purpose, so an
+   * envelope cannot be moved to another job. The plaintext is the exact bytes of the recipient + text JSON.
+   */
+  sealSmsPayload(jobId: string, plaintext: Buffer): ReplayEnvelope {
+    let iv: Buffer;
+    try {
+      iv = this.#random(IV_BYTES);
+    } catch {
+      throw new CryptoError('rng_failure');
+    }
+    if (!Buffer.isBuffer(iv) || iv.length !== IV_BYTES || !Buffer.isBuffer(plaintext) || plaintext.length < 1 || plaintext.length > 512) {
+      throw new CryptoError('invalid_input');
+    }
+    try {
+      const cipher = createCipheriv('aes-256-gcm', this.#smsPayloadKey, iv, { authTagLength: TAG_BYTES });
+      cipher.setAAD(this.#smsPayloadAad(jobId));
+      const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+      return { iv: Buffer.from(iv), tag: cipher.getAuthTag(), ciphertext };
+    } catch {
+      throw new CryptoError('invalid_input');
+    }
+  }
+
+  /** Opens a sealed SMS. Anything wrong (tag, AAD, key, shape) is a CryptoError; nothing is returned early. */
+  openSmsPayload(jobId: string, envelope: ReplayEnvelope): Buffer {
+    const { iv, tag, ciphertext } = envelope;
+    if (
+      !Buffer.isBuffer(iv) ||
+      iv.length !== IV_BYTES ||
+      !Buffer.isBuffer(tag) ||
+      tag.length !== TAG_BYTES ||
+      !Buffer.isBuffer(ciphertext) ||
+      ciphertext.length < 1 ||
+      ciphertext.length > 512
+    ) {
+      throw new CryptoError('invalid_envelope');
+    }
+    try {
+      const decipher = createDecipheriv('aes-256-gcm', this.#smsPayloadKey, iv, { authTagLength: TAG_BYTES });
+      decipher.setAAD(this.#smsPayloadAad(jobId));
+      decipher.setAuthTag(tag);
+      return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    } catch {
+      throw new CryptoError('authentication_failed');
+    }
+  }
+
+  #smsPayloadAad(jobId: string): Buffer {
+    if (typeof jobId !== 'string' || jobId.length === 0 || jobId.length > 64) {
+      throw new CryptoError('invalid_input');
+    }
+    return Buffer.from(JSON.stringify(['11ship.sms-payload.v1', this.id, jobId]), 'utf8');
   }
 
   #adminTotpAad(binding: AdminTotpBinding): Buffer {
