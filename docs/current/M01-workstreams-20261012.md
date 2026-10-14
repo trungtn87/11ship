@@ -47,7 +47,8 @@ Kiểm kê giới hạn cây file main 44ee7d65e0b1440634117261da96091293bb398d 
 - Có backend onboarding quán/xế, admin auth/lời mời/kích hoạt; có UI web/shared auth và Flutter shell/shared. Tái sử dụng đúng điểm vào bảng trên.
 - Tài liệu UI còn dòng “chờ M01.03/.04/.05” dù endpoint đã có; không dùng nhãn chờ cũ để triển khai lại backend.
 - Reset có nghiệp vụ đã duyệt, còn chi tiết kỹ thuật cần chốt; tài liệu UI ghi API danh sách quản trị viên/grants còn thiếu. Xác nhận đúng phần khi giao, không tuyên bố hoàn thành từ UI.
-- Quyết định Owner 12/10: bản test tạm đóng xác minh tài khoản, không cần OTP giả lập. Các handoff TEST_INBOX cũ không được giao lại mặc định. Contract test thay đổi cần được ghi riêng cho đúng môi trường trước Claude sửa; không tự mở bypass production hoặc bỏ TOTP Admin/SYSTEM. Đây là quyết định phải triển khai, không xác nhận code đã sửa.
+- **Cập nhật 14/10/2026 — thay thế dòng kế tiếp cho VPS:** VPS là bản vận hành thật, OTP thật qua SMS Gateway, không `DISABLED_TEST`: xem [M01-production-profile-20261014.md](M01-production-profile-20261014.md). Chế độ `DISABLED_TEST` chỉ còn cho dev/test cục bộ.
+- Quyết định Owner 12/10 (chỉ còn đúng cho dev/test cục bộ): bản test tạm đóng xác minh tài khoản, không cần OTP giả lập. Các handoff TEST_INBOX cũ không được giao lại mặc định. Contract test thay đổi cần được ghi riêng cho đúng môi trường trước Claude sửa; không tự mở bypass production hoặc bỏ TOTP Admin/SYSTEM. Đây là quyết định phải triển khai, không xác nhận code đã sửa.
 
 ## 5. Kiểm tra và review một lần cuối module
 Trong triển khai: Claude build/typecheck phần thay đổi khi cần và kiểm tra luồng vừa làm chạy được, test ca lỗi vừa sửa nếu có. Không yêu cầu đợt tìm lỗi độc lập, ma trận nghiệm thu mọi app, full local suite rồi chạy lại bằng CI và ChatGPT cho mỗi phần nhỏ.

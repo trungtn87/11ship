@@ -1,7 +1,7 @@
 # 11Food and 11Ship test apps (Flutter, Android)
 
 Test APKs for the Owner. They check the real server connection (`GET /v1/health/live` and `/v1/health/ready`) and, since M01-ANDROID, connect the
-account flow to the real backend: **register (test build, no OTP) -> login -> own profile (name) -> logout / session end**, on a device-bound session.
+account flow to the real backend: **register (SMS code) -> login -> own profile (name) -> logout / session end**, on a device-bound session.
 Every other business action stays **locked with a visible reason** ("Chưa nối trên Android"); there are no fake accounts, balances, shops, orders or GPS.
 
 - `packages/n11_shared` brand, theme, health monitor (5 s timeout, newest-check-wins, normal TLS verification only), widgets, diagnostics, and the account layer
@@ -23,7 +23,7 @@ Install: allow "install unknown apps" for the app you open the file with, tap th
 
 Contract: `docs/design/system-v2-20261011/11-m01-session-device-contract.md` sections 7-9; hand-off `docs/tasks/M01-android-account-session-handoff-20261013.md`.
 
-- **No OTP in the test build, and no weaker proof.** Registration uses the server's `CLIENT_AUTH_PHONE_VERIFICATION_MODE=DISABLED_TEST` (account stored as `TEST_UNVERIFIED`). The device proof, the signatures and TLS are
+- **Registration needs the SMS code, and no weaker proof.** The app registers only when the server answers `REQUIRED` (`GET /v1/client-auth/config`); any other answer opens nothing. The device proof, the signatures and TLS are all still required.
   all still required. If the server runs `REQUIRED`, the register screen says that phone verification is not supported on Android; nothing is faked.
 - **Device proof.** Each app has an ECDSA P-256 key generated inside the Android Keystore (non-exportable) with the server's challenge as attestation challenge. Every login / register / authenticated request is signed by it; a stolen token
   without the key opens nothing. A phone that cannot attest in TEE / StrongBox with a locked, verified boot gets `DEVICE_PROOF_UNSUPPORTED` (shown as such); there is no software fallback and no compatibility tier.
@@ -42,7 +42,7 @@ All three reuse the session above and the backend that already exists; nothing i
   ACTIVE and DISABLED shops are read-only. Every write is read back with `GET`; a lost answer is retried with the same key and body only when the person presses *Thử lại*.
 - **Ship - driver profile (S12-S13).** *Tài khoản -> Hồ sơ xế*. `GET /v1/driver/me` first; one `POST /v1/onboarding/driver {full_name, plate_number?}`; then `driver/me` and `me` are read again. PENDING / ACTIVE / SUSPENDED / CLOSING / CLOSED are shown with *Tải lại*.
   Sending the profile never changes the context and never enables receiving orders (still locked).
-- **Both - forgotten password (test).** *Đăng nhập -> Quên mật khẩu?*. `GET /v1/account-recovery/config` opens the form only when the server says `DISABLED_TEST`; `POST /v1/account-recovery/reset-test {phone, password}` is **public** (no token, cookie or device proof; the
+- **Both - forgotten password (SMS code only).** *Đăng nhập -> Quên mật khẩu?*: the form works only when `GET /v1/account-recovery/config` says `SMS_OTP` (phone -> *Gửi mã* -> code from the SMS -> new password: `POST /v1/account-recovery/otp`, `.../otp/{id}/verify`, `.../reset {verification_token, password}`). The code request answers the same for every number, the proof is one-use and bound to the number that received the code. The old no-OTP route is not used by the app. Email recovery is **not** part of this build.
   gateway forwards only `Idempotency-Key` and `Content-Type`). The answer is one generic acknowledgement, never an automatic login; the password confirmation is checked only on the phone. The server revokes the account's sessions, so an old session then ends through the normal 401 path.
   With `ACCOUNT_RECOVERY_MODE=SMS_OTP` (issue #102) the same screen becomes phone -> *Gửi mã* -> code from the SMS -> new password: `POST /v1/account-recovery/otp`, `.../otp/{id}/verify`, `.../reset {verification_token, password}`.
   The code request answers the same for every number ("if the number is registered you will receive an SMS"), the proof is one-use and bound to the number that received the code, and the screen asks for the password only after the code was verified.
@@ -53,8 +53,10 @@ All three reuse the session above and the backend that already exists; nothing i
 - **Permissions (exact allowlist, checked in CI by `mobile/tool/check-apk-permissions.sh`).** Food: INTERNET, ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION (+ the signature permission between the two apps). Ship: INTERNET only (+ the signature permission). No background location, camera, contacts or storage.
 - When a session ends (logout, 401, another phone), the shop, driver and reset controllers drop every personal value and any pending write.
 
-### Server inputs (development/test, loopback bind only)
-`CLIENT_AUTH_ANDROID_ENABLED=true` plus `CLIENT_DEVICE_ENVIRONMENT`, `CLIENT_DEVICE_ALLOWED_SIGNERS_FILE`, `CLIENT_DEVICE_ATTESTATION_ROOTS_FILE`, `CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE` (see `.env.example`). Staging, production or a remote bind with the gate on stop the startup.
+> **Production note (2026-10-14):** the apps are the real operating build. Server address: `config/endpoints.json` (read by the workflows). Consent pair sent: `terms-20261014-v1` / `privacy-20261014-v1` (texts in `docs/current/M01-terms-privacy-20261014.md`, pending Owner approval). The sections below describe the same inputs; production uses `APP_ENV=production` on a loopback bind behind nginx — see `ops/runbooks/vps-production-update-20261014.md`.
+
+### Server inputs (development/test or production, loopback bind only)
+`CLIENT_AUTH_ANDROID_ENABLED=true` plus `CLIENT_DEVICE_ENVIRONMENT`, `CLIENT_DEVICE_ALLOWED_SIGNERS_FILE`, `CLIENT_DEVICE_ATTESTATION_ROOTS_FILE`, `CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE` (see `.env.example`). Staging or a remote bind with the gate on stop the startup; production needs all four inputs.
 - Signers file: the **Mobile APK** workflow publishes the public signing-certificate SHA-256 of the persistent key (job summary + the `android-signers.json` artifact: `{"FOOD":{"package_name":"vn.eleven.food.test","signer_sha256":"<hex>"},"SHIP":{...}}`). Nothing secret is printed.
 - Roots file: the Android Key Attestation roots that **you pin** (PEM). The app and the server never use the OS trust store for this, and a client can not supply a root.
 - Revocation file: a snapshot of the official Android attestation status list with `fetched_at` (`{"fetched_at":"<ISO>","entries":{"<serial hex>":{"status":"REVOKED"}}}`). Older than 24 hours, or unreadable: the server answers 503 at verification.

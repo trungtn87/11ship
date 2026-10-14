@@ -31,7 +31,7 @@ describe('M01-D-ADMIN-1A - admin invitations (schema, participant, transactions)
 
   async function truncateInvitations(): Promise<void> {
     // M01-D-ADMIN-1B's step-up operations and M01-D-ADMIN-1C's attempts/profiles reference admin_invitations, so a TRUNCATE must name those tables too.
-    await pool.query('TRUNCATE app.admin_app_permissions, app.admin_profiles, app.admin_activation_otp_challenges, app.admin_activation_attempts, app.admin_sensitive_operations, app.admin_invitation_permissions, app.admin_invitations');
+    await pool.query('TRUNCATE app.admin_app_permissions, app.admin_profiles, app.admin_activation_otp_challenges, app.admin_activation_attempts, app.admin_sensitive_operations, app.admin_invitation_permissions, app.admin_invitations, app.sms_jobs');
   }
 
   async function makeUser(admin: boolean): Promise<string> {
