@@ -10,6 +10,12 @@ import { DatabaseTls, resolveDatabaseTls } from '../../database/tls-config';
 //                (port 5432, user <role>.<20-char project ref>), strict TLS from DB_SSL_CA / DB_SSL_CA_FILE, the same
 //                host/port/database/project as the runtime DATABASE_URL with a different role, and the operator typing
 //                the target in MIGRATION_CONFIRM_TARGET (host:port/database/project ref).
+//                DB_REMOTE_TARGET=SELF_HOSTED (M00-VPS-01) selects the one self-hosted staging PostgreSQL instead:
+//                localhost:5432/ship11_staging, operator role ship11_migrator, runtime role ship11_app, the same strict TLS,
+//                MIGRATION_CONFIRM_TARGET=localhost:5432/ship11_staging, and after connecting the SERVER must report that
+//                database, that role, port 5432, TLS in use and no elevated role attribute. Not set means SUPABASE; any
+//                other value is refused. Twin of scripts/db-remote-target.js (tests/deploy/db-remote-target-parity.test.mjs
+//                runs both on one case matrix).
 //   production   refused in this slice.
 
 export type CliEnvSource = Readonly<Record<string, string | undefined>>;
@@ -18,11 +24,35 @@ export interface CliTarget {
   readonly appEnv: 'development' | 'test' | 'staging';
   readonly connectionString: string;
   readonly tls: DatabaseTls | undefined;
-  /** What current_database() / current_user must report once connected (development and test). */
+  /** What current_database() / current_user must report once connected (development, test and self-hosted staging). */
   readonly expected: { readonly database: string; readonly user: string } | undefined;
+  /** True for DB_REMOTE_TARGET=SELF_HOSTED: the connected identity is checked with the stricter server-side query. */
+  readonly selfHosted: boolean;
 }
 
 export type CliTargetResult = { readonly ok: true; readonly target: CliTarget } | { readonly ok: false; readonly problem: string };
+
+export const SELECTOR_VARIABLE = 'DB_REMOTE_TARGET';
+
+/** The one self-hosted staging target. Mirrors SELF_HOSTED in scripts/db-remote-target.js (parity test). */
+export const SELF_HOSTED_TARGET = {
+  appEnv: 'staging',
+  host: 'localhost',
+  port: 5432,
+  database: 'ship11_staging',
+  migrationRole: 'ship11_migrator',
+  runtimeRole: 'ship11_app',
+  confirmTarget: 'localhost:5432/ship11_staging',
+} as const;
+
+export interface SelfHostedIdentityRow {
+  readonly database_name?: unknown;
+  readonly user_name?: unknown;
+  readonly session_user_name?: unknown;
+  readonly server_port?: unknown;
+  readonly tls?: unknown;
+  readonly privileged?: unknown;
+}
 
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
 const SESSION_POOLER_PORT = 5432;
@@ -85,6 +115,17 @@ export function resolveCliTarget(env: CliEnvSource): CliTargetResult {
     return { ok: false, problem: 'APP_ENV must be development, test or staging' };
   }
 
+  // The selector is validated BEFORE any environment-specific path: a value that is not exactly SUPABASE or SELF_HOSTED
+  // (empty, other case, a typo) is refused in every environment, and SELF_HOSTED is refused outside staging, so the
+  // local development/test path can never swallow a selector that the remote operator tools would refuse.
+  const selector = env[SELECTOR_VARIABLE];
+  if (selector !== undefined && selector !== 'SUPABASE' && selector !== 'SELF_HOSTED') {
+    return { ok: false, problem: `${SELECTOR_VARIABLE} must be SUPABASE or SELF_HOSTED (or not set, which means SUPABASE)` };
+  }
+  if (selector === 'SELF_HOSTED' && appEnv !== 'staging') {
+    return { ok: false, problem: `${SELECTOR_VARIABLE}=SELF_HOSTED is allowed only with APP_ENV=staging` };
+  }
+
   if (appEnv === 'development' || appEnv === 'test') {
     const parsed = parseUrl(env.DATABASE_URL);
     if (parsed === undefined) {
@@ -101,11 +142,16 @@ export function resolveCliTarget(env: CliEnvSource): CliTargetResult {
         connectionString: env.DATABASE_URL as string,
         tls: undefined,
         expected: { database: name, user: name },
+        selfHosted: false,
       },
     };
   }
 
-  // staging
+  // staging: the operator picks the target (the selector was validated above). Not set means SUPABASE.
+  if (selector === 'SELF_HOSTED') {
+    return resolveSelfHostedTarget(env);
+  }
+
   const migration = sessionPooler(env.MIGRATION_DATABASE_URL, 'MIGRATION_DATABASE_URL');
   if ('problem' in migration) {
     return { ok: false, problem: migration.problem };
@@ -140,8 +186,114 @@ export function resolveCliTarget(env: CliEnvSource): CliTargetResult {
       connectionString: env.MIGRATION_DATABASE_URL as string,
       tls: tls.tls,
       expected: undefined,
+      selfHosted: false,
     },
   };
+}
+
+interface SelfHostedUrl {
+  readonly username: string;
+}
+
+/** One URL of the self-hosted path: usable postgres URL, no query/fragment, host localhost, port 5432, database ship11_staging. */
+function selfHostedUrl(raw: string | undefined, variable: string): { parsed: SelfHostedUrl } | { problem: string } {
+  const invalid = { problem: `missing or invalid environment variable: ${variable}` };
+  if (raw === undefined) {
+    return invalid;
+  }
+  let url: URL;
+  let database: string;
+  let username: string;
+  try {
+    url = new URL(raw);
+    database = decodeURIComponent(url.pathname.slice(1));
+    username = decodeURIComponent(url.username);
+  } catch {
+    return invalid;
+  }
+  if (!/^postgres(ql)?:$/.test(url.protocol) || url.hostname === '' || database === '' || username === '') {
+    return invalid;
+  }
+  if (raw.includes('?') || raw.includes('#') || url.search !== '' || url.hash !== '') {
+    return { problem: `${variable} must not carry a query string or a fragment` };
+  }
+  const port = url.port === '' ? SELF_HOSTED_TARGET.port : Number(url.port);
+  if (url.hostname !== SELF_HOSTED_TARGET.host) {
+    return { problem: `${variable} must use the host name ${SELF_HOSTED_TARGET.host}` };
+  }
+  if (port !== SELF_HOSTED_TARGET.port) {
+    return { problem: `${variable} must use port ${SELF_HOSTED_TARGET.port}` };
+  }
+  if (database !== SELF_HOSTED_TARGET.database) {
+    return { problem: `${variable} must use the database ${SELF_HOSTED_TARGET.database}` };
+  }
+  return { parsed: { username } };
+}
+
+function resolveSelfHostedTarget(env: CliEnvSource): CliTargetResult {
+  const migration = selfHostedUrl(env.MIGRATION_DATABASE_URL, 'MIGRATION_DATABASE_URL');
+  if ('problem' in migration) {
+    return { ok: false, problem: migration.problem };
+  }
+  const runtime = selfHostedUrl(env.DATABASE_URL, 'DATABASE_URL');
+  if ('problem' in runtime) {
+    return { ok: false, problem: runtime.problem };
+  }
+  if (migration.parsed.username === runtime.parsed.username) {
+    return { ok: false, problem: 'MIGRATION_DATABASE_URL and DATABASE_URL must use different roles' };
+  }
+  if (migration.parsed.username !== SELF_HOSTED_TARGET.migrationRole) {
+    return { ok: false, problem: `MIGRATION_DATABASE_URL must use the role ${SELF_HOSTED_TARGET.migrationRole}` };
+  }
+  if (runtime.parsed.username !== SELF_HOSTED_TARGET.runtimeRole) {
+    return { ok: false, problem: `DATABASE_URL must use the role ${SELF_HOSTED_TARGET.runtimeRole}` };
+  }
+  const tls = resolveDatabaseTls({ env, required: true, databaseUrl: env.MIGRATION_DATABASE_URL });
+  if (!tls.ok || tls.tls === undefined) {
+    const names = (tls.ok ? ['DB_SSL_CA', 'DB_SSL_CA_FILE'] : tls.invalid).map((name) =>
+      name === 'DATABASE_URL' ? 'MIGRATION_DATABASE_URL' : name,
+    );
+    return { ok: false, problem: `invalid or missing configuration. Check environment variable(s): ${names.join(', ')}` };
+  }
+  if (env.MIGRATION_CONFIRM_TARGET !== SELF_HOSTED_TARGET.confirmTarget) {
+    return { ok: false, problem: `confirm the target by setting MIGRATION_CONFIRM_TARGET=${SELF_HOSTED_TARGET.confirmTarget}` };
+  }
+  return {
+    ok: true,
+    target: {
+      appEnv: 'staging',
+      connectionString: env.MIGRATION_DATABASE_URL as string,
+      tls: tls.tls,
+      expected: { database: SELF_HOSTED_TARGET.database, user: SELF_HOSTED_TARGET.migrationRole },
+      selfHosted: true,
+    },
+  };
+}
+
+/**
+ * SELF_HOSTED only: a fixed problem sentence (never a value) when the server's own report of the open connection is not
+ * the operator target, or undefined when it is. Twin of selfHostedIdentityProblem in scripts/db-remote-target.js.
+ */
+export function selfHostedIdentityProblem(row: SelfHostedIdentityRow | null | undefined): string | undefined {
+  if (row === undefined || row === null) {
+    return 'refused: the server did not report the connected identity.';
+  }
+  if (row.database_name !== SELF_HOSTED_TARGET.database) {
+    return `refused: the connected database is not ${SELF_HOSTED_TARGET.database}.`;
+  }
+  if (row.user_name !== SELF_HOSTED_TARGET.migrationRole || row.session_user_name !== SELF_HOSTED_TARGET.migrationRole) {
+    return `refused: the connected role is not ${SELF_HOSTED_TARGET.migrationRole}.`;
+  }
+  if (row.privileged !== false) {
+    return 'refused: the connected role has an elevated attribute (superuser, createrole, createdb, replication or bypassrls).';
+  }
+  if (Number(row.server_port) !== SELF_HOSTED_TARGET.port) {
+    return `refused: the server did not answer on port ${SELF_HOSTED_TARGET.port}.`;
+  }
+  if (row.tls !== true) {
+    return 'refused: the connection is not encrypted with TLS.';
+  }
+  return undefined;
 }
 
 /** After connecting (development and test): the server's own answer must match, whatever the URL said. */
@@ -154,6 +306,7 @@ export function connectedIdentityMatches(
   }
   return reported.database === target.expected.database && reported.user === target.expected.user;
 }
+
 
 /**
  * Extra guard of the local SYSTEM recovery command only (M01-RESET): development or test, AND a loopback database host

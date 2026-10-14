@@ -14,15 +14,30 @@ import { AdminCliError } from '../admin-cli-errors';
 import { AdminLimitConfigRepository } from '../admin-limit-config-repository';
 import { AdminLimitConfigService } from '../admin-limit-config-service';
 import { AdminMembershipRepository } from '../admin-membership-repository';
-import { CliEnvSource, connectedIdentityMatches, resolveCliTarget } from './cli-target-guard';
-import { runSystemRecoveryCli } from './system-recovery-cli';
+import {
+  CliEnvSource,
+  SelfHostedIdentityRow,
+  connectedIdentityMatches,
+  resolveCliTarget,
+  selfHostedIdentityProblem,
+} from './cli-target-guard';
 import { CliInputError, readBootstrapInput } from './stdin-input';
+import { runSystemRecoveryCli } from './system-recovery-cli';
+
+/**
+ * What the SERVER says about the open connection. Read-only. Identical to SELF_HOSTED_IDENTITY_SQL in
+ * scripts/db-remote-target.js (the parity test compares the two texts).
+ */
+export const SELF_HOSTED_IDENTITY_SQL =
+  'SELECT current_database() AS database_name, current_user AS user_name, session_user AS session_user_name, ' +
+  'inet_server_port() AS server_port, ' +
+  'COALESCE((SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()), false) AS tls, ' +
+  '(SELECT rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls FROM pg_roles WHERE rolname = current_user) AS privileged';
 
 export type AdminCliCommand = 'init-limit-config' | 'bootstrap-system' | 'recover-system';
 
 export interface AdminCliIo {
   readonly env: CliEnvSource;
-  /** Command-line arguments after the script name (only `recover-system` reads them). */
   readonly argv?: readonly string[];
   readonly stdin: Readable;
   readonly out: (line: string) => void;
@@ -78,12 +93,22 @@ export async function runAdminAuthCli(command: string, io: AdminCliIo): Promise<
   pool.on('error', () => undefined);
 
   try {
-    const identity = await pool.query<{ database_name: string; user_name: string }>(
-      'SELECT current_database() AS database_name, current_user AS user_name',
-    );
-    const reported = identity.rows[0];
-    if (reported === undefined || !connectedIdentityMatches(target, { database: reported.database_name, user: reported.user_name })) {
-      return fail('refused: the connected database and role are not the allowed target for this APP_ENV');
+    if (target.selfHosted) {
+      // Self-hosted staging: the server itself must report ship11_staging / ship11_migrator / port 5432 / TLS in use /
+      // no elevated role attribute, before anything is read or written.
+      const identity = await pool.query<SelfHostedIdentityRow>(SELF_HOSTED_IDENTITY_SQL);
+      const problem = selfHostedIdentityProblem(identity.rows[0]);
+      if (problem !== undefined) {
+        return fail(problem);
+      }
+    } else {
+      const identity = await pool.query<{ database_name: string; user_name: string }>(
+        'SELECT current_database() AS database_name, current_user AS user_name',
+      );
+      const reported = identity.rows[0];
+      if (reported === undefined || !connectedIdentityMatches(target, { database: reported.database_name, user: reported.user_name })) {
+        return fail('refused: the connected database and role are not the allowed target for this APP_ENV');
+      }
     }
 
     const transactions = new TransactionManager(poolClientSource(pool), { timeoutMs: 30_000, idleInTransactionTimeoutMs: 15_000 });
