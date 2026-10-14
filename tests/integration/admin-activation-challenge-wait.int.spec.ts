@@ -28,7 +28,8 @@ import { randomPhone } from './support/auth-fixtures';
 // waits AFTER reading `T`, and then decides and writes with a clock that is older than the lock it just obtained. Each test
 // holds the live challenge on its own connection (what txn2 holds), sends the request, waits until it is really blocked, lets
 // the DATABASE clock pass an expiry, releases, and checks the answer and that nothing was written with the old clock.
-// Waits stay under the 10 s test lock_timeout (expiries are 7 s). No sleep orders anything.
+// Expiries are 3 s, leaving scheduler headroom below the 10 s test lock_timeout.
+// The barrier and DATABASE clock still decide the order; no sleep orders anything.
 
 describe('M01-D-ADMIN-1C - T is read after the challenge lock (start / restart / phone conflict / 1B hook)', () => {
   let ctx: ActivationApp;
@@ -163,7 +164,7 @@ describe('M01-D-ADMIN-1C - T is read after the challenge lock (start / restart /
   const restartCall = (s: Setup) => () => act(ctx.app, 'POST', '/restart', { body: {}, cookies: cookiesOf(s.session), csrf: s.session.csrf });
 
   it('start: the invitation expires while start waits for the challenge - 404, no new attempt, nothing superseded', async () => {
-    const s = await setup({ invitationSeconds: 7, attemptSeconds: 600 });
+    const s = await setup({ invitationSeconds: 3, attemptSeconds: 600 });
     const before = await snapshot(s);
     const { response } = await whileChallengeHeld(s, startCall(s), invitationExpiry(s));
     expect(response.status).toBe(404);
@@ -173,7 +174,7 @@ describe('M01-D-ADMIN-1C - T is read after the challenge lock (start / restart /
   });
 
   it('start: the cookie attempt expires while start waits, the invitation is still valid - the expired attempt is REPLACED (not resumed), with the new clock', async () => {
-    const s = await setup({ attemptSeconds: 7 });
+    const s = await setup({ attemptSeconds: 3 });
     const { response, beforeRelease } = await whileChallengeHeld(s, startCall(s), attemptExpiry(s));
     expect(response.status).toBe(201);
     const attempts = await attemptsOf(ctx.pool, s.invitationId);
@@ -193,7 +194,7 @@ describe('M01-D-ADMIN-1C - T is read after the challenge lock (start / restart /
   });
 
   it('restart: the invitation expires while restart waits for the challenge - 404, no new attempt, nothing superseded', async () => {
-    const s = await setup({ invitationSeconds: 7, attemptSeconds: 600 });
+    const s = await setup({ invitationSeconds: 3, attemptSeconds: 600 });
     const before = await snapshot(s);
     const { response } = await whileChallengeHeld(s, restartCall(s), invitationExpiry(s));
     expect(response.status).toBe(404);
@@ -202,7 +203,7 @@ describe('M01-D-ADMIN-1C - T is read after the challenge lock (start / restart /
   });
 
   it('restart: the COOKIE expires while restart waits - 401 (restart needs a valid cookie), no new attempt, nothing superseded', async () => {
-    const s = await setup({ attemptSeconds: 7 });
+    const s = await setup({ attemptSeconds: 3 });
     const before = await snapshot(s);
     const { response } = await whileChallengeHeld(s, restartCall(s), attemptExpiry(s));
     expect(response.status).toBe(401);
@@ -211,7 +212,7 @@ describe('M01-D-ADMIN-1C - T is read after the challenge lock (start / restart /
   });
 
   it('start with the phone already taken: the invitation expires while waiting - 404, NOT PHONE_CONFLICT; nothing closed or audited', async () => {
-    const s = await setup({ invitationSeconds: 7, attemptSeconds: 600, phoneTaken: true });
+    const s = await setup({ invitationSeconds: 3, attemptSeconds: 600, phoneTaken: true });
     const before = await snapshot(s);
     const { response } = await whileChallengeHeld(s, startCall(s), invitationExpiry(s));
     expect(response.status).toBe(404);
@@ -221,7 +222,7 @@ describe('M01-D-ADMIN-1C - T is read after the challenge lock (start / restart /
   });
 
   it('restart with the phone already taken: the cookie expires while waiting - 401, NOT PHONE_CONFLICT; nothing closed or audited', async () => {
-    const s = await setup({ attemptSeconds: 7, phoneTaken: true });
+    const s = await setup({ attemptSeconds: 3, phoneTaken: true });
     const before = await snapshot(s);
     const { response } = await whileChallengeHeld(s, restartCall(s), attemptExpiry(s));
     expect(response.status).toBe(401);
