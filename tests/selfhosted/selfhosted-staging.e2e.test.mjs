@@ -318,6 +318,11 @@ describe('db:migrate:remote on the self-hosted target', () => {
     assert.match(result.stdout, new RegExp(`0 applied, ${files.length} pending of ${files.length} migration file\\(s\\)`));
     assert.match(result.stdout, /check only; nothing was changed/);
     assertNoSecrets(result, 'check');
+    // Production uses this same pinned SELF_HOSTED identity. A valid check must remain read-only.
+    const production = run('db-migrate-remote.js', { env: operatorEnv({ APP_ENV: 'production' }) });
+    assert.equal(production.status, 0, production.text);
+    assert.match(production.stdout, /check only; nothing was changed/);
+    assertNoSecrets(production, 'production check');
     assert.deepEqual(await snapshot(), before);
   });
 
@@ -326,7 +331,7 @@ describe('db:migrate:remote on the self-hosted target', () => {
     const cases = [
       ['unknown selector', { DB_REMOTE_TARGET: 'self_hosted' }],
       ['empty selector', { DB_REMOTE_TARGET: '' }],
-      ['production', { APP_ENV: 'production' }],
+      ['production without typed target', { APP_ENV: 'production', MIGRATION_CONFIRM_TARGET: undefined }],
       ['development', { APP_ENV: 'development' }],
       ['IP address host', { MIGRATION_DATABASE_URL: dbUrl('ship11_migrator', MIGRATOR_PW, '127.0.0.1') }],
       ['runtime URL on another host', { DATABASE_URL: dbUrl('ship11_app', APP_PW, '127.0.0.1') }],
@@ -453,7 +458,7 @@ describe('admin-auth operator commands on the self-hosted target', () => {
     const before = await snapshot();
     const cases = [
       ['unknown selector', { DB_REMOTE_TARGET: 'LOCAL' }],
-      ['production', { APP_ENV: 'production' }],
+      ['production without typed target', { APP_ENV: 'production', MIGRATION_CONFIRM_TARGET: undefined }],
       ['IP address host', { MIGRATION_DATABASE_URL: dbUrl('ship11_migrator', MIGRATOR_PW, '127.0.0.1') }],
       ['another database', { DATABASE_URL: RUNTIME_URL.replace('/ship11_staging', '/postgres') }],
       ['the same role', { DATABASE_URL: MIGRATION_URL }],
@@ -473,6 +478,11 @@ describe('admin-auth operator commands on the self-hosted target', () => {
     const first = run('admin-auth-init-limit-config.js', { env: limiterEnv() });
     assert.equal(first.status, 0, first.text);
     assert.match(first.stdout, /admin-auth:init-limit-config: created/);
+    // A correctly pinned production operator is accepted; the limiter key remains write-once.
+    const production = run('admin-auth-init-limit-config.js', { env: limiterEnv({ APP_ENV: 'production' }) });
+    assert.equal(production.status, 0, production.text);
+    assert.match(production.stdout, /admin-auth:init-limit-config: unchanged/);
+    assertNoSecrets(production, 'production limiter');
     const second = run('admin-auth-init-limit-config.js', { env: limiterEnv() });
     assert.equal(second.status, 0, second.text);
     assert.match(second.stdout, /admin-auth:init-limit-config: unchanged/);
