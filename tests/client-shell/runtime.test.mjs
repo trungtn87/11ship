@@ -814,7 +814,10 @@ describe('repository hygiene: certificates, keys and launcher state stay out of 
   });
   it('no certificate or key is tracked', () => {
     const tracked = execFileSync('git', ['ls-files'], { cwd: root }).toString().split('\n');
-    assert.deepEqual(tracked.filter((file) => /\.(pem|key|crt|p12|pfx)$/i.test(file)), []);
+    // This repository carries one public, non-secret CA certificate used only by the disposable self-hosted CI test.
+    // All other certificates and ALL private keys remain forbidden in Git.
+    const credentialFiles = tracked.filter((file) => /\.(pem|key|crt|p12|pfx)$/i.test(file));
+    assert.deepEqual(credentialFiles, ['tests/fixtures/selfhosted-test-ca.pem']);
     assert.ok(existsSync(join(root, '.gitignore')));
   });
 });
