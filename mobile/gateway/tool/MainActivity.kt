@@ -46,10 +46,9 @@ class MainActivity : FlutterActivity() {
                                 response.error("PHONE", "Số nhận không hợp lệ.", null)
                             !hasSmsPermission() ->
                                 response.error("PERMISSION", "Chưa được cấp SEND_SMS.", null)
-                            !packageManager.hasSystemFeature(
-                                PackageManager.FEATURE_TELEPHONY_MESSAGING
-                            ) ->
-                                response.error("NO_SIM", "Thiết bị không hỗ trợ SMS.", null)
+                            // FEATURE_TELEPHONY_MESSAGING is a diagnostic flag, not
+                            // an authoritative capability test on every OEM ROM.
+                            // Let SmsManager report a real send error instead.
                             else -> try {
                                 @Suppress("DEPRECATION")
                                 val manager = if (Build.VERSION.SDK_INT >= 31) {

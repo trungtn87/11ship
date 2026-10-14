@@ -26,3 +26,6 @@ cài bản mới đè lên bản cũ mà không phải xóa dữ liệu.
 
 CI tạo Android project bằng bash mobile/gateway/tool/prepare.sh rồi chạy
 flutter pub get, flutter analyze, flutter test, flutter build apk.
+
+## Bản sửa nhận diện SMS
+Một số Android trả về `FEATURE_TELEPHONY_MESSAGING = false` dù có SIM và gửi SMS bằng app Tin nhắn. Đây chỉ là thông tin chẩn đoán, **không được khóa cấp quyền hoặc nút gửi thử**. Quyền `SEND_SMS` và xác nhận bằng tay vẫn bắt buộc. Khi gửi thật, lỗi của Android/SIM được trả ra màn hình; không báo đã giao thành công nếu chưa kiểm máy nhận.

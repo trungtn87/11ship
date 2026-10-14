@@ -11,6 +11,12 @@ String? normalizeVietnamPhone(String raw) {
   return RegExp(r'^\+84[0-9]{9}$').hasMatch(value) ? value : null;
 }
 
+/// Hardware feature flags are informational only: some devices omit the
+/// FEATURE_TELEPHONY_MESSAGING declaration while supporting SMS in practice.
+/// Real send attempts still require runtime SEND_SMS permission and confirmation.
+bool mayAttemptSms({required bool permissionGranted, required bool busy}) =>
+    permissionGranted && !busy;
+
 void main() => runApp(const GatewayApp());
 
 class GatewayApp extends StatelessWidget {
@@ -64,10 +70,14 @@ class _GatewayHomeState extends State<GatewayHome> {
         _supported = data?['supported'] == true;
         _granted = data?['granted'] == true;
         _status = !_supported
-            ? 'Android không hỗ trợ gửi SMS trên thiết bị này.'
+            ? (_granted
+                ? 'Android không khai báo tính năng SMS. Bạn vẫn có thể thử gửi; '
+                    'kiểm tra SIM và máy nhận để xác nhận.'
+                : 'Android không khai báo tính năng SMS. Bạn vẫn có thể cấp '
+                    'quyền để thử; chỉ kết quả gửi thật mới xác nhận được.')
             : _granted
-                ? 'Có SIM/SMS và đã cấp quyền gửi.'
-                : 'Hỗ trợ SMS, nhưng chưa cấp quyền gửi.';
+                ? 'Android báo hỗ trợ SMS và đã cấp quyền gửi.'
+                : 'Android báo hỗ trợ SMS, nhưng chưa cấp quyền gửi.';
       });
     } catch (e) {
       if (mounted) setState(() => _status = 'Chưa đọc được trạng thái: $e');
@@ -145,7 +155,7 @@ class _GatewayHomeState extends State<GatewayHome> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(_status),
-                      if (_supported && !_granted)
+                      if (!_granted)
                         FilledButton.icon(
                           onPressed: _allow,
                           icon: const Icon(Icons.security),
@@ -177,7 +187,9 @@ class _GatewayHomeState extends State<GatewayHome> {
               const SelectableText(testSmsMessage),
               const SizedBox(height: 20),
               FilledButton.icon(
-                onPressed: _supported && _granted && !_sending ? _send : null,
+                onPressed: mayAttemptSms(permissionGranted: _granted, busy: _sending)
+                    ? _send
+                    : null,
                 icon: const Icon(Icons.sms_outlined),
                 label: Text(_sending ? 'Đang gửi...' : 'Gửi một SMS thử'),
               ),
