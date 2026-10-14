@@ -1,5 +1,8 @@
 import { DynamicModule, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ActivationOtpProvider, ACTIVATION_OTP_PROVIDER } from '../admin-activation/activation-otp-provider';
+import { ActivationSmsGatewayBinding, isActivationSmsGatewayBinding } from '../admin-activation/activation-otp-providers';
+import { SmsGatewayActivationOtpProvider } from '../sms-gateway/sms-gateway-activation-otp-provider';
+import { SmsGatewayModule } from '../sms-gateway/sms-gateway.module';
 import { adminActivationConfigProvider } from '../admin-activation/admin-activation-config.provider';
 import { AdminActivationInvalidator } from '../admin-activation/admin-activation-invalidator';
 import { AdminActivationLimiter } from '../admin-activation/admin-activation-limiter';
@@ -55,7 +58,7 @@ import { AdminTotpService } from './admin-totp-service';
  * when the phone verification is REQUIRED; with the local DISABLED_TEST mode there is no OTP step and no provider.
  */
 export interface AdminActivationWiring {
-  readonly otpProvider?: ActivationOtpProvider;
+  readonly otpProvider?: ActivationOtpProvider | ActivationSmsGatewayBinding;
 }
 
 @Module({})
@@ -63,7 +66,15 @@ export class AdminAuthModule implements NestModule {
   static register(auth: DynamicModule, activation?: AdminActivationWiring): DynamicModule {
     return {
       module: AdminAuthModule,
-      imports: [auth, TransactionModule, AuditModule, OutboxModule, IdempotencyModule],
+      imports: [
+        auth,
+        TransactionModule,
+        AuditModule,
+        OutboxModule,
+        IdempotencyModule,
+        // The activation OTP goes through the SAME SMS gateway queue as the account OTPs (one module instance, no second gateway).
+        ...(activation !== undefined && isActivationSmsGatewayBinding(activation.otpProvider) ? [SmsGatewayModule] : []),
+      ],
       // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
       // M01-D-ADMIN-1C: the activation routes under /v1/admin-activation exist only when explicitly enabled.
       controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, ...(activation === undefined ? [] : [AdminActivationController])],
@@ -111,7 +122,13 @@ export class AdminAuthModule implements NestModule {
         ...(activation === undefined
           ? []
           : [
-              ...(activation.otpProvider === undefined ? [] : [{ provide: ACTIVATION_OTP_PROVIDER, useValue: activation.otpProvider }]),
+              ...(activation.otpProvider === undefined
+                ? []
+                : [
+                    isActivationSmsGatewayBinding(activation.otpProvider)
+                      ? { provide: ACTIVATION_OTP_PROVIDER, useExisting: SmsGatewayActivationOtpProvider }
+                      : { provide: ACTIVATION_OTP_PROVIDER, useValue: activation.otpProvider },
+                  ]),
               adminActivationConfigProvider,
               AdminActivationLimiter,
               AdminActivationService,

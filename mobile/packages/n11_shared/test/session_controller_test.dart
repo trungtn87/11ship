@@ -6,7 +6,7 @@ import 'package:n11_shared/testing.dart';
 
 const AppConfig config = AppConfig(apiBaseUrl: 'https://api.example.test', deviceEnvironment: 'fixture-env');
 
-({SessionController session, FakeApiTransport api, FakeDeviceBridge bridge}) build({ClientApp app = ClientApp.food, FakeDeviceBridge? bridge, String registration = 'DISABLED_TEST'}) {
+({SessionController session, FakeApiTransport api, FakeDeviceBridge bridge}) build({ClientApp app = ClientApp.food, FakeDeviceBridge? bridge, String registration = 'REQUIRED'}) {
   final FakeApiTransport api = FakeApiTransport();
   installAccountRoutes(api, registration: registration);
   final FakeDeviceBridge deviceBridge = bridge ?? FakeDeviceBridge();
@@ -78,20 +78,21 @@ void main() {
     });
   });
 
-  group('register (test mode, no OTP) and login', () {
-    test('enrols a key, registers without a verification token, stores the token and the binding', () async {
+  group('register (SMS-verified) and login', () {
+    test('enrols a key, registers with the one-use verification token, stores the token and the binding', () async {
       final t = build();
       await t.session.loadRegistrationMode();
-      expect(t.session.registrationMode, RegistrationMode.disabledTest);
-      expect(await t.session.register(phone: '0901234567', password: 'Correct-Horse-9', fullName: 'Nguyễn Văn An'), isTrue);
+      expect(t.session.registrationMode, RegistrationMode.required);
+      expect(await t.session.register(phone: '0901234567', password: 'Correct-Horse-9', fullName: 'Nguyễn Văn An', verificationToken: 'PROOF-TOKEN-0123456789'), isTrue);
       expect(t.session.status, SessionStatus.signedIn);
       expect(t.bridge.generated, 1);
       expect(t.bridge.token, 'fake-access-token-0123456789');
       expect(t.bridge.bindingId, '33333333-3333-4333-8333-333333333333');
       expect(t.bridge.key?.keyId, '22222222-2222-4222-8222-222222222222');
       final RecordedRequest register = t.api.to('POST', '/v1/client-auth/register').single;
-      expect(register.body, isNot(contains('verification_token')));
-      expect(register.body, contains('"terms_version":"test-terms-20261011-v1"'));
+      expect(register.body, contains('"verification_token":"PROOF-TOKEN-0123456789"'));
+      expect(register.body, contains('"terms_version":"terms-20261014-v1"'));
+      expect(register.body, contains('"privacy_version":"privacy-20261014-v1"'));
       expect(register.headers['x-device-registration'], 'dG9rZW4');
       expect(register.headers['idempotency-key'], matches(RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')));
       expect(t.bridge.signedMessages.last, startsWith('11SHIP-AUTH-V1\nfixture-env\nPOST\n/v1/client-auth/register\n'));
@@ -99,10 +100,16 @@ void main() {
       expect(register.headers.values.join(), isNot(contains('Correct-Horse-9')));
     });
 
-    test('REQUIRED mode (needs an OTP step that is not wired): the mode is reported and nothing is faked', () async {
-      final t = build(registration: 'REQUIRED');
+    test('no registration is sent without the phone proof, and a server mode this build does not know opens nothing', () async {
+      final t = build();
       await t.session.loadRegistrationMode();
-      expect(t.session.registrationMode, RegistrationMode.required);
+      expect(await t.session.register(phone: '0901234567', password: 'Correct-Horse-9', fullName: 'Nguyễn Văn An'), isFalse);
+      expect(t.api.to('POST', '/v1/client-auth/register'), isEmpty);
+      final other = build(registration: 'DISABLED_TEST');
+      await other.session.loadRegistrationMode();
+      expect(other.session.registrationMode, RegistrationMode.unknown);
+      expect(await other.session.register(phone: '0901234567', password: 'Correct-Horse-9', fullName: 'Nguyễn Văn An', verificationToken: 'PROOF-TOKEN-0123456789'), isFalse);
+      expect(other.api.to('POST', '/v1/client-auth/register'), isEmpty);
     });
 
     test('an unreadable configuration leaves the mode unknown (the app never guesses)', () async {
@@ -231,7 +238,8 @@ void main() {
 
     test('F6: registering a NEW account never joins the peer binding (ENROLL on its own binding)', () async {
       final t = build(app: ClientApp.food, bridge: FakeDeviceBridge(peerState: const PeerState(bindingId: 'b-peer', keyId: 'k-peer')));
-      expect(await t.session.register(phone: '0909999999', password: 'Correct-Horse-9', fullName: 'Người Mới'), isTrue);
+      await t.session.loadRegistrationMode();
+      expect(await t.session.register(phone: '0909999999', password: 'Correct-Horse-9', fullName: 'Người Mới', verificationToken: 'PROOF-TOKEN-0123456789'), isTrue);
       final List<RecordedRequest> challenges = t.api.to('POST', '/v1/client-auth/device/challenges');
       expect(challenges.single.body, contains('"purpose":"ENROLL"'));
       expect(t.api.to('POST', '/v1/client-auth/device/registrations').single.body, contains('"join":null'));

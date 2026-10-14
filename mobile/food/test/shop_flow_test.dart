@@ -50,7 +50,7 @@ void main() {
     expect(tester.widget<N11Button>(find.byKey(const Key('shop-complete'))).onPressed, isNull);
   });
 
-  testWidgets('guest: the login screen reaches the reset form only when the server says DISABLED_TEST', (WidgetTester tester) async {
+  testWidgets('guest: the login screen reaches the reset form, which stays closed unless the server says SMS_OTP', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1080, 2340);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -71,6 +71,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('reset-closed')), findsOneWidget);
     expect(tester.widget<N11Button>(find.byKey(const Key('reset-submit'))).onPressed, isNull);
-    expect(api.to('POST', '/v1/account-recovery/reset-test'), isEmpty);
+    expect(api.to('POST', '/v1/account-recovery/reset'), isEmpty);
+    expect(api.to('POST', '/v1/account-recovery/otp'), isEmpty);
   });
 }

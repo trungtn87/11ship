@@ -31,6 +31,9 @@ export const CONSENT_VERSION_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 /** The only verification purpose A1 issues. */
 export const REGISTER_PURPOSE = 'REGISTER';
 
+/** Issue #102: the purpose of the password reset OTP / proof. Kept apart from REGISTER_PURPOSE: neither can be used for the other. */
+export const RESET_PASSWORD_PURPOSE = 'RESET_PASSWORD';
+
 /** OTP: exactly this many ASCII digits, drawn from the operating system CSPRNG. */
 export const OTP_LENGTH = 6;
 

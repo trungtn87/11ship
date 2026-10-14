@@ -21,6 +21,8 @@ const PHONE_MODES: readonly string[] = ['REQUIRED', 'DISABLED_TEST'];
 
 export interface OtpInfo {
   readonly status: OtpStatus;
+  /** SMS gateway: WAITING = queued, not sent yet (the code field stays closed); SENT = the code can be entered. */
+  readonly delivery?: 'WAITING' | 'SENT';
   readonly resendAt?: string;
   readonly attemptsLeft?: number;
 }
@@ -73,8 +75,10 @@ function otpOf(value: unknown): OtpInfo | undefined {
   }
   const resendAt = str(otp.resend_at);
   const attemptsLeft = posInt(otp.attempts_left);
+  const delivery = otp.delivery === 'WAITING' || otp.delivery === 'SENT' ? otp.delivery : undefined;
   return {
     status: otp.status as OtpStatus,
+    ...(delivery === undefined ? {} : { delivery }),
     ...(resendAt === undefined ? {} : { resendAt }),
     ...(attemptsLeft === undefined ? {} : { attemptsLeft }),
   };

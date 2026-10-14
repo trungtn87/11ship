@@ -28,11 +28,13 @@ enum SessionStatus {
 }
 
 /// How the server verifies a phone at registration (GET /v1/client-auth/config).
-enum RegistrationMode { unknown, required, disabledTest }
+enum RegistrationMode { unknown, required }
 
-/// The consent the register screen shows and sends. Same approved TEST pair as the web client; the server decides.
-const String kConsentTermsVersion = 'test-terms-20261011-v1';
-const String kConsentPrivacyVersion = 'test-privacy-20261011-v1';
+/// The consent the register screen shows and sends. The pair identifies the texts in account_views.dart (and docs/current/
+/// M01-terms-privacy-20261014.md); the server must be configured with the SAME pair (CLIENT_AUTH_TERMS_VERSION /
+/// CLIENT_AUTH_PRIVACY_VERSION) and refuses any other. Changing a text means a new version here AND on the server.
+const String kConsentTermsVersion = 'terms-20261014-v1';
+const String kConsentPrivacyVersion = 'privacy-20261014-v1';
 
 enum PendingKind { register, login }
 
@@ -250,11 +252,9 @@ class SessionController extends ChangeNotifier {
       final ApiResponse response = await api.transport.send('GET', '/v1/client-auth/config');
       final Object? data = response.status == 200 ? response.data : null;
       final Object? mode = data is Map<String, Object?> ? data['registration_verification'] : null;
-      _registrationMode = mode == 'DISABLED_TEST'
-          ? RegistrationMode.disabledTest
-          : mode == 'REQUIRED'
-              ? RegistrationMode.required
-              : RegistrationMode.unknown;
+      // Only the SMS-verified registration exists in the app. Any other answer (including a server mode this build does not know)
+      // leaves the mode unknown: the app never guesses and never offers a registration without the phone proof.
+      _registrationMode = mode == 'REQUIRED' ? RegistrationMode.required : RegistrationMode.unknown;
     } on AuthFailure {
       _registrationMode = RegistrationMode.unknown;
     }
@@ -263,13 +263,19 @@ class SessionController extends ChangeNotifier {
 
   // ---- register / login ------------------------------------------------------------------------------------------
 
-  Future<bool> register({required String phone, required String password, required String fullName}) async {
+  /// [verificationToken] is the one-use proof of the OTP step. It rides in the same signed body as everything else, so a retry after
+  /// a lost answer replays the identical request.
+  Future<bool> register({required String phone, required String password, required String fullName, String? verificationToken}) async {
+    if (_registrationMode != RegistrationMode.required || verificationToken == null) {
+      return false;
+    }
     return _begin(
       PendingKind.register,
       '/v1/client-auth/register',
       (Map<String, Object?> device) => jsonEncode(<String, Object?>{
         'phone': phone.trim(),
         'password': password,
+        'verification_token': verificationToken,
         'device': device,
         'full_name': fullName,
         'consent': <String, Object?>{'terms_version': kConsentTermsVersion, 'privacy_version': kConsentPrivacyVersion},

@@ -1,12 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { parseCaBundle } from '../database/tls-config';
-import { isLocalWebMode } from './client-auth-config';
+import { isLocalWebMode, isProductionOnLoopback } from './client-auth-config';
 
 // Configuration of the native Android binding (M01-ANDROID; contract11 sections 7 and 9). Pure validation: only the NAMES of
 // invalid variables are ever reported, never a value, a path or a file's content.
 //
-//   CLIENT_AUTH_ANDROID_ENABLED               true | false (default false). true only for APP_ENV development/test AND a
-//                                             loopback bind in this package: staging/production/remote bind + true stops startup.
+//   CLIENT_AUTH_ANDROID_ENABLED               true | false (default false). true only for APP_ENV development/test, or
+//                                             production (Owner decision 2026-10-14), AND a loopback bind: staging, a remote bind
+//                                             or an unknown APP_ENV + true stops startup. Production still needs every trust input.
 //   CLIENT_DEVICE_ENVIRONMENT                 non-secret identifier signed into every proof (same value in the native build)
 //   CLIENT_DEVICE_ALLOWED_SIGNERS_FILE        JSON exact {FOOD:{package_name,signer_sha256},SHIP:{package_name,signer_sha256}}
 //   CLIENT_DEVICE_ATTESTATION_ROOTS_FILE      PEM of the Android attestation roots the OPERATOR pinned (never the OS roots)
@@ -71,7 +72,7 @@ export function parseClientDevice(input: ClientDeviceConfigInput): ClientDeviceC
   if (input.appEnv === undefined) {
     return { ok: true, enabled: false, config: undefined };
   }
-  if (!isLocalWebMode(input.appEnv, input.host)) {
+  if (!isLocalWebMode(input.appEnv, input.host) && !isProductionOnLoopback(input.appEnv, input.host)) {
     return { ok: false, invalid: [CLIENT_AUTH_ANDROID_ENABLED_ENV] };
   }
 

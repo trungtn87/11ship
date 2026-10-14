@@ -46,6 +46,8 @@ async function bootstrap(): Promise<void> {
   // mode is on (then the explicit DisabledOtpProvider, never a fake), before anything is opened, naming only
   // OTP_PROVIDER.
   const otpProvider = bindOtpProvider(config.appEnv, {
+    // Issue #102: the real SMS adapter, only when SMS_GATEWAY_ENABLED=true was validated (off by default).
+    smsGatewayEnabled: config.smsGateway !== undefined,
     stagingFixtureMode: config.stagingFixtures !== undefined,
     ...(testSms?.registerProvider === undefined ? {} : { testInboxProvider: testSms.registerProvider }),
   });
@@ -57,6 +59,7 @@ async function bootstrap(): Promise<void> {
     config.adminActivation === undefined || config.adminActivation.phoneVerificationMode === 'DISABLED_TEST'
       ? undefined
       : bindActivationOtpProvider(config.adminActivation, {
+          smsGatewayEnabled: config.smsGateway !== undefined,
           ...(testSms?.activationProvider === undefined ? {} : { testInboxProvider: testSms.activationProvider }),
         });
 

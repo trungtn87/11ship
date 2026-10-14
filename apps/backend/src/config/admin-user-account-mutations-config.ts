@@ -1,11 +1,13 @@
 import { isLoopbackHost } from '../test-sms/test-sms-config';
+import { isProductionOnLoopback } from './client-auth-config';
 
 // Gate of the administration USER account mutations (lock / unlock; handoff M01-admin-account-lock, decision D15).
 //
 //   ADMIN_USER_ACCOUNT_MUTATIONS_ENABLED   exactly "true" or "false"; unset means false. "true" is valid ONLY for APP_ENV
-//                                          development or test, a loopback HOST and the administration web authentication
-//                                          enabled. The impact of a lock on running business (orders, money, deliveries) is
-//                                          not implemented in M01, so no other environment may open the mutation.
+//                                          development, test or production (Owner decision 2026-10-14), a loopback HOST and
+//                                          the administration web authentication enabled. The impact of a lock on running
+//                                          business (orders, money, deliveries) is not implemented in M01; the operator must
+//                                          re-decide the gate when such business exists. Staging and unknown environments stay closed.
 //
 // Fail closed: any other value, any other environment, a non-loopback bind and a missing administration module stop
 // startup. Only the variable NAME is ever reported, never a value.
@@ -33,7 +35,7 @@ export function parseAdminUserAccountMutations(input: {
   if (enabledRaw !== 'true') {
     return { ok: false, invalid: [ADMIN_USER_ACCOUNT_MUTATIONS_ENABLED_VARIABLE] };
   }
-  const local = (appEnv === 'development' || appEnv === 'test') && isLoopbackHost(host);
+  const local = ((appEnv === 'development' || appEnv === 'test') && isLoopbackHost(host)) || (appEnv !== undefined && isProductionOnLoopback(appEnv, host));
   if (!local || !adminAuthEnabled) {
     return { ok: false, invalid: [ADMIN_USER_ACCOUNT_MUTATIONS_ENABLED_VARIABLE] };
   }

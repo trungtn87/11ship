@@ -43,6 +43,14 @@ function harness({
   connectError,
   commitError,
   prepareError,
+  identity = {
+    database_name: 'ship11_staging',
+    user_name: 'ship11_migrator',
+    session_user_name: 'ship11_migrator',
+    server_port: 5432,
+    tls: true,
+    privileged: false,
+  },
 } = {}) {
   const log = { out: [], err: [], clients: [], statements: [], events: [], stdinReads: 0, ended: 0, seedCalls: 0 };
   const client = {
@@ -56,6 +64,7 @@ function harness({
     },
     query: async (sql) => {
       log.statements.push(sql);
+      if (/AS database_name/.test(sql)) return { rows: identity === null ? [] : [identity] };
       if (/server_version_num/.test(sql)) {
         return { rows: [{ version_num: versionNum, role: 'ship11_migrator', users_present: true, origin_present: originPresent }] };
       }
@@ -298,5 +307,98 @@ describe('staging:seed-fixtures source', () => {
   test('shares the D1 target gates instead of copying them, and never creates a role, profile or session', () => {
     assert.match(code, /checkRemoteTargets/);
     assert.doesNotMatch(code, /user_roles|INSERT INTO|UPDATE app|DELETE FROM|sessions/i);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// M00-VPS-01 package A: DB_REMOTE_TARGET=SELF_HOSTED. The same fixture contract on the self-hosted staging PostgreSQL;
+// the Supabase tests above are untouched. Sequence and rollback behaviour are shared code and covered above; here: the
+// target gates and the server-reported identity that must pass before the transaction opens.
+// ---------------------------------------------------------------------------------------------------------------------
+const SH_TARGET = 'localhost:5432/ship11_staging';
+const shUrl = ({ user, host = 'localhost', port = 5432, db = 'ship11_staging' }) => `postgres://${user}:${PASSWORD}@${host}:${port}/${db}`;
+const SH_ENV = {
+  ...GOOD_ENV,
+  DB_REMOTE_TARGET: 'SELF_HOSTED',
+  MIGRATION_DATABASE_URL: shUrl({ user: 'ship11_migrator' }),
+  DATABASE_URL: shUrl({ user: 'ship11_app' }),
+  MIGRATION_CONFIRM_TARGET: SH_TARGET,
+};
+
+describe('staging:seed-fixtures DB_REMOTE_TARGET=SELF_HOSTED', () => {
+  test('creates the fixtures on the self-hosted target: identity first, then the preflight and one transaction', async () => {
+    const h = harness();
+    assert.equal(await run(SH_ENV, [], h), 0);
+    assert.equal(h.log.clients.length, 1);
+    assert.equal(h.log.clients[0].connectionString, SH_ENV.MIGRATION_DATABASE_URL);
+    assert.deepEqual(h.log.clients[0].ssl, { ca: CA, rejectUnauthorized: true });
+    assert.match(h.log.statements[0], /AS database_name/, 'the server-reported identity is the first statement');
+    assert.match(h.log.statements[1], /server_version_num/);
+    assert.deepEqual(h.log.events, ['prepare', 'connect', 'seed']);
+    assert.ok(h.log.statements.includes('BEGIN') && h.log.statements.includes('COMMIT'));
+    assert.match(printed(h), /connected over verified TLS to localhost:5432\/ship11_staging as role ship11_migrator/);
+    assert.match(printed(h), /created 1, skipped 0/);
+    noSecrets(h);
+  });
+
+  test('refuses an unknown selector, a wrong target or a wrong typed target before reading stdin or connecting', async () => {
+    const cases = [
+      ['unknown selector', { DB_REMOTE_TARGET: 'self_hosted' }, /DB_REMOTE_TARGET must be SUPABASE or SELF_HOSTED/],
+      ['empty selector', { DB_REMOTE_TARGET: '' }, /DB_REMOTE_TARGET must be SUPABASE or SELF_HOSTED/],
+      ['IP address host', { MIGRATION_DATABASE_URL: shUrl({ user: 'ship11_migrator', host: '127.0.0.1' }) }, /must use the host name localhost/],
+      ['other database', { DATABASE_URL: shUrl({ user: 'ship11_app', db: 'postgres' }) }, /must use the database ship11_staging/],
+      ['other port', { MIGRATION_DATABASE_URL: shUrl({ user: 'ship11_migrator', port: 5433 }) }, /must use port 5432/],
+      ['same role', { DATABASE_URL: shUrl({ user: 'ship11_migrator' }) }, /same role/],
+      ['wrong migration role', { MIGRATION_DATABASE_URL: shUrl({ user: 'postgres' }) }, /must use the role ship11_migrator/],
+      ['wrong typed target', { MIGRATION_CONFIRM_TARGET: 'localhost:5432/ship11_test' }, /MIGRATION_CONFIRM_TARGET=localhost:5432\/ship11_staging/],
+      ['missing typed target', { MIGRATION_CONFIRM_TARGET: undefined }, /MIGRATION_CONFIRM_TARGET=localhost:5432\/ship11_staging/],
+    ];
+    for (const [name, env, pattern] of cases) {
+      const h = harness();
+      assert.equal(await run({ ...SH_ENV, ...env }, [], h), 1, name);
+      assert.match(printed(h), pattern, name);
+      noSecrets(h);
+      assert.equal(h.log.stdinReads, 0, name);
+      assert.equal(h.log.clients.length, 0, name);
+      assert.equal(h.log.seedCalls, 0, name);
+    }
+  });
+
+  test('stays staging only: SELF_HOSTED with production is refused', async () => {
+    const h = harness();
+    assert.equal(await run({ ...SH_ENV, APP_ENV: 'production' }, [], h), 1);
+    assert.match(printed(h), /APP_ENV must be staging/);
+    assert.equal(h.log.clients.length, 0);
+  });
+
+  test('a wrong connected identity stops it before the preflight and before any transaction: nothing is written', async () => {
+    const good = { database_name: 'ship11_staging', user_name: 'ship11_migrator', session_user_name: 'ship11_migrator', server_port: 5432, tls: true, privileged: false };
+    const wrong = [
+      ['other database', { ...good, database_name: 'postgres' }],
+      ['other role', { ...good, user_name: 'ship11_app', session_user_name: 'ship11_app' }],
+      ['superuser-like', { ...good, privileged: true }],
+      ['no TLS', { ...good, tls: false }],
+      ['other port', { ...good, server_port: 5433 }],
+      ['no identity row', null],
+    ];
+    for (const [name, identity] of wrong) {
+      const h = harness({ identity });
+      assert.equal(await run(SH_ENV, [], h), 1, name);
+      assert.match(printed(h), /refused:/, name);
+      assert.deepEqual(h.log.statements.length, 1, `${name}: only the identity query ran`);
+      assert.ok(!h.log.statements.includes('BEGIN'), name);
+      assert.equal(h.log.seedCalls, 0, name);
+      assert.equal(h.log.ended, 1, name);
+      noSecrets(h);
+    }
+  });
+
+  test('without DB_REMOTE_TARGET the self-hosted URLs are not accepted (the default stays Supabase)', async () => {
+    const env = { ...SH_ENV };
+    delete env.DB_REMOTE_TARGET;
+    const h = harness();
+    assert.equal(await run(env, [], h), 1);
+    assert.match(printed(h), /SESSION pooler|pooler user name/);
+    assert.equal(h.log.clients.length, 0);
   });
 });

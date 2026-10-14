@@ -117,6 +117,14 @@ AuthFailure failureOf(ApiResponse response) {
       kind = AuthFailureKind.verificationUnsupported;
     case 'DEVICE_RATE_LIMITED' || 'OTP_RATE_LIMITED':
       kind = AuthFailureKind.rateLimited;
+    case 'OTP_INVALID':
+      kind = AuthFailureKind.otpInvalid;
+    case 'OTP_EXPIRED':
+      kind = AuthFailureKind.otpExpired;
+    case 'OTP_ALREADY_USED':
+      kind = AuthFailureKind.otpAlreadyUsed;
+    case 'VERIFICATION_PROOF_INVALID' || 'VERIFICATION_PROOF_USED' || 'VERIFICATION_PURPOSE_MISMATCH':
+      kind = AuthFailureKind.proofInvalid;
     case 'TRANSACTION_OUTCOME_UNKNOWN' || 'SERVICE_UNAVAILABLE' || 'IDEMPOTENCY_KEY_UNAVAILABLE':
       kind = AuthFailureKind.serverUnavailable;
     default:

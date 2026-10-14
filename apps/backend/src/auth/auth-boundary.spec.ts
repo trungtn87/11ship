@@ -84,7 +84,7 @@ describe('where the expensive and external calls sit', () => {
       expect(codeOf(file)).not.toMatch(/provider|Provider/);
     }
     // The provider call sits in its own helper, outside the withTransaction callbacks of requestOtp.
-    expect(service).toMatch(/#deliver\(phoneNormalized, otp\)/);
+    expect(service).toMatch(/#deliver\(phoneNormalized, otp, \{/);
     expect(service.indexOf('await this.#deliver(')).toBeGreaterThan(service.indexOf('insertPendingDelivery'));
   });
 
@@ -122,7 +122,9 @@ describe('what Auth does not own', () => {
   });
 
   it('never issues or reads a refresh token, and has no logout-all, password reset or phone change', () => {
-    expect(allAuthCode()).not.toMatch(/refresh[_ ]?token|logout|reset[_ ]?password|change[_ ]?phone|forgot/i);
+    // Issue #102: Auth owns the RESET_PASSWORD OTP purpose and its request/verify engine (the reset itself lives in account-recovery/).
+    const withoutResetOtp = allAuthCode().replace(/RESET_PASSWORD(?:_PURPOSE)?|[A-Za-z]*ResetOtp/g, '');
+    expect(withoutResetOtp).not.toMatch(/refresh[_ ]?token|logout|reset[_ ]?password|change[_ ]?phone|forgot/i);
   });
 
   it('has no IP, device or daily throttle: the only limit is the locked per-lane cooldown', () => {
@@ -142,7 +144,10 @@ describe('what Auth does not own', () => {
     expect(codeOf('app.module.ts')).not.toMatch(/Fake|FakeOtpProvider|OTP_PROVIDER/);
     expect(codeOf('main.ts')).toContain('bindOtpProvider(config.appEnv, {');
     expect(codeOf('main.ts')).not.toMatch(/FakeOtpProvider/);
-    expect(codeOf('auth/auth.module.ts')).not.toMatch(/FakeOtpProvider|useClass|useExisting/);
+    expect(codeOf('auth/auth.module.ts')).not.toMatch(/FakeOtpProvider|useClass/);
+    // Issue #102: the real adapter is reached only through the explicit SMS_GATEWAY binding that bindOtpProvider returns.
+    expect(codeOf('auth/auth.module.ts').match(/useExisting/g)?.length ?? 0).toBe(1);
+    expect(codeOf('auth/auth.module.ts')).toMatch(/isSmsGatewayBinding\(options\.otpProvider\)\s*\?\s*\{ provide: OTP_PROVIDER, useExisting: SmsGatewayOtpProvider \}/);
   });
 
   it('uses the M00 modules instead of recreating them', () => {

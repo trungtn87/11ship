@@ -812,9 +812,18 @@ describe('repository hygiene: certificates, keys and launcher state stay out of 
       assert.ok(ignored(path), `${path} must be git-ignored`);
     }
   });
-  it('no certificate or key is tracked', () => {
+  // The one tracked certificate: the PUBLIC test CA the PostgreSQL TLS tests trust (M00-VPS-01). Allowed by exact path only,
+  // and only while its content is a single CERTIFICATE block (no private key of any kind).
+  const PUBLIC_TEST_CA = 'tests/fixtures/selfhosted-test-ca.pem';
+  it('no certificate or key is tracked, except the public test CA fixture', () => {
     const tracked = execFileSync('git', ['ls-files'], { cwd: root }).toString().split('\n');
-    assert.deepEqual(tracked.filter((file) => /\.(pem|key|crt|p12|pfx)$/i.test(file)), []);
+    const found = tracked.filter((file) => /\.(pem|key|crt|p12|pfx)$/i.test(file));
+    assert.deepEqual(found.filter((file) => file !== PUBLIC_TEST_CA), []);
     assert.ok(existsSync(join(root, '.gitignore')));
+  });
+  it('the allowed test CA fixture holds one public certificate and no private key', () => {
+    const text = readFileSync(join(root, PUBLIC_TEST_CA), 'utf8');
+    assert.deepEqual(text.match(/-----BEGIN [A-Z0-9 ]+-----/g), ['-----BEGIN CERTIFICATE-----']);
+    assert.doesNotMatch(text, /PRIVATE KEY|ENCRYPTED/);
   });
 });

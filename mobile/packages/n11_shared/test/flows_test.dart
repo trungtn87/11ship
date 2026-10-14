@@ -158,23 +158,36 @@ void main() {
     });
   });
 
+  // The SMS_OTP flow is the only reset the app has: a verified code first, then the password with the one-use proof.
+  Future<ResetController> verifiedReset(FakeApiTransport server, SessionController session) async {
+    final ResetController reset = ResetController(transport: server, session: session);
+    await reset.loadConfig();
+    expect(await reset.requestOtp('0901234567'), isTrue);
+    expect(await reset.verifyOtp('123456'), isTrue);
+    return reset;
+  }
+
   group('forgotten password (reset)', () {
-    test('only opens on DISABLED_TEST; public request; generic ack; retry same key/body; never logs in', () async {
+    test('only opens on SMS_OTP with a verified code; public request; retry same key/body; never logs in', () async {
       final t = await signedIn(ClientApp.food);
       final FakeApiTransport open = FakeApiTransport();
       installResetRoutes(open);
       final ResetController reset = ResetController(transport: open, session: t.session);
       expect(await reset.submit(phone: '0901234567', password: 'New-Pass-123'), isFalse, reason: 'config not read yet');
       await reset.loadConfig();
-      expect(reset.mode, ResetMode.available);
+      expect(reset.mode, ResetMode.smsOtp);
+      expect(await reset.submit(phone: '0901234567', password: 'New-Pass-123'), isFalse, reason: 'no verified code: no reset');
+      expect(open.to('POST', '/v1/account-recovery/reset'), isEmpty);
+      expect(await reset.requestOtp('0901234567'), isTrue);
+      expect(await reset.verifyOtp('123456'), isTrue);
 
       open.failNext = const AuthFailure(AuthFailureKind.unknownOutcome);
       expect(await reset.submit(phone: ' 0901234567 ', password: 'New-Pass-123'), isFalse);
       expect(await reset.retryPending(), isTrue);
-      final List<RecordedRequest> posts = open.to('POST', '/v1/account-recovery/reset-test');
+      final List<RecordedRequest> posts = open.to('POST', '/v1/account-recovery/reset');
       expect(posts.length, 2);
       expect(posts[0].headers['idempotency-key'], posts[1].headers['idempotency-key']);
-      expect(posts[0].body, jsonEncode(<String, Object?>{'phone': '0901234567', 'password': 'New-Pass-123'}));
+      expect(posts[0].body, jsonEncode(<String, Object?>{'verification_token': 'RESET-PROOF-TOKEN-0123456789', 'password': 'New-Pass-123'}));
       expect(posts[1].headers.keys.map((String k) => k.toLowerCase()).toSet(), <String>{'idempotency-key'});
       expect(reset.done, isTrue);
     });
@@ -187,15 +200,14 @@ void main() {
       await reset.loadConfig();
       expect(reset.mode, ResetMode.closed);
       expect(await reset.submit(phone: '0901234567', password: 'New-Pass-123'), isFalse);
-      expect(closed.to('POST', '/v1/account-recovery/reset-test'), isEmpty);
+      expect(closed.to('POST', '/v1/account-recovery/reset'), isEmpty);
     });
 
     test('a session the server revoked is cleared by the ordinary 401 path', () async {
       final t = await signedIn(ClientApp.food);
       final FakeApiTransport open = FakeApiTransport();
       installResetRoutes(open);
-      final ResetController reset = ResetController(transport: open, session: t.session);
-      await reset.loadConfig();
+      final ResetController reset = await verifiedReset(open, t.session);
       t.api.routes['GET /v1/client-auth/me'] = (String m, String p, Map<String, String> h, String b) async => apiError(401, 'SESSION_REVOKED');
       expect(await reset.submit(phone: '0901234567', password: 'New-Pass-123'), isTrue);
       expect(t.session.status, SessionStatus.guest);
@@ -244,15 +256,14 @@ void main() {
       final t = await signedIn(ClientApp.food);
       final FakeApiTransport open = FakeApiTransport();
       installResetRoutes(open);
-      final ResetController reset = ResetController(transport: open, session: t.session);
-      await reset.loadConfig();
-      final FakeHandler ok = open.routes['POST /v1/account-recovery/reset-test']!;
+      final ResetController reset = await verifiedReset(open, t.session);
+      final FakeHandler ok = open.routes['POST /v1/account-recovery/reset']!;
       int calls = 0;
-      open.routes['POST /v1/account-recovery/reset-test'] = (String m, String p, Map<String, String> h, String b) async => ++calls == 1 ? apiError(504, 'SERVICE_UNAVAILABLE') : ok(m, p, h, b);
+      open.routes['POST /v1/account-recovery/reset'] = (String m, String p, Map<String, String> h, String b) async => ++calls == 1 ? apiError(504, 'SERVICE_UNAVAILABLE') : ok(m, p, h, b);
       expect(await reset.submit(phone: '0901234567', password: 'New-Pass-123'), isFalse);
       expect(reset.hasPendingWrite, isTrue);
       expect(await reset.retryPending(), isTrue);
-      final List<RecordedRequest> posts = open.to('POST', '/v1/account-recovery/reset-test');
+      final List<RecordedRequest> posts = open.to('POST', '/v1/account-recovery/reset');
       expect(posts[0].headers['idempotency-key'], posts[1].headers['idempotency-key']);
 
       final FakeShopServer server = FakeShopServer(t.api)..owner = true;
@@ -270,8 +281,7 @@ void main() {
       final t = await signedIn(ClientApp.food);
       final FakeApiTransport open = FakeApiTransport();
       installResetRoutes(open);
-      final ResetController reset = ResetController(transport: open, session: t.session);
-      await reset.loadConfig();
+      final ResetController reset = await verifiedReset(open, t.session);
       open.failNext = const AuthFailure(AuthFailureKind.unknownOutcome);
       expect(await reset.submit(phone: '0901234567', password: 'New-Pass-123'), isFalse);
       expect(reset.hasPendingWrite, isTrue);
@@ -283,15 +293,14 @@ void main() {
       expect(reset.hasPendingWrite, isFalse);
       expect(reset.failure, isNull);
       expect(await reset.retryPending(), isFalse);
-      expect(open.to('POST', '/v1/account-recovery/reset-test').length, 1, reason: 'the old intent was not sent again');
+      expect(open.to('POST', '/v1/account-recovery/reset').length, 1, reason: 'the old intent was not sent again');
     });
 
     test('F2: after a success, opening the form again shows the form, not the old success', () async {
       final t = await signedIn(ClientApp.food);
       final FakeApiTransport open = FakeApiTransport();
       installResetRoutes(open);
-      final ResetController reset = ResetController(transport: open, session: t.session);
-      await reset.loadConfig();
+      final ResetController reset = await verifiedReset(open, t.session);
       expect(await reset.submit(phone: '0901234567', password: 'New-Pass-123'), isTrue);
       expect(reset.done, isTrue);
       reset.abandon();
@@ -308,9 +317,20 @@ void main() {
       await tester.pumpWidget(screen());
       await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const Key('reset-phone')), '0901234567');
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('reset-otp-request')));
+      await tester.pump();
+      await tester.pump();
+      await tester.enterText(find.byKey(const Key('reset-otp-code')), '123456');
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('reset-otp-verify')));
+      await tester.tap(find.byKey(const Key('reset-otp-verify')));
+      await tester.pump();
+      await tester.pump();
       await tester.enterText(find.byKey(const Key('reset-password')), 'New-Pass-123');
       await tester.enterText(find.byKey(const Key('reset-confirm')), 'New-Pass-123');
       await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('reset-submit')));
       await tester.tap(find.byKey(const Key('reset-submit')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('reset-done')), findsOneWidget);
@@ -319,7 +339,8 @@ void main() {
       await tester.pumpWidget(screen());
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('reset-done')), findsNothing);
-      expect(find.byKey(const Key('reset-submit')), findsOneWidget);
+      expect(find.byKey(const Key('reset-otp-request')), findsOneWidget, reason: 'an empty form: no code asked, no password yet');
+      expect(find.byKey(const Key('reset-submit')), findsNothing);
     });
 
     testWidgets('F4: after a version conflict and read-back the form shows v2 and a save keeps the untouched v2 fields', (WidgetTester tester) async {

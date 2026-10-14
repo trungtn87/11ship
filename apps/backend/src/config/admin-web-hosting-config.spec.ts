@@ -21,7 +21,12 @@ describe('parseAdminWebHosting (ADMIN_WEB_STAGING_ENABLED)', () => {
     });
   });
 
-  it.each(['production', 'development', 'test', undefined])(
+  it('"true" is accepted for APP_ENV=production with the administration module behind it (Owner decision 2026-10-14)', () => {
+    expect(parseAdminWebHosting({ appEnv: 'production', enabledRaw: 'true', adminAuthEnabled: true })).toEqual({ ok: true, config: { enabled: true } });
+    expect(parseAdminWebHosting({ appEnv: 'production', enabledRaw: 'true', adminAuthEnabled: false })).toEqual({ ok: false, invalid: [ADMIN_WEB_STAGING_ENABLED_VARIABLE] });
+  });
+
+  it.each(['development', 'test', undefined])(
     '"true" is refused for APP_ENV=%s, naming only the variable',
     (appEnv) => {
       expect(parseAdminWebHosting({ appEnv, enabledRaw: 'true', adminAuthEnabled: true })).toEqual({
@@ -94,8 +99,8 @@ describe('loadConfig and ADMIN_WEB_STAGING_ENABLED', () => {
     expect(invalidOf({ ...STAGING, ADMIN_WEB_STAGING_ENABLED: 'true' })).toEqual([ADMIN_WEB_STAGING_ENABLED_VARIABLE]);
   });
 
-  it('stops startup for "true" outside staging (test, development, production), never echoing a value', () => {
-    for (const appEnv of ['test', 'development', 'production']) {
+  it('stops startup for "true" outside staging/production (test, development), never echoing a value', () => {
+    for (const appEnv of ['test', 'development']) {
       const base = appEnv === 'production' ? { ...BASE, NODE_ENV: 'production', DB_SSL_CA: TEST_CA } : BASE;
       const invalid = invalidOf({ ...base, ...ADMIN_ENABLED, APP_ENV: appEnv, ADMIN_WEB_STAGING_ENABLED: 'true' });
       expect(invalid).toEqual([ADMIN_WEB_STAGING_ENABLED_VARIABLE]);

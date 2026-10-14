@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:n11_shared/n11_shared.dart';
 
-// 11Food screens of the test build (catalog F01-F04). Same layout, wording and rules as apps/food-web/src/screens.ts: nobody is
+// 11Food screens of the app (catalog F01-F04). Same layout, wording and rules as apps/food-web/src/screens.ts: nobody is
 // signed in and every business action is unavailable with a visible reason. No screen invents shops, dishes, orders, balances or
 // activity: an empty screen says "no data yet".
 
-const String kTestNoticeTitle = 'Bản chạy thử';
-const String kTestNoticeText = 'Bản thử nghiệm: đăng ký, đăng nhập và hồ sơ cá nhân đã nối máy chủ. Các nghiệp vụ khác chưa nối.';
 
 List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
   return <TabSpec>[
@@ -27,7 +25,6 @@ Widget _home(SessionController session, ShellActions actions, AppFlows? flows) {
   return vstack(<Widget>[
     // The search box of the design opens the real Tìm kiếm tab; it is not a second, fake search.
     _SearchEntry(onTap: () => actions.goTab('search')),
-    const N11Banner(kind: BannerKind.warn, title: kTestNoticeTitle, text: kTestNoticeText),
     _guestPrompt(session, 'Đăng nhập hoặc đăng ký để đặt món khi tính năng sẵn sàng.', flows),
     const EmptyState(icon: Icons.restaurant, title: 'Chưa có quán để hiển thị', text: 'Danh sách quán và món sẽ xuất hiện khi tính năng đặt món sẵn sàng.'),
     _soonChip(),
@@ -107,7 +104,12 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
           trailing: const N11Chip('Chưa nối', kind: ChipKind.soon),
         ),
       const N11ListItem(icon: Icons.help_outline, title: 'Trợ giúp', soon: true),
-      const N11ListItem(icon: Icons.shield_outlined, title: 'Chính sách và điều khoản', soon: true),
+      N11ListItem(
+        key: const Key('policy-entry'),
+        icon: Icons.shield_outlined,
+        title: 'Chính sách và điều khoản',
+        onTap: () => Navigator.of(context).push(n11Route(PolicyScreen(session: session))),
+      ),
     ],
   ));
 }

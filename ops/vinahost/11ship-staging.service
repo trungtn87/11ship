@@ -1,0 +1,49 @@
+# systemd unit — 11Ship staging API on Ubuntu 24.04 (M00-VPS-01, gói B).
+# Install: /etc/systemd/system/11ship-staging.service (root:root, 0644). No secret lives in this file: the service
+# reads /etc/11ship/staging.env (root:ship11, 0640), which the operator writes from ops/vinahost/staging.env.example.
+[Unit]
+Description=11Ship staging API
+After=network-online.target postgresql@17-main.service
+Wants=network-online.target postgresql@17-main.service
+# Bounded restart loop, set here so it does not depend on the provider's systemd.conf: at most 5 starts in 300 s. With
+# RestartSec=5 a service that fails at once (wrong environment) reaches the limit after about 25 s and stays "failed"
+# ("Start request repeated too quickly" in the journal) instead of restarting forever. Recovery: fix /etc/11ship/staging.env, then
+#   systemctl reset-failed 11ship-staging && systemctl start 11ship-staging
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ship11
+Group=ship11
+# The release root holds apps/backend/dist, apps/admin-web/dist and node_modules; the admin web is found relative to it.
+WorkingDirectory=/opt/11ship/current
+EnvironmentFile=/etc/11ship/staging.env
+ExecStart=/usr/bin/env node apps/backend/dist/main.js
+Restart=on-failure
+RestartSec=5
+# Small VPS (1 vCPU, ~1 GB): keep the heap well under RAM.
+Environment=NODE_OPTIONS=--max-old-space-size=384
+TimeoutStopSec=20
+KillSignal=SIGTERM
+
+# Hardening. The service only reads its release and talks to loopback PostgreSQL and nginx.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

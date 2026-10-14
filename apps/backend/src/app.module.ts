@@ -1,5 +1,6 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { ActivationOtpProvider } from './admin-activation/activation-otp-provider';
+import { ActivationSmsGatewayBinding } from './admin-activation/activation-otp-providers';
 import { AccountRecoveryModule } from './account-recovery/account-recovery.module';
 import { AdminAuthModule } from './admin-auth/admin-auth.module';
 import { AuthModule, AuthModuleOptions } from './auth/auth.module';
@@ -29,7 +30,7 @@ export interface AppModuleOptions {
    * activation is enabled with REQUIRED phone verification and no provider is bound, startup stops (no fallback to a
    * fake). With DISABLED_TEST there is no OTP step and binding a provider is refused.
    */
-  activationOtpProvider?: ActivationOtpProvider;
+  activationOtpProvider?: ActivationOtpProvider | ActivationSmsGatewayBinding;
   /**
    * The test SMS inbox runtime (M01.22). Passed by main.ts ONLY when TEST_INBOX is active (explicit, development/test,
    * loopback): it ties the private listener and its discovery state to the application's shutdown.

@@ -40,14 +40,20 @@ describe('parseClientDevice', () => {
     expect(parseClientDevice({ appEnv: 'production', host: '0.0.0.0', env: { CLIENT_AUTH_ANDROID_ENABLED: 'false' } })).toEqual({ ok: true, enabled: false, config: undefined });
   });
 
-  it('accepts the gate only for development/test on a loopback bind, naming only the variable otherwise', () => {
-    for (const [appEnv, host] of [['staging', '127.0.0.1'], ['production', '127.0.0.1'], ['test', '0.0.0.0'], ['development', '10.0.0.5']] as const) {
+  it('accepts the gate for development/test/production on a loopback bind only, naming only the variable otherwise', () => {
+    for (const [appEnv, host] of [['staging', '127.0.0.1'], ['production', '0.0.0.0'], ['production', '10.0.0.5'], ['test', '0.0.0.0'], ['development', '10.0.0.5']] as const) {
       expect(parseClientDevice({ appEnv, host, env: env(), readFile: files() })).toEqual({ ok: false, invalid: ['CLIENT_AUTH_ANDROID_ENABLED'] });
     }
     expect(parseClientDevice({ appEnv: 'test', host: '127.0.0.1', env: env({ CLIENT_AUTH_ANDROID_ENABLED: 'yes' }), readFile: files() })).toEqual({
       ok: false,
       invalid: ['CLIENT_AUTH_ANDROID_ENABLED'],
     });
+    // Production on loopback: every trust input is still required (no signer file, no roots, no revocation snapshot => refused).
+    const prod = parseClientDevice({ appEnv: 'production', host: '127.0.0.1', env: env(), readFile: files() });
+    expect(prod.ok && prod.enabled).toBe(true);
+    expect(parseClientDevice({ appEnv: 'production', host: '127.0.0.1', env: env({ CLIENT_DEVICE_ALLOWED_SIGNERS_FILE: undefined }), readFile: files() })).toEqual({ ok: false, invalid: ['CLIENT_DEVICE_ALLOWED_SIGNERS_FILE'] });
+    expect(parseClientDevice({ appEnv: 'production', host: '127.0.0.1', env: env({ CLIENT_DEVICE_ATTESTATION_ROOTS_FILE: undefined }), readFile: files() })).toEqual({ ok: false, invalid: ['CLIENT_DEVICE_ATTESTATION_ROOTS_FILE'] });
+    expect(parseClientDevice({ appEnv: 'production', host: '127.0.0.1', env: env({ CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE: undefined }), readFile: files() })).toEqual({ ok: false, invalid: ['CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE'] });
     const ok = parseClientDevice({ appEnv: 'development', host: 'localhost', env: env(), readFile: files() });
     expect(ok.ok && ok.enabled && ok.config?.environment).toBe('local-test');
     expect(ok.ok && ok.config?.signers.FOOD.signerSha256).toBe(SIGNER);

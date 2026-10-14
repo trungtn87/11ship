@@ -9,6 +9,10 @@
 //   - needs the operator to type the target (host:port/database/project ref) in MIGRATION_CONFIRM_TARGET;
 //   - accepts only the Supabase SESSION pooler (port 5432) and checks that runtime and migration URLs name the same
 //     host, port, database and project ref (a shared pooler host serves many projects) with different roles;
+//   - DB_REMOTE_TARGET=SELF_HOSTED (M00-VPS-01) selects the one self-hosted staging PostgreSQL instead: localhost:5432/
+//     ship11_staging, roles ship11_migrator / ship11_app, APP_ENV=staging only, MIGRATION_CONFIRM_TARGET=
+//     localhost:5432/ship11_staging, and the connected database/role/TLS are verified from the server before anything
+//     is read or changed (rules in scripts/db-remote-target.js). Not set means SUPABASE; any other value is refused;
 //   - defaults to a read-only CHECK (server version, role, pending migrations); only "--apply" changes anything;
 //   - keeps node-pg-migrate's own lock enabled, so two operators cannot migrate at once;
 //   - keeps the migration history in app.pgmigrations and never creates anything in Supabase's public schema;
@@ -18,6 +22,14 @@
 
 const { existsSync, readdirSync } = require('node:fs');
 const path = require('node:path');
+const {
+  SELF_HOSTED,
+  SELF_HOSTED_IDENTITY_SQL,
+  TARGET_SELF_HOSTED,
+  checkSelfHostedTargets,
+  resolveRemoteTargetSelector,
+  selfHostedIdentityProblem,
+} = require('./db-remote-target.js');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const MIGRATIONS_DIR = path.join(REPO_ROOT, 'database', 'migrations');
@@ -79,12 +91,30 @@ function checkSessionPoolerTarget(raw, variable) {
 }
 
 /**
- * The shared target gates of every remote operator command (db:migrate:remote, staging:seed-fixtures): both URLs are
- * the Supabase SESSION pooler on port 5432 with <role>.<project ref> user names; the runtime DATABASE_URL is
- * REQUIRED and must name the same host, port, database and project as MIGRATION_DATABASE_URL, with a different
- * role. Pure; names only, never a value. Returns { problem } or { target, runtime, rawUrl }.
+ * The shared target gates of every remote operator command (db:migrate:remote, staging:seed-fixtures). The operator
+ * picks the target with DB_REMOTE_TARGET (see ./db-remote-target.js): SELF_HOSTED goes to its own gates; SUPABASE, or the
+ * variable not set at all, keeps the Supabase path below exactly as it was; any other value fails here, before anything
+ * connects. Pure; names only, never a value.
+ * Returns { problem } or { kind, target, runtime, rawUrl, confirmTarget }, where confirmTarget is the exact text the
+ * operator must type in MIGRATION_CONFIRM_TARGET.
  */
 function checkRemoteTargets(env) {
+  const selected = resolveRemoteTargetSelector(env);
+  if (selected.problem !== undefined) {
+    return { problem: selected.problem };
+  }
+  if (selected.selector === TARGET_SELF_HOSTED) {
+    return checkSelfHostedTargets(env);
+  }
+  return checkSupabaseTargets(env);
+}
+
+/**
+ * The Supabase path (M00-D1): both URLs are the Supabase SESSION pooler on port 5432 with <role>.<project ref> user
+ * names; the runtime DATABASE_URL is REQUIRED and must name the same host, port, database and project as
+ * MIGRATION_DATABASE_URL, with a different role.
+ */
+function checkSupabaseTargets(env) {
   const rawUrl = env.MIGRATION_DATABASE_URL;
   const migration = checkSessionPoolerTarget(rawUrl, 'MIGRATION_DATABASE_URL');
   if (migration.target === undefined) {
@@ -106,7 +136,23 @@ function checkRemoteTargets(env) {
   if (runtime.role === target.role) {
     return { problem: 'MIGRATION_DATABASE_URL and DATABASE_URL use the same role. Migration and runtime credentials must differ.' };
   }
-  return { target, runtime, rawUrl };
+  return { kind: 'SUPABASE', target, runtime, rawUrl, confirmTarget: `${target.host}:${target.port}/${target.database}/${target.projectRef}` };
+}
+
+/**
+ * SELF_HOSTED only: after connecting (over verified TLS) the SERVER's own answer must be the operator target — database,
+ * role, port, TLS in use, no elevated role attribute. Read-only. Returns a fixed problem sentence or undefined.
+ */
+async function checkConnectedIdentity(client) {
+  const result = await client.query(SELF_HOSTED_IDENTITY_SQL);
+  return selfHostedIdentityProblem(result.rows[0]);
+}
+
+/** SELF_HOSTED only: schema app must be owned by the connected migration role (read-only). */
+async function schemaOwnedByCurrentUser(client, schema = MIGRATIONS_SCHEMA) {
+  assertIdentifier(schema);
+  const result = await client.query('SELECT pg_get_userbyid(nspowner) = current_user AS owned FROM pg_namespace WHERE nspname = $1', [schema]);
+  return result.rows[0]?.owned === true;
 }
 
 function listMigrationFiles(dir = MIGRATIONS_DIR) {
@@ -208,7 +254,8 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
   if (targets.problem !== undefined) {
     return fail(targets.problem);
   }
-  const { target, rawUrl } = targets;
+  const { kind, rawUrl, confirmTarget: expectedTarget } = targets;
+  const selfHosted = kind === TARGET_SELF_HOSTED;
 
   const tls = deps.resolveDatabaseTls({ env, required: true, databaseUrl: rawUrl });
   if (!tls.ok || tls.tls === undefined) {
@@ -218,7 +265,6 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
     return fail(`invalid or missing configuration. Check environment variable(s): ${names.join(', ')}`);
   }
 
-  const expectedTarget = `${target.host}:${target.port}/${target.database}/${target.projectRef}`;
   if (env.MIGRATION_CONFIRM_TARGET !== expectedTarget) {
     return fail(`confirm the target by setting MIGRATION_CONFIRM_TARGET=${expectedTarget}`);
   }
@@ -234,6 +280,16 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
   try {
     await client.connect();
 
+    if (selfHosted) {
+      // The URL is only a claim. Before the version check, the history read or any migration, the server itself must
+      // say it is ship11_staging, as ship11_migrator, on port 5432, over TLS, with no elevated role attribute.
+      stage = 'identity';
+      const identityProblem = await checkConnectedIdentity(client);
+      if (identityProblem !== undefined) {
+        return fail(identityProblem);
+      }
+    }
+
     stage = 'preflight';
     const info = await client.query(
       "SELECT current_setting('server_version_num')::int AS version_num, current_setting('server_version') AS version, current_user AS role, current_database() AS db",
@@ -247,6 +303,9 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
     stage = 'state';
     if (!(await schemaExists(client))) {
       return fail(`schema ${MIGRATIONS_SCHEMA} does not exist. Create it first, owned by the migration role (see the runbook, "Database roles"); this command never creates it.`);
+    }
+    if (selfHosted && !(await schemaOwnedByCurrentUser(client))) {
+      return fail(`schema ${MIGRATIONS_SCHEMA} is not owned by the migration role ${SELF_HOSTED.migrationRole}. Fix the preparation first (see the runbook, "Database roles"); this command never changes ownership.`);
     }
     const state = await readMigrationState(client, deps.migrationsDir);
     out(`${PROGRAM}: ${state.applied.length} applied, ${state.pending.length} pending of ${state.files.length} migration file(s)`);
@@ -277,7 +336,7 @@ async function main({ argv, env, deps = loadDefaultDeps(), out = console.log, er
   }
 }
 
-module.exports = { main, parseDatabaseUrl, checkSessionPoolerTarget, checkRemoteTargets, listMigrationFiles, readMigrationState, schemaExists, defaultRunMigrations, MIGRATIONS_TABLE, MIGRATIONS_SCHEMA };
+module.exports = { main, parseDatabaseUrl, checkSessionPoolerTarget, checkRemoteTargets, checkConnectedIdentity, schemaOwnedByCurrentUser, listMigrationFiles, readMigrationState, schemaExists, defaultRunMigrations, MIGRATIONS_TABLE, MIGRATIONS_SCHEMA };
 
 if (require.main === module) {
   main({ argv: process.argv.slice(2), env: process.env }).then(

@@ -174,7 +174,7 @@ const enroll: DesignScreen = {
 function resetPage(context: DesignContext, screen: ResetScreen, wired: boolean): HTMLElement {
   const host = h('div', { class: 'dv-host' });
   const demo = (): void => context.toast(DEMO_NOTICE);
-  new ResetPage(host, { wired, testSmsNotice: true, sendCode: demo, verify: demo, resend: demo, setPassword: demo, toLogin: () => context.go('login') }).render(screen);
+  new ResetPage(host, { wired, sendCode: demo, verify: demo, resend: demo, setPassword: demo, toLogin: () => context.go('login') }).render(screen);
   return host;
 }
 

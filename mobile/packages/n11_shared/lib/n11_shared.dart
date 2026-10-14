@@ -7,6 +7,7 @@ export 'src/account/device_bridge.dart';
 export 'src/account/device_proof.dart';
 export 'src/account/models.dart';
 export 'src/account/native_auth.dart';
+export 'src/account/phone_verification.dart';
 export 'src/account/session_controller.dart';
 export 'src/account/session_factory.dart';
 export 'src/brand.dart';

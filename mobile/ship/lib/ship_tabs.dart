@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:n11_shared/n11_shared.dart';
 
-// 11Ship (driver) screens of the test build (catalog S01-S05). Same layout, wording and rules as apps/ship-web/src/screens.ts.
+// 11Ship (driver) screens of the app (catalog S01-S05). Same layout, wording and rules as apps/ship-web/src/screens.ts.
 // Nobody is signed in, so Online is NEVER available: the switch stays unavailable and says why. No orders, income, balance or
 // activity status is invented anywhere; empty means "no data yet", unknown is shown as "—", never as 0.
 
-const String kTestNoticeTitle = 'Bản chạy thử';
-const String kTestNoticeText = 'Bản thử nghiệm: đăng ký, đăng nhập và hồ sơ cá nhân đã nối máy chủ. Các nghiệp vụ khác chưa nối.';
 const String kOnlineReason = 'Nhận đơn: $kNotOnAndroidReason Cần hồ sơ xế được duyệt.';
 
 List<TabSpec> buildShipTabs(SessionController session, {AppFlows? flows}) {
@@ -43,7 +41,6 @@ Widget _unknownFigure({required String label, required String note}) {
 
 Widget _home(SessionController session, AppFlows? flows) {
   return vstack(<Widget>[
-    const N11Banner(kind: BannerKind.warn, title: kTestNoticeTitle, text: kTestNoticeText),
     _guestPrompt(session, 'Đăng nhập để theo dõi tài khoản của bạn. Gửi hồ sơ xế trong tab Tài khoản.', flows),
     // Online is only ever possible for an approved, eligible driver; that state does not exist here. Always unavailable: the block of
     // the design (s-home-off) with the switch locked and its reason written under it.
@@ -165,7 +162,12 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
           trailing: const N11Chip('Chưa nối', kind: ChipKind.soon),
         ),
       const N11ListItem(icon: Icons.help_outline, title: 'Trợ giúp', soon: true),
-      const N11ListItem(icon: Icons.shield_outlined, title: 'Chính sách và điều khoản', soon: true),
+      N11ListItem(
+        key: const Key('policy-entry'),
+        icon: Icons.shield_outlined,
+        title: 'Chính sách và điều khoản',
+        onTap: () => Navigator.of(context).push(n11Route(PolicyScreen(session: session))),
+      ),
     ],
   ));
 }

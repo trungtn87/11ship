@@ -1,0 +1,14 @@
+[Unit]
+Description=11Ship — refresh the Android attestation revocation snapshot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Root writes the snapshot into the trust directory (root:ship11, 0750); the service user only READS it (file mode 0640).
+ExecStart=/usr/bin/env node /opt/11ship/current/scripts/android-attestation-refresh.mjs /etc/11ship/trust/android-attestation-revocation.json
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/etc/11ship/trust
+ProtectHome=true
+PrivateTmp=true

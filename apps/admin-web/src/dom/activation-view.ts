@@ -171,6 +171,7 @@ export class ActivationPage {
     const title = h('h1', { class: 'title', tabindex: '-1', id: 'act-otp-title' }, TITLE);
     const notice = message('notice', 'act-otp-notice');
     const sendError = message('error', 'act-send-error');
+    // Only a development/test server (TEST_DISPLAY provider) ever answers with a code to show; production never does.
     const test = h('p', { class: 'test-display', hidden: true });
     const send = primary('Gửi mã xác minh', 'button');
     send.id = 'act-send';
@@ -210,6 +211,7 @@ export class ActivationPage {
       ),
     );
     let codeReset = 0;
+    let pollTimer: number | undefined;
     return {
       name: 'otp',
       update: (s) => {
@@ -221,8 +223,23 @@ export class ActivationPage {
           code.value = '';
         }
         const wait = this.controller.waitSeconds();
-        const awaiting = s.otp?.status === 'SUBMITTED' || s.otp?.status === 'FAILED';
-        setMessage(notice, s.notice);
+        const waiting = s.otp?.status === 'SUBMITTED' && s.otp.delivery === 'WAITING';
+        const awaiting = (s.otp?.status === 'SUBMITTED' && !waiting) || s.otp?.status === 'FAILED';
+        setMessage(notice, waiting ? ADMIN_COPY.otpWaitingDelivery : s.notice);
+        // The gateway reports the SMS asynchronously: poll the state while it is on its way, stop as soon as it leaves the screen.
+        if (waiting && pollTimer === undefined) {
+          pollTimer = window.setInterval(() => {
+            if (this.controller.screen.name !== 'otp') {
+              window.clearInterval(pollTimer);
+              pollTimer = undefined;
+              return;
+            }
+            void this.controller.pollDelivery();
+          }, 3000);
+        } else if (!waiting && pollTimer !== undefined) {
+          window.clearInterval(pollTimer);
+          pollTimer = undefined;
+        }
         setMessage(sendError, s.sendError === 'unavailable' ? COPY.unavailable : s.sendError);
         send.disabled = s.pending || wait > 0;
         send.textContent = s.pending
@@ -232,9 +249,8 @@ export class ActivationPage {
             : awaiting || s.otp?.status === 'EXPIRED'
               ? 'Gửi lại mã'
               : 'Gửi mã xác minh';
-        // TEST_DISPLAY (non-production) shows the code on the page; it is not stored and goes with the screen.
         test.hidden = s.displayedCode === undefined;
-        test.textContent = s.displayedCode === undefined ? '' : `${ADMIN_COPY.otpTestDisplay} ${s.displayedCode}`;
+        test.textContent = s.displayedCode === undefined ? '' : `${ADMIN_COPY.otpDevDisplay} ${s.displayedCode}`;
         codeForm.hidden = !awaiting;
         const errors = { invalid: ADMIN_COPY.otpInvalid, expired: ADMIN_COPY.otpExpired, locked: ADMIN_COPY.otpLocked, unavailable: COPY.unavailable };
         setMessage(codeError, s.codeError === undefined ? undefined : errors[s.codeError]);

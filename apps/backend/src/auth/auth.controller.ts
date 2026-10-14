@@ -45,6 +45,12 @@ export class AuthController {
     return { data: await this.verification.requestOtp(input.phoneNormalized, input.purpose) };
   }
 
+  /** Delivery state of a REGISTER code the caller requested (issue #102): the SMS is queued, then sent by the paired phone. */
+  @Get('phone-verifications/:verificationId')
+  async deliveryStatus(@Param('verificationId') verificationId: string) {
+    return { data: await this.verification.getDelivery(parseVerificationId(verificationId)) };
+  }
+
   @Post('phone-verifications/:verificationId/verify')
   @HttpCode(200)
   async verifyOtp(

@@ -1,7 +1,8 @@
 // Same-origin hosting of the administration web (issue #49, from PR #42). Pure parsing: no environment access and no
 // I/O, exactly like the other config files, so it is testable and nothing that loads AppConfig depends on HTTP code.
 //
-//   ADMIN_WEB_STAGING_ENABLED   exactly "true" or "false"; unset means false. "true" is valid ONLY for APP_ENV=staging
+//   ADMIN_WEB_STAGING_ENABLED   exactly "true" or "false"; unset means false. "true" is valid ONLY for APP_ENV=staging or
+//                               production (the name is historical; Owner decision 2026-10-14 made the VPS production)
 //                               and only when the administration web authentication is enabled (ADMIN_AUTH_ENABLED=true
 //                               with its variables valid): the page is useless without it, and a page served without
 //                               the module behind it would only be a public file server.
@@ -31,9 +32,9 @@ export function parseAdminWebHosting(input: {
   if (enabledRaw !== 'true') {
     return { ok: false, invalid: [ADMIN_WEB_STAGING_ENABLED_VARIABLE] };
   }
-  // production, development and test (and an unusable APP_ENV) can never serve the page, and neither can a process
+  // development and test (and an unusable APP_ENV) can never serve the page, and neither can a process
   // without the administration module behind it.
-  if (appEnv !== 'staging' || !adminAuthEnabled) {
+  if ((appEnv !== 'staging' && appEnv !== 'production') || !adminAuthEnabled) {
     return { ok: false, invalid: [ADMIN_WEB_STAGING_ENABLED_VARIABLE] };
   }
   return { ok: true, config: { enabled: true } };

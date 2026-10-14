@@ -10,10 +10,11 @@ import { ActivationOtpMode } from '../config/admin-activation-config';
 
 /**
  * ACCEPTED: the provider took the message. REJECTED: the provider clearly refused it (it was not and will not be sent).
- * UNKNOWN: anything else - a timeout, an exception, an unreadable answer; the SMS MAY have been sent, so it is never
+ * QUEUED (SMS gateway only): the message was accepted into the asynchronous queue, NOT delivered; the challenge stays
+ * PENDING_DELIVERY until the gateway reports the outcome. UNKNOWN: anything else - a timeout, an exception, an unreadable answer; the SMS MAY have been sent, so it is never
  * resent blindly.
  */
-export type OtpDeliveryOutcome = 'ACCEPTED' | 'REJECTED' | 'UNKNOWN';
+export type OtpDeliveryOutcome = 'ACCEPTED' | 'REJECTED' | 'UNKNOWN' | 'QUEUED';
 
 export interface ActivationOtpDelivery {
   readonly outcome: OtpDeliveryOutcome;
@@ -21,9 +22,15 @@ export interface ActivationOtpDelivery {
   readonly displayedCode?: string;
 }
 
+/** The challenge a delivery belongs to. Synchronous providers ignore it; the SMS gateway queue needs it. */
+export interface ActivationOtpContext {
+  readonly challengeId: string;
+  readonly ttlSeconds: number;
+}
+
 export interface ActivationOtpProvider {
   readonly mode: ActivationOtpMode;
-  send(phoneNormalized: string, otp: string): Promise<ActivationOtpDelivery>;
+  send(phoneNormalized: string, otp: string, context?: ActivationOtpContext): Promise<ActivationOtpDelivery>;
 }
 
 /** Injection token of the explicit provider binding. */

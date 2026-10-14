@@ -143,4 +143,15 @@ void main() {
     await tester.pump();
     expect(find.byKey(const Key('connection-banner')), findsNothing);
   });
+
+  testWidgets('account: "Chính sách và điều khoản" opens the real terms and privacy texts, without an account', (WidgetTester tester) async {
+    await pump(tester, healthy());
+    await openTab(tester, 'account');
+    await tester.ensureVisible(find.byKey(const Key('policy-entry')));
+    await tester.tap(find.byKey(const Key('policy-entry')));
+    await tester.pumpAndSettle();
+    expect(find.text(kTermsText), findsOneWidget);
+    expect(find.text(kPrivacyText), findsOneWidget);
+    expect(find.textContaining('thử nghiệm'), findsNothing);
+  });
 }

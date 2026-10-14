@@ -1,4 +1,5 @@
 import { ACTIVATION_DOWN_SQL, ACTIVATION_UP_SQL } from './support/activation-migration-sql';
+import { SMS_GATEWAY_DOWN_SQL, SMS_GATEWAY_UP_SQL } from './support/sms-gateway-migration-sql';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
@@ -139,6 +140,7 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
     expect(before.length).toBeGreaterThan(0);
     await client.query('BEGIN');
     try {
+      await client.query(SMS_GATEWAY_DOWN_SQL); // the SMS queue references the activation challenges: newest, down first, up last
       for (const statement of ACTIVATION_DOWN_SQL) {
         await client.query(statement);
       }
@@ -151,6 +153,7 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
       for (const statement of ACTIVATION_UP_SQL) {
         await client.query(statement);
       }
+      await client.query(SMS_GATEWAY_UP_SQL);
     } finally {
       await client.query('ROLLBACK');
     }

@@ -12,6 +12,10 @@ Report final code SHA, changed behavior, relevant checks/results (links are suff
 
 Use the short task section of [the checklist](docs/templates/module-delivery-checklist.md). Prepare runnable local/device builds at the relevant delivery/acceptance stage; do not rebuild every app for every backend/doc change. Owner local acceptance precedes final device acceptance. Owner decides module closure; small-package merge follows standing authorization.
 
+## VPS = real operating build (Owner decision 2026-10-14)
+
+Read [the production profile](docs/current/M01-production-profile-20261014.md): it replaces the earlier VPS-test / `DISABLED_TEST` / test-SMS-inbox directions. Keep `ship11_staging` and its data, the origin, the applicationIds and the signing key; no fixture, accept-all, WEB fallback or disabled TLS; the SMS Gateway (#101/#103) is the only OTP channel and fails honestly when not ready. Do not claim the VPS works or M01 closed without real evidence.
+
 ## M01 workstreams — Owner revision 2026-10-12
 
 Start from [the M01 workstream plan](docs/current/M01-workstreams-20261012.md). Read only the mapped sections and relevant changed dependencies; reuse implemented endpoints, schema, screens and shared components. Deliver the missing portion of one assigned flow; do not advance into other packages automatically. Focused checks establish that the changed flow runs; do not arrange independent per-package bug hunts or repeated module acceptance. One module-wide review/verification occurs after M01 implementation and connection; fix findings and recheck only affected behavior. Existing mandatory CI still applies without extra manual duplicates. Older task matrices and reporting instructions yield to this process revision.

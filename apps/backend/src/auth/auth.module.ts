@@ -29,6 +29,9 @@ import { AdminUserAccountParticipant } from './admin-user-account-participant';
 import { AdminPasswordVerifier } from './admin-password-verifier';
 import { LoginService } from './login-service';
 import { OTP_PROVIDER, OtpProvider } from './otp-provider';
+import { isSmsGatewayBinding, SmsGatewayBinding } from './otp-provider-binding';
+import { SmsGatewayModule } from '../sms-gateway/sms-gateway.module';
+import { SmsGatewayOtpProvider } from '../sms-gateway/sms-gateway-otp-provider';
 import { Argon2idPasswordHasher, PASSWORD_HASHER } from './password-hasher';
 import { ProofRepository } from './proof-repository';
 import { RegistrationService } from './registration-service';
@@ -44,7 +47,7 @@ import { VerificationService } from './verification-service';
 
 export interface AuthModuleOptions {
   /** Explicit OTP provider binding. There is deliberately no default and no fake fallback. */
-  readonly otpProvider: OtpProvider;
+  readonly otpProvider: OtpProvider | SmsGatewayBinding;
   /**
    * Test harness only (M00-D2): an account origin policy to use instead of the one derived from the validated
    * configuration. The factory createAccountOriginPolicy still refuses fixtures outside APP_ENV=staging, so this
@@ -75,11 +78,22 @@ export class AuthModule {
   static register(options: AuthModuleOptions): DynamicModule {
     return {
       module: AuthModule,
-      imports: [TransactionModule, IdempotencyModule, AuditModule, OutboxModule, ShopModule, DriverModule],
+      imports: [
+        TransactionModule,
+        IdempotencyModule,
+        AuditModule,
+        OutboxModule,
+        ShopModule,
+        DriverModule,
+        // Issue #102: the SMS gateway (queue + gateway API) exists only when bindOtpProvider selected it.
+        ...(isSmsGatewayBinding(options.otpProvider) ? [SmsGatewayModule] : []),
+      ],
       controllers: [AuthController, ClientAuthController, ClientDeviceController],
       providers: [
         authConfigProvider,
-        { provide: OTP_PROVIDER, useValue: options.otpProvider },
+        isSmsGatewayBinding(options.otpProvider)
+          ? { provide: OTP_PROVIDER, useExisting: SmsGatewayOtpProvider }
+          : { provide: OTP_PROVIDER, useValue: options.otpProvider },
         // The account origin policy comes from the validated configuration (APP_ENV, fixture mode, allowlist).
         options.accountOriginPolicy === undefined
           ? {
@@ -163,6 +177,9 @@ export class AuthModule {
         // M01-RESET: the no-OTP test password reset revokes sessions with the same repository and hashes with the same hasher.
         SessionRepository,
         PASSWORD_HASHER,
+        // Issue #102: the SMS OTP reset reuses the OTP request/verify engine and the proof store.
+        VerificationService,
+        ProofRepository,
       ],
     };
   }

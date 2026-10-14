@@ -14,6 +14,9 @@ export const HKDF_INFO_ADMIN_TOTP_ENCRYPTION = Buffer.from('admin-totp-aes-gcm.v
 export const HKDF_INFO_ADMIN_OPERATION_HMAC = Buffer.from('admin-operation-hmac.v1', 'utf8');
 // M01-D-ADMIN-1C: the activation OTP digest has its own purpose subkey (added last; earlier derivations unchanged).
 export const HKDF_INFO_ADMIN_ACTIVATION_OTP_HMAC = Buffer.from('admin-activation-otp-hmac.v1', 'utf8');
+// Issue #102: the queued SMS (recipient + text with the OTP) is sealed with its own purpose subkey (added last; earlier
+// derivations unchanged).
+export const HKDF_INFO_SMS_PAYLOAD = Buffer.from('sms-payload-aes-gcm.v1', 'utf8');
 export const MASTER_KEY_BYTES = 32;
 export const SUBKEY_BYTES = 32;
 
@@ -25,6 +28,7 @@ export interface DerivedSubkeys {
   readonly adminTotpEncryption: Buffer;
   readonly adminOperation: Buffer;
   readonly adminActivationOtp: Buffer;
+  readonly smsPayload: Buffer;
 }
 
 export function deriveSubkeys(master: Buffer): DerivedSubkeys {
@@ -44,5 +48,6 @@ export function deriveSubkeys(master: Buffer): DerivedSubkeys {
     adminActivationOtp: Buffer.from(
       hkdfSync('sha256', master, HKDF_SALT, HKDF_INFO_ADMIN_ACTIVATION_OTP_HMAC, SUBKEY_BYTES),
     ),
+    smsPayload: Buffer.from(hkdfSync('sha256', master, HKDF_SALT, HKDF_INFO_SMS_PAYLOAD, SUBKEY_BYTES)),
   };
 }

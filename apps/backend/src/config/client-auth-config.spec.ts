@@ -21,8 +21,13 @@ describe('parseClientAuth', () => {
     }
   });
 
-  it('refuses the variables in staging and production, naming only the set ones', () => {
-    for (const appEnv of ['staging', 'production']) {
+  it('accepts the pair in production (Owner decision 2026-10-14) and still refuses it in staging, naming only the set ones', () => {
+    expect(parseClientAuth({ appEnv: 'production', termsRaw: TERMS, privacyRaw: PRIVACY })).toEqual({
+      ok: true,
+      config: { termsVersion: TERMS, privacyVersion: PRIVACY },
+    });
+    expect(parseClientAuth({ appEnv: 'production', termsRaw: TERMS, privacyRaw: undefined })).toEqual({ ok: false, invalid: ['CLIENT_AUTH_PRIVACY_VERSION'] });
+    for (const appEnv of ['staging']) {
       expect(parseClientAuth({ appEnv, termsRaw: TERMS, privacyRaw: PRIVACY })).toEqual({
         ok: false,
         invalid: ['CLIENT_AUTH_TERMS_VERSION', 'CLIENT_AUTH_PRIVACY_VERSION'],
@@ -66,7 +71,7 @@ describe('loadConfig client auth', () => {
     } else {
       expect(ok.invalid).not.toContain('CLIENT_AUTH_TERMS_VERSION');
     }
-    const bad = loadConfig({ ...base, APP_ENV: 'production', CLIENT_AUTH_TERMS_VERSION: TERMS, CLIENT_AUTH_PRIVACY_VERSION: PRIVACY });
+    const bad = loadConfig({ ...base, APP_ENV: 'staging', CLIENT_AUTH_TERMS_VERSION: TERMS, CLIENT_AUTH_PRIVACY_VERSION: PRIVACY });
     expect(bad.ok).toBe(false);
     if (!bad.ok) {
       expect(bad.invalid).toEqual(expect.arrayContaining(['CLIENT_AUTH_TERMS_VERSION', 'CLIENT_AUTH_PRIVACY_VERSION']));
