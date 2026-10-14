@@ -221,7 +221,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#103](https://github.com/trungtn87/11ship/pull/103) feat: SMS Gateway GĐ2 — Android ↔ VPS + OTP đăng ký/khôi ph… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `722204b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#104](https://github.com/trungtn87/11ship/pull/104) feat(M01): staging VPS connectivity for 11Food/11Ship + SMS… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `b5af88a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#105](https://github.com/trungtn87/11ship/pull/105) build(M01): verified Ubuntu VPS release for 11Food, 11Ship… | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `e4d75b2` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#106](https://github.com/trungtn87/11ship/pull/106) feat(M01): VPS production profile — SMS OTP everywhere, pro… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `d9db6a0` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#106](https://github.com/trungtn87/11ship/pull/106) feat(M01): VPS production profile — SMS OTP everywhere, pro… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `d9db6a0` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
