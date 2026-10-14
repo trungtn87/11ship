@@ -186,9 +186,9 @@ describe('issue #49 — Admin web hosted on the API origin', () => {
     }
   });
 
-  it('refuses production at install time, and a missing build, whatever the caller passes', () => {
+  it('accepts the approved production profile and still refuses a missing build', () => {
     const app = running.app;
-    expect(() => installAdminWebHosting(app, { appEnv: 'production', distDir: DIST })).toThrow();
+    expect(() => installAdminWebHosting(app, { appEnv: 'production', distDir: DIST })).not.toThrow();
     expect(() => installAdminWebHosting(app, { appEnv: 'staging', distDir: join(DIST, 'does-not-exist') })).toThrow();
   });
 });
