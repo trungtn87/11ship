@@ -101,18 +101,20 @@ export class ClientRegistrationService {
     input: ClientRegisterInput,
     idempotencyKey: string | readonly string[] | undefined,
     requestId: string,
+    evidence?: NativeRequestEvidence,
   ): Promise<ClientRegisterOutcome> {
     // Staging fixture mode closes every registration (same gate as the legacy route), before the key is read, any database
     // access, any hash or any executor call.
     this.originPolicy.assertRegistrationOpen();
     // The device gate: nothing is created, consumed or hashed for a platform that cannot be accepted.
     assertDeviceAllowed(this.settings, input.device);
-    // The native app has no OTP step in this package: REQUIRED verification is not supported there, and nothing is faked.
-    if (input.device.platform === 'ANDROID') {
-      throw new AppError('AUTH_REGISTRATION_UNAVAILABLE');
-    }
     // The executor validates the key again; doing it first only avoids a database round trip and an Argon2 hash.
     parseIdempotencyKey(idempotencyKey);
+    // ANDROID (issue #102): the OTP proof does NOT replace the native device proof. The registration token and its signature
+    // are verified now, before any hash or write, exactly like the no-proof branch; a replay presents a fresh proof for the
+    // same, already consumed, token.
+    const nativeProof: NativeAuthProof | undefined =
+      input.device.platform === 'ANDROID' ? await this.#nativeProof(evidence, input.device.app, idempotencyKey) : undefined;
 
     const token = parseCanonicalToken(input.verificationToken);
     if (token === undefined) {
@@ -155,16 +157,21 @@ export class ClientRegistrationService {
         replay: {
           kind: 'sensitive',
           authorize: async (context, guard) => {
-            await this.#authorizeReplay(context, guard, input, capture);
+            await this.#authorizeReplay(context, guard, input, capture, nativeProof);
             return true;
           },
         },
       },
-      (context) => this.#registerNew(context, { input, proofId, passwordHash, requestId }, capture),
+      (context) => this.#registerNew(context, { input, proofId, passwordHash, requestId, nativeProof }, capture),
     );
 
     const stored = storedResultOf(outcome.payload);
-    return { status: outcome.status, payload: responseOf(requireIdentity(capture), stored), replayed: outcome.replayed };
+    return {
+      status: outcome.status,
+      payload: responseOf(requireIdentity(capture), stored),
+      replayed: outcome.replayed,
+      ...(capture.binding === undefined ? {} : { binding: capture.binding }),
+    };
   }
 
   /**
@@ -256,10 +263,10 @@ export class ClientRegistrationService {
 
   async #registerNew(
     context: TransactionContext,
-    args: { input: ClientRegisterInput; proofId: string; passwordHash: string; requestId: string },
+    args: { input: ClientRegisterInput; proofId: string; passwordHash: string; requestId: string; nativeProof: NativeAuthProof | undefined },
     capture: IdentityCapture,
   ) {
-    const { input, proofId, passwordHash, requestId } = args;
+    const { input, proofId, passwordHash, requestId, nativeProof } = args;
 
     // 1. Proof row lock, then the clock (after the lock): the same recheck as the legacy route.
     const proof = await this.proofs.lockForRegister(context, proofId);
@@ -313,6 +320,10 @@ export class ClientRegistrationService {
       throw new TechnicalError('internal', 'A new customer was not fully provisioned');
     }
 
+    // 4b. Native: the one-use registration grant decides the binding (a new user can only start a NEW binding), before the session.
+    const plan =
+      nativeProof === undefined ? undefined : await this.deviceBinding.prepare(context, { userId, app: input.device.app, proof: nativeProof });
+
     // 5. The CUSTOMER session and its plaintext token (returned once, stored only as a digest). The context is chosen on
     // purpose here; the legacy default (a roleless session) is untouched.
     const session = await this.sessions.create(context, {
@@ -321,6 +332,9 @@ export class ClientRegistrationService {
       ttlSeconds: this.config.sessionTtlSeconds,
       activeRole: CUSTOMER_ROLE,
     });
+    if (plan !== undefined) {
+      capture.binding = await this.deviceBinding.finish(context, plan, { userId, sessionId: session.sessionId });
+    }
 
     // 6. Audit and ONE outbox event in the same transaction. Safe fields only: no phone, name, proof, password or token.
     await this.audit.append(context, {
@@ -380,6 +394,7 @@ export class ClientRegistrationService {
     guard: JsonObject,
     input: ClientRegisterInput,
     capture: IdentityCapture,
+    nativeProof: NativeAuthProof | undefined,
   ): Promise<void> {
     const { proof_id: proofId, user_id: userId, session_id: sessionId } = guard;
     if (!isCanonicalUuid(proofId) || !isCanonicalUuid(userId) || !isCanonicalUuid(sessionId)) {
@@ -415,6 +430,12 @@ export class ClientRegistrationService {
     }
     const nowMs = await freshClockMs(context);
     if (session.expiresAtMs <= nowMs) {
+      throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
+    }
+    // Native: the session must still be on the current binding, issued to the key that signs THIS replay.
+    if (nativeProof !== undefined) {
+      capture.binding = await this.deviceBinding.assertReplayable(context, { sessionId, proof: nativeProof });
+    } else if (input.device.platform === 'ANDROID') {
       throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
     }
 

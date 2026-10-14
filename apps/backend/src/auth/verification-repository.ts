@@ -123,6 +123,34 @@ export class VerificationRepository {
     );
   }
 
+  /**
+   * The delivery gateway closed the challenge as undeliverable (FAILED / EXPIRED job). Also reaches a PENDING challenge that
+   * nobody has tried yet (an UNKNOWN job later reported FAILED); a challenge with a wrong attempt is left alone.
+   */
+  async failDelivery(context: TransactionContext, verificationId: string): Promise<void> {
+    await context.query(
+      `UPDATE app.phone_verifications SET status = 'DELIVERY_FAILED'
+        WHERE verification_id = $1::uuid AND status IN ('PENDING_DELIVERY', 'PENDING') AND attempt_count = 0`,
+      [verificationId],
+    );
+  }
+
+  /** What a client may learn about the delivery of a challenge it created (no account information). */
+  async deliveryView(
+    context: TransactionContext,
+    verificationId: string,
+  ): Promise<{ readonly purpose: string; readonly status: VerificationStatus; readonly jobStatus: string | undefined; readonly expired: boolean } | undefined> {
+    const result = await context.query<{ purpose: string; status: VerificationStatus; job_status: string | null; expired: boolean }>(
+      `SELECT v.purpose, v.status, j.status AS job_status, v.expires_at <= clock_timestamp() AS expired
+         FROM app.phone_verifications v
+         LEFT JOIN app.sms_jobs j ON j.verification_id = v.verification_id
+        WHERE v.verification_id = $1::uuid`,
+      [verificationId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : { purpose: row.purpose, status: row.status, jobStatus: row.job_status ?? undefined, expired: row.expired };
+  }
+
   /** Locks the row. The caller reads the database clock AFTER this call. */
   async lockForVerify(
     context: TransactionContext,

@@ -6,6 +6,7 @@ import { AdminWebHostingConfig, parseAdminWebHosting } from './admin-web-hosting
 import { Keyring, parseKeyringConfig } from '../crypto/keyring';
 import { DatabaseTls, resolveDatabaseTls } from '../database/tls-config';
 import { parseStagingFixtures, StagingFixturesConfig } from './staging-fixtures-config';
+import { parseSmsGateway, SMS_GATEWAY_ENABLED_ENV, SmsGatewayConfig } from './sms-gateway-config';
 import { loadTestInboxConfig, TestInboxConfig } from '../test-sms/test-sms-config';
 import { ClientDeviceConfig, parseClientDevice } from './client-device-config';
 import {
@@ -174,7 +175,12 @@ export interface AppConfig {
    * Account recovery mode (M01-RESET). Present ONLY as DISABLED_TEST (password reset by phone without OTP), valid only for APP_ENV
    * development/test on a loopback bind; absent everywhere else, which means UNAVAILABLE (the reset endpoint is closed).
    */
-  accountRecoveryMode?: 'DISABLED_TEST';
+  accountRecoveryMode?: 'DISABLED_TEST' | 'SMS_OTP';
+  /**
+   * SMS gateway (issue #102). Present ONLY when SMS_GATEWAY_ENABLED=true and every variable is valid; absent otherwise
+   * (nothing is wired, nothing is exposed, no OTP is ever sent by SMS).
+   */
+  smsGateway?: SmsGatewayConfig;
   /**
    * Native Android binding (M01-ANDROID). Present ONLY when CLIENT_AUTH_ANDROID_ENABLED=true (development/test on a loopback bind)
    * and the four CLIENT_DEVICE_* trust inputs are valid. Absent everywhere else: every ANDROID request then stays a 503.
@@ -671,7 +677,25 @@ export function loadConfig(env: EnvSource): ConfigResult {
   }
 
   // Account recovery mode (M01-RESET): closed by default, DISABLED_TEST only for development/test on loopback.
-  const recoveryResult = parseAccountRecoveryMode({ appEnv, host, modeRaw: env[ACCOUNT_RECOVERY_MODE_ENV] });
+  // SMS gateway (issue #102): off by default; needs the keyring (the queued message is encrypted with it) and is incompatible
+  // with the staging fixture mode (which closes OTP altogether). Names only.
+  const smsGatewayResult = parseSmsGateway({ env });
+  let smsGateway: SmsGatewayConfig | undefined;
+  if (smsGatewayResult.ok) {
+    smsGateway = smsGatewayResult.config;
+    if (smsGateway !== undefined && (crypto === undefined || auth === undefined || (stagingFixtures.ok && stagingFixtures.config !== undefined))) {
+      flag(SMS_GATEWAY_ENABLED_ENV);
+    }
+  } else {
+    smsGatewayResult.invalid.forEach(flag);
+  }
+
+  const recoveryResult = parseAccountRecoveryMode({
+    appEnv,
+    host,
+    modeRaw: env[ACCOUNT_RECOVERY_MODE_ENV],
+    smsGatewayEnabled: smsGateway !== undefined,
+  });
   let accountRecoveryMode: AccountRecoveryMode = 'UNAVAILABLE';
   if (recoveryResult.ok) {
     accountRecoveryMode = recoveryResult.mode;
@@ -733,7 +757,8 @@ export function loadConfig(env: EnvSource): ConfigResult {
       ...(testInbox === undefined ? {} : { testInbox }),
       ...(clientAuth === undefined ? {} : { clientAuth }),
       ...(clientPhoneVerificationMode === 'DISABLED_TEST' ? { clientPhoneVerificationMode } : {}),
-      ...(accountRecoveryMode === 'DISABLED_TEST' ? { accountRecoveryMode } : {}),
+      ...(accountRecoveryMode === 'DISABLED_TEST' || accountRecoveryMode === 'SMS_OTP' ? { accountRecoveryMode } : {}),
+      ...(smsGateway === undefined ? {} : { smsGateway }),
       ...(clientAndroid === undefined ? {} : { clientAndroid }),
     },
   };

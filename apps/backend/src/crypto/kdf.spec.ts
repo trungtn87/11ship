@@ -64,6 +64,17 @@ describe('HKDF-SHA-256 subkey derivation — known answers (C25)', () => {
     );
     expect(subkeys.adminOperation.toString('hex')).toBe('0eeb10368925f909014ff4f40a2c702adb662e3f5b44ec4c96cc08400021fb19');
     const all = Object.values(subkeys).map((key) => key.toString('hex'));
-    expect(new Set(all).size).toBe(7);
+    expect(new Set(all).size).toBe(8);
+  });
+
+  it('issue #102 adds the SMS payload subkey as a distinct purpose without changing any earlier derivation', () => {
+    const subkeys = deriveSubkeys(FIXTURE_MASTER_K1);
+    expect(subkeys.smsPayload.toString('hex')).toBe('cb1fa266815984e04c7c40379aa75285c75a57908dce19911bd1e94b55d2fe09');
+    expect(subkeys.adminActivationOtp.toString('hex')).toBe('2ea507cb507b424c99ecaffd89e1b07b2fad2e53df53d41a0f62786e3cb47ee5');
+    for (const [name, key] of Object.entries(subkeys)) {
+      if (name !== 'smsPayload') {
+        expect(key.equals(subkeys.smsPayload)).toBe(false);
+      }
+    }
   });
 });
