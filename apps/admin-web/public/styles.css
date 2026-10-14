@@ -1,5 +1,6 @@
-/* 11 administration web - tokens from docs/current/11-brand-guideline-v1.0.md (colors, Plus Jakarta Sans, radius,
-   4px spacing grid, 44px touch targets). Functional colors are used only for messages. */
+/* 11 administration web - Brand Board v1.1 and the approved M01 Design (AdminView): UI yellow #E2B81F (hover #D8AD18,
+   pressed #B88F0A), charcoal #2A2A2E, background #F2F1EE, Plus Jakarta Sans, controls 14px / cards 16px, 44px touch
+   targets. Functional colors (error / success) are used only for states, never as brand colors. */
 
 @font-face {
   font-family: 'Plus Jakarta Sans';
@@ -10,22 +11,34 @@
 }
 
 :root {
-  --yellow: #d8ad18;
-  --yellow-hover: #c79e12;
+  --yellow: #e2b81f;
+  --yellow-hover: #d8ad18;
+  --yellow-pressed: #b88f0a;
+  --yellow-soft: #fbf1cf;
+  --yellow-subtle: #fdf8e6;
   --charcoal: #2a2a2e;
   --white: #ffffff;
   --surface: #f2f1ee;
-  --line: #e3e0d8;
-  --line-strong: #c9c5bb;
-  --muted: #5d5c62;
-  --error: #c62828;
-  --error-bg: #fdeeee;
-  --warning: #8a5a12; /* #B7791F darkened for 4.5:1 text contrast on its tint */
-  --warning-bg: #fbf3e4;
-  --info: #1d4fbf; /* #2563EB darkened for 4.5:1 text contrast on its tint */
-  --info-bg: #eef3fe;
+  --line: #e3e1db;
+  --line-strong: #cfccc3;
+  --muted: #55555b;
+  --placeholder: #8c8c92;
+  --neutral-bg: #efede8;
+  --error: #c23b32;
+  --error-ink: #8e2a22;
+  --error-bg: #fbe9e7;
+  --error-line: #e9b5af;
+  --ok: #2e7d4f;
+  --ok-ink: #1f5c38;
+  --ok-bg: #e4f3ea;
+  --ok-line: #a9d4b8;
+  --warning: var(--charcoal); /* warnings use the soft yellow with charcoal ink */
+  --warning-bg: var(--yellow-soft);
+  --warning-line: var(--yellow);
+  --info: var(--charcoal);
+  --info-bg: var(--white);
   --radius-card: 16px;
-  --radius-control: 12px;
+  --radius-control: 14px;
   --control-height: 48px;
   --font: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
@@ -88,19 +101,39 @@ input {
   min-width: 0;
 }
 
+.brand-tile {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--white);
+}
+
 .brand-logo {
   display: block;
-  width: auto;
+  width: 36px;
   height: 36px;
   object-fit: contain;
 }
 
-.brand-name {
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.brand-title {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 800;
+}
+
+.brand-name {
+  font-size: 12px;
   color: var(--muted);
-  padding-left: 10px;
-  border-left: 1px solid var(--line-strong);
 }
 
 .topbar-actions {
@@ -114,7 +147,127 @@ input {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px 16px 56px;
+  padding: 40px 32px 56px;
+}
+
+/* Signed-out pages (login, 2FA, activation, reset): dark ADMIN panel on the left, the card on the light side. */
+.page-auth {
+  flex-direction: row;
+}
+
+.auth-aside {
+  flex: none;
+  width: 420px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 48px;
+  background: var(--charcoal);
+  color: var(--white);
+}
+
+/* The logo's ink is dark: on the dark panel it sits on a white tile (the logo itself is never recolored). */
+.auth-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  background: var(--white);
+}
+
+.auth-logo {
+  display: block;
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+}
+
+.auth-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.auth-badge {
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--yellow);
+  color: var(--charcoal);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.auth-title {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.auth-text,
+.auth-slogan {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--line);
+}
+
+.auth-slogan {
+  font-size: 13px;
+}
+
+.page-auth .card {
+  max-width: 460px;
+  padding: 28px;
+}
+
+/* Narrow screens: the panel becomes a band above the card (logo, ADMIN, title); the long text is dropped. */
+@media (max-width: 900px) {
+  .page-auth {
+    flex-direction: column;
+  }
+
+  .auth-aside {
+    width: auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 14px;
+    padding: 14px 16px;
+  }
+
+  .auth-tile {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+  }
+
+  .auth-logo {
+    width: 36px;
+    height: 36px;
+  }
+
+  .auth-intro {
+    flex-direction: row-reverse;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .auth-title {
+    font-size: 17px;
+    letter-spacing: 0;
+  }
+
+  .auth-text,
+  .auth-slogan {
+    display: none;
+  }
 }
 
 .card {
@@ -136,8 +289,8 @@ input {
 .title {
   margin: 0 0 8px;
   font-size: 26px;
-  line-height: 1.25;
-  font-weight: 700;
+  line-height: 1.2;
+  font-weight: 800;
   letter-spacing: -0.01em;
 }
 
@@ -170,7 +323,7 @@ input {
 }
 
 .label {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -184,32 +337,36 @@ input {
   min-height: var(--control-height);
   padding: 0 14px;
   font-size: 16px; /* 16px keeps iOS from zooming on focus */
+  font-weight: 600;
   background: var(--white);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line);
   border-radius: var(--radius-control);
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .input-wrap input::placeholder {
-  color: #8d8b92;
+  color: var(--placeholder);
+  font-weight: 500;
 }
 
 .input-wrap input:hover {
-  border-color: #a9a59b;
+  border-color: var(--line-strong);
 }
 
+/* Focus: yellow 2px border with a soft-yellow ring; error: red border with a soft-red ring (M01 Design inputs). */
 .input-wrap input:focus-visible {
   outline: none;
-  border-color: var(--charcoal);
-  box-shadow: 0 0 0 3px rgba(216, 173, 24, 0.55);
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 1px var(--yellow), 0 0 0 4px var(--yellow-soft);
 }
 
 .input-wrap input[aria-invalid='true'] {
   border-color: var(--error);
+  box-shadow: 0 0 0 1px var(--error);
 }
 
 .input-wrap input[aria-invalid='true']:focus-visible {
-  box-shadow: 0 0 0 3px rgba(198, 40, 40, 0.25);
+  box-shadow: 0 0 0 1px var(--error), 0 0 0 4px var(--error-bg);
 }
 
 .input-wrap input[readonly] {
@@ -265,8 +422,8 @@ input {
   min-height: var(--control-height);
   padding: 0 20px;
   border-radius: var(--radius-control);
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease;
 }
@@ -282,10 +439,15 @@ input {
   border-color: var(--yellow-hover);
 }
 
+.btn-primary:active:not(:disabled) {
+  background: var(--yellow-pressed);
+  border-color: var(--yellow-pressed);
+}
+
 .btn-secondary {
   background: var(--white);
   color: var(--charcoal);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line);
 }
 
 .btn-secondary:hover:not(:disabled) {
@@ -294,12 +456,21 @@ input {
 
 .btn:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  background: #edebe5;
+  border-color: #edebe5;
+  color: var(--placeholder);
 }
 
 .btn[aria-busy='true'] {
-  opacity: 0.8;
+  background: var(--yellow-hover);
+  border-color: var(--yellow-hover);
+  color: var(--charcoal);
   cursor: progress;
+}
+
+.btn-secondary[aria-busy='true'] {
+  background: var(--surface);
+  border-color: var(--line);
 }
 
 .btn-compact {
@@ -315,11 +486,11 @@ input {
   margin: 0 0 4px -4px;
   border: 0;
   background: transparent;
-  color: var(--charcoal);
+  color: var(--yellow-pressed);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   text-decoration: underline;
-  text-decoration-color: var(--yellow);
+  text-decoration-color: currentColor;
   text-decoration-thickness: 2px;
   text-underline-offset: 4px;
   cursor: pointer;
@@ -333,28 +504,36 @@ input {
 
 .field .message-error {
   padding: 0;
+  border: 0;
   background: none;
-  color: var(--error);
+  color: var(--error-ink);
+  font-size: 13px;
 }
 
+/* Banners (M01 Design): error = soft red, success = soft green, warning = soft yellow, notice = white with a border. */
 .form > .message,
-.card > .message {
-  padding: 10px 12px;
-  border-radius: 10px;
+.card > .message,
+.shell-main > .message {
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
 }
 
 .message-error {
   background: var(--error-bg);
-  color: var(--error);
+  border-color: var(--error-line);
+  color: var(--error-ink);
 }
 
 .message-notice {
   background: var(--info-bg);
+  border-color: var(--line);
   color: var(--info);
 }
 
 .message-warning {
   background: var(--warning-bg);
+  border-color: var(--warning-line);
   color: var(--warning);
   font-variant-numeric: tabular-nums;
 }
@@ -510,7 +689,7 @@ select {
   padding: 10px 14px;
   font-size: 16px;
   background: var(--white);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line);
   border-radius: var(--radius-control);
 }
 
@@ -564,7 +743,7 @@ select {
 .test-display {
   margin: 12px 0 0;
   padding: 10px 14px;
-  border: 1px dashed var(--warning);
+  border: 1px dashed var(--yellow-pressed);
   border-radius: var(--radius-control);
   background: var(--warning-bg);
   color: var(--warning);
@@ -587,7 +766,7 @@ select {
 
 .btn-danger {
   background: var(--white);
-  color: var(--error);
+  color: var(--error-ink);
   border: 1px solid var(--error);
 }
 
@@ -683,30 +862,24 @@ select {
 .status {
   display: inline-block;
   justify-self: start;
-  padding: 2px 10px;
+  padding: 4px 10px;
   border-radius: 999px;
-  font-size: 13px;
-  font-weight: 600;
-  border: 1px solid var(--line-strong);
-  background: var(--surface);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--neutral-bg);
+  color: var(--muted);
 }
 
-.status-wait {
-  background: var(--info-bg);
-  color: var(--info);
-  border-color: var(--info);
-}
-
+.status-wait,
 .status-warn {
-  background: var(--warning-bg);
-  color: var(--warning);
-  border-color: var(--warning);
+  background: var(--yellow-soft);
+  color: var(--charcoal);
 }
 
 .status-ok {
-  background: #eaf6ec;
-  color: #1b5e20;
-  border-color: #1b5e20;
+  background: var(--ok-bg);
+  color: var(--ok-ink);
 }
 
 .empty {
@@ -740,7 +913,7 @@ select {
 .summary {
   padding: 12px 14px;
   border-radius: var(--radius-control);
-  background: var(--surface);
+  background: var(--yellow-subtle);
   font-size: 15px;
   overflow-wrap: anywhere;
 }
@@ -825,7 +998,7 @@ select {
   padding: 0 14px;
   font-size: 14px;
   background: var(--surface);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line);
   border-radius: var(--radius-control);
 }
 
@@ -872,12 +1045,12 @@ select {
 /* ---- Shell (D03): sidebar 240 px / rail 64 px / drawer, top bar with breadcrumb. Same tokens. ---- */
 
 :root {
-  --sidebar-width: 240px;
+  --sidebar-width: 232px;
   --sidebar-rail: 64px;
   --sidebar-bg: #2a2a2e;
   --sidebar-hover: #3a3a40;
-  --sidebar-text: #ecebe6;
-  --sidebar-muted: #a9a79f;
+  --sidebar-text: #ffffff;
+  --sidebar-muted: #e3e1db;
   --sidebar-line: #45454c;
 }
 
@@ -924,26 +1097,17 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 64px;
-  padding: 0 12px 0 20px;
+  min-height: 76px;
+  padding: 16px 8px 8px 16px;
 }
 
-/* The logo's ink is dark: on the dark sidebar it sits on a light tile. */
-.sidebar .brand-logo {
-  height: 32px;
-  padding: 4px 6px;
-  border-radius: 8px;
-  background: var(--white);
+/* The logo's ink is dark: on the dark sidebar it sits on the white tile of .brand-tile. */
+.sidebar .brand {
+  gap: 12px;
 }
 
 .sidebar .brand-name {
-  color: var(--sidebar-text);
-  border-left-color: transparent;
-  padding-left: 0;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  color: var(--sidebar-muted);
 }
 
 .side-toggle,
@@ -1010,11 +1174,11 @@ select {
 }
 
 .side-heading {
-  margin: 14px 8px 6px;
-  font-size: 12px;
+  margin: 16px 12px 6px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: var(--sidebar-muted);
+  color: #a9a79f;
 }
 
 .side-link {
@@ -1023,9 +1187,9 @@ select {
   gap: 12px;
   width: 100%;
   min-height: 44px;
-  padding: 0 12px;
+  padding: 0 14px;
   border: 0;
-  border-radius: var(--radius-control);
+  border-radius: 12px;
   background: transparent;
   color: var(--sidebar-text);
   font-size: 15px;
@@ -1051,6 +1215,7 @@ select {
 .side-active:hover {
   background: var(--yellow);
   color: var(--charcoal);
+  font-weight: 700;
 }
 
 .side-active-parent .icon {
@@ -1073,7 +1238,7 @@ select {
 }
 
 .side-soon {
-  color: var(--sidebar-muted);
+  color: #a9a79f;
   cursor: default;
 }
 
@@ -1088,7 +1253,7 @@ select {
   border: 1px solid var(--sidebar-line);
   font-size: 11px;
   font-weight: 600;
-  color: var(--sidebar-muted);
+  color: #a9a79f;
   white-space: nowrap;
 }
 
@@ -1109,8 +1274,8 @@ select {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: #d9d7d0;
-  color: #6a6970;
+  background: var(--yellow);
+  color: var(--charcoal);
 }
 
 .avatar-small {
@@ -1210,7 +1375,7 @@ select {
   min-height: 96px;
 }
 
-.shell-collapsed .brand-name,
+.shell-collapsed .brand-text,
 .shell-collapsed .side-label,
 .shell-collapsed .side-badge,
 .shell-collapsed .side-heading,
@@ -1326,15 +1491,15 @@ select {
 
 .crumbs [aria-current='page'] {
   color: var(--charcoal);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .shell-main {
   min-width: 0;
-  padding: 28px 32px 56px;
+  padding: 32px 32px 56px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .content-area {
@@ -1463,11 +1628,11 @@ select {
 
 .search-input {
   width: 100%;
-  min-height: var(--control-height);
+  min-height: 44px;
   padding: 0 14px 0 42px;
-  font-size: 16px;
+  font-size: 15px;
   background: var(--white);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line);
   border-radius: var(--radius-control);
 }
 
@@ -1501,21 +1666,26 @@ select {
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 15px;
+  font-size: 14px;
+}
+
+.table tbody tr:hover td {
+  background: var(--yellow-subtle);
 }
 
 .table th {
-  padding: 14px 16px;
-  background: var(--surface);
+  padding: 12px 20px;
+  background: var(--yellow-subtle);
   border-bottom: 1px solid var(--line);
-  font-size: 14px;
-  font-weight: 600;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
   text-align: left;
   white-space: nowrap;
 }
 
 .table td {
-  padding: 14px 16px;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--line);
   vertical-align: middle;
 }
@@ -1545,43 +1715,53 @@ select {
 }
 
 .chip {
-  padding: 2px 10px;
+  padding: 4px 10px;
   border-radius: 999px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  font-size: 13px;
-  font-weight: 600;
+  background: var(--neutral-bg);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
+.chip-shop-owner {
+  background: var(--yellow);
+  color: var(--charcoal);
+}
+
+.chip-driver {
+  background: var(--charcoal);
+  color: var(--white);
+}
+
+/* Status chips (M01 Design): pill, no border; green = active, red = locked, soft yellow = waiting / soon. */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 10px;
+  padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid var(--line-strong);
-  font-size: 13px;
-  font-weight: 600;
+  background: var(--neutral-bg);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
   white-space: nowrap;
 }
 
 .badge-ok {
-  background: #eaf6ec;
-  color: #1b5e20;
-  border-color: #1b5e20;
+  background: var(--ok-bg);
+  color: var(--ok-ink);
 }
 
 .badge-lock {
   background: var(--error-bg);
-  color: var(--error);
-  border-color: var(--error);
+  color: var(--error-ink);
 }
 
 .badge-wait,
 .badge-soon {
-  background: var(--warning-bg);
-  color: var(--warning);
-  border-color: var(--warning);
+  background: var(--yellow-soft);
+  color: var(--charcoal);
 }
 
 .table-link {
@@ -1589,10 +1769,10 @@ select {
   align-items: center;
   min-height: 44px;
   padding: 0 8px;
-  color: var(--charcoal);
-  font-weight: 600;
+  color: var(--yellow-pressed);
+  font-weight: 700;
   text-decoration: underline;
-  text-decoration-color: var(--yellow);
+  text-decoration-color: currentColor;
   text-decoration-thickness: 2px;
   text-underline-offset: 4px;
 }
@@ -1619,19 +1799,19 @@ select {
 }
 
 .state-error .state-icon {
-  background: var(--error-bg);
-  color: var(--error);
+  background: var(--error);
+  color: var(--white);
 }
 
 .state-warning .state-icon {
-  background: var(--warning-bg);
-  color: var(--warning);
+  background: var(--yellow);
+  color: var(--charcoal);
 }
 
 .state-title {
   margin: 8px 0 0;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 800;
 }
 
 .state-text {
@@ -1836,11 +2016,13 @@ select {
 
 .dialog-warning-danger {
   background: var(--error-bg);
-  color: var(--error);
+  border: 1px solid var(--error-line);
+  color: var(--error-ink);
 }
 
 .dialog-warning-info {
   background: var(--info-bg);
+  border: 1px solid var(--line);
   color: var(--info);
 }
 
@@ -1864,7 +2046,7 @@ select {
   line-height: 1.45;
   resize: vertical;
   background: var(--white);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line);
   border-radius: var(--radius-control);
 }
 
@@ -1887,7 +2069,7 @@ select {
 }
 
 .btn-danger-solid:hover:not(:disabled) {
-  background: #a82020;
+  background: var(--error-ink);
 }
 
 .link-center {

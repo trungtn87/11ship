@@ -54,7 +54,33 @@ export function eyeIcon(open: boolean): SVGElement {
  * sidebar it sits on a light tile (see styles.css).
  */
 export function brand(): HTMLElement {
-  return h('div', { class: 'brand' }, h('img', { class: 'brand-logo', src: '/logo-11-ui.png', alt: '11' }), h('span', { class: 'brand-name' }, 'Quản trị'));
+  return h(
+    'div',
+    { class: 'brand' },
+    h('span', { class: 'brand-tile' }, h('img', { class: 'brand-logo', src: '/logo-11-ui.png', alt: '11' })),
+    h('span', { class: 'brand-text' }, h('span', { class: 'brand-title' }, '11 Admin'), h('span', { class: 'brand-name' }, 'Quản trị')),
+  );
+}
+
+/**
+ * The page around the signed-out screens (login, 2FA, activation, reset): a dark panel that says this is the ADMIN area,
+ * and the screen's card on the light side (M01 Design, AdminView). On narrow screens the panel shrinks to a band on top.
+ */
+export function authPage(card: HTMLElement): HTMLElement {
+  const aside = h(
+    'aside',
+    { class: 'auth-aside', 'aria-label': 'Khu vực quản trị' },
+    h('span', { class: 'auth-tile' }, h('img', { class: 'auth-logo', src: '/logo-11-ui.png', alt: '11' })),
+    h(
+      'div',
+      { class: 'auth-intro' },
+      h('span', { class: 'auth-badge' }, 'ADMIN'),
+      h('p', { class: 'auth-title' }, 'Quản trị hệ sinh thái 11'),
+      h('p', { class: 'auth-text' }, 'Khu vực dành riêng cho quản trị viên. Không dành cho khách hàng, chủ quán hay tài xế.'),
+    ),
+    h('p', { class: 'auth-slogan' }, '11 — Cần là có'),
+  );
+  return h('div', { class: 'page page-auth' }, aside, h('main', { class: 'main' }, card));
 }
 
 export function message(kind: 'error' | 'notice' | 'warning', id: string): HTMLElement {

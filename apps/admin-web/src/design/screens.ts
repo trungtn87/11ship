@@ -8,7 +8,7 @@ import { Grants } from '../core/menu.js';
 import { ComposeDraft, EMPTY_DRAFT, ProvisioningController, ProvisioningScreen } from '../core/provisioning-controller.js';
 import { Route } from '../core/routes.js';
 import { AdministratorsView, openLockDialog, renderUserDetail, UsersView } from '../dom/accounts-view.js';
-import { h } from '../dom/dom.js';
+import { authPage, h } from '../dom/dom.js';
 import { ProvisioningView } from '../dom/provisioning-view.js';
 import { ActivationPage } from '../dom/activation-view.js';
 import { ResetPage, ResetScreen } from '../dom/reset-view.js';
@@ -211,20 +211,13 @@ const recovery: DesignScreen = {
   note: 'Chỉ có ở bản xem thiết kế: SYSTEM khôi phục bằng công cụ trên máy chủ, không có biểu mẫu công khai (chờ quyết định D05 và gói M01.20).',
   variants: variants(['default', 'Mặc định']),
   render: () =>
-    h(
-      'div',
-      { class: 'page' },
-      h('header', { class: 'topbar' }, h('div', { class: 'brand' }, h('img', { class: 'brand-logo', src: '/logo-11-ui.png', alt: '11' }), h('span', { class: 'brand-name' }, 'Quản trị'))),
+    authPage(
       h(
-        'main',
-        { class: 'main' },
-        h(
-          'section',
-          { class: 'card' },
-          h('h1', { class: 'title' }, 'Khôi phục tài khoản SYSTEM'),
-          h('p', { class: 'message message-notice', role: 'note' }, 'Tài khoản SYSTEM không khôi phục qua trang web. Không có biểu mẫu khôi phục công khai.'),
-          h('p', { class: 'lead' }, 'Trường hợp mất thiết bị hoặc không truy cập được, hãy dùng công cụ quản trị trên máy chủ theo quy trình vận hành đã duyệt.'),
-        ),
+        'section',
+        { class: 'card' },
+        h('h1', { class: 'title' }, 'Khôi phục tài khoản SYSTEM'),
+        h('p', { class: 'message message-notice', role: 'note' }, 'Tài khoản SYSTEM không khôi phục qua trang web. Không có biểu mẫu khôi phục công khai.'),
+        h('p', { class: 'lead' }, 'Trường hợp mất thiết bị hoặc không truy cập được, hãy dùng công cụ quản trị trên máy chủ theo quy trình vận hành đã duyệt.'),
       ),
     ),
 };

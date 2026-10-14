@@ -71,6 +71,11 @@ export function formatDateTimeVn(iso: string): string {
   }
 }
 
+/** The role chips of a user, colored per role as in the M01 Design (customer neutral, shop owner yellow, driver charcoal). */
+function roleChips(roles: readonly UserRole[]): HTMLElement {
+  return h('span', { class: 'chips' }, ...roles.map((role) => h('span', { class: `chip chip-${role.toLowerCase().replace('_', '-')}` }, USER_ROLE_LABEL[role])));
+}
+
 function pageHead(title: string, subtitle: string, id: string, action?: HTMLElement): HTMLElement {
   return h('header', { class: 'page-head' }, h('div', {}, h('h1', { class: 'title', tabindex: '-1', id }, title), h('p', { class: 'lead lead-last' }, subtitle)), action);
 }
@@ -204,7 +209,7 @@ export class UsersView {
       {},
       cell('Họ tên', row.fullName === null ? h('span', { class: 'muted' }, 'Chưa có tên') : row.fullName),
       cell('Số điện thoại', row.phoneMasked),
-      cell('Vai trò', h('span', { class: 'chips' }, ...row.roles.map((role: UserRole) => h('span', { class: 'chip' }, USER_ROLE_LABEL[role])))),
+      cell('Vai trò', roleChips(row.roles)),
       cell('Trạng thái', statusBadge(row.status, USER_STATUS_LABEL[row.status])),
       cell('Ngày tạo', formatDateVn(row.createdAt)),
       h('td', { 'data-label': 'Thao tác', class: 'cell-end' }, open),
@@ -287,7 +292,7 @@ export function renderUserDetail(screen: UserDetailScreen, hooks: UserDetailHook
           h('h3', { class: 'subtitle' }, 'Tài khoản'),
           definition([
             ['Trạng thái', statusBadge(user.status, USER_STATUS_LABEL[user.status])],
-            ['Vai trò', h('span', { class: 'chips' }, ...user.roles.map((role) => h('span', { class: 'chip' }, USER_ROLE_LABEL[role])))],
+            ['Vai trò', roleChips(user.roles)],
             ['Số điện thoại', user.phoneMasked],
             ['Ngày tạo', formatDateTimeVn(user.createdAt)],
             ['Phiên bản dữ liệu', String(user.version)],
