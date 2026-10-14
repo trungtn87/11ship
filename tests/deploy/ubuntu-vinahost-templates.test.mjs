@@ -198,3 +198,55 @@ describe('build script inputs', () => {
     assert.ok(rootManifest.devDependencies['node-pg-migrate'], 'the operator tool must be a declared dependency');
   });
 });
+
+// ---- the real operating build (Owner decision 2026-10-14) -----------------------------------------------------------------------
+describe('production env template', () => {
+  const production = read('ops/vinahost/production.env.example');
+  const env = parseEnv(production);
+
+  test('is the real build: production, loopback, no fixture / test / bypass switch, no secret, no migration credential', () => {
+    assert.equal(env.APP_ENV, 'production');
+    assert.equal(env.HOST, '127.0.0.1');
+    assert.doesNotMatch(code(production), /AUTH_STAGING|DISABLED_TEST|TEST_INBOX|TEST_DISPLAY|FAKE|ship11_migrator|MIGRATION_|DB_REMOTE_TARGET|NODE_TLS_REJECT_UNAUTHORIZED|sslmode/);
+    assert.equal(env.ADMIN_ACTIVATION_OTP_MODE, 'SMS');
+    assert.equal(env.ACCOUNT_RECOVERY_MODE, 'SMS_OTP');
+    assert.equal(env.SMS_GATEWAY_RECIPIENT_MODE, 'ALLOWLIST', 'OPEN is a separate, explicit Owner action');
+  });
+
+  test('is accepted by the real configuration loader once placeholders are filled (trust files, keys, CA)', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const configFile = path('apps/backend/dist/config/app-config.js');
+    assert.ok(existsSync(configFile), 'the compiled application is missing: run "npm run build" first');
+    const { loadConfig } = require(configFile);
+    const dir = mkdtempSync(join(tmpdir(), 'prod-env-'));
+    const signer = 'ab'.repeat(32);
+    writeFileSync(join(dir, 'signers.json'), JSON.stringify({ FOOD: { package_name: 'vn.eleven.food.test', signer_sha256: signer }, SHIP: { package_name: 'vn.eleven.ship.test', signer_sha256: signer } }));
+    writeFileSync(join(dir, 'roots.pem'), read('tests/fixtures/selfhosted-test-ca.pem'));
+    writeFileSync(join(dir, 'revocation.json'), JSON.stringify({ fetched_at: '2026-10-14T00:00:00Z', entries: {} }));
+    const key32 = Buffer.alloc(32, 7).toString('base64');
+    const filled = {
+      ...env,
+      DATABASE_URL: 'postgres://ship11_app:0123456789abcdef@localhost:5432/ship11_staging',
+      DB_SSL_CA_FILE: path('tests/fixtures/selfhosted-test-ca.pem'),
+      AUTH_OTP_HMAC_SECRET: key32,
+      CRYPTO_ACTIVE_KEY_ID: 'prod-1',
+      CRYPTO_KEYRING: `prod-1:${key32}`,
+      ADMIN_RATE_LIMIT_KEY_ID: 'prod-1',
+      ADMIN_RATE_LIMIT_HMAC_KEY: key32,
+      SMS_GATEWAY_ALLOWLIST: '0912345678',
+      CLIENT_DEVICE_ALLOWED_SIGNERS_FILE: join(dir, 'signers.json'),
+      CLIENT_DEVICE_ATTESTATION_ROOTS_FILE: join(dir, 'roots.pem'),
+      CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE: join(dir, 'revocation.json'),
+    };
+    const result = loadConfig(filled);
+    assert.deepEqual(result.ok ? [] : result.invalid, []);
+    assert.equal(result.ok, true);
+    // The guards are real: dropping a trust input, or opening a bypass, stops the start.
+    const { CLIENT_DEVICE_ATTESTATION_ROOTS_FILE: _roots, ...withoutRoots } = filled;
+    assert.equal(loadConfig(withoutRoots).ok, false);
+    assert.equal(loadConfig({ ...filled, CLIENT_AUTH_PHONE_VERIFICATION_MODE: 'DISABLED_TEST' }).ok, false);
+    assert.equal(loadConfig({ ...filled, HOST: '0.0.0.0' }).ok, false);
+  });
+});

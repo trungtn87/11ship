@@ -34,10 +34,15 @@ export const COPY_ENTRIES = [
   ['scripts/staging-seed-fixtures.js', 'scripts/staging-seed-fixtures.js'],
   ['scripts/admin-auth-init-limit-config.js', 'scripts/admin-auth-init-limit-config.js'],
   ['scripts/admin-auth-bootstrap-system.js', 'scripts/admin-auth-bootstrap-system.js'],
+  ['scripts/sms-gateway-ctl.js', 'scripts/sms-gateway-ctl.js'],
+  ['scripts/android-attestation-refresh.mjs', 'scripts/android-attestation-refresh.mjs'],
   ['ops/selfhosted', 'ops/selfhosted'],
   ['ops/vinahost', 'ops/vinahost'],
   ['ops/runbooks/selfhosted-postgres-staging.md', 'ops/runbooks/selfhosted-postgres-staging.md'],
   ['ops/runbooks/ubuntu-vinahost-staging.md', 'ops/runbooks/ubuntu-vinahost-staging.md'],
+  ['ops/runbooks/vps-production-update-20261014.md', 'ops/runbooks/vps-production-update-20261014.md'],
+  ['ops/runbooks/sms-gateway.md', 'ops/runbooks/sms-gateway.md'],
+  ['docs/current/M01-terms-privacy-20261014.md', 'docs/current/M01-terms-privacy-20261014.md'],
   ['.node-version', '.node-version'],
 ];
 
@@ -187,6 +192,7 @@ function runtimePackageJson(sha) {
       'staging:seed-fixtures': 'node scripts/staging-seed-fixtures.js',
       'admin-auth:init-limit-config': 'node scripts/admin-auth-init-limit-config.js',
       'admin-auth:bootstrap-system': 'node scripts/admin-auth-bootstrap-system.js',
+      'sms-gateway:ctl': 'node scripts/sms-gateway-ctl.js',
     },
   };
 }

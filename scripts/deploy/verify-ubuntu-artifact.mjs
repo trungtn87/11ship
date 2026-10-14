@@ -116,8 +116,8 @@ try {
   }
 
   // The operator commands must refuse (exit 1) with no target configured, proving they start from the artifact.
-  for (const script of ['db-migrate-remote.js', 'admin-auth-init-limit-config.js', 'admin-auth-bootstrap-system.js', 'staging-seed-fixtures.js']) {
-    const run = spawnSync(process.execPath, [join('scripts', script)], { cwd: rel, env: scrubbed, encoding: 'utf8', input: '' });
+  for (const script of ['db-migrate-remote.js', 'admin-auth-init-limit-config.js', 'admin-auth-bootstrap-system.js', 'staging-seed-fixtures.js', 'sms-gateway-ctl.js']) {
+    const run = spawnSync(process.execPath, [join('scripts', script), ...(script === 'sms-gateway-ctl.js' ? ['list'] : [])], { cwd: rel, env: scrubbed, encoding: 'utf8', input: '' });
     if (run.status !== 1) {
       fail(`${script} should refuse with exit 1 when no target is configured (got ${run.status})`);
     }
