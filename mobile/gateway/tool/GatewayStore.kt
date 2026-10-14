@@ -174,8 +174,6 @@ object GatewayStore {
         return Pair(job, attempt)
     }
 
-    class PendingReport(val jobId: String, val attemptId: String, val result: String, val errorCode: String?)
-
     fun savePending(ctx: Context, r: PendingReport) {
         prefs(ctx).edit()
             .putString(K_PEND_JOB, r.jobId).putString(K_PEND_ATT, r.attemptId)
@@ -194,4 +192,11 @@ object GatewayStore {
     fun clearPending(ctx: Context) {
         prefs(ctx).edit().remove(K_PEND_JOB).remove(K_PEND_ATT).remove(K_PEND_RES).remove(K_PEND_ERR).commit()
     }
+}
+
+/** The durable pending slot of the gateway, backed by [GatewayStore]. */
+class ContextPendingStore(private val ctx: Context) : PendingStore {
+    override fun pending(): PendingReport? = GatewayStore.pending(ctx)
+    override fun save(report: PendingReport) = GatewayStore.savePending(ctx, report)
+    override fun clear() = GatewayStore.clearPending(ctx)
 }

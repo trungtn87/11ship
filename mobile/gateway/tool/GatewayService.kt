@@ -70,6 +70,8 @@ class GatewayService : Service() {
     private var worker: Thread? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private val sentResults = ConcurrentHashMap<String, LinkedBlockingQueue<Int>>()
+    private lateinit var flusher: ReportFlusher
+    private var activeApi: GatewayApi? = null
 
     private val resultReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -149,6 +151,18 @@ class GatewayService : Service() {
         var pollSeconds = 5
         var lastBeat = 0L
         var api: GatewayApi? = null
+        flusher = ReportFlusher(
+            ContextPendingStore(this),
+            ack = { report ->
+                val client = activeApi ?: throw IOException("no connection")
+                try {
+                    client.ack(report.jobId, report.attemptId, report.result, report.errorCode)
+                } catch (e: GatewayApi.Rejected) {
+                    throw AckRejected()
+                }
+            },
+            sleep = { seconds -> sleepSeconds(seconds) },
+        )
         try {
             recoverCrashedAttempt()
             while (!stopRequested) {
@@ -161,14 +175,22 @@ class GatewayService : Service() {
                 }
                 val client = GatewayApi(base, credential)
                 api = client
+                activeApi = client
                 try {
-                    flushPending(client)
                     val permission = hasSmsPermission()
                     val now = System.currentTimeMillis()
                     if (now - lastBeat > 60_000) {
                         val beat = client.heartbeat(versionName(), permission, false)
                         pollSeconds = beat.pollSeconds.coerceIn(2, 60)
                         lastBeat = now
+                    }
+                    // A result that did not reach the server yet comes first: no new job is claimed (so the single pending slot
+                    // can never be overwritten and lose a sent SMS) until the server has acknowledged it.
+                    if (!flusher.mayClaim()) {
+                        GatewayStore.recordConnection(this, true, null, null)
+                        setStatus("Chờ báo kết quả gửi về VPS, tạm chưa nhận việc mới")
+                        if (!sleepSeconds(pollSeconds)) break
+                        continue
                     }
                     val claim = client.claim(permission, false)
                     GatewayStore.recordConnection(this, true, null, claim.sendingEnabled)
@@ -282,32 +304,12 @@ class GatewayService : Service() {
 
     /** Records the result durably first, then tells the server (idempotent on the server, retried until it answers). */
     private fun report(api: GatewayApi, jobId: String, attemptId: String, result: String, errorCode: String?) {
-        GatewayStore.savePending(this, GatewayStore.PendingReport(jobId, attemptId, result, errorCode))
+        activeApi = api
+        flusher.record(PendingReport(jobId, attemptId, result, errorCode))
         GatewayStore.clearAttempt(this)
         GatewayStore.countResult(this, result == "SENT")
-        flushPending(api)
-    }
-
-    /** Sends the stored report. If the server cannot be reached it stays stored and is retried on the next pass. */
-    private fun flushPending(api: GatewayApi) {
-        val pending = GatewayStore.pending(this) ?: return
-        var wait = 2
-        for (attempt in 1..4) {
-            try {
-                api.ack(pending.jobId, pending.attemptId, pending.result, pending.errorCode)
-                GatewayStore.clearPending(this)
-                return
-            } catch (e: GatewayApi.Rejected) {
-                // 404/409: the server already has a final answer for this attempt; nothing more can be done.
-                GatewayStore.clearPending(this)
-                return
-            } catch (e: GatewayApi.Unauthorized) {
-                throw e
-            } catch (e: Exception) {
-                if (attempt == 4 || !sleepSeconds(wait)) return
-                wait *= 2
-            }
-        }
+        // If the server cannot be reached the report stays stored; the loop does not claim again until it is delivered.
+        flusher.flush()
     }
 
     /** A previous run died between "about to send" and "reported": it may or may not have sent. Report UNKNOWN, never resend. */
@@ -315,7 +317,7 @@ class GatewayService : Service() {
         val crashed = GatewayStore.attempt(this) ?: return
         if (GatewayStore.pending(this) == null) {
             GatewayStore.savePending(
-                this, GatewayStore.PendingReport(crashed.first, crashed.second, "UNKNOWN", "RESTARTED")
+                this, PendingReport(crashed.first, crashed.second, "UNKNOWN", "RESTARTED")
             )
             GatewayStore.countResult(this, false)
         }

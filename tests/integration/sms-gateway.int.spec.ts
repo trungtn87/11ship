@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
+import { SmsQueueService } from '../../apps/backend/src/sms-gateway/sms-queue-service';
+import { SmsQueueSweeper } from '../../apps/backend/src/sms-gateway/sms-queue-sweeper';
 import { runSmsGatewayCli } from '../../apps/backend/src/sms-gateway/cli/sms-gateway-cli';
 import { SmsGatewayConfig } from '../../apps/backend/src/config/sms-gateway-config';
 import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
@@ -391,6 +393,97 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       const reused = await api(app.running.baseUrl, 'POST', '/auth/register', { headers: { 'idempotency-key': randomUUID() }, body });
       expect(reused.status).toBeGreaterThanOrEqual(400);
       expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE phone_normalized = $1', [phone.normalized])).toBe(1);
+    });
+  });
+
+  describe('cleanup without any gateway polling (review finding B2)', () => {
+    const sealedOf = async (verificationId: string) =>
+      (await app.pool.query<{ n: string }>('SELECT count(*)::text AS n FROM app.sms_jobs WHERE verification_id = $1::uuid AND payload_ciphertext IS NOT NULL', [verificationId])).rows[0]?.n;
+
+    it('a QUEUED job whose OTP expired is closed by the sweep alone: ciphertext erased, challenge closed, nothing handed out later', async () => {
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      const id = String(dataOf(await requestRegisterOtp(phone)).verification_id);
+      await app.pool.query(`UPDATE app.sms_jobs SET expires_at = created_at + interval '1 millisecond' WHERE verification_id = $1::uuid`, [id]);
+      await app.pool.query(`UPDATE app.phone_verifications SET expires_at = created_at + interval '1 millisecond' WHERE verification_id = $1::uuid`, [id]);
+      expect(await sealedOf(id)).toBe('1');
+
+      // No claim, no heartbeat: only the sweep runs.
+      const result = await app.running.app.get(SmsQueueService).sweep();
+      expect(result.closed).toBeGreaterThanOrEqual(1);
+      const job = await jobOf(id);
+      expect([job?.status, job?.has_payload, job?.result_code]).toEqual(['EXPIRED', false, 'OTP_EXPIRED']);
+      expect(await sealedOf(id)).toBe('0');
+      expect((await challenge(id))?.status).toBe('DELIVERY_FAILED');
+      expect(await deliveryOf(id)).toBe('EXPIRED');
+      // Idempotent: a second sweep changes nothing, and the dead job is never claimable.
+      expect((await app.running.app.get(SmsQueueService).sweep()).closed).toBe(0);
+      expect(await claim()).toBeNull();
+    });
+
+    it('a CLAIMED job whose phone vanished becomes UNKNOWN by the sweep: ciphertext erased, never requeued, the code stays usable', async () => {
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      const id = String(dataOf(await requestRegisterOtp(phone)).verification_id);
+      const job = (await claim()) as NonNullable<Awaited<ReturnType<typeof claim>>>;
+      const otp = otpOf(job.text);
+      await app.pool.query(`UPDATE app.sms_jobs SET lease_expires_at = now() - interval '1 second' WHERE verification_id = $1::uuid`, [id]);
+
+      await app.running.app.get(SmsQueueService).sweep();
+      const closed = await jobOf(id);
+      expect([closed?.status, closed?.has_payload, closed?.result_code]).toEqual(['UNKNOWN', false, 'LEASE_EXPIRED']);
+      expect(await sealedOf(id)).toBe('0');
+      expect(await claim()).toBeNull();
+      expect((await challenge(id))?.status).toBe('PENDING');
+      expect(await deliveryOf(id)).toBe('UNCERTAIN');
+      // A late report from the (returning) phone still refines it, as before.
+      expect((await ack(job, 'SENT')).status).toBe(200);
+      expect((await verifyRegister(id, otp)).status).toBe(200);
+    });
+
+    it('does not touch live work: a fresh QUEUED job and a CLAIMED job inside its lease survive the sweep', async () => {
+      const phoneA = randomPhone();
+      const phoneB = randomPhone();
+      app.track(phoneA.normalized);
+      app.track(phoneB.normalized);
+      const queued = String(dataOf(await requestRegisterOtp(phoneA)).verification_id);
+      const claimedId = String(dataOf(await requestRegisterOtp(phoneB)).verification_id);
+      // The oldest QUEUED job is handed out first; make sure it is the second one by claiming twice and keeping the 2nd.
+      const first = (await claim()) as NonNullable<Awaited<ReturnType<typeof claim>>>;
+      await app.running.app.get(SmsQueueService).sweep();
+      for (const id of [queued, claimedId]) {
+        expect(await sealedOf(id)).toBe('1');
+      }
+      expect(['QUEUED', 'CLAIMED']).toContain((await jobOf(queued))?.status);
+      expect((await ack(first, 'FAILED')).status).toBe(200);
+      const second = (await claim()) as NonNullable<Awaited<ReturnType<typeof claim>>>;
+      expect((await ack(second, 'FAILED')).status).toBe(200);
+    });
+
+    it('runs by itself: the module timer closes expired work with no request at all, and stops cleanly', async () => {
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      const id = String(dataOf(await requestRegisterOtp(phone)).verification_id);
+      await app.pool.query(`UPDATE app.sms_jobs SET expires_at = created_at + interval '1 millisecond' WHERE verification_id = $1::uuid`, [id]);
+      await app.pool.query(`UPDATE app.phone_verifications SET expires_at = created_at + interval '1 millisecond' WHERE verification_id = $1::uuid`, [id]);
+
+      const sweeper = app.running.app.get(SmsQueueSweeper);
+      sweeper.start(50);
+      try {
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline && (await jobOf(id))?.status !== 'EXPIRED') {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+        }
+      } finally {
+        sweeper.stop();
+      }
+      expect((await jobOf(id))?.status).toBe('EXPIRED');
+      expect(await sealedOf(id)).toBe('0');
+      sweeper.start(30_000);
+    });
+
+    it('a flag-off application has no queue, no sweeper and therefore no timer', () => {
+      expect(() => closed.running.app.get(SmsQueueSweeper)).toThrow();
     });
   });
 

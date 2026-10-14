@@ -53,6 +53,11 @@ jobs:
           flutter analyze
           flutter test
 
+      - name: Kotlin unit tests (pending-report slot)
+        run: |
+          cd mobile/gateway/android
+          ./gradlew :app:testDebugUnitTest --no-daemon --console=plain
+
       - name: Build APK
         run: |
           cd mobile/gateway
@@ -80,8 +85,13 @@ jobs:
             grep -q "uses-permission: name='android.permission.$permission'" "$RUNNER_TEMP/gateway-badging.txt" \
               || { echo "::error::Missing permission $permission"; exit 1; }
           done
-          grep -i 'sdkVersion' "$RUNNER_TEMP/gateway-badging.txt" || true
-          grep -qE "[sS]dkVersion:'2[4-9]'|[sS]dkVersion:'[3-9][0-9]'" "$RUNNER_TEMP/gateway-badging.txt" || true
+          # aapt2 prints minSdkVersion:'N' (older tools: sdkVersion:'N'). Compare the number; a missing or lower value fails.
+          min_sdk="$(grep -E "^(min)?[sS]dkVersion:'[0-9]+'" "$RUNNER_TEMP/gateway-badging.txt" | head -1 | grep -oE '[0-9]+')"
+          grep -iE "sdkVersion" "$RUNNER_TEMP/gateway-badging.txt" || true
+          echo "minSdk in the APK: ${min_sdk:-not found}"
+          if [ -z "$min_sdk" ] || [ "$min_sdk" -lt 24 ]; then
+            echo "::error::minSdk must be >= 24 (found: ${min_sdk:-none})"; exit 1
+          fi
           if grep -qE "uses-permission: name='android.permission.(READ_SMS|RECEIVE_SMS|READ_CONTACTS|READ_PHONE_STATE)'" "$RUNNER_TEMP/gateway-badging.txt"; then
             echo "::error::Unexpected sensitive permission"; exit 1
           fi

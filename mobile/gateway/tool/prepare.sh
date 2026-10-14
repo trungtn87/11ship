@@ -58,9 +58,15 @@ s = s.replace('applicationId = "vn.eleven.gateway"', 'applicationId = "vn.eleven
 # Keystore AES-GCM (API 23) and Service.STOP_FOREGROUND_REMOVE (API 24).
 s, n = re.subn(r"minSdk\s*=\s*[^\n]+", "minSdk = 24", s, count=1)
 assert n == 1, "minSdk line not found"
+# JVM unit tests of the pure-Kotlin parts (tool/test): the pending-report slot of the gateway.
+if "testImplementation" not in s:
+    s += '\ndependencies {\n    testImplementation("junit:junit:4.13.2")\n}\n'
 gradle.write_text(s)
 PY
 mkdir -p android/app/src/main/kotlin/vn/eleven/gateway
 for f in MainActivity GatewayStore GatewayApi GatewayService GatewayBootReceiver; do
   cp "tool/$f.kt" "android/app/src/main/kotlin/vn/eleven/gateway/$f.kt"
 done
+mkdir -p android/app/src/test/kotlin/vn/eleven/gateway
+cp tool/ReportFlusher.kt android/app/src/main/kotlin/vn/eleven/gateway/ReportFlusher.kt
+cp tool/test/ReportFlusherTest.kt android/app/src/test/kotlin/vn/eleven/gateway/ReportFlusherTest.kt
