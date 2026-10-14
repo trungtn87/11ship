@@ -4,6 +4,7 @@ import path from 'node:path';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ActivationOtpProvider } from '../../../apps/backend/src/admin-activation/activation-otp-provider';
+import { ActivationSmsGatewayBinding } from '../../../apps/backend/src/admin-activation/activation-otp-providers';
 import { AppModule } from '../../../apps/backend/src/app.module';
 import { AuthModuleOptions } from '../../../apps/backend/src/auth/auth.module';
 import { configureApp } from '../../../apps/backend/src/app.setup';
@@ -50,7 +51,7 @@ export interface StartAppOptions {
   /** Binds Auth Core (with an explicit OTP provider), exactly as main.ts does. Omitted: no Auth routes. */
   readonly auth?: AuthModuleOptions;
   /** M01-D-ADMIN-1C: the explicitly bound activation OTP provider (only used when config.adminActivation is set). */
-  readonly activationOtpProvider?: ActivationOtpProvider;
+  readonly activationOtpProvider?: ActivationOtpProvider | ActivationSmsGatewayBinding;
   /** Runs after configureApp and BEFORE the application initializes (listen), exactly where main.ts installs the Admin hosting. */
   readonly beforeListen?: (app: INestApplication) => void;
 }

@@ -690,6 +690,11 @@ export function loadConfig(env: EnvSource): ConfigResult {
     smsGatewayResult.invalid.forEach(flag);
   }
 
+  // Admin activation by SMS (Owner decision 2026-10-14) rides the SAME gateway: without it the mode cannot be selected.
+  if (adminActivation !== undefined && adminActivation.otpMode === 'SMS' && smsGateway === undefined) {
+    flag('ADMIN_ACTIVATION_OTP_MODE');
+  }
+
   const recoveryResult = parseAccountRecoveryMode({
     appEnv,
     host,

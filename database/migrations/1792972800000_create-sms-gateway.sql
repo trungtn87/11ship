@@ -1,6 +1,7 @@
 -- Up Migration
 -- Issue #102 (SMS Gateway phase 2): paired Android gateway devices, a control row (kill switch) and the PostgreSQL SMS queue
--- that delivers REGISTER / RESET_PASSWORD OTPs. Nothing here sends anything by itself: the feature stays OFF until the backend
+-- that delivers REGISTER / RESET_PASSWORD / ADMIN_ACTIVATION OTPs (the last one: Owner decision 2026-10-14, admin invitation activation;
+-- the migration had not been applied to any database when that purpose was added). Nothing here sends anything by itself: the feature stays OFF until the backend
 -- flag SMS_GATEWAY_ENABLED=true AND the control row says sending_enabled (both default off / absent).
 --
 -- Rules shared with every migration of this repository: no IF [NOT] EXISTS on DDL, no CASCADE, no seed data and no GRANT
@@ -48,7 +49,8 @@ CREATE TABLE app.sms_gateway_control (
 --   EXPIRED  the OTP expired before the job was claimed: nothing is sent
 CREATE TABLE app.sms_jobs (
   job_id             uuid         NOT NULL,
-  verification_id    uuid         NOT NULL,
+  verification_id    uuid,
+  activation_challenge_id uuid,
   purpose            varchar(32)  NOT NULL,
   phone_normalized   varchar(16)  NOT NULL,
   status             varchar(8)   NOT NULL,
@@ -67,10 +69,17 @@ CREATE TABLE app.sms_jobs (
   result_code        varchar(24),
   CONSTRAINT sms_jobs_pkey PRIMARY KEY (job_id),
   CONSTRAINT sms_jobs_verification_uq UNIQUE (verification_id),
+  CONSTRAINT sms_jobs_activation_challenge_uq UNIQUE (activation_challenge_id),
   CONSTRAINT sms_jobs_attempt_uq UNIQUE (attempt_id),
   CONSTRAINT sms_jobs_verification_fk FOREIGN KEY (verification_id) REFERENCES app.phone_verifications (verification_id) ON DELETE RESTRICT,
+  CONSTRAINT sms_jobs_activation_challenge_fk FOREIGN KEY (activation_challenge_id) REFERENCES app.admin_activation_otp_challenges (challenge_id) ON DELETE RESTRICT,
   CONSTRAINT sms_jobs_device_fk FOREIGN KEY (claimed_by) REFERENCES app.sms_gateway_devices (device_id) ON DELETE RESTRICT,
-  CONSTRAINT sms_jobs_purpose_ck CHECK (purpose IN ('REGISTER', 'RESET_PASSWORD')),
+  CONSTRAINT sms_jobs_purpose_ck CHECK (purpose IN ('REGISTER', 'RESET_PASSWORD', 'ADMIN_ACTIVATION')),
+  -- exactly one owner of the job: an account challenge (REGISTER / RESET_PASSWORD) or an admin activation challenge
+  CONSTRAINT sms_jobs_owner_ck CHECK (
+    (purpose = 'ADMIN_ACTIVATION' AND activation_challenge_id IS NOT NULL AND verification_id IS NULL)
+    OR (purpose <> 'ADMIN_ACTIVATION' AND verification_id IS NOT NULL AND activation_challenge_id IS NULL)
+  ),
   CONSTRAINT sms_jobs_phone_ck CHECK (phone_normalized ~ '^\+84[0-9]{9}$'),
   CONSTRAINT sms_jobs_status_ck CHECK (status IN ('QUEUED', 'CLAIMED', 'SENT', 'FAILED', 'UNKNOWN', 'EXPIRED')),
   CONSTRAINT sms_jobs_result_code_ck CHECK (result_code IS NULL OR result_code ~ '^[A-Z0-9_]{1,24}$'),

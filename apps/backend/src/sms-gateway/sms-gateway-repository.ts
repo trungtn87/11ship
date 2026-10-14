@@ -20,9 +20,14 @@ export interface ClaimedJob {
   readonly leaseExpiresAtMs: number;
 }
 
+/** The challenge a job belongs to: an account OTP (phone_verifications) or an admin activation OTP (its own challenge table). */
+export type JobOwner =
+  | { readonly kind: 'VERIFICATION'; readonly id: string }
+  | { readonly kind: 'ACTIVATION'; readonly id: string };
+
 export interface JobForAck {
   readonly jobId: string;
-  readonly verificationId: string;
+  readonly owner: JobOwner;
   readonly status: SmsJobStatus;
   readonly attemptId: string | null;
   readonly claimedBy: string | null;
@@ -38,6 +43,13 @@ export interface DeviceInfo {
   readonly appVersion: string | undefined;
   readonly smsPermission: boolean | undefined;
   readonly paused: boolean | undefined;
+}
+
+function ownerOf(row: { verification_id: string | null; activation_challenge_id: string | null }): JobOwner {
+  if (row.activation_challenge_id !== null) {
+    return { kind: 'ACTIVATION', id: row.activation_challenge_id };
+  }
+  return { kind: 'VERIFICATION', id: row.verification_id as string };
 }
 
 /** SQL for the SMS gateway tables. Every method takes the caller's TransactionContext. */
@@ -140,30 +152,83 @@ export class SmsGatewayRepository {
     return result.rowCount === 1;
   }
 
+  /**
+   * Admin activation (Owner decision 2026-10-14): the same queue, a challenge of its own. The job is only created for a challenge
+   * that is still PENDING_DELIVERY; its expiry is the challenge's expiry. Returns false when nothing was inserted.
+   */
+  async insertActivationJob(
+    context: TransactionContext,
+    job: { jobId: string; challengeId: string; phoneNormalized: string; sealed: SealedPayload },
+  ): Promise<boolean> {
+    const result = await context.query(
+      `INSERT INTO app.sms_jobs (
+         job_id, activation_challenge_id, purpose, phone_normalized, status,
+         payload_iv, payload_tag, payload_ciphertext, crypto_key_id, created_at, expires_at
+       )
+       SELECT $1::uuid, $2::uuid, 'ADMIN_ACTIVATION', $3::varchar, 'QUEUED', $4, $5, $6, $7, clock.t, c.expires_at
+         FROM app.admin_activation_otp_challenges c,
+              (SELECT date_trunc('milliseconds', clock_timestamp()) AS t) AS clock
+        WHERE c.challenge_id = $2::uuid AND c.status = 'PENDING_DELIVERY' AND c.phone_normalized = $3::varchar
+       ON CONFLICT (activation_challenge_id) DO NOTHING`,
+      [job.jobId, job.challengeId, job.phoneNormalized, job.sealed.iv, job.sealed.tag, job.sealed.ciphertext, job.sealed.keyId],
+    );
+    return result.rowCount === 1;
+  }
+
+  /** The activation challenge follows the job: PENDING_DELIVERY -> PENDING (verifiable) after SENT / UNKNOWN. */
+  async activationMarkPending(context: TransactionContext, challengeId: string): Promise<boolean> {
+    const result = await context.query(
+      `UPDATE app.admin_activation_otp_challenges SET status = 'PENDING'
+        WHERE challenge_id = $1::uuid AND status = 'PENDING_DELIVERY'`,
+      [challengeId],
+    );
+    return result.rowCount === 1;
+  }
+
+  /**
+   * The gateway closed the job as undeliverable (FAILED / EXPIRED). A challenge still waiting becomes DELIVERY_FAILED; one an
+   * UNKNOWN job had already made PENDING and nobody tried yet (attempt_count 0) becomes INVALIDATED (the only legal end of a
+   * PENDING challenge besides a verification). Anything else is left alone.
+   */
+  async activationFailDelivery(context: TransactionContext, challengeId: string): Promise<void> {
+    await context.query(
+      `UPDATE app.admin_activation_otp_challenges
+          SET status = 'DELIVERY_FAILED', ended_at = date_trunc('milliseconds', clock_timestamp())
+        WHERE challenge_id = $1::uuid AND status = 'PENDING_DELIVERY'`,
+      [challengeId],
+    );
+    await context.query(
+      `UPDATE app.admin_activation_otp_challenges
+          SET status = 'INVALIDATED', ended_at = date_trunc('milliseconds', clock_timestamp())
+        WHERE challenge_id = $1::uuid AND status = 'PENDING' AND attempt_count = 0`,
+      [challengeId],
+    );
+  }
+
   /** QUEUED jobs whose OTP is (almost) gone become EXPIRED and their ciphertext is erased. Returns their challenges. */
-  async expireQueued(context: TransactionContext, minRemainingSeconds: number): Promise<string[]> {
-    const result = await context.query<{ verification_id: string }>(
+  async expireQueued(context: TransactionContext, minRemainingSeconds: number): Promise<JobOwner[]> {
+    const result = await context.query<{ verification_id: string | null; activation_challenge_id: string | null }>(
       `UPDATE app.sms_jobs
           SET status = 'EXPIRED', payload_iv = NULL, payload_tag = NULL, payload_ciphertext = NULL,
               finished_at = date_trunc('milliseconds', clock_timestamp()), result_code = 'OTP_EXPIRED'
         WHERE status = 'QUEUED'
           AND expires_at <= clock_timestamp() + make_interval(secs => $1::double precision)
-        RETURNING verification_id`,
+        RETURNING verification_id, activation_challenge_id`,
       [minRemainingSeconds],
     );
-    return result.rows.map((row) => row.verification_id);
+    return result.rows.map(ownerOf);
   }
 
   /** CLAIMED jobs whose lease ran out without an acknowledgement become UNKNOWN (never resent). */
-  async expireLeases(context: TransactionContext): Promise<string[]> {
-    const result = await context.query<{ verification_id: string }>(
+  async expireLeases(context: TransactionContext): Promise<JobOwner[]> {
+    const result = await context.query<{ verification_id: string | null; activation_challenge_id: string | null }>(
       `UPDATE app.sms_jobs
           SET status = 'UNKNOWN', payload_iv = NULL, payload_tag = NULL, payload_ciphertext = NULL,
               finished_at = date_trunc('milliseconds', clock_timestamp()), result_code = 'LEASE_EXPIRED'
         WHERE status = 'CLAIMED' AND lease_expires_at <= clock_timestamp()
-        RETURNING verification_id`,
+        RETURNING verification_id, activation_challenge_id`,
     );
-    return result.rows.map((row) => row.verification_id);
+    return result.rows.map(ownerOf);
   }
 
   /** Hands the oldest sendable job to this device attempt. Concurrent claims never get the same job (SKIP LOCKED). */
@@ -189,6 +254,9 @@ export class SmsGatewayRepository {
         WHERE j.job_id = (
                 SELECT job_id FROM app.sms_jobs
                  WHERE status = 'QUEUED'
+                   AND (purpose <> 'ADMIN_ACTIVATION' OR EXISTS (
+                         SELECT 1 FROM app.admin_activation_otp_challenges c
+                          WHERE c.challenge_id = sms_jobs.activation_challenge_id AND c.status = 'PENDING_DELIVERY'))
                  ORDER BY created_at
                  LIMIT 1
                    FOR UPDATE SKIP LOCKED)
@@ -214,13 +282,14 @@ export class SmsGatewayRepository {
   async lockJobForAck(context: TransactionContext, jobId: string): Promise<JobForAck | undefined> {
     const result = await context.query<{
       job_id: string;
-      verification_id: string;
+      verification_id: string | null;
+      activation_challenge_id: string | null;
       status: SmsJobStatus;
       attempt_id: string | null;
       claimed_by: string | null;
       delivered: boolean;
     }>(
-      `SELECT job_id, verification_id, status, attempt_id, claimed_by, delivered_at IS NOT NULL AS delivered
+      `SELECT job_id, verification_id, activation_challenge_id, status, attempt_id, claimed_by, delivered_at IS NOT NULL AS delivered
          FROM app.sms_jobs WHERE job_id = $1::uuid FOR UPDATE`,
       [jobId],
     );
@@ -230,7 +299,7 @@ export class SmsGatewayRepository {
     }
     return {
       jobId: row.job_id,
-      verificationId: row.verification_id,
+      owner: ownerOf(row),
       status: row.status,
       attemptId: row.attempt_id,
       claimedBy: row.claimed_by,

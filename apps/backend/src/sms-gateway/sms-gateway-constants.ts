@@ -1,6 +1,6 @@
 // Fixed vocabulary of the SMS gateway (issue #102). Nothing here is configuration.
 
-export type SmsPurpose = 'REGISTER' | 'RESET_PASSWORD';
+export type SmsPurpose = 'REGISTER' | 'RESET_PASSWORD' | 'ADMIN_ACTIVATION';
 
 export type SmsJobStatus = 'QUEUED' | 'CLAIMED' | 'SENT' | 'FAILED' | 'UNKNOWN' | 'EXPIRED';
 
@@ -28,10 +28,10 @@ export function renderOtpSms(purpose: SmsPurpose, otp: string, ttlSeconds: numbe
     throw new RangeError('OTP shape');
   }
   const minutes = Math.min(99, Math.max(1, Math.ceil(ttlSeconds / 60)));
-  const what = purpose === 'REGISTER' ? 'xac thuc dang ky' : 'dat lai mat khau';
+  const what = purpose === 'REGISTER' ? 'xac thuc dang ky' : purpose === 'RESET_PASSWORD' ? 'dat lai mat khau' : 'kich hoat quan tri';
   return `11Ship: Ma ${what} cua ban la ${otp}. Hieu luc ${minutes} phut. Khong chia se ma nay.`;
 }
 
 /** Same pattern the Android gateway enforces. */
 export const SMS_TEXT_PATTERN =
-  /^11Ship: Ma (?:xac thuc dang ky|dat lai mat khau) cua ban la [0-9]{6}\. Hieu luc [0-9]{1,2} phut\. Khong chia se ma nay\.$/;
+  /^11Ship: Ma (?:xac thuc dang ky|dat lai mat khau|kich hoat quan tri) cua ban la [0-9]{6}\. Hieu luc [0-9]{1,2} phut\. Khong chia se ma nay\.$/;

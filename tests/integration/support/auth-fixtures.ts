@@ -241,8 +241,11 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
     [normalizedPhone],
   );
   if ((provisioning.rowCount ?? 0) > 0) {
+    // sms_jobs.activation_challenge_id references the challenge table, and PostgreSQL refuses a TRUNCATE of a referenced table
+    // unless the referencing one is listed (the queue may not exist in a migration test).
+    const queue = (await pool.query("SELECT to_regclass('app.sms_jobs') AS t")).rows[0]?.t !== null ? ', app.sms_jobs' : '';
     await pool.query(
-      'TRUNCATE app.admin_app_permissions, app.admin_profiles, app.admin_activation_otp_challenges, app.admin_activation_attempts, app.admin_sensitive_operations, app.admin_invitation_permissions, app.admin_invitations',
+      `TRUNCATE app.admin_app_permissions, app.admin_profiles, app.admin_activation_otp_challenges, app.admin_activation_attempts, app.admin_sensitive_operations, app.admin_invitation_permissions, app.admin_invitations${queue}`,
     );
   }
   // M01-D-LOGIN: the administration state of the user (factor -> challenge, session, membership), before the user.

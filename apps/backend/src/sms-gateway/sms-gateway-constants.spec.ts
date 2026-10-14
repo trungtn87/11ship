@@ -7,7 +7,9 @@ describe('renderOtpSms', () => {
     const reset = renderOtpSms('RESET_PASSWORD', '987654', 300);
     expect(register).toBe('11Ship: Ma xac thuc dang ky cua ban la 012345. Hieu luc 5 phut. Khong chia se ma nay.');
     expect(reset).toBe('11Ship: Ma dat lai mat khau cua ban la 987654. Hieu luc 5 phut. Khong chia se ma nay.');
-    for (const text of [register, reset]) {
+    const activation = renderOtpSms('ADMIN_ACTIVATION', '246810', 300);
+    expect(activation).toBe('11Ship: Ma kich hoat quan tri cua ban la 246810. Hieu luc 5 phut. Khong chia se ma nay.');
+    for (const text of [register, reset, activation]) {
       expect(text).toMatch(SMS_TEXT_PATTERN);
       expect(text.length).toBeLessThanOrEqual(160);
       expect(/^[\x20-\x7e]+$/.test(text)).toBe(true);

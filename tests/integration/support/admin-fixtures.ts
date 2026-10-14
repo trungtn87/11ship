@@ -12,6 +12,7 @@ import { FakeOtpProvider } from '../../../apps/backend/src/auth/fake-otp-provide
 import { SMS_GATEWAY_BINDING } from '../../../apps/backend/src/auth/otp-provider-binding';
 import { SmsGatewayConfig } from '../../../apps/backend/src/config/sms-gateway-config';
 import { ActivationOtpProvider } from '../../../apps/backend/src/admin-activation/activation-otp-provider';
+import { ACTIVATION_SMS_GATEWAY_BINDING } from '../../../apps/backend/src/admin-activation/activation-otp-providers';
 import { AdminActivationConfig, DEFAULT_ACTIVATION_LIMITS } from '../../../apps/backend/src/config/admin-activation-config';
 import { AdminAuthConfig, loadLimiterConfig } from '../../../apps/backend/src/config/admin-auth-config';
 import { AppConfig } from '../../../apps/backend/src/config/app-config';
@@ -231,6 +232,8 @@ export interface StartAdminOptions {
   readonly accountRecovery?: boolean;
   /** Issue #102: the SMS gateway configuration (the real queue adapter is bound) and ACCOUNT_RECOVERY_MODE=SMS_OTP. Default: absent. */
   readonly smsGateway?: SmsGatewayConfig;
+  /** Owner decision 2026-10-14: ADMIN_ACTIVATION_OTP_MODE=SMS through the SMS gateway queue (needs `smsGateway`). */
+  readonly activationSms?: boolean;
   /** Issue #49: runs after configureApp and before init, where main.ts installs the Admin web hosting. */
   readonly beforeListen?: (app: INestApplication) => void;
 }
@@ -265,12 +268,12 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
     ...(options.accountRecovery === true ? { accountRecoveryMode: 'DISABLED_TEST' as const } : {}),
     ...(options.smsGateway === undefined ? {} : { smsGateway: options.smsGateway, accountRecoveryMode: 'SMS_OTP' as const }),
     ...(options.userAccountMutations === true ? { adminUserAccountMutations: { enabled: true as const } } : {}),
-    ...(options.activationProvider === undefined && options.activationDisabledTest !== true
+    ...(options.activationProvider === undefined && options.activationDisabledTest !== true && options.activationSms !== true
       ? {}
       : {
           adminActivation: {
             phoneVerificationMode: options.activationDisabledTest === true ? ('DISABLED_TEST' as const) : ('REQUIRED' as const),
-            otpMode: options.activationDisabledTest === true ? undefined : ('FAKE' as const),
+            otpMode: options.activationDisabledTest === true ? undefined : options.activationSms === true ? ('SMS' as const) : ('FAKE' as const),
             providerTimeoutMs: 8000,
             promoteGraceMs: 10_000,
             limits: DEFAULT_ACTIVATION_LIMITS,
@@ -280,7 +283,11 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
   };
   const running = await startApp(config, {
     auth: { otpProvider: options.smsGateway === undefined ? new FakeOtpProvider() : SMS_GATEWAY_BINDING },
-    ...(options.activationProvider === undefined ? {} : { activationOtpProvider: options.activationProvider }),
+    ...(options.activationProvider === undefined
+      ? options.activationSms === true
+        ? { activationOtpProvider: ACTIVATION_SMS_GATEWAY_BINDING }
+        : {}
+      : { activationOtpProvider: options.activationProvider }),
     ...(options.beforeListen === undefined ? {} : { beforeListen: options.beforeListen }),
   });
   const pool = testPool(loaded.database, { poolMax: 6 });

@@ -87,13 +87,39 @@ export class TestDisplayActivationOtpProvider implements ActivationOtpProvider {
 
 /**
  * The provider main.ts binds. FAKE / TEST_DISPLAY come only from an explicit ADMIN_ACTIVATION_OTP_MODE in a non-production
- * environment (the configuration loader already refused them elsewhere). SMS has no provider yet: startup is refused,
- * naming only the variable, so there is no silent fallback to a test provider.
+ * environment (the configuration loader already refused them elsewhere). SMS selects the SMS gateway adapter and is refused
+ * (naming only the variable) unless the gateway is configured, so there is no silent fallback to a test provider.
  */
+/**
+ * The SMS adapter needs the queue and the keyring, which exist only inside the Nest graph (like the account OTP adapter,
+ * issue #102), so main.ts cannot build it: AdminAuthModule wires the real adapter from this marker.
+ */
+export const ACTIVATION_SMS_GATEWAY_BINDING = Object.freeze({ kind: 'SMS_GATEWAY' as const });
+export type ActivationSmsGatewayBinding = typeof ACTIVATION_SMS_GATEWAY_BINDING;
+
+export function isActivationSmsGatewayBinding(value: unknown): value is ActivationSmsGatewayBinding {
+  return value === ACTIVATION_SMS_GATEWAY_BINDING;
+}
+
 export function bindActivationOtpProvider(
   config: AdminActivationConfig,
-  options: { readonly testInboxProvider?: ActivationOtpProvider } = {},
-): ActivationOtpProvider {
+  options?: { readonly testInboxProvider?: ActivationOtpProvider; readonly smsGatewayEnabled?: false },
+): ActivationOtpProvider;
+export function bindActivationOtpProvider(
+  config: AdminActivationConfig,
+  options: { readonly testInboxProvider?: ActivationOtpProvider; readonly smsGatewayEnabled?: boolean },
+): ActivationOtpProvider | ActivationSmsGatewayBinding;
+export function bindActivationOtpProvider(
+  config: AdminActivationConfig,
+  options: { readonly testInboxProvider?: ActivationOtpProvider; readonly smsGatewayEnabled?: boolean } = {},
+): ActivationOtpProvider | ActivationSmsGatewayBinding {
+  // SMS (Owner decision 2026-10-14): the real adapter, only with the SMS gateway configured. It never combines with a test mode.
+  if (config.otpMode === 'SMS') {
+    if (options.smsGatewayEnabled !== true || options.testInboxProvider !== undefined) {
+      throw new StartupConfigError(['ADMIN_ACTIVATION_OTP_MODE']);
+    }
+    return ACTIVATION_SMS_GATEWAY_BINDING;
+  }
   if (config.otpMode === 'FAKE') {
     return new FakeActivationOtpProvider();
   }

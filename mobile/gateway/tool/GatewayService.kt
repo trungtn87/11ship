@@ -47,7 +47,7 @@ class GatewayService : Service() {
         private const val CHANNEL = "gateway"
         private const val NOTIFICATION_ID = 1811
         private val TEXT = Regex(
-            "^11Ship: Ma (xac thuc dang ky|dat lai mat khau) cua ban la [0-9]{6}\\. " +
+            "^11Ship: Ma (xac thuc dang ky|dat lai mat khau|kich hoat quan tri) cua ban la [0-9]{6}\\. " +
                 "Hieu luc [0-9]{1,2} phut\\. Khong chia se ma nay\\.$"
         )
         private val PHONE = Regex("^\\+84[0-9]{9}$")

@@ -45,7 +45,7 @@ import {
 import { AdminActivationLimiter } from './admin-activation-limiter';
 import { AdminActivationRepository, AttemptRow, AttemptSnapshot, ChallengeRow } from './admin-activation-repository';
 import { passwordDeadlineMs, stateBody, ViewInput } from './admin-activation-views';
-import { ACTIVATION_OTP_PROVIDER, ActivationOtpDelivery, ActivationOtpProvider } from './activation-otp-provider';
+import { ACTIVATION_OTP_PROVIDER, ActivationOtpContext, ActivationOtpDelivery, ActivationOtpProvider } from './activation-otp-provider';
 
 // Account activation by the invited ADMIN (M01-D-ADMIN-1C, contract sections 6 and 8-14). Every business transaction
 // follows the one lock order  R0 < S0 < L2 (limiter buckets) < L3 (phone advisory) < L8 (invitation) < L9a (attempt)
@@ -99,6 +99,9 @@ export class AdminActivationService {
   readonly #limits: ActivationLimits;
   /** The mode of THIS process: every new attempt records it, and a live attempt of another mode is never continued. */
   readonly #phoneMode: ActivationPhoneVerificationMode;
+  /** ADMIN_ACTIVATION_OTP_MODE=SMS: delivery is asynchronous (the SMS gateway queue), so only the gateway promotes a challenge. */
+  readonly #asyncDelivery: boolean;
+  readonly #otpTtlSeconds: number;
 
   constructor(
     private readonly transactions: TransactionManager,
@@ -122,6 +125,8 @@ export class AdminActivationService {
     this.#promoteGraceMs = config.promoteGraceMs;
     this.#limits = config.limits;
     this.#phoneMode = config.phoneVerificationMode;
+    this.#asyncDelivery = config.otpMode === 'SMS';
+    this.#otpTtlSeconds = config.limits.otpTtlSeconds;
     if (config.phoneVerificationMode === 'REQUIRED' && otpProvider === undefined) {
       // Startup refuses this first (AppModule); this keeps the service itself from existing without its provider.
       throw new TechnicalError('internal', 'Activation OTP provider is missing');
@@ -358,7 +363,7 @@ export class AdminActivationService {
     });
 
     // Outside every transaction, at most once, with a hard timeout. Anything but a clear answer is UNKNOWN.
-    const delivery = await this.#deliver(created.phone, otp);
+    const delivery = await this.#deliver(created.phone, otp, { challengeId: created.challengeId, ttlSeconds: this.#otpTtlSeconds });
 
     // txn2: only the challenge row (L9b). It is a subset of the lock order.
     return this.#run<Answer>(async (context) => {
@@ -377,6 +382,19 @@ export class AdminActivationService {
           metadata: { attempt_id: challenge.attemptId, current_state: challenge.status },
         });
         return thenThrow(new TechnicalError('unavailable', 'OTP delivery was refused'));
+      }
+      // SMS gateway: QUEUED (and a timed-out hand-over, which may or may not have queued the job) leaves the challenge
+      // PENDING_DELIVERY. The gateway's acknowledgement is the only thing that makes it verifiable; nothing is resent here.
+      if (this.#asyncDelivery && (delivery.outcome === 'QUEUED' || delivery.outcome === 'UNKNOWN')) {
+        if (delivery.outcome === 'UNKNOWN') {
+          await this.#audit(context, meta, {
+            action: ACTIVATION_AUDIT_ACTIONS.otpDeliveryUnknown,
+            resourceType: RESOURCE_CHALLENGE,
+            resourceId: challenge.challengeId,
+            metadata: { attempt_id: challenge.attemptId },
+          });
+        }
+        return value({ status: 202, body: { data: { resend_at: resendAt, delivery: 'SUBMITTED' } } });
       }
       const promoted = await this.repo.promoteChallenge(context, challenge.challengeId);
       if (!promoted) {
@@ -435,7 +453,8 @@ export class AdminActivationService {
       }
       let challenge = newest;
       if (challenge.status === 'PENDING_DELIVERY') {
-        if (nowMs < challenge.createdAtMs + this.#promoteGraceMs) {
+        // SMS gateway: a challenge whose SMS has not been reported is never promoted by waiting (the gateway does it).
+        if (this.#asyncDelivery || nowMs < challenge.createdAtMs + this.#promoteGraceMs) {
           throw step(challenge);
         }
         // The delivery outcome never came back (txn2 lost): the SMS may well have been sent. Promote and compare.
@@ -1022,7 +1041,7 @@ export class AdminActivationService {
   }
 
   /** The provider call: hard timeout, no retry, any exception or unreadable answer is UNKNOWN. */
-  async #deliver(phoneNormalized: string, otp: string): Promise<ActivationOtpDelivery> {
+  async #deliver(phoneNormalized: string, otp: string, context: ActivationOtpContext): Promise<ActivationOtpDelivery> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<ActivationOtpDelivery>((resolve) => {
       timer = setTimeout(() => resolve({ outcome: 'UNKNOWN' }), this.#providerTimeoutMs);
@@ -1031,9 +1050,9 @@ export class AdminActivationService {
       if (this.otpProvider === undefined) {
         throw new TechnicalError('internal', 'Activation OTP provider is missing');
       }
-      const answer = await Promise.race([this.otpProvider.send(phoneNormalized, otp), timeout]);
+      const answer = await Promise.race([this.otpProvider.send(phoneNormalized, otp, context), timeout]);
       const outcome = answer.outcome;
-      if (outcome !== 'ACCEPTED' && outcome !== 'REJECTED' && outcome !== 'UNKNOWN') {
+      if (outcome !== 'ACCEPTED' && outcome !== 'REJECTED' && outcome !== 'UNKNOWN' && outcome !== 'QUEUED') {
         return { outcome: 'UNKNOWN' };
       }
       return answer.displayedCode === undefined ? { outcome } : { outcome, displayedCode: answer.displayedCode };

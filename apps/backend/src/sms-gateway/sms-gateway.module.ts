@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { VerificationRepository } from '../auth/verification-repository';
 import { TransactionModule } from '../transaction/transaction.module';
 import { SmsGatewayAuthGuard } from './sms-gateway-auth.guard';
+import { SmsGatewayActivationOtpProvider } from './sms-gateway-activation-otp-provider';
 import { SmsGatewayOtpProvider } from './sms-gateway-otp-provider';
 import { SmsGatewayRepository } from './sms-gateway-repository';
 import { SmsGatewayController } from './sms-gateway.controller';
@@ -16,7 +17,7 @@ import { SmsKeyringHolder, SmsQueueService } from './sms-queue-service';
 @Module({
   imports: [TransactionModule],
   controllers: [SmsGatewayController],
-  providers: [SmsGatewayRepository, VerificationRepository, SmsKeyringHolder, SmsQueueService, SmsGatewayOtpProvider, SmsGatewayAuthGuard],
-  exports: [SmsGatewayOtpProvider, SmsQueueService],
+  providers: [SmsGatewayRepository, VerificationRepository, SmsKeyringHolder, SmsQueueService, SmsGatewayOtpProvider, SmsGatewayActivationOtpProvider, SmsGatewayAuthGuard],
+  exports: [SmsGatewayOtpProvider, SmsGatewayActivationOtpProvider, SmsQueueService],
 })
 export class SmsGatewayModule {}

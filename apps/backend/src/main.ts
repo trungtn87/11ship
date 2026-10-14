@@ -59,6 +59,7 @@ async function bootstrap(): Promise<void> {
     config.adminActivation === undefined || config.adminActivation.phoneVerificationMode === 'DISABLED_TEST'
       ? undefined
       : bindActivationOtpProvider(config.adminActivation, {
+          smsGatewayEnabled: config.smsGateway !== undefined,
           ...(testSms?.activationProvider === undefined ? {} : { testInboxProvider: testSms.activationProvider }),
         });
 

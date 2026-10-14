@@ -16,11 +16,16 @@ import {
   SmsAckResult,
   SmsPurpose,
 } from './sms-gateway-constants';
-import { SmsGatewayRepository } from './sms-gateway-repository';
+import { JobOwner, SmsGatewayRepository } from './sms-gateway-repository';
 
 export interface SmsDelivery {
   readonly verificationId: string;
   readonly purpose: SmsPurpose;
+  readonly ttlSeconds: number;
+}
+
+export interface ActivationSmsDelivery {
+  readonly challengeId: string;
   readonly ttlSeconds: number;
 }
 
@@ -126,6 +131,54 @@ export class SmsQueueService {
     }
   }
 
+  /**
+   * Queues the fixed ADMIN_ACTIVATION message for an already committed PENDING_DELIVERY activation challenge. Same kill switch,
+   * online gateway, global cap and recipient policy as the account OTPs; the per-phone caps belong to the activation's own
+   * limiter (per invitation). Any refusal throws BEFORE anything is stored, so the caller knows nothing was queued.
+   */
+  async enqueueActivation(phoneNormalized: string, otp: string, delivery: ActivationSmsDelivery): Promise<void> {
+    if (!this.#recipientAllowed(phoneNormalized)) {
+      throw new TechnicalError('unavailable', 'Recipient is not allowed');
+    }
+    const jobId = randomUUID();
+    const plaintext = Buffer.from(
+      JSON.stringify({ to: phoneNormalized, text: renderOtpSms('ADMIN_ACTIVATION', otp, delivery.ttlSeconds) }),
+      'utf8',
+    );
+    const version = this.keyring.keyring.active();
+    const sealed = version.sealSmsPayload(jobId, plaintext);
+    plaintext.fill(0);
+    const inserted = await this.transactions.withTransaction(async (context) => {
+      await this.repository.lockEnqueue(context);
+      await this.#gate(context, phoneNormalized, false);
+      return this.repository.insertActivationJob(context, {
+        jobId,
+        challengeId: delivery.challengeId,
+        phoneNormalized,
+        sealed: { ...sealed, keyId: version.id },
+      });
+    });
+    if (!inserted) {
+      throw new TechnicalError('unavailable', 'Activation challenge is no longer waiting for delivery');
+    }
+  }
+
+  async #markPending(context: TransactionContext, owner: JobOwner): Promise<void> {
+    if (owner.kind === 'ACTIVATION') {
+      await this.repository.activationMarkPending(context, owner.id);
+    } else {
+      await this.verifications.markPending(context, owner.id);
+    }
+  }
+
+  async #failDelivery(context: TransactionContext, owner: JobOwner): Promise<void> {
+    if (owner.kind === 'ACTIVATION') {
+      await this.repository.activationFailDelivery(context, owner.id);
+    } else {
+      await this.verifications.failDelivery(context, owner.id);
+    }
+  }
+
   async #gate(context: TransactionContext, phoneNormalized: string, checkPhoneCaps: boolean): Promise<void> {
     if (!(await this.repository.sendingEnabled(context))) {
       throw new TechnicalError('unavailable', 'SMS sending is disabled');
@@ -173,12 +226,12 @@ export class SmsQueueService {
         throw new AppError('GATEWAY_UNAUTHORIZED');
       }
       const expired = await this.repository.expireQueued(context, SMS_MIN_REMAINING_SECONDS);
-      for (const verificationId of expired) {
-        await this.verifications.failDelivery(context, verificationId);
+      for (const owner of expired) {
+        await this.#failDelivery(context, owner);
       }
       const unknown = await this.repository.expireLeases(context);
-      for (const verificationId of unknown) {
-        await this.verifications.markPending(context, verificationId);
+      for (const owner of unknown) {
+        await this.#markPending(context, owner);
       }
       const sendingEnabled = await this.repository.sendingEnabled(context);
       if (!sendingEnabled || device.paused === true || device.smsPermission === false) {
@@ -251,9 +304,9 @@ export class SmsQueueService {
       }
       await this.repository.finishJob(context, jobId, input.result, input.errorCode);
       if (input.result === 'FAILED') {
-        await this.verifications.failDelivery(context, job.verificationId);
+        await this.#failDelivery(context, job.owner);
       } else {
-        await this.verifications.markPending(context, job.verificationId);
+        await this.#markPending(context, job.owner);
       }
       return { status: input.result };
     });
