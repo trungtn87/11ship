@@ -224,7 +224,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#106](https://github.com/trungtn87/11ship/pull/106) feat(M01): VPS production profile — SMS OTP everywhere, pro… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `14a8794` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#107](https://github.com/trungtn87/11ship/pull/107) docs(M02): chốt tạm UI v3, triển khai app điện thoại | Đã merge (`MERGED`) | — | — | — | `b99f48a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#108](https://github.com/trungtn87/11ship/pull/108) docs: reconcile #91 Claude/Codex handoff with current main | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `b477233` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#109](https://github.com/trungtn87/11ship/pull/109) fix(client): preserve #84 logout→guest home behavior on cur… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `46ce911` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#109](https://github.com/trungtn87/11ship/pull/109) fix(client): preserve #84 logout→guest home behavior on cur… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `46ce911` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
