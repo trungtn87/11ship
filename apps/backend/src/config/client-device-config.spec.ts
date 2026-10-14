@@ -96,3 +96,29 @@ describe('parseRevocationSnapshot', () => {
     }
   });
 });
+
+describe('M01 VPS staging native client gate', () => {
+  it('accepts staging only on backend loopback with real SMS, REQUIRED OTP and pinned Android trust', () => {
+    const valid = env({ SMS_GATEWAY_ENABLED: 'true', CLIENT_AUTH_PHONE_VERIFICATION_MODE: 'REQUIRED' });
+    const result = parseClientDevice({ appEnv: 'staging', host: '127.0.0.1', env: valid, readFile: files() });
+    expect(result.ok && result.enabled && result.config?.signers.SHIP.signerSha256).toBe(SIGNER);
+  });
+
+  it('fails closed for production, remote bind, missing SMS, DISABLED_TEST and staging fixtures', () => {
+    const valid = env({ SMS_GATEWAY_ENABLED: 'true', CLIENT_AUTH_PHONE_VERIFICATION_MODE: 'REQUIRED' });
+    const cases: Array<[string, string, Record<string, string | undefined>]> = [
+      ['production', '127.0.0.1', valid],
+      ['staging', '0.0.0.0', valid],
+      ['staging', '10.0.0.1', valid],
+      ['staging', '127.0.0.1', env()],
+      ['staging', '127.0.0.1', { ...valid, CLIENT_AUTH_PHONE_VERIFICATION_MODE: 'DISABLED_TEST' }],
+      ['staging', '127.0.0.1', { ...valid, AUTH_STAGING_FIXTURES_ENABLED: 'true' }],
+    ];
+    for (const [appEnv, host, candidate] of cases) {
+      expect(parseClientDevice({ appEnv, host, env: candidate, readFile: files() })).toEqual({
+        ok: false,
+        invalid: ['CLIENT_AUTH_ANDROID_ENABLED'],
+      });
+    }
+  });
+});
