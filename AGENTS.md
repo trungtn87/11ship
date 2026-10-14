@@ -12,6 +12,10 @@ Claude tests the affected behavior; ChatGPT reuses valid test/CI evidence and re
 
 Owner's standing authorization (2026-10-11) allows ChatGPT to merge reviewed small packages when applicable required checks pass and dependencies/merge are compatible, without asking again. Do not enable auto-merge or claim local/device acceptance or module closure from a merge. Deploy and remote migration require their own authorization.
 
+## Owner priority — 2026-10-14 (results first, all modules M00–M12)
+
+**The 14/10/2026 Owner instruction supersedes conflicting earlier workflow, review and handoff rules.** ChatGPT owns end-to-end coordination, status tracking and quality gates; Claude/Codex handle implementation, integration and technical troubleshooting under one accountable lead per task. Owner sees *working results* and approves actual business, production, cost, security and data-risk decisions — never routine SSH/CI/SQL/Git chores. Deliver functioning connected web/APKs and service, not just green CI or open PRs. Reuse existing work, avoid repeated audit/review/testing, fix the scoped bug, merge compatible code into main and report only working output and blockers. Preserve real deployment/migration authorization and necessary risk-based safeguards. Full policy: [delivery workflow — Owner 14/10/2026](docs/process/11ship-delivery-workflow.md#quy-tắc-ưu-tiên--owner-chốt-ngày-14102026-giao-kết-quả-ai-chịu-trách-nhiệm-quá-trình).
+
 ## Owner priority — 2026-10-12
 
 “Nhanh, đủ, đúng” means deliver a working test build and fix observable user problems first. Owner explicitly asks to save tokens: keep handoffs, progress updates and reports short; reuse available context and valid evidence instead of repeated reading, reporting or testing. Do not expand scope with speculative edge cases or optional improvements. Deep tests need a concrete material risk to money, data, security or the requested behavior. When relevant checks pass, deliver and move on. ChatGPT is responsible for keeping the work proportionate; Owner should not need to repeat this instruction.
