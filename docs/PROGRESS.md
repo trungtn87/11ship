@@ -228,11 +228,13 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#110](https://github.com/trungtn87/11ship/pull/110) test(M01): stabilize challenge-lock expiry barriers | Đã merge (`MERGED`) | — | — | — | `a6bbcf7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#111](https://github.com/trungtn87/11ship/pull/111) fix(Android): load and refresh genuine attestation revocati… | Đã merge (`MERGED`) | — | — | — | `7e06aab` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#112](https://github.com/trungtn87/11ship/pull/112) fix(admin-web): allow approved production hosting | Đã merge (`MERGED`) | — | — | — | `a014d45` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#113](https://github.com/trungtn87/11ship/pull/113) M02 UI Flutter (11Food): quản lý quán, lịch, thực đơn, xem… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `4fda2bf` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
 - `UNCLASSIFIED_PR` PR #7: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #23: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #113: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
