@@ -29,6 +29,7 @@ void main() {
     expect(tester.widget<N11Button>(find.byKey(const Key('password-submit'))).onPressed, isNull);
     expect(api.to('POST', '/v1/client-auth/change-password'), isEmpty);
     await tester.enterText(find.byKey(const Key('password-confirm')), 'new-password-123');
+    await tester.pump();
     await tester.ensureVisible(find.byKey(const Key('password-submit')));
     await tester.tap(find.byKey(const Key('password-submit')));
     await tester.pumpAndSettle();

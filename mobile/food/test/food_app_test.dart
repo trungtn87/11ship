@@ -61,10 +61,12 @@ Future<void> registrationDetails(WidgetTester tester) async {
   await tester.pump();
   expect(tester.widget<N11Button>(find.byKey(const Key('register-next'))).onPressed, isNull);
   await tester.enterText(find.byKey(const Key('register-confirm')), 'Correct-Horse-9');
+  await tester.pump();
   await tester.ensureVisible(find.byKey(const Key('register-next')));
   await tester.tap(find.byKey(const Key('register-next')));
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('purpose-customer')));
+  await tester.pump();
   await tester.tap(find.byKey(const Key('purpose-next')));
   await tester.pumpAndSettle();
   await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
