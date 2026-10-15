@@ -23,7 +23,7 @@ def ui(name):
 
 
 def tap_text(root, text):
-    nodes = [n for n in root.iter('node') if n.get('text') == text]
+    nodes = [n for n in root.iter('node') if n.get('text','').casefold() == text.casefold()]
     assert nodes, text
     x1,y1,x2,y2 = map(int,re.findall(r'\d+', nodes[-1].get('bounds')))
     adb('shell', 'input', 'tap', str((x1+x2)//2),str((y1+y2)//2))
@@ -111,6 +111,13 @@ try:
     root=ui('offline-cached-route')
     assert any(n.get('text','').startswith('Tuyến dự tính đã lưu:') for n in root.iter('node'))
     (out/'offline-cached-route.png').write_bytes(adb('exec-out','screencap','-p'))
+    # Install the newer build over the old one with the same persistent signer.
+    adb('install','-r','updated-apk/11Ship-GPS-Test.apk')
+    adb('shell','am','start','-W','-n','vn.eleven.ship.gpstest/vn.eleven.gpstest.MainActivity')
+    time.sleep(10)
+    root=ui('updated-offline-cached-route')
+    assert any(n.get('text','').startswith('Tuyến dự tính đã lưu:') for n in root.iter('node'))
+    (out/'updated-offline-cached-route.png').write_bytes(adb('exec-out','screencap','-p'))
     tap_text(root,'Bắt đầu ghi')
     time.sleep(1)
     tap_text(ui('consent'),'Bắt đầu')
@@ -125,7 +132,7 @@ try:
     (out/'denied.png').write_bytes(adb('exec-out','screencap','-p'))
     log=adb('logcat','-d').decode(errors='replace')
     assert 'FATAL EXCEPTION' not in log, log[-4000:]
-    report={'signed_apk_installed':True,'airplane_mode':True,'osm_river_pixels':water,'offline_map_rendered':True,'two_pins_selected':True,'android_online_route':online_result,'offline_cached_route_after_restart':True,'offline_route_message':True,'permission_denied_without_recording':True,'gps_injected':False,'physical_gps_tested':False,'build_info':json.loads(Path('build-info.json').read_text())}
+    report={'signed_apk_installed':True,'airplane_mode':True,'osm_river_pixels':water,'offline_map_rendered':True,'two_pins_selected':True,'android_online_route':online_result,'offline_cached_route_after_restart':True,'offline_route_message':True,'permission_denied_without_recording':True,'gps_injected':False,'physical_gps_tested':False,'update_keeps_route_cache':True,'old_build_info':json.loads(Path('build-info.json').read_text()),'build_info':json.loads(Path('updated-apk/build-info.json').read_text())}
     (out/'result.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
     print(json.dumps(report,ensure_ascii=False))
 finally:
