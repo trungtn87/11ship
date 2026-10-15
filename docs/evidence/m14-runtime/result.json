@@ -11,6 +11,11 @@
   "gps_injected": false,
   "physical_gps_tested": false,
   "update_keeps_route_cache": true,
+  "foreground_survives_screen_lock_with_gps_off": true,
+  "stop_stays_stopped_after_65_seconds": true,
+  "gps_disabled_reported": true,
+  "retention_25h_deleted_1h_kept_using_database_fixtures": true,
+  "clear_history_works": true,
   "old_build_info": {
     "application_id": "vn.eleven.ship.gpstest",
     "version_code": 9,
