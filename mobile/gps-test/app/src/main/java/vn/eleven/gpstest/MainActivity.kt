@@ -48,6 +48,8 @@ class MainActivity: Activity() {
     private var moving: Boolean?=null
     private lateinit var pinsView: MapPinsView
     private var renderedTime=-1L
+    private var renderedFresh=false
+    private var lastTrackRedraw=0L
     private var ready=false
     private var busy=false
     private var pendingStart=false
@@ -186,7 +188,8 @@ class MainActivity: Activity() {
         if(!::gpsText.isInitialized) return
         val p=RecorderService.preferences(this); val active=RecorderService.active(this)
         val age=SystemClock.elapsedRealtime()-p.getLong("elapsed",0)
-        val details=if(p.contains("lat")) "\nVĩ độ ${p.getString("lat","")} · Kinh độ ${p.getString("lon","")} · ±${p.getFloat("accuracy",0f).toInt()} m · ${date.format(Date(p.getLong("time",0)))} · ${if(age in 0..120_000) "vị trí mới" else "vị trí cũ"}" else "\nChưa lấy được vị trí"
+        val fresh=age in 0..120_000 && System.currentTimeMillis()-p.getLong("time",0) in 0..120_000
+        val details=if(p.contains("lat")) "\nVĩ độ ${p.getString("lat","")} · Kinh độ ${p.getString("lon","")} · ±${p.getFloat("accuracy",0f).toInt()} m · ${date.format(Date(p.getLong("time",0)))} · ${if(fresh) "vị trí mới" else "vị trí cũ"}" else "\nChưa lấy được vị trí"
         val denied=checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED
         gpsText.text=(if(denied) "Chưa cấp quyền GPS chính xác" else if(!getSystemService(LocationManager::class.java).isProviderEnabled(LocationManager.GPS_PROVIDER)) "GPS đang tắt" else p.getString("status","Chưa bắt đầu ghi GPS"))+details
         recording.text=if(active) "Dừng ghi" else "Bắt đầu ghi"
@@ -194,10 +197,11 @@ class MainActivity: Activity() {
         val outside=try { (center!=null && !offline.contains(center.latitude,center.longitude)) || (p.contains("lat") && !offline.contains(p.getString("lat","0")!!.toDouble(),p.getString("lon","0")!!.toDouble())) } catch(_:Exception) { false }
         networkText.text=(if(online()) "Có mạng · Bản đồ và GPS dùng dữ liệu cục bộ" else "Cần mạng để tính tuyến mới")+(if(outside) "\nNgoài vùng bản đồ đã đóng gói" else "")
         val time=p.getLong("time",0)
-        if(time!=renderedTime) { renderedTime=time; redraw() }
+        if(time!=renderedTime || fresh!=renderedFresh || SystemClock.elapsedRealtime()-lastTrackRedraw>=60_000) { renderedTime=time; renderedFresh=fresh; redraw() }
     }
     private fun redraw() {
         val m=map?:return; if(!ready) return
+        lastTrackRedraw=SystemClock.elapsedRealtime()
         m.clear()
         val points=history.points()
         points.groupBy { it.segment }.values.forEach { group -> if(group.size>1) m.addPolyline(PolylineOptions().addAll(group.map { LatLng(it.lat,it.lon) }).color(Color.rgb(20,150,85)).width(4f)) }
@@ -208,7 +212,7 @@ class MainActivity: Activity() {
         val p=RecorderService.preferences(this)
         if(p.contains("lat")) {
             val age=SystemClock.elapsedRealtime()-p.getLong("elapsed",0)
-            pins.add(MapPin(p.getString("lat","0")!!.toDouble(),p.getString("lon","0")!!.toDouble(),"GPS",if(age in 0..120_000) Color.BLUE else Color.GRAY))
+            pins.add(MapPin(p.getString("lat","0")!!.toDouble(),p.getString("lon","0")!!.toDouble(),"GPS",if(age in 0..120_000 && System.currentTimeMillis()-p.getLong("time",0) in 0..120_000) Color.BLUE else Color.GRAY))
         }
         pinsView.pins=pins
 
