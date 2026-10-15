@@ -1,8 +1,8 @@
 # Bàn giao 11Ship GPS Test — 15/10/2026
 
-APK: `downloads/m14/11Ship-GPS-Test.apk`, Android 8.0+, application ID `vn.eleven.ship.gpstest`, versionCode 19, khóa ký cố định. Đã cài cập nhật từ bản 9 lên bản 19 mà giữ tuyến lưu.
+APK: `downloads/m14/11Ship-GPS-Test.apk`, Android 8.0+, application ID `vn.eleven.ship.gpstest`, versionCode 21, khóa ký cố định. Đã cài cập nhật từ bản 9 lên bản 19; bản 21 sửa khoảng đệm nút và kiểm tra lại UI/ghim/cache mà giữ tuyến lưu.
 
-Mã nguồn đã build: `5d078f3002fa826471bd75b278bcfaac03d149de`. SHA-256 APK: `3356f33fb3df41c591872b28970a541ac52ec0a1e33635e08a1c487caf35c6f0`. Metadata chứng thư, URL dịch vụ và phiên bản map: `downloads/m14/build-info.json`.
+Mã nguồn đã build: `8854fbeaf61dece26c02910dbc45fb79e7eeaf31`. SHA-256 APK: `8b763e542577cd64d1e5ed081125432d9b57afeb43a2716fc23cfba63b490ffa`. Metadata chứng thư, URL dịch vụ và phiên bản map: `downloads/m14/build-info.json`.
 
 Map `caobang-v1.3-2026-10-14`, snapshot OSM/Geofabrik 14/10/2026, 11.083 đối tượng, bounds `[106.0,22.43,106.52,22.91]`. Tất cả dữ liệu/style/font/ghim đi kèm APK; gói độc lập `downloads/m14/caobang-offline.tar.gz`. Giữ attribution ODbL và bản quyền/OFL của font. Nhãn địa danh/đường dùng Noto TTF cục bộ qua lớp Canvas dùng chung; nền bản đồ MapLibre dùng GeoJSON cục bộ. Không tải tile công cộng hàng loạt.
 
@@ -10,9 +10,10 @@ Valhalla thật: https://one1ship-m14-routing.onrender.com, gói Render free, re
 
 ## Bằng chứng
 
-- Build release, lint, 5 unit tests Android cho chia đoạn/giải mã tuyến, 3 tests gateway và kiểm tra checksum/quyền APK đạt: https://github.com/trungtn87/11ship/actions/runs/38800703639
-- Android API 30, APK đã ký: https://github.com/trungtn87/11ship/actions/runs/38800819834
-- Kết quả máy đọc được: `docs/evidence/m14-gps-test/result.json`; ảnh bản đồ máy bay/tuyến cache và từ chối quyền cùng thư mục.
+- Build release, lint, 5 unit tests Android cho chia đoạn/giải mã tuyến, 3 tests gateway và kiểm tra checksum/quyền APK đạt: https://github.com/trungtn87/11ship/actions/runs/38802262205
+- Android API 30, APK 19 đã ký, đủ ca recorder/history: https://github.com/trungtn87/11ship/actions/runs/38800819834
+- Android API 30, APK 21: UI, sửa/đổi/xóa ghim, route cache và cập nhật: https://github.com/trungtn87/11ship/actions/runs/38802501477
+- Kết quả máy đọc được: `docs/evidence/m14-gps-test/result.json` (đủ ca APK 19) và `docs/evidence/m14-gps-test/ui-update-result.json` (APK 21); ảnh bản đồ máy bay/tuyến cache và từ chối quyền cùng thư mục.
 
 | Trường hợp | Đã kiểm tra |
 |---|---|

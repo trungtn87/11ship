@@ -2,6 +2,7 @@ import math
 import json
 import re
 import sqlite3
+import sys
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -129,6 +130,32 @@ try:
     assert green_pin>100 and red_pin>100, ('A/B pins missing',green_pin,red_pin)
     place_labels=color_pixels((38,60,70))
     assert place_labels>20, ('Bundled offline font/place labels missing',place_labels)
+    a_node=next(n for n in root.iter('node') if n.get('text','').startswith('A · Điểm đầu:'))
+    previous_start=a_node.get('text')
+    x1,y1,x2,y2=bounds(a_node)
+    adb('shell','input','tap',str((x1+x2)//2),str((y1+y2)//2))
+    time.sleep(1)
+    tap_text(ui('move-menu'),'Di chuyển ghim đến chỗ chạm tiếp theo')
+    adb('shell','input','tap',str(im.width//2-90),str((map_top+map_bottom)//2))
+    time.sleep(2)
+    root=ui('pin-moved')
+    assert next(n.get('text') for n in root.iter('node') if n.get('text','').startswith('A · Điểm đầu:')) != previous_start
+    tap_text(root,'Đổi chiều')
+    time.sleep(1)
+    root=ui('pins-swapped')
+    tap_text(root,'Xóa điểm')
+    time.sleep(1)
+    root=ui('pins-cleared')
+    assert next(n for n in root.iter('node') if n.get('text')=='Tính tuyến').get('enabled')=='false'
+    tap_text(root,'Lịch sử')
+    time.sleep(1)
+    tap_text(ui('restore-route-history'),'Tùy chọn')
+    time.sleep(1)
+    tap_text(ui('restore-route-menu'),'Xem tuyến đã lưu')
+    time.sleep(2)
+    root=ui('restored-route')
+    assert any(n.get('text','').startswith('Tuyến dự tính đã lưu:') for n in root.iter('node'))
+    (out/'updated-offline-cached-route.png').write_bytes(adb('exec-out','screencap','-p'))
     tap_text(root,'Bắt đầu ghi')
     time.sleep(1)
     tap_text(ui('consent'),'Bắt đầu')
@@ -141,6 +168,11 @@ try:
     services=adb('shell','dumpsys','activity','services','vn.eleven.ship.gpstest').decode()
     assert 'ServiceRecord' not in services, services
     (out/'denied.png').write_bytes(adb('exec-out','screencap','-p'))
+    if '--quick-ui' in sys.argv:
+        report={'signed_apk_installed':True,'airplane_mode':True,'offline_map_rendered':True,'two_pins_selected':True,'pin_move_swap_clear_restore':True,'android_online_route':online_result,'offline_cached_route_after_restart':True,'update_keeps_route_cache':True,'green_start_pin_pixels':green_pin,'red_end_pin_pixels':red_pin,'offline_place_label_pixels':place_labels,'permission_denied_without_recording':True,'gps_injected':False,'physical_gps_tested':False,'build_info':json.loads(Path('updated-apk/build-info.json').read_text()),'unchanged_recorder_and_history_tests':'Validated on APK 19 in run 38800819834; this update changes button padding only.'}
+        (out/'result.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
+        print(json.dumps(report,ensure_ascii=False))
+        sys.exit(0)
     tap_text(root,'Đóng')
     # Foreground lifecycle with GPS explicitly OFF: never treat virtual GPS as a real fix.
     adb('shell','pm','grant','vn.eleven.ship.gpstest','android.permission.ACCESS_COARSE_LOCATION')

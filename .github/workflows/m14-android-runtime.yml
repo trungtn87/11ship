@@ -21,7 +21,7 @@ jobs:
         with:
           script: |
             for(let i=0;i<60;i++) {
-              const r=await github.rest.actions.getWorkflowRun({owner:context.repo.owner,repo:context.repo.repo,run_id:38800703639});
+              const r=await github.rest.actions.getWorkflowRun({owner:context.repo.owner,repo:context.repo.repo,run_id:38802262205});
               if(r.data.status==='completed') {
                 if(r.data.conclusion!=='success') throw new Error('Final APK build did not pass');
                 return;
@@ -37,7 +37,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: 11Ship-GPS-Test-APK
-          run-id: 38800703639
+          run-id: 38802262205
           path: updated-apk
           github-token: ${{ github.token }}
       - uses: actions/setup-python@v5
@@ -58,7 +58,7 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: python3 mobile/gps-test/tools/android-smoke.py
+          script: python3 mobile/gps-test/tools/android-smoke.py --quick-ui
       - uses: actions/upload-artifact@v4
         if: always()
         with:

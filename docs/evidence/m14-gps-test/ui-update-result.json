@@ -1,0 +1,27 @@
+{
+  "signed_apk_installed": true,
+  "airplane_mode": true,
+  "offline_map_rendered": true,
+  "two_pins_selected": true,
+  "pin_move_swap_clear_restore": true,
+  "android_online_route": "Tuyến dự tính: 1.56 km",
+  "offline_cached_route_after_restart": true,
+  "update_keeps_route_cache": true,
+  "green_start_pin_pixels": 5079,
+  "red_end_pin_pixels": 5006,
+  "offline_place_label_pixels": 1001,
+  "permission_denied_without_recording": true,
+  "gps_injected": false,
+  "physical_gps_tested": false,
+  "build_info": {
+    "application_id": "vn.eleven.ship.gpstest",
+    "version_code": 21,
+    "signer_sha256": "6aa5abfcace6e1b55f6cede5e1aea0dc449fdd3f67b50ebf5a92a62f38dbd0a3",
+    "apk_sha256": "8b763e542577cd64d1e5ed081125432d9b57afeb43a2716fc23cfba63b490ffa",
+    "source_sha": "8854fbeaf61dece26c02910dbc45fb79e7eeaf31",
+    "map_version": "caobang-v1.3-2026-10-14",
+    "routing_url": "https://one1ship-m14-routing.onrender.com",
+    "physical_device_tested": false
+  },
+  "unchanged_recorder_and_history_tests": "Validated on APK 19 in run 38800819834; this update changes button padding only."
+}
