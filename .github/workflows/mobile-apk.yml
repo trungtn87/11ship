@@ -298,3 +298,41 @@ jobs:
           path: android-signers.json
           if-no-files-found: error
           retention-days: 30
+
+  ship-android-ui:
+    name: 11Ship Android guest UI and screenshots
+    needs: apk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      SHIP_UI_OUTPUT: ${{ runner.temp }}/ship-android-ui
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: 11Ship-test.apk
+      - name: Enable KVM for the disposable emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Capture signed APK guest screens without sending SMS
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: python3 mobile/tool/ship-android-ui-smoke.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 11Ship-android-ui-screenshots
+          path: ${{ runner.temp }}/ship-android-ui/
+          if-no-files-found: warn
+          retention-days: 30
