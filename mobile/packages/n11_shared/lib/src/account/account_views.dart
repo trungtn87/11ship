@@ -619,7 +619,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ],
           if (_step == 1) ...<Widget>[
             for (final bool owner in <bool>[false, true])
-              N11Card(child: ListTile(key: Key(owner ? 'purpose-owner' : 'purpose-customer'), selected: _owner == owner, selectedTileColor: N11Colors.yellow.withValues(alpha: 0.2), leading: Icon(owner ? Icons.storefront_outlined : Icons.person_outline), title: Text(owner ? 'Chủ quán' : 'Khách hàng'), subtitle: Text(owner ? 'Gửi hồ sơ đăng ký quán sau khi xác minh. Chỉ bán hàng sau khi được duyệt.' : 'Tìm quán và đặt món khi tính năng sẵn sàng.'), trailing: Icon(_owner == owner ? Icons.radio_button_checked : Icons.radio_button_off), onTap: locked ? null : () => setState(() => _owner = owner))),
+              N11Card(child: Material(color: Colors.transparent, child: ListTile(key: Key(owner ? 'purpose-owner' : 'purpose-customer'), selected: _owner == owner, selectedTileColor: N11Colors.yellow.withValues(alpha: 0.2), leading: Icon(owner ? Icons.storefront_outlined : Icons.person_outline), title: Text(owner ? 'Chủ quán' : 'Khách hàng'), subtitle: Text(owner ? 'Gửi hồ sơ đăng ký quán sau khi xác minh. Chỉ bán hàng sau khi được duyệt.' : 'Tìm quán và đặt món khi tính năng sẵn sàng.'), trailing: Icon(_owner == owner ? Icons.radio_button_checked : Icons.radio_button_off), onTap: locked ? null : () => setState(() => _owner = owner)))),
             const ReasonNote('Bạn luôn là khách hàng và có thể đăng ký mở quán trong mục Tài khoản theo luồng hồ sơ hiện có.'),
             N11Button(key: const Key('purpose-next'), label: 'Tiếp tục', onPressed: !locked && _owner != null ? () => setState(() => _step = 2) : null),
           ],

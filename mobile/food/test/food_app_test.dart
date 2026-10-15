@@ -70,6 +70,7 @@ Future<void> registrationDetails(WidgetTester tester) async {
   await tester.tap(find.byKey(const Key('purpose-next')));
   await tester.pumpAndSettle();
   await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
+  await tester.pump();
 }
 
 void main() {
