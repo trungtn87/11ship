@@ -1,10 +1,10 @@
 {
   "application_id": "vn.eleven.ship.gpstest",
-  "version_code": 11,
+  "version_code": 13,
   "signer_sha256": "6aa5abfcace6e1b55f6cede5e1aea0dc449fdd3f67b50ebf5a92a62f38dbd0a3",
-  "apk_sha256": "35b6d4b0e19101709d7584aa93f21a8f77f957ffa6aeb32a5f304d68fc3a9c80",
-  "source_sha": "cb360b7653be2d870f8db92c16a86fb52c51cea2",
-  "map_version": "caobang-v1.1-2026-10-14",
+  "apk_sha256": "ef91d85e9c4d085d0bf3d3eb2fe48c29bdceccf0ac4922acc2b426bfa823f789",
+  "source_sha": "3937c41b83b4521030a9a5f2667775d6ef6dc4ca",
+  "map_version": "caobang-v1.2-2026-10-14",
   "routing_url": "https://one1ship-m14-routing.onrender.com",
   "physical_device_tested": false
 }
