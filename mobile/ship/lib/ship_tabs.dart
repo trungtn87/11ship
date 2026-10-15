@@ -92,6 +92,17 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
     brand: shipBrand,
     actions: actions,
     signedInTitle: 'Shipper',
+    showAccountStatus: false,
+    showDiagnostics: false,
+    settingsEntries: <Widget>[
+      N11ListItem(
+        key: const Key('open-change-password'),
+        icon: Icons.lock_outline,
+        title: 'Đổi mật khẩu',
+        sub: 'Cập nhật mật khẩu đăng nhập',
+        onTap: () => Navigator.of(context).push(n11Route(ChangePasswordScreen(session: session))),
+      ),
+    ],
     reset: flows?.reset,
     signedInEntries: <Widget>[
       // S12/S13: the driver profile, connected to the server. Sending it never receives orders or changes the context.
@@ -114,12 +125,6 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
           trailing: const N11Chip('Chưa nối', kind: ChipKind.soon),
         ),
       const N11ListItem(icon: Icons.help_outline, title: 'Trợ giúp', soon: true),
-      N11ListItem(
-        key: const Key('policy-entry'),
-        icon: Icons.shield_outlined,
-        title: 'Chính sách và điều khoản',
-        onTap: () => Navigator.of(context).push(n11Route(PolicyScreen(session: session))),
-      ),
     ],
   ));
 }

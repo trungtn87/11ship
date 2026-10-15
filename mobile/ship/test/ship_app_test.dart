@@ -118,19 +118,25 @@ void main() {
     await tester.pump();
     expect(find.text('Chưa có đơn hàng'), findsWidgets);
   });
-  testWidgets('account: login/register are open, the driver profile is locked "not on Android", diagnostics reachable with SHA', (WidgetTester tester) async {
-    await pump(tester, healthy());
+  testWidgets('account hides status, policy and diagnostics while preserving profile actions', (WidgetTester tester) async {
+    final SessionController session = await pump(tester, healthy());
     await openTab(tester, 'account');
     expect(tester.widget<N11Button>(find.byKey(const Key('open-login'))).onPressed, isNotNull);
     expect(tester.widget<N11Button>(find.byKey(const Key('open-register'))).onPressed, isNotNull);
-    expect(find.text('Hồ sơ shipper'), findsOneWidget);
-    expect(find.text(kNotOnAndroidReason), findsWidgets);
-    await tester.ensureVisible(find.text('Chẩn đoán kết nối'));
-    await tester.tap(find.text('Chẩn đoán kết nối'));
-    await tester.pump();
-    await tester.pump();
-    expect(find.textContaining(sha.substring(0, 12)), findsWidgets, reason: texts(tester));
-    expect(find.textContaining('Còn sống'), findsWidgets);
+    expect(find.text('Chính sách và điều khoản'), findsNothing);
+    expect(find.text('Chẩn đoán kết nối'), findsNothing);
+    expect(find.byKey(const Key('open-change-password')), findsNothing);
+    await session.login(phone: '0901234567', password: 'Correct-Horse-9');
+    await tester.pumpAndSettle();
+    expect(find.text('Trạng thái tài khoản'), findsNothing);
+    expect(find.text('Trạng thái'), findsNothing);
+    expect(find.byKey(const Key('open-profile')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('open-change-password')));
+    await tester.tap(find.byKey(const Key('open-change-password')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('password-current')), findsOneWidget);
+    expect(find.byKey(const Key('password-new')), findsOneWidget);
+    expect(find.byKey(const Key('password-confirm')), findsOneWidget);
   });
 
   testWidgets('login with a wrong password is a credentials error, not a session end; then a right one signs in', (WidgetTester tester) async {
@@ -225,14 +231,4 @@ void main() {
     expect(find.byKey(const Key('connection-banner')), findsNothing);
   });
 
-  testWidgets('account: "Chính sách và điều khoản" opens the real terms and privacy texts, without an account', (WidgetTester tester) async {
-    await pump(tester, healthy());
-    await openTab(tester, 'account');
-    await tester.ensureVisible(find.byKey(const Key('policy-entry')));
-    await tester.tap(find.byKey(const Key('policy-entry')));
-    await tester.pumpAndSettle();
-    expect(find.text(kTermsText), findsOneWidget);
-    expect(find.text(kPrivacyText), findsOneWidget);
-    expect(find.textContaining('thử nghiệm'), findsNothing);
-  });
 }
