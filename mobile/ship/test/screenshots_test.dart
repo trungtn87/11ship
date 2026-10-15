@@ -109,6 +109,7 @@ void main() {
     await tester.pumpWidget(RepaintBoundary(
       key: boundary,
       child: N11App(
+        key: const ValueKey<String>('online-visual-app'),
         brand: shipBrand,
         config: config,
         transport: healthy(),
