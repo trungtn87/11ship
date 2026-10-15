@@ -1,5 +1,5 @@
 {
-  "version": "caobang-v1-2026-10-14",
+  "version": "caobang-v1.1-2026-10-14",
   "source_date": "2026-10-14",
   "bounds": [
     106.0,
@@ -274,7 +274,7 @@
     "fonts/Noto Sans Regular/9472-9727.pbf": "405ec13fa1fe2d1ca31aead5869d033e751052c8034b597529f62b94e3481a6c",
     "fonts/Noto Sans Regular/9728-9983.pbf": "1b3ab0784400150344be0c0dcf1763dd8668e588b7665034bde64521e4c93a91",
     "fonts/Noto Sans Regular/9984-10239.pbf": "18b239f46bbb610d538d22fe67c86efe4505cae689a537a62630baba75d5204e",
-    "fonts/OFL.txt": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2",
+    "fonts/OFL.txt": "450eab0dc4e6fae9aacf903c92b8b7a8a64141b0f0adb6c76bc8a91272c32a7c",
     "map.geojson": "81c5db00aa59ade32d635dded1225972909bae9a10c33e7735a5f19acbe50aa6",
     "style.json": "10065f675fe0fa8064924d426df9cdf02ebf810662f6da037cbd1128a77d709c"
   }

@@ -1,3 +1,7 @@
+Noto Sans Regular
+Copyright 2012 Google Inc. All Rights Reserved.
+Source: https://github.com/openmaptiles/fonts/tree/d48c5fce2fc58b55c98d353558d807cac45e7262/noto-sans
+
 This Font Software is licensed under the SIL Open Font License,
 Version 1.1.
 
