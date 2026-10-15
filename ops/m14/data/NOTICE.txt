@@ -1,0 +1,7 @@
+© OpenStreetMap contributors. Source: Geofabrik Vietnam extract, 2026-10-14.
+Map database (map.geojson) is provided under Open Database License 1.0 (ODbL).
+https://www.openstreetmap.org/copyright
+https://opendatacommons.org/licenses/odbl/1-0/
+The full derived database is included as map.geojson; no tile server was scraped.
+Fonts: Noto Sans, SIL Open Font License; see fonts/OFL.txt.
+Map style: 11Ship GPS Test project.
