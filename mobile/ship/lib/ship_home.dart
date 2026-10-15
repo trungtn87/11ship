@@ -15,74 +15,96 @@ class ShipHome extends StatelessWidget {
   final VoidCallback onNotifications;
 
   @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: session,
-      builder: (BuildContext context, Widget? child) => LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final double mapHeight = (constraints.maxHeight - 230).clamp(240.0, 900.0).toDouble();
-          return SingleChildScrollView(
-            key: const Key('ship-home-scroll'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                SizedBox(
-                  height: mapHeight,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: <Widget>[
-                      const _HomeMap(),
-                      Positioned(
-                        top: 12,
-                        left: 16,
-                        right: 16,
-                        child: Row(
-                          children: <Widget>[
-                            DecoratedBox(
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: session,
+    builder: (BuildContext context, Widget? child) => ShipHomeLayout(
+      // M01 has no operational online API. Never infer this from profile approval.
+      online: false,
+      reason: kOnlineReason,
+      onNotifications: onNotifications,
+      footer: session.status == SessionStatus.guest
+          ? N11Link(
+              'Đăng nhập tài khoản shipper',
+              key: const Key('guest-login'),
+              onPressed: session.ready ? () => Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: shipBrand, reset: reset))) : null,
+            )
+          : null,
+    ),
+  );
+}
+
+/// Approved visual states without account mutations. The runtime passes Offline;
+/// visual tests can exercise Online without granting a role or starting a session.
+class ShipHomeLayout extends StatelessWidget {
+  const ShipHomeLayout({super.key, required this.online, required this.reason, required this.onNotifications, this.footer});
+
+  final bool online;
+  final String reason;
+  final VoidCallback onNotifications;
+  final Widget? footer;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints constraints) {
+      final double mapHeight = (constraints.maxHeight - 230).clamp(240.0, 900.0).toDouble();
+      return SingleChildScrollView(
+        key: const Key('ship-home-scroll'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            SizedBox(
+              height: mapHeight,
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  const _HomeMap(),
+                  Positioned(
+                    top: 12,
+                    left: 16,
+                    right: 16,
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: DecoratedBox(
                               decoration: BoxDecoration(color: const Color(0xF0FFFFFF), borderRadius: BorderRadius.circular(12)),
                               child: const Padding(padding: EdgeInsets.all(8), child: BrandLogo(brand: shipBrand, height: 32)),
                             ),
-                            const Spacer(),
-                            Material(
-                              color: N11Colors.white,
-                              shape: const CircleBorder(),
-                              child: IconButton(
-                                key: const Key('home-notifications'),
-                                tooltip: 'Thông báo',
-                                onPressed: onNotifications,
-                                icon: const Icon(Icons.notifications_outlined, color: N11Colors.black),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-                      const Positioned(
-                        left: 16,
-                        right: 16,
-                        bottom: 40,
-                        child: N11Chip('Bản đồ khu vực · Chưa có vị trí GPS'),
-                      ),
-                    ],
+                        const SizedBox(width: 12),
+                        if (online)
+                          const N11Chip('Đang online', kind: ChipKind.ok)
+                        else
+                          Material(
+                            color: N11Colors.white,
+                            shape: const CircleBorder(),
+                            child: IconButton(
+                              key: const Key('home-notifications'),
+                              tooltip: 'Thông báo',
+                              onPressed: onNotifications,
+                              icon: const Icon(Icons.notifications_outlined, color: N11Colors.black),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-                ShipActivityPanel(
-                  online: false,
-                  reason: kOnlineReason,
-                  footer: session.status == SessionStatus.guest
-                      ? N11Link(
-                          'Đăng nhập tài khoản shipper',
-                          key: const Key('guest-login'),
-                          onPressed: session.ready ? () => Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: shipBrand, reset: reset))) : null,
-                        )
-                      : null,
-                ),
-              ],
+                  const Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: 40,
+                    child: N11Chip('Bản đồ khu vực · Chưa có vị trí GPS'),
+                  ),
+                ],
+              ),
             ),
-          );
-        },
-      ),
-    );
-  }
+            ShipActivityPanel(online: online, reason: reason, footer: footer),
+          ],
+        ),
+      );
+    },
+  );
 }
 
 class _HomeMap extends StatefulWidget {

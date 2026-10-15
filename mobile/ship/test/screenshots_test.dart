@@ -104,15 +104,23 @@ void main() {
     await tester.tap(find.byKey(const Key('driver-entry')));
     await tester.pumpAndSettle();
     await shot(tester, '05-driver-form');
-    // An isolated visual-state render, not an online session or real statistics.
+    // Full Online layout under fixture rendering only; not an online session.
+    final List<TabSpec> tabs = buildShipTabs(session, flows: flows);
     await tester.pumpWidget(RepaintBoundary(
       key: boundary,
-      child: MaterialApp(
-        theme: buildN11Theme(),
-        home: const Scaffold(body: SafeArea(child: SingleChildScrollView(child: ShipActivityPanel(online: true, reason: kOnlineReason)))),
+      child: N11App(
+        brand: shipBrand,
+        config: config,
+        transport: healthy(),
+        pollInterval: Duration.zero,
+        tabs: <TabSpec>[
+          TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', fullBleed: true, showAppBar: false,
+            body: (BuildContext context, ShellActions actions) => ShipHomeLayout(online: true, reason: kOnlineReason, onNotifications: () => actions.goTab('notifications'))),
+          ...tabs.skip(1),
+        ],
       ),
     ));
     await tester.pumpAndSettle();
-    await shot(tester, '06-online-panel-visual-only');
+    await shot(tester, '06-home-online-visual-only');
   });
 }
