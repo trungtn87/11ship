@@ -6,7 +6,7 @@ App Android độc lập `vn.eleven.ship.gpstest`, Android 8.0 trở lên, khôn
 
 1. Cài `11Ship-GPS-Test.apk`. Cho phép cài từ nguồn tải nếu Android hỏi. Bản sau cùng khóa ký và application ID cài bằng **Cập nhật**, không gỡ app.
 2. Bật chế độ máy bay, mở app: bản đồ Cao Bằng phải có đường, sông, tên địa danh; không cần tải gói nào. Mục **Gói bản đồ** cho biết phiên bản/vùng phủ.
-3. Ra ngoài trời, bật Vị trí trên điện thoại, bấm **Bắt đầu ghi**. Cho phép **vị trí chính xác khi dùng app** và thông báo. Chỉ lúc này app bắt đầu xin mẫu GPS. Chờ tín hiệu; không coi tọa độ cũ hoặc vị trí giả là một mẫu mới thành công.
+3. Ra ngoài trời, bật Vị trí trên điện thoại, bấm **Bắt đầu ghi**. Cho phép **vị trí chính xác khi dùng app** và thông báo. Chỉ lúc này app bắt đầu xin mẫu GPS. Lần bắt tín hiệu đầu khi offline có thể cần tối đa hai phút; các lần sau thử lấy mẫu theo chu kỳ mục tiêu 60 giây. Không coi tọa độ cũ hoặc vị trí giả là một mẫu mới thành công.
 4. Xem vĩ độ/kinh độ, sai số thiết bị báo và thời điểm. **Về vị trí của tôi** dùng mẫu mới trong hai phút gần nhất. Khóa màn hình ít nhất 5 phút rồi mở **Lịch sử → Tùy chọn → Xem thời điểm** để đối chiếu chu kỳ mục tiêu 60 giây. Lúc không có tín hiệu, không tạo điểm giả.
 5. Chạm/nhấn giữ bản đồ để đặt A/Điểm đầu hoặc B/Điểm cuối. Bấm ô điểm để dùng vị trí hiện tại, ghi chú, xóa hoặc di chuyển ghim bằng lần chạm bản đồ tiếp theo. Có đổi chiều/xóa cả hai điểm.
 6. Bật mạng, bấm **Tính tuyến**. Đường xanh dương và số km là tuyến đường dự tính từ Valhalla với `motorcycle`. Chỉ gửi hai điểm chọn cho server; lịch sử di chuyển không được gửi. Không tính lại theo GPS.
@@ -29,7 +29,7 @@ Không có thiết bị thật gắn vào môi trường build. GPS vệ tinh, t
 | Module | Vai trò |
 |---|---|
 | `map` | Nạp/kiểm tra gói offline, vùng phủ và MapLibre style |
-| `gps` | Foreground service chỉ khởi động từ thao tác người dùng; thử lấy mẫu tối đa 25 giây mỗi chu kỳ 60 giây; dừng listener giữa các chu kỳ |
+| `gps` | Foreground service chỉ khởi động từ thao tác người dùng; lần đầu cho GPS tối đa 120 giây để bắt tín hiệu offline; sau đó thử lấy mẫu tối đa 25 giây mỗi chu kỳ 60 giây; dừng listener giữa các chu kỳ |
 | `history` | SQLite tại máy, giữ 24 giờ, chia đoạn và xuất GPX |
 | `routing` | HTTPS client Valhalla, giải mã polyline6, cache tuyến bằng AtomicFile |
 | `app` | Màn hình test, xin quyền, các tùy chọn test |

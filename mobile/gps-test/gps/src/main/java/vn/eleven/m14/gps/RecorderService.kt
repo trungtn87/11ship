@@ -47,14 +47,14 @@ class RecorderService: Service() {
         if(!running) {
             running=true
             preferences(this).edit().putBoolean("recording",true).apply()
-            // Keeps the target timer running with the screen locked; GPS itself runs at most 25s/min.
+            // Keeps the target timer running with the screen locked; GPS uses a bounded initial cold-fix window, then at most 25s/min.
             wake = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"11Ship:GPSRecording").also { it.acquire() }
             cycle.run()
         }
         return START_NOT_STICKY
     }
     private fun acquire() {
-        cancelFix()
+        if(listener != null) return // Let the first offline cold fix acquire satellite ephemeris.
         if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) { state("Quyền vị trí đã bị thu hồi"); shutdown(); return }
         if(!manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) { state("GPS đang tắt — bật Vị trí trên điện thoại"); return }
         state("Đang chờ vị trí GPS mới…")
@@ -80,7 +80,7 @@ class RecorderService: Service() {
         listener=current
         try { manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,0L,0f,current,Looper.getMainLooper()) }
         catch(_: SecurityException) { state("Quyền vị trí đã bị từ chối"); shutdown(); return }
-        handler.postDelayed({ if(listener === current) { cancelFix(); state("Chưa lấy được GPS mới — đang giữ vị trí cũ nếu có") } },25_000)
+        handler.postDelayed({ if(listener === current) { cancelFix(); state("Chưa lấy được GPS mới — đang giữ vị trí cũ nếu có") } },if(lastAcceptedElapsed==0L) 120_000 else 25_000)
     }
     private fun cancelFix() { listener?.let { manager.removeUpdates(it) }; listener=null }
     private fun state(message: String) {
