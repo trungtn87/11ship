@@ -147,7 +147,7 @@ class MainActivity: Activity() {
         busy=true; updateEndpoints(); result.text="Đang tính tuyến xe máy… Dịch vụ test có thể cần thời gian khởi động."
         worker.execute {
             try { val r=client.calculate(a,b); runOnUiThread { if(!isDestroyed) { if(start==a && end==b) { route=r; result.text="Tuyến dự tính: %.2f km".format(r.km); redraw() } else result.text="Đã lưu tuyến cho hai điểm cũ. Bấm Tính tuyến cho điểm mới." } } }
-            catch(e: Exception) { runOnUiThread { if(!isDestroyed) result.text=if(!online()) "Cần mạng để tính tuyến mới" else (e.message?:"Không tính được tuyến")+if(route!=null) " · Vẫn đang xem tuyến đã lưu" else "" } }
+            catch(e: Exception) { runOnUiThread { if(!isDestroyed) result.text=if(!online()) "Cần mạng để tính tuyến mới" else (if(e is IllegalStateException || e is IllegalArgumentException) e.message?:"Không tính được tuyến" else "Không kết nối được dịch vụ tính tuyến. Hãy kiểm tra mạng hoặc thử lại.")+if(route!=null) " · Vẫn đang xem tuyến đã lưu" else "" } }
             finally { runOnUiThread { if(!isDestroyed) { busy=false; updateEndpoints() } } }
         }
     }
