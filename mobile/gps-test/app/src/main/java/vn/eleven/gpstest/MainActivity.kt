@@ -58,7 +58,7 @@ class MainActivity: Activity() {
     private val tick=object: Runnable { override fun run() { refresh(); ui.postDelayed(this,5000) } }
     private fun dp(v: Int)=(resources.displayMetrics.density*v).toInt()
     private fun message(v: String) { Toast.makeText(this,v,Toast.LENGTH_LONG).show() }
-    private fun button(label: String, action: () -> Unit) = Button(this).apply { text=label; textSize=12f; isAllCaps=false; minHeight=dp(38); minimumHeight=dp(38); setOnClickListener { action() } }
+    private fun button(label: String, action: () -> Unit) = Button(this).apply { text=label; textSize=12f; isAllCaps=false; minHeight=dp(38); minimumHeight=dp(38); setPadding(dp(6),0,dp(6),0); setOnClickListener { action() } }
     private fun text(size: Float=13f) = TextView(this).apply { textSize=size; setPadding(dp(8),dp(3),dp(8),dp(3)); setTextColor(Color.rgb(30,40,45)) }
     private fun LinearLayout.row(vararg views: View) { addView(LinearLayout(this@MainActivity).apply { orientation=LinearLayout.HORIZONTAL; views.forEach { addView(it,LinearLayout.LayoutParams(0,dp(44),1f)) } }) }
     override fun onCreate(state: Bundle?) {
