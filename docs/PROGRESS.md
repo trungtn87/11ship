@@ -231,7 +231,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#113](https://github.com/trungtn87/11ship/pull/113) M02 UI Flutter (11Food): quản lý quán, lịch, thực đơn, xem… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `4fda2bf` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#115](https://github.com/trungtn87/11ship/pull/115) M01 11Food: đăng ký 3 bước, menu 3/4 tab và đổi mật khẩu th… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `9efdf95` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#116](https://github.com/trungtn87/11ship/pull/116) M01 11Ship: UI theo ảnh chốt, đăng ký 2 bước và thuật ngữ s… | Đã merge (`MERGED`) | — | — | — | `fcf4f3d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#118](https://github.com/trungtn87/11ship/pull/118) 11Ship M01: gọn tab Tài khoản và thêm đổi mật khẩu thật | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `dcd4be8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#118](https://github.com/trungtn87/11ship/pull/118) 11Ship M01: gọn tab Tài khoản và thêm đổi mật khẩu thật | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `dcd4be8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
