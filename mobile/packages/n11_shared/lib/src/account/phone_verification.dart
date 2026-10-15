@@ -56,6 +56,11 @@ class PhoneVerificationController extends ChangeNotifier {
   /// The code field is offered only once the SMS left (or may have left) the sending phone.
   bool get canEnterCode => _step == OtpStep.sent || _step == OtpStep.verifying;
 
+  int get resendSeconds {
+    final int seconds = _resendAt?.difference(_clock()).inSeconds ?? 0;
+    return seconds < 0 ? 0 : seconds + 1;
+  }
+
   bool get canResend {
     if (_step == OtpStep.requesting || _step == OtpStep.verifying || _step == OtpStep.verified) {
       return false;

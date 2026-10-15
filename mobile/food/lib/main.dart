@@ -10,5 +10,5 @@ void main() {
   final AppFlows flows = createFlows(ClientApp.food, session, config);
   // Cold start: the stored token is checked with the server (`me`) before anything personal is shown.
   session.start();
-  runApp(N11App(brand: foodBrand, tabs: buildFoodTabs(session, flows: flows), config: config));
+  runApp(ListenableBuilder(listenable: session, builder: (BuildContext context, Widget? child) => N11App(navigationIdentity: session.identity?.userId, brand: foodBrand, tabs: buildFoodTabs(session, flows: flows), config: config)));
 }

@@ -45,9 +45,11 @@ class N11App extends StatelessWidget {
     required this.tabs,
     required this.config,
     this.transport,
+    this.navigationIdentity,
     this.pollInterval = const Duration(seconds: 30),
   });
 
+  final String? navigationIdentity;
   final AppBrand brand;
   final List<TabSpec> tabs;
   final AppConfig config;
@@ -64,14 +66,15 @@ class N11App extends StatelessWidget {
       title: brand.name,
       debugShowCheckedModeBanner: false,
       theme: buildN11Theme(),
-      home: N11Shell(brand: brand, tabs: tabs, config: config, transport: transport, pollInterval: pollInterval),
+      home: N11Shell(navigationIdentity: navigationIdentity, brand: brand, tabs: tabs, config: config, transport: transport, pollInterval: pollInterval),
     );
   }
 }
 
 class N11Shell extends StatefulWidget {
-  const N11Shell({super.key, required this.brand, required this.tabs, required this.config, this.transport, this.pollInterval = const Duration(seconds: 30)});
+  const N11Shell({super.key, required this.brand, required this.tabs, required this.config, this.navigationIdentity, this.transport, this.pollInterval = const Duration(seconds: 30)});
 
+  final String? navigationIdentity;
   final AppBrand brand;
   final List<TabSpec> tabs;
   final AppConfig config;
@@ -99,6 +102,14 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
       shouldPoll: () => _foreground,
     );
     _monitor.start();
+  }
+
+  @override
+  void didUpdateWidget(N11Shell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final String selected = oldWidget.tabs[_index].id;
+    final int next = widget.tabs.indexWhere((TabSpec tab) => tab.id == selected);
+    _index = next < 0 || (widget.navigationIdentity != null && oldWidget.navigationIdentity != widget.navigationIdentity) ? 0 : next;
   }
 
   @override
