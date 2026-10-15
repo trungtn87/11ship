@@ -101,6 +101,12 @@ void main() {
     await tester.pump();
     await tester.pump();
     await shot(tester, '04-account');
+    await tester.ensureVisible(find.byKey(const Key('open-change-password')));
+    await tester.tap(find.byKey(const Key('open-change-password')));
+    await tester.pumpAndSettle();
+    await shot(tester, '04b-change-password');
+    await tester.tap(find.byTooltip('Quay lại'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('driver-entry')));
     await tester.pumpAndSettle();
     await shot(tester, '05-driver-form');

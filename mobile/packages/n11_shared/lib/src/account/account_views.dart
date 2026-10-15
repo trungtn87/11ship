@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
@@ -10,6 +11,7 @@ import '../widgets/components.dart';
 import '../flows/reset_controller.dart';
 import '../flows/reset_views.dart';
 import 'models.dart';
+import 'api_client.dart';
 import 'phone_verification.dart';
 import 'otp_input.dart';
 import 'session_controller.dart';
@@ -111,7 +113,7 @@ class GuestPrompt extends StatelessWidget {
 /// Tài khoản: guest, checking, unverified and signed-in states of one app. [entries] are that app's own rows (shop / driver entry,
 /// help, policy), shown for guests and signed-in people alike and kept locked with their reason.
 class AccountTab extends StatelessWidget {
-  const AccountTab({super.key, required this.session, required this.brand, required this.actions, required this.entries, this.registerLabel = 'Tạo tài khoản', this.signedInEntries = const <Widget>[], this.signedInTitle = 'Cửa hàng', this.reset});
+  const AccountTab({super.key, required this.session, required this.brand, required this.actions, required this.entries, this.registerLabel = 'Tạo tài khoản', this.signedInEntries = const <Widget>[], this.signedInTitle = 'Cửa hàng', this.reset, this.showAccountStatus = true, this.showDiagnostics = true, this.settingsEntries = const <Widget>[]});
 
   final SessionController session;
   final ResetController? reset;
@@ -125,6 +127,9 @@ class AccountTab extends StatelessWidget {
   final ShellActions actions;
   final List<Widget> entries;
   final String registerLabel;
+  final bool showAccountStatus;
+  final bool showDiagnostics;
+  final List<Widget> settingsEntries;
 
   @override
   Widget build(BuildContext context) {
@@ -184,8 +189,9 @@ class AccountTab extends StatelessWidget {
           sub: 'Xem và sửa họ tên',
           onTap: () => Navigator.of(context).push(n11Route(ProfileScreen(session: session))),
         ),
+      if (signedIn) ...settingsEntries,
       ...entries,
-      N11ListItem(icon: Icons.network_check, title: 'Chẩn đoán kết nối', sub: 'Kiểm tra kết nối với máy chủ', onTap: actions.openDiagnostics),
+      if (showDiagnostics) N11ListItem(icon: Icons.network_check, title: 'Chẩn đoán kết nối', sub: 'Kiểm tra kết nối với máy chủ', onTap: actions.openDiagnostics),
     ]);
   }
 
@@ -237,8 +243,7 @@ class AccountTab extends StatelessWidget {
           if (roles.contains('DRIVER')) const N11Chip('Shipper', kind: ChipKind.dark),
         ],
       ),
-      // Only what the phone knows: a live, server-checked session. It does not claim a verified phone number (the test build
-      // registers without verification).
+      if (showAccountStatus)
       const N11List(title: 'Trạng thái', children: <Widget>[
         N11ListItem(icon: Icons.check, title: 'Trạng thái tài khoản', sub: 'Phiên đăng nhập đang hoạt động trên máy này', trailing: N11Chip('Hoạt động', kind: ChipKind.ok)),
       ]),
@@ -747,6 +752,73 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
       },
     );
+  }
+}
+
+class ChangePasswordScreen extends StatefulWidget {
+  const ChangePasswordScreen({super.key, required this.session});
+  final SessionController session;
+  @override
+  State<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
+}
+
+class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
+  final TextEditingController _current = TextEditingController();
+  final TextEditingController _next = TextEditingController();
+  final TextEditingController _confirm = TextEditingController();
+  bool _busy = false;
+  bool _saved = false;
+  AuthFailure? _failure;
+  String? _pendingBody;
+  String? _pendingKey;
+  bool get _valid => _current.text.isNotEmpty && _next.text.runes.length >= 8 && _next.text.runes.length <= 128 && _next.text == _confirm.text;
+  @override
+  void initState() {
+    super.initState();
+    widget.session.addListener(_sessionChanged);
+  }
+  void _sessionChanged() {
+    if (mounted && widget.session.status != SessionStatus.signedIn) {
+      Navigator.of(context).popUntil((Route<dynamic> route) => route.isFirst);
+    }
+  }
+  @override
+  void dispose() {
+    widget.session.removeListener(_sessionChanged);
+    _current.dispose(); _next.dispose(); _confirm.dispose();
+    super.dispose();
+  }
+  Future<void> _save() async {
+    if (_busy) return;
+    final String body = _pendingBody ?? jsonEncode(<String, Object?>{'current_password': _current.text, 'new_password': _next.text});
+    final String key = _pendingKey ?? newIdempotencyKey();
+    setState(() { _busy = true; _failure = null; _saved = false; _pendingBody = body; _pendingKey = key; });
+    try {
+      final ApiResponse response = await widget.session.protectedCall('POST', '/v1/client-auth/change-password', body: body, idempotencyKey: key);
+      if (response.status != 200) throw failureOf(response);
+      final Object? data = response.data;
+      if (data is! Map<String, Object?> || data['changed'] != true) throw const AuthFailure(AuthFailureKind.badResponse);
+      if (!mounted) return;
+      setState(() { _saved = true; _pendingBody = null; _pendingKey = null; _current.clear(); _next.clear(); _confirm.clear(); });
+    } on AuthFailure catch (failure) {
+      if (!mounted) return;
+      setState(() { _failure = failure; if (!failure.outcomeUnknown) { _pendingBody = null; _pendingKey = null; } });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+  @override
+  Widget build(BuildContext context) {
+    final bool locked = _busy || _pendingBody != null;
+    return N11FormScaffold(title: 'Đổi mật khẩu', session: widget.session, children: <Widget>[
+      const ReasonNote('Dùng từ 8 đến 128 ký tự. Sau khi đổi, các phiên khác sẽ được đăng xuất.'),
+      if (_saved) const N11Banner(key: Key('password-saved'), kind: BannerKind.success, title: 'Đã đổi mật khẩu', text: 'Bạn có thể dùng mật khẩu mới để đăng nhập.'),
+      if (_failure != null) N11Banner(key: const Key('password-error'), kind: BannerKind.error, title: 'Chưa đổi được mật khẩu', text: _failure!.kind == AuthFailureKind.invalidCredentials ? 'Mật khẩu hiện tại không đúng.' : failureMessage(_failure!)),
+      N11Field(fieldKey: const Key('password-current'), label: 'Mật khẩu hiện tại', controller: _current, password: true, maxLength: 128, enabled: !locked, onChanged: () => setState(() {})),
+      N11Field(fieldKey: const Key('password-new'), label: 'Mật khẩu mới', controller: _next, password: true, maxLength: 128, enabled: !locked, onChanged: () => setState(() {})),
+      N11Field(fieldKey: const Key('password-confirm'), label: 'Nhập lại mật khẩu mới', controller: _confirm, password: true, maxLength: 128, enabled: !locked, hint: _confirm.text.isNotEmpty && _confirm.text != _next.text ? 'Mật khẩu chưa khớp.' : null, onChanged: () => setState(() {})),
+      N11Button(key: const Key('password-submit'), label: _busy ? 'Đang lưu…' : _pendingBody != null ? 'Thử lại' : 'Đổi mật khẩu', loading: _busy, onPressed: _busy || (!_valid && _pendingBody == null) || widget.session.status != SessionStatus.signedIn ? null : _save),
+    ]);
   }
 }
 

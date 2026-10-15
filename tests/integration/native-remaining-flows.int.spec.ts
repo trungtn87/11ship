@@ -188,6 +188,34 @@ describe('native remaining flows (fixture attestation)', () => {
     });
   });
 
+  describe('Ship own password change', () => {
+    it('requires a native proof, replays with fresh proof, keeps Ship and revokes Food', async () => {
+      const food = await registerFood();
+      const { native, phone } = food;
+      const authorizer = native.keys.FOOD;
+      if (authorizer === undefined) throw new Error('no food key');
+      const joined = await native.join('SHIP', food.bindingId, authorizer);
+      expect(joined.response.status).toBe(201);
+      const login = await native.authCall('SHIP', '/client-auth/login', { phone: phone.local, password: PASSWORD, device: device('SHIP') }, { token: joined.token, keyId: joined.keyId });
+      expect(login.response.status).toBe(200);
+      const token = String(dataOf(login.response).access_token);
+      const body = { current_password: PASSWORD, new_password: NEW_PASSWORD };
+      const bare = await native.signedCall('SHIP', 'POST', '/client-auth/change-password', { bearer: token, body, idempotencyKey: randomUUID(), omitProof: true });
+      expect([bare.response.status, errorCode(bare.response)]).toEqual([403, 'DEVICE_PROOF_REQUIRED']);
+      const wrong = await native.signedCall('SHIP', 'POST', '/client-auth/change-password', { bearer: token, body: { ...body, current_password: 'wrong' }, idempotencyKey: randomUUID() });
+      expect([wrong.response.status, errorCode(wrong.response)]).toEqual([400, 'CURRENT_PASSWORD_INVALID']);
+      const key = randomUUID();
+      const changed = await native.signedCall('SHIP', 'POST', '/client-auth/change-password', { bearer: token, body, idempotencyKey: key });
+      expect(changed.response.status).toBe(200);
+      expect(dataOf(changed.response)).toEqual({ changed: true });
+      const replay = await native.signedCall('SHIP', 'POST', '/client-auth/change-password', { bearer: token, body, idempotencyKey: key });
+      expect(replay.response.status).toBe(200);
+      expect(dataOf(replay.response)).toEqual({ changed: true });
+      expect((await me(native, 'SHIP', token)).status).toBe(200);
+      expect((await me(native, 'FOOD', food.token)).status).toBe(401);
+    });
+  });
+
   describe('test password reset', () => {
     it('is public (no token, no proof), answers one generic ack, revokes the native session and its login replay, and the new password logs in', async () => {
       const food = await registerFood();

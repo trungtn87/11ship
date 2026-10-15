@@ -91,6 +91,7 @@ AuthFailure failureOf(ApiResponse response) {
   final int status = response.status;
   AuthFailureKind kind;
   switch (code) {
+    case 'CURRENT_PASSWORD_INVALID':
     case 'INVALID_CREDENTIALS':
       kind = AuthFailureKind.invalidCredentials;
     case 'SESSION_INVALID' || 'SESSION_REVOKED' || 'SESSION_EXPIRED':
