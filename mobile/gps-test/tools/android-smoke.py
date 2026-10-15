@@ -1,6 +1,7 @@
 import math
 import json
 import re
+import sqlite3
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -130,9 +131,66 @@ try:
     services=adb('shell','dumpsys','activity','services','vn.eleven.ship.gpstest').decode()
     assert 'ServiceRecord' not in services, services
     (out/'denied.png').write_bytes(adb('exec-out','screencap','-p'))
+    tap_text(root,'Đóng')
+    # Foreground lifecycle with GPS explicitly OFF: never treat virtual GPS as a real fix.
+    adb('shell','pm','grant','vn.eleven.ship.gpstest','android.permission.ACCESS_COARSE_LOCATION')
+    adb('shell','pm','grant','vn.eleven.ship.gpstest','android.permission.ACCESS_FINE_LOCATION')
+    adb('shell','settings','put','secure','location_mode','0')
+    time.sleep(2)
+    tap_text(ui('gps-off'),'Bắt đầu ghi')
+    time.sleep(1)
+    tap_text(ui('gps-off-consent'),'Bắt đầu')
+    time.sleep(4)
+    services=adb('shell','dumpsys','activity','services','vn.eleven.ship.gpstest').decode()
+    assert 'RecorderService' in services and 'isForeground=true' in services, services
+    root=ui('recording-gps-disabled')
+    assert any('GPS đang tắt' in n.get('text','') for n in root.iter('node'))
+    adb('shell','input','keyevent','26')
+    time.sleep(5)
+    services=adb('shell','dumpsys','activity','services','vn.eleven.ship.gpstest').decode()
+    assert 'RecorderService' in services and 'isForeground=true' in services
+    adb('shell','input','keyevent','26')
+    adb('shell','input','keyevent','82')
+    adb('shell','am','start','-W','-n','vn.eleven.ship.gpstest/vn.eleven.gpstest.MainActivity')
+    time.sleep(3)
+    tap_text(ui('stop-recording'),'Dừng ghi')
+    time.sleep(65)
+    services=adb('shell','dumpsys','activity','services','vn.eleven.ship.gpstest').decode()
+    assert 'RecorderService' not in services, services
+    prefs=adb('shell','cat','/data/data/vn.eleven.ship.gpstest/shared_prefs/m14-gps.xml').decode()
+    assert 'name="lat"' not in prefs, prefs
+    # Exercise SQLite expiry with explicit test fixtures, not with a mock GPS provider.
+    adb('shell','am','force-stop','vn.eleven.ship.gpstest')
+    adb('pull','/data/data/vn.eleven.ship.gpstest/databases/m14-history.db',str(out/'retention-fixture.db'))
+    fixture=out/'retention-fixture.db'
+    conn=sqlite3.connect(fixture)
+    now=int(time.time()*1000)
+    conn.execute('DELETE FROM points')
+    for offset in (25*3600000,3600000):
+        conn.execute('INSERT INTO points(lat,lon,accuracy,time,segment) VALUES(?,?,?,?,?)',(22.665,106.257,5,now-offset,now-offset))
+    conn.commit();conn.close()
+    adb('push',str(fixture),'/data/data/vn.eleven.ship.gpstest/databases/m14-history.db')
+    adb('shell','am','start','-W','-n','vn.eleven.ship.gpstest/vn.eleven.gpstest.MainActivity')
+    time.sleep(5)
+    adb('pull','/data/data/vn.eleven.ship.gpstest/databases/m14-history.db',str(out/'retention-result.db'))
+    conn=sqlite3.connect(out/'retention-result.db')
+    assert conn.execute('SELECT count(*) FROM points').fetchone()[0]==1
+    conn.close()
+    tap_text(ui('history-before-delete'),'Lịch sử')
+    time.sleep(1)
+    tap_text(ui('history-options'),'Tùy chọn')
+    time.sleep(1)
+    tap_text(ui('history-menu'),'Xóa toàn bộ lịch sử')
+    time.sleep(1)
+    tap_text(ui('history-delete-confirm'),'Xóa')
+    time.sleep(2)
+    adb('pull','/data/data/vn.eleven.ship.gpstest/databases/m14-history.db',str(out/'history-cleared.db'))
+    conn=sqlite3.connect(out/'history-cleared.db')
+    assert conn.execute('SELECT count(*) FROM points').fetchone()[0]==0
+    conn.close()
     log=adb('logcat','-d').decode(errors='replace')
     assert 'FATAL EXCEPTION' not in log, log[-4000:]
-    report={'signed_apk_installed':True,'airplane_mode':True,'osm_river_pixels':water,'offline_map_rendered':True,'two_pins_selected':True,'android_online_route':online_result,'offline_cached_route_after_restart':True,'offline_route_message':True,'permission_denied_without_recording':True,'gps_injected':False,'physical_gps_tested':False,'update_keeps_route_cache':True,'old_build_info':json.loads(Path('build-info.json').read_text()),'build_info':json.loads(Path('updated-apk/build-info.json').read_text())}
+    report={'signed_apk_installed':True,'airplane_mode':True,'osm_river_pixels':water,'offline_map_rendered':True,'two_pins_selected':True,'android_online_route':online_result,'offline_cached_route_after_restart':True,'offline_route_message':True,'permission_denied_without_recording':True,'gps_injected':False,'physical_gps_tested':False,'update_keeps_route_cache':True,'foreground_survives_screen_lock_with_gps_off':True,'stop_stays_stopped_after_65_seconds':True,'gps_disabled_reported':True,'retention_25h_deleted_1h_kept_using_database_fixtures':True,'clear_history_works':True,'old_build_info':json.loads(Path('build-info.json').read_text()),'build_info':json.loads(Path('updated-apk/build-info.json').read_text())}
     (out/'result.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
     print(json.dumps(report,ensure_ascii=False))
 finally:
