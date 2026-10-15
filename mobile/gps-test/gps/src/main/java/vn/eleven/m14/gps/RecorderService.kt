@@ -58,12 +58,13 @@ class RecorderService: Service() {
         if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) { state("Quyền vị trí đã bị thu hồi"); shutdown(); return }
         if(!manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) { state("GPS đang tắt — bật Vị trí trên điện thoại"); return }
         state("Đang chờ vị trí GPS mới…")
+        val requestedAt=SystemClock.elapsedRealtimeNanos()
         val current = object: LocationListener {
             override fun onLocationChanged(location: Location) {
                 if(!running || listener !== this) return
                 val age = (SystemClock.elapsedRealtimeNanos()-location.elapsedRealtimeNanos)/1_000_000
                 if(location.isFromMockProvider) { state("Vị trí giả bị từ chối"); return }
-                if(age !in 0..120_000 || !location.hasAccuracy() || location.elapsedRealtimeNanos<=lastAcceptedElapsed) return
+                if(location.elapsedRealtimeNanos < requestedAt || age !in 0..25_000 || !location.hasAccuracy() || location.elapsedRealtimeNanos<=lastAcceptedElapsed) return
                 if(!location.latitude.isFinite() || !location.longitude.isFinite()) return
                 lastAcceptedElapsed=location.elapsedRealtimeNanos
                 if(preferences(this@RecorderService).getBoolean("historyEnabled",true)) { history.append(location,first); first=false }

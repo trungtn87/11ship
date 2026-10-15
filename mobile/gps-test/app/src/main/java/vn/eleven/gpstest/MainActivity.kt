@@ -1,11 +1,13 @@
 package vn.eleven.gpstest
 
 import android.Manifest
+import androidx.core.content.ContextCompat
 import android.app.*
 import android.content.*
 import android.content.pm.PackageManager
 import android.graphics.*
 import android.net.*
+import android.location.LocationManager
 import android.os.*
 import android.provider.Settings
 import android.view.*
@@ -143,7 +145,7 @@ class MainActivity: Activity() {
     }
     private fun currentFresh(): Endpoint? {
         val p=RecorderService.preferences(this); val elapsed=p.getLong("elapsed",0); val age=SystemClock.elapsedRealtime()-elapsed
-        if(!p.contains("lat") || elapsed==0L || age !in 0..120_000) { message("Chưa có vị trí GPS mới. Bấm Bắt đầu ghi và chờ tín hiệu."); return null }
+        if(!p.contains("lat") || elapsed==0L || age !in 0..120_000 || System.currentTimeMillis()-p.getLong("time",0) !in 0..120_000) { message("Chưa có vị trí GPS mới. Bấm Bắt đầu ghi và chờ tín hiệu."); return null }
         return Endpoint(p.getString("lat","0")!!.toDouble(),p.getString("lon","0")!!.toDouble(),"Vị trí của tôi")
     }
     private fun center() { currentFresh()?.let { map?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(it.lat,it.lon),15.0)) } }
@@ -179,7 +181,7 @@ class MainActivity: Activity() {
         val age=SystemClock.elapsedRealtime()-p.getLong("elapsed",0)
         val details=if(p.contains("lat")) "\n${p.getString("lat","")}, ${p.getString("lon","")} · ±${p.getFloat("accuracy",0f).toInt()} m · ${date.format(Date(p.getLong("time",0)))} · ${if(age in 0..120_000) "vị trí mới" else "vị trí cũ"}" else "\nChưa lấy được vị trí"
         val denied=checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED
-        gpsText.text=(if(denied) "Chưa cấp quyền GPS chính xác" else p.getString("status","Chưa bắt đầu ghi GPS"))+details
+        gpsText.text=(if(denied) "Chưa cấp quyền GPS chính xác" else if(!getSystemService(LocationManager::class.java).isProviderEnabled(LocationManager.GPS_PROVIDER)) "GPS đang tắt" else p.getString("status","Chưa bắt đầu ghi GPS"))+details
         recording.text=if(active) "Dừng ghi" else "Bắt đầu ghi"
         val center=map?.cameraPosition?.target
         val outside=try { center!=null && !offline.contains(center.latitude,center.longitude) } catch(_:Exception) { false }
@@ -233,7 +235,7 @@ class MainActivity: Activity() {
         super.onActivityResult(requestCode,resultCode,data)
         if(requestCode==16 && resultCode==RESULT_OK) data?.data?.let { uri -> try { contentResolver.openOutputStream(uri)?.let { history.export(it) }; message("Đã xuất GPX") } catch(_:Exception) { message("Không thể xuất GPX") } }
     }
-    override fun onStart() { super.onStart(); mapView.onStart(); if(Build.VERSION.SDK_INT>=33) registerReceiver(receiver,IntentFilter(RecorderService.ACTION),RECEIVER_NOT_EXPORTED) else registerReceiver(receiver,IntentFilter(RecorderService.ACTION)); tick.run() }
+    override fun onStart() { super.onStart(); mapView.onStart(); ContextCompat.registerReceiver(this,receiver,IntentFilter(RecorderService.ACTION),ContextCompat.RECEIVER_NOT_EXPORTED); tick.run() }
     override fun onResume() { super.onResume(); mapView.onResume(); if(::history.isInitialized) history.prune() }
     override fun onPause() { mapView.onPause(); super.onPause() }
     override fun onStop() { ui.removeCallbacks(tick); unregisterReceiver(receiver); mapView.onStop(); super.onStop() }

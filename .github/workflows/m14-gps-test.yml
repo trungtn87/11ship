@@ -95,3 +95,17 @@ jobs:
             artifact-out-m14/build-info.json
           if-no-files-found: error
           retention-days: 90
+
+  routing-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - run: python3 ops/m14/smoke.py https://one1ship-m14-routing.onrender.com
+      - uses: actions/upload-artifact@v4
+        with:
+          name: M14-Render-route-proof
+          path: routing-smoke.json
+          if-no-files-found: error
