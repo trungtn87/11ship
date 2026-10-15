@@ -75,7 +75,7 @@ Môi trường: PowerShell 7.5.4, Node v22.22.0 (CI dùng 24.21.0), npm 10.9.4. 
 | Admin Web | Đã duyệt (v2.1) | Wrapper + cổng từ chối | Chưa có | Chưa | CHƯA CHẠY | N/A gói này | Chưa |
 | 11Food — khách | Đã duyệt | Wrapper + cổng từ chối | Chưa có | Chưa | CHƯA CHẠY | N/A gói này | Chưa |
 | 11Food — quán | Đã duyệt (cùng app Food) | Cùng wrapper Food | Chưa có | Chưa | CHƯA CHẠY | N/A gói này | Chưa |
-| 11Ship — xế | Đã duyệt | Wrapper + cổng từ chối | Chưa có | Chưa | CHƯA CHẠY | N/A gói này | Chưa |
+| 11Ship — shipper | Đã duyệt | Wrapper + cổng từ chối | Chưa có | Chưa | CHƯA CHẠY | N/A gói này | Chưa |
 | Liên thông | Đã duyệt | Chưa triển khai | — | — | CHƯA CHẠY | — | Chưa |
 
 Không có bề mặt nào "mở được". Wrapper tồn tại và từ chối an toàn không phải bằng chứng ứng dụng chạy.

@@ -5,7 +5,7 @@
 - SYSTEM khóa/mở mọi USER thường, không target ADMIN/SYSTEM.
 - ADMIN cần can_view + can_lock cho TẤT CẢ domain/role của target: CUSTOMER, SHOP (public SHOP_OWNER), DRIVER. Có CUSTOMER+DRIVER phải đủ cả hai; không suy từ role đang chọn. USER chưa role chỉ SYSTEM được thao tác.
 - Khóa toàn identity trên Food/Ship, thu hồi mọi phiên thường của target.
-- Mở cho đăng nhập lại, giữ roles/trạng thái hồ sơ quán/xế; không phục hồi phiên cũ.
+- Mở cho đăng nhập lại, giữ roles/trạng thái hồ sơ quán/shipper; không phục hồi phiên cũ.
 - Lý do bắt buộc và log mỗi lần thay đổi. M01 không hủy đơn, xử lý tiền hoặc nghĩa vụ giao hàng.
 Quyết định này thay D15 “chờ duyệt” trong tài liệu lịch sử; không cần duyệt lại. Phạm vi nghiệm thu hiện tại là M01 local/CI isolated, không VPS/production hay rollout trên nghiệp vụ đang chạy.
 

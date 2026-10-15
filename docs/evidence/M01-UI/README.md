@@ -16,7 +16,7 @@ UI chưa phải kết quả nghiệp vụ; **M01 chưa đóng**. Chưa merge/dep
 | Finding | Sửa | Kiểm tra |
 |---|---|---|
 | **F1** (#61) thu gọn desktop làm drawer mobile hiện rail, không mở được "Danh sách / Đang khóa" | Tách hai chế độ: chế độ "thu gọn" chỉ áp dụng cho rail desktop (`compactSidebar(collapsed, drawerMode)`); ở ≤900 px menu luôn đầy đủ; vượt ngưỡng thì vẽ lại và đóng drawer; lựa chọn thu gọn được giữ khi quay về desktop. Bỏ các ghi đè CSS chết. | `admin-web:test` (2 test chế độ sidebar); test tích hợp CDP trên CI (`admin-web-browser`: thu gọn → 390 px → drawer hiện Danh sách/Đang khóa → bấm "Đang khóa" → quay lại 1280 px → rail trở lại); chạy Playwright cục bộ cả hai chiều desktop→phone và phone→desktop. Ảnh: [F1_sidebar_modes](img/F1_sidebar_modes.jpg) |
-| **F2** (#56 → #57/#58/#61) thiếu C08 | `LeaveController` + `guardForm`: bấm Quay lại, đổi màn hình trong app, nút Back của trình duyệt và đóng/tải lại trang đều hỏi "Bỏ thay đổi?" khi đang nhập. "Ở lại" (hoặc Esc) giữ nguyên nội dung; "Thoát" xóa mật khẩu/OTP và kết thúc luồng trong bộ nhớ. Back của trình duyệt được hoàn tác đúng vị trí lịch sử trong lúc hỏi. Không lưu gì vào URL, localStorage, sessionStorage, cookie hay `history.state` (chỉ số vị trí). Áp dụng cho đăng nhập, đăng ký, OTP đăng ký/đặt lại, quên mật khẩu, đặt lại mật khẩu (cả hai app), hồ sơ cá nhân và hồ sơ cửa hàng (11Food), hồ sơ xế (11Ship). Màn xem thiết kế **C08**. | `client-shell:test` (7 test C08 gồm: không hỏi khi chưa nhập, Ở lại giữ nội dung, Thoát xóa mật khẩu/OTP/flow, không mở hộp thứ hai, release khi thành công, không dùng storage); Playwright trên bản thật 11Ship (12 kiểm tra: hỏi khi Back trong app, hỏi khi bấm liên kết, hỏi khi Back trình duyệt và URL được giữ, Ở lại giữ nội dung, Thoát xóa trường mật khẩu, `beforeunload` chỉ hỏi khi đang nhập, không có gì trong URL/storage/cookie). Ảnh: [F2_C08_dirty_leave](img/F2_C08_dirty_leave.jpg) |
+| **F2** (#56 → #57/#58/#61) thiếu C08 | `LeaveController` + `guardForm`: bấm Quay lại, đổi màn hình trong app, nút Back của trình duyệt và đóng/tải lại trang đều hỏi "Bỏ thay đổi?" khi đang nhập. "Ở lại" (hoặc Esc) giữ nguyên nội dung; "Thoát" xóa mật khẩu/OTP và kết thúc luồng trong bộ nhớ. Back của trình duyệt được hoàn tác đúng vị trí lịch sử trong lúc hỏi. Không lưu gì vào URL, localStorage, sessionStorage, cookie hay `history.state` (chỉ số vị trí). Áp dụng cho đăng nhập, đăng ký, OTP đăng ký/đặt lại, quên mật khẩu, đặt lại mật khẩu (cả hai app), hồ sơ cá nhân và hồ sơ cửa hàng (11Food), hồ sơ shipper (11Ship). Màn xem thiết kế **C08**. | `client-shell:test` (7 test C08 gồm: không hỏi khi chưa nhập, Ở lại giữ nội dung, Thoát xóa mật khẩu/OTP/flow, không mở hộp thứ hai, release khi thành công, không dùng storage); Playwright trên bản thật 11Ship (12 kiểm tra: hỏi khi Back trong app, hỏi khi bấm liên kết, hỏi khi Back trình duyệt và URL được giữ, Ở lại giữ nội dung, Thoát xóa trường mật khẩu, `beforeunload` chỉ hỏi khi đang nhập, không có gì trong URL/storage/cookie). Ảnh: [F2_C08_dirty_leave](img/F2_C08_dirty_leave.jpg) |
 | **F3** (#61) test catalog nuốt lỗi import | Bỏ `catch`-và-`return`; import lỗi làm test FAIL; kiểm đủ mã D00–D09, D81, D86–D89, C01–C10 và D89 = `administrators`, nhóm Tài khoản | `admin-web:test` |
 
 Lưu ý phạm vi: C08 chưa áp dụng cho form lời mời của Web quản trị (catalog ghi C08 cho Back/logout của app; Web quản trị dùng trang riêng) — nếu Owner muốn áp dụng, cần quyết định riêng.
@@ -88,10 +88,10 @@ Trạng thái nối API: **Đã nối** = luồng và API đã có trong repo; *
 |---|---|---|---|
 | S00 | Chào mừng | `/welcome` | UI |
 | S01 / S02 / S03 / S04 | Trang chủ / Đơn hàng / Thu nhập / Ví | `/` `/orders` `/income` `/wallet` | UI; "—" khi chưa có dữ liệu; nhận đơn, nạp/rút khóa |
-| S05 / S14 | Tài khoản (khách / xế) | `/account` | Chờ BE |
+| S05 / S14 | Tài khoản (khách / shipper) | `/account` | Chờ BE |
 | S10 / S11 / S18 | Đăng nhập / Đăng ký / OTP | `/login` `/register` `/register/otp` | Chờ BE |
 | S15 / S16 / S17 | Quên / OTP / đặt lại mật khẩu | `/reset…` | Chờ BE (M01.16) |
-| S12 / S13 | Hồ sơ xế / trạng thái hồ sơ | `/driver/onboarding` `/driver/status` | Chờ BE (M01.10) |
+| S12 / S13 | Hồ sơ shipper / trạng thái hồ sơ | `/driver/onboarding` `/driver/status` | Chờ BE (M01.10) |
 | S19 | Hộp đăng xuất | trong S14 | Chờ BE |
 
 ## Finding còn lại

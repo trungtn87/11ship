@@ -98,9 +98,13 @@ void main() {
       final PhoneVerificationController otp = PhoneVerificationController(transport: api, clock: () => now);
       await otp.request('0901234567');
       expect(otp.canResend, isFalse);
+      expect(otp.resendSeconds, 60);
+      now = now.add(const Duration(milliseconds: 1500));
+      expect(otp.resendSeconds, 59);
       expect(await otp.request('0901234567'), isFalse);
       now = now.add(const Duration(seconds: 61));
       expect(otp.canResend, isTrue);
+      expect(otp.resendSeconds, 0);
       api.routes['POST /v1/auth/phone-verifications'] = (String m, String p, Map<String, String> h, String b) async => apiError(429, 'OTP_RATE_LIMITED');
       expect(await otp.request('0901234567'), isFalse);
       expect(otp.failure?.kind, AuthFailureKind.rateLimited);

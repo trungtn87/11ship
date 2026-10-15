@@ -13,6 +13,8 @@ dependencies:
     sdk: flutter
   n11_shared:
     path: ../packages/n11_shared
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
 
 dev_dependencies:
   flutter_test:

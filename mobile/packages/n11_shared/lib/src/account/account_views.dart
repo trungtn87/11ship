@@ -11,6 +11,7 @@ import '../flows/reset_controller.dart';
 import '../flows/reset_views.dart';
 import 'models.dart';
 import 'phone_verification.dart';
+import 'otp_input.dart';
 import 'session_controller.dart';
 
 // Account screens of both phone apps, laid out like the approved web screens (docs/ui/m01-food-web.md F04/F10/F11/F16/F17/F18 and
@@ -167,7 +168,7 @@ class AccountTab extends StatelessWidget {
           const SizedBox(height: N11Space.gap3),
           Text(brand.slogan, textAlign: TextAlign.center, style: N11Text.display),
           const SizedBox(height: 6),
-          Text(brand.id == AppId.food ? 'Đặt món từ quán gần bạn.' : 'Ứng dụng dành cho tài xế 11Ship.', textAlign: TextAlign.center, style: N11Text.lead),
+          Text(brand.id == AppId.food ? 'Đặt món từ quán gần bạn.' : 'Ứng dụng dành cho shipper 11Ship.', textAlign: TextAlign.center, style: N11Text.lead),
         ],
       ),
     );
@@ -233,7 +234,7 @@ class AccountTab extends StatelessWidget {
         chips: <Widget>[
           const N11Chip('Khách hàng'),
           if (roles.contains('SHOP_OWNER')) const N11Chip('Chủ quán', kind: ChipKind.yellow),
-          if (roles.contains('DRIVER')) const N11Chip('Tài xế', kind: ChipKind.dark),
+          if (roles.contains('DRIVER')) const N11Chip('Shipper', kind: ChipKind.dark),
         ],
       ),
       // Only what the phone knows: a live, server-checked session. It does not claim a verified phone number (the test build
@@ -270,12 +271,13 @@ Future<void> confirmLogout(BuildContext context, SessionController session) asyn
 // ---- Forms -----------------------------------------------------------------------------------------------------------
 
 class N11FormScaffold extends StatelessWidget {
-  const N11FormScaffold({super.key, required this.title, required this.children, required this.session, this.background = N11Colors.bg});
+  const N11FormScaffold({super.key, required this.title, required this.children, required this.session, this.background = N11Colors.bg, this.onBack});
 
   final String title;
   final List<Widget> children;
   final SessionController? session;
   final Color background;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -284,7 +286,7 @@ class N11FormScaffold extends StatelessWidget {
       body: SafeArea(
         child: Column(
           children: <Widget>[
-            N11AppBar(title: title, onBack: () => Navigator.of(context).maybePop()),
+            N11AppBar(title: title, onBack: onBack ?? () => Navigator.of(context).maybePop()),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap8),
@@ -371,7 +373,7 @@ class _LoginScreenState extends State<LoginScreen> {
           title: 'Đăng nhập',
           session: session,
           children: <Widget>[
-            N11Heading('Chào mừng trở lại', sub: widget.brand.id == AppId.food ? 'Đăng nhập để tiếp tục với 11Food.' : 'Đăng nhập tài khoản tài xế.'),
+            N11Heading('Chào mừng trở lại', sub: widget.brand.id == AppId.food ? 'Đăng nhập để tiếp tục với 11Food.' : 'Đăng nhập tài khoản shipper.'),
             _failureBanner(session),
             N11Field(fieldKey: const Key('login-phone'), label: 'Số điện thoại', placeholder: '0912 345 678', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !busy, onChanged: () => setState(() {})),
             N11Field(
@@ -413,10 +415,10 @@ class _LoginScreenState extends State<LoginScreen> {
 // version. They describe what the app really does today and nothing it does not do yet.
 const String kTermsTitle = 'Điều khoản sử dụng';
 const String kTermsText =
-    'Bạn dùng 11Food/11Ship đúng pháp luật, cung cấp thông tin đúng sự thật và tự giữ bí mật mật khẩu. Tài khoản gắn với số điện thoại bạn xác minh bằng mã SMS. Hiện ứng dụng có đăng ký, đăng nhập, hồ sơ cá nhân và gửi hồ sơ quán hoặc hồ sơ xế; đặt món, giao hàng, ví và doanh thu chưa hoạt động. Tạo tài khoản hoặc gửi hồ sơ chưa mở quyền bán hàng hay nhận đơn: quyền đó chỉ có sau khi hồ sơ được duyệt. 11Ship có thể khóa tài khoản khi phát hiện gian lận hoặc vi phạm điều khoản.';
+    'Bạn dùng 11Food/11Ship đúng pháp luật, cung cấp thông tin đúng sự thật và tự giữ bí mật mật khẩu. Tài khoản gắn với số điện thoại bạn xác minh bằng mã SMS. Hiện ứng dụng có đăng ký, đăng nhập, hồ sơ cá nhân và gửi hồ sơ quán hoặc hồ sơ shipper; đặt món, giao hàng, ví và doanh thu chưa hoạt động. Tạo tài khoản hoặc gửi hồ sơ chưa mở quyền bán hàng hay nhận đơn: quyền đó chỉ có sau khi hồ sơ được duyệt. 11Ship có thể khóa tài khoản khi phát hiện gian lận hoặc vi phạm điều khoản.';
 const String kPrivacyTitle = 'Chính sách quyền riêng tư';
 const String kPrivacyText =
-    '11Ship lưu số điện thoại, họ tên, mật khẩu ở dạng mã hóa một chiều, phiên đăng nhập, thông tin xác thực thiết bị Android để bảo vệ tài khoản, và thời điểm cùng phiên bản bạn đã chấp thuận. Mã xác minh được gửi bằng tin nhắn SMS tới số bạn nhập. Khi bạn tạo hồ sơ quán, ứng dụng chỉ lấy vị trí một lần lúc bạn bấm nút để ghi vị trí quán; ứng dụng không theo dõi vị trí nền. Hồ sơ xế lưu họ tên và biển số bạn nhập. Dữ liệu dùng để vận hành, bảo mật và hỗ trợ tài khoản.';
+    '11Ship lưu số điện thoại, họ tên, mật khẩu ở dạng mã hóa một chiều, phiên đăng nhập, thông tin xác thực thiết bị Android để bảo vệ tài khoản, và thời điểm cùng phiên bản bạn đã chấp thuận. Mã xác minh được gửi bằng tin nhắn SMS tới số bạn nhập. Khi bạn tạo hồ sơ quán, ứng dụng chỉ lấy vị trí một lần lúc bạn bấm nút để ghi vị trí quán; ứng dụng không theo dõi vị trí nền. Hồ sơ shipper lưu họ tên và biển số bạn nhập. Dữ liệu dùng để vận hành, bảo mật và hỗ trợ tài khoản.';
 const String kConsentLabel = 'Tôi đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư.';
 
 /// The same two texts, readable without an account (Tài khoản -> Chính sách và điều khoản). Static: it sends nothing.
@@ -464,6 +466,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _phone = TextEditingController();
   final TextEditingController _name = TextEditingController();
   final TextEditingController _password = TextEditingController();
+  final TextEditingController _confirm = TextEditingController();
+  bool _otpPage = false;
+  bool get _ship => widget.brand.id == AppId.ship;
   final TextEditingController _code = TextEditingController();
   late final PhoneVerificationController _otp = PhoneVerificationController(transport: widget.session.api.transport);
   Timer? _tick;
@@ -487,6 +492,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _phone.dispose();
     _name.dispose();
     _password.dispose();
+    _confirm.dispose();
     _code.dispose();
     super.dispose();
   }
@@ -516,6 +522,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() {});
   }
 
+  Future<void> _completeOtp() async {
+    if (await _otp.verify(_code.text) && mounted && _otpPage && _valid) {
+      await widget.session.register(phone: _phone.text, password: _password.text, fullName: _name.text, verificationToken: _otp.token);
+    }
+  }
+
   List<Widget> _otpSection(bool busy) {
     final bool verified = _otp.step == OtpStep.verified;
     final AuthFailure? failure = _otp.failure;
@@ -526,11 +538,37 @@ class _RegisterScreenState extends State<RegisterScreen> {
       OtpDelivery.closed => 'Mã này không dùng được nữa. Hãy gửi mã mới.',
       _ => null,
     };
+    if (_ship) {
+      return <Widget>[
+        if (verified)
+          const N11Banner(key: Key('otp-verified'), kind: BannerKind.success, title: 'Đã xác minh số điện thoại')
+        else ...<Widget>[
+          if (failure != null) N11Banner(key: const Key('otp-error'), kind: BannerKind.error, title: 'Chưa xác minh được', text: failureMessage(failure)),
+          if (_otp.step == OtpStep.waiting) const N11Banner(key: Key('otp-waiting'), kind: BannerKind.info, title: 'Đang gửi tin nhắn…', text: 'Bạn có thể nhập mã khi tin nhắn đã được gửi.'),
+          if (note != null) N11Banner(key: const Key('otp-note'), kind: BannerKind.warn, title: 'Lưu ý', text: note),
+          RegistrationOtpInput(controller: _code, enabled: !busy && _otp.step == OtpStep.sent, onChanged: () => setState(() {})),
+          N11Button(
+            key: const Key('otp-verify'),
+            label: _otp.step == OtpStep.verifying ? 'Đang kiểm tra…' : 'Xác nhận mã',
+            loading: _otp.step == OtpStep.verifying,
+            onPressed: busy || _otp.step != OtpStep.sent || _code.text.length != 6 ? null : _completeOtp,
+          ),
+          const Text('Không nhận được mã?', textAlign: TextAlign.center, style: N11Text.caption),
+          N11Link(
+            _otp.step == OtpStep.requesting ? 'Đang gửi…' : 'Gửi lại mã',
+            key: const Key('otp-request'),
+            onPressed: busy || !_otp.canResend ? null : () => _otp.request(_phone.text),
+          ),
+          if (!_otp.canResend && _otp.resendSeconds > 0)
+            Text('Gửi lại sau ${_otp.resendSeconds} giây', key: const Key('otp-resend-countdown'), textAlign: TextAlign.center, style: N11Text.caption),
+        ],
+      ];
+    }
     return <Widget>[
       if (verified)
         const N11Banner(key: Key('otp-verified'), kind: BannerKind.success, title: 'Đã xác minh số điện thoại')
       else ...<Widget>[
-        const N11Banner(key: Key('required-note'), kind: BannerKind.info, title: 'Xác minh số điện thoại', text: 'Mã gồm 6 số được gửi bằng tin nhắn SMS đến số điện thoại bên dưới.'),
+        const N11Banner(key: Key('required-note'), kind: BannerKind.info, title: 'Xác minh số điện thoại', text: 'Mã gồm 6 số được gửi bằng tin nhắn SMS đến số điện thoại đăng ký.'),
         if (failure != null) N11Banner(key: const Key('otp-error'), kind: BannerKind.error, title: 'Chưa xác minh được', text: failureMessage(failure)),
         if (note != null && _otp.step == OtpStep.idle) N11Banner(key: const Key('otp-note'), kind: BannerKind.warn, title: 'Mã chưa dùng được', text: note),
         if (_otp.step == OtpStep.waiting) const N11Banner(key: Key('otp-waiting'), kind: BannerKind.info, title: 'Đang gửi tin nhắn…', text: 'Vui lòng đợi, chưa nhập mã khi tin nhắn chưa được gửi đi.'),
@@ -561,7 +599,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  bool get _valid => _phone.text.trim().isNotEmpty && _name.text.trim().isNotEmpty && _password.text.length >= 8 && _agree;
+  Widget _termsCard() => N11Card(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const Text(kTermsTitle, style: N11Text.bodyStrong),
+        const SizedBox(height: N11Space.gap2),
+        const Text(kTermsText, key: Key('terms-text'), style: N11Text.caption),
+        const SizedBox(height: N11Space.gap3),
+        Text(_ship ? 'Chính sách bảo mật' : kPrivacyTitle, style: N11Text.bodyStrong),
+        const SizedBox(height: N11Space.gap2),
+        const Text(kPrivacyText, key: Key('privacy-text'), style: N11Text.caption),
+      ],
+    ),
+  );
+
+  bool get _valid {
+    final bool basic = _phone.text.trim().isNotEmpty &&
+        _name.text.trim().isNotEmpty && _agree;
+    if (!_ship) return basic && _password.text.length >= 8;
+    final int length = _password.text.runes.length;
+    return basic &&
+        RegExp(r'^(?:\+84|84|0)[0-9]{9}$').hasMatch(_phone.text.trim()) &&
+        _name.text.trim().runes.length <= 120 &&
+        length >= 8 && length <= 128 &&
+        _confirm.text == _password.text;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -574,11 +637,41 @@ class _RegisterScreenState extends State<RegisterScreen> {
         final bool open = session.ready && mode == RegistrationMode.required && _otp.token != null;
         final bool taken = session.lastFailure?.kind == AuthFailureKind.phoneRegistered;
         final bool food = widget.brand.id == AppId.food;
+        if (_ship && _otpPage) {
+          void back() => setState(() => _otpPage = false);
+          return PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (bool didPop, Object? result) {
+              if (!didPop && !busy && !_otp.busy) back();
+            },
+            child: N11FormScaffold(
+              title: 'Xác thực số điện thoại',
+              background: N11Colors.white,
+              session: session,
+              onBack: busy || _otp.busy ? () {} : back,
+              children: <Widget>[
+                const Text('Bước 2/2 · Nhập mã OTP gồm 6 số được gửi qua SMS đến', textAlign: TextAlign.center, style: N11Text.lead),
+                Text(_phone.text.trim(), key: const Key('register-otp-phone'), textAlign: TextAlign.center, style: N11Text.h2),
+                N11Link('Sửa số điện thoại', key: const Key('register-edit-phone'), onPressed: busy || _otp.busy ? null : back),
+                _failureBanner(session),
+                ..._otpSection(busy),
+                if (_otp.token != null)
+                  N11Button(
+                    key: const Key('register-submit'),
+                    label: busy ? 'Đang đăng ký…' : 'Hoàn tất đăng ký',
+                    loading: busy,
+                    onPressed: busy || !_valid ? null : () => session.register(phone: _phone.text, password: _password.text, fullName: _name.text, verificationToken: _otp.token),
+                  ),
+              ],
+            ),
+          );
+        }
         return N11FormScaffold(
           title: 'Đăng ký',
+          background: _ship ? N11Colors.white : N11Colors.bg,
           session: session,
           children: <Widget>[
-            N11Heading(food ? 'Tạo tài khoản 11Food' : 'Tạo tài khoản 11Ship', sub: food ? 'Tài khoản khách hàng dùng để đặt món.' : 'Tài khoản khách hàng; hồ sơ xế gửi sau trong mục Tài khoản.'),
+            N11Heading(food ? 'Tạo tài khoản 11Food' : 'Đăng ký shipper', sub: food ? 'Tài khoản khách hàng dùng để đặt món.' : 'Bước 1/2 · Tạo tài khoản để bắt đầu cùng 11Ship', size: _ship ? 22 : null),
             if (mode == RegistrationMode.unknown && session.ready)
               N11Banner(
                 key: const Key('config-unknown'),
@@ -591,7 +684,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             N11Field(
               fieldKey: const Key('register-phone'),
               label: 'Số điện thoại',
-              placeholder: '0912 345 678',
+              placeholder: '0912345678',
               controller: _phone,
               keyboard: TextInputType.phone,
               maxLength: 20,
@@ -600,7 +693,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               hint: taken ? 'Số điện thoại này đã có tài khoản.' : null,
               onChanged: _phoneEdited,
             ),
-            if (mode == RegistrationMode.required) ..._otpSection(busy),
+            if (!_ship && mode == RegistrationMode.required) ..._otpSection(busy),
             N11Field(fieldKey: const Key('register-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !busy, onChanged: () => setState(() {})),
             N11Field(
               fieldKey: const Key('register-password'),
@@ -612,20 +705,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
               hint: 'Dùng từ 8 đến 128 ký tự.',
               onChanged: () => setState(() {}),
             ),
-            N11Card(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  const Text(kTermsTitle, style: N11Text.bodyStrong),
-                  const SizedBox(height: N11Space.gap2),
-                  const Text(kTermsText, key: Key('terms-text'), style: N11Text.caption),
-                  const SizedBox(height: N11Space.gap3),
-                  const Text(kPrivacyTitle, style: N11Text.bodyStrong),
-                  const SizedBox(height: N11Space.gap2),
-                  const Text(kPrivacyText, key: Key('privacy-text'), style: N11Text.caption),
-                ],
-              ),
-            ),
+            if (_ship)
+              N11Field(fieldKey: const Key('register-confirm-password'), label: 'Nhập lại mật khẩu', controller: _confirm, password: true, maxLength: 128, enabled: !busy, hint: _confirm.text.isNotEmpty && _confirm.text != _password.text ? 'Mật khẩu nhập lại chưa khớp.' : null, onChanged: () => setState(() {})),
+            if (_ship)
+              SizedBox(height: 160, child: SingleChildScrollView(child: _termsCard()))
+            else
+              _termsCard(),
             CheckboxListTile(
               key: const Key('register-consent'),
               contentPadding: EdgeInsets.zero,
@@ -635,20 +720,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
               side: const BorderSide(color: N11Colors.lineStrong, width: 2),
               value: _agree,
               onChanged: busy ? null : (bool? value) => setState(() => _agree = value ?? false),
-              title: const Text(kConsentLabel, style: N11Text.body),
+              title: Text(_ship ? 'Tôi đã đọc và đồng ý với Điều khoản sử dụng và Chính sách bảo mật' : kConsentLabel, style: N11Text.body),
             ),
-            N11Banner(
+            if (food) N11Banner(
               kind: BannerKind.info,
               title: food ? 'Muốn mở quán?' : 'Muốn nhận đơn giao?',
               text: food
                   ? 'Mở Quản lý cửa hàng sau khi đăng ký, trong mục Tài khoản. Bạn vẫn giữ vai trò khách hàng.'
-                  : 'Gửi hồ sơ xế sau khi đăng ký, trong mục Tài khoản. Bạn vẫn giữ vai trò khách hàng; nhận đơn chưa mở.',
+                  : 'Gửi hồ sơ shipper sau khi đăng ký, trong mục Tài khoản. Bạn vẫn giữ vai trò khách hàng; nhận đơn chưa mở.',
             ),
             N11Button(
               key: const Key('register-submit'),
-              label: busy ? 'Đang đăng ký…' : 'Hoàn tất đăng ký',
+              label: busy ? 'Đang đăng ký…' : (_ship ? 'Tiếp tục' : 'Hoàn tất đăng ký'),
               loading: busy,
-              onPressed: busy || !open || !_valid ? null : () => session.register(phone: _phone.text, password: _password.text, fullName: _name.text, verificationToken: _otp.token),
+              onPressed: busy || !_valid || (_ship ? !session.ready || mode != RegistrationMode.required : !open) ? null : () {
+                if (_ship) {
+                  setState(() => _otpPage = true);
+                  if (_otp.phone == null) _otp.request(_phone.text);
+                } else {
+                  session.register(phone: _phone.text, password: _password.text, fullName: _name.text, verificationToken: _otp.token);
+                }
+              },
             ),
             if (!session.ready) const ReasonNote(kNoServerReason),
           ],

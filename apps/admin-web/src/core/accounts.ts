@@ -13,7 +13,7 @@ export { REASON_MAX };
 export type UserRole = 'CUSTOMER' | 'SHOP_OWNER' | 'DRIVER';
 export type UserStatus = 'ACTIVE' | 'LOCKED';
 
-export const USER_ROLE_LABEL: Record<UserRole, string> = { CUSTOMER: 'Khách hàng', SHOP_OWNER: 'Chủ quán', DRIVER: 'Xế' };
+export const USER_ROLE_LABEL: Record<UserRole, string> = { CUSTOMER: 'Khách hàng', SHOP_OWNER: 'Chủ quán', DRIVER: 'Shipper' };
 export const USER_STATUS_LABEL: Record<UserStatus, string> = { ACTIVE: 'Hoạt động', LOCKED: 'Đang khóa' };
 
 /** Why a list or a detail could not be shown. Each one has its own wording and none shows stale data. */

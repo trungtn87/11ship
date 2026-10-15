@@ -18,7 +18,7 @@ Tài liệu này ghi trạng thái, KHÔNG phải nghiệm thu. Không dòng nà
 | Ứng dụng | Phạm vi | Code/CI/review | Local | Thiết bị thật | Owner nghiệm thu |
 |---|---|---|---|---|---|
 | Web quản trị | Chỉ backend; không UI | Chưa có kết quả CI | Chưa kiểm chứng | Chưa kiểm chứng | Chưa |
-| Khách / Quán / Xế / App quản lý | N/A: gói không đổi app; chỉ thêm kiểm tra `account_origin` trong Auth | Hồi quy qua CI | N/A | N/A | Quyết định Owner |
+| Khách / Quán / Shipper / App quản lý | N/A: gói không đổi app; chỉ thêm kiểm tra `account_origin` trong Auth | Hồi quy qua CI | N/A | N/A | Quyết định Owner |
 | Liên thông | Chưa xác định | Chưa kiểm chứng | Chưa kiểm chứng | Chưa kiểm chứng | Chưa |
 
 Giới hạn bằng chứng: môi trường làm việc không cài được jest/PostgreSQL 17 (registry 403), nên bằng chứng test duy nhất là CI trên PR.

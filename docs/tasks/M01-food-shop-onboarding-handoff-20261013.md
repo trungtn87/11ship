@@ -6,7 +6,7 @@ Luồng: Tài khoản khách → Quản lý cửa hàng → tạo/lưu/tiếp t�
 #82 đăng ký không OTP test và #83 tài khoản/phiên đã merge. Dùng shared auth/session/profile/retry/guard hiện có; không làm lại.
 F20/F21/F22/F23 đã dựng trong apps/food-web/src/screens.ts nhưng Lưu/Hoàn tất/vị trí còn khóa. Backend onboarding/shop read/save/complete có sẵn. Tài liệu UI ghi chờ backend là nhãn cũ.
 PR #84 fix/client-guest-home đang xử lý trang chủ/đăng xuất, không làm lại việc đó. Cập nhật main khi tích hợp nếu #84 đã merge, giữ sửa của #84.
-Không làm giờ mở cửa/nhận đơn/menu/doanh thu M02, hồ sơ xế, reset/admin, Android/APK hoặc deploy VPS.
+Không làm giờ mở cửa/nhận đơn/menu/doanh thu M02, hồ sơ shipper, reset/admin, Android/APK hoặc deploy VPS.
 
 ## 2. Điểm vào và tài liệu đúng mục
 Code dùng lại:

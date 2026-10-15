@@ -99,6 +99,6 @@ PS7 / Windows PS5.1) is **verified by CI on the exact final SHA** only; see the 
 | Ứng dụng | Phạm vi | Code/CI/review | Local | Thiết bị thật | Owner nghiệm thu |
 |---|---|---|---|---|---|
 | Web quản trị | Hosting cùng origin + fixtures auth backend | Draft PR, CI chờ | Owner chạy theo runbook | N/A (web) | Chưa — Owner quyết định |
-| Khách / Quán / Xế | Chỉ ảnh hưởng đăng nhập bằng fixture (backend) | Draft PR, CI chờ | Chưa | Chưa | Chưa — Owner quyết định |
+| Khách / Quán / Shipper | Chỉ ảnh hưởng đăng nhập bằng fixture (backend) | Draft PR, CI chờ | Chưa | Chưa | Chưa — Owner quyết định |
 | Food / Ship | N/A: ngoài phạm vi issue #49 (không triển khai) | N/A | N/A | N/A | N/A |
 | App quản lý | N/A: không có trong issue #49 | N/A | N/A | N/A | N/A |

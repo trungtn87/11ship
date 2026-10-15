@@ -44,7 +44,7 @@ describe('menu by permission', () => {
     const m = await load(real, 'core/menu.js');
     assert.deepEqual(
       m.MENU.flatMap((group) => group.items.map((item) => item.label)),
-      ['Tổng quan', 'Người dùng', 'Quản trị viên', 'Lời mời Admin', 'Quán', 'Xế', 'Đơn hàng', 'Giao hàng', 'Phản ánh', 'Ví xế', 'Nạp tiền', 'Rút tiền', 'Vùng hoạt động', 'Tham số', 'Nhật ký', 'Giám sát'],
+      ['Tổng quan', 'Người dùng', 'Quản trị viên', 'Lời mời Admin', 'Quán', 'Shipper', 'Đơn hàng', 'Giao hàng', 'Phản ánh', 'Ví shipper', 'Nạp tiền', 'Rút tiền', 'Vùng hoạt động', 'Tham số', 'Nhật ký', 'Giám sát'],
     );
   });
   it('a ready entry has a route; an entry that is not built has none (shown as "Sắp có")', async () => {

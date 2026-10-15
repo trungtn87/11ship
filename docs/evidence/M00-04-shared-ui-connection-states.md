@@ -9,7 +9,7 @@ Ngày: 12/10/2026 (Asia/Ho_Chi_Minh). Người thực hiện: Claude. Thiết k�
 
 ## Đối chiếu quyết định đã chốt
 
-- Một Web Admin và hai app Android: 11Food (khách + quán), 11Ship (xế). Theo `01-m00.md`, bản web PC của Food/Ship là **runtime thử** của app Android; runtime native chọn sau. Trên `main` **không có Flutter/native**. Gói này không chọn lại công nghệ và không tạo bản web thay thế; nó đặt bộ UI chung vào đúng chỗ runtime thử đang có. Cần xác nhận lại điều này.
+- Một Web Admin và hai app Android: 11Food (khách + quán), 11Ship (shipper). Theo `01-m00.md`, bản web PC của Food/Ship là **runtime thử** của app Android; runtime native chọn sau. Trên `main` **không có Flutter/native**. Gói này không chọn lại công nghệ và không tạo bản web thay thế; nó đặt bộ UI chung vào đúng chỗ runtime thử đang có. Cần xác nhận lại điều này.
 - `apps/client-shared` trong handoff là đường dẫn dự kiến; trên `main` đã tồn tại đúng thư mục này, nên **không tạo kiến trúc song song**.
 
 ## Mapping trước khi sửa (trên main)

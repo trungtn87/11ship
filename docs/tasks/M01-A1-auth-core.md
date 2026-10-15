@@ -597,4 +597,4 @@ Checklist gate mới (chưa kiểm chứng, không phủ nhận kết quả test
 - [ ] Owner test thiết bị thật riêng từng app và liên thông, xác nhận đạt.
 - [ ] Owner quyết định phạm vi nghiệm thu, merge và đóng M01 khi đủ các task liên quan.
 
-M01 phải đối chiếu toàn bộ nghiệp vụ đã có, không giới hạn login. Checklist riêng web quản trị + Khách/Quán/Xế; ADMIN/2FA, khôi phục mật khẩu và các API chưa có phải ghi thiếu/giao thiết kế bổ sung, không dùng UI giả để đạt.
+M01 phải đối chiếu toàn bộ nghiệp vụ đã có, không giới hạn login. Checklist riêng web quản trị + Khách/Quán/Shipper; ADMIN/2FA, khôi phục mật khẩu và các API chưa có phải ghi thiếu/giao thiết kế bổ sung, không dùng UI giả để đạt.

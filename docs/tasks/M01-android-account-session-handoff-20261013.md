@@ -8,7 +8,7 @@ Kế thừa #82 (register test), #83 (account/profile/session), #93 head 5272ceb
 Flutter main hiện có brand/theme/component/shell/health và hai applicationId. Chưa có native auth client/controller/màn auth; features.dart còn reason backend cũ.
 Backend client-auth-policy.ts hiện trả 503 cho ANDROID; chưa có client_device_* storage/verifier/bridge. Không chỉ mở gate hoặc truyền device_id để đăng nhập.
 mobile-apk.yml hiện fallback ephemeral; phải bỏ ngay trong luồng này. Signing/config/runtime/binding dùng chung làm một lần.
-Đây là auth/phiên native, không phải toàn M01-ANDROID. Onboarding quán/xế, reset UI native nối ở luồng sau; giữ nút chưa nối có lý do đúng. Không kéo GPS vận hành/ví/đơn/Admin native/module khác.
+Đây là auth/phiên native, không phải toàn M01-ANDROID. Onboarding quán/shipper, reset UI native nối ở luồng sau; giữ nút chưa nối có lý do đúng. Không kéo GPS vận hành/ví/đơn/Admin native/module khác.
 
 ## 2. Đọc một lần, sau đó đúng mục
 AGENTS.md, CLAUDE.md, docs/process/11ship-delivery-workflow.md và handoff này khi bắt đầu. Không kiểm kê toàn M01.
@@ -55,7 +55,7 @@ Shared Dart typed contract/transport/session/controller trong n11_shared; views 
 - Token lưu riêng từng app được mã hóa bằng Android Keystore; không plaintext preferences/log/backup hay share qua Binder. Không lưu password. Persist key/token qua APK update; cold start validate me trước hiện dữ liệu nhạy cảm; 401 xóa token/PII, giữ private key để login lại.
 - Logout clear local sensitive state; server 204 xác nhận revoke, offline nói rõ chưa xác nhận. Rời màn bỏ response muộn, không cài lại phiên đã logout bằng stale request.
 - 403 proof errors không cấp quyền; 503 dependency báo thử lại, không downgrade WEB.
-- Nhận đơn/ví/onboarding quán/xế/reset native chưa nối vẫn khóa đúng reason “chưa nối trên Android”, không còn nói backend chưa tồn tại.
+- Nhận đơn/ví/onboarding quán/shipper/reset native chưa nối vẫn khóa đúng reason “chưa nối trên Android”, không còn nói backend chưa tồn tại.
 
 ## 6. HTTPS local và APK
 API_BASE_URL bắt buộc HTTPS origin; không badCertificateCallback/trust-all/cleartext token. Không deploy proxy/API lên VPS trong gói này.

@@ -10,7 +10,7 @@ Task M00-L. Chỉ hỗ trợ Windows; chạy từ `tools\local`. Repo hiện ch�
 - `11Ship-Test.cmd`: chạy kiểm tra kỹ thuật với riêng `ship11_test` cổng 5433, lưu log đã ẩn secret trong `.11ship-local\logs`.
 - `11Ship-Stop.cmd`: chỉ dừng đúng backend đã được chứng minh là của launcher, rồi dừng DB nhưng giữ volume DEV. Thêm `-KeepDatabases` để chỉ dừng backend. Không chứng minh được thì **không dừng gì cả** (xem "Định danh artifact và process").
 - `11Ship-Status.cmd`: xem Git, toolchain, DB, backend (bốn lớp: nguồn, artifact, process, cổng) và test gần nhất. Status chỉ đọc: không khóa, không ghi, không dừng gì.
-- `11Ship-Admin.cmd`, `11Ship-Food.cmd`, `11Ship-Ship.cmd` (gói M00.01): ba lối vào riêng cho Web Admin, 11Food (khách + quán) và 11Ship (xế). Từ M00.05–M00.08 cả ba mở được app qua HTTPS local (xem `local-https-runtime.md`); thiếu điều kiện thì dừng với `APP_NOT_READY`/mã lỗi riêng, chưa làm gì. Cả ba dùng chung một backend; đóng trình duyệt không dừng gì, chỉ `11Ship-Stop.cmd` dừng (các app, backend, DB; dữ liệu DEV được giữ).
+- `11Ship-Admin.cmd`, `11Ship-Food.cmd`, `11Ship-Ship.cmd` (gói M00.01): ba lối vào riêng cho Web Admin, 11Food (khách + quán) và 11Ship (shipper). Từ M00.05–M00.08 cả ba mở được app qua HTTPS local (xem `local-https-runtime.md`); thiếu điều kiện thì dừng với `APP_NOT_READY`/mã lỗi riêng, chưa làm gì. Cả ba dùng chung một backend; đóng trình duyệt không dừng gì, chỉ `11Ship-Stop.cmd` dừng (các app, backend, DB; dữ liệu DEV được giữ).
 
 Shortcut Desktop (M00.09) bằng mục 6 trong menu hoặc lệnh dưới đây: tạo `11Ship Test`, `11Ship Admin`, `11Ship Food`, `11Ship Ship`, mỗi cái trỏ đúng wrapper của checkout này; chạy lại chỉ ghi đè bốn file đó. Nếu chuyển repo sang thư mục khác thì chạy lại để cập nhật.
 
@@ -26,11 +26,11 @@ Ba file `.cmd` chỉ chọn app rồi gọi **cùng một** launcher (`11ship-la
 |---|---|---|---|
 | `11Ship-Admin.cmd` | Web Admin | https://localhost:8443 | Chưa mở được: `APP_LAUNCH_PACKAGE_MISSING` (gói M00.08) |
 | `11Ship-Food.cmd` | 11Food (khách + quán) | https://localhost:8444 | Mở được từ M00.05 (cần chứng chỉ local, xem `local-https-runtime.md`) |
-| `11Ship-Ship.cmd` | 11Ship (xế) | https://localhost:8445 | Mở được từ M00.05 (như trên) |
+| `11Ship-Ship.cmd` | 11Ship (shipper) | https://localhost:8445 | Mở được từ M00.05 (như trên) |
 
 - Food/Ship (M00.05): launcher kiểm tra chứng chỉ trước, lấy khóa dùng chung, bảo đảm backend chạy, build đúng commit, chạy máy chủ HTTPS local của app, **chứng minh** nó (đúng chứng chỉ, đúng định danh `/__11ship/runtime`, health qua proxy) rồi mới mở trình duyệt. Cổng đang bị tiến trình lạ giữ thì dừng (`PORT_IN_USE`), không dừng tiến trình lạ. `SHIP11_NO_BROWSER=1` bỏ bước mở trình duyệt. Hướng dẫn và bảng mã lỗi: `ops/runbooks/local-https-runtime.md`.
 - Khi không mở được, launcher thoát với **exit code 1** và nói rõ chưa làm gì; nó không bao giờ báo "đã chạy" khi chưa chứng minh được.
-- Không có app "Quán" riêng: quán thuộc 11Food, 11Ship chỉ dành cho xế.
+- Không có app "Quán" riêng: quán thuộc 11Food, 11Ship chỉ dành cho shipper.
 - Web Admin chưa mở dù đã có `scripts/admin-web-dev.mjs`: máy chủ Admin cần cùng cơ chế định danh/artifact và trình tự mở (gói M00.08), nên lối vào Admin vẫn từ chối. Một dịch vụ lạ trên cổng 8443 có thể bị nhận nhầm là Admin nếu mở bây giờ. Bản xem thử `Xem-Giao-Dien.cmd` (dữ liệu minh họa) không phải ứng dụng và không được dùng thay.
 - Double-click: cửa sổ giữ lại để đọc lỗi; từ terminal lệnh kết thúc ngay; `-NoPause` dùng được như các lệnh khác. Kết quả ghi ở `.11ship-local\last-run.json` với `command` là `App Admin`, `App Food` hoặc `App Ship`.
 - Lối vào Admin vẫn từ chối **trước khi** lấy khóa (không Update, không Start, không `launch.lock`) cho tới gói M00.08.

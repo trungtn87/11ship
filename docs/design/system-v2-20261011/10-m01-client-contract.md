@@ -42,7 +42,7 @@ M01.02 chỉ chuẩn bị schema/participants/backfill; không thêm endpoint re
 
 ## 3. Validation client mới (G3/G6)
 
-full_name: valid Unicode scalar string; NFC; trim và collapse Unicode whitespace thành U+0020; từ chối Unicode category Cc/Cf (gồm zero-width), surrogate lẻ; 1–120 Unicode codepoints sau normalize. Không lọc tên theo Latin hoặc buộc hai từ. Tên chỉ là profile khách, không chứng minh danh tính xế/ngân hàng.
+full_name: valid Unicode scalar string; NFC; trim và collapse Unicode whitespace thành U+0020; từ chối Unicode category Cc/Cf (gồm zero-width), surrogate lẻ; 1–120 Unicode codepoints sau normalize. Không lọc tên theo Latin hoặc buộc hai từ. Tên chỉ là profile khách, không chứng minh danh tính shipper/ngân hàng.
 device exact {device_id,platform,app}; app FOOD|SHIP, platform WEB|ANDROID cho client-auth mới. device_id giữ grammar legacy. Không nhận role/permission/driver_type.
 Password và phone/proof giữ primitives và normalization hiện hành; password không normalize/trim.
 Consent exact {terms_version,privacy_version}, dùng token grammar schema và khớp cặp server đang publish; không tin accepted_at do client gửi.
