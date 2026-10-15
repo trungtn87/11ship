@@ -27,7 +27,7 @@ if (root !== null) {
   startDesign(root, {
     definition: SHIP_DEFINITION,
     title: '11Ship',
-    subtitle: 'Xế · M01',
+    subtitle: 'Shipper · M01',
     extras: [...stateScreens(SHIP_BRAND), ...galleryScreens()],
     account: sampleAccount,
   });

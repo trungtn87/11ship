@@ -160,7 +160,7 @@ async function login(page) {
 async function toForm(page) {
   await page.click('a[href="/account"]');
   await waitPath(page, '/account');
-  await clickRow(page, 'Hồ sơ xế');
+  await clickRow(page, 'Hồ sơ shipper');
   await waitPath(page, '/driver/onboarding');
   await formReady(page);
 }
@@ -179,7 +179,7 @@ describe('the driver profile journey (stand-in backend)', () => {
 
       await page.click('#driver-submit');
       await page.waitFor(`!document.querySelector('#legal-name-error').hidden`, 'name error');
-      await page.fill('#legal-name', 'Nguyễn Văn Xế');
+      await page.fill('#legal-name', 'Nguyễn Văn Shipper');
       await page.fill('#plate', '59A\u200B123');
       await page.click('#driver-submit');
       await page.waitFor(`!document.querySelector('#plate-error').hidden`, 'plate error');
@@ -191,14 +191,14 @@ describe('the driver profile journey (stand-in backend)', () => {
       await statusReady(page);
       assert.equal(backend.calls('POST', '/v1/onboarding/driver').length, 1);
       const [sent] = backend.calls('POST', '/v1/onboarding/driver');
-      assert.deepEqual(JSON.parse(sent.body), { full_name: 'Nguyễn Văn Xế', plate_number: '59A-123.45' });
+      assert.deepEqual(JSON.parse(sent.body), { full_name: 'Nguyễn Văn Shipper', plate_number: '59A-123.45' });
       assert.match(sent.headers['idempotency-key'], /^[0-9a-f-]{36}$/);
       assert.equal(backend.calls('POST', '/v1/client-auth/context').length, 0, 'no context is selected');
       assert.equal(await page.evaluate(`document.querySelector('#driver-status-card').dataset.status`), 'PENDING');
       assert.equal(await page.evaluate(`document.querySelector('#driver-status-title').innerText`), 'Hồ sơ đang chờ duyệt');
-      assert.equal(await page.evaluate(`document.querySelector('#driver-name').innerText`), 'Nguyễn Văn Xế');
+      assert.equal(await page.evaluate(`document.querySelector('#driver-name').innerText`), 'Nguyễn Văn Shipper');
       assert.equal(await page.evaluate(`document.querySelector('#driver-plate').innerText`), '59A-123.45');
-      assert.equal(await page.evaluate(`document.querySelector('#driver-type').innerText`), 'Xế ngoài');
+      assert.equal(await page.evaluate(`document.querySelector('#driver-type').innerText`), 'Shipper ngoài');
       const overflowS13 = await page.evaluate(OVERFLOW);
       assert.ok(overflowS13.scrollWidth <= overflowS13.innerWidth, 'S13 does not scroll sideways');
       assert.deepEqual(await page.evaluate(SMALL_TARGETS), [], 'touch targets on S13');
@@ -216,7 +216,7 @@ describe('the driver profile journey (stand-in backend)', () => {
       await login(page);
       await toForm(page);
       backend.state.dropNextSubmit = true;
-      await page.fill('#legal-name', 'Nguyễn Văn Xế');
+      await page.fill('#legal-name', 'Nguyễn Văn Shipper');
       await page.click('#driver-submit');
       await page.waitFor(`document.querySelector('form .c-banner--error, form .c-banner--warn')`, 'failure banner');
       assert.equal(backend.calls('POST', '/v1/onboarding/driver').length, 1, 'no automatic retry');
@@ -236,15 +236,15 @@ describe('the driver profile journey (stand-in backend)', () => {
 
   it('a person who already has a profile never sees a create form; every stored status is shown as the server holds it', async () => {
     await withPage(async (page) => {
-      backend.state.driver = { driver_id: DRIVER, user_id: USER, full_name: 'Trần Xế Sẵn', plate_number: null, driver_type: 'PLATFORM', status: 'SUSPENDED', accepting_deliveries: false, version: 4 };
+      backend.state.driver = { driver_id: DRIVER, user_id: USER, full_name: 'Trần Shipper Sẵn', plate_number: null, driver_type: 'PLATFORM', status: 'SUSPENDED', accepting_deliveries: false, version: 4 };
       await login(page);
       await page.click('a[href="/account"]');
       await waitPath(page, '/account');
-      await clickRow(page, 'Hồ sơ xế');
+      await clickRow(page, 'Hồ sơ shipper');
       await statusReady(page);
       assert.equal(await page.evaluate(`document.querySelector('#driver-status-title').innerText`), 'Hồ sơ đang bị tạm khóa');
       assert.equal(await page.evaluate(`document.querySelector('#driver-plate').innerText`), 'Chưa bổ sung');
-      assert.equal(await page.evaluate(`document.querySelector('#driver-type').innerText`), 'Xế hệ thống');
+      assert.equal(await page.evaluate(`document.querySelector('#driver-type').innerText`), 'Shipper hệ thống');
       assert.equal(await page.evaluate(`document.querySelector('#driver-submit')`), null, 'no create or edit button on S13');
       // S12 opened directly (here through the router) goes to S13: the profile is read, not created again.
       await page.evaluate(`(() => { history.pushState(null, '', '/driver/onboarding'); window.dispatchEvent(new PopStateEvent('popstate')); })()`);

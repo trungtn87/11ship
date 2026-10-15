@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ship/ship_tabs.dart';
+import 'package:ship/ship_home.dart';
 import 'package:n11_shared/n11_shared.dart';
 import 'package:n11_shared/testing.dart';
 
@@ -59,6 +60,7 @@ void main() {
     phone(tester);
     final FakeApiTransport api = FakeApiTransport();
     installAccountRoutes(api);
+    installOtpRoutes(api, queued: false);
     installResetRoutes(api);
     FakeDriverServer(api);
     final SessionController session = createSessionController(ClientApp.ship, config, transport: api, bridge: FakeDeviceBridge());
@@ -73,6 +75,19 @@ void main() {
     await tester.tap(find.byKey(const Key('open-register')));
     await tester.pumpAndSettle();
     await shot(tester, '03-register');
+    await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
+    await tester.enterText(find.byKey(const Key('register-name')), 'Nguyễn An');
+    await tester.enterText(find.byKey(const Key('register-password')), 'Correct-Horse-9');
+    await tester.enterText(find.byKey(const Key('register-confirm-password')), 'Correct-Horse-9');
+    await tester.ensureVisible(find.byKey(const Key('register-consent')));
+    await tester.tap(find.byKey(const Key('register-consent')));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('register-submit')));
+    await tester.tap(find.byKey(const Key('register-submit')));
+    await tester.pumpAndSettle();
+    await shot(tester, '03b-register-otp');
+    await tester.tap(find.byKey(const Key('register-edit-phone')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Quay lại'));
     await tester.pumpAndSettle();
     await session.login(phone: '0901234567', password: 'Correct-Horse-9');
@@ -84,5 +99,15 @@ void main() {
     await tester.tap(find.byKey(const Key('driver-entry')));
     await tester.pumpAndSettle();
     await shot(tester, '05-driver-form');
+    // An isolated visual-state render, not an online session or real statistics.
+    await tester.pumpWidget(RepaintBoundary(
+      key: boundary,
+      child: MaterialApp(
+        theme: buildN11Theme(),
+        home: const Scaffold(body: SafeArea(child: SingleChildScrollView(child: ShipActivityPanel(online: true, reason: kOnlineReason)))),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await shot(tester, '06-online-panel-visual-only');
   });
 }

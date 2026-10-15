@@ -25,7 +25,7 @@ Trạng thái: **chỉ UI**, chưa tính là xong nghiệp vụ, M01 chưa đón
 Không có: số dư, doanh thu, đơn hàng, trạng thái hoạt động giả. Dữ liệu minh họa nằm riêng ở
 `apps/client-shared/src/design/samples.ts` và bị xoá khỏi bản thật (có test).
 
-Còn chờ backend (xem `docs/design/system-v2-20261011/10-m01-client-contract.md`): đặt lại mật khẩu, hồ sơ xế. Hình dạng cổng (`ports.ts`) chỉ là đề xuất cũ; phần nối thật dùng `apps/client-shared/src/auth` và `shop-flow.ts`.
+Còn chờ backend (xem `docs/design/system-v2-20261011/10-m01-client-contract.md`): đặt lại mật khẩu, hồ sơ shipper. Hình dạng cổng (`ports.ts`) chỉ là đề xuất cũ; phần nối thật dùng `apps/client-shared/src/auth` và `shop-flow.ts`.
 Hồ sơ cửa hàng chỉ nối trên https://localhost của 11Food (11Ship không nối); GPS thật trên thiết bị chưa thử, bản đồ chưa nối.
 Máy chủ tĩnh cần trả `index.html` cho mọi đường dẫn của app (SPA) — việc của bước triển khai.
 

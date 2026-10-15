@@ -29,7 +29,7 @@ Preflight (10/10/2026): ba head khớp mốc đã duyệt; `main` = `01b44ed`; #
 | Đấu nối (chỉ khi `ADMIN_AUTH_ENABLED=true`) | `admin-auth/admin-auth.module.ts` (+ `IdempotencyModule`, middleware no-store) |
 | Fixture test | `tests/integration/support/provisioning-fixtures.ts`; `admin-fixtures.ts` (basePath, cấu hình mới, `businessLockTimeoutMs` 10 s cho test barrier); `auth-fixtures.ts` (`purgePhone` dọn 3 bảng 1A/1B bằng `TRUNCATE` khi còn tham chiếu user) |
 
-Routes (`/v1/admin`, chỉ SYSTEM): `POST /operations`, `POST /operations/:id/verify`, `GET /operations/:id`, `POST /invitations`, `GET /invitations`, `GET /invitations/:id`, `POST /invitations/:id/reissue`, `POST /invitations/:id/revoke`. Không UI, không OTP, không kích hoạt 1C, không recovery, không tạo user/membership ADMIN, không quản lý tài khoản Khách/Quán/Xế.
+Routes (`/v1/admin`, chỉ SYSTEM): `POST /operations`, `POST /operations/:id/verify`, `GET /operations/:id`, `POST /invitations`, `GET /invitations`, `GET /invitations/:id`, `POST /invitations/:id/reissue`, `POST /invitations/:id/revoke`. Không UI, không OTP, không kích hoạt 1C, không recovery, không tạo user/membership ADMIN, không quản lý tài khoản Khách/Quán/Shipper.
 
 ## 3. Đối chiếu hợp đồng ↔ test/bằng chứng
 
@@ -40,7 +40,7 @@ Tên file test viết tắt: **H** = `tests/integration/admin-provisioning.int.s
 | §5 DDL, CHECK, trigger, unique sống, Down | migration | MG: hình thức file, inventory, FK NO ACTION (3), CHECK 23514, unique 23505, trigger 23001 cho từng chuyển sai, CHECK hết hạn, thứ tự Down, up→down→up rollback; spec cũ (auth/driver/shop/hours/migration/1A) cập nhật Down/Up và trigger count |
 | §6.0 thứ tự POST (Q6) | controller `#postIngress` | H "POST transport…", H LM quota |
 | §6.0 GET Origin tùy chọn (F5) | `#assertGetOrigin` | H "GET: no Origin header is fine…" |
-| §6.0 chỉ SYSTEM; app Khách/Quán/Xế không vào được | `AdminSystemActor` | H AZ: ADMIN-role → 403 trên cả 8 route; không cookie / bearer / cookie lạ → 401; DISABLED, đổi mật khẩu, membership version, factor version → 401 cho GET và POST |
+| §6.0 chỉ SYSTEM; app Khách/Quán/Shipper không vào được | `AdminSystemActor` | H AZ: ADMIN-role → 403 trên cả 8 route; không cookie / bearer / cookie lạ → 401; DISABLED, đổi mật khẩu, membership version, factor version → 401 cho GET và POST |
 | §6.1 parser strict, chuẩn hóa | validation | U validation (canonical, reissue null/array, giới hạn code point, quyền, cursor); H "strict parser" (20 ca, không ghi gì) |
 | §6.2/§8.3.1 create-operation, F1 | `createOperation` | H ST; TL trace; TL S1, S2 (không có 23505) |
 | §6.3 fingerprint, Q1/F4 | `canonicalPayload`, `operationFingerprint` | U purposes (null ≠ mảng giống hệt; khác action/khóa); H CR "body differs…"; H RI "copy và explicit là hai xác nhận khác nhau" |
@@ -86,7 +86,7 @@ Bốn diễn giải 1–4 **đã được chấp nhận** và được ghi vào 
 
 - Môi trường của Claude không cài được dependency (registry npm bị chặn) nên không chạy được jest/eslint cục bộ. Bằng chứng cục bộ: typecheck bằng TypeScript 6 với stub cho `@nestjs/*`, `pg`, `@jest/globals` (chỉ lỗi do stub); SQL của migration, repository và reader chạy thử trên PostgreSQL 16 cục bộ (DB nháp). **Bằng chứng chính thức là CI.**
 - Không chạy gì trên DB Owner/staging; migration chỉ chạy trên DB test của CI và DB nháp cục bộ.
-- Theo từng ứng dụng: Web quản trị — backend API đã code + CI, **chưa có UI**, chưa test local/thiết bị; Khách/Quán/Xế — N/A (chỉ dùng app; test âm tính xác nhận không vào được) — quyết định N/A thuộc Owner; App quản lý — N/A trong 1B; Liên thông — kích hoạt là 1C, chưa kiểm chứng.
+- Theo từng ứng dụng: Web quản trị — backend API đã code + CI, **chưa có UI**, chưa test local/thiết bị; Khách/Quán/Shipper — N/A (chỉ dùng app; test âm tính xác nhận không vào được) — quyết định N/A thuộc Owner; App quản lý — N/A trong 1B; Liên thông — kích hoạt là 1C, chưa kiểm chứng.
 
 ## 7. Sửa finding phân quyền của reissue/revoke (review `ad9b092`)
 

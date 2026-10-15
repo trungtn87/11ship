@@ -19,7 +19,7 @@ Không tự ý đổi logo, màu, font, slogan, icon style hoặc app identity n
 
 - **11** — thương hiệu mẹ.
 - **11Food** — app khách hàng tìm quán, xem món và đặt đồ ăn.
-- **11Ship** — app giao hàng dùng chung cho **Shop/Cửa hàng** và **Xế**.
+- **11Ship** — app giao hàng dùng chung cho **Shop/Cửa hàng** và **Shipper**.
   - Một tài khoản có thể có cả SHOP và DRIVER.
   - Sau đăng nhập, nếu có nhiều vai trò thì chọn vai trò sử dụng.
   - 11Ship không bị giới hạn về lâu dài vào giao đồ ăn.
@@ -207,11 +207,11 @@ Không dùng shadow nặng hoặc trang trí quá phức tạp.
 ### 5.3 Map marker 11Ship
 
 - Shop/điểm lấy: vàng + icon cửa hàng xám than.
-- Xế: marker xám than + chi tiết vàng.
+- Shipper: marker xám than + chi tiết vàng.
 - Khách/điểm giao: trắng/xám than.
 - Điểm đang thao tác: highlight vàng rõ.
 
-Phải phân biệt được Shop — Xế — Khách chỉ bằng hình dạng/màu marker.
+Phải phân biệt được Shop — Shipper — Khách chỉ bằng hình dạng/màu marker.
 
 ### 5.4 Photography
 
@@ -232,7 +232,7 @@ Phải phân biệt được Shop — Xế — Khách chỉ bằng hình dạng/
 
 ### 6.2 11Ship
 
-- Shop/Cửa hàng + Xế trong một app.
+- Shop/Cửa hàng + Shipper trong một app.
 - Visual: rõ, chắc, thiên vận hành; xám than có thể dùng nhiều hơn 11Food.
 - Tagline: **Gọi là có**.
 - Nếu user có SHOP + DRIVER: chọn vai trò sau đăng nhập; app vẫn là 11Ship, không đổi thương hiệu.
@@ -288,8 +288,8 @@ Bottom navigation tối đa 4–5 mục.
 Gợi ý:
 
 - 11Food: Trang chủ · Tìm kiếm · Đơn hàng · Tài khoản
-- 11Ship/Shop: Tổng quan · Đơn hàng · Gọi xế · Tài khoản
-- 11Ship/Xế: Trang chủ · Đơn hàng · Thu nhập · Tài khoản
+- 11Ship/Shop: Tổng quan · Đơn hàng · Gọi shipper · Tài khoản
+- 11Ship/Shipper: Trang chủ · Đơn hàng · Thu nhập · Tài khoản
 
 ### 7.5 Loading, toast, empty state
 
@@ -337,7 +337,7 @@ Dùng **logo mẹ 11** đơn giản, không nhồi thêm chữ nhỏ.
 Cover chung phải giới thiệu rõ **hai app**:
 
 - 11Food — app khách hàng đặt đồ ăn;
-- 11Ship — app Shop/Cửa hàng và Xế.
+- 11Ship — app Shop/Cửa hàng và Shipper.
 
 Không để Food hoặc Ship lấn át hoàn toàn nhánh còn lại.
 
@@ -353,7 +353,7 @@ Chuẩn hóa các nhóm:
 
 1. 11Food / món ăn
 2. 11Ship / giao hàng
-3. Tuyển xế
+3. Tuyển shipper
 4. Tuyển quán/đối tác
 5. Ưu đãi
 6. Thông báo
@@ -393,7 +393,7 @@ Các câu/hướng sau **không còn là chuẩn chính thức** và không đư
 - `Gần hơn mỗi ngày`
 - `Ngon gần bạn`
 - `Giao nhanh · Gần hơn`
-- `Gọi là có xế`
+- `Gọi là có shipper`
 - Brand Essence `GẦN`
 
 Chuẩn hiện tại:

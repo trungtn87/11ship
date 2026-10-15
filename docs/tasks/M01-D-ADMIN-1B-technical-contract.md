@@ -19,7 +19,7 @@ Trạng thái: `DESIGN v2 — chờ ChatGPT review head mới`. **Bổ sung v2.2
 
 Head/base của #38 được kiểm lại trước khi sửa: khớp mốc đã review (`3fd5d22` / `fa11ee5`). Sau đó Owner cho phép sửa B-1 trong phạm vi riêng: bản sửa nằm ở **commit riêng trên nhánh #34**, được đưa lên #37 và #38 bằng **merge commit** (không rebase, không force-push). #38 vẫn là PR xếp chồng trên #37, nay với base mới ở bảng trên; không tự merge phụ thuộc. Nguồn nghiệp vụ: Activation Contract v1 + Technical Design 1A + 6 bộ UI Owner đã duyệt (UI-06: màn "Lời mời đã tạo", "ADMIN chờ kích hoạt", popup xác nhận gồm **lý do bắt buộc + mã 2FA mới của SYSTEM**).
 
-Nguyên tắc không đổi: **web quản trị chỉ dành cho ADMIN/SYSTEM; Khách, Quán và Xế chỉ dùng app riêng.** 1B **không** có UI, OTP, kích hoạt tài khoản, trang kích hoạt công khai, user/membership ADMIN, khôi phục 2FA, hay quản lý tài khoản Khách/Quán/Xế.
+Nguyên tắc không đổi: **web quản trị chỉ dành cho ADMIN/SYSTEM; Khách, Quán và Shipper chỉ dùng app riêng.** 1B **không** có UI, OTP, kích hoạt tài khoản, trang kích hoạt công khai, user/membership ADMIN, khôi phục 2FA, hay quản lý tài khoản Khách/Quán/Shipper.
 
 ## 1. Quyết định của Owner đã ghi nhận (Q1–Q11) và nơi áp dụng
 
@@ -182,7 +182,7 @@ Runbook grants thêm: `admin_sensitive_operations: SELECT, INSERT, UPDATE` (kh�
 
 **Mọi GET 1B** (F5): không quota mới, không CSRF. **`Origin` là tùy chọn**: GET cùng-origin không bắt buộc có header `Origin`; nếu header **có mặt** mà không thuộc allowlist → `ADMIN_CSRF_INVALID`. Cookie phiên vẫn bắt buộc; phiên/quyền hiện tại vẫn được kiểm **dưới khóa** (`FOR SHARE`) như POST. GET không ghi gì và không bao giờ đổi trạng thái. **Mọi GET lời mời (chi tiết, danh sách) và GET operation kiểm factor `ACTIVE` đúng `factor_id/factor_version` của phiên, dưới khóa**: user → membership → factor → session → mục tiêu nếu cần (mục 8.3.3). Factor không ACTIVE hoặc lệch với phiên ⇒ `ADMIN_SESSION_INVALID`.
 
-Chung: JSON strict (khóa lạ → `ADMIN_INPUT_INVALID`; cấm client gửi `role`, `account_origin`, `user_id`, `status`, `generation_id`, `expires_at`, `token`, `created_by`); response `{ "data": … }`; thời gian ISO-8601 UTC; `Cache-Control: no-store`. Chỉ phiên **SYSTEM** (membership ACTIVE, `admin_role='SYSTEM'`): phiên ADMIN → `ADMIN_FORBIDDEN`; không có cookie/phiên sai → `ADMIN_SESSION_INVALID`. Token của app Khách/Quán/Xế không phải cookie quản trị nên không qua được.
+Chung: JSON strict (khóa lạ → `ADMIN_INPUT_INVALID`; cấm client gửi `role`, `account_origin`, `user_id`, `status`, `generation_id`, `expires_at`, `token`, `created_by`); response `{ "data": … }`; thời gian ISO-8601 UTC; `Cache-Control: no-store`. Chỉ phiên **SYSTEM** (membership ACTIVE, `admin_role='SYSTEM'`): phiên ADMIN → `ADMIN_FORBIDDEN`; không có cookie/phiên sai → `ADMIN_SESSION_INVALID`. Token của app Khách/Quán/Shipper không phải cookie quản trị nên không qua được.
 
 ### 6.1 Chuẩn hóa đầu vào (một parser dùng chung cho create-operation và route nghiệp vụ, để fingerprint khớp)
 - `full_name`: trim, 1–120 code point; `note`: 0–1000 ký tự, rỗng → `null`; `reason`: trim, 1–500 ký tự.
@@ -524,7 +524,7 @@ Unit: parser/chuẩn hóa (kể cả `permissions` vắng/null/mảng của reis
 Ngoài ra chạy race ngẫu nhiên có seed (N=100) trộn create-op/verify/mutation/login/logout làm **kiểm tra bổ sung**, khẳng định 0 lần `40P01` và bất biến cuối. **Không** dùng nó làm chứng minh không deadlock; chứng minh là bảng thứ tự + trace + lịch barrier ở trên.
 
 Nhóm test chức năng:
-- **AZ:** ADMIN-role ⇒ `ADMIN_FORBIDDEN` mọi route; không cookie / token app Khách-Quán-Xế / cookie sai ⇒ `ADMIN_SESSION_INVALID`; POST Origin sai/thiếu hoặc CSRF thiếu ⇒ 403; **GET không có Origin ⇒ thành công; GET có Origin sai ⇒ 403**; user/membership `DISABLED`, đổi mật khẩu (binding lệch), phiên thu hồi hoặc hết hạn *trong lúc chờ khóa* ⇒ 401; **mọi GET (chi tiết, danh sách, operation) với factor không ACTIVE hoặc lệch `factor_id/version` của phiên ⇒ 401**; trace khóa của từng GET phát ra user → membership → factor → session.
+- **AZ:** ADMIN-role ⇒ `ADMIN_FORBIDDEN` mọi route; không cookie / token app Khách-Quán-Shipper / cookie sai ⇒ `ADMIN_SESSION_INVALID`; POST Origin sai/thiếu hoặc CSRF thiếu ⇒ 403; **GET không có Origin ⇒ thành công; GET có Origin sai ⇒ 403**; user/membership `DISABLED`, đổi mật khẩu (binding lệch), phiên thu hồi hoặc hết hạn *trong lúc chờ khóa* ⇒ 401; **mọi GET (chi tiết, danh sách, operation) với factor không ACTIVE hoặc lệch `factor_id/version` của phiên ⇒ 401**; trace khóa của từng GET phát ra user → membership → factor → session.
 - **AZ-R (reissue/revoke, v2.2, không lộ sự tồn tại):** cho **cả hai route**: ADMIN-role + id tồn tại **và** id không tồn tại ⇒ cùng `403 ADMIN_FORBIDDEN`, body không chứa `NOT_FOUND`; SYSTEM còn hiệu lực + id không tồn tại ⇒ `404 ADMIN_INVITATION_NOT_FOUND`; phiên thu hồi / hết hạn, version factor lệch, version membership lệch, membership `DISABLED` ⇒ `401 ADMIN_SESSION_INVALID` cho id tồn tại và không tồn tại; sau mỗi lần bị từ chối: lời mời, `admin_sensitive_operations` (status, `attempt_count`), bucket TOTP, audit `admin_invitation.*` và record idempotency **không đổi**. Trace khóa: transaction authorization (`lock_timeout` → L4 S → L5 S → L6 S → L7 S, không `FOR UPDATE`, không advisory) kết thúc trước coordinator; coordinator giữ nguyên thứ tự L1 → L3 → L4…L9.
 - **SU:** sai mã tăng bộ đếm bucket và `attempt_count` và **được commit** (đọc lại sau lỗi); lần 5 ⇒ `INVALIDATED(ATTEMPTS_EXHAUSTED)`; **các trường hợp không đếm** (body sai, bucket khóa, operation sai/hết hạn/lệch binding) giữ nguyên cả hai bộ đếm; bucket khóa ⇒ 429 + `Retry-After` trước khi mở secret (spy `openTotpSecret` = 0 lần); mã vừa dùng đăng nhập bị từ chối (và được đếm vì đã so sánh); mã step trước/sau cửa sổ; operation hết hạn trong lúc chờ khóa; sai target/body/version/action; dùng lại sau `CONSUMED`; đăng nhập lại / đổi factor / tăng version membership ⇒ operation không dùng được nhưng `status` lưu **không đổi** (kiểm chứng "chỉ từ chối, không ghi"); tạo operation thứ hai ⇒ cái cũ `REPLACED`.
 - **ST (trạng thái, F5):** `VERIFIED` quá 120 s ⇒ GET `usable=false, expired=true, status='VERIFIED'` và **không** có UPDATE nào do GET; lệch binding ⇒ `usable=false`; `PENDING` ⇒ `verifiable=true`, `attempts_remaining` đúng.
@@ -543,7 +543,7 @@ CI phải đạt trên final head; lint, typecheck, build bắt buộc. Môi tr�
 
 Mới: migration `*_create-admin-sensitive-operations.sql`; `apps/backend/src/admin-provisioning/` (controller, `admin-operation-service`, `admin-invitation-service`, participant actor SYSTEM dùng `lockAndCheck`, repository operation, validation/chuẩn hóa, `activation-link` builder, hằng số); các spec và `tests/integration/admin-provisioning-*.int.spec.ts` (+ harness barrier/trace).
 Sửa: `common/app-errors.ts` (mã mới) và test registry; `crypto/key-version.ts` + `keyring.ts` (`adminOperation`) + `admin-purposes.spec.ts`; `config/admin-auth-config.ts` (+spec, `.env.example`); `app.module.ts` (mount có điều kiện); `admin-invitations/admin-invitation-repository.ts` (**không đổi**: phần đọc nằm ở `admin-provisioning/admin-invitation-reader.ts`, mục 6.10); `ops/runbooks/render-supabase-staging.md` (grants + biến mới); các test migration/trigger liệt kê migration mới; dọn dữ liệu test cho bảng mới. B-1 đã sửa riêng ở `38bb8c7` (`admin-bootstrap-service.ts`, `admin-membership-repository.ts`, một spec mới); 1B không sửa lại các file đó.
-Không sửa: migration đã apply, `/admin-auth/*`, bất kỳ route app Khách/Quán/Xế.
+Không sửa: migration đã apply, `/admin-auth/*`, bất kỳ route app Khách/Quán/Shipper.
 
 ## 17. Gate và ma trận từng ứng dụng
 
@@ -558,7 +558,7 @@ Không sửa: migration đã apply, `/admin-auth/*`, bất kỳ route app Khách
 | Ứng dụng | Phạm vi 1B | Ghi chú |
 |---|---|---|
 | Web quản trị (ADMIN/SYSTEM) | Backend API cho SYSTEM; **không UI** (UI-06 đã duyệt, code UI là gói khác) | Chưa kiểm chứng |
-| Khách / Quán / Xế | N/A: chỉ dùng app; không route 1B nào mở cho họ; test âm tính xác nhận | Quyết định N/A thuộc Owner |
+| Khách / Quán / Shipper | N/A: chỉ dùng app; không route 1B nào mở cho họ; test âm tính xác nhận | Quyết định N/A thuộc Owner |
 | App quản lý | N/A trong 1B | Quyết định Owner |
 | Liên thông | Chưa xác định; kích hoạt là 1C | Chưa kiểm chứng |
 

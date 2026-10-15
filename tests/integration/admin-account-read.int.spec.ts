@@ -80,7 +80,7 @@ describe('admin account read (API + one real browser smoke)', () => {
   const NAMES = {
     customer: `Nguyễn Thị Hoa ${tag}`,
     owner: `Quán Phở Bò ${tag}`,
-    driver: `Trần Văn Xế ${tag}`,
+    driver: `Trần Văn Shipper ${tag}`,
     multiCustomer: `Hoa Mai ${tag}`,
     multiDriver: `Lan Anh ${tag}`,
     locked: `Lê Khóa ${tag}`,
@@ -180,7 +180,7 @@ describe('admin account read (API + one real browser smoke)', () => {
     locked = await seedUser({ roles: ['CUSTOMER'], customerName: NAMES.locked, status: 'DISABLED', ageSeconds: 100 });
     legacy = await seedUser({ roles: [], ageSeconds: 600 });
     adminCustomer = await activatedAdmin(['CUSTOMER'], `Quản trị Khách ${tag}`);
-    adminShopDriver = await activatedAdmin(['SHOP', 'DRIVER'], `Quản trị Quán Xế ${tag}`);
+    adminShopDriver = await activatedAdmin(['SHOP', 'DRIVER'], `Quản trị Quán Shipper ${tag}`);
     // An invitation that is still waiting: it must never show in the administrators list.
     pendingName = `Quản trị Chờ ${tag}`;
     const pendingPhone = randomPhone();

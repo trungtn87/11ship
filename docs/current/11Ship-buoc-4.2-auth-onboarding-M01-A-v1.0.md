@@ -30,7 +30,7 @@ Không thuộc gói code đầu tiên của 4.2:
 
 - refresh token rotation, logout/revoke toàn bộ session, đổi/quên mật khẩu, đổi số điện thoại — chuyển M01-B;
 - admin/SYSTEM provisioning và 2FA — module quản trị triển khai sau;
-- duyệt xế, nạp/rút ví và logic nhận đơn — module Driver/Wallet/Delivery;
+- duyệt shipper, nạp/rút ví và logic nhận đơn — module Driver/Wallet/Delivery;
 - Customer ordering — triển khai ở đợt khách đặt món, nhưng M01 không được thiết kế theo cách chặn việc bổ sung role CUSTOMER sau này.
 
 ---
@@ -50,7 +50,7 @@ Không thuộc gói code đầu tiên của 4.2:
 
 - Một user có thể đồng thời có SHOP và DRIVER.
 - Role được cấp bởi kết quả onboarding tương ứng, không được cấp trong request đăng ký user.
-- SHOP và DRIVER là role nghiệp vụ; `driver.type = SYSTEM` chỉ là phân loại xế, tuyệt đối không phải quyền quản trị.
+- SHOP và DRIVER là role nghiệp vụ; `driver.type = SYSTEM` chỉ là phân loại shipper, tuyệt đối không phải quyền quản trị.
 - Nếu user có nhiều role, app 11Ship hiển thị lựa chọn SHOP/DRIVER khi vào hệ thống và cho phép chuyển role không cần tạo tài khoản khác.
 
 ### 2.3 OTP / verification proof
@@ -420,7 +420,7 @@ Sau transaction thành công:
 2. M03 tạo `driver_service_areas` theo vùng user đăng ký.
 3. `approval_status = PENDING`.
 4. `accepting_orders = false`.
-5. M01 cấp `user_roles.DRIVER` để user vào được giao diện xế.
+5. M01 cấp `user_roles.DRIVER` để user vào được giao diện shipper.
 6. Có role DRIVER không đồng nghĩa được nhận đơn.
 
 ### Điều kiện active lần đầu — contract với module quản lý/Wallet

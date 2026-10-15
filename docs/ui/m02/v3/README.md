@@ -9,7 +9,7 @@ Trạng thái: **UI_PROVISIONALLY_APPROVED**. Đây là mốc thiết kế để
 - [M02 Design.dc.html](M02%20Design.dc.html): catalog màn, trạng thái và prototype.
 - [Phone.dc.html](Phone.dc.html): tham chiếu UI app điện thoại.
 - [WebView.dc.html](WebView.dc.html): chỉ D01/D02 web Admin thuộc phạm vi. Mã Food web cũ còn trong file nguồn không phải yêu cầu triển khai.
-- 11Food (khách + chủ quán) và 11Ship (xế) **chỉ chạy app điện thoại**, không làm web Food/Ship. M02 bổ sung quán/thực đơn trong Food; Ship không có màn M02 mới.
+- 11Food (khách + chủ quán) và 11Ship (shipper) **chỉ chạy app điện thoại**, không làm web Food/Ship. M02 bổ sung quán/thực đơn trong Food; Ship không có màn M02 mới.
 - HTML/DC là định dạng thiết kế, chuyển thành Flutter trên nền M01 hiện hữu; không dùng nó làm WebView sản phẩm.
 - [Đặc tả chức năng](../../../tasks/M02-functional-spec-20261014.md) và [kế hoạch theo luồng](../../../current/M02-workstreams-20261014.md).
 

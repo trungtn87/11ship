@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
 import 'package:n11_shared/testing.dart';
 import 'package:ship/ship_tabs.dart';
+import 'package:ship/ship_home.dart';
 
 const String sha = '0123456789abcdef0123456789abcdef01234567';
 
@@ -53,7 +54,7 @@ String texts(WidgetTester tester) {
 void main() {
   testWidgets('five tabs in the agreed order and the 11Ship logo', (WidgetTester tester) async {
     await pump(tester, healthy());
-    for (final String label in <String>['Trang chủ', 'Đơn hàng', 'Thu nhập', 'Ví', 'Tài khoản']) {
+    for (final String label in <String>['Trang chủ', 'Đơn hàng', 'Thu nhập', 'Thông báo', 'Tài khoản']) {
       expect(find.descendant(of: find.byType(N11BottomNav), matching: find.text(label)), findsOneWidget, reason: label);
     }
     final Iterable<Image> images = tester.widgetList<Image>(find.byType(Image));
@@ -61,20 +62,50 @@ void main() {
     expect(find.byKey(const Key('connection-banner')), findsNothing);
   });
 
-  testWidgets('online switch is disabled: no GPS, no fake status', (WidgetTester tester) async {
+  testWidgets('online action stays locked: no GPS or invented statistics', (WidgetTester tester) async {
     await pump(tester, healthy());
-    final Switch s = tester.widget<Switch>(find.byKey(const Key('online-switch')));
-    expect(s.onChanged, isNull);
-    expect(s.value, isFalse);
+    final FilledButton button = tester.widget<FilledButton>(find.byKey(const Key('online-button')));
+    expect(button.onPressed, isNull);
+    expect(find.text('Bạn đang offline'), findsOneWidget);
+    expect(find.text(kOnlineReason), findsOneWidget);
+    expect(find.textContaining('320.000'), findsNothing);
+    expect(find.byKey(const Key('home-map')), findsOneWidget);
   });
 
-  testWidgets('income and wallet show unknown "—", never 0 or a balance', (WidgetTester tester) async {
+  testWidgets('home bell opens notifications', (WidgetTester tester) async {
+    await pump(tester, healthy());
+    await tester.tap(find.byKey(const Key('home-notifications')));
+    await tester.pumpAndSettle();
+    expect(find.text('Chưa có dữ liệu thông báo'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('both activity layouts fit narrow screens with large text', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    for (final bool online in <bool>[false, true]) {
+      await tester.pumpWidget(MaterialApp(
+        theme: buildN11Theme(),
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(320, 640), textScaler: TextScaler.linear(1.8)),
+          child: Scaffold(body: SingleChildScrollView(child: ShipActivityPanel(online: online, reason: kOnlineReason))),
+        ),
+      ));
+      await tester.pump();
+      expect(find.text(online ? 'Bạn đang online' : 'Bạn đang offline'), findsOneWidget);
+      expect(tester.widget<FilledButton>(find.byKey(const Key('online-button'))).onPressed, isNull);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('income remains unknown and notifications introduce no fake data', (WidgetTester tester) async {
     await pump(tester, healthy());
     await openTab(tester, 'income');
     expect(find.text('—'), findsOneWidget);
     expect(find.text('Chưa có dữ liệu thu nhập'), findsOneWidget);
-    await openTab(tester, 'wallet');
-    expect(find.text('—'), findsOneWidget);
+    await openTab(tester, 'notifications');
+    expect(find.text('Chưa có dữ liệu thông báo'), findsOneWidget);
     expect(find.textContaining('₫'), findsNothing);
   });
 
@@ -92,7 +123,7 @@ void main() {
     await openTab(tester, 'account');
     expect(tester.widget<N11Button>(find.byKey(const Key('open-login'))).onPressed, isNotNull);
     expect(tester.widget<N11Button>(find.byKey(const Key('open-register'))).onPressed, isNotNull);
-    expect(find.text('Hồ sơ xế'), findsOneWidget);
+    expect(find.text('Hồ sơ shipper'), findsOneWidget);
     expect(find.text(kNotOnAndroidReason), findsWidgets);
     await tester.ensureVisible(find.text('Chẩn đoán kết nối'));
     await tester.tap(find.text('Chẩn đoán kết nối'));
@@ -126,6 +157,56 @@ void main() {
     expect(find.byKey(const Key('account-name')), findsOneWidget);
     expect(bridge.token, isNotNull);
     expect(api.to('POST', '/v1/client-auth/login').first.body, contains('"app":"SHIP"'));
+  });
+
+  testWidgets('registration has two steps, preserves input and creates an account only after OTP', (WidgetTester tester) async {
+    final FakeApiTransport api = FakeApiTransport();
+    installAccountRoutes(api);
+    installOtpRoutes(api, queued: false);
+    await pump(tester, healthy(), api: api);
+    await openTab(tester, 'account');
+    await tester.tap(find.byKey(const Key('open-register')));
+    await tester.pumpAndSettle();
+
+    Future<void> tapVisible(String key) async {
+      await tester.ensureVisible(find.byKey(Key(key)));
+      await tester.tap(find.byKey(Key(key)));
+      await tester.pumpAndSettle();
+    }
+
+    await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
+    await tester.enterText(find.byKey(const Key('register-name')), 'Nguyễn An');
+    await tester.enterText(find.byKey(const Key('register-password')), 'Correct-Horse-9');
+    await tester.enterText(find.byKey(const Key('register-confirm-password')), 'Wrong-Password');
+    await tester.pump();
+    expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull);
+    await tester.enterText(find.byKey(const Key('register-confirm-password')), 'Correct-Horse-9');
+    await tester.pump();
+    expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull, reason: 'consent is required');
+    // No scrolling through the terms is required before consent.
+    await tapVisible('register-consent');
+    await tapVisible('register-submit');
+    expect(find.byKey(const Key('register-otp-phone')), findsOneWidget);
+    expect(find.byKey(const Key('register-password')), findsNothing);
+    expect(api.to('POST', '/v1/client-auth/register'), isEmpty);
+
+    await tapVisible('register-edit-phone');
+    expect(tester.widget<TextField>(find.byKey(const Key('register-phone'))).controller!.text, '0901234567');
+    expect(tester.widget<TextField>(find.byKey(const Key('register-name'))).controller!.text, 'Nguyễn An');
+    expect(tester.widget<CheckboxListTile>(find.byKey(const Key('register-consent'))).value, isTrue);
+    await tester.enterText(find.byKey(const Key('register-phone')), '0909999999');
+    await tester.pump();
+    await tapVisible('register-submit');
+    expect(find.text('0909999999'), findsOneWidget);
+    expect(api.to('POST', '/v1/auth/phone-verifications').length, 2);
+    await tester.enterText(find.byKey(const Key('otp-code')), '000000');
+    await tapVisible('otp-verify');
+    expect(api.to('POST', '/v1/client-auth/register'), isEmpty);
+    await tester.enterText(find.byKey(const Key('otp-code')), '123456');
+    await tapVisible('otp-verify');
+    expect(api.to('POST', '/v1/client-auth/register').single.body, contains('REGISTER-PROOF-TOKEN-0123456789'));
+    expect(find.byKey(const Key('account-name')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('offline then retry recovers', (WidgetTester tester) async {

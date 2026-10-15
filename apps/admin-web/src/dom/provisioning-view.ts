@@ -64,7 +64,7 @@ const STATUS_LABEL: Record<InvitationStatus, string> = {
   PHONE_CONFLICT: 'Trùng số điện thoại',
 };
 
-const APP_LABEL: Record<InvitationApp, string> = { CUSTOMER: 'Khách hàng', SHOP: 'Quán', DRIVER: 'Xế' };
+const APP_LABEL: Record<InvitationApp, string> = { CUSTOMER: 'Khách hàng', SHOP: 'Quán', DRIVER: 'Shipper' };
 const APPS: readonly InvitationApp[] = ['CUSTOMER', 'SHOP', 'DRIVER'];
 
 function statusBadge(invitation: Pick<InvitationSummary, 'status' | 'expired'>): HTMLElement {

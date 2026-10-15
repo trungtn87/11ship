@@ -83,7 +83,7 @@ describe('M01-A2D — Driver onboarding', () => {
   describe('POST /onboarding/driver (A03-26)', () => {
     it('creates an EXTERNAL / PENDING / not-accepting Driver, the DRIVER role, one audit row and one event', async () => {
       const user = await registerUser(app);
-      const response = await create(user.accessToken, driverBody({ full_name: '  Lê Văn Xế  ' }));
+      const response = await create(user.accessToken, driverBody({ full_name: '  Lê Văn Shipper  ' }));
 
       expect(response.status).toBe(201);
       const data = dataOf(response);
@@ -103,7 +103,7 @@ describe('M01-A2D — Driver onboarding', () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({
         driver_id: data.driver_id,
-        full_name: 'Lê Văn Xế',
+        full_name: 'Lê Văn Shipper',
         plate_number: '29A-123.45',
         driver_type: 'EXTERNAL',
         status: 'PENDING',

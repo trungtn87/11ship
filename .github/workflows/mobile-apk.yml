@@ -146,6 +146,21 @@ jobs:
               echo "::error title=tests failed in $d::$(grep -E -A1 'Which:|\[E\]' "$RUNNER_TEMP/t.log" | head -24 | tr '\n' '|' | head -c 4000)"; exit 1; }
           done
 
+      - name: Render 11Ship M01 UI for review
+        if: matrix.app == 'ship'
+        working-directory: mobile/ship
+        env:
+          N11_SCREENSHOTS: ${{ runner.temp }}/ship-m01-ui
+        run: flutter test test/screenshots_test.dart --reporter expanded
+
+      - name: Upload 11Ship M01 widget renders (fixture data, not device acceptance)
+        if: always() && matrix.app == 'ship'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 11Ship-m01-ui-widget-renders
+          path: ${{ runner.temp }}/ship-m01-ui/*.png
+          if-no-files-found: ignore
+
       - name: Prepare Android project
         run: DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" mobile/tool/prepare-android.sh ${{ matrix.app }}
 

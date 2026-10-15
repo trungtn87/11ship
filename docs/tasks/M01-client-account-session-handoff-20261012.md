@@ -4,7 +4,7 @@ Owner giao tiếp sau #82 ngày 12/10/2026. Nhánh: feat/m01-client-account-sess
 ## Đã có / cần làm
 #82 đã merge: Food đăng ký thật và DISABLED_TEST không OTP; backend register/login/me/context/logout và GET/PUT customer/me/profile có sẵn. Shared auth đã có login/me/logout, session và bảo vệ retry/response muộn. Ship có màn auth/account nhưng chưa nối.
 Hoàn thiện đúng một luồng tài khoản khách trên web local Food/Ship: đăng ký → đăng nhập → xem/sửa tên hồ sơ cá nhân → đăng xuất, xử lý hết phiên. Dùng đăng ký #82 cho Ship, không viết lại OTP engine/backend. UI tiếp tục theo màn có sẵn, logic ở shared controller/adapter.
-Không triển khai onboarding quán/xế, reset, quản trị, native binding, APK, deploy hoặc module khác. Đăng nhập Ship không cấp quyền nhận đơn; màn onboarding chưa nối giữ khóa/lý do đúng.
+Không triển khai onboarding quán/shipper, reset, quản trị, native binding, APK, deploy hoặc module khác. Đăng nhập Ship không cấp quyền nhận đơn; màn onboarding chưa nối giữ khóa/lý do đúng.
 
 ## File dùng lại
 - apps/client-shared/src/auth/{client,contract,session,transport}.ts; register-flow.ts; screens/auth.ts; app.ts; screen.ts; ports.ts.
@@ -18,7 +18,7 @@ Profile GET /v1/customer/me/profile không body/query; PUT cùng route exact {fu
 Dùng lại normalization/name, errors, idempotency và session generation; không thêm store quyền/identity. Unknown outcome giữ key/body cho người dùng thử lại, không auto retry POST. Token/password chỉ memory, F5 đăng nhập lại; không đưa token vào URL/storage/log.
 Sai mật khẩu hiển thị lỗi login, không coi là phiên hết hạn. Phiên invalid/revoked/expired xóa dữ liệu nhạy cảm và về đăng nhập. Logout offline xóa local nhưng không nói server đã revoke.
 Food/Ship web local không chứng minh policy cùng điện thoại native; không sửa gate ANDROID/production để nối web.
-DISABLED_TEST giữ nguyên #82: lấy config từ server, không OTP/proof giả. Dùng lại controller đăng ký cho Ship; routing theo identity/server hint, hồ sơ xế chưa nối thì nói rõ, không tạo hồ sơ/role DRIVER giả.
+DISABLED_TEST giữ nguyên #82: lấy config từ server, không OTP/proof giả. Dùng lại controller đăng ký cho Ship; routing theo identity/server hint, hồ sơ shipper chưa nối thì nói rõ, không tạo hồ sơ/role DRIVER giả.
 Proxy chỉ forward route/method trên, Bearer/Idempotency-Key khi cần; không forward cookie/headers tùy ý. Các route OTP chỉ theo đăng ký đang có.
 Giữ test build local HTTPS hiện hữu; không mở VPS trong task này.
 

@@ -7,7 +7,7 @@ Every other business action stays **locked with a visible reason** ("Chưa nối
 - `packages/n11_shared` brand, theme, health monitor (5 s timeout, newest-check-wins, normal TLS verification only), widgets, diagnostics, and the account layer
   (`lib/src/account`: typed server contract, HTTPS transport, device-proof messages, `SessionController`, the login / register / profile / logout screens).
 - `food/` 11Food: Trang chủ, Tìm kiếm, Đơn hàng, Tài khoản (Quản lý cửa hàng is in Tài khoản, locked: needs login).
-- `ship/` 11Ship: Trang chủ, Đơn hàng, Thu nhập, Ví, Tài khoản.
+- `ship/` 11Ship: Trang chủ, Đơn hàng, Thu nhập, Thông báo, Tài khoản.
 - `*/android_overlay` launcher icons and splash generated from the approved icons by `tools/brand/build-brand-assets.py`.
 - `tool/prepare-android.sh <food|ship>` generates the Android project (`flutter create` + overlay + the Kotlin device bridge in `tool/android-templates/kotlin`). The result is not committed;
   everything native is in this repository, so the script rebuilds it. It needs `DEVICE_ENVIRONMENT` (see below).
@@ -40,7 +40,7 @@ All three reuse the session above and the backend that already exists; nothing i
   denied / disabled / timeout leave the draft and block completion. Service areas come only from `GET /v1/onboarding/shop/service-areas` (ACTIVE). *Hoàn tất hồ sơ* calls `POST /v1/onboarding/shop/complete {expected_version}`:
   the shop becomes ACTIVE with `accepting_orders=false`, SHOP_OWNER is added and CUSTOMER kept. The context changes only when the person taps *Vào quản lý cửa hàng* / *Về giao diện khách hàng* (signed `POST /v1/client-auth/context`).
   ACTIVE and DISABLED shops are read-only. Every write is read back with `GET`; a lost answer is retried with the same key and body only when the person presses *Thử lại*.
-- **Ship - driver profile (S12-S13).** *Tài khoản -> Hồ sơ xế*. `GET /v1/driver/me` first; one `POST /v1/onboarding/driver {full_name, plate_number?}`; then `driver/me` and `me` are read again. PENDING / ACTIVE / SUSPENDED / CLOSING / CLOSED are shown with *Tải lại*.
+- **Ship - driver profile (S12-S13).** *Tài khoản -> Hồ sơ shipper*. `GET /v1/driver/me` first; one `POST /v1/onboarding/driver {full_name, plate_number?}`; then `driver/me` and `me` are read again. PENDING / ACTIVE / SUSPENDED / CLOSING / CLOSED are shown with *Tải lại*.
   Sending the profile never changes the context and never enables receiving orders (still locked).
 - **Both - forgotten password (SMS code only).** *Đăng nhập -> Quên mật khẩu?*: the form works only when `GET /v1/account-recovery/config` says `SMS_OTP` (phone -> *Gửi mã* -> code from the SMS -> new password: `POST /v1/account-recovery/otp`, `.../otp/{id}/verify`, `.../reset {verification_token, password}`). The code request answers the same for every number, the proof is one-use and bound to the number that received the code. The old no-OTP route is not used by the app. Email recovery is **not** part of this build.
 - **Both - register with an SMS code (issue #102, server `REQUIRED` mode).** The register screen shows *Gửi mã xác minh* under the phone field: `POST /v1/auth/phone-verifications`, then it polls `GET /v1/auth/phone-verifications/{id}` while the server says `PENDING_DELIVERY`

@@ -5,7 +5,7 @@
 SYSTEM/Admin login + TOTP, lời mời/kích hoạt đã có (#89 thêm activation không OTP local test). Không làm lại.
 D81/D86/D89, core/accounts.ts, AccountsSource, dom/accounts-view.ts, ShellApp và menu.ts đã có; read source vẫn NOT_WIRED. AdminSessionService.me đã validate phiên TOTP nhưng chưa trả grants.
 Nối backend + UI cùng gói: ADMIN thấy menu đúng quyền; SYSTEM xem USER và quản trị viên; ADMIN chỉ xem USER/projection trong scope.
-Không lock/unlock, cấp/đổi grants, suspend quán/xế, duyệt hồ sơ, audit toàn hệ thống, reset, Android hay VPS. Giữ D87/D88 khóa. D15 quyền khóa identity nhiều role vẫn cần chốt sau; không suy can_lock đã lưu là quyền thực thi mutation.
+Không lock/unlock, cấp/đổi grants, suspend quán/shipper, duyệt hồ sơ, audit toàn hệ thống, reset, Android hay VPS. Giữ D87/D88 khóa. D15 quyền khóa identity nhiều role vẫn cần chốt sau; không suy can_lock đã lưu là quyền thực thi mutation.
 Không thêm accounts store/schema trùng users, không tạo lại UI hoặc auth.
 
 ## 2. Tài liệu/file đúng phạm vi

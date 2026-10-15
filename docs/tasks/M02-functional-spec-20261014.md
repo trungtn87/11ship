@@ -10,15 +10,15 @@ Tài liệu này cụ thể hóa thao tác và trạng thái để thiết kế;
 **Owner cập nhật 15:06:** UI v3 được chốt tạm để triển khai, tinh chỉnh sau khi nối xong M02. Tham chiếu nguồn chính và finding cần sửa ở [UI v3](../ui/m02/v3/README.md) và [kế hoạch](../current/M02-workstreams-20261014.md). Các câu yêu cầu web Food/Ship hoặc UI_LOCKED hoàn thiện trong brief lịch sử nhường quyết định này. Hợp đồng kỹ thuật menu/storage còn cần đối chiếu trước code.
 
 ## 1. Nhiệm vụ và ranh giới
-M02 quản lý hoạt động quán và thực đơn, gồm giao diện chủ quán + khách trong app 11Food và phần danh mục web quản trị tối thiểu khi cần. App 11Ship dành cho xế không thêm màn M02.
+M02 quản lý hoạt động quán và thực đơn, gồm giao diện chủ quán + khách trong app 11Food và phần danh mục web quản trị tối thiểu khi cần. App 11Ship dành cho shipper không thêm màn M02.
 Dùng lại đăng nhập, tài khoản, đổi context, onboarding quán, GPS và component M01. Không thiết kế lại toàn bộ M01.
 Kết quả: chủ quán lưu hồ sơ/lịch/món; khách xem thực đơn đúng trạng thái và phạm vi công khai.
-Chưa có giỏ hàng, đặt đơn, gọi xế, ví, COD, doanh thu, khuyến mãi, đánh giá, topping, size, combo, định lượng, nghỉ lễ, tìm quán/xếp hạng công khai.
+Chưa có giỏ hàng, đặt đơn, gọi shipper, ví, COD, doanh thu, khuyến mãi, đánh giá, topping, size, combo, định lượng, nghỉ lễ, tìm quán/xếp hạng công khai.
 Không dựng nút giả cho các chức năng ngoài phạm vi. Màn khách được mở khi có shop ID từ route/điểm vào hiện hữu; không tự xây trang tìm quán trong M02.
 
 Nguồn ưu tiên:
 1. Quyết định Owner M02 đã chốt trong 11Ship-M02-thiet-ke-ke-hoach-20261014.md.
-2. Quyết định M01: khách + chủ quán trong 11Food; 11Ship là app xế.
+2. Quyết định M01: khách + chủ quán trong 11Food; 11Ship là app shipper.
 3. Contract backend M02-A cho hồ sơ/lịch, dùng lại phần đã có.
 4. UI/Brand M01 mới đã duyệt; token brand cho phần chưa có component.
 Nếu tài liệu cũ đặt quán trong app Ship hoặc có công tắc nhận đơn, áp dụng quyết định mới trên.
@@ -68,7 +68,7 @@ Nội dung theo thứ tự:
 - Tên quán; trạng thái hồ sơ riêng nếu cần.
 - Card trạng thái hoạt động theo máy chủ.
 - Hồ sơ quán; Giờ hoạt động; Thực đơn; Xem trước thực đơn.
-Không thêm thẻ doanh thu, đơn hôm nay, số xế hoặc công tắc nhận đơn.
+Không thêm thẻ doanh thu, đơn hôm nay, số shipper hoặc công tắc nhận đơn.
 
 | Trạng thái máy chủ | Nhãn chủ quán | Hướng xử lý |
 |---|---|---|
@@ -229,7 +229,7 @@ Nếu chưa có UI: dựng frame bổ sung trong web Admin M01:
 - Không xóa vật lý nhóm, không tự sửa các món liên kết.
 Tên bắt buộc; uniqueness/giới hạn dùng contract catalog được đối chiếu trước implementation, không đoán từ dự án Ốc 11.
 Phân quyền qua capabilities/contract Admin hiện hữu, không mặc định mọi ADMIN được sửa danh mục.
-Không mở màn quản lý service areas, quyền admin, vùng xế hoặc nhà cung cấp storage từ brief này.
+Không mở màn quản lý service areas, quyền admin, vùng shipper hoặc nhà cung cấp storage từ brief này.
 Thiết kế D01/D02 tách rõ phụ lục Có điều kiện, không chặn thiết kế toàn bộ Food.
 
 ## 12. Hành vi chung khi lưu, lỗi và rời màn
@@ -309,11 +309,11 @@ M02 chưa được đóng chỉ vì bộ UI đã xuất xong.
 
 > Thiết kế toàn bộ UI module M02 của dự án 11Ship theo file “11Ship-M02-chuc-nang-va-giao-Claude-Design.md” đính kèm.
 >
-> M02 là quản lý hoạt động quán và thực đơn trong app 11Food (khách + chủ quán), chỉ trên app điện thoại. Dùng lại phong cách, logo, font, component và shell M01 đã duyệt. App 11Ship dành cho xế không thêm chức năng M02. Tài liệu/Brand Board cũ có quán trong Ship hoặc công tắc nhận đơn phải nhường quyết định mới trong brief.
+> M02 là quản lý hoạt động quán và thực đơn trong app 11Food (khách + chủ quán), chỉ trên app điện thoại. Dùng lại phong cách, logo, font, component và shell M01 đã duyệt. App 11Ship dành cho shipper không thêm chức năng M02. Tài liệu/Brand Board cũ có quán trong Ship hoặc công tắc nhận đơn phải nhường quyết định mới trong brief.
 >
 > Đọc brief một lần; bắt đầu dựng ngay bộ màn Q01–Q07, Q06-A/B, K01/K02, đủ dialog và trạng thái trong bảng. D01/D02 là phụ lục có điều kiện, dùng lại nếu đã có. Không hỏi lại nghiệp vụ đã chốt. Bạn tự quyết bố cục chi tiết phù hợp M01; báo riêng khi có xung đột thật.
 >
-> Quán tự mở/đóng theo lịch, không switch nhận đơn. Lịch phải có Cả tuần, từng ngày, nhiều ca, qua đêm CN→T2, 24 giờ, đóng tuần và lỗi trùng. Món có tên, giá, nhóm hệ thống, ảnh tùy chọn; hiện/ẩn/xóa mềm. Preview giống khách và không hiện món ẩn. Không thêm giỏ hàng, đặt đơn, gọi xế, doanh thu, đánh giá, topping hoặc tính năng ngoài brief.
+> Quán tự mở/đóng theo lịch, không switch nhận đơn. Lịch phải có Cả tuần, từng ngày, nhiều ca, qua đêm CN→T2, 24 giờ, đóng tuần và lỗi trùng. Món có tên, giá, nhóm hệ thống, ảnh tùy chọn; hiện/ẩn/xóa mềm. Preview giống khách và không hiện món ẩn. Không thêm giỏ hàng, đặt đơn, gọi shipper, doanh thu, đánh giá, topping hoặc tính năng ngoài brief.
 >
 > Mobile ưu tiên 390px, kiểm 360px; desktop 1280px chỉ cho Admin. Dựng prototype đi được các luồng F01–F13; giữ trạng thái dirty/saving/error/conflict và các quyền/empty cases. Prototype chỉ dùng dữ liệu mẫu, chưa nối backend; không viết mã sản phẩm, API hoặc migration.
 >

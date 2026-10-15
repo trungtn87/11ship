@@ -29,7 +29,7 @@ export function driverStatusBody(profile: DriverView): HTMLElement[] {
   const rows: ReadonlyArray<readonly [string, string, string]> = [
     ['Họ tên', profile.fullName, 'driver-name'],
     ['Biển số', profile.plateNumber ?? 'Chưa bổ sung', 'driver-plate'],
-    ['Loại xế', profile.driverType === 'PLATFORM' ? 'Xế hệ thống' : 'Xế ngoài', 'driver-type'],
+    ['Loại shipper', profile.driverType === 'PLATFORM' ? 'Shipper hệ thống' : 'Shipper ngoài', 'driver-type'],
   ];
   return [
     h('section', { class: 'c-card c-stack c-stack--tight', id: 'driver-status-card', 'data-status': profile.status }, h('div', { class: 'c-row-flex' }, icon(copy.icon, 24), h('p', { class: 'c-title c-title--sm', id: 'driver-status-title' }, copy.title)), h('p', { class: 'c-lead' }, copy.text)),
@@ -182,7 +182,7 @@ export function liveDriverStatus(env: ScreenEnv): HTMLElement {
     const profile = driver.state().profile;
     if (profile === null) {
       host.replaceChildren(
-        banner({ kind: 'warn', title: 'Chưa gửi hồ sơ xế', text: 'Máy chủ chưa có hồ sơ xế của tài khoản này.', action: { label: 'Gửi hồ sơ', onClick: () => env.go('driver-onboarding') } }),
+        banner({ kind: 'warn', title: 'Chưa gửi hồ sơ shipper', text: 'Máy chủ chưa có hồ sơ shipper của tài khoản này.', action: { label: 'Gửi hồ sơ', onClick: () => env.go('driver-onboarding') } }),
       );
       return;
     }
