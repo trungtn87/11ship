@@ -30,6 +30,8 @@ def tap_text(root, text):
 
 
 try:
+    adb('root')  # Disposable AOSP emulator only; app itself never requires root.
+    adb('wait-for-device')
     adb('install', '-r', '11Ship-GPS-Test.apk')
     adb('shell', 'settings', 'put', 'global', 'airplane_mode_on', '1')
     adb('shell', 'am', 'broadcast', '-a', 'android.intent.action.AIRPLANE_MODE', '--ez', 'state', 'true')

@@ -4,6 +4,9 @@ on:
     branches: ['codex/m14-runtime-check']
     paths: ['.github/workflows/m14-android-runtime.yml', 'mobile/gps-test/tools/android-smoke.py']
   workflow_dispatch:
+concurrency:
+  group: m14-signed-runtime
+  cancel-in-progress: true
 permissions:
   contents: write
   actions: read
