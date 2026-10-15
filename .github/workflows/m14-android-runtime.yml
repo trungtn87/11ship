@@ -1,0 +1,67 @@
+name: M14 signed APK offline runtime
+on:
+  push:
+    branches: ['codex/m14-runtime-check']
+    paths: ['.github/workflows/m14-android-runtime.yml', 'mobile/gps-test/tools/android-smoke.py']
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  android-offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for the final signed APK build
+        uses: actions/github-script@v7
+        with:
+          script: |
+            for(let i=0;i<60;i++) {
+              const r=await github.rest.actions.getWorkflowRun({owner:context.repo.owner,repo:context.repo.repo,run_id:38795720356});
+              if(r.data.status==='completed') {
+                if(r.data.conclusion!=='success') throw new Error('Final APK build did not pass');
+                return;
+              }
+              await new Promise(resolve=>setTimeout(resolve,10000));
+            }
+            throw new Error('Timed out waiting for final APK');
+      - uses: actions/download-artifact@v4
+        with:
+          name: 11Ship-GPS-Test-APK
+          run-id: 38795720356
+          github-token: ${{ github.token }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install pillow
+      - name: Enable KVM for the disposable emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install signed APK and check real offline rendering without injecting GPS
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: python3 mobile/gps-test/tools/android-smoke.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: M14-Android-offline-runtime-proof
+          path: runtime-proof
+          retention-days: 90
+      - name: Preserve runtime evidence on the test-only branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          mkdir -p docs/evidence/m14-runtime
+          cp runtime-proof/* docs/evidence/m14-runtime/
+          git add docs/evidence/m14-runtime
+          git commit -m 'test(m14): record signed APK offline rendering evidence [skip ci]'
+          git push origin HEAD:codex/m14-runtime-check
