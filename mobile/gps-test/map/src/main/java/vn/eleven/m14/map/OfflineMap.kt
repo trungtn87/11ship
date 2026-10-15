@@ -26,4 +26,21 @@ class OfflineMap(private val context: Context) {
         // Asset URLs remain local in airplane mode. Fonts and all named source data are bundled.
         return Style.Builder().fromJson(style.toString())
     }
+    fun labels(): List<MapLabel> {
+        val data=JSONObject(context.assets.open("caobang/map.geojson").bufferedReader().use { it.readText() }).getJSONArray("features")
+        return buildList {
+            for(i in 0 until data.length()) {
+                val f=data.getJSONObject(i); val p=f.getJSONObject("properties"); val g=f.getJSONObject("geometry")
+                val name=p.optString("name:vi").ifBlank { p.optString("name") }; if(name.isBlank()) continue
+                val kind=p.optString("kind"); val type=g.getString("type"); val c=g.getJSONArray("coordinates")
+                if(kind=="place" && type=="Point") {
+                    val place=p.optString("place"); val priority=if(place in listOf("city","town")) 0 else 1
+                    val zoom=if(priority==0 || place=="state") 0.0 else if(place=="village") 12.0 else 14.0
+                    add(MapLabel(c.getDouble(1),c.getDouble(0),name,zoom,priority))
+                } else if(kind=="road" && type=="LineString" && c.length()>0) {
+                    val point=c.getJSONArray(c.length()/2); add(MapLabel(point.getDouble(1),point.getDouble(0),name,14.0,3))
+                } else if(kind=="poi" && type=="Point") add(MapLabel(c.getDouble(1),c.getDouble(0),name,15.0,2))
+            }
+        }.sortedBy { it.priority }
+    }
 }

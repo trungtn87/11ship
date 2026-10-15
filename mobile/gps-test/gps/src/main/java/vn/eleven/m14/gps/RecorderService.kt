@@ -24,6 +24,7 @@ class RecorderService: Service() {
     private var listener: LocationListener? = null
     private var wake: PowerManager.WakeLock? = null
     private var first = true
+    private var coldAttempt = true
     private var running = false
     private var lastAcceptedElapsed = 0L
     private val cycle = object: Runnable {
@@ -58,6 +59,8 @@ class RecorderService: Service() {
         if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) { state("Quyền vị trí đã bị thu hồi"); shutdown(); return }
         if(!manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) { state("GPS đang tắt — bật Vị trí trên điện thoại"); return }
         state("Đang chờ vị trí GPS mới…")
+        val fixTimeout=if(coldAttempt) 120_000L else 25_000L
+        coldAttempt=false
         val requestedAt=SystemClock.elapsedRealtimeNanos()
         val current = object: LocationListener {
             override fun onLocationChanged(location: Location) {
@@ -80,7 +83,7 @@ class RecorderService: Service() {
         listener=current
         try { manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,0L,0f,current,Looper.getMainLooper()) }
         catch(_: SecurityException) { state("Quyền vị trí đã bị từ chối"); shutdown(); return }
-        handler.postDelayed({ if(listener === current) { cancelFix(); state("Chưa lấy được GPS mới — đang giữ vị trí cũ nếu có") } },if(lastAcceptedElapsed==0L) 120_000 else 25_000)
+        handler.postDelayed({ if(listener === current) { cancelFix(); state("Chưa lấy được GPS mới — đang giữ vị trí cũ nếu có") } },fixTimeout)
     }
     private fun cancelFix() { listener?.let { manager.removeUpdates(it) }; listener=null }
     private fun state(message: String) {

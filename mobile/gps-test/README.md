@@ -19,8 +19,8 @@ Không có thiết bị thật gắn vào môi trường build. GPS vệ tinh, t
 ## Gói bản đồ
 
 - GeoJSON cục bộ là nguồn dữ liệu native được MapLibre Android 11.8.0 hỗ trợ. Không phụ thuộc máy chủ tile, localhost hoặc cache đã mở từ trước.
-- `app/src/main/assets/caobang`: dữ liệu, style, 256 khoảng glyph PBF Noto Sans và giấy phép; ghim A/B/GPS được vẽ cục bộ bằng Android Canvas, không có URL sprite ngoài.
-- Snapshot `caobang-v1.2-2026-10-14`, 11.083 đối tượng OSM, vùng phủ `[106.0,22.43,106.52,22.91]` theo thứ tự tây/nam/đông/bắc. Tâm test `[106.257,22.665]`, bán kính phục vụ tạm 10 km và đệm ít nhất 10 km. Đây là phạm vi test, không sửa phạm vi nghiệp vụ production.
+- `app/src/main/assets/caobang`: dữ liệu, style, 256 khoảng glyph PBF Noto Sans, TTF và giấy phép; nhãn địa danh/đường và ghim A/B/GPS và nhãn OSM được vẽ cục bộ bằng Android Canvas với font Noto đi kèm, không có URL sprite ngoài.
+- Snapshot `caobang-v1.3-2026-10-14`, 11.083 đối tượng OSM, vùng phủ `[106.0,22.43,106.52,22.91]` theo thứ tự tây/nam/đông/bắc. Tâm test `[106.257,22.665]`, bán kính phục vụ tạm 10 km và đệm ít nhất 10 km. Đây là phạm vi test, không sửa phạm vi nghiệp vụ production.
 - Dữ liệu từ Geofabrik Vietnam, © OpenStreetMap contributors, ODbL 1.0. Toàn bộ cơ sở dữ liệu dẫn xuất `map.geojson` có trong APK và gói bản đồ riêng, có thể trích xuất/tái phân phối theo ODbL. Không tải hàng loạt tile công cộng.
 - Kiểm tra SHA-256 toàn bộ tệp trước khi mở style. Nâng gói bằng APK mới. Gói không phải bản đồ toàn tỉnh hoặc toàn Việt Nam; không bảo đảm mọi hẻm/đường đã được cộng đồng OSM cập nhật.
 

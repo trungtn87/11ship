@@ -64,7 +64,6 @@ class MainActivity: Activity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         MapLibre.getInstance(this)
-        MapLibre.setConnected(true) // This SDK only loads local assets; do not gate glyphs on Internet connectivity.
         offline=OfflineMap(this); history=HistoryStore(this); client=RouteClient(this,BuildConfig.ROUTING_URL)
         CleanupJob.schedule(this)
         route=client.saved(); start=route?.start; end=route?.end
@@ -98,7 +97,7 @@ class MainActivity: Activity() {
             map=m; m.uiSettings.isAttributionEnabled=false
             m.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(22.665,106.257),12.0))
             worker.execute {
-                try { offline.verify(); runOnUiThread { if(!isDestroyed) m.setStyle(offline.style()) { ready=true; redraw() } } }
+                try { offline.verify(); val labels=offline.labels(); runOnUiThread { if(!isDestroyed) { pinsView.labels=labels; m.setStyle(offline.style()) { ready=true; redraw() } } } }
                 catch(e: Exception) { runOnUiThread { AlertDialog.Builder(this).setTitle("Gói bản đồ chưa sử dụng được").setMessage(e.message).setPositiveButton("Đóng",null).show() } }
             }
             m.addOnMapClickListener { p -> choosePoint(p); true }
