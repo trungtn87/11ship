@@ -80,6 +80,43 @@ void main() {
     expect(find.byKey(const Key('connection-banner')), findsNothing);
   });
 
+  testWidgets('back preserves details and purpose; owner UI comes only from server identity', (WidgetTester tester) async {
+    final FakeApiTransport api = FakeApiTransport();
+    installAccountRoutes(api);
+    final SessionController session = await pump(tester, healthy(), api: api);
+    await openTab(tester, 'account');
+    await tester.tap(find.byKey(const Key('open-register')));
+    await tester.pumpAndSettle();
+    await registrationDetails(tester);
+    await tester.tap(find.byTooltip('Quay lại'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('purpose-owner')));
+    await tester.tap(find.byTooltip('Quay lại'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byKey(const Key('register-name'))).controller!.text, 'Nguyễn Văn An');
+    expect(tester.widget<TextField>(find.byKey(const Key('register-confirm'))).controller!.text, 'Correct-Horse-9');
+    await tester.ensureVisible(find.byKey(const Key('register-next')));
+    await tester.tap(find.byKey(const Key('register-next')));
+    await tester.pumpAndSettle();
+    expect(tester.widget<ListTile>(find.byKey(const Key('purpose-owner'))).selected, isTrue);
+    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'account']);
+    expect(api.to('POST', '/v1/client-auth/register'), isEmpty);
+  });
+
+  test('owner tab follows server role/profile and never changes context', () async {
+    final FakeApiTransport api = FakeApiTransport();
+    installAccountRoutes(api);
+    final FakeShopServer server = FakeShopServer(api);
+    final SessionController session = createSessionController(ClientApp.food, config, transport: api, bridge: FakeDeviceBridge());
+    await session.start();
+    await session.login(phone: '0901234567', password: 'Correct-Horse-9');
+    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'account']);
+    server.owner = true;
+    await session.refreshIdentity();
+    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'shop', 'account']);
+    expect(server.contexts, isEmpty);
+  });
+
   testWidgets('home shows the approved logo asset, no test banner and no invented shops', (WidgetTester tester) async {
     await pump(tester, healthy());
     final Iterable<Image> images = tester.widgetList<Image>(find.byType(Image));
