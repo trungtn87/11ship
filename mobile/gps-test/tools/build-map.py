@@ -56,15 +56,15 @@ def build(source, destination, source_date):
             layer('building', 'fill', 'building', {'fill-color': '#d7c9b9', 'fill-outline-color': '#c0b29f'}, 'Polygon', minzoom=14),
             layer('road-casing', 'line', 'road', {'line-color': '#c7bbaa', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1, 14, 5, 18, 13]}, 'LineString'),
             layer('road', 'line', 'road', {'line-color': ['match', ['get', 'highway'], ['primary', 'secondary', 'trunk', 'motorway'], '#f0cb7a', '#ffffff'], 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 0.6, 14, 3, 18, 10]}, 'LineString', {'line-cap': 'round', 'line-join': 'round'}),
-            layer('road-label', 'symbol', 'road', {'text-color': '#5a5045', 'text-halo-color': '#ffffff', 'text-halo-width': 1}, 'LineString', {'symbol-placement': 'line', 'text-field': ['coalesce', ['get', 'name:vi'], ['get', 'name'], ''], 'text-font': ['Noto Sans Regular'], 'text-size': 11}, 14),
-            layer('place-label', 'symbol', 'place', {'text-color': '#263c46', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5}, 'Point', {'text-field': ['coalesce', ['get', 'name:vi'], ['get', 'name'], ''], 'text-font': ['Noto Sans Regular'], 'text-size': 14}),
-            layer('poi-label', 'symbol', 'poi', {'text-color': '#66507b', 'text-halo-color': '#ffffff', 'text-halo-width': 1}, 'Point', {'text-field': ['coalesce', ['get', 'name:vi'], ['get', 'name'], ''], 'text-font': ['Noto Sans Regular'], 'text-size': 11}, 15),
+            layer('road-label', 'symbol', 'road', {'text-color': '#5a5045', 'text-halo-color': '#ffffff', 'text-halo-width': 1}, 'LineString', {'symbol-placement': 'line', 'text-field': ['coalesce', ['get', 'name:vi'], ['get', 'name'], ''], 'text-font': ['NotoSansRegular'], 'text-size': 11}, 14),
+            layer('place-label', 'symbol', 'place', {'text-color': '#263c46', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5}, 'Point', {'text-field': ['coalesce', ['get', 'name:vi'], ['get', 'name'], ''], 'text-font': ['NotoSansRegular'], 'text-size': 14}),
+            layer('poi-label', 'symbol', 'poi', {'text-color': '#66507b', 'text-halo-color': '#ffffff', 'text-halo-width': 1}, 'Point', {'text-field': ['coalesce', ['get', 'name:vi'], ['get', 'name'], ''], 'text-font': ['NotoSansRegular'], 'text-size': 11}, 15),
         ]
     }
     (destination / 'style.json').write_text(json.dumps(style, ensure_ascii=False, indent=2))
     (destination / 'NOTICE.txt').write_text('© OpenStreetMap contributors. Source: Geofabrik Vietnam extract, '+source_date+'.\nMap database (map.geojson) is provided under Open Database License 1.0 (ODbL).\nhttps://www.openstreetmap.org/copyright\nhttps://opendatacommons.org/licenses/odbl/1-0/\nThe full derived database is included as map.geojson; no tile server was scraped.\nFonts: Noto Sans, SIL Open Font License; see fonts/OFL.txt.\nMap style: 11Ship GPS Test project.\n')
     checksums = {str(f.relative_to(destination)): hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(destination.rglob('*')) if f.is_file() and f.name != 'manifest.json'}
-    manifest = dict(version='caobang-v1.1-'+source_date, source_date=source_date, bounds=BOUNDS, center=[106.257,22.665], service_radius_km=10, minimum_buffer_km=10, feature_count=len(features), license='ODbL-1.0', source='https://download.geofabrik.de/asia/vietnam.html', sha256=checksums)
+    manifest = dict(version='caobang-v1.2-'+source_date, source_date=source_date, bounds=BOUNDS, center=[106.257,22.665], service_radius_km=10, minimum_buffer_km=10, feature_count=len(features), license='ODbL-1.0', source='https://download.geofabrik.de/asia/vietnam.html', sha256=checksums)
     (destination / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2))
     print(f'Built {len(features)} OSM features; {len(checksums)} local files')
 

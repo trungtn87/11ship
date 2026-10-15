@@ -20,6 +20,8 @@ import org.maplibre.android.maps.*
 import vn.eleven.m14.gps.*
 import vn.eleven.m14.history.*
 import vn.eleven.m14.map.OfflineMap
+import vn.eleven.m14.map.MapPin
+import vn.eleven.m14.map.MapPinsView
 import vn.eleven.m14.routing.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -44,8 +46,7 @@ class MainActivity: Activity() {
     private var end: Endpoint?=null
     private var route: Route?=null
     private var moving: Boolean?=null
-    private var startMarker: Marker?=null
-    private var endMarker: Marker?=null
+    private lateinit var pinsView: MapPinsView
     private var renderedTime=-1L
     private var ready=false
     private var busy=false
@@ -61,6 +62,7 @@ class MainActivity: Activity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         MapLibre.getInstance(this)
+        MapLibre.setConnected(true) // This SDK only loads local assets; do not gate glyphs on Internet connectivity.
         offline=OfflineMap(this); history=HistoryStore(this); client=RouteClient(this,BuildConfig.ROUTING_URL)
         CleanupJob.schedule(this)
         route=client.saved(); start=route?.start; end=route?.end
@@ -69,10 +71,14 @@ class MainActivity: Activity() {
         root.addView(text(18f).apply { text="11Ship GPS Test"; setBackgroundColor(Color.rgb(226,184,31)) })
         gpsText=text(); root.addView(gpsText)
         mapView=MapView(this); mapView.onCreate(state)
-        root.addView(mapView,LinearLayout.LayoutParams(-1,0,1f))
+        val mapFrame=FrameLayout(this)
+        mapFrame.addView(mapView,FrameLayout.LayoutParams(-1,-1))
+        pinsView=MapPinsView(this) { map }
+        mapFrame.addView(pinsView,FrameLayout.LayoutParams(-1,-1))
+        root.addView(mapFrame,LinearLayout.LayoutParams(-1,0,1f))
         val controls=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(4),0,dp(4),0) }
         val scroll=ScrollView(this).apply { addView(controls) }
-        root.addView(scroll,LinearLayout.LayoutParams(-1,dp(278)))
+        root.addView(scroll,LinearLayout.LayoutParams(-1,dp(240)))
         startButton=button("") { editEndpoint(true) }; endButton=button("") { editEndpoint(false) }
         controls.row(startButton,endButton)
         controls.row(button("Đổi chiều") { val old=start; start=end; end=old; changed() }, button("Xóa điểm") { start=null; end=null; changed() },button("Về vị trí của tôi") { center() })
@@ -95,7 +101,8 @@ class MainActivity: Activity() {
             }
             m.addOnMapClickListener { p -> choosePoint(p); true }
             m.addOnMapLongClickListener { p -> choosePoint(p); true }
-            m.addOnCameraIdleListener { refresh() }
+            m.addOnCameraMoveListener { pinsView.invalidate() }
+            m.addOnCameraIdleListener { pinsView.invalidate(); refresh() }
 
         }
     }
@@ -189,27 +196,22 @@ class MainActivity: Activity() {
         val time=p.getLong("time",0)
         if(time!=renderedTime) { renderedTime=time; redraw() }
     }
-    private fun icon(label: String, color: Int): Icon {
-        val bitmap=Bitmap.createBitmap(dp(40),dp(46),Bitmap.Config.ARGB_8888)
-        val c=Canvas(bitmap); val paint=Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color=color }
-        c.drawCircle(dp(20).toFloat(),dp(20).toFloat(),dp(17).toFloat(),paint)
-        paint.color=Color.WHITE; paint.textAlign=Paint.Align.CENTER; paint.textSize=dp(14).toFloat(); paint.typeface=Typeface.DEFAULT_BOLD
-        c.drawText(label,dp(20).toFloat(),dp(25).toFloat(),paint)
-        return IconFactory.getInstance(this).fromBitmap(bitmap)
-    }
     private fun redraw() {
         val m=map?:return; if(!ready) return
         m.clear()
         val points=history.points()
         points.groupBy { it.segment }.values.forEach { group -> if(group.size>1) m.addPolyline(PolylineOptions().addAll(group.map { LatLng(it.lat,it.lon) }).color(Color.rgb(20,150,85)).width(4f)) }
         route?.let { r -> m.addPolyline(PolylineOptions().addAll(r.coordinates.map { LatLng(it.first,it.second) }).color(Color.rgb(40,95,225)).width(5f)) }
-        startMarker=start?.let { m.addMarker(MarkerOptions().position(LatLng(it.lat,it.lon)).title("A · Điểm đầu").snippet(it.name).icon(icon("A",Color.rgb(20,140,70)))) }
-        endMarker=end?.let { m.addMarker(MarkerOptions().position(LatLng(it.lat,it.lon)).title("B · Điểm cuối").snippet(it.name).icon(icon("B",Color.rgb(220,70,35)))) }
+        val pins=mutableListOf<MapPin>()
+        start?.let { pins.add(MapPin(it.lat,it.lon,"A",Color.rgb(20,140,70))) }
+        end?.let { pins.add(MapPin(it.lat,it.lon,"B",Color.rgb(220,70,35))) }
         val p=RecorderService.preferences(this)
         if(p.contains("lat")) {
             val age=SystemClock.elapsedRealtime()-p.getLong("elapsed",0)
-            m.addMarker(MarkerOptions().position(LatLng(p.getString("lat","0")!!.toDouble(),p.getString("lon","0")!!.toDouble())).title(if(age in 0..120_000) "GPS · vị trí mới" else "GPS · vị trí cũ").icon(icon("GPS",if(age in 0..120_000) Color.BLUE else Color.GRAY)))
+            pins.add(MapPin(p.getString("lat","0")!!.toDouble(),p.getString("lon","0")!!.toDouble(),"GPS",if(age in 0..120_000) Color.BLUE else Color.GRAY))
         }
+        pinsView.pins=pins
+
     }
     private fun showHistory() {
         val points=history.points(); var meters=0.0

@@ -9,7 +9,7 @@ assert m['feature_count'] > 100
 assert m['bounds'] == [106.0, 22.43, 106.52, 22.91]
 for name, expected in m['sha256'].items():
     assert hashlib.sha256((root / name).read_bytes()).hexdigest() == expected, name
-assert all((root / 'fonts/Noto Sans Regular' / f'{i}-{i+255}.pbf').exists() for i in range(0,65536,256))
+assert all((root / 'fonts/NotoSansRegular' / f'{i}-{i+255}.pbf').exists() for i in range(0,65536,256))
 style = json.loads((root / 'style.json').read_text())
 assert style['glyphs'].startswith('asset://')
 assert all(s['data'].startswith('asset://') for s in style['sources'].values())
