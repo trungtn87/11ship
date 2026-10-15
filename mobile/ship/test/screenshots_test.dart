@@ -32,6 +32,9 @@ void main() {
       loader.addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
     }
     await loader.load();
+    final FontLoader icons = FontLoader('MaterialIcons');
+    icons.addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await icons.load();
   });
 
   final GlobalKey boundary = GlobalKey();
@@ -53,6 +56,7 @@ void main() {
   Future<void> pumpApp(WidgetTester tester, SessionController session, AppFlows flows) async {
     await tester.pumpWidget(RepaintBoundary(key: boundary, child: N11App(brand: shipBrand, tabs: buildShipTabs(session, flows: flows), config: config, transport: healthy(), pollInterval: Duration.zero)));
     await tester.pump();
+    await tester.runAsync(() => precacheImage(const AssetImage('assets/brand/logo-11ship-ui.png', package: 'n11_shared'), tester.element(find.byType(N11App))));
     await tester.pump();
   }
 
@@ -83,6 +87,7 @@ void main() {
     await tester.tap(find.byKey(const Key('register-consent')));
     await tester.pump();
     await tester.ensureVisible(find.byKey(const Key('register-submit')));
+    await shot(tester, '03a-register-consent');
     await tester.tap(find.byKey(const Key('register-submit')));
     await tester.pumpAndSettle();
     await shot(tester, '03b-register-otp');

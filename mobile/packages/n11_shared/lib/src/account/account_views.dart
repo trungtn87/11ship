@@ -538,6 +538,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
       OtpDelivery.closed => 'Mã này không dùng được nữa. Hãy gửi mã mới.',
       _ => null,
     };
+    if (_ship) {
+      return <Widget>[
+        if (verified)
+          const N11Banner(key: Key('otp-verified'), kind: BannerKind.success, title: 'Đã xác minh số điện thoại')
+        else ...<Widget>[
+          if (failure != null) N11Banner(key: const Key('otp-error'), kind: BannerKind.error, title: 'Chưa xác minh được', text: failureMessage(failure)),
+          if (_otp.step == OtpStep.waiting) const N11Banner(key: Key('otp-waiting'), kind: BannerKind.info, title: 'Đang gửi tin nhắn…', text: 'Bạn có thể nhập mã khi tin nhắn đã được gửi.'),
+          if (note != null) N11Banner(key: const Key('otp-note'), kind: BannerKind.warn, title: 'Lưu ý', text: note),
+          RegistrationOtpInput(controller: _code, enabled: !busy && _otp.step == OtpStep.sent, onChanged: () => setState(() {})),
+          N11Button(
+            key: const Key('otp-verify'),
+            label: _otp.step == OtpStep.verifying ? 'Đang kiểm tra…' : 'Xác nhận mã',
+            loading: _otp.step == OtpStep.verifying,
+            onPressed: busy || _otp.step != OtpStep.sent || _code.text.length != 6 ? null : _completeOtp,
+          ),
+          const Text('Không nhận được mã?', textAlign: TextAlign.center, style: N11Text.caption),
+          N11Link(
+            _otp.step == OtpStep.requesting ? 'Đang gửi…' : 'Gửi lại mã',
+            key: const Key('otp-request'),
+            onPressed: busy || !_otp.canResend ? null : () => _otp.request(_phone.text),
+          ),
+          if (!_otp.canResend && _otp.resendSeconds > 0)
+            Text('Gửi lại sau ${_otp.resendSeconds} giây', key: const Key('otp-resend-countdown'), textAlign: TextAlign.center, style: N11Text.caption),
+        ],
+      ];
+    }
     return <Widget>[
       if (verified)
         const N11Banner(key: Key('otp-verified'), kind: BannerKind.success, title: 'Đã xác minh số điện thoại')
@@ -547,8 +573,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
         if (note != null && _otp.step == OtpStep.idle) N11Banner(key: const Key('otp-note'), kind: BannerKind.warn, title: 'Mã chưa dùng được', text: note),
         if (_otp.step == OtpStep.waiting) const N11Banner(key: Key('otp-waiting'), kind: BannerKind.info, title: 'Đang gửi tin nhắn…', text: 'Vui lòng đợi, chưa nhập mã khi tin nhắn chưa được gửi đi.'),
         if (_otp.step == OtpStep.sent && note != null) N11Banner(key: const Key('otp-note'), kind: BannerKind.warn, title: 'Lưu ý', text: note),
-        if (_ship && !_otp.canResend && _otp.resendSeconds > 0)
-          Text('Gửi lại sau ${_otp.resendSeconds} giây', key: const Key('otp-resend-countdown'), textAlign: TextAlign.center, style: N11Text.caption),
         N11Button(
           key: const Key('otp-request'),
           label: _otp.step == OtpStep.requesting ? 'Đang gửi…' : (_otp.step == OtpStep.idle && _otp.phone == null ? 'Gửi mã xác minh' : 'Gửi lại mã'),
@@ -557,15 +581,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
           onPressed: busy || _phone.text.trim().isEmpty || !_otp.canResend ? null : () => _otp.request(_phone.text),
         ),
         if (_otp.canEnterCode) ...<Widget>[
-          if (_ship)
-            RegistrationOtpInput(controller: _code, enabled: _otp.step == OtpStep.sent, onChanged: () => setState(() {}))
-          else
-            N11Field(fieldKey: const Key('otp-code'), label: 'Mã xác minh', placeholder: '6 số', controller: _code, keyboard: TextInputType.number, maxLength: 6, enabled: _otp.step == OtpStep.sent, onChanged: () => setState(() {})),
+          N11Field(fieldKey: const Key('otp-code'), label: 'Mã xác minh', placeholder: '6 số', controller: _code, keyboard: TextInputType.number, maxLength: 6, enabled: _otp.step == OtpStep.sent, onChanged: () => setState(() {})),
           N11Button(
             key: const Key('otp-verify'),
             label: _otp.step == OtpStep.verifying ? 'Đang kiểm tra…' : 'Xác nhận mã',
             loading: _otp.step == OtpStep.verifying,
-            onPressed: _otp.step != OtpStep.sent || _code.text.trim().length != 6 ? null : (_ship ? _completeOtp : () => _otp.verify(_code.text)),
+            onPressed: _otp.step != OtpStep.sent || _code.text.trim().length != 6 ? null : () => _otp.verify(_code.text),
           ),
         ],
       ],
@@ -629,7 +650,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               session: session,
               onBack: busy || _otp.busy ? () {} : back,
               children: <Widget>[
-                const N11Heading('Xác thực số điện thoại', sub: 'Bước 2/2 · Nhập mã OTP được gửi đến', centered: true, size: 22),
+                const Text('Bước 2/2 · Nhập mã OTP gồm 6 số được gửi qua SMS đến', textAlign: TextAlign.center, style: N11Text.lead),
                 Text(_phone.text.trim(), key: const Key('register-otp-phone'), textAlign: TextAlign.center, style: N11Text.h2),
                 N11Link('Sửa số điện thoại', key: const Key('register-edit-phone'), onPressed: busy || _otp.busy ? null : back),
                 _failureBanner(session),
