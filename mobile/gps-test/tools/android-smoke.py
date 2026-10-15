@@ -119,6 +119,16 @@ try:
     root=ui('updated-offline-cached-route')
     assert any(n.get('text','').startswith('Tuyến dự tính đã lưu:') for n in root.iter('node'))
     (out/'updated-offline-cached-route.png').write_bytes(adb('exec-out','screencap','-p'))
+    updated=Image.open(out/'updated-offline-cached-route.png').convert('RGB')
+    map_top=bounds(next(n for n in root.iter('node') if 'Chưa lấy được vị trí' in n.get('text','')))[3]
+    map_bottom=bounds(next(n for n in root.iter('node') if 'A · Điểm đầu:' in n.get('text','')))[1]
+    map_colors=updated.crop((0,map_top,updated.width,map_bottom)).getcolors(updated.width*updated.height)
+    def color_pixels(target):
+        return sum(n for n,c in map_colors if sum(abs(c[i]-target[i]) for i in range(3))<30)
+    green_pin=color_pixels((20,140,70)); red_pin=color_pixels((220,70,35))
+    assert green_pin>100 and red_pin>100, ('A/B pins missing',green_pin,red_pin)
+    place_labels=color_pixels((38,60,70))
+    assert place_labels>20, ('Bundled offline font/place labels missing',place_labels)
     tap_text(root,'Bắt đầu ghi')
     time.sleep(1)
     tap_text(ui('consent'),'Bắt đầu')
@@ -190,7 +200,7 @@ try:
     conn.close()
     log=adb('logcat','-d').decode(errors='replace')
     assert 'FATAL EXCEPTION' not in log, log[-4000:]
-    report={'signed_apk_installed':True,'airplane_mode':True,'osm_river_pixels':water,'offline_map_rendered':True,'two_pins_selected':True,'android_online_route':online_result,'offline_cached_route_after_restart':True,'offline_route_message':True,'permission_denied_without_recording':True,'gps_injected':False,'physical_gps_tested':False,'update_keeps_route_cache':True,'foreground_survives_screen_lock_with_gps_off':True,'stop_stays_stopped_after_65_seconds':True,'gps_disabled_reported':True,'retention_25h_deleted_1h_kept_using_database_fixtures':True,'clear_history_works':True,'old_build_info':json.loads(Path('build-info.json').read_text()),'build_info':json.loads(Path('updated-apk/build-info.json').read_text())}
+    report={'signed_apk_installed':True,'airplane_mode':True,'osm_river_pixels':water,'offline_map_rendered':True,'two_pins_selected':True,'android_online_route':online_result,'offline_cached_route_after_restart':True,'offline_route_message':True,'permission_denied_without_recording':True,'gps_injected':False,'physical_gps_tested':False,'update_keeps_route_cache':True,'green_start_pin_pixels':green_pin,'red_end_pin_pixels':red_pin,'offline_place_label_pixels':place_labels,'foreground_survives_screen_lock_with_gps_off':True,'stop_stays_stopped_after_65_seconds':True,'gps_disabled_reported':True,'retention_25h_deleted_1h_kept_using_database_fixtures':True,'clear_history_works':True,'old_build_info':json.loads(Path('build-info.json').read_text()),'build_info':json.loads(Path('updated-apk/build-info.json').read_text())}
     (out/'result.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
     print(json.dumps(report,ensure_ascii=False))
 finally:

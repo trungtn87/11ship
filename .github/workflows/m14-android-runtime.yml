@@ -21,7 +21,7 @@ jobs:
         with:
           script: |
             for(let i=0;i<60;i++) {
-              const r=await github.rest.actions.getWorkflowRun({owner:context.repo.owner,repo:context.repo.repo,run_id:38797297710});
+              const r=await github.rest.actions.getWorkflowRun({owner:context.repo.owner,repo:context.repo.repo,run_id:38799003426});
               if(r.data.status==='completed') {
                 if(r.data.conclusion!=='success') throw new Error('Final APK build did not pass');
                 return;
@@ -37,7 +37,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: 11Ship-GPS-Test-APK
-          run-id: 38797297710
+          run-id: 38799003426
           path: updated-apk
           github-token: ${{ github.token }}
       - uses: actions/setup-python@v5
