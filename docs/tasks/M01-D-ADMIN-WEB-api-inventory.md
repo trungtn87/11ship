@@ -53,12 +53,12 @@ Cookie phiên ADMIN (đã xong TOTP), `Cache-Control: no-store`, không CSRF, `O
 | Route | Truy vấn | Thành công `data` | Lỗi chính |
 |---|---|---|---|
 | `GET /v1/admin-auth/permissions` | — | `{admin_role, permissions:[{app, can_view, can_review_profile, can_lock}]}` (SYSTEM: 3 app, mọi quyền true) | 401 |
-| `GET /v1/admin/users` | `q` (≤120 ký tự, không phân biệt hoa/thường và dấu tiếng Việt, `%` `_` là ký tự thường; tên, tên quán, tên xế, SĐT), `role` ∈ `CUSTOMER` `SHOP_OWNER` `DRIVER`, `status` ∈ `ACTIVE` `DISABLED`, `limit` 1–50 (mặc định 20), `cursor` | `{items:[{user_id, display_name, phone_masked, roles_visible[], account_status, created_at}], next_cursor, available_role_filters[]}` | 400 `ADMIN_INPUT_INVALID`; 403 `ADMIN_FORBIDDEN` (không có quyền xem nào, hoặc `role` ngoài phạm vi) |
+| `GET /v1/admin/users` | `q` (≤120 ký tự, không phân biệt hoa/thường và dấu tiếng Việt, `%` `_` là ký tự thường; tên, tên quán, tên shipper, SĐT), `role` ∈ `CUSTOMER` `SHOP_OWNER` `DRIVER`, `status` ∈ `ACTIVE` `DISABLED`, `limit` 1–50 (mặc định 20), `cursor` | `{items:[{user_id, display_name, phone_masked, roles_visible[], account_status, created_at}], next_cursor, available_role_filters[]}` | 400 `ADMIN_INPUT_INVALID`; 403 `ADMIN_FORBIDDEN` (không có quyền xem nào, hoặc `role` ngoài phạm vi) |
 | `GET /v1/admin/users/:user_id` | — | mục trên + `{updated_at, version, profiles:{customer?:{full_name}, shop?:{name,status}, driver?:{status}}, allowed_actions:[]\|["LOCK"]\|["UNLOCK"]}` | 404 `USER_NOT_AVAILABLE` (id không tồn tại và id ngoài phạm vi giống hệt nhau); 403 |
 | `GET /v1/admin/administrators` | `q`, `status` ∈ `ACTIVE` `DISABLED`, `limit`, `cursor` | `{items:[{user_id, full_name, phone_masked, admin_role:"ADMIN", status, permissions[], created_at}], next_cursor}` | 403 `ADMIN_FORBIDDEN` với ADMIN |
 
 - USER = tài khoản không phải `ADMIN_PROVISIONED` và không có `admin_memberships` (kể cả membership DISABLED). Vai trò: CUSTOMER→CUSTOMER, SHOP→`SHOP_OWNER`, DRIVER→DRIVER. ADMIN chỉ thấy user có ≥1 vai trò trong phạm vi; `roles_visible`, hồ sơ, tìm kiếm bị giới hạn theo phạm vi ngay trong SQL. SYSTEM còn thấy tài khoản cũ không có vai trò.
-- `display_name`: tên khách (góc nhìn CUSTOMER), rồi tên quán, rồi tên xế; không có ⇒ `null`. SĐT luôn là `phone_masked`; không trả mật khẩu, OTP, TOTP, token, ngân hàng, GPS.
+- `display_name`: tên khách (góc nhìn CUSTOMER), rồi tên quán, rồi tên shipper; không có ⇒ `null`. SĐT luôn là `phone_masked`; không trả mật khẩu, OTP, TOTP, token, ngân hàng, GPS.
 - Danh sách quản trị viên: chỉ ADMIN đã kích hoạt (có membership và hồ sơ); không có SYSTEM, không có lời mời đang chờ. `status` hiệu lực = `DISABLED` nếu tài khoản hoặc membership bị khóa.
 - `cursor` opaque, keyset `(created_at, user_id)` giảm dần, ràng buộc bằng HMAC vào endpoint, bộ lọc, actor, vân tay quyền và phiên bản membership. Đổi bộ lọc/quyền/actor hoặc cursor giả ⇒ 400 `ADMIN_INPUT_INVALID`; trang bỏ cursor và đọc lại trang 1.
 - `allowed_actions`: gợi ý cho UI, `["LOCK"]` khi tài khoản ACTIVE, `["UNLOCK"]` khi DISABLED, `[]` khi thiếu quyền theo D15, tài khoản không thuộc loại thường mà policy hiện hành chấp nhận, hoặc gate khóa/mở đang đóng (mục 2c). Mutation luôn kiểm lại.
@@ -107,5 +107,5 @@ Mọi 4xx/5xx và 2xx có no-store. `ADMIN_ACTIVATION_STEP_INVALID` (409) mang `
 
 ## 4. Khoảng trống đã xác nhận (không giả lập thành chức năng sản phẩm)
 
-Không có API cho: khóa/mở khóa ADMIN (khóa/mở USER thường: mục 2c), đổi quyền sau kích hoạt, khôi phục 2FA, nhật ký, quản lý người dùng app (Khách/Quán/Xế), danh sách tài khoản ADMIN đã kích hoạt.
+Không có API cho: khóa/mở khóa ADMIN (khóa/mở USER thường: mục 2c), đổi quyền sau kích hoạt, khôi phục 2FA, nhật ký, quản lý người dùng app (Khách/Quán/Shipper), danh sách tài khoản ADMIN đã kích hoạt.
 `GET /invitations/:id` luôn trả `activation.state = "NONE"` (1B); trạng thái kích hoạt thật chỉ ở `/v1/admin-activation/state` của người được mời.

@@ -100,7 +100,7 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 3 USER lock/unlock codes (M01 account lock, D15: USER_ACCOUNT_VERSION_CONFLICT, USER_ACCOUNT_ALREADY_IN_STATE, USER_ACCOUNT_IMPACT_REVIEW_REQUIRED):
     // + 4 native device codes (M01-ANDROID: DEVICE_PROOF_INVALID, DEVICE_PROOF_EXPIRED, DEVICE_PROOF_UNSUPPORTED, DEVICE_RATE_LIMITED)
     // + 3 SMS gateway codes (issue #102: GATEWAY_UNAUTHORIZED, GATEWAY_JOB_NOT_FOUND, GATEWAY_ACK_CONFLICT)
-    // + 1 own-password change code (M01 Food, issue #114: CURRENT_PASSWORD_INVALID)
+    // + 1 own-password change code (M01 client apps, reused from #114: CURRENT_PASSWORD_INVALID)
     // the total is pinned so that an accidental addition or removal is still caught.
     expect(codes).toHaveLength(66);
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(18);

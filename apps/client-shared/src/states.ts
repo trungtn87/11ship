@@ -141,7 +141,7 @@ export function failureMessage(code: FailureCode, retryAfterSeconds?: number): {
     case 'AREA_INVALID':
       return { title: 'Khu vực không còn hoạt động', text: 'Hãy chọn lại khu vực phục vụ trong danh sách.' };
     case 'DRIVER_EXISTS':
-      return { title: 'Tài khoản đã có hồ sơ xế', text: 'Hồ sơ xế đã được gửi trước đó. Hãy tải lại để xem trạng thái hiện tại.' };
+      return { title: 'Tài khoản đã có hồ sơ shipper', text: 'Hồ sơ shipper đã được gửi trước đó. Hãy tải lại để xem trạng thái hiện tại.' };
     case 'NOT_WIRED':
       return { title: STATE_COPY.notWiredTitle, text: 'Chức năng này chưa có máy chủ phục vụ.' };
     case 'UNKNOWN':

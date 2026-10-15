@@ -57,7 +57,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         final AuthFailure? failure = c.failure;
         final bool loading = c.loadState == DriverLoad.loading || c.loadState == DriverLoad.idle;
         return N11FormScaffold(
-          title: 'Hồ sơ xế',
+          title: 'Hồ sơ shipper',
           session: null,
           children: <Widget>[
             if (failure != null)
@@ -70,7 +70,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                     ? N11Button(key: const Key('driver-retry'), label: 'Thử lại', compact: true, onPressed: c.busy ? null : c.retryPending)
                     : null,
               ),
-            if (loading && profile == null) const N11Banner(key: Key('driver-loading'), kind: BannerKind.info, title: 'Đang đọc hồ sơ xế từ máy chủ…'),
+            if (loading && profile == null) const N11Banner(key: Key('driver-loading'), kind: BannerKind.info, title: 'Đang đọc hồ sơ shipper từ máy chủ…'),
             if (c.loadState == DriverLoad.failed) N11Button(key: const Key('driver-reload'), label: 'Tải lại', kind: ButtonKind.secondary, onPressed: c.load),
             if (c.loadState == DriverLoad.ready && profile == null) ..._form(c),
             if (profile != null) ..._status(c, profile),
@@ -83,7 +83,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   List<Widget> _form(DriverController c) {
     final bool busy = c.busy;
     return <Widget>[
-      const N11Heading('Thông tin tài xế', sub: 'Điền thông tin để gửi hồ sơ. Gửi hồ sơ chưa cho phép nhận đơn: hồ sơ sẽ chờ duyệt.'),
+      const N11Heading('Thông tin shipper', sub: 'Điền thông tin để gửi hồ sơ. Gửi hồ sơ chưa cho phép nhận đơn: hồ sơ sẽ chờ duyệt.'),
       N11Field(fieldKey: const Key('driver-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !busy, onChanged: () { c.fullName = _name.text; setState(() {}); }),
       N11Field(fieldKey: const Key('driver-plate'), label: 'Biển số xe', optionalLabel: true, placeholder: '59X1-123.45', controller: _plate, maxLength: 32, enabled: !busy, onChanged: () { c.plateNumber = _plate.text; setState(() {}); }),
       N11Button(
@@ -102,7 +102,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         phone: driverTypeLabel(profile.driverType),
         nameKey: const Key('driver-status-name'),
         chips: <Widget>[
-          const N11Chip('Tài xế', kind: ChipKind.dark),
+          const N11Chip('Shipper', kind: ChipKind.dark),
           N11Chip(driverStatusLabel(profile.status), key: const Key('driver-status-chip'), kind: profile.status == 'ACTIVE' ? ChipKind.ok : (profile.status == 'PENDING' ? ChipKind.warn : ChipKind.bad)),
           const N11Chip('Chưa nhận đơn', kind: ChipKind.soon),
         ],

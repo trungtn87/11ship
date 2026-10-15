@@ -55,12 +55,12 @@ const home: ScreenDef = {
     // Online is only ever possible for an approved, eligible driver; that state does not exist in M01. Always unavailable.
     const reason =
       env.account === undefined
-        ? 'Đăng nhập và hoàn tất hồ sơ xế để bật nhận đơn.'
+        ? 'Đăng nhập và hoàn tất hồ sơ shipper để bật nhận đơn.'
         : driver?.status === 'PENDING'
           ? 'Hồ sơ đang chờ duyệt. Bạn chưa thể bật nhận đơn.'
           : driver !== undefined && driver.status !== 'NONE'
             ? 'Nhận đơn chưa mở ở phiên bản này. Công tắc vẫn khóa.'
-            : 'Hoàn tất và gửi hồ sơ xế để được duyệt trước khi bật nhận đơn.';
+            : 'Hoàn tất và gửi hồ sơ shipper để được duyệt trước khi bật nhận đơn.';
     const toggle = h('button', { type: 'button', class: 'c-switch', role: 'switch', 'aria-checked': 'false', 'aria-label': 'Sẵn sàng nhận đơn', 'aria-describedby': 'online-reason', 'aria-disabled': 'true' });
     toggle.addEventListener('click', (event) => event.preventDefault());
     const status =
@@ -69,8 +69,8 @@ const home: ScreenDef = {
         : driver?.status === 'PENDING'
           ? banner({ kind: 'info', title: 'Hồ sơ đang chờ duyệt', text: 'Chúng tôi sẽ cập nhật khi hồ sơ được xem xét.', action: { label: 'Xem hồ sơ', onClick: () => env.go('driver-status') } })
           : driver !== undefined && driver.status !== 'NONE'
-            ? banner({ kind: 'info', title: 'Đã có hồ sơ xế', text: 'Xem trạng thái hồ sơ do máy chủ báo.', action: { label: 'Xem hồ sơ', onClick: () => env.go('driver-status') } })
-            : banner({ kind: 'warn', title: 'Chưa gửi hồ sơ xế', text: 'Gửi hồ sơ để được xét duyệt.', action: { label: 'Gửi hồ sơ', onClick: () => env.go('driver-onboarding') } });
+            ? banner({ kind: 'info', title: 'Đã có hồ sơ shipper', text: 'Xem trạng thái hồ sơ do máy chủ báo.', action: { label: 'Xem hồ sơ', onClick: () => env.go('driver-status') } })
+            : banner({ kind: 'warn', title: 'Chưa gửi hồ sơ shipper', text: 'Gửi hồ sơ để được xét duyệt.', action: { label: 'Gửi hồ sơ', onClick: () => env.go('driver-onboarding') } });
     return appPage({
       title: 'Trang chủ',
       logo: logo(SHIP_BRAND),
@@ -79,7 +79,7 @@ const home: ScreenDef = {
       bodyClass: 'c-stack',
       body: [
         designChip(env),
-        env.account === undefined ? guestPrompt(env, 'Đăng nhập để gửi hồ sơ xế và theo dõi trạng thái.') : status,
+        env.account === undefined ? guestPrompt(env, 'Đăng nhập để gửi hồ sơ shipper và theo dõi trạng thái.') : status,
         h('section', { class: 'c-card c-stack c-stack--tight' }, h('div', { class: 'c-row-flex' }, h('p', { class: 'c-title c-title--sm' }, 'Sẵn sàng nhận đơn'), toggle), h('p', { id: 'online-reason', class: 'c-reason' }, reason)),
         emptyState({ icon: 'truck', title: 'Chưa có đơn nào', text: 'Đơn giao sẽ hiện ở đây khi tính năng giao hàng sẵn sàng.' }),
       ],
@@ -214,7 +214,7 @@ const account: ScreenDef = {
         body: [
           h('div', { class: 'c-hero' }, logo(SHIP_BRAND, true), h('p', { class: 'c-slogan' }, SHIP_BRAND.slogan)),
           button({ label: 'Đăng nhập', kind: 'primary', id: 'account-login', onClick: () => env.go('login') }),
-          button({ label: 'Đăng ký làm xế', kind: 'secondary', id: 'account-register', onClick: () => env.go('register') }),
+          button({ label: 'Đăng ký làm shipper', kind: 'secondary', id: 'account-register', onClick: () => env.go('register') }),
           list([
             listItem({ icon: 'help', title: 'Trợ giúp', soon: true }),
             listItem({ icon: 'shield', title: 'Chính sách và điều khoản', soon: true }),
@@ -236,10 +236,10 @@ const account: ScreenDef = {
             { class: 'c-card c-stack c-stack--tight' },
             h('p', { class: 'c-title' }, me.fullName ?? 'Chưa có tên'),
             h('p', { class: 'c-lead' }, me.phoneMasked),
-            h('div', { class: 'c-row-flex' }, driver?.kind === 'PLATFORM' ? chip('Xế hệ thống', 'info') : driver?.kind === 'EXTERNAL' ? chip('Xế ngoài', 'info') : undefined, chip(STATUS_LABEL[status], status === 'ACTIVE' ? 'ok' : status === 'PENDING' || status === 'SUSPENDED' ? 'warn' : 'soon')),
+            h('div', { class: 'c-row-flex' }, driver?.kind === 'PLATFORM' ? chip('Shipper hệ thống', 'info') : driver?.kind === 'EXTERNAL' ? chip('Shipper ngoài', 'info') : undefined, chip(STATUS_LABEL[status], status === 'ACTIVE' ? 'ok' : status === 'PENDING' || status === 'SUSPENDED' ? 'warn' : 'soon')),
           ),
           list([
-            listItem({ icon: 'user', title: 'Hồ sơ xế', sub: status === 'NONE' ? 'Chưa gửi hồ sơ — gửi ngay' : 'Xem trạng thái hồ sơ', onClick: () => env.go(status === 'NONE' ? 'driver-onboarding' : 'driver-status') }),
+            listItem({ icon: 'user', title: 'Hồ sơ shipper', sub: status === 'NONE' ? 'Chưa gửi hồ sơ — gửi ngay' : 'Xem trạng thái hồ sơ', onClick: () => env.go(status === 'NONE' ? 'driver-onboarding' : 'driver-status') }),
             listItem({ icon: 'user', title: 'Thông tin cá nhân', sub: 'Họ tên và số điện thoại đăng nhập', onClick: () => env.go('profile') }),
             listItem({ icon: 'banknote', title: 'Tài khoản ngân hàng', soon: true }),
             listItem({ icon: 'wallet', title: 'Ví', soon: true }),
@@ -290,15 +290,15 @@ const profile: ScreenDef = {
 const driverOnboarding: ScreenDef = {
   id: 'driver-onboarding',
   code: 'S12',
-  title: 'Hồ sơ xế',
-  group: 'Hồ sơ xế',
+  title: 'Hồ sơ shipper',
+  group: 'Hồ sơ shipper',
   path: '/driver/onboarding',
   access: 'authed',
   variants: [v('default', 'Trống'), v('invalid-name', 'Tên sai'), v('invalid-plate', 'Biển số sai'), v('conflict', 'Xung đột cập nhật'), v('offline', 'Mất kết nối'), v('submitting', 'Đang gửi')],
   render: (env, variant) => {
     if (env.mode === 'live' && env.driver !== undefined) {
       return appPage({
-        title: 'Hồ sơ xế',
+        title: 'Hồ sơ shipper',
         onBack: () => env.go('account'),
         bodyClass: 'c-stack',
         body: [banner({ kind: 'info', title: 'Gửi hồ sơ để được duyệt', text: 'Sau khi gửi, hồ sơ ở trạng thái chờ duyệt. Chờ duyệt chưa thể nhận đơn.' }), liveDriverForm(env)],
@@ -343,7 +343,7 @@ const driverOnboarding: ScreenDef = {
       setBusy(submit.button, true, 'Gửi hồ sơ', 'Đang gửi…');
     }
     return appPage({
-      title: 'Hồ sơ xế',
+      title: 'Hồ sơ shipper',
       onBack: () => env.go('account'),
       bodyClass: 'c-stack',
       body: [designChip(env), banner({ kind: 'info', title: 'Gửi hồ sơ để được duyệt', text: 'Sau khi gửi, hồ sơ ở trạng thái chờ duyệt. Chờ duyệt chưa thể nhận đơn.' }), form],
@@ -357,7 +357,7 @@ const driverStatus: ScreenDef = {
   id: 'driver-status',
   code: 'S13',
   title: 'Trạng thái hồ sơ',
-  group: 'Hồ sơ xế',
+  group: 'Hồ sơ shipper',
   path: '/driver/status',
   access: 'authed',
   variants: [v('default', 'Chờ duyệt'), v('offline', 'Mất kết nối')],
@@ -369,7 +369,7 @@ const driverStatus: ScreenDef = {
     const rows: ReadonlyArray<readonly [string, string]> = [
       ['Họ tên', driver?.legalName ?? '—'],
       ['Biển số', driver?.plate ?? 'Chưa bổ sung'],
-      ['Loại xế', driver?.kind === 'PLATFORM' ? 'Xế hệ thống' : 'Xế ngoài'],
+      ['Loại shipper', driver?.kind === 'PLATFORM' ? 'Shipper hệ thống' : 'Shipper ngoài'],
     ];
     return appPage({
       title: 'Trạng thái hồ sơ',

@@ -146,6 +146,21 @@ jobs:
               echo "::error title=tests failed in $d::$(grep -E -A1 'Which:|\[E\]' "$RUNNER_TEMP/t.log" | head -24 | tr '\n' '|' | head -c 4000)"; exit 1; }
           done
 
+      - name: Render 11Ship M01 UI for review
+        if: matrix.app == 'ship'
+        working-directory: mobile/ship
+        env:
+          N11_SCREENSHOTS: ${{ runner.temp }}/ship-m01-ui
+        run: flutter test test/screenshots_test.dart --reporter expanded
+
+      - name: Upload 11Ship M01 widget renders (fixture data, not device acceptance)
+        if: always() && matrix.app == 'ship'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 11Ship-m01-ui-widget-renders
+          path: ${{ runner.temp }}/ship-m01-ui/*.png
+          if-no-files-found: ignore
+
       - name: Prepare Android project
         run: DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" mobile/tool/prepare-android.sh ${{ matrix.app }}
 
@@ -282,4 +297,43 @@ jobs:
           name: android-signers.json
           path: android-signers.json
           if-no-files-found: error
+          retention-days: 30
+
+  ship-android-ui:
+    name: 11Ship Android guest UI and screenshots
+    needs: apk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: 11Ship-test.apk
+      - name: Enable KVM for the disposable emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Capture signed APK guest screens without sending SMS
+        env:
+          SHIP_UI_OUTPUT: ${{ runner.temp }}/ship-android-ui
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: python3 mobile/tool/ship-android-ui-smoke.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 11Ship-android-ui-screenshots
+          path: ${{ runner.temp }}/ship-android-ui/
+          if-no-files-found: warn
           retention-days: 30

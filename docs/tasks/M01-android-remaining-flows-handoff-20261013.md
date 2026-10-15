@@ -3,14 +3,14 @@ Ngày 13/10/2026. Owner: “Vậy triển khai hết đi”. Claude code, ChatGP
 Cùng nhánh feat/m01-android-account-session / PR #95. Mốc kế thừa 3ffd51000ed8c651e753759be6b39a244769a763: Verify/Launcher/Preview xanh; hai APK compile đã qua, distribution dừng vì 4 signing secrets thiếu. Không chạy lại gói auth từ đầu.
 
 ## Kết quả
-Hoàn tất code Android còn thiếu trong phạm vi M01 test: Food onboarding quán F20–F23; Ship onboarding xế S12–S13; Food/Ship reset mật khẩu. Làm tuần tự trong cùng nhánh/PR, không dừng xin giao lại sau từng màn.
+Hoàn tất code Android còn thiếu trong phạm vi M01 test: Food onboarding quán F20–F23; Ship onboarding shipper S12–S13; Food/Ship reset mật khẩu. Làm tuần tự trong cùng nhánh/PR, không dừng xin giao lại sau từng màn.
 Không triển khai SMS/email thật, recovery SYSTEM email, order/wallet/GPS vận hành, bản đồ hay module khác. Các phần hoãn vẫn ghi chưa triển khai, không đánh PASS.
 Không chờ signing secrets để viết code/test. Thiếu secrets thì không xuất APK, không đổi khóa ký và không nhận là đã chạy trên thiết bị.
 
 ## Tài liệu/code dùng lại
 Trong phiên Claude hiện tại không đọc lại AGENTS/CLAUDE/quy trình/handoff auth nếu chưa thay đổi; phiên mới đọc một lần.
 - docs/current/M01-workstreams-20261012.md: M01-QUAN/XE/RESET/ANDROID và §5.
-- docs/tasks/M01-A2-onboarding.md: chỉ phần quán rồi phần xế.
+- docs/tasks/M01-A2-onboarding.md: chỉ phần quán rồi phần shipper.
 - docs/ui/m01-food-web.md F20–F23; docs/ui/m01-ship-web.md S12–S13 và S15; reset Food F13. UI web là tham chiếu bố cục/trạng thái, không viết lại nghiệp vụ.
 - PR #85 head d32d51d: apps/client-shared/src/shop-flow.ts, screens/shop-live.ts, auth/{contract,client}.ts; backend onboarding/shop-onboarding.controller.ts + validation/service hiện có.
 - PR #88 head 63faa208: apps/client-shared/src/driver-flow.ts và màn driver live (xác nhận đúng đường dẫn trước đọc); backend onboarding/driver-onboarding.controller.ts, customer-profile/driver-me.controller.ts.
@@ -27,12 +27,12 @@ Trong phiên Claude hiện tại không đọc lại AGENTS/CLAUDE/quy trình/ha
 6. Complete theo version/idempotency hiện có -> đọc identity/profile hiện tại; cửa hàng ACTIVE, accepting_orders=false; thêm SHOP_OWNER nhưng giữ CUSTOMER. Chỉ chuyển context theo thao tác user, ký POST /v1/client-auth/context. CUSTOMER <-> SHOP_OWNER cùng phiên Food, không revoke Ship.
 7. Hồ sơ ACTIVE/DISABLED chỉ xem theo API hiện hữu; không tự thêm API sửa sau hoàn tất. Không giờ mở cửa/nhận đơn/bản đồ.
 
-## Ship — hồ sơ xế
-1. Tài khoản -> Hồ sơ xế; GET /v1/driver/me trước. Chưa có -> S12, đã có -> S13, không tạo bản thứ hai.
+## Ship — hồ sơ shipper
+1. Tài khoản -> Hồ sơ shipper; GET /v1/driver/me trước. Chưa có -> S12, đã có -> S13, không tạo bản thứ hai.
 2. S12 họ tên bắt buộc, biển số tùy chọn; POST /v1/onboarding/driver đúng contract hiện hữu. Không lấy tên customer để điền ngầm.
 3. Thành công -> me và driver/me đọc lại; giữ identity hiện có và CUSTOMER, thêm DRIVER từ server; không tự đổi context/cấp quyền nhận đơn.
-4. S13 đọc PENDING/ACTIVE/SUSPENDED/CLOSING/CLOSED, tên/biển số/loại xế thực từ server. Mở màn lại đọc mới, có Tải lại. Không sửa, không bịa lý do xét duyệt hoặc dữ liệu ngân hàng/ví.
-5. Account/home hiển thị trạng thái server, nhận đơn vẫn khóa. PLATFORM chỉ loại xế, không SYSTEM quyền quản trị.
+4. S13 đọc PENDING/ACTIVE/SUSPENDED/CLOSING/CLOSED, tên/biển số/loại shipper thực từ server. Mở màn lại đọc mới, có Tải lại. Không sửa, không bịa lý do xét duyệt hoặc dữ liệu ngân hàng/ví.
+5. Account/home hiển thị trạng thái server, nhận đơn vẫn khóa. PLATFORM chỉ loại shipper, không SYSTEM quyền quản trị.
 
 ## Reset Food/Ship
 1. Một shared Flutter form dùng bố cục F13/S15: phone/password/confirm ở client.
@@ -43,7 +43,7 @@ Trong phiên Claude hiện tại không đọc lại AGENTS/CLAUDE/quy trình/ha
 6. Nếu phiên hiện tại hết hiệu lực sau reset, dùng cơ chế 401 hiện hữu để xóa token/PII/mọi controller cache; không biến public reset thành endpoint xác thực.
 
 ## Hạ tầng chung, không làm lại #95
-- Typed adapters/models và controllers quán/xế/reset tách widget, reuse NativeAuthApi.signedCall cho protected routes. Mọi request protected mới có proof/time/nonce/raw bytes đúng #95; retry key/body cũ + nonce mới.
+- Typed adapters/models và controllers quán/shipper/reset tách widget, reuse NativeAuthApi.signedCall cho protected routes. Mọi request protected mới có proof/time/nonce/raw bytes đúng #95; retry key/body cũ + nonce mới.
 - Với protected onboarding writes/context: kiểm binding/head trong cùng transaction nghiệp vụ, không chỉ guard HTTP. Chỉ bổ sung hook thiếu ở đúng service/participant hiện có; không rebuild backend onboarding/schema.
 - Session/logout/401/dispose phải hủy pending views và xóa PII/form cache; response muộn không đổi identity/context hay dựng hồ sơ của phiên khác.
 - Native gateway thêm allowlist đúng các route/method nêu trên và reset public; không wildcard/query bất ngờ. Header forwarding phân biệt public reset (không authorization/proof) và protected; web proxy không đổi.

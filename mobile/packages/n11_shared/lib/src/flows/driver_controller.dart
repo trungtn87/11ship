@@ -61,9 +61,9 @@ String driverStatusLabel(String status) {
 String driverTypeLabel(String type) {
   switch (type) {
     case 'PLATFORM':
-      return 'Xế của nền tảng';
+      return 'Shipper của nền tảng';
     case 'EXTERNAL':
-      return 'Xế bên ngoài';
+      return 'Shipper bên ngoài';
     default:
       return type;
   }

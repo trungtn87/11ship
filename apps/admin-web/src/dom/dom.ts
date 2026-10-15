@@ -76,7 +76,7 @@ export function authPage(card: HTMLElement): HTMLElement {
       { class: 'auth-intro' },
       h('span', { class: 'auth-badge' }, 'ADMIN'),
       h('p', { class: 'auth-title' }, 'Quản trị hệ sinh thái 11'),
-      h('p', { class: 'auth-text' }, 'Khu vực dành riêng cho quản trị viên. Không dành cho khách hàng, chủ quán hay tài xế.'),
+      h('p', { class: 'auth-text' }, 'Khu vực dành riêng cho quản trị viên. Không dành cho khách hàng, chủ quán hay shipper.'),
     ),
     h('p', { class: 'auth-slogan' }, '11 — Cần là có'),
   );

@@ -181,4 +181,4 @@ Task: M01-D-ADMIN-1C; base: head #44 `2e63da5`; nguồn nghiệp vụ: `docs/tas
 | Ứng dụng | Phạm vi | Code/CI/review | Local | Thiết bị thật | Owner nghiệm thu |
 |---|---|---|---|---|---|
 | Web quản trị | API kích hoạt tài khoản (8 route), không UI | Code + CI đạt trên head ghi ở mục 1; **chưa review** | Chưa kiểm chứng | Chưa kiểm chứng | Chưa |
-| Khách / Quán / Xế / App quản lý | N/A: không thay đổi (chỉ thêm unique-race với `/auth/register`, test B K2) | N/A | N/A | N/A | N/A |
+| Khách / Quán / Shipper / App quản lý | N/A: không thay đổi (chỉ thêm unique-race với `/auth/register`, test B K2) | N/A | N/A | N/A | N/A |

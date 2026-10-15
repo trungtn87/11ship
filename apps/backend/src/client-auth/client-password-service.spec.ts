@@ -31,7 +31,7 @@ function fixture() {
   return { service, principal, setApp: (value: string) => { app = value; }, resetDuringVerification: () => { concurrentReset = true; }, counters: () => ({ changed, revoked, audited, stored }) };
 }
 
-describe('Food own-password mutation', () => {
+describe('Client own-password mutation', () => {
   it('refuses incorrect current password without changing credentials or sessions', async () => {
     const f = fixture();
     await expect(f.service.change(f.principal, { currentPassword: 'wrong', newPassword: 'new-password-secret' }, randomUUID(), randomUUID())).rejects.toMatchObject({ code: 'CURRENT_PASSWORD_INVALID' });
@@ -47,8 +47,13 @@ describe('Food own-password mutation', () => {
     await expect(f.service.change(f.principal, { currentPassword: 'old-password', newPassword: 'new-password-secret' }, randomUUID(), randomUUID())).resolves.toEqual({ data: { changed: true } });
     expect(f.counters()).toEqual({ changed: 1, revoked: 1, audited: 1, stored: 'hash:new-password-secret' });
   });
-  it('does not expose the new feature to Ship sessions', async () => {
+  it('changes the password for Ship with the same session and audit safeguards', async () => {
     const f = fixture(); f.setApp('SHIP');
+    await expect(f.service.change(f.principal, { currentPassword: 'old-password', newPassword: 'new-password-secret' }, randomUUID(), randomUUID())).resolves.toEqual({ data: { changed: true } });
+    expect(f.counters()).toEqual({ changed: 1, revoked: 1, audited: 1, stored: 'hash:new-password-secret' });
+  });
+  it('does not accept another application as a client', async () => {
+    const f = fixture(); f.setApp('ADMIN');
     await expect(f.service.change(f.principal, { currentPassword: 'old-password', newPassword: 'new-password-secret' }, randomUUID(), randomUUID())).rejects.toMatchObject({ code: 'ROLE_NOT_AVAILABLE' });
     expect(f.counters()).toMatchObject({ changed: 0, revoked: 0, audited: 0 });
   });

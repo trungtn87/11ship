@@ -11,7 +11,8 @@ import { TransactionManager } from '../transaction/transaction-manager';
 import { ClientSessionAuthority } from './client-session-authority';
 import { ClientPasswordInput } from './client-auth-validation';
 
-/** Own-password change: native guard outside, current user/session locks inside, no role or phone supplied by the client. */
+/** Reuses the password mutation from PR #115 (9efdf95), extended to Ship.
+ * Own-password change: native guard outside, current user/session locks inside, no role or phone supplied by the client. */
 @Injectable()
 export class ClientPasswordService {
   constructor(
@@ -30,7 +31,7 @@ export class ClientPasswordService {
     // or change cannot be overwritten by a request verified against an obsolete password.
     const before = await this.transactions.withTransaction(async (context) => {
       const actor = await this.authority.lock(context, principal, 'share');
-      if (actor.app !== 'FOOD') throw new AppError('ROLE_NOT_AVAILABLE');
+      if (actor.app !== 'FOOD' && actor.app !== 'SHIP') throw new AppError('ROLE_NOT_AVAILABLE');
       return this.users.findById(context, actor.userId);
     });
     const matches = before !== undefined && await this.hasher.verify(before.passwordHash, input.currentPassword);
@@ -41,7 +42,7 @@ export class ClientPasswordService {
       replay: { kind: 'sensitive', authorize: async (context) => { await this.authority.lock(context, principal, 'share'); return true; } },
     }, async (context) => {
       const actor = await this.authority.lock(context, principal, 'update');
-      if (actor.app !== 'FOOD') throw new AppError('ROLE_NOT_AVAILABLE');
+      if (actor.app !== 'FOOD' && actor.app !== 'SHIP') throw new AppError('ROLE_NOT_AVAILABLE');
       const current = await this.users.findById(context, actor.userId);
       if (!matches || passwordHash === undefined || before === undefined || current?.passwordHash !== before.passwordHash) {
         throw new AppError('CURRENT_PASSWORD_INVALID');
