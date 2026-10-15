@@ -179,12 +179,12 @@ class MainActivity: Activity() {
         if(!::gpsText.isInitialized) return
         val p=RecorderService.preferences(this); val active=RecorderService.active(this)
         val age=SystemClock.elapsedRealtime()-p.getLong("elapsed",0)
-        val details=if(p.contains("lat")) "\n${p.getString("lat","")}, ${p.getString("lon","")} · ±${p.getFloat("accuracy",0f).toInt()} m · ${date.format(Date(p.getLong("time",0)))} · ${if(age in 0..120_000) "vị trí mới" else "vị trí cũ"}" else "\nChưa lấy được vị trí"
+        val details=if(p.contains("lat")) "\nVĩ độ ${p.getString("lat","")} · Kinh độ ${p.getString("lon","")} · ±${p.getFloat("accuracy",0f).toInt()} m · ${date.format(Date(p.getLong("time",0)))} · ${if(age in 0..120_000) "vị trí mới" else "vị trí cũ"}" else "\nChưa lấy được vị trí"
         val denied=checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED
         gpsText.text=(if(denied) "Chưa cấp quyền GPS chính xác" else if(!getSystemService(LocationManager::class.java).isProviderEnabled(LocationManager.GPS_PROVIDER)) "GPS đang tắt" else p.getString("status","Chưa bắt đầu ghi GPS"))+details
         recording.text=if(active) "Dừng ghi" else "Bắt đầu ghi"
         val center=map?.cameraPosition?.target
-        val outside=try { center!=null && !offline.contains(center.latitude,center.longitude) } catch(_:Exception) { false }
+        val outside=try { (center!=null && !offline.contains(center.latitude,center.longitude)) || (p.contains("lat") && !offline.contains(p.getString("lat","0")!!.toDouble(),p.getString("lon","0")!!.toDouble())) } catch(_:Exception) { false }
         networkText.text=(if(online()) "Có mạng · Bản đồ và GPS dùng dữ liệu cục bộ" else "Cần mạng để tính tuyến mới")+(if(outside) "\nNgoài vùng bản đồ đã đóng gói" else "")
         val time=p.getLong("time",0)
         if(time!=renderedTime) { renderedTime=time; redraw() }

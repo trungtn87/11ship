@@ -23,7 +23,7 @@ object TrackRules {
     }
 }
 
-/** Local only. A production integration may omit this module and set recordHistory=false. */
+/** Local only. Production must disable historyEnabled before recording. */
 class HistoryStore(context: Context): SQLiteOpenHelper(context, "m14-history.db", null, 1) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE points(id INTEGER PRIMARY KEY,lat REAL NOT NULL,lon REAL NOT NULL,accuracy REAL NOT NULL,time INTEGER NOT NULL,segment INTEGER NOT NULL)")

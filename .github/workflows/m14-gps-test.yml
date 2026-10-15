@@ -96,6 +96,20 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      - name: Publish installable test files on the isolated branch
+        if: github.ref_name == 'codex/m14-gps-test' || github.head_ref == 'codex/m14-gps-test'
+        run: |
+          mkdir -p downloads/m14
+          cp artifact-out-m14/11Ship-GPS-Test.apk artifact-out-m14/build-info.json downloads/m14/
+          cp caobang-offline.tar.gz downloads/m14/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add downloads/m14
+          if ! git diff --cached --quiet; then
+            git commit -m 'build(m14): publish installable test APK and map [skip ci]'
+            git push origin HEAD:codex/m14-gps-test
+          fi
+
   routing-smoke:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
