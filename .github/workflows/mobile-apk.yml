@@ -306,7 +306,6 @@ jobs:
     timeout-minutes: 20
     env:
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      SHIP_UI_OUTPUT: ${{ runner.temp }}/ship-android-ui
     steps:
       - uses: actions/checkout@v4
         with:
@@ -320,6 +319,8 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Capture signed APK guest screens without sending SMS
+        env:
+          SHIP_UI_OUTPUT: ${{ runner.temp }}/ship-android-ui
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
