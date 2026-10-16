@@ -124,9 +124,9 @@ class _HomeMapState extends State<_HomeMap> {
     // Opt in per build after the Cao Bang service area is approved. No GPS is
     // requested by displaying the map; M01 online/order behavior stays locked.
     if (const bool.fromEnvironment('M14_OFFLINE_MAP')) {
-      return const Semantics(
+      return Semantics(
         label: 'Bản đồ offline Cao Bằng, không phải vị trí hiện tại của bạn',
-        child: M14OfflineMap(key: Key('home-map')),
+        child: const M14OfflineMap(key: Key('home-map')),
       );
     }
     final int generation = _generation;
