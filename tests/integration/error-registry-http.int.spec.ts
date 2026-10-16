@@ -101,8 +101,9 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 4 native device codes (M01-ANDROID: DEVICE_PROOF_INVALID, DEVICE_PROOF_EXPIRED, DEVICE_PROOF_UNSUPPORTED, DEVICE_RATE_LIMITED)
     // + 3 SMS gateway codes (issue #102: GATEWAY_UNAUTHORIZED, GATEWAY_JOB_NOT_FOUND, GATEWAY_ACK_CONFLICT)
     // + 1 own-password change code (M01 client apps, reused from #114: CURRENT_PASSWORD_INVALID)
+    // + 6 menu/discovery codes (M02: MENU_ITEM_NOT_FOUND, MENU_CATEGORY_NOT_AVAILABLE, INVALID_MENU_IMAGE, MENU_LIMIT_REACHED, MENU_IMAGE_NOT_FOUND, SHOP_UNAVAILABLE)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(66);
+    expect(codes).toHaveLength(72);
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(18);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);
     expect(codes).toContain('TRANSACTION_OUTCOME_UNKNOWN');

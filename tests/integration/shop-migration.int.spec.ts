@@ -27,6 +27,10 @@ describe('M01-A2S — Shop onboarding migration', () => {
   const hoursSql = readFileSync(path.join(migrationsDir, `${HOURS}.sql`), 'utf8');
   const hoursUpSql = (hoursSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const hoursDownSql = hoursSql.split('-- Down Migration')[1] as string;
+  const MENU = names.find((name) => name.endsWith('create-menu')) as string;
+  const menuSql = readFileSync(path.join(migrationsDir, `${MENU}.sql`), 'utf8');
+  const menuUpSql = (menuSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+  const menuDownSql = menuSql.split('-- Down Migration')[1] as string;
   const driverSql = readFileSync(path.join(migrationsDir, `${DRIVER}.sql`), 'utf8');
   const driverUpSql = (driverSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const driverDownSql = driverSql.split('-- Down Migration')[1] as string;
@@ -163,6 +167,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
     expect(migrate().status).toBe(0);
     await client.query('BEGIN');
     try {
+      await client.query(menuDownSql);
       await client.query(hoursDownSql);
       await client.query(driverDownSql);
       await client.query(downSql);
@@ -175,6 +180,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
       await client.query(upSql);
       await client.query(driverUpSql);
       await client.query(hoursUpSql);
+      await client.query(menuUpSql);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
       await client.query('ROLLBACK');
