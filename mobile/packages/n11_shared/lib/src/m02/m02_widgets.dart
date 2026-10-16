@@ -307,7 +307,7 @@ class DishThumb extends StatelessWidget {
 
 /// One row of a dish list (owner list, preview and customer view share it; [dim] is a hidden dish).
 class DishRow extends StatelessWidget {
-  const DishRow({super.key, required this.name, required this.price, required this.imageUrl, this.sub, this.chip, this.dim = false, this.onTap});
+  const DishRow({super.key, required this.name, required this.price, required this.imageUrl, this.sub, this.chip, this.dim = false, this.highlight = false, this.onTap});
 
   final String name;
   final String price;
@@ -315,6 +315,9 @@ class DishRow extends StatelessWidget {
   final String? sub;
   final Widget? chip;
   final bool dim;
+
+  /// The dish a search result pointed at: marked so the person sees where they landed.
+  final bool highlight;
   final VoidCallback? onTap;
 
   @override
@@ -326,7 +329,9 @@ class DishRow extends StatelessWidget {
       onTap: onTap,
       child: InkWell(
         onTap: onTap,
-        child: ConstrainedBox(
+        child: ColoredBox(
+          color: highlight ? N11Colors.yellowSoft : Colors.transparent,
+          child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 76),
           child: Opacity(
             opacity: dim ? 0.62 : 1,
@@ -353,6 +358,7 @@ class DishRow extends StatelessWidget {
               ),
             ),
           ),
+        ),
         ),
       ),
     );

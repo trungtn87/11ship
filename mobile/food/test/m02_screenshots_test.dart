@@ -101,5 +101,16 @@ void main() {
     await screen(ShopPublicScreen(api: FakePublicShopApi(view), shopId: 's'), 'k01-shop');
     await screen(PublicHoursScreen(view: view), 'k02-hours');
     await screen(MenuListScreen(flows: createM02Flows(session: session, location: FakeLocationProvider(), pollEvery: Duration.zero)), 'q05-not-connected');
+
+    final FakeDiscoveryApi discovery = FakeDiscoveryApi(shops: <FakeShopEntry>[
+      FakeShopEntry('s1', 'Ốc 11', dishes: const <FakeDishEntry>[FakeDishEntry('d1', 'Ốc hương hấp', 120000, 'c1')]),
+      FakeShopEntry('s2', 'Hải Sản Phố Cổ', reason: 'OUTSIDE_BUSINESS_HOURS', dishes: const <FakeDishEntry>[FakeDishEntry('d2', 'Ngao hấp', 60000, 'c2')]),
+      FakeShopEntry('s3', 'Quán Ăn Chưa Có Lịch Hoạt Động Tên Rất Dài Để Thử Bố Cục', reason: 'NO_BUSINESS_HOURS', dishes: const <FakeDishEntry>[FakeDishEntry('d3', 'Mực nướng', 150000, 'c2')]),
+    ]);
+    final DiscoveryController home = DiscoveryController(api: discovery);
+    await screen(Scaffold(body: DiscoveryHome(controller: home, publicApi: FakePublicShopApi(view))), 'kp01-home');
+    await screen(Scaffold(body: DiscoveryHome(controller: home, publicApi: FakePublicShopApi(view))), 'kp01-home-360', width: 360);
+    await screen(SearchScreen(api: discovery, publicApi: FakePublicShopApi(view), areaId: 'a1', debounce: Duration.zero), 'kp02-search-empty');
+    await screen(Scaffold(body: Builder(builder: (BuildContext context) => FilterSheet(controller: home))), 'kp03-filter');
   });
 }

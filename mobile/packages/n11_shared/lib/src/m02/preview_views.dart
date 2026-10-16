@@ -29,53 +29,147 @@ import 'shop_ops_controller.dart';
   }
 }
 
-/// The shop header and the dish groups. [preview] adds the "Xem trước" tag and the hidden-dishes note.
-List<Widget> shopMenuBody(
-  BuildContext context,
-  ShopMenuView view, {
-  required bool preview,
-  required VoidCallback onHours,
-  int hiddenCount = 0,
-  String emptyText = 'Quán chưa có món để hiển thị.',
-}) {
-  final ({String label, ChipKind kind}) chip = _chipOf(view.availabilityReason);
-  return <Widget>[
-    N11Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(child: Text(view.name, key: const Key('shop-view-name'), style: const TextStyle(fontSize: 22, height: 1.25, fontWeight: FontWeight.w800, color: N11Colors.black))),
-              if (preview) const Padding(padding: EdgeInsets.only(left: N11Space.gap2), child: N11Chip('Xem trước', kind: ChipKind.dark)),
-            ],
-          ),
-          if (view.address.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Icon(Icons.place_outlined, size: 16, color: N11Colors.ink2), const SizedBox(width: 4), Expanded(child: Text(view.address, style: N11Text.caption))])),
-          const SizedBox(height: N11Space.gap3),
-          Wrap(
-            spacing: N11Space.gap3,
-            runSpacing: N11Space.gap2,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: <Widget>[
-              N11Chip(chip.label, key: const Key('shop-view-chip'), kind: chip.kind),
-              N11Link('Xem giờ hoạt động ›', key: const Key('shop-view-hours'), onPressed: onHours),
-            ],
-          ),
-        ],
+/// The shop header, the in-shop dish search and the dish groups. [preview] adds the "Xem trước" tag and the hidden-dishes note.
+/// [focusItemId] is the dish a search result pointed at: the view scrolls to it and marks it (a dish that is no longer there says so).
+class ShopMenuContent extends StatefulWidget {
+  const ShopMenuContent({
+    super.key,
+    required this.view,
+    required this.preview,
+    required this.onHours,
+    this.hiddenCount = 0,
+    this.emptyText = 'Quán chưa có món để hiển thị.',
+    this.focusItemId,
+  });
+
+  final ShopMenuView view;
+  final bool preview;
+  final VoidCallback onHours;
+  final int hiddenCount;
+  final String emptyText;
+  final String? focusItemId;
+
+  @override
+  State<ShopMenuContent> createState() => _ShopMenuContentState();
+}
+
+class _ShopMenuContentState extends State<ShopMenuContent> {
+  final TextEditingController _search = TextEditingController();
+  final Map<String, GlobalKey> _rows = <String, GlobalKey>{};
+  String? _highlight;
+  bool _focused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _highlight = widget.focusItemId;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _focus());
+  }
+
+  @override
+  void didUpdateWidget(ShopMenuContent old) {
+    super.didUpdateWidget(old);
+    if (!_focused) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _focus());
+    }
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _focus() {
+    final String? id = widget.focusItemId;
+    if (id == null || _focused || !mounted) {
+      return;
+    }
+    _focused = true;
+    final BuildContext? target = _rows[id]?.currentContext;
+    if (target == null) {
+      setState(() => _highlight = null);
+      m02Toast(context, 'Món này không còn trong thực đơn của quán.');
+      return;
+    }
+    Scrollable.ensureVisible(target, duration: const Duration(milliseconds: 250), alignment: 0.15);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ShopMenuView view = widget.view;
+    final ({String label, ChipKind kind}) chip = _chipOf(view.availabilityReason);
+    final String needle = foldVietnamese(_search.text.trim());
+    final List<PublicCategory> groups = <PublicCategory>[
+      for (final PublicCategory c in view.categories)
+        PublicCategory(name: c.name, items: <PublicItem>[for (final PublicItem i in c.items) if (needle.isEmpty || foldVietnamese(i.name).contains(needle)) i]),
+    ].where((PublicCategory c) => c.items.isNotEmpty).toList();
+    return vstack(<Widget>[
+      N11Card(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(child: Text(view.name, key: const Key('shop-view-name'), style: const TextStyle(fontSize: 22, height: 1.25, fontWeight: FontWeight.w800, color: N11Colors.black))),
+                if (widget.preview) const Padding(padding: EdgeInsets.only(left: N11Space.gap2), child: N11Chip('Xem trước', kind: ChipKind.dark)),
+              ],
+            ),
+            if (view.address.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Icon(Icons.place_outlined, size: 16, color: N11Colors.ink2), const SizedBox(width: 4), Expanded(child: Text(view.address, style: N11Text.caption))])),
+            const SizedBox(height: N11Space.gap3),
+            Wrap(
+              spacing: N11Space.gap3,
+              runSpacing: N11Space.gap2,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: <Widget>[
+                N11Chip(chip.label, key: const Key('shop-view-chip'), kind: chip.kind),
+                N11Link('Xem giờ hoạt động ›', key: const Key('shop-view-hours'), onPressed: widget.onHours),
+              ],
+            ),
+          ],
+        ),
       ),
-    ),
-    if (!view.hasItems)
-      N11InfoCard(key: const Key('shop-view-empty'), title: emptyText)
-    else
-      for (final PublicCategory category in view.categories) ...<Widget>[
-        Row(children: <Widget>[Expanded(child: Text(category.name, style: N11Text.h2)), Text('${category.items.length} món', style: N11Text.caption)]),
-        N11List(children: <Widget>[
-          for (final PublicItem item in category.items) DishRow(key: Key('pub-dish-${item.id}'), name: item.name, price: formatVnd(item.priceVnd), imageUrl: item.imageUrl),
-        ]),
+      if (!view.hasItems)
+        N11InfoCard(key: const Key('shop-view-empty'), title: widget.emptyText)
+      else ...<Widget>[
+        TextField(
+          key: const Key('shop-view-search'),
+          controller: _search,
+          onChanged: (String _) => setState(() {}),
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: N11Colors.black),
+          decoration: InputDecoration(
+            hintText: 'Tìm món trong quán',
+            hintStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: N11Colors.placeholder),
+            filled: true,
+            fillColor: N11Colors.white,
+            prefixIcon: const Icon(Icons.search, color: N11Colors.ink2),
+            suffixIcon: _search.text.isEmpty ? null : IconButton(key: const Key('shop-view-search-clear'), tooltip: 'Xóa nội dung tìm kiếm', icon: const Icon(Icons.close, size: 20), onPressed: () => setState(_search.clear)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: N11Space.gap3, vertical: 14),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: const BorderSide(color: N11Colors.line)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: const BorderSide(color: N11Colors.yellow, width: 2)),
+          ),
+        ),
+        if (groups.isEmpty)
+          const N11StateBlock(key: Key('shop-view-nomatch'), kind: StateKind.warn, icon: Icons.search_off, title: 'Không tìm thấy món phù hợp', text: 'Thử từ khóa khác.')
+        else
+          for (final PublicCategory category in groups) ...<Widget>[
+            Row(children: <Widget>[Expanded(child: Text(category.name, style: N11Text.h2)), Text('${category.items.length} món', style: N11Text.caption)]),
+            N11List(children: <Widget>[
+              for (final PublicItem item in category.items)
+                DishRow(
+                  key: _rows.putIfAbsent(item.id, GlobalKey.new),
+                  name: item.name,
+                  price: formatVnd(item.priceVnd),
+                  imageUrl: item.imageUrl,
+                  highlight: item.id == _highlight,
+                ),
+            ]),
+          ],
       ],
-    if (preview && hiddenCount > 0) const Text('Món đang ẩn không hiển thị trong bản xem trước.', key: Key('preview-hidden-note'), style: N11Text.caption),
-  ];
+      if (widget.preview && widget.hiddenCount > 0) const Text('Món đang ẩn không hiển thị trong bản xem trước.', key: Key('preview-hidden-note'), style: N11Text.caption),
+    ]);
+  }
 }
 
 /// Q07: from SAVED data only (a draft is never previewed). Hidden and deleted dishes are not in it.
@@ -132,13 +226,11 @@ class _PreviewScreenState extends State<PreviewScreen> {
           body = <Widget>[
             if (!shown) const N11Banner(key: Key('preview-not-public'), kind: BannerKind.warn, title: 'Quán hiện chưa hiển thị cho khách', text: 'Đây là bản xem trước dành cho chủ quán. Khách chưa tìm thấy quán này.'),
             if (ops.stale || menu.loadState != MenuLoad.ready) const N11Banner(kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.'),
-            ...shopMenuBody(
-              context,
-              view,
+            ShopMenuContent(
+              view: view,
               preview: true,
               hiddenCount: menu.hiddenCount,
               onHours: () => Navigator.of(context).push(n11Route(PublicHoursScreen(view: view))),
-              emptyText: 'Quán chưa có món để hiển thị.',
             ),
             if (shown)
               N11Button(
@@ -157,10 +249,13 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
 /// K01: a customer opens a shop by its id (from the entry point that has it). Public fields only.
 class ShopPublicScreen extends StatefulWidget {
-  const ShopPublicScreen({super.key, required this.api, required this.shopId});
+  const ShopPublicScreen({super.key, required this.api, required this.shopId, this.focusItemId});
 
   final PublicShopApi api;
   final String shopId;
+
+  /// A dish a search result pointed at: the screen scrolls to it.
+  final String? focusItemId;
 
   @override
   State<ShopPublicScreen> createState() => _ShopPublicScreenState();
@@ -219,7 +314,7 @@ class _ShopPublicScreenState extends State<ShopPublicScreen> {
                   text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.',
                   trailing: N11Button(key: const Key('k01-reload'), label: 'Thử lại', compact: true, onPressed: _controller.load),
                 ),
-              ...shopMenuBody(context, view!, preview: false, onHours: () => Navigator.of(context).push(n11Route(PublicHoursScreen(view: view)))),
+              ShopMenuContent(view: view!, preview: false, focusItemId: widget.focusItemId, onHours: () => Navigator.of(context).push(n11Route(PublicHoursScreen(view: view)))),
             ];
         }
         return M02Scaffold(title: view?.name ?? 'Quán', scrollController: _scroll, content: body);

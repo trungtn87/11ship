@@ -4,7 +4,8 @@ import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OutboxModule } from '../outbox/outbox.module';
 import { ShopModule } from '../shop/shop.module';
 import { TransactionModule } from '../transaction/transaction.module';
-import { MenuOwnerController, MenuPublicController } from './menu.controller';
+import { DiscoveryController, MenuOwnerController, MenuPublicController } from './menu.controller';
+import { DiscoveryService } from './discovery-service';
 import { MenuRepository } from './menu-repository';
 import { MenuService } from './menu-service';
 
@@ -19,8 +20,8 @@ export class MenuModule {
     return {
       module: MenuModule,
       imports: [auth, ShopModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
-      controllers: [MenuOwnerController, MenuPublicController],
-      providers: [MenuService, MenuRepository],
+      controllers: [MenuOwnerController, MenuPublicController, DiscoveryController],
+      providers: [MenuService, MenuRepository, DiscoveryService],
     };
   }
 }

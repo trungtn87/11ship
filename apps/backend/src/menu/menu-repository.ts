@@ -242,4 +242,45 @@ export class MenuRepository {
     const row = result.rows[0];
     return row === undefined ? undefined : { contentType: row.content_type, data: row.data };
   }
+
+  /** Which of these shops have at least one VISIBLE dish (inside the group when one is given). */
+  async shopIdsWithPublicItem(context: TransactionContext, shopIds: readonly string[], categoryId: string | null): Promise<Set<string>> {
+    if (shopIds.length === 0) {
+      return new Set();
+    }
+    const result = await context.query<{ shop_id: string }>(
+      `SELECT DISTINCT shop_id
+         FROM app.menu_items
+        WHERE shop_id = ANY($1::uuid[]) AND status = 'VISIBLE' AND ($2::uuid IS NULL OR category_id = $2::uuid)`,
+      [shopIds, categoryId],
+    );
+    return new Set(result.rows.map((row) => row.shop_id));
+  }
+
+  /**
+   * VISIBLE dishes of these shops whose folded name contains the term (`likePattern` is already a LIKE body of the folded term, null =
+   * no term), inside the group when one is given. At most `cap` rows: the coordinator pages what it keeps.
+   */
+  async searchPublicItems(
+    context: TransactionContext,
+    shopIds: readonly string[],
+    categoryId: string | null,
+    likePattern: string | null,
+    cap: number,
+  ): Promise<(PublicMenuItem & { shopId: string })[]> {
+    if (shopIds.length === 0) {
+      return [];
+    }
+    const result = await context.query<{ item_id: string; name: string; price_vnd: number; image_id: string | null; category_id: string; shop_id: string }>(
+      `SELECT item_id, name, price_vnd, image_id, category_id, shop_id
+         FROM app.menu_items
+        WHERE shop_id = ANY($1::uuid[]) AND status = 'VISIBLE'
+          AND ($2::uuid IS NULL OR category_id = $2::uuid)
+          AND ($3::text IS NULL OR app.fold_vi(name) LIKE $3::text ESCAPE '\\')
+        ORDER BY app.fold_vi(name), item_id
+        LIMIT $4::integer`,
+      [shopIds, categoryId, likePattern, cap],
+    );
+    return result.rows.map((row) => ({ itemId: row.item_id, name: row.name, priceVnd: row.price_vnd, imageId: row.image_id, categoryId: row.category_id, shopId: row.shop_id }));
+  }
 }

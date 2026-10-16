@@ -5,11 +5,18 @@ import { ApiResponse, AuthApp } from './auth-fixtures';
 // M02-MON fixtures: the system groups (provisioned by SQL as the operator would), the owner's menu calls and tiny valid pictures.
 
 export async function createCategory(pool: Pool, name: string, status: 'ACTIVE' | 'INACTIVE' = 'ACTIVE', sortOrder = 0): Promise<string> {
+  // Group names are unique ignoring case and marks, and a run may leave a group behind: reuse it, set to what the test wants.
+  const existing = await pool.query<{ category_id: string }>(`SELECT category_id FROM app.menu_categories WHERE app.fold_vi(name) = app.fold_vi($1)`, [name]);
+  const found = existing.rows[0];
+  if (found !== undefined) {
+    await pool.query(`UPDATE app.menu_categories SET status = $2, sort_order = $3, updated_at = clock_timestamp() WHERE category_id = $1::uuid`, [found.category_id, status, sortOrder]);
+    return found.category_id;
+  }
   const id = randomUUID();
   await pool.query(
     `INSERT INTO app.menu_categories (category_id, name, status, sort_order, created_at, updated_at)
      VALUES ($1::uuid, $2, $3, $4, clock_timestamp(), clock_timestamp())`,
-    [id, `${name}`, status, sortOrder],
+    [id, name, status, sortOrder],
   );
   return id;
 }
@@ -57,3 +64,9 @@ export const itemAction = (
 ): Promise<ApiResponse> => call(app, 'POST', `/shop/me/menu/items/${id}/${action}`, token, { expected_version: version }, key);
 
 export const publicShop = (app: AuthApp, shopId: string): Promise<ApiResponse> => call(app, 'GET', `/shops/${shopId}`, undefined);
+
+export const discoveryShops = (app: AuthApp, query: Record<string, string>): Promise<ApiResponse> =>
+  app.call('GET', `/discovery/shops?${new URLSearchParams(query).toString()}`, {});
+
+export const discoveryDishes = (app: AuthApp, query: Record<string, string>): Promise<ApiResponse> =>
+  app.call('GET', `/discovery/dishes?${new URLSearchParams(query).toString()}`, {});

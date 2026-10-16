@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { Body, Controller, Get, Headers, HttpCode, Param, Post, Put, Req, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, Post, Put, Query, Req, Res, StreamableFile, UseGuards } from '@nestjs/common';
 import { actorOf, AuthenticatedRequest } from '../auth/auth-principal';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
+import { DiscoveryService } from './discovery-service';
+import { parseDiscoveryQuery } from './discovery-validation';
 import { MenuService } from './menu-service';
 import {
   parseImageUploadBody,
@@ -115,5 +117,42 @@ export class MenuPublicController {
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
     return new StreamableFile(image.data);
+  }
+}
+
+type NoStore = { setHeader(name: string, value: string): unknown };
+
+/**
+ * Public discovery of M02: service areas and groups to choose from, the shops of an area and the dishes (with search and filters).
+ * No session, read only, never cached (what is open now changes by the minute).
+ */
+@Controller()
+export class DiscoveryController {
+  constructor(private readonly discovery: DiscoveryService) {}
+
+  @Get('service-areas')
+  async areas(@Res({ passthrough: true }) response: NoStore) {
+    response.setHeader('Cache-Control', 'no-store');
+    return { data: await this.discovery.serviceAreas() };
+  }
+
+  @Get('menu-categories')
+  async categories(@Res({ passthrough: true }) response: NoStore) {
+    response.setHeader('Cache-Control', 'no-store');
+    return { data: await this.discovery.categories() };
+  }
+
+  @Get('discovery/shops')
+  async shops(@Query() query: unknown, @Res({ passthrough: true }) response: NoStore) {
+    const parsed = parseDiscoveryQuery(query);
+    response.setHeader('Cache-Control', 'no-store');
+    return { data: await this.discovery.shops(parsed) };
+  }
+
+  @Get('discovery/dishes')
+  async dishes(@Query() query: unknown, @Res({ passthrough: true }) response: NoStore) {
+    const parsed = parseDiscoveryQuery(query);
+    response.setHeader('Cache-Control', 'no-store');
+    return { data: await this.discovery.dishes(parsed) };
   }
 }

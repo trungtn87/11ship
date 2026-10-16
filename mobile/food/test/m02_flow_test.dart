@@ -9,7 +9,7 @@ const AppConfig config = AppConfig(apiBaseUrl: 'https://api.example.test', devic
 HealthTransport healthy() => (Uri uri, Duration t) async => RawHealthResponse(status: 200, body: uri.path == kLivePath ? '{"data":{"status":"ok"}}' : '{"data":{"status":"ready"}}');
 
 void main() {
-  testWidgets('the Quán tab -> shop mode -> management reads the real shop; the menu says it is not connected; nothing is invented', (WidgetTester tester) async {
+  testWidgets('the Quán tab -> shop mode -> management reads the real shop; an empty menu is an empty menu; nothing is invented', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(390 * 3, 800 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -34,7 +34,7 @@ void main() {
     final FakeShopOpsServer shop = FakeShopOpsServer(api)..reason = 'NO_BUSINESS_HOURS';
     installResetRoutes(api);
     final SessionController session = createSessionController(ClientApp.food, config, transport: api, bridge: FakeDeviceBridge());
-    final AppFlows flows = createFlows(ClientApp.food, session, config, transport: api, location: FakeLocationProvider());
+    final AppFlows flows = createFlows(ClientApp.food, session, config, transport: api, location: FakeLocationProvider(), menuApi: FakeMenuApi(), discoveryApi: FakeDiscoveryApi(), publicApi: FakePublicShopApi(null));
     await session.start();
     await session.login(phone: '0901234567', password: 'Correct-Horse-9');
     await session.refreshIdentity();
@@ -60,13 +60,12 @@ void main() {
 
     await tester.tap(find.byKey(const Key('manage-menu')));
     await tester.pumpAndSettle();
-    expect(find.text('Chưa nối máy chủ'), findsOneWidget);
-    expect(find.byKey(const Key('menu-add')), findsNothing);
+    expect(find.text('Chưa có món trong thực đơn'), findsOneWidget);
     await tester.tap(find.byTooltip('Quay lại').last);
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('manage-preview')));
     await tester.pumpAndSettle();
-    expect(find.text('Chưa nối máy chủ'), findsOneWidget);
+    expect(find.text('Quán chưa có món để hiển thị.'), findsOneWidget);
   });
 }

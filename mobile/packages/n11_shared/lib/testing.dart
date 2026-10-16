@@ -549,6 +549,93 @@ class FakePublicShopApi implements PublicShopApi {
   }
 }
 
+/// An in-memory [DiscoveryApi] with the visible-data rules the screens rely on (shops of ONE area, folded search, open filter, paging).
+/// [gate] lets a test hold an answer back to prove the latest request wins.
+class FakeDiscoveryApi implements DiscoveryApi {
+  FakeDiscoveryApi({List<AreaChoice>? areas, List<CategoryChoice>? categories, List<FakeShopEntry>? shops})
+      : areaList = areas ?? <AreaChoice>[const AreaChoice(id: 'a1', name: 'Cao Bằng')],
+        categoryList = categories ?? <CategoryChoice>[const CategoryChoice(id: 'c1', name: 'Ốc'), const CategoryChoice(id: 'c2', name: 'Hải sản')],
+        entries = shops ?? <FakeShopEntry>[];
+
+  List<AreaChoice> areaList;
+  List<CategoryChoice> categoryList;
+  List<FakeShopEntry> entries;
+  bool offline = false;
+  Future<void> Function(DiscoveryQuery query, String kind)? gate;
+  final List<DiscoveryQuery> queries = <DiscoveryQuery>[];
+
+  Future<void> _enter(DiscoveryQuery? q, String kind) async {
+    if (q != null) {
+      queries.add(q);
+      await gate?.call(q, kind);
+    }
+    if (offline) {
+      throw const AuthFailure(AuthFailureKind.unknownOutcome);
+    }
+  }
+
+  @override
+  Future<List<AreaChoice>> areas() async {
+    await _enter(null, 'areas');
+    return areaList;
+  }
+
+  @override
+  Future<List<CategoryChoice>> categories() async {
+    await _enter(null, 'categories');
+    return categoryList;
+  }
+
+  bool _match(FakeShopEntry s, DiscoveryQuery q) => s.areaId == q.areaId && (!q.openOnly || s.reason == 'ONLINE') && (q.categoryId == null || s.dishes.any((FakeDishEntry d) => d.categoryId == q.categoryId));
+
+  @override
+  Future<DiscoveryPage<ShopCardData>> shops(DiscoveryQuery query) async {
+    await _enter(query, 'shops');
+    final String needle = foldVietnamese(query.term);
+    final List<FakeShopEntry> all = <FakeShopEntry>[for (final FakeShopEntry s in entries) if (_match(s, query) && (needle.isEmpty || foldVietnamese(s.name).contains(needle))) s];
+    all.sort((FakeShopEntry a, FakeShopEntry b) => (a.reason == 'ONLINE' ? 0 : 1) != (b.reason == 'ONLINE' ? 0 : 1) ? (a.reason == 'ONLINE' ? 0 : 1) - (b.reason == 'ONLINE' ? 0 : 1) : foldVietnamese(a.name).compareTo(foldVietnamese(b.name)));
+    final List<FakeShopEntry> page = all.skip(query.offset).take(query.limit).toList();
+    return DiscoveryPage<ShopCardData>(items: <ShopCardData>[for (final FakeShopEntry s in page) s.card], hasMore: query.offset + page.length < all.length);
+  }
+
+  @override
+  Future<DiscoveryPage<DishHit>> dishes(DiscoveryQuery query) async {
+    await _enter(query, 'dishes');
+    final String needle = foldVietnamese(query.term);
+    final List<DishHit> all = <DishHit>[
+      for (final FakeShopEntry s in entries)
+        if (_match(s, query))
+          for (final FakeDishEntry d in s.dishes)
+            if ((query.categoryId == null || d.categoryId == query.categoryId) && (needle.isEmpty || foldVietnamese(d.name).contains(needle)))
+              DishHit(itemId: d.id, name: d.name, priceVnd: d.price, imageUrl: null, shop: s.card),
+    ];
+    final List<DishHit> page = all.skip(query.offset).take(query.limit).toList();
+    return DiscoveryPage<DishHit>(items: page, hasMore: query.offset + page.length < all.length);
+  }
+}
+
+class FakeShopEntry {
+  FakeShopEntry(this.id, this.name, {this.areaId = 'a1', this.reason = 'ONLINE', this.address = '12 Phố Kim Đồng', this.dishes = const <FakeDishEntry>[]});
+
+  final String id;
+  final String name;
+  final String areaId;
+  final String reason;
+  final String address;
+  final List<FakeDishEntry> dishes;
+
+  ShopCardData get card => ShopCardData(shopId: id, name: name, address: address, reason: reason);
+}
+
+class FakeDishEntry {
+  const FakeDishEntry(this.id, this.name, this.price, this.categoryId);
+
+  final String id;
+  final String name;
+  final int price;
+  final String categoryId;
+}
+
 /// The driver side: GET driver/me is null until the one POST; the status is whatever the test sets.
 class FakeDriverServer {
   FakeDriverServer(FakeApiTransport transport) {

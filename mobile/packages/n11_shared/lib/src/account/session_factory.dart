@@ -4,6 +4,8 @@ import '../flows/location.dart';
 import '../flows/reset_controller.dart';
 import '../flows/shop_controller.dart';
 import '../m02/m02_flows.dart';
+import '../m02/discovery_models.dart';
+import '../m02/http_m02_api.dart';
 import '../m02/menu_models.dart';
 import 'api_client.dart';
 import 'device_bridge.dart';
@@ -44,18 +46,31 @@ AppFlows createFlows(
   AppConfig config, {
   ApiTransport? transport,
   LocationProvider? location,
-  MenuApi menuApi = const UnwiredMenuApi(),
-  PublicShopApi publicApi = const UnwiredPublicShopApi(),
+  MenuApi? menuApi,
+  PublicShopApi? publicApi,
+  DiscoveryApi? discoveryApi,
   ImagePickerPort picker = const NoImagePicker(),
 }) {
   final ApiTransport http = transport ?? HttpApiTransport(base: config.apiUri ?? Uri.parse('https://invalid.invalid'));
   final LocationProvider where = location ?? MethodChannelLocationProvider();
+  final Uri base = config.apiUri ?? Uri.parse('https://invalid.invalid');
   final ShopController? shop = app == ClientApp.food ? ShopController(session: session, location: where) : null;
   return AppFlows(
     session: session,
     reset: ResetController(transport: http, session: session),
     shop: shop,
     driver: app == ClientApp.ship ? DriverController(session: session) : null,
-    m02: app == ClientApp.food ? createM02Flows(session: session, location: where, onboarding: shop, menuApi: menuApi, publicApi: publicApi, picker: picker) : null,
+    m02: app == ClientApp.food
+        ? createM02Flows(
+            session: session,
+            location: where,
+            onboarding: shop,
+            // The real server contract unless a test passes its own ports.
+            menuApi: menuApi ?? HttpMenuApi(session: session, base: base),
+            publicApi: publicApi ?? HttpPublicShopApi(transport: http, base: base),
+            discoveryApi: discoveryApi ?? HttpDiscoveryApi(transport: http, base: base),
+            picker: picker,
+          )
+        : null,
   );
 }

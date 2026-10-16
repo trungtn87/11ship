@@ -24,7 +24,7 @@ String groupDigits(String raw) {
 const String _from = 'àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ';
 const String _to = 'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd';
 
-/// Lower case without Vietnamese marks, for the in-shop search ("oc huong" finds "Ốc hương").
+/// Lower case without Vietnamese marks, extra white space collapsed (the same folding as the server's search), for the in-shop search ("oc huong" finds "Ốc hương").
 String foldVietnamese(String input) {
   final StringBuffer out = StringBuffer();
   for (final int rune in input.toLowerCase().runes) {
@@ -32,5 +32,5 @@ String foldVietnamese(String input) {
     final int i = _from.indexOf(ch);
     out.write(i >= 0 ? _to[i] : ch);
   }
-  return out.toString();
+  return out.toString().replaceAll(RegExp(r'[\u0300-\u036f]'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
 }

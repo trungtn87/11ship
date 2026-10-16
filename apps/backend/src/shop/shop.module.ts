@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ServiceAreaRepository } from './service-area-repository';
 import { ShopAvailabilityReader } from './shop-availability-reader';
+import { ShopDiscoveryReader } from './shop-discovery-reader';
 import { ShopBusinessHoursRepository } from './shop-business-hours-repository';
 import { ShopEligibilityReader } from './shop-eligibility-reader';
 import { ShopRepository } from './shop-repository';
@@ -22,6 +23,7 @@ import { ShopRepository } from './shop-repository';
     ShopBusinessHoursRepository,
     ShopEligibilityReader,
     ShopAvailabilityReader,
+    ShopDiscoveryReader,
   ],
   exports: [
     ServiceAreaRepository,
@@ -29,6 +31,7 @@ import { ShopRepository } from './shop-repository';
     ShopBusinessHoursRepository,
     ShopEligibilityReader,
     ShopAvailabilityReader,
+    ShopDiscoveryReader,
   ],
 })
 export class ShopModule {}

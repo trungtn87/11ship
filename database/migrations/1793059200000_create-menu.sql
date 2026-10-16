@@ -11,22 +11,44 @@
 -- directory has to be deployed.
 
 -- ---------------------------------------------------------------------------------------------------
--- app.menu_categories: the system groups. Not writable by shop owners. ACTIVE groups can be chosen for a NEW or changed
--- dish; INACTIVE ones only keep the link of dishes that already have it.
+-- app.fold_vi: the text a search compares: lower case, Vietnamese marks removed (precomposed letters and combining marks), đ -> d,
+-- white space collapsed and trimmed. The application folds the typed search the same way (apps/backend/src/shared/fold-vietnamese.ts),
+-- so "oc huong" finds "Ốc hương". Pure SQL: no extension is needed.
+-- ---------------------------------------------------------------------------------------------------
+CREATE FUNCTION app.fold_vi(input text) RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT AS $$
+  SELECT btrim(regexp_replace(
+    regexp_replace(
+      translate(lower(input),
+        'àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ',
+        'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd'),
+      '[\u0300-\u036f]', '', 'g'),
+    '\s+', ' ', 'g'))
+$$;
+
+-- ---------------------------------------------------------------------------------------------------
+-- app.menu_categories: the system groups. Not writable by shop owners (the SYSTEM administrator manages them). ACTIVE groups can
+-- be chosen for a NEW or changed dish and appear in discovery; INACTIVE ones only keep the link of dishes that already have it.
+-- A group is never deleted physically.
 -- ---------------------------------------------------------------------------------------------------
 CREATE TABLE app.menu_categories (
   category_id uuid NOT NULL,
   name text NOT NULL,
   status text NOT NULL,
   sort_order integer NOT NULL DEFAULT 0,
+  version bigint NOT NULL DEFAULT 1,
   created_at timestamptz NOT NULL,
   updated_at timestamptz NOT NULL,
 
   CONSTRAINT menu_categories_pkey PRIMARY KEY (category_id),
   CONSTRAINT menu_categories_name_ck CHECK (name = btrim(name) AND char_length(name) BETWEEN 1 AND 80),
   CONSTRAINT menu_categories_status_ck CHECK (status IN ('ACTIVE', 'INACTIVE')),
+  CONSTRAINT menu_categories_version_ck CHECK (version >= 1),
   CONSTRAINT menu_categories_time_order_ck CHECK (updated_at >= created_at)
 );
+
+-- A group name is unique ignoring case, marks and spacing, so two groups never look the same to a person.
+CREATE UNIQUE INDEX menu_categories_name_uq ON app.menu_categories (app.fold_vi(name));
 
 -- ---------------------------------------------------------------------------------------------------
 -- app.menu_images: immutable picture bytes owned by a shop.
@@ -83,3 +105,4 @@ CREATE INDEX menu_items_image_idx ON app.menu_items (image_id) WHERE image_id IS
 DROP TABLE app.menu_items;
 DROP TABLE app.menu_images;
 DROP TABLE app.menu_categories;
+DROP FUNCTION app.fold_vi(text);
