@@ -26,6 +26,7 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
     private val frame=FrameLayout(context)
     private val channel=MethodChannel(messenger,"vn.eleven/m14/map/$id")
     private val offline=OfflineMap(context)
+    private val coverage=TextView(context).apply { text="Ngoài vùng bản đồ Cao Bằng"; setTextColor(Color.BLACK); setBackgroundColor(0xFFFFE0B2.toInt()); setPadding(12,8,12,8); visibility=View.GONE }
     private val view: MapView
     private val pins: MapPinsView
     private var map: MapLibreMap?=null
@@ -38,11 +39,12 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
     private val host: Activity? = generateSequence(context) { (it as? ContextWrapper)?.baseContext?.takeIf { b -> b!==it } }.filterIsInstance<Activity>().firstOrNull()
     init {
         MapLibre.getInstance(context)
-        view=MapView(context); view.onCreate(null)
+        view=MapView(context,MapLibreMapOptions.createFromAttributes(context).textureMode(true)); view.onCreate(null)
         pins=MapPinsView(context) { map }
         frame.addView(view,FrameLayout.LayoutParams(-1,-1)); frame.addView(pins,FrameLayout.LayoutParams(-1,-1))
         val attribution=TextView(context).apply { text="© OpenStreetMap contributors · ODbL 1.0"; textSize=10f; setTextColor(Color.DKGRAY); setBackgroundColor(0xDDFFFFFF.toInt()); setPadding(8,3,8,3) }
         frame.addView(attribution,FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.END))
+        frame.addView(coverage,FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.CENTER_HORIZONTAL))
         channel.setMethodCallHandler { call,result ->
             if(call.method=="update") { data=call.arguments as? Map<*,*>; draw(); result.success(null) } else result.notImplemented()
         }
@@ -60,6 +62,10 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
                             current.setStyle(offline.style()) { if(!disposed) { draw(); channel.invokeMethod("ready",null) } }
                             current.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(22.665,106.257),12.0))
                             current.addOnCameraMoveListener { pins.invalidate() }
+                            current.addOnCameraIdleListener {
+                                val center=current.cameraPosition.target
+                                coverage.visibility=if(center!=null && !offline.contains(center.latitude,center.longitude)) View.VISIBLE else View.GONE
+                            }
                             fun selected(point: LatLng): Boolean {
                                 channel.invokeMethod("point",mapOf("lat" to point.latitude,"lon" to point.longitude,"inside" to offline.contains(point.latitude,point.longitude))); return true
                             }
