@@ -122,7 +122,10 @@ export class AccountRecoveryService {
   }
 
   /** The mode the application reports to its clients: SMS_OTP only while the server mode allows it AND the SYSTEM switch is on. */
-  async effectiveAppMode(): Promise<'SMS_OTP' | 'UNAVAILABLE'> {
+  async effectiveAppMode(): Promise<'SMS_OTP' | 'DISABLED_TEST' | 'UNAVAILABLE'> {
+    if (this.mode === 'DISABLED_TEST') {
+      return 'DISABLED_TEST'; // the non-production no-OTP test mode (never configured on the production VPS)
+    }
     return this.mode === 'SMS_OTP' && (await this.systemSettings.passwordResetOtpEnabled()) ? 'SMS_OTP' : 'UNAVAILABLE';
   }
 
@@ -365,7 +368,7 @@ export class AccountRecoveryService {
   // No-OTP test reset (development / test on loopback only)
   // ---------------------------------------------------------------------------------------------------------------------------
 
-  async resetTest(input: ResetTestInput, idempotencyKey: string | readonly string[] | undefined, requestId: string): Promise<ResetOutcome> {
+  async resetTest(scope: AccountScope, input: ResetTestInput, idempotencyKey: string | readonly string[] | undefined, requestId: string): Promise<ResetOutcome> {
     this.assertOpen();
     parseIdempotencyKey(idempotencyKey);
     // Hashed outside any transaction (like login/register); a replay or a no-op target wastes one hash, which also keeps the
@@ -378,18 +381,18 @@ export class AccountRecoveryService {
         operationId: RESET_TEST_OPERATION_ID,
         idempotencyKey,
         // The whole input plus the mode; only HMAC-fingerprinted by the executor, never stored or logged.
-        logicalRequest: { mode: 'DISABLED_TEST', phone_normalized: input.phoneNormalized, password: input.password },
+        logicalRequest: { mode: 'DISABLED_TEST', scope, phone_normalized: input.phoneNormalized, password: input.password },
         // The stored answer is the constant acknowledgement: nothing secret, nothing account specific.
         replay: { kind: 'non-sensitive' },
       },
-      (context) => this.#apply(context, input, passwordHash, requestId),
+      (context) => this.#apply(context, scope, input, passwordHash, requestId),
     );
     return { status: outcome.status, payload: outcome.payload };
   }
 
-  async #apply(context: TransactionContext, input: ResetTestInput, passwordHash: string, requestId: string) {
+  async #apply(context: TransactionContext, scope: AccountScope, input: ResetTestInput, passwordHash: string, requestId: string) {
     const ack = { status: 200, replayGuard: { kind: 'reset_test' }, payload: { ...RESET_ACK } };
-    const found = await this.users.findByPhone(context, 'APP_USER', input.phoneNormalized);
+    const found = await this.users.findByPhone(context, scope, input.phoneNormalized);
     if (found === undefined) {
       return ack;
     }
@@ -398,7 +401,7 @@ export class AccountRecoveryService {
     if (target === undefined || target.phoneNormalized !== input.phoneNormalized) {
       return ack;
     }
-    const kind = await this.#classify(context, 'APP_USER', target, 'lock');
+    const kind = await this.#classify(context, scope, target, 'lock');
     if (kind === undefined) {
       return ack;
     }

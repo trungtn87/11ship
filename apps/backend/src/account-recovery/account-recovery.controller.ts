@@ -37,7 +37,7 @@ export class AccountRecoveryController {
   ) {
     // Closed mode answers 503 before the body is even validated.
     this.recovery.assertOpen();
-    const outcome = await this.recovery.resetTest(parseResetTestBody(body), idempotencyKey, request.requestId ?? randomUUID());
+    const outcome = await this.recovery.resetTest('APP_USER', parseResetTestBody(body), idempotencyKey, request.requestId ?? randomUUID());
     return { data: outcome.payload };
   }
 
@@ -125,7 +125,20 @@ export class AdminAccountRecoveryController {
   @Get('config')
   config(@Query() query: unknown, @Body() body: unknown) {
     assertNoInput(query, body);
-    return { data: { mode: this.recovery.mode === 'SMS_OTP' ? 'SMS_OTP' : 'UNAVAILABLE' } };
+    return { data: { mode: this.recovery.mode } };
+  }
+
+  /** The non-production no-OTP test mode for the administration scope (closed in every other mode: 503). */
+  @Post('reset-test')
+  @HttpCode(200)
+  async resetTest(
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    this.recovery.assertOpen();
+    const outcome = await this.recovery.resetTest('ADMIN_WEB', parseResetTestBody(body), idempotencyKey, request.requestId ?? randomUUID());
+    return { data: outcome.payload };
   }
 
   @Post('otp')

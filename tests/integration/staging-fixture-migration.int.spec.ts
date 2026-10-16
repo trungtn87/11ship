@@ -6,6 +6,7 @@ import { Client } from 'pg';
 import { assertTestDatabaseTarget } from './support/assert-test-target';
 import { randomPhone } from './support/auth-fixtures';
 import { D2_ORIGIN_NAME, D2_ORIGIN_UP_SQL, S42_ORIGIN_UP_SQL } from './support/account-origin-histories';
+import { ACCOUNT_SCOPE_DOWN_SQL } from './support/account-scope-migration-sql';
 import { minimalChildEnv, REPO_ROOT, runNpmScript } from './support/test-helpers';
 
 // Issue #49 — the STAGING_FIXTURE account origin and the migration-history matrix of account_origin.
@@ -279,16 +280,19 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
 
     it('the down refuses while a test-unverified account exists and, without one, restores the previous constraints (rolled back)', async () => {
       const { up, down } = sqlOf(TEST_ORIGIN);
-      const withTest = await originConstraints();
+      // The newest migration (account scope, PHONE_UNVERIFIED) sits on top of these constraints: it is taken down first, in the same
+      // rolled-back transaction, so that this migration is compared with its own state.
       await client.query('BEGIN');
+      let withTest: Awaited<ReturnType<typeof originConstraints>>;
       try {
+        await client.query(ACCOUNT_SCOPE_DOWN_SQL);
+        withTest = await originConstraints();
+        await client.query('SAVEPOINT refusal');
+        await client.query(`INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at)
+          VALUES (gen_random_uuid(), '${randomPhone().normalized}', 'x', NULL, 'TEST_UNVERIFIED', 'ACTIVE', 1, now(), now())`);
         await expect(client.query(down)).rejects.toThrow(/test-unverified accounts exist/);
-      } finally {
-        await client.query('ROLLBACK');
-      }
-      await client.query(`DELETE FROM app.users WHERE account_origin = 'TEST_UNVERIFIED'`);
-      await client.query('BEGIN');
-      try {
+        await client.query('ROLLBACK TO SAVEPOINT refusal');
+        await client.query(`DELETE FROM app.users WHERE account_origin = 'TEST_UNVERIFIED'`);
         await client.query(down);
         expect((await originConstraints()).users_account_origin_ck).not.toContain('TEST_UNVERIFIED');
         await client.query(up);

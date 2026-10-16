@@ -242,7 +242,7 @@ describe('admin account lock / unlock (API + one real browser smoke)', () => {
     const driverBefore = await app.pool.query('SELECT status FROM app.drivers WHERE user_id = $1::uuid', [target.id]);
 
     const hint = adminData(await detail(target.id, systemLogin()));
-    expect(hint.allowed_actions).toEqual(['LOCK']);
+    expect(hint.allowed_actions).toEqual(['LOCK', 'DELETE']);
     const key = randomUUID();
     const locked = await change('lock', target.id, systemLogin(), body(1, '  Vi phạm điều khoản  '), { key });
     expect(locked.status).toBe(200);
@@ -323,7 +323,7 @@ describe('admin account lock / unlock (API + one real browser smoke)', () => {
     const unlockReplay = await change('unlock', target.id, systemLogin(), body(2, 'Đã làm rõ'), { key: unlockKey });
     expect(adminData(unlockReplay)).toEqual(adminData(unlocked));
     expect(await auditCount(target.id, UNLOCK_ACTION)).toBe(1);
-    expect(adminData(await detail(target.id, systemLogin())).allowed_actions).toEqual(['LOCK']);
+    expect(adminData(await detail(target.id, systemLogin())).allowed_actions).toEqual(['LOCK', 'DELETE']);
   });
 
   it('a request is validated before it runs: transport, CSRF, key, strict body; nothing changes on a refusal', async () => {
@@ -366,9 +366,9 @@ describe('admin account lock / unlock (API + one real browser smoke)', () => {
     expect(adminData(await detail(multi.id, partialLogin)).allowed_actions).toEqual([]);
     expect(codeOf(await change('lock', multi.id, partialLogin, body(1)))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
     // The role selected in a session is irrelevant: the full set decides.
-    expect(adminData(await detail(multi.id, fullLogin)).allowed_actions).toEqual(['LOCK']);
+    expect(adminData(await detail(multi.id, fullLogin)).allowed_actions).toEqual(['LOCK', 'DELETE']);
     // The same admin may lock an account that only has the covered domain.
-    expect(adminData(await detail(customerOnly.id, partialLogin)).allowed_actions).toEqual(['LOCK']);
+    expect(adminData(await detail(customerOnly.id, partialLogin)).allowed_actions).toEqual(['LOCK', 'DELETE']);
     // An admin without any view of the target's domains cannot even read it.
     expect(codeOf(await detail(customerOnly.id, shopLogin))).toEqual({ status: 404, code: 'USER_NOT_AVAILABLE' });
     expect(codeOf(await change('lock', customerOnly.id, shopLogin, body(1)))).toEqual({ status: 404, code: 'USER_NOT_AVAILABLE' });
@@ -433,7 +433,7 @@ describe('admin account lock / unlock (API + one real browser smoke)', () => {
 
     // A user without a role: not readable by an ADMIN, lockable by SYSTEM.
     expect(codeOf(await change('lock', legacy.id, fullLogin, body(1)))).toEqual({ status: 404, code: 'USER_NOT_AVAILABLE' });
-    expect(adminData(await detail(legacy.id, systemLogin())).allowed_actions).toEqual(['LOCK']);
+    expect(adminData(await detail(legacy.id, systemLogin())).allowed_actions).toEqual(['LOCK', 'DELETE']);
     expect((await change('lock', legacy.id, systemLogin(), body(1))).status).toBe(200);
   });
 
@@ -539,7 +539,7 @@ describe('admin account lock / unlock (API + one real browser smoke)', () => {
     await page.pressEnter();
     await page.waitFor(`document.querySelector('a[href="/accounts/users"]')`);
     await page.goto(`${origin}/accounts/users/${target.id}`);
-    await page.waitFor(`document.body.innerText.includes(${JSON.stringify(`Khách Trình Duyệt ${tag}`)}) && document.body.innerText.includes('Bạn không có thao tác khóa hoặc mở khóa')`);
+    await page.waitFor(`document.body.innerText.includes(${JSON.stringify(`Khách Trình Duyệt ${tag}`)}) && document.body.innerText.includes('Bạn không có thao tác khóa, mở khóa hoặc xóa')`);
     expect(await page.evaluate<boolean>(`![...document.querySelectorAll('button')].some((b) => /Khóa tài khoản|Mở khóa/.test(b.textContent ?? ''))`)).toBe(true);
     expect(page.consoleErrors).toEqual([]);
     await page.close();

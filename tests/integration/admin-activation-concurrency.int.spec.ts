@@ -378,7 +378,7 @@ describe('M01-D-ADMIN-1C - races, expiry by the database clock and replay', () =
     const session = await begin(app, invite);
     await pool.query(
       `INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at)
-       VALUES ($1::uuid, $2, $3, now(), 'PHONE_VERIFIED', 'ACTIVE', 1, now(), now())`,
+       VALUES ($1::uuid, $2, $3, now(), 'ADMIN_PROVISIONED', 'ACTIVE', 1, now(), now())`,
       [randomUUID(), invite.phone.normalized, await new Argon2idPasswordHasher().hash('Another-Passw0rd-1')],
     );
     const result = await post(app, '/otp/request', session);

@@ -125,7 +125,7 @@ describe('M01-D-ADMIN-1C - contract 11.2 matrix (8 routes x 6 states, INVALIDATE
   async function takePhone(phone: string): Promise<void> {
     await ctx.pool.query(
       `INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at)
-       VALUES ($1::uuid, $2, $3, now(), 'PHONE_VERIFIED', 'ACTIVE', 1, now(), now())`,
+       VALUES ($1::uuid, $2, $3, now(), 'ADMIN_PROVISIONED', 'ACTIVE', 1, now(), now())`,
       [randomUUID(), phone, await new Argon2idPasswordHasher().hash(ADMIN_PASSWORD)],
     );
   }
