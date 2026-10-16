@@ -59,7 +59,7 @@ Không cần cấu hình thêm; các route mới nằm dưới prefix đã có (
 Thêm vào `.env`: `ADMIN_USER_ACCOUNT_MUTATIONS_ENABLED=true`. Hợp lệ khi `APP_ENV` development/test, `HOST` loopback (127.0.0.1/localhost/::1) và `ADMIN_AUTH_ENABLED=true`; ở staging/production hoặc host khác backend từ chối khởi động, giá trị lạ cũng bị từ chối. Mặc định (không đặt/`false`) mutation trả `USER_ACCOUNT_IMPACT_REVIEW_REQUIRED` và trang không có nút. Front `scripts/admin-web-dev.mjs` không đổi: route mới nằm dưới prefix `/v1/admin/` đã có.
 1. SYSTEM đăng nhập → Người dùng → mở một người dùng thường → **Khóa tài khoản** → nhập lý do → **Khóa**. Mọi phiên Food/Ship của họ bị thu hồi ngay; đăng nhập lại báo tài khoản bị khóa.
 2. **Mở khóa** → lý do → xác nhận: tài khoản ACTIVE, vai trò/hồ sơ giữ nguyên, phiên cũ vẫn chết, đăng nhập mới dùng được.
-3. ADMIN chỉ thấy nút khi có Xem **và** Khóa cho mọi domain của người đó (ví dụ vừa Khách vừa Xế cần cả hai); thiếu một domain ⇒ không có nút, gọi thẳng trả 403. Không khóa được ADMIN/SYSTEM.
+3. ADMIN chỉ thấy nút khi có Xem **và** Khóa cho mọi domain của người đó (ví dụ vừa Khách vừa Shipper cần cả hai); thiếu một domain ⇒ không có nút, gọi thẳng trả 403. Không khóa được ADMIN/SYSTEM.
 4. Test: `tests/integration/admin-account-lock.int.spec.ts` (API + một smoke Chrome thật qua front) cần DB `ship11_test` và Chrome; chạy trong CI bắt buộc.
 
 ## Giới hạn

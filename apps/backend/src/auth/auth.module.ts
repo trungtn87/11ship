@@ -1,3 +1,4 @@
+import { ClientPasswordService } from '../client-auth/client-password-service';
 import { DynamicModule, Module } from '@nestjs/common';
 import { AccountActivityRegistry } from '../account-lifecycle/account-activity-registry';
 import { AuditModule } from '../audit/audit.module';
@@ -136,6 +137,7 @@ export class AuthModule {
         ClientLoginService,
         ClientSessionAuthority,
         ClientSessionService,
+        ClientPasswordService,
         VerificationRepository,
         ProofRepository,
         UserRepository,

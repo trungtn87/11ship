@@ -155,7 +155,7 @@ Phong bì lỗi: `{error:{code,message,request_id,details:{}}}`, `message` cố 
 | Admin Web | Đối chiếu origin/guard (đọc mã) | Chưa ghi quyết định | Chưa kiểm chứng | Chưa chạy | Chưa chạy | Chưa nghiệm thu |
 | 11Food — khách | Đối chiếu hợp đồng CUSTOMER (đọc mã) | Chưa ghi quyết định | Chưa kiểm chứng | Chưa chạy | Chưa chạy | Chưa nghiệm thu |
 | 11Food — quán | Đối chiếu SHOP→SHOP_OWNER, context (đọc mã) | Chưa ghi quyết định | Chưa kiểm chứng | Chưa chạy | Chưa chạy | Chưa nghiệm thu |
-| 11Ship — xế | Đối chiếu DRIVER, `/driver/me` thiếu (đọc mã) | Chưa ghi quyết định | Chưa kiểm chứng | Chưa chạy | Chưa chạy | Chưa nghiệm thu |
+| 11Ship — shipper | Đối chiếu DRIVER, `/driver/me` thiếu (đọc mã) | Chưa ghi quyết định | Chưa kiểm chứng | Chưa chạy | Chưa chạy | Chưa nghiệm thu |
 | Liên thông | Ma trận §3 | Chưa ghi quyết định | Chưa kiểm chứng | Chưa chạy | Chưa chạy | Chưa nghiệm thu |
 
 Không có acceptance mới nào được ghi trong gói này. Một gói không kéo module M01 sang DONE/LOCK.

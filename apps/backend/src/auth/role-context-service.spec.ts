@@ -380,8 +380,8 @@ describe('RoleContextService.me (task section 13)', () => {
     const sessionShare = sessions.slice(sessions.indexOf('async lockByIdForShare('), sessions.indexOf('async revokeOtherShopSessions('));
     expect(sessionShare).toMatch(/FROM app\.sessions WHERE session_id = \$1::uuid FOR SHARE/);
     expect(sessionShare).not.toMatch(/FOR UPDATE|INSERT|UPDATE app|DELETE/);
-    // + the revoke-all of the administration lock (rows locked in session_id order, then updated).
-    expect(sessions.split('FOR UPDATE').length - 1).toBe(2);
+    // + revoke-all and password-change revoke-others (rows locked in session_id order, then updated).
+    expect(sessions.split('FOR UPDATE').length - 1).toBe(3);
 
     const service = sourceOf('auth/role-context-service.ts');
     const me = service.slice(service.indexOf('async me('), service.indexOf('async selectRole('));

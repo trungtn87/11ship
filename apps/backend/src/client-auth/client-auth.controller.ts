@@ -1,3 +1,4 @@
+import { ClientPasswordService } from './client-password-service';
 import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Inject, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AuthenticatedRequest, AuthPrincipal } from '../auth/auth-principal';
@@ -9,6 +10,7 @@ import { BindingInfo } from '../client-device/client-device-binding-participant'
 import { CLIENT_AUTH_SETTINGS, ClientAuthSettings } from './client-auth-policy';
 import {
   parseClientContextBody,
+  parseClientPasswordBody,
   parseClientLoginBody,
   parseClientLogoutBody,
   parseClientRegisterBody,
@@ -50,6 +52,7 @@ function bindingHeaders(response: StatusSettableResponse, binding: BindingInfo |
 @Controller('client-auth')
 export class ClientAuthController {
   constructor(
+    private readonly passwords: ClientPasswordService,
     private readonly registration: ClientRegistrationService,
     private readonly login: ClientLoginService,
     private readonly sessions: ClientSessionService,
@@ -115,6 +118,17 @@ export class ClientAuthController {
     const outcome = await this.sessions.me(this.#principal(request));
     bindingHeaders(response, outcome.binding);
     return { data: outcome.payload };
+  }
+
+  @Post('change-password')
+  @HttpCode(200)
+  @UseGuards(SessionAuthGuard)
+  async changePassword(
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.passwords.change(this.#principal(request), parseClientPasswordBody(body), idempotencyKey, request.requestId ?? randomUUID());
   }
 
   @Post('context')

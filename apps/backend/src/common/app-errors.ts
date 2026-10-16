@@ -45,6 +45,7 @@ export const APP_ERROR_DEFINITIONS = {
     status: 400,
     message: 'The verification was issued for a different purpose',
   },
+  CURRENT_PASSWORD_INVALID: { status: 400, message: 'The current password is not correct' },
   INVALID_CREDENTIALS: { status: 401, message: 'The phone number or password is not correct' },
   ACCOUNT_DISABLED: { status: 403, message: 'This account is disabled' },
   ROLE_NOT_AVAILABLE: { status: 403, message: 'The requested role is not available' },

@@ -145,7 +145,7 @@ export class UsersView {
     this.#status.addEventListener('change', emit);
     this.#refresh.addEventListener('click', () => this.#hooks.refresh());
     const toolbar = h('div', { class: 'toolbar toolbar-filters', role: 'search' }, h('div', { class: 'search' }, icon('search', 18), this.#search), this.#role, this.#status, this.#refresh);
-    root.replaceChildren(h('section', { class: 'content content-wide', 'aria-labelledby': 'users-title' }, pageHead('Người dùng', 'Quản lý tài khoản khách hàng, chủ quán và xế', 'users-title'), toolbar, this.#hint, this.#results));
+    root.replaceChildren(h('section', { class: 'content content-wide', 'aria-labelledby': 'users-title' }, pageHead('Người dùng', 'Quản lý tài khoản khách hàng, chủ quán và shipper', 'users-title'), toolbar, this.#hint, this.#results));
   }
 
   #read(): UserFilter {
@@ -247,7 +247,7 @@ function profileBlocks(user: UserDetail): HTMLElement[] {
     blocks.push(h('section', { class: 'detail-block' }, h('h3', { class: 'subtitle' }, 'Hồ sơ quán'), definition([['Tên quán', user.profile.shop.name ?? 'Chưa đặt tên'], ['Trạng thái hồ sơ', user.profile.shop.state]])));
   }
   if (user.profile.driver !== undefined) {
-    blocks.push(h('section', { class: 'detail-block' }, h('h3', { class: 'subtitle' }, 'Hồ sơ xế'), definition([['Trạng thái hồ sơ', user.profile.driver.state]])));
+    blocks.push(h('section', { class: 'detail-block' }, h('h3', { class: 'subtitle' }, 'Hồ sơ shipper'), definition([['Trạng thái hồ sơ', user.profile.driver.state]])));
   }
   return blocks;
 }

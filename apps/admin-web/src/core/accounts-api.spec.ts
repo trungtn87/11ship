@@ -134,7 +134,7 @@ describe('admin web account read - parsers', () => {
       ...over,
     });
     const page = parseAdministratorPage({ items: [row()], next_cursor: null });
-    expect(page?.items[0]).toMatchObject({ fullName: 'Trần B', status: 'LOCKED', scopes: ['Khách hàng: Xem, Khóa', 'Xế: Xem, Duyệt hồ sơ'] });
+    expect(page?.items[0]).toMatchObject({ fullName: 'Trần B', status: 'LOCKED', scopes: ['Khách hàng: Xem, Khóa', 'Shipper: Xem, Duyệt hồ sơ'] });
     expect(scopeLabels([{ app: 'SHOP', canView: false, canReviewProfile: false, canLock: false }])).toEqual(['Chưa cấp quyền']);
     expect(parseAdministratorPage({ items: [row({ admin_role: 'SYSTEM' })], next_cursor: null })).toBeUndefined();
     expect(parseAdministratorPage({ items: [row({ status: 'PENDING' })], next_cursor: null })).toBeUndefined();

@@ -130,7 +130,7 @@ export const MENU: readonly MenuGroup[] = [
     label: 'VẬN HÀNH',
     items: [
       soon('shops', 'Quán', 'store', 'shops'),
-      soon('drivers', 'Xế', 'rider', 'drivers'),
+      soon('drivers', 'Shipper', 'rider', 'drivers'),
       soon('orders', 'Đơn hàng', 'receipt', 'orders'),
       soon('deliveries', 'Giao hàng', 'truck', 'deliveries'),
       soon('feedback', 'Phản ánh', 'chat', 'feedback'),
@@ -139,7 +139,7 @@ export const MENU: readonly MenuGroup[] = [
   {
     id: 'finance',
     label: 'TÀI CHÍNH',
-    items: [soon('driver-wallets', 'Ví xế', 'wallet', 'driver-wallets'), soon('topups', 'Nạp tiền', 'plus-circle', 'topups'), soon('withdrawals', 'Rút tiền', 'minus-circle', 'withdrawals')],
+    items: [soon('driver-wallets', 'Ví shipper', 'wallet', 'driver-wallets'), soon('topups', 'Nạp tiền', 'plus-circle', 'topups'), soon('withdrawals', 'Rút tiền', 'minus-circle', 'withdrawals')],
   },
   {
     id: 'system',

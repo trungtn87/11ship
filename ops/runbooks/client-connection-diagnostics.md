@@ -1,6 +1,6 @@
 # Trạng thái kết nối và chẩn đoán của 11Food / 11Ship (M00.04)
 
-Áp dụng cho hai ứng dụng điện thoại 11Food (khách, quán) và 11Ship (xế), qua bản web PC dùng làm runtime thử. Không áp dụng cho Web quản trị. Đây là hướng dẫn kỹ thuật; **chưa phải kết quả Owner test**.
+Áp dụng cho hai ứng dụng điện thoại 11Food (khách, quán) và 11Ship (shipper), qua bản web PC dùng làm runtime thử. Không áp dụng cho Web quản trị. Đây là hướng dẫn kỹ thuật; **chưa phải kết quả Owner test**.
 
 ## Người dùng thấy gì
 

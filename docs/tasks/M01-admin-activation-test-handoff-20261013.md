@@ -5,7 +5,7 @@
 Login SYSTEM/ADMIN + TOTP, provisioning/invitations, activation và UI đã có trên main. Không dựng lại auth/lời mời.
 Owner đã gặp link mới mở bị báo hết hạn; dữ liệu chẩn đoán có 404 NOT_FOUND và config ADMIN_ACTIVATION_ORIGIN=https://localhost:8443, OTP_MODE=TEST_DISPLAY. Đây không chứng minh token hết hạn: kiểm feature wiring, route proxy/backend và error mapping trước. Không kéo dài TTL để che lỗi.
 Backend setPassword hiện chỉ nhận OTP_VERIFIED và otp_verified_at; DB CHECK/trigger bắt STARTED→OTP_VERIFIED→PASSWORD_SET. Quyết định test không xác minh/không OTP giả chưa triển khai cho activation.
-Đầu ra: SYSTEM có TOTP → tạo lời mời → mở link → đặt mật khẩu → đăng ký/xác nhận Authenticator → hoàn tất → login ADMIN + TOTP. Thực hiện local/CI, không VPS. Không list/lock/grants API mới, reset, Android, quán/xế hoặc M02.
+Đầu ra: SYSTEM có TOTP → tạo lời mời → mở link → đặt mật khẩu → đăng ký/xác nhận Authenticator → hoàn tất → login ADMIN + TOTP. Thực hiện local/CI, không VPS. Không list/lock/grants API mới, reset, Android, quán/shipper hoặc M02.
 
 ## Contract test chốt trước code
 1. Thêm ADMIN_ACTIVATION_PHONE_VERIFICATION_MODE=REQUIRED|DISABLED_TEST, unset mặc định REQUIRED; mode lạ từ chối startup. DISABLED_TEST chỉ APP_ENV development/test + HOST loopback + ADMIN_AUTH_ENABLED và ADMIN_ACTIVATION_ENABLED. Staging/production/non-loopback từ chối. Không client/header nào bật được.

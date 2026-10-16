@@ -9,7 +9,7 @@
 
 ## Tiến độ hiện tại
 
-Đã triển khai và merge: nền backend M00-B1, lõi giao dịch M00-C1 (transaction, idempotency, audit + outbox ghi, outbox dispatcher), Auth Core M01-A1, và onboarding M01-A2 (A2S quán, A2D tài xế). Gói sửa sau merge M00/M01 ([PR #19](docs/tasks/M00-M01-post-merge-repairs.md)) đang ở trạng thái **DRAFT**, chưa merge; xem trạng thái thật ở [docs/PROGRESS.md](docs/PROGRESS.md), không ở file này.
+Đã triển khai và merge: nền backend M00-B1, lõi giao dịch M00-C1 (transaction, idempotency, audit + outbox ghi, outbox dispatcher), Auth Core M01-A1, và onboarding M01-A2 (A2S quán, A2D shipper). Gói sửa sau merge M00/M01 ([PR #19](docs/tasks/M00-M01-post-merge-repairs.md)) đang ở trạng thái **DRAFT**, chưa merge; xem trạng thái thật ở [docs/PROGRESS.md](docs/PROGRESS.md), không ở file này.
 
 Chưa có (cố ý hoãn): logout và khôi phục tài khoản, ADMIN/SYSTEM/2FA, SMS production, publisher/worker chạy thật cho outbox, và dọn dẹp theo lịch (scheduled cleanup). Chưa có bản app cho Owner test.
 

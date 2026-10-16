@@ -118,5 +118,5 @@ Browser integration kiểm:
 | Ứng dụng | Phạm vi | Nghiệp vụ/UI duyệt | Code/CI/review | Local | Thiết bị thật | Owner nghiệm thu |
 |---|---|---|---|---|---|---|
 | Web quản trị | Login, Authenticator, F5, shell, logout | Owner đã duyệt ảnh UI hiện tại; logo chính thức chờ asset | Đã sửa 2 finding; CI xem PR; chờ review lại | Chưa kiểm chứng (chờ M00) | Chưa kiểm chứng | Chưa |
-| Khách / Quán / Xế / App quản lý | N/A: task này không đổi các app | — | — | — | — | Quyết định Owner |
+| Khách / Quán / Shipper / App quản lý | N/A: task này không đổi các app | — | — | — | — | Quyết định Owner |
 | Liên thông | Web quản trị ↔ backend PR #34 | — | Browser integration trong CI | Chưa kiểm chứng | Chưa kiểm chứng | Chưa |

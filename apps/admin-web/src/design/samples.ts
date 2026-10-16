@@ -66,7 +66,7 @@ export const SAMPLE_LOCKED_DETAIL: UserDetail = {
   version: 6,
   profile: { customer: { fullName: 'Lê Văn C' }, driver: { state: 'Chờ duyệt' } },
   events: [
-    { at: '2026-10-09T04:00:00.000Z', label: 'Khóa tài khoản', actor: 'ADMIN', reason: 'Thông tin xế không khớp giấy tờ.' },
+    { at: '2026-10-09T04:00:00.000Z', label: 'Khóa tài khoản', actor: 'ADMIN', reason: 'Thông tin shipper không khớp giấy tờ.' },
     { at: '2026-09-21T11:05:00.000Z', label: 'Tạo tài khoản' },
   ],
   allowedActions: ['UNLOCK', 'DELETE'],
@@ -87,7 +87,7 @@ export const SAMPLE_SETTINGS: PhoneVerificationSettings = {
 
 export const SAMPLE_ADMINISTRATORS: readonly AdministratorRow[] = [
   { id: 'a1000000-0000-4000-8000-000000000001', fullName: 'Nguyễn Anh', phoneMasked: '098••• ••101', scopes: ['Khách hàng: Xem, Khóa', 'Quán: Xem, Duyệt hồ sơ'], status: 'ACTIVE', createdAt: '2026-09-02T02:00:00.000Z' },
-  { id: 'a1000000-0000-4000-8000-000000000002', fullName: 'Lê Thu Hà', phoneMasked: '097••• ••202', scopes: ['Xế: Xem, Duyệt hồ sơ'], status: 'ACTIVE', createdAt: '2026-09-15T05:30:00.000Z' },
+  { id: 'a1000000-0000-4000-8000-000000000002', fullName: 'Lê Thu Hà', phoneMasked: '097••• ••202', scopes: ['Shipper: Xem, Duyệt hồ sơ'], status: 'ACTIVE', createdAt: '2026-09-15T05:30:00.000Z' },
   { id: 'a1000000-0000-4000-8000-000000000003', fullName: 'Vũ Minh Đức', phoneMasked: '096••• ••303', scopes: ['Khách hàng: Xem'], status: 'PENDING', createdAt: '2026-10-09T08:10:00.000Z' },
 ];
 

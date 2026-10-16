@@ -50,14 +50,74 @@ String texts(WidgetTester tester) {
   return all.length > 700 ? all.substring(0, 700) : all;
 }
 
+Future<void> registrationDetails(WidgetTester tester) async {
+  expect(find.byKey(const Key('register-phone')), findsNothing);
+  expect(find.byKey(const Key('otp-request')), findsNothing);
+  await tester.enterText(find.byKey(const Key('register-name')), 'Nguyễn Văn An');
+  await tester.enterText(find.byKey(const Key('register-password')), 'Correct-Horse-9');
+  await tester.enterText(find.byKey(const Key('register-confirm')), 'not-matching');
+  await tester.ensureVisible(find.byKey(const Key('register-consent')));
+  await tester.tap(find.byKey(const Key('register-consent')));
+  await tester.pump();
+  expect(tester.widget<N11Button>(find.byKey(const Key('register-next'))).onPressed, isNull);
+  await tester.enterText(find.byKey(const Key('register-confirm')), 'Correct-Horse-9');
+  await tester.pump();
+  await tester.ensureVisible(find.byKey(const Key('register-next')));
+  await tester.tap(find.byKey(const Key('register-next')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('purpose-customer')));
+  await tester.pump();
+  await tester.tap(find.byKey(const Key('purpose-next')));
+  await tester.pumpAndSettle();
+  await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
+  await tester.pump();
+}
+
 void main() {
-  testWidgets('four tabs in the agreed order, ready banner shown', (WidgetTester tester) async {
+  testWidgets('three customer tabs in the agreed order, ready banner shown', (WidgetTester tester) async {
     await pump(tester, healthy());
-    for (final String label in <String>['Trang chủ', 'Tìm kiếm', 'Đơn hàng', 'Tài khoản']) {
+    for (final String label in <String>['Trang chủ', 'Đơn hàng', 'Tài khoản']) {
       expect(find.descendant(of: find.byType(N11BottomNav), matching: find.text(label)), findsOneWidget, reason: label);
     }
     // Ready is quiet: no banner is shown when the server is fine (the diagnostics screen shows the details).
     expect(find.byKey(const Key('connection-banner')), findsNothing);
+  });
+
+  testWidgets('back preserves details and purpose; owner UI comes only from server identity', (WidgetTester tester) async {
+    final FakeApiTransport api = FakeApiTransport();
+    installAccountRoutes(api);
+    final SessionController session = await pump(tester, healthy(), api: api);
+    await openTab(tester, 'account');
+    await tester.tap(find.byKey(const Key('open-register')));
+    await tester.pumpAndSettle();
+    await registrationDetails(tester);
+    await tester.tap(find.byTooltip('Quay lại'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('purpose-owner')));
+    await tester.tap(find.byTooltip('Quay lại'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byKey(const Key('register-name'))).controller!.text, 'Nguyễn Văn An');
+    expect(tester.widget<TextField>(find.byKey(const Key('register-confirm'))).controller!.text, 'Correct-Horse-9');
+    await tester.ensureVisible(find.byKey(const Key('register-next')));
+    await tester.tap(find.byKey(const Key('register-next')));
+    await tester.pumpAndSettle();
+    expect(tester.widget<ListTile>(find.byKey(const Key('purpose-owner'))).selected, isTrue);
+    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'account']);
+    expect(api.to('POST', '/v1/client-auth/register'), isEmpty);
+  });
+
+  test('owner tab follows server role/profile and never changes context', () async {
+    final FakeApiTransport api = FakeApiTransport();
+    installAccountRoutes(api);
+    final FakeShopServer server = FakeShopServer(api);
+    final SessionController session = createSessionController(ClientApp.food, config, transport: api, bridge: FakeDeviceBridge());
+    await session.start();
+    await session.login(phone: '0901234567', password: 'Correct-Horse-9');
+    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'account']);
+    server.owner = true;
+    await session.refreshIdentity();
+    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'shop', 'account']);
+    expect(server.contexts, isEmpty);
   });
 
   testWidgets('home shows the approved logo asset, no test banner and no invented shops', (WidgetTester tester) async {
@@ -76,8 +136,8 @@ void main() {
     final Finder register = find.byKey(const Key('open-register'));
     expect(tester.widget<N11Button>(login).onPressed, isNotNull);
     expect(tester.widget<N11Button>(register).onPressed, isNotNull);
-    expect(find.text('Quản lý cửa hàng'), findsOneWidget);
-    expect(find.text(kNotOnAndroidReason), findsWidgets);
+    expect(find.text('Quản lý cửa hàng'), findsNothing);
+    expect(find.text('Chẩn đoán kết nối'), findsNothing);
     expect(find.textContaining('chờ backend'), findsNothing, reason: texts(tester));
   });
 
@@ -107,14 +167,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('Bản test'), findsNothing);
     expect(find.textContaining('thử nghiệm'), findsNothing);
-    await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
-    await tester.enterText(find.byKey(const Key('register-name')), 'Nguyễn Văn An');
-    await tester.enterText(find.byKey(const Key('register-password')), 'Correct-Horse-9');
-    await tester.pump();
-    expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull, reason: 'consent not ticked and phone not verified');
-    await tester.ensureVisible(find.byKey(const Key('register-consent')));
-    await tester.tap(find.byKey(const Key('register-consent')));
-    await tester.pump();
+    await registrationDetails(tester);
     await tester.ensureVisible(find.byKey(const Key('otp-request')));
     await tester.tap(find.byKey(const Key('otp-request')));
     await tester.pump();
@@ -158,16 +211,9 @@ void main() {
     await openTab(tester, 'account');
     await tester.tap(find.byKey(const Key('open-register')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('required-note')), findsOneWidget);
+    await registrationDetails(tester);
     expect(find.byKey(const Key('otp-code')), findsNothing);
-    await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
-    await tester.enterText(find.byKey(const Key('register-name')), 'Nguyễn Văn An');
-    await tester.enterText(find.byKey(const Key('register-password')), 'Correct-Horse-9');
-    await tester.ensureVisible(find.byKey(const Key('register-consent')));
-    await tester.tap(find.byKey(const Key('register-consent')));
-    await tester.pump();
-    expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull, reason: 'the phone is not verified yet');
-
+    expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull);
     await tester.ensureVisible(find.byKey(const Key('otp-request')));
     await tester.tap(find.byKey(const Key('otp-request')));
     await tester.pump();
@@ -191,6 +237,9 @@ void main() {
     await tester.pump();
     expect(find.byKey(const Key('otp-verified')), findsOneWidget);
 
+    await tester.ensureVisible(find.byKey(const Key('otp-change-phone')));
+    await tester.tap(find.byKey(const Key('otp-change-phone')));
+    await tester.pump();
     // Editing the phone drops the proof and closes the submit again.
     await tester.enterText(find.byKey(const Key('register-phone')), '0909999999');
     await tester.pump();
@@ -201,15 +250,13 @@ void main() {
     expect(find.byKey(const Key('otp-verified')), findsNothing, reason: 'the proof does not come back by typing the number again');
   });
 
-  testWidgets('account: "Chính sách và điều khoản" opens the real terms and privacy texts, without an account', (WidgetTester tester) async {
+  testWidgets('account omits removed groups and rows', (WidgetTester tester) async {
     await pump(tester, healthy());
     await openTab(tester, 'account');
-    await tester.ensureVisible(find.byKey(const Key('policy-entry')));
-    await tester.tap(find.byKey(const Key('policy-entry')));
-    await tester.pumpAndSettle();
-    expect(find.text(kTermsText), findsOneWidget);
-    expect(find.text(kPrivacyText), findsOneWidget);
-    expect(find.textContaining('thử nghiệm'), findsNothing);
+    for (final String label in <String>['Trạng thái tài khoản', 'Quản lý cửa hàng', 'Chính sách và điều khoản', 'Chẩn đoán kết nối', 'Trạng thái', 'Cửa hàng']) {
+      expect(find.text(label), findsNothing);
+    }
+    expect(find.text('Trợ giúp'), findsOneWidget);
   });
 
   testWidgets('offline then retry recovers', (WidgetTester tester) async {
@@ -244,34 +291,16 @@ void main() {
     expect(calls, 0);
   });
 
-  testWidgets('search text survives switching tabs and opening diagnostics', (WidgetTester tester) async {
+  testWidgets('home search remains usable without a search tab', (WidgetTester tester) async {
     await pump(tester, healthy());
-    await openTab(tester, 'search');
+    expect(find.byKey(const Key('tab-search')), findsNothing);
+    await tester.tap(find.byKey(const Key('home-search')));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('search-field')), 'phở');
     await tester.pump();
-    await openTab(tester, 'orders');
-    await openTab(tester, 'search');
-    expect(find.text('phở'), findsOneWidget);
     expect(find.text('Chưa tìm được kết quả'), findsOneWidget);
     await tester.tap(find.byKey(const Key('search-clear')));
     await tester.pump();
     expect(find.text('phở'), findsNothing);
-  });
-
-  testWidgets('diagnostics screen shows version, source SHA and both probes; back returns', (WidgetTester tester) async {
-    await pump(tester, healthy());
-    await openTab(tester, 'account');
-    await tester.ensureVisible(find.text('Chẩn đoán kết nối'));
-    await tester.tap(find.text('Chẩn đoán kết nối'));
-    await tester.pump();
-    await tester.pump();
-    expect(find.textContaining('0.1.0'), findsWidgets, reason: texts(tester));
-    expect(find.textContaining(sha.substring(0, 12)), findsWidgets);
-    expect(find.textContaining('Còn sống'), findsWidgets);
-    expect(find.textContaining('Sẵn sàng'), findsWidgets);
-    expect(find.byKey(const Key('diag-recheck')), findsOneWidget);
-    await tester.binding.handlePopRoute();
-    await tester.pump();
-    expect(find.byKey(const Key('diag-recheck')), findsNothing);
   });
 }

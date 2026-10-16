@@ -132,10 +132,10 @@ void main() {
       await driver.load();
       expect(driver.profile, isNull);
       driver
-        ..fullName = ' Trần Văn Xế '
+        ..fullName = ' Trần Văn Shipper '
         ..plateNumber = '';
       expect(await driver.submit(), isTrue);
-      expect(server.posts.single, <String, Object?>{'full_name': 'Trần Văn Xế'});
+      expect(server.posts.single, <String, Object?>{'full_name': 'Trần Văn Shipper'});
       expect(driver.profile!.status, 'PENDING');
       expect(t.api.to('GET', '/v1/client-auth/me'), hasLength(1), reason: 'me is read again after the write');
       expect(t.session.identity!.activeRole, 'CUSTOMER');
@@ -147,7 +147,7 @@ void main() {
     test('a lost answer retries the same key and body', () async {
       final t = await signedIn(ClientApp.ship);
       FakeDriverServer(t.api);
-      final DriverController driver = DriverController(session: t.session)..fullName = 'Trần Văn Xế';
+      final DriverController driver = DriverController(session: t.session)..fullName = 'Trần Văn Shipper';
       await driver.load();
       t.api.failNext = const AuthFailure(AuthFailureKind.unknownOutcome);
       expect(await driver.submit(), isFalse);
