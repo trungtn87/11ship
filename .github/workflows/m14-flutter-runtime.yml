@@ -4,6 +4,9 @@ on:
     branches: ['codex/m14-gps-test']
     paths: ['mobile/packages/n11_m14/**', 'mobile/ship/integration_test/m14_test.dart', '.github/workflows/m14-flutter-runtime.yml']
   workflow_dispatch:
+concurrency:
+  group: m14-flutter-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -37,9 +40,8 @@ jobs:
           profile: pixel_2
           disable-animations: true
           script: |
-            cd mobile/ship
-            flutter test integration_test/m14_test.dart --reporter expanded
-            adb shell run-as vn.eleven.ship.test sh -c 'test ! -f databases/m14-history.db'
+            cd mobile/ship && flutter test integration_test/m14_test.dart --reporter expanded
+            adb shell "run-as vn.eleven.ship.test sh -c 'test ! -f databases/m14-history.db'"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
