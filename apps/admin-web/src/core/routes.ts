@@ -15,7 +15,8 @@ export type Route =
   | { readonly name: 'reset' }
   | { readonly name: 'users'; readonly status?: UserStatusFilter }
   | { readonly name: 'user'; readonly id: string }
-  | { readonly name: 'administrators' };
+  | { readonly name: 'administrators' }
+  | { readonly name: 'settings' };
 
 /** The only status filter with its own menu entry ("Đang khóa"); any other value of ?status= is ignored. */
 export type UserStatusFilter = 'LOCKED';
@@ -33,6 +34,9 @@ export function parseRoute(pathname: string, search = ''): Route {
   }
   if (path === '/accounts/administrators') {
     return { name: 'administrators' };
+  }
+  if (path === '/system/settings') {
+    return { name: 'settings' };
   }
   const user = /^\/accounts\/users\/([^/]+)$/.exec(path);
   if (user !== null && isUuid(user[1])) {
@@ -75,6 +79,8 @@ export function formatRoute(route: Route): string {
       return `/accounts/users/${route.id}`;
     case 'administrators':
       return '/accounts/administrators';
+    case 'settings':
+      return '/system/settings';
     case 'invitations':
       return route.status === undefined ? '/invitations' : `/invitations?status=${route.status}`;
     case 'invitation-new':

@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { AdminAccountsApi, createAccountsSource, parseAdministratorPage, parseUserDetail, parseUserPage, scopeLabels } from './accounts-api';
+import { AdminAccountsApi, createAccountsSource, parseAdministratorPage, parseLockAcknowledgement, parseUserDetail, parseUserPage, scopeLabels } from './accounts-api';
 import { EMPTY_ADMIN_FILTER, EMPTY_USER_FILTER } from './accounts';
 import { Transport, TransportRequest, TransportResponse } from './api';
 import { grantsFromPermissions } from './menu';
@@ -32,6 +32,16 @@ const summary = (over: Record<string, unknown> = {}) => ({
   created_at: '2026-10-01T03:04:05.123Z',
   ...over,
 });
+const lifecycle = (over: Record<string, unknown> = {}) => ({
+  lock_reason: null,
+  locked_at: null,
+  related_data: [],
+  active_work: [],
+  delete_effect: 'DELETE_PERMANENTLY',
+  lock_blocked_reason: null,
+  delete_blocked_reason: null,
+  ...over,
+});
 const perm = (app: string, view: boolean, review = false, lock = false) => ({ app, can_view: view, can_review_profile: review, can_lock: lock });
 
 describe('admin web account read - parsers', () => {
@@ -53,26 +63,63 @@ describe('admin web account read - parsers', () => {
     expect(parseUserPage({ ...base, items: 'x' })).toBeUndefined();
   });
 
-  it('the detail carries no timeline and exactly the action the server allows; any other shape is refused', () => {
+  it('the detail carries no timeline and exactly the actions the server allows; any other shape is refused', () => {
     const detail = parseUserDetail({
       ...summary(),
       updated_at: '2026-10-02T00:00:00.000Z',
       version: 3,
       profiles: { customer: { full_name: 'Nguyễn Văn A' }, shop: { name: null, status: 'APPROVED' }, driver: { status: 'PENDING' } },
-      allowed_actions: ['LOCK'],
+      allowed_actions: ['LOCK', 'DELETE'],
+      phone_verified: false,
+      lifecycle: lifecycle({ related_data: ['SHOP'], delete_effect: 'LOCK' }),
     });
-    expect(detail?.allowedActions).toEqual(['LOCK']);
+    expect(detail?.allowedActions).toEqual(['LOCK', 'DELETE']);
     expect(detail?.events).toEqual([]);
     expect(detail?.version).toBe(3);
+    expect(detail?.phoneVerified).toBe(false);
+    expect(detail?.lifecycle).toEqual({ lockReason: null, lockedAt: null, relatedData: ['SHOP'], activeWork: [], deleteEffect: 'LOCK', lockBlockedReason: null, deleteBlockedReason: null });
     expect(detail?.profile).toEqual({ customer: { fullName: 'Nguyễn Văn A' }, shop: { name: null, state: 'APPROVED' }, driver: { state: 'PENDING' } });
-    const base = { ...summary(), updated_at: '2026-10-02T00:00:00.000Z', version: 3, profiles: {} };
+    const base = { ...summary(), updated_at: '2026-10-02T00:00:00.000Z', version: 3, profiles: {}, phone_verified: true, lifecycle: lifecycle() };
     expect(parseUserDetail({ ...base, allowed_actions: [] })?.allowedActions).toEqual([]);
     expect(parseUserDetail({ ...base, allowed_actions: ['UNLOCK'] })?.allowedActions).toEqual(['UNLOCK']);
-    for (const odd of [undefined, 'LOCK', ['LOCK', 'UNLOCK'], ['DELETE'], [null]]) {
+    expect(parseUserDetail({ ...base, allowed_actions: ['DELETE', 'UNLOCK'] })?.allowedActions).toEqual(['UNLOCK', 'DELETE']);
+    for (const odd of [undefined, 'LOCK', ['LOCK', 'UNLOCK'], ['DELETE', 'DELETE'], ['LOCK', 'DELETE', 'UNLOCK'], ['PURGE'], [null]]) {
       expect(parseUserDetail({ ...base, allowed_actions: odd })).toBeUndefined();
     }
     expect(parseUserDetail({ ...summary(), updated_at: '2026-10-02T00:00:00.000Z', version: '3', profiles: {}, allowed_actions: [] })).toBeUndefined();
     expect(parseUserDetail({ ...summary(), updated_at: '2026-10-02T00:00:00.000Z', version: 1 })).toBeUndefined();
+  });
+
+  it('the lifecycle block is strict: lock reason, blocks, names and the delete effect have exactly the documented values', () => {
+    const base = { ...summary(), updated_at: '2026-10-02T00:00:00.000Z', version: 3, profiles: {}, phone_verified: true, allowed_actions: ['UNLOCK'] };
+    const locked = parseUserDetail({ ...base, lifecycle: lifecycle({ lock_reason: 'DELETE_REQUEST', locked_at: '2026-10-03T00:00:00.000Z', related_data: ['DRIVER_PROFILE'], delete_effect: 'LOCK', delete_blocked_reason: 'ALREADY_LOCKED' }) });
+    expect(locked?.lifecycle).toMatchObject({ lockReason: 'DELETE_REQUEST', lockedAt: '2026-10-03T00:00:00.000Z', deleteBlockedReason: 'ALREADY_LOCKED' });
+    expect(parseUserDetail({ ...base, lifecycle: lifecycle({ lock_blocked_reason: 'ACTIVE_WORK', active_work: ['ORDERS'] }) })?.lifecycle.activeWork).toEqual(['ORDERS']);
+    for (const odd of [
+      lifecycle({ lock_reason: 'MANUAL' }),
+      lifecycle({ locked_at: 'yesterday' }),
+      lifecycle({ related_data: 'SHOP' }),
+      lifecycle({ related_data: ['shop'] }),
+      lifecycle({ active_work: [1] }),
+      lifecycle({ delete_effect: 'PURGE' }),
+      lifecycle({ lock_blocked_reason: 'BUSY' }),
+      lifecycle({ delete_blocked_reason: undefined }),
+      'x',
+      null,
+    ]) {
+      expect(parseUserDetail({ ...base, lifecycle: odd })).toBeUndefined();
+    }
+    expect(parseUserDetail({ ...base, lifecycle: lifecycle(), phone_verified: 'yes' })).toBeUndefined();
+  });
+
+  it('a lock acknowledgement is a lock/unlock one, a delete that locked, or a permanent delete; anything else is refused', () => {
+    const command = '22222222-2222-4222-8222-222222222222';
+    expect(parseLockAcknowledgement({ command_id: command, user_id: ID, account_status: 'DISABLED', lock_reason: 'VIOLATION', version: 5, changed_at: '2026-10-03T00:00:00.000Z' })).toEqual({ userId: ID, accountStatus: 'DISABLED', version: 5 });
+    expect(parseLockAcknowledgement({ command_id: command, user_id: ID, result: 'LOCKED', account_status: 'DISABLED', version: 5, changed_at: '2026-10-03T00:00:00.000Z' })?.result).toBe('LOCKED');
+    expect(parseLockAcknowledgement({ command_id: command, user_id: ID, result: 'DELETED' })).toEqual({ userId: ID, accountStatus: null, version: null, result: 'DELETED' });
+    expect(parseLockAcknowledgement({ command_id: command, user_id: ID, result: 'GONE' })).toBeUndefined();
+    expect(parseLockAcknowledgement({ command_id: 'x', user_id: ID, result: 'DELETED' })).toBeUndefined();
+    expect(parseLockAcknowledgement({ command_id: command, user_id: ID, account_status: 'DISABLED', version: 0, changed_at: '2026-10-03T00:00:00.000Z' })).toBeUndefined();
   });
 
   it('administrators: scopes in words, DISABLED as LOCKED, only ADMIN rows, no rights = "Chưa cấp quyền"', () => {
@@ -124,6 +171,20 @@ describe('admin web account lock - source', () => {
     ]);
   });
 
+  it('the category of a LOCK travels in lock_reason; a delete sends no category; a permanent delete is "deleted"', async () => {
+    const deleted = { data: { command_id: '22222222-2222-4222-8222-222222222222', user_id: ID, result: 'DELETED' } };
+    const { transport, requests } = scripted(reply(200, ACK), reply(200, deleted), reply(200, { data: { ...ACK.data, result: 'LOCKED' } }));
+    const source = createAccountsSource(new AdminAccountsApi(transport), port());
+    expect(await source.lock({ ...COMMAND, category: 'SECURITY' })).toEqual({ kind: 'ok' });
+    expect(await source.lock({ ...COMMAND, action: 'DELETE', category: 'SECURITY' })).toEqual({ kind: 'deleted' });
+    expect(await source.lock({ ...COMMAND, action: 'DELETE' })).toEqual({ kind: 'ok' });
+    expect(requests.map((request) => [request.path, request.body])).toEqual([
+      [`/admin/users/${ID}/lock`, { expected_version: 3, reason: 'Vi phạm', lock_reason: 'SECURITY' }],
+      [`/admin/users/${ID}/delete`, { expected_version: 3, reason: 'Vi phạm' }],
+      [`/admin/users/${ID}/delete`, { expected_version: 3, reason: 'Vi phạm' }],
+    ]);
+  });
+
   it('a lost answer, a 5xx and a malformed acknowledgement are "unknown": the command may have run, nothing is repeated by itself', async () => {
     const { transport, requests } = scripted('throw', reply(503, errorBody('TRANSACTION_OUTCOME_UNKNOWN')), reply(200, { data: { ...ACK.data, version: 0 } }), reply(409, errorBody('IDEMPOTENCY_BUSY')));
     const source = createAccountsSource(new AdminAccountsApi(transport), port());
@@ -146,6 +207,7 @@ describe('admin web account lock - source', () => {
       [409, 'USER_ACCOUNT_VERSION_CONFLICT', { kind: 'conflict' }],
       [409, 'USER_ACCOUNT_ALREADY_IN_STATE', { kind: 'conflict' }],
       [409, 'USER_ACCOUNT_IMPACT_REVIEW_REQUIRED', { kind: 'review-required' }],
+      [409, 'USER_ACCOUNT_HAS_ACTIVE_WORK', { kind: 'has-active-work' }],
       [404, 'USER_NOT_AVAILABLE', { kind: 'not-found' }],
       [403, 'ADMIN_FORBIDDEN', { kind: 'forbidden' }],
       [401, 'ADMIN_SESSION_INVALID', { kind: 'session-expired' }],

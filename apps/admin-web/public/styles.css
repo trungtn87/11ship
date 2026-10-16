@@ -2144,3 +2144,44 @@ select {
     gap: 10px;
   }
 }
+
+/* Cài đặt hệ thống (Owner decision 2026-10-14): one row per switch, label and help on the left, state and the switch on the right. */
+.setting-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+}
+.setting-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.setting-title {
+  font-weight: 600;
+}
+.setting-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.setting-value {
+  min-width: 2.5em;
+  text-align: right;
+}
+.switch-input {
+  width: 44px;
+  height: 24px;
+  accent-color: var(--brand, #e60012);
+  cursor: pointer;
+}
+.switch-input:disabled {
+  cursor: not-allowed;
+}
+@media (max-width: 600px) {
+  .setting-row {
+    flex-direction: column;
+  }
+}

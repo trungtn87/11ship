@@ -1,4 +1,4 @@
-import { AdministratorFilter, AdministratorRow, EMPTY_ADMIN_FILTER, EMPTY_USER_FILTER, ListState, LockDialog, NOT_WIRED_REASON, UserDetail, UserDetailState, UserFilter, UserRow, UsersScreen } from '../core/accounts.js';
+import { AdministratorFilter, AdministratorRow, EMPTY_ADMIN_FILTER, EMPTY_USER_FILTER, LifecycleAction, ListState, LockDialog, NOT_WIRED_REASON, UserDetail, UserDetailState, UserFilter, UserRow, UsersScreen } from '../core/accounts.js';
 import { ActivationScreen } from '../core/activation-controller.js';
 import { AdminAuthController, Clock, Screen } from '../core/controller.js';
 import { ActivationController } from '../core/activation-controller.js';
@@ -8,6 +8,8 @@ import { Grants } from '../core/menu.js';
 import { ComposeDraft, EMPTY_DRAFT, ProvisioningController, ProvisioningScreen } from '../core/provisioning-controller.js';
 import { Route } from '../core/routes.js';
 import { AdministratorsView, openLockDialog, renderUserDetail, UsersView } from '../dom/accounts-view.js';
+import { NOT_WIRED_SETTINGS_REASON, SettingsPhase, SettingsScreen } from '../core/settings.js';
+import { SettingsView } from '../dom/settings-view.js';
 import { authPage, h } from '../dom/dom.js';
 import { ProvisioningView } from '../dom/provisioning-view.js';
 import { ActivationPage } from '../dom/activation-view.js';
@@ -15,7 +17,7 @@ import { ResetPage, ResetScreen } from '../dom/reset-view.js';
 import { buildShell, ShellOptions } from '../dom/shell-layout.js';
 import { emptyPanel, failurePanel, notWiredPanel, skeleton, statePanel } from '../dom/states.js';
 import { AdminView } from '../dom/view.js';
-import { SAMPLE_ACTIVATION_LINK, SAMPLE_ADMINISTRATORS, SAMPLE_LOCKED_DETAIL, SAMPLE_LOCKED_USERS, SAMPLE_OTPAUTH, SAMPLE_SECRET, SAMPLE_USER_DETAIL, SAMPLE_USERS, SAMPLE_INVITATIONS, sampleInvitationDetail } from './samples.js';
+import { SAMPLE_ACTIVATION_LINK, SAMPLE_ADMINISTRATORS, SAMPLE_BUSY_DETAIL, SAMPLE_EMPTY_DETAIL, SAMPLE_LOCKED_DETAIL, SAMPLE_SETTINGS, SAMPLE_LOCKED_USERS, SAMPLE_OTPAUTH, SAMPLE_SECRET, SAMPLE_USER_DETAIL, SAMPLE_USERS, SAMPLE_INVITATIONS, sampleInvitationDetail } from './samples.js';
 import { DEMO_NOTICE, DesignContext, DesignScreen, Variant } from './viewer.js';
 
 // The screens of the design preview. Real screens (login, 2FA, invitations, activation, shell, account pages) are drawn
@@ -59,6 +61,8 @@ function screenIdOf(route: Route): { id: string; variant?: string } {
       return { id: 'user-detail' };
     case 'administrators':
       return { id: 'administrators' };
+    case 'settings':
+      return { id: 'settings' };
     case 'invitations':
       return { id: 'invitations' };
     case 'invitation-new':
@@ -328,7 +332,7 @@ function detailPage(context: DesignContext, state: UserDetailState, after?: (use
     }
     const demo = (): void => context.toast(DEMO_NOTICE);
     content.replaceChildren(
-      renderUserDetail({ name: 'user', id: SAMPLE_USERS[1]!.id, state }, { wired: state.kind !== 'not-wired', back: () => context.go('users'), reload: demo, retry: demo, login: () => context.go('login'), home: () => context.go('overview'), action: (action) => context.go(action === 'LOCK' ? 'user-lock' : 'user-unlock') }),
+      renderUserDetail({ name: 'user', id: SAMPLE_USERS[1]!.id, state }, { wired: state.kind !== 'not-wired', back: () => context.go('users'), reload: demo, retry: demo, login: () => context.go('login'), home: () => context.go('overview'), action: (action) => context.go(action === 'LOCK' ? 'user-lock' : action === 'DELETE' ? 'user-delete' : 'user-unlock') }),
     );
     if (after !== undefined && state.kind === 'ready') {
       const user = state.user;
@@ -343,12 +347,16 @@ const userDetail: DesignScreen = {
   title: 'Người dùng — chi tiết',
   group: 'Tài khoản',
   note: 'Bản thật chưa nối (gói M01.30; khóa/mở khóa gói M01.32 và M01.33). Nút khóa/mở khóa chỉ hiện khi máy chủ cho phép (allowed_actions).',
-  variants: variants(['active', 'Đang hoạt động'], ['locked', 'Đang khóa'], ['no-actions', 'Không có thao tác'], ['loading', 'Đang tải'], ['not-found', 'Không tìm thấy'], ['offline', 'Mất mạng'], ['live', 'Bản thật (chưa nối)']),
+  variants: variants(['active', 'Đang hoạt động'], ['locked', 'Đang khóa (theo yêu cầu xóa)'], ['empty', 'Không có dữ liệu liên quan'], ['busy', 'Còn đơn đang xử lý'], ['no-actions', 'Không có thao tác'], ['loading', 'Đang tải'], ['not-found', 'Không tìm thấy'], ['offline', 'Mất mạng'], ['live', 'Bản thật (chưa nối)']),
   render: (context, variant) => {
     const state: UserDetailState =
       variant === 'locked'
         ? { kind: 'ready', user: SAMPLE_LOCKED_DETAIL }
-        : variant === 'no-actions'
+        : variant === 'empty'
+          ? { kind: 'ready', user: SAMPLE_EMPTY_DETAIL }
+          : variant === 'busy'
+            ? { kind: 'ready', user: SAMPLE_BUSY_DETAIL }
+            : variant === 'no-actions'
           ? { kind: 'ready', user: { ...SAMPLE_USER_DETAIL, allowedActions: [] } }
           : variant === 'loading'
             ? { kind: 'loading' }
@@ -363,16 +371,16 @@ const userDetail: DesignScreen = {
   },
 };
 
-function lockScreen(action: 'LOCK' | 'UNLOCK', code: string, title: string, forms: readonly (readonly [string, string])[]): DesignScreen {
+function lockScreen(action: LifecycleAction, code: string, title: string, forms: readonly (readonly [string, string])[]): DesignScreen {
   return {
-    id: action === 'LOCK' ? 'user-lock' : 'user-unlock',
+    id: action === 'LOCK' ? 'user-lock' : action === 'DELETE' ? 'user-delete' : 'user-unlock',
     code,
     title,
     group: 'Tài khoản',
     note: 'Hộp thoại xác nhận có lý do bắt buộc (1–500 ký tự). Chờ gói M01.32 (máy chủ) và M01.33 (nối giao diện): bản thật không có hộp thoại này.',
     variants: variants(...forms),
     render: (context, variant) => {
-      const user = action === 'LOCK' ? SAMPLE_USER_DETAIL : SAMPLE_LOCKED_DETAIL;
+      const user = action === 'LOCK' ? SAMPLE_USER_DETAIL : action === 'DELETE' ? (variant === 'permanent' ? SAMPLE_EMPTY_DETAIL : SAMPLE_USER_DETAIL) : SAMPLE_LOCKED_DETAIL;
       const table: Record<string, LockDialog> = {
         form: { action, reason: '', phase: 'form' },
         'reason-error': { action, reason: '', phase: 'form', error: 'Nhập lý do.' },
@@ -392,6 +400,7 @@ function lockScreen(action: 'LOCK' | 'UNLOCK', code: string, title: string, form
 }
 
 const userLock = lockScreen('LOCK', 'D87', 'Khóa người dùng — hộp thoại', [['form', 'Mặc định'], ['reason-error', 'Thiếu lý do'], ['filled', 'Đã nhập lý do'], ['working', 'Đang gửi'], ['unknown', 'Chưa rõ kết quả'], ['conflict', 'Xung đột dữ liệu'], ['failed', 'Lỗi']]);
+const userDelete = lockScreen('DELETE', 'D90', 'Xóa người dùng — hộp thoại', [['form', 'Có dữ liệu liên quan (chuyển sang khóa)'], ['permanent', 'Không có dữ liệu (xóa vĩnh viễn)'], ['reason-error', 'Thiếu lý do'], ['working', 'Đang gửi'], ['failed', 'Lỗi (còn đơn đang xử lý)']]);
 const userUnlock = lockScreen('UNLOCK', 'D88', 'Mở khóa người dùng — hộp thoại', [['form', 'Mặc định'], ['reason-error', 'Thiếu lý do'], ['working', 'Đang gửi'], ['unknown', 'Chưa rõ kết quả']]);
 
 // ---- administrators -----------------------------------------------------------------------------------------------------
@@ -433,6 +442,53 @@ const administrators: DesignScreen = {
         refresh: demo,
       });
       view.render({ name: 'administrators', filter, state: stateFor() });
+    }),
+};
+
+// ---- D91: system settings ------------------------------------------------------------------------------------------------
+
+const settings: DesignScreen = {
+  id: 'settings',
+  code: 'D91',
+  title: 'Cài đặt hệ thống — Xác thực số điện thoại',
+  group: 'Hệ thống',
+  note: 'Chỉ SYSTEM. Hai công tắc độc lập (OTP khi đăng ký, OTP khi quên mật khẩu), mặc định Bật; có Lưu/Hủy và lịch sử thay đổi (giá trị cũ/mới, người thực hiện, thời gian). Có hiệu lực ngay, không cần khởi động lại. ADMIN không thấy mục này.',
+  variants: variants(['default', 'Mặc định (cả hai bật)'], ['changed', 'Đã sửa, chưa lưu'], ['working', 'Đang lưu'], ['saved', 'Đã lưu'], ['unknown', 'Chưa rõ kết quả'], ['conflict', 'Xung đột dữ liệu'], ['failed', 'Lỗi'], ['loading', 'Đang tải'], ['offline', 'Mất mạng'], ['live', 'Bản thật (chưa nối)']),
+  render: (context, variant) =>
+    shellPage(context, { name: 'settings' }, (content) => {
+      if (context.role !== 'SYSTEM') {
+        forbiddenPage(context, content);
+        return;
+      }
+      const demo = (): void => context.toast(DEMO_NOTICE);
+      const base = { ...SAMPLE_SETTINGS, otpRegistrationEnabled: true, otpPasswordResetEnabled: true, version: 0, updatedAt: null, history: [] };
+      const phase: SettingsPhase = variant === 'working' ? 'working' : variant === 'saved' ? 'saved' : variant === 'unknown' ? 'unknown' : variant === 'conflict' ? 'conflict' : variant === 'failed' ? 'failed' : 'idle';
+      const screen: SettingsScreen =
+        variant === 'loading'
+          ? { name: 'settings', state: { kind: 'loading' }, phase: 'idle' }
+          : variant === 'offline'
+            ? { name: 'settings', state: { kind: 'failed', failure: 'offline' }, phase: 'idle' }
+            : variant === 'live'
+              ? { name: 'settings', state: { kind: 'not-wired', reason: NOT_WIRED_SETTINGS_REASON }, phase: 'idle' }
+              : {
+                  name: 'settings',
+                  state: { kind: 'ready', settings: variant === 'default' || variant === 'changed' ? base : SAMPLE_SETTINGS },
+                  ...(variant === 'changed' || variant === 'working' || variant === 'unknown' ? { draft: { otpRegistrationEnabled: false, otpPasswordResetEnabled: true } } : {}),
+                  phase,
+                  ...(variant === 'failed' ? { error: 'Chưa thể lưu. Vui lòng thử lại.' } : {}),
+                };
+      const view: SettingsView = new SettingsView(content, {
+        wired: variant !== 'live',
+        change: demo,
+        save: demo,
+        cancel: demo,
+        recheck: demo,
+        retry: demo,
+        reload: demo,
+        login: () => context.go('login'),
+        home: () => context.go('overview'),
+      });
+      view.render(screen);
     }),
 };
 
@@ -584,4 +640,4 @@ const states: DesignScreen = {
     }),
 };
 
-export const SCREENS: readonly DesignScreen[] = [overview, login, verify, enroll, reset, recovery, activation, users, usersLocked, userDetail, userLock, userUnlock, administrators, invitations, invitationNew, invitationDetail, states];
+export const SCREENS: readonly DesignScreen[] = [overview, login, verify, enroll, reset, recovery, activation, users, usersLocked, userDetail, userLock, userUnlock, userDelete, settings, administrators, invitations, invitationNew, invitationDetail, states];

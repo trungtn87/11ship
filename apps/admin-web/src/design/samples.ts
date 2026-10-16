@@ -1,4 +1,5 @@
-import { AdministratorRow, UserDetail, UserRow } from '../core/accounts.js';
+import { AdministratorRow, UserDetail, UserLifecycle, UserRow } from '../core/accounts.js';
+import { PhoneVerificationSettings } from '../core/settings.js';
 import { InvitationDetail, InvitationStatus, InvitationSummary, Permission } from '../core/provisioning-api.js';
 
 // SAMPLE data of the design preview. Every person, phone and date here is invented to show how a screen looks; it is shown
@@ -15,6 +16,16 @@ export const SAMPLE_USERS: readonly UserRow[] = [
 
 export const SAMPLE_LOCKED_USERS: readonly UserRow[] = SAMPLE_USERS.filter((user) => user.status === 'LOCKED');
 
+const ACTIVE_LIFECYCLE: UserLifecycle = {
+  lockReason: null,
+  lockedAt: null,
+  relatedData: ['SHOP'],
+  activeWork: [],
+  deleteEffect: 'LOCK',
+  lockBlockedReason: null,
+  deleteBlockedReason: null,
+};
+
 export const SAMPLE_USER_DETAIL: UserDetail = {
   ...SAMPLE_USERS[1]!,
   version: 4,
@@ -27,7 +38,26 @@ export const SAMPLE_USER_DETAIL: UserDetail = {
     { at: '2026-10-07T08:45:00.000Z', label: 'Khóa tài khoản', actor: 'ADMIN', reason: 'Nhiều phản ánh về đơn hàng trong ngày.' },
     { at: '2026-09-18T07:40:00.000Z', label: 'Tạo tài khoản' },
   ],
-  allowedActions: ['LOCK'],
+  allowedActions: ['LOCK', 'DELETE'],
+  phoneVerified: true,
+  lifecycle: ACTIVE_LIFECYCLE,
+};
+
+/** An account with no business data: a delete removes it for good. Registered while the registration OTP was off, so the phone is unverified. */
+export const SAMPLE_EMPTY_DETAIL: UserDetail = {
+  ...SAMPLE_USER_DETAIL,
+  ...SAMPLE_USERS[3]!,
+  version: 1,
+  profile: { customer: { fullName: null } },
+  events: [{ at: '2026-10-01T01:30:00.000Z', label: 'Tạo tài khoản' }],
+  phoneVerified: false,
+  lifecycle: { ...ACTIVE_LIFECYCLE, relatedData: [], deleteEffect: 'DELETE_PERMANENTLY' },
+};
+
+/** An account with orders still being processed: it cannot be locked, nor deleted into a lock. */
+export const SAMPLE_BUSY_DETAIL: UserDetail = {
+  ...SAMPLE_USER_DETAIL,
+  lifecycle: { ...ACTIVE_LIFECYCLE, relatedData: ['SHOP', 'ORDERS'], activeWork: ['ORDERS'], lockBlockedReason: 'ACTIVE_WORK', deleteBlockedReason: 'ACTIVE_WORK' },
 };
 
 export const SAMPLE_LOCKED_DETAIL: UserDetail = {
@@ -39,7 +69,20 @@ export const SAMPLE_LOCKED_DETAIL: UserDetail = {
     { at: '2026-10-09T04:00:00.000Z', label: 'Khóa tài khoản', actor: 'ADMIN', reason: 'Thông tin xế không khớp giấy tờ.' },
     { at: '2026-09-21T11:05:00.000Z', label: 'Tạo tài khoản' },
   ],
-  allowedActions: ['UNLOCK'],
+  allowedActions: ['UNLOCK', 'DELETE'],
+  phoneVerified: true,
+  lifecycle: { ...ACTIVE_LIFECYCLE, lockReason: 'DELETE_REQUEST', lockedAt: '2026-10-09T04:00:00.000Z', relatedData: ['DRIVER_PROFILE'], deleteBlockedReason: 'ALREADY_LOCKED' },
+};
+
+export const SAMPLE_SETTINGS: PhoneVerificationSettings = {
+  version: 2,
+  otpRegistrationEnabled: true,
+  otpPasswordResetEnabled: false,
+  updatedAt: '2026-10-14T03:00:00.000Z',
+  history: [
+    { id: 'c3000000-0000-4000-8000-000000000002', key: 'otp_password_reset_enabled', oldValue: true, newValue: false, changedBy: 'a1000000-0000-4000-8000-0000000000aa', changedAt: '2026-10-14T03:00:00.000Z' },
+    { id: 'c3000000-0000-4000-8000-000000000001', key: 'otp_registration_enabled', oldValue: true, newValue: false, changedBy: 'a1000000-0000-4000-8000-0000000000aa', changedAt: '2026-10-13T08:00:00.000Z' },
+  ],
 };
 
 export const SAMPLE_ADMINISTRATORS: readonly AdministratorRow[] = [

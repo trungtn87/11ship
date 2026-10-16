@@ -145,6 +145,8 @@ export const MENU: readonly MenuGroup[] = [
     id: 'system',
     label: 'HỆ THỐNG',
     items: [
+      // Owner decision 2026-10-14: the SYSTEM account's switches (phone verification first). SYSTEM only.
+      { id: 'system-settings', label: 'Cài đặt hệ thống', icon: 'gear', route: { name: 'settings' }, ready: true, access: 'system' },
       soon('zones', 'Vùng hoạt động', 'map-pin', 'zones'),
       soon('parameters', 'Tham số', 'gear', 'parameters'),
       soon('audit', 'Nhật ký', 'doc', 'audit'),
@@ -204,6 +206,7 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'user':
       return canSee(role, grants, 'users');
     case 'administrators':
+    case 'settings':
     case 'invitations':
     case 'invitation-new':
     case 'invitation':
@@ -222,6 +225,8 @@ export function activeMenuId(route: Route): string {
       return 'users-list';
     case 'administrators':
       return 'administrators';
+    case 'settings':
+      return 'system-settings';
     case 'invitations':
     case 'invitation-new':
     case 'invitation':
@@ -244,6 +249,8 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Tài khoản', 'Người dùng', 'Chi tiết'];
     case 'administrators':
       return ['Tài khoản', 'Quản trị viên'];
+    case 'settings':
+      return ['Hệ thống', 'Cài đặt hệ thống'];
     case 'invitations':
       return ['Tài khoản', 'Lời mời Admin'];
     case 'invitation-new':

@@ -30,11 +30,11 @@ describe('menu by permission', () => {
     const m = await load(real, 'core/menu.js');
     assert.deepEqual(ids(m.visibleMenu('ADMIN', m.NO_GRANTS)), ['home']);
   });
-  it('ADMIN with a grant sees that entry, never administrators or invitations', async () => {
+  it('ADMIN with a grant sees that entry, never administrators, invitations or the system settings', async () => {
     const m = await load(real, 'core/menu.js');
     const seen = ids(m.visibleMenu('ADMIN', new Set(['users', 'shops'])));
     assert.deepEqual(seen, ['home', 'users', 'users-list', 'users-locked', 'shops']);
-    assert.ok(!seen.includes('administrators') && !seen.includes('invitations'));
+    assert.ok(!seen.includes('administrators') && !seen.includes('invitations') && !seen.includes('system-settings'));
   });
   it('SYSTEM sees every entry', async () => {
     const m = await load(real, 'core/menu.js');
@@ -44,7 +44,7 @@ describe('menu by permission', () => {
     const m = await load(real, 'core/menu.js');
     assert.deepEqual(
       m.MENU.flatMap((group) => group.items.map((item) => item.label)),
-      ['Tổng quan', 'Người dùng', 'Quản trị viên', 'Lời mời Admin', 'Quán', 'Xế', 'Đơn hàng', 'Giao hàng', 'Phản ánh', 'Ví xế', 'Nạp tiền', 'Rút tiền', 'Vùng hoạt động', 'Tham số', 'Nhật ký', 'Giám sát'],
+      ['Tổng quan', 'Người dùng', 'Quản trị viên', 'Lời mời Admin', 'Quán', 'Xế', 'Đơn hàng', 'Giao hàng', 'Phản ánh', 'Ví xế', 'Nạp tiền', 'Rút tiền', 'Cài đặt hệ thống', 'Vùng hoạt động', 'Tham số', 'Nhật ký', 'Giám sát'],
     );
   });
   it('a ready entry has a route; an entry that is not built has none (shown as "Sắp có")', async () => {
@@ -60,6 +60,9 @@ describe('menu by permission', () => {
     assert.equal(m.canOpenRoute('ADMIN', none, { name: 'administrators' }), false);
     assert.equal(m.canOpenRoute('ADMIN', none, { name: 'invitations' }), false);
     assert.equal(m.canOpenRoute('ADMIN', none, { name: 'users' }), false);
+    // Owner decision 2026-10-14: the system settings are SYSTEM only, whatever an ADMIN was granted.
+    assert.equal(m.canOpenRoute('ADMIN', new Set(['users', 'shops', 'drivers']), { name: 'settings' }), false);
+    assert.equal(m.canOpenRoute('SYSTEM', none, { name: 'settings' }), true);
     assert.equal(m.canOpenRoute('ADMIN', new Set(['users']), { name: 'users' }), true);
     assert.equal(m.canOpenRoute('SYSTEM', none, { name: 'administrators' }), true);
     assert.equal(m.canOpenRoute('ADMIN', none, { name: 'home' }), true);
@@ -120,13 +123,16 @@ describe('design preview', () => {
   it('lists every catalog screen with its code (an import failure FAILS this test)', async () => {
     const screens = await load(design, 'design/screens.js');
     const byCode = new Map(screens.SCREENS.map((screen) => [screen.code, screen]));
-    const expected = ['D00', 'D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08', 'D09', 'D81', 'D86', 'D87', 'D88', 'D89', 'C01–C10'];
+    const expected = ['D00', 'D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08', 'D09', 'D81', 'D86', 'D87', 'D88', 'D89', 'D90', 'D91', 'C01–C10'];
     for (const code of expected) {
       assert.ok(byCode.has(code), `missing screen code ${code}`);
     }
     assert.equal(byCode.get('D89').id, 'administrators');
     assert.match(byCode.get('D89').title, /Quản trị viên/);
     assert.equal(byCode.get('D89').group, 'Tài khoản');
+    assert.equal(byCode.get('D90').id, 'user-delete');
+    assert.equal(byCode.get('D91').id, 'settings');
+    assert.equal(byCode.get('D91').group, 'Hệ thống');
     for (const screen of screens.SCREENS) {
       assert.ok(screen.id && screen.title && screen.variants.length > 0, `incomplete screen ${screen.code}`);
     }
