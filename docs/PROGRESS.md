@@ -233,7 +233,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#116](https://github.com/trungtn87/11ship/pull/116) M01 11Ship: UI theo ảnh chốt, đăng ký 2 bước và thuật ngữ s… | Đã merge (`MERGED`) | — | — | — | `fcf4f3d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#118](https://github.com/trungtn87/11ship/pull/118) 11Ship M01: gọn tab Tài khoản và thêm đổi mật khẩu thật | Đã merge (`MERGED`) | — | — | — | `dcd4be8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#119](https://github.com/trungtn87/11ship/pull/119) M14: GPS Test APK and shared Flutter integration for future… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `bc1e8d6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#120](https://github.com/trungtn87/11ship/pull/120) M01: account scopes, system settings, account lifecycle (ba… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `f85ba32` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#120](https://github.com/trungtn87/11ship/pull/120) M01: account scopes, system settings, account lifecycle (ba… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `c11d132` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
