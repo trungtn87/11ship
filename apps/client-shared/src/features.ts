@@ -47,8 +47,8 @@ export const FEATURES: Readonly<Record<FeatureId, FeatureStatus>> = {
   'shop.draftSave': waitingAuth('lưu hồ sơ cửa hàng', 'M01.11'),
   'shop.location': waitingAuth('xác nhận vị trí lấy hàng', 'M01.12'),
   'shop.complete': waitingAuth('hoàn tất hồ sơ cửa hàng', 'M01.12'),
-  'driver.submit': waitingAuth('gửi hồ sơ xế', 'M01.10'),
-  'driver.statusRead': waitingAuth('đọc trạng thái hồ sơ xế', 'M01.05'),
+  'driver.submit': waitingAuth('gửi hồ sơ shipper', 'M01.10'),
+  'driver.statusRead': waitingAuth('đọc trạng thái hồ sơ shipper', 'M01.05'),
   'account.read': waitingAuth('đọc thông tin tài khoản', 'M01.04'),
 };
 

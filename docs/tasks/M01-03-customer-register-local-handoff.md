@@ -47,7 +47,7 @@ Cặp cấu hình server được duyệt cho local dev/test:
 - privacy_version: test-privacy-20261011-v1
 
 Nội dung điều khoản test:
-> Đây là bản thử nghiệm 11Ship/11Food để kiểm tra đăng ký, đăng nhập và quản lý tài khoản. Chỉ sử dụng dữ liệu thử. Mã OTP được lấy từ công cụ SMS test trên máy tính, chưa gửi SMS đến điện thoại. Việc tạo tài khoản chưa kích hoạt cửa hàng hoặc quyền nhận đơn của tài xế.
+> Đây là bản thử nghiệm 11Ship/11Food để kiểm tra đăng ký, đăng nhập và quản lý tài khoản. Chỉ sử dụng dữ liệu thử. Mã OTP được lấy từ công cụ SMS test trên máy tính, chưa gửi SMS đến điện thoại. Việc tạo tài khoản chưa kích hoạt cửa hàng hoặc quyền nhận đơn của shipper.
 
 Nội dung thông tin dữ liệu test:
 > Bản thử nghiệm lưu số điện thoại, tên bạn nhập, mật khẩu ở dạng băm, phiên đăng nhập và thời điểm/cặp phiên bản bạn chấp thuận để kiểm tra chức năng tài khoản. Không nhập thông tin nhạy cảm hoặc dùng mật khẩu đang dùng ở dịch vụ khác. Nội dung này chỉ dùng cho môi trường thử nghiệm, chưa phải chính sách phát hành chính thức.
@@ -81,7 +81,7 @@ onboarding:{shop:"NOT_STARTED",driver:"NOT_STARTED"};
 role_selection_required:false;
 onboarding_required:false cho FOOD, true cho SHIP;
 access_token opaque và session:{expires_at ISO UTC}, TTL main 604800s absolute.
-SHIP đăng ký vẫn có CUSTOMER; onboarding_required chỉ dẫn sang hồ sơ xế ở task UI sau, không cấp DRIVER.
+SHIP đăng ký vẫn có CUSTOMER; onboarding_required chỉ dẫn sang hồ sơ shipper ở task UI sau, không cấp DRIVER.
 
 ## 5. Transaction và file mapping
 
@@ -152,7 +152,7 @@ Nội dung/cặp consent test đã được Owner duyệt; R01/R14 Owner accepta
 >
 > Thêm POST /v1/client-auth/register theo exact parser/identity/error ở §4–6. Reuse OTP request/verify và TEST_INBOX .22; không OTP cố định, auto-verify hoặc trả OTP qua API sản phẩm. Atomic REGISTER proof/user PHONE_VERIFIED/CUSTOMER/profile tên normalized version1/consent DB time/session CUSTOMER/audit/outbox/encrypted result. Reuse idempotency engine, giữ namespace legacy tách biệt, sensitive replay original token/expires_at và CURRENT identity; unusable token trả AUTH_RESULT_NOT_REPLAYABLE409 trước decrypt/return. Không thay legacy wire response hoặc roleless session mặc định.
 >
-> Cặp consent local đã được Owner duyệt: test-terms-20261011-v1 / test-privacy-20261011-v1. Wiring cấu hình server hợp lệ theo §3, không bypass/hard-code acceptance. WEB chỉ explicit local dev/test + bind loopback; ANDROID chưa verifier phải fail closed theo contract11. Không triển khai .04/login/me/context/logout, UI, reset, onboarding quán/xế, native binding, SMS vendor, inbox hoặc launcher mới. Không làm lại migration .02; thiếu DDL prerequisite phải báo finding trước.
+> Cặp consent local đã được Owner duyệt: test-terms-20261011-v1 / test-privacy-20261011-v1. Wiring cấu hình server hợp lệ theo §3, không bypass/hard-code acceptance. WEB chỉ explicit local dev/test + bind loopback; ANDROID chưa verifier phải fail closed theo contract11. Không triển khai .04/login/me/context/logout, UI, reset, onboarding quán/shipper, native binding, SMS vendor, inbox hoặc launcher mới. Không làm lại migration .02; thiếu DDL prerequisite phải báo finding trước.
 >
 > Chạy R01–R15 với API/PG17 thật và restricted runtime role; lint/typecheck/build/unit/integration local+CI mode và các hồi quy workflow phù hợp phải xanh trên exact final SHA. Suite phá dữ liệu chỉ dùng TEST, không Owner DEV data hoặc DB remote. Nếu môi trường local thiếu toolchain/dependency, ghi rõ chưa chạy và dùng CI để cung cấp bằng chứng, không giả PASS. Trả Draft PR riêng, evidence base/dependency/final SHAs, commands/results/CI, mapping endpoint, rollback/race/replay/grants và runbook local request OTP → công cụ PC → verify → register. Runbook là hướng dẫn thử backend, không phải nghiệm thu UI/app.
 >
@@ -168,7 +168,7 @@ ChatGPT review đúng final SHA; mọi finding code do Claude sửa; merge gói 
 | Web Admin | Hồi quy auth độc lập | Không sửa trong gói | Chưa chạy gói mới | Chưa chạy | Chưa chạy | Chưa |
 | 11Food khách | Registration API/consent | Nối UI task sau | Chưa triển khai | Chưa chạy | Chưa chạy | Chưa |
 | 11Food quán | CUSTOMER trước onboarding shop | Không cấp SHOP ở đây | Chưa triển khai | Chưa chạy | Chưa chạy | Chưa |
-| 11Ship xế | CUSTOMER trước hồ sơ xế | Không cấp DRIVER ở đây | Chưa triển khai | Chưa chạy | Chưa chạy | Chưa |
+| 11Ship shipper | CUSTOMER trước hồ sơ shipper | Không cấp DRIVER ở đây | Chưa triển khai | Chưa chạy | Chưa chạy | Chưa |
 | Liên thông | phone uniqueness/proof/legacy/new | Backend scope | Chưa chạy | Chưa chạy | Chưa chạy | Chưa |
 
-Backend-only không thêm ảnh màn hình; không miễn UI/local/phone của module. Ngày 11/10/2026 đã inspect ba ảnh Owner đính kèm: 1000002801(1).jpg (bảng nhận diện/slogan), 1000002790.jpg (bảng nhận diện và màu), 1000002796.jpg (logo 11). Đây là nguồn nhận diện cho các task UI sau, không phải ảnh màn hình M01.03 hoặc bằng chứng test chức năng. Giữ guideline đã chốt trên main; không dùng mô tả phân chia app/slogan cũ trong ảnh để thay kiến trúc hiện hành 11Food khách + quán / 11Ship xế.
+Backend-only không thêm ảnh màn hình; không miễn UI/local/phone của module. Ngày 11/10/2026 đã inspect ba ảnh Owner đính kèm: 1000002801(1).jpg (bảng nhận diện/slogan), 1000002790.jpg (bảng nhận diện và màu), 1000002796.jpg (logo 11). Đây là nguồn nhận diện cho các task UI sau, không phải ảnh màn hình M01.03 hoặc bằng chứng test chức năng. Giữ guideline đã chốt trên main; không dùng mô tả phân chia app/slogan cũ trong ảnh để thay kiến trúc hiện hành 11Food khách + quán / 11Ship shipper.

@@ -40,9 +40,12 @@ mixin _LeaveWhenSignedOut<T extends StatefulWidget> on State<T> {
 }
 
 class ShopManageScreen extends StatefulWidget {
-  const ShopManageScreen({super.key, required this.flows});
+  const ShopManageScreen({super.key, required this.flows, this.embedded = false});
 
   final M02Flows flows;
+
+  /// True inside the "Quán" tab: only the content, the shell supplies the title bar and the bottom navigation.
+  final bool embedded;
 
   @override
   State<ShopManageScreen> createState() => _ShopManageScreenState();
@@ -105,6 +108,9 @@ class _ShopManageScreenState extends State<ShopManageScreen> with WidgetsBinding
           body = const <Widget>[M02Skeleton(rows: 1, height: 28), M02Skeleton(rows: 1, height: 120), M02Skeleton(rows: 4, height: 60)];
         } else {
           body = _content(o);
+        }
+        if (widget.embedded) {
+          return vstack(body);
         }
         return M02Scaffold(title: 'Quản lý cửa hàng', content: body);
       },

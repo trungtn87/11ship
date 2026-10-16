@@ -23,7 +23,7 @@ const PRIVACY = 'test-privacy-20261011-v1';
 const MOBILE = { width: 390, height: 844, mobile: true };
 const PASSWORD = 'Mật khẩu thử 12345 ü';
 const NAME = 'Nguyễn Văn An';
-const DRIVER_NAME = 'Nguyễn Văn Xế';
+const DRIVER_NAME = 'Nguyễn Văn Shipper';
 const PLATE = '59A-123.45';
 
 interface Shot {
@@ -165,7 +165,7 @@ describe('M01 — 11Ship driver profile in a real browser against the real backe
       expect(await page.text('#driver-status-title')).toBe('Hồ sơ đang chờ duyệt');
       expect(await page.text('#driver-name')).toBe(DRIVER_NAME);
       expect(await page.text('#driver-plate')).toBe(PLATE);
-      expect(await page.text('#driver-type')).toBe('Xế ngoài');
+      expect(await page.text('#driver-type')).toBe('Shipper ngoài');
       await shot(page, 's13-pending');
 
       // ---- account + home reflect the same state; the online switch stays locked ---------------------------------------
@@ -205,12 +205,12 @@ describe('M01 — 11Ship driver profile in a real browser against the real backe
       await again.waitFor(`location.pathname === '/' && document.body.innerText.includes('Hồ sơ đang chờ duyệt')`);
       await again.click('a[href="/account"]');
       await again.waitFor(`location.pathname === '/account'`);
-      await clickRow(again, 'Hồ sơ xế');
+      await clickRow(again, 'Hồ sơ shipper');
       await again.waitFor(`location.pathname === '/driver/status' && document.querySelector('#driver-status-card')`);
       expect(await again.text('#driver-name')).toBe(DRIVER_NAME);
       expect(await again.text('#driver-plate')).toBe(PLATE);
       expect(await again.evaluate<string>(`document.querySelector('#driver-status-card').dataset.status`)).toBe('PENDING');
-      expect(await mainText(again)).toContain('Xế ngoài');
+      expect(await mainText(again)).toContain('Shipper ngoài');
       expect(paths(again, 'POST').filter((path) => path === '/v1/onboarding/driver')).toHaveLength(0);
       await shot(again, 's13-new-session');
       const userId = String((await app.pool.query<{ user_id: string }>('SELECT user_id FROM app.users WHERE phone_normalized = $1', [phone.normalized])).rows[0]?.user_id);

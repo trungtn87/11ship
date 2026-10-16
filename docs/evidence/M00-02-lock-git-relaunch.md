@@ -66,7 +66,7 @@ Lịch sử CI (không phải kết quả cuối): lần chạy đầu đỏ vì
 |---|---|---|---|---|---|---|---|
 | Admin Web | Đã duyệt | Khóa tích hợp; app vẫn từ chối | Xem PR | Chưa | CHƯA CHẠY | N/A | Chưa |
 | 11Food (khách + quán) | Đã duyệt | như trên | Xem PR | Chưa | CHƯA CHẠY | N/A | Chưa |
-| 11Ship (xế) | Đã duyệt | như trên | Xem PR | Chưa | CHƯA CHẠY | N/A | Chưa |
+| 11Ship (shipper) | Đã duyệt | như trên | Xem PR | Chưa | CHƯA CHẠY | N/A | Chưa |
 | Liên thông | Đã duyệt | Chưa triển khai | — | — | CHƯA CHẠY | — | Chưa |
 
 ## Không làm

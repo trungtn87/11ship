@@ -5,7 +5,6 @@ import '../account/models.dart';
 import '../account/session_controller.dart';
 import '../features.dart';
 import '../m02/m02_flows.dart';
-import '../m02/shop_manage_views.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
 import 'location.dart';
@@ -471,16 +470,7 @@ class _ShopHomeScreenState extends State<ShopHomeScreen> {
               if (active == 'SHOP_OWNER') const Center(child: N11Chip('Đang ở chế độ cửa hàng', kind: ChipKind.dark)),
               if (!canShop) const ReasonNote('Chế độ cửa hàng chỉ mở khi máy chủ xác nhận cửa hàng đang hoạt động.'),
               N11List(children: <Widget>[
-                if (widget.m02 != null)
-                  N11ListItem(
-                    key: const Key('open-manage'),
-                    icon: Icons.storefront_outlined,
-                    title: 'Quản lý hoạt động quán',
-                    sub: active == 'SHOP_OWNER' ? 'Hồ sơ, giờ hoạt động, thực đơn, xem trước' : 'Chuyển sang chế độ cửa hàng để quản lý.',
-                    onTap: active == 'SHOP_OWNER' && profile.status == 'ACTIVE' ? () => Navigator.of(context).push(n11Route(ShopManageScreen(flows: widget.m02!))) : null,
-                  )
-                else
-                  N11ListItem(icon: Icons.restaurant_menu, title: 'Menu', sub: kNotOnAndroidReason, soon: true),
+                N11ListItem(icon: Icons.storefront_outlined, title: 'Quản lý quán', sub: 'Có ở tab Quán khi bạn vào chế độ quản lý quán.', soon: false),
                 N11ListItem(icon: Icons.receipt_long_outlined, title: 'Đơn hàng', sub: kNotOnAndroidReason, soon: true),
                 N11ListItem(icon: Icons.bar_chart_outlined, title: 'Doanh thu', sub: kNotOnAndroidReason, soon: true),
               ]),

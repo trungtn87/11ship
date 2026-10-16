@@ -23,7 +23,7 @@ Kết quả của 4.1: chỉ mục đặc tả, quy tắc phiên bản, schema m
 | S06 | Test fixtures và test evidence | Input/expected và kết quả thực chạy | Chưa chạy |
 | S07 | UI theo task có màn hình | Màn/luồng và trạng thái lỗi/offline | Chưa xác minh bản được duyệt |
 
-Các tài liệu kế hoạch/M0/gọi ship cũ được giữ làm lịch sử. Khi chúng mâu thuẫn S01, áp dụng S01; chỉ dẫn mới của Owner có ưu tiên cao hơn. Không dùng nội dung cũ để khôi phục giới hạn một đơn/xế, COD ledger, khách tự sửa/hủy hoặc Android trước rồi iOS sau.
+Các tài liệu kế hoạch/M0/gọi ship cũ được giữ làm lịch sử. Khi chúng mâu thuẫn S01, áp dụng S01; chỉ dẫn mới của Owner có ưu tiên cao hơn. Không dùng nội dung cũ để khôi phục giới hạn một đơn/shipper, COD ledger, khách tự sửa/hủy hoặc Android trước rồi iOS sau.
 
 Phiên bản độc lập:
 
@@ -38,7 +38,7 @@ Một thay đổi phải nêu rule/test liên quan, lý do, contract/schema/UI b
 
 ## 3. Kiến trúc triển khai
 
-Một repository 11Ship riêng; một backend chia module; một PostgreSQL nghiệp vụ; bốn app Flutter (khách, quán, xế, quản lý); một web quản trị React. NestJS là phương án backend kế thừa từ nguồn. Đây là phương án thiết kế; phiên bản thư viện/runtime cần kiểm tra và khóa ở M00-B, chưa có kết quả build xác minh.
+Một repository 11Ship riêng; một backend chia module; một PostgreSQL nghiệp vụ; bốn app Flutter (khách, quán, shipper, quản lý); một web quản trị React. NestJS là phương án backend kế thừa từ nguồn. Đây là phương án thiết kế; phiên bản thư viện/runtime cần kiểm tra và khóa ở M00-B, chưa có kết quả build xác minh.
 
 Các app dùng cùng hợp đồng và có phần dùng chung, nhưng đóng gói/quyền/luồng riêng. App quản lý ưu tiên theo dõi vận hành; web quản trị phục vụ cấu hình và quản trị theo quyền. Backend quyết định điều kiện nghiệp vụ. Không nhân bản thuật toán ví, ghép đơn hay quyền vào từng app.
 
@@ -74,9 +74,9 @@ Các tên sau được chọn làm tên chuẩn để viết schema vật lý. M
 | M01 | `users`, `user_roles`, `admin_scopes`, `admin_permissions`, `phone_verifications`, `verification_proofs`, `sessions` | SĐT chuẩn hóa unique; OTP/proof đúng purpose dùng một lần; thu hồi phiên/quyền thực thi phía server |
 | M02 | `service_areas`, `shops`, `shop_members`, `shop_business_hours` | Membership đúng quán; vùng lấy hàng; khung giờ nửa mở; trạng thái quán và bật nhận tách riêng |
 | M03 | `drivers`, `driver_service_areas`, `driver_bank_accounts`, `driver_closure_requests` | Một driver/user; type mặc định EXTERNAL; ngân hàng đổi mất verification; closure không xóa ví |
-| M04 | `driver_wallets`, `wallet_ledger_entries`, `wallet_holds`, `wallet_topups`, `wallet_withdrawals`, `wallet_adjustments` | Một ví/xế; ledger append-only; giữ/capture/release một lần; unique giao dịch ngân hàng; available không âm |
+| M04 | `driver_wallets`, `wallet_ledger_entries`, `wallet_holds`, `wallet_topups`, `wallet_withdrawals`, `wallet_adjustments` | Một ví/shipper; ledger append-only; giữ/capture/release một lần; unique giao dịch ngân hàng; available không âm |
 | M05 | `customers`, `customer_addresses` | Customer tối giản; địa chỉ thuộc người đặt; tối đa một default active; lat/lng có cùng nhau hoặc đều null |
-| M06 | `shipping_quotes`, `driver_routing_states`, `route_evaluations`, `policy_versions` | Quote bind/version/TTL; khóa aggregate xế; policy snapshot; ETA gốc thuộc assignment bất biến |
+| M06 | `shipping_quotes`, `driver_routing_states`, `route_evaluations`, `policy_versions` | Quote bind/version/TTL; khóa aggregate shipper; policy snapshot; ETA gốc thuộc assignment bất biến |
 | M07 | `deliveries`, `delivery_items`, `delivery_assignments`, `delivery_events`, `delivery_incidents` | Một active delivery/order; một active assignment/delivery; hạn tìm cố định; incident bảo vệ hàng sau fail |
 | M08 | `driver_location_samples`, `driver_current_locations`, `device_bindings`, `notification_deliveries`, `reminder_jobs` | Mẫu cũ không ghi đè mới; binding user/session/installation; job dedupe và kiểm trạng thái lúc chạy |
 | M09 | `system_categories`, `shop_categories`, `menu_items` | Hai lớp category độc lập; category đúng shop; active khác available; giá nguyên VND |
@@ -107,7 +107,7 @@ Ghi chú ownership:
 | `DELIVERED` | `completed` |
 | `FAILED` | `failed` |
 | `CANCELLED` | Chỉ map sang `cancelled_by_merchant` khi biết đúng nguyên nhân; không tự map mọi lịch sử cancel |
-| Thiếu terminal tìm xế | Bổ sung `search_stopped` |
+| Thiếu terminal tìm shipper | Bổ sung `search_stopped` |
 | `cancelled_by_customer` | Chỉ đọc lịch sử nếu có; không mở API khách hủy |
 | Một `delivery_id` trên order | Projection `active_delivery_id`, `latest_delivery_id` và history; không unique toàn bộ order_id |
 | `driver_type=SYSTEM` và quản trị SYSTEM | Enum và phép kiểm quyền riêng; không dùng chung `isSystem()` |
@@ -131,7 +131,7 @@ Event envelope chuẩn có `event_id`, `event_type`, `event_schema_version`, `re
 | Command | Coordinator | Thành phần cùng transaction |
 |---|---|---|
 | Register | M01 | Consume proof + user + session + audit/outbox cần thiết |
-| Nạp và duyệt xế | M03-B | M04 kiểm giao dịch ngân hàng + credit; M03 kích hoạt; audit |
+| Nạp và duyệt shipper | M03-B | M04 kiểm giao dịch ngân hàng + credit; M03 kích hoạt; audit |
 | Accept delivery | M07 | Delivery + assignment + M04 reserve + M06 routing version + event/outbox |
 | Return/cancel | M07 | State + assignment ended + M04 release + route invalidation + job/outbox |
 | Pickup | M07 | Ghim/phí + mốc location/pickup/delivering + snapshot hướng dẫn tiền + event/outbox |
@@ -143,7 +143,7 @@ Event envelope chuẩn có `event_id`, `event_type`, `event_schema_version`, `re
 
 Các service nhận transaction context chung. M07 hỗ trợ order adapter khi có M10; đơn ngoài app không phụ thuộc M10. Không ghép bằng nhiều HTTP call độc lập rồi giả rằng tất cả đã commit cùng nhau.
 
-Routing provider gọi ngoài transaction; khi commit kiểm lại tuổi kết quả, version/quyền/policy/ví/đơn. Thứ tự khóa và bounded retry phải thiết kế ở M00-B/C và task concurrency; chưa có DDL nên chưa tuyên bố đã giải quyết deadlock. Khóa aggregate xế và ví cần bảo vệ nhận song song hai delivery khác nhau.
+Routing provider gọi ngoài transaction; khi commit kiểm lại tuổi kết quả, version/quyền/policy/ví/đơn. Thứ tự khóa và bounded retry phải thiết kế ở M00-B/C và task concurrency; chưa có DDL nên chưa tuyên bố đã giải quyết deadlock. Khóa aggregate shipper và ví cần bảo vệ nhận song song hai delivery khác nhau.
 
 ## 8. Thứ tự công việc tiếp theo
 

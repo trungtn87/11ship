@@ -13,7 +13,7 @@
 
 | Loại tài khoản | Reset mật khẩu | Xác minh |
 |---|---|---|
-| USER (gồm khách, quán, xế và các vai trò nghiệp vụ thông thường) | Một form reset chung, không cần đăng nhập trước | OTP qua SMS đến **số đăng ký tài khoản** |
+| USER (gồm khách, quán, shipper và các vai trò nghiệp vụ thông thường) | Một form reset chung, không cần đăng nhập trước | OTP qua SMS đến **số đăng ký tài khoản** |
 | ADMIN | **Cùng form và luồng OTP SMS của USER**; không có form đổi mật khẩu riêng | OTP qua SMS đến **số đăng ký tài khoản ADMIN** |
 | SYSTEM (tài khoản cao nhất, duy nhất) | **Quy trình khôi phục đặc quyền bằng công cụ bảo mật trên server**, không dùng form reset công khai | Quyền vận hành server; **email đã xác minh** là bước OTP bổ sung nếu đã cấu hình |
 
@@ -59,7 +59,7 @@ Giao diện gồm các bước trên **cùng một form/luồng** (có thể hi�
 - Bảo vệ khỏi brute force, resend flood, dò tài khoản, replay OTP, reset đồng thời và sự cố gửi SMS/email; không trả bí mật trong lỗi.
 - Có log audit kết quả reset và thu hồi session an toàn; không lưu SĐT, email, OTP, password hay session token dạng rõ trong payload log/audit.
 - Mã xác minh và cơ chế delivery thực tế ở staging/production không được giả lập thành SMS/email thật. Test bằng provider giả lập trong môi trường test theo quy định dự án.
-- Sau reset, thử bằng mật khẩu cũ phải thất bại và mọi session cũ trên Web Admin / Khách / Quán / Xế / app quản lý phải bị chặn; mật khẩu mới đăng nhập đúng luồng role và 2FA tương ứng.
+- Sau reset, thử bằng mật khẩu cũ phải thất bại và mọi session cũ trên Web Admin / Khách / Quán / Shipper / app quản lý phải bị chặn; mật khẩu mới đăng nhập đúng luồng role và 2FA tương ứng.
 - Xác minh xử lý tài khoản disabled, OTP sai/hết hạn/dùng rồi, nhiều request đồng thời, phản hồi mạng bị mất sau commit, email SYSTEM chưa xác minh/mất email và bootstrap lại.
 
 ## 5. Ma trận triển khai và nghiệm thu
@@ -70,7 +70,7 @@ Giao diện gồm các bước trên **cùng một form/luồng** (có thể hi�
 | Web quản trị (ADMIN) | **Đã duyệt** | Chưa có ảnh UI được duyệt | Chưa | Chưa | Chưa | Chưa |
 | App Khách | **Đã duyệt** | Chưa có ảnh UI được duyệt | Chưa | Chưa | Chưa | Chưa |
 | App Quán | **Đã duyệt** | Chưa có ảnh UI được duyệt | Chưa | Chưa | Chưa | Chưa |
-| App Xế | **Đã duyệt** | Chưa có ảnh UI được duyệt | Chưa | Chưa | Chưa | Chưa |
+| App Shipper | **Đã duyệt** | Chưa có ảnh UI được duyệt | Chưa | Chưa | Chưa | Chưa |
 | App quản lý (nếu tài khoản thông thường sử dụng) | **Đã duyệt** | Chưa có ảnh UI được duyệt | Chưa | Chưa | Chưa | Chưa |
 | SYSTEM (CLI khôi phục local/CI; email phụ chưa làm) | **Đã duyệt nghiệp vụ** | CLI local `admin-auth:recover-system` đã triển khai (xem [runbook](../../ops/runbooks/system-recovery-local.md)); chưa có email recovery/VPS | Có (local/CI) | Chưa | N/A (CLI/server) | Chưa |
 | Hồi quy liên thông Auth/2FA/session | **Đã duyệt mục tiêu** | Test contract chưa khóa | Chưa | Chưa | Chưa | Chưa |

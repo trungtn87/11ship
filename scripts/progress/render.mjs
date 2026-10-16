@@ -84,9 +84,9 @@ const TITLE_VI = new Map([
   ['Audit + Outbox Write', 'Audit + ghi Outbox'],
   ['Dispatcher + Final Integration', 'Dispatcher + tích hợp cuối'],
   ['Auth Core', 'Lõi xác thực (Auth Core)'],
-  ['Onboarding (Shop + Driver)', 'Onboarding (Quán + Tài xế)'],
+  ['Onboarding (Shop + Driver)', 'Onboarding (Quán + Shipper)'],
   ['Shop onboarding', 'Onboarding quán (Shop)'],
-  ['Driver onboarding', 'Onboarding tài xế (Driver)'],
+  ['Driver onboarding', 'Onboarding shipper (Driver)'],
   ['Post-merge repairs (session, rollback, router, progress)', 'Sửa sau merge (session, rollback, router, tiến độ)'],
 ]);
 

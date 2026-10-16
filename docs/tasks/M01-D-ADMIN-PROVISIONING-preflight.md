@@ -35,7 +35,7 @@ Migration cuối: `1791763200000_create-shop-business-hours.sql`. Migration auth
 | `app.audit_logs` | `actor_type` token (`ANONYMOUS, USER, ADMIN, SYSTEM, …` theo comment), `actor_id`, `action` dotted-versioned, `resource_type/id/version`, `outcome`, `reason_code`, `metadata jsonb` (app từ chối metadata trông như bí mật). | Audit append qua `AuditWriter`. |
 | `app.idempotency_records` | M00-C1A1; scope/operation/key, replay mã hóa. | Idempotency. |
 | `app.shops` | `status IN ('INCOMPLETE','ACTIVE','DISABLED')`, `accepting_orders`; `app.shop_members`. | Quán. **Không có** trạng thái hồ sơ "Chờ duyệt/Đã duyệt/Yêu cầu bổ sung". |
-| `app.drivers` | `driver_type IN ('EXTERNAL','PLATFORM')`, `status IN ('PENDING','ACTIVE','SUSPENDED','CLOSING','CLOSED')`, `accepting_deliveries`, `full_name`. | Xế. **Không** thấy bảng ngân hàng/ví. |
+| `app.drivers` | `driver_type IN ('EXTERNAL','PLATFORM')`, `status IN ('PENDING','ACTIVE','SUSPENDED','CLOSING','CLOSED')`, `accepting_deliveries`, `full_name`. | Shipper. **Không** thấy bảng ngân hàng/ví. |
 | Outbox | `app.outbox_events` (M00-C1B/C). | Không dùng cho bước 1. |
 
 Không có bảng admin, lời mời, scope/quyền, factor/challenge/session quản trị, limiter trên `main`.
@@ -46,7 +46,7 @@ Không có bảng admin, lời mời, scope/quyền, factor/challenge/session qu
 | `database/migrations/1791936000000_add-users-account-origin.sql` | `users.account_origin varchar(24) NOT NULL DEFAULT 'PHONE_VERIFIED'`; `phone_verified_at` thành nullable; `users_account_origin_ck` ∈ {`PHONE_VERIFIED`,`ADMIN_PROVISIONED`}; `users_origin_verified_ck`: PHONE_VERIFIED ⇒ `phone_verified_at NOT NULL`, ADMIN_PROVISIONED ⇒ `phone_verified_at IS NULL`. Down từ chối chạy nếu còn origin khác. |
 | `database/migrations/1792022400000_create-admin-auth.sql` | `app.admin_memberships` (PK `user_id`, `admin_role IN ('SYSTEM','ADMIN')`, `status IN ('ACTIVE','DISABLED')`, `version`; unique partial index `admin_memberships_single_system_uq` — **SYSTEM duy nhất**), `app.admin_auth_challenges` (preauth, `csrf_nonce`, `password_binding`, `membership_version`, attempt ≤5), `app.admin_totp_factors` (1/admin, `state PENDING/ACTIVE`, secret AES-GCM, `last_accepted_step`), `app.admin_sessions` (cookie digest, CSRF, `membership_version`, `factor_*`, unique partial index `admin_sessions_active_per_user_uq` — **1 phiên quản trị còn hiệu lực/admin**), `app.admin_auth_limit_config` (singleton), `app.admin_auth_limits` (`kind IN ('LOGIN_PHONE','LOGIN_IP','LOGIN_REQUEST_IP','TOTP_USER','TOTP_REQUEST_IP')`). Không CASCADE, không seed. |
 
-**THIẾU trong #34** (đối chiếu yêu cầu bước 1/2): bảng lời mời; bảng scope/quyền theo app (Khách/Quán/Xế × Xem/Duyệt hồ sơ/Khóa-mở khóa); tên hiển thị ADMIN; ghi chú; trạng thái "chờ kích hoạt" (membership chỉ có ACTIVE/DISABLED); lý do/người khóa; bảng kind limiter cho OTP kích hoạt (CHECK `kind` là danh sách đóng); ràng buộc DB buộc membership chỉ đi với `account_origin='ADMIN_PROVISIONED'` (hiện chỉ code quyết định; comment migration: "membership - not the account origin - decides the right").
+**THIẾU trong #34** (đối chiếu yêu cầu bước 1/2): bảng lời mời; bảng scope/quyền theo app (Khách/Quán/Shipper × Xem/Duyệt hồ sơ/Khóa-mở khóa); tên hiển thị ADMIN; ghi chú; trạng thái "chờ kích hoạt" (membership chỉ có ACTIVE/DISABLED); lý do/người khóa; bảng kind limiter cho OTP kích hoạt (CHECK `kind` là danh sách đóng); ràng buộc DB buộc membership chỉ đi với `account_origin='ADMIN_PROVISIONED'` (hiện chỉ code quyết định; comment migration: "membership - not the account origin - decides the right").
 
 ### 2.3 Thêm bởi #27 (`c8b410e`) — chưa merge
 `database/migrations/1791849600000_add-users-account-origin.sql`: cùng cột `account_origin`, cùng tên constraint `users_account_origin_ck` / `users_origin_verified_ck`, nhưng giá trị ∈ {`PHONE_VERIFIED`,`STAGING_FIXTURE`}. Xem mục 8.
@@ -106,20 +106,20 @@ Cột "Đã có" ghi `main` / `#34` / `#35` (chưa merge). Không endpoint/schem
 | Khóa/mở khóa ADMIN | #34: `membership.status` DISABLED chặn login/phiên | Route + lý do + audit + thu hồi phiên | `admin-membership-repository.ts` | Bước 2 |
 | Lời mời hết hạn/thu hồi/cấp lại; màn lỗi (UI-05 §13) | — | Toàn bộ trạng thái và mã lỗi | — | Bước 1 |
 
-### 4.2 Tài khoản Khách / Quán / Xế (UI-03, 04, 05)
+### 4.2 Tài khoản Khách / Quán / Shipper (UI-03, 04, 05)
 | Chức năng | Đã có | Phần thiếu | File/API liên quan | Dependency |
 |---|---|---|---|---|
 | Danh sách + tìm kiếm + lọc | — | Mọi route đọc quản trị; "Khách" **không có role/hồ sơ trong hệ thống** (`SUPPORTED_ROLES = ['DRIVER','SHOP']`; không có bảng khách; `users` không có tên) | `auth-constants.ts`, `app.users` | Thiết kế module Khách; bước 3 |
 | Chỉ hiện app/thao tác trong phạm vi quyền | — | Guard theo quyền từng app ở server | — | Bước 1–2 |
 | Chi tiết Quán (hồ sơ, điều kiện hoạt động, GPS/vùng) | `app.shops`, `service_areas`, onboarding + shop-management trên `main` | Đọc cho quản trị; trạng thái hồ sơ Chờ duyệt/Đã duyệt/Bổ sung **chưa có** (shop chỉ `INCOMPLETE/ACTIVE/DISABLED`) | `onboarding/*`, `shop-management/*` | Bước 4 + thiết kế duyệt |
 | Duyệt hồ sơ / Yêu cầu bổ sung | — | Workflow duyệt, trạng thái, lý do, audit | — | Bước 4–5 |
-| Chi tiết Xế (loại xế, ngân hàng, điều kiện ví) | `app.drivers` (type/status) | Không thấy bảng ngân hàng/ví; verify | `driver/*`, `driver-onboarding-*` | Bước 5; không tự làm ví |
+| Chi tiết Shipper (loại shipper, ngân hàng, điều kiện ví) | `app.drivers` (type/status) | Không thấy bảng ngân hàng/ví; verify | `driver/*`, `driver-onboarding-*` | Bước 5; không tự làm ví |
 | Khóa/mở khóa tài khoản + lý do | `users.status` ACTIVE/DISABLED được login và session kiểm tra (`ACCOUNT_DISABLED`) | Route quản trị, lý do, người thực hiện, thu hồi phiên trong cùng transaction, "mở khóa giữ nguyên hồ sơ, không tự bật online" | `login-service.ts`, `session-authorization-participant.ts` | Bước 3 |
 | Thu hồi phiên app | `sessions.revoked_at`; chỉ có thu hồi phiên SHOP cũ khi chọn role | Thu hồi toàn bộ phiên của một user theo yêu cầu quản trị | `session-repository.ts` | Bước 3 |
 | Lịch sử tài khoản + chi tiết (người, lý do, trước/sau, mã thao tác) | `audit_logs` ghi được | **Đọc/lọc audit** (index theo resource? CHƯA KIỂM CHỨNG), lý do/trước-sau chỉ trong `metadata`, "mã thao tác ACT-…" chưa có | `audit-writer.ts` | Bước 3 |
 | Mất phản hồi khi lưu (UI-05) | M00 idempotency có sẵn (`IdempotencyExecutor`, replay mã hóa, mặc định replay 900s/dedupe 7 ngày) | Dùng cho route quản trị; thao tác "kiểm tra kết quả" | `idempotency/*` | Mọi bước |
-| Khóa Quán/Xế đang có đơn không tự hủy đơn/đổi ví | Chưa có module đơn/ví trên `main` | Thiết kế nghĩa vụ tiếp tục xử lý trước rollout | — | M03/M04, bước 4–5 |
-| "1 tài khoản = 1 thiết bị online" | Chỉ SHOP có unique index phiên; Khách/Xế **không** có ràng buộc | Đối chiếu yêu cầu thực; chưa suy từ SHOP | `sessions_active_shop_per_user_uq` | Quyết định riêng |
+| Khóa Quán/Shipper đang có đơn không tự hủy đơn/đổi ví | Chưa có module đơn/ví trên `main` | Thiết kế nghĩa vụ tiếp tục xử lý trước rollout | — | M03/M04, bước 4–5 |
+| "1 tài khoản = 1 thiết bị online" | Chỉ SHOP có unique index phiên; Khách/Shipper **không** có ràng buộc | Đối chiếu yêu cầu thực; chưa suy từ SHOP | `sessions_active_shop_per_user_uq` | Quyết định riêng |
 | App quản lý Android | — | Hợp đồng xác thực native (cookie `__Host-`/CSRF web không dùng cho Android) | — | Bước 6 |
 
 ## 5. Phân tích riêng: tạo / kích hoạt ADMIN
@@ -202,13 +202,13 @@ Cột "Đã có" ghi `main` / `#34` / `#35` (chưa merge). Không endpoint/schem
 | 2. Quản lý ADMIN | Danh sách/chi tiết, đổi quyền (bump version), khóa/mở khóa, khôi phục 2FA, thu hồi phiên; step-up D7 | Gói 1 đã review + Owner local | Quyền theo phạm vi; đổi/khóa trong lúc request; phiên cũ bị từ chối; replay | ChatGPT | Local + Authenticator thật |
 | 3. Khách | Danh sách, chi tiết, khóa/mở khóa, thu hồi phiên, lịch sử | Gói 2; định nghĩa "Khách" (D13); đọc audit (D14) | Khóa + thu hồi phiên nguyên tử; mở khóa không đổi hồ sơ; lịch sử không secret | ChatGPT | Local web + app Khách (nếu có) |
 | 4. Quán | Hồ sơ, duyệt/bổ sung, trạng thái tài khoản | Gói 3; thiết kế workflow duyệt (shop chưa có trạng thái duyệt); đối chiếu onboarding/điều kiện hoạt động | Duyệt không tự bật nhận đơn; khóa không hủy đơn/đổi ví | ChatGPT | Local + thiết bị Quán |
-| 5. Xế | Hồ sơ, xác minh, trạng thái | Gói 4; đối chiếu driver/wallet (không tự làm ví) | Như trên + loại xế | ChatGPT | Local + thiết bị Xế |
+| 5. Shipper | Hồ sơ, xác minh, trạng thái | Gói 4; đối chiếu driver/wallet (không tự làm ví) | Như trên + loại shipper | ChatGPT | Local + thiết bị Shipper |
 | 6 | App quản lý + hồi quy liên thông | Hợp đồng xác thực native riêng | — | ChatGPT | Thiết bị thật |
 
 Mỗi gói: giữ nền web quản trị #35 (`apps/admin-web`), không tạo ứng dụng song song. Gate từng app theo [mẫu module](../templates/module-delivery-checklist.md); một app đạt không kéo cả bước đạt.
 
 ## 10. Phần thiết kế UI chưa có (trả về ChatGPT/Owner, không tự đổi bố cục)
-Ảnh đã duyệt không có: màn sau khi tạo lời mời (link/mã một lần, copy, cấp lại, thu hồi); màn vào bằng link lời mời; tab "Thông tin" và "Lịch sử" của ADMIN; trạng thái và nút cho ADMIN "Chờ kích hoạt"; khóa/mở khóa ADMIN; xác nhận thu hồi phiên Khách/ADMIN; tab Hồ sơ/Bảo mật của Quán/Xế; form "Yêu cầu bổ sung"/"Duyệt hồ sơ"; "Tổng quan", "Nhật ký quản trị", "Cài đặt"; lỗi "chưa đủ quyền theo phạm vi" ở cấp từng màn. Phạm vi "Quản lý" có trong business-design nhưng không có trong ma trận UI-01.
+Ảnh đã duyệt không có: màn sau khi tạo lời mời (link/mã một lần, copy, cấp lại, thu hồi); màn vào bằng link lời mời; tab "Thông tin" và "Lịch sử" của ADMIN; trạng thái và nút cho ADMIN "Chờ kích hoạt"; khóa/mở khóa ADMIN; xác nhận thu hồi phiên Khách/ADMIN; tab Hồ sơ/Bảo mật của Quán/Shipper; form "Yêu cầu bổ sung"/"Duyệt hồ sơ"; "Tổng quan", "Nhật ký quản trị", "Cài đặt"; lỗi "chưa đủ quyền theo phạm vi" ở cấp từng màn. Phạm vi "Quản lý" có trong business-design nhưng không có trong ma trận UI-01.
 
 ## 11. Checklist gate (chưa có mục nào được tick)
 Theo mẫu: kiểm kê nguồn (tài liệu này, đang chờ review) → Owner duyệt nghiệp vụ/API/dữ liệu/ca lỗi → ảnh UI (đã có 5 bộ, còn thiếu mục 10) → gói giao Claude → code/CI → ChatGPT review → Owner local → bản điện thoại → Owner thiết bị thật → liên thông → Owner nghiệm thu. Trạng thái: NGHIỆP VỤ + 5 BỘ UI OWNER ĐÃ DUYỆT; KIỂM KÊ BACKEND XONG (tài liệu này); HỢP ĐỒNG IMPLEMENTATION CHƯA KHÓA; CHƯA CÓ CODE; #34/#35 CHƯA MERGE/NGHIỆM THU; M01 CHƯA ĐÓNG.

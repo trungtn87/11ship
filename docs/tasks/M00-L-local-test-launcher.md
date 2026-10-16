@@ -18,7 +18,7 @@ Hiện trạng Windows lúc kiểm kê:
 - `db-dev` và `db-test` chạy healthy; backend chưa chạy, hai health endpoint không kết nối được.
 - `test-integration.log` rỗng; không dùng làm bằng chứng PASS.
 - Working tree có untracked `tore package.json`; không sửa, xóa, move, add hay overwrite file này.
-- Repo hiện chỉ có backend. Không có web quản trị hoặc app Khách/Quán/Xế/App quản lý để launcher chạy. Không dựng giả và không gọi mock/ảnh là test nghiệp vụ.
+- Repo hiện chỉ có backend. Không có web quản trị hoặc app Khách/Quán/Shipper/App quản lý để launcher chạy. Không dựng giả và không gọi mock/ảnh là test nghiệp vụ.
 
 ## 2. Phạm vi đã duyệt
 
@@ -81,7 +81,7 @@ Status:
 
 - Báo branch/upstream/ahead-behind và dirty state nhưng không liệt kê nội dung secret.
 - Báo phiên bản Node/npm/Docker/Compose, trạng thái `db-dev`/`db-test`, backend PID/port và live/ready HTTP.
-- Web quản trị, Khách, Quán, Xế, App quản lý: `N/A — chưa có trong repo`, không báo FAIL.
+- Web quản trị, Khách, Quán, Shipper, App quản lý: `N/A — chưa có trong repo`, không báo FAIL.
 - Báo log test gần nhất và PASS/FAIL chỉ khi có summary hợp lệ gắn với commit SHA.
 
 ## 3. An toàn dữ liệu và bảo mật
@@ -133,7 +133,7 @@ Claude được phép điều chỉnh tên/thư mục nếu chứng minh phù h�
 | Web quản trị | Chưa có trong repo | N/A | N/A | N/A | N/A | Chưa kiểm chứng N/A |
 | Khách | Chưa có trong repo | N/A | N/A | N/A | N/A | Chưa kiểm chứng N/A |
 | Quán | Chưa có trong repo | N/A | N/A | N/A | N/A | Chưa kiểm chứng N/A |
-| Xế | Chưa có trong repo | N/A | N/A | N/A | N/A | Chưa kiểm chứng N/A |
+| Shipper | Chưa có trong repo | N/A | N/A | N/A | N/A | Chưa kiểm chứng N/A |
 | App quản lý | Chưa có trong repo | N/A | N/A | N/A | N/A | Chưa kiểm chứng N/A |
 | Liên thông | DB DEV/TEST và backend | Đã duyệt | Chưa kiểm chứng | Chưa kiểm chứng | N/A | Chưa kiểm chứng |
 

@@ -9,7 +9,7 @@ const AppConfig config = AppConfig(apiBaseUrl: 'https://api.example.test', devic
 HealthTransport healthy() => (Uri uri, Duration t) async => RawHealthResponse(status: 200, body: uri.path == kLivePath ? '{"data":{"status":"ok"}}' : '{"data":{"status":"ready"}}');
 
 void main() {
-  testWidgets('Tài khoản -> Quản lý cửa hàng -> shop mode -> Quản lý hoạt động quán reads the real shop; the menu says it is not connected; nothing is invented', (WidgetTester tester) async {
+  testWidgets('the Quán tab -> shop mode -> management reads the real shop; the menu says it is not connected; nothing is invented', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(390 * 3, 800 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -38,24 +38,21 @@ void main() {
     await session.start();
     await session.login(phone: '0901234567', password: 'Correct-Horse-9');
     await session.refreshIdentity();
-    await tester.pumpWidget(N11App(brand: foodBrand, tabs: buildFoodTabs(session, flows: flows), config: config, transport: healthy(), pollInterval: Duration.zero));
+    await tester.pumpWidget(ListenableBuilder(listenable: session, builder: (BuildContext context, Widget? child) => N11App(navigationIdentity: session.identity?.userId, brand: foodBrand, tabs: buildFoodTabs(session, flows: flows), config: config, transport: healthy(), pollInterval: Duration.zero)));
     await tester.pump();
+    // The owner's own tab, and no "Quản lý cửa hàng" row left in Tài khoản.
+    expect(find.byKey(const Key('tab-shop')), findsOneWidget);
     await tester.tap(find.byKey(const Key('tab-account')));
-    await tester.pump();
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('shop-entry')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('shop-open')));
+    expect(find.text('Quản lý cửa hàng'), findsNothing);
+    await tester.tap(find.byKey(const Key('tab-shop')));
     await tester.pumpAndSettle();
-    // Not in shop mode yet: the management entry is there but closed, with its reason.
-    expect(find.byKey(const Key('open-manage')), findsOneWidget);
-    expect(find.text('Chuyển sang chế độ cửa hàng để quản lý.'), findsOneWidget);
+    // Not in shop mode yet: nothing is read, the person enters the mode with their own tap.
+    expect(find.byKey(const Key('shop-tab-enter')), findsOneWidget);
     expect(shop.reads, 0);
-    await tester.tap(find.byKey(const Key('switch-shop')));
+    await tester.tap(find.byKey(const Key('shop-tab-enter')));
     await tester.pumpAndSettle();
     expect(onboarding.contexts, <String>['SHOP_OWNER']);
-    await tester.tap(find.byKey(const Key('open-manage')));
-    await tester.pumpAndSettle();
     expect(shop.reads, greaterThan(0));
     expect(find.byKey(const Key('manage-name')), findsOneWidget);
     expect(find.text('Chưa cài giờ hoạt động'), findsWidgets);

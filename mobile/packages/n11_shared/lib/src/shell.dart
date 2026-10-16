@@ -25,7 +25,7 @@ typedef TabBody = Widget Function(BuildContext context, ShellActions actions);
 
 /// One bottom-navigation tab: its label and icon, the title of its screen and its body.
 class TabSpec {
-  const TabSpec({required this.id, required this.label, required this.icon, required this.title, required this.body, this.showLogo = false});
+  const TabSpec({required this.id, required this.label, required this.icon, required this.title, required this.body, this.showLogo = false, this.fullBleed = false, this.showAppBar = true});
 
   final String id;
   final String label;
@@ -34,6 +34,9 @@ class TabSpec {
 
   /// Home screens show the brand logo in the app bar instead of a centred title.
   final bool showLogo;
+  /// Map-based screens own their layout and scrolling, without shell padding.
+  final bool fullBleed;
+  final bool showAppBar;
   final TabBody body;
 }
 
@@ -45,9 +48,11 @@ class N11App extends StatelessWidget {
     required this.tabs,
     required this.config,
     this.transport,
+    this.navigationIdentity,
     this.pollInterval = const Duration(seconds: 30),
   });
 
+  final String? navigationIdentity;
   final AppBrand brand;
   final List<TabSpec> tabs;
   final AppConfig config;
@@ -64,14 +69,15 @@ class N11App extends StatelessWidget {
       title: brand.name,
       debugShowCheckedModeBanner: false,
       theme: buildN11Theme(),
-      home: N11Shell(brand: brand, tabs: tabs, config: config, transport: transport, pollInterval: pollInterval),
+      home: N11Shell(navigationIdentity: navigationIdentity, brand: brand, tabs: tabs, config: config, transport: transport, pollInterval: pollInterval),
     );
   }
 }
 
 class N11Shell extends StatefulWidget {
-  const N11Shell({super.key, required this.brand, required this.tabs, required this.config, this.transport, this.pollInterval = const Duration(seconds: 30)});
+  const N11Shell({super.key, required this.brand, required this.tabs, required this.config, this.navigationIdentity, this.transport, this.pollInterval = const Duration(seconds: 30)});
 
+  final String? navigationIdentity;
   final AppBrand brand;
   final List<TabSpec> tabs;
   final AppConfig config;
@@ -99,6 +105,14 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
       shouldPoll: () => _foreground,
     );
     _monitor.start();
+  }
+
+  @override
+  void didUpdateWidget(N11Shell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final String selected = oldWidget.tabs[_index].id;
+    final int next = widget.tabs.indexWhere((TabSpec tab) => tab.id == selected);
+    _index = next < 0 || (widget.navigationIdentity != null && oldWidget.navigationIdentity != widget.navigationIdentity) ? 0 : next;
   }
 
   @override
@@ -169,9 +183,9 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
             children: <Widget>[
               if (diagnostics)
                 N11AppBar(title: 'Chẩn đoán kết nối', onBack: _closeDiagnostics)
-              else if (tab.showLogo)
+              else if (tab.showAppBar && tab.showLogo)
                 N11AppBar(logo: BrandLogo(brand: widget.brand), title: tab.title)
-              else
+              else if (tab.showAppBar)
                 N11AppBar(title: tab.title),
               if (!diagnostics) ConnectionBanner(monitor: _monitor),
               Expanded(
@@ -185,7 +199,9 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
                         index: _index,
                         children: <Widget>[
                           for (final TabSpec spec in widget.tabs)
-                            SingleChildScrollView(
+                            if (spec.fullBleed)
+                              Builder(key: Key('page-${spec.id}'), builder: (BuildContext context) => spec.body(context, actions))
+                            else SingleChildScrollView(
                               key: Key('page-${spec.id}'),
                               padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap8),
                               child: Builder(builder: (BuildContext context) => spec.body(context, actions)),

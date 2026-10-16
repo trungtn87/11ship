@@ -86,7 +86,7 @@ function welcomeScreen(brand: AppBrand, routes: AuthRoutes): ScreenDef {
             'div',
             { class: 'c-stack' },
             button({ label: 'Đăng nhập', kind: 'primary', id: 'welcome-login', onClick: () => env.go('login') }),
-            button({ label: food ? 'Đăng ký' : 'Đăng ký làm xế', kind: 'secondary', id: 'welcome-register', onClick: () => env.go('register') }),
+            button({ label: food ? 'Đăng ký' : 'Đăng ký làm shipper', kind: 'secondary', id: 'welcome-register', onClick: () => env.go('register') }),
             h('div', { class: 'c-center' }, textLink(food ? 'Tiếp tục với tư cách khách' : 'Tiếp tục xem ứng dụng', () => go(env, routes.guestHome))),
           ),
         ],
@@ -246,7 +246,7 @@ function registerScreen(brand: AppBrand, routes: AuthRoutes): ScreenDef {
   return {
     id: 'register',
     code: codes(brand).register,
-    title: food ? 'Đăng ký' : 'Đăng ký tài xế',
+    title: food ? 'Đăng ký' : 'Đăng ký shipper',
     group: 'Tài khoản',
     path: '/register',
     access: 'public',
@@ -467,9 +467,9 @@ function registerScreen(brand: AppBrand, routes: AuthRoutes): ScreenDef {
 
       const intro = food
         ? h('p', { class: 'c-lead' }, 'Đăng ký để đặt món hoặc quản lý cửa hàng.')
-        : banner({ kind: 'info', title: 'Đăng ký tài khoản, rồi gửi hồ sơ xế', text: 'Hồ sơ xế được gửi ở bước tiếp theo và cần được duyệt trước khi nhận đơn.' });
+        : banner({ kind: 'info', title: 'Đăng ký tài khoản, rồi gửi hồ sơ shipper', text: 'Hồ sơ shipper được gửi ở bước tiếp theo và cần được duyệt trước khi nhận đơn.' });
       const root = appPage({
-        title: food ? 'Đăng ký' : 'Đăng ký tài xế',
+        title: food ? 'Đăng ký' : 'Đăng ký shipper',
         onBack: () => env.go('login'),
         bodyClass: 'c-stack c-stack--loose',
         body: [

@@ -9,13 +9,22 @@ import 'package:n11_shared/n11_shared.dart';
 List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
   return <TabSpec>[
     TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', showLogo: true, body: (BuildContext context, ShellActions actions) => _home(session, actions, flows)),
-    TabSpec(id: 'search', label: 'Tìm kiếm', icon: Icons.search, title: 'Tìm kiếm', body: (BuildContext context, ShellActions actions) => SearchBody(actions: actions)),
     TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: (BuildContext context, ShellActions actions) => _orders(session, flows)),
+    if (session.status == SessionStatus.signedIn && (session.identity?.availableRoles.contains('SHOP_OWNER') == true || session.identity?.shopOnboarding == 'INCOMPLETE' || session.identity?.shopOnboarding == 'COMPLETED'))
+      TabSpec(
+        id: 'shop',
+        label: 'Quán',
+        icon: Icons.storefront_outlined,
+        title: 'Quán',
+        body: (BuildContext context, ShellActions actions) => flows?.m02 == null
+            ? const EmptyState(icon: Icons.storefront_outlined, title: 'Quán của bạn', text: 'Khu vực quản lý quán chưa sẵn sàng trong bản này.')
+            : ShopTab(session: session, flows: flows!.m02!),
+      ),
     TabSpec(id: 'account', label: 'Tài khoản', icon: Icons.person_outline, title: 'Tài khoản', body: (BuildContext context, ShellActions actions) => _account(session, actions, flows)),
   ];
 }
 
-Widget _guestPrompt(SessionController session, String text, [AppFlows? flows]) => GuestPrompt(session: session, brand: foodBrand, text: text, reset: flows?.reset);
+Widget _guestPrompt(SessionController session, String text, [AppFlows? flows]) => GuestPrompt(session: session, brand: foodBrand, text: text, reset: flows?.reset, shop: flows?.shop);
 
 Widget _soonChip() => const Center(child: N11Chip('Sắp có', kind: ChipKind.soon));
 
@@ -23,8 +32,16 @@ Widget _soonChip() => const Center(child: N11Chip('Sắp có', kind: ChipKind.so
 
 Widget _home(SessionController session, ShellActions actions, AppFlows? flows) {
   return vstack(<Widget>[
-    // The search box of the design opens the real Tìm kiếm tab; it is not a second, fake search.
-    _SearchEntry(onTap: () => actions.goTab('search')),
+    // Keep search accessible from Home after removing its bottom tab.
+    Builder(builder: (BuildContext context) => _SearchEntry(onTap: () {
+      Navigator.of(context).push(n11Route(N11FormScaffold(
+        title: 'Tìm kiếm', session: session,
+        children: <Widget>[SearchBody(actions: ShellActions(
+          goTab: (String id) => Navigator.of(context).pop(),
+          openDiagnostics: actions.openDiagnostics,
+        ))],
+      )));
+    })),
     _guestPrompt(session, 'Đăng nhập hoặc đăng ký để đặt món khi tính năng sẵn sàng.', flows),
     const EmptyState(icon: Icons.restaurant, title: 'Chưa có quán để hiển thị', text: 'Danh sách quán và món sẽ xuất hiện khi tính năng đặt món sẵn sàng.'),
     _soonChip(),
@@ -83,33 +100,9 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
     brand: foodBrand,
     actions: actions,
     reset: flows?.reset,
-    signedInEntries: <Widget>[
-      // F07: the shop entry, connected to the server. Having a shop never changes the active context by itself.
-      if (shop != null)
-        N11ListItem(
-          key: const Key('shop-entry'),
-          icon: Icons.storefront_outlined,
-          title: 'Quản lý cửa hàng',
-          sub: 'Hồ sơ quán, vị trí và chuyển chế độ quán.',
-          onTap: () => Navigator.of(context).push(n11Route(ShopStartScreen(controller: shop, m02: flows?.m02))),
-        ),
-    ],
-    entries: <Widget>[
-      if (shop == null)
-        N11ListItem(
-          icon: Icons.storefront_outlined,
-          title: 'Quản lý cửa hàng',
-          sub: kNotOnAndroidReason,
-          soon: true,
-          trailing: const N11Chip('Chưa nối', kind: ChipKind.soon),
-        ),
-      const N11ListItem(icon: Icons.help_outline, title: 'Trợ giúp', soon: true),
-      N11ListItem(
-        key: const Key('policy-entry'),
-        icon: Icons.shield_outlined,
-        title: 'Chính sách và điều khoản',
-        onTap: () => Navigator.of(context).push(n11Route(PolicyScreen(session: session))),
-      ),
+    shop: shop,
+    entries: const <Widget>[
+      N11ListItem(icon: Icons.help_outline, title: 'Trợ giúp', soon: true),
     ],
   ));
 }

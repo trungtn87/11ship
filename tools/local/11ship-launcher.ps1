@@ -1980,7 +1980,7 @@ $script:AppCatalog = [ordered]@{
   # Admin steps of Open-ClientApp / Initialize-AdminAuth: .env check, limiter configuration, SYSTEM account).
   Admin = [pscustomobject]@{ Name = 'Web Admin';             Url = 'https://localhost:8443'; Runtime = 'scripts/admin-web-dev.mjs'; Package = 'M00.05/M00.08'; Launch = 'client'; Key = 'admin-web'; Short = 'Web Admin'; BuildScript = 'build:admin-web'; Pending = '' }
   Food  = [pscustomobject]@{ Name = '11Food (khách + quán)'; Url = 'https://localhost:8444'; Runtime = 'scripts/food-web-dev.mjs';  Package = 'M00.05/M00.06'; Launch = 'client'; Key = 'food-web'; Short = '11Food';    BuildScript = 'build:food-web'; Pending = '' }
-  Ship  = [pscustomobject]@{ Name = '11Ship (xế)';           Url = 'https://localhost:8445'; Runtime = 'scripts/ship-web-dev.mjs';  Package = 'M00.05/M00.07'; Launch = 'client'; Key = 'ship-web'; Short = '11Ship';    BuildScript = 'build:ship-web'; Pending = '' }
+  Ship  = [pscustomobject]@{ Name = '11Ship (shipper)';           Url = 'https://localhost:8445'; Runtime = 'scripts/ship-web-dev.mjs';  Package = 'M00.05/M00.07'; Launch = 'client'; Key = 'ship-web'; Short = '11Ship';    BuildScript = 'build:ship-web'; Pending = '' }
 }
 # What the shared orchestrator guarantees today. A package flips its entry to Ready only when it is integrated and verified.
 # ExclusiveLock (M00.02): Start, Update, Test, Stop, dependency and migration steps all run under Use-LaunchLock; the behaviour

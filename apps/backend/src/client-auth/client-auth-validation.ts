@@ -193,3 +193,14 @@ export function parseClientContextBody(body: unknown): ClientContextInput {
 export function parseClientLogoutBody(body: unknown): void {
   exactObject(body, []);
 }
+
+export interface ClientPasswordInput {
+  readonly currentPassword: string;
+  readonly newPassword: string;
+}
+
+export function parseClientPasswordBody(body: unknown): ClientPasswordInput {
+  const parsed = exactObject(body, ['current_password', 'new_password']);
+  if (typeof parsed.current_password !== 'string' || !isWellFormed(parsed.current_password) || parsed.current_password.length > 1024) return reject();
+  return { currentPassword: parsed.current_password, newPassword: parsePassword(parsed.new_password) };
+}

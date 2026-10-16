@@ -77,5 +77,5 @@ built with the exact PR #42 history: its schema fingerprint equals a fresh datab
 | Ứng dụng | Phạm vi | Code/CI/review | Local | Thiết bị thật | Owner nghiệm thu |
 |---|---|---|---|---|---|
 | Web quản trị | Công cụ vận hành DB staging (giữ SYSTEM) | Draft PR, CI chờ, ChatGPT review chờ | Chưa — Owner chạy theo runbook sau review | N/A (web) | Chưa — Owner quyết định |
-| Khách / Quán / Xế | N/A: không đổi mã ứng dụng; dữ liệu thử bị bỏ khi nâng cấp | N/A | N/A | N/A | N/A |
+| Khách / Quán / Shipper | N/A: không đổi mã ứng dụng; dữ liệu thử bị bỏ khi nâng cấp | N/A | N/A | N/A | N/A |
 | Food / Ship / App quản lý | N/A: ngoài phạm vi | N/A | N/A | N/A | N/A |
