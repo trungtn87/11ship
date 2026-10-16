@@ -1,0 +1,26 @@
+{
+  "source_sha": "dcf598c2660e191f447216e74edec4fdde20cee2",
+  "pull_request": "https://github.com/trungtn87/11ship/pull/119",
+  "ship": {
+    "application_id": "vn.eleven.ship.test",
+    "version_code": 84,
+    "apk_sha256": "61cc21d3092acdf0f670ef0db44531b3ce664072b5f1b433e9bc32acdc5e9cf9",
+    "artifact_url": "https://github.com/trungtn87/11ship/actions/runs/38851693748/artifacts/12025543591",
+    "offline_map_enabled_in_this_build": false,
+    "test_history_compiled": false
+  },
+  "gps_test": {
+    "application_id": "vn.eleven.ship.gpstest",
+    "version_code": 29,
+    "signer_sha256": "6aa5abfcace6e1b55f6cede5e1aea0dc449fdd3f67b50ebf5a92a62f38dbd0a3",
+    "apk_sha256": "d30448efb636e906623882e956ecf25d03ea4c3c5fc332b0036b1916c53d955c",
+    "source_sha": "dcf598c2660e191f447216e74edec4fdde20cee2",
+    "map_version": "caobang-v1.3-2026-10-14",
+    "routing_url": "https://one1ship-m14-routing.onrender.com",
+    "physical_device_tested": false
+  },
+  "flutter_android_runtime_run": "https://github.com/trungtn87/11ship/actions/runs/38851689692",
+  "physical_device_acceptance_of_flutter_integration": false,
+  "vps_deployed": false,
+  "merged_into_main": false
+}
