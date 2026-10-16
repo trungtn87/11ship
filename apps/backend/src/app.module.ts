@@ -12,6 +12,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { JsonLogger } from './logging/json-logger';
 import { LoggingModule } from './logging/logging.module';
+import { MenuModule } from './menu/menu.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { ShopManagementModule } from './shop-management/shop-management.module';
 import { StoppableRuntime, TestSmsModule } from './test-sms/test-sms.module';
@@ -70,7 +71,7 @@ export class AppModule {
         HealthModule,
         ...(auth === undefined
           ? []
-          : [auth, OnboardingModule.register(auth), ShopManagementModule.register(auth), CustomerProfileModule.register(auth), AccountRecoveryModule.register(auth)]),
+          : [auth, OnboardingModule.register(auth), ShopManagementModule.register(auth), MenuModule.register(auth), CustomerProfileModule.register(auth), AccountRecoveryModule.register(auth)]),
         // Administration web authentication: only when ADMIN_AUTH_ENABLED=true (config.adminAuth is then present),
         // on top of the one Auth module object above. Disabled (the default): nothing is wired or exposed.
         ...(auth === undefined || options.config.adminAuth === undefined ? [] : [AdminAuthModule.register(auth, activation)]),

@@ -153,6 +153,13 @@ export class ShopAvailabilityReader {
     return row === undefined ? undefined : toShopSnapshot(row);
   }
 
+  /** The shop with this id, whatever its status, or undefined when there is none (the public shop view decides what to show). */
+  async snapshotOfShop(context: TransactionContext, shopId: string): Promise<ShopSnapshot | undefined> {
+    const result = await context.query<RawShopSnapshot>(SHOP_SNAPSHOT_SQL, [shopId]);
+    const row = result.rows[0];
+    return row === undefined ? undefined : toShopSnapshot(row);
+  }
+
   /** The availability of one shop. Throws the typed SHOP_NOT_FOUND when there is no such shop. */
   async availabilityOf(context: TransactionContext, shopId: string): Promise<ShopAvailability> {
     const result = await context.query<RawShopSnapshot>(SHOP_SNAPSHOT_SQL, [shopId]);

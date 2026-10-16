@@ -10,6 +10,7 @@ import { ServiceAreaRepository } from '../shop/service-area-repository';
 import { AVAILABILITY_TIME_ZONE } from '../shop/shop-availability-sql';
 import { ShopAvailabilityReader, ShopSnapshot } from '../shop/shop-availability-reader';
 import { ShopBusinessHoursRepository } from '../shop/shop-business-hours-repository';
+import { requireActiveShop } from '../shop/shop-guards';
 import { ShopRepository, ShopRow } from '../shop/shop-repository';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
@@ -279,20 +280,6 @@ export class ShopManagementService {
     }
     requireActiveShop(shop);
     return true;
-  }
-}
-
-/** ACTIVE passes; DISABLED and INCOMPLETE are refused with their own codes; anything else is a broken invariant. */
-function requireActiveShop(shop: ShopRow): void {
-  switch (shop.status) {
-    case 'ACTIVE':
-      return;
-    case 'DISABLED':
-      throw new AppError('SHOP_DISABLED');
-    case 'INCOMPLETE':
-      throw new AppError('SHOP_PROFILE_INCOMPLETE');
-    default:
-      throw new TechnicalError('internal', 'Unexpected shop status');
   }
 }
 

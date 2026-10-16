@@ -127,6 +127,7 @@ describe('M01-A1 — Auth Core migration', () => {
       '1792800000000_add-admin-activation-phone-verification-mode',
       '1792886400000_create-client-device-binding',
       '1792972800000_create-sms-gateway',
+      '1793059200000_create-menu',
     ]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });

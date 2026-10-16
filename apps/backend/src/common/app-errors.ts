@@ -82,6 +82,16 @@ export const APP_ERROR_DEFINITIONS = {
   SHOP_DISABLED: { status: 403, message: 'The shop is disabled' },
   INVALID_BUSINESS_HOURS: { status: 400, message: 'The business hours are not valid' },
 
+  // Menu (M02-MON). Same rule: fixed messages that echo nothing the client sent. A dish or picture of another shop is never told
+  // apart from one that does not exist. VERSION_CONFLICT, SHOP_NOT_FOUND, SHOP_DISABLED and SHOP_PROFILE_INCOMPLETE are reused.
+  MENU_ITEM_NOT_FOUND: { status: 404, message: 'The dish was not found' },
+  MENU_CATEGORY_NOT_AVAILABLE: { status: 400, message: 'The dish group cannot be chosen' },
+  INVALID_MENU_IMAGE: { status: 400, message: 'The picture is not valid' },
+  MENU_LIMIT_REACHED: { status: 409, message: 'The menu limit of this shop was reached' },
+  MENU_IMAGE_NOT_FOUND: { status: 404, message: 'The picture was not found' },
+  // Public shop view (M02-XEM): a shop that is not shown to customers, without saying why.
+  SHOP_UNAVAILABLE: { status: 403, message: 'The shop is not available' },
+
   // Administration web authentication (M01-D-LOGIN). Fixed messages that never echo what the client sent and never
   // say whether an account, a membership or a factor exists. Crypto/storage failures use the generic 503.
   ADMIN_PREAUTH_INVALID: { status: 401, message: 'The authentication step is not valid' },
