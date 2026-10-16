@@ -57,7 +57,7 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
                             map=current; pins.labels=labels
                             current.uiSettings.isAttributionEnabled=false
                             current.uiSettings.isLogoEnabled=false
-                            current.setStyle(offline.style()) { if(!disposed) draw() }
+                            current.setStyle(offline.style()) { if(!disposed) { draw(); channel.invokeMethod("ready",null) } }
                             current.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(22.665,106.257),12.0))
                             current.addOnCameraMoveListener { pins.invalidate() }
                             fun selected(point: LatLng): Boolean {
@@ -68,7 +68,7 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
                         }
                     }
                 }
-            } catch(e: Exception) { main.post { if(!disposed) frame.addView(TextView(context).apply { text="Không mở được gói bản đồ Cao Bằng"; setBackgroundColor(Color.WHITE) }) } }
+            } catch(e: Exception) { main.post { if(!disposed) { channel.invokeMethod("error","Không mở được gói bản đồ Cao Bằng"); frame.addView(TextView(context).apply { text="Không mở được gói bản đồ Cao Bằng"; setBackgroundColor(Color.WHITE) }) } } }
         }
     }
     private fun draw() {

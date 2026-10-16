@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -12,9 +14,11 @@ void main() {
     expect(status['lat'], null);
     final Map<String, dynamic> data = await client.mapPackage();
     expect(data['version'], contains('caobang-v1.3'));
-    await tester.pumpWidget(const MaterialApp(home: Scaffold(body: M14OfflineMap())));
+    final Completer<void> ready = Completer<void>();
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: M14OfflineMap(onReady: () => ready.complete(), onError: (String error) => ready.completeError(error)))));
     await tester.pumpAndSettle(const Duration(seconds: 2));
     expect(find.byType(AndroidView), findsOneWidget);
+    await tester.runAsync(() => ready.future.timeout(const Duration(seconds: 60)));
     // Two real OSM road vertices; this is an explicit route request, never a GPS fix.
     final Map<String, dynamic> route = await client.calculate(
       origin: 'https://one1ship-m14-routing.onrender.com',

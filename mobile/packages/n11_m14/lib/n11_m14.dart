@@ -44,9 +44,11 @@ class M14Client {
 /// Coordinates are [latitude, longitude]; attribution is always visible.
 class M14OfflineMap extends StatelessWidget {
   const M14OfflineMap({super.key, this.pins = const <Map<String, dynamic>>[],
-    this.route = const <List<double>>[], this.onPoint});
+    this.route = const <List<double>>[], this.onPoint, this.onReady, this.onError});
   final List<Map<String, dynamic>> pins;
   final List<List<double>> route;
+  final VoidCallback? onReady;
+  final ValueChanged<String>? onError;
   final void Function(double latitude, double longitude, bool insideCoverage)? onPoint;
 
   @override
@@ -54,14 +56,16 @@ class M14OfflineMap extends StatelessWidget {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
       return const Center(child: Text('Bản đồ offline M14 dành cho Android'));
     }
-    return _NativeMap(pins: pins, route: route, onPoint: onPoint);
+    return _NativeMap(pins: pins, route: route, onPoint: onPoint, onReady: onReady, onError: onError);
   }
 }
 
 class _NativeMap extends StatefulWidget {
-  const _NativeMap({required this.pins, required this.route, this.onPoint});
+  const _NativeMap({required this.pins, required this.route, this.onPoint, this.onReady, this.onError});
   final List<Map<String, dynamic>> pins;
   final List<List<double>> route;
+  final VoidCallback? onReady;
+  final ValueChanged<String>? onError;
   final void Function(double, double, bool)? onPoint;
   @override
   State<_NativeMap> createState() => _NativeMapState();
@@ -87,7 +91,10 @@ class _NativeMapState extends State<_NativeMap> {
     onPlatformViewCreated: (int id) {
       _channel = MethodChannel('vn.eleven/m14/map/$id');
       _channel!.setMethodCallHandler((MethodCall call) async {
-        if (call.method == 'point' && mounted) {
+        if (!mounted) return;
+        if (call.method == 'ready') widget.onReady?.call();
+        if (call.method == 'error') widget.onError?.call(call.arguments as String);
+        if (call.method == 'point') {
           final Map<dynamic, dynamic> p = call.arguments as Map;
           widget.onPoint?.call((p['lat'] as num).toDouble(), (p['lon'] as num).toDouble(), p['inside'] as bool);
         }
