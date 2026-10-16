@@ -691,7 +691,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
         title: 'Đăng ký · ${_step + 1}/3', session: session, onBack: back,
         children: <Widget>[
           N11Heading(<String>['Tạo tài khoản', 'Mục đích sử dụng', 'Số điện thoại & OTP'][_step]),
-          _failureBanner(session),
+          if (session.lastFailure?.kind == AuthFailureKind.accountRecoverable || _otp.failure?.kind == AuthFailureKind.accountRecoverable)
+            N11Banner(
+              key: const Key('recover-account'),
+              kind: BannerKind.warn,
+              title: 'Tài khoản này đã khóa theo yêu cầu xóa',
+              text: 'Số điện thoại này thuộc một tài khoản cũ. Bạn có thể khôi phục: xác minh mã SMS rồi đặt mật khẩu mới. Dữ liệu cũ được giữ nguyên.',
+              trailing: N11Button(key: const Key('recover-open'), label: 'Khôi phục tài khoản', compact: true, onPressed: locked ? null : () => _openRecovery(context)),
+            )
+          else
+            _failureBanner(session),
+          if (_step == 2 && session.registrationMode == RegistrationMode.notRequired)
+            const N11Banner(
+              key: Key('not-required-note'),
+              kind: BannerKind.info,
+              title: 'Đăng ký không cần mã xác minh',
+              text: 'Số điện thoại sẽ ở trạng thái chưa xác minh. Hãy nhập đúng số của bạn: số này dùng để đăng nhập và khôi phục tài khoản.',
+            ),
           if (_step == 0) ...<Widget>[
             N11Field(fieldKey: const Key('register-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !locked, onChanged: () => setState(() {})),
             N11Field(fieldKey: const Key('register-password'), label: 'Mật khẩu', controller: _password, password: true, maxLength: 128, enabled: !locked, hint: 'Dùng từ 8 đến 128 ký tự.', onChanged: () => setState(() {})),

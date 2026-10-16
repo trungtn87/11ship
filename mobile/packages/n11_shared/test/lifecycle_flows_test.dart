@@ -56,13 +56,24 @@ void main() {
       await t.session.start();
       await tester.pumpWidget(MaterialApp(home: RegisterScreen(session: t.session, brand: foodBrand)));
       await tester.pumpAndSettle();
+      // 11Food registers in three steps: account details, purpose, phone (+ OTP only while it is required).
+      await tester.enterText(find.byKey(const Key('register-name')), 'Nguyễn Văn An');
+      await tester.enterText(find.byKey(const Key('register-password')), 'Correct-Horse-9');
+      await tester.enterText(find.byKey(const Key('register-confirm')), 'Correct-Horse-9');
+      await tester.ensureVisible(find.byKey(const Key('register-consent')));
+      await tester.tap(find.byKey(const Key('register-consent')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('register-next')));
+      await tester.tap(find.byKey(const Key('register-next')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('purpose-customer')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('purpose-next')));
+      await tester.tap(find.byKey(const Key('purpose-next')));
+      await tester.pumpAndSettle();
       expect(find.byKey(const Key('not-required-note')), findsOneWidget);
       expect(find.byKey(const Key('otp-request')), findsNothing);
       await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
-      await tester.enterText(find.byKey(const Key('register-name')), 'Nguyễn Văn An');
-      await tester.enterText(find.byKey(const Key('register-password')), 'Correct-Horse-9');
-      await tester.ensureVisible(find.byKey(const Key('register-consent')));
-      await tester.tap(find.byKey(const Key('register-consent')));
       await tester.pump();
       await tester.ensureVisible(find.byKey(const Key('register-submit')));
       final N11Button submit = tester.widget<N11Button>(find.byKey(const Key('register-submit')));
