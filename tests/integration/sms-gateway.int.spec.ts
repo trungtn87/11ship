@@ -78,12 +78,12 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
     api(target.running.baseUrl, 'POST', '/auth/phone-verifications', { body: { phone: phone.local, purpose: 'REGISTER' } });
   const verifyRegister = (id: string, otp: string): Promise<ApiResponse> =>
     api(app.running.baseUrl, 'POST', `/auth/phone-verifications/${id}/verify`, { body: { otp } });
-  const requestResetOtp = (phoneLocal: string, target: AdminApp = app): Promise<ApiResponse> =>
-    api(target.running.baseUrl, 'POST', '/account-recovery/otp', { body: { phone: phoneLocal } });
-  const verifyReset = (id: string, otp: string): Promise<ApiResponse> =>
-    api(app.running.baseUrl, 'POST', `/account-recovery/otp/${id}/verify`, { body: { otp } });
-  const resetPassword = (token: string, password: string = NEW_PASSWORD, key: string = randomUUID()): Promise<ApiResponse> =>
-    api(app.running.baseUrl, 'POST', '/account-recovery/reset', { headers: { 'idempotency-key': key }, body: { verification_token: token, password } });
+  const requestResetOtp = (phoneLocal: string, target: AdminApp = app, prefix = '/account-recovery'): Promise<ApiResponse> =>
+    api(target.running.baseUrl, 'POST', `${prefix}/otp`, { body: { phone: phoneLocal } });
+  const verifyReset = (id: string, otp: string, prefix = '/account-recovery'): Promise<ApiResponse> =>
+    api(app.running.baseUrl, 'POST', `${prefix}/otp/${id}/verify`, { body: { otp } });
+  const resetPassword = (token: string, password: string = NEW_PASSWORD, key: string = randomUUID(), prefix = '/account-recovery'): Promise<ApiResponse> =>
+    api(app.running.baseUrl, 'POST', `${prefix}/reset`, { headers: { 'idempotency-key': key }, body: { verification_token: token, password } });
   const deliveryOf = async (id: string): Promise<string> => String(dataOf(await api(app.running.baseUrl, 'GET', `/auth/phone-verifications/${id}`)).delivery_status);
 
   const challenge = async (id: string) =>
@@ -591,8 +591,8 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
   });
 
   describe('RESET_PASSWORD through the queue', () => {
-    async function deliverReset(phoneLocal: string): Promise<{ id: string; otp: string; text: string }> {
-      const requested = await requestResetOtp(phoneLocal);
+    async function deliverReset(phoneLocal: string, prefix = '/account-recovery'): Promise<{ id: string; otp: string; text: string }> {
+      const requested = await requestResetOtp(phoneLocal, app, prefix);
       expect(requested.status).toBe(200);
       const id = String(dataOf(requested).verification_id);
       const job = (await claim()) as NonNullable<Awaited<ReturnType<typeof claim>>>;
@@ -755,9 +755,9 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       expect((await app.call('GET', '/me', { cookies: sessionCookies(login) })).status).toBe(200);
       const factorBefore = await app.pool.query('SELECT factor_id, state FROM app.admin_totp_factors WHERE user_id = $1::uuid', [admin.userId]);
 
-      const { id, otp } = await deliverReset(admin.phone.local);
-      const proof = String(dataOf(await verifyReset(id, otp)).verification_token);
-      expect((await resetPassword(proof)).status).toBe(200);
+      const { id, otp } = await deliverReset(admin.phone.local, '/admin-recovery');
+      const proof = String(dataOf(await verifyReset(id, otp, '/admin-recovery')).verification_token);
+      expect((await resetPassword(proof, NEW_PASSWORD, randomUUID(), '/admin-recovery')).status).toBe(200);
 
       expect((await app.call('GET', '/me', { cookies: sessionCookies(login) })).status).toBe(401);
       expect(await count(app.pool, 'SELECT 1 FROM app.admin_sessions WHERE user_id = $1::uuid AND revoked_at IS NULL', [admin.userId])).toBe(0);

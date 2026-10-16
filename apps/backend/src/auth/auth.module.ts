@@ -1,5 +1,6 @@
 import { ClientPasswordService } from '../client-auth/client-password-service';
 import { DynamicModule, Module } from '@nestjs/common';
+import { AccountActivityRegistry } from '../account-lifecycle/account-activity-registry';
 import { AuditModule } from '../audit/audit.module';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { ClientAuthController } from '../client-auth/client-auth.controller';
@@ -19,6 +20,8 @@ import { DriverModule } from '../driver/driver.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OutboxModule } from '../outbox/outbox.module';
 import { ShopModule } from '../shop/shop.module';
+import { SystemSettingsReader } from '../system-settings/system-settings-reader';
+import { SystemSettingsRepository } from '../system-settings/system-settings-repository';
 import { TransactionModule } from '../transaction/transaction.module';
 import { ACCOUNT_ORIGIN_POLICY, AccountOriginPolicy, createAccountOriginPolicy } from './account-origin';
 import { authConfigProvider } from './auth-config.provider';
@@ -140,6 +143,11 @@ export class AuthModule {
         UserRepository,
         CustomerProfileRepository,
         SessionRepository,
+        // SYSTEM settings (OTP switches): read by registration, OTP request and password reset on every request.
+        SystemSettingsRepository,
+        SystemSettingsReader,
+        // The business-data and active-work checks the account lifecycle (delete / lock) asks; later modules register theirs.
+        AccountActivityRegistry,
         VerificationService,
         RegistrationService,
         LoginService,
@@ -182,6 +190,9 @@ export class AuthModule {
         // Issue #102: the SMS OTP reset reuses the OTP request/verify engine and the proof store.
         VerificationService,
         ProofRepository,
+        SystemSettingsRepository,
+        SystemSettingsReader,
+        AccountActivityRegistry,
       ],
     };
   }

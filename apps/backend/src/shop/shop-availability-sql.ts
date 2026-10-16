@@ -45,6 +45,12 @@ SELECT s.shop_id, s.name, s.contact_phone_normalized, s.zalo, s.facebook, s.addr
          '[]'::json
        ) AS hours,
        EXISTS (SELECT 1 FROM app.shop_business_hours h WHERE h.shop_id = s.shop_id) AS has_hours,
+       -- Owner decision 2026-10-14: a shop whose OWNER account is locked takes no new orders (availability reads SHOP_DISABLED).
+       -- Unlocking the account restores this answer only; the shop row itself is never touched by a lock or an unlock.
+       EXISTS (
+         SELECT 1 FROM app.shop_members om JOIN app.users ou ON ou.user_id = om.user_id
+          WHERE om.shop_id = s.shop_id AND om.member_role = 'OWNER' AND ou.status <> 'ACTIVE'
+       ) AS owner_locked,
        EXISTS (
          SELECT 1
            FROM app.shop_business_hours h

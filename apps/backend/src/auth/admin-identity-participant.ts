@@ -25,7 +25,7 @@ export class AdminIdentityParticipant {
 
   /** Plain read by normalized phone (no lock): the precheck before the password is verified outside a transaction. */
   async findByPhone(context: TransactionContext, phoneNormalized: string): Promise<AdminIdentity | undefined> {
-    return this.users.findByPhone(context, phoneNormalized);
+    return this.users.findByPhone(context, 'ADMIN_WEB', phoneNormalized);
   }
 
   /** The account row FOR UPDATE: the writer lock of the administration lock order (user, then membership...). */

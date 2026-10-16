@@ -63,6 +63,47 @@ export interface TimelineEvent {
   readonly reason?: string;
 }
 
+// ---- Owner decision 2026-10-14: account lifecycle (delete / lock / recover) ------------------------------------------------
+
+export type LockCategory = 'VIOLATION' | 'SECURITY';
+/** Why an account is locked. DELETE_REQUEST is the only one its owner may undo (re-register the phone, prove it by OTP, set a new password). */
+export type LockReasonKind = 'DELETE_REQUEST' | LockCategory;
+export type LifecycleAction = 'LOCK' | 'UNLOCK' | 'DELETE';
+/** What stops a lock or a delete right now: nothing (null), the account is already locked, or orders/deliveries are still being processed. */
+export type LifecycleBlock = 'ALREADY_LOCKED' | 'ACTIVE_WORK' | null;
+
+export const LOCK_REASON_LABEL: Record<LockReasonKind, string> = {
+  DELETE_REQUEST: 'Khóa theo yêu cầu xóa tài khoản',
+  VIOLATION: 'Khóa do vi phạm',
+  SECURITY: 'Khóa vì lý do bảo mật',
+};
+export const LOCK_CATEGORY_LABEL: Record<LockCategory, string> = { VIOLATION: 'Vi phạm', SECURITY: 'Bảo mật' };
+
+/** The business data an account owns, by the name the server gave; an unknown name is shown as it came. */
+export const RELATED_DATA_LABEL: Readonly<Record<string, string>> = {
+  SHOP: 'Quán',
+  DRIVER_PROFILE: 'Hồ sơ xế',
+  ORDERS: 'Đơn hàng',
+  DELIVERIES: 'Giao hàng',
+  WALLET: 'Ví và lịch sử giao dịch',
+  REVIEWS: 'Đánh giá',
+  DISPUTES: 'Tranh chấp',
+};
+
+export interface UserLifecycle {
+  /** null = the account is not locked (or an older lock with no recorded reason, which is never self-recoverable). */
+  readonly lockReason: LockReasonKind | null;
+  /** ISO timestamp, or null. */
+  readonly lockedAt: string | null;
+  /** Names of the business data the account owns. Empty = a delete removes it for good; otherwise a delete only locks it. */
+  readonly relatedData: readonly string[];
+  /** Names of what is still being processed (orders, deliveries). Any of them blocks a lock. */
+  readonly activeWork: readonly string[];
+  readonly deleteEffect: 'DELETE_PERMANENTLY' | 'LOCK';
+  readonly lockBlockedReason: LifecycleBlock;
+  readonly deleteBlockedReason: LifecycleBlock;
+}
+
 export interface UserDetail extends UserRow {
   /** Row version, sent back with a lock/unlock so a stale view cannot overwrite a newer change. */
   readonly version: number;
@@ -74,7 +115,10 @@ export interface UserDetail extends UserRow {
   };
   readonly events: readonly TimelineEvent[];
   /** What the SERVER allows this admin to do right now. The page never derives it from the role or the status. */
-  readonly allowedActions: readonly ('LOCK' | 'UNLOCK')[];
+  readonly allowedActions: readonly LifecycleAction[];
+  /** Whether the phone number was proven by an OTP (an account registered while SYSTEM had the registration OTP off is not). */
+  readonly phoneVerified: boolean;
+  readonly lifecycle: UserLifecycle;
 }
 
 export type UserDetailState =
@@ -87,8 +131,10 @@ export type UserDetailState =
 export type LockPhase = 'form' | 'working' | 'unknown' | 'conflict' | 'failed' | 'done';
 
 export interface LockDialog {
-  readonly action: 'LOCK' | 'UNLOCK';
+  readonly action: LifecycleAction;
   readonly reason: string;
+  /** Lock only: the category the admin chose (default VIOLATION). */
+  readonly category?: LockCategory;
   readonly phase: LockPhase;
   /** Shown under the reason field (validation) or in the status area (server answer). */
   readonly error?: string;
@@ -141,6 +187,10 @@ export const NOT_WIRED_REASON = {
 /** What the server answered to a lock / unlock. The page never decides anything from it except what to say next. */
 export type LockResult =
   | { readonly kind: 'ok' }
+  /** The account had no business data and was removed for good (a delete only). */
+  | { readonly kind: 'deleted' }
+  /** USER_ACCOUNT_HAS_ACTIVE_WORK: orders or deliveries are still being processed, so the account cannot be locked. Nothing was changed. */
+  | { readonly kind: 'has-active-work' }
   /** USER_ACCOUNT_VERSION_CONFLICT or USER_ACCOUNT_ALREADY_IN_STATE: the account is not what the page showed. Nothing was changed. */
   | { readonly kind: 'conflict' }
   /** USER_ACCOUNT_IMPACT_REVIEW_REQUIRED: the gate is closed. Nothing was changed. */
@@ -157,7 +207,9 @@ export type LockResult =
 
 export interface LockCommand {
   readonly id: string;
-  readonly action: 'LOCK' | 'UNLOCK';
+  readonly action: LifecycleAction;
+  /** Lock only: VIOLATION (default) or SECURITY. */
+  readonly category?: LockCategory;
   /** The version of the detail the admin looked at. */
   readonly version: number;
   /** Already trimmed and validated (1..500 code points). */
@@ -173,6 +225,7 @@ export const LOCK_MESSAGE = {
   rateLimited: 'Thao tác quá nhanh. Vui lòng thử lại sau ít phút.',
   rejected: 'Yêu cầu không hợp lệ. Hãy kiểm tra lại lý do và thử lại.',
   notWired: 'Khóa và mở khóa chưa được nối với máy chủ.',
+  activeWork: 'Không thể khóa hoặc xóa lúc này vì tài khoản còn đơn hàng hoặc đơn giao hàng đang xử lý. Hãy chờ các đơn hoàn thành hoặc bị hủy rồi thử lại. Không có thay đổi nào được ghi.',
 } as const;
 
 /** A page of a list: a normal list state, or "the cursor no longer fits" (filter or rights changed): start again from page 1. */

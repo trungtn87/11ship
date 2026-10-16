@@ -78,13 +78,16 @@ export class ClientSessionService {
    */
   async me(principal: AuthPrincipal): Promise<ClientSessionOutcome> {
     const view = await this.transactions.withTransaction(async (context) => {
-      const actor = await this.authority.lock(context, principal, 'share');
+      // A LOCKED driver is served here with the limited identity (the wallet is the only thing it keeps); every other locked account
+      // is refused (ACCOUNT_DISABLED) as before.
+      const actor = await this.authority.lock(context, principal, 'share', { allowLockedDriver: true });
       const identity = await this.identityReader.read(context, {
         userId: actor.userId,
         phoneNormalized: principal.phoneNormalized,
         app: actor.app,
-        enabled: true,
+        enabled: !actor.limited,
         storedActiveRole: actor.storedActiveRole,
+        limited: actor.limited,
       });
       const bound = isNativeSession(actor.platform, actor.app) ? await this.devices.sessionBinding(context, actor.sessionId) : undefined;
       return { identity, expiresAtMs: actor.expiresAtMs, binding: bound === undefined ? undefined : { bindingId: bound.bindingId, generation: bound.generation } };

@@ -33,16 +33,22 @@ export function lockEligibility(
   return covered ? 'OK' : 'FORBIDDEN';
 }
 
-/** The UI hint of the detail: LOCK for ACTIVE, UNLOCK for DISABLED, nothing when the right, the account shape or the gate is missing. */
+export type LifecycleAction = 'LOCK' | 'UNLOCK' | 'DELETE';
+
+/**
+ * The UI hint of the detail: LOCK for ACTIVE, UNLOCK for DISABLED, and DELETE for any account (the delete command decides between a
+ * permanent deletion and a lock; the detail says which one would happen). Nothing when the right, the account shape or the gate is
+ * missing.
+ */
 export function allowedLockActions(input: {
   readonly eligible: boolean;
   readonly gateOpen: boolean;
   readonly status: 'ACTIVE' | 'DISABLED';
-}): ('LOCK' | 'UNLOCK')[] {
+}): LifecycleAction[] {
   if (!input.eligible || !input.gateOpen) {
     return [];
   }
-  return input.status === 'ACTIVE' ? ['LOCK'] : ['UNLOCK'];
+  return input.status === 'ACTIVE' ? ['LOCK', 'DELETE'] : ['UNLOCK', 'DELETE'];
 }
 
 /** allowed_actions of a USER detail: the same rules as the command, evaluated on the row the detail already read. */
@@ -51,7 +57,7 @@ export function detailAllowedActions(input: {
   readonly actor: { readonly role: 'SYSTEM' | 'ADMIN'; readonly permissions: readonly PermissionRow[] };
   readonly row: UserDetailRow;
   readonly gateOpen: boolean;
-}): ('LOCK' | 'UNLOCK')[] {
+}): LifecycleAction[] {
   const { row } = input;
   // The detail only ever selects accounts without an administration membership (USER_BASE), hence hasAdminMembership: false.
   const ordinary = isLockableAccount(input.policy, {

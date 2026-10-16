@@ -34,6 +34,15 @@ export const REGISTER_PURPOSE = 'REGISTER';
 /** Issue #102: the purpose of the password reset OTP / proof. Kept apart from REGISTER_PURPOSE: neither can be used for the other. */
 export const RESET_PASSWORD_PURPOSE = 'RESET_PASSWORD';
 
+/**
+ * Owner decision 2026-10-14: the OTP and the proof are bound to the ACCOUNT SCOPE they were issued for. RESET_PASSWORD (above) is the
+ * APP_USER reset (11Food / 11Ship); RESET_PASSWORD_ADMIN is the ADMIN_WEB reset (the administration web); RECOVER_ACCOUNT recovers a
+ * locked APP_USER account. A proof of one purpose is refused by the others, and the three reach the phone through the same SMS gateway
+ * category (the text says "dat lai mat khau").
+ */
+export const RESET_PASSWORD_ADMIN_PURPOSE = 'RESET_PASSWORD_ADMIN';
+export const RECOVER_ACCOUNT_PURPOSE = 'RECOVER_ACCOUNT';
+
 /** OTP: exactly this many ASCII digits, drawn from the operating system CSPRNG. */
 export const OTP_LENGTH = 6;
 

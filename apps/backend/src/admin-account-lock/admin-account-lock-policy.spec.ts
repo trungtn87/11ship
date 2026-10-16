@@ -34,9 +34,9 @@ describe('lockEligibility (D15)', () => {
 });
 
 describe('allowedLockActions', () => {
-  it('offers LOCK for ACTIVE and UNLOCK for DISABLED, and nothing without the right or the gate', () => {
-    expect(allowedLockActions({ eligible: true, gateOpen: true, status: 'ACTIVE' })).toEqual(['LOCK']);
-    expect(allowedLockActions({ eligible: true, gateOpen: true, status: 'DISABLED' })).toEqual(['UNLOCK']);
+  it('offers LOCK (and DELETE) for ACTIVE and UNLOCK (and DELETE) for DISABLED, and nothing without the right or the gate', () => {
+    expect(allowedLockActions({ eligible: true, gateOpen: true, status: 'ACTIVE' })).toEqual(['LOCK', 'DELETE']);
+    expect(allowedLockActions({ eligible: true, gateOpen: true, status: 'DISABLED' })).toEqual(['UNLOCK', 'DELETE']);
     expect(allowedLockActions({ eligible: false, gateOpen: true, status: 'ACTIVE' })).toEqual([]);
     expect(allowedLockActions({ eligible: true, gateOpen: false, status: 'DISABLED' })).toEqual([]);
   });

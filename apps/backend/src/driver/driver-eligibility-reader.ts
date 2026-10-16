@@ -41,4 +41,10 @@ export class DriverEligibilityReader {
     }
     return { onboarding: ONBOARDING_STATE_OF[row.status], selectable: row.status !== 'CLOSED' };
   }
+
+  /** Does the user have a driver profile in ANY status? The account lifecycle reads this as "the account has business data" (never deleted, locked). */
+  async hasProfile(context: TransactionContext, userId: string): Promise<boolean> {
+    const result = await context.query('SELECT 1 FROM app.drivers WHERE user_id = $1::uuid LIMIT 1', [userId]);
+    return result.rows.length > 0;
+  }
 }

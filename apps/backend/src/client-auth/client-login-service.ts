@@ -171,7 +171,7 @@ export class ClientLoginService {
    */
   async #verifiedUser(input: ClientLoginInput): Promise<UserRow> {
     const user = await this.transactions.withTransaction((context) =>
-      this.users.findByPhone(context, input.phoneNormalized),
+      this.users.findByPhone(context, 'APP_USER', input.phoneNormalized),
     );
     if (user === undefined || !isClientLoginOrigin(user.accountOrigin)) {
       // An administration or fixture account has no client login in ANY mode: it is treated exactly like an unknown phone,
@@ -208,15 +208,22 @@ export class ClientLoginService {
     if (eligibility === undefined || !isOrdinaryClientAccount(eligibility)) {
       throw new AppError('INVALID_CREDENTIALS');
     }
+    // A LOCKED account does not sign in, with one exception (Owner decision 2026-10-14): a driver, in the 11Ship app, gets the LIMITED
+    // access (wallet balance, history and withdrawal requests; no new orders, no other function). Any other locked account is refused.
+    let limited = false;
     if (locked.status !== 'ACTIVE') {
-      denied.disabledUserId = locked.userId;
-      throw new AppError('ACCOUNT_DISABLED');
+      if (input.device.app !== 'SHIP' || !(await this.users.hasRole(context, locked.userId, 'DRIVER'))) {
+        denied.disabledUserId = locked.userId;
+        throw new AppError('ACCOUNT_DISABLED');
+      }
+      limited = true;
     }
 
     // 2. The context of this login: chosen from the live selectable set, never granted. No selectable context is a roleless
-    // session (active_role null): role_selection_required / onboarding_required tell the app what is missing.
-    const selectable = await this.identityReader.selectableContexts(context, locked.userId);
-    const chosen: PublicContext | null = defaultContextFor(input.device.app, selectable);
+    // session (active_role null): role_selection_required / onboarding_required tell the app what is missing. A limited session
+    // always wears DRIVER (the context its wallet access is bound to) and offers no other.
+    const selectable = limited ? [] : await this.identityReader.selectableContexts(context, locked.userId);
+    const chosen: PublicContext | null = limited ? 'DRIVER' : defaultContextFor(input.device.app, selectable);
 
     // 2b. Native: the binding decision (same phone / join / new phone) under the user root lock, before the session exists.
     const plan =
@@ -256,8 +263,9 @@ export class ClientLoginService {
       userId: locked.userId,
       phoneNormalized: locked.phoneNormalized,
       app: input.device.app,
-      enabled: true,
+      enabled: !limited,
       storedActiveRole: chosen === null ? null : storageRoleOf(chosen),
+      limited,
     });
 
     return {
@@ -293,10 +301,14 @@ export class ClientLoginService {
     const user = await this.users.lockById(context, userId);
     if (
       user === undefined ||
-      user.status !== 'ACTIVE' ||
       !isClientLoginOrigin(user.accountOrigin) ||
       !this.originPolicy.allows({ accountOrigin: user.accountOrigin, phoneNormalized: user.phoneNormalized })
     ) {
+      throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
+    }
+    // A locked driver's limited session is replayable like any other (it is still a session of this user); every other locked account is not.
+    const limited = user.status !== 'ACTIVE';
+    if (limited && (input.device.app !== 'SHIP' || !(await this.users.hasRole(context, userId, 'DRIVER')))) {
       throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
     }
     // The password this request just proved is the one the user holds NOW. A hash that changed while the request waited for
@@ -329,8 +341,9 @@ export class ClientLoginService {
       userId,
       phoneNormalized: user.phoneNormalized,
       app: input.device.app,
-      enabled: true,
+      enabled: !limited,
       storedActiveRole: session.activeRole,
+      limited,
     });
   }
 }

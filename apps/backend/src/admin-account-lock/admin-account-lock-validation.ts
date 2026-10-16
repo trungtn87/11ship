@@ -6,10 +6,15 @@ import { isCanonicalUuid } from '../shared/identifiers';
 
 export const REASON_MAX_CODE_POINTS = 500;
 
+/** Why an administrator locks an account (the third reason, DELETE_REQUEST, only comes from the delete command). */
+export type AdminLockReason = 'VIOLATION' | 'SECURITY';
+
 export interface LockBody {
   readonly expectedVersion: number;
   /** Trimmed, 1..500 code points. */
   readonly reason: string;
+  /** Lock only: the category of the lock. Defaults to VIOLATION; it is never accepted on unlock or delete. */
+  readonly lockReason: AdminLockReason;
 }
 
 function invalid(): never {
@@ -23,7 +28,8 @@ export function parseTargetUserId(value: unknown): string {
   return value;
 }
 
-export function parseLockBody(body: unknown): LockBody {
+/** `allowLockReason` = the lock command: it may carry the optional category. Unlock and delete take exactly {expected_version, reason}. */
+export function parseLockBody(body: unknown, allowLockReason = false): LockBody {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     invalid();
   }
@@ -33,7 +39,16 @@ export function parseLockBody(body: unknown): LockBody {
   }
   const source = body as Record<string, unknown>;
   const keys = Object.keys(source);
-  if (keys.length !== 2 || !Object.hasOwn(source, 'expected_version') || !Object.hasOwn(source, 'reason')) {
+  const hasCategory = Object.hasOwn(source, 'lock_reason');
+  if (
+    keys.length !== (hasCategory ? 3 : 2) ||
+    (hasCategory && !allowLockReason) ||
+    !Object.hasOwn(source, 'expected_version') ||
+    !Object.hasOwn(source, 'reason')
+  ) {
+    invalid();
+  }
+  if (hasCategory && source.lock_reason !== 'VIOLATION' && source.lock_reason !== 'SECURITY') {
     invalid();
   }
   const version = source.expected_version;
@@ -48,5 +63,5 @@ export function parseLockBody(body: unknown): LockBody {
   if (length < 1 || length > REASON_MAX_CODE_POINTS) {
     invalid();
   }
-  return { expectedVersion: version, reason };
+  return { expectedVersion: version, reason, lockReason: hasCategory ? (source.lock_reason as AdminLockReason) : 'VIOLATION' };
 }

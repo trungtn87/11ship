@@ -64,7 +64,7 @@ export class LoginService {
   async login(input: LoginInput, requestId: string): Promise<LoginResult> {
     assertLegacyDeviceAllowed(input.device, this.nativeSettings?.androidEnabled === true);
     const user = await this.transactions.withTransaction((context) =>
-      this.users.findByPhone(context, input.phoneNormalized),
+      this.users.findByPhone(context, 'APP_USER', input.phoneNormalized),
     );
     if (user === undefined || user.accountOrigin === 'ADMIN_PROVISIONED') {
       // Same work as a real verification, same answer as a wrong password. An administration account has no

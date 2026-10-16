@@ -106,7 +106,7 @@ export class SmsGatewayRepository {
     const result = await context.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM app.phone_verifications
         WHERE phone_normalized = $1
-          AND purpose IN ('REGISTER', 'RESET_PASSWORD')
+          AND purpose IN ('REGISTER', 'RESET_PASSWORD', 'RESET_PASSWORD_ADMIN', 'RECOVER_ACCOUNT')
           AND created_at > clock_timestamp() - make_interval(secs => $2::double precision)`,
       [phoneNormalized, windowSeconds],
     );

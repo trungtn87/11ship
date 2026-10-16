@@ -16,8 +16,18 @@ const refused = (run: () => unknown): void => {
 
 describe('parseLockBody', () => {
   it('accepts exactly {expected_version, reason} and trims the reason', () => {
-    expect(parseLockBody({ expected_version: 3, reason: '  vi phạm  ' })).toEqual({ expectedVersion: 3, reason: 'vi phạm' });
+    expect(parseLockBody({ expected_version: 3, reason: '  vi phạm  ' })).toEqual({ expectedVersion: 3, reason: 'vi phạm', lockReason: 'VIOLATION' });
     expect(parseLockBody({ expected_version: 1, reason: 'x'.repeat(500) }).reason).toHaveLength(500);
+  });
+
+  it('the lock command (and only it) may name the category of the lock: VIOLATION or SECURITY, never DELETE_REQUEST', () => {
+    expect(parseLockBody({ expected_version: 3, reason: 'r', lock_reason: 'SECURITY' }, true)).toEqual({ expectedVersion: 3, reason: 'r', lockReason: 'SECURITY' });
+    expect(parseLockBody({ expected_version: 3, reason: 'r', lock_reason: 'VIOLATION' }, true).lockReason).toBe('VIOLATION');
+    refused(() => parseLockBody({ expected_version: 3, reason: 'r', lock_reason: 'DELETE_REQUEST' }, true));
+    refused(() => parseLockBody({ expected_version: 3, reason: 'r', lock_reason: 'security' }, true));
+    // unlock and delete take exactly two fields
+    refused(() => parseLockBody({ expected_version: 3, reason: 'r', lock_reason: 'SECURITY' }));
+    refused(() => parseLockBody({ expected_version: 3, reason: 'r', lock_reason: 'SECURITY', extra: 1 }, true));
   });
 
   it('counts Unicode code points, not UTF-16 units', () => {

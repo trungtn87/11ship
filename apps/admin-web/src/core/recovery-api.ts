@@ -1,11 +1,13 @@
-// HTTP client of the SMS-verified password reset of USER / ADMIN accounts (M01-RESET; issue #102): GET /v1/account-recovery/config,
+// HTTP client of the SMS-verified password reset of ADMIN_WEB accounts (an ADMIN; M01-RESET, issue #102): GET /v1/admin-recovery/config,
 // POST /otp {phone}, POST /otp/{id}/verify {otp}, POST /reset {verification_token, password}. Public routes: the admin front forwards
 // neither the admin cookie nor the CSRF token to them, and this client sends no CSRF. The no-OTP route of the old test build is not
 // used any more (the server refuses it outside development/test).
 
 import { ApiClient, ApiResult } from './api.js';
 
-export const RECOVERY_BASE = '/v1/account-recovery';
+// Owner decision 2026-10-14: the administration web has its OWN reset routes (ADMIN_WEB accounts only); the application's /v1/account-recovery
+// routes never find an administration account, and these never find an application account.
+export const RECOVERY_BASE = '/v1/admin-recovery';
 
 /** Only SMS_OTP opens the page; UNAVAILABLE keeps it closed. Anything else is "no usable answer". */
 export type RecoveryMode = 'SMS_OTP' | 'UNAVAILABLE';

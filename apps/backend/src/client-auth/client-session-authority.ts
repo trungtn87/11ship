@@ -20,6 +20,8 @@ export interface ClientActor {
   readonly expiresAtMs: number;
   /** The platform recorded on the session (immutable). */
   readonly platform: ClientPlatform;
+  /** True when a LOCKED driver is served through the limited (wallet-only) access; always false unless the caller opted in. */
+  readonly limited: boolean;
 }
 
 export type ClientActorLock = 'update' | 'share';
@@ -49,12 +51,18 @@ export class ClientSessionAuthority {
     @Inject(CLIENT_AUTH_SETTINGS) private readonly settings: ClientAuthSettings,
   ) {}
 
-  async lock(context: TransactionContext, principal: AuthPrincipal, mode: ClientActorLock): Promise<ClientActor> {
+  async lock(
+    context: TransactionContext,
+    principal: AuthPrincipal,
+    mode: ClientActorLock,
+    options: { readonly allowLockedDriver?: boolean } = {},
+  ): Promise<ClientActor> {
     const actor = actorOf(principal);
+    let limited = false;
     if (mode === 'update') {
       await this.sessionAuth.lockAuthorizedActor(context, actor);
     } else {
-      await this.sessionAuth.lockAuthorizedActorShared(context, actor);
+      limited = (await this.sessionAuth.lockAuthorizedActorShared(context, actor, options)).limited;
     }
     const view = await this.sessions.readClientView(context, actor.sessionId);
     if (view === undefined || !isClientApp(view.app) || !isClientPlatform(view.platform)) {
@@ -69,6 +77,7 @@ export class ClientSessionAuthority {
       storedActiveRole: view.activeRole,
       expiresAtMs: view.expiresAtMs,
       platform: view.platform,
+      limited,
     };
   }
 

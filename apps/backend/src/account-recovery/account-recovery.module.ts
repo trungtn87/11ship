@@ -5,7 +5,8 @@ import { AdminSessionRepository } from '../admin-auth/admin-session-repository';
 import { AuditModule } from '../audit/audit.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { TransactionModule } from '../transaction/transaction.module';
-import { AccountRecoveryController } from './account-recovery.controller';
+import { OutboxModule } from '../outbox/outbox.module';
+import { AccountRecoveryController, AdminAccountRecoveryController } from './account-recovery.controller';
 import { AccountRecoveryService } from './account-recovery-service';
 
 /**
@@ -19,8 +20,8 @@ export class AccountRecoveryModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: AccountRecoveryModule,
-      imports: [auth, TransactionModule, AuditModule, IdempotencyModule],
-      controllers: [AccountRecoveryController],
+      imports: [auth, TransactionModule, AuditModule, IdempotencyModule, OutboxModule],
+      controllers: [AccountRecoveryController, AdminAccountRecoveryController],
       providers: [AccountRecoveryService, AdminMembershipRepository, AdminSessionRepository, AdminChallengeRepository],
     };
   }

@@ -19,7 +19,7 @@ const ACTOR: SessionActor = {
   sessionId: '623e4567-e89b-42d3-a456-426614174000',
 };
 const OTHER_USER = '723e4567-e89b-42d3-a456-426614174000';
-const USER: UserRow = { userId: ACTOR.userId, phoneNormalized: '+84987654321', passwordHash: 'h', status: 'ACTIVE', accountOrigin: 'PHONE_VERIFIED' };
+const USER: UserRow = { userId: ACTOR.userId, phoneNormalized: '+84987654321', passwordHash: 'h', status: 'ACTIVE', accountOrigin: 'PHONE_VERIFIED', accountScope: 'APP_USER' };
 const SESSION: SharedLockedSession = {
   sessionId: ACTOR.sessionId,
   userId: ACTOR.userId,
@@ -181,11 +181,12 @@ describe('SessionAuthorizationParticipant.lockAuthorizedActorShared (readers)', 
     await expect(participant.lockAuthorizedActorShared(fakeContext(NOW, events), ACTOR)).resolves.toEqual({
       activeRole: 'DRIVER',
       phoneVerificationStatus: 'VERIFIED',
+      limited: false,
     });
     const roleless = rig();
     await expect(
       roleless.participant.lockAuthorizedActorShared(fakeContext(NOW, roleless.events), ACTOR),
-    ).resolves.toEqual({ activeRole: null, phoneVerificationStatus: 'VERIFIED' });
+    ).resolves.toEqual({ activeRole: null, phoneVerificationStatus: 'VERIFIED', limited: false });
   });
 
   it('applies the same checks and precedence as the writer variant', async () => {

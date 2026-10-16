@@ -50,7 +50,13 @@ String failureMessage(AuthFailure failure) {
     case AuthFailureKind.notReplayable:
       return 'Không gửi lại được yêu cầu trước đó. Vui lòng thực hiện lại.';
     case AuthFailureKind.accountDisabled:
-      return 'Tài khoản này đang bị khóa.';
+      return 'Tài khoản này đang bị khóa. Nếu bạn đã yêu cầu xóa tài khoản, hãy đăng ký lại bằng số điện thoại này để khôi phục (cần mã SMS). Nếu không, vui lòng liên hệ hỗ trợ.';
+    case AuthFailureKind.accountRecoverable:
+      return 'Số điện thoại này thuộc một tài khoản đã khóa theo yêu cầu xóa. Hãy khôi phục tài khoản: xác minh mã SMS và đặt mật khẩu mới.';
+    case AuthFailureKind.passwordResetDisabled:
+      return 'Chức năng tự đặt lại mật khẩu đang tạm khóa. Vui lòng liên hệ hỗ trợ.';
+    case AuthFailureKind.verificationModeChanged:
+      return 'Cách xác minh số điện thoại vừa thay đổi. Hãy tải lại màn hình đăng ký rồi thử lại.';
     case AuthFailureKind.badRequest:
       return 'Thông tin chưa hợp lệ. Kiểm tra số điện thoại, mật khẩu (8 đến 128 ký tự) và họ tên.';
     case AuthFailureKind.rateLimited:
@@ -239,6 +245,7 @@ class AccountTab extends StatelessWidget {
     final Identity? identity = session.identity;
     final String name = session.profile?.fullName ?? 'Chưa có tên';
     final List<String> roles = identity?.availableRoles ?? const <String>[];
+    final bool locked = identity?.lockedWalletOnly ?? false;
     return vstack(<Widget>[
       N11AvatarCard(
         name: name,
@@ -251,12 +258,22 @@ class AccountTab extends StatelessWidget {
           if (roles.contains('DRIVER')) const N11Chip('Shipper', kind: ChipKind.dark),
         ],
       ),
-      if (showAccountStatus && brand.id != AppId.food)
-      const N11List(title: 'Trạng thái', children: <Widget>[
-        N11ListItem(icon: Icons.check, title: 'Trạng thái tài khoản', sub: 'Phiên đăng nhập đang hoạt động trên máy này', trailing: N11Chip('Hoạt động', kind: ChipKind.ok)),
-      ]),
-      if (signedInEntries.isNotEmpty) N11List(title: signedInTitle, children: signedInEntries),
-      if (brand.id == AppId.food)
+      // Only what the phone knows: a live, server-checked session. It does not claim a verified phone number (an account registered while
+      // SYSTEM had the registration OTP off has an unverified one).
+      if (locked)
+        // A locked driver keeps the wallet and nothing else (Owner decision 2026-10-14): no new orders, no other function.
+        const N11Banner(
+          key: Key('locked-wallet-only'),
+          kind: BannerKind.warn,
+          title: 'Tài khoản đã khóa',
+          text: 'Bạn không nhận đơn mới và không dùng các chức năng giao hàng. Bạn vẫn xem được số dư ví, lịch sử giao dịch và gửi yêu cầu rút tiền theo điều kiện hiện hành khi mục Ví mở.',
+        )
+      else if (showAccountStatus && brand.id != AppId.food)
+        const N11List(title: 'Trạng thái', children: <Widget>[
+          N11ListItem(icon: Icons.check, title: 'Trạng thái tài khoản', sub: 'Phiên đăng nhập đang hoạt động trên máy này', trailing: N11Chip('Hoạt động', kind: ChipKind.ok)),
+        ]),
+      if (signedInEntries.isNotEmpty && !locked) N11List(title: signedInTitle, children: signedInEntries),
+      if (brand.id == AppId.food && !locked)
         N11List(title: 'Ưu đãi', children: <Widget>[
           N11ListItem(key: const Key('voucher-entry'), icon: Icons.local_offer_outlined, title: 'Voucher của tôi', onTap: () => Navigator.of(context).push(n11Route(VoucherScreen(session: session)))),
         ]),
@@ -615,6 +632,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     ];
   }
 
+  /// The recovery flow: its own controller and wording, the same public routes family; OTP is always required.
+  void _openRecovery(BuildContext context) {
+    final ResetController recovery = ResetController(transport: widget.session.api.transport, session: widget.session, endpoints: ResetEndpoints.recover);
+    Navigator.of(context).push(n11Route(ResetScreen(controller: recovery, brand: widget.brand, recovery: true)));
+  }
+
   void _leaveWhenSignedIn() {
     if (widget.session.status == SessionStatus.signedIn && mounted && !_leaving) {
       _leaving = true;
@@ -668,7 +691,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
         title: 'Đăng ký · ${_step + 1}/3', session: session, onBack: back,
         children: <Widget>[
           N11Heading(<String>['Tạo tài khoản', 'Mục đích sử dụng', 'Số điện thoại & OTP'][_step]),
-          _failureBanner(session),
+          if (session.lastFailure?.kind == AuthFailureKind.accountRecoverable || _otp.failure?.kind == AuthFailureKind.accountRecoverable)
+            N11Banner(
+              key: const Key('recover-account'),
+              kind: BannerKind.warn,
+              title: 'Tài khoản này đã khóa theo yêu cầu xóa',
+              text: 'Số điện thoại này thuộc một tài khoản cũ. Bạn có thể khôi phục: xác minh mã SMS rồi đặt mật khẩu mới. Dữ liệu cũ được giữ nguyên.',
+              trailing: N11Button(key: const Key('recover-open'), label: 'Khôi phục tài khoản', compact: true, onPressed: locked ? null : () => _openRecovery(context)),
+            )
+          else
+            _failureBanner(session),
+          if (_step == 2 && session.registrationMode == RegistrationMode.notRequired)
+            const N11Banner(
+              key: Key('not-required-note'),
+              kind: BannerKind.info,
+              title: 'Đăng ký không cần mã xác minh',
+              text: 'Số điện thoại sẽ ở trạng thái chưa xác minh. Hãy nhập đúng số của bạn: số này dùng để đăng nhập và khôi phục tài khoản.',
+            ),
           if (_step == 0) ...<Widget>[
             N11Field(fieldKey: const Key('register-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !locked, onChanged: () => setState(() {})),
             N11Field(fieldKey: const Key('register-password'), label: 'Mật khẩu', controller: _password, password: true, maxLength: 128, enabled: !locked, hint: 'Dùng từ 8 đến 128 ký tự.', onChanged: () => setState(() {})),
@@ -706,8 +745,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       builder: (BuildContext context, Widget? child) {
         final bool busy = session.busy;
         final RegistrationMode mode = session.registrationMode;
-        final bool open = session.ready && mode == RegistrationMode.required && _otp.token != null;
+        // With the SMS proof the submit needs the verified code; when SYSTEM turned the registration OTP off there is no code step.
+        final bool open = session.ready && ((mode == RegistrationMode.required && _otp.token != null) || mode == RegistrationMode.notRequired);
         final bool taken = session.lastFailure?.kind == AuthFailureKind.phoneRegistered;
+        // A phone that belongs to an account locked at its owner's request is recovered, never registered again.
+        final bool recoverable = session.lastFailure?.kind == AuthFailureKind.accountRecoverable || _otp.failure?.kind == AuthFailureKind.accountRecoverable;
         final bool food = widget.brand.id == AppId.food;
         if (_ship && _otpPage) {
           void back() => setState(() => _otpPage = false);
@@ -753,7 +795,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 text: 'Chưa thể đăng ký vì ứng dụng không đoán cách xác minh của máy chủ.',
                 trailing: N11Button(key: const Key('reload-config'), label: 'Thử lại', compact: true, kind: ButtonKind.secondary, onPressed: session.loadRegistrationMode),
               ),
-            _failureBanner(session),
+            if (mode == RegistrationMode.notRequired)
+              const N11Banner(
+                key: Key('not-required-note'),
+                kind: BannerKind.info,
+                title: 'Đăng ký không cần mã xác minh',
+                text: 'Số điện thoại sẽ ở trạng thái chưa xác minh. Hãy nhập đúng số của bạn: số này dùng để đăng nhập và khôi phục tài khoản.',
+              ),
+            if (recoverable)
+              N11Banner(
+                key: const Key('recover-account'),
+                kind: BannerKind.warn,
+                title: 'Tài khoản này đã khóa theo yêu cầu xóa',
+                text: 'Số điện thoại này thuộc một tài khoản cũ. Bạn có thể khôi phục: xác minh mã SMS rồi đặt mật khẩu mới. Dữ liệu cũ được giữ nguyên.',
+                trailing: N11Button(key: const Key('recover-open'), label: 'Khôi phục tài khoản', compact: true, onPressed: busy ? null : () => _openRecovery(context)),
+              )
+            else
+              _failureBanner(session),
             N11Field(
               fieldKey: const Key('register-phone'),
               label: 'Số điện thoại',

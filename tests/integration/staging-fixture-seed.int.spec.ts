@@ -90,8 +90,8 @@ describe('issue #49 — staging fixture seed (PostgreSQL)', () => {
     expect(audit.rowCount).toBe(1);
   });
 
-  it('is atomic: a batch that meets a verified or an administration account writes NOTHING, and never changes that account', async () => {
-    for (const [origin, verified] of [['PHONE_VERIFIED', true], ['ADMIN_PROVISIONED', false]] as const) {
+  it('is atomic: a batch that meets a verified application account writes NOTHING, and never changes that account', async () => {
+    for (const [origin, verified] of [['PHONE_VERIFIED', true]] as const) {
       const taken = fresh();
       const newcomer = fresh();
       const id = randomUUID();
@@ -107,6 +107,18 @@ describe('issue #49 — staging fixture seed (PostgreSQL)', () => {
       expect(await rowOf(taken)).toEqual(before);
       expect(await rowOf(newcomer)).toBeUndefined();
     }
+  });
+
+  it('an administration account with the same phone is another scope: the fixture is created beside it and the administration row is untouched', async () => {
+    const taken = fresh();
+    await pool.query(
+      `INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at)
+       VALUES ($1::uuid, $2, '$argon2id$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA', NULL, 'ADMIN_PROVISIONED', 'ACTIVE', 1, now(), now())`,
+      [randomUUID(), taken],
+    );
+    const before = await pool.query(`SELECT user_id, password_hash, version FROM app.users WHERE phone_normalized = $1 AND account_scope = 'ADMIN_WEB'`, [taken]);
+    expect(await run([{ phoneNormalized: taken, password: 'Fixture-Pass-1' }])).toEqual({ created: 1, skipped: 0 });
+    expect((await pool.query(`SELECT user_id, password_hash, version FROM app.users WHERE phone_normalized = $1 AND account_scope = 'ADMIN_WEB'`, [taken])).rows).toEqual(before.rows);
   });
 
   it('a failing audit write rolls the user back too (same transaction)', async () => {

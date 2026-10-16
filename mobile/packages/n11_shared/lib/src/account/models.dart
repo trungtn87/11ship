@@ -26,6 +26,7 @@ class Identity {
     required this.sessionExpiresAt,
     this.shopOnboarding = 'NOT_STARTED',
     this.driverOnboarding = 'NOT_STARTED',
+    this.lockedWalletOnly = false,
   });
 
   final String userId;
@@ -42,6 +43,10 @@ class Identity {
   /// PENDING_APPROVAL / ACTIVE / SUSPENDED / CLOSING / CLOSED for the driver. Display only; it grants nothing.
   final String shopOnboarding;
   final String driverOnboarding;
+
+  /// The account is locked and only the wallet is left to it (a driver: balance, history, withdrawal). The server says so with
+  /// account_status LOCKED and limited_access WALLET_ONLY; absent for every other identity.
+  final bool lockedWalletOnly;
 
   static Identity? tryParse(Object? data) {
     if (data is! Map<String, Object?>) {
@@ -82,6 +87,7 @@ class Identity {
       onboardingRequired: onboardingRequired is bool && onboardingRequired,
       roleSelectionRequired: roleSelection is bool && roleSelection,
       sessionExpiresAt: expires,
+      lockedWalletOnly: data['account_status'] == 'LOCKED' && data['limited_access'] == 'WALLET_ONLY',
     );
   }
 
@@ -149,6 +155,16 @@ enum AuthFailureKind {
 
   /// 403 ACCOUNT_DISABLED.
   accountDisabled,
+
+  /// 409 ACCOUNT_RECOVERY_AVAILABLE: the phone belongs to an account locked at its owner's request; it is recovered with an OTP and
+  /// a new password (never by registering again).
+  accountRecoverable,
+
+  /// 403 PASSWORD_RESET_DISABLED: SYSTEM turned the self-service password reset off.
+  passwordResetDisabled,
+
+  /// 409 PHONE_VERIFICATION_REQUIRED / PHONE_VERIFICATION_NOT_REQUIRED: the registration mode changed under the screen; read it again.
+  verificationModeChanged,
 
   /// 400 and everything else: the request was refused as malformed.
   badRequest,

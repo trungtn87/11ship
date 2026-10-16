@@ -1,4 +1,6 @@
 import { CanActivate, ExecutionContext, Inject, Injectable, Optional } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { ALLOW_LOCKED_DRIVER } from './allow-locked-driver';
 import { isNativeSession } from '../client-device/client-device-constants';
 import { ClientDeviceProofService } from '../client-device/client-device-proof-service';
 import { CLIENT_AUTH_SETTINGS, ClientAuthSettings } from '../client-auth/client-auth-policy';
@@ -18,11 +20,15 @@ export class SessionAuthGuard implements CanActivate {
     // Optional so that a module without the native device binding (a unit test) keeps the plain Bearer guard.
     @Optional() private readonly deviceProof?: ClientDeviceProofService,
     @Optional() @Inject(CLIENT_AUTH_SETTINGS) private readonly nativeSettings?: ClientAuthSettings,
+    // Reads the @AllowLockedDriver() mark of the route; without it (a unit harness) every locked account is refused.
+    @Optional() private readonly reflector?: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const principal = await this.sessions.authenticate(request.headers['authorization']);
+    const allowLockedDriver =
+      this.reflector?.getAllAndOverride<boolean | undefined>(ALLOW_LOCKED_DRIVER, [context.getHandler(), context.getClass()]) === true;
+    const principal = await this.sessions.authenticate(request.headers['authorization'], { allowLockedDriver });
     if (isNativeSession(principal.platform, principal.app)) {
       const token = bearerTokenFrom(request.headers['authorization']);
       if (this.deviceProof === undefined || token === undefined) {

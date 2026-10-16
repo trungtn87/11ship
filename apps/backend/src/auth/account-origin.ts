@@ -12,6 +12,9 @@ import { PhoneAllowlist } from '../config/staging-fixtures-config';
 //   TEST_UNVERIFIED    registered through the client API with CLIENT_AUTH_PHONE_VERIFICATION_MODE=DISABLED_TEST (development/
 //                      test on loopback only): its phone number was never proven and nothing pretends it was
 //                      (phone_verified_at stays NULL). Accepted by the application Auth ONLY while that mode is on.
+//   PHONE_UNVERIFIED   registered while the SYSTEM setting otp_registration_enabled was OFF (Owner decision 2026-10-14): the
+//                      phone number was never proven (phone_verified_at stays NULL). A normal application account in every other
+//                      respect, accepted in every mode but the staging fixture mode; it carries NO privilege.
 // The value is read from the database and never from a client. It carries NO privilege: administration rights come
 // only from app.admin_memberships (+ MFA), which the database refuses for every origin except ADMIN_PROVISIONED.
 //
@@ -24,16 +27,17 @@ import { PhoneAllowlist } from '../config/staging-fixtures-config';
 // The policy governs the application Auth only. The administration web authenticates through its own module and
 // accepts ADMIN_PROVISIONED accounts only; a fixture is refused there as well.
 
-export type AccountOrigin = 'PHONE_VERIFIED' | 'ADMIN_PROVISIONED' | 'STAGING_FIXTURE' | 'TEST_UNVERIFIED';
+export type AccountOrigin = 'PHONE_VERIFIED' | 'ADMIN_PROVISIONED' | 'STAGING_FIXTURE' | 'TEST_UNVERIFIED' | 'PHONE_UNVERIFIED';
 
 /** Display value on login and /me. It is NOT an authorization source: the database row is. */
-export type PhoneVerificationStatus = 'VERIFIED' | 'UNVERIFIED_TEST';
+export type PhoneVerificationStatus = 'VERIFIED' | 'UNVERIFIED_TEST' | 'UNVERIFIED';
 
 export const ACCOUNT_ORIGINS: readonly AccountOrigin[] = Object.freeze([
   'PHONE_VERIFIED',
   'ADMIN_PROVISIONED',
   'STAGING_FIXTURE',
   'TEST_UNVERIFIED',
+  'PHONE_UNVERIFIED',
 ]);
 
 export function isAccountOrigin(value: unknown): value is AccountOrigin {
@@ -41,12 +45,16 @@ export function isAccountOrigin(value: unknown): value is AccountOrigin {
     value === 'PHONE_VERIFIED' ||
     value === 'ADMIN_PROVISIONED' ||
     value === 'STAGING_FIXTURE' ||
-    value === 'TEST_UNVERIFIED'
+    value === 'TEST_UNVERIFIED' ||
+    value === 'PHONE_UNVERIFIED'
   );
 }
 
 /** A staging fixture and a test-unverified account are "unverified"; the rest the application Auth accepts is verified. */
 export function phoneVerificationStatusOf(origin: AccountOrigin): PhoneVerificationStatus {
+  if (origin === 'PHONE_UNVERIFIED') {
+    return 'UNVERIFIED';
+  }
   return origin === 'STAGING_FIXTURE' || origin === 'TEST_UNVERIFIED' ? 'UNVERIFIED_TEST' : 'VERIFIED';
 }
 
@@ -59,7 +67,7 @@ export interface CustomerOriginFacts {
 
 /**
  * The ONE row-shape rule of an ordinary client account, shared by registration, login, replay, bearer sessions and the
- * CUSTOMER participant: PHONE_VERIFIED with a verification time, or TEST_UNVERIFIED without one, and never an
+ * CUSTOMER participant: PHONE_VERIFIED with a verification time, or TEST_UNVERIFIED / PHONE_UNVERIFIED without one, and never an
  * administration membership. A TEST_UNVERIFIED row that carries a verification time (or a PHONE_VERIFIED one that lacks it)
  * is corrupt and refused. Whether the process may serve the origin right now is the policy's `allows`, not this function.
  */
@@ -70,7 +78,7 @@ export function isOrdinaryClientAccount(facts: CustomerOriginFacts): boolean {
   if (facts.accountOrigin === 'PHONE_VERIFIED') {
     return facts.phoneVerified;
   }
-  if (facts.accountOrigin === 'TEST_UNVERIFIED') {
+  if (facts.accountOrigin === 'TEST_UNVERIFIED' || facts.accountOrigin === 'PHONE_UNVERIFIED') {
     return !facts.phoneVerified;
   }
   return false;
@@ -78,7 +86,7 @@ export function isOrdinaryClientAccount(facts: CustomerOriginFacts): boolean {
 
 /** The origins a client login may even try (the password of any other origin is never verified). */
 export function isClientLoginOrigin(origin: AccountOrigin): boolean {
-  return origin === 'PHONE_VERIFIED' || origin === 'TEST_UNVERIFIED';
+  return origin === 'PHONE_VERIFIED' || origin === 'TEST_UNVERIFIED' || origin === 'PHONE_UNVERIFIED';
 }
 
 /** What the policy needs from a user row. */
@@ -124,6 +132,9 @@ class Policy implements AccountOriginPolicy {
         // Only while the no-proof test mode is on in this process; with it off (or in staging/production) the account and
         // every token it ever got are simply not accepted. It never becomes PHONE_VERIFIED by being refused or accepted.
         return this.unverifiedTestMode;
+      case 'PHONE_UNVERIFIED':
+        // A normal application account whose phone was never proven; only the fixture mode (a closed testing mode) refuses it.
+        return !this.fixtureMode;
       case 'ADMIN_PROVISIONED':
         // An administration account has no application session, whatever the mode is.
         return false;

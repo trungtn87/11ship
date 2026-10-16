@@ -28,7 +28,9 @@ enum SessionStatus {
 }
 
 /// How the server verifies a phone at registration (GET /v1/client-auth/config).
-enum RegistrationMode { unknown, required }
+/// How the server registers a new account right now (GET /v1/client-auth/config): [required] = with the SMS proof, [notRequired] = SYSTEM turned
+/// the registration OTP off (the account is created with an unverified phone), [unknown] = unreadable or a mode this build does not know.
+enum RegistrationMode { unknown, required, notRequired }
 
 /// The consent the register screen shows and sends. The pair identifies the texts in account_views.dart (and docs/current/
 /// M01-terms-privacy-20261014.md); the server must be configured with the SAME pair (CLIENT_AUTH_TERMS_VERSION /
@@ -252,9 +254,14 @@ class SessionController extends ChangeNotifier {
       final ApiResponse response = await api.transport.send('GET', '/v1/client-auth/config');
       final Object? data = response.status == 200 ? response.data : null;
       final Object? mode = data is Map<String, Object?> ? data['registration_verification'] : null;
-      // Only the SMS-verified registration exists in the app. Any other answer (including a server mode this build does not know)
-      // leaves the mode unknown: the app never guesses and never offers a registration without the phone proof.
-      _registrationMode = mode == 'REQUIRED' ? RegistrationMode.required : RegistrationMode.unknown;
+      // Two modes exist in the app: the SMS-verified registration and the one SYSTEM opens by turning the registration OTP off. Any other
+      // answer (including a server mode this build does not know, the development-only DISABLED_TEST included) leaves the mode unknown:
+      // the app never guesses and never offers a registration the server did not announce.
+      _registrationMode = mode == 'REQUIRED'
+          ? RegistrationMode.required
+          : mode == 'NOT_REQUIRED'
+              ? RegistrationMode.notRequired
+              : RegistrationMode.unknown;
     } on AuthFailure {
       _registrationMode = RegistrationMode.unknown;
     }
@@ -265,8 +272,12 @@ class SessionController extends ChangeNotifier {
 
   /// [verificationToken] is the one-use proof of the OTP step. It rides in the same signed body as everything else, so a retry after
   /// a lost answer replays the identical request.
+  /// With the SMS proof ([RegistrationMode.required]) the one-use [verificationToken] is part of the body; when SYSTEM turned the registration
+  /// OTP off ([RegistrationMode.notRequired]) there is no token and the body has none (the server refuses a token it did not ask for).
   Future<bool> register({required String phone, required String password, required String fullName, String? verificationToken}) async {
-    if (_registrationMode != RegistrationMode.required || verificationToken == null) {
+    final bool withProof = _registrationMode == RegistrationMode.required && verificationToken != null;
+    final bool withoutProof = _registrationMode == RegistrationMode.notRequired;
+    if (!withProof && !withoutProof) {
       return false;
     }
     return _begin(
@@ -275,7 +286,7 @@ class SessionController extends ChangeNotifier {
       (Map<String, Object?> device) => jsonEncode(<String, Object?>{
         'phone': phone.trim(),
         'password': password,
-        'verification_token': verificationToken,
+        if (withProof) 'verification_token': verificationToken,
         'device': device,
         'full_name': fullName,
         'consent': <String, Object?>{'terms_version': kConsentTermsVersion, 'privacy_version': kConsentPrivacyVersion},

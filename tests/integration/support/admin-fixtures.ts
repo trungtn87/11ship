@@ -236,6 +236,8 @@ export interface StartAdminOptions {
   readonly activationSms?: boolean;
   /** Issue #49: runs after configureApp and before init, where main.ts installs the Admin web hosting. */
   readonly beforeListen?: (app: INestApplication) => void;
+  /** Configuration fields laid over everything above (for example clientAuth, so the client registration can run in the same application). */
+  readonly configOverride?: Partial<AppConfig>;
 }
 
 export async function startAdminApp(options: StartAdminOptions = {}): Promise<AdminApp> {
@@ -280,6 +282,7 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
             ...options.activationConfig,
           },
         }),
+    ...(options.configOverride ?? {}),
   };
   const running = await startApp(config, {
     auth: { otpProvider: options.smsGateway === undefined ? new FakeOtpProvider() : SMS_GATEWAY_BINDING },
@@ -337,9 +340,10 @@ export async function createSystem(app: AdminApp, password: string = ADMIN_PASSW
   if (result.code !== 0) {
     throw new Error(`bootstrap-system failed: ${result.err.join(' | ')}`);
   }
-  const row = await app.pool.query<{ user_id: string }>('SELECT user_id FROM app.users WHERE phone_normalized = $1', [
-    phone.normalized,
-  ]);
+  const row = await app.pool.query<{ user_id: string }>(
+    "SELECT user_id FROM app.users WHERE account_scope = 'ADMIN_WEB' AND phone_normalized = $1",
+    [phone.normalized],
+  );
   return { phone, password, userId: (row.rows[0] as { user_id: string }).user_id };
 }
 

@@ -6,7 +6,12 @@ import {
   AdministratorsScreen,
   EMPTY_ADMIN_FILTER,
   ListState,
+  LifecycleAction,
+  LOCK_CATEGORY_LABEL,
+  LOCK_REASON_LABEL,
+  LockCategory,
   LockDialog,
+  RELATED_DATA_LABEL,
   REASON_MAX,
   UserDetail,
   UserDetailScreen,
@@ -226,7 +231,7 @@ export interface UserDetailHooks {
   retry(): void;
   login(): void;
   home(): void;
-  action(action: 'LOCK' | 'UNLOCK'): void;
+  action(action: LifecycleAction): void;
 }
 
 function definition(items: readonly (readonly [string, Node | string])[]): HTMLElement {
@@ -245,6 +250,39 @@ function profileBlocks(user: UserDetail): HTMLElement[] {
     blocks.push(h('section', { class: 'detail-block' }, h('h3', { class: 'subtitle' }, 'Hồ sơ shipper'), definition([['Trạng thái hồ sơ', user.profile.driver.state]])));
   }
   return blocks;
+}
+
+const dataLabel = (name: string): string => RELATED_DATA_LABEL[name] ?? name;
+
+function relatedDataText(user: UserDetail): string {
+  return user.lifecycle.relatedData.length === 0 ? 'Không có dữ liệu liên quan' : user.lifecycle.relatedData.map(dataLabel).join(', ');
+}
+
+/** Why a lock or a delete cannot be done now, in words, and what a delete would do. Drawn only from what the server said. */
+function lifecycleNotes(user: UserDetail): HTMLElement[] {
+  const notes: HTMLElement[] = [];
+  const { lifecycle } = user;
+  if (lifecycle.lockBlockedReason === 'ACTIVE_WORK' && user.allowedActions.includes('LOCK')) {
+    notes.push(h('p', { class: 'hint', role: 'note' }, 'Không thể khóa lúc này: tài khoản còn đơn hàng hoặc đơn giao hàng đang xử lý. Đơn đã hoàn thành hoặc đã hủy không cản trở việc khóa.'));
+  }
+  if (user.allowedActions.includes('DELETE')) {
+    if (lifecycle.deleteBlockedReason === 'ACTIVE_WORK') {
+      notes.push(h('p', { class: 'hint', role: 'note' }, 'Không thể xóa lúc này: tài khoản có dữ liệu liên quan nên chỉ có thể khóa, mà còn đơn đang xử lý.'));
+    } else if (lifecycle.deleteBlockedReason === 'ALREADY_LOCKED') {
+      notes.push(h('p', { class: 'hint', role: 'note' }, 'Không thể xóa lúc này: tài khoản có dữ liệu liên quan nên không bị xóa, và đang ở trạng thái khóa.'));
+    } else {
+      notes.push(
+        h(
+          'p',
+          { class: 'hint', role: 'note' },
+          lifecycle.deleteEffect === 'DELETE_PERMANENTLY'
+            ? 'Tài khoản không có dữ liệu liên quan: “Xóa tài khoản” sẽ xóa vĩnh viễn.'
+            : 'Tài khoản có dữ liệu liên quan: “Xóa tài khoản” không xóa mà chuyển sang khóa theo yêu cầu xóa, giữ nguyên mọi dữ liệu.',
+        ),
+      );
+    }
+  }
+  return notes;
 }
 
 export function renderUserDetail(screen: UserDetailScreen, hooks: UserDetailHooks): HTMLElement {
@@ -275,7 +313,12 @@ export function renderUserDetail(screen: UserDetailScreen, hooks: UserDetailHook
       refresh.addEventListener('click', () => hooks.reload());
       const actions: HTMLElement[] = [refresh];
       for (const action of user.allowedActions) {
-        const button = action === 'LOCK' ? h('button', { type: 'button', class: 'btn btn-danger btn-inline' }, icon('lock', 18), 'Khóa tài khoản') : primary('Mở khóa', 'button');
+        const button =
+          action === 'LOCK'
+            ? h('button', { type: 'button', class: 'btn btn-danger btn-inline' }, icon('lock', 18), 'Khóa tài khoản')
+            : action === 'DELETE'
+              ? h('button', { type: 'button', class: 'btn btn-danger btn-inline', 'data-action': 'delete' }, icon('alert', 18), 'Xóa tài khoản')
+              : primary('Mở khóa', 'button');
         button.classList.add('btn-inline');
         button.disabled = !hooks.wired;
         button.addEventListener('click', () => hooks.action(action));
@@ -285,7 +328,8 @@ export function renderUserDetail(screen: UserDetailScreen, hooks: UserDetailHook
         'div',
         { class: 'detail' },
         h('div', { class: 'detail-actions' }, ...actions),
-        user.allowedActions.length === 0 ? h('p', { class: 'hint' }, 'Bạn không có thao tác khóa hoặc mở khóa với tài khoản này.') : undefined,
+        user.allowedActions.length === 0 ? h('p', { class: 'hint' }, 'Bạn không có thao tác khóa, mở khóa hoặc xóa với tài khoản này.') : undefined,
+        ...lifecycleNotes(user),
         h(
           'section',
           { class: 'detail-block' },
@@ -294,6 +338,11 @@ export function renderUserDetail(screen: UserDetailScreen, hooks: UserDetailHook
             ['Trạng thái', statusBadge(user.status, USER_STATUS_LABEL[user.status])],
             ['Vai trò', roleChips(user.roles)],
             ['Số điện thoại', user.phoneMasked],
+            ['Xác minh số điện thoại', user.phoneVerified ? 'Đã xác minh' : 'Chưa xác minh'],
+            ...(user.lifecycle.lockReason === null ? [] : ([['Lý do khóa', LOCK_REASON_LABEL[user.lifecycle.lockReason]]] as const)),
+            ...(user.lifecycle.lockedAt === null ? [] : ([['Khóa từ', formatDateTimeVn(user.lifecycle.lockedAt)]] as const)),
+            ['Dữ liệu liên quan', relatedDataText(user)],
+            ...(user.lifecycle.activeWork.length === 0 ? [] : ([['Đang xử lý', user.lifecycle.activeWork.map(dataLabel).join(', ')]] as const)),
             ['Ngày tạo', formatDateTimeVn(user.createdAt)],
             ['Phiên bản dữ liệu', String(user.version)],
           ]),
@@ -328,8 +377,8 @@ export function renderUserDetail(screen: UserDetailScreen, hooks: UserDetailHook
 // ---- D87 / D88: lock and unlock dialogs ----------------------------------------------------------------------------------
 
 export interface LockHooks {
-  /** The reason typed, already validated. */
-  submit(reason: string): void;
+  /** The reason typed, already validated, and (lock only) the category chosen. */
+  submit(reason: string, category?: LockCategory): void;
   cancel(): void;
   /** After "unknown outcome": read the user's current state, never send the command again by itself. */
   recheck(): void;
@@ -342,28 +391,49 @@ export interface LockHooks {
 const LOCK_COPY = {
   LOCK: {
     title: 'Khóa tài khoản?',
-    warning: 'Người dùng sẽ bị đăng xuất khỏi cả 11Food và 11Ship và không thể đăng nhập lại cho đến khi được mở khóa.',
+    warning: 'Người dùng sẽ bị đăng xuất khỏi cả 11Food và 11Ship và không thể đăng nhập lại cho đến khi được mở khóa. Quán không nhận đơn mới; xế không nhận đơn và chỉ còn xem ví, rút tiền.',
     confirm: 'Khóa',
     working: 'Đang khóa…',
   },
   UNLOCK: {
     title: 'Mở khóa tài khoản?',
-    warning: 'Người dùng có thể đăng nhập lại bằng mật khẩu của mình. Mở khóa không khôi phục các phiên đã bị đăng xuất, và không tự mở lại hồ sơ hay số dư.',
+    warning: 'Người dùng có thể đăng nhập lại bằng mật khẩu của mình. Mở khóa không khôi phục các phiên đã bị đăng xuất, và không tự mở lại quán, hồ sơ xế hay số dư.',
     confirm: 'Mở khóa',
     working: 'Đang mở khóa…',
   },
+  DELETE: {
+    title: 'Xóa tài khoản?',
+    warning: 'Tài khoản không có dữ liệu liên quan sẽ bị xóa vĩnh viễn, không thể hoàn tác; số điện thoại đó đăng ký lại sẽ tạo tài khoản mới.',
+    confirm: 'Xóa tài khoản',
+    working: 'Đang xóa…',
+  },
 } as const;
+
+/** The warning of a delete depends on what the server said a delete would do to THIS account. */
+function warningOf(user: UserDetail, action: LifecycleAction): string {
+  if (action === 'DELETE' && user.lifecycle.deleteEffect === 'LOCK') {
+    return `Tài khoản có dữ liệu liên quan (${user.lifecycle.relatedData.map(dataLabel).join(', ')}) nên không bị xóa: tài khoản được khóa theo yêu cầu xóa, giữ nguyên mọi dữ liệu. Chủ tài khoản có thể khôi phục bằng cách đăng ký lại số điện thoại này, xác minh OTP và đặt mật khẩu mới. Người dùng bị đăng xuất ngay.`;
+  }
+  return LOCK_COPY[action].warning;
+}
 
 export function openLockDialog(user: UserDetail, dialog: LockDialog, hooks: LockHooks, host?: HTMLElement): DialogHandle {
   const copy = LOCK_COPY[dialog.action];
   const reason = h('textarea', { id: 'lock-reason', class: 'textarea', rows: '4', maxlength: String(REASON_MAX * 2), 'aria-describedby': 'lock-reason-error lock-reason-count', placeholder: 'Nhập lý do (bắt buộc)' });
   reason.value = dialog.reason;
+  const category = h(
+    'select',
+    { id: 'lock-category', class: 'select', 'aria-label': 'Loại khóa' },
+    ...(['VIOLATION', 'SECURITY'] as const).map((value) => h('option', { value }, LOCK_CATEGORY_LABEL[value])),
+  );
+  category.value = dialog.category ?? 'VIOLATION';
   const reasonError = message('error', 'lock-reason-error');
   const count = h('p', { id: 'lock-reason-count', class: 'hint hint-end' }, `${Array.from(dialog.reason).length}/${REASON_MAX}`);
   const status = message(dialog.phase === 'unknown' || dialog.phase === 'conflict' ? 'warning' : 'error', 'lock-status');
   const working = dialog.phase === 'working';
   const finished = dialog.phase === 'unknown' || dialog.phase === 'conflict';
   reason.disabled = working || finished;
+  category.disabled = working || finished;
   const cancel = secondary('Hủy');
   cancel.disabled = working;
   cancel.addEventListener('click', () => hooks.cancel());
@@ -381,7 +451,7 @@ export function openLockDialog(user: UserDetail, dialog: LockDialog, hooks: Lock
     confirm.addEventListener('click', () => hooks.reload());
     setMessage(status, 'Dữ liệu tài khoản đã thay đổi. Hãy tải lại chi tiết và kiểm tra đúng tài khoản trước khi thao tác.');
   } else {
-    confirm = dialog.action === 'LOCK' ? h('button', { type: 'button', class: 'btn btn-danger-solid' }, copy.confirm) : primary(copy.confirm, 'button');
+    confirm = dialog.action === 'UNLOCK' ? primary(copy.confirm, 'button') : h('button', { type: 'button', class: 'btn btn-danger-solid' }, copy.confirm);
     confirm.disabled = working;
     confirm.textContent = working ? copy.working : copy.confirm;
     confirm.setAttribute('aria-busy', String(working));
@@ -393,7 +463,7 @@ export function openLockDialog(user: UserDetail, dialog: LockDialog, hooks: Lock
         reason.focus();
         return;
       }
-      hooks.submit(result.value);
+      hooks.submit(result.value, dialog.action === 'LOCK' ? (category.value === 'SECURITY' ? 'SECURITY' : 'VIOLATION') : undefined);
     });
     if (dialog.phase === 'failed') {
       setMessage(status, dialog.error ?? 'Chưa thể thực hiện. Vui lòng thử lại.');
@@ -414,7 +484,8 @@ export function openLockDialog(user: UserDetail, dialog: LockDialog, hooks: Lock
     onDismiss: working ? undefined : () => hooks.cancel(),
     body: [
       h('div', { class: 'dialog-target' }, h('span', { class: 'avatar avatar-small', 'aria-hidden': 'true' }, icon('user', 16)), h('div', {}, h('p', { class: 'dialog-target-name' }, user.fullName ?? 'Chưa có tên'), h('p', { class: 'dialog-target-meta' }, user.phoneMasked))),
-      h('p', { class: `dialog-warning dialog-warning-${dialog.action === 'LOCK' ? 'danger' : 'info'}`, role: 'note' }, icon(dialog.action === 'LOCK' ? 'alert' : 'info', 18), h('span', {}, copy.warning)),
+      h('p', { class: `dialog-warning dialog-warning-${dialog.action === 'UNLOCK' ? 'info' : 'danger'}`, role: 'note' }, icon(dialog.action === 'UNLOCK' ? 'info' : 'alert', 18), h('span', {}, warningOf(user, dialog.action))),
+      ...(dialog.action === 'LOCK' ? [h('div', { class: 'field' }, h('label', { for: 'lock-category', class: 'label' }, 'Loại khóa'), category)] : []),
       h('div', { class: 'field' }, h('label', { for: 'lock-reason', class: 'label' }, 'Lý do'), reason, reasonError, count),
       status,
     ],

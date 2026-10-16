@@ -530,7 +530,7 @@ describe('admin-auth operator commands on the self-hosted target', () => {
     });
   });
 
-  test('seed-fixtures: creates fixtures without any membership; repeating leaves them unchanged; a non-fixture phone aborts the whole batch', async () => {
+  test('seed-fixtures: creates fixtures without any membership; repeating leaves them unchanged; a phone that is an administration account is another scope', async () => {
     const seedEnv = (extra = {}) =>
       operatorEnv({ AUTH_STAGING_FIXTURES_ENABLED: 'true', AUTH_STAGING_ALLOWED_PHONES: JSON.stringify([FIXTURE_PHONE, SYSTEM_PHONE]), ...extra });
     const batch = (entries) => JSON.stringify(entries);
@@ -563,18 +563,28 @@ describe('admin-auth operator commands on the self-hosted target', () => {
       assert.deepEqual(origins.map((row) => [row.account_origin, row.n]).sort(), [['ADMIN_PROVISIONED', 1], ['STAGING_FIXTURE', 1]].sort());
     });
 
-    // The SYSTEM administrator's phone is allowlisted here on purpose: it is still not a fixture, so the batch aborts.
-    const conflict = run('staging-seed-fixtures.js', {
+    // The SYSTEM administrator's phone is allowlisted here on purpose. An administration account and an application account are different
+    // scopes (Owner decision 2026-10-14): the fixture is created BESIDE the SYSTEM account, which stays exactly as it was and gets no membership.
+    const adminBefore = await withClient(asMigrator, async (client) =>
+      (await client.query("SELECT user_id, password_hash, version::text AS version FROM app.users WHERE account_scope = 'ADMIN_WEB'")).rows,
+    );
+    const beside = run('staging-seed-fixtures.js', {
       env: seedEnv(),
       input: batch([
         { phone: FIXTURE_PHONE, password: FIXTURE_PASSWORD },
         { phone: SYSTEM_PHONE, password: FIXTURE_PASSWORD },
       ]),
     });
-    assert.equal(conflict.status, 1);
-    assert.match(conflict.stderr, /not a staging fixture/);
-    for (const [label, result] of [['created', created], ['again', again], ['conflict', conflict]]) assertNoSecrets(result, `seed ${label}`);
-    assert.deepEqual(await snapshot(), afterSeed, 'the aborted batch wrote nothing');
+    assert.equal(beside.status, 0, beside.text);
+    assert.match(beside.stdout, /created 1, skipped 1/);
+    for (const [label, result] of [['created', created], ['again', again], ['beside', beside]]) assertNoSecrets(result, `seed ${label}`);
+    const afterBeside = await snapshot();
+    assert.equal(afterBeside.users, afterSeed.users + 1);
+    assert.equal(afterBeside.memberships, afterSeed.memberships, 'the fixture beside SYSTEM gets no membership');
+    await withClient(asMigrator, async (client) => {
+      const adminAfter = (await client.query("SELECT user_id, password_hash, version::text AS version FROM app.users WHERE account_scope = 'ADMIN_WEB'")).rows;
+      assert.deepEqual(adminAfter, adminBefore, 'the administration account is untouched');
+    });
   });
 
   test('after everything the runtime role still works within its grants: it reads the limiter row and the SYSTEM membership, writes audit rows, and still cannot change either', async () => {
