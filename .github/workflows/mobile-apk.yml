@@ -18,6 +18,10 @@ on:
         description: 'Server origin the APKs talk to (https only). Empty = config/endpoints.json (the VPS).'
         required: false
         default: ''
+      m14_offline_map:
+        description: 'Enable the integrated Cao Bang offline map in 11Ship (no automatic GPS).'
+        type: boolean
+        default: false
   pull_request:
     paths:
       - 'mobile/**'
@@ -161,6 +165,14 @@ jobs:
           path: ${{ runner.temp }}/ship-m01-ui/*.png
           if-no-files-found: ignore
 
+      - name: M14 Flutter bridge contracts
+        if: matrix.app == 'ship'
+        working-directory: mobile/packages/n11_m14
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
       - name: Prepare Android project
         run: DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" mobile/tool/prepare-android.sh ${{ matrix.app }}
 
@@ -177,6 +189,7 @@ jobs:
           fv="$(flutter --version --machine | python3 -c 'import json,sys; print(json.load(sys.stdin)["frameworkVersion"])' 2>/dev/null)" || fv=unknown
           flutter build apk --release \
             --build-name="$version" --build-number="${{ github.run_number }}" \
+            --dart-define=M14_OFFLINE_MAP="${{ matrix.app == 'ship' && inputs.m14_offline_map || false }}" \
             --dart-define=API_BASE_URL="$API_BASE_URL" \
             --dart-define=APP_ID="${{ matrix.app_id }}" \
             --dart-define=APP_VERSION="$version" \
@@ -195,6 +208,17 @@ jobs:
           bt="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)"
           "$bt/aapt2" dump badging mobile/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk > "$RUNNER_TEMP/unsigned-badging.txt"
           mobile/tool/check-apk-permissions.sh ${{ matrix.app }} "$RUNNER_TEMP/unsigned-badging.txt"
+
+      - name: Official M14 excludes test history
+        if: matrix.app == 'ship'
+        run: |
+          python3 - <<'PYCODE'
+          import zipfile
+          with zipfile.ZipFile('mobile/ship/build/app/outputs/flutter-apk/app-release.apk') as apk:
+              dex = b''.join(apk.read(n) for n in apk.namelist() if n.endswith('.dex'))
+              assert b'Lvn/eleven/m14/history/' not in dex, 'Test history leaked into official Ship'
+              assert 'assets/caobang/manifest.json' in apk.namelist()
+          PYCODE
 
       - name: Sign and verify
         run: |

@@ -32,3 +32,8 @@ Valhalla thật: https://one1ship-m14-routing.onrender.com, gói Render free, re
 Không có vị trí GPS giả được dùng để báo thành công. Không upload lịch sử. M14 chính thức phải tắt `historyEnabled`; app test cho tắt/xóa lịch sử và chỉ giữ snapshot mới nhất khi tắt. Hướng dẫn ngắn: `downloads/m14/TEST-NHANH.md`; hướng dẫn module/build/giới hạn: `mobile/gps-test/README.md`.
 
 Mã nguồn 4 module dùng chung + app và bộ Valhalla: `downloads/m14/m14-source.tar.gz`. Không thay luồng 11Food/11Ship, không merge main hoặc thay dịch vụ VPS production. PR nguồn: https://github.com/trungtn87/11ship/pull/119. Nghiệm thu GPS thực địa và đóng module thuộc Owner.
+
+
+## Tích hợp tiếp theo — 16/10/2026
+
+Owner báo test tạm ổn và yêu cầu tích hợp để triển khai sau. Mã tích hợp tiếp tục trên PR #119: `mobile/packages/n11_m14` nối Flutter Ship với cùng map/GPS/routing, GPS lõi không chứa lịch sử; lịch sử chuyển vào service riêng của app test. Xem README package để bật map Cao Bằng khi build và dùng API vị trí/tuyến. Mặc định không đổi giao diện M01/online/đơn hàng, không tự thu thập hoặc upload GPS. APK21/gói nguồn lưu tại đây vẫn là bản giao test trước đó; không coi là APK đã chứa tích hợp Flutter mới. Không deploy VPS/production hoặc tự merge main.

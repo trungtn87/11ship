@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:n11_shared/n11_shared.dart';
+import 'package:n11_m14/n11_m14.dart';
 
 const String kOnlineReason = 'Tính năng online và nhận đơn chưa khả dụng trong M01.';
 
@@ -120,6 +121,14 @@ class _HomeMapState extends State<_HomeMap> {
 
   @override
   Widget build(BuildContext context) {
+    // Opt in per build after the Cao Bang service area is approved. No GPS is
+    // requested by displaying the map; M01 online/order behavior stays locked.
+    if (const bool.fromEnvironment('M14_OFFLINE_MAP')) {
+      return const Semantics(
+        label: 'Bản đồ offline Cao Bằng, không phải vị trí hiện tại của bạn',
+        child: M14OfflineMap(key: Key('home-map')),
+      );
+    }
     final int generation = _generation;
     return Semantics(
       label: 'Bản đồ khu vực Thành phố Hồ Chí Minh, không phải vị trí hiện tại của bạn',

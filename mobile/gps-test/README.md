@@ -1,6 +1,6 @@
 # 11Ship GPS Test — M14
 
-App Android độc lập `vn.eleven.ship.gpstest`, Android 8.0 trở lên, không dùng tài khoản, OTP, ví hoặc đơn hàng. Không thay đổi 11Food/11Ship. Giao diện native Kotlin dùng cùng nền tảng Android hiện có của dự án; chưa tích hợp giao diện này vào Flutter.
+App Android độc lập `vn.eleven.ship.gpstest`, Android 8.0 trở lên, không dùng tài khoản, OTP, ví hoặc đơn hàng. Không thay đổi 11Food/11Ship. Giao diện native Kotlin dùng cùng nền tảng Android hiện có của dự án; giao diện test giữ riêng; cầu nối Flutter dùng chung đã có tại `mobile/packages/n11_m14`.
 
 ## Thử trên điện thoại
 
@@ -34,7 +34,7 @@ Không có thiết bị thật gắn vào môi trường build. GPS vệ tinh, t
 | `routing` | HTTPS client Valhalla, giải mã polyline6, cache tuyến bằng AtomicFile |
 | `app` | Màn hình test, xin quyền, các tùy chọn test |
 
-M14 chính thức phải đặt `RecorderService.preferences(context).edit().putBoolean("historyEnabled", false).apply()` **trước khi cho phép ghi**, không cung cấp điều khiển bật lịch sử, và xóa dữ liệu lịch sử test nếu dùng lại cùng sandbox. Khi tắt, GPS chỉ ghi đè snapshot vị trí mới nhất; không append lịch sử. App ID test riêng nên không chia sẻ sandbox với Food/Ship. Việc nối MethodChannel/PlatformView vào Flutter là công việc tích hợp sau; bản này không sửa luồng production.
+M14 chính thức dùng `mobile/packages/n11_m14`: cùng mã nguồn map/GPS/routing, không biên dịch module `history`. `RecorderService` lõi chỉ giữ snapshot mới nhất. Riêng `TestRecorderService` của app này ghi lịch sử qua hook `onAcceptedLocation`; `CleanupJob` cũng chỉ nằm trong app test. Xem README package về cờ build `M14_OFFLINE_MAP`, API Flutter và triển khai sau; không tự bật online/thu thập GPS trong Ship.
 
 Giữ lịch sử: xóa khi truy vấn/mở app/mỗi lần append; JobScheduler chạy dọn nền với chu kỳ tối thiểu Android 15 phút. Khi hệ điều hành trì hoãn job hoặc app bị force-stop, dữ liệu hết hạn được dọn ở lần chạy tiếp theo và không xuất hiện trong kết quả truy vấn/GPX. Không có tác vụ nền nào xin vị trí trước khi Bắt đầu.
 

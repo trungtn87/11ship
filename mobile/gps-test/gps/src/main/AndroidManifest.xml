@@ -7,6 +7,5 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <application>
         <service android:name="vn.eleven.m14.gps.RecorderService" android:exported="false" android:foregroundServiceType="location"/>
-        <service android:name="vn.eleven.m14.gps.CleanupJob" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE"/>
     </application>
 </manifest>

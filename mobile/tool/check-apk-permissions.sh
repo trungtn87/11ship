@@ -4,13 +4,13 @@
 #   INTERNET                                   both apps
 #   vn.eleven.n11.permission.PEER_ENDORSEMENT  both apps (signature permission of the Binder door between the two apps)
 #   <applicationId>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION  added by AndroidX itself (not grantable to other apps)
-#   ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION  11Food only (foreground, one fix at the shop); never ACCESS_BACKGROUND_LOCATION
+#   Food: one foreground fix; Ship: explicit M14 foreground recorder, never background-location permission.
 # Usage: check-apk-permissions.sh <food|ship> <badging-file>
 set -euo pipefail
 app="${1:?app}"; badging="${2:?badging file}"
 case "$app" in
   food) app_id="vn.eleven.food.test"; allowed="android.permission.INTERNET vn.eleven.n11.permission.PEER_ENDORSEMENT $app_id.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION" ;;
-  ship) app_id="vn.eleven.ship.test"; allowed="android.permission.INTERNET vn.eleven.n11.permission.PEER_ENDORSEMENT $app_id.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" ;;
+  ship) app_id="vn.eleven.ship.test"; allowed="android.permission.INTERNET vn.eleven.n11.permission.PEER_ENDORSEMENT $app_id.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION android.permission.ACCESS_NETWORK_STATE android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION android.permission.FOREGROUND_SERVICE android.permission.FOREGROUND_SERVICE_LOCATION android.permission.POST_NOTIFICATIONS android.permission.WAKE_LOCK" ;;
   *) echo "usage: $0 <food|ship> <badging-file>" >&2; exit 2 ;;
 esac
 found="$(sed -n "s/^uses-permission[a-z0-9-]*: name='\([^']*\)'.*/\1/p" "$badging" | sort -u)"

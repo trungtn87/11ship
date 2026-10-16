@@ -1,0 +1,20 @@
+name: n11_m14
+description: Shared offline Cao Bang map, explicit GPS and Valhalla bridge for 11Ship/11Food.
+version: 0.1.0
+publish_to: none
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+  flutter: '>=3.24.0'
+dependencies:
+  flutter:
+    sdk: flutter
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: vn.eleven.m14.flutter
+        pluginClass: M14Plugin

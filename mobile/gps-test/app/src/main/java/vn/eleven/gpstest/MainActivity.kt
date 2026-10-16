@@ -169,7 +169,7 @@ class MainActivity: Activity() {
     private fun beginRecording() {
         if(!pendingStart) return
         pendingStart=false
-        try { startForegroundService(Intent(this,RecorderService::class.java)); ui.postDelayed({ refresh() },500) }
+        try { startForegroundService(Intent(this,TestRecorderService::class.java)); ui.postDelayed({ refresh() },500) }
         catch(_: Exception) { message("Chưa thể bắt đầu ghi. Hãy mở app và thử lại.") }
     }
     override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>, grants: IntArray) {
@@ -182,7 +182,7 @@ class MainActivity: Activity() {
             else { pendingStart=false; message("Chưa bắt đầu ghi: cần cho phép thông báo để có nút Dừng khi khóa màn hình.") }
         }
     }
-    private fun stopRecording() { startService(Intent(this,RecorderService::class.java).setAction(RecorderService.STOP)); ui.postDelayed({ refresh() },300) }
+    private fun stopRecording() { startService(Intent(this,TestRecorderService::class.java).setAction(RecorderService.STOP)); ui.postDelayed({ refresh() },300) }
     private fun refresh() {
         if(!::gpsText.isInitialized) return
         val p=RecorderService.preferences(this); val active=RecorderService.active(this)
