@@ -110,7 +110,7 @@ describe('M01-D-ADMIN-1C - T is read after the challenge lock (start / restart /
     if (input.phoneTaken === true) {
       await ctx.pool.query(
         `INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at)
-         VALUES ($1::uuid, $2, $3, now(), 'ADMIN_PROVISIONED', 'ACTIVE', 1, now(), now())`,
+         VALUES ($1::uuid, $2, $3, NULL, 'ADMIN_PROVISIONED', 'ACTIVE', 1, now(), now())`,
         [randomUUID(), base.phone, await new Argon2idPasswordHasher().hash('Another-Passw0rd-1')],
       );
     }

@@ -248,7 +248,7 @@ describe('admin account lock / unlock (API + one real browser smoke)', () => {
     expect(locked.status).toBe(200);
     expect(locked.headers['cache-control']).toBe('no-store');
     const ack = adminData(locked);
-    expect(Object.keys(ack).sort()).toEqual(['account_status', 'changed_at', 'command_id', 'user_id', 'version']);
+    expect(Object.keys(ack).sort()).toEqual(['account_status', 'changed_at', 'command_id', 'lock_reason', 'user_id', 'version']);
     expect(ack).toMatchObject({ user_id: target.id, account_status: 'DISABLED', version: 2 });
     expect(String(ack.command_id)).toMatch(/^[0-9a-f-]{36}$/);
     expect(new Date(String(ack.changed_at)).toISOString()).toBe(ack.changed_at);
@@ -293,7 +293,7 @@ describe('admin account lock / unlock (API + one real browser smoke)', () => {
     const reused = await change('lock', target.id, systemLogin(), body(1, 'lý do khác'), { key });
     expect(codeOf(reused)).toEqual({ status: 409, code: 'IDEMPOTENCY_KEY_REUSED' });
     const hintLocked = adminData(await detail(target.id, systemLogin()));
-    expect(hintLocked).toMatchObject({ account_status: 'DISABLED', version: 2, allowed_actions: ['UNLOCK'] });
+    expect(hintLocked).toMatchObject({ account_status: 'DISABLED', version: 2, allowed_actions: ['UNLOCK', 'DELETE'] });
 
     // Version first, then state.
     expect(codeOf(await change('lock', target.id, systemLogin(), body(1)))).toEqual({ status: 409, code: 'USER_ACCOUNT_VERSION_CONFLICT' });

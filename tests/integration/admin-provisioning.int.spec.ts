@@ -433,7 +433,7 @@ describe('M01-D-ADMIN-1B - SYSTEM invitations over HTTP', () => {
       const insertUser = (normalized: string): Promise<unknown> =>
         app.pool.query(
           `INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at)
-           VALUES ($1::uuid, $2, '$argon2id$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA', now(), 'ADMIN_PROVISIONED', 'ACTIVE', 1, now(), now())`,
+           VALUES ($1::uuid, $2, '$argon2id$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA', NULL, 'ADMIN_PROVISIONED', 'ACTIVE', 1, now(), now())`,
           [randomUUID(), normalized],
         );
       app.track(early.normalized);

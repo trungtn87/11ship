@@ -48,7 +48,7 @@ describe('M01-D-ADMIN-1C - barriers: users unique, expiry after the locks', () =
     await client.query('BEGIN');
     await client.query(
       `INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at)
-       VALUES ($1::uuid, $2, $3, now(), 'ADMIN_PROVISIONED', 'ACTIVE', 1, now(), now())`,
+       VALUES ($1::uuid, $2, $3, NULL, 'ADMIN_PROVISIONED', 'ACTIVE', 1, now(), now())`,
       [randomUUID(), phone, await new Argon2idPasswordHasher().hash('Another-Passw0rd-1')],
     );
     const end = async (statement: 'COMMIT' | 'ROLLBACK'): Promise<void> => {

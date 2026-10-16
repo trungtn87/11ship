@@ -181,7 +181,7 @@ describe('admin activation - phone verification mode', () => {
     const session = await begin(app, invite);
     await pool.query(
       `INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at)
-       VALUES ($1::uuid, $2, $3, now(), 'ADMIN_PROVISIONED', 'ACTIVE', 1, now(), now())`,
+       VALUES ($1::uuid, $2, $3, NULL, 'ADMIN_PROVISIONED', 'ACTIVE', 1, now(), now())`,
       [randomUUID(), invite.phone.normalized, await new Argon2idPasswordHasher().hash(ADMIN_PASSWORD)],
     );
     const refused = await post(app, '/password', session, { password: ADMIN_PASSWORD });

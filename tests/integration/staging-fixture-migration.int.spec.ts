@@ -289,7 +289,7 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
         withTest = await originConstraints();
         await client.query('SAVEPOINT refusal');
         await client.query(`INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at)
-          VALUES (gen_random_uuid(), '${randomPhone().normalized}', 'x', NULL, 'TEST_UNVERIFIED', 'ACTIVE', 1, now(), now())`);
+          VALUES (gen_random_uuid(), '${randomPhone().normalized}', '$argon2id$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA', NULL, 'TEST_UNVERIFIED', 'ACTIVE', 1, now(), now())`);
         await expect(client.query(down)).rejects.toThrow(/test-unverified accounts exist/);
         await client.query('ROLLBACK TO SAVEPOINT refusal');
         await client.query(`DELETE FROM app.users WHERE account_origin = 'TEST_UNVERIFIED'`);
