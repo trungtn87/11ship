@@ -14,6 +14,7 @@ import { otpRequestLockKey } from './otp-lane-lock';
 import { isQueuedReceipt, OTP_PROVIDER, OtpDelivery, OtpProvider } from './otp-provider';
 import { generateToken } from './tokens';
 import { UserRepository } from './user-repository';
+import { SystemSettingsReader } from '../system-settings/system-settings-reader';
 import { VerificationRepository } from './verification-repository';
 
 /**
@@ -65,11 +66,18 @@ export class VerificationService {
     @Inject(AUTH_CONFIG) private readonly config: AuthConfig,
     @Inject(OTP_PROVIDER) private readonly provider: OtpProvider,
     @Optional() @Inject(ACCOUNT_ORIGIN_POLICY) private readonly policy: AccountOriginPolicy = standardAccountOriginPolicy(),
+    // The SYSTEM settings; optional only so that a unit harness without a database can build the service.
+    @Optional() private readonly systemSettings?: SystemSettingsReader,
   ) {}
 
   async requestOtp(phoneNormalized: string, purpose: string): Promise<OtpRequestResult> {
     // Staging fixture mode (M00-D2): closed at the service boundary, before the database, a digest or the provider.
     this.policy.assertRegistrationOpen();
+    // SYSTEM turned the registration OTP off: no code is issued (nothing is sent, no SMS is spent). The application registers
+    // without a proof; the SMS gateway itself stays on for the other purposes. The recovery of a locked account has its own request.
+    if (this.systemSettings !== undefined && !(await this.systemSettings.registrationOtpRequired())) {
+      throw new AppError('PHONE_VERIFICATION_NOT_REQUIRED');
+    }
     // A provider with a queue (the SMS gateway) says BEFORE anything is written whether it can take a message at all.
     const readiness = await this.provider.assertReady?.(phoneNormalized, REGISTER_PURPOSE);
     if (readiness !== undefined && !readiness.deliverable) {
@@ -81,8 +89,12 @@ export class VerificationService {
 
     await this.transactions.withTransaction(async (context) => {
       await this.verifications.lockLane(context, otpRequestLockKey(phoneNormalized, purpose));
-      if (await this.users.isPhoneRegistered(context, phoneNormalized)) {
-        throw new AppError('PHONE_ALREADY_REGISTERED');
+      if (await this.users.isPhoneRegistered(context, 'APP_USER', phoneNormalized)) {
+        // A locked account whose owner asked for its deletion can be recovered (OTP + a new password): the app opens that flow.
+        const existing = await this.users.findByPhone(context, 'APP_USER', phoneNormalized);
+        throw new AppError(
+          existing?.status === 'DISABLED' && existing.lockReason === 'DELETE_REQUEST' ? 'ACCOUNT_RECOVERY_AVAILABLE' : 'PHONE_ALREADY_REGISTERED',
+        );
       }
       if (await this.verifications.hasLiveCooldown(context, phoneNormalized, purpose)) {
         throw new AppError('OTP_RATE_LIMITED');
@@ -145,6 +157,8 @@ export class VerificationService {
   async requestResetOtp(
     phoneNormalized: string,
     isEligible: (context: TransactionContext) => Promise<boolean>,
+    // The challenge purpose (the account scope / flow it is bound to). The SMS category stays RESET_PASSWORD for all of them.
+    purpose: string = RESET_PASSWORD_PURPOSE,
   ): Promise<OtpRequestResult> {
     const sender = this.provider.sendResetOtp?.bind(this.provider);
     if (sender === undefined) {
@@ -156,18 +170,18 @@ export class VerificationService {
     }
     const verificationId = randomUUID();
     const otp = generateOtp();
-    const otpDigest = computeOtpDigest(this.config.otpHmacKey, verificationId, phoneNormalized, RESET_PASSWORD_PURPOSE, otp);
+    const otpDigest = computeOtpDigest(this.config.otpHmacKey, verificationId, phoneNormalized, purpose, otp);
 
     const eligible = await this.transactions.withTransaction(async (context) => {
-      await this.verifications.lockLane(context, otpRequestLockKey(phoneNormalized, RESET_PASSWORD_PURPOSE));
-      if (await this.verifications.hasLiveCooldown(context, phoneNormalized, RESET_PASSWORD_PURPOSE)) {
+      await this.verifications.lockLane(context, otpRequestLockKey(phoneNormalized, purpose));
+      if (await this.verifications.hasLiveCooldown(context, phoneNormalized, purpose)) {
         throw new AppError('OTP_RATE_LIMITED');
       }
-      await this.verifications.invalidateLive(context, phoneNormalized, RESET_PASSWORD_PURPOSE);
+      await this.verifications.invalidateLive(context, phoneNormalized, purpose);
       await this.verifications.insertPendingDelivery(context, {
         verificationId,
         phoneNormalized,
-        purpose: RESET_PASSWORD_PURPOSE,
+        purpose,
         otpDigest,
         otpTtlSeconds: this.config.otpTtlSeconds,
         resendSeconds: this.config.otpResendSeconds,

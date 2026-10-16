@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { AccountActivityRegistry } from '../account-lifecycle/account-activity-registry';
 import { detailAllowedActions } from '../admin-account-lock/admin-account-lock-policy';
 import { AdminCrypto } from '../admin-auth/admin-crypto';
 import { AdminRole } from '../admin-auth/admin-auth-constants';
@@ -76,6 +77,7 @@ export class AdminAccountReadService {
     private readonly crypto: AdminCrypto,
     @Inject(APP_CONFIG) appConfig: AppConfig,
     @Inject(ACCOUNT_ORIGIN_POLICY) private readonly originPolicy: AccountOriginPolicy,
+    private readonly activity: AccountActivityRegistry,
   ) {
     this.#lockTimeoutMs = appConfig.idempotency.businessLockTimeoutMs;
     this.#lockGateOpen = appConfig.adminUserAccountMutations?.enabled === true;
@@ -137,11 +139,28 @@ export class AdminAccountReadService {
       if (row.driver !== undefined) {
         profiles.driver = { status: row.driver.status };
       }
+      // The lifecycle facts the screen shows (Owner decision 2026-10-14): is the phone proven, why is the account locked, which business data
+      // it has (names only), which orders/deliveries are still being processed, what a delete would do and what blocks a lock or a delete.
+      const relatedData = await this.activity.relatedData(context, userId);
+      const activeWork = await this.activity.activeWork(context, userId);
+      const lockBlocked = row.status === 'DISABLED' ? 'ALREADY_LOCKED' : activeWork.length > 0 ? 'ACTIVE_WORK' : null;
+      const deleteBlocked =
+        relatedData.length === 0 ? null : row.status === 'DISABLED' ? 'ALREADY_LOCKED' : activeWork.length > 0 ? 'ACTIVE_WORK' : null;
       return {
         ...userSummaryView(row),
         updated_at: iso(row.updatedAtMs),
         version: row.version,
         profiles,
+        phone_verified: row.lock.phoneVerified,
+        lifecycle: {
+          lock_reason: row.lockReason,
+          locked_at: row.lockedAtMs === null ? null : iso(row.lockedAtMs),
+          related_data: relatedData,
+          active_work: activeWork,
+          delete_effect: relatedData.length === 0 ? 'DELETE_PERMANENTLY' : 'LOCK',
+          lock_blocked_reason: lockBlocked,
+          delete_blocked_reason: deleteBlocked,
+        },
         // A hint for the screen: the mutation re-checks everything under locks. It follows D15 (full-domain view + lock for an
         // ADMIN, ordinary accounts only) and the local gate; anything missing means no action.
         allowed_actions: detailAllowedActions({ policy: this.originPolicy, actor: auth, row, gateOpen: this.#lockGateOpen }),

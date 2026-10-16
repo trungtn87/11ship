@@ -3,7 +3,7 @@ import { isCanonicalUuid } from '../shared/identifiers';
 import { TransactionContext } from '../transaction/transaction-context';
 import { ACCOUNT_ORIGIN_POLICY, AccountOriginPolicy, isOrdinaryClientAccount } from './account-origin';
 import { SessionRepository } from './session-repository';
-import { AdminLockTargetRow, UserRepository, UserStatus } from './user-repository';
+import { AdminLockTargetRow, LockReason, UserRepository, UserStatus } from './user-repository';
 
 /** An ordinary account (customer / shop / driver) as the administration lock sees it, locked by the caller's transaction. */
 export interface OrdinaryAccount {
@@ -12,6 +12,8 @@ export interface OrdinaryAccount {
   readonly version: number;
   /** The FULL set of role rows (storage names), not a projection narrowed to what the actor may view. */
   readonly roles: readonly string[];
+  /** Why the account is locked (DISABLED rows only; older rows carry none). */
+  readonly lockReason?: LockReason;
 }
 
 /**
@@ -52,22 +54,42 @@ export class AdminUserAccountParticipant {
     if (row === undefined || !isLockableAccount(this.policy, row)) {
       return undefined;
     }
-    return { userId: row.userId, status: row.status, version: row.version, roles: await this.users.allRoles(context, userId) };
+    return {
+      userId: row.userId,
+      status: row.status,
+      version: row.version,
+      roles: await this.users.allRoles(context, userId),
+      ...(row.lockReason === undefined ? {} : { lockReason: row.lockReason }),
+    };
   }
 
   /**
    * ACTIVE -> DISABLED and every unrevoked session of the account revoked, in the caller's transaction. Undefined when the
    * row no longer is ACTIVE at the expected version.
    */
-  async disable(context: TransactionContext, account: OrdinaryAccount, expectedVersion: number): Promise<{ version: number; changedAtMs: number; revokedSessions: number } | undefined> {
-    const changed = await this.users.setAccountStatus(context, { userId: account.userId, from: 'ACTIVE', to: 'DISABLED', expectedVersion });
+  async disable(
+    context: TransactionContext,
+    account: OrdinaryAccount,
+    expectedVersion: number,
+    lockReason: LockReason,
+  ): Promise<{ version: number; changedAtMs: number; revokedSessions: number } | undefined> {
+    const changed = await this.users.setAccountStatus(context, { userId: account.userId, from: 'ACTIVE', to: 'DISABLED', expectedVersion, lockReason });
     if (changed === undefined) {
       return undefined;
     }
     return { ...changed, revokedSessions: await this.sessions.revokeAllForUser(context, account.userId) };
   }
 
-  /** DISABLED -> ACTIVE. No role, profile or session is touched: an old session stays revoked. */
+  /**
+   * Permanent deletion of an account that has no business data (the caller asked the registry first; the database function checks the shop
+   * and the driver profile again). The account's own sessions, device bindings, consents, profile and roles go with it. False when the row
+   * is not an APP_USER account any more.
+   */
+  async purge(context: TransactionContext, account: OrdinaryAccount): Promise<boolean> {
+    return this.users.purgeAppUser(context, account.userId);
+  }
+
+  /** DISABLED -> ACTIVE. No role, profile or session is touched: an old session stays revoked; the lock reason is cleared. */
   async enable(context: TransactionContext, account: OrdinaryAccount, expectedVersion: number): Promise<{ version: number; changedAtMs: number } | undefined> {
     return this.users.setAccountStatus(context, { userId: account.userId, from: 'DISABLED', to: 'ACTIVE', expectedVersion });
   }

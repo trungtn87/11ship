@@ -23,7 +23,7 @@ const PRINCIPAL: AuthPrincipal = {
   activeRole: null,
   phoneNormalized: '+84987654321',
 };
-const USER: UserRow = { userId: PRINCIPAL.userId, phoneNormalized: PRINCIPAL.phoneNormalized, passwordHash: 'h', status: 'ACTIVE', accountOrigin: 'PHONE_VERIFIED' };
+const USER: UserRow = { userId: PRINCIPAL.userId, phoneNormalized: PRINCIPAL.phoneNormalized, passwordHash: 'h', status: 'ACTIVE', accountOrigin: 'PHONE_VERIFIED', accountScope: 'APP_USER' };
 const FIXTURE_POLICY = createAccountOriginPolicy({
   appEnv: 'staging',
   fixtureModeEnabled: true,

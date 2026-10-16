@@ -23,6 +23,8 @@ import { AdminOperationService } from '../admin-provisioning/admin-operation-ser
 import { AdminProvisioningController } from '../admin-provisioning/admin-provisioning.controller';
 import { AdminSystemActor } from '../admin-provisioning/admin-system-actor';
 import { AuditModule } from '../audit/audit.module';
+import { SystemSettingsController } from '../system-settings/system-settings.controller';
+import { SystemSettingsService } from '../system-settings/system-settings-service';
 import { OutboxModule } from '../outbox/outbox.module';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { AdminAuthConfig } from '../config/admin-auth-config';
@@ -77,7 +79,7 @@ export class AdminAuthModule implements NestModule {
       ],
       // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
       // M01-D-ADMIN-1C: the activation routes under /v1/admin-activation exist only when explicitly enabled.
-      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, ...(activation === undefined ? [] : [AdminActivationController])],
+      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, ...(activation === undefined ? [] : [AdminActivationController])],
       providers: [
         adminAuthConfigProvider,
         {
@@ -116,6 +118,8 @@ export class AdminAuthModule implements NestModule {
         AdminAccountReadService,
         // M01-ADMIN lock / unlock of ordinary USER accounts (D15).
         AdminAccountLockService,
+        // SYSTEM-only system settings (OTP switches).
+        SystemSettingsService,
         // The 1B section 8.8 hook is always present (1B calls it); it is a no-op when no activation attempt exists.
         AdminActivationRepository,
         AdminActivationInvalidator,
@@ -138,7 +142,7 @@ export class AdminAuthModule implements NestModule {
   }
 
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController);
+    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController);
     // The activation transport headers are an application-level middleware in configureApp (app.setup.ts): it must precede
     // the body parser, which module middleware does not.
   }

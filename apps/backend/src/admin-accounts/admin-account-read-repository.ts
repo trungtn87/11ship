@@ -55,6 +55,9 @@ export interface UserDetailRow extends UserSummaryRow {
     readonly phoneVerified: boolean;
     readonly allRoles: readonly string[];
   };
+  /** Why the account is locked (DISABLED rows only) and since when; older locks carry no reason (read as not self-recoverable). */
+  readonly lockReason: 'DELETE_REQUEST' | 'VIOLATION' | 'SECURITY' | null;
+  readonly lockedAtMs: number | null;
 }
 
 export interface AdministratorRow {
@@ -101,7 +104,7 @@ const USER_BASE = `FROM app.users u
        LEFT JOIN app.customer_profiles cp ON cp.user_id = u.user_id
        ${SHOP_OWNER_JOIN}
        LEFT JOIN app.drivers dr ON dr.user_id = u.user_id
-      WHERE u.account_origin <> 'ADMIN_PROVISIONED'
+      WHERE u.account_scope = 'APP_USER'
         AND NOT EXISTS (SELECT 1 FROM app.admin_memberships am WHERE am.user_id = u.user_id)`;
 
 /** Roles the actor can see (storage names). ADMIN without view of an app never sees that app's roles. */
@@ -215,6 +218,8 @@ export class AdminAccountReadRepository {
         account_origin: string;
         phone_verified: boolean;
         all_roles: string[];
+        lock_reason: string | null;
+        locked_ms: string | null;
       }
     >(
       `SELECT u.user_id, u.phone_normalized, u.status, u.version::text AS version,
@@ -224,7 +229,8 @@ export class AdminAccountReadRepository {
               COALESCE(CASE WHEN $3::boolean THEN cp.full_name END, CASE WHEN $4::boolean THEN sh.name END, CASE WHEN $5::boolean THEN dr.full_name END) AS display_name,
               (cp.user_id IS NOT NULL) AS has_customer, cp.full_name AS customer_name,
               sh.name AS shop_name, sh.status AS shop_status, dr.status AS driver_status,
-              u.account_origin, (u.phone_verified_at IS NOT NULL) AS phone_verified,
+              u.account_origin, (u.phone_verified_at IS NOT NULL) AS phone_verified, u.lock_reason,
+              CASE WHEN u.locked_at IS NULL THEN NULL ELSE ${epochMs('u.locked_at')} END AS locked_ms,
               ARRAY(SELECT r.role FROM app.user_roles r WHERE r.user_id = u.user_id ORDER BY r.role) AS all_roles
        ${USER_BASE}
         AND ($2::boolean OR EXISTS (SELECT 1 FROM app.user_roles r WHERE r.user_id = u.user_id AND r.role = ANY($1::text[])))
@@ -241,6 +247,8 @@ export class AdminAccountReadRepository {
     return {
       ...toSummary(row),
       lock: { accountOrigin: row.account_origin, phoneVerified: row.phone_verified, allRoles: row.all_roles },
+      lockReason: row.lock_reason === 'DELETE_REQUEST' || row.lock_reason === 'VIOLATION' || row.lock_reason === 'SECURITY' ? row.lock_reason : null,
+      lockedAtMs: row.locked_ms === null ? null : toSafeInteger(row.locked_ms),
       updatedAtMs: toSafeInteger(row.updated_ms),
       version: toSafeInteger(row.version),
       customer: scope.customer && row.has_customer ? { fullName: row.customer_name } : undefined,

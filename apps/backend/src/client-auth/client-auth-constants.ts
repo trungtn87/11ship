@@ -40,6 +40,15 @@ export const CLIENT_REGISTER_UNVERIFIED_TEST_SCOPE_TYPE = 'client_unverified_tes
 export const CLIENT_REGISTER_UNVERIFIED_TEST_OPERATION_ID = 'client.auth.register.unverified_test.v1';
 export const CLIENT_REGISTER_UNVERIFIED_TEST_AUDIT_ACTION = 'client.auth.register.unverified_test.v1';
 
+/**
+ * Idempotency identity of the registration while the SYSTEM setting otp_registration_enabled is OFF (Owner decision 2026-10-14).
+ * Its own scope, operation and audit action: a record of this branch is never confused with the proof registration or the
+ * development-only test branch above.
+ */
+export const CLIENT_REGISTER_UNVERIFIED_SCOPE_TYPE = 'client_unverified_phone';
+export const CLIENT_REGISTER_UNVERIFIED_OPERATION_ID = 'client.auth.register.unverified.v1';
+export const CLIENT_REGISTER_UNVERIFIED_AUDIT_ACTION = 'client.auth.register.unverified.v1';
+
 /** Public names of the selectable contexts, in the order of the role array (contract11 section 1). */
 export const PUBLIC_CUSTOMER = 'CUSTOMER';
 export const PUBLIC_SHOP_OWNER = 'SHOP_OWNER';

@@ -67,6 +67,20 @@ export class AdminAccountLockController {
     return this.#change('unlock', userId, body, request, response, csrf, idempotencyKey);
   }
 
+  /** Delete (Owner decision 2026-10-14): permanent when the account has no business data, otherwise a lock at the owner's request. */
+  @Post('users/:user_id/delete')
+  @HttpCode(200)
+  delete(
+    @Param('user_id') userId: string,
+    @Body() body: unknown,
+    @Req() request: AdminRequest,
+    @Res({ passthrough: true }) response: StatusResponse,
+    @Headers('x-csrf-token') csrf: string | string[] | undefined,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+  ) {
+    return this.#change('delete', userId, body, request, response, csrf, idempotencyKey);
+  }
+
   async #change(
     kind: LockKind,
     userId: string,
@@ -78,7 +92,7 @@ export class AdminAccountLockController {
   ) {
     await this.#ingress(request);
     const target = parseTargetUserId(userId);
-    const input = parseLockBody(body);
+    const input = parseLockBody(body, kind === 'lock');
     const token = readCookieToken(request.headers.cookie, ADMIN_SESSION_COOKIE);
     const outcome = await this.locks.change(kind, token, csrf, target, input, idempotencyKey, { requestId: request.requestId ?? randomUUID() });
     response.status(outcome.status);

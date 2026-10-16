@@ -11,6 +11,8 @@ import { ProofRepository } from '../auth/proof-repository';
 import { SessionRepository } from '../auth/session-repository';
 import { digestToken, parseCanonicalToken } from '../auth/tokens';
 import { UserRepository } from '../auth/user-repository';
+import { SystemSettingsReader } from '../system-settings/system-settings-reader';
+import { OTP_REGISTRATION_ENABLED } from '../system-settings/system-settings-constants';
 import { AppError, TechnicalError } from '../common/app-errors';
 import { AuthConfig } from '../config/auth-config';
 import { IdempotencyExecutor, JsonObject } from '../idempotency/idempotency-executor';
@@ -25,6 +27,9 @@ import {
   CLIENT_REGISTER_AUDIT_ACTION,
   CLIENT_REGISTER_OPERATION_ID,
   CLIENT_REGISTER_SCOPE_TYPE,
+  CLIENT_REGISTER_UNVERIFIED_AUDIT_ACTION,
+  CLIENT_REGISTER_UNVERIFIED_OPERATION_ID,
+  CLIENT_REGISTER_UNVERIFIED_SCOPE_TYPE,
   CLIENT_REGISTER_UNVERIFIED_TEST_AUDIT_ACTION,
   CLIENT_REGISTER_UNVERIFIED_TEST_OPERATION_ID,
   CLIENT_REGISTER_UNVERIFIED_TEST_SCOPE_TYPE,
@@ -95,7 +100,24 @@ export class ClientRegistrationService {
     @Inject(PASSWORD_HASHER) private readonly hasher: PasswordHasher,
     @Inject(CLIENT_AUTH_SETTINGS) private readonly settings: ClientAuthSettings,
     @Optional() @Inject(ACCOUNT_ORIGIN_POLICY) private readonly originPolicy: AccountOriginPolicy = standardAccountOriginPolicy(),
+    // The SYSTEM settings. Optional only so that a unit harness without a database can build the service (it then keeps the proof path).
+    @Optional() private readonly systemSettings?: SystemSettingsReader,
   ) {}
+
+  /**
+   * Which registration the SERVER runs right now (never anything the request says): the development-only test mode, the proof
+   * registration, or the registration without a proof that the SYSTEM setting otp_registration_enabled=false opens. Read from the
+   * database on every call, so a change by SYSTEM is in effect at the next request.
+   */
+  async currentMode(): Promise<'DISABLED_TEST' | 'REQUIRED' | 'NOT_REQUIRED'> {
+    if (this.settings.phoneVerificationMode === 'DISABLED_TEST') {
+      return 'DISABLED_TEST';
+    }
+    if (this.systemSettings === undefined) {
+      return 'REQUIRED';
+    }
+    return (await this.systemSettings.registrationOtpRequired()) ? 'REQUIRED' : 'NOT_REQUIRED';
+  }
 
   async register(
     input: ClientRegisterInput,
@@ -198,6 +220,40 @@ export class ClientRegistrationService {
     if (this.settings.phoneVerificationMode !== 'DISABLED_TEST' || !this.originPolicy.unverifiedTestMode) {
       throw new AppError('AUTH_REGISTRATION_UNAVAILABLE');
     }
+    return this.#registerWithoutProof(TEST_VARIANT, input, idempotencyKey, requestId, evidence);
+  }
+
+  /**
+   * Registration WITHOUT a proof while the SYSTEM setting otp_registration_enabled is OFF (Owner decision 2026-10-14): the
+   * account is created PHONE_UNVERIFIED (phone_verified_at stays NULL; nothing pretends the number was proven). The route and the
+   * body are the ones of the test branch (no token, no flag); the SERVER decides, from the database, on every request:
+   * the setting is read before anything is hashed and AGAIN inside the transaction of the first execution, so a switch back to ON
+   * between the two refuses the registration (PHONE_VERIFICATION_REQUIRED) instead of creating an unproven account. A replay of an
+   * already committed registration does not read the setting: it only needs the account and the session to be intact.
+   */
+  async registerUnverified(
+    input: ClientUnverifiedRegisterInput,
+    idempotencyKey: string | readonly string[] | undefined,
+    requestId: string,
+    evidence?: NativeRequestEvidence,
+  ): Promise<ClientRegisterOutcome> {
+    this.originPolicy.assertRegistrationOpen();
+    if (this.settings.phoneVerificationMode === 'DISABLED_TEST' || this.systemSettings === undefined) {
+      throw new AppError('AUTH_REGISTRATION_UNAVAILABLE');
+    }
+    if (await this.systemSettings.registrationOtpRequired()) {
+      throw new AppError('PHONE_VERIFICATION_REQUIRED');
+    }
+    return this.#registerWithoutProof(SETTING_VARIANT, input, idempotencyKey, requestId, evidence);
+  }
+
+  async #registerWithoutProof(
+    variant: NoProofVariant,
+    input: ClientUnverifiedRegisterInput,
+    idempotencyKey: string | readonly string[] | undefined,
+    requestId: string,
+    evidence?: NativeRequestEvidence,
+  ): Promise<ClientRegisterOutcome> {
     assertDeviceAllowed(this.settings, input.device);
     parseIdempotencyKey(idempotencyKey);
     // ANDROID: the registration token and its signature are verified now, before any hash or write. A replay presents a fresh
@@ -210,13 +266,13 @@ export class ClientRegistrationService {
 
     const outcome = await this.executor.execute(
       {
-        scopeType: CLIENT_REGISTER_UNVERIFIED_TEST_SCOPE_TYPE,
-        scopeId: unverifiedTestScopeId(input.phoneNormalized),
-        operationId: CLIENT_REGISTER_UNVERIFIED_TEST_OPERATION_ID,
+        scopeType: variant.scopeType,
+        scopeId: noProofScopeId(variant.scopeNamespace, input.phoneNormalized),
+        operationId: variant.operationId,
         idempotencyKey,
         // Every logical input plus the mode; the password is only HMAC-fingerprinted by the executor, never stored or logged.
         logicalRequest: {
-          mode: 'DISABLED_TEST',
+          mode: variant.mode,
           phone_normalized: input.phoneNormalized,
           full_name: input.fullName,
           password: input.password,
@@ -233,12 +289,12 @@ export class ClientRegistrationService {
         replay: {
           kind: 'sensitive',
           authorize: async (context, guard) => {
-            await this.#authorizeUnverifiedTestReplay(context, guard, input, capture, proof);
+            await this.#authorizeNoProofReplay(variant, context, guard, input, capture, proof);
             return true;
           },
         },
       },
-      (context) => this.#registerUnverifiedTestNew(context, { input, passwordHash, requestId, proof }, capture),
+      (context) => this.#registerNoProofNew(variant, context, { input, passwordHash, requestId, proof }, capture),
     );
 
     const stored = storedResultOf(outcome.payload);
@@ -248,6 +304,18 @@ export class ClientRegistrationService {
       replayed: outcome.replayed,
       ...(capture.binding === undefined ? {} : { binding: capture.binding }),
     };
+  }
+
+  /**
+   * The answer when the phone already belongs to an APP_USER account: a locked account whose owner asked for its deletion is
+   * recoverable (ACCOUNT_RECOVERY_AVAILABLE: the app opens the recovery flow, which always needs an OTP); every other case,
+   * including an account locked for a violation or for security, is the plain PHONE_ALREADY_REGISTERED.
+   */
+  async #phoneTakenError(context: TransactionContext, phoneNormalized: string): Promise<AppError> {
+    const existing = await this.users.findByPhone(context, 'APP_USER', phoneNormalized);
+    return existing?.status === 'DISABLED' && existing.lockReason === 'DELETE_REQUEST'
+      ? new AppError('ACCOUNT_RECOVERY_AVAILABLE')
+      : new AppError('PHONE_ALREADY_REGISTERED');
   }
 
   async #nativeProof(
@@ -303,7 +371,7 @@ export class ClientRegistrationService {
       proofId,
     });
     if (!created) {
-      throw new AppError('PHONE_ALREADY_REGISTERED');
+      throw await this.#phoneTakenError(context, input.phoneNormalized);
     }
     await this.proofs.consume(context, proofId);
 
@@ -448,12 +516,19 @@ export class ClientRegistrationService {
       storedActiveRole: session.activeRole,
     });
   }
-  async #registerUnverifiedTestNew(
+  async #registerNoProofNew(
+    variant: NoProofVariant,
     context: TransactionContext,
     args: { input: ClientUnverifiedRegisterInput; passwordHash: string; requestId: string; proof: NativeAuthProof | undefined },
     capture: IdentityCapture,
   ) {
     const { input, passwordHash, requestId, proof } = args;
+
+    // 0. The SYSTEM switch is read AGAIN inside the transaction of the first execution (a replay never gets here): if SYSTEM turned
+    // the OTP back on after the request was accepted, no unproven account is created.
+    if (variant.mode === 'OTP_OFF' && this.systemSettings !== undefined && (await this.systemSettings.isEnabledIn(context, OTP_REGISTRATION_ENABLED))) {
+      throw new AppError('PHONE_VERIFICATION_REQUIRED');
+    }
 
     // 1. The consent pair of THIS first execution, compared before any row is written. A replay never gets here.
     const consent = assertConsentSupported(this.settings, input.consent);
@@ -461,13 +536,14 @@ export class ClientRegistrationService {
     // 2. The TEST_UNVERIFIED user (phone_verified_at NULL; no proof exists or is invented). The UNIQUE phone constraint decides
     // a race with any other registration route.
     const userId = randomUUID();
-    const created = await this.users.insertUnverifiedTest(context, {
+    const insert = variant.origin === 'PHONE_UNVERIFIED' ? this.users.insertPhoneUnverified : this.users.insertUnverifiedTest;
+    const created = await insert.call(this.users, context, {
       userId,
       phoneNormalized: input.phoneNormalized,
       passwordHash,
     });
     if (!created) {
-      throw new AppError('PHONE_ALREADY_REGISTERED');
+      throw await this.#phoneTakenError(context, input.phoneNormalized);
     }
 
     // 3. CUSTOMER, the profile (normalized name, version 1) and the consent (database time) through the same participant, on THIS
@@ -505,7 +581,7 @@ export class ClientRegistrationService {
       requestId,
       actorType: 'USER',
       actorId: userId,
-      action: CLIENT_REGISTER_UNVERIFIED_TEST_AUDIT_ACTION,
+      action: variant.auditAction,
       resourceType: 'user',
       resourceId: userId,
       resourceVersion: 1,
@@ -549,7 +625,8 @@ export class ClientRegistrationService {
    * TEST_UNVERIFIED account otherwise), so turning the mode off, a revoked or expired session or a disabled user never returns
    * the token: AUTH_RESULT_NOT_REPLAYABLE, not distinguishable by cause.
    */
-  async #authorizeUnverifiedTestReplay(
+  async #authorizeNoProofReplay(
+    variant: NoProofVariant,
     context: TransactionContext,
     guard: JsonObject,
     input: ClientUnverifiedRegisterInput,
@@ -565,7 +642,7 @@ export class ClientRegistrationService {
     if (
       user === undefined ||
       user.status !== 'ACTIVE' ||
-      user.accountOrigin !== 'TEST_UNVERIFIED' ||
+      user.accountOrigin !== variant.origin ||
       !this.originPolicy.allows({ accountOrigin: user.accountOrigin, phoneNormalized: user.phoneNormalized })
     ) {
       throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
@@ -597,6 +674,37 @@ export class ClientRegistrationService {
       storedActiveRole: session.activeRole,
     });
   }
+}
+
+interface NoProofVariant {
+  readonly mode: 'DISABLED_TEST' | 'OTP_OFF';
+  readonly origin: 'TEST_UNVERIFIED' | 'PHONE_UNVERIFIED';
+  readonly scopeType: string;
+  readonly operationId: string;
+  readonly auditAction: string;
+  readonly scopeNamespace: string;
+}
+
+const TEST_VARIANT: NoProofVariant = {
+  mode: 'DISABLED_TEST',
+  origin: 'TEST_UNVERIFIED',
+  scopeType: CLIENT_REGISTER_UNVERIFIED_TEST_SCOPE_TYPE,
+  operationId: CLIENT_REGISTER_UNVERIFIED_TEST_OPERATION_ID,
+  auditAction: CLIENT_REGISTER_UNVERIFIED_TEST_AUDIT_ACTION,
+  scopeNamespace: 'client.auth.register.unverified_test.phone.v1',
+};
+
+const SETTING_VARIANT: NoProofVariant = {
+  mode: 'OTP_OFF',
+  origin: 'PHONE_UNVERIFIED',
+  scopeType: CLIENT_REGISTER_UNVERIFIED_SCOPE_TYPE,
+  operationId: CLIENT_REGISTER_UNVERIFIED_OPERATION_ID,
+  auditAction: CLIENT_REGISTER_UNVERIFIED_AUDIT_ACTION,
+  scopeNamespace: 'client.auth.register.unverified.phone.v1',
+};
+
+function noProofScopeId(namespace: string, phoneNormalized: string): string {
+  return createHash('sha256').update(`${namespace}\u0000${phoneNormalized}`, 'utf8').digest('hex');
 }
 
 /**

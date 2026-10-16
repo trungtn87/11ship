@@ -10,10 +10,10 @@ const FILES = readdirSync(sourcePath('admin-account-lock'))
 const ALL = FILES.map((file) => codeOf(file)).join('\n');
 
 describe('administration account lock boundary', () => {
-  it('exposes exactly the two POST routes, under /v1/admin/users/:user_id', () => {
+  it('exposes exactly the three POST routes (lock, unlock, delete), under /v1/admin/users/:user_id', () => {
     const controller = codeOf('admin-account-lock/admin-account-lock.controller.ts');
     const routes = [...controller.matchAll(/@(Get|Post|Put|Patch|Delete)\('([^']*)'\)/g)].map((match) => `${match[1] as string} ${match[2] as string}`);
-    expect(routes.sort()).toEqual(['Post users/:user_id/lock', 'Post users/:user_id/unlock']);
+    expect(routes.sort()).toEqual(['Post users/:user_id/delete', 'Post users/:user_id/lock', 'Post users/:user_id/unlock']);
     expect(controller).toContain("@Controller('admin')");
   });
 
@@ -23,7 +23,8 @@ describe('administration account lock boundary', () => {
   });
 
   it('writes no SQL of its own: users and sessions stay behind the Auth participant', () => {
-    expect(ALL).not.toMatch(/\b(INSERT|UPDATE|DELETE|SELECT)\b|FOR (UPDATE|SHARE)|context\.query/);
+    // Statement shapes, not bare words: the policy names the action DELETE, which is not SQL.
+    expect(ALL).not.toMatch(/\bINSERT\s+INTO\b|\bUPDATE\s+\w+\s+SET\b|\bDELETE\s+FROM\b|\bSELECT\b[^;]*\bFROM\b|FOR (UPDATE|SHARE)|context\.query/);
   });
 
   it('the command runs inside the idempotency executor and writes audit + outbox in the same callback', () => {

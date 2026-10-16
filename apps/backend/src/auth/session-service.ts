@@ -34,7 +34,12 @@ export class SessionService {
     @Optional() @Inject(ACCOUNT_ORIGIN_POLICY) private readonly policy: AccountOriginPolicy = standardAccountOriginPolicy(),
   ) {}
 
-  async authenticate(authorization: string | string[] | undefined): Promise<AuthPrincipal> {
+  /**
+   * `allowLockedDriver` is set only by a route marked @AllowLockedDriver(): a locked account then passes the guard when its session wears the
+   * DRIVER context, and nothing else changes (the revoked/expired precedence and every other check are the same). The transaction of the
+   * route decides again under its locks.
+   */
+  async authenticate(authorization: string | string[] | undefined, options: { readonly allowLockedDriver?: boolean } = {}): Promise<AuthPrincipal> {
     const token = bearerTokenFrom(authorization);
     if (token === undefined) {
       throw new AppError('SESSION_INVALID');
@@ -59,7 +64,7 @@ export class SessionService {
     if (view.expired) {
       throw new AppError('SESSION_EXPIRED');
     }
-    if (view.userStatus !== 'ACTIVE') {
+    if (view.userStatus !== 'ACTIVE' && !(options.allowLockedDriver === true && view.activeRole === 'DRIVER')) {
       throw new AppError('ACCOUNT_DISABLED');
     }
     return {
