@@ -46,7 +46,7 @@ find "$res" -name 'ic_launcher*' -delete
 cp -R "$root/$app/android_overlay/res/." "$res/"
 
 mkdir -p "$res/values" "$res/values-v31" "$res/drawable"
-# Location permissions exist only in the Food manifest (the owner records the shop position); Ship declares none.
+# Food declares one-shot shop location here. Ship gets explicit M14 foreground GPS permissions from the plugin manifest.
 if [ "$app" = food ]; then
   location_permissions='<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/><uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>'
 else
