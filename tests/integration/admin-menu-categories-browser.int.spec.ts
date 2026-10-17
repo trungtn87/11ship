@@ -10,6 +10,7 @@ import { freePort, repoRoot, runScript, startFront } from './support/admin-web-h
 import { Browser, launchChrome, Page } from './support/cdp';
 import { Phone, randomPhone } from './support/auth-fixtures';
 import { createInvitation, createPayload, systemSession, SystemSession } from './support/provisioning-fixtures';
+import { purgeCategories } from './support/menu-fixtures';
 
 // M02 dish groups in a REAL Chrome against the real front, backend and PostgreSQL: the screen a SYSTEM or catalog-ADMIN uses (list, search,
 // filter, paging, add, edit, switch off with its confirmation, switch on, duplicate refusal, a conflict with the SQL-made group), the menu entry an
@@ -114,6 +115,8 @@ describe('admin dish groups (real browser)', () => {
     without = await activatedAdmin([{ app: 'SHOP', can_view: true, can_review_profile: false, can_lock: false }], `Quản trị Quán ${tag}`);
     // Groups the way the operator made them before this screen existed: by SQL, with their own order and status.
     await cleanup();
+    // Groups other suites left behind and no dish uses are removed, so the list holds only what this suite makes.
+    await purgeCategories(app.pool);
     // Groups other suites left behind (they may have dishes, so they are not deleted) would sort among these six: move them after.
     await app.pool.query(`UPDATE app.menu_categories SET sort_order = sort_order + 1000 WHERE name <> ALL($1::text[]) AND sort_order < 1000`, [[...NAMES]]);
     for (const [index, name] of NAMES.entries()) {
