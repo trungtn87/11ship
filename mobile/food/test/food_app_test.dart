@@ -126,7 +126,7 @@ void main() {
     expect(images.any((Image i) => i.image is AssetImage && (i.image as AssetImage).assetName == 'assets/brand/logo-11food-ui.png' && (i.image as AssetImage).package == 'n11_shared'), isTrue);
     expect(find.textContaining('thử nghiệm'), findsNothing);
     expect(find.textContaining('Bản chạy thử'), findsNothing);
-    expect(find.text('Chưa có quán để hiển thị'), findsOneWidget);
+    expect(find.text('Danh sách quán chưa sẵn sàng'), findsOneWidget);
   });
 
   testWidgets('account: login and register are open, shop management is locked "not on Android" and grants nothing', (WidgetTester tester) async {
@@ -141,8 +141,9 @@ void main() {
     expect(find.textContaining('chờ backend'), findsNothing, reason: texts(tester));
   });
 
-  testWidgets('home guest prompt opens the real login screen; no login without a server address', (WidgetTester tester) async {
+  testWidgets('orders guest prompt opens the real login screen; no login without a server address', (WidgetTester tester) async {
     await pump(tester, healthy());
+    await openTab(tester, 'orders');
     await tester.tap(find.byKey(const Key('guest-login')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('login-submit')), findsOneWidget);
@@ -291,16 +292,24 @@ void main() {
     expect(calls, 0);
   });
 
-  testWidgets('home search remains usable without a search tab', (WidgetTester tester) async {
-    await pump(tester, healthy());
+  testWidgets('Home is the discovery: shops from the server, search opens from Home (no search tab), a shop opens its menu', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final FakeApiTransport server = FakeApiTransport();
+    installAccountRoutes(server);
+    final SessionController session = createSessionController(ClientApp.food, config, transport: server, bridge: FakeDeviceBridge());
+    final FakeDiscoveryApi discovery = FakeDiscoveryApi(shops: <FakeShopEntry>[FakeShopEntry('s1', 'Ốc 11', dishes: const <FakeDishEntry>[FakeDishEntry('d1', 'Ốc hương hấp', 120000, 'c1')])]);
+    final AppFlows flows = createFlows(ClientApp.food, session, config, transport: server, location: FakeLocationProvider(), discoveryApi: discovery, publicApi: FakePublicShopApi(null));
+    await session.start();
+    await tester.pumpWidget(N11App(brand: foodBrand, tabs: buildFoodTabs(session, flows: flows), config: config, transport: healthy(), pollInterval: Duration.zero));
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('tab-search')), findsNothing);
+    expect(find.text('Ốc 11'), findsOneWidget);
     await tester.tap(find.byKey(const Key('home-search')));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('search-field')), 'phở');
-    await tester.pump();
-    expect(find.text('Chưa tìm được kết quả'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('search-clear')));
-    await tester.pump();
-    expect(find.text('phở'), findsNothing);
+    await tester.enterText(find.byKey(const Key('search-field')), 'oc 11');
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+    expect(find.byKey(const Key('result-shop-s1')), findsOneWidget);
   });
 }

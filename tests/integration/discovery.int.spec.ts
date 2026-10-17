@@ -1,0 +1,195 @@
+import { Pool } from 'pg';
+import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
+import { foldVietnamese } from '../../apps/backend/src/shared/fold-vietnamese';
+import { AuthApp, createServiceArea, dataOf, errorCode, startAuthApp } from './support/auth-fixtures';
+import { createCategory, createItem, discoveryDishes, discoveryShops, itemAction, purgeCategories } from './support/menu-fixtures';
+import { createShopOwner, insertHours, ShopOwner } from './support/shop-management-fixtures';
+
+// M02 discovery (docs/current/M02-discovery-UI-LOCKED-20261016.md) through the REAL Nest pipeline on a REAL PostgreSQL.
+describe('M02 — public discovery: areas, groups, shops, dishes, search and filters', () => {
+  let app: AuthApp;
+  let area: string;
+  let otherArea: string;
+  let snail: string;
+  let seafood: string;
+  let drinks: string;
+
+  beforeAll(async () => {
+    app = await startAuthApp();
+    area = await createServiceArea(app.pool);
+    otherArea = await createServiceArea(app.pool);
+    snail = await createCategory(app.pool, 'Ốc', 'ACTIVE', 1);
+    seafood = await createCategory(app.pool, 'Hải sản', 'ACTIVE', 2);
+    drinks = await createCategory(app.pool, 'Đồ uống', 'INACTIVE', 3);
+  });
+
+  afterAll(async () => {
+    await app.close();
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    try {
+      await purgeCategories(pool);
+    } finally {
+      await pool.end();
+    }
+  });
+
+  const every = [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({ weekday, start_minute: 0, end_minute: 1440, end_day_offset: 0 }));
+
+  /** An ACTIVE shop in `areaId` named `name` with the given dishes (all VISIBLE) and, optionally, open all day. */
+  async function shop(name: string, dishes: [string, number, string][], options: { open?: boolean; areaId?: string } = {}): Promise<ShopOwner> {
+    const owner = await createShopOwner(app, { areaId: options.areaId ?? area });
+    await app.pool.query(`UPDATE app.shops SET name = $2, updated_at = clock_timestamp() WHERE shop_id = $1::uuid`, [owner.shopId, name]);
+    if (options.open === true) {
+      await insertHours(app.pool, owner.shopId, every);
+    }
+    for (const [dish, price, category] of dishes) {
+      const response = await createItem(app, owner.token, { name: dish, price_vnd: price, category_id: category, image_id: null });
+      expect(response.status).toBe(201);
+    }
+    return owner;
+  }
+
+  const names = (response: Awaited<ReturnType<typeof discoveryShops>>): string[] => (dataOf(response).shops as { name: string }[]).map((s) => s.name);
+
+  it('lists only the ACTIVE service areas and ACTIVE groups, never cached', async () => {
+    const closed = await createServiceArea(app.pool, 'INACTIVE');
+    const areas = await app.call('GET', '/service-areas', {});
+    expect(areas.status).toBe(200);
+    expect(areas.headers.get('cache-control')).toBe('no-store');
+    const ids = (areas.body.data as unknown as { service_area_id: string }[]).map((a) => a.service_area_id);
+    expect(ids).toEqual(expect.arrayContaining([area, otherArea]));
+    expect(ids).not.toContain(closed);
+    const groups = (await app.call('GET', '/menu-categories', {})).body.data as unknown as { category_id: string; name: string }[];
+    const idsG = groups.map((g) => g.category_id);
+    expect(idsG).toEqual(expect.arrayContaining([snail, seafood]));
+    expect(idsG).not.toContain(drinks);
+    expect(idsG.indexOf(snail)).toBeLessThan(idsG.indexOf(seafood));
+  });
+
+  it('shows the shops of the chosen area with a public dish: open ones first, then by name; never other areas or empty shops', async () => {
+    const open = await shop('Zeta Quán Mở', [['Ốc len', 90000, snail]], { open: true });
+    const closedA = await shop('Alpha Quán Đóng', [['Ngao hấp', 60000, seafood]]);
+    await shop('Quán Không Món', []);
+    await shop('Quán Khu Khác', [['Mực', 150000, seafood]], { areaId: otherArea });
+    const list = await discoveryShops(app, { area_id: area });
+    expect(list.status).toBe(200);
+    expect(list.headers.get('cache-control')).toBe('no-store');
+    const data = dataOf(list);
+    expect(names(list)).toEqual(['Zeta Quán Mở', 'Alpha Quán Đóng']);
+    const first = (data.shops as { availability: { online: boolean; reason: string }; shop_id: string }[])[0]!;
+    expect(first.shop_id).toBe(open.shopId);
+    expect(first.availability).toEqual({ online: true, reason: 'ONLINE' });
+    expect((data.shops as { availability: { reason: string }; shop_id: string }[])[1]!.availability.reason).toBe('NO_BUSINESS_HOURS');
+    expect(data.has_more).toBe(false);
+    expect(closedA.shopId).toBeTruthy();
+    expect(list.text).not.toMatch(/contact_phone|zalo|facebook|pickup_|accepting|user_id/i);
+    expect(names(await discoveryShops(app, { area_id: otherArea }))).toEqual(['Quán Khu Khác']);
+  });
+
+  it('an unavailable shop (disabled, incomplete, area stopped) leaves discovery; a hidden or deleted dish leaves with it', async () => {
+    const own = await shop('Quán Rút Gọn', [['Sò điệp', 180000, seafood]]);
+    expect(names(await discoveryShops(app, { area_id: area, q: 'rut gon' }))).toEqual(['Quán Rút Gọn']);
+    const item = (dataOf(await app.call('GET', '/shop/me/menu', { bearer: own.token })).items as { item_id: string; version: number }[])[0]!;
+    await itemAction(app, own.token, item.item_id, 'hide', item.version);
+    expect(names(await discoveryShops(app, { area_id: area, q: 'rut gon' }))).toEqual([]);
+    expect(dataOf(await discoveryDishes(app, { area_id: area, q: 'so diep' })).dishes).toEqual([]);
+    await itemAction(app, own.token, item.item_id, 'show', item.version + 1);
+    expect(names(await discoveryShops(app, { area_id: area, q: 'rut gon' }))).toEqual(['Quán Rút Gọn']);
+    for (const status of ['DISABLED', 'INCOMPLETE']) {
+      await app.pool.query(`UPDATE app.shops SET status = $2, updated_at = clock_timestamp() WHERE shop_id = $1::uuid`, [own.shopId, status]);
+      expect(names(await discoveryShops(app, { area_id: area, q: 'rut gon' }))).toEqual([]);
+      expect(dataOf(await discoveryDishes(app, { area_id: area, q: 'so diep' })).dishes).toEqual([]);
+    }
+    await app.pool.query(`UPDATE app.shops SET status = 'ACTIVE', updated_at = clock_timestamp() WHERE shop_id = $1::uuid`, [own.shopId]);
+    const stopped = await createServiceArea(app.pool);
+    await app.pool.query(`UPDATE app.shops SET service_area_id = $2::uuid WHERE shop_id = $1::uuid`, [own.shopId, stopped]);
+    await app.pool.query(`UPDATE app.service_areas SET status = 'INACTIVE' WHERE service_area_id = $1::uuid`, [stopped]);
+    expect(names(await discoveryShops(app, { area_id: stopped }))).toEqual([]);
+  });
+
+  it('searches names without caring for case, marks or extra spaces, across the whole data set', async () => {
+    await shop('Ốc Hương Đặc Biệt', [['Ốc hương hấp', 120000, snail], ['Đậu phụ', 30000, seafood]]);
+    for (const q of ['oc huong', 'ỐC HƯƠNG', '  oc   huong  ', 'dac biet', 'Đặc Biệt']) {
+      expect(names(await discoveryShops(app, { area_id: area, q }))).toContain('Ốc Hương Đặc Biệt');
+    }
+    expect(names(await discoveryShops(app, { area_id: area, q: 'khong co quan nay' }))).toEqual([]);
+    const dishes = dataOf(await discoveryDishes(app, { area_id: area, q: 'DAU PHU' })).dishes as { name: string; shop: { name: string; availability: { reason: string } }; price_vnd: number }[];
+    expect(dishes).toHaveLength(1);
+    expect(dishes[0]).toMatchObject({ name: 'Đậu phụ', price_vnd: 30000, shop: { name: 'Ốc Hương Đặc Biệt', availability: { reason: 'NO_BUSINESS_HOURS' } } });
+    // A wildcard typed by the person is a plain character.
+    expect(names(await discoveryShops(app, { area_id: area, q: '%' }))).toEqual([]);
+    expect(names(await discoveryShops(app, { area_id: area, q: '_' }))).toEqual([]);
+  });
+
+  it('a group filter keeps only shops (and dishes) of that group; the open-only filter drops closed shops', async () => {
+    const mixed = await shop('Quán Hỗn Hợp Nhóm', [['Ốc xào', 70000, snail]], { open: true });
+    await shop('Quán Hải Sản Thuần', [['Cua rang', 250000, seafood]]);
+    const bySnail = names(await discoveryShops(app, { area_id: area, category_id: snail }));
+    expect(bySnail).toContain('Quán Hỗn Hợp Nhóm');
+    expect(bySnail).not.toContain('Quán Hải Sản Thuần');
+    const dishesSea = (dataOf(await discoveryDishes(app, { area_id: area, category_id: seafood })).dishes as { name: string }[]).map((d) => d.name);
+    expect(dishesSea).toContain('Cua rang');
+    expect(dishesSea).not.toContain('Ốc xào');
+    const openOnly = await discoveryShops(app, { area_id: area, open_only: 'true' });
+    expect(names(openOnly)).toContain('Quán Hỗn Hợp Nhóm');
+    expect(names(openOnly)).not.toContain('Quán Hải Sản Thuần');
+    expect((dataOf(openOnly).shops as { availability: { online: boolean } }[]).every((s) => s.availability.online)).toBe(true);
+    expect(mixed.shopId).toBeTruthy();
+  });
+
+  it('a group that was switched off no longer filters, but its dishes stay public in the shop', async () => {
+    const owner = await shop('Quán Nhóm Ngừng', [['Trà đá', 5000, seafood]]);
+    const dead = await createCategory(app.pool, 'Nhóm sắp ngừng', 'ACTIVE', 8);
+    await createItem(app, owner.token, { name: 'Món nhóm cũ', price_vnd: 10000, category_id: dead, image_id: null });
+    await app.pool.query(`UPDATE app.menu_categories SET status = 'INACTIVE', updated_at = clock_timestamp() WHERE category_id = $1::uuid`, [dead]);
+    expect(((await app.call('GET', '/menu-categories', {})).body.data as unknown as { category_id: string }[]).map((g) => g.category_id)).not.toContain(dead);
+    expect(names(await discoveryShops(app, { area_id: area, q: 'nhom ngung' }))).toEqual(['Quán Nhóm Ngừng']);
+    const shopView = await app.call('GET', `/shops/${owner.shopId}`, {});
+    expect(JSON.stringify(dataOf(shopView).categories)).toContain('Món nhóm cũ');
+  });
+
+  it('pages a stable order and says whether there is more', async () => {
+    const big = await createServiceArea(app.pool);
+    for (const n of ['A1', 'A2', 'A3']) {
+      await shop(`Quán Trang ${n}`, [['Món', 1000, snail]], { areaId: big });
+    }
+    const first = dataOf(await discoveryShops(app, { area_id: big, limit: '2' }));
+    expect((first.shops as unknown[]).length).toBe(2);
+    expect(first.has_more).toBe(true);
+    const second = await discoveryShops(app, { area_id: big, limit: '2', offset: '2' });
+    expect(names(second)).toEqual(['Quán Trang A3']);
+    expect(dataOf(second).has_more).toBe(false);
+  });
+
+  it('refuses a missing area, a malformed id or number, an unknown or repeated parameter and an over-long term', async () => {
+    for (const query of [
+      '',
+      'area_id=nope',
+      `area_id=${area}&category_id=zzz`,
+      `area_id=${area}&open_only=yes`,
+      `area_id=${area}&limit=0`,
+      `area_id=${area}&limit=51`,
+      `area_id=${area}&offset=-1`,
+      `area_id=${area}&sort=name`,
+      `area_id=${area}&area_id=${area}`,
+      `area_id=${area}&q=${'x'.repeat(101)}`,
+    ]) {
+      for (const route of ['shops', 'dishes']) {
+        const response = await app.call('GET', `/discovery/${route}?${query}`, {});
+        expect([response.status, route, query]).toEqual([400, route, query]);
+      }
+    }
+    expect(errorCode(await discoveryShops(app, { area_id: area }))).toBeUndefined();
+  });
+
+  it('the application fold equals the database fold (so a typed term matches what is stored)', async () => {
+    const samples = ['Ốc Hương', 'đậu phụ', 'ƯỚC MƠ', 'Phở  bò   tái', '  Bún chả Hà Nội ', 'Cà phê sữa đá', 'Mì Quảng', 'ABC xyz 123', 'Thạch rau câu'];
+    for (const sample of samples) {
+      const result = await app.pool.query<{ folded: string }>(`SELECT app.fold_vi($1) AS folded`, [sample]);
+      expect(result.rows[0]?.folded).toBe(foldVietnamese(sample));
+    }
+    const decomposed = 'Ôc Hương'.normalize('NFD');
+    expect((await app.pool.query<{ folded: string }>(`SELECT app.fold_vi($1) AS folded`, [decomposed])).rows[0]?.folded).toBe('oc huong');
+    expect(foldVietnamese(decomposed)).toBe('oc huong');
+  });
+});

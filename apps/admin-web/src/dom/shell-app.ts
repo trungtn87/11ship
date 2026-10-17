@@ -38,6 +38,9 @@ import { DialogHandle } from './dialog.js';
 import { h } from './dom.js';
 import { ProvisioningView } from './provisioning-view.js';
 import { SettingsView } from './settings-view.js';
+import { NOT_WIRED_CATALOG, CatalogSource } from '../core/catalog.js';
+import { CatalogController } from '../core/catalog-controller.js';
+import { CatalogView } from './catalog-view.js';
 import { ShellLayout } from './shell-layout.js';
 import { failurePanel, skeleton } from './states.js';
 import { ShellHost } from './view.js';
@@ -98,6 +101,8 @@ export class ShellApp implements ShellHost {
     private readonly newKey: () => string = () => globalThis.crypto.randomUUID(),
     /** Where the SYSTEM settings come from. By default nothing is wired, so the page says so. */
     private readonly settings: SettingsSource = NOT_WIRED_SETTINGS,
+    /** Where the dish groups (Danh mục › Nhóm món) come from. By default nothing is wired, so the page says so. */
+    private readonly catalog: CatalogSource = NOT_WIRED_CATALOG,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -240,6 +245,9 @@ export class ShellApp implements ShellHost {
         return;
       case 'settings':
         this.#settings(content);
+        return;
+      case 'categories':
+        this.#categories(content);
         return;
       default:
         this.#invitations(content, route);
@@ -647,6 +655,54 @@ export class ShellApp implements ShellHost {
       home: () => this.go({ name: 'home' }),
     });
     load();
+  }
+
+  /**
+   * "Danh mục › Nhóm món" (SYSTEM, or an ADMIN with the catalog right; the server decides again on every call). The controller owns the
+   * filter, the page, the popup and the one save in flight; this only connects it to the view, the typing pause and the session.
+   */
+  #categories(content: HTMLElement): void {
+    const generation = this.#generation;
+    const controller = new CatalogController({
+      source: this.catalog,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+    });
+    const view = new CatalogView(content, {
+      wired: this.catalog !== NOT_WIRED_CATALOG,
+      filter: (next) => {
+        controller.filter(next);
+        this.#later(generation, () => controller.load());
+      },
+      refresh: () => controller.load(),
+      retry: () => controller.load(),
+      page: (page) => controller.page(page),
+      create: () => controller.beginCreate(),
+      edit: (id) => controller.beginEdit(id),
+      toggle: (id) => controller.beginToggle(id),
+      draft: (draft) => controller.edit(draft),
+      submit: () => controller.submit(),
+      cancel: () => controller.cancel(),
+      retrySave: () => controller.retry(),
+      recheck: () => controller.recheck(),
+      reload: () => controller.reload(),
+      showTwin: () => controller.showTwin(),
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    });
+    const unsubscribe = controller.subscribe((screen) => view.render(screen));
+    this.#unsubscribe = () => {
+      unsubscribe();
+      controller.dispose();
+      view.dispose();
+    };
+    view.render(controller.screen);
+    controller.load();
   }
 
   /** What each server answer to a save changes on screen. 401 ends the session. */

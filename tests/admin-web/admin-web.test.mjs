@@ -36,6 +36,17 @@ describe('menu by permission', () => {
     assert.deepEqual(seen, ['home', 'users', 'users-list', 'users-locked', 'shops']);
     assert.ok(!seen.includes('administrators') && !seen.includes('invitations') && !seen.includes('system-settings'));
   });
+  it('"Danh mục › Nhóm món" needs the catalog grant (SHOP VIEW + the catalog right); SYSTEM always sees it', async () => {
+    const m = await load(real, 'core/menu.js');
+    assert.deepEqual(ids(m.visibleMenu('ADMIN', new Set(['catalog']))), ['home', 'catalog', 'catalog-categories']);
+    assert.ok(!ids(m.visibleMenu('ADMIN', new Set(['users', 'shops', 'drivers']))).includes('catalog-categories'));
+    assert.ok(ids(m.visibleMenu('SYSTEM')).includes('catalog-categories'));
+    assert.equal(m.canOpenRoute('ADMIN', new Set(['users', 'shops']), { name: 'categories' }), false);
+    assert.equal(m.canOpenRoute('ADMIN', new Set(['catalog']), { name: 'categories' }), true);
+    assert.equal(m.canOpenRoute('SYSTEM', m.NO_GRANTS, { name: 'categories' }), true);
+    assert.equal(m.activeMenuId({ name: 'categories' }), 'catalog-categories');
+    assert.deepEqual(m.breadcrumb({ name: 'categories' }), ['Danh mục', 'Nhóm món']);
+  });
   it('SYSTEM sees every entry', async () => {
     const m = await load(real, 'core/menu.js');
     assert.deepEqual(ids(m.visibleMenu('SYSTEM')), m.allLeaves().map((leaf) => leaf.id));
@@ -44,7 +55,7 @@ describe('menu by permission', () => {
     const m = await load(real, 'core/menu.js');
     assert.deepEqual(
       m.MENU.flatMap((group) => group.items.map((item) => item.label)),
-      ['Tổng quan', 'Người dùng', 'Quản trị viên', 'Lời mời Admin', 'Quán', 'Shipper', 'Đơn hàng', 'Giao hàng', 'Phản ánh', 'Ví shipper', 'Nạp tiền', 'Rút tiền', 'Cài đặt hệ thống', 'Vùng hoạt động', 'Tham số', 'Nhật ký', 'Giám sát'],
+      ['Tổng quan', 'Người dùng', 'Quản trị viên', 'Lời mời Admin', 'Quán', 'Shipper', 'Đơn hàng', 'Giao hàng', 'Phản ánh', 'Danh mục', 'Ví shipper', 'Nạp tiền', 'Rút tiền', 'Cài đặt hệ thống', 'Vùng hoạt động', 'Tham số', 'Nhật ký', 'Giám sát'],
     );
   });
   it('a ready entry has a route; an entry that is not built has none (shown as "Sắp có")', async () => {
@@ -123,7 +134,7 @@ describe('design preview', () => {
   it('lists every catalog screen with its code (an import failure FAILS this test)', async () => {
     const screens = await load(design, 'design/screens.js');
     const byCode = new Map(screens.SCREENS.map((screen) => [screen.code, screen]));
-    const expected = ['D00', 'D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08', 'D09', 'D81', 'D86', 'D87', 'D88', 'D89', 'D90', 'D91', 'C01–C10'];
+    const expected = ['D00', 'D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08', 'D09', 'D81', 'D86', 'D87', 'D88', 'D89', 'D90', 'D91', 'D92', 'C01–C10'];
     for (const code of expected) {
       assert.ok(byCode.has(code), `missing screen code ${code}`);
     }
@@ -133,6 +144,8 @@ describe('design preview', () => {
     assert.equal(byCode.get('D90').id, 'user-delete');
     assert.equal(byCode.get('D91').id, 'settings');
     assert.equal(byCode.get('D91').group, 'Hệ thống');
+    assert.equal(byCode.get('D92').id, 'categories');
+    assert.equal(byCode.get('D92').group, 'Danh mục');
     for (const screen of screens.SCREENS) {
       assert.ok(screen.id && screen.title && screen.variants.length > 0, `incomplete screen ${screen.code}`);
     }

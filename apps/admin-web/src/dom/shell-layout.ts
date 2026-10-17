@@ -1,5 +1,5 @@
 import { AdminRole } from '../core/api.js';
-import { breadcrumb, compactSidebar, DRAWER_QUERY, Grants, MenuGroup, visibleMenu } from '../core/menu.js';
+import { activeMenuId, breadcrumb, compactSidebar, DRAWER_QUERY, Grants, MENU, MenuGroup, visibleMenu } from '../core/menu.js';
 import { formatRoute, Route } from '../core/routes.js';
 import { brand, h, message } from './dom.js';
 import { icon } from './icons.js';
@@ -80,6 +80,7 @@ export function buildShell(options: ShellOptions): ShellLayout {
   let drawerOpen = options.initial?.drawerOpen ?? false;
   let accountOpen = options.initial?.accountMenuOpen ?? false;
   const expanded = new Set<string>(['users']);
+  let lastActive: string | undefined;
   let last: ShellState | undefined;
   const viewport: DrawerViewport | undefined = options.viewport ?? (typeof window.matchMedia === 'function' ? window.matchMedia(DRAWER_QUERY) : undefined);
   // The rail (collapsed) is a desktop-only mode; in drawer mode the menu is always shown in full.
@@ -258,6 +259,18 @@ export function buildShell(options: ShellOptions): ShellLayout {
     },
     render: (state) => {
       last = state;
+      // Opening a page (a bookmark, a reload) shows its own menu entry: the parent of the current page opens once per page.
+      const activeId = activeMenuId(state.route);
+      if (activeId !== lastActive) {
+        lastActive = activeId;
+        for (const group of MENU) {
+          for (const item of group.items) {
+            if (item.children?.some((child) => child.id === activeId) === true) {
+              expanded.add(item.id);
+            }
+          }
+        }
+      }
       const account = accountOf(state.role);
       accountName.textContent = account.name;
       accountCaption.textContent = account.caption;

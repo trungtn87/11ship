@@ -101,6 +101,8 @@ export interface PermissionDraft {
   readonly canView: boolean;
   readonly canReviewProfile: boolean;
   readonly canLock: boolean;
+  /** Dish-group management (SHOP only; needs VIEW). Absent = off. */
+  readonly canManageCatalog?: boolean;
 }
 
 export type PermissionsDraft = Readonly<Record<'CUSTOMER' | 'SHOP' | 'DRIVER', PermissionDraft>>;
@@ -112,16 +114,16 @@ export const EMPTY_PERMISSIONS: PermissionsDraft = {
 };
 
 /**
- * Applies one checkbox the way the backend rules read: REVIEW/LOCK need VIEW (removing VIEW removes them, adding them
- * adds VIEW), and the CUSTOMER app has no REVIEW.
+ * Applies one checkbox the way the backend rules read: REVIEW/LOCK/CATALOG need VIEW (removing VIEW removes them, adding them
+ * adds VIEW), the CUSTOMER app has no REVIEW, and only SHOP has the catalog (dish groups) right.
  */
 export function togglePermission(
   draft: PermissionsDraft,
   app: 'CUSTOMER' | 'SHOP' | 'DRIVER',
-  right: 'canView' | 'canReviewProfile' | 'canLock',
+  right: 'canView' | 'canReviewProfile' | 'canLock' | 'canManageCatalog',
   value: boolean,
 ): PermissionsDraft {
-  if (app === 'CUSTOMER' && right === 'canReviewProfile') {
+  if ((app === 'CUSTOMER' && right === 'canReviewProfile') || (app !== 'SHOP' && right === 'canManageCatalog')) {
     return draft;
   }
   const current = draft[app];

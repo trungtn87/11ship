@@ -17,7 +17,7 @@ export const PERSONAS: readonly { readonly id: Persona; readonly label: string }
 ];
 
 /** Sample grants of the preview persona "ADMIN (có quyền mẫu)". Not what the real backend sends (it sends none yet). */
-const SAMPLE_GRANTS: readonly GrantId[] = ['users', 'shops', 'drivers', 'orders'];
+const SAMPLE_GRANTS: readonly GrantId[] = ['users', 'shops', 'drivers', 'orders', 'catalog'];
 
 export function roleOf(persona: Persona): AdminRole {
   return persona === 'system' ? 'SYSTEM' : 'ADMIN';

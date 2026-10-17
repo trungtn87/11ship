@@ -27,6 +27,10 @@ describe('M01-A2S — Shop onboarding migration', () => {
   const hoursSql = readFileSync(path.join(migrationsDir, `${HOURS}.sql`), 'utf8');
   const hoursUpSql = (hoursSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const hoursDownSql = hoursSql.split('-- Down Migration')[1] as string;
+  const MENU = names.find((name) => name.endsWith('create-menu')) as string;
+  const menuSql = readFileSync(path.join(migrationsDir, `${MENU}.sql`), 'utf8');
+  const menuUpSql = (menuSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+  const menuDownSql = menuSql.split('-- Down Migration')[1] as string;
   const driverSql = readFileSync(path.join(migrationsDir, `${DRIVER}.sql`), 'utf8');
   const driverUpSql = (driverSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const driverDownSql = driverSql.split('-- Down Migration')[1] as string;
@@ -78,7 +82,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
 
   it('is a NEW migration after M00 and Auth Core, followed by the Driver, business-hours, account-origin and admin ones (applied migrations are never edited)', () => {
     expect(SHOP).toBeDefined();
-    expect(names.slice(names.indexOf(SHOP))).toEqual([SHOP, DRIVER, HOURS, '1791936000000_add-users-account-origin', '1792022400000_create-admin-auth', '1792108800000_create-admin-invitations', '1792195200000_create-admin-sensitive-operations', '1792281600000_create-admin-activation', '1792368000000_extend-admin-auth-limits-activation', '1792454400000_create-admin-membership-origin-guard', '1792540800000_create-customer-profiles-consents', '1792627200000_allow-staging-fixture-account-origin', '1792713600000_allow-test-unverified-account-origin', '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding', '1792972800000_create-sms-gateway', '1793059200000_account-scope-lifecycle-settings']);
+    expect(names.slice(names.indexOf(SHOP))).toEqual([SHOP, DRIVER, HOURS, '1791936000000_add-users-account-origin', '1792022400000_create-admin-auth', '1792108800000_create-admin-invitations', '1792195200000_create-admin-sensitive-operations', '1792281600000_create-admin-activation', '1792368000000_extend-admin-auth-limits-activation', '1792454400000_create-admin-membership-origin-guard', '1792540800000_create-customer-profiles-consents', '1792627200000_allow-staging-fixture-account-origin', '1792713600000_allow-test-unverified-account-origin', '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding', '1792972800000_create-sms-gateway', '1793059200000_account-scope-lifecycle-settings', '1793145600000_create-menu', '1793232000000_menu-category-admin']);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(names.filter((name) => name.endsWith('create-shop-onboarding'))).toHaveLength(1);
     expect(Number(SHOP.split('_')[0])).toBeGreaterThan(Number((BEFORE[BEFORE.length - 1] as string).split('_')[0]));
@@ -163,6 +167,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
     expect(migrate().status).toBe(0);
     await client.query('BEGIN');
     try {
+      await client.query(menuDownSql);
       await client.query(hoursDownSql);
       await client.query(driverDownSql);
       await client.query(downSql);
@@ -175,6 +180,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
       await client.query(upSql);
       await client.query(driverUpSql);
       await client.query(hoursUpSql);
+      await client.query(menuUpSql);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
       await client.query('ROLLBACK');

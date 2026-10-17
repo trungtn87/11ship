@@ -16,6 +16,7 @@ export type Route =
   | { readonly name: 'users'; readonly status?: UserStatusFilter }
   | { readonly name: 'user'; readonly id: string }
   | { readonly name: 'administrators' }
+  | { readonly name: 'categories' }
   | { readonly name: 'settings' };
 
 /** The only status filter with its own menu entry ("Đang khóa"); any other value of ?status= is ignored. */
@@ -34,6 +35,9 @@ export function parseRoute(pathname: string, search = ''): Route {
   }
   if (path === '/accounts/administrators') {
     return { name: 'administrators' };
+  }
+  if (path === '/catalog/categories') {
+    return { name: 'categories' };
   }
   if (path === '/system/settings') {
     return { name: 'settings' };
@@ -79,6 +83,8 @@ export function formatRoute(route: Route): string {
       return `/accounts/users/${route.id}`;
     case 'administrators':
       return '/accounts/administrators';
+    case 'categories':
+      return '/catalog/categories';
     case 'settings':
       return '/system/settings';
     case 'invitations':

@@ -60,6 +60,8 @@ export interface ListCursor {
 const APPS: readonly InvitationApp[] = ['CUSTOMER', 'SHOP', 'DRIVER'];
 const STATUSES: readonly InvitationStatus[] = ['PENDING', 'ACCEPTED', 'REVOKED', 'SUPERSEDED', 'EXPIRED', 'PHONE_CONFLICT'];
 const PERMISSION_KEYS = ['app', 'can_lock', 'can_review_profile', 'can_view'];
+/** Optional key (absent = false): the dish-group management right of the SHOP row. */
+const PERMISSION_OPTIONAL_KEYS = ['can_manage_catalog'];
 
 function invalid(): never {
   throw new AppError('ADMIN_INPUT_INVALID');
@@ -160,8 +162,9 @@ export function parsePermissions(value: unknown): readonly InvitationPermission[
   const permissions: InvitationPermission[] = [];
   for (const item of value as unknown[]) {
     const entry = plainObject(item);
-    exactKeys(entry, PERMISSION_KEYS);
+    exactKeys(entry, PERMISSION_KEYS, PERMISSION_OPTIONAL_KEYS);
     const { app, can_view: canView, can_review_profile: canReviewProfile, can_lock: canLock } = entry;
+    const canManageCatalog = entry.can_manage_catalog === undefined ? false : entry.can_manage_catalog;
     if (typeof app !== 'string' || !(APPS as readonly string[]).includes(app) || seen.has(app)) {
       invalid();
     }
@@ -174,8 +177,11 @@ export function parsePermissions(value: unknown): readonly InvitationPermission[
     if (app === 'CUSTOMER' && canReviewProfile) {
       invalid();
     }
+    if (typeof canManageCatalog !== 'boolean' || (canManageCatalog && (!canView || app !== 'SHOP'))) {
+      invalid();
+    }
     seen.add(app);
-    permissions.push({ app: app as InvitationApp, canView, canReviewProfile, canLock });
+    permissions.push(canManageCatalog ? { app: app as InvitationApp, canView, canReviewProfile, canLock, canManageCatalog } : { app: app as InvitationApp, canView, canReviewProfile, canLock });
   }
   if (!permissions.some((permission) => permission.canView)) {
     invalid();
@@ -267,6 +273,8 @@ function permissionsJson(permissions: readonly InvitationPermission[]): JsonObje
     can_view: permission.canView,
     can_review_profile: permission.canReviewProfile,
     can_lock: permission.canLock,
+    // Only when granted: the canonical form (and so every stored fingerprint) of a request without the right is unchanged.
+    ...(permission.canManageCatalog === true ? { can_manage_catalog: true } : {}),
   }));
 }
 

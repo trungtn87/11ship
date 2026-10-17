@@ -3,6 +3,10 @@ import '../flows/driver_controller.dart';
 import '../flows/location.dart';
 import '../flows/reset_controller.dart';
 import '../flows/shop_controller.dart';
+import '../m02/m02_flows.dart';
+import '../m02/discovery_models.dart';
+import '../m02/http_m02_api.dart';
+import '../m02/menu_models.dart';
 import 'api_client.dart';
 import 'device_bridge.dart';
 import 'native_auth.dart';
@@ -25,20 +29,48 @@ SessionController createSessionController(ClientApp app, AppConfig config, {ApiT
 
 /// The three connected flows of an app, built on its session. [location] is for tests; the real one is the Kotlin channel.
 class AppFlows {
-  AppFlows({required this.session, required this.reset, this.shop, this.driver});
+  AppFlows({required this.session, required this.reset, this.shop, this.driver, this.m02});
 
   final SessionController session;
   final ResetController reset;
   final ShopController? shop;
   final DriverController? driver;
+
+  /// Food only: the M02 shop-management, menu and customer screens.
+  final M02Flows? m02;
 }
 
-AppFlows createFlows(ClientApp app, SessionController session, AppConfig config, {ApiTransport? transport, LocationProvider? location}) {
+AppFlows createFlows(
+  ClientApp app,
+  SessionController session,
+  AppConfig config, {
+  ApiTransport? transport,
+  LocationProvider? location,
+  MenuApi? menuApi,
+  PublicShopApi? publicApi,
+  DiscoveryApi? discoveryApi,
+  ImagePickerPort picker = const NoImagePicker(),
+}) {
   final ApiTransport http = transport ?? HttpApiTransport(base: config.apiUri ?? Uri.parse('https://invalid.invalid'));
+  final LocationProvider where = location ?? MethodChannelLocationProvider();
+  final Uri base = config.apiUri ?? Uri.parse('https://invalid.invalid');
+  final ShopController? shop = app == ClientApp.food ? ShopController(session: session, location: where) : null;
   return AppFlows(
     session: session,
     reset: ResetController(transport: http, session: session),
-    shop: app == ClientApp.food ? ShopController(session: session, location: location ?? MethodChannelLocationProvider()) : null,
+    shop: shop,
     driver: app == ClientApp.ship ? DriverController(session: session) : null,
+    m02: app == ClientApp.food
+        ? createM02Flows(
+            session: session,
+            location: where,
+            onboarding: shop,
+            // The real server contract unless a test passes its own ports.
+            menuApi: menuApi ?? HttpMenuApi(session: session, base: base),
+            publicApi: publicApi ?? HttpPublicShopApi(transport: http, base: base),
+            discoveryApi: discoveryApi ?? HttpDiscoveryApi(transport: http, base: base),
+            picker: picker,
+          )
+        : null,
   );
 }

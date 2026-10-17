@@ -1,4 +1,5 @@
 import { AdministratorRow, UserDetail, UserLifecycle, UserRow } from '../core/accounts.js';
+import { CategoryRow } from '../core/catalog.js';
 import { PhoneVerificationSettings } from '../core/settings.js';
 import { InvitationDetail, InvitationStatus, InvitationSummary, Permission } from '../core/provisioning-api.js';
 
@@ -133,3 +134,17 @@ export const SAMPLE_ACTIVATION_LINK = 'https://admin.example.invalid/activate#t=
 /** A made-up otpauth URI (not a real secret) so the QR of the Authenticator screens can be drawn in the preview. */
 export const SAMPLE_OTPAUTH = 'otpauth://totp/11Ship:minh-hoa?secret=MINHHOAXEMTHIETKEKHONGDUNG&issuer=11Ship';
 export const SAMPLE_SECRET = 'MINHHOAXEMTHIETKEKHONGDUNG';
+
+// Dish groups (Danh mục › Nhóm món). Obviously sample names; the real page only ever shows what the server sent.
+function category(index: number, name: string, sortOrder: number, status: 'ACTIVE' | 'INACTIVE', itemCount: number): CategoryRow {
+  return { id: `d4000000-0000-4000-8000-0000000000${String(index).padStart(2, '0')}`, name, sortOrder, status, itemCount, version: 1, updatedAt: '2026-10-15T03:00:00.000Z' };
+}
+
+export const SAMPLE_CATEGORIES: readonly CategoryRow[] = [
+  category(1, 'Ốc', 1, 'ACTIVE', 18),
+  category(2, 'Hải sản', 2, 'ACTIVE', 12),
+  category(3, 'Món nướng', 3, 'ACTIVE', 7),
+  category(4, 'Ăn vặt', 4, 'ACTIVE', 5),
+  category(5, 'Đồ uống', 5, 'ACTIVE', 9),
+  category(6, 'Món theo mùa', 6, 'INACTIVE', 2),
+];

@@ -58,6 +58,8 @@ const UUID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-
  */
 const SPA_ROUTES: readonly RegExp[] = Object.freeze([
   /^\/activate$/,
+  // M02 dish groups (Danh mục › Nhóm món): a reload or a bookmark of the page opens the app.
+  /^\/catalog\/categories$/,
   /^\/invitations$/,
   /^\/invitations\/new$/,
   new RegExp(`^/invitations/${UUID}$`),

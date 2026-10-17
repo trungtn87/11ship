@@ -13,6 +13,7 @@ import {
   shopProfileBody,
   startAuthApp,
 } from './support/auth-fixtures';
+import { createCategory, jpegBase64 } from './support/menu-fixtures';
 import { FixtureTrust, NativePhone } from './support/native-device-fixtures';
 
 // M01-ANDROID remaining flows (shop profile + context, driver profile, test password reset) over the DEVICE-BOUND native session,
@@ -67,6 +68,54 @@ describe('native remaining flows (fixture attestation)', () => {
   }
 
   const me = (native: NativePhone, which: 'FOOD' | 'SHIP', token: string): Promise<ApiResponse> => native.signedCall(which, 'GET', '/client-auth/me', { bearer: token }).then((r) => r.response);
+
+  describe('Food shop management and menu (M02) with the device proof', () => {
+    it('the owner reads and writes the shop, schedule, pictures and dishes only with the signed request (raw body is what is signed)', async () => {
+      const food = await registerFood();
+      const { native, token } = food;
+      const areaId = await createServiceArea(app.pool);
+      const saved = await native.signedCall('FOOD', 'PUT', '/onboarding/shop/profile', { bearer: token, body: shopProfileBody({ ...GPS, service_area_id: areaId }), idempotencyKey: randomUUID() });
+      const done = await native.signedCall('FOOD', 'POST', '/onboarding/shop/complete', { bearer: token, body: { expected_version: Number(dataOf(saved.response).version) }, idempotencyKey: randomUUID() });
+      expect(done.response.status).toBe(200);
+      expect((await native.signedCall('FOOD', 'POST', '/client-auth/context', { bearer: token, body: { context: 'SHOP_OWNER' }, idempotencyKey: randomUUID() })).response.status).toBe(200);
+      const category = await createCategory(app.pool, 'Món chính', 'ACTIVE', 1);
+
+      const read = await native.signedCall('FOOD', 'GET', '/shop/me', { bearer: token });
+      expect(read.response.status).toBe(200);
+      expect(read.response.headers.get('cache-control')).toBe('no-store');
+      const version = Number(dataOf(read.response).version);
+
+      const noProof = await native.signedCall('FOOD', 'PUT', '/shop/me/business-hours', { bearer: token, body: { expected_version: version, intervals: [] }, idempotencyKey: randomUUID(), omitProof: true });
+      expect([noProof.response.status, errorCode(noProof.response)]).toEqual([403, 'DEVICE_PROOF_REQUIRED']);
+
+      const hours = await native.signedCall('FOOD', 'PUT', '/shop/me/business-hours', {
+        bearer: token,
+        body: { expected_version: version, intervals: [{ weekday: 1, start_minute: 1020, end_minute: 1380, end_day_offset: 0 }] },
+        idempotencyKey: randomUUID(),
+      });
+      expect(hours.response.status).toBe(200);
+      const profile = await native.signedCall('FOOD', 'PUT', '/shop/me/profile', {
+        bearer: token,
+        body: { expected_version: Number(dataOf(hours.response).version), name: 'Quán đã sửa', contact_phone: '0912345678', address_text: '1 Phố Mới', pickup_lat: 10.0123, pickup_lng: 106.0456, service_area_id: areaId },
+        idempotencyKey: randomUUID(),
+      });
+      expect(profile.response.status).toBe(200);
+
+      const image = await native.signedCall('FOOD', 'POST', '/shop/me/menu/images', { bearer: token, body: { content_type: 'image/jpeg', data_base64: jpegBase64(300_000) }, });
+      expect(image.response.status).toBe(201);
+      const created = await native.signedCall('FOOD', 'POST', '/shop/me/menu/items', {
+        bearer: token,
+        body: { name: 'Ốc hương hấp', price_vnd: 120000, category_id: category, image_id: String(dataOf(image.response).image_id) },
+        idempotencyKey: randomUUID(),
+      });
+      expect(created.response.status).toBe(201);
+      const itemId = String((dataOf(created.response).item as Record<string, unknown>).item_id);
+      const hidden = await native.signedCall('FOOD', 'POST', `/shop/me/menu/items/${itemId}/hide`, { bearer: token, body: { expected_version: 1 }, idempotencyKey: randomUUID() });
+      expect(hidden.response.status).toBe(200);
+      const menu = await native.signedCall('FOOD', 'GET', '/shop/me/menu', { bearer: token });
+      expect((dataOf(menu.response).items as { status: string }[])[0]?.status).toBe('HIDDEN');
+    });
+  });
 
   describe('Food shop profile and context', () => {
     it('needs the device proof; saves a draft without GPS, completes with a stored point and area, and keeps CUSTOMER', async () => {

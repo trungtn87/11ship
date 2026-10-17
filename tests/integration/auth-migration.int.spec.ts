@@ -51,6 +51,10 @@ describe('M01-A1 — Auth Core migration', () => {
   const hoursSql = readFileSync(path.join(migrationsDir, `${HOURS}.sql`), 'utf8');
   const hoursUpSql = (hoursSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const hoursDownSql = hoursSql.split('-- Down Migration')[1] as string;
+  const MENU = names.find((name) => name.endsWith('create-menu')) as string;
+  const menuSql = readFileSync(path.join(migrationsDir, `${MENU}.sql`), 'utf8');
+  const menuUpSql = (menuSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+  const menuDownSql = menuSql.split('-- Down Migration')[1] as string;
   const driverSql = readFileSync(path.join(migrationsDir, `${DRIVER}.sql`), 'utf8');
   const driverUpSql = (driverSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
   const driverDownSql = driverSql.split('-- Down Migration')[1] as string;
@@ -129,6 +133,8 @@ describe('M01-A1 — Auth Core migration', () => {
       '1792886400000_create-client-device-binding',
       '1792972800000_create-sms-gateway',
       '1793059200000_account-scope-lifecycle-settings',
+      '1793145600000_create-menu',
+      '1793232000000_menu-category-admin',
     ]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });
@@ -241,6 +247,7 @@ describe('M01-A1 — Auth Core migration', () => {
       await client.query(invitationsDownSql);
       await client.query(adminDownSql);
       await client.query(originDownSql);
+      await client.query(menuDownSql);
       await client.query(hoursDownSql);
       await client.query(driverDownSql);
       await client.query(shopDownSql);
@@ -267,6 +274,7 @@ describe('M01-A1 — Auth Core migration', () => {
       await client.query(CLIENT_DEVICE_UP_SQL);
       await client.query(SMS_GATEWAY_UP_SQL);
       await client.query(ACCOUNT_SCOPE_UP_SQL);
+      await client.query(menuUpSql);
       expect(await presentTables()).toEqual([...TABLES].sort());
     } finally {
       await client.query('ROLLBACK');

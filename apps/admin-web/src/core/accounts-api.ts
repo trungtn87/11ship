@@ -52,7 +52,16 @@ function permissionOf(value: unknown): AppPermission | undefined {
   if (typeof row.can_view !== 'boolean' || typeof row.can_review_profile !== 'boolean' || typeof row.can_lock !== 'boolean') {
     return undefined;
   }
-  return { app: row.app as AppPermission['app'], canView: row.can_view, canReviewProfile: row.can_review_profile, canLock: row.can_lock };
+  if (row.can_manage_catalog !== undefined && typeof row.can_manage_catalog !== 'boolean') {
+    return undefined;
+  }
+  return {
+    app: row.app as AppPermission['app'],
+    canView: row.can_view,
+    canReviewProfile: row.can_review_profile,
+    canLock: row.can_lock,
+    ...(row.can_manage_catalog === true ? { canManageCatalog: true } : {}),
+  };
 }
 
 function permissionList(value: unknown): readonly AppPermission[] | undefined {
@@ -219,10 +228,11 @@ function lifecycleOf(value: unknown): UserLifecycle | undefined {
   return { lockReason, lockedAt, relatedData, activeWork, deleteEffect: raw.delete_effect, lockBlockedReason: lockBlocked, deleteBlockedReason: deleteBlocked };
 }
 
-const RIGHT_LABEL: readonly (readonly [keyof Pick<AppPermission, 'canView' | 'canReviewProfile' | 'canLock'>, string])[] = [
+const RIGHT_LABEL: readonly (readonly [keyof Pick<AppPermission, 'canView' | 'canReviewProfile' | 'canLock' | 'canManageCatalog'>, string])[] = [
   ['canView', 'Xem'],
   ['canReviewProfile', 'Duyệt hồ sơ'],
   ['canLock', 'Khóa'],
+  ['canManageCatalog', 'Nhóm món'],
 ];
 
 /** "Khách hàng: Xem, Khóa" per app that has at least one right; "Chưa cấp quyền" when none. */

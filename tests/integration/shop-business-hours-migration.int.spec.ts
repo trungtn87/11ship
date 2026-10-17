@@ -80,7 +80,7 @@ describe('M02-A — Shop business-hours migration', () => {
       '1792540800000_create-customer-profiles-consents',
       '1792627200000_allow-staging-fixture-account-origin',
       '1792713600000_allow-test-unverified-account-origin',
-      '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding', '1792972800000_create-sms-gateway', '1793059200000_account-scope-lifecycle-settings'
+      '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding', '1792972800000_create-sms-gateway', '1793059200000_account-scope-lifecycle-settings', '1793145600000_create-menu', '1793232000000_menu-category-admin'
     ]);
     expect(HOURS).toBe('1791763200000_create-shop-business-hours');
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-driver-onboarding')).toBe(true);

@@ -32,14 +32,15 @@ export function permissionsView(permissions: readonly InvitationPermission[]): J
     can_view: permission.canView,
     can_review_profile: permission.canReviewProfile,
     can_lock: permission.canLock,
+    can_manage_catalog: permission.canManageCatalog === true,
   }));
 }
 
-/** Short audit form of a snapshot: ["CUSTOMER:V--", "SHOP:VRL"]. Not a secret, not personal data. */
+/** Short audit form of a snapshot: ["CUSTOMER:V--", "SHOP:VRL"] (+"C" when the catalog right is granted). Not a secret, not personal data. */
 export function permissionsAudit(permissions: readonly InvitationPermission[]): string[] {
   return permissions.map(
     (permission) =>
-      `${permission.app}:${permission.canView ? 'V' : '-'}${permission.canReviewProfile ? 'R' : '-'}${permission.canLock ? 'L' : '-'}`,
+      `${permission.app}:${permission.canView ? 'V' : '-'}${permission.canReviewProfile ? 'R' : '-'}${permission.canLock ? 'L' : '-'}${permission.canManageCatalog === true ? 'C' : ''}`,
   );
 }
 

@@ -1,7 +1,7 @@
 import { ACTIVATION_DOWN_SQL, ACTIVATION_UP_SQL } from './support/activation-migration-sql';
 import { ACCOUNT_SCOPE_DOWN_SQL, ACCOUNT_SCOPE_UP_SQL } from './support/account-scope-migration-sql';
 import { SMS_GATEWAY_DOWN_SQL, SMS_GATEWAY_UP_SQL } from './support/sms-gateway-migration-sql';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Client } from 'pg';
@@ -137,10 +137,16 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
 
   it('up -> down -> up (in a transaction that is rolled back) leaves no orphan and restores the exact object inventory', async () => {
     await assertTestDatabaseTarget(client);
+    // M02 adds a column and constraints to app.admin_invitation_permissions: its migration is newer, so it goes down first and up last.
+    const catalogFile = readdirSync(dir).find((name) => name.endsWith('menu-category-admin.sql')) as string;
+    const catalogSql = readFileSync(path.join(dir, catalogFile), 'utf8');
+    const catalogUpSql = (catalogSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+    const catalogDownSql = catalogSql.split('-- Down Migration')[1] as string;
     const before = await inventory();
     expect(before.length).toBeGreaterThan(0);
     await client.query('BEGIN');
     try {
+      await client.query(catalogDownSql);
       await client.query(ACCOUNT_SCOPE_DOWN_SQL); // the newest migration changes app.users: down first, up last
       await client.query(SMS_GATEWAY_DOWN_SQL); // the SMS queue references the activation challenges: newest, down first, up last
       for (const statement of ACTIVATION_DOWN_SQL) {
@@ -150,13 +156,15 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
       await client.query(downSql);
       expect(await inventory()).toEqual([]);
       await client.query(upSql);
-      expect(await inventory()).toEqual(before);
+      // The catalog right (M02) comes back last, so at this point exactly its own objects are missing.
+      expect(await inventory()).toEqual(before.filter((item) => !item.includes('catalog')));
       await client.query(operationsUpSql);
       for (const statement of ACTIVATION_UP_SQL) {
         await client.query(statement);
       }
       await client.query(SMS_GATEWAY_UP_SQL);
       await client.query(ACCOUNT_SCOPE_UP_SQL);
+      await client.query(catalogUpSql);
     } finally {
       await client.query('ROLLBACK');
     }
