@@ -88,6 +88,9 @@ describe('ops/selfhosted/02-runtime-grants.sql', () => {
       assert.ok(!(parsed.get(table) ?? []).includes('DELETE'), table);
     }
     assert.deepEqual(parsed.get('user_consents'), ['INSERT', 'SELECT']);
+    // M04-A1: the runtime role can create a zero wallet and read the wallet and the ledger; it cannot change or delete a wallet or write the ledger.
+    assert.deepEqual(parsed.get('driver_wallets'), ['INSERT', 'SELECT']);
+    assert.deepEqual(parsed.get('wallet_ledger_entries'), ['SELECT']);
     for (const privileges of parsed.values()) {
       assert.ok(privileges.every((kind) => KINDS.includes(kind)));
     }

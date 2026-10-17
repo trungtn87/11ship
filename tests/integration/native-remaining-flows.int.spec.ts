@@ -13,7 +13,7 @@ import {
   shopProfileBody,
   startAuthApp,
 } from './support/auth-fixtures';
-import { createCategory, jpegBase64 } from './support/menu-fixtures';
+import { createCategory, jpegBase64, purgeCategories } from './support/menu-fixtures';
 import { FixtureTrust, NativePhone } from './support/native-device-fixtures';
 
 // M01-ANDROID remaining flows (shop profile + context, driver profile, test password reset) over the DEVICE-BOUND native session,
@@ -43,6 +43,8 @@ describe('native remaining flows (fixture attestation)', () => {
   });
 
   afterAll(async () => {
+    // The dish group this file creates must not outlive it: later suites (admin dish groups) expect a table without it.
+    await purgeCategories(app.pool).catch(() => undefined);
     await closed.close();
     await app.close();
   });

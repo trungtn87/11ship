@@ -63,3 +63,7 @@ GRANT SELECT, UPDATE ON app.shipper_wallet_parameters TO ship11_app;
 GRANT SELECT, INSERT ON app.shipper_wallet_parameter_changes TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.customers TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.customer_addresses TO ship11_app;
+-- M04-A1: the Shipper wallet core. The runtime role may create a zero wallet and read both tables; it gets NO UPDATE on the wallet (no package moves money yet:
+-- M04-A2/B/C add the grants their mutations need) and NO INSERT on the ledger (a ledger row needs a source table that does not exist yet).
+GRANT SELECT, INSERT ON app.driver_wallets TO ship11_app;
+GRANT SELECT ON app.wallet_ledger_entries TO ship11_app;
