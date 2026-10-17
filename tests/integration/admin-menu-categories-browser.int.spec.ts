@@ -115,7 +115,7 @@ describe('admin dish groups (real browser)', () => {
     // Groups the way the operator made them before this screen existed: by SQL, with their own order and status.
     await cleanup();
     // Groups other suites left behind (they may have dishes, so they are not deleted) would sort among these six: move them after.
-    await app.pool.query(`UPDATE app.menu_categories SET sort_order = sort_order + 100000 WHERE name <> ALL($1::text[]) AND sort_order < 100000`, [[...NAMES]]);
+    await app.pool.query(`UPDATE app.menu_categories SET sort_order = sort_order + 1000 WHERE name <> ALL($1::text[]) AND sort_order < 1000`, [[...NAMES]]);
     for (const [index, name] of NAMES.entries()) {
       await app.pool.query(
         `INSERT INTO app.menu_categories (category_id, name, status, sort_order, created_at, updated_at) VALUES ($1::uuid, $2, $3, $4, clock_timestamp(), clock_timestamp())`,
