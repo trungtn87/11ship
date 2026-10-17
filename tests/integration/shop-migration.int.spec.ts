@@ -1,3 +1,4 @@
+import { SHIPPER_DOWN_SQL, SHIPPER_UP_SQL } from './support/shipper-migration-sql';
 import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -167,6 +168,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
     expect(migrate().status).toBe(0);
     await client.query('BEGIN');
     try {
+      await client.query(SHIPPER_DOWN_SQL); // M03 references app.drivers: down first, up last
       await client.query(menuDownSql);
       await client.query(hoursDownSql);
       await client.query(driverDownSql);
@@ -181,6 +183,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
       await client.query(driverUpSql);
       await client.query(hoursUpSql);
       await client.query(menuUpSql);
+      await client.query(SHIPPER_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
       await client.query('ROLLBACK');
