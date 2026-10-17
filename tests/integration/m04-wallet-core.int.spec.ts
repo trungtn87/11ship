@@ -296,6 +296,8 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
       await refused('unknown_kind', () => insertEntry(2, 'FREE_MONEY', 1, 100001), '_ck');
       await refused('update', () => client.query('UPDATE app.wallet_ledger_entries SET delta_vnd = 1'), 'append-only');
       await refused('delete', () => client.query('DELETE FROM app.wallet_ledger_entries'), 'append-only');
+      // The ledger and the balance move together, so the check is deferred for this one pair of statements.
+      await client.query('SET CONSTRAINTS ALL DEFERRED');
       await insertEntry(2, 'WITHDRAWAL_DEBIT', -40000, 60000);
       await client.query('UPDATE app.driver_wallets SET balance_vnd = 60000, version = version + 1 WHERE wallet_id = $1::uuid', [wallet.walletId]);
       await client.query('SET CONSTRAINTS ALL IMMEDIATE');
