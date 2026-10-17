@@ -2,6 +2,7 @@ import { ACTIVATION_DOWN_SQL, ACTIVATION_UP_SQL } from './support/activation-mig
 import { CLIENT_DEVICE_DOWN_SQL, CLIENT_DEVICE_UP_SQL } from './support/client-device-migration-sql';
 import { ACCOUNT_SCOPE_DOWN_SQL, ACCOUNT_SCOPE_UP_SQL } from './support/account-scope-migration-sql';
 import { SHIPPER_DOWN_SQL, SHIPPER_UP_SQL } from './support/shipper-migration-sql';
+import { WALLET_DOWN_SQL, WALLET_UP_SQL } from './support/wallet-migration-sql';
 import { SMS_GATEWAY_DOWN_SQL, SMS_GATEWAY_UP_SQL } from './support/sms-gateway-migration-sql';
 import { CUSTOMER_DOWN_SQL, CUSTOMER_UP_SQL } from './support/customer-migration-sql';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -239,7 +240,8 @@ describe('M01-A1 — Auth Core migration', () => {
       // The Shop and Driver migrations reference app.users, so they go down first and come back up last. The invitation
       // tables, the admin tables and the account origin are the newest: they go down before everything else.
       // The M01.02 customer tables reference app.users and are the very newest: they go down first and come back up last.
-      await client.query(SHIPPER_DOWN_SQL); // M03: references app.drivers and app.users, the very newest: down first, up last
+      await client.query(WALLET_DOWN_SQL); // M04-A1: references app.drivers, the very newest: down first, up last
+      await client.query(SHIPPER_DOWN_SQL); // M03: references app.drivers and app.users: down first, up last
       await client.query(ACCOUNT_SCOPE_DOWN_SQL); // changes app.users: down first, up last
       await client.query(SMS_GATEWAY_DOWN_SQL);
       await client.query(CLIENT_DEVICE_DOWN_SQL);
@@ -280,6 +282,7 @@ describe('M01-A1 — Auth Core migration', () => {
       await client.query(ACCOUNT_SCOPE_UP_SQL);
       await client.query(menuUpSql);
       await client.query(SHIPPER_UP_SQL);
+      await client.query(WALLET_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES].sort());
     } finally {
       await client.query('ROLLBACK');
@@ -298,7 +301,7 @@ describe('M01-A1 — Auth Core migration', () => {
     expect(owners.rows).toEqual([{ owner: 'ship11_test' }]);
     const triggers = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
+         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_)' AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
     );
     expect(triggers.rows[0]?.n).toBe(1); // only audit_logs_append_only
   });
