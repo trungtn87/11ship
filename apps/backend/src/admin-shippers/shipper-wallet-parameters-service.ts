@@ -14,6 +14,7 @@ import { OutboxWriter } from '../outbox/outbox-writer';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
+import { assertParameterAccess, ParameterAccess } from '../system-settings/system-parameter-access';
 import { WalletParametersBody } from './admin-shipper-validation';
 
 const OPERATION = 'admin.shipper_wallet_parameters.update.v1';
@@ -23,9 +24,9 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 const groupVersion = (rows: readonly WalletParameter[]): number => rows.reduce((sum, row) => sum + row.version, 0);
 
 /**
- * Cài đặt → Tham số hệ thống → Ví Shipper: the minimum top-up and the minimum withdrawal PER REQUEST, in whole VND. SYSTEM only,
- * like every other system parameter: the backend checks the membership under the actor's locks on every read and write (an ADMIN
- * session gets ADMIN_FORBIDDEN, never a value). The values are stored in the database and read from it on every use, so a change
+ * Cài đặt → Tham số hệ thống → Ví Shipper: the minimum top-up and the minimum withdrawal PER REQUEST, in whole VND. SYSTEM changes
+ * it, any ADMIN reads it (system-settings/system-parameter-access.ts, the rule of every system parameter): the backend checks the role under the
+ * actor's locks on every read and write (an ADMIN write gets ADMIN_FORBIDDEN). The values are stored in the database and read from it on every use, so a change
  * applies to the next request and never touches a transaction that already happened. These are NOT the minimum wallet balance for
  * taking orders (an M04 rule). One transaction: record -> actor locks -> both rows FOR UPDATE -> version check -> writes -> change
  * log (old value, new value, actor, time) -> audit -> outbox -> COMMIT. The screen carries one version for the pair (the sum of the
@@ -51,7 +52,7 @@ export class ShipperWalletParametersService {
     const known = await this.actor.precheck(sessionToken, { required: false });
     return this.transactions.withTransaction(async (context) => {
       await setBusinessLockTimeout(context, this.#lockTimeoutMs);
-      await this.#lockSystem(context, known);
+      await this.#lockActor(context, known, 'read');
       return view(await this.parameters.readAll(context), await this.parameters.recentChanges(context, HISTORY_LIMIT));
     });
   }
@@ -77,13 +78,13 @@ export class ShipperWalletParametersService {
             if (guard.actor_user_id !== known.userId) {
               throw new AppError('ADMIN_SESSION_INVALID');
             }
-            await this.#lockSystem(context, known);
+            await this.#lockActor(context, known, 'write');
             return true;
           },
         },
       },
       async (context) => {
-        const locked = await this.#lockSystem(context, known);
+        const locked = await this.#lockActor(context, known, 'write');
         const rows = await this.parameters.lockAll(context);
         if (groupVersion(rows) !== body.expectedVersion) {
           throw new AppError('WALLET_PARAMETER_VERSION_CONFLICT');
@@ -131,11 +132,11 @@ export class ShipperWalletParametersService {
     );
   }
 
-  /** The SYSTEM actor under the module's locks, the database clock read after them, then the SYSTEM-only rule. */
-  async #lockSystem(context: TransactionContext, known: SessionLookup): Promise<LockedActor> {
+  /** The administration actor under the module's locks, the database clock read after them, then the parameter access rule. */
+  async #lockActor(context: TransactionContext, known: SessionLookup, access: ParameterAccess): Promise<LockedActor> {
     const locked = await this.actor.lock(context, known, { user: 'read', factor: 'read' });
     const nowMs = await freshClockMs(context);
-    this.actor.assertLive(locked, nowMs);
+    assertParameterAccess(this.actor, locked, nowMs, access);
     return locked;
   }
 }

@@ -33,7 +33,7 @@ Khi M04 xong: bind `DRIVER_WALLET_PORT` sang bản thật (`readinessForOrders`:
 
 ## 3. Quyết định kỹ thuật (nêu để Owner/ChatGPT biết; đổi được nhanh)
 
-- **Quyền sửa tham số ví = chỉ tài khoản SYSTEM** (giống nhóm “Xác thực SĐT”). Admin thường nhận `ADMIN_FORBIDDEN`. Lý do: tham số tiền; hệ thống quyền Admin hiện chưa có quyền “tham số”. Nếu Owner muốn Admin thường sửa được: thêm quyền riêng ở M01-ADMIN trước.
+- **Quyền tham số hệ thống (Owner chốt 17/10/2026, dùng chung cho mọi nhóm tham số sau này — `system-settings/system-parameter-access.ts`)**: SYSTEM xem + sửa + xem lịch sử; mọi ADMIN hợp lệ (bất kể app được phân quyền) chỉ **xem** (kể cả lịch sử), `POST` bị `ADMIN_FORBIDDEN` ở backend; Customer/Shop/Shipper không có phiên quản trị nên không vào được. Web: SYSTEM có ô nhập + nút Lưu; ADMIN thấy giá trị chỉ đọc, không có nút Lưu. Không thêm quyền mới vào M01; quyền duyệt/khóa Shipper giữ nguyên.
 - **Quyền thao tác Shipper**: SYSTEM, hoặc ADMIN có dòng quyền app `DRIVER`: `can_view` (xem), `can_review_profile` (duyệt/từ chối/ngân hàng/phân loại/ngừng hoạt động), `can_lock` (khóa/mở lại). Không thêm quyền mới.
 - **Mở lại hoạt động** yêu cầu ngân hàng còn `Đã xác minh`. Mở lại **không** tự bật nhận đơn.
 - **Duyệt** yêu cầu hồ sơ đã gửi và có tài khoản ngân hàng đúng tên Shipper (ngân hàng được xác minh riêng, trước hoặc sau duyệt). “Hồ sơ thiếu thông tin không được duyệt.”
@@ -79,7 +79,7 @@ Chạy cục bộ (Node 22, PostgreSQL 16, đúng quy trình CI): `npm run typec
 Giới hạn / chưa làm được:
 - **APK mới chưa build** ở đây (không có Flutter SDK): code Dart + test Dart (`driver_m03_test.dart`, `driver_flow_test.dart`, `flows_test.dart`) đã viết nhưng **chưa chạy được cục bộ**; cần workflow *Mobile APK* / *m14-flutter-runtime* trên CI để xác nhận. Chưa kiểm trên thiết bị.
 - Web `ship-web` (LOCAL_WEB) chỉ được sửa để không lộ phân loại và đọc đúng hợp đồng mới; **không** có màn ngân hàng/nhận đơn M03 (phạm vi là app Android + Web Admin).
-- Chính sách quyền riêng tư trong app (`account_views.dart`) vẫn nói “hồ sơ shipper lưu họ tên và biển số”; nay còn lưu tài khoản ngân hàng ⇒ cần Owner duyệt văn bản mới trước khi sửa (xem `M01-terms-privacy-20261014.md`).
+- **Chính sách quyền riêng tư** đã cập nhật đúng câu Owner đưa (không thêm cam kết/thời hạn lưu): phiên bản mới `privacy-20261017-v1` (điều khoản giữ `terms-20261014-v1`). Văn bản app = tài liệu `M01-terms-privacy-20261014.md` (test `tests/deploy/consent-sync.test.mjs` kiểm từng chữ + phiên bản khớp `ops/vinahost/production.env.example`). **Khi triển khai phải đặt `CLIENT_AUTH_PRIVACY_VERSION=privacy-20261017-v1` trên máy chủ cùng lúc với APK mới** (máy chủ chỉ chấp nhận đúng một cặp). Giới hạn: cơ chế đồng ý hiện chỉ ghi chấp thuận lúc **đăng ký**; không có luồng yêu cầu tài khoản cũ đồng ý lại. Chấp thuận cũ (`privacy-20261014-v1`) vẫn được giữ nguyên trong DB, không bị mất hiệu lực; tài khoản cũ không bị chặn. APK cũ đăng ký mới sẽ bị máy chủ từ chối cho tới khi cập nhật APK. Không tự tạo luồng đồng ý lại ngoài M03.
 - Chưa có màn Admin xem tổng quan “yêu cầu ngừng hoạt động” riêng (lọc `Xin ngừng hoạt động` ở danh sách thay thế).
 
 ## 9. Checklist ngắn (task)

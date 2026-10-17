@@ -169,7 +169,7 @@ export class AdminShipperController {
   }
 }
 
-/** /v1/admin/system-settings/shipper-wallet (SYSTEM only): the minimum top-up and withdrawal per request. */
+/** /v1/admin/system-settings/shipper-wallet (SYSTEM changes, any ADMIN reads): the minimum top-up and withdrawal per request. */
 @Controller('admin/system-settings/shipper-wallet')
 export class ShipperWalletParametersController {
   readonly #transport: AdminTransport;

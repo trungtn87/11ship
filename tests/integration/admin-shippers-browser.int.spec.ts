@@ -190,6 +190,8 @@ describe('admin Shippers (real browser)', () => {
     for (const expected of [NAME_A, 'Tài khoản ngân hàng', 'Vietcombank', 'Chờ xác minh', 'Trạng thái nhận đơn', 'Ví chưa sẵn sàng', 'Phân loại nội bộ', 'EXTERNAL']) {
       expect(text).toContain(expected);
     }
+    await page.reload();
+    await page.waitFor(`document.querySelector('#shipper-detail-title') && document.body.innerText.includes('Lịch sử thao tác')`);
     await shot(page, 'shipper-detail-pending-desktop');
 
     // Approve: popup, one request, the answer read back.
@@ -270,6 +272,10 @@ describe('admin Shippers (real browser)', () => {
     await page.goto(`${origin}/system/parameters/shipper-wallet`);
     await page.waitFor(`document.querySelector('#wallet-topup') && document.querySelector('#wallet-topup').value === '100000'`);
     expect(await page.evaluate<string>(`document.querySelector('#wallet-withdraw').value`)).toBe('10000');
+    // SYSTEM edits: there is a Save button and the fields are not read-only. A direct reload of the route is served.
+    expect(await page.evaluate<boolean>(`!document.querySelector('#wallet-topup').readOnly && !document.querySelector('#wallet-readonly')`)).toBe(true);
+    await page.reload();
+    await page.waitFor(`document.querySelector('#wallet-topup') && document.querySelector('#wallet-topup').value === '100000'`);
     await shot(page, 'wallet-parameters-desktop');
 
     // Nothing but a whole positive VND is sent.
@@ -299,29 +305,40 @@ describe('admin Shippers (real browser)', () => {
     await page.close();
   }, 240_000);
 
-  it('an ADMIN without the DRIVER right never sees the Shipper entries, and the server refuses the page data anyway', async () => {
+  it('an ADMIN without the DRIVER right has no Shipper entries but reads the parameters (read-only); reload of both routes is served', async () => {
     const page: Page = await (browser as Browser).newPage();
     await page.viewport(1280, 900, false);
     await page.send('Network.clearBrowserCookies');
     await signIn(page, { phone: shopAdmin.phone, password: ADMIN_PASSWORD, userId: shopAdmin.userId, secret: shopAdmin.secret });
-    expect(await page.evaluate<boolean>(`!document.querySelector('a[href="/operations/shippers"]') && !document.querySelector('a[href="/system/parameters/shipper-wallet"]')`)).toBe(true);
+    expect(await page.evaluate<boolean>(`!document.querySelector('a[href="/operations/shippers"]') && !!document.querySelector('a[href="/system/parameters/shipper-wallet"]')`)).toBe(true);
     await page.goto(`${origin}/operations/shippers`);
     await page.waitFor(`document.body.innerText.includes('Không có quyền')`);
     await page.goto(`${origin}/system/parameters/shipper-wallet`);
-    await page.waitFor(`document.body.innerText.includes('Không có quyền')`);
+    await page.waitFor(`document.querySelector('#wallet-topup') && document.querySelector('#wallet-topup').value.includes('100')`);
+    expect(await page.evaluate<boolean>(`document.querySelector('#wallet-topup').readOnly && document.querySelector('#wallet-withdraw').readOnly`)).toBe(true);
+    expect(await page.evaluate<boolean>(`![...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Lưu') && !!document.querySelector('#wallet-readonly')`)).toBe(true);
+    await shot(page, 'wallet-parameters-admin-readonly');
+    await page.reload();
+    await page.waitFor(`document.querySelector('#wallet-topup')`);
     await page.close();
   }, 120_000);
 
-  it('an ADMIN with the DRIVER review right sees the Shipper pages but not the SYSTEM-only parameters', async () => {
+  it('an ADMIN with the DRIVER review right sees the Shipper pages and reads (not edits) the parameters; reload of a Shipper page is served', async () => {
     const page: Page = await (browser as Browser).newPage();
     await page.viewport(1280, 900, false);
     await page.send('Network.clearBrowserCookies');
     await signIn(page, { phone: driverAdmin.phone, password: ADMIN_PASSWORD, userId: driverAdmin.userId, secret: driverAdmin.secret });
-    expect(await page.evaluate<boolean>(`!!document.querySelector('a[href="/operations/shippers"]') && !document.querySelector('a[href="/system/parameters/shipper-wallet"]')`)).toBe(true);
+    expect(await page.evaluate<boolean>(`!!document.querySelector('a[href="/operations/shippers"]') && !!document.querySelector('a[href="/system/parameters/shipper-wallet"]')`)).toBe(true);
     await page.goto(`${origin}/operations/shippers`);
     await page.waitFor(`document.querySelector('#shipper-title') && document.querySelectorAll('.table tbody tr').length >= 1`);
+    await page.reload();
+    await page.waitFor(`document.querySelector('#shipper-title')`);
+    await page.goto(`${origin}/operations/shippers/${idA}`);
+    await page.waitFor(`document.querySelector('#shipper-detail-title')`);
+    await page.reload();
+    await page.waitFor(`document.querySelector('#shipper-detail-title')`);
     await page.goto(`${origin}/system/parameters/shipper-wallet`);
-    await page.waitFor(`document.body.innerText.includes('Không có quyền')`);
+    await page.waitFor(`document.querySelector('#wallet-readonly')`);
     await page.close();
   }, 120_000);
 });

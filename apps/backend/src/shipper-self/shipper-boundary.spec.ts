@@ -92,9 +92,14 @@ describe('Shipper administration boundary (M03)', () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
-  it('the wallet parameters are SYSTEM only: the permission check is the SYSTEM assertion, not a DRIVER permission row', () => {
+  it('the wallet parameters follow the shared parameter rule: SYSTEM writes, any administrator reads, no permission row is consulted', () => {
     const service = codeOf('admin-shippers/shipper-wallet-parameters-service.ts');
-    expect(service).toContain('this.actor.assertLive(locked, nowMs)');
-    expect(service).not.toMatch(/permissions\(|canReviewProfile|canLock/);
+    expect(service).toContain('assertParameterAccess(this.actor, locked, nowMs, access)');
+    expect(service).toContain("#lockActor(context, known, 'read')");
+    expect(service.match(/#lockActor\(context, known, 'write'\)/g)).toHaveLength(2);
+    expect(service).not.toMatch(/permissions\(|canReviewProfile|canLock|canView/);
+    const rule = codeOf('system-settings/system-parameter-access.ts');
+    expect(rule).toContain('actor.assertLive(locked, nowMs)');
+    expect(rule).toContain('actor.assertSessionLive(locked, nowMs)');
   });
 });

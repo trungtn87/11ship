@@ -44,6 +44,8 @@ export interface ShipperHost {
   readonly go: (route: Route) => void;
   readonly login: () => void;
   readonly home: () => void;
+  /** SYSTEM may change the system parameters; every other administrator only reads them. The server refuses a write from anyone else. */
+  readonly canEditParameters?: boolean;
   /** Where popups are mounted (the page body by default). */
   readonly dialogHost?: HTMLElement;
 }
@@ -612,8 +614,14 @@ export class WalletParametersView {
   #form(p: WalletParameters): HTMLElement {
     const topup = h('input', { id: 'wallet-topup', type: 'text', inputmode: 'numeric', autocomplete: 'off', 'aria-describedby': 'wallet-topup-error' });
     const withdraw = h('input', { id: 'wallet-withdraw', type: 'text', inputmode: 'numeric', autocomplete: 'off', 'aria-describedby': 'wallet-withdraw-error' });
-    topup.value = String(p.topupMinVnd);
-    withdraw.value = String(p.withdrawMinVnd);
+    const canEdit = this.host.canEditParameters === true;
+    topup.value = canEdit ? String(p.topupMinVnd) : formatVnd(p.topupMinVnd);
+    withdraw.value = canEdit ? String(p.withdrawMinVnd) : formatVnd(p.withdrawMinVnd);
+    if (!canEdit) {
+      // Read-only for every administrator but SYSTEM: the values are shown, there is nothing to type or save (the server refuses a write anyway).
+      topup.readOnly = true;
+      withdraw.readOnly = true;
+    }
     const topupError = message('error', 'wallet-topup-error');
     const withdrawError = message('error', 'wallet-withdraw-error');
     const status = message('error', 'wallet-status');
@@ -678,7 +686,7 @@ export class WalletParametersView {
         h('div', { class: 'field' }, h('label', { for: 'wallet-withdraw', class: 'label' }, `${WALLET_PARAMETER_LABEL.withdraw_min_vnd} (VND)`), h('div', { class: 'input-wrap' }, withdraw), withdrawError),
         h('p', { class: 'hint' }, 'Chỉ nhận số nguyên VND dương. Áp dụng cho yêu cầu nạp/rút mới, không sửa giao dịch đã xảy ra. Đây không phải số dư tối thiểu để nhận đơn (quy tắc của module Ví M04).'),
         status,
-        h('div', { class: 'detail-actions' }, save, cancel),
+        canEdit ? h('div', { class: 'detail-actions' }, save, cancel) : h('p', { class: 'hint', id: 'wallet-readonly' }, 'Bạn chỉ có quyền xem các tham số hệ thống. Chỉ tài khoản SYSTEM được chỉnh sửa.'),
         h('p', { class: 'hint' }, p.updatedAt === null ? 'Đang dùng giá trị mặc định.' : `Cập nhật lần cuối: ${formatDateTime(p.updatedAt)}`),
       ),
       h(

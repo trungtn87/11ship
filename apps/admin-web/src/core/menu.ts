@@ -169,14 +169,15 @@ export const MENU: readonly MenuGroup[] = [
       // Owner decision 2026-10-14: the SYSTEM account's switches (phone verification first). SYSTEM only.
       { id: 'system-settings', label: 'Cài đặt hệ thống', icon: 'gear', route: { name: 'settings' }, ready: true, access: 'system' },
       soon('zones', 'Vùng hoạt động', 'map-pin', 'zones'),
-      // M03: Cài đặt › Tham số hệ thống › Ví Shipper (minimum top-up / withdrawal per request). SYSTEM only.
+      // M03: Cài đặt › Tham số hệ thống › Ví Shipper (minimum top-up / withdrawal per request). Every administrator sees the values; only SYSTEM changes them
+      // (Owner decision 2026-10-17; the server decides again on every call).
       {
         id: 'parameters',
         label: 'Tham số hệ thống',
         icon: 'gear',
         ready: true,
-        access: 'system',
-        children: [{ id: 'parameters-shipper-wallet', label: 'Ví Shipper', route: { name: 'wallet-parameters' }, ready: true, access: 'system' }],
+        access: 'any',
+        children: [{ id: 'parameters-shipper-wallet', label: 'Ví Shipper', route: { name: 'wallet-parameters' }, ready: true, access: 'any' }],
       },
       soon('audit', 'Nhật ký', 'doc', 'audit'),
       soon('monitoring', 'Giám sát', 'activity', 'monitoring'),
@@ -230,6 +231,7 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'home':
     case 'activate':
     case 'reset':
+    case 'wallet-parameters':
       return true;
     case 'users':
     case 'user':
@@ -241,7 +243,6 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
       return canSee(role, grants, 'drivers');
     case 'administrators':
     case 'settings':
-    case 'wallet-parameters':
     case 'invitations':
     case 'invitation-new':
     case 'invitation':

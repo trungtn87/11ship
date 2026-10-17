@@ -596,14 +596,34 @@ describe('M03 — Shipper management', () => {
     const read = (who: AdminLogin): Promise<AdminResponse> => adminGet(who, '/system-settings/shipper-wallet');
     const write = (who: AdminLogin, body: unknown): Promise<AdminResponse> => adminPost(who, '/system-settings/shipper-wallet', body);
 
-    it('starts from the database defaults (100000 / 10000), is SYSTEM only and is read by M04\'s in-process reader and the Shipper app hint', async () => {
+    it('starts from the database defaults (100000 / 10000) and the Shipper app only gets them as a hint', async () => {
       const current = adminData(await read(systemLogin()));
       expect(current).toMatchObject({ topup_min_vnd: 100000, withdraw_min_vnd: 10000 });
-      expect(codeOf(await read(reviewer))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
-      expect(codeOf(await write(reviewer, { expected_version: Number(current.version), topup_min_vnd: 200000, withdraw_min_vnd: 20000 }))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
       const s = await newShipper();
       const hint = await client.call('GET', '/driver/wallet-limits', { bearer: s.token });
       expect(dataOf(hint)).toEqual({ topup_min_vnd: 100000, withdraw_min_vnd: 10000 });
+    });
+
+    it('every administrator reads them whatever apps it was granted (history included); no session reads nothing', async () => {
+      const system = adminData(await read(systemLogin()));
+      for (const who of [reviewer, viewer, lockOnly, noDriverRight]) {
+        const response = await read(who);
+        expect(response.status).toBe(200);
+        expect(adminData(response)).toEqual(system);
+        expect(Array.isArray(adminData(response).history)).toBe(true);
+      }
+      expect(codeOf(await adminGet(undefined, '/system-settings/shipper-wallet'))).toEqual({ status: 401, code: 'ADMIN_SESSION_INVALID' });
+    });
+
+    it('only SYSTEM changes them: an ADMIN of any app is refused by the server and nothing is written', async () => {
+      const before = adminData(await read(systemLogin()));
+      const body = { expected_version: Number(before.version), topup_min_vnd: 200000, withdraw_min_vnd: 20000 };
+      const logBefore = await countRows(admin.pool, 'SELECT 1 FROM app.shipper_wallet_parameter_changes');
+      for (const who of [reviewer, viewer, lockOnly, noDriverRight]) {
+        expect(codeOf(await write(who, body))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
+      }
+      expect(adminData(await read(systemLogin()))).toEqual(before);
+      expect(await countRows(admin.pool, 'SELECT 1 FROM app.shipper_wallet_parameter_changes')).toBe(logBefore);
     });
 
     it('accepts only whole positive VND, applies at once, versions the pair and records old / new value, actor and time', async () => {

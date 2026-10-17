@@ -684,6 +684,7 @@ export class ShellApp implements ShellHost {
       go: (route) => this.go(route),
       login: () => this.history.restart(),
       home: () => this.go({ name: 'home' }),
+      canEditParameters: this.#role === 'SYSTEM',
     };
   }
 
@@ -701,7 +702,7 @@ export class ShellApp implements ShellHost {
     void view.load();
   }
 
-  /** "Hệ thống › Tham số hệ thống › Ví Shipper" (SYSTEM only; the server decides again). */
+  /** "Hệ thống › Tham số hệ thống › Ví Shipper" (every administrator reads, only SYSTEM edits; the server decides again). */
   #walletParameters(content: HTMLElement): void {
     const view = new WalletParametersView(content, this.#shipperHost());
     this.#unsubscribe = () => view.dispose();

@@ -144,13 +144,16 @@ describe('admin web Shippers - model, routes and menu', () => {
     }
   });
 
-  it('shows the Shipper entry to SYSTEM and to an ADMIN with the DRIVER view right, and the parameters to SYSTEM only', () => {
+  it('shows the Shipper entry to SYSTEM and to an ADMIN with the DRIVER view right, and the parameters to every administrator (only SYSTEM edits)', () => {
     const labels = (role: 'SYSTEM' | 'ADMIN', grants: ReadonlySet<'drivers' | 'users'>) => allLeaves().filter((leaf) => visibleMenu(role, grants as never).some((g) => g.items.some((i) => i.id === leaf.id || i.children?.some((c) => c.id === leaf.id)))).map((leaf) => leaf.id);
     expect(labels('SYSTEM', new Set())).toEqual(expect.arrayContaining(['drivers', 'parameters-shipper-wallet']));
     expect(labels('ADMIN', new Set(['drivers']))).toContain('drivers');
-    expect(labels('ADMIN', new Set(['drivers']))).not.toContain('parameters-shipper-wallet');
+    // Every administrator sees the parameters, whatever it was granted; SYSTEM alone edits them (the server decides).
+    expect(labels('ADMIN', new Set(['drivers']))).toContain('parameters-shipper-wallet');
+    expect(labels('ADMIN', new Set())).toContain('parameters-shipper-wallet');
     expect(labels('ADMIN', new Set(['users']))).not.toContain('drivers');
-    expect(canOpenRoute('ADMIN', new Set(['drivers']) as never, { name: 'wallet-parameters' })).toBe(false);
+    expect(canOpenRoute('ADMIN', new Set(['drivers']) as never, { name: 'wallet-parameters' })).toBe(true);
+    expect(canOpenRoute('ADMIN', new Set() as never, { name: 'wallet-parameters' })).toBe(true);
     expect(canOpenRoute('ADMIN', new Set(['drivers']) as never, { name: 'shippers' })).toBe(true);
     expect(canOpenRoute('ADMIN', new Set() as never, { name: 'shipper', id: ID })).toBe(false);
   });
