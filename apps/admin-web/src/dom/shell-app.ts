@@ -43,6 +43,9 @@ import { CatalogController } from '../core/catalog-controller.js';
 import { CatalogView } from './catalog-view.js';
 import { NOT_WIRED_SHIPPERS, ShipperFilter, ShipperSource } from '../core/shippers.js';
 import { ShipperDetailView, ShipperHost, ShipperListView, WalletParametersView } from './shippers-view.js';
+import { FinanceController, isFinanceRoute } from '../core/finance-controller.js';
+import { FinanceSource, NOT_WIRED_FINANCE } from '../core/finance.js';
+import { FinanceView } from './finance-view.js';
 import { ShellLayout } from './shell-layout.js';
 import { failurePanel, skeleton } from './states.js';
 import { ShellHost } from './view.js';
@@ -107,6 +110,8 @@ export class ShellApp implements ShellHost {
     private readonly catalog: CatalogSource = NOT_WIRED_CATALOG,
     /** Where the Shippers (Vận hành › Shipper) and the Shipper wallet parameters come from. By default nothing is wired, so the pages say so. */
     private readonly shippers: ShipperSource = NOT_WIRED_SHIPPERS,
+    /** Where the finance pages (M04) come from. By default nothing is wired, so every page says so and every money button is disabled. */
+    private readonly finance: FinanceSource = NOT_WIRED_FINANCE,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -261,6 +266,17 @@ export class ShellApp implements ShellHost {
         return;
       case 'wallet-parameters':
         this.#walletParameters(content);
+        return;
+      case 'finance':
+      case 'finance-wallets':
+      case 'finance-topups':
+      case 'finance-topup':
+      case 'finance-withdrawals':
+      case 'finance-withdrawal':
+      case 'finance-transactions':
+      case 'finance-reconciliation':
+      case 'wallet-params':
+        this.#financePage(content, route);
         return;
       default:
         this.#invitations(content, route);
@@ -752,6 +768,55 @@ export class ShellApp implements ShellHost {
       unsubscribe();
       controller.dispose();
       view.dispose();
+    };
+    view.render(controller.screen);
+    controller.load();
+  }
+
+  /**
+   * "Tài chính" (M04, UI phase) and the wallet parameters. The controller owns the filter, the page and the two drafts; this only connects it
+   * to the view and the session. There is no write: every money button is drawn disabled while the source is NOT_WIRED_FINANCE.
+   */
+  #financePage(content: HTMLElement, route: Route): void {
+    if (!isFinanceRoute(route)) {
+      return;
+    }
+    const wired = this.finance !== NOT_WIRED_FINANCE;
+    const controller = new FinanceController({
+      source: this.finance,
+      route,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+    });
+    const view = new FinanceView(content, {
+      wired,
+      retry: () => controller.load(),
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      refresh: () => controller.load(),
+      open: (next) => this.go(next),
+      search: (query) => controller.search(query),
+      page: (page) => controller.page(page),
+      ledgerFilter: (next) => controller.ledgerFilter(next),
+      topupDraft: (draft) => controller.topupDraft(draft),
+      topupAttempt: (action) => controller.attemptTopup(action),
+      // Nothing below sends anything in the UI phase: the buttons are disabled until a backend package connects them.
+      topupDecide: () => undefined,
+      withdrawalAct: () => undefined,
+      paramsDraft: (draft) => controller.paramsDraft(draft),
+      paramsAttempt: () => controller.attemptParams(),
+      paramsSave: () => undefined,
+      paramsReset: () => controller.resetParams(),
+      exportLedger: () => undefined,
+    });
+    const unsubscribe = controller.subscribe((screen) => view.render(screen));
+    this.#unsubscribe = () => {
+      unsubscribe();
+      controller.dispose();
     };
     view.render(controller.screen);
     controller.load();

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:n11_shared/n11_shared.dart';
 
 import 'ship_home.dart';
+import 'ship_wallet.dart';
 
 // M01 phone tabs. Home follows the approved Offline/Online reference; later-module actions remain gated.
 
@@ -67,6 +68,8 @@ class _OrdersBodyState extends State<OrdersBody> {
 
 Widget _income(BuildContext context, ShellActions actions) {
   return vstack(<Widget>[
+    // M04 UI: entry to the wallet screens. Not-wired in real builds (the screens say so); sample data only in a preview build.
+    const WalletEntry(),
     const GatedButton(label: 'Chọn khoảng ngày', reason: 'Chọn ngày sẽ có khi dữ liệu thu nhập sẵn sàng.', kind: ButtonKind.secondary, icon: Icons.schedule),
     _unknownFigure(label: 'Tổng thu nhập', note: 'Chưa có dữ liệu. "—" nghĩa là chưa biết, không phải 0 đồng.'),
     const EmptyState(icon: Icons.bar_chart_outlined, title: 'Chưa có dữ liệu thu nhập', text: FrameReasons.empty),
@@ -116,6 +119,7 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
         ),
     ],
     entries: <Widget>[
+      const WalletListItem(key: Key('account-wallet-entry')),
       if (driver == null)
         N11ListItem(
           icon: Icons.badge_outlined,

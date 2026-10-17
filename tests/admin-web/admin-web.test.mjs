@@ -56,8 +56,27 @@ describe('menu by permission', () => {
     const m = await load(real, 'core/menu.js');
     assert.deepEqual(
       m.MENU.flatMap((group) => group.items.map((item) => item.label)),
-      ['Tổng quan', 'Người dùng', 'Quản trị viên', 'Lời mời Admin', 'Quán', 'Shipper', 'Đơn hàng', 'Giao hàng', 'Phản ánh', 'Danh mục', 'Ví shipper', 'Nạp tiền', 'Rút tiền', 'Cài đặt hệ thống', 'Vùng hoạt động', 'Tham số hệ thống', 'Nhật ký', 'Giám sát'],
+      ['Tổng quan', 'Người dùng', 'Quản trị viên', 'Lời mời Admin', 'Quán', 'Shipper', 'Đơn hàng', 'Giao hàng', 'Phản ánh', 'Danh mục', 'Tài chính', 'Cài đặt hệ thống', 'Vùng hoạt động', 'Tham số hệ thống', 'Nhật ký', 'Giám sát'],
     );
+  });
+  it('M04 "Tài chính": six ready entries in the approved order; SYSTEM sees them, an ADMIN only with the matching grant; parameters sit under the system group', async () => {
+    const m = await load(real, 'core/menu.js');
+    const finance = m.MENU.find((group) => group.id === 'finance').items[0];
+    assert.deepEqual(
+      finance.children.map((child) => child.label),
+      ['Tổng quan', 'Ví Shipper', 'Nạp tiền', 'Rút tiền', 'Giao dịch', 'Đối soát'],
+    );
+    assert.ok(finance.children.every((child) => child.ready && child.route !== undefined));
+    assert.ok(ids(m.visibleMenu('SYSTEM')).includes('finance-reconciliation'));
+    assert.ok(!ids(m.visibleMenu('ADMIN', m.NO_GRANTS)).includes('finance-topups'));
+    const topupsOnly = ids(m.visibleMenu('ADMIN', new Set(['driver-wallets', 'topups'])));
+    assert.ok(topupsOnly.includes('finance-topups') && !topupsOnly.includes('finance-withdrawals'));
+    assert.equal(m.canOpenRoute('ADMIN', new Set(['driver-wallets']), { name: 'finance-topups' }), false);
+    assert.equal(m.canOpenRoute('ADMIN', new Set(['withdrawals']), { name: 'finance-withdrawal', id: 'x' }), true);
+    assert.equal(m.canOpenRoute('ADMIN', m.NO_GRANTS, { name: 'wallet-params' }), false);
+    assert.equal(m.canOpenRoute('SYSTEM', m.NO_GRANTS, { name: 'wallet-params' }), true);
+    assert.deepEqual(m.breadcrumb({ name: 'wallet-params' }), ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper']);
+    assert.equal(m.activeMenuId({ name: 'finance-withdrawal', id: 'x' }), 'finance-withdrawals');
   });
   it('a ready entry has a route; an entry that is not built has none (shown as "Sắp có")', async () => {
     const m = await load(real, 'core/menu.js');
@@ -119,6 +138,15 @@ describe('real build', () => {
     const html = readFileSync(join(real, 'index.html'), 'utf8');
     assert.ok(!html.includes('Dữ liệu minh họa'));
   });
+  it('M04: carries no sample wallet, shipper or request (those exist only in the design preview) and no money-moving call', () => {
+    for (const file of ['core/finance.js', 'core/finance-controller.js', 'dom/finance-view.js', 'dom/shell-app.js']) {
+      const text = readFileSync(join(real, 'js', file), 'utf8');
+      assert.ok(!/Nguyễn Văn A|Trần Thị B|SHP00|NP2026|RT2026|MINHHOA|SAMPLE_/.test(text), file);
+      if (file.includes('finance')) {
+        assert.ok(!/\bfetch\(|XMLHttpRequest|localStorage|sessionStorage/.test(text), `${file} must not call a server or store anything in the UI phase`);
+      }
+    }
+  });
   it('has no persona picker and no way to grant rights from the page', () => {
     for (const file of ['dom/main.js', 'dom/shell-app.js', 'dom/view.js', 'core/menu.js']) {
       const text = readFileSync(join(real, 'js', file), 'utf8');
@@ -135,7 +163,7 @@ describe('design preview', () => {
   it('lists every catalog screen with its code (an import failure FAILS this test)', async () => {
     const screens = await load(design, 'design/screens.js');
     const byCode = new Map(screens.SCREENS.map((screen) => [screen.code, screen]));
-    const expected = ['D00', 'D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08', 'D09', 'D81', 'D86', 'D87', 'D88', 'D89', 'D90', 'D91', 'D92', 'C01–C10'];
+    const expected = ['D00', 'D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08', 'D09', 'D81', 'D86', 'D87', 'D88', 'D89', 'D90', 'D91', 'D92', 'M04-A01', 'M04-A02', 'M04-A03', 'M04-A04', 'M04-A05', 'M04-A06', 'M04-A07', 'C01–C10'];
     for (const code of expected) {
       assert.ok(byCode.has(code), `missing screen code ${code}`);
     }

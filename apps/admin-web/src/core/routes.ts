@@ -2,6 +2,7 @@
 // The activation page lives at /activate and the invitation token is in the URL FRAGMENT (#t=...), never in the path
 // or the query, so it is not sent to any server by the browser and is removed from the address bar right after reading.
 
+import { TOPUP_TABS, TopupTab, WITHDRAWAL_TABS, WithdrawalTab } from './finance.js';
 import { InvitationStatus, INVITATION_STATUSES, isUuid } from './provisioning-api.js';
 import { SHIPPER_FILTERS, ShipperFilter } from './shippers.js';
 
@@ -21,7 +22,17 @@ export type Route =
   | { readonly name: 'shippers'; readonly status?: ShipperFilter }
   | { readonly name: 'shipper'; readonly id: string }
   | { readonly name: 'wallet-parameters' }
-  | { readonly name: 'settings' };
+  | { readonly name: 'settings' }
+  // M04 (UI phase): "Tài chính" and the wallet parameters ("Cài đặt › Tham số hệ thống › Ví Shipper").
+  | { readonly name: 'finance' }
+  | { readonly name: 'finance-wallets' }
+  | { readonly name: 'finance-topups'; readonly tab?: TopupTab }
+  | { readonly name: 'finance-topup'; readonly id: string }
+  | { readonly name: 'finance-withdrawals'; readonly tab?: WithdrawalTab }
+  | { readonly name: 'finance-withdrawal'; readonly id: string }
+  | { readonly name: 'finance-transactions'; readonly shipper?: string }
+  | { readonly name: 'finance-reconciliation' }
+  | { readonly name: 'wallet-params' };
 
 /** The only status filter with its own menu entry ("Đang khóa"); any other value of ?status= is ignored. */
 export type UserStatusFilter = 'LOCKED';
@@ -57,6 +68,10 @@ export function parseRoute(pathname: string, search = ''): Route {
   if (shipper !== null && isUuid(shipper[1])) {
     return { name: 'shipper', id: shipper[1] };
   }
+  const finance = parseFinanceRoute(path, search);
+  if (finance !== undefined) {
+    return finance;
+  }
   const user = /^\/accounts\/users\/([^/]+)$/.exec(path);
   if (user !== null && isUuid(user[1])) {
     return { name: 'user', id: user[1] };
@@ -84,6 +99,40 @@ export function parseRoute(pathname: string, search = ''): Route {
   return { name: 'home' };
 }
 
+function parseFinanceRoute(path: string, search: string): Route | undefined {
+  switch (path) {
+    case '/finance':
+      return { name: 'finance' };
+    case '/finance/wallets':
+      return { name: 'finance-wallets' };
+    case '/finance/transactions': {
+      const shipper = new URLSearchParams(search).get('shipper')?.trim().slice(0, 80);
+      return shipper === undefined || shipper === '' ? { name: 'finance-transactions' } : { name: 'finance-transactions', shipper };
+    }
+    case '/finance/reconciliation':
+      return { name: 'finance-reconciliation' };
+    case '/system/parameters/wallet':
+      return { name: 'wallet-params' };
+    case '/finance/topups': {
+      const tab = new URLSearchParams(search).get('tab');
+      return tab !== null && (TOPUP_TABS as readonly string[]).includes(tab) ? { name: 'finance-topups', tab: tab as TopupTab } : { name: 'finance-topups' };
+    }
+    case '/finance/withdrawals': {
+      const tab = new URLSearchParams(search).get('tab');
+      return tab !== null && (WITHDRAWAL_TABS as readonly string[]).includes(tab) ? { name: 'finance-withdrawals', tab: tab as WithdrawalTab } : { name: 'finance-withdrawals' };
+    }
+  }
+  const topup = /^\/finance\/topups\/([^/]+)$/.exec(path);
+  if (topup !== null && isUuid(topup[1])) {
+    return { name: 'finance-topup', id: topup[1] };
+  }
+  const withdrawal = /^\/finance\/withdrawals\/([^/]+)$/.exec(path);
+  if (withdrawal !== null && isUuid(withdrawal[1])) {
+    return { name: 'finance-withdrawal', id: withdrawal[1] };
+  }
+  return undefined;
+}
+
 export function formatRoute(route: Route): string {
   switch (route.name) {
     case 'home':
@@ -108,6 +157,24 @@ export function formatRoute(route: Route): string {
       return route.status === undefined ? '/operations/shippers' : `/operations/shippers?status=${route.status}`;
     case 'shipper':
       return `/operations/shippers/${route.id}`;
+    case 'finance':
+      return '/finance';
+    case 'finance-wallets':
+      return '/finance/wallets';
+    case 'finance-topups':
+      return route.tab === undefined ? '/finance/topups' : `/finance/topups?tab=${route.tab}`;
+    case 'finance-topup':
+      return `/finance/topups/${route.id}`;
+    case 'finance-withdrawals':
+      return route.tab === undefined ? '/finance/withdrawals' : `/finance/withdrawals?tab=${route.tab}`;
+    case 'finance-withdrawal':
+      return `/finance/withdrawals/${route.id}`;
+    case 'finance-transactions':
+      return route.shipper === undefined ? '/finance/transactions' : `/finance/transactions?shipper=${encodeURIComponent(route.shipper)}`;
+    case 'finance-reconciliation':
+      return '/finance/reconciliation';
+    case 'wallet-params':
+      return '/system/parameters/wallet';
     case 'invitations':
       return route.status === undefined ? '/invitations' : `/invitations?status=${route.status}`;
     case 'invitation-new':
