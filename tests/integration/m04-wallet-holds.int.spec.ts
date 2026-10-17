@@ -64,7 +64,8 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
     readonly withdrawalId?: string | null;
   }
 
-  function insertHold(client: PoolClient, walletId: string, input: HoldInput): Promise<unknown> {
+  /** The raw INSERT, exactly as given (a hold not born ACTIVE is refused by the guard). */
+  function insertHoldRaw(client: PoolClient, walletId: string, input: HoldInput): Promise<unknown> {
     const purpose = input.purpose ?? 'COMMISSION';
     const status = input.status ?? 'ACTIVE';
     const commission = input.commissionAssignmentId === undefined ? (purpose === 'COMMISSION' ? randomUUID() : null) : input.commissionAssignmentId;
@@ -74,6 +75,16 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
        VALUES ($1::uuid, $2::uuid, $3::varchar, $4::bigint, $5::varchar, $6::uuid, $7::uuid, 1, now(), now(), CASE WHEN $5::varchar = 'ACTIVE' THEN NULL ELSE now() END)`,
       [input.holdId ?? randomUUID(), walletId, purpose, input.amount, status, commission, withdrawal],
     );
+  }
+
+  /** A hold as it really comes to exist: born ACTIVE, then (for CAPTURED / RELEASED) moved by the one allowed transition. */
+  async function insertHold(client: PoolClient, walletId: string, input: HoldInput): Promise<unknown> {
+    const holdId = input.holdId ?? randomUUID();
+    const result = await insertHoldRaw(client, walletId, { ...input, holdId, status: 'ACTIVE' });
+    if (input.status !== undefined && input.status !== 'ACTIVE') {
+      await client.query(`UPDATE app.wallet_holds SET status = $2::varchar, resolved_at = now(), updated_at = now(), version = version + 1 WHERE hold_id = $1::uuid`, [holdId, input.status]);
+    }
+    return result;
   }
 
   /**
@@ -207,6 +218,9 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
       await refused(client, 'zero_amount', () => insertHold(client, wallet, { amount: 0 }), 'wallet_holds_amount_ck');
       await refused(client, 'negative_amount', () => insertHold(client, wallet, { amount: -5 }), 'wallet_holds_amount_ck');
       await refused(client, 'over_the_technical_cap', () => insertHold(client, wallet, { amount: 9_007_199_254_740_992 }), 'wallet_holds_amount_ck');
+      for (const born of ['CAPTURED', 'RELEASED'] as const) {
+        await refused(client, `born_${born.toLowerCase()}`, () => insertHoldRaw(client, wallet, { amount: 1000, status: born }), 'WALLET_HOLD_MUST_START_ACTIVE');
+      }
       await refused(client, 'unknown_wallet', () => insertHold(client, randomUUID(), { amount: 1000 }), 'wallet_holds_wallet_fk');
     });
   });
@@ -352,7 +366,7 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
     // The committed RELEASED hold reads back through the read model (bigint, no side effect); the summary has nothing active.
     const holds = await manager().withTransaction((context) => service.listHolds(context, driverId));
     expect(holds).toHaveLength(1);
-    expect(holds[0]).toMatchObject({ walletId, purpose: 'COMMISSION', amountVnd: 4000n, status: 'RELEASED', version: 1n, withdrawalId: null });
+    expect(holds[0]).toMatchObject({ walletId, purpose: 'COMMISSION', amountVnd: 4000n, status: 'RELEASED', version: 2n, withdrawalId: null });
     expect(await manager().withTransaction((context) => service.holdSummary(context, driverId))).toEqual({
       provisioned: true,
       driverId,

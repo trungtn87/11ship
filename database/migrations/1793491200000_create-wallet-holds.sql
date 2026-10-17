@@ -79,6 +79,15 @@ CREATE TRIGGER wallet_holds_a_source_gate BEFORE INSERT ON app.wallet_holds
 CREATE FUNCTION app.wallet_holds_guard() RETURNS trigger
   LANGUAGE plpgsql AS $$
 BEGIN
+  -- The wallet row lock first (as the ledger chain does), so even a writer that forgot it is serialised per wallet.
+  PERFORM 1 FROM app.driver_wallets WHERE wallet_id = NEW.wallet_id FOR UPDATE;
+  IF TG_OP = 'INSERT' THEN
+    -- A hold is born ACTIVE, unresolved, at version 1; it can only reach CAPTURED / RELEASED by a transition.
+    IF NEW.status <> 'ACTIVE' OR NEW.resolved_at IS NOT NULL OR NEW.version <> 1 THEN
+      RAISE EXCEPTION 'WALLET_HOLD_MUST_START_ACTIVE' USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
   IF NEW.hold_id <> OLD.hold_id OR NEW.wallet_id <> OLD.wallet_id OR NEW.purpose <> OLD.purpose OR NEW.amount_vnd <> OLD.amount_vnd
      OR NEW.created_at <> OLD.created_at
      OR NEW.commission_assignment_id IS DISTINCT FROM OLD.commission_assignment_id
@@ -94,7 +103,7 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-CREATE TRIGGER wallet_holds_guard BEFORE UPDATE ON app.wallet_holds
+CREATE TRIGGER wallet_holds_guard BEFORE INSERT OR UPDATE ON app.wallet_holds
   FOR EACH ROW EXECUTE FUNCTION app.wallet_holds_guard();
 
 -- Hold history is never deleted (statement-level, so it fires even when no row matches).
