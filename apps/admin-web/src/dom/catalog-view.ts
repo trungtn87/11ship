@@ -280,7 +280,7 @@ export class CatalogView {
     const status = message(dialog.phase === 'unknown' || dialog.phase === 'conflict' ? 'warning' : 'error', 'category-status-message');
     setMessage(status, dialog.message);
     const cancel = secondary('Hủy');
-    cancel.disabled = working;
+    cancel.disabled = working || dialog.phase === 'unknown';
     cancel.addEventListener('click', () => this.hooks.cancel());
     const extra: HTMLElement[] = [];
     let confirm: HTMLButtonElement;
@@ -305,7 +305,7 @@ export class CatalogView {
     const handle = openDialog({
       host: this.dialogHost,
       title: dialog.mode === 'create' ? 'Thêm nhóm món' : 'Sửa nhóm món',
-      onDismiss: working ? undefined : () => this.hooks.cancel(),
+      onDismiss: working || dialog.phase === 'unknown' ? undefined : () => this.hooks.cancel(),
       body: [
         h('div', { class: 'field' }, h('label', { for: 'category-name', class: 'label' }, 'Tên nhóm'), h('div', { class: 'input-wrap' }, nameInput), nameError, twin, count),
         h('div', { class: 'field' }, h('label', { for: 'category-order', class: 'label' }, 'Thứ tự'), h('div', { class: 'input-wrap' }, orderInput), h('p', { id: 'category-order-hint', class: 'hint' }, 'Số nguyên không âm. Nhóm có số nhỏ hơn hiện trước trong bộ chọn của chủ quán.'), orderError),
@@ -328,7 +328,7 @@ export class CatalogView {
     const status = message(dialog.phase === 'unknown' || dialog.phase === 'conflict' ? 'warning' : 'error', 'category-status-message');
     setMessage(status, dialog.message);
     const cancel = secondary('Hủy');
-    cancel.disabled = working;
+    cancel.disabled = working || dialog.phase === 'unknown';
     cancel.addEventListener('click', () => this.hooks.cancel());
     const extra: HTMLElement[] = [];
     let confirm: HTMLButtonElement;
@@ -352,7 +352,7 @@ export class CatalogView {
     return openDialog({
       host: this.dialogHost,
       title: deactivate ? 'Ngừng dùng nhóm món' : 'Kích hoạt lại nhóm món',
-      onDismiss: working ? undefined : () => this.hooks.cancel(),
+      onDismiss: working || dialog.phase === 'unknown' ? undefined : () => this.hooks.cancel(),
       body: [
         h('p', { class: `dialog-warning dialog-warning-${deactivate ? 'danger' : 'info'}`, role: 'note', id: 'category-toggle-text' }, icon(deactivate ? 'alert' : 'info', 18), h('span', {}, deactivate ? deactivateText(dialog.name) : activateText(dialog.name))),
         deactivate && dialog.itemCount > 0 ? h('p', { class: 'hint' }, `Hiện có ${String(dialog.itemCount)} món thuộc nhóm này.`) : undefined,

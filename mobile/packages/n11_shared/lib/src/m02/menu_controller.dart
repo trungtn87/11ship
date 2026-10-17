@@ -70,6 +70,8 @@ class MenuListController extends ChangeNotifier {
   MenuLoad _load = MenuLoad.idle;
   MenuSnapshot? _snapshot;
   AuthFailure? _loadFailure;
+  bool _stale = false;
+  bool _reading = false;
 
   // List view state, kept across edits.
   String query = '';
@@ -94,6 +96,9 @@ class MenuListController extends ChangeNotifier {
   MenuLoad get loadState => _load;
   MenuSnapshot? get snapshot => _snapshot;
   AuthFailure? get loadFailure => _loadFailure;
+
+  /// The last read failed but an earlier snapshot is still shown: the data may be out of date and "Thử lại" reads it again.
+  bool get stale => _stale;
   ItemForm? get form => _form;
   bool get busy => _busy;
   MenuPending? get pending => _pending;
@@ -135,6 +140,8 @@ class MenuListController extends ChangeNotifier {
     _load = MenuLoad.idle;
     _snapshot = null;
     _loadFailure = null;
+    _stale = false;
+    _reading = false;
     query = '';
     filter = 'all';
     categoryFilter = 'all';
@@ -171,17 +178,21 @@ class MenuListController extends ChangeNotifier {
   // ---- reading --------------------------------------------------------------------------------------------------
 
   Future<void> load() async {
-    if (_load == MenuLoad.loading) {
+    if (_reading) {
       return;
     }
     final int epoch = _epoch;
-    _load = MenuLoad.loading;
+    // With a snapshot the data stays on screen while it is read again; only a first read shows the skeleton.
+    if (_snapshot == null) {
+      _load = MenuLoad.loading;
+    }
     _loadFailure = null;
     _notify();
     await _read(epoch);
   }
 
   Future<bool> _read(int epoch) async {
+    _reading = true;
     try {
       final MenuSnapshot snapshot = await api.load();
       if (epoch != _epoch) {
@@ -190,6 +201,7 @@ class MenuListController extends ChangeNotifier {
       _snapshot = snapshot;
       _load = MenuLoad.ready;
       _loadFailure = null;
+      _stale = false;
       _notify();
       return true;
     } on FeatureNotConnected {
@@ -199,12 +211,21 @@ class MenuListController extends ChangeNotifier {
       }
       return false;
     } on AuthFailure catch (failure) {
-      if (epoch == _epoch && _snapshot == null) {
+      if (epoch == _epoch) {
         _loadFailure = failure;
-        _load = MenuLoad.failed;
+        if (_snapshot == null) {
+          _load = MenuLoad.failed;
+        } else {
+          _load = MenuLoad.ready;
+          _stale = true;
+        }
         _notify();
       }
       return false;
+    } finally {
+      if (epoch == _epoch) {
+        _reading = false;
+      }
     }
   }
 
