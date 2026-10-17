@@ -234,7 +234,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#118](https://github.com/trungtn87/11ship/pull/118) 11Ship M01: gọn tab Tài khoản và thêm đổi mật khẩu thật | Đã merge (`MERGED`) | — | — | — | `dcd4be8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#119](https://github.com/trungtn87/11ship/pull/119) M14: GPS Test APK and shared Flutter integration for future… | Đã merge (`MERGED`) | — | — | — | `bc1e8d6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#120](https://github.com/trungtn87/11ship/pull/120) M01: account scopes, system settings, account lifecycle (ba… | Đã merge (`MERGED`) | — | — | — | `f478f1a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#121](https://github.com/trungtn87/11ship/pull/121) M02 discovery gap-fill (M09 merged into M02): exact dish pa… | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `49e7598` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#121](https://github.com/trungtn87/11ship/pull/121) M02 discovery gap-fill (M09 merged into M02): exact dish pa… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `7ee04d6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
