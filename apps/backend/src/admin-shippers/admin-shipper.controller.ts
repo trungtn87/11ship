@@ -13,17 +13,17 @@ import { AdminShipperService, CommandInput, ShipperCommand } from './admin-shipp
 import { parseClassifyBody, parseDriverId, parseNoQuery, parseReasonBody, parseShipperListQuery, parseVersionBody, parseWalletParametersBody } from './admin-shipper-validation';
 import { ShipperWalletParametersService } from './shipper-wallet-parameters-service';
 
-interface AdminRequest {
+export interface AdminRequest {
   readonly headers: Readonly<Record<string, string | string[] | undefined>>;
   readonly socket: { readonly remoteAddress?: string };
   readonly requestId?: string;
 }
 
-interface StatusResponse {
+export interface StatusResponse {
   status(code: number): unknown;
 }
 
-type Csrf = string | string[] | undefined;
+export type Csrf = string | string[] | undefined;
 
 /** Which commands need a reason and which one carries the classification; everything else names only the version. */
 const PARSERS: Readonly<Record<ShipperCommand, (body: unknown) => CommandInput>> = {
@@ -39,7 +39,7 @@ const PARSERS: Readonly<Record<ShipperCommand, (body: unknown) => CommandInput>>
 };
 
 /** Shared transport of the administration routes: exact Origin, quota, JSON, then the cookie/CSRF precheck inside the service. */
-class AdminTransport {
+export class AdminTransport {
   readonly #origins: ReadonlySet<string>;
   readonly #trustedProxies: ReadonlySet<string>;
 

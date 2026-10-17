@@ -88,6 +88,13 @@ export const APP_ERROR_DEFINITIONS = {
   DRIVER_HAS_ACTIVE_WORK: { status: 409, message: 'The Shipper still has deliveries in progress' },
   DRIVER_WALLET_NOT_SETTLED: { status: 409, message: 'The wallet balance must be settled first' },
   DRIVER_SELF_ACTION_FORBIDDEN: { status: 403, message: 'An administrator cannot perform this action on their own Shipper profile' },
+  // Finance access and the receiving accounts of the system (M04-B2.2a). Same rule: fixed messages that echo nothing the client sent and reveal nothing
+  // about another account. ADMIN_FORBIDDEN (above) is the answer to an administrator without the right.
+  FINANCE_ADMIN_NOT_FOUND: { status: 404, message: 'The administrator was not found' },
+  FINANCE_GRANT_STATE_CONFLICT: { status: 409, message: 'The finance right is not in a state that allows this action' },
+  FINANCE_VERSION_CONFLICT: { status: 409, message: 'The finance right was changed by another request' },
+  FINANCE_BANK_ACCOUNT_EXISTS: { status: 409, message: 'This receiving account is already configured' },
+  FINANCE_BANK_ACCOUNT_NOT_FOUND: { status: 404, message: 'The receiving account was not found' },
   // Shipper top-up requests (M04-B2.1). Same rule: fixed messages that echo nothing the client sent; a request of another Shipper reads as not found.
   TOPUP_AMOUNT_BELOW_MINIMUM: { status: 400, message: 'The top-up amount is below the current minimum' },
   TOPUP_RECEIVING_ACCOUNT_NOT_CONFIGURED: { status: 409, message: 'No receiving account is available for top-ups yet' },
