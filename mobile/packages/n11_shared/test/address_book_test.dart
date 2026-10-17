@@ -197,7 +197,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('address-save')));
     await tester.pumpAndSettle();
-    expect(find.text('Số điện thoại chưa hợp lệ.').evaluate().length + find.text('Nhập số điện thoại người nhận.').evaluate().length, 1);
+    expect(find.text('Nhập số điện thoại người nhận.'), findsNothing, reason: 'the account phone is prefilled');
+    await tester.enterText(find.byKey(const Key('address-phone')), '123');
+    await tester.tap(find.byKey(const Key('address-save')));
+    await tester.pumpAndSettle();
+    expect(find.text('Số điện thoại chưa hợp lệ.'), findsOneWidget);
     expect(find.text('Nhập địa chỉ giao hàng chi tiết.'), findsOneWidget);
     await tester.enterText(find.byKey(const Key('address-phone')), '0912 345 678');
     await tester.enterText(find.byKey(const Key('address-text')), '12 Lê Lợi, Q1');
