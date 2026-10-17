@@ -243,7 +243,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#127](https://github.com/trungtn87/11ship/pull/127) M04-A2.1: Lõi tạm giữ tiền Shipper (wallet_holds, cổng nguồ… | Đã merge (`MERGED`) | — | — | — | `520604a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#128](https://github.com/trungtn87/11ship/pull/128) M06: bảng giá ship (A), điều kiện nhận/ghép đơn (B/C), UI 1… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `eba7416` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#129](https://github.com/trungtn87/11ship/pull/129) M04-B1: Lõi nguồn tiền nạp và chứng từ ngân hàng (schema, k… | Đã merge (`MERGED`) | — | — | — | `7507583` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#130](https://github.com/trungtn87/11ship/pull/130) M04-B2.1: Shipper tạo, xem, hủy yêu cầu nạp tiền (backend,… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `fc90ed7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#130](https://github.com/trungtn87/11ship/pull/130) M04-B2.1: Shipper tạo, xem, hủy yêu cầu nạp tiền (backend,… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `fc90ed7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
