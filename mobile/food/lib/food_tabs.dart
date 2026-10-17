@@ -8,7 +8,7 @@ import 'package:n11_shared/n11_shared.dart';
 
 List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
   return <TabSpec>[
-    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', showLogo: true, fullBleed: true, body: (BuildContext context, ShellActions actions) => _home(session, actions, flows)),
+    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', showAppBar: false, fullBleed: true, body: (BuildContext context, ShellActions actions) => _home(session, actions, flows)),
     TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: (BuildContext context, ShellActions actions) => _orders(session, flows)),
     if (session.status == SessionStatus.signedIn && (session.identity?.availableRoles.contains('SHOP_OWNER') == true || session.identity?.shopOnboarding == 'INCOMPLETE' || session.identity?.shopOnboarding == 'COMPLETED'))
       TabSpec(
@@ -33,7 +33,14 @@ Widget _soonChip() => const Center(child: N11Chip('Sắp có', kind: ChipKind.so
 Widget _home(SessionController session, ShellActions actions, AppFlows? flows) {
   final M02Flows? m02 = flows?.m02;
   if (m02 == null) {
-    return const EmptyState(icon: Icons.restaurant, title: 'Danh sách quán chưa sẵn sàng', text: 'Bản này chưa nối danh sách quán.');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap4),
+      child: Column(children: <Widget>[
+        Align(alignment: Alignment.centerLeft, child: BrandLogo(brand: foodBrand)),
+        const SizedBox(height: N11Space.gap4),
+        const EmptyState(icon: Icons.restaurant, title: 'Danh sách quán chưa sẵn sàng', text: 'Bản này chưa nối danh sách quán.'),
+      ]),
+    );
   }
   return DiscoveryHome(controller: m02.discovery, publicApi: m02.publicApi);
 }

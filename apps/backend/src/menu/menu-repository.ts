@@ -258,15 +258,17 @@ export class MenuRepository {
   }
 
   /**
-   * VISIBLE dishes of these shops whose folded name contains the term (`likePattern` is already a LIKE body of the folded term, null =
-   * no term), inside the group when one is given. At most `cap` rows: the coordinator pages what it keeps.
+   * One page of the VISIBLE dishes of these shops whose folded name contains the term (`likePattern` is already a LIKE body of the folded
+   * term, null = no term), inside the group when one is given. `shopIds` is already in the order the shops are shown (open first, then
+   * name): the dishes follow that order, then their folded name, then the id, so a page is exact and stable for the whole matching set.
    */
   async searchPublicItems(
     context: TransactionContext,
     shopIds: readonly string[],
     categoryId: string | null,
     likePattern: string | null,
-    cap: number,
+    limit: number,
+    offset: number,
   ): Promise<(PublicMenuItem & { shopId: string })[]> {
     if (shopIds.length === 0) {
       return [];
@@ -277,9 +279,9 @@ export class MenuRepository {
         WHERE shop_id = ANY($1::uuid[]) AND status = 'VISIBLE'
           AND ($2::uuid IS NULL OR category_id = $2::uuid)
           AND ($3::text IS NULL OR app.fold_vi(name) LIKE $3::text ESCAPE '\\')
-        ORDER BY app.fold_vi(name), item_id
-        LIMIT $4::integer`,
-      [shopIds, categoryId, likePattern, cap],
+        ORDER BY array_position($1::uuid[], shop_id), app.fold_vi(name) COLLATE "C", item_id
+        LIMIT $4::integer OFFSET $5::integer`,
+      [shopIds, categoryId, likePattern, limit, offset],
     );
     return result.rows.map((row) => ({ itemId: row.item_id, name: row.name, priceVnd: row.price_vnd, imageId: row.image_id, categoryId: row.category_id, shopId: row.shop_id }));
   }

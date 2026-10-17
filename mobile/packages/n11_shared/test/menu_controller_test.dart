@@ -48,6 +48,57 @@ void main() {
     expect(c.loadState, MenuLoad.ready);
   });
 
+  test('a failed read with a snapshot leaves loading: the old data stays, it is stale, and Thử lại clears the warning', () async {
+    final FakeMenuApi api = seeded();
+    final MenuListController c = await ready(api);
+    api.failLoads = true;
+    await c.load();
+    expect(c.loadState, MenuLoad.ready, reason: 'never stuck on loading');
+    expect(c.stale, isTrue);
+    expect(c.snapshot!.items, hasLength(3));
+    expect(c.loadFailure, isNotNull);
+    // Still failing: the retry is not blocked and stays stale.
+    await c.load();
+    expect(c.loadState, MenuLoad.ready);
+    expect(c.stale, isTrue);
+    expect(api.loads, 3);
+    api.failLoads = false;
+    api.items = <MenuItem>[...api.items, FakeMenuApi.item('d', 'Sò điệp', 90000, 'c2')];
+    await c.load();
+    expect(c.stale, isFalse);
+    expect(c.loadFailure, isNull);
+    expect(c.snapshot!.items, hasLength(4));
+  });
+
+  test('a first read that fails is a load failure (never an empty menu) and does not block the retry', () async {
+    final FakeMenuApi api = seeded()..failLoads = true;
+    final MenuListController c = MenuListController(api: api);
+    await c.load();
+    expect(c.loadState, MenuLoad.failed);
+    expect(c.snapshot, isNull);
+    expect(c.stale, isFalse);
+    await c.load();
+    expect(c.loadState, MenuLoad.failed);
+    expect(api.loads, 2);
+  });
+
+  test('a failed re-read never releases a write whose outcome is unknown', () async {
+    final FakeMenuApi api = seeded();
+    final MenuListController c = await ready(api);
+    c.startEdit('b');
+    c.setPrice('61000');
+    api.loseAnswerOnce = true;
+    expect(await c.save(), isFalse);
+    expect(c.pending, isNotNull);
+    final String key = c.pending!.key;
+    api.failLoads = true;
+    await c.load();
+    expect(c.stale, isTrue);
+    expect(c.pending, isNotNull);
+    expect(c.pending!.key, key);
+    expect(c.locked, isTrue);
+  });
+
   test('a new dish: one active group is chosen for the person; validation sends nothing; a good save adds it once', () async {
     final FakeMenuApi api = FakeMenuApi(categories: <MenuCategory>[const MenuCategory(id: 'c1', name: 'Ốc', active: true), const MenuCategory(id: 'c9', name: 'Cũ', active: false)]);
     final MenuListController c = await ready(api);

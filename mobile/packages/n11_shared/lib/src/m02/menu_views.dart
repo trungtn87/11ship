@@ -125,6 +125,9 @@ class _MenuListScreenState extends State<MenuListScreen> with _LeaveWhenSignedOu
             if (menu.savedNotReloaded) {
               body.add(N11Banner(kind: BannerKind.warn, title: 'Đã lưu, chưa tải lại được dữ liệu', trailing: N11Button(key: const Key('menu-reload'), label: 'Tải lại', compact: true, onPressed: menu.reloadAfterSave)));
             }
+            if (menu.stale && !menu.savedNotReloaded) {
+              body.add(N11Banner(key: const Key('menu-stale'), kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị thực đơn đã tải. Kiểm tra kết nối rồi thử lại.', trailing: N11Button(key: const Key('menu-stale-retry'), label: 'Thử lại', compact: true, onPressed: menu.load)));
+            }
             if (menu.pending != null) {
               body.add(UnknownOutcomeBanner(onRetry: menu.retryPending, busy: menu.busy));
             } else if (menu.writeFailure != null && menu.form == null) {
