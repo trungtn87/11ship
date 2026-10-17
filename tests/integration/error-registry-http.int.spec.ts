@@ -110,8 +110,9 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     //   DRIVER_SELF_ACTION_FORBIDDEN, WALLET_PARAMETER_VERSION_CONFLICT)
     // + 1 customer address code (M05: CUSTOMER_ADDRESS_NOT_FOUND)
     // + 4 shipping fee policy codes (M06-A) + 1 eligibility parameters code (M06-B/C)
+    // + 4 Shipper top-up request codes (M04-B2.1: TOPUP_AMOUNT_BELOW_MINIMUM, TOPUP_RECEIVING_ACCOUNT_NOT_CONFIGURED, TOPUP_REQUEST_NOT_FOUND, TOPUP_REQUEST_STATE_CONFLICT)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(100);
+    expect(codes).toHaveLength(104);
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(18);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);
     expect(codes).toContain('TRANSACTION_OUTCOME_UNKNOWN');

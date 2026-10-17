@@ -88,6 +88,11 @@ export const APP_ERROR_DEFINITIONS = {
   DRIVER_HAS_ACTIVE_WORK: { status: 409, message: 'The Shipper still has deliveries in progress' },
   DRIVER_WALLET_NOT_SETTLED: { status: 409, message: 'The wallet balance must be settled first' },
   DRIVER_SELF_ACTION_FORBIDDEN: { status: 403, message: 'An administrator cannot perform this action on their own Shipper profile' },
+  // Shipper top-up requests (M04-B2.1). Same rule: fixed messages that echo nothing the client sent; a request of another Shipper reads as not found.
+  TOPUP_AMOUNT_BELOW_MINIMUM: { status: 400, message: 'The top-up amount is below the current minimum' },
+  TOPUP_RECEIVING_ACCOUNT_NOT_CONFIGURED: { status: 409, message: 'No receiving account is available for top-ups yet' },
+  TOPUP_REQUEST_NOT_FOUND: { status: 404, message: 'The top-up request was not found' },
+  TOPUP_REQUEST_STATE_CONFLICT: { status: 409, message: 'The top-up request is not in a state that allows this action' },
   WALLET_PARAMETER_VERSION_CONFLICT: { status: 409, message: 'The wallet parameters were changed by another request' },
 
   // M06-A shipping fee policy (Administration web).

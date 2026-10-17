@@ -126,7 +126,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | wallet_ledger_entries | SELECT (M04-A1: the append-only money ledger; no INSERT until a package provides the source tables, no UPDATE, no DELETE) |
 | wallet_holds | SELECT (M04-A2.1: held money per business source; read only, no INSERT until the source tables exist, no UPDATE, no DELETE; never deleted) |
 | system_owned_bank_accounts | SELECT (M04-B1: the receiving accounts of the system; no row exists until a SYSTEM-only package configures the real account; no INSERT/UPDATE/DELETE grant) |
-| wallet_topup_requests | SELECT (M04-B1: Shipper top-up requests; the writer comes with B2; never deleted) |
+| wallet_topup_requests | SELECT, INSERT, UPDATE (M04-B2.1: the Shipper creates a PENDING request and cancels it; no DELETE; a request never moves money) |
 | wallet_bank_transactions | SELECT (M04-B1: the shared registry of bank transactions, append-only; no writer until B2) |
 | wallet_topups | SELECT (M04-B1: money confirmed as received, append-only; no writer until B2; it cannot commit without its ledger credit, and the ledger stays closed) |
 | shipping_fee_policy_versions | SELECT, INSERT (M06-A: one immutable row per applied fee table; a trigger refuses UPDATE, DELETE and TRUNCATE) |
