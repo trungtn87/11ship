@@ -1,5 +1,11 @@
 import { Module } from '@nestjs/common';
 import { DriverActiveGuard } from './driver-active-guard';
+import { DriverAdminQueryRepository } from './driver-admin-query-repository';
+import { DriverBankRepository } from './driver-bank-repository';
+import { DriverEventRepository } from './driver-event-repository';
+import { DRIVER_WALLET_PORT, NotIntegratedDriverWalletPort } from './driver-wallet-port';
+import { ShipperViewBuilder } from './shipper-view';
+import { ShipperWalletParametersReader, ShipperWalletParametersRepository } from './shipper-wallet-parameters';
 import { DriverEligibilityReader } from './driver-eligibility-reader';
 import { DriverRepository } from './driver-repository';
 
@@ -13,7 +19,30 @@ import { DriverRepository } from './driver-repository';
  * cycle and no forwardRef.
  */
 @Module({
-  providers: [DriverRepository, DriverEligibilityReader, DriverActiveGuard],
-  exports: [DriverRepository, DriverEligibilityReader, DriverActiveGuard],
+  providers: [
+    DriverRepository,
+    DriverEligibilityReader,
+    DriverActiveGuard,
+    DriverBankRepository,
+    DriverEventRepository,
+    DriverAdminQueryRepository,
+    ShipperWalletParametersRepository,
+    ShipperWalletParametersReader,
+    ShipperViewBuilder,
+    // M04 has not delivered a wallet yet: everything that depends on it is blocked (see driver-wallet-port.ts).
+    { provide: DRIVER_WALLET_PORT, useClass: NotIntegratedDriverWalletPort },
+  ],
+  exports: [
+    DriverRepository,
+    DriverEligibilityReader,
+    DriverActiveGuard,
+    DriverBankRepository,
+    DriverEventRepository,
+    DriverAdminQueryRepository,
+    ShipperWalletParametersRepository,
+    ShipperWalletParametersReader,
+    ShipperViewBuilder,
+    DRIVER_WALLET_PORT,
+  ],
 })
 export class DriverModule {}

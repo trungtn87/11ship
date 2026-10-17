@@ -54,6 +54,8 @@ export interface StartAppOptions {
   readonly activationOtpProvider?: ActivationOtpProvider | ActivationSmsGatewayBinding;
   /** Runs after configureApp and BEFORE the application initializes (listen), exactly where main.ts installs the Admin hosting. */
   readonly beforeListen?: (app: INestApplication) => void;
+  /** Replaces providers of the compiled module with fixed values (for example the M04 wallet port, which does not exist yet). */
+  readonly overrides?: ReadonlyArray<{ readonly provide: unknown; readonly useValue: unknown }>;
 }
 
 /** Boots the real AppModule through the same HTTP pipeline as main.ts, on a random free port. */
@@ -63,7 +65,7 @@ export async function startApp(config: AppConfig, options: StartAppOptions = {})
     logs.push(line);
   });
 
-  const moduleRef = await Test.createTestingModule({
+  let builder = Test.createTestingModule({
     imports: [
       AppModule.register({
         config,
@@ -72,7 +74,11 @@ export async function startApp(config: AppConfig, options: StartAppOptions = {})
         ...(options.activationOtpProvider === undefined ? {} : { activationOtpProvider: options.activationOtpProvider }),
       }),
     ],
-  }).compile();
+  });
+  for (const override of options.overrides ?? []) {
+    builder = builder.overrideProvider(override.provide as never).useValue(override.useValue);
+  }
+  const moduleRef = await builder.compile();
 
   const app = moduleRef.createNestApplication({ logger: false });
   configureApp(app);

@@ -1,6 +1,7 @@
 import { ACTIVATION_DOWN_SQL, ACTIVATION_UP_SQL } from './support/activation-migration-sql';
 import { CLIENT_DEVICE_DOWN_SQL, CLIENT_DEVICE_UP_SQL } from './support/client-device-migration-sql';
 import { ACCOUNT_SCOPE_DOWN_SQL, ACCOUNT_SCOPE_UP_SQL } from './support/account-scope-migration-sql';
+import { SHIPPER_DOWN_SQL, SHIPPER_UP_SQL } from './support/shipper-migration-sql';
 import { SMS_GATEWAY_DOWN_SQL, SMS_GATEWAY_UP_SQL } from './support/sms-gateway-migration-sql';
 import { CUSTOMER_DOWN_SQL, CUSTOMER_UP_SQL } from './support/customer-migration-sql';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -135,6 +136,7 @@ describe('M01-A1 — Auth Core migration', () => {
       '1793059200000_account-scope-lifecycle-settings',
       '1793145600000_create-menu',
       '1793232000000_menu-category-admin',
+      '1793318400000_create-shipper-management',
     ]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });
@@ -236,7 +238,8 @@ describe('M01-A1 — Auth Core migration', () => {
       // The Shop and Driver migrations reference app.users, so they go down first and come back up last. The invitation
       // tables, the admin tables and the account origin are the newest: they go down before everything else.
       // The M01.02 customer tables reference app.users and are the very newest: they go down first and come back up last.
-      await client.query(ACCOUNT_SCOPE_DOWN_SQL); // the newest migration changes app.users: down first, up last
+      await client.query(SHIPPER_DOWN_SQL); // M03: references app.drivers and app.users, the very newest: down first, up last
+      await client.query(ACCOUNT_SCOPE_DOWN_SQL); // changes app.users: down first, up last
       await client.query(SMS_GATEWAY_DOWN_SQL);
       await client.query(CLIENT_DEVICE_DOWN_SQL);
       await client.query(CUSTOMER_DOWN_SQL);
@@ -275,6 +278,7 @@ describe('M01-A1 — Auth Core migration', () => {
       await client.query(SMS_GATEWAY_UP_SQL);
       await client.query(ACCOUNT_SCOPE_UP_SQL);
       await client.query(menuUpSql);
+      await client.query(SHIPPER_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES].sort());
     } finally {
       await client.query('ROLLBACK');

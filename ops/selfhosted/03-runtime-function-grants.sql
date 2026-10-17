@@ -13,3 +13,8 @@
 -- Contains no secret.
 
 GRANT EXECUTE ON FUNCTION app.purge_app_user(uuid) TO ship11_app;
+
+-- M03 (Shipper management): app.next_shipper_code() hands out the human-readable Shipper code (SH000001 ...) from a sequence the runtime role
+-- cannot touch directly. SECURITY DEFINER, owned by the migration role, no EXECUTE for PUBLIC. It is the column default of app.drivers.shipper_code,
+-- so the runtime role must be able to execute it when it inserts a driver.
+GRANT EXECUTE ON FUNCTION app.next_shipper_code() TO ship11_app;
