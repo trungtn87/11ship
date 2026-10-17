@@ -94,9 +94,11 @@ describe('ops/selfhosted/02-runtime-grants.sql', () => {
     // M04-A2.1: the hold table is read only for the runtime role (no hold can be written before the source tables exist).
     assert.deepEqual(parsed.get('wallet_holds'), ['SELECT']);
     // M04-B1: the topup sources are read-only too; no table of money can be written by the runtime role yet.
-    for (const table of ['system_owned_bank_accounts', 'wallet_topup_requests', 'wallet_bank_transactions', 'wallet_topups']) {
+    for (const table of ['system_owned_bank_accounts', 'wallet_bank_transactions', 'wallet_topups']) {
       assert.deepEqual(parsed.get(table), ['SELECT'], table);
     }
+    // M04-B2.1: the only money-adjacent table the runtime writes is the request (create + cancel); never DELETE, never the balance or the ledger.
+    assert.deepEqual(parsed.get('wallet_topup_requests'), ['INSERT', 'SELECT', 'UPDATE']);
     for (const privileges of parsed.values()) {
       assert.ok(privileges.every((kind) => KINDS.includes(kind)));
     }
