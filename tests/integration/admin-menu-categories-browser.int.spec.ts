@@ -10,7 +10,6 @@ import { freePort, repoRoot, runScript, startFront } from './support/admin-web-h
 import { Browser, launchChrome, Page } from './support/cdp';
 import { Phone, randomPhone } from './support/auth-fixtures';
 import { createInvitation, createPayload, systemSession, SystemSession } from './support/provisioning-fixtures';
-import { purgeCategories } from './support/menu-fixtures';
 
 // M02 dish groups in a REAL Chrome against the real front, backend and PostgreSQL: the screen a SYSTEM or catalog-ADMIN uses (list, search,
 // filter, paging, add, edit, switch off with its confirmation, switch on, duplicate refusal, a conflict with the SQL-made group), the menu entry an
@@ -19,6 +18,9 @@ import { purgeCategories } from './support/menu-fixtures';
 const tag = randomBytes(2).toString('hex').toUpperCase();
 const NAMES = ['Ốc', 'Hải sản', 'Món nướng', 'Ăn vặt', 'Đồ uống', 'Món theo mùa'] as const;
 const FILLER = 'Nhóm thử';
+// Every group this suite makes carries the run tag, so it can never collide with (or alter) a group another suite left in the shared
+// database: the page is scoped to the tag with its search box, and cleanup removes only groups that carry the tag.
+const mine = (base: string): string => `${base} ${tag}`;
 
 interface Shot {
   readonly name: string;
@@ -84,10 +86,8 @@ describe('admin dish groups (real browser)', () => {
   /** The groups this suite makes (and the ones it renames), removed when no dish uses them. */
   const cleanup = async (): Promise<void> => {
     await app.pool.query(
-      `DELETE FROM app.menu_categories c
-        WHERE (c.name = ANY($1::text[]) OR c.name LIKE $2 OR c.name LIKE $3 OR c.name LIKE $4)
-          AND NOT EXISTS (SELECT 1 FROM app.menu_items i WHERE i.category_id = c.category_id)`,
-      [[...NAMES, 'Hải Sản Đặc Biệt', 'Ăn vặt mới'], `${FILLER}%`, 'Món chay%', `%${tag}%`],
+      `DELETE FROM app.menu_categories c WHERE c.name LIKE $1 AND NOT EXISTS (SELECT 1 FROM app.menu_items i WHERE i.category_id = c.category_id)`,
+      [`%${tag}%`],
     );
   };
 
@@ -115,14 +115,10 @@ describe('admin dish groups (real browser)', () => {
     without = await activatedAdmin([{ app: 'SHOP', can_view: true, can_review_profile: false, can_lock: false }], `Quản trị Quán ${tag}`);
     // Groups the way the operator made them before this screen existed: by SQL, with their own order and status.
     await cleanup();
-    // Groups other suites left behind and no dish uses are removed, so the list holds only what this suite makes.
-    await purgeCategories(app.pool);
-    // Groups other suites left behind (they may have dishes, so they are not deleted) would sort among these six: move them after.
-    await app.pool.query(`UPDATE app.menu_categories SET sort_order = sort_order + 1000 WHERE name <> ALL($1::text[]) AND sort_order < 1000`, [[...NAMES]]);
     for (const [index, name] of NAMES.entries()) {
       await app.pool.query(
         `INSERT INTO app.menu_categories (category_id, name, status, sort_order, created_at, updated_at) VALUES ($1::uuid, $2, $3, $4, clock_timestamp(), clock_timestamp())`,
-        [randomUUID(), name, name === 'Món theo mùa' ? 'INACTIVE' : 'ACTIVE', index + 1],
+        [randomUUID(), mine(name), name === 'Món theo mùa' ? 'INACTIVE' : 'ACTIVE', index + 1],
       );
     }
   }, 300_000);
@@ -153,110 +149,113 @@ describe('admin dish groups (real browser)', () => {
     // The menu entry and the page.
     expect(await page.evaluate<boolean>(`!!document.querySelector('a[href="/catalog/categories"]') && document.body.innerText.includes('DANH MỤC')`)).toBe(true);
     await page.goto(`${origin}/catalog/categories`);
-    await page.waitFor(`document.querySelector('#catalog-title') && document.querySelectorAll('.table tbody tr').length >= 6`);
+    await page.waitFor(`document.querySelector('#catalog-title') && document.querySelector('#catalog-search') && document.querySelectorAll('.table tbody tr').length >= 6`);
+    // Other suites may have left unrelated groups: this suite looks only at the groups that carry its tag.
+    await page.fill('#catalog-search', tag);
+    await waitRows(page, `rows.length === 6`);
     const first = await rowsText(page);
-    expect(first.slice(0, 6)).toEqual([
-      'Ốc | 1 | 0 | Đang dùng | SửaNgừng dùng',
-      'Hải sản | 2 | 0 | Đang dùng | SửaNgừng dùng',
-      'Món nướng | 3 | 0 | Đang dùng | SửaNgừng dùng',
-      'Ăn vặt | 4 | 0 | Đang dùng | SửaNgừng dùng',
-      'Đồ uống | 5 | 0 | Đang dùng | SửaNgừng dùng',
-      'Món theo mùa | 6 | 0 | Ngừng dùng | SửaKích hoạt',
+    expect(first).toEqual([
+      `${mine('Ốc')} | 1 | 0 | Đang dùng | SửaNgừng dùng`,
+      `${mine('Hải sản')} | 2 | 0 | Đang dùng | SửaNgừng dùng`,
+      `${mine('Món nướng')} | 3 | 0 | Đang dùng | SửaNgừng dùng`,
+      `${mine('Ăn vặt')} | 4 | 0 | Đang dùng | SửaNgừng dùng`,
+      `${mine('Đồ uống')} | 5 | 0 | Đang dùng | SửaNgừng dùng`,
+      `${mine('Món theo mùa')} | 6 | 0 | Ngừng dùng | SửaKích hoạt`,
     ]);
     await shot(page, 'groups-list-desktop');
 
     // Search ignores case and marks; the filter narrows by status; clearing both restores the list.
-    await page.fill('#catalog-search', 'AN VAT');
+    await page.fill('#catalog-search', `AN VAT ${tag}`);
     await waitRows(page, `rows.length === 1 && rows[0].includes('Ăn vặt')`);
     await page.fill('#catalog-search', 'khong-co-nhom-nay');
     await page.waitFor(`document.body.innerText.includes('Không tìm thấy nhóm món')`);
-    await page.fill('#catalog-search', '');
-    await waitRows(page, `rows.length >= 6`);
+    await page.fill('#catalog-search', tag);
+    await waitRows(page, `rows.length === 6`);
     await page.evaluate(`(() => { const s = document.querySelector('#catalog-status'); s.value = 'INACTIVE'; s.dispatchEvent(new Event('change')); return true; })()`);
     await waitRows(page, `rows.length === 1 && rows[0].includes('Món theo mùa')`);
     await page.evaluate(`(() => { const s = document.querySelector('#catalog-status'); s.value = 'ALL'; s.dispatchEvent(new Event('change')); return true; })()`);
-    await waitRows(page, `rows.length >= 6`);
+    await waitRows(page, `rows.length === 6`);
 
     // Add: the popup opens with the next order, validation reports only, the form locks while saving.
     expect(await press(page, '+ Thêm nhóm')).toBe(true);
-    await page.waitFor(`document.querySelector('#category-name') && document.querySelector('#category-order').value === '7'`);
+    await page.waitFor(`document.querySelector('#category-name') && /^[0-9]+$/.test(document.querySelector('#category-order').value)`);
     expect(await press(page, 'Lưu', 'document.querySelector(".dialog")')).toBe(true);
     await page.waitFor(`document.querySelector('#category-name-error').textContent.includes('Nhập tên nhóm')`);
     expect(await page.evaluate<string>(`document.querySelector('#category-name').value`)).toBe('');
     await shot(page, 'groups-add-validation-desktop');
-    await page.fill('#category-name', '  Món   chay ');
+    await page.fill('#category-name', `  Món   chay ${tag} `);
     await page.fill('#category-order', 'abc');
     expect(await press(page, 'Lưu', 'document.querySelector(".dialog")')).toBe(true);
     await page.waitFor(`document.querySelector('#category-order-error').textContent.includes('số nguyên')`);
     expect(await page.evaluate<string>(`document.querySelector('#category-order').value`)).toBe('abc');
-    expect(await groupRow('Món chay')).toBeUndefined();
+    expect(await groupRow(mine('Món chay'))).toBeUndefined();
     await page.fill('#category-order', '7');
     await shot(page, 'groups-add-desktop');
     expect(await press(page, 'Lưu', 'document.querySelector(".dialog")')).toBe(true);
-    await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã thêm nhóm «Món chay».')`);
+    await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã thêm nhóm «Món chay ${tag}».')`);
     await waitRows(page, `rows.some((r) => r.startsWith('Món chay'))`);
-    expect(await groupRow('Món chay')).toEqual({ status: 'ACTIVE', sort_order: 7, version: 1 });
-    expect(await count(app.pool, "SELECT 1 FROM app.audit_logs a JOIN app.menu_categories c ON c.category_id::text = a.resource_id WHERE a.action = 'admin.menu_category.create.v1' AND c.name = 'Món chay'")).toBe(1);
+    expect(await groupRow(mine('Món chay'))).toEqual({ status: 'ACTIVE', sort_order: 7, version: 1 });
+    expect(await count(app.pool, "SELECT 1 FROM app.audit_logs a JOIN app.menu_categories c ON c.category_id::text = a.resource_id WHERE a.action = 'admin.menu_category.create.v1' AND c.name = '" + mine('Món chay') + "'")).toBe(1);
 
     // Duplicate: same name ignoring case and spaces is refused and the popup keeps what was typed; the inactive twin is named.
     expect(await press(page, '+ Thêm nhóm')).toBe(true);
     await page.waitFor(`document.querySelector('#category-name')`);
-    await page.fill('#category-name', 'hải  SẢN');
+    await page.fill('#category-name', `hải  SẢN  ${tag}`);
     expect(await press(page, 'Lưu', 'document.querySelector(".dialog")')).toBe(true);
     await page.waitFor(`document.querySelector('#category-name-error').textContent.includes('trùng tên')`);
-    expect(await page.evaluate<string>(`document.querySelector('#category-name').value`)).toBe('hải  SẢN');
+    expect(await page.evaluate<string>(`document.querySelector('#category-name').value`)).toBe(`hải  SẢN  ${tag}`);
     await shot(page, 'groups-add-duplicate-desktop');
-    await page.fill('#category-name', 'món THEO mùa');
+    await page.fill('#category-name', `món THEO mùa ${tag}`);
     expect(await press(page, 'Lưu', 'document.querySelector(".dialog")')).toBe(true);
     await page.waitFor(`document.querySelector('#category-twin') && document.querySelector('#category-name-error').textContent.includes('ngừng dùng')`);
     expect(await press(page, 'Hủy', 'document.querySelector(".dialog")')).toBe(true);
     await page.waitFor(`!document.querySelector('.dialog')`);
     // Marks distinguish: "Hai san" is a new group.
-    expect(await groupRow('Hai san')).toBeUndefined();
+    expect(await groupRow(mine('Hai san'))).toBeUndefined();
 
     // Edit: rename and reorder.
-    await page.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.getAttribute('aria-label') === 'Sửa nhóm Hải sản'); b.click(); return true; })()`);
-    await page.waitFor(`document.querySelector('#category-name') && document.querySelector('#category-name').value === 'Hải sản'`);
-    await page.fill('#category-name', 'Hải Sản Đặc Biệt');
+    await page.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.getAttribute('aria-label') === 'Sửa nhóm ${mine('Hải sản')}'); b.click(); return true; })()`);
+    await page.waitFor(`document.querySelector('#category-name') && document.querySelector('#category-name').value === '${mine('Hải sản')}'`);
+    await page.fill('#category-name', mine('Hải Sản Đặc Biệt'));
     await page.fill('#category-order', '2');
     await shot(page, 'groups-edit-desktop');
     expect(await press(page, 'Lưu', 'document.querySelector(".dialog")')).toBe(true);
-    await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã lưu nhóm «Hải Sản Đặc Biệt».')`);
-    expect(await groupRow('Hải Sản Đặc Biệt')).toEqual({ status: 'ACTIVE', sort_order: 2, version: 2 });
+    await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã lưu nhóm «Hải Sản Đặc Biệt ${tag}».')`);
+    expect(await groupRow(mine('Hải Sản Đặc Biệt'))).toEqual({ status: 'ACTIVE', sort_order: 2, version: 2 });
 
     // Switch off: the exact confirmation, nothing sent until confirmed, then the badge changes and the group moves after the active ones.
-    await page.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.getAttribute('aria-label') === 'Ngừng dùng nhóm Đồ uống'); b.click(); return true; })()`);
+    await page.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.getAttribute('aria-label') === 'Ngừng dùng nhóm ${mine('Đồ uống')}'); b.click(); return true; })()`);
     await page.waitFor(`document.querySelector('#category-toggle-text')`);
     expect(await page.evaluate<string>(`document.querySelector('#category-toggle-text').textContent`)).toBe(
-      'Ngừng dùng nhóm «Đồ uống»? Chủ quán sẽ không chọn được nhóm này cho món mới. Các món đang thuộc nhóm vẫn được giữ nguyên.',
+      `Ngừng dùng nhóm «${mine('Đồ uống')}»? Chủ quán sẽ không chọn được nhóm này cho món mới. Các món đang thuộc nhóm vẫn được giữ nguyên.`,
     );
     await shot(page, 'groups-deactivate-desktop');
     expect(await press(page, 'Hủy', 'document.querySelector(".dialog")')).toBe(true);
-    expect(await groupRow('Đồ uống')).toMatchObject({ status: 'ACTIVE', version: 1 });
-    await page.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.getAttribute('aria-label') === 'Ngừng dùng nhóm Đồ uống'); b.click(); return true; })()`);
+    expect(await groupRow(mine('Đồ uống'))).toMatchObject({ status: 'ACTIVE', version: 1 });
+    await page.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.getAttribute('aria-label') === 'Ngừng dùng nhóm ${mine('Đồ uống')}'); b.click(); return true; })()`);
     await page.waitFor(`document.querySelector('#category-toggle-text')`);
     expect(await press(page, 'Ngừng dùng', 'document.querySelector(".dialog")')).toBe(true);
-    await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã ngừng dùng nhóm «Đồ uống».')`);
-    expect(await groupRow('Đồ uống')).toMatchObject({ status: 'INACTIVE', version: 2 });
+    await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã ngừng dùng nhóm «Đồ uống ${tag}».')`);
+    expect(await groupRow(mine('Đồ uống'))).toMatchObject({ status: 'INACTIVE', version: 2 });
     await waitRows(page, `rows.findIndex((r) => r.startsWith('Đồ uống')) > rows.findIndex((r) => r.startsWith('Món chay'))`);
     await shot(page, 'groups-list-after-desktop');
 
     // Switch on again.
-    await page.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.getAttribute('aria-label') === 'Kích hoạt nhóm Đồ uống'); b.click(); return true; })()`);
+    await page.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.getAttribute('aria-label') === 'Kích hoạt nhóm ${mine('Đồ uống')}'); b.click(); return true; })()`);
     await page.waitFor(`document.querySelector('#category-toggle-text')`);
     expect(await press(page, 'Kích hoạt', 'document.querySelector(".dialog")')).toBe(true);
-    await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã kích hoạt lại nhóm «Đồ uống».')`);
-    expect(await groupRow('Đồ uống')).toMatchObject({ status: 'ACTIVE', version: 3 });
+    await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã kích hoạt lại nhóm «Đồ uống ${tag}».')`);
+    expect(await groupRow(mine('Đồ uống'))).toMatchObject({ status: 'ACTIVE', version: 3 });
 
     // A stale popup: somebody else changed the group meanwhile -> conflict, the typed text stays, nothing is written.
-    await page.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.getAttribute('aria-label') === 'Sửa nhóm Ăn vặt'); b.click(); return true; })()`);
+    await page.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.getAttribute('aria-label') === 'Sửa nhóm ${mine('Ăn vặt')}'); b.click(); return true; })()`);
     await page.waitFor(`document.querySelector('#category-name')`);
-    await app.pool.query(`UPDATE app.menu_categories SET version = version + 1, updated_at = clock_timestamp() WHERE name = 'Ăn vặt'`);
-    await page.fill('#category-name', 'Ăn vặt mới');
+    await app.pool.query(`UPDATE app.menu_categories SET version = version + 1, updated_at = clock_timestamp() WHERE name = '${mine('Ăn vặt')}'`);
+    await page.fill('#category-name', mine('Ăn vặt mới'));
     expect(await press(page, 'Lưu', 'document.querySelector(".dialog")')).toBe(true);
     await page.waitFor(`document.body.innerText.includes('Nhóm đã được thay đổi ở nơi khác')`);
     await shot(page, 'groups-conflict-desktop');
-    expect(await groupRow('Ăn vặt')).toMatchObject({ version: 2 });
+    expect(await groupRow(mine('Ăn vặt'))).toMatchObject({ version: 2 });
     expect(await press(page, 'Tải lại danh sách', 'document.querySelector(".dialog")')).toBe(true);
     await page.waitFor(`!document.querySelector('.dialog')`);
     // "Tải lại danh sách" closes the popup at once and reads the list again; the refresh button stays disabled until that read ends.
@@ -266,7 +265,7 @@ describe('admin dish groups (real browser)', () => {
     for (let index = 1; index <= 12; index += 1) {
       await app.pool.query(
         `INSERT INTO app.menu_categories (category_id, name, status, sort_order, created_at, updated_at) VALUES ($1::uuid, $2, 'ACTIVE', $3, clock_timestamp(), clock_timestamp())`,
-        [randomUUID(), `${FILLER} ${String(index).padStart(2, '0')}`, 100 + index],
+        [randomUUID(), mine(`${FILLER} ${String(index).padStart(2, '0')}`), 100 + index],
       );
     }
     expect(await press(page, 'Làm mới')).toBe(true);

@@ -208,6 +208,31 @@ void main() {
     expect(find.text('Mặc định'), findsOneWidget);
   });
 
+  testWidgets('new address: the phone of the signed-in account is prefilled and can be changed; the account phone is not touched', (WidgetTester tester) async {
+    final t = await tester.runAsync(signedIn) as dynamic;
+    final AddressBookController c = t.controller as AddressBookController;
+    final SessionController session = t.session as SessionController;
+    await show(tester, AddressFormScreen(controller: c));
+    String phoneField() => tester.widget<TextField>(find.byKey(const Key('address-phone'))).controller!.text;
+    expect(phoneField(), '0901234567');
+    await tester.enterText(find.byKey(const Key('address-phone')), '0987 654 321');
+    await tester.enterText(find.byKey(const Key('address-text')), '5 Nguyễn Huệ');
+    await tester.tap(find.byKey(const Key('address-save')));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pumpAndSettle();
+    final RecordedRequest post = (t.api as FakeApiTransport).to('POST', '/v1/customers/me/addresses').single;
+    expect(jsonDecode(post.body), containsPair('contact_phone', '0987654321'));
+    expect(session.identity!.phoneNormalized, '+84901234567', reason: 'the login phone does not change');
+  });
+
+  testWidgets('edit address: the form shows the phone of that address, not the account phone', (WidgetTester tester) async {
+    final t = await tester.runAsync(signedIn) as dynamic;
+    final AddressBookController c = t.controller as AddressBookController;
+    await tester.runAsync(() => c.save(const AddressInput(label: AddressLabel.office, recipientName: 'Bình', phone: '0987654321', addressText: '5 Nguyễn Huệ', note: '', makeDefault: false)));
+    await show(tester, AddressFormScreen(controller: c, editing: c.addresses.single));
+    expect(tester.widget<TextField>(find.byKey(const Key('address-phone'))).controller!.text, '0987654321');
+  });
+
   testWidgets('delete asks for confirmation and removes the address', (WidgetTester tester) async {
     final t = await tester.runAsync(signedIn) as dynamic;
     final AddressBookController c = t.controller as AddressBookController;

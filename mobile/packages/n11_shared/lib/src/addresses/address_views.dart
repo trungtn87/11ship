@@ -238,6 +238,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
   late AddressLabel _label;
   late bool _default;
   bool _submitted = false;
+  String _initialPhone = '';
 
   AddressBookController get c => widget.controller;
   DeliveryAddress? get e => widget.editing;
@@ -250,9 +251,13 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
     super.initState();
     final DeliveryAddress? a = e;
     _name = TextEditingController(text: a?.recipientName ?? '');
-    _phone = TextEditingController(text: a?.phoneText ?? '');
+    // A new address starts from the phone of the signed-in M01 account (the person may change it to order for somebody else); an
+    // existing address shows its own phone. The account phone itself is never touched.
+    final String? account = c.session?.identity?.phoneNormalized;
+    _phone = TextEditingController(text: a?.phoneText ?? (account == null ? '' : formatVnPhone(account)));
     _address = TextEditingController(text: a?.addressText ?? '');
     _note = TextEditingController(text: a?.deliveryNote ?? '');
+    _initialPhone = _phone.text.replaceAll(' ', '');
     _label = a?.label ?? AddressLabel.home;
     _default = a?.isDefault ?? c.addresses.isEmpty;
   }
@@ -278,7 +283,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
 
   bool get _dirty =>
       e == null
-          ? (_name.text.trim().isNotEmpty || _phone.text.trim().isNotEmpty || _address.text.trim().isNotEmpty || _note.text.trim().isNotEmpty)
+          ? (_name.text.trim().isNotEmpty || _phone.text.replaceAll(' ', '') != _initialPhone || _address.text.trim().isNotEmpty || _note.text.trim().isNotEmpty)
           : (_name.text.trim() != (e!.recipientName ?? '') || _phone.text.replaceAll(' ', '') != e!.phoneText || _address.text.trim() != e!.addressText || _note.text.trim() != (e!.deliveryNote ?? '') || _label != e!.label);
 
   Future<void> _save() async {
