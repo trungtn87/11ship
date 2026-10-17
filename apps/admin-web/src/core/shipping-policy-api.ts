@@ -4,7 +4,7 @@
 
 import { CsrfPort, failureOf } from './accounts-api.js';
 import { ApiClient, ApiResult, record, str } from './api.js';
-import { PolicyRead, PolicyState, PolicyTable, PolicyTier, PolicyVersionInfo, PolicyWriteResult, PreviewResult, ShippingPolicySource } from './shipping-policy.js';
+import { ConditionChange, ConditionsRead, ConditionsState, ConditionValues, PolicyRead, PolicyState, PolicyTable, PolicyTier, PolicyVersionInfo, PolicyWriteResult, PreviewResult, ShippingPolicySource } from './shipping-policy.js';
 
 /** The transport's base: this client's paths start with /admin. */
 export const SHIPPING_POLICY_BASE = '/v1';
@@ -76,6 +76,35 @@ export function parseState(data: Record<string, unknown>): PolicyState | undefin
   return { active, draft: { version: draftRaw.version, table: draftTable, updatedAt }, history };
 }
 
+function parseValues(raw: Record<string, unknown> | undefined): ConditionValues | undefined {
+  if (raw === undefined || !whole(raw.external_max_deliveries) || !whole(raw.batch_max_delay_seconds) || !whole(raw.pickup_service_seconds) || !whole(raw.handoff_service_seconds)) {
+    return undefined;
+  }
+  return { externalMax: raw.external_max_deliveries, delaySeconds: raw.batch_max_delay_seconds, pickupSeconds: raw.pickup_service_seconds, handoffSeconds: raw.handoff_service_seconds };
+}
+
+export function parseConditions(data: Record<string, unknown>): ConditionsState | undefined {
+  const values = parseValues(data);
+  const fixed = record(data.fixed);
+  const updatedAt = iso(data.updated_at);
+  if (values === undefined || fixed === undefined || !whole(fixed.search_radius_m) || updatedAt === undefined || !whole(data.version) || data.version < 1 || !Array.isArray(data.history)) {
+    return undefined;
+  }
+  const history: ConditionChange[] = [];
+  for (const item of data.history as unknown[]) {
+    const raw = record(item);
+    const before = parseValues(record(raw?.old));
+    const after = parseValues(record(raw?.new));
+    const changedAt = iso(raw?.changed_at);
+    const changedBy = str(raw?.changed_by);
+    if (raw === undefined || before === undefined || after === undefined || changedAt === undefined || changedBy === undefined || !whole(raw.version_after)) {
+      return undefined;
+    }
+    history.push({ versionAfter: raw.version_after, old: before, new: after, changedBy, changedAt });
+  }
+  return { ...values, version: data.version, updatedAt, searchRadiusM: fixed.search_radius_m, history };
+}
+
 /** A write answers with the active table and the draft only (no history); the page reads the whole state again afterwards. */
 const parseWriteAck = (data: Record<string, unknown>): true | undefined => (record(data.draft) !== undefined && 'active' in data ? true : undefined);
 
@@ -122,6 +151,29 @@ export class ShippingPolicyApi extends ApiClient {
     );
   }
 
+  readConditions(): Promise<ApiResult<ConditionsState>> {
+    return this.call({ method: 'GET', path: '/admin/shipping-eligibility-policy' }, parseConditions);
+  }
+
+  saveConditions(csrf: string, command: { version: number; values: ConditionValues; key: string }): Promise<ApiResult<ConditionsState>> {
+    return this.call(
+      {
+        method: 'POST',
+        path: '/admin/shipping-eligibility-policy',
+        body: {
+          expected_version: command.version,
+          external_max_deliveries: command.values.externalMax,
+          batch_max_delay_seconds: command.values.delaySeconds,
+          pickup_service_seconds: command.values.pickupSeconds,
+          handoff_service_seconds: command.values.handoffSeconds,
+        },
+        csrf,
+        idempotencyKey: command.key,
+      },
+      parseConditions,
+    );
+  }
+
   preview(csrf: string, distanceM: number, table: PolicyTable | null): Promise<ApiResult<PreviewData>> {
     return this.call({ method: 'POST', path: '/admin/shipping-fee-policy/preview', body: { distance_m: distanceM, ...(table === null ? {} : toBody(table)) }, csrf }, parsePreview);
   }
@@ -137,6 +189,7 @@ async function writeResult(result: ApiResult<unknown>, session: CsrfPort): Promi
   }
   switch (result.code) {
     case 'SHIPPING_DRAFT_VERSION_CONFLICT':
+    case 'SHIPPING_ELIGIBILITY_VERSION_CONFLICT':
       return { kind: 'conflict' };
     case 'ADMIN_CSRF_INVALID':
       // Refused before anything ran; a fresh token is read and the admin retries with the SAME key.
@@ -179,6 +232,17 @@ export function createShippingPolicySource(api: ShippingPolicyApi, session?: Csr
         return { kind: 'not-wired' };
       }
       return csrf === undefined ? { kind: 'session-expired' } : writeResult(await api.apply(csrf, command), session);
+    },
+    async readConditions(): Promise<ConditionsRead> {
+      const result = await api.readConditions();
+      return result.kind === 'ok' ? { kind: 'ready', state: result.data } : failureOf(result);
+    },
+    async saveConditions(command): Promise<PolicyWriteResult> {
+      const csrf = session?.csrf();
+      if (session === undefined) {
+        return { kind: 'not-wired' };
+      }
+      return csrf === undefined ? { kind: 'session-expired' } : writeResult(await api.saveConditions(csrf, command), session);
     },
     async preview(distanceM, table): Promise<PreviewResult> {
       const csrf = session?.csrf();

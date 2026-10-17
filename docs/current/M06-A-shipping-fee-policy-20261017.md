@@ -35,7 +35,7 @@ Quyền theo quy tắc tham số hệ thống (`system-parameter-access.ts`): SY
 Menu **Hệ thống › Phí & điều kiện giao** (`/system/shipping-fee-policy`), ba tab theo thiết kế đã khóa:
 
 - **Bảng giá ship**: thêm/sửa/xóa mốc, phần sau mốc cuối, báo lỗi ngay khi nhập, "Thử tính phí" (tính ở server), "Lưu bản nháp", "Áp dụng bảng giá" (hộp xác nhận, ghi chú, tóm tắt thay đổi). Admin không phải SYSTEM: ô chỉ đọc, không có nút ghi.
-- **Điều kiện nhận & ghép**: hiển thị mặc định đã duyệt (bán kính 5 km khóa, EXTERNAL 3, PLATFORM không giới hạn, chậm 5 phút) và nói rõ **chưa kết nối** — chỉnh sửa/áp dụng thật thuộc M06-B/C.
+- **Điều kiện nhận & ghép**: chỉnh được từ Gói 2 — xem [M06-BC-eligibility-batching-20261017.md](M06-BC-eligibility-batching-20261017.md).
 - **Lịch sử chính sách**: các phiên bản bất biến, người áp dụng, thời gian, ghi chú, thay đổi so với bản trước, chi tiết các mốc.
 
 ## Kiểm thử

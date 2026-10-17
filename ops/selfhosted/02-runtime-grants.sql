@@ -71,3 +71,6 @@ GRANT SELECT ON app.wallet_ledger_entries TO ship11_app;
 -- the one seeded row; the runtime reads it and updates it (never deletes: a trigger refuses).
 GRANT SELECT, INSERT ON app.shipping_fee_policy_versions TO ship11_app;
 GRANT SELECT, UPDATE ON app.shipping_fee_policy_drafts TO ship11_app;
+-- M06-B/C: the eligibility parameters (one seeded row: read and version-checked update, never deleted) and their append-only change log.
+GRANT SELECT, UPDATE ON app.shipping_eligibility_parameters TO ship11_app;
+GRANT SELECT, INSERT ON app.shipping_eligibility_parameter_changes TO ship11_app;

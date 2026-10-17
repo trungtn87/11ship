@@ -50,6 +50,25 @@ describe('admin shipping fee table (real browser)', () => {
     }
   }
 
+  async function resetEligibility(): Promise<void> {
+    const client = await app.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('ALTER TABLE app.shipping_eligibility_parameter_changes DISABLE TRIGGER shipping_eligibility_changes_append_only');
+      await client.query('DELETE FROM app.shipping_eligibility_parameter_changes');
+      await client.query('ALTER TABLE app.shipping_eligibility_parameter_changes ENABLE TRIGGER shipping_eligibility_changes_append_only');
+      await client.query(
+        'UPDATE app.shipping_eligibility_parameters SET version = version + 1, external_max_deliveries = 3, batch_max_delay_seconds = 300, pickup_service_seconds = 120, handoff_service_seconds = 60, updated_by = NULL',
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async function signIn(page: Page, who: { phone: { local: string }; password: string; userId: string; secret: string }): Promise<void> {
     await app.clearLimits();
     await page.goto(`${origin}/`);
@@ -106,6 +125,7 @@ describe('admin shipping fee table (real browser)', () => {
     const found = await app.pool.query<{ user_id: string }>('SELECT user_id FROM app.users WHERE phone_normalized = $1', [phone.normalized]);
     viewer = { phone, userId: (found.rows[0] as { user_id: string }).user_id, secret };
     await resetPolicy();
+    await resetEligibility();
   }, 300_000);
 
   afterAll(async () => {
@@ -118,6 +138,7 @@ describe('admin shipping fee table (real browser)', () => {
     front?.kill('SIGTERM');
     if (app !== undefined) {
       await resetPolicy();
+      await resetEligibility();
       await app.close();
     }
     if (tlsDir !== '') {
@@ -204,11 +225,25 @@ describe('admin shipping fee table (real browser)', () => {
     expect(await text(page, '#sp-version-2')).toContain('Mốc 1');
     expect(await text(page, '#sp-version-1')).toContain(`Bảng giá đầu ${tag}`);
     await shot(page, 'policy-history');
-    // The conditions tab says plainly that it is not connected yet and does not offer to edit.
+    // The conditions tab: the fixed 5 km radius is read-only, the limits are validated, saved once and logged.
     await page.click('#sp-tab-conditions');
-    await page.waitFor(`document.querySelector('#sp-conditions-pending')`);
-    expect(await page.evaluate<boolean>(`document.querySelectorAll('.sp-card input').length === 0`)).toBe(true);
-    await shot(page, 'policy-conditions-pending');
+    await page.waitFor(`document.querySelector('#sp-cond-external') && document.querySelector('#sp-cond-external').value === '3'`);
+    expect(await text(page, '#sp-cond-radius')).toBe('5 km');
+    expect(await page.evaluate<boolean>(`document.querySelector('#sp-cond-radius').tagName === 'SPAN' && document.querySelector('#sp-cond-delay').value === '5'`)).toBe(true);
+    await shot(page, 'policy-conditions');
+    await page.fill('#sp-cond-external', '0');
+    expect(await press(page, 'Lưu tham số')).toBe(true);
+    await page.waitFor(`document.querySelector('#sp-cond-external-error').textContent.includes('Nhập số nguyên')`);
+    expect(await count(app.pool, 'SELECT 1 FROM app.shipping_eligibility_parameter_changes')).toBe(0);
+    await page.fill('#sp-cond-external', '4');
+    await page.fill('#sp-cond-delay', '6');
+    expect(await press(page, 'Lưu tham số')).toBe(true);
+    await page.waitFor(`document.querySelector('#sp-cond-status').textContent.includes('Đã lưu tham số')`);
+    expect((await app.pool.query('SELECT external_max_deliveries AS e, batch_max_delay_seconds AS d FROM app.shipping_eligibility_parameters')).rows).toEqual([{ e: 4, d: 360 }]);
+    expect(await count(app.pool, 'SELECT 1 FROM app.shipping_eligibility_parameter_changes')).toBe(1);
+    await page.click('#sp-tab-history');
+    await page.waitFor(`document.querySelector('#sp-conditions-history') && document.querySelector('#sp-conditions-history').textContent.includes('EXTERNAL 4 đơn')`);
+    await shot(page, 'policy-history-conditions');
     await page.goto(`${origin}/system/shipping-fee-policy`);
     await page.waitFor(`document.querySelector('#sp-row-0-fee') && document.querySelector('#sp-row-0-fee').value === '9000'`);
     await page.close();
@@ -226,6 +261,10 @@ describe('admin shipping fee table (real browser)', () => {
     expect(await page.evaluate<boolean>(`![...document.querySelectorAll('button')].some((b) => ['Lưu bản nháp', 'Áp dụng bảng giá', '+ Thêm mốc'].includes(b.textContent.trim()))`)).toBe(true);
     await page.fill('#sp-preview-km', '5.5');
     await page.waitFor(`document.querySelector('#sp-preview-fee').textContent === '15.000đ' || document.querySelector('#sp-preview-fee').textContent === '14.000đ' || /đ$/.test(document.querySelector('#sp-preview-fee').textContent)`);
+    await page.click('#sp-tab-conditions');
+    await page.waitFor(`document.querySelector('#sp-cond-readonly') && document.querySelector('#sp-cond-external')`);
+    expect(await page.evaluate<boolean>(`[...document.querySelectorAll('.sp-condition input')].every((i) => i.readOnly) && ![...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Lưu tham số')`)).toBe(true);
+    await page.click('#sp-tab-prices');
     await shot(page, 'policy-admin-readonly');
     expect(await count(app.pool, 'SELECT 1 FROM app.shipping_fee_policy_versions')).toBe(2);
     await page.close();

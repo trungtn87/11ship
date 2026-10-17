@@ -67,9 +67,67 @@ export interface ShippingPolicySource {
   apply(command: { readonly version: number; readonly note: string | null; readonly key: string }): Promise<PolicyWriteResult>;
   /** Prices a distance against `table`, or against the table in force when `table` is null. Writes nothing. */
   preview(distanceM: number, table: PolicyTable | null): Promise<PreviewResult>;
+  readConditions(): Promise<ConditionsRead>;
+  saveConditions(command: { readonly version: number; readonly values: ConditionValues; readonly key: string }): Promise<PolicyWriteResult>;
+}
+
+// ---- "Điều kiện nhận & ghép" (M06-B/C parameters) ---------------------------------------------------------------------
+
+export interface ConditionValues {
+  readonly externalMax: number;
+  readonly delaySeconds: number;
+  readonly pickupSeconds: number;
+  readonly handoffSeconds: number;
+}
+
+export interface ConditionChange {
+  readonly versionAfter: number;
+  readonly old: ConditionValues;
+  readonly new: ConditionValues;
+  readonly changedBy: string;
+  readonly changedAt: string;
+}
+
+export interface ConditionsState extends ConditionValues {
+  readonly version: number;
+  readonly updatedAt: string;
+  /** The fixed 5 km search radius: shown read-only, never a setting. */
+  readonly searchRadiusM: number;
+  readonly history: readonly ConditionChange[];
+}
+
+export type ConditionsRead = { readonly kind: 'ready'; readonly state: ConditionsState } | { readonly kind: 'not-wired'; readonly reason: string } | Refused;
+
+export const CONDITION_BOUNDS = { externalMax: [1, 20], delaySeconds: [0, 3600], pickupSeconds: [0, 1800], handoffSeconds: [0, 1800] } as const;
+
+/** "5", "5.5", "5,5" minutes -> whole seconds (at most two decimals); undefined for anything else or out of range. */
+export function parseMinutes(text: string): number | undefined {
+  const match = /^(\d{1,3})(?:[.,](\d{1,2}))?$/.exec(text.trim());
+  if (match === null) {
+    return undefined;
+  }
+  const seconds = Math.round(Number(`${match[1] as string}.${match[2] ?? '0'}`) * 60);
+  return seconds <= CONDITION_BOUNDS.delaySeconds[1] ? seconds : undefined;
+}
+
+export function formatMinutes(seconds: number): string {
+  const minutes = seconds / 60;
+  return Number.isInteger(minutes) ? String(minutes) : String(Math.round(minutes * 100) / 100);
+}
+
+/** A whole number within [min, max] typed by a person; undefined otherwise. */
+export function parseBounded(text: string, [min, max]: readonly [number, number]): number | undefined {
+  const cleaned = text.trim();
+  if (!/^\d{1,5}$/.test(cleaned)) {
+    return undefined;
+  }
+  const value = Number(cleaned);
+  return value >= min && value <= max ? value : undefined;
 }
 
 export const NOT_WIRED_SHIPPING: ShippingPolicySource = {
+  readConditions: () => Promise.resolve({ kind: 'not-wired', reason: NOT_WIRED_SHIPPING_REASON }),
+  saveConditions: () => Promise.resolve({ kind: 'not-wired' }),
   read: () => Promise.resolve({ kind: 'not-wired', reason: NOT_WIRED_SHIPPING_REASON }),
   saveDraft: () => Promise.resolve({ kind: 'not-wired' }),
   apply: () => Promise.resolve({ kind: 'not-wired' }),
@@ -79,6 +137,7 @@ export const NOT_WIRED_SHIPPING: ShippingPolicySource = {
 export const SHIPPING_REFUSAL_MESSAGE: Record<string, string> = {
   SHIPPING_POLICY_INVALID: 'Bảng giá chưa hợp lệ (có hở, chồng lấn hoặc giá âm). Chưa có gì được lưu.',
   SHIPPING_DRAFT_EMPTY: 'Chưa có bản nháp nào để áp dụng. Hãy lưu bản nháp trước.',
+  SHIPPING_ELIGIBILITY_VERSION_CONFLICT: 'Tham số vừa được thay đổi ở nơi khác. Hãy tải lại để xem giá trị hiện tại.',
   SHIPPING_POLICY_UNCHANGED: 'Bản nháp giống hệt bảng giá đang áp dụng, không cần áp dụng lại.',
   ADMIN_INPUT_INVALID: 'Dữ liệu không hợp lệ. Hãy kiểm tra lại các ô đã nhập.',
 };

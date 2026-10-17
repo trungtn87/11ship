@@ -9,6 +9,8 @@ import { resolveClientIp } from '../admin-auth/client-ip';
 import { AppError } from '../common/app-errors';
 import { AdminAuthConfig } from '../config/admin-auth-config';
 import { ShippingFeePolicyService } from './shipping-fee-policy-service';
+import { ShippingEligibilityPolicyService } from './shipping-eligibility-policy-service';
+import { parseSaveEligibilityBody } from './shipping-eligibility-policy-validation';
 import { parseApplyBody, parsePreviewBody, parseSaveDraftBody } from './shipping-fee-policy-validation';
 
 interface AdminRequest {
@@ -93,5 +95,53 @@ export class ShippingFeePolicyController {
     }
     await this.limiter.reserveTotpRequest(resolveClientIp(request.socket.remoteAddress, request.headers['x-forwarded-for'], this.#trustedProxies));
     return readCookieToken(request.headers.cookie, ADMIN_SESSION_COOKIE);
+  }
+}
+
+/**
+ * /v1/admin/shipping-eligibility-policy (M06-B/C, Administration web): GET the limits and their change history, POST a change (SYSTEM only; any
+ * ADMIN reads). Same transport order as the fee-policy routes. No-store comes from the module.
+ */
+@Controller('admin/shipping-eligibility-policy')
+export class ShippingEligibilityPolicyController {
+  readonly #origins: ReadonlySet<string>;
+  readonly #trustedProxies: ReadonlySet<string>;
+
+  constructor(
+    private readonly policy: ShippingEligibilityPolicyService,
+    private readonly limiter: AdminLimiter,
+    @Inject(ADMIN_AUTH_CONFIG) config: AdminAuthConfig,
+  ) {
+    this.#origins = new Set(config.allowedOrigins);
+    this.#trustedProxies = new Set(config.trustedProxyIps);
+  }
+
+  @Get()
+  async read(@Query() query: unknown, @Req() request: AdminRequest) {
+    const origin = request.headers.origin;
+    if (origin !== undefined && (typeof origin !== 'string' || !this.#origins.has(origin))) {
+      throw new AppError('ADMIN_CSRF_INVALID');
+    }
+    if (typeof query !== 'object' || query === null || Object.keys(query).length > 0) {
+      throw new AppError('ADMIN_INPUT_INVALID');
+    }
+    return { data: await this.policy.read(readCookieToken(request.headers.cookie, ADMIN_SESSION_COOKIE)) };
+  }
+
+  @Post()
+  @HttpCode(200)
+  async update(@Body() body: unknown, @Req() request: AdminRequest, @Res({ passthrough: true }) response: StatusResponse, @Headers('x-csrf-token') csrf: Header, @Headers('idempotency-key') key: Header) {
+    const origin = request.headers.origin;
+    if (typeof origin !== 'string' || !this.#origins.has(origin)) {
+      throw new AppError('ADMIN_CSRF_INVALID');
+    }
+    if (!isJsonContentType(request.headers['content-type'])) {
+      throw new BadRequestException();
+    }
+    await this.limiter.reserveTotpRequest(resolveClientIp(request.socket.remoteAddress, request.headers['x-forwarded-for'], this.#trustedProxies));
+    const input = parseSaveEligibilityBody(body);
+    const outcome = await this.policy.update(readCookieToken(request.headers.cookie, ADMIN_SESSION_COOKIE), csrf, input, key, { requestId: request.requestId ?? randomUUID() });
+    response.status(outcome.status);
+    return { data: outcome.payload };
   }
 }

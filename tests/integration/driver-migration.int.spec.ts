@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Client } from 'pg';
 import { assertTestDatabaseTarget } from './support/assert-test-target';
 import { SHIPPER_DOWN_SQL, SHIPPER_UP_SQL } from './support/shipper-migration-sql';
+import { ELIGIBILITY_DOWN_SQL, ELIGIBILITY_UP_SQL } from './support/shipping-eligibility-migration-sql';
 import { FEE_POLICY_DOWN_SQL, FEE_POLICY_UP_SQL } from './support/shipping-fee-policy-migration-sql';
 import { WALLET_DOWN_SQL, WALLET_UP_SQL } from './support/wallet-migration-sql';
 import { minimalChildEnv, REPO_ROOT, runNpmScript } from './support/test-helpers';
@@ -95,7 +96,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
       '1793318400000_create-shipper-management',
       '1793404800000_create-customer-addresses',
       '1793404800000_create-driver-wallet-core',
-      '1793577600000_create-shipping-fee-policy',
+      '1793577600000_create-shipping-fee-policy', '1793664000000_create-shipping-eligibility-parameters',
     ]);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-shop-onboarding')).toBe(true);
@@ -180,6 +181,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
     await client.query('BEGIN');
     try {
       // The M03 migration references app.drivers: it goes down first and comes back up last.
+      await client.query(ELIGIBILITY_DOWN_SQL); // M06-B/C: references app.users, the very newest: down first, up last
       await client.query(FEE_POLICY_DOWN_SQL); // M06-A: references app.users, the very newest: down first, up last
       await client.query(WALLET_DOWN_SQL); // M04-A1 references app.drivers: the very newest
       await client.query(SHIPPER_DOWN_SQL);
@@ -194,6 +196,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
       await client.query(SHIPPER_UP_SQL);
       await client.query(WALLET_UP_SQL);
       await client.query(FEE_POLICY_UP_SQL);
+      await client.query(ELIGIBILITY_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
       await client.query('ROLLBACK');
@@ -212,7 +215,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
     expect(owners.rows).toEqual([{ owner: 'ship11_test' }]);
     const triggers = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|shipping_fee_policy_)' AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
+         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|shipping_fee_policy_|shipping_eligibility_)' AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
     );
     expect(triggers.rows[0]?.n).toBe(1);
   });

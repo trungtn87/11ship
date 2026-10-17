@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import { Transport, TransportRequest, TransportResponse } from './api';
-import { createShippingPolicySource, parseState, ShippingPolicyApi } from './shipping-policy-api';
-import { describeChanges, EditingModel, formatFee, formatKm, parseFee, parseKm, PolicyTable, toEditing, validateEditing } from './shipping-policy';
+import { createShippingPolicySource, parseConditions, parseState, ShippingPolicyApi } from './shipping-policy-api';
+import { CONDITION_BOUNDS, describeChanges, EditingModel, formatFee, formatKm, formatMinutes, parseBounded, parseFee, parseKm, parseMinutes, PolicyTable, toEditing, validateEditing } from './shipping-policy';
 import { canOpenRoute, visibleMenu } from './menu';
 import { formatRoute, parseRoute } from './routes';
 
@@ -159,5 +159,58 @@ describe('M06-A admin web - route and menu', () => {
     const labels = (role: 'SYSTEM' | 'ADMIN'): string[] => visibleMenu(role, new Set() as never).flatMap((group) => group.items.map((item) => item.id));
     expect(labels('SYSTEM')).toContain('shipping-policy');
     expect(labels('ADMIN')).toContain('shipping-policy');
+  });
+});
+
+const conditions = {
+  version: 2,
+  external_max_deliveries: 3,
+  batch_max_delay_seconds: 300,
+  pickup_service_seconds: 120,
+  handoff_service_seconds: 60,
+  updated_by: null,
+  updated_at: '2026-10-17T03:00:00.000Z',
+  fixed: { search_radius_m: 5000, platform_unlimited: true },
+  history: [],
+};
+
+describe('M06-B/C admin web - conditions', () => {
+  it('reads minutes and bounded whole numbers, nothing else', () => {
+    expect(parseMinutes('5')).toBe(300);
+    expect(parseMinutes('5,5')).toBe(330);
+    expect(parseMinutes('0')).toBe(0);
+    expect(parseMinutes('60')).toBe(3600);
+    for (const bad of ['', '61', '-1', 'x', '5.555', '1e2']) {
+      expect(parseMinutes(bad)).toBeUndefined();
+    }
+    expect(formatMinutes(300)).toBe('5');
+    expect(formatMinutes(330)).toBe('5.5');
+    expect(parseBounded('3', CONDITION_BOUNDS.externalMax)).toBe(3);
+    for (const bad of ['0', '21', '1.5', '-2', '', 'x']) {
+      expect(parseBounded(bad, CONDITION_BOUNDS.externalMax)).toBeUndefined();
+    }
+  });
+
+  it('parses the state strictly (fixed radius included) and refuses a malformed one', () => {
+    expect(parseConditions(conditions)).toMatchObject({ version: 2, externalMax: 3, delaySeconds: 300, pickupSeconds: 120, handoffSeconds: 60, searchRadiusM: 5000 });
+    const change = { version_after: 3, old: { external_max_deliveries: 3, batch_max_delay_seconds: 300, pickup_service_seconds: 120, handoff_service_seconds: 60 }, new: { external_max_deliveries: 4, batch_max_delay_seconds: 300, pickup_service_seconds: 120, handoff_service_seconds: 60 }, changed_by: 'u', changed_at: '2026-10-17T04:00:00.000Z' };
+    expect(parseConditions({ ...conditions, history: [change] })?.history[0]).toMatchObject({ versionAfter: 3, new: { externalMax: 4 } });
+    for (const bad of [{ ...conditions, fixed: {} }, { ...conditions, version: 0 }, { ...conditions, external_max_deliveries: 1.5 }, { ...conditions, history: [{ ...change, new: {} }] }, { ...conditions, history: 'x' }]) {
+      expect(parseConditions(bad)).toBeUndefined();
+    }
+  });
+
+  it('saves with the version, the key and the four values, and maps a stale screen to a conflict', async () => {
+    const values = { externalMax: 4, delaySeconds: 360, pickupSeconds: 90, handoffSeconds: 30 };
+    const saved = scripted(reply(200, { data: { ...conditions, version: 3 } }));
+    expect(await createShippingPolicySource(new ShippingPolicyApi(saved.transport), session()).saveConditions({ version: 2, values, key: 'k' })).toEqual({ kind: 'ok' });
+    expect(saved.requests[0]).toMatchObject({ method: 'POST', path: '/admin/shipping-eligibility-policy', csrf: 'csrf-1', idempotencyKey: 'k', body: { expected_version: 2, external_max_deliveries: 4, batch_max_delay_seconds: 360, pickup_service_seconds: 90, handoff_service_seconds: 30 } });
+    const stale = scripted(reply(409, errorBody('SHIPPING_ELIGIBILITY_VERSION_CONFLICT')));
+    expect(await createShippingPolicySource(new ShippingPolicyApi(stale.transport), session()).saveConditions({ version: 1, values, key: 'k' })).toEqual({ kind: 'conflict' });
+    const forbidden = scripted(reply(403, errorBody('ADMIN_FORBIDDEN')));
+    expect(await createShippingPolicySource(new ShippingPolicyApi(forbidden.transport), session()).saveConditions({ version: 2, values, key: 'k' })).toEqual({ kind: 'forbidden' });
+    const read = scripted(reply(200, { data: conditions }));
+    expect(await createShippingPolicySource(new ShippingPolicyApi(read.transport), session()).readConditions()).toMatchObject({ kind: 'ready' });
+    expect(read.requests[0]).toMatchObject({ method: 'GET', path: '/admin/shipping-eligibility-policy' });
   });
 });

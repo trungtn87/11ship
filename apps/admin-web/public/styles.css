@@ -2780,3 +2780,25 @@ select {
 .sp-actions {
   justify-content: flex-end;
 }
+
+.sp-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sp-value-field {
+  display: grid;
+  grid-template-columns: 110px auto;
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.sp-value-field .message {
+  grid-column: 1 / -1;
+}
+
+.sp-unit {
+  color: var(--muted);
+  font-size: 14px;
+}

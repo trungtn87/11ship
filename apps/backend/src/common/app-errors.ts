@@ -95,6 +95,7 @@ export const APP_ERROR_DEFINITIONS = {
   SHIPPING_DRAFT_VERSION_CONFLICT: { status: 409, message: 'The shipping fee draft was changed by another request' },
   SHIPPING_DRAFT_EMPTY: { status: 409, message: 'There is no saved draft to apply' },
   SHIPPING_POLICY_UNCHANGED: { status: 409, message: 'The draft is identical to the shipping fee table in force' },
+  SHIPPING_ELIGIBILITY_VERSION_CONFLICT: { status: 409, message: 'The eligibility parameters were changed by another request' },
 
   // Shop management (M02-A, task section 7). Same rule: fixed messages that echo nothing the client sent and reveal
   // nothing about any other account. SESSION_*, ACCOUNT_DISABLED, INVALID_SERVICE_AREA, SHOP_PROFILE_INCOMPLETE and

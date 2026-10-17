@@ -1,11 +1,18 @@
 import {
+  CONDITION_BOUNDS,
+  ConditionsRead,
+  ConditionsState,
+  ConditionValues,
   describeChanges,
   EditingModel,
   EditRow,
   formatFee,
   formatKm,
+  formatMinutes,
   NOT_WIRED_SHIPPING_REASON,
+  parseBounded,
   parseKm,
+  parseMinutes,
   PolicyState,
   PolicyTable,
   PolicyVersionInfo,
@@ -85,6 +92,8 @@ export class ShippingPolicyView {
   readonly #tabBar: HTMLElement;
   #tab: TabId = 'prices';
   #state: PolicyState | undefined;
+  #conditionsRead: ConditionsRead | undefined;
+  #pendingConditions: { readonly version: number; readonly values: ConditionValues; readonly key: string } | undefined;
   #model: EditingModel = toEditing(null);
   #latest = 0;
   #previewToken = 0;
@@ -130,7 +139,9 @@ export class ShippingPolicyView {
     this.#pending = undefined;
     this.#pendingSave = undefined;
     this.#body.replaceChildren(skeleton(4));
-    const read = await this.host.source.read();
+    const [read, conditions] = await Promise.all([this.host.source.read(), this.host.source.readConditions()]);
+    this.#conditionsRead = conditions;
+    this.#pendingConditions = undefined;
     if (this.#disposed || token !== this.#latest) {
       return;
     }
@@ -182,7 +193,7 @@ export class ShippingPolicyView {
         this.#body.replaceChildren(this.#prices(state, notice));
         return;
       case 'conditions':
-        this.#body.replaceChildren(this.#conditions());
+        this.#body.replaceChildren(this.#conditions(notice));
         return;
       case 'history':
         this.#body.replaceChildren(this.#history(state));
@@ -560,9 +571,103 @@ export class ShippingPolicyView {
 
   // ---- Điều kiện nhận & ghép --------------------------------------------------------------------------------------------
 
-  #conditions(): HTMLElement {
-    const item = (title: string, text: string, value: string, locked = false): HTMLElement =>
-      h('div', { class: 'sp-condition' }, h('div', {}, h('p', { class: 'sp-condition-title' }, title), h('p', { class: 'hint' }, text)), h('span', { class: `sp-value${locked ? ' sp-value-locked' : ''}` }, value));
+  #conditions(notice?: string): HTMLElement {
+    const read = this.#conditionsRead;
+    if (read === undefined || read.kind === 'not-wired') {
+      return h('div', { class: 'sp-card' }, notWiredPanel(read?.reason || NOT_WIRED_SHIPPING_REASON));
+    }
+    if (read.kind === 'failed') {
+      if (read.failure === 'session-expired') {
+        this.host.onSessionLost();
+      } else if (read.failure === 'forbidden') {
+        this.host.onForbidden();
+      }
+      return h('div', { class: 'sp-card' }, failurePanel(read.failure, { retry: () => void this.load(), login: this.host.login, home: this.host.home }, read.retryAfterSec));
+    }
+    return this.#conditionsForm(read.state, notice);
+  }
+
+  #conditionsForm(state: ConditionsState, notice: string | undefined): HTMLElement {
+    const canEdit = this.host.canEdit;
+    const status = message('error', 'sp-cond-status');
+    const save = primary('Lưu tham số', 'button');
+    const field = (id: string, value: string, unit: string): { readonly input: HTMLInputElement; readonly error: HTMLElement; readonly element: HTMLElement } => {
+      const input = h('input', { id, type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-describedby': `${id}-error`, 'aria-label': unit });
+      input.value = value;
+      input.readOnly = !canEdit;
+      const error = message('error', `${id}-error`);
+      return { input, error, element: h('div', { class: 'sp-value-field' }, h('div', { class: 'input-wrap' }, input), h('span', { class: 'sp-unit' }, unit), error) };
+    };
+    const external = field('sp-cond-external', String(state.externalMax), 'đơn');
+    const delay = field('sp-cond-delay', formatMinutes(state.delaySeconds), 'phút');
+    const pickup = field('sp-cond-pickup', String(state.pickupSeconds), 'giây');
+    const handoff = field('sp-cond-handoff', String(state.handoffSeconds), 'giây');
+    const read = (): ConditionValues | undefined => {
+      const values = {
+        externalMax: parseBounded(external.input.value, CONDITION_BOUNDS.externalMax),
+        delaySeconds: parseMinutes(delay.input.value),
+        pickupSeconds: parseBounded(pickup.input.value, CONDITION_BOUNDS.pickupSeconds),
+        handoffSeconds: parseBounded(handoff.input.value, CONDITION_BOUNDS.handoffSeconds),
+      };
+      setMessage(external.error, values.externalMax === undefined ? `Nhập số nguyên từ ${String(CONDITION_BOUNDS.externalMax[0])} đến ${String(CONDITION_BOUNDS.externalMax[1])}.` : undefined);
+      setMessage(delay.error, values.delaySeconds === undefined ? 'Nhập số phút từ 0 đến 60 (tối đa 2 chữ số thập phân).' : undefined);
+      setMessage(pickup.error, values.pickupSeconds === undefined ? `Nhập số giây nguyên từ 0 đến ${String(CONDITION_BOUNDS.pickupSeconds[1])}.` : undefined);
+      setMessage(handoff.error, values.handoffSeconds === undefined ? `Nhập số giây nguyên từ 0 đến ${String(CONDITION_BOUNDS.handoffSeconds[1])}.` : undefined);
+      return values.externalMax === undefined || values.delaySeconds === undefined || values.pickupSeconds === undefined || values.handoffSeconds === undefined
+        ? undefined
+        : { externalMax: values.externalMax, delaySeconds: values.delaySeconds, pickupSeconds: values.pickupSeconds, handoffSeconds: values.handoffSeconds };
+    };
+    const send = async (): Promise<void> => {
+      let pending = this.#pendingConditions;
+      if (pending === undefined) {
+        const values = read();
+        if (values === undefined) {
+          return;
+        }
+        if (values.externalMax === state.externalMax && values.delaySeconds === state.delaySeconds && values.pickupSeconds === state.pickupSeconds && values.handoffSeconds === state.handoffSeconds) {
+          status.className = 'message message-notice';
+          setMessage(status, 'Chưa có thay đổi nào để lưu.');
+          return;
+        }
+        pending = { version: state.version, values, key: this.host.newKey() };
+        this.#pendingConditions = pending;
+      }
+      save.disabled = true;
+      save.textContent = 'Đang lưu…';
+      const result = await this.host.source.saveConditions(pending);
+      if (this.#disposed) {
+        return;
+      }
+      if (result.kind === 'ok') {
+        this.#pendingConditions = undefined;
+        await this.load('Đã lưu tham số. Áp dụng cho các lần kiểm tra điều kiện tiếp theo; không đổi đơn đã nhận.');
+        return;
+      }
+      if (result.kind === 'session-expired') {
+        this.host.onSessionLost();
+        return;
+      }
+      if (result.kind === 'forbidden') {
+        this.host.onForbidden();
+      }
+      if (result.kind !== 'unknown') {
+        this.#pendingConditions = undefined;
+      }
+      save.disabled = false;
+      save.textContent = result.kind === 'unknown' ? 'Thử lại' : result.kind === 'conflict' ? 'Tải lại' : 'Lưu tham số';
+      if (result.kind === 'conflict') {
+        save.onclick = () => void this.load();
+      }
+      status.className = `message message-${result.kind === 'unknown' || result.kind === 'conflict' ? 'warning' : 'error'}`;
+      setMessage(status, writeText(result));
+    };
+    save.addEventListener('click', () => void send());
+    if (notice !== undefined) {
+      status.className = 'message message-notice';
+      setMessage(status, notice);
+    }
+    const row = (title: string, text: string, control: HTMLElement): HTMLElement =>
+      h('div', { class: 'sp-condition' }, h('div', {}, h('p', { class: 'sp-condition-title' }, title), h('p', { class: 'hint' }, text)), control);
     return h(
       'div',
       { class: 'sp-grid' },
@@ -570,12 +675,15 @@ export class ShippingPolicyView {
         'div',
         { class: 'sp-card' },
         h('h2', { class: 'subtitle' }, 'Điều kiện nhận đơn'),
-        h('p', { class: 'sp-note', role: 'note', id: 'sp-conditions-pending' }, 'Chưa kết nối: các tham số dưới đây là mặc định đã duyệt và chưa có tác dụng cho đến khi gói M06-B/C (kiểm tra điều kiện nhận và ghép đơn) được nối với máy chủ. Chưa chỉnh sửa được ở đây.'),
-        item('Bán kính tìm shipper', 'Quy tắc cố định của hệ thống (đường chim bay từ quán đến vị trí shipper).', '5 km', true),
-        item('EXTERNAL — đơn cùng lúc', 'Mức tối đa được phép đang thực hiện (mặc định).', '3'),
-        item('PLATFORM — đơn cùng lúc', 'Không công khai phân loại cho shipper.', 'Không giới hạn'),
-        item('Chậm thêm tối đa khi ghép', 'So với ETA gốc của từng đơn đã nhận, cộng dồn (mặc định).', '5 phút'),
-        h('p', { class: 'hint' }, 'PLATFORM không được miễn điều kiện GPS hợp lệ, số dư và bảo vệ ETA. Mọi thao tác nhận đơn do M07 thực hiện.'),
+        row('Bán kính tìm shipper', 'Quy tắc cố định của hệ thống (đường chim bay từ quán đến vị trí shipper).', h('span', { class: 'sp-value sp-value-locked', id: 'sp-cond-radius' }, `${formatKm(state.searchRadiusM)} km`)),
+        row('EXTERNAL — đơn cùng lúc', 'Mức tối đa được phép đang thực hiện (mặc định 3).', external.element),
+        row('PLATFORM — đơn cùng lúc', 'Không công khai phân loại cho shipper.', h('span', { class: 'sp-value' }, 'Không giới hạn')),
+        row('Chậm thêm tối đa khi ghép', 'So với ETA gốc của từng đơn đã nhận, cộng dồn (mặc định 5 phút).', delay.element),
+        row('Thời gian nhận hàng', 'Tính vào ETA khi đánh giá ghép đơn.', pickup.element),
+        row('Thời gian bàn giao hàng', 'Tính vào ETA khi đánh giá ghép đơn.', handoff.element),
+        h('p', { class: 'sp-note', role: 'note', id: 'sp-conditions-pending' }, 'PLATFORM không được miễn điều kiện GPS hợp lệ, số dư và bảo vệ ETA. Các tham số này được dùng cho kiểm tra điều kiện của M06; việc nhận đơn thật do M07 thực hiện và M07 chưa được nối nên chưa có đơn nào bị ảnh hưởng.'),
+        status,
+        canEdit ? h('div', { class: 'detail-actions sp-actions' }, save) : h('p', { class: 'hint', id: 'sp-cond-readonly' }, 'Bạn chỉ có quyền xem. Chỉ tài khoản SYSTEM được chỉnh sửa tham số.'),
       ),
       h(
         'div',
@@ -600,10 +708,15 @@ export class ShippingPolicyView {
   // ---- Lịch sử chính sách ----------------------------------------------------------------------------------------------
 
   #history(state: PolicyState): HTMLElement {
+    const conditions = this.#conditionsRead?.kind === 'ready' ? this.#conditionsHistory(this.#conditionsRead.state) : undefined;
     if (state.history.length === 0) {
-      return h('div', { class: 'sp-card' }, emptyPanel('Chưa có phiên bản nào', 'Chưa có bảng giá nào được áp dụng. Khi chưa có bảng giá, hệ thống không tính phí giao hàng.'));
+      return h('div', { class: 'sp-stack' }, h('div', { class: 'sp-card' }, emptyPanel('Chưa có phiên bản nào', 'Chưa có bảng giá nào được áp dụng. Khi chưa có bảng giá, hệ thống không tính phí giao hàng.')), conditions);
     }
     const versions: readonly PolicyVersionInfo[] = state.history;
+    return h('div', { class: 'sp-stack' }, this.#versionsCard(state, versions), conditions);
+  }
+
+  #versionsCard(state: PolicyState, versions: readonly PolicyVersionInfo[]): HTMLElement {
     return h(
       'div',
       { class: 'sp-card' },
@@ -641,6 +754,29 @@ export class ShippingPolicyView {
           );
         }),
       ),
+    );
+  }
+
+  #conditionsHistory(state: ConditionsState): HTMLElement {
+    const label = (v: ConditionValues): string => `EXTERNAL ${String(v.externalMax)} đơn · chậm tối đa ${formatMinutes(v.delaySeconds)} phút · nhận ${String(v.pickupSeconds)}s · bàn giao ${String(v.handoffSeconds)}s`;
+    return h(
+      'div',
+      { class: 'sp-card', id: 'sp-conditions-history' },
+      h('h2', { class: 'subtitle' }, 'Thay đổi điều kiện nhận & ghép'),
+      state.history.length === 0
+        ? h('p', { class: 'empty' }, 'Chưa có thay đổi nào so với mặc định.')
+        : h(
+            'ol',
+            { class: 'timeline' },
+            ...state.history.map((change) =>
+              h(
+                'li',
+                { class: 'timeline-item' },
+                h('span', { class: 'timeline-dot', 'aria-hidden': 'true' }),
+                h('div', {}, h('p', { class: 'timeline-label' }, `${label(change.old)} → ${label(change.new)}`), h('p', { class: 'timeline-meta' }, `${formatDateTime(change.changedAt)} · Tài khoản ${change.changedBy}`)),
+              ),
+            ),
+          ),
     );
   }
 }
