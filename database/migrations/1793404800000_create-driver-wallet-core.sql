@@ -202,7 +202,22 @@ CREATE CONSTRAINT TRIGGER wallet_ledger_invariants AFTER INSERT ON app.wallet_le
 
 -- Down Migration
 -- Only for disposable test or experimental databases. Reverse order; no CASCADE and no IF EXISTS: it fails loudly on drift.
--- It also fails if any wallet or ledger row exists in a way a foreign key forbids; money history is never silently dropped.
+-- Safety latch: money history is never dropped. Both tables are locked ACCESS EXCLUSIVE first, so no wallet or ledger row can appear
+-- between the check and the DROP, and the whole down migration is refused, with the data untouched, if either table holds any row.
+LOCK TABLE app.driver_wallets, app.wallet_ledger_entries IN ACCESS EXCLUSIVE MODE;
+DO $latch$
+DECLARE
+  wallet_rows bigint;
+  ledger_rows bigint;
+BEGIN
+  SELECT count(*) INTO wallet_rows FROM app.driver_wallets;
+  SELECT count(*) INTO ledger_rows FROM app.wallet_ledger_entries;
+  IF wallet_rows > 0 OR ledger_rows > 0 THEN
+    RAISE EXCEPTION 'WALLET_DOWN_MIGRATION_REFUSED: % wallet row(s) and % ledger row(s) exist; wallet data is never dropped', wallet_rows, ledger_rows
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+END
+$latch$;
 DROP TRIGGER wallet_ledger_invariants ON app.wallet_ledger_entries;
 DROP TRIGGER driver_wallets_invariants ON app.driver_wallets;
 DROP FUNCTION app.wallet_invariants_trigger();

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { AppError } from '../../apps/backend/src/common/app-errors';
 import { TransactionError } from '../../apps/backend/src/transaction/transaction-error';
 import { DriverRepository } from '../../apps/backend/src/driver/driver-repository';
@@ -10,6 +10,7 @@ import { WalletRepository } from '../../apps/backend/src/wallet/wallet-repositor
 import { WalletService } from '../../apps/backend/src/wallet/wallet-service';
 import { eventually, failureOf } from './support/async-helpers';
 import { AuthApp, createDriverFor, purgePhone, randomPhone, rowLockWaiters, startAuthApp } from './support/auth-fixtures';
+import { WALLET_DOWN_SQL, WALLET_UP_SQL } from './support/wallet-migration-sql';
 import { holdRowLock } from './support/lock-fixtures';
 import { loadIntegrationConfig } from './support/test-helpers';
 import { managerFor, testPool } from './support/transaction-fixtures';
@@ -315,6 +316,89 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
     expect(await manager().withTransaction((context) => service.readWallet(context, driverId))).toMatchObject({ balanceVnd: 0n, version: 1n });
     const gate = await pool.query<{ tgenabled: string }>("SELECT tgenabled FROM pg_trigger WHERE tgname = 'wallet_ledger_a_source_gate'");
     expect(gate.rows.map((row) => row.tgenabled)).toEqual(['O']);
+  });
+
+  describe('down migration safety latch (money history is never dropped)', () => {
+    const tablesPresent = async (client: Pool | PoolClient): Promise<string[]> =>
+      (await client.query<{ n: string }>(`SELECT table_name AS n FROM information_schema.tables WHERE table_schema = 'app' AND table_name IN ('driver_wallets', 'wallet_ledger_entries') ORDER BY 1`)).rows.map((row) => row.n);
+
+    it('a zero wallet exists: the down migration is refused and the wallet and both tables are untouched', async () => {
+      const { driverId } = await makeDriver();
+      await manager().withTransaction((context) => service.ensureZeroWallet(context, driverId));
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const error = await failureOf(() => client.query(WALLET_DOWN_SQL));
+        expect(messageOf(error)).toContain('WALLET_DOWN_MIGRATION_REFUSED');
+        expect(sqlState(error)).toBe('23000');
+      } finally {
+        await client.query('ROLLBACK').catch(() => undefined);
+        client.release();
+      }
+      expect(await walletCount(driverId)).toBe(1);
+      expect(await tablesPresent(pool)).toEqual(['driver_wallets', 'wallet_ledger_entries']);
+      // Nothing was dropped: the triggers still guard the tables.
+      const triggers = await pool.query(`SELECT 1 FROM pg_trigger WHERE tgname IN ('driver_wallets_guard', 'wallet_ledger_append_only', 'wallet_ledger_a_source_gate') AND NOT tgisinternal`);
+      expect(triggers.rowCount).toBe(3);
+    });
+
+    it('a wallet committed while the down migration waits for the table lock is still refused (no race between the check and the DROP)', async () => {
+      const { driverId } = await makeDriver();
+      const writer = await pool.connect();
+      const migrator = await pool.connect();
+      try {
+        await writer.query('BEGIN');
+        await writer.query(
+          `INSERT INTO app.driver_wallets (wallet_id, driver_id, balance_vnd, held_vnd, version, created_at, updated_at) VALUES ($1::uuid, $2::uuid, 0, 0, 1, now(), now())`,
+          [randomUUID(), driverId],
+        );
+        await migrator.query('BEGIN');
+        const migrating = migrator.query(WALLET_DOWN_SQL).then(() => undefined, (error: unknown) => error);
+        // The migration is parked on the table lock behind the uncommitted wallet; only then does the writer commit.
+        await eventually(
+          async () => (await pool.query(`SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE '%LOCK TABLE app.driver_wallets, app.wallet_ledger_entries%'`)).rowCount === 1,
+          'the down migration waits for the table lock',
+        );
+        await writer.query('COMMIT');
+        const error = await migrating;
+        expect(messageOf(error)).toContain('WALLET_DOWN_MIGRATION_REFUSED');
+      } finally {
+        await writer.query('ROLLBACK').catch(() => undefined);
+        await migrator.query('ROLLBACK').catch(() => undefined);
+        writer.release();
+        migrator.release();
+      }
+      expect(await walletCount(driverId)).toBe(1);
+      expect(await tablesPresent(pool)).toEqual(['driver_wallets', 'wallet_ledger_entries']);
+    });
+
+    it('no wallet data: up -> down -> up works (run in a transaction that is rolled back, with the existing test wallets removed only inside it)', async () => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        // Other tests of this file leave committed wallets until the end; inside this rolled-back transaction the database is made empty.
+        await client.query('ALTER TABLE app.driver_wallets DISABLE TRIGGER driver_wallets_no_delete');
+        await client.query('DELETE FROM app.driver_wallets');
+        await client.query('ALTER TABLE app.driver_wallets ENABLE TRIGGER driver_wallets_no_delete');
+        await client.query(WALLET_DOWN_SQL);
+        expect(await tablesPresent(client)).toEqual([]);
+        await client.query(WALLET_UP_SQL);
+        expect(await tablesPresent(client)).toEqual(['driver_wallets', 'wallet_ledger_entries']);
+        // The re-created schema works: a zero wallet can be born again.
+        const { driverId } = await (async () => {
+          const found = await client.query<{ driver_id: string }>('SELECT driver_id FROM app.drivers LIMIT 1');
+          return { driverId: found.rows[0]?.driver_id };
+        })();
+        if (driverId !== undefined) {
+          await client.query(`INSERT INTO app.driver_wallets (wallet_id, driver_id, balance_vnd, held_vnd, version, created_at, updated_at) VALUES ($1::uuid, $2::uuid, 0, 0, 1, now(), now())`, [randomUUID(), driverId]);
+          await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+        }
+      } finally {
+        await client.query('ROLLBACK').catch(() => undefined);
+        client.release();
+      }
+      expect(await tablesPresent(pool)).toEqual(['driver_wallets', 'wallet_ledger_entries']);
+    });
   });
 
   it('11. provisioning changes nothing of M03: the driver row, bank, history and wallet parameters are identical, and the wallet port still says "not ready / not settled"', async () => {
