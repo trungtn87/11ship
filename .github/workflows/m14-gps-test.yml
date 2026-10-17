@@ -1,0 +1,125 @@
+name: M14 GPS Test APK
+on:
+  push:
+    branches: ['codex/m14-gps-test']
+    paths: ['mobile/gps-test/**', 'ops/m14/**', '.github/workflows/m14-gps-test.yml']
+  pull_request:
+    paths: ['mobile/gps-test/**', 'ops/m14/**', '.github/workflows/m14-gps-test.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: m14-gps-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  data:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - name: Prepare licensed offline data
+        run: |
+          if [ ! -f mobile/gps-test/app/src/main/assets/caobang/manifest.json ] || [ ! -f ops/m14/data/caobang.osm.pbf ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y osmium-tool
+            bash mobile/gps-test/tools/prepare-data.sh
+          fi
+          python3 mobile/gps-test/tools/verify-package.py
+      - name: Preserve test package on the isolated branch
+        if: github.ref_name == 'codex/m14-gps-test' || github.head_ref == 'codex/m14-gps-test'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mobile/gps-test/app/src/main/assets/caobang ops/m14/data
+          if ! git diff --cached --quiet; then
+            git commit -m 'build(m14): bundle licensed Cao Bang offline data [skip ci]'
+            git push origin HEAD:codex/m14-gps-test
+          fi
+      - name: Package complete offline map
+        run: tar -czf caobang-offline.tar.gz -C mobile/gps-test/app/src/main/assets caobang
+      - uses: actions/upload-artifact@v4
+        with:
+          name: M14-CaoBang-offline-map
+          path: caobang-offline.tar.gz
+          retention-days: 90
+      - uses: actions/upload-artifact@v4
+        with:
+          name: M14-routing-source
+          path: ops/m14/data
+          retention-days: 90
+  apk:
+    needs: data
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      ANDROID_TEST_KEYSTORE_BASE64: ${{ secrets.ANDROID_TEST_KEYSTORE_BASE64 }}
+      ANDROID_TEST_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_TEST_KEYSTORE_PASSWORD }}
+      ANDROID_TEST_KEY_ALIAS: ${{ secrets.ANDROID_TEST_KEY_ALIAS }}
+      ANDROID_TEST_KEY_PASSWORD: ${{ secrets.ANDROID_TEST_KEY_PASSWORD }}
+      GPS_VERSION_CODE: ${{ github.run_number }}
+      GPS_ROUTING_URL: https://one1ship-m14-routing.onrender.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: M14-CaoBang-offline-map
+      - run: tar -xzf caobang-offline.tar.gz -C mobile/gps-test/app/src/main/assets
+      - name: Require stable signing inputs
+        run: |
+          for name in ANDROID_TEST_KEYSTORE_BASE64 ANDROID_TEST_KEYSTORE_PASSWORD ANDROID_TEST_KEY_ALIAS ANDROID_TEST_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then echo "::error::Missing $name; refusing temporary signing"; exit 1; fi
+          done
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Verify data, test affected rules and build native APK
+        run: |
+          python3 mobile/gps-test/tools/verify-package.py
+          python3 -m unittest discover -s ops/m14 -p 'test_*.py'
+          cd mobile/gps-test
+          ./gradlew :history:testDebugUnitTest :routing:testDebugUnitTest :app:assembleRelease :app:lintRelease
+      - name: Sign, verify and record build identity
+        run: bash mobile/gps-test/tools/sign-apk.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 11Ship-GPS-Test-APK
+          path: |
+            artifact-out-m14/11Ship-GPS-Test.apk
+            artifact-out-m14/build-info.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish installable test files on the isolated branch
+        if: github.ref_name == 'codex/m14-gps-test' || github.head_ref == 'codex/m14-gps-test'
+        run: |
+          mkdir -p downloads/m14
+          cp artifact-out-m14/11Ship-GPS-Test.apk artifact-out-m14/build-info.json downloads/m14/
+          cp caobang-offline.tar.gz downloads/m14/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add downloads/m14
+          if ! git diff --cached --quiet; then
+            git commit -m 'build(m14): publish installable test APK and map [skip ci]'
+            git push origin HEAD:codex/m14-gps-test
+          fi
+
+  routing-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - run: python3 ops/m14/smoke.py https://one1ship-m14-routing.onrender.com
+      - uses: actions/upload-artifact@v4
+        with:
+          name: M14-Render-route-proof
+          path: routing-smoke.json
+          if-no-files-found: error

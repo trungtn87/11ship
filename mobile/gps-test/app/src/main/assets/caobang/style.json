@@ -1,0 +1,240 @@
+{
+  "version": 8,
+  "name": "Cao Bằng offline",
+  "glyphs": "asset://caobang/fonts/{fontstack}/{range}.pbf",
+  "sources": {
+    "caobang": {
+      "type": "geojson",
+      "data": "asset://caobang/map.geojson",
+      "attribution": "© OpenStreetMap contributors",
+      "maxzoom": 18
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "#f5f3e9"
+      }
+    },
+    {
+      "id": "land",
+      "type": "fill",
+      "source": "caobang",
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "get",
+            "kind"
+          ],
+          "land"
+        ],
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "Polygon"
+        ]
+      ],
+      "paint": {
+        "fill-color": "#d9e5cf",
+        "fill-opacity": 0.75
+      },
+      "layout": {},
+      "minzoom": 0
+    },
+    {
+      "id": "water-area",
+      "type": "fill",
+      "source": "caobang",
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "get",
+            "kind"
+          ],
+          "water"
+        ],
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "Polygon"
+        ]
+      ],
+      "paint": {
+        "fill-color": "#9dcfe2"
+      },
+      "layout": {},
+      "minzoom": 0
+    },
+    {
+      "id": "water-line",
+      "type": "line",
+      "source": "caobang",
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "get",
+            "kind"
+          ],
+          "water"
+        ],
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "LineString"
+        ]
+      ],
+      "paint": {
+        "line-color": "#9dcfe2",
+        "line-width": 3
+      },
+      "layout": {},
+      "minzoom": 0
+    },
+    {
+      "id": "building",
+      "type": "fill",
+      "source": "caobang",
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "get",
+            "kind"
+          ],
+          "building"
+        ],
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "Polygon"
+        ]
+      ],
+      "paint": {
+        "fill-color": "#d7c9b9",
+        "fill-outline-color": "#c0b29f"
+      },
+      "layout": {},
+      "minzoom": 14
+    },
+    {
+      "id": "road-casing",
+      "type": "line",
+      "source": "caobang",
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "get",
+            "kind"
+          ],
+          "road"
+        ],
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "LineString"
+        ]
+      ],
+      "paint": {
+        "line-color": "#c7bbaa",
+        "line-width": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          10,
+          1,
+          14,
+          5,
+          18,
+          13
+        ]
+      },
+      "layout": {},
+      "minzoom": 0
+    },
+    {
+      "id": "road",
+      "type": "line",
+      "source": "caobang",
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "get",
+            "kind"
+          ],
+          "road"
+        ],
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "LineString"
+        ]
+      ],
+      "paint": {
+        "line-color": [
+          "match",
+          [
+            "get",
+            "highway"
+          ],
+          [
+            "primary",
+            "secondary",
+            "trunk",
+            "motorway"
+          ],
+          "#f0cb7a",
+          "#ffffff"
+        ],
+        "line-width": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          10,
+          0.6,
+          14,
+          3,
+          18,
+          10
+        ]
+      },
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round"
+      },
+      "minzoom": 0
+    }
+  ]
+}

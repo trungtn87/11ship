@@ -1,0 +1,42 @@
+{
+  "signed_apk_installed": true,
+  "airplane_mode": true,
+  "osm_river_pixels": 21369,
+  "offline_map_rendered": true,
+  "two_pins_selected": true,
+  "android_online_route": "Tuyến dự tính: 1.56 km",
+  "offline_cached_route_after_restart": true,
+  "offline_route_message": true,
+  "permission_denied_without_recording": true,
+  "gps_injected": false,
+  "physical_gps_tested": false,
+  "update_keeps_route_cache": true,
+  "green_start_pin_pixels": 5079,
+  "red_end_pin_pixels": 5006,
+  "offline_place_label_pixels": 1001,
+  "foreground_survives_screen_lock_with_gps_off": true,
+  "stop_stays_stopped_after_65_seconds": true,
+  "gps_disabled_reported": true,
+  "retention_25h_deleted_1h_kept_using_database_fixtures": true,
+  "clear_history_works": true,
+  "old_build_info": {
+    "application_id": "vn.eleven.ship.gpstest",
+    "version_code": 9,
+    "signer_sha256": "6aa5abfcace6e1b55f6cede5e1aea0dc449fdd3f67b50ebf5a92a62f38dbd0a3",
+    "apk_sha256": "401a856b495c213e890b8bc3014f4700033e4a67fb6613a0126d7f86c7b89e03",
+    "source_sha": "088ca97c993afb00ca024bcb867ce481cfcb358e",
+    "map_version": "caobang-v1-2026-10-14",
+    "routing_url": "https://one1ship-m14-routing.onrender.com",
+    "physical_device_tested": false
+  },
+  "build_info": {
+    "application_id": "vn.eleven.ship.gpstest",
+    "version_code": 19,
+    "signer_sha256": "6aa5abfcace6e1b55f6cede5e1aea0dc449fdd3f67b50ebf5a92a62f38dbd0a3",
+    "apk_sha256": "3356f33fb3df41c591872b28970a541ac52ec0a1e33635e08a1c487caf35c6f0",
+    "source_sha": "5d078f3002fa826471bd75b278bcfaac03d149de",
+    "map_version": "caobang-v1.3-2026-10-14",
+    "routing_url": "https://one1ship-m14-routing.onrender.com",
+    "physical_device_tested": false
+  }
+}

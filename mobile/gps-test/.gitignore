@@ -1,0 +1,4 @@
+.gradle/
+local.properties
+.kotlin/
+__pycache__/

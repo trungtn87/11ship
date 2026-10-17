@@ -36,13 +36,17 @@ grep -Eq 'applicationId\s*=?\s*"vn\.eleven\.'"$app"'"' "$gradle" || { echo "appl
 sed -i -E 's/(applicationId\s*=?\s*)"vn\.eleven\.'"$app"'"/\1"'"$app_id"'"/' "$gradle"
 grep -q "\"$app_id\"" "$gradle"
 
+# Shared M14 native library uses Android 8+. Food remains on its existing minimum.
+if [ "$app" = ship ]; then
+  sed -i -E 's/minSdk = flutter.minSdkVersion/minSdk = 26/; s/minSdkVersion flutter.minSdkVersion/minSdkVersion 26/' "$gradle"
+fi
 res="$dest/app/src/main/res"
 rm -rf "$res/drawable-v21" "$res/values-night" "$res/mipmap-hdpi/ic_launcher.webp" 2>/dev/null || true
 find "$res" -name 'ic_launcher*' -delete
 cp -R "$root/$app/android_overlay/res/." "$res/"
 
 mkdir -p "$res/values" "$res/values-v31" "$res/drawable"
-# Location permissions exist only in the Food manifest (the owner records the shop position); Ship declares none.
+# Food declares one-shot shop location here. Ship gets explicit M14 foreground GPS permissions from the plugin manifest.
 if [ "$app" = food ]; then
   location_permissions='<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/><uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>'
 else

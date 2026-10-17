@@ -46,7 +46,7 @@ All three reuse the session above and the backend that already exists; nothing i
 - **Both - register with an SMS code (issue #102, server `REQUIRED` mode).** The register screen shows *Gửi mã xác minh* under the phone field: `POST /v1/auth/phone-verifications`, then it polls `GET /v1/auth/phone-verifications/{id}` while the server says `PENDING_DELIVERY`
   (the SMS is sent by a paired phone; **the code field is offered only once the server says SENT**), then `POST .../verify` gives the one-use `verification_token`, which rides in the signed `POST /v1/client-auth/register` body next to the device proof
   (the OTP proof does not replace the native device proof). Editing the phone drops the challenge and the proof. Nothing is faked: with no proof the app sends no registration.
-- **Permissions (exact allowlist, checked in CI by `mobile/tool/check-apk-permissions.sh`).** Food: INTERNET, ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION (+ the signature permission between the two apps). Ship: INTERNET only (+ the signature permission). No background location, camera, contacts or storage.
+- **Permissions (exact allowlist, checked in CI by `mobile/tool/check-apk-permissions.sh`).** Food: INTERNET, ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION (+ the signature permission between the two apps). Ship: INTERNET, ACCESS_NETWORK_STATE, ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION, FOREGROUND_SERVICE, FOREGROUND_SERVICE_LOCATION, POST_NOTIFICATIONS, WAKE_LOCK (+ the signature permission). M14 only starts GPS after explicit consent; no history is compiled into Ship. No background location, camera, contacts or storage.
 - When a session ends (logout, 401, another phone), the shop, driver and reset controllers drop every personal value and any pending write.
 
 > **Production note (2026-10-14):** the apps are the real operating build. Server address: `config/endpoints.json` (read by the workflows). Consent pair sent: `terms-20261014-v1` / `privacy-20261014-v1` (texts in `docs/current/M01-terms-privacy-20261014.md`, pending Owner approval). The sections below describe the same inputs; production uses `APP_ENV=production` on a loopback bind behind nginx — see `ops/runbooks/vps-production-update-20261014.md`.
@@ -94,3 +94,7 @@ If an already installed first APK was signed with an older throw-away key (no lo
 ## M01 UI (issue #98)
 The Food/Ship screens follow the approved M01 design (Brand Board v1.1: UI yellow #E2B81F, Plus Jakarta Sans bundled in `n11_shared/assets/fonts`, 14 px controls). Only presentation changed; controllers, API calls and sessions are those of the account/flows code above.
 Screenshots (fixture data from the test fakes, regenerate with `N11_SCREENSHOTS=<dir> flutter test test/screenshots_test.dart` in `food/` or `ship/`): `docs/ui/android-m01/`.
+
+## M14 — tích hợp để triển khai sau (16/10/2026)
+
+11Ship dùng package [`n11_m14`](packages/n11_m14/README.md), tái sử dụng bản đồ offline Cao Bằng/GPS/Valhalla của GPS Test. App test giữ application ID riêng. Mặc định giao diện/online M01 không đổi; bật bản đồ Cao Bằng bằng input `m14_offline_map` trong Mobile APK. Không tự ghi GPS, upload lịch sử hoặc triển khai VPS; các luồng M14 chính thức gọi API package khi được nối nghiệp vụ. Ship yêu cầu Android 8+; Food giữ cấu hình hiện tại.
