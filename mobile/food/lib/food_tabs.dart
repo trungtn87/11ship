@@ -65,6 +65,9 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
     actions: actions,
     reset: flows?.reset,
     shop: shop,
+    settingsEntries: <Widget>[
+      if (flows?.addresses != null) addressBookEntry(context, flows!.addresses!),
+    ],
     entries: const <Widget>[
       N11ListItem(icon: Icons.help_outline, title: 'Trợ giúp', soon: true),
     ],

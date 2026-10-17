@@ -4,6 +4,7 @@ import { ACCOUNT_SCOPE_DOWN_SQL, ACCOUNT_SCOPE_UP_SQL } from './support/account-
 import { SHIPPER_DOWN_SQL, SHIPPER_UP_SQL } from './support/shipper-migration-sql';
 import { WALLET_DOWN_SQL, WALLET_UP_SQL } from './support/wallet-migration-sql';
 import { SMS_GATEWAY_DOWN_SQL, SMS_GATEWAY_UP_SQL } from './support/sms-gateway-migration-sql';
+import { CUSTOMER_ADDRESS_DOWN_SQL, CUSTOMER_ADDRESS_UP_SQL } from './support/customer-address-migration-sql';
 import { CUSTOMER_DOWN_SQL, CUSTOMER_UP_SQL } from './support/customer-migration-sql';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -138,6 +139,7 @@ describe('M01-A1 — Auth Core migration', () => {
       '1793145600000_create-menu',
       '1793232000000_menu-category-admin',
       '1793318400000_create-shipper-management',
+      '1793404800000_create-customer-addresses',
       '1793404800000_create-driver-wallet-core',
     ]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
@@ -242,6 +244,7 @@ describe('M01-A1 — Auth Core migration', () => {
       // The M01.02 customer tables reference app.users and are the very newest: they go down first and come back up last.
       await client.query(WALLET_DOWN_SQL); // M04-A1: references app.drivers, the very newest: down first, up last
       await client.query(SHIPPER_DOWN_SQL); // M03: references app.drivers and app.users: down first, up last
+      await client.query(CUSTOMER_ADDRESS_DOWN_SQL); // M05: references app.users, the very newest: down first, up last
       await client.query(ACCOUNT_SCOPE_DOWN_SQL); // changes app.users: down first, up last
       await client.query(SMS_GATEWAY_DOWN_SQL);
       await client.query(CLIENT_DEVICE_DOWN_SQL);
@@ -282,6 +285,7 @@ describe('M01-A1 — Auth Core migration', () => {
       await client.query(ACCOUNT_SCOPE_UP_SQL);
       await client.query(menuUpSql);
       await client.query(SHIPPER_UP_SQL);
+      await client.query(CUSTOMER_ADDRESS_UP_SQL);
       await client.query(WALLET_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES].sort());
     } finally {

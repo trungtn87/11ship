@@ -62,7 +62,7 @@ export interface ApiOptions {
 
 export async function api(
   baseUrl: string,
-  method: 'GET' | 'POST' | 'PUT',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   options: ApiOptions = {},
 ): Promise<ApiResponse> {
@@ -109,7 +109,7 @@ export interface AuthApp {
   readonly config: AppConfig;
   readonly provider: FakeOtpProvider;
   readonly pool: Pool;
-  call(method: 'GET' | 'POST' | 'PUT', path: string, options?: ApiOptions): Promise<ApiResponse>;
+  call(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, options?: ApiOptions): Promise<ApiResponse>;
   /** Registers a normalized phone for cleanup when the app closes. */
   track(normalizedPhone: string): void;
   close(): Promise<void>;
@@ -319,6 +319,16 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
   if ((consents.rowCount ?? 0) > 0) {
     await pool.query('TRUNCATE app.user_consents');
   }
+  // M05: the address book and the customer record reference the user (RESTRICT): the addresses go first, then the customer.
+  await pool.query(
+    `DELETE FROM app.customer_addresses
+      WHERE customer_id IN (SELECT c.id FROM app.customers c JOIN app.users u ON u.user_id = c.user_id WHERE u.phone_normalized = $1)`,
+    [normalizedPhone],
+  );
+  await pool.query(
+    'DELETE FROM app.customers WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
+    [normalizedPhone],
+  );
   await pool.query(
     'DELETE FROM app.customer_profiles WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],
@@ -341,6 +351,13 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
   await pool.query(
     `DELETE FROM app.idempotency_records
       WHERE scope_type = 'customer_profile'
+        AND scope_id IN (SELECT user_id::text FROM app.users WHERE phone_normalized = $1)`,
+    [normalizedPhone],
+  );
+  // M05: the idempotency records of the address-book writes (scope = the user).
+  await pool.query(
+    `DELETE FROM app.idempotency_records
+      WHERE scope_type = 'customer_address_book'
         AND scope_id IN (SELECT user_id::text FROM app.users WHERE phone_normalized = $1)`,
     [normalizedPhone],
   );

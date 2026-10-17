@@ -1,3 +1,6 @@
+import '../addresses/address_controller.dart';
+import '../addresses/address_models.dart';
+import '../addresses/http_address_api.dart';
 import '../config.dart';
 import '../flows/driver_controller.dart';
 import '../flows/location.dart';
@@ -29,7 +32,7 @@ SessionController createSessionController(ClientApp app, AppConfig config, {ApiT
 
 /// The three connected flows of an app, built on its session. [location] is for tests; the real one is the Kotlin channel.
 class AppFlows {
-  AppFlows({required this.session, required this.reset, this.shop, this.driver, this.m02});
+  AppFlows({required this.session, required this.reset, this.shop, this.driver, this.m02, this.addresses});
 
   final SessionController session;
   final ResetController reset;
@@ -38,6 +41,9 @@ class AppFlows {
 
   /// Food only: the M02 shop-management, menu and customer screens.
   final M02Flows? m02;
+
+  /// Food only: the customer's delivery address book (M05).
+  final AddressBookController? addresses;
 }
 
 AppFlows createFlows(
@@ -50,6 +56,7 @@ AppFlows createFlows(
   PublicShopApi? publicApi,
   DiscoveryApi? discoveryApi,
   ImagePickerPort picker = const NoImagePicker(),
+  AddressApi? addressApi,
 }) {
   final ApiTransport http = transport ?? HttpApiTransport(base: config.apiUri ?? Uri.parse('https://invalid.invalid'));
   final LocationProvider where = location ?? MethodChannelLocationProvider();
@@ -60,6 +67,7 @@ AppFlows createFlows(
     reset: ResetController(transport: http, session: session),
     shop: shop,
     driver: app == ClientApp.ship ? DriverController(session: session) : null,
+    addresses: app == ClientApp.food ? AddressBookController(api: addressApi ?? HttpAddressApi(session: session), session: session) : null,
     m02: app == ClientApp.food
         ? createM02Flows(
             session: session,

@@ -120,6 +120,8 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | driver_events | SELECT, INSERT (M03: the append-only history of a Shipper: who, when, what, why) |
 | shipper_wallet_parameters | SELECT, UPDATE (M03: minimum top-up and withdrawal per request; the two rows are seeded by the migration, the runtime only changes their value) |
 | shipper_wallet_parameter_changes | SELECT, INSERT (M03: the append-only change log of those two values) |
+| customers | SELECT, INSERT, UPDATE (M05: one row per user, created once by the service; UPDATE only because the address writes lock it `FOR UPDATE`; no DELETE) |
+| customer_addresses | SELECT, INSERT, UPDATE (M05: add, edit, set default and the soft delete are all UPDATEs; no DELETE, an address is never removed) |
 | driver_wallets | SELECT, INSERT (M04-A1: the zero wallet of a Shipper, created once; no UPDATE and no DELETE until a money package needs them; never deleted) |
 | wallet_ledger_entries | SELECT (M04-A1: the append-only money ledger; no INSERT until a package provides the source tables, no UPDATE, no DELETE) |
 

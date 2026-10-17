@@ -113,6 +113,10 @@ export const APP_ERROR_DEFINITIONS = {
   MENU_CATEGORY_NAME_TAKEN_INACTIVE: { status: 409, message: 'An inactive dish group with this name already exists; activate it again instead' },
   MENU_CATEGORY_VERSION_CONFLICT: { status: 409, message: 'The dish group was changed by another request' },
 
+  // Customer address book (M05). Fixed message that echoes nothing the client sent. An address of another account is never told apart
+  // from one that does not exist (or was deleted). ROLE_NOT_AVAILABLE, VERSION_CONFLICT and INVALID_PHONE (above) are reused.
+  CUSTOMER_ADDRESS_NOT_FOUND: { status: 404, message: 'The address was not found' },
+
   // Administration web authentication (M01-D-LOGIN). Fixed messages that never echo what the client sent and never
   // say whether an account, a membership or a factor exists. Crypto/storage failures use the generic 503.
   ADMIN_PREAUTH_INVALID: { status: 401, message: 'The authentication step is not valid' },
