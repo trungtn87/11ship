@@ -225,6 +225,64 @@ void main() {
       expect(find.text('Alpha Hải Sản'), findsOneWidget);
     });
 
+    testWidgets('the layout follows the approved reference: brand and bell, area, search, group chips, then "Quán quanh bạn" with the filter button; the bell says M08 is not there yet', (WidgetTester tester) async {
+      phone(tester);
+      final DiscoveryController c = DiscoveryController(api: seeded());
+      addTearDown(c.dispose);
+      await home(tester, c);
+      final double bell = tester.getTopLeft(find.byKey(const Key('home-bell'))).dy;
+      final double area = tester.getTopLeft(find.byKey(const Key('home-area'))).dy;
+      final double search = tester.getTopLeft(find.byKey(const Key('home-search'))).dy;
+      final double chips = tester.getTopLeft(find.byKey(const Key('home-cat-all'))).dy;
+      final double heading = tester.getTopLeft(find.text('Quán quanh bạn')).dy;
+      final double firstShop = tester.getTopLeft(find.byKey(const Key('shop-s1'))).dy;
+      expect(<double>[bell, area, search, chips, heading, firstShop], orderedEquals(<double>[bell, area, search, chips, heading, firstShop]..sort()));
+      expect(tester.getTopLeft(find.byKey(const Key('home-filter'))).dx, greaterThan(tester.getTopLeft(find.text('Quán quanh bạn')).dx), reason: 'the filter button sits at the end of the heading row');
+      expect((tester.getTopLeft(find.byKey(const Key('home-filter'))).dy - heading).abs(), lessThan(24));
+      await tapKey(tester, 'home-bell');
+      expect(find.text('Thông báo sẽ có ở bản sau.'), findsOneWidget);
+      expect(find.text('Trang chủ'), findsNothing, reason: 'no page title bar above the brand header');
+    });
+
+    testWidgets('the filter sheet shows the groups as pills as wide as their text (not full-width bars) and keeps them in the server order', (WidgetTester tester) async {
+      phone(tester);
+      final DiscoveryController c = DiscoveryController(api: seeded());
+      addTearDown(c.dispose);
+      await home(tester, c);
+      await tapKey(tester, 'home-filter');
+      final Size oc = tester.getSize(find.byKey(const Key('filter-cat-c1')));
+      final Size seafood = tester.getSize(find.byKey(const Key('filter-cat-c2')));
+      expect(oc.width, lessThan(200));
+      expect(seafood.width, lessThan(240));
+      expect(tester.getTopLeft(find.byKey(const Key('filter-cat-c1'))).dx, lessThan(tester.getTopLeft(find.byKey(const Key('filter-cat-c2'))).dx), reason: 'the groups sit side by side, in the order the server gave');
+    });
+
+    testWidgets('the filter sheet picks the area from a dropdown: Áp dụng moves the list to that area, closing keeps the old one', (WidgetTester tester) async {
+      phone(tester);
+      final FakeDiscoveryApi api = seeded()..areaList = <AreaChoice>[const AreaChoice(id: 'a1', name: 'Cao Bằng'), const AreaChoice(id: 'a2', name: 'Hòa An')];
+      final DiscoveryController c = DiscoveryController(api: api);
+      addTearDown(c.dispose);
+      await home(tester, c);
+      await tapKey(tester, 'area-a1');
+      expect(find.text('Zeta Ốc Hương'), findsOneWidget);
+      await tapKey(tester, 'home-filter');
+      await tapKey(tester, 'filter-area');
+      await tester.tap(find.byKey(const Key('filter-area-a2')).last);
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'filter-close');
+      expect(c.areaId, 'a1');
+      expect(find.text('Zeta Ốc Hương'), findsOneWidget);
+      await tapKey(tester, 'home-area');
+      await tapKey(tester, 'filter-area');
+      await tester.tap(find.byKey(const Key('filter-area-a2')).last);
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'filter-apply');
+      expect(c.areaId, 'a2');
+      expect(find.text('Quán Khu Khác'), findsOneWidget);
+      expect(find.text('Zeta Ốc Hương'), findsNothing);
+      expect(find.text('Hòa An'), findsOneWidget);
+    });
+
     testWidgets('no match for the filters says so with Xóa bộ lọc; an area without shops says so', (WidgetTester tester) async {
       phone(tester);
       final DiscoveryController c = DiscoveryController(api: FakeDiscoveryApi(shops: <FakeShopEntry>[FakeShopEntry('s1', 'Quán Đóng', reason: 'OUTSIDE_BUSINESS_HOURS', dishes: const <FakeDishEntry>[FakeDishEntry('d', 'Món', 1000, 'c1')])]));
@@ -306,6 +364,28 @@ void main() {
       await tapKey(tester, 'search-clear-term');
       expect(find.text('Không có kết quả'), findsNothing);
       expect(find.text('Gõ tên quán hoặc tên món. Không cần gõ dấu.'), findsOneWidget);
+    });
+
+    testWidgets('the Món tab says to choose a dish to see the shop menu, and "Xem thêm" brings the next page of a long result without repeating a dish', (WidgetTester tester) async {
+      phone(tester);
+      final FakeDiscoveryApi api = FakeDiscoveryApi(shops: <FakeShopEntry>[
+        FakeShopEntry('s1', 'Quán Nhiều Món', reason: 'ONLINE', dishes: <FakeDishEntry>[for (int i = 1; i <= 35; i++) FakeDishEntry('d$i', 'Món số ${i.toString().padLeft(2, '0')}', 1000 * i, 'c1')]),
+      ]);
+      await openSearch(tester, api);
+      await tester.enterText(find.byKey(const Key('search-field')), 'mon so');
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'search-tab-dishes');
+      expect(find.text('Chọn món để xem thực đơn quán'), findsOneWidget);
+      expect(find.byKey(const Key('result-dish-d1')), findsOneWidget);
+      final Finder list = find.byType(Scrollable).last;
+      await tester.scrollUntilVisible(find.byKey(const Key('search-more')), 400, scrollable: list);
+      await tester.tap(find.byKey(const Key('search-more')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.byKey(const Key('result-dish-d35')), 400, scrollable: list);
+      expect(find.byKey(const Key('result-dish-d35')), findsOneWidget);
+      expect(find.byKey(const Key('search-more')), findsNothing);
+      final List<DiscoveryQuery> dishQueries = api.queries.where((DiscoveryQuery q) => q.term == 'mon so').toList();
+      expect(dishQueries.map((DiscoveryQuery q) => q.offset).toSet(), containsAll(<int>[0, 30]));
     });
 
     testWidgets('a dish result opens ITS shop and lands on the dish; a dish that is gone says so', (WidgetTester tester) async {
