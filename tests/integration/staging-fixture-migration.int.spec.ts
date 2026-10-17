@@ -97,7 +97,7 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
 
   describe('the file', () => {
     it('is a NEW file after the applied ones (only the test-unverified origin and the activation phone-mode migrations follow it), and the repository has exactly ONE account_origin column migration', () => {
-      expect(NAMES.slice(NAMES.indexOf(NEW))).toEqual([NEW, TEST_ORIGIN, '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding', '1792972800000_create-sms-gateway', '1793059200000_account-scope-lifecycle-settings', '1793145600000_create-menu', '1793232000000_menu-category-admin', '1793318400000_create-shipper-management']);
+      expect(NAMES.slice(NAMES.indexOf(NEW))).toEqual([NEW, TEST_ORIGIN, '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding', '1792972800000_create-sms-gateway', '1793059200000_account-scope-lifecycle-settings', '1793145600000_create-menu', '1793232000000_menu-category-admin', '1793318400000_create-shipper-management', '1793404800000_create-driver-wallet-core']);
       expect(NAMES.filter((name) => name.endsWith('add-users-account-origin'))).toEqual([ORIGIN]);
       expect(NAMES).not.toContain(D2_ORIGIN_NAME);
     });
