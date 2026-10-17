@@ -1,0 +1,194 @@
+import { describe, expect, it } from '@jest/globals';
+import { Agreement, AgreementAction, applyAgreementAction, feeAllowsAssignment, needsCustomerConsent, rejectedKey, Transition } from './shipping-fee-agreement';
+
+const T0 = 1_000_000;
+const EXPIRES = T0 + 600_000;
+const D1 = '11111111-1111-4111-8111-111111111111';
+const D2 = '22222222-2222-4222-8222-222222222222';
+
+const agreed = (over: Partial<Agreement> = {}): Agreement => ({
+  agreementId: 'a',
+  deliveryId: 'd',
+  feeMode: 'AGREED',
+  payer: 'SHOP',
+  status: 'PROPOSED',
+  baseFeeVnd: 15000,
+  basePolicyVersionNo: 1,
+  reasonCode: 'URGENT',
+  reasonNote: null,
+  proposedFeeVnd: 25000,
+  counterFeeVnd: null,
+  counterBy: null,
+  boundDriverId: null,
+  pendingFeeVnd: null,
+  pendingSource: null,
+  finalFeeVnd: null,
+  expiresAtMs: EXPIRES,
+  version: 1,
+  createdBy: 'shop',
+  createdAtMs: T0 - 1000,
+  updatedAtMs: T0 - 1000,
+  lockedAtMs: null,
+  ...over,
+});
+
+const run = (agreement: Agreement, action: AgreementAction, nowMs = T0, rejected: ReadonlySet<string> = new Set()): Transition => applyAgreementAction(agreement, action, nowMs, rejected);
+const okOf = (t: Transition) => {
+  if (t.kind !== 'ok') {
+    throw new Error(`expected ok, got ${JSON.stringify(t)}`);
+  }
+  return t;
+};
+const refusal = (t: Transition): string | undefined => (t.kind === 'refused' ? t.code : t.kind);
+
+describe('M06 fee agreement: when the customer must confirm', () => {
+  it('only when the customer pays an AGREED amount that is not the base fee (or there is no base fee)', () => {
+    expect(needsCustomerConsent(agreed({ payer: 'CUSTOMER' }), 25000)).toBe(true);
+    expect(needsCustomerConsent(agreed({ payer: 'CUSTOMER' }), 15000)).toBe(false); // equal to the base fee: nothing changes for the customer
+    expect(needsCustomerConsent(agreed({ payer: 'CUSTOMER', baseFeeVnd: null }), 15000)).toBe(true); // outside the price table: always
+    expect(needsCustomerConsent(agreed({ payer: 'SHOP' }), 25000)).toBe(false);
+    expect(needsCustomerConsent(agreed({ payer: 'CUSTOMER', feeMode: 'STANDARD' }), 25000)).toBe(false);
+  });
+});
+
+describe('M06 fee agreement: proposal, Shipper answers', () => {
+  it('a Shipper agrees to the proposal: shop pays -> final at once, bound to that Shipper; the amount may be above or below the base fee', () => {
+    const t = okOf(run(agreed(), { type: 'DRIVER_ACCEPT', driverId: D1 }));
+    expect(t.patch).toMatchObject({ status: 'ACCEPTED', finalFeeVnd: 25000, boundDriverId: D1 });
+    expect(t.eventType).toBe('DRIVER_ACCEPTED');
+    const lower = okOf(run(agreed({ proposedFeeVnd: 9000 }), { type: 'DRIVER_ACCEPT', driverId: D1 }));
+    expect(lower.patch).toMatchObject({ status: 'ACCEPTED', finalFeeVnd: 9000 });
+  });
+
+  it('customer pays and the amount differs from the base fee: the fee is NOT final until the customer confirms', () => {
+    const t = okOf(run(agreed({ payer: 'CUSTOMER' }), { type: 'DRIVER_ACCEPT', driverId: D1 }));
+    expect(t.patch).toMatchObject({ status: 'AWAITING_CUSTOMER', pendingFeeVnd: 25000, pendingSource: 'PROPOSAL', boundDriverId: D1 });
+    expect(t.patch).not.toHaveProperty('finalFeeVnd');
+    const waiting = agreed({ payer: 'CUSTOMER', status: 'AWAITING_CUSTOMER', pendingFeeVnd: 25000, pendingSource: 'PROPOSAL', boundDriverId: D1 });
+    const yes = okOf(run(waiting, { type: 'CUSTOMER_CONFIRM', approve: true }));
+    expect(yes.patch).toMatchObject({ status: 'ACCEPTED', finalFeeVnd: 25000, pendingFeeVnd: null });
+    const no = okOf(run(waiting, { type: 'CUSTOMER_CONFIRM', approve: false }));
+    expect(no.patch).toMatchObject({ status: 'DECLINED' });
+  });
+
+  it('customer pays and the proposal equals the base fee: final at once (nothing changed for the customer)', () => {
+    const t = okOf(run(agreed({ payer: 'CUSTOMER', proposedFeeVnd: 15000 }), { type: 'DRIVER_ACCEPT', driverId: D1 }));
+    expect(t.patch).toMatchObject({ status: 'ACCEPTED', finalFeeVnd: 15000 });
+  });
+
+  it('a Shipper who skips changes nothing on the agreement (the search simply goes on)', () => {
+    const t = okOf(run(agreed(), { type: 'DRIVER_SKIP', driverId: D1 }));
+    expect(t.patch).toBeNull();
+    expect(t.eventType).toBe('DRIVER_SKIPPED');
+  });
+});
+
+describe('M06 fee agreement: counter-offer, shop accepts or rejects', () => {
+  const countered = (over: Partial<Agreement> = {}): Agreement => agreed({ status: 'COUNTERED', counterFeeVnd: 30000, counterBy: D1, ...over });
+
+  it('a Shipper counters with another amount, above or below the proposal', () => {
+    const t = okOf(run(agreed(), { type: 'COUNTER', driverId: D1, amountVnd: 30000 }));
+    expect(t.patch).toEqual({ status: 'COUNTERED', counterFeeVnd: 30000, counterBy: D1 });
+    expect(okOf(run(agreed(), { type: 'COUNTER', driverId: D1, amountVnd: 20000 })).patch).toMatchObject({ counterFeeVnd: 20000 });
+  });
+
+  it('refuses a counter equal to the proposal and amounts that are not whole VND within the technical limit (no silent clamp)', () => {
+    expect(refusal(run(agreed(), { type: 'COUNTER', driverId: D1, amountVnd: 25000 }))).toBe('COUNTER_SAME_AS_PROPOSAL');
+    for (const bad of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 10_000_001, 2 ** 53]) {
+      expect(refusal(run(agreed(), { type: 'COUNTER', driverId: D1, amountVnd: bad }))).toBe('AMOUNT_INVALID');
+    }
+    expect(okOf(run(agreed(), { type: 'COUNTER', driverId: D1, amountVnd: 0 })).patch).toMatchObject({ counterFeeVnd: 0 });
+    expect(okOf(run(agreed(), { type: 'COUNTER', driverId: D1, amountVnd: 10_000_000 })).patch).toMatchObject({ counterFeeVnd: 10_000_000 });
+  });
+
+  it('shop REJECTS: the original proposal stays, the counter is cleared, and the deadline is NOT touched (the search clock does not restart)', () => {
+    const t = okOf(run(countered(), { type: 'SHOP_REJECT_COUNTER' }));
+    expect(t.patch).toEqual({ status: 'PROPOSED', counterFeeVnd: null, counterBy: null });
+    expect(t.patch).not.toHaveProperty('expiresAtMs');
+    expect(t.eventType).toBe('COUNTER_REJECTED');
+    expect(t.amountVnd).toBe(30000);
+    expect(t.driverId).toBe(D1);
+  });
+
+  it('the Shipper whose counter was rejected cannot offer the same amount again, but may offer another; another Shipper may offer it', () => {
+    const rejected = new Set([rejectedKey(D1, 30000)]);
+    expect(refusal(run(agreed(), { type: 'COUNTER', driverId: D1, amountVnd: 30000 }, T0, rejected))).toBe('COUNTER_ALREADY_REJECTED');
+    expect(okOf(run(agreed(), { type: 'COUNTER', driverId: D1, amountVnd: 28000 }, T0, rejected)).patch).toMatchObject({ counterFeeVnd: 28000 });
+    expect(okOf(run(agreed(), { type: 'COUNTER', driverId: D2, amountVnd: 30000 }, T0, rejected)).patch).toMatchObject({ counterBy: D2 });
+  });
+
+  it('shop ACCEPTS the counter: shop pays -> final = the counter, bound to the Shipper who made it; customer pays -> waits for the customer', () => {
+    const shopPays = okOf(run(countered(), { type: 'SHOP_ACCEPT_COUNTER' }));
+    expect(shopPays.patch).toMatchObject({ status: 'ACCEPTED', finalFeeVnd: 30000, boundDriverId: D1, counterFeeVnd: null });
+    const customerPays = okOf(run(countered({ payer: 'CUSTOMER' }), { type: 'SHOP_ACCEPT_COUNTER' }));
+    expect(customerPays.patch).toMatchObject({ status: 'AWAITING_CUSTOMER', pendingFeeVnd: 30000, pendingSource: 'COUNTER', boundDriverId: D1 });
+    expect(customerPays.patch).not.toHaveProperty('finalFeeVnd');
+  });
+
+  it('a customer who declines a COUNTER sends the request back to the proposal (the search goes on); the bound Shipper is released', () => {
+    const waiting = agreed({ payer: 'CUSTOMER', status: 'AWAITING_CUSTOMER', pendingFeeVnd: 30000, pendingSource: 'COUNTER', boundDriverId: D1 });
+    const t = okOf(run(waiting, { type: 'CUSTOMER_CONFIRM', approve: false }));
+    expect(t.patch).toMatchObject({ status: 'PROPOSED', boundDriverId: null, pendingFeeVnd: null });
+    expect(t.patch).not.toHaveProperty('expiresAtMs');
+  });
+
+  it('steps that do not fit the state are refused: no agreeing while a counter is pending, no countering twice, no confirming nothing', () => {
+    expect(refusal(run(countered(), { type: 'DRIVER_ACCEPT', driverId: D2 }))).toBe('INVALID_STATE');
+    expect(refusal(run(countered(), { type: 'COUNTER', driverId: D2, amountVnd: 1000 }))).toBe('INVALID_STATE');
+    expect(refusal(run(agreed(), { type: 'SHOP_ACCEPT_COUNTER' }))).toBe('INVALID_STATE');
+    expect(refusal(run(agreed(), { type: 'SHOP_REJECT_COUNTER' }))).toBe('INVALID_STATE');
+    expect(refusal(run(agreed(), { type: 'CUSTOMER_CONFIRM', approve: true }))).toBe('INVALID_STATE');
+  });
+});
+
+describe('M06 fee agreement: expiry, lock and Admin adjustment', () => {
+  it('an open offer whose deadline passed answers "expire" for ANY late answer; the deadline instant itself is already late', () => {
+    for (const action of [
+      { type: 'DRIVER_ACCEPT', driverId: D1 } as const,
+      { type: 'COUNTER', driverId: D1, amountVnd: 1000 } as const,
+      { type: 'SHOP_ACCEPT_COUNTER' } as const,
+      { type: 'CUSTOMER_CONFIRM', approve: true } as const,
+    ]) {
+      expect(run(agreed({ status: 'COUNTERED', counterFeeVnd: 1, counterBy: D1 }), action, EXPIRES).kind).toBe('expire');
+      expect(run(agreed(), action, EXPIRES + 1).kind).toBe('expire');
+    }
+    expect(run(agreed(), { type: 'DRIVER_ACCEPT', driverId: D1 }, EXPIRES - 1).kind).toBe('ok');
+  });
+
+  it('an accepted fee does not expire, and only M07 extending its own search can move the deadline (forward only)', () => {
+    const accepted = agreed({ status: 'ACCEPTED', finalFeeVnd: 25000, boundDriverId: D1 });
+    expect(run(accepted, { type: 'LOCK' }, EXPIRES + 10_000_000).kind).toBe('ok');
+    expect(okOf(run(agreed(), { type: 'EXTEND_DEADLINE', newExpiresAtMs: EXPIRES + 1 })).patch).toEqual({ expiresAtMs: EXPIRES + 1 });
+    expect(refusal(run(agreed(), { type: 'EXTEND_DEADLINE', newExpiresAtMs: EXPIRES }))).toBe('DEADLINE_NOT_LATER');
+    expect(refusal(run(agreed(), { type: 'EXTEND_DEADLINE', newExpiresAtMs: EXPIRES - 1 }))).toBe('DEADLINE_NOT_LATER');
+  });
+
+  it('LOCK (at picked_up) only from an accepted fee; after it only an Admin adjustment, with a reason and a different amount, may change it', () => {
+    expect(refusal(run(agreed(), { type: 'LOCK' }))).toBe('INVALID_STATE');
+    const accepted = agreed({ status: 'ACCEPTED', finalFeeVnd: 25000, boundDriverId: D1 });
+    const locked = okOf(run(accepted, { type: 'LOCK' }, T0 + 5));
+    expect(locked.patch).toEqual({ status: 'LOCKED', lockedAtMs: T0 + 5 });
+    const lockedRow = agreed({ status: 'LOCKED', finalFeeVnd: 25000, boundDriverId: D1, lockedAtMs: T0 });
+    // Nobody but an Admin changes a locked fee: every other action is refused.
+    for (const action of [{ type: 'DRIVER_ACCEPT', driverId: D1 } as const, { type: 'COUNTER', driverId: D1, amountVnd: 1000 } as const, { type: 'SHOP_ACCEPT_COUNTER' } as const, { type: 'LOCK' } as const]) {
+      expect(refusal(run(lockedRow, action))).toBe('INVALID_STATE');
+    }
+    expect(refusal(run(accepted, { type: 'ADMIN_ADJUST', amountVnd: 20000, reason: 'x' }))).toBe('INVALID_STATE'); // not locked yet
+    const adjusted = okOf(run(lockedRow, { type: 'ADMIN_ADJUST', amountVnd: 20000, reason: '  Khách đổi địa chỉ  ' }));
+    expect(adjusted.patch).toEqual({ finalFeeVnd: 20000 });
+    expect(adjusted.reason).toBe('Khách đổi địa chỉ');
+    expect(refusal(run(lockedRow, { type: 'ADMIN_ADJUST', amountVnd: 20000, reason: '   ' }))).toBe('REASON_REQUIRED');
+    expect(refusal(run(lockedRow, { type: 'ADMIN_ADJUST', amountVnd: 25000, reason: 'same' }))).toBe('AMOUNT_INVALID');
+    expect(refusal(run(lockedRow, { type: 'ADMIN_ADJUST', amountVnd: -5, reason: 'neg' }))).toBe('AMOUNT_INVALID');
+    expect(refusal(run(lockedRow, { type: 'ADMIN_ADJUST', amountVnd: 20000, reason: 'x'.repeat(201) }))).toBe('REASON_REQUIRED');
+  });
+
+  it('a fee allows assignment only when final and bound to that Shipper (STANDARD: final fee, any Shipper)', () => {
+    const accepted = agreed({ status: 'ACCEPTED', finalFeeVnd: 25000, boundDriverId: D1 });
+    expect(feeAllowsAssignment(accepted, D1)).toBe(true);
+    expect(feeAllowsAssignment(accepted, D2)).toBe(false);
+    expect(feeAllowsAssignment(agreed(), D1)).toBe(false);
+    expect(feeAllowsAssignment(agreed({ status: 'AWAITING_CUSTOMER', pendingFeeVnd: 1, pendingSource: 'PROPOSAL', boundDriverId: D1 }), D1)).toBe(false);
+    expect(feeAllowsAssignment(agreed({ feeMode: 'STANDARD', status: 'ACCEPTED', finalFeeVnd: 15000, proposedFeeVnd: null, reasonCode: null }), D2)).toBe(true);
+  });
+});

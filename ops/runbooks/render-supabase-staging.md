@@ -129,6 +129,12 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | wallet_topup_requests | SELECT, INSERT, UPDATE (M04-B2.1: the Shipper creates a PENDING request and cancels it; no DELETE; a request never moves money) |
 | wallet_bank_transactions | SELECT (M04-B1: the shared registry of bank transactions, append-only; no writer until B2) |
 | wallet_topups | SELECT (M04-B1: money confirmed as received, append-only; no writer until B2; it cannot commit without its ledger credit, and the ledger stays closed) |
+| shipping_fee_policy_versions | SELECT, INSERT (M06-A: one immutable row per applied fee table; a trigger refuses UPDATE, DELETE and TRUNCATE) |
+| shipping_fee_policy_drafts | SELECT, UPDATE (M06-A: the one seeded draft row; UPDATE is the version-checked save/clear and `FOR UPDATE`; never deleted) |
+| shipping_eligibility_parameters | SELECT, UPDATE (M06-B/C: the one seeded row of limits; UPDATE is the version-checked change and `FOR UPDATE`; never deleted) |
+| shipping_eligibility_parameter_changes | SELECT, INSERT (M06-B/C: the append-only change log; a trigger refuses UPDATE, DELETE and TRUNCATE) |
+| shipping_fee_agreements | SELECT, INSERT, UPDATE (M06 v1.1: one fee agreement per delivery; UPDATE is the service's version-checked step under `FOR UPDATE`; never deleted) |
+| shipping_fee_agreement_events | SELECT, INSERT (M06 v1.1: the append-only log of who proposed, countered, accepted or rejected which amount) |
 
 **Permanent account deletion (Owner decision 2026-10-14).** The runtime role has no `DELETE` on any account table. The only way an account is removed is the function `app.purge_app_user(uuid)` (created by the migration, `SECURITY DEFINER`, owned by the migration role, refuses an administration account and an account with a shop or driver profile). `PUBLIC` has no `EXECUTE` on it; after the migrations run, grant it to the runtime role with `ops/selfhosted/03-runtime-function-grants.sql` (one statement: `GRANT EXECUTE ON FUNCTION app.purge_app_user(uuid) TO ship11_app;`). Without that grant a permanent delete answers 503 and nothing is deleted.
 
