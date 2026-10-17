@@ -383,12 +383,12 @@ class _BalanceCard extends StatelessWidget {
         children: <Widget>[
           const Text('Số dư khả dụng', style: TextStyle(fontSize: 14, height: 1.4, fontWeight: FontWeight.w600, color: N11Colors.black)),
           const SizedBox(height: 6),
-          Text(formatVnd(wallet.available), key: const Key('wallet-available'), style: N11Text.display),
+          Text(formatWalletVnd(wallet.available), key: const Key('wallet-available'), style: N11Text.display),
           const SizedBox(height: N11Space.gap4),
           Row(
             children: <Widget>[
-              Expanded(child: _Mini(label: 'Tổng số dư', value: formatVnd(wallet.total), valueKey: const Key('wallet-total'))),
-              Expanded(child: _Mini(label: 'Tiền tạm giữ', value: formatVnd(wallet.held), valueKey: const Key('wallet-held'), end: true)),
+              Expanded(child: _Mini(label: 'Tổng số dư', value: formatWalletVnd(wallet.total), valueKey: const Key('wallet-total'))),
+              Expanded(child: _Mini(label: 'Tiền tạm giữ', value: formatWalletVnd(wallet.held), valueKey: const Key('wallet-held'), end: true)),
             ],
           ),
           const SizedBox(height: N11Space.gap2),
@@ -471,7 +471,7 @@ class _TopupAmountScreenState extends State<TopupAmountScreen> {
       return 'Hãy nhập số tiền muốn nạp.';
     }
     if (value < widget.minTopup) {
-      return 'Số tiền nạp tối thiểu ${formatVnd(widget.minTopup)}.';
+      return 'Số tiền nạp tối thiểu ${formatWalletVnd(widget.minTopup)}.';
     }
     return null;
   }
@@ -509,7 +509,7 @@ class _TopupAmountScreenState extends State<TopupAmountScreen> {
         maxLength: 12,
         suffix: const Padding(padding: EdgeInsets.only(right: 14), child: Center(widthFactor: 1, child: Text('đ', style: N11Text.bodyStrong))),
         tone: _error == null ? FieldTone.normal : FieldTone.error,
-        hint: _error ?? 'Tối thiểu ${formatVnd(widget.minTopup)} mỗi lần nạp',
+        hint: _error ?? 'Tối thiểu ${formatWalletVnd(widget.minTopup)} mỗi lần nạp',
         onChanged: () => setState(() => _error = null),
       ),
       const Text('Thông tin chuyển khoản', style: N11Text.h2),
@@ -659,7 +659,7 @@ class _TopupConfirmScreenState extends State<TopupConfirmScreen> {
           children: <Widget>[
             const Text('Thông tin giao dịch', style: N11Text.h2),
             const SizedBox(height: N11Space.gap2),
-            _KV('Số tiền nạp', formatVnd(widget.amount), valueKey: const Key('confirm-amount')),
+            _KV('Số tiền nạp', formatWalletVnd(widget.amount), valueKey: const Key('confirm-amount')),
             _KV('Ngân hàng', info.bankName),
             _KV('Số tài khoản nhận', info.accountNumber),
             _KV('Nội dung', info.content),
@@ -775,7 +775,7 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
   }
 
   (IconData, _Tone, String) _look(TopupRequest r) => switch (r.status) {
-        TopupStatus.pending => (Icons.hourglass_top, _Tone.warn, 'Bạn đã gửi yêu cầu nạp ${formatVnd(r.amount)}. Admin sẽ kiểm tra và cộng tiền vào ví sau khi xác minh giao dịch ngân hàng.'),
+        TopupStatus.pending => (Icons.hourglass_top, _Tone.warn, 'Bạn đã gửi yêu cầu nạp ${formatWalletVnd(r.amount)}. Admin sẽ kiểm tra và cộng tiền vào ví sau khi xác minh giao dịch ngân hàng.'),
         TopupStatus.confirmed => (Icons.check_circle_outline, _Tone.ok, 'Admin đã xác nhận. Số tiền thực nhận đã được ghi vào ví.'),
         TopupStatus.rejected => (Icons.cancel_outlined, _Tone.bad, 'Admin đã từ chối yêu cầu này. Ví không thay đổi.'),
         TopupStatus.cancelled => (Icons.block, _Tone.neutral, 'Yêu cầu đã được hủy. Ví không thay đổi.'),
@@ -796,7 +796,7 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
               child: Column(
                 children: <Widget>[
                   _KV('Mã yêu cầu', r.code, valueKey: const Key('topup-code')),
-                  _KV('Số tiền', formatVnd(r.amount)),
+                  _KV('Số tiền', formatWalletVnd(r.amount)),
                   _KV('Thời gian', formatWalletTime(r.createdAt)),
                   _KV('Trạng thái', topupStatusLabel(r.status)),
                 ],
@@ -885,7 +885,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
       return null;
     }
     if (value == null || value < widget.minWithdraw) {
-      return 'Số tiền rút tối thiểu ${formatVnd(widget.minWithdraw)}.';
+      return 'Số tiền rút tối thiểu ${formatWalletVnd(widget.minWithdraw)}.';
     }
     if (available != null && value > available) {
       return 'Số dư khả dụng không đủ.';
@@ -939,7 +939,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               const Text('Số dư khả dụng', style: N11Text.label),
-              Text(formatVnd(wallet.value.available), key: const Key('withdraw-available'), style: N11Text.title),
+              Text(formatWalletVnd(wallet.value.available), key: const Key('withdraw-available'), style: N11Text.title),
             ],
           ),
         )
@@ -954,7 +954,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
         maxLength: 12,
         suffix: const Padding(padding: EdgeInsets.only(right: 14), child: Center(widthFactor: 1, child: Text('đ', style: N11Text.bodyStrong))),
         tone: problem == null ? FieldTone.normal : FieldTone.error,
-        hint: problem ?? 'Tối thiểu ${formatVnd(widget.minWithdraw)} mỗi lần rút',
+        hint: problem ?? 'Tối thiểu ${formatWalletVnd(widget.minWithdraw)} mỗi lần rút',
         onChanged: () => setState(() {}),
       ),
       const Text('Tài khoản nhận tiền', style: N11Text.h2),
@@ -1074,7 +1074,7 @@ class _WithdrawDetailScreenState extends State<WithdrawDetailScreen> {
               child: Column(
                 children: <Widget>[
                   _KV('Mã yêu cầu', r.code, valueKey: const Key('withdraw-code')),
-                  _KV('Số tiền rút', formatVnd(r.amount)),
+                  _KV('Số tiền rút', formatWalletVnd(r.amount)),
                   _KV('Ngày tạo', formatWalletTime(r.createdAt)),
                   _KV('Tài khoản nhận', '${r.account.bankName}\n${r.account.maskedNumber}\n${r.account.holder}'),
                 ],

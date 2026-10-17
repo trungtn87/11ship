@@ -19,10 +19,10 @@ String _group(int absolute) {
 }
 
 /// Whole VND with Vietnamese grouping: `100000` -> `100.000đ`, `-1000` -> `-1.000đ`.
-String formatVnd(int value) => '${value < 0 ? '-' : ''}${_group(value.abs())}đ';
+String formatWalletVnd(int value) => '${value < 0 ? '-' : ''}${_group(value.abs())}đ';
 
-/// Like [formatVnd] with an explicit `+` for positive values: `150000` -> `+150.000đ`.
-String formatVndSigned(int value) => value > 0 ? '+${formatVnd(value)}' : formatVnd(value);
+/// Like [formatWalletVnd] with an explicit `+` for positive values: `150000` -> `+150.000đ`.
+String formatWalletVndSigned(int value) => value > 0 ? '+${formatWalletVnd(value)}' : formatWalletVnd(value);
 
 /// `dd/MM/yyyy HH:mm` (local time of the value).
 String formatWalletTime(DateTime at) {
@@ -167,5 +167,5 @@ class WalletTxn {
   /// Holds and their release are not ledger entries: no sign, no green "+".
   bool get isLedgerMovement => type != TxnType.hold && type != TxnType.release;
 
-  String get amountText => isLedgerMovement ? formatVndSigned(amount) : formatVnd(amount.abs());
+  String get amountText => isLedgerMovement ? formatWalletVndSigned(amount) : formatWalletVnd(amount.abs());
 }

@@ -44,7 +44,7 @@ Bản hình ảnh là mockup tham khảo (dữ liệu, mã giao dịch, tài kho
 - Trạng thái rút nên trình bày nhãn tiếng Việt thân thiện: Chờ xử lý / Đang xử lý / Cần đối soát / Hoàn thành / Đã hủy; không giấu nhánh cần đối soát.
 - Trạng thái nạp: Chờ xác nhận / Thành công / Từ chối / Đã hủy.
 - Tiền đang giữ là thông tin hold, **không phải khoản trừ ledger**. Giải phóng hold không được ngụy tạo như giao dịch nạp +tiền. Đây là quy tắc hiển thị tài chính phải đúng dù ảnh mockup diễn giải đơn giản.
-- Điều hướng phải kế thừa app 11Ship hiện có. Nếu tab Ví chưa xuất hiện trong điều hướng chính đã chốt, chỉ thêm theo task UI rõ ràng; không làm đổi bất ngờ các tab của M01/M03.
+- Điều hướng phải kế thừa app 11Ship hiện có. **Owner chốt 17/10/2026: giữ nguyên 5 tab App Shipper, không thêm tab Ví.** Ví vào từ Thu nhập và Tài khoản.
 
 ## 4. Admin Web — catalog đã chốt
 
@@ -65,14 +65,14 @@ Sidebar nhóm Tài chính: Tổng quan / Ví Shipper / Nạp tiền / Rút tiề
 - Mỗi Shipper một ví; tổng số dư B, tiền giữ H, khả dụng A=B-H.
 - Mức mặc định theo quyết định Owner gần nhất: nạp tối thiểu **100.000đ/lần**; rút tối thiểu **10.000đ/lần**; hoa hồng **1.000đ/đơn giao thành công**; đều cấu hình trong Admin Web cho giao dịch mới.
 - Chỉ Admin được ghi nhận tiền nạp thực nhận sau đối soát giao dịch ngân hàng; nút "Tôi đã chuyển tiền" không trực tiếp cộng ví.
-- Shipper **được tạo yêu cầu nạp và rút trên ứng dụng**; Admin xử lý nạp/rút qua Web. Đây là scope UI Owner duyệt ngày 15/10. Tài liệu ADR-004 draft 07/10 trước đây nêu withdrawal create bởi Admin: cần đồng bộ lại API/authorization spec với UI đã chốt trước khi code. Không tự code theo bản draft mâu thuẫn.
+- Shipper **được tạo yêu cầu nạp và rút trên ứng dụng**; Admin xử lý nạp/rút qua Web. Đây là scope UI Owner duyệt ngày 15/10. **Đã giải quyết 17/10/2026:** Owner chốt Shipper tự tạo yêu cầu nạp/rút, Admin xử lý; `docs/current/ADR-004-driver-wallet-consistency.md` bản 0.2 ghi rõ phần thay đổi so với draft 07/10.
 - Tạm giữ hoa hồng khi nhận đơn; capture/debit khi completed; release khi hủy/thất bại. Mỗi assignment đúng một lần.
 - Khi rút, reserve ngay; chỉ PAID mới capture/debit. Chưa biết kết quả chuyển khoản thì giữ hold, không chuyển lại hoặc giải phóng tự động.
 - Shipper SUSPENDED/CLOSING vẫn có quyền yêu cầu rút tiền theo quy định; người dùng không truy cập được cần có kênh xử lý qua Admin xác minh.
 - Đổi ngân hàng sau khi tạo yêu cầu không được âm thầm đổi đích đã chốt của yêu cầu đang xử lý.
 - Không xóa ledger/giao dịch đã post, không sửa thẳng balance; sai lệch phải có quy trình adjustment có quyền và lý do.
 - M03 sở hữu hồ sơ/kích hoạt/tài khoản ngân hàng; M04 sở hữu ví, hold, ledger, nạp/rút; M07 sau này tích hợp luồng đơn.
-- Tham khảo contract an toàn: docs/current/ADR-004-driver-wallet-consistency.md trong PR #7 (DRAFT, không tự coi là đã merge/Owner lock).
+- Contract an toàn: `docs/current/ADR-004-driver-wallet-consistency.md` (bản 0.2, DESIGN PATCH, chưa CODE_READY/Owner lock).
 
 ## 6. Tiêu chí triển khai giao diện sau này
 
@@ -85,3 +85,4 @@ Sidebar nhóm Tài chính: Tổng quan / Ví Shipper / Nạp tiền / Rút tiề
 ## 7. Hồ sơ thay đổi
 
 - 15/10/2026: Owner xác nhận "Ok duyệt. Lưu vào dự án đi". Chốt **UI tham khảo M04 V1**; không đồng nghĩa duyệt triển khai backend/code/merge sản phẩm.
+- 17/10/2026: Owner chốt (1) Shipper tạo yêu cầu nạp/rút, Admin xử lý (ADR-004 bản 0.2); (2) giữ 5 tab App; (3) quyền tài chính ADMIN do SYSTEM cấp từng chức năng, không hardcode.

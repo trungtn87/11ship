@@ -52,15 +52,15 @@ Future<Wallet> readWallet(WidgetTester tester, WalletSource source) async {
 
 void main() {
   group('money', () {
-    test('formatVnd groups thousands with dots and keeps the sign', () {
-      expect(formatVnd(0), '0đ');
-      expect(formatVnd(999), '999đ');
-      expect(formatVnd(100000), '100.000đ');
-      expect(formatVnd(1250000), '1.250.000đ');
-      expect(formatVnd(-1000), '-1.000đ');
-      expect(formatVndSigned(150000), '+150.000đ');
-      expect(formatVndSigned(-1000), '-1.000đ');
-      expect(formatVndSigned(0), '0đ');
+    test('formatWalletVnd groups thousands with dots and keeps the sign', () {
+      expect(formatWalletVnd(0), '0đ');
+      expect(formatWalletVnd(999), '999đ');
+      expect(formatWalletVnd(100000), '100.000đ');
+      expect(formatWalletVnd(1250000), '1.250.000đ');
+      expect(formatWalletVnd(-1000), '-1.000đ');
+      expect(formatWalletVndSigned(150000), '+150.000đ');
+      expect(formatWalletVndSigned(-1000), '-1.000đ');
+      expect(formatWalletVndSigned(0), '0đ');
     });
 
     test('available is always total - held', () {

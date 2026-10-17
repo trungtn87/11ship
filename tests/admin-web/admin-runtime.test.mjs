@@ -222,6 +222,27 @@ describe('Admin front as the launcher starts it', () => {
   });
 });
 
+describe('Admin front serves the M04 Tài chính routes', () => {
+  it('opens, reloads and bookmarks every finance page and the wallet parameters page with the app; lookalikes stay 404', async () => {
+    const id = '123e4567-e89b-42d3-a456-426614174000';
+    const run = runEntry({});
+    try {
+      const { port } = await run.ready;
+      for (const path of ['/finance', '/finance/wallets', '/finance/topups', '/finance/topups?tab=DONE', '/finance/withdrawals', '/finance/withdrawals?tab=PENDING', '/finance/transactions', '/finance/transactions?shipper=' + id, '/finance/reconciliation', `/finance/topups/${id}`, `/finance/withdrawals/${id}`, '/system/parameters/wallet']) {
+        const page = await call(port, path);
+        assert.equal(page.status, 200, path);
+        assert.match(page.headers['content-type'], /text\/html/, path);
+        assert.match(page.body, /<script/, path);
+      }
+      for (const path of ['/finance/unknown', '/finance/topups/not-a-uuid', `/finance/wallets/${id}`, `/finance/topups/${id}/extra`, '/system/parameters', '/system/parameters/other', '/finance/../.env']) {
+        assert.equal((await call(port, path)).status, 404, path);
+      }
+    } finally {
+      await run.stop();
+    }
+  });
+});
+
 describe('Admin front refuses to start on what it cannot prove', () => {
   it('missing certificate -> exit 3; missing or altered build -> exit 4; a port someone else holds -> exit 5 and the other service is left alone', async () => {
     const noCert = runEntry({ ADMIN_WEB_TLS_CERT: join(work, 'absent.pem') });
