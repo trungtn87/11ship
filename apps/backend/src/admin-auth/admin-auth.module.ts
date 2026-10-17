@@ -14,6 +14,9 @@ import { AdminAccountLockController } from '../admin-account-lock/admin-account-
 import { AdminAccountReadRepository } from '../admin-accounts/admin-account-read-repository';
 import { AdminAccountReadService } from '../admin-accounts/admin-account-read-service';
 import { AdminAccountReadController, AdminPermissionsController } from '../admin-accounts/admin-account-read.controller';
+import { ShippingFeePolicyController } from '../shipping-policy/shipping-fee-policy.controller';
+import { ShippingFeePolicyRepository } from '../shipping-policy/shipping-fee-policy-repository';
+import { ShippingFeePolicyService } from '../shipping-policy/shipping-fee-policy-service';
 import { AdminShipperController, ShipperWalletParametersController } from '../admin-shippers/admin-shipper.controller';
 import { AdminShipperService } from '../admin-shippers/admin-shipper-service';
 import { ShipperWalletParametersService } from '../admin-shippers/shipper-wallet-parameters-service';
@@ -88,7 +91,7 @@ export class AdminAuthModule implements NestModule {
       ],
       // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
       // M01-D-ADMIN-1C: the activation routes under /v1/admin-activation exist only when explicitly enabled.
-      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ...(activation === undefined ? [] : [AdminActivationController])],
+      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ...(activation === undefined ? [] : [AdminActivationController])],
       providers: [
         adminAuthConfigProvider,
         {
@@ -135,6 +138,9 @@ export class AdminAuthModule implements NestModule {
         // M03 Shipper management (SYSTEM, or an ADMIN with the DRIVER permissions) and the SYSTEM-only Shipper wallet parameters.
         AdminShipperService,
         ShipperWalletParametersService,
+        // M06-A flexible shipping-fee table (SYSTEM changes, any ADMIN reads).
+        ShippingFeePolicyRepository,
+        ShippingFeePolicyService,
         // The 1B section 8.8 hook is always present (1B calls it); it is a no-op when no activation attempt exists.
         AdminActivationRepository,
         AdminActivationInvalidator,
@@ -157,7 +163,7 @@ export class AdminAuthModule implements NestModule {
   }
 
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController);
+    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController);
     // The activation transport headers are an application-level middleware in configureApp (app.setup.ts): it must precede
     // the body parser, which module middleware does not.
   }

@@ -90,6 +90,12 @@ export const APP_ERROR_DEFINITIONS = {
   DRIVER_SELF_ACTION_FORBIDDEN: { status: 403, message: 'An administrator cannot perform this action on their own Shipper profile' },
   WALLET_PARAMETER_VERSION_CONFLICT: { status: 409, message: 'The wallet parameters were changed by another request' },
 
+  // M06-A shipping fee policy (Administration web).
+  SHIPPING_POLICY_INVALID: { status: 400, message: 'The shipping fee table is not valid' },
+  SHIPPING_DRAFT_VERSION_CONFLICT: { status: 409, message: 'The shipping fee draft was changed by another request' },
+  SHIPPING_DRAFT_EMPTY: { status: 409, message: 'There is no saved draft to apply' },
+  SHIPPING_POLICY_UNCHANGED: { status: 409, message: 'The draft is identical to the shipping fee table in force' },
+
   // Shop management (M02-A, task section 7). Same rule: fixed messages that echo nothing the client sent and reveal
   // nothing about any other account. SESSION_*, ACCOUNT_DISABLED, INVALID_SERVICE_AREA, SHOP_PROFILE_INCOMPLETE and
   // VERSION_CONFLICT (above) are reused unchanged.

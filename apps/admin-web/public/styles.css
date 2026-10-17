@@ -2587,3 +2587,196 @@ select {
 .detail-block > .detail-actions {
   margin-top: 16px;
 }
+
+/* ---- M06-A: Phí & điều kiện giao (shipping-fee table) ---- */
+.eyebrow {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--yellow-pressed);
+}
+
+.sp-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.9fr) minmax(280px, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.sp-card {
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--white);
+}
+
+.sp-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.sp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sp-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 40px;
+  gap: 12px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.sp-row-head {
+  padding: 10px 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--surface);
+  border-bottom: 0;
+  padding-left: 12px;
+}
+
+.sp-remove {
+  height: var(--control-height);
+  width: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--white);
+  color: var(--error);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sp-remove:hover {
+  background: var(--error-bg);
+}
+
+.sp-tail-title {
+  margin: 20px 0 8px;
+  font-size: 15px;
+}
+
+.sp-tail {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sp-verdict {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-line);
+  font-size: 14px;
+}
+
+.sp-verdict-bad {
+  background: var(--error-bg);
+  border-color: var(--error-line);
+  color: var(--error-ink);
+}
+
+.sp-result {
+  margin: 12px 0;
+  padding: 16px 18px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.sp-result-label,
+.sp-result-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.sp-result-amount {
+  margin: 6px 0;
+  font-size: 32px;
+  font-weight: 800;
+}
+
+.sp-result-none {
+  font-size: 20px;
+  color: var(--muted);
+}
+
+.sp-note {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  background: var(--yellow-subtle);
+  border: 1px solid var(--yellow-soft);
+  font-size: 14px;
+}
+
+.sp-condition {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.sp-condition-title {
+  margin: 0;
+  font-weight: 800;
+}
+
+.sp-value {
+  padding: 10px 16px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.sp-value-locked {
+  background: var(--neutral-bg);
+  color: var(--muted);
+}
+
+.sp-tier-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  .sp-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sp-tail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sp-row {
+    grid-template-columns: 1fr 1fr 1fr 40px;
+    gap: 8px;
+  }
+}
+
+.sp-card .hint {
+  margin: 4px 0 12px;
+}
+
+.sp-actions {
+  justify-content: flex-end;
+}
