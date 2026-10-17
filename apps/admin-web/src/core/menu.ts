@@ -158,9 +158,27 @@ export const MENU: readonly MenuGroup[] = [
     ],
   },
   {
+    // M04 (UI phase, Owner-approved 2026-10-15): Tổng quan / Ví Shipper / Nạp tiền / Rút tiền / Giao dịch / Đối soát. SYSTEM sees all of it;
+    // an ADMIN needs the matching grant, which the server does not send yet (grantsFromPermissions), so for now only SYSTEM sees it.
     id: 'finance',
     label: 'TÀI CHÍNH',
-    items: [soon('driver-wallets', 'Ví shipper', 'wallet', 'driver-wallets'), soon('topups', 'Nạp tiền', 'plus-circle', 'topups'), soon('withdrawals', 'Rút tiền', 'minus-circle', 'withdrawals')],
+    items: [
+      {
+        id: 'finance',
+        label: 'Tài chính',
+        icon: 'wallet',
+        ready: true,
+        access: 'driver-wallets',
+        children: [
+          { id: 'finance-overview', label: 'Tổng quan', route: { name: 'finance' }, ready: true, access: 'driver-wallets' },
+          { id: 'finance-wallets', label: 'Ví Shipper', route: { name: 'finance-wallets' }, ready: true, access: 'driver-wallets' },
+          { id: 'finance-topups', label: 'Nạp tiền', route: { name: 'finance-topups' }, ready: true, access: 'topups' },
+          { id: 'finance-withdrawals', label: 'Rút tiền', route: { name: 'finance-withdrawals' }, ready: true, access: 'withdrawals' },
+          { id: 'finance-transactions', label: 'Giao dịch', route: { name: 'finance-transactions' }, ready: true, access: 'driver-wallets' },
+          { id: 'finance-reconciliation', label: 'Đối soát', route: { name: 'finance-reconciliation' }, ready: true, access: 'driver-wallets' },
+        ],
+      },
+    ],
   },
   {
     id: 'system',
@@ -169,7 +187,8 @@ export const MENU: readonly MenuGroup[] = [
       // Owner decision 2026-10-14: the SYSTEM account's switches (phone verification first). SYSTEM only.
       { id: 'system-settings', label: 'Cài đặt hệ thống', icon: 'gear', route: { name: 'settings' }, ready: true, access: 'system' },
       soon('zones', 'Vùng hoạt động', 'map-pin', 'zones'),
-      soon('parameters', 'Tham số', 'gear', 'parameters'),
+      // M04: "Cài đặt › Tham số hệ thống › Ví Shipper". Only the wallet group exists so far.
+      { id: 'parameters', label: 'Tham số hệ thống', icon: 'gear', route: { name: 'wallet-params' }, ready: true, access: 'parameters' },
       soon('audit', 'Nhật ký', 'doc', 'audit'),
       soon('monitoring', 'Giám sát', 'activity', 'monitoring'),
     ],
@@ -228,6 +247,19 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
       return canSee(role, grants, 'users');
     case 'categories':
       return canSee(role, grants, 'catalog');
+    case 'finance':
+    case 'finance-wallets':
+    case 'finance-transactions':
+    case 'finance-reconciliation':
+      return canSee(role, grants, 'driver-wallets');
+    case 'finance-topups':
+    case 'finance-topup':
+      return canSee(role, grants, 'topups');
+    case 'finance-withdrawals':
+    case 'finance-withdrawal':
+      return canSee(role, grants, 'withdrawals');
+    case 'wallet-params':
+      return canSee(role, grants, 'parameters');
     case 'administrators':
     case 'settings':
     case 'invitations':
@@ -248,6 +280,22 @@ export function activeMenuId(route: Route): string {
       return 'users-list';
     case 'categories':
       return 'catalog-categories';
+    case 'finance':
+      return 'finance-overview';
+    case 'finance-wallets':
+      return 'finance-wallets';
+    case 'finance-topups':
+    case 'finance-topup':
+      return 'finance-topups';
+    case 'finance-withdrawals':
+    case 'finance-withdrawal':
+      return 'finance-withdrawals';
+    case 'finance-transactions':
+      return 'finance-transactions';
+    case 'finance-reconciliation':
+      return 'finance-reconciliation';
+    case 'wallet-params':
+      return 'parameters';
     case 'administrators':
       return 'administrators';
     case 'settings':
@@ -274,6 +322,24 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Tài khoản', 'Người dùng', 'Chi tiết'];
     case 'categories':
       return ['Danh mục', 'Nhóm món'];
+    case 'finance':
+      return ['Tài chính', 'Tổng quan'];
+    case 'finance-wallets':
+      return ['Tài chính', 'Ví Shipper'];
+    case 'finance-topups':
+      return ['Tài chính', 'Nạp tiền'];
+    case 'finance-topup':
+      return ['Tài chính', 'Nạp tiền', 'Chi tiết'];
+    case 'finance-withdrawals':
+      return ['Tài chính', 'Rút tiền'];
+    case 'finance-withdrawal':
+      return ['Tài chính', 'Rút tiền', 'Chi tiết'];
+    case 'finance-transactions':
+      return ['Tài chính', 'Giao dịch'];
+    case 'finance-reconciliation':
+      return ['Tài chính', 'Đối soát'];
+    case 'wallet-params':
+      return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
     case 'administrators':
       return ['Tài khoản', 'Quản trị viên'];
     case 'settings':

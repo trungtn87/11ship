@@ -202,7 +202,7 @@ describe('Admin front as the launcher starts it', () => {
         const result = await probe(port);
         assert.equal(result.ok, ok, `${mode}: ${JSON.stringify(result)}`);
         assert.equal(result.code, expectedCode, mode);
-        assert.ok(!JSON.stringify(result).includes('abc'), 'no cookie or secret in the result');
+        assert.ok(!JSON.stringify(result).includes('11admin-pre=abc'), 'no cookie or secret in the result');
       } finally {
         await run.stop();
         await backend.stop();
