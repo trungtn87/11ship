@@ -40,6 +40,7 @@ export type GrantId =
   | 'driver-wallets'
   | 'topups'
   | 'withdrawals'
+  | 'catalog'
   | 'zones'
   | 'parameters'
   | 'audit'
@@ -56,11 +57,14 @@ export interface AppPermission {
   readonly canView: boolean;
   readonly canReviewProfile: boolean;
   readonly canLock: boolean;
+  /** Dish-group management (SHOP only). Absent = false. */
+  readonly canManageCatalog?: boolean;
 }
 
 /**
  * Menu grants of an ADMIN from the server's CURRENT can_view rows: CUSTOMER -> users, SHOP -> users + shops,
- * DRIVER -> users + drivers. Review/lock rights open no menu entry (and no mutation is wired yet).
+ * DRIVER -> users + drivers. Review/lock rights open no menu entry (and no mutation is wired yet). The catalog right (SHOP row with
+ * VIEW and canManageCatalog) opens "Danh mục · Nhóm món".
  */
 export function grantsFromPermissions(permissions: readonly AppPermission[]): Grants {
   const grants = new Set<GrantId>();
@@ -71,6 +75,9 @@ export function grantsFromPermissions(permissions: readonly AppPermission[]): Gr
     grants.add('users');
     if (row.app === 'SHOP') {
       grants.add('shops');
+      if (row.canManageCatalog === true) {
+        grants.add('catalog');
+      }
     } else if (row.app === 'DRIVER') {
       grants.add('drivers');
     }
@@ -134,6 +141,20 @@ export const MENU: readonly MenuGroup[] = [
       soon('orders', 'Đơn hàng', 'receipt', 'orders'),
       soon('deliveries', 'Giao hàng', 'truck', 'deliveries'),
       soon('feedback', 'Phản ánh', 'chat', 'feedback'),
+    ],
+  },
+  {
+    id: 'catalog',
+    label: 'DANH MỤC',
+    items: [
+      {
+        id: 'catalog',
+        label: 'Danh mục',
+        icon: 'store',
+        ready: true,
+        access: 'catalog',
+        children: [{ id: 'catalog-categories', label: 'Nhóm món', route: { name: 'categories' }, ready: true, access: 'catalog' }],
+      },
     ],
   },
   {
@@ -205,6 +226,8 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'users':
     case 'user':
       return canSee(role, grants, 'users');
+    case 'categories':
+      return canSee(role, grants, 'catalog');
     case 'administrators':
     case 'settings':
     case 'invitations':
@@ -223,6 +246,8 @@ export function activeMenuId(route: Route): string {
       return route.status === 'LOCKED' ? 'users-locked' : 'users-list';
     case 'user':
       return 'users-list';
+    case 'categories':
+      return 'catalog-categories';
     case 'administrators':
       return 'administrators';
     case 'settings':
@@ -247,6 +272,8 @@ export function breadcrumb(route: Route): readonly string[] {
       return route.status === 'LOCKED' ? ['Tài khoản', 'Người dùng', 'Đang khóa'] : ['Tài khoản', 'Người dùng'];
     case 'user':
       return ['Tài khoản', 'Người dùng', 'Chi tiết'];
+    case 'categories':
+      return ['Danh mục', 'Nhóm món'];
     case 'administrators':
       return ['Tài khoản', 'Quản trị viên'];
     case 'settings':

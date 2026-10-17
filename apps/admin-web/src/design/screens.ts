@@ -10,6 +10,8 @@ import { Route } from '../core/routes.js';
 import { AdministratorsView, openLockDialog, renderUserDetail, UsersView } from '../dom/accounts-view.js';
 import { NOT_WIRED_SETTINGS_REASON, SettingsPhase, SettingsScreen } from '../core/settings.js';
 import { SettingsView } from '../dom/settings-view.js';
+import { CatalogDialog, CatalogList, CatalogScreen, NOT_WIRED_CATALOG_REASON } from '../core/catalog.js';
+import { CatalogView } from '../dom/catalog-view.js';
 import { authPage, h } from '../dom/dom.js';
 import { ProvisioningView } from '../dom/provisioning-view.js';
 import { ActivationPage } from '../dom/activation-view.js';
@@ -17,7 +19,7 @@ import { ResetPage, ResetScreen } from '../dom/reset-view.js';
 import { buildShell, ShellOptions } from '../dom/shell-layout.js';
 import { emptyPanel, failurePanel, notWiredPanel, skeleton, statePanel } from '../dom/states.js';
 import { AdminView } from '../dom/view.js';
-import { SAMPLE_ACTIVATION_LINK, SAMPLE_ADMINISTRATORS, SAMPLE_BUSY_DETAIL, SAMPLE_EMPTY_DETAIL, SAMPLE_LOCKED_DETAIL, SAMPLE_SETTINGS, SAMPLE_LOCKED_USERS, SAMPLE_OTPAUTH, SAMPLE_SECRET, SAMPLE_USER_DETAIL, SAMPLE_USERS, SAMPLE_INVITATIONS, sampleInvitationDetail } from './samples.js';
+import { SAMPLE_ACTIVATION_LINK, SAMPLE_ADMINISTRATORS, SAMPLE_CATEGORIES, SAMPLE_BUSY_DETAIL, SAMPLE_EMPTY_DETAIL, SAMPLE_LOCKED_DETAIL, SAMPLE_SETTINGS, SAMPLE_LOCKED_USERS, SAMPLE_OTPAUTH, SAMPLE_SECRET, SAMPLE_USER_DETAIL, SAMPLE_USERS, SAMPLE_INVITATIONS, sampleInvitationDetail } from './samples.js';
 import { DEMO_NOTICE, DesignContext, DesignScreen, Variant } from './viewer.js';
 
 // The screens of the design preview. Real screens (login, 2FA, invitations, activation, shell, account pages) are drawn
@@ -63,6 +65,8 @@ function screenIdOf(route: Route): { id: string; variant?: string } {
       return { id: 'administrators' };
     case 'settings':
       return { id: 'settings' };
+    case 'categories':
+      return { id: 'categories' };
     case 'invitations':
       return { id: 'invitations' };
     case 'invitation-new':
@@ -492,6 +496,114 @@ const settings: DesignScreen = {
     }),
 };
 
+// ---- D92: dish groups ----------------------------------------------------------------------------------------------------
+
+const GROUPS_PAGE = SAMPLE_CATEGORIES.slice(0, 10);
+const readyList = (rows = GROUPS_PAGE, total = 23): CatalogList => ({ kind: 'ready', rows, total, pages: Math.ceil(total / 10), nextSortOrder: 24 });
+const FORM_DRAFT = { name: 'Món chay', sortOrder: '24', status: 'ACTIVE' } as const;
+const EDIT_DRAFT = { name: 'Hải sản', sortOrder: '2', status: 'ACTIVE' } as const;
+const EDIT_ID = SAMPLE_CATEGORIES[1]!.id;
+const TOGGLE_ROW = SAMPLE_CATEGORIES[4]!;
+
+const categories: DesignScreen = {
+  id: 'categories',
+  code: 'D92',
+  title: 'Danh mục — Nhóm món',
+  group: 'Danh mục',
+  note: 'SYSTEM, hoặc ADMIN được cấp quyền “Nhóm món” (quyền kiểm tra lại ở máy chủ). Tìm theo tên, lọc Tất cả / Đang dùng / Ngừng dùng, phân trang 10 nhóm/trang; thêm/sửa bằng popup; ngừng dùng có xác nhận, không có nút xóa. Ngừng dùng một nhóm không làm mất món đã gắn nhóm.',
+  variants: variants(
+    ['list', 'Có dữ liệu'],
+    ['loading', 'Đang tải'],
+    ['empty', 'Chưa có nhóm'],
+    ['no-results', 'Không có kết quả tìm'],
+    ['error', 'Lỗi tải (có Thử lại)'],
+    ['offline', 'Mất mạng'],
+    ['add', 'Thêm nhóm'],
+    ['add-error', 'Thêm: thiếu tên, thứ tự sai'],
+    ['add-taken', 'Thêm: trùng tên'],
+    ['add-twin', 'Thêm: trùng nhóm ngừng dùng'],
+    ['edit', 'Sửa nhóm'],
+    ['saving', 'Đang lưu (khóa form)'],
+    ['unknown', 'Chưa rõ kết quả'],
+    ['conflict', 'Xung đột dữ liệu'],
+    ['failed', 'Lỗi khi lưu'],
+    ['deactivate', 'Xác nhận ngừng dùng'],
+    ['activate', 'Xác nhận kích hoạt lại'],
+    ['live', 'Bản thật (chưa nối)'],
+  ),
+  render: (context, variant) =>
+    shellPage(context, { name: 'categories' }, (content) => {
+      if (context.role !== 'SYSTEM' && !(context.grants as Grants).has('catalog')) {
+        forbiddenPage(context, content);
+        return;
+      }
+      const demo = (): void => context.toast(DEMO_NOTICE);
+      const filter = { query: variant === 'no-results' ? 'xyz' : '', status: 'ALL' as const, page: 1 };
+      const lists: Record<string, CatalogList> = {
+        loading: { kind: 'loading' },
+        empty: { kind: 'empty', filtered: false },
+        'no-results': { kind: 'empty', filtered: true },
+        error: { kind: 'failed', failure: 'unknown' },
+        offline: { kind: 'failed', failure: 'offline' },
+        live: { kind: 'not-wired', reason: NOT_WIRED_CATALOG_REASON },
+      };
+      const list = lists[variant] ?? readyList();
+      const form = (mode: 'create' | 'edit', extra: Partial<Extract<CatalogDialog, { kind: 'form' }>>): CatalogDialog => ({
+        kind: 'form',
+        mode,
+        ...(mode === 'edit' ? { id: EDIT_ID } : {}),
+        draft: mode === 'edit' ? EDIT_DRAFT : FORM_DRAFT,
+        errors: {},
+        phase: 'form',
+        ...extra,
+      });
+      const toggle = (to: 'ACTIVE' | 'INACTIVE', row = TOGGLE_ROW): CatalogDialog => ({ kind: 'toggle', id: row.id, name: row.name, to, itemCount: row.itemCount, phase: 'form' });
+      const dialogs: Record<string, CatalogDialog> = {
+        add: form('create', { draft: { name: '', sortOrder: '24', status: 'ACTIVE' } }),
+        'add-error': form('create', { draft: { name: '   ', sortOrder: '-3', status: 'ACTIVE' }, errors: { name: 'Nhập tên nhóm.', sortOrder: 'Thứ tự là số nguyên từ 0 đến 100000.' } }),
+        'add-taken': form('create', { draft: { name: 'hải  SẢN ', sortOrder: '24', status: 'ACTIVE' }, errors: { name: 'Đã có nhóm trùng tên này. Tên nhóm không phân biệt chữ hoa/thường và khoảng trắng thừa; dấu tiếng Việt vẫn được phân biệt.' } }),
+        'add-twin': form('create', {
+          draft: { name: 'Món theo mùa', sortOrder: '24', status: 'ACTIVE' },
+          errors: { name: 'Đã có nhóm ngừng dùng trùng tên này. Hãy kích hoạt lại nhóm cũ thay vì tạo nhóm mới.' },
+          inactiveTwin: true,
+        }),
+        edit: form('edit', {}),
+        saving: form('edit', { phase: 'working' }),
+        unknown: form('edit', { phase: 'unknown', message: 'Chưa xác nhận được kết quả. Hãy kiểm tra lại danh sách; yêu cầu này không bị gửi lại tự động. “Thử lại” gửi đúng yêu cầu cũ, không tạo thêm nhóm.' }),
+        conflict: form('edit', { phase: 'conflict', message: 'Nhóm đã được thay đổi ở nơi khác. Hãy tải lại danh sách để xem dữ liệu hiện tại trước khi sửa. Nội dung bạn đã nhập vẫn còn trên màn hình này.' }),
+        failed: form('edit', { phase: 'failed', message: 'Thao tác quá nhanh. Vui lòng thử lại sau ít phút.' }),
+        deactivate: toggle('INACTIVE'),
+        activate: toggle('ACTIVE', SAMPLE_CATEGORIES[5]!),
+      };
+      const dialog = dialogs[variant];
+      const screen: CatalogScreen = { name: 'categories', filter, list, ...(dialog === undefined ? {} : { dialog }) };
+      const view = new CatalogView(
+        content,
+        {
+          wired: variant !== 'live',
+          filter: demo,
+          refresh: demo,
+          retry: demo,
+          page: demo,
+          create: demo,
+          edit: demo,
+          toggle: demo,
+          draft: () => undefined,
+          submit: demo,
+          cancel: demo,
+          retrySave: demo,
+          recheck: demo,
+          reload: demo,
+          showTwin: demo,
+          login: () => context.go('login'),
+          home: () => context.go('overview'),
+        },
+        context.frame,
+      );
+      view.render(screen);
+    }),
+};
+
 // ---- D04-D06: invitations (real screens) ---------------------------------------------------------------------------------
 
 function provisioningPage(context: DesignContext, route: Route, screen: ProvisioningScreen): HTMLElement {
@@ -640,4 +752,4 @@ const states: DesignScreen = {
     }),
 };
 
-export const SCREENS: readonly DesignScreen[] = [overview, login, verify, enroll, reset, recovery, activation, users, usersLocked, userDetail, userLock, userUnlock, userDelete, settings, administrators, invitations, invitationNew, invitationDetail, states];
+export const SCREENS: readonly DesignScreen[] = [overview, login, verify, enroll, reset, recovery, activation, users, usersLocked, userDetail, userLock, userUnlock, userDelete, settings, categories, administrators, invitations, invitationNew, invitationDetail, states];

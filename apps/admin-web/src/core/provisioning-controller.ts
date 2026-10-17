@@ -128,7 +128,9 @@ export function permissionsOfDraft(draft: PermissionsDraft): Permission[] {
   const apps: InvitationApp[] = ['CUSTOMER', 'SHOP', 'DRIVER'];
   return apps.flatMap((app) => {
     const rights = draft[app];
-    return rights.canView ? [{ app, canView: true, canReviewProfile: rights.canReviewProfile, canLock: rights.canLock }] : [];
+    return rights.canView
+      ? [{ app, canView: true, canReviewProfile: rights.canReviewProfile, canLock: rights.canLock, ...(app === 'SHOP' && rights.canManageCatalog === true ? { canManageCatalog: true } : {}) }]
+      : [];
   });
 }
 
@@ -139,6 +141,7 @@ export function draftOfPermissions(permissions: readonly Permission[]): Permissi
       canView: permission.canView,
       canReviewProfile: permission.canReviewProfile,
       canLock: permission.canLock,
+      ...(permission.canManageCatalog === true ? { canManageCatalog: true } : {}),
     };
   }
   return draft;

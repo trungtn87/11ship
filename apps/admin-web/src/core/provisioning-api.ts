@@ -21,6 +21,8 @@ export interface Permission {
   readonly canView: boolean;
   readonly canReviewProfile: boolean;
   readonly canLock: boolean;
+  /** Dish-group management (SHOP only). Absent = false. */
+  readonly canManageCatalog?: boolean;
 }
 
 export interface InvitationSummary {
@@ -126,6 +128,8 @@ function permissionsWire(permissions: readonly Permission[]): Record<string, unk
     can_view: permission.canView,
     can_review_profile: permission.canReviewProfile,
     can_lock: permission.canLock,
+    // Only when granted: the wire form of a request without the right is unchanged.
+    ...(permission.canManageCatalog === true ? { can_manage_catalog: true } : {}),
   }));
 }
 
@@ -166,8 +170,9 @@ function permissionOf(value: unknown): Permission | undefined {
   if (item === undefined) {
     return undefined;
   }
-  const { app, can_view: canView, can_review_profile: canReviewProfile, can_lock: canLock } = item;
+  const { app, can_view: canView, can_review_profile: canReviewProfile, can_lock: canLock, can_manage_catalog: canManageCatalog } = item;
   if (
+    (canManageCatalog !== undefined && typeof canManageCatalog !== 'boolean') ||
     typeof app !== 'string' ||
     !(INVITATION_APPS as readonly string[]).includes(app) ||
     typeof canView !== 'boolean' ||
@@ -176,7 +181,7 @@ function permissionOf(value: unknown): Permission | undefined {
   ) {
     return undefined;
   }
-  return { app: app as InvitationApp, canView, canReviewProfile, canLock };
+  return canManageCatalog === true ? { app: app as InvitationApp, canView, canReviewProfile, canLock, canManageCatalog } : { app: app as InvitationApp, canView, canReviewProfile, canLock };
 }
 
 function permissionsOf(value: unknown): Permission[] | undefined {

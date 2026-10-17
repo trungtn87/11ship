@@ -266,6 +266,15 @@ jobs:
           path: .test-results/food-shop-shots
           retention-days: 14
 
+      # M02 (dish groups): images of the real Admin Web "Danh mục › Nhóm món" screen (real Chrome, real front, real backend and PostgreSQL).
+      - name: Upload Admin Web dish group screenshots
+        if: ${{ always() && hashFiles('.test-results/admin-group-shots/*.webp') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-group-shots
+          path: .test-results/admin-group-shots
+          retention-days: 14
+
       # M01 (driver profile): images of the real 11Ship S12 -> S13 journey (real Chrome, real front, real backend and PostgreSQL).
       - name: Upload 11Ship driver profile screenshots
         if: ${{ always() && hashFiles('.test-results/ship-driver-shots/*.webp') != '' }}

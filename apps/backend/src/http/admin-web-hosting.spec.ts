@@ -52,6 +52,8 @@ describe('administration web hosting: what a path may resolve to', () => {
       `/invitations/${UUID}/reissue/extra`,
       `/invitations/${UUID}x`,
       '/invitations/new/extra',
+      '/catalog',
+      '/catalog/categories/extra',
     ]) {
       expect(publicAdminAsset(path)).toBeUndefined();
     }
@@ -61,6 +63,8 @@ describe('administration web hosting: what a path may resolve to', () => {
     for (const path of [
       '/activate',
       '/activate/',
+      '/catalog/categories',
+      '/catalog/categories/',
       '/invitations',
       '/invitations/',
       '/invitations/new',

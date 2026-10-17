@@ -65,7 +65,7 @@ export interface PublicMenuItem {
 export class MenuRepository {
   async listCategories(context: TransactionContext): Promise<MenuCategoryRow[]> {
     const result = await context.query<{ category_id: string; name: string; status: 'ACTIVE' | 'INACTIVE' }>(
-      `SELECT category_id, name, status FROM app.menu_categories ORDER BY sort_order, name, category_id`,
+      `SELECT category_id, name, status FROM app.menu_categories ORDER BY sort_order, app.fold_vi(name) COLLATE "C", name COLLATE "C", category_id`,
     );
     return result.rows.map((row) => ({ categoryId: row.category_id, name: row.name, status: row.status }));
   }
@@ -95,7 +95,7 @@ export class MenuRepository {
          FROM app.menu_items i
          JOIN app.menu_categories c ON c.category_id = i.category_id
         WHERE i.shop_id = $1::uuid AND i.status = 'VISIBLE'
-        ORDER BY c.sort_order, c.name, c.category_id, i.created_at, i.item_id`,
+        ORDER BY c.sort_order, app.fold_vi(c.name) COLLATE "C", c.name COLLATE "C", c.category_id, i.created_at, i.item_id`,
       [shopId],
     );
     return result.rows.map((row) => ({

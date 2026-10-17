@@ -22,9 +22,11 @@ describe('admin web routes', () => {
     expect(parseRoute('/accounts/users/not-a-uuid')).toEqual({ name: 'home' });
     expect(parseRoute('/accounts/administrators')).toEqual({ name: 'administrators' });
     expect(parseRoute('/system/settings')).toEqual({ name: 'settings' });
+    expect(parseRoute('/catalog/categories')).toEqual({ name: 'categories' });
+    expect(parseRoute('/catalog/categories/')).toEqual({ name: 'categories' });
     expect(parseRoute('/system/settings/')).toEqual({ name: 'settings' });
     expect(parseRoute('/system/other')).toEqual({ name: 'home' });
-    for (const route of [{ name: 'invitations', status: 'EXPIRED' } as const, { name: 'invitation-new' } as const, { name: 'invitation-revoke', id: INVITATION_ID } as const, { name: 'users', status: 'LOCKED' } as const, { name: 'user', id: INVITATION_ID } as const, { name: 'administrators' } as const, { name: 'settings' } as const, { name: 'reset' } as const]) {
+    for (const route of [{ name: 'invitations', status: 'EXPIRED' } as const, { name: 'invitation-new' } as const, { name: 'invitation-revoke', id: INVITATION_ID } as const, { name: 'users', status: 'LOCKED' } as const, { name: 'user', id: INVITATION_ID } as const, { name: 'administrators' } as const, { name: 'settings' } as const, { name: 'categories' } as const, { name: 'reset' } as const]) {
       expect(parseRoute(...(formatRoute(route).split(/(?=\?)/) as [string, string?]))).toEqual(route);
     }
   });

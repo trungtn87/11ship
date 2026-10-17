@@ -134,6 +134,7 @@ describe('M01-A1 — Auth Core migration', () => {
       '1792972800000_create-sms-gateway',
       '1793059200000_account-scope-lifecycle-settings',
       '1793145600000_create-menu',
+      '1793232000000_menu-category-admin',
     ]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });

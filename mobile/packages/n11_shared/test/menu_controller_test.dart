@@ -86,6 +86,52 @@ void main() {
     expect(MenuListController(api: FakeMenuApi(categories: <MenuCategory>[])..items = <MenuItem>[]).snapshot, isNull);
   });
 
+  test('groups managed on the Admin web: a reload shows the new name and order, a switched-off group leaves the picker and a switched-on one returns', () async {
+    final FakeMenuApi api = FakeMenuApi(
+      categories: <MenuCategory>[const MenuCategory(id: 'c1', name: 'Ốc', active: true), const MenuCategory(id: 'c2', name: 'Hải sản', active: true), const MenuCategory(id: 'c3', name: 'Đồ uống', active: true)],
+      items: <MenuItem>[FakeMenuApi.item('x', 'Trà đá', 5000, 'c3')],
+    );
+    final MenuListController c = await ready(api);
+    expect(c.snapshot!.activeCategories.map((MenuCategory g) => g.name), <String>['Ốc', 'Hải sản', 'Đồ uống']);
+    // The admin renames c3, moves it first and switches c2 off.
+    api.categories = <MenuCategory>[const MenuCategory(id: 'c3', name: 'Nước giải khát', active: true), const MenuCategory(id: 'c1', name: 'Ốc', active: true), const MenuCategory(id: 'c2', name: 'Hải sản', active: false)];
+    await c.load();
+    expect(c.snapshot!.activeCategories.map((MenuCategory g) => g.name), <String>['Nước giải khát', 'Ốc'], reason: 'server order is kept; the switched-off group is not offered');
+    expect(c.snapshot!.category('c3')!.name, 'Nước giải khát', reason: 'the dish shows the renamed group');
+    expect(c.snapshot!.items.single.categoryId, 'c3');
+    c.startNew();
+    c.setCategory('c2');
+    expect(c.form!.categoryId, isNot('c2'), reason: 'a switched-off group cannot be chosen for a new dish');
+    c.closeForm();
+    // Switched on again: it is offered again, in its place.
+    api.categories = <MenuCategory>[const MenuCategory(id: 'c3', name: 'Nước giải khát', active: true), const MenuCategory(id: 'c1', name: 'Ốc', active: true), const MenuCategory(id: 'c2', name: 'Hải sản', active: true)];
+    await c.load();
+    expect(c.snapshot!.activeCategories.map((MenuCategory g) => g.id), <String>['c3', 'c1', 'c2']);
+    c.startNew();
+    c.setCategory('c2');
+    expect(c.form!.categoryId, 'c2');
+  });
+
+  test('editing another field of a dish whose group was switched off keeps the old group; changing the group can only pick an active one', () async {
+    final FakeMenuApi api = FakeMenuApi(
+      categories: <MenuCategory>[const MenuCategory(id: 'c1', name: 'Ốc', active: true), const MenuCategory(id: 'c9', name: 'Đồ uống', active: false)],
+      items: <MenuItem>[FakeMenuApi.item('x', 'Trà đá', 5000, 'c9')],
+    );
+    final MenuListController c = await ready(api);
+    expect(c.snapshot!.items.single.categoryId, 'c9', reason: 'the dish is still listed with its old group');
+    c.startEdit('x');
+    c.setPrice('6.000');
+    expect(await c.save(), isTrue);
+    final MenuItem saved = c.snapshot!.items.single;
+    expect(saved.priceVnd, 6000);
+    expect(saved.categoryId, 'c9', reason: 'the group the dish already had is kept');
+    c.startEdit('x');
+    c.setCategory('c1');
+    expect(c.form!.categoryId, 'c1');
+    c.setCategory('c9');
+    expect(c.form!.categoryId, 'c9', reason: 'going back to its own switched-off group is only the kept link');
+  });
+
   test('picture: upload, replace failure keeps the old picture, remove only changes the draft, save sends the uploaded reference', () async {
     final FakeMenuApi api = seeded();
     final FakeImagePicker picker = FakeImagePicker();

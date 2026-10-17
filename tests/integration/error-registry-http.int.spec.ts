@@ -104,8 +104,9 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 6 menu/discovery codes (M02: MENU_ITEM_NOT_FOUND, MENU_CATEGORY_NOT_AVAILABLE, INVALID_MENU_IMAGE, MENU_LIMIT_REACHED, MENU_IMAGE_NOT_FOUND, SHOP_UNAVAILABLE)
     // + 6 account lifecycle codes (M01 final package: SYSTEM_SETTING_VERSION_CONFLICT, PHONE_VERIFICATION_NOT_REQUIRED, PHONE_VERIFICATION_REQUIRED,
     //   PASSWORD_RESET_DISABLED, ACCOUNT_RECOVERY_AVAILABLE, USER_ACCOUNT_HAS_ACTIVE_WORK)
+    // + 4 dish-group management codes (M02 Admin: MENU_CATEGORY_NOT_FOUND, MENU_CATEGORY_NAME_TAKEN, MENU_CATEGORY_NAME_TAKEN_INACTIVE, MENU_CATEGORY_VERSION_CONFLICT)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(78);
+    expect(codes).toHaveLength(82);
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(18);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);
     expect(codes).toContain('TRANSACTION_OUTCOME_UNKNOWN');
