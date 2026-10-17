@@ -2,6 +2,10 @@
 library;
 
 export 'src/account/account_views.dart';
+export 'src/addresses/address_controller.dart';
+export 'src/addresses/address_models.dart';
+export 'src/addresses/address_views.dart';
+export 'src/addresses/http_address_api.dart';
 export 'src/account/api_client.dart';
 export 'src/account/device_bridge.dart';
 export 'src/account/device_proof.dart';
