@@ -108,13 +108,13 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
     ],
     reset: flows?.reset,
     signedInEntries: <Widget>[
-      // S12/S13: the driver profile, connected to the server. Sending it never receives orders or changes the context.
+      // S12-S14 (M03): the Shipper profile, bank account, review status, receiving orders and stopping activity, all connected to the server.
       if (driver != null)
         N11ListItem(
           key: const Key('driver-entry'),
           icon: Icons.badge_outlined,
           title: 'Hồ sơ shipper',
-          sub: 'Gửi và xem hồ sơ shipper của bạn.',
+          sub: 'Hồ sơ, ngân hàng, nhận đơn và ngừng hoạt động.',
           onTap: () => Navigator.of(context).push(n11Route(DriverProfileScreen(controller: driver))),
         ),
     ],

@@ -10,17 +10,14 @@ const FILES = readdirSync(sourcePath('customer-profile'))
 const ALL = FILES.map((file) => codeOf(file)).join('\n');
 
 describe('Own-profile read model boundary (M01.05)', () => {
-  it('exposes exactly GET and PUT customer/me/profile and GET driver/me', () => {
+  it('exposes exactly GET and PUT customer/me/profile', () => {
     const customer = codeOf('customer-profile/customer-profile.controller.ts');
     expect(customer).toContain("@Controller('customer/me/profile')");
     expect(customer.match(/@(Get|Put|Post|Patch|Delete)\(/g)).toEqual(['@Get(', '@Put(']);
-    const driver = codeOf('customer-profile/driver-me.controller.ts');
-    expect(driver).toContain("@Controller('driver/me')");
-    expect(driver.match(/@(Get|Put|Post|Patch|Delete)\(/g)).toEqual(['@Get(']);
   });
 
   it('is guarded and takes identity only from the principal: no path parameter, no id in a body or query', () => {
-    for (const file of ['customer-profile/customer-profile.controller.ts', 'customer-profile/driver-me.controller.ts']) {
+    for (const file of ['customer-profile/customer-profile.controller.ts']) {
       const code = codeOf(file);
       expect(code).toContain('@UseGuards(SessionAuthGuard)');
       expect(code).toContain('request.auth');
@@ -38,9 +35,7 @@ describe('Own-profile read model boundary (M01.05)', () => {
     expect(ALL).not.toMatch(/OutboxWriter|outbox\.append/);
   });
 
-  it('the two readers open a read transaction and write nothing: no executor, audit or update', () => {
-    const driver = codeOf('customer-profile/driver-me-service.ts');
-    expect(driver).not.toMatch(/executor|audit|updateFullName|lockProfile|IdempotencyExecutor/);
+  it('the reader opens a read transaction and writes nothing: no executor, audit or update', () => {
     const service = codeOf('customer-profile/customer-profile-service.ts');
     const read = service.slice(service.indexOf('async read('), service.indexOf('async update('));
     expect(read).toContain("'share'");

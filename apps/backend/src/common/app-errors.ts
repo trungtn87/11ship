@@ -76,6 +76,20 @@ export const APP_ERROR_DEFINITIONS = {
   DRIVER_PROFILE_EXISTS: { status: 409, message: 'A driver profile already exists for this account' },
   DRIVER_PENDING_APPROVAL: { status: 403, message: 'The driver profile is waiting for approval' },
 
+  // Shipper management (M03). Same rule: fixed messages that echo nothing the client sent (no name, number or reason).
+  DRIVER_NOT_FOUND: { status: 404, message: 'The Shipper was not found' },
+  DRIVER_STATE_CONFLICT: { status: 409, message: 'The Shipper profile is not in a state that allows this action' },
+  DRIVER_PROFILE_LOCKED: { status: 409, message: 'This part of the Shipper profile can no longer be changed here' },
+  DRIVER_PROFILE_INCOMPLETE: { status: 409, message: 'The Shipper profile is missing required information' },
+  BANK_HOLDER_MISMATCH: { status: 400, message: 'The bank account holder must match the Shipper name' },
+  DRIVER_BANK_NOT_VERIFIED: { status: 409, message: 'The bank account has not been verified' },
+  DRIVER_NOT_ACTIVE: { status: 409, message: 'The Shipper is not active' },
+  DRIVER_WALLET_NOT_READY: { status: 409, message: 'The wallet does not meet the conditions to take orders' },
+  DRIVER_HAS_ACTIVE_WORK: { status: 409, message: 'The Shipper still has deliveries in progress' },
+  DRIVER_WALLET_NOT_SETTLED: { status: 409, message: 'The wallet balance must be settled first' },
+  DRIVER_SELF_ACTION_FORBIDDEN: { status: 403, message: 'An administrator cannot perform this action on their own Shipper profile' },
+  WALLET_PARAMETER_VERSION_CONFLICT: { status: 409, message: 'The wallet parameters were changed by another request' },
+
   // Shop management (M02-A, task section 7). Same rule: fixed messages that echo nothing the client sent and reveal
   // nothing about any other account. SESSION_*, ACCOUNT_DISABLED, INVALID_SERVICE_AREA, SHOP_PROFILE_INCOMPLETE and
   // VERSION_CONFLICT (above) are reused unchanged.

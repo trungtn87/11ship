@@ -224,7 +224,7 @@ describe('native remaining flows (fixture attestation)', () => {
       const key = randomUUID();
       const created = await native.signedCall('SHIP', 'POST', '/onboarding/driver', { bearer: token, body: { full_name: 'Trần Văn Shipper' }, idempotencyKey: key });
       expect(created.response.status).toBe(201);
-      expect(dataOf(created.response)).toMatchObject({ status: 'PENDING', accepting_deliveries: false, driver_type: 'EXTERNAL' });
+      expect(dataOf(created.response)).toMatchObject({ status: 'PENDING', accepting_deliveries: false });
       const replay = await native.signedCall('SHIP', 'POST', '/onboarding/driver', { bearer: token, body: { full_name: 'Trần Văn Shipper' }, idempotencyKey: key });
       expect(dataOf(replay.response)).toEqual(dataOf(created.response));
       const rows = await app.pool.query('SELECT 1 FROM app.drivers WHERE user_id = $1::uuid', [food.userId]);

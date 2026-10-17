@@ -64,7 +64,6 @@ export interface DriverProfile {
   readonly legalName: string;
   readonly plate: string | null;
   readonly status: 'PENDING' | 'ACTIVE' | 'SUSPENDED';
-  readonly type: 'EXTERNAL' | 'PLATFORM';
 }
 
 export interface DriverPort {

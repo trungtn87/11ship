@@ -74,14 +74,14 @@ async function startBackend() {
           send(response, 409, err('DRIVER_PROFILE_EXISTS'));
           return;
         }
-        state.driver = { driver_id: DRIVER, user_id: USER, full_name: sent.full_name, plate_number: sent.plate_number, driver_type: 'EXTERNAL', status: 'PENDING', accepting_deliveries: false, version: 1 };
+        state.driver = { driver_id: DRIVER, user_id: USER, full_name: sent.full_name, plate_number: sent.plate_number, status: 'PENDING', accepting_deliveries: false, version: 1 };
         if (state.dropNextSubmit) {
           // The work is done, the answer is lost: the person sees an unknown outcome and presses "Thử lại".
           state.dropNextSubmit = false;
           response.socket.destroy();
           return;
         }
-        send(response, 201, { data: { driver_id: DRIVER, driver_type: 'EXTERNAL', status: 'PENDING', accepting_deliveries: false, role_granted: true, version: 1 } });
+        send(response, 201, { data: { driver_id: DRIVER, status: 'PENDING', accepting_deliveries: false, role_granted: true, version: 1 } });
       } else {
         send(response, 404, err('NOT_FOUND'));
       }
@@ -198,7 +198,7 @@ describe('the driver profile journey (stand-in backend)', () => {
       assert.equal(await page.evaluate(`document.querySelector('#driver-status-title').innerText`), 'Hồ sơ đang chờ duyệt');
       assert.equal(await page.evaluate(`document.querySelector('#driver-name').innerText`), 'Nguyễn Văn Shipper');
       assert.equal(await page.evaluate(`document.querySelector('#driver-plate').innerText`), '59A-123.45');
-      assert.equal(await page.evaluate(`document.querySelector('#driver-type').innerText`), 'Shipper ngoài');
+      assert.equal(await page.evaluate(`document.querySelector('#driver-type')`), null, 'no classification on the Shipper screen');
       const overflowS13 = await page.evaluate(OVERFLOW);
       assert.ok(overflowS13.scrollWidth <= overflowS13.innerWidth, 'S13 does not scroll sideways');
       assert.deepEqual(await page.evaluate(SMALL_TARGETS), [], 'touch targets on S13');
@@ -244,7 +244,8 @@ describe('the driver profile journey (stand-in backend)', () => {
       await statusReady(page);
       assert.equal(await page.evaluate(`document.querySelector('#driver-status-title').innerText`), 'Hồ sơ đang bị tạm khóa');
       assert.equal(await page.evaluate(`document.querySelector('#driver-plate').innerText`), 'Chưa bổ sung');
-      assert.equal(await page.evaluate(`document.querySelector('#driver-type').innerText`), 'Shipper hệ thống');
+      assert.equal(await page.evaluate(`document.querySelector('#driver-type')`), null, 'even a server that sent a classification would not show it');
+      assert.equal(await page.evaluate(`document.body.innerText.includes('PLATFORM')`), false);
       assert.equal(await page.evaluate(`document.querySelector('#driver-submit')`), null, 'no create or edit button on S13');
       // S12 opened directly (here through the router) goes to S13: the profile is read, not created again.
       await page.evaluate(`(() => { history.pushState(null, '', '/driver/onboarding'); window.dispatchEvent(new PopStateEvent('popstate')); })()`);

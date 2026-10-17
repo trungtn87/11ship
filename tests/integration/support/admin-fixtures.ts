@@ -238,6 +238,8 @@ export interface StartAdminOptions {
   readonly beforeListen?: (app: INestApplication) => void;
   /** Configuration fields laid over everything above (for example clientAuth, so the client registration can run in the same application). */
   readonly configOverride?: Partial<AppConfig>;
+  /** M03: provider overrides (the wallet port, until M04 provides one). */
+  readonly overrides?: ReadonlyArray<{ readonly provide: unknown; readonly useValue: unknown }>;
 }
 
 export async function startAdminApp(options: StartAdminOptions = {}): Promise<AdminApp> {
@@ -285,6 +287,7 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
     ...(options.configOverride ?? {}),
   };
   const running = await startApp(config, {
+    ...(options.overrides === undefined ? {} : { overrides: options.overrides }),
     auth: { otpProvider: options.smsGateway === undefined ? new FakeOtpProvider() : SMS_GATEWAY_BINDING },
     ...(options.activationProvider === undefined
       ? options.activationSms === true

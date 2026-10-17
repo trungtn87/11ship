@@ -41,6 +41,8 @@ import { SettingsView } from './settings-view.js';
 import { NOT_WIRED_CATALOG, CatalogSource } from '../core/catalog.js';
 import { CatalogController } from '../core/catalog-controller.js';
 import { CatalogView } from './catalog-view.js';
+import { NOT_WIRED_SHIPPERS, ShipperFilter, ShipperSource } from '../core/shippers.js';
+import { ShipperDetailView, ShipperHost, ShipperListView, WalletParametersView } from './shippers-view.js';
 import { FinanceController, isFinanceRoute } from '../core/finance-controller.js';
 import { FinanceSource, NOT_WIRED_FINANCE } from '../core/finance.js';
 import { FinanceView } from './finance-view.js';
@@ -106,6 +108,8 @@ export class ShellApp implements ShellHost {
     private readonly settings: SettingsSource = NOT_WIRED_SETTINGS,
     /** Where the dish groups (Danh mục › Nhóm món) come from. By default nothing is wired, so the page says so. */
     private readonly catalog: CatalogSource = NOT_WIRED_CATALOG,
+    /** Where the Shippers (Vận hành › Shipper) and the Shipper wallet parameters come from. By default nothing is wired, so the pages say so. */
+    private readonly shippers: ShipperSource = NOT_WIRED_SHIPPERS,
     /** Where the finance pages (M04) come from. By default nothing is wired, so every page says so and every money button is disabled. */
     private readonly finance: FinanceSource = NOT_WIRED_FINANCE,
   ) {}
@@ -253,6 +257,15 @@ export class ShellApp implements ShellHost {
         return;
       case 'categories':
         this.#categories(content);
+        return;
+      case 'shippers':
+        this.#shipperList(content, route.status);
+        return;
+      case 'shipper':
+        this.#shipperDetail(content, route.id);
+        return;
+      case 'wallet-parameters':
+        this.#walletParameters(content);
         return;
       case 'finance':
       case 'finance-wallets':
@@ -671,6 +684,45 @@ export class ShellApp implements ShellHost {
       home: () => this.go({ name: 'home' }),
     });
     load();
+  }
+
+  /** What the Shipper pages need from the shell. 401 ends the session; 403 re-reads the rights. */
+  #shipperHost(): ShipperHost {
+    return {
+      source: this.shippers,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      go: (route) => this.go(route),
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      canEditParameters: this.#role === 'SYSTEM',
+    };
+  }
+
+  /** "Vận hành › Shipper": the list with search and status filter. The view owns the filter and the page. */
+  #shipperList(content: HTMLElement, status: ShipperFilter | undefined): void {
+    const view = new ShipperListView(content, this.#shipperHost(), status);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** One Shipper: profile, bank account, readiness, classification, history and the review / activity commands. */
+  #shipperDetail(content: HTMLElement, id: string): void {
+    const view = new ShipperDetailView(content, this.#shipperHost(), id);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Hệ thống › Tham số hệ thống › Ví Shipper" (every administrator reads, only SYSTEM edits; the server decides again). */
+  #walletParameters(content: HTMLElement): void {
+    const view = new WalletParametersView(content, this.#shipperHost());
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
   }
 
   /**
