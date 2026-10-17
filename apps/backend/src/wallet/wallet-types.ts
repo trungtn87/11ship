@@ -71,3 +71,55 @@ export class WalletInvariantError extends Error {
     this.name = 'WalletInvariantError';
   }
 }
+
+// M04-A2.1: the hold read model. A hold reserves part of a wallet balance for one business source; nothing here creates or changes one.
+export type HoldPurpose = 'COMMISSION' | 'WITHDRAWAL';
+export type HoldStatus = 'ACTIVE' | 'CAPTURED' | 'RELEASED';
+
+export interface HoldRow {
+  readonly holdId: string;
+  readonly walletId: string;
+  readonly purpose: HoldPurpose;
+  readonly amountVnd: bigint;
+  readonly status: HoldStatus;
+  /** Exactly one of the two sources is set, the one of the purpose. */
+  readonly commissionAssignmentId: string | null;
+  readonly withdrawalId: string | null;
+  readonly version: bigint;
+  readonly createdAtMs: number;
+  readonly resolvedAtMs: number | null;
+}
+
+/** The holds of a Shipper and their ACTIVE total, which always equals the wallet's held amount (checked on read, never repaired). */
+export interface HoldSummary {
+  readonly driverId: string;
+  readonly provisioned: boolean;
+  readonly holds: readonly HoldRow[];
+  readonly activeCount: number;
+  readonly activeVnd: bigint;
+}
+
+export function assertHoldRowSound(row: HoldRow): HoldRow {
+  const sourceOk =
+    (row.purpose === 'COMMISSION' && row.commissionAssignmentId !== null && row.withdrawalId === null) ||
+    (row.purpose === 'WITHDRAWAL' && row.withdrawalId !== null && row.commissionAssignmentId === null);
+  if (row.amountVnd <= 0n || row.amountVnd > MAX_WALLET_VND || !sourceOk || (row.status === 'ACTIVE') !== (row.resolvedAtMs === null)) {
+    throw new WalletInvariantError();
+  }
+  return row;
+}
+
+export function summaryOfHolds(driverId: string, wallet: WalletRow | undefined, holds: readonly HoldRow[]): HoldSummary {
+  if (wallet === undefined) {
+    if (holds.length > 0) {
+      throw new WalletInvariantError();
+    }
+    return { driverId, provisioned: false, holds: [], activeCount: 0, activeVnd: 0n };
+  }
+  const active = holds.filter((hold) => hold.status === 'ACTIVE');
+  const activeVnd = active.reduce((sum, hold) => sum + hold.amountVnd, 0n);
+  if (activeVnd !== wallet.heldVnd) {
+    throw new WalletInvariantError();
+  }
+  return { driverId, provisioned: true, holds, activeCount: active.length, activeVnd };
+}

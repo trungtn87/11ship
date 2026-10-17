@@ -40,6 +40,13 @@ describe('M04-A1 wallet core boundary', () => {
     expect(insert.match(/\$\d+/g)).toEqual(['$1', '$2']);
   });
 
+  it('M04-A2.1: holds are read only here: no INSERT, UPDATE, DELETE or TRUNCATE of app.wallet_holds, no hold command', () => {
+    const code = walletCode();
+    expect(code).not.toMatch(/(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+(TABLE\s+)?app\.wallet_holds/i);
+    expect(code).not.toMatch(/\b(setHeld|postMoney|placeHold|reserveHold|captureHold|releaseHold)\b/);
+    expect(code.match(/app\.wallet_holds\b/g) ?? []).toHaveLength(1);
+  });
+
   it('has no top-up, withdrawal, adjustment, hold or commission command', () => {
     expect(walletCode()).not.toMatch(/\b(creditTopup|requestTopup|requestWithdraw|postAdjustment|reserve|capture|release|chargeCommission|debitWallet|creditWallet)\b/);
   });

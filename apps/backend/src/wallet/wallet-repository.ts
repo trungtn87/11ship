@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
-import { assertWalletRowSound, WalletRow } from './wallet-types';
+import { assertHoldRowSound, assertWalletRowSound, HoldPurpose, HoldRow, HoldStatus, WalletRow } from './wallet-types';
 
 // SQL of app.driver_wallets (M04-A1). It only reads and inserts a zero wallet: there is no UPDATE here, because no package of M04-A1
 // moves money. Every amount arrives as text from PostgreSQL and is parsed to bigint; a malformed value is an internal error.
@@ -47,8 +47,52 @@ function toWallet(row: RawWallet): WalletRow {
   });
 }
 
+interface RawHold {
+  hold_id: string;
+  wallet_id: string;
+  purpose: string;
+  amount_vnd: string;
+  status: string;
+  commission_assignment_id: string | null;
+  withdrawal_id: string | null;
+  version: string;
+  created_ms: string;
+  resolved_ms: string | null;
+}
+
+const HOLD_COLUMNS = `h.hold_id::text AS hold_id, h.wallet_id::text AS wallet_id, h.purpose, h.amount_vnd::text AS amount_vnd, h.status,
+  h.commission_assignment_id::text AS commission_assignment_id, h.withdrawal_id::text AS withdrawal_id, h.version::text AS version,
+  (extract(epoch FROM h.created_at) * 1000)::bigint::text AS created_ms, (extract(epoch FROM h.resolved_at) * 1000)::bigint::text AS resolved_ms`;
+
+function toHold(row: RawHold): HoldRow {
+  if ((row.purpose !== 'COMMISSION' && row.purpose !== 'WITHDRAWAL') || (row.status !== 'ACTIVE' && row.status !== 'CAPTURED' && row.status !== 'RELEASED')) {
+    throw new TechnicalError('internal', 'Database returned an unexpected hold');
+  }
+  return assertHoldRowSound({
+    holdId: row.hold_id,
+    walletId: row.wallet_id,
+    purpose: row.purpose as HoldPurpose,
+    amountVnd: toBigint(row.amount_vnd),
+    status: row.status as HoldStatus,
+    commissionAssignmentId: row.commission_assignment_id,
+    withdrawalId: row.withdrawal_id,
+    version: toBigint(row.version),
+    createdAtMs: toMs(row.created_ms),
+    resolvedAtMs: row.resolved_ms === null ? null : toMs(row.resolved_ms),
+  });
+}
+
 @Injectable()
 export class WalletRepository {
+  /** Every hold of a wallet, oldest first. A plain read (M04-A2.1 has no hold writer): no lock, no side effect. */
+  async listHolds(context: TransactionContext, walletId: string): Promise<HoldRow[]> {
+    const result = await context.query<RawHold>(
+      `SELECT ${HOLD_COLUMNS} FROM app.wallet_holds h WHERE h.wallet_id = $1::uuid ORDER BY h.created_at, h.hold_id`,
+      [walletId],
+    );
+    return result.rows.map(toHold);
+  }
+
   /** The wallet of a driver exactly as stored, or undefined. A plain read: no lock, no insert. */
   async findByDriverId(context: TransactionContext, driverId: string): Promise<WalletRow | undefined> {
     const result = await context.query<RawWallet>(`SELECT ${COLUMNS} FROM app.driver_wallets w WHERE w.driver_id = $1::uuid`, [driverId]);

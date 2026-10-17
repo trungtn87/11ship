@@ -67,3 +67,6 @@ GRANT SELECT, INSERT, UPDATE ON app.customer_addresses TO ship11_app;
 -- M04-A2/B/C add the grants their mutations need) and NO INSERT on the ledger (a ledger row needs a source table that does not exist yet).
 GRANT SELECT, INSERT ON app.driver_wallets TO ship11_app;
 GRANT SELECT ON app.wallet_ledger_entries TO ship11_app;
+-- M04-A2.1: wallet holds. The runtime role only READS them: every hold needs a source (assignment / withdrawal) that does not exist yet, so the table is
+-- empty and unwritable (trigger gate). INSERT/UPDATE come with A2.2 in the migration that provides the sources; DELETE never.
+GRANT SELECT ON app.wallet_holds TO ship11_app;

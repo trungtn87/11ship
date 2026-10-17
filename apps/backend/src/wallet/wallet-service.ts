@@ -4,7 +4,7 @@ import { AppError, TechnicalError } from '../common/app-errors';
 import { DriverRepository } from '../driver/driver-repository';
 import { TransactionContext } from '../transaction/transaction-context';
 import { WalletRepository } from './wallet-repository';
-import { unprovisionedView, viewOfRow, WalletView } from './wallet-types';
+import { HoldSummary, summaryOfHolds, unprovisionedView, viewOfRow, WalletView } from './wallet-types';
 
 /**
  * The M04-A1 participant: what other packages may ask of the Shipper wallet core, and nothing more.
@@ -30,6 +30,16 @@ export class WalletService {
   async readWallet(context: TransactionContext, driverId: string): Promise<WalletView> {
     const row = await this.wallets.findByDriverId(context, driverId);
     return row === undefined ? unprovisionedView(driverId) : viewOfRow(row);
+  }
+
+  /**
+   * The holds of a Shipper and their ACTIVE total (M04-A2.1 read model). Locks nothing, writes nothing. No hold can exist before the
+   * M07 / M04-C sources do, so today the list is empty. A total that differs from the wallet's held amount is an internal error.
+   */
+  async readHolds(context: TransactionContext, driverId: string): Promise<HoldSummary> {
+    const wallet = await this.wallets.findByDriverId(context, driverId);
+    const holds = wallet === undefined ? [] : await this.wallets.listHolds(context, wallet.walletId);
+    return summaryOfHolds(driverId, wallet, holds);
   }
 
   /**

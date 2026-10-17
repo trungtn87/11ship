@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { assertWalletRowSound, availableOf, MAX_WALLET_VND, unprovisionedView, viewOfRow, WalletInvariantError, WalletRow } from './wallet-types';
+import { assertHoldRowSound, assertWalletRowSound, availableOf, HoldRow, MAX_WALLET_VND, summaryOfHolds, unprovisionedView, viewOfRow, WalletInvariantError, WalletRow } from './wallet-types';
 
 const row = (overrides: Partial<WalletRow> = {}): WalletRow => ({
   walletId: '11111111-1111-4111-8111-111111111111',
@@ -44,5 +44,44 @@ describe('M04-A1 wallet read model (pure rules, no database)', () => {
       expect(() => viewOfRow(row(bad))).toThrow('WALLET_INVARIANT_VIOLATION');
     }
     expect(assertWalletRowSound(row())).toEqual(row());
+  });
+});
+
+const hold = (overrides: Partial<HoldRow> = {}): HoldRow => ({
+  holdId: '33333333-3333-4333-8333-333333333333',
+  walletId: '11111111-1111-4111-8111-111111111111',
+  purpose: 'COMMISSION',
+  amountVnd: 1_000n,
+  status: 'ACTIVE',
+  commissionAssignmentId: '44444444-4444-4444-8444-444444444444',
+  withdrawalId: null,
+  version: 1n,
+  createdAtMs: 1,
+  resolvedAtMs: null,
+  ...overrides,
+});
+
+describe('M04-A2.1 hold read model', () => {
+  it('sums only ACTIVE holds and requires the total to equal the wallet held amount', () => {
+    const wallet = row({ balanceVnd: 10_000n, heldVnd: 3_000n });
+    const holds = [
+      hold({ amountVnd: 1_000n }),
+      hold({ holdId: 'b', purpose: 'WITHDRAWAL', amountVnd: 2_000n, commissionAssignmentId: null, withdrawalId: 'w' }),
+      hold({ holdId: 'c', amountVnd: 9_000n, status: 'RELEASED', resolvedAtMs: 2 }),
+    ];
+    expect(summaryOfHolds('d', wallet, holds)).toMatchObject({ provisioned: true, activeCount: 2, activeVnd: 3_000n });
+    expect(() => summaryOfHolds('d', row({ balanceVnd: 10_000n, heldVnd: 2_999n }), holds)).toThrow(WalletInvariantError);
+  });
+
+  it('is empty without a wallet and refuses holds that have no wallet', () => {
+    expect(summaryOfHolds('d', undefined, [])).toEqual({ driverId: 'd', provisioned: false, holds: [], activeCount: 0, activeVnd: 0n });
+    expect(() => summaryOfHolds('d', undefined, [hold()])).toThrow(WalletInvariantError);
+  });
+
+  it('a stored hold that breaks the hold rules is a loud internal error', () => {
+    for (const bad of [{ amountVnd: 0n }, { amountVnd: MAX_WALLET_VND + 1n }, { withdrawalId: 'w' }, { commissionAssignmentId: null }, { status: 'RELEASED' as const }, { resolvedAtMs: 5 }]) {
+      expect(() => assertHoldRowSound(hold(bad))).toThrow(WalletInvariantError);
+    }
+    expect(assertHoldRowSound(hold())).toEqual(hold());
   });
 });

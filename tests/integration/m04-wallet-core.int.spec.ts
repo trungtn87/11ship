@@ -10,7 +10,7 @@ import { WalletRepository } from '../../apps/backend/src/wallet/wallet-repositor
 import { WalletService } from '../../apps/backend/src/wallet/wallet-service';
 import { eventually, failureOf } from './support/async-helpers';
 import { AuthApp, createDriverFor, purgePhone, randomPhone, rowLockWaiters, startAuthApp } from './support/auth-fixtures';
-import { WALLET_DOWN_SQL, WALLET_UP_SQL } from './support/wallet-migration-sql';
+import { HOLD_DOWN_SQL, HOLD_UP_SQL, WALLET_DOWN_SQL, WALLET_UP_SQL } from './support/wallet-migration-sql';
 import { holdRowLock } from './support/lock-fixtures';
 import { loadIntegrationConfig } from './support/test-helpers';
 import { managerFor, testPool } from './support/transaction-fixtures';
@@ -380,9 +380,11 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
         await client.query('ALTER TABLE app.driver_wallets DISABLE TRIGGER driver_wallets_no_delete');
         await client.query('DELETE FROM app.driver_wallets');
         await client.query('ALTER TABLE app.driver_wallets ENABLE TRIGGER driver_wallets_no_delete');
+        await client.query(HOLD_DOWN_SQL); // M04-A2.1 holds reference the wallet core: down first, up last
         await client.query(WALLET_DOWN_SQL);
         expect(await tablesPresent(client)).toEqual([]);
         await client.query(WALLET_UP_SQL);
+        await client.query(HOLD_UP_SQL);
         expect(await tablesPresent(client)).toEqual(['driver_wallets', 'wallet_ledger_entries']);
         // The re-created schema works: a zero wallet can be born again.
         const { driverId } = await (async () => {

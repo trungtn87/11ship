@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Client } from 'pg';
 import { assertTestDatabaseTarget } from './support/assert-test-target';
 import { SHIPPER_DOWN_SQL, SHIPPER_UP_SQL } from './support/shipper-migration-sql';
-import { WALLET_DOWN_SQL, WALLET_UP_SQL } from './support/wallet-migration-sql';
+import { HOLD_DOWN_SQL, HOLD_UP_SQL, WALLET_DOWN_SQL, WALLET_UP_SQL } from './support/wallet-migration-sql';
 import { minimalChildEnv, REPO_ROOT, runNpmScript } from './support/test-helpers';
 
 // M01-A2D — the Driver onboarding migration (app.drivers only; Driver operating areas were removed by the Owner, task section 22), with the same rules as the M00,
@@ -94,6 +94,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
       '1793318400000_create-shipper-management',
       '1793404800000_create-customer-addresses',
       '1793404800000_create-driver-wallet-core',
+      '1793491200000_create-wallet-holds',
     ]);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-shop-onboarding')).toBe(true);
@@ -178,6 +179,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
     await client.query('BEGIN');
     try {
       // The M03 migration references app.drivers: it goes down first and comes back up last.
+      await client.query(HOLD_DOWN_SQL); // M04-A2.1 holds reference the wallet core: down first, up last
       await client.query(WALLET_DOWN_SQL); // M04-A1 references app.drivers: the very newest
       await client.query(SHIPPER_DOWN_SQL);
       await client.query(downSql);
@@ -190,6 +192,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
       await client.query(upSql);
       await client.query(SHIPPER_UP_SQL);
       await client.query(WALLET_UP_SQL);
+      await client.query(HOLD_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
       await client.query('ROLLBACK');

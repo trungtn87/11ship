@@ -124,6 +124,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | customer_addresses | SELECT, INSERT, UPDATE (M05: add, edit, set default and the soft delete are all UPDATEs; no DELETE, an address is never removed) |
 | driver_wallets | SELECT, INSERT (M04-A1: the zero wallet of a Shipper, created once; no UPDATE and no DELETE until a money package needs them; never deleted) |
 | wallet_ledger_entries | SELECT (M04-A1: the append-only money ledger; no INSERT until a package provides the source tables, no UPDATE, no DELETE) |
+| wallet_holds | SELECT (M04-A2.1: the hold table is empty and its INSERT is refused by a trigger until M07 / M04-C provide the sources; no INSERT, UPDATE or DELETE grant until A2.2) |
 
 **Permanent account deletion (Owner decision 2026-10-14).** The runtime role has no `DELETE` on any account table. The only way an account is removed is the function `app.purge_app_user(uuid)` (created by the migration, `SECURITY DEFINER`, owned by the migration role, refuses an administration account and an account with a shop or driver profile). `PUBLIC` has no `EXECUTE` on it; after the migrations run, grant it to the runtime role with `ops/selfhosted/03-runtime-function-grants.sql` (one statement: `GRANT EXECUTE ON FUNCTION app.purge_app_user(uuid) TO ship11_app;`). Without that grant a permanent delete answers 503 and nothing is deleted.
 

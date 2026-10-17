@@ -8,3 +8,10 @@ const file = path.resolve(__dirname, '..', '..', '..', '..', 'database', 'migrat
 const sql = readFileSync(file, 'utf8');
 export const WALLET_UP_SQL = (sql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
 export const WALLET_DOWN_SQL = sql.split('-- Down Migration')[1] as string;
+
+// M04-A2.1: the wallet holds migration. It references app.driver_wallets, so it goes down BEFORE the wallet core and up AFTER it.
+export const HOLD_MIGRATION_NAME = '1793491200000_create-wallet-holds';
+const holdFile = path.resolve(__dirname, '..', '..', '..', '..', 'database', 'migrations', `${HOLD_MIGRATION_NAME}.sql`);
+const holdSql = readFileSync(holdFile, 'utf8');
+export const HOLD_UP_SQL = (holdSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+export const HOLD_DOWN_SQL = holdSql.split('-- Down Migration')[1] as string;
