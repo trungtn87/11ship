@@ -12,7 +12,9 @@ class ShippingFeeView {
       {required this.pickupConfirmed,
       required this.dropoffChosen,
       this.distanceMeters,
-      this.feeVnd});
+      this.feeVnd,
+      this.outOfPriceRange = false,
+      this.agreement});
 
   /// The shop position (M02) is confirmed.
   final bool pickupConfirmed;
@@ -26,7 +28,62 @@ class ShippingFeeView {
   /// Fee from the policy in force; null = not determined (no drop-off position, no route, or no policy applied).
   final int? feeVnd;
 
+  /// The route distance is beyond the last band: there is no table fee ("Ngoài bảng giá", not 0đ) and nothing is added automatically.
+  final bool outOfPriceRange;
+
+  /// null until the shop chose how the fee is set.
+  final FeeAgreementView? agreement;
+
   bool get feeKnown => feeVnd != null && distanceMeters != null;
+}
+
+/// Technical cap of a final delivery fee (same as the backend): above it the app refuses the amount instead of clamping it.
+const int kAgreedFeeMax = 10000000;
+
+/// How the fee is set: from the three bands, or agreed between the parties.
+enum FeeMode { standard, agreed }
+
+/// Why the shop proposes an agreed fee.
+enum FeeReason { urgent, bulky, badWeather, outsideTable, other }
+
+String feeReasonText(FeeReason reason) => switch (reason) {
+      FeeReason.urgent => 'Gấp',
+      FeeReason.bulky => 'Cồng kềnh',
+      FeeReason.badWeather => 'Thời tiết xấu',
+      FeeReason.outsideTable => 'Ngoài bảng giá',
+      FeeReason.other => 'Khác',
+    };
+
+/// Where the agreement stands. Only `accepted` and `locked` carry a final fee.
+enum AgreementState { proposed, countered, awaitingCustomer, accepted, declined, expired, locked }
+
+/// The fee agreement of one delivery as an app draws it. No phone, address or coordinate is part of it.
+class FeeAgreementView {
+  const FeeAgreementView({
+    required this.mode,
+    required this.state,
+    required this.payer,
+    this.baseFeeVnd,
+    this.reason,
+    this.reasonNote,
+    this.proposedFeeVnd,
+    this.counterFeeVnd,
+    this.finalFeeVnd,
+    this.expiresAt,
+  });
+
+  final FeeMode mode;
+  final AgreementState state;
+  final FeePayer payer;
+  final int? baseFeeVnd;
+  final FeeReason? reason;
+  final String? reasonNote;
+  final int? proposedFeeVnd;
+  final int? counterFeeVnd;
+
+  /// null until the fee is final (never 0).
+  final int? finalFeeVnd;
+  final DateTime? expiresAt;
 }
 
 /// The result of the eligibility check (M06-B) as the app draws it: eligible, or the reason codes (see [m06ReasonText]).
@@ -49,6 +106,7 @@ class OrderOfferView {
     this.distanceToShopMeters,
     this.goodsVnd,
     this.shipFeeVnd,
+    this.agreement,
   });
 
   final String orderRef;
@@ -63,6 +121,9 @@ class OrderOfferView {
   /// null = "Chưa xác định phí".
   final int? shipFeeVnd;
   final EligibilityView eligibility;
+
+  /// The fee proposal for an AGREED delivery (amount, reason): shown before accepting. No phone, address or coordinate is part of it.
+  final FeeAgreementView? agreement;
 }
 
 /// One "try to add this order" result of the batching rule (M06-C).
@@ -112,7 +173,7 @@ String m06ReasonText(String code) => switch (code) {
       'LOCATION_UNAVAILABLE' => 'Chưa có vị trí hợp lệ của bạn.',
       'LOCATION_STALE' => 'Vị trí của bạn đã cũ. Hãy bật định vị và thử lại.',
       'SHOP_LOCATION_MISSING' => 'Chưa có vị trí quán để tính khoảng cách.',
-      'OUT_OF_SEARCH_RADIUS' => 'Bạn ở ngoài bán kính nhận đơn (5 km).',
+      'OUT_OF_SEARCH_RADIUS' => 'Bạn ở ngoài bán kính nhận đơn (3 km).',
       'ACTIVE_LIMIT_REACHED' =>
         'Bạn đã đạt số đơn tối đa được phép nhận cùng lúc.',
       'WALLET_UNAVAILABLE' => 'Chưa đọc được số dư ví.',

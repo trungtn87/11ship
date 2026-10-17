@@ -11,7 +11,15 @@ class SampleM06Source
   const SampleM06Source(
       {this.feeKnown = true,
       this.eligible = true,
-      this.reasonCodes = const <String>[]});
+      this.reasonCodes = const <String>[],
+      this.outOfPriceRange = false,
+      this.agreement});
+
+  /// A distance beyond the last band: no table fee (the fee reads "Ngoài bảng giá", never 0đ).
+  final bool outOfPriceRange;
+
+  /// A fee-agreement scenario (proposed, countered, awaiting customer, accepted...). Illustrative amounts only.
+  final FeeAgreementView? agreement;
 
   /// False: a delivery without a drop-off position (the fee must read "Chưa xác định phí", never 0đ).
   final bool feeKnown;
@@ -23,14 +31,24 @@ class SampleM06Source
 
   @override
   Future<M06Load<ShippingFeeView>> fee() async => M06Ready<ShippingFeeView>(
-        feeKnown
-            ? const ShippingFeeView(
+        outOfPriceRange
+            ? ShippingFeeView(
                 pickupConfirmed: true,
                 dropoffChosen: true,
-                distanceMeters: 5500,
-                feeVnd: 15000)
-            : const ShippingFeeView(
-                pickupConfirmed: true, dropoffChosen: false),
+                distanceMeters: 12500,
+                outOfPriceRange: true,
+                agreement: agreement)
+            : feeKnown
+                ? ShippingFeeView(
+                    pickupConfirmed: true,
+                    dropoffChosen: true,
+                    distanceMeters: 5500,
+                    feeVnd: 15000,
+                    agreement: agreement)
+                : ShippingFeeView(
+                    pickupConfirmed: true,
+                    dropoffChosen: false,
+                    agreement: agreement),
       );
 
   @override
@@ -43,6 +61,7 @@ class SampleM06Source
           distanceToShopMeters: 2800,
           goodsVnd: 180000,
           shipFeeVnd: feeKnown ? 15000 : null,
+          agreement: agreement,
           eligibility:
               EligibilityView(eligible: eligible, reasonCodes: reasonCodes),
         ),

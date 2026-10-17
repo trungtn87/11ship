@@ -9,7 +9,7 @@ Thiết kế: [M06-design-UI-LOCKED-2026-10-16.md](M06-design-UI-LOCKED-2026-10-
 
 ## Điều kiện nhận (B) — `shipping-eligibility.ts`
 
-Hồ sơ `ACTIVE`, bật nhận đơn, ngân hàng đã xác minh; đơn đang tìm, chưa có shipper, chưa quá hạn tìm; GPS hợp lệ và mới (cờ do M14); **bán kính 5 km cố định** đường chim bay quán → GPS shipper (không phải tham số, không có ô Admin; PLATFORM miễn bán kính); EXTERNAL tối đa `external_max_deliveries` (mặc định 3), PLATFORM không giới hạn số đơn nhưng **vẫn** cần GPS, số dư khả dụng ≥ hold (so sánh chính xác bằng bigint) và bảo vệ ETA. Mã lý do: `DRIVER_NOT_ACTIVE`, `DRIVER_NOT_ACCEPTING`, `DRIVER_BANK_NOT_VERIFIED`, `DELIVERY_NOT_AVAILABLE`, `DELIVERY_SEARCH_EXPIRED`, `LOCATION_UNAVAILABLE`, `LOCATION_STALE`, `SHOP_LOCATION_MISSING`, `OUT_OF_SEARCH_RADIUS`, `ACTIVE_LIMIT_REACHED`, `WALLET_UNAVAILABLE`, `BALANCE_TOO_LOW`, `DEPENDENCY_NOT_READY`. Không khu vực đăng ký (đã bỏ ở M03).
+Hồ sơ `ACTIVE`, bật nhận đơn, ngân hàng đã xác minh; đơn đang tìm, chưa có shipper, chưa quá hạn tìm; GPS hợp lệ và mới (cờ do M14); **bán kính 3 km cố định (3000 m, v1.1)** đường chim bay quán → GPS shipper (không phải tham số, không có ô Admin; PLATFORM chỉ miễn bán kính; vẫn cần tọa độ quán — `SHOP_LOCATION_MISSING` áp dụng cả PLATFORM); EXTERNAL tối đa `external_max_deliveries` (mặc định 3), PLATFORM không giới hạn số đơn nhưng **vẫn** cần GPS, số dư khả dụng ≥ hold (so sánh chính xác bằng bigint) và bảo vệ ETA. Mã lý do: `DRIVER_NOT_ACTIVE`, `DRIVER_NOT_ACCEPTING`, `DRIVER_BANK_NOT_VERIFIED`, `DELIVERY_NOT_AVAILABLE`, `DELIVERY_SEARCH_EXPIRED`, `LOCATION_UNAVAILABLE`, `LOCATION_STALE`, `SHOP_LOCATION_MISSING`, `OUT_OF_SEARCH_RADIUS`, `ACTIVE_LIMIT_REACHED`, `WALLET_UNAVAILABLE`, `BALANCE_TOO_LOW`, `DEPENDENCY_NOT_READY`. Không khu vực đăng ký (đã bỏ ở M03).
 
 ## Ghép đơn (C) — `shipping-batching.ts`
 
@@ -27,7 +27,7 @@ Hồ sơ `ACTIVE`, bật nhận đơn, ngân hàng đã xác minh; đơn đang t
 
 - Migration `1793664000000_create-shipping-eligibility-parameters.sql`: một dòng tham số (có version, CHECK khoảng giá trị, không xóa) + nhật ký thay đổi chỉ-thêm (cũ, mới, actor, thời gian). Seed: 3 / 300 / 120 / 60. Grants runtime đã thêm vào `02-runtime-grants.sql` và runbook.
 - Admin API `/v1/admin/shipping-eligibility-policy`: GET (mọi Admin), POST (chỉ SYSTEM; `expected_version`, bốn giá trị; idempotency, audit, outbox). Bán kính không phải trường của API (gửi lên bị từ chối). `SHIPPING_ELIGIBILITY_VERSION_CONFLICT` (409).
-- Admin Web: tab **Điều kiện nhận & ghép** chỉnh được (bán kính 5 km khóa chỉ đọc, PLATFORM "Không giới hạn"); tab **Lịch sử chính sách** có thêm nhật ký thay đổi điều kiện.
+- Admin Web: tab **Điều kiện nhận & ghép** chỉnh được (bán kính 3 km khóa chỉ đọc, PLATFORM "Không giới hạn"); tab **Lịch sử chính sách** có thêm nhật ký thay đổi điều kiện.
 
 ## Ports (mặc định fail-closed)
 
@@ -42,3 +42,6 @@ M07 và M14 bind implementation của mình vào token; M06 không đổi. Sau M
 ## Kiểm thử
 
 Unit: `shipping-eligibility.spec.ts`, `shipping-batching.spec.ts`, `apps/admin-web/src/core/shipping-policy.spec.ts`. PostgreSQL thật: `tests/integration/m06-shipping-eligibility.int.spec.ts` (tham số: quyền, biên, version, log bất biến; quyết định: EXTERNAL/PLATFORM, port fail-closed, tuyến, snapshot cũ; **hai yêu cầu nhận đồng thời không vượt số đơn hay số dư** — bỏ khóa hàng Shipper thì test đỏ 3/3 được nhận). Chrome thật: `tests/integration/admin-shipping-policy-browser.int.spec.ts`.
+
+
+> **v1.1 (18/10/2026):** bán kính tìm shipper là 3 km (đúng 3.000 m còn trong vùng; >3.000 m `OUT_OF_SEARCH_RADIUS` với EXTERNAL). Không liên quan quãng đường quán→khách (tính phí). Xem [M06-v1.1](M06-v1.1-3km-3tiers-fee-agreement-20261018.md).

@@ -17,6 +17,11 @@ import { ActorType, ShippingFeeAgreementRepository } from './shipping-fee-agreem
 import { ShippingFeePolicyReader } from './shipping-fee-policy-repository';
 import { evaluateQuote, UnpricedReason } from './shipping-fee-quote';
 
+/** The note is shown to Shippers before they accept: 8+ digits (separators ignored) look like a phone number and are refused. */
+export function noteLooksLikePhone(note: string): boolean {
+  return /\d{8,}/.test(note.replace(/[\s.\-()+]/g, ''));
+}
+
 export type ServiceRefusal = RefusalCode | 'NOT_FOUND' | 'DELIVERY_ALREADY_HAS_AGREEMENT' | 'PROPOSAL_INVALID' | 'DRIVER_NOT_FOUND' | 'ACTOR_REQUIRED';
 
 export type AgreementOutcome =
@@ -119,7 +124,7 @@ export class ShippingFeeAgreementService {
     if (
       !AGREEMENT_REASONS.includes(input.reasonCode) ||
       !isValidAmount(input.proposedFeeVnd) ||
-      (note !== null && [...note].length > REASON_NOTE_MAX) ||
+      (note !== null && ([...note].length > REASON_NOTE_MAX || noteLooksLikePhone(note))) ||
       (input.reasonCode === 'OTHER' && (note === null || note === '')) ||
       input.expiresAtMs <= input.nowMs
     ) {

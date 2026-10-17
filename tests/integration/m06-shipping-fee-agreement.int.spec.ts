@@ -151,6 +151,13 @@ describe('M06 v1.1 — shipping fee agreement', () => {
     }
   }
 
+
+  it('refuses a note that carries a phone number (the note is shown to Shippers before they accept)', async () => {
+    const withPhone = await create('createAgreed', { ...agreedInput({}, 25000), reasonNote: 'Gọi 0912 345 678' } as never);
+    expect(withPhone).toEqual({ kind: 'refused', code: 'PROPOSAL_INVALID' });
+    const fine = await create('createAgreed', { ...agreedInput({}, 25000), reasonNote: 'Hàng nặng, 2 thùng' } as never);
+    expect(fine.kind).not.toBe('refused');
+  });
   it('AGREED, shop pays: a Shipper agrees -> the proposed amount (above the base fee) is final and bound to that Shipper; the log names who and what', async () => {
     const proposed = ok(await create('createAgreed', agreedInput({ payer: 'SHOP' }, 25000)));
     expect(proposed).toMatchObject({ feeMode: 'AGREED', status: 'PROPOSED', baseFeeVnd: 15000, proposedFeeVnd: 25000, finalFeeVnd: null, reasonCode: 'URGENT' });

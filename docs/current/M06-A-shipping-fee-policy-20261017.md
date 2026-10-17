@@ -1,45 +1,37 @@
-# M06-A — Bảng giá ship linh hoạt (Gói 1)
+# M06-A — Bảng giá ship 3 khung (v1.1)
 
-Thiết kế: [M06-design-UI-LOCKED-2026-10-16.md](M06-design-UI-LOCKED-2026-10-16.md) mục 2. Gói này chỉ làm **bảng giá + phiên bản + Admin Web + tính phí thuần**. Chưa làm: điều kiện nhận/ghép (M06-B/C), báo giá lưu trữ `shipping_quotes`, UI 11Food/11Ship (M06-D), tuyến/GPS (M14), delivery (M07), ví (M04).
+Thiết kế: [M06-v1.1](M06-v1.1-3km-3tiers-fee-agreement-20261018.md) (thay v1.0: nhiều khung + `tail`). Gói này: **bảng giá 3 khung + phiên bản + Admin Web + tính phí thuần + thỏa thuận phí (dữ liệu/luật)**. Chưa làm: lifecycle/tìm shipper/khóa phí (M07), tuyến/GPS (M14), ví (M04), thông báo (M08).
 
-## Quy tắc tính phí (một nơi duy nhất: `apps/backend/src/shipping-policy/shipping-fee-policy.ts`)
+## Quy tắc tính phí (`apps/backend/src/shipping-policy/shipping-fee-policy.ts`)
 
-- Khoảng cách là **mét gốc** (số M14 trả về); không làm tròn km. UI nhập km tối đa 3 chữ số thập phân → mét nguyên.
-- Mốc nửa mở `[từ, đến)`: đúng mốc biên thuộc mốc tiếp theo. Mốc đầu bắt đầu từ 0; các mốc liên tục (không hở, không chồng); 1–50 mốc; phí nguyên 0–10.000.000đ; mốc cuối ≤ 1.000 km.
-- Sau mốc cuối: `phí nền + floor((d − mốc_cuối) / bước_m) × phí_mỗi_bước` (bước ≥ 1 m). Mọi quãng đường có đúng một phí.
-- **Không có công thức hay giá mặc định trong code/DB**: chưa áp dụng phiên bản nào thì không tính được phí (`UNPRICED`, `fee = null`, không bao giờ 0đ).
-- Không có tuyến/khoảng cách (null, NaN, âm) → `UNPRICED / ROUTE_DATA_UNAVAILABLE`, không đoán.
-- `recheckQuote`: quote chưa chốt phải tính lại khi hết TTL, đổi quán/điểm giao hoặc đổi policy version (`EXPIRED` / `LOCATION_CHANGED` / `POLICY_CHANGED`). `evaluateQuote`/`recheckQuote` là hàm thuần để M07/M06-D dùng; bảng `shipping_quotes` sẽ tạo ở gói nối M07/M14.
+- Khoảng cách là **mét gốc** do M14 trả về (không dùng đường chim bay để tính phí).
+- **Đúng 3 khung**: `[0,b1)`, `[b1,b2)`, `[b2,b3]` (khung cuối gồm cả mốc b3); `0<b1<b2<b3`; mốc và phí là số nguyên; phí ≥ 0 và ≤ 10.000.000đ; b3 ≤ 1.000 km. Không có phí nền/bước/công thức sau mốc cuối.
+- Quãng đường > b3: `UNPRICED / OUT_OF_PRICE_RANGE`, `fee = null` (không bao giờ 0đ, không tự cộng). Thiếu tuyến (null/NaN/âm): `ROUTE_DATA_UNAVAILABLE`. Hai mã khác nhau; không tự chuyển thành thỏa thuận.
+- Chưa có phiên bản v2 nào được áp dụng → không tính được phí (`fee = null`). **Không seed giá**; 10k/15k/20k chỉ là ví dụ giao diện.
+- `recheckQuote`: quote chưa chốt tính lại khi hết TTL / đổi điểm / đổi policy version.
 
-## Dữ liệu (migration `1793577600000_create-shipping-fee-policy.sql`)
+## Dữ liệu và migration
 
-- `app.shipping_fee_policy_versions`: mỗi lần "Áp dụng" một dòng **bất biến** (trigger chặn UPDATE/DELETE/TRUNCATE mọi role): số phiên bản liên tục, mốc (jsonb), phần sau mốc cuối, ghi chú, người áp dụng, thời gian. Bảng giá đang hiệu lực = phiên bản số lớn nhất.
-- `app.shipping_fee_policy_drafts`: đúng một dòng (seed rỗng), `version` luôn tăng (màn hình cũ luôn bị báo xung đột, không ghi đè).
-- CHECK `app.shipping_fee_tiers_valid(jsonb)` ở cả hai bảng: DB tự từ chối bảng hở/chồng/âm/không bắt đầu từ 0.
-- Grants runtime: versions `SELECT, INSERT`; drafts `SELECT, UPDATE` (đã thêm vào `ops/selfhosted/02-runtime-grants.sql` và runbook).
-- **Đơn/quote đã chốt giữ nguyên giá**: chúng lưu số phiên bản + phí lúc chốt; phiên bản cũ không bao giờ đổi. Module khác đọc bảng giá hiện hành qua `ShippingFeePolicyReader.active(context)` (đọc DB mỗi lần, không cache) trong transaction định giá.
+- `1793750400000_create-shipping-fee-policy.sql` (**đã đổi tên** từ `1793577600000_…` vì trùng tiền tố với `1793577600000_create-wallet-topup-sources.sql` của M04-B1; migration này chưa vào `main` nên chưa chạy ở môi trường nào — nội dung giữ nguyên).
+- `1793836800000_m06-v1-1-three-tiers-agreement.sql` (cộng thêm, chạy sau): `schema_version` (1 = cũ N khung + tail, chỉ để xem lịch sử, **không dùng để tính phí**; 2 = 3 khung), cột tail nullable, `shipping_fee_three_tiers_valid`, bảng `shipping_fee_agreements` và `shipping_fee_agreement_events` (xem dưới). Down từ chối khi đã có dữ liệu v2.
+- Phiên bản bảng giá bất biến (trigger); snapshot phí đã chốt của đơn cũ không bị tính lại.
 
-## API (Admin, cookie + CSRF, `/v1/admin/shipping-fee-policy`)
+## API Admin (`/v1/admin/shipping-fee-policy`)
 
-| Method | Đường dẫn | Quyền | Ý nghĩa |
-|---|---|---|---|
-| GET | `/` | mọi Admin | `active`, `draft` (+`version`), `history` (50 phiên bản mới nhất), `limits` |
-| POST | `/draft` | SYSTEM | Lưu nháp `{expected_version, tiers:[{from_m,to_m,fee_vnd}], tail:{base_fee_vnd,step_m,step_fee_vnd}}`; cần `Idempotency-Key` |
-| POST | `/apply` | SYSTEM | Áp dụng bản nháp đã lưu `{expected_version, note?}` → phiên bản mới; cần `Idempotency-Key` |
-| POST | `/preview` | mọi Admin | Thử tính `{distance_m, tiers?, tail?}`: có `tiers/tail` → tính theo bảng đang sửa, không có → theo bảng đang áp dụng. Không ghi gì |
+`GET /` (mọi Admin), `POST /draft` `{expected_version, tiers:[{from_m,to_m,fee_vnd}×3}` (SYSTEM, Idempotency-Key), `POST /apply` (SYSTEM), `POST /preview` `{distance_m, tiers?}` (mọi Admin). Mã lỗi: `SHIPPING_POLICY_INVALID` (kèm mã chi tiết `TIERS_COUNT`, `OVERLAP`, `GAP`, `FEE_NEGATIVE`, `FEE_TOO_HIGH`…), `ADMIN_INPUT_INVALID` (gửi `tail` hoặc khóa lạ), `SHIPPING_DRAFT_VERSION_CONFLICT`, `SHIPPING_DRAFT_EMPTY`, `SHIPPING_POLICY_UNCHANGED`.
 
-Quyền theo quy tắc tham số hệ thống (`system-parameter-access.ts`): SYSTEM ghi, Admin khác chỉ đọc/thử tính; server quyết định mỗi lần (Admin ghi → `ADMIN_FORBIDDEN`). Mã lỗi: `SHIPPING_POLICY_INVALID` (400), `ADMIN_INPUT_INVALID` (400, sai hình dạng), `SHIPPING_DRAFT_VERSION_CONFLICT` (409), `SHIPPING_DRAFT_EMPTY` (409), `SHIPPING_POLICY_UNCHANGED` (409). Mỗi lần lưu nháp/áp dụng ghi audit (actor, thời gian, số mốc/phiên bản); áp dụng phát outbox `shipping.fee_policy.applied.v1`.
+## Thỏa thuận phí (`shipping-fee-agreement*.ts`, service `ShippingFeeAgreementService`)
+
+- `fee_mode STANDARD|AGREED`; trạng thái `PROPOSED → COUNTERED → AWAITING_CUSTOMER → ACCEPTED`, hoặc `DECLINED/EXPIRED/LOCKED`. Mỗi thỏa thuận lưu đề xuất, phản đề nghị, phí chốt, lý do (`URGENT|BULKY|BAD_WEATHER|OUTSIDE_TABLE|OTHER`, `OTHER` bắt buộc ghi chú; ghi chú ≤200 ký tự và **không chứa số điện thoại** — ≥8 chữ số bị từ chối `PROPOSAL_INVALID`), người trả, người thao tác, thời gian, `version`.
+- Quán đề xuất → shipper đồng ý / bỏ qua / đề xuất mức khác → quán chấp thuận hoặc từ chối. **Từ chối giữ nguyên đề xuất gốc, không kéo dài hạn (`expires_at` không bao giờ lùi/tăng lại), shipper bị từ chối không tự chốt mức đã bị từ chối.** Khách trả và mức khác phí chuẩn → `AWAITING_CUSTOMER`, chỉ chốt khi khách đồng ý.
+- Chống trùng/đồng thời/muộn: khóa dòng `FOR UPDATE`, `version`, nhật ký `(agreement_id, request_id)` duy nhất (lặp lại cùng request trả kết quả cũ), phản hồi sau hạn → `EXPIRED`. Trigger DB: bất biến danh tính + đề xuất, hạn không rút ngắn, version +1, đồ thị trạng thái; nhật ký chỉ ghi thêm.
+- Sau `picked_up` phí bị khóa (M07 gọi khóa); chỉ Admin có quyền điều chỉnh, có nhật ký. M06 **không** viết lifecycle/tìm shipper: M07 gọi service này.
+- Không có phụ phí tự động.
 
 ## Admin Web
 
-Menu **Hệ thống › Phí & điều kiện giao** (`/system/shipping-fee-policy`), ba tab theo thiết kế đã khóa:
-
-- **Bảng giá ship**: thêm/sửa/xóa mốc, phần sau mốc cuối, báo lỗi ngay khi nhập, "Thử tính phí" (tính ở server), "Lưu bản nháp", "Áp dụng bảng giá" (hộp xác nhận, ghi chú, tóm tắt thay đổi). Admin không phải SYSTEM: ô chỉ đọc, không có nút ghi.
-- **Điều kiện nhận & ghép**: chỉnh được từ Gói 2 — xem [M06-BC-eligibility-batching-20261017.md](M06-BC-eligibility-batching-20261017.md).
-- **Lịch sử chính sách**: các phiên bản bất biến, người áp dụng, thời gian, ghi chú, thay đổi so với bản trước, chi tiết các mốc.
+Menu **Hệ thống › Phí & điều kiện giao**: bảng **3 hàng cố định** (sửa 3 mốc trên + 3 mức phí), không thêm/xóa khung, không `tail`; thử tính hiển thị "Ngoài bảng giá" khi vượt b3; bán kính tìm shipper **3 km chỉ đọc**; lịch sử có nhãn phiên bản cũ (N khung + tail, chỉ xem).
 
 ## Kiểm thử
 
-- Unit: `apps/backend/src/shipping-policy/shipping-fee-policy.spec.ts` (mốc biên, mét gốc, không phải công thức cố định, validate, quote không tuyến, recheck, parser), `apps/admin-web/src/core/shipping-policy.spec.ts`.
-- PostgreSQL thật: `tests/integration/m06-shipping-fee-policy.int.spec.ts` (bắt đầu rỗng/fail-closed, Admin không sửa được, bảng sai bị chặn ở API và DB, mốc biên qua API, phiên bản bất biến, đơn cũ không đổi, hai "áp dụng" đồng thời chỉ một thắng, replay idempotent).
-- Chrome thật: `tests/integration/admin-shipping-policy-browser.int.spec.ts` (nhập → báo lỗi → thử tính → lưu nháp → áp dụng → lịch sử; Admin chỉ đọc).
+Unit: `shipping-fee-policy.spec.ts`, `shipping-fee-agreement.spec.ts`, `apps/admin-web/src/core/shipping-policy.spec.ts`. PostgreSQL thật: `m06-shipping-fee-policy.int.spec.ts`, `m06-shipping-fee-agreement.int.spec.ts` (đề xuất → phản đề nghị → từ chối giữ hạn, khách trả, trùng/đồng thời/hết hạn), `m06-shipping-eligibility.int.spec.ts` (3000 m vào, >3000 m ngoài). Chrome thật: `admin-shipping-policy-browser.int.spec.ts`.

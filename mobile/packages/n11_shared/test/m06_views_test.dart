@@ -15,7 +15,7 @@ class _Failing implements ShippingFeeSource {
 }
 
 Future<void> mount(WidgetTester tester, Widget screen) async {
-  tester.view.physicalSize = const Size(1080, 4200);
+  tester.view.physicalSize = const Size(1080, 7200);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(MaterialApp(theme: buildN11Theme(), home: screen));
@@ -31,6 +31,50 @@ Finder money() => find.byWidgetPredicate((Widget w) =>
 Finder button(String label) => find.widgetWithText(N11Button, label);
 bool disabled(WidgetTester tester, String label) =>
     tester.widget<N11Button>(button(label)).onPressed == null;
+
+FeeAgreementView _agreement(AgreementState state, {int? finalFee}) => FeeAgreementView(
+      mode: FeeMode.agreed,
+      state: state,
+      payer: FeePayer.customer,
+      baseFeeVnd: 15000,
+      reason: FeeReason.badWeather,
+      proposedFeeVnd: 25000,
+      counterFeeVnd: state == AgreementState.countered || state == AgreementState.awaitingCustomer || state == AgreementState.accepted ? 30000 : null,
+      finalFeeVnd: finalFee,
+      expiresAt: DateTime(2026, 10, 18, 9, 30),
+    );
+
+class _ShopActions implements ShopFeeActions {
+  _ShopActions({this.fail = false});
+  final bool fail;
+  final List<String> calls = <String>[];
+  Future<void> _do(String c) async {
+    calls.add(c);
+    if (fail) {
+      throw StateError('x');
+    }
+  }
+
+  @override
+  Future<void> useStandard(FeePayer payer) => _do('standard:${payer.name}');
+  @override
+  Future<void> propose({required FeePayer payer, required FeeReason reason, String? note, required int amountVnd}) =>
+      _do('propose:${payer.name}:${reason.name}:$note:$amountVnd');
+  @override
+  Future<void> acceptCounter() => _do('accept');
+  @override
+  Future<void> rejectCounter() => _do('reject');
+}
+
+class _ShipActions implements ShipperFeeActions {
+  final List<String> calls = <String>[];
+  @override
+  Future<void> agree() async => calls.add('agree');
+  @override
+  Future<void> skip() async => calls.add('skip');
+  @override
+  Future<void> counter(int amountVnd) async => calls.add('counter:$amountVnd');
+}
 
 void main() {
   group('real build: nothing is connected, so nothing is shown or enabled', () {
@@ -118,23 +162,109 @@ void main() {
       expect(find.byKey(const Key('m06-fee-unknown-note')), findsOneWidget);
     });
 
-    testWidgets(
-        '"Tiếp tục" is M07\'s: disabled with its reason without M07, and gives M07 the chosen payer when M07 provides it',
+    testWidgets('without M07 actions the request button is disabled with its reason and nothing is sent',
         (WidgetTester tester) async {
       await mount(tester, const ShippingFeeScreen(source: SampleM06Source()));
-      expect(disabled(tester, 'Tiếp tục'), isTrue);
-      expect(text(kContinueReason), findsOneWidget);
+      expect(text(kAgreementReason), findsOneWidget);
+      expect(find.byKey(const Key('m06-fee-submit')), findsNothing);
+      expect(find.byKey(const Key('m06-mode-standard')), findsOneWidget);
+      expect(find.byKey(const Key('m06-mode-agreed')), findsOneWidget);
+    });
 
-      FeePayer? chosen;
-      await mount(
-          tester,
-          ShippingFeeScreen(
-              source: const SampleM06Source(),
-              onContinue: (FeePayer payer) => chosen = payer));
+    testWidgets('standard mode gives M07 the chosen payer', (WidgetTester tester) async {
+      final _ShopActions actions = _ShopActions();
+      await mount(tester, ShippingFeeScreen(source: const SampleM06Source(), actions: actions));
       await tester.tap(find.byKey(const Key('m06-payer-shop')));
       await tester.pump();
-      await tester.tap(find.byKey(const Key('m06-fee-continue')));
-      expect(chosen, FeePayer.shop);
+      await tester.tap(find.byKey(const Key('m06-fee-submit')));
+      await tester.pump();
+      expect(actions.calls, <String>['standard:shop']);
+    });
+
+    testWidgets('agreed mode: needs a reason and a whole-VND amount; OTHER needs a note; a phone number in the note is refused',
+        (WidgetTester tester) async {
+      final _ShopActions actions = _ShopActions();
+      await mount(tester, ShippingFeeScreen(source: const SampleM06Source(), actions: actions));
+      await tester.tap(find.byKey(const Key('m06-mode-agreed')));
+      await tester.pump();
+      expect(disabled(tester, 'Gửi đề xuất phí'), isTrue);
+      await tester.tap(find.byKey(const Key('m06-reason-other')));
+      await tester.enterText(find.byKey(const Key('m06-agreed-amount')), '25000');
+      await tester.pump();
+      expect(disabled(tester, 'Gửi đề xuất phí'), isTrue); // OTHER without a note
+      await tester.enterText(find.byKey(const Key('m06-agreed-note')), 'Gọi 0912345678 nhé');
+      await tester.pump();
+      expect(disabled(tester, 'Gửi đề xuất phí'), isTrue);
+      expect(containing('số điện thoại'), findsWidgets);
+      await tester.enterText(find.byKey(const Key('m06-agreed-note')), 'Hàng nặng');
+      await tester.pump();
+      expect(disabled(tester, 'Gửi đề xuất phí'), isFalse);
+      await tester.enterText(find.byKey(const Key('m06-agreed-amount')), '12000000'); // above the cap: refused, not clamped
+      await tester.pump();
+      expect(disabled(tester, 'Gửi đề xuất phí'), isTrue);
+      await tester.enterText(find.byKey(const Key('m06-agreed-amount')), '25000');
+      await tester.pump();
+      expect(containing('khách phải đồng ý'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('m06-fee-submit')));
+      await tester.pump();
+      expect(actions.calls, <String>['propose:customer:other:Hàng nặng:25000']);
+    });
+
+    testWidgets('out of the price table: "Ngoài bảng giá", never 0đ; only an agreement can go on',
+        (WidgetTester tester) async {
+      await mount(tester, ShippingFeeScreen(source: const SampleM06Source(outOfPriceRange: true), actions: _ShopActions()));
+      expect(tester.widget<Text>(find.byKey(const Key('m06-fee-amount'))).data, kOutOfRangeText);
+      expect(find.byKey(const Key('m06-fee-out-of-range-note')), findsOneWidget);
+      expect(money(), findsNothing);
+      expect(find.byKey(const Key('m06-reason-outsideTable')), findsOneWidget); // agreed mode is forced
+    });
+
+    testWidgets('a failed send shows "Chưa gửi được" and lets the shop try again', (WidgetTester tester) async {
+      final _ShopActions actions = _ShopActions(fail: true);
+      await mount(tester, ShippingFeeScreen(source: const SampleM06Source(), actions: actions));
+      await tester.tap(find.byKey(const Key('m06-fee-submit')));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('m06-agreement-error')), findsOneWidget);
+      expect(disabled(tester, 'Dùng phí theo bảng giá'), isFalse);
+    });
+
+    testWidgets('countered: shows the shipper amount and the original proposal; reject keeps the search going',
+        (WidgetTester tester) async {
+      final _ShopActions actions = _ShopActions();
+      await mount(tester, ShippingFeeScreen(source: SampleM06Source(agreement: _agreement(AgreementState.countered)), actions: actions));
+      expect(text('Shipper đề xuất mức khác'), findsOneWidget);
+      expect(tester.widget<Text>(find.byKey(const Key('m06-agreement-counter'))).data, '30.000đ');
+      expect(tester.widget<Text>(find.byKey(const Key('m06-agreement-proposed'))).data, '25.000đ');
+      expect(tester.widget<Text>(find.byKey(const Key('m06-agreement-final'))).data, 'Chưa chốt');
+      expect(find.byKey(const Key('m06-counter-reject-note')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('m06-counter-reject')));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('m06-counter-accept')));
+      await tester.pump();
+      expect(actions.calls, <String>['reject', 'accept']);
+    });
+
+    testWidgets('countered without M07 actions: both answers disabled with the reason', (WidgetTester tester) async {
+      await mount(tester, ShippingFeeScreen(source: SampleM06Source(agreement: _agreement(AgreementState.countered))));
+      expect(disabled(tester, 'Đồng ý'), isTrue);
+      expect(disabled(tester, 'Từ chối'), isTrue);
+      expect(text(kAgreementReason), findsOneWidget);
+    });
+
+    testWidgets('customer pays and the amount differs: pending, not final, until the customer agrees',
+        (WidgetTester tester) async {
+      await mount(tester, ShippingFeeScreen(source: SampleM06Source(agreement: _agreement(AgreementState.awaitingCustomer))));
+      expect(text('Chờ khách xác nhận'), findsOneWidget);
+      expect(find.byKey(const Key('m06-agreement-awaiting-customer')), findsOneWidget);
+      expect(tester.widget<Text>(find.byKey(const Key('m06-agreement-final'))).data, 'Chưa chốt');
+    });
+
+    testWidgets('accepted shows the final fee', (WidgetTester tester) async {
+      await mount(tester, ShippingFeeScreen(source: SampleM06Source(agreement: _agreement(AgreementState.accepted, finalFee: 30000))));
+      expect(text('Đã chốt phí'), findsOneWidget);
+      expect(tester.widget<Text>(find.byKey(const Key('m06-agreement-final'))).data, '30.000đ');
     });
   });
 
@@ -221,6 +351,60 @@ void main() {
           const OrderOfferScreen(source: SampleM06Source(feeKnown: false)));
       expect(tester.widget<Text>(find.byKey(const Key('m06-offer-fee'))).data,
           kFeeUnknownText);
+    });
+  });
+
+  group('11Ship: phí thỏa thuận trước khi nhận (sample data)', () {
+    testWidgets('proposed: shows amount and reason, agree / skip / counter; no private data', (WidgetTester tester) async {
+      final _ShipActions actions = _ShipActions();
+      await mount(tester, OrderOfferScreen(source: SampleM06Source(agreement: _agreement(AgreementState.proposed)), actions: actions, onAccept: () {}));
+      expect(tester.widget<Text>(find.byKey(const Key('m06-offer-fee'))).data, '25.000đ (đề xuất)');
+      expect(tester.widget<Text>(find.byKey(const Key('m06-agreement-reason'))).data, 'Thời tiết xấu');
+      final Iterable<String> texts = tester.widgetList<Text>(find.byType(Text)).map((Text t) => t.data ?? '');
+      expect(texts.any((String s) => RegExp(r'(\+84|\b0\d{9}\b)').hasMatch(s)), isFalse);
+      expect(button('Nhận đơn'), findsNothing); // cannot accept before the fee is final
+      await tester.tap(find.byKey(const Key('m06-fee-agree')));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.byKey(const Key('m06-fee-skip')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(actions.calls, <String>['agree', 'skip']);
+    });
+
+    testWidgets('counter amount must be whole VND within the cap', (WidgetTester tester) async {
+      final _ShipActions actions = _ShipActions();
+      await mount(tester, OrderOfferScreen(source: SampleM06Source(agreement: _agreement(AgreementState.proposed)), actions: actions));
+      await tester.tap(find.byKey(const Key('m06-fee-counter-open')));
+      await tester.pump();
+      final Finder field = find.byKey(const Key('m06-counter-amount'));
+      await tester.enterText(field, '99999999');
+      await tester.pump();
+      expect(disabled(tester, 'Gửi đề xuất'), isTrue);
+      await tester.enterText(field, '30000');
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('m06-counter-send')));
+      await tester.pump();
+      expect(actions.calls, <String>['counter:30000']);
+    });
+
+    testWidgets('without M07 actions the answers are disabled with the reason', (WidgetTester tester) async {
+      await mount(tester, OrderOfferScreen(source: SampleM06Source(agreement: _agreement(AgreementState.proposed))));
+      expect(disabled(tester, 'Đồng ý mức phí'), isTrue);
+      expect(text(kAgreementReason), findsWidgets);
+    });
+
+    testWidgets('countered: waits for the shop, nothing to accept yet', (WidgetTester tester) async {
+      await mount(tester, OrderOfferScreen(source: SampleM06Source(agreement: _agreement(AgreementState.countered)), onAccept: () {}));
+      expect(find.byKey(const Key('m06-offer-waiting-shop')), findsOneWidget);
+      expect(find.byKey(const Key('m06-offer-accept')), findsNothing);
+    });
+
+    testWidgets('accepted: the final fee shows and "Nhận đơn" is M07\'s', (WidgetTester tester) async {
+      await mount(tester, OrderOfferScreen(source: SampleM06Source(agreement: _agreement(AgreementState.accepted, finalFee: 30000)), onAccept: () {}));
+      expect(tester.widget<Text>(find.byKey(const Key('m06-offer-fee'))).data, '30.000đ');
+      expect(find.byKey(const Key('m06-offer-accept')), findsOneWidget);
     });
   });
 
