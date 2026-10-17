@@ -61,3 +61,5 @@ GRANT SELECT, INSERT, UPDATE ON app.driver_bank_accounts TO ship11_app;
 GRANT SELECT, INSERT ON app.driver_events TO ship11_app;
 GRANT SELECT, UPDATE ON app.shipper_wallet_parameters TO ship11_app;
 GRANT SELECT, INSERT ON app.shipper_wallet_parameter_changes TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.customers TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.customer_addresses TO ship11_app;

@@ -91,6 +91,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
       '1793145600000_create-menu',
       '1793232000000_menu-category-admin',
       '1793318400000_create-shipper-management',
+      '1793404800000_create-customer-addresses',
     ]);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-shop-onboarding')).toBe(true);
