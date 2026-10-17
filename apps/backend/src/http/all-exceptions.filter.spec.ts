@@ -202,6 +202,7 @@ describe('AllExceptionsFilter', () => {
         'BANK_HOLDER_MISMATCH',
         'CONSENT_VERSION_UNSUPPORTED',
         'CURRENT_PASSWORD_INVALID',
+        'CUSTOMER_ADDRESS_NOT_FOUND',
         'DEVICE_PROOF_EXPIRED',
         'DEVICE_PROOF_INVALID',
         'DEVICE_PROOF_REQUIRED',

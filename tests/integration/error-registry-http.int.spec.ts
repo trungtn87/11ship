@@ -108,8 +108,9 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 12 Shipper management codes (M03: DRIVER_NOT_FOUND, DRIVER_STATE_CONFLICT, DRIVER_PROFILE_LOCKED, DRIVER_PROFILE_INCOMPLETE, BANK_HOLDER_MISMATCH,
     //   DRIVER_BANK_NOT_VERIFIED, DRIVER_NOT_ACTIVE, DRIVER_WALLET_NOT_READY, DRIVER_HAS_ACTIVE_WORK, DRIVER_WALLET_NOT_SETTLED,
     //   DRIVER_SELF_ACTION_FORBIDDEN, WALLET_PARAMETER_VERSION_CONFLICT)
+    // + 1 customer address code (M05: CUSTOMER_ADDRESS_NOT_FOUND)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(94);
+    expect(codes).toHaveLength(95);
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(18);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);
     expect(codes).toContain('TRANSACTION_OUTCOME_UNKNOWN');
