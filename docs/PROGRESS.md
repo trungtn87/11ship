@@ -5,7 +5,7 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo mã main `7095233` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ⏳ Đang chạy (`RUNNING`)
+> Dữ liệu theo mã main `7095233` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ✅ Đạt (`PASS`)
 
 ## 🎯 VIỆC ĐANG LÀM
 
@@ -235,7 +235,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#119](https://github.com/trungtn87/11ship/pull/119) M14: GPS Test APK and shared Flutter integration for future… | Đã merge (`MERGED`) | — | — | — | `bc1e8d6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#120](https://github.com/trungtn87/11ship/pull/120) M01: account scopes, system settings, account lifecycle (ba… | Đã merge (`MERGED`) | — | — | — | `f478f1a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#121](https://github.com/trungtn87/11ship/pull/121) M02 discovery gap-fill (M09 merged into M02): exact dish pa… | Đã merge (`MERGED`) | — | — | — | `899bec0` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#122](https://github.com/trungtn87/11ship/pull/122) feat(ops): deploy-m01.ps1 - deploy M01 lên VPS qua SSH/SCP | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `770711d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#122](https://github.com/trungtn87/11ship/pull/122) feat(ops): deploy-m01.ps1 - deploy M01 lên VPS qua SSH/SCP | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `770711d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
