@@ -89,11 +89,6 @@ describe('admin shipping fee table (real browser)', () => {
   const press = (page: Page, text: string, within = 'document'): Promise<boolean> =>
     page.evaluate<boolean>(`(() => { const b = [...${within}.querySelectorAll('button')].find((x) => (x.textContent ?? '').trim() === ${JSON.stringify(text)} && !x.disabled); if (!b) return false; b.click(); return true; })()`);
   const text = (page: Page, selector: string): Promise<string> => page.evaluate<string>(`(document.querySelector(${JSON.stringify(selector)})?.textContent ?? '').trim()`);
-  const fillRow = async (page: Page, index: number, from: string, to: string, fee: string): Promise<void> => {
-    await page.fill(`#sp-row-${String(index)}-from`, from);
-    await page.fill(`#sp-row-${String(index)}-to`, to);
-    await page.fill(`#sp-row-${String(index)}-fee`, fee);
-  };
 
   beforeAll(async () => {
     runScript('admin-web-build.mjs');
