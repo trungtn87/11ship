@@ -237,7 +237,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#121](https://github.com/trungtn87/11ship/pull/121) M02 discovery gap-fill (M09 merged into M02): exact dish pa… | Đã merge (`MERGED`) | — | — | — | `899bec0` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#122](https://github.com/trungtn87/11ship/pull/122) feat(ops): deploy-m01.ps1 - deploy M01 lên VPS qua SSH/SCP | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `770711d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#123](https://github.com/trungtn87/11ship/pull/123) M03 — Quản lý Shipper (app Android + Web Admin + backend) | Đã merge (`MERGED`) | — | — | — | `8a33c74` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#124](https://github.com/trungtn87/11ship/pull/124) feat(m04): UI Ví Shipper &amp; Tài chính (UI only, chờ Owne… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `fd2df21` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#124](https://github.com/trungtn87/11ship/pull/124) feat(m04): UI Ví Shipper &amp; Tài chính (UI only, chờ Owne… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `fd2df21` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
