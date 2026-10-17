@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Client } from 'pg';
 import { assertTestDatabaseTarget } from './support/assert-test-target';
 import { SHIPPER_DOWN_SQL, SHIPPER_UP_SQL } from './support/shipper-migration-sql';
-import { WALLET_DOWN_SQL, WALLET_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
+import { WALLET_DOWN_SQL, WALLET_UP_SQL, FINANCE_DOWN_SQL, FINANCE_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
 import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
 import { minimalChildEnv, REPO_ROOT, runNpmScript } from './support/test-helpers';
 
@@ -97,6 +97,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
       '1793404800000_create-driver-wallet-core',
       '1793491200000_create-wallet-holds',
       '1793577600000_create-wallet-topup-sources',
+      '1793664000000_create-admin-finance-grants',
     ]);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-shop-onboarding')).toBe(true);
@@ -181,6 +182,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
     await client.query('BEGIN');
     try {
       // The M03 migration references app.drivers: it goes down first and comes back up last.
+      await client.query(FINANCE_DOWN_SQL); // M04-B2.2a: newest, down first, up last
       await client.query(TOPUP_DOWN_SQL); // M04-B1 adds a ledger column and references the wallet core: the very newest, down first, up last
       await client.query(WALLET_HOLD_DOWN_SQL); // M04-A2.1 references app.driver_wallets: the very newest, down first, up last
       await client.query(WALLET_DOWN_SQL); // M04-A1 references app.drivers: the very newest
@@ -197,6 +199,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
       await client.query(WALLET_UP_SQL);
       await client.query(WALLET_HOLD_UP_SQL);
       await client.query(TOPUP_UP_SQL);
+      await client.query(FINANCE_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
       await client.query('ROLLBACK');
@@ -215,7 +218,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
     expect(owners.rows).toEqual([{ owner: 'ship11_test' }]);
     const triggers = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_)' AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
+         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|admin_finance_grants_)' AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
     );
     expect(triggers.rows[0]?.n).toBe(1);
   });

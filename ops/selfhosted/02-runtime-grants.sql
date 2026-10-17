@@ -72,8 +72,11 @@ GRANT SELECT ON app.wallet_ledger_entries TO ship11_app;
 GRANT SELECT ON app.wallet_holds TO ship11_app;
 -- M04-B1: topup sources. READ ONLY for the runtime role: no INSERT, UPDATE or DELETE on any of them, no UPDATE of the wallet and no INSERT into the ledger
 -- (money cannot be posted in B1). The matrix must list every table, hence a SELECT row for each; B2/B3 narrow or extend it in the migration that opens a writer.
-GRANT SELECT ON app.system_owned_bank_accounts TO ship11_app;
+-- M04-B2.2a: SYSTEM adds a receiving account (INSERT, always can_receive = false). NO UPDATE: switching an account on (can_receive = true) is B2.2b, so the runtime role cannot do it.
+GRANT SELECT, INSERT ON app.system_owned_bank_accounts TO ship11_app;
 -- M04-B2.1: the Shipper creates a PENDING request and cancels it (INSERT, UPDATE). Nothing else of money is writable: topups, bank records, system accounts, ledger and wallet stay as above.
 GRANT SELECT, INSERT, UPDATE ON app.wallet_topup_requests TO ship11_app;
 GRANT SELECT ON app.wallet_bank_transactions TO ship11_app;
 GRANT SELECT ON app.wallet_topups TO ship11_app;
+-- M04-B2.2a: finance rights of the administration. SYSTEM gives (INSERT) and takes back (UPDATE) each right; never DELETE. Default deny: no row = no right.
+GRANT SELECT, INSERT, UPDATE ON app.admin_finance_grants TO ship11_app;

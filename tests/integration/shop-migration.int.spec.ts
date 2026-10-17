@@ -1,5 +1,5 @@
 import { SHIPPER_DOWN_SQL, SHIPPER_UP_SQL } from './support/shipper-migration-sql';
-import { WALLET_DOWN_SQL, WALLET_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
+import { WALLET_DOWN_SQL, WALLET_UP_SQL, FINANCE_DOWN_SQL, FINANCE_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
 import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
 import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -86,7 +86,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
   it('is a NEW migration after M00 and Auth Core, followed by the Driver, business-hours, account-origin and admin ones (applied migrations are never edited)', () => {
     expect(SHOP).toBeDefined();
     expect(names.slice(names.indexOf(SHOP))).toEqual([SHOP, DRIVER, HOURS, '1791936000000_add-users-account-origin', '1792022400000_create-admin-auth', '1792108800000_create-admin-invitations', '1792195200000_create-admin-sensitive-operations', '1792281600000_create-admin-activation', '1792368000000_extend-admin-auth-limits-activation', '1792454400000_create-admin-membership-origin-guard', '1792540800000_create-customer-profiles-consents', '1792627200000_allow-staging-fixture-account-origin', '1792713600000_allow-test-unverified-account-origin', '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding', '1792972800000_create-sms-gateway', '1793059200000_account-scope-lifecycle-settings', '1793145600000_create-menu', '1793232000000_menu-category-admin', '1793318400000_create-shipper-management', '1793404800000_create-customer-addresses',
-      '1793404800000_create-driver-wallet-core', '1793491200000_create-wallet-holds', '1793577600000_create-wallet-topup-sources']);
+      '1793404800000_create-driver-wallet-core', '1793491200000_create-wallet-holds', '1793577600000_create-wallet-topup-sources', '1793664000000_create-admin-finance-grants']);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(names.filter((name) => name.endsWith('create-shop-onboarding'))).toHaveLength(1);
     expect(Number(SHOP.split('_')[0])).toBeGreaterThan(Number((BEFORE[BEFORE.length - 1] as string).split('_')[0]));
@@ -171,6 +171,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
     expect(migrate().status).toBe(0);
     await client.query('BEGIN');
     try {
+      await client.query(FINANCE_DOWN_SQL); // M04-B2.2a: newest, down first, up last
       await client.query(TOPUP_DOWN_SQL); // M04-B1 adds a ledger column and references the wallet core: the very newest, down first, up last
       await client.query(WALLET_HOLD_DOWN_SQL); // M04-A2.1 references app.driver_wallets: the very newest, down first, up last
       await client.query(WALLET_DOWN_SQL); // M04-A1 references app.drivers: the very newest, down first, up last
@@ -193,6 +194,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
       await client.query(WALLET_UP_SQL);
       await client.query(WALLET_HOLD_UP_SQL);
       await client.query(TOPUP_UP_SQL);
+      await client.query(FINANCE_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
       await client.query('ROLLBACK');
@@ -211,7 +213,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
     expect(owners.rows).toEqual([{ owner: 'ship11_test' }]);
     const triggers = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_)' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg') AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard'`,
+         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|admin_finance_grants_)' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg') AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard'`,
     );
     expect(triggers.rows[0]?.n).toBe(1);
   });

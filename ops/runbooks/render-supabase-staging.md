@@ -125,7 +125,8 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | driver_wallets | SELECT, INSERT (M04-A1: the zero wallet of a Shipper, created once; no UPDATE and no DELETE until a money package needs them; never deleted) |
 | wallet_ledger_entries | SELECT (M04-A1: the append-only money ledger; no INSERT until a package provides the source tables, no UPDATE, no DELETE) |
 | wallet_holds | SELECT (M04-A2.1: held money per business source; read only, no INSERT until the source tables exist, no UPDATE, no DELETE; never deleted) |
-| system_owned_bank_accounts | SELECT (M04-B1: the receiving accounts of the system; no row exists until a SYSTEM-only package configures the real account; no INSERT/UPDATE/DELETE grant) |
+| system_owned_bank_accounts | SELECT, INSERT (M04-B2.2a: SYSTEM adds a receiving account, always created not receiving; no UPDATE until B2.2b switches accounts on; no DELETE) |
+| admin_finance_grants | SELECT, INSERT, UPDATE (M04-B2.2a: SYSTEM gives and takes back each finance right of an ADMIN; default deny; never deleted) |
 | wallet_topup_requests | SELECT, INSERT, UPDATE (M04-B2.1: the Shipper creates a PENDING request and cancels it; no DELETE; a request never moves money) |
 | wallet_bank_transactions | SELECT (M04-B1: the shared registry of bank transactions, append-only; no writer until B2) |
 | wallet_topups | SELECT (M04-B1: money confirmed as received, append-only; no writer until B2; it cannot commit without its ledger credit, and the ledger stays closed) |
