@@ -195,6 +195,10 @@ async function purgeWalletsOfPhone(pool: Pool, normalizedPhone: string): Promise
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // M04-A2.1: a test that committed a hold (a RELEASED one, to prove the down latch) removes it first, under the same lifted guard.
+    await client.query('ALTER TABLE app.wallet_holds DISABLE TRIGGER wallet_holds_no_delete');
+    await client.query(`DELETE FROM app.wallet_holds WHERE wallet_id IN (SELECT wallet_id FROM app.driver_wallets WHERE driver_id IN (${owned}))`, [normalizedPhone]);
+    await client.query('ALTER TABLE app.wallet_holds ENABLE TRIGGER wallet_holds_no_delete');
     await client.query('ALTER TABLE app.driver_wallets DISABLE TRIGGER driver_wallets_no_delete');
     await client.query(`DELETE FROM app.driver_wallets WHERE driver_id IN (${owned})`, [normalizedPhone]);
     await client.query('ALTER TABLE app.driver_wallets ENABLE TRIGGER driver_wallets_no_delete');

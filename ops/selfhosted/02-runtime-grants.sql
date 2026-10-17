@@ -67,6 +67,9 @@ GRANT SELECT, INSERT, UPDATE ON app.customer_addresses TO ship11_app;
 -- M04-A2/B/C add the grants their mutations need) and NO INSERT on the ledger (a ledger row needs a source table that does not exist yet).
 GRANT SELECT, INSERT ON app.driver_wallets TO ship11_app;
 GRANT SELECT ON app.wallet_ledger_entries TO ship11_app;
+-- M04-A2.1: the hold table. READ ONLY for the runtime role: no hold is written until the source tables (M07 assignments, M04-C withdrawals) exist;
+-- the A2.2 migration that creates them grants the INSERT / UPDATE its participants need, together with the checks.
+GRANT SELECT ON app.wallet_holds TO ship11_app;
 -- M06-A: the shipping-fee table. Versions are immutable (a trigger refuses UPDATE/DELETE/TRUNCATE for every role): the runtime only appends and reads. The draft is
 -- the one seeded row; the runtime reads it and updates it (never deletes: a trigger refuses).
 GRANT SELECT, INSERT ON app.shipping_fee_policy_versions TO ship11_app;

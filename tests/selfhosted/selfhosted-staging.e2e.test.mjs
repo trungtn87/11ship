@@ -444,6 +444,14 @@ describe('runtime grants (ops/selfhosted/02-runtime-grants.sql) with the real re
       await assert.rejects(client.query('DROP TABLE app.users'), { code: '42501' });
       await assert.rejects(client.query('ALTER TABLE app.users ADD COLUMN must_not_exist int'), { code: '42501' });
       await assert.rejects(client.query('CREATE TABLE public.runtime_must_not_create (id int)'), { code: '42501' });
+      // M04-A2.1: the holds are read only for the runtime role, and no package yet moves money (no wallet UPDATE, no ledger INSERT).
+      await client.query('SELECT 1 FROM app.wallet_holds LIMIT 1');
+      await assert.rejects(client.query('INSERT INTO app.wallet_holds (hold_id) VALUES (gen_random_uuid())'), { code: '42501' });
+      await assert.rejects(client.query("UPDATE app.wallet_holds SET status = 'RELEASED'"), { code: '42501' });
+      await assert.rejects(client.query('DELETE FROM app.wallet_holds'), { code: '42501' });
+      await assert.rejects(client.query('TRUNCATE app.wallet_holds'), { code: '42501' });
+      await assert.rejects(client.query('UPDATE app.driver_wallets SET version = version'), { code: '42501' });
+      await assert.rejects(client.query('INSERT INTO app.wallet_ledger_entries (entry_id) VALUES (gen_random_uuid())'), { code: '42501' });
     });
   });
 });

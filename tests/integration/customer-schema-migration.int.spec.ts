@@ -189,7 +189,7 @@ describe('M01.02 — customer schema migration', () => {
     expect(NEW_NAME).toBe('1792540800000_create-customer-profiles-consents');
     // Issue #49: the staging-fixture origin migration (1792627200000) was moved AFTER this one; only the test-unverified origin migration follows it.
     expect(names.slice(names.indexOf(NEW_NAME))).toEqual([NEW_NAME, '1792627200000_allow-staging-fixture-account-origin', '1792713600000_allow-test-unverified-account-origin', '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding', '1792972800000_create-sms-gateway', '1793059200000_account-scope-lifecycle-settings', '1793145600000_create-menu', '1793232000000_menu-category-admin', '1793318400000_create-shipper-management', '1793404800000_create-customer-addresses',
-      '1793404800000_create-driver-wallet-core', '1793577600000_create-shipping-fee-policy', '1793664000000_create-shipping-eligibility-parameters']);
+      '1793404800000_create-driver-wallet-core', '1793491200000_create-wallet-holds', '1793577600000_create-shipping-fee-policy', '1793664000000_create-shipping-eligibility-parameters']);
     expect(names.filter((name) => name === NEW_NAME)).toHaveLength(1);
     expect(Number(NEW_NAME.split('_')[0])).toBeGreaterThan(Number((BEFORE[BEFORE.length - 1] as string).split('_')[0]));
     expect(CUSTOMER_MIGRATION_SQL).toContain('-- Up Migration');
