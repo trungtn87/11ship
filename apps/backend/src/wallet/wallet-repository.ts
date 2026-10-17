@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
-import { assertWalletRowSound, WalletRow } from './wallet-types';
+import { assertHoldRowSound, assertWalletRowSound, HoldPurpose, HoldStatus, WalletHoldRow, WalletRow } from './wallet-types';
 
-// SQL of app.driver_wallets (M04-A1). It only reads and inserts a zero wallet: there is no UPDATE here, because no package of M04-A1
-// moves money. Every amount arrives as text from PostgreSQL and is parsed to bigint; a malformed value is an internal error.
+// SQL of app.driver_wallets (M04-A1) and the read side of app.wallet_holds (M04-A2.1). It only reads, and inserts a zero wallet: there is
+// no UPDATE here and no hold INSERT, because no package so far moves money. Every amount arrives as text from PostgreSQL and is parsed to bigint; a malformed value is an internal error.
 
 interface RawWallet {
   wallet_id: string;
@@ -20,6 +20,24 @@ const COLUMNS = `w.wallet_id::text AS wallet_id, w.driver_id::text AS driver_id,
   w.version::text AS version, (extract(epoch FROM w.created_at) * 1000)::bigint::text AS created_ms,
   (extract(epoch FROM w.updated_at) * 1000)::bigint::text AS updated_ms`;
 
+interface RawHold {
+  hold_id: string;
+  wallet_id: string;
+  purpose: string;
+  amount_vnd: string;
+  status: string;
+  commission_assignment_id: string | null;
+  withdrawal_id: string | null;
+  version: string;
+  created_ms: string;
+  resolved_ms: string | null;
+}
+
+const HOLD_COLUMNS = `h.hold_id::text AS hold_id, h.wallet_id::text AS wallet_id, h.purpose, h.amount_vnd::text AS amount_vnd, h.status,
+  h.commission_assignment_id::text AS commission_assignment_id, h.withdrawal_id::text AS withdrawal_id, h.version::text AS version,
+  (extract(epoch FROM h.created_at) * 1000)::bigint::text AS created_ms,
+  (extract(epoch FROM h.resolved_at) * 1000)::bigint::text AS resolved_ms`;
+
 function toBigint(raw: unknown): bigint {
   if (typeof raw !== 'string' || !/^-?[0-9]{1,19}$/.test(raw)) {
     throw new TechnicalError('internal', 'Database returned an unexpected number');
@@ -33,6 +51,24 @@ function toMs(raw: unknown): number {
     throw new TechnicalError('internal', 'Database returned an unexpected time');
   }
   return value;
+}
+
+function toHold(row: RawHold): WalletHoldRow {
+  if ((row.purpose !== 'COMMISSION' && row.purpose !== 'WITHDRAWAL') || (row.status !== 'ACTIVE' && row.status !== 'CAPTURED' && row.status !== 'RELEASED')) {
+    throw new TechnicalError('internal', 'Database returned an unexpected hold');
+  }
+  return assertHoldRowSound({
+    holdId: row.hold_id,
+    walletId: row.wallet_id,
+    purpose: row.purpose as HoldPurpose,
+    amountVnd: toBigint(row.amount_vnd),
+    status: row.status as HoldStatus,
+    commissionAssignmentId: row.commission_assignment_id,
+    withdrawalId: row.withdrawal_id,
+    version: toBigint(row.version),
+    createdAtMs: toMs(row.created_ms),
+    resolvedAtMs: row.resolved_ms === null ? null : toMs(row.resolved_ms),
+  });
 }
 
 function toWallet(row: RawWallet): WalletRow {
@@ -76,5 +112,29 @@ export class WalletRepository {
     );
     const row = result.rows[0];
     return row === undefined ? undefined : toWallet(row);
+  }
+
+  /** The holds of a wallet, oldest first, optionally only one status. A plain read: no lock, no write. */
+  async listHolds(context: TransactionContext, walletId: string, status?: HoldStatus): Promise<WalletHoldRow[]> {
+    const result = await context.query<RawHold>(
+      `SELECT ${HOLD_COLUMNS} FROM app.wallet_holds h
+        WHERE h.wallet_id = $1::uuid AND ($2::text IS NULL OR h.status = $2::text)
+        ORDER BY h.created_at, h.hold_id`,
+      [walletId, status ?? null],
+    );
+    return result.rows.map(toHold);
+  }
+
+  /** How many ACTIVE holds a wallet has and their total, computed by the database from the holds themselves. */
+  async activeTotals(context: TransactionContext, walletId: string): Promise<{ readonly count: number; readonly totalVnd: bigint }> {
+    const result = await context.query<{ n: string; total: string }>(
+      `SELECT count(*)::text AS n, COALESCE(SUM(h.amount_vnd), 0)::text AS total FROM app.wallet_holds h WHERE h.wallet_id = $1::uuid AND h.status = 'ACTIVE'`,
+      [walletId],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      throw new TechnicalError('internal', 'Database returned no hold totals');
+    }
+    return { count: Number(toBigint(row.n)), totalVnd: toBigint(row.total) };
   }
 }
