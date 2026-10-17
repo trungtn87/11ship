@@ -114,6 +114,10 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | menu_categories | SELECT, UPDATE (M02-MON: UPDATE only because `FOR SHARE` needs it; the groups are written by the operator command with the migration role) |
 | menu_images | SELECT, INSERT, UPDATE (M02-MON: immutable rows; UPDATE only because `FOR SHARE` needs it; no DELETE) |
 | menu_items | SELECT, INSERT, UPDATE (M02-MON: the dish edit, hide/show and the soft delete are UPDATEs; no DELETE) |
+| system_settings | SELECT, INSERT, UPDATE (Owner decision 2026-10-14: the SYSTEM-managed switches; UPDATE is the version-checked change and `FOR UPDATE`; no DELETE) |
+| system_setting_changes | SELECT, INSERT (the append-only change log: old value, new value, actor, time) |
+
+**Permanent account deletion (Owner decision 2026-10-14).** The runtime role has no `DELETE` on any account table. The only way an account is removed is the function `app.purge_app_user(uuid)` (created by the migration, `SECURITY DEFINER`, owned by the migration role, refuses an administration account and an account with a shop or driver profile). `PUBLIC` has no `EXECUTE` on it; after the migrations run, grant it to the runtime role with `ops/selfhosted/03-runtime-function-grants.sql` (one statement: `GRANT EXECUTE ON FUNCTION app.purge_app_user(uuid) TO ship11_app;`). Without that grant a permanent delete answers 503 and nothing is deleted.
 
 ```sql
 -- example shape, repeat per row of the table above

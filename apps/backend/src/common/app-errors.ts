@@ -37,6 +37,8 @@ export const APP_ERROR_DEFINITIONS = {
     message: 'Too many verification requests or attempts; try again later',
   },
   PHONE_ALREADY_REGISTERED: { status: 409, message: 'This phone number is already registered' },
+  // The phone belongs to an account locked at its owner's request: it can be recovered through the OTP-proven recovery flow.
+  ACCOUNT_RECOVERY_AVAILABLE: { status: 409, message: 'This account can be recovered with phone verification' },
   VERIFICATION_PROOF_INVALID: { status: 400, message: 'The verification proof is not valid' },
   VERIFICATION_PROOF_USED: { status: 409, message: 'The verification proof was already used' },
   VERIFICATION_PURPOSE_MISMATCH: {
@@ -119,7 +121,16 @@ export const APP_ERROR_DEFINITIONS = {
   // Lock / unlock of a USER account (M01-ADMIN, D15). Fixed messages: nothing the client sent (reason, id) is echoed.
   USER_ACCOUNT_VERSION_CONFLICT: { status: 409, message: 'The account was changed by another request' },
   USER_ACCOUNT_ALREADY_IN_STATE: { status: 409, message: 'The account is already in the requested state' },
+  // The account still has orders or deliveries being processed: it cannot be locked (and so not deleted into a lock) until they finish.
+  USER_ACCOUNT_HAS_ACTIVE_WORK: { status: 409, message: 'The account still has orders or deliveries being processed' },
   USER_ACCOUNT_IMPACT_REVIEW_REQUIRED: { status: 409, message: 'This account change is not available until its business impact is reviewed' },
+
+  // SYSTEM settings (Owner decision 2026-10-14). Fixed messages; nothing the client sent is echoed.
+  SYSTEM_SETTING_VERSION_CONFLICT: { status: 409, message: 'The settings were changed by another request' },
+  // The application side of the OTP switches: registration with no OTP is open (a code is not used) / password reset is closed.
+  PHONE_VERIFICATION_NOT_REQUIRED: { status: 409, message: 'Phone verification is not used for this action' },
+  PHONE_VERIFICATION_REQUIRED: { status: 409, message: 'Phone verification is required for this action' },
+  PASSWORD_RESET_DISABLED: { status: 403, message: 'Self-service password reset is not available' },
 
   // Administration account activation (M01-D-ADMIN-1C, contract section 16). Same rule: fixed messages that echo nothing
   // the client sent. A bad or closed link is ONE uniform 404 (it never says which). OTP_*, ADMIN_TOTP_INVALID,

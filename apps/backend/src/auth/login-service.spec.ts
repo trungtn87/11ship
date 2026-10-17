@@ -31,6 +31,7 @@ const USER: UserRow = {
   passwordHash: '$argon2id$v=19$m=19456,t=2,p=1$salt$hash',
   status: 'ACTIVE',
   accountOrigin: 'PHONE_VERIFIED',
+  accountScope: 'APP_USER',
 };
 const INPUT = {
   phoneNormalized: '+84987654321',

@@ -36,4 +36,13 @@ export class ShopEligibilityReader {
     }
     return { onboarding: 'COMPLETED', selectable: row.status === 'ACTIVE' };
   }
+
+  /**
+   * Does the user belong to ANY shop, as owner or otherwise? The account lifecycle (Owner decision 2026-10-14) reads this as "the account has
+   * business data": such an account is locked, never deleted. Nothing is locked or written.
+   */
+  async hasAnyMembership(context: TransactionContext, userId: string): Promise<boolean> {
+    const result = await context.query('SELECT 1 FROM app.shop_members WHERE user_id = $1::uuid LIMIT 1', [userId]);
+    return result.rows.length > 0;
+  }
 }

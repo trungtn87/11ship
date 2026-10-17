@@ -5,7 +5,7 @@
 ## 0. Thay đổi so với bản đang chạy
 | Hạng mục | Chi tiết |
 |---|---|
-| Migration mới (1) | `1793059200000_create-menu`: hàm `app.fold_vi`, bảng `menu_categories`, `menu_images`, `menu_items`. Chỉ thêm, không sửa bảng cũ, không seed dữ liệu. |
+| Migration mới (1) | `1793145600000_create-menu`: hàm `app.fold_vi`, bảng `menu_categories`, `menu_images`, `menu_items`. Chỉ thêm, không sửa bảng cũ, không seed dữ liệu. |
 | Grant runtime mới (3 bảng) | `menu_categories` (SELECT, UPDATE), `menu_images` (SELECT, INSERT, UPDATE), `menu_items` (SELECT, INSERT, UPDATE) — đã có trong `ops/selfhosted/02-runtime-grants.sql` (chạy lại file là idempotent). |
 | Backend | (1) bắt body gốc cho chữ ký thiết bị trên `/v1/shop/me/*` (sửa lỗi 403 khi lưu hồ sơ/lịch từ app); (2) `GET/POST/PUT /v1/shop/me/menu...`; (3) công khai không cần đăng nhập: `GET /v1/shops/:id`, `/v1/menu-images/:id`, `/v1/service-areas`, `/v1/menu-categories`, `/v1/discovery/shops`, `/v1/discovery/dishes`. |
 | nginx | thêm `location = /v1/shop/me/menu/images` với `client_max_body_size 3600k` (các route khác giữ `1m`). Bản mẫu: `ops/vinahost/nginx-11ship-staging.conf`. Áp dụng: sao vào `/etc/nginx/sites-available/...` (đúng file đang dùng), `nginx -t && systemctl reload nginx`. |
@@ -14,7 +14,7 @@
 ## 1. Thứ tự
 1. Sao lưu `pg_dump` (mục 2 của runbook 14/10). 
 2. Giải gói release mới như mục 1 runbook 14/10; `current` chưa đổi.
-3. Migration (từ release mới, shell operator): `node scripts/db-migrate-remote.js` → phải liệt kê đúng **1** migration pending (`1793059200000_create-menu`); rồi `--apply`.
+3. Migration (từ release mới, shell operator): `node scripts/db-migrate-remote.js` → phải liệt kê đúng **1** migration pending (`1793145600000_create-menu`); rồi `--apply`.
 4. Grants: `psql -d ship11_staging -v ON_ERROR_STOP=1 -f ops/selfhosted/02-runtime-grants.sql` (migration role).
 5. nginx: cập nhật cấu hình, `nginx -t`, `systemctl reload nginx`.
 6. Đổi `current` sang release mới và `systemctl restart 11ship-staging` (service giữ tên cũ).

@@ -55,3 +55,5 @@ GRANT SELECT, INSERT, UPDATE ON app.sms_jobs TO ship11_app;
 GRANT SELECT, UPDATE ON app.menu_categories TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.menu_images TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.menu_items TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.system_settings TO ship11_app;
+GRANT SELECT, INSERT ON app.system_setting_changes TO ship11_app;

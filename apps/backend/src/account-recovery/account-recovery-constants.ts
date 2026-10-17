@@ -13,3 +13,9 @@ export const RESET_OTP_OPERATION_ID = 'account.password.reset_otp.v1';
 export const RESET_OTP_AUDIT_ACTION = 'account.password.reset_otp.v1';
 /** Audit marker: the phone number WAS proven by an SMS OTP of the RESET_PASSWORD purpose. */
 export const RESET_OTP_VERIFICATION_MARK = 'SMS_OTP';
+
+// Owner decision 2026-10-14: recovery of an APP_USER account that was locked at its owner's request (re-registering the same phone). Its own
+// scope/operation/audit action so its idempotency records are never confused with a password reset. The OTP is ALWAYS required.
+export const RECOVER_OPERATION_ID = 'account.recover_locked.v1';
+export const RECOVER_AUDIT_ACTION = 'account.recover_locked.v1';
+export const RECOVER_USER_UNLOCKED_EVENT = 'user.account.unlocked.v1';

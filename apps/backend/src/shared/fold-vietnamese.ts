@@ -1,4 +1,4 @@
-// The text a search compares, folded the way database/migrations/1793059200000_create-menu.sql folds it (app.fold_vi): lower case,
+// The text a search compares, folded the way database/migrations/1793145600000_create-menu.sql folds it (app.fold_vi): lower case,
 // Vietnamese marks removed (precomposed letters and combining marks), đ -> d, white space collapsed and trimmed. Keep the two in step;
 // an integration test compares them on real data.
 

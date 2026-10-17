@@ -21,11 +21,23 @@ import { AdminRole } from '../core/api.js';
 import { Clock } from '../core/controller.js';
 import { breadcrumb, canOpenRoute, Grants, NO_GRANTS } from '../core/menu.js';
 import { ProvisioningController } from '../core/provisioning-controller.js';
+import {
+  NOT_WIRED_SETTINGS,
+  PhoneVerificationSettings,
+  SaveCommand,
+  SaveResult,
+  SETTINGS_MESSAGE,
+  SettingsDraft,
+  SettingsPhase,
+  SettingsSource,
+  SettingsState,
+} from '../core/settings.js';
 import { formatRoute, parseRoute, Route } from '../core/routes.js';
 import { AccountsHooks, AdministratorsView, openLockDialog, renderUserDetail, UsersView } from './accounts-view.js';
 import { DialogHandle } from './dialog.js';
 import { h } from './dom.js';
 import { ProvisioningView } from './provisioning-view.js';
+import { SettingsView } from './settings-view.js';
 import { ShellLayout } from './shell-layout.js';
 import { failurePanel, skeleton } from './states.js';
 import { ShellHost } from './view.js';
@@ -84,6 +96,8 @@ export class ShellApp implements ShellHost {
     private readonly onSessionLost: () => void = () => undefined,
     /** A new Idempotency-Key for a NEW lock / unlock intent. A retry after an unknown outcome never calls it. */
     private readonly newKey: () => string = () => globalThis.crypto.randomUUID(),
+    /** Where the SYSTEM settings come from. By default nothing is wired, so the page says so. */
+    private readonly settings: SettingsSource = NOT_WIRED_SETTINGS,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -223,6 +237,9 @@ export class ShellApp implements ShellHost {
         return;
       case 'administrators':
         this.#administrators(content);
+        return;
+      case 'settings':
+        this.#settings(content);
         return;
       default:
         this.#invitations(content, route);
@@ -432,12 +449,12 @@ export class ShellApp implements ShellHost {
         return;
       }
       this.#dialog = openLockDialog(target, next, {
-        submit: (reason) => {
+        submit: (reason, category) => {
           if (target === undefined || dialog === undefined) {
             return;
           }
           // A NEW confirmation is a new intent with a new key; only "Thử lại" reuses the key of an unanswered one.
-          intent = { id, action: dialog.action, version: target.version, reason, key: this.newKey() };
+          intent = { id, action: dialog.action, version: target.version, reason, key: this.newKey(), ...(category === undefined ? {} : { category }) };
           void send();
         },
         cancel: () => closeDialog(),
@@ -455,7 +472,8 @@ export class ShellApp implements ShellHost {
       if (command === undefined || dialog === undefined) {
         return;
       }
-      show({ action: command.action, reason: command.reason, phase: 'working' });
+      const base = { action: command.action, reason: command.reason, ...(command.category === undefined ? {} : { category: command.category }) };
+      show({ ...base, phase: 'working' });
       const result = await this.source.lock(command);
       if (!live() || intent !== command) {
         return;
@@ -466,10 +484,16 @@ export class ShellApp implements ShellHost {
           // The acknowledgement says the intent happened, not what the account is NOW: read the current detail.
           load();
         },
-        phase: (phase, error) => show({ action: command.action, reason: command.reason, phase, ...(error === undefined ? {} : { error }) }),
+        phase: (phase, error) => show({ ...base, phase, ...(error === undefined ? {} : { error }) }),
         gone: () => {
           closeDialog();
           load();
+        },
+        deleted: () => {
+          // The account no longer exists: nothing about it stays on screen; the list is the next place.
+          closeDialog();
+          this.#restoreFilter = true;
+          this.go({ name: 'users' });
         },
       });
     };
@@ -479,11 +503,17 @@ export class ShellApp implements ShellHost {
   /** What each server answer to a lock / unlock changes on screen. 401 ends the session; 403 re-reads the admin's rights. */
   #afterLock(
     result: LockResult,
-    ui: { done(): void; phase(phase: LockDialog['phase'], error?: string): void; gone(): void },
+    ui: { done(): void; phase(phase: LockDialog['phase'], error?: string): void; gone(): void; deleted(): void },
   ): void {
     switch (result.kind) {
       case 'ok':
         ui.done();
+        return;
+      case 'deleted':
+        ui.deleted();
+        return;
+      case 'has-active-work':
+        ui.phase('failed', LOCK_MESSAGE.activeWork);
         return;
       case 'conflict':
         ui.phase('conflict');
@@ -514,6 +544,137 @@ export class ShellApp implements ShellHost {
         return;
       case 'rejected':
         ui.phase('failed', LOCK_MESSAGE.rejected);
+        return;
+    }
+  }
+
+  /**
+   * "Cài đặt hệ thống" (SYSTEM only; the server decides again on every call). The switches edit a draft; "Lưu" sends ONE request with a
+   * key of its own, "Hủy" drops the draft. A lost answer keeps the key and the body for an explicit "Thử lại"; a version conflict asks
+   * to reload before anything else is sent. Nothing read or typed here outlives the page.
+   */
+  #settings(content: HTMLElement): void {
+    const generation = this.#generation;
+    const live = (): boolean => generation === this.#generation;
+    let saved: PhoneVerificationSettings | undefined;
+    let draft: SettingsDraft | undefined;
+    let intent: SaveCommand | undefined;
+    let phase: SettingsPhase = 'idle';
+    let error: string | undefined;
+
+    const draw = (state: SettingsState): void =>
+      view.render({ name: 'settings', state, ...(draft === undefined ? {} : { draft }), phase, ...(error === undefined ? {} : { error }) });
+    const redraw = (): void => {
+      if (saved !== undefined) {
+        draw({ kind: 'ready', settings: saved });
+      }
+    };
+    const load = (keepPhase = false): void => {
+      saved = undefined;
+      draft = undefined;
+      intent = undefined;
+      if (!keepPhase) {
+        phase = 'idle';
+        error = undefined;
+      }
+      draw({ kind: 'loading' });
+      void this.settings.read().then((state) => {
+        if (!live()) {
+          return;
+        }
+        if (state.kind === 'failed' && state.failure === 'session-expired') {
+          this.onSessionLost();
+          return;
+        }
+        if (state.kind === 'ready') {
+          saved = state.settings;
+        }
+        draw(state);
+      });
+    };
+    const send = async (): Promise<void> => {
+      const command = intent;
+      if (command === undefined) {
+        return;
+      }
+      phase = 'working';
+      error = undefined;
+      redraw();
+      const result = await this.settings.save(command);
+      if (!live() || intent !== command) {
+        return;
+      }
+      this.#afterSave(result, {
+        done: () => {
+          // The acknowledgement says the intent happened, not what the settings are NOW: read them.
+          phase = 'saved';
+          load(true);
+        },
+        phase: (next, text) => {
+          phase = next;
+          error = text;
+          redraw();
+        },
+      });
+    };
+    const view = new SettingsView(content, {
+      wired: this.settings !== NOT_WIRED_SETTINGS,
+      change: (next) => {
+        draft = next;
+        phase = 'idle';
+        error = undefined;
+        redraw();
+      },
+      save: () => {
+        if (saved === undefined || draft === undefined) {
+          return;
+        }
+        // A NEW confirmation is a new intent with a new key; only "Thử lại" reuses the key of an unanswered one.
+        intent = { version: saved.version, otpRegistrationEnabled: draft.otpRegistrationEnabled, otpPasswordResetEnabled: draft.otpPasswordResetEnabled, key: this.newKey() };
+        void send();
+      },
+      cancel: () => {
+        draft = undefined;
+        phase = 'idle';
+        error = undefined;
+        redraw();
+      },
+      // Read the values again; the unanswered intent (and its key) is dropped by the reload, as the page shows what the server holds now.
+      recheck: () => load(),
+      retry: () => void send(),
+      reload: () => load(),
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    });
+    load();
+  }
+
+  /** What each server answer to a save changes on screen. 401 ends the session. */
+  #afterSave(result: SaveResult, ui: { done(): void; phase(phase: SettingsPhase, error?: string): void }): void {
+    switch (result.kind) {
+      case 'ok':
+        ui.done();
+        return;
+      case 'conflict':
+        ui.phase('conflict');
+        return;
+      case 'unknown':
+        ui.phase('unknown');
+        return;
+      case 'session-expired':
+        this.onSessionLost();
+        return;
+      case 'forbidden':
+        ui.phase('failed', SETTINGS_MESSAGE.forbidden);
+        return;
+      case 'rate-limited':
+        ui.phase('failed', SETTINGS_MESSAGE.rateLimited);
+        return;
+      case 'not-wired':
+        ui.phase('failed', SETTINGS_MESSAGE.notWired);
+        return;
+      case 'rejected':
+        ui.phase('failed', SETTINGS_MESSAGE.rejected);
         return;
     }
   }

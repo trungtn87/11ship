@@ -16,12 +16,17 @@ const String kResetOtpSentTitle = 'Đã xử lý yêu cầu';
 const String kResetOtpSentText = 'Nếu số điện thoại đã đăng ký, bạn sẽ nhận tin nhắn SMS chứa mã xác minh trong ít phút. Nhập mã vào ô bên dưới.';
 const String kResetDoneTitle = 'Yêu cầu đã xử lý';
 const String kResetDoneText = 'Nếu số điện thoại hợp lệ, hãy đăng nhập bằng mật khẩu mới. Ứng dụng không tự đăng nhập cho bạn.';
+const String kRecoverDoneTitle = 'Đã khôi phục tài khoản';
+const String kRecoverDoneText = 'Tài khoản đã được mở khóa với mật khẩu mới. Hãy đăng nhập. Dữ liệu và lịch sử của tài khoản được giữ nguyên; quán hoặc hồ sơ xế chỉ hoạt động lại khi đủ điều kiện.';
 
 class ResetScreen extends StatefulWidget {
-  const ResetScreen({super.key, required this.controller, required this.brand});
+  const ResetScreen({super.key, required this.controller, required this.brand, this.recovery = false});
 
   final ResetController controller;
   final AppBrand brand;
+
+  /// true = the recovery of an account locked at its owner's request (same form, its own wording); false = the forgotten password.
+  final bool recovery;
 
   @override
   State<ResetScreen> createState() => _ResetScreenState();
@@ -78,13 +83,14 @@ class _ResetScreenState extends State<ResetScreen> {
     return ListenableBuilder(
       listenable: controller,
       builder: (BuildContext context, Widget? child) {
+        final bool recovery = widget.recovery;
         if (controller.done) {
           return N11FormScaffold(
-            title: 'Quên mật khẩu',
+            title: recovery ? 'Khôi phục tài khoản' : 'Quên mật khẩu',
             session: null,
             background: N11Colors.white,
             children: <Widget>[
-              const N11StateBlock(key: Key('reset-done'), kind: StateKind.ok, title: kResetDoneTitle, text: kResetDoneText),
+              N11StateBlock(key: const Key('reset-done'), kind: StateKind.ok, title: recovery ? kRecoverDoneTitle : kResetDoneTitle, text: recovery ? kRecoverDoneText : kResetDoneText),
               const SizedBox(height: N11Space.gap4),
               N11Button(key: const Key('reset-to-login'), label: 'Đăng nhập', onPressed: () => Navigator.of(context).maybePop()),
             ],
@@ -97,14 +103,26 @@ class _ResetScreenState extends State<ResetScreen> {
         final bool passwordStep = !sms || controller.otpVerified;
         final bool open = sms && controller.otpVerified;
         return N11FormScaffold(
-          title: 'Quên mật khẩu',
+          title: recovery ? 'Khôi phục tài khoản' : 'Quên mật khẩu',
           session: null,
           children: <Widget>[
-            N11Heading('Đặt lại mật khẩu', sub: 'Nhập số điện thoại đã đăng ký, mã xác minh nhận qua SMS, rồi đặt mật khẩu mới.'),
+            N11Heading(
+              recovery ? 'Khôi phục tài khoản đã khóa' : 'Đặt lại mật khẩu',
+              sub: recovery
+                  ? 'Nhập số điện thoại của tài khoản, mã xác minh nhận qua SMS (bắt buộc), rồi đặt mật khẩu mới. Tài khoản cũ được mở khóa và giữ nguyên dữ liệu.'
+                  : 'Nhập số điện thoại đã đăng ký, mã xác minh nhận qua SMS, rồi đặt mật khẩu mới.',
+            ),
             if (sms && controller.otpStep == ResetOtpStep.requested) const N11Banner(key: Key('reset-otp-sent'), kind: BannerKind.info, title: kResetOtpSentTitle, text: kResetOtpSentText),
             if (sms && controller.otpVerified) const N11Banner(key: Key('reset-otp-verified'), kind: BannerKind.success, title: 'Đã xác minh mã'),
             if (controller.mode == ResetMode.closed)
-              const N11Banner(key: Key('reset-closed'), kind: BannerKind.warn, title: 'Chưa mở đặt lại mật khẩu', text: 'Máy chủ chưa bật đặt lại mật khẩu bằng mã SMS. Chưa thể gửi yêu cầu.'),
+              N11Banner(
+                key: const Key('reset-closed'),
+                kind: BannerKind.warn,
+                title: recovery ? 'Chưa thể khôi phục tài khoản' : 'Tự đặt lại mật khẩu đang tạm khóa',
+                text: recovery
+                    ? 'Máy chủ chưa gửi được mã SMS nên chưa thể khôi phục tài khoản. Mã SMS là bắt buộc; ứng dụng không bỏ qua bước này.'
+                    : 'Chức năng tự đặt lại mật khẩu đang tạm khóa. Vui lòng liên hệ hỗ trợ.',
+              ),
             if (controller.mode == ResetMode.unknown)
               N11Banner(
                 key: const Key('reset-unknown'),
@@ -177,7 +195,7 @@ class _ResetScreenState extends State<ResetScreen> {
             ),
             if (passwordStep) N11Button(
               key: const Key('reset-submit'),
-              label: busy ? 'Đang gửi…' : 'Đặt lại mật khẩu',
+              label: busy ? 'Đang gửi…' : (recovery ? 'Khôi phục tài khoản' : 'Đặt lại mật khẩu'),
               loading: busy,
               onPressed: busy || !_valid || !open ? null : () => controller.submit(phone: _phone.text, password: _password.text),
             ),

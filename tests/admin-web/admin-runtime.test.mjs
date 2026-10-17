@@ -163,10 +163,10 @@ describe('Admin front as the launcher starts it', () => {
       const origin = `https://localhost:${String(listening.port)}`;
       const secrets = { cookie: '__Host-11admin=SESSION', 'x-csrf-token': 'tok', authorization: 'Bearer X', 'x-forwarded-for': '6.6.6.6' };
       backend.seen.length = 0;
-      const config = await call(listening.port, '/v1/account-recovery/config', { headers: { ...secrets } });
+      const config = await call(listening.port, '/v1/admin-recovery/config', { headers: { ...secrets } });
       assert.equal(config.status, 404, 'the stand-in backend has no such route; what matters is what reached it');
       const body = JSON.stringify({ phone: '0987654321', password: 'Mật khẩu mới 123' });
-      const reset = await call(listening.port, '/v1/account-recovery/reset-test', { method: 'POST', body, headers: { ...secrets, origin, 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(body)), 'idempotency-key': '00000000-0000-4000-8000-000000000001' } });
+      const reset = await call(listening.port, '/v1/admin-recovery/reset-test', { method: 'POST', body, headers: { ...secrets, origin, 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(body)), 'idempotency-key': '00000000-0000-4000-8000-000000000001' } });
       assert.equal(reset.status, 404);
       assert.equal(backend.seen.length, 2);
       for (const seen of backend.seen) {
@@ -178,12 +178,12 @@ describe('Admin front as the launcher starts it', () => {
 
       // Everything else under the prefix, another method, a query, another site and a missing Origin are refused before the backend.
       backend.seen.length = 0;
-      assert.equal((await call(listening.port, '/v1/account-recovery/other')).status, 404);
-      assert.equal((await call(listening.port, '/v1/account-recovery/config', { method: 'POST', body: '{}', headers: { origin } })).status, 405);
-      assert.equal((await call(listening.port, '/v1/account-recovery/reset-test')).status, 405);
-      assert.equal((await call(listening.port, '/v1/account-recovery/config?x=1')).status, 404);
-      assert.equal((await call(listening.port, '/v1/account-recovery/reset-test', { method: 'POST', body, headers: { origin: 'https://evil.example', 'content-length': String(Buffer.byteLength(body)) } })).status, 403);
-      assert.equal((await call(listening.port, '/v1/account-recovery/reset-test', { method: 'POST', body, headers: { 'content-length': String(Buffer.byteLength(body)) } })).status, 403);
+      assert.equal((await call(listening.port, '/v1/admin-recovery/other')).status, 404);
+      assert.equal((await call(listening.port, '/v1/admin-recovery/config', { method: 'POST', body: '{}', headers: { origin } })).status, 405);
+      assert.equal((await call(listening.port, '/v1/admin-recovery/reset-test')).status, 405);
+      assert.equal((await call(listening.port, '/v1/admin-recovery/config?x=1')).status, 404);
+      assert.equal((await call(listening.port, '/v1/admin-recovery/reset-test', { method: 'POST', body, headers: { origin: 'https://evil.example', 'content-length': String(Buffer.byteLength(body)) } })).status, 403);
+      assert.equal((await call(listening.port, '/v1/admin-recovery/reset-test', { method: 'POST', body, headers: { 'content-length': String(Buffer.byteLength(body)) } })).status, 403);
       assert.equal(backend.seen.length, 0, 'none of these reached the backend');
     } finally {
       await run.stop();

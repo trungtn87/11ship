@@ -44,8 +44,8 @@ describe('M01-RESET no-OTP test password reset', () => {
     await app.close();
   });
 
-  const reset = (phone: string, password: string, key: string | null = randomUUID(), body?: Record<string, unknown>, target: AdminApp = app): Promise<ApiResponse> =>
-    api(target.running.baseUrl, 'POST', '/account-recovery/reset-test', {
+  const reset = (phone: string, password: string, key: string | null = randomUUID(), body?: Record<string, unknown>, target: AdminApp = app, route = '/account-recovery/reset-test'): Promise<ApiResponse> =>
+    api(target.running.baseUrl, 'POST', route, {
       ...(key === null ? {} : { headers: { 'idempotency-key': key } }),
       body: body ?? { phone, password },
     });
@@ -198,7 +198,7 @@ describe('M01-RESET no-OTP test password reset', () => {
     const stalePre = { cookie: String(cookieFrom(stale, ADMIN_PREAUTH_COOKIE)), csrf: String(adminData(stale).csrf_token) };
     expect((await app.call('GET', '/me', { cookies: sessionCookies(first) })).status).toBe(200);
 
-    const done = await reset(admin.phone.local, NEW_PASSWORD);
+    const done = await reset(admin.phone.local, NEW_PASSWORD, randomUUID(), undefined, app, '/admin-recovery/reset-test');
     expect([done.status, done.body]).toEqual([200, ACK]);
 
     expect((await app.call('GET', '/me', { cookies: sessionCookies(first) })).status).toBe(401);

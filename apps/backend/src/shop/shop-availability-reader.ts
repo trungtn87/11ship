@@ -24,6 +24,8 @@ export interface RawShopSnapshot {
   hours: unknown;
   has_hours: boolean;
   in_hours: boolean;
+  /** The OWNER account is locked (optional: a test row built without it means "not locked"). */
+  owner_locked?: boolean;
 }
 
 /**
@@ -85,11 +87,12 @@ export function evaluateAvailability(
   hasHours: boolean,
   inHours: boolean,
   evaluatedAt: string,
+  ownerLocked = false,
 ): ShopAvailability {
   if (!isShopStatus(status) || !EVALUATED_AT_PATTERN.test(evaluatedAt)) {
     return broken();
   }
-  if (status === 'DISABLED') {
+  if (status === 'DISABLED' || ownerLocked) {
     return { online: false, reason: 'SHOP_DISABLED', evaluatedAt };
   }
   if (status === 'INCOMPLETE') {
@@ -129,7 +132,7 @@ export function toShopSnapshot(row: RawShopSnapshot): ShopSnapshot {
     status: row.status,
     version: toSafeInteger(row.version),
     hours: parseHours(row.hours),
-    availability: evaluateAvailability(row.status, row.area_status, row.has_hours, row.in_hours, row.evaluated_at),
+    availability: evaluateAvailability(row.status, row.area_status, row.has_hours, row.in_hours, row.evaluated_at, row.owner_locked === true),
   };
 }
 

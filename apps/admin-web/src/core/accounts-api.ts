@@ -8,12 +8,16 @@ import {
   AdministratorRow,
   Failure,
   GrantsResult,
+  LifecycleAction,
+  LifecycleBlock,
   LockCommand,
+  LockReasonKind,
   LockResult,
   PageState,
   UserDetail,
   UserDetailState,
   UserFilter,
+  UserLifecycle,
   UserRole,
   UserRow,
   UserStatus,
@@ -124,7 +128,8 @@ export function parseUserDetail(data: Record<string, unknown>): UserDetail | und
     return undefined;
   }
   const actions = allowedActionsOf(data.allowed_actions);
-  if (actions === undefined) {
+  const lifecycle = lifecycleOf(data.lifecycle);
+  if (actions === undefined || lifecycle === undefined || typeof data.phone_verified !== 'boolean') {
     return undefined;
   }
   const customer = profiles.customer === undefined ? undefined : record(profiles.customer);
@@ -152,18 +157,66 @@ export function parseUserDetail(data: Record<string, unknown>): UserDetail | und
     // No timeline yet: the page shows nothing it did not receive. The actions are exactly what the server allows right now.
     events: [],
     allowedActions: actions,
+    phoneVerified: data.phone_verified,
+    lifecycle,
   };
 }
 
-/** [] | ["LOCK"] | ["UNLOCK"]; anything else is not the documented shape. */
-function allowedActionsOf(value: unknown): readonly ('LOCK' | 'UNLOCK')[] | undefined {
-  if (!Array.isArray(value) || value.length > 1) {
+const LIFECYCLE_ORDER: readonly LifecycleAction[] = ['LOCK', 'UNLOCK', 'DELETE'];
+
+/** A set of LOCK / UNLOCK (at most one of the two) and DELETE, without repeats; anything else is not the documented shape. */
+function allowedActionsOf(value: unknown): readonly LifecycleAction[] | undefined {
+  if (!Array.isArray(value) || value.length > 2) {
     return undefined;
   }
-  if (value.length === 0) {
-    return [];
+  const actions: LifecycleAction[] = [];
+  for (const item of value) {
+    if (!LIFECYCLE_ORDER.includes(item as LifecycleAction) || actions.includes(item as LifecycleAction)) {
+      return undefined;
+    }
+    actions.push(item as LifecycleAction);
   }
-  return value[0] === 'LOCK' || value[0] === 'UNLOCK' ? [value[0]] : undefined;
+  if (actions.includes('LOCK') && actions.includes('UNLOCK')) {
+    return undefined;
+  }
+  return LIFECYCLE_ORDER.filter((action) => actions.includes(action));
+}
+
+function blockOf(value: unknown): LifecycleBlock | undefined {
+  return value === null || value === 'ALREADY_LOCKED' || value === 'ACTIVE_WORK' ? value : undefined;
+}
+
+function nameList(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value) || value.length > 20 || !value.every((name) => typeof name === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(name))) {
+    return undefined;
+  }
+  return value as string[];
+}
+
+/** The lifecycle facts of a detail: the lock reason and time, business data, work in progress, what a delete does and what blocks. */
+function lifecycleOf(value: unknown): UserLifecycle | undefined {
+  const raw = record(value);
+  if (raw === undefined) {
+    return undefined;
+  }
+  const lockReason = raw.lock_reason === null || raw.lock_reason === 'DELETE_REQUEST' || raw.lock_reason === 'VIOLATION' || raw.lock_reason === 'SECURITY' ? (raw.lock_reason as LockReasonKind | null) : undefined;
+  const lockedAt = raw.locked_at === null ? null : isoOf(raw.locked_at);
+  const relatedData = nameList(raw.related_data);
+  const activeWork = nameList(raw.active_work);
+  const lockBlocked = blockOf(raw.lock_blocked_reason);
+  const deleteBlocked = blockOf(raw.delete_blocked_reason);
+  if (
+    lockReason === undefined ||
+    lockedAt === undefined ||
+    relatedData === undefined ||
+    activeWork === undefined ||
+    lockBlocked === undefined ||
+    deleteBlocked === undefined ||
+    (raw.delete_effect !== 'DELETE_PERMANENTLY' && raw.delete_effect !== 'LOCK')
+  ) {
+    return undefined;
+  }
+  return { lockReason, lockedAt, relatedData, activeWork, deleteEffect: raw.delete_effect, lockBlockedReason: lockBlocked, deleteBlockedReason: deleteBlocked };
 }
 
 const RIGHT_LABEL: readonly (readonly [keyof Pick<AppPermission, 'canView' | 'canReviewProfile' | 'canLock'>, string])[] = [
@@ -223,30 +276,40 @@ function query(params: Readonly<Record<string, string | undefined>>): string {
 
 export interface LockAcknowledgement {
   readonly userId: string;
-  readonly accountStatus: 'ACTIVE' | 'DISABLED';
-  readonly version: number;
+  /** null for a permanent deletion: there is no account left to have a status. */
+  readonly accountStatus: 'ACTIVE' | 'DISABLED' | null;
+  readonly version: number | null;
+  /** DELETED = removed for good; LOCKED = the delete became a lock at the owner's request. Absent for a plain lock / unlock. */
+  readonly result?: 'DELETED' | 'LOCKED';
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** {command_id, user_id, account_status, version, changed_at}: an acknowledgement of the intent, not the current state. */
+/**
+ * {command_id, user_id, account_status, version, changed_at} (lock / unlock, or a delete that locked) or {command_id, user_id, result:'DELETED'}
+ * (a permanent delete): an acknowledgement of the intent, not the current state.
+ */
 export function parseLockAcknowledgement(data: Record<string, unknown>): LockAcknowledgement | undefined {
   const userId = str(data.user_id);
   const commandId = str(data.command_id);
+  if (userId === undefined || commandId === undefined || !UUID_RE.test(commandId)) {
+    return undefined;
+  }
+  if (data.result === 'DELETED') {
+    return { userId, accountStatus: null, version: null, result: 'DELETED' };
+  }
   const version = data.version;
   if (
-    userId === undefined ||
-    commandId === undefined ||
-    !UUID_RE.test(commandId) ||
     (data.account_status !== 'ACTIVE' && data.account_status !== 'DISABLED') ||
     typeof version !== 'number' ||
     !Number.isSafeInteger(version) ||
     version < 1 ||
-    isoOf(data.changed_at) === undefined
+    isoOf(data.changed_at) === undefined ||
+    (data.result !== undefined && data.result !== 'LOCKED')
   ) {
     return undefined;
   }
-  return { userId, accountStatus: data.account_status, version };
+  return { userId, accountStatus: data.account_status, version, ...(data.result === 'LOCKED' ? { result: 'LOCKED' as const } : {}) };
 }
 
 /** The CSRF token of the shell session (from memory) and the way to read a fresh one. */
@@ -275,13 +338,18 @@ export class AdminAccountsApi extends ApiClient {
     return this.call({ method: 'GET', path: `/admin/users/${encodeURIComponent(id)}` }, parseUserDetail);
   }
 
-  /** POST /v1/admin/users/:id/lock|unlock. One request; the caller owns the key and never repeats the call by itself. */
+  /** POST /v1/admin/users/:id/lock|unlock|delete. One request; the caller owns the key and never repeats the call by itself. */
   changeLock(csrf: string, command: LockCommand): Promise<ApiResult<LockAcknowledgement>> {
     return this.call(
       {
         method: 'POST',
-        path: `/admin/users/${encodeURIComponent(command.id)}/${command.action === 'LOCK' ? 'lock' : 'unlock'}`,
-        body: { expected_version: command.version, reason: command.reason },
+        path: `/admin/users/${encodeURIComponent(command.id)}/${command.action === 'LOCK' ? 'lock' : command.action === 'DELETE' ? 'delete' : 'unlock'}`,
+        // The category only travels with a LOCK (the server refuses it elsewhere); VIOLATION is the server's default.
+        body: {
+          expected_version: command.version,
+          reason: command.reason,
+          ...(command.action === 'LOCK' && command.category !== undefined ? { lock_reason: command.category } : {}),
+        },
         csrf,
         idempotencyKey: command.key,
       },
@@ -339,7 +407,7 @@ export function createAccountsSource(api: AdminAccountsApi, session?: CsrfPort):
       }
       const result = await api.changeLock(csrf, command);
       if (result.kind === 'ok') {
-        return { kind: 'ok' };
+        return result.data.result === 'DELETED' ? { kind: 'deleted' } : { kind: 'ok' };
       }
       // No usable answer, or a server fault (503 TRANSACTION_OUTCOME_UNKNOWN included): the command may have been executed.
       if (result.kind === 'network' || result.status >= 500) {
@@ -361,6 +429,8 @@ export function createAccountsSource(api: AdminAccountsApi, session?: CsrfPort):
           return { kind: 'conflict' };
         case 'USER_ACCOUNT_IMPACT_REVIEW_REQUIRED':
           return { kind: 'review-required' };
+        case 'USER_ACCOUNT_HAS_ACTIVE_WORK':
+          return { kind: 'has-active-work' };
         case 'IDEMPOTENCY_BUSY':
           // The same key is still being processed: asking again with it is exactly right.
           return { kind: 'unknown' };

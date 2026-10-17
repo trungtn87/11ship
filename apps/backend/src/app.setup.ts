@@ -37,6 +37,8 @@ export function configureApp(app: INestApplication): void {
   app.use(`/${GLOBAL_PREFIX}/${CLIENT_AUTH_ROUTE_PREFIX}`, clientAuthTransportMiddleware);
   // M01-RESET: the no-OTP test password reset carries credentials, never cached.
   app.use(`/${GLOBAL_PREFIX}/${ACCOUNT_RECOVERY_ROUTE_PREFIX}`, clientAuthTransportMiddleware);
+  // Owner decision 2026-10-14: the administration web's own password reset routes (ADMIN_WEB scope) carry credentials as well.
+  app.use(`/${GLOBAL_PREFIX}/admin-recovery`, clientAuthTransportMiddleware);
   // Issue #102: the SMS gateway API carries the message (an OTP) and a device credential, never cached.
   app.use(`/${GLOBAL_PREFIX}/sms-gateway`, clientAuthTransportMiddleware);
   // Same headers for the own-profile routes (M01.05): personal data, never cached.

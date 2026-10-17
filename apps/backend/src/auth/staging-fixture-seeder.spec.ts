@@ -63,7 +63,7 @@ function rig(options: { existing?: Stored[]; failAuditAt?: number; raceOn?: stri
   let hashed = 0;
   let inserted = 0;
   const users = {
-    findByPhone: async (_context: unknown, phone: string) => rows.get(phone),
+    findByPhone: async (_context: unknown, _scope: string, phone: string) => rows.get(phone),
     insertStagingFixture: async (_context: unknown, input: { userId: string; phoneNormalized: string; passwordHash: string }) => {
       inserted += 1;
       if (options.raceOn === input.phoneNormalized) {

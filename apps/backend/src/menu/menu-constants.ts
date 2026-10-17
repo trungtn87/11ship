@@ -1,5 +1,5 @@
 // Fixed vocabulary and limits of Menu (M02-MON). Part of the contract in docs/tasks/M02-menu-contract-20261014.md; the limits
-// mirror the CHECK constraints of database/migrations/1793059200000_create-menu.sql and are sent to the app in GET /shop/me/menu
+// mirror the CHECK constraints of database/migrations/1793145600000_create-menu.sql and are sent to the app in GET /shop/me/menu
 // so that the two cannot drift.
 
 export const MENU_SCOPE_TYPE = 'user';

@@ -5,6 +5,7 @@ import { AuthConfig, OtpHmacKey } from '../config/auth-config';
 import { fakeTransactions } from './auth-fakes.fixture';
 import { computeOtpDigest } from './otp';
 import { OtpProvider } from './otp-provider';
+import { SystemSettingsReader } from '../system-settings/system-settings-reader';
 import { UserRepository } from './user-repository';
 import { VerificationRepository, VerificationRow, VerificationStatus } from './verification-repository';
 import { VerificationService } from './verification-service';
@@ -29,7 +30,9 @@ interface RequestRig {
   sent: Array<{ phone: string; otp: string; inTransaction: boolean }>;
 }
 
-function requestRig(options: { registered?: boolean; cooldown?: boolean; providerFails?: boolean; markPending?: boolean } = {}): RequestRig {
+function requestRig(
+  options: { registered?: boolean; lockReason?: 'DELETE_REQUEST' | 'VIOLATION'; registrationOtpOff?: boolean; cooldown?: boolean; providerFails?: boolean; markPending?: boolean } = {},
+): RequestRig {
   const { manager, state } = fakeTransactions(NOW);
   const events: string[] = [];
   const inserted: Array<Record<string, unknown>> = [];
@@ -56,7 +59,15 @@ function requestRig(options: { registered?: boolean; cooldown?: boolean; provide
       events.push('registered?');
       return options.registered ?? false;
     },
+    findByPhone: async () =>
+      options.lockReason === undefined ? { status: 'ACTIVE' } : { status: 'DISABLED', lockReason: options.lockReason },
   } as unknown as UserRepository;
+  const systemSettings = {
+    registrationOtpRequired: async () => {
+      events.push('setting.registration');
+      return options.registrationOtpOff !== true;
+    },
+  } as unknown as SystemSettingsReader;
   const provider: OtpProvider = {
     sendRegisterOtp: async (phone, otp) => {
       sent.push({ phone, otp, inTransaction: state.inTransaction });
@@ -67,7 +78,7 @@ function requestRig(options: { registered?: boolean; cooldown?: boolean; provide
     },
   };
   const recorder = { recordBestEffort: async () => undefined } as unknown as StandaloneAuditRecorder;
-  return { service: new VerificationService(manager, verifications, users, recorder, CONFIG, provider), events, inserted, sent };
+  return { service: new VerificationService(manager, verifications, users, recorder, CONFIG, provider, undefined, systemSettings), events, inserted, sent };
 }
 
 async function failureOf(run: () => Promise<unknown>): Promise<unknown> {
@@ -83,7 +94,7 @@ describe('VerificationService.requestOtp (task sections 7 and 11)', () => {
   it('commits the PENDING_DELIVERY row, THEN calls the provider outside any transaction, THEN marks PENDING', async () => {
     const r = requestRig();
     const result = await r.service.requestOtp(PHONE, 'REGISTER');
-    expect(r.events).toEqual(['lane.lock', 'registered?', 'cooldown', 'invalidate', 'insert', 'send', 'mark.pending']);
+    expect(r.events).toEqual(['setting.registration', 'lane.lock', 'registered?', 'cooldown', 'invalidate', 'insert', 'send', 'mark.pending']);
     expect(r.sent).toHaveLength(1);
     expect(r.sent[0]?.inTransaction).toBe(false);
     expect(result.expires_in_seconds).toBe(300);
@@ -111,8 +122,26 @@ describe('VerificationService.requestOtp (task sections 7 and 11)', () => {
     const cooling = requestRig({ cooldown: true });
     const e2 = await failureOf(() => cooling.service.requestOtp(PHONE, 'REGISTER'));
     expect((e2 as AppError).code).toBe('OTP_RATE_LIMITED');
-    expect(cooling.events).toEqual(['lane.lock', 'registered?', 'cooldown']);
+    expect(cooling.events).toEqual(['setting.registration', 'lane.lock', 'registered?', 'cooldown']);
     expect(cooling.sent).toHaveLength(0);
+  });
+
+  it('a phone whose account was locked at its owner\'s request is told to recover it; one locked for another reason is plainly registered', async () => {
+    const recoverable = requestRig({ registered: true, lockReason: 'DELETE_REQUEST' });
+    expect(((await failureOf(() => recoverable.service.requestOtp(PHONE, 'REGISTER'))) as AppError).code).toBe('ACCOUNT_RECOVERY_AVAILABLE');
+    expect(recoverable.sent).toHaveLength(0);
+    const violation = requestRig({ registered: true, lockReason: 'VIOLATION' });
+    expect(((await failureOf(() => violation.service.requestOtp(PHONE, 'REGISTER'))) as AppError).code).toBe('PHONE_ALREADY_REGISTERED');
+    expect(violation.sent).toHaveLength(0);
+  });
+
+  it('SYSTEM turned the registration OTP off: no challenge, no provider call, no row', async () => {
+    const off = requestRig({ registrationOtpOff: true });
+    const error = await failureOf(() => off.service.requestOtp(PHONE, 'REGISTER'));
+    expect((error as AppError).code).toBe('PHONE_VERIFICATION_NOT_REQUIRED');
+    expect(off.events).toEqual(['setting.registration']);
+    expect(off.inserted).toHaveLength(0);
+    expect(off.sent).toHaveLength(0);
   });
 
   it('a provider failure marks DELIVERY_FAILED and surfaces a sanitized 503 with no provider detail', async () => {
@@ -121,7 +150,7 @@ describe('VerificationService.requestOtp (task sections 7 and 11)', () => {
     expect(error).toBeInstanceOf(TechnicalError);
     expect((error as TechnicalError).kind).toBe('unavailable');
     expect((error as TechnicalError).message).not.toContain('SECRET_MARKER_PROVIDER_FAILURE');
-    expect(r.events).toEqual(['lane.lock', 'registered?', 'cooldown', 'invalidate', 'insert', 'send', 'mark.failed']);
+    expect(r.events).toEqual(['setting.registration', 'lane.lock', 'registered?', 'cooldown', 'invalidate', 'insert', 'send', 'mark.failed']);
     expect(r.events).not.toContain('mark.pending');
   });
 

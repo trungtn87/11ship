@@ -28,6 +28,12 @@ export interface ClientIdentity {
   readonly onboarding: { readonly shop: ShopOnboardingState; readonly driver: DriverOnboardingState };
   readonly onboarding_required: boolean;
   readonly role_selection_required: boolean;
+  /**
+   * Present ONLY for a LOCKED driver served through the limited access (Owner decision 2026-10-14): the account is locked and may use
+   * the wallet and nothing else. Absent for every other identity, so the shape every other client already parses is unchanged.
+   */
+  readonly account_status?: 'LOCKED';
+  readonly limited_access?: 'WALLET_ONLY';
 }
 
 export interface ClientIdentityInput {
@@ -42,6 +48,8 @@ export interface ClientIdentityInput {
   readonly enabled: boolean;
   /** The role stored on the CURRENT session row (the caller holds the session lock), or null for a roleless session. */
   readonly storedActiveRole: string | null;
+  /** The caller established that the account is LOCKED and served through the limited wallet-only access: no capability, no context. */
+  readonly limited?: boolean;
 }
 
 /**
@@ -73,6 +81,23 @@ export class ClientIdentityReader {
   }
 
   async read(context: TransactionContext, input: ClientIdentityInput): Promise<ClientIdentity> {
+    if (input.limited === true) {
+      // A locked driver: the identity says so and offers no context and no capability. The app shows the locked state with the wallet.
+      const profile = await this.customers.findProfile(context, input.userId);
+      return {
+        user_id: input.userId,
+        phone_normalized: input.phoneNormalized,
+        available_roles: [],
+        active_role: null,
+        profile: { full_name: profile?.fullName ?? null, version: profile?.version ?? null },
+        capabilities: { customer_access: false, shop_profile_read: false, shop_manage: false, driver_profile_read: false },
+        onboarding: { shop: 'NOT_STARTED', driver: 'NOT_STARTED' },
+        onboarding_required: false,
+        role_selection_required: false,
+        account_status: 'LOCKED',
+        limited_access: 'WALLET_ONLY',
+      };
+    }
     const held = new Set(await this.users.rolesAmong(context, input.userId, [CUSTOMER_ROLE, 'SHOP', 'DRIVER']));
     const profile = await this.customers.findProfile(context, input.userId);
     const shop = await this.shops.ownerShopEligibility(context, input.userId);

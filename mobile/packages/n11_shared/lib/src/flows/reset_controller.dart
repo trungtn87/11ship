@@ -15,12 +15,30 @@ import '../account/session_controller.dart';
 
 enum ResetMode { unknown, smsOtp, closed }
 
+/// The four public routes of one OTP flow. The password reset uses /v1/account-recovery/*; the recovery of an account that was locked at
+/// its owner's request uses /v1/account-recovery/locked/*. Both are APPLICATION routes (APP_USER accounts only): the administration web has
+/// its own and this app never calls them. The recovery always needs the SMS proof, whatever the SYSTEM switches say.
+@immutable
+class ResetEndpoints {
+  const ResetEndpoints({required this.config, required this.otp, required this.submit});
+
+  final String config;
+  final String otp;
+  final String submit;
+
+  static const ResetEndpoints reset = ResetEndpoints(config: '/v1/account-recovery/config', otp: '/v1/account-recovery/otp', submit: '/v1/account-recovery/reset');
+  static const ResetEndpoints recover = ResetEndpoints(config: '/v1/account-recovery/locked/config', otp: '/v1/account-recovery/locked/otp', submit: '/v1/account-recovery/locked/recover');
+}
+
 enum ResetOtpStep { idle, requesting, requested, verifying, verified }
 
 class ResetController extends ChangeNotifier {
-  ResetController({required this.transport, required this.session});
+  ResetController({required this.transport, required this.session, this.endpoints = ResetEndpoints.reset});
 
   final ApiTransport transport;
+
+  /// Which flow this controller runs: the password reset (default) or the recovery of a locked account.
+  final ResetEndpoints endpoints;
 
   /// Used only to re-check an existing session after a reset (the server revokes it; a 401 then clears this phone).
   final SessionController session;
@@ -76,7 +94,7 @@ class ResetController extends ChangeNotifier {
   Future<void> loadConfig() async {
     final int epoch = ++_epoch;
     try {
-      final ApiResponse response = await transport.send('GET', '/v1/account-recovery/config');
+      final ApiResponse response = await transport.send('GET', endpoints.config);
       if (epoch != _epoch) {
         return;
       }
@@ -151,7 +169,7 @@ class ResetController extends ChangeNotifier {
     _failure = null;
     _notify();
     try {
-      final ApiResponse response = await transport.send('POST', '/v1/account-recovery/otp', body: utf8.encode(jsonEncode(<String, Object?>{'phone': phone.trim()})));
+      final ApiResponse response = await transport.send('POST', endpoints.otp, body: utf8.encode(jsonEncode(<String, Object?>{'phone': phone.trim()})));
       if (epoch != _epoch) {
         return false;
       }
@@ -193,7 +211,7 @@ class ResetController extends ChangeNotifier {
     _failure = null;
     _notify();
     try {
-      final ApiResponse response = await transport.send('POST', '/v1/account-recovery/otp/$id/verify', body: utf8.encode(jsonEncode(<String, Object?>{'otp': otp.trim()})));
+      final ApiResponse response = await transport.send('POST', '${endpoints.otp}/$id/verify', body: utf8.encode(jsonEncode(<String, Object?>{'otp': otp.trim()})));
       if (epoch != _epoch) {
         return false;
       }
@@ -231,7 +249,7 @@ class ResetController extends ChangeNotifier {
     final String body = _bodyFor(phone, password);
     // Same intent -> same key (a retry after a lost answer); a changed phone or password is a new intent and a new key.
     final String key = _pendingBody == body && _pendingKey != null ? _pendingKey! : newIdempotencyKey();
-    return _send(body, key, '/v1/account-recovery/reset');
+    return _send(body, key, endpoints.submit);
   }
 
   Future<bool> retryPending() async {

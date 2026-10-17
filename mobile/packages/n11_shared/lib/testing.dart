@@ -671,6 +671,16 @@ void installResetRoutes(FakeApiTransport transport, {String mode = 'SMS_OTP'}) {
   transport.routes['POST /v1/account-recovery/reset'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'next': 'LOGIN'}});
 }
 
+/// The public routes of the recovery of an account locked at its owner's request. [mode] is what GET locked/config answers.
+void installRecoverRoutes(FakeApiTransport transport, {String mode = 'SMS_OTP'}) {
+  transport.routes['GET /v1/account-recovery/locked/config'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'mode': mode}});
+  transport.routes['POST /v1/account-recovery/locked/otp'] = (String m, String p, Map<String, String> h, String b) async =>
+      json(200, <String, Object?>{'data': <String, Object?>{'verification_id': '66666666-6666-4666-8666-666666666666', 'expires_in_seconds': 300, 'resend_after_seconds': 60, 'delivery_status': 'PENDING_DELIVERY'}});
+  transport.routes['POST /v1/account-recovery/locked/otp/66666666-6666-4666-8666-666666666666/verify'] = (String m, String p, Map<String, String> h, String b) async =>
+      b.contains('"123456"') ? json(200, <String, Object?>{'data': <String, Object?>{'verification_token': 'RECOVER-PROOF-TOKEN-0123456789', 'purpose': 'RECOVER_ACCOUNT', 'expires_in_seconds': 600}}) : apiError(400, 'OTP_INVALID');
+  transport.routes['POST /v1/account-recovery/locked/recover'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'next': 'LOGIN'}});
+}
+
 /// The REGISTER OTP routes. [queued] = the server accepted the code into the SMS queue (PENDING_DELIVERY, then [deliveries] in
 /// order); otherwise the provider is synchronous and the answer has no delivery_status. The code the fake accepts is 123456.
 void installOtpRoutes(FakeApiTransport transport, {bool queued = true, List<String> deliveries = const <String>['PENDING_DELIVERY', 'SENT']}) {

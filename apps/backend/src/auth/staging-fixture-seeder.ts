@@ -140,7 +140,7 @@ export class StagingFixtureSeeder {
     let created = 0;
     let skipped = 0;
     for (const fixture of prepared) {
-      const existing = await this.users.findByPhone(context, fixture.phoneNormalized);
+      const existing = await this.users.findByPhone(context, 'APP_USER', fixture.phoneNormalized);
       if (existing !== undefined) {
         // An existing fixture is left exactly as it is (password, status, version, roles); any other account (a
         // verified one, an administration one) aborts the batch. Either way nothing is overwritten.
@@ -158,7 +158,7 @@ export class StagingFixtureSeeder {
       });
       if (!inserted) {
         // Lost a race with something that does not take the seed lock: look again, decide the same way.
-        const winner = await this.users.findByPhone(context, fixture.phoneNormalized);
+        const winner = await this.users.findByPhone(context, 'APP_USER', fixture.phoneNormalized);
         if (winner === undefined || winner.accountOrigin !== 'STAGING_FIXTURE') {
           throw new StagingSeedConflictError();
         }

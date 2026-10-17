@@ -9,6 +9,7 @@ import { parseRoute, tokenFromFragment } from '../core/routes.js';
 import { ActivationPage } from './activation-view.js';
 import { RecoveryController } from '../core/recovery-controller.js';
 import { AdminRecoveryApi, RECOVERY_BASE } from '../core/recovery-api.js';
+import { AdminSettingsApi, createSettingsSource, SETTINGS_BASE } from '../core/settings-api.js';
 import { ResetPage } from './reset-view.js';
 import { ShellApp } from './shell-app.js';
 import { AdminView } from './view.js';
@@ -121,6 +122,10 @@ function startAdmin(host: HTMLElement): void {
     }),
     () => controller.sessionLost(),
     () => window.crypto.randomUUID(),
+    createSettingsSource(new AdminSettingsApi(fetchTransport(window.fetch.bind(window), { base: SETTINGS_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
   );
   const view = new AdminView(host, controller, shell);
   controller.subscribe((screen) => view.render(screen));

@@ -2,6 +2,7 @@ import { ClientPasswordService } from './client-password-service';
 import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Inject, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AuthenticatedRequest, AuthPrincipal } from '../auth/auth-principal';
+import { AllowLockedDriver } from '../auth/allow-locked-driver';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
 import { NativeRequestEvidence } from '../client-device/client-device-proof-service';
@@ -64,11 +65,13 @@ export class ClientAuthController {
    * guess. The transport middleware adds Cache-Control: no-store like for every /v1/client-auth route.
    */
   @Get('config')
-  config(@Query() query: unknown, @Body() body: unknown) {
+  async config(@Query() query: unknown, @Body() body: unknown) {
     if (!isEmptyObject(query) || !(body === undefined || isEmptyObject(body))) {
       throw new BadRequestException();
     }
-    return { data: { registration_verification: this.settings.phoneVerificationMode } };
+    // REQUIRED (an OTP proof), NOT_REQUIRED (SYSTEM turned the registration OTP off: no proof, the account is created unverified) or the
+    // development-only DISABLED_TEST. Read from the database on every call: a change by SYSTEM is in effect at the next request.
+    return { data: { registration_verification: await this.registration.currentMode() } };
   }
 
   @Post('register')
@@ -81,10 +84,13 @@ export class ClientAuthController {
     const requestId = request.requestId ?? randomUUID();
     // The body shape follows the SERVER mode, never anything the request says about itself: REQUIRED takes the six-field proof
     // body, DISABLED_TEST the five-field body without a token (a token, a role or a bypass flag is a plain 400 there).
+    const mode = await this.registration.currentMode();
     const outcome =
-      this.settings.phoneVerificationMode === 'DISABLED_TEST'
+      mode === 'DISABLED_TEST'
         ? await this.registration.registerUnverifiedTest(parseClientUnverifiedRegisterBody(body), idempotencyKey, requestId, evidenceOf(request))
-        : await this.registration.register(parseClientRegisterBody(body), idempotencyKey, requestId, evidenceOf(request));
+        : mode === 'NOT_REQUIRED'
+          ? await this.registration.registerUnverified(parseClientUnverifiedRegisterBody(body), idempotencyKey, requestId, evidenceOf(request))
+          : await this.registration.register(parseClientRegisterBody(body), idempotencyKey, requestId, evidenceOf(request));
     response.status(outcome.status);
     bindingHeaders(response, 'binding' in outcome ? outcome.binding : undefined);
     return { data: outcome.payload };
@@ -105,6 +111,8 @@ export class ClientAuthController {
   }
 
   @Get('me')
+  // A locked driver still reads its identity (it says the account is locked and the wallet is all that is left).
+  @AllowLockedDriver()
   @UseGuards(SessionAuthGuard)
   async me(@Req() request: AuthenticatedRequest, @Res({ passthrough: true }) response: StatusSettableResponse) {
     const outcome = await this.sessions.me(this.#principal(request));

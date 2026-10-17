@@ -25,12 +25,25 @@ export interface SessionActor {
 
 /** The only context the Shop variants accept (the value of sessions.active_role and of user_roles.role). */
 const SHOP_ROLE = 'SHOP';
+/** The context a LOCKED account keeps for the wallet (Owner decision 2026-10-14). */
+const DRIVER_ROLE = 'DRIVER';
+
+/**
+ * Opt-in of the limited access of a LOCKED driver: wallet balance, transaction history and withdrawal requests, nothing else. Every
+ * variant refuses a locked account (ACCOUNT_DISABLED) unless the caller passes this explicitly, so a business command added later is
+ * closed to a locked account by default; the wallet endpoints are the ones that opt in.
+ */
+export interface LockedAccessOptions {
+  readonly allowLockedDriver?: boolean;
+}
 
 /** What a reader gets back from the shared variant: the session's CURRENT active role. */
 export interface AuthorizedSessionState {
   readonly activeRole: string | null;
   /** Display only: derived from the LOCKED user row's account origin. Never an authorization source. */
   readonly phoneVerificationStatus: PhoneVerificationStatus;
+  /** True only for a LOCKED driver served through the limited access (the caller opted in): wallet only. */
+  readonly limited: boolean;
 }
 
 /**
@@ -73,6 +86,23 @@ export class SessionAuthorizationParticipant {
   }
 
   /**
+   * The WALLET variant of a DRIVER (balance, history, withdrawal request): the same locks, the same session decision, and a LOCKED
+   * account is accepted here, and only here, when it holds the DRIVER role and the session is in the DRIVER context (the limited
+   * access). An ACTIVE driver is served the same way. Anything else is refused exactly as by lockAuthorizedActor (ACCOUNT_DISABLED for a
+   * locked non-driver) or ROLE_NOT_AVAILABLE (not in the DRIVER context). The locks stay held until the caller's transaction ends.
+   */
+  async lockAuthorizedDriverWalletActor(context: TransactionContext, actor: SessionActor): Promise<{ readonly limited: boolean }> {
+    assertActorShape(actor);
+    const user = await this.users.lockById(context, actor.userId);
+    const session = user === undefined ? undefined : await this.sessions.lockById(context, actor.sessionId);
+    const limited = await this.#decide(context, actor, user, session, { allowLockedDriver: true });
+    if (session === undefined || session.activeRole !== DRIVER_ROLE || !(await this.users.hasRole(context, actor.userId, DRIVER_ROLE))) {
+      throw new AppError('ROLE_NOT_AVAILABLE');
+    }
+    return { limited };
+  }
+
+  /**
    * For a reader (/auth/me): user FOR SHARE, then session FOR SHARE. Any number of readers of one user run
    * together; a role selection, a revocation or an onboarding command (FOR UPDATE) is waited for. Returns the
    * active role read from the LOCKED session row.
@@ -80,11 +110,12 @@ export class SessionAuthorizationParticipant {
   async lockAuthorizedActorShared(
     context: TransactionContext,
     actor: SessionActor,
+    options: LockedAccessOptions = {},
   ): Promise<AuthorizedSessionState> {
     assertActorShape(actor);
     const user = await this.users.lockByIdForShare(context, actor.userId);
     const session = user === undefined ? undefined : await this.sessions.lockByIdForShare(context, actor.sessionId);
-    await this.#decide(context, actor, user, session);
+    const limited = await this.#decide(context, actor, user, session, options);
     if (session === undefined || user === undefined) {
       // Unreachable: #decide refuses a missing user or session. Kept so the types narrow without a cast.
       throw new AppError('SESSION_INVALID');
@@ -92,6 +123,7 @@ export class SessionAuthorizationParticipant {
     return {
       activeRole: session.activeRole,
       phoneVerificationStatus: phoneVerificationStatusOf(user.accountOrigin),
+      limited,
     };
   }
 
@@ -136,12 +168,14 @@ export class SessionAuthorizationParticipant {
     }
   }
 
+  /** Returns true when the caller is served through the LIMITED access of a locked driver (only when it opted in). */
   async #decide(
     context: TransactionContext,
     actor: SessionActor,
     user: UserRow | undefined,
     session: LockedSession | undefined,
-  ): Promise<void> {
+    options: LockedAccessOptions = {},
+  ): Promise<boolean> {
     if (user === undefined || session === undefined || session.userId !== actor.userId) {
       throw new AppError('SESSION_INVALID');
     }
@@ -161,14 +195,25 @@ export class SessionAuthorizationParticipant {
     if (session.expiresAtMs <= nowMs) {
       throw new AppError('SESSION_EXPIRED');
     }
+    let limited = false;
     if (user.status !== 'ACTIVE') {
-      throw new AppError('ACCOUNT_DISABLED');
+      // A locked account has no business access. The one exception (opt-in): a DRIVER that is in the DRIVER context keeps the
+      // wallet, so it can still see its balance and withdraw what it owns.
+      if (
+        options.allowLockedDriver !== true ||
+        session.activeRole !== DRIVER_ROLE ||
+        !(await this.users.hasRole(context, user.userId, DRIVER_ROLE))
+      ) {
+        throw new AppError('ACCOUNT_DISABLED');
+      }
+      limited = true;
     }
     // A native (ANDROID Food / Ship) session lives only while it sits on the user's CURRENT device binding. Rechecked here, under
     // the user and session locks, so a request that waited behind a device replacement fails after it (contract11 section 8).
     if (this.bindings !== undefined && (await this.bindings.nativeSessionState(context, actor.sessionId)) === 'UNBOUND') {
       throw new AppError('SESSION_REVOKED');
     }
+    return limited;
   }
 }
 
