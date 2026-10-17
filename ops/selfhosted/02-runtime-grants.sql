@@ -57,3 +57,7 @@ GRANT SELECT, INSERT, UPDATE ON app.menu_images TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.menu_items TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.system_settings TO ship11_app;
 GRANT SELECT, INSERT ON app.system_setting_changes TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.driver_bank_accounts TO ship11_app;
+GRANT SELECT, INSERT ON app.driver_events TO ship11_app;
+GRANT SELECT, UPDATE ON app.shipper_wallet_parameters TO ship11_app;
+GRANT SELECT, INSERT ON app.shipper_wallet_parameter_changes TO ship11_app;

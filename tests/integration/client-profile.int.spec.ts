@@ -32,14 +32,26 @@ const PRIVACY = 'test-privacy-20261011-v1';
 const WEB_FOOD = { device_id: 'web-food-0001', platform: 'WEB', app: 'FOOD' };
 const WEB_SHIP = { device_id: 'web-ship-0001', platform: 'WEB', app: 'SHIP' };
 const PROFILE_KEYS = ['user_id', 'full_name', 'version'];
+// M03: the owner's view of the Shipper profile. The internal classification (driver_type) is NOT part of it.
 const DRIVER_KEYS = [
-  'driver_id',
-  'user_id',
-  'full_name',
-  'plate_number',
-  'driver_type',
-  'status',
   'accepting_deliveries',
+  'bank',
+  'can_edit_profile',
+  'can_submit',
+  'closure',
+  'driver_id',
+  'full_name',
+  'phone',
+  'plate_number',
+  'readiness',
+  'rejection_reason',
+  'review_state',
+  'reviewed_at',
+  'shipper_code',
+  'status',
+  'submitted_at',
+  'suspension_reason',
+  'user_id',
   'version',
 ];
 const MAX_VERSION = 9007199254740991;
@@ -596,7 +608,6 @@ describe('M01.05 — own profile read model', () => {
           user_id: user.userId,
           full_name: 'Fixture driver',
           plate_number: null,
-          driver_type: 'EXTERNAL',
           status,
           accepting_deliveries: false,
           version: 1,
@@ -604,13 +615,15 @@ describe('M01.05 — own profile read model', () => {
         for (const device of [{ ...WEB_FOOD }, { ...WEB_SHIP }]) {
           const response = await getDriver(await clientLogin(user, device));
           expect(response.status).toBe(200);
-          expect(Object.keys(dataOf(response))).toEqual(DRIVER_KEYS);
-          expect(dataOf(response)).toEqual(expected);
+          expect(Object.keys(dataOf(response)).sort()).toEqual(DRIVER_KEYS);
+          expect(dataOf(response)).toMatchObject(expected);
+          expect(response.text).not.toContain('driver_type');
+          expect(response.text).not.toContain('PLATFORM');
         }
       });
     }
 
-    it('returns PLATFORM, the plate and the accepting flag as stored; a legacy account without CUSTOMER can read its driver', async () => {
+    it('returns the plate and the accepting flag as stored and never the PLATFORM classification; a legacy account without CUSTOMER can read its driver', async () => {
       const user = await legacyAccount();
       const driverId = await createDriverFor(app.pool, user.userId, { status: 'ACTIVE' });
       await app.pool.query(
@@ -620,16 +633,17 @@ describe('M01.05 — own profile read model', () => {
       );
       const response = await getDriver(await clientLogin(user, { ...WEB_SHIP }));
       expect(response.status).toBe(200);
-      expect(dataOf(response)).toEqual({
+      expect(dataOf(response)).toMatchObject({
         driver_id: driverId,
         user_id: user.userId,
         full_name: 'Fixture driver',
         plate_number: '51A-123.45',
-        driver_type: 'PLATFORM',
         status: 'ACTIVE',
         accepting_deliveries: true,
         version: 1,
       });
+      // Even a PLATFORM Shipper never learns it: the classification is not in any client response.
+      expect(response.text).not.toMatch(/PLATFORM|EXTERNAL|driver_type/);
       // The customer profile of that account stays a separate thing: no CUSTOMER role, no customer profile.
       expect(errorCode(await getProfile(await clientLogin(user)))).toBe('ROLE_NOT_AVAILABLE');
     });

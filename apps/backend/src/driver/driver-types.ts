@@ -32,3 +32,14 @@ export interface OwnerDriverEligibility {
   readonly onboarding: DriverOnboardingState;
   readonly selectable: boolean;
 }
+
+/**
+ * Review of the profile while the driver is PENDING (M03): DRAFT (not sent yet) -> SUBMITTED -> APPROVED | REJECTED (the driver
+ * edits and sends again). Every status other than PENDING is APPROVED. Mirrors drivers_review_state_ck.
+ */
+export const DRIVER_REVIEW_STATES = ['DRAFT', 'SUBMITTED', 'REJECTED', 'APPROVED'] as const;
+export type DriverReviewState = (typeof DRIVER_REVIEW_STATES)[number];
+
+/** Verification of the bank account by an administrator. Mirrors driver_bank_accounts_state_ck. */
+export const BANK_VERIFICATION_STATES = ['UNVERIFIED', 'VERIFIED', 'REJECTED'] as const;
+export type BankVerificationState = (typeof BANK_VERIFICATION_STATES)[number];

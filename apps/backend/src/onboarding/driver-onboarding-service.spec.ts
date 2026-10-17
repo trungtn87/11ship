@@ -31,6 +31,19 @@ function driverRow(overrides: Partial<DriverRow> = {}): DriverRow {
     status: 'PENDING',
     acceptingDeliveries: false,
     version: 1,
+    shipperCode: 'SH000001',
+    reviewState: 'DRAFT',
+    submittedAtMs: null,
+    reviewedAtMs: null,
+    reviewedBy: null,
+    rejectionReason: null,
+    suspensionReason: null,
+    suspendedAtMs: null,
+    statusBeforeClosing: null,
+    closureRequestedAtMs: null,
+    closureNote: null,
+    createdAtMs: 0,
+    updatedAtMs: 0,
     ...overrides,
   };
 }
@@ -142,11 +155,10 @@ describe('DriverOnboardingService.create (A03-26)', () => {
     expect(outcome.replayed).toBe(false);
   });
 
-  it('answers with exactly the contract payload: EXTERNAL, PENDING, not accepting, role granted, version 1', async () => {
+  it('answers with exactly the contract payload (no internal classification): PENDING, not accepting, role granted, version 1', async () => {
     const outcome = await create(rig());
     expect(outcome.payload).toEqual({
       driver_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
-      driver_type: 'EXTERNAL',
       status: 'PENDING',
       accepting_deliveries: false,
       role_granted: true,
@@ -155,7 +167,6 @@ describe('DriverOnboardingService.create (A03-26)', () => {
     expect(Object.keys(outcome.payload as object).sort()).toEqual([
       'accepting_deliveries',
       'driver_id',
-      'driver_type',
       'role_granted',
       'status',
       'version',

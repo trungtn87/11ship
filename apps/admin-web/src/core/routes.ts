@@ -3,6 +3,7 @@
 // or the query, so it is not sent to any server by the browser and is removed from the address bar right after reading.
 
 import { InvitationStatus, INVITATION_STATUSES, isUuid } from './provisioning-api.js';
+import { SHIPPER_FILTERS, ShipperFilter } from './shippers.js';
 
 export type Route =
   | { readonly name: 'home' }
@@ -17,6 +18,9 @@ export type Route =
   | { readonly name: 'user'; readonly id: string }
   | { readonly name: 'administrators' }
   | { readonly name: 'categories' }
+  | { readonly name: 'shippers'; readonly status?: ShipperFilter }
+  | { readonly name: 'shipper'; readonly id: string }
+  | { readonly name: 'wallet-parameters' }
   | { readonly name: 'settings' };
 
 /** The only status filter with its own menu entry ("Đang khóa"); any other value of ?status= is ignored. */
@@ -41,6 +45,17 @@ export function parseRoute(pathname: string, search = ''): Route {
   }
   if (path === '/system/settings') {
     return { name: 'settings' };
+  }
+  if (path === '/system/parameters/shipper-wallet') {
+    return { name: 'wallet-parameters' };
+  }
+  if (path === '/operations/shippers') {
+    const status = new URLSearchParams(search).get('status');
+    return status !== null && status !== 'ALL' && (SHIPPER_FILTERS as readonly string[]).includes(status) ? { name: 'shippers', status: status as ShipperFilter } : { name: 'shippers' };
+  }
+  const shipper = /^\/operations\/shippers\/([^/]+)$/.exec(path);
+  if (shipper !== null && isUuid(shipper[1])) {
+    return { name: 'shipper', id: shipper[1] };
   }
   const user = /^\/accounts\/users\/([^/]+)$/.exec(path);
   if (user !== null && isUuid(user[1])) {
@@ -87,6 +102,12 @@ export function formatRoute(route: Route): string {
       return '/catalog/categories';
     case 'settings':
       return '/system/settings';
+    case 'wallet-parameters':
+      return '/system/parameters/shipper-wallet';
+    case 'shippers':
+      return route.status === undefined ? '/operations/shippers' : `/operations/shippers?status=${route.status}`;
+    case 'shipper':
+      return `/operations/shippers/${route.id}`;
     case 'invitations':
       return route.status === undefined ? '/invitations' : `/invitations?status=${route.status}`;
     case 'invitation-new':

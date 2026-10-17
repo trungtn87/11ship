@@ -125,6 +125,8 @@ export async function startAuthApp(
     configOverride?: Partial<AppConfig>;
     /** M01-ANDROID: the FIXTURE device trust (roots, signers, revocation, clock) injected by dependency injection. */
     deviceTrust?: ClientDeviceTrust;
+    /** M03: provider overrides (the wallet port, until M04 provides one). */
+    overrides?: ReadonlyArray<{ readonly provide: unknown; readonly useValue: unknown }>;
   } = {},
 ): Promise<AuthApp> {
   const loaded = loadIntegrationConfig();
@@ -147,6 +149,7 @@ export async function startAuthApp(
   const provider = new FakeOtpProvider();
   // Issue #49: with a fixture policy the app is bound exactly as staging fixture mode binds it (DisabledOtpProvider + the policy).
   const running = await startApp(config, {
+    ...(extra.overrides === undefined ? {} : { overrides: extra.overrides }),
     auth:
       extra.fixturePolicy === undefined
         ? { otpProvider: provider, ...(extra.deviceTrust === undefined ? {} : { deviceTrust: extra.deviceTrust }) }
@@ -187,7 +190,15 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
         AND scope_id IN (SELECT user_id::text FROM app.users WHERE phone_normalized = $1)`,
     [normalizedPhone],
   );
-  // M01-A2D: the Driver profile of the user (it references the user purged below).
+  // M03: the history and the bank account of the user's Driver profile, then (M01-A2D) the Driver profile itself (all reference the user
+  // or the driver purged below).
+  for (const table of ['driver_events', 'driver_bank_accounts']) {
+    await pool.query(
+      `DELETE FROM app.${table}
+        WHERE driver_id IN (SELECT driver_id FROM app.drivers WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1))`,
+      [normalizedPhone],
+    );
+  }
   await pool.query(
     'DELETE FROM app.drivers WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],

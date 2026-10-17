@@ -119,7 +119,6 @@ export class DriverOnboardingService {
       replayGuard: { user_id: userId },
       payload: {
         driver_id: driverId,
-        driver_type: 'EXTERNAL',
         status: 'PENDING',
         accepting_deliveries: false,
         role_granted: true,

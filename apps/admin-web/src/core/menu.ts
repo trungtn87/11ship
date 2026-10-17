@@ -137,7 +137,7 @@ export const MENU: readonly MenuGroup[] = [
     label: 'VẬN HÀNH',
     items: [
       soon('shops', 'Quán', 'store', 'shops'),
-      soon('drivers', 'Shipper', 'rider', 'drivers'),
+      { id: 'drivers', label: 'Shipper', icon: 'rider', route: { name: 'shippers' }, ready: true, access: 'drivers' },
       soon('orders', 'Đơn hàng', 'receipt', 'orders'),
       soon('deliveries', 'Giao hàng', 'truck', 'deliveries'),
       soon('feedback', 'Phản ánh', 'chat', 'feedback'),
@@ -169,7 +169,16 @@ export const MENU: readonly MenuGroup[] = [
       // Owner decision 2026-10-14: the SYSTEM account's switches (phone verification first). SYSTEM only.
       { id: 'system-settings', label: 'Cài đặt hệ thống', icon: 'gear', route: { name: 'settings' }, ready: true, access: 'system' },
       soon('zones', 'Vùng hoạt động', 'map-pin', 'zones'),
-      soon('parameters', 'Tham số', 'gear', 'parameters'),
+      // M03: Cài đặt › Tham số hệ thống › Ví Shipper (minimum top-up / withdrawal per request). Every administrator sees the values; only SYSTEM changes them
+      // (Owner decision 2026-10-17; the server decides again on every call).
+      {
+        id: 'parameters',
+        label: 'Tham số hệ thống',
+        icon: 'gear',
+        ready: true,
+        access: 'any',
+        children: [{ id: 'parameters-shipper-wallet', label: 'Ví Shipper', route: { name: 'wallet-parameters' }, ready: true, access: 'any' }],
+      },
       soon('audit', 'Nhật ký', 'doc', 'audit'),
       soon('monitoring', 'Giám sát', 'activity', 'monitoring'),
     ],
@@ -222,12 +231,16 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'home':
     case 'activate':
     case 'reset':
+    case 'wallet-parameters':
       return true;
     case 'users':
     case 'user':
       return canSee(role, grants, 'users');
     case 'categories':
       return canSee(role, grants, 'catalog');
+    case 'shippers':
+    case 'shipper':
+      return canSee(role, grants, 'drivers');
     case 'administrators':
     case 'settings':
     case 'invitations':
@@ -248,6 +261,11 @@ export function activeMenuId(route: Route): string {
       return 'users-list';
     case 'categories':
       return 'catalog-categories';
+    case 'shippers':
+    case 'shipper':
+      return 'drivers';
+    case 'wallet-parameters':
+      return 'parameters-shipper-wallet';
     case 'administrators':
       return 'administrators';
     case 'settings':
@@ -274,6 +292,12 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Tài khoản', 'Người dùng', 'Chi tiết'];
     case 'categories':
       return ['Danh mục', 'Nhóm món'];
+    case 'shippers':
+      return ['Vận hành', 'Shipper'];
+    case 'shipper':
+      return ['Vận hành', 'Shipper', 'Chi tiết'];
+    case 'wallet-parameters':
+      return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
     case 'administrators':
       return ['Tài khoản', 'Quản trị viên'];
     case 'settings':

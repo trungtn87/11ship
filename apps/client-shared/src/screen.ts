@@ -53,7 +53,7 @@ export interface AccountView {
   /** Shop owner only. */
   readonly shop?: { readonly state: 'NONE' | 'DRAFT' | 'COMPLETE'; readonly name?: string };
   /** Driver only. */
-  readonly driver?: { readonly status: 'NONE' | 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'CLOSING' | 'CLOSED'; readonly kind?: 'EXTERNAL' | 'PLATFORM'; readonly legalName?: string; readonly plate?: string | null };
+  readonly driver?: { readonly status: 'NONE' | 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'CLOSING' | 'CLOSED'; readonly legalName?: string; readonly plate?: string | null };
 }
 
 export interface ScreenEnv {

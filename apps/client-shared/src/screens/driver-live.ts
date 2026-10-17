@@ -23,13 +23,12 @@ const STATUS_COPY: Readonly<Record<DriverView['status'], { readonly title: strin
   CLOSED: { title: 'Hồ sơ đã đóng', text: 'Bạn không thể nhận đơn với hồ sơ này. Hiện chưa có thông tin lý do trong ứng dụng.', icon: 'alert' },
 };
 
-/** The profile card of S13: the server's stored values (name as the driver typed it, plate or "Chưa bổ sung", the type). */
+/** The profile card of S13: the server's stored values (name as the driver typed it, plate or "Chưa bổ sung"). */
 export function driverStatusBody(profile: DriverView): HTMLElement[] {
   const copy = STATUS_COPY[profile.status];
   const rows: ReadonlyArray<readonly [string, string, string]> = [
     ['Họ tên', profile.fullName, 'driver-name'],
     ['Biển số', profile.plateNumber ?? 'Chưa bổ sung', 'driver-plate'],
-    ['Loại shipper', profile.driverType === 'PLATFORM' ? 'Shipper hệ thống' : 'Shipper ngoài', 'driver-type'],
   ];
   return [
     h('section', { class: 'c-card c-stack c-stack--tight', id: 'driver-status-card', 'data-status': profile.status }, h('div', { class: 'c-row-flex' }, icon(copy.icon, 24), h('p', { class: 'c-title c-title--sm', id: 'driver-status-title' }, copy.title)), h('p', { class: 'c-lead' }, copy.text)),

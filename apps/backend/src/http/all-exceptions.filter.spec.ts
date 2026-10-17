@@ -175,7 +175,7 @@ describe('AllExceptionsFilter', () => {
   describe('typed error registry', () => {
     const codes = Object.keys(APP_ERROR_DEFINITIONS) as AppErrorCode[];
 
-    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes, the Shop onboarding codes, the Driver onboarding codes, the Shop management codes, the administration login codes the ADMIN invitation codes, the administration activation codes, the administration account read code, the USER lock/unlock codes, the staging-fixture registration code and the client registration codes', () => {
+    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes, the Shop onboarding codes, the Driver onboarding codes, the Shipper management codes (M03), the Shop management codes, the administration login codes the ADMIN invitation codes, the administration activation codes, the administration account read code, the USER lock/unlock codes, the staging-fixture registration code and the client registration codes', () => {
       expect([...codes].sort()).toEqual([
         'ACCOUNT_DISABLED',
         'ACCOUNT_RECOVERY_AVAILABLE',
@@ -199,6 +199,7 @@ describe('AllExceptionsFilter', () => {
         'ADMIN_VERSION_CONFLICT',
         'AUTH_REGISTRATION_UNAVAILABLE',
         'AUTH_RESULT_NOT_REPLAYABLE',
+        'BANK_HOLDER_MISMATCH',
         'CONSENT_VERSION_UNSUPPORTED',
         'CURRENT_PASSWORD_INVALID',
         'DEVICE_PROOF_EXPIRED',
@@ -206,8 +207,18 @@ describe('AllExceptionsFilter', () => {
         'DEVICE_PROOF_REQUIRED',
         'DEVICE_PROOF_UNSUPPORTED',
         'DEVICE_RATE_LIMITED',
+        'DRIVER_BANK_NOT_VERIFIED',
+        'DRIVER_HAS_ACTIVE_WORK',
+        'DRIVER_NOT_ACTIVE',
+        'DRIVER_NOT_FOUND',
         'DRIVER_PENDING_APPROVAL',
         'DRIVER_PROFILE_EXISTS',
+        'DRIVER_PROFILE_INCOMPLETE',
+        'DRIVER_PROFILE_LOCKED',
+        'DRIVER_SELF_ACTION_FORBIDDEN',
+        'DRIVER_STATE_CONFLICT',
+        'DRIVER_WALLET_NOT_READY',
+        'DRIVER_WALLET_NOT_SETTLED',
         'GATEWAY_ACK_CONFLICT',
         'GATEWAY_JOB_NOT_FOUND',
         'GATEWAY_UNAUTHORIZED',
@@ -259,6 +270,7 @@ describe('AllExceptionsFilter', () => {
         'VERIFICATION_PROOF_USED',
         'VERIFICATION_PURPOSE_MISMATCH',
         'VERSION_CONFLICT',
+        'WALLET_PARAMETER_VERSION_CONFLICT',
       ]);
     });
 

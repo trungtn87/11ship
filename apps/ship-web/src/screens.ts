@@ -236,7 +236,7 @@ const account: ScreenDef = {
             { class: 'c-card c-stack c-stack--tight' },
             h('p', { class: 'c-title' }, me.fullName ?? 'Chưa có tên'),
             h('p', { class: 'c-lead' }, me.phoneMasked),
-            h('div', { class: 'c-row-flex' }, driver?.kind === 'PLATFORM' ? chip('Shipper hệ thống', 'info') : driver?.kind === 'EXTERNAL' ? chip('Shipper ngoài', 'info') : undefined, chip(STATUS_LABEL[status], status === 'ACTIVE' ? 'ok' : status === 'PENDING' || status === 'SUSPENDED' ? 'warn' : 'soon')),
+            h('div', { class: 'c-row-flex' }, chip(STATUS_LABEL[status], status === 'ACTIVE' ? 'ok' : status === 'PENDING' || status === 'SUSPENDED' ? 'warn' : 'soon')),
           ),
           list([
             listItem({ icon: 'user', title: 'Hồ sơ shipper', sub: status === 'NONE' ? 'Chưa gửi hồ sơ — gửi ngay' : 'Xem trạng thái hồ sơ', onClick: () => env.go(status === 'NONE' ? 'driver-onboarding' : 'driver-status') }),
@@ -369,7 +369,6 @@ const driverStatus: ScreenDef = {
     const rows: ReadonlyArray<readonly [string, string]> = [
       ['Họ tên', driver?.legalName ?? '—'],
       ['Biển số', driver?.plate ?? 'Chưa bổ sung'],
-      ['Loại shipper', driver?.kind === 'PLATFORM' ? 'Shipper hệ thống' : 'Shipper ngoài'],
     ];
     return appPage({
       title: 'Trạng thái hồ sơ',

@@ -26,19 +26,20 @@ after(() => rmSync(out, { recursive: true, force: true }));
 const ids = (groups) => groups.flatMap((group) => group.items.flatMap((item) => [item.id, ...(item.children ?? []).map((child) => child.id)]));
 
 describe('menu by permission', () => {
-  it('ADMIN without grants only sees Tổng quan', async () => {
+  it('ADMIN without grants sees Tổng quan and the (read-only) system parameters, nothing else', async () => {
     const m = await load(real, 'core/menu.js');
-    assert.deepEqual(ids(m.visibleMenu('ADMIN', m.NO_GRANTS)), ['home']);
+    // Owner decision 2026-10-17: every administrator may READ the system parameters (SYSTEM alone edits them).
+    assert.deepEqual(ids(m.visibleMenu('ADMIN', m.NO_GRANTS)), ['home', 'parameters', 'parameters-shipper-wallet']);
   });
   it('ADMIN with a grant sees that entry, never administrators, invitations or the system settings', async () => {
     const m = await load(real, 'core/menu.js');
     const seen = ids(m.visibleMenu('ADMIN', new Set(['users', 'shops'])));
-    assert.deepEqual(seen, ['home', 'users', 'users-list', 'users-locked', 'shops']);
+    assert.deepEqual(seen, ['home', 'users', 'users-list', 'users-locked', 'shops', 'parameters', 'parameters-shipper-wallet']);
     assert.ok(!seen.includes('administrators') && !seen.includes('invitations') && !seen.includes('system-settings'));
   });
   it('"Danh mục › Nhóm món" needs the catalog grant (SHOP VIEW + the catalog right); SYSTEM always sees it', async () => {
     const m = await load(real, 'core/menu.js');
-    assert.deepEqual(ids(m.visibleMenu('ADMIN', new Set(['catalog']))), ['home', 'catalog', 'catalog-categories']);
+    assert.deepEqual(ids(m.visibleMenu('ADMIN', new Set(['catalog']))), ['home', 'catalog', 'catalog-categories', 'parameters', 'parameters-shipper-wallet']);
     assert.ok(!ids(m.visibleMenu('ADMIN', new Set(['users', 'shops', 'drivers']))).includes('catalog-categories'));
     assert.ok(ids(m.visibleMenu('SYSTEM')).includes('catalog-categories'));
     assert.equal(m.canOpenRoute('ADMIN', new Set(['users', 'shops']), { name: 'categories' }), false);
@@ -55,7 +56,7 @@ describe('menu by permission', () => {
     const m = await load(real, 'core/menu.js');
     assert.deepEqual(
       m.MENU.flatMap((group) => group.items.map((item) => item.label)),
-      ['Tổng quan', 'Người dùng', 'Quản trị viên', 'Lời mời Admin', 'Quán', 'Shipper', 'Đơn hàng', 'Giao hàng', 'Phản ánh', 'Danh mục', 'Ví shipper', 'Nạp tiền', 'Rút tiền', 'Cài đặt hệ thống', 'Vùng hoạt động', 'Tham số', 'Nhật ký', 'Giám sát'],
+      ['Tổng quan', 'Người dùng', 'Quản trị viên', 'Lời mời Admin', 'Quán', 'Shipper', 'Đơn hàng', 'Giao hàng', 'Phản ánh', 'Danh mục', 'Ví shipper', 'Nạp tiền', 'Rút tiền', 'Cài đặt hệ thống', 'Vùng hoạt động', 'Tham số hệ thống', 'Nhật ký', 'Giám sát'],
     );
   });
   it('a ready entry has a route; an entry that is not built has none (shown as "Sắp có")', async () => {

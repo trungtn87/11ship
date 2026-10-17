@@ -34,16 +34,18 @@ describe('Driver (M03) module boundary', () => {
     expect(codeIn('driver')).not.toMatch(/DATABASE_POOL|from 'pg'|new Pool|\.connect\(|BEGIN|COMMIT|ROLLBACK|TransactionManager|withTransaction/);
   });
 
-  it('has no Wallet, bank, closure, order or delivery table and no approval, activation or lifecycle command', () => {
-    expect(codeIn('driver')).not.toMatch(/app\.(wallets?|driver_wallets?|driver_bank\w*|driver_closure\w*|wallet_\w+|orders?|deliver\w*)\b/i);
-    // Case-sensitive on purpose: the STATUS names (SUSPENDED, ACTIVE, ...) are vocabulary, a command is a verb.
-    expect(codeIn('driver')).not.toMatch(/[aA]pprove|[aA]ctivate|[sS]uspend\w*\(|[rR]esume|[tT]opup|[wW]ithdraw/);
+  it('has no wallet balance or transaction table, no order or delivery table and no top-up or withdrawal command (the wallet is M04)', () => {
+    // M03 owns the bank account, the history and the two wallet PARAMETERS (a minimum per request); it never holds a balance.
+    expect(codeIn('driver')).not.toMatch(/app\.(wallets?|driver_wallets?|wallet_\w+|wallet_transactions?|orders?|deliver\w*)\b/i);
+    expect(codeIn('driver')).not.toMatch(/\b(creditWallet|debitWallet|requestTopup|requestWithdraw|topupWallet|withdrawFromWallet)\b/);
   });
 
-  it('interpolates nothing but the fixed clock fragment into SQL', () => {
-    for (const file of filesOf('driver').filter((name) => name.endsWith('-repository.ts'))) {
+  it('interpolates nothing but fixed fragments chosen by code into SQL (the clock, the column lists, the patch whitelist, the number of a bind parameter)', () => {
+    // Never a request value: every interpolated name is a constant of the file or the column of a closed whitelist (DriverPatch).
+    const fixed = /^\$\{(CLOCK_CTE|DRIVER_COLUMNS|COLUMNS|clause|sets\.join\(', '\)|ms\('[a-z_.]+'\)|alternatives\.join\(' OR '\)|params\.length( - 1)?|column|spec\.column|spec\.cast \?\? ''|parts\.join\(' AND '\))\}$/;
+    for (const file of filesOf('driver').filter((name) => name.endsWith('-repository.ts') || name.endsWith('shipper-wallet-parameters.ts'))) {
       const interpolations = codeOf(file).match(/\$\{[^}]*\}/g) ?? [];
-      expect([file, interpolations.filter((i) => i !== '${CLOCK_CTE}')]).toEqual([file, []]);
+      expect([file, interpolations.filter((i) => !fixed.test(i))]).toEqual([file, []]);
     }
   });
 
@@ -74,13 +76,17 @@ describe('Driver (M03) module boundary', () => {
   it('the vocabulary is the contract one: EXTERNAL | PLATFORM and PENDING | ACTIVE | SUSPENDED | CLOSING | CLOSED, no SYSTEM', () => {
     expect([...DRIVER_TYPES]).toEqual(['EXTERNAL', 'PLATFORM']);
     expect([...DRIVER_STATUSES]).toEqual(['PENDING', 'ACTIVE', 'SUSPENDED', 'CLOSING', 'CLOSED']);
-    expect(codeIn('driver')).not.toMatch(/'SYSTEM'/);
+    // 'SYSTEM' is the actor kind of the history rows (driver-event-repository), never a driver type or status.
+    expect(codeOf('driver/driver-types.ts')).not.toMatch(/'SYSTEM'/);
+    expect(codeOf('driver/driver-repository.ts')).not.toMatch(/'SYSTEM'/);
   });
 
-  it('the Driver repository exposes no command that changes type, status or flags: one INSERT of fixed values, no UPDATE, no DELETE', () => {
+  it('the Driver repository inserts only the fixed self-onboarding shape; every later change is one version-checked UPDATE through the DriverPatch whitelist; nothing is deleted', () => {
     const repository = codeOf('driver/driver-repository.ts');
     expect(repository.match(/INSERT INTO app\.drivers\b/g) ?? []).toHaveLength(1);
-    expect(repository).not.toMatch(/UPDATE app\.|DELETE FROM/);
+    expect(repository.match(/UPDATE app\.drivers\b/g) ?? []).toHaveLength(1);
+    expect(repository).toContain('d.version = $2::bigint');
+    expect(codeIn('driver')).not.toMatch(/DELETE FROM/);
     const insert = repository.slice(repository.indexOf('INSERT INTO app.drivers'), repository.indexOf('ON CONFLICT (user_id) DO NOTHING'));
     expect(insert).toContain("'EXTERNAL', 'PENDING', false, 1");
     // The four fixed values are literals: none of them is a bind parameter.

@@ -88,13 +88,12 @@ describe('M01-A2D — Driver onboarding', () => {
       expect(response.status).toBe(201);
       const data = dataOf(response);
       expect(data).toMatchObject({
-        driver_type: 'EXTERNAL',
         status: 'PENDING',
         accepting_deliveries: false,
         role_granted: true,
         version: 1,
       });
-      expect(Object.keys(data).sort()).toEqual(['accepting_deliveries', 'driver_id', 'driver_type', 'role_granted', 'status', 'version']);
+      expect(Object.keys(data).sort()).toEqual(['accepting_deliveries', 'driver_id', 'role_granted', 'status', 'version']);
       // Creating the profile logs nobody in: no token, no selected role.
       expect(response.text).not.toContain('access_token');
       expect(response.text).not.toContain('refresh_token');

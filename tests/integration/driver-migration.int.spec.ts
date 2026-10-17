@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Client } from 'pg';
 import { assertTestDatabaseTarget } from './support/assert-test-target';
+import { SHIPPER_DOWN_SQL, SHIPPER_UP_SQL } from './support/shipper-migration-sql';
 import { minimalChildEnv, REPO_ROOT, runNpmScript } from './support/test-helpers';
 
 // M01-A2D — the Driver onboarding migration (app.drivers only; Driver operating areas were removed by the Owner, task section 22), with the same rules as the M00,
@@ -89,6 +90,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
       '1793059200000_account-scope-lifecycle-settings',
       '1793145600000_create-menu',
       '1793232000000_menu-category-admin',
+      '1793318400000_create-shipper-management',
     ]);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-shop-onboarding')).toBe(true);
@@ -172,6 +174,8 @@ describe('M01-A2D — Driver onboarding migration', () => {
     expect(migrate().status).toBe(0);
     await client.query('BEGIN');
     try {
+      // The M03 migration references app.drivers: it goes down first and comes back up last.
+      await client.query(SHIPPER_DOWN_SQL);
       await client.query(downSql);
       expect(await presentTables()).toEqual([]);
       const leftovers = await client.query(
@@ -180,6 +184,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
       );
       expect(leftovers.rowCount).toBe(0);
       await client.query(upSql);
+      await client.query(SHIPPER_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
       await client.query('ROLLBACK');
@@ -311,9 +316,17 @@ describe('M01-A2D — Driver onboarding migration', () => {
           'drivers_version_ck',
           'drivers_time_order_ck',
           'drivers_not_active_not_accepting_ck',
+          // M03 (Shipper management): review state, reasons, the Shipper code and who reviewed.
+          'drivers_shipper_code_uq',
+          'drivers_shipper_code_ck',
+          'drivers_reviewed_by_fk',
+          'drivers_review_state_ck',
+          'drivers_rejection_reason_ck',
+          'drivers_suspension_reason_ck',
+          'drivers_status_before_closing_ck',
         ].sort(),
       );
-      expect(await indexNames('drivers')).toEqual(['drivers_pkey', 'drivers_user_uq']);
+      expect(await indexNames('drivers')).toEqual(['drivers_full_name_idx', 'drivers_pkey', 'drivers_shipper_code_uq', 'drivers_status_idx', 'drivers_user_uq']);
     });
 
     it('defaults: EXTERNAL, not accepting, version 1; a driver must say its status and its name', async () => {
@@ -430,7 +443,12 @@ describe('M01-A2D — Driver onboarding migration', () => {
         `SELECT column_name FROM information_schema.columns WHERE table_schema = 'app' AND table_name = 'drivers' ORDER BY column_name`,
       );
       expect(columns.rows.map((r) => r.column_name)).toEqual(
-        ['accepting_deliveries', 'created_at', 'driver_id', 'driver_type', 'full_name', 'plate_number', 'status', 'updated_at', 'user_id', 'version'].sort(),
+        // The A2D columns plus the M03 ones (review, suspension, closure, Shipper code). Still no area column.
+        [
+          'accepting_deliveries', 'created_at', 'driver_id', 'driver_type', 'full_name', 'plate_number', 'status', 'updated_at', 'user_id', 'version',
+          'shipper_code', 'review_state', 'submitted_at', 'reviewed_at', 'reviewed_by', 'rejection_reason', 'suspension_reason', 'suspended_at',
+          'status_before_closing', 'closure_requested_at', 'closure_note',
+        ].sort(),
       );
     });
   });
