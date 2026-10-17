@@ -312,4 +312,17 @@ void main() {
     await tester.pumpAndSettle(const Duration(seconds: 1));
     expect(find.byKey(const Key('result-shop-s1')), findsOneWidget);
   });
+
+  testWidgets('M06: the orders tab reaches "Phí giao hàng", which says it is not ready and shows no fee', (WidgetTester tester) async {
+    await pump(tester, healthy());
+    await openTab(tester, 'orders');
+    expect(find.byKey(const Key('m06-fee-entry')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('m06-fee-entry')));
+    await tester.tap(find.byKey(const Key('m06-fee-entry')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('m06-fee-not-ready')), findsOneWidget);
+    expect(find.byKey(const Key('m06-fee-amount')), findsNothing);
+    expect(find.byKey(const Key('m06-sample-banner')), findsNothing);
+    expect(find.widgetWithText(N11Button, 'Tiếp tục'), findsNothing);
+  });
 }
