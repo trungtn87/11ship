@@ -14,7 +14,7 @@ import { isCanonicalUuid } from '../shared/identifiers';
 import { assertParameterAccess, ParameterAccess } from '../system-settings/system-parameter-access';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
-import { FeePolicy, MAX_DISTANCE_M, MAX_FEE_VND, MAX_TIERS, samePolicy } from './shipping-fee-policy';
+import { FeePolicy, MAX_DISTANCE_M, MAX_FEE_VND, samePolicy, TIER_COUNT } from './shipping-fee-policy';
 import { evaluateQuote } from './shipping-fee-quote';
 import { PolicyDraft, PolicyVersion, ShippingFeePolicyRepository } from './shipping-fee-policy-repository';
 import { ApplyBody, PreviewBody, SaveDraftBody } from './shipping-fee-policy-validation';
@@ -27,14 +27,22 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 
 const policyView = (policy: FeePolicy): JsonObject => ({
   tiers: policy.tiers.map((t) => ({ from_m: t.fromM, to_m: t.toM, fee_vnd: t.feeVnd })),
-  tail: { base_fee_vnd: policy.tail.baseFeeVnd, step_m: policy.tail.stepM, step_fee_vnd: policy.tail.stepFeeVnd },
 });
 
-const versionView = (v: PolicyVersion): JsonObject => ({ version_no: v.versionNo, ...policyView(v.policy), note: v.note, applied_by: v.appliedBy, applied_at: iso(v.appliedAtMs) });
+/** `legacy` = a v1.0 version (history only; its `tail` formula is shown but never used to price). */
+const versionView = (v: PolicyVersion): JsonObject => ({
+  version_no: v.versionNo,
+  legacy: v.schemaVersion !== 2,
+  ...policyView(v.policy),
+  tail: v.legacyTail === null ? null : { base_fee_vnd: v.legacyTail.baseFeeVnd, step_m: v.legacyTail.stepM, step_fee_vnd: v.legacyTail.stepFeeVnd },
+  note: v.note,
+  applied_by: v.appliedBy,
+  applied_at: iso(v.appliedAtMs),
+});
 
 const draftView = (d: PolicyDraft): JsonObject => ({
   version: d.version,
-  ...(d.policy === null ? { tiers: null, tail: null } : policyView(d.policy)),
+  ...(d.policy === null ? { tiers: null } : policyView(d.policy)),
   updated_by: d.updatedBy,
   updated_at: iso(d.updatedAtMs),
 });
@@ -45,7 +53,7 @@ function state(active: PolicyVersion | undefined, draft: PolicyDraft, history: r
     active: active === undefined ? null : versionView(active),
     draft: draftView(draft),
     ...(history === null ? {} : { history: history.map(versionView) }),
-    limits: { max_tiers: MAX_TIERS, max_fee_vnd: MAX_FEE_VND, max_distance_m: MAX_DISTANCE_M },
+    limits: { tier_count: TIER_COUNT, max_fee_vnd: MAX_FEE_VND, max_distance_m: MAX_DISTANCE_M },
   };
 }
 
@@ -90,7 +98,7 @@ export class ShippingFeePolicyService {
       await setBusinessLockTimeout(context, this.#lockTimeoutMs);
       await this.#lockActor(context, known, 'read');
       const active = await this.policies.active(context);
-      const snapshot = body.policy !== null ? { versionNo: 0, policy: body.policy } : active === undefined ? null : { versionNo: active.versionNo, policy: active.policy };
+      const snapshot = body.policy !== null ? { versionNo: 0, policy: body.policy } : active === undefined || active.schemaVersion !== 2 ? null : { versionNo: active.versionNo, policy: active.policy };
       const outcome = evaluateQuote(snapshot, body.distanceM);
       return {
         status: outcome.status,
@@ -169,7 +177,7 @@ export class ShippingFeePolicyService {
           throw new AppError('SHIPPING_DRAFT_EMPTY');
         }
         const before = await this.policies.active(context);
-        if (before !== undefined && samePolicy(before.policy, draft.policy)) {
+        if (before !== undefined && before.schemaVersion === 2 && samePolicy(before.policy, draft.policy)) {
           throw new AppError('SHIPPING_POLICY_UNCHANGED');
         }
         const created = await this.policies.insertVersion(context, {

@@ -2628,11 +2628,22 @@ select {
 
 .sp-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 40px;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 12px;
   align-items: start;
   padding: 8px 0;
   border-bottom: 1px solid var(--line);
+}
+
+.sp-from {
+  min-height: var(--control-height);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-radius: var(--radius-control);
+  background: var(--neutral-bg);
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .sp-row-head {
@@ -2768,7 +2779,7 @@ select {
   }
 
   .sp-row {
-    grid-template-columns: 1fr 1fr 1fr 40px;
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 8px;
   }
 }

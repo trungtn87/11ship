@@ -21,22 +21,28 @@ const session = (csrf: string | null = 'csrf-1') => ({ csrf: () => csrf ?? undef
 
 const TABLE: PolicyTable = {
   tiers: [
-    { fromM: 0, toM: 2000, feeVnd: 10000 },
-    { fromM: 2000, toM: 4000, feeVnd: 12000 },
+    { fromM: 0, toM: 3000, feeVnd: 10000 },
+    { fromM: 3000, toM: 6000, feeVnd: 15000 },
+    { fromM: 6000, toM: 10000, feeVnd: 20000 },
   ],
-  tail: { baseFeeVnd: 20000, stepM: 1000, stepFeeVnd: 3000 },
 };
-const wire = {
-  tiers: [{ from_m: 0, to_m: 2000, fee_vnd: 10000 }, { from_m: 2000, to_m: 4000, fee_vnd: 12000 }],
+const wire = { tiers: [{ from_m: 0, to_m: 3000, fee_vnd: 10000 }, { from_m: 3000, to_m: 6000, fee_vnd: 15000 }, { from_m: 6000, to_m: 10000, fee_vnd: 20000 }] };
+const version = { version_no: 2, legacy: false, ...wire, tail: null, note: null, applied_by: '11111111-1111-4111-8111-111111111111', applied_at: '2026-10-17T03:00:00.000Z' };
+const legacyVersion = {
+  version_no: 1,
+  legacy: true,
+  tiers: [{ from_m: 0, to_m: 2000, fee_vnd: 10000 }, { from_m: 2000, to_m: 4000, fee_vnd: 12000 }, { from_m: 4000, to_m: 7000, fee_vnd: 15000 }, { from_m: 7000, to_m: 10000, fee_vnd: 20000 }],
   tail: { base_fee_vnd: 20000, step_m: 1000, step_fee_vnd: 3000 },
+  note: null,
+  applied_by: '11111111-1111-4111-8111-111111111111',
+  applied_at: '2026-10-16T03:00:00.000Z',
 };
-const version = { version_no: 2, ...wire, note: null, applied_by: '11111111-1111-4111-8111-111111111111', applied_at: '2026-10-17T03:00:00.000Z' };
-const state = { active: version, draft: { version: 3, tiers: null, tail: null, updated_by: null, updated_at: '2026-10-17T03:00:00.000Z' }, history: [version] };
+const state = { active: version, draft: { version: 3, tiers: null, updated_by: null, updated_at: '2026-10-17T03:00:00.000Z' }, history: [version, legacyVersion] };
 
 describe('M06-A admin web - typing', () => {
   it('reads km with at most three decimals into whole metres, never rounding', () => {
     expect(parseKm('0')).toBe(0);
-    expect(parseKm('2')).toBe(2000);
+    expect(parseKm('3')).toBe(3000);
     expect(parseKm('5.5')).toBe(5500);
     expect(parseKm('5,5')).toBe(5500);
     expect(parseKm('0.125')).toBe(125);
@@ -44,7 +50,7 @@ describe('M06-A admin web - typing', () => {
     for (const bad of ['', '-1', '1e3', 'abc', '1.', '.5', '10000']) {
       expect(parseKm(bad)).toBeUndefined();
     }
-    expect(formatKm(2000)).toBe('2');
+    expect(formatKm(3000)).toBe('3');
     expect(formatKm(5500)).toBe('5.5');
     expect(formatKm(125)).toBe('0.125');
   });
@@ -60,52 +66,66 @@ describe('M06-A admin web - typing', () => {
   });
 });
 
-describe('M06-A admin web - validateEditing (same rules as the server)', () => {
-  const model = (rows: Array<[string, string, string]>, tail = ['20000', '1', '3000']): EditingModel => ({ rows: rows.map(([from, to, fee]) => ({ from, to, fee })), tail: { base: tail[0] as string, step: tail[1] as string, stepFee: tail[2] as string } });
+describe('M06-A admin web - validateEditing (three fixed bands, same rules as the server)', () => {
+  const model = (bounds: [string, string, string], fees: [string, string, string] = ['10000', '15000', '20000']): EditingModel => ({ bounds, fees });
 
-  it('accepts a continuous table and returns it in metres', () => {
-    expect(validateEditing(model([['0', '2', '10000'], ['2', '4', '12000']])).table).toEqual({ tiers: TABLE.tiers, tail: TABLE.tail });
+  it('accepts three increasing bounds and returns three continuous bands in metres', () => {
+    expect(validateEditing(model(['3', '6', '10'])).table).toEqual(TABLE);
     expect(validateEditing(toEditing(TABLE)).table).toEqual(TABLE);
+    expect(validateEditing(model(['3', '6', '14'])).table?.tiers[2]).toEqual({ fromM: 6000, toM: 14000, feeVnd: 20000 }); // about 10 km is not a hard limit
   });
 
-  it('names a gap, an overlap, a first row not at 0, an empty or reversed range, a bad fee and a missing tail', () => {
-    expect(validateEditing(model([['0', '2', '1'], ['2.5', '4', '1']])).problems.rows[1]?.from).toContain('Hở');
-    expect(validateEditing(model([['0', '2', '1'], ['1.5', '4', '1']])).problems.rows[1]?.from).toContain('Chồng');
-    expect(validateEditing(model([['1', '2', '1']])).problems.rows[0]?.from).toContain('0 km');
-    expect(validateEditing(model([['0', '0', '1']])).problems.rows[0]?.to).toBeDefined();
-    expect(validateEditing(model([['0', '2', '-5']])).problems.rows[0]?.fee).toBeDefined();
-    expect(validateEditing(model([['0', '2', '1']], ['', '1', '1'])).problems.tail.base).toBeDefined();
-    expect(validateEditing(model([['0', '2', '1']], ['1', '0', '1'])).problems.tail.step).toBeDefined();
-    const empty = validateEditing(model([]));
-    expect(empty.table).toBeUndefined();
-    expect(empty.problems.table).toBeDefined();
-    for (const bad of [model([['0', '2', '1'], ['2.5', '4', '1']]), model([['0', '2', '-5']]), model([['0', '2', '1']], ['', '1', '1'])]) {
+  it('always has exactly three bands (the model cannot hold a fourth) and starts empty when nothing is applied', () => {
+    expect(toEditing(null).bounds).toHaveLength(3);
+    expect(toEditing(null).fees).toHaveLength(3);
+    expect(toEditing({ tiers: TABLE.tiers.slice(0, 2) }).bounds).toEqual(['', '', '']); // not a v1.1 table: not shown as one
+    expect(validateEditing(toEditing(null)).table).toBeUndefined();
+  });
+
+  it('names a bound that is not above the previous one (0 < b1 < b2 < b3), a bad number or a bad fee', () => {
+    expect(validateEditing(model(['0', '6', '10'])).problems.bounds[0]).toContain('lớn hơn 0');
+    expect(validateEditing(model(['3', '3', '10'])).problems.bounds[1]).toContain('lớn hơn mốc');
+    expect(validateEditing(model(['3', '6', '5'])).problems.bounds[2]).toContain('lớn hơn mốc');
+    expect(validateEditing(model(['x', '6', '10'])).problems.bounds[0]).toContain('Nhập số km');
+    expect(validateEditing(model(['3', '6', '10'], ['-5', '15000', '20000'])).problems.fees[0]).toBeDefined();
+    expect(validateEditing(model(['3', '6', '10'], ['10000', '', '20000'])).problems.fees[1]).toBeDefined();
+    for (const bad of [model(['0', '6', '10']), model(['3', '3', '10']), model(['3', '6', '10'], ['10000', '15000', '10000001']), model(['3', '6', '1.2345'])]) {
       expect(validateEditing(bad).table).toBeUndefined();
     }
   });
 
-  it('describes what changed between two versions', () => {
+  it('describes what changed between two versions; an old-format version is not compared line by line', () => {
     expect(describeChanges(null, TABLE)).toEqual(['Bảng giá đầu tiên.']);
     expect(describeChanges(TABLE, TABLE)).toEqual(['Không đổi nội dung.']);
-    const changed: PolicyTable = { tiers: [{ fromM: 0, toM: 2000, feeVnd: 9000 }], tail: { ...TABLE.tail, stepFeeVnd: 4000 } };
-    const lines = describeChanges(TABLE, changed);
-    expect(lines.join('|')).toContain('Mốc 1');
-    expect(lines.join('|')).toContain('Bỏ mốc 2–4 km');
-    expect(lines.join('|')).toContain('Sau mốc cuối');
+    const changed: PolicyTable = { tiers: [{ fromM: 0, toM: 2500, feeVnd: 9000 }, TABLE.tiers[1] as never, TABLE.tiers[2] as never] };
+    const lines = describeChanges(TABLE, changed).join('|');
+    expect(lines).toContain('Khung 1');
+    expect(lines).not.toContain('Khung 2');
+    expect(describeChanges({ tiers: [] }, TABLE, true)[0]).toContain('định dạng cũ');
   });
 });
 
 describe('M06-A admin web - api', () => {
-  it('parses the state strictly and refuses a malformed one', () => {
-    expect(parseState(state)?.active?.versionNo).toBe(2);
+  it('parses the state strictly: a current version has exactly three bands and no tail; an old one may differ and is marked legacy', () => {
+    const parsed = parseState(state);
+    expect(parsed?.active).toMatchObject({ versionNo: 2, legacy: false, tail: null });
+    expect(parsed?.history[1]).toMatchObject({ versionNo: 1, legacy: true, tail: { baseFeeVnd: 20000, stepM: 1000, stepFeeVnd: 3000 } });
+    expect(parsed?.history[1]?.tiers).toHaveLength(4);
     expect(parseState({ ...state, active: null, history: [] })?.active).toBeNull();
-    expect(parseState({ ...state, draft: { ...state.draft, tiers: wire.tiers, tail: wire.tail } })?.draft.table).toEqual(TABLE);
-    for (const bad of [{ ...state, history: 'x' }, { ...state, draft: { ...state.draft, tiers: wire.tiers } }, { ...state, active: { ...version, version_no: 0 } }, { ...state, active: { ...version, tiers: [{ from_m: 0.5, to_m: 1, fee_vnd: 1 }] } }]) {
+    expect(parseState({ ...state, draft: { ...state.draft, tiers: wire.tiers } })?.draft.table).toEqual(TABLE);
+    for (const bad of [
+      { ...state, history: 'x' },
+      { ...state, active: { ...version, version_no: 0 } },
+      { ...state, active: { ...version, legacy: false, tiers: wire.tiers.slice(0, 2) } }, // a current version with two bands
+      { ...state, active: { ...version, tail: { base_fee_vnd: 1, step_m: 1, step_fee_vnd: 1 } } }, // a current version with a tail
+      { ...state, active: { ...version, tiers: [{ from_m: 0.5, to_m: 1, fee_vnd: 1 }, ...wire.tiers.slice(1)] } },
+      { ...state, draft: { ...state.draft, tiers: wire.tiers.slice(0, 2) } },
+    ]) {
       expect(parseState(bad)).toBeUndefined();
     }
   });
 
-  it('reads, saves a draft with the draft version and key, applies with a note, and maps refusals', async () => {
+  it('reads, saves a draft with the draft version and key (three bands, no tail), applies with a note, and maps refusals', async () => {
     const s = scripted(reply(200, { data: state }));
     expect(await createShippingPolicySource(new ShippingPolicyApi(s.transport), session()).read()).toMatchObject({ kind: 'ready' });
     expect(s.requests[0]).toMatchObject({ method: 'GET', path: '/admin/shipping-fee-policy' });
@@ -113,6 +133,7 @@ describe('M06-A admin web - api', () => {
     const saved = scripted(reply(200, { data: { active: null, draft: state.draft } }));
     expect(await createShippingPolicySource(new ShippingPolicyApi(saved.transport), session()).saveDraft({ version: 3, table: TABLE, key: 'k1' })).toEqual({ kind: 'ok' });
     expect(saved.requests[0]).toMatchObject({ method: 'POST', path: '/admin/shipping-fee-policy/draft', csrf: 'csrf-1', idempotencyKey: 'k1', body: { expected_version: 3, ...wire } });
+    expect(JSON.stringify(saved.requests[0]?.body)).not.toContain('tail');
 
     const applied = scripted(reply(200, { data: { active: version, draft: state.draft } }));
     expect(await createShippingPolicySource(new ShippingPolicyApi(applied.transport), session()).apply({ version: 4, note: 'ghi chú', key: 'k2' })).toEqual({ kind: 'ok' });
@@ -134,17 +155,17 @@ describe('M06-A admin web - api', () => {
     expect(await createShippingPolicySource(new ShippingPolicyApi(lost.transport), session()).saveDraft({ version: 1, table: TABLE, key: 'k' })).toEqual({ kind: 'unknown' });
   });
 
-  it('sends nothing without a session token or an unwired session, and never prices from a failed preview', async () => {
+  it('sends nothing without a session token or an unwired session, and never prices from a failed preview; beyond the last band is "unpriced", not 0', async () => {
     const none = scripted();
     expect(await createShippingPolicySource(new ShippingPolicyApi(none.transport), session(null)).saveDraft({ version: 1, table: TABLE, key: 'k' })).toEqual({ kind: 'session-expired' });
     expect(await createShippingPolicySource(new ShippingPolicyApi(none.transport)).apply({ version: 1, note: null, key: 'k' })).toEqual({ kind: 'not-wired' });
     expect(none.requests).toHaveLength(0);
 
-    const priced = scripted(reply(200, { data: { status: 'PRICED', fee_vnd: 15000, distance_m: 5500, based_on: 'EDITING', policy_version_no: null, band: 2 } }));
-    expect(await createShippingPolicySource(new ShippingPolicyApi(priced.transport), session()).preview(5500, TABLE)).toEqual({ kind: 'priced', feeVnd: 15000, band: 2, basedOn: 'EDITING' });
+    const priced = scripted(reply(200, { data: { status: 'PRICED', fee_vnd: 15000, distance_m: 5500, based_on: 'EDITING', policy_version_no: null, band: 1 } }));
+    expect(await createShippingPolicySource(new ShippingPolicyApi(priced.transport), session()).preview(5500, TABLE)).toEqual({ kind: 'priced', feeVnd: 15000, band: 1, basedOn: 'EDITING' });
     expect(priced.requests[0]).toMatchObject({ path: '/admin/shipping-fee-policy/preview', body: { distance_m: 5500, ...wire } });
-    const unpriced = scripted(reply(200, { data: { status: 'UNPRICED', fee_vnd: null, distance_m: 1, based_on: 'ACTIVE', reason: 'POLICY_NOT_CONFIGURED' } }));
-    expect(await createShippingPolicySource(new ShippingPolicyApi(unpriced.transport), session()).preview(1, null)).toEqual({ kind: 'unpriced', reason: 'POLICY_NOT_CONFIGURED' });
+    const outside = scripted(reply(200, { data: { status: 'UNPRICED', fee_vnd: null, distance_m: 12000, based_on: 'ACTIVE', reason: 'OUT_OF_PRICE_RANGE' } }));
+    expect(await createShippingPolicySource(new ShippingPolicyApi(outside.transport), session()).preview(12000, null)).toEqual({ kind: 'unpriced', reason: 'OUT_OF_PRICE_RANGE' });
     const broken = scripted(reply(200, { data: { status: 'PRICED', fee_vnd: 0 } }));
     expect(await createShippingPolicySource(new ShippingPolicyApi(broken.transport), session()).preview(1, null)).toEqual({ kind: 'failed' });
   });
@@ -170,7 +191,7 @@ const conditions = {
   handoff_service_seconds: 60,
   updated_by: null,
   updated_at: '2026-10-17T03:00:00.000Z',
-  fixed: { search_radius_m: 5000, platform_unlimited: true },
+  fixed: { search_radius_m: 3000, platform_unlimited: true },
   history: [],
 };
 
@@ -192,7 +213,7 @@ describe('M06-B/C admin web - conditions', () => {
   });
 
   it('parses the state strictly (fixed radius included) and refuses a malformed one', () => {
-    expect(parseConditions(conditions)).toMatchObject({ version: 2, externalMax: 3, delaySeconds: 300, pickupSeconds: 120, handoffSeconds: 60, searchRadiusM: 5000 });
+    expect(parseConditions(conditions)).toMatchObject({ version: 2, externalMax: 3, delaySeconds: 300, pickupSeconds: 120, handoffSeconds: 60, searchRadiusM: 3000 });
     const change = { version_after: 3, old: { external_max_deliveries: 3, batch_max_delay_seconds: 300, pickup_service_seconds: 120, handoff_service_seconds: 60 }, new: { external_max_deliveries: 4, batch_max_delay_seconds: 300, pickup_service_seconds: 120, handoff_service_seconds: 60 }, changed_by: 'u', changed_at: '2026-10-17T04:00:00.000Z' };
     expect(parseConditions({ ...conditions, history: [change] })?.history[0]).toMatchObject({ versionAfter: 3, new: { externalMax: 4 } });
     for (const bad of [{ ...conditions, fixed: {} }, { ...conditions, version: 0 }, { ...conditions, external_max_deliveries: 1.5 }, { ...conditions, history: [{ ...change, new: {} }] }, { ...conditions, history: 'x' }]) {

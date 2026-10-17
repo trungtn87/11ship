@@ -17,7 +17,6 @@ import { AdminAccountReadController, AdminPermissionsController } from '../admin
 import { ShippingEligibilityModule } from '../shipping-policy/shipping-eligibility.module';
 import { ShippingEligibilityPolicyService } from '../shipping-policy/shipping-eligibility-policy-service';
 import { ShippingEligibilityPolicyController, ShippingFeePolicyController } from '../shipping-policy/shipping-fee-policy.controller';
-import { ShippingFeePolicyRepository } from '../shipping-policy/shipping-fee-policy-repository';
 import { ShippingFeePolicyService } from '../shipping-policy/shipping-fee-policy-service';
 import { AdminShipperController, ShipperWalletParametersController } from '../admin-shippers/admin-shipper.controller';
 import { AdminShipperService } from '../admin-shippers/admin-shipper-service';
@@ -143,7 +142,6 @@ export class AdminAuthModule implements NestModule {
         AdminShipperService,
         ShipperWalletParametersService,
         // M06-A flexible shipping-fee table (SYSTEM changes, any ADMIN reads).
-        ShippingFeePolicyRepository,
         ShippingFeePolicyService,
         ShippingEligibilityPolicyService,
         // The 1B section 8.8 hook is always present (1B calls it); it is a no-op when no activation attempt exists.

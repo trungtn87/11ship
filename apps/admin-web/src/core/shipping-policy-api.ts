@@ -4,7 +4,7 @@
 
 import { CsrfPort, failureOf } from './accounts-api.js';
 import { ApiClient, ApiResult, record, str } from './api.js';
-import { ConditionChange, ConditionsRead, ConditionsState, ConditionValues, PolicyRead, PolicyState, PolicyTable, PolicyTier, PolicyVersionInfo, PolicyWriteResult, PreviewResult, ShippingPolicySource } from './shipping-policy.js';
+import { ConditionChange, ConditionsRead, ConditionsState, ConditionValues, LegacyTail, PolicyRead, PolicyState, PolicyTable, PolicyTier, PolicyVersionInfo, PolicyWriteResult, PreviewResult, ShippingPolicySource } from './shipping-policy.js';
 
 /** The transport's base: this client's paths start with /admin. */
 export const SHIPPING_POLICY_BASE = '/v1';
@@ -32,11 +32,7 @@ function parseTiers(value: unknown): PolicyTier[] | undefined {
 
 function parseTable(source: Record<string, unknown>): PolicyTable | undefined {
   const tiers = parseTiers(source.tiers);
-  const tail = record(source.tail);
-  if (tiers === undefined || tail === undefined || !whole(tail.base_fee_vnd) || !whole(tail.step_m) || !whole(tail.step_fee_vnd)) {
-    return undefined;
-  }
-  return { tiers, tail: { baseFeeVnd: tail.base_fee_vnd, stepM: tail.step_m, stepFeeVnd: tail.step_fee_vnd } };
+  return tiers === undefined ? undefined : { tiers };
 }
 
 export function parseVersion(value: unknown): PolicyVersionInfo | undefined {
@@ -48,10 +44,17 @@ export function parseVersion(value: unknown): PolicyVersionInfo | undefined {
   const appliedAt = iso(raw.applied_at);
   const appliedBy = str(raw.applied_by);
   const note = raw.note === null ? null : str(raw.note);
-  if (table === undefined || appliedAt === undefined || appliedBy === undefined || note === undefined || !whole(raw.version_no) || raw.version_no < 1) {
+  const tailRaw = raw.tail === null ? null : record(raw.tail);
+  const tail: LegacyTail | null | undefined =
+    tailRaw === null ? null : tailRaw !== undefined && whole(tailRaw.base_fee_vnd) && whole(tailRaw.step_m) && whole(tailRaw.step_fee_vnd) ? { baseFeeVnd: tailRaw.base_fee_vnd, stepM: tailRaw.step_m, stepFeeVnd: tailRaw.step_fee_vnd } : undefined;
+  if (table === undefined || appliedAt === undefined || appliedBy === undefined || note === undefined || tail === undefined || typeof raw.legacy !== 'boolean' || !whole(raw.version_no) || raw.version_no < 1) {
     return undefined;
   }
-  return { ...table, versionNo: raw.version_no, note, appliedBy, appliedAt };
+  // A current (v1.1) version has exactly three bands and no tail; only a legacy one may differ.
+  if (!raw.legacy && (table.tiers.length !== 3 || tail !== null)) {
+    return undefined;
+  }
+  return { ...table, versionNo: raw.version_no, legacy: raw.legacy, tail, note, appliedBy, appliedAt };
 }
 
 export function parseState(data: Record<string, unknown>): PolicyState | undefined {
@@ -61,8 +64,8 @@ export function parseState(data: Record<string, unknown>): PolicyState | undefin
   if (active === undefined || draftRaw === undefined || updatedAt === undefined || !whole(draftRaw.version) || draftRaw.version < 1) {
     return undefined;
   }
-  const draftTable = draftRaw.tiers === null && draftRaw.tail === null ? null : parseTable(draftRaw);
-  if (draftTable === undefined || !Array.isArray(data.history)) {
+  const draftTable = draftRaw.tiers === null ? null : parseTable(draftRaw);
+  if (draftTable === undefined || (draftTable !== null && draftTable.tiers.length !== 3) || !Array.isArray(data.history)) {
     return undefined;
   }
   const history: PolicyVersionInfo[] = [];
@@ -108,15 +111,12 @@ export function parseConditions(data: Record<string, unknown>): ConditionsState 
 /** A write answers with the active table and the draft only (no history); the page reads the whole state again afterwards. */
 const parseWriteAck = (data: Record<string, unknown>): true | undefined => (record(data.draft) !== undefined && 'active' in data ? true : undefined);
 
-const toBody = (table: PolicyTable): Record<string, unknown> => ({
-  tiers: table.tiers.map((t) => ({ from_m: t.fromM, to_m: t.toM, fee_vnd: t.feeVnd })),
-  tail: { base_fee_vnd: table.tail.baseFeeVnd, step_m: table.tail.stepM, step_fee_vnd: table.tail.stepFeeVnd },
-});
+const toBody = (table: PolicyTable): Record<string, unknown> => ({ tiers: table.tiers.map((t) => ({ from_m: t.fromM, to_m: t.toM, fee_vnd: t.feeVnd })) });
 
 interface PreviewData {
   readonly status: 'PRICED' | 'UNPRICED';
   readonly feeVnd: number | null;
-  readonly band: number | 'TAIL' | null;
+  readonly band: number | null;
   readonly reason: string | null;
   readonly basedOn: 'ACTIVE' | 'EDITING';
 }
@@ -126,7 +126,7 @@ function parsePreview(data: Record<string, unknown>): PreviewData | undefined {
   if (basedOn === undefined) {
     return undefined;
   }
-  if (data.status === 'PRICED' && whole(data.fee_vnd) && (data.band === 'TAIL' || whole(data.band))) {
+  if (data.status === 'PRICED' && whole(data.fee_vnd) && whole(data.band)) {
     return { status: 'PRICED', feeVnd: data.fee_vnd, band: data.band, reason: null, basedOn };
   }
   if (data.status === 'UNPRICED' && data.fee_vnd === null && str(data.reason) !== undefined) {
@@ -257,7 +257,7 @@ export function createShippingPolicySource(api: ShippingPolicyApi, session?: Csr
         return { kind: 'failed' };
       }
       return result.data.status === 'PRICED'
-        ? { kind: 'priced', feeVnd: result.data.feeVnd as number, band: result.data.band as number | 'TAIL', basedOn: result.data.basedOn }
+        ? { kind: 'priced', feeVnd: result.data.feeVnd as number, band: result.data.band as number, basedOn: result.data.basedOn }
         : { kind: 'unpriced', reason: result.data.reason as string };
     },
   };

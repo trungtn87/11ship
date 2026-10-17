@@ -1,9 +1,9 @@
 import { computeShippingFee, FeePolicy } from './shipping-fee-policy';
 
-// Quote evaluation (M06): turns "a policy version + a route distance from M14" into a priced or an UNPRICED answer. An unpriced quote has
+// Quote evaluation (M06, v1.1): turns "a policy version + a route distance from M14" into a priced or an UNPRICED answer. An unpriced quote has
 // feeVnd null: never 0, never a straight-line guess. M06 never calls the route service itself; the caller hands the distance in.
 
-export type UnpricedReason = 'POLICY_NOT_CONFIGURED' | 'ROUTE_DATA_UNAVAILABLE';
+export type UnpricedReason = 'POLICY_NOT_CONFIGURED' | 'ROUTE_DATA_UNAVAILABLE' | 'OUT_OF_PRICE_RANGE';
 
 export interface PolicySnapshot {
   readonly versionNo: number;
@@ -11,7 +11,7 @@ export interface PolicySnapshot {
 }
 
 export type QuoteOutcome =
-  | { readonly status: 'PRICED'; readonly feeVnd: number; readonly distanceM: number; readonly policyVersionNo: number; readonly band: number | 'TAIL' }
+  | { readonly status: 'PRICED'; readonly feeVnd: number; readonly distanceM: number; readonly policyVersionNo: number; readonly band: number }
   | { readonly status: 'UNPRICED'; readonly feeVnd: null; readonly reason: UnpricedReason };
 
 export function evaluateQuote(snapshot: PolicySnapshot | null, distanceM: number | null | undefined): QuoteOutcome {
@@ -21,8 +21,12 @@ export function evaluateQuote(snapshot: PolicySnapshot | null, distanceM: number
   if (typeof distanceM !== 'number' || !Number.isFinite(distanceM) || distanceM < 0) {
     return { status: 'UNPRICED', feeVnd: null, reason: 'ROUTE_DATA_UNAVAILABLE' };
   }
-  const { feeVnd, band } = computeShippingFee(snapshot.policy, distanceM);
-  return { status: 'PRICED', feeVnd, distanceM, policyVersionNo: snapshot.versionNo, band };
+  const result = computeShippingFee(snapshot.policy, distanceM);
+  if (result.status === 'OUT_OF_PRICE_RANGE') {
+    // Beyond the last band: no fee (null, never 0) and nothing is added or agreed automatically.
+    return { status: 'UNPRICED', feeVnd: null, reason: 'OUT_OF_PRICE_RANGE' };
+  }
+  return { status: 'PRICED', feeVnd: result.feeVnd, distanceM, policyVersionNo: snapshot.versionNo, band: result.band };
 }
 
 export interface QuoteSnapshot {

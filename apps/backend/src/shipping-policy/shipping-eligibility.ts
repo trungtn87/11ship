@@ -2,8 +2,8 @@
 // owners (M03 profile, M04 wallet, M07 open work, M14 location) and hands them in; a fact an owner cannot give is `undefined` and is a REASON to
 // refuse, never a guess. A preview of "eligible" is not an acceptance: M07 re-checks under its own locks when it commits.
 
-/** The normal search radius is fixed by the approved design (straight line, shop -> Shipper's current GPS). It is never a setting. */
-export const SHIPPER_SEARCH_RADIUS_M = 5000;
+/** The search radius (M06 v1.1: 3 km) is fixed by the approved design: straight line from the shop position to the Shipper's current GPS. Never a setting, never widened. It is NOT the delivery distance from shop to customer. */
+export const SHIPPER_SEARCH_RADIUS_M = 3000;
 
 export type EligibilityReason =
   | 'DRIVER_NOT_ACTIVE'
@@ -105,9 +105,8 @@ export function evaluateEligibility(facts: EligibilityFacts): EligibilityVerdict
     reasons.push('LOCATION_STALE');
   } else if (delivery !== undefined) {
     if (!isValidPoint(delivery.shop)) {
-      if (!platform) {
-        reasons.push('SHOP_LOCATION_MISSING');
-      }
+      // The shop position is needed by EXTERNAL (the radius) and PLATFORM (the exemption is only from the radius) alike.
+      reasons.push('SHOP_LOCATION_MISSING');
     } else {
       distance = haversineMeters(delivery.shop, location.point);
       if (!platform && distance > SHIPPER_SEARCH_RADIUS_M) {

@@ -50,6 +50,11 @@ describe('M04-A1 wallet core boundary', () => {
     expect(code).not.toMatch(/held_vnd\s*=/);
   });
 
+  it('M04-B1: no production code touches the topup source tables yet (schema only; the writers are B2)', () => {
+    const touching = productionFiles().filter((name) => /app\.(system_owned_bank_accounts|wallet_topup_requests|wallet_bank_transactions|wallet_topups)\b/.test(codeOf(name)));
+    expect(touching).toEqual([]);
+  });
+
   it('has no top-up, withdrawal, adjustment, hold or commission command', () => {
     expect(walletCode()).not.toMatch(/\b(creditTopup|requestTopup|requestWithdraw|postAdjustment|reserve|capture|release|chargeCommission|debitWallet|creditWallet)\b/);
   });

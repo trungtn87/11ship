@@ -4,6 +4,8 @@ import { EligibilityFacts, evaluateEligibility, haversineMeters, SHIPPER_SEARCH_
 const SHOP = { lat: 22.665, lng: 106.257 };
 const NEAR = { lat: 22.67, lng: 106.257 }; // ~556 m
 const FAR = { lat: 22.72, lng: 106.257 }; // ~6.1 km
+/** A point `metres` north of the shop on the same meridian (great-circle distance = metres, to well under a millimetre). */
+const northOf = (metres: number) => ({ lat: SHOP.lat + (metres / 6_371_008.8) * (180 / Math.PI), lng: SHOP.lng });
 
 const base = (over: Partial<EligibilityFacts> = {}): EligibilityFacts => ({
   nowMs: 1_000_000,
@@ -25,16 +27,22 @@ describe('M06-B evaluateEligibility', () => {
     expect(verdict.distanceToShopM).toBeLessThan(700);
   });
 
-  it('keeps the radius fixed at 5 km (straight line): inside passes, outside is refused for EXTERNAL', () => {
-    expect(SHIPPER_SEARCH_RADIUS_M).toBe(5000);
+  it('keeps the radius fixed at 3 km (straight line shop -> GPS): up to 3.000 m is inside, above it is refused for EXTERNAL; 4-6 km is outside', () => {
+    expect(SHIPPER_SEARCH_RADIUS_M).toBe(3000);
+    expect(haversineMeters(SHOP, northOf(3000))).toBeCloseTo(3000, 3);
+    expect(reasons(base({ location: { point: northOf(2999.99), fresh: true, valid: true } }))).toEqual([]);
+    expect(reasons(base({ location: { point: northOf(3000.01), fresh: true, valid: true } }))).toEqual(['OUT_OF_SEARCH_RADIUS']);
+    expect(reasons(base({ location: { point: northOf(4000), fresh: true, valid: true } }))).toEqual(['OUT_OF_SEARCH_RADIUS']); // the old 5 km radius no longer applies
     expect(haversineMeters(SHOP, FAR)).toBeGreaterThan(5000);
     expect(reasons(base({ location: { point: FAR, fresh: true, valid: true } }))).toEqual(['OUT_OF_SEARCH_RADIUS']);
   });
 
-  it('PLATFORM is exempt from the radius and the count, but never from GPS, the wallet or the delivery state', () => {
+  it('PLATFORM is exempt from the radius and the count, but never from GPS, the shop position, the wallet or the delivery state', () => {
     const platform = { status: 'ACTIVE', acceptingDeliveries: true, driverType: 'PLATFORM' as const, bankVerified: true };
     expect(reasons(base({ driver: platform, location: { point: FAR, fresh: true, valid: true }, activeCount: 50 }))).toEqual([]);
     expect(reasons(base({ driver: platform, location: undefined }))).toEqual(['LOCATION_UNAVAILABLE']);
+    // PLATFORM skips only the radius: a missing shop position is still a missing fact for the check.
+    expect(reasons(base({ driver: platform, delivery: { searching: true, hasShipper: false, searchExpiresAtMs: 2_000_000, shop: null, requiredHoldVnd: 0n } }))).toEqual(['SHOP_LOCATION_MISSING']);
     expect(reasons(base({ driver: platform, location: { point: NEAR, fresh: false, valid: true } }))).toEqual(['LOCATION_STALE']);
     expect(reasons(base({ driver: platform, availableVnd: 1n }))).toEqual(['BALANCE_TOO_LOW']);
     expect(reasons(base({ driver: platform, availableVnd: undefined }))).toEqual(['WALLET_UNAVAILABLE']);

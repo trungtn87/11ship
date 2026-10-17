@@ -1,14 +1,13 @@
-// Shipping-fee table (M06-A): the pure rules. No I/O, no clock, no built-in price. The database enforces the same shape
-// (app.shipping_fee_tiers_valid and the CHECKs of the policy tables); this file is the single place the application decides a fee.
+// Shipping-fee table (M06-A, v1.1): the pure rules. No I/O, no clock, no built-in price. The database enforces the same shape
+// (app.shipping_fee_three_tiers_valid and the CHECKs of the policy tables); this file is the single place the application decides a base fee.
 //
-// Distances are METRES exactly as M14 reports them: nothing here rounds to km. Bands are half-open [fromM, toM): a distance equal to a
-// boundary belongs to the NEXT band. Beyond the last band: base + floor((d - lastToM) / stepM) * stepFee, so a distance on a step
-// boundary belongs to the next step and every distance has one fee.
+// EXACTLY THREE bands over the real route distance in METRES from M14 (never rounded, never a straight line): [0, b1) [b1, b2) [b2, b3] with
+// 0 < b1 < b2 < b3. A distance equal to b1 belongs to band 2, equal to b2 to band 3, and equal to b3 still to band 3. Beyond b3 there is NO fee
+// (null, reason OUT_OF_PRICE_RANGE): nothing is added automatically, it is never 0, and it never turns into an agreed fee by itself.
 
-export const MAX_TIERS = 50;
+export const TIER_COUNT = 3;
 export const MAX_DISTANCE_M = 1_000_000;
 export const MAX_FEE_VND = 10_000_000;
-export const MAX_TAIL_STEP_M = 100_000;
 
 export interface FeeTier {
   readonly fromM: number;
@@ -16,33 +15,15 @@ export interface FeeTier {
   readonly feeVnd: number;
 }
 
-export interface FeeTail {
-  readonly baseFeeVnd: number;
-  readonly stepM: number;
-  readonly stepFeeVnd: number;
-}
-
 export interface FeePolicy {
   readonly tiers: readonly FeeTier[];
-  readonly tail: FeeTail;
 }
 
-export type PolicyIssueCode =
-  | 'TIERS_EMPTY'
-  | 'TIERS_TOO_MANY'
-  | 'NOT_INTEGER'
-  | 'FIRST_NOT_ZERO'
-  | 'RANGE_EMPTY'
-  | 'OVERLAP'
-  | 'GAP'
-  | 'FEE_NEGATIVE'
-  | 'FEE_TOO_HIGH'
-  | 'DISTANCE_TOO_LARGE'
-  | 'TAIL_INVALID';
+export type PolicyIssueCode = 'TIERS_COUNT' | 'NOT_INTEGER' | 'FIRST_NOT_ZERO' | 'RANGE_EMPTY' | 'OVERLAP' | 'GAP' | 'FEE_NEGATIVE' | 'FEE_TOO_HIGH' | 'DISTANCE_TOO_LARGE';
 
 export interface PolicyIssue {
   readonly code: PolicyIssueCode;
-  /** Zero-based tier index, or undefined for the tail / the whole table. */
+  /** Zero-based band index, or undefined for the table as a whole. */
   readonly index?: number;
 }
 
@@ -51,17 +32,15 @@ const isWhole = (value: unknown): value is number => typeof value === 'number' &
 /** Every reason the table cannot be saved; empty means valid. */
 export function validateFeePolicy(policy: FeePolicy): PolicyIssue[] {
   const issues: PolicyIssue[] = [];
-  const { tiers, tail } = policy;
-  if (tiers.length === 0) {
-    issues.push({ code: 'TIERS_EMPTY' });
-  }
-  if (tiers.length > MAX_TIERS) {
-    issues.push({ code: 'TIERS_TOO_MANY' });
+  const { tiers } = policy;
+  if (tiers.length !== TIER_COUNT) {
+    issues.push({ code: 'TIERS_COUNT' });
   }
   let expectedFrom = 0;
   tiers.forEach((tier, index) => {
     if (!isWhole(tier.fromM) || !isWhole(tier.toM) || !isWhole(tier.feeVnd)) {
       issues.push({ code: 'NOT_INTEGER', index });
+      expectedFrom = isWhole(tier.toM) ? tier.toM : expectedFrom; // keep the next band's continuity check meaningful
       return;
     }
     if (index === 0 && tier.fromM !== 0) {
@@ -84,56 +63,38 @@ export function validateFeePolicy(policy: FeePolicy): PolicyIssue[] {
     }
     expectedFrom = tier.toM;
   });
-  if (
-    !isWhole(tail.baseFeeVnd) ||
-    !isWhole(tail.stepM) ||
-    !isWhole(tail.stepFeeVnd) ||
-    tail.baseFeeVnd < 0 ||
-    tail.baseFeeVnd > MAX_FEE_VND ||
-    tail.stepFeeVnd < 0 ||
-    tail.stepFeeVnd > MAX_FEE_VND ||
-    tail.stepM < 1 ||
-    tail.stepM > MAX_TAIL_STEP_M
-  ) {
-    issues.push({ code: 'TAIL_INVALID' });
-  }
   return issues;
 }
 
-export interface FeeResult {
-  readonly feeVnd: number;
-  /** Zero-based index of the band that priced it, or 'TAIL' beyond the last band. */
-  readonly band: number | 'TAIL';
-}
+export type FeeResult =
+  | { readonly status: 'PRICED'; readonly feeVnd: number; /** Zero-based band that priced it. */ readonly band: number }
+  | { readonly status: 'OUT_OF_PRICE_RANGE'; readonly feeVnd: null };
 
 /**
- * The fee for a distance in metres. Throws on an invalid policy or distance: callers decide first (quote evaluation maps
- * "no distance" to an unpriced result, never to a number).
+ * The base fee for a distance in metres. Throws on an invalid policy or distance: callers decide first (quote evaluation maps "no distance" to an
+ * unpriced result, never to a number).
  */
 export function computeShippingFee(policy: FeePolicy, distanceM: number): FeeResult {
   if (validateFeePolicy(policy).length > 0) {
     throw new RangeError('INVALID_FEE_POLICY');
   }
-  if (typeof distanceM !== 'number' || !Number.isFinite(distanceM) || distanceM < 0 || distanceM > MAX_DISTANCE_M) {
+  if (typeof distanceM !== 'number' || !Number.isFinite(distanceM) || distanceM < 0) {
     throw new RangeError('INVALID_DISTANCE');
   }
-  for (let index = 0; index < policy.tiers.length; index += 1) {
+  const last = policy.tiers.length - 1;
+  for (let index = 0; index <= last; index += 1) {
     const tier = policy.tiers[index] as FeeTier;
-    if (distanceM >= tier.fromM && distanceM < tier.toM) {
-      return { feeVnd: tier.feeVnd, band: index };
+    // Half-open [from, to) for the first two bands; the last band also includes its upper bound.
+    if (distanceM >= tier.fromM && (distanceM < tier.toM || (index === last && distanceM === tier.toM))) {
+      return { status: 'PRICED', feeVnd: tier.feeVnd, band: index };
     }
   }
-  const last = policy.tiers[policy.tiers.length - 1] as FeeTier;
-  const steps = Math.floor((distanceM - last.toM) / policy.tail.stepM);
-  return { feeVnd: policy.tail.baseFeeVnd + steps * policy.tail.stepFeeVnd, band: 'TAIL' };
+  return { status: 'OUT_OF_PRICE_RANGE', feeVnd: null };
 }
 
 /** Same content, same table (used to refuse an "apply" that changes nothing). */
 export function samePolicy(a: FeePolicy, b: FeePolicy): boolean {
   return (
-    a.tail.baseFeeVnd === b.tail.baseFeeVnd &&
-    a.tail.stepM === b.tail.stepM &&
-    a.tail.stepFeeVnd === b.tail.stepFeeVnd &&
     a.tiers.length === b.tiers.length &&
     a.tiers.every((tier, i) => {
       const other = b.tiers[i] as FeeTier;

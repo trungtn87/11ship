@@ -4,10 +4,9 @@ import { Refused } from './shippers.js';
 // rule again (SYSTEM only writes; a table that is not continuous is refused); the checks here only tell the person what is wrong while
 // typing. Distances are whole metres on the wire and in the model; the screen shows and accepts km with up to three decimals.
 
-export const SHIPPING_MAX_TIERS = 50;
+export const SHIPPING_TIER_COUNT = 3;
 export const SHIPPING_MAX_FEE_VND = 10_000_000;
 export const SHIPPING_MAX_DISTANCE_M = 1_000_000;
-export const SHIPPING_MAX_STEP_M = 100_000;
 export const NOT_WIRED_SHIPPING_REASON = 'Bảng giá ship chưa được nối với máy chủ ở bản này.';
 
 export interface PolicyTier {
@@ -16,19 +15,23 @@ export interface PolicyTier {
   readonly feeVnd: number;
 }
 
-export interface PolicyTail {
+/** Exactly three bands: [0,b1) [b1,b2) [b2,b3] (the last bound is included). Beyond b3 there is no fee. */
+export interface PolicyTable {
+  readonly tiers: readonly PolicyTier[];
+}
+
+/** The v1.0 "after the last band" formula: shown for an OLD version in the history only; never edited, never used to price. */
+export interface LegacyTail {
   readonly baseFeeVnd: number;
   readonly stepM: number;
   readonly stepFeeVnd: number;
 }
 
-export interface PolicyTable {
-  readonly tiers: readonly PolicyTier[];
-  readonly tail: PolicyTail;
-}
-
 export interface PolicyVersionInfo extends PolicyTable {
   readonly versionNo: number;
+  /** A v1.0 version (any number of bands + a tail): history only. */
+  readonly legacy: boolean;
+  readonly tail: LegacyTail | null;
   readonly note: string | null;
   readonly appliedBy: string;
   readonly appliedAt: string;
@@ -56,7 +59,7 @@ export type PolicyWriteResult =
   | { readonly kind: 'not-wired' };
 
 export type PreviewResult =
-  | { readonly kind: 'priced'; readonly feeVnd: number; readonly band: number | 'TAIL'; readonly basedOn: 'ACTIVE' | 'EDITING' }
+  | { readonly kind: 'priced'; readonly feeVnd: number; readonly band: number; readonly basedOn: 'ACTIVE' | 'EDITING' }
   | { readonly kind: 'unpriced'; readonly reason: string }
   | { readonly kind: 'failed' }
   | { readonly kind: 'not-wired' };
@@ -135,7 +138,7 @@ export const NOT_WIRED_SHIPPING: ShippingPolicySource = {
 };
 
 export const SHIPPING_REFUSAL_MESSAGE: Record<string, string> = {
-  SHIPPING_POLICY_INVALID: 'Bảng giá chưa hợp lệ (có hở, chồng lấn hoặc giá âm). Chưa có gì được lưu.',
+  SHIPPING_POLICY_INVALID: 'Bảng giá chưa hợp lệ (cần đúng 3 khung liên tục, 0 < mốc 1 < mốc 2 < mốc 3, phí không âm). Chưa có gì được lưu.',
   SHIPPING_DRAFT_EMPTY: 'Chưa có bản nháp nào để áp dụng. Hãy lưu bản nháp trước.',
   SHIPPING_ELIGIBILITY_VERSION_CONFLICT: 'Tham số vừa được thay đổi ở nơi khác. Hãy tải lại để xem giá trị hiện tại.',
   SHIPPING_POLICY_UNCHANGED: 'Bản nháp giống hệt bảng giá đang áp dụng, không cần áp dụng lại.',
@@ -178,40 +181,24 @@ export function formatFee(vnd: number): string {
 
 // ---- editing model ----------------------------------------------------------------------------------------------------
 
-/** One row as typed. Nothing here is a number until `validateEditing` reads it. */
-export interface EditRow {
-  from: string;
-  to: string;
-  fee: string;
-}
-
-export interface EditTail {
-  base: string;
-  step: string;
-  stepFee: string;
-}
-
+/** The three bands as typed: the upper bound (km) and the fee of each. The lower bound of a band is the upper bound of the one before (0 for the first). */
 export interface EditingModel {
-  rows: EditRow[];
-  tail: EditTail;
+  bounds: [string, string, string];
+  fees: [string, string, string];
 }
 
 export function toEditing(table: PolicyTable | null): EditingModel {
-  if (table === null) {
-    return { rows: [], tail: { base: '', step: '', stepFee: '' } };
+  if (table === null || table.tiers.length !== SHIPPING_TIER_COUNT) {
+    return { bounds: ['', '', ''], fees: ['', '', ''] };
   }
-  return {
-    rows: table.tiers.map((t) => ({ from: formatKm(t.fromM), to: formatKm(t.toM), fee: String(t.feeVnd) })),
-    tail: { base: String(table.tail.baseFeeVnd), step: formatKm(table.tail.stepM), stepFee: String(table.tail.stepFeeVnd) },
-  };
+  const [a, b, c] = table.tiers as [PolicyTier, PolicyTier, PolicyTier];
+  return { bounds: [formatKm(a.toM), formatKm(b.toM), formatKm(c.toM)], fees: [String(a.feeVnd), String(b.feeVnd), String(c.feeVnd)] };
 }
 
 export interface EditingProblems {
-  /** One message per row field that is wrong, by row index. */
-  readonly rows: ReadonlyArray<{ readonly from?: string; readonly to?: string; readonly fee?: string }>;
-  readonly tail: { readonly base?: string; readonly step?: string; readonly stepFee?: string };
-  /** A problem of the table as a whole ("add at least one tier"). */
-  readonly table?: string;
+  /** One message per field that is wrong (index = band). */
+  readonly bounds: ReadonlyArray<string | undefined>;
+  readonly fees: ReadonlyArray<string | undefined>;
 }
 
 export interface EditingResult {
@@ -219,93 +206,54 @@ export interface EditingResult {
   readonly problems: EditingProblems;
 }
 
-/** Reads what was typed and says what is wrong; `table` is set only when nothing is wrong (the same rules the backend enforces). */
+/** Reads what was typed and says what is wrong; `table` is set only when nothing is wrong (0 < b1 < b2 < b3, whole fees 0..limit: the rules the server enforces). */
 export function validateEditing(model: EditingModel): EditingResult {
-  const rows: Array<{ from?: string; to?: string; fee?: string }> = [];
-  const tiers: PolicyTier[] = [];
-  let expectedFrom = 0;
+  const bounds: Array<string | undefined> = [];
+  const fees: Array<string | undefined> = [];
+  const metres: Array<number | undefined> = [];
+  let previous = 0;
   let valid = true;
-  model.rows.forEach((row, index) => {
-    const problems: { from?: string; to?: string; fee?: string } = {};
-    const from = parseKm(row.from);
-    const to = parseKm(row.to);
-    const fee = parseFee(row.fee);
-    if (from === undefined) {
-      problems.from = 'Nhập số km (tối đa 3 chữ số thập phân).';
-    } else if (index === 0 && from !== 0) {
-      problems.from = 'Mốc đầu tiên phải bắt đầu từ 0 km.';
-    } else if (index > 0 && from < expectedFrom) {
-      problems.from = 'Chồng lấn với mốc trước.';
-    } else if (index > 0 && from > expectedFrom) {
-      problems.from = 'Hở khoảng so với mốc trước.';
+  model.bounds.forEach((text, index) => {
+    const m = parseKm(text);
+    let problem: string | undefined;
+    if (m === undefined) {
+      problem = 'Nhập số km (tối đa 3 chữ số thập phân).';
+    } else if (m <= previous) {
+      problem = index === 0 ? '“Đến dưới” phải lớn hơn 0 km.' : 'Phải lớn hơn mốc của khung trước (không chồng lấn).';
     }
-    if (to === undefined) {
-      problems.to = 'Nhập số km (tối đa 3 chữ số thập phân).';
-    } else if (from !== undefined && to <= from) {
-      problems.to = '“Đến dưới” phải lớn hơn “Từ”.';
-    }
-    if (fee === undefined) {
-      problems.fee = `Nhập số VND nguyên từ 0 đến ${formatFee(SHIPPING_MAX_FEE_VND)}.`;
-    }
-    if (from !== undefined && to !== undefined && fee !== undefined && Object.keys(problems).length === 0) {
-      tiers.push({ fromM: from, toM: to, feeVnd: fee });
-    } else {
+    if (problem !== undefined) {
       valid = false;
     }
-    if (Object.keys(problems).length > 0) {
-      valid = false;
-    }
-    rows.push(problems);
-    expectedFrom = to ?? expectedFrom;
+    bounds.push(problem);
+    metres.push(m);
+    previous = m ?? previous;
   });
-  const base = parseFee(model.tail.base);
-  const stepM = parseKm(model.tail.step);
-  const stepFee = parseFee(model.tail.stepFee);
-  const tail: { base?: string; step?: string; stepFee?: string } = {};
-  if (base === undefined) {
-    tail.base = `Nhập số VND nguyên từ 0 đến ${formatFee(SHIPPING_MAX_FEE_VND)}.`;
+  const parsedFees = model.fees.map((text) => parseFee(text));
+  parsedFees.forEach((fee) => {
+    if (fee === undefined) {
+      valid = false;
+    }
+    fees.push(fee === undefined ? `Nhập số VND nguyên từ 0 đến ${formatFee(SHIPPING_MAX_FEE_VND)}.` : undefined);
+  });
+  if (!valid) {
+    return { table: undefined, problems: { bounds, fees } };
   }
-  if (stepM === undefined || stepM < 1 || stepM > SHIPPING_MAX_STEP_M) {
-    tail.step = 'Nhập bước km lớn hơn 0.';
-  }
-  if (stepFee === undefined) {
-    tail.stepFee = `Nhập số VND nguyên từ 0 đến ${formatFee(SHIPPING_MAX_FEE_VND)}.`;
-  }
-  let table: string | undefined;
-  if (model.rows.length === 0) {
-    table = 'Thêm ít nhất một mốc giá.';
-  } else if (model.rows.length > SHIPPING_MAX_TIERS) {
-    table = `Tối đa ${String(SHIPPING_MAX_TIERS)} mốc.`;
-  }
-  const clean = valid && table === undefined && Object.keys(tail).length === 0 && base !== undefined && stepM !== undefined && stepFee !== undefined;
-  return {
-    table: clean ? { tiers, tail: { baseFeeVnd: base, stepM, stepFeeVnd: stepFee } } : undefined,
-    problems: { rows, tail, ...(table === undefined ? {} : { table }) },
-  };
+  const [b1, b2, b3] = metres as [number, number, number];
+  const [f1, f2, f3] = parsedFees as [number, number, number];
+  return { table: { tiers: [{ fromM: 0, toM: b1, feeVnd: f1 }, { fromM: b1, toM: b2, feeVnd: f2 }, { fromM: b2, toM: b3, feeVnd: f3 }] }, problems: { bounds, fees } };
 }
 
-/** What changed from `before` to `after`, as short lines for the history comparison. */
-export function describeChanges(before: PolicyTable | null, after: PolicyTable): string[] {
-  if (before === null) {
-    return ['Bảng giá đầu tiên.'];
+/** What changed from `before` to `after`, as short lines for the history comparison. A v1.0 (legacy) version has a different shape, so it is not compared line by line. */
+export function describeChanges(before: PolicyTable | null, after: PolicyTable, beforeIsLegacy = false): string[] {
+  if (before === null || beforeIsLegacy || before.tiers.length !== after.tiers.length) {
+    return [before === null ? 'Bảng giá đầu tiên.' : 'Chuyển sang bảng giá 3 khung (phiên bản trước dùng định dạng cũ).'];
   }
   const lines: string[] = [];
-  const max = Math.max(before.tiers.length, after.tiers.length);
-  for (let i = 0; i < max; i += 1) {
-    const a = before.tiers[i];
-    const b = after.tiers[i];
-    if (a === undefined && b !== undefined) {
-      lines.push(`Thêm mốc ${formatKm(b.fromM)}–${formatKm(b.toM)} km: ${formatFee(b.feeVnd)}`);
-    } else if (a !== undefined && b === undefined) {
-      lines.push(`Bỏ mốc ${formatKm(a.fromM)}–${formatKm(a.toM)} km (${formatFee(a.feeVnd)})`);
-    } else if (a !== undefined && b !== undefined && (a.fromM !== b.fromM || a.toM !== b.toM || a.feeVnd !== b.feeVnd)) {
-      lines.push(`Mốc ${i + 1}: ${formatKm(a.fromM)}–${formatKm(a.toM)} km ${formatFee(a.feeVnd)} → ${formatKm(b.fromM)}–${formatKm(b.toM)} km ${formatFee(b.feeVnd)}`);
+  after.tiers.forEach((b, i) => {
+    const a = before.tiers[i] as PolicyTier;
+    if (a.toM !== b.toM || a.feeVnd !== b.feeVnd) {
+      lines.push(`Khung ${String(i + 1)}: ${formatKm(a.fromM)}–${formatKm(a.toM)} km ${formatFee(a.feeVnd)} → ${formatKm(b.fromM)}–${formatKm(b.toM)} km ${formatFee(b.feeVnd)}`);
     }
-  }
-  const t = before.tail;
-  const n = after.tail;
-  if (t.baseFeeVnd !== n.baseFeeVnd || t.stepM !== n.stepM || t.stepFeeVnd !== n.stepFeeVnd) {
-    lines.push(`Sau mốc cuối: ${formatFee(t.baseFeeVnd)} + ${formatFee(t.stepFeeVnd)}/${formatKm(t.stepM)} km → ${formatFee(n.baseFeeVnd)} + ${formatFee(n.stepFeeVnd)}/${formatKm(n.stepM)} km`);
-  }
+  });
   return lines.length === 0 ? ['Không đổi nội dung.'] : lines;
 }

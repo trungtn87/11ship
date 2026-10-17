@@ -5,7 +5,6 @@ import {
   ConditionValues,
   describeChanges,
   EditingModel,
-  EditRow,
   formatFee,
   formatKm,
   formatMinutes,
@@ -18,7 +17,7 @@ import {
   PolicyVersionInfo,
   PolicyWriteResult,
   PreviewResult,
-  SHIPPING_MAX_TIERS,
+  SHIPPING_TIER_COUNT,
   SHIPPING_REFUSAL_MESSAGE,
   ShippingPolicySource,
   toEditing,
@@ -79,12 +78,9 @@ function writeText(result: PolicyWriteResult): string | undefined {
 
 const sameTable = (a: PolicyTable | null | undefined, b: PolicyTable | null | undefined): boolean => (a ?? null) !== null && (b ?? null) !== null && JSON.stringify(a) === JSON.stringify(b);
 
-function bandLabel(band: number | 'TAIL', table: PolicyTable): string {
-  if (band === 'TAIL') {
-    return `Sau mốc cuối (từ ${formatKm(table.tiers[table.tiers.length - 1]?.toM ?? 0)} km)`;
-  }
+function bandLabel(band: number, table: PolicyTable): string {
   const tier = table.tiers[band];
-  return tier === undefined ? `Mốc ${String(band + 1)}` : `Mốc ${String(band + 1)} (${formatKm(tier.fromM)}–${formatKm(tier.toM)} km)`;
+  return tier === undefined ? `Khung ${String(band + 1)}` : `Khung ${String(band + 1)} (${formatKm(tier.fromM)}–${formatKm(tier.toM)} km)`;
 }
 
 export class ShippingPolicyView {
@@ -159,7 +155,7 @@ export class ShippingPolicyView {
       return;
     }
     this.#state = read.state;
-    this.#model = toEditing(read.state.draft.table ?? read.state.active);
+    this.#model = toEditing(read.state.draft.table ?? (read.state.active !== null && !read.state.active.legacy ? read.state.active : null));
     this.#draw(notice);
   }
 
@@ -205,73 +201,50 @@ export class ShippingPolicyView {
   #prices(state: PolicyState, notice: string | undefined): HTMLElement {
     const canEdit = this.host.canEdit;
     const rowsHost = h('div', { class: 'sp-rows' });
-    const tableError = message('error', 'sp-table-error');
     const verdict = h('p', { class: 'sp-verdict', id: 'sp-verdict', role: 'status' });
     const status = message('error', 'sp-status');
     const save = secondary('Lưu bản nháp');
     const apply = primary('Áp dụng bảng giá', 'button');
     let refresh: () => void = () => undefined;
     const changed = (): void => refresh();
-    const baseInput = this.#tailField('sp-tail-base', 'Phí nền (đ)', this.#model.tail.base, (v) => (this.#model.tail.base = v), canEdit, changed);
-    const stepInput = this.#tailField('sp-tail-step', 'Mỗi thêm (km)', this.#model.tail.step, (v) => (this.#model.tail.step = v), canEdit, changed);
-    const stepFeeInput = this.#tailField('sp-tail-stepfee', 'Cộng thêm (đ)', this.#model.tail.stepFee, (v) => (this.#model.tail.stepFee = v), canEdit, changed);
     const preview = this.#previewCard();
+    const legacy = state.active?.legacy === true;
 
     refresh = (): void => {
       const { table, problems } = validateEditing(this.#model);
-      this.#model.rows.forEach((_, index) => {
-        const row = problems.rows[index] ?? {};
-        for (const field of ['from', 'to', 'fee'] as const) {
+      for (let index = 0; index < SHIPPING_TIER_COUNT; index += 1) {
+        const from = rowsHost.querySelector<HTMLElement>(`#sp-row-${String(index)}-from`);
+        if (from !== null) {
+          from.textContent = index === 0 ? '0' : this.#model.bounds[index - 1] || '…';
+        }
+        for (const [field, problem] of [['to', problems.bounds[index]], ['fee', problems.fees[index]]] as const) {
           const input = rowsHost.querySelector<HTMLInputElement>(`#sp-row-${String(index)}-${field}`);
           const error = rowsHost.querySelector<HTMLElement>(`#sp-row-${String(index)}-${field}-error`);
           if (input !== null && error !== null) {
-            setMessage(error, row[field]);
-            input.setAttribute('aria-invalid', String(row[field] !== undefined));
+            setMessage(error, problem);
+            input.setAttribute('aria-invalid', String(problem !== undefined));
           }
         }
-      });
-      for (const [input, key] of [[baseInput, 'base'], [stepInput, 'step'], [stepFeeInput, 'stepFee']] as const) {
-        setMessage(input.error, problems.tail[key]);
-        input.input.setAttribute('aria-invalid', String(problems.tail[key] !== undefined));
       }
-      setMessage(tableError, problems.table);
       const ok = table !== undefined;
-      const identicalToActive = ok && state.active !== null && sameTable(table, state.active) && state.draft.table === null;
+      const active = state.active !== null && !state.active.legacy ? state.active : null;
+      const identicalToActive = ok && active !== null && sameTable(table, active) && state.draft.table === null;
       const dirty = ok && !sameTable(table, state.draft.table);
       verdict.className = `sp-verdict ${ok ? 'sp-verdict-ok' : 'sp-verdict-bad'}`;
       verdict.textContent = ok
-        ? `✓ Các mốc liên tục, không chồng lấn. ${state.active === null ? 'Chưa có bảng giá nào được áp dụng: hệ thống chưa tính được phí.' : `Đang áp dụng phiên bản ${String(state.active.versionNo)}.`}`
+        ? `✓ Ba khung liên tục, không chồng lấn. ${
+            state.active === null ? 'Chưa có bảng giá nào được áp dụng: hệ thống chưa tính được phí.' : legacy ? `Phiên bản ${String(state.active.versionNo)} dùng định dạng cũ nên không dùng để tính phí: hãy áp dụng bảng giá 3 khung này.` : `Đang áp dụng phiên bản ${String(state.active.versionNo)}.`
+          }`
         : 'Bảng giá chưa hợp lệ. Hãy sửa các ô báo lỗi trước khi lưu.';
       save.disabled = !ok || !dirty;
       apply.disabled = !ok || identicalToActive;
       this.#schedulePreview(preview, table);
     };
 
-    const drawRows = (): void => {
-      rowsHost.replaceChildren(
-        h('div', { class: 'sp-row sp-row-head', 'aria-hidden': 'true' }, h('span', {}, 'Từ (km)'), h('span', {}, 'Đến dưới (km)'), h('span', {}, 'Phí ship (đ)'), h('span', {})),
-        ...this.#model.rows.map((row, index) => this.#row(row, index, canEdit, changed, () => {
-          this.#model.rows.splice(index, 1);
-          drawRows();
-          refresh();
-        })),
-      );
-    };
-    drawRows();
-
-    const add = secondary('+ Thêm mốc');
-    add.addEventListener('click', () => {
-      if (this.#model.rows.length >= SHIPPING_MAX_TIERS) {
-        setMessage(tableError, `Tối đa ${String(SHIPPING_MAX_TIERS)} mốc.`);
-        return;
-      }
-      const last = this.#model.rows[this.#model.rows.length - 1];
-      const next = last === undefined ? '0' : last.to;
-      this.#model.rows.push({ from: next, to: '', fee: '' });
-      drawRows();
-      refresh();
-      rowsHost.querySelector<HTMLInputElement>(`#sp-row-${String(this.#model.rows.length - 1)}-to`)?.focus();
-    });
+    rowsHost.replaceChildren(
+      h('div', { class: 'sp-row sp-row-head', 'aria-hidden': 'true' }, h('span', {}, 'Từ (km)'), h('span', {}, 'Đến (km)'), h('span', {}, 'Phí ship (đ)')),
+      ...[0, 1, 2].map((index) => this.#row(index, canEdit, changed)),
+    );
 
     save.addEventListener('click', () => void this.#saveDraft(status, save, apply));
     apply.addEventListener('click', () => this.#confirmApply(state));
@@ -287,14 +260,13 @@ export class ShippingPolicyView {
       h(
         'div',
         { class: 'sp-card-head' },
-        h('div', {}, h('h2', { class: 'subtitle' }, 'Các mốc tính phí'), h('p', { class: 'hint' }, 'Có thể thay đổi khoảng cách và giá từng mốc, không cố định 5km / 5.000đ. Khoảng nửa mở: đúng mốc biên thuộc mốc tiếp theo.')),
-        canEdit ? add : undefined,
+        h('div', {}, h('h2', { class: 'subtitle' }, 'Ba khung tính phí'), h('p', { class: 'hint' }, 'Đúng 3 khung: chỉnh mốc khoảng cách và phí của từng khung. Khung 1 và 2 tính đến dưới mốc; khung 3 gồm cả mốc cuối.')),
       ),
+      legacy
+        ? h('p', { class: 'sp-note', role: 'note', id: 'sp-legacy-note' }, `Phiên bản ${String(state.active?.versionNo ?? '')} dùng định dạng cũ (nhiều khung và công thức cộng thêm) nên không còn dùng để tính phí. Nhập ba khung mới bên dưới và áp dụng.`)
+        : undefined,
       rowsHost,
-      tableError,
-      h('h3', { class: 'sp-tail-title' }, 'Khi vượt mốc cuối cùng'),
-      h('div', { class: 'sp-tail' }, baseInput.element, stepInput.element, stepFeeInput.element),
-      h('p', { class: 'hint' }, 'Phí = phí nền + (số bước km đã đi đủ qua mốc cuối) × số tiền cộng thêm. Mỗi mốc/bước dùng khoảng cách mét gốc, không làm tròn km trước khi tính.'),
+      h('p', { class: 'hint', id: 'sp-range-note' }, 'Phí tính theo quãng đường tuyến đường thực tế (mét gốc từ M14, không làm tròn km). Quá mốc cuối: “Ngoài bảng giá”, phí chưa xác định (không phải 0đ), không tự cộng thêm tiền; chỉ đi tiếp khi có phí thỏa thuận hợp lệ.'),
       verdict,
     );
     const right = h(
@@ -310,33 +282,31 @@ export class ShippingPolicyView {
     return h('div', { class: 'sp-grid' }, left, right);
   }
 
-  #tailField(id: string, label: string, value: string, set: (value: string) => void, canEdit: boolean, changed: () => void): { readonly element: HTMLElement; readonly input: HTMLInputElement; readonly error: HTMLElement } {
-    const input = h('input', { id, type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-describedby': `${id}-error` });
-    input.value = value;
-    input.readOnly = !canEdit;
-    input.addEventListener('input', () => {
-      set(input.value);
-      changed();
-    });
-    const error = message('error', `${id}-error`);
-    return { element: h('div', { class: 'field' }, h('label', { for: id, class: 'label' }, label), h('div', { class: 'input-wrap' }, input), error), input, error };
-  }
-
-  #row(row: EditRow, index: number, canEdit: boolean, changed: () => void, remove: () => void): HTMLElement {
-    const cell = (field: 'from' | 'to' | 'fee', label: string): HTMLElement => {
+  #row(index: number, canEdit: boolean, changed: () => void): HTMLElement {
+    const cell = (field: 'to' | 'fee', label: string, set: (value: string) => void, value: string): HTMLElement => {
       const id = `sp-row-${String(index)}-${field}`;
-      const input = h('input', { id, type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': `Mốc ${String(index + 1)}: ${label}`, 'aria-describedby': `${id}-error` });
-      input.value = row[field];
+      const input = h('input', { id, type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': `Khung ${String(index + 1)}: ${label}`, 'aria-describedby': `${id}-error` });
+      input.value = value;
       input.readOnly = !canEdit;
       input.addEventListener('input', () => {
-        row[field] = input.value;
+        set(input.value);
         changed();
       });
       return h('div', { class: 'sp-cell' }, h('div', { class: 'input-wrap' }, input), message('error', `${id}-error`));
     };
-    const del = h('button', { type: 'button', class: 'sp-remove', 'aria-label': `Xóa mốc ${String(index + 1)}`, title: 'Xóa mốc' }, '×');
-    del.addEventListener('click', remove);
-    return h('div', { class: 'sp-row' }, cell('from', 'Từ (km)'), cell('to', 'Đến dưới (km)'), cell('fee', 'Phí ship (đ)'), canEdit ? del : h('span', {}));
+    return h(
+      'div',
+      { class: 'sp-row' },
+      h('div', { class: 'sp-cell sp-from' }, h('span', { id: `sp-row-${String(index)}-from`, class: 'sp-from-value' }, index === 0 ? '0' : this.#model.bounds[index - 1] || '…')),
+      cell('to', index === 2 ? 'Đến (km, gồm cả mốc)' : 'Đến dưới (km)', (v) => (this.#model.bounds[index] = v), this.#model.bounds[index] as string),
+      cell('fee', 'Phí ship (đ)', (v) => (this.#model.fees[index] = v), this.#model.fees[index] as string),
+    );
+  }
+
+  /** The fixed search radius as the server states it (read-only, never an input). */
+  #radiusText(): string {
+    const read = this.#conditionsRead;
+    return read?.kind === 'ready' ? `${formatKm(read.state.searchRadiusM)} km (cố định, chỉ đọc)` : '—';
   }
 
   // ---- thử tính phí ----------------------------------------------------------------------------------------------------
@@ -361,6 +331,7 @@ export class ShippingPolicyView {
         h('div', { class: 'kv' }, h('dt', {}, 'Từ'), h('dd', {}, 'Tọa độ quán M02')),
         h('div', { class: 'kv' }, h('dt', {}, 'Đến'), h('dd', {}, 'Điểm giao của đơn')),
         h('div', { class: 'kv' }, h('dt', {}, 'Nguồn khoảng cách'), h('dd', {}, 'M14 — tuyến đường (mét)')),
+        h('div', { class: 'kv' }, h('dt', {}, 'Bán kính tìm shipper'), h('dd', { id: 'sp-preview-radius' }, this.#radiusText())),
       ),
       h('p', { class: 'sp-note', role: 'note' }, 'Dữ liệu đường và vị trí do M14 cung cấp. M06 chỉ dùng khoảng cách để tính phí, không quản lý GPS.'),
     );
@@ -403,7 +374,11 @@ export class ShippingPolicyView {
         this.#paintPreview(card, 'ok', formatFee(result.feeVnd), `Tính theo bảng giá đang chỉnh sửa · ${bandLabel(result.band, table)}`);
         return;
       case 'unpriced':
-        this.#paintPreview(card, undefined, 'Chưa xác định phí', 'Chưa tính được phí: không có đủ dữ liệu. Phí không bao giờ mặc định 0đ.');
+        if (result.reason === 'OUT_OF_PRICE_RANGE') {
+          this.#paintPreview(card, undefined, 'Ngoài bảng giá', 'Quãng đường vượt mốc cuối: phí chưa xác định (không phải 0đ, không tự cộng thêm). Chỉ đi tiếp khi có phí thỏa thuận hợp lệ.');
+        } else {
+          this.#paintPreview(card, undefined, 'Chưa xác định phí', 'Chưa tính được phí: không có đủ dữ liệu. Phí không bao giờ mặc định 0đ.');
+        }
         return;
       case 'not-wired':
         this.#paintPreview(card, undefined, '—', 'Chức năng này chưa được nối với máy chủ.');
@@ -561,7 +536,7 @@ export class ShippingPolicyView {
       },
       body: [
         h('p', { class: 'dialog-warning dialog-warning-info', role: 'note' }, icon('info', 18), h('span', {}, 'Các đơn tạo SAU khi áp dụng sẽ tính phí theo bảng này. Phí đã chốt của đơn cũ không thay đổi. Phiên bản đã áp dụng không sửa được; muốn đổi phải áp dụng phiên bản mới. Việc áp dụng được ghi nhật ký (người thực hiện, thời gian).')),
-        ...describeChanges(state.active, table).map((line) => h('p', { class: 'hint' }, line)),
+        ...describeChanges(state.active, table, state.active?.legacy === true).map((line) => h('p', { class: 'hint' }, line)),
         noteField,
         status,
       ],
@@ -727,7 +702,7 @@ export class ShippingPolicyView {
         { class: 'timeline' },
         ...versions.map((version, index) => {
           const previous = versions[index + 1] ?? null;
-          const lines = previous === null && version.versionNo > 1 ? ['Xem các mốc bên dưới.'] : describeChanges(previous, version);
+          const lines = previous === null && version.versionNo > 1 ? ['Xem các khung bên dưới.'] : describeChanges(previous, version, previous?.legacy === true || version.legacy);
           return h(
             'li',
             { class: 'timeline-item', id: `sp-version-${String(version.versionNo)}` },
@@ -735,19 +710,21 @@ export class ShippingPolicyView {
             h(
               'div',
               {},
-              h('p', { class: 'timeline-label' }, `Phiên bản ${String(version.versionNo)}${version.versionNo === state.active?.versionNo ? ' · đang áp dụng' : ''}`),
+              h('p', { class: 'timeline-label' }, `Phiên bản ${String(version.versionNo)}${version.versionNo === state.active?.versionNo ? (version.legacy ? ' · mới nhất (định dạng cũ, không dùng tính phí)' : ' · đang áp dụng') : ''}${version.legacy && version.versionNo !== state.active?.versionNo ? ' · định dạng cũ' : ''}`),
               h('p', { class: 'timeline-meta' }, `${formatDateTime(version.appliedAt)} · Tài khoản ${version.appliedBy}`),
               version.note === null ? undefined : h('p', { class: 'timeline-reason' }, `Ghi chú: ${version.note}`),
               ...lines.map((line) => h('p', { class: 'hint' }, line)),
               h(
                 'details',
                 {},
-                h('summary', {}, 'Các mốc của phiên bản này'),
+                h('summary', {}, 'Các khung của phiên bản này'),
                 h(
                   'ul',
                   { class: 'sp-tier-list' },
                   ...version.tiers.map((t) => h('li', {}, `${formatKm(t.fromM)}–${formatKm(t.toM)} km: ${formatFee(t.feeVnd)}`)),
-                  h('li', {}, `Sau ${formatKm(version.tiers[version.tiers.length - 1]?.toM ?? 0)} km: ${formatFee(version.tail.baseFeeVnd)} + ${formatFee(version.tail.stepFeeVnd)} mỗi ${formatKm(version.tail.stepM)} km`),
+                  version.tail === null
+                    ? h('li', {}, `Quá ${formatKm(version.tiers[version.tiers.length - 1]?.toM ?? 0)} km: ngoài bảng giá (phí chưa xác định)`)
+                    : h('li', {}, `Công thức cũ sau ${formatKm(version.tiers[version.tiers.length - 1]?.toM ?? 0)} km: ${formatFee(version.tail.baseFeeVnd)} + ${formatFee(version.tail.stepFeeVnd)} mỗi ${formatKm(version.tail.stepM)} km (không còn dùng)`),
                 ),
               ),
             ),

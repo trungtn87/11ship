@@ -20,10 +20,9 @@ interface AdminLogin {
 }
 
 const tiers = (rows: ReadonlyArray<readonly [number, number, number]>): Array<{ from_m: number; to_m: number; fee_vnd: number }> => rows.map(([from_m, to_m, fee_vnd]) => ({ from_m, to_m, fee_vnd }));
-const TAIL = { base_fee_vnd: 20000, step_m: 1000, step_fee_vnd: 3000 };
-// The approved screen's example (UI reference): 0-2 km 10.000, 2-4 km 12.000, 4-7 km 15.000, 7-10 km 20.000; then 20.000 + 3.000 per km.
-const TABLE_1 = { tiers: tiers([[0, 2000, 10000], [2000, 4000, 12000], [4000, 7000, 15000], [7000, 10000, 20000]]), tail: TAIL };
-const TABLE_2 = { tiers: tiers([[0, 1500, 8000], [1500, 3500, 11000], [3500, 8000, 17000]]), tail: { base_fee_vnd: 25000, step_m: 500, step_fee_vnd: 2000 } };
+// The approved v1.1 example (NOT a seeded price): 0-<3 km 10.000, 3-<6 km 15.000, 6-10 km 20.000 (10 km included). Exactly three bands, no tail.
+const TABLE_1 = { tiers: tiers([[0, 3000, 10000], [3000, 6000, 15000], [6000, 10000, 20000]]) };
+const TABLE_2 = { tiers: tiers([[0, 2500, 8000], [2500, 5000, 11000], [5000, 9000, 17000]]) };
 
 describe('M06-A — shipping fee table (policy versions, draft, API)', () => {
   let admin: AdminApp;
@@ -40,7 +39,7 @@ describe('M06-A — shipping fee table (policy versions, draft, API)', () => {
       await client.query('ALTER TABLE app.shipping_fee_policy_versions DISABLE TRIGGER shipping_fee_policy_versions_immutable');
       await client.query('DELETE FROM app.shipping_fee_policy_versions');
       await client.query('ALTER TABLE app.shipping_fee_policy_versions ENABLE TRIGGER shipping_fee_policy_versions_immutable');
-      await client.query('UPDATE app.shipping_fee_policy_drafts SET version = version + 1, tiers = NULL, tail_base_fee_vnd = NULL, tail_step_m = NULL, tail_step_fee_vnd = NULL, updated_by = NULL');
+      await client.query('UPDATE app.shipping_fee_policy_drafts SET version = version + 1, schema_version = 2, tiers = NULL, tail_base_fee_vnd = NULL, tail_step_m = NULL, tail_step_fee_vnd = NULL, updated_by = NULL');
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -93,7 +92,7 @@ describe('M06-A — shipping fee table (policy versions, draft, API)', () => {
   type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   const state = async (who: AdminLogin = systemLogin()): Promise<Json> => adminData(await get(who)) as Json;
   const draftVersion = async (): Promise<number> => Number((await state()).draft.version);
-  const saveDraft = async (table: { tiers: unknown; tail: unknown }): Promise<AdminResponse> => write(systemLogin(), 'draft', { expected_version: await draftVersion(), ...table });
+  const saveDraft = async (table: { tiers: unknown }): Promise<AdminResponse> => write(systemLogin(), 'draft', { expected_version: await draftVersion(), ...table });
   const apply = async (note?: string): Promise<AdminResponse> => write(systemLogin(), 'apply', { expected_version: await draftVersion(), ...(note === undefined ? {} : { note }) });
   const preview = (who: AdminLogin, body: unknown): Promise<AdminResponse> => write(who, 'preview', body);
   const versionCount = (): Promise<number> => countRows(admin.pool, 'SELECT 1 FROM app.shipping_fee_policy_versions');
@@ -101,8 +100,9 @@ describe('M06-A — shipping fee table (policy versions, draft, API)', () => {
   it('starts with NO fee table: nothing is priced, never 0 and never a built-in formula', async () => {
     const start = await state();
     expect(start.active).toBeNull();
-    expect(start.draft).toMatchObject({ tiers: null, tail: null });
+    expect(start.draft).toMatchObject({ tiers: null });
     expect(start.history).toEqual([]);
+    expect(start.limits.tier_count).toBe(3);
     const quote = adminData(await preview(systemLogin(), { distance_m: 3500 }));
     expect(quote).toMatchObject({ status: 'UNPRICED', fee_vnd: null, reason: 'POLICY_NOT_CONFIGURED' });
   });
@@ -122,29 +122,33 @@ describe('M06-A — shipping fee table (policy versions, draft, API)', () => {
     expect(await versionCount()).toBe(0);
   });
 
-  it('refuses a wrong table (gap, overlap, negative, not starting at 0, empty; decimal, extra key, wrong type) and keeps the draft as it was', async () => {
+  it('refuses a wrong table (not three bands, gap, overlap, negative, not starting at 0, empty band) and keeps the draft as it was', async () => {
     const before = await state();
     const v = Number(before.draft.version);
+    const [a, b, c] = TABLE_1.tiers as unknown as [Json, Json, Json];
     const wrong: unknown[] = [
-      { tiers: tiers([[0, 2000, 10000], [2500, 4000, 12000]]), tail: TAIL }, // gap
-      { tiers: tiers([[0, 2000, 10000], [1500, 4000, 12000]]), tail: TAIL }, // overlap
-      { tiers: tiers([[0, 2000, -1]]), tail: TAIL }, // negative fee
-      { tiers: tiers([[100, 2000, 10000]]), tail: TAIL }, // does not start at 0
-      { tiers: [], tail: TAIL }, // empty
-      { tiers: tiers([[0, 0, 10000]]), tail: TAIL }, // empty band
-      { tiers: tiers([[0, 2000, 10000]]), tail: { ...TAIL, step_m: 0 } }, // tail without a step
-      { tiers: tiers([[0, 2000, 10000]]), tail: { ...TAIL, base_fee_vnd: -5 } },
+      { tiers: [] },
+      { tiers: [a, b] }, // two bands
+      { tiers: [a, b, c, { from_m: 10000, to_m: 12000, fee_vnd: 25000 }] }, // a fourth band
+      { tiers: [a, { ...b, from_m: 3500 }, c] }, // gap
+      { tiers: [a, { ...b, from_m: 2500 }, c] }, // overlap
+      { tiers: [{ ...a, fee_vnd: -1 }, b, c] }, // negative fee
+      { tiers: [{ ...a, from_m: 100 }, b, c] }, // does not start at 0
+      { tiers: [{ ...a, to_m: 0 }, b, c] }, // empty band
+      { tiers: [a, { ...b, to_m: 3000 }, { ...c, from_m: 3000 }] }, // b1 = b2
+      { tiers: [{ ...a, fee_vnd: 10_000_001 }, b, c] }, // above the technical limit
     ];
     for (const table of wrong) {
       expect(codeOf(await write(systemLogin(), 'draft', { expected_version: v, ...(table as object) }))).toEqual({ status: 400, code: 'SHIPPING_POLICY_INVALID' });
     }
-    for (const table of [{ tiers: tiers([[0, 2000, 10000.5]]), tail: TAIL }, { tiers: [{ from_m: 0, to_m: 2000, fee_vnd: 1000, extra: 1 }], tail: TAIL }, { tiers: [{ from_m: '0', to_m: 2000, fee_vnd: 1000 }], tail: TAIL }, { tiers: [{ from_m: 0, to_m: 2000, fee_vnd: 1000 }] }]) {
+    const tail = { base_fee_vnd: 20000, step_m: 1000, step_fee_vnd: 3000 };
+    for (const table of [{ tiers: tiers([[0, 3000, 10000.5], [3000, 6000, 1], [6000, 10000, 1]]) }, { ...TABLE_1, tail }, { tiers: [{ ...a, extra: 1 }, b, c] }, { tiers: [{ ...a, from_m: '0' }, b, c] }, { tiers: [{ from_m: 0, to_m: 3000 }, b, c] }]) {
       expect(codeOf(await write(systemLogin(), 'draft', { expected_version: v, ...table }))).toEqual({ status: 400, code: 'ADMIN_INPUT_INVALID' });
     }
     expect(await state()).toEqual(before);
   });
 
-  it('saves a draft (version-checked, audited), applies it as version 1, and prices exact boundaries in metres without rounding', async () => {
+  it('saves a draft (version-checked, audited), applies it as version 1, and prices every boundary in metres without rounding', async () => {
     const stale = await draftVersion();
     expect((await saveDraft(TABLE_1)).status).toBe(200);
     expect(codeOf(await write(systemLogin(), 'draft', { expected_version: stale, ...TABLE_2 }))).toEqual({ status: 409, code: 'SHIPPING_DRAFT_VERSION_CONFLICT' });
@@ -154,23 +158,23 @@ describe('M06-A — shipping fee table (policy versions, draft, API)', () => {
     const applied = await apply('Bảng giá đầu tiên');
     expect(applied.status).toBe(200);
     const after = adminData(applied) as Json;
-    expect(after.active).toMatchObject({ version_no: 1, note: 'Bảng giá đầu tiên', tiers: TABLE_1.tiers, tail: TAIL });
-    expect(after.draft).toMatchObject({ tiers: null, tail: null });
+    expect(after.active).toMatchObject({ version_no: 1, legacy: false, note: 'Bảng giá đầu tiên', tiers: TABLE_1.tiers, tail: null });
+    expect(after.draft).toMatchObject({ tiers: null });
     expect(after.history).toBeUndefined();
     expect((await state()).history).toHaveLength(1);
 
-    // Distance in metres, half-open bands; the boundary belongs to the next band; no km rounding (1999.9 m is still the first band).
+    // Real route distance in metres; the boundary b1 is band 2, b2 is band 3, the last bound is still band 3, beyond it there is no fee.
     const fee = async (distance_m: number): Promise<unknown> => adminData(await preview(systemLogin(), { distance_m })).fee_vnd;
     expect(await fee(0)).toBe(10000);
-    expect(await fee(1999.9)).toBe(10000);
-    expect(await fee(2000)).toBe(12000);
-    expect(await fee(5500)).toBe(15000);
-    expect(await fee(9999)).toBe(20000);
-    expect(await fee(10000)).toBe(20000); // the tail starts: base only
-    expect(await fee(10999)).toBe(20000);
-    expect(await fee(11000)).toBe(23000);
-    expect(await fee(12500)).toBe(26000);
-    expect(adminData(await preview(systemLogin(), { distance_m: 5500 }))).toMatchObject({ based_on: 'ACTIVE', policy_version_no: 1, band: 2 });
+    expect(await fee(2999.9)).toBe(10000);
+    expect(await fee(3000)).toBe(15000);
+    expect(await fee(5999)).toBe(15000);
+    expect(await fee(6000)).toBe(20000);
+    expect(await fee(10000)).toBe(20000);
+    const beyond = adminData(await preview(systemLogin(), { distance_m: 10001 }));
+    expect(beyond).toMatchObject({ status: 'UNPRICED', fee_vnd: null, reason: 'OUT_OF_PRICE_RANGE' });
+    expect(adminData(await preview(systemLogin(), { distance_m: 1_000_000 }))).toMatchObject({ fee_vnd: null, reason: 'OUT_OF_PRICE_RANGE' });
+    expect(adminData(await preview(systemLogin(), { distance_m: 5500 }))).toMatchObject({ based_on: 'ACTIVE', policy_version_no: 1, band: 1 });
 
     expect(await countRows(admin.pool, "SELECT 1 FROM app.audit_logs WHERE action IN ('admin.shipping_fee_policy.save_draft.v1','admin.shipping_fee_policy.apply.v1') AND actor_id = $1", [system.account.userId])).toBeGreaterThanOrEqual(2);
   });
@@ -198,7 +202,7 @@ describe('M06-A — shipping fee table (policy versions, draft, API)', () => {
     // The stored snapshot still reproduces its own fee from version 1, which is untouched.
     const history = ((await state()).history as Json[]).slice().reverse();
     expect(history.map((h) => h.version_no)).toEqual([1, 2]);
-    expect(history[0]).toMatchObject({ tiers: TABLE_1.tiers, tail: TAIL });
+    expect(history[0]).toMatchObject({ tiers: TABLE_1.tiers, tail: null });
     const v1 = (await manager().withTransaction((context) => new ShippingFeePolicyRepository().history(context, 10))).find((v) => v.versionNo === 1);
     expect(evaluateQuote(v1 === undefined ? null : { versionNo: 1, policy: v1.policy }, 5500)).toMatchObject({ feeVnd: (stored as { feeVnd: number }).feeVnd });
 
@@ -209,29 +213,60 @@ describe('M06-A — shipping fee table (policy versions, draft, API)', () => {
     expect(await versionCount()).toBe(2);
   });
 
+  it('a v1.0 version in the history stays readable and valid, but is never used to price a new quote (apply a v1.1 table instead)', async () => {
+    // Written exactly as v1.0 wrote it: schema_version 1, four bands and a tail.
+    await admin.pool.query(
+      `INSERT INTO app.shipping_fee_policy_versions (version_id, version_no, schema_version, tiers, tail_base_fee_vnd, tail_step_m, tail_step_fee_vnd, applied_by, applied_at)
+       VALUES ($1::uuid, 3, 1, $2::jsonb, 20000, 1000, 3000, $3::uuid, now())`,
+      [randomUUID(), JSON.stringify(tiers([[0, 2000, 10000], [2000, 4000, 12000], [4000, 7000, 15000], [7000, 10000, 20000]])), system.account.userId],
+    );
+    const read = (await state()).history as Json[];
+    expect(read[0]).toMatchObject({ version_no: 3, legacy: true, tail: { base_fee_vnd: 20000, step_m: 1000, step_fee_vnd: 3000 } });
+    expect(read[0]?.tiers).toHaveLength(4);
+    expect(await manager().withTransaction(async (context) => evaluateQuote(await reader().active(context), 5500))).toEqual({ status: 'UNPRICED', feeVnd: null, reason: 'POLICY_NOT_CONFIGURED' });
+    expect(adminData(await preview(systemLogin(), { distance_m: 5500 }))).toMatchObject({ status: 'UNPRICED', reason: 'POLICY_NOT_CONFIGURED' });
+    // The same numbering continues with a v1.1 apply, and that one prices again.
+    expect((await saveDraft(TABLE_1)).status).toBe(200);
+    expect((await apply()).status).toBe(200);
+    expect(adminData(await preview(systemLogin(), { distance_m: 5500 }))).toMatchObject({ status: 'PRICED', fee_vnd: 15000, policy_version_no: 4 });
+  });
+
   it('the database itself refuses a wrong table, whatever the application does', async () => {
-    const insert = (json: unknown, tail = [1, 1000, 100]): Promise<unknown> =>
+    const insert = (json: unknown, schema = 2, tail: [number | null, number | null, number | null] = [null, null, null]): Promise<unknown> =>
       admin.pool.query(
-        `INSERT INTO app.shipping_fee_policy_versions (version_id, version_no, tiers, tail_base_fee_vnd, tail_step_m, tail_step_fee_vnd, applied_by, applied_at)
-         VALUES ($1::uuid, 999, $2::jsonb, $3, $4, $5, $6::uuid, now())`,
-        [randomUUID(), JSON.stringify(json), tail[0], tail[1], tail[2], system.account.userId],
+        `INSERT INTO app.shipping_fee_policy_versions (version_id, version_no, schema_version, tiers, tail_base_fee_vnd, tail_step_m, tail_step_fee_vnd, applied_by, applied_at)
+         VALUES ($1::uuid, 999, $2, $3::jsonb, $4, $5, $6, $7::uuid, now())`,
+        [randomUUID(), schema, JSON.stringify(json), tail[0], tail[1], tail[2], system.account.userId],
       );
-    for (const bad of [tiers([[0, 1000, 1], [1500, 2000, 1]]), tiers([[0, 1000, 1], [900, 2000, 1]]), tiers([[0, 1000, -1]]), tiers([[5, 1000, 1]]), [], tiers([[0, 1000, 1]]).concat({ from_m: 1000, to_m: 2000, fee_vnd: 1, extra: 1 } as never), [{ from_m: '0', to_m: 1000, fee_vnd: 1 }], tiers([[0, 1000, 99_000_000]])]) {
+    const good = tiers([[0, 3000, 1], [3000, 6000, 1], [6000, 10000, 1]]);
+    for (const bad of [
+      tiers([[0, 3000, 1], [3000, 6000, 1]]), // two bands
+      [...good, { from_m: 10000, to_m: 12000, fee_vnd: 1 }], // four bands
+      tiers([[0, 3000, 1], [3500, 6000, 1], [6000, 10000, 1]]), // gap
+      tiers([[0, 3000, 1], [2900, 6000, 1], [6000, 10000, 1]]), // overlap
+      tiers([[0, 3000, -1], [3000, 6000, 1], [6000, 10000, 1]]), // negative fee
+      tiers([[5, 3000, 1], [3000, 6000, 1], [6000, 10000, 1]]), // not from 0
+      [{ ...good[0], extra: 1 }, good[1], good[2]], // extra key
+      [{ from_m: '0', to_m: 3000, fee_vnd: 1 }, good[1], good[2]], // a string
+      tiers([[0, 3000, 99_000_000], [3000, 6000, 1], [6000, 10000, 1]]), // above the technical limit
+    ]) {
       await expect(insert(bad)).rejects.toMatchObject({ code: '23514' });
     }
-    await expect(insert(tiers([[0, 1000, 1]]), [0, 0, 0])).rejects.toMatchObject({ code: '23514' }); // step of 0 m
-    expect(await versionCount()).toBe(2);
+    await expect(insert(good, 2, [1, 1000, 1])).rejects.toMatchObject({ code: '23514' }); // a version-2 row carries no tail
+    await expect(insert(good, 1, [null, null, null])).rejects.toMatchObject({ code: '23514' }); // a version-1 row needs its tail
+    await expect(insert(good, 3)).rejects.toMatchObject({ code: '23514' });
+    expect(await versionCount()).toBe(4);
   });
 
   it('two applies of the same draft at once: exactly one wins and the numbers stay contiguous', async () => {
-    expect((await saveDraft({ tiers: tiers([[0, 3000, 9000]]), tail: TAIL })).status).toBe(200);
+    expect((await saveDraft({ tiers: tiers([[0, 2000, 9000], [2000, 4000, 12000], [4000, 8000, 16000]]) })).status).toBe(200);
     const v = await draftVersion();
     await admin.clearLimits();
     const results = await Promise.all([write(systemLogin(), 'apply', { expected_version: v }), write(systemLogin(), 'apply', { expected_version: v })]);
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
     expect(codeOf(results.find((r) => r.status === 409) as AdminResponse).code).toBe('SHIPPING_DRAFT_VERSION_CONFLICT');
     const numbers = (await admin.pool.query<{ version_no: string }>('SELECT version_no::text FROM app.shipping_fee_policy_versions ORDER BY version_no')).rows.map((r) => Number(r.version_no));
-    expect(numbers).toEqual([1, 2, 3]);
+    expect(numbers).toEqual([1, 2, 3, 4, 5]);
   });
 
   it('a replay of the same Idempotency-Key does not apply twice', async () => {
@@ -241,6 +276,6 @@ describe('M06-A — shipping fee table (policy versions, draft, API)', () => {
     const first = await write(systemLogin(), 'apply', { expected_version: v }, key);
     const second = await write(systemLogin(), 'apply', { expected_version: v }, key);
     expect([first.status, second.status]).toEqual([200, 200]);
-    expect(await versionCount()).toBe(4);
+    expect(await versionCount()).toBe(6);
   });
 });

@@ -10,7 +10,7 @@ import { WalletRepository } from '../../apps/backend/src/wallet/wallet-repositor
 import { WalletService } from '../../apps/backend/src/wallet/wallet-service';
 import { eventually, failureOf } from './support/async-helpers';
 import { AuthApp, createDriverFor, purgePhone, randomPhone, rowLockWaiters, startAuthApp } from './support/auth-fixtures';
-import { WALLET_DOWN_SQL, WALLET_UP_SQL } from './support/wallet-migration-sql';
+import { WALLET_DOWN_SQL, WALLET_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
 import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
 import { holdRowLock } from './support/lock-fixtures';
 import { loadIntegrationConfig } from './support/test-helpers';
@@ -195,7 +195,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
     const error = await failureOf(() =>
       pool.query(
         `INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at)
-         VALUES ($1::uuid, $2::uuid, 1, 'TOPUP', 100000, 100000, now())`,
+         VALUES ($1::uuid, $2::uuid, 1, 'ADJUSTMENT_CREDIT', 100000, 100000, now())`,
         [randomUUID(), wallet.walletId],
       ),
     );
@@ -205,7 +205,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
       manager().withTransaction(async (context) => {
         await context.query(
           `INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at)
-           VALUES ($1::uuid, $2::uuid, 1, 'TOPUP', 100000, 100000, now())`,
+           VALUES ($1::uuid, $2::uuid, 1, 'ADJUSTMENT_CREDIT', 100000, 100000, now())`,
           [randomUUID(), wallet.walletId],
         );
       }),
@@ -216,7 +216,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
     const ghost = await failureOf(() =>
       pool.query(
         `INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at)
-         VALUES ($1::uuid, $2::uuid, 1, 'TOPUP', 1, 1, now())`,
+         VALUES ($1::uuid, $2::uuid, 1, 'ADJUSTMENT_CREDIT', 1, 1, now())`,
         [randomUUID(), randomUUID()],
       ),
     );
@@ -281,7 +281,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
     try {
       await client.query('BEGIN');
       await client.query('ALTER TABLE app.wallet_ledger_entries DISABLE TRIGGER wallet_ledger_a_source_gate');
-      await insertEntry(1, 'TOPUP', 100000, 100000);
+      await insertEntry(1, 'ADJUSTMENT_CREDIT', 100000, 100000);
       await client.query('UPDATE app.driver_wallets SET balance_vnd = 100000, version = version + 1 WHERE wallet_id = $1::uuid', [wallet.walletId]);
       await client.query('SET CONSTRAINTS ALL IMMEDIATE');
       // Each refusal aborts the transaction in PostgreSQL, so every probe runs in its own savepoint.
@@ -291,10 +291,10 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
         await client.query(`ROLLBACK TO SAVEPOINT ${label}`);
         expect([label, messageOf(error).includes(needle)]).toEqual([label, true]);
       };
-      await refused('wrong_sequence', () => insertEntry(3, 'TOPUP', 1, 100001), 'WALLET_LEDGER_CHAIN_BROKEN');
-      await refused('wrong_balance_after', () => insertEntry(2, 'TOPUP', 1, 5), 'WALLET_LEDGER_CHAIN_BROKEN');
-      await refused('wrong_sign', () => insertEntry(2, 'TOPUP', -1, 99999), 'wallet_ledger_entries_delta_ck');
-      await refused('zero_delta', () => insertEntry(2, 'TOPUP', 0, 100000), 'wallet_ledger_entries_delta_ck');
+      await refused('wrong_sequence', () => insertEntry(3, 'ADJUSTMENT_CREDIT', 1, 100001), 'WALLET_LEDGER_CHAIN_BROKEN');
+      await refused('wrong_balance_after', () => insertEntry(2, 'ADJUSTMENT_CREDIT', 1, 5), 'WALLET_LEDGER_CHAIN_BROKEN');
+      await refused('wrong_sign', () => insertEntry(2, 'ADJUSTMENT_CREDIT', -1, 99999), 'wallet_ledger_entries_delta_ck');
+      await refused('zero_delta', () => insertEntry(2, 'ADJUSTMENT_CREDIT', 0, 100000), 'wallet_ledger_entries_delta_ck');
       await refused('unknown_kind', () => insertEntry(2, 'FREE_MONEY', 1, 100001), '_ck');
       await refused('update', () => client.query('UPDATE app.wallet_ledger_entries SET delta_vnd = 1'), 'append-only');
       await refused('delete', () => client.query('DELETE FROM app.wallet_ledger_entries'), 'append-only');
@@ -381,11 +381,13 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
         await client.query('ALTER TABLE app.driver_wallets DISABLE TRIGGER driver_wallets_no_delete');
         await client.query('DELETE FROM app.driver_wallets');
         await client.query('ALTER TABLE app.driver_wallets ENABLE TRIGGER driver_wallets_no_delete');
+        await client.query(TOPUP_DOWN_SQL); // M04-B1 adds a ledger column and references the wallet core: the very newest, down first, up last
         await client.query(WALLET_HOLD_DOWN_SQL); // M04-A2.1 references the wallet table: the very newest, down first, up last
         await client.query(WALLET_DOWN_SQL);
         expect(await tablesPresent(client)).toEqual([]);
         await client.query(WALLET_UP_SQL);
         await client.query(WALLET_HOLD_UP_SQL);
+        await client.query(TOPUP_UP_SQL);
         expect(await tablesPresent(client)).toEqual(['driver_wallets', 'wallet_ledger_entries']);
         // The re-created schema works: a zero wallet can be born again.
         const { driverId } = await (async () => {

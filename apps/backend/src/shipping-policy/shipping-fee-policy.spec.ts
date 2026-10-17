@@ -4,97 +4,105 @@ import { computeShippingFee, FeePolicy, samePolicy, validateFeePolicy } from './
 import { evaluateQuote, recheckQuote } from './shipping-fee-quote';
 import { parseApplyBody, parsePreviewBody, parseSaveDraftBody } from './shipping-fee-policy-validation';
 
+// The v1.1 example table of the approved design (NOT a seeded price): 0-<3 km 10.000, 3-<6 km 15.000, 6-10 km 20.000 (10 km included).
 const POLICY: FeePolicy = {
   tiers: [
-    { fromM: 0, toM: 2000, feeVnd: 10000 },
-    { fromM: 2000, toM: 4000, feeVnd: 12000 },
-    { fromM: 4000, toM: 7000, feeVnd: 15000 },
-    { fromM: 7000, toM: 10000, feeVnd: 20000 },
+    { fromM: 0, toM: 3000, feeVnd: 10000 },
+    { fromM: 3000, toM: 6000, feeVnd: 15000 },
+    { fromM: 6000, toM: 10000, feeVnd: 20000 },
   ],
-  tail: { baseFeeVnd: 20000, stepM: 1000, stepFeeVnd: 3000 },
 };
 
-const fee = (m: number): number => computeShippingFee(POLICY, m).feeVnd;
+const priced = (m: number): number | null => computeShippingFee(POLICY, m).feeVnd;
 const codes = (policy: FeePolicy): string[] => validateFeePolicy(policy).map((i) => i.code);
-const withTiers = (tiers: FeePolicy['tiers']): FeePolicy => ({ ...POLICY, tiers });
+const withTiers = (tiers: FeePolicy['tiers']): FeePolicy => ({ tiers });
 
-describe('M06-A computeShippingFee', () => {
-  it('prices every band, the exact boundaries (they belong to the next band) and distances past the last band', () => {
-    expect(fee(0)).toBe(10000);
-    expect(fee(1999)).toBe(10000);
-    expect(fee(2000)).toBe(12000);
-    expect(fee(3999)).toBe(12000);
-    expect(fee(4000)).toBe(15000);
-    expect(fee(6999)).toBe(15000);
-    expect(fee(7000)).toBe(20000);
-    expect(fee(9999)).toBe(20000);
-    expect(fee(10000)).toBe(20000);
-    expect(fee(10999)).toBe(20000);
-    expect(fee(11000)).toBe(23000);
-    expect(fee(14500)).toBe(32000);
-    expect(computeShippingFee(POLICY, 15000)).toEqual({ feeVnd: 35000, band: 'TAIL' });
+describe('M06-A v1.1 computeShippingFee: exactly three bands', () => {
+  it('prices every band and every boundary: 3 km is band 2, 6 km is band 3, exactly 10 km is still band 3', () => {
+    expect(priced(0)).toBe(10000);
+    expect(priced(2999)).toBe(10000);
+    expect(priced(2999.9)).toBe(10000); // metres as M14 gives them: no km rounding
+    expect(priced(3000)).toBe(15000);
+    expect(priced(5999)).toBe(15000);
+    expect(priced(6000)).toBe(20000);
+    expect(priced(9999)).toBe(20000);
+    expect(priced(10000)).toBe(20000);
+    expect(computeShippingFee(POLICY, 3000)).toEqual({ status: 'PRICED', feeVnd: 15000, band: 1 });
+    expect(computeShippingFee(POLICY, 10000)).toEqual({ status: 'PRICED', feeVnd: 20000, band: 2 });
   });
 
-  it('uses the metre value as is: a display rounding to km never moves a fee', () => {
-    expect(fee(1999.9)).toBe(10000); // would round to 2 km (12.000) if km were rounded first
-    expect(fee(2000.1)).toBe(12000);
-    expect(fee(10999.9)).toBe(20000);
+  it('beyond the last bound there is NO fee: null (never 0, never extrapolated), reason OUT_OF_PRICE_RANGE', () => {
+    expect(computeShippingFee(POLICY, 10000.1)).toEqual({ status: 'OUT_OF_PRICE_RANGE', feeVnd: null });
+    expect(computeShippingFee(POLICY, 10001)).toEqual({ status: 'OUT_OF_PRICE_RANGE', feeVnd: null });
+    expect(computeShippingFee(POLICY, 999_999)).toEqual({ status: 'OUT_OF_PRICE_RANGE', feeVnd: null });
+    // No huge fee can come out of any distance: a fee is only ever one of the three entered amounts or null.
+    for (const m of [0, 1, 2999, 3000, 5999, 6000, 10000, 10001, 50_000, 1_000_000, 5_000_000]) {
+      const fee = computeShippingFee(POLICY, m).feeVnd;
+      expect(fee === null || [10000, 15000, 20000].includes(fee)).toBe(true);
+    }
   });
 
-  it('is not the fixed "+5.000 per 5 km" formula: the fee follows whatever the Admin entered', () => {
-    const odd: FeePolicy = { tiers: [{ fromM: 0, toM: 700, feeVnd: 4321 }, { fromM: 700, toM: 4100, feeVnd: 4000 }], tail: { baseFeeVnd: 9999, stepM: 250, stepFeeVnd: 7 } };
-    expect(computeShippingFee(odd, 699).feeVnd).toBe(4321);
-    expect(computeShippingFee(odd, 700).feeVnd).toBe(4000); // a cheaper band after a dearer one is allowed
-    expect(computeShippingFee(odd, 4100).feeVnd).toBe(9999);
-    expect(computeShippingFee(odd, 4350).feeVnd).toBe(10006);
+  it('follows whatever the Admin entered (the example is not a built-in price)', () => {
+    const own: FeePolicy = { tiers: [{ fromM: 0, toM: 1500, feeVnd: 7000 }, { fromM: 1500, toM: 4200, feeVnd: 7000 }, { fromM: 4200, toM: 8000, feeVnd: 3000 }] };
+    expect(computeShippingFee(own, 1499).feeVnd).toBe(7000);
+    expect(computeShippingFee(own, 1500).feeVnd).toBe(7000);
+    expect(computeShippingFee(own, 4200).feeVnd).toBe(3000); // a cheaper band after a dearer one is allowed
+    expect(computeShippingFee(own, 8000).feeVnd).toBe(3000);
+    expect(computeShippingFee(own, 8001).feeVnd).toBeNull();
   });
 
   it('refuses an invalid policy or distance instead of guessing', () => {
-    expect(() => computeShippingFee(withTiers([{ fromM: 0, toM: 100, feeVnd: 1 }, { fromM: 200, toM: 300, feeVnd: 1 }]), 50)).toThrow('INVALID_FEE_POLICY');
-    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY, 2_000_000]) {
+    expect(() => computeShippingFee(withTiers([{ fromM: 0, toM: 100, feeVnd: 1 }]), 50)).toThrow('INVALID_FEE_POLICY');
+    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(() => computeShippingFee(POLICY, bad)).toThrow('INVALID_DISTANCE');
     }
   });
 });
 
-describe('M06-A validateFeePolicy', () => {
-  it('accepts a continuous table', () => {
+describe('M06-A v1.1 validateFeePolicy', () => {
+  it('accepts exactly three continuous bands', () => {
     expect(codes(POLICY)).toEqual([]);
   });
 
-  it('rejects gaps, overlaps, a first band not at 0, empty bands, negative or too-high fees, decimals and an empty table', () => {
-    expect(codes(withTiers([{ fromM: 0, toM: 1000, feeVnd: 1 }, { fromM: 1500, toM: 2000, feeVnd: 1 }]))).toEqual(['GAP']);
-    expect(codes(withTiers([{ fromM: 0, toM: 1000, feeVnd: 1 }, { fromM: 900, toM: 2000, feeVnd: 1 }]))).toEqual(['OVERLAP']);
-    expect(codes(withTiers([{ fromM: 10, toM: 1000, feeVnd: 1 }]))).toEqual(['FIRST_NOT_ZERO']);
-    expect(codes(withTiers([{ fromM: 0, toM: 0, feeVnd: 1 }]))).toContain('RANGE_EMPTY');
-    expect(codes(withTiers([{ fromM: 0, toM: 1000, feeVnd: -1 }]))).toEqual(['FEE_NEGATIVE']);
-    expect(codes(withTiers([{ fromM: 0, toM: 1000, feeVnd: 10_000_001 }]))).toEqual(['FEE_TOO_HIGH']);
-    expect(codes(withTiers([{ fromM: 0, toM: 1000.5, feeVnd: 1 }]))).toEqual(['NOT_INTEGER']);
-    expect(codes(withTiers([]))).toEqual(['TIERS_EMPTY']);
-    expect(codes(withTiers([{ fromM: 0, toM: 1_000_001, feeVnd: 1 }]))).toEqual(['DISTANCE_TOO_LARGE']);
+  it('refuses any other number of bands (no 4th band, no fewer)', () => {
+    expect(codes(withTiers([]))).toEqual(['TIERS_COUNT']);
+    expect(codes(withTiers(POLICY.tiers.slice(0, 2)))).toEqual(['TIERS_COUNT']);
+    expect(codes(withTiers([...POLICY.tiers, { fromM: 10000, toM: 12000, feeVnd: 25000 }]))).toEqual(['TIERS_COUNT']);
   });
 
-  it('rejects an unusable tail (no step, negative fee)', () => {
-    expect(codes({ ...POLICY, tail: { ...POLICY.tail, stepM: 0 } })).toEqual(['TAIL_INVALID']);
-    expect(codes({ ...POLICY, tail: { ...POLICY.tail, stepFeeVnd: -1 } })).toEqual(['TAIL_INVALID']);
-    expect(codes({ ...POLICY, tail: { ...POLICY.tail, baseFeeVnd: -1 } })).toEqual(['TAIL_INVALID']);
+  it('refuses gaps, overlaps, a first band not at 0, empty or reversed bands (0 < b1 < b2 < b3), negative or too-high fees, decimals', () => {
+    const [a, b, c] = POLICY.tiers as [FeePolicy['tiers'][number], FeePolicy['tiers'][number], FeePolicy['tiers'][number]];
+    expect(codes(withTiers([a, { ...b, fromM: 3500 }, c]))).toEqual(['GAP']);
+    expect(codes(withTiers([a, { ...b, fromM: 2500 }, c]))).toEqual(['OVERLAP']);
+    expect(codes(withTiers([{ ...a, fromM: 10 }, b, c]))).toEqual(['FIRST_NOT_ZERO']);
+    expect(codes(withTiers([{ ...a, toM: 0 }, b, c]))).toContain('RANGE_EMPTY');
+    expect(codes(withTiers([a, { ...b, toM: 3000 }, { ...c, fromM: 3000 }]))).toContain('RANGE_EMPTY');
+    expect(codes(withTiers([{ ...a, feeVnd: -1 }, b, c]))).toEqual(['FEE_NEGATIVE']);
+    expect(codes(withTiers([a, b, { ...c, feeVnd: 10_000_001 }]))).toEqual(['FEE_TOO_HIGH']);
+    expect(codes(withTiers([{ ...a, feeVnd: 10000.5 }, b, c]))).toEqual(['NOT_INTEGER']);
+    expect(codes(withTiers([a, b, { ...c, toM: 1_000_001 }]))).toEqual(['DISTANCE_TOO_LARGE']);
+  });
+
+  it('allows a last bound beyond 10 km (about 10 km is the survey, not a hard technical limit)', () => {
+    expect(codes(withTiers([POLICY.tiers[0] as never, POLICY.tiers[1] as never, { fromM: 6000, toM: 14000, feeVnd: 20000 }]))).toEqual([]);
   });
 
   it('samePolicy compares content', () => {
     expect(samePolicy(POLICY, JSON.parse(JSON.stringify(POLICY)) as FeePolicy)).toBe(true);
-    expect(samePolicy(POLICY, { ...POLICY, tail: { ...POLICY.tail, stepFeeVnd: 1 } })).toBe(false);
+    expect(samePolicy(POLICY, withTiers([POLICY.tiers[0] as never, POLICY.tiers[1] as never, { fromM: 6000, toM: 10000, feeVnd: 20001 }]))).toBe(false);
   });
 });
 
 describe('M06 evaluateQuote / recheckQuote', () => {
   const snapshot = { versionNo: 3, policy: POLICY };
 
-  it('has no route -> no fee (null, never 0); no table -> no fee', () => {
+  it('has no route -> no fee (null, never 0); no table -> no fee; beyond the last band -> OUT_OF_PRICE_RANGE (null)', () => {
     for (const missing of [null, undefined, Number.NaN, -5]) {
       expect(evaluateQuote(snapshot, missing)).toEqual({ status: 'UNPRICED', feeVnd: null, reason: 'ROUTE_DATA_UNAVAILABLE' });
     }
     expect(evaluateQuote(null, 3000)).toEqual({ status: 'UNPRICED', feeVnd: null, reason: 'POLICY_NOT_CONFIGURED' });
-    expect(evaluateQuote(snapshot, 5500)).toEqual({ status: 'PRICED', feeVnd: 15000, distanceM: 5500, policyVersionNo: 3, band: 2 });
+    expect(evaluateQuote(snapshot, 12_000)).toEqual({ status: 'UNPRICED', feeVnd: null, reason: 'OUT_OF_PRICE_RANGE' });
+    expect(evaluateQuote(snapshot, 5500)).toEqual({ status: 'PRICED', feeVnd: 15000, distanceM: 5500, policyVersionNo: 3, band: 1 });
   });
 
   it('an unaccepted quote must be priced again after its TTL, a changed place or a new policy version', () => {
@@ -109,8 +117,9 @@ describe('M06 evaluateQuote / recheckQuote', () => {
   });
 });
 
-describe('M06-A body parsers', () => {
-  const body = { expected_version: 1, tiers: [{ from_m: 0, to_m: 2000, fee_vnd: 10000 }], tail: { base_fee_vnd: 1, step_m: 1000, step_fee_vnd: 1 } };
+describe('M06-A v1.1 body parsers', () => {
+  const tiers = [{ from_m: 0, to_m: 3000, fee_vnd: 10000 }, { from_m: 3000, to_m: 6000, fee_vnd: 15000 }, { from_m: 6000, to_m: 10000, fee_vnd: 20000 }];
+  const body = { expected_version: 1, tiers };
   const code = (fn: () => unknown): string | undefined => {
     try {
       fn();
@@ -120,12 +129,15 @@ describe('M06-A body parsers', () => {
     }
   };
 
-  it('separates a malformed body (ADMIN_INPUT_INVALID) from a table that breaks a rule (SHIPPING_POLICY_INVALID)', () => {
-    expect(parseSaveDraftBody(body).policy.tiers).toHaveLength(1);
+  it('separates a malformed body (ADMIN_INPUT_INVALID) from a table that breaks a rule (SHIPPING_POLICY_INVALID); no tail any more', () => {
+    expect(parseSaveDraftBody(body).policy.tiers).toHaveLength(3);
+    expect(code(() => parseSaveDraftBody({ ...body, tail: { base_fee_vnd: 1, step_m: 1000, step_fee_vnd: 1 } }))).toBe('ADMIN_INPUT_INVALID');
     expect(code(() => parseSaveDraftBody({ ...body, extra: 1 }))).toBe('ADMIN_INPUT_INVALID');
     expect(code(() => parseSaveDraftBody({ ...body, expected_version: 0 }))).toBe('ADMIN_INPUT_INVALID');
-    expect(code(() => parseSaveDraftBody({ ...body, tiers: [{ from_m: 0, to_m: 2000 }] }))).toBe('ADMIN_INPUT_INVALID');
-    expect(code(() => parseSaveDraftBody({ ...body, tiers: [{ from_m: 5, to_m: 2000, fee_vnd: 1 }] }))).toBe('SHIPPING_POLICY_INVALID');
+    expect(code(() => parseSaveDraftBody({ ...body, tiers: [{ from_m: 0, to_m: 2000 }, ...tiers.slice(1)] }))).toBe('ADMIN_INPUT_INVALID');
+    expect(code(() => parseSaveDraftBody({ ...body, tiers: tiers.slice(0, 2) }))).toBe('SHIPPING_POLICY_INVALID');
+    expect(code(() => parseSaveDraftBody({ ...body, tiers: [...tiers, { from_m: 10000, to_m: 12000, fee_vnd: 1 }] }))).toBe('SHIPPING_POLICY_INVALID');
+    expect(code(() => parseSaveDraftBody({ ...body, tiers: [{ ...tiers[0], from_m: 5 }, ...tiers.slice(1)] }))).toBe('SHIPPING_POLICY_INVALID');
   });
 
   it('parses apply notes and the preview shape', () => {
@@ -133,7 +145,8 @@ describe('M06-A body parsers', () => {
     expect(parseApplyBody({ expected_version: 2 }).note).toBeNull();
     expect(code(() => parseApplyBody({ expected_version: 2, note: 'x'.repeat(201) }))).toBe('ADMIN_INPUT_INVALID');
     expect(parsePreviewBody({ distance_m: 5500 })).toEqual({ distanceM: 5500, policy: null });
-    expect(parsePreviewBody({ distance_m: 5500, tiers: body.tiers, tail: body.tail }).policy).not.toBeNull();
+    expect(parsePreviewBody({ distance_m: 5500, tiers }).policy).not.toBeNull();
     expect(code(() => parsePreviewBody({ distance_m: -1 }))).toBe('ADMIN_INPUT_INVALID');
+    expect(code(() => parsePreviewBody({ distance_m: 5500, tiers, tail: {} }))).toBe('ADMIN_INPUT_INVALID');
   });
 });

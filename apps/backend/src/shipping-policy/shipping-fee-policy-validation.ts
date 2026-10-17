@@ -40,7 +40,7 @@ function version(value: unknown): number {
 }
 
 function parsePolicy(source: Record<string, unknown>): FeePolicy {
-  if (!Array.isArray(source.tiers) || source.tiers.length > 200) {
+  if (!Array.isArray(source.tiers) || source.tiers.length > 50) {
     return invalid();
   }
   const tiers = source.tiers.map((raw: unknown) => {
@@ -48,9 +48,7 @@ function parsePolicy(source: Record<string, unknown>): FeePolicy {
     exactKeys(tier, ['from_m', 'to_m', 'fee_vnd']);
     return { fromM: whole(tier.from_m), toM: whole(tier.to_m), feeVnd: whole(tier.fee_vnd) };
   });
-  const tail = plainObject(source.tail);
-  exactKeys(tail, ['base_fee_vnd', 'step_m', 'step_fee_vnd']);
-  return { tiers, tail: { baseFeeVnd: whole(tail.base_fee_vnd), stepM: whole(tail.step_m), stepFeeVnd: whole(tail.step_fee_vnd) } };
+  return { tiers };
 }
 
 function parseValidPolicy(source: Record<string, unknown>): FeePolicy {
@@ -68,7 +66,7 @@ export interface SaveDraftBody {
 
 export function parseSaveDraftBody(body: unknown): SaveDraftBody {
   const source = plainObject(body);
-  exactKeys(source, ['expected_version', 'tiers', 'tail']);
+  exactKeys(source, ['expected_version', 'tiers']);
   return { expectedVersion: version(source.expected_version), policy: parseValidPolicy(source) };
 }
 
@@ -104,11 +102,11 @@ export interface PreviewBody {
 
 export function parsePreviewBody(body: unknown): PreviewBody {
   const source = plainObject(body);
-  exactKeys(source, ['distance_m'], ['tiers', 'tail']);
+  exactKeys(source, ['distance_m'], ['tiers']);
   const distance = source.distance_m;
   if (typeof distance !== 'number' || !Number.isFinite(distance) || distance < 0 || distance > MAX_DISTANCE_M) {
     return invalid();
   }
-  const hasPolicy = source.tiers !== undefined || source.tail !== undefined;
+  const hasPolicy = source.tiers !== undefined;
   return { distanceM: distance, policy: hasPolicy ? parseValidPolicy(source) : null };
 }

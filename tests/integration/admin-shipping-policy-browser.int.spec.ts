@@ -154,40 +154,45 @@ describe('admin shipping fee table (real browser)', () => {
     expect(await page.evaluate<boolean>(`!!document.querySelector('a[href="/system/shipping-fee-policy"]')`)).toBe(true);
     await page.goto(`${origin}/system/shipping-fee-policy`);
     await page.waitFor(`document.querySelector('#sp-title') && document.querySelector('#sp-verdict')`);
-    // No table yet: nothing is priced, and the page says so (never 0đ).
-    expect(await text(page, '#sp-table-error')).toContain('Thêm ít nhất');
+    // No table yet: nothing is priced, and the page says so (never 0đ). Exactly three bands, no add/remove, no tail formula.
+    expect(await text(page, '#sp-verdict')).toContain('chưa hợp lệ');
     expect(await page.evaluate<boolean>(`[...document.querySelectorAll('button')].filter((b) => ['Lưu bản nháp', 'Áp dụng bảng giá'].includes(b.textContent.trim())).every((b) => b.disabled)`)).toBe(true);
+    expect(await page.evaluate<boolean>(`document.querySelectorAll('.sp-rows .sp-row:not(.sp-row-head)').length === 3 && ![...document.querySelectorAll('button')].some((b) => /Thêm mốc|Xóa mốc/.test(b.textContent + (b.getAttribute('aria-label') ?? ''))) && !document.querySelector('#sp-tail-base') && !document.body.innerText.includes('Phí nền') && !document.body.innerText.includes('Mỗi thêm')`)).toBe(true);
+    // The fixed search radius is shown read-only (it comes from the server, 3 km), never as an input.
+    await page.waitFor(`document.querySelector('#sp-preview-radius') && document.querySelector('#sp-preview-radius').textContent.includes('3 km')`);
 
-    expect(await press(page, '+ Thêm mốc')).toBe(true);
-    await fillRow(page, 0, '0', '2', '10000');
-    expect(await press(page, '+ Thêm mốc')).toBe(true);
-    // A gap is named at once and nothing can be saved.
-    await fillRow(page, 1, '2.5', '4', '12000');
-    await page.waitFor(`document.querySelector('#sp-row-1-from-error').textContent.includes('Hở')`);
-    await page.fill('#sp-tail-base', '20000');
-    await page.fill('#sp-tail-step', '1');
-    await page.fill('#sp-tail-stepfee', '3000');
-    await page.waitFor(`document.querySelector('#sp-verdict').textContent.includes('chưa hợp lệ')`);
+    // Typing: a bound not above the previous one is named at once and nothing can be saved.
+    await page.fill('#sp-row-0-to', '3');
+    await page.fill('#sp-row-0-fee', '10000');
+    await page.fill('#sp-row-1-to', '3');
+    await page.fill('#sp-row-1-fee', '15000');
+    await page.fill('#sp-row-2-to', '10');
+    await page.fill('#sp-row-2-fee', '20000');
+    await page.waitFor(`document.querySelector('#sp-row-1-to-error').textContent.includes('lớn hơn mốc')`);
+    expect(await text(page, '#sp-verdict')).toContain('chưa hợp lệ');
     expect(await page.evaluate<boolean>(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Lưu bản nháp').disabled`)).toBe(true);
-    await shot(page, 'policy-gap-error');
-    // An overlap too; then the fix.
-    await page.fill('#sp-row-1-from', '1');
-    await page.waitFor(`document.querySelector('#sp-row-1-from-error').textContent.includes('Chồng')`);
-    await page.fill('#sp-row-1-from', '2');
-    await page.waitFor(`document.querySelector('#sp-verdict').textContent.includes('✓ Các mốc liên tục')`);
-    expect(await press(page, '+ Thêm mốc')).toBe(true);
-    await fillRow(page, 2, '4', '7', '15000');
-    expect(await press(page, '+ Thêm mốc')).toBe(true);
-    await fillRow(page, 3, '7', '10', '20000');
-    await page.waitFor(`document.querySelector('#sp-verdict').textContent.includes('✓ Các mốc liên tục')`);
+    await shot(page, 'policy-bound-error');
+    await page.fill('#sp-row-1-to', '6');
+    await page.waitFor(`document.querySelector('#sp-verdict').textContent.includes('✓ Ba khung liên tục')`);
+    // The lower bound of band 2 follows the upper bound of band 1.
+    expect(await text(page, '#sp-row-1-from')).toBe('3');
+    expect(await text(page, '#sp-row-2-from')).toBe('6');
 
-    // The preview prices the table being edited, from the server (5.5 km -> 15.000đ), and past the last tier (11 km -> 23.000đ).
+    // The preview prices the table being edited, from the server: every boundary, and beyond the last bound there is no fee.
+    const feeIs = (value: string): string => `document.querySelector('#sp-preview-fee').textContent === ${JSON.stringify(value)}`;
+    await page.fill('#sp-preview-km', '2.999');
+    await page.waitFor(feeIs('10.000đ'));
+    await page.fill('#sp-preview-km', '3');
+    await page.waitFor(feeIs('15.000đ'));
+    await page.fill('#sp-preview-km', '6');
+    await page.waitFor(feeIs('20.000đ'));
+    await page.fill('#sp-preview-km', '10');
+    await page.waitFor(feeIs('20.000đ'));
+    await page.fill('#sp-preview-km', '10.001');
+    await page.waitFor(feeIs('Ngoài bảng giá'));
+    expect(await text(page, '#sp-preview-sub')).toContain('không phải 0đ');
     await page.fill('#sp-preview-km', '5.5');
-    await page.waitFor(`document.querySelector('#sp-preview-fee').textContent === '15.000đ'`);
-    await page.fill('#sp-preview-km', '11');
-    await page.waitFor(`document.querySelector('#sp-preview-fee').textContent === '23.000đ'`);
-    await page.fill('#sp-preview-km', '1.999');
-    await page.waitFor(`document.querySelector('#sp-preview-fee').textContent === '10.000đ'`);
+    await page.waitFor(feeIs('15.000đ'));
     await shot(page, 'policy-table-edited');
     expect(await count(app.pool, 'SELECT 1 FROM app.shipping_fee_policy_versions')).toBe(0); // typing and previewing write nothing
 
@@ -215,20 +220,20 @@ describe('admin shipping fee table (real browser)', () => {
     await page.fill('#sp-row-0-fee', '9000');
     await page.waitFor(`!([...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Áp dụng bảng giá').disabled)`);
     expect(await press(page, 'Áp dụng bảng giá')).toBe(true);
-    await page.waitFor(`document.querySelector('[role=dialog]') && document.querySelector('[role=dialog]').textContent.includes('phiên bản 2') && document.querySelector('[role=dialog]').textContent.includes('Mốc 1')`);
+    await page.waitFor(`document.querySelector('[role=dialog]') && document.querySelector('[role=dialog]').textContent.includes('phiên bản 2') && document.querySelector('[role=dialog]').textContent.includes('Khung 1')`);
     expect(await press(page, 'Áp dụng', `document.querySelector('[role=dialog]')`)).toBe(true);
     await page.waitFor(`document.querySelector('#sp-status') && document.querySelector('#sp-status').textContent.includes('phiên bản 2')`);
     expect((await app.pool.query('SELECT version_no::int AS n FROM app.shipping_fee_policy_versions ORDER BY version_no')).rows).toEqual([{ n: 1 }, { n: 2 }]);
     await page.click('#sp-tab-history');
     await page.waitFor(`document.querySelector('#sp-version-1') && document.querySelector('#sp-version-2')`);
     expect(await text(page, '#sp-version-2')).toContain('đang áp dụng');
-    expect(await text(page, '#sp-version-2')).toContain('Mốc 1');
+    expect(await text(page, '#sp-version-2')).toContain('Khung 1');
     expect(await text(page, '#sp-version-1')).toContain(`Bảng giá đầu ${tag}`);
     await shot(page, 'policy-history');
     // The conditions tab: the fixed 5 km radius is read-only, the limits are validated, saved once and logged.
     await page.click('#sp-tab-conditions');
     await page.waitFor(`document.querySelector('#sp-cond-external') && document.querySelector('#sp-cond-external').value === '3'`);
-    expect(await text(page, '#sp-cond-radius')).toBe('5 km');
+    expect(await text(page, '#sp-cond-radius')).toBe('3 km');
     expect(await page.evaluate<boolean>(`document.querySelector('#sp-cond-radius').tagName === 'SPAN' && document.querySelector('#sp-cond-delay').value === '5'`)).toBe(true);
     await shot(page, 'policy-conditions');
     await page.fill('#sp-cond-external', '0');
@@ -257,10 +262,10 @@ describe('admin shipping fee table (real browser)', () => {
     expect(await page.evaluate<boolean>(`!!document.querySelector('a[href="/system/shipping-fee-policy"]')`)).toBe(true);
     await page.goto(`${origin}/system/shipping-fee-policy`);
     await page.waitFor(`document.querySelector('#sp-readonly') && document.querySelector('#sp-row-0-fee')`);
-    expect(await page.evaluate<boolean>(`[...document.querySelectorAll('.sp-rows input, #sp-tail-base, #sp-tail-step, #sp-tail-stepfee')].every((i) => i.readOnly)`)).toBe(true);
-    expect(await page.evaluate<boolean>(`![...document.querySelectorAll('button')].some((b) => ['Lưu bản nháp', 'Áp dụng bảng giá', '+ Thêm mốc'].includes(b.textContent.trim()))`)).toBe(true);
+    expect(await page.evaluate<boolean>(`[...document.querySelectorAll('.sp-rows input')].length === 6 && [...document.querySelectorAll('.sp-rows input')].every((i) => i.readOnly)`)).toBe(true);
+    expect(await page.evaluate<boolean>(`![...document.querySelectorAll('button')].some((b) => ['Lưu bản nháp', 'Áp dụng bảng giá'].includes(b.textContent.trim()))`)).toBe(true);
     await page.fill('#sp-preview-km', '5.5');
-    await page.waitFor(`document.querySelector('#sp-preview-fee').textContent === '15.000đ' || document.querySelector('#sp-preview-fee').textContent === '14.000đ' || /đ$/.test(document.querySelector('#sp-preview-fee').textContent)`);
+    await page.waitFor(`/đ$/.test(document.querySelector('#sp-preview-fee').textContent)`);
     await page.click('#sp-tab-conditions');
     await page.waitFor(`document.querySelector('#sp-cond-readonly') && document.querySelector('#sp-cond-external')`);
     expect(await page.evaluate<boolean>(`[...document.querySelectorAll('.sp-condition input')].every((i) => i.readOnly) && ![...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Lưu tham số')`)).toBe(true);

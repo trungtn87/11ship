@@ -43,7 +43,7 @@ interface AdminLogin {
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const NOW = Date.UTC(2026, 9, 17, 18, 20, 0);
 const P = (x: number): LatLng => ({ lat: 22 + x / 1000, lng: 106 });
-/** About 11 km north of the origin: outside the 5 km search radius. */
+/** About 11 km north of the origin: outside the 3 km search radius. */
 const FAR: LatLng = { lat: 22.1, lng: 106 };
 const NO_SERVICE_TIME = 'UPDATE app.shipping_eligibility_parameters SET version = version + 1, pickup_service_seconds = 0, handoff_service_seconds = 0';
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -115,9 +115,9 @@ describe('M06-B/C — eligibility parameters and decisions', () => {
   const values = (v: number, over: Json = {}): Json => ({ external_max_deliveries: 3, batch_max_delay_seconds: 300, pickup_service_seconds: 120, handoff_service_seconds: 60, ...over, expected_version: v });
 
   describe('Admin parameters', () => {
-    it('starts from the approved defaults (EXTERNAL 3, 300 s), shows the fixed 5 km radius, and every administrator reads it', async () => {
+    it('starts from the approved defaults (EXTERNAL 3, 300 s), shows the fixed 3 km radius, and every administrator reads it', async () => {
       const start = await state();
-      expect(start).toMatchObject({ external_max_deliveries: 3, batch_max_delay_seconds: 300, fixed: { search_radius_m: 5000, platform_unlimited: true }, history: [] });
+      expect(start).toMatchObject({ external_max_deliveries: 3, batch_max_delay_seconds: 300, fixed: { search_radius_m: 3000, platform_unlimited: true }, history: [] });
       expect((await get(viewer)).status).toBe(200);
       expect(codeOf(await get(undefined))).toEqual({ status: 401, code: 'ADMIN_SESSION_INVALID' });
     });
@@ -269,10 +269,17 @@ describe('M06-B/C — eligibility parameters and decisions', () => {
       world.available = 100_000n;
       world.fresh = false;
       expect((await service().preview({ driverId: platform, deliveryId: 'N' }, NOW)).decision.reasons).toEqual(['LOCATION_STALE']);
+      world.fresh = true;
+      world.shop = null; // PLATFORM is exempt from the radius only: the shop position is still required
+      expect((await service().preview({ driverId: platform, deliveryId: 'N' }, NOW)).decision.reasons).toEqual(['SHOP_LOCATION_MISSING']);
     });
 
-    it('refuses an EXTERNAL Shipper beyond the fixed 5 km, a delivery that has a Shipper or whose search is over, and a Shipper that is not ready', async () => {
+    it('refuses an EXTERNAL Shipper beyond the fixed 3 km (2,9 km passes, 4 km does not), a delivery that has a Shipper or whose search is over, and a Shipper that is not ready', async () => {
       reset();
+      world.driverPoint = P(26); // about 2,9 km from the shop
+      expect((await service().preview({ driverId, deliveryId: 'N' }, NOW)).decision.eligible).toBe(true);
+      world.driverPoint = P(36); // about 4 km: inside the old 5 km radius, outside the 3 km one
+      expect((await service().preview({ driverId, deliveryId: 'N' }, NOW)).decision.reasons).toEqual(['OUT_OF_SEARCH_RADIUS']);
       world.driverPoint = FAR;
       expect((await service().preview({ driverId, deliveryId: 'N' }, NOW)).decision.reasons).toEqual(['OUT_OF_SEARCH_RADIUS']);
       reset();
