@@ -240,7 +240,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#124](https://github.com/trungtn87/11ship/pull/124) feat(m04): UI Ví Shipper &amp; Tài chính (UI only, chờ Owne… | Đã merge (`MERGED`) | — | — | — | `5d46cc5` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#125](https://github.com/trungtn87/11ship/pull/125) feat(m05): Khách hàng &amp; Sổ địa chỉ — DB + API (gói 1) | Đã merge (`MERGED`) | — | — | — | `231ca42` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#126](https://github.com/trungtn87/11ship/pull/126) feat(m04-a1): lõi ví Shipper &amp; sổ giao dịch (database +… | Đã merge (`MERGED`) | — | — | — | `32fe4cc` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#127](https://github.com/trungtn87/11ship/pull/127) M04-A2.1: Lõi tạm giữ tiền Shipper (wallet_holds, cổng nguồ… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `7fc837a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#127](https://github.com/trungtn87/11ship/pull/127) M04-A2.1: Lõi tạm giữ tiền Shipper (wallet_holds, cổng nguồ… | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `7fc837a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
