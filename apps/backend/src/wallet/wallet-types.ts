@@ -71,3 +71,51 @@ export class WalletInvariantError extends Error {
     this.name = 'WalletInvariantError';
   }
 }
+
+/** Why a hold exists: money set aside for a delivery commission (M07) or for a withdrawal (M04-C). */
+export type HoldPurpose = 'COMMISSION' | 'WITHDRAWAL';
+export type HoldStatus = 'ACTIVE' | 'CAPTURED' | 'RELEASED';
+
+/** A hold row as stored (M04-A2.1). Exactly one source id is set, the one that belongs to the purpose. Read only: nothing here writes. */
+export interface WalletHoldRow {
+  readonly holdId: string;
+  readonly walletId: string;
+  readonly purpose: HoldPurpose;
+  readonly amountVnd: bigint;
+  readonly status: HoldStatus;
+  readonly commissionAssignmentId: string | null;
+  readonly withdrawalId: string | null;
+  readonly version: bigint;
+  readonly createdAtMs: number;
+  readonly resolvedAtMs: number | null;
+}
+
+/**
+ * The held side of a Shipper wallet, from the holds themselves. consistent says whether the wallet's stored held amount equals the
+ * sum of its ACTIVE holds (the database refuses a commit where it does not, so false is an alarm, never a normal state).
+ * A Shipper without a wallet has no holds: provisioned false, zeros that mean "nothing here".
+ */
+export interface HoldSummary {
+  readonly provisioned: boolean;
+  readonly driverId: string;
+  readonly heldVnd: bigint;
+  readonly activeHoldCount: number;
+  readonly activeHoldTotalVnd: bigint;
+  readonly consistent: boolean;
+}
+
+export function isHoldRowSound(row: WalletHoldRow): boolean {
+  const sourceOk =
+    (row.purpose === 'COMMISSION' && row.commissionAssignmentId !== null && row.withdrawalId === null) ||
+    (row.purpose === 'WITHDRAWAL' && row.withdrawalId !== null && row.commissionAssignmentId === null);
+  const resolvedOk = row.status === 'ACTIVE' ? row.resolvedAtMs === null : row.resolvedAtMs !== null;
+  return sourceOk && resolvedOk && row.amountVnd > 0n && row.amountVnd <= MAX_WALLET_VND && row.version >= 1n;
+}
+
+/** A stored hold that breaks the hold rules is a loud internal error; the caller's transaction rolls back and nothing is repaired. */
+export function assertHoldRowSound(row: WalletHoldRow): WalletHoldRow {
+  if (!isHoldRowSound(row)) {
+    throw new WalletInvariantError();
+  }
+  return row;
+}

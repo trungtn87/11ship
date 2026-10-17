@@ -91,6 +91,8 @@ describe('ops/selfhosted/02-runtime-grants.sql', () => {
     // M04-A1: the runtime role can create a zero wallet and read the wallet and the ledger; it cannot change or delete a wallet or write the ledger.
     assert.deepEqual(parsed.get('driver_wallets'), ['INSERT', 'SELECT']);
     assert.deepEqual(parsed.get('wallet_ledger_entries'), ['SELECT']);
+    // M04-A2.1: the hold table is read only for the runtime role (no hold can be written before the source tables exist).
+    assert.deepEqual(parsed.get('wallet_holds'), ['SELECT']);
     for (const privileges of parsed.values()) {
       assert.ok(privileges.every((kind) => KINDS.includes(kind)));
     }

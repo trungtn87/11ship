@@ -40,6 +40,16 @@ describe('M04-A1 wallet core boundary', () => {
     expect(insert.match(/\$\d+/g)).toEqual(['$1', '$2']);
   });
 
+  it('only reads holds (M04-A2.1): no INSERT, UPDATE or DELETE of app.wallet_holds, and no helper that sets the held amount', () => {
+    const code = walletCode();
+    expect(code).toMatch(/FROM app\.wallet_holds/);
+    expect(code).not.toMatch(/INSERT\s+INTO\s+app\.wallet_holds/i);
+    expect(code).not.toMatch(/UPDATE\s+app\.wallet_holds/i);
+    expect(code).not.toMatch(/DELETE\s+FROM\s+app\.wallet_holds/i);
+    expect(code).not.toMatch(/\b(setHeld|postMoney|placeHold|addHold|createHold)\b/);
+    expect(code).not.toMatch(/held_vnd\s*=/);
+  });
+
   it('has no top-up, withdrawal, adjustment, hold or commission command', () => {
     expect(walletCode()).not.toMatch(/\b(creditTopup|requestTopup|requestWithdraw|postAdjustment|reserve|capture|release|chargeCommission|debitWallet|creditWallet)\b/);
   });

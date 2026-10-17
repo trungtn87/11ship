@@ -4,7 +4,7 @@ import { AppError, TechnicalError } from '../common/app-errors';
 import { DriverRepository } from '../driver/driver-repository';
 import { TransactionContext } from '../transaction/transaction-context';
 import { WalletRepository } from './wallet-repository';
-import { unprovisionedView, viewOfRow, WalletView } from './wallet-types';
+import { HoldStatus, HoldSummary, unprovisionedView, viewOfRow, WalletHoldRow, WalletView } from './wallet-types';
 
 /**
  * The M04-A1 participant: what other packages may ask of the Shipper wallet core, and nothing more.
@@ -15,7 +15,10 @@ import { unprovisionedView, viewOfRow, WalletView } from './wallet-types';
  *                      wallet at 0 VND if it does not exist, and returns it. It creates NO money and NO ledger row: opening money
  *                      without a source document is impossible (the database refuses it).
  *
- * Both take the caller's TransactionContext: this class opens no transaction, commits nothing, holds no pool and calls no network,
+ *  - listHolds / holdSummary (M04-A2.1): plain reads of the holds of a Shipper's wallet. Today the list is always empty: the database
+ *                      refuses every hold until a source (M07 assignment, M04-C withdrawal) exists. They never create a wallet.
+ *
+ * All take the caller's TransactionContext: this class opens no transaction, commits nothing, holds no pool and calls no network,
  * so no database lock is ever held across a network call. There is no endpoint and no money command here (no top-up, withdrawal,
  * adjustment, hold or commission); those are M04-A2 / M04-B / M04-C / M07.
  */
@@ -30,6 +33,29 @@ export class WalletService {
   async readWallet(context: TransactionContext, driverId: string): Promise<WalletView> {
     const row = await this.wallets.findByDriverId(context, driverId);
     return row === undefined ? unprovisionedView(driverId) : viewOfRow(row);
+  }
+
+  /** The holds of a Shipper's wallet, oldest first (optionally one status). No wallet means no holds. Locks nothing, writes nothing. */
+  async listHolds(context: TransactionContext, driverId: string, status?: HoldStatus): Promise<WalletHoldRow[]> {
+    const wallet = await this.wallets.findByDriverId(context, driverId);
+    return wallet === undefined ? [] : this.wallets.listHolds(context, wallet.walletId, status);
+  }
+
+  /** The held amount of a Shipper against the sum of its ACTIVE holds. Locks nothing, writes nothing. */
+  async holdSummary(context: TransactionContext, driverId: string): Promise<HoldSummary> {
+    const wallet = await this.wallets.findByDriverId(context, driverId);
+    if (wallet === undefined) {
+      return { provisioned: false, driverId, heldVnd: 0n, activeHoldCount: 0, activeHoldTotalVnd: 0n, consistent: true };
+    }
+    const totals = await this.wallets.activeTotals(context, wallet.walletId);
+    return {
+      provisioned: true,
+      driverId,
+      heldVnd: wallet.heldVnd,
+      activeHoldCount: totals.count,
+      activeHoldTotalVnd: totals.totalVnd,
+      consistent: wallet.heldVnd === totals.totalVnd,
+    };
   }
 
   /**
