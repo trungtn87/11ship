@@ -31,6 +31,9 @@ Future<void> mount(WidgetTester tester, Widget screen) async {
 }
 
 Future<void> tapKey(WidgetTester tester, String key) async {
+  // A horizontally scrolling chip row can have the target off screen; bring it into view so the tap really lands.
+  await tester.ensureVisible(find.byKey(Key(key)));
+  await tester.pumpAndSettle();
   await tester.tap(find.byKey(Key(key)));
   await tester.pumpAndSettle();
 }
