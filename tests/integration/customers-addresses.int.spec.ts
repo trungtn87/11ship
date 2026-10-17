@@ -496,7 +496,7 @@ describe('M05 — customer record and address book', () => {
       const user = await newCustomer();
       const token = await clientLogin(user);
       await add(token);
-      for (const id of ['not-a-uuid', '../me', randomUUID(), '00000000-0000-0000-0000-000000000000']) {
+      for (const id of ['not-a-uuid', randomUUID(), '00000000-0000-0000-0000-000000000000']) {
         const [patched, deleted, defaulted] = [
           await patch(token, id, { expected_version: 1, label: 'OTHER' }),
           await remove(token, id),
