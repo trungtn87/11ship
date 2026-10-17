@@ -127,17 +127,17 @@ void main() {
     final t = await signedIn();
     await t.controller.save(home);
     await t.controller.save(const AddressInput(label: AddressLabel.office, recipientName: '', phone: '0987654321', addressText: '5 Nguyễn Huệ', note: 'Tầng 3', makeDefault: false));
-    t.route('PUT', 'a2/default', (String m, String p, Map<String, String> h, String b) async {
+    t.server.route('PUT', 'a2/default', (String m, String p, Map<String, String> h, String b) async {
       t.server.rows[0]['is_default'] = false;
       t.server.rows[1]['is_default'] = true;
       return json(200, <String, Object?>{'data': t.server.rows[1]});
     });
     expect(await t.controller.setDefault('a2'), isTrue);
     expect(t.controller.addresses.first.id, 'a2');
-    t.route('PATCH', 'a1', (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{...t.server.rows[0], 'address_description': '99 Mới', 'version': 2}}));
+    t.server.route('PATCH', 'a1', (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{...t.server.rows[0], 'address_description': '99 Mới', 'version': 2}}));
     expect(await t.controller.save(home, editing: t.controller.byId('a1')), isTrue);
     expect(jsonDecode(t.api.to('PATCH', '/v1/customers/me/addresses/a1').single.body), containsPair('expected_version', 1));
-    t.route('DELETE', 'a1', (String m, String p, Map<String, String> h, String b) async {
+    t.server.route('DELETE', 'a1', (String m, String p, Map<String, String> h, String b) async {
       t.server.rows.removeAt(0);
       return json(200, <String, Object?>{'data': <String, Object?>{'id': 'a1', 'deleted': true, 'default_address_id': 'a2'}});
     });
@@ -148,10 +148,10 @@ void main() {
   test('409 VERSION_CONFLICT reloads and flags the conflict; 404 reloads and flags gone', () async {
     final t = await signedIn();
     await t.controller.save(home);
-    t.route('PATCH', 'a1', (String m, String p, Map<String, String> h, String b) async => apiError(409, 'VERSION_CONFLICT'));
+    t.server.route('PATCH', 'a1', (String m, String p, Map<String, String> h, String b) async => apiError(409, 'VERSION_CONFLICT'));
     expect(await t.controller.save(home, editing: t.controller.byId('a1')), isFalse);
     expect(t.controller.conflict, isTrue);
-    t.route('DELETE', 'a1', (String m, String p, Map<String, String> h, String b) async => apiError(404, 'CUSTOMER_ADDRESS_NOT_FOUND'));
+    t.server.route('DELETE', 'a1', (String m, String p, Map<String, String> h, String b) async => apiError(404, 'CUSTOMER_ADDRESS_NOT_FOUND'));
     expect(await t.controller.delete('a1'), isFalse);
     expect(t.controller.gone, isTrue);
     expect(t.controller.pending, isNull);
