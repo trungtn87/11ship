@@ -8,3 +8,10 @@ const file = path.resolve(__dirname, '..', '..', '..', '..', 'database', 'migrat
 const sql = readFileSync(file, 'utf8');
 export const WALLET_UP_SQL = (sql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
 export const WALLET_DOWN_SQL = sql.split('-- Down Migration')[1] as string;
+
+// M04-B1: the topup source migration. It adds a column to the ledger and references the wallet core: newest, so it goes down FIRST and up LAST.
+export const TOPUP_MIGRATION_NAME = '1793577600000_create-wallet-topup-sources';
+const topupFile = path.resolve(__dirname, '..', '..', '..', '..', 'database', 'migrations', `${TOPUP_MIGRATION_NAME}.sql`);
+const topupSql = readFileSync(topupFile, 'utf8');
+export const TOPUP_UP_SQL = (topupSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+export const TOPUP_DOWN_SQL = topupSql.split('-- Down Migration')[1] as string;

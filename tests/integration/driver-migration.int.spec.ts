@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Client } from 'pg';
 import { assertTestDatabaseTarget } from './support/assert-test-target';
 import { SHIPPER_DOWN_SQL, SHIPPER_UP_SQL } from './support/shipper-migration-sql';
-import { WALLET_DOWN_SQL, WALLET_UP_SQL } from './support/wallet-migration-sql';
+import { WALLET_DOWN_SQL, WALLET_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
 import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
 import { minimalChildEnv, REPO_ROOT, runNpmScript } from './support/test-helpers';
 
@@ -96,6 +96,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
       '1793404800000_create-customer-addresses',
       '1793404800000_create-driver-wallet-core',
       '1793491200000_create-wallet-holds',
+      '1793577600000_create-wallet-topup-sources',
     ]);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-shop-onboarding')).toBe(true);
@@ -180,6 +181,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
     await client.query('BEGIN');
     try {
       // The M03 migration references app.drivers: it goes down first and comes back up last.
+      await client.query(TOPUP_DOWN_SQL); // M04-B1 adds a ledger column and references the wallet core: the very newest, down first, up last
       await client.query(WALLET_HOLD_DOWN_SQL); // M04-A2.1 references app.driver_wallets: the very newest, down first, up last
       await client.query(WALLET_DOWN_SQL); // M04-A1 references app.drivers: the very newest
       await client.query(SHIPPER_DOWN_SQL);
@@ -194,6 +196,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
       await client.query(SHIPPER_UP_SQL);
       await client.query(WALLET_UP_SQL);
       await client.query(WALLET_HOLD_UP_SQL);
+      await client.query(TOPUP_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
       await client.query('ROLLBACK');

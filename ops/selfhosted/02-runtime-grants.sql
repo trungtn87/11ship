@@ -70,3 +70,9 @@ GRANT SELECT ON app.wallet_ledger_entries TO ship11_app;
 -- M04-A2.1: the hold table. READ ONLY for the runtime role: no hold is written until the source tables (M07 assignments, M04-C withdrawals) exist;
 -- the A2.2 migration that creates them grants the INSERT / UPDATE its participants need, together with the checks.
 GRANT SELECT ON app.wallet_holds TO ship11_app;
+-- M04-B1: topup sources. READ ONLY for the runtime role: no INSERT, UPDATE or DELETE on any of them, no UPDATE of the wallet and no INSERT into the ledger
+-- (money cannot be posted in B1). The matrix must list every table, hence a SELECT row for each; B2/B3 narrow or extend it in the migration that opens a writer.
+GRANT SELECT ON app.system_owned_bank_accounts TO ship11_app;
+GRANT SELECT ON app.wallet_topup_requests TO ship11_app;
+GRANT SELECT ON app.wallet_bank_transactions TO ship11_app;
+GRANT SELECT ON app.wallet_topups TO ship11_app;
