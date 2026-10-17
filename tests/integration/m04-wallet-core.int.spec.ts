@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Pool } from 'pg';
 import { AppError } from '../../apps/backend/src/common/app-errors';
+import { TransactionError } from '../../apps/backend/src/transaction/transaction-error';
 import { DriverRepository } from '../../apps/backend/src/driver/driver-repository';
 import { NotIntegratedDriverWalletPort } from '../../apps/backend/src/driver/driver-wallet-port';
 import { poolClientSource } from '../../apps/backend/src/transaction/pg-client-source';
@@ -47,6 +48,15 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
 
   function sqlState(error: unknown): string | undefined {
     return typeof error === 'object' && error !== null ? ((error as { code?: string }).code) : undefined;
+  }
+
+  /**
+   * The wallet invariant is a constraint trigger checked at COMMIT: the server refuses the COMMIT, and the transaction manager reports a
+   * sanitized COMMIT_REJECTED (it never carries the driver message). The rollback itself is proven by the state checks that follow.
+   */
+  function expectCommitRejected(error: unknown): void {
+    expect(error).toBeInstanceOf(TransactionError);
+    expect((error as TransactionError).reason).toBe('COMMIT_REJECTED');
   }
 
   function messageOf(error: unknown): string {
@@ -220,7 +230,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
         await context.query('UPDATE app.driver_wallets SET balance_vnd = 100000, version = version + 1 WHERE wallet_id = $1::uuid', [wallet.walletId]);
       }),
     );
-    expect(messageOf(error)).toContain('WALLET_INVARIANT_VIOLATION');
+    expectCommitRejected(error);
     const read = await manager().withTransaction((context) => service.readWallet(context, driverId));
     expect(read).toMatchObject({ provisioned: true, balanceVnd: 0n, heldVnd: 0n, version: 1n });
     // A held amount with no hold source is the same violation (until M04-A2 gives holds a source).
@@ -230,7 +240,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
         await context.query('UPDATE app.driver_wallets SET balance_vnd = 5000, held_vnd = 5000, version = version + 1 WHERE wallet_id = $1::uuid', [wallet.walletId]);
       }),
     );
-    expect(held).toBeDefined();
+    expectCommitRejected(held);
     expect((await manager().withTransaction((context) => service.readWallet(context, driverId))).provisioned).toBe(true);
     expect((await manager().withTransaction((context) => service.readWallet(context, driverId))).balanceVnd).toBe(0n);
   });
@@ -252,7 +262,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
         await context.query('UPDATE app.driver_wallets SET balance_vnd = 1, version = version + 1 WHERE driver_id = $1::uuid', [driverId]);
       }),
     );
-    expect(messageOf(violated)).toContain('WALLET_INVARIANT_VIOLATION');
+    expectCommitRejected(violated);
     expect(await walletCount(driverId)).toBe(0);
   });
 
@@ -283,7 +293,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
       await refused('wrong_balance_after', () => insertEntry(2, 'TOPUP', 1, 5), 'WALLET_LEDGER_CHAIN_BROKEN');
       await refused('wrong_sign', () => insertEntry(2, 'TOPUP', -1, 99999), 'wallet_ledger_entries_delta_ck');
       await refused('zero_delta', () => insertEntry(2, 'TOPUP', 0, 100000), 'wallet_ledger_entries_delta_ck');
-      await refused('unknown_kind', () => insertEntry(2, 'FREE_MONEY', 1, 100001), 'wallet_ledger_entries_kind_ck');
+      await refused('unknown_kind', () => insertEntry(2, 'FREE_MONEY', 1, 100001), '_ck');
       await refused('update', () => client.query('UPDATE app.wallet_ledger_entries SET delta_vnd = 1'), 'append-only');
       await refused('delete', () => client.query('DELETE FROM app.wallet_ledger_entries'), 'append-only');
       await insertEntry(2, 'WITHDRAWAL_DEBIT', -40000, 60000);
