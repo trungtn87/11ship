@@ -238,11 +238,13 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#122](https://github.com/trungtn87/11ship/pull/122) feat(ops): deploy-m01.ps1 - deploy M01 lên VPS qua SSH/SCP | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `770711d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#123](https://github.com/trungtn87/11ship/pull/123) M03 — Quản lý Shipper (app Android + Web Admin + backend) | Đã merge (`MERGED`) | — | — | — | `8a33c74` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#124](https://github.com/trungtn87/11ship/pull/124) feat(m04): UI Ví Shipper &amp; Tài chính (UI only, chờ Owne… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `fd2df21` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#125](https://github.com/trungtn87/11ship/pull/125) feat(m05): Khách hàng &amp; Sổ địa chỉ — DB + API (gói 1) | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `488ca0a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
 - `UNCLASSIFIED_PR` PR #122: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #124: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #125: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
