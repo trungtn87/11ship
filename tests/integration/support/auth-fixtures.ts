@@ -181,6 +181,32 @@ export async function startAuthApp(
   };
 }
 
+/**
+ * M04-A1 (test database only): a wallet is never deleted by the application and the database refuses it, so the fixture that removes a
+ * test Shipper lifts that one trigger inside ONE transaction (DDL is transactional: the trigger is back at COMMIT, and a failure restores
+ * it). Only when a wallet exists, so the usual purge pays nothing. The ledger of such a Shipper is empty (no ledger row can exist yet).
+ */
+async function purgeWalletsOfPhone(pool: Pool, normalizedPhone: string): Promise<void> {
+  const owned = `SELECT driver_id FROM app.drivers WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)`;
+  const found = await pool.query(`SELECT 1 FROM app.driver_wallets WHERE driver_id IN (${owned}) LIMIT 1`, [normalizedPhone]);
+  if ((found.rowCount ?? 0) === 0) {
+    return;
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('ALTER TABLE app.driver_wallets DISABLE TRIGGER driver_wallets_no_delete');
+    await client.query(`DELETE FROM app.driver_wallets WHERE driver_id IN (${owned})`, [normalizedPhone]);
+    await client.query('ALTER TABLE app.driver_wallets ENABLE TRIGGER driver_wallets_no_delete');
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 /** Removes every Auth row of one phone number (and the register idempotency records of its proofs). */
 export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<void> {
   // M01-A2S: shops owned by the user, their memberships and the user-scoped onboarding idempotency records.
@@ -199,6 +225,7 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
       [normalizedPhone],
     );
   }
+  await purgeWalletsOfPhone(pool, normalizedPhone);
   await pool.query(
     'DELETE FROM app.drivers WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],
