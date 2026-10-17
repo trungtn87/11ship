@@ -99,7 +99,7 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
       await client.query('ALTER TABLE app.wallet_holds DISABLE TRIGGER wallet_holds_a_source_gate');
       await client.query('ALTER TABLE app.wallet_ledger_entries DISABLE TRIGGER wallet_ledger_a_source_gate');
       await client.query(
-        `INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at) VALUES ($1::uuid, $2::uuid, 1, 'TOPUP', 100000, 100000, now())`,
+        `INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at) VALUES ($1::uuid, $2::uuid, 1, 'ADJUSTMENT_CREDIT', 100000, 100000, now())`,
         [randomUUID(), walletId],
       );
       await client.query('UPDATE app.driver_wallets SET balance_vnd = 100000, version = version + 1 WHERE wallet_id = $1::uuid', [walletId]);
@@ -202,7 +202,7 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
     try {
       await gated.query('BEGIN');
       await gated.query('ALTER TABLE app.wallet_ledger_entries DISABLE TRIGGER wallet_ledger_a_source_gate');
-      await gated.query(`INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at) VALUES ($1::uuid, $2::uuid, 1, 'TOPUP', 100000, 100000, now())`, [randomUUID(), walletId]);
+      await gated.query(`INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at) VALUES ($1::uuid, $2::uuid, 1, 'ADJUSTMENT_CREDIT', 100000, 100000, now())`, [randomUUID(), walletId]);
       await gated.query('UPDATE app.driver_wallets SET balance_vnd = 100000, version = version + 1 WHERE wallet_id = $1::uuid', [walletId]);
       const error = await failureOf(() => insertHold(gated, walletId, { amount: 1000 }));
       expect(messageOf(error)).toContain('WALLET_HOLD_SOURCE_NOT_AVAILABLE');

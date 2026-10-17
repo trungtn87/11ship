@@ -195,6 +195,24 @@ async function purgeWalletsOfPhone(pool: Pool, normalizedPhone: string): Promise
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // M04-B1: a test that committed topup sources (request, bank record, topup, ledger credit) removes them first, newest dependants first, with the
+    // user triggers of exactly those tables lifted for this transaction only; the deferred links are settled before the guards come back.
+    const topupTables = ['wallet_ledger_entries', 'wallet_topups', 'wallet_bank_transactions', 'wallet_topup_requests'];
+    const ownedWallets = `SELECT wallet_id FROM app.driver_wallets WHERE driver_id IN (${owned})`;
+    for (const table of topupTables) {
+      await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
+    }
+    await client.query(`DELETE FROM app.wallet_ledger_entries WHERE wallet_id IN (${ownedWallets})`, [normalizedPhone]);
+    await client.query(
+      `WITH gone AS (DELETE FROM app.wallet_topups WHERE wallet_id IN (${ownedWallets}) RETURNING bank_record_id)
+       DELETE FROM app.wallet_bank_transactions WHERE bank_record_id IN (SELECT bank_record_id FROM gone)`,
+      [normalizedPhone],
+    );
+    await client.query(`DELETE FROM app.wallet_topup_requests WHERE wallet_id IN (${ownedWallets})`, [normalizedPhone]);
+    await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+    for (const table of topupTables) {
+      await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
+    }
     // M04-A2.1: a test that committed a hold (a RELEASED one, to prove the down latch) removes it first, under the same lifted guard.
     await client.query('ALTER TABLE app.wallet_holds DISABLE TRIGGER wallet_holds_no_delete');
     await client.query(`DELETE FROM app.wallet_holds WHERE wallet_id IN (SELECT wallet_id FROM app.driver_wallets WHERE driver_id IN (${owned}))`, [normalizedPhone]);
