@@ -404,6 +404,11 @@ describe('M04-B1 - topup sources, bank registry and ledger source (schema, invar
       await refused(client, 'req_unknown_state', () => move(pending, `state = 'LOST', version = version + 1`), 'WALLET_TOPUP_REQUEST_TRANSITION_REFUSED');
       await refused(client, 'req_version', () => move(pending, `state = 'CANCELLED', resolved_by_user_id = created_by_user_id, resolved_at = now(), updated_at = now(), version = version + 3`), 'WALLET_TOPUP_REQUEST_VERSION_CONFLICT');
       await refused(client, 'req_resolved_without_actor', () => move(pending, `state = 'CANCELLED', updated_at = now(), version = version + 1`), 'wallet_topup_requests_resolved_ck');
+      // An end state needs BOTH resolution fields: each one alone is refused, for every end state.
+      for (const end of ['CONFIRMED', 'REJECTED', 'CANCELLED']) {
+        await refused(client, `${end.toLowerCase()}_only_time`, () => move(pending, `state = '${end}', resolved_at = now(), updated_at = now(), version = version + 1`), 'wallet_topup_requests_resolved_ck');
+        await refused(client, `${end.toLowerCase()}_only_actor`, () => move(pending, `state = '${end}', resolved_by_user_id = created_by_user_id, updated_at = now(), version = version + 1`), 'wallet_topup_requests_resolved_ck');
+      }
       await move(pending, `state = 'CANCELLED', resolved_by_user_id = created_by_user_id, resolved_at = now(), updated_at = now(), version = version + 1`);
       for (const next of ['PENDING', 'CONFIRMED', 'REJECTED']) {
         await refused(client, `cancelled_to_${next.toLowerCase()}`, () => move(pending, `state = '${next}', version = version + 1`), 'WALLET_TOPUP_REQUEST_TRANSITION_REFUSED');

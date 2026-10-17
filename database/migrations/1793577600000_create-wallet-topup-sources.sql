@@ -110,7 +110,11 @@ CREATE TABLE app.wallet_topup_requests (
   CONSTRAINT wallet_topup_requests_wallet_uq UNIQUE (request_id, wallet_id),
   CONSTRAINT wallet_topup_requests_amount_ck CHECK (amount_requested_vnd > 0 AND amount_requested_vnd <= 9007199254740991),
   CONSTRAINT wallet_topup_requests_state_ck CHECK (state IN ('PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED')),
-  CONSTRAINT wallet_topup_requests_resolved_ck CHECK ((state = 'PENDING') = (resolved_at IS NULL AND resolved_by_user_id IS NULL)),
+  -- PENDING carries neither resolution field; every end state (CONFIRMED / REJECTED / CANCELLED) carries BOTH, never just one.
+  CONSTRAINT wallet_topup_requests_resolved_ck CHECK (
+    (state = 'PENDING' AND resolved_at IS NULL AND resolved_by_user_id IS NULL)
+    OR (state <> 'PENDING' AND resolved_at IS NOT NULL AND resolved_by_user_id IS NOT NULL)
+  ),
   CONSTRAINT wallet_topup_requests_version_ck CHECK (version >= 1),
   CONSTRAINT wallet_topup_requests_time_order_ck CHECK (updated_at >= created_at AND (resolved_at IS NULL OR resolved_at >= created_at))
 );
