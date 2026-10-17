@@ -19,8 +19,8 @@ import { FailureCode } from '../states.js';
 //                  PUT  /v1/onboarding/shop/profile       (Bearer, Idempotency-Key) {name, contact_phone, address_text, zalo?, facebook?, pickup_lat?, pickup_lng?, service_area_id?, expected_version?} -> 201 (created) | 200 (updated) {data:{shop_id, status:"INCOMPLETE", version, role_granted:false}}
 //                  POST /v1/onboarding/shop/complete      (Bearer, Idempotency-Key) {expected_version}                                -> 200 {data:{shop_id, status:"ACTIVE", accepting_orders:false, role_granted:true, version}}
 //                  GET  /v1/onboarding/shop/service-areas (Bearer, no query/body)                                                     -> 200 {data:[{service_area_id, name}]}
-//   driver (11Ship) GET /v1/driver/me                 (Bearer, no query/body)                                                     -> 200 {data:null} | {data:{driver_id, user_id, full_name, plate_number, driver_type, status, accepting_deliveries, version}}
-//                  POST /v1/onboarding/driver            (Bearer, Idempotency-Key) {full_name, plate_number?}                        -> 201 {data:{driver_id, driver_type:"EXTERNAL", status:"PENDING", accepting_deliveries:false, role_granted:true, version:1}}
+//   driver (11Ship) GET /v1/driver/me                 (Bearer, no query/body)                                                     -> 200 {data:null} | {data:{driver_id, user_id, full_name, plate_number, status, accepting_deliveries, version, + M03 fields (shipper_code, review_state, bank, readiness ...)}}
+//                  POST /v1/onboarding/driver            (Bearer, Idempotency-Key) {full_name, plate_number?}                        -> 201 {data:{driver_id, status:"PENDING", accepting_deliveries:false, role_granted:true, version:1}}
 // Errors: {error:{code, message, request_id, details}}. Only `code` is read, and only from a closed list per operation;
 // `message`, `details` and `request_id` are never shown, stored or logged.
 //
@@ -424,9 +424,7 @@ const ERROR_CODE = /^[A-Z][A-Z0-9_]{1,63}$/;
 // ---- driver profile (11Ship) --------------------------------------------------------------------------------------
 
 export type DriverStatusWire = 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'CLOSING' | 'CLOSED';
-export type DriverTypeWire = 'EXTERNAL' | 'PLATFORM';
 const DRIVER_STATUS_VALUES: readonly string[] = ['PENDING', 'ACTIVE', 'SUSPENDED', 'CLOSING', 'CLOSED'];
-const DRIVER_TYPE_VALUES: readonly string[] = ['EXTERNAL', 'PLATFORM'];
 
 /** The caller's own driver profile as the server holds it. Stored values only: nothing is derived or made up. */
 export interface DriverProfileWire {
@@ -434,13 +432,14 @@ export interface DriverProfileWire {
   readonly userId: string;
   readonly fullName: string;
   readonly plateNumber: string | null;
-  readonly driverType: DriverTypeWire;
   readonly status: DriverStatusWire;
   readonly acceptingDeliveries: boolean;
   readonly version: number;
 }
 
-const DRIVER_KEYS = ['driver_id', 'user_id', 'full_name', 'plate_number', 'driver_type', 'status', 'accepting_deliveries', 'version'] as const;
+// M03: the owner's view carries more than this client reads (shipper code, review state, bank, readiness ...). The internal
+// classification is never part of it; if a server ever sent one this client would not read or show it.
+const DRIVER_KEYS = ['driver_id', 'user_id', 'full_name', 'plate_number', 'status', 'accepting_deliveries', 'version'] as const;
 
 /** GET /v1/driver/me: `null` = no driver profile ({data:null}); undefined = not this contract. */
 export function parseDriverProfileResponse(body: unknown): DriverProfileWire | null | undefined {
@@ -448,10 +447,10 @@ export function parseDriverProfileResponse(body: unknown): DriverProfileWire | n
     return null;
   }
   const data = dataOf(body);
-  if (data === undefined || !hasExactKeys(data, DRIVER_KEYS)) {
+  if (data === undefined || !DRIVER_KEYS.every((key) => Object.hasOwn(data, key))) {
     return undefined;
   }
-  const { driver_id: driverId, user_id: userId, full_name: fullName, plate_number: plate, driver_type: type, status, accepting_deliveries: accepting, version } = data;
+  const { driver_id: driverId, user_id: userId, full_name: fullName, plate_number: plate, status, accepting_deliveries: accepting, version } = data;
   if (
     !isUuid(driverId) ||
     !isUuid(userId) ||
@@ -459,8 +458,6 @@ export function parseDriverProfileResponse(body: unknown): DriverProfileWire | n
     fullName.length < 1 ||
     fullName.length > 480 ||
     !nullableText(plate, 32) ||
-    typeof type !== 'string' ||
-    !DRIVER_TYPE_VALUES.includes(type) ||
     typeof status !== 'string' ||
     !DRIVER_STATUS_VALUES.includes(status) ||
     typeof accepting !== 'boolean' ||
@@ -468,20 +465,20 @@ export function parseDriverProfileResponse(body: unknown): DriverProfileWire | n
   ) {
     return undefined;
   }
-  return { driverId, userId, fullName, plateNumber: plate as string | null, driverType: type as DriverTypeWire, status: status as DriverStatusWire, acceptingDeliveries: accepting, version };
+  return { driverId, userId, fullName, plateNumber: plate as string | null, status: status as DriverStatusWire, acceptingDeliveries: accepting, version };
 }
 
 export interface DriverSubmittedWire {
   readonly driverId: string;
 }
 
-/** POST /v1/onboarding/driver: exactly {data:{driver_id, driver_type:"EXTERNAL", status:"PENDING", accepting_deliveries:false, role_granted:true, version:1}}. */
+/** POST /v1/onboarding/driver: exactly {data:{driver_id, status:"PENDING", accepting_deliveries:false, role_granted:true, version:1}}. */
 export function parseDriverSubmitResponse(body: unknown): DriverSubmittedWire | undefined {
   const data = dataOf(body);
-  if (data === undefined || !hasExactKeys(data, ['driver_id', 'driver_type', 'status', 'accepting_deliveries', 'role_granted', 'version'])) {
+  if (data === undefined || !hasExactKeys(data, ['driver_id', 'status', 'accepting_deliveries', 'role_granted', 'version'])) {
     return undefined;
   }
-  return isUuid(data.driver_id) && data.driver_type === 'EXTERNAL' && data.status === 'PENDING' && data.accepting_deliveries === false && data.role_granted === true && data.version === 1 ? { driverId: data.driver_id } : undefined;
+  return isUuid(data.driver_id) && data.status === 'PENDING' && data.accepting_deliveries === false && data.role_granted === true && data.version === 1 ? { driverId: data.driver_id } : undefined;
 }
 
 export function errorCodeOf(body: unknown): string | undefined {
