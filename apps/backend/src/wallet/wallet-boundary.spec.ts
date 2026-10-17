@@ -30,7 +30,8 @@ describe('M04-A1 wallet core boundary', () => {
 
   it('moves no money: no UPDATE, DELETE or TRUNCATE of the wallet tables, no INSERT into the ledger, a single INSERT of a literal-zero wallet', () => {
     const code = walletCode();
-    expect(code).not.toMatch(/\bUPDATE\s+app\./i);
+    // M04-B2.1: the one UPDATE in this package is the conditional cancel of a top-up REQUEST (which carries no money); nothing updates a wallet.
+    expect(code.match(/\bUPDATE\s+app\.\w+/gi)).toEqual(['UPDATE app.wallet_topup_requests']);
     expect(code).not.toMatch(/\bDELETE\s+FROM\b/i);
     expect(code).not.toMatch(/\bTRUNCATE\b/i);
     expect(code).not.toMatch(/INSERT\s+INTO\s+app\.wallet_ledger_entries/i);
@@ -50,9 +51,13 @@ describe('M04-A1 wallet core boundary', () => {
     expect(code).not.toMatch(/held_vnd\s*=/);
   });
 
-  it('M04-B1: no production code touches the topup source tables yet (schema only; the writers are B2)', () => {
-    const touching = productionFiles().filter((name) => /app\.(system_owned_bank_accounts|wallet_topup_requests|wallet_bank_transactions|wallet_topups)\b/.test(codeOf(name)));
-    expect(touching).toEqual([]);
+  it('M04-B2.1: topup requests are written here only (INSERT PENDING, conditional cancel); no code writes a topup, a bank record or a system account', () => {
+    const code = walletCode();
+    expect([...(code.match(/INSERT\s+INTO\s+app\.\w+/gi) ?? [])].sort()).toEqual(['INSERT INTO app.driver_wallets', 'INSERT INTO app.wallet_topup_requests']);
+    expect(code).not.toMatch(/(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+app\.(wallet_topups|wallet_bank_transactions|system_owned_bank_accounts)/i);
+    // Outside the wallet package nothing issues SQL on these tables, and the topup module issues no SQL at all.
+    const outside = productionFiles().filter((name) => !name.startsWith('wallet/') && /app\.(system_owned_bank_accounts|wallet_topup_requests|wallet_bank_transactions|wallet_topups)\b/.test(codeOf(name)));
+    expect(outside).toEqual([]);
   });
 
   it('has no top-up, withdrawal, adjustment, hold or commission command', () => {
