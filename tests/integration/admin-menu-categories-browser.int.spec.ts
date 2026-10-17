@@ -254,6 +254,8 @@ describe('admin dish groups (real browser)', () => {
     expect(await groupRow('Ăn vặt')).toMatchObject({ version: 2 });
     expect(await press(page, 'Tải lại danh sách', 'document.querySelector(".dialog")')).toBe(true);
     await page.waitFor(`!document.querySelector('.dialog')`);
+    // "Tải lại danh sách" closes the popup at once and reads the list again; the refresh button stays disabled until that read ends.
+    await page.waitFor(`[...document.querySelectorAll('button')].some((x) => (x.textContent ?? '').trim() === 'Làm mới' && !x.disabled)`);
 
     // Paging: 12 more groups make 3 pages of 10.
     for (let index = 1; index <= 12; index += 1) {
@@ -262,7 +264,7 @@ describe('admin dish groups (real browser)', () => {
         [randomUUID(), `${FILLER} ${String(index).padStart(2, '0')}`, 100 + index],
       );
     }
-    await page.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('Làm mới')); b.click(); return true; })()`);
+    expect(await press(page, 'Làm mới')).toBe(true);
     await page.waitFor(`document.querySelector('#catalog-count') && document.querySelector('#catalog-count').textContent.includes('/ 19 nhóm')`);
     expect(await page.evaluate<string>(`document.querySelector('#catalog-count').textContent`)).toBe('Hiển thị 1–10 / 19 nhóm');
     expect(await press(page, 'Sau', 'document.querySelector(".pager")')).toBe(true);
