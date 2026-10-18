@@ -10,6 +10,9 @@ import '../m02/m02_flows.dart';
 import '../m02/discovery_models.dart';
 import '../m02/http_m02_api.dart';
 import '../m02/menu_models.dart';
+import '../m07/m07_http.dart';
+import '../m07/m07_sample.dart';
+import '../m07/m07_source.dart';
 import 'api_client.dart';
 import 'device_bridge.dart';
 import 'native_auth.dart';
@@ -32,7 +35,7 @@ SessionController createSessionController(ClientApp app, AppConfig config, {ApiT
 
 /// The three connected flows of an app, built on its session. [location] is for tests; the real one is the Kotlin channel.
 class AppFlows {
-  AppFlows({required this.session, required this.reset, this.shop, this.driver, this.m02, this.addresses});
+  AppFlows({required this.session, required this.reset, this.shop, this.driver, this.m02, this.addresses, this.shopDeliveries, this.shipperDeliveries});
 
   final SessionController session;
   final ResetController reset;
@@ -44,6 +47,12 @@ class AppFlows {
 
   /// Food only: the customer's delivery address book (M05).
   final AddressBookController? addresses;
+
+  /// Food only: the shop's delivery requests (M07). Sample data only in a preview build.
+  final ShopDeliverySource? shopDeliveries;
+
+  /// Ship only: the Shipper's offers and deliveries (M07).
+  final ShipperDeliverySource? shipperDeliveries;
 }
 
 AppFlows createFlows(
@@ -68,6 +77,8 @@ AppFlows createFlows(
     shop: shop,
     driver: app == ClientApp.ship ? DriverController(session: session) : null,
     addresses: app == ClientApp.food ? AddressBookController(api: addressApi ?? HttpAddressApi(session: session), session: session) : null,
+    shopDeliveries: app == ClientApp.food ? (kM07UiPreview ? SampleShopSource() : HttpShopDeliverySource(session: session)) : null,
+    shipperDeliveries: app == ClientApp.ship ? (kM07UiPreview ? SampleShipperSource() : HttpShipperDeliverySource(session: session)) : null,
     m02: app == ClientApp.food
         ? createM02Flows(
             session: session,
