@@ -344,7 +344,7 @@ Widget _failureBanner(SessionController session) {
     key: const Key('form-error'),
     kind: BannerKind.error,
     title: failure.kind == AuthFailureKind.invalidCredentials ? 'Thông tin chưa đúng' : 'Chưa hoàn tất',
-    text: failureMessage(failure) + (failure.diagnostic == null ? '' : '\n${failure.diagnostic}'),
+    text: failureMessage(failure) + (failure.kind != AuthFailureKind.serverUnavailable || failure.diagnostic == null ? '' : '\n${failure.diagnostic}'),
     trailing: canRetryFailure(failure) && session.pending != null
         ? Row(children: <Widget>[
             N11Button(key: const Key('retry-pending'), label: 'Thử lại', compact: true, onPressed: session.busy ? null : session.retryPending),
