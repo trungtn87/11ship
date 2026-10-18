@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
+import { DeliverySweeper } from '../../apps/backend/src/delivery/delivery-sweeper';
 import { M14_ROUTING } from '../../apps/backend/src/delivery/m14-route-client';
 import { ApiResponse, AuthApp, countRows, dataOf, errorCode, obtainProof, PASSWORD, randomPhone, startAuthApp } from './support/auth-fixtures';
 import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
@@ -375,5 +376,186 @@ describe('M07 — delivery flow', () => {
     const delivery = await newDelivery();
     const read = await asShipper(other, 'GET', `/driver/deliveries/${delivery.delivery_id}`);
     expect(read.status).toBe(404);
+  });
+
+  // ---- time: the 30-minute window, the reminders, the give-back ----------------------------------------------------------------------
+
+  /** Moves the whole search window of a delivery into the past by whole minutes (the guard that keeps it immutable is lifted for this statement only). */
+  async function age(deliveryId: string, minutes: number): Promise<void> {
+    const client = await app.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('ALTER TABLE app.deliveries DISABLE TRIGGER deliveries_guard');
+      await client.query(
+        `UPDATE app.deliveries SET search_started_at = search_started_at - make_interval(mins => $2::int), search_expires_at = search_expires_at - make_interval(mins => $2::int),
+                created_at = created_at - make_interval(mins => $2::int) WHERE delivery_id = $1::uuid`,
+        [deliveryId, minutes],
+      );
+      await client.query('SET CONSTRAINTS ALL IMMEDIATE'); // ALTER TABLE refuses pending deferred trigger events
+      await client.query('ALTER TABLE app.deliveries ENABLE TRIGGER deliveries_guard');
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  const sweeper = (): DeliverySweeper => app.running.app.get(DeliverySweeper);
+  const row = async (id: string): Promise<Json> => (await app.pool.query('SELECT * FROM app.deliveries WHERE delivery_id = $1::uuid', [id])).rows[0] as Json;
+
+  it('after 30 minutes the search stops by itself: no Order is touched, nobody can accept, and the shop can call again (a new delivery linked to the old one)', async () => {
+    const s = await newShipper();
+    const delivery = await newDelivery();
+    const id = String(delivery.delivery_id);
+    await age(id, 31);
+    await sweeper().sweep();
+    expect(await stateOf(id)).toBe('search_stopped');
+    expect((await row(id)).search_stopped_at).not.toBeNull();
+    const late = await asShipper(s, 'POST', `/driver/deliveries/${id}/accept`, {});
+    expect(codeOf(late)).toBe('DELIVERY_SEARCH_EXPIRED');
+    expect(await wallet(s)).toEqual({ balance: 50_000, held: 0 });
+    const recalled = await asShop('POST', `/shop/me/deliveries/${id}/recall`, {});
+    expect([recalled.status, recalled.text.slice(0, 200)]).toEqual([201, recalled.text.slice(0, 200)]);
+    const next = dataOf(recalled) as Json;
+    expect(next).toMatchObject({ previous_delivery_id: id, state: 'waiting_driver' });
+    expect(await stateOf(id)).toBe('search_stopped');
+    // At most one ACTIVE delivery per call chain: the old one is not active, the new one is.
+    expect(await countRows(app.pool, `SELECT 1 FROM app.deliveries WHERE previous_delivery_id = $1::uuid`, [id])).toBe(1);
+  });
+
+  it('the shop is reminded once at minute 5 and once at minute 15, and a second pass sends nothing twice', async () => {
+    const delivery = await newDelivery();
+    const id = String(delivery.delivery_id);
+    await age(id, 6);
+    await sweeper().sweep();
+    await sweeper().sweep();
+    expect((await row(id)).reminded_5_at).not.toBeNull();
+    expect((await row(id)).reminded_15_at).toBeNull();
+    expect(await eventsOf(id, 'delivery.search_reminder_5')).toBe(1);
+    expect(await eventsOf(id, 'delivery.search_reminder_15')).toBe(0);
+    await age(id, 10);
+    await sweeper().sweep();
+    await sweeper().sweep();
+    expect((await row(id)).reminded_15_at).not.toBeNull();
+    expect(await eventsOf(id, 'delivery.search_reminder_5')).toBe(1);
+    expect(await eventsOf(id, 'delivery.search_reminder_15')).toBe(1);
+    expect(await stateOf(id)).toBe('waiting_driver');
+  });
+
+  it('a Shipper who gives the delivery back after the window has closed ends the search; it does not restart', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s);
+    const id = String(view.delivery_id);
+    await age(id, 31);
+    const released = await asShipper(s, 'POST', `/driver/deliveries/${id}/release`, { reason: 'Kẹt xe', expected_version: view.version });
+    expect([released.status, released.text.slice(0, 200)]).toEqual([200, released.text.slice(0, 200)]);
+    expect(await stateOf(id)).toBe('search_stopped');
+    expect(await wallet(s)).toEqual({ balance: 50_000, held: 0 });
+  });
+
+  it('a Shipper whose money covers one commission wins one of two simultaneous accepts, never both', async () => {
+    const s = await newShipper(1500);
+    const a = await newDelivery();
+    const b = await newDelivery();
+    const [ra, rb] = await Promise.all([
+      asShipper(s, 'POST', `/driver/deliveries/${a.delivery_id}/accept`, {}),
+      asShipper(s, 'POST', `/driver/deliveries/${b.delivery_id}/accept`, {}),
+    ]);
+    expect([ra.status, rb.status].filter((status) => status === 200)).toHaveLength(1);
+    expect(await wallet(s)).toEqual({ balance: 1500, held: 1000 });
+    expect(await countRows(app.pool, `SELECT 1 FROM app.delivery_assignments WHERE driver_id = $1::uuid AND status = 'ACTIVE'`, [s.driverId])).toBe(1);
+  });
+
+  it('an EXTERNAL Shipper holds at most 3 deliveries at once; a fourth is refused and holds no money', async () => {
+    const s = await newShipper(50_000);
+    const accepted: string[] = [];
+    let refused: ApiResponse | undefined;
+    for (let i = 0; i < 4; i += 1) {
+      const delivery = await newDelivery();
+      const response = await asShipper(s, 'POST', `/driver/deliveries/${delivery.delivery_id}/accept`, {});
+      if (response.status === 200) {
+        accepted.push(String(delivery.delivery_id));
+      } else {
+        refused = response;
+        break;
+      }
+    }
+    expect(accepted.length).toBeLessThanOrEqual(3);
+    expect(refused).toBeDefined();
+    expect(codeOf(refused as ApiResponse)).toBe('DELIVERY_NOT_ELIGIBLE');
+    expect(await wallet(s)).toEqual({ balance: 50_000, held: 1000 * accepted.length });
+  });
+
+  it('the shop sees the latest position (with its time) of the Shipper who holds its delivery; another shop sees nothing; after cancel it is gone', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s);
+    const id = String(view.delivery_id);
+    const mineView = dataOf(await asShop('GET', `/shop/me/deliveries/${id}`)) as Json;
+    expect(mineView.location).toMatchObject({ freshness: 'LIVE' });
+    expect(mineView.location.recorded_at).toBeDefined();
+    const other = await createShopOwner(app);
+    const stranger = await app.call('GET', `/shop/me/deliveries/${id}`, { bearer: other.token });
+    expect(stranger.status).toBe(404);
+    expect((await asShop('POST', `/shop/me/deliveries/${id}/cancel`, { reason: 'Đổi ý', expected_version: mineView.version })).status).toBe(200);
+    const after = dataOf(await asShop('GET', `/shop/me/deliveries/${id}`)) as Json;
+    expect(after.location).toBeNull();
+  });
+
+  it('no pin and no fee: the Shipper confirms the pin and the agreed fee before pickup; after pickup the fee and the point are locked', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s, { dropoff_lat: undefined, dropoff_lng: undefined });
+    const id = String(view.delivery_id);
+    expect(view.fee).toMatchObject({ mode: 'PICKUP_AGREEMENT', amount_vnd: null });
+    expect(view.can).toMatchObject({ confirm_destination: true, pickup: false });
+    expect((await asShipper(s, 'POST', `/driver/deliveries/${id}/pickup`, { expected_version: view.version })).status).toBeGreaterThanOrEqual(400);
+    const confirmed = await asShipper(s, 'POST', `/driver/deliveries/${id}/destination`, { expected_version: view.version, lat: 21.01, lng: 105.83, fee_vnd: 18_000 });
+    expect([confirmed.status, confirmed.text.slice(0, 200)]).toEqual([200, confirmed.text.slice(0, 200)]);
+    const afterPin = dataOf(confirmed) as Json;
+    expect(afterPin).toMatchObject({ state: 'location_confirmed' });
+    expect(afterPin.fee.amount_vnd).toBe(18_000);
+    const picked = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${id}/pickup`, { expected_version: afterPin.version })) as Json;
+    expect(picked.state).toBe('delivering');
+    const again = await asShipper(s, 'POST', `/driver/deliveries/${id}/destination`, { expected_version: picked.version, lat: 21.02, lng: 105.84, fee_vnd: 1000 });
+    expect(again.status).toBeGreaterThanOrEqual(400);
+    const stored = await row(id);
+    expect(Number(stored.fee_vnd)).toBe(18_000);
+    expect(stored.dropoff_pinned_by).toBe(s.driverId);
+    expect(stored.fee_confirmed_by).toBe(s.driverId);
+  });
+
+  it('complete and fail racing after pickup: exactly one wins, and the commission follows the winner', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s);
+    const id = String(view.delivery_id);
+    const picked = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${id}/pickup`, { expected_version: view.version })) as Json;
+    const [done, failed] = await Promise.all([
+      asShipper(s, 'POST', `/driver/deliveries/${id}/complete`, { expected_version: picked.version }),
+      asShipper(s, 'POST', `/driver/deliveries/${id}/fail`, { expected_version: picked.version, reason_code: 'OTHER', goods_condition: 'WITH_SHIPPER', note: 'x' }),
+    ]);
+    expect([done.status, failed.status].filter((status) => status === 200)).toHaveLength(1);
+    if (done.status === 200) {
+      expect(await stateOf(id)).toBe('completed');
+      expect(await wallet(s)).toEqual({ balance: 49_000, held: 0 });
+    } else {
+      expect(await stateOf(id)).toBe('failed');
+      expect(await wallet(s)).toEqual({ balance: 50_000, held: 0 });
+    }
+  });
+
+  it('after a failure the goods come back: the shop confirms them, the incident closes and only then can it call again', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s);
+    const id = String(view.delivery_id);
+    const picked = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${id}/pickup`, { expected_version: view.version })) as Json;
+    const failed = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${id}/fail`, { expected_version: picked.version, reason_code: 'RECIPIENT_REFUSED', goods_condition: 'WITH_SHIPPER', note: 'Khách từ chối' })) as Json;
+    expect(failed.state).toBe('failed');
+    expect((await asShop('POST', `/shop/me/deliveries/${id}/recall`, {})).status).toBeGreaterThanOrEqual(400);
+    const resolved = await asShop('POST', `/shop/me/deliveries/${id}/custody`, { resolution: 'GOODS_RETURNED' });
+    expect([resolved.status, resolved.text.slice(0, 200)]).toEqual([200, resolved.text.slice(0, 200)]);
+    expect(await countRows(app.pool, `SELECT 1 FROM app.delivery_incidents WHERE delivery_id = $1::uuid AND status = 'CLOSED' AND custody = 'SHOP'`, [id])).toBe(1);
+    expect(await stateOf(id)).toBe('failed'); // the delivery stays failed; the Order is never completed by this
+    const recalled = await asShop('POST', `/shop/me/deliveries/${id}/recall`, {});
+    expect([recalled.status, recalled.text.slice(0, 200)]).toEqual([201, recalled.text.slice(0, 200)]);
   });
 });
