@@ -47,6 +47,8 @@ import { NOT_WIRED_SHIPPING, ShippingPolicySource } from '../core/shipping-polic
 import { ShippingPolicyView } from './shipping-policy-view.js';
 import { DeliverySource, NOT_WIRED_DELIVERIES } from '../core/deliveries.js';
 import { DeliveryHost, DeliveryListView } from './deliveries-view.js';
+import { NOT_WIRED_NOTIFICATIONS, NotificationSource } from '../core/notifications.js';
+import { NotificationHost, NotificationsView } from './notifications-view.js';
 import { FinanceController, isFinanceRoute } from '../core/finance-controller.js';
 import { FinanceSource, NOT_WIRED_FINANCE } from '../core/finance.js';
 import { FinanceView } from './finance-view.js';
@@ -120,6 +122,8 @@ export class ShellApp implements ShellHost {
     private readonly shipping: ShippingPolicySource = NOT_WIRED_SHIPPING,
     /** Where the deliveries (Vận hành › Giao hàng, M07.07) come from. By default nothing is wired, so the page says so. */
     private readonly deliveries: DeliverySource = NOT_WIRED_DELIVERIES,
+    /** Where the notifications (Vận hành › Thông báo, M08.06) come from. By default nothing is wired, so the page says so. */
+    private readonly notifications: NotificationSource = NOT_WIRED_NOTIFICATIONS,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -280,6 +284,9 @@ export class ShellApp implements ShellHost {
         return;
       case 'deliveries':
         this.#deliveryList(content);
+        return;
+      case 'notifications':
+        this.#notificationPage(content);
         return;
       case 'finance':
       case 'finance-wallets':
@@ -747,6 +754,27 @@ export class ShellApp implements ShellHost {
       home: () => this.go({ name: 'home' }),
     };
     const view = new DeliveryListView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Vận hành › Thông báo" (M08.06): the work queue, the search and the settings; the server decides every read and the one write (SYSTEM only). */
+  #notificationPage(content: HTMLElement): void {
+    const host: NotificationHost = {
+      source: this.notifications,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      openDeliveries: () => this.go({ name: 'deliveries' }),
+      canEdit: this.#role === 'SYSTEM',
+    };
+    const view = new NotificationsView(content, host);
     this.#unsubscribe = () => view.dispose();
     void view.load();
   }

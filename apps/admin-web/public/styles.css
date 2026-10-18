@@ -2874,3 +2874,21 @@ select {
 .counters:empty {
   display: none;
 }
+
+/* M08.06 Notifications: sub-table caption, the settings form row and its label. */
+.sub-caption {
+  caption-side: top;
+  padding: 12px 16px 4px;
+  text-align: left;
+  font-weight: 700;
+}
+.form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+.field-label {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
