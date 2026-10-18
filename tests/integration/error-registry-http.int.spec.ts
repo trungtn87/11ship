@@ -115,7 +115,7 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 13 delivery codes (M07: DELIVERY_*, FEE_*, DESTINATION_NOT_CONFIRMED, ... see app-errors.ts)
     // the total is pinned so that an accidental addition or removal is still caught.
     expect(codes).toHaveLength(122);
-    expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(18);
+    expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(19);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);
     expect(codes).toContain('TRANSACTION_OUTCOME_UNKNOWN');
   });
