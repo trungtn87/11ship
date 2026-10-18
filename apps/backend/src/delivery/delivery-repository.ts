@@ -403,6 +403,12 @@ export class DeliveryRepository {
     return result.rows.map(toDelivery);
   }
 
+  /** Every delivery of an Order (M10), oldest first: the history of its calls. */
+  async listOfOrder(context: TransactionContext, orderId: string): Promise<DeliveryRow[]> {
+    const result = await context.query<RawDelivery>(`SELECT ${DELIVERY_COLUMNS} FROM app.deliveries d WHERE d.order_id = $1::uuid ORDER BY d.created_at, d.delivery_id`, [orderId]);
+    return result.rows.map(toDelivery);
+  }
+
   /** The deliveries on offer: searching, not expired, no active assignment. The caller filters by distance and eligibility. */
   async listOpenOffers(context: TransactionContext, limit: number): Promise<DeliveryRow[]> {
     const result = await context.query<RawDelivery>(
