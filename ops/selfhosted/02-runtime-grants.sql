@@ -101,3 +101,14 @@ GRANT SELECT, INSERT, UPDATE ON app.delivery_assignments TO ship11_app;
 GRANT SELECT, INSERT ON app.delivery_events TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.delivery_incidents TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.shipper_latest_locations TO ship11_app;
+
+-- M08: notifications. The inbox, the push attempts and their bookkeeping. DELETE exists only where the retention pass removes rows after the total window
+-- (Order, Delivery, ledger and audit rows are never touched); a push token is ended, never deleted.
+GRANT SELECT, INSERT, UPDATE ON app.notification_push_tokens TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.notification_config TO ship11_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.notifications TO ship11_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.notification_pushes TO ship11_app;
+GRANT SELECT, INSERT, DELETE ON app.notification_consumed_events TO ship11_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.notification_reminders TO ship11_app;
+GRANT SELECT, INSERT, DELETE ON app.notification_offer_rounds TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.notification_settings TO ship11_app;

@@ -6,6 +6,53 @@ import 'package:n11_shared/n11_shared.dart';
 // activity: an empty screen says "no data yet".
 
 
+/// How an opened notification reaches its object in 11Food: a delivery opens its detail (which loads the CURRENT state and decides the right again), a list
+/// opens the Orders tab, the shop profile opens the shop tab. Nothing here decides a right.
+NotificationRouter foodNotificationRouter(AppFlows flows) => (BuildContext context, NotificationItem? item, OpenOutcome outcome, ShellActions actions) async {
+      final NotificationTarget? target = outcome.target;
+      if (target == null) {
+        return;
+      }
+      final NavigatorState navigator = Navigator.of(context);
+      switch (target.type) {
+        case TargetType.delivery:
+          final ShopDeliverySource? source = flows.shopDeliveries;
+          if (source != null && target.id != null) {
+            await navigator.push(n11Route(ShopDeliveryDetailScreen(source: source, deliveryId: target.id!)));
+          } else {
+            navigator.popUntil((Route<dynamic> r) => r.isFirst);
+            actions.goTab('orders');
+          }
+        case TargetType.deliveryList:
+          navigator.popUntil((Route<dynamic> r) => r.isFirst);
+          actions.goTab('orders');
+        case TargetType.profile:
+          navigator.popUntil((Route<dynamic> r) => r.isFirst);
+          actions.goTab('shop');
+        case TargetType.order || TargetType.walletTxn || TargetType.none:
+          break;
+      }
+    };
+
+/// The bell at the top of the Food home and the page it opens (no new bottom tab).
+Widget? _bell(BuildContext context, AppFlows? flows, ShellActions actions) {
+  final NotificationController? inbox = flows?.notifications;
+  final NotificationSource? source = flows?.notificationSource;
+  final PushSync? push = flows?.push;
+  if (inbox == null || source == null || push == null) {
+    return null;
+  }
+  return NotificationBell(
+    controller: inbox,
+    onPressed: () => Navigator.of(context).push(n11Route(NotificationInboxScreen(
+      controller: inbox,
+      router: foodNotificationRouter(flows!),
+      actions: actions,
+      settingsBuilder: (BuildContext context) => NotificationSettingsScreen(source: source, push: push, shipper: false),
+    ))),
+  );
+}
+
 List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
   return <TabSpec>[
     TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', showAppBar: false, fullBleed: true, body: (BuildContext context, ShellActions actions) => _home(session, actions, flows)),
@@ -42,7 +89,7 @@ Widget _home(SessionController session, ShellActions actions, AppFlows? flows) {
       ]),
     );
   }
-  return DiscoveryHome(controller: m02.discovery, publicApi: m02.publicApi);
+  return Builder(builder: (BuildContext context) => DiscoveryHome(controller: m02.discovery, publicApi: m02.publicApi, bell: _bell(context, flows, actions)));
 }
 
 // ---- F03: orders -----------------------------------------------------------------------------------------------------
@@ -75,6 +122,14 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
     shop: shop,
     settingsEntries: <Widget>[
       if (flows?.addresses != null) addressBookEntry(context, flows!.addresses!),
+      if (flows?.notificationSource != null && flows?.push != null)
+        N11ListItem(
+          key: const Key('open-notification-settings'),
+          icon: Icons.notifications_outlined,
+          title: 'Cài đặt thông báo',
+          sub: 'Âm thanh, rung và nhóm thông báo',
+          onTap: () => Navigator.of(context).push(n11Route(NotificationSettingsScreen(source: flows!.notificationSource!, push: flows.push!, shipper: false))),
+        ),
     ],
     entries: const <Widget>[
       N11ListItem(icon: Icons.help_outline, title: 'Trợ giúp', soon: true),

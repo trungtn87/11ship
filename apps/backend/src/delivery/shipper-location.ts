@@ -38,6 +38,19 @@ export class ShipperLocationRepository {
     );
   }
 
+  /** The Shippers whose latest position lies inside a box around a point, nearest first (a cheap prefilter; M06 decides the real radius and freshness). */
+  async driversNear(context: TransactionContext, lat: number, lng: number, radiusM: number, limit: number): Promise<string[]> {
+    const dLat = radiusM / 111_000;
+    const dLng = radiusM / (111_000 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+    const result = await context.query<{ driver_id: string }>(
+      `SELECT driver_id FROM app.shipper_latest_locations
+        WHERE lat BETWEEN $1::float8 AND $2::float8 AND lng BETWEEN $3::float8 AND $4::float8
+        ORDER BY (lat - $5::float8) * (lat - $5::float8) + (lng - $6::float8) * (lng - $6::float8) LIMIT $7`,
+      [lat - dLat, lat + dLat, lng - dLng, lng + dLng, lat, lng, limit],
+    );
+    return result.rows.map((r) => r.driver_id);
+  }
+
   async find(context: TransactionContext, driverId: string): Promise<StoredLocation | undefined> {
     const result = await context.query<RawLocation>(
       `SELECT lat, lng, accuracy_m, (extract(epoch FROM recorded_at) * 1000)::bigint::text AS recorded_ms,

@@ -1,4 +1,5 @@
 import { M14RoutingConfig, parseM14Routing } from './m14-routing-config';
+import { parsePushConfig, PushConfig } from './push-config';
 import { ACCOUNT_RECOVERY_MODE_ENV, AccountRecoveryMode, parseAccountRecoveryMode } from './account-recovery-config';
 import { AdminActivationConfig, loadAdminActivationConfig } from './admin-activation-config';
 import { AdminAuthConfig, loadAdminAuthConfig } from './admin-auth-config';
@@ -184,6 +185,8 @@ export interface AppConfig {
   smsGateway?: SmsGatewayConfig;
   /** M14 routing service for road distance / travel time (M07). Present only when M14_ROUTING_ORIGIN is set and valid; absent = routes are unavailable. */
   m14Routing?: M14RoutingConfig;
+  /** Android push provider (M08, FCM). Present only when PUSH_FCM_PROJECT_ID and PUSH_FCM_SERVICE_ACCOUNT_FILE are both set and valid; absent = push is not configured (the inbox still works). */
+  push?: PushConfig;
   /**
    * Native Android binding (M01-ANDROID). Present ONLY when CLIENT_AUTH_ANDROID_ENABLED=true (development/test on a loopback bind)
    * and the four CLIENT_DEVICE_* trust inputs are valid. Absent everywhere else: every ANDROID request then stays a 503.
@@ -702,6 +705,15 @@ export function loadConfig(env: EnvSource): ConfigResult {
     m14RoutingResult.invalid.forEach(flag);
   }
 
+  // Android push (M08): optional; absent means every push is recorded as skipped (PROVIDER_NOT_CONFIGURED), never as sent. Names only.
+  const pushResult = parsePushConfig({ env, appEnv: appEnv ?? '' });
+  let push: PushConfig | undefined;
+  if (pushResult.ok) {
+    push = pushResult.config;
+  } else {
+    pushResult.invalid.forEach(flag);
+  }
+
   // Admin activation by SMS (Owner decision 2026-10-14) rides the SAME gateway: without it the mode cannot be selected.
   if (adminActivation !== undefined && adminActivation.otpMode === 'SMS' && smsGateway === undefined) {
     flag('ADMIN_ACTIVATION_OTP_MODE');
@@ -777,6 +789,7 @@ export function loadConfig(env: EnvSource): ConfigResult {
       ...(accountRecoveryMode === 'DISABLED_TEST' || accountRecoveryMode === 'SMS_OTP' ? { accountRecoveryMode } : {}),
       ...(smsGateway === undefined ? {} : { smsGateway }),
       ...(m14Routing === undefined ? {} : { m14Routing }),
+      ...(push === undefined ? {} : { push }),
       ...(clientAndroid === undefined ? {} : { clientAndroid }),
     },
   };

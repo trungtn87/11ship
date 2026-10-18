@@ -201,6 +201,18 @@ export class DriverRepository {
   }
 
   /** A plain read by id (the administration detail). */
+  /** Of the given Shippers, those that are ACTIVE and have deliveries switched on, with their account. A cheap prefilter for "who may be told about a new delivery". */
+  async listAcceptingAmong(context: TransactionContext, driverIds: readonly string[]): Promise<{ driverId: string; userId: string }[]> {
+    if (driverIds.length === 0) {
+      return [];
+    }
+    const result = await context.query<{ driver_id: string; user_id: string }>(
+      `SELECT driver_id, user_id FROM app.drivers WHERE driver_id = ANY($1::uuid[]) AND status = 'ACTIVE' AND accepting_deliveries`,
+      [driverIds],
+    );
+    return result.rows.map((r) => ({ driverId: r.driver_id, userId: r.user_id }));
+  }
+
   async findById(context: TransactionContext, driverId: string): Promise<DriverRow | undefined> {
     const result = await context.query<RawDriver>(`SELECT ${DRIVER_COLUMNS} FROM app.drivers d WHERE d.driver_id = $1::uuid`, [driverId]);
     const row = result.rows[0];

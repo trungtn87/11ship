@@ -61,6 +61,17 @@ function toShop(row: RawShop): ShopRow {
  */
 @Injectable()
 export class ShopRepository {
+  /** The account that owns the shop (read only, no lock): who a notification about the shop goes to. */
+  async ownerUserIdOfShop(context: TransactionContext, shopId: string): Promise<string | undefined> {
+    const result = await context.query<{ user_id: string }>(`SELECT user_id FROM app.shop_members WHERE shop_id = $1::uuid AND member_role = $2`, [shopId, OWNER_MEMBER_ROLE]);
+    return result.rows[0]?.user_id;
+  }
+
+  /** True when this account owns the shop (read only, no lock). */
+  async isOwnerOfShop(context: TransactionContext, shopId: string, userId: string): Promise<boolean> {
+    return (await this.ownerUserIdOfShop(context, shopId)) === userId;
+  }
+
   /**
    * Locks the user's OWNER membership and then the shop it points at, in that order (the A2 global lock
    * order), and returns the shop as it is AFTER the locks. Two statements on purpose: a join with

@@ -127,7 +127,9 @@ describe('env template', () => {
       AUTH_OTP_HMAC_SECRET: key32,
       CRYPTO_KEYRING: `staging-1:${key32}`,
       ADMIN_RATE_LIMIT_HMAC_KEY: key32,
+      PUSH_FCM_PROJECT_ID: 'eleven-ship-test',
     };
+    assert.equal(env.PUSH_FCM_SERVICE_ACCOUNT_FILE, '/etc/11ship/fcm/service-account.json');
     const result = loadConfig(filled);
     assert.deepEqual(result.ok ? [] : result.invalid, []);
     assert.equal(result.ok, true);
@@ -236,6 +238,7 @@ describe('production env template', () => {
       ADMIN_RATE_LIMIT_KEY_ID: 'prod-1',
       ADMIN_RATE_LIMIT_HMAC_KEY: key32,
       SMS_GATEWAY_ALLOWLIST: '0912345678',
+      PUSH_FCM_PROJECT_ID: 'eleven-ship-test',
       CLIENT_DEVICE_ALLOWED_SIGNERS_FILE: join(dir, 'signers.json'),
       CLIENT_DEVICE_ATTESTATION_ROOTS_FILE: join(dir, 'roots.pem'),
       CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE: join(dir, 'revocation.json'),

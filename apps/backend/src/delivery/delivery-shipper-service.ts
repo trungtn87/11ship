@@ -633,7 +633,7 @@ function feeTakeable(agreement: Agreement, driverId: string): boolean {
 }
 
 /** Whether this Shipper may even see the offer: a fee still being settled, one that is theirs, or one that anyone can take. */
-function feeOpenTo(agreement: Agreement, driverId: string): boolean {
+export function feeOpenTo(agreement: Agreement, driverId: string): boolean {
   if (agreement.status === 'ACCEPTED' || agreement.status === 'LOCKED') {
     return feeTakeable(agreement, driverId);
   }
