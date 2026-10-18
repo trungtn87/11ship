@@ -64,3 +64,8 @@ Service account có vai trò *Firebase Cloud Messaging API Admin*. Kiểm tra tr
 - `tests/integration/m08-admin-notifications.int.spec.ts` (6): phạm vi SYSTEM/ADMIN, tìm kiếm, chi tiết + bằng chứng, hàng đợi, cấu hình (quyền, phiên bản, giới hạn, audit), không có route gửi/phát lại.
 - Migration specs hiện có cập nhật (Up/Down thứ tự mới); unit: composer, cấu hình push, registry lỗi, ranh giới module; Admin Web (core + build); Flutter: `n11_shared` 335 + m08 16, `ship` 21 (4 mới), `food` 19.
 - **Chưa kiểm chứng:** Android thật (emulator hay máy), nhận push FCM thật, build Kotlin (không có Android SDK trong môi trường phát triển — CI *Mobile APK* biên dịch), giao diện Admin Web trong trình duyệt thật, PG 17 cho spec `staging-db-upgrade-from-42` (cần PG 17, CI chạy).
+
+
+## Owner decision — 18/10/2026: defer FCM activation
+
+Owner approved merging M08 with the in-app inbox, notification bell and live/reconnect synchronization. Firebase/FCM production configuration and real background-push acceptance are deferred until preparation for the Google Play release. Keep the implemented FCM integration for later activation. Missing Firebase credentials do not block this merge. This decision does not authorize VPS deployment or remote migrations.
