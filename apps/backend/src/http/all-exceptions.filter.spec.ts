@@ -175,7 +175,7 @@ describe('AllExceptionsFilter', () => {
   describe('typed error registry', () => {
     const codes = Object.keys(APP_ERROR_DEFINITIONS) as AppErrorCode[];
 
-    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes, the Shop onboarding codes, the Driver onboarding codes, the Shipper management codes (M03), the Shop management codes, the administration login codes the ADMIN invitation codes, the administration activation codes, the administration account read code, the USER lock/unlock codes, the staging-fixture registration code and the client registration codes', () => {
+    it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes, the Shop onboarding codes, the Driver onboarding codes, the Shipper management codes (M03), the shipping fee policy codes (M06-A), the Shop management codes, the administration login codes the ADMIN invitation codes, the administration activation codes, the administration account read code, the USER lock/unlock codes, the staging-fixture registration code and the client registration codes', () => {
       expect([...codes].sort()).toEqual([
         'ACCOUNT_DISABLED',
         'ACCOUNT_RECOVERY_AVAILABLE',
@@ -259,6 +259,11 @@ describe('AllExceptionsFilter', () => {
         'SESSION_EXPIRED',
         'SESSION_INVALID',
         'SESSION_REVOKED',
+        'SHIPPING_DRAFT_EMPTY',
+        'SHIPPING_DRAFT_VERSION_CONFLICT',
+        'SHIPPING_ELIGIBILITY_VERSION_CONFLICT',
+        'SHIPPING_POLICY_INVALID',
+        'SHIPPING_POLICY_UNCHANGED',
         'SHOP_DISABLED',
         'SHOP_NOT_FOUND',
         'SHOP_ONBOARDING_EXISTS',

@@ -17,7 +17,7 @@ export const TOPUP_UP_SQL = (topupSql.split('-- Down Migration')[0] as string).r
 export const TOPUP_DOWN_SQL = topupSql.split('-- Down Migration')[1] as string;
 
 // M04-B2.2a: the finance access (grants) migration. It references only admin_memberships and users, and is the newest: down FIRST, up LAST.
-export const FINANCE_MIGRATION_NAME = '1793664000000_create-admin-finance-grants';
+export const FINANCE_MIGRATION_NAME = '1793923200000_create-admin-finance-grants';
 const financeFile = path.resolve(__dirname, '..', '..', '..', '..', 'database', 'migrations', `${FINANCE_MIGRATION_NAME}.sql`);
 const financeSql = readFileSync(financeFile, 'utf8');
 export const FINANCE_UP_SQL = (financeSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');

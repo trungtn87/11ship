@@ -43,6 +43,8 @@ import { CatalogController } from '../core/catalog-controller.js';
 import { CatalogView } from './catalog-view.js';
 import { NOT_WIRED_SHIPPERS, ShipperFilter, ShipperSource } from '../core/shippers.js';
 import { ShipperDetailView, ShipperHost, ShipperListView, WalletParametersView } from './shippers-view.js';
+import { NOT_WIRED_SHIPPING, ShippingPolicySource } from '../core/shipping-policy.js';
+import { ShippingPolicyView } from './shipping-policy-view.js';
 import { FinanceController, isFinanceRoute } from '../core/finance-controller.js';
 import { FinanceSource, NOT_WIRED_FINANCE } from '../core/finance.js';
 import { FinanceView } from './finance-view.js';
@@ -112,6 +114,8 @@ export class ShellApp implements ShellHost {
     private readonly shippers: ShipperSource = NOT_WIRED_SHIPPERS,
     /** Where the finance pages (M04) come from. By default nothing is wired, so every page says so and every money button is disabled. */
     private readonly finance: FinanceSource = NOT_WIRED_FINANCE,
+    /** Where the shipping-fee table (Phí & điều kiện giao, M06-A) comes from. By default nothing is wired, so the page says so. */
+    private readonly shipping: ShippingPolicySource = NOT_WIRED_SHIPPING,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -266,6 +270,9 @@ export class ShellApp implements ShellHost {
         return;
       case 'wallet-parameters':
         this.#walletParameters(content);
+        return;
+      case 'shipping-policy':
+        this.#shippingPolicy(content);
         return;
       case 'finance':
       case 'finance-wallets':
@@ -714,6 +721,25 @@ export class ShellApp implements ShellHost {
   /** One Shipper: profile, bank account, readiness, classification, history and the review / activity commands. */
   #shipperDetail(content: HTMLElement, id: string): void {
     const view = new ShipperDetailView(content, this.#shipperHost(), id);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Hệ thống › Phí & điều kiện giao" (M06-A): every administrator reads and previews, only SYSTEM edits; the server decides again. */
+  #shippingPolicy(content: HTMLElement): void {
+    const view = new ShippingPolicyView(content, {
+      source: this.shipping,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      canEdit: this.#role === 'SYSTEM',
+    });
     this.#unsubscribe = () => view.dispose();
     void view.load();
   }

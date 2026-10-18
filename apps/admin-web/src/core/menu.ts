@@ -197,6 +197,8 @@ export const MENU: readonly MenuGroup[] = [
         access: 'any',
         children: [{ id: 'parameters-shipper-wallet', label: 'Ví Shipper', route: { name: 'wallet-parameters' }, ready: true, access: 'any' }],
       },
+      // M06-A: Phí & điều kiện giao (fee table; every administrator reads, only SYSTEM changes, the server decides again).
+      { id: 'shipping-policy', label: 'Phí & điều kiện giao', icon: 'gear', route: { name: 'shipping-policy' }, ready: true, access: 'any' },
       soon('audit', 'Nhật ký', 'doc', 'audit'),
       soon('monitoring', 'Giám sát', 'activity', 'monitoring'),
     ],
@@ -250,6 +252,7 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'activate':
     case 'reset':
     case 'wallet-parameters':
+    case 'shipping-policy':
       return true;
     case 'users':
     case 'user':
@@ -297,6 +300,8 @@ export function activeMenuId(route: Route): string {
       return 'drivers';
     case 'wallet-parameters':
       return 'parameters-shipper-wallet';
+    case 'shipping-policy':
+      return 'shipping-policy';
     case 'finance':
       return 'finance-overview';
     case 'finance-wallets':
@@ -345,6 +350,8 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Vận hành', 'Shipper', 'Chi tiết'];
     case 'wallet-parameters':
       return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
+    case 'shipping-policy':
+      return ['Cài đặt', 'Phí & điều kiện giao'];
     case 'finance':
       return ['Tài chính', 'Tổng quan'];
     case 'finance-wallets':

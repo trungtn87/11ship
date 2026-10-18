@@ -2,7 +2,7 @@
 
 Nguồn: `docs/tasks/M04-B2-2-admin-topup-settlement-20261018.md` (B2.2a), ADR-004 v0.2 §9. **Chỉ backend/DB. Không mở cổng ledger, không cộng ví, không bật nhận tiền.**
 
-## Migration `1793664000000_create-admin-finance-grants.sql` (additive)
+## Migration `1793923200000_create-admin-finance-grants.sql` (additive)
 `app.admin_finance_grants (user_id, permission_key)`: FK `admin_memberships`, `state GRANTED|REVOKED`, `granted_by/at`, `revoked_by/at` (REVOKED có đủ cả hai), `version`. Trigger: chỉ membership **ADMIN** mới được giữ quyền (SYSTEM có quyền ngầm, không có dòng), danh tính bất biến, version +1, không DELETE/TRUNCATE. `permission_key` chỉ kiểm định dạng nên gói sau thêm khóa không cần đổi schema. Down: khóa ACCESS EXCLUSIVE, từ chối `FINANCE_GRANTS_DOWN_REFUSED` nếu có **bất kỳ** dòng (kể cả REVOKED); rỗng thì gỡ sạch, không CASCADE.
 
 ## Quyền (default deny)

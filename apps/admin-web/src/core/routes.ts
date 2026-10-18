@@ -22,6 +22,7 @@ export type Route =
   | { readonly name: 'shippers'; readonly status?: ShipperFilter }
   | { readonly name: 'shipper'; readonly id: string }
   | { readonly name: 'wallet-parameters' }
+  | { readonly name: 'shipping-policy' }
   | { readonly name: 'settings' }
   // M04 (UI phase): "Tài chính" and the wallet parameters ("Cài đặt › Tham số hệ thống › Ví Shipper").
   | { readonly name: 'finance' }
@@ -59,6 +60,9 @@ export function parseRoute(pathname: string, search = ''): Route {
   }
   if (path === '/system/parameters/shipper-wallet') {
     return { name: 'wallet-parameters' };
+  }
+  if (path === '/system/shipping-fee-policy') {
+    return { name: 'shipping-policy' };
   }
   if (path === '/operations/shippers') {
     const status = new URLSearchParams(search).get('status');
@@ -153,6 +157,8 @@ export function formatRoute(route: Route): string {
       return '/system/settings';
     case 'wallet-parameters':
       return '/system/parameters/shipper-wallet';
+    case 'shipping-policy':
+      return '/system/shipping-fee-policy';
     case 'shippers':
       return route.status === undefined ? '/operations/shippers' : `/operations/shippers?status=${route.status}`;
     case 'shipper':

@@ -80,3 +80,14 @@ GRANT SELECT ON app.wallet_bank_transactions TO ship11_app;
 GRANT SELECT ON app.wallet_topups TO ship11_app;
 -- M04-B2.2a: finance rights of the administration. SYSTEM gives (INSERT) and takes back (UPDATE) each right; never DELETE. Default deny: no row = no right.
 GRANT SELECT, INSERT, UPDATE ON app.admin_finance_grants TO ship11_app;
+-- M06-A: the shipping-fee table. Versions are immutable (a trigger refuses UPDATE/DELETE/TRUNCATE for every role): the runtime only appends and reads. The draft is
+-- the one seeded row; the runtime reads it and updates it (never deletes: a trigger refuses).
+GRANT SELECT, INSERT ON app.shipping_fee_policy_versions TO ship11_app;
+GRANT SELECT, UPDATE ON app.shipping_fee_policy_drafts TO ship11_app;
+-- M06-B/C: the eligibility parameters (one seeded row: read and version-checked update, never deleted) and their append-only change log.
+GRANT SELECT, UPDATE ON app.shipping_eligibility_parameters TO ship11_app;
+GRANT SELECT, INSERT ON app.shipping_eligibility_parameter_changes TO ship11_app;
+-- M06 v1.1: the shipping-fee agreement. The agreement row is read, inserted once per delivery and updated by the M06 service under FOR UPDATE (a trigger refuses DELETE,
+-- TRUNCATE, identity changes, a shorter deadline and any status move off the graph); its event log is append-only (a trigger refuses UPDATE, DELETE and TRUNCATE).
+GRANT SELECT, INSERT, UPDATE ON app.shipping_fee_agreements TO ship11_app;
+GRANT SELECT, INSERT ON app.shipping_fee_agreement_events TO ship11_app;

@@ -64,6 +64,8 @@ const SPA_ROUTES: readonly RegExp[] = Object.freeze([
   /^\/operations\/shippers$/,
   new RegExp(`^/operations/shippers/${UUID}$`),
   /^\/system\/parameters\/shipper-wallet$/,
+  // M06-A Phí & điều kiện giao (the fee table).
+  /^\/system\/shipping-fee-policy$/,
   /^\/invitations$/,
   /^\/invitations\/new$/,
   new RegExp(`^/invitations/${UUID}$`),

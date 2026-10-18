@@ -11,6 +11,7 @@ import { RecoveryController } from '../core/recovery-controller.js';
 import { AdminRecoveryApi, RECOVERY_BASE } from '../core/recovery-api.js';
 import { AdminCatalogApi, CATALOG_BASE, createCatalogSource } from '../core/catalog-api.js';
 import { AdminShipperApi, createShipperSource, SHIPPERS_BASE } from '../core/shippers-api.js';
+import { createShippingPolicySource, SHIPPING_POLICY_BASE, ShippingPolicyApi } from '../core/shipping-policy-api.js';
 import { AdminSettingsApi, createSettingsSource, SETTINGS_BASE } from '../core/settings-api.js';
 import { ResetPage } from './reset-view.js';
 import { ShellApp } from './shell-app.js';
@@ -133,6 +134,11 @@ function startAdmin(host: HTMLElement): void {
       refresh: () => controller.refreshSession(),
     }),
     createShipperSource(new AdminShipperApi(fetchTransport(window.fetch.bind(window), { base: SHIPPERS_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
+    undefined,
+    createShippingPolicySource(new ShippingPolicyApi(fetchTransport(window.fetch.bind(window), { base: SHIPPING_POLICY_BASE })), {
       csrf: () => controller.sessionCsrf,
       refresh: () => controller.refreshSession(),
     }),
