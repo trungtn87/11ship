@@ -344,7 +344,7 @@ Widget _failureBanner(SessionController session) {
     key: const Key('form-error'),
     kind: BannerKind.error,
     title: failure.kind == AuthFailureKind.invalidCredentials ? 'Thông tin chưa đúng' : 'Chưa hoàn tất',
-    text: failureMessage(failure),
+    text: failureMessage(failure) + (failure.kind != AuthFailureKind.serverUnavailable || failure.diagnostic == null ? '' : '\n${failure.diagnostic}'),
     trailing: canRetryFailure(failure) && session.pending != null
         ? Row(children: <Widget>[
             N11Button(key: const Key('retry-pending'), label: 'Thử lại', compact: true, onPressed: session.busy ? null : session.retryPending),
@@ -864,8 +864,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               key: const Key('register-submit'),
               label: busy ? 'Đang đăng ký…' : (_ship ? 'Tiếp tục' : 'Hoàn tất đăng ký'),
               loading: busy,
-              onPressed: busy || !_valid || (_ship ? !session.ready || mode != RegistrationMode.required : !open) ? null : () {
-                if (_ship) {
+              onPressed: busy || !_valid || (_ship ? !session.ready || mode == RegistrationMode.unknown : !open) ? null : () {
+                if (_ship && mode == RegistrationMode.required) {
                   setState(() => _otpPage = true);
                   if (_otp.phone == null) _otp.request(_phone.text);
                 } else {
