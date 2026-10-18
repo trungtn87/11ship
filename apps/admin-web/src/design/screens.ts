@@ -117,6 +117,7 @@ function screenIdOf(route: Route): { id: string; variant?: string } {
     // The Shipper pages (M03) have no design-catalog sample: the preview shows the overview.
     case 'shippers':
     case 'shipper':
+    case 'deliveries':
     case 'wallet-parameters':
     case 'shipping-policy':
     case 'home':
