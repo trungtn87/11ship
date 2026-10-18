@@ -76,7 +76,8 @@ void main() {
     await pump(tester, healthy());
     await tester.tap(find.byKey(const Key('home-notifications')));
     await tester.pumpAndSettle();
-    expect(find.text('Chưa có dữ liệu thông báo'), findsOneWidget);
+    // A guest has no inbox: the page asks to sign in and shows no notification of anyone.
+    expect(find.text('Đăng nhập để xem thông báo của bạn.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -105,7 +106,7 @@ void main() {
     expect(find.text('—'), findsOneWidget);
     expect(find.text('Chưa có dữ liệu thu nhập'), findsOneWidget);
     await openTab(tester, 'notifications');
-    expect(find.text('Chưa có dữ liệu thông báo'), findsOneWidget);
+    expect(find.text('Đăng nhập để xem thông báo của bạn.'), findsOneWidget);
     expect(find.textContaining('₫'), findsNothing);
   });
 

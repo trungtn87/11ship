@@ -108,10 +108,13 @@ class _FakeField extends StatelessWidget {
 
 /// KP01: the Home tab of 11Food. It owns its scrolling (pull to refresh, "Xem thêm").
 class DiscoveryHome extends StatefulWidget {
-  const DiscoveryHome({super.key, required this.controller, required this.publicApi});
+  const DiscoveryHome({super.key, required this.controller, required this.publicApi, this.bell});
 
   final DiscoveryController controller;
   final PublicShopApi publicApi;
+
+  /// M08: the notification bell (with its unread count). Null = the placeholder that says notifications are not built in this build.
+  final Widget? bell;
 
   @override
   State<DiscoveryHome> createState() => _DiscoveryHomeState();
@@ -175,20 +178,21 @@ class _DiscoveryHomeState extends State<DiscoveryHome> {
     );
   }
 
-  /// The brand and the notification bell (M08 is not built yet: the bell says so instead of opening an empty page).
+  /// The brand and the notification bell.
   Widget _header() => Row(children: <Widget>[
         BrandLogo(brand: foodBrand),
         const Spacer(),
         Material(
           color: N11Colors.white,
           shape: const CircleBorder(side: BorderSide(color: N11Colors.line)),
-          child: IconButton(
-            key: const Key('home-bell'),
-            tooltip: 'Thông báo',
-            constraints: const BoxConstraints(minWidth: kTapMin, minHeight: kTapMin),
-            onPressed: () => m02Toast(context, 'Thông báo sẽ có ở bản sau.'),
-            icon: const Icon(Icons.notifications_outlined, color: N11Colors.black),
-          ),
+          child: widget.bell ??
+              IconButton(
+                key: const Key('home-bell'),
+                tooltip: 'Thông báo',
+                constraints: const BoxConstraints(minWidth: kTapMin, minHeight: kTapMin),
+                onPressed: () => m02Toast(context, 'Thông báo sẽ có ở bản sau.'),
+                icon: const Icon(Icons.notifications_outlined, color: N11Colors.black),
+              ),
         ),
       ]);
 
