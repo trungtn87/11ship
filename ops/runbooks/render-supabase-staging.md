@@ -122,14 +122,14 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | shipper_wallet_parameter_changes | SELECT, INSERT (M03: the append-only change log of those two values) |
 | customers | SELECT, INSERT, UPDATE (M05: one row per user, created once by the service; UPDATE only because the address writes lock it `FOR UPDATE`; no DELETE) |
 | customer_addresses | SELECT, INSERT, UPDATE (M05: add, edit, set default and the soft delete are all UPDATEs; no DELETE, an address is never removed) |
-| driver_wallets | SELECT, INSERT, UPDATE (M04-A1 the zero wallet; M07 commission hold/capture moves balance and held under the lock order; never deleted) |
-| wallet_ledger_entries | SELECT, INSERT (M04-A1 append-only ledger; M07 inserts the one commission debit per assignment through the source gate; no UPDATE, no DELETE) |
-| wallet_holds | SELECT, INSERT, UPDATE (M04-A2: a commission hold per assignment, ACTIVE then CAPTURED or RELEASED once; never deleted) |
-| system_owned_bank_accounts | SELECT, INSERT (M04-B2.2a: SYSTEM adds a receiving account, always created not receiving; no UPDATE until B2.2b switches accounts on; no DELETE) |
+| driver_wallets | SELECT, INSERT, UPDATE (M04-A1/B2.2b: the zero wallet of a Shipper, created once; UPDATE only moves the balance together with its ledger row in the TOPUP posting; no DELETE; never deleted) |
+| wallet_ledger_entries | SELECT, INSERT (M04-A1/B2.2b: the append-only money ledger; INSERT only for the TOPUP posting, whose source gate refuses every other kind; no UPDATE, no DELETE) |
+| wallet_holds | SELECT, INSERT, UPDATE (M04-A2 / M07: a COMMISSION hold per delivery assignment, ACTIVE then CAPTURED or RELEASED once; the hold gate refuses any other source; never deleted) |
+| system_owned_bank_accounts | SELECT, INSERT, UPDATE (M04-B2.2a/b: SYSTEM adds a receiving account, always created not receiving, and switches receiving on or off; no DELETE) |
 | admin_finance_grants | SELECT, INSERT, UPDATE (M04-B2.2a: SYSTEM gives and takes back each finance right of an ADMIN; default deny; never deleted) |
 | wallet_topup_requests | SELECT, INSERT, UPDATE (M04-B2.1: the Shipper creates a PENDING request and cancels it; no DELETE; a request never moves money) |
-| wallet_bank_transactions | SELECT (M04-B1: the shared registry of bank transactions, append-only; no writer until B2) |
-| wallet_topups | SELECT (M04-B1: money confirmed as received, append-only; no writer until B2; it cannot commit without its ledger credit, and the ledger stays closed) |
+| wallet_bank_transactions | SELECT, INSERT (M04-B1/B2.2b: the shared registry of bank transactions, append-only; written once per bank transaction in the Admin confirmation) |
+| wallet_topups | SELECT, INSERT (M04-B1/B2.2b: money confirmed as received, append-only; it cannot commit without its ledger credit) |
 | shipping_fee_policy_versions | SELECT, INSERT (M06-A: one immutable row per applied fee table; a trigger refuses UPDATE, DELETE and TRUNCATE) |
 | shipping_fee_policy_drafts | SELECT, UPDATE (M06-A: the one seeded draft row; UPDATE is the version-checked save/clear and `FOR UPDATE`; never deleted) |
 | shipping_eligibility_parameters | SELECT, UPDATE (M06-B/C: the one seeded row of limits; UPDATE is the version-checked change and `FOR UPDATE`; never deleted) |

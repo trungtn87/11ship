@@ -95,6 +95,11 @@ export const APP_ERROR_DEFINITIONS = {
   FINANCE_VERSION_CONFLICT: { status: 409, message: 'The finance right was changed by another request' },
   FINANCE_BANK_ACCOUNT_EXISTS: { status: 409, message: 'This receiving account is already configured' },
   FINANCE_BANK_ACCOUNT_NOT_FOUND: { status: 404, message: 'The receiving account was not found' },
+  // Administration of top-up requests (M04-B2.2b). Same rule: fixed messages that reveal nothing about the wallet, the Shipper or the bank record of anyone else.
+  TOPUP_ACCOUNT_NOT_RECEIVING: { status: 409, message: 'The receiving account cannot record money now' },
+  BANK_TRANSACTION_ALREADY_RECORDED: { status: 409, message: 'This bank transaction was already recorded' },
+  TOPUP_WALLET_LIMIT_EXCEEDED: { status: 409, message: 'The wallet balance would exceed its limit' },
+  FINANCE_BANK_ACCOUNT_STATE_CONFLICT: { status: 409, message: 'The receiving account is already in that state' },
   // Shipper top-up requests (M04-B2.1). Same rule: fixed messages that echo nothing the client sent; a request of another Shipper reads as not found.
   TOPUP_AMOUNT_BELOW_MINIMUM: { status: 400, message: 'The top-up amount is below the current minimum' },
   TOPUP_RECEIVING_ACCOUNT_NOT_CONFIGURED: { status: 409, message: 'No receiving account is available for top-ups yet' },

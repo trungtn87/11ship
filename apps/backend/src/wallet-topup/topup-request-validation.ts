@@ -52,7 +52,7 @@ export function encodeCursor(createdAtMs: number, requestId: string): string {
   return Buffer.from(`${createdAtMs}.${requestId}`, 'utf8').toString('base64url');
 }
 
-function decodeCursor(raw: string): TopupListCursor {
+export function decodeCursor(raw: string): TopupListCursor {
   if (!/^[A-Za-z0-9_-]{1,120}$/.test(raw)) {
     return reject();
   }

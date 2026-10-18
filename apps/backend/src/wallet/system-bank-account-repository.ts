@@ -3,8 +3,7 @@ import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
 
 // SQL of app.system_owned_bank_accounts for the SYSTEM configuration (M04-B2.2a): read, and INSERT of an account that is NOT yet receiving.
-// There is no UPDATE here: switching an account on (can_receive = true) opens the money path and belongs to B2.2b, so this package cannot do
-// it and the runtime role has no UPDATE privilege on the table. The INSERT writes the literal false.
+// The INSERT writes the literal false (M04-B2.2a). The only UPDATE (M04-B2.2b) is the SYSTEM switch of can_receive, at the expected version: identity never changes.
 
 export interface SystemBankAccountRow {
   readonly accountId: string;
@@ -69,6 +68,30 @@ export class SystemBankAccountRepository {
             )
        SELECT ${COLUMNS} FROM inserted a`,
       [input.accountId, input.bankId, input.accountNumber, input.accountHolder],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toAccount(row);
+  }
+
+  /** The account row, FOR UPDATE: waits for a confirmation that holds it FOR SHARE, and blocks the next one until the switch is committed. */
+  async lockForUpdate(context: TransactionContext, accountId: string): Promise<SystemBankAccountRow | undefined> {
+    const result = await context.query<RawAccount>(`SELECT ${COLUMNS} FROM app.system_owned_bank_accounts a WHERE a.system_account_id = $1::uuid FOR UPDATE`, [accountId]);
+    const row = result.rows[0];
+    return row === undefined ? undefined : toAccount(row);
+  }
+
+  /** Switches the receiving flag at the expected version (+1). The caller locked the row and decided that the value changes. */
+  async setReceiving(context: TransactionContext, accountId: string, expectedVersion: number, receiving: boolean): Promise<SystemBankAccountRow | undefined> {
+    const result = await context.query<RawAccount>(
+      `WITH clock AS (SELECT date_trunc('milliseconds', clock_timestamp()) AS t),
+            updated AS (
+              UPDATE app.system_owned_bank_accounts a
+                 SET can_receive = $3::boolean, version = a.version + 1, updated_at = clock.t
+                FROM clock WHERE a.system_account_id = $1::uuid AND a.version = $2::bigint
+               RETURNING a.*
+            )
+       SELECT ${COLUMNS} FROM updated a`,
+      [accountId, expectedVersion, receiving],
     );
     const row = result.rows[0];
     return row === undefined ? undefined : toAccount(row);

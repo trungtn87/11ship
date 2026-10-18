@@ -291,7 +291,7 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
     const holdGrants = grants.split('\n').filter((line) => /^GRANT .* ON app\.wallet_holds TO ship11_app;/.test(line));
     expect(holdGrants).toEqual(['GRANT SELECT, INSERT, UPDATE ON app.wallet_holds TO ship11_app;']);
     expect(grants).not.toMatch(/GRANT [A-Z, ]*\b(DELETE|TRUNCATE)\b[A-Z, ]* ON app\.(wallet_holds|wallet_ledger_entries|driver_wallets) /);
-    // The ledger is append-only: INSERT, never UPDATE.
+    // The ledger is append-only: INSERT (TOPUP posting, COMMISSION capture), never UPDATE.
     expect(grants).not.toMatch(/GRANT [A-Z, ]*\bUPDATE\b[A-Z, ]* ON app\.wallet_ledger_entries /);
   });
 

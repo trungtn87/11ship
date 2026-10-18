@@ -69,3 +69,18 @@ export function parseBankAccountBody(body: unknown): BankAccountBody {
   }
   return { bankId: bank, accountNumber: digits, accountHolder: name };
 }
+
+export interface ReceivingBody {
+  readonly expectedVersion: number;
+  readonly canReceive: boolean;
+}
+
+/** POST bank-accounts/:id/receiving: exact {expected_version, can_receive}; the version the screen saw and the wanted state. */
+export function parseReceivingBody(body: unknown): ReceivingBody {
+  const parsed = exact(body, ['expected_version', 'can_receive']);
+  const version = parsed.expected_version;
+  if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1 || typeof parsed.can_receive !== 'boolean') {
+    return invalid();
+  }
+  return { expectedVersion: version, canReceive: parsed.can_receive };
+}

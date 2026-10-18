@@ -14,7 +14,7 @@ const code = (): string => files().map((file) => codeOf(file)).join('\n');
 const ID = '3f2b8c1e-4a5d-4e6f-8a7b-9c0d1e2f3a4b';
 
 describe('M04-B2.2a boundary', () => {
-  it('exposes exactly the documented routes, none that switches an account on, changes or deletes one, or moves money', () => {
+  it('exposes exactly the documented routes, none that changes or deletes an account or moves money (the receiving switch is the only change)', () => {
     const controller = codeOf('finance-access/finance-access.controller.ts');
     expect(controller).toContain("@Controller('admin/finance')");
     expect(controller).not.toMatch(/SessionAuthGuard|AuthPrincipal/);
@@ -26,6 +26,7 @@ describe('M04-B2.2a boundary', () => {
       "@Get('bank-accounts')",
       "@Get('bank-accounts/:account_id')",
       "@Post('bank-accounts')",
+      "@Post('bank-accounts/:account_id/receiving')",
     ]);
     expect(controller).not.toMatch(/@(Put|Patch|Delete)\(/);
   });

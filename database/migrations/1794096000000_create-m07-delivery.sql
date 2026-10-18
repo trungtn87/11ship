@@ -7,9 +7,10 @@
 -- orphans) and REPLACES two functions (the hold source gate and the ledger source gate, same names and signatures, so their triggers keep firing).
 -- Nothing is dropped, truncated or rewritten; no CASCADE; earlier migrations are not edited.
 --
--- How the gates open (the plan written in the M04 migrations): in ONE transaction (1) assert wallet_holds and the ledger are still empty, (2) add the
--- typed foreign key / column to the new source table, (3) replace the gate so it accepts exactly a row whose source exists for the same driver and
--- amount. A WITHDRAWAL hold and every ledger kind other than COMMISSION_DEBIT stay refused. Reserve / capture / release move money only through
+-- How the gates open (the plan written in the M04 migrations): in ONE transaction (1) assert the compatibility of the existing data (no hold; the ledger holds
+-- only TOPUP rows with their topup record, which M04-B2.2b already allows: those rows, balances and history are kept untouched), (2) add the typed foreign key /
+-- column to the new source table, (3) replace the gates so they accept exactly a row whose source exists for the same driver and amount (the ledger gate keeps
+-- TOPUP and adds COMMISSION_DEBIT). A WITHDRAWAL hold and every ledger kind other than TOPUP and COMMISSION_DEBIT stay refused. Reserve / capture / release move money only through
 -- these gates and the deferred checks below, so no commission can be held without an ACTIVE assignment, debited without a CAPTURED hold, or
 -- forgotten when an assignment ends.
 
@@ -401,10 +402,20 @@ ALTER TABLE app.shipping_fee_agreements ADD CONSTRAINT shipping_fee_agreements_d
 -- ---------------------------------------------------------------------------------------------------
 -- M04-A2.2: the commission hold and the commission debit become writable (and nothing else)
 -- ---------------------------------------------------------------------------------------------------
+-- Compatibility, not emptiness: money may already be in the ledger, but ONLY what the earlier gates allowed. The hold table must be empty (no hold could be
+-- written before this migration), and every ledger row must be a TOPUP backed by its topup record (the only kind the gate admitted since M04-B2.2b). Anything else
+-- means the database is not in a state this migration understands, and it refuses WITHOUT touching a row. Existing TOPUP rows, balances and history are kept as they are.
 DO $guard$
+DECLARE
+  bad_kinds text;
 BEGIN
-  IF EXISTS (SELECT 1 FROM app.wallet_holds) OR EXISTS (SELECT 1 FROM app.wallet_ledger_entries) THEN
-    RAISE EXCEPTION 'M07_MIGRATION_REFUSED: the hold table and the ledger must still be empty' USING ERRCODE = 'integrity_constraint_violation';
+  IF EXISTS (SELECT 1 FROM app.wallet_holds) THEN
+    RAISE EXCEPTION 'M07_MIGRATION_REFUSED: holds exist but no hold source existed before this migration' USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+  SELECT string_agg(DISTINCT entry_kind, ', ') INTO bad_kinds FROM app.wallet_ledger_entries
+   WHERE entry_kind <> 'TOPUP' OR topup_id IS NULL OR NOT EXISTS (SELECT 1 FROM app.wallet_topups t WHERE t.topup_id = wallet_ledger_entries.topup_id AND t.wallet_id = wallet_ledger_entries.wallet_id AND t.actual_amount_vnd = wallet_ledger_entries.delta_vnd);
+  IF bad_kinds IS NOT NULL THEN
+    RAISE EXCEPTION 'M07_MIGRATION_REFUSED: ledger rows other than TOPUP with a topup record exist (%)', bad_kinds USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 END
 $guard$;
@@ -438,11 +449,18 @@ BEGIN
 END;
 $$;
 
--- The ledger gate: only a COMMISSION_DEBIT whose hold for the same assignment and wallet is already CAPTURED in this transaction, for exactly the
--- held amount. Every other kind (topup, withdrawal, adjustment) is still refused with the same message as before.
+-- The ledger gate keeps what main opened (M04-B2.2b: a TOPUP row whose topup record exists for the same wallet and the same amount) and opens ONE more kind: a
+-- COMMISSION_DEBIT whose hold for the same assignment and wallet is already CAPTURED, for exactly the held amount. Every other kind (WITHDRAWAL_DEBIT,
+-- ADJUSTMENT_CREDIT, ADJUSTMENT_DEBIT) and every row without its own source is refused with the same error as before.
 CREATE OR REPLACE FUNCTION app.wallet_ledger_source_gate() RETURNS trigger
   LANGUAGE plpgsql AS $$
 BEGIN
+  IF NEW.entry_kind = 'TOPUP' AND NEW.topup_id IS NOT NULL AND EXISTS (
+       SELECT 1 FROM app.wallet_topups t
+        WHERE t.topup_id = NEW.topup_id AND t.wallet_id = NEW.wallet_id AND t.actual_amount_vnd = NEW.delta_vnd
+     ) THEN
+    RETURN NEW;
+  END IF;
   IF NEW.entry_kind = 'COMMISSION_DEBIT' AND NEW.commission_assignment_id IS NOT NULL AND EXISTS (
        SELECT 1
          FROM app.wallet_holds h
@@ -453,7 +471,7 @@ BEGIN
           AND h.amount_vnd = -NEW.delta_vnd) THEN
     RETURN NEW;
   END IF;
-  RAISE EXCEPTION 'WALLET_LEDGER_SOURCE_NOT_AVAILABLE: a ledger row needs a valid business source and none exists yet'
+  RAISE EXCEPTION 'WALLET_LEDGER_SOURCE_NOT_AVAILABLE: a ledger row needs a valid business source and none exists for it'
     USING ERRCODE = 'restrict_violation';
 END;
 $$;
@@ -503,7 +521,7 @@ CREATE CONSTRAINT TRIGGER wallet_ledger_commission_capture AFTER INSERT ON app.w
 
 -- Down Migration
 -- Only for disposable test or experimental databases. Reverse order; no CASCADE and no IF EXISTS: it fails loudly on drift.
--- Safety latch: delivery history and the money it moved are never dropped. Everything is locked first so no row can appear between the check and the
+-- Safety latch: delivery history and the money it moved are never dropped (TOPUP money posted before or after this migration is not delivery history and stays untouched). Everything is locked first so no row can appear between the check and the
 -- DROP; the down migration is refused, with the data untouched, if ANY delivery, assignment, event, incident, position, commission hold or commission
 -- debit exists.
 LOCK TABLE app.deliveries, app.delivery_assignments, app.delivery_events, app.delivery_incidents, app.shipper_latest_locations, app.wallet_holds, app.wallet_ledger_entries, app.shipping_fee_agreements IN ACCESS EXCLUSIVE MODE;
@@ -525,11 +543,17 @@ DROP TRIGGER wallet_holds_commission_capture ON app.wallet_holds;
 DROP FUNCTION app.wallet_commission_ledger_trigger();
 DROP FUNCTION app.wallet_commission_hold_trigger();
 DROP FUNCTION app.wallet_commission_capture_assert(uuid);
--- Back to the closed gates, byte for byte.
+-- Back to the gates of main: the ledger gate keeps accepting TOPUP with its topup record (M04-B2.2b, byte for byte) and refuses everything else; the hold gate is closed.
 CREATE OR REPLACE FUNCTION app.wallet_ledger_source_gate() RETURNS trigger
   LANGUAGE plpgsql AS $$
 BEGIN
-  RAISE EXCEPTION 'WALLET_LEDGER_SOURCE_NOT_AVAILABLE: a ledger row needs a valid business source and none exists yet'
+  IF NEW.entry_kind = 'TOPUP' AND NEW.topup_id IS NOT NULL AND EXISTS (
+       SELECT 1 FROM app.wallet_topups t
+        WHERE t.topup_id = NEW.topup_id AND t.wallet_id = NEW.wallet_id AND t.actual_amount_vnd = NEW.delta_vnd
+     ) THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'WALLET_LEDGER_SOURCE_NOT_AVAILABLE: a ledger row needs a valid business source and none exists for it'
     USING ERRCODE = 'restrict_violation';
 END;
 $$;

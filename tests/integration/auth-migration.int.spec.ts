@@ -5,7 +5,7 @@ import { SHIPPER_DOWN_SQL, SHIPPER_UP_SQL } from './support/shipper-migration-sq
 import { V11_DOWN_SQL, V11_UP_SQL } from './support/shipping-v11-migration-sql';
 import { ELIGIBILITY_DOWN_SQL, ELIGIBILITY_UP_SQL } from './support/shipping-eligibility-migration-sql';
 import { FEE_POLICY_DOWN_SQL, FEE_POLICY_UP_SQL } from './support/shipping-fee-policy-migration-sql';
-import { WALLET_DOWN_SQL, WALLET_UP_SQL, FINANCE_DOWN_SQL, FINANCE_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
+import { WALLET_DOWN_SQL, WALLET_UP_SQL, FINANCE_DOWN_SQL, FINANCE_UP_SQL, POSTING_DOWN_SQL, POSTING_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
 import { M07_DOWN_SQL, M07_UP_SQL } from './support/m07-migration-sql';
 import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
 import { SMS_GATEWAY_DOWN_SQL, SMS_GATEWAY_UP_SQL } from './support/sms-gateway-migration-sql';
@@ -148,7 +148,7 @@ describe('M01-A1 — Auth Core migration', () => {
       '1793404800000_create-driver-wallet-core',
       '1793491200000_create-wallet-holds',
       '1793577600000_create-wallet-topup-sources',
-      '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_create-m07-delivery',
+      '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_open-topup-ledger-gate', '1794096000000_create-m07-delivery',
     ]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });
@@ -251,6 +251,7 @@ describe('M01-A1 — Auth Core migration', () => {
       // tables, the admin tables and the account origin are the newest: they go down before everything else.
       // The M01.02 customer tables reference app.users and are the very newest: they go down first and come back up last.
       await client.query(M07_DOWN_SQL); // M07: references users, shops, drivers, wallets and fee agreements: the very newest, down first, up last
+      await client.query(POSTING_DOWN_SQL); // M04-B2.2b: replaces one function and needs the topup tables: newest, down first, up last
       await client.query(FINANCE_DOWN_SQL); // M04-B2.2a: newest, down first, up last
       await client.query(V11_DOWN_SQL); // M06 v1.1: references app.users, the very newest: down first, up last
       await client.query(FEE_POLICY_DOWN_SQL); // M06-A: references app.users: down first, up last
@@ -308,6 +309,7 @@ describe('M01-A1 — Auth Core migration', () => {
       await client.query(FEE_POLICY_UP_SQL);
       await client.query(V11_UP_SQL);
       await client.query(FINANCE_UP_SQL);
+      await client.query(POSTING_UP_SQL);
       await client.query(M07_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES].sort());
     } finally {

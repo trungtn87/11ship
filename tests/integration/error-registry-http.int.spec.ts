@@ -112,9 +112,10 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 4 shipping fee policy codes (M06-A) + 1 eligibility parameters code (M06-B/C)
     // + 4 Shipper top-up request codes (M04-B2.1: TOPUP_AMOUNT_BELOW_MINIMUM, TOPUP_RECEIVING_ACCOUNT_NOT_CONFIGURED, TOPUP_REQUEST_NOT_FOUND, TOPUP_REQUEST_STATE_CONFLICT)
     // + 5 finance access / receiving account codes (M04-B2.2a: FINANCE_ADMIN_NOT_FOUND, FINANCE_GRANT_STATE_CONFLICT, FINANCE_VERSION_CONFLICT, FINANCE_BANK_ACCOUNT_EXISTS, FINANCE_BANK_ACCOUNT_NOT_FOUND)
+    // + 4 top-up posting codes (M04-B2.2b: TOPUP_ACCOUNT_NOT_RECEIVING, BANK_TRANSACTION_ALREADY_RECORDED, TOPUP_WALLET_LIMIT_EXCEEDED, FINANCE_BANK_ACCOUNT_STATE_CONFLICT)
     // + 13 delivery codes (M07: DELIVERY_*, FEE_*, DESTINATION_NOT_CONFIRMED, ... see app-errors.ts)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(122);
+    expect(codes).toHaveLength(126);
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(19);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);
     expect(codes).toContain('TRANSACTION_OUTCOME_UNKNOWN');

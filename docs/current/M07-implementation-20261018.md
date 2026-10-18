@@ -9,7 +9,7 @@ Nguồn: `11Ship-M07-Functional-Approved-UI-v1.0.md` (Owner duyệt chức năng
 | 1 | M07 ghi bán kính 5 km; M06 v1.1 (18/10, Owner khóa) ghi 3 km | Dùng `SHIPPER_SEARCH_RADIUS_M` của M06 (3000 m). Không thêm hằng số thứ hai |
 | 2 | Ảnh bộ thiết kế `Design-UI-LOCKED-v1.0.zip` không có trong tệp đính kèm | UI làm theo văn bản (mục 8–10 của tài liệu M07) và component hiện có; nếu zip khác văn bản thì sửa sau |
 | 3 | M04-A2.2 (reserve/capture/release hoa hồng) và nguồn ledger hoa hồng chưa tồn tại | Làm trong migration M07.03 theo lộ trình đã ghi ở migration M04 (assert bảng rỗng → FK → thay cổng nguồn). Chỉ mở nguồn `COMMISSION`; `WITHDRAWAL`/`TOPUP` vẫn đóng |
-| 4 | Chưa có đường ghi tiền vào ví (M04-B2/B3 nạp tiền chưa làm) | Ví thật chưa có số dư ⇒ eligibility trả `BALANCE_TOO_LOW`/`WALLET_UNAVAILABLE`: **chưa shipper thật nào nhận được đơn** cho tới khi M04-B nạp tiền. Test dùng nạp trực tiếp bằng quyền DB của test, không phải đường sản phẩm |
+| 4 | Đường nạp tiền: M04-B2.2b (đã trên main) cho Admin xác nhận nạp và ghi sổ TOPUP; M04-B3 (UI Admin tài chính) và rút tiền (M04-C) chưa có | Shipper có số dư qua nạp thật (yêu cầu nạp của shipper → Admin có quyền `wallet.topup.record` xác nhận) thì nhận được đơn. Chưa kiểm chứng trên thiết bị/UI Admin tài chính. WITHDRAWAL/ADJUSTMENT vẫn bị cổng ledger chặn |
 | 5 | Hoa hồng: ADR-004 ghi 1.000 VND/đơn thành công, snapshot theo assignment | Hằng số `COMMISSION_VND = 1000`, chốt vào `delivery_assignments.commission_vnd` và hold; capture dùng số đã chốt |
 | 6 | M06 cần xác nhận của khách khi khách trả phí và mức khác bảng giá, nhưng chưa có app khách | Quán ghi nhận "khách đã đồng ý" (hành động CUSTOMER do quán chuyển lời, có audit). Cần Owner xác nhận cách này |
 | 7 | M10 (Order), M08 (push), M11 (phản ánh) chưa có | Adapter rõ ràng: tạo từ Order trả `ORDER_MODULE_NOT_READY`; sự kiện đi qua outbox (M08 đọc sau); chuyển M11 chỉ ghi dấu `m11_referred_at` + audit, không giả lập ticket |
@@ -66,9 +66,9 @@ offer: { delivery_id, code, shop: { name, area_text }, distance_to_shop_m|null, 
 
 Vị trí (`freshness`): `LIVE` ≤ 120 s, `STALE` ≤ 600 s, `LOST` sau đó (hoặc M14 báo không hợp lệ). Luôn trả `recorded_at`. Chỉ quán chủ delivery, shipper đang giữ assignment `ACTIVE`, hoặc Admin đọc được; hủy nhận/kết thúc/đổi assignment làm `location` = null ngay.
 
-## 6. Dữ liệu (migration `1794009600000_create-m07-delivery.sql`)
+## 6. Dữ liệu (migration `1794096000000_create-m07-delivery.sql`)
 
-`app.deliveries`, `app.delivery_assignments` (ETA gốc bất biến, hoa hồng chốt), `app.delivery_events` (chỉ thêm), `app.delivery_incidents`, `app.shipper_latest_locations` (một dòng/shipper, ghi đè, không lịch sử). Mở cổng hold COMMISSION và ledger COMMISSION_DEBIT theo lộ trình M04. Không xóa cứng nghiệp vụ; trigger chặn DELETE/TRUNCATE.
+`app.deliveries`, `app.delivery_assignments` (ETA gốc bất biến, hoa hồng chốt), `app.delivery_events` (chỉ thêm), `app.delivery_incidents`, `app.shipper_latest_locations` (một dòng/shipper, ghi đè, không lịch sử). Mở cổng hold COMMISSION và thêm COMMISSION_DEBIT vào cổng ledger (giữ nguyên TOPUP đã mở bởi `1794009600000_open-topup-ledger-gate`; WITHDRAWAL/ADJUSTMENT vẫn bị chặn). Không xóa cứng nghiệp vụ; trigger chặn DELETE/TRUNCATE.
 
 ## 7. Chưa nối / chặn thật
 
@@ -78,5 +78,8 @@ Xem mục 1 (#3, #4, #6, #7, #8). Báo cáo bàn giao ghi lại phần nào đã
 
 - `reprice` (tính lại phí do quán yêu cầu) **chưa làm**: quán gọi lại (`recall`) thì giao mới được tính phí lại; hằng `OPERATIONS.reprice` chỉ để dành tên.
 - Khoá FK: `shipping_fee_agreements.delivery_id → deliveries` (M06 trước đó chưa có bảng giao hàng); các test M04/M06 đã được cập nhật dùng dòng giao hàng/assignment thật (`tests/integration/support/delivery-fixtures.ts`).
-- M04-A2.2 nằm trong migration M07: hold COMMISSION chỉ ghi được khi có assignment ACTIVE; ghi sổ COMMISSION_DEBIT chỉ khi hold đã CAPTURED, đúng một lần.
-- Kiểm thử: `tests/integration/m07-delivery.int.spec.ts` chạy trên PostgreSQL thật với dịch vụ định tuyến M14 là một HTTP server cục bộ thật; ví Shipper được nạp bằng ghi sổ thử nghiệm (đường tiền vào M04-B2/B3 chưa có).
+- M04-A2.2 nằm trong migration M07: hold COMMISSION chỉ ghi được khi có assignment ACTIVE; ghi sổ COMMISSION_DEBIT chỉ khi hold đã CAPTURED, đúng một lần. `app.wallet_ledger_source_gate()` được hợp nhất: TOPUP (có `wallet_topups` cùng ví, cùng số tiền, như main) **hoặc** COMMISSION_DEBIT hợp lệ; mọi loại khác bị chặn như trước.
+- Thứ tự migration: sau `1794009600000_open-topup-ledger-gate` của main nên M07 là `1794096000000_create-m07-delivery.sql` (chưa môi trường nào áp dụng tên cũ; nếu sau này có, phải chuyển tiếp bằng migration mới chứ không đổi lịch sử).
+- Điều kiện nâng cấp: migration **không** đòi ledger rỗng. Nó chỉ yêu cầu bảng hold rỗng và mọi dòng ledger là TOPUP có bản ghi nạp khớp ví/số tiền; nếu không, từ chối `M07_MIGRATION_REFUSED` và không đụng dữ liệu. Dòng TOPUP, số dư và lịch sử được giữ nguyên.
+- Down: chỉ khi không có dòng giao hàng/hoa hồng (safety latch `M07_DOWN_REFUSED`); khôi phục cổng ledger về đúng bản của main (vẫn nhận TOPUP), cổng hold về đóng; tiền TOPUP không bị đụng.
+- Kiểm thử: `tests/integration/m07-delivery.int.spec.ts` (23 test, luồng nghiệp vụ; dịch vụ định tuyến M14 là HTTP server cục bộ thật; ví nạp bằng ghi sổ thử nghiệm) và `tests/integration/m07-topup-upgrade.int.spec.ts` (7 test: gỡ M07 bằng Down, nạp TOPUP thật qua Shipper → Admin xác nhận, áp M07, so sánh nguyên trạng, nạp tiếp, nhận đơn/giữ hoa hồng/hoàn thành trừ một lần/hủy/thất bại giải phóng, nguồn ledger sai bị chặn, Down bị chốt chặn).

@@ -9,7 +9,7 @@ Mã nguồn: PR #133, nhánh `ccr-20044309-7dr277`. Bản APK (11Food / 11Ship),
 | Bảng phí giao hàng đã áp dụng (M06, Admin → Phí giao hàng) | Không có bảng phí thì phí hiện "Chưa xác định phí" và không lấy hàng được | Phải làm trên môi trường thử |
 | Một quán ACTIVE có toạ độ lấy hàng, đăng nhập 11Food bằng tài khoản chủ quán | Điểm lấy hàng = toạ độ quán | Có sẵn nếu M02 đã dùng |
 | Một shipper ACTIVE, đã duyệt, **ngân hàng đã xác minh**, bật "Nhận đơn", đăng nhập 11Ship, mở màn hình đơn để app gửi vị trí | Điều kiện nhận đơn của M03/M06 | Cần làm |
-| **Số dư ví shipper ≥ hoa hồng (1.000đ) + ngưỡng M06** | Nhận đơn giữ hoa hồng | **Chưa làm thật được**: đường nạp ví M04-B2/B3 chưa đủ (B2.2b đang ở PR khác). Tới khi có, chỉ thử được bằng nạp thử nghiệm trên DB, không dùng cho môi trường vận hành |
+| **Số dư ví shipper ≥ hoa hồng (1.000đ) + ngưỡng M06** | Nhận đơn giữ hoa hồng | Dùng đường nạp thật của M04-B2.2b: shipper tạo yêu cầu nạp (11Ship → Ví), Admin có quyền ghi nạp (`wallet.topup.record`) xác nhận theo sao kê và có tài khoản nhận đang bật. UI Admin tài chính (M04-B3) và rút tiền (M04-C) chưa có |
 | Dịch vụ định tuyến M14 (`M14_ROUTING_ORIGIN`) | Tính phí/khoảng cách; không có thì phí "Chưa xác định" | Cần cấu hình |
 
 ## Luồng thử (quán gọi → shipper nhận → lấy hàng → kết quả)
@@ -28,11 +28,11 @@ Mã nguồn: PR #133, nhánh `ccr-20044309-7dr277`. Bản APK (11Food / 11Ship),
 
 ## Chưa chạy thật được (thiếu phụ thuộc hoặc chưa kiểm chứng)
 
-- **Đường nạp ví M04 (B2/B3)**: chưa có ⇒ shipper thật chưa thể có số dư để nhận đơn. Các kiểm thử tích hợp nạp ví bằng bút toán thử nghiệm trong DB thử.
+- **Nạp ví**: đường nạp thật (yêu cầu của shipper + Admin xác nhận qua API) đã được kiểm thử tích hợp cùng M07, nhưng **chưa thử trên thiết bị và chưa có UI Admin tài chính (M04-B3)**; rút tiền (M04-C) chưa có.
 - **Đơn từ M10 (Order)**, **thông báo M08**, **tranh chấp M11**: chưa nối; chỉ luồng gọi trực tiếp từ quán chạy thật.
 - **Tính lại phí theo yêu cầu quán (reprice)**: chưa làm; gọi lại tạo giao mới và tính phí lại.
 - **GPS/thiết bị thật**, **bản đồ trong 11Food** (không có bản đồ), **bản đồ Admin** (chỉ toạ độ), **ghép đơn ở quy mô lớn** (cần `/matrix` của M14): chưa kiểm chứng.
-- **Kiểm thử cơ sở dữ liệu**: chạy cục bộ trên PostgreSQL 18.4 (không có 17 trong môi trường làm việc). 3 kiểm thử cũ khác biệt do hành vi PostgreSQL 18, không do M07; CI dùng PostgreSQL 17.11 là cổng chính thức.
+- **Kiểm thử cơ sở dữ liệu**: chạy cục bộ trên PostgreSQL 18.4 (không cài được 17 trong môi trường làm việc). 3 kiểm thử cũ khác biệt do hành vi PostgreSQL 18, không do M07; CI dùng PostgreSQL 17.11 là cổng chính thức.
 
 ## Quyết định cần Owner xác nhận
 
