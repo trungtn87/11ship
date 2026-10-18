@@ -628,3 +628,29 @@ jobs:
         if: ${{ always() && hashFiles('.test-results/launcher-behaviour.log') != '' }}
         shell: bash
         run: echo "::notice title=Launcher behaviour (Windows PowerShell 5.1)::$(grep -E '^(POWERSHELL|SUMMARY|SKIP|     run record)' .test-results/launcher-behaviour.log | tr '\n' ';')"
+
+  oneclick-linux:
+    name: One-click deploy (Ubuntu state machine)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: bash -n scripts/deploy/deploy-vps.sh
+      - run: node --test tests/oneclick/*.test.mjs
+
+  oneclick-windows:
+    name: One-click deploy (${{ matrix.shell }})
+    runs-on: windows-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v4
+      - name: PowerShell parser and offline deployment contracts
+        shell: ${{ matrix.shell }}
+        run: .\tests\oneclick\windows.ps1

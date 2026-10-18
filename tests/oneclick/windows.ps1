@@ -47,7 +47,7 @@ Assert ((Wait-Deployment ('d'*32)).status -eq 'unchanged') 'no-new-version healt
 $work=Join-Path ([IO.Path]::GetTempPath()) ('11ship-test-'+[Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $work | Out-Null
 try {
-  function Invoke-WebRequest {param($UseBasicParsing,$Uri,$Headers,$MaximumRedirection,$TimeoutSec,$OutFile)
+  function Invoke-WebRequest {param([switch]$UseBasicParsing,$Uri,$Headers,$MaximumRedirection,$TimeoutSec,$OutFile)
     if($OutFile){[IO.File]::WriteAllText($OutFile,'tampered');return}
     return [pscustomobject]@{StatusCode=302;Headers=@{Location='https://fixture.blob.core.windows.net/artifact'}}
   }

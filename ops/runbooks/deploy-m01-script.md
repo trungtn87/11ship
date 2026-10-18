@@ -47,4 +47,4 @@ Sau đó chuyển symlink atomic, restart `11ship-staging`, kiểm readiness n�
 
 ## Kiểm chứng
 
-Workflow `One-click deploy contracts`: parser và hành vi offline trên Windows PowerShell 5.1/PowerShell 7; state machine Bash và policy trên Ubuntu với filesystem thật và doubles của OS/DB/network. Bao phủ no-op, CI đỏ, required check thiếu, artifact sai SHA, checksum/manifest sai, mất SSH, backup lỗi, migration lỗi, service/health lỗi, rollback. CI artifact hiện hữu kiểm bundle/native module. Không có kiểm thử production hoặc nghiệm thu bằng máy Windows của Owner trước khi chạy thật; không dùng mock để tuyên bố đã deploy.
+Các job `One-click deploy` trong workflow CI hiện có: parser và hành vi offline trên Windows PowerShell 5.1/PowerShell 7; state machine Bash và policy trên Ubuntu với filesystem thật và doubles của OS/DB/network. Bao phủ no-op, CI đỏ, required check thiếu, artifact sai SHA, checksum/manifest sai, mất SSH, backup lỗi, migration lỗi, service/health lỗi, rollback. CI artifact hiện hữu kiểm bundle/native module. Không có kiểm thử production hoặc nghiệm thu bằng máy Windows của Owner trước khi chạy thật; không dùng mock để tuyên bố đã deploy.
