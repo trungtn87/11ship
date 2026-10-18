@@ -72,7 +72,7 @@ const SPA_ROUTES: readonly RegExp[] = Object.freeze([
   new RegExp(`^/invitations/${UUID}/(?:reissue|revoke)$`),
   // M04 Tài chính (UI only): list pages, the two detail pages (a UUID, nothing else) and the wallet parameters page.
   /^\/finance$/,
-  /^\/finance\/(?:wallets|topups|withdrawals|transactions|reconciliation)$/,
+  /^\/finance\/(?:wallets|topups|withdrawals|transactions|reconciliation|bank-accounts)$/,
   new RegExp(`^/finance/(?:topups|withdrawals)/${UUID}$`),
   /^\/system\/parameters\/wallet$/,
 ]);

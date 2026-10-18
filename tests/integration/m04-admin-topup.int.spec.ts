@@ -443,4 +443,31 @@ describe('M04-B2.2b — Admin top-up reconciliation and TOPUP posting', () => {
     expect(adminErrorCode(await confirm(recorderLogin, s.requestId, body, key))).not.toBe(undefined);
     expect(await ledgerOf(s.walletId)).toHaveLength(1);
   });
+
+  it('11. the receiving-account projection for the confirmation: SYSTEM and the record right only, number masked, no holder, no mutation', async () => {
+    const path = '/finance/topup-receiving-accounts';
+    expect((await get(undefined, path)).status).toBe(401);
+    for (const who of [bareLogin, readerLogin]) {
+      expect(code(await get(who, path))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' }); // not even the read right opens it
+    }
+    expect(code(await get(recorderLogin, `${path}?x=1`))).toEqual({ status: 400, code: 'ADMIN_INPUT_INVALID' });
+    const before = await countRows(admin.pool, 'SELECT 1 FROM app.audit_logs');
+    for (const who of [recorderLogin, systemLogin()]) {
+      const response = await get(who, path);
+      expect(response.status).toBe(200);
+      const accounts = adminData(response).accounts as Array<Record<string, unknown>>;
+      const mine = accounts.find((item) => item.account_id === account.id);
+      expect(mine).toEqual({ account_id: account.id, bank_id: 'VCB', account_number_masked: `****${account.number.slice(-4)}`, can_receive: true });
+      for (const item of accounts) {
+        expect(Object.keys(item).sort()).toEqual(['account_id', 'account_number_masked', 'bank_id', 'can_receive']);
+      }
+      expect(response.text).not.toContain(account.number);
+      expect(response.text).not.toContain(SECRET_HOLDER);
+    }
+    expect(await countRows(admin.pool, 'SELECT 1 FROM app.audit_logs')).toBe(before); // a read writes nothing
+    // Revoked right: gone at once.
+    expect((await changeGrant('revoke', recorder.userId, RECORD, 3)).status).toBe(200);
+    expect(code(await get(recorderLogin, path))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
+    expect((await changeGrant('grant', recorder.userId, RECORD, 4)).status).toBe(200);
+  });
 });
