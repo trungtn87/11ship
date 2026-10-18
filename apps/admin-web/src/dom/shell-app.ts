@@ -125,14 +125,14 @@ export class ShellApp implements ShellHost {
     private readonly shippers: ShipperSource = NOT_WIRED_SHIPPERS,
     /** Where the finance pages (M04) come from. By default nothing is wired, so every page says so and every money button is disabled. */
     private readonly finance: FinanceSource = NOT_WIRED_FINANCE,
+    /** Where the notifications (Vận hành › Thông báo, M08.06) come from. By default nothing is wired, so the page says so. */
+    private readonly notifications: NotificationSource = NOT_WIRED_NOTIFICATIONS,
     /** Where the shipping-fee table (Phí & điều kiện giao, M06-A) comes from. By default nothing is wired, so the page says so. */
     private readonly shipping: ShippingPolicySource = NOT_WIRED_SHIPPING,
     /** Where the deliveries (Vận hành › Giao hàng, M07.07) come from. By default nothing is wired, so the page says so. */
     private readonly deliveries: DeliverySource = NOT_WIRED_DELIVERIES,
     /** Where the REAL finance pages (M04-B3a: top-up requests, receiving accounts, finance rights) come from. By default nothing is wired and no page shows data. */
     private readonly financeAdmin: FinanceAdminSource = NOT_WIRED_FINANCE_ADMIN,
-    /** Where the notifications (Vận hành › Thông báo, M08.06) come from. By default nothing is wired, so the page says so. */
-    private readonly notifications: NotificationSource = NOT_WIRED_NOTIFICATIONS,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
