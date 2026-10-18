@@ -264,7 +264,7 @@ class _MineCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ({String label, ChipKind kind}) chip = m07StateChip(delivery.state);
+    final ({String label, ChipKind kind}) chip = _ownChip(delivery) ?? m07StateChip(delivery.state);
     final bool missing = delivery.state.isActive && (delivery.needsDestination || delivery.fee.amountVnd == null) && delivery.state != DeliveryState.delivering;
     return InkWell(
       key: Key('m07-mine-${delivery.deliveryId}'),
@@ -284,6 +284,19 @@ class _MineCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// What happened to THIS Shipper's part when the delivery ended without them finishing it (null: show the delivery's own state).
+({String label, ChipKind kind})? _ownChip(DeliveryView d) {
+  switch (d.ownOutcome) {
+    case 'released':
+      return (label: 'Bạn đã hủy nhận', kind: ChipKind.neutral);
+    case 'released_by_admin':
+      return (label: 'Admin đã gỡ bạn khỏi đơn', kind: ChipKind.warn);
+    case 'cancelled_by_shop':
+      return (label: 'Quán đã hủy yêu cầu giao', kind: ChipKind.neutral);
+  }
+  return null;
 }
 
 // ---- S03 / S06 / S08: detail -----------------------------------------------------------------------------------------

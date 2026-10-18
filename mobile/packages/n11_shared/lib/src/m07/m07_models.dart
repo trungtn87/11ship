@@ -309,6 +309,7 @@ class DeliveryView {
     this.orderId,
     this.previousDeliveryId,
     required this.state,
+    this.ownOutcome,
     required this.version,
     required this.pickup,
     required this.recipient,
@@ -334,6 +335,7 @@ class DeliveryView {
       orderId: _strOrNull(m['order_id']),
       previousDeliveryId: _strOrNull(m['previous_delivery_id']),
       state: deliveryStateOf(_str(m['state'])),
+      ownOutcome: _strOrNull(m['own_outcome']),
       version: _int(m['version']),
       pickup: PickupView.fromJson(m['pickup']),
       recipient: RecipientView.fromJson(m['recipient']),
@@ -358,6 +360,10 @@ class DeliveryView {
   final String? orderId;
   final String? previousDeliveryId;
   final DeliveryState state;
+
+  /// Only in the Shipper's own history, when the delivery ended without this Shipper finishing it: `released` (they gave it back), `released_by_admin`
+  /// or `cancelled_by_shop`. The delivery's own state is then what happened to the delivery, not to this Shipper.
+  final String? ownOutcome;
   final int version;
   final PickupView pickup;
   final RecipientView recipient;
@@ -399,6 +405,7 @@ class DeliveryView {
         orderId: orderId,
         previousDeliveryId: previousDeliveryId,
         state: state ?? this.state,
+        ownOutcome: ownOutcome,
         version: version ?? this.version,
         pickup: pickup,
         recipient: recipient ?? this.recipient,

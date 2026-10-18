@@ -1,0 +1,58 @@
+{
+ "data": {
+  "deliveries": [
+   {
+    "delivery_id": "f43876b2-8328-4663-9942-425f0c6ab23a",
+    "code": "G-H7JWQK",
+    "source": "DIRECT",
+    "order_id": null,
+    "previous_delivery_id": null,
+    "state": "waiting_driver",
+    "version": 2,
+    "pickup": {
+     "shop_name": "Fixture shop",
+     "phone": "+84900000001",
+     "address_text": "Fixture address",
+     "lat": 21,
+     "lng": 105.8
+    },
+    "recipient": {
+     "name": "Khách nhận",
+     "phone": "+84912345678",
+     "address_text": "12 Phố Huế, Hai Bà Trưng, Hà Nội",
+     "lat": 21,
+     "lng": 105.82
+    },
+    "goods": {
+     "description": "Hộp quà",
+     "value_vnd": 200000,
+     "paid_vnd": 0
+    },
+    "fee": {
+     "mode": "STANDARD",
+     "payer": "CUSTOMER",
+     "amount_vnd": 10000,
+     "status": "FINAL",
+     "distance_m": 2500,
+     "agreement": null
+    },
+    "search": {
+     "started_at": "2026-10-18T03:24:16.999Z",
+     "expires_at": "2026-10-18T03:54:16.999Z",
+     "server_now": "2026-10-18T03:24:17.034Z",
+     "stopped_at": null
+    },
+    "note": null,
+    "assignment": null,
+    "location": null,
+    "result": null,
+    "incident": null,
+    "can": {
+     "cancel": true,
+     "recall": false,
+     "resolve_custody": false
+    }
+   }
+  ]
+ }
+}
