@@ -244,7 +244,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#128](https://github.com/trungtn87/11ship/pull/128) M06: bảng giá ship (A), điều kiện nhận/ghép đơn (B/C), UI 1… | Đã merge (`MERGED`) | — | — | — | `8747e7b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#129](https://github.com/trungtn87/11ship/pull/129) M04-B1: Lõi nguồn tiền nạp và chứng từ ngân hàng (schema, k… | Đã merge (`MERGED`) | — | — | — | `7507583` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#130](https://github.com/trungtn87/11ship/pull/130) M04-B2.1: Shipper tạo, xem, hủy yêu cầu nạp tiền (backend,… | Đã merge (`MERGED`) | — | — | — | `fc90ed7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#131](https://github.com/trungtn87/11ship/pull/131) M04-B2.2a: Quyền tài chính Admin (SYSTEM cấp từng quyền) +… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `7b6b5e6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#131](https://github.com/trungtn87/11ship/pull/131) M04-B2.2a: Quyền tài chính Admin (SYSTEM cấp từng quyền) +… | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `7b6b5e6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
