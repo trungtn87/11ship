@@ -196,6 +196,9 @@ export async function cleanupOrders(app: AuthApp, input: { shopIds: readonly str
     const wallets = `SELECT wallet_id FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[])`;
     await client.query(`DELETE FROM app.wallet_ledger_entries WHERE wallet_id IN (${wallets})`, [drivers]);
     await client.query(`DELETE FROM app.wallet_holds WHERE wallet_id IN (${wallets})`, [drivers]);
+    const assignments = `SELECT assignment_id FROM app.delivery_assignments WHERE delivery_id IN (${deliveries})`;
+    await client.query(`DELETE FROM app.wallet_ledger_entries WHERE commission_assignment_id IN (${assignments})`, [shops, customers]);
+    await client.query(`DELETE FROM app.wallet_holds WHERE commission_assignment_id IN (${assignments})`, [shops, customers]);
     for (const table of ['delivery_incidents', 'delivery_events']) {
       await client.query(`DELETE FROM app.${table} WHERE delivery_id IN (${deliveries})`, [shops, customers]);
     }
