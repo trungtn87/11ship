@@ -88,11 +88,13 @@ describe('ops/selfhosted/02-runtime-grants.sql', () => {
       assert.ok(!(parsed.get(table) ?? []).includes('DELETE'), table);
     }
     assert.deepEqual(parsed.get('user_consents'), ['INSERT', 'SELECT']);
-    // M04-A1: the runtime role can create a zero wallet and read the wallet and the ledger; it cannot change or delete a wallet or write the ledger.
-    assert.deepEqual(parsed.get('driver_wallets'), ['INSERT', 'SELECT']);
-    assert.deepEqual(parsed.get('wallet_ledger_entries'), ['SELECT']);
-    // M04-A2.1: the hold table is read only for the runtime role (no hold can be written before the source tables exist).
-    assert.deepEqual(parsed.get('wallet_holds'), ['SELECT']);
+    // M04-A1 / M07: the runtime role can create and move a wallet and append to the ledger (the commission) but never delete any of them.
+    assert.deepEqual(parsed.get('driver_wallets'), ['INSERT', 'SELECT', 'UPDATE']);
+    assert.deepEqual(parsed.get('wallet_ledger_entries'), ['INSERT', 'SELECT']);
+    // M04-A2: holds are written only through the M07 source gates.
+    assert.deepEqual(parsed.get('wallet_holds'), ['INSERT', 'SELECT', 'UPDATE']);
+    // M07: the delivery history is append-only for the runtime role; nothing of the delivery flow is ever deleted.
+    assert.deepEqual(parsed.get('delivery_events'), ['INSERT', 'SELECT']);
     // M04-B1: the topup sources are read-only too; no table of money can be written by the runtime role yet.
     for (const table of ['system_owned_bank_accounts', 'wallet_bank_transactions', 'wallet_topups']) {
       assert.deepEqual(parsed.get(table), ['SELECT'], table);

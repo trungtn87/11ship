@@ -41,14 +41,15 @@ C. Nối app với API thật, CI, APK.
 
 Quán (phiên SHOP): `POST /v1/shop/me/deliveries` · `GET /v1/shop/me/deliveries?scope=active|history&q=` · `GET /v1/shop/me/deliveries/{id}` · `POST .../{id}/cancel` {reason, expected_version} · `POST .../{id}/recall` · `POST .../{id}/fee/counter-accept|counter-reject|customer-confirm` · `POST .../{id}/custody` {resolution: GOODS_RETURNED|HANDLED_NO_RETURN, note}.
 
-Shipper (phiên DRIVER): `GET /v1/driver/deliveries/offers` · `GET /v1/driver/deliveries/mine?scope=active|history` · `GET /v1/driver/deliveries/{id}` · `POST .../{id}/accept` · `POST .../{id}/release` {reason} · `POST .../{id}/fee/agree|skip|counter` · `POST .../{id}/destination` {lat,lng,fee_vnd?} · `POST .../{id}/pickup` · `POST .../{id}/complete` · `POST .../{id}/fail` {reason_code, note, goods_condition} · `PUT /v1/driver/location` {lat,lng,accuracy_m?} · `GET /v1/driver/deliveries/offers` có `eligible` + `reasons[]`.
+Shipper (phiên DRIVER): `GET /v1/driver/deliveries/offers` → `{offers: [...]}` · `GET /v1/driver/deliveries/mine?scope=active|history` (`active` gồm cả `search_stopped`/`failed` còn sự cố mở của shipper này; `own_outcome` = released | released_by_admin | cancelled_by_shop cho lịch sử của chính shipper) · `GET /v1/driver/deliveries/{id}` · `POST .../{id}/accept` · `POST .../{id}/release` {reason} · `POST .../{id}/fee/agree|skip|counter` · `POST .../{id}/destination` {lat,lng,fee_vnd?} · `POST .../{id}/pickup` · `POST .../{id}/complete` · `POST .../{id}/fail` {reason_code, note, goods_condition} · `PUT /v1/driver/location` {lat,lng,accuracy_m?} · `GET /v1/driver/deliveries/offers` có `eligible` + `reasons[]`.
 
 Admin (phiên admin): `GET /v1/admin/deliveries` · `GET /v1/admin/deliveries/{id}` · `POST /v1/admin/deliveries/{id}/actions/{record-custody|adjust-after-pickup|refer-m11|release-assignment}`.
 
 ### Delivery (quán thấy đủ; shipper trước nhận chỉ thấy `offer`)
 
 ```
-delivery: { delivery_id, code, source: DIRECT|ORDER, order_id|null, previous_delivery_id|null, state, version,
+delivery: { delivery_id, code, source: DIRECT|ORDER, order_id|null, previous_delivery_id|null, state, own_outcome|null, version,
+  pickup: { shop_name, phone, address_text, lat, lng },   // điểm lấy = toạ độ quán (snapshot lúc gọi); shipper chỉ thấy sau khi nhận
   recipient: { name, phone, address_text, lat|null, lng|null },
   goods: { description, value_vnd, paid_vnd, unpaid_vnd },
   fee: { mode: STANDARD|AGREED|PICKUP_AGREEMENT, payer: CUSTOMER|SHOP, amount_vnd|null, status: FINAL|UNKNOWN|PENDING_AGREEMENT|AWAITING_CUSTOMER,
@@ -72,3 +73,10 @@ Vị trí (`freshness`): `LIVE` ≤ 120 s, `STALE` ≤ 600 s, `LOST` sau đó (h
 ## 7. Chưa nối / chặn thật
 
 Xem mục 1 (#3, #4, #6, #7, #8). Báo cáo bàn giao ghi lại phần nào đã chạy thật, phần nào chỉ chạy trong test.
+
+## Ghi chú sau triển khai (18/10/2026)
+
+- `reprice` (tính lại phí do quán yêu cầu) **chưa làm**: quán gọi lại (`recall`) thì giao mới được tính phí lại; hằng `OPERATIONS.reprice` chỉ để dành tên.
+- Khoá FK: `shipping_fee_agreements.delivery_id → deliveries` (M06 trước đó chưa có bảng giao hàng); các test M04/M06 đã được cập nhật dùng dòng giao hàng/assignment thật (`tests/integration/support/delivery-fixtures.ts`).
+- M04-A2.2 nằm trong migration M07: hold COMMISSION chỉ ghi được khi có assignment ACTIVE; ghi sổ COMMISSION_DEBIT chỉ khi hold đã CAPTURED, đúng một lần.
+- Kiểm thử: `tests/integration/m07-delivery.int.spec.ts` chạy trên PostgreSQL thật với dịch vụ định tuyến M14 là một HTTP server cục bộ thật; ví Shipper được nạp bằng ghi sổ thử nghiệm (đường tiền vào M04-B2/B3 chưa có).

@@ -10,7 +10,8 @@ import { poolClientSource } from '../../apps/backend/src/transaction/pg-client-s
 import { WalletRepository } from '../../apps/backend/src/wallet/wallet-repository';
 import { WalletService } from '../../apps/backend/src/wallet/wallet-service';
 import { eventually, failureOf } from './support/async-helpers';
-import { AuthApp, createDriverFor, purgePhone, randomPhone, startAuthApp } from './support/auth-fixtures';
+import { AuthApp, createActiveShopFor, createDriverFor, purgePhone, randomPhone, startAuthApp } from './support/auth-fixtures';
+import { insertCommissionSource, M07_INVARIANT_TRIGGERS } from './support/delivery-fixtures';
 import { loadIntegrationConfig } from './support/test-helpers';
 import { managerFor, testPool } from './support/transaction-fixtures';
 import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
@@ -62,6 +63,8 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
     readonly holdId?: string;
     readonly commissionAssignmentId?: string | null;
     readonly withdrawalId?: string | null;
+    /** Since M07 a commission hold can have a REAL source (assignment, delivery and, for CAPTURED, the ledger debit). Off: the old random id, which the rules must refuse. */
+    readonly real?: boolean;
   }
 
   /** The raw INSERT, exactly as given (a hold not born ACTIVE is refused by the guard). */
@@ -80,12 +83,67 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
   /** A hold as it really comes to exist: born ACTIVE, then (for CAPTURED / RELEASED) moved by the one allowed transition. */
   async function insertHold(client: PoolClient, walletId: string, input: HoldInput): Promise<unknown> {
     const holdId = input.holdId ?? randomUUID();
-    const result = await insertHoldRaw(client, walletId, { ...input, holdId, status: 'ACTIVE' });
-    if (input.status !== undefined && input.status !== 'ACTIVE') {
-      await client.query(`UPDATE app.wallet_holds SET status = $2::varchar, resolved_at = now(), updated_at = now(), version = version + 1 WHERE hold_id = $1::uuid`, [holdId, input.status]);
+    const status = input.status ?? 'ACTIVE';
+    // A commission hold has a REAL source since M07: an assignment in the state that matches the hold's final status. The M07 invariant (delivery,
+    // assignment and hold agree) is deferred around the pair and then checked at once.
+    let commissionAssignmentId = input.commissionAssignmentId;
+    const sourced = input.real === true && (input.purpose ?? 'COMMISSION') === 'COMMISSION' && commissionAssignmentId === undefined;
+    if (sourced) {
+      const owner = await sourceShop();
+      const wallet = await client.query<{ driver_id: string }>('SELECT driver_id FROM app.driver_wallets WHERE wallet_id = $1::uuid', [walletId]);
+      await client.query(`SET CONSTRAINTS ${M07_INVARIANT_TRIGGERS.join(', ')} DEFERRED`);
+      commissionAssignmentId = await insertCommissionSource(client, { ...owner, driverId: (wallet.rows[0] as { driver_id: string }).driver_id, amountVnd: input.amount, outcome: status });
+    }
+    const result = await insertHoldRaw(client, walletId, { ...input, holdId, status: 'ACTIVE', ...(commissionAssignmentId === undefined ? {} : { commissionAssignmentId }) });
+    if (status !== 'ACTIVE') {
+      await client.query(`UPDATE app.wallet_holds SET status = $2::varchar, resolved_at = now(), updated_at = now(), version = version + 1 WHERE hold_id = $1::uuid`, [holdId, status]);
+    }
+    if (sourced && status === 'CAPTURED') {
+      await insertCaptureDebit(client, walletId, commissionAssignmentId as string, input.amount);
+    }
+    if (sourced) {
+      await client.query(`SET CONSTRAINTS ${M07_INVARIANT_TRIGGERS.join(', ')} IMMEDIATE`);
     }
     return result;
   }
+
+  /** A captured hold has exactly one commission debit (the database refuses a capture without it): the next ledger row of the wallet, and the balance follows. */
+  async function insertCaptureDebit(client: PoolClient, walletId: string, assignmentId: string, amount: number): Promise<void> {
+    const last = await client.query<{ sequence_no: string; balance_after_vnd: string }>('SELECT sequence_no, balance_after_vnd FROM app.wallet_ledger_entries WHERE wallet_id = $1::uuid ORDER BY sequence_no DESC LIMIT 1', [walletId]);
+    const previous = last.rows[0] as { sequence_no: string; balance_after_vnd: string };
+    await client.query(
+      `INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at, commission_assignment_id)
+       VALUES ($1::uuid, $2::uuid, $3, 'COMMISSION_DEBIT', $4, $5, now(), $6::uuid)`,
+      [randomUUID(), walletId, Number(previous.sequence_no) + 1, -amount, Number(previous.balance_after_vnd) - amount, assignmentId],
+    );
+    await client.query('UPDATE app.driver_wallets SET balance_vnd = balance_vnd - $2, version = version + 1 WHERE wallet_id = $1::uuid', [walletId, amount]);
+  }
+
+  /** The delivery of an ACTIVE assignment runs to its end: picked up, completed; the assignment completes (the order the database's graph allows). */
+  async function completeSource(client: PoolClient, assignmentId: string): Promise<void> {
+    const delivery = `(SELECT delivery_id FROM app.delivery_assignments WHERE assignment_id = $1::uuid)`;
+    await client.query(`UPDATE app.deliveries SET state = 'delivering', picked_up_at = now(), fee_vnd = 10000, version = version + 1, updated_at = now() WHERE delivery_id = ${delivery}`, [assignmentId]);
+    await client.query(`UPDATE app.deliveries SET state = 'completed', ended_at = now(), version = version + 1, updated_at = now() WHERE delivery_id = ${delivery}`, [assignmentId]);
+    await client.query(`UPDATE app.delivery_assignments SET status = 'COMPLETED', ended_at = now(), end_actor = 'SHIPPER', version = version + 1, updated_at = now() WHERE assignment_id = $1::uuid`, [assignmentId]);
+  }
+
+  /** The one shop (and its owner) that the commission sources of this suite hang from; removed with its owner's phone after the Shippers. */
+  let shopOwner: { shopId: string; userId: string } | undefined;
+  async function sourceShop(): Promise<{ shopId: string; userId: string }> {
+    if (shopOwner === undefined) {
+      const phone = randomPhone();
+      shopPhone = phone.normalized;
+      const userId = randomUUID();
+      await pool.query(
+        `INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at)
+         VALUES ($1::uuid, $2, '$argon2id$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA', now(), 'PHONE_VERIFIED', 'ACTIVE', 1, now(), now())`,
+        [userId, phone.normalized],
+      );
+      shopOwner = { shopId: await createActiveShopFor(pool, userId), userId };
+    }
+    return shopOwner;
+  }
+  let shopPhone: string | undefined;
 
   /**
    * A wallet with 100000 VND in its ledger, inside a transaction that is ALWAYS rolled back, with both source gates lifted for this
@@ -135,6 +193,9 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
     try {
       for (const phone of phonesToPurge) {
         await purgePhone(pool, phone);
+      }
+      if (shopPhone !== undefined) {
+        await purgePhone(pool, shopPhone);
       }
     } finally {
       await pool.end();
@@ -225,22 +286,22 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
     });
   });
 
-  it('3b. the runtime role gets exactly SELECT on the holds (the grants file); the effective privileges are proven with the real restricted role by the self-hosted PostgreSQL job', () => {
+  it('3b. the runtime role gets SELECT, INSERT and UPDATE on the holds, never DELETE (the grants file; M07 opened the commission path); the effective privileges are proven with the real restricted role by the self-hosted PostgreSQL job', () => {
     const grants = readFileSync(path.resolve(__dirname, '..', '..', '..', 'ops', 'selfhosted', '02-runtime-grants.sql'), 'utf8');
     const holdGrants = grants.split('\n').filter((line) => /^GRANT .* ON app\.wallet_holds TO ship11_app;/.test(line));
-    expect(holdGrants).toEqual(['GRANT SELECT ON app.wallet_holds TO ship11_app;']);
-    expect(grants).not.toMatch(/GRANT [A-Z, ]*\b(UPDATE|DELETE|TRUNCATE)\b[A-Z, ]* ON app\.(wallet_holds|wallet_ledger_entries) /);
-    expect(grants).not.toMatch(/GRANT [A-Z, ]*\bINSERT\b[A-Z, ]* ON app\.(wallet_holds|wallet_ledger_entries) /);
-    expect(grants).not.toMatch(/GRANT [A-Z, ]*\b(UPDATE|DELETE|TRUNCATE)\b[A-Z, ]* ON app\.driver_wallets /);
+    expect(holdGrants).toEqual(['GRANT SELECT, INSERT, UPDATE ON app.wallet_holds TO ship11_app;']);
+    expect(grants).not.toMatch(/GRANT [A-Z, ]*\b(DELETE|TRUNCATE)\b[A-Z, ]* ON app\.(wallet_holds|wallet_ledger_entries|driver_wallets) /);
+    // The ledger is append-only: INSERT, never UPDATE.
+    expect(grants).not.toMatch(/GRANT [A-Z, ]*\bUPDATE\b[A-Z, ]* ON app\.wallet_ledger_entries /);
   });
 
   it('4. held = SUM(ACTIVE holds): several holds match, one coin short or over rolls back, held above the balance fails (all rolled-back fixtures)', async () => {
     await inFixture(async (client, walletId) => {
       await client.query('SET CONSTRAINTS ALL DEFERRED');
-      await insertHold(client, walletId, { purpose: 'COMMISSION', amount: 30000 });
-      await insertHold(client, walletId, { purpose: 'WITHDRAWAL', amount: 20000 });
-      await insertHold(client, walletId, { purpose: 'COMMISSION', amount: 1000, status: 'RELEASED' });
-      await insertHold(client, walletId, { purpose: 'COMMISSION', amount: 2000, status: 'CAPTURED' });
+      await insertHold(client, walletId, { real: true, purpose: 'COMMISSION', amount: 30000 });
+      await insertHold(client, walletId, { real: true, purpose: 'WITHDRAWAL', amount: 20000 });
+      await insertHold(client, walletId, { real: true, purpose: 'COMMISSION', amount: 1000, status: 'RELEASED' });
+      await insertHold(client, walletId, { real: true, purpose: 'COMMISSION', amount: 2000, status: 'CAPTURED' });
       await setHeld(client, walletId, 50000);
       await client.query('SET CONSTRAINTS ALL IMMEDIATE'); // 30000 + 20000 = 50000: the RELEASED and CAPTURED ones do not count
       // The read model on the same transaction agrees with the database.
@@ -264,7 +325,7 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
       }, 'WALLET_INVARIANT_VIOLATION');
       await refused(client, 'hold_without_held', async () => {
         await client.query('SET CONSTRAINTS ALL DEFERRED');
-        await insertHold(client, walletId, { purpose: 'COMMISSION', amount: 7 });
+        await insertHold(client, walletId, { real: true, purpose: 'COMMISSION', amount: 7 });
         await client.query('SET CONSTRAINTS ALL IMMEDIATE');
       }, 'WALLET_INVARIANT_VIOLATION');
       await refused(client, 'release_without_lowering_held', async () => {
@@ -275,21 +336,22 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
       // Held above the balance: the wallet CHECK refuses it even when the holds add up.
       await refused(client, 'held_above_balance', async () => {
         await client.query('SET CONSTRAINTS ALL DEFERRED');
-        await insertHold(client, walletId, { purpose: 'WITHDRAWAL', amount: 60000 });
+        await insertHold(client, walletId, { real: true, purpose: 'WITHDRAWAL', amount: 60000 });
         await setHeld(client, walletId, 110000);
       }, 'driver_wallets_held_ck');
       // With any hold present (here ACTIVE ones) the down migration is refused, savepointed, so nothing is dropped.
       await refused(client, 'down_with_holds', () => client.query(WALLET_HOLD_DOWN_SQL), 'WALLET_HOLD_DOWN_REFUSED');
-      // A hold never writes the ledger: the one TOPUP row is still the only row.
-      expect((await client.query('SELECT 1 FROM app.wallet_ledger_entries')).rowCount).toBe(1);
+      // A hold never writes the ledger by itself: the fixture's credit and the ONE commission debit of the captured hold are the only rows.
+      expect((await client.query('SELECT 1 FROM app.wallet_ledger_entries')).rowCount).toBe(2);
     });
   });
 
   it('5. a hold is immutable except ACTIVE -> CAPTURED / RELEASED once, the version advances by one, nothing is deleted or truncated (all rolled back)', async () => {
     await inFixture(async (client, walletId) => {
       const holdId = randomUUID();
-      const assignment = randomUUID();
       await client.query('SET CONSTRAINTS ALL DEFERRED');
+      const driver = await client.query<{ driver_id: string }>('SELECT driver_id FROM app.driver_wallets WHERE wallet_id = $1::uuid', [walletId]);
+      const assignment = await insertCommissionSource(client, { ...(await sourceShop()), driverId: (driver.rows[0] as { driver_id: string }).driver_id, amountVnd: 30000, outcome: 'ACTIVE' });
       await insertHold(client, walletId, { holdId, amount: 30000, commissionAssignmentId: assignment });
       await setHeld(client, walletId, 30000);
       await client.query('SET CONSTRAINTS ALL IMMEDIATE');
@@ -309,6 +371,9 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
       // The legal move: ACTIVE -> CAPTURED, with the held amount lowered in the same transaction. It writes no ledger row by itself.
       await update(`${bump}, status = 'CAPTURED', resolved_at = now()`);
       await setHeld(client, walletId, 0);
+      // Since M07 a capture is the commission debit of the ledger (exactly one) and a completed assignment: the database refuses either missing.
+      await insertCaptureDebit(client, walletId, assignment, 30000);
+      await completeSource(client, assignment);
       await client.query('SET CONSTRAINTS ALL IMMEDIATE');
       await client.query('SET CONSTRAINTS ALL DEFERRED');
       for (const next of ['ACTIVE', 'RELEASED', 'CAPTURED']) {
@@ -317,7 +382,7 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
       await refused(client, 'delete', () => client.query('DELETE FROM app.wallet_holds'), 'never deleted');
       await refused(client, 'delete_no_match', () => client.query('DELETE FROM app.wallet_holds WHERE false'), 'never deleted');
       await refused(client, 'truncate', () => client.query('TRUNCATE app.wallet_holds'), 'never deleted');
-      expect((await client.query('SELECT 1 FROM app.wallet_ledger_entries')).rowCount).toBe(1);
+      expect((await client.query('SELECT 1 FROM app.wallet_ledger_entries')).rowCount).toBe(2); // the fixture credit and the captured hold's one commission debit
       expect((await client.query("SELECT 1 FROM app.wallet_holds WHERE hold_id = $1::uuid AND status = 'CAPTURED' AND version = 2", [holdId])).rowCount).toBe(1);
     });
   });
@@ -330,7 +395,7 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
     try {
       await writer.query('BEGIN');
       await writer.query('ALTER TABLE app.wallet_holds DISABLE TRIGGER wallet_holds_a_source_gate');
-      await insertHold(writer, walletId, { amount: 4000, status: 'RELEASED' });
+      await insertHold(writer, walletId, { real: true, amount: 4000, status: 'RELEASED' });
       // ALTER TABLE refuses a table with pending deferred trigger events: run the invariant now (a RELEASED hold holds nothing, it passes).
       await writer.query('SET CONSTRAINTS ALL IMMEDIATE');
       await writer.query('ALTER TABLE app.wallet_holds ENABLE TRIGGER wallet_holds_a_source_gate');

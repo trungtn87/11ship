@@ -7,7 +7,8 @@ import { AgreementOutcome, ShippingFeeAgreementService } from '../../apps/backen
 import { ShippingFeeAgreementRepository } from '../../apps/backend/src/shipping-policy/shipping-fee-agreement-repository';
 import { ShippingFeePolicyReader, ShippingFeePolicyRepository } from '../../apps/backend/src/shipping-policy/shipping-fee-policy-repository';
 import { poolClientSource } from '../../apps/backend/src/transaction/pg-client-source';
-import { createDriverFor, purgePhone, randomPhone } from './support/auth-fixtures';
+import { createDriverFor, purgePhone, randomPhone, createActiveShopFor } from './support/auth-fixtures';
+import { insertDeliveryRow } from './support/delivery-fixtures';
 import { loadIntegrationConfig } from './support/test-helpers';
 import { managerFor, testPool } from './support/transaction-fixtures';
 
@@ -23,6 +24,7 @@ describe('M06 v1.1 — shipping fee agreement', () => {
   let pool: Pool;
   const phones: string[] = [];
   let shop = '';
+  let shopId = '';
   let customer = '';
   let admin = '';
   let driver1 = '';
@@ -58,6 +60,12 @@ describe('M06 v1.1 — shipping fee agreement', () => {
       await client.query('DELETE FROM app.shipping_fee_agreements');
       await client.query('ALTER TABLE app.shipping_fee_agreement_events ENABLE TRIGGER shipping_fee_agreement_events_append_only');
       await client.query('ALTER TABLE app.shipping_fee_agreements ENABLE TRIGGER shipping_fee_agreements_no_delete');
+      // M07: an agreement belongs to a real delivery; the deliveries of this suite's shop go with it (no assignment or event exists for them).
+      await client.query('ALTER TABLE app.deliveries DISABLE TRIGGER USER');
+      if (shopId !== '') {
+        await client.query('DELETE FROM app.deliveries WHERE shop_id = $1::uuid', [shopId]);
+      }
+      await client.query('ALTER TABLE app.deliveries ENABLE TRIGGER USER');
       await client.query('ALTER TABLE app.shipping_fee_policy_versions DISABLE TRIGGER shipping_fee_policy_versions_immutable');
       await client.query('DELETE FROM app.shipping_fee_policy_versions');
       await client.query('ALTER TABLE app.shipping_fee_policy_versions ENABLE TRIGGER shipping_fee_policy_versions_immutable');
@@ -82,6 +90,7 @@ describe('M06 v1.1 — shipping fee agreement', () => {
     pool = testPool(loadIntegrationConfig().database, { poolMax: 8 });
     await resetAll();
     shop = await user();
+    shopId = await createActiveShopFor(pool, shop);
     customer = await user();
     admin = await user();
     driver1 = await driverOf(await user());
@@ -113,7 +122,17 @@ describe('M06 v1.1 — shipping fee agreement', () => {
   const agreedInput = (over: Parameters<typeof base>[0] = {}, proposedFeeVnd = 25000) => ({ ...base(over), reasonCode: 'URGENT' as const, reasonNote: 'Khách cần gấp', proposedFeeVnd });
   const act = (agreementId: string, expectedVersion: number, action: AgreementAction, over: { nowMs?: number; requestId?: string; actorUserId?: string } = {}): Promise<AgreementOutcome> =>
     tx((context) => service().act(context, { agreementId, expectedVersion, requestId: over.requestId ?? randomUUID(), nowMs: over.nowMs ?? NOW + 1000, action, ...(over.actorUserId === undefined ? {} : { actorUserId: over.actorUserId }) }));
-  const create = <T extends 'createStandard' | 'createAgreed'>(kind: T, input: Parameters<ShippingFeeAgreementService[T]>[1]): Promise<AgreementOutcome> => tx((context) => service()[kind](context, input as never));
+  /** An agreement belongs to a real delivery (a foreign key since M07): the first agreement for an id creates the delivery row of the suite's shop. */
+  async function ensureDelivery(deliveryId: string): Promise<void> {
+    const found = await pool.query('SELECT 1 FROM app.deliveries WHERE delivery_id = $1::uuid', [deliveryId]);
+    if ((found.rowCount ?? 0) === 0) {
+      await insertDeliveryRow(pool, { shopId, userId: shop, deliveryId }).catch(() => undefined);
+    }
+  }
+  const create = async <T extends 'createStandard' | 'createAgreed'>(kind: T, input: Parameters<ShippingFeeAgreementService[T]>[1]): Promise<AgreementOutcome> => {
+    await ensureDelivery((input as { deliveryId: string }).deliveryId);
+    return tx((context) => service()[kind](context, input as never));
+  };
   const ok = (outcome: AgreementOutcome) => {
     if (outcome.kind !== 'ok') {
       throw new Error(`expected ok, got ${JSON.stringify(outcome)}`);

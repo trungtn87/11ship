@@ -29,7 +29,7 @@ describe('M07 — delivery flow', () => {
   let app: AuthApp;
   let router: http.Server;
   let shop: ShopOwner;
-  const phones: string[] = [];
+  const drivers: string[] = [];
   let addedPolicy = false;
 
   beforeAll(async () => {
@@ -62,37 +62,40 @@ describe('M07 — delivery flow', () => {
     await new Promise<void>((resolve) => router.close(() => resolve()));
   });
 
+  /**
+   * Removes exactly the rows this suite created (its shop's deliveries and the wallets of its Shippers), in one transaction with the user triggers of
+   * those tables lifted (the application never deletes them). The phones are purged afterwards by app.close(). Errors are NOT swallowed.
+   */
   async function cleanup(): Promise<void> {
-    if (addedPolicy) {
-      const policy = await app.pool.connect();
-      try {
-        await policy.query('BEGIN');
-        await policy.query('ALTER TABLE app.shipping_fee_policy_versions DISABLE TRIGGER shipping_fee_policy_versions_immutable');
-        await policy.query('DELETE FROM app.shipping_fee_policy_versions');
-        await policy.query('ALTER TABLE app.shipping_fee_policy_versions ENABLE TRIGGER shipping_fee_policy_versions_immutable');
-        await policy.query('COMMIT');
-      } catch {
-        await policy.query('ROLLBACK').catch(() => undefined);
-      } finally {
-        policy.release();
-      }
-    }
     const client = await app.pool.connect();
+    const tables = ['wallet_ledger_entries', 'wallet_holds', 'delivery_incidents', 'delivery_events', 'delivery_assignments', 'deliveries', 'driver_wallets', 'shipping_fee_agreement_events', 'shipping_fee_agreements', 'shipping_fee_policy_versions'];
     try {
       await client.query('BEGIN');
-      await client.query('ALTER TABLE app.wallet_holds DISABLE TRIGGER USER');
-      await client.query('ALTER TABLE app.wallet_ledger_entries DISABLE TRIGGER USER');
-      await client.query('ALTER TABLE app.deliveries DISABLE TRIGGER USER');
-      await client.query('ALTER TABLE app.delivery_assignments DISABLE TRIGGER USER');
-      await client.query('ALTER TABLE app.delivery_events DISABLE TRIGGER USER');
-      await client.query('ALTER TABLE app.delivery_incidents DISABLE TRIGGER USER');
-      await client.query('ALTER TABLE app.driver_wallets DISABLE TRIGGER USER');
-      await client.query('DELETE FROM app.delivery_incidents WHERE delivery_id IN (SELECT delivery_id FROM app.deliveries WHERE shop_id = $1::uuid)', [shop.shopId]);
-      await client.query('DELETE FROM app.delivery_events WHERE delivery_id IN (SELECT delivery_id FROM app.deliveries WHERE shop_id = $1::uuid)', [shop.shopId]);
-      await client.query('DELETE FROM app.shipping_fee_agreements WHERE delivery_id IN (SELECT delivery_id FROM app.deliveries WHERE shop_id = $1::uuid)').catch(() => undefined);
+      for (const table of tables) {
+        await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
+      }
+      const mine = `SELECT delivery_id FROM app.deliveries WHERE shop_id = $1::uuid`;
+      const wallets = `SELECT wallet_id FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[])`;
+      await client.query(`DELETE FROM app.wallet_ledger_entries WHERE wallet_id IN (${wallets})`, [drivers]);
+      await client.query(`DELETE FROM app.wallet_holds WHERE wallet_id IN (${wallets})`, [drivers]);
+      await client.query(`DELETE FROM app.delivery_incidents WHERE delivery_id IN (${mine})`, [shop.shopId]);
+      await client.query(`DELETE FROM app.delivery_events WHERE delivery_id IN (${mine})`, [shop.shopId]);
+      await client.query(`DELETE FROM app.shipping_fee_agreement_events WHERE agreement_id IN (SELECT agreement_id FROM app.shipping_fee_agreements WHERE delivery_id IN (${mine}))`, [shop.shopId]);
+      await client.query(`DELETE FROM app.shipping_fee_agreements WHERE delivery_id IN (${mine})`, [shop.shopId]);
+      await client.query(`DELETE FROM app.delivery_assignments WHERE delivery_id IN (${mine})`, [shop.shopId]);
+      await client.query('DELETE FROM app.deliveries WHERE shop_id = $1::uuid', [shop.shopId]);
+      await client.query('DELETE FROM app.shipper_latest_locations WHERE driver_id = ANY($1::uuid[])', [drivers]);
+      await client.query('DELETE FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[])', [drivers]);
+      if (addedPolicy) {
+        await client.query('DELETE FROM app.shipping_fee_policy_versions');
+      }
+      for (const table of tables) {
+        await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
+      }
       await client.query('COMMIT');
-    } catch {
+    } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
     } finally {
       client.release();
     }
@@ -108,7 +111,6 @@ describe('M07 — delivery flow', () => {
   /** An ACTIVE, accepting Shipper with a wallet, ledger credit and a fresh position near the shop (committed, then purged with the account). */
   async function newShipper(funds = 50_000, near = true): Promise<Shipper> {
     const phone = randomPhone();
-    phones.push(phone.normalized);
     app.track(phone.normalized);
     const proof = await obtainProof(app, phone);
     const registered = await app.call('POST', '/client-auth/register', {
@@ -132,6 +134,7 @@ describe('M07 — delivery flow', () => {
     const selected = await app.call('POST', '/auth/role/select', { bearer: token, body: { role: 'DRIVER' } });
     expect([selected.status, selected.text.slice(0, 200)]).toEqual([200, selected.text.slice(0, 200)]);
     const walletId = await fund(driverId, funds);
+    drivers.push(driverId);
     const shipper: Shipper = { userId, token, driverId, walletId };
     const located = await asShipper(shipper, 'PUT', '/driver/location', { lat: near ? 21.0005 : 21.2, lng: 105.8005, accuracy_m: 20 });
     expect([200, 204]).toContain(located.status);

@@ -1,4 +1,5 @@
 import { SHIPPER_DOWN_SQL, SHIPPER_UP_SQL } from './support/shipper-migration-sql';
+import { M07_DOWN_SQL, M07_UP_SQL } from './support/m07-migration-sql';
 import { V11_DOWN_SQL, V11_UP_SQL } from './support/shipping-v11-migration-sql';
 import { ELIGIBILITY_DOWN_SQL, ELIGIBILITY_UP_SQL } from './support/shipping-eligibility-migration-sql';
 import { FEE_POLICY_DOWN_SQL, FEE_POLICY_UP_SQL } from './support/shipping-fee-policy-migration-sql';
@@ -89,7 +90,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
   it('is a NEW migration after M00 and Auth Core, followed by the Driver, business-hours, account-origin and admin ones (applied migrations are never edited)', () => {
     expect(SHOP).toBeDefined();
     expect(names.slice(names.indexOf(SHOP))).toEqual([SHOP, DRIVER, HOURS, '1791936000000_add-users-account-origin', '1792022400000_create-admin-auth', '1792108800000_create-admin-invitations', '1792195200000_create-admin-sensitive-operations', '1792281600000_create-admin-activation', '1792368000000_extend-admin-auth-limits-activation', '1792454400000_create-admin-membership-origin-guard', '1792540800000_create-customer-profiles-consents', '1792627200000_allow-staging-fixture-account-origin', '1792713600000_allow-test-unverified-account-origin', '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding', '1792972800000_create-sms-gateway', '1793059200000_account-scope-lifecycle-settings', '1793145600000_create-menu', '1793232000000_menu-category-admin', '1793318400000_create-shipper-management', '1793404800000_create-customer-addresses',
-      '1793404800000_create-driver-wallet-core', '1793491200000_create-wallet-holds', '1793577600000_create-wallet-topup-sources', '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement']);
+      '1793404800000_create-driver-wallet-core', '1793491200000_create-wallet-holds', '1793577600000_create-wallet-topup-sources', '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-m07-delivery']);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(names.filter((name) => name.endsWith('create-shop-onboarding'))).toHaveLength(1);
     expect(Number(SHOP.split('_')[0])).toBeGreaterThan(Number((BEFORE[BEFORE.length - 1] as string).split('_')[0]));
@@ -174,6 +175,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
     expect(migrate().status).toBe(0);
     await client.query('BEGIN');
     try {
+      await client.query(M07_DOWN_SQL); // M07: references users, shops, drivers, wallets and fee agreements: the very newest, down first, up last
       await client.query(V11_DOWN_SQL); // M06 v1.1: references app.users, the very newest: down first, up last
       await client.query(FEE_POLICY_DOWN_SQL); // M06-A: references app.users: down first, up last
       await client.query(ELIGIBILITY_DOWN_SQL); // M06-B/C: references app.users: down first, up last
@@ -202,6 +204,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
       await client.query(ELIGIBILITY_UP_SQL);
       await client.query(FEE_POLICY_UP_SQL);
       await client.query(V11_UP_SQL);
+      await client.query(M07_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
       await client.query('ROLLBACK');
@@ -220,7 +223,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
     expect(owners.rows).toEqual([{ owner: 'ship11_test' }]);
     const triggers = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|shipping_fee_policy_|shipping_eligibility_|shipping_fee_agreement)' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg') AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard'`,
+         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|shipping_fee_policy_|shipping_eligibility_|deliver(y|ies)_|shipping_fee_agreement)' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg') AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard'`,
     );
     expect(triggers.rows[0]?.n).toBe(1);
   });

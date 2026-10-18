@@ -214,9 +214,23 @@ async function purgeWalletsOfPhone(pool: Pool, normalizedPhone: string): Promise
       await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
     }
     // M04-A2.1: a test that committed a hold (a RELEASED one, to prove the down latch) removes it first, under the same lifted guard.
+    // M07: a test that committed a commission source (assignment + delivery of the fixture shop) removes it with the hold, newest dependants first.
+    const m07Tables = ['delivery_incidents', 'delivery_events', 'delivery_assignments', 'deliveries'];
+    for (const table of m07Tables) {
+      await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
+    }
+    const ownedDeliveries = `SELECT delivery_id FROM app.delivery_assignments WHERE driver_id IN (${owned})`;
+    await client.query(`DELETE FROM app.delivery_incidents WHERE delivery_id IN (${ownedDeliveries})`, [normalizedPhone]);
+    await client.query(`DELETE FROM app.delivery_events WHERE delivery_id IN (${ownedDeliveries})`, [normalizedPhone]);
     await client.query('ALTER TABLE app.wallet_holds DISABLE TRIGGER wallet_holds_no_delete');
     await client.query(`DELETE FROM app.wallet_holds WHERE wallet_id IN (SELECT wallet_id FROM app.driver_wallets WHERE driver_id IN (${owned}))`, [normalizedPhone]);
     await client.query('ALTER TABLE app.wallet_holds ENABLE TRIGGER wallet_holds_no_delete');
+    await client.query(`CREATE TEMP TABLE m07_purge ON COMMIT DROP AS SELECT delivery_id FROM app.delivery_assignments WHERE driver_id IN (${owned})`, [normalizedPhone]);
+    await client.query(`DELETE FROM app.delivery_assignments WHERE driver_id IN (${owned})`, [normalizedPhone]);
+    await client.query('DELETE FROM app.deliveries WHERE delivery_id IN (SELECT delivery_id FROM m07_purge)');
+    for (const table of m07Tables) {
+      await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
+    }
     await client.query('ALTER TABLE app.driver_wallets DISABLE TRIGGER driver_wallets_no_delete');
     await client.query(`DELETE FROM app.driver_wallets WHERE driver_id IN (${owned})`, [normalizedPhone]);
     await client.query('ALTER TABLE app.driver_wallets ENABLE TRIGGER driver_wallets_no_delete');
