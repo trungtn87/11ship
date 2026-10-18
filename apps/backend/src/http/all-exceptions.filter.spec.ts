@@ -260,6 +260,7 @@ describe('AllExceptionsFilter', () => {
         'MENU_IMAGE_NOT_FOUND',
         'MENU_ITEM_NOT_FOUND',
         'MENU_LIMIT_REACHED',
+        'NOTIFICATION_NOT_FOUND',
         'ORDER_MODULE_NOT_READY',
         'OTP_ALREADY_USED',
         'OTP_EXPIRED',

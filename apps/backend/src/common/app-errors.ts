@@ -116,6 +116,8 @@ export const APP_ERROR_DEFINITIONS = {
 
   // Delivery flow (M07). Fixed messages: they echo nothing the client sent. A delivery of another shop and a missing one answer the same
   // DELIVERY_NOT_FOUND. VERSION_CONFLICT, SHOP_NOT_FOUND, SHOP_PROFILE_INCOMPLETE and the DRIVER_* codes (above) are reused unchanged.
+  // Notifications (M08). A notification of another account and a missing one answer the same.
+  NOTIFICATION_NOT_FOUND: { status: 404, message: 'The notification was not found' },
   DELIVERY_NOT_FOUND: { status: 404, message: 'The delivery was not found' },
   DELIVERY_STATE_CONFLICT: { status: 409, message: 'The delivery is not in a state that allows this action' },
   DELIVERY_ALREADY_TAKEN: { status: 409, message: 'Another Shipper already took this delivery' },
