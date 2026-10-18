@@ -221,8 +221,16 @@ export class ShellApp implements ShellHost {
       const changed = !this.#financeLoaded || next.canRead !== this.#financeRights.canRead || next.canRecord !== this.#financeRights.canRecord;
       this.#financeRights = next;
       this.#financeLoaded = true;
-      if (changed) {
+      if (!changed) {
+        return;
+      }
+      // Only a money page depends on these rights. Anywhere else just the menu is redrawn: redrawing the whole page would wipe a form the
+      // administrator has already started to fill when the answer arrives late.
+      const route = parseRoute(this.history.pathname(), this.history.search());
+      if (route.name === 'finance-topups' || route.name === 'finance-topup' || route.name === 'finance-bank-accounts') {
         this.#apply();
+      } else if (this.#layout !== undefined && this.#role !== undefined) {
+        this.#layout.render({ role: this.#role, grants: this.#effectiveGrants(), route, navigate: (next) => this.go(next) });
       }
     });
   }
