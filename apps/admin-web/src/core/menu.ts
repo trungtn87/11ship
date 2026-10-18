@@ -172,7 +172,8 @@ export const MENU: readonly MenuGroup[] = [
         label: 'Tài chính',
         icon: 'wallet',
         ready: true,
-        access: 'driver-wallets',
+        // B3a: the children decide (an ADMIN with only wallet.read sees only "Nạp tiền"); a parent without a visible child is dropped.
+        access: 'any',
         children: [
           { id: 'finance-overview', label: 'Tổng quan', route: { name: 'finance' }, ready: true, access: 'driver-wallets' },
           { id: 'finance-wallets', label: 'Ví Shipper', route: { name: 'finance-wallets' }, ready: true, access: 'driver-wallets' },
@@ -180,6 +181,8 @@ export const MENU: readonly MenuGroup[] = [
           { id: 'finance-withdrawals', label: 'Rút tiền', route: { name: 'finance-withdrawals' }, ready: true, access: 'withdrawals' },
           { id: 'finance-transactions', label: 'Giao dịch', route: { name: 'finance-transactions' }, ready: true, access: 'driver-wallets' },
           { id: 'finance-reconciliation', label: 'Đối soát', route: { name: 'finance-reconciliation' }, ready: true, access: 'driver-wallets' },
+          // B3a: the receiving accounts of the system (SYSTEM only; the server decides again).
+          { id: 'finance-bank-accounts', label: 'Tài khoản nhận tiền', route: { name: 'finance-bank-accounts' }, ready: true, access: 'system' },
         ],
       },
     ],
@@ -276,6 +279,8 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'finance-topups':
     case 'finance-topup':
       return canSee(role, grants, 'topups');
+    case 'finance-bank-accounts':
+      return role === 'SYSTEM';
     case 'finance-withdrawals':
     case 'finance-withdrawal':
       return canSee(role, grants, 'withdrawals');
@@ -317,6 +322,8 @@ export function activeMenuId(route: Route): string {
     case 'finance-topups':
     case 'finance-topup':
       return 'finance-topups';
+    case 'finance-bank-accounts':
+      return 'finance-bank-accounts';
     case 'finance-withdrawals':
     case 'finance-withdrawal':
       return 'finance-withdrawals';
@@ -370,6 +377,8 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Tài chính', 'Nạp tiền'];
     case 'finance-topup':
       return ['Tài chính', 'Nạp tiền', 'Chi tiết'];
+    case 'finance-bank-accounts':
+      return ['Tài chính', 'Tài khoản nhận tiền'];
     case 'finance-withdrawals':
       return ['Tài chính', 'Rút tiền'];
     case 'finance-withdrawal':

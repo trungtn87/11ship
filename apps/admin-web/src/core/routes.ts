@@ -3,6 +3,7 @@
 // or the query, so it is not sent to any server by the browser and is removed from the address bar right after reading.
 
 import { TOPUP_TABS, TopupTab, WITHDRAWAL_TABS, WithdrawalTab } from './finance.js';
+import { TopupFilter, TOPUP_FILTERS } from './finance-admin.js';
 import { InvitationStatus, INVITATION_STATUSES, isUuid } from './provisioning-api.js';
 import { SHIPPER_FILTERS, ShipperFilter } from './shippers.js';
 
@@ -28,7 +29,8 @@ export type Route =
   // M04 (UI phase): "Tài chính" and the wallet parameters ("Cài đặt › Tham số hệ thống › Ví Shipper").
   | { readonly name: 'finance' }
   | { readonly name: 'finance-wallets' }
-  | { readonly name: 'finance-topups'; readonly tab?: TopupTab }
+  | { readonly name: 'finance-topups'; readonly tab?: TopupTab; readonly status?: TopupFilter }
+  | { readonly name: 'finance-bank-accounts' }
   | { readonly name: 'finance-topup'; readonly id: string }
   | { readonly name: 'finance-withdrawals'; readonly tab?: WithdrawalTab }
   | { readonly name: 'finance-withdrawal'; readonly id: string }
@@ -121,7 +123,14 @@ function parseFinanceRoute(path: string, search: string): Route | undefined {
       return { name: 'finance-reconciliation' };
     case '/system/parameters/wallet':
       return { name: 'wallet-params' };
+    case '/finance/bank-accounts':
+      return { name: 'finance-bank-accounts' };
     case '/finance/topups': {
+      // B3a: the server's own states, one per call (?status=PENDING|CONFIRMED|REJECTED|CANCELLED|ALL). The old ?tab= of the mock is still read.
+      const status = new URLSearchParams(search).get('status');
+      if (status !== null && (TOPUP_FILTERS as readonly string[]).includes(status)) {
+        return { name: 'finance-topups', status: status as TopupFilter };
+      }
       const tab = new URLSearchParams(search).get('tab');
       return tab !== null && (TOPUP_TABS as readonly string[]).includes(tab) ? { name: 'finance-topups', tab: tab as TopupTab } : { name: 'finance-topups' };
     }
@@ -174,7 +183,9 @@ export function formatRoute(route: Route): string {
     case 'finance-wallets':
       return '/finance/wallets';
     case 'finance-topups':
-      return route.tab === undefined ? '/finance/topups' : `/finance/topups?tab=${route.tab}`;
+      return route.status !== undefined ? `/finance/topups?status=${route.status}` : route.tab === undefined ? '/finance/topups' : `/finance/topups?tab=${route.tab}`;
+    case 'finance-bank-accounts':
+      return '/finance/bank-accounts';
     case 'finance-topup':
       return `/finance/topups/${route.id}`;
     case 'finance-withdrawals':

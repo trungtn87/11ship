@@ -50,6 +50,9 @@ import { DeliveryHost, DeliveryListView } from './deliveries-view.js';
 import { FinanceController, isFinanceRoute } from '../core/finance-controller.js';
 import { FinanceSource, NOT_WIRED_FINANCE } from '../core/finance.js';
 import { FinanceView } from './finance-view.js';
+import { FinanceAdminSource, FinanceRights, NO_FINANCE_RIGHTS, NOT_WIRED_FINANCE_ADMIN, TopupFilter } from '../core/finance-admin.js';
+import { BankAccountsView, FinanceAdminHost, FINANCE_RECORD_REQUIRES_READ, openFinanceAccessDialog, TopupDetailView, TopupListView } from './finance-admin-view.js';
+import { statePanel } from './states.js';
 import { ShellLayout } from './shell-layout.js';
 import { failurePanel, skeleton } from './states.js';
 import { ShellHost } from './view.js';
@@ -90,6 +93,10 @@ export class ShellApp implements ShellHost {
   #mounts = 0;
   #filterTimer: unknown;
   #grants: Grants = NO_GRANTS;
+  /** The finance rights of THIS session as the server last said them (GET access/me). Independent of the application grants above. */
+  #financeRights: FinanceRights = NO_FINANCE_RIGHTS;
+  #financeLoaded = false;
+  #financeDialog: { close(): void } | undefined;
   #roles: readonly UserRole[] = [];
   #grantsState: GrantsState = { kind: 'loading' };
   /** The users filter, kept only so "Back" from a detail returns to the same list. Dropped with the shell. */
@@ -120,6 +127,8 @@ export class ShellApp implements ShellHost {
     private readonly shipping: ShippingPolicySource = NOT_WIRED_SHIPPING,
     /** Where the deliveries (Vận hành › Giao hàng, M07.07) come from. By default nothing is wired, so the page says so. */
     private readonly deliveries: DeliverySource = NOT_WIRED_DELIVERIES,
+    /** Where the REAL finance pages (M04-B3a: top-up requests, receiving accounts, finance rights) come from. By default nothing is wired and no page shows data. */
+    private readonly financeAdmin: FinanceAdminSource = NOT_WIRED_FINANCE_ADMIN,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -132,6 +141,7 @@ export class ShellApp implements ShellHost {
       this.#roles = ALL_ROLES;
       this.#grantsState = { kind: 'ready' };
       this.#apply();
+      this.#loadFinanceRights();
       return;
     }
     this.#grantsState = { kind: 'loading' };
@@ -148,6 +158,8 @@ export class ShellApp implements ShellHost {
     // Nothing read about accounts stays in memory or on screen once the shell is gone.
     this.#layout?.content.replaceChildren();
     this.#grants = NO_GRANTS;
+    this.#financeRights = NO_FINANCE_RIGHTS;
+    this.#financeLoaded = false;
     this.#roles = [];
     this.#usersFilter = undefined;
     this.#restoreFilter = false;
@@ -165,6 +177,8 @@ export class ShellApp implements ShellHost {
   /** Reads the admin's CURRENT permissions. `quiet`: a re-check after a 403, which only updates the menu/pages when they changed. */
   #loadGrants(quiet = false): void {
     const mount = this.#mounts;
+    // The finance rights are read again with the application rights (mount, retry, a 403): they are the ones that decide the money pages.
+    this.#loadFinanceRights();
     if (!quiet) {
       this.#grantsState = { kind: 'loading' };
     }
@@ -196,7 +210,47 @@ export class ShellApp implements ShellHost {
     });
   }
 
+  /** GET access/me. A failure leaves NO finance right (fail closed); 401 ends the session. Changed rights redraw the page, so content that is no longer allowed disappears. */
+  #loadFinanceRights(): void {
+    const mount = this.#mounts;
+    void this.financeAdmin.rights().then((read) => {
+      if (mount !== this.#mounts || this.#role === undefined) {
+        return;
+      }
+      if (read.kind === 'failed' && read.failure === 'session-expired') {
+        this.onSessionLost();
+        return;
+      }
+      const next = read.kind === 'ready' ? read.data : NO_FINANCE_RIGHTS;
+      const changed = !this.#financeLoaded || next.canRead !== this.#financeRights.canRead || next.canRecord !== this.#financeRights.canRecord;
+      this.#financeRights = next;
+      this.#financeLoaded = true;
+      if (!changed) {
+        return;
+      }
+      // Only a money page depends on these rights. Anywhere else just the menu is redrawn: redrawing the whole page would wipe a form the
+      // administrator has already started to fill when the answer arrives late.
+      const route = parseRoute(this.history.pathname(), this.history.search());
+      if (route.name === 'finance-topups' || route.name === 'finance-topup' || route.name === 'finance-bank-accounts') {
+        this.#apply();
+      } else if (this.#layout !== undefined && this.#role !== undefined) {
+        this.#layout.render({ role: this.#role, grants: this.#effectiveGrants(), route, navigate: (next) => this.go(next) });
+      }
+    });
+  }
+
+  /** What the shell may show: the application grants plus the finance READ right (never inferred from the application rights). */
+  #effectiveGrants(): Grants {
+    return this.#financeRights.canRead ? new Set([...this.#grants, 'topups' as const]) : this.#grants;
+  }
+
+  #rights(): FinanceRights {
+    return this.#role === 'SYSTEM' ? { role: 'SYSTEM', implicit: true, canRead: true, canRecord: true } : this.#financeRights;
+  }
+
   #teardown(): void {
+    this.#financeDialog?.close();
+    this.#financeDialog = undefined;
     this.#generation += 1;
     if (this.#filterTimer !== undefined) {
       this.clock.clearTimeout(this.#filterTimer);
@@ -218,7 +272,7 @@ export class ShellApp implements ShellHost {
     }
     const content = layout.content;
     const route = parseRoute(this.history.pathname(), this.history.search());
-    layout.render({ role, grants: this.#grants, route, navigate: (next) => this.go(next) });
+    layout.render({ role, grants: this.#effectiveGrants(), route, navigate: (next) => this.go(next) });
     document.title = `${breadcrumb(route).at(-1) ?? 'Tổng quan'} · Quản trị · 11`;
     this.#teardown();
     this.provisioning.clear();
@@ -242,7 +296,17 @@ export class ShellApp implements ShellHost {
       );
       return;
     }
-    if (!canOpenRoute(role, this.#grants, route)) {
+    const moneyRoute = route.name === 'finance-topups' || route.name === 'finance-topup';
+    if (moneyRoute && role === 'ADMIN' && !this.#financeLoaded) {
+      content.replaceChildren(h('section', { class: 'content content-narrow', 'aria-busy': 'true' }, skeleton()));
+      return;
+    }
+    if (!canOpenRoute(role, this.#effectiveGrants(), route)) {
+      if (moneyRoute && role === 'ADMIN' && this.#financeRights.canRecord && !this.#financeRights.canRead) {
+        // Record without read: nothing is listed or shown; the sentence tells what to ask SYSTEM for.
+        content.replaceChildren(h('section', { class: 'content content-narrow' }, statePanel({ icon: 'lock', title: 'Cần quyền xem yêu cầu nạp tiền', text: FINANCE_RECORD_REQUIRES_READ, tone: 'warning' })));
+        return;
+      }
       content.replaceChildren(this.#forbidden());
       return;
     }
@@ -278,13 +342,20 @@ export class ShellApp implements ShellHost {
       case 'shipping-policy':
         this.#shippingPolicy(content);
         return;
+      case 'finance-topups':
+        this.#topupList(content, route.status ?? 'PENDING');
+        return;
+      case 'finance-topup':
+        this.#topupDetail(content, route.id);
+        return;
+      case 'finance-bank-accounts':
+        this.#bankAccounts(content);
+        return;
       case 'deliveries':
         this.#deliveryList(content);
         return;
       case 'finance':
       case 'finance-wallets':
-      case 'finance-topups':
-      case 'finance-topup':
       case 'finance-withdrawals':
       case 'finance-withdrawal':
       case 'finance-transactions':
@@ -700,6 +771,46 @@ export class ShellApp implements ShellHost {
     load();
   }
 
+  /** What the finance pages (B3a) need from the shell. 401 ends the session; 403 re-reads the rights (and so redraws what is still allowed). */
+  #financeHost(): FinanceAdminHost {
+    return {
+      source: this.financeAdmin,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        this.#loadFinanceRights();
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      go: (route) => this.go(route),
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      rights: () => this.#rights(),
+      now: () => this.clock.now(),
+    };
+  }
+
+  /** "Tài chính › Nạp tiền": the requests of the server, one status per tab, cursor paging. */
+  #topupList(content: HTMLElement, filter: TopupFilter): void {
+    const view = new TopupListView(content, this.#financeHost(), filter);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  #topupDetail(content: HTMLElement, id: string): void {
+    const view = new TopupDetailView(content, this.#financeHost(), id);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Tài chính › Tài khoản nhận tiền" (SYSTEM only; the server decides again). */
+  #bankAccounts(content: HTMLElement): void {
+    const view = new BankAccountsView(content, this.#financeHost());
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
   /** What the Shipper pages need from the shell. 401 ends the session; 403 re-reads the rights. */
   #shipperHost(): ShipperHost {
     return {
@@ -916,6 +1027,15 @@ export class ShellApp implements ShellHost {
       login: () => this.history.restart(),
       home: () => this.go({ name: 'home' }),
       invite: () => this.go({ name: 'invitation-new' }),
+      // B3a: SYSTEM gives and takes back each finance right here (the server refuses anyone else again).
+      ...(this.#role === 'SYSTEM' && this.financeAdmin !== NOT_WIRED_FINANCE_ADMIN
+        ? {
+            financeAccess: (row: { readonly id: string; readonly fullName: string }) => {
+              this.#financeDialog?.close();
+              this.#financeDialog = openFinanceAccessDialog(this.#financeHost(), row);
+            },
+          }
+        : {}),
       wired: this.#wired(),
       // The live list holds activated accounts only; invitations that wait for activation are in "Lời mời Admin".
       pending: !this.#wired(),

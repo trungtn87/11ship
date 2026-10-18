@@ -228,13 +228,13 @@ describe('Admin front serves the M04 Tài chính routes', () => {
     const run = runEntry({});
     try {
       const { port } = await run.ready;
-      for (const path of ['/finance', '/finance/wallets', '/finance/topups', '/finance/topups?tab=DONE', '/finance/withdrawals', '/finance/withdrawals?tab=PENDING', '/finance/transactions', '/finance/transactions?shipper=' + id, '/finance/reconciliation', `/finance/topups/${id}`, `/finance/withdrawals/${id}`, '/system/parameters/wallet']) {
+      for (const path of ['/finance', '/finance/wallets', '/finance/topups', '/finance/topups?tab=DONE', '/finance/withdrawals', '/finance/withdrawals?tab=PENDING', '/finance/transactions', '/finance/transactions?shipper=' + id, '/finance/reconciliation', '/finance/bank-accounts', '/finance/topups?status=CONFIRMED', `/finance/topups/${id}`, `/finance/withdrawals/${id}`, '/system/parameters/wallet']) {
         const page = await call(port, path);
         assert.equal(page.status, 200, path);
         assert.match(page.headers['content-type'], /text\/html/, path);
         assert.match(page.body, /<script/, path);
       }
-      for (const path of ['/finance/unknown', '/finance/topups/not-a-uuid', `/finance/wallets/${id}`, `/finance/topups/${id}/extra`, '/system/parameters', '/system/parameters/other', '/finance/../.env']) {
+      for (const path of ['/finance/unknown', '/finance/bank-accounts/extra', '/finance/topups/not-a-uuid', `/finance/wallets/${id}`, `/finance/topups/${id}/extra`, '/system/parameters', '/system/parameters/other', '/finance/../.env']) {
         assert.equal((await call(port, path)).status, 404, path);
       }
     } finally {
