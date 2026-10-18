@@ -141,6 +141,14 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | delivery_events | SELECT, INSERT (M07: the append-only history of a delivery) |
 | delivery_incidents | SELECT, INSERT, UPDATE (M07: the goods-custody incident of a failed delivery; closed once; never deleted) |
 | shipper_latest_locations | SELECT, INSERT, UPDATE (M14/M07: the one latest position of each Shipper, replaced in place; no trail) |
+| notification_push_tokens | SELECT, INSERT, UPDATE (M08: the push token of one session; ended (never deleted) when the session ends or the token is replaced) |
+| notification_config | SELECT, INSERT, UPDATE (M08: the single settings row (channel, retention, retry); SYSTEM changes it through the Administration) |
+| notifications | SELECT, INSERT, UPDATE, DELETE (M08: the inbox; read marks and the refreshed new-offers card are UPDATEs; DELETE only by the retention purge after the total window) |
+| notification_pushes | SELECT, INSERT, UPDATE, DELETE (M08: one push attempt per notification with its retry state; DELETE only with its notification by the retention purge) |
+| notification_consumed_events | SELECT, INSERT, DELETE (M08: outbox event ids already consumed (dedupe); old ids are deleted by the retention pass) |
+| notification_reminders | SELECT, INSERT, UPDATE, DELETE (M08: due reminders from M07 events, resolved once; resolved rows are deleted by the retention pass) |
+| notification_offer_rounds | SELECT, INSERT, DELETE (M08: one row per Shipper, delivery and search round (at most one push); old rows are deleted by the retention pass) |
+| notification_settings | SELECT, INSERT, UPDATE (M08: the account's own notification settings per app) |
 
 **Permanent account deletion (Owner decision 2026-10-14).** The runtime role has no `DELETE` on any account table. The only way an account is removed is the function `app.purge_app_user(uuid)` (created by the migration, `SECURITY DEFINER`, owned by the migration role, refuses an administration account and an account with a shop or driver profile). `PUBLIC` has no `EXECUTE` on it; after the migrations run, grant it to the runtime role with `ops/selfhosted/03-runtime-function-grants.sql` (one statement: `GRANT EXECUTE ON FUNCTION app.purge_app_user(uuid) TO ship11_app;`). Without that grant a permanent delete answers 503 and nothing is deleted.
 
