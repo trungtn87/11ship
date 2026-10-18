@@ -51,6 +51,8 @@ Widget _orders(SessionController session, AppFlows? flows) {
   return vstack(<Widget>[
     _guestPrompt(session, 'Đăng nhập để xem đơn hàng của bạn.', flows),
     const EmptyState(icon: Icons.receipt_long_outlined, title: 'Chưa có đơn hàng', text: 'Đơn hàng của bạn sẽ hiện ở đây khi tính năng đặt món sẵn sàng.'),
+    // M06 UI: fee, distance and who pays. Not ready in real builds (the screen says what is missing).
+    const ShippingFeeEntry(),
     _soonChip(),
   ]);
 }

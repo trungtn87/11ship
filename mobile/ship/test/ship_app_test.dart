@@ -118,6 +118,26 @@ void main() {
     await tester.pump();
     expect(find.text('Chưa có đơn hàng'), findsWidgets);
   });
+  testWidgets('M06: orders reach the offer and batching screens, which say they are not ready (no order, no money, nothing to accept)', (WidgetTester tester) async {
+    await pump(tester, healthy());
+    await openTab(tester, 'orders');
+    expect(find.byKey(const Key('m06-offer-entry')), findsOneWidget);
+    expect(find.byKey(const Key('m06-batch-entry')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('m06-offer-entry')));
+    await tester.tap(find.byKey(const Key('m06-offer-entry')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('m06-offer-not-ready')), findsOneWidget);
+    expect(find.widgetWithText(N11Button, 'Nhận đơn'), findsNothing);
+    expect(find.byKey(const Key('m06-sample-banner')), findsNothing);
+    tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('m06-batch-entry')));
+    await tester.tap(find.byKey(const Key('m06-batch-entry')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('m06-batch-not-ready')), findsOneWidget);
+    expect(find.textContaining('ETA gốc'), findsNothing);
+  });
+
   testWidgets('account hides status, policy and diagnostics while preserving profile actions', (WidgetTester tester) async {
     final SessionController session = await pump(tester, healthy());
     await openTab(tester, 'account');

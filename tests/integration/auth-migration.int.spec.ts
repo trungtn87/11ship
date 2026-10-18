@@ -2,6 +2,9 @@ import { ACTIVATION_DOWN_SQL, ACTIVATION_UP_SQL } from './support/activation-mig
 import { CLIENT_DEVICE_DOWN_SQL, CLIENT_DEVICE_UP_SQL } from './support/client-device-migration-sql';
 import { ACCOUNT_SCOPE_DOWN_SQL, ACCOUNT_SCOPE_UP_SQL } from './support/account-scope-migration-sql';
 import { SHIPPER_DOWN_SQL, SHIPPER_UP_SQL } from './support/shipper-migration-sql';
+import { V11_DOWN_SQL, V11_UP_SQL } from './support/shipping-v11-migration-sql';
+import { ELIGIBILITY_DOWN_SQL, ELIGIBILITY_UP_SQL } from './support/shipping-eligibility-migration-sql';
+import { FEE_POLICY_DOWN_SQL, FEE_POLICY_UP_SQL } from './support/shipping-fee-policy-migration-sql';
 import { WALLET_DOWN_SQL, WALLET_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
 import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
 import { SMS_GATEWAY_DOWN_SQL, SMS_GATEWAY_UP_SQL } from './support/sms-gateway-migration-sql';
@@ -144,6 +147,7 @@ describe('M01-A1 — Auth Core migration', () => {
       '1793404800000_create-driver-wallet-core',
       '1793491200000_create-wallet-holds',
       '1793577600000_create-wallet-topup-sources',
+      '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement',
     ]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });
@@ -245,6 +249,9 @@ describe('M01-A1 — Auth Core migration', () => {
       // The Shop and Driver migrations reference app.users, so they go down first and come back up last. The invitation
       // tables, the admin tables and the account origin are the newest: they go down before everything else.
       // The M01.02 customer tables reference app.users and are the very newest: they go down first and come back up last.
+      await client.query(V11_DOWN_SQL); // M06 v1.1: references app.users, the very newest: down first, up last
+      await client.query(FEE_POLICY_DOWN_SQL); // M06-A: references app.users: down first, up last
+      await client.query(ELIGIBILITY_DOWN_SQL); // M06-B/C: references app.users: down first, up last
       await client.query(TOPUP_DOWN_SQL); // M04-B1 adds a ledger column and references the wallet core: the very newest, down first, up last
       await client.query(WALLET_HOLD_DOWN_SQL); // M04-A2.1 references app.driver_wallets: the very newest, down first, up last
       await client.query(WALLET_DOWN_SQL); // M04-A1: references app.drivers, the very newest: down first, up last
@@ -294,6 +301,9 @@ describe('M01-A1 — Auth Core migration', () => {
       await client.query(WALLET_UP_SQL);
       await client.query(WALLET_HOLD_UP_SQL);
       await client.query(TOPUP_UP_SQL);
+      await client.query(ELIGIBILITY_UP_SQL);
+      await client.query(FEE_POLICY_UP_SQL);
+      await client.query(V11_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES].sort());
     } finally {
       await client.query('ROLLBACK');
@@ -312,7 +322,7 @@ describe('M01-A1 — Auth Core migration', () => {
     expect(owners.rows).toEqual([{ owner: 'ship11_test' }]);
     const triggers = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_)' AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
+         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|shipping_fee_policy_|shipping_eligibility_|shipping_fee_agreement)' AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
     );
     expect(triggers.rows[0]?.n).toBe(1); // only audit_logs_append_only
   });
