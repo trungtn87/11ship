@@ -57,10 +57,13 @@ describe('M04-A1 wallet core boundary', () => {
     expect(codeOf('wallet/wallet-repository.ts')).not.toMatch(/held_vnd\s*=|balance_vnd\s*=/);
   });
 
-  it('M04-B2.1: topup requests are written here only (INSERT PENDING, conditional cancel); no code writes a topup, a bank record or a system account', () => {
+  it('M04-B2.1: topup requests are written here only (INSERT PENDING, conditional cancel); no code writes a topup or a bank record, and a system account is only inserted inactive (M04-B2.2a)', () => {
     const code = walletCode();
-    expect([...(code.match(/INSERT\s+INTO\s+app\.\w+/gi) ?? [])].sort()).toEqual(['INSERT INTO app.driver_wallets', 'INSERT INTO app.wallet_holds', 'INSERT INTO app.wallet_ledger_entries', 'INSERT INTO app.wallet_topup_requests']);
-    expect(code).not.toMatch(/(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+app\.(wallet_topups|wallet_bank_transactions|system_owned_bank_accounts)/i);
+    expect([...(code.match(/INSERT\s+INTO\s+app\.\w+/gi) ?? [])].sort()).toEqual(['INSERT INTO app.driver_wallets', 'INSERT INTO app.system_owned_bank_accounts', 'INSERT INTO app.wallet_holds', 'INSERT INTO app.wallet_ledger_entries', 'INSERT INTO app.wallet_topup_requests']);
+    // M04-B2.2a: a receiving account is only ever inserted NOT receiving (the literal false); nothing in this package switches one on.
+    expect(code).toContain('SELECT $1::uuid, $2, $3, $4, false, 1, clock.t, clock.t');
+    expect(code).not.toMatch(/UPDATE\s+app\.system_owned_bank_accounts|can_receive\s*=\s*true/i);
+    expect(code).not.toMatch(/(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+app\.(wallet_topups|wallet_bank_transactions)/i);
     // Outside the wallet package nothing issues SQL on these tables, and the topup module issues no SQL at all.
     const outside = productionFiles().filter((name) => !name.startsWith('wallet/') && /app\.(system_owned_bank_accounts|wallet_topup_requests|wallet_bank_transactions|wallet_topups)\b/.test(codeOf(name)));
     expect(outside).toEqual([]);

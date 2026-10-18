@@ -1,4 +1,4 @@
-// M07 vocabulary and fixed rules. The values mirror database/migrations/1793923200000_create-m07-delivery.sql; keep the two in step.
+// M07 vocabulary and fixed rules. The values mirror database/migrations/1794009600000_create-m07-delivery.sql; keep the two in step.
 
 export const DELIVERY_STATES = ['waiting_driver', 'accepted', 'location_confirmed', 'picked_up', 'delivering', 'completed', 'failed', 'cancelled_by_merchant', 'search_stopped'] as const;
 export type DeliveryState = (typeof DELIVERY_STATES)[number];

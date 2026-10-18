@@ -66,7 +66,7 @@ offer: { delivery_id, code, shop: { name, area_text }, distance_to_shop_m|null, 
 
 Vị trí (`freshness`): `LIVE` ≤ 120 s, `STALE` ≤ 600 s, `LOST` sau đó (hoặc M14 báo không hợp lệ). Luôn trả `recorded_at`. Chỉ quán chủ delivery, shipper đang giữ assignment `ACTIVE`, hoặc Admin đọc được; hủy nhận/kết thúc/đổi assignment làm `location` = null ngay.
 
-## 6. Dữ liệu (migration `1793923200000_create-m07-delivery.sql`)
+## 6. Dữ liệu (migration `1794009600000_create-m07-delivery.sql`)
 
 `app.deliveries`, `app.delivery_assignments` (ETA gốc bất biến, hoa hồng chốt), `app.delivery_events` (chỉ thêm), `app.delivery_incidents`, `app.shipper_latest_locations` (một dòng/shipper, ghi đè, không lịch sử). Mở cổng hold COMMISSION và ledger COMMISSION_DEBIT theo lộ trình M04. Không xóa cứng nghiệp vụ; trigger chặn DELETE/TRUNCATE.
 

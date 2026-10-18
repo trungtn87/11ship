@@ -25,6 +25,12 @@ import { AdminShipperController, ShipperWalletParametersController } from '../ad
 import { AdminShipperService } from '../admin-shippers/admin-shipper-service';
 import { ShipperWalletParametersService } from '../admin-shippers/shipper-wallet-parameters-service';
 import { DriverModule } from '../driver/driver.module';
+import { FinanceAccessController } from '../finance-access/finance-access.controller';
+import { FinanceAccessParticipant } from '../finance-access/finance-access-participant';
+import { FinanceAccessRepository } from '../finance-access/finance-access-repository';
+import { FinanceAccessService } from '../finance-access/finance-access-service';
+import { SystemBankAccountService } from '../finance-access/system-bank-account-service';
+import { WalletModule } from '../wallet/wallet.module';
 import { AdminMenuCategoryService } from '../admin-menu-categories/admin-menu-category-service';
 import { AdminMenuCategoryController } from '../admin-menu-categories/admin-menu-category.controller';
 import { MenuCategoryAdminRepository } from '../menu/menu-category-admin-repository';
@@ -90,6 +96,8 @@ export class AdminAuthModule implements NestModule {
         IdempotencyModule,
         // M03 Shipper tables and ports (repositories, the wallet port, the owner's view).
         DriverModule,
+        // M04-B2.2a: the SYSTEM receiving accounts (SQL stays in the Wallet package).
+        WalletModule,
         // M06-B/C eligibility and batching (its parameter repository backs the Admin routes below).
         ShippingEligibilityModule,
         // M07.07 deliveries for the Admin routes below (views, the three records, the M06 agreements and the commission hold through their owners).
@@ -99,7 +107,7 @@ export class AdminAuthModule implements NestModule {
       ],
       // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
       // M01-D-ADMIN-1C: the activation routes under /v1/admin-activation exist only when explicitly enabled.
-      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, AdminDeliveryController, ...(activation === undefined ? [] : [AdminActivationController])],
+      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, FinanceAccessController, AdminDeliveryController, ...(activation === undefined ? [] : [AdminActivationController])],
       providers: [
         adminAuthConfigProvider,
         {
@@ -146,6 +154,11 @@ export class AdminAuthModule implements NestModule {
         // M03 Shipper management (SYSTEM, or an ADMIN with the DRIVER permissions) and the SYSTEM-only Shipper wallet parameters.
         AdminShipperService,
         ShipperWalletParametersService,
+        // M04 finance access (SYSTEM gives each right to an ADMIN, default deny) and the SYSTEM-only receiving accounts (always created not receiving).
+        FinanceAccessRepository,
+        FinanceAccessParticipant,
+        FinanceAccessService,
+        SystemBankAccountService,
         // M06-A flexible shipping-fee table (SYSTEM changes, any ADMIN reads).
         ShippingFeePolicyService,
         ShippingEligibilityPolicyService,
@@ -173,7 +186,7 @@ export class AdminAuthModule implements NestModule {
   }
 
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, AdminDeliveryController);
+    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, FinanceAccessController, AdminDeliveryController);
     // The activation transport headers are an application-level middleware in configureApp (app.setup.ts): it must precede
     // the body parser, which module middleware does not.
   }

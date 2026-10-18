@@ -96,6 +96,13 @@ describe('admin Shippers (real browser)', () => {
     await page.waitFor(`document.querySelector('#shell-title')`);
   }
 
+  /**
+   * The shell shows its landing page (#shell-title) BEFORE the admin's CURRENT permissions have been read (GET permissions, asynchronous);
+   * the menu is redrawn when they arrive. A check of the menu therefore waits for the entry it expects instead of reading it right after
+   * the sign-in, which on a slow runner is a race and not a permission fault.
+   */
+  const waitMenu = (page: Page, expression: string): Promise<void> => page.waitFor(expression);
+
   const shot = async (page: Page, name: string): Promise<void> => {
     shots.push({ name, data: await page.screenshot() });
   };
@@ -310,6 +317,7 @@ describe('admin Shippers (real browser)', () => {
     await page.viewport(1280, 900, false);
     await page.send('Network.clearBrowserCookies');
     await signIn(page, { phone: shopAdmin.phone, password: ADMIN_PASSWORD, userId: shopAdmin.userId, secret: shopAdmin.secret });
+    await waitMenu(page, `!!document.querySelector('a[href="/system/parameters/shipper-wallet"]')`);
     expect(await page.evaluate<boolean>(`!document.querySelector('a[href="/operations/shippers"]') && !!document.querySelector('a[href="/system/parameters/shipper-wallet"]')`)).toBe(true);
     await page.goto(`${origin}/operations/shippers`);
     await page.waitFor(`document.body.innerText.includes('Không có quyền')`);
@@ -328,6 +336,7 @@ describe('admin Shippers (real browser)', () => {
     await page.viewport(1280, 900, false);
     await page.send('Network.clearBrowserCookies');
     await signIn(page, { phone: driverAdmin.phone, password: ADMIN_PASSWORD, userId: driverAdmin.userId, secret: driverAdmin.secret });
+    await waitMenu(page, `!!document.querySelector('a[href="/operations/shippers"]') && !!document.querySelector('a[href="/system/parameters/shipper-wallet"]')`);
     expect(await page.evaluate<boolean>(`!!document.querySelector('a[href="/operations/shippers"]') && !!document.querySelector('a[href="/system/parameters/shipper-wallet"]')`)).toBe(true);
     await page.goto(`${origin}/operations/shippers`);
     await page.waitFor(`document.querySelector('#shipper-title') && document.querySelectorAll('.table tbody tr').length >= 1`);

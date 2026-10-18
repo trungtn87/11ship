@@ -10,7 +10,7 @@ import { WalletRepository } from '../../apps/backend/src/wallet/wallet-repositor
 import { WalletService } from '../../apps/backend/src/wallet/wallet-service';
 import { eventually, failureOf } from './support/async-helpers';
 import { AuthApp, createDriverFor, purgePhone, randomPhone, rowLockWaiters, startAuthApp } from './support/auth-fixtures';
-import { WALLET_DOWN_SQL, WALLET_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
+import { WALLET_DOWN_SQL, WALLET_UP_SQL, FINANCE_DOWN_SQL, FINANCE_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
 import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
 import { holdRowLock } from './support/lock-fixtures';
 import { loadIntegrationConfig } from './support/test-helpers';
@@ -381,6 +381,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
         await client.query('ALTER TABLE app.driver_wallets DISABLE TRIGGER driver_wallets_no_delete');
         await client.query('DELETE FROM app.driver_wallets');
         await client.query('ALTER TABLE app.driver_wallets ENABLE TRIGGER driver_wallets_no_delete');
+        await client.query(FINANCE_DOWN_SQL); // M04-B2.2a: newest, down first, up last
         await client.query(TOPUP_DOWN_SQL); // M04-B1 adds a ledger column and references the wallet core: the very newest, down first, up last
         await client.query(WALLET_HOLD_DOWN_SQL); // M04-A2.1 references the wallet table: the very newest, down first, up last
         await client.query(WALLET_DOWN_SQL);
@@ -388,6 +389,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
         await client.query(WALLET_UP_SQL);
         await client.query(WALLET_HOLD_UP_SQL);
         await client.query(TOPUP_UP_SQL);
+        await client.query(FINANCE_UP_SQL);
         expect(await tablesPresent(client)).toEqual(['driver_wallets', 'wallet_ledger_entries']);
         // The re-created schema works: a zero wallet can be born again.
         const { driverId } = await (async () => {
