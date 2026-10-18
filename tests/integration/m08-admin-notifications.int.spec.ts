@@ -134,6 +134,7 @@ describe('M08.06 — notification administration', () => {
   it('the settings: defaults, any ADMIN reads, only SYSTEM writes with the right version and within bounds; the timers are shown read-only; one audit row', async () => {
     const start = adminData(await get(driverViewer, '/notifications/config')) as Json;
     expect(start).toMatchObject({ version: 0, push_enabled: true, default_sound: true, visible_days: 90, purge_days: 365, retry_max_attempts: 5, retry_base_seconds: 30, timers: { shop_reminder_minutes: [5, 15], search_stop_minutes: 30, pickup_reminder_minutes: 5 } });
+    const auditBefore = await countRows(admin.pool, `SELECT 1 FROM app.audit_logs WHERE action = 'admin.notification_config.update.v1'`);
     const body = { expected_version: 0, push_enabled: true, default_sound: false, visible_days: 60, purge_days: 300, retry_max_attempts: 4, retry_base_seconds: 20 };
     expect(codeOf(await putConfig(driverViewer, '/notifications/config', body))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
     expect((adminData(await get(systemLogin(), '/notifications/config')) as Json).version).toBe(0);
@@ -145,7 +146,7 @@ describe('M08.06 — notification administration', () => {
     for (const bad of [{ ...body, expected_version: 1, visible_days: 6 }, { ...body, expected_version: 1, purge_days: 30 }, { ...body, expected_version: 1, retry_max_attempts: 11 }, { ...body, expected_version: 1, search_stop_minutes: 10 }]) {
       expect((await putConfig(systemLogin(), '/notifications/config', bad)).status).toBe(400);
     }
-    expect(await countRows(admin.pool, `SELECT 1 FROM app.audit_logs WHERE action = 'admin.notification_config.update.v1'`)).toBe(1);
+    expect(await countRows(admin.pool, `SELECT 1 FROM app.audit_logs WHERE action = 'admin.notification_config.update.v1'`)).toBe(auditBefore + 1);
   });
 
   it('there is no route that sends, replays or broadcasts', async () => {

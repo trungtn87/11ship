@@ -4,13 +4,15 @@
          The marker below is replaced by tool/prepare-android.sh (Food: the two location lines; Ship: nothing). -->
     <uses-permission android:name="android.permission.INTERNET"/>
     @LOCATION_PERMISSIONS@
+    <!-- M08: only a build that carries the push provider declares the notification permission (tool/prepare-android.sh fills the marker). -->
+    @PUSH_PERMISSIONS@
     <!-- The signature-level permission of the Binder door between the two 11Ship apps (contract11 section 7): only an app signed with
          the SAME certificate can hold it, so only the other 11Ship app can even bind to N11PeerService. Declared by both apps. -->
     <permission android:name="vn.eleven.n11.permission.PEER_ENDORSEMENT" android:protectionLevel="signature"/>
     <uses-permission android:name="vn.eleven.n11.permission.PEER_ENDORSEMENT"/>
     <application
         android:label="@LABEL@"
-        android:name="${applicationName}"
+        android:name="vn.eleven.n11.N11Application"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:fullBackupContent="false"
@@ -19,6 +21,7 @@
         android:usesCleartextTraffic="false">
         <!-- The non-secret environment identifier the device proofs are signed for (the server pins the same value). -->
         <meta-data android:name="vn.eleven.n11.DEVICE_ENVIRONMENT" android:value="@DEVICE_ENVIRONMENT@"/>
+        @PUSH_SERVICE@
         <service
             android:name="vn.eleven.n11.N11PeerService"
             android:exported="true"

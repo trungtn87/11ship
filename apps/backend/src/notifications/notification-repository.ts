@@ -136,6 +136,8 @@ export interface NewNotification {
   readonly sourceEventId: string | null;
   readonly validForMs: number | null;
   readonly purgeDays: number;
+  /** How long ago the fact happened (the event's age): the row is dated by the fact, not by the moment it was consumed. 0 = now. */
+  readonly ageMs?: number;
 }
 
 export type PushStatus = 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'EXPIRED' | 'SKIPPED';
@@ -343,11 +345,12 @@ export class NotificationRepository {
       `INSERT INTO app.notifications (notification_id, recipient_user_id, app, kind, category, title, body, target_type, target_id, target_version, dedupe_key, source_event_id,
                                       valid_until, created_at, updated_at, purge_after)
        SELECT $1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::uuid, $10::bigint, $11, $12::uuid,
-              CASE WHEN $13::bigint IS NULL THEN NULL ELSE c.t + ($13::bigint * interval '1 millisecond') END, c.t, c.t, c.t + ($14::int * interval '1 day')
+              CASE WHEN $13::bigint IS NULL THEN NULL ELSE c.t - ($15::bigint * interval '1 millisecond') + ($13::bigint * interval '1 millisecond') END,
+              c.t - ($15::bigint * interval '1 millisecond'), c.t - ($15::bigint * interval '1 millisecond'), c.t + ($14::int * interval '1 day')
          FROM (SELECT ${CLOCK} AS t) AS c
        ON CONFLICT (recipient_user_id, app, dedupe_key) DO NOTHING
        RETURNING notification_id`,
-      [n.notificationId, n.recipientUserId, n.app, n.kind, n.category, n.title, n.body, n.targetType, n.targetId, n.targetVersion, n.dedupeKey, n.sourceEventId, n.validForMs, n.purgeDays],
+      [n.notificationId, n.recipientUserId, n.app, n.kind, n.category, n.title, n.body, n.targetType, n.targetId, n.targetVersion, n.dedupeKey, n.sourceEventId, n.validForMs, n.purgeDays, Math.max(0, n.ageMs ?? 0)],
     );
     const row = inserted.rows[0];
     if (row !== undefined) {
@@ -571,13 +574,14 @@ export class NotificationRepository {
 
   async insertReminder(
     context: TransactionContext,
-    r: { reminderId: string; eventId: string; kind: 'SEARCH_5' | 'SEARCH_15' | 'PICKUP'; recipientUserId: string; app: NotificationApp; deliveryId: string; assignmentId: string | null; validForMs: number },
+    r: { reminderId: string; eventId: string; kind: 'SEARCH_5' | 'SEARCH_15' | 'PICKUP'; recipientUserId: string; app: NotificationApp; deliveryId: string; assignmentId: string | null; validForMs: number; ageMs: number },
   ): Promise<void> {
     await context.query(
       `INSERT INTO app.notification_reminders (reminder_id, event_id, kind, recipient_user_id, app, delivery_id, assignment_id, due_at, valid_until, status)
-       SELECT $1::uuid, $2::uuid, $3, $4::uuid, $5, $6::uuid, $7::uuid, c.t, c.t + ($8::bigint * interval '1 millisecond'), 'PENDING' FROM (SELECT ${CLOCK} AS t) AS c
+       SELECT $1::uuid, $2::uuid, $3, $4::uuid, $5, $6::uuid, $7::uuid, c.t - ($9::bigint * interval '1 millisecond'), c.t - ($9::bigint * interval '1 millisecond') + ($8::bigint * interval '1 millisecond'), 'PENDING'
+         FROM (SELECT ${CLOCK} AS t) AS c
        ON CONFLICT (event_id) DO NOTHING`,
-      [r.reminderId, r.eventId, r.kind, r.recipientUserId, r.app, r.deliveryId, r.assignmentId, r.validForMs],
+      [r.reminderId, r.eventId, r.kind, r.recipientUserId, r.app, r.deliveryId, r.assignmentId, r.validForMs, Math.max(0, r.ageMs)],
     );
   }
 

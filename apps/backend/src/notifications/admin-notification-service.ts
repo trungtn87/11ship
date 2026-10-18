@@ -31,6 +31,7 @@ const SKIP_TEXT: Readonly<Record<string, string>> = {
   PROVIDER_NOT_CONFIGURED: 'Máy chủ chưa cấu hình dịch vụ đẩy thông báo',
   NO_LONGER_AVAILABLE: 'Đơn không còn có thể nhận',
   STALE: 'Đã có thông tin mới hơn về cùng đối tượng',
+  STALE_EVENT: 'Sự kiện đã quá cũ khi được xử lý nên không gửi đẩy nữa',
 };
 
 interface Rights {

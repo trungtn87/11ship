@@ -12,9 +12,15 @@ export class NotificationPushQueue {
   constructor(private readonly repo: NotificationRepository) {}
 
   /** Always leaves ONE push row, so the Administration can see why nothing was sent (switched off, no device, not configured) instead of guessing. */
-  async queue(context: TransactionContext, p: { config: NotificationConfig; notificationId: string; userId: string; app: NotificationApp; category: NotificationCategory; pushKey: string; ttlMs: number }): Promise<void> {
+  async queue(context: TransactionContext, p: { config: NotificationConfig; notificationId: string; userId: string; app: NotificationApp; category: NotificationCategory; pushKey: string; ttlMs: number; ageMs?: number }): Promise<void> {
     const config = p.config;
-    const base = { pushId: randomUUID(), notificationId: p.notificationId, recipientUserId: p.userId, app: p.app, pushKey: p.pushKey, expiresInMs: p.ttlMs };
+    // The deadline runs from when the FACT happened: a late event (a backlog after an outage) is never pushed after its time has passed.
+    const remaining = p.ttlMs - Math.max(0, p.ageMs ?? 0);
+    const base = { pushId: randomUUID(), notificationId: p.notificationId, recipientUserId: p.userId, app: p.app, pushKey: p.pushKey, expiresInMs: Math.max(1, remaining) };
+    if (remaining <= 0) {
+      await this.repo.insertPush(context, { ...base, tokenId: null, status: 'SKIPPED', skipReason: 'STALE_EVENT' });
+      return;
+    }
     if (!config.pushEnabled) {
       await this.repo.insertPush(context, { ...base, tokenId: null, status: 'SKIPPED', skipReason: 'CHANNEL_OFF' });
       return;

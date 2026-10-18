@@ -648,4 +648,24 @@ describe('M08 — notifications, reminders and sync', () => {
     await events.consume(foreign);
     expect(await rows(`SELECT 1 FROM app.notification_consumed_events WHERE event_id = $1::uuid`, [foreign.eventId])).toHaveLength(0);
   });
+
+  it('an old event (a backlog after an outage) is recorded as stale and told to nobody; an hours-old result keeps its history time but its push deadline runs from the fact', async () => {
+    const s = await newShipper(true);
+    expect((await registerToken(s, tokenOf('old'))).status).toBe(200);
+    await flush();
+    const events = app.running.app.get(NotificationEventService);
+    const old = { eventId: randomUUID(), eventType: 'driver.state_changed.v1', eventSchemaVersion: 1, resourceType: 'driver', resourceId: s.driverId, resourceVersion: 5, occurredAt: new Date(Date.now() - 2 * 86_400_000).toISOString(), attemptCount: 1, payload: { driver_id: s.driverId, change: 'approved', status: 'ACTIVE', review_state: 'APPROVED', accepting_deliveries: false, version: 5 } };
+    await events.consume(old);
+    expect(await rows(`SELECT outcome FROM app.notification_consumed_events WHERE event_id = $1::uuid`, [old.eventId])).toEqual([{ outcome: 'STALE_EVENT' }]);
+    expect(((await inbox(s)).items as Json[]).filter((i) => i.kind.startsWith('PROFILE_'))).toHaveLength(0);
+
+    // Account notifications may be pushed for 24 h: a 23 h old one still has a deadline ahead, a 25 h old one is skipped as stale (and not even inserted past 24 h).
+    const recent = { ...old, eventId: randomUUID(), resourceVersion: 6, occurredAt: new Date(Date.now() - 23 * 3_600_000).toISOString(), payload: { ...old.payload, change: 'rejected', version: 6 } };
+    await events.consume(recent);
+    const card = ((await inbox(s)).items as Json[]).find((i) => i.kind === 'PROFILE_REJECTED') as Json;
+    expect(card).toBeDefined();
+    expect(Date.now() - Date.parse(String(card.created_at))).toBeGreaterThan(22 * 3_600_000);
+    const push = (await rows(`SELECT status, (expires_at > now()) AS live FROM app.notification_pushes WHERE recipient_user_id = $1::uuid`, [s.userId])) as Json[];
+    expect(push).toEqual([{ status: 'PENDING', live: true }]);
+  });
 });

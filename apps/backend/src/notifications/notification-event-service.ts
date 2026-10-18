@@ -11,6 +11,7 @@ import { TransactionManager } from '../transaction/transaction-manager';
 import { DraftBase, composeDeliveryChange, DeliveryChangePayload, NEW_OFFERS_COPY, PROFILE_COPY, TOPUP_COPY } from './notification-composer';
 import {
   CATEGORY_OF_KIND,
+  MAX_EVENT_AGE_MS,
   OUTBOX_DELIVERY_CHANGED_TYPE,
   OUTBOX_DRIVER_STATE_CHANGED_TYPE,
   OUTBOX_ORDER_PREFIX,
@@ -55,6 +56,12 @@ export class NotificationEventService {
 
   /** Resolves when the event is fully handled or recognized as not ours; rejects (so the outbox retries) when it could not be persisted. */
   async consume(event: OutboxPublishEvent): Promise<void> {
+    const ownType = event.eventType === OUTBOX_DELIVERY_CHANGED_TYPE || event.eventType === OUTBOX_TOPUP_CHANGED_TYPE || event.eventType === OUTBOX_DRIVER_STATE_CHANGED_TYPE;
+    if (ownType && this.#ageOf(event) > MAX_EVENT_AGE_MS) {
+      // Old news (a backlog after an outage, or from before M08 existed): recorded, told to nobody, never replayed.
+      await this.transactions.withTransaction((context) => this.repo.claimEvent(context, event.eventId, event.eventType, 'STALE_EVENT'));
+      return;
+    }
     switch (event.eventType) {
       case OUTBOX_DELIVERY_CHANGED_TYPE:
         return this.#delivery(event);
@@ -68,6 +75,12 @@ export class NotificationEventService {
           await this.transactions.withTransaction((context) => this.repo.claimEvent(context, event.eventId, event.eventType.slice(0, 80), 'NOT_INTEGRATED'));
         }
     }
+  }
+
+  /** How long ago the event was written (its own time, taken from the database clock when it was stored). */
+  #ageOf(event: OutboxPublishEvent): number {
+    const at = Date.parse(event.occurredAt);
+    return Number.isFinite(at) ? Math.max(0, Date.now() - at) : 0;
   }
 
   // ---- delivery --------------------------------------------------------------------------------------------------------------
@@ -96,7 +109,7 @@ export class NotificationEventService {
         if (draft.type === 'NOTIFY') {
           const userId = await this.#resolve(context, draft.draft, p);
           if (userId !== undefined) {
-            await this.#notify(context, config, draft.draft, userId, event.eventId);
+            await this.#notify(context, config, draft.draft, userId, event.eventId, this.#ageOf(event));
           }
         } else if (draft.type === 'OFFER_ROUND') {
           await this.#offerRound(context, config, draft.deliveryId, draft.roundVersion, audience, event.eventId);
@@ -112,6 +125,7 @@ export class NotificationEventService {
               deliveryId: draft.deliveryId,
               assignmentId: draft.assignmentId,
               validForMs: draft.reminder === 'PICKUP' ? PICKUP_REMINDER_STALE_MS : SEARCH_REMINDER_STALE_MS,
+              ageMs: this.#ageOf(event),
             });
           }
         }
@@ -204,7 +218,7 @@ export class NotificationEventService {
         return;
       }
       const copy = TOPUP_COPY[state];
-      await this.#notify(context, config, { audience: 'DRIVER', app: 'SHIP', kind: copy.kind, title: copy.title, body: copy.body, targetType: 'WALLET_TXN', targetId: requestId, targetVersion: version, dedupeKey: `topup:${requestId}:${state}:${String(version)}`, validForMs: null, pushTtlMs: PUSH_TTL_MS.account }, userId, event.eventId);
+      await this.#notify(context, config, { audience: 'DRIVER', app: 'SHIP', kind: copy.kind, title: copy.title, body: copy.body, targetType: 'WALLET_TXN', targetId: requestId, targetVersion: version, dedupeKey: `topup:${requestId}:${state}:${String(version)}`, validForMs: null, pushTtlMs: PUSH_TTL_MS.account }, userId, event.eventId, this.#ageOf(event));
     });
   }
 
@@ -223,13 +237,13 @@ export class NotificationEventService {
       if (userId === undefined) {
         return;
       }
-      await this.#notify(context, config, { audience: 'DRIVER', app: 'SHIP', kind: copy.kind, title: copy.title, body: copy.body, targetType: 'PROFILE', targetId: null, targetVersion: version, dedupeKey: `driver:${driverId}:${String(change)}:${String(version)}`, validForMs: null, pushTtlMs: PUSH_TTL_MS.account }, userId, event.eventId);
+      await this.#notify(context, config, { audience: 'DRIVER', app: 'SHIP', kind: copy.kind, title: copy.title, body: copy.body, targetType: 'PROFILE', targetId: null, targetVersion: version, dedupeKey: `driver:${driverId}:${String(change)}:${String(version)}`, validForMs: null, pushTtlMs: PUSH_TTL_MS.account }, userId, event.eventId, this.#ageOf(event));
     });
   }
 
   // ---- shared ----------------------------------------------------------------------------------------------------------------
 
-  async #notify(context: TransactionContext, config: NotificationConfig, d: DraftBase, userId: string, eventId: string): Promise<void> {
+  async #notify(context: TransactionContext, config: NotificationConfig, d: DraftBase, userId: string, eventId: string, ageMs: number): Promise<void> {
     const category = CATEGORY_OF_KIND[d.kind];
     const inserted = await this.repo.insertNotification(context, {
       notificationId: randomUUID(),
@@ -246,9 +260,10 @@ export class NotificationEventService {
       sourceEventId: eventId,
       validForMs: d.validForMs,
       purgeDays: config.purgeDays,
+      ageMs,
     });
     if (inserted.created) {
-      await this.pushes.queue(context, { config, notificationId: inserted.notificationId, userId, app: d.app, category, pushKey: `n:${inserted.notificationId}`, ttlMs: d.pushTtlMs });
+      await this.pushes.queue(context, { config, notificationId: inserted.notificationId, userId, app: d.app, category, pushKey: `n:${inserted.notificationId}`, ttlMs: d.pushTtlMs, ageMs });
     }
   }
 }

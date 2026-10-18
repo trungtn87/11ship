@@ -64,6 +64,9 @@ export const PUSH_TTL_MS = {
   account: 24 * 3_600_000,
 } as const;
 
+/** An event older than this when it is consumed (an outbox backlog after an outage, or from before M08 existed) is recorded as stale and told to nobody. */
+export const MAX_EVENT_AGE_MS = 24 * 3_600_000;
+
 /** Grouping window of due reminders: events that fall due within this many ms of each other are sent as ONE notification. */
 export const REMINDER_GATHER_MS = 3_000;
 /** A search reminder / pickup reminder older than this when it is finally looked at is stale (its next mark has passed): it is dropped, not sent late. */

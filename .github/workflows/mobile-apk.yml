@@ -173,8 +173,20 @@ jobs:
           flutter analyze
           flutter test
 
+      # M08 push: the Firebase Android client identifiers of THIS app (repository variables FCM_PROJECT_ID, FCM_SENDER_ID, FCM_SHIP_APP_ID / FCM_FOOD_APP_ID and
+      # secrets FCM_SHIP_API_KEY / FCM_FOOD_API_KEY). All four present = the APK carries FCM; none = a build without push (the app says so); a partial or invalid
+      # set stops the build. The server's credential (service account) is never here.
       - name: Prepare Android project
-        run: DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" mobile/tool/prepare-android.sh ${{ matrix.app }}
+        env:
+          FCM_PROJECT_ID: ${{ vars.FCM_PROJECT_ID }}
+          FCM_SENDER_ID: ${{ vars.FCM_SENDER_ID }}
+          FCM_APP_ID: ${{ matrix.app == 'ship' && vars.FCM_SHIP_APP_ID || vars.FCM_FOOD_APP_ID }}
+          FCM_API_KEY: ${{ matrix.app == 'ship' && secrets.FCM_SHIP_API_KEY || secrets.FCM_FOOD_API_KEY }}
+        run: |
+          DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" mobile/tool/prepare-android.sh ${{ matrix.app }} | tee "$RUNNER_TEMP/prepare.log"
+          if grep -q 'push=off' "$RUNNER_TEMP/prepare.log"; then
+            echo "::warning title=M08 push not in this APK::the Firebase client identifiers are not configured for ${{ matrix.app }}; the app is built without push (inbox and live sync still work)"
+          fi
 
       - name: Native unit tests (Binder join rules)
         run: |
