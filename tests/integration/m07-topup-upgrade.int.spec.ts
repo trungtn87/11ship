@@ -135,6 +135,7 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
         await c.query('DELETE FROM app.shipping_fee_policy_versions');
       }
       await c.query('DELETE FROM app.admin_finance_grants');
+      await c.query('SET CONSTRAINTS ALL IMMEDIATE'); // the deferred withdrawal foreign keys fire now, before the triggers come back
       for (const table of tables) {
         await c.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
       }

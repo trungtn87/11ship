@@ -12,6 +12,7 @@ import { eventually, failureOf } from './support/async-helpers';
 import { AuthApp, createDriverFor, purgePhone, randomPhone, rowLockWaiters, startAuthApp } from './support/auth-fixtures';
 import { WALLET_DOWN_SQL, WALLET_UP_SQL, FINANCE_DOWN_SQL, FINANCE_UP_SQL, POSTING_DOWN_SQL, POSTING_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
 import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
+import { WITHDRAWAL_DOWN_SQL, WITHDRAWAL_UP_SQL } from './support/withdrawal-migration-sql';
 import { holdRowLock } from './support/lock-fixtures';
 import { loadIntegrationConfig } from './support/test-helpers';
 import { managerFor, testPool } from './support/transaction-fixtures';
@@ -300,7 +301,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
       await refused('delete', () => client.query('DELETE FROM app.wallet_ledger_entries'), 'append-only');
       // The ledger and the balance move together, so the check is deferred for this one pair of statements.
       await client.query('SET CONSTRAINTS ALL DEFERRED');
-      await insertEntry(2, 'WITHDRAWAL_DEBIT', -40000, 60000);
+      await insertEntry(2, 'ADJUSTMENT_DEBIT', -40000, 60000);
       await client.query('UPDATE app.driver_wallets SET balance_vnd = 60000, version = version + 1 WHERE wallet_id = $1::uuid', [wallet.walletId]);
       await client.query('SET CONSTRAINTS ALL IMMEDIATE');
       // The ledger says 60000; a balance of 70000 breaks the invariant right here.
@@ -381,6 +382,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
         await client.query('ALTER TABLE app.driver_wallets DISABLE TRIGGER driver_wallets_no_delete');
         await client.query('DELETE FROM app.driver_wallets');
         await client.query('ALTER TABLE app.driver_wallets ENABLE TRIGGER driver_wallets_no_delete');
+        await client.query(WITHDRAWAL_DOWN_SQL); // M04-C withdrawals: the very newest, down first, up last
         await client.query(POSTING_DOWN_SQL); // M04-B2.2b: replaces one function and needs the topup tables: newest, down first, up last
         await client.query(FINANCE_DOWN_SQL); // M04-B2.2a: newest, down first, up last
         await client.query(TOPUP_DOWN_SQL); // M04-B1 adds a ledger column and references the wallet core: the very newest, down first, up last
@@ -392,6 +394,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
         await client.query(TOPUP_UP_SQL);
         await client.query(FINANCE_UP_SQL);
         await client.query(POSTING_UP_SQL);
+        await client.query(WITHDRAWAL_UP_SQL);
         expect(await tablesPresent(client)).toEqual(['driver_wallets', 'wallet_ledger_entries']);
         // The re-created schema works: a zero wallet can be born again.
         const { driverId } = await (async () => {
@@ -431,7 +434,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
   it('12. no route lets a user or an administrator move money: the wallet package exposes no endpoint', async () => {
     const app: AuthApp = await startAuthApp();
     try {
-      const paths = ['/wallet', '/wallets', '/wallet/topup', '/wallet/withdraw', '/wallet/adjustment', '/driver/wallet', '/driver/wallet/topups', '/driver/wallet/withdrawals'];
+      const paths = ['/wallet', '/wallets', '/wallet/topup', '/wallet/withdraw', '/wallet/adjustment', '/driver/wallet/topups'];
       for (const method of ['GET', 'POST', 'PUT'] as const) {
         for (const path of paths) {
           const response = await app.call(method, path, { body: method === 'GET' ? undefined : { amount_vnd: 100000 } });

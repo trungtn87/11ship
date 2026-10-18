@@ -46,7 +46,6 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
   let client: AuthApp;
   let admin: AdminApp;
   let system: SystemSession;
-  let hash = '';
   let account: { id: string; number: string };
   const accountIds: string[] = [];
   const admins: Record<string, { who: ActivatedAdmin; login: Login }> = {};
