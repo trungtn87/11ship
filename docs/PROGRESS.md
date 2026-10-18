@@ -252,12 +252,14 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#137](https://github.com/trungtn87/11ship/pull/137) M04: hoàn thiện module Ví Shipper (rút tiền, tài chính Admi… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `4ec714e` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#138](https://github.com/trungtn87/11ship/pull/138) chore: sync main into M08 for integration | Đã merge (`MERGED`) | — | — | — | `5f4d8be` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#139](https://github.com/trungtn87/11ship/pull/139) fix(M01): 11Ship đăng ký khi tắt OTP; chẩn đoán lỗi đăng ký… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `9477ff4` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#140](https://github.com/trungtn87/11ship/pull/140) feat(M10): orders schema, API, M07 adapter, M08 events, adm… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `08ef950` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
 - `UNCLASSIFIED_PR` PR #122: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #137: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #139: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #140: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
