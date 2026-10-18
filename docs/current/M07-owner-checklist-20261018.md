@@ -40,6 +40,13 @@ Mã nguồn: PR #133, nhánh `ccr-20044309-7dr277`. Bản APK (11Food / 11Ship),
 - Quán chuyển lời đồng ý của khách về điểm giao (shipper ghim điểm).
 - Hoa hồng 1.000đ/đơn thành công (ADR-004), chốt tại thời điểm nhận đơn.
 
-## APK
+## APK (cập nhật đè, cùng applicationId và cùng khóa ký cố định)
 
-(điền sau khi workflow Mobile APK hoàn tất: applicationId giữ nguyên, ký bằng khóa cố định, versionCode tăng)
+Bản dựng thủ công của workflow **Mobile APK**, run #121, từ mã nguồn `35c350d`; `mobile/` không đổi từ đó tới bản cuối của PR nên không dựng lại. Máy chủ: `https://103.9.78.67.sslip.io`, môi trường thiết bị `ship11-test`. Tải ở trang run: https://github.com/trungtn87/11ship/actions/runs/39097360083 (artifact giữ 30 ngày).
+
+| App | applicationId | versionCode | SHA256 của APK |
+|---|---|---|---|
+| 11Food | `vn.eleven.food.test` | 121 | `090e1621c022daf7fc92d83250c8d3b55595b91125267e2dbc2e4486ea71f154` |
+| 11Ship (bản đồ ngoại tuyến M14 **bật**) | `vn.eleven.ship.test` | 121 | `463a201ac1ed5fbaf7eb1c468fd9236285ad43b49a5bc1988d8b7a5a8dda9e98` |
+
+Cả hai đã qua: phân tích + test Flutter, kiểm chứng ký (v2 đạt, chứng chỉ trùng khóa cố định), danh sách quyền, kiểm tra đúng applicationId/versionCode; 11Ship còn qua kiểm tra M14 chính thức không chứa lịch sử thử nghiệm và ảnh chụp giao diện khách trên máy ảo Android. **Đây chưa phải nghiệm thu trên thiết bị thật** và không gửi SMS.
