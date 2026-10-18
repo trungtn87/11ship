@@ -76,6 +76,25 @@ function toRequest(row: RawRequest): TopupRequestRow {
   };
 }
 
+export interface AdminTopupRow extends TopupRequestRow {
+  /** The amount the administrator recorded as received (CONFIRMED only), which may differ from the amount asked for. */
+  readonly actualAmountVnd: bigint | null;
+  readonly receivedAtMs: number | null;
+}
+
+interface RawAdminRequest extends RawRequest {
+  actual_amount_vnd: string | null;
+  received_ms: string | null;
+}
+
+function toAdminRow(row: RawAdminRequest): AdminTopupRow {
+  const base = toRequest(row);
+  if (row.actual_amount_vnd !== null && !/^[0-9]{1,16}$/.test(row.actual_amount_vnd)) {
+    throw new TechnicalError('internal', 'Database returned an unexpected top-up amount');
+  }
+  return { ...base, actualAmountVnd: row.actual_amount_vnd === null ? null : BigInt(row.actual_amount_vnd), receivedAtMs: row.received_ms === null ? null : safeNumber(row.received_ms) };
+}
+
 @Injectable()
 export class TopupRequestRepository {
   /** The receiving accounts the system accepts money on today (can_receive = true), in a stable order. Read only. */
@@ -165,5 +184,74 @@ export class TopupRequestRepository {
       [walletId, options.state ?? null, options.after?.createdAtMs ?? null, options.after?.requestId ?? null, options.limit],
     );
     return result.rows.map(toRequest);
+  }
+
+  // ---- Administration (M04-B2.2b): every request of any Shipper, read and resolved by an authorised administrator ----
+
+  /** A request by id, any owner, WITHOUT a lock: used only to discover which Shipper to lock first; every decision is re-read under the locks. */
+  async findById(context: TransactionContext, requestId: string): Promise<TopupRequestRow | undefined> {
+    const result = await context.query<RawRequest>(`SELECT ${COLUMNS} FROM app.wallet_topup_requests r WHERE r.request_id = $1::uuid`, [requestId]);
+    const row = result.rows[0];
+    return row === undefined ? undefined : toRequest(row);
+  }
+
+  async lockById(context: TransactionContext, requestId: string): Promise<TopupRequestRow | undefined> {
+    const result = await context.query<RawRequest>(`SELECT ${COLUMNS} FROM app.wallet_topup_requests r WHERE r.request_id = $1::uuid FOR UPDATE`, [requestId]);
+    const row = result.rows[0];
+    return row === undefined ? undefined : toRequest(row);
+  }
+
+  /**
+   * PENDING -> CONFIRMED | REJECTED at the expected version in ONE conditional statement (the loser of a race with the Shipper's cancel updates zero rows).
+   * The resolver is the administrator; the time is the database clock. CONFIRMED is only valid together with its topup (checked at COMMIT).
+   */
+  async resolve(
+    context: TransactionContext,
+    requestId: string,
+    expectedVersion: number,
+    state: 'CONFIRMED' | 'REJECTED',
+    actorUserId: string,
+  ): Promise<TopupRequestRow | undefined> {
+    const result = await context.query<RawRequest>(
+      `WITH clock AS (SELECT date_trunc('milliseconds', clock_timestamp()) AS t),
+            resolved AS (
+              UPDATE app.wallet_topup_requests r
+                 SET state = $4, resolved_by_user_id = $3::uuid, resolved_at = clock.t, updated_at = clock.t, version = r.version + 1
+                FROM clock
+               WHERE r.request_id = $1::uuid AND r.state = 'PENDING' AND r.version = $2::bigint
+               RETURNING r.*
+            )
+       SELECT ${COLUMNS} FROM resolved r`,
+      [requestId, expectedVersion, actorUserId, state],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toRequest(row);
+  }
+
+  /** Newest first, with the actual amount and the time received of a CONFIRMED request. No bank reference, no account, no phone. */
+  async listForAdmin(
+    context: TransactionContext,
+    options: { state: TopupRequestState | undefined; limit: number; after: TopupListCursor | undefined },
+  ): Promise<AdminTopupRow[]> {
+    const result = await context.query<RawAdminRequest>(
+      `SELECT ${COLUMNS}, t.actual_amount_vnd::text AS actual_amount_vnd, (extract(epoch FROM t.received_at) * 1000)::bigint::text AS received_ms
+         FROM app.wallet_topup_requests r LEFT JOIN app.wallet_topups t ON t.request_id = r.request_id
+        WHERE ($1::text IS NULL OR r.state = $1::text)
+          AND ($2::bigint IS NULL OR (r.created_at, r.request_id) < ('epoch'::timestamptz + $2::bigint * interval '1 millisecond', $3::uuid))
+        ORDER BY r.created_at DESC, r.request_id DESC
+        LIMIT $4::int`,
+      [options.state ?? null, options.after?.createdAtMs ?? null, options.after?.requestId ?? null, options.limit],
+    );
+    return result.rows.map(toAdminRow);
+  }
+
+  async findForAdmin(context: TransactionContext, requestId: string): Promise<AdminTopupRow | undefined> {
+    const result = await context.query<RawAdminRequest>(
+      `SELECT ${COLUMNS}, t.actual_amount_vnd::text AS actual_amount_vnd, (extract(epoch FROM t.received_at) * 1000)::bigint::text AS received_ms
+         FROM app.wallet_topup_requests r LEFT JOIN app.wallet_topups t ON t.request_id = r.request_id WHERE r.request_id = $1::uuid`,
+      [requestId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toAdminRow(row);
   }
 }

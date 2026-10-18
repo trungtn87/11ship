@@ -230,8 +230,9 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
     const holdGrants = grants.split('\n').filter((line) => /^GRANT .* ON app\.wallet_holds TO ship11_app;/.test(line));
     expect(holdGrants).toEqual(['GRANT SELECT ON app.wallet_holds TO ship11_app;']);
     expect(grants).not.toMatch(/GRANT [A-Z, ]*\b(UPDATE|DELETE|TRUNCATE)\b[A-Z, ]* ON app\.(wallet_holds|wallet_ledger_entries) /);
-    expect(grants).not.toMatch(/GRANT [A-Z, ]*\bINSERT\b[A-Z, ]* ON app\.(wallet_holds|wallet_ledger_entries) /);
-    expect(grants).not.toMatch(/GRANT [A-Z, ]*\b(UPDATE|DELETE|TRUNCATE)\b[A-Z, ]* ON app\.driver_wallets /);
+    expect(grants).not.toMatch(/GRANT [A-Z, ]*\bINSERT\b[A-Z, ]* ON app\.wallet_holds /);
+    // M04-B2.2b: the wallet balance moves and the ledger is appended only in the TOPUP posting; neither is ever deleted or truncated.
+    expect(grants).not.toMatch(/GRANT [A-Z, ]*\b(DELETE|TRUNCATE)\b[A-Z, ]* ON app\.driver_wallets /);
   });
 
   it('4. held = SUM(ACTIVE holds): several holds match, one coin short or over rolls back, held above the balance fails (all rolled-back fixtures)', async () => {
