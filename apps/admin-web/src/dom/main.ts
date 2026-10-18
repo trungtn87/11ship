@@ -141,6 +141,10 @@ function startAdmin(host: HTMLElement): void {
       refresh: () => controller.refreshSession(),
     }),
     undefined,
+    createNotificationSource(new AdminNotificationApi(fetchTransport(window.fetch.bind(window), { base: NOTIFICATIONS_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
     createShippingPolicySource(new ShippingPolicyApi(fetchTransport(window.fetch.bind(window), { base: SHIPPING_POLICY_BASE })), {
       csrf: () => controller.sessionCsrf,
       refresh: () => controller.refreshSession(),
@@ -150,10 +154,6 @@ function startAdmin(host: HTMLElement): void {
       refresh: () => controller.refreshSession(),
     }),
     createFinanceAdminSource(new AdminFinanceApi(fetchTransport(window.fetch.bind(window), { base: FINANCE_BASE })), {
-      csrf: () => controller.sessionCsrf,
-      refresh: () => controller.refreshSession(),
-    }),
-    createNotificationSource(new AdminNotificationApi(fetchTransport(window.fetch.bind(window), { base: NOTIFICATIONS_BASE })), {
       csrf: () => controller.sessionCsrf,
       refresh: () => controller.refreshSession(),
     }),
