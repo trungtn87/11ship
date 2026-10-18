@@ -11,7 +11,7 @@ List<TabSpec> buildShipTabs(SessionController session, {AppFlows? flows}) {
   return <TabSpec>[
     TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', fullBleed: true, showAppBar: false, body: (BuildContext context, ShellActions actions) => ShipHome(session: session, reset: flows?.reset, onNotifications: () => actions.goTab('notifications'))),
     TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: (BuildContext context, ShellActions actions) => _orders(session, flows)),
-    TabSpec(id: 'income', label: 'Thu nhập', icon: Icons.bar_chart_outlined, title: 'Thu nhập', body: _income),
+    TabSpec(id: 'income', label: 'Thu nhập', icon: Icons.bar_chart_outlined, title: 'Thu nhập', body: (BuildContext context, ShellActions actions) => _income(context, actions, session)),
     TabSpec(id: 'notifications', label: 'Thông báo', icon: Icons.notifications_outlined, title: 'Thông báo', body: _notifications),
     TabSpec(id: 'account', label: 'Tài khoản', icon: Icons.person_outline, title: 'Tài khoản', body: (BuildContext context, ShellActions actions) => _account(session, actions, flows)),
   ];
@@ -80,10 +80,10 @@ class _OrdersBodyState extends State<OrdersBody> {
 
 // ---- S03: income -----------------------------------------------------------------------------------------------------
 
-Widget _income(BuildContext context, ShellActions actions) {
+Widget _income(BuildContext context, ShellActions actions, SessionController session) {
   return vstack(<Widget>[
-    // M04 UI: entry to the wallet screens. Not-wired in real builds (the screens say so); sample data only in a preview build.
-    const WalletEntry(),
+    // M04: entry to the wallet screens, connected to the server through the session (a sample only in a preview build).
+    WalletEntry(session: session),
     const GatedButton(label: 'Chọn khoảng ngày', reason: 'Chọn ngày sẽ có khi dữ liệu thu nhập sẵn sàng.', kind: ButtonKind.secondary, icon: Icons.schedule),
     _unknownFigure(label: 'Tổng thu nhập', note: 'Chưa có dữ liệu. "—" nghĩa là chưa biết, không phải 0 đồng.'),
     const EmptyState(icon: Icons.bar_chart_outlined, title: 'Chưa có dữ liệu thu nhập', text: FrameReasons.empty),
@@ -133,7 +133,7 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
         ),
     ],
     entries: <Widget>[
-      const WalletListItem(key: Key('account-wallet-entry')),
+      WalletListItem(key: const Key('account-wallet-entry'), session: session),
       if (driver == null)
         N11ListItem(
           icon: Icons.badge_outlined,

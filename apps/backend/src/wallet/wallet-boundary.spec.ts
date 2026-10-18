@@ -25,28 +25,33 @@ function productionFiles(): string[] {
 describe('M04-A1 wallet core boundary', () => {
   it('exposes no endpoint: no controller, no route decorator, and the application module does not import it yet', () => {
     expect(walletCode()).not.toMatch(/@Controller|@Get\(|@Post\(|@Put\(|@Patch\(|@Delete\(|@UseGuards/);
-    expect(codeOf('app.module.ts')).not.toMatch(/WalletModule|wallet\//);
+    expect(codeOf('app.module.ts')).not.toMatch(/\bWalletModule\b|from '\.\/wallet\//);
   });
 
-  it('moves money only as a TOPUP posting or a COMMISSION capture: one literal ledger INSERT each, the wallet UPDATE only in the two money services, no DELETE or TRUNCATE, a single INSERT of a literal-zero wallet', () => {
+  it('moves money only as a TOPUP posting, a COMMISSION capture or a WITHDRAWAL capture: one literal ledger INSERT each, the wallet UPDATE only in the two money services, no DELETE or TRUNCATE, a single INSERT of a literal-zero wallet', () => {
     const code = walletCode();
     // M04-B2.2b: the UPDATEs are the conditional request change, the SYSTEM receiving switch and the balance move of the TOPUP posting.
     // M07: the commission hold changes the hold row (resolve once) and the wallet (held on reserve, held and balance on capture, held on release).
+    // M04-C: the withdrawal money service moves the wallet and its hold the same way (reserve, release, capture) and the withdrawal repository moves the withdrawal state machine.
     expect([...(code.match(/\bUPDATE\s+app\.\w+/gi) ?? [])].sort()).toEqual([
+      'UPDATE app.driver_wallets',
       'UPDATE app.driver_wallets',
       'UPDATE app.driver_wallets',
       'UPDATE app.system_owned_bank_accounts',
       'UPDATE app.wallet_holds',
+      'UPDATE app.wallet_holds',
       'UPDATE app.wallet_topup_requests',
       'UPDATE app.wallet_topup_requests',
+      ...Array<string>(6).fill('UPDATE app.wallet_withdrawals'),
     ]);
-    for (const file of walletFiles().filter((name) => name !== 'wallet/topup-settlement-repository.ts' && name !== 'wallet/commission-hold-service.ts')) {
+    for (const file of walletFiles().filter((name) => name !== 'wallet/topup-settlement-repository.ts' && name !== 'wallet/commission-hold-service.ts' && name !== 'wallet/withdrawal-money-service.ts')) {
       expect(codeOf(file)).not.toMatch(/UPDATE\s+app\.(driver_wallets|wallet_holds)|INSERT\s+INTO\s+app\.(wallet_ledger_entries|wallet_holds)/i);
     }
     expect(codeOf('wallet/topup-settlement-repository.ts')).toContain('UPDATE app.driver_wallets');
     expect(code).not.toMatch(/\bDELETE\s+FROM\b/i);
     expect(code).not.toMatch(/\bTRUNCATE\b/i);
-    expect(code.match(/INSERT\s+INTO\s+app\.wallet_ledger_entries/gi)).toHaveLength(2);
+    expect(code.match(/INSERT\s+INTO\s+app\.wallet_ledger_entries/gi)).toHaveLength(3);
+    expect(codeOf('wallet/withdrawal-money-service.ts')).toMatch(/INSERT INTO app\.wallet_ledger_entries[^`]*'WITHDRAWAL_DEBIT'/);
     expect(codeOf('wallet/topup-settlement-repository.ts')).toMatch(/INSERT INTO app\.wallet_ledger_entries[^`]*VALUES \(\$1::uuid, \$2::uuid, \$3::bigint, 'TOPUP'/);
     expect(codeOf('wallet/commission-hold-service.ts')).toMatch(/INSERT INTO app\.wallet_ledger_entries[^`]*'COMMISSION_DEBIT'/);
     expect(code.match(/INSERT INTO app\.driver_wallets\b/g) ?? []).toHaveLength(1);
@@ -55,7 +60,7 @@ describe('M04-A1 wallet core boundary', () => {
     expect(insert.match(/\$\d+/g)).toEqual(['$1', '$2']);
   });
 
-  it('holds are written only by the commission service (M07): COMMISSION only, no withdrawal hold, no delete, no free "set held" helper', () => {
+  it('holds are written only by the commission service (M07, COMMISSION only) and the withdrawal money service (M04-C, WITHDRAWAL only): no delete, no free "set held" helper', () => {
     const code = walletCode();
     expect(code).toMatch(/FROM app\.wallet_holds/);
     expect(code).not.toMatch(/DELETE\s+FROM\s+app\.wallet_holds/i);
@@ -65,33 +70,42 @@ describe('M04-A1 wallet core boundary', () => {
     expect(codeOf('wallet/commission-hold-service.ts')).not.toMatch(/WITHDRAWAL/);
   });
 
-  it('M04-B2.2b / M07: the only inserts are the wallet, the request, an INACTIVE system account, the bank record, the topup, the ledger rows (TOPUP, COMMISSION_DEBIT) and the commission hold; no receiving switch to true by literal', () => {
+  it('M04-B2.2b / M07 / M04-C: the only inserts are the wallet, the request, an INACTIVE system account, the bank records, the topup, the ledger rows (TOPUP, COMMISSION_DEBIT, WITHDRAWAL_DEBIT), the holds, the withdrawal with its events and the commission policy versions; no receiving switch to true by literal', () => {
     const code = walletCode();
     expect([...(code.match(/INSERT\s+INTO\s+app\.\w+/gi) ?? [])].sort()).toEqual([
       'INSERT INTO app.driver_wallets',
       'INSERT INTO app.system_owned_bank_accounts',
       'INSERT INTO app.wallet_bank_transactions',
+      'INSERT INTO app.wallet_bank_transactions',
+      'INSERT INTO app.wallet_commission_policies',
       'INSERT INTO app.wallet_holds',
+      'INSERT INTO app.wallet_holds',
+      'INSERT INTO app.wallet_ledger_entries',
       'INSERT INTO app.wallet_ledger_entries',
       'INSERT INTO app.wallet_ledger_entries',
       'INSERT INTO app.wallet_topup_requests',
       'INSERT INTO app.wallet_topups',
+      'INSERT INTO app.wallet_withdrawal_events',
+      'INSERT INTO app.wallet_withdrawals',
     ]);
     // A receiving account is only ever inserted NOT receiving (the literal false); the switch takes its value from the SYSTEM command, never a literal true.
     expect(code).toContain('SELECT $1::uuid, $2, $3, $4, false, 1, clock.t, clock.t');
     expect(code).not.toMatch(/can_receive\s*=\s*true/i);
     expect(code).not.toMatch(/(UPDATE|DELETE\s+FROM)\s+app\.(wallet_topups|wallet_bank_transactions|wallet_ledger_entries)/i);
-    // The bank record and the topup are written only by the settlement repository.
+    // The topup and the IN bank record are written only by the settlement repository; the OUT bank record only by the withdrawal repository.
     for (const file of walletFiles().filter((name) => name !== 'wallet/topup-settlement-repository.ts')) {
-      expect(codeOf(file)).not.toMatch(/INSERT\s+INTO\s+app\.(wallet_topups|wallet_bank_transactions)/i);
+      expect(codeOf(file)).not.toMatch(/INSERT\s+INTO\s+app\.wallet_topups/i);
+    }
+    for (const file of walletFiles().filter((name) => name !== 'wallet/topup-settlement-repository.ts' && name !== 'wallet/withdrawal-repository.ts')) {
+      expect(codeOf(file)).not.toMatch(/INSERT\s+INTO\s+app\.wallet_bank_transactions/i);
     }
     // Outside the wallet package nothing issues SQL on these tables, and the topup modules issue no SQL at all.
     const outside = productionFiles().filter((name) => !name.startsWith('wallet/') && /app\.(system_owned_bank_accounts|wallet_topup_requests|wallet_bank_transactions|wallet_topups)\b/.test(codeOf(name)));
     expect(outside).toEqual([]);
   });
 
-  it('has no withdrawal or adjustment command; reserve / capture / release exist only in the commission service (M07)', () => {
-    expect(walletCode()).not.toMatch(/\b(requestWithdraw|postAdjustment|chargeCommission|debitWallet|creditWallet)\b/);
+  it('has no generic adjustment, debit or credit command; the commission reserve / capture / release exist only in the commission service (M07)', () => {
+    expect(walletCode()).not.toMatch(/\b(postAdjustment|chargeCommission|debitWallet|creditWallet|ADJUSTMENT_CREDIT'|ADJUSTMENT_DEBIT')\b/);
     for (const file of walletFiles().filter((name) => name !== 'wallet/commission-hold-service.ts')) {
       expect(codeOf(file)).not.toMatch(/\b(reserveCommission|captureCommission|releaseCommission)\b/);
     }
@@ -123,8 +137,11 @@ describe('M04-A1 wallet core boundary', () => {
     expect(codeOf('wallet/wallet-service.ts')).toContain('lockById');
   });
 
-  it('leaves the M03 wallet port as it is: not integrated, so a wallet never makes a Shipper ready for orders', () => {
-    expect(codeOf('driver/driver.module.ts')).toMatch(/provide: DRIVER_WALLET_PORT, useClass: NotIntegratedDriverWalletPort/);
-    expect(walletCode()).not.toMatch(/DRIVER_WALLET_PORT|readinessForOrders|settlementForClosure/);
+  it('M04-C: the M03 wallet port is a delegate that fails closed until the wallet binds itself (the Driver module imports nothing of the wallet)', () => {
+    expect(codeOf('driver/driver.module.ts')).toMatch(/provide: DRIVER_WALLET_PORT, useExisting: DelegatingDriverWalletPort/);
+    expect(codeOf('driver/driver-wallet-port.ts')).toMatch(/#target: DriverWalletPort = new NotIntegratedDriverWalletPort\(\)/);
+    expect(codeOf('wallet/wallet.module.ts')).toContain('this.port.bind(this.wallet)');
+    // The only wallet file that answers the port is the one adapter; no other file names it.
+    expect(walletFiles().filter((name) => /DRIVER_WALLET_PORT|readinessForOrders|settlementForClosure/.test(codeOf(name)))).toEqual(['wallet/wallet-driver-port.ts']);
   });
 });

@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { ADMIN_SESSION_COOKIE } from '../../apps/backend/src/admin-auth/admin-auth-constants';
-import { DRIVER_WALLET_PORT, DriverWalletPort, WalletReadiness, WalletSettlement } from '../../apps/backend/src/driver/driver-wallet-port';
+import { DRIVER_WALLET_PORT, DriverWalletPort, WalletFunding, WalletReadiness, WalletSettlement } from '../../apps/backend/src/driver/driver-wallet-port';
 import {
   ADMIN_PASSWORD,
   AdminApp,
@@ -46,6 +46,7 @@ const tag = randomBytes(3).toString('hex').toUpperCase();
 /** The M04 wallet as a test can control it: nothing is real, the flags only say what M04 would answer. */
 const wallet = { ready: false, settled: false };
 const walletPort: DriverWalletPort = {
+  fundingForActivation: (): Promise<WalletFunding> => Promise.resolve({ funded: true }),
   readinessForOrders: (): Promise<WalletReadiness> => Promise.resolve(wallet.ready ? { ready: true } : { ready: false, reason: 'WALLET_NOT_AVAILABLE' }),
   settlementForClosure: (): Promise<WalletSettlement> => Promise.resolve(wallet.settled ? { settled: true } : { settled: false, reason: 'BALANCE_REMAINING' }),
 };

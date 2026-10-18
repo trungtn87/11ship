@@ -200,7 +200,7 @@ describe('M04-B2.2a — finance access and receiving accounts', () => {
 
   it('3. strict input and targets: unknown or reserved rights, extra fields, a missing CSRF or cookie, SYSTEM / unknown / ordinary users as targets, a disabled admin', async () => {
     const target = other.userId;
-    for (const body of [{}, { permission_key: READ }, { permission_key: 'wallet.withdrawal.process', expected_version: 0 }, { permission_key: 'driver.bank.read', expected_version: 0 }, { permission_key: 'wallet.*', expected_version: 0 },
+    for (const body of [{}, { permission_key: READ }, { permission_key: 'wallet.adjustment.post', expected_version: 0 }, { permission_key: 'driver.bank.read', expected_version: 0 }, { permission_key: 'wallet.*', expected_version: 0 },
       { permission_key: READ, expected_version: -1 }, { permission_key: READ, expected_version: 0, role: 'SYSTEM' }, { permission_key: READ, expected_version: 0, user_id: plain.userId }]) {
       expect([JSON.stringify(body), (await send(systemLogin(), `/finance/access/admins/${target}/grant`, body)).status]).toEqual([JSON.stringify(body), 400]);
     }

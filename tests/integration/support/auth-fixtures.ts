@@ -199,6 +199,26 @@ async function purgeWalletsOfPhone(pool: Pool, normalizedPhone: string): Promise
     // user triggers of exactly those tables lifted for this transaction only; the deferred links are settled before the guards come back.
     const topupTables = ['wallet_ledger_entries', 'wallet_topups', 'wallet_bank_transactions', 'wallet_topup_requests'];
     const ownedWallets = `SELECT wallet_id FROM app.driver_wallets WHERE driver_id IN (${owned})`;
+    // M04-C: a test that committed withdrawals removes them first (events, the OUT bank record, the debit, the hold, the withdrawal itself), with the guards of
+    // exactly those tables lifted for this transaction only. Their links are deferred, so the order inside the transaction does not matter; they are checked at the end.
+    const withdrawalTables = ['wallet_withdrawal_events', 'wallet_withdrawals', 'wallet_ledger_entries', 'wallet_bank_transactions'];
+    for (const table of withdrawalTables) {
+      await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
+    }
+    await client.query('ALTER TABLE app.wallet_holds DISABLE TRIGGER wallet_holds_no_delete');
+    const ownedWithdrawals = `SELECT withdrawal_id FROM app.wallet_withdrawals WHERE wallet_id IN (${ownedWallets})`;
+    await client.query(`DELETE FROM app.wallet_ledger_entries WHERE withdrawal_id IN (${ownedWithdrawals})`, [normalizedPhone]);
+    await client.query(`DELETE FROM app.wallet_withdrawal_events WHERE withdrawal_id IN (${ownedWithdrawals})`, [normalizedPhone]);
+    await client.query(`DELETE FROM app.wallet_bank_transactions WHERE withdrawal_id IN (${ownedWithdrawals})`, [normalizedPhone]);
+    await client.query(`DELETE FROM app.wallet_holds WHERE withdrawal_id IN (${ownedWithdrawals})`, [normalizedPhone]);
+    await client.query(`DELETE FROM app.wallet_withdrawals WHERE wallet_id IN (${ownedWallets})`, [normalizedPhone]);
+    // The ledger rows of the withdrawals are gone, but the wallet balance was moved by them: the balance of a purged wallet is rewritten below with the rest.
+    await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+    await client.query('ALTER TABLE app.wallet_holds ENABLE TRIGGER wallet_holds_no_delete');
+    for (const table of withdrawalTables) {
+      await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
+    }
+    await client.query('SET CONSTRAINTS ALL DEFERRED');
     for (const table of topupTables) {
       await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
     }

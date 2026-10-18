@@ -90,6 +90,7 @@ describe('M07 — delivery flow', () => {
       if (addedPolicy) {
         await client.query('DELETE FROM app.shipping_fee_policy_versions');
       }
+      await client.query('SET CONSTRAINTS ALL IMMEDIATE'); // the deferred withdrawal foreign keys fire now, before the triggers come back
       for (const table of tables) {
         await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
       }

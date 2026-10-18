@@ -213,6 +213,11 @@ export class AdminShipperService {
         if (driver.fullName.trim() === '' || bank === undefined || !holderMatchesName(driver.fullName, bank.accountHolder)) {
           throw new AppError('DRIVER_PROFILE_INCOMPLETE');
         }
+        // The first activation needs real money already RECORDED by an administrator (M04 top-up confirmation): at least 100.000 VND confirmed and available. Approving
+        // credits nothing and a Shipper's own "I have transferred" request never activates anybody (ADR-004 6).
+        if (!(await this.wallet.fundingForActivation(context, driver.driverId)).funded) {
+          throw new AppError('DRIVER_FUNDING_REQUIRED');
+        }
         return { driver: await this.#write(context, driver, { status: 'ACTIVE', reviewState: 'APPROVED', reviewedAt: NOW, reviewedBy: auth.actorId, rejectionReason: null, acceptingDeliveries: false }), change: 'approved' };
       }
       case 'reject': {

@@ -12,7 +12,8 @@ import { ShippingEligibilityService } from '../shipping-policy/shipping-eligibil
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { CommissionHoldService } from '../wallet/commission-hold-service';
-import { COMMISSION_POLICY, COMMISSION_VND, DELIVERY_SCOPE_TYPE, OPERATIONS } from './delivery-constants';
+import { CommissionPolicyRepository } from '../wallet/commission-policy-repository';
+import { DELIVERY_SCOPE_TYPE, OPERATIONS } from './delivery-constants';
 import { DeliveryActors, ShipperCaller } from './delivery-actors';
 import { ORDER_DELIVERY_PORT, OrderDeliveryPort } from './delivery-order-port';
 import { DeliveryRecorder } from './delivery-recorder';
@@ -50,6 +51,7 @@ export class DeliveryShipperService {
     private readonly recorder: DeliveryRecorder,
     private readonly agreements: ShippingFeeAgreementService,
     private readonly commission: CommissionHoldService,
+    private readonly policies: CommissionPolicyRepository,
     private readonly eligibility: ShippingEligibilityService,
     private readonly parameters: EligibilityParametersRepository,
     private readonly routes: M14RouteClient,
@@ -197,21 +199,23 @@ export class DeliveryShipperService {
           throw new AppError('DELIVERY_NOT_ELIGIBLE');
         }
         const assignmentId = randomUUID();
+        // The commission policy in force NOW is snapshotted on this assignment (amount and label); a later change never reaches it (M04-C).
+        const policy = await this.policies.current(context);
         await this.deliveries.insertAssignment(context, {
           assignmentId,
           deliveryId,
           driverId,
           originalEtaAtMs: etaMs,
-          commissionVnd: COMMISSION_VND,
-          commissionPolicy: COMMISSION_POLICY,
+          commissionVnd: policy.amountVnd,
+          commissionPolicy: policy.label,
           destinationConfirmed: complete,
         });
-        const reserved = await this.commission.reserveCommission(context, { driverId, assignmentId, amountVnd: COMMISSION_VND });
+        const reserved = await this.commission.reserveCommission(context, { driverId, assignmentId, amountVnd: policy.amountVnd });
         if (reserved.kind === 'insufficient') {
           throw new AppError('DELIVERY_NOT_ELIGIBLE');
         }
         const after = await this.#update(context, current, { state: 'accepted' });
-        await this.recorder.record(context, { delivery: after, type: 'accepted', actorType: 'SHIPPER', actorId: caller.actor.userId, assignmentId, driverId, operation: OPERATIONS.accept, requestId, metadata: { commission_vnd: Number(COMMISSION_VND) } });
+        await this.recorder.record(context, { delivery: after, type: 'accepted', actorType: 'SHIPPER', actorId: caller.actor.userId, assignmentId, driverId, operation: OPERATIONS.accept, requestId, metadata: { commission_vnd: Number(policy.amountVnd) } });
         const assignment = await this.#assignment(context, assignmentId);
         return { status: 200, replayGuard: { user_id: caller.actor.userId }, payload: await this.views.forShipper(context, after, assignment, await freshClockMs(context)) };
       },

@@ -36,6 +36,18 @@ class WalletReady<T> extends WalletLoad<T> {
   final T value;
 }
 
+/// A write that did not complete, with the sentence to show. [outcomeUnknown] means the server may have done it: the person's next tap
+/// sends the SAME command again (the source keeps its Idempotency-Key), never a new one.
+class WalletFailure implements Exception {
+  const WalletFailure(this.message, {this.outcomeUnknown = false});
+
+  final String message;
+  final bool outcomeUnknown;
+
+  @override
+  String toString() => 'WalletFailure($message, unknown: $outcomeUnknown)';
+}
+
 /// Writes. Only a source that really can write has one; the UI disables every "create / cancel" control when [WalletSource.writes] is null.
 abstract class WalletWrites {
   /// Creates a topup REQUEST in state "Chờ xác nhận". It never adds money: only an Admin confirms a topup.
@@ -61,6 +73,10 @@ abstract class WalletSource {
   bool get canWrite => writes != null;
 
   String get notWiredReason => kWalletNotWiredReason;
+
+  /// The minimum amounts the server currently asks for (a real source learns them from the wallet summary; others use the defaults).
+  int get minTopup => kMinTopup;
+  int get minWithdraw => kMinWithdraw;
 
   Future<WalletLoad<Wallet>> wallet();
   Future<WalletLoad<List<WalletTxn>>> recentTxns();

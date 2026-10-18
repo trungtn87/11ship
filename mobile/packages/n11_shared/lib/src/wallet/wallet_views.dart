@@ -258,7 +258,7 @@ class _TxnSheet extends StatelessWidget {
             _KV('Thời gian', formatWalletTime(txn.at)),
             _KV('Trạng thái', txnStatusLabel(txn.status)),
             if (txn.orderRef != null) _KV('Đơn hàng', txn.orderRef!),
-            if (txn.requestCode != null) _KV('Mã yêu cầu', txn.requestCode!),
+            if (txn.requestCode != null) _KV('Mã yêu cầu', walletShortCode(txn.requestCode!)),
             if (!txn.isLedgerMovement)
               const Padding(
                 padding: EdgeInsets.only(top: N11Space.gap2),
@@ -308,13 +308,13 @@ Widget _txnList(BuildContext context, WalletSource source, List<WalletTxn> rows,
 // ---- M04-S01: Ví của tôi ---------------------------------------------------------------------------------------------
 
 class WalletHomeScreen extends StatefulWidget {
-  const WalletHomeScreen({super.key, required this.source, this.minTopup = kMinTopup, this.minWithdraw = kMinWithdraw});
+  const WalletHomeScreen({super.key, required this.source, this.minTopup, this.minWithdraw});
 
   final WalletSource source;
 
-  /// Default display minimums; the real ones are configured in Admin Web.
-  final int minTopup;
-  final int minWithdraw;
+  /// Display minimums when a caller fixes them; null = what the source says (a real source reads the minimums the server asks for today).
+  final int? minTopup;
+  final int? minWithdraw;
 
   @override
   State<WalletHomeScreen> createState() => _WalletHomeScreenState();
@@ -422,10 +422,10 @@ class _Mini extends StatelessWidget {
 // ---- M04-S02: Nạp tiền (nhập số tiền) -------------------------------------------------------------------------------
 
 class TopupAmountScreen extends StatefulWidget {
-  const TopupAmountScreen({super.key, required this.source, this.minTopup = kMinTopup});
+  const TopupAmountScreen({super.key, required this.source, this.minTopup});
 
   final WalletSource source;
-  final int minTopup;
+  final int? minTopup;
 
   @override
   State<TopupAmountScreen> createState() => _TopupAmountScreenState();
@@ -465,13 +465,15 @@ class _TopupAmountScreenState extends State<TopupAmountScreen> {
     _fetch();
   }
 
+  int get _min => widget.minTopup ?? widget.source.minTopup;
+
   String? _validate() {
     final int? value = parseVndInput(_amount.text);
     if (value == null) {
       return 'Hãy nhập số tiền muốn nạp.';
     }
-    if (value < widget.minTopup) {
-      return 'Số tiền nạp tối thiểu ${formatWalletVnd(widget.minTopup)}.';
+    if (value < _min) {
+      return 'Số tiền nạp tối thiểu ${formatWalletVnd(_min)}.';
     }
     return null;
   }
@@ -509,12 +511,13 @@ class _TopupAmountScreenState extends State<TopupAmountScreen> {
         maxLength: 12,
         suffix: const Padding(padding: EdgeInsets.only(right: 14), child: Center(widthFactor: 1, child: Text('đ', style: N11Text.bodyStrong))),
         tone: _error == null ? FieldTone.normal : FieldTone.error,
-        hint: _error ?? 'Tối thiểu ${formatWalletVnd(widget.minTopup)} mỗi lần nạp',
+        hint: _error ?? 'Tối thiểu ${formatWalletVnd(_min)} mỗi lần nạp',
         onChanged: () => setState(() => _error = null),
       ),
       const Text('Thông tin chuyển khoản', style: N11Text.h2),
       if (state is WalletReady<BankTransferInfo>) _TransferCard(info: state.value) else walletStateView<BankTransferInfo>(state, retry: _retry) ?? const SizedBox.shrink(),
-      if (state is WalletReady<BankTransferInfo>) const _QrPlaceholder(),
+      if (state is WalletReady<BankTransferInfo>)
+        (source.isSample ? const _QrPlaceholder() : const ReasonNote('Mã QR chưa được hỗ trợ ở phiên bản này. Hãy chuyển khoản theo thông tin ở trên rồi bấm "Tôi đã chuyển tiền".', key: Key('topup-no-qr'))),
       N11Button(key: const Key('topup-continue'), label: 'Tôi đã chuyển tiền', onPressed: source.canWrite && state is WalletReady<BankTransferInfo> ? _continue : null),
       if (!source.canWrite) ReasonNote(source.notWiredReason),
     ]);
@@ -536,7 +539,7 @@ class _TransferCard extends StatelessWidget {
           _KV('Ngân hàng', info.bankName),
           _CopyRow(label: 'Số tài khoản', value: info.accountNumber, copyKey: const Key('copy-account')),
           _KV('Chủ tài khoản', info.holder),
-          _CopyRow(label: 'Nội dung chuyển khoản', value: info.content, copyKey: const Key('copy-content')),
+          if (info.content != null) _CopyRow(label: 'Nội dung chuyển khoản', value: info.content!, copyKey: const Key('copy-content')),
         ],
       ),
     );
@@ -638,11 +641,11 @@ class _TopupConfirmScreenState extends State<TopupConfirmScreen> {
         return;
       }
       Navigator.of(context).pop(created);
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(() {
           _busy = false;
-          _error = 'Chưa gửi được yêu cầu. Vui lòng thử lại.';
+          _error = error is WalletFailure ? error.message : 'Chưa gửi được yêu cầu. Vui lòng thử lại.';
         });
       }
     }
@@ -662,7 +665,7 @@ class _TopupConfirmScreenState extends State<TopupConfirmScreen> {
             _KV('Số tiền nạp', formatWalletVnd(widget.amount), valueKey: const Key('confirm-amount')),
             _KV('Ngân hàng', info.bankName),
             _KV('Số tài khoản nhận', info.accountNumber),
-            _KV('Nội dung', info.content),
+            if (info.content != null) _KV('Nội dung', info.content!),
           ],
         ),
       ),
@@ -763,8 +766,8 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
     });
     try {
       await writes.cancelTopup(widget.code);
-    } catch (_) {
-      _error = 'Chưa hủy được yêu cầu. Vui lòng thử lại.';
+    } catch (error) {
+      _error = error is WalletFailure ? error.message : 'Chưa hủy được yêu cầu. Vui lòng thử lại.';
     }
     if (mounted) {
       setState(() {
@@ -795,7 +798,7 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
             N11Card(
               child: Column(
                 children: <Widget>[
-                  _KV('Mã yêu cầu', r.code, valueKey: const Key('topup-code')),
+                  _KV('Mã yêu cầu', r.shownCode, valueKey: const Key('topup-code')),
                   _KV('Số tiền', formatWalletVnd(r.amount)),
                   _KV('Thời gian', formatWalletTime(r.createdAt)),
                   _KV('Trạng thái', topupStatusLabel(r.status)),
@@ -815,10 +818,10 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
 // ---- M04-S05: Rút tiền -----------------------------------------------------------------------------------------------
 
 class WithdrawScreen extends StatefulWidget {
-  const WithdrawScreen({super.key, required this.source, this.minWithdraw = kMinWithdraw});
+  const WithdrawScreen({super.key, required this.source, this.minWithdraw});
 
   final WalletSource source;
-  final int minWithdraw;
+  final int? minWithdraw;
 
   @override
   State<WithdrawScreen> createState() => _WithdrawScreenState();
@@ -877,6 +880,8 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
     return w is WalletReady<Wallet> ? w.value.available : null;
   }
 
+  int get _min => widget.minWithdraw ?? widget.source.minWithdraw;
+
   /// Live message under the field; null when the amount is empty or acceptable.
   String? get _problem {
     final int? value = parseVndInput(_amount.text);
@@ -884,8 +889,8 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
     if (_amount.text.trim().isEmpty) {
       return null;
     }
-    if (value == null || value < widget.minWithdraw) {
-      return 'Số tiền rút tối thiểu ${formatWalletVnd(widget.minWithdraw)}.';
+    if (value == null || value < _min) {
+      return 'Số tiền rút tối thiểu ${formatWalletVnd(_min)}.';
     }
     if (available != null && value > available) {
       return 'Số dư khả dụng không đủ.';
@@ -914,11 +919,11 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
         return;
       }
       await Navigator.of(context).pushReplacement(n11Route(WithdrawDetailScreen(source: widget.source, code: created.code)));
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(() {
           _busy = false;
-          _submitError = 'Chưa gửi được yêu cầu rút. Vui lòng thử lại.';
+          _submitError = error is WalletFailure ? error.message : 'Chưa gửi được yêu cầu rút. Vui lòng thử lại.';
         });
       }
     }
@@ -954,7 +959,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
         maxLength: 12,
         suffix: const Padding(padding: EdgeInsets.only(right: 14), child: Center(widthFactor: 1, child: Text('đ', style: N11Text.bodyStrong))),
         tone: problem == null ? FieldTone.normal : FieldTone.error,
-        hint: problem ?? 'Tối thiểu ${formatWalletVnd(widget.minWithdraw)} mỗi lần rút',
+        hint: problem ?? 'Tối thiểu ${formatWalletVnd(_min)} mỗi lần rút',
         onChanged: () => setState(() {}),
       ),
       const Text('Tài khoản nhận tiền', style: N11Text.h2),
@@ -1022,8 +1027,8 @@ class _WithdrawDetailScreenState extends State<WithdrawDetailScreen> {
     });
     try {
       await writes.cancelWithdrawal(widget.code);
-    } catch (_) {
-      _error = 'Chưa hủy được yêu cầu. Vui lòng thử lại.';
+    } catch (error) {
+      _error = error is WalletFailure ? error.message : 'Chưa hủy được yêu cầu. Vui lòng thử lại.';
     }
     if (mounted) {
       setState(() {
@@ -1073,7 +1078,7 @@ class _WithdrawDetailScreenState extends State<WithdrawDetailScreen> {
             N11Card(
               child: Column(
                 children: <Widget>[
-                  _KV('Mã yêu cầu', r.code, valueKey: const Key('withdraw-code')),
+                  _KV('Mã yêu cầu', r.shownCode, valueKey: const Key('withdraw-code')),
                   _KV('Số tiền rút', formatWalletVnd(r.amount)),
                   _KV('Ngày tạo', formatWalletTime(r.createdAt)),
                   _KV('Tài khoản nhận', '${r.account.bankName}\n${r.account.maskedNumber}\n${r.account.holder}'),
@@ -1153,12 +1158,12 @@ class _StepRow extends StatelessWidget {
 // ---- M04-S07: Lịch sử giao dịch --------------------------------------------------------------------------------------
 
 class TxnHistoryScreen extends StatefulWidget {
-  const TxnHistoryScreen({super.key, required this.source, this.initial = TxnFilter.all, this.minTopup = kMinTopup, this.minWithdraw = kMinWithdraw});
+  const TxnHistoryScreen({super.key, required this.source, this.initial = TxnFilter.all, this.minTopup, this.minWithdraw});
 
   final WalletSource source;
   final TxnFilter initial;
-  final int minTopup;
-  final int minWithdraw;
+  final int? minTopup;
+  final int? minWithdraw;
 
   @override
   State<TxnHistoryScreen> createState() => _TxnHistoryScreenState();

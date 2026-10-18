@@ -51,6 +51,8 @@ import { FinanceController, isFinanceRoute } from '../core/finance-controller.js
 import { FinanceSource, NOT_WIRED_FINANCE } from '../core/finance.js';
 import { FinanceView } from './finance-view.js';
 import { FinanceAdminSource, FinanceRights, NO_FINANCE_RIGHTS, NOT_WIRED_FINANCE_ADMIN, TopupFilter } from '../core/finance-admin.js';
+import { FinanceOpsSource, NOT_WIRED_FINANCE_OPS } from '../core/finance-ops.js';
+import { FinanceOpsHost, OpsOverviewView, ReconciliationPageView, TransactionsView, WalletListView, WithdrawalDetailView, WithdrawalListView } from './finance-ops-view.js';
 import { BankAccountsView, FinanceAdminHost, FINANCE_RECORD_REQUIRES_READ, openFinanceAccessDialog, TopupDetailView, TopupListView } from './finance-admin-view.js';
 import { statePanel } from './states.js';
 import { ShellLayout } from './shell-layout.js';
@@ -129,6 +131,8 @@ export class ShellApp implements ShellHost {
     private readonly deliveries: DeliverySource = NOT_WIRED_DELIVERIES,
     /** Where the REAL finance pages (M04-B3a: top-up requests, receiving accounts, finance rights) come from. By default nothing is wired and no page shows data. */
     private readonly financeAdmin: FinanceAdminSource = NOT_WIRED_FINANCE_ADMIN,
+    /** Where the operating finance pages (M04-C: overview, wallets, withdrawals, transactions, reconciliation, commission) come from. By default nothing is wired and the earlier not-wired pages are shown. */
+    private readonly financeOps: FinanceOpsSource = NOT_WIRED_FINANCE_OPS,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -222,7 +226,13 @@ export class ShellApp implements ShellHost {
         return;
       }
       const next = read.kind === 'ready' ? read.data : NO_FINANCE_RIGHTS;
-      const changed = !this.#financeLoaded || next.canRead !== this.#financeRights.canRead || next.canRecord !== this.#financeRights.canRecord;
+      const changed =
+        !this.#financeLoaded ||
+        next.canRead !== this.#financeRights.canRead ||
+        next.canRecord !== this.#financeRights.canRecord ||
+        next.canProcess !== this.#financeRights.canProcess ||
+        next.canConfirm !== this.#financeRights.canConfirm ||
+        next.canReconcile !== this.#financeRights.canReconcile;
       this.#financeRights = next;
       this.#financeLoaded = true;
       if (!changed) {
@@ -231,7 +241,7 @@ export class ShellApp implements ShellHost {
       // Only a money page depends on these rights. Anywhere else just the menu is redrawn: redrawing the whole page would wipe a form the
       // administrator has already started to fill when the answer arrives late.
       const route = parseRoute(this.history.pathname(), this.history.search());
-      if (route.name === 'finance-topups' || route.name === 'finance-topup' || route.name === 'finance-bank-accounts') {
+      if (route.name === 'finance-topups' || route.name === 'finance-topup' || route.name === 'finance-bank-accounts' || route.name.startsWith('finance')) {
         this.#apply();
       } else if (this.#layout !== undefined && this.#role !== undefined) {
         this.#layout.render({ role: this.#role, grants: this.#effectiveGrants(), route, navigate: (next) => this.go(next) });
@@ -241,11 +251,12 @@ export class ShellApp implements ShellHost {
 
   /** What the shell may show: the application grants plus the finance READ right (never inferred from the application rights). */
   #effectiveGrants(): Grants {
-    return this.#financeRights.canRead ? new Set([...this.#grants, 'topups' as const]) : this.#grants;
+    // The finance READ right opens every finance page (the actions on them need their own rights, which the server asks again).
+    return this.#financeRights.canRead ? new Set([...this.#grants, 'topups' as const, 'driver-wallets' as const, 'withdrawals' as const]) : this.#grants;
   }
 
   #rights(): FinanceRights {
-    return this.#role === 'SYSTEM' ? { role: 'SYSTEM', implicit: true, canRead: true, canRecord: true } : this.#financeRights;
+    return this.#role === 'SYSTEM' ? { role: 'SYSTEM', implicit: true, canRead: true, canRecord: true, canProcess: true, canConfirm: true, canReconcile: true } : this.#financeRights;
   }
 
   #teardown(): void {
@@ -296,7 +307,7 @@ export class ShellApp implements ShellHost {
       );
       return;
     }
-    const moneyRoute = route.name === 'finance-topups' || route.name === 'finance-topup';
+    const moneyRoute = route.name.startsWith('finance') && route.name !== 'finance-bank-accounts';
     if (moneyRoute && role === 'ADMIN' && !this.#financeLoaded) {
       content.replaceChildren(h('section', { class: 'content content-narrow', 'aria-busy': 'true' }, skeleton()));
       return;
@@ -360,6 +371,13 @@ export class ShellApp implements ShellHost {
       case 'finance-withdrawal':
       case 'finance-transactions':
       case 'finance-reconciliation':
+        if (this.financeOps !== NOT_WIRED_FINANCE_OPS) {
+          this.#financeOpsPage(content, route);
+          return;
+        }
+        // Not wired (design preview or a build without the finance routes): the earlier pages that say so and draw no data.
+        this.#financePage(content, route);
+        return;
       case 'wallet-params':
         this.#financePage(content, route);
         return;
@@ -934,6 +952,43 @@ export class ShellApp implements ShellHost {
     };
     view.render(controller.screen);
     controller.load();
+  }
+
+  /** What the operating finance pages (M04-C) need from the shell. 401 ends the session; 403 re-reads the rights (and so redraws what is still allowed). */
+  #financeOpsHost(): FinanceOpsHost {
+    const { source, ...rest } = this.#financeHost();
+    void source;
+    return { ...rest, ops: this.financeOps };
+  }
+
+  /** "Tài chính": overview, Shipper wallets, withdrawals, transactions and reconciliation, from the server (M04-C). */
+  #financeOpsPage(content: HTMLElement, route: Route): void {
+    const host = this.#financeOpsHost();
+    let view: { load(): Promise<void>; dispose(): void };
+    switch (route.name) {
+      case 'finance':
+        view = new OpsOverviewView(content, host);
+        break;
+      case 'finance-wallets':
+        view = new WalletListView(content, host);
+        break;
+      case 'finance-withdrawals':
+        view = new WithdrawalListView(content, host, route.status ?? (route.tab === undefined ? 'PENDING' : route.tab === 'COMPLETED' ? 'PAID' : route.tab === 'NEEDS_RECONCILE' ? 'RECONCILIATION' : route.tab));
+        break;
+      case 'finance-withdrawal':
+        view = new WithdrawalDetailView(content, host, route.id);
+        break;
+      case 'finance-transactions':
+        view = new TransactionsView(content, host, route.shipper ?? null);
+        break;
+      case 'finance-reconciliation':
+        view = new ReconciliationPageView(content, host);
+        break;
+      default:
+        return;
+    }
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
   }
 
   /**

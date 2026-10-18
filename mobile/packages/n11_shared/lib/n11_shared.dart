@@ -59,6 +59,7 @@ export 'src/m07/m07_source.dart';
 export 'src/m07/m07_widgets.dart';
 export 'src/shell.dart';
 export 'src/tokens.dart';
+export 'src/wallet/wallet_http.dart';
 export 'src/wallet/wallet_models.dart';
 export 'src/wallet/wallet_sample.dart';
 export 'src/wallet/wallet_source.dart';
