@@ -444,14 +444,24 @@ describe('runtime grants (ops/selfhosted/02-runtime-grants.sql) with the real re
       await assert.rejects(client.query('DROP TABLE app.users'), { code: '42501' });
       await assert.rejects(client.query('ALTER TABLE app.users ADD COLUMN must_not_exist int'), { code: '42501' });
       await assert.rejects(client.query('CREATE TABLE public.runtime_must_not_create (id int)'), { code: '42501' });
-      // M04-A2.1: the holds are read only for the runtime role, and no package yet moves money (no wallet UPDATE, no ledger INSERT).
+      // M07: the runtime role may write the commission hold, the wallet balance and the ledger, but only through the database gates: a hold or a ledger row
+      // without its delivery assignment is refused (restrict_violation), and nothing is ever deleted or truncated.
       await client.query('SELECT 1 FROM app.wallet_holds LIMIT 1');
-      await assert.rejects(client.query('INSERT INTO app.wallet_holds (hold_id) VALUES (gen_random_uuid())'), { code: '42501' });
-      await assert.rejects(client.query("UPDATE app.wallet_holds SET status = 'RELEASED'"), { code: '42501' });
+      await assert.rejects(client.query('INSERT INTO app.wallet_holds (hold_id) VALUES (gen_random_uuid())'), { code: '23001', message: /WALLET_HOLD_SOURCE_NOT_AVAILABLE/ });
+      await client.query("UPDATE app.wallet_holds SET status = status WHERE false");
       await assert.rejects(client.query('DELETE FROM app.wallet_holds'), { code: '42501' });
       await assert.rejects(client.query('TRUNCATE app.wallet_holds'), { code: '42501' });
-      await assert.rejects(client.query('UPDATE app.driver_wallets SET version = version'), { code: '42501' });
-      await assert.rejects(client.query('INSERT INTO app.wallet_ledger_entries (entry_id) VALUES (gen_random_uuid())'), { code: '42501' });
+      await client.query('UPDATE app.driver_wallets SET version = version WHERE false');
+      await assert.rejects(client.query('INSERT INTO app.wallet_ledger_entries (entry_id) VALUES (gen_random_uuid())'), { code: '23001', message: /WALLET_LEDGER_SOURCE_NOT_AVAILABLE/ });
+      await assert.rejects(client.query('UPDATE app.wallet_ledger_entries SET delta_vnd = delta_vnd'), { code: '42501' });
+      await assert.rejects(client.query('DELETE FROM app.wallet_ledger_entries'), { code: '42501' });
+      // M07 tables: no DELETE or TRUNCATE for the runtime role; the event log is INSERT only.
+      for (const table of ['deliveries', 'delivery_assignments', 'delivery_events', 'delivery_incidents', 'shipper_latest_locations']) {
+        await client.query(`SELECT 1 FROM app.${table} LIMIT 1`);
+        await assert.rejects(client.query(`DELETE FROM app.${table}`), { code: '42501' });
+        await assert.rejects(client.query(`TRUNCATE app.${table}`), { code: '42501' });
+      }
+      await assert.rejects(client.query('UPDATE app.delivery_events SET note = note'), { code: '42501' });
     });
   });
 });
