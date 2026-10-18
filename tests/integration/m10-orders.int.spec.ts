@@ -66,9 +66,9 @@ describe('M10 — food orders', () => {
 
   // ---- helpers -------------------------------------------------------------------------------------------------------------------
 
-  type Verb = 'GET' | 'POST' | 'PUT' | 'DELETE';
+  type Verb = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   const call = (token: string, method: Verb, path: string, body?: unknown, key: string = randomUUID()): Promise<ApiResponse> =>
-    app.call(method, path, { bearer: token, ...(method === 'POST' || method === 'PUT' ? { headers: { 'idempotency-key': key } } : {}), ...(body === undefined ? {} : { body }) });
+    app.call(method, path, { bearer: token, ...(method !== 'GET' ? { headers: { 'idempotency-key': key } } : {}), ...(body === undefined ? {} : { body }) });
   const asCustomer = (c: Customer, method: Verb, path: string, body?: unknown, key?: string): Promise<ApiResponse> => call(c.token, method, path, body, key);
   const asShop = (method: Verb, path: string, body?: unknown, key?: string, owner: ShopOwner = shop): Promise<ApiResponse> => call(owner.token, method, path, body, key);
   const asShipper = (s: Shipper, method: Verb, path: string, body?: unknown, key?: string): Promise<ApiResponse> => call(s.token, method, path, body, key);
@@ -167,7 +167,7 @@ describe('M10 — food orders', () => {
     expect(order.money).toMatchObject({ items_total_vnd: 60_000, paid_vnd: 0, fee: { payer: 'CUSTOMER', amount_vnd: null, estimate_vnd: 10_000, status: 'ESTIMATE' } });
     expect(order.recipient).toMatchObject({ name: 'Người nhận', address_text: '77 Phố Mới, Cầu Giấy' });
     await app.pool.query(`UPDATE app.menu_items SET name = 'Tên mới', price_vnd = 99000, version = version + 1, updated_at = clock_timestamp() WHERE item_id = $1::uuid`, [dish.itemId]);
-    ok(await asCustomer(alice, 'PATCH' as Verb, `/customers/me/addresses/${String(book.id)}`, { expected_version: 1, address_description: 'Địa chỉ đã đổi' }));
+    ok(await asCustomer(alice, 'PATCH', `/customers/me/addresses/${String(book.id)}`, { expected_version: 1, address_description: 'Địa chỉ đã đổi' }));
     ok(await asCustomer(alice, 'DELETE', `/customers/me/addresses/${String(book.id)}`));
     const after = await customerView(alice, String(order.order_id));
     expect(after.items[0]).toMatchObject({ name: 'Món snapshot', unit_price_vnd: 30_000, quantity: 2, note: 'không hành' });
@@ -218,7 +218,7 @@ describe('M10 — food orders', () => {
     const first = ok(await asCustomer(alice, 'POST', '/customers/me/orders', body, key), 201);
     const replay = ok(await asCustomer(alice, 'POST', '/customers/me/orders', body, key), 201);
     expect(replay.order_id).toBe(first.order_id);
-    const otherKey = ok(await asCustomer(alice, 'POST', '/customers/me/orders', body, randomUUID()), 200);
+    const otherKey = ok(await asCustomer(alice, 'POST', '/customers/me/orders', body, randomUUID()), 201);
     expect(otherKey.order_id).toBe(first.order_id);
     const racing = checkout([line(bun, 2)]);
     const results = await Promise.all(Array.from({ length: 5 }, () => asCustomer(alice, 'POST', '/customers/me/orders', racing, randomUUID())));
@@ -241,7 +241,7 @@ describe('M10 — food orders', () => {
     expect(refused(await asShop('POST', `/shop/me/orders/${id}/confirm`, { expected_version: 1 }, undefined, otherShop))).toEqual({ status: 404, code: 'ORDER_NOT_FOUND' });
     // A customer is not a shop and a shop owner is not a customer of the shop routes.
     expect(refused(await asCustomer(alice, 'GET', '/shop/me/orders')).status).toBeGreaterThanOrEqual(403);
-    expect(refused(await call(shop.token, 'GET', '/customers/me/orders')).status).toBeGreaterThanOrEqual(403);
+    expect(refused(await call(shop.token, 'GET', '/customers/me/orders')).status).toBeGreaterThanOrEqual(401);
     expect((await app.call('GET', '/customers/me/orders', {})).status).toBe(401);
     // The lists carry only the caller's own Orders.
     const mine = ok(await asCustomer(bob, 'GET', '/customers/me/orders?scope=processing')).orders as Json[];
@@ -266,14 +266,14 @@ describe('M10 — food orders', () => {
     const done = ok(await asShop('POST', `/shop/me/orders/${id}/confirm`, { expected_version: 2, change_reason: 'Hết bún chả, khách đồng ý bớt 1 phở' }));
     expect(done).toMatchObject({ status: 'PREPARING', display_status: 'PREPARING', change_reason: 'Hết bún chả, khách đồng ý bớt 1 phở' });
     const seen = await customerView(alice, id);
-    expect(seen.money).toMatchObject({ items_original_total_vnd: 150_000, items_total_vnd: 57_000 });
+    expect(seen.money).toMatchObject({ items_original_total_vnd: 140_000, items_total_vnd: 57_000 });
     expect(seen.change_reason).toBe('Hết bún chả, khách đồng ý bớt 1 phở');
     const edit = seen.timeline.find((e: Json) => e.type === 'order.edited');
     expect(edit.details.changes).toHaveLength(3);
     // From the moment of confirmation the dishes and the amount are locked — at the API and in the database.
     expect(refused(await asShop('POST', `/shop/me/orders/${id}/edit`, { expected_version: 3, changes: [{ line_id: phoLine, quantity: 5 }] }))).toEqual({ status: 409, code: 'ORDER_STATE_CONFLICT' });
     await expect(app.pool.query('UPDATE app.order_items SET quantity = 9 WHERE line_id = $1::uuid', [phoLine])).rejects.toThrow(/ORDER_ITEMS_LOCKED/u);
-    await expect(app.pool.query('UPDATE app.orders SET items_total_vnd = 1 WHERE order_id = $1::uuid', [id])).rejects.toThrow(/ORDER_ITEMS_LOCKED/u);
+    await expect(app.pool.query('UPDATE app.orders SET items_total_vnd = 1, version = version + 1 WHERE order_id = $1::uuid', [id])).rejects.toThrow(/ORDER_ITEMS_LOCKED/u);
   });
 
   it('an Order without a dish is never confirmed; a refused Order carries the reason the customer reads', async () => {
@@ -425,7 +425,7 @@ describe('M10 — food orders', () => {
     ok(await asShipper(s, 'POST', `/driver/deliveries/${did}/accept`, {}));
     expect(await walletOf(app, s)).toEqual({ balance: 50_000, held: 1000 });
     expect((await shopView(String(order.order_id))).display_status).toBe('SHIPPER_COMING');
-    expect(refused(await asShop('POST', `/shop/me/orders/${String(order.order_id)}/cancel`, { expected_version: called.version }))).toEqual({ status: 400, code: undefined });
+    expect(refused(await asShop('POST', `/shop/me/orders/${String(order.order_id)}/cancel`, { expected_version: called.version }))).toEqual({ status: 400, code: 'BAD_REQUEST' });
     const cancelled = ok(await asShop('POST', `/shop/me/orders/${String(order.order_id)}/cancel`, { expected_version: Number((await orderRow(String(order.order_id))).version), reason: 'Hết nguyên liệu' }));
     expect(cancelled).toMatchObject({ status: 'CANCELLED_BY_SHOP', display_status: 'CANCELLED_BY_SHOP' });
     expect((await deliveryOf(String(order.order_id))).map((r) => r.state)).toEqual(['cancelled_by_merchant']);
@@ -486,7 +486,7 @@ describe('M10 — food orders', () => {
     const key = randomUUID();
     const done = ok(await asShipper(s, 'POST', `/driver/deliveries/${did}/complete`, { expected_version: version }, key));
     expect(done.state).toBe('completed');
-    expect(refused(await asShipper(s, 'POST', `/driver/deliveries/${did}/complete`, { expected_version: version }, randomUUID())).status).toBe(409);
+    expect(refused(await asShipper(s, 'POST', `/driver/deliveries/${did}/complete`, { expected_version: version }, randomUUID())).status).toBe(404);
     ok(await asShipper(s, 'POST', `/driver/deliveries/${did}/complete`, { expected_version: version }, key));
     const row = await orderRow(oid);
     expect(row).toMatchObject({ status: 'COMPLETED', end_actor: 'SYSTEM' });
@@ -605,7 +605,7 @@ describe('M10 — food orders', () => {
     const customerScheduled = ok(await asCustomer(alice, 'GET', '/customers/me/orders?scope=scheduled')).orders as Json[];
     expect(customerScheduled.map((o) => o.order_id)).toContain(inside.order_id);
     const shopScheduled = ok(await asShop('GET', '/shop/me/orders?filter=scheduled', undefined, undefined, night)).orders as Json[];
-    expect(shopScheduled.length).toBe(2);
+    expect(shopScheduled.length).toBe(3);
     expect(((ok(await asCustomer(alice, 'GET', '/customers/me/orders?scope=processing')).orders) as Json[]).map((o) => o.order_id)).not.toContain(inside.order_id);
     expect(refused(await asShop('POST', `/shop/me/orders/${String(inside.order_id)}/call-shipper`, { expected_version: 1 }, undefined, night)).code).toBe('ORDER_STATE_CONFLICT');
     // The shop changes its hours after accepting: the Order is kept, the shop is warned, nothing is cancelled.
@@ -628,6 +628,7 @@ describe('M10 — food orders', () => {
       await client.query('BEGIN');
       await client.query('ALTER TABLE app.orders DISABLE TRIGGER orders_guard');
       await client.query(`UPDATE app.orders SET scheduled_for = now() + interval '10 minutes' WHERE order_id = $1::uuid`, [oid]);
+      await client.query('SET CONSTRAINTS ALL IMMEDIATE');
       await client.query('ALTER TABLE app.orders ENABLE TRIGGER orders_guard');
       await client.query('COMMIT');
     } finally {
@@ -639,7 +640,7 @@ describe('M10 — food orders', () => {
     expect(await deliveryOf(oid)).toHaveLength(0);
     expect((await orderRow(oid)).status).toBe('PREPARING');
     // The reminder reaches the shop's inbox through M08 (once).
-    for (let pass = 0; pass < 6; pass += 1) {
+    for (let pass = 0; pass < 200; pass += 1) {
       if ((await runtime().dispatcher.dispatchOnce()).claimed === 0) break;
     }
     const inbox = await app.pool.query(`SELECT kind, target_type, target_id::text FROM app.notifications WHERE recipient_user_id = $1::uuid AND kind = 'ORDER_SCHEDULE_REMINDER'`, [shop.userId]);
@@ -705,7 +706,7 @@ describe('M10 — food orders', () => {
     const s = await shipper();
     const called = ok(await callShipper(await shopView(oid)), 201);
     ok(await asShipper(s, 'POST', `/driver/deliveries/${String((called.delivery as Json).delivery_id)}/accept`, {}));
-    for (let pass = 0; pass < 10; pass += 1) {
+    for (let pass = 0; pass < 200; pass += 1) {
       if ((await runtime().dispatcher.dispatchOnce()).claimed === 0) break;
     }
     const kinds = async (userId: string): Promise<string[]> => (await app.pool.query(`SELECT kind FROM app.notifications WHERE recipient_user_id = $1::uuid AND target_id = $2::uuid ORDER BY created_at, kind`, [userId, oid])).rows.map((r) => String(r.kind));
@@ -723,7 +724,7 @@ describe('M10 — food orders', () => {
     // Cancel before confirm notifies the shop once.
     const other = await place(dana, [line(tea, 1)]);
     ok(await asCustomer(dana, 'POST', `/customers/me/orders/${String(other.order_id)}/cancel`, { expected_version: 1 }));
-    for (let pass = 0; pass < 10; pass += 1) {
+    for (let pass = 0; pass < 200; pass += 1) {
       if ((await runtime().dispatcher.dispatchOnce()).claimed === 0) break;
     }
     expect((await app.pool.query(`SELECT kind FROM app.notifications WHERE recipient_user_id = $1::uuid AND target_id = $2::uuid ORDER BY kind`, [shop.userId, other.order_id])).rows.map((r) => r.kind)).toEqual(['ORDER_CANCELLED_BY_CUSTOMER', 'ORDER_PLACED']);

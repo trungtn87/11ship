@@ -188,24 +188,27 @@ export async function cleanupOrders(app: AuthApp, input: { shopIds: readonly str
     for (const table of tables) {
       await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
     }
+    const shops = [...input.shopIds];
+    const customers = [...input.customerIds];
+    const drivers = [...input.drivers];
     const orders = `SELECT order_id FROM app.orders WHERE shop_id = ANY($1::uuid[]) OR customer_user_id = ANY($2::uuid[])`;
     const deliveries = `SELECT delivery_id FROM app.deliveries WHERE shop_id = ANY($1::uuid[]) OR order_id IN (${orders})`;
-    const wallets = `SELECT wallet_id FROM app.driver_wallets WHERE driver_id = ANY($3::uuid[])`;
-    const p = [input.shopIds, input.customerIds, input.drivers];
-    await client.query(`DELETE FROM app.wallet_ledger_entries WHERE wallet_id IN (${wallets})`, [input.shopIds, input.customerIds, input.drivers]);
-    await client.query(`DELETE FROM app.wallet_holds WHERE wallet_id IN (${wallets})`, p);
-    await client.query(`DELETE FROM app.delivery_incidents WHERE delivery_id IN (${deliveries})`, [input.shopIds, input.customerIds]);
-    await client.query(`DELETE FROM app.delivery_events WHERE delivery_id IN (${deliveries})`, [input.shopIds, input.customerIds]);
-    await client.query(`DELETE FROM app.shipping_fee_agreement_events WHERE agreement_id IN (SELECT agreement_id FROM app.shipping_fee_agreements WHERE delivery_id IN (${deliveries}))`, [input.shopIds, input.customerIds]);
-    await client.query(`DELETE FROM app.shipping_fee_agreements WHERE delivery_id IN (${deliveries})`, [input.shopIds, input.customerIds]);
-    await client.query(`DELETE FROM app.delivery_assignments WHERE delivery_id IN (${deliveries})`, [input.shopIds, input.customerIds]);
-    await client.query(`DELETE FROM app.deliveries WHERE delivery_id IN (${deliveries})`, [input.shopIds, input.customerIds]);
-    await client.query(`DELETE FROM app.order_events WHERE order_id IN (${orders})`, [input.shopIds, input.customerIds]);
-    await client.query(`DELETE FROM app.order_items WHERE order_id IN (${orders})`, [input.shopIds, input.customerIds]);
-    await client.query(`DELETE FROM app.orders WHERE shop_id = ANY($1::uuid[]) OR customer_user_id = ANY($2::uuid[])`, [input.shopIds, input.customerIds]);
-    await client.query('DELETE FROM app.customer_carts WHERE shop_id = ANY($1::uuid[]) OR user_id = ANY($2::uuid[])', [input.shopIds, input.customerIds]);
-    await client.query('DELETE FROM app.shipper_latest_locations WHERE driver_id = ANY($1::uuid[])', [input.drivers]);
-    await client.query('DELETE FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[])', [input.drivers]);
+    const wallets = `SELECT wallet_id FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[])`;
+    await client.query(`DELETE FROM app.wallet_ledger_entries WHERE wallet_id IN (${wallets})`, [drivers]);
+    await client.query(`DELETE FROM app.wallet_holds WHERE wallet_id IN (${wallets})`, [drivers]);
+    for (const table of ['delivery_incidents', 'delivery_events']) {
+      await client.query(`DELETE FROM app.${table} WHERE delivery_id IN (${deliveries})`, [shops, customers]);
+    }
+    await client.query(`DELETE FROM app.shipping_fee_agreement_events WHERE agreement_id IN (SELECT agreement_id FROM app.shipping_fee_agreements WHERE delivery_id IN (${deliveries}))`, [shops, customers]);
+    await client.query(`DELETE FROM app.shipping_fee_agreements WHERE delivery_id IN (${deliveries})`, [shops, customers]);
+    await client.query(`DELETE FROM app.delivery_assignments WHERE delivery_id IN (${deliveries})`, [shops, customers]);
+    await client.query(`DELETE FROM app.deliveries WHERE delivery_id IN (${deliveries})`, [shops, customers]);
+    await client.query(`DELETE FROM app.order_events WHERE order_id IN (${orders})`, [shops, customers]);
+    await client.query(`DELETE FROM app.order_items WHERE order_id IN (${orders})`, [shops, customers]);
+    await client.query(`DELETE FROM app.orders WHERE shop_id = ANY($1::uuid[]) OR customer_user_id = ANY($2::uuid[])`, [shops, customers]);
+    await client.query('DELETE FROM app.customer_carts WHERE shop_id = ANY($1::uuid[]) OR user_id = ANY($2::uuid[])', [shops, customers]);
+    await client.query('DELETE FROM app.shipper_latest_locations WHERE driver_id = ANY($1::uuid[])', [drivers]);
+    await client.query('DELETE FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[])', [drivers]);
     await client.query('DELETE FROM app.notification_pushes WHERE recipient_user_id = ANY($1::uuid[])', [[...input.userIds]]);
     await client.query('DELETE FROM app.notifications WHERE recipient_user_id = ANY($1::uuid[])', [[...input.userIds]]);
     if (input.policyAdded === true) {

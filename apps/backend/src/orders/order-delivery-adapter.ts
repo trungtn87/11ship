@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { AppError, TechnicalError } from '../common/app-errors';
+import { ACTIVE_STATES } from '../delivery/delivery-constants';
 import { OrderDeliveryPort } from '../delivery/delivery-order-port';
 import { TransactionContext } from '../transaction/transaction-context';
 import { ORDER_OPERATIONS } from './order-constants';
@@ -27,6 +28,11 @@ export class OrderDeliveryAdapter implements OrderDeliveryPort {
       throw new AppError('ORDER_NOT_FOUND');
     }
     if (order.status !== 'PREPARING') {
+      throw new AppError('ORDER_STATE_CONFLICT');
+    }
+    // At most one delivery is active per Order: a new call while one is running is a conflict, not a database error.
+    const latest = await this.orders.latestDeliveryState(context, orderId);
+    if (latest !== null && ACTIVE_STATES.includes(latest)) {
       throw new AppError('ORDER_STATE_CONFLICT');
     }
   }
