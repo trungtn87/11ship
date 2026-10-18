@@ -248,7 +248,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#132](https://github.com/trungtn87/11ship/pull/132) M04-B2.2b: Admin top-up reconciliation and TOPUP wallet pos… | Đã merge (`MERGED`) | — | — | — | `14477f2` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#133](https://github.com/trungtn87/11ship/pull/133) feat(m07): quy trình giao hàng — 11Food, 11Ship, Admin, bac… | Đã merge (`MERGED`) | — | — | — | `94c00e6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#134](https://github.com/trungtn87/11ship/pull/134) M04-B3a: Web Admin finance pages on the real API | Đã merge (`MERGED`) | — | — | — | `e16e4d5` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#135](https://github.com/trungtn87/11ship/pull/135) feat(m08): thông báo, nhắc việc và đồng bộ trạng thái | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `4c997b5` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#135](https://github.com/trungtn87/11ship/pull/135) feat(m08): thông báo, nhắc việc và đồng bộ trạng thái | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `3a3f4ab` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
