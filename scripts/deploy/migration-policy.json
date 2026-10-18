@@ -72,7 +72,7 @@
     },
     "1792800000000_add-admin-activation-phone-verification-mode": {
       "sha256": "c51220b910c59e533ed1cf94f1307dad757636e15635efcab1b6cf00d60be4ff",
-      "autoApply": true
+      "autoApply": false
     },
     "1792886400000_create-client-device-binding": {
       "sha256": "2bcf7ca93a558a5ab1ceba60e4707a0b2a857b7b8387a7f8a5b25b0b3f2ce0de",

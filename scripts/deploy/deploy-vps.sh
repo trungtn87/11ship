@@ -22,8 +22,8 @@ write_receipt() {
 }
 fail() { write_receipt failed "$1"; exit 1; }
 atomic_current() {
-  rm -f "$ROOT/.current-$JOB"
-  ln -s "$1" "$ROOT/.current-$JOB"
+  rm -f "$ROOT/.current-$JOB" || return 1
+  ln -s "$1" "$ROOT/.current-$JOB" || return 1
   mv -Tf "$ROOT/.current-$JOB" "$ROOT/current"
 }
 health() {
@@ -99,10 +99,10 @@ node "$new/scripts/deploy/verify-ubuntu-artifact.mjs" "$UPLOAD/$PKG" "$SHA" > "$
 step=preflight; write_receipt running OK
 (
   set -a
-  . /root/ship11-secrets/operator.env
+  . /root/ship11-secrets/operator.env || exit 1
   set +a
   [[ "${APP_ENV:-}" = production && "${DB_REMOTE_TARGET:-}" = SELF_HOSTED ]] || exit 1
-  cd "$new"
+  cd "$new" || exit 1
   node scripts/db-migrate-remote.js
 ) > "$UPLOAD/preflight.log" 2>&1 || fail MIGRATION_PREFLIGHT_FAILED
 if ! node "$new/scripts/deploy/deploy-check.mjs" "$new" "$previous" "$UPLOAD/preflight.log" > "$UPLOAD/plan.json" 2> "$UPLOAD/policy-error.log"; then
@@ -131,10 +131,10 @@ printf '%s\n' "$previous" > "$backup/previous-release.txt"
 step=migration; write_receipt running OK
 if [[ "$pending" != 0 ]]; then
   (
-    set -a; . /root/ship11-secrets/operator.env; set +a
+    set -a; . /root/ship11-secrets/operator.env || exit 1; set +a
     [[ "${APP_ENV:-}" = production && "${DB_REMOTE_TARGET:-}" = SELF_HOSTED ]] || exit 1
-    cd "$new"
-    node scripts/db-migrate-remote.js --apply
+    cd "$new" || exit 1
+    node scripts/db-migrate-remote.js --apply || exit 1
     node scripts/db-migrate-remote.js
   ) > "$UPLOAD/migration.log" 2>&1 || fail MIGRATION_FAILED_CODE_UNCHANGED
   grep -Eq 'db:migrate:remote: [0-9]+ applied, 0 pending of' "$UPLOAD/migration.log" || fail MIGRATION_INCOMPLETE

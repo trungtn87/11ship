@@ -55,3 +55,6 @@ try {
   Assert-Throws {Get-Artifact $release $work} 'ZIP_CHECKSUM_INVALID'
 } finally {Remove-Item -LiteralPath $work -Recurse -Force}
 Write-Host 'PASS: parser, main/CI/provenance, required check, checksum, SSH loss, failed receipt, no-update result'
+# The intentional fake ssh failure must not become GitHub's final native exit code after passing assertions.
+$global:LASTEXITCODE=0
+exit 0

@@ -10,13 +10,22 @@ export function pendingFrom(text) {
   if (!summary || Number(summary[2]) !== names.length || new Set(names).size !== names.length || !text.includes('check only; nothing was changed.')) throw Error('PREFLIGHT_INVALID');
   return names;
 }
+export function nonDestructiveUp(bytes) {
+  let sql = bytes.toString().split('-- Down Migration')[0];
+  sql = sql.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  // Defining a guarded function does not execute its DELETE/UPDATE body. Anonymous DO blocks remain inspected.
+  sql = sql.replace(/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\b[\s\S]*?\bAS\s+(\$[a-zA-Z0-9_]*\$)[\s\S]*?\1/gi, 'CREATE FUNCTION BODY');
+  sql = sql.replace(/CREATE\s+(?:CONSTRAINT\s+)?TRIGGER\b[^;]*;/gi, 'CREATE TRIGGER;');
+  sql = sql.replace(/'(?:''|[^'])*'/g, "''");
+  return !/\b(?:DROP\s+(?:TABLE|SCHEMA|TYPE|DOMAIN)\b|TRUNCATE\b|DELETE\s+FROM\b|UPDATE\s+app\.|EXECUTE\s+(?!FUNCTION\b|PROCEDURE\b|ON\b)[^;]|ALTER\s+TABLE[^;]*?\b(?:DROP\s+COLUMN|RENAME|ALTER[^;]*?\bTYPE)\b)/i.test(sql);
+}
 export function migrationPlan(release, previous, text) {
   const names = pendingFrom(text);
   const policy = JSON.parse(readFileSync(join(release, 'scripts/deploy/migration-policy.json'), 'utf8'));
   for (const name of names) {
     const bytes = readFileSync(join(release, 'database/migrations', `${name}.sql`));
     const rule = policy.migrations[name];
-    if (!rule || rule.autoApply !== true || rule.sha256 !== createHash('sha256').update(bytes).digest('hex')) throw Error(`MIGRATION_REQUIRES_REVIEW:${name}`);
+    if (!rule || rule.autoApply !== true || !nonDestructiveUp(bytes) || rule.sha256 !== createHash('sha256').update(bytes).digest('hex')) throw Error(`MIGRATION_REQUIRES_REVIEW:${name}`);
   }
   // Existing migrations cannot be rewritten under already-running application code.
   for (const file of readdirSync(join(previous, 'database/migrations')).filter(n => n.endsWith('.sql'))) {
