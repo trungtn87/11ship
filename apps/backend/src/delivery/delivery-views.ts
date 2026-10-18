@@ -184,6 +184,9 @@ export class DeliveryViews {
       location,
       result: this.#result(d, incident),
       goods_custody: d.state === 'failed' ? (incident?.custody ?? null) : null,
+      // The points of the call as they were when it was made (snapshots): the map draws these; they say nothing about where anybody is NOW.
+      pickup: { lat: d.pickupLat, lng: d.pickupLng },
+      dropoff: d.dropoffLat === null || d.dropoffLng === null ? null : { lat: d.dropoffLat, lng: d.dropoffLng },
       created_at: iso(d.createdAtMs),
     };
   }

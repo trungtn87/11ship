@@ -8,6 +8,8 @@ import 'm02_flows.dart';
 import 'm02_format.dart';
 import 'm02_widgets.dart';
 import 'menu_controller.dart';
+import '../m10/m10_cart.dart';
+import '../m10/m10_customer_views.dart';
 import 'menu_models.dart';
 import 'public_shop_controller.dart';
 import 'schedule.dart';
@@ -40,8 +42,11 @@ class ShopMenuContent extends StatefulWidget {
     this.hiddenCount = 0,
     this.emptyText = 'Quán chưa có món để hiển thị.',
     this.focusItemId,
+    this.orderShopId,
   });
 
+  /// The shop being viewed by a CUSTOMER: when set (and orders exist in this app) each dish gets the + / − and a note sheet. Null in the owner's preview.
+  final String? orderShopId;
   final ShopMenuView view;
   final bool preview;
   final VoidCallback onHours;
@@ -93,6 +98,25 @@ class _ShopMenuContentState extends State<ShopMenuContent> {
       return;
     }
     Scrollable.ensureVisible(target, duration: const Duration(milliseconds: 250), alignment: 0.15);
+  }
+
+  OrderRuntime? get _orders => widget.preview || widget.orderShopId == null ? null : OrderRuntime.current;
+
+  Widget? _stepper(BuildContext context, PublicItem item) {
+    final OrderRuntime? runtime = _orders;
+    if (runtime == null || widget.view.availabilityReason == 'NO_BUSINESS_HOURS') {
+      return null;
+    }
+    return DishStepper(cart: runtime.cart, shopId: widget.orderShopId!, shopName: widget.view.name, itemId: item.id, name: item.name, priceVnd: item.priceVnd, canOrder: runtime.canOrder);
+  }
+
+  Future<void> _openDish(BuildContext context, PublicItem item) async {
+    final OrderRuntime runtime = _orders!;
+    if (!runtime.canOrder()) {
+      m02Toast(context, 'Đăng nhập tài khoản khách để đặt món.');
+      return;
+    }
+    await showDishSheet(context, cart: runtime.cart, shopId: widget.orderShopId!, shopName: widget.view.name, itemId: item.id, name: item.name, priceVnd: item.priceVnd);
   }
 
   @override
@@ -163,6 +187,8 @@ class _ShopMenuContentState extends State<ShopMenuContent> {
                   price: formatVnd(item.priceVnd),
                   imageUrl: item.imageUrl,
                   highlight: item.id == _highlight,
+                  chip: _stepper(context, item),
+                  onTap: _stepper(context, item) == null ? null : () => _openDish(context, item),
                 ),
             ]),
           ],
@@ -314,10 +340,11 @@ class _ShopPublicScreenState extends State<ShopPublicScreen> {
                   text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.',
                   trailing: N11Button(key: const Key('k01-reload'), label: 'Thử lại', compact: true, onPressed: _controller.load),
                 ),
-              ShopMenuContent(view: view!, preview: false, focusItemId: widget.focusItemId, onHours: () => Navigator.of(context).push(n11Route(PublicHoursScreen(view: view)))),
+              ShopMenuContent(view: view!, preview: false, orderShopId: widget.shopId, focusItemId: widget.focusItemId, onHours: () => Navigator.of(context).push(n11Route(PublicHoursScreen(view: view)))),
             ];
         }
-        return M02Scaffold(title: view?.name ?? 'Quán', scrollController: _scroll, content: body);
+        final OrderRuntime? orders = OrderRuntime.current;
+        return M02Scaffold(title: view?.name ?? 'Quán', scrollController: _scroll, content: body, footer: view != null && orders != null ? <Widget>[CartBar(runtime: orders, shopId: widget.shopId)] : const <Widget>[]);
       },
     );
   }

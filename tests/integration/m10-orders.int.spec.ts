@@ -59,6 +59,10 @@ describe('M10 — food orders', () => {
   });
 
   afterAll(async () => {
+    // Whatever the outbox still holds is consumed first, so nothing lands in the inbox of an account after its rows are gone.
+    for (let pass = 0; pass < 200 && (await runtime().dispatcher.dispatchOnce()).claimed > 0; pass += 1) {
+      // drained
+    }
     await cleanupOrders(app, { shopIds: [shop.shopId, otherShop.shopId], customerIds: [alice.userId, bob.userId], drivers, userIds: [alice.userId, bob.userId, shop.userId, otherShop.userId], policyAdded: addedPolicy });
     await app.close();
     await new Promise<void>((resolve) => router.close(() => resolve()));

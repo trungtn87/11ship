@@ -181,7 +181,7 @@ export async function cleanupOrders(app: AuthApp, input: { shopIds: readonly str
   const client = await app.pool.connect();
   const tables = [
     'order_events', 'order_items', 'orders', 'customer_carts', 'wallet_ledger_entries', 'wallet_holds', 'delivery_incidents', 'delivery_events', 'delivery_assignments', 'deliveries',
-    'driver_wallets', 'shipping_fee_agreement_events', 'shipping_fee_agreements', 'shipping_fee_policy_versions', 'notifications', 'notification_pushes', 'notification_consumed_events',
+    'driver_wallets', 'shipping_fee_agreement_events', 'shipping_fee_agreements', 'shipping_fee_policy_versions', 'notifications', 'notification_pushes', 'notification_consumed_events', 'notification_reminders', 'notification_offer_rounds',
   ];
   try {
     await client.query('BEGIN');
@@ -205,6 +205,9 @@ export async function cleanupOrders(app: AuthApp, input: { shopIds: readonly str
     await client.query(`DELETE FROM app.shipping_fee_agreement_events WHERE agreement_id IN (SELECT agreement_id FROM app.shipping_fee_agreements WHERE delivery_id IN (${deliveries}))`, [shops, customers]);
     await client.query(`DELETE FROM app.shipping_fee_agreements WHERE delivery_id IN (${deliveries})`, [shops, customers]);
     await client.query(`DELETE FROM app.delivery_assignments WHERE delivery_id IN (${deliveries})`, [shops, customers]);
+    for (const table of ['notification_reminders', 'notification_offer_rounds']) {
+      await client.query(`DELETE FROM app.${table} WHERE delivery_id IN (${deliveries})`, [shops, customers]);
+    }
     await client.query(`DELETE FROM app.deliveries WHERE delivery_id IN (${deliveries})`, [shops, customers]);
     await client.query(`DELETE FROM app.order_events WHERE order_id IN (${orders})`, [shops, customers]);
     await client.query(`DELETE FROM app.order_items WHERE order_id IN (${orders})`, [shops, customers]);
