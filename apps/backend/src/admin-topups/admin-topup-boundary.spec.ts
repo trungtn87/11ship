@@ -39,4 +39,11 @@ describe('M04-B2.2b admin top-up boundary', () => {
     expect(service.slice(service.indexOf('payload: {'))).not.toMatch(/canonical|account_number|account_holder/);
     expect(service).not.toMatch(/metadata:[^}]*(canonical|accountNumber|accountHolder)/);
   });
+
+  it('ADR-004 3.1 lock order: Shipper root, then wallet root, then the request source row (the receiving account is locked later, inside the posting)', () => {
+    const service = codeOf('admin-topups/admin-topup-service.ts');
+    const order = ['this.drivers.lockById(context, found.driverId)', 'this.posting.lockWalletOf(', 'this.requests.lockById(context, requestId)'].map((needle) => service.indexOf(needle));
+    expect(order.every((index) => index > 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
 });

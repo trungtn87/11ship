@@ -282,6 +282,8 @@ describe('M04-B2.2b — Admin top-up reconciliation and TOPUP posting', () => {
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
     expect(code(results.find((r) => r.status === 409) as AdminResponse).code).toBe('TOPUP_REQUEST_STATE_CONFLICT');
     expect(await ledgerOf(one.walletId)).toHaveLength(1);
+    expect(await walletOf(one.walletId)).toEqual({ balance: '100000', version: '2' }); // credited exactly once
+    expect(await countRows(admin.pool, 'SELECT 1 FROM app.wallet_topups WHERE wallet_id = $1::uuid', [one.walletId])).toBe(1);
 
     const two = await newShipper();
     const mixed = await Promise.all([confirm(recorderLogin, two.requestId, confirmBody()), reject(systemLogin(), two.requestId)]);
@@ -417,5 +419,28 @@ describe('M04-B2.2b — Admin top-up reconciliation and TOPUP posting', () => {
       }
     }
     await expectUntouched(s);
+  });
+
+  it('10. a replay is authorized again: after the right is revoked the same key and body get 403 and write nothing; after it is granted again the replay answers the stored result', async () => {
+    const extra = await activatedAdmin([permission('DRIVER', true)], `Admin thu hồi ${tag}`);
+    const extraLogin = await login(extra);
+    expect((await changeGrant('grant', extra.userId, RECORD, 0)).status).toBe(200);
+    const s = await newShipper();
+    const body = confirmBody({ actual_amount_vnd: 70_000 });
+    const key = randomUUID();
+    expect((await confirm(extraLogin, s.requestId, body, key)).status).toBe(200);
+    expect((await changeGrant('revoke', extra.userId, RECORD, 1)).status).toBe(200);
+    expect(code(await confirm(extraLogin, s.requestId, body, key))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
+    expect(await ledgerOf(s.walletId)).toHaveLength(1);
+    expect(await auditCount(s.requestId, 'admin.wallet_topup.confirm.v1')).toBe(1);
+    expect((await changeGrant('grant', extra.userId, RECORD, 2)).status).toBe(200);
+    const replay = await confirm(extraLogin, s.requestId, body, key);
+    expect(replay.status).toBe(200);
+    expect(adminData(replay)).toMatchObject({ state: 'CONFIRMED', actual_amount_vnd: 70_000 });
+    expect(await ledgerOf(s.walletId)).toHaveLength(1);
+    expect(await walletOf(s.walletId)).toEqual({ balance: '70000', version: '2' });
+    // Another administrator cannot replay this administrator's key (the scope is the actor).
+    expect(adminErrorCode(await confirm(recorderLogin, s.requestId, body, key))).not.toBe(undefined);
+    expect(await ledgerOf(s.walletId)).toHaveLength(1);
   });
 });

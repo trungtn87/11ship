@@ -33,8 +33,8 @@ const iso = (ms: number): string => new Date(ms).toISOString();
  * (FinanceAccessParticipant, FOR SHARE on the right's row, after the fresh database clock). Nothing here trusts a cookie alone, a hidden button or an app permission.
  *
  * A confirmation is ONE transaction opened by the idempotency executor, in the lock order of ADR-004 3.1: idempotency record -> the administrator (user,
- * membership, factor, session) -> the finance right FOR SHARE -> the Shipper root (drivers FOR UPDATE) -> the request FOR UPDATE (state, version and owner read again)
- * -> the wallet FOR UPDATE -> the receiving account FOR SHARE -> bank record (IN) -> topup -> ledger credit -> wallet balance -> request CONFIRMED -> audit -> outbox ->
+ * membership, factor, session) -> the finance right FOR SHARE -> the Shipper root (drivers FOR UPDATE) -> the wallet FOR UPDATE -> the request FOR UPDATE (state, version, owner and wallet read again)
+ * -> the receiving account FOR SHARE -> bank record (IN) -> topup -> ledger credit -> wallet balance -> request CONFIRMED -> audit -> outbox ->
  * the executor's record -> COMMIT. The amount credited is the ACTUAL amount the administrator recorded from the statement; the amount asked for is kept. Any
  * refusal, any failure of any step and a bank transaction recorded before (by anyone, any key, any wallet) roll the WHOLE transaction back: no row of the
  * bank, the topup, the ledger, the wallet or the request is left. A replay of the same key answers only after the administrator, the session and the right were
@@ -170,8 +170,12 @@ export class AdminTopupService {
           if (driver === undefined) {
             throw new AppError('DRIVER_NOT_FOUND');
           }
+          // ADR-004 3.1: Shipper root -> WALLET root -> topup source (the request). Nothing below is decided before the request is read again.
+          if (!(await this.posting.lockWalletOf(context, found.walletId, found.driverId))) {
+            throw new AppError('TOPUP_REQUEST_NOT_FOUND');
+          }
           const current = await this.requests.lockById(context, requestId);
-          if (current === undefined || current.driverId !== found.driverId) {
+          if (current === undefined || current.driverId !== found.driverId || current.walletId !== found.walletId) {
             throw new AppError('TOPUP_REQUEST_NOT_FOUND');
           }
           if (current.state !== 'PENDING') {

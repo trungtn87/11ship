@@ -14,7 +14,7 @@ Admin có quyền `wallet.read` xem, có quyền `wallet.topup.record` xác nh�
 Mọi ghi: cookie phiên + Origin + CSRF + `Idempotency-Key`; quyền hỏi lại **dưới khóa** (FOR SHARE) trong mỗi lệnh và khi replay.
 
 ## Giao dịch xác nhận (một transaction)
-Thứ tự khóa (ADR-004): idempotency → admin (user/membership/factor/session) → quyền tài chính → `drivers` FOR UPDATE → request FOR UPDATE → ví FOR UPDATE → tài khoản nhận FOR SHARE → bank record (`ON CONFLICT DO NOTHING`) → topup → ledger `TOPUP` → số dư ví → request `CONFIRMED` → audit → outbox → bản ghi idempotency. Lỗi ở bất kỳ bước nào rollback toàn bộ.
+Thứ tự khóa (ADR-004 §3.1): idempotency → admin (user/membership/factor/session) → quyền tài chính → `drivers` FOR UPDATE → **ví FOR UPDATE** → request (nguồn topup) FOR UPDATE, đọc lại owner/ví/state/version dưới khóa → tài khoản nhận FOR SHARE → ghi (Shipper hủy yêu cầu chỉ khóa driver → request, không lấy ví nên không đảo thứ tự) → tài khoản nhận FOR SHARE → bank record (`ON CONFLICT DO NOTHING`) → topup → ledger `TOPUP` → số dư ví → request `CONFIRMED` → audit → outbox → bản ghi idempotency. Lỗi ở bất kỳ bước nào rollback toàn bộ.
 
 * Một giao dịch ngân hàng ghi một lần toàn hệ thống: khóa duy nhất `(bank_id, system_owned_account_id, canonical_transaction_id)`; thua → `409 BANK_TRANSACTION_ALREADY_RECORDED`, không ghi gì.
 * Chỉ cộng số thực nhận; số yêu cầu giữ nguyên. Vượt trần ví → `409 TOPUP_WALLET_LIMIT_EXCEEDED`.
@@ -32,3 +32,6 @@ Fail closed: không ghi nhận được khi tài khoản `can_receive=false` (re
 
 ## Còn phụ thuộc
 UI Web Admin / APK (B3); kích hoạt Shipper (M03) chưa nối; rút tiền, hoa hồng, điều chỉnh, hold (A2.2/M04-C) vẫn đóng.
+
+## Phạm vi quyền tiền (ADR-004 §9)
+`wallet.read` và `wallet.topup.record` là quyền **toàn hệ thống**: M01 hiện không có scope theo Shipper/khu vực/tài khoản nhận/hạn mức, nên không có "target money scope" nào để thu hẹp. Giới hạn được chấp nhận cho B2.2b vì: (1) quyền do SYSTEM cấp riêng từng chức năng, mặc định từ chối, thu hồi có hiệu lực ngay (kiểm lại dưới khóa, kể cả replay); (2) chỉ cộng vào ví của chính Shipper có yêu cầu PENDING, vào đúng tài khoản nhận SYSTEM đang bật, mỗi giao dịch ngân hàng một lần, trần ví cố định; (3) mọi lần xác nhận có audit người thực hiện. Rủi ro còn lại: một Admin được cấp quyền ghi có thể xác nhận số liệu sai cho bất kỳ yêu cầu nào; kiểm soát bằng việc cấp quyền hẹp và đối soát/audit. Hạn mức theo lần/ngày hoặc phê duyệt hai người cần quyết định nghiệp vụ riêng (không làm trong B2.2b).

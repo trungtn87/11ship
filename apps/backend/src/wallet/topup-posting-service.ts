@@ -38,6 +38,15 @@ export interface CreditedTopup {
 export class TopupPostingService {
   constructor(private readonly repository: TopupSettlementRepository) {}
 
+  /**
+   * ADR-004 3.1 step 4: the wallet root FOR UPDATE, taken by the caller right after the Shipper root and BEFORE any topup source row (the request).
+   * Returns false when the wallet does not exist or is not this Shipper's. Taking it again inside creditTopup is a no-op on a lock already held.
+   */
+  async lockWalletOf(context: TransactionContext, walletId: string, driverId: string): Promise<boolean> {
+    const wallet = await this.repository.lockWallet(context, walletId);
+    return wallet !== undefined && wallet.driverId === driverId;
+  }
+
   async creditTopup(context: TransactionContext, input: CreditTopupInput): Promise<CreditedTopup> {
     if (input.actualAmountVnd <= 0n || input.actualAmountVnd > MAX_WALLET_VND) {
       throw new TechnicalError('internal', 'Invalid top-up amount');
