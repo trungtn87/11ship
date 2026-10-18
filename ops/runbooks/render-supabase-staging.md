@@ -124,7 +124,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | customer_addresses | SELECT, INSERT, UPDATE (M05: add, edit, set default and the soft delete are all UPDATEs; no DELETE, an address is never removed) |
 | driver_wallets | SELECT, INSERT, UPDATE (M04-A1/B2.2b: the zero wallet of a Shipper, created once; UPDATE only moves the balance together with its ledger row in the TOPUP posting; no DELETE; never deleted) |
 | wallet_ledger_entries | SELECT, INSERT (M04-A1/B2.2b: the append-only money ledger; INSERT only for the TOPUP posting, whose source gate refuses every other kind; no UPDATE, no DELETE) |
-| wallet_holds | SELECT (M04-A2.1: held money per business source; read only, no INSERT until the source tables exist, no UPDATE, no DELETE; never deleted) |
+| wallet_holds | SELECT, INSERT, UPDATE (M04-A2 / M07: a COMMISSION hold per delivery assignment, ACTIVE then CAPTURED or RELEASED once; the hold gate refuses any other source; never deleted) |
 | system_owned_bank_accounts | SELECT, INSERT, UPDATE (M04-B2.2a/b: SYSTEM adds a receiving account, always created not receiving, and switches receiving on or off; no DELETE) |
 | admin_finance_grants | SELECT, INSERT, UPDATE (M04-B2.2a: SYSTEM gives and takes back each finance right of an ADMIN; default deny; never deleted) |
 | wallet_topup_requests | SELECT, INSERT, UPDATE (M04-B2.1: the Shipper creates a PENDING request and cancels it; no DELETE; a request never moves money) |
@@ -136,6 +136,11 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | shipping_eligibility_parameter_changes | SELECT, INSERT (M06-B/C: the append-only change log; a trigger refuses UPDATE, DELETE and TRUNCATE) |
 | shipping_fee_agreements | SELECT, INSERT, UPDATE (M06 v1.1: one fee agreement per delivery; UPDATE is the service's version-checked step under `FOR UPDATE`; never deleted) |
 | shipping_fee_agreement_events | SELECT, INSERT (M06 v1.1: the append-only log of who proposed, countered, accepted or rejected which amount) |
+| deliveries | SELECT, INSERT, UPDATE (M07: the delivery request and its state; a trigger refuses DELETE and any move off the state graph) |
+| delivery_assignments | SELECT, INSERT, UPDATE (M07: one Shipper's hold on a delivery; ACTIVE at most once per delivery; never deleted) |
+| delivery_events | SELECT, INSERT (M07: the append-only history of a delivery) |
+| delivery_incidents | SELECT, INSERT, UPDATE (M07: the goods-custody incident of a failed delivery; closed once; never deleted) |
+| shipper_latest_locations | SELECT, INSERT, UPDATE (M14/M07: the one latest position of each Shipper, replaced in place; no trail) |
 
 **Permanent account deletion (Owner decision 2026-10-14).** The runtime role has no `DELETE` on any account table. The only way an account is removed is the function `app.purge_app_user(uuid)` (created by the migration, `SECURITY DEFINER`, owned by the migration role, refuses an administration account and an account with a shop or driver profile). `PUBLIC` has no `EXECUTE` on it; after the migrations run, grant it to the runtime role with `ops/selfhosted/03-runtime-function-grants.sql` (one statement: `GRANT EXECUTE ON FUNCTION app.purge_app_user(uuid) TO ship11_app;`). Without that grant a permanent delete answers 503 and nothing is deleted.
 

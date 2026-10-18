@@ -1,0 +1,76 @@
+{
+ "data": {
+  "deliveries": [
+   {
+    "delivery_id": "2748303b-e0c9-4bf9-86f1-5fef77d7c36a",
+    "code": "G-NMSJCC",
+    "source": "DIRECT",
+    "order_id": null,
+    "previous_delivery_id": null,
+    "state": "cancelled_by_merchant",
+    "own_outcome": "released",
+    "version": 4,
+    "pickup": {
+     "shop_name": "Fixture shop",
+     "phone": null,
+     "address_text": null,
+     "lat": null,
+     "lng": null
+    },
+    "recipient": {
+     "name": "Khách nhận",
+     "phone": null,
+     "address_text": null,
+     "lat": null,
+     "lng": null
+    },
+    "goods": {
+     "description": "Hộp quà",
+     "value_vnd": 200000,
+     "paid_vnd": 0
+    },
+    "fee": {
+     "mode": "STANDARD",
+     "payer": "CUSTOMER",
+     "amount_vnd": 10000,
+     "status": "FINAL",
+     "distance_m": 2500,
+     "agreement": null
+    },
+    "search": {
+     "started_at": "2026-10-18T03:24:17.389Z",
+     "expires_at": "2026-10-18T03:54:17.389Z",
+     "server_now": "2026-10-18T03:24:17.482Z",
+     "stopped_at": null
+    },
+    "note": null,
+    "assignment": {
+     "assignment_id": "5eec0bd8-cc06-446a-bb08-67478c1bdee3",
+     "shipper": {
+      "name": "",
+      "phone": null,
+      "plate_number": null
+     },
+     "accepted_at": "2026-10-18T03:24:17.436Z",
+     "picked_up_at": null,
+     "destination_confirmed": true
+    },
+    "location": null,
+    "result": {
+     "outcome": "cancelled",
+     "at": "2026-10-18T03:24:17.462Z",
+     "reason": "x",
+     "goods_condition": null
+    },
+    "incident": null,
+    "can": {
+     "release": false,
+     "confirm_destination": false,
+     "pickup": false,
+     "complete": false,
+     "fail": false
+    }
+   }
+  ]
+ }
+}

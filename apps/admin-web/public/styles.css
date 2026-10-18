@@ -2813,3 +2813,64 @@ select {
   color: var(--muted);
   font-size: 14px;
 }
+
+/* M07.07: delivery counters and the detail drawer ("Vận hành › Giao hàng"). */
+.counters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.counter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+.counter-value {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.counter-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.counter-wait {
+  background: var(--yellow-subtle);
+  border-color: var(--yellow);
+}
+.counter-ok {
+  background: var(--ok-bg);
+  border-color: var(--ok-line);
+}
+.counter-lock {
+  background: var(--error-bg);
+  border-color: var(--error-line);
+}
+.drawer {
+  margin-top: 24px;
+  padding: 20px;
+  background: var(--white);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-card);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.drawer[hidden] {
+  display: none;
+}
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.counters:empty {
+  display: none;
+}

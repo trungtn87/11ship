@@ -1,0 +1,136 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:n11_shared/n11_shared.dart';
+import 'package:n11_shared/testing.dart';
+import 'package:ship/ship_m07.dart';
+
+// Sharing the Shipper's position (M07.06 / M14): nothing starts without consent, only a fresh latest position is uploaded, uploads are spaced,
+// an old snapshot is never sent, and stopping really stops.
+
+const AppConfig config = AppConfig(apiBaseUrl: 'https://api.example.test', deviceEnvironment: 'fixture-env');
+
+class _Feed implements LocationFeed {
+  final StreamController<Map<String, dynamic>> controller = StreamController<Map<String, dynamic>>.broadcast();
+  int starts = 0;
+  int stops = 0;
+  Object? startError;
+
+  @override
+  Stream<Map<String, dynamic>> get positions => controller.stream;
+
+  @override
+  Future<void> start() async {
+    starts++;
+    if (startError != null) {
+      throw startError!;
+    }
+  }
+
+  @override
+  Future<void> stop() async => stops++;
+}
+
+Map<String, dynamic> fix({bool fresh = true, double lat = 22.66, double lon = 106.25}) => <String, dynamic>{'lat': lat, 'lon': lon, 'accuracy': 12.0, 'fresh': fresh};
+
+Future<({ShipLocationReporter reporter, FakeApiTransport api, _Feed feed, List<DateTime> clock})> build({Duration gap = const Duration(seconds: 45)}) async {
+  final FakeApiTransport api = FakeApiTransport();
+  installAccountRoutes(api);
+  api.routes['PUT /v1/driver/location'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'ok': true}});
+  final SessionController session = createSessionController(ClientApp.ship, config, transport: api, bridge: FakeDeviceBridge());
+  await session.start();
+  await session.login(phone: '0901234567', password: 'Correct-Horse-9');
+  final _Feed feed = _Feed();
+  final List<DateTime> clock = <DateTime>[DateTime.utc(2026, 10, 18, 9)];
+  final ShipLocationReporter reporter = ShipLocationReporter(session: session, feed: feed, minGap: gap, clock: () => clock.last);
+  return (reporter: reporter, api: api, feed: feed, clock: clock);
+}
+
+void main() {
+  test('nothing is started or uploaded before the Shipper agrees', () async {
+    final t = await build();
+    expect(t.reporter.sharing, isFalse);
+    expect(t.feed.starts, 0);
+    t.feed.controller.add(fix());
+    await Future<void>.delayed(Duration.zero);
+    expect(t.api.to('PUT', '/v1/driver/location'), isEmpty);
+  });
+
+  test('only a fresh latest position is uploaded, spaced by the minimum gap', () async {
+    final t = await build();
+    await t.reporter.start();
+    expect(t.feed.starts, 1);
+    expect(t.reporter.sharing, isTrue);
+    await t.reporter.onSnapshot(fix(fresh: false));
+    expect(t.api.to('PUT', '/v1/driver/location'), isEmpty, reason: 'an old snapshot is never sent as the current position');
+    await t.reporter.onSnapshot(fix());
+    await t.reporter.onSnapshot(fix(lat: 22.7)); // too soon
+    expect(t.api.to('PUT', '/v1/driver/location').length, 1);
+    t.clock.add(DateTime.utc(2026, 10, 18, 9, 1));
+    await t.reporter.onSnapshot(fix(lat: 22.7));
+    final List<RecordedRequest> sent = t.api.to('PUT', '/v1/driver/location');
+    expect(sent.length, 2);
+    final Map<String, Object?> body = jsonDecode(sent.last.body) as Map<String, Object?>;
+    expect(body['lat'], 22.7);
+    expect(body['lng'], 106.25);
+    expect(body['accuracy_m'], 12.0);
+    expect(body.keys, isNot(contains('history')));
+  });
+
+  test('a failed upload is reported and retried at the next position (no gap is spent on it)', () async {
+    final t = await build();
+    await t.reporter.start();
+    t.api.routes['PUT /v1/driver/location'] = (String m, String p, Map<String, String> h, String b) async => apiError(503, 'SERVICE_UNAVAILABLE');
+    await t.reporter.onSnapshot(fix());
+    expect(t.reporter.error, isNotNull);
+    expect(t.reporter.lastUpload, isNull);
+    t.api.routes['PUT /v1/driver/location'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'ok': true}});
+    await t.reporter.onSnapshot(fix());
+    expect(t.reporter.error, isNull);
+    expect(t.reporter.lastUpload, isNotNull);
+  });
+
+  test('stopping cancels the subscription and stops the core', () async {
+    final t = await build();
+    await t.reporter.start();
+    await t.reporter.stop();
+    expect(t.reporter.sharing, isFalse);
+    expect(t.feed.stops, 1);
+    t.feed.controller.add(fix());
+    await Future<void>.delayed(Duration.zero);
+    expect(t.api.to('PUT', '/v1/driver/location'), isEmpty);
+  });
+
+  test('a refused permission keeps sharing off and says so', () async {
+    final t = await build();
+    t.feed.startError = Exception('Cần quyền vị trí');
+    await t.reporter.start();
+    expect(t.reporter.sharing, isFalse);
+    expect(t.reporter.error, contains('quyền vị trí'));
+  });
+
+  testWidgets('the card explains first; only "Đồng ý chia sẻ" starts the core', (WidgetTester tester) async {
+    final t = await build();
+    await tester.pumpWidget(MaterialApp(theme: buildN11Theme(), home: Scaffold(body: SingleChildScrollView(child: ShipLocationShareCard(reporter: t.reporter)))));
+    expect(find.text('Đang tắt'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('m07-share-start')));
+    await tester.pump();
+    expect(find.textContaining('60 giây'), findsOneWidget);
+    expect(find.textContaining('không lưu vệt di chuyển'), findsOneWidget);
+    expect(t.feed.starts, 0);
+    await tester.tap(find.byKey(const Key('m07-confirm-back')));
+    await tester.pump();
+    expect(t.feed.starts, 0);
+    await tester.tap(find.byKey(const Key('m07-share-start')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('m07-confirm-yes')));
+    await tester.pump();
+    await tester.pump();
+    expect(t.feed.starts, 1);
+    expect(find.text('Đang chia sẻ'), findsOneWidget);
+    expect(find.byKey(const Key('m07-share-stop')), findsOneWidget);
+    await tester.runAsync(t.reporter.stop);
+  });
+}

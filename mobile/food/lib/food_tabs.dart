@@ -48,6 +48,12 @@ Widget _home(SessionController session, ShellActions actions, AppFlows? flows) {
 // ---- F03: orders -----------------------------------------------------------------------------------------------------
 
 Widget _orders(SessionController session, AppFlows? flows) {
+  final ShopDeliverySource? deliveries = flows?.shopDeliveries;
+  final bool owner = session.status == SessionStatus.signedIn && session.identity?.availableRoles.contains('SHOP_OWNER') == true;
+  if (deliveries != null && owner) {
+    // M07: the shop's delivery requests (call a Shipper, follow, cancel before pickup, goods handling).
+    return ShopDeliveryHub(source: deliveries);
+  }
   return vstack(<Widget>[
     _guestPrompt(session, 'Đăng nhập để xem đơn hàng của bạn.', flows),
     const EmptyState(icon: Icons.receipt_long_outlined, title: 'Chưa có đơn hàng', text: 'Đơn hàng của bạn sẽ hiện ở đây khi tính năng đặt món sẵn sàng.'),

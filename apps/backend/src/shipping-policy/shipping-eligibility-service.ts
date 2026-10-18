@@ -99,6 +99,22 @@ export class ShippingEligibilityService {
     return { decision: this.#decide(gathered, route, verdict.distanceToShopM), route };
   }
 
+  /**
+   * Read-only, in ONE short transaction: the eligibility RULES (not the batching route) for several deliveries, to list what a Shipper may take. It asks M14 for
+   * nothing; a listed "eligible" is a promise of nothing: `confirm` decides again at the commit. Order of the answers = order of `deliveryIds`.
+   */
+  async precheck(request: { driverId: string; deliveryIds: readonly string[] }, nowMs: number): Promise<Decision[]> {
+    return this.transactions.withTransaction(async (context) => {
+      const decisions: Decision[] = [];
+      for (const deliveryId of request.deliveryIds) {
+        const gathered = await this.#gather(context, { driverId: request.driverId, deliveryId }, false, nowMs);
+        const verdict = evaluateEligibility(gathered.facts);
+        decisions.push({ eligible: verdict.eligible, reasons: verdict.reasons, distanceToShopM: verdict.distanceToShopM, batch: null });
+      }
+      return decisions;
+    });
+  }
+
   async confirm(context: TransactionContext, request: { driverId: string; deliveryId: string }, route: RouteSnapshot | undefined, nowMs: number): Promise<Decision> {
     const gathered = await this.#gather(context, request, true, nowMs);
     const verdict = evaluateEligibility(gathered.facts);
@@ -148,7 +164,7 @@ export class ShippingEligibilityService {
     const params = await this.parameters.read(context);
     const offer = await this.offers.offer(context, request.deliveryId);
     const openWork = await this.work.openWork(context, driver.driverId);
-    const location = await this.locations.current(driver.driverId);
+    const location = await this.locations.current(context, driver.driverId);
     const availableVnd = await this.balances.availableVnd(context, driver.driverId);
     const facts: EligibilityFacts = {
       nowMs,

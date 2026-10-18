@@ -22,6 +22,7 @@ export type Route =
   | { readonly name: 'categories' }
   | { readonly name: 'shippers'; readonly status?: ShipperFilter }
   | { readonly name: 'shipper'; readonly id: string }
+  | { readonly name: 'deliveries' }
   | { readonly name: 'wallet-parameters' }
   | { readonly name: 'shipping-policy' }
   | { readonly name: 'settings' }
@@ -65,6 +66,9 @@ export function parseRoute(pathname: string, search = ''): Route {
   }
   if (path === '/system/shipping-fee-policy') {
     return { name: 'shipping-policy' };
+  }
+  if (path === '/operations/deliveries') {
+    return { name: 'deliveries' };
   }
   if (path === '/operations/shippers') {
     const status = new URLSearchParams(search).get('status');
@@ -172,6 +176,8 @@ export function formatRoute(route: Route): string {
       return route.status === undefined ? '/operations/shippers' : `/operations/shippers?status=${route.status}`;
     case 'shipper':
       return `/operations/shippers/${route.id}`;
+    case 'deliveries':
+      return '/operations/deliveries';
     case 'finance':
       return '/finance';
     case 'finance-wallets':

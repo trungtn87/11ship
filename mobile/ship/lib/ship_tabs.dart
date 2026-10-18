@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:n11_shared/n11_shared.dart';
 
 import 'ship_home.dart';
+import 'ship_m07.dart';
 import 'ship_wallet.dart';
 
 // M01 phone tabs. Home follows the approved Offline/Online reference; later-module actions remain gated.
@@ -9,7 +10,7 @@ import 'ship_wallet.dart';
 List<TabSpec> buildShipTabs(SessionController session, {AppFlows? flows}) {
   return <TabSpec>[
     TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', fullBleed: true, showAppBar: false, body: (BuildContext context, ShellActions actions) => ShipHome(session: session, reset: flows?.reset, onNotifications: () => actions.goTab('notifications'))),
-    TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: (BuildContext context, ShellActions actions) => const OrdersBody()),
+    TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: (BuildContext context, ShellActions actions) => _orders(session, flows)),
     TabSpec(id: 'income', label: 'Thu nhập', icon: Icons.bar_chart_outlined, title: 'Thu nhập', body: _income),
     TabSpec(id: 'notifications', label: 'Thông báo', icon: Icons.notifications_outlined, title: 'Thông báo', body: _notifications),
     TabSpec(id: 'account', label: 'Tài khoản', icon: Icons.person_outline, title: 'Tài khoản', body: (BuildContext context, ShellActions actions) => _account(session, actions, flows)),
@@ -35,6 +36,17 @@ Widget _unknownFigure({required String label, required String note}) {
 }
 
 // ---- S02: orders -----------------------------------------------------------------------------------------------------
+
+Widget _orders(SessionController session, AppFlows? flows) {
+  final ShipperDeliverySource? deliveries = flows?.shipperDeliveries;
+  final String onboarding = session.identity?.driverOnboarding ?? 'NOT_STARTED';
+  final bool shipper = session.status == SessionStatus.signedIn && (onboarding == 'ACTIVE' || onboarding == 'CLOSING');
+  if (deliveries != null && shipper) {
+    // M07: offers, my deliveries, drop-off and pickup confirmation, result and history.
+    return ShipperDeliveryHub(source: deliveries, mapBuilder: shipMapBuilder(), pinPicker: shipPinPicker(), locationSlot: (BuildContext context) => ShipLocationShareCard(reporter: reporterFor(session)));
+  }
+  return const OrdersBody();
+}
 
 enum OrdersView { active, history }
 
