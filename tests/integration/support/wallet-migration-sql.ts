@@ -22,3 +22,10 @@ const financeFile = path.resolve(__dirname, '..', '..', '..', '..', 'database', 
 const financeSql = readFileSync(financeFile, 'utf8');
 export const FINANCE_UP_SQL = (financeSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
 export const FINANCE_DOWN_SQL = financeSql.split('-- Down Migration')[1] as string;
+
+// M04-B2.2b: opens the ledger gate for TOPUP only. It changes one function and depends on the topup tables: newest, down FIRST, up LAST.
+export const POSTING_MIGRATION_NAME = '1794009600000_open-topup-ledger-gate';
+const postingFile = path.resolve(__dirname, '..', '..', '..', '..', 'database', 'migrations', `${POSTING_MIGRATION_NAME}.sql`);
+const postingSql = readFileSync(postingFile, 'utf8');
+export const POSTING_UP_SQL = (postingSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+export const POSTING_DOWN_SQL = postingSql.split('-- Down Migration')[1] as string;

@@ -63,21 +63,22 @@ GRANT SELECT, UPDATE ON app.shipper_wallet_parameters TO ship11_app;
 GRANT SELECT, INSERT ON app.shipper_wallet_parameter_changes TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.customers TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.customer_addresses TO ship11_app;
--- M04-A1: the Shipper wallet core. The runtime role may create a zero wallet and read both tables; it gets NO UPDATE on the wallet (no package moves money yet:
--- M04-A2/B/C add the grants their mutations need) and NO INSERT on the ledger (a ledger row needs a source table that does not exist yet).
-GRANT SELECT, INSERT ON app.driver_wallets TO ship11_app;
-GRANT SELECT ON app.wallet_ledger_entries TO ship11_app;
+-- M04-A1/B2.2b: the Shipper wallet core. The runtime role creates a zero wallet and (B2.2b, one TOPUP posting in the Admin confirmation transaction) updates its
+-- balance and appends a TOPUP ledger row; the ledger gate refuses every other kind and the ledger is append-only (no UPDATE, no DELETE).
+GRANT SELECT, INSERT, UPDATE ON app.driver_wallets TO ship11_app;
+GRANT SELECT, INSERT ON app.wallet_ledger_entries TO ship11_app;
 -- M04-A2.1: the hold table. READ ONLY for the runtime role: no hold is written until the source tables (M07 assignments, M04-C withdrawals) exist;
 -- the A2.2 migration that creates them grants the INSERT / UPDATE its participants need, together with the checks.
 GRANT SELECT ON app.wallet_holds TO ship11_app;
 -- M04-B1: topup sources. READ ONLY for the runtime role: no INSERT, UPDATE or DELETE on any of them, no UPDATE of the wallet and no INSERT into the ledger
 -- (money cannot be posted in B1). The matrix must list every table, hence a SELECT row for each; B2/B3 narrow or extend it in the migration that opens a writer.
--- M04-B2.2a: SYSTEM adds a receiving account (INSERT, always can_receive = false). NO UPDATE: switching an account on (can_receive = true) is B2.2b, so the runtime role cannot do it.
-GRANT SELECT, INSERT ON app.system_owned_bank_accounts TO ship11_app;
+-- M04-B2.2a/b: SYSTEM adds a receiving account (INSERT, always can_receive = false) and switches receiving on or off (UPDATE of the flag; never DELETE).
+GRANT SELECT, INSERT, UPDATE ON app.system_owned_bank_accounts TO ship11_app;
 -- M04-B2.1: the Shipper creates a PENDING request and cancels it (INSERT, UPDATE). Nothing else of money is writable: topups, bank records, system accounts, ledger and wallet stay as above.
 GRANT SELECT, INSERT, UPDATE ON app.wallet_topup_requests TO ship11_app;
-GRANT SELECT ON app.wallet_bank_transactions TO ship11_app;
-GRANT SELECT ON app.wallet_topups TO ship11_app;
+-- M04-B2.2b: the Admin confirmation records the bank transaction once and the confirmed topup (INSERT only; both append-only).
+GRANT SELECT, INSERT ON app.wallet_bank_transactions TO ship11_app;
+GRANT SELECT, INSERT ON app.wallet_topups TO ship11_app;
 -- M04-B2.2a: finance rights of the administration. SYSTEM gives (INSERT) and takes back (UPDATE) each right; never DELETE. Default deny: no row = no right.
 GRANT SELECT, INSERT, UPDATE ON app.admin_finance_grants TO ship11_app;
 -- M06-A: the shipping-fee table. Versions are immutable (a trigger refuses UPDATE/DELETE/TRUNCATE for every role): the runtime only appends and reads. The draft is

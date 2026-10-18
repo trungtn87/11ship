@@ -28,13 +28,15 @@ describe('M04-A1 wallet core boundary', () => {
     expect(codeOf('app.module.ts')).not.toMatch(/WalletModule|wallet\//);
   });
 
-  it('moves no money: no UPDATE, DELETE or TRUNCATE of the wallet tables, no INSERT into the ledger, a single INSERT of a literal-zero wallet', () => {
+  it('moves money only as a TOPUP posting: one literal-TOPUP ledger INSERT, the wallet UPDATE only in the settlement repository, no DELETE or TRUNCATE, a single INSERT of a literal-zero wallet', () => {
     const code = walletCode();
-    // M04-B2.1: the one UPDATE in this package is the conditional cancel of a top-up REQUEST (which carries no money); nothing updates a wallet.
-    expect(code.match(/\bUPDATE\s+app\.\w+/gi)).toEqual(['UPDATE app.wallet_topup_requests']);
+    // M04-B2.2b: the UPDATEs of this package are the conditional request change, the SYSTEM receiving switch and the balance move of the TOPUP posting.
+    expect([...(code.match(/\bUPDATE\s+app\.\w+/gi) ?? [])].sort()).toEqual(['UPDATE app.driver_wallets', 'UPDATE app.system_owned_bank_accounts', 'UPDATE app.wallet_topup_requests', 'UPDATE app.wallet_topup_requests']);
+    expect(codeOf('wallet/topup-settlement-repository.ts')).toContain('UPDATE app.driver_wallets');
     expect(code).not.toMatch(/\bDELETE\s+FROM\b/i);
     expect(code).not.toMatch(/\bTRUNCATE\b/i);
-    expect(code).not.toMatch(/INSERT\s+INTO\s+app\.wallet_ledger_entries/i);
+    expect(code.match(/INSERT\s+INTO\s+app\.wallet_ledger_entries/gi)).toHaveLength(1);
+    expect(codeOf('wallet/topup-settlement-repository.ts')).toMatch(/INSERT INTO app\.wallet_ledger_entries[^`]*VALUES \(\$1::uuid, \$2::uuid, \$3::bigint, 'TOPUP'/);
     expect(code.match(/INSERT INTO app\.driver_wallets\b/g) ?? []).toHaveLength(1);
     const insert = code.slice(code.indexOf('INSERT INTO app.driver_wallets'), code.indexOf('ON CONFLICT (driver_id) DO NOTHING'));
     expect(insert).toContain('SELECT $1::uuid, $2::uuid, 0, 0, 1, clock.t, clock.t');
@@ -51,20 +53,31 @@ describe('M04-A1 wallet core boundary', () => {
     expect(code).not.toMatch(/held_vnd\s*=/);
   });
 
-  it('M04-B2.1: topup requests are written here only (INSERT PENDING, conditional cancel); no code writes a topup or a bank record, and a system account is only inserted inactive (M04-B2.2a)', () => {
+  it('M04-B2.2b: the only inserts are the wallet, the request, an INACTIVE system account, the bank record, the topup and its TOPUP ledger row; no receiving switch to true by literal', () => {
     const code = walletCode();
-    expect([...(code.match(/INSERT\s+INTO\s+app\.\w+/gi) ?? [])].sort()).toEqual(['INSERT INTO app.driver_wallets', 'INSERT INTO app.system_owned_bank_accounts', 'INSERT INTO app.wallet_topup_requests']);
-    // M04-B2.2a: a receiving account is only ever inserted NOT receiving (the literal false); nothing in this package switches one on.
+    expect([...(code.match(/INSERT\s+INTO\s+app\.\w+/gi) ?? [])].sort()).toEqual([
+      'INSERT INTO app.driver_wallets',
+      'INSERT INTO app.system_owned_bank_accounts',
+      'INSERT INTO app.wallet_bank_transactions',
+      'INSERT INTO app.wallet_ledger_entries',
+      'INSERT INTO app.wallet_topup_requests',
+      'INSERT INTO app.wallet_topups',
+    ]);
+    // A receiving account is only ever inserted NOT receiving (the literal false); the switch takes its value from the SYSTEM command, never a literal true.
     expect(code).toContain('SELECT $1::uuid, $2, $3, $4, false, 1, clock.t, clock.t');
-    expect(code).not.toMatch(/UPDATE\s+app\.system_owned_bank_accounts|can_receive\s*=\s*true/i);
-    expect(code).not.toMatch(/(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+app\.(wallet_topups|wallet_bank_transactions)/i);
-    // Outside the wallet package nothing issues SQL on these tables, and the topup module issues no SQL at all.
+    expect(code).not.toMatch(/can_receive\s*=\s*true/i);
+    expect(code).not.toMatch(/(UPDATE|DELETE\s+FROM)\s+app\.(wallet_topups|wallet_bank_transactions|wallet_ledger_entries)/i);
+    // The bank record and the topup are written only by the settlement repository.
+    for (const file of walletFiles().filter((name) => name !== 'wallet/topup-settlement-repository.ts')) {
+      expect(codeOf(file)).not.toMatch(/INSERT\s+INTO\s+app\.(wallet_topups|wallet_bank_transactions|wallet_ledger_entries)/i);
+    }
+    // Outside the wallet package nothing issues SQL on these tables, and the topup modules issue no SQL at all.
     const outside = productionFiles().filter((name) => !name.startsWith('wallet/') && /app\.(system_owned_bank_accounts|wallet_topup_requests|wallet_bank_transactions|wallet_topups)\b/.test(codeOf(name)));
     expect(outside).toEqual([]);
   });
 
-  it('has no top-up, withdrawal, adjustment, hold or commission command', () => {
-    expect(walletCode()).not.toMatch(/\b(creditTopup|requestTopup|requestWithdraw|postAdjustment|reserve|capture|release|chargeCommission|debitWallet|creditWallet)\b/);
+  it('has no withdrawal, adjustment, hold or commission command', () => {
+    expect(walletCode()).not.toMatch(/\b(requestWithdraw|postAdjustment|reserve|capture|release|chargeCommission|debitWallet|creditWallet)\b/);
   });
 
   it('is a participant: it opens no transaction, holds no pool and calls no network', () => {

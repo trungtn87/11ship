@@ -13,16 +13,19 @@ import { OutboxWriter } from '../outbox/outbox-writer';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { SystemBankAccountRepository, SystemBankAccountRow } from '../wallet/system-bank-account-repository';
-import { BankAccountBody } from './finance-access-validation';
+import { BankAccountBody, ReceivingBody } from './finance-access-validation';
 
 const OPERATION = 'admin.system_bank_account.create.v1';
 const RESOURCE = 'system_bank_account';
 const EVENT_CREATED = 'system.bank_account.created.v1';
+const OPERATION_RECEIVING = 'admin.system_bank_account.receiving.v1';
+const EVENT_RECEIVING = 'system.bank_account.receiving_changed.v1';
 
 /**
- * The receiving accounts OF THE SYSTEM (M04-B2.2a), SYSTEM only: read the list or one account, and add a new one. A new account is ALWAYS created
- * not receiving (can_receive = false) and there is no command here to switch it on, change it or delete it: switching on opens the money path and
- * belongs to B2.2b; the identity (bank, number, holder) never changes, so another account is added instead. The same bank and number twice is one
+ * The receiving accounts OF THE SYSTEM (M04-B2.2a/b), SYSTEM only: read the list or one account, add a new one and switch receiving on or off. A new
+ * account is ALWAYS created not receiving (can_receive = false); `setReceiving` is the only way to change the flag (versioned, row locked, audited, a
+ * no-op change is a conflict). Switching OFF does not touch recorded money; money that arrives for a switched-off account cannot be recorded until
+ * SYSTEM switches it on again. There is no command to change or delete an account; the identity (bank, number, holder) never changes, so another account is added instead. The same bank and number twice is one
  * conflict that says nothing else. Number and holder are the SYSTEM's own data, shown only to SYSTEM here; the audit row and the event carry the
  * identifier and the bank code, never the number or the holder.
  */
@@ -116,6 +119,73 @@ export class SystemBankAccountService {
           payload: { account_id: row.accountId, bank_id: row.bankId, can_receive: false, version: row.version },
         });
         return { status: 201, replayGuard: { actor_user_id: known.userId }, payload: view(row) };
+      },
+    );
+  }
+
+  async setReceiving(
+    sessionToken: string | undefined,
+    csrfHeader: unknown,
+    accountId: string,
+    body: ReceivingBody,
+    idempotencyKey: string | readonly string[] | undefined,
+    meta: { requestId: string },
+  ): Promise<IdempotentOutcome> {
+    const known = await this.actor.precheck(sessionToken, { required: true, header: csrfHeader });
+    return this.executor.execute(
+      {
+        scopeType: PROVISIONING_SCOPE_TYPE,
+        scopeId: known.userId,
+        operationId: OPERATION_RECEIVING,
+        idempotencyKey,
+        logicalRequest: { account_id: accountId, expected_version: body.expectedVersion, can_receive: body.canReceive },
+        replay: {
+          kind: 'sensitive',
+          authorize: async (context, guard) => {
+            if (guard.actor_user_id !== known.userId) {
+              throw new AppError('ADMIN_SESSION_INVALID');
+            }
+            await this.#lockSystem(context, known, 'write');
+            return true;
+          },
+        },
+      },
+      async (context) => {
+        const locked = await this.#lockSystem(context, known, 'write');
+        const current = await this.accounts.lockForUpdate(context, accountId);
+        if (current === undefined) {
+          throw new AppError('FINANCE_BANK_ACCOUNT_NOT_FOUND');
+        }
+        if (current.version !== body.expectedVersion) {
+          throw new AppError('FINANCE_VERSION_CONFLICT');
+        }
+        if (current.canReceive === body.canReceive) {
+          throw new AppError('FINANCE_BANK_ACCOUNT_STATE_CONFLICT');
+        }
+        const row = await this.accounts.setReceiving(context, accountId, body.expectedVersion, body.canReceive);
+        if (row === undefined) {
+          throw new AppError('FINANCE_VERSION_CONFLICT');
+        }
+        await this.audit.append(context, {
+          requestId: meta.requestId,
+          actorType: locked.checked.membership.adminRole,
+          actorId: known.userId,
+          action: OPERATION_RECEIVING,
+          resourceType: RESOURCE,
+          resourceId: row.accountId,
+          resourceVersion: row.version,
+          outcome: 'SUCCESS',
+          metadata: { bank_id: row.bankId, can_receive: row.canReceive },
+        });
+        await this.outbox.append(context, {
+          eventType: EVENT_RECEIVING,
+          eventSchemaVersion: 1,
+          resourceType: RESOURCE,
+          resourceId: row.accountId,
+          resourceVersion: row.version,
+          payload: { account_id: row.accountId, bank_id: row.bankId, can_receive: row.canReceive, version: row.version },
+        });
+        return { status: 200, replayGuard: { actor_user_id: known.userId }, payload: view(row) };
       },
     );
   }

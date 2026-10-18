@@ -444,14 +444,37 @@ describe('runtime grants (ops/selfhosted/02-runtime-grants.sql) with the real re
       await assert.rejects(client.query('DROP TABLE app.users'), { code: '42501' });
       await assert.rejects(client.query('ALTER TABLE app.users ADD COLUMN must_not_exist int'), { code: '42501' });
       await assert.rejects(client.query('CREATE TABLE public.runtime_must_not_create (id int)'), { code: '42501' });
-      // M04-A2.1: the holds are read only for the runtime role, and no package yet moves money (no wallet UPDATE, no ledger INSERT).
+      // M04-A2.1: the holds are read only for the runtime role, and the money path is the TOPUP posting only (B2.2b).
       await client.query('SELECT 1 FROM app.wallet_holds LIMIT 1');
       await assert.rejects(client.query('INSERT INTO app.wallet_holds (hold_id) VALUES (gen_random_uuid())'), { code: '42501' });
       await assert.rejects(client.query("UPDATE app.wallet_holds SET status = 'RELEASED'"), { code: '42501' });
       await assert.rejects(client.query('DELETE FROM app.wallet_holds'), { code: '42501' });
       await assert.rejects(client.query('TRUNCATE app.wallet_holds'), { code: '42501' });
-      await assert.rejects(client.query('UPDATE app.driver_wallets SET version = version'), { code: '42501' });
-      await assert.rejects(client.query('INSERT INTO app.wallet_ledger_entries (entry_id) VALUES (gen_random_uuid())'), { code: '42501' });
+      // M04-B2.2b: the runtime role may move a balance and append a TOPUP ledger row (the Admin confirmation), and nothing beyond that.
+      await client.query('SELECT 1 FROM app.wallet_ledger_entries LIMIT 1');
+      await client.query('SELECT 1 FROM app.driver_wallets LIMIT 1');
+      // The privilege is there (no 42501), but the database still refuses a ledger row with a wrong source or kind: the gate runs before any row is stored.
+      const ledgerInsert = (kind, topup) => ({
+        text: `INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at, topup_id)
+               VALUES (gen_random_uuid(), gen_random_uuid(), 1, $1, 1000, 1000, now(), $2)`,
+        values: [kind, topup],
+      });
+      for (const [kind, topup] of [['TOPUP', null], ['TOPUP', '00000000-0000-4000-8000-000000000001'], ['ADJUSTMENT', null], ['COMMISSION', null], ['WITHDRAWAL', null]]) {
+        await assert.rejects(client.query(ledgerInsert(kind, topup)), (error) => error.code !== '42501' && /WALLET_LEDGER_SOURCE_NOT_AVAILABLE/.test(error.message), `${kind}/${topup}`);
+      }
+      // The ledger is append-only for the runtime role, the wallet and the sources are never deleted, nothing is truncated.
+      await assert.rejects(client.query('UPDATE app.wallet_ledger_entries SET delta_vnd = delta_vnd'), { code: '42501' });
+      await assert.rejects(client.query('DELETE FROM app.wallet_ledger_entries'), { code: '42501' });
+      await assert.rejects(client.query('TRUNCATE app.wallet_ledger_entries'), { code: '42501' });
+      await assert.rejects(client.query('DELETE FROM app.driver_wallets'), { code: '42501' });
+      await assert.rejects(client.query('TRUNCATE app.driver_wallets'), { code: '42501' });
+      for (const table of ['wallet_topups', 'wallet_bank_transactions']) {
+        await assert.rejects(client.query(`UPDATE app.${table} SET created_at = created_at`), { code: '42501' }, `${table} update`);
+        await assert.rejects(client.query(`DELETE FROM app.${table}`), { code: '42501' }, `${table} delete`);
+        await assert.rejects(client.query(`TRUNCATE app.${table}`), { code: '42501' }, `${table} truncate`);
+      }
+      await assert.rejects(client.query('DELETE FROM app.system_owned_bank_accounts'), { code: '42501' });
+      await assert.rejects(client.query('DELETE FROM app.wallet_topup_requests'), { code: '42501' });
     });
   });
 });

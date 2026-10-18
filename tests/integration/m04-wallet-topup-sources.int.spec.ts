@@ -170,17 +170,17 @@ describe('M04-B1 - topup sources, bank registry and ledger source (schema, invar
   }
 
   // =====================================================================================================
-  it('1. fail closed: with the A1 gate in place no money can be posted, and nothing leaks (ledger, topup, bank record, request credit)', async () => {
+  it('1. fail closed: the gate refuses a credit without a matching topup source, a complete posting passes it (B2.2b) and a rollback leaves nothing (ledger, topup, bank record, request credit)', async () => {
     // The ledger gate refuses the credit, whatever the source row says.
     const direct = await failureOf(() => credit(pool as unknown as PoolClient, { wallet: a.walletId, topupId: null, delta: 1000 }));
     expect(messageOf(direct)).toContain('WALLET_LEDGER_SOURCE_NOT_AVAILABLE');
-    // A whole posting attempt against the real gate: the ledger insert is refused, the transaction aborts, nothing is left behind.
+    // A whole posting against the real gate (opened by B2.2b for a matching TOPUP source): accepted inside the transaction; the rollback leaves nothing behind.
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       const accountId = await account(client);
-      const error = await failureOf(() => post(client, a, { accountId }));
-      expect(messageOf(error)).toContain('WALLET_LEDGER_SOURCE_NOT_AVAILABLE');
+      await post(client, a, { accountId });
+      expect((await client.query('SELECT 1 FROM app.wallet_ledger_entries WHERE wallet_id = $1::uuid', [a.walletId])).rowCount).toBe(1);
     } finally {
       await client.query('ROLLBACK').catch(() => undefined);
       client.release();

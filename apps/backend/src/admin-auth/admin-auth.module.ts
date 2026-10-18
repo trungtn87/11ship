@@ -22,6 +22,8 @@ import { AdminShipperController, ShipperWalletParametersController } from '../ad
 import { AdminShipperService } from '../admin-shippers/admin-shipper-service';
 import { ShipperWalletParametersService } from '../admin-shippers/shipper-wallet-parameters-service';
 import { DriverModule } from '../driver/driver.module';
+import { AdminTopupController } from '../admin-topups/admin-topup.controller';
+import { AdminTopupService } from '../admin-topups/admin-topup-service';
 import { FinanceAccessController } from '../finance-access/finance-access.controller';
 import { FinanceAccessParticipant } from '../finance-access/finance-access-participant';
 import { FinanceAccessRepository } from '../finance-access/finance-access-repository';
@@ -102,7 +104,7 @@ export class AdminAuthModule implements NestModule {
       ],
       // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
       // M01-D-ADMIN-1C: the activation routes under /v1/admin-activation exist only when explicitly enabled.
-      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, FinanceAccessController, ...(activation === undefined ? [] : [AdminActivationController])],
+      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, FinanceAccessController, AdminTopupController, ...(activation === undefined ? [] : [AdminActivationController])],
       providers: [
         adminAuthConfigProvider,
         {
@@ -154,6 +156,8 @@ export class AdminAuthModule implements NestModule {
         FinanceAccessParticipant,
         FinanceAccessService,
         SystemBankAccountService,
+        // M04-B2.2b Admin reconciliation of the Shipper top-up requests (the ledger posting itself stays in WalletModule).
+        AdminTopupService,
         // M06-A flexible shipping-fee table (SYSTEM changes, any ADMIN reads).
         ShippingFeePolicyService,
         ShippingEligibilityPolicyService,
@@ -179,7 +183,7 @@ export class AdminAuthModule implements NestModule {
   }
 
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, FinanceAccessController);
+    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, FinanceAccessController, AdminTopupController);
     // The activation transport headers are an application-level middleware in configureApp (app.setup.ts): it must precede
     // the body parser, which module middleware does not.
   }
