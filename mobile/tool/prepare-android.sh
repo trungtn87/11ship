@@ -75,7 +75,7 @@ else
 fi
 if [ "$push" = on ]; then
   push_permissions='<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>'
-  push_service='<service android:name="vn.eleven.n11.N11FirebaseService" android:exported="false"><intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT"/></intent-filter></service><meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="n11_sv"/><meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@mipmap/ic_launcher"/>'
+  push_service='<service android:name="vn.eleven.n11.N11FirebaseService" android:exported="false"><intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT"/></intent-filter></service><meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="n11_sv"/><meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_n11"/><meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/n11_notification_color"/>'
 else
   push_permissions=''
   push_service=''
@@ -86,6 +86,10 @@ sed -e "s/@LABEL@/$label/g" -e "s/@PEER_PACKAGE@/$peer_id/g" -e "s/@DEVICE_ENVIR
 cp "$here/android-templates/styles.xml" "$res/values/styles.xml"
 cp "$here/android-templates/styles-v31.xml" "$res/values-v31/styles.xml"
 cp "$here/android-templates/launch_background.xml" "$res/drawable/launch_background.xml"
+if [ "$push" = on ]; then
+  cp "$here/android-templates/ic_stat_n11.xml" "$res/drawable/ic_stat_n11.xml"
+  printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' '<resources><color name="n11_notification_color">#D8AD18</color></resources>' > "$res/values/n11_push_colors.xml"
+fi
 mkdir -p "$res/xml"
 cp "$here/android-templates/network_security_config.xml" "$res/xml/network_security_config.xml"
 cp "$here/android-templates/n11_data_extraction_rules.xml" "$res/xml/n11_data_extraction_rules.xml"

@@ -35,6 +35,11 @@ export interface PushProvider {
 
 export const PUSH_PROVIDER = Symbol('PUSH_PROVIDER');
 
+/** What the operator's configuration check found. Fixed codes only: never a token, a key, a project secret or a provider response body. */
+export type PushCheckResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly code: 'CREDENTIAL_UNAVAILABLE' | 'PROVIDER_AUTH' | 'PROJECT_NOT_FOUND' | 'PERMISSION_DENIED' | 'NETWORK' | 'REJECTED'; readonly evidence: string };
+
 export class UnconfiguredPushProvider implements PushProvider {
   readonly configured = false;
   send(): Promise<PushResult> {
@@ -78,6 +83,44 @@ export class FcmPushProvider implements PushProvider {
       result = await this.#post(account, message, signal, true);
     }
     return result === 'UNAUTHENTICATED' ? { kind: 'RETRYABLE', code: 'PROVIDER_AUTH', evidence: 'Dịch vụ đẩy thông báo từ chối xác thực' } : result;
+  }
+
+  /**
+   * Operator check (`npm run push:check`): signs in with the service account and asks FCM to VALIDATE a message (validate_only: nothing is delivered to anybody).
+   * It proves the credential file, the project id and the FCM API permission together; it cannot prove that a phone will receive anything.
+   */
+  async check(signal: AbortSignal): Promise<PushCheckResult> {
+    let account: ServiceAccount;
+    try {
+      account = await this.#loadAccount();
+    } catch {
+      return { ok: false, code: 'CREDENTIAL_UNAVAILABLE', evidence: 'Không đọc được hoặc sai định dạng tệp khóa dịch vụ' };
+    }
+    try {
+      const token = await this.#accessToken(account, signal, true);
+      if (token === undefined) {
+        return { ok: false, code: 'PROVIDER_AUTH', evidence: 'Google không cấp mã truy cập cho khóa dịch vụ này' };
+      }
+      const response = await fetch(`${this.config.apiOrigin}/v1/projects/${this.config.projectId}/messages:send`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json; charset=UTF-8' },
+        body: JSON.stringify({ validate_only: true, message: { topic: 'n11-config-check', notification: { title: 'Kiểm tra cấu hình', body: 'Không gửi cho ai.' } } }),
+        signal,
+      });
+      if (response.ok) {
+        return { ok: true };
+      }
+      const detail = await errorStatus(response);
+      if (response.status === 404) {
+        return { ok: false, code: 'PROJECT_NOT_FOUND', evidence: 'Không tìm thấy dự án Firebase với mã đã cấu hình' };
+      }
+      if (response.status === 401 || response.status === 403) {
+        return { ok: false, code: 'PERMISSION_DENIED', evidence: `Khóa dịch vụ chưa có quyền gửi FCM cho dự án này (mã ${String(response.status)}${detail === '' ? '' : `, ${detail}`})` };
+      }
+      return { ok: false, code: 'REJECTED', evidence: `Dịch vụ đẩy từ chối kiểm tra: mã ${String(response.status)}${detail === '' ? '' : ` (${detail})`}` };
+    } catch (error) {
+      return { ok: false, code: 'NETWORK', evidence: `Không kết nối được tới Google${error instanceof Error ? ` (${error.name})` : ''}` };
+    }
   }
 
   async #loadAccount(): Promise<ServiceAccount> {

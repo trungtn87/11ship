@@ -164,6 +164,33 @@ class FakePush implements PushPort {
   Stream<String> get taps => tapStream.stream;
 }
 
+class _CountingPush implements PushPort {
+  _CountingPush(this.inner, this.onAsk);
+  final FakePush inner;
+  final void Function() onAsk;
+
+  @override
+  Future<PushState> state() => inner.state();
+
+  @override
+  Future<PushPermission> requestPermission() {
+    onAsk();
+    return inner.requestPermission();
+  }
+
+  @override
+  Future<void> openSystemSettings() => inner.openSystemSettings();
+
+  @override
+  Future<void> deleteToken() => inner.deleteToken();
+
+  @override
+  Stream<String> get tokenRefreshes => inner.tokenRefreshes;
+
+  @override
+  Stream<String> get taps => inner.taps;
+}
+
 NotificationItem item(String id, int seq, {String kind = 'DELIVERY_ACCEPTED', bool read = false, bool expired = false, DateTime? at, String title = 'Quán đã xác nhận đơn'}) =>
     NotificationItem.fromJson(itemJson(id, seq, kind: kind, read: read, expired: expired, at: at, title: title));
 
@@ -317,6 +344,30 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 10));
       expect(port.deleted, 1);
       sync.dispose();
+    });
+
+    test('asks the notification permission once after sign-in when it was never asked: allowed binds the token, refused is reported and not asked again', () async {
+      final t = await signedIn();
+      final FakeSource source = FakeSource(t.session);
+      final FakePush port = FakePush()..current = const PushState(supported: true, permission: PushPermission.unknown);
+      final PushSync sync = PushSync(session: t.session, source: source, port: port);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(sync.permission, PushPermission.granted);
+      expect(source.tokens, <String>['tok-aaaaaaaaaaaaaaaaaaaa']);
+      sync.dispose();
+
+      final FakeSource source2 = FakeSource(t.session);
+      final FakePush refused = FakePush()
+        ..asked = PushPermission.denied
+        ..current = const PushState(supported: true, permission: PushPermission.unknown);
+      int asks = 0;
+      final PushSync sync2 = PushSync(session: t.session, source: source2, port: _CountingPush(refused, () => asks++));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await sync2.resync();
+      expect(asks, 1);
+      expect(source2.tokens, isEmpty);
+      expect(source2.deniedReports, greaterThanOrEqualTo(1));
+      sync2.dispose();
     });
 
     test('a build without a push provider says so and registers nothing; a tap is handed to the app', () async {

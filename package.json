@@ -42,6 +42,7 @@
     "admin-auth:bootstrap-system": "node scripts/admin-auth-bootstrap-system.js",
     "admin-auth:recover-system": "node scripts/admin-auth-recover-system.js",
     "sms-gateway:ctl": "node scripts/sms-gateway-ctl.js",
+    "push:check": "node scripts/push-check.js",
     "deploy:validate": "node scripts/deploy/validate-render-blueprint.mjs",
     "deploy:test": "node --test \"tests/deploy/*.test.mjs\"",
     "selfhosted:test": "node --test --test-concurrency=1 \"tests/selfhosted/*.test.mjs\"",

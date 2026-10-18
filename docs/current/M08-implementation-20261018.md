@@ -37,13 +37,15 @@ Nguồn thiết kế: `11Ship-M08-Functional-UI-LOCKED-v1.0.md` (OWNER_APPROVED 
 
 ## 4. Cấu hình còn cần để có push thật
 
+**Trạng thái:** phần kỹ thuật đã hoàn thiện đầu cuối (máy chủ FCM, APK có đường build push, quyền thông báo, kênh âm thanh/rung, biểu tượng, chạm mở đúng màn). **APK bàn giao hiện chưa có push** vì dự án Firebase của Owner và khóa chưa được cung cấp; M08 **chưa** được coi là xong cho đến khi Owner làm các bước dưới đây và máy thật đạt. Hướng dẫn từng bước, lệnh và bài thử điện thoại: [ops/runbooks/m08-push-deploy-20261018.md](../../ops/runbooks/m08-push-deploy-20261018.md).
+
 **Máy chủ (VPS)** — thiếu thì push ghi `PROVIDER_NOT_CONFIGURED`, hộp thư/đồng bộ vẫn chạy:
 
 ```
 PUSH_FCM_PROJECT_ID=<id dự án Firebase>
-PUSH_FCM_SERVICE_ACCOUNT_FILE=/đường/dẫn/tuyệt/đối/fcm-service-account.json   # file khóa dịch vụ, quyền chỉ root/service, KHÔNG đưa vào repo/log
+PUSH_FCM_SERVICE_ACCOUNT_FILE=/etc/11ship/fcm/service-account.json   # service account JSON, 640 root:ship11 trong thư mục 750; KHÔNG đưa vào repo/log/APK
 ```
-File là service account có vai trò *Firebase Cloud Messaging API Admin*; mount bằng file, chmod 600. Không có biến nào trong source/log/APK.
+Service account có vai trò *Firebase Cloud Messaging API Admin*. Kiểm tra trước khi khởi động lại: `npm run push:check` (xác thực khóa, dự án và quyền FCM qua `validate_only`, không gửi gì; mã lỗi cố định; `-- --token <token>` gửi thử một thông báo thật).
 
 **APK (GitHub)** — biến/secret của repository, đủ cả 4 cho từng app, thiếu hết = APK không có push (CI cảnh báo), thiếu một phần = build dừng:
 
@@ -53,7 +55,8 @@ File là service account có vai trò *Firebase Cloud Messaging API Admin*; moun
 | `FCM_SHIP_APP_ID`, `FCM_FOOD_APP_ID` | variable | `1:<sender>:android:<hex>` của từng app Android (applicationId `vn.eleven.ship.test` / `vn.eleven.food.test`) |
 | `FCM_SHIP_API_KEY`, `FCM_FOOD_API_KEY` | secret | khóa API Android của từng app (định danh client, có trong mọi APK; không phải khóa máy chủ) |
 
-Triển khai ngắn: (1) áp migration `1794182400000` (xem runbook cập nhật VPS hiện có, cần quyền riêng); (2) đặt hai biến máy chủ + file khóa, khởi động lại; (3) chạy workflow *Mobile APK* để có APK mới (versionCode = `run_number`, cùng applicationId và khóa ký); (4) cài đè, đăng nhập, bật thông báo, thử.
+**Đã kiểm tự động:** client FCM với máy chủ Google giả (`push-provider.spec.ts`); token theo phiên, dừng khi đăng xuất/đổi tài khoản, gom thẻ, nhắc 5/15 phút và nhắc lấy hàng, **nhắc lấy hàng bị bỏ khi pickup / shop hủy / shipper trả đơn** (`m08-notifications.int.spec.ts`); xin quyền một lần sau đăng nhập, đăng ký token, chạm → định tuyến (Dart); job CI *push build compiles* biên dịch bản có Firebase bằng định danh giả và kiểm tra manifest + quyền.
+**Chưa kiểm (chỉ máy thật mới chứng minh):** Google nhận khóa thật, FCM giao tới máy, thông báo hiện/chạm mở đúng màn trên Android, kênh âm thanh/rung. Bài thử: mục D của runbook.
 
 ## 5. Kiểm thử đã chạy (cục bộ, PG 16)
 

@@ -548,6 +548,50 @@ describe('M08 — notifications, reminders and sync', () => {
     expect((await rows(`SELECT 1 FROM app.notification_reminders WHERE recipient_user_id = $1::uuid`, [s.userId])).length).toBeGreaterThanOrEqual(3);
   });
 
+  it('a pickup reminder that is due is dropped (not sent) when the Shipper gives the delivery back or the shop cancels it before the reminder goes out', async () => {
+    const backdateAccepted = async (deliveryId: string): Promise<void> => {
+      const client = await app.pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('ALTER TABLE app.delivery_assignments DISABLE TRIGGER delivery_assignments_guard');
+        await client.query(`UPDATE app.delivery_assignments SET accepted_at = accepted_at - interval '6 minutes' WHERE delivery_id = $1::uuid`, [deliveryId]);
+        await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+        await client.query('ALTER TABLE app.delivery_assignments ENABLE TRIGGER delivery_assignments_guard');
+        await client.query('COMMIT');
+      } finally {
+        client.release();
+      }
+    };
+    const s = await newShipper(true);
+    const released = await newDelivery();
+    const cancelled = await newDelivery();
+    for (const d of [released, cancelled]) {
+      expect((await asShipper(s, 'POST', `/driver/deliveries/${d.delivery_id}/accept`, {})).status).toBe(200);
+      await backdateAccepted(String(d.delivery_id));
+    }
+    await settle();
+    await sweeper().sweep();
+    await settle();
+    await backdateReminders();
+    expect((await rows(`SELECT 1 FROM app.notification_reminders WHERE recipient_user_id = $1::uuid AND kind = 'PICKUP' AND status = 'PENDING'`, [s.userId])).length).toBe(2);
+
+    const held = dataOf(await asShipper(s, 'GET', `/driver/deliveries/${released.delivery_id}`)) as Json;
+    const give = await asShipper(s, 'POST', `/driver/deliveries/${released.delivery_id}/release`, { reason: 'Xe hỏng', expected_version: held.version });
+    expect([give.status, give.text.slice(0, 200)]).toEqual([200, give.text.slice(0, 200)]);
+    const cancel = await asShop('POST', `/shop/me/deliveries/${cancelled.delivery_id}/cancel`, { reason: 'Khách đổi ý', expected_version: dataOf(await asShop('GET', `/shop/me/deliveries/${cancelled.delivery_id}`)).version });
+    expect([cancel.status, cancel.text.slice(0, 200)]).toEqual([200, cancel.text.slice(0, 200)]);
+
+    const sentBefore = ((await inbox(s)).items as Json[]).filter((i) => i.kind === 'PICKUP_REMINDER').length;
+    expect(await reminders().runOnce()).toMatchObject({ sent: 0 });
+    expect(((await inbox(s)).items as Json[]).filter((i) => i.kind === 'PICKUP_REMINDER')).toHaveLength(sentBefore);
+    expect((await rows(`SELECT 1 FROM app.notification_reminders WHERE recipient_user_id = $1::uuid AND kind = 'PICKUP' AND status = 'PENDING'`, [s.userId])).length).toBe(0);
+    // Nothing starts again later: the sweeper has no assignment left to remind about.
+    await sweeper().sweep();
+    await settle();
+    await backdateReminders();
+    expect(await reminders().runOnce()).toMatchObject({ sent: 0 });
+  });
+
   it('search reminders go to the shop only while it is searching; a stale backlog (past its window) is dropped, never sent late', async () => {
     const d = await newDelivery();
     const id = String(d.delivery_id);

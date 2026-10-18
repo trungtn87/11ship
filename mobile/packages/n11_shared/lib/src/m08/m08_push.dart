@@ -173,6 +173,7 @@ class PushSync {
 
   PushPermission _permission = PushPermission.unknown;
   bool _supported = false;
+  bool _asked = false;
 
   bool get supported => _supported;
   PushPermission get permission => _permission;
@@ -208,7 +209,23 @@ class PushSync {
     if (!state.supported) {
       return;
     }
-    if (state.permission == PushPermission.denied) {
+    if (state.permission == PushPermission.unknown && !_asked) {
+      // Android 13+ shows nothing until the person allows it: ask once per run, right after sign-in, in context of the account that will receive them.
+      _asked = true;
+      _permission = await port.requestPermission();
+      if (_disposed || session.status != SessionStatus.signedIn) {
+        return;
+      }
+      if (_permission != PushPermission.denied) {
+        final PushState again = await port.state();
+        _permission = again.permission;
+        final String? fresh = again.token;
+        if (fresh != null && again.permission == PushPermission.granted) {
+          await _register(fresh);
+        }
+        return;
+      }
+    } else if (state.permission == PushPermission.denied) {
       try {
         await source.reportPushPermissionDenied();
       } on NotificationFailure {
