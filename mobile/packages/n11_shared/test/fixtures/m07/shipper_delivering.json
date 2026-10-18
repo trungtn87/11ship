@@ -1,0 +1,67 @@
+{
+ "data": {
+  "assignment": {
+   "accepted_at": "2026-10-18T03:24:17.092Z",
+   "assignment_id": "ecda12b5-a2e9-4808-8b3c-284aadf52470",
+   "destination_confirmed": true,
+   "picked_up_at": "2026-10-18T03:24:17.153Z",
+   "shipper": {
+    "name": "",
+    "phone": null,
+    "plate_number": null
+   }
+  },
+  "can": {
+   "complete": true,
+   "confirm_destination": false,
+   "fail": true,
+   "pickup": false,
+   "release": false
+  },
+  "code": "G-H7JWQK",
+  "delivery_id": "f43876b2-8328-4663-9942-425f0c6ab23a",
+  "fee": {
+   "agreement": null,
+   "amount_vnd": 10000,
+   "distance_m": 2500,
+   "mode": "STANDARD",
+   "payer": "CUSTOMER",
+   "status": "FINAL"
+  },
+  "goods": {
+   "description": "Hộp quà",
+   "paid_vnd": 0,
+   "value_vnd": 200000
+  },
+  "incident": null,
+  "location": null,
+  "note": null,
+  "order_id": null,
+  "own_outcome": null,
+  "pickup": {
+   "address_text": "Fixture address",
+   "lat": 21,
+   "lng": 105.8,
+   "phone": "+84900000001",
+   "shop_name": "Fixture shop"
+  },
+  "previous_delivery_id": null,
+  "recipient": {
+   "address_text": "12 Phố Huế, Hai Bà Trưng, Hà Nội",
+   "lat": 21,
+   "lng": 105.82,
+   "name": "Khách nhận",
+   "phone": "+84912345678"
+  },
+  "result": null,
+  "search": {
+   "expires_at": "2026-10-18T03:54:16.999Z",
+   "server_now": "2026-10-18T03:24:17.158Z",
+   "started_at": "2026-10-18T03:24:16.999Z",
+   "stopped_at": null
+  },
+  "source": "DIRECT",
+  "state": "delivering",
+  "version": 4
+ }
+}

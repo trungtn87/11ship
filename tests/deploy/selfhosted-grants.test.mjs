@@ -91,8 +91,10 @@ describe('ops/selfhosted/02-runtime-grants.sql', () => {
     // M04-A1/B2.2b: the wallet is created and its balance updated (TOPUP posting); the ledger is append-only (INSERT, never UPDATE or DELETE).
     assert.deepEqual(parsed.get('driver_wallets'), ['INSERT', 'SELECT', 'UPDATE']);
     assert.deepEqual(parsed.get('wallet_ledger_entries'), ['INSERT', 'SELECT']);
-    // M04-A2.1: the hold table is read only for the runtime role (no hold can be written before the source tables exist).
-    assert.deepEqual(parsed.get('wallet_holds'), ['SELECT']);
+    // M04-A2 / M07: holds are written only through the M07 source gate (a commission hold needs an ACTIVE delivery assignment).
+    assert.deepEqual(parsed.get('wallet_holds'), ['INSERT', 'SELECT', 'UPDATE']);
+    // M07: the delivery history is append-only for the runtime role; nothing of the delivery flow is ever deleted.
+    assert.deepEqual(parsed.get('delivery_events'), ['INSERT', 'SELECT']);
     // M04-B2.2b: the bank record and the confirmed topup are INSERT-only (append-only tables).
     for (const table of ['wallet_bank_transactions', 'wallet_topups']) {
       assert.deepEqual(parsed.get(table), ['INSERT', 'SELECT'], table);

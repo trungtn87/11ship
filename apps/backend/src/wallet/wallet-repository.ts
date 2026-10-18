@@ -125,6 +125,13 @@ export class WalletRepository {
     return result.rows.map(toHold);
   }
 
+  /** The commission hold of one assignment (at most one exists: the source is unique), or undefined. A plain read: no lock, no write. */
+  async findHoldBySource(context: TransactionContext, assignmentId: string): Promise<WalletHoldRow | undefined> {
+    const result = await context.query<RawHold>(`SELECT ${HOLD_COLUMNS} FROM app.wallet_holds h WHERE h.commission_assignment_id = $1::uuid`, [assignmentId]);
+    const row = result.rows[0];
+    return row === undefined ? undefined : toHold(row);
+  }
+
   /** How many ACTIVE holds a wallet has and their total, computed by the database from the holds themselves. */
   async activeTotals(context: TransactionContext, walletId: string): Promise<{ readonly count: number; readonly totalVnd: bigint }> {
     const result = await context.query<{ n: string; total: string }>(

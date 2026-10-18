@@ -67,9 +67,9 @@ GRANT SELECT, INSERT, UPDATE ON app.customer_addresses TO ship11_app;
 -- balance and appends a TOPUP ledger row; the ledger gate refuses every other kind and the ledger is append-only (no UPDATE, no DELETE).
 GRANT SELECT, INSERT, UPDATE ON app.driver_wallets TO ship11_app;
 GRANT SELECT, INSERT ON app.wallet_ledger_entries TO ship11_app;
--- M04-A2.1: the hold table. READ ONLY for the runtime role: no hold is written until the source tables (M07 assignments, M04-C withdrawals) exist;
--- the A2.2 migration that creates them grants the INSERT / UPDATE its participants need, together with the checks.
-GRANT SELECT ON app.wallet_holds TO ship11_app;
+-- M04-A2 / M07: the hold table. The runtime role reserves a COMMISSION hold for an ACTIVE assignment and resolves it once (CAPTURED or RELEASED); the hold gate refuses
+-- every hold without a valid delivery assignment (a WITHDRAWAL hold stays refused until M04-C) and nothing is ever deleted.
+GRANT SELECT, INSERT, UPDATE ON app.wallet_holds TO ship11_app;
 -- M04-B1: topup sources. READ ONLY for the runtime role: no INSERT, UPDATE or DELETE on any of them, no UPDATE of the wallet and no INSERT into the ledger
 -- (money cannot be posted in B1). The matrix must list every table, hence a SELECT row for each; B2/B3 narrow or extend it in the migration that opens a writer.
 -- M04-B2.2a/b: SYSTEM adds a receiving account (INSERT, always can_receive = false) and switches receiving on or off (UPDATE of the flag; never DELETE).
@@ -92,3 +92,12 @@ GRANT SELECT, INSERT ON app.shipping_eligibility_parameter_changes TO ship11_app
 -- TRUNCATE, identity changes, a shorter deadline and any status move off the graph); its event log is append-only (a trigger refuses UPDATE, DELETE and TRUNCATE).
 GRANT SELECT, INSERT, UPDATE ON app.shipping_fee_agreements TO ship11_app;
 GRANT SELECT, INSERT ON app.shipping_fee_agreement_events TO ship11_app;
+-- M07: the delivery flow. The services write these under the lock order (Shipper, delivery, assignment, wallet); triggers refuse DELETE and any move off the state graph.
+-- The commission (M04-A2.2 inside the M07 migration) reserves a hold, captures it into the ledger once, or releases it: hence UPDATE of the wallet and INSERT of the
+-- ledger and the hold above, each guarded by the source-gate triggers (an INSERT needs an assignment) and the deferred invariants. Events and incidents never
+-- change history: events are INSERT only. The latest Shipper position is one row per Shipper (upsert), never a trail.
+GRANT SELECT, INSERT, UPDATE ON app.deliveries TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.delivery_assignments TO ship11_app;
+GRANT SELECT, INSERT ON app.delivery_events TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.delivery_incidents TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.shipper_latest_locations TO ship11_app;

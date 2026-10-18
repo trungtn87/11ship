@@ -81,6 +81,10 @@ export function grantsFromPermissions(permissions: readonly AppPermission[]): Gr
     } else if (row.app === 'DRIVER') {
       grants.add('drivers');
     }
+    // M07.07: the delivery pages open for an administrator who may view the shop or the Shipper side; the server decides every read and action again.
+    if (row.app === 'SHOP' || row.app === 'DRIVER') {
+      grants.add('deliveries');
+    }
   }
   return grants;
 }
@@ -139,7 +143,7 @@ export const MENU: readonly MenuGroup[] = [
       soon('shops', 'Quán', 'store', 'shops'),
       { id: 'drivers', label: 'Shipper', icon: 'rider', route: { name: 'shippers' }, ready: true, access: 'drivers' },
       soon('orders', 'Đơn hàng', 'receipt', 'orders'),
-      soon('deliveries', 'Giao hàng', 'truck', 'deliveries'),
+      { id: 'deliveries', label: 'Giao hàng', icon: 'truck', route: { name: 'deliveries' }, ready: true, access: 'deliveries' },
       soon('feedback', 'Phản ánh', 'chat', 'feedback'),
     ],
   },
@@ -262,6 +266,8 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'shippers':
     case 'shipper':
       return canSee(role, grants, 'drivers');
+    case 'deliveries':
+      return canSee(role, grants, 'deliveries');
     case 'finance':
     case 'finance-wallets':
     case 'finance-transactions':
@@ -298,6 +304,8 @@ export function activeMenuId(route: Route): string {
     case 'shippers':
     case 'shipper':
       return 'drivers';
+    case 'deliveries':
+      return 'deliveries';
     case 'wallet-parameters':
       return 'parameters-shipper-wallet';
     case 'shipping-policy':
@@ -348,6 +356,8 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Vận hành', 'Shipper'];
     case 'shipper':
       return ['Vận hành', 'Shipper', 'Chi tiết'];
+    case 'deliveries':
+      return ['Vận hành', 'Giao hàng'];
     case 'wallet-parameters':
       return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
     case 'shipping-policy':

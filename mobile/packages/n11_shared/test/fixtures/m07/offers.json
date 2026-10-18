@@ -1,0 +1,27 @@
+{
+ "data": {
+  "offers": [
+   {
+    "delivery_id": "f43876b2-8328-4663-9942-425f0c6ab23a",
+    "code": "G-H7JWQK",
+    "shop": {
+     "name": "Fixture shop",
+     "area_text": null
+    },
+    "distance_to_shop_m": 76,
+    "dropoff_area_text": "Hai Bà Trưng, Hà Nội",
+    "destination_known": true,
+    "goods_value_vnd": 200000,
+    "unpaid_vnd": 200000,
+    "fee_vnd": 10000,
+    "fee_status": "FINAL",
+    "fee_payer": "CUSTOMER",
+    "search_expires_at": "2026-10-18T03:54:16.999Z",
+    "server_now": "2026-10-18T03:24:17.047Z",
+    "eligible": true,
+    "reasons": [],
+    "agreement": null
+   }
+  ]
+ }
+}

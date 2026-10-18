@@ -1,3 +1,4 @@
+import { M14RoutingConfig, parseM14Routing } from './m14-routing-config';
 import { ACCOUNT_RECOVERY_MODE_ENV, AccountRecoveryMode, parseAccountRecoveryMode } from './account-recovery-config';
 import { AdminActivationConfig, loadAdminActivationConfig } from './admin-activation-config';
 import { AdminAuthConfig, loadAdminAuthConfig } from './admin-auth-config';
@@ -181,6 +182,8 @@ export interface AppConfig {
    * (nothing is wired, nothing is exposed, no OTP is ever sent by SMS).
    */
   smsGateway?: SmsGatewayConfig;
+  /** M14 routing service for road distance / travel time (M07). Present only when M14_ROUTING_ORIGIN is set and valid; absent = routes are unavailable. */
+  m14Routing?: M14RoutingConfig;
   /**
    * Native Android binding (M01-ANDROID). Present ONLY when CLIENT_AUTH_ANDROID_ENABLED=true (development/test on a loopback bind)
    * and the four CLIENT_DEVICE_* trust inputs are valid. Absent everywhere else: every ANDROID request then stays a 503.
@@ -690,6 +693,15 @@ export function loadConfig(env: EnvSource): ConfigResult {
     smsGatewayResult.invalid.forEach(flag);
   }
 
+  // M14 routing (M07): optional; absent means every route answer is "unavailable" and a fee that needs one stays unknown. Names only.
+  const m14RoutingResult = parseM14Routing({ env, appEnv: appEnv ?? '' });
+  let m14Routing: M14RoutingConfig | undefined;
+  if (m14RoutingResult.ok) {
+    m14Routing = m14RoutingResult.config;
+  } else {
+    m14RoutingResult.invalid.forEach(flag);
+  }
+
   // Admin activation by SMS (Owner decision 2026-10-14) rides the SAME gateway: without it the mode cannot be selected.
   if (adminActivation !== undefined && adminActivation.otpMode === 'SMS' && smsGateway === undefined) {
     flag('ADMIN_ACTIVATION_OTP_MODE');
@@ -764,6 +776,7 @@ export function loadConfig(env: EnvSource): ConfigResult {
       ...(clientPhoneVerificationMode === 'DISABLED_TEST' ? { clientPhoneVerificationMode } : {}),
       ...(accountRecoveryMode === 'DISABLED_TEST' || accountRecoveryMode === 'SMS_OTP' ? { accountRecoveryMode } : {}),
       ...(smsGateway === undefined ? {} : { smsGateway }),
+      ...(m14Routing === undefined ? {} : { m14Routing }),
       ...(clientAndroid === undefined ? {} : { clientAndroid }),
     },
   };

@@ -300,7 +300,7 @@ describe('F03 / C23 — migrations on the guarded test database', () => {
       const result = await client.query<{ n: number }>(
         `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
           JOIN pg_namespace n ON n.oid = c.relnamespace
-         WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|admin_finance_grants_|shipping_fee_policy_|shipping_eligibility_|shipping_fee_agreement)' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg') AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard'`,
+         WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|admin_finance_grants_|deliver(y|ies)_|shipping_fee_policy_|shipping_eligibility_|shipping_fee_agreement)' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg') AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard'`,
       );
       return (result.rows[0] as { n: number }).n;
     }
@@ -481,7 +481,7 @@ describe('F03 / C23 — migrations on the guarded test database', () => {
       );
       const trigger = await client.query<{ tgname: string; tgtype: number; relname: string }>(
         `SELECT t.tgname, t.tgtype, c.relname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-           JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|admin_finance_grants_|shipping_fee_policy_|shipping_eligibility_|shipping_fee_agreement)' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg') AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard'`,
+           JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|admin_finance_grants_|deliver(y|ies)_|shipping_fee_policy_|shipping_eligibility_|shipping_fee_agreement)' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg') AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard'`,
       );
       expect(trigger.rows).toHaveLength(1);
       expect(trigger.rows[0]?.tgname).toBe('audit_logs_append_only');
@@ -678,7 +678,7 @@ describe('F03 / C23 — migrations on the guarded test database', () => {
 
     it('outbox_events is NOT append-only: the C1C dispatcher will update delivery state (no trigger on it)', async () => {
       const result = await client.query(
-        `SELECT 1 FROM pg_trigger t WHERE t.tgrelid = 'app.outbox_events'::regclass AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|admin_finance_grants_|shipping_fee_policy_|shipping_eligibility_|shipping_fee_agreement)'`,
+        `SELECT 1 FROM pg_trigger t WHERE t.tgrelid = 'app.outbox_events'::regclass AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|admin_finance_grants_|deliver(y|ies)_|shipping_fee_policy_|shipping_eligibility_|shipping_fee_agreement)'`,
       );
       expect(result.rowCount).toBe(0);
     });

@@ -1,0 +1,261 @@
+import { BadRequestException } from '@nestjs/common';
+import { isWellFormed } from '../auth/auth-validation';
+import { normalizeVietnamPhone } from '../auth/phone';
+import { AGREEMENT_REASONS, AgreementReason } from '../shipping-policy/shipping-fee-agreement';
+import { FAIL_REASON_CODES, FailReasonCode, FeePayer, GOODS_CONDITIONS, GoodsCondition } from './delivery-constants';
+
+// Strict parsers of the M07 requests. Every body is an exact object (required keys, plus the few optional ones named): no key may be added, so no
+// shop id, driver id, status, fee mode or version of another record can arrive from a client. Failures never echo the offending key or value: a
+// plain 400. Pure: no I/O.
+
+function reject(): never {
+  throw new BadRequestException();
+}
+
+const CONTROL = /[\p{Cc}\p{Cf}]/u;
+
+/** NFC, collapsed whitespace, trimmed; refuses control / format characters and lengths outside min..max code points. */
+export function text(value: unknown, min: number, max: number): string {
+  if (typeof value !== 'string' || !isWellFormed(value)) {
+    return reject();
+  }
+  const normalized = value.normalize('NFC').replace(/\s+/gu, ' ').trim();
+  const length = [...normalized].length;
+  if (CONTROL.test(normalized) || length < min || length > max) {
+    return reject();
+  }
+  return normalized;
+}
+
+function optionalText(value: unknown, max: number): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  const normalized = text(value, 0, max);
+  return normalized === '' ? null : normalized;
+}
+
+function whole(value: unknown, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) {
+    return reject();
+  }
+  return value;
+}
+
+function version(value: unknown): number {
+  return whole(value, 1, Number.MAX_SAFE_INTEGER);
+}
+
+function coordinate(value: unknown, limit: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || Math.abs(value) > limit) {
+    return reject();
+  }
+  return value;
+}
+
+/** An object with exactly the `required` keys and any subset of the `optional` ones. */
+export function shaped(value: unknown, required: readonly string[], optional: readonly string[] = []): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return reject();
+  }
+  const keys = Object.keys(value);
+  if (!required.every((key) => keys.includes(key)) || !keys.every((key) => required.includes(key) || optional.includes(key))) {
+    return reject();
+  }
+  return value as Record<string, unknown>;
+}
+
+const MAX_FEE_VND = 10_000_000;
+const MAX_MONEY_VND = 9_007_199_254_740_991;
+
+export interface AgreedFeeInput {
+  readonly reasonCode: AgreementReason;
+  readonly reasonNote: string | null;
+  readonly amountVnd: number;
+}
+
+export interface CreateDeliveryInput {
+  readonly recipientName: string;
+  /** Normalized +84 number. */
+  readonly recipientPhone: string;
+  readonly addressText: string;
+  readonly lat: number | null;
+  readonly lng: number | null;
+  readonly goodsDescription: string;
+  readonly goodsValueVnd: number;
+  readonly paidVnd: number;
+  readonly feePayer: FeePayer;
+  readonly note: string | null;
+  readonly agreedFee: AgreedFeeInput | null;
+}
+
+/** POST /v1/shop/me/deliveries. */
+export function parseCreateBody(body: unknown): CreateDeliveryInput {
+  const b = shaped(body, ['recipient_name', 'recipient_phone', 'dropoff_address_text', 'goods_description', 'goods_value_vnd', 'paid_vnd', 'fee_payer'], ['dropoff_lat', 'dropoff_lng', 'note', 'agreed_fee']);
+  const phone = normalizeVietnamPhone(b.recipient_phone);
+  if (phone === undefined || (b.fee_payer !== 'CUSTOMER' && b.fee_payer !== 'SHOP')) {
+    return reject();
+  }
+  const hasLat = b.dropoff_lat !== undefined;
+  const hasLng = b.dropoff_lng !== undefined;
+  if (hasLat !== hasLng) {
+    return reject();
+  }
+  const goodsValueVnd = whole(b.goods_value_vnd, 0, MAX_MONEY_VND);
+  const paidVnd = whole(b.paid_vnd, 0, goodsValueVnd);
+  let agreedFee: AgreedFeeInput | null = null;
+  if (b.agreed_fee !== undefined) {
+    const f = shaped(b.agreed_fee, ['reason_code', 'amount_vnd'], ['reason_note']);
+    if (typeof f.reason_code !== 'string' || !(AGREEMENT_REASONS as readonly string[]).includes(f.reason_code)) {
+      return reject();
+    }
+    agreedFee = { reasonCode: f.reason_code as AgreementReason, reasonNote: optionalText(f.reason_note, 200), amountVnd: whole(f.amount_vnd, 0, MAX_FEE_VND) };
+  }
+  return {
+    recipientName: text(b.recipient_name, 1, 80),
+    recipientPhone: phone,
+    addressText: text(b.dropoff_address_text, 1, 300),
+    lat: hasLat ? coordinate(b.dropoff_lat, 90) : null,
+    lng: hasLng ? coordinate(b.dropoff_lng, 180) : null,
+    goodsDescription: text(b.goods_description, 1, 120),
+    goodsValueVnd,
+    paidVnd,
+    feePayer: b.fee_payer,
+    note: optionalText(b.note, 200),
+    agreedFee,
+  };
+}
+
+export interface ReasonInput {
+  readonly reason: string;
+  readonly expectedVersion: number;
+}
+
+/** A command that needs a reason (cancel before pickup, give the delivery back): {reason, expected_version}. */
+export function parseReasonBody(body: unknown): ReasonInput {
+  const b = shaped(body, ['reason', 'expected_version']);
+  return { reason: text(b.reason, 1, 200), expectedVersion: version(b.expected_version) };
+}
+
+export interface VersionInput {
+  readonly expectedVersion: number;
+}
+
+/** {expected_version}. */
+export function parseVersionBody(body: unknown): VersionInput {
+  return { expectedVersion: version(shaped(body, ['expected_version']).expected_version) };
+}
+
+/** {} : a command that names only the target in the path. */
+export function parseEmptyBody(body: unknown): void {
+  shaped(body, []);
+}
+
+export interface CustodyInput {
+  readonly resolution: 'GOODS_RETURNED' | 'HANDLED_NO_RETURN';
+  readonly note: string | null;
+}
+
+/** POST .../custody: GOODS_RETURNED (back at the shop) or HANDLED_NO_RETURN (dealt with; the note says how). */
+export function parseCustodyBody(body: unknown): CustodyInput {
+  const b = shaped(body, ['resolution'], ['note']);
+  if (b.resolution !== 'GOODS_RETURNED' && b.resolution !== 'HANDLED_NO_RETURN') {
+    return reject();
+  }
+  const note = optionalText(b.note, 300);
+  if (b.resolution === 'HANDLED_NO_RETURN' && note === null) {
+    return reject();
+  }
+  return { resolution: b.resolution, note };
+}
+
+export interface DestinationInput {
+  readonly lat: number;
+  readonly lng: number;
+  readonly feeVnd: number | null;
+  readonly expectedVersion: number;
+}
+
+/** POST .../destination: the pin and, when the fee is not set, the agreed fee. */
+export function parseDestinationBody(body: unknown): DestinationInput {
+  const b = shaped(body, ['lat', 'lng', 'expected_version'], ['fee_vnd']);
+  return { lat: coordinate(b.lat, 90), lng: coordinate(b.lng, 180), feeVnd: b.fee_vnd === undefined ? null : whole(b.fee_vnd, 0, MAX_FEE_VND), expectedVersion: version(b.expected_version) };
+}
+
+export interface FailInput {
+  readonly reasonCode: FailReasonCode;
+  readonly note: string | null;
+  readonly goodsCondition: GoodsCondition;
+  readonly expectedVersion: number;
+}
+
+/** POST .../fail: a reason from the closed list, where the goods are, and a note (required for OTHER). */
+export function parseFailBody(body: unknown): FailInput {
+  const b = shaped(body, ['reason_code', 'goods_condition', 'expected_version'], ['note']);
+  if (typeof b.reason_code !== 'string' || !(FAIL_REASON_CODES as readonly string[]).includes(b.reason_code) || typeof b.goods_condition !== 'string' || !(GOODS_CONDITIONS as readonly string[]).includes(b.goods_condition)) {
+    return reject();
+  }
+  const note = optionalText(b.note, 300);
+  if (b.reason_code === 'OTHER' && note === null) {
+    return reject();
+  }
+  return { reasonCode: b.reason_code as FailReasonCode, note, goodsCondition: b.goods_condition as GoodsCondition, expectedVersion: version(b.expected_version) };
+}
+
+/** POST .../fee/counter: {amount_vnd}. */
+export function parseCounterBody(body: unknown): { readonly amountVnd: number } {
+  return { amountVnd: whole(shaped(body, ['amount_vnd']).amount_vnd, 0, MAX_FEE_VND) };
+}
+
+export interface LocationInput {
+  readonly lat: number;
+  readonly lng: number;
+  readonly accuracyM: number | null;
+}
+
+/** PUT /v1/driver/location: {lat, lng, accuracy_m?}. */
+export function parseLocationBody(body: unknown): LocationInput {
+  const b = shaped(body, ['lat', 'lng'], ['accuracy_m']);
+  let accuracyM: number | null = null;
+  if (b.accuracy_m !== undefined) {
+    if (typeof b.accuracy_m !== 'number' || !Number.isFinite(b.accuracy_m) || b.accuracy_m < 0 || b.accuracy_m > 100_000) {
+      return reject();
+    }
+    accuracyM = b.accuracy_m;
+  }
+  return { lat: coordinate(b.lat, 90), lng: coordinate(b.lng, 180), accuracyM };
+}
+
+export interface ShopListQuery {
+  readonly scope: 'active' | 'history';
+  readonly q: string;
+}
+
+/** GET /v1/shop/me/deliveries?scope=active|history&q= */
+export function parseShopListQuery(query: unknown): ShopListQuery {
+  const q = shaped(query ?? {}, [], ['scope', 'q']);
+  if (q.scope !== undefined && q.scope !== 'active' && q.scope !== 'history') {
+    return reject();
+  }
+  return { scope: q.scope === 'history' ? 'history' : 'active', q: q.q === undefined ? '' : text(q.q, 0, 40) };
+}
+
+export function parseScopeQuery(query: unknown): 'active' | 'history' {
+  const q = shaped(query ?? {}, [], ['scope']);
+  if (q.scope !== undefined && q.scope !== 'active' && q.scope !== 'history') {
+    return reject();
+  }
+  return q.scope === 'history' ? 'history' : 'active';
+}
+
+/** No query at all (a read by id). */
+export function parseNoQuery(query: unknown): void {
+  shaped(query ?? {}, []);
+}
+
+export function parseDeliveryId(value: unknown): string {
+  if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)) {
+    return reject();
+  }
+  return value;
+}

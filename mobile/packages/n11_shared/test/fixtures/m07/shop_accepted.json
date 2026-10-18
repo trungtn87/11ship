@@ -1,0 +1,84 @@
+{
+ "data": {
+  "delivery_id": "f43876b2-8328-4663-9942-425f0c6ab23a",
+  "code": "G-H7JWQK",
+  "source": "DIRECT",
+  "order_id": null,
+  "previous_delivery_id": null,
+  "state": "accepted",
+  "version": 3,
+  "pickup": {
+   "shop_name": "Fixture shop",
+   "phone": "+84900000001",
+   "address_text": "Fixture address",
+   "lat": 21,
+   "lng": 105.8
+  },
+  "recipient": {
+   "name": "Khách nhận",
+   "phone": "+84912345678",
+   "address_text": "12 Phố Huế, Hai Bà Trưng, Hà Nội",
+   "lat": 21,
+   "lng": 105.82
+  },
+  "goods": {
+   "description": "Hộp quà",
+   "value_vnd": 200000,
+   "paid_vnd": 0
+  },
+  "fee": {
+   "mode": "STANDARD",
+   "payer": "CUSTOMER",
+   "amount_vnd": 10000,
+   "status": "FINAL",
+   "distance_m": 2500,
+   "agreement": null
+  },
+  "search": {
+   "started_at": "2026-10-18T03:24:16.999Z",
+   "expires_at": "2026-10-18T03:54:16.999Z",
+   "server_now": "2026-10-18T03:24:17.119Z",
+   "stopped_at": null
+  },
+  "note": null,
+  "assignment": {
+   "assignment_id": "ecda12b5-a2e9-4808-8b3c-284aadf52470",
+   "shipper": {
+    "name": "Shipper FF3F6F",
+    "phone": "+84912980981",
+    "plate_number": "59X1-123.45"
+   },
+   "accepted_at": "2026-10-18T03:24:17.092Z",
+   "picked_up_at": null,
+   "destination_confirmed": true
+  },
+  "location": {
+   "lat": 21.0005,
+   "lng": 105.8005,
+   "recorded_at": "2026-10-18T03:24:16.978Z",
+   "age_seconds": 0,
+   "freshness": "LIVE"
+  },
+  "result": null,
+  "incident": null,
+  "can": {
+   "cancel": true,
+   "recall": false,
+   "resolve_custody": false
+  },
+  "timeline": [
+   {
+    "at": "2026-10-18T03:24:17.014Z",
+    "type": "delivery.created",
+    "actor": "SHOP",
+    "note": null
+   },
+   {
+    "at": "2026-10-18T03:24:17.098Z",
+    "type": "delivery.accepted",
+    "actor": "SHIPPER",
+    "note": null
+   }
+  ]
+ }
+}
