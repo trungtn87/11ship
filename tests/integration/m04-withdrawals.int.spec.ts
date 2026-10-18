@@ -1,6 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
-import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
 import { ADMIN_SESSION_COOKIE } from '../../apps/backend/src/admin-auth/admin-auth-constants';
 import { ADMIN_PASSWORD, AdminApp, adminData, adminErrorCode, AdminResponse, cookieFrom, loginStep, preauthCookies, rewindAcceptedStep, sessionCookies, startAdminApp, totpNow } from './support/admin-fixtures';
 import { begin, ok, post } from './support/activation-fixtures';
@@ -54,7 +53,6 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
     client = await startAuthApp({}, { relaxTimeouts: true, configOverride: { clientAuth: { termsVersion: TERMS, privacyVersion: PRIVACY } } });
     admin = await startAdminApp({ activationDisabledTest: true });
     system = await systemSession(admin);
-    hash = await new Argon2idPasswordHasher().hash(ADMIN_PASSWORD);
     const specs: Array<[string, string[]]> = [
       ['bare', []],
       ['reader', [READ]],
