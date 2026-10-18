@@ -120,7 +120,14 @@ export interface MenuGroup {
 const soon = (id: string, label: string, icon: IconName, access: GrantId): MenuItem => ({ id, label, icon, ready: false, access });
 
 export const MENU: readonly MenuGroup[] = [
-  { id: 'overview', items: [{ id: 'home', label: 'Tổng quan', icon: 'home', route: { name: 'home' }, ready: true, access: 'any' }] },
+  {
+    id: 'overview',
+    items: [
+      { id: 'home', label: 'Tổng quan', icon: 'home', route: { name: 'home' }, ready: true, access: 'any' },
+      // M12-A: the figures and the work waiting; every figure is gated by the server per administrator (FORBIDDEN / NOT_READY / ERROR are shown as such).
+      { id: 'overview', label: 'Điều hành', icon: 'activity', route: { name: 'overview' }, ready: true, access: 'any' },
+    ],
+  },
   {
     id: 'accounts',
     label: 'TÀI KHOẢN',
@@ -261,6 +268,7 @@ export function entryRoute(item: MenuItem): Route | undefined {
 export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boolean {
   switch (route.name) {
     case 'home':
+    case 'overview':
     case 'activate':
     case 'reset':
     case 'wallet-parameters':
@@ -352,6 +360,8 @@ export function activeMenuId(route: Route): string {
     case 'invitation-reissue':
     case 'invitation-revoke':
       return 'invitations';
+    case 'overview':
+      return 'overview';
     case 'home':
     case 'activate':
     case 'reset':
@@ -414,6 +424,8 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Lời mời Admin', 'Cấp lại lời mời'];
     case 'invitation-revoke':
       return ['Lời mời Admin', 'Thu hồi lời mời'];
+    case 'overview':
+      return ['Tổng quan', 'Điều hành'];
     case 'home':
     case 'activate':
     case 'reset':

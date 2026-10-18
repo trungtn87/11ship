@@ -241,6 +241,8 @@ export class AdminDeliveryApi extends ApiClient {
       to: filter.to,
       shop: filter.shop.trim(),
       shipper: filter.shipper.trim(),
+      group: filter.group,
+      basis: filter.basis === 'ended' ? 'ended' : undefined,
       limit: String(DELIVERY_PAGE_SIZE),
       offset: String((Math.max(filter.page, 1) - 1) * DELIVERY_PAGE_SIZE),
     })}`;

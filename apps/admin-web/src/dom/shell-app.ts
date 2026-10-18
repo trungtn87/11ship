@@ -32,7 +32,7 @@ import {
   SettingsSource,
   SettingsState,
 } from '../core/settings.js';
-import { formatRoute, parseRoute, Route } from '../core/routes.js';
+import { routeOfLink, formatRoute, parseRoute, Route } from '../core/routes.js';
 import { AccountsHooks, AdministratorsView, openLockDialog, renderUserDetail, UsersView } from './accounts-view.js';
 import { DialogHandle } from './dialog.js';
 import { h } from './dom.js';
@@ -46,6 +46,8 @@ import { ShipperDetailView, ShipperHost, ShipperListView, WalletParametersView }
 import { NOT_WIRED_SHIPPING, ShippingPolicySource } from '../core/shipping-policy.js';
 import { ShippingPolicyView } from './shipping-policy-view.js';
 import { DeliverySource, NOT_WIRED_DELIVERIES } from '../core/deliveries.js';
+import { NOT_WIRED_OVERVIEW, OverviewSource } from '../core/overview.js';
+import { OverviewHost, OverviewView } from './overview-view.js';
 import { DeliveryHost, DeliveryListView } from './deliveries-view.js';
 import { NOT_WIRED_NOTIFICATIONS, NotificationSource } from '../core/notifications.js';
 import { NotificationHost, NotificationsView } from './notifications-view.js';
@@ -133,6 +135,8 @@ export class ShellApp implements ShellHost {
     private readonly deliveries: DeliverySource = NOT_WIRED_DELIVERIES,
     /** Where the REAL finance pages (M04-B3a: top-up requests, receiving accounts, finance rights) come from. By default nothing is wired and no page shows data. */
     private readonly financeAdmin: FinanceAdminSource = NOT_WIRED_FINANCE_ADMIN,
+    /** Where the overview figures (Tổng quan › Điều hành, M12-A) come from. By default nothing is wired, so the page says so. */
+    private readonly overview: OverviewSource = NOT_WIRED_OVERVIEW,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -356,7 +360,10 @@ export class ShellApp implements ShellHost {
         this.#bankAccounts(content);
         return;
       case 'deliveries':
-        this.#deliveryList(content);
+        this.#deliveryList(content, route.filter);
+        return;
+      case 'overview':
+        this.#overviewPage(content);
         return;
       case 'notifications':
         this.#notificationPage(content);
@@ -851,8 +858,9 @@ export class ShellApp implements ShellHost {
   }
 
   /** "Vận hành › Giao hàng" (M07.07): counters, filters, list and the detail drawer; the server decides every read and action. */
-  #deliveryList(content: HTMLElement): void {
+  #deliveryList(content: HTMLElement, filter?: Extract<Route, { name: 'deliveries' }>['filter']): void {
     const host: DeliveryHost = {
+      ...(filter === undefined ? {} : { initial: filter }),
       source: this.deliveries,
       newKey: this.newKey,
       onSessionLost: () => this.onSessionLost(),
@@ -865,6 +873,25 @@ export class ShellApp implements ShellHost {
       home: () => this.go({ name: 'home' }),
     };
     const view = new DeliveryListView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Tổng quan › Điều hành" (M12-A): the figures, read-only; every figure is gated by the server for this administrator. */
+  #overviewPage(content: HTMLElement): void {
+    const host: OverviewHost = {
+      source: this.overview,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      open: (link) => this.go(routeOfLink(link.area, link.query)),
+    };
+    const view = new OverviewView(content, host);
     this.#unsubscribe = () => view.dispose();
     void view.load();
   }

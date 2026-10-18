@@ -2892,3 +2892,153 @@ select {
   margin-bottom: 4px;
   font-weight: 600;
 }
+
+/* M12-A Overview ("Tổng quan › Điều hành"): range switch, figure cards (period and current state), the work list. */
+.ov-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.ov-ranges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+.ov-range {
+  min-height: 40px;
+  padding: 0 14px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--charcoal);
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.ov-range[aria-pressed='true'] {
+  background: var(--yellow);
+}
+.ov-range:focus-visible,
+.ov-card.ov-link:focus-visible {
+  outline: 3px solid var(--charcoal);
+  outline-offset: 2px;
+}
+.ov-custom[hidden] {
+  display: none;
+}
+.ov-stamp,
+.ov-scope {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.ov-section {
+  margin-bottom: 28px;
+}
+.ov-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.ov-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 108px;
+  padding: 14px 16px;
+  font: inherit;
+  text-align: left;
+  color: var(--charcoal);
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+.ov-link {
+  cursor: pointer;
+}
+.ov-link:hover {
+  border-color: var(--yellow-hover);
+  background: var(--yellow-subtle);
+}
+.ov-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.ov-value {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.ov-note,
+.ov-reason {
+  font-size: 12px;
+  color: var(--muted);
+}
+.ov-reason {
+  font-weight: 600;
+}
+.ov-wait {
+  border-color: var(--yellow);
+  background: var(--yellow-subtle);
+}
+.ov-ok {
+  border-color: var(--ok-line);
+  background: var(--ok-bg);
+}
+.ov-lock {
+  border-color: var(--error-line);
+  background: var(--error-bg);
+}
+.ov-muted {
+  background: var(--neutral-bg);
+}
+.ov-muted .ov-value {
+  color: var(--placeholder);
+}
+.ov-todo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ov-todo-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, auto) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+.ov-todo-label {
+  font-weight: 600;
+}
+.ov-todo-count {
+  min-width: 40px;
+  font-size: 20px;
+  font-weight: 800;
+  text-align: right;
+}
+.ov-todo-open {
+  color: var(--error-ink);
+}
+@media (max-width: 700px) {
+  .ov-todo-row {
+    grid-template-columns: 1fr auto;
+  }
+  .ov-todo-row .btn {
+    grid-column: 1 / -1;
+  }
+}

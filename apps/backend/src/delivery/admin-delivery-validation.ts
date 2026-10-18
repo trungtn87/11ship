@@ -1,5 +1,6 @@
 import { AppError } from '../common/app-errors';
 import { isCanonicalUuid } from '../shared/identifiers';
+import { ADMIN_DELIVERY_GROUPS, AdminDeliveryGroup } from './delivery-repository';
 
 // Strict parsers of the Administration web's delivery routes (M07.07). The actor comes from the session and the target from the path; a body never
 // names an actor, a state or a status: there is NO "set status" field, each action has its own conditions in the service. Anything that is not
@@ -114,14 +115,19 @@ export interface AdminDeliveryListQuery {
   /** Exclusive: the start of the day AFTER the typed "to" date. */
   readonly toMs: number | null;
   readonly shop: string;
+  readonly shopId: string | null;
   readonly shipper: string;
+  /** M12-B: which moment `from`/`to` bound: the creation of the delivery or the moment it ended. */
+  readonly basis: 'created' | 'ended';
+  readonly source: 'DIRECT' | 'ORDER' | null;
+  readonly group: AdminDeliveryGroup | null;
   readonly limit: number;
   readonly offset: number;
 }
 
 export function parseAdminListQuery(query: unknown): AdminDeliveryListQuery {
   const source = plainObject(query);
-  onlyKeys(source, [], ['q', 'state', 'goods', 'from', 'to', 'shop', 'shipper', 'limit', 'offset']);
+  onlyKeys(source, [], ['q', 'state', 'goods', 'from', 'to', 'shop', 'shop_id', 'shipper', 'basis', 'source', 'group', 'limit', 'offset']);
   const state = queryText(source, 'state', 32);
   const goods = queryText(source, 'goods', 8);
   if (state !== '' && !(ADMIN_STATE_FILTERS as readonly string[]).includes(state)) {
@@ -131,6 +137,13 @@ export function parseAdminListQuery(query: unknown): AdminDeliveryListQuery {
     invalid();
   }
   const to = dayStart(source, 'to');
+  const basis = queryText(source, 'basis', 8);
+  const sourceFilter = queryText(source, 'source', 8);
+  const group = queryText(source, 'group', 16);
+  const shopId = queryText(source, 'shop_id', 36);
+  if ((basis !== '' && basis !== 'created' && basis !== 'ended') || (sourceFilter !== '' && sourceFilter !== 'DIRECT' && sourceFilter !== 'ORDER') || (group !== '' && !(ADMIN_DELIVERY_GROUPS as readonly string[]).includes(group)) || (shopId !== '' && !isCanonicalUuid(shopId))) {
+    invalid();
+  }
   return {
     q: queryText(source, 'q', SEARCH_MAX_CODEPOINTS),
     state: state === '' ? null : (state as (typeof ADMIN_STATE_FILTERS)[number]),
@@ -138,6 +151,10 @@ export function parseAdminListQuery(query: unknown): AdminDeliveryListQuery {
     fromMs: dayStart(source, 'from'),
     toMs: to === null ? null : to + 86_400_000,
     shop: queryText(source, 'shop', SEARCH_MAX_CODEPOINTS),
+    shopId: shopId === '' ? null : shopId,
+    basis: basis === 'ended' ? 'ended' : 'created',
+    source: sourceFilter === '' ? null : (sourceFilter as 'DIRECT' | 'ORDER'),
+    group: group === '' ? null : (group as AdminDeliveryGroup),
     shipper: queryText(source, 'shipper', SEARCH_MAX_CODEPOINTS),
     limit: integerParam(source, 'limit', LIST_DEFAULT_LIMIT, 1, LIST_MAX_LIMIT),
     offset: integerParam(source, 'offset', 0, 0, LIST_MAX_OFFSET),

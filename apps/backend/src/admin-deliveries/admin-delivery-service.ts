@@ -45,6 +45,21 @@ interface Authorized {
 /** `admin.delivery.action.v1.record_custody`: dotted lower-case segments (the audit and the idempotency scope accept no hyphen). */
 const operationOf = (name: AdminDeliveryAction): string => `${OPERATIONS.adminAction}.${name.replace(/-/g, '_')}`;
 
+/** What needs a person, from the stored state only (M12-B): a stopped search nobody called again, goods still unsettled, an active delivery without a fee. */
+export function signalsOf(state: string, feeVnd: number | null, custodyOpen: boolean, recalled: boolean): string[] {
+  const signals: string[] = [];
+  if (state === 'search_stopped' && !recalled) {
+    signals.push('SEARCH_STOPPED');
+  }
+  if (custodyOpen) {
+    signals.push('CUSTODY_OPEN');
+  }
+  if (feeVnd === null && ['waiting_driver', 'accepted', 'location_confirmed', 'picked_up', 'delivering'].includes(state)) {
+    signals.push('FEE_UNKNOWN');
+  }
+  return signals;
+}
+
 const iso = (ms: number | null): string | null => (ms === null ? null : new Date(ms).toISOString());
 
 /**
@@ -91,7 +106,7 @@ export class AdminDeliveryService {
       const page =
         driverIds !== null && driverIds.length === 0
           ? { rows: [], total: 0 }
-          : await this.deliveries.listForAdmin(context, { q: query.q, state: query.state, goods: query.goods, fromMs: query.fromMs, toMs: query.toMs, shop: query.shop, driverIds }, { limit: query.limit, offset: query.offset });
+          : await this.deliveries.listForAdmin(context, { q: query.q, state: query.state, goods: query.goods, basis: query.basis, fromMs: query.fromMs, toMs: query.toMs, shop: query.shop, shopId: query.shopId, driverIds, source: query.source, group: query.group }, { limit: query.limit, offset: query.offset });
       const names = new Map<string, string>();
       const items: JsonObject[] = [];
       for (const row of page.rows) {
@@ -112,6 +127,10 @@ export class AdminDeliveryService {
           goods_value_vnd: d.goodsValueVnd,
           fee_vnd: d.feeVnd,
           fee_status: d.feeVnd === null ? 'UNKNOWN' : 'FINAL',
+          source: d.source,
+          order_id: d.orderId,
+          wait_seconds: row.waitSeconds,
+          signals: signalsOf(d.state, d.feeVnd, row.incidentStatus === 'OPEN', row.recalled),
           incident_open: row.incidentStatus === 'OPEN',
           custody: row.custody,
           created_at: iso(d.createdAtMs),

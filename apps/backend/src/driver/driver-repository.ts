@@ -213,6 +213,15 @@ export class DriverRepository {
     return result.rows.map((r) => ({ driverId: r.driver_id, userId: r.user_id }));
   }
 
+  /** The ACTIVE Shippers that have deliveries switched on (M12 overview), at most `limit` + 1 so a caller can tell the list was cut. */
+  async listAcceptingIds(context: TransactionContext, limit: number): Promise<string[]> {
+    const result = await context.query<{ driver_id: string }>(
+      `SELECT driver_id::text AS driver_id FROM app.drivers WHERE status = 'ACTIVE' AND accepting_deliveries ORDER BY driver_id LIMIT $1`,
+      [limit + 1],
+    );
+    return result.rows.map((row) => row.driver_id);
+  }
+
   async findById(context: TransactionContext, driverId: string): Promise<DriverRow | undefined> {
     const result = await context.query<RawDriver>(`SELECT ${DRIVER_COLUMNS} FROM app.drivers d WHERE d.driver_id = $1::uuid`, [driverId]);
     const row = result.rows[0];

@@ -1,5 +1,6 @@
 import {
   CUSTODY_LABEL,
+  DELIVERY_GROUP_LABEL,
   DELIVERY_PAGE_SIZE,
   DELIVERY_REFUSAL_MESSAGE,
   DELIVERY_STATE_LABEL,
@@ -9,6 +10,7 @@ import {
   DeliveryActionResult,
   DeliveryCounters,
   DeliveryDetail,
+  DeliveryGroup,
   DeliveryRow,
   DeliverySource,
   DeliveryStateFilter,
@@ -40,6 +42,8 @@ export interface DeliveryHost {
   readonly home: () => void;
   /** Where popups are mounted (the page body by default). */
   readonly dialogHost?: HTMLElement;
+  /** M12: the filter a link of the overview opened the page with. The page shows it and lets the administrator drop it. */
+  readonly initial?: { readonly group?: DeliveryGroup; readonly state?: DeliveryStateFilter; readonly basis?: 'created' | 'ended'; readonly from?: string; readonly to?: string };
 }
 
 const SEARCH_PAUSE_MS = 300;
@@ -112,11 +116,14 @@ export class DeliveryListView {
   readonly #shop: HTMLInputElement;
   readonly #shipper: HTMLInputElement;
   readonly #counters: HTMLElement;
+  readonly #linked: HTMLElement;
   readonly #results: HTMLElement;
   readonly #drawer: HTMLElement;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #latest = 0;
   #page = 1;
+  #group: DeliveryGroup | undefined;
+  #basis: 'created' | 'ended' = 'created';
   #disposed = false;
   #openId: string | undefined;
   #handle: DialogHandle | undefined;
@@ -135,6 +142,7 @@ export class DeliveryListView {
     this.#shipper = h('input', { id: 'delivery-shipper', type: 'search', class: 'search-input', placeholder: 'Shipper', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Shipper', maxlength: '80' });
     const refresh = h('button', { type: 'button', class: 'btn btn-secondary btn-inline' }, icon('refresh', 18), 'Làm mới');
     this.#counters = h('div', { class: 'counters', role: 'status', 'aria-label': 'Tổng quan giao hàng' });
+    this.#linked = h('div', { class: 'notice linked-filter', role: 'status', hidden: true });
     this.#results = h('div', { class: 'results' });
     this.#drawer = h('aside', { class: 'drawer', id: 'delivery-drawer', 'aria-label': 'Chi tiết giao hàng', hidden: true });
     const reload = (): void => {
@@ -153,12 +161,21 @@ export class DeliveryListView {
       control.addEventListener('change', reload);
     }
     refresh.addEventListener('click', () => void this.load());
+    const initial = host.initial;
+    if (initial !== undefined) {
+      this.#group = initial.group;
+      this.#basis = initial.basis ?? 'created';
+      this.#state.value = initial.state ?? 'ALL';
+      this.#from.value = initial.from ?? '';
+      this.#to.value = initial.to ?? '';
+    }
     root.replaceChildren(
       h(
         'section',
         { class: 'content content-wide', 'aria-labelledby': 'delivery-title' },
         h('header', { class: 'page-head' }, h('div', {}, h('h1', { class: 'title', tabindex: '-1', id: 'delivery-title' }, 'Giao hàng'), h('p', { class: 'lead lead-last' }, 'Các yêu cầu gọi shipper của quán: theo dõi, xem diễn biến và xử lý ngoại lệ đúng quyền. Quán và shipper thao tác trong ứng dụng; Admin không đổi trạng thái tùy ý.'))),
         this.#counters,
+        this.#linked,
         h('div', { class: 'toolbar toolbar-filters', role: 'search' }, h('div', { class: 'search' }, icon('search', 18), this.#search), this.#state, this.#goods, refresh),
         h('div', { class: 'toolbar toolbar-filters' }, this.#from, this.#to, this.#shop, this.#shipper),
         this.#results,
@@ -185,6 +202,8 @@ export class DeliveryListView {
       shop: this.#shop.value,
       shipper: this.#shipper.value,
       page: this.#page,
+      ...(this.#group === undefined ? {} : { group: this.#group }),
+      ...(this.#basis === 'ended' ? { basis: 'ended' as const } : {}),
     });
     if (this.#disposed || token !== this.#latest) {
       return;
@@ -205,13 +224,40 @@ export class DeliveryListView {
       return;
     }
     this.#renderCounters(read.counters);
+    this.#renderLinked();
     if (read.rows.length === 0) {
-      const filtered = [this.#search.value, this.#shop.value, this.#shipper.value, this.#from.value, this.#to.value].some((value) => value.trim() !== '') || this.#state.value !== 'ALL' || this.#goods.value !== 'ALL';
+      const filtered = [this.#search.value, this.#shop.value, this.#shipper.value, this.#from.value, this.#to.value].some((value) => value.trim() !== '') || this.#state.value !== 'ALL' || this.#goods.value !== 'ALL' || this.#group !== undefined;
       this.#results.replaceChildren(this.#card({ panel: filtered ? emptyPanel('Không tìm thấy yêu cầu giao', 'Thử đổi từ khóa hoặc bộ lọc.') : emptyPanel('Chưa có yêu cầu giao', 'Yêu cầu giao xuất hiện ở đây khi quán gọi shipper trong ứng dụng 11Food.') }));
       return;
     }
     const pages = Math.max(1, Math.ceil(read.total / DELIVERY_PAGE_SIZE));
     this.#results.replaceChildren(h('div', {}, this.#card({ rows: read.rows.map((row) => this.#row(row)) }), this.#pager(read.total, pages)));
+  }
+
+  /** The filter that came from the overview, in words, with a way to drop it. Gone as soon as the administrator drops it. */
+  #renderLinked(): void {
+    if (this.#group === undefined && this.#basis === 'created') {
+      this.#linked.hidden = true;
+      this.#linked.replaceChildren();
+      return;
+    }
+    const drop = secondary('Bỏ lọc này');
+    drop.classList.add('btn-inline');
+    drop.addEventListener('click', () => {
+      this.#group = undefined;
+      this.#basis = 'created';
+      this.#page = 1;
+      void this.load();
+    });
+    const parts: string[] = [];
+    if (this.#group !== undefined) {
+      parts.push(DELIVERY_GROUP_LABEL[this.#group]);
+    }
+    if (this.#basis === 'ended') {
+      parts.push('thời gian tính theo ngày kết thúc');
+    }
+    this.#linked.hidden = false;
+    this.#linked.replaceChildren(h('span', {}, `Đang lọc từ Tổng quan: ${parts.join(', ')}.`), drop);
   }
 
   #renderCounters(counters: DeliveryCounters): void {

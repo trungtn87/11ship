@@ -50,7 +50,7 @@ const SECURITY_HEADERS = {
 };
 
 // Client-side routes of the page (see apps/admin-web/src/core/routes.ts): the page is served, and it decides what to show.
-const APP_ROUTES = /^\/(?:activate|reset|invitations(?:\/.*)?|accounts(?:\/.*)?|catalog\/categories|system\/settings|system\/parameters\/shipper-wallet|system\/shipping-fee-policy|operations\/shippers(?:\/.*)?|system\/parameters\/wallet|finance(?:\/(?:wallets|transactions|reconciliation|bank-accounts|(?:topups|withdrawals)(?:\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?))?)$/;
+const APP_ROUTES = /^\/(?:activate|reset|invitations(?:\/.*)?|accounts(?:\/.*)?|catalog\/categories|system\/settings|system\/parameters\/shipper-wallet|system\/shipping-fee-policy|overview|operations\/(?:shippers(?:\/.*)?|deliveries|notifications)|system\/parameters\/wallet|finance(?:\/(?:wallets|transactions|reconciliation|bank-accounts|(?:topups|withdrawals)(?:\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?))?)$/;
 
 // Login (#34), invitation management (1B) and activation (1C). Nothing else of the backend is reachable through this front.
 const API_PREFIXES = ['/v1/admin-auth/', '/v1/admin-activation/', '/v1/admin/'];

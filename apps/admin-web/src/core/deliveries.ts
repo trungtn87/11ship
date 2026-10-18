@@ -132,7 +132,23 @@ export interface DeliveryQuery {
   readonly shop: string;
   readonly shipper: string;
   readonly page: number;
+  /** M12: a named group of the overview tiles (searching, waiting_pickup, delivering, stopped, custody_open, attention). */
+  readonly group?: DeliveryGroup;
+  /** M12: which moment `from`/`to` bound; absent = the creation of the delivery. */
+  readonly basis?: 'created' | 'ended';
 }
+
+export const DELIVERY_GROUPS = ['searching', 'waiting_pickup', 'delivering', 'stopped', 'custody_open', 'attention'] as const;
+export type DeliveryGroup = (typeof DELIVERY_GROUPS)[number];
+
+export const DELIVERY_GROUP_LABEL: Record<DeliveryGroup, string> = {
+  searching: 'Đang tìm shipper',
+  waiting_pickup: 'Chờ lấy hàng',
+  delivering: 'Đang giao',
+  stopped: 'Đã ngừng tìm, chưa gọi lại',
+  custody_open: 'Giao thất bại, hàng chưa xử lý xong',
+  attention: 'Cần xử lý',
+};
 
 export type Refused = { readonly kind: 'failed'; readonly failure: Failure; readonly retryAfterSec?: number };
 

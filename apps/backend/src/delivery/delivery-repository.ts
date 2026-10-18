@@ -664,32 +664,40 @@ export class DeliveryRepository {
 
   async listForAdmin(
     context: TransactionContext,
-    filter: { q: string; state: string | null; goods: 'OPEN' | 'CLOSED' | null; fromMs: number | null; toMs: number | null; shop: string; driverIds: readonly string[] | null },
+    filter: AdminDeliveryFilter,
     page: { limit: number; offset: number },
-  ): Promise<{ rows: Array<{ delivery: DeliveryRow; driverId: string | null; incidentStatus: 'OPEN' | 'CLOSED' | null; custody: Custody | null }>; total: number }> {
-    const like = (value: string): string | null => (value === '' ? null : `%${value.replace(/[\\%_]/g, '\\$&')}%`);
-    const params = [like(filter.q), filter.state, filter.goods, filter.fromMs, filter.toMs, like(filter.shop), filter.driverIds === null ? null : [...filter.driverIds]];
-    const where = `($1::text IS NULL OR d.code ILIKE $1 ESCAPE '\\')
-          AND ($2::text IS NULL OR d.state = $2)
-          AND ($3::text IS NULL OR (i.incident_id IS NOT NULL AND i.status = $3))
-          AND ($4::bigint IS NULL OR d.created_at >= to_timestamp($4::bigint / 1000.0))
-          AND ($5::bigint IS NULL OR d.created_at < to_timestamp($5::bigint / 1000.0))
-          AND ($6::text IS NULL OR d.shop_name ILIKE $6 ESCAPE '\\')
-          AND ($7::uuid[] IS NULL OR COALESCE(a.driver_id, i.driver_id) = ANY($7::uuid[]))`;
-    const from = `FROM app.deliveries d
-         LEFT JOIN app.delivery_incidents i ON i.delivery_id = d.delivery_id
-         LEFT JOIN app.delivery_assignments a ON a.delivery_id = d.delivery_id AND a.status = 'ACTIVE'`;
-    const total = await context.query<{ n: string }>(`SELECT count(*)::text AS n ${from} WHERE ${where}`, params);
-    const result = await context.query<RawDelivery & { driver_id: string | null; incident_status: 'OPEN' | 'CLOSED' | null; incident_custody: Custody | null }>(
-      `SELECT ${DELIVERY_COLUMNS}, COALESCE(a.driver_id, i.driver_id)::text AS driver_id, i.status AS incident_status, i.custody AS incident_custody
-         ${from} WHERE ${where}
-        ORDER BY d.updated_at DESC, d.delivery_id LIMIT $8 OFFSET $9`,
+  ): Promise<{ rows: Array<{ delivery: DeliveryRow; driverId: string | null; incidentStatus: 'OPEN' | 'CLOSED' | null; custody: Custody | null; waitSeconds: number | null; recalled: boolean }>; total: number }> {
+    const { where, params } = adminDeliveryWhere(filter);
+    const total = await context.query<{ n: string }>(`SELECT count(*)::text AS n ${ADMIN_DELIVERY_FROM} WHERE ${where}`, params);
+    const result = await context.query<RawDelivery & { driver_id: string | null; incident_status: 'OPEN' | 'CLOSED' | null; incident_custody: Custody | null; wait_s: string | null; recalled: boolean }>(
+      `SELECT ${DELIVERY_COLUMNS}, COALESCE(a.driver_id, i.driver_id)::text AS driver_id, i.status AS incident_status, i.custody AS incident_custody,
+              CASE d.state WHEN 'waiting_driver' THEN floor(extract(epoch FROM (clock_timestamp() - d.search_started_at)))::text
+                           WHEN 'accepted' THEN floor(extract(epoch FROM (clock_timestamp() - a.accepted_at)))::text
+                           WHEN 'location_confirmed' THEN floor(extract(epoch FROM (clock_timestamp() - a.accepted_at)))::text
+                           ELSE NULL END AS wait_s,
+              EXISTS (SELECT 1 FROM app.deliveries n WHERE n.previous_delivery_id = d.delivery_id) AS recalled
+         ${ADMIN_DELIVERY_FROM} WHERE ${where}
+        ORDER BY d.updated_at DESC, d.delivery_id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, page.limit, page.offset],
     );
     return {
       total: safe(total.rows[0]?.n),
-      rows: result.rows.map((row) => ({ delivery: toDelivery(row), driverId: row.driver_id, incidentStatus: row.incident_status, custody: row.incident_custody })),
+      rows: result.rows.map((row) => ({
+        delivery: toDelivery(row),
+        driverId: row.driver_id,
+        incidentStatus: row.incident_status,
+        custody: row.incident_custody,
+        waitSeconds: row.wait_s === null ? null : Math.max(0, safe(row.wait_s)),
+        recalled: row.recalled,
+      })),
     };
+  }
+
+  /** The number the list would report as `total` for this filter: the ONE definition M12 overview and the list share, so a tile and the list it opens always agree. */
+  async countForAdmin(context: TransactionContext, filter: AdminDeliveryFilter): Promise<number> {
+    const { where, params } = adminDeliveryWhere(filter);
+    const total = await context.query<{ n: string }>(`SELECT count(*)::text AS n ${ADMIN_DELIVERY_FROM} WHERE ${where}`, params);
+    return safe(total.rows[0]?.n);
   }
 
   /** The four counters of the Admin list (all deliveries, not the filtered page). */
@@ -698,11 +706,65 @@ export class DeliveryRepository {
       `SELECT count(*) FILTER (WHERE state = 'waiting_driver')::text AS searching,
               count(*) FILTER (WHERE state IN ('accepted', 'location_confirmed'))::text AS waiting,
               count(*) FILTER (WHERE state IN ('picked_up', 'delivering'))::text AS delivering,
-              (count(*) FILTER (WHERE state = 'search_stopped')
+              (count(*) FILTER (WHERE state = 'search_stopped' AND NOT EXISTS (SELECT 1 FROM app.deliveries n WHERE n.previous_delivery_id = deliveries.delivery_id))
                + (SELECT count(*) FROM app.delivery_incidents WHERE status = 'OPEN'))::text AS attention
          FROM app.deliveries`,
     );
     const row = result.rows[0];
     return { searching: safe(row?.searching), waitingPickup: safe(row?.waiting), delivering: safe(row?.delivering), needsAttention: safe(row?.attention) };
   }
+}
+
+/** Filter of the Administration delivery list (M07.07, extended by M12-B). Every field is optional-by-null; the SQL below is the only place that reads it. */
+export interface AdminDeliveryFilter {
+  readonly q: string;
+  readonly state: string | null;
+  readonly goods: 'OPEN' | 'CLOSED' | null;
+  /** `created`: d.created_at; `ended`: d.ended_at (the moment a delivery completed, failed, was cancelled or its search stopped). */
+  readonly basis: 'created' | 'ended';
+  readonly fromMs: number | null;
+  readonly toMs: number | null;
+  readonly shop: string;
+  readonly shopId: string | null;
+  readonly driverIds: readonly string[] | null;
+  readonly source: 'DIRECT' | 'ORDER' | null;
+  /** Named groups of states and flags (the tiles of the overview open the list with one of them). */
+  readonly group: AdminDeliveryGroup | null;
+}
+
+export const ADMIN_DELIVERY_GROUPS = ['searching', 'waiting_pickup', 'delivering', 'stopped', 'custody_open', 'attention'] as const;
+export type AdminDeliveryGroup = (typeof ADMIN_DELIVERY_GROUPS)[number];
+
+const ADMIN_DELIVERY_FROM = `FROM app.deliveries d
+         LEFT JOIN app.delivery_incidents i ON i.delivery_id = d.delivery_id
+         LEFT JOIN app.delivery_assignments a ON a.delivery_id = d.delivery_id AND a.status = 'ACTIVE'`;
+
+// "Stopped" means a search that ended with nobody and that nobody has called again (a recall creates a NEW delivery pointing back with previous_delivery_id).
+const STOPPED_UNHANDLED = `(d.state = 'search_stopped' AND NOT EXISTS (SELECT 1 FROM app.deliveries n WHERE n.previous_delivery_id = d.delivery_id))`;
+const CUSTODY_OPEN = `(i.incident_id IS NOT NULL AND i.status = 'OPEN')`;
+
+const GROUP_SQL: Readonly<Record<AdminDeliveryGroup, string>> = {
+  searching: `d.state = 'waiting_driver'`,
+  waiting_pickup: `d.state IN ('accepted', 'location_confirmed')`,
+  delivering: `d.state IN ('picked_up', 'delivering')`,
+  stopped: STOPPED_UNHANDLED,
+  custody_open: `(d.state = 'failed' AND ${CUSTODY_OPEN})`,
+  attention: `(${STOPPED_UNHANDLED} OR ${CUSTODY_OPEN})`,
+};
+
+function adminDeliveryWhere(filter: AdminDeliveryFilter): { where: string; params: unknown[] } {
+  const like = (value: string): string | null => (value === '' ? null : `%${value.replace(/[\\%_]/g, '\\$&')}%`);
+  const timeColumn = filter.basis === 'ended' ? 'd.ended_at' : 'd.created_at';
+  const params: unknown[] = [like(filter.q), filter.state, filter.goods, filter.fromMs, filter.toMs, like(filter.shop), filter.driverIds === null ? null : [...filter.driverIds], filter.source, filter.shopId];
+  const where = `($1::text IS NULL OR d.code ILIKE $1 ESCAPE '\\')
+          AND ($2::text IS NULL OR d.state = $2)
+          AND ($3::text IS NULL OR (i.incident_id IS NOT NULL AND i.status = $3))
+          AND ($4::bigint IS NULL OR (${timeColumn} IS NOT NULL AND ${timeColumn} >= to_timestamp($4::bigint / 1000.0)))
+          AND ($5::bigint IS NULL OR (${timeColumn} IS NOT NULL AND ${timeColumn} < to_timestamp($5::bigint / 1000.0)))
+          AND ($6::text IS NULL OR d.shop_name ILIKE $6 ESCAPE '\\')
+          AND ($7::uuid[] IS NULL OR COALESCE(a.driver_id, i.driver_id) = ANY($7::uuid[]))
+          AND ($8::text IS NULL OR d.source = $8)
+          AND ($9::uuid IS NULL OR d.shop_id = $9::uuid)
+          ${filter.group === null ? '' : `AND ${GROUP_SQL[filter.group]}`}`;
+  return { where, params };
 }
