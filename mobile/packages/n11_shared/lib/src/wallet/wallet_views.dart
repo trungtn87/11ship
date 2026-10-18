@@ -1199,9 +1199,65 @@ class _TxnHistoryScreenState extends State<TxnHistoryScreen> {
         load: () => source.txns(_filter),
         emptyTitle: 'Chưa có giao dịch',
         emptyText: _filter == TxnFilter.all ? 'Các giao dịch của ví sẽ hiển thị ở đây.' : 'Không có giao dịch thuộc nhóm "${txnFilterLabel(_filter)}".',
-        builder: (List<WalletTxn> rows) => _txnList(context, source, rows, _refresh),
+        builder: (List<WalletTxn> rows) => _HistoryRows(source: source, filter: _filter, first: rows, afterOpen: _refresh),
       ),
     ]);
+  }
+}
+
+/// The loaded rows of one filter, and "Tải thêm" while the server has older ones: the whole history is reachable, page by page.
+class _HistoryRows extends StatefulWidget {
+  const _HistoryRows({required this.source, required this.filter, required this.first, required this.afterOpen});
+
+  final WalletSource source;
+  final TxnFilter filter;
+  final List<WalletTxn> first;
+  final Future<void> Function() afterOpen;
+
+  @override
+  State<_HistoryRows> createState() => _HistoryRowsState();
+}
+
+class _HistoryRowsState extends State<_HistoryRows> {
+  late final List<WalletTxn> _rows = List<WalletTxn>.of(widget.first);
+  bool _loading = false;
+  String? _error;
+
+  Future<void> _more() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final WalletLoad<List<WalletTxn>> result = await widget.source.moreTxns(widget.filter);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _loading = false;
+      if (result is WalletReady<List<WalletTxn>>) {
+        _rows.addAll(result.value);
+      } else if (result is WalletFailed<List<WalletTxn>>) {
+        _error = result.message;
+      } else {
+        _error = widget.source.notWiredReason;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _txnList(context, widget.source, _rows, widget.afterOpen),
+        if (_error != null) Padding(padding: const EdgeInsets.only(top: N11Space.gap2), child: Text(_error!, key: const Key('txn-more-error'), style: const TextStyle(fontSize: 13, color: N11Colors.error))),
+        if (widget.source.hasMoreTxns(widget.filter))
+          Padding(
+            padding: const EdgeInsets.only(top: N11Space.gap2),
+            child: OutlinedButton(key: const Key('txn-more'), onPressed: _loading ? null : _more, child: Text(_loading ? 'Đang tải…' : 'Tải thêm')),
+          ),
+      ],
+    );
   }
 }
 

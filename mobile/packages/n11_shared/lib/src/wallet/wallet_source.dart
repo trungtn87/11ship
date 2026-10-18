@@ -81,6 +81,13 @@ abstract class WalletSource {
   Future<WalletLoad<Wallet>> wallet();
   Future<WalletLoad<List<WalletTxn>>> recentTxns();
   Future<WalletLoad<List<WalletTxn>>> txns(TxnFilter filter);
+
+  /// True while the server still has older rows of [filter] after what [txns] and [moreTxns] returned (the history screen then offers "Tải thêm").
+  bool hasMoreTxns(TxnFilter filter) => false;
+
+  /// The next older page of [filter], continuing where [txns] / the last call stopped. Empty when nothing is left.
+  Future<WalletLoad<List<WalletTxn>>> moreTxns(TxnFilter filter) async => const WalletReady<List<WalletTxn>>(<WalletTxn>[]);
+
   Future<WalletLoad<TopupRequest>> topup(String code);
   Future<WalletLoad<WithdrawalRequest>> withdrawal(String code);
 

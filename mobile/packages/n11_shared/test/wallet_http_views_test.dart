@@ -106,4 +106,21 @@ void main() {
     expect(find.byKey(const Key('withdraw-code')), findsOneWidget);
     expect(find.text('A1B2C3D4'), findsOneWidget);
   });
+
+  testWidgets('history: "Tải thêm" appears only while the server has older rows and appends the next page; no cap, no other change to the screen', (WidgetTester tester) async {
+    final t = await signedIn();
+    Map<String, Object?> row(String rowId) => <String, Object?>{'id': rowId, 'type': 'topup', 'amount_vnd': 100000, 'at': '2026-10-18T09:20:00.000Z', 'status': 'success', 'order_ref': null, 'request_id': null, 'request_kind': null};
+    t.api.routes['GET /v1/driver/wallet/transactions?type=all&limit=50'] = (String m, String p, Map<String, String> h, String b) async =>
+        ok(200, <String, Object?>{'items': <Object?>[row('L:1')], 'next_cursor': 'c1_-1'});
+    t.api.routes['GET /v1/driver/wallet/transactions?type=all&limit=50&cursor=c1_-1'] = (String m, String p, Map<String, String> h, String b) async =>
+        ok(200, <String, Object?>{'items': <Object?>[row('L:2'), row('L:3')], 'next_cursor': null});
+    final HttpWalletSource source = HttpWalletSource(session: t.session);
+    await mount(tester, TxnHistoryScreen(source: source));
+    expect(find.byType(WalletTxnTile), findsNWidgets(1));
+    expect(find.byKey(const Key('txn-more')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('txn-more')));
+    await tester.pumpAndSettle();
+    expect(find.byType(WalletTxnTile), findsNWidgets(3));
+    expect(find.byKey(const Key('txn-more')), findsNothing);
+  });
 }

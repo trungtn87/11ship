@@ -122,16 +122,30 @@ void main() {
     expect(await source.txns(TxnFilter.withdraw), isA<WalletEmpty<List<WalletTxn>>>());
   });
 
-  test('history: the pages are followed with the server cursor', () async {
+  test('history: one page at a time with the server cursor, "more" continues where it stopped until the whole history is read (no cap)', () async {
     final t = await signedIn();
     final HttpWalletSource source = HttpWalletSource(session: t.session);
     Map<String, Object?> row(String id) => <String, Object?>{'id': id, 'type': 'commission', 'amount_vnd': -1000, 'at': '2026-10-18T09:20:00.000Z', 'status': 'success', 'order_ref': null, 'request_id': null, 'request_kind': null};
     t.api.routes['GET /v1/driver/wallet/transactions?type=commission&limit=50'] = (String m, String p, Map<String, String> h, String b) async =>
         ok(200, <String, Object?>{'items': <Object?>[row('L:a')], 'next_cursor': 'abc_-1'});
     t.api.routes['GET /v1/driver/wallet/transactions?type=commission&limit=50&cursor=abc_-1'] = (String m, String p, Map<String, String> h, String b) async =>
-        ok(200, <String, Object?>{'items': <Object?>[row('L:b')], 'next_cursor': null});
-    final List<WalletTxn> rows = ((await source.txns(TxnFilter.commission)) as WalletReady<List<WalletTxn>>).value;
-    expect(rows.map((WalletTxn r) => r.id), <String>['L:a', 'L:b']);
+        ok(200, <String, Object?>{'items': <Object?>[row('L:b')], 'next_cursor': 'def_-2'});
+    t.api.routes['GET /v1/driver/wallet/transactions?type=commission&limit=50&cursor=def_-2'] = (String m, String p, Map<String, String> h, String b) async =>
+        ok(200, <String, Object?>{'items': <Object?>[row('L:c')], 'next_cursor': null});
+    expect(source.hasMoreTxns(TxnFilter.commission), isFalse);
+    final List<WalletTxn> first = ((await source.txns(TxnFilter.commission)) as WalletReady<List<WalletTxn>>).value;
+    expect(first.map((WalletTxn r) => r.id), <String>['L:a']);
+    expect(source.hasMoreTxns(TxnFilter.commission), isTrue);
+    final List<WalletTxn> second = ((await source.moreTxns(TxnFilter.commission)) as WalletReady<List<WalletTxn>>).value;
+    expect(second.map((WalletTxn r) => r.id), <String>['L:b']);
+    expect(source.hasMoreTxns(TxnFilter.commission), isTrue);
+    final List<WalletTxn> third = ((await source.moreTxns(TxnFilter.commission)) as WalletReady<List<WalletTxn>>).value;
+    expect(third.map((WalletTxn r) => r.id), <String>['L:c']);
+    expect(source.hasMoreTxns(TxnFilter.commission), isFalse);
+    expect(((await source.moreTxns(TxnFilter.commission)) as WalletReady<List<WalletTxn>>).value, isEmpty);
+    // Reloading the filter starts again from the newest page.
+    await source.txns(TxnFilter.commission);
+    expect(source.hasMoreTxns(TxnFilter.commission), isTrue);
   });
 
   test('topup request: the contract body with a key; a lost answer keeps the key, the retry is the SAME command, a new amount is a new intent', () async {

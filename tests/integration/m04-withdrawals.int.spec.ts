@@ -598,4 +598,60 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
     expect(code(await send(systemLogin(), '/finance/commission-policy', { expected_version: 1, commission_vnd: 0 }))).toEqual({ status: 400, code: 'ADMIN_INPUT_INVALID' });
     expect(await countRows(client.pool, 'SELECT 1 FROM app.wallet_commission_policies')).toBe(1);
   });
+  it('14. M03 activation needs real confirmed top-ups: under 100.000 it is refused, 100.000 with the money still available approves, and nothing is credited twice', async () => {
+    // A Shipper whose profile was sent for review, with a verified bank account of its own name, and no money at all.
+    const s = await newShipper(0);
+    await client.pool.query(`UPDATE app.drivers SET review_state = 'SUBMITTED' WHERE driver_id = $1::uuid`, [s.driverId]);
+    const driverVersion = async (): Promise<number> => Number((await client.pool.query<{ version: string }>('SELECT version::text FROM app.drivers WHERE driver_id = $1::uuid', [s.driverId])).rows[0]?.version);
+    const approve = async (): Promise<AdminResponse> => send(systemLogin(), `/shippers/${s.driverId}/approve`, { expected_version: await driverVersion() });
+    const status = async (): Promise<string> => String((await client.pool.query('SELECT status FROM app.drivers WHERE driver_id = $1::uuid', [s.driverId])).rows[0]?.status);
+    const topups = (): Promise<number> => countRows(client.pool, `SELECT 1 FROM app.wallet_ledger_entries l JOIN app.driver_wallets w ON w.wallet_id = l.wallet_id WHERE w.driver_id = $1::uuid AND l.entry_kind = 'TOPUP'`, [s.driverId]);
+    /** One real top-up: the Shipper asks, an administrator records the money that really arrived. */
+    const topup = async (amount: number): Promise<void> => {
+      const requested = await client.call('POST', `${BASE}/topup-requests`, { bearer: s.token, headers: { 'idempotency-key': randomUUID() }, body: { amount_vnd: Math.max(amount, 100_000) } });
+      expect(requested.status).toBe(201);
+      const confirmed = await send(as('recorder'), `/finance/topup-requests/${String(dataOf(requested).request_id)}/confirm`, {
+        expected_version: 1,
+        actual_amount_vnd: amount,
+        bank_id: 'VCB',
+        system_owned_account_id: account.id,
+        canonical_transaction_id: `IN${Math.floor(1e11 + Math.random() * 9e11)}`,
+        received_at: new Date(Date.now() - 60_000).toISOString(),
+      });
+      expect(confirmed.status).toBe(200);
+    };
+
+    // No money, then a request that only says "I have transferred": still refused, and nothing was created.
+    expect(code(await approve())).toEqual({ status: 409, code: 'DRIVER_FUNDING_REQUIRED' });
+    const asked = await client.call('POST', `${BASE}/topup-requests`, { bearer: s.token, headers: { 'idempotency-key': randomUUID() }, body: { amount_vnd: 200_000 } });
+    expect(asked.status).toBe(201);
+    expect(code(await approve())).toEqual({ status: 409, code: 'DRIVER_FUNDING_REQUIRED' });
+    expect(await status()).toBe('PENDING');
+
+    // 50.000 of recorded money is not enough either.
+    await topup(50_000);
+    expect(code(await approve())).toEqual({ status: 409, code: 'DRIVER_FUNDING_REQUIRED' });
+    expect(await status()).toBe('PENDING');
+    expect(await topups()).toBe(1);
+
+    // 100.000 confirmed in total, but a withdrawal asked since set money aside: the AVAILABLE money is under 100.000, so it is refused again.
+    await topup(50_000);
+    expect(await wallet(s)).toEqual({ balance: '100000', held: '0' });
+    const reserved = await request(s, 20_000);
+    expect(code(await approve())).toEqual({ status: 409, code: 'DRIVER_FUNDING_REQUIRED' });
+    const cancelled = await cancel(s, reserved, { expected_version: 1 });
+    expect(cancelled.status).toBe(200);
+
+    // 100.000 confirmed and available: approved. Approving credits nothing, and a replay of the same command neither.
+    const key = randomUUID();
+    const approvedAt = await driverVersion();
+    const first = await send(systemLogin(), `/shippers/${s.driverId}/approve`, { expected_version: approvedAt }, key);
+    expect(first.status).toBe(200);
+    expect(await status()).toBe('ACTIVE');
+    const replay = await send(systemLogin(), `/shippers/${s.driverId}/approve`, { expected_version: approvedAt }, key);
+    expect(replay.status).toBe(200);
+    expect(await wallet(s)).toEqual({ balance: '100000', held: '0' });
+    expect(await topups()).toBe(2);
+    expect(await countRows(client.pool, `SELECT 1 FROM app.wallet_ledger_entries l JOIN app.driver_wallets w ON w.wallet_id = l.wallet_id WHERE w.driver_id = $1::uuid AND l.entry_kind <> 'TOPUP'`, [s.driverId])).toBe(0);
+  });
 });

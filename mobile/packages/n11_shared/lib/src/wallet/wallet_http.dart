@@ -334,37 +334,47 @@ class HttpWalletSource extends WalletSource implements WalletWrites {
         return Wallet(total: balance, held: held);
       });
 
-  Future<List<WalletTxn>> _history(TxnFilter filter, {required int limit, required int pages}) async {
-    final List<WalletTxn> rows = <WalletTxn>[];
-    String? cursor;
-    for (int page = 0; page < pages; page++) {
-      final String query = 'type=${_filterName(filter)}&limit=$limit${cursor == null ? '' : '&cursor=${Uri.encodeQueryComponent(cursor)}'}';
-      final Map<String, Object?> data = _map(await _get('/transactions?$query'));
-      final Object? items = data['items'];
-      if (items is! List<Object?>) {
-        throw const FormatException('items');
-      }
-      rows.addAll(items.map(_parseTxn));
+  /// The next older page of the cursor each filter is at: the server pages (50 a page), so the whole history is reachable without a cap.
+  final Map<TxnFilter, String?> _txnCursor = <TxnFilter, String?>{};
+
+  Future<List<WalletTxn>> _history(TxnFilter filter, {required int limit, String? cursor, bool remember = false}) async {
+    final String query = 'type=${_filterName(filter)}&limit=$limit${cursor == null ? '' : '&cursor=${Uri.encodeQueryComponent(cursor)}'}';
+    final Map<String, Object?> data = _map(await _get('/transactions?$query'));
+    final Object? items = data['items'];
+    if (items is! List<Object?>) {
+      throw const FormatException('items');
+    }
+    final List<WalletTxn> rows = items.map(_parseTxn).toList();
+    if (remember) {
       final Object? next = data['next_cursor'];
-      if (next is! String) {
-        break;
-      }
-      cursor = next;
+      _txnCursor[filter] = next is String ? next : null;
     }
     return rows;
   }
 
   @override
   Future<WalletLoad<List<WalletTxn>>> recentTxns() async {
-    final WalletLoad<List<WalletTxn>> result = await _read<List<WalletTxn>>(() => _history(TxnFilter.all, limit: 3, pages: 1));
+    final WalletLoad<List<WalletTxn>> result = await _read<List<WalletTxn>>(() => _history(TxnFilter.all, limit: 3));
     return result is WalletReady<List<WalletTxn>> && result.value.isEmpty ? const WalletEmpty<List<WalletTxn>>() : result;
   }
 
   @override
   Future<WalletLoad<List<WalletTxn>>> txns(TxnFilter filter) async {
-    // The server pages (50 a page); the screen shows the newest 200 and says nothing is hidden by a filter it does not name.
-    final WalletLoad<List<WalletTxn>> result = await _read<List<WalletTxn>>(() => _history(filter, limit: 50, pages: 4));
+    _txnCursor[filter] = null;
+    final WalletLoad<List<WalletTxn>> result = await _read<List<WalletTxn>>(() => _history(filter, limit: 50, remember: true));
     return result is WalletReady<List<WalletTxn>> && result.value.isEmpty ? const WalletEmpty<List<WalletTxn>>() : result;
+  }
+
+  @override
+  bool hasMoreTxns(TxnFilter filter) => _txnCursor[filter] != null;
+
+  @override
+  Future<WalletLoad<List<WalletTxn>>> moreTxns(TxnFilter filter) async {
+    final String? cursor = _txnCursor[filter];
+    if (cursor == null) {
+      return const WalletReady<List<WalletTxn>>(<WalletTxn>[]);
+    }
+    return _read<List<WalletTxn>>(() => _history(filter, limit: 50, cursor: cursor, remember: true));
   }
 
   @override

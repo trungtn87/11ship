@@ -30,7 +30,7 @@ Admin (`admin/finance`): `withdrawals` (list/đọc), `withdrawals/:id/start-pro
 - Không có API điều chỉnh số dư (adjustment).
 - Không hỗ trợ chuyển một phần: số tiền lệch với yêu cầu ở lại RECONCILIATION.
 - Không tải ảnh chứng từ / không tạo mã QR giả; app chỉ hiện thông tin chuyển khoản thật.
-- Lịch sử trong app giới hạn 200 dòng gần nhất mỗi lần xem.
+- Lịch sử trong app tải từng trang 50 dòng theo cursor của server; nút "Tải thêm" xem được toàn bộ lịch sử, không giới hạn 200 dòng.
 - Quyền tiền toàn hệ thống của SYSTEM giữ nguyên.
 - Phát hiện lệch (drift) chỉ báo cáo, không tự sửa.
 
