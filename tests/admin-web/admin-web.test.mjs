@@ -26,19 +26,20 @@ after(() => rmSync(out, { recursive: true, force: true }));
 const ids = (groups) => groups.flatMap((group) => group.items.flatMap((item) => [item.id, ...(item.children ?? []).map((child) => child.id)]));
 
 describe('menu by permission', () => {
-  it('ADMIN without grants only sees Tổng quan', async () => {
+  it('ADMIN without grants sees Tổng quan and the (read-only) system parameters, nothing else', async () => {
     const m = await load(real, 'core/menu.js');
-    assert.deepEqual(ids(m.visibleMenu('ADMIN', m.NO_GRANTS)), ['home']);
+    // Owner decision 2026-10-17: every administrator may READ the system parameters (SYSTEM alone edits them).
+    assert.deepEqual(ids(m.visibleMenu('ADMIN', m.NO_GRANTS)), ['home', 'parameters', 'parameters-shipper-wallet', 'shipping-policy']);
   });
   it('ADMIN with a grant sees that entry, never administrators, invitations or the system settings', async () => {
     const m = await load(real, 'core/menu.js');
     const seen = ids(m.visibleMenu('ADMIN', new Set(['users', 'shops'])));
-    assert.deepEqual(seen, ['home', 'users', 'users-list', 'users-locked', 'shops']);
+    assert.deepEqual(seen, ['home', 'users', 'users-list', 'users-locked', 'shops', 'parameters', 'parameters-shipper-wallet', 'shipping-policy']);
     assert.ok(!seen.includes('administrators') && !seen.includes('invitations') && !seen.includes('system-settings'));
   });
   it('"Danh mục › Nhóm món" needs the catalog grant (SHOP VIEW + the catalog right); SYSTEM always sees it', async () => {
     const m = await load(real, 'core/menu.js');
-    assert.deepEqual(ids(m.visibleMenu('ADMIN', new Set(['catalog']))), ['home', 'catalog', 'catalog-categories']);
+    assert.deepEqual(ids(m.visibleMenu('ADMIN', new Set(['catalog']))), ['home', 'catalog', 'catalog-categories', 'parameters', 'parameters-shipper-wallet', 'shipping-policy']);
     assert.ok(!ids(m.visibleMenu('ADMIN', new Set(['users', 'shops', 'drivers']))).includes('catalog-categories'));
     assert.ok(ids(m.visibleMenu('SYSTEM')).includes('catalog-categories'));
     assert.equal(m.canOpenRoute('ADMIN', new Set(['users', 'shops']), { name: 'categories' }), false);
@@ -55,8 +56,36 @@ describe('menu by permission', () => {
     const m = await load(real, 'core/menu.js');
     assert.deepEqual(
       m.MENU.flatMap((group) => group.items.map((item) => item.label)),
-      ['Tổng quan', 'Người dùng', 'Quản trị viên', 'Lời mời Admin', 'Quán', 'Shipper', 'Đơn hàng', 'Giao hàng', 'Phản ánh', 'Danh mục', 'Ví shipper', 'Nạp tiền', 'Rút tiền', 'Cài đặt hệ thống', 'Vùng hoạt động', 'Tham số', 'Nhật ký', 'Giám sát'],
+      ['Tổng quan', 'Người dùng', 'Quản trị viên', 'Lời mời Admin', 'Quán', 'Shipper', 'Đơn hàng', 'Giao hàng', 'Thông báo', 'Phản ánh', 'Danh mục', 'Tài chính', 'Cài đặt hệ thống', 'Vùng hoạt động', 'Tham số hệ thống', 'Phí & điều kiện giao', 'Nhật ký', 'Giám sát'],
     );
+  });
+  it('M04 "Tài chính": six ready entries in the approved order and the SYSTEM-only receiving accounts (B3a); SYSTEM sees them, an ADMIN only with the matching grant; parameters sit under the system group', async () => {
+    const m = await load(real, 'core/menu.js');
+    const finance = m.MENU.find((group) => group.id === 'finance').items[0];
+    assert.deepEqual(
+      finance.children.map((child) => child.label),
+      ['Tổng quan', 'Ví Shipper', 'Nạp tiền', 'Rút tiền', 'Giao dịch', 'Đối soát', 'Tài khoản nhận tiền'],
+    );
+    assert.ok(finance.children.every((child) => child.ready && child.route !== undefined));
+    assert.ok(ids(m.visibleMenu('SYSTEM')).includes('finance-reconciliation'));
+    assert.ok(!ids(m.visibleMenu('ADMIN', m.NO_GRANTS)).includes('finance-topups'));
+    const topupsOnly = ids(m.visibleMenu('ADMIN', new Set(['driver-wallets', 'topups'])));
+    assert.ok(topupsOnly.includes('finance-topups') && !topupsOnly.includes('finance-withdrawals'));
+    assert.equal(m.canOpenRoute('ADMIN', new Set(['driver-wallets']), { name: 'finance-topups' }), false);
+    // B3a: an ADMIN with only the finance READ right ('topups') sees the top-up entry and no other finance entry; the receiving accounts are SYSTEM only.
+    const readOnly = ids(m.visibleMenu('ADMIN', new Set(['topups'])));
+    assert.deepEqual(readOnly.filter((id) => id.startsWith('finance')), ['finance', 'finance-topups']);
+    assert.ok(!ids(m.visibleMenu('ADMIN', new Set(['topups', 'driver-wallets', 'withdrawals', 'drivers']))).includes('finance-bank-accounts'));
+    assert.ok(ids(m.visibleMenu('SYSTEM')).includes('finance-bank-accounts'));
+    assert.equal(m.canOpenRoute('ADMIN', new Set(['topups']), { name: 'finance-bank-accounts' }), false);
+    assert.equal(m.canOpenRoute('SYSTEM', m.NO_GRANTS, { name: 'finance-bank-accounts' }), true);
+    // The application permissions never open the money pages (a Shipper view right is not a finance right).
+    assert.equal(m.canOpenRoute('ADMIN', new Set(['users', 'shops', 'drivers']), { name: 'finance-topup', id: 'x' }), false);
+    assert.equal(m.canOpenRoute('ADMIN', new Set(['withdrawals']), { name: 'finance-withdrawal', id: 'x' }), true);
+    assert.equal(m.canOpenRoute('ADMIN', m.NO_GRANTS, { name: 'wallet-params' }), false);
+    assert.equal(m.canOpenRoute('SYSTEM', m.NO_GRANTS, { name: 'wallet-params' }), true);
+    assert.deepEqual(m.breadcrumb({ name: 'wallet-params' }), ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper']);
+    assert.equal(m.activeMenuId({ name: 'finance-withdrawal', id: 'x' }), 'finance-withdrawals');
   });
   it('a ready entry has a route; an entry that is not built has none (shown as "Sắp có")', async () => {
     const m = await load(real, 'core/menu.js');
@@ -118,6 +147,15 @@ describe('real build', () => {
     const html = readFileSync(join(real, 'index.html'), 'utf8');
     assert.ok(!html.includes('Dữ liệu minh họa'));
   });
+  it('M04: carries no sample wallet, shipper or request (those exist only in the design preview) and no money-moving call', () => {
+    for (const file of ['core/finance.js', 'core/finance-controller.js', 'dom/finance-view.js', 'dom/shell-app.js']) {
+      const text = readFileSync(join(real, 'js', file), 'utf8');
+      assert.ok(!/Nguyễn Văn A|Trần Thị B|SHP00|NP2026|RT2026|MINHHOA|SAMPLE_/.test(text), file);
+      if (file.includes('finance')) {
+        assert.ok(!/\bfetch\(|XMLHttpRequest|localStorage|sessionStorage/.test(text), `${file} must not call a server or store anything in the UI phase`);
+      }
+    }
+  });
   it('has no persona picker and no way to grant rights from the page', () => {
     for (const file of ['dom/main.js', 'dom/shell-app.js', 'dom/view.js', 'core/menu.js']) {
       const text = readFileSync(join(real, 'js', file), 'utf8');
@@ -134,7 +172,7 @@ describe('design preview', () => {
   it('lists every catalog screen with its code (an import failure FAILS this test)', async () => {
     const screens = await load(design, 'design/screens.js');
     const byCode = new Map(screens.SCREENS.map((screen) => [screen.code, screen]));
-    const expected = ['D00', 'D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08', 'D09', 'D81', 'D86', 'D87', 'D88', 'D89', 'D90', 'D91', 'D92', 'C01–C10'];
+    const expected = ['D00', 'D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08', 'D09', 'D81', 'D86', 'D87', 'D88', 'D89', 'D90', 'D91', 'D92', 'M04-A01', 'M04-A02', 'M04-A03', 'M04-A04', 'M04-A05', 'M04-A06', 'M04-A07', 'C01–C10'];
     for (const code of expected) {
       assert.ok(byCode.has(code), `missing screen code ${code}`);
     }

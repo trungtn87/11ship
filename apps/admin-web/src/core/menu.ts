@@ -20,6 +20,7 @@ export type IconName =
   | 'rider'
   | 'receipt'
   | 'truck'
+  | 'bell'
   | 'chat'
   | 'wallet'
   | 'plus-circle'
@@ -36,6 +37,7 @@ export type GrantId =
   | 'drivers'
   | 'orders'
   | 'deliveries'
+  | 'notifications'
   | 'feedback'
   | 'driver-wallets'
   | 'topups'
@@ -80,6 +82,12 @@ export function grantsFromPermissions(permissions: readonly AppPermission[]): Gr
       }
     } else if (row.app === 'DRIVER') {
       grants.add('drivers');
+    }
+    // M07.07: the delivery pages open for an administrator who may view the shop or the Shipper side; the server decides every read and action again.
+    if (row.app === 'SHOP' || row.app === 'DRIVER') {
+      grants.add('deliveries');
+      // M08.06: the notification pages open for the same viewers; the server narrows what is listed to the apps the administrator may view.
+      grants.add('notifications');
     }
   }
   return grants;
@@ -137,9 +145,10 @@ export const MENU: readonly MenuGroup[] = [
     label: 'VẬN HÀNH',
     items: [
       soon('shops', 'Quán', 'store', 'shops'),
-      soon('drivers', 'Shipper', 'rider', 'drivers'),
+      { id: 'drivers', label: 'Shipper', icon: 'rider', route: { name: 'shippers' }, ready: true, access: 'drivers' },
       soon('orders', 'Đơn hàng', 'receipt', 'orders'),
-      soon('deliveries', 'Giao hàng', 'truck', 'deliveries'),
+      { id: 'deliveries', label: 'Giao hàng', icon: 'truck', route: { name: 'deliveries' }, ready: true, access: 'deliveries' },
+      { id: 'notifications', label: 'Thông báo', icon: 'bell', route: { name: 'notifications' }, ready: true, access: 'notifications' },
       soon('feedback', 'Phản ánh', 'chat', 'feedback'),
     ],
   },
@@ -158,9 +167,30 @@ export const MENU: readonly MenuGroup[] = [
     ],
   },
   {
+    // M04 (UI phase, Owner-approved 2026-10-15): Tổng quan / Ví Shipper / Nạp tiền / Rút tiền / Giao dịch / Đối soát. SYSTEM sees all of it;
+    // an ADMIN needs the matching grant, which the server does not send yet (grantsFromPermissions), so for now only SYSTEM sees it.
     id: 'finance',
     label: 'TÀI CHÍNH',
-    items: [soon('driver-wallets', 'Ví shipper', 'wallet', 'driver-wallets'), soon('topups', 'Nạp tiền', 'plus-circle', 'topups'), soon('withdrawals', 'Rút tiền', 'minus-circle', 'withdrawals')],
+    items: [
+      {
+        id: 'finance',
+        label: 'Tài chính',
+        icon: 'wallet',
+        ready: true,
+        // B3a: the children decide (an ADMIN with only wallet.read sees only "Nạp tiền"); a parent without a visible child is dropped.
+        access: 'any',
+        children: [
+          { id: 'finance-overview', label: 'Tổng quan', route: { name: 'finance' }, ready: true, access: 'driver-wallets' },
+          { id: 'finance-wallets', label: 'Ví Shipper', route: { name: 'finance-wallets' }, ready: true, access: 'driver-wallets' },
+          { id: 'finance-topups', label: 'Nạp tiền', route: { name: 'finance-topups' }, ready: true, access: 'topups' },
+          { id: 'finance-withdrawals', label: 'Rút tiền', route: { name: 'finance-withdrawals' }, ready: true, access: 'withdrawals' },
+          { id: 'finance-transactions', label: 'Giao dịch', route: { name: 'finance-transactions' }, ready: true, access: 'driver-wallets' },
+          { id: 'finance-reconciliation', label: 'Đối soát', route: { name: 'finance-reconciliation' }, ready: true, access: 'driver-wallets' },
+          // B3a: the receiving accounts of the system (SYSTEM only; the server decides again).
+          { id: 'finance-bank-accounts', label: 'Tài khoản nhận tiền', route: { name: 'finance-bank-accounts' }, ready: true, access: 'system' },
+        ],
+      },
+    ],
   },
   {
     id: 'system',
@@ -169,7 +199,18 @@ export const MENU: readonly MenuGroup[] = [
       // Owner decision 2026-10-14: the SYSTEM account's switches (phone verification first). SYSTEM only.
       { id: 'system-settings', label: 'Cài đặt hệ thống', icon: 'gear', route: { name: 'settings' }, ready: true, access: 'system' },
       soon('zones', 'Vùng hoạt động', 'map-pin', 'zones'),
-      soon('parameters', 'Tham số', 'gear', 'parameters'),
+      // M03: Cài đặt › Tham số hệ thống › Ví Shipper (minimum top-up / withdrawal per request). Every administrator sees the values; only SYSTEM changes them
+      // (Owner decision 2026-10-17; the server decides again on every call).
+      {
+        id: 'parameters',
+        label: 'Tham số hệ thống',
+        icon: 'gear',
+        ready: true,
+        access: 'any',
+        children: [{ id: 'parameters-shipper-wallet', label: 'Ví Shipper', route: { name: 'wallet-parameters' }, ready: true, access: 'any' }],
+      },
+      // M06-A: Phí & điều kiện giao (fee table; every administrator reads, only SYSTEM changes, the server decides again).
+      { id: 'shipping-policy', label: 'Phí & điều kiện giao', icon: 'gear', route: { name: 'shipping-policy' }, ready: true, access: 'any' },
       soon('audit', 'Nhật ký', 'doc', 'audit'),
       soon('monitoring', 'Giám sát', 'activity', 'monitoring'),
     ],
@@ -222,12 +263,36 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'home':
     case 'activate':
     case 'reset':
+    case 'wallet-parameters':
+    case 'shipping-policy':
       return true;
     case 'users':
     case 'user':
       return canSee(role, grants, 'users');
     case 'categories':
       return canSee(role, grants, 'catalog');
+    case 'shippers':
+    case 'shipper':
+      return canSee(role, grants, 'drivers');
+    case 'deliveries':
+      return canSee(role, grants, 'deliveries');
+    case 'notifications':
+      return canSee(role, grants, 'notifications');
+    case 'finance':
+    case 'finance-wallets':
+    case 'finance-transactions':
+    case 'finance-reconciliation':
+      return canSee(role, grants, 'driver-wallets');
+    case 'finance-topups':
+    case 'finance-topup':
+      return canSee(role, grants, 'topups');
+    case 'finance-bank-accounts':
+      return role === 'SYSTEM';
+    case 'finance-withdrawals':
+    case 'finance-withdrawal':
+      return canSee(role, grants, 'withdrawals');
+    case 'wallet-params':
+      return canSee(role, grants, 'parameters');
     case 'administrators':
     case 'settings':
     case 'invitations':
@@ -248,6 +313,35 @@ export function activeMenuId(route: Route): string {
       return 'users-list';
     case 'categories':
       return 'catalog-categories';
+    case 'shippers':
+    case 'shipper':
+      return 'drivers';
+    case 'deliveries':
+      return 'deliveries';
+    case 'notifications':
+      return 'notifications';
+    case 'wallet-parameters':
+      return 'parameters-shipper-wallet';
+    case 'shipping-policy':
+      return 'shipping-policy';
+    case 'finance':
+      return 'finance-overview';
+    case 'finance-wallets':
+      return 'finance-wallets';
+    case 'finance-topups':
+    case 'finance-topup':
+      return 'finance-topups';
+    case 'finance-bank-accounts':
+      return 'finance-bank-accounts';
+    case 'finance-withdrawals':
+    case 'finance-withdrawal':
+      return 'finance-withdrawals';
+    case 'finance-transactions':
+      return 'finance-transactions';
+    case 'finance-reconciliation':
+      return 'finance-reconciliation';
+    case 'wallet-params':
+      return 'parameters';
     case 'administrators':
       return 'administrators';
     case 'settings':
@@ -274,6 +368,38 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Tài khoản', 'Người dùng', 'Chi tiết'];
     case 'categories':
       return ['Danh mục', 'Nhóm món'];
+    case 'shippers':
+      return ['Vận hành', 'Shipper'];
+    case 'shipper':
+      return ['Vận hành', 'Shipper', 'Chi tiết'];
+    case 'deliveries':
+      return ['Vận hành', 'Giao hàng'];
+    case 'notifications':
+      return ['Vận hành', 'Thông báo'];
+    case 'wallet-parameters':
+      return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
+    case 'shipping-policy':
+      return ['Cài đặt', 'Phí & điều kiện giao'];
+    case 'finance':
+      return ['Tài chính', 'Tổng quan'];
+    case 'finance-wallets':
+      return ['Tài chính', 'Ví Shipper'];
+    case 'finance-topups':
+      return ['Tài chính', 'Nạp tiền'];
+    case 'finance-topup':
+      return ['Tài chính', 'Nạp tiền', 'Chi tiết'];
+    case 'finance-bank-accounts':
+      return ['Tài chính', 'Tài khoản nhận tiền'];
+    case 'finance-withdrawals':
+      return ['Tài chính', 'Rút tiền'];
+    case 'finance-withdrawal':
+      return ['Tài chính', 'Rút tiền', 'Chi tiết'];
+    case 'finance-transactions':
+      return ['Tài chính', 'Giao dịch'];
+    case 'finance-reconciliation':
+      return ['Tài chính', 'Đối soát'];
+    case 'wallet-params':
+      return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
     case 'administrators':
       return ['Tài khoản', 'Quản trị viên'];
     case 'settings':

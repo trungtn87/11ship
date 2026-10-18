@@ -1,0 +1,146 @@
+{
+  "version": 1,
+  "description": "Immutable reviewed forward migrations; no code rollback after any pending migration. Data backfills and pricing semantic conversion require separate review. Unknown or modified migrations stop.",
+  "migrations": {
+    "1791244800000_create-app-schema": {
+      "sha256": "6e3239dd46f6a23b268638dcb8025be64a8a35fae7af0f4bb78aef22033a08d2",
+      "autoApply": true
+    },
+    "1791331200000_create-idempotency-records": {
+      "sha256": "a50292867f727298e98143dbe7a66094c1682f18449c5319e71b387c7d36f37b",
+      "autoApply": true
+    },
+    "1791417600000_create-audit-outbox": {
+      "sha256": "aa2af9dede36c3229117352fead9100fa66f5db928dc08d9cc2abfe758753791",
+      "autoApply": true
+    },
+    "1791504000000_create-auth-core": {
+      "sha256": "1840961c284625703b396688767c18541a73b09cf23fc388ba04f24aaad27e08",
+      "autoApply": true
+    },
+    "1791590400000_create-shop-onboarding": {
+      "sha256": "6728fbedaf61b6fd523e93b87c7d662d4276aeb63f5657c2d087750a6f77a47a",
+      "autoApply": true
+    },
+    "1791676800000_create-driver-onboarding": {
+      "sha256": "cecc1a51b68e3ed89726db90a178ee07f1a0f3b76e15339658083d31ff07df1f",
+      "autoApply": true
+    },
+    "1791763200000_create-shop-business-hours": {
+      "sha256": "c1caed3c5010b58ac9e39ed7ef682c279e698edbcaef5320e6f12129a051fd0e",
+      "autoApply": true
+    },
+    "1791936000000_add-users-account-origin": {
+      "sha256": "70e85103ca35d46717c6c79cbaecf882ee7dece2dbf009958b41e754fd70356c",
+      "autoApply": true
+    },
+    "1792022400000_create-admin-auth": {
+      "sha256": "885b6064cc2ec2ba14f88c14008ea2de40697d6c13fdc9016eb34faaecf7a426",
+      "autoApply": true
+    },
+    "1792108800000_create-admin-invitations": {
+      "sha256": "6691795726e25db822e8c3402ececb524f3a4c6a7378571762ca12770c4b5991",
+      "autoApply": true
+    },
+    "1792195200000_create-admin-sensitive-operations": {
+      "sha256": "ae12ac2f1e5a9e49f00b50366e59d28a79d180b6fe6fd78fa27912584c8b40a8",
+      "autoApply": true
+    },
+    "1792281600000_create-admin-activation": {
+      "sha256": "1bcd1d7820730958b582d081ffe33aa43628e5ae3ec447ab7086d0c56397f803",
+      "autoApply": true
+    },
+    "1792368000000_extend-admin-auth-limits-activation": {
+      "sha256": "9feabfc24a63093bd248b9056fa14bd4e0b32edf1b948bcf2fb18610996c2e4b",
+      "autoApply": true
+    },
+    "1792454400000_create-admin-membership-origin-guard": {
+      "sha256": "564538545c3cb3e7f307767f10edcd1471f39bca55883f31813eab84e41b6ccf",
+      "autoApply": true
+    },
+    "1792540800000_create-customer-profiles-consents": {
+      "sha256": "62542e2e8b09b64e45c83e09412e5ad04b042cda6c3424956b1233b3a99436bb",
+      "autoApply": true
+    },
+    "1792627200000_allow-staging-fixture-account-origin": {
+      "sha256": "22fc7d999b59f63543d4e5f9574ca6f234c89670f420414fedd2ac174eaf45e7",
+      "autoApply": true
+    },
+    "1792713600000_allow-test-unverified-account-origin": {
+      "sha256": "5f5110b5ad2ea21c20e02e3d2621560c9eb6bd3f8abf01cf946544a1253d8a16",
+      "autoApply": true
+    },
+    "1792800000000_add-admin-activation-phone-verification-mode": {
+      "sha256": "c51220b910c59e533ed1cf94f1307dad757636e15635efcab1b6cf00d60be4ff",
+      "autoApply": true
+    },
+    "1792886400000_create-client-device-binding": {
+      "sha256": "2bcf7ca93a558a5ab1ceba60e4707a0b2a857b7b8387a7f8a5b25b0b3f2ce0de",
+      "autoApply": true
+    },
+    "1792972800000_create-sms-gateway": {
+      "sha256": "1f0c2c3dd7fb9accbcefff88d011979723df464a2862748e672d21f704586134",
+      "autoApply": true
+    },
+    "1793059200000_account-scope-lifecycle-settings": {
+      "sha256": "e3a129b0c5c3b7b5f43e106a6641b33cc8a4733c9f0b0a87513ffa72355450d0",
+      "autoApply": false
+    },
+    "1793145600000_create-menu": {
+      "sha256": "245374e7754feadbfeee9c9fb29d7f26f69a5b81970edb8f7b00e48a9ecedb76",
+      "autoApply": true
+    },
+    "1793232000000_menu-category-admin": {
+      "sha256": "cce014925585d5c6f135ccb511b197ecf35042eab7a8fe833d587b77077c976d",
+      "autoApply": true
+    },
+    "1793318400000_create-shipper-management": {
+      "sha256": "2c1f9a01161099a06c2a074e162e0d5f1a9d3ffd184ae946d6d1fd56af7113ad",
+      "autoApply": false
+    },
+    "1793404800000_create-customer-addresses": {
+      "sha256": "95e498d04a2f0a63c8afd33e250cc1a01ecbdf02471843537a5d973810b0d92e",
+      "autoApply": true
+    },
+    "1793404800000_create-driver-wallet-core": {
+      "sha256": "c737fc7e29de930cd49ba907470efd231d2078541c960702ae3fc469fd67392d",
+      "autoApply": true
+    },
+    "1793491200000_create-wallet-holds": {
+      "sha256": "9e74953b772a3155b6b43551de0a46faf75de6da12e75403504c1b6fbca95ae9",
+      "autoApply": true
+    },
+    "1793577600000_create-wallet-topup-sources": {
+      "sha256": "256af661051633cddce8624c628c80379e4bf5d64f04b30981cb142ed53b2e0f",
+      "autoApply": true
+    },
+    "1793664000000_create-shipping-eligibility-parameters": {
+      "sha256": "30ed993ea6a1e9a2332be40adeb2df99372d84d26bc79d012d2f64fb86b9cb6e",
+      "autoApply": true
+    },
+    "1793750400000_create-shipping-fee-policy": {
+      "sha256": "a229e5416028bb1bff5c4cf5852a13d162b54b53829c6d1a81489595aa7ee87e",
+      "autoApply": true
+    },
+    "1793836800000_m06-v1-1-three-tiers-agreement": {
+      "sha256": "d69042b4398fc410879f5b915363c24614aa9b76ff62513caa6cbe59a0a794ca",
+      "autoApply": false
+    },
+    "1793923200000_create-admin-finance-grants": {
+      "sha256": "6a4d18528620edef3e0ee388ef6f771673a149960ba015275893864468c4c2b6",
+      "autoApply": true
+    },
+    "1794009600000_open-topup-ledger-gate": {
+      "sha256": "1c1240c9afd160bfda0783f70596d047f6f3e441c680861e311e099a539a67de",
+      "autoApply": true
+    },
+    "1794096000000_create-m07-delivery": {
+      "sha256": "e41396497cc5eb5d340d3cbf2e8c206e2ff1dc00d4d5aa5b8269c6d088daa682",
+      "autoApply": true
+    },
+    "1794182400000_create-m08-notifications": {
+      "sha256": "84541e13006785826bf2665726f2363dac1bba8d80878e9644ff75a2b0ee4a7a",
+      "autoApply": true
+    }
+  }
+}

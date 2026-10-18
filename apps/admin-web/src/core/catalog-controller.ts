@@ -2,7 +2,8 @@
 // is left (`dispose`). Rules that matter, each pinned by catalog-controller.spec.ts:
 //  * a save sends ONE request with its own Idempotency-Key; the form is locked while it runs and a second click is ignored;
 //  * a lost answer (timeout, offline, 5xx) is NOT a failure: the same key and body stay for an explicit "Thử lại", and nothing else may
-//    be written meanwhile; "Kiểm tra lại" reads the list again and drops the unanswered request;
+//    be written meanwhile. The popup cannot be closed and "Kiểm tra lại" only re-reads the list: a list that does not show the change (or cannot
+//    be loaded) proves nothing about the unanswered request, so it stays pending until an answer says ok or a clear refusal;
 //  * a refusal (duplicate name, validation, conflict, no right) keeps everything the admin typed;
 //  * validation only reports: the draft is never rewritten;
 //  * a late answer of a page that was left, or of a filter that was replaced, is dropped.
@@ -187,19 +188,14 @@ export class CatalogController {
     this.#emit();
   }
 
-  /** "Hủy" / Esc. Not while a request is running; an unanswered one is dropped and the list is read again. */
+  /** "Hủy" / Esc. Not while a request is running or unanswered: its key and body must be retried, never abandoned. */
   cancel(): void {
     const dialog = this.#dialog;
-    if (dialog === undefined || dialog.phase === 'working') {
+    if (dialog === undefined || dialog.phase === 'working' || this.#intent !== undefined) {
       return;
     }
-    const unanswered = this.#intent !== undefined;
-    this.#intent = undefined;
     this.#dialog = undefined;
     this.#emit();
-    if (unanswered) {
-      this.load();
-    }
   }
 
   // ---- saving ------------------------------------------------------------------------------------------------------------
@@ -252,21 +248,20 @@ export class CatalogController {
     void this.#run(intent);
   }
 
-  /** After an unknown outcome: read the list again and forget the unanswered request (the admin looks at what the server holds). */
+  /** After an unknown outcome: read the list again for the admin to look at. The unanswered request stays pending (same key and body). */
   recheck(): void {
     const dialog = this.#dialog;
-    if (dialog === undefined || dialog.phase !== 'unknown') {
+    if (dialog === undefined || dialog.phase !== 'unknown' || this.#intent === undefined) {
       return;
     }
-    this.#intent = undefined;
-    this.#dialog = { ...dialog, phase: 'form', message: undefined } as CatalogDialog;
-    this.#emit();
     this.load();
   }
 
   /** After a version conflict: read the list again; the popup closes (what the admin typed is shown again by opening the group). */
   reload(): void {
-    this.#intent = undefined;
+    if (this.#intent !== undefined) {
+      return;
+    }
     this.#dialog = undefined;
     this.#emit();
     this.load();

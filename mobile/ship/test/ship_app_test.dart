@@ -76,7 +76,8 @@ void main() {
     await pump(tester, healthy());
     await tester.tap(find.byKey(const Key('home-notifications')));
     await tester.pumpAndSettle();
-    expect(find.text('Chưa có dữ liệu thông báo'), findsOneWidget);
+    // A guest has no inbox: the page asks to sign in and shows no notification of anyone.
+    expect(find.text('Đăng nhập để xem thông báo của bạn.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -105,7 +106,7 @@ void main() {
     expect(find.text('—'), findsOneWidget);
     expect(find.text('Chưa có dữ liệu thu nhập'), findsOneWidget);
     await openTab(tester, 'notifications');
-    expect(find.text('Chưa có dữ liệu thông báo'), findsOneWidget);
+    expect(find.text('Đăng nhập để xem thông báo của bạn.'), findsOneWidget);
     expect(find.textContaining('₫'), findsNothing);
   });
 
@@ -118,6 +119,26 @@ void main() {
     await tester.pump();
     expect(find.text('Chưa có đơn hàng'), findsWidgets);
   });
+  testWidgets('M06: orders reach the offer and batching screens, which say they are not ready (no order, no money, nothing to accept)', (WidgetTester tester) async {
+    await pump(tester, healthy());
+    await openTab(tester, 'orders');
+    expect(find.byKey(const Key('m06-offer-entry')), findsOneWidget);
+    expect(find.byKey(const Key('m06-batch-entry')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('m06-offer-entry')));
+    await tester.tap(find.byKey(const Key('m06-offer-entry')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('m06-offer-not-ready')), findsOneWidget);
+    expect(find.widgetWithText(N11Button, 'Nhận đơn'), findsNothing);
+    expect(find.byKey(const Key('m06-sample-banner')), findsNothing);
+    tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('m06-batch-entry')));
+    await tester.tap(find.byKey(const Key('m06-batch-entry')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('m06-batch-not-ready')), findsOneWidget);
+    expect(find.textContaining('ETA gốc'), findsNothing);
+  });
+
   testWidgets('account hides status, policy and diagnostics while preserving profile actions', (WidgetTester tester) async {
     final SessionController session = await pump(tester, healthy());
     await openTab(tester, 'account');

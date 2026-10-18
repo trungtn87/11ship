@@ -76,6 +76,62 @@ export const APP_ERROR_DEFINITIONS = {
   DRIVER_PROFILE_EXISTS: { status: 409, message: 'A driver profile already exists for this account' },
   DRIVER_PENDING_APPROVAL: { status: 403, message: 'The driver profile is waiting for approval' },
 
+  // Shipper management (M03). Same rule: fixed messages that echo nothing the client sent (no name, number or reason).
+  DRIVER_NOT_FOUND: { status: 404, message: 'The Shipper was not found' },
+  DRIVER_STATE_CONFLICT: { status: 409, message: 'The Shipper profile is not in a state that allows this action' },
+  DRIVER_PROFILE_LOCKED: { status: 409, message: 'This part of the Shipper profile can no longer be changed here' },
+  DRIVER_PROFILE_INCOMPLETE: { status: 409, message: 'The Shipper profile is missing required information' },
+  BANK_HOLDER_MISMATCH: { status: 400, message: 'The bank account holder must match the Shipper name' },
+  DRIVER_BANK_NOT_VERIFIED: { status: 409, message: 'The bank account has not been verified' },
+  DRIVER_NOT_ACTIVE: { status: 409, message: 'The Shipper is not active' },
+  DRIVER_WALLET_NOT_READY: { status: 409, message: 'The wallet does not meet the conditions to take orders' },
+  DRIVER_HAS_ACTIVE_WORK: { status: 409, message: 'The Shipper still has deliveries in progress' },
+  DRIVER_WALLET_NOT_SETTLED: { status: 409, message: 'The wallet balance must be settled first' },
+  DRIVER_SELF_ACTION_FORBIDDEN: { status: 403, message: 'An administrator cannot perform this action on their own Shipper profile' },
+  // Finance access and the receiving accounts of the system (M04-B2.2a). Same rule: fixed messages that echo nothing the client sent and reveal nothing
+  // about another account. ADMIN_FORBIDDEN (above) is the answer to an administrator without the right.
+  FINANCE_ADMIN_NOT_FOUND: { status: 404, message: 'The administrator was not found' },
+  FINANCE_GRANT_STATE_CONFLICT: { status: 409, message: 'The finance right is not in a state that allows this action' },
+  FINANCE_VERSION_CONFLICT: { status: 409, message: 'The finance right was changed by another request' },
+  FINANCE_BANK_ACCOUNT_EXISTS: { status: 409, message: 'This receiving account is already configured' },
+  FINANCE_BANK_ACCOUNT_NOT_FOUND: { status: 404, message: 'The receiving account was not found' },
+  // Administration of top-up requests (M04-B2.2b). Same rule: fixed messages that reveal nothing about the wallet, the Shipper or the bank record of anyone else.
+  TOPUP_ACCOUNT_NOT_RECEIVING: { status: 409, message: 'The receiving account cannot record money now' },
+  BANK_TRANSACTION_ALREADY_RECORDED: { status: 409, message: 'This bank transaction was already recorded' },
+  TOPUP_WALLET_LIMIT_EXCEEDED: { status: 409, message: 'The wallet balance would exceed its limit' },
+  FINANCE_BANK_ACCOUNT_STATE_CONFLICT: { status: 409, message: 'The receiving account is already in that state' },
+  // Shipper top-up requests (M04-B2.1). Same rule: fixed messages that echo nothing the client sent; a request of another Shipper reads as not found.
+  TOPUP_AMOUNT_BELOW_MINIMUM: { status: 400, message: 'The top-up amount is below the current minimum' },
+  TOPUP_RECEIVING_ACCOUNT_NOT_CONFIGURED: { status: 409, message: 'No receiving account is available for top-ups yet' },
+  TOPUP_REQUEST_NOT_FOUND: { status: 404, message: 'The top-up request was not found' },
+  TOPUP_REQUEST_STATE_CONFLICT: { status: 409, message: 'The top-up request is not in a state that allows this action' },
+  WALLET_PARAMETER_VERSION_CONFLICT: { status: 409, message: 'The wallet parameters were changed by another request' },
+
+  // M06-A shipping fee policy (Administration web).
+  SHIPPING_POLICY_INVALID: { status: 400, message: 'The shipping fee table is not valid' },
+  SHIPPING_DRAFT_VERSION_CONFLICT: { status: 409, message: 'The shipping fee draft was changed by another request' },
+  SHIPPING_DRAFT_EMPTY: { status: 409, message: 'There is no saved draft to apply' },
+  SHIPPING_POLICY_UNCHANGED: { status: 409, message: 'The draft is identical to the shipping fee table in force' },
+  SHIPPING_ELIGIBILITY_VERSION_CONFLICT: { status: 409, message: 'The eligibility parameters were changed by another request' },
+
+  // Delivery flow (M07). Fixed messages: they echo nothing the client sent. A delivery of another shop and a missing one answer the same
+  // DELIVERY_NOT_FOUND. VERSION_CONFLICT, SHOP_NOT_FOUND, SHOP_PROFILE_INCOMPLETE and the DRIVER_* codes (above) are reused unchanged.
+  // Notifications (M08). A notification of another account and a missing one answer the same.
+  NOTIFICATION_NOT_FOUND: { status: 404, message: 'The notification was not found' },
+  DELIVERY_NOT_FOUND: { status: 404, message: 'The delivery was not found' },
+  DELIVERY_STATE_CONFLICT: { status: 409, message: 'The delivery is not in a state that allows this action' },
+  DELIVERY_ALREADY_TAKEN: { status: 409, message: 'Another Shipper already took this delivery' },
+  DELIVERY_SEARCH_EXPIRED: { status: 409, message: 'The search for a Shipper has ended' },
+  DELIVERY_NOT_ELIGIBLE: { status: 409, message: 'The Shipper does not meet the conditions to take this delivery' },
+  DELIVERY_INPUT_INVALID: { status: 400, message: 'The delivery details are not valid' },
+  AFTER_PICKUP_NO_CANCEL: { status: 409, message: 'The goods were picked up, so the delivery can no longer be cancelled' },
+  FEE_NOT_CONFIRMED: { status: 409, message: 'The delivery fee is not confirmed yet' },
+  FEE_LOCKED: { status: 409, message: 'The delivery fee is fixed' },
+  DESTINATION_NOT_CONFIRMED: { status: 409, message: 'The drop-off point is not confirmed yet' },
+  RECALL_BLOCKED_GOODS_OUT: { status: 409, message: 'The goods are not back at the shop, so the delivery cannot be requested again' },
+  ORDER_MODULE_NOT_READY: { status: 409, message: 'The order module is not connected yet' },
+  ADMIN_ACTION_NOT_ALLOWED: { status: 409, message: 'This action does not apply to the delivery in its current state' },
+
   // Shop management (M02-A, task section 7). Same rule: fixed messages that echo nothing the client sent and reveal
   // nothing about any other account. SESSION_*, ACCOUNT_DISABLED, INVALID_SERVICE_AREA, SHOP_PROFILE_INCOMPLETE and
   // VERSION_CONFLICT (above) are reused unchanged.
@@ -98,6 +154,10 @@ export const APP_ERROR_DEFINITIONS = {
   MENU_CATEGORY_NAME_TAKEN: { status: 409, message: 'A dish group with this name already exists' },
   MENU_CATEGORY_NAME_TAKEN_INACTIVE: { status: 409, message: 'An inactive dish group with this name already exists; activate it again instead' },
   MENU_CATEGORY_VERSION_CONFLICT: { status: 409, message: 'The dish group was changed by another request' },
+
+  // Customer address book (M05). Fixed message that echoes nothing the client sent. An address of another account is never told apart
+  // from one that does not exist (or was deleted). ROLE_NOT_AVAILABLE, VERSION_CONFLICT and INVALID_PHONE (above) are reused.
+  CUSTOMER_ADDRESS_NOT_FOUND: { status: 404, message: 'The address was not found' },
 
   // Administration web authentication (M01-D-LOGIN). Fixed messages that never echo what the client sent and never
   // say whether an account, a membership or a factor exists. Crypto/storage failures use the generic 503.

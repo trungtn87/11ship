@@ -146,8 +146,8 @@ describe('admin web account read - menu grants', () => {
   it('CUSTOMER -> users, SHOP -> users+shops, DRIVER -> users+drivers; review/lock open nothing; no view = nothing', () => {
     const asked = (app: 'CUSTOMER' | 'SHOP' | 'DRIVER', canView: boolean, canLock = false) => ({ app, canView, canReviewProfile: canLock, canLock });
     expect([...grantsFromPermissions([asked('CUSTOMER', true)])]).toEqual(['users']);
-    expect([...grantsFromPermissions([asked('SHOP', true)])].sort()).toEqual(['shops', 'users']);
-    expect([...grantsFromPermissions([asked('DRIVER', true), asked('SHOP', false)])].sort()).toEqual(['drivers', 'users']);
+    expect([...grantsFromPermissions([asked('SHOP', true)])].sort()).toEqual(['deliveries', 'notifications', 'shops', 'users']);
+    expect([...grantsFromPermissions([asked('DRIVER', true), asked('SHOP', false)])].sort()).toEqual(['deliveries', 'drivers', 'notifications', 'users']);
     expect([...grantsFromPermissions([asked('CUSTOMER', false, true), asked('SHOP', false, true)])]).toEqual([]);
   });
 });
@@ -236,7 +236,7 @@ describe('admin web account read - source', () => {
     const good = scripted(reply(200, { data: { admin_role: 'ADMIN', permissions: [perm('CUSTOMER', true), perm('SHOP', false), perm('DRIVER', true)] } }));
     const result = await createAccountsSource(new AdminAccountsApi(good.transport)).grants();
     expect(good.requests).toEqual([{ method: 'GET', path: '/admin-auth/permissions' }]);
-    expect(result.kind === 'ok' && [...result.grants].sort()).toEqual(['drivers', 'users']);
+    expect(result.kind === 'ok' && [...result.grants].sort()).toEqual(['deliveries', 'drivers', 'notifications', 'users']);
     expect(result.kind === 'ok' && result.roles).toEqual(['CUSTOMER', 'DRIVER']);
     const bad = await createAccountsSource(new AdminAccountsApi(scripted(reply(200, { data: { admin_role: 'ADMIN', permissions: [{ app: 'SHOP' }] } })).transport)).grants();
     expect(bad).toEqual({ kind: 'failed', failure: 'offline' });

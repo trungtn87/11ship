@@ -6,7 +6,7 @@ import { AccountView, ScreenDef } from '../../../client-shared/src/screen.js';
 import { SHIP_DEFINITION } from '../screens.js';
 
 // Design preview of 11Ship. Sample data only, shown with the "Dữ liệu minh họa" label. No session, no backend.
-const PENDING: AccountView = { ...SAMPLE.person, roles: ['CUSTOMER', 'DRIVER'], driver: { status: 'PENDING', kind: 'EXTERNAL', legalName: SAMPLE.person.fullName, plate: null } };
+const PENDING: AccountView = { ...SAMPLE.person, roles: ['CUSTOMER', 'DRIVER'], driver: { status: 'PENDING', legalName: SAMPLE.person.fullName, plate: null } };
 const NO_PROFILE: AccountView = { ...SAMPLE.person, roles: ['CUSTOMER'], driver: { status: 'NONE' } };
 
 function sampleAccount(screen: ScreenDef, variant: string): AccountView | undefined {

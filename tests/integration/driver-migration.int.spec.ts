@@ -4,6 +4,14 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Client } from 'pg';
 import { assertTestDatabaseTarget } from './support/assert-test-target';
+import { SHIPPER_DOWN_SQL, SHIPPER_UP_SQL } from './support/shipper-migration-sql';
+import { V11_DOWN_SQL, V11_UP_SQL } from './support/shipping-v11-migration-sql';
+import { ELIGIBILITY_DOWN_SQL, ELIGIBILITY_UP_SQL } from './support/shipping-eligibility-migration-sql';
+import { FEE_POLICY_DOWN_SQL, FEE_POLICY_UP_SQL } from './support/shipping-fee-policy-migration-sql';
+import { WALLET_DOWN_SQL, WALLET_UP_SQL, FINANCE_DOWN_SQL, FINANCE_UP_SQL, POSTING_DOWN_SQL, POSTING_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
+import { M07_DOWN_SQL, M07_UP_SQL } from './support/m07-migration-sql';
+import { M08_DOWN_SQL, M08_UP_SQL } from './support/m08-migration-sql';
+import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
 import { minimalChildEnv, REPO_ROOT, runNpmScript } from './support/test-helpers';
 
 // M01-A2D — the Driver onboarding migration (app.drivers only; Driver operating areas were removed by the Owner, task section 22), with the same rules as the M00,
@@ -89,6 +97,12 @@ describe('M01-A2D — Driver onboarding migration', () => {
       '1793059200000_account-scope-lifecycle-settings',
       '1793145600000_create-menu',
       '1793232000000_menu-category-admin',
+      '1793318400000_create-shipper-management',
+      '1793404800000_create-customer-addresses',
+      '1793404800000_create-driver-wallet-core',
+      '1793491200000_create-wallet-holds',
+      '1793577600000_create-wallet-topup-sources',
+      '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_open-topup-ledger-gate', '1794096000000_create-m07-delivery', '1794182400000_create-m08-notifications',
     ]);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-shop-onboarding')).toBe(true);
@@ -172,6 +186,18 @@ describe('M01-A2D — Driver onboarding migration', () => {
     expect(migrate().status).toBe(0);
     await client.query('BEGIN');
     try {
+      // The M03 migration references app.drivers: it goes down first and comes back up last.
+      await client.query(M08_DOWN_SQL); // M08: references users, sessions and deliveries: the very newest, down first, up last
+      await client.query(M07_DOWN_SQL); // M07: references users, shops, drivers, wallets and fee agreements: the very newest, down first, up last
+      await client.query(POSTING_DOWN_SQL); // M04-B2.2b: replaces one function and needs the topup tables: newest, down first, up last
+      await client.query(FINANCE_DOWN_SQL); // M04-B2.2a: newest, down first, up last
+      await client.query(V11_DOWN_SQL); // M06 v1.1: references app.users, the very newest: down first, up last
+      await client.query(FEE_POLICY_DOWN_SQL); // M06-A: references app.users: down first, up last
+      await client.query(ELIGIBILITY_DOWN_SQL); // M06-B/C: references app.users: down first, up last
+      await client.query(TOPUP_DOWN_SQL); // M04-B1 adds a ledger column and references the wallet core: the very newest, down first, up last
+      await client.query(WALLET_HOLD_DOWN_SQL); // M04-A2.1 references app.driver_wallets: the very newest, down first, up last
+      await client.query(WALLET_DOWN_SQL); // M04-A1 references app.drivers: the very newest
+      await client.query(SHIPPER_DOWN_SQL);
       await client.query(downSql);
       expect(await presentTables()).toEqual([]);
       const leftovers = await client.query(
@@ -180,6 +206,17 @@ describe('M01-A2D — Driver onboarding migration', () => {
       );
       expect(leftovers.rowCount).toBe(0);
       await client.query(upSql);
+      await client.query(SHIPPER_UP_SQL);
+      await client.query(WALLET_UP_SQL);
+      await client.query(WALLET_HOLD_UP_SQL);
+      await client.query(TOPUP_UP_SQL);
+      await client.query(ELIGIBILITY_UP_SQL);
+      await client.query(FEE_POLICY_UP_SQL);
+      await client.query(V11_UP_SQL);
+      await client.query(FINANCE_UP_SQL);
+      await client.query(POSTING_UP_SQL);
+      await client.query(M07_UP_SQL);
+      await client.query(M08_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
       await client.query('ROLLBACK');
@@ -198,7 +235,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
     expect(owners.rows).toEqual([{ owner: 'ship11_test' }]);
     const triggers = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
+         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|admin_finance_grants_|deliver(y|ies)_|shipping_fee_policy_|shipping_eligibility_|shipping_fee_agreement)' AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'sessions_invalidate_push_tokens_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
     );
     expect(triggers.rows[0]?.n).toBe(1);
   });
@@ -311,9 +348,17 @@ describe('M01-A2D — Driver onboarding migration', () => {
           'drivers_version_ck',
           'drivers_time_order_ck',
           'drivers_not_active_not_accepting_ck',
+          // M03 (Shipper management): review state, reasons, the Shipper code and who reviewed.
+          'drivers_shipper_code_uq',
+          'drivers_shipper_code_ck',
+          'drivers_reviewed_by_fk',
+          'drivers_review_state_ck',
+          'drivers_rejection_reason_ck',
+          'drivers_suspension_reason_ck',
+          'drivers_status_before_closing_ck',
         ].sort(),
       );
-      expect(await indexNames('drivers')).toEqual(['drivers_pkey', 'drivers_user_uq']);
+      expect(await indexNames('drivers')).toEqual(['drivers_full_name_idx', 'drivers_pkey', 'drivers_shipper_code_uq', 'drivers_status_idx', 'drivers_user_uq']);
     });
 
     it('defaults: EXTERNAL, not accepting, version 1; a driver must say its status and its name', async () => {
@@ -430,7 +475,12 @@ describe('M01-A2D — Driver onboarding migration', () => {
         `SELECT column_name FROM information_schema.columns WHERE table_schema = 'app' AND table_name = 'drivers' ORDER BY column_name`,
       );
       expect(columns.rows.map((r) => r.column_name)).toEqual(
-        ['accepting_deliveries', 'created_at', 'driver_id', 'driver_type', 'full_name', 'plate_number', 'status', 'updated_at', 'user_id', 'version'].sort(),
+        // The A2D columns plus the M03 ones (review, suspension, closure, Shipper code). Still no area column.
+        [
+          'accepting_deliveries', 'created_at', 'driver_id', 'driver_type', 'full_name', 'plate_number', 'status', 'updated_at', 'user_id', 'version',
+          'shipper_code', 'review_state', 'submitted_at', 'reviewed_at', 'reviewed_by', 'rejection_reason', 'suspension_reason', 'suspended_at',
+          'status_before_closing', 'closure_requested_at', 'closure_note',
+        ].sort(),
       );
     });
   });

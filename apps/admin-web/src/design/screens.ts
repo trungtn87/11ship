@@ -4,7 +4,10 @@ import { AdminAuthController, Clock, Screen } from '../core/controller.js';
 import { ActivationController } from '../core/activation-controller.js';
 import { EMPTY_PERMISSIONS } from '../core/inputs.js';
 import { COPY } from '../core/messages.js';
-import { Grants } from '../core/menu.js';
+import { canOpenRoute, Grants } from '../core/menu.js';
+import { FinanceController, FinanceRoute } from '../core/finance-controller.js';
+import { FinanceLoad, FinanceSource, NOT_WIRED_FINANCE_REASON, TopupDetail, WithdrawalDetail } from '../core/finance.js';
+import { FinanceView } from '../dom/finance-view.js';
 import { ComposeDraft, EMPTY_DRAFT, ProvisioningController, ProvisioningScreen } from '../core/provisioning-controller.js';
 import { Route } from '../core/routes.js';
 import { AdministratorsView, openLockDialog, renderUserDetail, UsersView } from '../dom/accounts-view.js';
@@ -19,7 +22,23 @@ import { ResetPage, ResetScreen } from '../dom/reset-view.js';
 import { buildShell, ShellOptions } from '../dom/shell-layout.js';
 import { emptyPanel, failurePanel, notWiredPanel, skeleton, statePanel } from '../dom/states.js';
 import { AdminView } from '../dom/view.js';
-import { SAMPLE_ACTIVATION_LINK, SAMPLE_ADMINISTRATORS, SAMPLE_CATEGORIES, SAMPLE_BUSY_DETAIL, SAMPLE_EMPTY_DETAIL, SAMPLE_LOCKED_DETAIL, SAMPLE_SETTINGS, SAMPLE_LOCKED_USERS, SAMPLE_OTPAUTH, SAMPLE_SECRET, SAMPLE_USER_DETAIL, SAMPLE_USERS, SAMPLE_INVITATIONS, sampleInvitationDetail } from './samples.js';
+import {
+  SAMPLE_LEDGER,
+  SAMPLE_LEDGER_MISMATCH,
+  SAMPLE_OVERVIEW,
+  SAMPLE_TOPUP_DETAIL,
+  SAMPLE_TOPUP_DONE,
+  SAMPLE_TOPUP_REJECTED,
+  SAMPLE_TOPUPS,
+  SAMPLE_WALLET_PARAMS,
+  SAMPLE_WALLETS,
+  SAMPLE_WITHDRAWAL_CANCELLED,
+  SAMPLE_WITHDRAWAL_DONE,
+  SAMPLE_WITHDRAWAL_PENDING,
+  SAMPLE_WITHDRAWAL_PROCESSING,
+  SAMPLE_WITHDRAWAL_RECONCILE,
+  SAMPLE_WITHDRAWALS,
+  SAMPLE_ACTIVATION_LINK, SAMPLE_ADMINISTRATORS, SAMPLE_CATEGORIES, SAMPLE_BUSY_DETAIL, SAMPLE_EMPTY_DETAIL, SAMPLE_LOCKED_DETAIL, SAMPLE_SETTINGS, SAMPLE_LOCKED_USERS, SAMPLE_OTPAUTH, SAMPLE_SECRET, SAMPLE_USER_DETAIL, SAMPLE_USERS, SAMPLE_INVITATIONS, sampleInvitationDetail } from './samples.js';
 import { DEMO_NOTICE, DesignContext, DesignScreen, Variant } from './viewer.js';
 
 // The screens of the design preview. Real screens (login, 2FA, invitations, activation, shell, account pages) are drawn
@@ -67,6 +86,24 @@ function screenIdOf(route: Route): { id: string; variant?: string } {
       return { id: 'settings' };
     case 'categories':
       return { id: 'categories' };
+    case 'finance':
+      return { id: 'finance' };
+    case 'finance-wallets':
+      return { id: 'finance-wallets' };
+    case 'finance-topups':
+      return { id: 'finance-topups', ...(route.tab === 'DONE' ? { variant: 'done' } : route.tab === 'ALL' ? { variant: 'all' } : {}) };
+    case 'finance-topup':
+      return { id: 'finance-topup' };
+    case 'finance-withdrawals':
+      return { id: 'finance-withdrawals', ...(route.tab === undefined || route.tab === 'PENDING' ? {} : { variant: route.tab === 'NEEDS_RECONCILE' ? 'reconcile' : route.tab.toLowerCase() }) };
+    case 'finance-withdrawal':
+      return { id: 'finance-withdrawal' };
+    case 'finance-transactions':
+      return { id: 'finance-transactions', ...(route.shipper === undefined ? {} : { variant: 'shipper' }) };
+    case 'finance-reconciliation':
+      return { id: 'finance-reconciliation' };
+    case 'wallet-params':
+      return { id: 'wallet-params' };
     case 'invitations':
       return { id: 'invitations' };
     case 'invitation-new':
@@ -77,6 +114,14 @@ function screenIdOf(route: Route): { id: string; variant?: string } {
       return { id: 'invitation-detail', variant: 'reissue' };
     case 'invitation-revoke':
       return { id: 'invitation-detail', variant: 'revoke' };
+    // The Shipper pages (M03) have no design-catalog sample: the preview shows the overview.
+    case 'finance-bank-accounts':
+    case 'shippers':
+    case 'shipper':
+    case 'deliveries':
+    case 'notifications':
+    case 'wallet-parameters':
+    case 'shipping-policy':
     case 'home':
     case 'activate':
     case 'reset':
@@ -449,6 +494,195 @@ const administrators: DesignScreen = {
     }),
 };
 
+
+// ---- M04-A01 ... A07: finance (sample data) -----------------------------------------------------------------------------------
+// The SAME FinanceController and FinanceView the real app uses, fed with a sample source: search, tabs, filters, paging and the form drafts
+// really work in the preview; the buttons that would change money only say "demo". Every screen is under the banner "Dữ liệu minh họa".
+
+const GENERIC_STATES = [['loading', 'Đang tải'], ['empty', 'Trống'], ['offline', 'Mất mạng'], ['live', 'Bản thật (chưa nối)']] as const;
+
+function sampleFinance(variant: string, data: { readonly topup?: TopupDetail; readonly withdrawal?: WithdrawalDetail; readonly ledger?: typeof SAMPLE_LEDGER }): FinanceSource {
+  const wrap = <T,>(value: T): Promise<FinanceLoad<T>> => {
+    switch (variant) {
+      case 'loading':
+        return new Promise(() => undefined);
+      case 'empty':
+        return Promise.resolve({ kind: 'empty', filtered: false });
+      case 'offline':
+        return Promise.resolve({ kind: 'failed', failure: 'offline' });
+      case 'live':
+        return Promise.resolve({ kind: 'not-wired', reason: NOT_WIRED_FINANCE_REASON });
+      default:
+        return Promise.resolve({ kind: 'ready', data: value });
+    }
+  };
+  return {
+    overview: () => wrap(SAMPLE_OVERVIEW),
+    wallets: () => wrap(SAMPLE_WALLETS),
+    topups: () => wrap(SAMPLE_TOPUPS),
+    topup: () => wrap(data.topup ?? SAMPLE_TOPUP_DETAIL),
+    withdrawals: () => wrap(SAMPLE_WITHDRAWALS),
+    withdrawal: () => wrap(data.withdrawal ?? SAMPLE_WITHDRAWAL_PENDING),
+    ledger: () => wrap(data.ledger ?? SAMPLE_LEDGER),
+    params: () => wrap(SAMPLE_WALLET_PARAMS),
+  };
+}
+
+function financePage(context: DesignContext, route: FinanceRoute, variant: string, source: FinanceSource, setup?: (controller: FinanceController) => void): HTMLElement {
+  return shellPage(context, route, (content) => {
+    if (!canOpenRoute(context.role, context.grants, route)) {
+      forbiddenPage(context, content);
+      return;
+    }
+    const demo = (): void => context.toast(DEMO_NOTICE);
+    const controller = new FinanceController({ source, route, onSessionLost: demo, onForbidden: demo });
+    const view = new FinanceView(content, {
+      wired: variant !== 'live',
+      retry: () => controller.load(),
+      login: () => context.go('login'),
+      home: () => context.go('overview'),
+      refresh: () => controller.load(),
+      open: (next) => {
+        const target = screenIdOf(next);
+        context.go(target.id, target.variant);
+      },
+      search: (query) => controller.search(query),
+      page: (page) => controller.page(page),
+      ledgerFilter: (next) => controller.ledgerFilter(next),
+      topupDraft: (draft) => controller.topupDraft(draft),
+      topupAttempt: (action) => controller.attemptTopup(action),
+      topupDecide: demo,
+      withdrawalAct: demo,
+      paramsDraft: (draft) => controller.paramsDraft(draft),
+      paramsAttempt: () => controller.attemptParams(),
+      paramsSave: demo,
+      paramsReset: () => controller.resetParams(),
+      exportLedger: demo,
+    });
+    controller.subscribe((screen) => view.render(screen));
+    setup?.(controller);
+    view.render(controller.screen);
+    controller.load();
+  });
+}
+
+const financeOverview: DesignScreen = {
+  id: 'finance',
+  code: 'M04-A01',
+  title: 'Tài chính — Tổng quan',
+  group: 'Tài chính',
+  note: 'Thẻ KPI (tổng số dư, tiền tạm giữ, yêu cầu nạp/rút chờ, hoa hồng đã thu, giao dịch hôm nay), lọc thời gian và biểu đồ cột nạp/rút/hoa hồng theo ngày. Tiền tạm giữ là thông tin giữ chỗ, không phải khoản trừ sổ cái. Bản thật chưa nối: không có số liệu giả.',
+  variants: variants(['rows', 'Có dữ liệu'], ...GENERIC_STATES),
+  render: (context, variant) => financePage(context, { name: 'finance' }, variant, sampleFinance(variant, {})),
+};
+
+const financeWallets: DesignScreen = {
+  id: 'finance-wallets',
+  code: 'M04-A02',
+  title: 'Tài chính — Danh sách ví Shipper',
+  group: 'Tài chính',
+  note: 'Tìm theo tên/SĐT/mã; bảng tổng số dư, tạm giữ, khả dụng (= tổng − tạm giữ), trạng thái; phân trang 10 ví/trang. “Xem” mở lịch sử giao dịch của Shipper đó. Xuất Excel chưa nối (cần quyền riêng).',
+  variants: variants(['rows', 'Có dữ liệu'], ['no-results', 'Tìm không thấy'], ...GENERIC_STATES),
+  render: (context, variant) => financePage(context, { name: 'finance-wallets' }, variant, sampleFinance(variant, {}), (controller) => (variant === 'no-results' ? controller.search('Không có tên này') : undefined)),
+};
+
+const financeTopups: DesignScreen = {
+  id: 'finance-topups',
+  code: 'M04-A03',
+  title: 'Tài chính — Yêu cầu nạp tiền',
+  group: 'Tài chính',
+  note: 'Tab Chờ xác nhận / Đã xử lý / Tất cả (có số lượng), tìm theo tên/SĐT/mã, bảng theo Shipper, số tiền, thời điểm, trạng thái; “Xem” mở chi tiết xác nhận.',
+  variants: variants(['rows', 'Chờ xác nhận'], ['done', 'Đã xử lý'], ['all', 'Tất cả'], ['no-results', 'Tìm không thấy'], ...GENERIC_STATES),
+  render: (context, variant) =>
+    financePage(context, { name: 'finance-topups', ...(variant === 'done' ? { tab: 'DONE' as const } : variant === 'all' ? { tab: 'ALL' as const } : {}) }, variant, sampleFinance(variant, {}), (controller) => (variant === 'no-results' ? controller.search('Không có tên này') : undefined)),
+};
+
+const financeTopup: DesignScreen = {
+  id: 'finance-topup',
+  code: 'M04-A04',
+  title: 'Tài chính — Chi tiết xác nhận nạp tiền',
+  group: 'Tài chính',
+  note: 'Thông tin yêu cầu, chứng từ đính kèm và khối xác minh: số tiền ngân hàng thực nhận, mã giao dịch chuẩn, ghi chú; Xác nhận / Từ chối. Chỉ Admin ghi nhận tiền nạp, sau khi đối chiếu sao kê; số tiền thực nhận khác đề nghị chỉ cảnh báo. Bản xem trước không cộng ví.',
+  variants: variants(['rows', 'Chờ xác nhận'], ['errors', 'Thiếu thông tin khi xác nhận'], ['mismatch', 'Số tiền thực nhận khác đề nghị'], ['no-proof', 'Không có ảnh'], ['done', 'Đã xác nhận'], ['rejected', 'Đã từ chối'], ['not-found', 'Không tìm thấy'], ...GENERIC_STATES.filter(([id]) => id !== 'empty')),
+  render: (context, variant) => {
+    const detail = variant === 'done' ? SAMPLE_TOPUP_DONE : variant === 'rejected' ? SAMPLE_TOPUP_REJECTED : variant === 'no-proof' ? { ...SAMPLE_TOPUP_DETAIL, proofName: null } : SAMPLE_TOPUP_DETAIL;
+    const source = sampleFinance(variant === 'not-found' ? 'empty' : variant, { topup: detail });
+    return financePage(context, { name: 'finance-topup', id: SAMPLE_TOPUP_DETAIL.id }, variant, source, (controller) => {
+      if (variant === 'errors') {
+        controller.attemptTopup('confirm');
+      } else if (variant === 'mismatch') {
+        controller.topupDraft({ actualAmount: '90000', bankReference: 'FT26288MINHHOA02', note: '' });
+      }
+    });
+  },
+};
+
+const financeWithdrawals: DesignScreen = {
+  id: 'finance-withdrawals',
+  code: 'M04-A05',
+  title: 'Tài chính — Danh sách yêu cầu rút tiền',
+  group: 'Tài chính',
+  note: 'Bộ lọc Chờ xử lý / Đang xử lý / Đã hoàn thành / Cần đối soát / Tất cả (có số lượng). Shipper tự tạo yêu cầu trên ứng dụng (UI đã duyệt); Admin xử lý. Lưu ý: ADR-004 bản cũ ghi Admin tạo yêu cầu rút — cần đồng bộ hợp đồng nghiệp vụ trước backend.',
+  variants: variants(['rows', 'Chờ xử lý'], ['processing', 'Đang xử lý'], ['completed', 'Đã hoàn thành'], ['reconcile', 'Cần đối soát'], ['all', 'Tất cả'], ['no-results', 'Tìm không thấy'], ...GENERIC_STATES),
+  render: (context, variant) => {
+    const tab = { processing: 'PROCESSING', completed: 'COMPLETED', reconcile: 'NEEDS_RECONCILE', all: 'ALL' } as const;
+    const picked = variant in tab ? tab[variant as keyof typeof tab] : undefined;
+    return financePage(context, { name: 'finance-withdrawals', ...(picked === undefined ? {} : { tab: picked }) }, variant, sampleFinance(variant, {}), (controller) => (variant === 'no-results' ? controller.search('Không có tên này') : undefined));
+  },
+};
+
+const financeWithdrawal: DesignScreen = {
+  id: 'finance-withdrawal',
+  code: 'M04-A05',
+  title: 'Tài chính — Chi tiết yêu cầu rút tiền',
+  group: 'Tài chính',
+  note: 'Thông tin yêu cầu, snapshot tài khoản nhận (không đổi khi Shipper đổi ngân hàng), tiến trình và thao tác theo trạng thái: Nhận xử lý → Xác nhận đã chuyển / Cần đối soát → Đối soát. Chưa biết kết quả chuyển khoản thì giữ tiền, không chuyển lại hay giải phóng tự động.',
+  variants: variants(['rows', 'Chờ xử lý'], ['processing', 'Đang xử lý'], ['reconcile', 'Cần đối soát'], ['done', 'Hoàn thành'], ['cancelled', 'Đã hủy'], ['not-found', 'Không tìm thấy'], ...GENERIC_STATES.filter(([id]) => id !== 'empty')),
+  render: (context, variant) => {
+    const detail = { processing: SAMPLE_WITHDRAWAL_PROCESSING, reconcile: SAMPLE_WITHDRAWAL_RECONCILE, done: SAMPLE_WITHDRAWAL_DONE, cancelled: SAMPLE_WITHDRAWAL_CANCELLED }[variant as 'processing'] ?? SAMPLE_WITHDRAWAL_PENDING;
+    return financePage(context, { name: 'finance-withdrawal', id: detail.id }, variant, sampleFinance(variant === 'not-found' ? 'empty' : variant, { withdrawal: detail }));
+  },
+};
+
+const financeTransactions: DesignScreen = {
+  id: 'finance-transactions',
+  code: 'M04-A06',
+  title: 'Tài chính — Lịch sử giao dịch',
+  group: 'Tài chính',
+  note: 'Lọc theo ngày, Shipper, loại, trạng thái; bảng sổ cái và tạm giữ. Dòng tạm giữ/giải phóng chỉ là thông tin phần đang giữ: không đổi tổng số dư, không hiển thị như tiền nạp. Xuất Excel chưa nối.',
+  variants: variants(['rows', 'Có dữ liệu'], ['shipper', 'Lọc theo Shipper'], ['no-results', 'Lọc không có kết quả'], ...GENERIC_STATES),
+  render: (context, variant) =>
+    financePage(context, { name: 'finance-transactions', ...(variant === 'shipper' ? { shipper: 'Nguyễn Văn A' } : {}) }, variant, sampleFinance(variant, {}), (controller) => (variant === 'no-results' ? controller.ledgerFilter({ type: 'WITHDRAW', status: 'FAILED' }) : undefined)),
+};
+
+const financeReconciliation: DesignScreen = {
+  id: 'finance-reconciliation',
+  code: 'M04-A06',
+  title: 'Tài chính — Đối soát',
+  group: 'Tài chính',
+  note: 'So tổng sổ cái với tổng số dư ví và chỉ ra chênh lệch như nó là. Không có nút sửa số dư: sai lệch phải đi qua quy trình điều chỉnh có quyền và lý do.',
+  variants: variants(['rows', 'Khớp'], ['mismatch', 'Có chênh lệch'], ...GENERIC_STATES),
+  render: (context, variant) => financePage(context, { name: 'finance-reconciliation' }, variant, sampleFinance(variant, variant === 'mismatch' ? { ledger: SAMPLE_LEDGER_MISMATCH } : {})),
+};
+
+const walletParams: DesignScreen = {
+  id: 'wallet-params',
+  code: 'M04-A07',
+  title: 'Cài đặt › Tham số hệ thống › Ví Shipper',
+  group: 'Hệ thống',
+  note: 'Nạp tối thiểu 100.000đ, rút tối thiểu 10.000đ, hoa hồng 1.000đ/đơn thành công (mặc định tham khảo). Chỉ Admin Web, có nhật ký thay đổi. Giai đoạn giao diện: chưa lưu vào cơ sở dữ liệu.',
+  variants: variants(['rows', 'Mặc định'], ['changed', 'Đã sửa, chưa lưu'], ['errors', 'Giá trị không hợp lệ'], ...GENERIC_STATES),
+  render: (context, variant) =>
+    financePage(context, { name: 'wallet-params' }, variant, sampleFinance(variant, {}), (controller) => {
+      if (variant === 'changed') {
+        controller.paramsDraft({ minTopup: '200000', minWithdraw: '10000', commissionPerOrder: '1000' });
+      } else if (variant === 'errors') {
+        controller.paramsDraft({ minTopup: '0', minWithdraw: 'abc', commissionPerOrder: '1000' });
+        controller.attemptParams();
+      }
+    }),
+};
+
 // ---- D91: system settings ------------------------------------------------------------------------------------------------
 
 const settings: DesignScreen = {
@@ -752,4 +986,4 @@ const states: DesignScreen = {
     }),
 };
 
-export const SCREENS: readonly DesignScreen[] = [overview, login, verify, enroll, reset, recovery, activation, users, usersLocked, userDetail, userLock, userUnlock, userDelete, settings, categories, administrators, invitations, invitationNew, invitationDetail, states];
+export const SCREENS: readonly DesignScreen[] = [overview, login, verify, enroll, reset, recovery, activation, users, usersLocked, userDetail, userLock, userUnlock, userDelete, financeOverview, financeWallets, financeTopups, financeTopup, financeWithdrawals, financeWithdrawal, financeTransactions, financeReconciliation, walletParams, settings, categories, administrators, invitations, invitationNew, invitationDetail, states];

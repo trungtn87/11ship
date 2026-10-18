@@ -161,6 +161,27 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
     expect(dataOf(second).has_more).toBe(false);
   });
 
+  it('pages the dishes exactly in the order of the shops as shown (open first, then name), then dish name: no page repeats or skips a dish', async () => {
+    const big = await createServiceArea(app.pool);
+    await shop('Mmm Quán Đóng', [['Ốc c', 3000, snail], ['Ốc a', 1000, snail]], { areaId: big });
+    await shop('Zzz Quán Mở', [['Ốc b', 2000, snail], ['Ốc d', 4000, snail]], { areaId: big, open: true });
+    await shop('Aaa Quán Đóng', [['Ốc e', 5000, snail]], { areaId: big });
+    const seen: string[] = [];
+    for (const offset of ['0', '2', '4']) {
+      const page = await discoveryDishes(app, { area_id: big, q: 'oc', limit: '2', offset });
+      expect(page.status).toBe(200);
+      const data = dataOf(page);
+      seen.push(...(data.dishes as { name: string }[]).map((d) => d.name));
+      expect(data.has_more).toBe(offset !== '4');
+    }
+    // The open shop first (its dishes by name), then the closed shops by name (their dishes by name).
+    expect(seen).toEqual(['Ốc b', 'Ốc d', 'Ốc e', 'Ốc a', 'Ốc c']);
+    expect(dataOf(await discoveryDishes(app, { area_id: big, q: 'oc', limit: '2', offset: '5' })).dishes).toEqual([]);
+    // A group that does not match leaves nothing, and the term still ignores marks and spacing.
+    expect(dataOf(await discoveryDishes(app, { area_id: big, q: '  OC   a ', category_id: seafood })).dishes).toEqual([]);
+    expect((dataOf(await discoveryDishes(app, { area_id: big, q: '  OC   a ' })).dishes as { name: string }[]).map((d) => d.name)).toEqual(['Ốc a']);
+  });
+
   it('refuses a missing area, a malformed id or number, an unknown or repeated parameter and an over-long term', async () => {
     for (const query of [
       '',

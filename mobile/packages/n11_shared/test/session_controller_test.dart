@@ -92,7 +92,7 @@ void main() {
       final RecordedRequest register = t.api.to('POST', '/v1/client-auth/register').single;
       expect(register.body, contains('"verification_token":"PROOF-TOKEN-0123456789"'));
       expect(register.body, contains('"terms_version":"terms-20261014-v1"'));
-      expect(register.body, contains('"privacy_version":"privacy-20261014-v1"'));
+      expect(register.body, contains('"privacy_version":"privacy-20261017-v1"'));
       expect(register.headers['x-device-registration'], 'dG9rZW4');
       expect(register.headers['idempotency-key'], matches(RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')));
       expect(t.bridge.signedMessages.last, startsWith('11SHIP-AUTH-V1\nfixture-env\nPOST\n/v1/client-auth/register\n'));

@@ -62,7 +62,7 @@ export interface ApiOptions {
 
 export async function api(
   baseUrl: string,
-  method: 'GET' | 'POST' | 'PUT',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   options: ApiOptions = {},
 ): Promise<ApiResponse> {
@@ -109,7 +109,7 @@ export interface AuthApp {
   readonly config: AppConfig;
   readonly provider: FakeOtpProvider;
   readonly pool: Pool;
-  call(method: 'GET' | 'POST' | 'PUT', path: string, options?: ApiOptions): Promise<ApiResponse>;
+  call(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, options?: ApiOptions): Promise<ApiResponse>;
   /** Registers a normalized phone for cleanup when the app closes. */
   track(normalizedPhone: string): void;
   close(): Promise<void>;
@@ -125,6 +125,8 @@ export async function startAuthApp(
     configOverride?: Partial<AppConfig>;
     /** M01-ANDROID: the FIXTURE device trust (roots, signers, revocation, clock) injected by dependency injection. */
     deviceTrust?: ClientDeviceTrust;
+    /** M03: provider overrides (the wallet port, until M04 provides one). */
+    overrides?: ReadonlyArray<{ readonly provide: unknown; readonly useValue: unknown }>;
   } = {},
 ): Promise<AuthApp> {
   const loaded = loadIntegrationConfig();
@@ -147,6 +149,7 @@ export async function startAuthApp(
   const provider = new FakeOtpProvider();
   // Issue #49: with a fixture policy the app is bound exactly as staging fixture mode binds it (DisabledOtpProvider + the policy).
   const running = await startApp(config, {
+    ...(extra.overrides === undefined ? {} : { overrides: extra.overrides }),
     auth:
       extra.fixturePolicy === undefined
         ? { otpProvider: provider, ...(extra.deviceTrust === undefined ? {} : { deviceTrust: extra.deviceTrust }) }
@@ -178,6 +181,68 @@ export async function startAuthApp(
   };
 }
 
+/**
+ * M04-A1 (test database only): a wallet is never deleted by the application and the database refuses it, so the fixture that removes a
+ * test Shipper lifts that one trigger inside ONE transaction (DDL is transactional: the trigger is back at COMMIT, and a failure restores
+ * it). Only when a wallet exists, so the usual purge pays nothing. The ledger of such a Shipper is empty (no ledger row can exist yet).
+ */
+async function purgeWalletsOfPhone(pool: Pool, normalizedPhone: string): Promise<void> {
+  const owned = `SELECT driver_id FROM app.drivers WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)`;
+  const found = await pool.query(`SELECT 1 FROM app.driver_wallets WHERE driver_id IN (${owned}) LIMIT 1`, [normalizedPhone]);
+  if ((found.rowCount ?? 0) === 0) {
+    return;
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // M04-B1: a test that committed topup sources (request, bank record, topup, ledger credit) removes them first, newest dependants first, with the
+    // user triggers of exactly those tables lifted for this transaction only; the deferred links are settled before the guards come back.
+    const topupTables = ['wallet_ledger_entries', 'wallet_topups', 'wallet_bank_transactions', 'wallet_topup_requests'];
+    const ownedWallets = `SELECT wallet_id FROM app.driver_wallets WHERE driver_id IN (${owned})`;
+    for (const table of topupTables) {
+      await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
+    }
+    await client.query(`DELETE FROM app.wallet_ledger_entries WHERE wallet_id IN (${ownedWallets})`, [normalizedPhone]);
+    await client.query(
+      `WITH gone AS (DELETE FROM app.wallet_topups WHERE wallet_id IN (${ownedWallets}) RETURNING bank_record_id)
+       DELETE FROM app.wallet_bank_transactions WHERE bank_record_id IN (SELECT bank_record_id FROM gone)`,
+      [normalizedPhone],
+    );
+    await client.query(`DELETE FROM app.wallet_topup_requests WHERE wallet_id IN (${ownedWallets})`, [normalizedPhone]);
+    await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+    for (const table of topupTables) {
+      await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
+    }
+    // M04-A2.1: a test that committed a hold (a RELEASED one, to prove the down latch) removes it first, under the same lifted guard.
+    // M07: a test that committed a commission source (assignment + delivery of the fixture shop) removes it with the hold, newest dependants first.
+    const m07Tables = ['delivery_incidents', 'delivery_events', 'delivery_assignments', 'deliveries'];
+    for (const table of m07Tables) {
+      await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
+    }
+    const ownedDeliveries = `SELECT delivery_id FROM app.delivery_assignments WHERE driver_id IN (${owned})`;
+    await client.query(`DELETE FROM app.delivery_incidents WHERE delivery_id IN (${ownedDeliveries})`, [normalizedPhone]);
+    await client.query(`DELETE FROM app.delivery_events WHERE delivery_id IN (${ownedDeliveries})`, [normalizedPhone]);
+    await client.query('ALTER TABLE app.wallet_holds DISABLE TRIGGER wallet_holds_no_delete');
+    await client.query(`DELETE FROM app.wallet_holds WHERE wallet_id IN (SELECT wallet_id FROM app.driver_wallets WHERE driver_id IN (${owned}))`, [normalizedPhone]);
+    await client.query('ALTER TABLE app.wallet_holds ENABLE TRIGGER wallet_holds_no_delete');
+    await client.query(`CREATE TEMP TABLE m07_purge ON COMMIT DROP AS SELECT delivery_id FROM app.delivery_assignments WHERE driver_id IN (${owned})`, [normalizedPhone]);
+    await client.query(`DELETE FROM app.delivery_assignments WHERE driver_id IN (${owned})`, [normalizedPhone]);
+    await client.query('DELETE FROM app.deliveries WHERE delivery_id IN (SELECT delivery_id FROM m07_purge)');
+    for (const table of m07Tables) {
+      await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
+    }
+    await client.query('ALTER TABLE app.driver_wallets DISABLE TRIGGER driver_wallets_no_delete');
+    await client.query(`DELETE FROM app.driver_wallets WHERE driver_id IN (${owned})`, [normalizedPhone]);
+    await client.query('ALTER TABLE app.driver_wallets ENABLE TRIGGER driver_wallets_no_delete');
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 /** Removes every Auth row of one phone number (and the register idempotency records of its proofs). */
 export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<void> {
   // M01-A2S: shops owned by the user, their memberships and the user-scoped onboarding idempotency records.
@@ -187,7 +252,16 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
         AND scope_id IN (SELECT user_id::text FROM app.users WHERE phone_normalized = $1)`,
     [normalizedPhone],
   );
-  // M01-A2D: the Driver profile of the user (it references the user purged below).
+  // M03: the history and the bank account of the user's Driver profile, then (M01-A2D) the Driver profile itself (all reference the user
+  // or the driver purged below).
+  for (const table of ['driver_events', 'driver_bank_accounts']) {
+    await pool.query(
+      `DELETE FROM app.${table}
+        WHERE driver_id IN (SELECT driver_id FROM app.drivers WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1))`,
+      [normalizedPhone],
+    );
+  }
+  await purgeWalletsOfPhone(pool, normalizedPhone);
   await pool.query(
     'DELETE FROM app.drivers WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],
@@ -281,6 +355,16 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
   if ((consents.rowCount ?? 0) > 0) {
     await pool.query('TRUNCATE app.user_consents');
   }
+  // M05: the address book and the customer record reference the user (RESTRICT): the addresses go first, then the customer.
+  await pool.query(
+    `DELETE FROM app.customer_addresses
+      WHERE customer_id IN (SELECT c.id FROM app.customers c JOIN app.users u ON u.user_id = c.user_id WHERE u.phone_normalized = $1)`,
+    [normalizedPhone],
+  );
+  await pool.query(
+    'DELETE FROM app.customers WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
+    [normalizedPhone],
+  );
   await pool.query(
     'DELETE FROM app.customer_profiles WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],
@@ -303,6 +387,13 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
   await pool.query(
     `DELETE FROM app.idempotency_records
       WHERE scope_type = 'customer_profile'
+        AND scope_id IN (SELECT user_id::text FROM app.users WHERE phone_normalized = $1)`,
+    [normalizedPhone],
+  );
+  // M05: the idempotency records of the address-book writes (scope = the user).
+  await pool.query(
+    `DELETE FROM app.idempotency_records
+      WHERE scope_type = 'customer_address_book'
         AND scope_id IN (SELECT user_id::text FROM app.users WHERE phone_normalized = $1)`,
     [normalizedPhone],
   );

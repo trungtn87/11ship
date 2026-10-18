@@ -344,7 +344,7 @@ Widget _failureBanner(SessionController session) {
     key: const Key('form-error'),
     kind: BannerKind.error,
     title: failure.kind == AuthFailureKind.invalidCredentials ? 'Thông tin chưa đúng' : 'Chưa hoàn tất',
-    text: failureMessage(failure),
+    text: failureMessage(failure) + (failure.kind != AuthFailureKind.serverUnavailable || failure.diagnostic == null ? '' : '\n${failure.diagnostic}'),
     trailing: canRetryFailure(failure) && session.pending != null
         ? Row(children: <Widget>[
             N11Button(key: const Key('retry-pending'), label: 'Thử lại', compact: true, onPressed: session.busy ? null : session.retryPending),
@@ -453,7 +453,7 @@ const String kTermsText =
     'Bạn dùng 11Food/11Ship đúng pháp luật, cung cấp thông tin đúng sự thật và tự giữ bí mật mật khẩu. Tài khoản gắn với số điện thoại bạn xác minh bằng mã SMS. Hiện ứng dụng có đăng ký, đăng nhập, hồ sơ cá nhân và gửi hồ sơ quán hoặc hồ sơ shipper; đặt món, giao hàng, ví và doanh thu chưa hoạt động. Tạo tài khoản hoặc gửi hồ sơ chưa mở quyền bán hàng hay nhận đơn: quyền đó chỉ có sau khi hồ sơ được duyệt. 11Ship có thể khóa tài khoản khi phát hiện gian lận hoặc vi phạm điều khoản.';
 const String kPrivacyTitle = 'Chính sách quyền riêng tư';
 const String kPrivacyText =
-    '11Ship lưu số điện thoại, họ tên, mật khẩu ở dạng mã hóa một chiều, phiên đăng nhập, thông tin xác thực thiết bị Android để bảo vệ tài khoản, và thời điểm cùng phiên bản bạn đã chấp thuận. Mã xác minh được gửi bằng tin nhắn SMS tới số bạn nhập. Khi bạn tạo hồ sơ quán, ứng dụng chỉ lấy vị trí một lần lúc bạn bấm nút để ghi vị trí quán; ứng dụng không theo dõi vị trí nền. Hồ sơ shipper lưu họ tên và biển số bạn nhập. Dữ liệu dùng để vận hành, bảo mật và hỗ trợ tài khoản.';
+    '11Ship lưu số điện thoại, họ tên, mật khẩu ở dạng mã hóa một chiều, phiên đăng nhập, thông tin xác thực thiết bị Android để bảo vệ tài khoản, và thời điểm cùng phiên bản bạn đã chấp thuận. Mã xác minh được gửi bằng tin nhắn SMS tới số bạn nhập. Khi bạn tạo hồ sơ quán, ứng dụng chỉ lấy vị trí một lần lúc bạn bấm nút để ghi vị trí quán; ứng dụng không theo dõi vị trí nền. Hồ sơ Shipper có thể bao gồm họ tên, số điện thoại, biển số xe và thông tin tài khoản ngân hàng. Thông tin ngân hàng được sử dụng để xác minh chủ tài khoản và phục vụ các nghiệp vụ thanh toán liên quan. Thông tin này không được công khai cho khách hàng, chủ quán hoặc Shipper khác. Dữ liệu dùng để vận hành, bảo mật và hỗ trợ tài khoản.';
 const String kConsentLabel = 'Tôi đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư.';
 
 /// The same two texts, readable without an account (Tài khoản -> Chính sách và điều khoản). Static: it sends nothing.
@@ -864,8 +864,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               key: const Key('register-submit'),
               label: busy ? 'Đang đăng ký…' : (_ship ? 'Tiếp tục' : 'Hoàn tất đăng ký'),
               loading: busy,
-              onPressed: busy || !_valid || (_ship ? !session.ready || mode != RegistrationMode.required : !open) ? null : () {
-                if (_ship) {
+              onPressed: busy || !_valid || (_ship ? !session.ready || mode == RegistrationMode.unknown : !open) ? null : () {
+                if (_ship && mode == RegistrationMode.required) {
                   setState(() => _otpPage = true);
                   if (_otp.phone == null) _otp.request(_phone.text);
                 } else {

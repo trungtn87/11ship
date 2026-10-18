@@ -6,9 +6,56 @@ import 'package:n11_shared/n11_shared.dart';
 // activity: an empty screen says "no data yet".
 
 
+/// How an opened notification reaches its object in 11Food: a delivery opens its detail (which loads the CURRENT state and decides the right again), a list
+/// opens the Orders tab, the shop profile opens the shop tab. Nothing here decides a right.
+NotificationRouter foodNotificationRouter(AppFlows flows) => (BuildContext context, NotificationItem? item, OpenOutcome outcome, ShellActions actions) async {
+      final NotificationTarget? target = outcome.target;
+      if (target == null) {
+        return;
+      }
+      final NavigatorState navigator = Navigator.of(context);
+      switch (target.type) {
+        case TargetType.delivery:
+          final ShopDeliverySource? source = flows.shopDeliveries;
+          if (source != null && target.id != null) {
+            await navigator.push(n11Route(ShopDeliveryDetailScreen(source: source, deliveryId: target.id!)));
+          } else {
+            navigator.popUntil((Route<dynamic> r) => r.isFirst);
+            actions.goTab('orders');
+          }
+        case TargetType.deliveryList:
+          navigator.popUntil((Route<dynamic> r) => r.isFirst);
+          actions.goTab('orders');
+        case TargetType.profile:
+          navigator.popUntil((Route<dynamic> r) => r.isFirst);
+          actions.goTab('shop');
+        case TargetType.order || TargetType.walletTxn || TargetType.none:
+          break;
+      }
+    };
+
+/// The bell at the top of the Food home and the page it opens (no new bottom tab).
+Widget? _bell(BuildContext context, AppFlows? flows, ShellActions actions) {
+  final NotificationController? inbox = flows?.notifications;
+  final NotificationSource? source = flows?.notificationSource;
+  final PushSync? push = flows?.push;
+  if (inbox == null || source == null || push == null) {
+    return null;
+  }
+  return NotificationBell(
+    controller: inbox,
+    onPressed: () => Navigator.of(context).push(n11Route(NotificationInboxScreen(
+      controller: inbox,
+      router: foodNotificationRouter(flows!),
+      actions: actions,
+      settingsBuilder: (BuildContext context) => NotificationSettingsScreen(source: source, push: push, shipper: false),
+    ))),
+  );
+}
+
 List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
   return <TabSpec>[
-    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', showLogo: true, fullBleed: true, body: (BuildContext context, ShellActions actions) => _home(session, actions, flows)),
+    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', showAppBar: false, fullBleed: true, body: (BuildContext context, ShellActions actions) => _home(session, actions, flows)),
     TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: (BuildContext context, ShellActions actions) => _orders(session, flows)),
     if (session.status == SessionStatus.signedIn && (session.identity?.availableRoles.contains('SHOP_OWNER') == true || session.identity?.shopOnboarding == 'INCOMPLETE' || session.identity?.shopOnboarding == 'COMPLETED'))
       TabSpec(
@@ -33,17 +80,32 @@ Widget _soonChip() => const Center(child: N11Chip('Sắp có', kind: ChipKind.so
 Widget _home(SessionController session, ShellActions actions, AppFlows? flows) {
   final M02Flows? m02 = flows?.m02;
   if (m02 == null) {
-    return const EmptyState(icon: Icons.restaurant, title: 'Danh sách quán chưa sẵn sàng', text: 'Bản này chưa nối danh sách quán.');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap4),
+      child: Column(children: <Widget>[
+        Align(alignment: Alignment.centerLeft, child: BrandLogo(brand: foodBrand)),
+        const SizedBox(height: N11Space.gap4),
+        const EmptyState(icon: Icons.restaurant, title: 'Danh sách quán chưa sẵn sàng', text: 'Bản này chưa nối danh sách quán.'),
+      ]),
+    );
   }
-  return DiscoveryHome(controller: m02.discovery, publicApi: m02.publicApi);
+  return Builder(builder: (BuildContext context) => DiscoveryHome(controller: m02.discovery, publicApi: m02.publicApi, bell: _bell(context, flows, actions)));
 }
 
 // ---- F03: orders -----------------------------------------------------------------------------------------------------
 
 Widget _orders(SessionController session, AppFlows? flows) {
+  final ShopDeliverySource? deliveries = flows?.shopDeliveries;
+  final bool owner = session.status == SessionStatus.signedIn && session.identity?.availableRoles.contains('SHOP_OWNER') == true;
+  if (deliveries != null && owner) {
+    // M07: the shop's delivery requests (call a Shipper, follow, cancel before pickup, goods handling).
+    return ShopDeliveryHub(source: deliveries);
+  }
   return vstack(<Widget>[
     _guestPrompt(session, 'Đăng nhập để xem đơn hàng của bạn.', flows),
     const EmptyState(icon: Icons.receipt_long_outlined, title: 'Chưa có đơn hàng', text: 'Đơn hàng của bạn sẽ hiện ở đây khi tính năng đặt món sẵn sàng.'),
+    // M06 UI: fee, distance and who pays. Not ready in real builds (the screen says what is missing).
+    const ShippingFeeEntry(),
     _soonChip(),
   ]);
 }
@@ -58,6 +120,17 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
     actions: actions,
     reset: flows?.reset,
     shop: shop,
+    settingsEntries: <Widget>[
+      if (flows?.addresses != null) addressBookEntry(context, flows!.addresses!),
+      if (flows?.notificationSource != null && flows?.push != null)
+        N11ListItem(
+          key: const Key('open-notification-settings'),
+          icon: Icons.notifications_outlined,
+          title: 'Cài đặt thông báo',
+          sub: 'Âm thanh, rung và nhóm thông báo',
+          onTap: () => Navigator.of(context).push(n11Route(NotificationSettingsScreen(source: flows!.notificationSource!, push: flows.push!, shipper: false))),
+        ),
+    ],
     entries: const <Widget>[
       N11ListItem(icon: Icons.help_outline, title: 'Trợ giúp', soon: true),
     ],

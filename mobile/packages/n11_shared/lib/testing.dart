@@ -636,28 +636,144 @@ class FakeDishEntry {
   final String categoryId;
 }
 
-/// The driver side: GET driver/me is null until the one POST; the status is whatever the test sets.
+/// The driver side (M03): GET driver/me is null until the one POST (M01 onboarding); the M03 commands change the profile the way the
+/// server does (version +1, bank back to UNVERIFIED on a change, accepting only with every condition). [profile] is the stored profile
+/// in the server's own shape; tests may set it directly, and the [walletReady] flag stands in for the M04 answer.
 class FakeDriverServer {
   FakeDriverServer(FakeApiTransport transport) {
-    transport.routes['GET /v1/driver/me'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': profile});
+    transport.routes['GET /v1/driver/me'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': _view()});
+    transport.routes['GET /v1/driver/banks'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{
+          'data': <String, Object?>{
+            'banks': <Object?>[
+              <String, Object?>{'code': 'VCB', 'name': 'Vietcombank'},
+              <String, Object?>{'code': 'TCB', 'name': 'Techcombank'},
+            ],
+          },
+        });
     transport.routes['POST /v1/onboarding/driver'] = (String m, String p, Map<String, String> h, String b) async {
       posts.add(jsonDecode(b) as Map<String, Object?>);
       final Map<String, Object?> body = posts.last;
       profile ??= <String, Object?>{
         'driver_id': '55555555-5555-4555-8555-555555555555',
+        'user_id': '11111111-1111-4111-8111-111111111111',
+        'shipper_code': 'SH000001',
         'full_name': body['full_name'],
+        'phone': '+84901234567',
         'plate_number': body['plate_number'],
-        'driver_type': 'EXTERNAL',
         'status': 'PENDING',
+        'review_state': 'DRAFT',
         'accepting_deliveries': false,
         'version': 1,
       };
-      return json(201, <String, Object?>{'data': profile});
+      return json(201, <String, Object?>{'data': <String, Object?>{'driver_id': profile!['driver_id'], 'status': 'PENDING', 'accepting_deliveries': false, 'role_granted': true, 'version': 1}});
+    };
+    transport.routes['PUT /v1/driver/me/profile'] = (String m, String p, Map<String, String> h, String b) async => _command(p, b, (Map<String, Object?> body) {
+          profile!['full_name'] = body['full_name'];
+          profile!['plate_number'] = body['plate_number'];
+        });
+    transport.routes['PUT /v1/driver/me/bank'] = (String m, String p, Map<String, String> h, String b) async => _command(p, b, (Map<String, Object?> body) {
+          final String code = body['bank_code']! as String;
+          bank = <String, Object?>{
+            'bank_code': code,
+            'bank_name': code == 'VCB' ? 'Vietcombank' : 'Techcombank',
+            'account_number': body['account_number'],
+            'account_holder': body['account_holder'],
+            'verification_state': 'UNVERIFIED',
+            'rejection_reason': null,
+          };
+          profile!['accepting_deliveries'] = false;
+        });
+    transport.routes['POST /v1/driver/me/submit'] = (String m, String p, Map<String, String> h, String b) async => _command(p, b, (Map<String, Object?> body) {
+          if (profile!['status'] != 'PENDING' || (profile!['review_state'] != 'DRAFT' && profile!['review_state'] != 'REJECTED') || bank == null) {
+            throw StateError('DRIVER_STATE_CONFLICT');
+          }
+          profile!['review_state'] = 'SUBMITTED';
+          profile!['rejection_reason'] = null;
+        });
+    transport.routes['POST /v1/driver/me/accepting'] = (String m, String p, Map<String, String> h, String b) async => _command(p, b, (Map<String, Object?> body) {
+          final bool on = body['accepting']! as bool;
+          if (on && (profile!['status'] != 'ACTIVE' || bank == null || bank!['verification_state'] != 'VERIFIED' || !walletReady)) {
+            throw StateError('DRIVER_WALLET_NOT_READY');
+          }
+          profile!['accepting_deliveries'] = on;
+        });
+    transport.routes['POST /v1/driver/me/closure-request'] = (String m, String p, Map<String, String> h, String b) async => _command(p, b, (Map<String, Object?> body) {
+          if (profile!['status'] != 'ACTIVE') {
+            throw StateError('DRIVER_STATE_CONFLICT');
+          }
+          profile!['status'] = 'CLOSING';
+          profile!['accepting_deliveries'] = false;
+          closureNote = body['note'] as String?;
+        });
+    transport.routes['POST /v1/driver/me/closure-cancel'] = (String m, String p, Map<String, String> h, String b) async => _command(p, b, (Map<String, Object?> body) {
+          if (profile!['status'] != 'CLOSING') {
+            throw StateError('DRIVER_STATE_CONFLICT');
+          }
+          profile!['status'] = 'ACTIVE';
+          closureNote = null;
+        });
+  }
+
+  /// The stored profile in the server's shape (without bank / readiness / closure, which [_view] derives); null = none yet.
+  Map<String, Object?>? profile;
+
+  /// The stored bank account (server shape) or null.
+  Map<String, Object?>? bank;
+  bool walletReady = false;
+  String? closureNote;
+  final List<Map<String, Object?>> posts = <Map<String, Object?>>[];
+
+  /// What the M03 commands received, in order: path and decoded body.
+  final List<(String, Map<String, Object?>)> commands = <(String, Map<String, Object?>)>[];
+
+  Map<String, Object?>? _view() {
+    final Map<String, Object?>? stored = profile;
+    if (stored == null) {
+      return null;
+    }
+    final String status = stored['status']! as String;
+    final String review = stored['review_state']! as String;
+    final bool bankVerified = bank != null && bank!['verification_state'] == 'VERIFIED';
+    final List<String> blocks = <String>[
+      if (status != 'ACTIVE') (status == 'PENDING' ? 'PROFILE_NOT_APPROVED' : 'ACCOUNT_SUSPENDED'),
+      if (bank == null) 'BANK_MISSING' else if (!bankVerified) 'BANK_NOT_VERIFIED',
+      if (!walletReady) 'WALLET_NOT_AVAILABLE',
+    ];
+    final bool editable = status == 'PENDING' && (review == 'DRAFT' || review == 'REJECTED');
+    return <String, Object?>{
+      ...stored,
+      'rejection_reason': stored['rejection_reason'],
+      'suspension_reason': stored['suspension_reason'],
+      'submitted_at': null,
+      'reviewed_at': null,
+      'can_edit_profile': editable,
+      'can_submit': editable,
+      'bank': bank,
+      'readiness': <String, Object?>{
+        'profile_approved': status == 'ACTIVE',
+        'bank_verified': bankVerified,
+        'wallet_ready': walletReady,
+        'blocks': blocks,
+        'can_accept': status == 'ACTIVE' && bankVerified && walletReady,
+      },
+      'closure': status == 'CLOSING' ? <String, Object?>{'requested_at': '2026-10-17T00:00:00.000Z', 'note': closureNote, 'can_cancel': true} : null,
     };
   }
 
-  Map<String, Object?>? profile;
-  final List<Map<String, Object?>> posts = <Map<String, Object?>>[];
+  Future<ApiResponse> _command(String path, String body, void Function(Map<String, Object?> body) apply) async {
+    final Map<String, Object?> decoded = jsonDecode(body) as Map<String, Object?>;
+    commands.add((path, decoded));
+    if (decoded['expected_version'] != profile!['version']) {
+      return apiError(409, 'VERSION_CONFLICT');
+    }
+    try {
+      apply(decoded);
+    } on StateError catch (error) {
+      return apiError(409, error.message.toString());
+    }
+    profile!['version'] = (profile!['version']! as int) + 1;
+    return json(200, <String, Object?>{'data': _view()});
+  }
 }
 
 /// The public reset routes. [mode] is what GET config answers.

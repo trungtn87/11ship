@@ -204,6 +204,36 @@ void main() {
     expect(h.menuApi.items.any((MenuItem i) => i.id == 'b'), isFalse);
   });
 
+  testWidgets('a re-read that fails keeps the dishes with "Chưa cập nhật" + Thử lại (not stuck on loading); the retry clears it once the network is back', (WidgetTester tester) async {
+    final Harness h = await harness(tester, menu: seeded());
+    await show(tester, MenuListScreen(flows: h.flows));
+    expect(find.text('Ngao hấp'), findsOneWidget);
+    expect(find.byKey(const Key('menu-stale')), findsNothing);
+    h.menuApi.failLoads = true;
+    await h.flows.menu.load();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('menu-stale')), findsOneWidget);
+    expect(find.text('Chưa cập nhật'), findsOneWidget);
+    expect(find.text('Ngao hấp'), findsOneWidget);
+    await tapKey(tester, 'menu-stale-retry');
+    expect(find.byKey(const Key('menu-stale')), findsOneWidget, reason: 'still offline: the warning stays and the button is usable again');
+    h.menuApi.failLoads = false;
+    await tapKey(tester, 'menu-stale-retry');
+    expect(find.byKey(const Key('menu-stale')), findsNothing);
+    expect(find.text('Ngao hấp'), findsOneWidget);
+  });
+
+  testWidgets('a first read that fails shows the load failure with Thử lại, not an empty menu; the retry loads it', (WidgetTester tester) async {
+    final FakeMenuApi api = seeded()..failLoads = true;
+    final Harness h = await harness(tester, menu: api);
+    await show(tester, MenuListScreen(flows: h.flows));
+    expect(find.text('Chưa có món trong thực đơn'), findsNothing);
+    expect(find.byType(M02LoadFailed), findsOneWidget);
+    api.failLoads = false;
+    await tapKey(tester, 'm02-retry');
+    expect(find.text('Ngao hấp'), findsOneWidget);
+  });
+
   testWidgets('an unknown outcome on a dish locks the form; the retry sends the same operation once', (WidgetTester tester) async {
     final Harness h = await harness(tester, menu: seeded());
     await openForm(tester, h, 'b');

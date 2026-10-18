@@ -10,6 +10,11 @@ import { ActivationPage } from './activation-view.js';
 import { RecoveryController } from '../core/recovery-controller.js';
 import { AdminRecoveryApi, RECOVERY_BASE } from '../core/recovery-api.js';
 import { AdminCatalogApi, CATALOG_BASE, createCatalogSource } from '../core/catalog-api.js';
+import { AdminFinanceApi, createFinanceAdminSource, FINANCE_BASE } from '../core/finance-api.js';
+import { AdminShipperApi, createShipperSource, SHIPPERS_BASE } from '../core/shippers-api.js';
+import { AdminDeliveryApi, createDeliverySource, DELIVERIES_BASE } from '../core/deliveries-api.js';
+import { AdminNotificationApi, createNotificationSource, NOTIFICATIONS_BASE } from '../core/notifications-api.js';
+import { createShippingPolicySource, SHIPPING_POLICY_BASE, ShippingPolicyApi } from '../core/shipping-policy-api.js';
 import { AdminSettingsApi, createSettingsSource, SETTINGS_BASE } from '../core/settings-api.js';
 import { ResetPage } from './reset-view.js';
 import { ShellApp } from './shell-app.js';
@@ -128,6 +133,27 @@ function startAdmin(host: HTMLElement): void {
       refresh: () => controller.refreshSession(),
     }),
     createCatalogSource(new AdminCatalogApi(fetchTransport(window.fetch.bind(window), { base: CATALOG_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
+    createShipperSource(new AdminShipperApi(fetchTransport(window.fetch.bind(window), { base: SHIPPERS_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
+    undefined,
+    createNotificationSource(new AdminNotificationApi(fetchTransport(window.fetch.bind(window), { base: NOTIFICATIONS_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
+    createShippingPolicySource(new ShippingPolicyApi(fetchTransport(window.fetch.bind(window), { base: SHIPPING_POLICY_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
+    createDeliverySource(new AdminDeliveryApi(fetchTransport(window.fetch.bind(window), { base: DELIVERIES_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
+    createFinanceAdminSource(new AdminFinanceApi(fetchTransport(window.fetch.bind(window), { base: FINANCE_BASE })), {
       csrf: () => controller.sessionCsrf,
       refresh: () => controller.refreshSession(),
     }),

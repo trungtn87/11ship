@@ -40,8 +40,8 @@ const identity = (over = {}) => ({
 const signInBody = { data: { ...identity(), access_token: TOKEN, session: { expires_at: expiresIn(86_400_000) } } };
 const meBody = (over = {}) => ({ data: { ...identity(over), session: { expires_at: expiresIn(86_400_000) } } });
 const errorBody = (code) => ({ error: { code, message: 'RAW_SERVER_MESSAGE_MARKER', request_id: 'r-1', details: {} } });
-const driverRow = (over = {}) => ({ driver_id: DRIVER, user_id: USER, full_name: 'Nguyễn Văn An', plate_number: null, driver_type: 'EXTERNAL', status: 'PENDING', accepting_deliveries: false, version: 1, ...over });
-const submitBody = { data: { driver_id: DRIVER, driver_type: 'EXTERNAL', status: 'PENDING', accepting_deliveries: false, role_granted: true, version: 1 } };
+const driverRow = (over = {}) => ({ driver_id: DRIVER, user_id: USER, full_name: 'Nguyễn Văn An', plate_number: null, status: 'PENDING', accepting_deliveries: false, version: 1, ...over });
+const submitBody = { data: { driver_id: DRIVER, status: 'PENDING', accepting_deliveries: false, role_granted: true, version: 1 } };
 const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8' } });
 
 function stub(handler) {
@@ -100,15 +100,15 @@ describe('driver wire contract', () => {
   it('reads exactly {data:null} or the 8 fields, and refuses anything else as BAD_RESPONSE', async () => {
     const { parseDriverProfileResponse, parseDriverSubmitResponse } = await load('auth/contract.js');
     assert.equal(parseDriverProfileResponse({ data: null }), null);
-    assert.deepEqual(parseDriverProfileResponse({ data: driverRow({ plate_number: '59A-123.45' }) }), { driverId: DRIVER, userId: USER, fullName: 'Nguyễn Văn An', plateNumber: '59A-123.45', driverType: 'EXTERNAL', status: 'PENDING', acceptingDeliveries: false, version: 1 });
+    assert.deepEqual(parseDriverProfileResponse({ data: driverRow({ plate_number: '59A-123.45' }) }), { driverId: DRIVER, userId: USER, fullName: 'Nguyễn Văn An', plateNumber: '59A-123.45', status: 'PENDING', acceptingDeliveries: false, version: 1 });
     for (const status of ['ACTIVE', 'SUSPENDED', 'CLOSING', 'CLOSED']) {
       assert.equal(parseDriverProfileResponse({ data: driverRow({ status }) }).status, status, 'the stored enum passes through');
     }
-    for (const bad of [{ data: { ...driverRow(), extra: 1 } }, { data: { ...driverRow(), status: 'APPROVED' } }, { data: driverRow({ driver_type: 'ADMIN' }) }, { data: driverRow({ driver_id: 'x' }) }, { data: driverRow({ full_name: '' }) }, { data: driverRow({ version: 0 }) }, { data: [] }, {}]) {
+    for (const bad of [{ data: { ...driverRow(), status: 'APPROVED' } }, { data: driverRow({ driver_id: 'x' }) }, { data: driverRow({ full_name: '' }) }, { data: driverRow({ version: 0 }) }, { data: [] }, {}]) {
       assert.equal(parseDriverProfileResponse(bad), undefined);
     }
     assert.deepEqual(parseDriverSubmitResponse(submitBody), { driverId: DRIVER });
-    for (const bad of [{ data: { ...submitBody.data, status: 'ACTIVE' } }, { data: { ...submitBody.data, accepting_deliveries: true } }, { data: { ...submitBody.data, role_granted: false } }, { data: { ...submitBody.data, version: 2 } }, { data: { ...submitBody.data, driver_type: 'PLATFORM' } }]) {
+    for (const bad of [{ data: { ...submitBody.data, status: 'ACTIVE' } }, { data: { ...submitBody.data, accepting_deliveries: true } }, { data: { ...submitBody.data, role_granted: false } }, { data: { ...submitBody.data, version: 2 } }, { data: { ...submitBody.data, driver_type: 'PLATFORM' } }, { data: { ...submitBody.data, extra: 1 } }]) {
       assert.equal(parseDriverSubmitResponse(bad), undefined);
     }
   });
@@ -136,7 +136,7 @@ describe('driver controller', () => {
     assert.deepEqual(server.state.submits[0].body, { full_name: 'Nguyễn Văn An', plate_number: null }, 'trimmed, empty plate = null, nothing else is sent');
     assert.match(server.state.submits[0].key, /^[0-9a-f-]{36}$/);
     assert.equal(driver.state().profile.status, 'PENDING');
-    assert.equal(driver.state().profile.driverType, 'EXTERNAL');
+    assert.equal(driver.state().profile.driverType, undefined, 'the internal classification is never read');
     assert.equal(driver.state().profile.acceptingDeliveries, false);
     const me = auth.session.identity();
     assert.deepEqual(me.availableRoles, ['CUSTOMER', 'DRIVER']);

@@ -13,7 +13,7 @@ import {
   shopProfileBody,
   startAuthApp,
 } from './support/auth-fixtures';
-import { createCategory, jpegBase64 } from './support/menu-fixtures';
+import { createCategory, jpegBase64, purgeCategories } from './support/menu-fixtures';
 import { FixtureTrust, NativePhone } from './support/native-device-fixtures';
 
 // M01-ANDROID remaining flows (shop profile + context, driver profile, test password reset) over the DEVICE-BOUND native session,
@@ -43,6 +43,8 @@ describe('native remaining flows (fixture attestation)', () => {
   });
 
   afterAll(async () => {
+    // The dish group this file creates must not outlive it: later suites (admin dish groups) expect a table without it.
+    await purgeCategories(app.pool).catch(() => undefined);
     await closed.close();
     await app.close();
   });
@@ -224,7 +226,7 @@ describe('native remaining flows (fixture attestation)', () => {
       const key = randomUUID();
       const created = await native.signedCall('SHIP', 'POST', '/onboarding/driver', { bearer: token, body: { full_name: 'Trần Văn Shipper' }, idempotencyKey: key });
       expect(created.response.status).toBe(201);
-      expect(dataOf(created.response)).toMatchObject({ status: 'PENDING', accepting_deliveries: false, driver_type: 'EXTERNAL' });
+      expect(dataOf(created.response)).toMatchObject({ status: 'PENDING', accepting_deliveries: false });
       const replay = await native.signedCall('SHIP', 'POST', '/onboarding/driver', { bearer: token, body: { full_name: 'Trần Văn Shipper' }, idempotencyKey: key });
       expect(dataOf(replay.response)).toEqual(dataOf(created.response));
       const rows = await app.pool.query('SELECT 1 FROM app.drivers WHERE user_id = $1::uuid', [food.userId]);

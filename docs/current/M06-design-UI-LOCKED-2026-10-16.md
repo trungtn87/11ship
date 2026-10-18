@@ -1,5 +1,8 @@
 # 11Ship — M06 Phí giao hàng, điều kiện nhận/ghép đơn & UI
 
+> **THAY ĐỔI ĐÃ DUYỆT NGÀY 18/10/2026:** Xem [M06 v1.1 — bán kính 3 km, ba khung giá, phí thỏa thuận](M06-v1.1-3km-3tiers-fee-agreement-20261018.md). Tài liệu v1.1 **ưu tiên khi xung đột** với v1.0: 3 km (không phải 5 km), đúng 3 khung giá (không còn phí `tail`), và có luồng đề xuất/đồng ý/từ chối phí với shipper. Những phần khác của v1.0 vẫn giữ nguyên. **Đây là thiết kế đã duyệt, chưa phải code đã triển khai.**
+
+
 **Phiên bản:** v1.0 — **OWNER APPROVED / DESIGN_LOCKED**  
 **Ngày duyệt:** 16/10/2026 (Asia/Ho_Chi_Minh)  
 **Trạng thái triển khai:** **IMPLEMENTATION_PENDING — CHƯA CODE / CHƯA DEPLOY**  

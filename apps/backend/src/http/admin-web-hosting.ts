@@ -60,10 +60,21 @@ const SPA_ROUTES: readonly RegExp[] = Object.freeze([
   /^\/activate$/,
   // M02 dish groups (Danh mục › Nhóm món): a reload or a bookmark of the page opens the app.
   /^\/catalog\/categories$/,
+  // M03 Shippers (Vận hành › Shipper) and the Shipper wallet parameters (Hệ thống › Tham số hệ thống).
+  /^\/operations\/shippers$/,
+  new RegExp(`^/operations/shippers/${UUID}$`),
+  /^\/system\/parameters\/shipper-wallet$/,
+  // M06-A Phí & điều kiện giao (the fee table).
+  /^\/system\/shipping-fee-policy$/,
   /^\/invitations$/,
   /^\/invitations\/new$/,
   new RegExp(`^/invitations/${UUID}$`),
   new RegExp(`^/invitations/${UUID}/(?:reissue|revoke)$`),
+  // M04 Tài chính (UI only): list pages, the two detail pages (a UUID, nothing else) and the wallet parameters page.
+  /^\/finance$/,
+  /^\/finance\/(?:wallets|topups|withdrawals|transactions|reconciliation|bank-accounts)$/,
+  new RegExp(`^/finance/(?:topups|withdrawals)/${UUID}$`),
+  /^\/system\/parameters\/wallet$/,
 ]);
 
 /**

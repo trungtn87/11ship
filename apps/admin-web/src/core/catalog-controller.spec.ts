@@ -21,6 +21,7 @@ class FakeSource implements CatalogSource {
   readonly #saveHolds: Array<(result: CatalogSaveResult) => void> = [];
   holdReads = false;
   holdSaves = false;
+  failReads = false;
   rows: CategoryRow[] = [row(1), row(2), row(3)];
   total = 3;
   saveAnswers: CatalogSaveResult[] = [];
@@ -28,6 +29,9 @@ class FakeSource implements CatalogSource {
   list(query: CatalogQuery): Promise<CatalogRead> {
     this.lists.push(query);
     const read: CatalogRead = { kind: 'ready', rows: this.rows, total: this.total, nextSortOrder: 4 };
+    if (this.failReads) {
+      return Promise.resolve({ kind: 'failed', failure: 'offline' });
+    }
     if (this.holdReads) {
       return new Promise((resolve) => this.#readHolds.push(resolve));
     }
@@ -299,7 +303,7 @@ describe('catalog controller - a lost answer is not a failure', () => {
     expect(controller.screen.notice).toBe('Đã thêm nhóm «Món chay».');
   });
 
-  it('"Kiểm tra lại" reads the list and drops the unanswered request; a new save then gets a NEW key', async () => {
+  it('"Kiểm tra lại" reads the list but keeps the unanswered request pending: nothing new can be written, the retry still has the same key and body', async () => {
     const { controller, source } = await ready();
     source.saveAnswers = [{ kind: 'unknown' }, { kind: 'ok' }];
     controller.beginCreate();
@@ -309,26 +313,76 @@ describe('catalog controller - a lost answer is not a failure', () => {
     controller.recheck();
     await tick();
     expect(source.lists).toHaveLength(2);
-    expect(controller.screen.dialog).toMatchObject({ phase: 'form', draft: { name: 'A' } });
-    controller.retry();
-    expect(source.saves).toHaveLength(1);
+    expect(controller.screen.dialog).toMatchObject({ phase: 'unknown', draft: { name: 'A' } });
+    // The list does not show the group: that proves nothing, so no new write is possible.
+    controller.edit({ name: 'B', sortOrder: '5', status: 'ACTIVE' });
     controller.submit();
+    expect(source.saves).toHaveLength(1);
+    controller.retry();
     await tick();
-    expect(source.saves.map((command) => command.key)).toEqual(['key-1', 'key-2']);
+    expect(source.saves.map((command) => command.key)).toEqual(['key-1', 'key-1']);
+    expect(source.saves[1]).toEqual(source.saves[0]);
+    expect(controller.screen.dialog).toBeUndefined();
   });
 
-  it('Hủy on an unanswered request drops it and reads the list so the admin sees what the server holds', async () => {
+  it('"Kiểm tra lại" whose list cannot be loaded (offline) still keeps the request pending', async () => {
+    const { controller, source } = await ready();
+    source.saveAnswers = [{ kind: 'unknown' }, { kind: 'unknown' }, { kind: 'ok' }];
+    controller.beginCreate();
+    controller.edit({ name: 'A', sortOrder: '4', status: 'ACTIVE' });
+    controller.submit();
+    await tick();
+    source.failReads = true;
+    controller.recheck();
+    await tick();
+    expect(controller.screen.list).toMatchObject({ kind: 'failed' });
+    expect(controller.screen.dialog).toMatchObject({ phase: 'unknown' });
+    controller.submit();
+    controller.beginToggle(row(1).id);
+    expect(source.saves).toHaveLength(1);
+    source.failReads = false;
+    controller.retry();
+    await tick();
+    controller.retry();
+    await tick();
+    expect(new Set(source.saves.map((command) => JSON.stringify(command)))).toHaveProperty('size', 1);
+    expect(source.saves.map((command) => command.key)).toEqual(['key-1', 'key-1', 'key-1']);
+  });
+
+  it('Hủy / closing the popup is refused while the outcome is unknown; no new write, and the retry is still the old request', async () => {
     const { controller, source } = await ready();
     source.saveAnswers = [{ kind: 'unknown' }];
     controller.beginToggle(row(1).id);
     controller.submit();
     await tick();
     controller.cancel();
-    await tick();
-    expect(controller.screen.dialog).toBeUndefined();
-    expect(source.lists).toHaveLength(2);
-    controller.retry();
+    expect(controller.screen.dialog).toMatchObject({ kind: 'toggle', phase: 'unknown' });
+    controller.beginEdit(row(2).id);
+    controller.submit();
     expect(source.saves).toHaveLength(1);
+    controller.retry();
+    await tick();
+    expect(source.saves.map((command) => command.key)).toEqual(['key-1', 'key-1']);
+    expect(controller.screen.dialog).toBeUndefined();
+  });
+
+  it('a clear refusal after the unknown frees the screen: the next write gets a NEW key', async () => {
+    const { controller, source } = await ready();
+    source.saveAnswers = [{ kind: 'unknown' }, { kind: 'rejected' }, { kind: 'ok' }];
+    controller.beginCreate();
+    controller.edit({ name: 'A', sortOrder: '4', status: 'ACTIVE' });
+    controller.submit();
+    await tick();
+    controller.retry();
+    await tick();
+    expect(controller.screen.dialog).toMatchObject({ phase: 'failed' });
+    controller.cancel();
+    expect(controller.screen.dialog).toBeUndefined();
+    controller.beginCreate();
+    controller.edit({ name: 'B', sortOrder: '5', status: 'ACTIVE' });
+    controller.submit();
+    await tick();
+    expect(source.saves.map((command) => command.key)).toEqual(['key-1', 'key-1', 'key-2']);
   });
 
   it('a late answer after the page was left changes nothing', async () => {

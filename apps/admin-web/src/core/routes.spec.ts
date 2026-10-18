@@ -31,6 +31,37 @@ describe('admin web routes', () => {
     }
   });
 
+  it('parses and formats the M04 finance routes; a bad tab or id falls back, never to a blank page', () => {
+    const topup = '3f1c2a10-0000-4000-8000-000000000001';
+    expect(parseRoute('/finance')).toEqual({ name: 'finance' });
+    expect(parseRoute('/finance/wallets/')).toEqual({ name: 'finance-wallets' });
+    expect(parseRoute('/finance/topups')).toEqual({ name: 'finance-topups' });
+    expect(parseRoute('/finance/topups', '?tab=DONE')).toEqual({ name: 'finance-topups', tab: 'DONE' });
+    expect(parseRoute('/finance/topups', '?tab=BOGUS')).toEqual({ name: 'finance-topups' });
+    expect(parseRoute(`/finance/topups/${topup}`)).toEqual({ name: 'finance-topup', id: topup });
+    expect(parseRoute('/finance/topups/not-a-uuid')).toEqual({ name: 'home' });
+    expect(parseRoute('/finance/withdrawals', '?tab=NEEDS_RECONCILE')).toEqual({ name: 'finance-withdrawals', tab: 'NEEDS_RECONCILE' });
+    expect(parseRoute(`/finance/withdrawals/${topup}`)).toEqual({ name: 'finance-withdrawal', id: topup });
+    expect(parseRoute('/finance/transactions')).toEqual({ name: 'finance-transactions' });
+    expect(parseRoute('/finance/transactions', '?shipper=Nguy%E1%BB%85n%20V%C4%83n%20A')).toEqual({ name: 'finance-transactions', shipper: 'Nguyễn Văn A' });
+    expect(parseRoute('/finance/reconciliation')).toEqual({ name: 'finance-reconciliation' });
+    expect(parseRoute('/system/parameters/wallet')).toEqual({ name: 'wallet-params' });
+    expect(parseRoute('/finance/other')).toEqual({ name: 'home' });
+    for (const route of [
+      { name: 'finance' } as const,
+      { name: 'finance-wallets' } as const,
+      { name: 'finance-topups', tab: 'ALL' } as const,
+      { name: 'finance-topup', id: topup } as const,
+      { name: 'finance-withdrawals', tab: 'PROCESSING' } as const,
+      { name: 'finance-withdrawal', id: topup } as const,
+      { name: 'finance-transactions', shipper: 'Nguyễn Văn A' } as const,
+      { name: 'finance-reconciliation' } as const,
+      { name: 'wallet-params' } as const,
+    ]) {
+      expect(parseRoute(...(formatRoute(route).split(/(?=\?)/) as [string, string?]))).toEqual(route);
+    }
+  });
+
   it('reads only a 43-character base64url fragment as the token', () => {
     expect(tokenFromFragment(`#t=${TOKEN}`)).toBe(TOKEN);
     expect(tokenFromFragment('')).toBeUndefined();

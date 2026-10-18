@@ -88,6 +88,22 @@ describe('ops/selfhosted/02-runtime-grants.sql', () => {
       assert.ok(!(parsed.get(table) ?? []).includes('DELETE'), table);
     }
     assert.deepEqual(parsed.get('user_consents'), ['INSERT', 'SELECT']);
+    // M04-A1/B2.2b: the wallet is created and its balance updated (TOPUP posting); the ledger is append-only (INSERT, never UPDATE or DELETE).
+    assert.deepEqual(parsed.get('driver_wallets'), ['INSERT', 'SELECT', 'UPDATE']);
+    assert.deepEqual(parsed.get('wallet_ledger_entries'), ['INSERT', 'SELECT']);
+    // M04-A2 / M07: holds are written only through the M07 source gate (a commission hold needs an ACTIVE delivery assignment).
+    assert.deepEqual(parsed.get('wallet_holds'), ['INSERT', 'SELECT', 'UPDATE']);
+    // M07: the delivery history is append-only for the runtime role; nothing of the delivery flow is ever deleted.
+    assert.deepEqual(parsed.get('delivery_events'), ['INSERT', 'SELECT']);
+    // M04-B2.2b: the bank record and the confirmed topup are INSERT-only (append-only tables).
+    for (const table of ['wallet_bank_transactions', 'wallet_topups']) {
+      assert.deepEqual(parsed.get(table), ['INSERT', 'SELECT'], table);
+    }
+    // M04-B2.2a/b: SYSTEM adds a receiving account and switches receiving on or off (never DELETE) and manages the finance rights (never DELETE).
+    assert.deepEqual(parsed.get('system_owned_bank_accounts'), ['INSERT', 'SELECT', 'UPDATE']);
+    assert.deepEqual(parsed.get('admin_finance_grants'), ['INSERT', 'SELECT', 'UPDATE']);
+    // M04-B2.1: the only money-adjacent table the runtime writes is the request (create + cancel); never DELETE, never the balance or the ledger.
+    assert.deepEqual(parsed.get('wallet_topup_requests'), ['INSERT', 'SELECT', 'UPDATE']);
     for (const privileges of parsed.values()) {
       assert.ok(privileges.every((kind) => KINDS.includes(kind)));
     }

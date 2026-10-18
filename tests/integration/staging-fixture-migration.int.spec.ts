@@ -97,7 +97,8 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
 
   describe('the file', () => {
     it('is a NEW file after the applied ones (only the test-unverified origin and the activation phone-mode migrations follow it), and the repository has exactly ONE account_origin column migration', () => {
-      expect(NAMES.slice(NAMES.indexOf(NEW))).toEqual([NEW, TEST_ORIGIN, '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding', '1792972800000_create-sms-gateway', '1793059200000_account-scope-lifecycle-settings', '1793145600000_create-menu', '1793232000000_menu-category-admin']);
+      expect(NAMES.slice(NAMES.indexOf(NEW))).toEqual([NEW, TEST_ORIGIN, '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding', '1792972800000_create-sms-gateway', '1793059200000_account-scope-lifecycle-settings', '1793145600000_create-menu', '1793232000000_menu-category-admin', '1793318400000_create-shipper-management', '1793404800000_create-customer-addresses',
+      '1793404800000_create-driver-wallet-core', '1793491200000_create-wallet-holds', '1793577600000_create-wallet-topup-sources', '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_open-topup-ledger-gate', '1794096000000_create-m07-delivery', '1794182400000_create-m08-notifications']);
       expect(NAMES.filter((name) => name.endsWith('add-users-account-origin'))).toEqual([ORIGIN]);
       expect(NAMES).not.toContain(D2_ORIGIN_NAME);
     });

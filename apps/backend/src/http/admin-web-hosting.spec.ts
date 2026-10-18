@@ -54,6 +54,13 @@ describe('administration web hosting: what a path may resolve to', () => {
       '/invitations/new/extra',
       '/catalog',
       '/catalog/categories/extra',
+      '/finance/unknown',
+      '/finance/bank-accounts/extra',
+      '/finance/topups/not-a-uuid',
+      `/finance/wallets/${UUID}`,
+      `/finance/topups/${UUID}/extra`,
+      '/system/parameters',
+      '/system/parameters/other',
     ]) {
       expect(publicAdminAsset(path)).toBeUndefined();
     }
@@ -73,6 +80,18 @@ describe('administration web hosting: what a path may resolve to', () => {
       `/invitations/${UUID}/reissue`,
       `/invitations/${UUID}/revoke`,
       `/invitations/${UUID.toUpperCase()}`,
+      '/finance',
+      '/finance/',
+      '/finance/wallets',
+      '/finance/topups',
+      '/finance/withdrawals',
+      '/finance/transactions',
+      '/finance/reconciliation',
+      '/finance/bank-accounts',
+      `/finance/topups/${UUID}`,
+      `/finance/withdrawals/${UUID}/`,
+      '/system/parameters/wallet',
+      '/system/shipping-fee-policy',
     ]) {
       expect(publicAdminAsset(path)).toBe('index.html');
     }

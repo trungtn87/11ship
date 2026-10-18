@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../account/account_views.dart';
+import '../brand.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
 import 'discovery_controller.dart';
@@ -107,10 +108,13 @@ class _FakeField extends StatelessWidget {
 
 /// KP01: the Home tab of 11Food. It owns its scrolling (pull to refresh, "Xem thêm").
 class DiscoveryHome extends StatefulWidget {
-  const DiscoveryHome({super.key, required this.controller, required this.publicApi});
+  const DiscoveryHome({super.key, required this.controller, required this.publicApi, this.bell});
 
   final DiscoveryController controller;
   final PublicShopApi publicApi;
+
+  /// M08: the notification bell (with its unread count). Null = the placeholder that says notifications are not built in this build.
+  final Widget? bell;
 
   @override
   State<DiscoveryHome> createState() => _DiscoveryHomeState();
@@ -149,7 +153,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> {
     return ListenableBuilder(
       listenable: c,
       builder: (BuildContext context, Widget? child) {
-        final List<Widget> body = <Widget>[];
+        final List<Widget> body = <Widget>[_header()];
         switch (c.choicesState) {
           case DiscoveryLoad.idle:
           case DiscoveryLoad.loading:
@@ -174,6 +178,24 @@ class _DiscoveryHomeState extends State<DiscoveryHome> {
     );
   }
 
+  /// The brand and the notification bell.
+  Widget _header() => Row(children: <Widget>[
+        BrandLogo(brand: foodBrand),
+        const Spacer(),
+        Material(
+          color: N11Colors.white,
+          shape: const CircleBorder(side: BorderSide(color: N11Colors.line)),
+          child: widget.bell ??
+              IconButton(
+                key: const Key('home-bell'),
+                tooltip: 'Thông báo',
+                constraints: const BoxConstraints(minWidth: kTapMin, minHeight: kTapMin),
+                onPressed: () => m02Toast(context, 'Thông báo sẽ có ở bản sau.'),
+                icon: const Icon(Icons.notifications_outlined, color: N11Colors.black),
+              ),
+        ),
+      ]);
+
   Widget _failed(VoidCallback retry) => Column(children: <Widget>[
         const N11StateBlock(kind: StateKind.warn, title: 'Không tải được dữ liệu', text: 'Chưa nhận được dữ liệu từ máy chủ nên chưa hiển thị được danh sách quán. Chưa có gì bị thay đổi.'),
         const SizedBox(height: N11Space.gap4),
@@ -185,40 +207,20 @@ class _DiscoveryHomeState extends State<DiscoveryHome> {
     if (c.areas.isEmpty) {
       return <Widget>[const EmptyState(icon: Icons.place_outlined, title: 'Chưa có khu vực phục vụ', text: 'Hiện chưa có khu vực nào đang phục vụ. Vui lòng quay lại sau.')];
     }
-    out.add(Row(children: <Widget>[
-      Expanded(
-        child: InkWell(
-          key: const Key('home-area'),
-          onTap: _openFilters,
-          borderRadius: BorderRadius.circular(kRadiusControl),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: kTapMin),
-            child: Row(children: <Widget>[
-              const Icon(Icons.place_outlined, size: 20, color: N11Colors.black),
-              const SizedBox(width: 6),
-              Flexible(child: Text(c.area?.name ?? 'Chọn khu vực', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: N11Colors.black))),
-              const Icon(Icons.expand_more, size: 22, color: N11Colors.ink2),
-            ]),
-          ),
-        ),
+    out.add(InkWell(
+      key: const Key('home-area'),
+      onTap: _openFilters,
+      borderRadius: BorderRadius.circular(kRadiusControl),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: kTapMin),
+        child: Row(children: <Widget>[
+          const Icon(Icons.place, size: 20, color: N11Colors.yellowStrong),
+          const SizedBox(width: 6),
+          Flexible(child: Text(c.area?.name ?? 'Chọn khu vực', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: N11Colors.black))),
+          const Icon(Icons.expand_more, size: 22, color: N11Colors.ink2),
+        ]),
       ),
-      Semantics(
-        button: true,
-        label: c.filtersActive ? 'Bộ lọc đang bật' : 'Bộ lọc',
-        excludeSemantics: true,
-        child: InkWell(
-          key: const Key('home-filter'),
-          onTap: _openFilters,
-          borderRadius: BorderRadius.circular(kRadiusControl),
-          child: Container(
-            constraints: const BoxConstraints(minWidth: kTapMin + 20, minHeight: kTapMin),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(color: c.filtersActive ? N11Colors.yellow : N11Colors.white, border: Border.all(color: c.filtersActive ? N11Colors.yellow : N11Colors.line), borderRadius: BorderRadius.circular(kRadiusControl)),
-            child: const Row(mainAxisSize: MainAxisSize.min, children: <Widget>[Icon(Icons.tune, size: 18, color: N11Colors.black), SizedBox(width: 6), Text('Bộ lọc', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: N11Colors.black))]),
-          ),
-        ),
-      ),
-    ]));
+    ));
     out.add(_FakeField(onTap: _openSearch));
     if (c.areaId == null) {
       out.add(const Text('Chọn khu vực để xem các quán đang phục vụ.', key: Key('home-pick-area'), style: N11Text.lead));
@@ -239,6 +241,26 @@ class _DiscoveryHomeState extends State<DiscoveryHome> {
     if (c.stale) {
       out.add(N11Banner(key: const Key('home-stale'), kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.', trailing: N11Button(key: const Key('home-reload'), label: 'Thử lại', compact: true, onPressed: c.refresh)));
     }
+    out.add(Row(children: <Widget>[
+      const Expanded(child: Text('Quán quanh bạn', style: N11Text.h2)),
+      Semantics(
+        button: true,
+        label: c.filtersActive ? 'Bộ lọc đang bật' : 'Bộ lọc',
+        excludeSemantics: true,
+        onTap: _openFilters,
+        child: InkWell(
+          key: const Key('home-filter'),
+          onTap: _openFilters,
+          borderRadius: BorderRadius.circular(kRadiusControl),
+          child: Container(
+            constraints: const BoxConstraints(minWidth: kTapMin, minHeight: kTapMin),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: c.filtersActive ? N11Colors.yellow : N11Colors.white, border: Border.all(color: c.filtersActive ? N11Colors.yellow : N11Colors.line), borderRadius: BorderRadius.circular(kRadiusControl)),
+            child: const Icon(Icons.tune, size: 22, color: N11Colors.black),
+          ),
+        ),
+      ),
+    ]));
     switch (c.listState) {
       case DiscoveryLoad.idle:
       case DiscoveryLoad.loading:
@@ -326,7 +348,25 @@ class _FilterSheetState extends State<FilterSheet> {
               const SizedBox(height: N11Space.gap2),
               const Text('Khu vực', style: N11Text.label),
               const SizedBox(height: N11Space.gap2),
-              Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[for (final AreaChoice a in c.areas) _pick('filter-area-${a.id}', a.name, _area == a.id, () => setState(() => _area = a.id))]),
+              Container(
+                constraints: const BoxConstraints(minHeight: kTapMin),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: N11Colors.line), borderRadius: BorderRadius.circular(kRadiusControl)),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    key: const Key('filter-area'),
+                    isExpanded: true,
+                    value: c.areas.any((AreaChoice a) => a.id == _area) ? _area : null,
+                    hint: const Text('Chọn khu vực'),
+                    icon: const Icon(Icons.expand_more, color: N11Colors.ink2),
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: N11Colors.black),
+                    items: <DropdownMenuItem<String>>[
+                      for (final AreaChoice a in c.areas) DropdownMenuItem<String>(key: Key('filter-area-${a.id}'), value: a.id, child: Row(children: <Widget>[const Icon(Icons.place, size: 18, color: N11Colors.yellowStrong), const SizedBox(width: 8), Flexible(child: Text(a.name, overflow: TextOverflow.ellipsis))])),
+                    ],
+                    onChanged: (String? id) => setState(() => _area = id),
+                  ),
+                ),
+              ),
               const SizedBox(height: N11Space.gap4),
               const Text('Nhóm món', style: N11Text.label),
               const SizedBox(height: N11Space.gap2),
@@ -377,10 +417,10 @@ class _FilterSheetState extends State<FilterSheet> {
         onTap: onTap,
         child: Container(
           constraints: const BoxConstraints(minHeight: kTapMin),
-          alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(color: on ? N11Colors.yellow : N11Colors.white, border: Border.all(color: on ? N11Colors.yellow : N11Colors.line), borderRadius: BorderRadius.circular(kRadiusPill)),
-          child: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: N11Colors.black)),
+          // widthFactor 1: the chip is as wide as its text (a Wrap inside a stretched column must not stretch it into a full-width bar).
+          child: Center(widthFactor: 1, child: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: N11Colors.black))),
         ),
       ),
     );
@@ -453,10 +493,9 @@ class _SearchScreenState extends State<SearchScreen> {
                 ]),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap3, N11Space.pad, 0),
+                padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap2, N11Space.pad, 0),
                 child: Row(children: <Widget>[
                   Expanded(child: _tab('search-tab-shops', 'Quán', SearchScope.shops)),
-                  const SizedBox(width: N11Space.gap2),
                   Expanded(child: _tab('search-tab-dishes', 'Món', SearchScope.dishes)),
                 ]),
               ),
@@ -478,13 +517,12 @@ class _SearchScreenState extends State<SearchScreen> {
       onTap: () => _search.setScope(scope),
       child: InkWell(
         key: Key(key),
-        borderRadius: BorderRadius.circular(kRadiusControl),
         onTap: () => _search.setScope(scope),
         child: Container(
           constraints: const BoxConstraints(minHeight: kTapMin),
           alignment: Alignment.center,
-          decoration: BoxDecoration(color: on ? N11Colors.yellow : N11Colors.white, border: Border.all(color: on ? N11Colors.yellow : N11Colors.line), borderRadius: BorderRadius.circular(kRadiusControl)),
-          child: Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: N11Colors.black)),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: on ? N11Colors.yellowStrong : N11Colors.line, width: on ? 3 : 1))),
+          child: Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: on ? N11Colors.yellowStrong : N11Colors.ink2)),
         ),
       ),
     );
@@ -521,6 +559,7 @@ class _SearchScreenState extends State<SearchScreen> {
       ];
     }
     return <Widget>[
+      if (!shops) gap(const Text('Chọn món để xem thực đơn quán', key: Key('search-hint'), style: N11Text.lead)),
       if (s.stale) gap(const N11Banner(key: Key('search-stale'), kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị kết quả đã tải.')),
       if (shops)
         for (final ShopCardData shop in s.shops) gap(ShopCard(key: Key('result-shop-${shop.shopId}'), shop: shop, onTap: () => _openShop(context, widget.publicApi, shop)))

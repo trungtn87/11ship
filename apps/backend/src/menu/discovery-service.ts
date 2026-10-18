@@ -9,9 +9,6 @@ import { DiscoveryQuery } from './discovery-validation';
 
 type Reason = 'ONLINE' | 'OUTSIDE_BUSINESS_HOURS' | 'NO_BUSINESS_HOURS';
 
-/** Dishes read for one answer (the whole matching set is searched; only the page asked for is returned). */
-const DISH_SEARCH_CAP = 1000;
-
 function availabilityOf(shop: DiscoverableShop): { online: boolean; reason: Reason } {
   if (!shop.hasHours) {
     return { online: false, reason: 'NO_BUSINESS_HOURS' };
@@ -84,29 +81,34 @@ export class DiscoveryService {
 
   async dishes(query: DiscoveryQuery): Promise<Record<string, unknown>> {
     return this.transactions.withTransaction(async (context) => {
-      const eligible = await this.#eligible(context, query);
-      const byId = new Map(eligible.map((shop) => [shop.shopId, { ...shop, folded: foldVietnamese(shop.name) }]));
-      const items = await this.menu.searchPublicItems(
+      const eligible = (await this.#eligible(context, query)).map((shop) => ({ ...shop, folded: foldVietnamese(shop.name) })).sort(byOpenThenName);
+      const byId = new Map(eligible.map((shop) => [shop.shopId, shop]));
+      // The database pages the whole matching set in the order of the shops as shown: one more row than asked tells `has_more`.
+      const found = await this.menu.searchPublicItems(
         context,
-        eligible.map((s) => s.shopId),
+        eligible.map((shop) => shop.shopId),
         query.categoryId,
         query.term === '' ? null : likeContains(query.term),
-        DISH_SEARCH_CAP,
+        query.limit + 1,
+        query.offset,
       );
-      const rows = items
-        .map((item) => ({ item, shop: byId.get(item.shopId) }))
-        .filter((row): row is { item: (typeof items)[number]; shop: DiscoverableShop & { folded: string } } => row.shop !== undefined)
-        .sort((a, b) => byOpenThenName(a.shop, b.shop) || (foldVietnamese(a.item.name) < foldVietnamese(b.item.name) ? -1 : foldVietnamese(a.item.name) > foldVietnamese(b.item.name) ? 1 : a.item.itemId < b.item.itemId ? -1 : 1));
-      const page = rows.slice(query.offset, query.offset + query.limit);
+      const page = found.slice(0, query.limit);
       return {
-        dishes: page.map(({ item, shop }) => ({
-          item_id: item.itemId,
-          name: item.name,
-          price_vnd: toSafeInteger(item.priceVnd),
-          image_id: item.imageId,
-          shop: { shop_id: shop.shopId, name: shop.name, address_text: shop.addressText, availability: availabilityOf(shop) },
-        })),
-        has_more: rows.length > query.offset + query.limit,
+        dishes: page.flatMap((item) => {
+          const shop = byId.get(item.shopId);
+          return shop === undefined
+            ? []
+            : [
+                {
+                  item_id: item.itemId,
+                  name: item.name,
+                  price_vnd: toSafeInteger(item.priceVnd),
+                  image_id: item.imageId,
+                  shop: { shop_id: shop.shopId, name: shop.name, address_text: shop.addressText, availability: availabilityOf(shop) },
+                },
+              ];
+        }),
+        has_more: found.length > query.limit,
       };
     });
   }

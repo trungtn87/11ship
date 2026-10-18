@@ -67,7 +67,7 @@ try:
     wait('Bạn đang offline')
     capture('01-home-offline')
     for tab, title, name in [
-        ('Thông báo', 'Chưa có dữ liệu thông báo', '02-notifications'),
+        ('Thông báo', 'Đăng nhập để xem thông báo của bạn.', '02-notifications'),
         ('Đơn hàng', 'Chưa có đơn hàng', '03-orders'),
         ('Thu nhập', 'Chưa có dữ liệu thu nhập', '04-income'),
         ('Tài khoản', 'Tạo tài khoản', '05-account'),

@@ -9,11 +9,14 @@ const String kOnlineReason = 'Tính năng online và nhận đơn chưa khả d�
 /// Presentation only: M01 has no online mutation or operational GPS controller.
 /// Never turn the reference image's sample figures or location into account data.
 class ShipHome extends StatelessWidget {
-  const ShipHome({super.key, required this.session, required this.onNotifications, this.reset});
+  const ShipHome({super.key, required this.session, required this.onNotifications, this.reset, this.notifications});
 
   final SessionController session;
   final ResetController? reset;
   final VoidCallback onNotifications;
+
+  /// M08: the unread count on the bell. Null = the plain bell.
+  final NotificationController? notifications;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -23,6 +26,7 @@ class ShipHome extends StatelessWidget {
       online: false,
       reason: kOnlineReason,
       onNotifications: onNotifications,
+      bell: notifications == null ? null : NotificationBell(controller: notifications!, onPressed: onNotifications),
       footer: session.status == SessionStatus.guest
           ? N11Link(
               'Đăng nhập tài khoản shipper',
@@ -37,11 +41,12 @@ class ShipHome extends StatelessWidget {
 /// Approved visual states without account mutations. The runtime passes Offline;
 /// visual tests can exercise Online without granting a role or starting a session.
 class ShipHomeLayout extends StatelessWidget {
-  const ShipHomeLayout({super.key, required this.online, required this.reason, required this.onNotifications, this.footer});
+  const ShipHomeLayout({super.key, required this.online, required this.reason, required this.onNotifications, this.bell, this.footer});
 
   final bool online;
   final String reason;
   final VoidCallback onNotifications;
+  final Widget? bell;
   final Widget? footer;
 
   @override
@@ -75,19 +80,18 @@ class ShipHomeLayout extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        if (online)
-                          const N11Chip('Đang online', kind: ChipKind.ok)
-                        else
-                          Material(
-                            color: N11Colors.white,
-                            shape: const CircleBorder(),
-                            child: IconButton(
-                              key: const Key('home-notifications'),
-                              tooltip: 'Thông báo',
-                              onPressed: onNotifications,
-                              icon: const Icon(Icons.notifications_outlined, color: N11Colors.black),
-                            ),
-                          ),
+                        if (online) ...<Widget>[const N11Chip('Đang online', kind: ChipKind.ok), const SizedBox(width: 8)],
+                        Material(
+                          color: N11Colors.white,
+                          shape: const CircleBorder(),
+                          child: bell ??
+                              IconButton(
+                                key: const Key('home-notifications'),
+                                tooltip: 'Thông báo',
+                                onPressed: onNotifications,
+                                icon: const Icon(Icons.notifications_outlined, color: N11Colors.black),
+                              ),
+                        ),
                       ],
                     ),
                   ),

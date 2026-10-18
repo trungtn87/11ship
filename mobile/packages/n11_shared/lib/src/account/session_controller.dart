@@ -36,7 +36,7 @@ enum RegistrationMode { unknown, required, notRequired }
 /// M01-terms-privacy-20261014.md); the server must be configured with the SAME pair (CLIENT_AUTH_TERMS_VERSION /
 /// CLIENT_AUTH_PRIVACY_VERSION) and refuses any other. Changing a text means a new version here AND on the server.
 const String kConsentTermsVersion = 'terms-20261014-v1';
-const String kConsentPrivacyVersion = 'privacy-20261014-v1';
+const String kConsentPrivacyVersion = 'privacy-20261017-v1';
 
 enum PendingKind { register, login }
 
@@ -377,7 +377,7 @@ class SessionController extends ChangeNotifier {
     final bool created = response.status == 201 && pending.kind == PendingKind.register;
     final bool ok = response.status == 200 && pending.kind == PendingKind.login;
     if (!created && !ok) {
-      throw failureOf(response);
+      throw failureOf(response, endpoint: pending.path);
     }
     final Object? data = response.data;
     final Identity? identity = Identity.tryParse(data);

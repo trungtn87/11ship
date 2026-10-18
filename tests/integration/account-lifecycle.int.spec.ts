@@ -838,7 +838,7 @@ describe('account lifecycle, scopes and system settings', () => {
       const token = randomBytes(32).toString('base64url');
       await app.pool.query(
         `INSERT INTO app.phone_verifications (verification_id, phone_normalized, purpose, otp_digest, status, attempt_count, expires_at, resend_not_before, verified_at, created_at)
-         VALUES ($1::uuid, $2, 'RECOVER_ACCOUNT', repeat('0', 64), 'VERIFIED', 0, clock_timestamp() + interval '10 minutes', clock_timestamp(), clock_timestamp(), clock_timestamp())`,
+         VALUES ($1::uuid, $2, 'RECOVER_ACCOUNT', repeat('0', 64), 'VERIFIED', 0, now() + interval '10 minutes', now(), now(), now())`,
         [verificationId, phone.normalized],
       );
       await app.pool.query(

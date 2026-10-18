@@ -86,7 +86,7 @@ class HttpApiTransport implements ApiTransport {
 }
 
 /// A server refusal as a closed failure. Nothing the server wrote (message, details) is carried.
-AuthFailure failureOf(ApiResponse response) {
+AuthFailure failureOf(ApiResponse response, {String? endpoint}) {
   final String? code = response.errorCode;
   final int status = response.status;
   AuthFailureKind kind;
@@ -147,7 +147,12 @@ AuthFailure failureOf(ApiResponse response) {
         kind = AuthFailureKind.badResponse;
       }
   }
-  return AuthFailure(kind, code: code, status: status);
+  // Only bounded machine codes and a UUID may reach diagnostics; arbitrary server text is discarded.
+  final Object? error = response.json?['error'];
+  final Object? rawId = error is Map<String, Object?> ? error['request_id'] : null;
+  final String? requestId = rawId is String && RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(rawId) ? rawId : null;
+  final String? safeCode = code != null && RegExp(r'^[A-Z][A-Z0-9_]{0,79}$').hasMatch(code) ? code : null;
+  return AuthFailure(kind, code: safeCode, status: status, endpoint: endpoint, requestId: requestId);
 }
 
 /// A random UUID v4 for an Idempotency-Key.
