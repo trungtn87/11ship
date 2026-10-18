@@ -246,7 +246,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#130](https://github.com/trungtn87/11ship/pull/130) M04-B2.1: Shipper tạo, xem, hủy yêu cầu nạp tiền (backend,… | Đã merge (`MERGED`) | — | — | — | `fc90ed7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#131](https://github.com/trungtn87/11ship/pull/131) M04-B2.2a: Quyền tài chính Admin (SYSTEM cấp từng quyền) +… | Đã merge (`MERGED`) | — | — | — | `7b6b5e6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#132](https://github.com/trungtn87/11ship/pull/132) M04-B2.2b: Admin top-up reconciliation and TOPUP wallet pos… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `14477f2` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#133](https://github.com/trungtn87/11ship/pull/133) feat(m07): quy trình giao hàng — 11Food, 11Ship, Admin, bac… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `679ff67` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#133](https://github.com/trungtn87/11ship/pull/133) feat(m07): quy trình giao hàng — 11Food, 11Ship, Admin, bac… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `f3b89a8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
