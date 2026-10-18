@@ -21,7 +21,7 @@ export class DeliveryModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: DeliveryModule,
-      imports: [DeliveryCoreModule.register(auth), M14RoutingModule, DriverModule, TransactionModule, IdempotencyModule],
+      imports: [auth, DeliveryCoreModule.register(auth), M14RoutingModule, DriverModule, TransactionModule, IdempotencyModule],
       controllers: [DeliveryShopController, DeliveryShipperController],
       providers: [DeliveryShopService, DeliveryShipperService, DeliverySweeper, DeliverySweeperRunner, { provide: ORDER_DELIVERY_PORT, useClass: NotIntegratedOrderDeliveryPort }],
       exports: [DeliverySweeper],
