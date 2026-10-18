@@ -505,6 +505,8 @@ export interface AdministratorsHooks extends Pick<AccountsHooks, 'retry' | 'logi
   readonly pending?: boolean;
   /** Next page of the live list; absent = the list has no paging (design preview). */
   loadMore?(): void;
+  /** SYSTEM only (M04-B3a): opens the finance rights of one administrator. Absent = no such column. */
+  financeAccess?(row: { readonly id: string; readonly fullName: string }): void;
 }
 
 export class AdministratorsView {
@@ -543,6 +545,12 @@ export class AdministratorsView {
     root.replaceChildren(h('section', { class: 'content content-wide', 'aria-labelledby': 'admins-title' }, pageHead('Quản trị viên', 'Quản lý tài khoản quản trị và phạm vi quyền được cấp', 'admins-title', invite), toolbar, this.#hint, this.#results));
   }
 
+  #financeButton(row: AdministratorRow): HTMLElement {
+    const button = h('button', { type: 'button', class: 'btn btn-secondary btn-inline' }, icon('key', 18), 'Quản lý');
+    button.addEventListener('click', () => this.hooks.financeAccess?.({ id: row.id, fullName: row.fullName }));
+    return button;
+  }
+
   #read(): AdministratorFilter {
     const status = this.#status.value;
     return { query: this.#search.value, status: status === 'ACTIVE' || status === 'PENDING' || status === 'LOCKED' ? status : 'ALL' };
@@ -560,7 +568,7 @@ export class AdministratorsView {
     }
     this.#refresh.disabled = !usable || screen.state.kind === 'loading';
     setMessage(this.#hint, screen.state.kind === 'not-wired' ? 'Tìm kiếm và bộ lọc sẽ dùng được khi danh sách được nối với máy chủ.' : undefined);
-    const columns: readonly Column[] = [{ label: 'Họ tên' }, { label: 'Số điện thoại' }, { label: 'Phạm vi quyền' }, { label: 'Trạng thái' }, { label: 'Ngày tạo' }];
+    const columns: readonly Column[] = [{ label: 'Họ tên' }, { label: 'Số điện thoại' }, { label: 'Phạm vi quyền' }, { label: 'Trạng thái' }, { label: 'Ngày tạo' }, ...(this.hooks.financeAccess === undefined ? [] : [{ label: 'Quyền tài chính', end: true }])];
     const caption = 'Danh sách quản trị viên';
     const state = screen.state;
     const filtered = filter.query.trim() !== '' || filter.status !== 'ALL';
@@ -581,7 +589,7 @@ export class AdministratorsView {
         table = tableCard(caption, columns, { panel: failurePanel(state.failure, { retry: () => this.hooks.retry(), login: () => this.hooks.login(), home: () => this.hooks.home() }, state.retryAfterSec) });
         break;
       case 'rows': {
-        const card = tableCard(caption, columns, { rows: state.rows.map((row: AdministratorRow) => h('tr', {}, cell('Họ tên', row.fullName), cell('Số điện thoại', row.phoneMasked), cell('Phạm vi quyền', h('span', { class: 'chips' }, ...row.scopes.map((scope) => h('span', { class: 'chip' }, scope)))), cell('Trạng thái', statusBadge(row.status, ADMINISTRATOR_STATUS_LABEL[row.status])), cell('Ngày tạo', formatDateVn(row.createdAt)))) });
+        const card = tableCard(caption, columns, { rows: state.rows.map((row: AdministratorRow) => h('tr', {}, cell('Họ tên', row.fullName), cell('Số điện thoại', row.phoneMasked), cell('Phạm vi quyền', h('span', { class: 'chips' }, ...row.scopes.map((scope) => h('span', { class: 'chip' }, scope)))), cell('Trạng thái', statusBadge(row.status, ADMINISTRATOR_STATUS_LABEL[row.status])), cell('Ngày tạo', formatDateVn(row.createdAt)), ...(this.hooks.financeAccess === undefined ? [] : [cell('Quyền tài chính', this.#financeButton(row))]))) });
         const loadMore = this.hooks.loadMore?.bind(this.hooks);
         if (state.nextCursor === null || loadMore === undefined) {
           table = card;

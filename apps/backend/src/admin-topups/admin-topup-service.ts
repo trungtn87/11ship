@@ -15,6 +15,7 @@ import { OutboxWriter } from '../outbox/outbox-writer';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { AdminTopupRow, TopupRequestRepository } from '../wallet/topup-request-repository';
+import { SystemBankAccountRepository } from '../wallet/system-bank-account-repository';
 import { TopupPostingService } from '../wallet/topup-posting-service';
 import { encodeCursor } from '../wallet-topup/topup-request-validation';
 import { AdminTopupListQuery, ConfirmBody, RejectBody } from './admin-topup-validation';
@@ -52,6 +53,7 @@ export class AdminTopupService {
     private readonly drivers: DriverRepository,
     private readonly requests: TopupRequestRepository,
     private readonly posting: TopupPostingService,
+    private readonly accounts: SystemBankAccountRepository,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
     @Inject(APP_CONFIG) appConfig: AppConfig,
@@ -68,6 +70,20 @@ export class AdminTopupService {
       const page = rows.slice(0, query.limit);
       const last = page[page.length - 1];
       return { items: page.map(view), next_cursor: rows.length > query.limit && last !== undefined ? encodeCursor(last.createdAtMs, last.requestId) : null };
+    });
+  }
+
+  /**
+   * The accounts a confirmation can name (read-only projection for the record right, SYSTEM implicit): identifier, bank code, the number MASKED to its last
+   * four digits and whether it receives now. The holder and the full number never leave the SYSTEM-only account routes. Authorized under the locks like every call.
+   */
+  async receivingAccounts(sessionToken: string | undefined): Promise<JsonObject> {
+    const known = await this.actor.precheck(sessionToken, { required: false });
+    return this.transactions.withTransaction(async (context) => {
+      await setBusinessLockTimeout(context, this.#lockTimeoutMs);
+      await this.#authorize(context, known, 'read', FINANCE_PERMISSION_TOPUP_RECORD);
+      const rows = await this.accounts.list(context);
+      return { accounts: rows.map((row) => ({ account_id: row.accountId, bank_id: row.bankId, account_number_masked: `****${row.accountNumber.slice(-4)}`, can_receive: row.canReceive })) };
     });
   }
 

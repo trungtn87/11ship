@@ -10,11 +10,11 @@ const files = (): string[] =>
     .map((name) => `admin-topups/${name}`);
 
 describe('M04-B2.2b admin top-up boundary', () => {
-  it('exposes exactly the documented routes: list, read, confirm, reject', () => {
+  it('exposes exactly the documented routes: receiving accounts (masked), list, read, confirm, reject', () => {
     const controller = codeOf('admin-topups/admin-topup.controller.ts');
-    expect(controller).toContain("@Controller('admin/finance/topup-requests')");
+    expect(controller).toContain("@Controller('admin/finance')");
     expect(controller).not.toMatch(/SessionAuthGuard|AuthPrincipal/);
-    expect(controller.match(/@(Get|Put|Post|Patch|Delete)\([^)]*\)/g)).toEqual(['@Get()', "@Get(':request_id')", "@Post(':request_id/confirm')", "@Post(':request_id/reject')"]);
+    expect(controller.match(/@(Get|Put|Post|Patch|Delete)\([^)]*\)/g)).toEqual(["@Get('topup-receiving-accounts')", "@Get('topup-requests')", "@Get('topup-requests/:request_id')", "@Post('topup-requests/:request_id/confirm')", "@Post('topup-requests/:request_id/reject')"]);
   });
 
   it('issues no SQL and opens no transaction of its own: money is written by the wallet package inside the executor transaction', () => {

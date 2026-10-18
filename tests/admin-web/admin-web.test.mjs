@@ -59,12 +59,12 @@ describe('menu by permission', () => {
       ['Tổng quan', 'Người dùng', 'Quản trị viên', 'Lời mời Admin', 'Quán', 'Shipper', 'Đơn hàng', 'Giao hàng', 'Thông báo', 'Phản ánh', 'Danh mục', 'Tài chính', 'Cài đặt hệ thống', 'Vùng hoạt động', 'Tham số hệ thống', 'Phí & điều kiện giao', 'Nhật ký', 'Giám sát'],
     );
   });
-  it('M04 "Tài chính": six ready entries in the approved order; SYSTEM sees them, an ADMIN only with the matching grant; parameters sit under the system group', async () => {
+  it('M04 "Tài chính": six ready entries in the approved order and the SYSTEM-only receiving accounts (B3a); SYSTEM sees them, an ADMIN only with the matching grant; parameters sit under the system group', async () => {
     const m = await load(real, 'core/menu.js');
     const finance = m.MENU.find((group) => group.id === 'finance').items[0];
     assert.deepEqual(
       finance.children.map((child) => child.label),
-      ['Tổng quan', 'Ví Shipper', 'Nạp tiền', 'Rút tiền', 'Giao dịch', 'Đối soát'],
+      ['Tổng quan', 'Ví Shipper', 'Nạp tiền', 'Rút tiền', 'Giao dịch', 'Đối soát', 'Tài khoản nhận tiền'],
     );
     assert.ok(finance.children.every((child) => child.ready && child.route !== undefined));
     assert.ok(ids(m.visibleMenu('SYSTEM')).includes('finance-reconciliation'));
@@ -72,6 +72,15 @@ describe('menu by permission', () => {
     const topupsOnly = ids(m.visibleMenu('ADMIN', new Set(['driver-wallets', 'topups'])));
     assert.ok(topupsOnly.includes('finance-topups') && !topupsOnly.includes('finance-withdrawals'));
     assert.equal(m.canOpenRoute('ADMIN', new Set(['driver-wallets']), { name: 'finance-topups' }), false);
+    // B3a: an ADMIN with only the finance READ right ('topups') sees the top-up entry and no other finance entry; the receiving accounts are SYSTEM only.
+    const readOnly = ids(m.visibleMenu('ADMIN', new Set(['topups'])));
+    assert.deepEqual(readOnly.filter((id) => id.startsWith('finance')), ['finance', 'finance-topups']);
+    assert.ok(!ids(m.visibleMenu('ADMIN', new Set(['topups', 'driver-wallets', 'withdrawals', 'drivers']))).includes('finance-bank-accounts'));
+    assert.ok(ids(m.visibleMenu('SYSTEM')).includes('finance-bank-accounts'));
+    assert.equal(m.canOpenRoute('ADMIN', new Set(['topups']), { name: 'finance-bank-accounts' }), false);
+    assert.equal(m.canOpenRoute('SYSTEM', m.NO_GRANTS, { name: 'finance-bank-accounts' }), true);
+    // The application permissions never open the money pages (a Shipper view right is not a finance right).
+    assert.equal(m.canOpenRoute('ADMIN', new Set(['users', 'shops', 'drivers']), { name: 'finance-topup', id: 'x' }), false);
     assert.equal(m.canOpenRoute('ADMIN', new Set(['withdrawals']), { name: 'finance-withdrawal', id: 'x' }), true);
     assert.equal(m.canOpenRoute('ADMIN', m.NO_GRANTS, { name: 'wallet-params' }), false);
     assert.equal(m.canOpenRoute('SYSTEM', m.NO_GRANTS, { name: 'wallet-params' }), true);

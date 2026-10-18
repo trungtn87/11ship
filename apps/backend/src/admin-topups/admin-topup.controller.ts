@@ -9,11 +9,11 @@ import { AdminTopupService } from './admin-topup-service';
 import { parseAdminTopupListQuery, parseConfirmBody, parseRejectBody } from './admin-topup-validation';
 
 /**
- * /v1/admin/finance/topup-requests (M04-B2.2b, Administration web). The SESSION cookie is the only credential (Origin, quota, CSRF as every
+ * /v1/admin/finance/topup-requests and topup-receiving-accounts (M04-B2.2b/B3a, Administration web). The SESSION cookie is the only credential (Origin, quota, CSRF as every
  * administration write); the actor comes from the session and the request from the path, never from a body. Reading needs `wallet.read`, confirming or
  * rejecting `wallet.topup.record` (SYSTEM implicit); both are asked again under the locks in the service. No-store comes from the module.
  */
-@Controller('admin/finance/topup-requests')
+@Controller('admin/finance')
 export class AdminTopupController {
   readonly #transport: AdminTransport;
 
@@ -25,20 +25,27 @@ export class AdminTopupController {
     this.#transport = new AdminTransport(limiter, config);
   }
 
-  @Get()
+  @Get('topup-receiving-accounts')
+  async receivingAccounts(@Query() query: unknown, @Req() request: AdminRequest) {
+    const token = this.#transport.read(request);
+    parseNoFinanceQuery(query);
+    return { data: await this.topups.receivingAccounts(token) };
+  }
+
+  @Get('topup-requests')
   async list(@Query() query: unknown, @Req() request: AdminRequest) {
     const token = this.#transport.read(request);
     return { data: await this.topups.list(token, parseAdminTopupListQuery(query)) };
   }
 
-  @Get(':request_id')
+  @Get('topup-requests/:request_id')
   async detail(@Param('request_id') requestId: string, @Query() query: unknown, @Req() request: AdminRequest) {
     const token = this.#transport.read(request);
     parseNoFinanceQuery(query);
     return { data: await this.topups.detail(token, parseFinanceId(requestId)) };
   }
 
-  @Post(':request_id/confirm')
+  @Post('topup-requests/:request_id/confirm')
   @HttpCode(200)
   async confirm(@Param('request_id') requestId: string, @Body() body: unknown, @Req() req: AdminRequest, @Res({ passthrough: true }) res: StatusResponse, @Headers('x-csrf-token') csrf: Csrf, @Headers('idempotency-key') key: Csrf) {
     const token = await this.#transport.write(req);
@@ -49,7 +56,7 @@ export class AdminTopupController {
     return { data: outcome.payload };
   }
 
-  @Post(':request_id/reject')
+  @Post('topup-requests/:request_id/reject')
   @HttpCode(200)
   async reject(@Param('request_id') requestId: string, @Body() body: unknown, @Req() req: AdminRequest, @Res({ passthrough: true }) res: StatusResponse, @Headers('x-csrf-token') csrf: Csrf, @Headers('idempotency-key') key: Csrf) {
     const token = await this.#transport.write(req);
