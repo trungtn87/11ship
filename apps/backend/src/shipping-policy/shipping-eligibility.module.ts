@@ -1,4 +1,10 @@
 import { Module } from '@nestjs/common';
+import { DeliveryOfferReader, ShipperWorkReader } from '../delivery/delivery-ports';
+import { DeliveryReadModule } from '../delivery/delivery-read.module';
+import { M14RouteClient } from '../delivery/m14-route-client';
+import { M14RoutingModule } from '../delivery/m14-routing.module';
+import { ShipperLocationReader } from '../delivery/shipper-location';
+import { ShipperLocationModule } from '../delivery/shipper-location.module';
 import { DriverModule } from '../driver/driver.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { WalletModule } from '../wallet/wallet.module';
@@ -10,10 +16,6 @@ import { ShippingEligibilityService } from './shipping-eligibility-service';
 import {
   AVAILABLE_BALANCE_PORT,
   DELIVERY_OFFER_PORT,
-  NotIntegratedDeliveryOfferPort,
-  NotIntegratedRouteMatrixPort,
-  NotIntegratedShipperLocationPort,
-  NotIntegratedShipperWorkPort,
   ROUTE_MATRIX_PORT,
   SHIPPER_LOCATION_PORT,
   SHIPPER_WORK_PORT,
@@ -27,7 +29,7 @@ import {
  * "not connected" until those modules provide theirs: every acceptance check then refuses honestly. The balance is the real M04 read model.
  */
 @Module({
-  imports: [TransactionModule, DriverModule, WalletModule],
+  imports: [TransactionModule, DriverModule, WalletModule, DeliveryReadModule, ShipperLocationModule, M14RoutingModule],
   providers: [
     EligibilityParametersRepository,
     ShippingEligibilityService,
@@ -35,10 +37,12 @@ import {
     ShippingFeePolicyReader,
     ShippingFeeAgreementRepository,
     ShippingFeeAgreementService,
-    { provide: DELIVERY_OFFER_PORT, useClass: NotIntegratedDeliveryOfferPort },
-    { provide: SHIPPER_WORK_PORT, useClass: NotIntegratedShipperWorkPort },
-    { provide: SHIPPER_LOCATION_PORT, useClass: NotIntegratedShipperLocationPort },
-    { provide: ROUTE_MATRIX_PORT, useClass: NotIntegratedRouteMatrixPort },
+    // M07 and M14 are connected: the ports answer from M07's tables and M14's latest position / routing service. A fact the owner cannot give is
+    // still `undefined` / unavailable, and the check then refuses (fail closed).
+    { provide: DELIVERY_OFFER_PORT, useExisting: DeliveryOfferReader },
+    { provide: SHIPPER_WORK_PORT, useExisting: ShipperWorkReader },
+    { provide: SHIPPER_LOCATION_PORT, useExisting: ShipperLocationReader },
+    { provide: ROUTE_MATRIX_PORT, useExisting: M14RouteClient },
     { provide: AVAILABLE_BALANCE_PORT, useClass: WalletAvailableBalancePort },
   ],
   exports: [EligibilityParametersRepository, ShippingEligibilityService, ShippingFeePolicyRepository, ShippingFeePolicyReader, ShippingFeeAgreementService, DELIVERY_OFFER_PORT, SHIPPER_WORK_PORT, SHIPPER_LOCATION_PORT, ROUTE_MATRIX_PORT, AVAILABLE_BALANCE_PORT],

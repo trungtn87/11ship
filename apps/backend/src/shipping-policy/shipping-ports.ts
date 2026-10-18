@@ -45,7 +45,8 @@ export interface ShipperLocation {
 }
 
 export interface ShipperLocationPort {
-  current(driverId: string): Promise<ShipperLocation | undefined>;
+  /** Runs in the CALLER's transaction (the eligibility check holds its locks): the reader opens none of its own. */
+  current(context: TransactionContext, driverId: string): Promise<ShipperLocation | undefined>;
 }
 export const SHIPPER_LOCATION_PORT = Symbol('SHIPPER_LOCATION_PORT');
 

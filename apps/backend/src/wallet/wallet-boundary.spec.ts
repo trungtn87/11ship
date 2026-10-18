@@ -28,40 +28,47 @@ describe('M04-A1 wallet core boundary', () => {
     expect(codeOf('app.module.ts')).not.toMatch(/WalletModule|wallet\//);
   });
 
-  it('moves no money: no UPDATE, DELETE or TRUNCATE of the wallet tables, no INSERT into the ledger, a single INSERT of a literal-zero wallet', () => {
+  it('moves money only through the commission hold service (M04-A2.2): reserve, capture and release of one assignment, nothing else', () => {
     const code = walletCode();
-    // M04-B2.1: the one UPDATE in this package is the conditional cancel of a top-up REQUEST (which carries no money); nothing updates a wallet.
-    expect(code.match(/\bUPDATE\s+app\.\w+/gi)).toEqual(['UPDATE app.wallet_topup_requests']);
+    const writers = walletFiles().filter((file) => /\b(UPDATE\s+app\.(driver_wallets|wallet_holds)|INSERT\s+INTO\s+app\.(wallet_holds|wallet_ledger_entries))\b/i.test(codeOf(file)));
+    expect(writers).toEqual(['wallet/commission-hold-service.ts']);
+    // M04-B2.1 still updates a top-up REQUEST (no money); the wallet and the hold are updated by the commission service only.
+    expect([...(code.match(/\bUPDATE\s+app\.\w+/gi) ?? [])].sort()).toEqual(['UPDATE app.driver_wallets', 'UPDATE app.wallet_holds', 'UPDATE app.wallet_topup_requests']);
     expect(code).not.toMatch(/\bDELETE\s+FROM\b/i);
     expect(code).not.toMatch(/\bTRUNCATE\b/i);
-    expect(code).not.toMatch(/INSERT\s+INTO\s+app\.wallet_ledger_entries/i);
+    // The one ledger INSERT is the commission debit; the one hold INSERT is a COMMISSION hold; a literal-zero wallet is the only wallet INSERT.
+    expect(code.match(/INSERT INTO app\.wallet_ledger_entries\b/g) ?? []).toHaveLength(1);
+    expect(code).toContain("'COMMISSION_DEBIT'");
+    expect(codeOf('wallet/commission-hold-service.ts')).not.toMatch(/'(TOPUP|WITHDRAWAL_DEBIT|ADJUSTMENT_CREDIT|ADJUSTMENT_DEBIT)'/);
+    expect(code.match(/INSERT INTO app\.wallet_holds\b/g) ?? []).toHaveLength(1);
+    expect(codeOf('wallet/commission-hold-service.ts')).not.toMatch(/WITHDRAWAL/);
     expect(code.match(/INSERT INTO app\.driver_wallets\b/g) ?? []).toHaveLength(1);
     const insert = code.slice(code.indexOf('INSERT INTO app.driver_wallets'), code.indexOf('ON CONFLICT (driver_id) DO NOTHING'));
     expect(insert).toContain('SELECT $1::uuid, $2::uuid, 0, 0, 1, clock.t, clock.t');
     expect(insert.match(/\$\d+/g)).toEqual(['$1', '$2']);
   });
 
-  it('only reads holds (M04-A2.1): no INSERT, UPDATE or DELETE of app.wallet_holds, and no helper that sets the held amount', () => {
+  it('holds are written only by the commission service, and it has no withdrawal hold and no free "set held" helper', () => {
     const code = walletCode();
     expect(code).toMatch(/FROM app\.wallet_holds/);
-    expect(code).not.toMatch(/INSERT\s+INTO\s+app\.wallet_holds/i);
-    expect(code).not.toMatch(/UPDATE\s+app\.wallet_holds/i);
     expect(code).not.toMatch(/DELETE\s+FROM\s+app\.wallet_holds/i);
     expect(code).not.toMatch(/\b(setHeld|postMoney|placeHold|addHold|createHold)\b/);
-    expect(code).not.toMatch(/held_vnd\s*=/);
+    expect(codeOf('wallet/wallet-service.ts')).not.toMatch(/held_vnd\s*=|balance_vnd\s*=/);
+    expect(codeOf('wallet/wallet-repository.ts')).not.toMatch(/held_vnd\s*=|balance_vnd\s*=/);
   });
 
   it('M04-B2.1: topup requests are written here only (INSERT PENDING, conditional cancel); no code writes a topup, a bank record or a system account', () => {
     const code = walletCode();
-    expect([...(code.match(/INSERT\s+INTO\s+app\.\w+/gi) ?? [])].sort()).toEqual(['INSERT INTO app.driver_wallets', 'INSERT INTO app.wallet_topup_requests']);
+    expect([...(code.match(/INSERT\s+INTO\s+app\.\w+/gi) ?? [])].sort()).toEqual(['INSERT INTO app.driver_wallets', 'INSERT INTO app.wallet_holds', 'INSERT INTO app.wallet_ledger_entries', 'INSERT INTO app.wallet_topup_requests']);
     expect(code).not.toMatch(/(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+app\.(wallet_topups|wallet_bank_transactions|system_owned_bank_accounts)/i);
     // Outside the wallet package nothing issues SQL on these tables, and the topup module issues no SQL at all.
     const outside = productionFiles().filter((name) => !name.startsWith('wallet/') && /app\.(system_owned_bank_accounts|wallet_topup_requests|wallet_bank_transactions|wallet_topups)\b/.test(codeOf(name)));
     expect(outside).toEqual([]);
   });
 
-  it('has no top-up, withdrawal, adjustment, hold or commission command', () => {
+  it('has no top-up, withdrawal or adjustment command, and no free credit / debit: only the three commission steps', () => {
     expect(walletCode()).not.toMatch(/\b(creditTopup|requestTopup|requestWithdraw|postAdjustment|reserve|capture|release|chargeCommission|debitWallet|creditWallet)\b/);
+    expect(walletCode()).toMatch(/\breserveCommission\b[\s\S]*\bcaptureCommission\b[\s\S]*\breleaseCommission\b/);
   });
 
   it('is a participant: it opens no transaction, holds no pool and calls no network', () => {

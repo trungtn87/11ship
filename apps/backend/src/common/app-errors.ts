@@ -102,6 +102,22 @@ export const APP_ERROR_DEFINITIONS = {
   SHIPPING_POLICY_UNCHANGED: { status: 409, message: 'The draft is identical to the shipping fee table in force' },
   SHIPPING_ELIGIBILITY_VERSION_CONFLICT: { status: 409, message: 'The eligibility parameters were changed by another request' },
 
+  // Delivery flow (M07). Fixed messages: they echo nothing the client sent. A delivery of another shop and a missing one answer the same
+  // DELIVERY_NOT_FOUND. VERSION_CONFLICT, SHOP_NOT_FOUND, SHOP_PROFILE_INCOMPLETE and the DRIVER_* codes (above) are reused unchanged.
+  DELIVERY_NOT_FOUND: { status: 404, message: 'The delivery was not found' },
+  DELIVERY_STATE_CONFLICT: { status: 409, message: 'The delivery is not in a state that allows this action' },
+  DELIVERY_ALREADY_TAKEN: { status: 409, message: 'Another Shipper already took this delivery' },
+  DELIVERY_SEARCH_EXPIRED: { status: 409, message: 'The search for a Shipper has ended' },
+  DELIVERY_NOT_ELIGIBLE: { status: 409, message: 'The Shipper does not meet the conditions to take this delivery' },
+  DELIVERY_INPUT_INVALID: { status: 400, message: 'The delivery details are not valid' },
+  AFTER_PICKUP_NO_CANCEL: { status: 409, message: 'The goods were picked up, so the delivery can no longer be cancelled' },
+  FEE_NOT_CONFIRMED: { status: 409, message: 'The delivery fee is not confirmed yet' },
+  FEE_LOCKED: { status: 409, message: 'The delivery fee is fixed' },
+  DESTINATION_NOT_CONFIRMED: { status: 409, message: 'The drop-off point is not confirmed yet' },
+  RECALL_BLOCKED_GOODS_OUT: { status: 409, message: 'The goods are not back at the shop, so the delivery cannot be requested again' },
+  ORDER_MODULE_NOT_READY: { status: 409, message: 'The order module is not connected yet' },
+  ADMIN_ACTION_NOT_ALLOWED: { status: 409, message: 'This action does not apply to the delivery in its current state' },
+
   // Shop management (M02-A, task section 7). Same rule: fixed messages that echo nothing the client sent and reveal
   // nothing about any other account. SESSION_*, ACCOUNT_DISABLED, INVALID_SERVICE_AREA, SHOP_PROFILE_INCOMPLETE and
   // VERSION_CONFLICT (above) are reused unchanged.
