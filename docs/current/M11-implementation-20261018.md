@@ -23,26 +23,28 @@ Nguồn thiết kế: `11Ship-M11-Functional-UI-LOCKED-v1.0.md` (OWNER_APPROVED 
 8. **Ranh giới module**: SQL chỉ qua repository của chủ sở hữu; M11 không ghi ví/sổ cái. Boundary spec hiện có vẫn xanh.
 9. Nhãn sản phẩm dùng "Điều chỉnh tài chính"/"Xem tình trạng hàng", không dùng tên module kỹ thuật; từ "shipper" xuyên suốt; không thêm tab (vào từ chi tiết giao hàng và Tài khoản).
 
-## 3. Phần chưa nối — chặn thật, không giả thành công
+## 3. Nối module khác và phần còn chặn (cập nhật 19/10/2026, sau khi M10 vào main)
 
-| Phần | Lý do | Hành vi hiện tại |
-|---|---|---|
-| Khách đánh giá quán/shipper và khách gửi phản ánh về Order | **M10 (Order) chưa có**: không có Order thật để kiểm "đã hoàn thành" và "người đặt" | Cổng `FEEDBACK_ORDER_PORT` mặc định `NotIntegrated` → API trả `ORDER_MODULE_NOT_READY` (409); app báo "module đặt món chưa sẵn sàng". Kiểm bằng cổng giả trong test, không có dữ liệu giả ở bản chạy. Khi M10 xong chỉ cần cung cấp implementation của cổng (`OrderFact`: orderId, code, shopId, shopName, completed, người đặt) |
-| Ghi điều chỉnh hoa hồng vào ví | Cổng ghi M04 cho điều chỉnh chưa có | `COMMISSION_ADJUSTMENT_PORT` mặc định ghi nhận `PENDING_FINANCE` (`M04_UNAVAILABLE`); tuyệt đối không ghi ví. Các nhánh POSTED / INSUFFICIENT_BALANCE được kiểm bằng cổng giả |
-| Xem ảnh minh chứng ngay trong app | Kênh `protectedCall` hiện chỉ trả văn bản | App gửi ảnh và hiện "N ảnh minh chứng đính kèm"; **Admin Web xem được ảnh** (có kiểm quyền, `private, no-store`). Máy chủ đã có route `.../attachments/:id` cho từng vai |
-| Push thật | Firebase chưa cấp (xem M08) | Thông báo vào hộp thư; push `PROVIDER_NOT_CONFIGURED` như M08 |
-| App khách (11Food phía khách) | Chưa có màn Đơn của khách (M10) | Màn đánh giá/phản ánh của khách đã có trong thư viện dùng chung nhưng chưa có đường vào từ đơn |
+| Phần | Trạng thái |
+|---|---|
+| **M10 Order** | **Đã nối.** `FEEDBACK_ORDER_PORT` do module Orders cung cấp (`orders/order-feedback-adapter.ts`): Order thuộc đúng **tài khoản** khách đặt (không theo SĐT), "đã hoàn thành" = `COMPLETED`. Mã `ORDER_MODULE_NOT_READY` đã bỏ. Khách đánh giá quán/shipper và gửi phản ánh từ chi tiết đơn đã kết thúc (thẻ "Đánh giá và phản ánh"). Kiểm bằng luồng thật: đặt đơn → quán xác nhận → gọi shipper → giao xong → Order COMPLETED → đánh giá/phản ánh (`m11-orders-real.int.spec.ts`). |
+| **M04 điều chỉnh tiền** | **Đã bổ sung cổng ở M04 và nối.** Migration `1794441600000_open-adjustment-ledger-gate.sql`: bảng `wallet_adjustments` (append-only, `UNIQUE(source)`), cột `adjustment_id` trên sổ cái, cổng sổ cái chỉ mở cho hàng điều chỉnh có bản ghi riêng, đúng ví/số tiền/chiều; mỗi điều chỉnh có **đúng một** hàng sổ cái (kiểm lúc COMMIT). `WalletAdjustmentService` khóa ví, idempotent theo nguồn, **thu thêm chỉ lấy tiền khả dụng (số dư − tiền đang giữ)**, thiếu thì trả `INSUFFICIENT_BALANCE` → "Chờ xử lý tài chính", ví không âm. M11 không ghi sổ cái; quyền tiền riêng (`wallet.adjustment.post`) giữ nguyên. Kiểm bằng ví thật (`m11-adjustment-real.int.spec.ts`). Chưa có thao tác "đẩy lại" một điều chỉnh đang chờ tài chính sau khi shipper nạp thêm tiền: cần quyết định nghiệp vụ. |
+| **Ảnh minh chứng trong app** | **Đã có.** Người gửi và bên liên quan được phép (server kiểm từng ảnh) xem ảnh ngay trong hồ sơ, chạm để phóng to, lỗi thì chạm thử lại. Cần `ApiResponse.bodyBytes` (thêm vào tầng truyền thông). |
+| Push thật | Chưa có: Firebase thống nhất để sau (xem M08), **không** coi là lỗi chặn M11; thông báo vẫn vào hộp thư. |
 
 ## 4. Migration (Owner/Ops chạy — tôi chưa chạy trên môi trường thật)
 
-Tệp: `database/migrations/1794355200000_create-m11-reviews-complaints.sql` (Up + Down trong cùng tệp). Chỉ **thêm** bảng/trigger/sequence và mở rộng `notifications_target_ck` thêm `'COMPLAINT'`; không sửa dữ liệu cũ, không seed.
+Hai tệp, theo thứ tự (sau `1794268800000_create-m10-orders`):
+
+1. `database/migrations/1794355200000_create-m11-reviews-complaints.sql` — thêm bảng đánh giá/phản ánh, hàm `app.next_complaint_code()` (SECURITY DEFINER), mở rộng `notifications_target_ck` thêm `'COMPLAINT'`.
+2. `database/migrations/1794441600000_open-adjustment-ledger-gate.sql` — M04: bảng `wallet_adjustments`, cột sổ cái, cổng sổ cái. Down **bị từ chối** nếu đã có điều chỉnh (tiền đã ghi không bị xóa).
+
+Cả hai chỉ **thêm**; không sửa dữ liệu cũ, không seed.
 
 ```
 npm run db:migrate            # hoặc: npm run db:migrate:remote  (theo quy trình hiện hành, sao lưu trước)
 ```
-Hoàn tác (chỉ khi cần, mất dữ liệu M11): chạy migration down một bước; Down xóa các push của thông báo `COMPLAINT` trước khi gỡ ràng buộc.
-
-Không có biến môi trường mới. Không đổi applicationId, khóa ký, origin hay `ship11_staging`.
+Sau khi migrate, trên VPS chạy lại `ops/selfhosted/02-runtime-grants.sql` (10 bảng mới) và `03-runtime-function-grants.sql` (`next_complaint_code`) bằng role migrator. Không có biến môi trường mới. Không đổi applicationId, khóa ký, origin hay `ship11_staging`.
 
 ## 5. Kiểm tra đã chạy (xem mục 7 cho kết quả cụ thể)
 
@@ -63,9 +65,9 @@ Không có biến môi trường mới. Không đổi applicationId, khóa ký, 
 5. 11Ship: một đánh giá về mình → *Phản ánh đánh giá*.
 6. Tắt mạng rồi gửi: app báo mất kết nối, giữ nội dung; bật mạng bấm lại → chỉ một bản ghi.
 
-Máy tính (Admin Web): 7. **Vận hành → Phản ánh**: tiếp nhận → phân công → ghi chú nội bộ → yêu cầu bổ sung (người gửi thấy "Đang chờ bạn" trên điện thoại) → kết luận → đóng; điện thoại hiện nút *Yêu cầu xem xét lại* trong 7 ngày, Admin mở lại/từ chối có lý do. 8. **Vận hành → Đánh giá**: ẩn một đánh giá có lý do → điểm trang quán giảm; khôi phục → điểm trở lại. 9. Điều chỉnh kết quả giao (có lịch sử); điều chỉnh hoa hồng: Admin không có quyền tiền không thấy nút; có quyền tiền → "Chờ xử lý tài chính" vì cổng M04 chưa nối.
+Máy tính (Admin Web): 7. **Vận hành → Phản ánh**: tiếp nhận → phân công → ghi chú nội bộ → yêu cầu bổ sung (người gửi thấy "Đang chờ bạn" trên điện thoại) → kết luận → đóng; điện thoại hiện nút *Yêu cầu xem xét lại* trong 7 ngày, Admin mở lại/từ chối có lý do. 8. **Vận hành → Đánh giá**: ẩn một đánh giá có lý do → điểm trang quán giảm; khôi phục → điểm trở lại. 9. Điều chỉnh kết quả giao (có lịch sử); điều chỉnh hoa hồng: Admin không có quyền tiền không thấy nút; có quyền tiền → hoàn/thu thêm được ghi **một lần** vào ví shipper (xem trong sổ cái), thiếu tiền khả dụng → "Chờ xử lý tài chính" và ví không đổi.
 
-**Chưa thử được cho tới khi có M10:** khách đánh giá quán/shipper, khách gửi phản ánh.
+Khách (tài khoản đã có đơn món hoàn thành): 11Food → Đơn hàng → mở đơn đã xong → thẻ *Đánh giá và phản ánh* → *Đánh giá đơn hàng* (quán, shipper) và *Gửi phản ánh*; trong hồ sơ phản ánh chạm ảnh minh chứng để phóng to.
 
 ## 7. Bằng chứng
 
