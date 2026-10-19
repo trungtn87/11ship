@@ -38,3 +38,7 @@ Owner's standing authorization (2026-10-11) allows ChatGPT to merge reviewed sma
 ## M01 — Owner revision 2026-10-12
 
 Use [the M01 workstream plan](docs/current/M01-workstreams-20261012.md) as the current task/read map. Reuse existing code and designs; hand off only missing work with exact document sections and file entry points. UI documents contain presentation, not duplicated business contracts. Do not conduct independent bug-hunting reviews after each small M01 package: conduct one module-wide review once M01 is implemented and connected. During implementation check that the affected flow works and fix observed defects; before integration check scope/dependencies and existing required CI. After final review fixes, review the delta and affected behavior only. This Owner revision supersedes conflicting per-package audit demands above and in old handoffs; module closure remains Owner's decision.
+
+## Shared release versions — Owner decision 2026-10-19
+
+Read and apply [the release versioning convention](docs/process/release-versioning-20261019.md) for merges, builds, APK naming, VPS deployment reports and M13.07/M13.08. Apply it immediately: one immutable release version per merged main SHA; artifacts with that version come from that SHA. Preserve actual running/device versions, Android signing/applicationIds and increasing versionCode. Do not wait for M13 or claim automation/deployment from this documentation change.
