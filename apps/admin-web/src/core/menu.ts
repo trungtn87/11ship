@@ -28,7 +28,8 @@ export type IconName =
   | 'map-pin'
   | 'gear'
   | 'doc'
-  | 'activity';
+  | 'activity'
+  | 'star';
 
 /** A domain an ADMIN can be granted. SYSTEM does not need a grant. */
 export type GrantId =
@@ -88,6 +89,8 @@ export function grantsFromPermissions(permissions: readonly AppPermission[]): Gr
       grants.add('deliveries');
       // M08.06: the notification pages open for the same viewers; the server narrows what is listed to the apps the administrator may view.
       grants.add('notifications');
+      // M11.03: the rating and complaint pages open for the same viewers; the server decides every read and every action again (an action needs the review right).
+      grants.add('feedback');
     }
   }
   return grants;
@@ -149,7 +152,8 @@ export const MENU: readonly MenuGroup[] = [
       soon('orders', 'Đơn hàng', 'receipt', 'orders'),
       { id: 'deliveries', label: 'Giao hàng', icon: 'truck', route: { name: 'deliveries' }, ready: true, access: 'deliveries' },
       { id: 'notifications', label: 'Thông báo', icon: 'bell', route: { name: 'notifications' }, ready: true, access: 'notifications' },
-      soon('feedback', 'Phản ánh', 'chat', 'feedback'),
+      { id: 'reviews', label: 'Đánh giá', icon: 'star', route: { name: 'reviews' }, ready: true, access: 'feedback' },
+      { id: 'complaints', label: 'Phản ánh', icon: 'chat', route: { name: 'complaints' }, ready: true, access: 'feedback' },
     ],
   },
   {
@@ -278,6 +282,9 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
       return canSee(role, grants, 'deliveries');
     case 'notifications':
       return canSee(role, grants, 'notifications');
+    case 'reviews':
+    case 'complaints':
+      return canSee(role, grants, 'feedback');
     case 'finance':
     case 'finance-wallets':
     case 'finance-transactions':
@@ -320,6 +327,10 @@ export function activeMenuId(route: Route): string {
       return 'deliveries';
     case 'notifications':
       return 'notifications';
+    case 'reviews':
+      return 'reviews';
+    case 'complaints':
+      return 'complaints';
     case 'wallet-parameters':
       return 'parameters-shipper-wallet';
     case 'shipping-policy':
@@ -376,6 +387,10 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Vận hành', 'Giao hàng'];
     case 'notifications':
       return ['Vận hành', 'Thông báo'];
+    case 'reviews':
+      return ['Vận hành', 'Đánh giá'];
+    case 'complaints':
+      return ['Vận hành', 'Phản ánh'];
     case 'wallet-parameters':
       return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
     case 'shipping-policy':

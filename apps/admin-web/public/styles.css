@@ -2892,3 +2892,35 @@ select {
   margin-bottom: 4px;
   font-weight: 600;
 }
+
+/* M11.03: ratings and complaints. */
+.stars {
+  color: var(--brand-yellow, #d8ad18);
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.evidence-link img {
+  display: block;
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e3e1db;
+}
+
+.detail-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.plain-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}

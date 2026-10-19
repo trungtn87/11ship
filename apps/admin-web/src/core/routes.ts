@@ -24,6 +24,9 @@ export type Route =
   | { readonly name: 'shipper'; readonly id: string }
   | { readonly name: 'deliveries' }
   | { readonly name: 'notifications' }
+  // M11.03: ratings and complaints.
+  | { readonly name: 'reviews' }
+  | { readonly name: 'complaints' }
   | { readonly name: 'wallet-parameters' }
   | { readonly name: 'shipping-policy' }
   | { readonly name: 'settings' }
@@ -73,6 +76,12 @@ export function parseRoute(pathname: string, search = ''): Route {
   }
   if (path === '/operations/notifications') {
     return { name: 'notifications' };
+  }
+  if (path === '/operations/reviews') {
+    return { name: 'reviews' };
+  }
+  if (path === '/operations/complaints') {
+    return { name: 'complaints' };
   }
   if (path === '/operations/shippers') {
     const status = new URLSearchParams(search).get('status');
@@ -184,6 +193,10 @@ export function formatRoute(route: Route): string {
       return '/operations/deliveries';
     case 'notifications':
       return '/operations/notifications';
+    case 'reviews':
+      return '/operations/reviews';
+    case 'complaints':
+      return '/operations/complaints';
     case 'finance':
       return '/finance';
     case 'finance-wallets':
