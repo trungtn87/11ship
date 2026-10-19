@@ -22,10 +22,15 @@ def adb(*args, binary=False):
 
 
 def nodes():
-    adb('shell', 'uiautomator', 'dump', '/sdcard/ship-ui.xml')
-    raw = adb('exec-out', 'cat', '/sdcard/ship-ui.xml')
-    (OUTPUT / 'latest-hierarchy.xml').write_text(raw)
-    return ET.fromstring(raw).iter('node')
+    # Right after a cold start uiautomator can answer "null root node" (no window yet): that is "not ready", not a result, so the caller's wait loop
+    # asks again. A real failure (the app never shows its UI) still ends in the wait's AssertionError, with the logcat printed below.
+    try:
+        adb('shell', 'uiautomator', 'dump', '/sdcard/ship-ui.xml')
+        raw = adb('exec-out', 'cat', '/sdcard/ship-ui.xml')
+        (OUTPUT / 'latest-hierarchy.xml').write_text(raw)
+        return list(ET.fromstring(raw).iter('node'))
+    except (subprocess.SubprocessError, ET.ParseError):
+        return []
 
 
 def find(label):
@@ -97,4 +102,10 @@ try:
     }, ensure_ascii=False, indent=2))
 finally:
     capture('last-screen')
-    (OUTPUT / 'logcat.txt').write_text(adb('logcat', '-d', '-t', '500'))
+    log = adb('logcat', '-d', '-t', '1500')
+    (OUTPUT / 'logcat.txt').write_text(log)
+    # The lines that explain a launch that never showed its UI, printed so the CI log carries them (the full logcat is in the artifact).
+    key = re.compile(r'FATAL|AndroidRuntime|ClassNotFound|NoClassDefFound|UnsatisfiedLink|Error registering plugin|Process: vn\.eleven|ANR in|has died|Force finishing|vn\.eleven\.(ship|m14)', re.I)
+    lines = [line for line in log.splitlines() if key.search(line)]
+    print('--- logcat (filtered, last 80) ---')
+    print('\n'.join(lines[-80:]))
