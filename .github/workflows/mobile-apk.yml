@@ -223,7 +223,7 @@ jobs:
         id: m14
         run: |
           set -euo pipefail
-          want="${{ matrix.app == 'ship' && inputs.m14_offline_map || 'true' }}"
+          want="${{ matrix.app == 'ship' && (inputs.m14_offline_map == true && 'true' || 'false') || 'true' }}"
           flag=false
           if [ "$want" = true ]; then
             if python3 - <<'PYCODE'
