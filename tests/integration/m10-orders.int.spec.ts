@@ -29,6 +29,10 @@ describe('M10 — food orders', () => {
   let bun: Dish;
   const drivers: string[] = [];
   let addedPolicy = false;
+  // Accounts and shops made inside single tests: they are cleaned up with the rest.
+  const extraShops: string[] = [];
+  const extraUsers: string[] = [];
+  const extraCustomers: string[] = [];
 
   beforeAll(async () => {
     router = http.createServer((request, response) => {
@@ -63,7 +67,7 @@ describe('M10 — food orders', () => {
     for (let pass = 0; pass < 200 && (await runtime().dispatcher.dispatchOnce()).claimed > 0; pass += 1) {
       // drained
     }
-    await cleanupOrders(app, { shopIds: [shop.shopId, otherShop.shopId], customerIds: [alice.userId, bob.userId], drivers, userIds: [alice.userId, bob.userId, shop.userId, otherShop.userId], policyAdded: addedPolicy });
+    await cleanupOrders(app, { shopIds: [shop.shopId, otherShop.shopId, ...extraShops], customerIds: [alice.userId, bob.userId, ...extraCustomers], drivers, userIds: [alice.userId, bob.userId, shop.userId, otherShop.userId, ...extraUsers], policyAdded: addedPolicy });
     await app.close();
     await new Promise<void>((resolve) => router.close(() => resolve()));
   });
@@ -204,6 +208,8 @@ describe('M10 — food orders', () => {
 
   it('the shop must be able to take the order: a disabled shop and a shop outside its hours are refused', async () => {
     const closed = await createShopOwner(app);
+    extraShops.push(closed.shopId);
+    extraUsers.push(closed.userId);
     await setHours(app, closed.shopId, []);
     const dish = await newDish(app, closed.token, 'Món quán đóng', 10_000);
     const closedOrder = { ...checkout([line(dish, 1)]), shop_id: closed.shopId };
@@ -588,6 +594,8 @@ describe('M10 — food orders', () => {
 
   it('Case "hẹn qua đêm / 24 giờ": a wanted time inside a shift past midnight is accepted, outside it is refused, a 24-hour shop takes any time, and the time bounds apply', async () => {
     const night = await createShopOwner(app);
+    extraShops.push(night.shopId);
+    extraUsers.push(night.userId);
     const dish = await newDish(app, night.token, 'Cháo đêm', 25_000);
     const day = vietnamInstant(2, 23);
     const weekday = vietnamWeekday(day);
@@ -656,6 +664,8 @@ describe('M10 — food orders', () => {
 
   it('history and filters: "Đang xử lý / Đơn hẹn / Lịch sử" for the customer; pending, preparing, delivering, attention and history for the shop, with search by code or name', async () => {
     const carol = await newCustomer(app, 'Lê Thị Carol');
+    extraCustomers.push(carol.userId);
+    extraUsers.push(carol.userId);
     const pending = await place(carol, [line(bun, 1)], { recipient_name: 'Người Nhận Riêng' });
     const running = await confirmed(carol, [line(tea, 1)]);
     const cancelled = await place(carol, [line(tea, 2)]);
@@ -703,6 +713,8 @@ describe('M10 — food orders', () => {
 
   it('M08: the shop hears of a new and cancelled Order, the customer of every step, once each, and opening the notification re-checks the right', async () => {
     const dana = await newCustomer(app, 'Phạm Dana');
+    extraCustomers.push(dana.userId);
+    extraUsers.push(dana.userId);
     const order = await place(dana, [line(bun, 1)]);
     const oid = String(order.order_id);
     const accepted = await confirm(order);

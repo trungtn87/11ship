@@ -165,6 +165,21 @@ jobs:
           path: ${{ runner.temp }}/ship-m01-ui/*.png
           if-no-files-found: ignore
 
+      - name: Render 11Food M10 order screens for review
+        if: matrix.app == 'food'
+        working-directory: mobile/food
+        env:
+          N11_SCREENSHOTS: ${{ runner.temp }}/food-m10-ui
+        run: flutter test test/m10_screenshots_test.dart --reporter expanded
+
+      - name: Upload 11Food M10 widget renders (sample data, not device acceptance)
+        if: always() && matrix.app == 'food'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 11Food-m10-ui-widget-renders
+          path: ${{ runner.temp }}/food-m10-ui/*.png
+          if-no-files-found: ignore
+
       - name: M14 Flutter bridge contracts
         if: matrix.app == 'ship'
         working-directory: mobile/packages/n11_m14

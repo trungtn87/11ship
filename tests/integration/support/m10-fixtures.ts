@@ -215,8 +215,10 @@ export async function cleanupOrders(app: AuthApp, input: { shopIds: readonly str
     await client.query('DELETE FROM app.customer_carts WHERE shop_id = ANY($1::uuid[]) OR user_id = ANY($2::uuid[])', [shops, customers]);
     await client.query('DELETE FROM app.shipper_latest_locations WHERE driver_id = ANY($1::uuid[])', [drivers]);
     await client.query('DELETE FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[])', [drivers]);
-    await client.query('DELETE FROM app.notification_pushes WHERE recipient_user_id = ANY($1::uuid[])', [[...input.userIds]]);
-    await client.query('DELETE FROM app.notifications WHERE recipient_user_id = ANY($1::uuid[])', [[...input.userIds]]);
+    // The notified accounts are the given ones and the Shippers' own accounts (offers, reminders).
+    const notified = `SELECT user_id FROM app.drivers WHERE driver_id = ANY($2::uuid[])`;
+    await client.query(`DELETE FROM app.notification_pushes WHERE recipient_user_id = ANY($1::uuid[]) OR recipient_user_id IN (${notified})`, [[...input.userIds], drivers]);
+    await client.query(`DELETE FROM app.notifications WHERE recipient_user_id = ANY($1::uuid[]) OR recipient_user_id IN (${notified})`, [[...input.userIds], drivers]);
     if (input.policyAdded === true) {
       await client.query('DELETE FROM app.shipping_fee_policy_versions');
     }
