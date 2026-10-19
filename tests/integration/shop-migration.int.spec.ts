@@ -7,6 +7,7 @@ import { M07_DOWN_SQL, M07_UP_SQL } from './support/m07-migration-sql';
 import { M08_DOWN_SQL, M08_UP_SQL } from './support/m08-migration-sql';
 import { M10_DOWN_SQL, M10_UP_SQL } from './support/m10-migration-sql';
 import { M11_DOWN_SQL, M11_UP_SQL } from './support/m11-migration-sql';
+import { ADJUSTMENT_DOWN_SQL, ADJUSTMENT_UP_SQL } from './support/adjustment-migration-sql';
 import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
 import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -93,7 +94,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
   it('is a NEW migration after M00 and Auth Core, followed by the Driver, business-hours, account-origin and admin ones (applied migrations are never edited)', () => {
     expect(SHOP).toBeDefined();
     expect(names.slice(names.indexOf(SHOP))).toEqual([SHOP, DRIVER, HOURS, '1791936000000_add-users-account-origin', '1792022400000_create-admin-auth', '1792108800000_create-admin-invitations', '1792195200000_create-admin-sensitive-operations', '1792281600000_create-admin-activation', '1792368000000_extend-admin-auth-limits-activation', '1792454400000_create-admin-membership-origin-guard', '1792540800000_create-customer-profiles-consents', '1792627200000_allow-staging-fixture-account-origin', '1792713600000_allow-test-unverified-account-origin', '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding', '1792972800000_create-sms-gateway', '1793059200000_account-scope-lifecycle-settings', '1793145600000_create-menu', '1793232000000_menu-category-admin', '1793318400000_create-shipper-management', '1793404800000_create-customer-addresses',
-      '1793404800000_create-driver-wallet-core', '1793491200000_create-wallet-holds', '1793577600000_create-wallet-topup-sources', '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_open-topup-ledger-gate', '1794096000000_create-m07-delivery', '1794182400000_create-m08-notifications', '1794268800000_create-m10-orders', '1794355200000_create-m11-reviews-complaints']);
+      '1793404800000_create-driver-wallet-core', '1793491200000_create-wallet-holds', '1793577600000_create-wallet-topup-sources', '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_open-topup-ledger-gate', '1794096000000_create-m07-delivery', '1794182400000_create-m08-notifications', '1794268800000_create-m10-orders', '1794355200000_create-m11-reviews-complaints', '1794441600000_open-adjustment-ledger-gate']);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(names.filter((name) => name.endsWith('create-shop-onboarding'))).toHaveLength(1);
     expect(Number(SHOP.split('_')[0])).toBeGreaterThan(Number((BEFORE[BEFORE.length - 1] as string).split('_')[0]));
@@ -178,6 +179,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
     expect(migrate().status).toBe(0);
     await client.query('BEGIN');
     try {
+      await client.query(ADJUSTMENT_DOWN_SQL); // M04 adjustment gate: replaces the ledger gate of M07 and adds its source: the very newest, down first, up last
       await client.query(M11_DOWN_SQL); // M11: references users, shops, drivers, orders, deliveries and widens an M08 constraint: the very newest, down first, up last
       await client.query(M10_DOWN_SQL); // M10: references users, shops, dishes, addresses and deliveries: the very newest, down first, up last
       await client.query(M08_DOWN_SQL); // M08: references users, sessions and deliveries: the very newest, down first, up last
@@ -218,6 +220,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
       await client.query(M08_UP_SQL);
       await client.query(M10_UP_SQL);
       await client.query(M11_UP_SQL);
+      await client.query(ADJUSTMENT_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
       await client.query('ROLLBACK');

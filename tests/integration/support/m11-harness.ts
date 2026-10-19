@@ -88,7 +88,7 @@ export class M11World {
   ) {}
 
   /** With `admin`, the SAME application also serves the Administration web (a SYSTEM session is ready) and binds a controllable M04 stand-in. */
-  static async start(options: { admin?: boolean } = {}): Promise<M11World> {
+  static async start(options: { admin?: boolean; realFinance?: boolean } = {}): Promise<M11World> {
     const router = http.createServer((request, response) => {
       request.resume();
       response.setHeader('content-type', 'application/json');
@@ -101,7 +101,7 @@ export class M11World {
     const overrides = [
       { provide: M14_ROUTING, useValue: { origin, timeoutMs: 3000 } },
       { provide: FEEDBACK_ORDER_PORT, useValue: stub },
-      ...(options.admin === true ? [{ provide: COMMISSION_ADJUSTMENT_PORT, useValue: finance }] : []),
+      ...(options.admin === true && options.realFinance !== true ? [{ provide: COMMISSION_ADJUSTMENT_PORT, useValue: finance }] : []),
     ];
     const configOverride = { clientAuth: { termsVersion: TERMS, privacyVersion: PRIVACY } };
     let admin: AdminApp | undefined;
@@ -121,7 +121,7 @@ export class M11World {
     (world as { stub: StubOrders }).stub = stub;
     if (admin !== undefined) {
       world.admin = admin;
-      world.finance = finance;
+      world.finance = options.realFinance === true ? undefined : finance;
       world.system = await systemSession(admin);
     }
     const existing = await app.pool.query('SELECT 1 FROM app.shipping_fee_policy_versions LIMIT 1');
@@ -151,7 +151,7 @@ export class M11World {
   private async cleanup(): Promise<void> {
     const client = await this.app.pool.connect();
     const m11 = ['complaint_adjustments', 'complaint_reconsiderations', 'complaint_attachments', 'complaint_messages', 'complaints', 'review_reply_history', 'review_replies', 'review_moderations', 'reviews'];
-    const m07 = ['order_items', 'orders', 'wallet_ledger_entries', 'wallet_holds', 'delivery_incidents', 'delivery_events', 'delivery_assignments', 'deliveries', 'driver_wallets', 'shipping_fee_agreement_events', 'shipping_fee_agreements', 'shipping_fee_policy_versions'];
+    const m07 = ['order_items', 'orders', 'wallet_ledger_entries', 'wallet_adjustments', 'wallet_holds', 'delivery_incidents', 'delivery_events', 'delivery_assignments', 'deliveries', 'driver_wallets', 'shipping_fee_agreement_events', 'shipping_fee_agreements', 'shipping_fee_policy_versions'];
     try {
       await client.query('BEGIN');
       for (const table of [...m11, ...m07]) {
@@ -169,6 +169,7 @@ export class M11World {
         await client.query(`DELETE FROM app.${table}`);
       }
       await client.query(`DELETE FROM app.wallet_ledger_entries WHERE wallet_id IN (${wallets})`, [this.drivers]);
+      await client.query(`DELETE FROM app.wallet_adjustments WHERE wallet_id IN (${wallets})`, [this.drivers]);
       await client.query(`DELETE FROM app.wallet_holds WHERE wallet_id IN (${wallets})`, [this.drivers]);
       await client.query(`DELETE FROM app.delivery_incidents WHERE delivery_id IN (${mine})`, [shopId]);
       await client.query(`DELETE FROM app.delivery_events WHERE delivery_id IN (${mine})`, [shopId]);
@@ -331,15 +332,20 @@ export class M11World {
     return shipper;
   }
 
-  /** Test-only funding: the money-in path is not under test here, so the ledger credit is written with the source gate lifted in ONE transaction. */
+  /** Test-only funding: the money-in path is not under test here, so the Shipper gets one adjustment credit (the gate stays on) in ONE transaction. */
   private async fund(driverId: string, amount: number): Promise<string> {
     const client = await this.app.pool.connect();
     try {
       await client.query('BEGIN');
       const walletId = randomUUID();
       await client.query(`INSERT INTO app.driver_wallets (wallet_id, driver_id, balance_vnd, held_vnd, version, created_at, updated_at) VALUES ($1::uuid, $2::uuid, 0, 0, 1, now(), now())`, [walletId, driverId]);
-      await client.query('ALTER TABLE app.wallet_ledger_entries DISABLE TRIGGER wallet_ledger_a_source_gate');
-      await client.query(`INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at) VALUES ($1::uuid, $2::uuid, 1, 'ADJUSTMENT_CREDIT', $3, $3, now())`, [randomUUID(), walletId, amount]);
+      // The funds come in through the adjustment gate itself (a REFUND with its own record), so no gate is lifted and the ledger rows stay real.
+      const adjustmentId = randomUUID();
+      await client.query(
+        `INSERT INTO app.wallet_adjustments (adjustment_id, wallet_id, source_type, source_id, direction, amount_vnd, posted_by, created_at) VALUES ($1::uuid, $2::uuid, 'COMPLAINT', $3::uuid, 'REFUND_TO_SHIPPER', $4, $5::uuid, now())`,
+        [adjustmentId, walletId, randomUUID(), amount, this.shop.userId],
+      );
+      await client.query(`INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at, adjustment_id) VALUES ($1::uuid, $2::uuid, 1, 'ADJUSTMENT_CREDIT', $3, $3, now(), $4::uuid)`, [randomUUID(), walletId, amount, adjustmentId]);
       await client.query('UPDATE app.driver_wallets SET balance_vnd = $2, version = version + 1 WHERE wallet_id = $1::uuid', [walletId, amount]);
       await client.query('COMMIT');
       return walletId;

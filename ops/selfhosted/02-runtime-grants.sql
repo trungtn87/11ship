@@ -131,3 +131,6 @@ GRANT SELECT, INSERT ON app.complaint_messages TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.complaint_attachments TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.complaint_reconsiderations TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.complaint_adjustments TO ship11_app;
+
+-- M04 adjustments (posted by the wallet package for a decision of M11): the record is append-only. The ledger row it comes with is covered by the ledger grant above.
+GRANT SELECT, INSERT ON app.wallet_adjustments TO ship11_app;

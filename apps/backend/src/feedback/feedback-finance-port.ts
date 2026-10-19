@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { TransactionContext } from '../transaction/transaction-context';
 
-// The money part of an outcome adjustment belongs to M04 (the wallet package): M11 never writes a ledger row or a hold. M04's ledger gate today opens
-// only for TOPUP and COMMISSION_DEBIT, so there is no posting of a refund or an extra charge yet. The default binding says so (UNAVAILABLE) and the
-// adjustment stays PENDING_FINANCE with its reason; when M04 opens an adjustment posting it binds this port and nothing in M11 changes. A missing
-// balance is a result of the port (INSUFFICIENT_BALANCE), never a negative wallet and never the money held for another delivery.
+// The money part of an outcome adjustment belongs to M04 (the wallet package): M11 never writes a ledger row or a hold. M04 posts a refund or an extra charge of
+// a commission through its adjustment gate (wallet/wallet-adjustment-service.ts), bound to this port by the wallet package's adapter. A missing balance is a result
+// of the port (INSUFFICIENT_BALANCE), never a negative wallet and never the money held for another delivery. The "not integrated" binding below is kept for a
+// build that does not load the wallet package: it answers UNAVAILABLE and the adjustment stays PENDING_FINANCE with its reason.
 
 export type CommissionAdjustmentRequest = {
   readonly adjustmentId: string;

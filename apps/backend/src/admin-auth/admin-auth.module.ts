@@ -27,7 +27,7 @@ import { ShopModule } from '../shop/shop.module';
 import { AdminDeliveryController } from '../admin-deliveries/admin-delivery.controller';
 import { AdminFeedbackController } from '../admin-feedback/admin-feedback.controller';
 import { AdminFeedbackService } from '../admin-feedback/admin-feedback-service';
-import { COMMISSION_ADJUSTMENT_PORT, NotIntegratedCommissionAdjustmentPort } from '../feedback/feedback-finance-port';
+import { COMMISSION_ADJUSTMENT_PORT } from '../feedback/feedback-finance-port';
 import { FeedbackReadModule } from '../feedback/feedback-read.module';
 import { AdminNotificationController } from '../notifications/admin-notification.controller';
 import { AdminNotificationService } from '../notifications/admin-notification-service';
@@ -44,6 +44,7 @@ import { FinanceAccessParticipant } from '../finance-access/finance-access-parti
 import { FinanceAccessRepository } from '../finance-access/finance-access-repository';
 import { FinanceAccessService } from '../finance-access/finance-access-service';
 import { SystemBankAccountService } from '../finance-access/system-bank-account-service';
+import { WalletCommissionAdjustmentAdapter } from '../wallet/wallet-commission-adjustment.adapter';
 import { WalletModule } from '../wallet/wallet.module';
 import { AdminMenuCategoryService } from '../admin-menu-categories/admin-menu-category-service';
 import { AdminMenuCategoryController } from '../admin-menu-categories/admin-menu-category.controller';
@@ -188,8 +189,8 @@ export class AdminAuthModule implements NestModule {
         // M07.07 delivery management (SYSTEM, or an ADMIN with the SHOP / DRIVER permissions).
         AdminDeliveryService,
         AdminFeedbackService,
-        // M04 adjustments are not connected yet: the money part of an outcome adjustment stays pending (the port says so honestly).
-        { provide: COMMISSION_ADJUSTMENT_PORT, useClass: NotIntegratedCommissionAdjustmentPort },
+        // The money part of a commission adjustment goes to the wallet package (M04), never to the ledger directly.
+        { provide: COMMISSION_ADJUSTMENT_PORT, useExisting: WalletCommissionAdjustmentAdapter },
         // M10.05 order management (SYSTEM, or an ADMIN with the SHOP / DRIVER permissions).
         OrderViews,
         AdminOrderService,
