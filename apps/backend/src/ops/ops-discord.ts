@@ -190,7 +190,7 @@ export class OpsDiscordDispatcher {
       const effective = await this.settings.load(context);
       const url = this.settings.webhookUrl(effective.row);
       if (!effective.discordEnabled || url === undefined) {
-        const reason = !effective.discordEnabled ? 'DISABLED' : 'NOT_CONFIGURED';
+        const reason = url === undefined ? 'NOT_CONFIGURED' : 'DISABLED';
         const skipped = await this.incidents.skipAllPending(context, reason);
         return { skipped, rows: [] as NotificationRow[], url: undefined as string | undefined, effective };
       }

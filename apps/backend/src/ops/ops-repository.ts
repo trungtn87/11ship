@@ -354,8 +354,8 @@ export class OpsRepository {
     } else {
       await context.query(
         `UPDATE app.ops_checks
-            SET source = $2, state = $3, observed_at = ${timeExpr},
-                since_at = CASE WHEN state = $3 THEN since_at ELSE ${timeExpr} END,
+            SET source = $2::varchar, state = $3::varchar, observed_at = ${timeExpr},
+                since_at = CASE WHEN state = $3::varchar THEN since_at ELSE ${timeExpr} END,
                 consecutive_failures = $5, consecutive_successes = $6, value = $7::jsonb, evidence_code = $8, stale_after_seconds = $9
           WHERE check_key = $1`,
         values,
@@ -422,7 +422,7 @@ export class OpsRepository {
         e.code === undefined || e.code === null ? null : e.code.toUpperCase().replace(/[^A-Z0-9_.:-]/g, '_').slice(0, 48) || null,
         e.kind ?? null,
         redactText(e.message) || '-',
-        e.requestRef === undefined || e.requestRef === null ? null : redactText(e.requestRef, 64),
+        e.requestRef === undefined || e.requestRef === null ? null : /^[A-Za-z0-9._:-]{1,64}$/.test(e.requestRef) ? e.requestRef : redactText(e.requestRef, 64),
         e.deliveryCode === undefined || e.deliveryCode === null ? null : redactText(e.deliveryCode, 32),
         e.transactionRef === undefined || e.transactionRef === null ? null : redactText(e.transactionRef, 64),
         e.userId ?? null,

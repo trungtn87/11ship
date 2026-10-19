@@ -216,7 +216,7 @@ export class OpsReleaseRepository {
 
   async setReleaseStatus(context: TransactionContext, releaseId: string, expectedVersion: number, status: ReleaseStatus): Promise<ReleaseRow | undefined> {
     const result = await context.query<ReleaseDbRow>(
-      `UPDATE app.ops_releases SET status = $3, released_at = CASE WHEN $3 = 'PUBLISHED' AND released_at IS NULL THEN ${CLOCK} ELSE released_at END, version = version + 1, updated_at = ${CLOCK}
+      `UPDATE app.ops_releases SET status = $3::varchar, released_at = CASE WHEN $3::varchar = 'PUBLISHED' AND released_at IS NULL THEN ${CLOCK} ELSE released_at END, version = version + 1, updated_at = ${CLOCK}
         WHERE release_id = $1::uuid AND version = $2 RETURNING ${RELEASE_COLUMNS}`,
       [releaseId, expectedVersion, status],
     );
@@ -261,7 +261,7 @@ export class OpsReleaseRepository {
 
   async finishDeploy(context: TransactionContext, deployId: string, f: { status: Exclude<DeployStatus, 'RUNNING'>; healthResult: 'PASSED' | 'FAILED' | null; healthDetail: string | null; note: string | null }): Promise<DeployRow | undefined> {
     const result = await context.query<DeployDbRow>(
-      `UPDATE app.ops_deploys SET status = $2, finished_at = ${CLOCK}, health_result = $3, health_checked_at = CASE WHEN $3::text IS NULL THEN NULL ELSE ${CLOCK} END, health_detail = $4, note = COALESCE($5, note)
+      `UPDATE app.ops_deploys SET status = $2, finished_at = ${CLOCK}, health_result = $3::varchar, health_checked_at = CASE WHEN $3::varchar IS NULL THEN NULL ELSE ${CLOCK} END, health_detail = $4, note = COALESCE($5, note)
         WHERE deploy_id = $1::uuid AND status = 'RUNNING' RETURNING ${DEPLOY_COLUMNS}`,
       [deployId, f.status, f.healthResult, f.healthDetail === null ? null : redactText(f.healthDetail, 200), f.note === null ? null : redactText(f.note, 300)],
     );

@@ -21,7 +21,8 @@ const SECRET_PAIR = /\b(password|passwd|pwd|secret|token|otp|authorization|api[_
 // Vietnamese mobile number in any usual spelling: 0912345678, +84 912 345 678, 84.912.345.678.
 const PHONE = /(?<![\dA-Za-z])(?:\+?84|0)[\s.-]?[1-9](?:[\s.-]?\d){8}(?![\d])/g;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const LONG_TOKEN = /[A-Za-z0-9_+/=-]{32,}/g;
+// '/' is not part of the class: a URL path (an Admin link) is not a secret, a 32-character token is.
+const LONG_TOKEN = /[A-Za-z0-9_+=-]{32,}/g;
 
 const SENSITIVE_KEY = /(otp|pass(word|wd)?|pwd|token|secret|webhook|authorization|cookie|credential|api[_-]?key|private|signature|digest|sealed|ciphertext|session|csrf)/i;
 const PHONE_KEY = /(phone|sdt|msisdn|mobile)/i;

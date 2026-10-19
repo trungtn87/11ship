@@ -238,8 +238,8 @@ export class OpsEngine {
     }
     const created = await this.incidents.insertIncident(context, {
       incidentId: randomUUID(),
-      // A live incident of the same check keeps its fingerprint; this finished episode must not collide with it.
-      fingerprint: open === undefined ? r.checkKey : `${r.checkKey}:${r.episodeId}`.slice(0, 96),
+      // A finished episode is history: it never takes the live fingerprint, so the next outage of the same check opens its own incident. A live incident of the check keeps its fingerprint too.
+      fingerprint: r.recoveredAtMs === null && open === undefined ? r.checkKey : `${r.checkKey}:${r.episodeId}`.slice(0, 96),
       source: r.source,
       checkKey: r.checkKey,
       severity: 'CRITICAL',
@@ -448,8 +448,8 @@ export class OpsEngine {
   /** The decision "will this message be sent?" at the moment it is created: a closed channel, a severity below the threshold or a maintenance window make it SKIPPED with the reason. */
   #skipReason(eff: OpsEffective, severity: DiscordSeverity, maintenance: boolean): string | undefined {
     if (maintenance) return 'MAINTENANCE';
-    if (!eff.discordEnabled) return 'DISABLED';
     if (!eff.webhookConfigured) return 'NOT_CONFIGURED';
+    if (!eff.discordEnabled) return 'DISABLED';
     if (severity === 'WARNING' && eff.discordMinSeverity === 'CRITICAL') return 'BELOW_MIN';
     return undefined;
   }

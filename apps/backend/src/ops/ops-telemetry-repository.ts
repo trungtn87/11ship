@@ -36,7 +36,7 @@ export class OpsTelemetryRepository {
   async recordTelemetry(context: TransactionContext, deviceId: string, t: TelemetryInput): Promise<void> {
     await context.query(
       `INSERT INTO app.ops_gateway_telemetry (device_id, reported_at, battery_percent, charging, power_changed_at, sim_state, pending_reports, current_task, last_error_code, last_error_at)
-       VALUES ($1::uuid, ${CLOCK}, $2, $3, CASE WHEN $3::boolean IS NULL THEN NULL ELSE ${CLOCK} END, $4, $5, $6, $7, CASE WHEN $7::text IS NULL THEN NULL ELSE ${CLOCK} END)
+       VALUES ($1::uuid, ${CLOCK}, $2, $3, CASE WHEN $3::boolean IS NULL THEN NULL ELSE ${CLOCK} END, $4, $5, $6, $7, CASE WHEN $7::varchar IS NULL THEN NULL ELSE ${CLOCK} END)
        ON CONFLICT (device_id) DO UPDATE SET
          reported_at = ${CLOCK},
          battery_percent = COALESCE($2, app.ops_gateway_telemetry.battery_percent),
@@ -45,7 +45,7 @@ export class OpsTelemetryRepository {
          sim_state = COALESCE($4, app.ops_gateway_telemetry.sim_state),
          pending_reports = COALESCE($5, app.ops_gateway_telemetry.pending_reports),
          current_task = COALESCE($6, app.ops_gateway_telemetry.current_task),
-         last_error_at = CASE WHEN $7::text IS NOT NULL AND (app.ops_gateway_telemetry.last_error_code IS DISTINCT FROM $7::text OR app.ops_gateway_telemetry.last_error_at IS NULL) THEN ${CLOCK} ELSE app.ops_gateway_telemetry.last_error_at END,
+         last_error_at = CASE WHEN $7::varchar IS NOT NULL AND (app.ops_gateway_telemetry.last_error_code IS DISTINCT FROM $7::varchar OR app.ops_gateway_telemetry.last_error_at IS NULL) THEN ${CLOCK} ELSE app.ops_gateway_telemetry.last_error_at END,
          last_error_code = COALESCE($7, app.ops_gateway_telemetry.last_error_code)`,
       [deviceId, t.batteryPercent, t.charging, t.simState, t.pendingReports, t.currentTask, t.lastErrorCode],
     );

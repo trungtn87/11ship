@@ -673,7 +673,8 @@ export class OpsAdminService {
   }
 
   async createRelease(token: string | undefined, csrf: unknown, key: string | readonly string[] | undefined, meta: { requestId: string }, b: ReleaseBody): Promise<IdempotentOutcome> {
-    // The file is measured BEFORE the transaction (it can be large); the row then carries what the server itself read.
+    // Authorization comes first (a caller without the right learns nothing about the artifact directory); the file is then measured BEFORE the write transaction (it can be large).
+    await this.#read(token, 'SYSTEM', async () => undefined);
     const artifact = b.artifactName === null ? null : await this.#measureArtifact(b.artifactName);
     return this.#mutate(
       token,
@@ -692,6 +693,7 @@ export class OpsAdminService {
   }
 
   async #releaseStatus(token: string | undefined, csrf: unknown, key: string | readonly string[] | undefined, meta: { requestId: string }, id: string, expectedVersion: number, to: 'PUBLISHED' | 'WITHDRAWN'): Promise<IdempotentOutcome> {
+    await this.#read(token, 'SYSTEM', async () => undefined);
     const pre = to === 'PUBLISHED' ? await this.transactions.withTransaction((context) => this.releases.findRelease(context, id)) : undefined;
     // Publishing re-measures the file: a file that changed or vanished since registration is refused, so devices are never offered an artifact the server cannot vouch for.
     const remeasured = pre?.artifactName == null ? null : await this.#measureArtifact(pre.artifactName);
