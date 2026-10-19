@@ -11,6 +11,7 @@ import { FEE_POLICY_DOWN_SQL, FEE_POLICY_UP_SQL } from './support/shipping-fee-p
 import { WALLET_DOWN_SQL, WALLET_UP_SQL, FINANCE_DOWN_SQL, FINANCE_UP_SQL, POSTING_DOWN_SQL, POSTING_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
 import { M07_DOWN_SQL, M07_UP_SQL } from './support/m07-migration-sql';
 import { M08_DOWN_SQL, M08_UP_SQL } from './support/m08-migration-sql';
+import { M11_DOWN_SQL, M11_UP_SQL } from './support/m11-migration-sql';
 import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
 import { minimalChildEnv, REPO_ROOT, runNpmScript } from './support/test-helpers';
 
@@ -187,6 +188,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
     await client.query('BEGIN');
     try {
       // The M03 migration references app.drivers: it goes down first and comes back up last.
+      await client.query(M11_DOWN_SQL); // M11: references users, shops, drivers, deliveries and widens an M08 constraint: the very newest, down first, up last
       await client.query(M08_DOWN_SQL); // M08: references users, sessions and deliveries: the very newest, down first, up last
       await client.query(M07_DOWN_SQL); // M07: references users, shops, drivers, wallets and fee agreements: the very newest, down first, up last
       await client.query(POSTING_DOWN_SQL); // M04-B2.2b: replaces one function and needs the topup tables: newest, down first, up last
@@ -217,6 +219,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
       await client.query(POSTING_UP_SQL);
       await client.query(M07_UP_SQL);
       await client.query(M08_UP_SQL);
+      await client.query(M11_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
       await client.query('ROLLBACK');
@@ -235,7 +238,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
     expect(owners.rows).toEqual([{ owner: 'ship11_test' }]);
     const triggers = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|admin_finance_grants_|deliver(y|ies)_|shipping_fee_policy_|shipping_eligibility_|shipping_fee_agreement)' AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'sessions_invalidate_push_tokens_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
+         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|admin_finance_grants_|deliver(y|ies)_|reviews_|review_|complaints_|complaint_|shipping_fee_policy_|shipping_eligibility_|shipping_fee_agreement)' AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'sessions_invalidate_push_tokens_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
     );
     expect(triggers.rows[0]?.n).toBe(1);
   });
