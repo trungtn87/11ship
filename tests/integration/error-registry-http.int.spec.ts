@@ -115,8 +115,9 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 4 top-up posting codes (M04-B2.2b: TOPUP_ACCOUNT_NOT_RECEIVING, BANK_TRANSACTION_ALREADY_RECORDED, TOPUP_WALLET_LIMIT_EXCEEDED, FINANCE_BANK_ACCOUNT_STATE_CONFLICT)
     // + 1 notification code (M08: NOTIFICATION_NOT_FOUND)
     // + 13 delivery codes (M07: DELIVERY_*, FEE_*, DESTINATION_NOT_CONFIRMED, ... see app-errors.ts)
+    // + 12 order codes (M10: ORDER_*; the earlier ORDER_MODULE_NOT_READY placeholder is gone, so +11 net; see app-errors.ts)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(127);
+    expect(codes).toHaveLength(138);
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(19);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);
     expect(codes).toContain('TRANSACTION_OUTCOME_UNKNOWN');
