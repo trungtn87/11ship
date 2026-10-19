@@ -61,6 +61,22 @@ export function configureApp(app: INestApplication): void {
   // A differently named wrapper on purpose: the framework skips registering ITS parser when it finds one named jsonParser, which
   // would leave every other route without a body parser.
   const captureRawBody = (request: unknown, response: unknown, next: (error?: unknown) => void): void => rawCapturingParser(request, response, next);
+  // M11: an evidence picture is sent as base64 (5 MB of picture is about 7 MB of text). Its own parser goes FIRST for the three upload routes; every other
+  // complaint route keeps the default limit through the parsers below (the first parser to run wins).
+  const evidenceParser = express.json({
+    limit: '7.5mb',
+    verify: (request, _response, buffer) => {
+      request.rawBody = Buffer.from(buffer);
+    },
+  }) as unknown as (request: unknown, response: unknown, next: (error?: unknown) => void) => void;
+  const captureEvidenceBody = (request: unknown, response: unknown, next: (error?: unknown) => void): void => evidenceParser(request, response, next);
+  for (const route of ['customers/me/complaints/attachments', 'shop/me/complaints/attachments', 'driver/complaints/attachments']) {
+    app.use(`/${GLOBAL_PREFIX}/${route}`, captureEvidenceBody);
+  }
+  // The Shipper's M11 routes carry private data like every own-profile route: never cached.
+  for (const route of ['driver/complaints', 'driver/reviews']) {
+    app.use(`/${GLOBAL_PREFIX}/${route}`, clientAuthTransportMiddleware);
+  }
   app.use(`/${GLOBAL_PREFIX}/${CLIENT_AUTH_ROUTE_PREFIX}`, captureRawBody);
   app.use(`/${GLOBAL_PREFIX}/customer/me/profile`, captureRawBody);
   // M05: the customer address book writes a phone signs (create, edit, delete, default).

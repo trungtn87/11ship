@@ -377,6 +377,33 @@ export class DeliveryRepository {
     return row === undefined ? undefined : toDelivery(row);
   }
 
+  /** Every delivery that was made for an order, oldest first (M11 reads it: the customer rates the Shipper of the one that succeeded). */
+  async listByOrder(context: TransactionContext, orderId: string): Promise<DeliveryRow[]> {
+    const result = await context.query<RawDelivery>(`SELECT ${DELIVERY_COLUMNS} FROM app.deliveries d WHERE d.order_id = $1::uuid ORDER BY d.created_at, d.delivery_id`, [orderId]);
+    return result.rows.map(toDelivery);
+  }
+
+  /**
+   * The whole chain a delivery belongs to (the first call, every "call again" after it), oldest first: M11 reads it before it applies a conclusion
+   * to a result, because a later delivery may have changed the facts.
+   */
+  async listChain(context: TransactionContext, deliveryId: string): Promise<DeliveryRow[]> {
+    const result = await context.query<RawDelivery>(
+      `WITH RECURSIVE up(delivery_id, previous_delivery_id) AS (
+         SELECT delivery_id, previous_delivery_id FROM app.deliveries WHERE delivery_id = $1::uuid
+         UNION ALL
+         SELECT p.delivery_id, p.previous_delivery_id FROM app.deliveries p JOIN up ON p.delivery_id = up.previous_delivery_id
+       ), down(delivery_id) AS (
+         SELECT delivery_id FROM up WHERE previous_delivery_id IS NULL
+         UNION ALL
+         SELECT n.delivery_id FROM app.deliveries n JOIN down ON n.previous_delivery_id = down.delivery_id
+       )
+       SELECT ${DELIVERY_COLUMNS} FROM app.deliveries d WHERE d.delivery_id IN (SELECT delivery_id FROM down) ORDER BY d.created_at, d.delivery_id`,
+      [deliveryId],
+    );
+    return result.rows.map(toDelivery);
+  }
+
   /** The delivery a Shop owns, or undefined (the same answer for a stranger's and a missing one). */
   async findOfShop(context: TransactionContext, deliveryId: string, shopId: string): Promise<DeliveryRow | undefined> {
     const found = await this.findById(context, deliveryId);

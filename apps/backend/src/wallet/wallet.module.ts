@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { DriverModule } from '../driver/driver.module';
 import { CommissionHoldService } from './commission-hold-service';
+import { WalletAdjustmentRepository } from './wallet-adjustment-repository';
+import { WalletAdjustmentService } from './wallet-adjustment-service';
+import { WalletCommissionAdjustmentAdapter } from './wallet-commission-adjustment.adapter';
 import { WalletRepository } from './wallet-repository';
 import { SystemBankAccountRepository } from './system-bank-account-repository';
 import { TopupPostingService } from './topup-posting-service';
@@ -17,7 +20,7 @@ import { WalletService } from './wallet-service';
  */
 @Module({
   imports: [DriverModule],
-  providers: [WalletRepository, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupSettlementRepository, TopupPostingService, CommissionHoldService],
-  exports: [WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupPostingService, CommissionHoldService],
+  providers: [WalletRepository, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupSettlementRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentRepository, WalletAdjustmentService, WalletCommissionAdjustmentAdapter],
+  exports: [WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentService, WalletCommissionAdjustmentAdapter],
 })
 export class WalletModule {}

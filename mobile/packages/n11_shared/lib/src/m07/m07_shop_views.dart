@@ -36,11 +36,12 @@ class ShopCallDraft {
 // ---- Q01: list -------------------------------------------------------------------------------------------------------
 
 class ShopDeliveryHub extends StatefulWidget {
-  const ShopDeliveryHub({super.key, required this.source, this.mapBuilder, this.pinPicker});
+  const ShopDeliveryHub({super.key, required this.source, this.mapBuilder, this.pinPicker, this.feedbackSlot});
 
   final ShopDeliverySource source;
   final M07MapBuilder? mapBuilder;
   final M07PinPickerBuilder? pinPicker;
+  final M07FeedbackSlot? feedbackSlot;
 
   @override
   State<ShopDeliveryHub> createState() => _ShopDeliveryHubState();
@@ -66,7 +67,7 @@ class _ShopDeliveryHubState extends State<ShopDeliveryHub> {
   }
 
   Future<void> _open(DeliveryView d) async {
-    await Navigator.of(context).push(n11Route(ShopDeliveryDetailScreen(source: widget.source, deliveryId: d.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker)));
+    await Navigator.of(context).push(n11Route(ShopDeliveryDetailScreen(source: widget.source, deliveryId: d.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker, feedbackSlot: widget.feedbackSlot)));
     if (mounted) {
       setState(() => _rev++);
     }
@@ -409,12 +410,13 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
 // ---- Q03-Q08: detail -------------------------------------------------------------------------------------------------
 
 class ShopDeliveryDetailScreen extends StatefulWidget {
-  const ShopDeliveryDetailScreen({super.key, required this.source, required this.deliveryId, this.mapBuilder, this.pinPicker});
+  const ShopDeliveryDetailScreen({super.key, required this.source, required this.deliveryId, this.mapBuilder, this.pinPicker, this.feedbackSlot});
 
   final ShopDeliverySource source;
   final String deliveryId;
   final M07MapBuilder? mapBuilder;
   final M07PinPickerBuilder? pinPicker;
+  final M07FeedbackSlot? feedbackSlot;
 
   @override
   State<ShopDeliveryDetailScreen> createState() => _ShopDeliveryDetailScreenState();
@@ -438,7 +440,7 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
   Future<void> _recall(DeliveryView d) async {
     DeliveryView? fresh;
     if (await act('recall-${d.deliveryId}', (String key) async => fresh = await widget.source.recall(d.deliveryId, key: key), onConflict: _reload) && mounted && fresh != null) {
-      await Navigator.of(context).pushReplacement(n11Route(ShopDeliveryDetailScreen(source: widget.source, deliveryId: fresh!.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker)));
+      await Navigator.of(context).pushReplacement(n11Route(ShopDeliveryDetailScreen(source: widget.source, deliveryId: fresh!.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker, feedbackSlot: widget.feedbackSlot)));
     }
   }
 
@@ -499,6 +501,7 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
       ..._byState(d),
       _recipientCard(d),
       MoneySummary(goods: d.goods, fee: d.fee),
+      if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed || d.state == DeliveryState.cancelledByMerchant)) widget.feedbackSlot!(context, d),
       if (d.previousDeliveryId != null) const N11Card(child: Text('Đây là lần gọi lại. Lần gọi trước vẫn nằm trong lịch sử.', style: N11Text.caption)),
       if (d.result != null || d.timeline.isNotEmpty) _timeline(d),
     ];

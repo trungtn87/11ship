@@ -19,7 +19,7 @@ NotificationRouter foodNotificationRouter(AppFlows flows) => (BuildContext conte
         case TargetType.delivery:
           final ShopDeliverySource? source = flows.shopDeliveries;
           if (source != null && target.id != null) {
-            await navigator.push(n11Route(ShopDeliveryDetailScreen(source: source, deliveryId: target.id!)));
+            await navigator.push(n11Route(ShopDeliveryDetailScreen(source: source, deliveryId: target.id!, feedbackSlot: _feedbackSlot(flows))));
           } else {
             navigator.popUntil((Route<dynamic> r) => r.isFirst);
             actions.goTab('orders');
@@ -30,6 +30,11 @@ NotificationRouter foodNotificationRouter(AppFlows flows) => (BuildContext conte
         case TargetType.profile:
           navigator.popUntil((Route<dynamic> r) => r.isFirst);
           actions.goTab('shop');
+        case TargetType.complaint:
+          final M11Source? feedback = flows.feedback;
+          if (feedback != null && target.id != null) {
+            await navigator.push(n11Route(complaintRoute(source: feedback, role: m11RoleOf(flows.session, shipApp: false), complaintId: target.id!, picker: flows.picker)));
+          }
         case TargetType.order:
           final OrderRuntime? orders = flows.orders;
           if (orders != null && target.id != null) {
@@ -44,6 +49,9 @@ NotificationRouter foodNotificationRouter(AppFlows flows) => (BuildContext conte
           break;
       }
     };
+
+/// M11: rating and complaint entries under a finished delivery. Null while the app has no M11 source.
+M07FeedbackSlot? _feedbackSlot(AppFlows? flows) => flows?.feedback == null ? null : shopDeliveryFeedbackSlot(source: flows!.feedback!, picker: flows.picker);
 
 /// The bell at the top of the Food home and the page it opens (no new bottom tab).
 Widget? _bell(BuildContext context, AppFlows? flows, ShellActions actions) {
@@ -99,7 +107,7 @@ Widget _home(SessionController session, ShellActions actions, AppFlows? flows) {
       ]),
     );
   }
-  return Builder(builder: (BuildContext context) => DiscoveryHome(controller: m02.discovery, publicApi: m02.publicApi, bell: _bell(context, flows, actions)));
+  return Builder(builder: (BuildContext context) => DiscoveryHome(controller: m02.discovery, publicApi: m02.publicApi, ratings: flows?.feedback, bell: _bell(context, flows, actions)));
 }
 
 // ---- F03: orders -----------------------------------------------------------------------------------------------------
@@ -112,10 +120,10 @@ Widget _orders(SessionController session, AppFlows? flows) {
   final bool shopHat = owner && session.identity?.activeRole != 'CUSTOMER';
   if (shopHat && orders != null) {
     // M10 + M07: "Đơn món" (ordered in the app) and "Giao hàng" (calls for a Shipper: from an order or direct).
-    return ShopOrdersTab(runtime: orders, deliveries: deliveries);
+    return ShopOrdersTab(runtime: orders, deliveries: deliveries, deliveriesBuilder: (ShopDeliverySource source) => ShopDeliveryHub(source: source, mapBuilder: foodMapBuilder(), pinPicker: foodPinPicker(), feedbackSlot: _feedbackSlot(flows)));
   }
   if (shopHat && deliveries != null) {
-    return ShopDeliveryHub(source: deliveries, mapBuilder: foodMapBuilder(), pinPicker: foodPinPicker());
+    return ShopDeliveryHub(source: deliveries, mapBuilder: foodMapBuilder(), pinPicker: foodPinPicker(), feedbackSlot: _feedbackSlot(flows));
   }
   if (signedIn && orders != null && session.identity?.customerAccess == true) {
     // M10: the customer's orders — Đang xử lý / Đơn hẹn / Lịch sử.
@@ -140,6 +148,7 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
     reset: flows?.reset,
     shop: shop,
     settingsEntries: <Widget>[
+      if (flows?.feedback != null) ...m11AccountEntries(context, source: flows!.feedback!, picker: flows.picker, role: m11RoleOf(session, shipApp: false)),
       if (flows?.addresses != null) addressBookEntry(context, flows!.addresses!),
       if (flows?.notificationSource != null && flows?.push != null)
         N11ListItem(

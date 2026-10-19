@@ -40,13 +40,16 @@ describe('M04-A1 wallet core boundary', () => {
       'UPDATE app.wallet_topup_requests',
       'UPDATE app.wallet_topup_requests',
     ]);
-    for (const file of walletFiles().filter((name) => name !== 'wallet/topup-settlement-repository.ts' && name !== 'wallet/commission-hold-service.ts')) {
+    for (const file of walletFiles().filter((name) => name !== 'wallet/topup-settlement-repository.ts' && name !== 'wallet/commission-hold-service.ts' && name !== 'wallet/wallet-adjustment-repository.ts')) {
       expect(codeOf(file)).not.toMatch(/UPDATE\s+app\.(driver_wallets|wallet_holds)|INSERT\s+INTO\s+app\.(wallet_ledger_entries|wallet_holds)/i);
     }
     expect(codeOf('wallet/topup-settlement-repository.ts')).toContain('UPDATE app.driver_wallets');
     expect(code).not.toMatch(/\bDELETE\s+FROM\b/i);
     expect(code).not.toMatch(/\bTRUNCATE\b/i);
-    expect(code.match(/INSERT\s+INTO\s+app\.wallet_ledger_entries/gi)).toHaveLength(2);
+    // M04 adjustments: a third literal ledger INSERT, in the adjustment repository only, and only for the two adjustment kinds with their own record.
+    expect(code.match(/INSERT\s+INTO\s+app\.wallet_ledger_entries/gi)).toHaveLength(3);
+    expect(codeOf('wallet/wallet-adjustment-repository.ts')).toMatch(/INSERT INTO app\.wallet_ledger_entries[^`]*adjustment_id\)/);
+    expect(codeOf('wallet/wallet-adjustment-service.ts')).toMatch(/'ADJUSTMENT_CREDIT' : 'ADJUSTMENT_DEBIT'/);
     expect(codeOf('wallet/topup-settlement-repository.ts')).toMatch(/INSERT INTO app\.wallet_ledger_entries[^`]*VALUES \(\$1::uuid, \$2::uuid, \$3::bigint, 'TOPUP'/);
     expect(codeOf('wallet/commission-hold-service.ts')).toMatch(/INSERT INTO app\.wallet_ledger_entries[^`]*'COMMISSION_DEBIT'/);
     expect(code.match(/INSERT INTO app\.driver_wallets\b/g) ?? []).toHaveLength(1);
@@ -65,13 +68,15 @@ describe('M04-A1 wallet core boundary', () => {
     expect(codeOf('wallet/commission-hold-service.ts')).not.toMatch(/WITHDRAWAL/);
   });
 
-  it('M04-B2.2b / M07: the only inserts are the wallet, the request, an INACTIVE system account, the bank record, the topup, the ledger rows (TOPUP, COMMISSION_DEBIT) and the commission hold; no receiving switch to true by literal', () => {
+  it('M04-B2.2b / M07: the only inserts are the wallet, the request, an INACTIVE system account, the bank record, the topup, the ledger rows (TOPUP, COMMISSION_DEBIT, the two adjustment kinds), the adjustment record and the commission hold; no receiving switch to true by literal', () => {
     const code = walletCode();
     expect([...(code.match(/INSERT\s+INTO\s+app\.\w+/gi) ?? [])].sort()).toEqual([
       'INSERT INTO app.driver_wallets',
       'INSERT INTO app.system_owned_bank_accounts',
+      'INSERT INTO app.wallet_adjustments',
       'INSERT INTO app.wallet_bank_transactions',
       'INSERT INTO app.wallet_holds',
+      'INSERT INTO app.wallet_ledger_entries',
       'INSERT INTO app.wallet_ledger_entries',
       'INSERT INTO app.wallet_ledger_entries',
       'INSERT INTO app.wallet_topup_requests',
@@ -80,7 +85,7 @@ describe('M04-A1 wallet core boundary', () => {
     // A receiving account is only ever inserted NOT receiving (the literal false); the switch takes its value from the SYSTEM command, never a literal true.
     expect(code).toContain('SELECT $1::uuid, $2, $3, $4, false, 1, clock.t, clock.t');
     expect(code).not.toMatch(/can_receive\s*=\s*true/i);
-    expect(code).not.toMatch(/(UPDATE|DELETE\s+FROM)\s+app\.(wallet_topups|wallet_bank_transactions|wallet_ledger_entries)/i);
+    expect(code).not.toMatch(/(UPDATE|DELETE\s+FROM)\s+app\.(wallet_topups|wallet_bank_transactions|wallet_ledger_entries|wallet_adjustments)/i);
     // The bank record and the topup are written only by the settlement repository.
     for (const file of walletFiles().filter((name) => name !== 'wallet/topup-settlement-repository.ts')) {
       expect(codeOf(file)).not.toMatch(/INSERT\s+INTO\s+app\.(wallet_topups|wallet_bank_transactions)/i);

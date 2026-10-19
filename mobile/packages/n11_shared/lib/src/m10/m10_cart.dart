@@ -3,8 +3,10 @@ import 'package:flutter/foundation.dart';
 import '../account/session_controller.dart';
 import '../flows/location.dart';
 import '../addresses/address_controller.dart';
+import '../m02/menu_models.dart';
 import '../m07/m07_source.dart';
 import '../m07/m07_widgets.dart';
+import '../m11/m11_source.dart';
 import 'm10_models.dart';
 import 'm10_source.dart';
 
@@ -206,7 +208,7 @@ class CartController extends ChangeNotifier {
 /// What the order screens of the app share: the cart and the two sources. Built once per app (food); [current] is how a menu row finds the cart without
 /// every screen between the home and the menu having to pass it down. Null in a build or a test that has no orders.
 class OrderRuntime {
-  OrderRuntime({required this.customer, required this.shop, required this.cart, this.mapBuilder, this.pinPicker, this.canOrder = _always, this.addresses, this.session, this.location});
+  OrderRuntime({required this.customer, required this.shop, required this.cart, this.mapBuilder, this.pinPicker, this.canOrder = _always, this.addresses, this.session, this.location, this.feedback, this.picker});
 
   /// The address book (M05) the checkout picks from, and the session the recipient is pre-filled from.
   final AddressBookController? addresses;
@@ -214,6 +216,10 @@ class OrderRuntime {
 
   /// One foreground position fix, taken only when the customer presses "Dùng vị trí hiện tại" at the checkout (no tracking). Null = no GPS in this build.
   final LocationProvider? location;
+
+  /// M11: the customer's ratings and complaints under a finished order. Null = this build has none.
+  final M11Source? feedback;
+  final ImagePickerPort? picker;
 
   static bool _always() => true;
 

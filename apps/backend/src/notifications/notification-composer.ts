@@ -3,7 +3,7 @@ import { NotificationApp, NotificationKind, PUSH_TTL_MS, TargetType } from './no
 // Pure: an outbox event becomes zero or more notification drafts. Wording is fixed here and is safe for a lock screen: the delivery CODE is the only
 // identifier shown, never a phone, an address, an amount owner, an OTP or bank data. No I/O and no clock.
 
-export type Audience = 'SHOP' | 'DRIVER' | 'DRIVER_OF_AGREEMENT' | 'CUSTOMER';
+export type Audience = 'SHOP' | 'DRIVER' | 'DRIVER_OF_AGREEMENT' | 'CUSTOMER' | 'ACCOUNT';
 
 export interface DraftBase {
   readonly audience: Audience;
@@ -51,6 +51,15 @@ const delivery = (p: DeliveryChangePayload, audience: Audience, kind: Notificati
     pushTtlMs,
   },
 });
+
+/**
+ * M11: the shop may rate the Shipper once the delivery ended (delivered or failed). ONE reminder per delivery (the dedupe key has no version), in the inbox
+ * like the other reminders: it never forces a screen open, and the rating itself stays optional.
+ */
+function reviewReminder(p: DeliveryChangePayload): Draft {
+  const base = delivery(p, 'SHOP', 'REVIEW_REMINDER', 'Đánh giá shipper', `Đơn ${p.code}: bạn có thể đánh giá shipper đã giao.`);
+  return base.type === 'NOTIFY' ? { type: 'NOTIFY', draft: { ...base.draft, dedupeKey: `review-reminder:${p.deliveryId}` } } : base;
+}
 
 /** What a delivery change tells whom. Unknown changes tell nobody (they are internal steps such as a pinned destination). */
 export function composeDeliveryChange(p: DeliveryChangePayload): Draft[] {
@@ -100,9 +109,9 @@ function composeForShopAndShipper(p: DeliveryChangePayload): Draft[] {
     case 'picked_up':
       return [delivery(p, 'SHOP', 'DELIVERY_PICKED_UP', 'Shipper đã lấy hàng', `Đơn ${code} đang được giao.`)];
     case 'completed':
-      return [delivery(p, 'SHOP', 'DELIVERY_COMPLETED', 'Giao hàng thành công', `Đơn ${code} đã giao thành công.`)];
+      return [delivery(p, 'SHOP', 'DELIVERY_COMPLETED', 'Giao hàng thành công', `Đơn ${code} đã giao thành công.`), reviewReminder(p)];
     case 'failed':
-      return [delivery(p, 'SHOP', 'DELIVERY_FAILED', 'Giao hàng không thành công', `Đơn ${code} giao không thành công. Cần bạn xử lý hàng.`)];
+      return [delivery(p, 'SHOP', 'DELIVERY_FAILED', 'Giao hàng không thành công', `Đơn ${code} giao không thành công. Cần bạn xử lý hàng.`), reviewReminder(p)];
     case 'cancelled_by_shop':
       return p.driverId === null ? [] : [delivery(p, 'DRIVER', 'DELIVERY_CANCELLED', 'Quán đã hủy đơn', `Đơn ${code} đã bị quán hủy. Bạn không cần giao đơn này.`)];
     case 'search_stopped':

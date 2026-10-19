@@ -13,6 +13,7 @@ import '../flows/location.dart';
 import '../m02/m02_widgets.dart';
 import '../m07/m07_models.dart';
 import '../m07/m07_source.dart';
+import '../m11/m11_entries.dart';
 import '../m07/m07_widgets.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
@@ -892,6 +893,8 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
       OrderMoneyCard(money: o.money, edited: o.edited, showPaid: o.confirmedAt != null),
       N11Card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Text('Người nhận', style: N11Text.label), KeyValueRows(<(String, String)>[('Tên', o.recipient.name), ('Số điện thoại', o.recipient.phone), ('Địa chỉ', o.recipient.addressText)]), if (o.note != null) Text('Ghi chú: ${o.note}', style: N11Text.caption)])),
       if (d != null) _deliveryCard(o, d),
+      if (o.ended && widget.runtime.feedback != null && widget.runtime.picker != null)
+        customerOrderFeedbackCard(context, source: widget.runtime.feedback!, picker: widget.runtime.picker!, orderId: o.orderId, orderCode: o.code),
       if (d != null || o.recipient.hasPin)
         OrderMapCard(
           pickupLat: d?.pickupLat,

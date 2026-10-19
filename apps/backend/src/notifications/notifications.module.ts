@@ -3,6 +3,7 @@ import { OrdersCoreModule } from '../orders/orders-core.module';
 import { DeliveryReadModule } from '../delivery/delivery-read.module';
 import { ShipperLocationModule } from '../delivery/shipper-location.module';
 import { DriverModule } from '../driver/driver.module';
+import { FeedbackReadModule } from '../feedback/feedback-read.module';
 import { ShopModule } from '../shop/shop.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { NotificationRecipients } from './notification-recipients';
@@ -29,7 +30,7 @@ export class NotificationsModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: NotificationsModule,
-      imports: [auth, TransactionModule, ShippingEligibilityModule, NotificationsReadModule, ShopModule, DriverModule, WalletModule, DeliveryReadModule, ShipperLocationModule, OrdersCoreModule],
+      imports: [auth, TransactionModule, ShippingEligibilityModule, NotificationsReadModule, ShopModule, DriverModule, WalletModule, DeliveryReadModule, ShipperLocationModule, OrdersCoreModule, FeedbackReadModule],
       controllers: [NotificationController],
       providers: [
         NotificationRecipients,

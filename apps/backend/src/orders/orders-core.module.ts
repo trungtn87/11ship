@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { OutboxModule } from '../outbox/outbox.module';
 import { OrderDeliveryAdapter } from './order-delivery-adapter';
+import { OrderFeedbackAdapter } from './order-feedback-adapter';
 import { OrderRecorder } from './order-recorder';
 import { OrderRepository } from './order-repository';
 
@@ -11,7 +12,7 @@ import { OrderRepository } from './order-repository';
  */
 @Module({
   imports: [AuditModule, OutboxModule],
-  providers: [OrderRepository, OrderRecorder, OrderDeliveryAdapter],
-  exports: [OrderRepository, OrderRecorder, OrderDeliveryAdapter],
+  providers: [OrderRepository, OrderRecorder, OrderDeliveryAdapter, OrderFeedbackAdapter],
+  exports: [OrderRepository, OrderRecorder, OrderDeliveryAdapter, OrderFeedbackAdapter],
 })
 export class OrdersCoreModule {}

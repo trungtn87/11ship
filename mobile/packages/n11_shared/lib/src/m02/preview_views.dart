@@ -4,6 +4,8 @@ import '../account/account_views.dart';
 import '../account/session_controller.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../m11/m11_rating_views.dart';
+import '../m11/m11_source.dart';
 import 'm02_flows.dart';
 import 'm02_format.dart';
 import 'm02_widgets.dart';
@@ -275,13 +277,16 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
 /// K01: a customer opens a shop by its id (from the entry point that has it). Public fields only.
 class ShopPublicScreen extends StatefulWidget {
-  const ShopPublicScreen({super.key, required this.api, required this.shopId, this.focusItemId});
+  const ShopPublicScreen({super.key, required this.api, required this.shopId, this.focusItemId, this.ratings});
 
   final PublicShopApi api;
   final String shopId;
 
   /// A dish a search result pointed at: the screen scrolls to it.
   final String? focusItemId;
+
+  /// M11: where the shop's public ratings come from. Null = no rating entry (preview, tests).
+  final M11Source? ratings;
 
   @override
   State<ShopPublicScreen> createState() => _ShopPublicScreenState();
@@ -339,6 +344,14 @@ class _ShopPublicScreenState extends State<ShopPublicScreen> {
                   title: 'Chưa cập nhật',
                   text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.',
                   trailing: N11Button(key: const Key('k01-reload'), label: 'Thử lại', compact: true, onPressed: _controller.load),
+                ),
+              if (widget.ratings != null)
+                N11ListItem(
+                  key: const Key('k01-ratings'),
+                  icon: Icons.star_outline_rounded,
+                  title: 'Đánh giá của khách',
+                  sub: 'Điểm trung bình, nhận xét và phản hồi của quán',
+                  onTap: () => Navigator.of(context).push(n11Route(ShopReviewsScreen(source: widget.ratings!, shopId: widget.shopId, title: view!.name))),
                 ),
               ShopMenuContent(view: view!, preview: false, orderShopId: widget.shopId, focusItemId: widget.focusItemId, onHours: () => Navigator.of(context).push(n11Route(PublicHoursScreen(view: view)))),
             ];

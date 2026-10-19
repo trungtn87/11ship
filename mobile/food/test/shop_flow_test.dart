@@ -27,6 +27,7 @@ void main() {
     await tester.tap(find.byKey(const Key('tab-account')));
     await tester.pump();
     await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('shop-entry')));
     await tester.tap(find.byKey(const Key('shop-entry')));
     await tester.pumpAndSettle();
     expect(api.to('GET', '/v1/onboarding/shop/profile'), hasLength(1));

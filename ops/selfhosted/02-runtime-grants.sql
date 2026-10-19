@@ -119,3 +119,18 @@ GRANT SELECT, INSERT, DELETE ON app.notification_consumed_events TO ship11_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.notification_reminders TO ship11_app;
 GRANT SELECT, INSERT, DELETE ON app.notification_offer_rounds TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.notification_settings TO ship11_app;
+
+-- M11: ratings and complaints. Nothing is ever deleted (guard triggers); messages, moderations and reply history are append-only. The complaint code comes from
+-- app.next_complaint_code() (03-runtime-function-grants.sql), not from a sequence privilege.
+GRANT SELECT, INSERT, UPDATE ON app.reviews TO ship11_app;
+GRANT SELECT, INSERT ON app.review_moderations TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.review_replies TO ship11_app;
+GRANT SELECT, INSERT ON app.review_reply_history TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.complaints TO ship11_app;
+GRANT SELECT, INSERT ON app.complaint_messages TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.complaint_attachments TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.complaint_reconsiderations TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.complaint_adjustments TO ship11_app;
+
+-- M04 adjustments (posted by the wallet package for a decision of M11): the record is append-only. The ledger row it comes with is covered by the ledger grant above.
+GRANT SELECT, INSERT ON app.wallet_adjustments TO ship11_app;

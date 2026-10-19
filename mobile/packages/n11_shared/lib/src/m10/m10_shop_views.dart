@@ -6,7 +6,9 @@ import '../account/account_views.dart';
 import '../m02/m02_widgets.dart';
 import '../m07/m07_models.dart';
 import '../m07/m07_shop_views.dart';
+import '../m02/menu_models.dart';
 import '../m07/m07_source.dart';
+import '../m11/m11_entries.dart';
 import '../m07/m07_widgets.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
@@ -410,7 +412,7 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
                 kind: ButtonKind.secondary,
                 compact: true,
                 onPressed: () async {
-                  await Navigator.of(context).push(n11Route(ShopDeliveryDetailScreen(source: widget.deliveries!, deliveryId: d.deliveryId)));
+                  await Navigator.of(context).push(n11Route(ShopDeliveryDetailScreen(source: widget.deliveries!, deliveryId: d.deliveryId, feedbackSlot: widget.runtime.feedback == null ? null : shopDeliveryFeedbackSlot(source: widget.runtime.feedback!, picker: widget.runtime.picker ?? const NoImagePicker()))));
                   await _fetcher.reload();
                 },
               ),

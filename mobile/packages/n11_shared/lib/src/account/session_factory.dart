@@ -11,6 +11,8 @@ import '../m02/discovery_models.dart';
 import '../m02/http_m02_api.dart';
 import '../m02/menu_models.dart';
 import '../m07/m07_http.dart';
+import '../m11/m11_http.dart';
+import '../m11/m11_source.dart';
 import '../m07/m07_sample.dart';
 import '../m07/m07_source.dart';
 import '../m07/m07_widgets.dart';
@@ -44,7 +46,7 @@ SessionController createSessionController(ClientApp app, AppConfig config, {ApiT
 
 /// The three connected flows of an app, built on its session. [location] is for tests; the real one is the Kotlin channel.
 class AppFlows {
-  AppFlows({required this.session, required this.reset, this.shop, this.driver, this.m02, this.addresses, this.shopDeliveries, this.shipperDeliveries, this.orders, this.notifications, this.notificationSource, this.push});
+  AppFlows({required this.session, required this.reset, this.shop, this.driver, this.m02, this.addresses, this.shopDeliveries, this.shipperDeliveries, this.orders, this.notifications, this.notificationSource, this.push, this.feedback, this.picker = const NoImagePicker()});
 
   final SessionController session;
   final ResetController reset;
@@ -70,6 +72,12 @@ class AppFlows {
   final NotificationController? notifications;
   final NotificationSource? notificationSource;
   final PushSync? push;
+
+  /// M11: ratings and complaints of this app's account. Real server contract; no sample data.
+  final M11Source? feedback;
+
+  /// The OS photo picker for complaint evidence pictures (a test passes its own).
+  final ImagePickerPort picker;
 }
 
 AppFlows createFlows(
@@ -85,6 +93,7 @@ AppFlows createFlows(
   AddressApi? addressApi,
   NotificationSource? notificationSource,
   PushPort pushPort = const NoPushPort(),
+  M11Source? feedbackSource,
   OrderRuntime? orderRuntime,
   M07MapBuilder? orderMapBuilder,
   M07PinPickerBuilder? orderPinPicker,
@@ -96,11 +105,14 @@ AppFlows createFlows(
   final NotificationSource inbox = notificationSource ?? HttpNotificationSource(session: session);
   final NotificationController inboxController = NotificationController(session: session, source: inbox);
   final AddressBookController? book = app == ClientApp.food ? AddressBookController(api: addressApi ?? HttpAddressApi(session: session), session: session) : null;
-  final OrderRuntime? orders = app == ClientApp.food ? (orderRuntime ?? _orderRuntime(session, book, where, orderMapBuilder, orderPinPicker)) : null;
+  final M11Source feedback = feedbackSource ?? HttpM11Source(session: session);
+  final OrderRuntime? orders = app == ClientApp.food ? (orderRuntime ?? _orderRuntime(session, book, where, orderMapBuilder, orderPinPicker, feedback, picker)) : null;
   OrderRuntime.current = orders;
   return AppFlows(
     orders: orders,
     notificationSource: inbox,
+    feedback: feedback,
+    picker: picker,
     notifications: inboxController,
     push: PushSync(session: session, source: inbox, port: pushPort, onTap: inboxController.requestOpen),
     session: session,
@@ -127,7 +139,7 @@ AppFlows createFlows(
 
 /// The cart and the order sources of 11Food. The cart belongs to the signed-in account: it is read when a person signs in and dropped when the session
 /// ends, so the next person never sees it.
-OrderRuntime _orderRuntime(SessionController session, AddressBookController? book, LocationProvider location, M07MapBuilder? mapBuilder, M07PinPickerBuilder? pinPicker) {
+OrderRuntime _orderRuntime(SessionController session, AddressBookController? book, LocationProvider location, M07MapBuilder? mapBuilder, M07PinPickerBuilder? pinPicker, M11Source feedback, ImagePickerPort picker) {
   final SampleOrderStore? store = kM10UiPreview ? SampleOrderStore() : null;
   final CustomerOrderSource customer = store != null ? SampleCustomerOrders(store) : HttpCustomerOrderSource(session: session);
   final ShopOrderSource shop = store != null ? SampleShopOrders(store) : HttpShopOrderSource(session: session);
@@ -155,6 +167,8 @@ OrderRuntime _orderRuntime(SessionController session, AddressBookController? boo
     addresses: book,
     session: session,
     location: location,
+    feedback: feedback,
+    picker: picker,
     mapBuilder: mapBuilder,
     pinPicker: pinPicker,
     canOrder: () => session.status == SessionStatus.signedIn && (session.identity?.customerAccess ?? false) && session.identity?.activeRole != 'SHOP_OWNER',

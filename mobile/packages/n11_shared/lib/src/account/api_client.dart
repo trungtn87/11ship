@@ -11,13 +11,16 @@ import 'models.dart';
 // through the Android certificate store of the test package (mobile/README.md), never through this code.
 
 class ApiResponse {
-  const ApiResponse({required this.status, required this.headers, required this.body});
+  const ApiResponse({required this.status, required this.headers, required this.body, this.bodyBytes});
 
   final int status;
 
   /// Lower-case header names.
   final Map<String, String> headers;
   final String body;
+
+  /// The raw bytes of the answer, for a picture; null when the transport kept only the text (a JSON answer never needs them).
+  final List<int>? bodyBytes;
 
   Map<String, Object?>? get json {
     try {
@@ -68,7 +71,7 @@ class HttpApiTransport implements ApiTransport {
       final List<int> bytes = await response.expand((List<int> chunk) => chunk).toList().timeout(timeout);
       final Map<String, String> out = <String, String>{};
       response.headers.forEach((String name, List<String> values) => out[name.toLowerCase()] = values.join(', '));
-      return ApiResponse(status: response.statusCode, headers: out, body: utf8.decode(bytes, allowMalformed: true));
+      return ApiResponse(status: response.statusCode, headers: out, body: utf8.decode(bytes, allowMalformed: true), bodyBytes: bytes);
     } on HandshakeException {
       throw const AuthFailure(AuthFailureKind.tls);
     } on TlsException {

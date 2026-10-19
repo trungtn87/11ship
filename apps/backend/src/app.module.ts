@@ -8,6 +8,7 @@ import { AppConfig } from './config/app-config';
 import { CustomerProfileModule } from './customer-profile/customer-profile.module';
 import { CustomersModule } from './customers/customers.module';
 import { DeliveryModule } from './delivery/delivery.module';
+import { FeedbackModule } from './feedback/feedback.module';
 import { ConfigModule } from './config/config.module';
 import { StartupConfigError } from './config/startup-config-error';
 import { DatabaseModule } from './database/database.module';
@@ -79,7 +80,7 @@ export class AppModule {
         HealthModule,
         ...(auth === undefined
           ? []
-          : [auth, OnboardingModule.register(auth), ShopManagementModule.register(auth), MenuModule.register(auth), CustomerProfileModule.register(auth), CustomersModule.register(auth), ShipperSelfModule.register(auth), WalletTopupModule.register(auth), delivery as DynamicModule, OrdersModule.register(auth, delivery as DynamicModule), NotificationsModule.register(auth), AccountRecoveryModule.register(auth)]),
+          : [auth, OnboardingModule.register(auth), ShopManagementModule.register(auth), MenuModule.register(auth), CustomerProfileModule.register(auth), CustomersModule.register(auth), ShipperSelfModule.register(auth), WalletTopupModule.register(auth), delivery as DynamicModule, OrdersModule.register(auth, delivery as DynamicModule), FeedbackModule.register(auth), NotificationsModule.register(auth), AccountRecoveryModule.register(auth)]),
         // Administration web authentication: only when ADMIN_AUTH_ENABLED=true (config.adminAuth is then present),
         // on top of the one Auth module object above. Disabled (the default): nothing is wired or exposed.
         ...(auth === undefined || options.config.adminAuth === undefined ? [] : [AdminAuthModule.register(auth, activation)]),

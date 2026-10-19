@@ -6,7 +6,7 @@ export type NotificationApp = (typeof NOTIFICATION_APPS)[number];
 export const NOTIFICATION_CATEGORIES = ['ORDERS', 'REMINDERS', 'WALLET_PROFILE', 'AVAILABLE'] as const;
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
 
-export const TARGET_TYPES = ['ORDER', 'DELIVERY', 'WALLET_TXN', 'PROFILE', 'DELIVERY_LIST', 'NONE'] as const;
+export const TARGET_TYPES = ['ORDER', 'DELIVERY', 'WALLET_TXN', 'PROFILE', 'DELIVERY_LIST', 'NONE', 'COMPLAINT'] as const;
 export type TargetType = (typeof TARGET_TYPES)[number];
 
 /** The catalog of notification kinds. A kind fixes the category, the target and the lock-screen-safe wording; none of them carries a phone, an address, an OTP or bank data. */
@@ -31,6 +31,8 @@ export const KINDS = [
   'PROFILE_REJECTED',
   'PROFILE_SUSPENDED',
   'PROFILE_REOPENED',
+  'REVIEW_REMINDER',
+  'COMPLAINT_UPDATED',
   // M10 food orders: the shop is told of a new / cancelled order and of the wanted time; the customer of every step of the Order.
   'ORDER_PLACED',
   'ORDER_CANCELLED_BY_CUSTOMER',
@@ -52,6 +54,8 @@ export const OUTBOX_DELIVERY_CHANGED_TYPE = 'delivery.changed.v1';
 export const OUTBOX_ORDER_CHANGED_TYPE = 'order.changed.v1';
 export const OUTBOX_TOPUP_CHANGED_TYPE = 'wallet.topup_request.changed.v1';
 export const OUTBOX_DRIVER_STATE_CHANGED_TYPE = 'driver.state_changed.v1';
+/** M11: a complaint moved (the Administration received it, asked, concluded, closed, re-opened). */
+export const OUTBOX_COMPLAINT_CHANGED_TYPE = 'complaint.changed.v1';
 /** Withdrawals (M04-C) have no producer yet, and any other `order.*` type than the one above: their names are reserved here and handled by explicit "not integrated" adapters. */
 export const OUTBOX_ORDER_PREFIX = 'order.';
 export const OUTBOX_WITHDRAWAL_PREFIX = 'wallet.withdrawal';
@@ -121,6 +125,8 @@ export const CATEGORY_OF_KIND: Readonly<Record<NotificationKind, NotificationCat
   PROFILE_REJECTED: 'WALLET_PROFILE',
   PROFILE_SUSPENDED: 'WALLET_PROFILE',
   PROFILE_REOPENED: 'WALLET_PROFILE',
+  REVIEW_REMINDER: 'REMINDERS',
+  COMPLAINT_UPDATED: 'ORDERS',
   ORDER_PLACED: 'ORDERS',
   ORDER_CANCELLED_BY_CUSTOMER: 'ORDERS',
   ORDER_CANCELLED_BY_ADMIN: 'ORDERS',
