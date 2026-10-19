@@ -109,6 +109,23 @@ void main() {
       expect(server.completed, 1);
     });
 
+    test('malformed optional profile values do not throw or lose the pending save', () async {
+      final t = await signedIn(ClientApp.food);
+      final FakeShopServer server = FakeShopServer(t.api);
+      final ShopController shop = ShopController(session: t.session, location: FakeLocationProvider());
+      await shop.load();
+      shop..name = 'Ốc 11'..contactPhone = '0901234567'..addressText = '035 Tổ Gia Cung';
+      await shop.capturePosition();
+      t.api.routes['GET /v1/onboarding/shop/profile'] = (String m, String p, Map<String, String> h, String b) async =>
+          json(200, <String, Object?>{'data': <String, Object?>{...server.profile!, 'facebook': 123}});
+      expect(await shop.finishProfile(), isFalse);
+      expect(shop.failure?.kind, AuthFailureKind.badResponse);
+      expect(shop.busy, isFalse);
+      expect(shop.hasPendingWrite, isTrue);
+      expect(shop.fix, isNotNull);
+      expect(server.completed, 0);
+    });
+
     test('HTTP 500 retains the save key for an explicit retry and does not complete', () async {
       final t = await signedIn(ClientApp.food);
       final FakeShopServer server = FakeShopServer(t.api);

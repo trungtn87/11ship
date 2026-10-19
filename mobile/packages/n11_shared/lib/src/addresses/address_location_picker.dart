@@ -4,6 +4,7 @@ import 'package:n11_m14_map/n11_m14_map.dart';
 import '../account/session_controller.dart';
 import '../flows/location.dart';
 import '../tokens.dart';
+import '../widgets/form_feedback.dart';
 
 /// Address text and its explicitly selected point are returned together, only on Save.
 class AddressLocation {
@@ -93,6 +94,11 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
   double? _lng;
   bool _locating = false;
   String? _error;
+  bool _submitted = false;
+  final FocusNode _addressFocus = FocusNode();
+  String? get _addressError => _submitted
+      ? textError(_text.text, 'địa chỉ chi tiết', widget.maxLength)
+      : null;
   late final int? _sessionEpoch;
 
   @override
@@ -124,6 +130,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
   @override
   void dispose() {
     widget.session?.removeListener(_sessionChanged);
+    _addressFocus.dispose();
     _text.dispose();
     super.dispose();
   }
@@ -186,13 +193,13 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
       Navigator.of(context).pop();
       return;
     }
-    if (_text.text.trim().isEmpty ||
-        (widget.requirePoint && (_lat == null || _lng == null))) {
-      setState(
-        () => _error = _text.text.trim().isEmpty
-            ? 'Nhập địa chỉ chi tiết.'
-            : 'Chọn vị trí trên bản đồ trước khi lưu.',
-      );
+    setState(() => _submitted = true);
+    if (_addressError != null) {
+      _addressFocus.requestFocus();
+      return;
+    }
+    if (widget.requirePoint && (_lat == null || _lng == null)) {
+      setState(() => _error = 'Chọn vị trí trên bản đồ trước khi lưu.');
       return;
     }
     Navigator.of(
@@ -210,11 +217,15 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
           TextField(
             key: const Key('location-address-text'),
             controller: _text,
+            focusNode: _addressFocus,
+            onChanged: (_) => setState(() {}),
             maxLength: widget.maxLength,
             minLines: 1,
             maxLines: 3,
             decoration: InputDecoration(
               labelText: 'Địa chỉ',
+              errorText: _addressError,
+              errorMaxLines: 2,
               hintText: 'Số nhà, đường, tổ, phường/xã…',
               filled: true,
               fillColor: N11Colors.white,

@@ -51,6 +51,43 @@ void main() {
       expect(await t.session.register(phone: '0901234567', password: 'Correct-Horse-9', fullName: 'Nguyễn Văn An'), isFalse);
     });
 
+    testWidgets('registration reveals field errors, focuses the first and blocks an invalid phone before sending', (WidgetTester tester) async {
+      final t = build(registration: 'NOT_REQUIRED');
+      await t.session.start();
+      await tester.pumpWidget(MaterialApp(home: RegisterScreen(session: t.session, brand: foodBrand)));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('register-next')));
+      await tester.tap(find.byKey(const Key('register-next')));
+      await tester.pumpAndSettle();
+      expect(find.text('Nhập họ và tên.'), findsOneWidget);
+      expect(find.text('Nhập mật khẩu.'), findsOneWidget);
+      expect(tester.widget<TextField>(find.byKey(const Key('register-name'))).focusNode!.hasFocus, isTrue);
+      expect(t.api.to('POST', '/v1/client-auth/register'), isEmpty);
+      await tester.enterText(find.byKey(const Key('register-name')), 'Nguyễn An');
+      await tester.enterText(find.byKey(const Key('register-password')), 'Correct-Horse-9');
+      await tester.enterText(find.byKey(const Key('register-confirm')), 'Correct-Horse-9');
+      await tester.ensureVisible(find.byKey(const Key('register-consent')));
+      await tester.tap(find.byKey(const Key('register-consent')));
+      await tester.pump();
+      expect(find.text('Nhập họ và tên.'), findsNothing);
+      await tester.ensureVisible(find.byKey(const Key('register-next')));
+      await tester.tap(find.byKey(const Key('register-next')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('purpose-customer')));
+      await tester.tap(find.byKey(const Key('purpose-next')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('register-phone')), '090 1234567');
+      await tester.ensureVisible(find.byKey(const Key('register-submit')));
+      await tester.tap(find.byKey(const Key('register-submit')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('không có dấu cách'), findsOneWidget);
+      expect(t.api.to('POST', '/v1/client-auth/register'), isEmpty);
+      await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
+      await tester.pump();
+      expect(find.textContaining('không có dấu cách'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
     testWidgets('RegisterScreen: no OTP section, an info note, and the submit needs no code', (WidgetTester tester) async {
       final t = build(registration: 'NOT_REQUIRED');
       await t.session.start();

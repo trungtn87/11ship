@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../widgets/form_feedback.dart';
+
 import '../brand.dart';
 import '../features.dart';
 import '../shell.dart';
@@ -410,7 +412,7 @@ class _LoginScreenState extends State<LoginScreen> {
           children: <Widget>[
             N11Heading('Chào mừng trở lại', sub: widget.brand.id == AppId.food ? 'Đăng nhập để tiếp tục với 11Food.' : 'Đăng nhập tài khoản shipper.'),
             _failureBanner(session),
-            N11Field(fieldKey: const Key('login-phone'), label: 'Số điện thoại', placeholder: '0912 345 678', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !busy, onChanged: () => setState(() {})),
+            N11Field(fieldKey: const Key('login-phone'), label: 'Số điện thoại', placeholder: '0912345678', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !busy, onChanged: () => setState(() {})),
             N11Field(
               fieldKey: const Key('login-password'),
               label: 'Mật khẩu',
@@ -503,6 +505,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _name = TextEditingController();
   final TextEditingController _password = TextEditingController();
   final TextEditingController _confirm = TextEditingController();
+  final FormFeedback _feedback = FormFeedback();
+  bool _purposeAttempted = false;
   bool _otpPage = false;
   bool get _ship => widget.brand.id == AppId.ship;
   final TextEditingController _code = TextEditingController();
@@ -596,7 +600,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           N11Link(
             _otp.step == OtpStep.requesting ? 'Đang gửi…' : 'Gửi lại mã',
             key: const Key('otp-request'),
-            onPressed: busy || !_otp.canResend ? null : () => _otp.request(_phone.text),
+            onPressed: busy || !_otp.canResend ? null : () { if (_validate(phoneOnly: true)) _otp.request(_phone.text); },
           ),
           if (!_otp.canResend && _otp.resendSeconds > 0)
             Text('Gửi lại sau ${_otp.resendSeconds} giây', key: const Key('otp-resend-countdown'), textAlign: TextAlign.center, style: N11Text.caption),
@@ -617,10 +621,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           label: !_otp.canResend && !_otp.busy ? 'Gửi lại sau ${_otp.resendSeconds} giây' : _otp.step == OtpStep.requesting ? 'Đang gửi…' : (_otp.step == OtpStep.idle && _otp.phone == null ? 'Gửi mã xác minh' : 'Gửi lại mã'),
           kind: ButtonKind.secondary,
           loading: _otp.step == OtpStep.requesting,
-          onPressed: busy || _phone.text.trim().isEmpty || !_otp.canResend ? null : () => _otp.request(_phone.text),
+          onPressed: busy || !_otp.canResend ? null : () { if (_validate(phoneOnly: true)) _otp.request(_phone.text); },
         ),
         if (_otp.canEnterCode) ...<Widget>[
-          N11Field(fieldKey: const Key('otp-code'), label: 'Mã xác minh', placeholder: '6 số', controller: _code, keyboard: TextInputType.number, maxLength: 6, enabled: _otp.step == OtpStep.sent, onChanged: () => setState(() {})),
+          N11Field(hint: failure == null ? null : failureMessage(failure), tone: failure == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('otp-code'), label: 'Mã xác minh', placeholder: '6 số', controller: _code, keyboard: TextInputType.number, maxLength: 6, enabled: _otp.step == OtpStep.sent, onChanged: () => setState(() {})),
           N11Button(
             key: const Key('otp-verify'),
             label: _otp.step == OtpStep.verifying ? 'Đang kiểm tra…' : 'Xác nhận mã',
@@ -641,6 +645,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void _leaveWhenSignedIn() {
     if (widget.session.status == SessionStatus.signedIn && mounted && !_leaving) {
       _leaving = true;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('Đăng ký thành công.')));
       final NavigatorState navigator = Navigator.of(context);
       navigator.popUntil((Route<dynamic> route) => route.isFirst);
       if (widget.brand.id == AppId.food && _owner == true && widget.shop != null) {
@@ -664,19 +669,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
     ),
   );
 
-  bool get _valid {
-    final bool basic = _phone.text.trim().isNotEmpty &&
-        _name.text.trim().isNotEmpty && _agree;
-    if (!_ship) return basic && _password.text.length >= 8;
-    final int length = _password.text.runes.length;
-    return basic &&
-        RegExp(r'^(?:\+84|84|0)[0-9]{9}$').hasMatch(_phone.text.trim()) &&
-        _name.text.trim().runes.length <= 120 &&
-        length >= 8 && length <= 128 &&
-        _confirm.text == _password.text;
-  }
+  Map<String, String?> get _detailsErrors => <String, String?>{
+    'name': textError(_name.text, 'họ và tên', 120),
+    'password': passwordError(_password.text),
+    'confirm': _confirm.text.isEmpty ? 'Nhập lại mật khẩu.' : _confirm.text != _password.text ? 'Mật khẩu nhập lại chưa khớp.' : null,
+    'consent': _agree ? null : 'Bạn cần đồng ý với Điều khoản sử dụng và Chính sách bảo mật.',
+  };
 
-  bool get _detailsValid => _name.text.trim().isNotEmpty && _password.text.runes.length >= 8 && _password.text.runes.length <= 128 && _password.text == _confirm.text && _agree;
+  Map<String, String?> get _errors => <String, String?>{'phone': phoneError(_phone.text), ..._detailsErrors};
+  bool get _valid => _errors.values.every((String? error) => error == null);
+  bool get _detailsValid => _detailsErrors.values.every((String? error) => error == null);
+  String? _error(String id) => _feedback.message(_errors[id]);
+  bool _validate({bool detailsOnly = false, bool phoneOnly = false}) {
+    final bool valid = _feedback.validate(phoneOnly ? <String, String?>{'phone': phoneError(_phone.text)} : detailsOnly ? _detailsErrors : _errors);
+    setState(() {});
+    return valid;
+  }
 
   Widget _foodForm(SessionController session, bool busy, bool open, bool taken) {
     final bool locked = busy || _otp.busy || session.pending != null;
@@ -709,28 +717,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
               text: 'Số điện thoại sẽ ở trạng thái chưa xác minh. Hãy nhập đúng số của bạn: số này dùng để đăng nhập và khôi phục tài khoản.',
             ),
           if (_step == 0) ...<Widget>[
-            N11Field(fieldKey: const Key('register-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !locked, onChanged: () => setState(() {})),
-            N11Field(fieldKey: const Key('register-password'), label: 'Mật khẩu', controller: _password, password: true, maxLength: 128, enabled: !locked, hint: 'Dùng từ 8 đến 128 ký tự.', onChanged: () => setState(() {})),
-            N11Field(fieldKey: const Key('register-confirm'), label: 'Nhập lại mật khẩu', controller: _confirm, password: true, maxLength: 128, enabled: !locked, hint: _confirm.text.isNotEmpty && _confirm.text != _password.text ? 'Mật khẩu chưa khớp.' : null, tone: _confirm.text.isNotEmpty && _confirm.text != _password.text ? FieldTone.error : FieldTone.normal, onChanged: () => setState(() {})),
+            N11Field(key: _feedback.key('name'), hint: _error('name'), tone: _error('name') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !locked, onChanged: () => setState(() {})),
+            N11Field(key: _feedback.key('password'), tone: _error('password') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-password'), label: 'Mật khẩu', controller: _password, password: true, maxLength: 128, enabled: !locked, hint: _error('password') ?? 'Dùng từ 8 đến 128 ký tự.', onChanged: () => setState(() {})),
+            N11Field(key: _feedback.key('confirm'), fieldKey: const Key('register-confirm'), label: 'Nhập lại mật khẩu', controller: _confirm, password: true, maxLength: 128, enabled: !locked, hint: _error('confirm') ?? (_confirm.text.isNotEmpty && _confirm.text != _password.text ? 'Mật khẩu chưa khớp.' : null), tone: _error('confirm') != null || (_confirm.text.isNotEmpty && _confirm.text != _password.text) ? FieldTone.error : FieldTone.normal, onChanged: () => setState(() {})),
             const N11Card(child: SizedBox(height: 140, child: SingleChildScrollView(key: Key('consent-scroll'), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
               Text(kTermsTitle, style: N11Text.bodyStrong), Text(kTermsText, key: Key('terms-text'), style: N11Text.caption), SizedBox(height: 12),
               Text(kPrivacyTitle, style: N11Text.bodyStrong), Text(kPrivacyText, key: Key('privacy-text'), style: N11Text.caption),
             ])))),
-            CheckboxListTile(key: const Key('register-consent'), contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, activeColor: N11Colors.yellow, checkColor: N11Colors.black, value: _agree, onChanged: locked ? null : (bool? value) => setState(() => _agree = value ?? false), title: const Text(kConsentLabel, style: N11Text.body)),
-            N11Button(key: const Key('register-next'), label: 'Tiếp tục', onPressed: !locked && _detailsValid ? () => setState(() => _step = 1) : null),
+            KeyedSubtree(key: _feedback.key('consent'), child: CheckboxListTile(key: const Key('register-consent'), contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, activeColor: N11Colors.yellow, checkColor: N11Colors.black, value: _agree, onChanged: locked ? null : (bool? value) => setState(() => _agree = value ?? false), title: const Text(kConsentLabel, style: N11Text.body))),
+            if (_error('consent') != null) Text(_error('consent')!, style: const TextStyle(color: N11Colors.error)),
+            N11Button(key: const Key('register-next'), label: 'Tiếp tục', onPressed: locked ? null : () { if (_validate(detailsOnly: true)) setState(() => _step = 1); }),
           ],
           if (_step == 1) ...<Widget>[
             for (final bool owner in <bool>[false, true])
               N11Card(child: Material(color: Colors.transparent, child: ListTile(key: Key(owner ? 'purpose-owner' : 'purpose-customer'), selected: _owner == owner, selectedTileColor: N11Colors.yellow.withValues(alpha: 0.2), leading: Icon(owner ? Icons.storefront_outlined : Icons.person_outline), title: Text(owner ? 'Chủ quán' : 'Khách hàng'), subtitle: Text(owner ? 'Gửi hồ sơ đăng ký quán sau khi xác minh. Chỉ bán hàng sau khi được duyệt.' : 'Tìm quán và đặt món khi tính năng sẵn sàng.'), trailing: Icon(_owner == owner ? Icons.radio_button_checked : Icons.radio_button_off), onTap: locked ? null : () => setState(() => _owner = owner)))),
             const ReasonNote('Bạn luôn là khách hàng và có thể đăng ký mở quán trong mục Tài khoản theo luồng hồ sơ hiện có.'),
-            N11Button(key: const Key('purpose-next'), label: 'Tiếp tục', onPressed: !locked && _owner != null ? () => setState(() => _step = 2) : null),
+            if (_purposeAttempted && _owner == null) const Text('Chọn Khách hàng hoặc Chủ quán để tiếp tục.', style: TextStyle(color: N11Colors.error)),
+            N11Button(key: const Key('purpose-next'), label: 'Tiếp tục', onPressed: locked ? null : () => setState(() { _purposeAttempted = true; if (_owner != null) _step = 2; })),
           ],
           if (_step == 2) ...<Widget>[
-            N11Field(fieldKey: const Key('register-phone'), label: 'Số điện thoại', placeholder: '0912 345 678', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !locked && _otp.phone == null, tone: taken ? FieldTone.error : FieldTone.normal, hint: taken ? 'Số điện thoại này đã có tài khoản.' : null, onChanged: _phoneEdited),
+            N11Field(key: _feedback.key('phone'), fieldKey: const Key('register-phone'), label: 'Số điện thoại', placeholder: '0912345678', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !locked && _otp.phone == null, tone: taken || _error('phone') != null ? FieldTone.error : FieldTone.normal, hint: taken ? 'Số điện thoại này đã có tài khoản.' : _error('phone'), onChanged: _phoneEdited),
             if (_otp.phone != null) N11Link('Đổi số điện thoại', key: const Key('otp-change-phone'), onPressed: locked ? null : () { _otp.reset(); _code.clear(); setState(() {}); }),
             if (session.registrationMode == RegistrationMode.required) ..._otpSection(locked),
             if (session.registrationMode == RegistrationMode.unknown) N11Banner(kind: BannerKind.warn, title: 'Chưa đọc được cấu hình đăng ký', trailing: N11Button(label: 'Thử lại', onPressed: session.loadRegistrationMode)),
-            N11Button(key: const Key('register-submit'), label: busy ? 'Đang đăng ký…' : 'Hoàn tất đăng ký', loading: busy, onPressed: locked || !open || !_detailsValid || _owner == null ? null : () => session.register(phone: _phone.text, password: _password.text, fullName: _name.text, verificationToken: _otp.token)),
+            N11Button(key: const Key('register-submit'), label: busy ? 'Đang đăng ký…' : 'Hoàn tất đăng ký', loading: busy, onPressed: locked || !open || !_detailsValid || _owner == null ? null : () { if (_validate(phoneOnly: true)) session.register(phone: _phone.text, password: _password.text, fullName: _name.text, verificationToken: _otp.token); }),
           ],
         ],
       ),
@@ -813,6 +823,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             else
               _failureBanner(session),
             N11Field(
+              key: _feedback.key('phone'),
               fieldKey: const Key('register-phone'),
               label: 'Số điện thoại',
               placeholder: '0912345678',
@@ -820,29 +831,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
               keyboard: TextInputType.phone,
               maxLength: 20,
               enabled: !busy,
-              tone: taken ? FieldTone.error : FieldTone.normal,
-              hint: taken ? 'Số điện thoại này đã có tài khoản.' : null,
+              tone: taken || _error('phone') != null ? FieldTone.error : FieldTone.normal,
+              hint: taken ? 'Số điện thoại này đã có tài khoản.' : _error('phone'),
               onChanged: _phoneEdited,
             ),
             if (!_ship && mode == RegistrationMode.required) ..._otpSection(busy),
-            N11Field(fieldKey: const Key('register-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !busy, onChanged: () => setState(() {})),
+            N11Field(key: _feedback.key('name'), hint: _error('name'), tone: _error('name') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !busy, onChanged: () => setState(() {})),
             N11Field(
+              key: _feedback.key('password'),
+              tone: _error('password') == null ? FieldTone.normal : FieldTone.error,
               fieldKey: const Key('register-password'),
               label: 'Mật khẩu',
               controller: _password,
               password: true,
               maxLength: 128,
               enabled: !busy,
-              hint: 'Dùng từ 8 đến 128 ký tự.',
+              hint: _error('password') ?? 'Dùng từ 8 đến 128 ký tự.',
               onChanged: () => setState(() {}),
             ),
             if (_ship)
-              N11Field(fieldKey: const Key('register-confirm-password'), label: 'Nhập lại mật khẩu', controller: _confirm, password: true, maxLength: 128, enabled: !busy, hint: _confirm.text.isNotEmpty && _confirm.text != _password.text ? 'Mật khẩu nhập lại chưa khớp.' : null, onChanged: () => setState(() {})),
+              N11Field(key: _feedback.key('confirm'), tone: _error('confirm') != null || (_confirm.text.isNotEmpty && _confirm.text != _password.text) ? FieldTone.error : FieldTone.normal, fieldKey: const Key('register-confirm-password'), label: 'Nhập lại mật khẩu', controller: _confirm, password: true, maxLength: 128, enabled: !busy, hint: _error('confirm') ?? (_confirm.text.isNotEmpty && _confirm.text != _password.text ? 'Mật khẩu nhập lại chưa khớp.' : null), onChanged: () => setState(() {})),
             if (_ship)
               SizedBox(height: 160, child: SingleChildScrollView(child: _termsCard()))
             else
               _termsCard(),
-            CheckboxListTile(
+            KeyedSubtree(key: _feedback.key('consent'), child: CheckboxListTile(
               key: const Key('register-consent'),
               contentPadding: EdgeInsets.zero,
               controlAffinity: ListTileControlAffinity.leading,
@@ -852,7 +865,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               value: _agree,
               onChanged: busy ? null : (bool? value) => setState(() => _agree = value ?? false),
               title: Text(_ship ? 'Tôi đã đọc và đồng ý với Điều khoản sử dụng và Chính sách bảo mật' : kConsentLabel, style: N11Text.body),
-            ),
+            )),
+            if (_error('consent') != null) Text(_error('consent')!, style: const TextStyle(color: N11Colors.error)),
             if (food) N11Banner(
               kind: BannerKind.info,
               title: food ? 'Muốn mở quán?' : 'Muốn nhận đơn giao?',
@@ -864,7 +878,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               key: const Key('register-submit'),
               label: busy ? 'Đang đăng ký…' : (_ship ? 'Tiếp tục' : 'Hoàn tất đăng ký'),
               loading: busy,
-              onPressed: busy || !_valid || (_ship ? !session.ready || mode == RegistrationMode.unknown : !open) ? null : () {
+              onPressed: busy || (_ship ? !session.ready || mode == RegistrationMode.unknown : !open) ? null : () {
+                if (!_validate()) return;
                 if (_ship && mode == RegistrationMode.required) {
                   setState(() => _otpPage = true);
                   if (_otp.phone == null) _otp.request(_phone.text);

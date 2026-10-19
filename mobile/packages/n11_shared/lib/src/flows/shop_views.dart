@@ -8,6 +8,7 @@ import '../features.dart';
 import '../m02/m02_flows.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../widgets/form_feedback.dart';
 import 'shop_controller.dart';
 
 // F20-F23 on Android, laid out like docs/ui/m01-food-web.md: start (read the server first), profile form with the pickup position,
@@ -35,7 +36,14 @@ Widget _shopFailure(ShopController controller) {
     key: const Key('shop-error'),
     kind: BannerKind.error,
     title: 'Chưa hoàn tất',
-    text: <String>[failureMessage(failure), if (failure.diagnostic != null) failure.diagnostic!].join('\n'),
+    text: <String>[switch (failure.kind) {
+      AuthFailureKind.badRequest => 'Máy chủ từ chối thông tin hồ sơ quán. Kiểm tra tên quán, số điện thoại và địa chỉ rồi thử lại.',
+      AuthFailureKind.invalidServiceArea => 'Hệ thống chưa xác định được khu vực phục vụ cho quán. Bấm Hoàn tất hồ sơ để thử xác định lại.',
+      AuthFailureKind.badResponse when controller.hasPendingWrite => 'Đã nhận phản hồi lưu nhưng chưa xác nhận được hồ sơ trên máy chủ. Thông tin vẫn được giữ; bấm Hoàn tất hồ sơ để kiểm tra lại.',
+      AuthFailureKind.badResponse => 'Máy chủ trả kết quả hồ sơ quán không hợp lệ. Chưa thể xác nhận hoàn tất. Hãy thử lại.',
+      AuthFailureKind.unknownOutcome when (failure.status ?? 0) >= 500 => 'Máy chủ gặp lỗi khi xử lý hồ sơ quán. Chưa xác định được kết quả lưu; bấm Hoàn tất hồ sơ để kiểm tra lại.',
+      _ => failureMessage(failure),
+    }, if (failure.diagnostic != null) failure.diagnostic!].join('\n'),
     trailing: controller.hasPendingWrite && canRetryFailure(failure)
         ? N11Button(key: const Key('shop-retry'), label: 'Thử lại', compact: true, onPressed: controller.busy ? null : controller.finishProfile)
         : null,
@@ -151,6 +159,7 @@ class ShopFormScreen extends StatefulWidget {
 }
 
 class _ShopFormScreenState extends State<ShopFormScreen> {
+  final FormFeedback _feedback = FormFeedback();
   late final TextEditingController _name;
   late final TextEditingController _phone;
   late final TextEditingController _address;
@@ -221,6 +230,8 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
   }
 
 
+  String? _error(String id) => _feedback.message(widget.controller.fieldErrors[id]);
+
   @override
   Widget build(BuildContext context) {
     final ShopController c = widget.controller;
@@ -239,11 +250,11 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
             _shopFailure(c),
             if (locked) const N11Banner(kind: BannerKind.info, title: 'Hồ sơ đã hoàn tất', text: 'Chỉ xem. Sửa hồ sơ sau khi hoàn tất chưa nối trên Android.'),
             const N11Steps(count: 2, current: 1, label: 'Thông tin liên hệ'),
-            N11Field(fieldKey: const Key('shop-name'), label: 'Tên cửa hàng', controller: _name, maxLength: 120, enabled: !editingLocked && !locked, onChanged: () { _push(); setState(() {}); }),
-            N11Field(fieldKey: const Key('shop-phone'), label: 'Số điện thoại liên hệ', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !editingLocked && !locked, onChanged: () { _push(); setState(() {}); }),
+            N11Field(key: _feedback.key('name'), hint: _error('name'), tone: _error('name') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('shop-name'), label: 'Tên cửa hàng', controller: _name, maxLength: 120, enabled: !editingLocked && !locked, onChanged: () { _push(); setState(() {}); }),
+            N11Field(key: _feedback.key('phone'), hint: _error('phone'), tone: _error('phone') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('shop-phone'), label: 'Số điện thoại liên hệ', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !editingLocked && !locked, onChanged: () { _push(); setState(() {}); }),
             const SizedBox(height: N11Space.gap1),
             const N11Steps(count: 2, current: 2, label: 'Vị trí'),
-            AddressLocationField(key: const Key('shop-address'), label: 'Địa chỉ lấy hàng', text: _address.text,
+            KeyedSubtree(key: _feedback.key('address'), child: AddressLocationField(key: const Key('shop-address'), error: _error('address'), label: 'Địa chỉ lấy hàng', text: _address.text,
               onTap: busy || locked || c.hasPendingWrite ? null : () async {
                 _push();
                 final int epoch = c.session.sessionEpoch;
@@ -255,9 +266,9 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
                 _address.text = selected.text;
                 c.selectAddress(selected.text, latitude: selected.latitude, longitude: selected.longitude);
                 setState(() {});
-              }),
-            N11Field(fieldKey: const Key('shop-zalo'), label: 'Zalo', placeholder: 'Số Zalo của quán', optionalLabel: true, controller: _zalo, maxLength: 160, enabled: !editingLocked && !locked, onChanged: _push),
-            N11Field(fieldKey: const Key('shop-facebook'), label: 'Facebook', placeholder: 'Liên kết trang Facebook', optionalLabel: true, controller: _facebook, maxLength: 300, enabled: !editingLocked && !locked, onChanged: _push),
+              })),
+            N11Field(key: _feedback.key('zalo'), hint: _error('zalo'), tone: _error('zalo') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('shop-zalo'), label: 'Zalo', placeholder: 'Số Zalo của quán', optionalLabel: true, controller: _zalo, maxLength: 160, enabled: !editingLocked && !locked, onChanged: () { _push(); setState(() {}); }),
+            N11Field(key: _feedback.key('facebook'), hint: _error('facebook'), tone: _error('facebook') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('shop-facebook'), label: 'Facebook', placeholder: 'Liên kết trang Facebook', optionalLabel: true, controller: _facebook, maxLength: 300, enabled: !editingLocked && !locked, onChanged: () { _push(); setState(() {}); }),
             if (c.areasFailed || (c.serviceAreaId == null && c.areas.length != 1))
               const ReasonNote('Hệ thống chưa xác định được khu vực phục vụ. Vui lòng thử lại.'),
             if (!locked) ...<Widget>[
@@ -265,10 +276,16 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
                 key: const Key('shop-complete'),
                 label: busy ? 'Đang hoàn tất…' : 'Hoàn tất hồ sơ',
                 loading: busy,
-                onPressed: busy || (!c.canFinish && !c.hasPendingWrite) ? null : () async {
+                onPressed: busy ? null : () async {
                   _push();
+                  if (!c.hasPendingWrite) {
+                    final bool valid = _feedback.validate(c.fieldErrors);
+                    setState(() {});
+                    if (!valid) return;
+                  }
                   final bool ok = await c.finishProfile();
                   if (ok && context.mounted) {
+                    ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('Đã hoàn tất hồ sơ cửa hàng.')));
                     Navigator.of(context).pushReplacement(n11Route(ShopHomeScreen(controller: c, m02: widget.m02)));
                   }
                 },

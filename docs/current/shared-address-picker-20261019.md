@@ -5,7 +5,7 @@
 - Bên ngoài chỉ hiện dòng địa chỉ; bấm vào để chọn/sửa. Bỏ phần GPS, tọa độ, độ chính xác và bộ chọn khu vực khỏi hồ sơ quán.
 - Màn chọn có ô nhập địa chỉ và bản đồ Cao Bằng hiện có. Chạm bản đồ để đặt/chuyển ghim; nút Vị trí hiện tại nằm trong bản đồ và chỉ lấy một lần khi bấm.
 - Lưu trả về địa chỉ chữ và điểm đã chọn cùng nhau. Quay lại không áp dụng chỉnh sửa. Lỗi/quyền GPS không làm mất ghim cũ; vẫn chọn trên bản đồ được.
-- Hồ sơ quán vẫn cho lưu nháp trước khi có ghim. Điều kiện hoàn tất, kiểm tra khu vực trên server, idempotency và version được giữ.
+- Hồ sơ quán dùng nút Hoàn tất hồ sơ theo điều chỉnh bên dưới. Kiểm tra khu vực trên server, idempotency và version được giữ.
 - Địa chỉ cũ không có ghim và đặt đơn bằng địa chỉ chữ vẫn theo contract hiện có (phí chưa xác định). Không tạo tọa độ giả từ địa chỉ chữ. Thêm/sửa trong sổ địa chỉ dùng điểm được chọn trong màn chọn.
 
 ## Cấu hình khu vực hiện tại
@@ -20,3 +20,24 @@ Không migration, không deploy VPS trong thay đổi này. Các bản APK vẫn
 - Hồ sơ quán bỏ nút Lưu nháp. Chỉ còn Hoàn tất hồ sơ: app lưu thông tin, đọc lại version trên server, rồi hoàn tất. Không chuyển màn thành công nếu chưa xác nhận hồ sơ ACTIVE.
 - Các bản nháp cũ trên server vẫn tiếp tục được. Mỗi bước giữ Idempotency-Key riêng; lỗi đọc lại hoặc kết quả chưa xác định giữ nội dung và ghim, không tự kích hoạt.
 - Ảnh lỗi lưu chỉ có thông báo chung; chưa có log VPS để kết luận nguyên nhân production. Bổ sung endpoint/HTTP/code/request_id an toàn khi có lỗi để đối chiếu; không ghi thông tin cá nhân hay token.
+
+
+## Thông báo từng ô và kiểm tra lỗi lưu — Owner giao tiếp 19/10/2026
+
+Lỗi xuất hiện dưới đúng ô khi bấm Tiếp tục/Hoàn tất; sửa nội dung thì cập nhật ngay. Tự cuộn và đưa con trỏ tới ô sai đầu tiên. Nút vẫn cho bấm để biết lý do thiếu/sai, nhưng không gửi API khi dữ liệu chưa hợp lệ. Chỉ khóa khi đang xử lý, chờ xác minh OTP hoặc chưa biết cấu hình đăng ký.
+
+| Ô | Kiểm tra/thông báo |
+| --- | --- |
+| Họ tên, tên quán | Bắt buộc, tối đa 120 ký tự theo API |
+| Số điện thoại | Đúng contract Việt Nam: 0 + 9 số, hoặc 84/+84 + 9 số, không có khoảng trắng bên trong |
+| Mật khẩu/nhập lại | 8–128 ký tự; bắt buộc nhập lại trùng khớp |
+| Điều khoản | Báo cần đồng ý trước khi tiếp tục |
+| Mục đích sử dụng | Báo chọn Khách hàng/Chủ quán nếu chưa chọn |
+| Địa chỉ | Nội dung bắt buộc ngay dưới ô; ghim bắt buộc được báo riêng |
+| Zalo/Facebook | Không bắt buộc; giữ giới hạn 160/300, không tự thêm quy tắc URL/số điện thoại mà API không yêu cầu |
+
+Đăng ký và hoàn tất hồ sơ thành công có thông báo rõ. Lỗi lưu quán dùng nội dung riêng, không còn nhắc mật khẩu trong lỗi hồ sơ quán. Lỗi 5xx/kết quả đọc lại chưa hợp lệ không bị mô tả đơn thuần là mất mạng; giữ thông tin, ghim và ý định ghi để kiểm tra lại an toàn.
+
+Kiểm tra code: PUT hồ sơ và POST hoàn tất dùng transaction riêng với membership/audit/idempotency; hoàn tất còn yêu cầu tọa độ và khu vực ACTIVE. Đăng ký ghi thành công chứng minh API/DB hoạt động ở luồng tài khoản, chưa chứng minh các bước riêng của quán thành công. Request fields, normalized phone, optional empty omission, numeric coordinates, expected_version và payload GET đã đối chiếu giữa mobile/backend. Không thấy lỗi backend xác định được từ code trong phạm vi này; chưa có log production để khẳng định nguyên nhân VPS. Không thay schema, quyền DB hay deploy.
+
+Phát hiện bổ sung: parser hồ sơ mobile ép kiểu trực tiếp các trường optional. Nếu server trả sai kiểu, lỗi cast thoát khỏi xử lý AuthFailure và có thể để trạng thái tải/ghi không kết thúc. Đã đổi sang từ chối response có kiểm soát, giữ ý định ghi và ghim; có ca kiểm tra. Đây là lỗi xác định trong code, chưa phải bằng chứng đó là lỗi Owner gặp trên VPS.

@@ -6,6 +6,7 @@ import '../account/api_client.dart';
 import '../account/models.dart';
 import '../account/session_controller.dart';
 import 'location.dart';
+import '../widgets/form_feedback.dart';
 
 // Food: the shop profile of the owner (F20-F23), over the contract that already exists on the server:
 //   GET /v1/onboarding/shop/profile        PUT /v1/onboarding/shop/profile        POST /v1/onboarding/shop/complete
@@ -63,7 +64,16 @@ class ShopProfile {
     final Object? version = data['version'];
     final Object? lat = data['pickup_lat'];
     final Object? lng = data['pickup_lng'];
-    if (id is! String || name is! String || phone is! String || address is! String || status is! String || accepting is! bool || version is! int) {
+    if (id is! String || name is! String || phone is! String || address is! String || status is! String || accepting is! bool || version is! int || version < 1) {
+      return null;
+    }
+    // A malformed optional value is a bad response, never an unchecked cast that leaves the form busy.
+    for (final String field in <String>['zalo', 'facebook', 'service_area_id']) {
+      if (data[field] != null && data[field] is! String) { return null; }
+    }
+    if ((lat == null) != (lng == null) ||
+        (lat != null && (lat is! num || !lat.isFinite || lat.abs() > 90)) ||
+        (lng != null && (lng is! num || !lng.isFinite || lng.abs() > 180))) {
       return null;
     }
     return ShopProfile(
@@ -352,8 +362,16 @@ class ShopController extends ChangeNotifier {
     };
   }
 
-  bool get canFinish => name.trim().isNotEmpty && contactPhone.trim().isNotEmpty &&
-      addressText.trim().isNotEmpty && (_fix != null || (_profile?.hasLocation ?? false));
+  Map<String, String?> get fieldErrors => <String, String?>{
+    'name': textError(name, 'tên cửa hàng', 120),
+    'phone': phoneError(contactPhone),
+    'address': textError(addressText, 'địa chỉ lấy hàng', 500) ??
+        (_fix == null && !(_profile?.hasLocation ?? false) ? 'Mở địa chỉ và chọn vị trí trên bản đồ.' : null),
+    'zalo': textError(zalo, 'Zalo', 160, optional: true),
+    'facebook': textError(facebook, 'Facebook', 300, optional: true),
+  };
+
+  bool get canFinish => fieldErrors.values.every((String? error) => error == null);
 
   bool get _profileChanged {
     final ShopProfile? p = _profile;
