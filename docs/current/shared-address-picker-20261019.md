@@ -41,3 +41,18 @@ Lỗi xuất hiện dưới đúng ô khi bấm Tiếp tục/Hoàn tất; sửa 
 Kiểm tra code: PUT hồ sơ và POST hoàn tất dùng transaction riêng với membership/audit/idempotency; hoàn tất còn yêu cầu tọa độ và khu vực ACTIVE. Đăng ký ghi thành công chứng minh API/DB hoạt động ở luồng tài khoản, chưa chứng minh các bước riêng của quán thành công. Request fields, normalized phone, optional empty omission, numeric coordinates, expected_version và payload GET đã đối chiếu giữa mobile/backend. Không thấy lỗi backend xác định được từ code trong phạm vi này; chưa có log production để khẳng định nguyên nhân VPS. Không thay schema, quyền DB hay deploy.
 
 Phát hiện bổ sung: parser hồ sơ mobile ép kiểu trực tiếp các trường optional. Nếu server trả sai kiểu, lỗi cast thoát khỏi xử lý AuthFailure và có thể để trạng thái tải/ghi không kết thúc. Đã đổi sang từ chối response có kiểm soát, giữ ý định ghi và ghim; có ca kiểm tra. Đây là lỗi xác định trong code, chưa phải bằng chứng đó là lỗi Owner gặp trên VPS.
+
+
+## Nguyên nhân VPS đã xác định — 20/10/2026, 00:59
+
+Owner đối chiếu request_id `d5ed27f7-12db-4f12-8c09-615078624f38`: PostgreSQL báo `permission denied for table shop_members`. Cấu hình cấp quyền runtime chỉ có SELECT/INSERT trên bảng này, trong khi `ShopRepository.lockOwnedShop` chạy SELECT FOR UPDATE trước khi lưu. PostgreSQL cần UPDATE cho khóa dòng, kể cả không có dòng khớp; vì vậy tài khoản mới cũng không tạo được hồ sơ. Đăng ký thành công không vướng bảng này.
+
+Sửa đúng quyền thiếu, không nới role hay bỏ khóa: bổ sung UPDATE trên app.shop_members cho ship11_app trong runtime grants và đồng bộ ma trận runbook. Bổ sung regression ở bộ CI với runtime role bị giới hạn: SELECT FOR UPDATE trên OWNER chưa tồn tại phải chạy được, DELETE vẫn bị từ chối.
+
+Khắc phục VPS hiện tại (Owner chạy):
+
+```bash
+sudo -u postgres psql -d ship11_staging -v ON_ERROR_STOP=1 -c "GRANT UPDATE ON app.shop_members TO ship11_app;"
+```
+
+Không thay dữ liệu/schema, không cần restart hay APK mới. Sau GRANT, Owner bấm Thử lại trên cùng hồ sơ để kiểm tra. Chưa coi là production đã khắc phục trước khi có kết quả thực tế từ Owner.
