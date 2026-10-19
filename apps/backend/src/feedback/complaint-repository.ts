@@ -223,8 +223,8 @@ export interface AdminComplaintFilter {
 @Injectable()
 export class ComplaintRepository {
   async nextCode(context: TransactionContext): Promise<string> {
-    const result = await context.query<{ n: string }>(`SELECT nextval('app.complaint_code_seq')::text AS n`);
-    return `PA${(result.rows[0]?.n ?? '0').padStart(5, '0')}`;
+    const result = await context.query<{ code: string }>(`SELECT app.next_complaint_code() AS code`);
+    return result.rows[0]?.code ?? 'PA00000';
   }
 
   /** False when an open file of the same party on the same subject and group exists (the unique index answered): nothing was written. */

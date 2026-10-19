@@ -173,6 +173,14 @@ CREATE TRIGGER review_moderations_append_only BEFORE UPDATE OR DELETE OR TRUNCAT
 -- ---------------------------------------------------------------------------------------------------
 CREATE SEQUENCE app.complaint_code_seq AS bigint START WITH 1 MINVALUE 1 NO CYCLE;
 
+-- The runtime role gets no sequence privilege (the grant matrix has none): it reaches the sequence only through this function, which runs with its owner's
+-- rights, exactly like app.next_shipper_code. The runtime role gets EXECUTE in 03-runtime-function-grants.sql.
+CREATE FUNCTION app.next_complaint_code() RETURNS varchar
+  LANGUAGE sql SECURITY DEFINER SET search_path = app, pg_temp AS $$
+  SELECT 'PA' || lpad(nextval('app.complaint_code_seq')::text, 5, '0')
+$$;
+REVOKE ALL ON FUNCTION app.next_complaint_code() FROM PUBLIC;
+
 CREATE TABLE app.complaints (
   complaint_id uuid NOT NULL,
   code varchar(16) NOT NULL,
@@ -492,6 +500,7 @@ DROP FUNCTION app.complaint_attachments_guard();
 DROP TABLE app.complaint_messages;
 DROP TABLE app.complaints;
 DROP FUNCTION app.complaints_guard();
+DROP FUNCTION app.next_complaint_code();
 DROP SEQUENCE app.complaint_code_seq;
 DROP TABLE app.review_reply_history;
 DROP TABLE app.review_replies;
