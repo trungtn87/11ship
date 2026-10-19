@@ -49,6 +49,8 @@ import { DeliverySource, NOT_WIRED_DELIVERIES } from '../core/deliveries.js';
 import { FeedbackSource, NOT_WIRED_FEEDBACK } from '../core/feedback.js';
 import { ComplaintListView, FeedbackHost, ReviewListView } from './feedback-view.js';
 import { DeliveryHost, DeliveryListView } from './deliveries-view.js';
+import { NOT_WIRED_ORDERS, OrderSource } from '../core/orders.js';
+import { OrderHost, OrderListView } from './orders-view.js';
 import { NOT_WIRED_NOTIFICATIONS, NotificationSource } from '../core/notifications.js';
 import { NotificationHost, NotificationsView } from './notifications-view.js';
 import { FinanceController, isFinanceRoute } from '../core/finance-controller.js';
@@ -135,6 +137,8 @@ export class ShellApp implements ShellHost {
     private readonly deliveries: DeliverySource = NOT_WIRED_DELIVERIES,
     /** Where the REAL finance pages (M04-B3a: top-up requests, receiving accounts, finance rights) come from. By default nothing is wired and no page shows data. */
     private readonly financeAdmin: FinanceAdminSource = NOT_WIRED_FINANCE_ADMIN,
+    /** Where the food orders (Vận hành › Đơn hàng, M10.05) come from. By default nothing is wired, so the page says so. */
+    private readonly orders: OrderSource = NOT_WIRED_ORDERS,
     /** Where the ratings and complaints (Vận hành › Đánh giá / Phản ánh, M11.03) come from. By default nothing is wired, so the pages say so. */
     private readonly feedback: FeedbackSource = NOT_WIRED_FEEDBACK,
   ) {}
@@ -361,6 +365,9 @@ export class ShellApp implements ShellHost {
         return;
       case 'deliveries':
         this.#deliveryList(content);
+        return;
+      case 'orders':
+        this.#orderList(content);
         return;
       case 'notifications':
         this.#notificationPage(content);
@@ -875,6 +882,25 @@ export class ShellApp implements ShellHost {
       home: () => this.go({ name: 'home' }),
     };
     const view = new DeliveryListView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Vận hành › Đơn hàng" (M10.05): filters, list and the detail drawer; the server decides every read and action. */
+  #orderList(content: HTMLElement): void {
+    const host: OrderHost = {
+      source: this.orders,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    };
+    const view = new OrderListView(content, host);
     this.#unsubscribe = () => view.dispose();
     void view.load();
   }

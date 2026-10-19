@@ -140,6 +140,10 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | delivery_assignments | SELECT, INSERT, UPDATE (M07: one Shipper's hold on a delivery; ACTIVE at most once per delivery; never deleted) |
 | delivery_events | SELECT, INSERT (M07: the append-only history of a delivery) |
 | delivery_incidents | SELECT, INSERT, UPDATE (M07: the goods-custody incident of a failed delivery; closed once; never deleted) |
+| customer_carts | SELECT, INSERT, UPDATE, DELETE (M10: the customer's working cart; replaced or cleared, never history) |
+| orders | SELECT, INSERT, UPDATE (M10: a food Order moves along its status graph; never deleted) |
+| order_items | SELECT, INSERT, UPDATE (M10: lines written once; only the shop's edit columns change; never deleted) |
+| order_events | SELECT, INSERT (M10: the append-only history of an Order) |
 | shipper_latest_locations | SELECT, INSERT, UPDATE (M14/M07: the one latest position of each Shipper, replaced in place; no trail) |
 | notification_push_tokens | SELECT, INSERT, UPDATE (M08: the push token of one session; ended (never deleted) when the session ends or the token is replaced) |
 | notification_config | SELECT, INSERT, UPDATE (M08: the single settings row (channel, retention, retry); SYSTEM changes it through the Administration) |

@@ -1,3 +1,4 @@
+import { newDish } from './m10-fixtures';
 import { randomBytes, randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
@@ -42,9 +43,8 @@ export interface StubOrder extends OrderFact {
   customerUserId: string;
 }
 
-/** The in-memory M10: an order of the account that placed it. `integrated=false` makes it answer like the default "not connected" binding. */
+/** A stand-in for the Orders port used by the suites that only need an Order to exist (the real M10 is exercised in m11-orders-real.int.spec.ts). */
 export class StubOrders implements FeedbackOrderPort {
-  integrated = true;
   readonly orders = new Map<string, StubOrder>();
 
   orderOfCustomer(_context: TransactionContext, orderId: string, customerUserId: string): Promise<OrderFact | undefined> {
@@ -151,7 +151,7 @@ export class M11World {
   private async cleanup(): Promise<void> {
     const client = await this.app.pool.connect();
     const m11 = ['complaint_adjustments', 'complaint_reconsiderations', 'complaint_attachments', 'complaint_messages', 'complaints', 'review_reply_history', 'review_replies', 'review_moderations', 'reviews'];
-    const m07 = ['wallet_ledger_entries', 'wallet_holds', 'delivery_incidents', 'delivery_events', 'delivery_assignments', 'deliveries', 'driver_wallets', 'shipping_fee_agreement_events', 'shipping_fee_agreements', 'shipping_fee_policy_versions'];
+    const m07 = ['order_items', 'orders', 'wallet_ledger_entries', 'wallet_holds', 'delivery_incidents', 'delivery_events', 'delivery_assignments', 'deliveries', 'driver_wallets', 'shipping_fee_agreement_events', 'shipping_fee_agreements', 'shipping_fee_policy_versions'];
     try {
       await client.query('BEGIN');
       for (const table of [...m11, ...m07]) {
@@ -176,6 +176,8 @@ export class M11World {
       await client.query(`DELETE FROM app.shipping_fee_agreements WHERE delivery_id IN (${mine})`, [shopId]);
       await client.query(`DELETE FROM app.delivery_assignments WHERE delivery_id IN (${mine})`, [shopId]);
       await client.query('DELETE FROM app.deliveries WHERE shop_id = $1::uuid', [shopId]);
+      await client.query('DELETE FROM app.order_items WHERE order_id IN (SELECT order_id FROM app.orders WHERE shop_id = $1::uuid)', [shopId]);
+      await client.query('DELETE FROM app.orders WHERE shop_id = $1::uuid', [shopId]);
       await client.query('DELETE FROM app.shipper_latest_locations WHERE driver_id = ANY($1::uuid[])', [this.drivers]);
       await client.query('DELETE FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[])', [this.drivers]);
       if (this.addedPolicy) {
@@ -416,15 +418,44 @@ export class M11World {
     return String(delivery.delivery_id);
   }
 
+  private dishId: string | undefined;
+
+  /** One dish of the shop, made through the product's own route, for the lines of the Order rows written by [linkToOrder]. */
+  private async dish(): Promise<string> {
+    this.dishId ??= (await newDish(this.app, this.shop.token, 'Món thử', 50_000)).itemId;
+    return this.dishId;
+  }
+
   /** Test-only: makes a finished DIRECT delivery the delivery of a stub order (M10 will create the link itself). */
   async linkToOrder(deliveryId: string, customer: Customer, over: Partial<StubOrder> = {}): Promise<StubOrder> {
     const orderId = randomUUID();
+    let finishedOrder = true;
     const client = await this.app.pool.connect();
     try {
       await client.query('BEGIN');
+      // M10 owns the Orders: a delivery of an Order points at a real row (FK). It is written here as the finished Order it stands for.
+      const dish = await this.dish();
+      finishedOrder = (await client.query<{ state: string }>('SELECT state FROM app.deliveries WHERE delivery_id = $1::uuid', [deliveryId])).rows[0]?.state === 'completed';
+      const finished = finishedOrder;
+      await client.query('ALTER TABLE app.orders DISABLE TRIGGER USER');
+      await client.query('ALTER TABLE app.order_items DISABLE TRIGGER USER');
+      await client.query(
+        `INSERT INTO app.orders (order_id, code, client_ref, customer_user_id, shop_id, status, shop_name, shop_phone, shop_address_text, recipient_name, recipient_phone, address_text,
+           items_original_total_vnd, items_total_vnd, confirmed_at, ended_at, end_actor, end_reason, created_at, updated_at)
+         VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6, 'Quán thử', '0900000000', 'Số 1', 'Người nhận', '0912345678', 'Số 2', 50000, 50000,
+           now(), now(), 'SYSTEM', $7, now(), now())`,
+        [orderId, `#${tag}${deliveryId.slice(0, 4)}`, randomUUID(), customer.userId, this.shop.shopId, finished ? 'COMPLETED' : 'NOT_COMPLETED', finished ? null : 'Giao không thành công'],
+      );
+      await client.query(
+        `INSERT INTO app.order_items (line_id, order_id, line_no, menu_item_id, name, orig_unit_price_vnd, orig_quantity, unit_price_vnd, quantity, created_at)
+         VALUES ($1::uuid, $2::uuid, 1, $3::uuid, 'Món thử', 50000, 1, 50000, 1, now())`,
+        [randomUUID(), orderId, dish],
+      );
       await client.query('ALTER TABLE app.deliveries DISABLE TRIGGER deliveries_guard');
       await client.query(`UPDATE app.deliveries SET source = 'ORDER', order_id = $2::uuid WHERE delivery_id = $1::uuid`, [deliveryId, orderId]);
       await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+      await client.query('ALTER TABLE app.orders ENABLE TRIGGER USER');
+      await client.query('ALTER TABLE app.order_items ENABLE TRIGGER USER');
       await client.query('ALTER TABLE app.deliveries ENABLE TRIGGER deliveries_guard');
       await client.query('COMMIT');
     } catch (error) {
@@ -433,7 +464,7 @@ export class M11World {
     } finally {
       client.release();
     }
-    const order: StubOrder = { orderId, code: `#${tag}${deliveryId.slice(0, 4)}`, shopId: this.shop.shopId, shopName: 'Quán thử', completed: true, customerUserId: customer.userId, ...over };
+    const order: StubOrder = { orderId, code: `#${tag}${deliveryId.slice(0, 4)}`, shopId: this.shop.shopId, shopName: 'Quán thử', completed: finishedOrder, customerUserId: customer.userId, ...over };
     this.stub.orders.set(orderId, order);
     return order;
   }

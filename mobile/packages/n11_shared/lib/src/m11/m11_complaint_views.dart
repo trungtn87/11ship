@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../m02/menu_models.dart';
@@ -14,6 +16,77 @@ import 'm11_widgets.dart';
 // never count days or guess a status. A write keeps its operation key until the server answered, so a retry never files twice.
 
 const int kMaxEvidence = 5;
+
+/// The evidence pictures of one line of the thread, loaded from the server only when the person opens the file (the server checks the right for each
+/// picture; a refused or lost one says so, it never shows a broken image). Tapping one enlarges it.
+class EvidenceThumbs extends StatelessWidget {
+  const EvidenceThumbs({super.key, required this.source, required this.role, required this.pictures});
+
+  final M11Source source;
+  final M11Role role;
+  final List<EvidenceRef> pictures;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: N11Space.gap2,
+      runSpacing: N11Space.gap2,
+      children: <Widget>[for (final EvidenceRef p in pictures) _Thumb(key: Key('m11-evidence-${p.id}'), source: source, role: role, id: p.id)],
+    );
+  }
+}
+
+class _Thumb extends StatefulWidget {
+  const _Thumb({super.key, required this.source, required this.role, required this.id});
+
+  final M11Source source;
+  final M11Role role;
+  final String id;
+
+  @override
+  State<_Thumb> createState() => _ThumbState();
+}
+
+class _ThumbState extends State<_Thumb> {
+  late Future<Uint8List> _bytes = widget.source.evidencePicture(widget.role, widget.id);
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List>(
+      future: _bytes,
+      builder: (BuildContext context, AsyncSnapshot<Uint8List> snapshot) {
+        const double size = 88;
+        if (snapshot.hasError) {
+          return SizedBox(
+            width: size,
+            height: size,
+            child: InkWell(
+              key: Key('m11-evidence-retry-${widget.id}'),
+              borderRadius: BorderRadius.circular(kRadiusControl),
+              onTap: () => setState(() {
+                _bytes = widget.source.evidencePicture(widget.role, widget.id);
+              }),
+              child: Container(
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: N11Colors.errorSoft, borderRadius: BorderRadius.circular(kRadiusControl)),
+                child: const Text('Không tải được.\nChạm để thử lại', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: N11Colors.errorInk)),
+              ),
+            ),
+          );
+        }
+        final Uint8List? data = snapshot.data;
+        if (data == null) {
+          return const SizedBox(width: size, height: size, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+        }
+        return InkWell(
+          borderRadius: BorderRadius.circular(kRadiusControl),
+          onTap: () => showDialog<void>(context: context, builder: (BuildContext dialogContext) => Dialog(child: InteractiveViewer(child: Image.memory(data, fit: BoxFit.contain, semanticLabel: 'Ảnh minh chứng')))),
+          child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusControl), child: Image.memory(data, width: size, height: size, fit: BoxFit.cover, semanticLabel: 'Ảnh minh chứng', errorBuilder: (BuildContext c, Object e, StackTrace? s) => const SizedBox(width: size, height: size, child: Icon(Icons.broken_image_outlined)))),
+        );
+      },
+    );
+  }
+}
 
 /// Evidence pictures chosen on the phone: each is uploaded on choosing, and its id kept so that a retry of the submit sends the same ones.
 class _EvidenceBox extends StatelessWidget {
@@ -254,7 +327,7 @@ class ComplaintDetailScreen extends StatelessWidget {
                 children: <Widget>[
                   Row(children: <Widget>[Expanded(child: Text(_kindLabel(line), style: N11Text.label)), Text(m11DateTime(line.createdAt), style: N11Text.caption)]),
                   if (line.body != null && line.body!.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(line.body!, style: N11Text.body)),
-                  if (line.evidence.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text('${line.evidence.length} ảnh minh chứng đính kèm', style: N11Text.caption)),
+                  if (line.evidence.isNotEmpty) Padding(padding: const EdgeInsets.only(top: N11Space.gap2), child: EvidenceThumbs(source: source, role: role, pictures: line.evidence)),
                 ],
               ),
             ),

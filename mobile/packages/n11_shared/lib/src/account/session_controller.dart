@@ -377,7 +377,7 @@ class SessionController extends ChangeNotifier {
     final bool created = response.status == 201 && pending.kind == PendingKind.register;
     final bool ok = response.status == 200 && pending.kind == PendingKind.login;
     if (!created && !ok) {
-      throw failureOf(response);
+      throw failureOf(response, endpoint: pending.path);
     }
     final Object? data = response.data;
     final Identity? identity = Identity.tryParse(data);

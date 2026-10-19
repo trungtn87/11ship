@@ -8,6 +8,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  n11_m14_map:
+    path: ../n11_m14_map
 dev_dependencies:
   flutter_test:
     sdk: flutter

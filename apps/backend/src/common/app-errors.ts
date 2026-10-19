@@ -129,8 +129,23 @@ export const APP_ERROR_DEFINITIONS = {
   FEE_LOCKED: { status: 409, message: 'The delivery fee is fixed' },
   DESTINATION_NOT_CONFIRMED: { status: 409, message: 'The drop-off point is not confirmed yet' },
   RECALL_BLOCKED_GOODS_OUT: { status: 409, message: 'The goods are not back at the shop, so the delivery cannot be requested again' },
-  ORDER_MODULE_NOT_READY: { status: 409, message: 'The order module is not connected yet' },
   ADMIN_ACTION_NOT_ALLOWED: { status: 409, message: 'This action does not apply to the delivery in its current state' },
+
+  // Food orders (M10). Fixed messages that echo nothing the client sent. An Order of another account or shop and a missing one answer the same
+  // ORDER_NOT_FOUND. VERSION_CONFLICT, SHOP_NOT_FOUND, SHOP_DISABLED, ROLE_NOT_AVAILABLE, AFTER_PICKUP_NO_CANCEL, RECALL_BLOCKED_GOODS_OUT and the
+  // DELIVERY_* / ADMIN_* codes (above) are reused unchanged.
+  ORDER_NOT_FOUND: { status: 404, message: 'The order was not found' },
+  ORDER_STATE_CONFLICT: { status: 409, message: 'The order is not in a state that allows this action' },
+  ORDER_CART_CHANGED: { status: 409, message: 'A dish or a price changed; check the cart and send the order again' },
+  ORDER_SHOP_NOT_OPEN: { status: 409, message: 'The shop cannot take this order now' },
+  ORDER_SCHEDULE_INVALID: { status: 409, message: 'The wanted time is not possible for this shop' },
+  ORDER_ADDRESS_INVALID: { status: 409, message: 'The delivery address is not available' },
+  ORDER_EMPTY: { status: 409, message: 'An order without dishes cannot be confirmed' },
+  ORDER_CHANGE_REASON_REQUIRED: { status: 409, message: 'The order was changed: a reason is required to confirm it' },
+  ORDER_PAYMENT_LOCKED: { status: 409, message: 'The paid amount cannot change while a delivery is in progress' },
+  ORDER_PAYMENT_INVALID: { status: 400, message: 'The paid amount is not valid' },
+  ORDER_CART_OTHER_SHOP: { status: 409, message: 'The cart holds dishes of another shop' },
+  ORDER_INPUT_INVALID: { status: 400, message: 'The order details are not valid' },
 
   // Shop management (M02-A, task section 7). Same rule: fixed messages that echo nothing the client sent and reveal
   // nothing about any other account. SESSION_*, ACCOUNT_DISABLED, INVALID_SERVICE_AREA, SHOP_PROFILE_INCOMPLETE and

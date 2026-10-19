@@ -343,11 +343,8 @@ export class ReviewService {
     return { status: 201, payload: { review: { review_id: review.reviewId, stars: review.stars, comment: review.comment } } };
   }
 
-  /** The order of THIS account. Another account's order, a phone-sharing recipient's and a missing one read the same; M10 not connected is said honestly. */
+  /** The order of THIS account. Another account's order, a phone-sharing recipient's and a missing one read the same. */
   async #orderOf(context: TransactionContext, userId: string, orderId: string): Promise<OrderFact> {
-    if (!this.orders.integrated) {
-      throw new AppError('ORDER_MODULE_NOT_READY');
-    }
     const order = await this.orders.orderOfCustomer(context, orderId, userId);
     if (order === undefined) {
       throw new AppError('REVIEW_TARGET_NOT_FOUND');

@@ -84,3 +84,31 @@ M11Role m11RoleOf(SessionController session, {required bool shipApp}) {
   }
   return session.identity?.availableRoles.contains('SHOP_OWNER') == true ? M11Role.shop : M11Role.customer;
 }
+
+/// The customer's block under a finished order: rate the shop and the Shipper, or send a complaint. The server decides what is possible (an unfinished
+/// order, somebody else's order and a second rating are refused there) and the screen says it in words.
+Widget customerOrderFeedbackCard(BuildContext context, {required M11Source source, required ImagePickerPort picker, required String orderId, required String orderCode}) {
+  return N11Card(
+    key: const Key('m11-customer-feedback'),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const Text('Đánh giá và phản ánh', style: N11Text.label),
+        const SizedBox(height: N11Space.gap2),
+        N11Button(
+          key: const Key('m11-customer-rate'),
+          label: 'Đánh giá đơn hàng',
+          kind: ButtonKind.secondary,
+          onPressed: () => Navigator.of(context).push<void>(n11Route(CustomerOrderRatingScreen(source: source, orderId: orderId, picker: picker))),
+        ),
+        const SizedBox(height: N11Space.gap2),
+        N11Button(
+          key: const Key('m11-customer-complain'),
+          label: 'Gửi phản ánh',
+          kind: ButtonKind.secondary,
+          onPressed: () => Navigator.of(context).push<void>(n11Route(ComplaintFormScreen(source: source, role: M11Role.customer, subject: ComplaintSubject.order(orderId), subjectLabel: 'Đơn $orderCode', picker: picker))),
+        ),
+      ],
+    ),
+  );
+}

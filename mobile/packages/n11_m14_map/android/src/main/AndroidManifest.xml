@@ -1,0 +1,4 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <!-- The map library asks for the Wi-Fi state; the map reads only the offline package, so the permission is removed (same as the M14 GPS plugin does). -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" tools:node="remove"/>
+</manifest>

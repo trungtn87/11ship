@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../account/api_client.dart';
 import '../account/models.dart';
@@ -127,6 +128,23 @@ class HttpM11Source extends M11Source {
   Future<String> uploadEvidence(M11Role role, PickedImage image) async {
     final Object? data = await _call('POST', '${_family(role)}/attachments', body: <String, Object?>{'content_type': image.contentType, 'data_base64': base64Encode(image.bytes)}, ok: const <int>{201});
     return _parse(data, (Object? v) => v is Map<String, Object?> && v['attachment_id'] is String ? v['attachment_id']! as String : throw const FormatException('attachment'));
+  }
+
+  @override
+  Future<Uint8List> evidencePicture(M11Role role, String attachmentId) async {
+    try {
+      final ApiResponse response = await session.protectedCall('GET', '${_family(role)}/attachments/$attachmentId');
+      final List<int>? bytes = response.bodyBytes;
+      if (response.status != 200) {
+        throw failureOf(response);
+      }
+      if (bytes == null || bytes.isEmpty) {
+        throw const M07Failure(M07FailureKind.server, code: 'BAD_RESPONSE');
+      }
+      return Uint8List.fromList(bytes);
+    } on Object catch (error) {
+      throw _failureOf(error);
+    }
   }
 
   @override

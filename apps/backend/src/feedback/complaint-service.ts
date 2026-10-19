@@ -358,9 +358,6 @@ export class ComplaintService {
       if (input.orderId === null) {
         return notFound();
       }
-      if (!this.orders.integrated) {
-        throw new AppError('ORDER_MODULE_NOT_READY');
-      }
       const order = await this.orders.orderOfCustomer(context, input.orderId, caller.userId);
       if (order === undefined) {
         return notFound();

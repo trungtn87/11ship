@@ -24,19 +24,6 @@ describe('M11.01 ratings', () => {
 
   // ---- customer -> shop --------------------------------------------------------------------------------------------------------------
 
-  it('the order module is not connected: the customer answers honestly and nothing is written', async () => {
-    const customer = await w.newCustomer();
-    const order = w.newOrder(customer);
-    w.stub.integrated = false;
-    try {
-      const response = await w.asCustomer(customer, 'POST', `/customers/me/orders/${order.orderId}/reviews/shop`, body());
-      expect([response.status, errorCode(response)]).toEqual([409, 'ORDER_MODULE_NOT_READY']);
-    } finally {
-      w.stub.integrated = true;
-    }
-    expect(await reviewsOf('SELECT 1 FROM app.reviews WHERE order_id = $1::uuid', [order.orderId])).toBe(0);
-  });
-
   it('rates the shop once the order is completed; wrong person, other account, unfinished order and bad input are refused', async () => {
     const customer = await w.newCustomer('Trần Minh Hà');
     const other = await w.newCustomer();
@@ -377,12 +364,6 @@ describe('M11.02 complaints', () => {
     const ok = await w.asCustomer(customer, 'POST', '/customers/me/complaints', complaint({ category: 'GOODS', order_id: order.orderId, body: 'Thiếu món' }));
     expect(ok.status).toBe(201);
     expect(((dataOf(ok) as Json).complaint as Json).related).toMatchObject({ code: order.code, order_id: order.orderId });
-    w.stub.integrated = false;
-    try {
-      expect(errorCode(await w.asCustomer(customer, 'POST', '/customers/me/complaints', complaint({ order_id: order.orderId, category: 'OTHER' })))).toBe('ORDER_MODULE_NOT_READY');
-    } finally {
-      w.stub.integrated = true;
-    }
   });
 
   it('evidence pictures: up to 5 of 5 MB, a real image only, never somebody else\'s, readable only by those who may read the line', async () => {

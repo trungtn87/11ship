@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../m02/menu_models.dart';
 import '../m07/m07_source.dart';
 import 'm11_models.dart';
@@ -33,6 +35,9 @@ abstract class M11Source {
   // ---- complaints ------------------------------------------------------------------------------------------------------
 
   Future<String> uploadEvidence(M11Role role, PickedImage image);
+
+  /// One evidence picture, only if the server says this person may read it (the submitter, or whoever the file addressed it to).
+  Future<Uint8List> evidencePicture(M11Role role, String attachmentId);
   Future<ComplaintListPage> complaints(M11Role role, {required bool closed});
   Future<ComplaintDetail> complaint(M11Role role, String id);
   Future<ComplaintFiled> fileComplaint(M11Role role, {required ComplaintSubject subject, required ComplaintCategory category, required String body, List<String> attachmentIds = const <String>[], required String key});

@@ -4,6 +4,7 @@ import { ShipperLocationRepository } from '../delivery/shipper-location';
 import { DriverRepository } from '../driver/driver-repository';
 import { ComplaintRepository } from '../feedback/complaint-repository';
 import { freshClockMs } from '../idempotency/idempotency-repository';
+import { OrderRepository } from '../orders/order-repository';
 import { ShopRepository } from '../shop/shop-repository';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { TransactionContext } from '../transaction/transaction-context';
@@ -41,10 +42,29 @@ export class NotificationRecipients {
     private readonly topups: TopupRequestRepository,
     private readonly agreements: ShippingFeeAgreementService,
     private readonly complaints: ComplaintRepository,
+    private readonly orders: OrderRepository,
   ) {}
 
   shopOwner(context: TransactionContext, shopId: string): Promise<string | undefined> {
     return this.shops.ownerUserIdOfShop(context, shopId);
+  }
+
+  /** The account that placed the Order (re-read: the event only carries the id). Never a phone typed into the Order. */
+  async orderCustomer(context: TransactionContext, orderId: string): Promise<string | undefined> {
+    return (await this.orders.findById(context, orderId))?.customerUserId;
+  }
+
+  /**
+   * Does this account have a right to open this Order now? The customer who placed it, or the owner of its shop. `ended` tells the app to show it as history.
+   * Nothing about the Order is returned when the right is gone.
+   */
+  async orderAccessFor(context: TransactionContext, orderId: string, userId: string, role: 'CUSTOMER' | 'SHOP'): Promise<{ access: boolean; ended: boolean; status: string | null }> {
+    const order = await this.orders.findById(context, orderId);
+    if (order === undefined) {
+      return { access: false, ended: false, status: null };
+    }
+    const access = role === 'CUSTOMER' ? order.customerUserId === userId : (await this.shops.ownerUserIdOfShop(context, order.shopId)) === userId;
+    return { access, ended: order.endedAtMs !== null, status: access ? order.status : null };
   }
 
   async driverUser(context: TransactionContext, driverId: string): Promise<string | undefined> {

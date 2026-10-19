@@ -69,6 +69,7 @@ export class DeliveryRecorder {
         delivery_id: d.deliveryId,
         code: d.code,
         shop_id: d.shopId,
+        order_id: d.orderId,
         change: change.type,
         state: d.state,
         version: d.version,

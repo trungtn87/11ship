@@ -3,7 +3,7 @@ import { NotificationApp, NotificationKind, PUSH_TTL_MS, TargetType } from './no
 // Pure: an outbox event becomes zero or more notification drafts. Wording is fixed here and is safe for a lock screen: the delivery CODE is the only
 // identifier shown, never a phone, an address, an amount owner, an OTP or bank data. No I/O and no clock.
 
-export type Audience = 'SHOP' | 'DRIVER' | 'DRIVER_OF_AGREEMENT' | 'ACCOUNT';
+export type Audience = 'SHOP' | 'DRIVER' | 'DRIVER_OF_AGREEMENT' | 'CUSTOMER' | 'ACCOUNT';
 
 export interface DraftBase {
   readonly audience: Audience;
@@ -31,13 +31,15 @@ export interface DeliveryChangePayload {
   readonly version: number;
   readonly assignmentId: string | null;
   readonly driverId: string | null;
+  /** The food Order the delivery carries (M10), if any: its customer is told of the steps that matter to them. */
+  readonly orderId?: string | null;
 }
 
 const delivery = (p: DeliveryChangePayload, audience: Audience, kind: NotificationKind, title: string, body: string, pushTtlMs: number = PUSH_TTL_MS.result): Draft => ({
   type: 'NOTIFY',
   draft: {
     audience,
-    app: audience === 'SHOP' ? 'FOOD' : 'SHIP',
+    app: audience === 'SHOP' || audience === 'CUSTOMER' ? 'FOOD' : 'SHIP',
     kind,
     title,
     body,
@@ -61,6 +63,31 @@ function reviewReminder(p: DeliveryChangePayload): Draft {
 
 /** What a delivery change tells whom. Unknown changes tell nobody (they are internal steps such as a pinned destination). */
 export function composeDeliveryChange(p: DeliveryChangePayload): Draft[] {
+  return [...composeForShopAndShipper(p), ...composeForCustomer(p)];
+}
+
+function composeForCustomer(p: DeliveryChangePayload): Draft[] {
+  if (p.orderId === undefined || p.orderId === null) {
+    return [];
+  }
+  const orderId = p.orderId;
+  const notify = (kind: NotificationKind, title: string, body: string): Draft => ({
+    type: 'NOTIFY',
+    draft: { audience: 'CUSTOMER', app: 'FOOD', kind, title, body, targetType: 'ORDER', targetId: orderId, targetVersion: p.version, dedupeKey: `order-delivery:${orderId}:${p.deliveryId}:${p.change}:${String(p.version)}`, validForMs: null, pushTtlMs: PUSH_TTL_MS.result },
+  });
+  switch (p.change) {
+    case 'accepted':
+      return [notify('ORDER_SHIPPER_ACCEPTED', 'Shipper đã nhận đơn của bạn', `Đơn ${p.code}: shipper đang đến quán lấy món.`)];
+    case 'picked_up':
+      return [notify('ORDER_DELIVERING', 'Đơn của bạn đang được giao', `Đơn ${p.code}: shipper đã lấy món và đang giao.`)];
+    case 'failed':
+      return [notify('ORDER_DELIVERY_FAILED', 'Giao hàng chưa thành công', `Đơn ${p.code}: giao chưa thành công, quán đang xử lý. Mở ứng dụng để xem.`)];
+    default:
+      return [];
+  }
+}
+
+function composeForShopAndShipper(p: DeliveryChangePayload): Draft[] {
   const code = p.code;
   switch (p.change) {
     case 'created':
@@ -141,3 +168,62 @@ export const PROFILE_COPY: Readonly<Record<string, { kind: NotificationKind; tit
   suspended: { kind: 'PROFILE_SUSPENDED', title: 'Tài khoản shipper bị tạm khóa', body: 'Tài khoản của bạn đang bị tạm khóa. Mở ứng dụng để xem chi tiết.' },
   reopened: { kind: 'PROFILE_REOPENED', title: 'Tài khoản shipper đã được mở lại', body: 'Tài khoản của bạn đã được mở lại.' },
 };
+
+// ---- M10 food orders ----------------------------------------------------------------------------------------------------------
+
+export interface OrderChangePayload {
+  readonly orderId: string;
+  readonly code: string;
+  readonly shopId: string;
+  readonly customerUserId: string;
+  readonly change: string;
+  readonly status: string;
+  readonly version: number;
+}
+
+const order = (p: OrderChangePayload, audience: 'SHOP' | 'CUSTOMER', kind: NotificationKind, title: string, body: string, pushTtlMs: number = PUSH_TTL_MS.result): Draft => ({
+  type: 'NOTIFY',
+  draft: {
+    audience,
+    app: 'FOOD',
+    kind,
+    title,
+    body,
+    targetType: 'ORDER',
+    targetId: p.orderId,
+    targetVersion: p.version,
+    dedupeKey: `order:${p.orderId}:${p.change}:${String(p.version)}`,
+    validForMs: null,
+    pushTtlMs,
+  },
+});
+
+/** What an Order change tells whom. The Order CODE is the only identifier shown; no dish, phone, address or amount reaches a lock screen. */
+export function composeOrderChange(p: OrderChangePayload): Draft[] {
+  const code = p.code;
+  switch (p.change) {
+    case 'placed':
+      return [order(p, 'SHOP', 'ORDER_PLACED', 'Có đơn món mới', `Đơn ${code} đang chờ bạn xác nhận.`, PUSH_TTL_MS.offer)];
+    case 'cancelled_by_customer':
+      return [order(p, 'SHOP', 'ORDER_CANCELLED_BY_CUSTOMER', 'Khách đã hủy đơn món', `Đơn ${code} đã được khách hủy trước khi bạn xác nhận.`)];
+    case 'schedule_reminder':
+      return [order(p, 'SHOP', 'ORDER_SCHEDULE_REMINDER', 'Sắp đến giờ hẹn', `Đơn hẹn ${code} sắp đến giờ nhận món. Hãy chuẩn bị và gọi shipper.`, PUSH_TTL_MS.reminder)];
+    case 'confirmed':
+      return [order(p, 'CUSTOMER', 'ORDER_CONFIRMED', 'Quán đã xác nhận đơn', `Đơn ${code} đang được chuẩn bị.`)];
+    case 'rejected':
+      return [order(p, 'CUSTOMER', 'ORDER_REJECTED', 'Quán không nhận đơn', `Đơn ${code} chưa được quán nhận. Mở ứng dụng để xem lý do.`)];
+    case 'cancelled_by_shop':
+      return [order(p, 'CUSTOMER', 'ORDER_CANCELLED_BY_SHOP', 'Quán đã hủy đơn', `Đơn ${code} đã bị quán hủy. Mở ứng dụng để xem lý do.`)];
+    case 'cancelled_by_admin':
+      return [order(p, 'CUSTOMER', 'ORDER_CANCELLED_BY_SHOP', 'Đơn của bạn đã bị hủy', `Đơn ${code} đã được hủy. Mở ứng dụng để xem lý do.`), order(p, 'SHOP', 'ORDER_CANCELLED_BY_ADMIN', 'Quản trị viên đã hủy đơn', `Đơn ${code} đã được quản trị viên hủy.`)];
+    case 'ready':
+      return [order(p, 'CUSTOMER', 'ORDER_READY', 'Món đã sẵn sàng', `Món của đơn ${code} đã sẵn sàng.`)];
+    case 'completed':
+      return [order(p, 'CUSTOMER', 'ORDER_COMPLETED', 'Đơn đã hoàn thành', `Đơn ${code} đã giao thành công.`)];
+    case 'not_completed':
+    case 'not_completed_by_admin':
+      return [order(p, 'CUSTOMER', 'ORDER_NOT_COMPLETED', 'Đơn không hoàn tất', `Đơn ${code} không hoàn tất. Mở ứng dụng để xem lý do.`)];
+    default:
+      return [];
+  }
+}

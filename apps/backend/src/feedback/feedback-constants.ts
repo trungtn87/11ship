@@ -1,4 +1,4 @@
-// M11 vocabulary and fixed rules. The values mirror database/migrations/1794268800000_create-m11-reviews-complaints.sql; keep the two in step.
+// M11 vocabulary and fixed rules. The values mirror database/migrations/1794355200000_create-m11-reviews-complaints.sql; keep the two in step.
 
 export const REVIEW_KINDS = ['SHOP_BY_CUSTOMER', 'SHIPPER_BY_CUSTOMER', 'SHIPPER_BY_SHOP'] as const;
 export type ReviewKind = (typeof REVIEW_KINDS)[number];

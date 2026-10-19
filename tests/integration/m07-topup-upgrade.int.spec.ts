@@ -10,6 +10,7 @@ import { begin, ok, post } from './support/activation-fixtures';
 import { ApiResponse, AuthApp, dataOf, obtainProof, PASSWORD, Phone, purgePhone, randomPhone, startAuthApp } from './support/auth-fixtures';
 import { M07_DOWN_SQL, M07_MIGRATION_NAME, M07_UP_SQL } from './support/m07-migration-sql';
 import { M08_DOWN_SQL, M08_MIGRATION_NAME, M08_UP_SQL } from './support/m08-migration-sql';
+import { M10_DOWN_SQL, M10_MIGRATION_NAME, M10_UP_SQL } from './support/m10-migration-sql';
 import { M11_DOWN_SQL, M11_MIGRATION_NAME, M11_UP_SQL } from './support/m11-migration-sql';
 import { createInvitation, createPayload, systemSession, SystemSession } from './support/provisioning-fixtures';
 import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
@@ -53,8 +54,7 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
 
   /**
    * The M07 migration goes in and out as the runner would do it: its SQL, then its row in the history (so `npm run db:migrate` stays consistent). M08
-   * (notifications) and M11 (ratings and complaints) reference M07's deliveries, so they leave BEFORE M07 (M11 first) and come back AFTER it, each with its
-   * own history row.
+   * (notifications) references M07's deliveries, so it leaves BEFORE M07 and comes back AFTER it, with its own history row.
    */
   async function runMigration(sql: string, record: 'insert' | 'delete'): Promise<void> {
     const c = await pool().connect();
@@ -62,14 +62,16 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
       await c.query('BEGIN');
       if (record === 'delete') {
         await c.query(M11_DOWN_SQL);
+        await c.query(M10_DOWN_SQL);
         await c.query(M08_DOWN_SQL);
         await c.query(sql);
-        await c.query('DELETE FROM public.pgmigrations WHERE name = ANY($1::text[])', [[M07_MIGRATION_NAME, M08_MIGRATION_NAME, M11_MIGRATION_NAME]]);
+        await c.query('DELETE FROM public.pgmigrations WHERE name = ANY($1::text[])', [[M07_MIGRATION_NAME, M08_MIGRATION_NAME, M10_MIGRATION_NAME, M11_MIGRATION_NAME]]);
       } else {
         await c.query(sql);
         await c.query(M08_UP_SQL);
+        await c.query(M10_UP_SQL);
         await c.query(M11_UP_SQL);
-        await c.query('INSERT INTO public.pgmigrations (name, run_on) VALUES ($1, now()), ($2, now()), ($3, now())', [M07_MIGRATION_NAME, M08_MIGRATION_NAME, M11_MIGRATION_NAME]);
+        await c.query('INSERT INTO public.pgmigrations (name, run_on) VALUES ($1, now()), ($2, now()), ($3, now()), ($4, now())', [M07_MIGRATION_NAME, M08_MIGRATION_NAME, M10_MIGRATION_NAME, M11_MIGRATION_NAME]);
       }
       await c.query('COMMIT');
     } catch (error) {

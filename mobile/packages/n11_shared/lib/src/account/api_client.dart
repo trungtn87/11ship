@@ -11,13 +11,16 @@ import 'models.dart';
 // through the Android certificate store of the test package (mobile/README.md), never through this code.
 
 class ApiResponse {
-  const ApiResponse({required this.status, required this.headers, required this.body});
+  const ApiResponse({required this.status, required this.headers, required this.body, this.bodyBytes});
 
   final int status;
 
   /// Lower-case header names.
   final Map<String, String> headers;
   final String body;
+
+  /// The raw bytes of the answer, for a picture; null when the transport kept only the text (a JSON answer never needs them).
+  final List<int>? bodyBytes;
 
   Map<String, Object?>? get json {
     try {
@@ -68,7 +71,7 @@ class HttpApiTransport implements ApiTransport {
       final List<int> bytes = await response.expand((List<int> chunk) => chunk).toList().timeout(timeout);
       final Map<String, String> out = <String, String>{};
       response.headers.forEach((String name, List<String> values) => out[name.toLowerCase()] = values.join(', '));
-      return ApiResponse(status: response.statusCode, headers: out, body: utf8.decode(bytes, allowMalformed: true));
+      return ApiResponse(status: response.statusCode, headers: out, body: utf8.decode(bytes, allowMalformed: true), bodyBytes: bytes);
     } on HandshakeException {
       throw const AuthFailure(AuthFailureKind.tls);
     } on TlsException {
@@ -86,7 +89,7 @@ class HttpApiTransport implements ApiTransport {
 }
 
 /// A server refusal as a closed failure. Nothing the server wrote (message, details) is carried.
-AuthFailure failureOf(ApiResponse response) {
+AuthFailure failureOf(ApiResponse response, {String? endpoint}) {
   final String? code = response.errorCode;
   final int status = response.status;
   AuthFailureKind kind;
@@ -147,7 +150,12 @@ AuthFailure failureOf(ApiResponse response) {
         kind = AuthFailureKind.badResponse;
       }
   }
-  return AuthFailure(kind, code: code, status: status);
+  // Only bounded machine codes and a UUID may reach diagnostics; arbitrary server text is discarded.
+  final Object? error = response.json?['error'];
+  final Object? rawId = error is Map<String, Object?> ? error['request_id'] : null;
+  final String? requestId = rawId is String && RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(rawId) ? rawId : null;
+  final String? safeCode = code != null && RegExp(r'^[A-Z][A-Z0-9_]{0,79}$').hasMatch(code) ? code : null;
+  return AuthFailure(kind, code: safeCode, status: status, endpoint: endpoint, requestId: requestId);
 }
 
 /// A random UUID v4 for an Idempotency-Key.

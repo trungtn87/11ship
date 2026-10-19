@@ -9,13 +9,14 @@ import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agr
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { appOfAudience, composeComplaintChange, ComplaintChangePayload } from './notification-complaint-composer';
-import { DraftBase, composeDeliveryChange, DeliveryChangePayload, NEW_OFFERS_COPY, PROFILE_COPY, TOPUP_COPY } from './notification-composer';
+import { DraftBase, composeDeliveryChange, composeOrderChange, DeliveryChangePayload, OrderChangePayload, NEW_OFFERS_COPY, PROFILE_COPY, TOPUP_COPY } from './notification-composer';
 import {
   CATEGORY_OF_KIND,
   MAX_EVENT_AGE_MS,
   OUTBOX_COMPLAINT_CHANGED_TYPE,
   OUTBOX_DELIVERY_CHANGED_TYPE,
   OUTBOX_DRIVER_STATE_CHANGED_TYPE,
+  OUTBOX_ORDER_CHANGED_TYPE,
   OUTBOX_ORDER_PREFIX,
   OUTBOX_TOPUP_CHANGED_TYPE,
   OUTBOX_WITHDRAWAL_PREFIX,
@@ -32,11 +33,19 @@ import { isCanonicalUuid } from '../shared/identifiers';
 const CANDIDATE_LIMIT = 100;
 
 function parseDeliveryPayload(payload: Readonly<Record<string, unknown>>): DeliveryChangePayload | undefined {
-  const { delivery_id: deliveryId, code, shop_id: shopId, change, state, version, assignment_id: assignmentId, driver_id: driverId } = payload;
+  const { delivery_id: deliveryId, code, shop_id: shopId, change, state, version, assignment_id: assignmentId, driver_id: driverId, order_id: orderId } = payload;
   if (!isCanonicalUuid(deliveryId) || typeof code !== 'string' || !isCanonicalUuid(shopId) || typeof change !== 'string' || typeof state !== 'string' || typeof version !== 'number') {
     return undefined;
   }
-  return { deliveryId, code, shopId, change, state, version, assignmentId: isCanonicalUuid(assignmentId) ? assignmentId : null, driverId: isCanonicalUuid(driverId) ? driverId : null };
+  return { deliveryId, code, shopId, change, state, version, assignmentId: isCanonicalUuid(assignmentId) ? assignmentId : null, driverId: isCanonicalUuid(driverId) ? driverId : null, orderId: isCanonicalUuid(orderId) ? orderId : null };
+}
+
+function parseOrderPayload(payload: Readonly<Record<string, unknown>>): OrderChangePayload | undefined {
+  const { order_id: orderId, code, shop_id: shopId, customer_user_id: customerUserId, change, status, version } = payload;
+  if (!isCanonicalUuid(orderId) || typeof code !== 'string' || !isCanonicalUuid(shopId) || !isCanonicalUuid(customerUserId) || typeof change !== 'string' || typeof status !== 'string' || typeof version !== 'number') {
+    return undefined;
+  }
+  return { orderId, code, shopId, customerUserId, change, status, version };
 }
 
 function parseComplaintPayload(payload: Readonly<Record<string, unknown>>): ComplaintChangePayload | undefined {
@@ -80,7 +89,7 @@ export class NotificationEventService {
 
   /** Resolves when the event is fully handled or recognized as not ours; rejects (so the outbox retries) when it could not be persisted. */
   async consume(event: OutboxPublishEvent): Promise<void> {
-    const ownType = event.eventType === OUTBOX_DELIVERY_CHANGED_TYPE || event.eventType === OUTBOX_TOPUP_CHANGED_TYPE || event.eventType === OUTBOX_DRIVER_STATE_CHANGED_TYPE || event.eventType === OUTBOX_COMPLAINT_CHANGED_TYPE;
+    const ownType = event.eventType === OUTBOX_DELIVERY_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHANGED_TYPE || event.eventType === OUTBOX_TOPUP_CHANGED_TYPE || event.eventType === OUTBOX_DRIVER_STATE_CHANGED_TYPE || event.eventType === OUTBOX_COMPLAINT_CHANGED_TYPE;
     if (ownType && this.#ageOf(event) > MAX_EVENT_AGE_MS) {
       // Old news (a backlog after an outage, or from before M08 existed): recorded, told to nobody, never replayed.
       await this.transactions.withTransaction((context) => this.repo.claimEvent(context, event.eventId, event.eventType, 'STALE_EVENT'));
@@ -89,6 +98,8 @@ export class NotificationEventService {
     switch (event.eventType) {
       case OUTBOX_DELIVERY_CHANGED_TYPE:
         return this.#delivery(event);
+      case OUTBOX_ORDER_CHANGED_TYPE:
+        return this.#order(event);
       case OUTBOX_TOPUP_CHANGED_TYPE:
         return this.#topup(event);
       case OUTBOX_DRIVER_STATE_CHANGED_TYPE:
@@ -97,7 +108,7 @@ export class NotificationEventService {
         return this.#complaint(event);
       default:
         if (event.eventType.startsWith(OUTBOX_ORDER_PREFIX) || event.eventType.startsWith(OUTBOX_WITHDRAWAL_PREFIX)) {
-          // M10 (Order) and M04-C (withdrawal) do not exist yet: the hook is here, the event is acknowledged as "not integrated" and nothing is made up.
+          // Any other order.* type and M04-C (withdrawal) have no consumer yet: the event is acknowledged as "not integrated" and nothing is made up.
           await this.transactions.withTransaction((context) => this.repo.claimEvent(context, event.eventId, event.eventType.slice(0, 80), 'NOT_INTEGRATED'));
         }
     }
@@ -162,6 +173,9 @@ export class NotificationEventService {
   async #resolve(context: TransactionContext, d: DraftBase, p: DeliveryChangePayload): Promise<string | undefined> {
     if (d.audience === 'SHOP') {
       return this.recipients.shopOwner(context, p.shopId);
+    }
+    if (d.audience === 'CUSTOMER') {
+      return p.orderId === null || p.orderId === undefined ? undefined : this.recipients.orderCustomer(context, p.orderId);
     }
     if (d.audience === 'DRIVER') {
       return p.driverId === null ? undefined : this.recipients.driverUser(context, p.driverId);
@@ -258,6 +272,33 @@ export class NotificationEventService {
           event.eventId,
           this.#ageOf(event),
         );
+      }
+    });
+  }
+
+  // ---- food orders (M10) -----------------------------------------------------------------------------------------------------
+
+  /** An Order step: the shop owner and/or the ordering account are told. Both are resolved from the identifiers on the event and re-read from the owners' tables. */
+  async #order(event: OutboxPublishEvent): Promise<void> {
+    const p = parseOrderPayload(event.payload);
+    if (p === undefined) {
+      await this.transactions.withTransaction((context) => this.repo.claimEvent(context, event.eventId, event.eventType, 'INVALID_PAYLOAD'));
+      return;
+    }
+    const drafts = composeOrderChange(p);
+    await this.transactions.withTransaction(async (context) => {
+      const config = await this.repo.readConfig(context);
+      if (!(await this.repo.claimEvent(context, event.eventId, event.eventType, drafts.length === 0 ? 'NO_NOTIFICATION' : 'OK'))) {
+        return;
+      }
+      for (const draft of drafts) {
+        if (draft.type !== 'NOTIFY') {
+          continue;
+        }
+        const userId = draft.draft.audience === 'SHOP' ? await this.recipients.shopOwner(context, p.shopId) : await this.recipients.orderCustomer(context, p.orderId);
+        if (userId !== undefined) {
+          await this.#notify(context, config, draft.draft, userId, event.eventId, this.#ageOf(event));
+        }
       }
     });
   }

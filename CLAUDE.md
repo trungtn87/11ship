@@ -19,3 +19,7 @@ Read [the production profile](docs/current/M01-production-profile-20261014.md): 
 ## M01 workstreams — Owner revision 2026-10-12
 
 Start from [the M01 workstream plan](docs/current/M01-workstreams-20261012.md). Read only the mapped sections and relevant changed dependencies; reuse implemented endpoints, schema, screens and shared components. Deliver the missing portion of one assigned flow; do not advance into other packages automatically. Focused checks establish that the changed flow runs; do not arrange independent per-package bug hunts or repeated module acceptance. One module-wide review/verification occurs after M01 implementation and connection; fix findings and recheck only affected behavior. Existing mandatory CI still applies without extra manual duplicates. Older task matrices and reporting instructions yield to this process revision.
+
+## Shared release versions — Owner decision 2026-10-19
+
+Read and apply [the release versioning convention](docs/process/release-versioning-20261019.md) for merges, builds, APK naming, VPS deployment reports and M13.07/M13.08. Apply it immediately: one immutable release version per merged main SHA; artifacts with that version come from that SHA. Preserve actual running/device versions, Android signing/applicationIds and increasing versionCode. Do not wait for M13 or claim automation/deployment from this documentation change.

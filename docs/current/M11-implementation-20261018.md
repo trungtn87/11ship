@@ -6,7 +6,7 @@ Nguồn thiết kế: `11Ship-M11-Functional-UI-LOCKED-v1.0.md` (OWNER_APPROVED 
 
 | Gói | Nội dung | Code |
 |---|---|---|
-| M11.01 | Đánh giá quán (khách) / shipper (khách, quán); tổng hợp điểm; phản hồi của quán có lịch sử; trang đánh giá công khai của quán; điểm theo nguồn cho shipper | `database/migrations/1794268800000_create-m11-reviews-complaints.sql`, `apps/backend/src/feedback/review-*.ts`, `review.controller.ts`, `mobile/.../m11/m11_rating_views.dart` |
+| M11.01 | Đánh giá quán (khách) / shipper (khách, quán); tổng hợp điểm; phản hồi của quán có lịch sử; trang đánh giá công khai của quán; điểm theo nguồn cho shipper | `database/migrations/1794355200000_create-m11-reviews-complaints.sql`, `apps/backend/src/feedback/review-*.ts`, `review.controller.ts`, `mobile/.../m11/m11_rating_views.dart` |
 | M11.02 | Gửi phản ánh (6 nhóm), ảnh minh chứng (≤5 ảnh, ≤5 MB, kiểm chữ ký tệp), theo dõi, bổ sung, giải trình của bên liên quan, yêu cầu xem xét lại trong 7 ngày | `feedback/complaint-*.ts`, `complaint.controller.ts`, `m11_complaint_views.dart` |
 | M11.03 | Admin Web **Đánh giá** và **Phản ánh**: lọc/tìm, tiếp nhận, phân công, ghi chú nội bộ, yêu cầu bổ sung, kết luận, đóng, quyết định xem xét lại, ẩn/khôi phục đánh giá, điều chỉnh kết quả giao, điều chỉnh hoa hồng (cổng M04) | `apps/backend/src/admin-feedback/`, `apps/admin-web/src/dom/feedback-view.ts`, `core/feedback*.ts` |
 | M08 | Nhắc đánh giá **một lần** (thông báo thường, không popup) sau giao thành công/thất bại; thông báo hồ sơ phản ánh (đã tiếp nhận/cần bổ sung/kết luận/mở lại) và mục tiêu `COMPLAINT` | `notification-composer.ts`, `notification-complaint-composer.ts`, `notification-event-service.ts` |
@@ -35,7 +35,7 @@ Nguồn thiết kế: `11Ship-M11-Functional-UI-LOCKED-v1.0.md` (OWNER_APPROVED 
 
 ## 4. Migration (Owner/Ops chạy — tôi chưa chạy trên môi trường thật)
 
-Tệp: `database/migrations/1794268800000_create-m11-reviews-complaints.sql` (Up + Down trong cùng tệp). Chỉ **thêm** bảng/trigger/sequence và mở rộng `notifications_target_ck` thêm `'COMPLAINT'`; không sửa dữ liệu cũ, không seed.
+Tệp: `database/migrations/1794355200000_create-m11-reviews-complaints.sql` (Up + Down trong cùng tệp). Chỉ **thêm** bảng/trigger/sequence và mở rộng `notifications_target_ck` thêm `'COMPLAINT'`; không sửa dữ liệu cũ, không seed.
 
 ```
 npm run db:migrate            # hoặc: npm run db:migrate:remote  (theo quy trình hiện hành, sao lưu trước)

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:n11_shared/n11_shared.dart';
+import 'food_m14.dart';
 
 // 11Food screens of the app (catalog F01-F04). Same layout, wording and rules as apps/food-web/src/screens.ts: nobody is
 // signed in and every business action is unavailable with a visible reason. No screen invents shops, dishes, orders, balances or
@@ -34,7 +35,17 @@ NotificationRouter foodNotificationRouter(AppFlows flows) => (BuildContext conte
           if (feedback != null && target.id != null) {
             await navigator.push(n11Route(complaintRoute(source: feedback, role: m11RoleOf(flows.session, shipApp: false), complaintId: target.id!, picker: flows.picker)));
           }
-        case TargetType.order || TargetType.walletTxn || TargetType.none:
+        case TargetType.order:
+          final OrderRuntime? orders = flows.orders;
+          if (orders != null && target.id != null) {
+            // The detail loads the CURRENT order and decides the right again: the shop's hat opens the shop's view, the customer's the customer's.
+            final bool shopHat = flows.session.identity?.activeRole == 'SHOP_OWNER';
+            await navigator.push(n11Route(shopHat ? ShopOrderDetailScreen(runtime: orders, orderId: target.id!, deliveries: flows.shopDeliveries) : CustomerOrderDetailScreen(runtime: orders, orderId: target.id!)));
+          } else {
+            navigator.popUntil((Route<dynamic> r) => r.isFirst);
+            actions.goTab('orders');
+          }
+        case TargetType.walletTxn || TargetType.none:
           break;
       }
     };
@@ -81,7 +92,6 @@ List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
 
 Widget _guestPrompt(SessionController session, String text, [AppFlows? flows]) => GuestPrompt(session: session, brand: foodBrand, text: text, reset: flows?.reset, shop: flows?.shop);
 
-Widget _soonChip() => const Center(child: N11Chip('Sắp có', kind: ChipKind.soon));
 
 // ---- F01: home -------------------------------------------------------------------------------------------------------
 
@@ -104,17 +114,26 @@ Widget _home(SessionController session, ShellActions actions, AppFlows? flows) {
 
 Widget _orders(SessionController session, AppFlows? flows) {
   final ShopDeliverySource? deliveries = flows?.shopDeliveries;
-  final bool owner = session.status == SessionStatus.signedIn && session.identity?.availableRoles.contains('SHOP_OWNER') == true;
-  if (deliveries != null && owner) {
-    // M07: the shop's delivery requests (call a Shipper, follow, cancel before pickup, goods handling).
-    return ShopDeliveryHub(source: deliveries, feedbackSlot: _feedbackSlot(flows));
+  final OrderRuntime? orders = flows?.orders;
+  final bool signedIn = session.status == SessionStatus.signedIn;
+  final bool owner = signedIn && session.identity?.availableRoles.contains('SHOP_OWNER') == true;
+  final bool shopHat = owner && session.identity?.activeRole != 'CUSTOMER';
+  if (shopHat && orders != null) {
+    // M10 + M07: "Đơn món" (ordered in the app) and "Giao hàng" (calls for a Shipper: from an order or direct).
+    return ShopOrdersTab(runtime: orders, deliveries: deliveries, deliveriesBuilder: (ShopDeliverySource source) => ShopDeliveryHub(source: source, mapBuilder: foodMapBuilder(), pinPicker: foodPinPicker(), feedbackSlot: _feedbackSlot(flows)));
+  }
+  if (shopHat && deliveries != null) {
+    return ShopDeliveryHub(source: deliveries, mapBuilder: foodMapBuilder(), pinPicker: foodPinPicker(), feedbackSlot: _feedbackSlot(flows));
+  }
+  if (signedIn && orders != null && session.identity?.customerAccess == true) {
+    // M10: the customer's orders — Đang xử lý / Đơn hẹn / Lịch sử.
+    return CustomerOrdersView(runtime: orders);
   }
   return vstack(<Widget>[
     _guestPrompt(session, 'Đăng nhập để xem đơn hàng của bạn.', flows),
-    const EmptyState(icon: Icons.receipt_long_outlined, title: 'Chưa có đơn hàng', text: 'Đơn hàng của bạn sẽ hiện ở đây khi tính năng đặt món sẵn sàng.'),
+    const EmptyState(icon: Icons.receipt_long_outlined, title: 'Chưa có đơn hàng', text: 'Đơn hàng của bạn sẽ hiện ở đây sau khi bạn đặt món.'),
     // M06 UI: fee, distance and who pays. Not ready in real builds (the screen says what is missing).
     const ShippingFeeEntry(),
-    _soonChip(),
   ]);
 }
 

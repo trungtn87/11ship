@@ -40,7 +40,6 @@ class M14Plugin: FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler,
         attached = true
         channel = MethodChannel(binding.binaryMessenger,"vn.eleven/m14").also { it.setMethodCallHandler(this) }
         events = EventChannel(binding.binaryMessenger,"vn.eleven/m14/gps").also { it.setStreamHandler(this) }
-        binding.platformViewRegistry.registerViewFactory("vn.eleven/m14/map", M14MapFactory(binding.binaryMessenger))
     }
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         attached = false

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -58,6 +59,7 @@ class FakeM11 extends M11Source {
   int stars = 0;
   String? comment;
   Object? failNext;
+  bool pictureFails = false;
   ComplaintDetail detail = ComplaintDetail.fromJson(detailJson());
 
   Future<void> _maybeFail() async {
@@ -118,6 +120,15 @@ class FakeM11 extends M11Source {
   Future<String> uploadEvidence(M11Role role, PickedImage image) async {
     log.add('upload');
     return 'a${log.length}';
+  }
+
+  @override
+  Future<Uint8List> evidencePicture(M11Role role, String attachmentId) async {
+    log.add('picture:$attachmentId');
+    if (pictureFails) {
+      throw const M07Failure(M07FailureKind.offline);
+    }
+    return Uint8List.fromList(base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='));
   }
 
   @override
@@ -339,6 +350,22 @@ void main() {
       await mount(tester, ComplaintDetailScreen(source: source, role: M11Role.customer, complaintId: 'c1', picker: FakeImagePicker()));
       expect(key('m11-reconsider-expired'), findsOneWidget);
       expect(key('m11-reconsider'), findsNothing);
+    });
+
+    testWidgets('evidence pictures are loaded for the person who may read them; a lost one can be retried', (WidgetTester tester) async {
+      final Map<String, Object?> json = detailJson();
+      ((json['messages']! as List<Object?>).first! as Map<String, Object?>)['attachments'] = <Object?>[
+        <String, Object?>{'attachment_id': 'a1', 'byte_size': 70},
+      ];
+      final FakeM11 source = FakeM11()
+        ..detail = ComplaintDetail.fromJson(json)
+        ..pictureFails = true;
+      await mount(tester, ComplaintDetailScreen(source: source, role: M11Role.customer, complaintId: 'c1', picker: FakeImagePicker()));
+      expect(key('m11-evidence-retry-a1'), findsOneWidget);
+      source.pictureFails = false;
+      await tap(tester, key('m11-evidence-retry-a1'));
+      expect(source.log.where((String e) => e == 'picture:a1'), hasLength(2));
+      expect(key('m11-evidence-retry-a1'), findsNothing);
     });
 
     testWidgets('a related party sees no submitter text', (WidgetTester tester) async {
