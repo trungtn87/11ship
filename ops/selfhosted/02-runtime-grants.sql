@@ -112,3 +112,21 @@ GRANT SELECT, INSERT, DELETE ON app.notification_consumed_events TO ship11_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.notification_reminders TO ship11_app;
 GRANT SELECT, INSERT, DELETE ON app.notification_offer_rounds TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.notification_settings TO ship11_app;
+
+-- M13: operations, alerts and updates. The log and the metrics are append-only (a trigger refuses UPDATE of the log); DELETE exists only where the retention pass
+-- removes expired operational rows. No business table is granted here; nothing in M13 deletes an order, wallet, fee or account row.
+GRANT SELECT, INSERT, UPDATE ON app.ops_config TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_admin_scopes TO ship11_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.ops_incidents TO ship11_app;
+GRANT SELECT, INSERT, DELETE ON app.ops_events TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_checks TO ship11_app;
+GRANT SELECT, INSERT, DELETE ON app.ops_metrics TO ship11_app;
+GRANT SELECT, INSERT, DELETE ON app.ops_metrics_hourly TO ship11_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.ops_notifications TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_maintenance TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_gateway_telemetry TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_ingest_keys TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_releases TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_version_reports TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_deploys TO ship11_app;
+GRANT SELECT, INSERT, DELETE ON app.ops_backup_reports TO ship11_app;

@@ -41,6 +41,9 @@ export function configureApp(app: INestApplication): void {
   app.use(`/${GLOBAL_PREFIX}/admin-recovery`, clientAuthTransportMiddleware);
   // Issue #102: the SMS gateway API carries the message (an OTP) and a device credential, never cached.
   app.use(`/${GLOBAL_PREFIX}/sms-gateway`, clientAuthTransportMiddleware);
+  // M13: ingest credentials and update checks, never cached.
+  app.use(`/${GLOBAL_PREFIX}/ops`, clientAuthTransportMiddleware);
+  app.use(`/${GLOBAL_PREFIX}/app-updates`, clientAuthTransportMiddleware);
   // Same headers for the own-profile routes (M01.05): personal data, never cached.
   // The own shop and its menu are private to the owner as well (M02).
   app.use(`/${GLOBAL_PREFIX}/shop/me`, clientAuthTransportMiddleware);
@@ -67,6 +70,8 @@ export function configureApp(app: INestApplication): void {
   app.use(`/${GLOBAL_PREFIX}/customers/me`, captureRawBody);
   // The shop and driver onboarding writes a phone signs (M01 remaining flows).
   app.use(`/${GLOBAL_PREFIX}/onboarding`, captureRawBody);
+  // M13: the app's log batches and version reports are signed by the phone like any other write; the ingest keys use a Bearer machine credential and no proof.
+  app.use(`/${GLOBAL_PREFIX}/ops/client`, captureRawBody);
   // M02: the shop writes a phone signs (profile, schedule, dishes). The picture upload carries a base64 picture: it gets its own,
   // larger parser FIRST (the first parser to run wins; the later ones skip an already parsed body), everything else keeps the default limit.
   const pictureParser = express.json({

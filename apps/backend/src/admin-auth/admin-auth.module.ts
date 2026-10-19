@@ -23,6 +23,9 @@ import { AdminDeliveryController } from '../admin-deliveries/admin-delivery.cont
 import { AdminNotificationController } from '../notifications/admin-notification.controller';
 import { AdminNotificationService } from '../notifications/admin-notification-service';
 import { NotificationsReadModule } from '../notifications/notifications-read.module';
+import { OpsAdminController } from '../ops/ops-admin.controller';
+import { OpsAdminService } from '../ops/ops-admin-service';
+import { OpsCoreModule } from '../ops/ops-core.module';
 import { DeliveryCoreModule } from '../delivery/delivery-core.module';
 import { AdminShipperController, ShipperWalletParametersController } from '../admin-shippers/admin-shipper.controller';
 import { AdminShipperService } from '../admin-shippers/admin-shipper-service';
@@ -109,12 +112,14 @@ export class AdminAuthModule implements NestModule {
         DeliveryCoreModule.register(auth),
         // M08.06 notification administration (read-only SQL; the worker itself lives in NotificationsModule, never twice).
         NotificationsReadModule,
+        // M13 operations: its SQL, engine and Discord sender (the worker lives in OpsModule, never twice).
+        OpsCoreModule,
         // The activation OTP goes through the SAME SMS gateway queue as the account OTPs (one module instance, no second gateway).
         ...(activation !== undefined && isActivationSmsGatewayBinding(activation.otpProvider) ? [SmsGatewayModule] : []),
       ],
       // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
       // M01-D-ADMIN-1C: the activation routes under /v1/admin-activation exist only when explicitly enabled.
-      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, FinanceAccessController, AdminTopupController, AdminDeliveryController, AdminNotificationController, ...(activation === undefined ? [] : [AdminActivationController])],
+      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, FinanceAccessController, AdminTopupController, AdminDeliveryController, AdminNotificationController, OpsAdminController, ...(activation === undefined ? [] : [AdminActivationController])],
       providers: [
         adminAuthConfigProvider,
         {
@@ -174,6 +179,8 @@ export class AdminAuthModule implements NestModule {
         // M07.07 delivery management (SYSTEM, or an ADMIN with the SHOP / DRIVER permissions).
         AdminDeliveryService,
         AdminNotificationService,
+        // M13 operations administration (SYSTEM everything; an ADMIN only the scope SYSTEM granted).
+        OpsAdminService,
         // The 1B section 8.8 hook is always present (1B calls it); it is a no-op when no activation attempt exists.
         AdminActivationRepository,
         AdminActivationInvalidator,
@@ -196,7 +203,7 @@ export class AdminAuthModule implements NestModule {
   }
 
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, FinanceAccessController, AdminTopupController, AdminDeliveryController, AdminNotificationController);
+    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, FinanceAccessController, AdminTopupController, AdminDeliveryController, AdminNotificationController, OpsAdminController);
     // The activation transport headers are an application-level middleware in configureApp (app.setup.ts): it must precede
     // the body parser, which module middleware does not.
   }

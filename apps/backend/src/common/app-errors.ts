@@ -118,6 +118,25 @@ export const APP_ERROR_DEFINITIONS = {
   // DELIVERY_NOT_FOUND. VERSION_CONFLICT, SHOP_NOT_FOUND, SHOP_PROFILE_INCOMPLETE and the DRIVER_* codes (above) are reused unchanged.
   // Notifications (M08). A notification of another account and a missing one answer the same.
   NOTIFICATION_NOT_FOUND: { status: 404, message: 'The notification was not found' },
+
+  // Operations (M13). Fixed messages; none echoes what the caller sent. An incident outside the caller's scope answers like a missing one.
+  OPS_INCIDENT_NOT_FOUND: { status: 404, message: 'The incident was not found' },
+  OPS_INCIDENT_STATE_CONFLICT: { status: 409, message: 'The incident is not in a state that allows this action' },
+  OPS_SETTINGS_INVALID: { status: 400, message: 'The operations settings are not valid' },
+  OPS_WEBHOOK_INVALID: { status: 400, message: 'The Discord webhook is not valid' },
+  OPS_SECRET_UNAVAILABLE: { status: 503, message: 'Secrets cannot be stored on this server' },
+  OPS_MAINTENANCE_INVALID: { status: 400, message: 'The maintenance window is not valid' },
+  OPS_MAINTENANCE_NOT_FOUND: { status: 404, message: 'The maintenance window was not found' },
+  OPS_RELEASE_NOT_FOUND: { status: 404, message: 'The release was not found' },
+  OPS_RELEASE_CONFLICT: { status: 409, message: 'The release already exists or is not in a state that allows this action' },
+  OPS_ARTIFACT_INVALID: { status: 400, message: 'The release file is not valid' },
+  OPS_ARTIFACT_UNAVAILABLE: { status: 503, message: 'Release files are not available on this server' },
+  OPS_INGEST_UNAUTHORIZED: { status: 401, message: 'The reporting credential is not valid' },
+  OPS_DEPLOY_NOT_FOUND: { status: 404, message: 'The deployment was not found' },
+  OPS_DEPLOY_STATE_CONFLICT: { status: 409, message: 'The deployment is not in a state that allows this report' },
+  OPS_TARGET_NOT_FOUND: { status: 404, message: 'The target was not found' },
+  OPS_UPDATE_NOT_READY: { status: 409, message: 'The device must finish its current work before it can update' },
+  OPS_DISCORD_NOT_CONFIGURED: { status: 409, message: 'The Discord channel is not configured' },
   DELIVERY_NOT_FOUND: { status: 404, message: 'The delivery was not found' },
   DELIVERY_STATE_CONFLICT: { status: 409, message: 'The delivery is not in a state that allows this action' },
   DELIVERY_ALREADY_TAKEN: { status: 409, message: 'Another Shipper already took this delivery' },

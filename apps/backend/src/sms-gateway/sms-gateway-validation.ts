@@ -22,22 +22,68 @@ function objectWithOnly(value: unknown, allowed: readonly string[]): Record<stri
   return value as Record<string, unknown>;
 }
 
+/** What a phone may tell about itself besides the OTP work (M13). Every field is optional: a field the phone does not send is "not reported", never guessed. */
+export interface HeartbeatTelemetry {
+  readonly batteryPercent: number | null;
+  readonly charging: boolean | null;
+  readonly simState: 'READY' | 'ABSENT' | 'LOCKED' | 'UNKNOWN' | null;
+  readonly pendingReports: number | null;
+  readonly currentTask: 'IDLE' | 'SENDING' | 'REPORTING' | null;
+  readonly lastErrorCode: string | null;
+}
+
 export interface HeartbeatInput {
   readonly appVersion: string | null;
+  /** The installed versionCode, when the phone sends it (the update offer compares it). */
+  readonly appVersionCode: number | null;
   readonly smsPermission: boolean | null;
   readonly paused: boolean | null;
+  readonly telemetry: HeartbeatTelemetry;
+}
+
+function optionalInt(value: unknown, min: number, max: number): number | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
+    throw new BadRequestException();
+  }
+  return value;
+}
+
+function optionalEnum<T extends string>(value: unknown, allowed: readonly T[]): T | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== 'string' || !(allowed as readonly string[]).includes(value)) {
+    throw new BadRequestException();
+  }
+  return value as T;
 }
 
 export function parseHeartbeatBody(body: unknown): HeartbeatInput {
-  const parsed = objectWithOnly(body, ['app_version', 'sms_permission', 'paused']);
+  const parsed = objectWithOnly(body, ['app_version', 'sms_permission', 'paused', 'battery_percent', 'charging', 'sim_state', 'pending_reports', 'current_task', 'last_error_code', 'app_version_code']);
   const version = parsed.app_version;
+  const errorCode = parsed.last_error_code;
+  if (errorCode !== undefined && errorCode !== null && (typeof errorCode !== 'string' || !SMS_ERROR_CODE_PATTERN.test(errorCode))) {
+    throw new BadRequestException();
+  }
   if (version !== undefined && (typeof version !== 'string' || !SMS_APP_VERSION_PATTERN.test(version))) {
     throw new BadRequestException();
   }
   return {
     appVersion: version === undefined ? null : version,
+    appVersionCode: optionalInt(parsed.app_version_code, 1, 2_000_000_000),
     smsPermission: optionalBoolean(parsed.sms_permission),
     paused: optionalBoolean(parsed.paused),
+    telemetry: {
+      batteryPercent: optionalInt(parsed.battery_percent, 0, 100),
+      charging: optionalBoolean(parsed.charging),
+      simState: optionalEnum(parsed.sim_state, ['READY', 'ABSENT', 'LOCKED', 'UNKNOWN'] as const),
+      pendingReports: optionalInt(parsed.pending_reports, 0, 100),
+      currentTask: optionalEnum(parsed.current_task, ['IDLE', 'SENDING', 'REPORTING'] as const),
+      lastErrorCode: typeof errorCode === 'string' ? errorCode : null,
+    },
   };
 }
 
