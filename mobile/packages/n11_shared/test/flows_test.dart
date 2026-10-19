@@ -365,7 +365,7 @@ void main() {
       await tester.pump();
       expect(shop.profile!.version, 2);
       expect(find.widgetWithText(TextField, 'Quán v2 (web)'), findsOneWidget);
-      expect(find.widgetWithText(TextField, '2 Phố Mới'), findsOneWidget);
+      expect(tester.widget<AddressLocationField>(find.byKey(const Key('shop-address'))).text, '2 Phố Mới');
 
       // Edit one field only, then save: name and address stay v2.
       await tester.enterText(find.byKey(const Key('shop-zalo')), 'zalo.sau');
