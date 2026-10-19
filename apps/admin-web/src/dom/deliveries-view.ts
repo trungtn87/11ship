@@ -1,4 +1,5 @@
 import {
+  COMMISSION_HOLD_LABEL,
   CUSTODY_LABEL,
   DELIVERY_GROUP_LABEL,
   DELIVERY_PAGE_SIZE,
@@ -12,16 +13,19 @@ import {
   DeliveryDetail,
   DeliveryGroup,
   DeliveryRow,
+  DELIVERY_SIGNAL_LABEL,
   DeliverySource,
   DeliveryStateFilter,
   FEE_UNKNOWN_TEXT,
   formatVnd,
   FRESHNESS_LABEL,
+  GeoPoint,
   GOODS_FILTER_LABEL,
   REASON_MAX,
+  SOURCE_FILTER_LABEL,
 } from '../core/deliveries.js';
 import { DialogHandle, openDialog } from './dialog.js';
-import { formatDateTime, h, message, primary, secondary, setMessage } from './dom.js';
+import { formatDateTime, h, message, primary, secondary, setMessage, svg } from './dom.js';
 import { icon } from './icons.js';
 import { emptyPanel, failurePanel, notWiredPanel, skeleton } from './states.js';
 
@@ -42,6 +46,8 @@ export interface DeliveryHost {
   readonly home: () => void;
   /** Where popups are mounted (the page body by default). */
   readonly dialogHost?: HTMLElement;
+  /** M12-B: opens a Shipper's own page (Vận hành › Shipper). Absent when the page is not available to this Admin. */
+  readonly openShipper?: (driverId: string) => void;
   /** M12: the filter a link of the overview opened the page with. The page shows it and lets the administrator drop it. */
   readonly initial?: { readonly group?: DeliveryGroup; readonly state?: DeliveryStateFilter; readonly basis?: 'created' | 'ended'; readonly from?: string; readonly to?: string };
 }
@@ -71,7 +77,65 @@ function stateBadge(row: { readonly state: DeliveryRow['state']; readonly incide
   }
 }
 
+const ACTOR_LABEL: Record<string, string> = { SHIPPER: 'shipper', SHOP: 'quán', ADMIN: 'Admin', SYSTEM: 'hệ thống' };
+
 const fee = (value: number | null): string => (value === null ? FEE_UNKNOWN_TEXT : formatVnd(value));
+
+/** "45 giây", "12 phút", "1 giờ 5 phút", "2 ngày 3 giờ": how long something has been waiting. Never negative. */
+export function waitText(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  if (total < 60) {
+    return `${String(total)} giây`;
+  }
+  const minutes = Math.floor(total / 60);
+  if (minutes < 60) {
+    return `${String(minutes)} phút`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return minutes % 60 === 0 ? `${String(hours)} giờ` : `${String(hours)} giờ ${String(minutes % 60)} phút`;
+  }
+  return hours % 24 === 0 ? `${String(Math.floor(hours / 24))} ngày` : `${String(Math.floor(hours / 24))} ngày ${String(hours % 24)} giờ`;
+}
+
+interface DiagramPoint {
+  readonly label: string;
+  readonly point: GeoPoint;
+  readonly tone: 'pickup' | 'dropoff' | 'live' | 'stale';
+}
+
+/**
+ * A schematic of the real coordinates the server gave (pickup, drop-off when the Admin may see it, the Shipper's latest position), scaled to fit and
+ * drawn with plain SVG. It is NOT a map: there is no basemap, no route and no movement, only where the points lie relative to each other.
+ */
+export function positionDiagram(points: readonly DiagramPoint[]): SVGElement {
+  const width = 420;
+  const height = 220;
+  const pad = 36;
+  const meanLat = points.reduce((sum, item) => sum + item.point.lat, 0) / Math.max(points.length, 1);
+  const scaleLng = Math.cos((meanLat * Math.PI) / 180);
+  const xs = points.map((item) => item.point.lng * scaleLng);
+  const ys = points.map((item) => item.point.lat);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const span = Math.max(maxX - minX, maxY - minY, 1e-6);
+  const scale = Math.min(width - pad * 2, height - pad * 2) / span;
+  const offsetX = (width - (maxX - minX) * scale) / 2;
+  const offsetY = (height - (maxY - minY) * scale) / 2;
+  const colour = { pickup: '#2A2A2E', dropoff: '#D8AD18', live: '#2E7D4F', stale: '#C23B32' } as const;
+  const nodes: SVGElement[] = [svg('rect', { x: '0.5', y: '0.5', width: String(width - 1), height: String(height - 1), rx: '12', fill: '#FFFFFF', stroke: '#E3E1DB' })];
+  points.forEach((item, index) => {
+    const x = offsetX + ((xs[index] as number) - minX) * scale;
+    const y = height - (offsetY + ((ys[index] as number) - minY) * scale);
+    const circle = svg('circle', { cx: x.toFixed(1), cy: y.toFixed(1), r: '7', fill: colour[item.tone], stroke: '#FFFFFF', 'stroke-width': '2' });
+    const text = svg('text', { x: Math.min(Math.max(x, 60), width - 60).toFixed(1), y: (y - 12).toFixed(1), 'text-anchor': 'middle', 'font-size': '12', 'font-weight': '600', fill: '#2A2A2E' });
+    text.textContent = item.label;
+    nodes.push(circle, text);
+  });
+  return svg('svg', { viewBox: `0 0 ${String(width)} ${String(height)}`, width: '100%', role: 'img', 'aria-label': `Sơ đồ vị trí tương đối của ${String(points.length)} điểm` }, ...nodes);
+}
 
 const ACTION_LABEL: Record<DeliveryActionName, string> = {
   'record-custody': 'Ghi nhận hàng',
@@ -111,6 +175,7 @@ export class DeliveryListView {
   readonly #search: HTMLInputElement;
   readonly #state: HTMLSelectElement;
   readonly #goods: HTMLSelectElement;
+  readonly #source: HTMLSelectElement;
   readonly #from: HTMLInputElement;
   readonly #to: HTMLInputElement;
   readonly #shop: HTMLInputElement;
@@ -136,6 +201,7 @@ export class DeliveryListView {
     const states: DeliveryStateFilter[] = ['ALL', ...DELIVERY_STATES];
     this.#state = h('select', { id: 'delivery-state', class: 'select', 'aria-label': 'Trạng thái' }, ...states.map((value) => h('option', { value }, DELIVERY_STATE_LABEL[value])));
     this.#goods = h('select', { id: 'delivery-goods', class: 'select', 'aria-label': 'Tình trạng hàng' }, ...(['ALL', 'OPEN', 'CLOSED'] as const).map((value) => h('option', { value }, GOODS_FILTER_LABEL[value])));
+    this.#source = h('select', { id: 'delivery-source', class: 'select', 'aria-label': 'Nguồn' }, ...(['ALL', 'DIRECT', 'ORDER'] as const).map((value) => h('option', { value }, SOURCE_FILTER_LABEL[value])));
     this.#from = h('input', { id: 'delivery-from', type: 'date', class: 'search-input', 'aria-label': 'Từ ngày' });
     this.#to = h('input', { id: 'delivery-to', type: 'date', class: 'search-input', 'aria-label': 'Đến ngày' });
     this.#shop = h('input', { id: 'delivery-shop', type: 'search', class: 'search-input', placeholder: 'Quán', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Quán', maxlength: '80' });
@@ -157,7 +223,7 @@ export class DeliveryListView {
     for (const input of [this.#search, this.#shop, this.#shipper]) {
       input.addEventListener('input', typed);
     }
-    for (const control of [this.#state, this.#goods, this.#from, this.#to]) {
+    for (const control of [this.#state, this.#goods, this.#source, this.#from, this.#to]) {
       control.addEventListener('change', reload);
     }
     refresh.addEventListener('click', () => void this.load());
@@ -177,7 +243,7 @@ export class DeliveryListView {
         this.#counters,
         this.#linked,
         h('div', { class: 'toolbar toolbar-filters', role: 'search' }, h('div', { class: 'search' }, icon('search', 18), this.#search), this.#state, this.#goods, refresh),
-        h('div', { class: 'toolbar toolbar-filters' }, this.#from, this.#to, this.#shop, this.#shipper),
+        h('div', { class: 'toolbar toolbar-filters' }, this.#from, this.#to, this.#source, this.#shop, this.#shipper),
         this.#results,
         this.#drawer,
       ),
@@ -202,6 +268,7 @@ export class DeliveryListView {
       shop: this.#shop.value,
       shipper: this.#shipper.value,
       page: this.#page,
+      source: (['DIRECT', 'ORDER'] as const).find((value) => value === this.#source.value) ?? 'ALL',
       ...(this.#group === undefined ? {} : { group: this.#group }),
       ...(this.#basis === 'ended' ? { basis: 'ended' as const } : {}),
     });
@@ -226,7 +293,7 @@ export class DeliveryListView {
     this.#renderCounters(read.counters);
     this.#renderLinked();
     if (read.rows.length === 0) {
-      const filtered = [this.#search.value, this.#shop.value, this.#shipper.value, this.#from.value, this.#to.value].some((value) => value.trim() !== '') || this.#state.value !== 'ALL' || this.#goods.value !== 'ALL' || this.#group !== undefined;
+      const filtered = [this.#search.value, this.#shop.value, this.#shipper.value, this.#from.value, this.#to.value].some((value) => value.trim() !== '') || this.#state.value !== 'ALL' || this.#goods.value !== 'ALL' || this.#source.value !== 'ALL' || this.#group !== undefined;
       this.#results.replaceChildren(this.#card({ panel: filtered ? emptyPanel('Không tìm thấy yêu cầu giao', 'Thử đổi từ khóa hoặc bộ lọc.') : emptyPanel('Chưa có yêu cầu giao', 'Yêu cầu giao xuất hiện ở đây khi quán gọi shipper trong ứng dụng 11Food.') }));
       return;
     }
@@ -271,7 +338,7 @@ export class DeliveryListView {
   }
 
   #card(body: { readonly rows: readonly HTMLElement[] } | { readonly panel: HTMLElement }): HTMLElement {
-    const columns = ['Mã', 'Quán', 'Shipper', 'Trạng thái', 'Tiền hàng', 'Phí giao', 'Cập nhật', 'Thao tác'];
+    const columns = ['Mã / Order', 'Quán', 'Shipper', 'Tạo lúc', 'Trạng thái', 'Phí giao', 'Chờ', 'Cần xử lý', 'Thao tác'];
     const head = h('tr', {}, ...columns.map((label) => h('th', { scope: 'col', class: label === 'Thao tác' ? 'cell-end' : '' }, label)));
     const rows = 'rows' in body ? body.rows : [h('tr', { class: 'row-panel' }, h('td', { colspan: String(columns.length) }, body.panel))];
     return h('div', { class: 'table-card' }, h('table', { class: 'table' }, h('caption', { class: 'sr-only' }, 'Danh sách giao hàng'), h('thead', {}, head), h('tbody', {}, ...rows)));
@@ -280,16 +347,18 @@ export class DeliveryListView {
   #row(row: DeliveryRow): HTMLElement {
     const open = h('button', { type: 'button', class: 'table-link table-action', 'aria-label': `Xem giao hàng ${row.code}` }, 'Xem');
     open.addEventListener('click', () => void this.#open(row.id));
+    const signals = row.signals.map((signal) => badge(DELIVERY_SIGNAL_LABEL[signal], 'lock'));
     return h(
       'tr',
       {},
-      h('td', { 'data-label': 'Mã' }, row.code),
+      h('td', { 'data-label': 'Mã / Order' }, row.code, row.source === 'ORDER' ? h('span', { class: 'cell-sub' }, `Order ${row.orderId ?? ''}`.trim()) : h('span', { class: 'cell-sub' }, 'Quán gọi trực tiếp')),
       h('td', { 'data-label': 'Quán', class: 'cell-name' }, row.shopName),
       h('td', { 'data-label': 'Shipper' }, row.shipperName ?? '—'),
-      h('td', { 'data-label': 'Trạng thái' }, stateBadge(row), row.incidentOpen ? badge('Cần xử lý hàng', 'lock') : undefined),
-      h('td', { 'data-label': 'Tiền hàng' }, formatVnd(row.goodsValueVnd)),
+      h('td', { 'data-label': 'Tạo lúc' }, formatDateTime(row.createdAt)),
+      h('td', { 'data-label': 'Trạng thái' }, stateBadge(row)),
       h('td', { 'data-label': 'Phí giao' }, fee(row.feeVnd)),
-      h('td', { 'data-label': 'Cập nhật' }, formatDateTime(row.updatedAt)),
+      h('td', { 'data-label': 'Chờ' }, row.waitSeconds === null ? '—' : waitText(row.waitSeconds)),
+      h('td', { 'data-label': 'Cần xử lý' }, ...(signals.length === 0 ? ['—'] : signals)),
       h('td', { 'data-label': 'Thao tác', class: 'cell-end' }, h('span', { class: 'table-actions' }, open)),
     );
   }
@@ -346,6 +415,118 @@ export class DeliveryListView {
     }
     this.#drawer.replaceChildren(...this.#detail(read.delivery, note));
     this.#drawer.focus();
+  }
+
+  /** Pickup and drop-off. The drop-off address and point are the customer's: filled only for an Admin who may see the contact. */
+  #places(d: DeliveryDetail): HTMLElement {
+    const point = (p: { readonly lat: number; readonly lng: number }): string => `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`;
+    return h(
+      'section',
+      { class: 'detail-block' },
+      h('h3', { class: 'subtitle' }, 'Điểm lấy và điểm giao'),
+      definition([
+        ['Điểm lấy (quán)', d.pickup.addressText],
+        ['Tọa độ điểm lấy', point(d.pickup)],
+        ['Khu vực giao', d.dropoff.areaText ?? '—'],
+        ['Địa chỉ giao', d.dropoff.addressText ?? 'Ẩn: tài khoản này không có quyền xem liên hệ'],
+        ['Điểm giao đã ghim', d.dropoff.point === null ? (d.dropoff.addressText === null ? 'Ẩn: tài khoản này không có quyền xem liên hệ' : d.dropoff.pinned ? '—' : 'Chưa ghim') : point(d.dropoff.point)],
+      ]),
+    );
+  }
+
+  /**
+   * The position of the Shipper. The cases are told apart: nobody holds the delivery, the delivery is not on the way, the phone never sent a position,
+   * the position is old or lost, and the position is fresh. Web Admin has no basemap component (the M14 map lives in the Android app), so the block says so
+   * and draws a schematic of the real coordinates; it never animates or invents a position, and a missing map never hides the list.
+   */
+  #mapBlock(d: DeliveryDetail): HTMLElement {
+    const notes: Record<DeliveryDetail['locationState'], string> = {
+      NO_SHIPPER: 'Chưa có shipper giữ đơn nên chưa theo dõi vị trí.',
+      NOT_RUNNING: 'Yêu cầu giao không còn ở giai đoạn đang giao nên không theo dõi vị trí.',
+      NO_POSITION: 'Chưa có vị trí: shipper đang giữ đơn nhưng thiết bị chưa gửi vị trí nào.',
+      AVAILABLE: '',
+    };
+    const block = h('section', { class: 'detail-block', id: 'delivery-map' }, h('h3', { class: 'subtitle' }, 'Vị trí shipper'));
+    const points: DiagramPoint[] = [{ label: 'Quán', point: { lat: d.pickup.lat, lng: d.pickup.lng }, tone: 'pickup' }];
+    if (d.dropoff.point !== null) {
+      points.push({ label: 'Điểm giao', point: d.dropoff.point, tone: 'dropoff' });
+    }
+    const location = d.location;
+    if (d.locationState !== 'AVAILABLE' || location === null) {
+      block.append(h('p', { class: 'hint', role: 'status' }, notes[d.locationState] === '' ? 'Chưa có vị trí.' : notes[d.locationState]));
+    } else {
+      block.append(
+        definition([
+          ['Tọa độ gần nhất', `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`],
+          ['Cập nhật lúc', `${formatDateTime(location.recordedAt)} (${waitText(location.ageSeconds)} trước)`],
+          ['Tình trạng', badge(FRESHNESS_LABEL[location.freshness], location.freshness === 'LIVE' ? 'ok' : location.freshness === 'STALE' ? 'wait' : 'lock')],
+        ]),
+      );
+      if (location.freshness !== 'LIVE') {
+        block.append(h('p', { class: 'notice', role: 'status' }, location.freshness === 'STALE' ? 'GPS cũ: vị trí này không còn là trực tiếp, shipper có thể đã di chuyển.' : 'Mất kết nối vị trí: không nên dùng vị trí này để biết shipper đang ở đâu.'));
+      }
+      points.push({ label: 'Shipper', point: { lat: location.lat, lng: location.lng }, tone: location.freshness === 'LIVE' ? 'live' : 'stale' });
+    }
+    block.append(positionDiagram(points), h('p', { class: 'hint' }, 'Sơ đồ tương đối từ tọa độ thật (không phải bản đồ nền). Web Admin chưa có thành phần bản đồ; bản đồ M14 hiện chỉ có trong ứng dụng Android. Chỉ lưu vị trí mới nhất, không có vệt di chuyển.'));
+    return block;
+  }
+
+  /** The other records of the delivery. A link is a button only where this Admin has the page; the Order and the shop have no page of their own yet. */
+  #links(d: DeliveryDetail): HTMLElement {
+    const items: Array<readonly [string, string | HTMLElement]> = [['Quán', d.shopName]];
+    if (d.links.shipperDriverId !== null) {
+      const open = this.host.openShipper;
+      if (open === undefined) {
+        items.push(['Shipper', d.shipperName ?? '—']);
+      } else {
+        const button = h('button', { type: 'button', class: 'table-link' }, d.shipperName ?? 'Xem shipper');
+        button.addEventListener('click', () => open(d.links.shipperDriverId as string));
+        items.push(['Shipper', button]);
+      }
+    }
+    items.push(['Order', d.links.orderId === null ? 'Không có (quán gọi trực tiếp)' : `${d.links.orderId} (màn hình Order chưa có)`]);
+    if (d.links.previousDeliveryId !== null) {
+      const previous = d.links.previousDeliveryId;
+      const button = h('button', { type: 'button', class: 'table-link' }, 'Mở yêu cầu giao trước');
+      button.addEventListener('click', () => void this.#open(previous));
+      items.push(['Gọi lại từ', button]);
+    }
+    if (d.links.nextDelivery !== null) {
+      const next = d.links.nextDelivery;
+      const button = h('button', { type: 'button', class: 'table-link' }, `Mở ${next.code}`);
+      button.addEventListener('click', () => void this.#open(next.id));
+      items.push(['Đã gọi lại thành', button]);
+    }
+    return h('section', { class: 'detail-block' }, h('h3', { class: 'subtitle' }, 'Liên kết'), definition(items));
+  }
+
+  /** The commission hold and ledger row of each assignment, from M04. Not derived from the delivery state; hidden entirely without wallet.read. */
+  #money(d: DeliveryDetail): HTMLElement {
+    const block = h('section', { class: 'detail-block' }, h('h3', { class: 'subtitle' }, 'Giao dịch liên quan'));
+    if (d.money.status === 'FORBIDDEN') {
+      block.append(h('p', { class: 'hint' }, 'Tài khoản này không có quyền xem giao dịch ví nên hoa hồng của yêu cầu giao không được hiển thị.'));
+      return block;
+    }
+    if (d.money.commissions.length === 0) {
+      block.append(h('p', { class: 'empty' }, 'Chưa có hoa hồng nào được giữ hoặc thu cho yêu cầu giao này.'));
+      return block;
+    }
+    block.append(
+      h(
+        'ul',
+        { class: 'plain-list' },
+        ...d.money.commissions.map((trace) =>
+          h(
+            'li',
+            {},
+            `${COMMISSION_HOLD_LABEL[trace.holdStatus]} · ${formatVnd(trace.amountVnd)}`,
+            trace.ledgerAt === null ? ' · chưa ghi sổ cái' : ` · ghi sổ cái ${formatDateTime(trace.ledgerAt)}`,
+          ),
+        ),
+      ),
+      h('p', { class: 'hint' }, 'Trạng thái giao hàng không quyết định tiền đã thu: chỉ một dòng sổ cái (ví M04) mới là bằng chứng hoa hồng đã thu.'),
+    );
+    return block;
   }
 
   #closeBar(title: string): HTMLElement {
@@ -405,19 +586,10 @@ export class DeliveryListView {
         ]),
         h('p', { class: 'hint' }, 'Tiền hàng và phí giao do các bên giao nhận trực tiếp, không đi qua ví 11Ship.'),
       ),
-      h(
-        'section',
-        { class: 'detail-block' },
-        h('h3', { class: 'subtitle' }, 'Vị trí shipper'),
-        d.location === null
-          ? h('p', { class: 'hint' }, 'Chưa có vị trí: shipper chưa giữ đơn hoặc chưa chia sẻ vị trí.')
-          : definition([
-              ['Tọa độ', `${d.location.lat.toFixed(5)}, ${d.location.lng.toFixed(5)}`],
-              ['Cập nhật lúc', formatDateTime(d.location.recordedAt)],
-              ['Tình trạng', badge(FRESHNESS_LABEL[d.location.freshness], d.location.freshness === 'LIVE' ? 'ok' : d.location.freshness === 'STALE' ? 'wait' : 'lock')],
-            ]),
-        h('p', { class: 'hint' }, 'Chỉ lưu vị trí mới nhất, không có vệt di chuyển. Vị trí cũ hoặc mất kết nối không được coi là trực tiếp.'),
-      ),
+      this.#places(d),
+      this.#mapBlock(d),
+      this.#links(d),
+      this.#money(d),
       h(
         'section',
         { class: 'detail-block' },
@@ -432,7 +604,7 @@ export class DeliveryListView {
                   'li',
                   { class: 'timeline-item' },
                   h('span', { class: 'timeline-dot', 'aria-hidden': 'true' }),
-                  h('div', {}, h('p', { class: 'timeline-label' }, `${a.shipperName} · ${a.status}`), h('p', { class: 'timeline-meta' }, `Nhận ${formatDateTime(a.acceptedAt)}${a.endedAt === null ? '' : ` · kết thúc ${formatDateTime(a.endedAt)}`}`), a.endReason === null ? undefined : h('p', { class: 'timeline-reason' }, `Lý do: ${a.endReason}`)),
+                  h('div', {}, h('p', { class: 'timeline-label' }, `${a.shipperName} · ${a.status}`), h('p', { class: 'timeline-meta' }, `Nhận ${formatDateTime(a.acceptedAt)}${a.endedAt === null ? '' : ` · kết thúc ${formatDateTime(a.endedAt)}${a.endActor === null ? '' : ` bởi ${ACTOR_LABEL[a.endActor] ?? a.endActor}`}`}`), a.endReason === null ? undefined : h('p', { class: 'timeline-reason' }, `Lý do: ${a.endReason}`)),
                 ),
               ),
             ),

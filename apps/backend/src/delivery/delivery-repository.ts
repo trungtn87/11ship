@@ -533,6 +533,16 @@ export class DeliveryRepository {
   }
 
   /** Every assignment of a delivery, oldest first (the history). */
+  /** The delivery a recall created after this one (its `previous_delivery_id` points here), if any: the other end of the link M12 shows. */
+  async findRecallOf(context: TransactionContext, deliveryId: string): Promise<{ deliveryId: string; code: string } | undefined> {
+    const result = await context.query<{ delivery_id: string; code: string }>(
+      `SELECT delivery_id::text AS delivery_id, code FROM app.deliveries WHERE previous_delivery_id = $1::uuid ORDER BY created_at LIMIT 1`,
+      [deliveryId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : { deliveryId: row.delivery_id, code: row.code };
+  }
+
   async listAssignments(context: TransactionContext, deliveryId: string): Promise<AssignmentRow[]> {
     const result = await context.query<RawAssignment>(`SELECT ${A_COLUMNS} FROM app.delivery_assignments a WHERE a.delivery_id = $1::uuid ORDER BY a.accepted_at, a.assignment_id`, [deliveryId]);
     return result.rows.map(toAssignment);

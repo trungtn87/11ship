@@ -3042,3 +3042,30 @@ select {
     grid-column: 1 / -1;
   }
 }
+
+/* M12-B Operations: list sub-line, linked-filter notice, plain list in the detail drawer. */
+.cell-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+.linked-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.linked-filter[hidden] {
+  display: none;
+}
+.plain-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+#delivery-map svg {
+  display: block;
+  max-width: 460px;
+  margin: 12px 0;
+}

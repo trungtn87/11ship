@@ -47,8 +47,42 @@ function whole(raw: unknown): number {
   return value;
 }
 
+export interface CommissionTrace {
+  readonly assignmentId: string;
+  readonly holdStatus: 'ACTIVE' | 'CAPTURED' | 'RELEASED';
+  readonly amountVnd: number;
+  /** The ledger row that took the commission (only once the hold was captured), else null. */
+  readonly ledgerEntryId: string | null;
+  readonly ledgerAtMs: number | null;
+}
+
 @Injectable()
 export class WalletReportReader {
+  /**
+   * What happened to the commission of each assignment, from M04's own hold and ledger rows (never inferred from the delivery state: a delivered delivery
+   * whose commission was not captured shows as ACTIVE or RELEASED here, and the screen says so).
+   */
+  async commissionOf(context: TransactionContext, assignmentIds: readonly string[]): Promise<CommissionTrace[]> {
+    if (assignmentIds.length === 0) {
+      return [];
+    }
+    const result = await context.query<{ assignment_id: string; status: string; amount: string; entry_id: string | null; entry_ms: string | null }>(
+      `SELECT h.commission_assignment_id::text AS assignment_id, h.status, h.amount_vnd::text AS amount, e.entry_id::text AS entry_id,
+              (extract(epoch FROM e.created_at) * 1000)::bigint::text AS entry_ms
+         FROM app.wallet_holds h
+         LEFT JOIN app.wallet_ledger_entries e ON e.commission_assignment_id = h.commission_assignment_id AND e.entry_kind = 'COMMISSION_DEBIT'
+        WHERE h.purpose = 'COMMISSION' AND h.commission_assignment_id = ANY($1::uuid[])
+        ORDER BY h.created_at`,
+      [assignmentIds],
+    );
+    return result.rows.map((row) => {
+      if (row.status !== 'ACTIVE' && row.status !== 'CAPTURED' && row.status !== 'RELEASED') {
+        throw new TechnicalError('internal', 'Database returned an unexpected hold');
+      }
+      return { assignmentId: row.assignment_id, holdStatus: row.status, amountVnd: whole(row.amount), ledgerEntryId: row.entry_id, ledgerAtMs: row.entry_ms === null ? null : whole(row.entry_ms) };
+    });
+  }
+
   async totals(context: TransactionContext): Promise<WalletTotals> {
     const result = await context.query<{ n: string; balance: string; held: string }>(
       `SELECT count(*)::text AS n, COALESCE(sum(balance_vnd), 0)::text AS balance, COALESCE(sum(held_vnd), 0)::text AS held FROM app.driver_wallets`,

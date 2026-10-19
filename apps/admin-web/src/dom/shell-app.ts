@@ -861,6 +861,8 @@ export class ShellApp implements ShellHost {
   #deliveryList(content: HTMLElement, filter?: Extract<Route, { name: 'deliveries' }>['filter']): void {
     const host: DeliveryHost = {
       ...(filter === undefined ? {} : { initial: filter }),
+      // The Shipper page opens from a delivery only for an administrator who may open it (the server decides again on the read).
+      ...(this.#role !== undefined && canOpenRoute(this.#role, this.#effectiveGrants(), { name: 'shippers' }) ? { openShipper: (driverId: string) => this.go({ name: 'shipper', id: driverId }) } : {}),
       source: this.deliveries,
       newKey: this.newKey,
       onSessionLost: () => this.onSessionLost(),
