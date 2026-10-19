@@ -120,6 +120,7 @@ function screenIdOf(route: Route): { id: string; variant?: string } {
     case 'shipper':
     case 'deliveries':
     case 'overview':
+    case 'access':
     case 'notifications':
     case 'wallet-parameters':
     case 'shipping-policy':

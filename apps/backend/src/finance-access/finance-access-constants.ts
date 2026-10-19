@@ -5,8 +5,23 @@
 export const FINANCE_PERMISSION_READ = 'wallet.read';
 export const FINANCE_PERMISSION_TOPUP_RECORD = 'wallet.topup.record';
 
+// M12-C: the same table carries the function rights of the administration beyond money (it is key-format-only by design). Each is separate: viewing a report is
+// not exporting it, and neither opens the audit log. SYSTEM holds them implicitly.
+export const PERMISSION_REPORT_READ = 'report.read';
+export const PERMISSION_REPORT_EXPORT = 'report.export';
+export const PERMISSION_AUDIT_READ = 'audit.read';
+
 /** The rights that can be granted TODAY. */
 export const GRANTABLE_FINANCE_PERMISSIONS = [FINANCE_PERMISSION_READ, FINANCE_PERMISSION_TOPUP_RECORD] as const;
+
+/** The function rights beyond money (M12-C). They live in the same table and are given by the same SYSTEM-only routes, but are not finance rights. */
+export const GRANTABLE_FUNCTION_PERMISSIONS = [PERMISSION_REPORT_READ, PERMISSION_REPORT_EXPORT, PERMISSION_AUDIT_READ] as const;
+export const GRANTABLE_PERMISSIONS = [...GRANTABLE_FINANCE_PERMISSIONS, ...GRANTABLE_FUNCTION_PERMISSIONS] as const;
+export type GrantablePermissionKey = (typeof GRANTABLE_PERMISSIONS)[number];
+
+export function isGrantablePermission(value: unknown): value is GrantablePermissionKey {
+  return typeof value === 'string' && (GRANTABLE_PERMISSIONS as readonly string[]).includes(value);
+}
 export type FinancePermissionKey = (typeof GRANTABLE_FINANCE_PERMISSIONS)[number];
 
 /**

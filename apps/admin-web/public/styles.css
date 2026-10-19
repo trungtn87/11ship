@@ -3069,3 +3069,56 @@ select {
   max-width: 460px;
   margin: 12px 0;
 }
+
+/* M12-C Access matrix: one row per function group, one switch per right. */
+.access-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.access-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+.access-group {
+  font-weight: 700;
+}
+.access-switches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--yellow-hover);
+}
+.textarea {
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  resize: vertical;
+}
+@media (max-width: 700px) {
+  .access-row {
+    grid-template-columns: 1fr;
+  }
+}

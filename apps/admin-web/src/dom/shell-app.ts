@@ -48,6 +48,8 @@ import { ShippingPolicyView } from './shipping-policy-view.js';
 import { DeliverySource, NOT_WIRED_DELIVERIES } from '../core/deliveries.js';
 import { NOT_WIRED_OVERVIEW, OverviewSource } from '../core/overview.js';
 import { OverviewHost, OverviewView } from './overview-view.js';
+import { AccessSource, NOT_WIRED_ACCESS } from '../core/access.js';
+import { AccessHost, AccessView } from './access-view.js';
 import { DeliveryHost, DeliveryListView } from './deliveries-view.js';
 import { NOT_WIRED_NOTIFICATIONS, NotificationSource } from '../core/notifications.js';
 import { NotificationHost, NotificationsView } from './notifications-view.js';
@@ -137,6 +139,8 @@ export class ShellApp implements ShellHost {
     private readonly financeAdmin: FinanceAdminSource = NOT_WIRED_FINANCE_ADMIN,
     /** Where the overview figures (Tổng quan › Điều hành, M12-A) come from. By default nothing is wired, so the page says so. */
     private readonly overview: OverviewSource = NOT_WIRED_OVERVIEW,
+    /** Where the administrator permission matrix (Tài khoản › Phân quyền, M12-C) comes from. By default nothing is wired, so the page says so. */
+    private readonly access: AccessSource = NOT_WIRED_ACCESS,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -364,6 +368,9 @@ export class ShellApp implements ShellHost {
         return;
       case 'overview':
         this.#overviewPage(content);
+        return;
+      case 'access':
+        this.#accessPage(content);
         return;
       case 'notifications':
         this.#notificationPage(content);
@@ -875,6 +882,25 @@ export class ShellApp implements ShellHost {
       home: () => this.go({ name: 'home' }),
     };
     const view = new DeliveryListView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Tài khoản › Phân quyền" (M12-C): SYSTEM only; the server decides every read and command again. */
+  #accessPage(content: HTMLElement): void {
+    const host: AccessHost = {
+      source: this.access,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    };
+    const view = new AccessView(content, host);
     this.#unsubscribe = () => view.dispose();
     void view.load();
   }

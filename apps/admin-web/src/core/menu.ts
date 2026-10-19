@@ -28,6 +28,7 @@ export type IconName =
   | 'map-pin'
   | 'gear'
   | 'doc'
+  | 'key'
   | 'activity';
 
 /** A domain an ADMIN can be granted. SYSTEM does not need a grant. */
@@ -144,6 +145,8 @@ export const MENU: readonly MenuGroup[] = [
         ],
       },
       { id: 'administrators', label: 'Quản trị viên', icon: 'shield', route: { name: 'administrators' }, ready: true, access: 'system' },
+      // M12-C: SYSTEM gives and takes back the rights of each ADMIN, locks the account and ends its sessions.
+      { id: 'access', label: 'Phân quyền', icon: 'key', route: { name: 'access' }, ready: true, access: 'system' },
       { id: 'invitations', label: 'Lời mời Admin', icon: 'mail', route: { name: 'invitations' }, ready: true, access: 'system' },
     ],
   },
@@ -302,6 +305,7 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'wallet-params':
       return canSee(role, grants, 'parameters');
     case 'administrators':
+    case 'access':
     case 'settings':
     case 'invitations':
     case 'invitation-new':
@@ -352,6 +356,8 @@ export function activeMenuId(route: Route): string {
       return 'parameters';
     case 'administrators':
       return 'administrators';
+    case 'access':
+      return 'access';
     case 'settings':
       return 'system-settings';
     case 'invitations':
@@ -412,6 +418,8 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
     case 'administrators':
       return ['Tài khoản', 'Quản trị viên'];
+    case 'access':
+      return ['Tài khoản', 'Phân quyền'];
     case 'settings':
       return ['Hệ thống', 'Cài đặt hệ thống'];
     case 'invitations':

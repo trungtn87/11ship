@@ -8,7 +8,7 @@ import { ADMIN_ORIGIN, AdminApp, rewindAcceptedStep, startAdminApp, totpNow } fr
 import { freePort, repoRoot, runScript, startFront } from './support/admin-web-harness';
 import { Browser, launchChrome, Page } from './support/cdp';
 import { createActiveShopFor } from './support/auth-fixtures';
-import { ActivatedAdmin, activatedAdmin, permission, purgeDeliveriesOfShops, seedDelivery } from './support/m12-fixtures';
+import { ActivatedAdmin, activatedAdmin, permission, purgeDeliveriesOfShops, purgeGrants, seedDelivery } from './support/m12-fixtures';
 import { systemSession, SystemSession } from './support/provisioning-fixtures';
 
 // M12 on the Administration web in a REAL Chrome against the real front, backend and PostgreSQL (desktop size 1440x900 and a narrow check at 390 wide).
@@ -75,6 +75,7 @@ describe('M12 administration web (real browser)', () => {
     front?.kill('SIGTERM');
     if (app !== undefined) {
       await purgeDeliveriesOfShops(app.pool, [shopId]);
+      await purgeGrants(app.pool);
       await app.pool.query('DELETE FROM app.shop_members WHERE shop_id = $1::uuid', [shopId]);
       await app.pool.query('DELETE FROM app.shops WHERE shop_id = $1::uuid', [shopId]);
       await app.close();
@@ -151,5 +152,50 @@ describe('M12 administration web (real browser)', () => {
     expect(await page.evaluate<boolean>(`document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1`)).toBe(true);
     await shot(page, 'm12a-overview-phone');
     await page.close();
+  }, 120_000);
+
+  const press = (page: Page, text: string, within = 'document'): Promise<boolean> =>
+    page.evaluate<boolean>(`(() => { const b = [...${within}.querySelectorAll('button')].find((x) => (x.textContent ?? '').trim() === ${JSON.stringify(text)} && !x.disabled); if (!b) return false; b.click(); return true; })()`);
+
+  it('M12-C: SYSTEM changes a right and an application permission from the matrix with a reason; the change is stored and audited; an ADMIN cannot open the page', async () => {
+    const page: Page = await (browser as Browser).newPage();
+    await page.viewport(1440, 900, false);
+    await page.send('Network.clearBrowserCookies');
+    await signIn(page, { phone: system.account.phone, password: system.account.password, userId: system.account.userId, secret: system.login.secret });
+    await page.goto(`${origin}/accounts/access`);
+    await page.waitFor(`document.querySelector('#access-title') && [...document.querySelectorAll('.table tbody tr')].some((r) => r.textContent.includes(${JSON.stringify(`Xem điều hành ${tag}`)}))`);
+    await shot(page, 'm12c-access-matrix-desktop');
+    expect(await page.evaluate<boolean>(`(() => { const row = [...document.querySelectorAll('.table tbody tr')].find((r) => r.textContent.includes(${JSON.stringify(`Xem điều hành ${tag}`)})); row.querySelector('button').click(); return true; })()`)).toBe(true);
+    await page.waitFor(`document.querySelector('#access-editor') && !document.querySelector('#access-editor').hidden && document.querySelector('#access-save')`);
+    expect(await page.evaluate<boolean>(`document.querySelector('#access-save').disabled`)).toBe(true); // nothing changed yet
+    // Switch on "Xem báo cáo" and the DRIVER "Khóa" switch.
+    await page.evaluate(`(() => { const click = (label) => { const l = [...document.querySelectorAll('#access-editor label.check')].find((x) => x.textContent.includes(label)); l.querySelector('input').click(); }; click('Xem báo cáo'); click('Khóa: khóa shipper'); return true; })()`);
+    await page.waitFor(`!document.querySelector('#access-save').disabled`);
+    await shot(page, 'm12c-access-editor-desktop');
+    await press(page, 'Xem lại và lưu');
+    await page.waitFor(`document.querySelector('.dialog')`);
+    // A reason is required: confirming without it sends nothing.
+    await press(page, 'Xác nhận lưu', "document.querySelector('.dialog')");
+    await page.waitFor(`document.querySelector('.dialog .message-error') && !document.querySelector('.dialog .message-error').hidden`);
+    expect(await app.pool.query(`SELECT 1 FROM app.admin_finance_grants WHERE user_id = $1::uuid`, [viewer.userId]).then((r) => r.rowCount)).toBe(0);
+    await page.fill('.dialog textarea', 'Phụ trách báo cáo và khóa shipper vi phạm');
+    await press(page, 'Xác nhận lưu', "document.querySelector('.dialog')");
+    await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã lưu quyền')`);
+    const grant = await app.pool.query(`SELECT state FROM app.admin_finance_grants WHERE user_id = $1::uuid AND permission_key = 'report.read'`, [viewer.userId]);
+    expect(grant.rows).toEqual([{ state: 'GRANTED' }]);
+    const permissions = await app.pool.query(`SELECT can_lock FROM app.admin_app_permissions WHERE user_id = $1::uuid AND app = 'DRIVER'`, [viewer.userId]);
+    expect(permissions.rows).toEqual([{ can_lock: true }]);
+    expect((await app.pool.query(`SELECT metadata FROM app.audit_logs WHERE action = 'admin.access.permissions.update.v1' AND resource_id = $1`, [viewer.userId])).rows[0].metadata.reason).toBe('Phụ trách báo cáo và khóa shipper vi phạm');
+    await shot(page, 'm12c-access-saved');
+    await page.close();
+
+    const adminPage: Page = await (browser as Browser).newPage();
+    await adminPage.viewport(1440, 900, false);
+    await adminPage.send('Network.clearBrowserCookies');
+    await signIn(adminPage, { phone: viewer.phone, password: 'Correct-Horse-Battery-9', userId: viewer.userId, secret: viewer.secret });
+    expect(await adminPage.evaluate<boolean>(`!!document.querySelector('a[href="/accounts/access"]')`)).toBe(false);
+    await adminPage.goto(`${origin}/accounts/access`);
+    await adminPage.waitFor(`document.body.innerText.includes('Không có quyền')`);
+    await adminPage.close();
   }, 120_000);
 });

@@ -179,6 +179,9 @@ describe('AllExceptionsFilter', () => {
       expect([...codes].sort()).toEqual([
         'ACCOUNT_DISABLED',
         'ACCOUNT_RECOVERY_AVAILABLE',
+        'ADMIN_ACCESS_NOT_FOUND',
+        'ADMIN_ACCESS_STATE_CONFLICT',
+        'ADMIN_ACCESS_VERSION_CONFLICT',
         'ADMIN_ACTION_NOT_ALLOWED',
         'ADMIN_ACTIVATION_LINK_INVALID',
         'ADMIN_ACTIVATION_SESSION_INVALID',

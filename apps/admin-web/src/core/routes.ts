@@ -20,6 +20,7 @@ export type Route =
   | { readonly name: 'users'; readonly status?: UserStatusFilter }
   | { readonly name: 'user'; readonly id: string }
   | { readonly name: 'administrators' }
+  | { readonly name: 'access' }
   | { readonly name: 'categories' }
   | { readonly name: 'shippers'; readonly status?: ShipperFilter }
   | { readonly name: 'shipper'; readonly id: string }
@@ -93,6 +94,9 @@ export function parseRoute(pathname: string, search = ''): Route {
   }
   if (path === '/accounts/users') {
     return new URLSearchParams(search).get('status') === 'LOCKED' ? { name: 'users', status: 'LOCKED' } : { name: 'users' };
+  }
+  if (path === '/accounts/access') {
+    return { name: 'access' };
   }
   if (path === '/accounts/administrators') {
     return { name: 'administrators' };
@@ -230,6 +234,8 @@ export function formatRoute(route: Route): string {
       return `/accounts/users/${route.id}`;
     case 'administrators':
       return '/accounts/administrators';
+    case 'access':
+      return '/accounts/access';
     case 'categories':
       return '/catalog/categories';
     case 'settings':
