@@ -192,7 +192,7 @@ CREATE TABLE app.complaints (
   -- What "the same issue" means: the rating, else the delivery, else the order.
   scope_key uuid NOT NULL,
   status varchar(16) NOT NULL DEFAULT 'PENDING',
-  awaiting_from varchar(8),
+  awaiting_from varchar(10),
   assigned_to uuid,
   received_at timestamptz,
   body text NOT NULL,
@@ -478,6 +478,7 @@ ALTER TABLE app.notifications ADD CONSTRAINT notifications_target_ck
 
 -- Down Migration
 -- Only for disposable test or experimental databases. Restores the M08 constraint (refused while a COMPLAINT notification exists) and drops the M11 objects, children first.
+DELETE FROM app.notification_pushes WHERE notification_id IN (SELECT notification_id FROM app.notifications WHERE target_type = 'COMPLAINT');
 DELETE FROM app.notifications WHERE target_type = 'COMPLAINT';
 ALTER TABLE app.notifications DROP CONSTRAINT notifications_target_ck;
 ALTER TABLE app.notifications ADD CONSTRAINT notifications_target_ck

@@ -726,7 +726,8 @@ export class AdminFeedbackService {
     if (!mayView || (right === 'handle' && !handle)) {
       throw new AppError('ADMIN_FORBIDDEN');
     }
-    const grant = right === 'handle' ? await this.grants.lockForShare(context, known.userId, FINANCE_ADJUSTMENT_RIGHT) : undefined;
+    // The money right is its own row (read FOR SHARE, kept to the end of the transaction): a revocation waits for a command that already passed.
+    const grant = await this.grants.lockForShare(context, known.userId, FINANCE_ADJUSTMENT_RIGHT);
     return { role, actorId: known.userId, handle, finance: grant?.state === 'GRANTED' };
   }
 

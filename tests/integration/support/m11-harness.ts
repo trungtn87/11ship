@@ -5,7 +5,14 @@ import { expect } from '@jest/globals';
 import { FEEDBACK_ORDER_PORT, FeedbackOrderPort, OrderFact } from '../../../apps/backend/src/feedback/feedback-order-port';
 import { M14_ROUTING } from '../../../apps/backend/src/delivery/m14-route-client';
 import { TransactionContext } from '../../../apps/backend/src/transaction/transaction-context';
-import { ApiResponse, AuthApp, countRows, dataOf, obtainProof, PASSWORD, randomPhone, startAuthApp } from './auth-fixtures';
+import { FakeOtpProvider } from '../../../apps/backend/src/auth/fake-otp-provider';
+import { COMMISSION_ADJUSTMENT_PORT, CommissionAdjustmentPort, CommissionAdjustmentRequest, CommissionAdjustmentResult } from '../../../apps/backend/src/feedback/feedback-finance-port';
+import { ADMIN_SESSION_COOKIE } from '../../../apps/backend/src/admin-auth/admin-auth-constants';
+import { ADMIN_PASSWORD, AdminApp, adminData, AdminResponse, cookieFrom, loginStep, preauthCookies, rewindAcceptedStep, sessionCookies, startAdminApp, totpNow } from './admin-fixtures';
+import { begin, ok, post } from './activation-fixtures';
+import { api, ApiResponse, AuthApp, countRows, dataOf, obtainProof, PASSWORD, Phone, randomPhone, startAuthApp } from './auth-fixtures';
+import { createInvitation, createPayload, systemSession, SystemSession } from './provisioning-fixtures';
+import { NotificationRuntime } from '../../../apps/backend/src/notifications/notification-runtime';
 import { createShopOwner, ShopOwner } from './shop-management-fixtures';
 
 // The world M11 is tested in: a REAL Nest pipeline and PostgreSQL, a real local M14 routing server, one shop, Shippers and customers that go through
@@ -46,10 +53,33 @@ export class StubOrders implements FeedbackOrderPort {
   }
 }
 
+export interface AdminLogin {
+  readonly cookie: string;
+  readonly csrf: string;
+  readonly userId: string;
+}
+
+/** The M04 stand-in an Admin test binds when it needs to see what M11 does with each answer of the wallet package. */
+export class StubFinance implements CommissionAdjustmentPort {
+  integrated = true;
+  answer: CommissionAdjustmentResult = { kind: 'POSTED' };
+  readonly requests: CommissionAdjustmentRequest[] = [];
+
+  post(_context: TransactionContext, request: CommissionAdjustmentRequest): Promise<CommissionAdjustmentResult> {
+    this.requests.push(request);
+    return Promise.resolve(this.answer);
+  }
+}
+
 export class M11World {
   readonly drivers: string[] = [];
+  readonly userIds: string[] = [];
   readonly stub = new StubOrders();
   private addedPolicy = false;
+
+  admin: AdminApp | undefined;
+  system: SystemSession | undefined;
+  finance: StubFinance | undefined;
 
   private constructor(
     readonly app: AuthApp,
@@ -57,7 +87,8 @@ export class M11World {
     readonly shop: ShopOwner,
   ) {}
 
-  static async start(): Promise<M11World> {
+  /** With `admin`, the SAME application also serves the Administration web (a SYSTEM session is ready) and binds a controllable M04 stand-in. */
+  static async start(options: { admin?: boolean } = {}): Promise<M11World> {
     const router = http.createServer((request, response) => {
       request.resume();
       response.setHeader('content-type', 'application/json');
@@ -66,20 +97,33 @@ export class M11World {
     await new Promise<void>((resolve) => router.listen(0, '127.0.0.1', resolve));
     const origin = `http://127.0.0.1:${(router.address() as AddressInfo).port}`;
     const stub = new StubOrders();
-    const app = await startAuthApp(
-      {},
-      {
-        relaxTimeouts: true,
-        configOverride: { clientAuth: { termsVersion: TERMS, privacyVersion: PRIVACY } },
-        overrides: [
-          { provide: M14_ROUTING, useValue: { origin, timeoutMs: 3000 } },
-          { provide: FEEDBACK_ORDER_PORT, useValue: stub },
-        ],
-      },
-    );
+    const finance = new StubFinance();
+    const overrides = [
+      { provide: M14_ROUTING, useValue: { origin, timeoutMs: 3000 } },
+      { provide: FEEDBACK_ORDER_PORT, useValue: stub },
+      ...(options.admin === true ? [{ provide: COMMISSION_ADJUSTMENT_PORT, useValue: finance }] : []),
+    ];
+    const configOverride = { clientAuth: { termsVersion: TERMS, privacyVersion: PRIVACY } };
+    let admin: AdminApp | undefined;
+    let app: AuthApp;
+    if (options.admin === true) {
+      const provider = new FakeOtpProvider();
+      admin = await startAdminApp({ activationDisabledTest: true, otpProvider: provider, configOverride, overrides });
+      const running = admin.running;
+      const base = admin;
+      app = { running, config: base.config, provider, pool: base.pool, call: (method, path, o) => api(running.baseUrl, method, path, o), track: (phone) => base.track(phone), close: () => base.close() };
+    } else {
+      app = await startAuthApp({}, { relaxTimeouts: true, configOverride, overrides });
+    }
     const shop = await createShopOwner(app);
     const world = new M11World(app, router, shop);
+    world.userIds.push(shop.userId);
     (world as { stub: StubOrders }).stub = stub;
+    if (admin !== undefined) {
+      world.admin = admin;
+      world.finance = finance;
+      world.system = await systemSession(admin);
+    }
     const existing = await app.pool.query('SELECT 1 FROM app.shipping_fee_policy_versions LIMIT 1');
     if ((existing.rowCount ?? 0) === 0) {
       await app.pool.query(
@@ -94,6 +138,9 @@ export class M11World {
   async close(): Promise<void> {
     try {
       await this.cleanup();
+    } catch (error) {
+      console.error('M11 cleanup failed:', error);
+      throw error;
     } finally {
       await this.app.close();
       await new Promise<void>((resolve) => this.router.close(() => resolve()));
@@ -113,6 +160,10 @@ export class M11World {
       const mine = `SELECT delivery_id FROM app.deliveries WHERE shop_id = $1::uuid`;
       const wallets = `SELECT wallet_id FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[])`;
       const shopId = this.shop.shopId;
+      for (const table of ['notification_pushes', 'notification_reminders', 'notification_offer_rounds', 'notifications', 'notification_settings', 'notification_push_tokens']) {
+        const by = table === 'notification_reminders' || table === 'notification_offer_rounds' ? `delivery_id IN (${mine})` : `${table === 'notification_settings' || table === 'notification_push_tokens' ? 'user_id' : 'recipient_user_id'} = ANY($1::uuid[])`;
+        await client.query(`DELETE FROM app.${table} WHERE ${by}`, by.includes('ANY') ? [this.userIds] : [shopId]);
+      }
       // The test database holds only this suite's rows of these tables (other suites never write M11 rows): they are removed whole, children first.
       for (const table of ['complaint_adjustments', 'complaint_reconsiderations', 'complaint_attachments', 'complaint_messages', 'complaints', 'review_reply_history', 'review_replies', 'review_moderations', 'reviews']) {
         await client.query(`DELETE FROM app.${table}`);
@@ -143,13 +194,90 @@ export class M11World {
     }
   }
 
+  // ---- the Administration (only when started with `admin`) ------------------------------------------------------------------------
+
+  systemLogin(): AdminLogin {
+    const system = this.system as SystemSession;
+    return { cookie: system.login.cookie, csrf: system.login.csrf, userId: system.account.userId };
+  }
+
+  /** A new ADMIN with exactly these rights on the SHOP / DRIVER app (view, review, lock), logged in. */
+  async adminWith(app: 'DRIVER' | 'SHOP', rights: { review: boolean; lock?: boolean }): Promise<AdminLogin> {
+    const admin = this.admin as AdminApp;
+    const phone = randomPhone();
+    admin.track(phone.normalized);
+    const invitation = await createInvitation(admin, this.system as SystemSession, createPayload(phone.local, { full_name: `Quản trị ${tag}`, permissions: [{ app, can_view: true, can_review_profile: rights.review, can_lock: rights.lock === true }] }));
+    const token = invitation.link.split('#t=')[1] as string;
+    const session = await begin(admin, { invitationId: invitation.invitationId, token, phone });
+    ok(await post(admin, '/password', session, { password: ADMIN_PASSWORD }));
+    const secret = String(adminData(ok(await post(admin, '/totp/enrollment', session))).secret);
+    ok(await post(admin, '/complete', session, { code: totpNow(secret) }));
+    const found = await admin.pool.query<{ user_id: string }>('SELECT user_id FROM app.users WHERE phone_normalized = $1', [phone.normalized]);
+    const userId = (found.rows[0] as { user_id: string }).user_id;
+    return this.#adminLogin({ phone, userId, secret });
+  }
+
+  async #adminLogin(who: { phone: Phone; userId: string; secret: string }): Promise<AdminLogin> {
+    const admin = this.admin as AdminApp;
+    const preauth = await loginStep(admin, { phone: who.phone, password: ADMIN_PASSWORD, userId: who.userId });
+    await rewindAcceptedStep(admin, who.userId);
+    const verified = await admin.call('POST', '/totp/verify', { body: { code: totpNow(who.secret) }, cookies: preauthCookies(preauth), csrf: preauth.csrf });
+    if (verified.status !== 200) {
+      throw new Error(`admin login failed: ${verified.status} ${verified.text}`);
+    }
+    return { cookie: String(cookieFrom(verified, ADMIN_SESSION_COOKIE)), csrf: String(adminData(verified).csrf_token), userId: who.userId };
+  }
+
+  adminGet(who: AdminLogin | undefined, path: string): Promise<AdminResponse> {
+    return (this.admin as AdminApp).call('GET', path, { basePath: '/v1/admin', ...(who === undefined ? {} : { cookies: sessionCookies(who) }) });
+  }
+
+  async adminPost(who: AdminLogin, path: string, body: unknown, key: string = randomUUID()): Promise<AdminResponse> {
+    const admin = this.admin as AdminApp;
+    await admin.clearLimits();
+    return admin.call('POST', path, { basePath: '/v1/admin', body, cookies: sessionCookies(who), csrf: who.csrf, headers: { 'idempotency-key': key } });
+  }
+
+  /** Runs the outbox consumer until it has nothing left to claim (what M08 would have done in the background). */
+  async dispatch(): Promise<void> {
+    const runtime = this.app.running.app.get(NotificationRuntime);
+    for (let i = 0; i < 20; i += 1) {
+      const summary = await runtime.dispatcher.dispatchOnce();
+      if (summary.claimed === 0) {
+        return;
+      }
+    }
+  }
+
+  #shopFood: string | undefined;
+
+  /** The shop owner in the 11Food app (a client session with the SHOP hat): the inbox and the notification routes are client routes. */
+  async shopFoodToken(): Promise<string> {
+    if (this.#shopFood === undefined) {
+      const loggedIn = await this.app.call('POST', '/client-auth/login', { headers: { 'idempotency-key': randomUUID() }, body: { phone: this.shop.user.phone.local, password: PASSWORD, device: { ...WEB_FOOD } } });
+      expect([loggedIn.status, loggedIn.text.slice(0, 200)]).toEqual([200, loggedIn.text.slice(0, 200)]);
+      const token = String(dataOf(loggedIn).access_token);
+      expect((await this.app.call('POST', '/auth/role/select', { bearer: token, body: { role: 'SHOP' } })).status).toBe(200);
+      this.#shopFood = token;
+    }
+    return this.#shopFood;
+  }
+
+  inbox = async (token: string, app: 'FOOD' | 'SHIP' = 'FOOD'): Promise<Json[]> => {
+    void app;
+    const response = await this.as(token, 'GET', '/notifications?limit=100');
+    expect(response.status).toBe(200);
+    return ((dataOf(response) as Json).items as Json[]) ?? [];
+  };
+
   // ---- calls -----------------------------------------------------------------------------------------------------------------
 
   as(token: string, method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, key: string = randomUUID()): Promise<ApiResponse> {
     return this.app.call(method, path, { bearer: token, ...(method !== 'GET' ? { headers: { 'idempotency-key': key } } : {}), ...(body === undefined ? {} : { body }) });
   }
 
-  asShop = (method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, key?: string): Promise<ApiResponse> => this.as(this.shop.token, method, path, body, key);
+  /** The shop owner's session: the legacy one it was created with, or the 11Food session once the inbox needed it (a new login ends the older session). */
+  asShop = (method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, key?: string): Promise<ApiResponse> => this.as(this.#shopFood ?? this.shop.token, method, path, body, key);
   asShipper = (s: Shipper, method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, key?: string): Promise<ApiResponse> => this.as(s.token, method, path, body, key);
   asCustomer = (c: Customer, method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, key?: string): Promise<ApiResponse> => this.as(c.token, method, path, body, key);
 
@@ -164,7 +292,9 @@ export class M11World {
       body: { phone: phone.local, password: PASSWORD, verification_token: proof.proofToken, device: { ...device }, full_name: fullName, consent: { terms_version: TERMS, privacy_version: PRIVACY } },
     });
     expect(registered.status).toBe(201);
-    return { userId: String(dataOf(registered).user_id), phone };
+    const userId = String(dataOf(registered).user_id);
+    this.userIds.push(userId);
+    return { userId, phone };
   }
 
   async newCustomer(name = `Khách ${tag}`): Promise<Customer> {
