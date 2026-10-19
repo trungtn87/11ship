@@ -298,7 +298,7 @@ function isRevoked(certificates: readonly X509Certificate[], snapshot: Revocatio
   return certificates.some((certificate) => snapshot.revokedSerials.has(normalizedSerial(certificate)));
 }
 
-async function currentSnapshot(trust: ClientDeviceTrust): Promise<RevocationSnapshot> {
+export async function currentSnapshot(trust: ClientDeviceTrust): Promise<RevocationSnapshot> {
   let snapshot: RevocationSnapshot;
   try {
     snapshot = await trust.revocation();
