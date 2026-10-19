@@ -7,6 +7,7 @@ import '../account/models.dart';
 import '../brand.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../widgets/form_feedback.dart';
 import 'reset_controller.dart';
 
 // F13 / S15: forgotten password, test build. One form: phone, new password, confirmation (the confirmation is checked on the phone
@@ -37,6 +38,9 @@ class _ResetScreenState extends State<ResetScreen> {
   final TextEditingController _password = TextEditingController();
   final TextEditingController _confirm = TextEditingController();
   final TextEditingController _code = TextEditingController();
+  final FormFeedback _feedback = FormFeedback();
+  bool _phoneAttempted = false;
+  bool _codeAttempted = false;
   Timer? _tick;
 
   @override
@@ -75,7 +79,6 @@ class _ResetScreenState extends State<ResetScreen> {
     super.dispose();
   }
 
-  bool get _valid => _phone.text.trim().isNotEmpty && _password.text.length >= 8 && _password.text.length <= 128 && _password.text == _confirm.text;
 
   @override
   Widget build(BuildContext context) {
@@ -142,9 +145,13 @@ class _ResetScreenState extends State<ResetScreen> {
                     : null,
               ),
             N11Field(
+              validator: phoneError,
+              hint: _phoneAttempted ? phoneError(_phone.text) : null,
+              tone: _phoneAttempted && phoneError(_phone.text) != null ? FieldTone.error : FieldTone.normal,
+              key: _feedback.key('phone'),
               fieldKey: const Key('reset-phone'),
               label: 'Số điện thoại',
-              placeholder: '0912 345 678',
+              placeholder: '0912345678',
               controller: _phone,
               keyboard: TextInputType.phone,
               maxLength: 20,
@@ -160,19 +167,20 @@ class _ResetScreenState extends State<ResetScreen> {
                 label: controller.otpStep == ResetOtpStep.requesting ? 'Đang gửi…' : (controller.otpStep == ResetOtpStep.idle ? 'Gửi mã xác minh' : 'Gửi lại mã'),
                 kind: ButtonKind.secondary,
                 loading: controller.otpStep == ResetOtpStep.requesting,
-                onPressed: busy || _phone.text.trim().isEmpty || !controller.canResend ? null : () => controller.requestOtp(_phone.text),
+                onPressed: busy || !controller.canResend ? null : () { setState(() => _phoneAttempted = true); if (_feedback.validate(<String, String?>{'phone': phoneError(_phone.text)})) controller.requestOtp(_phone.text); },
               ),
               if (controller.otpStep == ResetOtpStep.requested || controller.otpStep == ResetOtpStep.verifying) ...<Widget>[
-                N11Field(fieldKey: const Key('reset-otp-code'), label: 'Mã xác minh', placeholder: '6 số', controller: _code, keyboard: TextInputType.number, maxLength: 6, enabled: !busy, onChanged: () => setState(() {})),
+                N11Field(key: _feedback.key('code'), validator: otpError, hint: _codeAttempted ? otpError(_code.text) : null, tone: _codeAttempted && otpError(_code.text) != null ? FieldTone.error : FieldTone.normal, fieldKey: const Key('reset-otp-code'), label: 'Mã xác minh', placeholder: '6 số', controller: _code, keyboard: TextInputType.number, maxLength: 6, enabled: !busy, onChanged: () => setState(() {})),
                 N11Button(
                   key: const Key('reset-otp-verify'),
                   label: controller.otpStep == ResetOtpStep.verifying ? 'Đang kiểm tra…' : 'Xác nhận mã',
                   loading: controller.otpStep == ResetOtpStep.verifying,
-                  onPressed: busy || _code.text.trim().length != 6 ? null : () => controller.verifyOtp(_code.text),
+                  onPressed: busy ? null : () { setState(() => _codeAttempted = true); if (_feedback.validate(<String, String?>{'code': otpError(_code.text)})) controller.verifyOtp(_code.text); },
                 ),
               ],
             ],
             if (passwordStep) N11Field(
+              validator: passwordError,
               fieldKey: const Key('reset-password'),
               label: 'Mật khẩu mới',
               controller: _password,
@@ -183,6 +191,7 @@ class _ResetScreenState extends State<ResetScreen> {
               onChanged: () => setState(() {}),
             ),
             if (passwordStep) N11Field(
+              validator: (String value) => confirmPasswordError(value, _password.text),
               fieldKey: const Key('reset-confirm'),
               label: 'Nhập lại mật khẩu mới',
               controller: _confirm,
@@ -194,10 +203,10 @@ class _ResetScreenState extends State<ResetScreen> {
               onChanged: () => setState(() {}),
             ),
             if (passwordStep) N11Button(
-              key: const Key('reset-submit'),
+              key: const Key('reset-submit'), validate: true,
               label: busy ? 'Đang gửi…' : (recovery ? 'Khôi phục tài khoản' : 'Đặt lại mật khẩu'),
               loading: busy,
-              onPressed: busy || !_valid || !open ? null : () => controller.submit(phone: _phone.text, password: _password.text),
+              onPressed: busy || !open ? null : () => controller.submit(phone: _phone.text, password: _password.text),
             ),
           ],
         );

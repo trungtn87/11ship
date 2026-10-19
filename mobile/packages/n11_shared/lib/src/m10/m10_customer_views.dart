@@ -17,6 +17,7 @@ import '../m11/m11_entries.dart';
 import '../m07/m07_widgets.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../widgets/form_feedback.dart';
 import 'm10_cart.dart';
 import 'm10_common.dart';
 import 'm10_models.dart';
@@ -142,7 +143,7 @@ class _DishSheetState extends State<_DishSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return Form(child: Padding(
       padding: EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, MediaQuery.of(context).viewInsets.bottom + N11Space.gap4),
       child: Column(
         key: const Key('dish-sheet'),
@@ -163,7 +164,7 @@ class _DishSheetState extends State<_DishSheet> {
           N11Field(fieldKey: const Key('sheet-note'), label: 'Ghi chú cho món', controller: _note, maxLength: 200, optionalLabel: true, placeholder: 'Ví dụ: ít cay, không hành'),
           const SizedBox(height: N11Space.gap3),
           N11Button(
-            key: const Key('sheet-add'),
+            key: const Key('sheet-add'), validate: true,
             label: 'Thêm vào giỏ · ${m10Money(widget.priceVnd * _qty)}',
             onPressed: () async {
               final NavigatorState navigator = Navigator.of(context);
@@ -173,7 +174,7 @@ class _DishSheetState extends State<_DishSheet> {
           ),
         ],
       ),
-    );
+    ));
   }
 }
 
@@ -543,9 +544,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   Widget build(BuildContext context) {
     final CheckoutPreview? p = _preview;
-    final CheckoutDraft? draft = _draft();
     final bool blocked = p != null && (!p.ok || p.blockers.isNotEmpty);
-    final bool ready = draft != null && draft.recipientName.isNotEmpty && draft.recipientPhone.length >= 9 && !blocked && _attempt != _Attempt.sending && _attempt != _Attempt.unknown;
+    final bool ready = !cart.isEmpty && cart.shopId != null && !blocked && _attempt != _Attempt.sending && _attempt != _Attempt.unknown;
     final int items = p?.itemsVnd ?? cart.itemsVnd;
     return m07Page(
       'Xác nhận đơn',
@@ -563,15 +563,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         if (_changed)
           N11Banner(key: const Key('checkout-changed'), kind: BannerKind.warn, title: 'Giá hoặc món đã thay đổi', text: 'Giỏ đã được cập nhật theo giá hiện tại. Hãy kiểm tra lại rồi gửi đơn.', icon: Icons.sync_problem_outlined),
         if (p != null && p.blockers.isNotEmpty) N11Banner(key: const Key('checkout-blockers'), kind: BannerKind.error, title: 'Chưa gửi được đơn', text: p.blockers.map(_blockerText).join('\n')),
-        N11Field(fieldKey: const Key('checkout-name'), label: 'Tên người nhận', controller: _name, maxLength: 80, onChanged: _touch),
-        N11Field(fieldKey: const Key('checkout-phone'), label: 'Số điện thoại người nhận', controller: _phone, keyboard: TextInputType.phone, maxLength: 15, onChanged: _touch, hint: 'Người nhận có thể khác người đặt.'),
+        N11Field(requiredInput: true, fieldKey: const Key('checkout-name'), label: 'Tên người nhận', controller: _name, maxLength: 80, onChanged: _touch),
+        N11Field(validator: recipientPhoneError, fieldKey: const Key('checkout-phone'), label: 'Số điện thoại người nhận', controller: _phone, keyboard: TextInputType.phone, maxLength: 15, onChanged: _touch, hint: 'Người nhận có thể khác người đặt.'),
         N11Card(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              AddressLocationField(key: const Key('checkout-address'), label: 'Địa chỉ giao',
+              FormField<bool>(
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                validator: (_) => _draft() == null ? 'Chọn địa chỉ giao hàng.' : null,
+                builder: (FormFieldState<bool> field) => AddressLocationField(error: field.errorText, key: const Key('checkout-address'), label: 'Địa chỉ giao',
                 text: _typedMode ? _typed.text : (_address?.text ?? ''),
-                onTap: _attempt == _Attempt.sending || _attempt == _Attempt.unknown ? null : () => _editAddress()),
+                onTap: _attempt == _Attempt.sending || _attempt == _Attempt.unknown ? null : () async { await _editAddress(); if (mounted) field.didChange(_draft() != null); })),
               const SizedBox(height: N11Space.gap2),
               Row(children: <Widget>[
                 if (widget.addresses != null) Expanded(child: N11Button(key: const Key('checkout-pick'), label: 'Chọn từ sổ địa chỉ', kind: ButtonKind.secondary, compact: true,
@@ -634,7 +637,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         else if (_failure != null && !_changed)
           N11Banner(key: const Key('checkout-failed'), kind: BannerKind.error, title: 'Chưa gửi được đơn', text: m10FailureText(_failure!)),
       ],
-      bottom: N11Button(key: const Key('checkout-send'), label: 'Gửi đơn · ${m10Money(items)}', loading: _attempt == _Attempt.sending, onPressed: ready ? () => unawaited(_send()) : null),
+      bottom: N11Button(key: const Key('checkout-send'), validate: true, label: 'Gửi đơn · ${m10Money(items)}', loading: _attempt == _Attempt.sending, onPressed: ready ? () => unawaited(_send()) : null),
     );
   }
 

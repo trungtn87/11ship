@@ -171,7 +171,7 @@ class _HoursScreenState extends State<HoursScreen> {
               : <Widget>[
                   if (dirty || ops.busy) N11Button(key: const Key('hours-revert'), label: 'Bỏ thay đổi', kind: ButtonKind.secondary, onPressed: ops.locked ? null : ops.revertHours),
                   N11Button(
-                    key: const Key('hours-save'),
+                    key: const Key('hours-save'), validate: true,
                     label: ops.busy ? 'Đang lưu…' : 'Lưu lịch',
                     loading: ops.busy,
                     onPressed: ops.locked || !dirty ? null : _save,

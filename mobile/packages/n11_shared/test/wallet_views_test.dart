@@ -211,11 +211,13 @@ void main() {
 
       await typeKey(tester, 'withdraw-amount', '200000');
       expect(find.text('Số dư khả dụng không đủ.'), findsOneWidget);
-      expect(isDisabled(tester, 'withdraw-submit'), isTrue);
+      await tapKey(tester, 'withdraw-submit');
+      expect(find.byKey(const Key('withdraw-amount')), findsOneWidget);
 
       await typeKey(tester, 'withdraw-amount', '5000');
       expect(find.text('Số tiền rút tối thiểu 10.000đ.'), findsOneWidget);
-      expect(isDisabled(tester, 'withdraw-submit'), isTrue);
+      await tapKey(tester, 'withdraw-submit');
+      expect(find.byKey(const Key('withdraw-amount')), findsOneWidget);
 
       await typeKey(tester, 'withdraw-amount', '100000');
       expect(isDisabled(tester, 'withdraw-submit'), isFalse);

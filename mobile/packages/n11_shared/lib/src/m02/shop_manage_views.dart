@@ -403,7 +403,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
               onPressed: ops.locked || !ops.profileDirty ? null : ops.revertProfile,
             ),
             N11Button(
-              key: const Key('profile-save'),
+              key: const Key('profile-save'), validate: true,
               label: ops.busy ? 'Đang lưu…' : 'Lưu hồ sơ',
               loading: ops.busy,
               onPressed: ops.locked ? null : () {

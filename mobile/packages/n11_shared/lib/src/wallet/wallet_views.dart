@@ -501,6 +501,7 @@ class _TopupAmountScreenState extends State<TopupAmountScreen> {
     final WalletLoad<BankTransferInfo> state = _info;
     return _page(source, 'Nạp tiền', <Widget>[
       N11Field(
+        validator: (_) => _validate(),
         fieldKey: const Key('topup-amount'),
         label: 'Nhập số tiền nạp',
         controller: _amount,
@@ -515,7 +516,7 @@ class _TopupAmountScreenState extends State<TopupAmountScreen> {
       const Text('Thông tin chuyển khoản', style: N11Text.h2),
       if (state is WalletReady<BankTransferInfo>) _TransferCard(info: state.value) else walletStateView<BankTransferInfo>(state, retry: _retry) ?? const SizedBox.shrink(),
       if (state is WalletReady<BankTransferInfo>) const _QrPlaceholder(),
-      N11Button(key: const Key('topup-continue'), label: 'Tôi đã chuyển tiền', onPressed: source.canWrite && state is WalletReady<BankTransferInfo> ? _continue : null),
+      N11Button(key: const Key('topup-continue'), validate: true, label: 'Tôi đã chuyển tiền', onPressed: source.canWrite && state is WalletReady<BankTransferInfo> ? _continue : null),
       if (!source.canWrite) ReasonNote(source.notWiredReason),
     ]);
   }
@@ -894,8 +895,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
   }
 
   bool get _canSubmit {
-    final int? value = parseVndInput(_amount.text);
-    return widget.source.canWrite && _account is WalletReady<ReceivingAccount> && _available != null && value != null && _problem == null && !_busy;
+    return widget.source.canWrite && _account is WalletReady<ReceivingAccount> && _available != null && !_busy;
   }
 
   Future<void> _submit() async {
@@ -946,6 +946,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
       else
         walletStateView<Wallet>(wallet, retry: _retry) ?? const SizedBox.shrink(),
       N11Field(
+        validator: (String value) => value.trim().isEmpty ? 'Nhập số tiền muốn rút.' : _problem,
         fieldKey: const Key('withdraw-amount'),
         label: 'Số tiền muốn rút',
         controller: _amount,
@@ -982,7 +983,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
       else
         walletStateView<ReceivingAccount>(account, retry: _retry, keyPrefix: 'account', emptyIcon: Icons.account_balance_outlined, emptyTitle: 'Chưa có tài khoản nhận tiền', emptyText: 'Thêm tài khoản ngân hàng trong hồ sơ shipper trước khi rút tiền.') ?? const SizedBox.shrink(),
       if (_submitError != null) N11Banner(key: const Key('withdraw-submit-error'), kind: BannerKind.error, title: 'Chưa gửi được', text: _submitError),
-      N11Button(key: const Key('withdraw-submit'), label: 'Yêu cầu rút tiền', loading: _busy, onPressed: _canSubmit ? _submit : null),
+      N11Button(key: const Key('withdraw-submit'), validate: true, label: 'Yêu cầu rút tiền', loading: _busy, onPressed: _canSubmit ? _submit : null),
       if (!source.canWrite) ReasonNote(source.notWiredReason),
     ]);
   }

@@ -387,6 +387,7 @@ class _ReasonDialog extends StatefulWidget {
 
 class _ReasonDialogState extends State<_ReasonDialog> {
   final TextEditingController _reason = TextEditingController();
+  final GlobalKey<FormState> _form = GlobalKey<FormState>();
 
   @override
   void dispose() {
@@ -397,7 +398,7 @@ class _ReasonDialogState extends State<_ReasonDialog> {
   @override
   Widget build(BuildContext context) {
     final bool ready = _reason.text.trim().isNotEmpty;
-    return AlertDialog(
+    return Form(key: _form, child: AlertDialog(
       key: const Key('m07-reason-dialog'),
       title: Text(widget.title, style: N11Text.h2),
       content: SingleChildScrollView(
@@ -407,7 +408,7 @@ class _ReasonDialogState extends State<_ReasonDialog> {
           children: <Widget>[
             Text(widget.explanation, style: N11Text.lead),
             const SizedBox(height: N11Space.gap3),
-            N11Field(fieldKey: const Key('m07-reason-field'), label: widget.reasonLabel, controller: _reason, maxLength: 200, onChanged: () => setState(() {})),
+            N11Field(requiredInput: true, fieldKey: const Key('m07-reason-field'), label: widget.reasonLabel, controller: _reason, maxLength: 200, onChanged: () => setState(() {})),
           ],
         ),
       ),
@@ -415,11 +416,11 @@ class _ReasonDialogState extends State<_ReasonDialog> {
         TextButton(key: const Key('m07-reason-back'), onPressed: () => Navigator.of(context).pop(), child: const Text('Quay lại')),
         TextButton(
           key: const Key('m07-reason-confirm'),
-          onPressed: ready ? () => Navigator.of(context).pop(_reason.text.trim()) : null,
+          onPressed: () { if (_form.currentState!.validate()) Navigator.of(context).pop(_reason.text.trim()); },
           child: Text(widget.confirmLabel, style: TextStyle(fontWeight: FontWeight.w700, color: ready ? (widget.danger ? N11Colors.error : N11Colors.black) : N11Colors.ink3)),
         ),
       ],
-    );
+    ));
   }
 }
 
@@ -642,7 +643,7 @@ class _M07Scaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return Form(child: Scaffold(
       backgroundColor: N11Colors.bg,
       resizeToAvoidBottomInset: true,
       body: SafeArea(
@@ -664,7 +665,7 @@ class _M07Scaffold extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 

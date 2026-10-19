@@ -65,3 +65,14 @@ Không thay dữ liệu/schema, không cần restart hay APK mới. Sau GRANT, O
 Hai ngoại lệ có chủ đích: ClientDeviceRepository.purgeExpired dành cho cleanup credential, hiện không có caller runtime; AdminLimitConfigRepository.insert chỉ được CLI khởi tạo limiter gọi bằng tài khoản vận hành. Không thêm các quyền này cho ship11_app.
 
 Bổ sung ops/selfhosted/04-check-runtime-grants.sql: transaction READ ONLY, kiểm tra quyền thực tế trên toàn bộ 90 bảng, 3 hàm, schema và database; chỉ in số lượng đạt và tên object/quyền thiếu. Không đọc nội dung người dùng, không sửa quyền/dữ liệu. Có test đồng bộ danh sách với ma trận GRANT để tránh bỏ sót bảng khi dự án mở rộng. Kiểm tra static hiện đạt; quyền thực tế VPS còn cần Owner chạy script vì môi trường hiện tại không truy cập SSH được.
+
+
+## Thông báo kiểm tra đầu vào trên hai app — Owner giao 20/10/2026
+
+Dùng chung FormField trong N11Field, opt-in kiểm tra khi bấm nút gửi/lưu; lỗi xuất hiện dưới ô, cập nhật khi sửa, cuộn/focus ô sai đầu tiên. Ô tùy chọn không bị biến thành bắt buộc. Quay lại/hủy không chạy kiểm tra dữ liệu. Các guard về phiên, OTP, quyền, busy, trạng thái nghiệp vụ và retry body/key giữ riêng; không dùng lỗi kiểm tra đầu vào để chặn thử lại một ý định ghi đang chờ kết quả.
+
+Bổ sung ở đăng nhập, đổi/quên/khôi phục mật khẩu, hồ sơ cá nhân, tạo/sửa hồ sơ shipper, ngân hàng, địa chỉ, phí giao/thỏa thuận, gọi shipper/xác nhận điểm giao/ghi chú giao thất bại, đơn món/đơn giá/thanh toán và nhận xét/phản ánh/giải trình. Món ăn, giờ hoạt động và sửa hồ sơ quán giữ hệ thống lỗi từng ô đã có; nối kiểm tra giới hạn chung khi lưu. Các lựa chọn như số sao, nhóm phản ánh, tình trạng hàng giữ hướng dẫn tại nhóm lựa chọn và guard hiện có; không tự chọn thay người dùng.
+
+Số tài khoản theo contract backend 6–20 chữ số sau khi bỏ dấu cách/gạch ngang; không thêm quy tắc bắt buộc URL Facebook hay số Zalo. Các mức tiền tối thiểu, số dư khả dụng, giới hạn phí/đơn giá giữ từ logic/API hiện tại. Nhận xét/phản hồi tối đa 2000, nội dung phản ánh/bổ sung tối đa 4000 theo backend. Form đổi mật khẩu reset trạng thái lỗi sau khi thành công.
+
+Kiểm tra cần thiết do thay đổi widget dùng chung: test form blank/focus/correction/optional, back/retry/disabled field, các test luồng cũ và Analyze/Test của cả Food/Ship. Không thay backend, quyền DB hay deploy trong gói UI này; APK mới sẽ mang SHA riêng.

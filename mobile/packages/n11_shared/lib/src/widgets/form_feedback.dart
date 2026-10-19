@@ -66,3 +66,54 @@ class FormFeedback {
     return false;
   }
 }
+
+/// The action caller owns busy/session/business guards. This only checks visible input fields.
+bool validateInputForm(BuildContext context) {
+  final Set<FormFieldState<Object?>> invalid =
+      Form.maybeOf(context)?.validateGranularly() ??
+      <FormFieldState<Object?>>{};
+  if (invalid.isEmpty) return true;
+  for (final FormFieldState<Object?> field in invalid) {
+    field.didChange(field.value);
+  }
+  final BuildContext first = invalid.first.context;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!first.mounted) return;
+    void focus(Element element) {
+      if (element.widget is EditableText) {
+        (element.widget as EditableText).focusNode.requestFocus();
+        return;
+      }
+      element.visitChildElements(focus);
+    }
+
+    (first as Element).visitChildElements(focus);
+    Scrollable.ensureVisible(
+      first,
+      alignment: 0.15,
+      duration: const Duration(milliseconds: 200),
+    );
+  });
+  return false;
+}
+
+String? confirmPasswordError(String value, String password) => value.isEmpty
+    ? 'Nhập lại mật khẩu.'
+    : value != password
+    ? 'Mật khẩu nhập lại chưa khớp.'
+    : null;
+String? otpError(String value) => RegExp(r'^\d{6}$').hasMatch(value.trim())
+    ? null
+    : 'Nhập mã xác minh gồm 6 số.';
+String? bankNumberError(String value) =>
+    RegExp(r'^[0-9]{6,20}$')
+        .hasMatch(value.trim().replaceAll(RegExp(r'[ -]'), ''))
+    ? null
+    : 'Số tài khoản cần từ 6 đến 20 chữ số; có thể ngăn cách bằng dấu cách hoặc gạch ngang.';
+
+String? recipientPhoneError(String value) {
+  final String phone = value.replaceAll(RegExp(r'[\s.\-]'), '');
+  return RegExp(r'^(0|\+84)\d{9}$').hasMatch(phone)
+      ? null
+      : 'Nhập số điện thoại người nhận gồm 10 số bắt đầu bằng 0 hoặc +84.';
+}

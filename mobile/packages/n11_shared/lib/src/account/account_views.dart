@@ -307,17 +307,18 @@ Future<void> confirmLogout(BuildContext context, SessionController session) asyn
 // ---- Forms -----------------------------------------------------------------------------------------------------------
 
 class N11FormScaffold extends StatelessWidget {
-  const N11FormScaffold({super.key, required this.title, required this.children, required this.session, this.background = N11Colors.bg, this.onBack});
+  const N11FormScaffold({super.key, required this.title, required this.children, required this.session, this.background = N11Colors.bg, this.onBack, this.formKey});
 
   final String title;
   final List<Widget> children;
   final SessionController? session;
   final Color background;
   final VoidCallback? onBack;
+  final GlobalKey<FormState>? formKey;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return Form(key: formKey, child: Scaffold(
       backgroundColor: background,
       body: SafeArea(
         child: Column(
@@ -332,7 +333,7 @@ class N11FormScaffold extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -396,7 +397,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  bool get _valid => _phone.text.trim().isNotEmpty && _password.text.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -412,8 +412,9 @@ class _LoginScreenState extends State<LoginScreen> {
           children: <Widget>[
             N11Heading('Chào mừng trở lại', sub: widget.brand.id == AppId.food ? 'Đăng nhập để tiếp tục với 11Food.' : 'Đăng nhập tài khoản shipper.'),
             _failureBanner(session),
-            N11Field(fieldKey: const Key('login-phone'), label: 'Số điện thoại', placeholder: '0912345678', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !busy, onChanged: () => setState(() {})),
+            N11Field(validator: phoneError, fieldKey: const Key('login-phone'), label: 'Số điện thoại', placeholder: '0912345678', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !busy, onChanged: () => setState(() {})),
             N11Field(
+              requiredInput: true,
               fieldKey: const Key('login-password'),
               label: 'Mật khẩu',
               controller: _password,
@@ -429,10 +430,10 @@ class _LoginScreenState extends State<LoginScreen> {
               ReasonNote(kNotOnAndroidReason),
             const SizedBox(height: N11Space.gap2),
             N11Button(
-              key: const Key('login-submit'),
+              key: const Key('login-submit'), validate: true,
               label: busy ? 'Đang đăng nhập…' : 'Đăng nhập',
               loading: busy,
-              onPressed: busy || !_valid || !session.ready ? null : () => session.login(phone: _phone.text, password: _password.text),
+              onPressed: busy || !session.ready ? null : () => session.login(phone: _phone.text, password: _password.text),
             ),
             if (!session.ready) const ReasonNote(kNoServerReason),
             N11Link('Chưa có tài khoản? Đăng ký', key: const Key('to-register'), onPressed: busy ? null : () {
@@ -907,12 +908,12 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   final TextEditingController _current = TextEditingController();
   final TextEditingController _next = TextEditingController();
   final TextEditingController _confirm = TextEditingController();
+  final GlobalKey<FormState> _form = GlobalKey<FormState>();
   bool _busy = false;
   bool _saved = false;
   AuthFailure? _failure;
   String? _pendingBody;
   String? _pendingKey;
-  bool get _valid => _current.text.isNotEmpty && _next.text.runes.length >= 8 && _next.text.runes.length <= 128 && _next.text == _confirm.text;
   @override
   void initState() {
     super.initState();
@@ -941,6 +942,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       if (data is! Map<String, Object?> || data['changed'] != true) throw const AuthFailure(AuthFailureKind.badResponse);
       if (!mounted) return;
       setState(() { _saved = true; _pendingBody = null; _pendingKey = null; _current.clear(); _next.clear(); _confirm.clear(); });
+      _form.currentState?.reset();
     } on AuthFailure catch (failure) {
       if (!mounted) return;
       setState(() { _failure = failure; if (!failure.outcomeUnknown) { _pendingBody = null; _pendingKey = null; } });
@@ -951,14 +953,14 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   @override
   Widget build(BuildContext context) {
     final bool locked = _busy || _pendingBody != null;
-    return N11FormScaffold(title: 'Đổi mật khẩu', session: widget.session, children: <Widget>[
+    return N11FormScaffold(formKey: _form, title: 'Đổi mật khẩu', session: widget.session, children: <Widget>[
       const ReasonNote('Dùng từ 8 đến 128 ký tự. Sau khi đổi, các phiên khác sẽ được đăng xuất.'),
       if (_saved) const N11Banner(key: Key('password-saved'), kind: BannerKind.success, title: 'Đã đổi mật khẩu', text: 'Bạn có thể dùng mật khẩu mới để đăng nhập.'),
       if (_failure != null) N11Banner(key: const Key('password-error'), kind: BannerKind.error, title: 'Chưa đổi được mật khẩu', text: _failure!.kind == AuthFailureKind.invalidCredentials ? 'Mật khẩu hiện tại không đúng.' : failureMessage(_failure!)),
-      N11Field(fieldKey: const Key('password-current'), label: 'Mật khẩu hiện tại', controller: _current, password: true, maxLength: 128, enabled: !locked, onChanged: () => setState(() {})),
-      N11Field(fieldKey: const Key('password-new'), label: 'Mật khẩu mới', controller: _next, password: true, maxLength: 128, enabled: !locked, onChanged: () => setState(() {})),
-      N11Field(fieldKey: const Key('password-confirm'), label: 'Nhập lại mật khẩu mới', controller: _confirm, password: true, maxLength: 128, enabled: !locked, hint: _confirm.text.isNotEmpty && _confirm.text != _next.text ? 'Mật khẩu chưa khớp.' : null, onChanged: () => setState(() {})),
-      N11Button(key: const Key('password-submit'), label: _busy ? 'Đang lưu…' : _pendingBody != null ? 'Thử lại' : 'Đổi mật khẩu', loading: _busy, onPressed: _busy || (!_valid && _pendingBody == null) || widget.session.status != SessionStatus.signedIn ? null : _save),
+      N11Field(requiredInput: true, fieldKey: const Key('password-current'), label: 'Mật khẩu hiện tại', controller: _current, password: true, maxLength: 128, enabled: !locked, onChanged: () => setState(() {})),
+      N11Field(validator: passwordError, fieldKey: const Key('password-new'), label: 'Mật khẩu mới', controller: _next, password: true, maxLength: 128, enabled: !locked, onChanged: () => setState(() {})),
+      N11Field(validator: (String value) => confirmPasswordError(value, _next.text), fieldKey: const Key('password-confirm'), label: 'Nhập lại mật khẩu mới', controller: _confirm, password: true, maxLength: 128, enabled: !locked, hint: _confirm.text.isNotEmpty && _confirm.text != _next.text ? 'Mật khẩu chưa khớp.' : null, onChanged: () => setState(() {})),
+      N11Button(key: const Key('password-submit'), validate: _pendingBody == null, label: _busy ? 'Đang lưu…' : _pendingBody != null ? 'Thử lại' : 'Đổi mật khẩu', loading: _busy, onPressed: _busy || widget.session.status != SessionStatus.signedIn ? null : _save),
     ]);
   }
 }
@@ -1050,13 +1052,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const N11Heading('Thông tin cá nhân', sub: 'Xem và sửa họ tên hiển thị trên tài khoản.'),
             if (_loading) const N11Banner(kind: BannerKind.info, title: 'Đang tải hồ sơ…'),
             if (_message != null) N11Banner(key: const Key('profile-message'), kind: _messageOk ? BannerKind.success : BannerKind.error, title: _message!),
-            N11Field(fieldKey: const Key('profile-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !session.busy && !_loading, onChanged: () => setState(() {})),
+            N11Field(requiredInput: true, fieldKey: const Key('profile-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !session.busy && !_loading, onChanged: () => setState(() {})),
             Text('Số điện thoại: ${session.identity?.maskedPhone ?? ''}', key: const Key('profile-phone'), style: N11Text.caption),
             N11Button(
-              key: const Key('profile-save'),
+              key: const Key('profile-save'), validate: true,
               label: session.busy ? 'Đang lưu…' : 'Lưu',
               loading: session.busy,
-              onPressed: session.busy || _loading || !dirty || _name.text.trim().isEmpty ? null : _save,
+              onPressed: session.busy || _loading || !dirty ? null : _save,
             ),
           ],
         );

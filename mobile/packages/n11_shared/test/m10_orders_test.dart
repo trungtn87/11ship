@@ -420,7 +420,9 @@ void main() {
       final String id = store.seed();
       await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: id));
       await tap(tester, find.widgetWithText(OutlinedButton, 'Từ chối đơn'));
-      expect(tester.widget<TextButton>(key('m07-reason-confirm')).onPressed, isNull);
+      await tap(tester, key('m07-reason-confirm'));
+      expect(key('m07-reason-dialog'), findsOneWidget);
+      expect(tester.widgetList<Text>(find.byType(Text)).any((Text text) => (text.data ?? '').startsWith('Nhập ')), isTrue);
       await tester.enterText(key('m07-reason-field'), 'Hết món');
       await settle(tester);
       await tap(tester, key('m07-reason-confirm'));
@@ -459,7 +461,9 @@ void main() {
       expect(find.widgetWithText(N11Button, 'Gọi lại shipper'), findsOneWidget);
       expect(find.widgetWithText(OutlinedButton, 'Hủy đơn món'), findsOneWidget);
       await tap(tester, find.widgetWithText(OutlinedButton, 'Hủy đơn món'));
-      expect(tester.widget<TextButton>(key('m07-reason-confirm')).onPressed, isNull);
+      await tap(tester, key('m07-reason-confirm'));
+      expect(key('m07-reason-dialog'), findsOneWidget);
+      expect(tester.widgetList<Text>(find.byType(Text)).any((Text text) => (text.data ?? '').startsWith('Nhập ')), isTrue);
       await tap(tester, key('m07-reason-back'));
       await unmount(tester);
     });

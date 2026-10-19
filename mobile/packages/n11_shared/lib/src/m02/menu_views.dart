@@ -502,7 +502,7 @@ class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOu
                   : <Widget>[
                       if (f.isNew || menu.busy) N11Button(key: const Key('dish-cancel'), label: 'Hủy', kind: ButtonKind.secondary, onPressed: menu.busy ? null : () => Navigator.of(context).maybePop()),
                       N11Button(
-                        key: const Key('dish-save'),
+                        key: const Key('dish-save'), validate: true,
                         label: menu.busy ? 'Đang lưu…' : (menu.uploading ? 'Chờ tải ảnh…' : (f.isNew ? 'Lưu món' : 'Lưu thay đổi')),
                         loading: menu.busy,
                         onPressed: menu.locked || menu.uploading ? null : () => menu.save(),

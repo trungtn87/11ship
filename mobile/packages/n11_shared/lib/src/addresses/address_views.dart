@@ -6,6 +6,7 @@ import '../account/models.dart';
 import '../m02/m02_widgets.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../widgets/form_feedback.dart';
 import 'address_controller.dart';
 import 'address_models.dart';
 import 'address_location_picker.dart';
@@ -240,6 +241,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
   late AddressLabel _label;
   late bool _default;
   bool _submitted = false;
+  final FormFeedback _feedback = FormFeedback();
   double? _latitude;
   double? _longitude;
   String _initialPhone = '';
@@ -294,7 +296,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
 
   Future<void> _save() async {
     setState(() => _submitted = true);
-    if (_phoneError != null || _addressError != null || c.locked) {
+    if (!_feedback.validate(<String, String?>{'phone': _phoneError, 'address': _addressError}) || c.locked) {
       return;
     }
     final NavigatorState navigator = Navigator.of(context);
@@ -351,6 +353,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
             ]),
             N11Field(fieldKey: const Key('address-name'), label: 'Tên người nhận', optionalLabel: true, controller: _name, maxLength: 120, enabled: !locked, placeholder: 'Người nhận hàng', onChanged: () => setState(() {})),
             N11Field(
+              key: _feedback.key('phone'),
               fieldKey: const Key('address-phone'),
               label: 'Số điện thoại *',
               controller: _phone,
@@ -362,7 +365,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
               hint: _submitted ? _phoneError : 'Số shipper sẽ gọi khi giao hàng.',
               onChanged: () => setState(() {}),
             ),
-            AddressLocationField(key: const Key('address-text'), label: 'Địa chỉ giao hàng', text: _address.text,
+            KeyedSubtree(key: _feedback.key('address'), child: AddressLocationField(key: const Key('address-text'), label: 'Địa chỉ giao hàng', text: _address.text,
               error: _submitted ? _addressError : null,
               onTap: locked ? null : () async {
                 final int? epoch = c.session?.sessionEpoch;
@@ -371,7 +374,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
                     latitude: _latitude, longitude: _longitude), location: c.location, session: c.session)));
                 if (selected == null || !context.mounted || c.locked || c.session?.sessionEpoch != epoch || (c.session != null && c.session!.status != SessionStatus.signedIn)) return;
                 setState(() { _address.text = selected.text; _latitude = selected.latitude; _longitude = selected.longitude; });
-              }),
+              })),
             N11Field(fieldKey: const Key('address-note'), label: 'Ghi chú cho shipper', optionalLabel: true, controller: _note, maxLength: 300, enabled: !locked, placeholder: 'Tòa nhà, tầng, cổng…', onChanged: () => setState(() {})),
             SwitchListTile(
               key: const Key('address-default-switch'),
@@ -385,7 +388,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
           ],
           footer: <Widget>[
             N11Button(
-              key: const Key('address-save'),
+              key: const Key('address-save'), validate: true,
               label: e == null ? 'Lưu địa chỉ' : 'Cập nhật',
               loading: c.busy,
               onPressed: locked || gone ? null : _save,

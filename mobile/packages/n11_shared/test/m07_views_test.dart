@@ -141,10 +141,12 @@ void main() {
       expect(key('m07-cancel'), findsOneWidget);
       await tap(tester, key('m07-cancel'));
       expect(containing('Không tự hủy đơn món'), findsOneWidget);
-      // The confirming button is disabled until a reason is typed; the way out is "Quay lại", never "Hủy".
+      // Submitting an empty reason explains the field and keeps the dialog open; Back remains available.
       expect(find.text('Quay lại'), findsOneWidget);
       expect(find.text('Hủy'), findsNothing);
-      expect(tester.widget<TextButton>(key('m07-reason-confirm')).onPressed, isNull);
+      await tap(tester, key('m07-reason-confirm'));
+      expect(key('m07-reason-dialog'), findsOneWidget);
+      expect(tester.widgetList<Text>(find.byType(Text)).any((Text text) => (text.data ?? '').startsWith('Nhập ')), isTrue);
       await tester.enterText(key('m07-reason-field').first, 'Khách đổi ý');
       await settle(tester);
       expect(tester.widget<TextButton>(key('m07-reason-confirm')).onPressed, isNotNull);
@@ -304,7 +306,9 @@ void main() {
       expect(containing('Hủy nhận đơn'), findsWidgets);
       await tap(tester, key('m07-release'));
       expect(containing('tìm shipper khác'), findsOneWidget);
-      expect(tester.widget<TextButton>(key('m07-reason-confirm')).onPressed, isNull);
+      await tap(tester, key('m07-reason-confirm'));
+      expect(key('m07-reason-dialog'), findsOneWidget);
+      expect(tester.widgetList<Text>(find.byType(Text)).any((Text text) => (text.data ?? '').startsWith('Nhập ')), isTrue);
       await unmount(tester);
     });
 

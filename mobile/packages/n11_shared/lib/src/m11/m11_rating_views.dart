@@ -80,7 +80,7 @@ class _RateScreenState extends State<RateScreen> with M07Actions<RateScreen> {
         ),
         M11TextBox(fieldKey: const Key('m11-rate-comment'), label: 'Nhận xét', optional: true, controller: _comment, enabled: !busy, hint: 'Chia sẻ trải nghiệm của bạn'),
         actionBanner(),
-        N11Button(key: const Key('m11-rate-send'), label: 'Gửi đánh giá', loading: busy, onPressed: _stars == 0 || busy ? null : _send),
+        N11Button(key: const Key('m11-rate-send'), validate: true, label: 'Gửi đánh giá', loading: busy, onPressed: _stars == 0 || busy ? null : _send),
         if (_stars == 0) const Text('Hãy chọn số sao trước khi gửi.', textAlign: TextAlign.center, style: N11Text.caption),
       ],
     );
@@ -357,7 +357,6 @@ class _ReplyScreenState extends State<ReplyScreen> with M07Actions<ReplyScreen> 
 
   @override
   Widget build(BuildContext context) {
-    final bool ready = _body.text.trim().isNotEmpty;
     return m07Page(
       widget.review.reply == null ? 'Phản hồi đánh giá' : 'Sửa phản hồi',
       false,
@@ -367,10 +366,10 @@ class _ReplyScreenState extends State<ReplyScreen> with M07Actions<ReplyScreen> 
         const Text('Quán không sửa hoặc xóa được đánh giá của khách. Phản hồi cũ được lưu lại khi bạn cập nhật.', style: N11Text.caption),
         actionBanner(),
         N11Button(
-          key: const Key('m11-reply-save'),
+          key: const Key('m11-reply-save'), validate: true,
           label: 'Lưu phản hồi',
           loading: busy,
-          onPressed: !ready || busy ? null : _save,
+          onPressed: busy ? null : _save,
         ),
       ],
     );
