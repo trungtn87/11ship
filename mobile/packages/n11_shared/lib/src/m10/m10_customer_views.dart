@@ -418,7 +418,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Future<void> _check() async {
     final CheckoutDraft? draft = _draft();
-    if (draft == null || draft.recipientName.isEmpty || draft.recipientPhone.length < 9) {
+    if (draft == null || textError(draft.recipientName, 'tên người nhận', 80) != null || phoneError(draft.recipientPhone) != null || textError(draft.note ?? '', 'ghi chú', 200, optional: true) != null) {
       setState(() => _preview = null);
       return;
     }
@@ -564,7 +564,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           N11Banner(key: const Key('checkout-changed'), kind: BannerKind.warn, title: 'Giá hoặc món đã thay đổi', text: 'Giỏ đã được cập nhật theo giá hiện tại. Hãy kiểm tra lại rồi gửi đơn.', icon: Icons.sync_problem_outlined),
         if (p != null && p.blockers.isNotEmpty) N11Banner(key: const Key('checkout-blockers'), kind: BannerKind.error, title: 'Chưa gửi được đơn', text: p.blockers.map(_blockerText).join('\n')),
         N11Field(requiredInput: true, fieldKey: const Key('checkout-name'), label: 'Tên người nhận', controller: _name, maxLength: 80, onChanged: _touch),
-        N11Field(validator: recipientPhoneError, fieldKey: const Key('checkout-phone'), label: 'Số điện thoại người nhận', controller: _phone, keyboard: TextInputType.phone, maxLength: 15, onChanged: _touch, hint: 'Người nhận có thể khác người đặt.'),
+        N11Field(validator: phoneError, fieldKey: const Key('checkout-phone'), label: 'Số điện thoại người nhận', controller: _phone, keyboard: TextInputType.phone, maxLength: 15, onChanged: _touch, hint: 'Người nhận có thể khác người đặt.'),
         N11Card(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

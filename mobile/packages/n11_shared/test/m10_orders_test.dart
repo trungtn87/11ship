@@ -121,6 +121,31 @@ void main() {
       await settle(tester);
     }
 
+    testWidgets('invalid recipient phone blocks both preview and order placement, then correction sends once', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final _CountedPreviews customer = _CountedPreviews(store);
+      final OrderRuntime runtime = OrderRuntime(customer: customer, shop: SampleShopOrders(store), cart: CartController(source: customer));
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở', itemId: pho.id, name: pho.name, priceVnd: 45000);
+      await mount(tester, CheckoutScreen(runtime: runtime));
+      await fill(tester);
+      await tester.pump(const Duration(seconds: 1));
+      await settle(tester);
+      final int before = customer.previews;
+      await tester.enterText(key('checkout-phone'), '0912 345678');
+      await tester.pump(const Duration(seconds: 1));
+      await settle(tester);
+      expect(customer.previews, before);
+      await tap(tester, key('checkout-send'));
+      expect(containing('không có dấu cách'), findsOneWidget);
+      expect(store.orderCount, 0);
+      await tester.enterText(key('checkout-phone'), '0912345678');
+      await tester.pump(const Duration(seconds: 1));
+      await settle(tester);
+      await tap(tester, key('checkout-send'));
+      expect(store.orderCount, 1);
+      await unmount(tester);
+    });
+
     testWidgets('no pin (no GPS): the Order still goes, the fee reads "Chưa xác định phí" — never 0đ, and no total is claimed', (WidgetTester tester) async {
       final (OrderRuntime runtime, SampleOrderStore store) = await readyCart();
       await mount(tester, CheckoutScreen(runtime: runtime));
@@ -557,5 +582,16 @@ class _Offline extends SampleCustomerOrders {
       throw const M07Failure(M07FailureKind.offline);
     }
     return super.saveCart(shopId: shopId, lines: lines, note: note);
+  }
+}
+
+
+class _CountedPreviews extends SampleCustomerOrders {
+  _CountedPreviews(super.store);
+  int previews = 0;
+  @override
+  Future<CheckoutPreview> preview(CheckoutDraft draft) {
+    previews++;
+    return super.preview(draft);
   }
 }
