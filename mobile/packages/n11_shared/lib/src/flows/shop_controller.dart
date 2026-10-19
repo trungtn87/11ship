@@ -108,6 +108,7 @@ class ShopController extends ChangeNotifier {
   bool _areasFailed = false;
   AuthFailure? _failure;
   bool _busy = false;
+  bool _finishing = false;
   LocationFix? _fix;
   LocationFailure? _locationFailure;
   bool _locating = false;
@@ -133,7 +134,7 @@ class ShopController extends ChangeNotifier {
   List<ServiceArea> get areas => _areas;
   bool get areasFailed => _areasFailed;
   AuthFailure? get failure => _failure;
-  bool get busy => _busy;
+  bool get busy => _busy || _finishing;
   LocationFix? get fix => _fix;
   LocationFailure? get locationFailure => _locationFailure;
   bool get locating => _locating;
@@ -157,6 +158,7 @@ class ShopController extends ChangeNotifier {
     _areasFailed = false;
     _failure = null;
     _busy = false;
+    _finishing = false;
     _fix = null;
     _locationFailure = null;
     _locating = false;
@@ -216,12 +218,15 @@ class ShopController extends ChangeNotifier {
         return;
       }
       if (response.status != 200) {
-        throw failureOf(response);
+        throw failureOf(response, endpoint: '/v1/onboarding/shop/profile');
+      }
+      if (response.json?.containsKey('data') != true) {
+        throw AuthFailure(AuthFailureKind.badResponse, status: response.status, endpoint: '/v1/onboarding/shop/profile');
       }
       final Object? data = response.data;
       final ShopProfile? parsed = ShopProfile.tryParse(data);
       if (data != null && parsed == null) {
-        throw const AuthFailure(AuthFailureKind.badResponse);
+        throw AuthFailure(AuthFailureKind.badResponse, status: response.status, endpoint: '/v1/onboarding/shop/profile');
       }
       _profile = parsed;
       if (parsed != null) {
@@ -347,6 +352,47 @@ class ShopController extends ChangeNotifier {
     };
   }
 
+  bool get canFinish => name.trim().isNotEmpty && contactPhone.trim().isNotEmpty &&
+      addressText.trim().isNotEmpty && (_fix != null || (_profile?.hasLocation ?? false));
+
+  bool get _profileChanged {
+    final ShopProfile? p = _profile;
+    return p == null || _fix != null || name.trim() != p.name ||
+        contactPhone.trim() != p.contactPhone || addressText.trim() != p.addressText ||
+        zalo.trim() != (p.zalo ?? '') || facebook.trim() != (p.facebook ?? '') || serviceAreaId != p.serviceAreaId;
+  }
+
+  /// One user action; each server mutation retains its own version and idempotency key.
+  Future<bool> finishProfile() async {
+    if (busy || session.status != SessionStatus.signedIn) { return false; }
+    final int epoch = _epoch;
+    _finishing = true;
+    _notify();
+    try {
+      if (hasPendingWrite && !await retryPending()) { return false; }
+      if (epoch != _epoch) { return false; }
+      if (_profile?.status == 'ACTIVE') {
+        await session.refreshIdentity();
+        return epoch == _epoch && session.identity?.availableRoles.contains('SHOP_OWNER') == true;
+      }
+      if (!canFinish) { return false; }
+      if (serviceAreaId == null) { await _loadAreas(epoch); }
+      if (epoch != _epoch) { return false; }
+      if (serviceAreaId == null) {
+        _failure = const AuthFailure(AuthFailureKind.invalidServiceArea);
+        return false;
+      }
+      if (_profileChanged && !await saveDraft()) { return false; }
+      if (epoch != _epoch || _load != ShopLoad.ready || _profile?.readyToComplete != true) { return false; }
+      return await complete() && _profile?.status == 'ACTIVE';
+    } on AuthFailure catch (failure) {
+      if (epoch == _epoch) { _failure = failure; }
+      return false;
+    } finally {
+      if (epoch == _epoch) { _finishing = false; _notify(); }
+    }
+  }
+
   /// PUT the draft (works without a position). Returns true when the server stored it.
   Future<bool> saveDraft() async {
     if (_busy) {
@@ -399,17 +445,27 @@ class ShopController extends ChangeNotifier {
         return false;
       }
       if (response.status != 200 && response.status != 201) {
-        throw failureOf(response);
+        final AuthFailure failure = failureOf(response, endpoint: path);
+        // An upstream 5xx can follow a committed write. Retry this exact intent, never a new key.
+        if (response.status >= 500) {
+          throw AuthFailure(AuthFailureKind.unknownOutcome, status: response.status, code: failure.code, endpoint: path, requestId: failure.requestId);
+        }
+        throw failure;
+      }
+      _busy = false;
+      // Keep the intent and selected point until a valid server snapshot confirms the write.
+      await load();
+      if (epoch != _epoch || _load != ShopLoad.ready || _profile == null) {
+        if (epoch == _epoch && _failure == null) {
+          _failure = const AuthFailure(AuthFailureKind.badResponse, status: 200, endpoint: '/v1/onboarding/shop/profile');
+        }
+        _notify();
+        return false;
       }
       _pendingKind = null;
       _pendingBody = null;
       _pendingKey = null;
-      if (kind == 'save') {
-        _fix = null;
-      }
-      _busy = false;
-      // Read back what the server holds; the answer of the write is not trusted to be the whole truth.
-      await load();
+      if (kind == 'save') { _fix = null; }
       if (kind == 'complete') {
         await session.refreshIdentity();
       }

@@ -213,9 +213,26 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
             maxLength: widget.maxLength,
             minLines: 1,
             maxLines: 3,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Địa chỉ',
               hintText: 'Số nhà, đường, tổ, phường/xã…',
+              filled: true,
+              fillColor: N11Colors.white,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 16,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(kRadiusControl),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(kRadiusControl),
+                borderSide: const BorderSide(color: N11Colors.line),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(kRadiusControl),
+                borderSide: const BorderSide(color: N11Colors.yellow, width: 2),
+              ),
             ),
           ),
           const SizedBox(height: 12),

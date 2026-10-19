@@ -35,9 +35,9 @@ Widget _shopFailure(ShopController controller) {
     key: const Key('shop-error'),
     kind: BannerKind.error,
     title: 'Chưa hoàn tất',
-    text: failureMessage(failure),
+    text: <String>[failureMessage(failure), if (failure.diagnostic != null) failure.diagnostic!].join('\n'),
     trailing: controller.hasPendingWrite && canRetryFailure(failure)
-        ? N11Button(key: const Key('shop-retry'), label: 'Thử lại', compact: true, onPressed: controller.busy ? null : controller.retryPending)
+        ? N11Button(key: const Key('shop-retry'), label: 'Thử lại', compact: true, onPressed: controller.busy ? null : controller.finishProfile)
         : null,
   );
 }
@@ -126,7 +126,7 @@ class _ShopStartScreenState extends State<ShopStartScreen> {
     return vstack(<Widget>[
       N11InfoCard(
         title: profile.name,
-        chip: N11Chip(incomplete ? (profile.readyToComplete ? 'Đủ điều kiện' : 'Bản nháp') : shopStatusLabel(profile.status), kind: incomplete ? (profile.readyToComplete ? ChipKind.ok : ChipKind.warn) : (profile.status == 'ACTIVE' ? ChipKind.ok : ChipKind.bad)),
+        chip: N11Chip(incomplete ? (profile.readyToComplete ? 'Đủ điều kiện' : 'Chưa hoàn tất') : shopStatusLabel(profile.status), kind: incomplete ? (profile.readyToComplete ? ChipKind.ok : ChipKind.warn) : (profile.status == 'ACTIVE' ? ChipKind.ok : ChipKind.bad)),
       ),
       if (incomplete)
         N11CheckList(items: <N11CheckItem>[
@@ -220,7 +220,6 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
     c.facebook = _facebook.text;
   }
 
-  bool get _fieldsFilled => _name.text.trim().isNotEmpty && _phone.text.trim().isNotEmpty && _address.text.trim().isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -231,6 +230,7 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
         final ShopProfile? profile = c.profile;
         final bool locked = profile != null && profile.status != 'INCOMPLETE';
         final bool busy = c.busy;
+        final bool editingLocked = busy || c.hasPendingWrite;
         final bool hasPoint = c.fix != null || (profile?.hasLocation ?? false);
         return N11FormScaffold(
           title: 'Hồ sơ cửa hàng',
@@ -239,8 +239,8 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
             _shopFailure(c),
             if (locked) const N11Banner(kind: BannerKind.info, title: 'Hồ sơ đã hoàn tất', text: 'Chỉ xem. Sửa hồ sơ sau khi hoàn tất chưa nối trên Android.'),
             const N11Steps(count: 2, current: 1, label: 'Thông tin liên hệ'),
-            N11Field(fieldKey: const Key('shop-name'), label: 'Tên cửa hàng', controller: _name, maxLength: 120, enabled: !busy && !locked, onChanged: () { _push(); setState(() {}); }),
-            N11Field(fieldKey: const Key('shop-phone'), label: 'Số điện thoại liên hệ', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !busy && !locked, onChanged: () { _push(); setState(() {}); }),
+            N11Field(fieldKey: const Key('shop-name'), label: 'Tên cửa hàng', controller: _name, maxLength: 120, enabled: !editingLocked && !locked, onChanged: () { _push(); setState(() {}); }),
+            N11Field(fieldKey: const Key('shop-phone'), label: 'Số điện thoại liên hệ', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !editingLocked && !locked, onChanged: () { _push(); setState(() {}); }),
             const SizedBox(height: N11Space.gap1),
             const N11Steps(count: 2, current: 2, label: 'Vị trí'),
             AddressLocationField(key: const Key('shop-address'), label: 'Địa chỉ lấy hàng', text: _address.text,
@@ -250,41 +250,28 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
                 final AddressLocation? selected = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(
                   builder: (_) => AddressLocationPicker(initial: AddressLocation(_address.text,
                     latitude: c.fix?.latitude ?? profile?.pickupLat, longitude: c.fix?.longitude ?? profile?.pickupLng),
-                    location: c.location, session: c.session, maxLength: 500, requirePoint: false)));
+                    location: c.location, session: c.session, maxLength: 500)));
                 if (selected == null || !context.mounted || c.session.status != SessionStatus.signedIn || c.session.sessionEpoch != epoch) return;
                 _address.text = selected.text;
                 c.selectAddress(selected.text, latitude: selected.latitude, longitude: selected.longitude);
                 setState(() {});
               }),
-            N11Field(fieldKey: const Key('shop-zalo'), label: 'Zalo', placeholder: 'Số Zalo của quán', optionalLabel: true, controller: _zalo, maxLength: 160, enabled: !busy && !locked, onChanged: _push),
-            N11Field(fieldKey: const Key('shop-facebook'), label: 'Facebook', placeholder: 'Liên kết trang Facebook', optionalLabel: true, controller: _facebook, maxLength: 300, enabled: !busy && !locked, onChanged: _push),
+            N11Field(fieldKey: const Key('shop-zalo'), label: 'Zalo', placeholder: 'Số Zalo của quán', optionalLabel: true, controller: _zalo, maxLength: 160, enabled: !editingLocked && !locked, onChanged: _push),
+            N11Field(fieldKey: const Key('shop-facebook'), label: 'Facebook', placeholder: 'Liên kết trang Facebook', optionalLabel: true, controller: _facebook, maxLength: 300, enabled: !editingLocked && !locked, onChanged: _push),
             if (c.areasFailed || (c.serviceAreaId == null && c.areas.length != 1))
-              const ReasonNote('Hệ thống chưa xác định được khu vực phục vụ. Bạn vẫn có thể lưu nháp.'),
+              const ReasonNote('Hệ thống chưa xác định được khu vực phục vụ. Vui lòng thử lại.'),
             if (!locked) ...<Widget>[
               N11Button(
-                key: const Key('shop-save'),
-                label: busy ? 'Đang lưu…' : 'Lưu nháp',
-                kind: ButtonKind.secondary,
+                key: const Key('shop-complete'),
+                label: busy ? 'Đang hoàn tất…' : 'Hoàn tất hồ sơ',
                 loading: busy,
-                onPressed: busy || !_fieldsFilled ? null : () async {
+                onPressed: busy || (!c.canFinish && !c.hasPendingWrite) ? null : () async {
                   _push();
-                  final bool ok = await c.saveDraft();
+                  final bool ok = await c.finishProfile();
                   if (ok && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã lưu nháp trên máy chủ.')));
+                    Navigator.of(context).pushReplacement(n11Route(ShopHomeScreen(controller: c, m02: widget.m02)));
                   }
                 },
-              ),
-              N11Button(
-                key: const Key('shop-complete'),
-                label: 'Hoàn tất hồ sơ',
-                onPressed: busy || profile == null || !profile.readyToComplete || _unsavedChanges(c)
-                    ? null
-                    : () async {
-                        final bool ok = await c.complete();
-                        if (ok && context.mounted) {
-                          Navigator.of(context).pushReplacement(n11Route(ShopHomeScreen(controller: c, m02: widget.m02)));
-                        }
-                      },
               ),
               ReasonNote(_completeReason(c, profile, hasPoint)),
             ],
@@ -294,34 +281,10 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
     );
   }
 
-  bool _unsavedChanges(ShopController c) {
-    final ShopProfile? p = c.profile;
-    if (p == null) {
-      return true;
-    }
-    return c.fix != null ||
-        c.name.trim() != p.name ||
-        c.contactPhone.trim() != p.contactPhone ||
-        c.addressText.trim() != p.addressText ||
-        c.zalo.trim() != (p.zalo ?? '') ||
-        c.facebook.trim() != (p.facebook ?? '') ||
-        c.serviceAreaId != p.serviceAreaId;
-  }
-
   String _completeReason(ShopController c, ShopProfile? profile, bool hasPoint) {
-    if (profile == null) {
-      return 'Lưu nháp trước; hoàn tất chỉ mở khi máy chủ đã giữ đủ thông tin.';
-    }
-    if (!profile.hasLocation) {
-      return 'Chưa có vị trí lấy hàng đã lưu: hãy mở địa chỉ, chọn ghim trên bản đồ rồi lưu nháp.';
-    }
-    if (profile.serviceAreaId == null) {
-      return 'Hệ thống chưa xác định được khu vực phục vụ. Vui lòng thử lại sau.';
-    }
-    if (_unsavedChanges(c)) {
-      return 'Có thay đổi chưa lưu: hãy lưu nháp trước khi hoàn tất.';
-    }
-    return 'Đủ điều kiện hoàn tất.';
+    if (!hasPoint) { return 'Mở địa chỉ và chọn ghim vị trí lấy hàng để hoàn tất hồ sơ.'; }
+    if (c.hasPendingWrite) { return 'Chưa xác định được kết quả. Bấm Hoàn tất hồ sơ để kiểm tra và tiếp tục.'; }
+    return 'Điền đủ thông tin rồi bấm Hoàn tất hồ sơ.';
   }
 
 
