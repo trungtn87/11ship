@@ -252,7 +252,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#137](https://github.com/trungtn87/11ship/pull/137) M04: hoàn thiện module Ví Shipper (rút tiền, tài chính Admi… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `4ec714e` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#138](https://github.com/trungtn87/11ship/pull/138) chore: sync main into M08 for integration | Đã merge (`MERGED`) | — | — | — | `5f4d8be` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#139](https://github.com/trungtn87/11ship/pull/139) fix(M01): 11Ship đăng ký khi tắt OTP; chẩn đoán lỗi đăng ký… | Đã merge (`MERGED`) | — | — | — | `9477ff4` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#140](https://github.com/trungtn87/11ship/pull/140) feat(M10): đặt món và đơn hàng quán (backend, DB, API, 11Fo… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `070c91a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#140](https://github.com/trungtn87/11ship/pull/140) feat(M10): đặt món và đơn hàng quán (backend, DB, API, 11Fo… | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `070c91a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
