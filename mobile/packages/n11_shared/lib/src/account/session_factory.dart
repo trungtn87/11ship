@@ -93,7 +93,7 @@ AppFlows createFlows(
   final NotificationSource inbox = notificationSource ?? HttpNotificationSource(session: session);
   final NotificationController inboxController = NotificationController(session: session, source: inbox);
   final AddressBookController? book = app == ClientApp.food ? AddressBookController(api: addressApi ?? HttpAddressApi(session: session), session: session) : null;
-  final OrderRuntime? orders = app == ClientApp.food ? (orderRuntime ?? _orderRuntime(session, book)) : null;
+  final OrderRuntime? orders = app == ClientApp.food ? (orderRuntime ?? _orderRuntime(session, book, where)) : null;
   OrderRuntime.current = orders;
   return AppFlows(
     orders: orders,
@@ -124,7 +124,7 @@ AppFlows createFlows(
 
 /// The cart and the order sources of 11Food. The cart belongs to the signed-in account: it is read when a person signs in and dropped when the session
 /// ends, so the next person never sees it.
-OrderRuntime _orderRuntime(SessionController session, AddressBookController? book) {
+OrderRuntime _orderRuntime(SessionController session, AddressBookController? book, LocationProvider location) {
   final SampleOrderStore? store = kM10UiPreview ? SampleOrderStore() : null;
   final CustomerOrderSource customer = store != null ? SampleCustomerOrders(store) : HttpCustomerOrderSource(session: session);
   final ShopOrderSource shop = store != null ? SampleShopOrders(store) : HttpShopOrderSource(session: session);
@@ -151,6 +151,7 @@ OrderRuntime _orderRuntime(SessionController session, AddressBookController? boo
     cart: cart,
     addresses: book,
     session: session,
+    location: location,
     canOrder: () => session.status == SessionStatus.signedIn && (session.identity?.customerAccess ?? false) && session.identity?.activeRole != 'SHOP_OWNER',
   );
 }

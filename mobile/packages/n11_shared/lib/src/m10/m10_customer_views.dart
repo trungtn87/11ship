@@ -9,6 +9,7 @@ import '../account/session_controller.dart';
 import '../addresses/address_controller.dart';
 import '../addresses/address_models.dart';
 import '../addresses/address_views.dart';
+import '../flows/location.dart';
 import '../m02/m02_widgets.dart';
 import '../m07/m07_models.dart';
 import '../m07/m07_source.dart';
@@ -334,6 +335,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String _key = newIdempotencyKey();
   double? _pinLat;
   double? _pinLng;
+  bool _locating = false;
+  String? _pinNote;
 
   CartController get cart => widget.runtime.cart;
   CustomerOrderSource get source => widget.runtime.customer;
@@ -365,6 +368,40 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   DraftAddress _fromBook(DeliveryAddress a) => DraftAddress.book(a.id, text: a.addressText, lat: a.latitude, lng: a.longitude);
 
   /// Anything the person changes makes this a NEW attempt (a new reference and key); a retry of the same unchanged attempt keeps both.
+  /// One foreground fix, only on this tap: the point is the device's own position, never a guess. If the address is not where the person stands, they
+  /// pick or type another address and the fee stays "Chưa xác định phí".
+  Future<void> _useCurrentPosition() async {
+    final LocationProvider? where = widget.runtime.location;
+    if (where == null) {
+      return;
+    }
+    setState(() {
+      _locating = true;
+      _pinNote = null;
+    });
+    try {
+      final LocationFix fix = await where.currentFix();
+      if (!mounted) {
+        return;
+      }
+      _pinLat = fix.latitude;
+      _pinLng = fix.longitude;
+      _pinNote = 'Đã ghim vị trí hiện tại của điện thoại${fix.accuracyMeters == null ? '' : ' (sai số khoảng ${fix.accuracyMeters!.round()} m)'}. Nếu địa chỉ giao không ở chỗ bạn đang đứng, hãy chọn địa chỉ khác.';
+    } on LocationException catch (e) {
+      _pinNote = switch (e.failure) {
+        LocationFailure.denied => 'Bạn chưa cho phép ứng dụng dùng vị trí. Đơn vẫn gửi được, phí giao ghi "Chưa xác định phí".',
+        LocationFailure.disabled => 'Dịch vụ vị trí của điện thoại đang tắt. Hãy bật rồi thử lại, hoặc gửi đơn không ghim.',
+        LocationFailure.timeout => 'Chưa lấy được vị trí trong thời gian chờ. Hãy thử lại ở nơi thoáng hơn, hoặc gửi đơn không ghim.',
+        LocationFailure.unavailable => 'Không lấy được vị trí thật từ điện thoại. Đơn vẫn gửi được, phí giao ghi "Chưa xác định phí".',
+      };
+    } finally {
+      if (mounted) {
+        _locating = false;
+        _touch();
+      }
+    }
+  }
+
   void _touch() {
     setState(() {
       _clientRef = newIdempotencyKey();
@@ -564,6 +601,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   )
                 else
                   const ReasonNote('Bản này chưa có bản đồ để ghim. Đơn vẫn gửi được, phí giao ghi "Chưa xác định phí".'),
+                if (widget.runtime.location != null) ...<Widget>[
+                  const SizedBox(height: N11Space.gap2),
+                  N11Button(key: const Key('checkout-use-gps'), label: _locating ? 'Đang lấy vị trí…' : 'Dùng vị trí hiện tại làm điểm giao', kind: ButtonKind.secondary, compact: true, onPressed: _locating ? null : _useCurrentPosition),
+                  if (_pinNote != null) Padding(padding: const EdgeInsets.only(top: 4), child: ReasonNote(_pinNote!, key: const Key('checkout-pin-note'))),
+                ],
               ],
               const SizedBox(height: N11Space.gap2),
               Row(children: <Widget>[

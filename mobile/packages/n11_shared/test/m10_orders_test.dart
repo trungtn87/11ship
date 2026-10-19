@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
+import 'package:n11_shared/testing.dart';
 
 // M10 phone screens on the sample store (one in-memory stand-in for the server, shared by both sides). What matters: the cart (one shop, same dish + same
 // note joins, another shop asks first, kept by the server), the checkout without a pin ("Chưa xác định phí", never 0đ), a changed price or a dish that is
@@ -132,6 +133,27 @@ void main() {
       expect(key('order-sent'), findsOneWidget);
       expect(containing('Chờ quán xác nhận'), findsWidgets);
       expect(runtime.cart.isEmpty, isTrue);
+      await unmount(tester);
+    });
+
+    testWidgets('"Dùng vị trí hiện tại": one explicit fix becomes the pin of the Order; a refusal leaves the Order without a pin and says so (never a made-up point)', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final FakeLocationProvider gps = FakeLocationProvider();
+      final OrderRuntime runtime = OrderRuntime(customer: SampleCustomerOrders(store), shop: SampleShopOrders(store), cart: CartController(source: SampleCustomerOrders(store)), location: gps);
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán', itemId: pho.id, name: pho.name, priceVnd: 45000);
+      await mount(tester, CheckoutScreen(runtime: runtime));
+      await fill(tester);
+      expect(gps.calls, 0, reason: 'nothing is read until the person presses the button');
+      gps.failure = LocationFailure.denied;
+      await tap(tester, key('checkout-use-gps'));
+      expect(gps.calls, 1);
+      expect(containing('chưa cho phép'), findsOneWidget);
+      gps.failure = null;
+      await tap(tester, key('checkout-use-gps'));
+      expect(gps.calls, 2);
+      expect(containing('Đã ghim vị trí hiện tại'), findsOneWidget);
+      await tap(tester, key('checkout-send'));
+      expect(store.lastPin, (10.0123, 106.0456));
       await unmount(tester);
     });
 

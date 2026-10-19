@@ -45,7 +45,19 @@ Migration `database/migrations/1794268800000_create-m10-orders.sql`: `customer_c
 
 - **M10-MAP.01 (thanh toán)**: địa chỉ từ M05, điểm ghim theo lõi M14 khi có; điểm được snapshot vào Order; thiếu ghim vẫn gửi được, phí "Chưa xác định phí"; có tuyến thì dùng báo giá M06.
 - **M10-MAP.02 (chi tiết đơn)**: chi tiết khách/quán theo delivery/assignment hiện hành của M07 (điểm lấy/giao + vị trí shipper mới nhất kèm thời điểm và trạng thái cũ/mất kết nối); khi shipper hủy nhận/quán gọi lại thì theo assignment/delivery mới; đơn kết thúc chỉ còn snapshot điểm + timeline và dừng theo dõi; không lưu lịch sử GPS; bản đồ ngoại tuyến ≠ chỉ đường ngoại tuyến; không tọa độ giả/đường thẳng/0đ giả; không bước "Bắt đầu giao" hay tab bản đồ; đặt hộ không cấp quyền xem vị trí qua SĐT.
-- **Giới hạn đã biết — cần quyết định**: 11Food chưa tích hợp plugin bản đồ M14 (chỉ 11Ship có). Trong 11Food các seam `mapBuilder`/`pinPicker` để trống: màn hình hiển thị điểm bằng chữ + vị trí shipper (tọa độ/thời điểm/độ mới), thanh toán đi **không có ghim** → phí "Chưa xác định phí" cho tới khi M14 được nối vào 11Food. Đây là việc theo dõi riêng, không giả lập.
+- **Trạng thái M10-MAP.01 / M10-MAP.02 trong 11Food (cập nhật 19/10/2026)**
+  - **Đã làm, chạy thật:**
+    - Địa chỉ lấy từ sổ M05 (kèm ghim nếu có) hoặc nhập tay.
+    - Nút "Dùng vị trí hiện tại làm điểm giao" lấy **một** vị trí thật theo thao tác rõ ràng của khách (không theo dõi, không tọa độ giả; từ chối/tắt vị trí/hết thời gian đều nói rõ và đơn vẫn gửi được).
+    - Điểm ghim được snapshot vào Order; thiếu ghim → "Chưa xác định phí"; có ghim → máy chủ báo giá M06 (app không tự tính phí).
+    - Chi tiết đơn của khách/quán theo delivery/assignment hiện hành của M07: điểm lấy/giao bằng chữ + vị trí shipper mới nhất kèm thời điểm và trạng thái mới/cũ; đơn kết thúc chỉ còn snapshot + timeline, dừng theo dõi; không lưu lịch sử GPS; không bước "Bắt đầu giao"/tab bản đồ; đặt hộ không cấp xem vị trí qua SĐT.
+  - **CHƯA làm được — bị chặn bởi phụ thuộc M14, không phải do M10:**
+    1. *Ghim điểm giao trên bản đồ* và *vẽ điểm lấy/giao + vị trí shipper trên bản đồ* trong 11Food cần widget `M14OfflineMap` (gói `mobile/packages/n11_m14`). Gói này hiện chỉ được 11Ship phụ thuộc.
+    2. Manifest của `n11_m14` khai báo thêm `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_LOCATION` và `RecorderService` (ghi GPS cho shipper). Danh sách quyền APK của 11Food (`mobile/tool/check-apk-permissions.sh`) cố ý không cho các quyền này; đưa nguyên gói vào 11Food sẽ làm CI đỏ và đưa dịch vụ ghi GPS vào app khách — không chấp nhận.
+    3. Cần M14 tách bản **chỉ bản đồ** (không recorder/quyền foreground-service, không lịch sử thử nghiệm) hoặc một cờ build; cần gói bản đồ ngoại tuyến Cao Bằng (`assets/caobang`) đi cùng APK 11Food (dung lượng APK); cần Owner chốt nguồn bản đồ/dung lượng và cho phép sửa allowlist theo đó.
+    4. `prepare-android.sh food` và workflow chưa có cờ `M14_OFFLINE_MAP` cho 11Food (hiện chỉ 11Ship).
+  - **Phần M10 đã sẵn sàng để nối khi M14 xong:** `OrderRuntime.mapBuilder` / `pinPicker` (đã dùng ở thanh toán và chi tiết đơn khách/quán). Chỉ cần cung cấp hai builder bằng `M14OfflineMap`, như `shipMapBuilder()` / `shipPinPicker()` của 11Ship; không cần đổi màn hình M10.
+  - M10 **chưa** được đánh dấu hoàn tất: hai hạng mục bản đồ trong app (ghim trên bản đồ, bản đồ chi tiết đơn) chờ M14.
 
 ## 6. Giao diện
 

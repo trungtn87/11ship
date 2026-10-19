@@ -13,7 +13,7 @@ Mã nguồn: nhánh `claude/m10-order-delivery-hfy75r` (PR: xem báo cáo bàn g
 ## Luồng thử
 
 1. **Giỏ**: khách thêm món ở màn quán → thanh giỏ; thêm cùng món cùng ghi chú gộp dòng, ghi chú khác tách dòng; thêm món quán khác → app hỏi trước khi thay giỏ; thoát app mở lại giỏ còn.
-2. **Gửi đơn**: xác nhận đơn (tên, SĐT, địa chỉ từ sổ hoặc nhập tay, ghim nếu có). Không ghim → phí "Chưa xác định phí" (không 0đ), vẫn gửi được. Quán đổi giá/ẩn món trước khi gửi → báo kiểm tra lại, không tạo đơn. Tắt mạng đúng lúc gửi → app nói chưa rõ kết quả và tra lại, không tạo đơn thứ hai.
+2. **Gửi đơn**: xác nhận đơn (tên, SĐT, địa chỉ từ sổ hoặc nhập tay; nhập tay có nút "Dùng vị trí hiện tại làm điểm giao" — từ chối quyền vị trí vẫn gửi được). Không ghim → phí "Chưa xác định phí" (không 0đ), vẫn gửi được. Quán đổi giá/ẩn món trước khi gửi → báo kiểm tra lại, không tạo đơn. Tắt mạng đúng lúc gửi → app nói chưa rõ kết quả và tra lại, không tạo đơn thứ hai.
 3. **Quán xử lý**: tab Đơn → "Đơn món" → đơn "Chờ xác nhận": sửa số lượng/giá/bỏ dòng (phải có lý do khi xác nhận đơn đã sửa, không xác nhận đơn rỗng), xác nhận hoặc từ chối (lý do). Khách chỉ hủy được trước khi quán xác nhận.
 4. **Chuẩn bị / gọi shipper**: "Món đã sẵn sàng" và "Gọi shipper" độc lập; gọi shipper được khi đang chuẩn bị. Đơn hẹn: chọn giờ nhận mong muốn (cả qua nửa đêm với quán mở khuya); quán nhận nhắc trước giờ hẹn.
 5. **Giao**: chi tiết đơn của khách theo shipper hiện hành (nhận đơn / lấy hàng / giao); vị trí shipper mới nhất kèm thời điểm; shipper hủy nhận hoặc quán gọi lại → chi tiết theo delivery mới. Dừng tìm 30 phút không hủy đơn.
@@ -25,6 +25,6 @@ Mã nguồn: nhánh `claude/m10-order-delivery-hfy75r` (PR: xem báo cáo bàn g
 
 ## Chưa chạy / giới hạn
 
-- Bản đồ và ghim điểm **chưa có trong 11Food** (xem `M10-implementation-20261018.md` §5); phí đi theo "Chưa xác định phí" khi không ghim.
+- Bản đồ và ghim điểm **trên bản đồ chưa có trong 11Food**: bị chặn bởi M14 (gói chỉ-bản-đồ, allowlist quyền, gói bản đồ ngoại tuyến — xem `M10-implementation-20261018.md` §5). Hiện có: nút "Dùng vị trí hiện tại làm điểm giao" (một lần, do khách bấm); không ghim thì phí "Chưa xác định phí". Vì vậy **M10 chưa hoàn tất**.
 - Chưa thử trên thiết bị thật; chưa thử FCM đẩy thật cho thông báo đơn.
 - Merge/CI không tự chứng minh nghiệm thu: Owner quyết định đóng module.

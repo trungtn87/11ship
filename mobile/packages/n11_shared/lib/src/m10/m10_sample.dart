@@ -80,6 +80,9 @@ class SampleOrderStore {
 
   /// Orders the sample "server" holds, for assertions in tests.
   int get orderCount => _orders.length;
+
+  /// The drop-off point the newest Order was sent with (null = no pin), for assertions in tests.
+  (double?, double?) get lastPin => _orders.isEmpty ? (null, null) : (_orders.last.lat, _orders.last.lng);
   int placeAttempts = 0;
 
   /// A test can make the NEXT `place` lose its answer after the server stored the Order.
