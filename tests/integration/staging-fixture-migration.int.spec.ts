@@ -65,6 +65,9 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
     );
     return result.rows[0]?.n ?? 0;
   }
+  // The accounts THIS suite inserted: removed again in afterAll (by id, nothing else), because a left-over test-unverified account would make the Down
+  // guard of the account-scope migration ("test-unverified accounts exist") refuse in whatever suite runs next.
+  const inserted: string[] = [];
   async function insertUser(origin: string, verified: boolean): Promise<string> {
     const userId = randomUUID();
     await client.query(
@@ -72,6 +75,7 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
        VALUES ($1::uuid, $2, '$argon2id$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA', ${verified ? 'now()' : 'NULL'}, $3, 'ACTIVE', 1, now(), now())`,
       [userId, randomPhone().normalized, origin],
     );
+    inserted.push(userId);
     return userId;
   }
   /** Runs the first `count` migration files through the real runner. */
@@ -89,6 +93,9 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
     try {
       if (migrate().status !== 0) {
         throw new Error('could not restore the migrated test database');
+      }
+      if (inserted.length > 0) {
+        await client.query('DELETE FROM app.users WHERE user_id = ANY($1::uuid[])', [inserted]);
       }
     } finally {
       await client.end();

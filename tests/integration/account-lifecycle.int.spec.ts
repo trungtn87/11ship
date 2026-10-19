@@ -491,7 +491,11 @@ describe('account lifecycle, scopes and system settings', () => {
   describe('delete, lock and unlock of an application account', () => {
     it('case 7 — an account without related data is deleted for good; its own rows go, audit stays, the phone can register again as a NEW account', async () => {
       await postSettings(sys(), settingsBody(0, false, true));
-      const created = await registerClient(registerBody(randomPhone()));
+      // This first registration makes a second, unrelated account. Its phone is tracked so app.close() purges it: an unverified account left behind would
+      // outlive this suite and make the migration Down guards ("phone-unverified accounts exist") fail in whatever suite runs next.
+      const bystander = randomPhone();
+      app.track(bystander.normalized);
+      const created = await registerClient(registerBody(bystander));
       const phone = randomPhone();
       app.track(phone.normalized);
       const registered = await registerClient(registerBody(phone));

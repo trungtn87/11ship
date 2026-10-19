@@ -4,6 +4,7 @@ import { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { ADMIN_SESSION_COOKIE } from '../../apps/backend/src/admin-auth/admin-auth-constants';
 import { M14_ROUTING } from '../../apps/backend/src/delivery/m14-route-client';
+import { NotificationRuntime } from '../../apps/backend/src/notifications/notification-runtime';
 import { ADMIN_PASSWORD, AdminApp, adminData, adminErrorCode, AdminResponse, cookieFrom, loginStep, preauthCookies, rewindAcceptedStep, sessionCookies, startAdminApp, totpNow } from './support/admin-fixtures';
 import { begin, ok as activationOk, post } from './support/activation-fixtures';
 import { ApiResponse, AuthApp, dataOf, Phone, randomPhone, startAuthApp } from './support/auth-fixtures';
@@ -69,6 +70,11 @@ describe('M10.05 — Admin orders', () => {
   });
 
   afterAll(async () => {
+    // Whatever the outbox still holds from this suite is consumed first, so it neither lands in an inbox after the accounts are gone nor sits in the queue for
+    // the next suite.
+    for (let pass = 0; pass < 200 && (await app.running.app.get(NotificationRuntime).dispatcher.dispatchOnce()).claimed > 0; pass += 1) {
+      // drained
+    }
     await cleanupOrders(app, { shopIds: [shop.shopId], customerIds: [customer.userId], drivers: [], userIds: [customer.userId, shop.userId], policyAdded: addedPolicy });
     await app.close();
     await admin.close();
