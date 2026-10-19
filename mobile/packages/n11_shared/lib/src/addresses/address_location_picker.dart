@@ -111,10 +111,13 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
           widget.session!.sessionEpoch == _sessionEpoch);
 
   void _sessionChanged() {
-    if (_sessionValid) return;
+    if (_sessionValid) {
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted)
+      if (mounted) {
         Navigator.of(context).popUntil((Route<dynamic> route) => route.isFirst);
+      }
     });
   }
 
@@ -131,8 +134,9 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
         !lat.isFinite ||
         !lng.isFinite ||
         lat.abs() > 90 ||
-        lng.abs() > 180)
+        lng.abs() > 180) {
       return;
+    }
     setState(() {
       _lat = lat;
       _lng = lng;
@@ -141,7 +145,9 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
   }
 
   Future<void> _locate() async {
-    if (_locating) return;
+    if (_locating) {
+      return;
+    }
     setState(() {
       _locating = true;
       _error = null;
@@ -150,9 +156,11 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
       final LocationFix fix =
           await (widget.location ?? MethodChannelLocationProvider())
               .currentFix();
-      if (mounted && _sessionValid) _pick(fix.latitude, fix.longitude);
+      if (mounted && _sessionValid) {
+        _pick(fix.latitude, fix.longitude);
+      }
     } on LocationException catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(
           () => _error = switch (e.failure) {
             LocationFailure.denied =>
@@ -165,8 +173,11 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
               'Chưa lấy được vị trí. Bạn vẫn có thể chọn trên bản đồ.',
           },
         );
+      }
     } finally {
-      if (mounted) setState(() => _locating = false);
+      if (mounted) {
+        setState(() => _locating = false);
+      }
     }
   }
 
