@@ -5,7 +5,7 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo mã main `5d153d8` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ⏳ Đang chạy (`RUNNING`)
+> Dữ liệu theo mã main `5d153d8` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ❌ Lỗi (`FAIL`)
 
 ## 🎯 VIỆC ĐANG LÀM
 
@@ -254,7 +254,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#139](https://github.com/trungtn87/11ship/pull/139) fix(M01): 11Ship đăng ký khi tắt OTP; chẩn đoán lỗi đăng ký… | Đã merge (`MERGED`) | — | — | — | `9477ff4` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#140](https://github.com/trungtn87/11ship/pull/140) feat(M10): đặt món và đơn hàng quán (backend, DB, API, 11Fo… | Đã merge (`MERGED`) | — | — | — | `b31f35b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#141](https://github.com/trungtn87/11ship/pull/141) fix(ops): kiểm tra Android trust và cập nhật VPS giữ nguyên… | Đã merge (`MERGED`) | — | — | — | `27c5767` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#142](https://github.com/trungtn87/11ship/pull/142) M11: Đánh giá và phản ánh (M11.01–M11.03) | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `2e4dd4e` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#142](https://github.com/trungtn87/11ship/pull/142) M11: Đánh giá và phản ánh (M11.01–M11.03) | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `d99c783` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
