@@ -152,6 +152,46 @@ export class DeliveryViews {
   }
 
   /**
+   * The ordering CUSTOMER's view of a delivery of their Order (M10): the state, the fee, the search clock, and, only while a Shipper holds the delivery, who
+   * it is and the Shipper's LATEST position with its age. Nothing about the shop's other deliveries, the fee agreement or the commission. Once the delivery
+   * has ended (or the Shipper gave it back) there is no Shipper and no position: tracking stops with the right to see it.
+   */
+  async forCustomer(context: TransactionContext, d: DeliveryRow, nowMs: number): Promise<JsonObject> {
+    const assignment = await this.deliveries.findActiveAssignment(context, d.deliveryId);
+    const incident = await this.deliveries.findIncident(context, d.deliveryId);
+    const agreement = await this.agreements.readByDelivery(context, d.deliveryId);
+    let shipper: JsonObject | null = null;
+    let location: JsonObject | null = null;
+    if (assignment !== undefined && RUNNING_STATES.includes(d.state)) {
+      const identity = await this.shipperOf(context, assignment.driverId);
+      shipper = {
+        name: identity?.driver.fullName ?? '—',
+        phone: identity?.phone ?? null,
+        plate_number: identity?.driver.plateNumber ?? null,
+        accepted_at: iso(assignment.acceptedAtMs),
+        picked_up_at: iso(assignment.pickedUpAtMs),
+      };
+      location = await this.#location(context, assignment.driverId);
+    }
+    return {
+      delivery_id: d.deliveryId,
+      code: d.code,
+      state: d.state,
+      version: d.version,
+      fee: { payer: d.feePayer, amount_vnd: d.feeVnd, status: feeStatusOf({ feeVnd: d.feeVnd, agreementStatus: agreement?.status ?? null }), distance_m: d.routeDistanceM },
+      search: this.#search(d, nowMs),
+      shipper,
+      location,
+      result: this.#result(d, incident),
+      goods_custody: d.state === 'failed' ? (incident?.custody ?? null) : null,
+      // The points of the call as they were when it was made (snapshots): the map draws these; they say nothing about where anybody is NOW.
+      pickup: { lat: d.pickupLat, lng: d.pickupLng },
+      dropoff: d.dropoffLat === null || d.dropoffLng === null ? null : { lat: d.dropoffLat, lng: d.dropoffLng },
+      created_at: iso(d.createdAtMs),
+    };
+  }
+
+  /**
    * The view of a delivery for a Shipper who took it. While the assignment is ACTIVE the Shipper has the contacts and the map points; once it ended
    * (given back, completed, failed) the view is the LIMITED projection: no phone, no street address, no position of the drop-off.
    */

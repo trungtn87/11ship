@@ -2,7 +2,9 @@
 
 Package Android dùng trực tiếp mã Kotlin `mobile/gps-test/{map,gps,routing}` và gói Cao Bằng đã kiểm tra. Không sao chép thuật toán, không phụ thuộc `history`, không chứa `HistoryStore`, GPX hoặc job dọn lịch sử. `TestRecorderService` và `CleanupJob` chỉ thuộc app GPS Test riêng.
 
-11Ship đã khai báo dependency. Flutter tự đăng ký plugin; không sửa bridge tài khoản/Binder đang chạy. Android tối thiểu 8.0 (API 26), giữ application ID `vn.eleven.ship.test`, khóa ký và dãy versionCode của workflow Mobile APK. Food chưa thêm dependency hoặc quyền mới.
+11Ship đã khai báo dependency. Flutter tự đăng ký plugin; không sửa bridge tài khoản/Binder đang chạy. Android tối thiểu 8.0 (API 26), giữ application ID `vn.eleven.ship.test`, khóa ký và dãy versionCode của workflow Mobile APK.
+
+**Tách bản đồ (M10, 19/10/2026).** Phần hiển thị bản đồ/chọn ghim (`M14OfflineMap`, PlatformView, `OfflineMap`, `MapPinsView`, gói Cao Bằng) nằm ở gói riêng `mobile/packages/n11_m14_map` (không GPS, không foreground service, không định tuyến, không quyền). `n11_m14` phụ thuộc vào gói đó và vẫn re-export `M14OfflineMap`, nên 11Ship không đổi cách dùng. 11Food chỉ phụ thuộc `n11_m14_map`: nó không có `RecorderService`, quyền `FOREGROUND_SERVICE*` hay client định tuyến (CI kiểm dex + danh sách quyền). Vị trí một lần của khách ở thanh toán là kênh `N11LocationChannel` riêng của 11Food, do khách bấm.
 
 ## Bật bản đồ khi triển khai khu vực Cao Bằng
 

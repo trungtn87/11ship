@@ -65,6 +65,9 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
     );
     return result.rows[0]?.n ?? 0;
   }
+  // The accounts THIS suite inserted: removed again in afterAll (by id, nothing else), because a left-over test-unverified account would make the Down
+  // guard of the account-scope migration ("test-unverified accounts exist") refuse in whatever suite runs next.
+  const inserted: string[] = [];
   async function insertUser(origin: string, verified: boolean): Promise<string> {
     const userId = randomUUID();
     await client.query(
@@ -72,6 +75,7 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
        VALUES ($1::uuid, $2, '$argon2id$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA', ${verified ? 'now()' : 'NULL'}, $3, 'ACTIVE', 1, now(), now())`,
       [userId, randomPhone().normalized, origin],
     );
+    inserted.push(userId);
     return userId;
   }
   /** Runs the first `count` migration files through the real runner. */
@@ -90,6 +94,9 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
       if (migrate().status !== 0) {
         throw new Error('could not restore the migrated test database');
       }
+      if (inserted.length > 0) {
+        await client.query('DELETE FROM app.users WHERE user_id = ANY($1::uuid[])', [inserted]);
+      }
     } finally {
       await client.end();
     }
@@ -98,7 +105,7 @@ describe('issue #49 — staging fixture origin migration and account_origin hist
   describe('the file', () => {
     it('is a NEW file after the applied ones (only the test-unverified origin and the activation phone-mode migrations follow it), and the repository has exactly ONE account_origin column migration', () => {
       expect(NAMES.slice(NAMES.indexOf(NEW))).toEqual([NEW, TEST_ORIGIN, '1792800000000_add-admin-activation-phone-verification-mode', '1792886400000_create-client-device-binding', '1792972800000_create-sms-gateway', '1793059200000_account-scope-lifecycle-settings', '1793145600000_create-menu', '1793232000000_menu-category-admin', '1793318400000_create-shipper-management', '1793404800000_create-customer-addresses',
-      '1793404800000_create-driver-wallet-core', '1793491200000_create-wallet-holds', '1793577600000_create-wallet-topup-sources', '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_open-topup-ledger-gate', '1794096000000_create-m07-delivery', '1794182400000_create-m08-notifications']);
+      '1793404800000_create-driver-wallet-core', '1793491200000_create-wallet-holds', '1793577600000_create-wallet-topup-sources', '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_open-topup-ledger-gate', '1794096000000_create-m07-delivery', '1794182400000_create-m08-notifications', '1794268800000_create-m10-orders']);
       expect(NAMES.filter((name) => name.endsWith('add-users-account-origin'))).toEqual([ORIGIN]);
       expect(NAMES).not.toContain(D2_ORIGIN_NAME);
     });

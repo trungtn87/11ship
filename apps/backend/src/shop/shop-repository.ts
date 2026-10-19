@@ -106,6 +106,18 @@ export class ShopRepository {
     return toShop(row);
   }
 
+  /** The shop by id, locked FOR SHARE (M10: an Order is placed against a shop that cannot be disabled or moved until the Order has committed). */
+  async lockShopShared(context: TransactionContext, shopId: string): Promise<ShopRow | undefined> {
+    const result = await context.query<RawShop>(
+      `SELECT shop_id, name, contact_phone_normalized, zalo, facebook, address_text, pickup_lat, pickup_lng,
+              service_area_id, status, accepting_orders, version
+         FROM app.shops WHERE shop_id = $1::uuid FOR SHARE`,
+      [shopId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toShop(row);
+  }
+
   /**
    * Reads the shop the user owns, whatever its status, or undefined when the user owns none. ONE statement on
    * purpose: the OWNER membership and the shop are joined in a single snapshot, so the caller can never see a

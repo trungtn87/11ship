@@ -22,6 +22,8 @@ export class MenuModule {
       imports: [auth, ShopModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
       controllers: [MenuOwnerController, MenuPublicController, DiscoveryController],
       providers: [MenuService, MenuRepository, DiscoveryService],
+      // The dish reads an Order needs (M10) go through the owner of the tables.
+      exports: [MenuRepository],
     };
   }
 }

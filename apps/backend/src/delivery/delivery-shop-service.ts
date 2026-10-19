@@ -14,9 +14,10 @@ import { CommissionHoldService } from '../wallet/commission-hold-service';
 import { DELIVERY_SCOPE_TYPE, OPERATIONS } from './delivery-constants';
 import { DeliveryActors, ShopCaller } from './delivery-actors';
 import { ORDER_DELIVERY_PORT, OrderDeliveryPort } from './delivery-order-port';
+import { DeliveryCancel } from './delivery-cancel';
 import { DeliveryRecorder } from './delivery-recorder';
 import { DeliveryRepository, DeliveryRow, NewDelivery } from './delivery-repository';
-import { dropoffAreaOf, mayRecall, newDeliveryCode, shopMayCancel } from './delivery-rules';
+import { dropoffAreaOf, mayRecall, newDeliveryCode } from './delivery-rules';
 import { CreateDeliveryInput, CustodyInput, ReasonInput, ShopListQuery, VersionInput } from './delivery-validation';
 import { DeliveryViews } from './delivery-views';
 import { M14RouteClient, RouteLeg } from './m14-route-client';
@@ -26,6 +27,26 @@ const LIST_LIMIT = 50;
 interface Pickup {
   readonly lat: number;
   readonly lng: number;
+}
+
+/** What an Order hands to M07 when the shop calls a Shipper for it (the Order's confirmed snapshot). */
+export interface OrderCallSpec {
+  readonly orderId: string;
+  readonly previousDeliveryId: string | null;
+  readonly recipientName: string;
+  readonly recipientPhone: string;
+  readonly addressText: string;
+  readonly lat: number | null;
+  readonly lng: number | null;
+  readonly goodsDescription: string;
+  readonly goodsValueVnd: number;
+  readonly paidVnd: number;
+  readonly feePayer: 'CUSTOMER' | 'SHOP';
+  readonly note: string | null;
+  readonly agreedFee: { reasonCode: import('../shipping-policy/shipping-fee-agreement').AgreementReason; reasonNote: string | null; amountVnd: number } | null;
+  readonly route: RouteLeg | undefined;
+  readonly routeFrom: Pickup | undefined;
+  readonly requestId: string;
 }
 
 /**
@@ -51,6 +72,7 @@ export class DeliveryShopService {
     private readonly recorder: DeliveryRecorder,
     private readonly agreements: ShippingFeeAgreementService,
     private readonly commission: CommissionHoldService,
+    private readonly cancelling: DeliveryCancel,
     private readonly routes: M14RouteClient,
     @Inject(ORDER_DELIVERY_PORT) private readonly orders: OrderDeliveryPort,
   ) {}
@@ -81,7 +103,7 @@ export class DeliveryShopService {
 
   /** A direct call for an order outside the app: no Order record is created. The pickup is the shop's own position. */
   async create(principal: AuthPrincipal, input: CreateDeliveryInput, key: string | readonly string[] | undefined, requestId: string): Promise<IdempotentOutcome> {
-    const route = await this.#routeFor(principal, input.lat, input.lng);
+    const route = await this.routeFor(principal, input.lat, input.lng);
     return this.executor.execute(
       {
         scopeType: DELIVERY_SCOPE_TYPE,
@@ -131,15 +153,12 @@ export class DeliveryShopService {
     );
   }
 
-  /** A call from a CONFIRMED order (M10). Refused honestly until M10 is connected; a direct call is unaffected. */
-  async createFromOrder(principal: AuthPrincipal, orderId: string): Promise<never> {
-    await this.transactions.withTransaction(async (context) => {
-      const { shop } = await this.actors.shopReader(context, principal);
-      if (!this.orders.integrated || (await this.orders.snapshot(context, orderId, shop.shopId)) === undefined) {
-        throw new AppError('ORDER_MODULE_NOT_READY');
-      }
-    });
-    throw new AppError('ORDER_MODULE_NOT_READY');
+  /**
+   * A call from a CONFIRMED order (M10), inside the transaction of the Order command (the caller holds the shop and the Order locked). The pickup is the
+   * shop's own position, the goods are the Order's confirmed dishes, and the delivery is linked to the Order (and to the previous call, if any).
+   */
+  createForOrder(context: TransactionContext, caller: ShopCaller, spec: OrderCallSpec): Promise<DeliveryRow> {
+    return this.#createDelivery(context, caller, { ...spec, source: 'ORDER' });
   }
 
   /**
@@ -154,7 +173,7 @@ export class DeliveryShopService {
     if (old.delivery === undefined) {
       throw new AppError('DELIVERY_NOT_FOUND');
     }
-    const route = await this.#routeFor(principal, old.delivery.dropoffLat, old.delivery.dropoffLng);
+    const route = await this.routeFor(principal, old.delivery.dropoffLat, old.delivery.dropoffLng);
     return this.executor.execute(
       { scopeType: DELIVERY_SCOPE_TYPE, scopeId: principal.userId, operationId: OPERATIONS.recall, idempotencyKey: key, logicalRequest: { delivery_id: deliveryId }, replay: this.#replay(principal) },
       async (context) => {
@@ -162,6 +181,10 @@ export class DeliveryShopService {
         const previous = await this.deliveries.lockById(context, deliveryId);
         if (previous === undefined || previous.shopId !== caller.shop.shopId) {
           throw new AppError('DELIVERY_NOT_FOUND');
+        }
+        if (previous.orderId !== null) {
+          // The Order must still be running (confirmed, not ended) for a new call; it is locked after the delivery, like every other path.
+          await this.orders.assertMayCall(context, previous.orderId, caller.shop.shopId);
         }
         const incident = await this.deliveries.findIncident(context, deliveryId);
         if (!mayRecall(previous.state, incident?.status === 'OPEN')) {
@@ -196,7 +219,7 @@ export class DeliveryShopService {
   }
 
   /** Asks M14 for the road distance shop -> drop-off, outside any transaction. Undefined when there is no drop-off position, no pickup position or no route. */
-  async #routeFor(principal: AuthPrincipal, lat: number | null, lng: number | null): Promise<{ leg: RouteLeg; from: Pickup } | undefined> {
+  async routeFor(principal: AuthPrincipal, lat: number | null, lng: number | null): Promise<{ leg: RouteLeg; from: Pickup } | undefined> {
     if (lat === null || lng === null) {
       return undefined;
     }
@@ -325,39 +348,11 @@ export class DeliveryShopService {
       },
       async (context) => {
         const caller = await this.actors.shopWriter(context, principal);
-        const delivery = await this.#lockForShop(context, caller, deliveryId);
+        const delivery = await this.lockForShop(context, caller, deliveryId);
         if (delivery.version !== input.expectedVersion) {
           throw new AppError('VERSION_CONFLICT');
         }
-        if (delivery.state === 'delivering' || delivery.state === 'picked_up') {
-          throw new AppError('AFTER_PICKUP_NO_CANCEL');
-        }
-        if (!shopMayCancel(delivery.state)) {
-          throw new AppError('DELIVERY_STATE_CONFLICT');
-        }
-        const assignment = await this.deliveries.lockActiveAssignment(context, deliveryId);
-        if (assignment !== undefined) {
-          if (!(await this.deliveries.endAssignment(context, assignment.assignmentId, assignment.version, 'CANCELLED_BY_SHOP', 'SHOP', input.reason))) {
-            throw new TechnicalError('internal', 'Assignment changed under its lock');
-          }
-          const released = await this.commission.releaseCommission(context, assignment.assignmentId);
-          if (released.kind === 'conflict') {
-            throw new TechnicalError('internal', 'Commission hold was not releasable');
-          }
-        }
-        const after = await this.#update(context, delivery, { state: 'cancelled_by_merchant', ...(delivery.endedAtMs === null ? { endedNow: true as const } : {}), endReason: input.reason });
-        await this.recorder.record(context, {
-          delivery: after,
-          type: 'cancelled_by_shop',
-          actorType: 'SHOP',
-          actorId: caller.actor.userId,
-          assignmentId: assignment?.assignmentId ?? null,
-          driverId: assignment?.driverId ?? null,
-          note: input.reason,
-          operation: OPERATIONS.cancel,
-          requestId,
-          metadata: { had_shipper: assignment !== undefined },
-        });
+        const after = await this.cancelling.cancel(context, { type: 'SHOP', userId: caller.actor.userId }, delivery, input.reason, requestId, false);
         return { status: 200, replayGuard: { user_id: caller.actor.userId }, payload: await this.views.forShop(context, after, await freshClockMs(context), true) };
       },
     );
@@ -392,7 +387,7 @@ export class DeliveryShopService {
       { scopeType: DELIVERY_SCOPE_TYPE, scopeId: principal.userId, operationId: operation, idempotencyKey: key, logicalRequest: { delivery_id: deliveryId, expected_version: input.expectedVersion }, replay: this.#replay(principal) },
       async (context) => {
         const caller = await this.actors.shopWriter(context, principal);
-        const delivery = await this.#lockForShop(context, caller, deliveryId);
+        const delivery = await this.lockForShop(context, caller, deliveryId);
         if (delivery.version !== input.expectedVersion) {
           throw new AppError('VERSION_CONFLICT');
         }
@@ -447,7 +442,7 @@ export class DeliveryShopService {
       },
       async (context) => {
         const caller = await this.actors.shopWriter(context, principal);
-        const delivery = await this.#lockForShop(context, caller, deliveryId);
+        const delivery = await this.lockForShop(context, caller, deliveryId);
         const incident = await this.deliveries.lockIncident(context, deliveryId);
         if (delivery.state !== 'failed' || incident === undefined || incident.status !== 'OPEN') {
           throw new AppError('DELIVERY_STATE_CONFLICT');
@@ -480,7 +475,7 @@ export class DeliveryShopService {
    * Locks in the global order: the Shipper holding the delivery (peeked without a lock) FIRST, then the delivery. If the Shipper changed between the
    * peek and the lock, nothing is done and the shop reloads (DELIVERY_STATE_CONFLICT).
    */
-  async #lockForShop(context: TransactionContext, caller: ShopCaller, deliveryId: string): Promise<DeliveryRow> {
+  async lockForShop(context: TransactionContext, caller: ShopCaller, deliveryId: string): Promise<DeliveryRow> {
     const peek = await this.deliveries.findOfShop(context, deliveryId, caller.shop.shopId);
     if (peek === undefined) {
       throw new AppError('DELIVERY_NOT_FOUND');

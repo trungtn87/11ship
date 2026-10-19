@@ -129,6 +129,14 @@ export class CustomersService {
     });
   }
 
+  /**
+   * The ACTIVE address of this account for checkout (M10), read inside the caller's transaction (the caller holds the user and session locks). The Order
+   * keeps its own copy: a later change or deletion of the address does not touch it. Undefined for a missing, deleted or foreign address.
+   */
+  findAddressForOrder(context: TransactionContext, userId: string, addressId: string): Promise<AddressRow | undefined> {
+    return this.customers.findActiveAddressOfUser(context, userId, addressId);
+  }
+
   // ------------------------------------------------------------------------------------------------------------ writes
 
   /** POST /v1/customers/me/addresses. The first address is the default; later ones only when asked. */

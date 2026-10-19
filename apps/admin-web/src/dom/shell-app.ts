@@ -47,6 +47,8 @@ import { NOT_WIRED_SHIPPING, ShippingPolicySource } from '../core/shipping-polic
 import { ShippingPolicyView } from './shipping-policy-view.js';
 import { DeliverySource, NOT_WIRED_DELIVERIES } from '../core/deliveries.js';
 import { DeliveryHost, DeliveryListView } from './deliveries-view.js';
+import { NOT_WIRED_ORDERS, OrderSource } from '../core/orders.js';
+import { OrderHost, OrderListView } from './orders-view.js';
 import { NOT_WIRED_NOTIFICATIONS, NotificationSource } from '../core/notifications.js';
 import { NotificationHost, NotificationsView } from './notifications-view.js';
 import { FinanceController, isFinanceRoute } from '../core/finance-controller.js';
@@ -133,6 +135,8 @@ export class ShellApp implements ShellHost {
     private readonly deliveries: DeliverySource = NOT_WIRED_DELIVERIES,
     /** Where the REAL finance pages (M04-B3a: top-up requests, receiving accounts, finance rights) come from. By default nothing is wired and no page shows data. */
     private readonly financeAdmin: FinanceAdminSource = NOT_WIRED_FINANCE_ADMIN,
+    /** Where the food orders (Vận hành › Đơn hàng, M10.05) come from. By default nothing is wired, so the page says so. */
+    private readonly orders: OrderSource = NOT_WIRED_ORDERS,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -357,6 +361,9 @@ export class ShellApp implements ShellHost {
         return;
       case 'deliveries':
         this.#deliveryList(content);
+        return;
+      case 'orders':
+        this.#orderList(content);
         return;
       case 'notifications':
         this.#notificationPage(content);
@@ -865,6 +872,25 @@ export class ShellApp implements ShellHost {
       home: () => this.go({ name: 'home' }),
     };
     const view = new DeliveryListView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Vận hành › Đơn hàng" (M10.05): filters, list and the detail drawer; the server decides every read and action. */
+  #orderList(content: HTMLElement): void {
+    const host: OrderHost = {
+      source: this.orders,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    };
+    const view = new OrderListView(content, host);
     this.#unsubscribe = () => view.dispose();
     void view.load();
   }

@@ -8,6 +8,7 @@ import { FEE_POLICY_DOWN_SQL, FEE_POLICY_UP_SQL } from './support/shipping-fee-p
 import { WALLET_DOWN_SQL, WALLET_UP_SQL, FINANCE_DOWN_SQL, FINANCE_UP_SQL, POSTING_DOWN_SQL, POSTING_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
 import { M07_DOWN_SQL, M07_UP_SQL } from './support/m07-migration-sql';
 import { M08_DOWN_SQL, M08_UP_SQL } from './support/m08-migration-sql';
+import { M10_DOWN_SQL, M10_UP_SQL } from './support/m10-migration-sql';
 import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
 import { SMS_GATEWAY_DOWN_SQL, SMS_GATEWAY_UP_SQL } from './support/sms-gateway-migration-sql';
 import { CUSTOMER_ADDRESS_DOWN_SQL, CUSTOMER_ADDRESS_UP_SQL } from './support/customer-address-migration-sql';
@@ -149,7 +150,7 @@ describe('M01-A1 — Auth Core migration', () => {
       '1793404800000_create-driver-wallet-core',
       '1793491200000_create-wallet-holds',
       '1793577600000_create-wallet-topup-sources',
-      '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_open-topup-ledger-gate', '1794096000000_create-m07-delivery', '1794182400000_create-m08-notifications',
+      '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_open-topup-ledger-gate', '1794096000000_create-m07-delivery', '1794182400000_create-m08-notifications', '1794268800000_create-m10-orders',
     ]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });
@@ -251,6 +252,7 @@ describe('M01-A1 — Auth Core migration', () => {
       // The Shop and Driver migrations reference app.users, so they go down first and come back up last. The invitation
       // tables, the admin tables and the account origin are the newest: they go down before everything else.
       // The M01.02 customer tables reference app.users and are the very newest: they go down first and come back up last.
+      await client.query(M10_DOWN_SQL); // M10: references users, shops, dishes, addresses and deliveries: the very newest, down first, up last
       await client.query(M08_DOWN_SQL); // M08: references users, sessions and deliveries: the very newest, down first, up last
       await client.query(M07_DOWN_SQL); // M07: references users, shops, drivers, wallets and fee agreements: the very newest, down first, up last
       await client.query(POSTING_DOWN_SQL); // M04-B2.2b: replaces one function and needs the topup tables: newest, down first, up last
@@ -314,6 +316,7 @@ describe('M01-A1 — Auth Core migration', () => {
       await client.query(POSTING_UP_SQL);
       await client.query(M07_UP_SQL);
       await client.query(M08_UP_SQL);
+      await client.query(M10_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES].sort());
     } finally {
       await client.query('ROLLBACK');
@@ -332,7 +335,7 @@ describe('M01-A1 — Auth Core migration', () => {
     expect(owners.rows).toEqual([{ owner: 'ship11_test' }]);
     const triggers = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|admin_finance_grants_|deliver(y|ies)_|shipping_fee_policy_|shipping_eligibility_|shipping_fee_agreement)' AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'sessions_invalidate_push_tokens_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
+         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(orders?_|wallet_|driver_wallets_|admin_finance_grants_|deliver(y|ies)_|shipping_fee_policy_|shipping_eligibility_|shipping_fee_agreement)' AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'sessions_invalidate_push_tokens_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
     );
     expect(triggers.rows[0]?.n).toBe(1); // only audit_logs_append_only
   });

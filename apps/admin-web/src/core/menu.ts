@@ -86,6 +86,7 @@ export function grantsFromPermissions(permissions: readonly AppPermission[]): Gr
     // M07.07: the delivery pages open for an administrator who may view the shop or the Shipper side; the server decides every read and action again.
     if (row.app === 'SHOP' || row.app === 'DRIVER') {
       grants.add('deliveries');
+      grants.add('orders');
       // M08.06: the notification pages open for the same viewers; the server narrows what is listed to the apps the administrator may view.
       grants.add('notifications');
     }
@@ -146,7 +147,7 @@ export const MENU: readonly MenuGroup[] = [
     items: [
       soon('shops', 'Quán', 'store', 'shops'),
       { id: 'drivers', label: 'Shipper', icon: 'rider', route: { name: 'shippers' }, ready: true, access: 'drivers' },
-      soon('orders', 'Đơn hàng', 'receipt', 'orders'),
+      { id: 'orders', label: 'Đơn hàng', icon: 'receipt', route: { name: 'orders' }, ready: true, access: 'orders' },
       { id: 'deliveries', label: 'Giao hàng', icon: 'truck', route: { name: 'deliveries' }, ready: true, access: 'deliveries' },
       { id: 'notifications', label: 'Thông báo', icon: 'bell', route: { name: 'notifications' }, ready: true, access: 'notifications' },
       soon('feedback', 'Phản ánh', 'chat', 'feedback'),
@@ -274,6 +275,8 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'shippers':
     case 'shipper':
       return canSee(role, grants, 'drivers');
+    case 'orders':
+      return canSee(role, grants, 'orders');
     case 'deliveries':
       return canSee(role, grants, 'deliveries');
     case 'notifications':
@@ -316,6 +319,8 @@ export function activeMenuId(route: Route): string {
     case 'shippers':
     case 'shipper':
       return 'drivers';
+    case 'orders':
+      return 'orders';
     case 'deliveries':
       return 'deliveries';
     case 'notifications':
@@ -372,6 +377,8 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Vận hành', 'Shipper'];
     case 'shipper':
       return ['Vận hành', 'Shipper', 'Chi tiết'];
+    case 'orders':
+      return ['Vận hành', 'Đơn hàng'];
     case 'deliveries':
       return ['Vận hành', 'Giao hàng'];
     case 'notifications':

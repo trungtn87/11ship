@@ -102,6 +102,13 @@ GRANT SELECT, INSERT ON app.delivery_events TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.delivery_incidents TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.shipper_latest_locations TO ship11_app;
 
+-- M10: food orders. The cart is a working copy (replaced or cleared: hence DELETE of it only); an Order is created and moved along its status graph, its lines are
+-- written once and only the shop's edit columns change; nothing of an Order is ever deleted (triggers refuse it) and its event log is append-only.
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.customer_carts TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.orders TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.order_items TO ship11_app;
+GRANT SELECT, INSERT ON app.order_events TO ship11_app;
+
 -- M08: notifications. The inbox, the push attempts and their bookkeeping. DELETE exists only where the retention pass removes rows after the total window
 -- (Order, Delivery, ledger and audit rows are never touched); a push token is ended, never deleted.
 GRANT SELECT, INSERT, UPDATE ON app.notification_push_tokens TO ship11_app;

@@ -2,7 +2,7 @@ name: M14 Flutter integration
 on:
   push:
     branches: ['codex/m14-gps-test']
-    paths: ['mobile/packages/n11_m14/**', 'mobile/ship/integration_test/m14_test.dart', '.github/workflows/m14-flutter-runtime.yml']
+    paths: ['mobile/packages/n11_m14/**', 'mobile/packages/n11_m14_map/**', 'mobile/ship/integration_test/m14_test.dart', '.github/workflows/m14-flutter-runtime.yml']
   workflow_dispatch:
 concurrency:
   group: m14-flutter-${{ github.ref }}

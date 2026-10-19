@@ -139,8 +139,9 @@ export class NotificationInboxService {
   }
 
   async #access(context: TransactionContext, actor: ClientActor, n: NotificationRow): Promise<{ kind: 'OK' | 'ENDED' | 'NO_ACCESS'; state: string | null }> {
+    // An Order is opened by the customer who placed it (CUSTOMER hat) or by the owner of its shop (SHOP hat); everything else by the hat of its app.
     const wantedRole = actor.app === 'SHIP' ? 'DRIVER' : 'SHOP';
-    const roleOk = n.targetType === 'PROFILE' || actor.storedActiveRole === wantedRole;
+    const roleOk = n.targetType === 'PROFILE' || actor.storedActiveRole === wantedRole || (n.targetType === 'ORDER' && actor.app === 'FOOD' && actor.storedActiveRole === 'CUSTOMER');
     if (!roleOk) {
       return { kind: 'NO_ACCESS', state: null };
     }
@@ -151,6 +152,13 @@ export class NotificationInboxService {
           return { kind: 'NO_ACCESS', state: null };
         }
         return { kind: facts.ended ? 'ENDED' : 'OK', state: facts.state };
+      }
+      case 'ORDER': {
+        const facts = n.targetId === null ? undefined : await this.recipients.orderAccessFor(context, n.targetId, actor.userId, actor.storedActiveRole === 'CUSTOMER' ? 'CUSTOMER' : 'SHOP');
+        if (facts === undefined || !facts.access) {
+          return { kind: 'NO_ACCESS', state: null };
+        }
+        return { kind: facts.ended ? 'ENDED' : 'OK', state: facts.status };
       }
       case 'WALLET_TXN': {
         const owner = n.targetId === null ? undefined : await this.recipients.topupOwner(context, n.targetId);

@@ -130,6 +130,18 @@ export class CustomersRepository {
     return result.rows[0]?.id;
   }
 
+  /** An ACTIVE address of the customer of this user, or undefined (another customer's address and a deleted one read the same). Read only. */
+  async findActiveAddressOfUser(context: TransactionContext, userId: string, addressId: string): Promise<AddressRow | undefined> {
+    const result = await context.query<RawAddress>(
+      `SELECT ${ADDRESS_COLUMNS}
+         FROM app.customer_addresses
+        WHERE id = $2::uuid AND is_active AND customer_id = (SELECT id FROM app.customers WHERE user_id = $1::uuid)`,
+      [userId, addressId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : addressOf(row);
+  }
+
   /** Active addresses, default first, then the most recently updated. */
   async listActive(context: TransactionContext, customerId: string): Promise<AddressRow[]> {
     const result = await context.query<RawAddress>(
