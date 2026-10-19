@@ -1,4 +1,4 @@
-package vn.eleven.m14.flutter
+package vn.eleven.m14.flutter.map
 
 import android.app.Activity
 import android.app.Application

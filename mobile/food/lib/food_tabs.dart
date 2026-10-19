@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:n11_shared/n11_shared.dart';
+import 'food_m14.dart';
 
 // 11Food screens of the app (catalog F01-F04). Same layout, wording and rules as apps/food-web/src/screens.ts: nobody is
 // signed in and every business action is unavailable with a visible reason. No screen invents shops, dishes, orders, balances or
@@ -114,7 +115,7 @@ Widget _orders(SessionController session, AppFlows? flows) {
     return ShopOrdersTab(runtime: orders, deliveries: deliveries);
   }
   if (shopHat && deliveries != null) {
-    return ShopDeliveryHub(source: deliveries);
+    return ShopDeliveryHub(source: deliveries, mapBuilder: foodMapBuilder(), pinPicker: foodPinPicker());
   }
   if (signedIn && orders != null && session.identity?.customerAccess == true) {
     // M10: the customer's orders — Đang xử lý / Đơn hẹn / Lịch sử.

@@ -157,6 +157,31 @@ void main() {
       await unmount(tester);
     });
 
+    testWidgets('the map pin picker: pick a point, move it, and the Order is sent with the LAST point; no point is made up', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final OrderRuntime runtime = OrderRuntime(
+        customer: SampleCustomerOrders(store),
+        shop: SampleShopOrders(store),
+        cart: CartController(source: SampleCustomerOrders(store)),
+        pinPicker: (BuildContext context, {required void Function(double lat, double lng) onPick, double? lat, double? lng}) => Column(children: <Widget>[
+          Text(lat == null ? 'pin:none' : 'pin:$lat,$lng', key: const Key('picker-state')),
+          TextButton(key: const Key('picker-a'), onPressed: () => onPick(22.66, 106.25), child: const Text('A')),
+          TextButton(key: const Key('picker-b'), onPressed: () => onPick(22.67, 106.26), child: const Text('B')),
+        ]),
+      );
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán', itemId: pho.id, name: pho.name, priceVnd: 45000);
+      await mount(tester, CheckoutScreen(runtime: runtime));
+      await fill(tester);
+      expect(find.text('pin:none'), findsOneWidget);
+      await tap(tester, key('picker-a'));
+      expect(find.text('pin:22.66,106.25'), findsOneWidget);
+      await tap(tester, key('picker-b'));
+      expect(find.text('pin:22.67,106.26'), findsOneWidget);
+      await tap(tester, key('checkout-send'));
+      expect(store.lastPin, (22.67, 106.26));
+      await unmount(tester);
+    });
+
     testWidgets('a changed price is refused: nothing is created, the cart is refreshed and the person is told to check and send again', (WidgetTester tester) async {
       final (OrderRuntime runtime, SampleOrderStore store) = await readyCart();
       await mount(tester, CheckoutScreen(runtime: runtime));
@@ -262,6 +287,55 @@ void main() {
       await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: done));
       expect(key('m07-location-card'), findsNothing);
       expect(containing('Hoàn thành'), findsWidgets);
+      await unmount(tester);
+    });
+
+    testWidgets('the map shows pickup, drop-off and the Shipper\'s latest position with its time while a Shipper holds the delivery; an ended order draws no live position', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final List<List<String>> drawn = <List<String>>[];
+      final OrderRuntime runtime = OrderRuntime(
+        customer: SampleCustomerOrders(store),
+        shop: SampleShopOrders(store),
+        cart: CartController(source: SampleCustomerOrders(store)),
+        mapBuilder: (BuildContext context, List<M07MapPin> pins) {
+          drawn.add(<String>[for (final M07MapPin p in pins) p.label]);
+          return const SizedBox(key: Key('fake-map'));
+        },
+      );
+      final String live = store.seed(status: 'PREPARING', deliveryState: 'accepted');
+      await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: live));
+      expect(key('fake-map'), findsOneWidget);
+      expect(drawn.last, containsAll(<String>['shipper', 'Điểm giao']));
+      expect(key('m07-location-time'), findsOneWidget);
+      await unmount(tester);
+      drawn.clear();
+      final String searching = store.seed(status: 'PREPARING', deliveryState: 'waiting_driver');
+      await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: searching));
+      expect(drawn.last, isNot(contains('shipper')), reason: 'nobody holds the delivery yet: no live position');
+      await unmount(tester);
+      drawn.clear();
+      final String done = store.seed(status: 'COMPLETED', deliveryState: 'completed');
+      await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: done));
+      expect(drawn.every((List<String> labels) => !labels.contains('shipper')), isTrue, reason: 'an ended order stops tracking');
+      expect(key('m07-location-card'), findsNothing);
+      expect(containing('không còn theo dõi vị trí'), findsOneWidget);
+      await unmount(tester);
+    });
+
+    testWidgets('a call again makes a NEW delivery: the screen follows the current one (the earlier one keeps its history, the Shipper pin is gone until the new Shipper holds it)', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final OrderRuntime runtime = runtimeOf(store);
+      final String stopped = store.seed(status: 'PREPARING', deliveryState: 'search_stopped');
+      await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: stopped));
+      expect(containing('Chưa tìm được shipper — quán đang xử lý'), findsWidgets);
+      await unmount(tester);
+      await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: stopped));
+      await tap(tester, key('order-call'));
+      await tap(tester, key('call-payer-customer'));
+      await unmount(tester);
+      await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: stopped));
+      expect(containing('Đang tìm shipper'), findsWidgets);
+      expect(key('m07-location-card'), findsNothing);
       await unmount(tester);
     });
 

@@ -57,10 +57,8 @@ grep -Eq 'applicationId\s*=?\s*"vn\.eleven\.'"$app"'"' "$gradle" || { echo "appl
 sed -i -E 's/(applicationId\s*=?\s*)"vn\.eleven\.'"$app"'"/\1"'"$app_id"'"/' "$gradle"
 grep -q "\"$app_id\"" "$gradle"
 
-# Shared M14 native library uses Android 8+. Food remains on its existing minimum.
-if [ "$app" = ship ]; then
-  sed -i -E 's/minSdk = flutter.minSdkVersion/minSdk = 26/; s/minSdkVersion flutter.minSdkVersion/minSdkVersion 26/' "$gradle"
-fi
+# The shared M14 native libraries (the map-only one in both apps, the recorder in Ship) use Android 8+ (API 26): both apps now carry the M14 map.
+sed -i -E 's/minSdk = flutter.minSdkVersion/minSdk = 26/; s/minSdkVersion flutter.minSdkVersion/minSdkVersion 26/' "$gradle"
 res="$dest/app/src/main/res"
 rm -rf "$res/drawable-v21" "$res/values-night" "$res/mipmap-hdpi/ic_launcher.webp" 2>/dev/null || true
 find "$res" -name 'ic_launcher*' -delete

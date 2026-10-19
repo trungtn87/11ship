@@ -13,6 +13,7 @@ import '../m02/menu_models.dart';
 import '../m07/m07_http.dart';
 import '../m07/m07_sample.dart';
 import '../m07/m07_source.dart';
+import '../m07/m07_widgets.dart';
 import '../m10/m10_cart.dart';
 import '../m10/m10_http.dart';
 import '../m10/m10_sample.dart';
@@ -85,6 +86,8 @@ AppFlows createFlows(
   NotificationSource? notificationSource,
   PushPort pushPort = const NoPushPort(),
   OrderRuntime? orderRuntime,
+  M07MapBuilder? orderMapBuilder,
+  M07PinPickerBuilder? orderPinPicker,
 }) {
   final ApiTransport http = transport ?? HttpApiTransport(base: config.apiUri ?? Uri.parse('https://invalid.invalid'));
   final LocationProvider where = location ?? MethodChannelLocationProvider();
@@ -93,7 +96,7 @@ AppFlows createFlows(
   final NotificationSource inbox = notificationSource ?? HttpNotificationSource(session: session);
   final NotificationController inboxController = NotificationController(session: session, source: inbox);
   final AddressBookController? book = app == ClientApp.food ? AddressBookController(api: addressApi ?? HttpAddressApi(session: session), session: session) : null;
-  final OrderRuntime? orders = app == ClientApp.food ? (orderRuntime ?? _orderRuntime(session, book, where)) : null;
+  final OrderRuntime? orders = app == ClientApp.food ? (orderRuntime ?? _orderRuntime(session, book, where, orderMapBuilder, orderPinPicker)) : null;
   OrderRuntime.current = orders;
   return AppFlows(
     orders: orders,
@@ -124,7 +127,7 @@ AppFlows createFlows(
 
 /// The cart and the order sources of 11Food. The cart belongs to the signed-in account: it is read when a person signs in and dropped when the session
 /// ends, so the next person never sees it.
-OrderRuntime _orderRuntime(SessionController session, AddressBookController? book, LocationProvider location) {
+OrderRuntime _orderRuntime(SessionController session, AddressBookController? book, LocationProvider location, M07MapBuilder? mapBuilder, M07PinPickerBuilder? pinPicker) {
   final SampleOrderStore? store = kM10UiPreview ? SampleOrderStore() : null;
   final CustomerOrderSource customer = store != null ? SampleCustomerOrders(store) : HttpCustomerOrderSource(session: session);
   final ShopOrderSource shop = store != null ? SampleShopOrders(store) : HttpShopOrderSource(session: session);
@@ -152,6 +155,8 @@ OrderRuntime _orderRuntime(SessionController session, AddressBookController? boo
     addresses: book,
     session: session,
     location: location,
+    mapBuilder: mapBuilder,
+    pinPicker: pinPicker,
     canOrder: () => session.status == SessionStatus.signedIn && (session.identity?.customerAccess ?? false) && session.identity?.activeRole != 'SHOP_OWNER',
   );
 }
