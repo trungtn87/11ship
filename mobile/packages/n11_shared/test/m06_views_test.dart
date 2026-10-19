@@ -187,24 +187,40 @@ void main() {
       await mount(tester, ShippingFeeScreen(source: const SampleM06Source(), actions: actions));
       await tester.tap(find.byKey(const Key('m06-mode-agreed')));
       await tester.pump();
-      expect(disabled(tester, 'Gửi đề xuất phí'), isTrue);
+      await tester.ensureVisible(find.byKey(const Key('m06-fee-submit')));
+      await tester.tap(find.byKey(const Key('m06-fee-submit')));
+      await tester.pumpAndSettle();
+      expect(actions.calls, isEmpty);
+      expect(find.text('Chọn lý do thỏa thuận phí.'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('m06-reason-other')));
       await tester.tap(find.byKey(const Key('m06-reason-other')));
       await tester.enterText(find.byKey(const Key('m06-agreed-amount')), '25000');
       await tester.pump();
-      expect(disabled(tester, 'Gửi đề xuất phí'), isTrue); // OTHER without a note
+      await tester.ensureVisible(find.byKey(const Key('m06-fee-submit')));
+      await tester.tap(find.byKey(const Key('m06-fee-submit')));
+      await tester.pumpAndSettle();
+      expect(actions.calls, isEmpty); // OTHER without a note
+      expect(find.text('Lý do Khác cần có ghi chú.'), findsOneWidget);
       await tester.enterText(find.byKey(const Key('m06-agreed-note')), 'Gọi 0912345678 nhé');
       await tester.pump();
-      expect(disabled(tester, 'Gửi đề xuất phí'), isTrue);
+      await tester.ensureVisible(find.byKey(const Key('m06-fee-submit')));
+      await tester.tap(find.byKey(const Key('m06-fee-submit')));
+      await tester.pumpAndSettle();
+      expect(actions.calls, isEmpty);
       expect(containing('số điện thoại'), findsWidgets);
       await tester.enterText(find.byKey(const Key('m06-agreed-note')), 'Hàng nặng');
       await tester.pump();
       expect(disabled(tester, 'Gửi đề xuất phí'), isFalse);
       await tester.enterText(find.byKey(const Key('m06-agreed-amount')), '12000000'); // above the cap: refused, not clamped
       await tester.pump();
-      expect(disabled(tester, 'Gửi đề xuất phí'), isTrue);
+      await tester.ensureVisible(find.byKey(const Key('m06-fee-submit')));
+      await tester.tap(find.byKey(const Key('m06-fee-submit')));
+      await tester.pumpAndSettle();
+      expect(actions.calls, isEmpty);
       await tester.enterText(find.byKey(const Key('m06-agreed-amount')), '25000');
       await tester.pump();
       expect(containing('khách phải đồng ý'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('m06-fee-submit')));
       await tester.tap(find.byKey(const Key('m06-fee-submit')));
       await tester.pump();
       expect(actions.calls, <String>['propose:customer:other:Hàng nặng:25000']);
@@ -381,7 +397,11 @@ void main() {
       final Finder field = find.byKey(const Key('m06-counter-amount'));
       await tester.enterText(field, '99999999');
       await tester.pump();
-      expect(disabled(tester, 'Gửi đề xuất'), isTrue);
+      await tester.ensureVisible(find.byKey(const Key('m06-counter-send')));
+      await tester.tap(find.byKey(const Key('m06-counter-send')));
+      await tester.pumpAndSettle();
+      expect(actions.calls, isEmpty);
+      expect(containing('10.000.000'), findsWidgets);
       await tester.enterText(field, '30000');
       await tester.pump();
       await tester.tap(find.byKey(const Key('m06-counter-send')));
