@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../account/account_views.dart';
+import '../account/session_controller.dart';
 import '../account/models.dart';
 import '../m02/m02_widgets.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
 import 'address_controller.dart';
 import 'address_models.dart';
+import 'address_location_picker.dart';
 
 // M05-B screens (approved UI 11Ship-M05-UI-Approved-v1.0): Sổ địa chỉ, form thêm / sửa, and the reusable delivery-address picker
 // that checkout (M10) will embed. Words are fixed here; nothing the server wrote is shown except the person's own address data.
@@ -238,6 +240,8 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
   late AddressLabel _label;
   late bool _default;
   bool _submitted = false;
+  double? _latitude;
+  double? _longitude;
   String _initialPhone = '';
 
   AddressBookController get c => widget.controller;
@@ -256,6 +260,8 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
     final String? account = c.session?.identity?.phoneNormalized;
     _phone = TextEditingController(text: a?.phoneText ?? (account == null ? '' : formatVnPhone(account)));
     _address = TextEditingController(text: a?.addressText ?? '');
+    _latitude = a?.latitude;
+    _longitude = a?.longitude;
     _note = TextEditingController(text: a?.deliveryNote ?? '');
     _initialPhone = _phone.text.replaceAll(' ', '');
     _label = a?.label ?? AddressLabel.home;
@@ -284,7 +290,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
   bool get _dirty =>
       e == null
           ? (_name.text.trim().isNotEmpty || _phone.text.replaceAll(' ', '') != _initialPhone || _address.text.trim().isNotEmpty || _note.text.trim().isNotEmpty)
-          : (_name.text.trim() != (e!.recipientName ?? '') || _phone.text.replaceAll(' ', '') != e!.phoneText || _address.text.trim() != e!.addressText || _note.text.trim() != (e!.deliveryNote ?? '') || _label != e!.label);
+          : (_name.text.trim() != (e!.recipientName ?? '') || _phone.text.replaceAll(' ', '') != e!.phoneText || _address.text.trim() != e!.addressText || _note.text.trim() != (e!.deliveryNote ?? '') || _label != e!.label || _latitude != e!.latitude || _longitude != e!.longitude);
 
   Future<void> _save() async {
     setState(() => _submitted = true);
@@ -293,7 +299,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
     }
     final NavigatorState navigator = Navigator.of(context);
     final bool ok = await c.save(
-      AddressInput(label: _label, recipientName: _name.text, phone: _phone.text.replaceAll(' ', ''), addressText: _address.text, note: _note.text, makeDefault: _default),
+      AddressInput(label: _label, recipientName: _name.text, phone: _phone.text.replaceAll(' ', ''), addressText: _address.text, note: _note.text, makeDefault: _default, latitude: _latitude, longitude: _longitude),
       editing: e,
     );
     if (ok && mounted) {
@@ -356,18 +362,16 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
               hint: _submitted ? _phoneError : 'Số shipper sẽ gọi khi giao hàng.',
               onChanged: () => setState(() {}),
             ),
-            N11Field(
-              fieldKey: const Key('address-text'),
-              label: 'Địa chỉ chi tiết *',
-              controller: _address,
-              maxLength: 300,
-              enabled: !locked,
-              placeholder: 'Số nhà, đường, phường/xã, quận/huyện',
-              tone: _submitted && _addressError != null ? FieldTone.error : FieldTone.normal,
-              hint: _submitted ? _addressError : null,
-              onChanged: () => setState(() {}),
-            ),
-            const N11ListItem(icon: Icons.map_outlined, title: 'Ghim vị trí trên bản đồ', sub: 'Không bắt buộc', soon: true),
+            AddressLocationField(key: const Key('address-text'), label: 'Địa chỉ giao hàng', text: _address.text,
+              error: _submitted ? _addressError : null,
+              onTap: locked ? null : () async {
+                final int? epoch = c.session?.sessionEpoch;
+                final AddressLocation? selected = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(
+                  builder: (_) => AddressLocationPicker(initial: AddressLocation(_address.text,
+                    latitude: _latitude, longitude: _longitude), location: c.location, session: c.session)));
+                if (selected == null || !context.mounted || c.locked || c.session?.sessionEpoch != epoch || (c.session != null && c.session!.status != SessionStatus.signedIn)) return;
+                setState(() { _address.text = selected.text; _latitude = selected.latitude; _longitude = selected.longitude; });
+              }),
             N11Field(fieldKey: const Key('address-note'), label: 'Ghi chú cho shipper', optionalLabel: true, controller: _note, maxLength: 300, enabled: !locked, placeholder: 'Tòa nhà, tầng, cổng…', onChanged: () => setState(() {})),
             SwitchListTile(
               key: const Key('address-default-switch'),

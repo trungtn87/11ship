@@ -11,7 +11,7 @@ import 'location.dart';
 //   GET /v1/onboarding/shop/profile        PUT /v1/onboarding/shop/profile        POST /v1/onboarding/shop/complete
 //   GET /v1/onboarding/shop/service-areas  POST /v1/client-auth/context (only on the person's own action)
 // Everything shown comes from those answers. Nothing is invented: no area, no coordinate, no status. The app never creates a draft
-// by itself, never derives an area from the position, and never completes a profile the server has not stored.
+// by itself and never completes a profile the server has not stored.
 
 @immutable
 class ShopProfile {
@@ -266,6 +266,7 @@ class ShopController extends ChangeNotifier {
         // The stored choice is no longer an ACTIVE area: it is shown as not chosen (the server still holds what it holds).
         serviceAreaId = null;
       }
+      if (serviceAreaId == null && _areas.length == 1) serviceAreaId = _areas.single.id;
     } on AuthFailure catch (failure) {
       if (failure.kind == AuthFailureKind.sessionEnded) {
         rethrow;
@@ -281,6 +282,15 @@ class ShopController extends ChangeNotifier {
       await _loadAreas(epoch);
     } on AuthFailure catch (failure) {
       _failure = failure;
+    }
+    _notify();
+  }
+
+  void selectAddress(String text, {double? latitude, double? longitude}) {
+    if (_busy || hasPendingWrite || session.status != SessionStatus.signedIn) return;
+    addressText = text;
+    if (latitude != null && longitude != null) {
+      _fix = LocationFix(latitude: latitude, longitude: longitude, accuracyMeters: null, takenAt: DateTime.now());
     }
     _notify();
   }

@@ -116,7 +116,8 @@ void main() {
       await tester.enterText(key('checkout-name'), 'Nguyễn An');
       await tester.enterText(key('checkout-phone'), '0912345678');
       await tap(tester, key('checkout-typed-toggle'));
-      await tester.enterText(key('checkout-typed'), '12 Phố Huế, Hà Nội');
+      await tester.enterText(key('location-address-text'), '12 Phố Huế, Hà Nội');
+      await tap(tester, key('location-save'));
       await settle(tester);
     }
 
@@ -145,13 +146,15 @@ void main() {
       await fill(tester);
       expect(gps.calls, 0, reason: 'nothing is read until the person presses the button');
       gps.failure = LocationFailure.denied;
-      await tap(tester, key('checkout-use-gps'));
+      await tap(tester, key('checkout-address'));
+      await tap(tester, key('location-current'));
       expect(gps.calls, 1);
-      expect(containing('chưa cho phép'), findsOneWidget);
+      expect(containing('Chưa được cấp quyền'), findsOneWidget);
       gps.failure = null;
-      await tap(tester, key('checkout-use-gps'));
+      await tap(tester, key('location-current'));
       expect(gps.calls, 2);
-      expect(containing('Đã ghim vị trí hiện tại'), findsOneWidget);
+      expect(containing('Đã chọn vị trí'), findsOneWidget);
+      await tap(tester, key('location-save'));
       await tap(tester, key('checkout-send'));
       expect(store.lastPin, (10.0123, 106.0456));
       await unmount(tester);
@@ -172,11 +175,14 @@ void main() {
       await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán', itemId: pho.id, name: pho.name, priceVnd: 45000);
       await mount(tester, CheckoutScreen(runtime: runtime));
       await fill(tester);
+      await tap(tester, key('checkout-address'));
       expect(find.text('pin:none'), findsOneWidget);
       await tap(tester, key('picker-a'));
       expect(find.text('pin:22.66,106.25'), findsOneWidget);
       await tap(tester, key('picker-b'));
       expect(find.text('pin:22.67,106.26'), findsOneWidget);
+      await tap(tester, key('location-save'));
+      expect(key('checkout-use-gps'), findsNothing);
       await tap(tester, key('checkout-send'));
       expect(store.lastPin, (22.67, 106.26));
       await unmount(tester);

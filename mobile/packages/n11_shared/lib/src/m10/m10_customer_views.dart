@@ -9,7 +9,7 @@ import '../account/session_controller.dart';
 import '../addresses/address_controller.dart';
 import '../addresses/address_models.dart';
 import '../addresses/address_views.dart';
-import '../flows/location.dart';
+import '../addresses/address_location_picker.dart';
 import '../m02/m02_widgets.dart';
 import '../m07/m07_models.dart';
 import '../m07/m07_source.dart';
@@ -336,8 +336,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String _key = newIdempotencyKey();
   double? _pinLat;
   double? _pinLng;
-  bool _locating = false;
-  String? _pinNote;
 
   CartController get cart => widget.runtime.cart;
   CustomerOrderSource get source => widget.runtime.customer;
@@ -368,41 +366,27 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   DraftAddress _fromBook(DeliveryAddress a) => DraftAddress.book(a.id, text: a.addressText, lat: a.latitude, lng: a.longitude);
 
-  /// Anything the person changes makes this a NEW attempt (a new reference and key); a retry of the same unchanged attempt keeps both.
-  /// One foreground fix, only on this tap: the point is the device's own position, never a guess. If the address is not where the person stands, they
-  /// pick or type another address and the fee stays "Chưa xác định phí".
-  Future<void> _useCurrentPosition() async {
-    final LocationProvider? where = widget.runtime.location;
-    if (where == null) {
-      return;
-    }
-    setState(() {
-      _locating = true;
-      _pinNote = null;
-    });
-    try {
-      final LocationFix fix = await where.currentFix();
-      if (!mounted) {
-        return;
-      }
-      _pinLat = fix.latitude;
-      _pinLng = fix.longitude;
-      _pinNote = 'Đã ghim vị trí hiện tại của điện thoại${fix.accuracyMeters == null ? '' : ' (sai số khoảng ${fix.accuracyMeters!.round()} m)'}. Nếu địa chỉ giao không ở chỗ bạn đang đứng, hãy chọn địa chỉ khác.';
-    } on LocationException catch (e) {
-      _pinNote = switch (e.failure) {
-        LocationFailure.denied => 'Bạn chưa cho phép ứng dụng dùng vị trí. Đơn vẫn gửi được, phí giao ghi "Chưa xác định phí".',
-        LocationFailure.disabled => 'Dịch vụ vị trí của điện thoại đang tắt. Hãy bật rồi thử lại, hoặc gửi đơn không ghim.',
-        LocationFailure.timeout => 'Chưa lấy được vị trí trong thời gian chờ. Hãy thử lại ở nơi thoáng hơn, hoặc gửi đơn không ghim.',
-        LocationFailure.unavailable => 'Không lấy được vị trí thật từ điện thoại. Đơn vẫn gửi được, phí giao ghi "Chưa xác định phí".',
-      };
-    } finally {
-      if (mounted) {
-        _locating = false;
-        _touch();
-      }
-    }
+  Future<void> _editAddress({bool fresh = false}) async {
+    final SessionController? session = widget.session ?? widget.runtime.session;
+    final int? epoch = session?.sessionEpoch;
+    final M07PinPickerBuilder? builder = widget.pinPicker ?? widget.runtime.pinPicker;
+    final AddressLocation initial = fresh ? const AddressLocation('') : AddressLocation(
+      _typedMode ? _typed.text : (_address?.text ?? ''),
+      latitude: _typedMode ? _pinLat : _address?.lat,
+      longitude: _typedMode ? _pinLng : _address?.lng);
+    final AddressLocation? selected = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(
+      builder: (_) => AddressLocationPicker(initial: initial, session: session, requirePoint: false, location: widget.runtime.location,
+        mapBuilder: builder == null ? null : (BuildContext context, double? lat, double? lng, void Function(double, double) onPick) =>
+          builder(context, lat: lat, lng: lng, onPick: onPick))));
+    if (selected == null || !mounted || session?.sessionEpoch != epoch || (session != null && session.status != SessionStatus.signedIn)) return;
+    _typed.text = selected.text;
+    _pinLat = selected.latitude;
+    _pinLng = selected.longitude;
+    _typedMode = true;
+    _touch();
   }
 
+  /// An address edit makes a new order attempt; an unchanged retry retains its key.
   void _touch() {
     setState(() {
       _clientRef = newIdempotencyKey();
@@ -585,37 +569,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              const Text('Địa chỉ giao', style: N11Text.label),
-              const SizedBox(height: N11Space.gap2),
-              if (!_typedMode) Text(_address?.text ?? 'Chưa chọn địa chỉ', key: const Key('checkout-address'), style: N11Text.body),
-              if (!_typedMode && _address != null && !_address!.hasPin) const Padding(padding: EdgeInsets.only(top: 4), child: ReasonNote('Địa chỉ này chưa có ghim. Vẫn gửi được; phí giao sẽ ghi "Chưa xác định phí" và được chốt với shipper sau.')),
-              if (_typedMode) ...<Widget>[
-                N11Field(fieldKey: const Key('checkout-typed'), label: 'Địa chỉ giao', controller: _typed, maxLength: 300, onChanged: _touch),
-                if ((widget.pinPicker ?? widget.runtime.pinPicker) != null)
-                  SizedBox(
-                    height: 220,
-                    child: (widget.pinPicker ?? widget.runtime.pinPicker)!(context, lat: _pinLat, lng: _pinLng, onPick: (double lat, double lng) {
-                      _pinLat = lat;
-                      _pinLng = lng;
-                      _touch();
-                    }),
-                  )
-                else
-                  const ReasonNote('Bản này chưa có bản đồ để ghim. Đơn vẫn gửi được, phí giao ghi "Chưa xác định phí".'),
-                if (widget.runtime.location != null) ...<Widget>[
-                  const SizedBox(height: N11Space.gap2),
-                  N11Button(key: const Key('checkout-use-gps'), label: _locating ? 'Đang lấy vị trí…' : 'Dùng vị trí hiện tại làm điểm giao', kind: ButtonKind.secondary, compact: true, onPressed: _locating ? null : _useCurrentPosition),
-                  if (_pinNote != null) Padding(padding: const EdgeInsets.only(top: 4), child: ReasonNote(_pinNote!, key: const Key('checkout-pin-note'))),
-                ],
-              ],
+              AddressLocationField(key: const Key('checkout-address'), label: 'Địa chỉ giao',
+                text: _typedMode ? _typed.text : (_address?.text ?? ''),
+                onTap: _attempt == _Attempt.sending || _attempt == _Attempt.unknown ? null : () => _editAddress()),
               const SizedBox(height: N11Space.gap2),
               Row(children: <Widget>[
-                if (widget.addresses != null) Expanded(child: N11Button(key: const Key('checkout-pick'), label: 'Chọn từ sổ địa chỉ', kind: ButtonKind.secondary, compact: true, onPressed: _pickAddress)),
+                if (widget.addresses != null) Expanded(child: N11Button(key: const Key('checkout-pick'), label: 'Chọn từ sổ địa chỉ', kind: ButtonKind.secondary, compact: true,
+                  onPressed: _attempt == _Attempt.sending || _attempt == _Attempt.unknown ? null : _pickAddress)),
                 if (widget.addresses != null) const SizedBox(width: N11Space.gap2),
-                Expanded(child: N11Button(key: const Key('checkout-typed-toggle'), label: _typedMode ? 'Dùng sổ địa chỉ' : 'Nhập địa chỉ khác', kind: ButtonKind.secondary, compact: true, onPressed: () {
-                  _typedMode = !_typedMode;
-                  _touch();
-                })),
+                Expanded(child: N11Button(key: const Key('checkout-typed-toggle'), label: 'Địa chỉ khác', kind: ButtonKind.secondary, compact: true,
+                  onPressed: _attempt == _Attempt.sending || _attempt == _Attempt.unknown ? null : () => _editAddress(fresh: true))),
               ]),
             ],
           ),

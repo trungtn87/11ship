@@ -31,6 +31,7 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
     private val pins: MapPinsView
     private var map: MapLibreMap?=null
     private var data=initial
+    private var focusedPoint: Pair<Double, Double>?=null
     private var disposed=false
     private var resumed=false
     private var started=false
@@ -86,6 +87,15 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
             if(!lat.isFinite() || !lon.isFinite()) return@mapNotNull null
             MapPin(lat,lon,p["label"] as? String?:"",(p["color"] as? Number)?.toInt()?:Color.BLUE)
         }?:emptyList()
+        if(data?.get("focus_pin")==true) pins.pins.firstOrNull()?.let { pin ->
+            val point=Pair(pin.latitude,pin.longitude)
+            if(focusedPoint!=point) {
+                val first=focusedPoint==null
+                focusedPoint=point
+                if(first) current.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(pin.latitude,pin.longitude),15.0))
+                else current.moveCamera(CameraUpdateFactory.newLatLng(LatLng(pin.latitude,pin.longitude)))
+            }
+        }
         current.clear()
         val coords=(data?.get("route") as? List<*>)?.mapNotNull { item ->
             val p=item as? List<*>?:return@mapNotNull null

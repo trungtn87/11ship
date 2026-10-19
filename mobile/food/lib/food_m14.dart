@@ -17,6 +17,7 @@ M07MapBuilder? foodMapBuilder() => kM14MapEnabled
 /// Lets a person pin or move the drop-off point; a tap outside the covered area is ignored (the map says so).
 M07PinPickerBuilder? foodPinPicker() => kM14MapEnabled
     ? (BuildContext context, {required void Function(double lat, double lng) onPick, double? lat, double? lng}) => M14OfflineMap(
+          focusPin: true,
           pins: <Map<String, dynamic>>[if (lat != null && lng != null) _pin(lat, lng, 'Điểm giao', 0xFFC0392B)],
           onPoint: (double la, double lo, bool inside) {
             if (inside) {
