@@ -20,6 +20,10 @@ import { ShippingEligibilityPolicyController, ShippingFeePolicyController } from
 import { ShippingFeePolicyService } from '../shipping-policy/shipping-fee-policy-service';
 import { AdminDeliveryService } from '../admin-deliveries/admin-delivery-service';
 import { AdminDeliveryController } from '../admin-deliveries/admin-delivery.controller';
+import { AdminFeedbackController } from '../admin-feedback/admin-feedback.controller';
+import { AdminFeedbackService } from '../admin-feedback/admin-feedback-service';
+import { COMMISSION_ADJUSTMENT_PORT, NotIntegratedCommissionAdjustmentPort } from '../feedback/feedback-finance-port';
+import { FeedbackReadModule } from '../feedback/feedback-read.module';
 import { AdminNotificationController } from '../notifications/admin-notification.controller';
 import { AdminNotificationService } from '../notifications/admin-notification-service';
 import { NotificationsReadModule } from '../notifications/notifications-read.module';
@@ -109,12 +113,14 @@ export class AdminAuthModule implements NestModule {
         DeliveryCoreModule.register(auth),
         // M08.06 notification administration (read-only SQL; the worker itself lives in NotificationsModule, never twice).
         NotificationsReadModule,
+        // M11.03 reviews and complaints for the Admin routes below (the SQL of the M11 tables lives in one place).
+        FeedbackReadModule,
         // The activation OTP goes through the SAME SMS gateway queue as the account OTPs (one module instance, no second gateway).
         ...(activation !== undefined && isActivationSmsGatewayBinding(activation.otpProvider) ? [SmsGatewayModule] : []),
       ],
       // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
       // M01-D-ADMIN-1C: the activation routes under /v1/admin-activation exist only when explicitly enabled.
-      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, FinanceAccessController, AdminTopupController, AdminDeliveryController, AdminNotificationController, ...(activation === undefined ? [] : [AdminActivationController])],
+      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, FinanceAccessController, AdminTopupController, AdminDeliveryController, AdminFeedbackController, AdminNotificationController, ...(activation === undefined ? [] : [AdminActivationController])],
       providers: [
         adminAuthConfigProvider,
         {
@@ -173,6 +179,9 @@ export class AdminAuthModule implements NestModule {
         ShippingEligibilityPolicyService,
         // M07.07 delivery management (SYSTEM, or an ADMIN with the SHOP / DRIVER permissions).
         AdminDeliveryService,
+        AdminFeedbackService,
+        // M10 and M04 adjustments are not connected: the money part of an outcome adjustment stays pending (the port says so honestly).
+        { provide: COMMISSION_ADJUSTMENT_PORT, useClass: NotIntegratedCommissionAdjustmentPort },
         AdminNotificationService,
         // The 1B section 8.8 hook is always present (1B calls it); it is a no-op when no activation attempt exists.
         AdminActivationRepository,

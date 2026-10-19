@@ -217,6 +217,23 @@ export const APP_ERROR_DEFINITIONS = {
   DEVICE_PROOF_EXPIRED: { status: 403, message: 'The device proof has expired' },
   DEVICE_PROOF_UNSUPPORTED: { status: 403, message: 'This device cannot provide the required proof' },
   DEVICE_RATE_LIMITED: { status: 429, message: 'Too many device requests; try again later' },
+
+  // Reviews and complaints (M11). Fixed messages that echo nothing the client sent. A review, order, delivery or complaint of another account is never
+  // told apart from one that does not exist. ORDER_MODULE_NOT_READY, DELIVERY_NOT_FOUND, VERSION_CONFLICT and the ADMIN_* codes are reused.
+  REVIEW_NOT_ELIGIBLE: { status: 409, message: 'This rating is not available for the order or delivery yet' },
+  REVIEW_ALREADY_EXISTS: { status: 409, message: 'This order or delivery was already rated' },
+  REVIEW_NOT_FOUND: { status: 404, message: 'The rating was not found' },
+  REVIEW_TARGET_NOT_FOUND: { status: 404, message: 'The order or delivery to rate was not found' },
+  COMPLAINT_NOT_FOUND: { status: 404, message: 'The complaint was not found' },
+  COMPLAINT_TARGET_NOT_FOUND: { status: 404, message: 'The order, delivery or rating of the complaint was not found' },
+  COMPLAINT_STATE_CONFLICT: { status: 409, message: 'The complaint is not in a state that allows this action' },
+  COMPLAINT_ATTACHMENT_INVALID: { status: 400, message: 'The evidence picture is not valid' },
+  COMPLAINT_ATTACHMENT_NOT_FOUND: { status: 404, message: 'The evidence picture was not found' },
+  COMPLAINT_ATTACHMENT_LIMIT: { status: 409, message: 'Too many evidence pictures' },
+  COMPLAINT_FORBIDDEN: { status: 403, message: 'You cannot do this on this complaint' },
+  RECONSIDERATION_EXPIRED: { status: 409, message: 'The period to ask for another review has ended' },
+  RECONSIDERATION_NOT_AVAILABLE: { status: 409, message: 'Another review cannot be requested for this complaint' },
+  ADJUSTMENT_HISTORY_REVIEW_REQUIRED: { status: 409, message: 'The whole delivery history must be reviewed before this adjustment' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;

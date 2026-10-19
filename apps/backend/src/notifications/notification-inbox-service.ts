@@ -131,7 +131,9 @@ export class NotificationInboxService {
         notification_id: n.notificationId,
         outcome: outcome.kind,
         target: outcome.kind === 'NO_ACCESS' ? null : { type: n.targetType, id: n.targetId, ...(n.targetType === 'DELIVERY_LIST' ? { list: listOf(n.kind) } : {}) },
-        delivery_state: outcome.kind === 'NO_ACCESS' ? null : outcome.state,
+        delivery_state: outcome.kind === 'NO_ACCESS' || n.targetType === 'COMPLAINT' ? null : outcome.state,
+        // The state of the opened object when it is not a delivery (a complaint's status), so the app opens the right screen without guessing.
+        object_state: outcome.kind === 'NO_ACCESS' || n.targetType !== 'COMPLAINT' ? null : outcome.state,
         expired: n.validUntilMs !== null && nowMs >= n.validUntilMs,
         server_now: new Date(nowMs).toISOString(),
       };
@@ -139,6 +141,12 @@ export class NotificationInboxService {
   }
 
   async #access(context: TransactionContext, actor: ClientActor, n: NotificationRow): Promise<{ kind: 'OK' | 'ENDED' | 'NO_ACCESS'; state: string | null }> {
+    // A complaint opens for whoever the server says may read it NOW (the submitter in any role of the app, a related party it was shown to): the role hat
+    // of the session is not what decides it.
+    if (n.targetType === 'COMPLAINT') {
+      const facts = n.targetId === null ? undefined : await this.recipients.complaintAccessFor(context, n.targetId, actor.userId);
+      return facts === undefined || !facts.exists || !facts.access ? { kind: 'NO_ACCESS', state: null } : { kind: facts.ended ? 'ENDED' : 'OK', state: facts.status };
+    }
     const wantedRole = actor.app === 'SHIP' ? 'DRIVER' : 'SHOP';
     const roleOk = n.targetType === 'PROFILE' || actor.storedActiveRole === wantedRole;
     if (!roleOk) {

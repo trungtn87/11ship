@@ -2,6 +2,7 @@ import { DynamicModule, Module } from '@nestjs/common';
 import { DeliveryReadModule } from '../delivery/delivery-read.module';
 import { ShipperLocationModule } from '../delivery/shipper-location.module';
 import { DriverModule } from '../driver/driver.module';
+import { FeedbackReadModule } from '../feedback/feedback-read.module';
 import { ShopModule } from '../shop/shop.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { NotificationRecipients } from './notification-recipients';
@@ -28,7 +29,7 @@ export class NotificationsModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: NotificationsModule,
-      imports: [auth, TransactionModule, ShippingEligibilityModule, NotificationsReadModule, ShopModule, DriverModule, WalletModule, DeliveryReadModule, ShipperLocationModule],
+      imports: [auth, TransactionModule, ShippingEligibilityModule, NotificationsReadModule, ShopModule, DriverModule, WalletModule, DeliveryReadModule, ShipperLocationModule, FeedbackReadModule],
       controllers: [NotificationController],
       providers: [
         NotificationRecipients,

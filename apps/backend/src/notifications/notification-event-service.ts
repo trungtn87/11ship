@@ -8,10 +8,12 @@ import { ShippingEligibilityService } from '../shipping-policy/shipping-eligibil
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
+import { appOfAudience, composeComplaintChange, ComplaintChangePayload } from './notification-complaint-composer';
 import { DraftBase, composeDeliveryChange, DeliveryChangePayload, NEW_OFFERS_COPY, PROFILE_COPY, TOPUP_COPY } from './notification-composer';
 import {
   CATEGORY_OF_KIND,
   MAX_EVENT_AGE_MS,
+  OUTBOX_COMPLAINT_CHANGED_TYPE,
   OUTBOX_DELIVERY_CHANGED_TYPE,
   OUTBOX_DRIVER_STATE_CHANGED_TYPE,
   OUTBOX_ORDER_PREFIX,
@@ -37,6 +39,28 @@ function parseDeliveryPayload(payload: Readonly<Record<string, unknown>>): Deliv
   return { deliveryId, code, shopId, change, state, version, assignmentId: isCanonicalUuid(assignmentId) ? assignmentId : null, driverId: isCanonicalUuid(driverId) ? driverId : null };
 }
 
+function parseComplaintPayload(payload: Readonly<Record<string, unknown>>): ComplaintChangePayload | undefined {
+  const { complaint_id: complaintId, code, change, status, version, shop_id: shopId, driver_id: driverId, submitter_user_id: submitter, submitter_role: role, awaiting_from: awaiting } = payload;
+  if (!isCanonicalUuid(complaintId) || typeof code !== 'string' || typeof change !== 'string' || typeof status !== 'string' || typeof version !== 'number' || !isCanonicalUuid(shopId) || !isCanonicalUuid(submitter)) {
+    return undefined;
+  }
+  if (role !== 'CUSTOMER' && role !== 'SHOP' && role !== 'SHIPPER') {
+    return undefined;
+  }
+  return {
+    complaintId,
+    code,
+    change,
+    status,
+    version,
+    shopId,
+    driverId: isCanonicalUuid(driverId) ? driverId : null,
+    submitterUserId: submitter,
+    submitterRole: role,
+    awaitingFrom: awaiting === 'SUBMITTER' || awaiting === 'SHOP' || awaiting === 'SHIPPER' ? awaiting : null,
+  };
+}
+
 /**
  * M08's consumer of the outbox (M08.02). The outbox is at-least-once, so the event id is recorded in the SAME transaction as the rows an event produces:
  * a redelivery finds the record and does nothing, and a crash in between leaves neither. One business fact = one inbox row per recipient (unique on the
@@ -56,7 +80,7 @@ export class NotificationEventService {
 
   /** Resolves when the event is fully handled or recognized as not ours; rejects (so the outbox retries) when it could not be persisted. */
   async consume(event: OutboxPublishEvent): Promise<void> {
-    const ownType = event.eventType === OUTBOX_DELIVERY_CHANGED_TYPE || event.eventType === OUTBOX_TOPUP_CHANGED_TYPE || event.eventType === OUTBOX_DRIVER_STATE_CHANGED_TYPE;
+    const ownType = event.eventType === OUTBOX_DELIVERY_CHANGED_TYPE || event.eventType === OUTBOX_TOPUP_CHANGED_TYPE || event.eventType === OUTBOX_DRIVER_STATE_CHANGED_TYPE || event.eventType === OUTBOX_COMPLAINT_CHANGED_TYPE;
     if (ownType && this.#ageOf(event) > MAX_EVENT_AGE_MS) {
       // Old news (a backlog after an outage, or from before M08 existed): recorded, told to nobody, never replayed.
       await this.transactions.withTransaction((context) => this.repo.claimEvent(context, event.eventId, event.eventType, 'STALE_EVENT'));
@@ -69,6 +93,8 @@ export class NotificationEventService {
         return this.#topup(event);
       case OUTBOX_DRIVER_STATE_CHANGED_TYPE:
         return this.#profile(event);
+      case OUTBOX_COMPLAINT_CHANGED_TYPE:
+        return this.#complaint(event);
       default:
         if (event.eventType.startsWith(OUTBOX_ORDER_PREFIX) || event.eventType.startsWith(OUTBOX_WITHDRAWAL_PREFIX)) {
           // M10 (Order) and M04-C (withdrawal) do not exist yet: the hook is here, the event is acknowledged as "not integrated" and nothing is made up.
@@ -199,6 +225,41 @@ export class NotificationEventService {
       });
       await this.pushes.queue(context, { config, notificationId: card.notificationId, userId, app: 'SHIP', category: 'AVAILABLE', pushKey: `offer:${deliveryId}:${String(roundVersion)}`, ttlMs: Math.min(PUSH_TTL_MS.offer, facts.remainingMs) });
     }
+  }
+
+  // ---- complaints (M11) ------------------------------------------------------------------------------------------------------
+
+  /**
+   * The Administration's steps on a complaint tell the people concerned. The recipients are accounts read back from the owners' tables (the submitter named on
+   * the event, the shop's owner, the Shipper's account): never a typed phone. A line a person wrote themselves tells nobody. The deep link opens the complaint
+   * and the server checks the right again at that moment.
+   */
+  async #complaint(event: OutboxPublishEvent): Promise<void> {
+    const p = parseComplaintPayload(event.payload);
+    const drafts = p === undefined ? [] : composeComplaintChange(p);
+    await this.transactions.withTransaction(async (context) => {
+      const config = await this.repo.readConfig(context);
+      if (!(await this.repo.claimEvent(context, event.eventId, event.eventType, p === undefined ? 'INVALID_PAYLOAD' : drafts.length === 0 ? 'NO_NOTIFICATION' : 'OK'))) {
+        return;
+      }
+      if (p === undefined) {
+        return;
+      }
+      for (const d of drafts) {
+        const userId = d.audience === 'SUBMITTER' ? p.submitterUserId : d.audience === 'SHOP' ? await this.recipients.shopOwner(context, p.shopId) : p.driverId === null ? undefined : await this.recipients.driverUser(context, p.driverId);
+        if (userId === undefined) {
+          continue;
+        }
+        await this.#notify(
+          context,
+          config,
+          { audience: 'ACCOUNT', app: appOfAudience(d.audience, p.submitterRole), kind: 'COMPLAINT_UPDATED', title: d.title, body: d.body, targetType: 'COMPLAINT', targetId: p.complaintId, targetVersion: p.version, dedupeKey: d.dedupeKey, validForMs: null, pushTtlMs: d.pushTtlMs },
+          userId,
+          event.eventId,
+          this.#ageOf(event),
+        );
+      }
+    });
   }
 
   // ---- wallet and profile -----------------------------------------------------------------------------------------------------
