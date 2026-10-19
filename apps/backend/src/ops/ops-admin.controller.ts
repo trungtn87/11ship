@@ -44,6 +44,13 @@ export class OpsAdminController {
 
   // ---- reads ----
 
+  @Get('me')
+  async me(@Query() query: unknown, @Req() request: AdminRequest) {
+    const token = this.#transport.read(request);
+    parseNoQuery(query);
+    return { data: await this.ops.me(token) };
+  }
+
   @Get('overview')
   async overview(@Query() query: unknown, @Req() request: AdminRequest) {
     const token = this.#transport.read(request);

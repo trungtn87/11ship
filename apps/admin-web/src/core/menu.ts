@@ -46,7 +46,9 @@ export type GrantId =
   | 'zones'
   | 'parameters'
   | 'audit'
-  | 'monitoring';
+  | 'monitoring'
+  // M13: the "Vận hành hệ thống" section. An ADMIN gets it only from the server's answer (GET /admin/ops/me), never from the application grants.
+  | 'ops';
 
 export type Grants = ReadonlySet<GrantId>;
 
@@ -193,6 +195,29 @@ export const MENU: readonly MenuGroup[] = [
     ],
   },
   {
+    // M13 (Owner-approved 2026-10-16): Tổng quan / Sự cố / SMS Gateway / Nhật ký / Phiên bản & cập nhật / Cấu hình. SYSTEM sees all; an ADMIN only with a
+    // grant from SYSTEM (view or handle), read from the server; the server decides every call again.
+    id: 'sysops',
+    label: 'VẬN HÀNH HỆ THỐNG',
+    items: [
+      {
+        id: 'sysops',
+        label: 'Vận hành hệ thống',
+        icon: 'activity',
+        ready: true,
+        access: 'ops',
+        children: [
+          { id: 'sysops-overview', label: 'Tổng quan', route: { name: 'ops' }, ready: true, access: 'ops' },
+          { id: 'sysops-incidents', label: 'Sự cố', route: { name: 'ops-incidents' }, ready: true, access: 'ops' },
+          { id: 'sysops-gateway', label: 'SMS Gateway', route: { name: 'ops-gateway' }, ready: true, access: 'ops' },
+          { id: 'sysops-logs', label: 'Nhật ký', route: { name: 'ops-logs' }, ready: true, access: 'ops' },
+          { id: 'sysops-releases', label: 'Phiên bản & cập nhật', route: { name: 'ops-releases' }, ready: true, access: 'ops' },
+          { id: 'sysops-config', label: 'Cấu hình', route: { name: 'ops-config' }, ready: true, access: 'ops' },
+        ],
+      },
+    ],
+  },
+  {
     id: 'system',
     label: 'HỆ THỐNG',
     items: [
@@ -211,8 +236,6 @@ export const MENU: readonly MenuGroup[] = [
       },
       // M06-A: Phí & điều kiện giao (fee table; every administrator reads, only SYSTEM changes, the server decides again).
       { id: 'shipping-policy', label: 'Phí & điều kiện giao', icon: 'gear', route: { name: 'shipping-policy' }, ready: true, access: 'any' },
-      soon('audit', 'Nhật ký', 'doc', 'audit'),
-      soon('monitoring', 'Giám sát', 'activity', 'monitoring'),
     ],
   },
 ];
@@ -278,6 +301,14 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
       return canSee(role, grants, 'deliveries');
     case 'notifications':
       return canSee(role, grants, 'notifications');
+    case 'ops':
+    case 'ops-incidents':
+    case 'ops-incident':
+    case 'ops-gateway':
+    case 'ops-logs':
+    case 'ops-releases':
+    case 'ops-config':
+      return canSee(role, grants, 'ops');
     case 'finance':
     case 'finance-wallets':
     case 'finance-transactions':
@@ -342,6 +373,19 @@ export function activeMenuId(route: Route): string {
       return 'finance-reconciliation';
     case 'wallet-params':
       return 'parameters';
+    case 'ops':
+      return 'sysops-overview';
+    case 'ops-incidents':
+    case 'ops-incident':
+      return 'sysops-incidents';
+    case 'ops-gateway':
+      return 'sysops-gateway';
+    case 'ops-logs':
+      return 'sysops-logs';
+    case 'ops-releases':
+      return 'sysops-releases';
+    case 'ops-config':
+      return 'sysops-config';
     case 'administrators':
       return 'administrators';
     case 'settings':
@@ -400,6 +444,20 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Tài chính', 'Đối soát'];
     case 'wallet-params':
       return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
+    case 'ops':
+      return ['Vận hành hệ thống', 'Tổng quan'];
+    case 'ops-incidents':
+      return ['Vận hành hệ thống', 'Sự cố'];
+    case 'ops-incident':
+      return ['Vận hành hệ thống', 'Sự cố', route.ref.toUpperCase()];
+    case 'ops-gateway':
+      return ['Vận hành hệ thống', 'SMS Gateway'];
+    case 'ops-logs':
+      return ['Vận hành hệ thống', 'Nhật ký'];
+    case 'ops-releases':
+      return ['Vận hành hệ thống', 'Phiên bản & cập nhật'];
+    case 'ops-config':
+      return ['Vận hành hệ thống', 'Cấu hình'];
     case 'administrators':
       return ['Tài khoản', 'Quản trị viên'];
     case 'settings':

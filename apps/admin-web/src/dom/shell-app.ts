@@ -19,7 +19,7 @@ import {
 } from '../core/accounts.js';
 import { AdminRole } from '../core/api.js';
 import { Clock } from '../core/controller.js';
-import { breadcrumb, canOpenRoute, Grants, NO_GRANTS } from '../core/menu.js';
+import { breadcrumb, canOpenRoute, GrantId, Grants, NO_GRANTS } from '../core/menu.js';
 import { ProvisioningController } from '../core/provisioning-controller.js';
 import {
   NOT_WIRED_SETTINGS,
@@ -54,6 +54,8 @@ import { FinanceSource, NOT_WIRED_FINANCE } from '../core/finance.js';
 import { FinanceView } from './finance-view.js';
 import { FinanceAdminSource, FinanceRights, NO_FINANCE_RIGHTS, NOT_WIRED_FINANCE_ADMIN, TopupFilter } from '../core/finance-admin.js';
 import { BankAccountsView, FinanceAdminHost, FINANCE_RECORD_REQUIRES_READ, openFinanceAccessDialog, TopupDetailView, TopupListView } from './finance-admin-view.js';
+import { NOT_WIRED_OPS, OpsLevel, OpsSource } from '../core/ops.js';
+import { OpsConfigView, OpsGatewayView, OpsHost, OpsIncidentDetailView, OpsIncidentsView, OpsLogsView, OpsOverviewView, OpsReleasesView, openOpsAccessDialog } from './ops-view.js';
 import { statePanel } from './states.js';
 import { ShellLayout } from './shell-layout.js';
 import { failurePanel, skeleton } from './states.js';
@@ -98,7 +100,11 @@ export class ShellApp implements ShellHost {
   /** The finance rights of THIS session as the server last said them (GET access/me). Independent of the application grants above. */
   #financeRights: FinanceRights = NO_FINANCE_RIGHTS;
   #financeLoaded = false;
+  /** The caller's own access to "Vận hành hệ thống" as the server last said it (GET ops/me); NONE until it answers (fail closed). */
+  #opsLevel: OpsLevel = 'NONE';
+  #opsLoaded = false;
   #financeDialog: { close(): void } | undefined;
+  #opsDialog: { close(): void } | undefined;
   #roles: readonly UserRole[] = [];
   #grantsState: GrantsState = { kind: 'loading' };
   /** The users filter, kept only so "Back" from a detail returns to the same list. Dropped with the shell. */
@@ -133,6 +139,8 @@ export class ShellApp implements ShellHost {
     private readonly deliveries: DeliverySource = NOT_WIRED_DELIVERIES,
     /** Where the REAL finance pages (M04-B3a: top-up requests, receiving accounts, finance rights) come from. By default nothing is wired and no page shows data. */
     private readonly financeAdmin: FinanceAdminSource = NOT_WIRED_FINANCE_ADMIN,
+    /** Where "Vận hành hệ thống" (M13) comes from. By default nothing is wired, so every page says so and no control works. */
+    private readonly ops: OpsSource = NOT_WIRED_OPS,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -144,6 +152,8 @@ export class ShellApp implements ShellHost {
       // SYSTEM reads everything; the server still decides every call.
       this.#roles = ALL_ROLES;
       this.#grantsState = { kind: 'ready' };
+      this.#opsLevel = 'SYSTEM';
+      this.#opsLoaded = true;
       this.#apply();
       this.#loadFinanceRights();
       return;
@@ -164,6 +174,10 @@ export class ShellApp implements ShellHost {
     this.#grants = NO_GRANTS;
     this.#financeRights = NO_FINANCE_RIGHTS;
     this.#financeLoaded = false;
+    this.#opsLevel = 'NONE';
+    this.#opsLoaded = false;
+    this.#opsDialog?.close();
+    this.#opsDialog = undefined;
     this.#roles = [];
     this.#usersFilter = undefined;
     this.#restoreFilter = false;
@@ -183,6 +197,7 @@ export class ShellApp implements ShellHost {
     const mount = this.#mounts;
     // The finance rights are read again with the application rights (mount, retry, a 403): they are the ones that decide the money pages.
     this.#loadFinanceRights();
+    this.#loadOpsLevel();
     if (!quiet) {
       this.#grantsState = { kind: 'loading' };
     }
@@ -243,9 +258,75 @@ export class ShellApp implements ShellHost {
     });
   }
 
-  /** What the shell may show: the application grants plus the finance READ right (never inferred from the application rights). */
+  /** GET ops/me (ADMIN only; SYSTEM has it implicitly). A failure leaves NO access (fail closed); 401 ends the session. A changed level redraws the menu and, on an ops page, the page. */
+  #loadOpsLevel(): void {
+    if (this.#role !== 'ADMIN') {
+      return;
+    }
+    const mount = this.#mounts;
+    void this.ops.me().then((read) => {
+      if (mount !== this.#mounts || this.#role === undefined) {
+        return;
+      }
+      if (read.kind === 'failed' && read.failure === 'session-expired') {
+        this.onSessionLost();
+        return;
+      }
+      const next: OpsLevel = read.kind === 'ready' ? read.data : 'NONE';
+      const changed = !this.#opsLoaded || next !== this.#opsLevel;
+      this.#opsLevel = next;
+      this.#opsLoaded = true;
+      if (!changed) {
+        return;
+      }
+      const route = parseRoute(this.history.pathname(), this.history.search());
+      if (route.name.startsWith('ops')) {
+        this.#apply();
+      } else if (this.#layout !== undefined && this.#role !== undefined) {
+        this.#layout.render({ role: this.#role, grants: this.#effectiveGrants(), route, navigate: (target) => this.go(target) });
+      }
+    });
+  }
+
+  /** What the shell may show: the application grants plus the finance READ right and the M13 access (never inferred from the application rights). */
   #effectiveGrants(): Grants {
-    return this.#financeRights.canRead ? new Set([...this.#grants, 'topups' as const]) : this.#grants;
+    const extra: GrantId[] = [];
+    if (this.#financeRights.canRead) extra.push('topups');
+    if (this.#opsLevel !== 'NONE') extra.push('ops');
+    return extra.length === 0 ? this.#grants : new Set([...this.#grants, ...extra]);
+  }
+
+  #opsHost(): OpsHost {
+    return {
+      source: this.ops,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => this.#loadOpsLevel(),
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      go: (route) => this.go(route),
+      level: () => (this.#role === 'SYSTEM' ? 'SYSTEM' : this.#opsLevel),
+    };
+  }
+
+  #opsPage(content: HTMLElement, route: Route): void {
+    const host = this.#opsHost();
+    const view =
+      route.name === 'ops-incident'
+        ? new OpsIncidentDetailView(content, host, route.ref)
+        : route.name === 'ops-incidents'
+          ? new OpsIncidentsView(content, host)
+          : route.name === 'ops-gateway'
+            ? new OpsGatewayView(content, host)
+            : route.name === 'ops-logs'
+              ? new OpsLogsView(content, host)
+              : route.name === 'ops-releases'
+                ? new OpsReleasesView(content, host)
+                : route.name === 'ops-config'
+                  ? new OpsConfigView(content, host)
+                  : new OpsOverviewView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
   }
 
   #rights(): FinanceRights {
@@ -305,6 +386,10 @@ export class ShellApp implements ShellHost {
       content.replaceChildren(h('section', { class: 'content content-narrow', 'aria-busy': 'true' }, skeleton()));
       return;
     }
+    if (route.name.startsWith('ops') && role === 'ADMIN' && !this.#opsLoaded) {
+      content.replaceChildren(h('section', { class: 'content content-narrow', 'aria-busy': 'true' }, skeleton()));
+      return;
+    }
     if (!canOpenRoute(role, this.#effectiveGrants(), route)) {
       if (moneyRoute && role === 'ADMIN' && this.#financeRights.canRecord && !this.#financeRights.canRead) {
         // Record without read: nothing is listed or shown; the sentence tells what to ask SYSTEM for.
@@ -360,6 +445,15 @@ export class ShellApp implements ShellHost {
         return;
       case 'notifications':
         this.#notificationPage(content);
+        return;
+      case 'ops':
+      case 'ops-incidents':
+      case 'ops-incident':
+      case 'ops-gateway':
+      case 'ops-logs':
+      case 'ops-releases':
+      case 'ops-config':
+        this.#opsPage(content, route);
         return;
       case 'finance':
       case 'finance-wallets':
@@ -1061,6 +1155,15 @@ export class ShellApp implements ShellHost {
             financeAccess: (row: { readonly id: string; readonly fullName: string }) => {
               this.#financeDialog?.close();
               this.#financeDialog = openFinanceAccessDialog(this.#financeHost(), row);
+            },
+          }
+        : {}),
+      // M13: SYSTEM gives or takes back an administrator's access to "Vận hành hệ thống" (the server refuses anyone else again).
+      ...(this.#role === 'SYSTEM' && this.ops !== NOT_WIRED_OPS
+        ? {
+            opsAccess: (row: { readonly id: string; readonly fullName: string }) => {
+              this.#opsDialog?.close();
+              this.#opsDialog = openOpsAccessDialog(this.#opsHost(), row);
             },
           }
         : {}),

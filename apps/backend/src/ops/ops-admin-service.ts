@@ -169,6 +169,21 @@ export class OpsAdminService {
     );
   }
 
+  /** The caller's own level for the menu: NONE (instead of a refusal) for an ADMIN without a grant, so the section can simply be hidden. Reads nothing else. */
+  async me(token: string | undefined): Promise<JsonObject> {
+    const known = await this.actor.precheck(token, { required: false });
+    return this.transactions.withTransaction(async (context) => {
+      await setBusinessLockTimeout(context, this.#lockTimeoutMs);
+      const locked = await this.actor.lock(context, known, { user: 'read', factor: 'read' });
+      this.actor.assertSessionLive(locked, await freshClockMs(context));
+      if (locked.checked.membership.adminRole === 'SYSTEM') {
+        return { level: 'SYSTEM' };
+      }
+      const scope = await this.repo.scopeOf(context, known.userId);
+      return { level: scope?.level ?? 'NONE' };
+    });
+  }
+
   // ---- overview ----
 
   async overview(token: string | undefined): Promise<JsonObject> {
