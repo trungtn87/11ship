@@ -18,7 +18,7 @@ NotificationRouter foodNotificationRouter(AppFlows flows) => (BuildContext conte
         case TargetType.delivery:
           final ShopDeliverySource? source = flows.shopDeliveries;
           if (source != null && target.id != null) {
-            await navigator.push(n11Route(ShopDeliveryDetailScreen(source: source, deliveryId: target.id!)));
+            await navigator.push(n11Route(ShopDeliveryDetailScreen(source: source, deliveryId: target.id!, feedbackSlot: _feedbackSlot(flows))));
           } else {
             navigator.popUntil((Route<dynamic> r) => r.isFirst);
             actions.goTab('orders');
@@ -29,10 +29,18 @@ NotificationRouter foodNotificationRouter(AppFlows flows) => (BuildContext conte
         case TargetType.profile:
           navigator.popUntil((Route<dynamic> r) => r.isFirst);
           actions.goTab('shop');
+        case TargetType.complaint:
+          final M11Source? feedback = flows.feedback;
+          if (feedback != null && target.id != null) {
+            await navigator.push(n11Route(complaintRoute(source: feedback, role: m11RoleOf(flows.session, shipApp: false), complaintId: target.id!, picker: flows.picker)));
+          }
         case TargetType.order || TargetType.walletTxn || TargetType.none:
           break;
       }
     };
+
+/// M11: rating and complaint entries under a finished delivery. Null while the app has no M11 source.
+M07FeedbackSlot? _feedbackSlot(AppFlows? flows) => flows?.feedback == null ? null : shopDeliveryFeedbackSlot(source: flows!.feedback!, picker: flows.picker);
 
 /// The bell at the top of the Food home and the page it opens (no new bottom tab).
 Widget? _bell(BuildContext context, AppFlows? flows, ShellActions actions) {
@@ -89,7 +97,7 @@ Widget _home(SessionController session, ShellActions actions, AppFlows? flows) {
       ]),
     );
   }
-  return Builder(builder: (BuildContext context) => DiscoveryHome(controller: m02.discovery, publicApi: m02.publicApi, bell: _bell(context, flows, actions)));
+  return Builder(builder: (BuildContext context) => DiscoveryHome(controller: m02.discovery, publicApi: m02.publicApi, ratings: flows?.feedback, bell: _bell(context, flows, actions)));
 }
 
 // ---- F03: orders -----------------------------------------------------------------------------------------------------
@@ -99,7 +107,7 @@ Widget _orders(SessionController session, AppFlows? flows) {
   final bool owner = session.status == SessionStatus.signedIn && session.identity?.availableRoles.contains('SHOP_OWNER') == true;
   if (deliveries != null && owner) {
     // M07: the shop's delivery requests (call a Shipper, follow, cancel before pickup, goods handling).
-    return ShopDeliveryHub(source: deliveries);
+    return ShopDeliveryHub(source: deliveries, feedbackSlot: _feedbackSlot(flows));
   }
   return vstack(<Widget>[
     _guestPrompt(session, 'Đăng nhập để xem đơn hàng của bạn.', flows),
@@ -121,6 +129,7 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
     reset: flows?.reset,
     shop: shop,
     settingsEntries: <Widget>[
+      if (flows?.feedback != null) ...m11AccountEntries(context, source: flows!.feedback!, picker: flows.picker, role: m11RoleOf(session, shipApp: false)),
       if (flows?.addresses != null) addressBookEntry(context, flows!.addresses!),
       if (flows?.notificationSource != null && flows?.push != null)
         N11ListItem(

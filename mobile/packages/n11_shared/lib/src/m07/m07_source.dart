@@ -66,6 +66,24 @@ String m07FailureText(M07Failure failure) {
       return 'Đơn từ Order chưa dùng được vì module đặt món chưa sẵn sàng.';
     case 'DELIVERY_INPUT_INVALID':
       return 'Thông tin chưa hợp lệ. Hãy kiểm tra lại các ô đã nhập.';
+    case 'REVIEW_NOT_ELIGIBLE':
+      return 'Chưa đánh giá được ở thời điểm này.';
+    case 'REVIEW_ALREADY_EXISTS':
+      return 'Bạn đã đánh giá rồi. Mỗi đối tượng chỉ đánh giá một lần.';
+    case 'REVIEW_NOT_FOUND' || 'REVIEW_TARGET_NOT_FOUND' || 'COMPLAINT_TARGET_NOT_FOUND' || 'COMPLAINT_NOT_FOUND':
+      return 'Không tìm thấy nội dung này.';
+    case 'COMPLAINT_STATE_CONFLICT':
+      return 'Hồ sơ vừa thay đổi. Đã tải lại, hãy kiểm tra rồi thử lại.';
+    case 'COMPLAINT_ATTACHMENT_INVALID':
+      return 'Ảnh không hợp lệ. Dùng ảnh JPEG, PNG hoặc WebP, tối đa 5 MB.';
+    case 'COMPLAINT_ATTACHMENT_LIMIT':
+      return 'Tối đa 5 ảnh cho mỗi lần gửi.';
+    case 'COMPLAINT_FORBIDDEN':
+      return 'Bạn không có quyền thực hiện việc này trên hồ sơ.';
+    case 'RECONSIDERATION_EXPIRED':
+      return 'Đã hết 7 ngày để yêu cầu xem xét lại.';
+    case 'RECONSIDERATION_NOT_AVAILABLE':
+      return 'Hồ sơ này không còn yêu cầu xem xét lại được.';
     case 'SHOP_PROFILE_INCOMPLETE':
       return 'Quán chưa có vị trí lấy hàng. Hãy hoàn tất hồ sơ quán.';
   }

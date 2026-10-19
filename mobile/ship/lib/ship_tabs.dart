@@ -25,6 +25,7 @@ NotificationRouter shipNotificationRouter(SessionController session, AppFlows fl
               mapBuilder: shipMapBuilder(),
               pinPicker: shipPinPicker(),
               locationSlot: (BuildContext context) => ShipLocationShareCard(reporter: reporterFor(session)),
+              feedbackSlot: _feedbackSlot(flows),
             )));
           } else {
             navigator.popUntil((Route<dynamic> r) => r.isFirst);
@@ -40,10 +41,18 @@ NotificationRouter shipNotificationRouter(SessionController session, AppFlows fl
           if (driver != null) {
             await navigator.push(n11Route(DriverProfileScreen(controller: driver)));
           }
+        case TargetType.complaint:
+          final M11Source? feedback = flows.feedback;
+          if (feedback != null && target.id != null) {
+            await navigator.push(n11Route(complaintRoute(source: feedback, role: M11Role.shipper, complaintId: target.id!, picker: flows.picker)));
+          }
         case TargetType.order || TargetType.none:
           break;
       }
     };
+
+/// M11: the complaint entry under a finished delivery. Null while the app has no M11 source.
+M07FeedbackSlot? _feedbackSlot(AppFlows? flows) => flows?.feedback == null ? null : shipperDeliveryFeedbackSlot(source: flows!.feedback!, picker: flows.picker);
 
 WidgetBuilder? _settingsBuilder(AppFlows? flows) {
   final NotificationSource? source = flows?.notificationSource;
@@ -87,7 +96,7 @@ Widget _orders(SessionController session, AppFlows? flows) {
   final bool shipper = session.status == SessionStatus.signedIn && (onboarding == 'ACTIVE' || onboarding == 'CLOSING');
   if (deliveries != null && shipper) {
     // M07: offers, my deliveries, drop-off and pickup confirmation, result and history.
-    return ShipperDeliveryHub(source: deliveries, mapBuilder: shipMapBuilder(), pinPicker: shipPinPicker(), locationSlot: (BuildContext context) => ShipLocationShareCard(reporter: reporterFor(session)));
+    return ShipperDeliveryHub(source: deliveries, mapBuilder: shipMapBuilder(), pinPicker: shipPinPicker(), locationSlot: (BuildContext context) => ShipLocationShareCard(reporter: reporterFor(session)), feedbackSlot: _feedbackSlot(flows));
   }
   return const OrdersBody();
 }
@@ -174,6 +183,8 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
           sub: 'Âm thanh, rung, nhóm thông báo và đơn có thể nhận',
           onTap: () => Navigator.of(context).push(n11Route(_settingsBuilder(flows)!(context))),
         ),
+      // M11: the Shipper's scores by source and their complaints (no new tab).
+      if (flows?.feedback != null) ...m11AccountEntries(context, source: flows!.feedback!, picker: flows.picker, role: M11Role.shipper),
       // S12-S14 (M03): the Shipper profile, bank account, review status, receiving orders and stopping activity, all connected to the server.
       if (driver != null)
         N11ListItem(

@@ -13,6 +13,9 @@ import 'm07_source.dart';
 // intent, a busy lock, conflict -> reload), the search timer, the position card (never drawn as live when it is old), and the
 // reason dialog ("Quay lại" never "Hủy" to close a pop-up).
 
+/// Under a finished delivery: the host app puts the rating and complaint entries here (M11). Null = nothing is shown.
+typedef M07FeedbackSlot = Widget Function(BuildContext context, DeliveryView delivery);
+
 const String kM07SampleLabel = 'Dữ liệu minh họa';
 const String kFeeUnknown = 'Chưa xác định phí';
 

@@ -31,12 +31,13 @@ typedef M07LocationSlot = Widget Function(BuildContext context);
 enum _ShipView { mine, offers, history }
 
 class ShipperDeliveryHub extends StatefulWidget {
-  const ShipperDeliveryHub({super.key, required this.source, this.mapBuilder, this.pinPicker, this.locationSlot});
+  const ShipperDeliveryHub({super.key, required this.source, this.mapBuilder, this.pinPicker, this.locationSlot, this.feedbackSlot});
 
   final ShipperDeliverySource source;
   final M07MapBuilder? mapBuilder;
   final M07PinPickerBuilder? pinPicker;
   final M07LocationSlot? locationSlot;
+  final M07FeedbackSlot? feedbackSlot;
 
   @override
   State<ShipperDeliveryHub> createState() => _ShipperDeliveryHubState();
@@ -47,7 +48,7 @@ class _ShipperDeliveryHubState extends State<ShipperDeliveryHub> with M07Actions
   int _rev = 0;
 
   Future<void> _open(DeliveryView d) async {
-    await Navigator.of(context).push(n11Route(ShipperDeliveryDetailScreen(source: widget.source, deliveryId: d.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker, locationSlot: widget.locationSlot)));
+    await Navigator.of(context).push(n11Route(ShipperDeliveryDetailScreen(source: widget.source, deliveryId: d.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker, locationSlot: widget.locationSlot, feedbackSlot: widget.feedbackSlot)));
     if (mounted) {
       setState(() => _rev++);
     }
@@ -302,13 +303,14 @@ class _MineCard extends StatelessWidget {
 // ---- S03 / S06 / S08: detail -----------------------------------------------------------------------------------------
 
 class ShipperDeliveryDetailScreen extends StatefulWidget {
-  const ShipperDeliveryDetailScreen({super.key, required this.source, required this.deliveryId, this.mapBuilder, this.pinPicker, this.locationSlot});
+  const ShipperDeliveryDetailScreen({super.key, required this.source, required this.deliveryId, this.mapBuilder, this.pinPicker, this.locationSlot, this.feedbackSlot});
 
   final ShipperDeliverySource source;
   final String deliveryId;
   final M07MapBuilder? mapBuilder;
   final M07PinPickerBuilder? pinPicker;
   final M07LocationSlot? locationSlot;
+  final M07FeedbackSlot? feedbackSlot;
 
   @override
   State<ShipperDeliveryDetailScreen> createState() => _ShipperDeliveryDetailScreenState();
@@ -404,6 +406,7 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
       Row(children: <Widget>[Expanded(child: Text(d.code, key: const Key('m07-ship-code'), style: N11Text.title)), N11Chip(chip.label, kind: chip.kind)]),
       actionBanner(),
       if (active && widget.locationSlot != null) widget.locationSlot!(context),
+      if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed)) widget.feedbackSlot!(context, d),
       if (active && widget.mapBuilder != null && pins.isNotEmpty)
         SizedBox(key: const Key('m07-ship-map'), height: 220, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusCard), child: widget.mapBuilder!(context, pins))),
       if (active && d.state != DeliveryState.delivering && (d.needsDestination || d.fee.amountVnd == null))

@@ -11,6 +11,8 @@ import '../m02/discovery_models.dart';
 import '../m02/http_m02_api.dart';
 import '../m02/menu_models.dart';
 import '../m07/m07_http.dart';
+import '../m11/m11_http.dart';
+import '../m11/m11_source.dart';
 import '../m07/m07_sample.dart';
 import '../m07/m07_source.dart';
 import '../m08/m08_controller.dart';
@@ -39,7 +41,7 @@ SessionController createSessionController(ClientApp app, AppConfig config, {ApiT
 
 /// The three connected flows of an app, built on its session. [location] is for tests; the real one is the Kotlin channel.
 class AppFlows {
-  AppFlows({required this.session, required this.reset, this.shop, this.driver, this.m02, this.addresses, this.shopDeliveries, this.shipperDeliveries, this.notifications, this.notificationSource, this.push});
+  AppFlows({required this.session, required this.reset, this.shop, this.driver, this.m02, this.addresses, this.shopDeliveries, this.shipperDeliveries, this.notifications, this.notificationSource, this.push, this.feedback, this.picker = const NoImagePicker()});
 
   final SessionController session;
   final ResetController reset;
@@ -62,6 +64,12 @@ class AppFlows {
   final NotificationController? notifications;
   final NotificationSource? notificationSource;
   final PushSync? push;
+
+  /// M11: ratings and complaints of this app's account. Real server contract; no sample data.
+  final M11Source? feedback;
+
+  /// The OS photo picker for complaint evidence pictures (a test passes its own).
+  final ImagePickerPort picker;
 }
 
 AppFlows createFlows(
@@ -77,6 +85,7 @@ AppFlows createFlows(
   AddressApi? addressApi,
   NotificationSource? notificationSource,
   PushPort pushPort = const NoPushPort(),
+  M11Source? feedbackSource,
 }) {
   final ApiTransport http = transport ?? HttpApiTransport(base: config.apiUri ?? Uri.parse('https://invalid.invalid'));
   final LocationProvider where = location ?? MethodChannelLocationProvider();
@@ -86,6 +95,8 @@ AppFlows createFlows(
   final NotificationController inboxController = NotificationController(session: session, source: inbox);
   return AppFlows(
     notificationSource: inbox,
+    feedback: feedbackSource ?? HttpM11Source(session: session),
+    picker: picker,
     notifications: inboxController,
     push: PushSync(session: session, source: inbox, port: pushPort, onTap: inboxController.requestOpen),
     session: session,
