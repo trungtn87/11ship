@@ -1,0 +1,10 @@
+[Unit]
+Description=11Ship hourly private Android readiness alarm (journal/systemd failure)
+
+[Timer]
+OnBootSec=5min
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

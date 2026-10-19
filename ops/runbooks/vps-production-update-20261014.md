@@ -1,5 +1,7 @@
 # Runbook — cập nhật VPS từ release `75a0a29` lên bản vận hành thật (production) — 14/10/2026
 
+> Cập nhật 19/10: dùng [quy trình cập nhật an toàn](vps-safe-update.md) cho các lần sau; không áp dụng bước chép env cũ trong rollback mục 9.
+
 **Trạng thái: chuẩn bị, CHƯA thực thi trên VPS.** Quyết định: [M01-production-profile-20261014.md](../../docs/current/M01-production-profile-20261014.md). Người vận hành là Owner hoặc người Owner chỉ định, chạy tại shell VPS.
 **Không gửi mật khẩu, khóa, OTP, token hay file `.env` qua chat/PR/log.** Không reset/drop/down, không đổi tên database, không ghi đè khóa hiện có.
 

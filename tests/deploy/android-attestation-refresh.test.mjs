@@ -34,3 +34,19 @@ describe('android attestation refresh', () => {
     assert.throws(() => toSnapshot('{}', 0));
   });
 });
+
+test('oversized streaming response and concurrent refresh never publish a partial document', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'att-stream-'));
+  const file = join(dir, 'rev.json');
+  writeFileSync(file, 'PREVIOUS');
+  let cancelled = false;
+  const fetchImpl = async () => ({ status: 200, body: { getReader: () => ({
+    read: async () => ({ done: false, value: Buffer.alloc(8 * 1024 * 1024 + 1) }),
+    cancel: async () => { cancelled = true; },
+  }) } });
+  await assert.rejects(refresh(file, { fetchImpl }), /too large/);
+  assert.equal(cancelled, true);
+  assert.equal(readFileSync(file, 'utf8'), 'PREVIOUS');
+  await Promise.all([refresh(file, { fetchImpl: answer(200, GOOD) }), refresh(file, { fetchImpl: answer(200, GOOD) })]);
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).entries, toSnapshot(GOOD, Date.now()).entries);
+});

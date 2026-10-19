@@ -3,7 +3,7 @@ Description=11Ship — refresh the Android attestation revocation snapshot every
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=6h
+OnCalendar=*-*-* 00/6:00:00
 RandomizedDelaySec=10min
 Persistent=true
 
