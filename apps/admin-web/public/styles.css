@@ -3122,3 +3122,44 @@ select {
     grid-template-columns: 1fr;
   }
 }
+
+/* M12-D Configuration hub: one card per group, fixed rules apart. */
+.cfg-card {
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+.cfg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.cfg-fixed {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--neutral-bg);
+  border-radius: var(--radius-control);
+}
+.cfg-fixed-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.cfg-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.cfg-history:empty {
+  display: none;
+}
+.cfg-history {
+  margin-top: 12px;
+}

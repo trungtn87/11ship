@@ -76,6 +76,8 @@ describe('M12 administration web (real browser)', () => {
     if (app !== undefined) {
       await purgeDeliveriesOfShops(app.pool, [shopId]);
       await purgeGrants(app.pool);
+      await app.pool.query('DELETE FROM app.shipper_wallet_parameter_changes');
+      await app.pool.query('UPDATE app.shipper_wallet_parameters SET updated_by = NULL');
       await app.pool.query('DELETE FROM app.shop_members WHERE shop_id = $1::uuid', [shopId]);
       await app.pool.query('DELETE FROM app.shops WHERE shop_id = $1::uuid', [shopId]);
       await app.close();
@@ -196,6 +198,56 @@ describe('M12 administration web (real browser)', () => {
     expect(await adminPage.evaluate<boolean>(`!!document.querySelector('a[href="/accounts/access"]')`)).toBe(false);
     await adminPage.goto(`${origin}/accounts/access`);
     await adminPage.waitFor(`document.body.innerText.includes('Không có quyền')`);
+    await adminPage.close();
+  }, 120_000);
+
+  it('M12-D: the configuration hub shows the owners\' values and the fixed rules; SYSTEM changes a value with a compared old/new and a reason, then reverts it as a new version; an ADMIN sees no edit', async () => {
+    const page: Page = await (browser as Browser).newPage();
+    await page.viewport(1440, 900, false);
+    await page.send('Network.clearBrowserCookies');
+    await signIn(page, { phone: system.account.phone, password: system.account.password, userId: system.account.userId, secret: system.login.secret });
+    await page.goto(`${origin}/system/config`);
+    await page.waitFor(`document.querySelector('#config-title') && document.querySelectorAll('.cfg-card').length === 6`);
+    const text = await page.evaluate<string>(`document.body.innerText`);
+    for (const expected of ['Bảo mật, OTP và chống spam', 'Quy tắc cố định (không phải tham số, không chỉnh được)', 'Bán kính tìm shipper', '3.000 m', 'Chờ gửi lại mã OTP', 'Bản đồ và GPS', 'Lưu trữ và sao lưu']) {
+      expect(text).toContain(expected);
+    }
+    await shot(page, 'm12d-config-desktop');
+    const before = (await app.pool.query(`SELECT int_value::text AS v FROM app.shipper_wallet_parameters WHERE param_key = 'topup_min_vnd'`)).rows[0].v as string;
+    expect(await page.evaluate<boolean>(`(() => { const card = [...document.querySelectorAll('.cfg-card')].find((c) => c.textContent.includes('Shipper, ví và hoa hồng')); [...card.querySelectorAll('button')].find((b) => b.textContent === 'Sửa').click(); return true; })()`)).toBe(true);
+    await page.waitFor(`document.querySelector('.dialog #cfg-f-topup_min_vnd')`);
+    expect(await page.evaluate<boolean>(`document.querySelector('.dialog .btn-primary').disabled`)).toBe(true); // nothing changed yet
+    await page.fill('#cfg-f-topup_min_vnd', String(Number(before) + 5000));
+    await page.waitFor(`document.querySelector('.dialog .plain-list').textContent.includes('→')`);
+    await shot(page, 'm12d-config-edit-compare');
+    await press(page, 'Xác nhận lưu', "document.querySelector('.dialog')");
+    await page.waitFor(`document.querySelector('.dialog .message-error') && !document.querySelector('.dialog .message-error').hidden`); // no reason: nothing sent
+    expect((await app.pool.query(`SELECT int_value::text AS v FROM app.shipper_wallet_parameters WHERE param_key = 'topup_min_vnd'`)).rows[0].v).toBe(before);
+    await page.fill('.dialog textarea', 'Điều chỉnh mức nạp tối thiểu');
+    await press(page, 'Xác nhận lưu', "document.querySelector('.dialog')");
+    await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã lưu cấu hình')`);
+    expect((await app.pool.query(`SELECT int_value::text AS v FROM app.shipper_wallet_parameters WHERE param_key = 'topup_min_vnd'`)).rows[0].v).toBe(String(Number(before) + 5000));
+    // History with the reason, then revert as a new version.
+    await page.evaluate(`(() => { const card = [...document.querySelectorAll('.cfg-card')].find((c) => c.textContent.includes('Shipper, ví và hoa hồng')); [...card.querySelectorAll('button')].find((b) => b.textContent === 'Lịch sử thay đổi').click(); return true; })()`);
+    await page.waitFor(`document.body.innerText.includes('Lý do: Điều chỉnh mức nạp tối thiểu')`);
+    await shot(page, 'm12d-config-history');
+    await press(page, 'Hoàn nguyên giá trị này');
+    await page.waitFor(`document.querySelector('.dialog #cfg-f-topup_min_vnd') && document.querySelector('.dialog').textContent.includes('Hoàn nguyên')`);
+    expect(await page.evaluate<string>(`document.querySelector('#cfg-f-topup_min_vnd').value`)).toBe(before);
+    await page.fill('.dialog textarea', 'Hoàn nguyên mức nạp');
+    await press(page, 'Xác nhận lưu', "document.querySelector('.dialog')");
+    await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã lưu cấu hình')`);
+    expect((await app.pool.query(`SELECT int_value::text AS v FROM app.shipper_wallet_parameters WHERE param_key = 'topup_min_vnd'`)).rows[0].v).toBe(before);
+    expect((await app.pool.query(`SELECT count(*)::int AS n FROM app.audit_logs WHERE action = 'admin.shipper_wallet_parameters.update.v1' AND metadata ->> 'reason' IN ('Điều chỉnh mức nạp tối thiểu', 'Hoàn nguyên mức nạp')`)).rows[0].n).toBe(2);
+    await page.close();
+
+    const adminPage: Page = await (browser as Browser).newPage();
+    await adminPage.viewport(1440, 900, false);
+    await adminPage.send('Network.clearBrowserCookies');
+    await signIn(adminPage, { phone: viewer.phone, password: 'Correct-Horse-Battery-9', userId: viewer.userId, secret: viewer.secret });
+    await adminPage.goto(`${origin}/system/config`);
+    await adminPage.waitFor(`document.querySelectorAll('.cfg-card').length === 6`);
+    expect(await adminPage.evaluate<boolean>(`[...document.querySelectorAll('.cfg-card button')].every((b) => b.textContent !== 'Sửa')`)).toBe(true);
     await adminPage.close();
   }, 120_000);
 });

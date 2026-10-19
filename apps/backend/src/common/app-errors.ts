@@ -91,7 +91,7 @@ export const APP_ERROR_DEFINITIONS = {
   // Finance access and the receiving accounts of the system (M04-B2.2a). Same rule: fixed messages that echo nothing the client sent and reveal nothing
   // about another account. ADMIN_FORBIDDEN (above) is the answer to an administrator without the right.
   // M12-C: SYSTEM manages the administrators (permissions, lock, sessions).
-  ADMIN_ACCESS_NOT_FOUND: { status: 404, message: 'The administrator was not found' },
+  ADMIN_ACCESS_NOT_FOUND: { status: 404, message: 'The administrator account to manage was not found' },
   ADMIN_ACCESS_VERSION_CONFLICT: { status: 409, message: 'The administrator was changed by another request' },
   ADMIN_ACCESS_STATE_CONFLICT: { status: 409, message: 'The administrator is not in a state that allows this action' },
   FINANCE_ADMIN_NOT_FOUND: { status: 404, message: 'The administrator was not found' },

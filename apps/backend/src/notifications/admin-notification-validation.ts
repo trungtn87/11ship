@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { parseReason } from '../admin-access/admin-access-validation';
 import { shaped } from '../delivery/delivery-validation';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { INBOX_PAGE_MAX, KINDS } from './notification-constants';
@@ -67,10 +68,12 @@ export interface ConfigBody {
   readonly purgeDays: number;
   readonly retryMaxAttempts: number;
   readonly retryBaseSeconds: number;
+  /** M12-D: why the setting changes, written to the audit row. Optional so the older screen keeps working. */
+  readonly reason: string | null;
 }
 
 export function parseConfigBody(body: unknown): ConfigBody {
-  const o = shaped(body, ['expected_version', 'push_enabled', 'default_sound', 'visible_days', 'purge_days', 'retry_max_attempts', 'retry_base_seconds']);
+  const o = shaped(body, ['expected_version', 'push_enabled', 'default_sound', 'visible_days', 'purge_days', 'retry_max_attempts', 'retry_base_seconds'], ['reason']);
   const whole = (value: unknown, min: number, max: number): number => (typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max ? value : reject());
   const bool = (value: unknown): boolean => (typeof value === 'boolean' ? value : reject());
   const visibleDays = whole(o.visible_days, 7, 365);
@@ -82,6 +85,7 @@ export function parseConfigBody(body: unknown): ConfigBody {
     purgeDays: whole(o.purge_days, visibleDays, 1095),
     retryMaxAttempts: whole(o.retry_max_attempts, 1, 10),
     retryBaseSeconds: whole(o.retry_base_seconds, 5, 3600),
+    reason: Object.hasOwn(o, 'reason') ? parseReason(o.reason) : null,
   };
 }
 

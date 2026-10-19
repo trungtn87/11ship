@@ -50,6 +50,8 @@ import { NOT_WIRED_OVERVIEW, OverviewSource } from '../core/overview.js';
 import { OverviewHost, OverviewView } from './overview-view.js';
 import { AccessSource, NOT_WIRED_ACCESS } from '../core/access.js';
 import { AccessHost, AccessView } from './access-view.js';
+import { ConfigSource, NOT_WIRED_CONFIG } from '../core/config.js';
+import { ConfigHost, ConfigView } from './config-view.js';
 import { DeliveryHost, DeliveryListView } from './deliveries-view.js';
 import { NOT_WIRED_NOTIFICATIONS, NotificationSource } from '../core/notifications.js';
 import { NotificationHost, NotificationsView } from './notifications-view.js';
@@ -141,6 +143,8 @@ export class ShellApp implements ShellHost {
     private readonly overview: OverviewSource = NOT_WIRED_OVERVIEW,
     /** Where the administrator permission matrix (Tài khoản › Phân quyền, M12-C) comes from. By default nothing is wired, so the page says so. */
     private readonly access: AccessSource = NOT_WIRED_ACCESS,
+    /** Where the central configuration (Cài đặt › Cấu hình tập trung, M12-D) comes from. By default nothing is wired, so the page says so. */
+    private readonly config: ConfigSource = NOT_WIRED_CONFIG,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -371,6 +375,9 @@ export class ShellApp implements ShellHost {
         return;
       case 'access':
         this.#accessPage(content);
+        return;
+      case 'config':
+        this.#configPage(content);
         return;
       case 'notifications':
         this.#notificationPage(content);
@@ -882,6 +889,26 @@ export class ShellApp implements ShellHost {
       home: () => this.go({ name: 'home' }),
     };
     const view = new DeliveryListView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Cài đặt › Cấu hình tập trung" (M12-D): every administrator reads; SYSTEM changes through the owners' own commands. */
+  #configPage(content: HTMLElement): void {
+    const host: ConfigHost = {
+      source: this.config,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      openFeeTable: () => this.go({ name: 'shipping-policy' }),
+    };
+    const view = new ConfigView(content, host);
     this.#unsubscribe = () => view.dispose();
     void view.load();
   }

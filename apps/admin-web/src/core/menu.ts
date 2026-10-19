@@ -208,6 +208,8 @@ export const MENU: readonly MenuGroup[] = [
     items: [
       // Owner decision 2026-10-14: the SYSTEM account's switches (phone verification first). SYSTEM only.
       { id: 'system-settings', label: 'Cài đặt hệ thống', icon: 'gear', route: { name: 'settings' }, ready: true, access: 'system' },
+      // M12-D: every group of configuration in one place (every administrator reads; only SYSTEM changes, and each owner decides again).
+      { id: 'config', label: 'Cấu hình tập trung', icon: 'gear', route: { name: 'config' }, ready: true, access: 'any' },
       soon('zones', 'Vùng hoạt động', 'map-pin', 'zones'),
       // M03: Cài đặt › Tham số hệ thống › Ví Shipper (minimum top-up / withdrawal per request). Every administrator sees the values; only SYSTEM changes them
       // (Owner decision 2026-10-17; the server decides again on every call).
@@ -272,6 +274,7 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
   switch (route.name) {
     case 'home':
     case 'overview':
+    case 'config':
     case 'activate':
     case 'reset':
     case 'wallet-parameters':
@@ -368,6 +371,8 @@ export function activeMenuId(route: Route): string {
       return 'invitations';
     case 'overview':
       return 'overview';
+    case 'config':
+      return 'config';
     case 'home':
     case 'activate':
     case 'reset':
@@ -434,6 +439,8 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Lời mời Admin', 'Thu hồi lời mời'];
     case 'overview':
       return ['Tổng quan', 'Điều hành'];
+    case 'config':
+      return ['Cài đặt', 'Cấu hình tập trung'];
     case 'home':
     case 'activate':
     case 'reset':
