@@ -414,6 +414,19 @@ describe('runtime grants (ops/selfhosted/02-runtime-grants.sql) with the real re
     });
   });
 
+  test('the read-only VPS audit executes as the restricted runtime role and reports every required privilege', async () => {
+    await withClient(asMigrator, async (client) => {
+      await client.query(readFileSync(path.join(ROOT, 'ops', 'selfhosted', '03-runtime-function-grants.sql'), 'utf8'));
+    });
+    const checkSql = readFileSync(path.join(ROOT, 'ops', 'selfhosted', '04-check-runtime-grants.sql'), 'utf8').replace(/^\\set.*$/gm, '');
+    await withClient(asRuntime, async (client) => {
+      const results = await client.query(checkSql);
+      const report = results.find((result) => result.fields.some((field) => field.name === 'check_name'));
+      const count = [...matrix.values()].reduce((n, privileges) => n + privileges.length, 0) + 5;
+      assert.deepEqual(report.rows, [{ check_name: 'SUMMARY', result: `${count}/${count} checks OK (${matrix.size} tables)` }]);
+    });
+  });
+
   test('the effective privileges of ship11_app on EVERY table equal the matrix, and nothing else', async () => {
     await withClient(asMigrator, async (client) => {
       for (const [table, privileges] of matrix) {

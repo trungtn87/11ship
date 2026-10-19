@@ -56,3 +56,12 @@ sudo -u postgres psql -d ship11_staging -v ON_ERROR_STOP=1 -c "GRANT UPDATE ON a
 ```
 
 Không thay dữ liệu/schema, không cần restart hay APK mới. Sau GRANT, Owner bấm Thử lại trên cùng hồ sơ để kiểm tra. Chưa coi là production đã khắc phục trước khi có kết quả thực tế từ Owner.
+
+
+## Kiểm tra các bảng còn lại — 20/10/2026, 01:01
+
+Đối chiếu 90 bảng trong runtime grants với tham chiếu SQL của backend hiện tại: SELECT/INSERT/UPDATE/DELETE, 7 UPSERT và các khóa FOR UPDATE/FOR SHARE (kể cả khóa có điều kiện và query dùng hằng SELECT). Ngoài shop_members đã sửa, chưa tìm thấy thiếu quyền cùng loại trong phạm vi code hiện tại. Ba hàm runtime gọi được đối chiếu với 03-runtime-function-grants.sql. Không cấp UPDATE đại trà cho bảng chỉ ghi thêm; không cấp DELETE rộng để né lỗi.
+
+Hai ngoại lệ có chủ đích: ClientDeviceRepository.purgeExpired dành cho cleanup credential, hiện không có caller runtime; AdminLimitConfigRepository.insert chỉ được CLI khởi tạo limiter gọi bằng tài khoản vận hành. Không thêm các quyền này cho ship11_app.
+
+Bổ sung ops/selfhosted/04-check-runtime-grants.sql: transaction READ ONLY, kiểm tra quyền thực tế trên toàn bộ 90 bảng, 3 hàm, schema và database; chỉ in số lượng đạt và tên object/quyền thiếu. Không đọc nội dung người dùng, không sửa quyền/dữ liệu. Có test đồng bộ danh sách với ma trận GRANT để tránh bỏ sót bảng khi dự án mở rộng. Kiểm tra static hiện đạt; quyền thực tế VPS còn cần Owner chạy script vì môi trường hiện tại không truy cập SSH được.

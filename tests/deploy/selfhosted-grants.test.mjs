@@ -76,6 +76,18 @@ describe('ops/selfhosted/02-runtime-grants.sql', () => {
     }
   });
 
+  test('the read-only VPS privilege check covers the full table matrix and all explicitly granted functions', () => {
+    const check = read('ops/selfhosted/04-check-runtime-grants.sql');
+    const expected = new Map([...check.matchAll(/\('([a-z_]+)', ARRAY\[([^\]]+)\]::text\[\]\)/g)].map((match) =>
+      [match[1], [...match[2].matchAll(/'([A-Z]+)'/g)].map((privilege) => privilege[1]).sort()]));
+    assert.deepEqual(expected, parsed);
+    const functions = [...read('ops/selfhosted/03-runtime-function-grants.sql').matchAll(/^GRANT EXECUTE ON FUNCTION (app\.[a-z_]+\([^)]*\))/gm)].map((match) => match[1]);
+    for (const signature of functions) assert.ok(check.includes(`'${signature}'`), signature);
+    assert.match(check, /BEGIN READ ONLY;/);
+    const code = check.replace(/--.*$/gm, '').replace(/'[^']*'/g, "''");
+    assert.doesNotMatch(code, /\b(?:GRANT|REVOKE|INSERT|UPDATE|DELETE|TRUNCATE|ALTER|CREATE|DROP|COPY)\b/i);
+  });
+
   test('covers exactly the tables the migrations create', () => {
     assert.deepEqual([...parsed.keys()].sort(), [...migrationTables()].sort());
     assert.ok(parsed.size >= 28);
