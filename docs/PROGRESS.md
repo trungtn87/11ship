@@ -255,10 +255,12 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#140](https://github.com/trungtn87/11ship/pull/140) feat(M10): đặt món và đơn hàng quán (backend, DB, API, 11Fo… | Đã merge (`MERGED`) | — | — | — | `b31f35b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#141](https://github.com/trungtn87/11ship/pull/141) fix(ops): kiểm tra Android trust và cập nhật VPS giữ nguyên… | Đã merge (`MERGED`) | — | — | — | `27c5767` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#142](https://github.com/trungtn87/11ship/pull/142) M11: Đánh giá và phản ánh (M11.01–M11.03) | Đã merge (`MERGED`) | — | — | — | `d4ad58b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#143](https://github.com/trungtn87/11ship/pull/143) Dùng chung màn chọn địa chỉ và ghim bản đồ cho quán và khác… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `db6d1db` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
 - `UNCLASSIFIED_PR` PR #137: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #143: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
