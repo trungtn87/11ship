@@ -6,6 +6,8 @@ import '../tokens.dart';
 import '../widgets/components.dart';
 import '../m11/m11_rating_views.dart';
 import '../m11/m11_source.dart';
+import '../m11/m11_models.dart';
+import '../m11/m11_widgets.dart';
 import 'm02_flows.dart';
 import 'm02_format.dart';
 import 'm02_widgets.dart';
@@ -45,10 +47,12 @@ class ShopMenuContent extends StatefulWidget {
     this.emptyText = 'Quán chưa có món để hiển thị.',
     this.focusItemId,
     this.orderShopId,
+    this.ratings,
   });
 
   /// The shop being viewed by a CUSTOMER: when set (and orders exist in this app) each dish gets the + / − and a note sheet. Null in the owner's preview.
   final String? orderShopId;
+  final Widget? ratings;
   final ShopMenuView view;
   final bool preview;
   final VoidCallback onHours;
@@ -153,6 +157,7 @@ class _ShopMenuContentState extends State<ShopMenuContent> {
                 N11Link('Xem giờ hoạt động ›', key: const Key('shop-view-hours'), onPressed: widget.onHours),
               ],
             ),
+            if (widget.ratings != null) ...<Widget>[const SizedBox(height: N11Space.gap3), widget.ratings!],
           ],
         ),
       ),
@@ -187,6 +192,7 @@ class _ShopMenuContentState extends State<ShopMenuContent> {
                   key: _rows.putIfAbsent(item.id, GlobalKey.new),
                   name: item.name,
                   price: formatVnd(item.priceVnd),
+                  sub: item.soldCount == null ? null : 'Đã bán ${item.soldCount}',
                   imageUrl: item.imageUrl,
                   highlight: item.id == _highlight,
                   chip: _stepper(context, item),
@@ -345,15 +351,14 @@ class _ShopPublicScreenState extends State<ShopPublicScreen> {
                   text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.',
                   trailing: N11Button(key: const Key('k01-reload'), label: 'Thử lại', compact: true, onPressed: _controller.load),
                 ),
-              if (widget.ratings != null)
-                N11ListItem(
-                  key: const Key('k01-ratings'),
-                  icon: Icons.star_outline_rounded,
-                  title: 'Đánh giá của khách',
-                  sub: 'Điểm trung bình, nhận xét và phản hồi của quán',
-                  onTap: () => Navigator.of(context).push(n11Route(ShopReviewsScreen(source: widget.ratings!, shopId: widget.shopId, title: view!.name))),
+              ShopMenuContent(
+                view: view!, preview: false, orderShopId: widget.shopId, focusItemId: widget.focusItemId,
+                onHours: () => Navigator.of(context).push(n11Route(PublicHoursScreen(view: view))),
+                ratings: widget.ratings == null ? null : _ShopRatingLink(
+                  source: widget.ratings!, shopId: widget.shopId,
+                  onTap: () => Navigator.of(context).push(n11Route(ShopReviewsScreen(source: widget.ratings!, shopId: widget.shopId, title: view.name))),
                 ),
-              ShopMenuContent(view: view!, preview: false, orderShopId: widget.shopId, focusItemId: widget.focusItemId, onHours: () => Navigator.of(context).push(n11Route(PublicHoursScreen(view: view)))),
+              ),
             ];
         }
         final OrderRuntime? orders = OrderRuntime.current;
@@ -361,6 +366,64 @@ class _ShopPublicScreenState extends State<ShopPublicScreen> {
       },
     );
   }
+}
+
+/// A real summary inside the shop information card; failure must never look like zero reviews.
+class _ShopRatingLink extends StatefulWidget {
+  const _ShopRatingLink({required this.source, required this.shopId, required this.onTap});
+  final M11Source source;
+  final String shopId;
+  final VoidCallback onTap;
+
+  @override
+  State<_ShopRatingLink> createState() => _ShopRatingLinkState();
+}
+
+class _ShopRatingLinkState extends State<_ShopRatingLink> {
+  late Future<ShopReviewPage> _page;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_ShopRatingLink oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.shopId != widget.shopId || oldWidget.source != widget.source) _load();
+  }
+
+  void _load() {
+    _page = widget.source.publicShopReviews(widget.shopId);
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<ShopReviewPage>(
+    future: _page,
+    builder: (context, snapshot) {
+      final RatingSummary? summary = snapshot.data?.summary;
+      final bool failed = snapshot.hasError;
+      final String label = failed ? 'Chưa tải được đánh giá · Thử lại'
+          : summary == null ? 'Đang tải đánh giá…'
+          : summary.isEmpty ? 'Chưa có đánh giá (0 lượt)'
+          : '${m11Average(summary.average)}/5 · ${summary.count} lượt đánh giá';
+      return InkWell(
+        key: const Key('k01-ratings'),
+        onTap: failed ? () => setState(_load) : widget.onTap,
+        borderRadius: BorderRadius.circular(kRadiusControl),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: Row(children: <Widget>[
+            const Icon(Icons.star_rounded, color: N11Colors.yellowStrong, size: 22),
+            const SizedBox(width: N11Space.gap2),
+            Expanded(child: Text(label, key: const Key('shop-rating-summary'), style: N11Text.bodyStrong)),
+            Icon(failed ? Icons.refresh : Icons.chevron_right, color: N11Colors.ink2, size: 20),
+          ]),
+        ),
+      );
+    },
+  );
 }
 
 /// K02: the week as a customer reads it. Read only; today is marked from the SERVER's instant (Vietnam time), never the phone clock.

@@ -32,6 +32,9 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
     private var map: MapLibreMap?=null
     private var data=initial
     private var focusedPoint: Pair<Double, Double>?=null
+    private var ready=false
+    private var loadError: String?=null
+    private var centerRequest=0
     private var disposed=false
     private var resumed=false
     private var started=false
@@ -47,20 +50,28 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
         frame.addView(attribution,FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.END))
         frame.addView(coverage,FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.CENTER_HORIZONTAL))
         channel.setMethodCallHandler { call,result ->
-            if(call.method=="update") { data=call.arguments as? Map<*,*>; draw(); result.success(null) } else result.notImplemented()
+            when(call.method) {
+                "update" -> { data=call.arguments as? Map<*,*>; draw(); result.success(null) }
+                "state" -> result.success(mapOf("ready" to ready, "error" to loadError))
+                else -> result.notImplemented()
+            }
         }
+        view.addOnDidFinishRenderingMapListener { fully ->
+            if(fully && ready && !disposed) frame.contentDescription="Bản đồ offline Cao Bằng đã hiển thị"
+        }
+        view.addOnDidFailLoadingMapListener { fail("Không tải được bản đồ Cao Bằng. Thử lại hoặc cập nhật ứng dụng.") }
         host?.application?.registerActivityLifecycleCallbacks(this)
         start(); resume()
         worker.execute {
             try {
-                offline.verify(); val labels=offline.labels()
+                offline.verify(); val labels=offline.labels(); val style=offline.style()
                 main.post {
                     if(!disposed) view.getMapAsync { current ->
                         if(!disposed) {
                             map=current; pins.labels=labels
                             current.uiSettings.isAttributionEnabled=false
                             current.uiSettings.isLogoEnabled=false
-                            current.setStyle(offline.style()) { if(!disposed) { draw(); channel.invokeMethod("ready",null) } }
+                            current.setStyle(style) { if(!disposed) { ready=true; draw(); channel.invokeMethod("ready",null) } }
                             current.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(22.665,106.257),12.0))
                             current.addOnCameraMoveListener { pins.invalidate() }
                             current.addOnCameraIdleListener {
@@ -75,8 +86,14 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
                         }
                     }
                 }
-            } catch(e: Exception) { main.post { if(!disposed) { channel.invokeMethod("error","Không mở được gói bản đồ Cao Bằng"); frame.addView(TextView(context).apply { text="Không mở được gói bản đồ Cao Bằng"; setBackgroundColor(Color.WHITE) }) } } }
+            } catch(e: Exception) { main.post { fail("Không mở được gói bản đồ Cao Bằng. Thử lại hoặc cập nhật ứng dụng có bản đồ offline.") } }
         }
+    }
+    private fun fail(message: String) {
+        if(disposed) return
+        ready=false; loadError=message
+        frame.contentDescription=message
+        channel.invokeMethod("error", message)
     }
     private fun draw() {
         val current=map?:return
@@ -94,6 +111,13 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
                 focusedPoint=point
                 if(first) current.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(pin.latitude,pin.longitude),15.0))
                 else current.moveCamera(CameraUpdateFactory.newLatLng(LatLng(pin.latitude,pin.longitude)))
+            }
+        }
+        val requested=(data?.get("center_request") as? Number)?.toInt()?:0
+        if(requested!=centerRequest) {
+            centerRequest=requested
+            pins.pins.firstOrNull()?.let { pin ->
+                current.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(pin.latitude,pin.longitude),15.0))
             }
         }
         current.clear()

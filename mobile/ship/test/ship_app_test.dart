@@ -66,10 +66,12 @@ void main() {
     await pump(tester, healthy());
     final FilledButton button = tester.widget<FilledButton>(find.byKey(const Key('online-button')));
     expect(button.onPressed, isNull);
-    expect(find.text('Bạn đang offline'), findsOneWidget);
+    expect(find.text('Chưa xác định trạng thái hoạt động'), findsOneWidget);
     expect(find.text(kOnlineReason), findsOneWidget);
     expect(find.textContaining('320.000'), findsNothing);
-    expect(find.byKey(const Key('home-map')), findsOneWidget);
+    expect(find.byKey(const Key('home-map-unavailable')), findsOneWidget);
+    expect(find.textContaining('trong M01'), findsNothing);
+    expect(find.text('Chưa bật chia sẻ vị trí'), findsOneWidget);
   });
 
   testWidgets('home bell opens notifications', (WidgetTester tester) async {

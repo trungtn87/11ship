@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
@@ -156,4 +158,62 @@ void main() {
       expect(result, isNull);
     },
   );
+  testWidgets('timeout keeps the chosen point and retry reports accuracy',
+      (tester) async {
+    final gps = FakeLocationProvider()..failure = LocationFailure.timeout;
+    await tester.pumpWidget(MaterialApp(
+        home: AddressLocationPicker(
+      initial:
+          const AddressLocation('Cao Bằng', latitude: 22.66, longitude: 106.25),
+      location: gps,
+      mapBuilder: (_, lat, lng, onPick) => Text('$lat,$lng'),
+    )));
+    await tester.tap(find.byKey(const Key('location-current')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Hết thời gian chờ'), findsOneWidget);
+    expect(find.textContaining('Điểm giao đã chọn'), findsOneWidget);
+    expect(find.text('22.66,106.25'), findsOneWidget);
+    gps.failure = null;
+    gps.next = LocationFix(
+        latitude: 22.68,
+        longitude: 106.27,
+        accuracyMeters: 350,
+        takenAt: DateTime.now());
+    await tester.tap(find.byKey(const Key('location-current')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('location-picker-error')), findsNothing);
+    expect(find.text('22.68,106.27'), findsOneWidget);
+    expect(find.textContaining('sai số khoảng 350 m'), findsOneWidget);
+  });
+
+  testWidgets('late GPS does not replace a point picked while waiting',
+      (tester) async {
+    final gps = _PendingLocation();
+    await tester.pumpWidget(MaterialApp(
+        home: AddressLocationPicker(
+      initial: const AddressLocation('Cao Bằng'),
+      location: gps,
+      mapBuilder: (_, lat, lng, onPick) => TextButton(
+          key: const Key('map-pick'),
+          onPressed: () => onPick(22.67, 106.26),
+          child: Text('$lat,$lng')),
+    )));
+    await tester.tap(find.byKey(const Key('location-current')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('map-pick')));
+    gps.result.complete(LocationFix(
+        latitude: 22.7,
+        longitude: 106.3,
+        accuracyMeters: 10,
+        takenAt: DateTime.now()));
+    await tester.pumpAndSettle();
+    expect(find.text('22.67,106.26'), findsOneWidget);
+    expect(find.textContaining('Điểm giao đã chọn'), findsOneWidget);
+  });
+}
+
+class _PendingLocation implements LocationProvider {
+  final result = Completer<LocationFix>();
+  @override
+  Future<LocationFix> currentFix() => result.future;
 }

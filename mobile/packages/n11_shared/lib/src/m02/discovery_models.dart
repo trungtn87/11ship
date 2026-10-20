@@ -41,11 +41,12 @@ class ShopCardData {
 
 @immutable
 class DishHit {
-  const DishHit({required this.itemId, required this.name, required this.priceVnd, required this.imageUrl, required this.shop});
+  const DishHit({required this.itemId, required this.name, required this.priceVnd, required this.imageUrl, required this.shop, this.soldCount});
 
   final String itemId;
   final String name;
   final int priceVnd;
+  final int? soldCount;
   final String? imageUrl;
   final ShopCardData shop;
 }

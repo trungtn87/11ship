@@ -487,6 +487,35 @@ describe('M10 — food orders', () => {
     return { did, version: Number(picked.version) };
   }
 
+  it('public sold quantities count only completed orders, final quantities and lines not removed, once per completion', async () => {
+    const dish = await newDish(app, shop.token, `Món lượt bán ${randomUUID()}`, 20_000);
+    const removed = await newDish(app, shop.token, `Món đã gỡ ${randomUUID()}`, 10_000);
+    const counts = async (): Promise<number[]> => {
+      const menu = ok(await app.call('GET', `/shops/${shop.shopId}`, {}));
+      const items = (menu.categories as Json[]).flatMap((category) => category.items as Json[]);
+      return [dish, removed].map((d) => Number(items.find((item) => item.item_id === d.itemId)?.sold_count));
+    };
+    const cancelled = await place(alice, [line(dish, 5)]);
+    ok(await asCustomer(alice, 'POST', `/customers/me/orders/${String(cancelled.order_id)}/cancel`, { expected_version: 1 }));
+    const order = await place(alice, [line(dish, 4), line(dish, 1, 'ít cay'), line(removed, 3)]);
+    expect(await counts()).toEqual([0, 0]);
+    const id = String(order.order_id);
+    const first = (order.items as Json[]).find((item) => item.menu_item_id === dish.itemId && item.note == null);
+    const gone = (order.items as Json[]).find((item) => item.menu_item_id === removed.itemId);
+    const edited = ok(await asShop('POST', `/shop/me/orders/${id}/edit`, { expected_version: 1, changes: [{ line_id: first?.line_id, quantity: 2 }, { line_id: gone?.line_id, remove: true }] }));
+    const prepared = ok(await asShop('POST', `/shop/me/orders/${id}/confirm`, { expected_version: edited.version, change_reason: 'Khách đồng ý bớt món' }));
+    const driver = await shipper();
+    const { did, version } = await toDelivering(driver, prepared);
+    expect(await counts()).toEqual([0, 0]);
+    const key = randomUUID();
+    ok(await asShipper(driver, 'POST', `/driver/deliveries/${did}/complete`, { expected_version: version }, key));
+    expect(await counts()).toEqual([3, 0]);
+    ok(await asShipper(driver, 'POST', `/driver/deliveries/${did}/complete`, { expected_version: version }, key));
+    expect(await counts()).toEqual([3, 0]);
+    const found = ok(await app.call('GET', `/discovery/dishes?area_id=${shop.areaId}&q=${encodeURIComponent(dish.name)}`, {}));
+    expect((found.dishes as Json[]).find((item) => item.item_id === dish.itemId)).toMatchObject({ sold_count: 3 });
+  });
+
   it('Case "completed chỉ một lần": the Shipper completes, the Order completes once, the commission is taken once, and a repeat or a late event changes nothing', async () => {
     const s = await shipper();
     const order = await confirmed(alice);
