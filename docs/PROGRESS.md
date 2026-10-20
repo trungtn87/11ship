@@ -5,7 +5,7 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo mã main `5a15136` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ⏳ Đang chạy (`RUNNING`)
+> Dữ liệu theo mã main `5a15136` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ❌ Lỗi (`FAIL`)
 
 ## 🎯 VIỆC ĐANG LÀM
 
@@ -258,7 +258,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#143](https://github.com/trungtn87/11ship/pull/143) 11Food: địa chỉ, thông báo lỗi, logo quán, chọn giờ và nhóm… | Đã merge (`MERGED`) | — | — | — | `7e2351b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#144](https://github.com/trungtn87/11ship/pull/144) Sửa định vị, giỏ hàng và bổ sung đánh giá/lượt bán món | Đã merge (`MERGED`) | — | — | — | `0828a9f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#145](https://github.com/trungtn87/11ship/pull/145) M03: đơn giản hóa đăng ký shipper và hoàn ví khi dừng hoạt… | 🚫 Đã hủy / bỏ qua (`CANCELLED / IGNORED`) | — | — | — | `76924b7` | 🚫 không tính (đã hủy) — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#146](https://github.com/trungtn87/11ship/pull/146) M03: đơn giản hóa đăng ký shipper và hoàn ví khi dừng hoạt… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `76924b7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#146](https://github.com/trungtn87/11ship/pull/146) M03: đơn giản hóa đăng ký shipper và hoàn ví khi dừng hoạt… | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `54712fd` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 

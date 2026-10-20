@@ -313,6 +313,14 @@ describe('M07 — delivery flow', () => {
     expect(codeOf(refund)).toBe('DRIVER_HAS_ACTIVE_WORK');
     expect(await stateOf(String(view.delivery_id))).toBe('accepted');
     expect(await wallet(s)).toEqual({ balance: 50_000, held: 1000 });
+
+    // CLOSING stops new assignments, never the pickup/completion of an assignment already held.
+    const picked = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/pickup`, { expected_version: view.version });
+    expect(picked.status).toBe(200);
+    const completed = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/complete`, { expected_version: dataOf(picked).version });
+    expect(completed.status).toBe(200);
+    expect(await stateOf(String(view.delivery_id))).toBe('completed');
+    expect(await wallet(s)).toEqual({ balance: 49_000, held: 0 });
   });
 
   it('full path: accept, pickup, complete: the commission is captured once and the delivery is completed', async () => {
