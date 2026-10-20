@@ -68,9 +68,22 @@ def capture(name):
 try:
     adb('install', '-r', '11Ship-test.apk')
     adb('logcat', '-c')
+    # Cold launch without network or location access: map must render from APK assets.
+    adb('shell', 'svc', 'wifi', 'disable')
+    adb('shell', 'svc', 'data', 'disable')
+    adb('shell', 'settings', 'put', 'secure', 'location_mode', '0')
+    adb('shell', 'wm', 'size', '360x640')
+    adb('shell', 'wm', 'density', '160')
     adb('shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1')
-    wait('Bạn đang offline')
-    capture('01-home-offline')
+    wait('Chưa xác định trạng thái hoạt động')
+    wait('Chưa bật chia sẻ vị trí')
+    wait('Bản đồ offline Cao Bằng đã hiển thị')
+    hierarchy = nodes()
+    online = [n for n in hierarchy if 'Bật online' in (n.get('text', '') + n.get('content-desc', '')) and n.get('clickable') == 'true']
+    assert not online, 'unknown activity must not expose an online action'
+    assert not any('trong M01' in (n.get('text', '') + n.get('content-desc', '')) for n in hierarchy)
+    capture('01-home-offline-no-gps')
+    adb('shell', 'svc', 'wifi', 'enable')
     for tab, title, name in [
         ('Thông báo', 'Đăng nhập để xem thông báo của bạn.', '02-notifications'),
         ('Đơn hàng', 'Chưa có đơn hàng', '03-orders'),
@@ -97,7 +110,7 @@ try:
         'package': PACKAGE,
         'sha': os.environ.get('SOURCE_SHA'),
         'platform': 'Android emulator API 30',
-        'result': 'guest UI smoke passed',
+        'result': 'guest UI and offline Cao Bang map without network/GPS passed',
         'not_tested': ['real device', 'online operation', 'SMS/OTP success', 'account creation'],
     }, ensure_ascii=False, indent=2))
 finally:

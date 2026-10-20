@@ -18,6 +18,7 @@ class FreshLocationRequest(
     private val nowNanos: () -> Long = { SystemClock.elapsedRealtimeNanos() },
 ) {
     private var active = false
+    private var startedNanos = 0L
     private var best: Location? = null
     private val providers = mutableSetOf<String>()
     private var listener: LocationListener? = null
@@ -29,14 +30,15 @@ class FreshLocationRequest(
     @Suppress("DEPRECATION")
     private fun usable(location: Location): Boolean {
         val age = nowNanos() - location.elapsedRealtimeNanos
-        return !location.isFromMockProvider && age in 0..25_000_000_000L &&
+        return !location.isFromMockProvider && location.elapsedRealtimeNanos > startedNanos && age in 0..25_000_000_000L &&
             location.latitude.isFinite() && location.latitude in -90.0..90.0 &&
             location.longitude.isFinite() && location.longitude in -180.0..180.0 &&
-            location.hasAccuracy() && location.accuracy.isFinite() && location.accuracy > 0
+            location.hasAccuracy() && location.accuracy.isFinite() && location.accuracy > 0 && location.accuracy <= 1000f
     }
 
     fun start(timeoutMillis: Long = 45_000L, onFix: (Location) -> Unit, onFailure: (String) -> Unit) {
         check(!active) { "Location request is already running" }
+        startedNanos = nowNanos()
         active = true
         success = onFix
         failure = onFailure

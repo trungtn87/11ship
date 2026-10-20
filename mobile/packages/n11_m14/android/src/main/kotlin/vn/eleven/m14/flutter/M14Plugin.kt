@@ -62,8 +62,9 @@ class M14Plugin: FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler,
             "permissionGranted" to permitted,
             "lat" to p.getString("lat",null)?.toDoubleOrNull(), "lon" to p.getString("lon",null)?.toDoubleOrNull(),
             "accuracy" to if(p.contains("accuracy")) p.getFloat("accuracy",0f).toDouble() else null,
+            "fixState" to p.getString("fixState", "UNAVAILABLE"),
             "time" to if(p.contains("time")) p.getLong("time",0) else null,
-            "fresh" to (RecorderService.runningInProcess && permitted && locationEnabled && elapsed>0 && age in 0..120_000 && wallAge in 0..120_000),
+            "fresh" to (RecorderService.runningInProcess && permitted && locationEnabled && p.getString("fixState", "") == "FIX" && elapsed>0 && age in 0..120_000 && wallAge in 0..120_000),
             "status" to if(RecorderService.runningInProcess || !p.getBoolean("recording",false)) p.getString("status","Đã dừng — không thu thập vị trí") else "Đã dừng — không thu thập vị trí")
     }
     private fun async(result: MethodChannel.Result, task: () -> Any?) {
@@ -121,8 +122,8 @@ class M14Plugin: FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler,
     override fun onListen(arguments: Any?, eventSink: EventChannel.EventSink) {
         sink=eventSink
         if(!listening) {
-            if(Build.VERSION.SDK_INT>=33) context.registerReceiver(receiver,IntentFilter(RecorderService.ACTION),Context.RECEIVER_NOT_EXPORTED)
-            else context.registerReceiver(receiver,IntentFilter(RecorderService.ACTION))
+            if(Build.VERSION.SDK_INT>=33) context.registerReceiver(receiver,IntentFilter(RecorderService.ACTION).apply { addAction(LocationManager.PROVIDERS_CHANGED_ACTION) },Context.RECEIVER_NOT_EXPORTED)
+            else context.registerReceiver(receiver,IntentFilter(RecorderService.ACTION).apply { addAction(LocationManager.PROVIDERS_CHANGED_ACTION) })
             listening=true
         }
         sink?.success(snapshot())

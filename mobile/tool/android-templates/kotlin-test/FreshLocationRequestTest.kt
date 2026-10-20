@@ -36,6 +36,7 @@ class FreshLocationRequestTest {
     private fun start(fine: Boolean = true): FreshLocationRequest {
         val request = FreshLocationRequest(manager, handler, fine) { now }
         request.start(onFix = { fix = it; answers++ }, onFailure = { error = it; answers++ })
+        now += 1_000_000_000L
         return request
     }
 
@@ -59,6 +60,7 @@ class FreshLocationRequestTest {
         assertSame(network, fix)
         assertNull(error)
         verify(manager).removeUpdates(any(LocationListener::class.java))
+        verify(handler, atLeastOnce()).removeCallbacks(any(Runnable::class.java))
         timers.forEach { it.first.run() }
         assertEquals(1, answers)
     }
@@ -87,6 +89,8 @@ class FreshLocationRequestTest {
         start()
         val gps = listeners.getValue("gps")
         gps.onLocationChanged(point(ageSeconds = 26))
+        gps.onLocationChanged(point(ageSeconds = 1)) // exactly at request start
+        gps.onLocationChanged(point(2000f)) // unusable accuracy
         gps.onLocationChanged(point(mockFix = true))
         gps.onLocationChanged(point(ageSeconds = -1))
         gps.onLocationChanged(point(Float.NaN))
