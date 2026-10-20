@@ -138,21 +138,30 @@ void main() {
   testWidgets('adding from unified search uses the existing one-shop cart replacement confirmation', (WidgetTester tester) async {
     phone(tester);
     final SampleOrderStore store = SampleOrderStore();
-    final CartController cart = CartController(source: SampleCustomerOrders(store));
-    OrderRuntime.current = OrderRuntime(customer: SampleCustomerOrders(store), shop: SampleShopOrders(store), cart: cart);
+    final SampleDish dish = kSampleDishes.first;
+    final SampleDish oldDish = kSampleDishes[1];
+    final SampleCustomerOrders source = SampleCustomerOrders(store);
+    final CartController cart = CartController(source: source);
+    OrderRuntime.current = OrderRuntime(customer: source, shop: SampleShopOrders(store), cart: cart);
     addTearDown(() { OrderRuntime.current = null; cart.dispose(); });
-    await cart.add(shopId: 'old-shop', shopName: 'Quán cũ', itemId: 'old-dish', name: 'Món cũ', priceVnd: 10000);
-    await tester.pumpWidget(MaterialApp(theme: buildN11Theme(), home: SearchScreen(api: seeded(), publicApi: FakePublicShopApi(menuOf('Zeta Ốc Hương')), areaId: 'a1', debounce: Duration.zero)));
-    await tester.enterText(find.byKey(const Key('search-field')), 'oc huong');
+    await cart.add(shopId: 'old-shop', shopName: 'Quán cũ', itemId: oldDish.id, name: oldDish.name, priceVnd: oldDish.priceVnd);
+    final FakeDiscoveryApi api = FakeDiscoveryApi(shops: <FakeShopEntry>[
+      FakeShopEntry(kSampleShopId, 'Quán Phở', reason: 'ONLINE', dishes: <FakeDishEntry>[FakeDishEntry(dish.id, dish.name, dish.priceVnd, 'c1')]),
+    ]);
+    await tester.pumpWidget(MaterialApp(theme: buildN11Theme(), home: SearchScreen(api: api, publicApi: FakePublicShopApi(menuOf('Quán Phở')), areaId: 'a1', debounce: Duration.zero)));
+    await tester.enterText(find.byKey(const Key('search-field')), 'pho');
     await tester.pumpAndSettle();
-    await tapKey(tester, 'dish-add-d1');
+    await tapKey(tester, 'dish-add-${dish.id}');
     expect(find.text('Thay giỏ hàng?'), findsOneWidget);
     await tapKey(tester, 'cart-replace-keep');
     expect(cart.shopId, 'old-shop');
-    await tapKey(tester, 'dish-add-d1');
+    await tapKey(tester, 'dish-add-${dish.id}');
     await tapKey(tester, 'cart-replace-yes');
-    expect(cart.shopId, 's1');
-    expect(cart.quantityOf('d1'), 1);
+    expect(cart.shopId, kSampleShopId);
+    expect(cart.quantityOf(dish.id), 1);
+    expect(cart.failure, isNull);
+    expect(cart.unsaved, isFalse);
+    expect((await source.cart())!.lines.single.itemId, dish.id);
   });
 
   group('DishSearchController', () {
