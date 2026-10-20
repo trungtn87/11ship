@@ -29,3 +29,5 @@ Không phát hiện kiểm soát pháp lý bắt buộc được mô hình hóa 
 ## Kiểm chứng
 
 Test tập trung M03/M04/M01: đăng ký SHIP tự cấp quyền/ví; không ngân hàng; ví 0; nạp chờ không cộng; đủ tiền bật online; không đủ hoa hồng; khóa Admin; rút toàn bộ 5.000đ; giữ tiền và replay; đóng chỉ sau PAID; giữ CUSTOMER. Các test M04 có sẵn bao phủ tranh chấp hold, quyền tài chính, chuyển tiền lặp và đối soát thất bại. PostgreSQL và Flutter được xác minh trên CI khi công cụ tương ứng không có trong môi trường local. Chưa merge, deploy, apply remote migration hoặc phát hành APK.
+
+CI tại `4c625b3`: workflow mobile đạt toàn bộ (Flutter analyze/test, build, push compile, chữ ký và Android guest UI). Backend đạt lint/typecheck/build, migration smoke và unit test; integration đang được xác minh. CI giới hạn từng lượt integration ở 15 phút để lấy báo lỗi khi tiến trình giữ handle sau lỗi fixture, không bỏ test hay nới điều kiện đạt.
