@@ -78,8 +78,8 @@ class _NativeMapState extends State<_NativeMap> {
       // Recover readiness/errors emitted before Dart installed its handler.
       _channel!.invokeMapMethod<String, dynamic>('state').then((Map<String, dynamic>? state) {
         if (!mounted) return;
-        if (state?['error'] is String) widget.onError?.call(state!['error'] as String);
-        else if (state?['ready'] == true) widget.onReady?.call();
+        if (state?['error'] is String) { widget.onError?.call(state!['error'] as String); }
+        else if (state?['ready'] == true) { widget.onReady?.call(); }
       }).catchError((Object error) { if (mounted) widget.onError?.call('Không mở được bản đồ Cao Bằng'); });
     },
   );

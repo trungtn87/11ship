@@ -38,6 +38,7 @@ void main() {
     await tester.pump();
     expect(find.byType(M14OfflineMap), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
+    debugDefaultTargetPlatformOverride = null;
   }, skip: !kM14MapEnabled);
 
   testWidgets('unknown activity and missing map fit a small phone with large text', (WidgetTester tester) async {
