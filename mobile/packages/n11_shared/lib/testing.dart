@@ -660,12 +660,12 @@ class FakeDriverServer {
         'full_name': body['full_name'],
         'phone': '+84901234567',
         'plate_number': body['plate_number'],
-        'status': 'PENDING',
+        'status': 'ACTIVE',
         'review_state': 'DRAFT',
         'accepting_deliveries': false,
         'version': 1,
       };
-      return json(201, <String, Object?>{'data': <String, Object?>{'driver_id': profile!['driver_id'], 'status': 'PENDING', 'accepting_deliveries': false, 'role_granted': true, 'version': 1}});
+      return json(201, <String, Object?>{'data': <String, Object?>{'driver_id': profile!['driver_id'], 'status': 'ACTIVE', 'accepting_deliveries': false, 'role_granted': true, 'version': 1}});
     };
     transport.routes['PUT /v1/driver/me/profile'] = (String m, String p, Map<String, String> h, String b) async => _command(p, b, (Map<String, Object?> body) {
           profile!['full_name'] = body['full_name'];
@@ -692,7 +692,7 @@ class FakeDriverServer {
         });
     transport.routes['POST /v1/driver/me/accepting'] = (String m, String p, Map<String, String> h, String b) async => _command(p, b, (Map<String, Object?> body) {
           final bool on = body['accepting']! as bool;
-          if (on && (profile!['status'] != 'ACTIVE' || bank == null || bank!['verification_state'] != 'VERIFIED' || !walletReady)) {
+          if (on && (profile!['status'] != 'ACTIVE' || !walletReady)) {
             throw StateError('DRIVER_WALLET_NOT_READY');
           }
           profile!['accepting_deliveries'] = on;
@@ -736,7 +736,6 @@ class FakeDriverServer {
     final bool bankVerified = bank != null && bank!['verification_state'] == 'VERIFIED';
     final List<String> blocks = <String>[
       if (status != 'ACTIVE') (status == 'PENDING' ? 'PROFILE_NOT_APPROVED' : 'ACCOUNT_SUSPENDED'),
-      if (bank == null) 'BANK_MISSING' else if (!bankVerified) 'BANK_NOT_VERIFIED',
       if (!walletReady) 'WALLET_NOT_AVAILABLE',
     ];
     final bool editable = status == 'PENDING' && (review == 'DRAFT' || review == 'REJECTED');
@@ -754,7 +753,7 @@ class FakeDriverServer {
         'bank_verified': bankVerified,
         'wallet_ready': walletReady,
         'blocks': blocks,
-        'can_accept': status == 'ACTIVE' && bankVerified && walletReady,
+        'can_accept': status == 'ACTIVE' && walletReady,
       },
       'closure': status == 'CLOSING' ? <String, Object?>{'requested_at': '2026-10-17T00:00:00.000Z', 'note': closureNote, 'can_cancel': true} : null,
     };

@@ -285,7 +285,6 @@ class DriverController extends ChangeNotifier {
   DriverController({required this.session}) {
     _sessionEpoch = session.sessionEpoch;
     session.addListener(_onSession);
-    if (session.status == SessionStatus.signedIn) load();
   }
 
   final SessionController session;
@@ -319,7 +318,6 @@ class DriverController extends ChangeNotifier {
     if (session.sessionEpoch != _sessionEpoch || session.status != SessionStatus.signedIn) {
       _sessionEpoch = session.sessionEpoch;
       clear();
-      if (session.status == SessionStatus.signedIn) load();
     }
   }
 

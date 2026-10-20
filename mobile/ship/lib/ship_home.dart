@@ -8,7 +8,7 @@ const String kOnlineReason = 'Tính năng online và nhận đơn chưa khả d�
 
 /// Presentation only: M01 has no online mutation or operational GPS controller.
 /// Never turn the reference image's sample figures or location into account data.
-class ShipHome extends StatelessWidget {
+class ShipHome extends StatefulWidget {
   const ShipHome({super.key, required this.session, required this.onNotifications, this.reset, this.notifications, this.driver, this.walletSource});
 
   final SessionController session;
@@ -19,6 +19,39 @@ class ShipHome extends StatelessWidget {
 
   /// M08: the unread count on the bell. Null = the plain bell.
   final NotificationController? notifications;
+
+  @override
+  State<ShipHome> createState() => _ShipHomeState();
+}
+
+class _ShipHomeState extends State<ShipHome> {
+  SessionController get session => widget.session;
+  DriverController? get driver => widget.driver;
+  WalletSource? get walletSource => widget.walletSource;
+  ResetController? get reset => widget.reset;
+  NotificationController? get notifications => widget.notifications;
+  VoidCallback get onNotifications => widget.onNotifications;
+  int _epoch = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    session.addListener(_readDriver);
+    _readDriver();
+  }
+
+  void _readDriver() {
+    if (session.status == SessionStatus.signedIn && _epoch != session.sessionEpoch) {
+      _epoch = session.sessionEpoch;
+      driver?.load();
+    }
+  }
+
+  @override
+  void dispose() {
+    session.removeListener(_readDriver);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(

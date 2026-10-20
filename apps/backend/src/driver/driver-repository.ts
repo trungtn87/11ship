@@ -183,7 +183,7 @@ export class DriverRepository {
   }
 
   /**
-   * Inserts the one shape self-onboarding may create: EXTERNAL, PENDING, not accepting deliveries, version 1.
+   * Inserts the one shape self-onboarding may create: EXTERNAL, ACTIVE, not accepting deliveries, version 1.
    * The four fixed values are literals in the statement, not parameters: nothing a caller passes can change
    * them. Returns false when the user already has a Driver (the UNIQUE(user_id) rule decided, which only a
    * caller that skipped the user lock could reach): ON CONFLICT DO NOTHING lets the database decide and never
