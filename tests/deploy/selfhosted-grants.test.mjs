@@ -116,6 +116,10 @@ describe('ops/selfhosted/02-runtime-grants.sql', () => {
     assert.deepEqual(parsed.get('admin_finance_grants'), ['INSERT', 'SELECT', 'UPDATE']);
     // M04-B2.1: the only money-adjacent table the runtime writes is the request (create + cancel); never DELETE, never the balance or the ledger.
     assert.deepEqual(parsed.get('wallet_topup_requests'), ['INSERT', 'SELECT', 'UPDATE']);
+    // M04-C: withdrawals move along a guarded state machine (never DELETE); the trail and the commission policy versions are append-only.
+    assert.deepEqual(parsed.get('wallet_withdrawals'), ['INSERT', 'SELECT', 'UPDATE']);
+    assert.deepEqual(parsed.get('wallet_withdrawal_events'), ['INSERT', 'SELECT']);
+    assert.deepEqual(parsed.get('wallet_commission_policies'), ['INSERT', 'SELECT']);
     for (const privileges of parsed.values()) {
       assert.ok(privileges.every((kind) => KINDS.includes(kind)));
     }

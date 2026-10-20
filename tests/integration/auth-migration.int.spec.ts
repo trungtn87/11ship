@@ -7,6 +7,7 @@ import { ELIGIBILITY_DOWN_SQL, ELIGIBILITY_UP_SQL } from './support/shipping-eli
 import { FEE_POLICY_DOWN_SQL, FEE_POLICY_UP_SQL } from './support/shipping-fee-policy-migration-sql';
 import { WALLET_DOWN_SQL, WALLET_UP_SQL, FINANCE_DOWN_SQL, FINANCE_UP_SQL, POSTING_DOWN_SQL, POSTING_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
 import { M07_DOWN_SQL, M07_UP_SQL } from './support/m07-migration-sql';
+import { WITHDRAWAL_DOWN_SQL, WITHDRAWAL_UP_SQL } from './support/withdrawal-migration-sql';
 import { M08_DOWN_SQL, M08_UP_SQL } from './support/m08-migration-sql';
 import { M10_DOWN_SQL, M10_UP_SQL } from './support/m10-migration-sql';
 import { M11_DOWN_SQL, M11_UP_SQL } from './support/m11-migration-sql';
@@ -152,7 +153,7 @@ describe('M01-A1 — Auth Core migration', () => {
       '1793404800000_create-driver-wallet-core',
       '1793491200000_create-wallet-holds',
       '1793577600000_create-wallet-topup-sources',
-      '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_open-topup-ledger-gate', '1794096000000_create-m07-delivery', '1794182400000_create-m08-notifications', '1794268800000_create-m10-orders', '1794355200000_create-m11-reviews-complaints', '1794441600000_open-adjustment-ledger-gate',
+      '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_open-topup-ledger-gate', '1794096000000_create-m07-delivery', '1794182400000_create-m08-notifications', '1794268800000_create-m10-orders', '1794355200000_create-m11-reviews-complaints', '1794441600000_open-adjustment-ledger-gate', '1795046400000_add-shop-logo', '1795132800000_create-wallet-withdrawals', '1795219200000_simplify-shipper-onboarding',
     ]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });
@@ -254,6 +255,7 @@ describe('M01-A1 — Auth Core migration', () => {
       // The Shop and Driver migrations reference app.users, so they go down first and come back up last. The invitation
       // tables, the admin tables and the account origin are the newest: they go down before everything else.
       // The M01.02 customer tables reference app.users and are the very newest: they go down first and come back up last.
+      await client.query(WITHDRAWAL_DOWN_SQL); // M04 withdrawals: the very newest, down first, up last
       await client.query(ADJUSTMENT_DOWN_SQL); // M04 adjustment gate: replaces the ledger gate of M07 and adds its source: the very newest, down first, up last
       await client.query(M11_DOWN_SQL); // M11: references users, shops, drivers, orders, deliveries and widens an M08 constraint: the very newest, down first, up last
       await client.query(M10_DOWN_SQL); // M10: references users, shops, dishes, addresses and deliveries: the very newest, down first, up last
@@ -323,6 +325,7 @@ describe('M01-A1 — Auth Core migration', () => {
       await client.query(M10_UP_SQL);
       await client.query(M11_UP_SQL);
       await client.query(ADJUSTMENT_UP_SQL);
+      await client.query(WITHDRAWAL_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES].sort());
     } finally {
       await client.query('ROLLBACK');

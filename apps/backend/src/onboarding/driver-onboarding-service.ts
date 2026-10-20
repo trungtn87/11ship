@@ -1,3 +1,4 @@
+import { WalletService } from '../wallet/wallet-service';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
@@ -46,6 +47,7 @@ export class DriverOnboardingService {
     private readonly drivers: DriverRepository,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
+    private readonly wallets: WalletService,
   ) {}
 
   async create(
@@ -92,6 +94,7 @@ export class DriverOnboardingService {
       throw new AppError('DRIVER_PROFILE_EXISTS');
     }
     await this.roleGrants.grant(context, userId, 'DRIVER');
+    await this.wallets.ensureZeroWallet(context, driverId);
 
     // Nothing the client typed goes into the audit row or the event: no name, no plate number.
     await this.audit.append(context, {
@@ -119,7 +122,7 @@ export class DriverOnboardingService {
       replayGuard: { user_id: userId },
       payload: {
         driver_id: driverId,
-        status: 'PENDING',
+        status: 'ACTIVE',
         accepting_deliveries: false,
         role_granted: true,
         version: 1,

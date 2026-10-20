@@ -1,3 +1,6 @@
+import { DriverRepository } from '../driver/driver-repository';
+import { RoleGrantParticipant } from '../auth/role-grant-participant';
+import { WalletService } from '../wallet/wallet-service';
 import { createHash, randomUUID } from 'node:crypto';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
@@ -102,6 +105,9 @@ export class ClientRegistrationService {
     @Optional() @Inject(ACCOUNT_ORIGIN_POLICY) private readonly originPolicy: AccountOriginPolicy = standardAccountOriginPolicy(),
     // The SYSTEM settings. Optional only so that a unit harness without a database can build the service (it then keeps the proof path).
     @Optional() private readonly systemSettings?: SystemSettingsReader,
+    @Optional() private readonly drivers?: DriverRepository,
+    @Optional() private readonly roleGrants?: RoleGrantParticipant,
+    @Optional() private readonly wallets?: WalletService,
   ) {}
 
   /**
@@ -387,6 +393,13 @@ export class ClientRegistrationService {
     if (!provisioned.roleGranted || !provisioned.profileCreated || !provisioned.consentRecorded) {
       throw new TechnicalError('internal', 'A new customer was not fully provisioned');
     }
+    if (input.device.app === 'SHIP') {
+      if (!this.drivers || !this.roleGrants || !this.wallets) throw new TechnicalError('internal', 'Shipper provisioning unavailable');
+      const driverId = randomUUID();
+      if (!(await this.drivers.insertPending(context, { driverId, userId, fullName: input.fullName, plateNumber: null }))) throw new TechnicalError('internal', 'Shipper already exists');
+      await this.roleGrants.grant(context, userId, 'DRIVER');
+      await this.wallets.ensureZeroWallet(context, driverId);
+    }
 
     // 4b. Native: the one-use registration grant decides the binding (a new user can only start a NEW binding), before the session.
     const plan =
@@ -398,7 +411,7 @@ export class ClientRegistrationService {
       userId,
       device: { deviceId: input.device.deviceId, platform: input.device.platform, app: input.device.app },
       ttlSeconds: this.config.sessionTtlSeconds,
-      activeRole: CUSTOMER_ROLE,
+      activeRole: input.device.app === 'SHIP' ? 'DRIVER' : CUSTOMER_ROLE,
     });
     if (plan !== undefined) {
       capture.binding = await this.deviceBinding.finish(context, plan, { userId, sessionId: session.sessionId });
@@ -437,7 +450,7 @@ export class ClientRegistrationService {
       phoneNormalized: input.phoneNormalized,
       app: input.device.app,
       enabled: true,
-      storedActiveRole: CUSTOMER_ROLE,
+      storedActiveRole: input.device.app === 'SHIP' ? 'DRIVER' : CUSTOMER_ROLE,
     });
 
     return {
@@ -557,6 +570,13 @@ export class ClientRegistrationService {
     if (!provisioned.roleGranted || !provisioned.profileCreated || !provisioned.consentRecorded) {
       throw new TechnicalError('internal', 'A new customer was not fully provisioned');
     }
+    if (input.device.app === 'SHIP') {
+      if (!this.drivers || !this.roleGrants || !this.wallets) throw new TechnicalError('internal', 'Shipper provisioning unavailable');
+      const driverId = randomUUID();
+      if (!(await this.drivers.insertPending(context, { driverId, userId, fullName: input.fullName, plateNumber: null }))) throw new TechnicalError('internal', 'Shipper already exists');
+      await this.roleGrants.grant(context, userId, 'DRIVER');
+      await this.wallets.ensureZeroWallet(context, driverId);
+    }
 
     // 3b. Native: the one-use registration grant decides the binding (a new user can only start a NEW binding), before the session.
     const plan =
@@ -569,7 +589,7 @@ export class ClientRegistrationService {
       userId,
       device: { deviceId: input.device.deviceId, platform: input.device.platform, app: input.device.app },
       ttlSeconds: this.config.sessionTtlSeconds,
-      activeRole: CUSTOMER_ROLE,
+      activeRole: input.device.app === 'SHIP' ? 'DRIVER' : CUSTOMER_ROLE,
     });
     if (plan !== undefined) {
       capture.binding = await this.deviceBinding.finish(context, plan, { userId, sessionId: session.sessionId });
@@ -609,7 +629,7 @@ export class ClientRegistrationService {
       phoneNormalized: input.phoneNormalized,
       app: input.device.app,
       enabled: true,
-      storedActiveRole: CUSTOMER_ROLE,
+      storedActiveRole: input.device.app === 'SHIP' ? 'DRIVER' : CUSTOMER_ROLE,
     });
 
     return {

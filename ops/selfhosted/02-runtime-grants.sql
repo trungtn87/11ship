@@ -82,6 +82,11 @@ GRANT SELECT, INSERT ON app.wallet_bank_transactions TO ship11_app;
 GRANT SELECT, INSERT ON app.wallet_topups TO ship11_app;
 -- M04-B2.2a: finance rights of the administration. SYSTEM gives (INSERT) and takes back (UPDATE) each right; never DELETE. Default deny: no row = no right.
 GRANT SELECT, INSERT, UPDATE ON app.admin_finance_grants TO ship11_app;
+-- M04-C: the withdrawal. The Shipper creates a request (INSERT) and the Admin / the Shipper move it along the state machine (UPDATE, guarded by a trigger; never DELETE). The
+-- event trail and the commission policy versions are append-only (INSERT, never UPDATE or DELETE: triggers refuse them for every role).
+GRANT SELECT, INSERT, UPDATE ON app.wallet_withdrawals TO ship11_app;
+GRANT SELECT, INSERT ON app.wallet_withdrawal_events TO ship11_app;
+GRANT SELECT, INSERT ON app.wallet_commission_policies TO ship11_app;
 -- M06-A: the shipping-fee table. Versions are immutable (a trigger refuses UPDATE/DELETE/TRUNCATE for every role): the runtime only appends and reads. The draft is
 -- the one seeded row; the runtime reads it and updates it (never deletes: a trigger refuses).
 GRANT SELECT, INSERT ON app.shipping_fee_policy_versions TO ship11_app;

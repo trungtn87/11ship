@@ -245,7 +245,7 @@ describe('admin finance (real browser)', () => {
     await signIn(page, person(reader));
     await waitMenu(page, `!!document.querySelector('a[href="/finance/topups"]')`);
     expect(await menuHas(page, '/finance/bank-accounts')).toBe(false);
-    expect(await menuHas(page, '/finance/withdrawals')).toBe(false);
+    expect(await menuHas(page, '/finance/withdrawals')).toBe(true);
     await page.goto(`${origin}/finance/topups`);
     await page.waitFor(`document.body.innerText.includes(${JSON.stringify(a.requestId.slice(0, 8))})`);
     expect(await text(page)).toContain('Bạn chỉ có quyền xem');

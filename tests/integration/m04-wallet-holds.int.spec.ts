@@ -15,6 +15,7 @@ import { insertCommissionSource, M07_INVARIANT_TRIGGERS } from './support/delive
 import { loadIntegrationConfig } from './support/test-helpers';
 import { managerFor, testPool } from './support/transaction-fixtures';
 import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
+import { WITHDRAWAL_DOWN_SQL, WITHDRAWAL_UP_SQL } from './support/withdrawal-migration-sql';
 
 // M04-A2.1 - the Shipper hold core, on a REAL PostgreSQL (the test database only). No hold can be written in this package: the source
 // gate refuses every INSERT because the source tables (M07 assignments, M04-C withdrawals) do not exist. The rules BEHIND the gate
@@ -94,7 +95,19 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
       await client.query(`SET CONSTRAINTS ${M07_INVARIANT_TRIGGERS.join(', ')} DEFERRED`);
       commissionAssignmentId = await insertCommissionSource(client, { ...owner, driverId: (wallet.rows[0] as { driver_id: string }).driver_id, amountVnd: input.amount, outcome: status });
     }
-    const result = await insertHoldRaw(client, walletId, { ...input, holdId, status: 'ACTIVE', ...(commissionAssignmentId === undefined ? {} : { commissionAssignmentId }) });
+    // A withdrawal hold has a REAL source since M04-C: the PENDING withdrawal that reserves it (the hold gate looks for it; the foreign key is deferred).
+    let withdrawalId = input.withdrawalId;
+    if (input.real === true && input.purpose === 'WITHDRAWAL' && withdrawalId === undefined && status === 'ACTIVE') {
+      withdrawalId = randomUUID();
+      await client.query(
+        `INSERT INTO app.wallet_withdrawals (withdrawal_id, wallet_id, driver_id, hold_id, amount_vnd, state, version, bank_code, bank_name, account_number, account_holder,
+                                              bank_snapshot_at, bank_verified_at, created_by_user_id, created_at, updated_at)
+         SELECT $1::uuid, w.wallet_id, w.driver_id, $2::uuid, $3::bigint, 'PENDING', 1, 'VCB', 'Vietcombank', '0123456789', 'NGUYEN VAN A', now(), now(), d.user_id, now(), now()
+           FROM app.driver_wallets w JOIN app.drivers d ON d.driver_id = w.driver_id WHERE w.wallet_id = $4::uuid`,
+        [withdrawalId, holdId, input.amount, walletId],
+      );
+    }
+    const result = await insertHoldRaw(client, walletId, { ...input, holdId, status: 'ACTIVE', ...(commissionAssignmentId === undefined ? {} : { commissionAssignmentId }), ...(withdrawalId === undefined ? {} : { withdrawalId }) });
     if (status !== 'ACTIVE') {
       await client.query(`UPDATE app.wallet_holds SET status = $2::varchar, resolved_at = now(), updated_at = now(), version = version + 1 WHERE hold_id = $1::uuid`, [holdId, status]);
     }
@@ -215,11 +228,13 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
     try {
       await client.query('BEGIN');
       const before = await snapshot(client);
+      await client.query(WITHDRAWAL_DOWN_SQL); // M04-C withdrawals: the very newest, down first, up last
       await client.query(WALLET_HOLD_DOWN_SQL);
       expect((await client.query("SELECT 1 FROM information_schema.tables WHERE table_schema = 'app' AND table_name = 'wallet_holds'")).rowCount).toBe(0);
       // Back at the A1 state, the A1 rule is back: held must be 0 (and it is).
       expect(await snapshot(client)).toEqual(before);
       await client.query(WALLET_HOLD_UP_SQL);
+      await client.query(WITHDRAWAL_UP_SQL);
       expect(await snapshot(client)).toEqual(before);
       expect((await client.query('SELECT 1 FROM app.wallet_holds')).rowCount).toBe(0);
       // The re-created schema still carries the gate and the invariant.
@@ -381,7 +396,8 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
       }
       await refused(client, 'delete', () => client.query('DELETE FROM app.wallet_holds'), 'never deleted');
       await refused(client, 'delete_no_match', () => client.query('DELETE FROM app.wallet_holds WHERE false'), 'never deleted');
-      await refused(client, 'truncate', () => client.query('TRUNCATE app.wallet_holds'), 'never deleted');
+      // Since M04-C the withdrawals reference the holds, so PostgreSQL itself refuses the TRUNCATE first (the trigger is the second line of defence).
+      await refused(client, 'truncate', () => client.query('TRUNCATE app.wallet_holds'), 'cannot truncate a table referenced in a foreign key constraint');
       expect((await client.query('SELECT 1 FROM app.wallet_ledger_entries')).rowCount).toBe(2); // the fixture credit and the captured hold's one commission debit
       expect((await client.query("SELECT 1 FROM app.wallet_holds WHERE hold_id = $1::uuid AND status = 'CAPTURED' AND version = 2", [holdId])).rowCount).toBe(1);
     });
@@ -452,9 +468,12 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
       await client.query('ALTER TABLE app.wallet_holds DISABLE TRIGGER wallet_holds_no_delete');
       await client.query('DELETE FROM app.wallet_holds');
       await client.query('DELETE FROM app.driver_wallets');
+      await client.query('SET CONSTRAINTS ALL IMMEDIATE'); // the deferred foreign keys fire before the tables are altered
+      await client.query(WITHDRAWAL_DOWN_SQL);
       await client.query(WALLET_HOLD_DOWN_SQL);
       expect((await client.query("SELECT 1 FROM information_schema.tables WHERE table_schema = 'app' AND table_name = 'wallet_holds'")).rowCount).toBe(0);
       await client.query(WALLET_HOLD_UP_SQL);
+      await client.query(WITHDRAWAL_UP_SQL);
       expect((await client.query("SELECT 1 FROM information_schema.tables WHERE table_schema = 'app' AND table_name = 'wallet_holds'")).rowCount).toBe(1);
     } finally {
       await client.query('ROLLBACK').catch(() => undefined);
@@ -484,7 +503,7 @@ describe('M04-A2.1 - Shipper hold core (schema, invariant, gate, down latch)', (
   it('8. no route opens holds or any money movement for a user or an administrator', async () => {
     const app: AuthApp = await startAuthApp();
     try {
-      const paths = ['/wallet/holds', '/wallets/holds', '/driver/wallet/holds', '/driver/wallet/reserve', '/driver/wallet/release', '/driver/wallet/capture', '/admin/wallet/holds'];
+      const paths = ['/wallet/holds', '/wallets/holds', '/driver/wallet/reserve', '/driver/wallet/release', '/driver/wallet/capture', '/admin/wallet/holds'];
       for (const method of ['GET', 'POST', 'PUT'] as const) {
         for (const path of paths) {
           const response = await app.call(method, path, { body: method === 'GET' ? undefined : { amount_vnd: 100000 } });

@@ -11,6 +11,7 @@ import { RecoveryController } from '../core/recovery-controller.js';
 import { AdminRecoveryApi, RECOVERY_BASE } from '../core/recovery-api.js';
 import { AdminCatalogApi, CATALOG_BASE, createCatalogSource } from '../core/catalog-api.js';
 import { AdminFinanceApi, createFinanceAdminSource, FINANCE_BASE } from '../core/finance-api.js';
+import { AdminFinanceOpsApi, createFinanceOpsSource } from '../core/finance-ops-api.js';
 import { AdminShipperApi, createShipperSource, SHIPPERS_BASE } from '../core/shippers-api.js';
 import { AdminOrderApi, createOrderSource } from '../core/orders-api.js';
 import { AdminDeliveryApi, createDeliverySource, DELIVERIES_BASE } from '../core/deliveries-api.js';
@@ -164,6 +165,10 @@ function startAdmin(host: HTMLElement): void {
       refresh: () => controller.refreshSession(),
     }),
     createFeedbackSource(new AdminFeedbackApi(fetchTransport(window.fetch.bind(window), { base: FEEDBACK_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
+    createFinanceOpsSource(new AdminFinanceOpsApi(fetchTransport(window.fetch.bind(window), { base: FINANCE_BASE })), {
       csrf: () => controller.sessionCsrf,
       refresh: () => controller.refreshSession(),
     }),

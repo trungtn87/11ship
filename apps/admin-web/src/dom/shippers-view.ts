@@ -396,7 +396,7 @@ export class ShipperDetailView {
         buttons.push(this.#button('Xác minh ngân hàng', { name: 'bank/verify', title: 'Xác minh tài khoản ngân hàng', text: `Xác nhận tài khoản ${bank.bankName} của ${bank.accountHolder} là chính chủ Shipper và đúng thông tin.`, confirm: 'Xác minh' }, true));
       }
       if (bank.state !== 'REJECTED') {
-        buttons.push(this.#button('Từ chối ngân hàng', { name: 'bank/reject', title: 'Từ chối tài khoản ngân hàng', text: 'Shipper sẽ thấy lý do và phải nhập lại thông tin ngân hàng. Nhận đơn bị tắt cho đến khi xác minh lại.', confirm: 'Từ chối', danger: true, reason: true }, false));
+        buttons.push(this.#button('Từ chối ngân hàng', { name: 'bank/reject', title: 'Từ chối tài khoản ngân hàng', text: 'Shipper sẽ thấy lý do và phải nhập lại thông tin ngân hàng. Tài khoản này chỉ dùng để hoàn tiền khi dừng hoạt động.', confirm: 'Từ chối', danger: true, reason: true }, false));
       }
     }
     return h(
@@ -436,21 +436,15 @@ export class ShipperDetailView {
 
   #actions(s: ShipperDetail): HTMLElement[] {
     const actions: HTMLElement[] = [];
-    if (s.status === 'PENDING' && s.reviewState === 'SUBMITTED') {
-      actions.push(
-        this.#button('Duyệt hồ sơ', { name: 'approve', title: 'Duyệt hồ sơ Shipper', text: `Duyệt hồ sơ của ${s.fullName}? Shipper chuyển sang “Đã duyệt”. Nhận đơn vẫn chỉ bật được khi ngân hàng đã xác minh và ví đủ điều kiện.`, confirm: 'Duyệt' }, true),
-        this.#button('Từ chối', { name: 'reject', title: 'Từ chối hồ sơ Shipper', text: 'Shipper sẽ thấy lý do, được sửa và gửi lại hồ sơ.', confirm: 'Từ chối', danger: true, reason: true }, false),
-      );
-    }
     if (s.status === 'ACTIVE') {
       actions.push(this.#button('Khóa hoạt động', { name: 'lock', title: 'Khóa hoạt động Shipper', text: 'Shipper ngừng nhận đơn mới ngay. Đơn đã nhận và số dư ví không bị ảnh hưởng.', confirm: 'Khóa', danger: true, reason: true }, false));
     }
     if (s.status === 'SUSPENDED') {
-      actions.push(this.#button('Mở lại hoạt động', { name: 'unlock', title: 'Mở lại hoạt động', text: 'Chỉ mở lại khi ngân hàng đã được xác minh. Nhận đơn vẫn tắt cho đến khi Shipper tự bật.', confirm: 'Mở lại' }, true));
+      actions.push(this.#button('Mở lại hoạt động', { name: 'unlock', title: 'Mở lại hoạt động', text: 'Mở khóa tài khoản. Shipper có thể tự bật nhận đơn khi ví đủ điều kiện.', confirm: 'Mở lại' }, true));
     }
     if (s.status === 'CLOSING') {
       actions.push(
-        this.#button('Hoàn tất ngừng hoạt động', { name: 'closure/finalize', title: 'Hoàn tất ngừng hoạt động', text: 'Chỉ hoàn tất khi không còn đơn đang giao và ví đã tất toán. Máy chủ kiểm tra lại điều kiện; số dư không bị mất.', confirm: 'Hoàn tất', danger: true }, false),
+        this.#button('Hoàn tất ngừng hoạt động', { name: 'closure/finalize', title: 'Hoàn tất ngừng hoạt động', text: 'Xử lý và xác nhận hoàn tiền tại Tài chính → Rút tiền trước. Chỉ hoàn tất khi không còn đơn đang giao và ví đã tất toán. Máy chủ kiểm tra lại điều kiện; số dư không bị mất.', confirm: 'Hoàn tất', danger: true }, false),
         this.#button('Từ chối yêu cầu', { name: 'closure/reject', title: 'Từ chối yêu cầu ngừng hoạt động', text: 'Shipper quay lại trạng thái hoạt động với nhận đơn đang tắt.', confirm: 'Từ chối yêu cầu', reason: true }, true),
       );
     }

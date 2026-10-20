@@ -9,9 +9,11 @@ const String kOnlineReason = 'Tính năng online và nhận đơn chưa khả d�
 /// Presentation only: M01 has no online mutation or operational GPS controller.
 /// Never turn the reference image's sample figures or location into account data.
 class ShipHome extends StatelessWidget {
-  const ShipHome({super.key, required this.session, required this.onNotifications, this.reset, this.notifications});
+  const ShipHome({super.key, required this.session, required this.onNotifications, this.reset, this.notifications, this.driver, this.walletSource});
 
   final SessionController session;
+  final DriverController? driver;
+  final WalletSource? walletSource;
   final ResetController? reset;
   final VoidCallback onNotifications;
 
@@ -20,11 +22,12 @@ class ShipHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: session,
+    listenable: Listenable.merge(<Listenable>[session, if (driver != null) driver!]),
     builder: (BuildContext context, Widget? child) => ShipHomeLayout(
       // M01 has no operational online API. Never infer this from profile approval.
-      online: false,
-      reason: kOnlineReason,
+      online: driver?.profile?.acceptingDeliveries ?? false,
+      reason: driver?.profile == null ? kOnlineReason : (driver!.profile!.readiness.canAccept ? 'Ví đủ điều kiện. Bạn có thể bật hoạt động.' : driver!.profile!.readiness.blocks.map(driverBlockLabel).join('\n')),
+      onToggle: driver?.profile == null || driver!.busy || !(driver!.profile!.acceptingDeliveries || driver!.profile!.readiness.canAccept) ? null : () => driver!.setAccepting(!driver!.profile!.acceptingDeliveries),
       onNotifications: onNotifications,
       bell: notifications == null ? null : NotificationBell(controller: notifications!, onPressed: onNotifications),
       footer: session.status == SessionStatus.guest
@@ -33,7 +36,7 @@ class ShipHome extends StatelessWidget {
               key: const Key('guest-login'),
               onPressed: session.ready ? () => Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: shipBrand, reset: reset))) : null,
             )
-          : null,
+          : walletSource == null ? null : Column(children: <Widget>[N11Button(label: 'Ví tiền / Nạp tiền', onPressed: () => Navigator.of(context).push(n11Route(WalletHomeScreen(source: walletSource!)))), if (driver != null) N11Link('Cập nhật điều kiện nhận đơn', onPressed: driver!.load), if (driver != null) N11Link('Thông tin và hoạt động shipper', onPressed: () => Navigator.of(context).push(n11Route(DriverProfileScreen(controller: driver!, walletSource: walletSource))))]),
     ),
   );
 }
@@ -41,11 +44,12 @@ class ShipHome extends StatelessWidget {
 /// Approved visual states without account mutations. The runtime passes Offline;
 /// visual tests can exercise Online without granting a role or starting a session.
 class ShipHomeLayout extends StatelessWidget {
-  const ShipHomeLayout({super.key, required this.online, required this.reason, required this.onNotifications, this.bell, this.footer});
+  const ShipHomeLayout({super.key, required this.online, required this.reason, required this.onNotifications, this.bell, this.footer, this.onToggle});
 
   final bool online;
   final String reason;
   final VoidCallback onNotifications;
+  final VoidCallback? onToggle;
   final Widget? bell;
   final Widget? footer;
 
@@ -104,7 +108,7 @@ class ShipHomeLayout extends StatelessWidget {
                 ],
               ),
             ),
-            ShipActivityPanel(online: online, reason: reason, footer: footer),
+            ShipActivityPanel(online: online, reason: reason, footer: footer, onToggle: onToggle),
           ],
         ),
       );

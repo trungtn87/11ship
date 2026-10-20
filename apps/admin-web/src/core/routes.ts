@@ -4,6 +4,7 @@
 
 import { TOPUP_TABS, TopupTab, WITHDRAWAL_TABS, WithdrawalTab } from './finance.js';
 import { TopupFilter, TOPUP_FILTERS } from './finance-admin.js';
+import { WithdrawalFilterOps, WITHDRAWAL_FILTERS } from './finance-ops.js';
 import { InvitationStatus, INVITATION_STATUSES, isUuid } from './provisioning-api.js';
 import { SHIPPER_FILTERS, ShipperFilter } from './shippers.js';
 
@@ -37,7 +38,7 @@ export type Route =
   | { readonly name: 'finance-topups'; readonly tab?: TopupTab; readonly status?: TopupFilter }
   | { readonly name: 'finance-bank-accounts' }
   | { readonly name: 'finance-topup'; readonly id: string }
-  | { readonly name: 'finance-withdrawals'; readonly tab?: WithdrawalTab }
+  | { readonly name: 'finance-withdrawals'; readonly tab?: WithdrawalTab; readonly status?: WithdrawalFilterOps }
   | { readonly name: 'finance-withdrawal'; readonly id: string }
   | { readonly name: 'finance-transactions'; readonly shipper?: string }
   | { readonly name: 'finance-reconciliation' }
@@ -152,7 +153,12 @@ function parseFinanceRoute(path: string, search: string): Route | undefined {
       return tab !== null && (TOPUP_TABS as readonly string[]).includes(tab) ? { name: 'finance-topups', tab: tab as TopupTab } : { name: 'finance-topups' };
     }
     case '/finance/withdrawals': {
-      const tab = new URLSearchParams(search).get('tab');
+      const params = new URLSearchParams(search);
+      const status = params.get('status');
+      if (status !== null && (WITHDRAWAL_FILTERS as readonly string[]).includes(status)) {
+        return { name: 'finance-withdrawals', status: status as WithdrawalFilterOps };
+      }
+      const tab = params.get('tab');
       return tab !== null && (WITHDRAWAL_TABS as readonly string[]).includes(tab) ? { name: 'finance-withdrawals', tab: tab as WithdrawalTab } : { name: 'finance-withdrawals' };
     }
   }
@@ -214,7 +220,7 @@ export function formatRoute(route: Route): string {
     case 'finance-topup':
       return `/finance/topups/${route.id}`;
     case 'finance-withdrawals':
-      return route.tab === undefined ? '/finance/withdrawals' : `/finance/withdrawals?tab=${route.tab}`;
+      return route.status !== undefined ? `/finance/withdrawals?status=${route.status}` : route.tab === undefined ? '/finance/withdrawals' : `/finance/withdrawals?tab=${route.tab}`;
     case 'finance-withdrawal':
       return `/finance/withdrawals/${route.id}`;
     case 'finance-transactions':

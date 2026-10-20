@@ -83,6 +83,7 @@ export const APP_ERROR_DEFINITIONS = {
   DRIVER_PROFILE_INCOMPLETE: { status: 409, message: 'The Shipper profile is missing required information' },
   BANK_HOLDER_MISMATCH: { status: 400, message: 'The bank account holder must match the Shipper name' },
   DRIVER_BANK_NOT_VERIFIED: { status: 409, message: 'The bank account has not been verified' },
+  DRIVER_FUNDING_REQUIRED: { status: 409, message: 'The Shipper needs the initial funding before the profile can be approved' },
   DRIVER_NOT_ACTIVE: { status: 409, message: 'The Shipper is not active' },
   DRIVER_WALLET_NOT_READY: { status: 409, message: 'The wallet does not meet the conditions to take orders' },
   DRIVER_HAS_ACTIVE_WORK: { status: 409, message: 'The Shipper still has deliveries in progress' },
@@ -106,6 +107,16 @@ export const APP_ERROR_DEFINITIONS = {
   TOPUP_REQUEST_NOT_FOUND: { status: 404, message: 'The top-up request was not found' },
   TOPUP_REQUEST_STATE_CONFLICT: { status: 409, message: 'The top-up request is not in a state that allows this action' },
   WALLET_PARAMETER_VERSION_CONFLICT: { status: 409, message: 'The wallet parameters were changed by another request' },
+  // Withdrawals (M04-C). Same rule: fixed messages that echo nothing the client sent; a withdrawal of another Shipper reads as not found.
+  WITHDRAWAL_AMOUNT_BELOW_MINIMUM: { status: 400, message: 'The withdrawal amount is below the current minimum' },
+  WITHDRAWAL_INSUFFICIENT_AVAILABLE: { status: 409, message: 'The available balance is not enough for this withdrawal' },
+  WITHDRAWAL_BANK_NOT_VERIFIED: { status: 409, message: 'A verified bank account is needed to withdraw' },
+  WITHDRAWAL_NOT_FOUND: { status: 404, message: 'The withdrawal was not found' },
+  WITHDRAWAL_STATE_CONFLICT: { status: 409, message: 'The withdrawal is not in a state that allows this action' },
+  BANK_SNAPSHOT_STALE: { status: 409, message: 'The bank account changed since the withdrawal was requested' },
+  WITHDRAWAL_NOT_OWNER: { status: 403, message: 'Only the administrator who took this withdrawal can confirm it' },
+  WITHDRAWAL_EVIDENCE_MISMATCH: { status: 409, message: 'The transfer evidence does not match the withdrawal; report it for reconciliation' },
+  COMMISSION_POLICY_VERSION_CONFLICT: { status: 409, message: 'The commission policy was changed by another request' },
 
   // M06-A shipping fee policy (Administration web).
   SHIPPING_POLICY_INVALID: { status: 400, message: 'The shipping fee table is not valid' },

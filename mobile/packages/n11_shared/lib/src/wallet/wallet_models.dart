@@ -39,6 +39,9 @@ int? parseVndInput(String text) {
   return int.parse(digits);
 }
 
+/// A readable short form of a request identifier: the first eight characters, upper-case, for a server UUID; any other code unchanged.
+String walletShortCode(String code) => RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-').hasMatch(code) ? code.substring(0, 8).toUpperCase() : code;
+
 /// B = total, H = held, A = B - H. The available figure is ALWAYS computed here, never taken from a separate field.
 class Wallet {
   const Wallet({required this.total, required this.held});
@@ -70,12 +73,15 @@ String withdrawalStatusLabel(WithdrawalStatus status) => switch (status) {
 
 /// Where the shipper sends money when topping up (the system account) and the content to type.
 class BankTransferInfo {
-  const BankTransferInfo({required this.bankName, required this.accountNumber, required this.holder, required this.content});
+  const BankTransferInfo({required this.bankName, required this.accountNumber, required this.holder, this.content});
 
   final String bankName;
   final String accountNumber;
   final String holder;
-  final String content;
+
+  /// The transfer content to type, ONLY when the server defines one. A real server defines none today (the Admin matches the transfer by
+  /// the bank statement), so a real build shows no content row rather than an invented code.
+  final String? content;
 }
 
 /// The shipper's verified receiving account (owned by M03; read-only here). Only the masked number is ever shown.
@@ -88,23 +94,36 @@ class ReceivingAccount {
 }
 
 class TopupRequest {
-  const TopupRequest({required this.code, required this.amount, required this.createdAt, required this.status, required this.transfer, this.proofName});
+  const TopupRequest({required this.code, required this.amount, required this.createdAt, required this.status, this.transfer, this.proofName, this.displayCode, this.version});
 
+  /// The identifier the app opens the request by (the server's request id for a real source).
   final String code;
   final int amount;
   final DateTime createdAt;
   final TopupStatus status;
-  final BankTransferInfo transfer;
+  final BankTransferInfo? transfer;
   final String? proofName;
+
+  /// A short code a person can read out ("MÃ A1B2C3D4"); [code] when the source has none.
+  final String? displayCode;
+
+  /// The record version the server answered (a cancel carries it).
+  final int? version;
+
+  String get shownCode => displayCode ?? code;
 
   /// A topup can be cancelled only while nobody has decided it.
   bool get canCancel => status == TopupStatus.pending;
 }
 
 class WithdrawalRequest {
-  const WithdrawalRequest({required this.code, required this.amount, required this.createdAt, required this.status, required this.account});
+  const WithdrawalRequest({required this.code, required this.amount, required this.createdAt, required this.status, required this.account, this.displayCode, this.version});
 
   final String code;
+  final String? displayCode;
+  final int? version;
+
+  String get shownCode => displayCode ?? code;
   final int amount;
   final DateTime createdAt;
   final WithdrawalStatus status;

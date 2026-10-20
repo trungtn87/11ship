@@ -36,6 +36,18 @@ class WalletReady<T> extends WalletLoad<T> {
   final T value;
 }
 
+/// A write that did not complete, with the sentence to show. [outcomeUnknown] means the server may have done it: the person's next tap
+/// sends the SAME command again (the source keeps its Idempotency-Key), never a new one.
+class WalletFailure implements Exception {
+  const WalletFailure(this.message, {this.outcomeUnknown = false});
+
+  final String message;
+  final bool outcomeUnknown;
+
+  @override
+  String toString() => 'WalletFailure($message, unknown: $outcomeUnknown)';
+}
+
 /// Writes. Only a source that really can write has one; the UI disables every "create / cancel" control when [WalletSource.writes] is null.
 abstract class WalletWrites {
   /// Creates a topup REQUEST in state "Chờ xác nhận". It never adds money: only an Admin confirms a topup.
@@ -62,9 +74,20 @@ abstract class WalletSource {
 
   String get notWiredReason => kWalletNotWiredReason;
 
+  /// The minimum amounts the server currently asks for (a real source learns them from the wallet summary; others use the defaults).
+  int get minTopup => kMinTopup;
+  int get minWithdraw => kMinWithdraw;
+
   Future<WalletLoad<Wallet>> wallet();
   Future<WalletLoad<List<WalletTxn>>> recentTxns();
   Future<WalletLoad<List<WalletTxn>>> txns(TxnFilter filter);
+
+  /// True while the server still has older rows of [filter] after what [txns] and [moreTxns] returned (the history screen then offers "Tải thêm").
+  bool hasMoreTxns(TxnFilter filter) => false;
+
+  /// The next older page of [filter], continuing where [txns] / the last call stopped. Empty when nothing is left.
+  Future<WalletLoad<List<WalletTxn>>> moreTxns(TxnFilter filter) async => const WalletReady<List<WalletTxn>>(<WalletTxn>[]);
+
   Future<WalletLoad<TopupRequest>> topup(String code);
   Future<WalletLoad<WithdrawalRequest>> withdrawal(String code);
 

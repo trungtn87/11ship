@@ -1,3 +1,5 @@
+import '../wallet/wallet_source.dart';
+import '../wallet/wallet_views.dart';
 import 'package:flutter/material.dart';
 
 import '../account/account_views.dart';
@@ -42,9 +44,10 @@ ChipKind _standingKind(DriverProfile profile) {
 }
 
 class DriverProfileScreen extends StatefulWidget {
-  const DriverProfileScreen({super.key, required this.controller});
+  const DriverProfileScreen({super.key, required this.controller, this.walletSource});
 
   final DriverController controller;
+  final WalletSource? walletSource;
 
   @override
   State<DriverProfileScreen> createState() => _DriverProfileScreenState();
@@ -99,12 +102,6 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     }
   }
 
-  Future<void> _sendForReview(DriverController c) async {
-    final bool ok = await c.submitForReview();
-    if (ok && mounted) {
-      setState(() => _saved = 'Đã gửi hồ sơ. Hồ sơ đang chờ xét duyệt.');
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -159,9 +156,6 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         ],
       ),
       if (_saved != null) N11Banner(key: const Key('driver-saved'), kind: BannerKind.success, title: _saved!),
-      if (profile.rejected) N11Banner(key: const Key('driver-rejected'), kind: BannerKind.error, title: 'Hồ sơ bị từ chối', text: 'Lý do: ${profile.rejectionReason ?? 'Không rõ'}. Bạn có thể chỉnh sửa và gửi lại.'),
-      if (profile.submitted) const N11Banner(key: Key('driver-submitted'), kind: BannerKind.info, title: 'Hồ sơ đang chờ xét duyệt', text: 'Quản trị viên sẽ duyệt hồ sơ. Bạn chưa nhận đơn được cho đến khi hồ sơ được duyệt.'),
-      if (profile.draft) const N11Banner(key: Key('driver-draft'), kind: BannerKind.warn, title: 'Hồ sơ chưa gửi xét duyệt', text: 'Khai báo tài khoản ngân hàng rồi bấm "Gửi hồ sơ xét duyệt".'),
       if (profile.status == 'SUSPENDED') N11Banner(key: const Key('driver-suspended'), kind: BannerKind.error, title: 'Tài khoản đang bị tạm khóa', text: profile.suspensionReason == null ? null : 'Lý do: ${profile.suspensionReason}. Đơn đã nhận và số dư ví của bạn không bị ảnh hưởng.'),
       if (profile.status == 'CLOSING') const N11Banner(key: Key('driver-closing'), kind: BannerKind.warn, title: 'Đang xin ngừng hoạt động', text: 'Bạn đã ngừng nhận đơn mới. Đơn đang giao vẫn cần hoàn tất.'),
       if (profile.canEditProfile) ...<Widget>[
@@ -186,12 +180,12 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         ),
       N11List(
         children: <Widget>[
-          N11ListItem(
+          if (profile.status == 'CLOSING') N11ListItem(
             key: const Key('driver-bank-entry'),
             icon: Icons.account_balance_outlined,
             title: 'Tài khoản ngân hàng',
             sub: profile.bank == null ? 'Chưa khai báo' : '${profile.bank!.bankName} · ${bankStateLabel(profile.bank!.verificationState)}',
-            onTap: profile.status == 'CLOSING' || profile.status == 'CLOSED' ? null : () => Navigator.of(context).push(n11Route(DriverBankScreen(controller: c))),
+            onTap: () => Navigator.of(context).push(n11Route(DriverBankScreen(controller: c))),
           ),
           if (profile.status == 'ACTIVE' || profile.status == 'SUSPENDED' || profile.status == 'CLOSING')
             N11ListItem(
@@ -199,18 +193,10 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
               icon: Icons.two_wheeler_outlined,
               title: 'Nhận đơn và ngừng hoạt động',
               sub: profile.acceptingDeliveries ? 'Đang nhận đơn' : 'Đang tắt nhận đơn',
-              onTap: () => Navigator.of(context).push(n11Route(DriverActivityScreen(controller: c))),
+              onTap: () => Navigator.of(context).push(n11Route(DriverActivityScreen(controller: c, walletSource: widget.walletSource))),
             ),
         ],
       ),
-      if (profile.canSubmit)
-        N11Button(
-          key: const Key('driver-send-review'),
-          label: busy ? 'Đang gửi…' : (profile.rejected ? 'Gửi lại hồ sơ' : 'Gửi hồ sơ xét duyệt'),
-          loading: busy,
-          onPressed: busy || profile.bank == null ? null : () => _sendForReview(c),
-        ),
-      if (profile.canSubmit && profile.bank == null) const ReasonNote('Cần khai báo tài khoản ngân hàng trước khi gửi hồ sơ.'),
       N11Button(key: const Key('driver-refresh'), label: 'Tải lại', kind: ButtonKind.secondary, onPressed: busy ? null : c.load),
     ];
   }
@@ -330,9 +316,10 @@ class _DriverBankScreenState extends State<DriverBankScreen> {
 
 /// Receiving orders (on/off, with what is missing) and the request to stop working.
 class DriverActivityScreen extends StatefulWidget {
-  const DriverActivityScreen({super.key, required this.controller});
+  const DriverActivityScreen({super.key, required this.controller, this.walletSource});
 
   final DriverController controller;
+  final WalletSource? walletSource;
 
   @override
   State<DriverActivityScreen> createState() => _DriverActivityScreenState();
@@ -401,8 +388,7 @@ class _DriverActivityScreenState extends State<DriverActivityScreen> {
             const ReasonNote('Tắt nhận đơn không hủy các đơn bạn đã nhận.'),
             N11CheckList(
               items: <N11CheckItem>[
-                N11CheckItem('Hồ sơ đã được duyệt', active || profile.status == 'CLOSING' || profile.status == 'SUSPENDED' ? CheckState.done : CheckState.missing),
-                N11CheckItem('Ngân hàng đã xác minh', r.bankVerified ? CheckState.done : CheckState.missing),
+                N11CheckItem('Tài khoản hợp lệ', active || profile.status == 'CLOSING' || profile.status == 'SUSPENDED' ? CheckState.done : CheckState.missing),
                 N11CheckItem('Ví đủ điều kiện nhận đơn', r.walletReady ? CheckState.done : CheckState.missing),
               ],
             ),
@@ -414,9 +400,14 @@ class _DriverActivityScreenState extends State<DriverActivityScreen> {
                 text: r.blocks.map(driverBlockLabel).join('\n'),
               ),
             const SizedBox(height: N11Space.gap2),
-            const N11Heading('Ngừng hoạt động', sub: 'Gửi yêu cầu nếu bạn không muốn làm shipper nữa. Đơn đang giao phải hoàn tất, số dư ví không bị mất.'),
+            const N11Heading('Dừng hoạt động / Rút tiền', sub: 'Gửi yêu cầu nếu bạn không muốn làm shipper nữa. Đơn đang giao phải hoàn tất, số dư ví không bị mất.'),
             if (profile.status == 'CLOSING') ...<Widget>[
               N11Banner(key: const Key('driver-closure-pending'), kind: BannerKind.warn, title: 'Đã gửi yêu cầu ngừng hoạt động', text: profile.closure?.note == null ? 'Bạn đã ngừng nhận đơn mới.' : 'Ghi chú: ${profile.closure!.note}'),
+              N11Button(key: const Key('closure-bank'), label: profile.bank == null ? 'Nhập ngân hàng nhận hoàn tiền' : 'Thông tin ngân hàng nhận hoàn tiền', kind: ButtonKind.secondary, onPressed: busy ? null : () => Navigator.of(context).push(n11Route(DriverBankScreen(controller: c)))),
+              if (!(profile.bank?.verified ?? false)) const ReasonNote('Hoàn tất đơn và giao dịch đang chờ. Ngân hàng chính chủ cần được Admin xác minh trước khi yêu cầu hoàn tiền.'),
+              if (widget.walletSource != null && (profile.bank?.verified ?? false))
+                N11Button(key: const Key('closure-withdraw'), label: 'Rút toàn bộ số dư ví', onPressed: busy ? null : () => Navigator.of(context).push(n11Route(WithdrawScreen(source: widget.walletSource!, closing: true)))),
+              N11Button(key: const Key('closure-refresh'), label: 'Cập nhật trạng thái', kind: ButtonKind.secondary, onPressed: busy ? null : c.load),
               N11Button(key: const Key('driver-closure-undo'), label: 'Hủy yêu cầu ngừng hoạt động', kind: ButtonKind.secondary, loading: busy, onPressed: busy || !(profile.closure?.canCancel ?? false) ? null : c.cancelClosure),
             ] else if (active) ...<Widget>[
               N11Field(fieldKey: const Key('driver-closure-note'), label: 'Ghi chú', optionalLabel: true, controller: _note, maxLength: 500, enabled: !busy),

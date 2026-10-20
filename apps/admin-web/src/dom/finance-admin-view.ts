@@ -62,22 +62,25 @@ export interface FinanceAdminHost {
   readonly dialogHost?: HTMLElement;
 }
 
+/** What the shared pieces need from a page host (the top-up pages and the operating pages both provide it). */
+export type SessionHost = Pick<FinanceAdminHost, 'home' | 'login' | 'onSessionLost' | 'onForbidden'>;
+
 // ---- small pieces -------------------------------------------------------------------------------------------------------------
 
-interface Column {
+export interface Column {
   readonly label: string;
   readonly end?: boolean;
 }
 
-function tableCard(caption: string, columns: readonly Column[], body: { readonly rows: readonly HTMLElement[] } | { readonly panel: HTMLElement }): HTMLElement {
+export function tableCard(caption: string, columns: readonly Column[], body: { readonly rows: readonly HTMLElement[] } | { readonly panel: HTMLElement }): HTMLElement {
   const head = h('tr', {}, ...columns.map((column) => h('th', { scope: 'col', class: column.end ? 'cell-end' : '' }, column.label)));
   const rows = 'rows' in body ? body.rows : [h('tr', { class: 'row-panel' }, h('td', { colspan: String(columns.length) }, body.panel))];
   return h('div', { class: 'table-card' }, h('table', { class: 'table' }, h('caption', { class: 'sr-only' }, caption), h('thead', {}, head), h('tbody', {}, ...rows)));
 }
 
-const cell = (label: string, ...children: (Node | string | undefined)[]): HTMLElement => h('td', { 'data-label': label }, ...children);
+export const cell = (label: string, ...children: (Node | string | undefined)[]): HTMLElement => h('td', { 'data-label': label }, ...children);
 
-function pageHead(title: string, subtitle: string, id: string, ...actions: (HTMLElement | undefined)[]): HTMLElement {
+export function pageHead(title: string, subtitle: string, id: string, ...actions: (HTMLElement | undefined)[]): HTMLElement {
   return h('header', { class: 'page-head' }, h('div', {}, h('h1', { class: 'title', tabindex: '-1', id }, title), h('p', { class: 'lead lead-last' }, subtitle)), ...actions);
 }
 
@@ -93,14 +96,14 @@ function stateBadge(state: TopupState): HTMLElement {
   return h('span', { class: `badge${kind === 'neutral' ? '' : ` badge-${kind}`}` }, icon(name, 14), TOPUP_STATE_LABEL[state]);
 }
 
-function definition(items: ReadonlyArray<readonly [string, string | HTMLElement]>): HTMLElement {
+export function definition(items: ReadonlyArray<readonly [string, string | HTMLElement]>): HTMLElement {
   return h('dl', { class: 'kvs' }, ...items.map(([label, value]) => h('div', { class: 'kv' }, h('dt', {}, label), h('dd', {}, value))));
 }
 
-const when = (iso: string | null): string => (iso === null ? '—' : formatDateTimeVn(iso));
+export const when = (iso: string | null): string => (iso === null ? '—' : formatDateTimeVn(iso));
 
 /** The sentence of a failed command; `reload` says whether the data on screen is now stale. */
-function outcomeText(outcome: FinanceOutcome): { readonly text: string; readonly reload: boolean } {
+export function outcomeText(outcome: FinanceOutcome): { readonly text: string; readonly reload: boolean } {
   switch (outcome.kind) {
     case 'conflict':
       return { text: messageOf(outcome.code), reload: true };
@@ -120,7 +123,7 @@ function outcomeText(outcome: FinanceOutcome): { readonly text: string; readonly
 }
 
 /** Shared by the pages: a read that did not give data, drawn as a state panel (never an empty area). */
-function readPanel(read: Exclude<FinanceRead<unknown>, { kind: 'ready' }>, host: FinanceAdminHost, retry: () => void): HTMLElement {
+export function readPanel(read: Exclude<FinanceRead<unknown>, { kind: 'ready' }>, host: SessionHost, retry: () => void): HTMLElement {
   switch (read.kind) {
     case 'not-wired':
       return notWiredPanel('Tài chính chưa được nối với máy chủ nên chưa có dữ liệu nào để hiển thị.');
@@ -132,7 +135,7 @@ function readPanel(read: Exclude<FinanceRead<unknown>, { kind: 'ready' }>, host:
 }
 
 /** Handles the two outcomes every page treats the same way. Returns true when the page must stop (the session is gone). */
-function sessionGone(outcome: FinanceOutcome | FinanceRead<unknown>, host: FinanceAdminHost): boolean {
+export function sessionGone(outcome: FinanceOutcome | FinanceRead<unknown>, host: SessionHost): boolean {
   if (outcome.kind === 'session-expired' || (outcome.kind === 'failed' && outcome.failure === 'session-expired')) {
     host.onSessionLost();
     return true;
@@ -143,7 +146,7 @@ function sessionGone(outcome: FinanceOutcome | FinanceRead<unknown>, host: Finan
   return false;
 }
 
-function noticeBlock(id: string, kind: 'error' | 'notice' | 'warning'): { readonly element: HTMLElement; set(text: string | undefined): void } {
+export function noticeBlock(id: string, kind: 'error' | 'notice' | 'warning'): { readonly element: HTMLElement; set(text: string | undefined): void } {
   const element = message(kind, id);
   return { element, set: (text) => setMessage(element, text) };
 }

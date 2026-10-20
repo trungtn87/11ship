@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { BatchOrder } from '../shipping-policy/shipping-batching';
 import { DeliveryOffer, DeliveryOfferPort, ShipperOpenWork, ShipperWorkPort } from '../shipping-policy/shipping-ports';
 import { TransactionContext } from '../transaction/transaction-context';
-import { COMMISSION_VND } from './delivery-constants';
+import { CommissionPolicyRepository } from '../wallet/commission-policy-repository';
 import { DeliveryRepository } from './delivery-repository';
 
 // What M06 may know about M07, answered from M07's own tables. M06 never sees a phone number or an address text: only what its rules need.
@@ -10,7 +10,10 @@ import { DeliveryRepository } from './delivery-repository';
 /** The delivery on offer, as the eligibility rules need it. */
 @Injectable()
 export class DeliveryOfferReader implements DeliveryOfferPort {
-  constructor(private readonly deliveries: DeliveryRepository) {}
+  constructor(
+    private readonly deliveries: DeliveryRepository,
+    private readonly policies: CommissionPolicyRepository,
+  ) {}
 
   async offer(context: TransactionContext, deliveryId: string): Promise<DeliveryOffer | undefined> {
     const delivery = await this.deliveries.findById(context, deliveryId);
@@ -25,8 +28,8 @@ export class DeliveryOfferReader implements DeliveryOfferPort {
       searchExpiresAtMs: delivery.searchExpiresAtMs,
       shop: { lat: delivery.pickupLat, lng: delivery.pickupLng },
       dropoff: delivery.dropoffLat === null || delivery.dropoffLng === null ? null : { lat: delivery.dropoffLat, lng: delivery.dropoffLng },
-      // The commission M04 would set aside: a fixed amount per delivery today (ADR-004), snapshotted on the assignment when it is accepted.
-      requiredHoldVnd: COMMISSION_VND,
+      // The commission M04 would set aside: the policy in force now (M04-C, versioned), snapshotted on the assignment when it is accepted.
+      requiredHoldVnd: (await this.policies.current(context)).amountVnd,
     };
   }
 }

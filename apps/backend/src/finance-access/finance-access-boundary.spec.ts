@@ -58,8 +58,8 @@ describe('M04-B2.2a boundary', () => {
     expect(codeOf('finance-access/finance-access-participant.ts')).toContain("adminRole === 'SYSTEM'");
   });
 
-  it('only wallet.read and wallet.topup.record can be granted today; the reserved names grant nothing', () => {
-    expect([...GRANTABLE_FINANCE_PERMISSIONS]).toEqual(['wallet.read', 'wallet.topup.record']);
+  it('only the read, topup and the three withdrawal rights can be granted today; the reserved names grant nothing', () => {
+    expect([...GRANTABLE_FINANCE_PERMISSIONS]).toEqual(['wallet.read', 'wallet.topup.record', 'wallet.withdrawal.process', 'wallet.withdrawal.confirm', 'wallet.withdrawal.reconcile']);
     for (const reserved of RESERVED_FINANCE_PERMISSIONS) {
       expect(isGrantableFinancePermission(reserved)).toBe(false);
       expect(() => parseGrantBody({ permission_key: reserved, expected_version: 0 })).toThrow();

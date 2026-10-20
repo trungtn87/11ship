@@ -32,12 +32,8 @@ export const LOCATION_MAX_ACCURACY_M = 500;
 /** M06 asks "fresh": the position must be at most as old as LIVE. */
 export const LOCATION_FRESH_MS = LOCATION_LIVE_SECONDS * 1000;
 
-/**
- * Commission per successful delivery (ADR-004: 1.000 VND). It is SNAPSHOTTED on the assignment together with the policy label at acceptance;
- * capture and release use the snapshot, never this constant afterwards.
- */
-export const COMMISSION_VND = 1000n;
-export const COMMISSION_POLICY = 'COMMISSION_V1';
+// The commission per successful delivery is a versioned policy of M04 (app.wallet_commission_policies; version 1 = 1.000 VND, ADR-004). It is SNAPSHOTTED on the
+// assignment (amount and label COMMISSION_V<version>) when the delivery is accepted; capture and release use the snapshot, never the current policy.
 
 /** Fixed pre-pickup display: the first segment of an address (the street line) is never shown to a Shipper before accepting. */
 export const AREA_TEXT_MAX = 160;

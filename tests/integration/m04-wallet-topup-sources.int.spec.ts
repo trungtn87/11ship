@@ -10,6 +10,7 @@ import { createDriverFor, purgePhone, randomPhone } from './support/auth-fixture
 import { loadIntegrationConfig } from './support/test-helpers';
 import { managerFor, testPool } from './support/transaction-fixtures';
 import { TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
+import { WITHDRAWAL_DOWN_SQL, WITHDRAWAL_UP_SQL } from './support/withdrawal-migration-sql';
 
 // M04-B1 against a REAL PostgreSQL test database: the topup SOURCE core (system receiving accounts, requests, the bank-transaction registry,
 // confirmed topups, the typed ledger source). No money can be posted in this package: the A1 ledger source gate is untouched. The rules
@@ -362,8 +363,8 @@ describe('M04-B1 - topup sources, bank registry and ledger source (schema, invar
       }
       await insertOne('FT 20 1'); // an inner space is part of the id
       // The account must be a receiving system account of the same bank; OUT is closed until withdrawals exist.
-      await refused(client, 'unknown_account', () => bankRecord(client, { id: randomUUID(), accountId: randomUUID(), txid: 'U1', amount: 1000, topupId: randomUUID() }), 'wallet_bank_transactions_account_fk|WALLET_BANK_ACCOUNT_NOT_RECEIVING');
-      await refused(client, 'wrong_bank_for_account', () => insertOne('B1', accountId, 'ACB'), 'wallet_bank_transactions_account_fk|WALLET_BANK_ACCOUNT_NOT_RECEIVING');
+      await refused(client, 'unknown_account', () => bankRecord(client, { id: randomUUID(), accountId: randomUUID(), txid: 'U1', amount: 1000, topupId: randomUUID() }), 'wallet_bank_transactions_account_fk|WALLET_BANK_ACCOUNT_NOT_RECEIVING|WALLET_BANK_ACCOUNT_NOT_FOUND');
+      await refused(client, 'wrong_bank_for_account', () => insertOne('B1', accountId, 'ACB'), 'wallet_bank_transactions_account_fk|WALLET_BANK_ACCOUNT_NOT_RECEIVING|WALLET_BANK_ACCOUNT_NOT_FOUND');
       const closed = await account(client, false);
       await refused(client, 'account_not_receiving', () => insertOne('N1', closed), 'WALLET_BANK_ACCOUNT_NOT_RECEIVING');
       await refused(client, 'out_closed', () => bankRecord(client, { id: randomUUID(), accountId, txid: 'O1', amount: 1000, topupId: randomUUID(), direction: 'OUT' }), 'WALLET_BANK_OUT_NOT_AVAILABLE');
@@ -445,12 +446,14 @@ describe('M04-B1 - topup sources, bank registry and ledger source (schema, invar
     try {
       await client.query('BEGIN');
       const before = await snapshot(client);
+      await client.query(WITHDRAWAL_DOWN_SQL); // M04-C withdrawals: the very newest, down first, up last
       await client.query(TOPUP_DOWN_SQL);
       const gone = await client.query(`SELECT 1 FROM information_schema.tables WHERE table_schema = 'app' AND table_name IN ('system_owned_bank_accounts', 'wallet_topup_requests', 'wallet_bank_transactions', 'wallet_topups')`);
       expect(gone.rowCount).toBe(0);
       expect((await client.query(`SELECT 1 FROM information_schema.columns WHERE table_schema = 'app' AND table_name = 'wallet_ledger_entries' AND column_name = 'topup_id'`)).rowCount).toBe(0);
       expect(await snapshot(client)).toEqual(before);
       await client.query(TOPUP_UP_SQL);
+      await client.query(WITHDRAWAL_UP_SQL);
       expect(await snapshot(client)).toEqual(before);
     } finally {
       await client.query('ROLLBACK').catch(() => undefined);
@@ -499,6 +502,7 @@ describe('M04-B1 - topup sources, bank registry and ledger source (schema, invar
         await reader.query('BEGIN');
         await reader.query('SELECT count(*) FROM app.wallet_topups');
         await migrator.query('BEGIN');
+        await migrator.query(WITHDRAWAL_DOWN_SQL); // M04-C withdrawals depend on the registry: newest, down first
         const migrating = migrator.query(TOPUP_DOWN_SQL).then(() => undefined, (error: unknown) => error);
         await eventually(async () => (await waiting()) >= 1, 'the down migration blocked behind the open reader');
         await reader.query('COMMIT');

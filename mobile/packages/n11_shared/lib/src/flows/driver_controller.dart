@@ -193,7 +193,7 @@ String driverStandingLabel(DriverProfile profile) {
       }
       return profile.rejected ? 'Bị từ chối' : 'Chưa gửi hồ sơ';
     case 'ACTIVE':
-      return 'Đã duyệt';
+      return 'Đã kích hoạt';
     case 'SUSPENDED':
       return 'Tạm khóa';
     case 'CLOSING':
@@ -285,6 +285,7 @@ class DriverController extends ChangeNotifier {
   DriverController({required this.session}) {
     _sessionEpoch = session.sessionEpoch;
     session.addListener(_onSession);
+    if (session.status == SessionStatus.signedIn) load();
   }
 
   final SessionController session;
@@ -318,6 +319,7 @@ class DriverController extends ChangeNotifier {
     if (session.sessionEpoch != _sessionEpoch || session.status != SessionStatus.signedIn) {
       _sessionEpoch = session.sessionEpoch;
       clear();
+      if (session.status == SessionStatus.signedIn) load();
     }
   }
 
