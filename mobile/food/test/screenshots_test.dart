@@ -111,15 +111,16 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('shop-name')), 'Cơm tấm Cô Ba');
     await tester.enterText(find.byKey(const Key('shop-phone')), '0912345678');
-    await tester.enterText(find.byKey(const Key('shop-address')), '12 Nguyễn Huệ, Q.1, TP.HCM');
-    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('shop-address')));
+    await tester.tap(find.byKey(const Key('shop-address')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('location-address-text')), '12 Nguyễn Huệ, Q.1, TP.HCM');
+    await tester.tap(find.byKey(const Key('location-current')));
+    await tester.pumpAndSettle();
+    await shot(tester, '10-shop-address-picker');
+    await tester.tap(find.byKey(const Key('location-save')));
+    await tester.pumpAndSettle();
     await shot(tester, '09-shop-form');
-    await tester.ensureVisible(find.byKey(const Key('shop-locate')));
-    await tester.tap(find.byKey(const Key('shop-locate')));
-    await tester.pumpAndSettle();
-    await tester.drag(find.byType(SingleChildScrollView).last, const Offset(0, -900));
-    await tester.pumpAndSettle();
-    await shot(tester, '10-shop-form-gps');
     expect(server.puts, isEmpty);
   });
 }

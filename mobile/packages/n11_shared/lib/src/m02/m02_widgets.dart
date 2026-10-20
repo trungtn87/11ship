@@ -36,7 +36,7 @@ class M02Scaffold extends StatelessWidget {
           navigator.pop();
         }
       },
-      child: Scaffold(
+      child: Form(child: Scaffold(
         backgroundColor: N11Colors.bg,
         body: SafeArea(
           child: Column(
@@ -79,7 +79,7 @@ class M02Scaffold extends StatelessWidget {
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 }

@@ -5,6 +5,7 @@ import '../account/models.dart';
 import '../account/session_controller.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../widgets/form_feedback.dart';
 import 'driver_controller.dart';
 
 // M03 on Android. S12: the Shipper profile (create it once, edit it, send it for review, see why it was refused) and its bank account;
@@ -132,13 +133,13 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     final bool busy = c.busy;
     return <Widget>[
       const N11Heading('Thông tin shipper', sub: 'Dùng tài khoản 11Ship hiện tại, không cần đăng ký lại. Điền họ tên để tạo hồ sơ; bước sau là tài khoản ngân hàng rồi gửi xét duyệt.'),
-      N11Field(fieldKey: const Key('driver-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !busy, onChanged: () { c.fullName = _name.text; setState(() {}); }),
+      N11Field(requiredInput: true, fieldKey: const Key('driver-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !busy, onChanged: () { c.fullName = _name.text; setState(() {}); }),
       N11Field(fieldKey: const Key('driver-plate'), label: 'Biển số xe', optionalLabel: true, placeholder: '59X1-123.45', controller: _plate, maxLength: 32, enabled: !busy, onChanged: () { c.plateNumber = _plate.text; setState(() {}); }),
       N11Button(
-        key: const Key('driver-submit'),
+        key: const Key('driver-submit'), validate: true,
         label: busy ? 'Đang tạo…' : 'Tạo hồ sơ',
         loading: busy,
-        onPressed: busy || _name.text.trim().isEmpty ? null : c.submit,
+        onPressed: busy ? null : c.submit,
       ),
     ];
   }
@@ -164,14 +165,14 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
       if (profile.status == 'SUSPENDED') N11Banner(key: const Key('driver-suspended'), kind: BannerKind.error, title: 'Tài khoản đang bị tạm khóa', text: profile.suspensionReason == null ? null : 'Lý do: ${profile.suspensionReason}. Đơn đã nhận và số dư ví của bạn không bị ảnh hưởng.'),
       if (profile.status == 'CLOSING') const N11Banner(key: Key('driver-closing'), kind: BannerKind.warn, title: 'Đang xin ngừng hoạt động', text: 'Bạn đã ngừng nhận đơn mới. Đơn đang giao vẫn cần hoàn tất.'),
       if (profile.canEditProfile) ...<Widget>[
-        N11Field(fieldKey: const Key('driver-edit-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !busy, onChanged: () => setState(() => _saved = null)),
+        N11Field(requiredInput: true, fieldKey: const Key('driver-edit-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !busy, onChanged: () => setState(() => _saved = null)),
         N11Field(fieldKey: const Key('driver-edit-plate'), label: 'Biển số xe', optionalLabel: true, placeholder: '59X1-123.45', controller: _plate, maxLength: 32, enabled: !busy, onChanged: () => setState(() => _saved = null)),
         N11Button(
-          key: const Key('driver-save-profile'),
+          key: const Key('driver-save-profile'), validate: true,
           label: 'Lưu thông tin',
           kind: ButtonKind.secondary,
           loading: busy,
-          onPressed: busy || _name.text.trim().isEmpty || (_name.text.trim() == profile.fullName && _plate.text.trim() == (profile.plateNumber ?? '')) ? null : () => _save(c),
+          onPressed: busy || (_name.text.trim() == profile.fullName && _plate.text.trim() == (profile.plateNumber ?? '')) ? null : () => _save(c),
         ),
       ] else
         N11InfoCard(
@@ -259,9 +260,10 @@ class _DriverBankScreenState extends State<DriverBankScreen> {
     _holder.text = bank?.accountHolder ?? profile.fullName;
   }
 
-  bool get _complete => _bankCode != null && RegExp(r'^[0-9][0-9 -]{4,28}[0-9]$').hasMatch(_number.text.trim()) && _holder.text.trim().isNotEmpty;
+  bool get _complete => _bankCode != null && bankNumberError(_number.text) == null && _holder.text.trim().isNotEmpty;
 
   Future<void> _save(DriverController c) async {
+    if (!_complete) return;
     final bool ok = await c.saveBank(bankCode: _bankCode!, accountNumber: _number.text, accountHolder: _holder.text);
     if (ok && mounted) {
       setState(() => _saved = 'Đã lưu tài khoản ngân hàng. Quản trị viên sẽ xác minh.');
@@ -295,7 +297,10 @@ class _DriverBankScreenState extends State<DriverBankScreen> {
                 text: bank.verificationState == 'REJECTED' ? 'Lý do: ${bank.rejectionReason ?? 'Không rõ'}. Hãy sửa thông tin và lưu lại.' : (bank.verified ? 'Ngân hàng đã được xác minh.' : 'Đang chờ quản trị viên xác minh.'),
               ),
             const N11Heading('Thông tin nhận tiền', sub: 'Tên chủ tài khoản phải khớp họ tên shipper. Đổi ngân hàng hoặc số tài khoản sẽ phải xác minh lại và tạm tắt nhận đơn.'),
-            Container(
+            FormField<String>(
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              validator: (_) => known ? null : 'Chọn ngân hàng nhận tiền.',
+              builder: (FormFieldState<String> field) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Container(
               padding: const EdgeInsets.symmetric(horizontal: N11Space.gap3),
               decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: N11Colors.line), borderRadius: BorderRadius.circular(14)),
               child: DropdownButton<String>(
@@ -307,13 +312,15 @@ class _DriverBankScreenState extends State<DriverBankScreen> {
                 items: <DropdownMenuItem<String>>[for (final BankOption o in c.banks) DropdownMenuItem<String>(value: o.code, child: Text(o.name, style: N11Text.body))],
                 onChanged: busy ? null : (String? value) => setState(() {
                   _bankCode = value;
+                  field.didChange(value);
                   _saved = null;
                 }),
               ),
+            ), if (field.errorText != null) Text(field.errorText!, style: const TextStyle(color: N11Colors.error))]),
             ),
-            N11Field(fieldKey: const Key('driver-bank-number'), label: 'Số tài khoản', controller: _number, keyboard: TextInputType.number, maxLength: 24, enabled: !busy, onChanged: () => setState(() => _saved = null)),
-            N11Field(fieldKey: const Key('driver-bank-holder'), label: 'Tên chủ tài khoản', controller: _holder, maxLength: 120, hint: 'Phải khớp họ tên: ${profile.fullName}', enabled: !busy, onChanged: () => setState(() => _saved = null)),
-            N11Button(key: const Key('driver-bank-save'), label: busy ? 'Đang lưu…' : 'Lưu tài khoản ngân hàng', loading: busy, onPressed: busy || !_complete ? null : () => _save(c)),
+            N11Field(validator: bankNumberError, fieldKey: const Key('driver-bank-number'), label: 'Số tài khoản', controller: _number, keyboard: TextInputType.number, maxLength: 24, enabled: !busy, onChanged: () => setState(() => _saved = null)),
+            N11Field(requiredInput: true, fieldKey: const Key('driver-bank-holder'), label: 'Tên chủ tài khoản', controller: _holder, maxLength: 120, hint: 'Phải khớp họ tên: ${profile.fullName}', enabled: !busy, onChanged: () => setState(() => _saved = null)),
+            N11Button(key: const Key('driver-bank-save'), validate: true, label: busy ? 'Đang lưu…' : 'Lưu tài khoản ngân hàng', loading: busy, onPressed: busy ? null : () => _save(c)),
           ],
         );
       },
@@ -413,7 +420,7 @@ class _DriverActivityScreenState extends State<DriverActivityScreen> {
               N11Button(key: const Key('driver-closure-undo'), label: 'Hủy yêu cầu ngừng hoạt động', kind: ButtonKind.secondary, loading: busy, onPressed: busy || !(profile.closure?.canCancel ?? false) ? null : c.cancelClosure),
             ] else if (active) ...<Widget>[
               N11Field(fieldKey: const Key('driver-closure-note'), label: 'Ghi chú', optionalLabel: true, controller: _note, maxLength: 500, enabled: !busy),
-              N11Button(key: const Key('driver-closure-request'), label: 'Gửi yêu cầu ngừng hoạt động', kind: ButtonKind.secondary, loading: busy, onPressed: busy ? null : () => _confirmClosure(context, c)),
+              N11Button(key: const Key('driver-closure-request'), validate: true, label: 'Gửi yêu cầu ngừng hoạt động', kind: ButtonKind.secondary, loading: busy, onPressed: busy ? null : () => _confirmClosure(context, c)),
             ] else
               const ReasonNote('Chỉ gửi được yêu cầu ngừng hoạt động khi hồ sơ đang hoạt động.'),
           ],

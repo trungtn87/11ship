@@ -250,6 +250,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> with M07Actio
             ),
           ),
         M11TextBox(
+          maxLength: 4000,
           fieldKey: const Key('m11-complaint-body'),
           label: 'Nội dung',
           controller: _body,
@@ -259,7 +260,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> with M07Actio
         ),
         _EvidenceBox(count: evidenceIds.length, busy: locked, onAdd: addEvidence, onRemoveLast: removeLastEvidence, failure: evidenceFailure),
         actionBanner(),
-        N11Button(key: const Key('m11-complaint-send'), label: 'Gửi phản ánh', loading: busy, onPressed: _category == null || needsText || locked ? null : _send),
+        N11Button(key: const Key('m11-complaint-send'), validate: true, label: 'Gửi phản ánh', loading: busy, onPressed: _category == null || locked ? null : _send),
         if (_category == null) const Text('Hãy chọn nhóm vấn đề.', textAlign: TextAlign.center, style: N11Text.caption) else if (needsText) const Text('Hãy nhập nội dung phản ánh.', textAlign: TextAlign.center, style: N11Text.caption),
       ],
     );
@@ -457,14 +458,14 @@ class _SupplementScreenState extends State<SupplementScreen> with M07Actions<Sup
       false,
       <Widget>[
         N11Card(child: Text('${widget.detail.code} · ${widget.detail.category.label}', style: N11Text.bodyStrong)),
-        M11TextBox(fieldKey: const Key('m11-supplement-body'), label: party ? 'Nội dung giải trình' : 'Nội dung bổ sung', controller: _body, enabled: !locked, onChanged: () => setState(() {})),
+        M11TextBox(maxLength: 4000, optional: evidenceIds.isNotEmpty, fieldKey: const Key('m11-supplement-body'), label: party ? 'Nội dung giải trình' : 'Nội dung bổ sung', controller: _body, enabled: !locked, onChanged: () => setState(() {})),
         _EvidenceBox(count: evidenceIds.length, busy: locked, onAdd: addEvidence, onRemoveLast: removeLastEvidence, failure: evidenceFailure),
         actionBanner(),
         N11Button(
-          key: const Key('m11-supplement-send'),
+          key: const Key('m11-supplement-send'), validate: true,
           label: 'Gửi',
           loading: busy,
-          onPressed: !ready || locked ? null : _send,
+          onPressed: locked ? null : _send,
         ),
         if (!ready) const Text('Nhập nội dung hoặc thêm ít nhất một ảnh.', textAlign: TextAlign.center, style: N11Text.caption),
       ],

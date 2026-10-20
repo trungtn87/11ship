@@ -67,6 +67,84 @@ void main() {
       expect(t.session.identity!.availableRoles, containsAll(<String>['CUSTOMER', 'SHOP_OWNER']));
     });
 
+    test('Complete saves and activates in one action and blocks overlapping taps', () async {
+      final t = await signedIn(ClientApp.food);
+      final FakeShopServer server = FakeShopServer(t.api);
+      final ShopController shop = ShopController(session: t.session, location: FakeLocationProvider());
+      await shop.load();
+      shop..name = 'Ốc 11'..contactPhone = '0901234567'..addressText = '035 Tổ Gia Cung';
+      await shop.capturePosition();
+      final Future<bool> first = shop.finishProfile();
+      expect(await shop.finishProfile(), isFalse);
+      expect(await first, isTrue);
+      expect(server.puts, hasLength(1));
+      expect(server.completed, 1);
+      expect(shop.profile?.status, 'ACTIVE');
+      expect(shop.busy, isFalse);
+    });
+
+    test('failed read-back retains the point and same save intent; Complete never activates an unconfirmed profile', () async {
+      final t = await signedIn(ClientApp.food);
+      final FakeShopServer server = FakeShopServer(t.api);
+      final ShopController shop = ShopController(session: t.session, location: FakeLocationProvider());
+      await shop.load();
+      shop..name = 'Ốc 11'..contactPhone = '0901234567'..addressText = '035 Tổ Gia Cung';
+      await shop.capturePosition();
+      final FakeHandler original = t.api.routes['GET /v1/onboarding/shop/profile']!;
+      t.api.routes['GET /v1/onboarding/shop/profile'] = (String m, String p, Map<String, String> h, String b) async => const ApiResponse(status: 200, headers: <String, String>{}, body: 'invalid response');
+      expect(await shop.finishProfile(), isFalse);
+      expect(shop.hasPendingWrite, isTrue);
+      expect(shop.fix, isNotNull);
+      expect(shop.failure?.diagnostic, contains('/v1/onboarding/shop/profile'));
+      expect(server.completed, 0);
+      final RecordedRequest first = t.api.to('PUT', '/v1/onboarding/shop/profile').single;
+      // A real server replays the same key. This fake checks the replay intent, then returns its committed result.
+      t.api.routes['GET /v1/onboarding/shop/profile'] = original;
+      t.api.routes['PUT /v1/onboarding/shop/profile'] = (String m, String p, Map<String, String> h, String b) async {
+        expect(h['idempotency-key'], first.headers['idempotency-key']);
+        expect(b, first.body);
+        return json(201, <String, Object?>{'data': <String, Object?>{'shop_id': server.profile!['shop_id'], 'version': 1}});
+      };
+      expect(await shop.finishProfile(), isTrue);
+      expect(server.completed, 1);
+    });
+
+    test('malformed optional profile values do not throw or lose the pending save', () async {
+      final t = await signedIn(ClientApp.food);
+      final FakeShopServer server = FakeShopServer(t.api);
+      final ShopController shop = ShopController(session: t.session, location: FakeLocationProvider());
+      await shop.load();
+      shop..name = 'Ốc 11'..contactPhone = '0901234567'..addressText = '035 Tổ Gia Cung';
+      await shop.capturePosition();
+      t.api.routes['GET /v1/onboarding/shop/profile'] = (String m, String p, Map<String, String> h, String b) async =>
+          json(200, <String, Object?>{'data': <String, Object?>{...server.profile!, 'facebook': 123}});
+      expect(await shop.finishProfile(), isFalse);
+      expect(shop.failure?.kind, AuthFailureKind.badResponse);
+      expect(shop.busy, isFalse);
+      expect(shop.hasPendingWrite, isTrue);
+      expect(shop.fix, isNotNull);
+      expect(server.completed, 0);
+    });
+
+    test('HTTP 500 retains the save key for an explicit retry and does not complete', () async {
+      final t = await signedIn(ClientApp.food);
+      final FakeShopServer server = FakeShopServer(t.api);
+      final ShopController shop = ShopController(session: t.session, location: FakeLocationProvider());
+      await shop.load();
+      shop..name = 'Ốc 11'..contactPhone = '0901234567'..addressText = '035 Tổ Gia Cung';
+      await shop.capturePosition();
+      t.api.routes['PUT /v1/onboarding/shop/profile'] = (String m, String p, Map<String, String> h, String b) async => apiError(500, 'INTERNAL_ERROR');
+      expect(await shop.finishProfile(), isFalse);
+      expect(shop.hasPendingWrite, isTrue);
+      expect(shop.fix, isNotNull);
+      expect(shop.failure?.status, 500);
+      expect(server.completed, 0);
+      expect(await shop.finishProfile(), isFalse);
+      final List<RecordedRequest> puts = t.api.to('PUT', '/v1/onboarding/shop/profile');
+      expect(puts[1].headers['idempotency-key'], puts[0].headers['idempotency-key']);
+      expect(puts[1].body, puts[0].body);
+    });
+
     test('a lost answer is retried with the same key and body; version conflict reloads and overwrites nothing', () async {
       final t = await signedIn(ClientApp.food);
       final FakeShopServer server = FakeShopServer(t.api);
@@ -365,7 +443,7 @@ void main() {
       await tester.pump();
       expect(shop.profile!.version, 2);
       expect(find.widgetWithText(TextField, 'Quán v2 (web)'), findsOneWidget);
-      expect(find.widgetWithText(TextField, '2 Phố Mới'), findsOneWidget);
+      expect(tester.widget<AddressLocationField>(find.byKey(const Key('shop-address'))).text, '2 Phố Mới');
 
       // Edit one field only, then save: name and address stay v2.
       await tester.enterText(find.byKey(const Key('shop-zalo')), 'zalo.sau');

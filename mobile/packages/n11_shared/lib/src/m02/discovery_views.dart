@@ -58,7 +58,10 @@ class ShopCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(color: N11Colors.yellowSoft, borderRadius: BorderRadius.circular(12)),
-                child: const Icon(Icons.storefront_outlined, size: 24, color: N11Colors.black),
+                clipBehavior: Clip.antiAlias,
+                child: shop.logoUrl == null ? const Icon(Icons.storefront_outlined, size: 24, color: N11Colors.black)
+                  : Image.network(shop.logoUrl!, key: Key('shop-logo-${shop.shopId}'), fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const Icon(Icons.storefront_outlined, size: 24, color: N11Colors.black)),
               ),
               const SizedBox(width: N11Space.gap3),
               Expanded(

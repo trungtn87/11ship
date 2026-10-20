@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'form_feedback.dart';
+
 import '../tokens.dart';
 
 // Shared components of the 11Food / 11Ship phone UI, built from the approved M01 design ("Phone" component of m01.zip, Brand Board
@@ -117,7 +119,7 @@ class N11Banner extends StatelessWidget {
 enum ButtonKind { primary, secondary, dark }
 
 class N11Button extends StatefulWidget {
-  const N11Button({super.key, required this.label, this.onPressed, this.kind = ButtonKind.primary, this.icon, this.compact = false, this.loading = false});
+  const N11Button({super.key, required this.label, this.onPressed, this.kind = ButtonKind.primary, this.icon, this.compact = false, this.loading = false, this.validate = false});
 
   final String label;
 
@@ -132,12 +134,21 @@ class N11Button extends StatefulWidget {
   /// Shows a spinner and the loading shade; the button does nothing while loading.
   final bool loading;
 
+  /// Validate visible form fields before this submit action; navigation/cancel actions opt out.
+  final bool validate;
+
   @override
   State<N11Button> createState() => _N11ButtonState();
 }
 
 class _N11ButtonState extends State<N11Button> {
   bool _pressed = false;
+
+  void _submit() {
+    if (widget.loading || widget.onPressed == null) return;
+    if (widget.validate && !validateInputForm(context)) return;
+    widget.onPressed!();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -164,13 +175,13 @@ class _N11ButtonState extends State<N11Button> {
       enabled: enabled,
       label: widget.label,
       excludeSemantics: true,
-      onTap: enabled ? widget.onPressed : null,
+      onTap: enabled ? _submit : null,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapDown: enabled ? (TapDownDetails _) => setState(() => _pressed = true) : null,
         onTapCancel: () => setState(() => _pressed = false),
         onTapUp: (TapUpDetails _) => setState(() => _pressed = false),
-        onTap: enabled ? widget.onPressed : null,
+        onTap: enabled ? _submit : null,
         child: ConstrainedBox(
           constraints: BoxConstraints(minHeight: widget.compact ? kTapMin : kControlHeight),
           child: DecoratedBox(
@@ -712,6 +723,8 @@ class N11Field extends StatefulWidget {
     this.optionalLabel = false,
     this.suffix,
     this.textInputAction,
+    this.requiredInput = false,
+    this.validator,
   });
 
   final Key fieldKey;
@@ -732,6 +745,8 @@ class N11Field extends StatefulWidget {
   final bool optionalLabel;
   final Widget? suffix;
   final TextInputAction? textInputAction;
+  final bool requiredInput;
+  final String? Function(String value)? validator;
 
   @override
   State<N11Field> createState() => _N11FieldState();
@@ -740,6 +755,7 @@ class N11Field extends StatefulWidget {
 class _N11FieldState extends State<N11Field> {
   final FocusNode _focus = FocusNode();
   bool _hidden = true;
+  final GlobalKey<FormFieldState<String>> _validation = GlobalKey<FormFieldState<String>>();
 
   @override
   void initState() {
@@ -754,9 +770,19 @@ class _N11FieldState extends State<N11Field> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => FormField<String>(
+    key: _validation,
+    initialValue: widget.controller.text,
+    autovalidateMode: AutovalidateMode.onUserInteraction,
+    validator: (_) => !widget.enabled ? null : widget.validator?.call(widget.controller.text) ??
+        (widget.password ? (widget.requiredInput && widget.controller.text.isEmpty ? 'Nhập ${widget.label.toLowerCase()}.' : null) : textError(widget.controller.text, widget.label.toLowerCase(), widget.maxLength ?? 10000, optional: !widget.requiredInput)),
+    builder: (FormFieldState<String> field) => _buildField(context, field),
+  );
+
+  Widget _buildField(BuildContext context, FormFieldState<String> field) {
+    final String? hint = field.errorText ?? widget.hint;
     final bool focused = _focus.hasFocus;
-    final bool error = widget.tone == FieldTone.error;
+    final bool error = field.hasError || widget.tone == FieldTone.error;
     final bool ok = widget.tone == FieldTone.ok;
     final Color borderColor = error ? N11Colors.error : (ok ? N11Colors.success : (focused ? N11Colors.yellow : N11Colors.line));
     final double borderWidth = error || focused ? 2 : 1;
@@ -791,7 +817,7 @@ class _N11FieldState extends State<N11Field> {
             enableSuggestions: !widget.password,
             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: N11Colors.black),
             cursorColor: N11Colors.black,
-            onChanged: widget.onChanged == null ? null : (String _) => widget.onChanged!(),
+            onChanged: (String value) { field.didChange(value); widget.onChanged?.call(); },
             decoration: InputDecoration(
               counterText: '',
               isDense: true,
@@ -813,7 +839,7 @@ class _N11FieldState extends State<N11Field> {
             ),
           ),
         ),
-        if (widget.hint != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(widget.hint!, style: TextStyle(fontSize: 12, height: 1.4, fontWeight: FontWeight.w500, color: hintInk))),
+        if (hint != null) Padding(padding: const EdgeInsets.only(top: 6), child: Semantics(liveRegion: true, child: Text(hint, style: TextStyle(fontSize: 12, height: 1.4, fontWeight: FontWeight.w500, color: hintInk)))),
       ],
     );
   }

@@ -206,10 +206,14 @@ void main() {
     await tester.enterText(find.byKey(const Key('register-password')), 'Correct-Horse-9');
     await tester.enterText(find.byKey(const Key('register-confirm-password')), 'Wrong-Password');
     await tester.pump();
-    expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull);
+    await tapVisible('register-submit');
+    expect(find.text('Mật khẩu nhập lại chưa khớp.'), findsOneWidget);
+    expect(api.to('POST', '/v1/auth/phone-verifications'), isEmpty);
     await tester.enterText(find.byKey(const Key('register-confirm-password')), 'Correct-Horse-9');
     await tester.pump();
-    expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull, reason: 'consent is required');
+    await tapVisible('register-submit');
+    expect(find.text('Bạn cần đồng ý với Điều khoản sử dụng và Chính sách bảo mật.'), findsOneWidget);
+    expect(api.to('POST', '/v1/auth/phone-verifications'), isEmpty);
     // No scrolling through the terms is required before consent.
     await tapVisible('register-consent');
     await tapVisible('register-submit');

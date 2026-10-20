@@ -101,7 +101,7 @@ AppFlows createFlows(
   final ApiTransport http = transport ?? HttpApiTransport(base: config.apiUri ?? Uri.parse('https://invalid.invalid'));
   final LocationProvider where = location ?? MethodChannelLocationProvider();
   final Uri base = config.apiUri ?? Uri.parse('https://invalid.invalid');
-  final ShopController? shop = app == ClientApp.food ? ShopController(session: session, location: where) : null;
+  final ShopController? shop = app == ClientApp.food ? ShopController(session: session, location: where, picker: picker) : null;
   final NotificationSource inbox = notificationSource ?? HttpNotificationSource(session: session);
   final NotificationController inboxController = NotificationController(session: session, source: inbox);
   final AddressBookController? book = app == ClientApp.food ? AddressBookController(api: addressApi ?? HttpAddressApi(session: session), session: session) : null;

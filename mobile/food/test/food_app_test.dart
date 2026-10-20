@@ -59,7 +59,11 @@ Future<void> registrationDetails(WidgetTester tester) async {
   await tester.ensureVisible(find.byKey(const Key('register-consent')));
   await tester.tap(find.byKey(const Key('register-consent')));
   await tester.pump();
-  expect(tester.widget<N11Button>(find.byKey(const Key('register-next'))).onPressed, isNull);
+  await tester.ensureVisible(find.byKey(const Key('register-next')));
+  await tester.tap(find.byKey(const Key('register-next')));
+  await tester.pumpAndSettle();
+  expect(find.text('Mật khẩu nhập lại chưa khớp.'), findsOneWidget);
+  expect(find.byKey(const Key('purpose-customer')), findsNothing);
   await tester.enterText(find.byKey(const Key('register-confirm')), 'Correct-Horse-9');
   await tester.pump();
   await tester.ensureVisible(find.byKey(const Key('register-next')));
@@ -147,7 +151,11 @@ void main() {
     await tester.tap(find.byKey(const Key('guest-login')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('login-submit')), findsOneWidget);
-    expect(tester.widget<N11Button>(find.byKey(const Key('login-submit'))).onPressed, isNull, reason: 'empty form');
+    await tester.ensureVisible(find.byKey(const Key('login-submit')));
+    await tester.tap(find.byKey(const Key('login-submit')));
+    await tester.pumpAndSettle();
+    expect(find.text('Nhập số điện thoại.'), findsOneWidget);
+    expect(find.text('Nhập mật khẩu.'), findsOneWidget);
   });
 
   testWidgets('without a server address the account buttons are unavailable and say why', (WidgetTester tester) async {

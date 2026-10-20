@@ -289,19 +289,20 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
   }
 
   Future<void> _payment(OrderView o) async {
+    final GlobalKey<FormState> form = GlobalKey<FormState>();
     final TextEditingController c = TextEditingController(text: o.money.paidVnd.toString());
     final String? value = await showDialog<String>(
       context: context,
-      builder: (BuildContext d) => AlertDialog(
+      builder: (BuildContext d) => Form(key: form, child: AlertDialog(
         key: const Key('payment-dialog'),
         title: const Text('Đã thanh toán trực tiếp', style: N11Text.h2),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
           Text('Tiền món ${m10Money(o.money.itemsVnd)}. Đây là thông tin bạn ghi nhận, không chứng minh ngân hàng đã xác nhận.', style: N11Text.lead),
           const SizedBox(height: N11Space.gap2),
-          N11Field(fieldKey: const Key('payment-field'), label: 'Số tiền đã thanh toán (đ)', controller: c, keyboard: TextInputType.number, maxLength: 12),
+          N11Field(validator: (String value) { final int? paid = int.tryParse(value.replaceAll(RegExp(r'[^0-9]'), '')); return paid == null || paid > o.money.itemsVnd ? 'Nhập số tiền từ 0 đến tổng tiền món.' : null; }, fieldKey: const Key('payment-field'), label: 'Số tiền đã thanh toán (đ)', controller: c, keyboard: TextInputType.number, maxLength: 12),
         ]),
-        actions: <Widget>[TextButton(onPressed: () => Navigator.of(d).pop(), child: const Text('Quay lại')), TextButton(key: const Key('payment-save'), onPressed: () => Navigator.of(d).pop(c.text), child: const Text('Lưu'))],
-      ),
+        actions: <Widget>[TextButton(onPressed: () => Navigator.of(d).pop(), child: const Text('Quay lại')), TextButton(key: const Key('payment-save'), onPressed: () { if (form.currentState!.validate()) Navigator.of(d).pop(c.text); }, child: const Text('Lưu'))],
+      )),
     );
     c.dispose();
     final int? paid = int.tryParse((value ?? '').replaceAll(RegExp(r'[^0-9]'), ''));
@@ -467,7 +468,7 @@ class _EditSheetState extends State<_EditSheet> {
   @override
   Widget build(BuildContext context) {
     final List<LineEdit> changes = _changes();
-    return Padding(
+    return Form(child: Padding(
       padding: EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, MediaQuery.of(context).viewInsets.bottom + N11Space.gap4),
       child: SingleChildScrollView(
         child: Column(
@@ -489,18 +490,18 @@ class _EditSheetState extends State<_EditSheet> {
                           Text('${_qty[l.lineId]}', key: Key('edit-qty-${l.lineId}'), style: N11Text.bodyStrong),
                           IconButton(key: Key('edit-plus-${l.lineId}'), onPressed: () => setState(() => _qty[l.lineId] = _qty[l.lineId]! + 1), icon: const Icon(Icons.add_circle, color: N11Colors.yellowStrong)),
                           const SizedBox(width: N11Space.gap2),
-                          Expanded(child: N11Field(fieldKey: Key('edit-price-${l.lineId}'), label: 'Đơn giá (đ)', controller: _price[l.lineId]!, keyboard: TextInputType.number, maxLength: 9, onChanged: () => setState(() {}))),
+                          Expanded(child: N11Field(validator: (String value) { final int? price = int.tryParse(value.replaceAll(RegExp(r'[^0-9]'), '')); return price == null || price < 1 || price > 99999999 ? 'Đơn giá cần từ 1 đến 99.999.999đ.' : null; }, fieldKey: Key('edit-price-${l.lineId}'), label: 'Đơn giá (đ)', controller: _price[l.lineId]!, keyboard: TextInputType.number, maxLength: 9, onChanged: () => setState(() {}))),
                           IconButton(key: Key('edit-remove-${l.lineId}'), tooltip: 'Bỏ món', onPressed: () => setState(() => _removed.add(l.lineId)), icon: const Icon(Icons.delete_outline, color: N11Colors.error)),
                         ]),
                       ]),
               ),
             const SizedBox(height: N11Space.gap3),
-            N11Button(key: const Key('edit-save'), label: 'Lưu chỉnh sửa', onPressed: changes.isEmpty ? null : () => Navigator.of(context).pop(changes)),
+            N11Button(key: const Key('edit-save'), validate: true, label: 'Lưu chỉnh sửa', onPressed: changes.isEmpty ? null : () => Navigator.of(context).pop(changes)),
             const SizedBox(height: N11Space.gap2),
             N11Button(key: const Key('edit-back'), label: 'Quay lại', kind: ButtonKind.secondary, onPressed: () => Navigator.of(context).pop()),
           ],
         ),
       ),
-    );
+    ));
   }
 }

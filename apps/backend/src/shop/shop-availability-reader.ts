@@ -1,3 +1,4 @@
+import { ShopLogo } from './shop-logo';
 import { Injectable } from '@nestjs/common';
 import { AppError, TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
@@ -8,6 +9,7 @@ import { SERVICE_AREA_STATUSES, SHOP_STATUSES, ShopAvailability, ShopStatus } fr
 
 /** The raw row of the snapshot statement (see shop-availability-sql.ts). */
 export interface RawShopSnapshot {
+  logo?: ShopLogo | null;
   shop_id: string;
   name: string;
   contact_phone_normalized: string;
@@ -33,6 +35,7 @@ export interface RawShopSnapshot {
  * and the availability computed at one instant. `accepting_orders` is deliberately not part of it.
  */
 export interface ShopSnapshot {
+  readonly logo?: ShopLogo;
   readonly shopId: string;
   readonly name: string;
   readonly contactPhoneNormalized: string;
@@ -123,6 +126,7 @@ export function toShopSnapshot(row: RawShopSnapshot): ShopSnapshot {
   }
   return {
     shopId: row.shop_id,
+    ...(row.logo == null ? {} : { logo: row.logo }),
     name: row.name,
     contactPhoneNormalized: row.contact_phone_normalized,
     zalo: row.zalo,

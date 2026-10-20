@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../widgets/form_feedback.dart';
 import 'm11_models.dart';
 
 // Shared pieces of the M11 screens: stars, the rating summary, a multi-line box, dates and the chips of a complaint status.
@@ -175,7 +176,7 @@ class M11StarFilter extends StatelessWidget {
 
 /// A multi-line text box in the style of the form fields. No length counter and no 500-character limit: the server decides what is too long.
 class M11TextBox extends StatelessWidget {
-  const M11TextBox({super.key, required this.fieldKey, required this.label, required this.controller, this.hint, this.enabled = true, this.onChanged, this.minLines = 3, this.optional = false});
+  const M11TextBox({super.key, required this.fieldKey, required this.label, required this.controller, this.hint, this.enabled = true, this.onChanged, this.minLines = 3, this.optional = false, this.maxLength = 2000, this.validator});
 
   final Key fieldKey;
   final String label;
@@ -185,11 +186,16 @@ class M11TextBox extends StatelessWidget {
   final VoidCallback? onChanged;
   final int minLines;
   final bool optional;
+  final int maxLength;
+  final String? Function(String)? validator;
 
   @override
   Widget build(BuildContext context) {
     final OutlineInputBorder border = OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: const BorderSide(color: N11Colors.lineStrong));
-    return Column(
+    return FormField<String>(
+      initialValue: controller.text, autovalidateMode: AutovalidateMode.onUserInteraction,
+      validator: (_) => !enabled ? null : validator?.call(controller.text) ?? textError(controller.text, label.toLowerCase(), maxLength, optional: optional),
+      builder: (FormFieldState<String> field) => Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Text(optional ? '$label · không bắt buộc' : label, style: N11Text.label),
@@ -203,9 +209,11 @@ class M11TextBox extends StatelessWidget {
           keyboardType: TextInputType.multiline,
           textInputAction: TextInputAction.newline,
           style: N11Text.body,
-          onChanged: (String _) => onChanged?.call(),
+          onChanged: (String value) { field.didChange(value); onChanged?.call(); },
           decoration: InputDecoration(
             hintText: hint,
+            errorText: field.errorText,
+            errorMaxLines: 3,
             hintStyle: const TextStyle(color: N11Colors.placeholder),
             filled: true,
             fillColor: N11Colors.field,
@@ -215,7 +223,7 @@ class M11TextBox extends StatelessWidget {
           ),
         ),
       ],
-    );
+    ));
   }
 }
 

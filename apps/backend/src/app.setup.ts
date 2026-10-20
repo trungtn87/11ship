@@ -81,10 +81,6 @@ export function configureApp(app: INestApplication): void {
   app.use(`/${GLOBAL_PREFIX}/customer/me/profile`, captureRawBody);
   // M05: the customer address book writes a phone signs (create, edit, delete, default).
   app.use(`/${GLOBAL_PREFIX}/customers/me`, captureRawBody);
-  // The shop and driver onboarding writes a phone signs (M01 remaining flows).
-  app.use(`/${GLOBAL_PREFIX}/onboarding`, captureRawBody);
-  // M02: the shop writes a phone signs (profile, schedule, dishes). The picture upload carries a base64 picture: it gets its own,
-  // larger parser FIRST (the first parser to run wins; the later ones skip an already parsed body), everything else keeps the default limit.
   const pictureParser = express.json({
     limit: '3.5mb',
     verify: (request, _response, buffer) => {
@@ -92,6 +88,12 @@ export function configureApp(app: INestApplication): void {
     },
   }) as unknown as (request: unknown, response: unknown, next: (error?: unknown) => void) => void;
   const capturePictureBody = (request: unknown, response: unknown, next: (error?: unknown) => void): void => pictureParser(request, response, next);
+  app.use(`/${GLOBAL_PREFIX}/onboarding/shop/profile`, capturePictureBody);
+  app.use(`/${GLOBAL_PREFIX}/shop/me/profile`, capturePictureBody);
+  // The shop and driver onboarding writes a phone signs (M01 remaining flows).
+  app.use(`/${GLOBAL_PREFIX}/onboarding`, captureRawBody);
+  // M02: the shop writes a phone signs (profile, schedule, dishes). The picture upload carries a base64 picture: it gets its own,
+  // larger parser FIRST (the first parser to run wins; the later ones skip an already parsed body), everything else keeps the default limit.
   app.use(`/${GLOBAL_PREFIX}/shop/me/menu/images`, capturePictureBody);
   app.use(`/${GLOBAL_PREFIX}/shop/me`, captureRawBody);
   app.setGlobalPrefix(GLOBAL_PREFIX);

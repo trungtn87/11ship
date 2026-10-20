@@ -80,7 +80,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | sessions | SELECT, INSERT, UPDATE |
 | service_areas | SELECT, UPDATE (UPDATE only because `FOR SHARE` needs it) |
 | shops | SELECT, INSERT, UPDATE |
-| shop_members | SELECT, INSERT |
+| shop_members | SELECT, INSERT, UPDATE (UPDATE because onboarding locks the OWNER row with `FOR UPDATE`) |
 | drivers | SELECT, INSERT, UPDATE |
 | shop_business_hours | SELECT, INSERT, DELETE |
 | idempotency_records | SELECT, INSERT, UPDATE, DELETE |

@@ -73,7 +73,7 @@ export class DiscoveryService {
         .sort(byOpenThenName);
       const page = matching.slice(query.offset, query.offset + query.limit);
       return {
-        shops: page.map((shop) => ({ shop_id: shop.shopId, name: shop.name, address_text: shop.addressText, availability: availabilityOf(shop) })),
+        shops: page.map((shop) => ({ shop_id: shop.shopId, ...(shop.hasLogo ? { logo_url: '/v1/shops/' + shop.shopId + '/logo?v=' + (shop.logoVersion ?? '1') } : {}), name: shop.name, address_text: shop.addressText, availability: availabilityOf(shop) })),
         has_more: matching.length > query.offset + query.limit,
       };
     });
@@ -104,7 +104,7 @@ export class DiscoveryService {
                   name: item.name,
                   price_vnd: toSafeInteger(item.priceVnd),
                   image_id: item.imageId,
-                  shop: { shop_id: shop.shopId, name: shop.name, address_text: shop.addressText, availability: availabilityOf(shop) },
+                  shop: { shop_id: shop.shopId, ...(shop.hasLogo ? { logo_url: '/v1/shops/' + shop.shopId + '/logo?v=' + (shop.logoVersion ?? '1') } : {}), name: shop.name, address_text: shop.addressText, availability: availabilityOf(shop) },
                 },
               ];
         }),

@@ -21,7 +21,8 @@ GRANT SELECT, INSERT, UPDATE ON app.verification_proofs TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.sessions TO ship11_app;
 GRANT SELECT, UPDATE ON app.service_areas TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.shops TO ship11_app;
-GRANT SELECT, INSERT ON app.shop_members TO ship11_app;
+-- UPDATE is required by ShopRepository.lockOwnedShop SELECT ... FOR UPDATE, even with no matching row.
+GRANT SELECT, INSERT, UPDATE ON app.shop_members TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.drivers TO ship11_app;
 GRANT SELECT, INSERT, DELETE ON app.shop_business_hours TO ship11_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.idempotency_records TO ship11_app;

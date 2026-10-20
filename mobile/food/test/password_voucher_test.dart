@@ -26,7 +26,10 @@ void main() {
     await tester.enterText(find.byKey(const Key('password-new')), 'new-password-123');
     await tester.enterText(find.byKey(const Key('password-confirm')), 'mismatch');
     await tester.pump();
-    expect(tester.widget<N11Button>(find.byKey(const Key('password-submit'))).onPressed, isNull);
+    await tester.ensureVisible(find.byKey(const Key('password-submit')));
+    await tester.tap(find.byKey(const Key('password-submit')));
+    await tester.pumpAndSettle();
+    expect(find.text('Mật khẩu nhập lại chưa khớp.'), findsOneWidget);
     expect(api.to('POST', '/v1/client-auth/change-password'), isEmpty);
     await tester.enterText(find.byKey(const Key('password-confirm')), 'new-password-123');
     await tester.pump();

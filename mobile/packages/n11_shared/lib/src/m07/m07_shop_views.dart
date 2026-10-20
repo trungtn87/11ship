@@ -8,6 +8,7 @@ import '../m06/m06_views.dart' show kFeeNotePrivacyHint, noteLooksLikePhone, par
 import '../tokens.dart';
 import '../wallet/wallet_models.dart';
 import '../widgets/components.dart';
+import '../widgets/form_feedback.dart';
 import 'm07_models.dart';
 import 'm07_source.dart';
 import 'm07_widgets.dart';
@@ -296,20 +297,20 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
       'Gọi shipper',
       widget.source.isSample,
       <Widget>[
-        N11Field(fieldKey: const Key('m07-f-name'), label: 'Tên người nhận', controller: _field('name'), maxLength: 80),
-        N11Field(fieldKey: const Key('m07-f-phone'), label: 'Số điện thoại người nhận', controller: _field('phone'), keyboard: TextInputType.phone, maxLength: 15),
-        N11Field(fieldKey: const Key('m07-f-address'), label: 'Địa chỉ giao (mô tả)', controller: _field('address'), maxLength: 200),
+        N11Field(requiredInput: true, fieldKey: const Key('m07-f-name'), label: 'Tên người nhận', controller: _field('name'), maxLength: 80),
+        N11Field(validator: recipientPhoneError, fieldKey: const Key('m07-f-phone'), label: 'Số điện thoại người nhận', controller: _field('phone'), keyboard: TextInputType.phone, maxLength: 15),
+        N11Field(requiredInput: true, fieldKey: const Key('m07-f-address'), label: 'Địa chỉ giao (mô tả)', controller: _field('address'), maxLength: 200),
         _pinSection(),
-        N11Field(fieldKey: const Key('m07-f-goods'), label: 'Mô tả hàng', controller: _field('goods'), maxLength: 120),
-        N11Field(fieldKey: const Key('m07-f-value'), label: 'Giá trị hàng (đ)', controller: _field('value'), keyboard: TextInputType.number, maxLength: 12),
-        N11Field(fieldKey: const Key('m07-f-paid'), label: 'Tiền hàng đã thanh toán (đ)', controller: _field('paid'), keyboard: TextInputType.number, maxLength: 12, optionalLabel: true, hint: 'Để trống nếu khách chưa trả trước.'),
+        N11Field(requiredInput: true, fieldKey: const Key('m07-f-goods'), label: 'Mô tả hàng', controller: _field('goods'), maxLength: 120),
+        N11Field(validator: (String value) => parseVndInput(value) == null ? 'Nhập giá trị hàng là số nguyên, có thể là 0.' : null, fieldKey: const Key('m07-f-value'), label: 'Giá trị hàng (đ)', controller: _field('value'), keyboard: TextInputType.number, maxLength: 12),
+        N11Field(validator: (String value) { if (value.trim().isEmpty) return null; final int? paid = parseVndInput(value); final int? goods = parseVndInput(_field('value').text); return paid == null || (goods != null && paid > goods) ? 'Tiền đã thanh toán phải từ 0 đến giá trị hàng.' : null; }, fieldKey: const Key('m07-f-paid'), label: 'Tiền hàng đã thanh toán (đ)', controller: _field('paid'), keyboard: TextInputType.number, maxLength: 12, optionalLabel: true, hint: 'Để trống nếu khách chưa trả trước.'),
         _payerSection(),
         _feeSection(),
         N11Field(fieldKey: const Key('m07-f-note'), label: 'Ghi chú', controller: _field('note'), maxLength: 200, optionalLabel: true),
         if (_problem != null) N11Banner(key: const Key('m07-form-problem'), kind: BannerKind.error, title: 'Chưa gửi được', text: _problem),
         actionBanner(),
       ],
-      bottom: N11Button(key: const Key('m07-submit-call'), label: 'Gọi shipper', icon: Icons.two_wheeler, loading: busy, onPressed: busy ? null : _submit),
+      bottom: N11Button(key: const Key('m07-submit-call'), validate: true, label: 'Gọi shipper', icon: Icons.two_wheeler, loading: busy, onPressed: busy ? null : _submit),
     );
   }
 
@@ -389,8 +390,8 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
               ],
             ),
             const SizedBox(height: N11Space.gap3),
-            N11Field(fieldKey: const Key('m07-f-amount'), label: 'Mức phí đề xuất (đ)', controller: _field('amount'), keyboard: TextInputType.number, maxLength: 10),
-            N11Field(fieldKey: const Key('m07-f-fee-note'), label: 'Ghi chú cho shipper', controller: _field('feeNote'), maxLength: 200, optionalLabel: true, hint: kFeeNotePrivacyHint),
+            N11Field(validator: (String value) => parseAgreedFee(value) == null ? 'Nhập phí là số nguyên từ 0 đến 10.000.000đ.' : null, fieldKey: const Key('m07-f-amount'), label: 'Mức phí đề xuất (đ)', controller: _field('amount'), keyboard: TextInputType.number, maxLength: 10),
+            N11Field(validator: (String value) => noteLooksLikePhone(value) ? 'Ghi chú cho shipper không được chứa số điện thoại.' : _reason == 'OTHER' && value.trim().isEmpty ? 'Lý do Khác cần có ghi chú.' : null, fieldKey: const Key('m07-f-fee-note'), label: 'Ghi chú cho shipper', controller: _field('feeNote'), maxLength: 200, optionalLabel: true, hint: kFeeNotePrivacyHint),
             if (_payer == 'CUSTOMER') const ReasonNote('Khách trả ship: mức khác bảng giá cần khách đồng ý trước khi chốt.'),
           ],
         ],

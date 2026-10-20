@@ -141,10 +141,12 @@ void main() {
       expect(key('m07-cancel'), findsOneWidget);
       await tap(tester, key('m07-cancel'));
       expect(containing('Không tự hủy đơn món'), findsOneWidget);
-      // The confirming button is disabled until a reason is typed; the way out is "Quay lại", never "Hủy".
+      // Submitting an empty reason explains the field and keeps the dialog open; Back remains available.
       expect(find.text('Quay lại'), findsOneWidget);
       expect(find.text('Hủy'), findsNothing);
-      expect(tester.widget<TextButton>(key('m07-reason-confirm')).onPressed, isNull);
+      await tap(tester, key('m07-reason-confirm'));
+      expect(key('m07-reason-dialog'), findsOneWidget);
+      expect(tester.widgetList<Text>(find.byType(Text)).any((Text text) => (text.data ?? '').startsWith('Nhập ')), isTrue);
       await tester.enterText(key('m07-reason-field').first, 'Khách đổi ý');
       await settle(tester);
       expect(tester.widget<TextButton>(key('m07-reason-confirm')).onPressed, isNotNull);
@@ -242,7 +244,8 @@ void main() {
       final _FlakyShop source = _FlakyShop(failures: 0);
       await mount(tester, ShopCallScreen(source: source));
       await tap(tester, key('m07-submit-call'));
-      expect(key('m07-form-problem'), findsOneWidget);
+      expect(find.text('Nhập tên người nhận.'), findsOneWidget);
+      expect(tester.widget<TextField>(key('m07-f-name').first).focusNode!.hasFocus, isTrue);
       expect(source.createKeys, isEmpty);
       expect(containing('Chưa ghim điểm giao nên Chưa xác định phí'), findsOneWidget);
       await unmount(tester);
@@ -304,7 +307,9 @@ void main() {
       expect(containing('Hủy nhận đơn'), findsWidgets);
       await tap(tester, key('m07-release'));
       expect(containing('tìm shipper khác'), findsOneWidget);
-      expect(tester.widget<TextButton>(key('m07-reason-confirm')).onPressed, isNull);
+      await tap(tester, key('m07-reason-confirm'));
+      expect(key('m07-reason-dialog'), findsOneWidget);
+      expect(tester.widgetList<Text>(find.byType(Text)).any((Text text) => (text.data ?? '').startsWith('Nhập ')), isTrue);
       await unmount(tester);
     });
 
@@ -314,7 +319,8 @@ void main() {
       await mount(tester, ConfirmDestinationScreen(source: source, delivery: d));
       expect(key('m07-no-map'), findsOneWidget);
       await tap(tester, key('m07-dest-submit'));
-      expect(key('m07-dest-problem'), findsOneWidget);
+      expect(find.text('Nhập phí là số nguyên từ 0 đến 10.000.000đ.'), findsOneWidget);
+      expect((await source.get('m-acc')).version, d.version);
       await unmount(tester);
     });
 

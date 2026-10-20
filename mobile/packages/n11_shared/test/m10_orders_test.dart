@@ -116,9 +116,35 @@ void main() {
       await tester.enterText(key('checkout-name'), 'Nguyễn An');
       await tester.enterText(key('checkout-phone'), '0912345678');
       await tap(tester, key('checkout-typed-toggle'));
-      await tester.enterText(key('checkout-typed'), '12 Phố Huế, Hà Nội');
+      await tester.enterText(key('location-address-text'), '12 Phố Huế, Hà Nội');
+      await tap(tester, key('location-save'));
       await settle(tester);
     }
+
+    testWidgets('invalid recipient phone blocks both preview and order placement, then correction sends once', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final _CountedPreviews customer = _CountedPreviews(store);
+      final OrderRuntime runtime = OrderRuntime(customer: customer, shop: SampleShopOrders(store), cart: CartController(source: customer));
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở', itemId: pho.id, name: pho.name, priceVnd: 45000);
+      await mount(tester, CheckoutScreen(runtime: runtime));
+      await fill(tester);
+      await tester.pump(const Duration(seconds: 1));
+      await settle(tester);
+      final int before = customer.previews;
+      await tester.enterText(key('checkout-phone'), '0912 345678');
+      await tester.pump(const Duration(seconds: 1));
+      await settle(tester);
+      expect(customer.previews, before);
+      await tap(tester, key('checkout-send'));
+      expect(containing('không có dấu cách'), findsOneWidget);
+      expect(store.orderCount, 0);
+      await tester.enterText(key('checkout-phone'), '0912345678');
+      await tester.pump(const Duration(seconds: 1));
+      await settle(tester);
+      await tap(tester, key('checkout-send'));
+      expect(store.orderCount, 1);
+      await unmount(tester);
+    });
 
     testWidgets('no pin (no GPS): the Order still goes, the fee reads "Chưa xác định phí" — never 0đ, and no total is claimed', (WidgetTester tester) async {
       final (OrderRuntime runtime, SampleOrderStore store) = await readyCart();
@@ -145,13 +171,15 @@ void main() {
       await fill(tester);
       expect(gps.calls, 0, reason: 'nothing is read until the person presses the button');
       gps.failure = LocationFailure.denied;
-      await tap(tester, key('checkout-use-gps'));
+      await tap(tester, key('checkout-address'));
+      await tap(tester, key('location-current'));
       expect(gps.calls, 1);
-      expect(containing('chưa cho phép'), findsOneWidget);
+      expect(containing('Chưa được cấp quyền'), findsOneWidget);
       gps.failure = null;
-      await tap(tester, key('checkout-use-gps'));
+      await tap(tester, key('location-current'));
       expect(gps.calls, 2);
-      expect(containing('Đã ghim vị trí hiện tại'), findsOneWidget);
+      expect(containing('Đã chọn vị trí'), findsOneWidget);
+      await tap(tester, key('location-save'));
       await tap(tester, key('checkout-send'));
       expect(store.lastPin, (10.0123, 106.0456));
       await unmount(tester);
@@ -172,11 +200,14 @@ void main() {
       await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán', itemId: pho.id, name: pho.name, priceVnd: 45000);
       await mount(tester, CheckoutScreen(runtime: runtime));
       await fill(tester);
+      await tap(tester, key('checkout-address'));
       expect(find.text('pin:none'), findsOneWidget);
       await tap(tester, key('picker-a'));
       expect(find.text('pin:22.66,106.25'), findsOneWidget);
       await tap(tester, key('picker-b'));
       expect(find.text('pin:22.67,106.26'), findsOneWidget);
+      await tap(tester, key('location-save'));
+      expect(key('checkout-use-gps'), findsNothing);
       await tap(tester, key('checkout-send'));
       expect(store.lastPin, (22.67, 106.26));
       await unmount(tester);
@@ -414,7 +445,9 @@ void main() {
       final String id = store.seed();
       await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: id));
       await tap(tester, find.widgetWithText(OutlinedButton, 'Từ chối đơn'));
-      expect(tester.widget<TextButton>(key('m07-reason-confirm')).onPressed, isNull);
+      await tap(tester, key('m07-reason-confirm'));
+      expect(key('m07-reason-dialog'), findsOneWidget);
+      expect(tester.widgetList<Text>(find.byType(Text)).any((Text text) => (text.data ?? '').startsWith('Nhập ')), isTrue);
       await tester.enterText(key('m07-reason-field'), 'Hết món');
       await settle(tester);
       await tap(tester, key('m07-reason-confirm'));
@@ -453,7 +486,9 @@ void main() {
       expect(find.widgetWithText(N11Button, 'Gọi lại shipper'), findsOneWidget);
       expect(find.widgetWithText(OutlinedButton, 'Hủy đơn món'), findsOneWidget);
       await tap(tester, find.widgetWithText(OutlinedButton, 'Hủy đơn món'));
-      expect(tester.widget<TextButton>(key('m07-reason-confirm')).onPressed, isNull);
+      await tap(tester, key('m07-reason-confirm'));
+      expect(key('m07-reason-dialog'), findsOneWidget);
+      expect(tester.widgetList<Text>(find.byType(Text)).any((Text text) => (text.data ?? '').startsWith('Nhập ')), isTrue);
       await tap(tester, key('m07-reason-back'));
       await unmount(tester);
     });
@@ -547,5 +582,16 @@ class _Offline extends SampleCustomerOrders {
       throw const M07Failure(M07FailureKind.offline);
     }
     return super.saveCart(shopId: shopId, lines: lines, note: note);
+  }
+}
+
+
+class _CountedPreviews extends SampleCustomerOrders {
+  _CountedPreviews(super.store);
+  int previews = 0;
+  @override
+  Future<CheckoutPreview> preview(CheckoutDraft draft) {
+    previews++;
+    return super.preview(draft);
   }
 }

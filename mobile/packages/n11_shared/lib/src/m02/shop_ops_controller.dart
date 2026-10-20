@@ -1,3 +1,4 @@
+import '../flows/shop_logo_data.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -44,6 +45,7 @@ class ShopOverview {
     required this.contactPhone,
     required this.zalo,
     required this.facebook,
+    this.logo,
     required this.addressText,
     required this.pickupLat,
     required this.pickupLng,
@@ -59,6 +61,7 @@ class ShopOverview {
   final String contactPhone;
   final String? zalo;
   final String? facebook;
+  final ShopLogoData? logo;
   final String addressText;
   final double? pickupLat;
   final double? pickupLng;
@@ -96,8 +99,10 @@ class ShopOverview {
     if (online is! bool || reason is! String) {
       return null;
     }
+    if (data['logo'] != null && ShopLogoData.tryParse(data['logo']) == null) return null;
     return ShopOverview(
       shopId: id,
+      logo: ShopLogoData.tryParse(data['logo']),
       name: name,
       contactPhone: phone,
       zalo: data['zalo'] as String?,
@@ -130,6 +135,7 @@ class PendingWrite {
 }
 
 class ProfileDraft {
+  ShopLogoData? logo;
   String name = '';
   String phone = '';
   String zalo = '';
@@ -220,7 +226,7 @@ class ShopOpsController extends ChangeNotifier {
     if (o == null) {
       return false;
     }
-    return _fix != null ||
+    return profile.logo != o.logo || _fix != null ||
         profile.name.trim() != o.name ||
         profile.phone.trim() != o.contactPhone ||
         profile.address.trim() != o.addressText ||
@@ -290,6 +296,7 @@ class ShopOpsController extends ChangeNotifier {
     profile.phone = o?.contactPhone ?? '';
     profile.zalo = o?.zalo ?? '';
     profile.facebook = o?.facebook ?? '';
+    profile.logo = o?.logo;
     profile.address = o?.addressText ?? '';
     profile.areaId = o?.serviceAreaId;
   }
@@ -400,6 +407,7 @@ class ShopOpsController extends ChangeNotifier {
             if (item is Map<String, Object?> && item['service_area_id'] is String && item['name'] is String) ServiceArea(id: item['service_area_id']! as String, name: item['name']! as String),
         ];
         _areasFailed = false;
+        if (!_areas.any((ServiceArea a) => a.id == profile.areaId) && _areas.length == 1) profile.areaId = _areas.single.id;
       }
     } on AuthFailure {
       if (epoch == _epoch) {
@@ -412,6 +420,12 @@ class ShopOpsController extends ChangeNotifier {
   }
 
   // ---- profile draft --------------------------------------------------------------------------------------------
+
+  void setLogo(ShopLogoData? value) {
+    if (locked || readOnly) return;
+    profile.logo = value;
+    profileEdited();
+  }
 
   void profileEdited() {
     _profileErrors = <String, String>{};
@@ -438,6 +452,15 @@ class ShopOpsController extends ChangeNotifier {
     _locationFailure = null;
     _formRevision++;
     _notify();
+  }
+
+  void selectAddress(String text, {double? latitude, double? longitude}) {
+    if (locked || readOnly || session.status != SessionStatus.signedIn) return;
+    profile.address = text;
+    if (latitude != null && longitude != null) {
+      _fix = LocationFix(latitude: latitude, longitude: longitude, accuracyMeters: null, takenAt: DateTime.now());
+    }
+    profileEdited();
   }
 
   /// ONE real fix, only on the person's press. Denied / disabled / timeout / unavailable keep the stored position and the draft.
@@ -480,11 +503,11 @@ class ShopOpsController extends ChangeNotifier {
     }
     final String? area = profile.areaId;
     if (area == null || !_areas.any((ServiceArea a) => a.id == area)) {
-      errors['area'] = 'Chọn một khu vực đang hoạt động.';
+      errors['area'] = 'Hệ thống chưa xác định được khu vực phục vụ. Vui lòng thử lại sau.';
     }
     final ShopOverview? o = _overview;
     if (_fix == null && (o?.pickupLat == null || o?.pickupLng == null)) {
-      errors['position'] = 'Chưa có vị trí lấy hàng. Bấm Lấy vị trí hiện tại khi bạn đang ở quán.';
+      errors['position'] = 'Mở địa chỉ và chọn ghim vị trí lấy hàng trên bản đồ.';
     }
     return errors;
   }
@@ -505,6 +528,7 @@ class ShopOpsController extends ChangeNotifier {
     final double lng = _fix?.longitude ?? o.pickupLng!;
     final String body = jsonEncode(<String, Object?>{
       'expected_version': o.version,
+      if (profile.logo != o.logo) 'logo': profile.logo?.toWire(),
       'name': profile.name.trim(),
       'contact_phone': profile.phone.trim(),
       'zalo': profile.zalo.trim().isEmpty ? null : profile.zalo.trim(),
@@ -614,7 +638,7 @@ class ShopOpsController extends ChangeNotifier {
         if (failure.kind == AuthFailureKind.versionConflict) {
           _conflict = true;
         } else if (failure.kind == AuthFailureKind.invalidServiceArea) {
-          _profileErrors = <String, String>{'area': 'Khu vực này không còn hợp lệ. Chọn khu vực khác.'};
+          _profileErrors = <String, String>{'area': 'Khu vực phục vụ chưa hợp lệ. Vui lòng tải lại hồ sơ.'};
           unawaited(loadAreas());
         } else if (failure.kind == AuthFailureKind.stateConflict) {
           unawaited(_read(initial: false));
