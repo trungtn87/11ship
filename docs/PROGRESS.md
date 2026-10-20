@@ -256,7 +256,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#141](https://github.com/trungtn87/11ship/pull/141) fix(ops): kiểm tra Android trust và cập nhật VPS giữ nguyên… | Đã merge (`MERGED`) | — | — | — | `27c5767` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#142](https://github.com/trungtn87/11ship/pull/142) M11: Đánh giá và phản ánh (M11.01–M11.03) | Đã merge (`MERGED`) | — | — | — | `d4ad58b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#143](https://github.com/trungtn87/11ship/pull/143) 11Food: địa chỉ, thông báo lỗi, logo quán, chọn giờ và nhóm… | Đã merge (`MERGED`) | — | — | — | `7e2351b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#144](https://github.com/trungtn87/11ship/pull/144) Sửa định vị, giỏ hàng và bổ sung đánh giá/lượt bán món | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `12d72d3` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#144](https://github.com/trungtn87/11ship/pull/144) Sửa định vị, giỏ hàng và bổ sung đánh giá/lượt bán món | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `76bc02e` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
