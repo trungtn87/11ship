@@ -36,4 +36,4 @@ Admin (`admin/finance`): `withdrawals` (list/đọc), `withdrawals/:id/start-pro
 
 ## Migration
 
-`1794182400000_create-wallet-withdrawals.sql` (up/down/up đã kiểm). Down có chốt chặn: từ chối khi đã có yêu cầu rút. Ops grants cập nhật trong `ops/selfhosted/02-runtime-grants.sql`. Không chạy migration production trong gói này.
+`1795132800000_create-wallet-withdrawals.sql` (up/down/up đã kiểm). Down có chốt chặn: từ chối khi đã có yêu cầu rút. Ops grants cập nhật trong `ops/selfhosted/02-runtime-grants.sql`. Không chạy migration production trong gói này.

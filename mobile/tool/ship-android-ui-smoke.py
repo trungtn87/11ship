@@ -22,10 +22,15 @@ def adb(*args, binary=False):
 
 
 def nodes():
-    adb('shell', 'uiautomator', 'dump', '/sdcard/ship-ui.xml')
-    raw = adb('exec-out', 'cat', '/sdcard/ship-ui.xml')
-    (OUTPUT / 'latest-hierarchy.xml').write_text(raw)
-    return ET.fromstring(raw).iter('node')
+    # Right after a cold start uiautomator can answer "null root node" (no window yet): that is "not ready", not a result, so the caller's wait loop
+    # asks again. A real failure (the app never shows its UI) still ends in the wait's AssertionError, with the logcat printed below.
+    try:
+        adb('shell', 'uiautomator', 'dump', '/sdcard/ship-ui.xml')
+        raw = adb('exec-out', 'cat', '/sdcard/ship-ui.xml')
+        (OUTPUT / 'latest-hierarchy.xml').write_text(raw)
+        return list(ET.fromstring(raw).iter('node'))
+    except (subprocess.SubprocessError, ET.ParseError):
+        return []
 
 
 def find(label):
@@ -62,12 +67,27 @@ def capture(name):
 
 try:
     adb('install', '-r', '11Ship-test.apk')
+    # Cold launch without network or location access: map must render from APK assets.
+    adb('shell', 'svc', 'wifi', 'disable')
+    adb('shell', 'svc', 'data', 'disable')
+    adb('shell', 'settings', 'put', 'secure', 'location_mode', '0')
+    # Set density first so Launcher never sees 360px at the Pixel's old high DPI.
+    adb('shell', 'wm', 'density', '160')
+    adb('shell', 'wm', 'size', '360x640')
+    time.sleep(1)
     adb('logcat', '-c')
     adb('shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1')
-    wait('Bạn đang offline')
-    capture('01-home-offline')
+    wait('Chưa xác định trạng thái hoạt động')
+    wait('Chưa bật chia sẻ vị trí')
+    wait('Bản đồ offline Cao Bằng đã hiển thị')
+    hierarchy = nodes()
+    online = [n for n in hierarchy if 'Bật online' in (n.get('text', '') + n.get('content-desc', '')) and n.get('clickable') == 'true']
+    assert not online, 'unknown activity must not expose an online action'
+    assert not any('trong M01' in (n.get('text', '') + n.get('content-desc', '')) for n in hierarchy)
+    capture('01-home-offline-no-gps')
+    adb('shell', 'svc', 'wifi', 'enable')
     for tab, title, name in [
-        ('Thông báo', 'Chưa có dữ liệu thông báo', '02-notifications'),
+        ('Thông báo', 'Đăng nhập để xem thông báo của bạn.', '02-notifications'),
         ('Đơn hàng', 'Chưa có đơn hàng', '03-orders'),
         ('Thu nhập', 'Chưa có dữ liệu thu nhập', '04-income'),
         ('Tài khoản', 'Tạo tài khoản', '05-account'),
@@ -92,9 +112,15 @@ try:
         'package': PACKAGE,
         'sha': os.environ.get('SOURCE_SHA'),
         'platform': 'Android emulator API 30',
-        'result': 'guest UI smoke passed',
+        'result': 'guest UI and offline Cao Bang map without network/GPS passed',
         'not_tested': ['real device', 'online operation', 'SMS/OTP success', 'account creation'],
     }, ensure_ascii=False, indent=2))
 finally:
     capture('last-screen')
-    (OUTPUT / 'logcat.txt').write_text(adb('logcat', '-d', '-t', '500'))
+    log = adb('logcat', '-d', '-t', '1500')
+    (OUTPUT / 'logcat.txt').write_text(log)
+    # The lines that explain a launch that never showed its UI, printed so the CI log carries them (the full logcat is in the artifact).
+    key = re.compile(r'FATAL|AndroidRuntime|ClassNotFound|NoClassDefFound|UnsatisfiedLink|Error registering plugin|Process: vn\.eleven|ANR in|has died|Force finishing|vn\.eleven\.(ship|m14)', re.I)
+    lines = [line for line in log.splitlines() if key.search(line)]
+    print('--- logcat (filtered, last 80) ---')
+    print('\n'.join(lines[-80:]))

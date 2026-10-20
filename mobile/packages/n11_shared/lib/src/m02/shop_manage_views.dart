@@ -1,10 +1,10 @@
+import '../flows/shop_logo_widgets.dart';
 import 'package:flutter/material.dart';
 
 import '../account/account_views.dart';
 import '../account/models.dart';
 import '../account/session_controller.dart';
-import '../flows/location.dart';
-import '../flows/shop_controller.dart' show ServiceArea;
+import '../addresses/address_location_picker.dart';
 import '../flows/shop_views.dart' show ShopFormScreen;
 import '../tokens.dart';
 import '../widgets/components.dart';
@@ -230,6 +230,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
   @override
   void initState() {
     super.initState();
+    ops.dismissWriteFailure(notify: false);
     _name = TextEditingController();
     _phone = TextEditingController();
     _zalo = TextEditingController();
@@ -247,6 +248,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
 
   @override
   void dispose() {
+    ops.dismissWriteFailure(notify: false);
     ops.removeListener(_onOps);
     _unwatchSession();
     for (final TextEditingController c in <TextEditingController>[_name, _phone, _zalo, _facebook, _address]) {
@@ -356,6 +358,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
             title: 'Hồ sơ quán',
             content: <Widget>[
               ...banners,
+              if (o.logo != null) ShopLogoField(value: o.logo, picker: widget.flows.menu.picker, session: ops.session, enabled: false, onChanged: (_) {}),
               N11InfoCard(
                 titleKey: const Key('profile-name'),
                 title: o.name,
@@ -365,8 +368,6 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
                   ('Zalo', o.zalo ?? '—'),
                   ('Facebook', o.facebook ?? '—'),
                   ('Địa chỉ', o.addressText),
-                  ('Vị trí lấy hàng', o.pickupLat == null || o.pickupLng == null ? 'Chưa có' : '${o.pickupLat!.toStringAsFixed(4)}, ${o.pickupLng!.toStringAsFixed(4)}'),
-                  ('Khu vực', _areaName(o.serviceAreaId, inactive: o.availability.reason == 'SERVICE_AREA_INACTIVE')),
                 ],
               ),
             ],
@@ -379,13 +380,25 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
           onWillLeave: _leave,
           content: <Widget>[
             ...banners,
+            ShopLogoField(value: ops.profile.logo, picker: widget.flows.menu.picker, session: ops.session, enabled: !ops.locked, onChanged: ops.setLogo),
             _field('name', 'Tên quán', _name, 'profile-field-name', maxLength: 120),
             _field('phone', 'SĐT liên lạc của quán', _phone, 'profile-field-phone', keyboard: TextInputType.phone, maxLength: 20, help: 'Có thể khác SĐT đăng nhập.'),
             N11Field(fieldKey: const Key('profile-field-zalo'), label: 'Zalo', placeholder: 'Số Zalo của quán', optionalLabel: true, controller: _zalo, maxLength: 160, enabled: !ops.locked, onChanged: _push),
             N11Field(fieldKey: const Key('profile-field-facebook'), label: 'Facebook', placeholder: 'Liên kết trang Facebook', optionalLabel: true, controller: _facebook, maxLength: 300, enabled: !ops.locked, onChanged: _push),
-            _field('address', 'Địa chỉ', _address, 'profile-field-address', maxLength: 500, keyboard: TextInputType.multiline),
-            _position(o),
-            _areas(o),
+            KeyedSubtree(key: _errorKey('address'), child: AddressLocationField(
+              key: const Key('profile-field-address'), label: 'Địa chỉ lấy hàng', text: _address.text,
+              error: ops.profileErrors['address'] ?? ops.profileErrors['position'] ?? ops.profileErrors['area'],
+              onTap: ops.locked ? null : () async {
+                final int epoch = ops.session.sessionEpoch;
+                final AddressLocation? selected = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(
+                  builder: (_) => AddressLocationPicker(initial: AddressLocation(_address.text,
+                    latitude: ops.fix?.latitude ?? o.pickupLat, longitude: ops.fix?.longitude ?? o.pickupLng),
+                    location: ops.location, session: ops.session, maxLength: 500)));
+                if (selected == null || !context.mounted || ops.session.status != SessionStatus.signedIn || ops.session.sessionEpoch != epoch) return;
+                _address.text = selected.text;
+                ops.selectAddress(selected.text, latitude: selected.latitude, longitude: selected.longitude);
+                setState(() {});
+              })),
           ],
           footer: <Widget>[
             N11Button(
@@ -395,7 +408,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
               onPressed: ops.locked || !ops.profileDirty ? null : ops.revertProfile,
             ),
             N11Button(
-              key: const Key('profile-save'),
+              key: const Key('profile-save'), validate: true,
               label: ops.busy ? 'Đang lưu…' : 'Lưu hồ sơ',
               loading: ops.busy,
               onPressed: ops.locked ? null : () {
@@ -409,24 +422,12 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
     );
   }
 
-  String _areaName(String? id, {required bool inactive}) {
-    if (id == null) {
-      return 'Chưa chọn';
-    }
-    for (final ServiceArea a in ops.areas) {
-      if (a.id == id) {
-        return a.name;
-      }
-    }
-    return inactive ? 'Khu vực đã chọn · ngừng hoạt động' : 'Đã chọn';
-  }
-
   List<Widget> _banners(bool readOnly) {
     final AuthFailure? failure = ops.writeFailure;
     return <Widget>[
       if (readOnly) const N11Banner(key: Key('profile-readonly'), kind: BannerKind.info, title: 'Chỉ đọc', text: 'Quán đã bị vô hiệu hóa. Bạn không thể chỉnh sửa hồ sơ.'),
       if (ops.overview?.availability.reason == 'SERVICE_AREA_INACTIVE')
-        const N11Banner(kind: BannerKind.warn, title: 'Khu vực phục vụ ngừng hoạt động', text: 'Chọn khu vực hợp lệ khi lưu hồ sơ.'),
+        const N11Banner(kind: BannerKind.warn, title: 'Khu vực phục vụ ngừng hoạt động', text: 'Hệ thống sẽ xác định khu vực phục vụ khi lưu hồ sơ.'),
       if (ops.stale) const N11Banner(key: Key('profile-stale'), kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.'),
       if (ops.pending != null && ops.pending!.kind == OpsWriteKind.profile) UnknownOutcomeBanner(onRetry: ops.retryPending, busy: ops.busy),
       if (failure != null && ops.pending == null && !ops.conflict)
@@ -459,67 +460,5 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
     );
   }
 
-  Widget _position(ShopOverview o) {
-    final LocationFix? fix = ops.fix;
-    final bool has = fix != null || (o.pickupLat != null && o.pickupLng != null);
-    final double? lat = fix?.latitude ?? o.pickupLat;
-    final double? lng = fix?.longitude ?? o.pickupLng;
-    final String? error = ops.profileErrors['position'];
-    return KeyedSubtree(
-      key: _errorKey('position'),
-      child: vstack(<Widget>[
-        N11InfoCard(
-          title: 'Vị trí lấy hàng',
-          chip: N11Chip(fix != null ? 'Vị trí mới' : (has ? 'Đã có' : 'Chưa có'), kind: has ? ChipKind.ok : ChipKind.warn),
-          text: fix != null ? 'Đã lấy vị trí hiện tại. Bấm Lưu hồ sơ để lưu vị trí này.' : 'Bấm để lấy vị trí khi bạn đang ở quán.',
-          textKey: const Key('profile-position-text'),
-          rows: <(String, String)>[
-            ('Vĩ độ', lat == null ? '—' : lat.toStringAsFixed(6)),
-            ('Kinh độ', lng == null ? '—' : lng.toStringAsFixed(6)),
-          ],
-        ),
-        if (error != null) N11Banner(kind: BannerKind.error, title: 'Chưa có vị trí', text: error),
-        if (ops.locationFailure != null)
-          N11Banner(
-            key: const Key('profile-location-error'),
-            kind: BannerKind.warn,
-            title: 'Chưa lấy được vị trí',
-            text: '${locationFailureMessage(ops.locationFailure!)} Tọa độ cũ vẫn được giữ.',
-          ),
-        N11Button(
-          key: const Key('profile-locate'),
-          label: ops.locating ? 'Đang lấy vị trí…' : 'Lấy vị trí hiện tại',
-          kind: ButtonKind.secondary,
-          icon: Icons.my_location,
-          loading: ops.locating,
-          onPressed: ops.locating || ops.locked ? null : ops.capturePosition,
-        ),
-      ]),
-    );
-  }
 
-  Widget _areas(ShopOverview o) {
-    final String? error = ops.profileErrors['area'];
-    if (ops.areasFailed) {
-      return N11Banner(
-        key: const Key('profile-areas-failed'),
-        kind: BannerKind.warn,
-        title: 'Chưa tải được danh sách khu vực',
-        trailing: N11Button(key: const Key('profile-areas-reload'), label: 'Tải lại', compact: true, kind: ButtonKind.secondary, onPressed: ops.loadAreas),
-      );
-    }
-    final String? current = ops.profile.areaId;
-    final bool currentListed = current == null || ops.areas.any((ServiceArea a) => a.id == current);
-    return KeyedSubtree(
-      key: _errorKey('area'),
-      child: vstack(<Widget>[
-        const Text('Khu vực phục vụ', style: N11Text.label),
-        if (!currentListed)
-          const N11ChoiceCard(key: Key('area-current-inactive'), title: 'Khu vực hiện tại', text: 'Ngừng hoạt động · không chọn được. Hãy chọn khu vực khác.', selected: true),
-        for (final ServiceArea a in ops.areas)
-          N11ChoiceCard(key: Key('area-${a.id}'), title: a.name, text: 'Đang hoạt động', selected: current == a.id, onTap: ops.locked ? null : () => ops.chooseArea(a.id)),
-        if (error != null) N11Banner(kind: BannerKind.error, title: 'Khu vực không hợp lệ', text: error),
-      ]),
-    );
-  }
 }

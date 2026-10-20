@@ -127,6 +127,8 @@ export const APP_ERROR_DEFINITIONS = {
 
   // Delivery flow (M07). Fixed messages: they echo nothing the client sent. A delivery of another shop and a missing one answer the same
   // DELIVERY_NOT_FOUND. VERSION_CONFLICT, SHOP_NOT_FOUND, SHOP_PROFILE_INCOMPLETE and the DRIVER_* codes (above) are reused unchanged.
+  // Notifications (M08). A notification of another account and a missing one answer the same.
+  NOTIFICATION_NOT_FOUND: { status: 404, message: 'The notification was not found' },
   DELIVERY_NOT_FOUND: { status: 404, message: 'The delivery was not found' },
   DELIVERY_STATE_CONFLICT: { status: 409, message: 'The delivery is not in a state that allows this action' },
   DELIVERY_ALREADY_TAKEN: { status: 409, message: 'Another Shipper already took this delivery' },
@@ -138,8 +140,23 @@ export const APP_ERROR_DEFINITIONS = {
   FEE_LOCKED: { status: 409, message: 'The delivery fee is fixed' },
   DESTINATION_NOT_CONFIRMED: { status: 409, message: 'The drop-off point is not confirmed yet' },
   RECALL_BLOCKED_GOODS_OUT: { status: 409, message: 'The goods are not back at the shop, so the delivery cannot be requested again' },
-  ORDER_MODULE_NOT_READY: { status: 409, message: 'The order module is not connected yet' },
   ADMIN_ACTION_NOT_ALLOWED: { status: 409, message: 'This action does not apply to the delivery in its current state' },
+
+  // Food orders (M10). Fixed messages that echo nothing the client sent. An Order of another account or shop and a missing one answer the same
+  // ORDER_NOT_FOUND. VERSION_CONFLICT, SHOP_NOT_FOUND, SHOP_DISABLED, ROLE_NOT_AVAILABLE, AFTER_PICKUP_NO_CANCEL, RECALL_BLOCKED_GOODS_OUT and the
+  // DELIVERY_* / ADMIN_* codes (above) are reused unchanged.
+  ORDER_NOT_FOUND: { status: 404, message: 'The order was not found' },
+  ORDER_STATE_CONFLICT: { status: 409, message: 'The order is not in a state that allows this action' },
+  ORDER_CART_CHANGED: { status: 409, message: 'A dish or a price changed; check the cart and send the order again' },
+  ORDER_SHOP_NOT_OPEN: { status: 409, message: 'The shop cannot take this order now' },
+  ORDER_SCHEDULE_INVALID: { status: 409, message: 'The wanted time is not possible for this shop' },
+  ORDER_ADDRESS_INVALID: { status: 409, message: 'The delivery address is not available' },
+  ORDER_EMPTY: { status: 409, message: 'An order without dishes cannot be confirmed' },
+  ORDER_CHANGE_REASON_REQUIRED: { status: 409, message: 'The order was changed: a reason is required to confirm it' },
+  ORDER_PAYMENT_LOCKED: { status: 409, message: 'The paid amount cannot change while a delivery is in progress' },
+  ORDER_PAYMENT_INVALID: { status: 400, message: 'The paid amount is not valid' },
+  ORDER_CART_OTHER_SHOP: { status: 409, message: 'The cart holds dishes of another shop' },
+  ORDER_INPUT_INVALID: { status: 400, message: 'The order details are not valid' },
 
   // Shop management (M02-A, task section 7). Same rule: fixed messages that echo nothing the client sent and reveal
   // nothing about any other account. SESSION_*, ACCOUNT_DISABLED, INVALID_SERVICE_AREA, SHOP_PROFILE_INCOMPLETE and
@@ -226,6 +243,23 @@ export const APP_ERROR_DEFINITIONS = {
   DEVICE_PROOF_EXPIRED: { status: 403, message: 'The device proof has expired' },
   DEVICE_PROOF_UNSUPPORTED: { status: 403, message: 'This device cannot provide the required proof' },
   DEVICE_RATE_LIMITED: { status: 429, message: 'Too many device requests; try again later' },
+
+  // Reviews and complaints (M11). Fixed messages that echo nothing the client sent. A review, order, delivery or complaint of another account is never
+  // told apart from one that does not exist. ORDER_MODULE_NOT_READY, DELIVERY_NOT_FOUND, VERSION_CONFLICT and the ADMIN_* codes are reused.
+  REVIEW_NOT_ELIGIBLE: { status: 409, message: 'This rating is not available for the order or delivery yet' },
+  REVIEW_ALREADY_EXISTS: { status: 409, message: 'This order or delivery was already rated' },
+  REVIEW_NOT_FOUND: { status: 404, message: 'The rating was not found' },
+  REVIEW_TARGET_NOT_FOUND: { status: 404, message: 'The order or delivery to rate was not found' },
+  COMPLAINT_NOT_FOUND: { status: 404, message: 'The complaint was not found' },
+  COMPLAINT_TARGET_NOT_FOUND: { status: 404, message: 'The order, delivery or rating of the complaint was not found' },
+  COMPLAINT_STATE_CONFLICT: { status: 409, message: 'The complaint is not in a state that allows this action' },
+  COMPLAINT_ATTACHMENT_INVALID: { status: 400, message: 'The evidence picture is not valid' },
+  COMPLAINT_ATTACHMENT_NOT_FOUND: { status: 404, message: 'The evidence picture was not found' },
+  COMPLAINT_ATTACHMENT_LIMIT: { status: 409, message: 'Too many evidence pictures' },
+  COMPLAINT_FORBIDDEN: { status: 403, message: 'You cannot do this on this complaint' },
+  RECONSIDERATION_EXPIRED: { status: 409, message: 'The period to ask for another review has ended' },
+  RECONSIDERATION_NOT_AVAILABLE: { status: 409, message: 'Another review cannot be requested for this complaint' },
+  ADJUSTMENT_HISTORY_REVIEW_REQUIRED: { status: 409, message: 'The whole delivery history must be reviewed before this adjustment' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;

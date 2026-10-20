@@ -15,6 +15,7 @@ dependencies:
     path: ../packages/n11_shared
   n11_m14:
     path: ../packages/n11_m14
+  image_picker: ^1.2.4
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
 

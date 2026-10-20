@@ -1,3 +1,4 @@
+import { AccountActivityRegistry } from '../../apps/backend/src/account-lifecycle/account-activity-registry';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { ADMIN_SESSION_COOKIE } from '../../apps/backend/src/admin-auth/admin-auth-constants';
@@ -235,13 +236,90 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
   const reconcile = (who: string, id: string, body: Record<string, unknown>, version = 3, key?: string): Promise<AdminResponse> =>
     send(as(who), `/finance/withdrawals/${id}/reconcile`, { expected_version: version, ...body }, key);
 
+
+  const selfCommand = async (s: Shipper, path: string, extra: Record<string, unknown> = {}) => {
+    const profile = dataOf(await client.call('GET', '/driver/me', { bearer: s.token }));
+    return client.call('POST', `/driver/me/${path}`, { bearer: s.token, headers: { 'idempotency-key': randomUUID() }, body: { expected_version: profile.version, ...extra } });
+  };
+
+  it('M03: SHIP registration provisions an ACTIVE driver and zero wallet without bank or approval, and retries create neither twice', async () => {
+    const phone = randomPhone();
+    const proof = await obtainProof(client, phone);
+    const key = randomUUID();
+    const body = { phone: phone.local, password: PASSWORD, verification_token: proof.proofToken, device: WEB_SHIP, full_name: 'Nguyễn Văn Mới', consent: { terms_version: TERMS, privacy_version: PRIVACY } };
+    const registered = await client.call('POST', '/client-auth/register', { headers: { 'idempotency-key': key }, body });
+    expect(registered.status).toBe(201);
+    const data = dataOf(registered);
+    expect(data).toMatchObject({ active_role: 'DRIVER', onboarding_required: false });
+    const token = String(data.access_token);
+    const profile = dataOf(await client.call('GET', '/driver/me', { bearer: token }));
+    expect(profile).toMatchObject({ status: 'ACTIVE', bank: null, accepting_deliveries: false, readiness: { can_accept: false } });
+    expect(dataOf(await gc(token, ''))).toMatchObject({ wallet: { provisioned: true, balance_vnd: 0 } });
+    const replay = await client.call('POST', '/client-auth/register', { headers: { 'idempotency-key': key }, body });
+    expect(replay.status).toBe(201);
+    expect(dataOf(replay).user_id).toBe(data.user_id);
+    expect(await countRows(client.pool, 'SELECT 1 FROM app.drivers WHERE user_id = $1::uuid', [data.user_id])).toBe(1);
+    expect(errorCode(await client.call('POST', '/driver/me/accepting', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { expected_version: profile.version, accepting: true } }))).toBe('DRIVER_WALLET_NOT_READY');
+  });
+
+  it('M03: confirmed funding enables activity without a bank; pending topup credits nothing; Admin suspension blocks activity', async () => {
+    const s = await newShipper(100_000);
+    await client.pool.query('DELETE FROM app.driver_bank_accounts WHERE driver_id = $1::uuid', [s.driverId]);
+    expect((await selfCommand(s, 'accepting', { accepting: true })).status).toBe(200);
+    const topup = await client.call('POST', `${BASE}/topup-requests`, { bearer: s.token, headers: { 'idempotency-key': randomUUID() }, body: { amount_vnd: 100_000 } });
+    expect(topup.status).toBe(201);
+    expect(await wallet(s)).toEqual({ balance: '100000', held: '0' });
+    const profile = dataOf(await client.call('GET', '/driver/me', { bearer: s.token }));
+    expect((await send(systemLogin(), `/shippers/${s.driverId}/lock`, { expected_version: profile.version, reason: 'M03 test lock' })).status).toBe(200);
+    expect(errorCode(await selfCommand(s, 'accepting', { accepting: true }))).toBe('DRIVER_NOT_ACTIVE');
+  });
+
+  it('M03: active delivery work blocks refund, while closure request immediately stops new orders', async () => {
+    const s = await newShipper(100_000);
+    const activity = client.running.app.get(AccountActivityRegistry);
+    activity.register({ name: 'M03_ACTIVE_WORK_TEST', activeWork: async (_context, userId) => userId === s.userId ? 1 : 0 });
+    try {
+      expect((await selfCommand(s, 'closure-request', { note: null })).status).toBe(200);
+      expect(errorCode(await withdraw(s, { amount_vnd: 100_000 }))).toBe('DRIVER_HAS_ACTIVE_WORK');
+      expect(await wallet(s)).toEqual({ balance: '100000', held: '0' });
+      expect(errorCode(await selfCommand(s, 'accepting', { accepting: true }))).toBe('DRIVER_NOT_ACTIVE');
+    } finally {
+      activity.unregister('M03_ACTIVE_WORK_TEST');
+    }
+  });
+
+  it('M03: closing returns all 5.000 VND below the ordinary minimum, holds once, and cannot close before payment', async () => {
+    const s = await newShipper(5_000);
+    expect((await selfCommand(s, 'closure-request', { note: 'Rút toàn bộ' })).status).toBe(200);
+    const key = randomUUID();
+    const first = await withdraw(s, { amount_vnd: 5_000 }, key);
+    expect(first.status).toBe(201);
+    const id = String(dataOf(first).withdrawal_id);
+    const replay = await withdraw(s, { amount_vnd: 5_000 }, key);
+    expect(dataOf(replay).withdrawal_id).toBe(id);
+    expect(await wallet(s)).toEqual({ balance: '5000', held: '5000' });
+    expect((await withdraw(s, { amount_vnd: 5_000 })).status).toBe(409);
+    expect(errorCode(await selfCommand(s, 'closure-cancel'))).toBe('DRIVER_WALLET_NOT_SETTLED');
+    const profile = dataOf(await client.call('GET', '/driver/me', { bearer: s.token }));
+    expect(adminErrorCode(await send(systemLogin(), `/shippers/${s.driverId}/closure/finalize`, { expected_version: profile.version }))).toBe('DRIVER_WALLET_NOT_SETTLED');
+    expect((await start('processor', id)).status).toBe(200);
+    const paidKey = randomUUID();
+    const paidBody = evidence(id, {}, 5_000);
+    expect((await paid('processor', id, paidBody, 2, paidKey)).status).toBe(200);
+    expect((await paid('processor', id, paidBody, 2, paidKey)).status).toBe(200);
+    expect(await debits(s.walletId)).toBe(1);
+    expect(await wallet(s)).toEqual({ balance: '0', held: '0' });
+    expect((await send(systemLogin(), `/shippers/${s.driverId}/closure/finalize`, { expected_version: profile.version })).status).toBe(200);
+    expect(await countRows(client.pool, "SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid AND role = 'CUSTOMER'", [s.userId])).toBe(1);
+  });
+
   // ------------------------------------------------------------------------------------------------ tests
   it('1. the Shipper wallet is read-only and private: the summary adds no wallet, shows B / H / A, and another Shipper reads as not found', async () => {
     const poor = await newShipper(0);
     const before = await countRows(client.pool, 'SELECT 1 FROM app.driver_wallets WHERE driver_id = $1::uuid', [poor.driverId]);
     const summary = await gc(poor.token, '');
     expect(summary.status).toBe(200);
-    expect(dataOf(summary)).toMatchObject({ wallet: { provisioned: false, balance_vnd: 0, held_vnd: 0, available_vnd: 0 }, limits: { withdraw_min_vnd: 10_000 }, commission_vnd: 1000 });
+    expect(dataOf(summary)).toMatchObject({ wallet: { provisioned: true, balance_vnd: 0, held_vnd: 0, available_vnd: 0 }, limits: { withdraw_min_vnd: 10_000 }, commission_vnd: 1000 });
     expect(await countRows(client.pool, 'SELECT 1 FROM app.driver_wallets WHERE driver_id = $1::uuid', [poor.driverId])).toBe(before);
     expect((await gc(poor.token, '/transactions')).status).toBe(200);
     expect(dataOf(await gc(poor.token, '/transactions')).items).toEqual([]);
@@ -601,7 +679,7 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
   it('14. M03 activation needs real confirmed top-ups: under 100.000 it is refused, 100.000 with the money still available approves, and nothing is credited twice', async () => {
     // A Shipper whose profile was sent for review, with a verified bank account of its own name, and no money at all.
     const s = await newShipper(0);
-    await client.pool.query(`UPDATE app.drivers SET review_state = 'SUBMITTED' WHERE driver_id = $1::uuid`, [s.driverId]);
+    await client.pool.query(`UPDATE app.drivers SET status = 'PENDING', review_state = 'SUBMITTED' WHERE driver_id = $1::uuid`, [s.driverId]);
     const driverVersion = async (): Promise<number> => Number((await client.pool.query<{ version: string }>('SELECT version::text FROM app.drivers WHERE driver_id = $1::uuid', [s.driverId])).rows[0]?.version);
     const approve = async (): Promise<AdminResponse> => send(systemLogin(), `/shippers/${s.driverId}/approve`, { expected_version: await driverVersion() });
     const status = async (): Promise<string> => String((await client.pool.query('SELECT status FROM app.drivers WHERE driver_id = $1::uuid', [s.driverId])).rows[0]?.status);

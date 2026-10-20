@@ -1,3 +1,4 @@
+import { WalletReadRepository } from '../wallet/wallet-read-repository';
 import { Injectable } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
 import { AuthPrincipal } from '../auth/auth-principal';
@@ -58,6 +59,7 @@ export class ShipperSelfService {
     private readonly limits: ShipperWalletParametersReader,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
+    private readonly walletReads: WalletReadRepository,
   ) {}
 
   /** GET /v1/driver/me. Reading grants nothing; a user without a Shipper profile reads null. */
@@ -107,9 +109,10 @@ export class ShipperSelfService {
 
   saveBank(principal: AuthPrincipal, input: BankUpdateInput, key: string | readonly string[] | undefined, requestId: string) {
     return this.#command(principal, 'bank', { expected_version: input.expectedVersion, bank_code: input.bank.code, account_number: input.accountNumber, account_holder: input.accountHolder }, key, requestId, input.expectedVersion, async (context, driver) => {
-      if (driver.status === 'CLOSING' || driver.status === 'CLOSED') {
+      if (driver.status === 'CLOSED') {
         throw new AppError('DRIVER_STATE_CONFLICT');
       }
+      if ((await this.walletReads.openWithdrawalCountOfDriver(context, driver.driverId)) > 0) throw new AppError('DRIVER_WALLET_NOT_SETTLED');
       if (!holderMatchesName(driver.fullName, input.accountHolder)) {
         throw new AppError('BANK_HOLDER_MISMATCH');
       }
@@ -129,7 +132,7 @@ export class ShipperSelfService {
         accountHolder: input.accountHolder,
       });
       // A new or changed account is not verified, so the Shipper stops taking new orders until it is (orders already taken stay).
-      const stopAccepting = driver.acceptingDeliveries;
+      const stopAccepting = false;
       const updated = await this.#write(context, driver, stopAccepting ? { acceptingDeliveries: false } : {});
       return {
         driver: updated,
@@ -165,9 +168,6 @@ export class ShipperSelfService {
           throw new AppError('DRIVER_NOT_ACTIVE');
         }
         const bank = await this.banks.find(context, driver.driverId);
-        if (bank?.verificationState !== 'VERIFIED') {
-          throw new AppError('DRIVER_BANK_NOT_VERIFIED');
-        }
         if (!(await this.views.readiness(context, driver, bank)).walletReady) {
           throw new AppError('DRIVER_WALLET_NOT_READY');
         }
@@ -200,6 +200,7 @@ export class ShipperSelfService {
       if (driver.status !== 'CLOSING' || driver.statusBeforeClosing === null) {
         throw new AppError('DRIVER_STATE_CONFLICT');
       }
+      if ((await this.walletReads.openWithdrawalCountOfDriver(context, driver.driverId)) > 0) throw new AppError('DRIVER_WALLET_NOT_SETTLED');
       // Back to ACTIVE with the switch off: the Shipper turns receiving on again on purpose.
       const updated = await this.#write(context, driver, { status: driver.statusBeforeClosing, statusBeforeClosing: null, closureRequestedAt: null, closureNote: null });
       return { driver: updated, change: 'closure_cancelled' };

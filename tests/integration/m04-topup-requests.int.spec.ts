@@ -157,14 +157,14 @@ describe('M04-B2.1 — Shipper top-up requests', () => {
     const list = await get(s.token, '/topup-requests');
     expect(list.status).toBe(200);
     expect(dataOf(list)).toEqual({ items: [], next_cursor: null });
-    expect(await walletOf(s.driverId)).toBeUndefined();
+    expect(await walletOf(s.driverId)).toMatchObject({ balance_vnd: '0', held_vnd: '0', version: '1' });
     expect((await get(s.token, `/topup-requests/${randomUUID()}`)).status).toBe(404);
-    expect(await walletOf(s.driverId)).toBeUndefined();
+    expect(await walletOf(s.driverId)).toMatchObject({ balance_vnd: '0', held_vnd: '0', version: '1' });
     const accounts = dataOf(await get(s.token, '/topup-receiving-accounts')).accounts as Array<Record<string, unknown>>;
     const mine = accounts.filter((account) => account.account_holder === 'CONG TY TEST 11SHIP');
     expect(mine).toHaveLength(1);
     expect(Object.keys(mine[0] as object).sort()).toEqual(['account_holder', 'account_number', 'bank_id']);
-    expect(await walletOf(s.driverId)).toBeUndefined();
+    expect(await walletOf(s.driverId)).toMatchObject({ balance_vnd: '0', held_vnd: '0', version: '1' });
     // Query parameters other than the documented ones, and a body on a GET, are refused.
     expect((await get(s.token, '/topup-requests?driver_id=x')).status).toBe(400);
     expect((await get(s.token, '/topup-receiving-accounts?x=1')).status).toBe(400);
@@ -176,7 +176,7 @@ describe('M04-B2.1 — Shipper top-up requests', () => {
     const below = await create(s.token, { amount_vnd: 99_999 });
     expect([below.status, errorCode(below)]).toEqual([400, 'TOPUP_AMOUNT_BELOW_MINIMUM']);
     expect(await requestRows(s.driverId)).toBe(0);
-    expect(await walletOf(s.driverId)).toBeUndefined(); // the zero wallet was rolled back with the refusal
+    expect(await walletOf(s.driverId)).toMatchObject({ balance_vnd: '0', held_vnd: '0', version: '1' }); // the zero wallet was rolled back with the refusal
     await setMin(50_000);
     const accepted = await create(s.token, { amount_vnd: 60_000 });
     expect(accepted.status).toBe(201);
@@ -196,7 +196,7 @@ describe('M04-B2.1 — Shipper top-up requests', () => {
     }
     expect(errorCode(await create(s.token, { amount_vnd: 100_000 }, null))).toBe('IDEMPOTENCY_KEY_REQUIRED');
     expect(await requestRows(s.driverId)).toBe(0);
-    expect(await walletOf(s.driverId)).toBeUndefined();
+    expect(await walletOf(s.driverId)).toMatchObject({ balance_vnd: '0', held_vnd: '0', version: '1' });
   });
 
   it('5. without a receiving account nothing is created and no address is shown; the lists stay readable', async () => {
@@ -206,7 +206,7 @@ describe('M04-B2.1 — Shipper top-up requests', () => {
       const refused = await create(s.token, { amount_vnd: 100_000 });
       expect([refused.status, errorCode(refused)]).toEqual([409, 'TOPUP_RECEIVING_ACCOUNT_NOT_CONFIGURED']);
       expect(await requestRows(s.driverId)).toBe(0);
-      expect(await walletOf(s.driverId)).toBeUndefined();
+      expect(await walletOf(s.driverId)).toMatchObject({ balance_vnd: '0', held_vnd: '0', version: '1' });
       const accounts = dataOf(await get(s.token, '/topup-receiving-accounts')).accounts as Array<Record<string, unknown>>;
       expect(accounts.filter((account) => account.account_holder === 'CONG TY TEST 11SHIP')).toEqual([]);
       expect(dataOf(await get(s.token, '/topup-requests'))).toEqual({ items: [], next_cursor: null });
@@ -253,7 +253,7 @@ describe('M04-B2.1 — Shipper top-up requests', () => {
     for (const driverId of [s.driverId, closed.driverId, disabled.driverId, revoked.driverId, roleless.driverId]) {
       expect([driverId, await requestRows(driverId)]).toEqual([driverId, 0]);
     }
-    expect(await walletOf(s.driverId)).toBeUndefined();
+    expect(await walletOf(s.driverId)).toMatchObject({ balance_vnd: '0', held_vnd: '0', version: '1' });
   });
 
   it('7. ownership: another Shipper cannot read or cancel a request, and an unknown or malformed id reads the same as another\'s', async () => {

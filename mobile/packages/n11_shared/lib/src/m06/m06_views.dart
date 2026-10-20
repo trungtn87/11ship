@@ -392,9 +392,7 @@ class _ShippingFeeScreenState extends State<ShippingFeeScreen> {
         ? null
         : mode == FeeMode.standard
             ? () => _send(() => widget.actions!.useStandard(_payer))
-            : agreedReady
-                ? () => _send(() => widget.actions!.propose(payer: _payer, reason: _reason!, note: note.isEmpty ? null : note, amountVnd: amount))
-                : null;
+            : () { if (agreedReady) _send(() => widget.actions!.propose(payer: _payer, reason: _reason!, note: note.isEmpty ? null : note, amountVnd: amount)); };
     return <Widget>[
       const Text('CÁCH TÍNH PHÍ', style: N11Text.label),
       const SizedBox(height: N11Space.gap2),
@@ -417,16 +415,17 @@ class _ShippingFeeScreenState extends State<ShippingFeeScreen> {
         const SizedBox(height: N11Space.gap3),
         const Text('LÝ DO THỎA THUẬN', style: N11Text.label),
         const SizedBox(height: N11Space.gap2),
-        Wrap(
+        FormField<FeeReason>(autovalidateMode: AutovalidateMode.onUserInteraction, validator: (_) => _reason == null ? 'Chọn lý do thỏa thuận phí.' : null, builder: (FormFieldState<FeeReason> field) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Wrap(
           spacing: N11Space.gap2,
           runSpacing: N11Space.gap2,
           children: <Widget>[
             for (final FeeReason reason in FeeReason.values)
               ChoiceChip(key: Key('m06-reason-${reason.name}'), label: Text(feeReasonText(reason)), selected: _reason == reason, onSelected: (bool _) => setState(() => _reason = reason)),
           ],
-        ),
+        ), if (field.errorText != null) Text(field.errorText!, style: const TextStyle(color: N11Colors.error))])),
         const SizedBox(height: N11Space.gap3),
         N11Field(
+          validator: (String value) => parseAgreedFee(value) == null ? 'Nhập mức phí là số nguyên từ 0 đến 10.000.000đ.' : null,
           fieldKey: const Key('m06-agreed-amount'),
           label: 'Mức phí đề xuất (đ)',
           controller: _amount,
@@ -438,6 +437,7 @@ class _ShippingFeeScreenState extends State<ShippingFeeScreen> {
         ),
         const SizedBox(height: N11Space.gap2),
         N11Field(
+          validator: (String value) => noteError ?? (_reason == FeeReason.other && value.trim().isEmpty ? 'Lý do Khác cần có ghi chú.' : null),
           fieldKey: const Key('m06-agreed-note'),
           label: 'Ghi chú cho shipper',
           controller: _note,
@@ -454,7 +454,7 @@ class _ShippingFeeScreenState extends State<ShippingFeeScreen> {
       if (widget.actions == null)
         const GatedButton(label: 'Gửi yêu cầu giao', reason: kAgreementReason)
       else
-        N11Button(key: const Key('m06-fee-submit'), label: mode == FeeMode.standard ? 'Dùng phí theo bảng giá' : 'Gửi đề xuất phí', loading: _busy, onPressed: submit),
+        N11Button(key: const Key('m06-fee-submit'), validate: true, label: mode == FeeMode.standard ? 'Dùng phí theo bảng giá' : 'Gửi đề xuất phí', loading: _busy, onPressed: submit),
       if (_error != null) Padding(padding: const EdgeInsets.only(top: N11Space.gap2), child: Text(_error!, key: const Key('m06-agreement-error'), style: N11Text.caption)),
     ];
   }
@@ -595,9 +595,9 @@ class _OrderOfferScreenState extends State<OrderOfferScreen> {
       ),
       if (_countering && actions != null) ...<Widget>[
         const SizedBox(height: N11Space.gap3),
-        N11Field(fieldKey: const Key('m06-counter-amount'), label: 'Mức phí bạn đề xuất (đ)', controller: _counter, keyboard: TextInputType.number, maxLength: 11, hint: counterError, tone: counterError == null ? FieldTone.normal : FieldTone.error, onChanged: () => setState(() {})),
+        N11Field(validator: (String value) => parseAgreedFee(value) == null ? 'Nhập mức phí là số nguyên từ 0 đến 10.000.000đ.' : counterError, fieldKey: const Key('m06-counter-amount'), label: 'Mức phí bạn đề xuất (đ)', controller: _counter, keyboard: TextInputType.number, maxLength: 11, hint: counterError, tone: counterError == null ? FieldTone.normal : FieldTone.error, onChanged: () => setState(() {})),
         const SizedBox(height: N11Space.gap2),
-        N11Button(key: const Key('m06-counter-send'), label: 'Gửi đề xuất', loading: _busy, onPressed: _busy || counter == null || counterError != null ? null : () => _send(() => actions.counter(counter))),
+        N11Button(key: const Key('m06-counter-send'), validate: true, label: 'Gửi đề xuất', loading: _busy, onPressed: _busy ? null : () { if (counter != null && counterError == null) _send(() => actions.counter(counter)); }),
       ],
       if (actions == null) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: ReasonNote(kAgreementReason)),
       const SizedBox(height: N11Space.gap3),

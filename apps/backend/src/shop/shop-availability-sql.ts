@@ -26,7 +26,7 @@ export const PRODUCTION_CLOCK = 'clock_timestamp()';
 export type SnapshotSource = 'owner' | 'shop';
 
 const SELECT_LIST = `
-SELECT s.shop_id, s.name, s.contact_phone_normalized, s.zalo, s.facebook, s.address_text, s.pickup_lat, s.pickup_lng,
+SELECT s.logo, s.shop_id, s.name, s.contact_phone_normalized, s.zalo, s.facebook, s.address_text, s.pickup_lat, s.pickup_lng,
        s.service_area_id, s.status, s.version,
        a.status AS area_status,
        to_char(date_trunc('milliseconds', l.instant) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS evaluated_at,

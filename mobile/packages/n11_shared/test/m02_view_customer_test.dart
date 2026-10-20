@@ -28,8 +28,8 @@ ShopMenuView customerView({String reason = 'OUTSIDE_BUSINESS_HOURS', bool items 
       hours: hours ? week() : emptyWeek(),
       categories: items
           ? const <PublicCategory>[
-              PublicCategory(name: 'Ốc', items: <PublicItem>[PublicItem(id: 'a', name: 'Ốc hương hấp', priceVnd: 120000, imageUrl: null)]),
-              PublicCategory(name: 'Hải sản', items: <PublicItem>[PublicItem(id: 'b', name: 'Ngao hấp', priceVnd: 60000, imageUrl: null)]),
+              PublicCategory(name: 'Ốc', items: <PublicItem>[PublicItem(id: 'a', name: 'Ốc hương hấp', priceVnd: 120000, imageUrl: null, soldCount: 120)]),
+              PublicCategory(name: 'Hải sản', items: <PublicItem>[PublicItem(id: 'b', name: 'Ngao hấp', priceVnd: 60000, imageUrl: null, soldCount: 0)]),
             ]
           : const <PublicCategory>[],
     );
@@ -80,6 +80,8 @@ void main() {
     expect(find.text('Đã đóng cửa'), findsOneWidget);
     expect(find.text('Ốc hương hấp'), findsOneWidget);
     expect(find.text('120.000 đ'), findsOneWidget);
+    expect(find.text('Đã bán 120'), findsOneWidget);
+    expect(find.text('Đã bán 0'), findsOneWidget);
     expect(find.text('Xem trước'), findsNothing);
     for (final String word in <String>['Mua', 'Đặt ngay', '+', 'Giỏ hàng']) {
       expect(find.text(word), findsNothing);

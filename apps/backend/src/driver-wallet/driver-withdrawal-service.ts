@@ -1,3 +1,6 @@
+import { ShipperSettlementReader } from '../shipper-settlement/shipper-settlement-reader';
+import { WalletReadRepository } from '../wallet/wallet-read-repository';
+import { AccountActivityRegistry } from '../account-lifecycle/account-activity-registry';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
@@ -46,6 +49,9 @@ export class DriverWithdrawalService {
     private readonly limits: ShipperWalletParametersReader,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
+    private readonly activity: AccountActivityRegistry,
+    private readonly reads: WalletReadRepository,
+    private readonly settlement: ShipperSettlementReader,
   ) {}
 
   async list(principal: AuthPrincipal, query: WithdrawalListQuery): Promise<JsonObject> {
@@ -80,13 +86,22 @@ export class DriverWithdrawalService {
         const { actor, driver } = await this.access.writer(context, principal);
         // The minimum is read from the database at this moment; a request made before a change keeps the amount it was made with.
         const limits = await this.limits.limits(context);
-        if (amountVnd < limits.withdrawMinVnd) {
+        if (driver.status !== 'CLOSING' && amountVnd < limits.withdrawMinVnd) {
           throw new AppError('WITHDRAWAL_AMOUNT_BELOW_MINIMUM');
         }
         const wallet = await this.money.lockWalletOfDriver(context, driver.driverId);
         if (wallet === undefined) {
           // No wallet means no money: nothing is created for a withdrawal.
           throw new AppError('WITHDRAWAL_INSUFFICIENT_AVAILABLE');
+        }
+        if (driver.status === 'CLOSING') {
+          const obligations = await this.settlement.obligations(context, driver.driverId);
+          if (obligations.activeWork) throw new AppError('DRIVER_HAS_ACTIVE_WORK');
+          if (obligations.pendingFinance) throw new AppError('DRIVER_WALLET_NOT_SETTLED');
+          if ((await this.activity.activeWork(context, driver.userId)).length > 0) throw new AppError('DRIVER_HAS_ACTIVE_WORK');
+          const pending = await this.reads.pendingTopupCount(context, wallet.walletId);
+          if (pending > 0 || wallet.heldVnd !== 0n) throw new AppError('DRIVER_WALLET_NOT_SETTLED');
+          if (BigInt(amountVnd) !== wallet.balanceVnd) throw new AppError('WITHDRAWAL_INSUFFICIENT_AVAILABLE');
         }
         const row = await this.money.reserve(context, wallet, { driverId: driver.driverId, amountVnd: BigInt(amountVnd), createdByUserId: actor.userId });
         await this.#record(context, actor, requestId, OPERATION.create, 'created', 'CREATED', null, row, null);

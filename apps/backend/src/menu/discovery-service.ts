@@ -1,4 +1,6 @@
+import { ReviewRepository } from '../feedback/review-repository';
 import { Injectable } from '@nestjs/common';
+import { OrderSalesReader } from '../orders/order-sales-reader';
 import { foldVietnamese, likeContains } from '../shared/fold-vietnamese';
 import { toSafeInteger } from '../shop/shop-db';
 import { DiscoverableShop, ShopDiscoveryReader } from '../shop/shop-discovery-reader';
@@ -46,6 +48,8 @@ export class DiscoveryService {
     private readonly shopReader: ShopDiscoveryReader,
     private readonly areas: ServiceAreaRepository,
     private readonly menu: MenuRepository,
+    private readonly sales: OrderSalesReader,
+    private readonly reviews: ReviewRepository,
   ) {}
 
   async serviceAreas(): Promise<Record<string, unknown>[]> {
@@ -72,8 +76,9 @@ export class DiscoveryService {
         .filter((shop) => query.term === '' || shop.folded.includes(query.term))
         .sort(byOpenThenName);
       const page = matching.slice(query.offset, query.offset + query.limit);
+      const summaries = await this.reviews.shopSummaries(context, page.map((shop) => shop.shopId));
       return {
-        shops: page.map((shop) => ({ shop_id: shop.shopId, name: shop.name, address_text: shop.addressText, availability: availabilityOf(shop) })),
+        shops: page.map((shop) => ({ shop_id: shop.shopId, ...(shop.hasLogo ? { logo_url: '/v1/shops/' + shop.shopId + '/logo?v=' + (shop.logoVersion ?? '1') } : {}), name: shop.name, address_text: shop.addressText, pickup_lat: shop.pickupLat ?? null, pickup_lng: shop.pickupLng ?? null, rating: summaries.get(shop.shopId) ?? { count: 0, average: null }, availability: availabilityOf(shop) })),
         has_more: matching.length > query.offset + query.limit,
       };
     });
@@ -93,6 +98,8 @@ export class DiscoveryService {
         query.offset,
       );
       const page = found.slice(0, query.limit);
+      const summaries = await this.reviews.shopSummaries(context, [...new Set(page.map((item) => item.shopId))]);
+      const sold = await this.sales.quantitiesOfItems(context, page.map((item) => item.itemId));
       return {
         dishes: page.flatMap((item) => {
           const shop = byId.get(item.shopId);
@@ -103,8 +110,9 @@ export class DiscoveryService {
                   item_id: item.itemId,
                   name: item.name,
                   price_vnd: toSafeInteger(item.priceVnd),
+                  sold_count: sold.get(item.itemId) ?? 0,
                   image_id: item.imageId,
-                  shop: { shop_id: shop.shopId, name: shop.name, address_text: shop.addressText, availability: availabilityOf(shop) },
+                  shop: { shop_id: shop.shopId, ...(shop.hasLogo ? { logo_url: '/v1/shops/' + shop.shopId + '/logo?v=' + (shop.logoVersion ?? '1') } : {}), name: shop.name, address_text: shop.addressText, pickup_lat: shop.pickupLat ?? null, pickup_lng: shop.pickupLng ?? null, rating: summaries.get(shop.shopId) ?? { count: 0, average: null }, availability: availabilityOf(shop) },
                 },
               ];
         }),

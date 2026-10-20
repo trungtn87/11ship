@@ -20,6 +20,7 @@ export type IconName =
   | 'rider'
   | 'receipt'
   | 'truck'
+  | 'bell'
   | 'chat'
   | 'wallet'
   | 'plus-circle'
@@ -27,7 +28,8 @@ export type IconName =
   | 'map-pin'
   | 'gear'
   | 'doc'
-  | 'activity';
+  | 'activity'
+  | 'star';
 
 /** A domain an ADMIN can be granted. SYSTEM does not need a grant. */
 export type GrantId =
@@ -36,6 +38,7 @@ export type GrantId =
   | 'drivers'
   | 'orders'
   | 'deliveries'
+  | 'notifications'
   | 'feedback'
   | 'driver-wallets'
   | 'topups'
@@ -84,6 +87,11 @@ export function grantsFromPermissions(permissions: readonly AppPermission[]): Gr
     // M07.07: the delivery pages open for an administrator who may view the shop or the Shipper side; the server decides every read and action again.
     if (row.app === 'SHOP' || row.app === 'DRIVER') {
       grants.add('deliveries');
+      grants.add('orders');
+      // M08.06: the notification pages open for the same viewers; the server narrows what is listed to the apps the administrator may view.
+      grants.add('notifications');
+      // M11.03: the rating and complaint pages open for the same viewers; the server decides every read and every action again (an action needs the review right).
+      grants.add('feedback');
     }
   }
   return grants;
@@ -142,9 +150,11 @@ export const MENU: readonly MenuGroup[] = [
     items: [
       soon('shops', 'Quán', 'store', 'shops'),
       { id: 'drivers', label: 'Shipper', icon: 'rider', route: { name: 'shippers' }, ready: true, access: 'drivers' },
-      soon('orders', 'Đơn hàng', 'receipt', 'orders'),
+      { id: 'orders', label: 'Đơn hàng', icon: 'receipt', route: { name: 'orders' }, ready: true, access: 'orders' },
       { id: 'deliveries', label: 'Giao hàng', icon: 'truck', route: { name: 'deliveries' }, ready: true, access: 'deliveries' },
-      soon('feedback', 'Phản ánh', 'chat', 'feedback'),
+      { id: 'notifications', label: 'Thông báo', icon: 'bell', route: { name: 'notifications' }, ready: true, access: 'notifications' },
+      { id: 'reviews', label: 'Đánh giá', icon: 'star', route: { name: 'reviews' }, ready: true, access: 'feedback' },
+      { id: 'complaints', label: 'Phản ánh', icon: 'chat', route: { name: 'complaints' }, ready: true, access: 'feedback' },
     ],
   },
   {
@@ -269,8 +279,15 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'shippers':
     case 'shipper':
       return canSee(role, grants, 'drivers');
+    case 'orders':
+      return canSee(role, grants, 'orders');
     case 'deliveries':
       return canSee(role, grants, 'deliveries');
+    case 'notifications':
+      return canSee(role, grants, 'notifications');
+    case 'reviews':
+    case 'complaints':
+      return canSee(role, grants, 'feedback');
     case 'finance':
     case 'finance-wallets':
     case 'finance-transactions':
@@ -309,8 +326,16 @@ export function activeMenuId(route: Route): string {
     case 'shippers':
     case 'shipper':
       return 'drivers';
+    case 'orders':
+      return 'orders';
     case 'deliveries':
       return 'deliveries';
+    case 'notifications':
+      return 'notifications';
+    case 'reviews':
+      return 'reviews';
+    case 'complaints':
+      return 'complaints';
     case 'wallet-parameters':
       return 'parameters-shipper-wallet';
     case 'shipping-policy':
@@ -363,8 +388,16 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Vận hành', 'Shipper'];
     case 'shipper':
       return ['Vận hành', 'Shipper', 'Chi tiết'];
+    case 'orders':
+      return ['Vận hành', 'Đơn hàng'];
     case 'deliveries':
       return ['Vận hành', 'Giao hàng'];
+    case 'notifications':
+      return ['Vận hành', 'Thông báo'];
+    case 'reviews':
+      return ['Vận hành', 'Đánh giá'];
+    case 'complaints':
+      return ['Vận hành', 'Phản ánh'];
     case 'wallet-parameters':
       return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
     case 'shipping-policy':

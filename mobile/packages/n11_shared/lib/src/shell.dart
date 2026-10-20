@@ -5,10 +5,24 @@ import 'package:flutter/material.dart';
 import 'brand.dart';
 import 'config.dart';
 import 'health.dart';
+import 'account/session_controller.dart';
+import 'm08/m08_controller.dart';
+import 'm08/m08_models.dart';
+import 'm08/m08_push.dart';
+import 'm08/m08_views.dart';
 import 'tokens.dart';
 import 'widgets/components.dart';
 import 'widgets/connection_banner.dart';
 import 'widgets/diagnostics_view.dart';
+
+/// What the shell needs to keep the notifications alive (M08): the inbox state, how an opened notification reaches its object in THIS app, and the push link.
+class NotificationShell {
+  const NotificationShell({required this.controller, required this.router, this.push});
+
+  final NotificationController controller;
+  final NotificationRouter router;
+  final PushSync? push;
+}
 
 /// What a tab body can ask the shell to do.
 class ShellActions {
@@ -50,12 +64,16 @@ class N11App extends StatelessWidget {
     this.transport,
     this.navigationIdentity,
     this.pollInterval = const Duration(seconds: 30),
+    this.notifications,
   });
 
   final String? navigationIdentity;
   final AppBrand brand;
   final List<TabSpec> tabs;
   final AppConfig config;
+
+  /// Live notifications, the push tap and the foreground resync (M08). Null = the shell does none of it (a build without notifications).
+  final NotificationShell? notifications;
 
   /// Replaced only by tests; the real app uses [httpHealthTransport].
   final HealthTransport? transport;
@@ -69,13 +87,13 @@ class N11App extends StatelessWidget {
       title: brand.name,
       debugShowCheckedModeBanner: false,
       theme: buildN11Theme(),
-      home: N11Shell(navigationIdentity: navigationIdentity, brand: brand, tabs: tabs, config: config, transport: transport, pollInterval: pollInterval),
+      home: N11Shell(navigationIdentity: navigationIdentity, brand: brand, tabs: tabs, config: config, transport: transport, pollInterval: pollInterval, notifications: notifications),
     );
   }
 }
 
 class N11Shell extends StatefulWidget {
-  const N11Shell({super.key, required this.brand, required this.tabs, required this.config, this.navigationIdentity, this.transport, this.pollInterval = const Duration(seconds: 30)});
+  const N11Shell({super.key, required this.brand, required this.tabs, required this.config, this.navigationIdentity, this.transport, this.pollInterval = const Duration(seconds: 30), this.notifications});
 
   final String? navigationIdentity;
   final AppBrand brand;
@@ -83,6 +101,7 @@ class N11Shell extends StatefulWidget {
   final AppConfig config;
   final HealthTransport? transport;
   final Duration pollInterval;
+  final NotificationShell? notifications;
 
   @override
   State<N11Shell> createState() => _N11ShellState();
@@ -105,6 +124,41 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
       shouldPoll: () => _foreground,
     );
     _monitor.start();
+    _attachNotifications();
+  }
+
+  void _attachNotifications() {
+    final NotificationShell? shell = widget.notifications;
+    if (shell == null) {
+      return;
+    }
+    shell.controller.addListener(_routePendingOpen);
+    shell.controller.onLiveItems = _announce;
+    // Cold start and a returning phone: read the server again, then keep listening while the app is open.
+    unawaited(shell.controller.resync());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _routePendingOpen());
+  }
+
+  /// A short in-app notice for something that arrived while the app is open. A refreshed card or a retried event never repeats it (the controller filters).
+  void _announce(List<NotificationItem> items) {
+    if (!mounted || items.isEmpty) {
+      return;
+    }
+    final String text = items.length == 1 ? items.first.title : '${items.length} thông báo mới';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(key: const Key('live-notice'), content: Text(text), duration: const Duration(seconds: 3)));
+  }
+
+  /// A tap on a push waits in the controller until the person is signed in and the shell is on screen; the server then re-checks the right and the state.
+  void _routePendingOpen() {
+    final NotificationShell? shell = widget.notifications;
+    if (shell == null || !mounted || !shell.controller.hasPendingOpen || shell.controller.session.status != SessionStatus.signedIn) {
+      return;
+    }
+    final String? id = shell.controller.takePendingOpen();
+    if (id == null) {
+      return;
+    }
+    unawaited(openNotification(context, shell.controller, shell.router, ShellActions(goTab: _goTab, openDiagnostics: _openDiagnostics), id: id));
   }
 
   @override
@@ -113,11 +167,21 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
     final String selected = oldWidget.tabs[_index].id;
     final int next = widget.tabs.indexWhere((TabSpec tab) => tab.id == selected);
     _index = next < 0 || (widget.navigationIdentity != null && oldWidget.navigationIdentity != widget.navigationIdentity) ? 0 : next;
+    if (widget.navigationIdentity != oldWidget.navigationIdentity) {
+      // Another account signed in on this phone: its inbox is read from the server and its live sync starts; nothing of the previous one is kept.
+      unawaited(widget.notifications?.controller.resync());
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    final NotificationShell? shell = widget.notifications;
+    if (shell != null) {
+      shell.controller.removeListener(_routePendingOpen);
+      shell.controller.onLiveItems = null;
+      shell.controller.stopLive();
+    }
     _monitor.stop();
     _monitor.dispose();
     super.dispose();
@@ -131,6 +195,10 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
     if (returned) {
       // Back in the foreground: do not trust an answer that is minutes old.
       unawaited(_monitor.check());
+      unawaited(widget.notifications?.controller.resync());
+      unawaited(widget.notifications?.push?.resync());
+    } else if (!visible) {
+      widget.notifications?.controller.stopLive();
     }
   }
 

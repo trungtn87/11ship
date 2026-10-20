@@ -24,6 +24,11 @@ export type Route =
   | { readonly name: 'shippers'; readonly status?: ShipperFilter }
   | { readonly name: 'shipper'; readonly id: string }
   | { readonly name: 'deliveries' }
+  | { readonly name: 'orders' }
+  | { readonly name: 'notifications' }
+  // M11.03: ratings and complaints.
+  | { readonly name: 'reviews' }
+  | { readonly name: 'complaints' }
   | { readonly name: 'wallet-parameters' }
   | { readonly name: 'shipping-policy' }
   | { readonly name: 'settings' }
@@ -68,8 +73,20 @@ export function parseRoute(pathname: string, search = ''): Route {
   if (path === '/system/shipping-fee-policy') {
     return { name: 'shipping-policy' };
   }
+  if (path === '/operations/orders') {
+    return { name: 'orders' };
+  }
   if (path === '/operations/deliveries') {
     return { name: 'deliveries' };
+  }
+  if (path === '/operations/notifications') {
+    return { name: 'notifications' };
+  }
+  if (path === '/operations/reviews') {
+    return { name: 'reviews' };
+  }
+  if (path === '/operations/complaints') {
+    return { name: 'complaints' };
   }
   if (path === '/operations/shippers') {
     const status = new URLSearchParams(search).get('status');
@@ -182,8 +199,16 @@ export function formatRoute(route: Route): string {
       return route.status === undefined ? '/operations/shippers' : `/operations/shippers?status=${route.status}`;
     case 'shipper':
       return `/operations/shippers/${route.id}`;
+    case 'orders':
+      return '/operations/orders';
     case 'deliveries':
       return '/operations/deliveries';
+    case 'notifications':
+      return '/operations/notifications';
+    case 'reviews':
+      return '/operations/reviews';
+    case 'complaints':
+      return '/operations/complaints';
     case 'finance':
       return '/finance';
     case 'finance-wallets':

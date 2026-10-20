@@ -386,6 +386,11 @@ export class WalletReadRepository {
     }));
   }
 
+  async pendingTopupCount(context: TransactionContext, walletId: string): Promise<number> {
+    const result = await context.query<{ n: string }>(`SELECT count(*)::text AS n FROM app.wallet_topup_requests WHERE wallet_id = $1::uuid AND state = 'PENDING'`, [walletId]);
+    return Number(bigintOf(result.rows[0]?.n));
+  }
+
   async openWithdrawalCountOfDriver(context: TransactionContext, driverId: string): Promise<number> {
     const result = await context.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM app.wallet_withdrawals d WHERE d.driver_id = $1::uuid AND d.state IN ('PENDING', 'PROCESSING', 'RECONCILIATION')`,

@@ -51,6 +51,43 @@ void main() {
       expect(await t.session.register(phone: '0901234567', password: 'Correct-Horse-9', fullName: 'Nguyễn Văn An'), isFalse);
     });
 
+    testWidgets('registration reveals field errors, focuses the first and blocks an invalid phone before sending', (WidgetTester tester) async {
+      final t = build(registration: 'NOT_REQUIRED');
+      await t.session.start();
+      await tester.pumpWidget(MaterialApp(home: RegisterScreen(session: t.session, brand: foodBrand)));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('register-next')));
+      await tester.tap(find.byKey(const Key('register-next')));
+      await tester.pumpAndSettle();
+      expect(find.text('Nhập họ và tên.'), findsOneWidget);
+      expect(find.text('Nhập mật khẩu.'), findsOneWidget);
+      expect(tester.widget<TextField>(find.byKey(const Key('register-name'))).focusNode!.hasFocus, isTrue);
+      expect(t.api.to('POST', '/v1/client-auth/register'), isEmpty);
+      await tester.enterText(find.byKey(const Key('register-name')), 'Nguyễn An');
+      await tester.enterText(find.byKey(const Key('register-password')), 'Correct-Horse-9');
+      await tester.enterText(find.byKey(const Key('register-confirm')), 'Correct-Horse-9');
+      await tester.ensureVisible(find.byKey(const Key('register-consent')));
+      await tester.tap(find.byKey(const Key('register-consent')));
+      await tester.pump();
+      expect(find.text('Nhập họ và tên.'), findsNothing);
+      await tester.ensureVisible(find.byKey(const Key('register-next')));
+      await tester.tap(find.byKey(const Key('register-next')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('purpose-customer')));
+      await tester.tap(find.byKey(const Key('purpose-next')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('register-phone')), '090 1234567');
+      await tester.ensureVisible(find.byKey(const Key('register-submit')));
+      await tester.tap(find.byKey(const Key('register-submit')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('không có dấu cách'), findsOneWidget);
+      expect(t.api.to('POST', '/v1/client-auth/register'), isEmpty);
+      await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
+      await tester.pump();
+      expect(find.textContaining('không có dấu cách'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
     testWidgets('RegisterScreen: no OTP section, an info note, and the submit needs no code', (WidgetTester tester) async {
       final t = build(registration: 'NOT_REQUIRED');
       await t.session.start();
@@ -78,6 +115,107 @@ void main() {
       await tester.ensureVisible(find.byKey(const Key('register-submit')));
       final N11Button submit = tester.widget<N11Button>(find.byKey(const Key('register-submit')));
       expect(submit.onPressed, isNotNull);
+      await tester.tap(find.byKey(const Key('register-submit')));
+      await tester.pumpAndSettle();
+      expect(t.session.status, SessionStatus.signedIn);
+      expect(jsonDecode(t.api.to('POST', '/v1/client-auth/register').single.body), isNot(contains('verification_token')));
+      expect(t.api.requests.where((RecordedRequest r) => r.path.contains('/phone-verifications')), isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  });
+
+  group('Ship registration mode routing', () {
+    Future<void> fillShip(WidgetTester tester) async {
+      await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
+      await tester.enterText(find.byKey(const Key('register-name')), 'Nguyễn Văn An');
+      await tester.enterText(find.byKey(const Key('register-password')), 'Correct-Horse-9');
+      await tester.enterText(find.byKey(const Key('register-confirm-password')), 'Correct-Horse-9');
+      await tester.ensureVisible(find.byKey(const Key('register-consent')));
+      await tester.tap(find.byKey(const Key('register-consent')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('register-submit')));
+    }
+
+    for (final String mode in <String>['NOT_REQUIRED', 'REQUIRED']) {
+      testWidgets('$mode routes Ship to direct registration or SMS verification', (WidgetTester tester) async {
+        final t = build(registration: mode, app: ClientApp.ship);
+        installOtpRoutes(t.api, queued: false);
+        await t.session.start();
+        await tester.pumpWidget(MaterialApp(home: RegisterScreen(session: t.session, brand: shipBrand)));
+        await tester.pumpAndSettle();
+        await fillShip(tester);
+        expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNotNull);
+        await tester.tap(find.byKey(const Key('register-submit')));
+        await tester.pumpAndSettle();
+        final registrations = t.api.to('POST', '/v1/client-auth/register');
+        if (mode == 'NOT_REQUIRED') {
+          expect(registrations, hasLength(1));
+          expect(jsonDecode(registrations.single.body), isNot(contains('verification_token')));
+          expect(t.session.status, SessionStatus.signedIn);
+          expect(t.api.requests.where((RecordedRequest r) => r.path.contains('/phone-verifications')), isEmpty);
+          expect(find.byKey(const Key('register-otp-phone')), findsNothing);
+        } else {
+          expect(registrations, isEmpty);
+          expect(find.byKey(const Key('register-otp-phone')), findsOneWidget);
+          expect(t.api.requests.where((RecordedRequest r) => r.method == 'POST' && r.path.contains('/phone-verifications')), isNotEmpty);
+          await tester.enterText(find.byKey(const Key('otp-code')), '123456');
+          await tester.pump();
+          await tester.ensureVisible(find.byKey(const Key('otp-verify')));
+          await tester.tap(find.byKey(const Key('otp-verify')));
+          await tester.pumpAndSettle();
+          expect(t.session.status, SessionStatus.signedIn);
+          expect(jsonDecode(t.api.to('POST', '/v1/client-auth/register').single.body)['verification_token'], 'REGISTER-PROOF-TOKEN-0123456789');
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+      });
+    }
+
+    testWidgets('unreadable config explains the lock and retry restores direct registration', (WidgetTester tester) async {
+      final t = build(registration: 'NOT_REQUIRED', app: ClientApp.ship);
+      t.api.routes['GET /v1/client-auth/config'] = (String m, String p, Map<String, String> h, String b) async => apiError(503, 'SERVICE_UNAVAILABLE');
+      await t.session.start();
+      await tester.pumpWidget(MaterialApp(home: RegisterScreen(session: t.session, brand: shipBrand)));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('config-unknown')), findsOneWidget);
+      await fillShip(tester);
+      expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull);
+      installAccountRoutes(t.api, registration: 'NOT_REQUIRED');
+      await tester.ensureVisible(find.byKey(const Key('reload-config')));
+      await tester.tap(find.byKey(const Key('reload-config')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('not-required-note')), findsOneWidget);
+      expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNotNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  });
+
+  group('registration failure correlation (no SMS)', () {
+    for (final ClientApp app in ClientApp.values) {
+      for (final String path in <String>['/v1/client-auth/device/challenges', '/v1/client-auth/device/registrations', '/v1/client-auth/register']) {
+        test('${app.label}: 503 at $path is correlated and can be retried', () async {
+          final t = build(registration: 'NOT_REQUIRED', app: app);
+          await t.session.loadRegistrationMode();
+          t.api.routes['POST $path'] = (String m, String p, Map<String, String> h, String b) async => json(503, <String, Object?>{
+            'error': <String, Object?>{'code': 'SERVICE_UNAVAILABLE', 'request_id': '123e4567-e89b-42d3-a456-426614174000', 'message': 'secret server detail'},
+          });
+          expect(await t.session.register(phone: '0901234567', password: 'Correct-Horse-9', fullName: 'Nguyễn Văn An'), isFalse);
+          final AuthFailure failure = t.session.lastFailure!;
+          expect(failure.endpoint, path);
+          expect(failure.status, 503);
+          expect(failure.code, 'SERVICE_UNAVAILABLE');
+          expect(failure.requestId, '123e4567-e89b-42d3-a456-426614174000');
+          expect(failure.diagnostic, isNot(contains('secret server detail')));
+          installAccountRoutes(t.api, registration: 'NOT_REQUIRED');
+          expect(await t.session.register(phone: '0901234567', password: 'Correct-Horse-9', fullName: 'Nguyễn Văn An'), isTrue);
+          expect(t.api.requests.where((RecordedRequest r) => r.path.contains('/phone-verifications')), isEmpty);
+        });
+      }
+    }
+    test('diagnostics discard arbitrary correlation and error text', () {
+      final failure = failureOf(json(503, <String, Object?>{'error': <String, Object?>{'code': 'secret value', 'request_id': 'secret token'}}), endpoint: '/v1/client-auth/register');
+      expect(failure.code, isNull);
+      expect(failure.requestId, isNull);
+      expect(failure.diagnostic, isNot(contains('secret')));
     });
   });
 

@@ -1,3 +1,4 @@
+import { ShopLogo } from './shop-logo';
 import { Injectable } from '@nestjs/common';
 import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
@@ -6,6 +7,7 @@ import { OWNER_MEMBER_ROLE, ShopStatus } from './shop-types';
 
 /** The profile fields a save writes, already validated and normalized by the caller. */
 export interface ShopProfileFields {
+  readonly logo?: ShopLogo | null;
   readonly name: string;
   readonly contactPhoneNormalized: string;
   readonly zalo: string | null;
@@ -24,6 +26,7 @@ export interface ShopRow extends ShopProfileFields {
 }
 
 interface RawShop {
+  logo?: ShopLogo | null;
   shop_id: string;
   name: string;
   contact_phone_normalized: string;
@@ -41,6 +44,7 @@ interface RawShop {
 function toShop(row: RawShop): ShopRow {
   return {
     shopId: row.shop_id,
+    ...(row.logo == null ? {} : { logo: row.logo }),
     name: row.name,
     contactPhoneNormalized: row.contact_phone_normalized,
     zalo: row.zalo,
@@ -61,6 +65,31 @@ function toShop(row: RawShop): ShopRow {
  */
 @Injectable()
 export class ShopRepository {
+  async saveLogo(context: TransactionContext, shopId: string, logo: ShopLogo | null | undefined): Promise<void> {
+    if (logo === undefined) return;
+    await context.query('UPDATE app.shops SET logo = $2::jsonb WHERE shop_id = $1::uuid', [shopId, logo === null ? null : JSON.stringify(logo)]);
+  }
+
+  async publicLogo(context: TransactionContext, shopId: string): Promise<ShopLogo | undefined> {
+    const result = await context.query<{ logo: ShopLogo }>(`SELECT s.logo FROM app.shops s
+      JOIN app.service_areas a ON a.service_area_id = s.service_area_id
+      WHERE s.shop_id = $1::uuid AND s.status = 'ACTIVE' AND a.status = 'ACTIVE' AND s.logo IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM app.shop_members m JOIN app.users u ON u.user_id = m.user_id
+        WHERE m.shop_id = s.shop_id AND m.member_role = 'OWNER' AND u.status <> 'ACTIVE')`, [shopId]);
+    return result.rows[0]?.logo;
+  }
+
+  /** The account that owns the shop (read only, no lock): who a notification about the shop goes to. */
+  async ownerUserIdOfShop(context: TransactionContext, shopId: string): Promise<string | undefined> {
+    const result = await context.query<{ user_id: string }>(`SELECT user_id FROM app.shop_members WHERE shop_id = $1::uuid AND member_role = $2`, [shopId, OWNER_MEMBER_ROLE]);
+    return result.rows[0]?.user_id;
+  }
+
+  /** True when this account owns the shop (read only, no lock). */
+  async isOwnerOfShop(context: TransactionContext, shopId: string, userId: string): Promise<boolean> {
+    return (await this.ownerUserIdOfShop(context, shopId)) === userId;
+  }
+
   /**
    * Locks the user's OWNER membership and then the shop it points at, in that order (the A2 global lock
    * order), and returns the shop as it is AFTER the locks. Two statements on purpose: a join with
@@ -81,7 +110,7 @@ export class ShopRepository {
     }
     const shop = await context.query<RawShop>(
       `SELECT shop_id, name, contact_phone_normalized, zalo, facebook, address_text, pickup_lat, pickup_lng,
-              service_area_id, status, accepting_orders, version
+              service_area_id, status, accepting_orders, version, logo
          FROM app.shops
         WHERE shop_id = $1::uuid
           FOR UPDATE`,
@@ -95,6 +124,18 @@ export class ShopRepository {
     return toShop(row);
   }
 
+  /** The shop by id, locked FOR SHARE (M10: an Order is placed against a shop that cannot be disabled or moved until the Order has committed). */
+  async lockShopShared(context: TransactionContext, shopId: string): Promise<ShopRow | undefined> {
+    const result = await context.query<RawShop>(
+      `SELECT shop_id, name, contact_phone_normalized, zalo, facebook, address_text, pickup_lat, pickup_lng,
+              service_area_id, status, accepting_orders, version, logo
+         FROM app.shops WHERE shop_id = $1::uuid FOR SHARE`,
+      [shopId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toShop(row);
+  }
+
   /**
    * Reads the shop the user owns, whatever its status, or undefined when the user owns none. ONE statement on
    * purpose: the OWNER membership and the shop are joined in a single snapshot, so the caller can never see a
@@ -103,7 +144,7 @@ export class ShopRepository {
   async findOwnedShop(context: TransactionContext, userId: string): Promise<ShopRow | undefined> {
     const result = await context.query<RawShop>(
       `SELECT s.shop_id, s.name, s.contact_phone_normalized, s.zalo, s.facebook, s.address_text, s.pickup_lat,
-              s.pickup_lng, s.service_area_id, s.status, s.accepting_orders, s.version
+              s.pickup_lng, s.service_area_id, s.status, s.accepting_orders, s.version, s.logo
          FROM app.shop_members m
          JOIN app.shops s ON s.shop_id = m.shop_id
         WHERE m.user_id = $1::uuid AND m.member_role = $2`,

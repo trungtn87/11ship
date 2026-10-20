@@ -157,7 +157,7 @@ describe('M01-A2D — Driver onboarding concurrency', () => {
     const ME_SHARE_LOCK = '%FROM app.users WHERE user_id = $1::uuid FOR SHARE%';
     const meWaiters = (): Promise<number> => rowLockWaitersRunning(app.pool, ME_SHARE_LOCK);
 
-    it('/auth/me started while the create holds the user row WAITS for it, then reports DRIVER available and PENDING_APPROVAL', async () => {
+    it('/auth/me started while the create holds the user row WAITS for it, then reports DRIVER available and ACTIVE', async () => {
       const user: Registered = await registerUser(app);
       expect(dataOf(await me(user.accessToken))).toMatchObject({
         available_roles: [],
@@ -195,7 +195,7 @@ describe('M01-A2D — Driver onboarding concurrency', () => {
         // The coherent final projection: never "profile exists but role not listed" or the reverse.
         const data = dataOf(response);
         expect(data.available_roles).toEqual(['DRIVER']);
-        expect(data.onboarding).toEqual({ shop: 'NOT_STARTED', driver: 'PENDING_APPROVAL' });
+        expect(data.onboarding).toEqual({ shop: 'NOT_STARTED', driver: 'ACTIVE' });
         expect(data.onboarding_required).toBe(false);
         expect(data.role_selection_required).toBe(true);
         expect(data.active_role).toBeNull();

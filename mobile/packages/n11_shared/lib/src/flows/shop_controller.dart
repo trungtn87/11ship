@@ -1,3 +1,5 @@
+import '../m02/menu_models.dart';
+import 'shop_logo_data.dart';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -6,12 +8,13 @@ import '../account/api_client.dart';
 import '../account/models.dart';
 import '../account/session_controller.dart';
 import 'location.dart';
+import '../widgets/form_feedback.dart';
 
 // Food: the shop profile of the owner (F20-F23), over the contract that already exists on the server:
 //   GET /v1/onboarding/shop/profile        PUT /v1/onboarding/shop/profile        POST /v1/onboarding/shop/complete
 //   GET /v1/onboarding/shop/service-areas  POST /v1/client-auth/context (only on the person's own action)
 // Everything shown comes from those answers. Nothing is invented: no area, no coordinate, no status. The app never creates a draft
-// by itself, never derives an area from the position, and never completes a profile the server has not stored.
+// by itself and never completes a profile the server has not stored.
 
 @immutable
 class ShopProfile {
@@ -21,6 +24,7 @@ class ShopProfile {
     required this.contactPhone,
     required this.zalo,
     required this.facebook,
+    this.logo,
     required this.addressText,
     required this.pickupLat,
     required this.pickupLng,
@@ -35,6 +39,7 @@ class ShopProfile {
   final String contactPhone;
   final String? zalo;
   final String? facebook;
+  final ShopLogoData? logo;
   final String addressText;
   final double? pickupLat;
   final double? pickupLng;
@@ -63,11 +68,22 @@ class ShopProfile {
     final Object? version = data['version'];
     final Object? lat = data['pickup_lat'];
     final Object? lng = data['pickup_lng'];
-    if (id is! String || name is! String || phone is! String || address is! String || status is! String || accepting is! bool || version is! int) {
+    if (id is! String || name is! String || phone is! String || address is! String || status is! String || accepting is! bool || version is! int || version < 1) {
       return null;
     }
+    // A malformed optional value is a bad response, never an unchecked cast that leaves the form busy.
+    for (final String field in <String>['zalo', 'facebook', 'service_area_id']) {
+      if (data[field] != null && data[field] is! String) { return null; }
+    }
+    if ((lat == null) != (lng == null) ||
+        (lat != null && (lat is! num || !lat.isFinite || lat.abs() > 90)) ||
+        (lng != null && (lng is! num || !lng.isFinite || lng.abs() > 180))) {
+      return null;
+    }
+    if (data['logo'] != null && ShopLogoData.tryParse(data['logo']) == null) return null;
     return ShopProfile(
       shopId: id,
+      logo: ShopLogoData.tryParse(data['logo']),
       name: name,
       contactPhone: phone,
       zalo: data['zalo'] as String?,
@@ -94,20 +110,30 @@ class ServiceArea {
 enum ShopLoad { idle, loading, ready, failed }
 
 class ShopController extends ChangeNotifier {
-  ShopController({required this.session, required this.location}) {
+  ShopController({required this.session, required this.location, this.picker = const NoImagePicker()}) {
     session.addListener(_onSession);
     _sessionEpoch = session.sessionEpoch;
   }
 
   final SessionController session;
   final LocationProvider location;
+  final ImagePickerPort picker;
+  ShopLogoData? logo;
+
+  void setLogo(ShopLogoData? value) {
+    if (busy || hasPendingWrite || (_profile != null && _profile!.status != 'INCOMPLETE')) return;
+    logo = value;
+    _notify();
+  }
 
   ShopLoad _load = ShopLoad.idle;
   ShopProfile? _profile;
   List<ServiceArea> _areas = const <ServiceArea>[];
   bool _areasFailed = false;
   AuthFailure? _failure;
+  int _failureView = 0;
   bool _busy = false;
+  bool _finishing = false;
   LocationFix? _fix;
   LocationFailure? _locationFailure;
   bool _locating = false;
@@ -133,7 +159,7 @@ class ShopController extends ChangeNotifier {
   List<ServiceArea> get areas => _areas;
   bool get areasFailed => _areasFailed;
   AuthFailure? get failure => _failure;
-  bool get busy => _busy;
+  bool get busy => _busy || _finishing;
   LocationFix? get fix => _fix;
   LocationFailure? get locationFailure => _locationFailure;
   bool get locating => _locating;
@@ -147,6 +173,13 @@ class ShopController extends ChangeNotifier {
     }
   }
 
+  void dismissFailure({bool notify = true}) {
+    _failureView++;
+    // An unresolved write must keep its visible retry and exact intent.
+    if (!hasPendingWrite) _failure = null;
+    if (notify) _notify();
+  }
+
   /// Drops the profile, the form, the position and any pending write.
   void clear() {
     _epoch++;
@@ -157,6 +190,7 @@ class ShopController extends ChangeNotifier {
     _areasFailed = false;
     _failure = null;
     _busy = false;
+    _finishing = false;
     _fix = null;
     _locationFailure = null;
     _locating = false;
@@ -165,6 +199,7 @@ class ShopController extends ChangeNotifier {
     addressText = '';
     zalo = '';
     facebook = '';
+    logo = null;
     serviceAreaId = null;
     _pendingKey = null;
     _pendingBody = null;
@@ -198,6 +233,7 @@ class ShopController extends ChangeNotifier {
     addressText = profile.addressText;
     zalo = profile.zalo ?? '';
     facebook = profile.facebook ?? '';
+    logo = profile.logo;
     serviceAreaId = profile.serviceAreaId;
   }
 
@@ -216,12 +252,15 @@ class ShopController extends ChangeNotifier {
         return;
       }
       if (response.status != 200) {
-        throw failureOf(response);
+        throw failureOf(response, endpoint: '/v1/onboarding/shop/profile');
+      }
+      if (response.json?.containsKey('data') != true) {
+        throw AuthFailure(AuthFailureKind.badResponse, status: response.status, endpoint: '/v1/onboarding/shop/profile');
       }
       final Object? data = response.data;
       final ShopProfile? parsed = ShopProfile.tryParse(data);
       if (data != null && parsed == null) {
-        throw const AuthFailure(AuthFailureKind.badResponse);
+        throw AuthFailure(AuthFailureKind.badResponse, status: response.status, endpoint: '/v1/onboarding/shop/profile');
       }
       _profile = parsed;
       if (parsed != null) {
@@ -266,6 +305,7 @@ class ShopController extends ChangeNotifier {
         // The stored choice is no longer an ACTIVE area: it is shown as not chosen (the server still holds what it holds).
         serviceAreaId = null;
       }
+      if (serviceAreaId == null && _areas.length == 1) serviceAreaId = _areas.single.id;
     } on AuthFailure catch (failure) {
       if (failure.kind == AuthFailureKind.sessionEnded) {
         rethrow;
@@ -281,6 +321,15 @@ class ShopController extends ChangeNotifier {
       await _loadAreas(epoch);
     } on AuthFailure catch (failure) {
       _failure = failure;
+    }
+    _notify();
+  }
+
+  void selectAddress(String text, {double? latitude, double? longitude}) {
+    if (_busy || hasPendingWrite || session.status != SessionStatus.signedIn) return;
+    addressText = text;
+    if (latitude != null && longitude != null) {
+      _fix = LocationFix(latitude: latitude, longitude: longitude, accuracyMeters: null, takenAt: DateTime.now());
     }
     _notify();
   }
@@ -326,6 +375,7 @@ class ShopController extends ChangeNotifier {
     final double? lng = fresh?.longitude ?? current?.pickupLng;
     return <String, Object?>{
       'name': name.trim(),
+      if (logo != current?.logo) 'logo': logo?.toWire(),
       'contact_phone': contactPhone.trim(),
       'address_text': addressText.trim(),
       if (zalo.trim().isNotEmpty) 'zalo': zalo.trim(),
@@ -335,6 +385,55 @@ class ShopController extends ChangeNotifier {
       if (serviceAreaId != null) 'service_area_id': serviceAreaId,
       if (current != null) 'expected_version': current.version,
     };
+  }
+
+  Map<String, String?> get fieldErrors => <String, String?>{
+    'name': textError(name, 'tên cửa hàng', 120),
+    'phone': phoneError(contactPhone),
+    'address': textError(addressText, 'địa chỉ lấy hàng', 500) ??
+        (_fix == null && !(_profile?.hasLocation ?? false) ? 'Mở địa chỉ và chọn vị trí trên bản đồ.' : null),
+    'zalo': textError(zalo, 'Zalo', 160, optional: true),
+    'facebook': textError(facebook, 'Facebook', 300, optional: true),
+  };
+
+  bool get canFinish => fieldErrors.values.every((String? error) => error == null);
+
+  bool get _profileChanged {
+    final ShopProfile? p = _profile;
+    return p == null || logo != p.logo || _fix != null || name.trim() != p.name ||
+        contactPhone.trim() != p.contactPhone || addressText.trim() != p.addressText ||
+        zalo.trim() != (p.zalo ?? '') || facebook.trim() != (p.facebook ?? '') || serviceAreaId != p.serviceAreaId;
+  }
+
+  /// One user action; each server mutation retains its own version and idempotency key.
+  Future<bool> finishProfile() async {
+    if (busy || session.status != SessionStatus.signedIn) { return false; }
+    final int epoch = _epoch;
+    _finishing = true;
+    _notify();
+    try {
+      if (hasPendingWrite && !await retryPending()) { return false; }
+      if (epoch != _epoch) { return false; }
+      if (_profile?.status == 'ACTIVE') {
+        await session.refreshIdentity();
+        return epoch == _epoch && session.identity?.availableRoles.contains('SHOP_OWNER') == true;
+      }
+      if (!canFinish) { return false; }
+      if (serviceAreaId == null) { await _loadAreas(epoch); }
+      if (epoch != _epoch) { return false; }
+      if (serviceAreaId == null) {
+        _failure = const AuthFailure(AuthFailureKind.invalidServiceArea);
+        return false;
+      }
+      if (_profileChanged && !await saveDraft()) { return false; }
+      if (epoch != _epoch || _load != ShopLoad.ready || _profile?.readyToComplete != true) { return false; }
+      return await complete() && _profile?.status == 'ACTIVE';
+    } on AuthFailure catch (failure) {
+      if (epoch == _epoch) { _failure = failure; }
+      return false;
+    } finally {
+      if (epoch == _epoch) { _finishing = false; _notify(); }
+    }
   }
 
   /// PUT the draft (works without a position). Returns true when the server stored it.
@@ -377,6 +476,7 @@ class ShopController extends ChangeNotifier {
 
   Future<bool> _write({required String kind, required String method, required String path, required String body, required String key}) async {
     final int epoch = _epoch;
+    final int failureView = _failureView;
     _busy = true;
     _failure = null;
     _pendingKind = kind;
@@ -389,17 +489,27 @@ class ShopController extends ChangeNotifier {
         return false;
       }
       if (response.status != 200 && response.status != 201) {
-        throw failureOf(response);
+        final AuthFailure failure = failureOf(response, endpoint: path);
+        // An upstream 5xx can follow a committed write. Retry this exact intent, never a new key.
+        if (response.status >= 500) {
+          throw AuthFailure(AuthFailureKind.unknownOutcome, status: response.status, code: failure.code, endpoint: path, requestId: failure.requestId);
+        }
+        throw failure;
+      }
+      _busy = false;
+      // Keep the intent and selected point until a valid server snapshot confirms the write.
+      await load();
+      if (epoch != _epoch || _load != ShopLoad.ready || _profile == null) {
+        if (epoch == _epoch && _failure == null) {
+          _failure = const AuthFailure(AuthFailureKind.badResponse, status: 200, endpoint: '/v1/onboarding/shop/profile');
+        }
+        _notify();
+        return false;
       }
       _pendingKind = null;
       _pendingBody = null;
       _pendingKey = null;
-      if (kind == 'save') {
-        _fix = null;
-      }
-      _busy = false;
-      // Read back what the server holds; the answer of the write is not trusted to be the whole truth.
-      await load();
+      if (kind == 'save') { _fix = null; }
       if (kind == 'complete') {
         await session.refreshIdentity();
       }
@@ -414,13 +524,13 @@ class ShopController extends ChangeNotifier {
         _pendingBody = null;
         _pendingKey = null;
       }
-      _failure = failure;
+      if (failure.outcomeUnknown || failureView == _failureView) _failure = failure;
       _busy = false;
       if (failure.kind == AuthFailureKind.versionConflict || failure.kind == AuthFailureKind.stateConflict) {
         _notify();
         // The profile moved on elsewhere: show what the server holds now, overwrite nothing.
         await load();
-        _failure = failure;
+        if (failure.outcomeUnknown || failureView == _failureView) _failure = failure;
       }
       _notify();
       return false;

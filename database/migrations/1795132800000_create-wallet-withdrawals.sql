@@ -227,7 +227,7 @@ CREATE TRIGGER wallet_withdrawal_events_append_only BEFORE UPDATE OR DELETE OR T
 DO $guard$
 BEGIN
   IF EXISTS (SELECT 1 FROM app.wallet_holds WHERE purpose = 'WITHDRAWAL')
-     OR EXISTS (SELECT 1 FROM app.wallet_ledger_entries WHERE entry_kind IN ('WITHDRAWAL_DEBIT', 'ADJUSTMENT_CREDIT', 'ADJUSTMENT_DEBIT'))
+     OR EXISTS (SELECT 1 FROM app.wallet_ledger_entries WHERE entry_kind = 'WITHDRAWAL_DEBIT')
      OR EXISTS (SELECT 1 FROM app.wallet_bank_transactions WHERE direction = 'OUT') THEN
     RAISE EXCEPTION 'M04C_MIGRATION_REFUSED: withdrawal, adjustment or outgoing rows exist but no source existed before this migration' USING ERRCODE = 'integrity_constraint_violation';
   END IF;
@@ -312,6 +312,16 @@ BEGIN
           AND h.status = 'CAPTURED'
           AND h.amount_vnd = -NEW.delta_vnd
           AND d.amount_vnd = h.amount_vnd) THEN
+    RETURN NEW;
+  END IF;
+  IF NEW.entry_kind IN ('ADJUSTMENT_CREDIT', 'ADJUSTMENT_DEBIT') AND NEW.adjustment_id IS NOT NULL AND EXISTS (
+       SELECT 1
+         FROM app.wallet_adjustments a
+        WHERE a.adjustment_id = NEW.adjustment_id
+          AND a.wallet_id = NEW.wallet_id
+          AND a.amount_vnd = abs(NEW.delta_vnd)
+          AND ((a.direction = 'REFUND_TO_SHIPPER' AND NEW.entry_kind = 'ADJUSTMENT_CREDIT')
+            OR (a.direction = 'CHARGE_TO_SHIPPER' AND NEW.entry_kind = 'ADJUSTMENT_DEBIT'))) THEN
     RETURN NEW;
   END IF;
   RAISE EXCEPTION 'WALLET_LEDGER_SOURCE_NOT_AVAILABLE: a ledger row needs a valid business source and none exists for it'
@@ -504,6 +514,16 @@ BEGIN
           AND h.purpose = 'COMMISSION'
           AND h.status = 'CAPTURED'
           AND h.amount_vnd = -NEW.delta_vnd) THEN
+    RETURN NEW;
+  END IF;
+  IF NEW.entry_kind IN ('ADJUSTMENT_CREDIT', 'ADJUSTMENT_DEBIT') AND NEW.adjustment_id IS NOT NULL AND EXISTS (
+       SELECT 1
+         FROM app.wallet_adjustments a
+        WHERE a.adjustment_id = NEW.adjustment_id
+          AND a.wallet_id = NEW.wallet_id
+          AND a.amount_vnd = abs(NEW.delta_vnd)
+          AND ((a.direction = 'REFUND_TO_SHIPPER' AND NEW.entry_kind = 'ADJUSTMENT_CREDIT')
+            OR (a.direction = 'CHARGE_TO_SHIPPER' AND NEW.entry_kind = 'ADJUSTMENT_DEBIT'))) THEN
     RETURN NEW;
   END IF;
   RAISE EXCEPTION 'WALLET_LEDGER_SOURCE_NOT_AVAILABLE: a ledger row needs a valid business source and none exists for it'

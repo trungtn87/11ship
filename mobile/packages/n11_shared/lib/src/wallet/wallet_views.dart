@@ -342,10 +342,11 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
       Row(
         children: <Widget>[
           Expanded(child: N11Button(key: const Key('wallet-topup-button'), label: 'Nạp tiền', icon: Icons.south_west, onPressed: source.canWrite ? () => _open(TopupAmountScreen(source: source, minTopup: widget.minTopup)) : null)),
-          const SizedBox(width: N11Space.gap3),
-          Expanded(child: N11Button(key: const Key('wallet-withdraw-button'), label: 'Rút tiền', icon: Icons.north_east, kind: ButtonKind.secondary, onPressed: source.canWrite ? () => _open(WithdrawScreen(source: source, minWithdraw: widget.minWithdraw)) : null)),
+          if (source.isSample) const SizedBox(width: N11Space.gap3),
+          if (source.isSample) Expanded(child: N11Button(key: const Key('wallet-withdraw-button'), label: 'Rút tiền', icon: Icons.north_east, kind: ButtonKind.secondary, onPressed: source.canWrite ? () => _open(WithdrawScreen(source: source, minWithdraw: widget.minWithdraw)) : null)),
         ],
       ),
+      if (!source.isSample && source.canWrite) const ReasonNote('Để rút toàn bộ số dư, mở Tài khoản → Dừng hoạt động / Rút tiền.'),
       if (!source.canWrite) ReasonNote('${source.notWiredReason} Nạp và rút tiền chưa dùng được.'),
       Row(
         children: <Widget>[
@@ -503,6 +504,7 @@ class _TopupAmountScreenState extends State<TopupAmountScreen> {
     final WalletLoad<BankTransferInfo> state = _info;
     return _page(source, 'Nạp tiền', <Widget>[
       N11Field(
+        validator: (_) => _validate(),
         fieldKey: const Key('topup-amount'),
         label: 'Nhập số tiền nạp',
         controller: _amount,
@@ -518,7 +520,7 @@ class _TopupAmountScreenState extends State<TopupAmountScreen> {
       if (state is WalletReady<BankTransferInfo>) _TransferCard(info: state.value) else walletStateView<BankTransferInfo>(state, retry: _retry) ?? const SizedBox.shrink(),
       if (state is WalletReady<BankTransferInfo>)
         (source.isSample ? const _QrPlaceholder() : const ReasonNote('Mã QR chưa được hỗ trợ ở phiên bản này. Hãy chuyển khoản theo thông tin ở trên rồi bấm "Tôi đã chuyển tiền".', key: Key('topup-no-qr'))),
-      N11Button(key: const Key('topup-continue'), label: 'Tôi đã chuyển tiền', onPressed: source.canWrite && state is WalletReady<BankTransferInfo> ? _continue : null),
+      N11Button(key: const Key('topup-continue'), validate: true, label: 'Tôi đã chuyển tiền', onPressed: source.canWrite && state is WalletReady<BankTransferInfo> ? _continue : null),
       if (!source.canWrite) ReasonNote(source.notWiredReason),
     ]);
   }
@@ -818,10 +820,11 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
 // ---- M04-S05: Rút tiền -----------------------------------------------------------------------------------------------
 
 class WithdrawScreen extends StatefulWidget {
-  const WithdrawScreen({super.key, required this.source, this.minWithdraw});
+  const WithdrawScreen({super.key, required this.source, this.minWithdraw, this.closing = false});
 
   final WalletSource source;
   final int? minWithdraw;
+  final bool closing;
 
   @override
   State<WithdrawScreen> createState() => _WithdrawScreenState();
@@ -862,6 +865,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
     if (mounted) {
       setState(() {
         _wallet = wallet;
+      if (widget.closing && wallet is WalletReady<Wallet>) _amount.text = wallet.value.available.toString();
         _account = account;
       });
     }
@@ -880,7 +884,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
     return w is WalletReady<Wallet> ? w.value.available : null;
   }
 
-  int get _min => widget.minWithdraw ?? widget.source.minWithdraw;
+  int get _min => widget.closing ? 1 : (widget.minWithdraw ?? widget.source.minWithdraw);
 
   /// Live message under the field; null when the amount is empty or acceptable.
   String? get _problem {
@@ -899,8 +903,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
   }
 
   bool get _canSubmit {
-    final int? value = parseVndInput(_amount.text);
-    return widget.source.canWrite && _account is WalletReady<ReceivingAccount> && _available != null && value != null && _problem == null && !_busy;
+    return widget.source.canWrite && _account is WalletReady<ReceivingAccount> && _available != null && !_busy;
   }
 
   Future<void> _submit() async {
@@ -914,7 +917,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
       _submitError = null;
     });
     try {
-      final WithdrawalRequest created = await writes.createWithdrawal(value);
+      final WithdrawalRequest created = await writes.createWithdrawal(widget.closing ? _available! : value);
       if (!mounted) {
         return;
       }
@@ -951,8 +954,10 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
       else
         walletStateView<Wallet>(wallet, retry: _retry) ?? const SizedBox.shrink(),
       N11Field(
+        validator: (String value) => value.trim().isEmpty ? 'Nhập số tiền muốn rút.' : _problem,
         fieldKey: const Key('withdraw-amount'),
-        label: 'Số tiền muốn rút',
+        label: widget.closing ? 'Rút toàn bộ số dư khả dụng' : 'Số tiền muốn rút',
+        enabled: !widget.closing,
         controller: _amount,
         keyboard: TextInputType.number,
         placeholder: '100.000',
@@ -987,7 +992,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
       else
         walletStateView<ReceivingAccount>(account, retry: _retry, keyPrefix: 'account', emptyIcon: Icons.account_balance_outlined, emptyTitle: 'Chưa có tài khoản nhận tiền', emptyText: 'Thêm tài khoản ngân hàng trong hồ sơ shipper trước khi rút tiền.') ?? const SizedBox.shrink(),
       if (_submitError != null) N11Banner(key: const Key('withdraw-submit-error'), kind: BannerKind.error, title: 'Chưa gửi được', text: _submitError),
-      N11Button(key: const Key('withdraw-submit'), label: 'Yêu cầu rút tiền', loading: _busy, onPressed: _canSubmit ? _submit : null),
+      N11Button(key: const Key('withdraw-submit'), validate: true, label: 'Yêu cầu rút tiền', loading: _busy, onPressed: _canSubmit ? _submit : null),
       if (!source.canWrite) ReasonNote(source.notWiredReason),
     ]);
   }

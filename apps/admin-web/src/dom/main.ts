@@ -13,7 +13,10 @@ import { AdminCatalogApi, CATALOG_BASE, createCatalogSource } from '../core/cata
 import { AdminFinanceApi, createFinanceAdminSource, FINANCE_BASE } from '../core/finance-api.js';
 import { AdminFinanceOpsApi, createFinanceOpsSource } from '../core/finance-ops-api.js';
 import { AdminShipperApi, createShipperSource, SHIPPERS_BASE } from '../core/shippers-api.js';
+import { AdminOrderApi, createOrderSource } from '../core/orders-api.js';
 import { AdminDeliveryApi, createDeliverySource, DELIVERIES_BASE } from '../core/deliveries-api.js';
+import { AdminFeedbackApi, createFeedbackSource, FEEDBACK_BASE } from '../core/feedback-api.js';
+import { AdminNotificationApi, createNotificationSource, NOTIFICATIONS_BASE } from '../core/notifications-api.js';
 import { createShippingPolicySource, SHIPPING_POLICY_BASE, ShippingPolicyApi } from '../core/shipping-policy-api.js';
 import { AdminSettingsApi, createSettingsSource, SETTINGS_BASE } from '../core/settings-api.js';
 import { ResetPage } from './reset-view.js';
@@ -141,6 +144,10 @@ function startAdmin(host: HTMLElement): void {
       refresh: () => controller.refreshSession(),
     }),
     undefined,
+    createNotificationSource(new AdminNotificationApi(fetchTransport(window.fetch.bind(window), { base: NOTIFICATIONS_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
     createShippingPolicySource(new ShippingPolicyApi(fetchTransport(window.fetch.bind(window), { base: SHIPPING_POLICY_BASE })), {
       csrf: () => controller.sessionCsrf,
       refresh: () => controller.refreshSession(),
@@ -150,6 +157,14 @@ function startAdmin(host: HTMLElement): void {
       refresh: () => controller.refreshSession(),
     }),
     createFinanceAdminSource(new AdminFinanceApi(fetchTransport(window.fetch.bind(window), { base: FINANCE_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
+    createOrderSource(new AdminOrderApi(fetchTransport(window.fetch.bind(window), { base: DELIVERIES_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
+    createFeedbackSource(new AdminFeedbackApi(fetchTransport(window.fetch.bind(window), { base: FEEDBACK_BASE })), {
       csrf: () => controller.sessionCsrf,
       refresh: () => controller.refreshSession(),
     }),

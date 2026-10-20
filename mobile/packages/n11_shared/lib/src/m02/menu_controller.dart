@@ -66,6 +66,7 @@ class MenuListController extends ChangeNotifier {
   final MenuApi api;
   final SessionController? session;
   final ImagePickerPort _picker;
+  ImagePickerPort get picker => _picker;
 
   MenuLoad _load = MenuLoad.idle;
   MenuSnapshot? _snapshot;

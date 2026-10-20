@@ -122,7 +122,7 @@ class NativeAuthApi {
     );
     final Object? data = response.status == 201 ? response.data : null;
     if (data is! Map<String, Object?> || data['challenge_id'] is! String || data['nonce'] is! String) {
-      throw response.status == 201 ? const AuthFailure(AuthFailureKind.badResponse) : failureOf(response);
+      throw response.status == 201 ? const AuthFailure(AuthFailureKind.badResponse) : failureOf(response, endpoint: '/v1/client-auth/device/challenges');
     }
     return (challengeId: data['challenge_id']! as String, nonce: data['nonce']! as String);
   }
@@ -179,7 +179,7 @@ class NativeAuthApi {
     );
     final Object? data = response.status == 201 ? response.data : null;
     if (data is! Map<String, Object?> || data['device_registration_token'] is! String || data['key_id'] is! String) {
-      throw response.status == 201 ? const AuthFailure(AuthFailureKind.badResponse) : failureOf(response);
+      throw response.status == 201 ? const AuthFailure(AuthFailureKind.badResponse) : failureOf(response, endpoint: '/v1/client-auth/device/registrations');
     }
     return RegistrationGrant(token: data['device_registration_token']! as String, keyId: data['key_id']! as String);
   }

@@ -13,6 +13,7 @@ import { AuthApp, createDriverFor, purgePhone, randomPhone, rowLockWaiters, star
 import { WALLET_DOWN_SQL, WALLET_UP_SQL, FINANCE_DOWN_SQL, FINANCE_UP_SQL, POSTING_DOWN_SQL, POSTING_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
 import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
 import { WITHDRAWAL_DOWN_SQL, WITHDRAWAL_UP_SQL } from './support/withdrawal-migration-sql';
+import { ADJUSTMENT_DOWN_SQL, ADJUSTMENT_UP_SQL } from './support/adjustment-migration-sql';
 import { holdRowLock } from './support/lock-fixtures';
 import { loadIntegrationConfig } from './support/test-helpers';
 import { managerFor, testPool } from './support/transaction-fixtures';
@@ -383,6 +384,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
         await client.query('DELETE FROM app.driver_wallets');
         await client.query('ALTER TABLE app.driver_wallets ENABLE TRIGGER driver_wallets_no_delete');
         await client.query(WITHDRAWAL_DOWN_SQL); // M04-C withdrawals: the very newest, down first, up last
+        await client.query(ADJUSTMENT_DOWN_SQL); // M04 adjustments reference the wallet table and replace the ledger gate: the very newest, down first, up last
         await client.query(POSTING_DOWN_SQL); // M04-B2.2b: replaces one function and needs the topup tables: newest, down first, up last
         await client.query(FINANCE_DOWN_SQL); // M04-B2.2a: newest, down first, up last
         await client.query(TOPUP_DOWN_SQL); // M04-B1 adds a ledger column and references the wallet core: the very newest, down first, up last
@@ -394,6 +396,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
         await client.query(TOPUP_UP_SQL);
         await client.query(FINANCE_UP_SQL);
         await client.query(POSTING_UP_SQL);
+        await client.query(ADJUSTMENT_UP_SQL);
         await client.query(WITHDRAWAL_UP_SQL);
         expect(await tablesPresent(client)).toEqual(['driver_wallets', 'wallet_ledger_entries']);
         // The re-created schema works: a zero wallet can be born again.

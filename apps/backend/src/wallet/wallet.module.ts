@@ -2,6 +2,9 @@ import { Module, OnModuleInit } from '@nestjs/common';
 import { DelegatingDriverWalletPort } from '../driver/driver-wallet-port';
 import { DriverModule } from '../driver/driver.module';
 import { CommissionHoldService } from './commission-hold-service';
+import { WalletAdjustmentRepository } from './wallet-adjustment-repository';
+import { WalletAdjustmentService } from './wallet-adjustment-service';
+import { WalletCommissionAdjustmentAdapter } from './wallet-commission-adjustment.adapter';
 import { WalletRepository } from './wallet-repository';
 import { SystemBankAccountRepository } from './system-bank-account-repository';
 import { TopupPostingService } from './topup-posting-service';
@@ -23,17 +26,10 @@ import { WithdrawalRepository } from './withdrawal-repository';
  */
 @Module({
   imports: [DriverModule],
-  providers: [WalletRepository, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupSettlementRepository, TopupPostingService, CommissionHoldService, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, CommissionPolicyRepository, WalletDriverPort],
-  exports: [WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupPostingService, CommissionHoldService, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, CommissionPolicyRepository],
+  providers: [WalletRepository, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupSettlementRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentRepository, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, CommissionPolicyRepository, WalletDriverPort],
+  exports: [WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, CommissionPolicyRepository, WalletDriverPort],
 })
 export class WalletModule implements OnModuleInit {
-  constructor(
-    private readonly port: DelegatingDriverWalletPort,
-    private readonly wallet: WalletDriverPort,
-  ) {}
-
-  /** M04-C: the wallet answers M03's readiness and closure questions from here on (DRIVER_WALLET_PORT is bound once). */
-  onModuleInit(): void {
-    this.port.bind(this.wallet);
-  }
+  constructor(private readonly port: DelegatingDriverWalletPort, private readonly wallet: WalletDriverPort) {}
+  onModuleInit(): void { this.port.bind(this.wallet); }
 }

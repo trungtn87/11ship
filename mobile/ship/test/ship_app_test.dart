@@ -66,17 +66,20 @@ void main() {
     await pump(tester, healthy());
     final FilledButton button = tester.widget<FilledButton>(find.byKey(const Key('online-button')));
     expect(button.onPressed, isNull);
-    expect(find.text('Bạn đang offline'), findsOneWidget);
+    expect(find.text('Chưa xác định trạng thái hoạt động'), findsOneWidget);
     expect(find.text(kOnlineReason), findsOneWidget);
     expect(find.textContaining('320.000'), findsNothing);
-    expect(find.byKey(const Key('home-map')), findsOneWidget);
+    expect(find.byKey(const Key('home-map-unavailable')), findsOneWidget);
+    expect(find.textContaining('trong M01'), findsNothing);
+    expect(find.text('Chưa bật chia sẻ vị trí'), findsOneWidget);
   });
 
   testWidgets('home bell opens notifications', (WidgetTester tester) async {
     await pump(tester, healthy());
     await tester.tap(find.byKey(const Key('home-notifications')));
     await tester.pumpAndSettle();
-    expect(find.text('Chưa có dữ liệu thông báo'), findsOneWidget);
+    // A guest has no inbox: the page asks to sign in and shows no notification of anyone.
+    expect(find.text('Đăng nhập để xem thông báo của bạn.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -105,7 +108,7 @@ void main() {
     expect(find.text('—'), findsOneWidget);
     expect(find.text('Chưa có dữ liệu thu nhập'), findsOneWidget);
     await openTab(tester, 'notifications');
-    expect(find.text('Chưa có dữ liệu thông báo'), findsOneWidget);
+    expect(find.text('Đăng nhập để xem thông báo của bạn.'), findsOneWidget);
     expect(find.textContaining('₫'), findsNothing);
   });
 
@@ -205,10 +208,14 @@ void main() {
     await tester.enterText(find.byKey(const Key('register-password')), 'Correct-Horse-9');
     await tester.enterText(find.byKey(const Key('register-confirm-password')), 'Wrong-Password');
     await tester.pump();
-    expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull);
+    await tapVisible('register-submit');
+    expect(find.text('Mật khẩu nhập lại chưa khớp.'), findsOneWidget);
+    expect(api.to('POST', '/v1/auth/phone-verifications'), isEmpty);
     await tester.enterText(find.byKey(const Key('register-confirm-password')), 'Correct-Horse-9');
     await tester.pump();
-    expect(tester.widget<N11Button>(find.byKey(const Key('register-submit'))).onPressed, isNull, reason: 'consent is required');
+    await tapVisible('register-submit');
+    expect(find.text('Bạn cần đồng ý với Điều khoản sử dụng và Chính sách bảo mật.'), findsOneWidget);
+    expect(api.to('POST', '/v1/auth/phone-verifications'), isEmpty);
     // No scrolling through the terms is required before consent.
     await tapVisible('register-consent');
     await tapVisible('register-submit');

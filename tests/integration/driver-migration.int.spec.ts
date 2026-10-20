@@ -11,6 +11,10 @@ import { FEE_POLICY_DOWN_SQL, FEE_POLICY_UP_SQL } from './support/shipping-fee-p
 import { WALLET_DOWN_SQL, WALLET_UP_SQL, FINANCE_DOWN_SQL, FINANCE_UP_SQL, POSTING_DOWN_SQL, POSTING_UP_SQL, TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
 import { M07_DOWN_SQL, M07_UP_SQL } from './support/m07-migration-sql';
 import { WITHDRAWAL_DOWN_SQL, WITHDRAWAL_UP_SQL } from './support/withdrawal-migration-sql';
+import { M08_DOWN_SQL, M08_UP_SQL } from './support/m08-migration-sql';
+import { M10_DOWN_SQL, M10_UP_SQL } from './support/m10-migration-sql';
+import { M11_DOWN_SQL, M11_UP_SQL } from './support/m11-migration-sql';
+import { ADJUSTMENT_DOWN_SQL, ADJUSTMENT_UP_SQL } from './support/adjustment-migration-sql';
 import { WALLET_HOLD_DOWN_SQL, WALLET_HOLD_UP_SQL } from './support/wallet-hold-migration-sql';
 import { minimalChildEnv, REPO_ROOT, runNpmScript } from './support/test-helpers';
 
@@ -102,7 +106,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
       '1793404800000_create-driver-wallet-core',
       '1793491200000_create-wallet-holds',
       '1793577600000_create-wallet-topup-sources',
-      '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_open-topup-ledger-gate', '1794096000000_create-m07-delivery', '1794182400000_create-wallet-withdrawals',
+      '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_open-topup-ledger-gate', '1794096000000_create-m07-delivery', '1794182400000_create-m08-notifications', '1794268800000_create-m10-orders', '1794355200000_create-m11-reviews-complaints', '1794441600000_open-adjustment-ledger-gate', '1795046400000_add-shop-logo', '1795132800000_create-wallet-withdrawals', '1795219200000_simplify-shipper-onboarding',
     ]);
     expect(BEFORE.some((name) => name.endsWith('create-auth-core'))).toBe(true);
     expect(BEFORE[BEFORE.length - 1]?.endsWith('create-shop-onboarding')).toBe(true);
@@ -188,6 +192,10 @@ describe('M01-A2D — Driver onboarding migration', () => {
     try {
       // The M03 migration references app.drivers: it goes down first and comes back up last.
       await client.query(WITHDRAWAL_DOWN_SQL); // M04 withdrawals: the very newest, down first, up last
+      await client.query(ADJUSTMENT_DOWN_SQL); // M04 adjustment gate: replaces the ledger gate of M07 and adds its source: the very newest, down first, up last
+      await client.query(M11_DOWN_SQL); // M11: references users, shops, drivers, orders, deliveries and widens an M08 constraint: the very newest, down first, up last
+      await client.query(M10_DOWN_SQL); // M10: references users, shops, dishes, addresses and deliveries: the very newest, down first, up last
+      await client.query(M08_DOWN_SQL); // M08: references users, sessions and deliveries: the very newest, down first, up last
       await client.query(M07_DOWN_SQL); // M07: references users, shops, drivers, wallets and fee agreements: the very newest, down first, up last
       await client.query(POSTING_DOWN_SQL); // M04-B2.2b: replaces one function and needs the topup tables: newest, down first, up last
       await client.query(FINANCE_DOWN_SQL); // M04-B2.2a: newest, down first, up last
@@ -216,6 +224,10 @@ describe('M01-A2D — Driver onboarding migration', () => {
       await client.query(FINANCE_UP_SQL);
       await client.query(POSTING_UP_SQL);
       await client.query(M07_UP_SQL);
+      await client.query(M08_UP_SQL);
+      await client.query(M10_UP_SQL);
+      await client.query(M11_UP_SQL);
+      await client.query(ADJUSTMENT_UP_SQL);
       await client.query(WITHDRAWAL_UP_SQL);
       expect(await presentTables()).toEqual([...TABLES]);
     } finally {
@@ -235,7 +247,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
     expect(owners.rows).toEqual([{ owner: 'ship11_test' }]);
     const triggers = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(wallet_|driver_wallets_|admin_finance_grants_|deliver(y|ies)_|shipping_fee_policy_|shipping_eligibility_|shipping_fee_agreement)' AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
+         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND NOT t.tgisinternal AND t.tgname !~ '^(orders?_|wallet_|driver_wallets_|admin_finance_grants_|deliver(y|ies)_|reviews_|review_|complaints_|complaint_|shipping_fee_policy_|shipping_eligibility_|shipping_fee_agreement)' AND c.relname NOT IN ('admin_invitations', 'admin_invitation_permissions', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'admin_profiles', 'user_consents') AND t.tgname <> 'admin_membership_origin_guard' AND t.tgname NOT IN ('sessions_release_binding_trg', 'sessions_invalidate_push_tokens_trg', 'client_device_key_links_guard_trg', 'client_session_bindings_guard_trg', 'client_device_bindings_guard_trg', 'client_device_keys_guard_trg')`,
     );
     expect(triggers.rows[0]?.n).toBe(1);
   });
@@ -478,7 +490,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
         // The A2D columns plus the M03 ones (review, suspension, closure, Shipper code). Still no area column.
         [
           'accepting_deliveries', 'created_at', 'driver_id', 'driver_type', 'full_name', 'plate_number', 'status', 'updated_at', 'user_id', 'version',
-          'shipper_code', 'review_state', 'submitted_at', 'reviewed_at', 'reviewed_by', 'rejection_reason', 'suspension_reason', 'suspended_at',
+          'initial_funding_required', 'shipper_code', 'review_state', 'submitted_at', 'reviewed_at', 'reviewed_by', 'rejection_reason', 'suspension_reason', 'suspended_at',
           'status_before_closing', 'closure_requested_at', 'closure_note',
         ].sort(),
       );

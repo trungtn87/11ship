@@ -86,9 +86,6 @@ export function evaluateEligibility(facts: EligibilityFacts): EligibilityVerdict
   if (!driver.acceptingDeliveries) {
     reasons.push('DRIVER_NOT_ACCEPTING');
   }
-  if (!driver.bankVerified) {
-    reasons.push('DRIVER_BANK_NOT_VERIFIED');
-  }
   if (delivery === undefined) {
     reasons.push('DEPENDENCY_NOT_READY');
   } else if (!delivery.searching || delivery.hasShipper) {
@@ -126,7 +123,7 @@ export function evaluateEligibility(facts: EligibilityFacts): EligibilityVerdict
 
   if (facts.availableVnd === undefined || (delivery !== undefined && delivery.requiredHoldVnd === null)) {
     reasons.push('WALLET_UNAVAILABLE');
-  } else if (delivery !== undefined && delivery.requiredHoldVnd !== null && facts.availableVnd < delivery.requiredHoldVnd) {
+  } else if (delivery !== undefined && delivery.requiredHoldVnd !== null && (facts.availableVnd <= 0n || facts.availableVnd < delivery.requiredHoldVnd)) {
     reasons.push('BALANCE_TOO_LOW');
   }
 

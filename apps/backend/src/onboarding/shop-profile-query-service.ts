@@ -1,3 +1,4 @@
+import { ShopLogo } from '../shop/shop-logo';
 import { Injectable } from '@nestjs/common';
 import { SessionActor, SessionAuthorizationParticipant } from '../auth/session-authorization-participant';
 import { ShopRepository, ShopRow } from '../shop/shop-repository';
@@ -12,6 +13,7 @@ import { TransactionManager } from '../transaction/transaction-manager';
  * Deliberately absent: the user id, anything about the membership row, and all audit / idempotency metadata.
  */
 export interface ShopProfileView {
+  readonly logo?: ShopLogo;
   readonly shop_id: string;
   readonly name: string;
   readonly contact_phone: string;
@@ -29,6 +31,7 @@ export interface ShopProfileView {
 function toView(shop: ShopRow): ShopProfileView {
   return {
     shop_id: shop.shopId,
+    ...(shop.logo == null ? {} : { logo: shop.logo }),
     name: shop.name,
     contact_phone: shop.contactPhoneNormalized,
     zalo: shop.zalo,

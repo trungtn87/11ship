@@ -46,7 +46,13 @@ import { ShipperDetailView, ShipperHost, ShipperListView, WalletParametersView }
 import { NOT_WIRED_SHIPPING, ShippingPolicySource } from '../core/shipping-policy.js';
 import { ShippingPolicyView } from './shipping-policy-view.js';
 import { DeliverySource, NOT_WIRED_DELIVERIES } from '../core/deliveries.js';
+import { FeedbackSource, NOT_WIRED_FEEDBACK } from '../core/feedback.js';
+import { ComplaintListView, FeedbackHost, ReviewListView } from './feedback-view.js';
 import { DeliveryHost, DeliveryListView } from './deliveries-view.js';
+import { NOT_WIRED_ORDERS, OrderSource } from '../core/orders.js';
+import { OrderHost, OrderListView } from './orders-view.js';
+import { NOT_WIRED_NOTIFICATIONS, NotificationSource } from '../core/notifications.js';
+import { NotificationHost, NotificationsView } from './notifications-view.js';
 import { FinanceController, isFinanceRoute } from '../core/finance-controller.js';
 import { FinanceSource, NOT_WIRED_FINANCE } from '../core/finance.js';
 import { FinanceView } from './finance-view.js';
@@ -125,6 +131,8 @@ export class ShellApp implements ShellHost {
     private readonly shippers: ShipperSource = NOT_WIRED_SHIPPERS,
     /** Where the finance pages (M04) come from. By default nothing is wired, so every page says so and every money button is disabled. */
     private readonly finance: FinanceSource = NOT_WIRED_FINANCE,
+    /** Where the notifications (Vận hành › Thông báo, M08.06) come from. By default nothing is wired, so the page says so. */
+    private readonly notifications: NotificationSource = NOT_WIRED_NOTIFICATIONS,
     /** Where the shipping-fee table (Phí & điều kiện giao, M06-A) comes from. By default nothing is wired, so the page says so. */
     private readonly shipping: ShippingPolicySource = NOT_WIRED_SHIPPING,
     /** Where the deliveries (Vận hành › Giao hàng, M07.07) come from. By default nothing is wired, so the page says so. */
@@ -132,6 +140,11 @@ export class ShellApp implements ShellHost {
     /** Where the REAL finance pages (M04-B3a: top-up requests, receiving accounts, finance rights) come from. By default nothing is wired and no page shows data. */
     private readonly financeAdmin: FinanceAdminSource = NOT_WIRED_FINANCE_ADMIN,
     /** Where the operating finance pages (M04-C: overview, wallets, withdrawals, transactions, reconciliation, commission) come from. By default nothing is wired and the earlier not-wired pages are shown. */
+    /** Where the operating finance pages (M04-C: overview, wallets, withdrawals, transactions, reconciliation, commission) come from. By default nothing is wired and the earlier not-wired pages are shown. */
+    /** Where the food orders (Vận hành › Đơn hàng, M10.05) come from. By default nothing is wired, so the page says so. */
+    private readonly orders: OrderSource = NOT_WIRED_ORDERS,
+    /** Where the ratings and complaints (Vận hành › Đánh giá / Phản ánh, M11.03) come from. By default nothing is wired, so the pages say so. */
+    private readonly feedback: FeedbackSource = NOT_WIRED_FEEDBACK,
     private readonly financeOps: FinanceOpsSource = NOT_WIRED_FINANCE_OPS,
   ) {}
 
@@ -364,6 +377,18 @@ export class ShellApp implements ShellHost {
         return;
       case 'deliveries':
         this.#deliveryList(content);
+        return;
+      case 'orders':
+        this.#orderList(content);
+        return;
+      case 'notifications':
+        this.#notificationPage(content);
+        return;
+      case 'reviews':
+        this.#feedbackPage(content, 'reviews');
+        return;
+      case 'complaints':
+        this.#feedbackPage(content, 'complaints');
         return;
       case 'finance':
       case 'finance-wallets':
@@ -876,6 +901,65 @@ export class ShellApp implements ShellHost {
       home: () => this.go({ name: 'home' }),
     };
     const view = new DeliveryListView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Vận hành › Đơn hàng" (M10.05): filters, list and the detail drawer; the server decides every read and action. */
+  #orderList(content: HTMLElement): void {
+    const host: OrderHost = {
+      source: this.orders,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    };
+    const view = new OrderListView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Vận hành › Đánh giá" and "Vận hành › Phản ánh" (M11.03): the lists, the detail drawers and the actions; the server decides every read and action. */
+  #feedbackPage(content: HTMLElement, page: 'reviews' | 'complaints'): void {
+    const host: FeedbackHost = {
+      source: this.feedback,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    };
+    const view = page === 'reviews' ? new ReviewListView(content, host) : new ComplaintListView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Vận hành › Thông báo" (M08.06): the work queue, the search and the settings; the server decides every read and the one write (SYSTEM only). */
+  #notificationPage(content: HTMLElement): void {
+    const host: NotificationHost = {
+      source: this.notifications,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      openDeliveries: () => this.go({ name: 'deliveries' }),
+      canEdit: this.#role === 'SYSTEM',
+    };
+    const view = new NotificationsView(content, host);
     this.#unsubscribe = () => view.dispose();
     void view.load();
   }

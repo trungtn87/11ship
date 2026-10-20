@@ -1,3 +1,5 @@
+import { DriverRepository } from '../driver/driver-repository';
+import { ShipperWalletParametersReader } from '../driver/shipper-wallet-parameters';
 import { Injectable } from '@nestjs/common';
 import { DriverWalletPort, WalletFunding, WalletReadiness, WalletSettlement } from '../driver/driver-wallet-port';
 import { TransactionContext } from '../transaction/transaction-context';
@@ -13,7 +15,7 @@ import { WalletService } from './wallet-service';
  *    balance of exactly 0. Anything else is BALANCE_REMAINING: the money is paid out by a withdrawal first, never written off.
  */
 /** The first-activation funding, ADR-004 6: 100.000 VND of real top-ups (a fixed rule of the Owner, not the configurable minimum top-up). */
-export const INITIAL_FUNDING_VND = 100_000n;
+
 
 @Injectable()
 export class WalletDriverPort implements DriverWalletPort {
@@ -21,18 +23,27 @@ export class WalletDriverPort implements DriverWalletPort {
     private readonly wallets: WalletService,
     private readonly reads: WalletReadRepository,
     private readonly policies: CommissionPolicyRepository,
+    private readonly limits: ShipperWalletParametersReader,
+    private readonly drivers: DriverRepository,
   ) {}
 
   /** Confirmed top-ups of the Shipper >= 100.000 VND AND the money still available >= 100.000 VND (a withdrawal asked since counts against it). Nothing is credited here. */
   async fundingForActivation(context: TransactionContext, driverId: string): Promise<WalletFunding> {
     const funding = await this.reads.fundingOfDriver(context, driverId);
-    return funding.confirmedTopupVnd >= INITIAL_FUNDING_VND && funding.availableVnd >= INITIAL_FUNDING_VND ? { funded: true } : { funded: false, reason: 'FUNDING_TOO_LOW' };
+    const minimum = BigInt((await this.limits.limits(context)).topupMinVnd);
+    return funding.confirmedTopupVnd >= minimum && funding.availableVnd >= minimum ? { funded: true } : { funded: false, reason: 'FUNDING_TOO_LOW' };
   }
 
   async readinessForOrders(context: TransactionContext, driverId: string): Promise<WalletReadiness> {
     const wallet = await this.wallets.readWallet(context, driverId);
+    const driver = await this.drivers.findById(context, driverId);
+    if (driver?.initialFundingRequired) {
+      const funding = await this.reads.fundingOfDriver(context, driverId);
+      const minimum = BigInt((await this.limits.limits(context)).topupMinVnd);
+      if (funding.confirmedTopupVnd < minimum) return { ready: false, reason: 'BALANCE_TOO_LOW' };
+    }
     const policy = await this.policies.current(context);
-    return wallet.availableVnd >= policy.amountVnd ? { ready: true } : { ready: false, reason: 'BALANCE_TOO_LOW' };
+    return wallet.availableVnd > 0n && wallet.availableVnd >= policy.amountVnd ? { ready: true } : { ready: false, reason: 'BALANCE_TOO_LOW' };
   }
 
   async settlementForClosure(context: TransactionContext, driverId: string): Promise<WalletSettlement> {
@@ -42,6 +53,7 @@ export class WalletDriverPort implements DriverWalletPort {
     }
     const holds = await this.wallets.holdSummary(context, driverId);
     const open = await this.reads.openWithdrawalCountOfDriver(context, driverId);
-    return wallet.balanceVnd === 0n && holds.activeHoldCount === 0 && open === 0 ? { settled: true } : { settled: false, reason: 'BALANCE_REMAINING' };
+    const pending = await context.query(`SELECT 1 FROM app.wallet_topup_requests WHERE wallet_id = $1::uuid AND state = 'PENDING' LIMIT 1`, [wallet.walletId]);
+    return pending.rows.length === 0 && wallet.balanceVnd === 0n && holds.activeHoldCount === 0 && open === 0 ? { settled: true } : { settled: false, reason: 'BALANCE_REMAINING' };
   }
 }
