@@ -14,12 +14,13 @@ class AddressLocation {
   final double? longitude;
 }
 
-typedef AddressMapBuilder = Widget Function(
-  BuildContext context,
-  double? latitude,
-  double? longitude,
-  void Function(double latitude, double longitude) onPick,
-);
+typedef AddressMapBuilder =
+    Widget Function(
+      BuildContext context,
+      double? latitude,
+      double? longitude,
+      void Function(double latitude, double longitude) onPick,
+    );
 
 /// The profile/checkout shows just this row. GPS and the map live in the editor.
 class AddressLocationField extends StatelessWidget {
@@ -93,6 +94,9 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
   double? _lat;
   double? _lng;
   bool _locating = false;
+  double? _accuracyMeters;
+  bool _currentPosition = false;
+  int _pointRevision = 0;
   String? _error;
   bool _submitted = false;
   final FocusNode _addressFocus = FocusNode();
@@ -145,6 +149,9 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
       return;
     }
     setState(() {
+      _pointRevision++;
+      _currentPosition = false;
+      _accuracyMeters = null;
       _lat = lat;
       _lng = lng;
       _error = null;
@@ -159,25 +166,30 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
       _locating = true;
       _error = null;
     });
+    final int pointRevision = _pointRevision;
     try {
       final LocationFix fix =
           await (widget.location ?? MethodChannelLocationProvider())
               .currentFix();
-      if (mounted && _sessionValid) {
+      if (mounted && _sessionValid && pointRevision == _pointRevision) {
         _pick(fix.latitude, fix.longitude);
+        setState(() {
+          _currentPosition = true;
+          _accuracyMeters = fix.accuracyMeters;
+        });
       }
     } on LocationException catch (e) {
-      if (mounted) {
+      if (mounted && _sessionValid && pointRevision == _pointRevision) {
         setState(
           () => _error = switch (e.failure) {
             LocationFailure.denied =>
-              'Chưa được cấp quyền vị trí. Bạn vẫn có thể chạm bản đồ để chọn.',
+              'Chưa được cấp quyền vị trí. Hãy cho phép trong cài đặt ứng dụng hoặc chạm bản đồ để chọn.',
             LocationFailure.disabled =>
               'Hãy bật vị trí trên điện thoại hoặc chọn trên bản đồ.',
             LocationFailure.timeout =>
-              'Chưa lấy được vị trí. Hãy thử lại hoặc chọn trên bản đồ.',
+              'Hết thời gian chờ vị trí từ GPS và mạng. Hãy thử ở nơi thoáng hơn hoặc chạm bản đồ để chọn.',
             LocationFailure.unavailable =>
-              'Chưa lấy được vị trí. Bạn vẫn có thể chọn trên bản đồ.',
+              'Điện thoại chưa cung cấp vị trí hợp lệ. Bạn vẫn có thể chạm bản đồ để chọn.',
           },
         );
       }
@@ -305,8 +317,15 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
           Text(
             _lat == null
                 ? 'Chạm bản đồ để ghim đúng vị trí.'
-                : 'Đã chọn vị trí. Chạm bản đồ để chuyển ghim.',
+                : _currentPosition
+                ? 'Đã lấy vị trí hiện tại${_accuracyMeters == null ? '' : ' · sai số khoảng ${_accuracyMeters!.ceil()} m'}. Kiểm tra và chỉnh ghim nếu cần.'
+                : 'Điểm giao đã chọn. Chạm bản đồ để chuyển ghim.',
           ),
+          if (_locating)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text('Đang lấy vị trí qua GPS và mạng…'),
+            ),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(top: 12),

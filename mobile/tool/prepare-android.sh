@@ -121,15 +121,18 @@ find "$kt" -name MainActivity.kt -delete
 main_template="MainActivity.kt"
 if [ "$app" = food ]; then
   main_template="MainActivityFood.kt"
-  cp "$here/android-templates/kotlin/N11LocationChannel.kt" "$kt/vn/eleven/n11/N11LocationChannel.kt"
+  mkdir -p "$kt/vn/eleven/m14/gps"
+  cp "$here/../gps-test/gps/src/main/java/vn/eleven/m14/gps/FreshLocationRequest.kt" "$kt/vn/eleven/m14/gps/FreshLocationRequest.kt"
 fi
+cp "$here/android-templates/kotlin/N11LocationChannel.kt" "$kt/vn/eleven/n11/N11LocationChannel.kt"
 sed "s/@APP_PACKAGE@/vn.eleven.$app/" "$here/android-templates/kotlin/$main_template" > "$kt/vn/eleven/$app/MainActivity.kt"
 # JVM unit test of the Binder join rules (no device needed), run by `./gradlew :app:testDebugUnitTest` in CI.
 mkdir -p "$dest/app/src/test/kotlin/vn/eleven/n11"
 cp "$here/android-templates/kotlin-test/N11PeerPolicyTest.kt" "$dest/app/src/test/kotlin/vn/eleven/n11/N11PeerPolicyTest.kt"
+cp "$here/android-templates/kotlin-test/FreshLocationRequestTest.kt" "$dest/app/src/test/kotlin/vn/eleven/n11/FreshLocationRequestTest.kt"
 case "$gradle" in
-  *.kts) printf '\ndependencies {\n    testImplementation("junit:junit:4.13.2")\n}\n' >> "$gradle" ;;
-  *) printf "\ndependencies {\n    testImplementation 'junit:junit:4.13.2'\n}\n" >> "$gradle" ;;
+  *.kts) printf '\ndependencies {\n    testImplementation("junit:junit:4.13.2")\n    testImplementation("org.mockito:mockito-core:5.14.2")\n}\n' >> "$gradle" ;;
+  *) printf "\ndependencies {\n    testImplementation 'junit:junit:4.13.2'\n    testImplementation 'org.mockito:mockito-core:5.14.2'\n}\n" >> "$gradle" ;;
 esac
 if [ "$push" = on ]; then
   # FCM client library only; no Google Services Gradle plugin (the client identifiers are given above), so nothing else changes in the Gradle build.

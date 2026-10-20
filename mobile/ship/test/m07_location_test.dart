@@ -79,6 +79,19 @@ void main() {
     expect(body.keys, isNot(contains('history')));
   });
 
+  test('native timeout is visible and a stopped recorder cannot upload old coordinates', () async {
+    final t = await build();
+    await t.reporter.start();
+    await t.reporter.onSnapshot(<String, dynamic>{'fresh': false, 'recording': true, 'status': 'Hết thời gian chờ vị trí mới'});
+    expect(t.reporter.error, contains('Hết thời gian chờ'));
+    expect(t.api.to('PUT', '/v1/driver/location'), isEmpty);
+    await t.reporter.onSnapshot(<String, dynamic>{...fix(), 'recording': false, 'status': 'Quyền vị trí đã bị thu hồi'});
+    expect(t.reporter.sharing, isFalse);
+    expect(t.reporter.error, contains('Quyền vị trí'));
+    expect(t.api.to('PUT', '/v1/driver/location'), isEmpty);
+    await t.reporter.stop();
+  });
+
   test('a failed upload is reported and retried at the next position (no gap is spent on it)', () async {
     final t = await build();
     await t.reporter.start();

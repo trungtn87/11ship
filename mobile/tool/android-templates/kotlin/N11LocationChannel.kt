@@ -3,31 +3,25 @@ package vn.eleven.n11
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
-import android.location.Location
-import android.location.LocationListener
 import android.location.LocationManager
-import android.os.Build
-import android.os.Bundle
-import android.os.CancellationSignal
 import android.os.Handler
+import vn.eleven.m14.gps.FreshLocationRequest
 import android.os.Looper
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * Food only (lib/src/flows/location.dart): ONE foreground position fix when the person presses the button at the shop.
+ * ONE foreground fix for a user-requested address/shop location (lib/src/flows/location.dart).
  * - Foreground location permission only (FINE + COARSE so the system dialog offers precise/approximate); never background.
  * - One shot: nothing keeps listening after the answer, the timeout or the cancel.
- * - A position from a mock provider is refused (UNAVAILABLE). No default, cached or typed position is ever returned.
+ * - A position from a mock provider is refused (UNAVAILABLE). GPS and network are requested together; old/mock positions are never returned.
  * Errors: DENIED, DISABLED, TIMEOUT, UNAVAILABLE. Results carry latitude, longitude, accuracyMeters, takenAtMillis only.
  */
 class N11LocationChannel(private val activity: Activity) : MethodChannel.MethodCallHandler {
     private val main = Handler(Looper.getMainLooper())
     private var pending: MethodChannel.Result? = null
-    private var cancel: CancellationSignal? = null
-    private var legacyListener: LocationListener? = null
-    private var timeout: Runnable? = null
+    private var request: FreshLocationRequest? = null
 
     fun register(messenger: BinaryMessenger) {
         MethodChannel(messenger, CHANNEL).setMethodCallHandler(this)
@@ -63,8 +57,7 @@ class N11LocationChannel(private val activity: Activity) : MethodChannel.MethodC
     }
 
     fun dispose() {
-        stopListening()
-        pending = null
+        fail("UNAVAILABLE")
     }
 
     private fun hasPermission(): Boolean =
@@ -73,92 +66,36 @@ class N11LocationChannel(private val activity: Activity) : MethodChannel.MethodC
 
     private fun hasFine(): Boolean = activity.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
-    @Suppress("DEPRECATION")
     private fun takeFix() {
         val manager = activity.getSystemService(Activity.LOCATION_SERVICE) as? LocationManager
-        if (manager == null) {
-            fail("UNAVAILABLE")
-            return
-        }
-        val provider = when {
-            hasFine() && manager.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
-            manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
-            else -> {
-                fail("DISABLED")
-                return
-            }
-        }
-        val deadline = Runnable { fail("TIMEOUT") }
-        timeout = deadline
-        main.postDelayed(deadline, TIMEOUT_MILLIS)
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val signal = CancellationSignal()
-                cancel = signal
-                manager.getCurrentLocation(provider, signal, activity.mainExecutor) { location ->
-                    if (location == null) fail("UNAVAILABLE") else deliver(location)
+        if (manager == null) { fail("UNAVAILABLE"); return }
+        val current = FreshLocationRequest(manager, main, hasFine())
+        request = current
+        current.start(onFix = { location ->
+                if (request === current) {
+                    val result = pending
+                    pending = null
+                    request = null
+                    result?.success(mapOf(
+                        "latitude" to location.latitude,
+                        "longitude" to location.longitude,
+                        "accuracyMeters" to location.accuracy.toDouble(),
+                        "takenAtMillis" to location.time,
+                    ))
                 }
-            } else {
-                val listener = object : LocationListener {
-                    override fun onLocationChanged(location: Location) = deliver(location)
-                    override fun onProviderEnabled(provider: String) = Unit
-                    override fun onProviderDisabled(provider: String) = fail("DISABLED")
-                    @Deprecated("Deprecated in Java")
-                    override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
-                }
-                legacyListener = listener
-                manager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
-            }
-        } catch (e: SecurityException) {
-            fail("DENIED")
-        } catch (e: Exception) {
-            fail("UNAVAILABLE")
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun isMock(location: Location): Boolean =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) location.isMock else location.isFromMockProvider
-
-    private fun deliver(location: Location) {
-        val result = pending ?: return
-        if (isMock(location)) {
-            fail("UNAVAILABLE")
-            return
-        }
-        stopListening()
-        pending = null
-        result.success(
-            mapOf(
-                "latitude" to location.latitude,
-                "longitude" to location.longitude,
-                "accuracyMeters" to if (location.hasAccuracy()) location.accuracy.toDouble() else null,
-                "takenAtMillis" to System.currentTimeMillis(),
-            ),
-        )
+            }, onFailure = { code -> if (request === current) fail(code) })
     }
 
     private fun fail(code: String) {
         val result = pending
-        stopListening()
         pending = null
+        request?.cancel()
+        request = null
         result?.error(code, null, null)
-    }
-
-    private fun stopListening() {
-        timeout?.let { main.removeCallbacks(it) }
-        timeout = null
-        cancel?.cancel()
-        cancel = null
-        legacyListener?.let {
-            (activity.getSystemService(Activity.LOCATION_SERVICE) as? LocationManager)?.removeUpdates(it)
-        }
-        legacyListener = null
     }
 
     companion object {
         const val CHANNEL = "vn.eleven.n11/location"
         private const val REQUEST_CODE = 4711
-        private const val TIMEOUT_MILLIS = 25_000L
     }
 }

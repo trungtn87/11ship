@@ -77,6 +77,8 @@ class ShipLocationReporter extends ChangeNotifier {
     if (_sharing) {
       return;
     }
+    await _sub?.cancel();
+    _sub = null;
     try {
       await _feed.start();
     } on Object catch (error) {
@@ -106,7 +108,15 @@ class ShipLocationReporter extends ChangeNotifier {
   Future<void> onSnapshot(Map<String, dynamic> snapshot) async {
     final Object? lat = snapshot['lat'];
     final Object? lon = snapshot['lon'];
+    if (snapshot['recording'] == false) {
+      _sharing = false;
+      _error = snapshot['status'] as String? ?? 'Đã dừng cập nhật vị trí.';
+      notifyListeners();
+      return;
+    }
     if (snapshot['fresh'] != true || lat is! num || lon is! num) {
+      _error = snapshot['status'] as String? ?? 'Chưa lấy được vị trí mới. Kiểm tra quyền và dịch vụ vị trí.';
+      notifyListeners();
       return;
     }
     final DateTime now = _clock();

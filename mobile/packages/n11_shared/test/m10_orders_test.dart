@@ -178,7 +178,7 @@ void main() {
       gps.failure = null;
       await tap(tester, key('location-current'));
       expect(gps.calls, 2);
-      expect(containing('Đã chọn vị trí'), findsOneWidget);
+      expect(containing('Đã lấy vị trí hiện tại'), findsOneWidget);
       await tap(tester, key('location-save'));
       await tap(tester, key('checkout-send'));
       expect(store.lastPin, (10.0123, 106.0456));
