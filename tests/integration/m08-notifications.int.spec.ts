@@ -1,3 +1,4 @@
+import { ShippingEligibilityService } from '../../apps/backend/src/shipping-policy/shipping-eligibility-service';
 import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
@@ -101,13 +102,19 @@ describe('M08 — notifications, reminders and sync', () => {
       );
       addedPolicy = true;
     }
+    await settle();
   });
 
   afterAll(async () => {
-    await cleanup();
-    await app.close();
-    await new Promise<void>((resolve) => router.close(() => resolve()));
-    await new Promise<void>((resolve) => fcm.close(() => resolve()));
+    try {
+      await cleanup();
+    } finally {
+      try { await app.close(); }
+      finally {
+        await new Promise<void>((resolve) => router.close(() => resolve()));
+        await new Promise<void>((resolve) => fcm.close(() => resolve()));
+      }
+    }
   });
 
   async function cleanup(): Promise<void> {
@@ -139,6 +146,7 @@ describe('M08 — notifications, reminders and sync', () => {
       if (addedPolicy) {
         await client.query('DELETE FROM app.shipping_fee_policy_versions');
       }
+      await client.query('SET CONSTRAINTS ALL IMMEDIATE');
       for (const table of tables) {
         await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
       }
@@ -231,6 +239,8 @@ describe('M08 — notifications, reminders and sync', () => {
       await client.query('ALTER TABLE app.wallet_ledger_entries DISABLE TRIGGER wallet_ledger_a_source_gate');
       await client.query(`INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at) VALUES ($1::uuid, $2::uuid, 1, 'ADJUSTMENT_CREDIT', $3, $3, now())`, [randomUUID(), walletId, amount]);
       await client.query('UPDATE app.driver_wallets SET balance_vnd = $2, version = version + 1 WHERE wallet_id = $1::uuid', [walletId, amount]);
+      await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+      await client.query('ALTER TABLE app.wallet_ledger_entries ENABLE TRIGGER wallet_ledger_a_source_gate');
       await client.query('COMMIT');
       return walletId;
     } catch (error) {
@@ -259,14 +269,13 @@ describe('M08 — notifications, reminders and sync', () => {
     return dataOf(created) as Json;
   }
 
-  /** Runs the outbox consumer until it has nothing left to claim, then the reminder batcher and the push dispatcher once. */
+  /** Drain due events, including the backlog left by earlier suites; never silently stop before this scenario's event is consumed. */
   async function settle(): Promise<void> {
-    for (let i = 0; i < 20; i += 1) {
+    for (let i = 0; i < 2000; i += 1) {
       const summary = await runtime().dispatcher.dispatchOnce();
-      if (summary.claimed === 0) {
-        break;
-      }
+      if (summary.claimed === 0) return;
     }
+    throw new Error('M08 fixture did not drain the due outbox backlog within 2000 batches');
   }
   async function backdateReminders(): Promise<void> {
     await app.pool.query(`UPDATE app.notification_reminders SET due_at = due_at - interval '10 seconds', valid_until = valid_until - interval '10 seconds' WHERE status = 'PENDING'`);
@@ -287,6 +296,8 @@ describe('M08 — notifications, reminders and sync', () => {
     const far = await newShipper(false);
     expect((await registerToken(near, tokenOf('near'))).status).toBe(200);
     const delivery = await newDelivery();
+    const [eligible] = await app.running.app.get(ShippingEligibilityService).precheck({ driverId: near.driverId, deliveryIds: [String(delivery.delivery_id)] }, Date.now());
+    expect(eligible).toMatchObject({ eligible: true, reasons: [] });
     await settle();
     const cards = (await inbox(near)).items as Json[];
     expect(cards).toHaveLength(1);

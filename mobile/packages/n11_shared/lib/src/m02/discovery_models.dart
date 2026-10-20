@@ -1,3 +1,7 @@
+import 'dart:math' as math;
+
+import '../flows/location.dart';
+
 import 'package:flutter/foundation.dart';
 
 import 'menu_models.dart' show FeatureNotConnected;
@@ -26,7 +30,32 @@ class CategoryChoice {
 
 @immutable
 class ShopCardData {
-  const ShopCardData({required this.shopId, required this.name, required this.address, required this.reason, this.logoUrl});
+  const ShopCardData({
+    required this.shopId,
+    required this.name,
+    required this.address,
+    required this.reason,
+    this.logoUrl,
+    this.ratingAverage,
+    this.ratingCount = 0,
+    this.latitude,
+    this.longitude,
+  });
+
+  final double? ratingAverage;
+  final int ratingCount;
+  final double? latitude;
+  final double? longitude;
+  double? distanceKm(LocationFix? fix) {
+    if (fix == null || latitude == null || longitude == null) return null;
+    double rad(double n) => n * math.pi / 180;
+    final double a =
+        math.pow(math.sin(rad(latitude! - fix.latitude) / 2), 2).toDouble() +
+        math.cos(rad(fix.latitude)) *
+            math.cos(rad(latitude!)) *
+            math.pow(math.sin(rad(longitude! - fix.longitude) / 2), 2);
+    return 6371 * 2 * math.asin(math.sqrt(a.clamp(0, 1)));
+  }
 
   final String? logoUrl;
   final String shopId;
@@ -41,7 +70,14 @@ class ShopCardData {
 
 @immutable
 class DishHit {
-  const DishHit({required this.itemId, required this.name, required this.priceVnd, required this.imageUrl, required this.shop, this.soldCount});
+  const DishHit({
+    required this.itemId,
+    required this.name,
+    required this.priceVnd,
+    required this.imageUrl,
+    required this.shop,
+    this.soldCount,
+  });
 
   final String itemId;
   final String name;
@@ -62,7 +98,14 @@ class DiscoveryPage<T> {
 /// What is asked of the server: always inside ONE area; [term] is what the person typed (the server folds case and marks).
 @immutable
 class DiscoveryQuery {
-  const DiscoveryQuery({required this.areaId, this.categoryId, this.openOnly = false, this.term = '', this.offset = 0, this.limit = 30});
+  const DiscoveryQuery({
+    required this.areaId,
+    this.categoryId,
+    this.openOnly = false,
+    this.term = '',
+    this.offset = 0,
+    this.limit = 30,
+  });
 
   final String areaId;
   final String? categoryId;
@@ -71,7 +114,14 @@ class DiscoveryQuery {
   final int offset;
   final int limit;
 
-  DiscoveryQuery next(int newOffset) => DiscoveryQuery(areaId: areaId, categoryId: categoryId, openOnly: openOnly, term: term, offset: newOffset, limit: limit);
+  DiscoveryQuery next(int newOffset) => DiscoveryQuery(
+    areaId: areaId,
+    categoryId: categoryId,
+    openOnly: openOnly,
+    term: term,
+    offset: newOffset,
+    limit: limit,
+  );
 }
 
 /// Throws [AuthFailure] (no answer / refusal) or [FeatureNotConnected].
@@ -86,14 +136,18 @@ class UnwiredDiscoveryApi implements DiscoveryApi {
   const UnwiredDiscoveryApi();
 
   @override
-  Future<List<AreaChoice>> areas() => Future<List<AreaChoice>>.error(const FeatureNotConnected());
+  Future<List<AreaChoice>> areas() =>
+      Future<List<AreaChoice>>.error(const FeatureNotConnected());
 
   @override
-  Future<List<CategoryChoice>> categories() => Future<List<CategoryChoice>>.error(const FeatureNotConnected());
+  Future<List<CategoryChoice>> categories() =>
+      Future<List<CategoryChoice>>.error(const FeatureNotConnected());
 
   @override
-  Future<DiscoveryPage<ShopCardData>> shops(DiscoveryQuery query) => Future<DiscoveryPage<ShopCardData>>.error(const FeatureNotConnected());
+  Future<DiscoveryPage<ShopCardData>> shops(DiscoveryQuery query) =>
+      Future<DiscoveryPage<ShopCardData>>.error(const FeatureNotConnected());
 
   @override
-  Future<DiscoveryPage<DishHit>> dishes(DiscoveryQuery query) => Future<DiscoveryPage<DishHit>>.error(const FeatureNotConnected());
+  Future<DiscoveryPage<DishHit>> dishes(DiscoveryQuery query) =>
+      Future<DiscoveryPage<DishHit>>.error(const FeatureNotConnected());
 }

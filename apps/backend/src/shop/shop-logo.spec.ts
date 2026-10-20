@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { BadRequestException } from '@nestjs/common';
-import { parseShopLogo } from './shop-logo';
+import { parseShopLogo, shopLogoFingerprint } from './shop-logo';
 import { parseShopProfileBody } from '../onboarding/shop-onboarding-validation';
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAIAAADwyuo0AAAAEklEQVR4nGN8tEOeAQaYGJAAACppAb0V3EgsAAAAAElFTkSuQmCC';
@@ -16,6 +16,14 @@ describe('optional shop logo', () => {
     }
     const large = Buffer.alloc(1048577); Buffer.from(png, 'base64').copy(large);
     expect(() => parseShopLogo({ ...logo, data_base64: large.toString('base64') })).toThrow(BadRequestException);
+  });
+
+  it('fingerprints bytes and MIME deterministically, distinguishes content and removal', () => {
+    const parsed = parseShopLogo(logo)!;
+    expect(shopLogoFingerprint(parsed)).toEqual(shopLogoFingerprint(parsed));
+    expect(shopLogoFingerprint({ ...parsed, data_base64: Buffer.concat([Buffer.from(png, 'base64'), Buffer.from([1])]).toString('base64') })).not.toEqual(shopLogoFingerprint(parsed));
+    expect(shopLogoFingerprint({ ...parsed, content_type: 'image/webp' })).not.toEqual(shopLogoFingerprint(parsed));
+    expect(shopLogoFingerprint(null)).toBeNull();
   });
 
   it('logo is optional during onboarding and is normalized with the profile', () => {

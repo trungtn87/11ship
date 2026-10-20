@@ -1,3 +1,6 @@
+import '../flows/location.dart';
+import '../m10/m10_cart.dart';
+import '../m10/m10_customer_views.dart' show DishStepper;
 import 'package:flutter/material.dart';
 
 import '../account/account_views.dart';
@@ -13,8 +16,7 @@ import 'menu_models.dart';
 import 'preview_views.dart';
 
 // M02-KP01 Trang chủ khám phá, KP03 bộ lọc, KP02 tìm quán/món. Layout of docs/current/M02-discovery-UI-LOCKED-20261016.md: area, search entry,
-// group chips, the shop list and the filter button. Only what the server returned is shown (no sample shop, no rating, no distance, no
-// delivery fee). Tapping a shop opens its menu (K01); tapping a dish opens its shop and lands on the dish.
+// group chips, the shop list and the filter button. Ratings and pickup coordinates come from the server; distance is a foreground estimate. Tapping a shop opens its menu (K01); tapping a dish opens its shop and lands on the dish.
 
 void _openShop(BuildContext context, PublicShopApi publicApi, ShopCardData shop, {String? focusItemId, M11Source? ratings}) {
   Navigator.of(context).push(n11Route(ShopPublicScreen(api: publicApi, shopId: shop.shopId, focusItemId: focusItemId, ratings: ratings)));
@@ -32,17 +34,22 @@ void _openShop(BuildContext context, PublicShopApi publicApi, ShopCardData shop,
 }
 
 class ShopCard extends StatelessWidget {
-  const ShopCard({super.key, required this.shop, required this.onTap});
+  const ShopCard({super.key, required this.shop, required this.onTap, this.customerLocation, this.locating = false});
 
+  final LocationFix? customerLocation;
+  final bool locating;
   final ShopCardData shop;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final ({String label, ChipKind kind}) chip = _stateChip(shop.reason);
+    final double? km = shop.distanceKm(customerLocation);
+    final String rating = shop.ratingCount == 0 || shop.ratingAverage == null ? 'Chưa có đánh giá' : '★ ${shop.ratingAverage!.toStringAsFixed(1)}/5 (${shop.ratingCount} đánh giá)';
+    final String distance = locating ? 'Đang định vị…' : km == null ? 'Chưa xác định' : '≈ ${km.toStringAsFixed(1)} km · đường chim bay';
     return Semantics(
       button: true,
-      label: '${shop.name}, ${chip.label}',
+      label: '${shop.name}, $rating, $distance, ${chip.label}',
       excludeSemantics: true,
       onTap: onTap,
       child: InkWell(
@@ -70,6 +77,8 @@ class ShopCard extends StatelessWidget {
                   children: <Widget>[
                     Text(shop.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, height: 1.3, fontWeight: FontWeight.w700, color: N11Colors.black)),
                     if (shop.address.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 2), child: Text(shop.address, maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.caption)),
+                    Text(rating, key: Key('shop-rating-${shop.shopId}'), style: N11Text.caption),
+                    Text(distance, key: Key('shop-distance-${shop.shopId}'), style: N11Text.caption),
                     Padding(padding: const EdgeInsets.only(top: 6), child: N11Chip(chip.label, kind: chip.kind)),
                   ],
                 ),
@@ -112,8 +121,9 @@ class _FakeField extends StatelessWidget {
 
 /// KP01: the Home tab of 11Food. It owns its scrolling (pull to refresh, "Xem thêm").
 class DiscoveryHome extends StatefulWidget {
-  const DiscoveryHome({super.key, required this.controller, required this.publicApi, this.bell, this.ratings});
+  const DiscoveryHome({super.key, required this.controller, required this.publicApi, this.bell, this.ratings, this.position});
 
+  final DiscoveryPosition? position;
   final DiscoveryController controller;
   final PublicShopApi publicApi;
 
@@ -129,11 +139,18 @@ class DiscoveryHome extends StatefulWidget {
 
 class _DiscoveryHomeState extends State<DiscoveryHome> {
   DiscoveryController get c => widget.controller;
+  late final DiscoveryPosition _position = widget.position ?? DiscoveryPosition();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => c.start());
+  }
+
+  @override
+  void dispose() {
+    if (widget.position == null) _position.dispose();
+    super.dispose();
   }
 
   Future<void> _openFilters() async {
@@ -152,13 +169,13 @@ class _DiscoveryHomeState extends State<DiscoveryHome> {
       m02Toast(context, 'Hãy chọn khu vực trước khi tìm.');
       return;
     }
-    Navigator.of(context).push(n11Route(SearchScreen(api: c.api, publicApi: widget.publicApi, ratings: widget.ratings, areaId: area, categoryId: c.categoryId, openOnly: c.openOnly)));
+    Navigator.of(context).push(n11Route(SearchScreen(api: c.api, publicApi: widget.publicApi, ratings: widget.ratings, areaId: area, position: _position)));
   }
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: c,
+      listenable: Listenable.merge(<Listenable>[c, _position]),
       builder: (BuildContext context, Widget? child) {
         final List<Widget> body = <Widget>[_header()];
         switch (c.choicesState) {
@@ -229,6 +246,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> {
       ),
     ));
     out.add(_FakeField(onTap: _openSearch));
+    out.add(_PositionButton(position: _position));
     if (c.areaId == null) {
       out.add(const Text('Chọn khu vực để xem các quán đang phục vụ.', key: Key('home-pick-area'), style: N11Text.lead));
       for (final AreaChoice a in c.areas) {
@@ -284,7 +302,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> {
           }
         } else {
           for (final ShopCardData s in c.shops) {
-            out.add(ShopCard(key: Key('shop-${s.shopId}'), shop: s, onTap: () => _openShop(context, widget.publicApi, s, ratings: widget.ratings)));
+            out.add(ShopCard(key: Key('shop-${s.shopId}'), shop: s, customerLocation: _position.fix, locating: _position.loading, onTap: () => _openShop(context, widget.publicApi, s, ratings: widget.ratings)));
           }
           if (c.hasMore) {
             out.add(N11Button(key: const Key('home-more'), label: c.loadingMore ? 'Đang tải…' : 'Xem thêm', kind: ButtonKind.secondary, loading: c.loadingMore, onPressed: c.loadingMore ? null : c.loadMore));
@@ -437,8 +455,9 @@ class _FilterSheetState extends State<FilterSheet> {
 /// KP02: search over shop names and dish names in the chosen area, in two tabs. Hủy leaves; the typed term stays while the person moves
 /// between the tabs; results of an older term never show under a newer one.
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key, required this.api, required this.publicApi, this.ratings, required this.areaId, this.categoryId, this.openOnly = false, this.debounce = const Duration(milliseconds: 350)});
+  const SearchScreen({super.key, required this.api, required this.publicApi, this.ratings, required this.areaId, this.categoryId, this.openOnly = false, this.position, this.debounce = const Duration(milliseconds: 350)});
 
+  final DiscoveryPosition? position;
   final DiscoveryApi api;
   final PublicShopApi publicApi;
   final M11Source? ratings;
@@ -453,10 +472,12 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   late final DishSearchController _search = DishSearchController(api: widget.api, areaId: widget.areaId, categoryId: widget.categoryId, openOnly: widget.openOnly, debounce: widget.debounce);
+  late final DiscoveryPosition _position = widget.position ?? DiscoveryPosition();
   final TextEditingController _text = TextEditingController();
 
   @override
   void dispose() {
+    if (widget.position == null) _position.dispose();
     _search.dispose();
     _text.dispose();
     super.dispose();
@@ -468,7 +489,7 @@ class _SearchScreenState extends State<SearchScreen> {
       backgroundColor: N11Colors.bg,
       body: SafeArea(
         child: ListenableBuilder(
-          listenable: _search,
+          listenable: Listenable.merge(<Listenable>[_search, _position]),
           builder: (BuildContext context, Widget? child) => Column(
             children: <Widget>[
               Container(
@@ -500,37 +521,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   TextButton(key: const Key('search-cancel'), style: TextButton.styleFrom(minimumSize: const Size(kTapMin, kTapMin)), onPressed: () => Navigator.of(context).maybePop(), child: const Text('Hủy', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: N11Colors.black))),
                 ]),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap2, N11Space.pad, 0),
-                child: Row(children: <Widget>[
-                  Expanded(child: _tab('search-tab-shops', 'Quán', SearchScope.shops)),
-                  Expanded(child: _tab('search-tab-dishes', 'Món', SearchScope.dishes)),
-                ]),
-              ),
+              _PositionButton(position: _position),
               Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap3, N11Space.pad, N11Space.gap8), children: _results())),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _tab(String key, String label, SearchScope scope) {
-    final bool on = _search.scope == scope;
-    return Semantics(
-      button: true,
-      selected: on,
-      label: label,
-      excludeSemantics: true,
-      onTap: () => _search.setScope(scope),
-      child: InkWell(
-        key: Key(key),
-        onTap: () => _search.setScope(scope),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: kTapMin),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: on ? N11Colors.yellowStrong : N11Colors.line, width: on ? 3 : 1))),
-          child: Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: on ? N11Colors.yellowStrong : N11Colors.ink2)),
         ),
       ),
     );
@@ -557,22 +551,24 @@ class _SearchScreenState extends State<SearchScreen> {
       case DiscoveryLoad.ready:
         break;
     }
-    final bool shops = s.scope == SearchScope.shops;
-    final int count = shops ? s.shops.length : s.dishes.length;
+    final int count = s.groupedShops.length;
     if (count == 0) {
       return <Widget>[
-        const N11StateBlock(kind: StateKind.warn, icon: Icons.search_off, title: 'Không có kết quả', text: 'Thử từ khóa khác hoặc đổi bộ lọc.'),
+        const N11StateBlock(kind: StateKind.warn, icon: Icons.search_off, title: 'Không có kết quả', text: 'Thử tên quán hoặc tên món khác.'),
         const SizedBox(height: N11Space.gap4),
         N11Button(key: const Key('search-clear-term'), label: 'Xóa từ khóa', kind: ButtonKind.secondary, onPressed: () { _text.clear(); _search.setTerm(''); setState(() {}); }),
       ];
     }
     return <Widget>[
-      if (!shops) gap(const Text('Chọn món để xem thực đơn quán', key: Key('search-hint'), style: N11Text.lead)),
       if (s.stale) gap(const N11Banner(key: Key('search-stale'), kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị kết quả đã tải.')),
-      if (shops)
-        for (final ShopCardData shop in s.shops) gap(ShopCard(key: Key('result-shop-${shop.shopId}'), shop: shop, onTap: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings)))
-      else
-        for (final DishHit dish in s.dishes) gap(_DishResult(key: Key('result-dish-${dish.itemId}'), dish: dish, onTap: () => _openShop(context, widget.publicApi, dish.shop, focusItemId: dish.itemId, ratings: widget.ratings))),
+      for (final ShopCardData shop in s.groupedShops) ...<Widget>[
+        gap(ShopCard(key: Key('result-shop-${shop.shopId}'), shop: shop, customerLocation: _position.fix, locating: _position.loading,
+          onTap: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings))),
+        for (final DishHit dish in s.dishes.where((DishHit d) => d.shop.shopId == shop.shopId))
+          gap(_DishResult(key: Key('result-dish-${dish.itemId}'), dish: dish,
+            onTap: () => _openShop(context, widget.publicApi, shop, focusItemId: dish.itemId, ratings: widget.ratings))),
+        gap(TextButton(key: Key('search-all-${shop.shopId}'), onPressed: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings), child: const Text('Xem tất cả'))),
+      ],
       if (s.hasMore) gap(N11Button(key: const Key('search-more'), label: s.loadingMore ? 'Đang tải…' : 'Xem thêm', kind: ButtonKind.secondary, loading: s.loadingMore, onPressed: s.loadingMore ? null : s.loadMore)),
     ];
   }
@@ -608,11 +604,25 @@ class _DishResult extends StatelessWidget {
                   Padding(padding: const EdgeInsets.only(top: 4), child: N11Chip(chip.label, kind: chip.kind)),
                 ]),
               ),
-              const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2),
+              if (dish.shop.open && OrderRuntime.current != null)
+                DishStepper(cart: OrderRuntime.current!.cart, shopId: dish.shop.shopId, shopName: dish.shop.name,
+                  itemId: dish.itemId, name: dish.name, priceVnd: dish.priceVnd, canOrder: OrderRuntime.current!.canOrder)
+              else const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2),
             ]),
           ),
         ),
       ),
     );
   }
+}
+
+class _PositionButton extends StatelessWidget {
+  const _PositionButton({required this.position});
+  final DiscoveryPosition position;
+  @override
+  Widget build(BuildContext context) => TextButton.icon(
+    key: const Key('discovery-locate'), onPressed: position.loading ? null : position.locate,
+    icon: const Icon(Icons.my_location, size: 18),
+    label: Text(position.loading ? 'Đang định vị…' : position.fix == null ? 'Dùng vị trí hiện tại để xem khoảng cách' : 'Cập nhật vị trí hiện tại'),
+  );
 }

@@ -103,7 +103,8 @@ class HttpMenuApi implements MenuApi {
 ShopCardData _shopCard(Map<String, Object?> m, {String idKey = 'shop_id', Uri? base}) {
   final Map<String, Object?> availability = _obj(m['availability']);
   _bool(availability['online']);
-  return ShopCardData(logoUrl: m['logo_url'] == null || base == null ? null : base.resolve(_str(m['logo_url'])).toString(), shopId: _str(m[idKey]), name: _str(m['name']), address: _str(m['address_text']), reason: _str(availability['reason']));
+  final Map<String, Object?>? rating = m['rating'] == null ? null : _obj(m['rating']);
+  return ShopCardData(ratingAverage: (rating?['average'] as num?)?.toDouble(), ratingCount: (rating?['count'] as num?)?.toInt() ?? 0, latitude: (m['pickup_lat'] as num?)?.toDouble(), longitude: (m['pickup_lng'] as num?)?.toDouble(), logoUrl: m['logo_url'] == null || base == null ? null : base.resolve(_str(m['logo_url'])).toString(), shopId: _str(m[idKey]), name: _str(m['name']), address: _str(m['address_text']), reason: _str(availability['reason']));
 }
 
 /// Public requests need no session: a plain GET over the same HTTPS transport (normal TLS verification).

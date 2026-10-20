@@ -131,6 +131,7 @@ class ShopController extends ChangeNotifier {
   List<ServiceArea> _areas = const <ServiceArea>[];
   bool _areasFailed = false;
   AuthFailure? _failure;
+  int _failureView = 0;
   bool _busy = false;
   bool _finishing = false;
   LocationFix? _fix;
@@ -170,6 +171,13 @@ class ShopController extends ChangeNotifier {
       _sessionEpoch = session.sessionEpoch;
       clear();
     }
+  }
+
+  void dismissFailure({bool notify = true}) {
+    _failureView++;
+    // An unresolved write must keep its visible retry and exact intent.
+    if (!hasPendingWrite) _failure = null;
+    if (notify) _notify();
   }
 
   /// Drops the profile, the form, the position and any pending write.
@@ -468,6 +476,7 @@ class ShopController extends ChangeNotifier {
 
   Future<bool> _write({required String kind, required String method, required String path, required String body, required String key}) async {
     final int epoch = _epoch;
+    final int failureView = _failureView;
     _busy = true;
     _failure = null;
     _pendingKind = kind;
@@ -515,13 +524,13 @@ class ShopController extends ChangeNotifier {
         _pendingBody = null;
         _pendingKey = null;
       }
-      _failure = failure;
+      if (failure.outcomeUnknown || failureView == _failureView) _failure = failure;
       _busy = false;
       if (failure.kind == AuthFailureKind.versionConflict || failure.kind == AuthFailureKind.stateConflict) {
         _notify();
         // The profile moved on elsewhere: show what the server holds now, overwrite nothing.
         await load();
-        _failure = failure;
+        if (failure.outcomeUnknown || failureView == _failureView) _failure = failure;
       }
       _notify();
       return false;

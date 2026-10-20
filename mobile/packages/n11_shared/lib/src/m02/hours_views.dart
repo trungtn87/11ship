@@ -31,6 +31,7 @@ class _HoursScreenState extends State<HoursScreen> {
   @override
   void initState() {
     super.initState();
+    ops.dismissWriteFailure(notify: false);
     _seenNotice = ops.noticeSeq;
     ops.addListener(_onOps);
     ops.session.addListener(_gone);
@@ -41,6 +42,7 @@ class _HoursScreenState extends State<HoursScreen> {
 
   @override
   void dispose() {
+    ops.dismissWriteFailure(notify: false);
     ops.removeListener(_onOps);
     ops.session.removeListener(_gone);
     super.dispose();

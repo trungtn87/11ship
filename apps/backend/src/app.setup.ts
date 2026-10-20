@@ -61,6 +61,15 @@ export function configureApp(app: INestApplication): void {
   // A differently named wrapper on purpose: the framework skips registering ITS parser when it finds one named jsonParser, which
   // would leave every other route without a body parser.
   const captureRawBody = (request: unknown, response: unknown, next: (error?: unknown) => void): void => rawCapturingParser(request, response, next);
+  // Only these two profile writes accept a <=1 MiB logo as base64. Keep every other route's default body limit.
+  const logoParser = express.json({
+    limit: '2mb',
+    verify: (request, _response, buffer) => { request.rawBody = Buffer.from(buffer); },
+  }) as unknown as (request: unknown, response: unknown, next: (error?: unknown) => void) => void;
+  app.use(/^\/v1\/(?:onboarding\/shop\/profile|shop\/me\/profile)\/?$/, (request: { method: string }, response: unknown, next: (error?: unknown) => void) => {
+    if (request.method === 'PUT') logoParser(request, response, next);
+    else next();
+  });
   // M11: an evidence picture is sent as base64 (5 MB of picture is about 7 MB of text). Its own parser goes FIRST for the three upload routes; every other
   // complaint route keeps the default limit through the parsers below (the first parser to run wins).
   const evidenceParser = express.json({

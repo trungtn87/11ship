@@ -66,7 +66,7 @@ describe('admin Shippers (real browser)', () => {
     return { phone, userId: (found.rows[0] as { user_id: string }).user_id, secret };
   }
 
-  /** A Shipper account with a profile sent for review and a bank account of its own name — what the Android app produces. */
+  /** Current M03: an active Shipper without a profile-review gate; bank details are optional and used for closure refunds. */
   async function seedShipper(fullName: string, holder: string): Promise<string> {
     const phone = randomPhone();
     app.track(phone.normalized);
@@ -79,7 +79,7 @@ describe('admin Shippers (real browser)', () => {
     await grantRole(app.pool, userId, 'DRIVER');
     const driverId = (await app.pool.query<{ driver_id: string }>('SELECT driver_id FROM app.drivers WHERE user_id = $1::uuid', [userId])).rows[0]?.driver_id as string;
     await app.pool.query(
-      `UPDATE app.drivers SET status = 'PENDING', full_name = $2, review_state = 'SUBMITTED', submitted_at = clock_timestamp() WHERE driver_id = $1::uuid`,
+      `UPDATE app.drivers SET status = 'ACTIVE', full_name = $2, review_state = 'APPROVED', submitted_at = NULL WHERE driver_id = $1::uuid`,
       [driverId, fullName],
     );
     await app.pool.query(
@@ -171,7 +171,7 @@ describe('admin Shippers (real browser)', () => {
     }
   });
 
-  it('SYSTEM: list, search, filter, detail, approve, verify the bank, classify, reject with a reason; the history shows who did what', async () => {
+  it('SYSTEM: active Shippers need no approval; search, filter, bank verification/rejection, classification and locking retain history', async () => {
     const page: Page = await (browser as Browser).newPage();
     await page.viewport(1280, 900, false);
     await page.send('Network.clearBrowserCookies');
@@ -184,7 +184,7 @@ describe('admin Shippers (real browser)', () => {
     await page.fill('#shipper-search', tag);
     await waitRows(page, `rows.length === 2 && rows.every((r) => r.includes('SH'))`);
     const listed = await rowsText(page);
-    expect(listed.some((row) => row.includes(NAME_A) && row.includes('Chờ xét duyệt') && row.includes('EXTERNAL') && row.includes('Chờ xác minh'))).toBe(true);
+    expect(listed.some((row) => row.includes(NAME_A) && row.includes('Đã duyệt · hoạt động') && row.includes('EXTERNAL') && row.includes('Chờ xác minh'))).toBe(true);
     await shot(page, 'shippers-list-desktop');
     // Names are found without marks, like the dish groups.
     await page.fill('#shipper-search', `nguyen van duyet ${tag.toLowerCase()}`);
@@ -193,9 +193,9 @@ describe('admin Shippers (real browser)', () => {
     await page.waitFor(`document.body.innerText.includes('Không tìm thấy Shipper')`);
     await page.fill('#shipper-search', tag);
     await waitRows(page, `rows.length === 2`);
-    await page.evaluate(`(() => { const s = document.querySelector('#shipper-status'); s.value = 'ACTIVE'; s.dispatchEvent(new Event('change')); return true; })()`);
+    await page.evaluate(`(() => { const s = document.querySelector('#shipper-status'); s.value = 'SUSPENDED'; s.dispatchEvent(new Event('change')); return true; })()`);
     await page.waitFor(`document.body.innerText.includes('Không tìm thấy Shipper')`);
-    await page.evaluate(`(() => { const s = document.querySelector('#shipper-status'); s.value = 'SUBMITTED'; s.dispatchEvent(new Event('change')); return true; })()`);
+    await page.evaluate(`(() => { const s = document.querySelector('#shipper-status'); s.value = 'ACTIVE'; s.dispatchEvent(new Event('change')); return true; })()`);
     await waitRows(page, `rows.length === 2`);
 
     // Detail of A: profile, bank (with the number to check), readiness, classification, history.
@@ -209,14 +209,11 @@ describe('admin Shippers (real browser)', () => {
     await page.waitFor(`document.querySelector('#shipper-detail-title') && document.body.innerText.includes('Lịch sử thao tác')`);
     await shot(page, 'shipper-detail-pending-desktop');
 
-    // Approve: popup, one request, the answer read back.
-    expect(await press(page, 'Duyệt hồ sơ')).toBe(true);
-    await page.waitFor(`document.querySelector('.dialog')`);
-    await shot(page, 'shipper-approve-popup-desktop');
-    expect(await press(page, 'Duyệt', 'document.querySelector(".dialog")')).toBe(true);
-    await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã cập nhật.') && document.body.innerText.includes('Đã duyệt')`);
+    // Automatic activation: neither profile approval nor rejection is offered or required.
+    expect(await press(page, 'Duyệt hồ sơ')).toBe(false);
+    expect(await press(page, 'Từ chối')).toBe(false);
     expect(await driverRow(idA)).toMatchObject({ status: 'ACTIVE', review_state: 'APPROVED', accepting_deliveries: false });
-    expect(await count(app.pool, "SELECT 1 FROM app.audit_logs WHERE resource_id = $1 AND action = 'admin.shipper.approve.v1'", [idA])).toBe(1);
+    expect(await count(app.pool, "SELECT 1 FROM app.audit_logs WHERE resource_id = $1 AND action = 'admin.shipper.approve.v1'", [idA])).toBe(0);
 
     // Bank verification.
     expect(await press(page, 'Xác minh ngân hàng')).toBe(true);
@@ -235,7 +232,7 @@ describe('admin Shippers (real browser)', () => {
     // The readiness still says what is missing (the wallet belongs to M04), and the history names the three actions.
     const after = await page.evaluate<string>(`document.body.innerText`);
     expect(after).toContain('Ví chưa sẵn sàng');
-    for (const label of ['Admin duyệt hồ sơ', 'Admin xác minh ngân hàng', 'Admin đổi phân loại nội bộ']) {
+    for (const label of ['Admin xác minh ngân hàng', 'Admin đổi phân loại nội bộ']) {
       expect(after).toContain(label);
     }
     await shot(page, 'shipper-detail-approved-desktop');
@@ -257,16 +254,17 @@ describe('admin Shippers (real browser)', () => {
     await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã duyệt · hoạt động')`);
     expect((await driverRow(idA)).status).toBe('ACTIVE');
 
-    // Reject B: the reason is required and is what the Shipper sees.
+    // Reject B's bank for a refund: this does not revoke automatic activation.
     await page.goto(`${origin}/operations/shippers/${idB}`);
     await page.waitFor(`document.querySelector('#shipper-detail-title') && document.body.innerText.includes(${JSON.stringify(NAME_B)})`);
-    expect(await press(page, 'Từ chối')).toBe(true);
+    expect(await press(page, 'Từ chối ngân hàng')).toBe(true);
     await page.waitFor(`document.querySelector('.dialog')`);
     await page.fill('#shipper-reason', 'Tên chủ tài khoản chưa rõ');
     await shot(page, 'shipper-reject-popup-desktop');
     expect(await press(page, 'Từ chối', 'document.querySelector(".dialog")')).toBe(true);
-    await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã từ chối: Tên chủ tài khoản chưa rõ')`);
-    expect(await driverRow(idB)).toMatchObject({ status: 'PENDING', review_state: 'REJECTED', rejection_reason: 'Tên chủ tài khoản chưa rõ' });
+    await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Tên chủ tài khoản chưa rõ')`);
+    expect(await driverRow(idB)).toMatchObject({ status: 'ACTIVE', review_state: 'APPROVED' });
+    expect((await app.pool.query('SELECT verification_state, rejection_reason FROM app.driver_bank_accounts WHERE driver_id = $1::uuid', [idB])).rows[0]).toEqual({ verification_state: 'REJECTED', rejection_reason: 'Tên chủ tài khoản chưa rõ' });
 
     // A phone-sized layout keeps the page usable and does not scroll sideways.
     await page.viewport(390, 844, true);
