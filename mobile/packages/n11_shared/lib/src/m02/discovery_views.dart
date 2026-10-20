@@ -603,6 +603,7 @@ class _DishResult extends StatelessWidget {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
                   Text(dish.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, height: 1.35, fontWeight: FontWeight.w700, color: N11Colors.black)),
                   Text(formatVnd(dish.priceVnd), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: N11Colors.yellowStrong)),
+                  if (dish.soldCount != null) Text('Đã bán ${dish.soldCount}', style: N11Text.caption),
                   Text(dish.shop.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.caption),
                   Padding(padding: const EdgeInsets.only(top: 4), child: N11Chip(chip.label, kind: chip.kind)),
                 ]),

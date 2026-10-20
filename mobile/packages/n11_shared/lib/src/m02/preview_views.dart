@@ -192,6 +192,7 @@ class _ShopMenuContentState extends State<ShopMenuContent> {
                   key: _rows.putIfAbsent(item.id, GlobalKey.new),
                   name: item.name,
                   price: formatVnd(item.priceVnd),
+                  sub: item.soldCount == null ? null : 'Đã bán ${item.soldCount}',
                   imageUrl: item.imageUrl,
                   highlight: item.id == _highlight,
                   chip: _stepper(context, item),

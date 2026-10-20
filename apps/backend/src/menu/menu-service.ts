@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
+import { OrderSalesReader } from '../orders/order-sales-reader';
 import { AuditWriter } from '../audit/audit-writer';
 import { SessionActor, SessionAuthorizationParticipant } from '../auth/session-authorization-participant';
 import { AppError, TechnicalError } from '../common/app-errors';
@@ -59,6 +60,7 @@ export class MenuService {
     private readonly reader: ShopAvailabilityReader,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
+    private readonly sales: OrderSalesReader,
   ) {}
 
   // ---- reads ----------------------------------------------------------------------------------------------------
@@ -107,6 +109,7 @@ export class MenuService {
         this.menu.listCategories(context),
         this.menu.listPublicItems(context, shopId),
       ]);
+      const sold = await this.sales.quantitiesOfItems(context, items.map((item) => item.itemId));
       return {
         shop_id: snapshot.shopId,
         name: snapshot.name,
@@ -129,6 +132,7 @@ export class MenuService {
                 item_id: item.itemId,
                 name: item.name,
                 price_vnd: item.priceVnd,
+                sold_count: sold.get(item.itemId) ?? 0,
                 image_id: item.imageId,
               })),
           }))
