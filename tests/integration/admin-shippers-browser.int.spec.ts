@@ -79,7 +79,7 @@ describe('admin Shippers (real browser)', () => {
     await grantRole(app.pool, userId, 'DRIVER');
     const driverId = (await app.pool.query<{ driver_id: string }>('SELECT driver_id FROM app.drivers WHERE user_id = $1::uuid', [userId])).rows[0]?.driver_id as string;
     await app.pool.query(
-      `UPDATE app.drivers SET full_name = $2, review_state = 'SUBMITTED', submitted_at = clock_timestamp() WHERE driver_id = $1::uuid`,
+      `UPDATE app.drivers SET status = 'PENDING', full_name = $2, review_state = 'SUBMITTED', submitted_at = clock_timestamp() WHERE driver_id = $1::uuid`,
       [driverId, fullName],
     );
     await app.pool.query(

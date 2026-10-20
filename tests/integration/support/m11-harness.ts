@@ -337,8 +337,8 @@ export class M11World {
     const client = await this.app.pool.connect();
     try {
       await client.query('BEGIN');
-      const walletId = randomUUID();
-      await client.query(`INSERT INTO app.driver_wallets (wallet_id, driver_id, balance_vnd, held_vnd, version, created_at, updated_at) VALUES ($1::uuid, $2::uuid, 0, 0, 1, now(), now())`, [walletId, driverId]);
+      const walletId = (await client.query<{ wallet_id: string }>('SELECT wallet_id::text FROM app.driver_wallets WHERE driver_id = $1::uuid', [driverId])).rows[0]?.wallet_id as string;
+      await client.query('UPDATE app.drivers SET initial_funding_required = false WHERE driver_id = $1::uuid', [driverId]);
       // The funds come in through the adjustment gate itself (a REFUND with its own record), so no gate is lifted and the ledger rows stay real.
       const adjustmentId = randomUUID();
       await client.query(

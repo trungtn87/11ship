@@ -376,7 +376,7 @@ describe('M01-A2S — Shop onboarding migration', () => {
         [
           'shops_pkey',
           'shops_service_area_fk',
-          'shops_name_ck',
+          'shops_name_ck', 'shops_logo_shape',
           'shops_address_ck',
           'shops_contact_phone_ck',
           'shops_status_ck',

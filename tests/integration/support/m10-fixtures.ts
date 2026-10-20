@@ -222,6 +222,7 @@ export async function cleanupOrders(app: AuthApp, input: { shopIds: readonly str
     if (input.policyAdded === true) {
       await client.query('DELETE FROM app.shipping_fee_policy_versions');
     }
+    await client.query('SET CONSTRAINTS ALL IMMEDIATE');
     for (const table of tables) {
       await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
     }

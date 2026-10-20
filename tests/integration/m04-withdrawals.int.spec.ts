@@ -279,7 +279,7 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
     const activity = client.running.app.get(AccountActivityRegistry);
     activity.register({ name: 'M03_ACTIVE_WORK_TEST', activeWork: async (_context, userId) => userId === s.userId ? 1 : 0 });
     try {
-      expect((await selfCommand(s, 'closure-request')).status).toBe(200);
+      expect((await selfCommand(s, 'closure-request', { note: null })).status).toBe(200);
       expect(errorCode(await withdraw(s, { amount_vnd: 100_000 }))).toBe('DRIVER_HAS_ACTIVE_WORK');
       expect(await wallet(s)).toEqual({ balance: '100000', held: '0' });
       expect(errorCode(await selfCommand(s, 'accepting', { accepting: true }))).toBe('DRIVER_NOT_ACTIVE');
@@ -679,7 +679,7 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
   it('14. M03 activation needs real confirmed top-ups: under 100.000 it is refused, 100.000 with the money still available approves, and nothing is credited twice', async () => {
     // A Shipper whose profile was sent for review, with a verified bank account of its own name, and no money at all.
     const s = await newShipper(0);
-    await client.pool.query(`UPDATE app.drivers SET review_state = 'SUBMITTED' WHERE driver_id = $1::uuid`, [s.driverId]);
+    await client.pool.query(`UPDATE app.drivers SET status = 'PENDING', review_state = 'SUBMITTED' WHERE driver_id = $1::uuid`, [s.driverId]);
     const driverVersion = async (): Promise<number> => Number((await client.pool.query<{ version: string }>('SELECT version::text FROM app.drivers WHERE driver_id = $1::uuid', [s.driverId])).rows[0]?.version);
     const approve = async (): Promise<AdminResponse> => send(systemLogin(), `/shippers/${s.driverId}/approve`, { expected_version: await driverVersion() });
     const status = async (): Promise<string> => String((await client.pool.query('SELECT status FROM app.drivers WHERE driver_id = $1::uuid', [s.driverId])).rows[0]?.status);

@@ -226,8 +226,8 @@ describe('M08 — notifications, reminders and sync', () => {
     const client = await app.pool.connect();
     try {
       await client.query('BEGIN');
-      const walletId = randomUUID();
-      await client.query(`INSERT INTO app.driver_wallets (wallet_id, driver_id, balance_vnd, held_vnd, version, created_at, updated_at) VALUES ($1::uuid, $2::uuid, 0, 0, 1, now(), now())`, [walletId, driverId]);
+      const walletId = (await client.query<{ wallet_id: string }>('SELECT wallet_id::text FROM app.driver_wallets WHERE driver_id = $1::uuid', [driverId])).rows[0]?.wallet_id as string;
+      await client.query('UPDATE app.drivers SET initial_funding_required = false WHERE driver_id = $1::uuid', [driverId]);
       await client.query('ALTER TABLE app.wallet_ledger_entries DISABLE TRIGGER wallet_ledger_a_source_gate');
       await client.query(`INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at) VALUES ($1::uuid, $2::uuid, 1, 'ADJUSTMENT_CREDIT', $3, $3, now())`, [randomUUID(), walletId, amount]);
       await client.query('UPDATE app.driver_wallets SET balance_vnd = $2, version = version + 1 WHERE wallet_id = $1::uuid', [walletId, amount]);

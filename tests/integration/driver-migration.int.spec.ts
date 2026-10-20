@@ -490,7 +490,7 @@ describe('M01-A2D — Driver onboarding migration', () => {
         // The A2D columns plus the M03 ones (review, suspension, closure, Shipper code). Still no area column.
         [
           'accepting_deliveries', 'created_at', 'driver_id', 'driver_type', 'full_name', 'plate_number', 'status', 'updated_at', 'user_id', 'version',
-          'shipper_code', 'review_state', 'submitted_at', 'reviewed_at', 'reviewed_by', 'rejection_reason', 'suspension_reason', 'suspended_at',
+          'initial_funding_required', 'shipper_code', 'review_state', 'submitted_at', 'reviewed_at', 'reviewed_by', 'rejection_reason', 'suspension_reason', 'suspended_at',
           'status_before_closing', 'closure_requested_at', 'closure_note',
         ].sort(),
       );
