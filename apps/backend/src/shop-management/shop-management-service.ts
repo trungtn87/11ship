@@ -80,13 +80,6 @@ export class ShopManagementService {
     return toView(snapshot);
   }
 
-  async publicLogo(shopId: string) {
-    if (!isCanonicalUuid(shopId)) throw new AppError('SHOP_NOT_FOUND');
-    const logo = await this.transactions.withTransaction((context) => this.shops.publicLogo(context, shopId));
-    if (logo === undefined) throw new AppError('SHOP_NOT_FOUND');
-    return logo;
-  }
-
   async updateProfile(
     actor: SessionActor,
     input: ShopProfileUpdateInput,

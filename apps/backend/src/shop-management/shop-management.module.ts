@@ -4,7 +4,9 @@ import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OutboxModule } from '../outbox/outbox.module';
 import { ShopModule } from '../shop/shop.module';
 import { TransactionModule } from '../transaction/transaction.module';
-import { ShopLogoController, ShopManagementController } from './shop-management.controller';
+import { ShopManagementController } from './shop-management.controller';
+import { ShopLogoController } from './shop-logo.controller';
+import { ShopLogoService } from './shop-logo-service';
 import { ShopManagementService } from './shop-management-service';
 
 /**
@@ -25,7 +27,7 @@ export class ShopManagementModule {
       module: ShopManagementModule,
       imports: [auth, ShopModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
       controllers: [ShopManagementController, ShopLogoController],
-      providers: [ShopManagementService],
+      providers: [ShopManagementService, ShopLogoService],
     };
   }
 }

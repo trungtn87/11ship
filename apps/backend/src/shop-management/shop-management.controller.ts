@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Body, Controller, Get, Headers, Param, Put, Req, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Put, Req, UseGuards } from '@nestjs/common';
 import { actorOf, AuthenticatedRequest } from '../auth/auth-principal';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
@@ -63,19 +63,5 @@ export class ShopManagementController {
       throw new AppError('SESSION_INVALID');
     }
     return request.auth;
-  }
-}
-
-/** Public logo bytes only for an active, discoverable shop. Draft/disabled profiles are never exposed. */
-@Controller('shops')
-export class ShopLogoController {
-  constructor(private readonly management: ShopManagementService) {}
-
-  @Get(':shopId/logo')
-  async read(@Param('shopId') shopId: string, @Res({ passthrough: true }) response: { setHeader(name: string, value: string): unknown }) {
-    const logo = await this.management.publicLogo(shopId);
-    response.setHeader('Cache-Control', 'no-store');
-    response.setHeader('X-Content-Type-Options', 'nosniff');
-    return new StreamableFile(Buffer.from(logo.data_base64, 'base64'), { type: logo.content_type });
   }
 }
