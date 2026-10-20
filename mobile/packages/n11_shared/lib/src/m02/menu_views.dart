@@ -514,9 +514,7 @@ class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOu
   }
 
   Widget _categories(ItemForm f, MenuSnapshot snapshot, List<MenuCategory> choices, bool lock) {
-    if (choices.length <= 1) {
-      return choices.length == 1 ? Text('Nhóm món: ${choices.single.name} (tự chọn, chỉ có một nhóm).', key: const Key('dish-single-group'), style: N11Text.caption) : const SizedBox.shrink();
-    }
+    if (choices.isEmpty) return const SizedBox.shrink();
     return vstack(<Widget>[
       const Text('Nhóm món', style: N11Text.label),
       InputDecorator(

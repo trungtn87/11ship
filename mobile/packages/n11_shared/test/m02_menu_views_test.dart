@@ -62,11 +62,10 @@ void main() {
     expect(find.byKey(const Key('dish-save')), findsNothing, reason: 'back on the list');
   });
 
-  testWidgets('with a single active group it is chosen for the person and the selector is hidden', (WidgetTester tester) async {
+  testWidgets('a single active group is selected automatically and remains visible in the dropdown', (WidgetTester tester) async {
     final Harness h = await harness(tester, menu: FakeMenuApi(categories: <MenuCategory>[const MenuCategory(id: 'c1', name: 'Ốc', active: true), const MenuCategory(id: 'c9', name: 'Cũ', active: false)]));
     await openFormEmpty(tester, h);
-    expect(find.byKey(const Key('dish-single-group')), findsOneWidget);
-    expect(find.byKey(const Key('dish-cat-c1')), findsNothing);
+    expect(tester.widget<DropdownButton<String>>(find.byKey(const Key('dish-category'))).value, 'c1');
   });
 
   testWidgets('no active group: "Chưa có nhóm món để lựa chọn" with Thử lại, no fake group', (WidgetTester tester) async {
