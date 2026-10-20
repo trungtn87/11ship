@@ -1,3 +1,4 @@
+import { shopLogoFingerprint } from '../shop/shop-logo';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
@@ -74,7 +75,7 @@ export class ShopOnboardingService {
           pickup_lng: input.pickupLng,
           service_area_id: input.serviceAreaId,
           expected_version: input.expectedVersion,
-          ...(input.logo === undefined ? {} : { logo: input.logo }),
+          ...(input.logo === undefined ? {} : { logo: shopLogoFingerprint(input.logo) }),
         },
         replay: { kind: 'sensitive', authorize: (context, guard) => this.#authorizeReplay(context, guard, actor) },
       },

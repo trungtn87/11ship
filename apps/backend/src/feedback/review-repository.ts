@@ -207,6 +207,15 @@ export class ReviewRepository {
     return fold(result.rows);
   }
 
+  /** One bounded aggregate for discovery cards, with the same public visibility rule as shopSummary. */
+  async shopSummaries(context: TransactionContext, shopIds: readonly string[]): Promise<Map<string, { count: number; average: number | null }>> {
+    if (shopIds.length === 0) return new Map();
+    const result = await context.query<{ shop_id: string; n: string; average: string }>(
+      `SELECT shop_id, count(*)::text AS n, avg(stars)::text AS average FROM app.reviews
+       WHERE shop_id = ANY($1::uuid[]) AND kind = 'SHOP_BY_CUSTOMER' AND visibility = 'VISIBLE' GROUP BY shop_id`, [shopIds]);
+    return new Map(result.rows.map((row) => [row.shop_id, { count: safe(row.n), average: Number(row.average) }]));
+  }
+
   /** The Shipper's score, split by who wrote it (CUSTOMER / SHOP) and combined, over the visible ratings only. */
   async shipperSummary(context: TransactionContext, driverId: string): Promise<{ readonly customer: Summary; readonly shop: Summary; readonly all: Summary }> {
     const result = await context.query<{ kind: ReviewKind; stars: number; n: string }>(

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { BadRequestException } from '@nestjs/common';
 
 export interface ShopLogo {
@@ -19,4 +20,9 @@ export function parseShopLogo(value: unknown): ShopLogo | null | undefined {
     : bytes.length >= 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP' ? 'image/webp' : null;
   if (type === null || input.content_type !== type) throw new BadRequestException();
   return { content_type: type, data_base64: data };
+}
+
+/** Bounded, content-sensitive idempotency input; the original bytes are still saved. */
+export function shopLogoFingerprint(logo: ShopLogo | null): { content_type: string; sha256: string } | null {
+  return logo === null ? null : { content_type: logo.content_type, sha256: createHash('sha256').update(Buffer.from(logo.data_base64, 'base64')).digest('hex') };
 }

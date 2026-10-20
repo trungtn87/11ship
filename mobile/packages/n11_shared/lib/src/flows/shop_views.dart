@@ -171,6 +171,7 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
   void initState() {
     super.initState();
     final ShopController c = widget.controller;
+    c.dismissFailure(notify: false);
     _name = TextEditingController(text: c.name);
     _phone = TextEditingController(text: c.contactPhone);
     _address = TextEditingController(text: c.addressText);
@@ -200,6 +201,7 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
 
   @override
   void dispose() {
+    widget.controller.dismissFailure(notify: false);
     widget.controller.removeListener(_syncFromController);
     widget.controller.session.removeListener(_leaveWhenSignedOut);
     // What was typed stays in the controller (not lost when the screen is left); nothing is sent by leaving. After the session ended
@@ -228,6 +230,7 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
     c.addressText = _address.text;
     c.zalo = _zalo.text;
     c.facebook = _facebook.text;
+    c.dismissFailure(notify: false);
   }
 
 

@@ -173,6 +173,7 @@ class ShopOpsController extends ChangeNotifier {
   bool _busy = false;
   PendingWrite? _pending;
   AuthFailure? _writeFailure;
+  int _failureView = 0;
   bool _conflict = false;
   bool _savedNotReloaded = false;
   String? _notice;
@@ -429,6 +430,7 @@ class ShopOpsController extends ChangeNotifier {
 
   void profileEdited() {
     _profileErrors = <String, String>{};
+    dismissWriteFailure(notify: false);
     _notify();
   }
 
@@ -548,6 +550,7 @@ class ShopOpsController extends ChangeNotifier {
     if (locked) {
       return;
     }
+    dismissWriteFailure(notify: false);
     _hours = copyWeek(_hours)..[day] = <HourRange>[for (final HourRange r in ranges) r.copy()];
     _notify();
   }
@@ -557,6 +560,7 @@ class ShopOpsController extends ChangeNotifier {
     if (locked) {
       return;
     }
+    dismissWriteFailure(notify: false);
     _hours = <List<HourRange>>[for (int i = 0; i < 7; i++) <HourRange>[for (final HourRange r in ranges) r.copy()]];
     _notify();
   }
@@ -565,6 +569,7 @@ class ShopOpsController extends ChangeNotifier {
     if (locked) {
       return;
     }
+    dismissWriteFailure(notify: false);
     _hours = copyWeek(_overview?.hours ?? emptyWeek());
     _formRevision++;
     _notify();
@@ -603,6 +608,7 @@ class ShopOpsController extends ChangeNotifier {
 
   Future<bool> _send(PendingWrite write) async {
     final int epoch = _epoch;
+    final int failureView = _failureView;
     _busy = true;
     // Kept from the moment it is sent: if no usable answer comes back, it is already there.
     _pending = write;
@@ -616,6 +622,7 @@ class ShopOpsController extends ChangeNotifier {
         throw failureOf(response);
       }
       _pending = null;
+      _writeFailure = null;
       _busy = false;
       _fix = null;
       _say(write.kind == OpsWriteKind.profile ? 'Đã lưu hồ sơ quán.' : 'Đã lưu lịch hoạt động.');
@@ -631,12 +638,12 @@ class ShopOpsController extends ChangeNotifier {
         return false;
       }
       _busy = false;
-      _writeFailure = failure;
+      if (failureView == _failureView) _writeFailure = failure;
       if (!failure.outcomeUnknown) {
         // The outcome is decided (a refusal): the key and body are released.
         _pending = null;
         if (failure.kind == AuthFailureKind.versionConflict) {
-          _conflict = true;
+          _conflict = failureView == _failureView;
         } else if (failure.kind == AuthFailureKind.invalidServiceArea) {
           _profileErrors = <String, String>{'area': 'Khu vực phục vụ chưa hợp lệ. Vui lòng tải lại hồ sơ.'};
           unawaited(loadAreas());
@@ -679,10 +686,10 @@ class ShopOpsController extends ChangeNotifier {
     _notify();
   }
 
-  void dismissWriteFailure() {
-    if (_pending == null) {
-      _writeFailure = null;
-      _notify();
-    }
+  /// Leaving/reopening clears presentation, never an unresolved write's key or body.
+  void dismissWriteFailure({bool notify = true}) {
+    _failureView++;
+    _writeFailure = null;
+    if (notify) _notify();
   }
 }

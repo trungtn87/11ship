@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { foldVietnamese } from '../../apps/backend/src/shared/fold-vietnamese';
@@ -50,6 +51,26 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
   }
 
   const names = (response: Awaited<ReturnType<typeof discoveryShops>>): string[] => (dataOf(response).shops as { name: string }[]).map((s) => s.name);
+
+  it('returns pickup coordinates and public M11 ratings on Home and dish-search cards, excluding hidden ratings', async () => {
+    const ownArea = await createServiceArea(app.pool);
+    const owner = await shop('Quán Điểm Sao', [['Món Điểm Sao', 10000, snail]], { areaId: ownArea });
+    for (const [stars, visibility] of [[5, 'VISIBLE'], [3, 'VISIBLE'], [1, 'HIDDEN']] as const) {
+      await app.pool.query(`INSERT INTO app.reviews
+        (review_id, kind, reviewer_user_id, shop_id, order_id, stars, reviewer_name, shop_name, related_code, visibility, created_at)
+        VALUES ($1, 'SHOP_BY_CUSTOMER', $2, $3, $4, $5, 'Khách', 'Quán Điểm Sao', 'TEST147', $6, clock_timestamp())`,
+        [randomUUID(), owner.userId, owner.shopId, randomUUID(), stars, visibility]);
+    }
+    const home = dataOf(await discoveryShops(app, { area_id: ownArea })).shops as Record<string, unknown>[];
+    expect(home[0]).toMatchObject({ shop_id: owner.shopId, rating: { count: 2, average: 4 } });
+    expect(typeof home[0]?.pickup_lat).toBe('number');
+    expect(typeof home[0]?.pickup_lng).toBe('number');
+    const found = dataOf(await discoveryDishes(app, { area_id: ownArea, q: 'mon diem sao' })).dishes as { shop: unknown }[];
+    expect(found[0]?.shop).toMatchObject({ shop_id: owner.shopId, rating: { count: 2, average: 4 } });
+    const unrated = await shop('Chưa Đánh Giá', [['Món Chưa Sao', 10000, snail]], { areaId: ownArea });
+    const all = dataOf(await discoveryShops(app, { area_id: ownArea })).shops as { shop_id: string; rating: unknown }[];
+    expect(all.find((s) => s.shop_id === unrated.shopId)?.rating).toEqual({ count: 0, average: null });
+  });
 
   it('lists only the ACTIVE service areas and ACTIVE groups, never cached', async () => {
     const closed = await createServiceArea(app.pool, 'INACTIVE');

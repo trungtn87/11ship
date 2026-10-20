@@ -115,6 +115,46 @@ void main() {
     });
   });
 
+  testWidgets('shop cards show actual ratings, no fake distance, then a one-shot approximate distance', (WidgetTester tester) async {
+    phone(tester);
+    const ShopCardData shop = ShopCardData(shopId: 'rated', name: 'Ốc 11', address: 'Cao Bằng', reason: 'ONLINE', ratingAverage: 4.5, ratingCount: 12, latitude: 22.67, longitude: 106.25);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: ShopCard(shop: shop, onTap: () {}))));
+    expect(find.text('★ 4.5/5 (12 đánh giá)'), findsOneWidget);
+    expect(find.text('Chưa xác định'), findsOneWidget);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: ShopCard(shop: shop, locating: true, onTap: () {}))));
+    expect(find.text('Đang định vị…'), findsOneWidget);
+    final LocationFix fix = LocationFix(latitude: 22.67, longitude: 106.26, accuracyMeters: 10, takenAt: DateTime.now());
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: ShopCard(shop: shop, customerLocation: fix, onTap: () {}))));
+    expect(shop.distanceKm(fix), closeTo(1.026, 0.02));
+    expect(find.textContaining('km · đường chim bay'), findsOneWidget);
+    final FakeLocationProvider gps = FakeLocationProvider()..failure = LocationFailure.denied;
+    final DiscoveryPosition position = DiscoveryPosition(provider: gps);
+    await position.locate();
+    expect(position.fix, isNull);
+    expect(gps.calls, 1);
+    position.dispose();
+  });
+
+  testWidgets('adding from unified search uses the existing one-shop cart replacement confirmation', (WidgetTester tester) async {
+    phone(tester);
+    final SampleOrderStore store = SampleOrderStore();
+    final CartController cart = CartController(source: SampleCustomerOrders(store));
+    OrderRuntime.current = OrderRuntime(customer: SampleCustomerOrders(store), shop: SampleShopOrders(store), cart: cart);
+    addTearDown(() { OrderRuntime.current = null; cart.dispose(); });
+    await cart.add(shopId: 'old-shop', shopName: 'Quán cũ', itemId: 'old-dish', name: 'Món cũ', priceVnd: 10000);
+    await tester.pumpWidget(MaterialApp(theme: buildN11Theme(), home: SearchScreen(api: seeded(), publicApi: FakePublicShopApi(menuOf('Zeta Ốc Hương')), areaId: 'a1', debounce: Duration.zero)));
+    await tester.enterText(find.byKey(const Key('search-field')), 'oc huong');
+    await tester.pumpAndSettle();
+    await tapKey(tester, 'dish-add-d1');
+    expect(find.text('Thay giỏ hàng?'), findsOneWidget);
+    await tapKey(tester, 'cart-replace-keep');
+    expect(cart.shopId, 'old-shop');
+    await tapKey(tester, 'dish-add-d1');
+    await tapKey(tester, 'cart-replace-yes');
+    expect(cart.shopId, 's1');
+    expect(cart.quantityOf('d1'), 1);
+  });
+
   group('DishSearchController', () {
     test('typing clears the old results at once and the LATEST term wins even when an older answer arrives last', () async {
       final FakeDiscoveryApi api = seeded();
@@ -131,7 +171,6 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 10));
       expect(s.term, 'ngao');
       expect(s.shops, isEmpty, reason: 'the answer of the older term "oc" is dropped');
-      s.setScope(SearchScope.dishes);
       await Future<void>.delayed(const Duration(milliseconds: 10));
       expect(s.dishes.map((DishHit d) => d.name), <String>['Ngao hấp']);
       expect(s.dishes.single.shop.name, 'Alpha Hải Sản');
@@ -148,6 +187,18 @@ void main() {
       expect(s.shops, isEmpty, reason: 'another area');
       s.setTerm('   ');
       expect(s.hasTerm, isFalse);
+    });
+
+    test('search ignores Home category and open-only filters, and deduplicates the shop group', () async {
+      final FakeDiscoveryApi api = seeded();
+      final DishSearchController s = DishSearchController(api: api, areaId: 'a1', categoryId: 'c2', openOnly: true, debounce: Duration.zero);
+      s.setTerm('oc');
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(api.queries.every((DiscoveryQuery q) => q.categoryId == null && !q.openOnly && q.areaId == 'a1'), isTrue);
+      expect(s.dishes.map((DishHit d) => d.itemId), containsAll(<String>['d1', 'd3']));
+      expect(s.groupedShops.map((ShopCardData x) => x.shopId).toSet(), <String>{'s1', 's2'});
+      expect(s.groupedShops, hasLength(2));
+      s.dispose();
     });
 
     test('a failure keeps the term and Thử lại runs it again', () async {
@@ -175,7 +226,7 @@ void main() {
         expect(find.text(n), findsOneWidget);
       }
       expect(tester.getTopLeft(find.text('Zeta Ốc Hương')).dy, lessThan(tester.getTopLeft(find.text('Alpha Hải Sản')).dy));
-      expect(find.text('Đang mở cửa'), findsOneWidget);
+      expect(find.text('Đang mở cửa'), findsWidgets);
       expect(find.text('Đã đóng cửa'), findsOneWidget);
       expect(find.text('Chưa cài giờ hoạt động'), findsOneWidget);
       expect(find.text('Quán Khu Khác'), findsNothing);
@@ -345,7 +396,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('type without marks: shop and dish tabs; no result keeps the term and offers to clear it', (WidgetTester tester) async {
+    testWidgets('type without marks: grouped shop and dish results; no result keeps the term and offers to clear it', (WidgetTester tester) async {
       phone(tester);
       final FakeDiscoveryApi api = seeded();
       await openSearch(tester, api);
@@ -353,10 +404,11 @@ void main() {
       await tester.enterText(find.byKey(const Key('search-field')), 'oc huong');
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('result-shop-s1')), findsOneWidget);
-      await tapKey(tester, 'search-tab-dishes');
       expect(find.text('Ốc hương hấp'), findsOneWidget);
-      expect(find.text('Zeta Ốc Hương'), findsOneWidget, reason: 'the dish result names its shop');
-      expect(find.text('Đang mở cửa'), findsOneWidget);
+      expect(find.text('Zeta Ốc Hương'), findsWidgets);
+      expect(find.byKey(const Key('search-tab-shops')), findsNothing);
+      expect(find.byKey(const Key('search-tab-dishes')), findsNothing);
+      expect(find.text('Đang mở cửa'), findsWidgets);
       await tester.enterText(find.byKey(const Key('search-field')), 'khong co gi');
       await tester.pumpAndSettle();
       expect(find.text('Không có kết quả'), findsOneWidget);
@@ -366,7 +418,7 @@ void main() {
       expect(find.text('Gõ tên quán hoặc tên món. Không cần gõ dấu.'), findsOneWidget);
     });
 
-    testWidgets('the Món tab says to choose a dish to see the shop menu, and "Xem thêm" brings the next page of a long result without repeating a dish', (WidgetTester tester) async {
+    testWidgets('grouped search shows the shop, and "Xem thêm" brings the next page of a long result without repeating a dish', (WidgetTester tester) async {
       phone(tester);
       final FakeDiscoveryApi api = FakeDiscoveryApi(shops: <FakeShopEntry>[
         FakeShopEntry('s1', 'Quán Nhiều Món', reason: 'ONLINE', dishes: <FakeDishEntry>[for (int i = 1; i <= 35; i++) FakeDishEntry('d$i', 'Món số ${i.toString().padLeft(2, '0')}', 1000 * i, 'c1')]),
@@ -374,8 +426,7 @@ void main() {
       await openSearch(tester, api);
       await tester.enterText(find.byKey(const Key('search-field')), 'mon so');
       await tester.pumpAndSettle();
-      await tapKey(tester, 'search-tab-dishes');
-      expect(find.text('Chọn món để xem thực đơn quán'), findsOneWidget);
+      expect(find.byKey(const Key('result-shop-s1')), findsOneWidget);
       expect(find.byKey(const Key('result-dish-d1')), findsOneWidget);
       final Finder list = find.byType(Scrollable).last;
       await tester.scrollUntilVisible(find.byKey(const Key('search-more')), 400, scrollable: list);
@@ -393,7 +444,6 @@ void main() {
       await openSearch(tester, seeded());
       await tester.enterText(find.byKey(const Key('search-field')), 'len xao');
       await tester.pumpAndSettle();
-      await tapKey(tester, 'search-tab-dishes');
       await tapKey(tester, 'result-dish-d3');
       expect(find.byKey(const Key('shop-view-name')), findsOneWidget);
       final DishRow row = tester.widget<DishRow>(find.widgetWithText(DishRow, 'Ốc len xào dừa'));
@@ -425,8 +475,7 @@ void main() {
       expect(find.text('Không tải được dữ liệu'), findsOneWidget);
       api.offline = false;
       await tapKey(tester, 'search-retry');
-      expect(find.byKey(const Key('result-shop-s2')), findsNothing, reason: 'Ngao is a dish of Alpha, not a shop name');
-      await tapKey(tester, 'search-tab-dishes');
+      expect(find.byKey(const Key('result-shop-s2')), findsOneWidget, reason: 'dish matches are grouped under their shop');
       expect(find.byKey(const Key('result-dish-d2')), findsOneWidget);
     });
   });

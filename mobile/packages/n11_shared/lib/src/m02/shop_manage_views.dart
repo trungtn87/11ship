@@ -230,6 +230,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
   @override
   void initState() {
     super.initState();
+    ops.dismissWriteFailure(notify: false);
     _name = TextEditingController();
     _phone = TextEditingController();
     _zalo = TextEditingController();
@@ -247,6 +248,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
 
   @override
   void dispose() {
+    ops.dismissWriteFailure(notify: false);
     ops.removeListener(_onOps);
     _unwatchSession();
     for (final TextEditingController c in <TextEditingController>[_name, _phone, _zalo, _facebook, _address]) {

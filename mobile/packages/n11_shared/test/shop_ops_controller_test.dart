@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
 import 'package:n11_shared/testing.dart';
@@ -20,6 +21,30 @@ Future<({SessionController session, FakeApiTransport api, FakeShopOpsServer serv
 }
 
 void main() {
+  test('dismissed write failures stay dismissed when an older request completes; unknown intent survives', () async {
+    final t = await setup();
+    t.ops.applyAllWeek(<HourRange>[day('17:00', '23:00')]);
+    final Completer<ApiResponse> late = Completer<ApiResponse>();
+    t.api.routes['PUT /v1/shop/me/business-hours'] = (String m, String p, Map<String, String> h, String b) => late.future;
+    final Future<bool> saving = t.ops.saveHours();
+    await Future<void>.delayed(Duration.zero);
+    final PendingWrite sent = t.ops.pending!;
+    t.ops.dismissWriteFailure(notify: false);
+    late.complete(apiError(400, 'BAD_REQUEST'));
+    expect(await saving, isFalse);
+    expect(t.ops.pending, isNull);
+    expect(t.ops.writeFailure, isNull);
+    t.api.failNext = const AuthFailure(AuthFailureKind.unknownOutcome);
+    expect(await t.ops.saveHours(), isFalse);
+    final PendingWrite unknown = t.ops.pending!;
+    t.ops.dismissWriteFailure();
+    expect(t.ops.pending!.body, unknown.body);
+    expect(t.ops.pending!.key, unknown.key);
+    expect(t.ops.locked, isTrue);
+    expect(sent.body, unknown.body);
+    t.ops.dispose();
+  });
+
   test('loads the shop, schedule and the SERVER availability; a failed refresh keeps the data and says it is out of date', () async {
     final t = await setup();
     expect(t.ops.loadState, OpsLoad.ready);

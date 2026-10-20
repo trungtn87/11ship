@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
+import 'package:n11_shared/testing.dart';
 
 import 'm02_shop_views_test.dart' show harness, show, tapKey, Harness;
 
@@ -26,6 +27,21 @@ Future<void> setRange(WidgetTester tester, int i, String open, String close) asy
 String textOf(WidgetTester tester, String key) => tester.widget<TextField>(find.byKey(Key(key))).controller!.text;
 
 void main() {
+  testWidgets('leaving and reopening removes a definite error, keeps the empty-hours warning', (WidgetTester tester) async {
+    final Harness h = await harness(tester);
+    await show(tester, HoursScreen(flows: h.flows));
+    h.flows.ops.applyAllWeek(<HourRange>[HourRange(open: '17:00', close: '23:00', kind: RangeKind.day)]);
+    h.api.failNext = const AuthFailure(AuthFailureKind.badResponse);
+    await h.flows.ops.saveHours();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('hours-error')), findsOneWidget);
+    h.flows.ops.revertHours();
+    await tester.pumpWidget(const SizedBox());
+    await show(tester, HoursScreen(flows: h.flows));
+    expect(find.byKey(const Key('hours-error')), findsNothing);
+    expect(find.byKey(const Key('hours-fresh')), findsOneWidget);
+  });
+
   testWidgets('F03: no schedule yet -> Cả tuần 17:00-23:00 -> apply -> Chủ nhật 17:00-22:00 -> save -> read back', (WidgetTester tester) async {
     final Harness h = await harness(tester);
     await show(tester, HoursScreen(flows: h.flows));
