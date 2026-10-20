@@ -1,3 +1,4 @@
+import 'shop_logo_widgets.dart';
 import 'package:flutter/material.dart';
 
 import '../addresses/address_location_picker.dart';
@@ -249,6 +250,7 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
           children: <Widget>[
             _shopFailure(c),
             if (locked) const N11Banner(kind: BannerKind.info, title: 'Hồ sơ đã hoàn tất', text: 'Chỉ xem. Sửa hồ sơ sau khi hoàn tất chưa nối trên Android.'),
+            ShopLogoField(value: c.logo, picker: c.picker, session: c.session, enabled: !editingLocked && !locked, onChanged: c.setLogo),
             const N11Steps(count: 2, current: 1, label: 'Thông tin liên hệ'),
             N11Field(key: _feedback.key('name'), hint: _error('name'), tone: _error('name') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('shop-name'), label: 'Tên cửa hàng', controller: _name, maxLength: 120, enabled: !editingLocked && !locked, onChanged: () { _push(); setState(() {}); }),
             N11Field(key: _feedback.key('phone'), hint: _error('phone'), tone: _error('phone') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('shop-phone'), label: 'Số điện thoại liên hệ', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !editingLocked && !locked, onChanged: () { _push(); setState(() {}); }),

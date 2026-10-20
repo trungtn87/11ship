@@ -100,10 +100,10 @@ class HttpMenuApi implements MenuApi {
   }
 }
 
-ShopCardData _shopCard(Map<String, Object?> m, {String idKey = 'shop_id'}) {
+ShopCardData _shopCard(Map<String, Object?> m, {String idKey = 'shop_id', Uri? base}) {
   final Map<String, Object?> availability = _obj(m['availability']);
   _bool(availability['online']);
-  return ShopCardData(shopId: _str(m[idKey]), name: _str(m['name']), address: _str(m['address_text']), reason: _str(availability['reason']));
+  return ShopCardData(logoUrl: m['logo_url'] == null || base == null ? null : base.resolve(_str(m['logo_url'])).toString(), shopId: _str(m[idKey]), name: _str(m['name']), address: _str(m['address_text']), reason: _str(availability['reason']));
 }
 
 /// Public requests need no session: a plain GET over the same HTTPS transport (normal TLS verification).
@@ -186,7 +186,7 @@ class HttpDiscoveryApi implements DiscoveryApi {
   @override
   Future<DiscoveryPage<ShopCardData>> shops(DiscoveryQuery query) async {
     final Map<String, Object?> data = _obj(await _publicGet(transport, '/v1/discovery/shops?${_query(query)}'));
-    return DiscoveryPage<ShopCardData>(items: <ShopCardData>[for (final Object? s in _list(data['shops'])) _shopCard(_obj(s))], hasMore: _bool(data['has_more']));
+    return DiscoveryPage<ShopCardData>(items: <ShopCardData>[for (final Object? s in _list(data['shops'])) _shopCard(_obj(s), base: base)], hasMore: _bool(data['has_more']));
   }
 
   @override
@@ -200,7 +200,7 @@ class HttpDiscoveryApi implements DiscoveryApi {
             name: _str(_obj(d)['name']),
             priceVnd: _int(_obj(d)['price_vnd']),
             imageUrl: _obj(d)['image_id'] == null ? null : imageUrlOf(base, _str(_obj(d)['image_id'])),
-            shop: _shopCard(_obj(_obj(d)['shop'])),
+            shop: _shopCard(_obj(_obj(d)['shop']), base: base),
           ),
       ],
       hasMore: _bool(data['has_more']),

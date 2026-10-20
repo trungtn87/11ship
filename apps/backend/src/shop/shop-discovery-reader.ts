@@ -4,6 +4,8 @@ import { AVAILABILITY_TIME_ZONE } from './shop-availability-sql';
 
 /** A shop a customer may be shown: ACTIVE, in an ACTIVE area, and what the schedule says at the one instant of the read. */
 export interface DiscoverableShop {
+  readonly hasLogo?: boolean;
+  readonly logoVersion?: string;
   readonly shopId: string;
   readonly name: string;
   readonly addressText: string;
@@ -25,7 +27,7 @@ local_time AS MATERIALIZED (
          )) / 60 AS week_minute
     FROM clock c
 )
-SELECT s.shop_id, s.name, s.address_text,
+SELECT s.shop_id, s.name, s.address_text, (s.logo IS NOT NULL) AS has_logo, s.version::text AS logo_version,
        EXISTS (SELECT 1 FROM app.shop_business_hours h WHERE h.shop_id = s.shop_id) AS has_hours,
        EXISTS (
          SELECT 1
@@ -53,7 +55,7 @@ SELECT s.shop_id, s.name, s.address_text,
 @Injectable()
 export class ShopDiscoveryReader {
   async eligibleShopsOfArea(context: TransactionContext, serviceAreaId: string): Promise<DiscoverableShop[]> {
-    const result = await context.query<{ shop_id: string; name: string; address_text: string; has_hours: boolean; in_hours: boolean }>(ELIGIBLE_SHOPS_SQL, [serviceAreaId]);
-    return result.rows.map((row) => ({ shopId: row.shop_id, name: row.name, addressText: row.address_text, hasHours: row.has_hours, inHours: row.in_hours }));
+    const result = await context.query<{ shop_id: string; name: string; address_text: string; has_logo?: boolean; logo_version?: string; has_hours: boolean; in_hours: boolean }>(ELIGIBLE_SHOPS_SQL, [serviceAreaId]);
+    return result.rows.map((row) => ({ shopId: row.shop_id, hasLogo: row.has_logo === true, logoVersion: row.logo_version, name: row.name, addressText: row.address_text, hasHours: row.has_hours, inHours: row.in_hours }));
   }
 }

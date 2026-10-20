@@ -74,6 +74,7 @@ export class ShopOnboardingService {
           pickup_lng: input.pickupLng,
           service_area_id: input.serviceAreaId,
           expected_version: input.expectedVersion,
+          ...(input.logo === undefined ? {} : { logo: input.logo }),
         },
         replay: { kind: 'sensitive', authorize: (context, guard) => this.#authorizeReplay(context, guard, actor) },
       },
@@ -148,6 +149,8 @@ export class ShopOnboardingService {
       created = false;
       version = await this.shops.updateDraft(context, shopId, existing.version, input);
     }
+
+    if (input.logo !== undefined) await this.shops.saveLogo(context, shopId, input.logo);
 
     await this.audit.append(context, {
       requestId,

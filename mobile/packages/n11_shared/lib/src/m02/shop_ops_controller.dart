@@ -1,3 +1,4 @@
+import '../flows/shop_logo_data.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -44,6 +45,7 @@ class ShopOverview {
     required this.contactPhone,
     required this.zalo,
     required this.facebook,
+    this.logo,
     required this.addressText,
     required this.pickupLat,
     required this.pickupLng,
@@ -59,6 +61,7 @@ class ShopOverview {
   final String contactPhone;
   final String? zalo;
   final String? facebook;
+  final ShopLogoData? logo;
   final String addressText;
   final double? pickupLat;
   final double? pickupLng;
@@ -96,8 +99,10 @@ class ShopOverview {
     if (online is! bool || reason is! String) {
       return null;
     }
+    if (data['logo'] != null && ShopLogoData.tryParse(data['logo']) == null) return null;
     return ShopOverview(
       shopId: id,
+      logo: ShopLogoData.tryParse(data['logo']),
       name: name,
       contactPhone: phone,
       zalo: data['zalo'] as String?,
@@ -130,6 +135,7 @@ class PendingWrite {
 }
 
 class ProfileDraft {
+  ShopLogoData? logo;
   String name = '';
   String phone = '';
   String zalo = '';
@@ -220,7 +226,7 @@ class ShopOpsController extends ChangeNotifier {
     if (o == null) {
       return false;
     }
-    return _fix != null ||
+    return profile.logo != o.logo || _fix != null ||
         profile.name.trim() != o.name ||
         profile.phone.trim() != o.contactPhone ||
         profile.address.trim() != o.addressText ||
@@ -290,6 +296,7 @@ class ShopOpsController extends ChangeNotifier {
     profile.phone = o?.contactPhone ?? '';
     profile.zalo = o?.zalo ?? '';
     profile.facebook = o?.facebook ?? '';
+    profile.logo = o?.logo;
     profile.address = o?.addressText ?? '';
     profile.areaId = o?.serviceAreaId;
   }
@@ -414,6 +421,12 @@ class ShopOpsController extends ChangeNotifier {
 
   // ---- profile draft --------------------------------------------------------------------------------------------
 
+  void setLogo(ShopLogoData? value) {
+    if (locked || readOnly) return;
+    profile.logo = value;
+    profileEdited();
+  }
+
   void profileEdited() {
     _profileErrors = <String, String>{};
     _notify();
@@ -515,6 +528,7 @@ class ShopOpsController extends ChangeNotifier {
     final double lng = _fix?.longitude ?? o.pickupLng!;
     final String body = jsonEncode(<String, Object?>{
       'expected_version': o.version,
+      if (profile.logo != o.logo) 'logo': profile.logo?.toWire(),
       'name': profile.name.trim(),
       'contact_phone': profile.phone.trim(),
       'zalo': profile.zalo.trim().isEmpty ? null : profile.zalo.trim(),

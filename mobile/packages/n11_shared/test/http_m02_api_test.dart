@@ -124,7 +124,7 @@ void main() {
     api.routes['GET /v1/menu-categories'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <Object?>[<String, Object?>{'category_id': 'c1', 'name': 'Ốc'}]});
     api.routes['GET /v1/discovery/shops?area_id=a1&category_id=c1&open_only=true&q=%E1%BB%91c+h%C6%B0%C6%A1ng&limit=30&offset=30'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{
           'data': <String, Object?>{
-            'shops': <Object?>[<String, Object?>{'shop_id': 's1', 'name': 'Ốc 11', 'address_text': 'x', 'availability': <String, Object?>{'online': true, 'reason': 'ONLINE'}}],
+            'shops': <Object?>[<String, Object?>{'shop_id': 's1', 'name': 'Ốc 11', 'logo_url': '/v1/shops/s1/logo?v=4', 'address_text': 'x', 'availability': <String, Object?>{'online': true, 'reason': 'ONLINE'}}],
             'has_more': true,
           },
         });
@@ -133,6 +133,7 @@ void main() {
     expect((await discovery.categories()).single.name, 'Ốc');
     final DiscoveryPage<ShopCardData> page = await discovery.shops(const DiscoveryQuery(areaId: 'a1', categoryId: 'c1', openOnly: true, term: ' ốc hương ', offset: 30));
     expect(page.items.single.open, isTrue);
+    expect(page.items.single.logoUrl, 'https://api.example.test/v1/shops/s1/logo?v=4');
     expect(page.hasMore, isTrue);
     api.routes['GET /v1/discovery/dishes?area_id=a1&limit=30'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{
           'data': <String, Object?>{

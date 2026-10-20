@@ -50,7 +50,10 @@ void main() {
     await tester.enterText(find.byKey(const Key('dish-price')), '90000');
     await tester.pump();
     expect(textOf(tester, 'dish-price'), '90.000');
-    await tapKey(tester, 'dish-cat-c1');
+    await tapKey(tester, 'dish-category');
+    await tester.tap(find.text('Ốc').last);
+    await tester.pumpAndSettle();
+    expect(tester.widget<DropdownButton<String>>(find.byKey(const Key('dish-category'))).value, 'c1');
     await tapKey(tester, 'dish-save');
     expect(h.menuApi.effects, hasLength(1));
     expect(find.text('Ốc len xào dừa'), findsOneWidget);
@@ -108,9 +111,13 @@ void main() {
     await show(tester, MenuListScreen(flows: h.flows));
     expect(find.text('Đồ uống · Ngừng hoạt động'), findsOneWidget);
     await tapKey(tester, 'dish-x');
-    expect(find.byKey(const Key('dish-cat-c9')), findsOneWidget);
+    expect(tester.widget<DropdownButton<String>>(find.byKey(const Key('dish-category'))).value, 'c9');
     expect(find.textContaining('Ngừng hoạt động · chỉ giữ liên kết hiện có'), findsOneWidget);
-    expect(tester.widget<N11ChoiceCard>(find.byKey(const Key('dish-cat-c9'))).selected, isTrue);
+    await tapKey(tester, 'dish-category');
+    expect(find.text('Đồ uống (ngừng hoạt động)'), findsWidgets);
+    await tester.tap(find.text('Ốc').last);
+    await tester.pumpAndSettle();
+    expect(tester.widget<DropdownButton<String>>(find.byKey(const Key('dish-category'))).value, 'c1');
   });
 
   testWidgets('F09/F10: hide asks first and the list shows Đang ẩn; Hiện món needs no dialog; delete asks and the dish is gone; a dirty form must be saved or reverted first', (WidgetTester tester) async {

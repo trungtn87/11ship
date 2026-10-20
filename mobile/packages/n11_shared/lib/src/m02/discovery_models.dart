@@ -26,8 +26,9 @@ class CategoryChoice {
 
 @immutable
 class ShopCardData {
-  const ShopCardData({required this.shopId, required this.name, required this.address, required this.reason});
+  const ShopCardData({required this.shopId, required this.name, required this.address, required this.reason, this.logoUrl});
 
+  final String? logoUrl;
   final String shopId;
   final String name;
   final String address;

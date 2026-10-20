@@ -1,3 +1,5 @@
+import '../m02/menu_models.dart';
+import 'shop_logo_data.dart';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -22,6 +24,7 @@ class ShopProfile {
     required this.contactPhone,
     required this.zalo,
     required this.facebook,
+    this.logo,
     required this.addressText,
     required this.pickupLat,
     required this.pickupLng,
@@ -36,6 +39,7 @@ class ShopProfile {
   final String contactPhone;
   final String? zalo;
   final String? facebook;
+  final ShopLogoData? logo;
   final String addressText;
   final double? pickupLat;
   final double? pickupLng;
@@ -76,8 +80,10 @@ class ShopProfile {
         (lng != null && (lng is! num || !lng.isFinite || lng.abs() > 180))) {
       return null;
     }
+    if (data['logo'] != null && ShopLogoData.tryParse(data['logo']) == null) return null;
     return ShopProfile(
       shopId: id,
+      logo: ShopLogoData.tryParse(data['logo']),
       name: name,
       contactPhone: phone,
       zalo: data['zalo'] as String?,
@@ -104,13 +110,21 @@ class ServiceArea {
 enum ShopLoad { idle, loading, ready, failed }
 
 class ShopController extends ChangeNotifier {
-  ShopController({required this.session, required this.location}) {
+  ShopController({required this.session, required this.location, this.picker = const NoImagePicker()}) {
     session.addListener(_onSession);
     _sessionEpoch = session.sessionEpoch;
   }
 
   final SessionController session;
   final LocationProvider location;
+  final ImagePickerPort picker;
+  ShopLogoData? logo;
+
+  void setLogo(ShopLogoData? value) {
+    if (busy || hasPendingWrite || (_profile != null && _profile!.status != 'INCOMPLETE')) return;
+    logo = value;
+    _notify();
+  }
 
   ShopLoad _load = ShopLoad.idle;
   ShopProfile? _profile;
@@ -177,6 +191,7 @@ class ShopController extends ChangeNotifier {
     addressText = '';
     zalo = '';
     facebook = '';
+    logo = null;
     serviceAreaId = null;
     _pendingKey = null;
     _pendingBody = null;
@@ -210,6 +225,7 @@ class ShopController extends ChangeNotifier {
     addressText = profile.addressText;
     zalo = profile.zalo ?? '';
     facebook = profile.facebook ?? '';
+    logo = profile.logo;
     serviceAreaId = profile.serviceAreaId;
   }
 
@@ -351,6 +367,7 @@ class ShopController extends ChangeNotifier {
     final double? lng = fresh?.longitude ?? current?.pickupLng;
     return <String, Object?>{
       'name': name.trim(),
+      if (logo != current?.logo) 'logo': logo?.toWire(),
       'contact_phone': contactPhone.trim(),
       'address_text': addressText.trim(),
       if (zalo.trim().isNotEmpty) 'zalo': zalo.trim(),
@@ -375,7 +392,7 @@ class ShopController extends ChangeNotifier {
 
   bool get _profileChanged {
     final ShopProfile? p = _profile;
-    return p == null || _fix != null || name.trim() != p.name ||
+    return p == null || logo != p.logo || _fix != null || name.trim() != p.name ||
         contactPhone.trim() != p.contactPhone || addressText.trim() != p.addressText ||
         zalo.trim() != (p.zalo ?? '') || facebook.trim() != (p.facebook ?? '') || serviceAreaId != p.serviceAreaId;
   }

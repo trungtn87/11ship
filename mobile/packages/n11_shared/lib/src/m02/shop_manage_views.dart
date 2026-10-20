@@ -1,3 +1,4 @@
+import '../flows/shop_logo_widgets.dart';
 import 'package:flutter/material.dart';
 
 import '../account/account_views.dart';
@@ -355,6 +356,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
             title: 'Hồ sơ quán',
             content: <Widget>[
               ...banners,
+              if (o.logo != null) ShopLogoField(value: o.logo, picker: widget.flows.menu.picker, session: ops.session, enabled: false, onChanged: (_) {}),
               N11InfoCard(
                 titleKey: const Key('profile-name'),
                 title: o.name,
@@ -376,6 +378,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
           onWillLeave: _leave,
           content: <Widget>[
             ...banners,
+            ShopLogoField(value: ops.profile.logo, picker: widget.flows.menu.picker, session: ops.session, enabled: !ops.locked, onChanged: ops.setLogo),
             _field('name', 'Tên quán', _name, 'profile-field-name', maxLength: 120),
             _field('phone', 'SĐT liên lạc của quán', _phone, 'profile-field-phone', keyboard: TextInputType.phone, maxLength: 20, help: 'Có thể khác SĐT đăng nhập.'),
             N11Field(fieldKey: const Key('profile-field-zalo'), label: 'Zalo', placeholder: 'Số Zalo của quán', optionalLabel: true, controller: _zalo, maxLength: 160, enabled: !ops.locked, onChanged: _push),
