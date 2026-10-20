@@ -257,12 +257,13 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#142](https://github.com/trungtn87/11ship/pull/142) M11: Đánh giá và phản ánh (M11.01–M11.03) | Đã merge (`MERGED`) | — | — | — | `d4ad58b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#143](https://github.com/trungtn87/11ship/pull/143) 11Food: địa chỉ, thông báo lỗi, logo quán, chọn giờ và nhóm… | Đã merge (`MERGED`) | — | — | — | `7e2351b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#144](https://github.com/trungtn87/11ship/pull/144) Sửa định vị, giỏ hàng và bổ sung đánh giá/lượt bán món | Đã merge (`MERGED`) | — | — | — | `0828a9f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#145](https://github.com/trungtn87/11ship/pull/145) M03: đơn giản hóa đăng ký shipper và hoàn ví khi dừng hoạt… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `76924b7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#145](https://github.com/trungtn87/11ship/pull/145) M03: đơn giản hóa đăng ký shipper và hoàn ví khi dừng hoạt… | 🚫 Đã hủy / bỏ qua (`CANCELLED / IGNORED`) | — | — | — | `76924b7` | 🚫 không tính (đã hủy) — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#146](https://github.com/trungtn87/11ship/pull/146) M03: đơn giản hóa đăng ký shipper và hoàn ví khi dừng hoạt… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `76924b7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
 - `UNCLASSIFIED_PR` PR #137: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
-- `UNCLASSIFIED_PR` PR #145: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #146: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
