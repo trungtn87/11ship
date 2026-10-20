@@ -17,6 +17,7 @@ class _Feed extends LocationFeed {
   int starts = 0;
   int stops = 0;
   Object? startError;
+  Completer<void>? startGate;
 
   @override
   Stream<Map<String, dynamic>> get positions => controller.stream;
@@ -24,6 +25,7 @@ class _Feed extends LocationFeed {
   @override
   Future<void> start() async {
     starts++;
+    await startGate?.future;
     if (startError != null) {
       throw startError!;
     }
@@ -123,6 +125,20 @@ void main() {
     await t.reporter.start();
     expect(t.reporter.sharing, isFalse);
     expect(t.reporter.error, contains('quyền vị trí'));
+  });
+
+  test('stop also cancels a native start that finishes after the permission dialog', () async {
+    final t = await build();
+    final Completer<void> gate = Completer<void>();
+    t.feed.startGate = gate;
+    final Future<void> starting = t.reporter.start();
+    await t.reporter.stop();
+    gate.complete();
+    await starting;
+    expect(t.feed.stops, 2);
+    expect(t.reporter.sharing, isFalse);
+    await t.reporter.onSnapshot({...fix(), 'recording': true});
+    expect(t.api.to('PUT', '/v1/driver/location'), isEmpty);
   });
 
   test('duplicate measurement is not resent after the rate limit; a newer fix is sent', () async {

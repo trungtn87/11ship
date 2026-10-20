@@ -109,6 +109,7 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
       final Map<String, dynamic>? value = await _feed.status();
       if (epoch == _epoch && value != null) await onSnapshot(value);
     } on Object {
+      if (epoch != _epoch) return;
       _clearPosition();
       _gpsStatus = 'Không lấy được vị trí';
       notifyListeners();
@@ -137,13 +138,19 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
     _gpsStatus = 'Đang lấy vị trí';
     try {
       await _feed.start();
-      if (epoch != _epoch) { _starting = false; return; }
+      if (epoch != _epoch) {
+        // Consent/permission may finish after stop or logout. Stop that late native start too.
+        try { await _feed.stop(); } on Object { /* Already stopped. */ }
+        _starting = false;
+        return;
+      }
       _error = null;
       _sharing = true;
       _observeRecording = true;
       _listen();
       unawaited(refresh());
     } on Object catch (error) {
+      if (epoch != _epoch) { _starting = false; return; }
       _error = error.toString();
       _gpsStatus = error is PlatformException && error.code == 'PERMISSION'
           ? 'Chưa cấp quyền vị trí' : 'Không lấy được vị trí';
