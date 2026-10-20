@@ -197,6 +197,14 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
     ],
     entries: <Widget>[
       WalletListItem(key: const Key('account-wallet-entry'), session: session),
+      if (driver != null && session.status == SessionStatus.signedIn)
+        N11ListItem(
+          key: const Key('account-closure-entry'),
+          icon: Icons.account_balance_outlined,
+          title: 'Dừng hoạt động / Rút tiền',
+          sub: 'Hoàn tất đơn và rút toàn bộ số dư ví',
+          onTap: () => Navigator.of(context).push(n11Route(DriverActivityScreen(controller: driver, walletSource: buildWalletSource(session: session)))),
+        ),
       if (driver == null)
         N11ListItem(
           icon: Icons.badge_outlined,
