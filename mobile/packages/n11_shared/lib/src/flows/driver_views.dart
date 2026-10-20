@@ -64,8 +64,11 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     super.initState();
     _name = TextEditingController(text: widget.controller.fullName);
     _plate = TextEditingController(text: widget.controller.plateNumber);
-    widget.controller.clearFailure();
-    widget.controller.load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.controller.clearFailure();
+      widget.controller.load();
+    });
     widget.controller.session.addListener(_leaveWhenSignedOut);
   }
 
@@ -224,8 +227,11 @@ class _DriverBankScreenState extends State<DriverBankScreen> {
     super.initState();
     _number = TextEditingController();
     _holder = TextEditingController();
-    widget.controller.clearFailure();
-    widget.controller.loadBanks();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.controller.clearFailure();
+      widget.controller.loadBanks();
+    });
   }
 
   @override
@@ -331,7 +337,11 @@ class _DriverActivityScreenState extends State<DriverActivityScreen> {
   @override
   void initState() {
     super.initState();
-    widget.controller.clearFailure();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.controller.clearFailure();
+      widget.controller.load();
+    });
   }
 
   @override

@@ -1,3 +1,4 @@
+import { ShipperSettlementReader } from '../shipper-settlement/shipper-settlement-reader';
 import { WalletReadRepository } from '../wallet/wallet-read-repository';
 import { AccountActivityRegistry } from '../account-lifecycle/account-activity-registry';
 import { randomUUID } from 'node:crypto';
@@ -50,6 +51,7 @@ export class DriverWithdrawalService {
     private readonly outbox: OutboxWriter,
     private readonly activity: AccountActivityRegistry,
     private readonly reads: WalletReadRepository,
+    private readonly settlement: ShipperSettlementReader,
   ) {}
 
   async list(principal: AuthPrincipal, query: WithdrawalListQuery): Promise<JsonObject> {
@@ -93,6 +95,9 @@ export class DriverWithdrawalService {
           throw new AppError('WITHDRAWAL_INSUFFICIENT_AVAILABLE');
         }
         if (driver.status === 'CLOSING') {
+          const obligations = await this.settlement.obligations(context, driver.driverId);
+          if (obligations.activeWork) throw new AppError('DRIVER_HAS_ACTIVE_WORK');
+          if (obligations.pendingFinance) throw new AppError('DRIVER_WALLET_NOT_SETTLED');
           if ((await this.activity.activeWork(context, driver.userId)).length > 0) throw new AppError('DRIVER_HAS_ACTIVE_WORK');
           const pending = await this.reads.pendingTopupCount(context, wallet.walletId);
           if (pending > 0 || wallet.heldVnd !== 0n) throw new AppError('DRIVER_WALLET_NOT_SETTLED');

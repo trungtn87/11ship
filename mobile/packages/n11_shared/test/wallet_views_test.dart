@@ -98,7 +98,7 @@ void main() {
       expect(find.byKey(const Key('wallet-sample-banner')), findsNothing);
       expect(money(), findsNothing);
       expect(isDisabled(tester, 'wallet-topup-button'), isTrue);
-      expect(isDisabled(tester, 'wallet-withdraw-button'), isTrue);
+      expect(find.byKey(const Key('wallet-withdraw-button')), findsNothing);
     });
 
     testWidgets('history, topup and withdraw say not wired and cannot write', (WidgetTester tester) async {

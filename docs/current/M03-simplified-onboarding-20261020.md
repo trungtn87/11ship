@@ -10,7 +10,7 @@ Ví và Nạp tiền mở ngay. Nạp theo `topup_min_vnd` hiện hành; chỉ x
 
 ## Dừng hoạt động / Rút số dư
 
-Yêu cầu dừng chuyển ACTIVE → CLOSING và tắt nhận đơn ngay, không hủy đơn đang giao. Sau khi hoàn tất đơn, giao dịch chờ và nghĩa vụ tài chính: nhập ngân hàng chính chủ trong luồng đóng shipper; Admin xác minh thụ hưởng. Yêu cầu rút trong CLOSING phải bằng toàn bộ số dư, không có tiền đang giữ, không có giao dịch nạp chờ. Ngoại lệ mức rút tối thiểu cho phép mọi số dư dương, kể cả dưới 10.000đ.
+Yêu cầu dừng chuyển ACTIVE → CLOSING và tắt nhận đơn ngay, không hủy đơn đang giao. Sau khi hoàn tất đơn, sự cố giữ hàng chưa đóng, giao dịch chờ và điều chỉnh khiếu nại PENDING_FINANCE: nhập ngân hàng chính chủ trong luồng đóng shipper; Admin xác minh thụ hưởng. Yêu cầu rút trong CLOSING phải bằng toàn bộ số dư, không có tiền đang giữ, không có giao dịch nạp chờ. Ngoại lệ mức rút tối thiểu cho phép mọi số dư dương, kể cả dưới 10.000đ.
 
 Yêu cầu rút giữ toàn bộ tiền bằng hold WITHDRAWAL, không trừ ngay. Admin có quyền tài chính tiếp nhận/xử lý, xác nhận đích nhận và chứng từ chuyển tiền; PAID mới capture hold và ghi đúng một WITHDRAWAL_DEBIT. Kết quả thất bại/không rõ giữ CLOSING và xử lý đối soát, không tự đóng. Không đổi ngân hàng, hủy đóng hoặc mở lại bằng từ chối đóng khi còn yêu cầu rút đang xử lý. Admin hoàn tất đóng chỉ khi không còn đơn, số dư, hold, giao dịch nạp chờ hoặc yêu cầu rút mở. Ví 0đ không cần một yêu cầu rút 0đ. Không xóa tài khoản, CUSTOMER, đơn hay lịch sử; CLOSED hết quyền hoạt động shipper.
 

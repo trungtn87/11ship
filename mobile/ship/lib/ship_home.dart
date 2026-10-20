@@ -43,7 +43,9 @@ class _ShipHomeState extends State<ShipHome> {
   void _readDriver() {
     if (session.status == SessionStatus.signedIn && _epoch != session.sessionEpoch) {
       _epoch = session.sessionEpoch;
-      driver?.load();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) driver?.load();
+      });
     }
   }
 

@@ -302,6 +302,19 @@ describe('M07 — delivery flow', () => {
     expect(await stateOf(String(view.delivery_id))).toBe('accepted');
   });
 
+  it('M03 closing stops new orders but retains the active delivery and refuses a full refund', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s);
+    const profile = dataOf(await asShipper(s, 'GET', '/driver/me'));
+    const closing = await asShipper(s, 'POST', '/driver/me/closure-request', { expected_version: profile.version, note: null });
+    expect(closing.status).toBe(200);
+    expect(dataOf(closing)).toMatchObject({ status: 'CLOSING', accepting_deliveries: false });
+    const refund = await asShipper(s, 'POST', '/driver/wallet/withdrawals', { amount_vnd: 50_000 });
+    expect(codeOf(refund)).toBe('DRIVER_HAS_ACTIVE_WORK');
+    expect(await stateOf(String(view.delivery_id))).toBe('accepted');
+    expect(await wallet(s)).toEqual({ balance: 50_000, held: 1000 });
+  });
+
   it('full path: accept, pickup, complete: the commission is captured once and the delivery is completed', async () => {
     const s = await newShipper();
     const view = await acceptNew(s);

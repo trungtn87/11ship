@@ -1,3 +1,4 @@
+import { ShipperSettlementModule } from '../shipper-settlement/shipper-settlement.module';
 import { DynamicModule, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ActivationOtpProvider, ACTIVATION_OTP_PROVIDER } from '../admin-activation/activation-otp-provider';
 import { ActivationSmsGatewayBinding, isActivationSmsGatewayBinding } from '../admin-activation/activation-otp-providers';
@@ -107,6 +108,7 @@ export class AdminAuthModule implements NestModule {
     return {
       module: AdminAuthModule,
       imports: [
+        ShipperSettlementModule,
         auth,
         TransactionModule,
         AuditModule,
