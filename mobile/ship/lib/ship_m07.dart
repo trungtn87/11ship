@@ -117,7 +117,7 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(refresh());
+    if (state == AppLifecycleState.resumed) { unawaited(refresh()); }
     else { _clearPosition(); notifyListeners(); }
   }
 
@@ -187,7 +187,7 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
         lon is num && lon.isFinite && lon >= -180 && lon <= 180 &&
         accuracy is num && accuracy.isFinite && accuracy > 0 && accuracy <= 1000 &&
         measured is int && age >= 0 && age < 120000;
-    if (valid && _latestTime != null && (measured as int) < _latestTime!) return;
+    if (valid && _latestTime != null && measured < _latestTime!) return;
     _clearPosition();
     if (!valid) {
       _error = snapshot['status'] as String? ?? 'Không lấy được vị trí';
@@ -199,7 +199,7 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       return;
     }
-    _latestTime = measured as int;
+    _latestTime = measured;
     _position = Map<String, dynamic>.from(snapshot);
     _gpsStatus = 'Đã có vị trí mới';
     _expiry = Timer(Duration(milliseconds: 120000 - age), () {
@@ -209,15 +209,15 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
     });
     notifyListeners();
     if (session.status != SessionStatus.signedIn || _sending ||
-        (_lastSentTime != null && (measured as int) <= _lastSentTime!) ||
-        (_lastUpload != null && now.difference(_lastUpload!) < minGap)) return;
+        (_lastSentTime != null && measured <= _lastSentTime!) ||
+        (_lastUpload != null && now.difference(_lastUpload!) < minGap)) { return; }
     final int epoch = _epoch;
     _sending = true;
     try {
       final ApiResponse response = await session.protectedCall('PUT', '/v1/driver/location',
-        body: jsonEncode(<String, Object?>{'lat': (lat as num).toDouble(), 'lng': (lon as num).toDouble(), 'accuracy_m': (accuracy as num).toDouble()}));
+        body: jsonEncode(<String, Object?>{'lat': lat.toDouble(), 'lng': lon.toDouble(), 'accuracy_m': accuracy.toDouble()}));
       if (epoch != _epoch) return;
-      if (response.status == 200) { _lastSentTime = measured as int; _lastUpload = now; _error = null; }
+      if (response.status == 200) { _lastSentTime = measured; _lastUpload = now; _error = null; }
       else { _error = 'Chưa gửi được vị trí.'; }
     } on Object {
       if (epoch == _epoch) _error = 'Chưa gửi được vị trí. Kiểm tra kết nối.';
