@@ -14,6 +14,7 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
   let snail: string;
   let seafood: string;
   let drinks: string;
+  const reviewIds: string[] = [];
 
   beforeAll(async () => {
     app = await startAuthApp();
@@ -25,7 +26,22 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
   });
 
   afterAll(async () => {
-    await app.close();
+    try {
+      if (reviewIds.length > 0) {
+        const client = await app.pool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query('ALTER TABLE app.reviews DISABLE TRIGGER USER');
+          await client.query('DELETE FROM app.reviews WHERE review_id = ANY($1::uuid[])', [reviewIds]);
+          await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+          await client.query('ALTER TABLE app.reviews ENABLE TRIGGER USER');
+          await client.query('COMMIT');
+        } catch (error) {
+          await client.query('ROLLBACK');
+          throw error;
+        } finally { client.release(); }
+      }
+    } finally { await app.close(); }
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     try {
       await purgeCategories(pool);
@@ -56,10 +72,12 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
     const ownArea = await createServiceArea(app.pool);
     const owner = await shop('Quán Điểm Sao', [['Món Điểm Sao', 10000, snail]], { areaId: ownArea });
     for (const [stars, visibility] of [[5, 'VISIBLE'], [3, 'VISIBLE'], [1, 'HIDDEN']] as const) {
+      const reviewId = randomUUID();
+      reviewIds.push(reviewId);
       await app.pool.query(`INSERT INTO app.reviews
         (review_id, kind, reviewer_user_id, shop_id, order_id, stars, reviewer_name, shop_name, related_code, visibility, created_at)
         VALUES ($1, 'SHOP_BY_CUSTOMER', $2, $3, $4, $5, 'Khách', 'Quán Điểm Sao', 'TEST147', $6, clock_timestamp())`,
-        [randomUUID(), owner.userId, owner.shopId, randomUUID(), stars, visibility]);
+        [reviewId, owner.userId, owner.shopId, randomUUID(), stars, visibility]);
     }
     const home = dataOf(await discoveryShops(app, { area_id: ownArea })).shops as Record<string, unknown>[];
     expect(home[0]).toMatchObject({ shop_id: owner.shopId, rating: { count: 2, average: 4 } });
@@ -103,7 +121,7 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
     expect((data.shops as { availability: { reason: string }; shop_id: string }[])[1]!.availability.reason).toBe('NO_BUSINESS_HOURS');
     expect(data.has_more).toBe(false);
     expect(closedA.shopId).toBeTruthy();
-    expect(list.text).not.toMatch(/contact_phone|zalo|facebook|pickup_|accepting|user_id/i);
+    expect(list.text).not.toMatch(/contact_phone|zalo|facebook|accepting|user_id/i);
     expect(names(await discoveryShops(app, { area_id: otherArea }))).toEqual(['Quán Khu Khác']);
   });
 

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
-import 'package:n11_shared/testing.dart';
 
 import 'm02_shop_views_test.dart' show harness, show, tapKey, Harness;
 

@@ -351,8 +351,9 @@ class DishSearchController extends ChangeNotifier {
   }
 
   Future<void> loadMore() async {
-    if (!hasTerm || !hasMore || loadingMore || state != DiscoveryLoad.ready)
+    if (!hasTerm || !hasMore || loadingMore || state != DiscoveryLoad.ready) {
       return;
+    }
     loadingMore = true;
     _notify();
     await _fetch(_epoch, more: true);
