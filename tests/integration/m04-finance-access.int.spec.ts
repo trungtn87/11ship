@@ -139,7 +139,7 @@ describe('M04-B2.2a — finance access and receiving accounts', () => {
     const mineAdmin = adminData(await get(plainLogin, '/finance/access/me'));
     expect(mineAdmin).toMatchObject({ role: 'ADMIN', implicit: false, permissions: [] });
     const mineSystem = adminData(await get(systemLogin(), '/finance/access/me'));
-    expect(mineSystem).toMatchObject({ role: 'SYSTEM', implicit: true, permissions: [READ, RECORD] });
+    expect(mineSystem).toMatchObject({ role: 'SYSTEM', implicit: true, permissions: [READ, RECORD, 'wallet.withdrawal.process', 'wallet.withdrawal.confirm', 'wallet.withdrawal.reconcile'] });
     expect((await get(undefined, '/finance/access/me')).status).toBe(401);
     // Everything else is SYSTEM only: an ADMIN gets ADMIN_FORBIDDEN and nothing changes.
     const responses = [
@@ -164,6 +164,9 @@ describe('M04-B2.2a — finance access and receiving accounts', () => {
     expect(permissionsOf(view)).toEqual([
       { permission_key: READ, state: 'NONE', version: 0, granted_at: null, revoked_at: null },
       { permission_key: RECORD, state: 'NONE', version: 0, granted_at: null, revoked_at: null },
+      { permission_key: 'wallet.withdrawal.process', state: 'NONE', version: 0, granted_at: null, revoked_at: null },
+      { permission_key: 'wallet.withdrawal.confirm', state: 'NONE', version: 0, granted_at: null, revoked_at: null },
+      { permission_key: 'wallet.withdrawal.reconcile', state: 'NONE', version: 0, granted_at: null, revoked_at: null },
     ]);
     const key = randomUUID();
     const granted = await grant(target, RECORD, 0, { key });
@@ -200,7 +203,7 @@ describe('M04-B2.2a — finance access and receiving accounts', () => {
 
   it('3. strict input and targets: unknown or reserved rights, extra fields, a missing CSRF or cookie, SYSTEM / unknown / ordinary users as targets, a disabled admin', async () => {
     const target = other.userId;
-    for (const body of [{}, { permission_key: READ }, { permission_key: 'wallet.withdrawal.process', expected_version: 0 }, { permission_key: 'driver.bank.read', expected_version: 0 }, { permission_key: 'wallet.*', expected_version: 0 },
+    for (const body of [{}, { permission_key: READ }, { permission_key: 'wallet.adjustment.post', expected_version: 0 }, { permission_key: 'driver.bank.read', expected_version: 0 }, { permission_key: 'wallet.*', expected_version: 0 },
       { permission_key: READ, expected_version: -1 }, { permission_key: READ, expected_version: 0, role: 'SYSTEM' }, { permission_key: READ, expected_version: 0, user_id: plain.userId }]) {
       expect([JSON.stringify(body), (await send(systemLogin(), `/finance/access/admins/${target}/grant`, body)).status]).toEqual([JSON.stringify(body), 400]);
     }

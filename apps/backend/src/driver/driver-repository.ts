@@ -15,6 +15,7 @@ export interface DriverRow {
   /** M03 */
   readonly shipperCode: string;
   readonly reviewState: DriverReviewState;
+  readonly initialFundingRequired?: boolean;
   readonly submittedAtMs: number | null;
   readonly reviewedAtMs: number | null;
   readonly reviewedBy: string | null;
@@ -47,6 +48,7 @@ export interface RawDriver {
   version: string;
   shipper_code: string;
   review_state: DriverReviewState;
+  initial_funding_required: boolean;
   submitted_ms: string | null;
   reviewed_ms: string | null;
   reviewed_by: string | null;
@@ -64,7 +66,7 @@ const ms = (column: string): string => `(extract(epoch FROM ${column}) * 1000)::
 
 /** Every column of a driver row as the repository reads it (the table alias is `d` where a query joins). */
 export const DRIVER_COLUMNS = `d.driver_id, d.user_id, d.full_name, d.plate_number, d.driver_type, d.status, d.accepting_deliveries, d.version,
-  d.shipper_code, d.review_state, ${ms('d.submitted_at')} AS submitted_ms, ${ms('d.reviewed_at')} AS reviewed_ms, d.reviewed_by::text AS reviewed_by,
+  d.shipper_code, d.review_state, d.initial_funding_required, ${ms('d.submitted_at')} AS submitted_ms, ${ms('d.reviewed_at')} AS reviewed_ms, d.reviewed_by::text AS reviewed_by,
   d.rejection_reason, d.suspension_reason, ${ms('d.suspended_at')} AS suspended_ms, d.status_before_closing,
   ${ms('d.closure_requested_at')} AS closure_requested_ms, d.closure_note, ${ms('d.created_at')} AS created_ms, ${ms('d.updated_at')} AS updated_ms`;
 
@@ -82,6 +84,7 @@ export function toDriver(row: RawDriver): DriverRow {
     version: toSafeInteger(row.version),
     shipperCode: row.shipper_code,
     reviewState: row.review_state,
+    initialFundingRequired: row.initial_funding_required,
     submittedAtMs: optionalMs(row.submitted_ms),
     reviewedAtMs: optionalMs(row.reviewed_ms),
     reviewedBy: row.reviewed_by,
@@ -180,7 +183,7 @@ export class DriverRepository {
   }
 
   /**
-   * Inserts the one shape self-onboarding may create: EXTERNAL, PENDING, not accepting deliveries, version 1.
+   * Inserts the one shape self-onboarding may create: EXTERNAL, ACTIVE, not accepting deliveries, version 1.
    * The four fixed values are literals in the statement, not parameters: nothing a caller passes can change
    * them. Returns false when the user already has a Driver (the UNIQUE(user_id) rule decided, which only a
    * caller that skipped the user lock could reach): ON CONFLICT DO NOTHING lets the database decide and never
@@ -192,7 +195,7 @@ export class DriverRepository {
          driver_id, user_id, full_name, plate_number, driver_type, status, accepting_deliveries, version,
          created_at, updated_at
        )
-       SELECT $1::uuid, $2::uuid, $3, $4, 'EXTERNAL', 'PENDING', false, 1, clock.t, clock.t
+       SELECT $1::uuid, $2::uuid, $3, $4, 'EXTERNAL', 'ACTIVE', false, 1, clock.t, clock.t
          FROM (${CLOCK_CTE}) AS clock
        ON CONFLICT (user_id) DO NOTHING`,
       [driver.driverId, driver.userId, driver.fullName, driver.plateNumber],

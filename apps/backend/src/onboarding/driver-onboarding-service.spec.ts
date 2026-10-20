@@ -1,3 +1,4 @@
+import { WalletService } from '../wallet/wallet-service';
 import { describe, expect, it } from '@jest/globals';
 import { AuditWriter } from '../audit/audit-writer';
 import { fakeContext } from '../auth/auth-fakes.fixture';
@@ -28,7 +29,7 @@ function driverRow(overrides: Partial<DriverRow> = {}): DriverRow {
     fullName: 'Existing',
     plateNumber: null,
     driverType: 'EXTERNAL',
-    status: 'PENDING',
+    status: 'ACTIVE',
     acceptingDeliveries: false,
     version: 1,
     shipperCode: 'SH000001',
@@ -116,7 +117,7 @@ function rig(
   } as unknown as OutboxWriter;
 
   return {
-    service: new DriverOnboardingService(executor, sessionAuth, roleGrants, drivers, audit, outboxWriter),
+    service: new DriverOnboardingService(executor, sessionAuth, roleGrants, drivers, audit, outboxWriter, { ensureZeroWallet: async () => undefined } as unknown as WalletService),
     events,
     requests,
     audits,
@@ -159,7 +160,7 @@ describe('DriverOnboardingService.create (A03-26)', () => {
     const outcome = await create(rig());
     expect(outcome.payload).toEqual({
       driver_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
-      status: 'PENDING',
+      status: 'ACTIVE',
       accepting_deliveries: false,
       role_granted: true,
       version: 1,

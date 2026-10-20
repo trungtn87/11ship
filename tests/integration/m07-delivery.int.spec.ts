@@ -68,6 +68,7 @@ describe('M07 — delivery flow', () => {
    * those tables lifted (the application never deletes them). The phones are purged afterwards by app.close(). Errors are NOT swallowed.
    */
   async function cleanup(): Promise<void> {
+    await dropExtraCommissionPolicies();
     const client = await app.pool.connect();
     const tables = ['wallet_ledger_entries', 'wallet_holds', 'delivery_incidents', 'delivery_events', 'delivery_assignments', 'deliveries', 'driver_wallets', 'shipping_fee_agreement_events', 'shipping_fee_agreements', 'shipping_fee_policy_versions'];
     try {
@@ -90,6 +91,7 @@ describe('M07 — delivery flow', () => {
       if (addedPolicy) {
         await client.query('DELETE FROM app.shipping_fee_policy_versions');
       }
+      await client.query('SET CONSTRAINTS ALL IMMEDIATE'); // the deferred withdrawal foreign keys fire now, before the triggers come back
       for (const table of tables) {
         await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
       }
@@ -300,6 +302,27 @@ describe('M07 — delivery flow', () => {
     expect(await stateOf(String(view.delivery_id))).toBe('accepted');
   });
 
+  it('M03 closing stops new orders but retains the active delivery and refuses a full refund', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s);
+    const profile = dataOf(await asShipper(s, 'GET', '/driver/me'));
+    const closing = await asShipper(s, 'POST', '/driver/me/closure-request', { expected_version: profile.version, note: null });
+    expect(closing.status).toBe(200);
+    expect(dataOf(closing)).toMatchObject({ status: 'CLOSING', accepting_deliveries: false });
+    const refund = await asShipper(s, 'POST', '/driver/wallet/withdrawals', { amount_vnd: 50_000 });
+    expect(codeOf(refund)).toBe('DRIVER_HAS_ACTIVE_WORK');
+    expect(await stateOf(String(view.delivery_id))).toBe('accepted');
+    expect(await wallet(s)).toEqual({ balance: 50_000, held: 1000 });
+
+    // CLOSING stops new assignments, never the pickup/completion of an assignment already held.
+    const picked = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/pickup`, { expected_version: view.version });
+    expect(picked.status).toBe(200);
+    const completed = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/complete`, { expected_version: dataOf(picked).version });
+    expect(completed.status).toBe(200);
+    expect(await stateOf(String(view.delivery_id))).toBe('completed');
+    expect(await wallet(s)).toEqual({ balance: 49_000, held: 0 });
+  });
+
   it('full path: accept, pickup, complete: the commission is captured once and the delivery is completed', async () => {
     const s = await newShipper();
     const view = await acceptNew(s);
@@ -323,6 +346,74 @@ describe('M07 — delivery flow', () => {
     expect(await stateOf(String(view.delivery_id))).toBe('completed');
     expect(await wallet(s)).toEqual({ balance: 49_000, held: 0 });
     expect(await countRows(app.pool, `SELECT 1 FROM app.wallet_ledger_entries WHERE wallet_id = $1::uuid AND delta_vnd = -1000`, [s.walletId])).toBe(1);
+  });
+
+  /** Test-only: removes the policy versions above 1 (the table is append-only for the application; the owner lifts the guard for this one statement). */
+  async function dropExtraCommissionPolicies(): Promise<void> {
+    const c = await app.pool.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query('ALTER TABLE app.wallet_commission_policies DISABLE TRIGGER wallet_commission_policies_append_only');
+      await c.query('DELETE FROM app.wallet_commission_policies WHERE policy_version > 1');
+      await c.query('ALTER TABLE app.wallet_commission_policies ENABLE TRIGGER wallet_commission_policies_append_only');
+      await c.query('COMMIT');
+    } catch (error) {
+      await c.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      c.release();
+    }
+  }
+
+  async function pickupAndComplete(s: Shipper, view: Json): Promise<void> {
+    let current = view;
+    if (current.state === 'accepted') {
+      const confirmed = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/destination`, { expected_version: current.version, lat: 21.0, lng: 105.82, fee_vnd: 15_000 });
+      if (confirmed.status === 200) {
+        current = dataOf(confirmed) as Json;
+      }
+    }
+    const picked = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/pickup`, { expected_version: current.version });
+    expect([picked.status, picked.text.slice(0, 300)]).toEqual([200, picked.text.slice(0, 300)]);
+    const afterPickup = dataOf(picked) as Json;
+    const done = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/complete`, { expected_version: afterPickup.version });
+    expect([done.status, done.text.slice(0, 300)]).toEqual([200, done.text.slice(0, 300)]);
+  }
+
+  it('a new commission version applies only to later assignments: the old one keeps its amount, the new one uses the new amount, and each completion debits exactly once', async () => {
+    const older = await newShipper();
+    const newer = await newShipper();
+    const oldView = await acceptNew(older); // accepted under version 1
+    expect(await wallet(older)).toEqual({ balance: 50_000, held: 1000 });
+    try {
+      await app.pool.query(`INSERT INTO app.wallet_commission_policies (policy_version, commission_vnd, created_by_user_id, created_at) VALUES (2, 2500, $1::uuid, now())`, [shop.userId]);
+      const newView = await acceptNew(newer); // accepted under version 2
+      const rows = (await app.pool.query<{ delivery_id: string; commission_vnd: string; commission_policy: string }>(
+        `SELECT delivery_id::text, commission_vnd::text, commission_policy FROM app.delivery_assignments WHERE delivery_id = ANY($1::uuid[])`,
+        [[String(oldView.delivery_id), String(newView.delivery_id)]],
+      )).rows;
+      const byDelivery = new Map(rows.map((r) => [r.delivery_id, r]));
+      expect(byDelivery.get(String(oldView.delivery_id))).toMatchObject({ commission_vnd: '1000', commission_policy: 'COMMISSION_V1' });
+      expect(byDelivery.get(String(newView.delivery_id))).toMatchObject({ commission_vnd: '2500', commission_policy: 'COMMISSION_V2' });
+      // The change reached the held amounts too: the older hold is untouched.
+      expect(await wallet(older)).toEqual({ balance: 50_000, held: 1000 });
+      expect(await wallet(newer)).toEqual({ balance: 50_000, held: 2500 });
+
+      // Completing: the OLD assignment is debited its OLD amount, the NEW one its NEW amount, each exactly once, and the holds are captured.
+      await pickupAndComplete(older, oldView);
+      await pickupAndComplete(newer, newView);
+      expect(await wallet(older)).toEqual({ balance: 49_000, held: 0 });
+      expect(await wallet(newer)).toEqual({ balance: 47_500, held: 0 });
+      expect(await countRows(app.pool, `SELECT 1 FROM app.wallet_ledger_entries WHERE entry_kind = 'COMMISSION_DEBIT' AND wallet_id = $1::uuid`, [older.walletId])).toBe(1);
+      expect(await countRows(app.pool, `SELECT 1 FROM app.wallet_ledger_entries WHERE entry_kind = 'COMMISSION_DEBIT' AND wallet_id = $1::uuid AND delta_vnd = -2500`, [newer.walletId])).toBe(1);
+      expect(await countRows(app.pool, `SELECT 1 FROM app.wallet_ledger_entries WHERE entry_kind = 'COMMISSION_DEBIT' AND wallet_id = $1::uuid AND delta_vnd = -1000`, [older.walletId])).toBe(1);
+      // A repeated completion does not debit again.
+      const again = await asShipper(older, 'POST', `/driver/deliveries/${oldView.delivery_id}/complete`, { expected_version: 1 });
+      expect(again.status).toBeGreaterThanOrEqual(400);
+      expect(await wallet(older)).toEqual({ balance: 49_000, held: 0 });
+    } finally {
+      await dropExtraCommissionPolicies();
+    }
   });
 
   it('failed delivery: the hold is released and a custody incident is opened; the shop cannot recall until the goods are back', async () => {

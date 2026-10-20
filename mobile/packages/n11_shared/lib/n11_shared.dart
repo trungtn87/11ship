@@ -81,6 +81,7 @@ export 'src/m08/m08_source.dart';
 export 'src/m08/m08_views.dart';
 export 'src/shell.dart';
 export 'src/tokens.dart';
+export 'src/wallet/wallet_http.dart';
 export 'src/wallet/wallet_models.dart';
 export 'src/wallet/wallet_sample.dart';
 export 'src/wallet/wallet_source.dart';

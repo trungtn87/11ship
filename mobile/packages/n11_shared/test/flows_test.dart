@@ -214,7 +214,7 @@ void main() {
         ..plateNumber = '';
       expect(await driver.submit(), isTrue);
       expect(server.posts.single, <String, Object?>{'full_name': 'Trần Văn Shipper'});
-      expect(driver.profile!.status, 'PENDING');
+      expect(driver.profile!.status, 'ACTIVE');
       expect(t.api.to('GET', '/v1/client-auth/me'), hasLength(1), reason: 'me is read again after the write');
       expect(t.session.identity!.activeRole, 'CUSTOMER');
       expect(await driver.submit(), isFalse);

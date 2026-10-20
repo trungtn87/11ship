@@ -53,16 +53,11 @@ export class ShipperViewBuilder {
       blocks.push('PROFILE_NOT_APPROVED');
     }
     const bankVerified = bank?.verificationState === 'VERIFIED';
-    if (bank === undefined) {
-      blocks.push('BANK_MISSING');
-    } else if (!bankVerified) {
-      blocks.push('BANK_NOT_VERIFIED');
-    }
     const wallet = await this.wallet.readinessForOrders(context, driver.driverId);
     if (!wallet.ready) {
       blocks.push(wallet.reason);
     }
-    return { profileApproved, bankVerified, walletReady: wallet.ready, blocks, canAccept: driver.status === 'ACTIVE' && bankVerified && wallet.ready };
+    return { profileApproved, bankVerified, walletReady: wallet.ready, blocks, canAccept: driver.status === 'ACTIVE' && wallet.ready };
   }
 
   async build(context: TransactionContext, driver: DriverRow): Promise<JsonObject> {

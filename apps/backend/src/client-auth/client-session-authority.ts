@@ -60,7 +60,12 @@ export class ClientSessionAuthority {
     const actor = actorOf(principal);
     let limited = false;
     if (mode === 'update') {
-      await this.sessionAuth.lockAuthorizedActor(context, actor);
+      if (options.allowLockedDriver === true) {
+        // The wallet writer (M04-C withdrawal): a LOCKED driver keeps the wallet and nothing else (Owner decision 2026-10-14); the DRIVER context is required.
+        limited = (await this.sessionAuth.lockAuthorizedDriverWalletActor(context, actor)).limited;
+      } else {
+        await this.sessionAuth.lockAuthorizedActor(context, actor);
+      }
     } else {
       limited = (await this.sessionAuth.lockAuthorizedActorShared(context, actor, options)).limited;
     }

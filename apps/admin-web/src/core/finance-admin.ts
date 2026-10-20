@@ -6,9 +6,23 @@ import { Failure } from './accounts.js';
 
 export const FINANCE_PERMISSION_READ = 'wallet.read';
 export const FINANCE_PERMISSION_RECORD = 'wallet.topup.record';
-export type FinancePermissionKey = typeof FINANCE_PERMISSION_READ | typeof FINANCE_PERMISSION_RECORD;
-export const FINANCE_PERMISSIONS: readonly FinancePermissionKey[] = [FINANCE_PERMISSION_READ, FINANCE_PERMISSION_RECORD];
-export const FINANCE_PERMISSION_LABEL: Record<FinancePermissionKey, string> = { 'wallet.read': 'Xem yêu cầu nạp tiền', 'wallet.topup.record': 'Xác nhận / từ chối nạp tiền' };
+export const FINANCE_PERMISSION_PROCESS = 'wallet.withdrawal.process';
+export const FINANCE_PERMISSION_CONFIRM = 'wallet.withdrawal.confirm';
+export const FINANCE_PERMISSION_RECONCILE = 'wallet.withdrawal.reconcile';
+export type FinancePermissionKey =
+  | typeof FINANCE_PERMISSION_READ
+  | typeof FINANCE_PERMISSION_RECORD
+  | typeof FINANCE_PERMISSION_PROCESS
+  | typeof FINANCE_PERMISSION_CONFIRM
+  | typeof FINANCE_PERMISSION_RECONCILE;
+export const FINANCE_PERMISSIONS: readonly FinancePermissionKey[] = [FINANCE_PERMISSION_READ, FINANCE_PERMISSION_RECORD, FINANCE_PERMISSION_PROCESS, FINANCE_PERMISSION_CONFIRM, FINANCE_PERMISSION_RECONCILE];
+export const FINANCE_PERMISSION_LABEL: Record<FinancePermissionKey, string> = {
+  'wallet.read': 'Xem tài chính (ví, giao dịch, nạp, rút, đối soát)',
+  'wallet.topup.record': 'Xác nhận / từ chối nạp tiền',
+  'wallet.withdrawal.process': 'Nhận xử lý yêu cầu rút tiền (chuyển tiền thủ công)',
+  'wallet.withdrawal.confirm': 'Xác nhận đã chuyển tiền (chỉ người đã nhận xử lý)',
+  'wallet.withdrawal.reconcile': 'Đối soát rút tiền và chạy kiểm tra đối soát',
+};
 
 /** GET access/me: the rights of the CALLING session. Never derived from application permissions, a role of a Shipper or the old sidebar. */
 export interface FinanceRights {
@@ -16,8 +30,12 @@ export interface FinanceRights {
   readonly implicit: boolean;
   readonly canRead: boolean;
   readonly canRecord: boolean;
+  /** M04-C: withdrawals. Each right is separate; none implies another. */
+  readonly canProcess: boolean;
+  readonly canConfirm: boolean;
+  readonly canReconcile: boolean;
 }
-export const NO_FINANCE_RIGHTS: FinanceRights = { role: 'ADMIN', implicit: false, canRead: false, canRecord: false };
+export const NO_FINANCE_RIGHTS: FinanceRights = { role: 'ADMIN', implicit: false, canRead: false, canRecord: false, canProcess: false, canConfirm: false, canReconcile: false };
 
 export type TopupState = 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED';
 export const TOPUP_STATES: readonly TopupState[] = ['PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED'];

@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { ADMIN_SESSION_COOKIE } from '../../apps/backend/src/admin-auth/admin-auth-constants';
-import { DRIVER_WALLET_PORT, DriverWalletPort, WalletReadiness, WalletSettlement } from '../../apps/backend/src/driver/driver-wallet-port';
+import { DRIVER_WALLET_PORT, DriverWalletPort, WalletFunding, WalletReadiness, WalletSettlement } from '../../apps/backend/src/driver/driver-wallet-port';
 import {
   ADMIN_PASSWORD,
   AdminApp,
@@ -46,6 +46,7 @@ const tag = randomBytes(3).toString('hex').toUpperCase();
 /** The M04 wallet as a test can control it: nothing is real, the flags only say what M04 would answer. */
 const wallet = { ready: false, settled: false };
 const walletPort: DriverWalletPort = {
+  fundingForActivation: (): Promise<WalletFunding> => Promise.resolve({ funded: true }),
   readinessForOrders: (): Promise<WalletReadiness> => Promise.resolve(wallet.ready ? { ready: true } : { ready: false, reason: 'WALLET_NOT_AVAILABLE' }),
   settlementForClosure: (): Promise<WalletSettlement> => Promise.resolve(wallet.settled ? { settled: true } : { settled: false, reason: 'BALANCE_REMAINING' }),
 };
@@ -175,7 +176,9 @@ describe('M03 — Shipper management', () => {
     const token = String(dataOf(loggedIn).access_token);
     const created = await client.call('POST', '/onboarding/driver', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { full_name: name, plate_number: '59X1-123.45' } });
     expect(created.status).toBe(201);
-    return { phone, userId, token, driverId: String(dataOf(created).driver_id) };
+    const driverId = String(dataOf(created).driver_id);
+    await client.pool.query("UPDATE app.drivers SET status = 'PENDING' WHERE driver_id = $1::uuid", [driverId]);
+    return { phone, userId, token, driverId };
   }
 
   const mine = async (s: Shipper): Promise<Record<string, unknown>> => dataOf(await client.call('GET', '/driver/me', { bearer: s.token }));
@@ -379,8 +382,8 @@ describe('M03 — Shipper management', () => {
         expect((await setAccepting(s, true)).status).toBe(200);
         const changed = await saveBank(s, { bank_code: 'TCB', account_number: '1112223334' });
         expect(changed.status).toBe(200);
-        expect(dataOf(changed)).toMatchObject({ accepting_deliveries: false, bank: { bank_code: 'TCB', verification_state: 'UNVERIFIED' } });
-        expect(errorCode(await setAccepting(s, true))).toBe('DRIVER_BANK_NOT_VERIFIED');
+        expect(dataOf(changed)).toMatchObject({ accepting_deliveries: true, bank: { bank_code: 'TCB', verification_state: 'UNVERIFIED' } });
+        expect((await setAccepting(s, true)).status).toBe(200);
         expect(codeOf(await command(reviewer, s.driverId, 'bank/reject', { expected_version: await versionOf(s) }))).toEqual({ status: 400, code: 'ADMIN_INPUT_INVALID' });
         expect((await command(reviewer, s.driverId, 'bank/reject', { expected_version: await versionOf(s), reason: 'Số tài khoản không tồn tại' })).status).toBe(200);
         expect((await mine(s)).bank).toMatchObject({ verification_state: 'REJECTED', rejection_reason: 'Số tài khoản không tồn tại' });
@@ -406,7 +409,7 @@ describe('M03 — Shipper management', () => {
       const draft = await newShipper();
       expect(errorCode(await setAccepting(draft, true))).toBe('DRIVER_NOT_ACTIVE');
       const s = await approved(false);
-      expect(errorCode(await setAccepting(s, true))).toBe('DRIVER_BANK_NOT_VERIFIED');
+      expect(errorCode(await setAccepting(s, true))).toBe('DRIVER_WALLET_NOT_READY');
       await command(reviewer, s.driverId, 'bank/verify', { expected_version: await versionOf(s) });
       // M04 has not provided a wallet: blocked, with a clear reason, and nothing is invented.
       expect(errorCode(await setAccepting(s, true))).toBe('DRIVER_WALLET_NOT_READY');
@@ -464,8 +467,8 @@ describe('M03 — Shipper management', () => {
       const s = await approved();
       await command(lockOnly, s.driverId, 'lock', { expected_version: await versionOf(s), reason: 'Kiểm tra' });
       await saveBank(s, { account_number: '5555666677' });
-      expect(codeOf(await command(lockOnly, s.driverId, 'unlock', { expected_version: await versionOf(s) }))).toEqual({ status: 409, code: 'DRIVER_BANK_NOT_VERIFIED' });
-      expect((await row(s.driverId)).status).toBe('SUSPENDED');
+      expect((await command(lockOnly, s.driverId, 'unlock', { expected_version: await versionOf(s) })).status).toBe(200);
+      expect((await row(s.driverId)).status).toBe('ACTIVE');
     });
   });
 

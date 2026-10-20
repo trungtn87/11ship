@@ -118,7 +118,7 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 12 order codes (M10: ORDER_*; the earlier ORDER_MODULE_NOT_READY placeholder is gone, so +11 net; see app-errors.ts)
     // + 14 M11 codes (REVIEW_*, COMPLAINT_*, RECONSIDERATION_*, ADJUSTMENT_HISTORY_REVIEW_REQUIRED)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(152);
+    expect(codes).toHaveLength(162);
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(19);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);
     expect(codes).toContain('TRANSACTION_OUTCOME_UNKNOWN');

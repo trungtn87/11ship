@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
+import { DRIVER_WALLET_PORT, DriverWalletPort } from '../../apps/backend/src/driver/driver-wallet-port';
 import { ADMIN_ORIGIN, ADMIN_PASSWORD, AdminApp, adminData, count, rewindAcceptedStep, startAdminApp, totpNow } from './support/admin-fixtures';
 import { begin, ok, post } from './support/activation-fixtures';
 import { freePort, repoRoot, runScript, startFront } from './support/admin-web-harness';
@@ -30,6 +31,13 @@ interface Person {
   readonly userId: string;
   readonly secret: string;
 }
+
+/** The M04 wallet as this browser test needs it: funded for the activation review, not ready for orders (what the page says). The real funding gate is tested in m04-withdrawals. */
+const walletPort: DriverWalletPort = {
+  fundingForActivation: () => Promise.resolve({ funded: true }),
+  readinessForOrders: () => Promise.resolve({ ready: false, reason: 'WALLET_NOT_AVAILABLE' }),
+  settlementForClosure: () => Promise.resolve({ settled: false, reason: 'WALLET_NOT_AVAILABLE' }),
+};
 
 describe('admin Shippers (real browser)', () => {
   let app: AdminApp;
@@ -71,7 +79,7 @@ describe('admin Shippers (real browser)', () => {
     await grantRole(app.pool, userId, 'DRIVER');
     const driverId = (await app.pool.query<{ driver_id: string }>('SELECT driver_id FROM app.drivers WHERE user_id = $1::uuid', [userId])).rows[0]?.driver_id as string;
     await app.pool.query(
-      `UPDATE app.drivers SET full_name = $2, review_state = 'SUBMITTED', submitted_at = clock_timestamp() WHERE driver_id = $1::uuid`,
+      `UPDATE app.drivers SET status = 'PENDING', full_name = $2, review_state = 'SUBMITTED', submitted_at = clock_timestamp() WHERE driver_id = $1::uuid`,
       [driverId, fullName],
     );
     await app.pool.query(
@@ -122,7 +130,7 @@ describe('admin Shippers (real browser)', () => {
     const spkiHash = createHash('sha256').update(spki).digest('base64');
     const port = await freePort();
     origin = `https://localhost:${String(port)}`;
-    app = await startAdminApp({ allowedOrigins: [origin, ADMIN_ORIGIN], activationDisabledTest: true });
+    app = await startAdminApp({ allowedOrigins: [origin, ADMIN_ORIGIN], activationDisabledTest: true, overrides: [{ provide: DRIVER_WALLET_PORT, useValue: walletPort }] });
     front = await startFront({
       ADMIN_WEB_PORT: String(port),
       ADMIN_WEB_HOST: 'localhost',

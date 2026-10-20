@@ -9,8 +9,10 @@ import 'ship_m07.dart';
 const String kOnlineReason = 'Chưa có dữ liệu trạng thái hoạt động. Chưa thể bật online.';
 
 class ShipHome extends StatefulWidget {
-  const ShipHome({super.key, required this.session, required this.onNotifications, this.reset, this.notifications});
+  const ShipHome({super.key, required this.session, required this.onNotifications, this.reset, this.notifications, this.driver, this.walletSource});
   final SessionController session;
+  final DriverController? driver;
+  final WalletSource? walletSource;
   final ResetController? reset;
   final VoidCallback onNotifications;
   final NotificationController? notifications;
@@ -21,19 +23,39 @@ class ShipHome extends StatefulWidget {
 
 class _ShipHomeState extends State<ShipHome> {
   late ShipLocationReporter reporter;
+  int _epoch = -1;
   @override
   void initState() {
     super.initState();
     reporter = reporterFor(widget.session);
+    widget.session.addListener(_readDriver);
+    _readDriver();
+  }
+
+  void _readDriver() {
+    if (widget.session.status == SessionStatus.signedIn && _epoch != widget.session.sessionEpoch) {
+      _epoch = widget.session.sessionEpoch;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.driver?.load();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.session.removeListener(_readDriver);
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge(<Listenable>[widget.session, reporter]),
+    listenable: Listenable.merge(<Listenable>[widget.session, reporter, if (widget.driver != null) widget.driver!]),
     builder: (BuildContext context, Widget? child) {
       if (widget.session.status == SessionStatus.signedIn) reporter.observe();
       return ShipHomeLayout(
-      reason: kOnlineReason,
+      online: widget.driver?.profile?.acceptingDeliveries,
+      reason: widget.driver?.profile == null ? kOnlineReason : (widget.driver!.profile!.readiness.canAccept ? 'Ví đủ điều kiện. Bạn có thể bật hoạt động.' : widget.driver!.profile!.readiness.blocks.map(driverBlockLabel).join('\n')),
+      onToggle: widget.driver?.profile == null || widget.driver!.busy || !(widget.driver!.profile!.acceptingDeliveries || widget.driver!.profile!.readiness.canAccept) ? null : () => widget.driver!.setAccepting(!widget.driver!.profile!.acceptingDeliveries),
       gpsStatus: reporter.gpsStatus,
       position: reporter.position,
       onNotifications: widget.onNotifications,
@@ -41,7 +63,11 @@ class _ShipHomeState extends State<ShipHome> {
       footer: widget.session.status == SessionStatus.guest
           ? N11Link('Đăng nhập tài khoản shipper', key: const Key('guest-login'),
               onPressed: widget.session.ready ? () => Navigator.of(context).push(n11Route(LoginScreen(session: widget.session, brand: shipBrand, reset: widget.reset))) : null)
-          : null,
+          : widget.walletSource == null ? null : Column(children: <Widget>[
+              N11Button(label: 'Ví tiền / Nạp tiền', onPressed: () => Navigator.of(context).push(n11Route(WalletHomeScreen(source: widget.walletSource!)))),
+              if (widget.driver != null) N11Link('Cập nhật điều kiện nhận đơn', onPressed: widget.driver!.load),
+              if (widget.driver != null) N11Link('Thông tin và hoạt động shipper', onPressed: () => Navigator.of(context).push(n11Route(DriverProfileScreen(controller: widget.driver!, walletSource: widget.walletSource)))),
+            ]),
     );
     },
   );
@@ -49,10 +75,11 @@ class _ShipHomeState extends State<ShipHome> {
 
 class ShipHomeLayout extends StatelessWidget {
   const ShipHomeLayout({super.key, this.online, required this.reason, required this.onNotifications, this.bell, this.footer,
-    this.gpsStatus = 'Chưa bật chia sẻ vị trí', this.position});
+    this.gpsStatus = 'Chưa bật chia sẻ vị trí', this.position, this.onToggle});
   final bool? online;
   final String reason;
   final VoidCallback onNotifications;
+  final VoidCallback? onToggle;
   final Widget? bell;
   final Widget? footer;
   final String gpsStatus;
@@ -71,7 +98,7 @@ class ShipHomeLayout extends StatelessWidget {
         ])),
         Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 8), child: Text(gpsStatus, key: const Key('home-gps-status'), style: N11Text.caption)),
         _HomeMap(height: mapHeight, position: position),
-        ShipActivityPanel(online: online, reason: reason, footer: footer),
+        ShipActivityPanel(online: online, reason: reason, footer: footer, onToggle: onToggle),
       ]),
     );
   });

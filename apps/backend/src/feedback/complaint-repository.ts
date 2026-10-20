@@ -534,6 +534,11 @@ export class ComplaintRepository {
     return result.rows.map(toAdjustment);
   }
 
+  async pendingFinanceOfDriver(context: TransactionContext, driverId: string): Promise<number> {
+    const result = await context.query<{ n: string }>(`SELECT count(*)::text AS n FROM app.complaint_adjustments WHERE driver_id = $1::uuid AND status = 'PENDING_FINANCE'`, [driverId]);
+    return Number(result.rows[0]?.n ?? 0);
+  }
+
   async listAdjustmentsOfDelivery(context: TransactionContext, deliveryId: string): Promise<AdjustmentRow[]> {
     const result = await context.query<RawAdjustment>(`SELECT ${A_COLUMNS} FROM app.complaint_adjustments a WHERE a.delivery_id = $1::uuid ORDER BY a.created_at, a.adjustment_id`, [deliveryId]);
     return result.rows.map(toAdjustment);

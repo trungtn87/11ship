@@ -1,3 +1,4 @@
+import { WalletModule } from '../wallet/wallet.module';
 import { DynamicModule, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { DriverModule } from '../driver/driver.module';
@@ -29,7 +30,7 @@ export class OnboardingModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: OnboardingModule,
-      imports: [auth, ShopModule, DriverModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
+      imports: [auth, ShopModule, DriverModule, WalletModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
       controllers: [ShopOnboardingController, DriverOnboardingController],
       providers: [ShopOnboardingService, ShopProfileQueryService, ShopServiceAreaQueryService, DriverOnboardingService],
     };
