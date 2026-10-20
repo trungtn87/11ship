@@ -144,4 +144,8 @@ fi
 rm -rf "$dest/app/src/debug" "$dest/app/src/profile" 2>/dev/null || true
 # keep debug/profile manifests out: the permissions are declared in the main manifest only
 
+# flutter create ran in a temporary empty project. Regenerate plugin wiring in the real app
+# before a direct Gradle unit-test invocation, not only later inside `flutter build apk`.
+(cd "$root/$app" && flutter pub get --offline)
+
 echo "prepared $dest ($app_id) push=$push"
