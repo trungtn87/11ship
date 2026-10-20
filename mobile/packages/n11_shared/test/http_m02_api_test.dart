@@ -103,7 +103,7 @@ void main() {
               <String, Object?>{
                 'category_id': 'c1',
                 'name': 'Ốc',
-                'items': <Object?>[<String, Object?>{'item_id': 'i1', 'name': 'Ốc hương hấp', 'price_vnd': 120000, 'image_id': 'img-1'}],
+                'items': <Object?>[<String, Object?>{'item_id': 'i1', 'name': 'Ốc hương hấp', 'price_vnd': 120000, 'image_id': 'img-1', 'sold_count': 120}],
               },
             ],
           },
@@ -116,6 +116,7 @@ void main() {
     expect(view.serverNow, DateTime.utc(2026, 10, 14, 11, 30));
     expect(view.hours[0].single.open, '17:00');
     expect(view.categories.single.items.single.imageUrl, 'https://api.example.test/v1/menu-images/img-1');
+    expect(view.categories.single.items.single.soldCount, 120);
     await expectLater(shops.load('s2'), throwsA(isA<AuthFailure>().having((AuthFailure f) => f.code, 'code', 'SHOP_NOT_FOUND')));
     await expectLater(shops.load('s3'), throwsA(isA<AuthFailure>().having((AuthFailure f) => f.code, 'code', 'SHOP_UNAVAILABLE')));
     expect(api.requests.every((RecordedRequest r) => !r.headers.containsKey('authorization')), isTrue);
@@ -129,6 +130,17 @@ void main() {
           },
         });
     final HttpDiscoveryApi discovery = HttpDiscoveryApi(transport: api, base: base);
+    api.routes['GET /v1/discovery/dishes?area_id=a1&limit=30'] = (m, p, h, b) async => json(200, <String, Object?>{
+      'data': <String, Object?>{'has_more': false, 'dishes': <Object?>[
+        <String, Object?>{'item_id': 'i1', 'name': 'Ốc hương hấp', 'price_vnd': 120000, 'image_id': null, 'sold_count': 120,
+          'shop': <String, Object?>{'shop_id': 's1', 'name': 'Ốc 11', 'address_text': 'x', 'availability': <String, Object?>{'online': true, 'reason': 'ONLINE'}}},
+        <String, Object?>{'item_id': 'i2', 'name': 'Món mới', 'price_vnd': 20000, 'image_id': null,
+          'shop': <String, Object?>{'shop_id': 's1', 'name': 'Ốc 11', 'address_text': 'x', 'availability': <String, Object?>{'online': true, 'reason': 'ONLINE'}}},
+      ]},
+    });
+    final soldDishes = await discovery.dishes(const DiscoveryQuery(areaId: 'a1'));
+    expect(soldDishes.items.first.soldCount, 120);
+    expect(soldDishes.items.last.soldCount, isNull, reason: 'old servers do not supply a count; never invent zero');
     expect((await discovery.areas()).single.name, 'Cao Bằng');
     expect((await discovery.categories()).single.name, 'Ốc');
     final DiscoveryPage<ShopCardData> page = await discovery.shops(const DiscoveryQuery(areaId: 'a1', categoryId: 'c1', openOnly: true, term: ' ốc hương ', offset: 30));

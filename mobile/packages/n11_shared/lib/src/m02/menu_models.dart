@@ -148,11 +148,12 @@ class NoImagePicker implements ImagePickerPort {
 
 @immutable
 class PublicItem {
-  const PublicItem({required this.id, required this.name, required this.priceVnd, required this.imageUrl});
+  const PublicItem({required this.id, required this.name, required this.priceVnd, required this.imageUrl, this.soldCount});
 
   final String id;
   final String name;
   final int priceVnd;
+  final int? soldCount;
   final String? imageUrl;
 }
 

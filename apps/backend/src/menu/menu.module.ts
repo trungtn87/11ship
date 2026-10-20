@@ -1,6 +1,7 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
+import { OrdersCoreModule } from '../orders/orders-core.module';
 import { OutboxModule } from '../outbox/outbox.module';
 import { ShopModule } from '../shop/shop.module';
 import { TransactionModule } from '../transaction/transaction.module';
@@ -19,7 +20,7 @@ export class MenuModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: MenuModule,
-      imports: [auth, ShopModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
+      imports: [auth, ShopModule, OrdersCoreModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
       controllers: [MenuOwnerController, MenuPublicController, DiscoveryController],
       providers: [MenuService, MenuRepository, DiscoveryService],
       // The dish reads an Order needs (M10) go through the owner of the tables.
