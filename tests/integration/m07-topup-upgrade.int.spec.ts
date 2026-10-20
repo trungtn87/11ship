@@ -51,8 +51,43 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
   let accountId = '';
   let m07Applied = true;
   let addedPolicy = false;
+  let originalMigrationHistory: Array<{ id: number; name: string; run_on: Date }> = [];
   const shippers: Shipper[] = [];
   const pool = (): Pool => admin.pool;
+
+  // This test temporarily removes/reapplies M07 and its dependants. Re-inserting history rows
+  // gives them NEW serial IDs, which makes a later node-pg-migrate checkOrder fail even though
+  // the schema was restored. Preserve the original IDs and run_on values for the next suite.
+  async function restoreMigrationHistory(): Promise<void> {
+    if (originalMigrationHistory.length === 0) return;
+    const affectedNames = new Set([
+      M07_MIGRATION_NAME, M08_MIGRATION_NAME, M10_MIGRATION_NAME,
+      M11_MIGRATION_NAME, ADJUSTMENT_MIGRATION_NAME, WITHDRAWAL_MIGRATION_NAME,
+    ]);
+    const c = await pool().connect();
+    try {
+      await c.query('BEGIN');
+      for (const original of originalMigrationHistory.filter((row) => affectedNames.has(row.name))) {
+        const result = await c.query(
+          'UPDATE public.pgmigrations SET id = $1, run_on = $2 WHERE name = $3',
+          [original.id, original.run_on, original.name],
+        );
+        if (result.rowCount !== 1) {
+          throw new Error(`Could not restore migration history for ${original.name}`);
+        }
+      }
+      const restored = await c.query<{ id: number; name: string; run_on: Date }>(
+        'SELECT id, name, run_on FROM public.pgmigrations ORDER BY id',
+      );
+      expect(restored.rows).toEqual(originalMigrationHistory);
+      await c.query('COMMIT');
+    } catch (error) {
+      await c.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      c.release();
+    }
+  }
 
   /**
    * The M07 migration goes in and out as the runner would do it: its SQL, then its row in the history (so `npm run db:migrate` stays consistent). M08
@@ -100,6 +135,9 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
     const origin = `http://127.0.0.1:${(router.address() as AddressInfo).port}`;
     client = await startAuthApp({}, { relaxTimeouts: true, configOverride: { clientAuth: { termsVersion: TERMS, privacyVersion: PRIVACY } }, overrides: [{ provide: M14_ROUTING, useValue: { origin, timeoutMs: 3000 } }] });
     admin = await startAdminApp({ activationDisabledTest: true });
+    originalMigrationHistory = (await pool().query<{ id: number; name: string; run_on: Date }>(
+      'SELECT id, name, run_on FROM public.pgmigrations ORDER BY id',
+    )).rows;
     // Back to the schema of main: M07 is taken off through its own Down (it is empty, so the safety latch lets it go).
     await runMigration(WITHDRAWAL_DOWN_SQL, 'delete', WITHDRAWAL_MIGRATION_NAME);
     await runMigration(M07_DOWN_SQL, 'delete');
@@ -124,9 +162,13 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
       }
       await removeCommittedRows();
     } finally {
-      await client.close();
-      await admin.close();
-      await new Promise<void>((resolve) => router.close(() => resolve()));
+      try {
+        await restoreMigrationHistory();
+      } finally {
+        await client.close();
+        await admin.close();
+        await new Promise<void>((resolve) => router.close(() => resolve()));
+      }
     }
   });
 
