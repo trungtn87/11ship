@@ -199,8 +199,8 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
     if (!valid) {
       _error = snapshot['status'] as String? ?? 'Không lấy được vị trí';
       _gpsStatus = snapshot['permissionGranted'] == false ? 'Chưa cấp quyền vị trí'
-          : snapshot['gpsEnabled'] == false || snapshot['fixState'] == 'DISABLED' ? 'GPS đang tắt'
-          : snapshot['fixState'] == 'ACQUIRING' ? 'Đang lấy vị trí'
+          : snapshot['gpsEnabled'] == false || (snapshot['gpsEnabled'] != true && snapshot['fixState'] == 'DISABLED') ? 'GPS đang tắt'
+          : snapshot['fixState'] == 'ACQUIRING' || (snapshot['gpsEnabled'] == true && snapshot['fixState'] == 'DISABLED') ? 'Đang lấy vị trí'
           : snapshot['fixState'] == 'TIMEOUT' || _error!.contains('Hết thời gian chờ') ? 'Hết thời gian chờ định vị'
           : 'Không lấy được vị trí';
       notifyListeners();

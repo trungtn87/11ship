@@ -67,13 +67,15 @@ def capture(name):
 
 try:
     adb('install', '-r', '11Ship-test.apk')
-    adb('logcat', '-c')
     # Cold launch without network or location access: map must render from APK assets.
     adb('shell', 'svc', 'wifi', 'disable')
     adb('shell', 'svc', 'data', 'disable')
     adb('shell', 'settings', 'put', 'secure', 'location_mode', '0')
-    adb('shell', 'wm', 'size', '360x640')
+    # Set density first so Launcher never sees 360px at the Pixel's old high DPI.
     adb('shell', 'wm', 'density', '160')
+    adb('shell', 'wm', 'size', '360x640')
+    time.sleep(1)
+    adb('logcat', '-c')
     adb('shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1')
     wait('Chưa xác định trạng thái hoạt động')
     wait('Chưa bật chia sẻ vị trí')

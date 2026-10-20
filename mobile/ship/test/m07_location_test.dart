@@ -173,6 +173,7 @@ void main() {
     for (final (String, Map<String, dynamic>) state in <(String, Map<String, dynamic>)>[
       ('Đã có vị trí mới', fix()),
       ('GPS đang tắt', {'gpsEnabled': false}),
+      ('Đang lấy vị trí', {'gpsEnabled': true, 'fixState': 'DISABLED'}), // provider re-enabled before the next recorder cycle
       ('Chưa cấp quyền vị trí', {'permissionGranted': false}),
       ('Hết thời gian chờ định vị', {'fixState': 'TIMEOUT'}),
       ('Không lấy được vị trí', {'fixState': 'UNAVAILABLE'}),
