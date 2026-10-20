@@ -259,7 +259,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#144](https://github.com/trungtn87/11ship/pull/144) Sửa định vị, giỏ hàng và bổ sung đánh giá/lượt bán món | Đã merge (`MERGED`) | — | — | — | `0828a9f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#145](https://github.com/trungtn87/11ship/pull/145) M03: đơn giản hóa đăng ký shipper và hoàn ví khi dừng hoạt… | 🚫 Đã hủy / bỏ qua (`CANCELLED / IGNORED`) | — | — | — | `76924b7` | 🚫 không tính (đã hủy) — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#146](https://github.com/trungtn87/11ship/pull/146) M03: đơn giản hóa đăng ký shipper và hoàn ví khi dừng hoạt… | Đã merge (`MERGED`) | — | — | — | `7b3b86c` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#148](https://github.com/trungtn87/11ship/pull/148) 11Food: sửa logo, banner lỗi và tìm kiếm chung quán/món (#1… | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `032f3b7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#148](https://github.com/trungtn87/11ship/pull/148) 11Food: sửa logo, banner lỗi và tìm kiếm chung quán/món (#1… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `54c5fb2` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
