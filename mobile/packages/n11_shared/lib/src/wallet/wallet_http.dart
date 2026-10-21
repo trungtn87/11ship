@@ -306,7 +306,11 @@ class HttpWalletSource extends WalletSource implements WalletWrites {
     }
     _keys.remove(intent);
     if (refusal != null) {
-      throw WalletFailure(refusal.kind == AuthFailureKind.sessionEnded ? _readText(refusal) : _refusalText(refusal.code));
+      // M13 #155: safe server-generated correlation ID for SYSTEM error log lookup.
+      // Never show an exception message, stack, bank record or untrusted response body.
+      final String safeMessage = refusal.kind == AuthFailureKind.sessionEnded ? _readText(refusal) : _refusalText(refusal.code);
+      final String trace = refusal.requestId == null ? '' : '\nMã tra cứu: ${refusal.requestId}';
+      throw WalletFailure(safeMessage + trace);
     }
     return response.data;
   }
