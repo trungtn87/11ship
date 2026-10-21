@@ -183,6 +183,7 @@ describe('admin finance (real browser)', () => {
     await browser?.close();
     front?.kill('SIGTERM');
     if (app !== undefined) {
+      const cleanupErrors: unknown[] = [];
       try {
         for (const shipper of shippers) {
           await purgePhone(app.pool, shipper.phone.normalized);
@@ -192,6 +193,7 @@ describe('admin finance (real browser)', () => {
           await client.query('BEGIN');
           await client.query('ALTER TABLE app.admin_finance_grants DISABLE TRIGGER admin_finance_grants_no_delete');
           await client.query('DELETE FROM app.admin_finance_grants');
+          await client.query('SET CONSTRAINTS ALL IMMEDIATE');
           await client.query('ALTER TABLE app.admin_finance_grants ENABLE TRIGGER admin_finance_grants_no_delete');
           await client.query('ALTER TABLE app.system_owned_bank_accounts DISABLE TRIGGER wallet_system_accounts_no_delete');
           await client.query('DELETE FROM app.system_owned_bank_accounts WHERE system_account_id = ANY($1::uuid[]) OR account_holder = $2', [accountIds, HOLDER]);
@@ -203,9 +205,12 @@ describe('admin finance (real browser)', () => {
         } finally {
           client.release();
         }
+      } catch (error) {
+        cleanupErrors.push(error);
       } finally {
-        await app.close();
+        try { await app.close(); } catch (error) { cleanupErrors.push(error); }
       }
+      if (cleanupErrors.length > 0) throw new AggregateError(cleanupErrors, 'Admin Finance fixture cleanup failed');
     }
     if (tlsDir !== '') {
       rmSync(tlsDir, { recursive: true, force: true });

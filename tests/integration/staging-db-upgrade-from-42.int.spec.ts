@@ -289,9 +289,9 @@ describe('issue #49 — staging DB upgrade from the PR #42 history (PostgreSQL)'
     expect(printed()).toContain('committed');
 
     // M01.02 and the fixture migration are part of the standard history now: the upgrade creates the customer tables (empty).
-    expect(NAMES).toHaveLength(41);
+    expect(NAMES).toHaveLength(42);
     expect(NAMES).toContain('1792540800000_create-customer-profiles-consents');
-    expect(NAMES[NAMES.length - 1]).toBe('1795219200000_simplify-shipper-onboarding');
+    expect(NAMES[NAMES.length - 1]).toBe('1795305600000_order-stage-timeouts');
     const customerTables = await client.query<{ profiles: number; consents: number }>(
       `SELECT (SELECT count(*) FROM app.customer_profiles)::int AS profiles, (SELECT count(*) FROM app.user_consents)::int AS consents`,
     );

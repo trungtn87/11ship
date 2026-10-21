@@ -248,6 +248,7 @@ async function purgeWalletsOfPhone(pool: Pool, normalizedPhone: string): Promise
     await client.query(`CREATE TEMP TABLE m07_purge ON COMMIT DROP AS SELECT delivery_id FROM app.delivery_assignments WHERE driver_id IN (${owned})`, [normalizedPhone]);
     await client.query(`DELETE FROM app.delivery_assignments WHERE driver_id IN (${owned})`, [normalizedPhone]);
     await client.query('DELETE FROM app.deliveries WHERE delivery_id IN (SELECT delivery_id FROM m07_purge)');
+    await client.query('SET CONSTRAINTS ALL IMMEDIATE');
     for (const table of m07Tables) {
       await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
     }
@@ -265,6 +266,26 @@ async function purgeWalletsOfPhone(pool: Pool, normalizedPhone: string): Promise
 
 /** Removes every Auth row of one phone number (and the register idempotency records of its proofs). */
 export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<void> {
+  const grants = await pool.query("SELECT to_regclass('app.admin_finance_grants') AS t");
+  if (grants.rows[0]?.t != null) {
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query('ALTER TABLE app.admin_finance_grants DISABLE TRIGGER admin_finance_grants_no_delete');
+      await c.query(`DELETE FROM app.admin_finance_grants
+        WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)
+           OR granted_by_user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)
+           OR revoked_by_user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)`, [normalizedPhone]);
+      await c.query('SET CONSTRAINTS ALL IMMEDIATE');
+      await c.query('ALTER TABLE app.admin_finance_grants ENABLE TRIGGER admin_finance_grants_no_delete');
+      await c.query('COMMIT');
+    } catch (error) {
+      await c.query('ROLLBACK');
+      throw error;
+    } finally {
+      c.release();
+    }
+  }
   // M01-A2S: shops owned by the user, their memberships and the user-scoped onboarding idempotency records.
   await pool.query(
     `DELETE FROM app.idempotency_records

@@ -1,3 +1,6 @@
+import { PRE_TIMEOUT_MIGRATION_ARGS, TIMEOUT_MIGRATION_NAME, TIMEOUT_UP_SQL } from './support/timeout-migration-sql';
+import { assertTestDatabaseTarget } from './support/assert-test-target';
+import { minimalChildEnv, runNpmScript } from './support/test-helpers';
 import { randomBytes, randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
@@ -78,7 +81,7 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
         }
       }
       const restored = await c.query<{ id: number; name: string; run_on: string }>(
-        'SELECT id, name, run_on::text AS run_on FROM public.pgmigrations ORDER BY id',
+        'SELECT id, name, run_on::text AS run_on FROM public.pgmigrations WHERE name <> $1 ORDER BY id', [TIMEOUT_MIGRATION_NAME],
       );
       expect(restored.rows).toEqual(originalMigrationHistory);
       await c.query('COMMIT');
@@ -102,6 +105,10 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
         await c.query(sql);
         if (record === 'delete') await c.query('DELETE FROM public.pgmigrations WHERE name = $1', [name]);
         else await c.query('INSERT INTO public.pgmigrations (name, run_on) VALUES ($1, now())', [name]);
+        if (record === 'insert' && name === WITHDRAWAL_MIGRATION_NAME) {
+          await c.query(TIMEOUT_UP_SQL);
+          await c.query('INSERT INTO public.pgmigrations (name, run_on) VALUES ($1, now())', [TIMEOUT_MIGRATION_NAME]);
+        }
       } else if (record === 'delete') {
         await c.query(ADJUSTMENT_DOWN_SQL);
         await c.query(M11_DOWN_SQL);
@@ -127,6 +134,16 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
   }
 
   beforeAll(async () => {
+    const setup = new Pool({ connectionString: process.env.DATABASE_URL });
+    try {
+      await assertTestDatabaseTarget(setup);
+      await setup.query('DROP SCHEMA app CASCADE');
+      await setup.query('DROP TABLE public.pgmigrations');
+      const result = runNpmScript('db:migrate', PRE_TIMEOUT_MIGRATION_ARGS, minimalChildEnv({ APP_ENV: 'test', DATABASE_URL: process.env.DATABASE_URL }));
+      expect(result.status).toBe(0);
+    } finally {
+      await setup.end();
+    }
     router = http.createServer((request, response) => {
       request.resume();
       response.setHeader('content-type', 'application/json');

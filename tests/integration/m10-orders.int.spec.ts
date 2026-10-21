@@ -809,6 +809,7 @@ describe('M10 — food orders', () => {
         'cancel_at',(timeout_snapshot->>'cancel_at')::timestamptz-make_interval(mins=>$2::int)),
         ${table==='orders'?'timeout_next_reminder_at=timeout_next_reminder_at-make_interval(mins=>$2::int),':''}
         version=version+1 WHERE ${key}=$1::uuid`,[id,minutes]);
+      await c.query('SET CONSTRAINTS ALL IMMEDIATE');
       await c.query(`ALTER TABLE app.${table} ENABLE TRIGGER ${trigger}`);await c.query('COMMIT');
     }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}
   }
