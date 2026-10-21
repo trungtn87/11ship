@@ -134,6 +134,64 @@ class DeployTests(unittest.TestCase):
             d.verify_service()
             self.assertFalse(any('is-active' in call.args[0] for call in run.call_args_list))
 
+    def test_only_exact_root_owned_non_writable_refresh_wrapper_is_accepted(self):
+        from types import SimpleNamespace
+        wrapper = self.root / 'refresh-android.sh'
+        wrapper.write_text(d.REFRESH_WRAPPER_CONTENT)
+        wrapper.chmod(0o755)
+        properties = {'User': 'ship11', 'Group': 'ship11', 'WorkingDirectory': str(self.root / 'current'),
+                      'EnvironmentFiles': d.ENV + ' (ignore_errors=no)', 'ExecStart': 'node apps/backend/dist/main.js',
+                      'Environment': '', 'RootDirectory': '', 'RootImage': ''}
+        start = '{ path=/opt/11ship/tools/refresh-android.sh ; argv[]=/opt/11ship/tools/refresh-android.sh ; }'
+        with patch.object(d, 'prop', side_effect=properties.get), patch.object(d, 'run', return_value=start), \
+             patch.object(d, 'REFRESH_WRAPPER', wrapper):
+            # lstat owner is mocked so this test also runs as a non-root developer.
+            with patch.object(Path, 'lstat', return_value=SimpleNamespace(st_uid=0, st_mode=0o100755)):
+                d.verify_service()
+                wrapper.write_text(d.REFRESH_WRAPPER_CONTENT + 'echo changed\n')
+                with self.assertRaisesRegex(RuntimeError, 'wrapper content or permissions'):
+                    d.verify_service()
+            wrapper.write_text(d.REFRESH_WRAPPER_CONTENT)
+            for owner, mode in [(1000, 0o100755), (0, 0o100775)]:
+                with patch.object(Path, 'lstat', return_value=SimpleNamespace(st_uid=owner, st_mode=mode)):
+                    with self.assertRaisesRegex(RuntimeError, 'wrapper content or permissions'):
+                        d.verify_service()
+
+    def test_existing_release_retry_checks_all_files_and_refuses_drift(self):
+        import shutil
+        verified = self.root / 'verified'
+        shutil.copytree(self.new, verified)
+        d.verify_existing_release(self.new, verified)
+        (self.new / 'code').write_text('modified')
+        with self.assertRaisesRegex(RuntimeError, 'never overwrite'):
+            d.verify_existing_release(self.new, verified)
+        self.assertEqual((self.new / 'code').read_text(), 'modified')
+
+    def test_existing_release_retry_refuses_links_and_extra_files(self):
+        import shutil
+        verified = self.root / 'verified'
+        shutil.copytree(self.new, verified)
+        extra = self.new / 'extra'
+        extra.write_text('user data')
+        with self.assertRaisesRegex(RuntimeError, 'never overwrite'):
+            d.verify_existing_release(self.new, verified)
+        extra.unlink()
+        extra.symlink_to(self.old / 'code')
+        with self.assertRaisesRegex(RuntimeError, 'links or special'):
+            d.verify_existing_release(self.new, verified)
+
+    def test_same_release_retry_preserves_rollback_record(self):
+        before = (self.root / 'previous').resolve()
+        with patch.object(d, 'verify_service'), patch.object(d, 'extract', return_value=self.old), \
+             patch.object(d, 'probe', side_effect=['ready', 'ready', '[]']), patch.object(d, 'run'), \
+             patch.object(d, 'health') as health, patch.object(d, 'save_state') as save, \
+             patch.object(d, 'switch') as switch:
+            d.update('archive', 'a' * 40)
+            health.assert_called_once_with(self.old)
+            switch.assert_not_called()
+            save.assert_not_called()
+        self.assertEqual((self.root / 'previous').resolve(), before)
+
 
 if __name__ == '__main__':
     unittest.main()
