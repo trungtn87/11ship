@@ -27,7 +27,9 @@ import 'session_controller.dart';
 const String kNoServerReason = 'Bản dựng này thiếu địa chỉ máy chủ HTTPS (API_BASE_URL).';
 
 /// A refusal in words (Vietnamese, fixed): never the server's text.
-String failureMessage(AuthFailure failure) {
+String failureMessage(AuthFailure failure) => withRequestTrace(_failureMessage(failure), failure.requestId);
+
+String _failureMessage(AuthFailure failure) {
   switch (failure.kind) {
     case AuthFailureKind.unknownOutcome:
       return 'Chưa nhận được phản hồi từ máy chủ. Yêu cầu có thể đã được xử lý. Nhấn "Thử lại" để gửi lại đúng yêu cầu đó.';

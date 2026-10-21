@@ -1,3 +1,4 @@
+import 'dart:async';
 import '../flows/location.dart';
 import '../m10/m10_cart.dart';
 import '../m10/m10_customer_views.dart' show DishStepper;
@@ -137,20 +138,32 @@ class DiscoveryHome extends StatefulWidget {
   State<DiscoveryHome> createState() => _DiscoveryHomeState();
 }
 
-class _DiscoveryHomeState extends State<DiscoveryHome> {
+class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserver {
   DiscoveryController get c => widget.controller;
-  late final DiscoveryPosition _position = widget.position ?? DiscoveryPosition();
+  late final DiscoveryPosition _position = widget.position ?? c.position;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => c.start());
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      if (c.choicesState != DiscoveryLoad.ready) await c.start();
+      if (mounted) await c.locate(source: _position);
+    });
   }
 
   @override
   void dispose() {
-    if (widget.position == null) _position.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && c.choicesState == DiscoveryLoad.ready) {
+      unawaited(c.locate(source: _position));
+    }
   }
 
   Future<void> _openFilters() async {
@@ -169,7 +182,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> {
       m02Toast(context, 'Hãy chọn khu vực trước khi tìm.');
       return;
     }
-    Navigator.of(context).push(n11Route(SearchScreen(api: c.api, publicApi: widget.publicApi, ratings: widget.ratings, areaId: area, position: _position)));
+    Navigator.of(context).push(n11Route(SearchScreen(api: c.api, publicApi: widget.publicApi, ratings: widget.ratings, areaId: area, position: _position, discovery: c, retryPosition: () => c.locate(source: _position, force: true))));
   }
 
   @override
@@ -229,6 +242,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> {
   List<Widget> _ready() {
     final List<Widget> out = <Widget>[];
     if (c.areas.isEmpty) {
+      if (c.outsideCoverage) return <Widget>[const Text('Khu vực này chưa được phục vụ', key: Key('home-outside-coverage'), style: N11Text.lead)];
       return <Widget>[const EmptyState(icon: Icons.place_outlined, title: 'Chưa có khu vực phục vụ', text: 'Hiện chưa có khu vực nào đang phục vụ. Vui lòng quay lại sau.')];
     }
     out.add(InkWell(
@@ -240,13 +254,17 @@ class _DiscoveryHomeState extends State<DiscoveryHome> {
         child: Row(children: <Widget>[
           const Icon(Icons.place, size: 20, color: N11Colors.yellowStrong),
           const SizedBox(width: 6),
-          Flexible(child: Text(c.area?.name ?? 'Chọn khu vực', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: N11Colors.black))),
+          Flexible(child: Text(c.area == null ? 'Chọn khu vực' : c.manualArea ? '${c.area!.name} · đang xem tham khảo' : c.area!.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: N11Colors.black))),
           const Icon(Icons.expand_more, size: 22, color: N11Colors.ink2),
         ]),
       ),
     ));
     out.add(_FakeField(onTap: _openSearch));
-    out.add(_PositionButton(position: _position));
+    out.add(_PositionButton(position: _position, resolving: c.resolvingArea, failed: c.areaResolutionFailed,
+      retry: () => c.locate(source: _position, force: true)));
+    if (c.outsideCoverage) {
+      out.add(const Text('Khu vực này chưa được phục vụ', key: Key('home-outside-coverage'), style: N11Text.lead));
+    }
     if (c.areaId == null) {
       out.add(const Text('Chọn khu vực để xem các quán đang phục vụ.', key: Key('home-pick-area'), style: N11Text.lead));
       for (final AreaChoice a in c.areas) {
@@ -455,13 +473,15 @@ class _FilterSheetState extends State<FilterSheet> {
 /// KP02: search over shop names and dish names in the chosen area, in two tabs. Hủy leaves; the typed term stays while the person moves
 /// between the tabs; results of an older term never show under a newer one.
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key, required this.api, required this.publicApi, this.ratings, required this.areaId, this.categoryId, this.openOnly = false, this.position, this.debounce = const Duration(milliseconds: 350)});
+  const SearchScreen({super.key, required this.api, required this.publicApi, this.ratings, required this.areaId, this.categoryId, this.openOnly = false, this.position, this.debounce = const Duration(milliseconds: 350), this.discovery, this.retryPosition});
 
   final DiscoveryPosition? position;
   final DiscoveryApi api;
   final PublicShopApi publicApi;
   final M11Source? ratings;
   final String areaId;
+  final DiscoveryController? discovery;
+  final VoidCallback? retryPosition;
   final String? categoryId;
   final bool openOnly;
   final Duration debounce;
@@ -476,8 +496,17 @@ class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _text = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    widget.discovery?.addListener(_areaChanged);
+  }
+
+  void _areaChanged() => _search.setArea(widget.discovery?.areaId);
+
+  @override
   void dispose() {
     if (widget.position == null) _position.dispose();
+    widget.discovery?.removeListener(_areaChanged);
     _search.dispose();
     _text.dispose();
     super.dispose();
@@ -489,7 +518,7 @@ class _SearchScreenState extends State<SearchScreen> {
       backgroundColor: N11Colors.bg,
       body: SafeArea(
         child: ListenableBuilder(
-          listenable: Listenable.merge(<Listenable>[_search, _position]),
+          listenable: Listenable.merge(<Listenable>[_search, _position, if (widget.discovery != null) widget.discovery!]),
           builder: (BuildContext context, Widget? child) => Column(
             children: <Widget>[
               Container(
@@ -521,7 +550,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   TextButton(key: const Key('search-cancel'), style: TextButton.styleFrom(minimumSize: const Size(kTapMin, kTapMin)), onPressed: () => Navigator.of(context).maybePop(), child: const Text('Hủy', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: N11Colors.black))),
                 ]),
               ),
-              _PositionButton(position: _position),
+              _PositionButton(position: _position, retry: widget.retryPosition, resolving: widget.discovery?.resolvingArea ?? false, failed: widget.discovery?.areaResolutionFailed ?? false),
               Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap3, N11Space.pad, N11Space.gap8), children: _results())),
             ],
           ),
@@ -533,6 +562,9 @@ class _SearchScreenState extends State<SearchScreen> {
   List<Widget> _results() {
     final DishSearchController s = _search;
     Widget gap(Widget w) => Padding(padding: const EdgeInsets.only(bottom: N11Space.gap3), child: w);
+    if (widget.discovery != null && widget.discovery!.areaId == null) {
+      return <Widget>[const Text('Chọn khu vực để tìm quán hoặc món.')];
+    }
     if (!s.hasTerm) {
       return <Widget>[const EmptyState(icon: Icons.search, title: 'Tìm quán hoặc món', text: 'Gõ tên quán hoặc tên món. Không cần gõ dấu.')];
     }
@@ -617,12 +649,22 @@ class _DishResult extends StatelessWidget {
 }
 
 class _PositionButton extends StatelessWidget {
-  const _PositionButton({required this.position});
+  const _PositionButton({required this.position, this.retry, this.resolving = false, this.failed = false});
   final DiscoveryPosition position;
+  final VoidCallback? retry;
+  final bool resolving;
+  final bool failed;
   @override
-  Widget build(BuildContext context) => TextButton.icon(
-    key: const Key('discovery-locate'), onPressed: position.loading ? null : position.locate,
-    icon: const Icon(Icons.my_location, size: 18),
-    label: Text(position.loading ? 'Đang định vị…' : position.fix == null ? 'Dùng vị trí hiện tại để xem khoảng cách' : 'Cập nhật vị trí hiện tại'),
-  );
+  Widget build(BuildContext context) {
+    if (position.fix != null && !resolving && !failed) return const SizedBox.shrink();
+    final bool busy = position.loading || resolving;
+    final String label = busy ? 'Đang định vị…' : failed ? 'Chưa xác định được khu vực. Thử lại'
+      : position.failure == LocationFailure.denied ? 'Chưa được cấp quyền vị trí. Thử lại'
+      : position.failure == LocationFailure.disabled ? 'Vị trí đang tắt. Thử lại'
+      : position.attemptedAt != null ? 'Chưa lấy được vị trí. Thử lại' : 'Dùng vị trí hiện tại để xem khoảng cách';
+    return TextButton.icon(
+      key: const Key('discovery-locate'), onPressed: busy ? null : retry ?? position.locate,
+      icon: const Icon(Icons.my_location, size: 18), label: Text(label),
+    );
+  }
 }

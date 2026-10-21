@@ -18,7 +18,7 @@ function parseQuery(value: unknown): ErrorLogQuery {
     throw new AppError('ADMIN_INPUT_INVALID');
   }
   const source = value as Record<string, unknown>;
-  const keys = ['request_id', 'code', 'app', 'status', 'from', 'to', 'page', 'limit'];
+  const keys = ['request_id', 'code', 'app', 'status', 'from', 'to', 'page', 'limit', 'level', 'module'];
   if (!Object.keys(source).every((key) => keys.includes(key))) {
     throw new AppError('ADMIN_INPUT_INVALID');
   }
@@ -31,12 +31,16 @@ function parseQuery(value: unknown): ErrorLogQuery {
   const requestId = get('request_id');
   const code = get('code');
   const app = get('app');
+  const level = get('level');
+  const moduleName = get('module');
+  if (level !== undefined && level !== 'warn' && level !== 'error') throw new AppError('ADMIN_INPUT_INVALID');
+  if (moduleName !== undefined && !/^[A-Za-z0-9_.-]{1,128}$/.test(moduleName)) throw new AppError('ADMIN_INPUT_INVALID');
   const statusText = get('status');
   const fromText = get('from');
   const toText = get('to');
   const pageText = get('page');
   const limitText = get('limit');
-  if (requestId !== undefined && !/^[a-f0-9]{8}-[a-f0-9-]{27,36}$/i.test(requestId)) throw new AppError('ADMIN_INPUT_INVALID');
+  if (requestId !== undefined && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(requestId)) throw new AppError('ADMIN_INPUT_INVALID');
   if (code !== undefined && !/^[A-Z0-9_]{1,128}$/.test(code)) throw new AppError('ADMIN_INPUT_INVALID');
   if (app !== undefined && !['SHIP', 'FOOD', 'ADMIN', 'API'].includes(app)) throw new AppError('ADMIN_INPUT_INVALID');
   const numberOf = (s: string | undefined, min: number, max: number, defaultValue: number): number => {
@@ -62,6 +66,8 @@ function parseQuery(value: unknown): ErrorLogQuery {
     ...(requestId === undefined ? {} : { requestId: requestId.toLowerCase() }),
     ...(code === undefined ? {} : { code }),
     ...(app === undefined ? {} : { app }),
+    ...(level === undefined ? {} : { level }),
+    ...(moduleName === undefined ? {} : { module: moduleName }),
     ...(statusText === undefined ? {} : { status: numberOf(statusText, 400, 599, 400) }),
     ...(from === undefined ? {} : { from }),
     ...(to === undefined ? {} : { to }),

@@ -31,6 +31,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const moduleName = family === 'driver/wallet' ? 'M04' :
       family?.startsWith('admin') ? 'ADMIN' : family === 'orders' ? 'M10' : family === 'driver' ? 'M03' : 'GENERAL';
 
+    // Express route.path is registered server code, unlike originalUrl which contains user data.
+    const template = (request as RequestWithContext & { route?: { path?: unknown } }).route?.path;
+    const safeRoute = typeof template === 'string' && /^\/[A-Za-z0-9/:._-]{0,127}$/.test(template) ? template : undefined;
+
     // Only whitelisted metadata is logged. The exception message and stack are never logged.
     this.logger.log(classified.status >= 500 ? 'error' : 'warn', 'request_failed', {
       request_id: requestId,
@@ -40,6 +44,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       error_class: safeErrorClass(exception),
       app,
       module: moduleName,
+      ...(safeRoute === undefined ? {} : { route: safeRoute }),
     });
 
     if (classified.retryAfterSeconds !== undefined) {

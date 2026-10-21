@@ -16,15 +16,16 @@ M07Failure _failureOf(Object error) {
   }
   if (error is AuthFailure) {
     if (error.code == 'ORDER_MODULE_NOT_READY') {
-      return M07Failure(M07FailureKind.notReady, code: error.code);
+      return M07Failure(M07FailureKind.notReady, code: error.code, requestId: error.requestId);
     }
-    return switch (error.kind) {
+    final M07Failure mapped = switch (error.kind) {
       AuthFailureKind.unknownOutcome || AuthFailureKind.tls => const M07Failure(M07FailureKind.offline),
       AuthFailureKind.sessionEnded || AuthFailureKind.deviceProofRefused => const M07Failure(M07FailureKind.sessionEnded),
       AuthFailureKind.versionConflict => M07Failure(M07FailureKind.conflict, code: error.code ?? 'VERSION_CONFLICT'),
       AuthFailureKind.serverUnavailable => error.outcomeUnknown ? const M07Failure(M07FailureKind.offline) : const M07Failure(M07FailureKind.server),
       _ => _byCode(error.code),
     };
+    return M07Failure(mapped.kind, code: mapped.code, requestId: error.requestId);
   }
   if (error is FormatException) {
     return const M07Failure(M07FailureKind.server, code: 'BAD_RESPONSE');

@@ -21,7 +21,11 @@ async function bootstrap(): Promise<void> {
   }
 
   const { config } = result;
-  const logger = new JsonLogger(undefined, process.env.M13_ERROR_LOG_PATH);
+  const logger = new JsonLogger(undefined, process.env.M13_ERROR_LOG_PATH, {
+    maxEntries: Number(process.env.M13_ERROR_LOG_MAX_ENTRIES),
+    maxBytes: Number(process.env.M13_ERROR_LOG_MAX_BYTES),
+    retentionDays: Number(process.env.M13_ERROR_LOG_RETENTION_DAYS),
+  });
 
   // Fixed event name only: the logger's metadata whitelist deliberately has no TLS, host or path fields, so
   // nothing about the CA can reach a log line. Emitted only when strict TLS is active (always in staging).

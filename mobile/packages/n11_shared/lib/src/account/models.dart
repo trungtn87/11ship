@@ -101,6 +101,13 @@ class Identity {
   }
 }
 
+/// Append only a validated server correlation UUID; never reflect arbitrary error text.
+String withRequestTrace(String message, String? requestId) {
+  if (requestId == null || !RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(requestId)) return message;
+  final String trace = '\nMã tra cứu: $requestId';
+  return message.endsWith(trace) ? message : message + trace;
+}
+
 /// A refusal by the server or the device, as a closed code (no server text is ever shown).
 @immutable
 class AuthFailure implements Exception {

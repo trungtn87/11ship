@@ -90,6 +90,29 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
     expect(all.find((s) => s.shop_id === unrated.shopId)?.rating).toEqual({ count: 0, average: null });
   });
 
+  it('resolves only ACTIVE configured circles and rejects incomplete or invalid geometry', async () => {
+    const first = await createServiceArea(app.pool);
+    const second = await createServiceArea(app.pool);
+    const inactive = await createServiceArea(app.pool, 'INACTIVE');
+    await app.pool.query(`UPDATE app.service_areas SET coverage_lat = 0, coverage_lng = 0, coverage_radius_m = 1000 WHERE service_area_id = $1`, [first]);
+    await app.pool.query(`UPDATE app.service_areas SET coverage_lat = 1, coverage_lng = 1, coverage_radius_m = 1000 WHERE service_area_id = $1`, [second]);
+    await app.pool.query(`UPDATE app.service_areas SET coverage_lat = 2, coverage_lng = 2, coverage_radius_m = 1000 WHERE service_area_id = $1`, [inactive]);
+    const resolve = (lat: number, lng: number) => app.call('GET', `/service-areas/resolve?latitude=${lat}&longitude=${lng}`);
+    const located = await resolve(0, 0);
+    expect(located.status).toBe(200);
+    expect(located.headers.get('cache-control')).toBe('no-store');
+    expect(located.body.data).toMatchObject({ service_area_id: first });
+    expect((await resolve(1, 1)).body.data).toMatchObject({ service_area_id: second });
+    expect((await resolve(2, 2)).body.data).toBeNull();
+    expect((await resolve(80, 80)).body.data).toBeNull();
+    for (const query of ['latitude=91&longitude=0', 'latitude=0', 'latitude=0&latitude=1&longitude=0', 'latitude=NaN&longitude=0']) {
+      expect((await app.call('GET', `/service-areas/resolve?${query}`)).status).toBe(400);
+    }
+    await expect(app.pool.query('UPDATE app.service_areas SET coverage_lat = 91 WHERE service_area_id = $1', [first])).rejects.toThrow();
+    await expect(app.pool.query('UPDATE app.service_areas SET coverage_lng = NULL WHERE service_area_id = $1', [first])).rejects.toThrow();
+    await expect(app.pool.query('UPDATE app.service_areas SET coverage_radius_m = 0 WHERE service_area_id = $1', [first])).rejects.toThrow();
+  });
+
   it('lists only the ACTIVE service areas and ACTIVE groups, never cached', async () => {
     const closed = await createServiceArea(app.pool, 'INACTIVE');
     const areas = await app.call('GET', '/service-areas', {});
