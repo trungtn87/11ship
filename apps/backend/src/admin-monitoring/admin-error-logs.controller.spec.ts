@@ -6,7 +6,7 @@ import { AdminErrorLogsController } from './admin-error-logs.controller';
 
 const requestId = '11111111-2222-4333-8444-555555555555';
 const request = { headers: { cookie: 'test', origin: 'https://admin.example.test' }, requestId };
-const config = { allowedOrigins: ['https://admin.example.test'] } as AdminAuthConfig;
+const config = { allowedOrigins: ['https://admin.example.test'] } as unknown as AdminAuthConfig;
 
 function controller(role: 'SYSTEM' | 'ADMIN') {
   const logger = new JsonLogger(() => undefined);
