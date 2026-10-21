@@ -48,3 +48,33 @@ Workflow không cài mới server, đổi env hoặc tạo/cấp quyền khóa S
 Không tự deploy sau mỗi merge, không gửi Discord, không bật Firebase. Không coi
 health check là nghiệm thu trên điện thoại. M13 có thể gọi/dùng lại workflow này
 khi tích hợp điều khiển phát hành; không tạo hệ thống version/deploy riêng.
+
+## Khôi phục riêng bản 6270be9 khi Owner không có terminal VPS
+
+Action **Recover VPS 6270be9** là thao tác operator thủ công, chỉ trên main và
+environment/SSH/concurrency hiện có. Phải chọn `approve_reviewed_hashes`; mặc định
+tắt. Nó không tự duyệt migration trong **Deploy VPS** hay cho những bản tiếp theo.
+
+Nguồn ứng dụng cố định `6270be903e7c94b5155b3db9a353a7761b864722`, cùng APK build 210.
+Gói đã verify/upload/extract bởi Deploy VPS run `39636197294`, bị dừng trước apply.
+Lần deploy thành công trước đã xác minh nguồn `aadde62d08a9a7bc500ff1a50fe84fd2acbd2e74`
+(run `39520731414`). Recovery từ chối nếu current đã chuyển sang bản khác.
+
+Hai nội dung SQL được review cho lần triển khai Owner đã yêu cầu:
+
+| Migration | SHA256 nội dung |
+| --- | --- |
+| `1795305600000_service-area-coverage` | `1d78c9b015340412dfea60fcb0a073f32684e664caf8b0d640d585915b2a1e78` |
+| `1795392000000_order-stage-timeouts` | `e3b281687b13f74591a91c39aeb827ac7153efe8973317bf42c0ca2209278f77` |
+
+Coverage thêm ba cột nullable/check, không đoán vị trí hay sửa dữ liệu cũ. Timeout
+thêm bảng/cột/trigger và mở rộng trạng thái; giữ snapshot NULL của giai đoạn cũ,
+giữ guard tiền/identity và không xóa lịch sử. Bằng chứng integration của PR #157
+đã xanh trước merge. Không chạy Down Migration. Quyền runtime do updater cấp sau
+apply như quy trình hiện có; backup và rollback code vẫn thuộc updater.
+
+Recovery kiểm đúng SQL và updater, giữ approval khác, sao lưu policy và ghi nguyên
+tử dưới deploy lock; không cho conflict hoặc app-write policy. Sau đó updater tự
+verify lại gói, backup DB, apply/grants và health/readiness. Migration khác chưa có
+hash tiếp tục bị chặn. Chạy `python3 tests/deploy/recover-6270be9.test.py` để kiểm
+những nhánh từ chối bằng filesystem tạm, không gọi SSH/DB/systemd.
