@@ -157,6 +157,24 @@ class DeployTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, 'wrapper content or permissions'):
                         d.verify_service()
 
+    def test_verified_release_permissions_ignore_restrictive_umask(self):
+        folder = self.new / 'apps/backend'
+        folder.mkdir(parents=True)
+        script = folder / 'main.js'
+        script.write_text('code')
+        executable = folder / 'tool'
+        executable.write_text('tool')
+        for path in (self.new, self.new / 'apps', folder):
+            path.chmod(0o700)
+        script.chmod(0o600)
+        executable.chmod(0o700)
+        d.make_release_readable(self.new)
+        for path in (self.new, self.new / 'apps', folder):
+            self.assertEqual(path.stat().st_mode & 0o777, 0o755)
+        self.assertEqual(script.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(executable.stat().st_mode & 0o777, 0o755)
+        self.assertEqual(script.read_text(), 'code')
+
     def test_existing_release_retry_checks_all_files_and_refuses_drift(self):
         import shutil
         verified = self.root / 'verified'
