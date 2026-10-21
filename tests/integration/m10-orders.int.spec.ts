@@ -819,10 +819,10 @@ describe('M10 — food orders', () => {
   it('#153: 15/20/25 reminders, one cancellation at 30, durable audit and reorder',async()=>{
     const o=await place(alice),oid=String(o.order_id);await timeoutAge('orders',oid,25);
     await Promise.all([orderSweeper().sweep(),orderSweeper().sweep()]);
-    expect(await countRows(app.pool,`SELECT 1 FROM app.order_events WHERE order_id=$1::uuid AND event_type='order.confirmation_reminder'`,[oid])).toBe(3);
+    expect(await countRows(app.pool,`SELECT 1 FROM app.order_events WHERE order_id=$1::uuid AND type='order.confirmation_reminder'`,[oid])).toBe(3);
     await timeoutAge('orders',oid,5);await Promise.all([orderSweeper().sweep(),orderSweeper().sweep()]);
     expect(await orderRow(oid)).toMatchObject({status:'CANCELLED_BY_SYSTEM',end_actor:'SYSTEM',end_reason:'QUÁ HẠN QUÁN XÁC NHẬN'});
-    expect(await countRows(app.pool,`SELECT 1 FROM app.order_events WHERE order_id=$1::uuid AND event_type='order.confirmation_timeout'`,[oid])).toBe(1);
+    expect(await countRows(app.pool,`SELECT 1 FROM app.order_events WHERE order_id=$1::uuid AND type='order.confirmation_timeout'`,[oid])).toBe(1);
     expect(await countRows(app.pool,`SELECT 1 FROM app.cancellation_transitions WHERE resource_id=$1::uuid AND before_state='PENDING_CONFIRMATION' AND after_state='CANCELLED_BY_SYSTEM' AND source='timeout' AND request_id IS NOT NULL`,[oid])).toBe(1);
     await timeoutDrain();expect((await app.pool.query(`SELECT recipient_user_id::text FROM app.notifications WHERE target_id=$1::uuid AND kind='ORDER_TIMEOUT'`,[oid])).rows).toEqual([{recipient_user_id:alice.userId}]);
     expect((await customerView(alice,oid)).display_status).toBe('CANCELLED_BY_SYSTEM');
