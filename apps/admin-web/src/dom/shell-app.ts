@@ -60,6 +60,7 @@ import { FinanceAdminSource, FinanceRights, NO_FINANCE_RIGHTS, NOT_WIRED_FINANCE
 import { FinanceOpsSource, NOT_WIRED_FINANCE_OPS } from '../core/finance-ops.js';
 import { FinanceOpsHost, OpsOverviewView, ReconciliationPageView, TransactionsView, WalletListView, WithdrawalDetailView, WithdrawalListView } from './finance-ops-view.js';
 import { BankAccountsView, FinanceAdminHost, FINANCE_RECORD_REQUIRES_READ, openFinanceAccessDialog, TopupDetailView, TopupListView } from './finance-admin-view.js';
+import { ErrorLogView } from './monitoring-errors-view.js';
 import { statePanel } from './states.js';
 import { ShellLayout } from './shell-layout.js';
 import { failurePanel, skeleton } from './states.js';
@@ -105,6 +106,7 @@ export class ShellApp implements ShellHost {
   #financeRights: FinanceRights = NO_FINANCE_RIGHTS;
   #financeLoaded = false;
   #financeDialog: { close(): void } | undefined;
+  #errorLogView: ErrorLogView | undefined;
   #roles: readonly UserRole[] = [];
   #grantsState: GrantsState = { kind: 'loading' };
   /** The users filter, kept only so "Back" from a detail returns to the same list. Dropped with the shell. */
@@ -273,6 +275,8 @@ export class ShellApp implements ShellHost {
   }
 
   #teardown(): void {
+    this.#errorLogView?.dispose();
+    this.#errorLogView = undefined;
     this.#financeDialog?.close();
     this.#financeDialog = undefined;
     this.#generation += 1;
@@ -348,6 +352,12 @@ export class ShellApp implements ShellHost {
       case 'administrators':
         this.#administrators(content);
         return;
+      case 'monitoring-errors': {
+        const view = new ErrorLogView(this.onSessionLost);
+        this.#errorLogView = view;
+        content.replaceChildren(view.root);
+        return;
+      }
       case 'settings':
         this.#settings(content);
         return;
