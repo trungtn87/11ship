@@ -266,7 +266,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#156](https://github.com/trungtn87/11ship/pull/156) M02: tự định vị và chuyển khu vực phục vụ theo GPS (#154) | Đã merge (`MERGED`) | — | — | — | `dfff64a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#157](https://github.com/trungtn87/11ship/pull/157) M10/M07/M08: ba giai đoạn timeout, SYSTEM hủy đơn và cấu hì… | Đã merge (`MERGED`) | — | — | — | `67c39ff` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#158](https://github.com/trungtn87/11ship/pull/158) M13: Nhật ký lỗi dễ đọc, chỉ SYSTEM (#155) | Đã merge (`MERGED`) | — | — | — | `ad076a7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#159](https://github.com/trungtn87/11ship/pull/159) fix(deploy): khôi phục VPS 6270be9 qua Actions với hai hash… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `2304242` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#159](https://github.com/trungtn87/11ship/pull/159) fix(deploy): khôi phục VPS 6270be9 qua Actions với hai hash… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `c578cb6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
