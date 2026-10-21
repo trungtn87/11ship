@@ -105,6 +105,10 @@ export function configureApp(app: INestApplication): void {
   // larger parser FIRST (the first parser to run wins; the later ones skip an already parsed body), everything else keeps the default limit.
   app.use(`/${GLOBAL_PREFIX}/shop/me/menu/images`, capturePictureBody);
   app.use(`/${GLOBAL_PREFIX}/shop/me`, captureRawBody);
+  // M08: native notification writes sign their exact JSON bytes too (including `{}` on open/read-all).
+  // Without this hook GET works, but the guard hashes an empty body for POST and refuses its valid proof.
+  app.use(`/${GLOBAL_PREFIX}/notifications`, clientAuthTransportMiddleware);
+  app.use(`/${GLOBAL_PREFIX}/notifications`, captureRawBody);
   app.setGlobalPrefix(GLOBAL_PREFIX);
   app.useGlobalFilters(new AllExceptionsFilter(app.get(HttpAdapterHost), logger));
 }

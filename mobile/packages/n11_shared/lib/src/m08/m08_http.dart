@@ -16,7 +16,8 @@ NotificationFailure _failureOf(Object error) {
   if (error is AuthFailure) {
     return switch (error.kind) {
       AuthFailureKind.unknownOutcome || AuthFailureKind.tls => const NotificationFailure(NotificationFailureKind.offline),
-      AuthFailureKind.sessionEnded || AuthFailureKind.deviceProofRefused => const NotificationFailure(NotificationFailureKind.sessionEnded),
+      AuthFailureKind.sessionEnded => NotificationFailure(NotificationFailureKind.sessionEnded, code: error.code),
+      AuthFailureKind.deviceProofRefused || AuthFailureKind.deviceUnsupported => NotificationFailure(NotificationFailureKind.deviceProofRefused, code: error.code),
       _ => error.code == 'NOTIFICATION_NOT_FOUND' ? NotificationFailure(NotificationFailureKind.notFound, code: error.code) : NotificationFailure(NotificationFailureKind.server, code: error.code),
     };
   }

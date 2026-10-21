@@ -135,6 +135,7 @@ Future<void> openNotification(BuildContext context, NotificationController contr
       NotificationFailureKind.offline => kOfflineText,
       NotificationFailureKind.notFound => 'Không tìm thấy thông báo này.',
       NotificationFailureKind.sessionEnded => 'Phiên đăng nhập đã hết hạn.',
+      NotificationFailureKind.deviceProofRefused => 'Chưa xác thực được thiết bị. Hãy thử lại.',
       NotificationFailureKind.server => 'Chưa mở được thông báo. Hãy thử lại.',
     })));
     return;

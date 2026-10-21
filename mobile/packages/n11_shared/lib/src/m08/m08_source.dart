@@ -7,7 +7,10 @@ enum NotificationFailureKind {
   /// No complete answer (offline, timeout): nothing is known about a write until the person tries again.
   offline,
 
-  /// The session ended or lost its role.
+  /// Device proof was refused; the signed-in session is kept.
+  deviceProofRefused,
+
+  /// The session ended.
   sessionEnded,
 
   /// The notification is not the account's (or no longer exists).
