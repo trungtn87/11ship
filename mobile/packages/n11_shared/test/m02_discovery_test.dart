@@ -340,7 +340,7 @@ void main() {
       expect(c.areaId, 'a2');
       expect(find.text('Quán Khu Khác'), findsOneWidget);
       expect(find.text('Zeta Ốc Hương'), findsNothing);
-      expect(find.text('Hòa An'), findsOneWidget);
+      expect(find.text('Hòa An · đang xem tham khảo'), findsOneWidget);
     });
 
     testWidgets('no match for the filters says so with Xóa bộ lọc; an area without shops says so', (WidgetTester tester) async {

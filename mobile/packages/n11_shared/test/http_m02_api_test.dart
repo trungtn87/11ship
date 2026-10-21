@@ -28,6 +28,17 @@ Future<({SessionController session, FakeApiTransport api, HttpMenuApi menu})> si
 }
 
 void main() {
+  test('GPS resolve parses configured area and explicit outside-coverage null', () async {
+    final FakeApiTransport transport = FakeApiTransport();
+    final HttpDiscoveryApi api = HttpDiscoveryApi(transport: transport, base: base);
+    transport.routes['GET /v1/service-areas/resolve?latitude=22.67&longitude=106.25'] =
+      (_, __, ___, ____) async => json(200, <String, Object?>{'data': <String, Object?>{'service_area_id': 'new-area', 'name': 'Vùng mới'}});
+    expect((await api.resolveArea(22.67, 106.25))?.id, 'new-area');
+    transport.routes['GET /v1/service-areas/resolve?latitude=0.0&longitude=0.0'] =
+      (_, __, ___, ____) async => json(200, <String, Object?>{'data': null});
+    expect(await api.resolveArea(0, 0), isNull);
+  });
+
   test('owner menu: the read is parsed, picture URLs point at the public image route, nothing else is invented', () async {
     final t = await signedIn();
     t.api.routes['GET /v1/shop/me/menu'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{

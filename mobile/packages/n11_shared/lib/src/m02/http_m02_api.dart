@@ -163,6 +163,21 @@ class HttpDiscoveryApi implements DiscoveryApi {
   final ApiTransport transport;
   final Uri base;
 
+  @override
+  Future<AreaChoice?> resolveArea(double latitude, double longitude) async {
+    final String query = Uri(queryParameters: <String, String>{
+      'latitude': '$latitude', 'longitude': '$longitude',
+    }).query;
+    final ApiResponse response = await transport.send('GET', '/v1/service-areas/resolve?$query');
+    if (response.status != 200) throw failureOf(response);
+    final Map<String, Object?>? envelope = response.json;
+    if (envelope == null || !envelope.containsKey('data')) throw _bad;
+    final Object? raw = envelope['data'];
+    if (raw == null) return null;
+    final Map<String, Object?> area = _obj(raw);
+    return AreaChoice(id: _str(area['service_area_id']), name: _str(area['name']));
+  }
+
   String _query(DiscoveryQuery q) {
     final Map<String, String> params = <String, String>{
       'area_id': q.areaId,
