@@ -1,3 +1,4 @@
+import { cancellationAudit } from '../order-timeouts/cancellation-audit';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
@@ -39,6 +40,7 @@ export class DeliveryRecorder {
 
   async record(context: TransactionContext, change: Change): Promise<void> {
     const d = change.delivery;
+    const cancellation=/cancel|release|search_stopped/.test(change.type)?await cancellationAudit(context,'deliveries',d.deliveryId,d.version,change.assignmentId):{};
     await this.deliveries.appendEvent(context, {
       eventId: randomUUID(),
       deliveryId: d.deliveryId,
@@ -57,7 +59,7 @@ export class DeliveryRecorder {
       resourceId: d.deliveryId,
       resourceVersion: d.version,
       outcome: 'SUCCESS',
-      metadata: { change: change.type, state: d.state, ...change.metadata },
+      metadata: { change: change.type, state: d.state, reason:change.note??null,actor_type:change.actorType,...cancellation,...change.metadata },
     });
     await this.outbox.append(context, {
       eventType: OUTBOX_DELIVERY_CHANGED,

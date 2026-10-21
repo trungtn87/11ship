@@ -11,6 +11,7 @@ export type TargetType = (typeof TARGET_TYPES)[number];
 
 /** The catalog of notification kinds. A kind fixes the category, the target and the lock-screen-safe wording; none of them carries a phone, an address, an OTP or bank data. */
 export const KINDS = [
+  'ORDER_TIMEOUT','ORDER_CONFIRMATION_REMINDER','PICKUP_TIMEOUT_WARNING',
   'DELIVERY_ACCEPTED',
   'DELIVERY_RELEASED',
   'DELIVERY_PICKED_UP',
@@ -105,6 +106,7 @@ export const DISPLAYED_TIMERS = {
 } as const;
 
 export const CATEGORY_OF_KIND: Readonly<Record<NotificationKind, NotificationCategory>> = {
+  ORDER_TIMEOUT:'ORDERS',ORDER_CONFIRMATION_REMINDER:'REMINDERS',PICKUP_TIMEOUT_WARNING:'REMINDERS',
   DELIVERY_ACCEPTED: 'ORDERS',
   DELIVERY_RELEASED: 'ORDERS',
   DELIVERY_PICKED_UP: 'ORDERS',

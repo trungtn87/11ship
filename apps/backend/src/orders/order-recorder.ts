@@ -1,3 +1,4 @@
+import { cancellationAudit } from '../order-timeouts/cancellation-audit';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
@@ -38,6 +39,8 @@ export class OrderRecorder {
 
   async record(context: TransactionContext, change: OrderChange): Promise<void> {
     const o = change.order;
+    const cancellation=/cancel|timeout|reject/.test(change.type)?await cancellationAudit(context,'orders',o.orderId,o.version):{};
+    const details={...cancellation,...(change.details??{}),actor_type:change.actorType,actor_id:change.actorId,request_id:change.requestId,reason:change.note??null};
     await this.orders.appendEvent(context, {
       eventId: randomUUID(),
       orderId: o.orderId,
@@ -45,7 +48,7 @@ export class OrderRecorder {
       actorType: change.actorType,
       actorId: change.actorId,
       note: change.note ?? null,
-      details: change.details ?? null,
+      details,
     });
     await this.audit.append(context, {
       requestId: change.requestId,
@@ -56,7 +59,7 @@ export class OrderRecorder {
       resourceId: o.orderId,
       resourceVersion: o.version,
       outcome: 'SUCCESS',
-      metadata: { change: change.type, status: o.status, ...change.metadata },
+      metadata: { change: change.type, status: o.status, ...details, ...change.metadata },
     });
     if (change.notify !== false) {
       await this.outbox.append(context, {

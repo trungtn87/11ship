@@ -295,6 +295,8 @@ class _MineCard extends StatelessWidget {
       return (label: 'Bạn đã hủy nhận', kind: ChipKind.neutral);
     case 'released_by_admin':
       return (label: 'Admin đã gỡ bạn khỏi đơn', kind: ChipKind.warn);
+    case 'cancelled_by_system':
+      return (label: 'Hệ thống hủy quá hạn', kind: ChipKind.neutral);
     case 'cancelled_by_shop':
       return (label: 'Quán đã hủy yêu cầu giao', kind: ChipKind.neutral);
   }

@@ -10,7 +10,7 @@ export { FEE_UNKNOWN_TEXT, formatVnd };
 
 export const ORDER_PAGE_SIZE = 20;
 
-export const ORDER_STATUSES = ['PENDING_CONFIRMATION', 'PREPARING', 'COMPLETED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SHOP', 'REJECTED_BY_SHOP', 'NOT_COMPLETED'] as const;
+export const ORDER_STATUSES = ['PENDING_CONFIRMATION', 'PREPARING', 'COMPLETED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SHOP','CANCELLED_BY_SYSTEM', 'REJECTED_BY_SHOP', 'NOT_COMPLETED'] as const;
 export type OrderStatusName = (typeof ORDER_STATUSES)[number];
 export type OrderStatusFilter = 'ALL' | OrderStatusName;
 
@@ -20,6 +20,7 @@ export const ORDER_STATUS_LABEL: Record<OrderStatusName | 'ALL', string> = {
   PREPARING: 'Đang chuẩn bị / giao',
   COMPLETED: 'Hoàn thành',
   CANCELLED_BY_CUSTOMER: 'Khách đã hủy',
+  CANCELLED_BY_SYSTEM:'Hệ thống hủy quá hạn',
   CANCELLED_BY_SHOP: 'Đã hủy (quán / Admin)',
   REJECTED_BY_SHOP: 'Quán từ chối',
   NOT_COMPLETED: 'Không hoàn tất',
@@ -36,6 +37,7 @@ export const DISPLAY_LABEL: Record<string, string> = {
   SEARCH_STOPPED: 'Chưa tìm được shipper — quán đang xử lý',
   DELIVERY_FAILED: 'Giao thất bại — đang xử lý',
   CANCELLED_BY_CUSTOMER: 'Đã hủy',
+  CANCELLED_BY_SYSTEM:'Hệ thống hủy quá hạn',
   CANCELLED_BY_SHOP: 'Đã hủy',
   REJECTED: 'Quán từ chối',
   NOT_COMPLETED: 'Không hoàn tất',

@@ -62,6 +62,7 @@ import { AdminOperationService } from '../admin-provisioning/admin-operation-ser
 import { AdminProvisioningController } from '../admin-provisioning/admin-provisioning.controller';
 import { AdminSystemActor } from '../admin-provisioning/admin-system-actor';
 import { AuditModule } from '../audit/audit.module';
+import { TimeoutPolicyService } from '../order-timeouts/timeout-policy-service';
 import { SystemSettingsController } from '../system-settings/system-settings.controller';
 import { SystemSettingsService } from '../system-settings/system-settings-service';
 import { OutboxModule } from '../outbox/outbox.module';
@@ -174,7 +175,7 @@ export class AdminAuthModule implements NestModule {
         // M01-ADMIN lock / unlock of ordinary USER accounts (D15).
         AdminAccountLockService,
         // SYSTEM-only system settings (OTP switches).
-        SystemSettingsService,
+        SystemSettingsService, TimeoutPolicyService,
         // M02 dish-group management (SYSTEM, or an ADMIN with the catalog right). The SQL stays in the Menu module's repository.
         MenuCategoryAdminRepository,
         AdminMenuCategoryService,

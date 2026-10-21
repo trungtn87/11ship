@@ -59,7 +59,8 @@ function pushView(p: PushDetailRow): JsonObject {
   };
 }
 
-function configView(c: NotificationConfig, providerConfigured: boolean): JsonObject {
+async function configView(context:TransactionContext,c: NotificationConfig, providerConfigured: boolean): Promise<JsonObject> {
+  const policy=(await context.query<{parameters:{search_stop:number}}>('SELECT parameters FROM app.order_timeout_policy WHERE id')).rows[0]!;
   return {
     version: c.version,
     push_enabled: c.pushEnabled,
@@ -71,7 +72,7 @@ function configView(c: NotificationConfig, providerConfigured: boolean): JsonObj
     updated_at: iso(c.updatedAtMs),
     provider_configured: providerConfigured,
     // The business timers belong to M07 and are only displayed (read-only).
-    timers: { shop_reminder_minutes: [...DISPLAYED_TIMERS.shop_reminder_minutes], search_stop_minutes: DISPLAYED_TIMERS.search_stop_minutes, pickup_reminder_minutes: DISPLAYED_TIMERS.pickup_reminder_minutes },
+    timers: { shop_reminder_minutes: [...DISPLAYED_TIMERS.shop_reminder_minutes], search_stop_minutes: policy.parameters.search_stop, pickup_reminder_minutes: DISPLAYED_TIMERS.pickup_reminder_minutes },
   };
 }
 
@@ -181,7 +182,7 @@ export class AdminNotificationService {
     return this.transactions.withTransaction(async (context) => {
       await setBusinessLockTimeout(context, this.#lockTimeoutMs);
       await this.#lock(context, known, 'read');
-      return configView(await this.repo.readConfig(context), this.provider.configured);
+      return await configView(context,await this.repo.readConfig(context), this.provider.configured);
     });
   }
 
@@ -245,7 +246,7 @@ export class AdminNotificationService {
             to_retry_base_seconds: next.retryBaseSeconds,
           },
         });
-        return { status: 200, replayGuard: { actor_user_id: known.userId }, payload: configView(await this.repo.readConfig(context), this.provider.configured) };
+        return { status: 200, replayGuard: { actor_user_id: known.userId }, payload: await configView(context,await this.repo.readConfig(context), this.provider.configured) };
       },
     );
   }

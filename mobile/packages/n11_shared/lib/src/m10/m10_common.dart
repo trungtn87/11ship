@@ -34,7 +34,7 @@ String m10When(DateTime t) {
       DisplayStatus.ready || DisplayStatus.searchingShipper || DisplayStatus.delivering => (label: s.label, kind: ChipKind.yellow),
       DisplayStatus.completed => (label: s.label, kind: ChipKind.ok),
       DisplayStatus.searchStopped || DisplayStatus.deliveryFailed => (label: s.label, kind: ChipKind.bad),
-      DisplayStatus.cancelledByCustomer || DisplayStatus.cancelledByShop || DisplayStatus.rejected || DisplayStatus.notCompleted => (label: s.label, kind: ChipKind.neutral),
+      DisplayStatus.cancelledByCustomer || DisplayStatus.cancelledByShop || DisplayStatus.cancelledBySystem || DisplayStatus.rejected || DisplayStatus.notCompleted => (label: s.label, kind: ChipKind.neutral),
     };
 
 class OrderStatusChip extends StatelessWidget {

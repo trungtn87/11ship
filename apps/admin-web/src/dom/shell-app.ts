@@ -37,6 +37,7 @@ import { AccountsHooks, AdministratorsView, openLockDialog, renderUserDetail, Us
 import { DialogHandle } from './dialog.js';
 import { h } from './dom.js';
 import { ProvisioningView } from './provisioning-view.js';
+import { orderTimeoutsPage } from './order-timeouts-page.js';
 import { SettingsView } from './settings-view.js';
 import { NOT_WIRED_CATALOG, CatalogSource } from '../core/catalog.js';
 import { CatalogController } from '../core/catalog-controller.js';
@@ -146,6 +147,7 @@ export class ShellApp implements ShellHost {
     /** Where the ratings and complaints (Vận hành › Đánh giá / Phản ánh, M11.03) come from. By default nothing is wired, so the pages say so. */
     private readonly feedback: FeedbackSource = NOT_WIRED_FEEDBACK,
     private readonly financeOps: FinanceOpsSource = NOT_WIRED_FINANCE_OPS,
+    private readonly sessionCsrf: () => string | undefined = () => undefined,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -348,6 +350,9 @@ export class ShellApp implements ShellHost {
       case 'administrators':
         this.#administrators(content);
         return;
+      case 'order-timeouts':
+        orderTimeoutsPage(content,this.sessionCsrf,this.onSessionLost);
+        break;
       case 'settings':
         this.#settings(content);
         return;

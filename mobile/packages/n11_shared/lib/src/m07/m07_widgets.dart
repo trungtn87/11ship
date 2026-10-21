@@ -72,7 +72,7 @@ String m07NewKey() => newIdempotencyKey();
       DeliveryState.pickedUp || DeliveryState.delivering => (label: state.label, kind: ChipKind.yellow),
       DeliveryState.completed => (label: state.label, kind: ChipKind.ok),
       DeliveryState.failed => (label: state.label, kind: ChipKind.bad),
-      DeliveryState.cancelledByMerchant => (label: state.label, kind: ChipKind.neutral),
+      DeliveryState.cancelledByMerchant || DeliveryState.cancelledBySystem => (label: state.label, kind: ChipKind.neutral),
       DeliveryState.searchStopped => (label: state.label, kind: ChipKind.warn),
     };
 

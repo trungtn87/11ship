@@ -172,6 +172,7 @@ function startAdmin(host: HTMLElement): void {
       csrf: () => controller.sessionCsrf,
       refresh: () => controller.refreshSession(),
     }),
+    () => controller.sessionCsrf,
   );
   const view = new AdminView(host, controller, shell);
   controller.subscribe((screen) => view.render(screen));

@@ -1,3 +1,4 @@
+import { OrderTimeoutSweeper } from '../order-timeouts/order-timeout-sweeper';
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, OnApplicationBootstrap, OnApplicationShutdown, Optional } from '@nestjs/common';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
@@ -23,9 +24,11 @@ export class OrderSweeper {
     private readonly transactions: TransactionManager,
     private readonly orders: OrderRepository,
     private readonly recorder: OrderRecorder,
+    private readonly timeouts: OrderTimeoutSweeper,
   ) {}
 
   async sweep(): Promise<{ reminded: number; skipped: number }> {
+    await this.timeouts.sweep();
     return this.transactions.withTransaction(async (context) => {
       let reminded = 0;
       let skipped = 0;

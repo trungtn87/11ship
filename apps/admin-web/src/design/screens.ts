@@ -82,6 +82,7 @@ function screenIdOf(route: Route): { id: string; variant?: string } {
       return { id: 'user-detail' };
     case 'administrators':
       return { id: 'administrators' };
+    case 'order-timeouts':
     case 'settings':
       return { id: 'settings' };
     case 'categories':
