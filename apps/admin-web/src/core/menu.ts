@@ -217,7 +217,9 @@ export const MENU: readonly MenuGroup[] = [
       // M06-A: Phí & điều kiện giao (fee table; every administrator reads, only SYSTEM changes, the server decides again).
       { id: 'shipping-policy', label: 'Phí & điều kiện giao', icon: 'gear', route: { name: 'shipping-policy' }, ready: true, access: 'any' },
       soon('audit', 'Nhật ký', 'doc', 'audit'),
-      soon('monitoring', 'Giám sát', 'activity', 'monitoring'),
+      { id: 'monitoring', label: 'Giám sát', icon: 'activity', ready: true, access: 'system', children: [
+        { id: 'monitoring-errors', label: 'Nhật ký lỗi', route: { name: 'monitoring-errors' }, ready: true, access: 'system' },
+      ] },
     ],
   },
 ];
@@ -297,6 +299,7 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'finance-topup':
       return canSee(role, grants, 'topups');
     case 'finance-bank-accounts':
+    case 'monitoring-errors':
       return role === 'SYSTEM';
     case 'finance-withdrawals':
     case 'finance-withdrawal':
@@ -362,6 +365,8 @@ export function activeMenuId(route: Route): string {
       return 'administrators';
     case 'settings':
       return 'system-settings';
+    case 'monitoring-errors':
+      return 'monitoring-errors';
     case 'invitations':
     case 'invitation-new':
     case 'invitation':
@@ -426,6 +431,8 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Tài khoản', 'Quản trị viên'];
     case 'settings':
       return ['Hệ thống', 'Cài đặt hệ thống'];
+    case 'monitoring-errors':
+      return ['Hệ thống', 'Giám sát', 'Nhật ký lỗi'];
     case 'invitations':
       return ['Tài khoản', 'Lời mời Admin'];
     case 'invitation-new':

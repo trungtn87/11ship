@@ -78,7 +78,9 @@ String _refusalText(String? code) {
 }
 
 /// What a failed READ says. No server text is ever copied into it.
-String _readText(Object error) {
+String _readText(Object error) => withRequestTrace(_readMessage(error), error is AuthFailure ? error.requestId : null);
+
+String _readMessage(Object error) {
   if (error is AuthFailure) {
     switch (error.kind) {
       case AuthFailureKind.sessionEnded || AuthFailureKind.deviceProofRefused:
@@ -295,18 +297,21 @@ class HttpWalletSource extends WalletSource implements WalletWrites {
       response = await session.protectedCall(method, '/v1/driver/wallet$path', body: jsonEncode(body), idempotencyKey: key);
     } on AuthFailure catch (failure) {
       if (failure.outcomeUnknown) {
-        throw const WalletFailure(_unknownText, outcomeUnknown: true);
+        throw WalletFailure(withRequestTrace(_unknownText, failure.requestId), outcomeUnknown: true);
       }
       _keys.remove(intent);
       throw WalletFailure(_readText(failure));
     }
     final AuthFailure? refusal = ok.contains(response.status) ? null : failureOf(response);
     if (refusal != null && refusal.outcomeUnknown) {
-      throw const WalletFailure(_unknownText, outcomeUnknown: true);
+      throw WalletFailure(withRequestTrace(_unknownText, refusal.requestId), outcomeUnknown: true);
     }
     _keys.remove(intent);
     if (refusal != null) {
-      throw WalletFailure(refusal.kind == AuthFailureKind.sessionEnded ? _readText(refusal) : _refusalText(refusal.code));
+      // M13 #155: safe server-generated correlation ID for SYSTEM error log lookup.
+      // Never show an exception message, stack, bank record or untrusted response body.
+      final String safeMessage = refusal.kind == AuthFailureKind.sessionEnded ? _readText(refusal) : _refusalText(refusal.code);
+      throw WalletFailure(withRequestTrace(safeMessage, refusal.requestId));
     }
     return response.data;
   }

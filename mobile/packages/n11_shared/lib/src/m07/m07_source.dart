@@ -1,3 +1,4 @@
+import '../account/models.dart';
 import 'm07_models.dart';
 
 // The data seam of the M07 screens. A screen asks a source and draws whatever comes back; it never invents a value.
@@ -27,10 +28,11 @@ enum M07FailureKind {
 }
 
 class M07Failure implements Exception {
-  const M07Failure(this.kind, {this.code});
+  const M07Failure(this.kind, {this.code, this.requestId});
 
   final M07FailureKind kind;
   final String? code;
+  final String? requestId;
 
   String get message => m07FailureText(this);
 
@@ -38,7 +40,9 @@ class M07Failure implements Exception {
   String toString() => 'M07Failure($kind, $code)';
 }
 
-String m07FailureText(M07Failure failure) {
+String m07FailureText(M07Failure failure) => withRequestTrace(_m07FailureText(failure), failure.requestId);
+
+String _m07FailureText(M07Failure failure) {
   switch (failure.code) {
     case 'DELIVERY_NOT_FOUND':
       return 'Không tìm thấy yêu cầu giao này.';
