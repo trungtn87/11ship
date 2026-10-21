@@ -11,7 +11,7 @@ export async function cancellationAudit(
   const result = await c.query<{ before_state: string; after_state: string; reason: string | null; source: string; rule_snapshot: JsonObject | null }>(
     `SELECT before_state,after_state,reason,source,rule_snapshot FROM app.cancellation_transitions
      WHERE (resource_type=$1 AND resource_id=$2::uuid AND resource_version=$3) OR (resource_type='delivery_assignments' AND resource_id=$4::uuid)
-     ORDER BY transition_id`,
+     ORDER BY created_at,transition_id`,
     [resource, id, version, assignmentId ?? null],
   );
   const facts: JsonObject = { transitions: result.rows.map((row) => ({ ...row })) };

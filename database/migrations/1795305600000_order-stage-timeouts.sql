@@ -189,7 +189,7 @@ $$;
 
 -- Safe before/after facts, joined by resource/version to existing event/audit actor and correlation records.
 CREATE TABLE app.cancellation_transitions (
- transition_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, resource_type text NOT NULL,resource_id uuid NOT NULL,resource_version bigint NOT NULL,
+ transition_id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY, resource_type text NOT NULL,resource_id uuid NOT NULL,resource_version bigint NOT NULL,
  order_id uuid,delivery_id uuid,assignment_id uuid,before_state text NOT NULL,after_state text NOT NULL,reason text,actor_type text,
  source text NOT NULL,request_id text,rule_snapshot jsonb,created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
  UNIQUE(resource_type,resource_id,resource_version)

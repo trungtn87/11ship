@@ -142,6 +142,6 @@ GRANT SELECT, INSERT, UPDATE ON app.complaint_adjustments TO ship11_app;
 GRANT SELECT, INSERT ON app.wallet_adjustments TO ship11_app;
 
 -- #153: stage policy and append-only cancellation facts.
-GRANT SELECT,UPDATE ON app.order_timeout_policy TO ship11_app;
-GRANT SELECT,INSERT ON app.order_timeout_policy_changes,app.cancellation_transitions TO ship11_app;
-GRANT USAGE ON SEQUENCE app.cancellation_transitions_transition_id_seq TO ship11_app;
+GRANT SELECT, UPDATE ON app.order_timeout_policy TO ship11_app;
+GRANT SELECT, INSERT ON app.order_timeout_policy_changes TO ship11_app;
+GRANT SELECT, INSERT ON app.cancellation_transitions TO ship11_app;
