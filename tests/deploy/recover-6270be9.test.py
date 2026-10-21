@@ -31,11 +31,26 @@ class RecoveryTests(unittest.TestCase):
         self.policy = self.root / 'migration-compatibility.json'
         self.policy.write_text(json.dumps({'historical': 'preserved'}))
         self.policy.chmod(0o600)
+        self.fixture_owner = 0
 
     def run_policy(self):
         code = SOURCE.replace("Path('/opt/11ship')", 'Path(' + repr(str(self.base)) + ')').replace(
             "Path('/etc/11ship/migration-compatibility.json')", 'Path(' + repr(str(self.policy)) + ')')
-        return subprocess.run(['python3', '-c', code], capture_output=True, text=True)
+        # The VPS operator is root; CI's temporary files belong to runner. Model
+        # only this fixture's owner metadata without changing the production guard.
+        harness = """from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+original_lstat = Path.lstat
+def fixture_lstat(path):
+    actual = original_lstat(path)
+    if str(path) == POLICY_PATH:
+        return SimpleNamespace(st_mode=actual.st_mode, st_uid=FIXTURE_OWNER)
+    return actual
+with patch.object(Path, 'lstat', fixture_lstat):
+    exec(SOURCE_CODE)
+""".replace('POLICY_PATH', repr(str(self.policy))).replace('FIXTURE_OWNER', str(self.fixture_owner)).replace('SOURCE_CODE', repr(code))
+        return subprocess.run(['python3', '-c', harness], capture_output=True, text=True)
 
     def assert_rejected(self, message):
         before = self.policy.read_bytes()
@@ -67,6 +82,10 @@ class RecoveryTests(unittest.TestCase):
 
     def test_unsafe_policy_permissions_rejected(self):
         self.policy.chmod(0o666)
+        self.assert_rejected('policy ownership/type/permissions')
+
+    def test_non_root_policy_owner_rejected(self):
+        self.fixture_owner = 1001
         self.assert_rejected('policy ownership/type/permissions')
 
     def test_later_release_cannot_be_downgraded(self):
