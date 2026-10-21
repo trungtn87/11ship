@@ -139,9 +139,26 @@ def extract(archive, sha):
                 # A preflight refusal leaves the immutable release behind. Retry only
                 # after comparing every file against the newly verified archive.
                 verify_existing_release(target, tree)
+                make_release_readable(target)
             else:
+                make_release_readable(tree)
                 tree.rename(target)
     return target
+
+
+def make_release_readable(tree):
+    # Archive/SSH umasks may leave 0700 directories or 0600 files. Only
+    # verified, secret-free release code is made readable; shared state is untouched.
+    tree.chmod(0o755)
+    for path in tree.rglob('*'):
+        if path.is_symlink():
+            raise RuntimeError('release contains a link')
+        if path.is_dir():
+            path.chmod(0o755)
+        elif path.is_file():
+            path.chmod(0o755 if path.stat().st_mode & 0o111 else 0o644)
+        else:
+            raise RuntimeError('release contains a special file')
 
 
 def verify_existing_release(target, verified):
