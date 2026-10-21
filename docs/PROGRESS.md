@@ -5,7 +5,7 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo mã main `cfe876f` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ⏳ Đang chạy (`RUNNING`)
+> Dữ liệu theo mã main `cfe876f` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ✅ Đạt (`PASS`)
 
 ## 🎯 VIỆC ĐANG LÀM
 
@@ -264,7 +264,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#150](https://github.com/trungtn87/11ship/pull/150) fix(deploy): normalize verified release permissions before… | Đã merge (`MERGED`) | — | — | — | `b2733d6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#152](https://github.com/trungtn87/11ship/pull/152) fix(M08): mở đơn từ thông báo trên Android, phân biệt lỗi t… | Đã merge (`MERGED`) | — | — | — | `142e5e5` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#156](https://github.com/trungtn87/11ship/pull/156) M02: tự định vị và chuyển khu vực phục vụ theo GPS (#154) | Đã merge (`MERGED`) | — | — | — | `dfff64a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#157](https://github.com/trungtn87/11ship/pull/157) M10/M07/M08: ba giai đoạn timeout, SYSTEM hủy đơn và cấu hì… | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `c63d22c` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#157](https://github.com/trungtn87/11ship/pull/157) M10/M07/M08: ba giai đoạn timeout, SYSTEM hủy đơn và cấu hì… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `c63d22c` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#158](https://github.com/trungtn87/11ship/pull/158) M13: SYSTEM-only Admin Web error logs (#155) | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `5fe15ee` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
