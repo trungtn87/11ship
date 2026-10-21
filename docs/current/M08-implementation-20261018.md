@@ -1,5 +1,7 @@
 # M08 — Thông báo, nhắc việc và đồng bộ trạng thái: triển khai (18/10/2026)
 
+> Bổ sung Owner 21/10/2026: [Thời hạn ba giai đoạn, SYSTEM tự hủy, audit và cài đặt Admin](M10-timeouts-20261021.md) (#153) thay thế các mô tả timeout cũ xung đột.
+
 Nguồn thiết kế: `11Ship-M08-Functional-UI-LOCKED-v1.0.md` (OWNER_APPROVED / DESIGN_LOCKED 16/10/2026), hai ảnh `11Ship-M08-App-UI.png`, `11Ship-M08-Admin-Web-UI.png`; bản sao trong `docs/ui/m08/` và `docs/current/11Ship-M08-Functional-UI-LOCKED-v1.0.md`. Văn bản ưu tiên hơn chữ/dữ liệu trong ảnh. Nhánh `ccr-4d66d3bf-hsc7li`, base `main@999122d`. Không merge, không deploy.
 
 ## 1. Gói và nơi làm

@@ -25,7 +25,7 @@ export class DeliveryCancel {
 
   async cancel(
     context: TransactionContext,
-    actor: { readonly type: 'SHOP' | 'ADMIN'; readonly userId: string },
+    actor: { readonly type: 'SHOP' | 'ADMIN'; readonly userId: string } | { readonly type: 'SYSTEM'; readonly userId: null },
     delivery: DeliveryRow,
     reason: string,
     requestId: string,
@@ -39,7 +39,7 @@ export class DeliveryCancel {
     }
     const assignment = await this.deliveries.lockActiveAssignment(context, delivery.deliveryId);
     if (assignment !== undefined) {
-      if (!(await this.deliveries.endAssignment(context, assignment.assignmentId, assignment.version, 'CANCELLED_BY_SHOP', actor.type, reason))) {
+      if (!(await this.deliveries.endAssignment(context, assignment.assignmentId, assignment.version, actor.type === 'SYSTEM' ? 'CANCELLED_BY_SYSTEM' : 'CANCELLED_BY_SHOP', actor.type, reason))) {
         throw new TechnicalError('internal', 'Assignment changed under its lock');
       }
       const released = await this.commission.releaseCommission(context, assignment.assignmentId);
@@ -48,7 +48,7 @@ export class DeliveryCancel {
       }
     }
     const after = await this.deliveries.update(context, delivery.deliveryId, delivery.version, {
-      state: 'cancelled_by_merchant',
+      state: actor.type === 'SYSTEM' ? 'cancelled_by_system' : 'cancelled_by_merchant',
       ...(delivery.endedAtMs === null ? { endedNow: true as const } : {}),
       endReason: reason,
     });
@@ -57,7 +57,7 @@ export class DeliveryCancel {
     }
     await this.recorder.record(context, {
       delivery: after,
-      type: 'cancelled_by_shop',
+      type: actor.type === 'SYSTEM' ? 'cancelled_by_system' : 'cancelled_by_shop',
       actorType: actor.type,
       actorId: actor.userId,
       assignmentId: assignment?.assignmentId ?? null,
@@ -65,7 +65,7 @@ export class DeliveryCancel {
       note: reason,
       operation: OPERATIONS.cancel,
       requestId,
-      metadata: { had_shipper: assignment !== undefined, via_order: viaOrder },
+      metadata: { had_shipper: assignment !== undefined, via_order: viaOrder, before_state: delivery.state, reason, assignment_id: assignment?.assignmentId ?? null, commission_status: assignment === undefined ? null : 'RELEASED' },
     });
     return after;
   }

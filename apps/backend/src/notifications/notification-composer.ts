@@ -76,6 +76,10 @@ function composeForCustomer(p: DeliveryChangePayload): Draft[] {
     draft: { audience: 'CUSTOMER', app: 'FOOD', kind, title, body, targetType: 'ORDER', targetId: orderId, targetVersion: p.version, dedupeKey: `order-delivery:${orderId}:${p.deliveryId}:${p.change}:${String(p.version)}`, validForMs: null, pushTtlMs: PUSH_TTL_MS.result },
   });
   switch (p.change) {
+    case 'search_stopped':
+      return [notify('SEARCH_STOPPED','Chưa có shipper nhận đơn',`Đơn ${p.code}: tìm shipper đã dừng. Quán đang xử lý.`)];
+    case 'pickup_timeout_warning':
+      return [notify('PICKUP_TIMEOUT_WARNING','Shipper chưa lấy hàng',`Đơn ${p.code}: shipper chưa lấy hàng trong thời hạn cảnh báo.`)];
     case 'accepted':
       return [notify('ORDER_SHIPPER_ACCEPTED', 'Shipper đã nhận đơn của bạn', `Đơn ${p.code}: shipper đang đến quán lấy món.`)];
     case 'picked_up':
@@ -112,10 +116,14 @@ function composeForShopAndShipper(p: DeliveryChangePayload): Draft[] {
       return [delivery(p, 'SHOP', 'DELIVERY_COMPLETED', 'Giao hàng thành công', `Đơn ${code} đã giao thành công.`), reviewReminder(p)];
     case 'failed':
       return [delivery(p, 'SHOP', 'DELIVERY_FAILED', 'Giao hàng không thành công', `Đơn ${code} giao không thành công. Cần bạn xử lý hàng.`), reviewReminder(p)];
+    case 'cancelled_by_system':
+      return p.driverId===null?[]:[delivery(p,'DRIVER','DELIVERY_CANCELLED','Hệ thống đã hủy đơn quá hạn',`Đơn ${code} đã bị hủy trước khi lấy hàng. Khoản giữ hoa hồng đã được giải phóng.`)];
+    case 'pickup_timeout_warning':
+      return [delivery(p,'SHOP','PICKUP_TIMEOUT_WARNING','Shipper chưa lấy hàng',`Đơn ${code}: shipper chưa lấy hàng trong thời hạn cảnh báo.`),...(p.driverId===null?[]:[delivery(p,'DRIVER','PICKUP_TIMEOUT_WARNING','Vui lòng lấy hàng',`Đơn ${code}: bạn chưa lấy hàng trong thời hạn cảnh báo.`)])];
     case 'cancelled_by_shop':
       return p.driverId === null ? [] : [delivery(p, 'DRIVER', 'DELIVERY_CANCELLED', 'Quán đã hủy đơn', `Đơn ${code} đã bị quán hủy. Bạn không cần giao đơn này.`)];
     case 'search_stopped':
-      return [delivery(p, 'SHOP', 'SEARCH_STOPPED', 'Chưa có shipper nhận đơn', `Đơn ${code} đã tìm 30 phút. Hãy gọi lại hoặc hủy.`)];
+      return [delivery(p, 'SHOP', 'SEARCH_STOPPED', 'Chưa có shipper nhận đơn', `Đơn ${code} đã hết thời gian tìm. Hãy gọi lại hoặc hủy.`)];
     case 'search_reminder_5':
       return [{ type: 'REMINDER', reminder: 'SEARCH_5', deliveryId: p.deliveryId, assignmentId: null }];
     case 'search_reminder_15':
@@ -202,6 +210,12 @@ const order = (p: OrderChangePayload, audience: 'SHOP' | 'CUSTOMER', kind: Notif
 export function composeOrderChange(p: OrderChangePayload): Draft[] {
   const code = p.code;
   switch (p.change) {
+    case 'confirmation_reminder':
+      return [order(p,'SHOP','ORDER_CONFIRMATION_REMINDER','Vui lòng xác nhận đơn',`Đơn ${code} vẫn đang chờ quán xác nhận.`,PUSH_TTL_MS.reminder)];
+    case 'confirmation_timeout':
+      return [order(p,'CUSTOMER','ORDER_TIMEOUT','Đơn quá hạn chờ quán',`Đơn ${code} đã được hệ thống hủy. Bạn có thể đặt lại trong lịch sử.`)];
+    case 'delivery_timeout':
+      return [order(p,'CUSTOMER','ORDER_TIMEOUT','Hệ thống đã hủy đơn quá hạn',`Đơn ${code} đã bị hủy trước khi lấy hàng. Bạn có thể đặt lại trong lịch sử.`),order(p,'SHOP','ORDER_TIMEOUT','Hệ thống đã hủy đơn quá hạn',`Đơn ${code} đã bị hủy trước khi lấy hàng.`)];
     case 'placed':
       return [order(p, 'SHOP', 'ORDER_PLACED', 'Có đơn món mới', `Đơn ${code} đang chờ bạn xác nhận.`, PUSH_TTL_MS.offer)];
     case 'cancelled_by_customer':

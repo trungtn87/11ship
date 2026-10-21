@@ -151,7 +151,7 @@ export class NotificationRecipients {
         }
       }
     }
-    return { exists: true, access, state: d.state, ended: ['completed', 'failed', 'cancelled_by_merchant', 'search_stopped'].includes(d.state) };
+    return { exists: true, access, state: d.state, ended: ['completed', 'failed', 'cancelled_by_merchant','cancelled_by_system', 'search_stopped'].includes(d.state) };
   }
 
   /**

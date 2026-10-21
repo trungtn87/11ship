@@ -521,10 +521,11 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
         return <Widget>[_shipperCard(d), LocationCard(location: d.location, mapBuilder: widget.mapBuilder), const ReasonNote('Đã nhận hàng nên không hủy được và không sửa thông tin/phí.')];
       case DeliveryState.searchStopped:
         return <Widget>[
-          const N11Banner(key: Key('m07-stopped'), kind: BannerKind.warn, title: 'Đã ngừng tìm shipper', text: 'Đã tìm đủ 30 phút nhưng chưa có shipper. Đơn món (nếu có) không bị hủy.', icon: Icons.timer_off_outlined),
+          const N11Banner(key: Key('m07-stopped'), kind: BannerKind.warn, title: 'Đã ngừng tìm shipper', text: 'Đã hết thời gian tìm nhưng chưa có shipper. Đơn món sẽ tự hủy nếu quá thời hạn xử lý.', icon: Icons.timer_off_outlined),
         ];
       case DeliveryState.completed:
       case DeliveryState.failed:
+      case DeliveryState.cancelledBySystem:
       case DeliveryState.cancelledByMerchant:
         return <Widget>[if (d.assignment != null) _shipperCard(d), if (d.incident != null) _incidentCard(d)];
     }

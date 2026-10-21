@@ -277,7 +277,7 @@ export interface AdminListFilter {
 
 const LATEST = `LEFT JOIN LATERAL (SELECT d.state FROM app.deliveries d WHERE d.order_id = o.order_id ORDER BY d.created_at DESC, d.delivery_id DESC LIMIT 1) ld ON true`;
 const LINE_COUNT = `(SELECT count(*)::int FROM app.order_items i WHERE i.order_id = o.order_id AND i.removed_at IS NULL) AS line_count`;
-const ENDED = `('COMPLETED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SHOP', 'REJECTED_BY_SHOP', 'NOT_COMPLETED')`;
+const ENDED = `('COMPLETED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SHOP','CANCELLED_BY_SYSTEM', 'REJECTED_BY_SHOP', 'NOT_COMPLETED')`;
 
 type RawListItem = RawOrder & { latest_state: DeliveryState | null; line_count: number };
 

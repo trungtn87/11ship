@@ -1,5 +1,7 @@
 # 11Ship — M10: Đặt món và đơn hàng quán
 
+> Bổ sung Owner 21/10/2026: [Thời hạn ba giai đoạn, SYSTEM tự hủy, audit và cài đặt Admin](M10-timeouts-20261021.md) (#153) thay thế các mô tả timeout cũ xung đột.
+
 Phiên bản 1.0 · Ngày 16/10/2026 · Giờ Việt Nam.
 
 **Chức năng: OWNER_APPROVED. UI: OWNER_APPROVED / DESIGN_LOCKED. Triển khai: IMPLEMENTATION_PENDING.**

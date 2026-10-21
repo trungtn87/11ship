@@ -508,12 +508,15 @@ function Invoke-Harness([string[]]$Arguments) {
   } finally { Pop-Location; $ErrorActionPreference = $previous }
 }
 function Read-HarnessCalls {
-  $path = Join-Path $script:StateDir 'harness-calls.log'
-  if (!(Test-Path -LiteralPath $path)) { return @() }
-  return @(Get-Content -LiteralPath $path | Where-Object { $_ } | ForEach-Object {
+  # Each child owns its log; combine them chronologically without concurrent writers.
+  $paths = @(Get-ChildItem -LiteralPath $script:StateDir -Filter 'harness-calls-*.log' -File -ErrorAction SilentlyContinue)
+  if ($paths.Count -eq 0) { return @() }
+  return @($paths | ForEach-Object { Get-Content -LiteralPath $_.FullName } | Where-Object { $_ } | ForEach-Object {
     $m = [regex]::Match($_, '^(\d+) pid=(\d+) (.*)$')
-    [pscustomobject]@{ Ticks = [int64]$m.Groups[1].Value; ProcessId = [int]$m.Groups[2].Value; Text = $m.Groups[3].Value }
-  })
+    if ($m.Success) {
+      [pscustomobject]@{ Ticks = [int64]$m.Groups[1].Value; ProcessId = [int]$m.Groups[2].Value; Text = $m.Groups[3].Value }
+    }
+  } | Sort-Object Ticks)
 }
 function Record-Install {
   New-Item -ItemType Directory -Force -Path (Join-Path $script:Repo 'node_modules') | Out-Null

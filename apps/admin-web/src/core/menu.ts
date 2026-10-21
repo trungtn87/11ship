@@ -45,6 +45,7 @@ export type GrantId =
   | 'withdrawals'
   | 'catalog'
   | 'zones'
+  | 'order-timeouts'
   | 'parameters'
   | 'audit'
   | 'monitoring';
@@ -83,6 +84,7 @@ export function grantsFromPermissions(permissions: readonly AppPermission[]): Gr
       }
     } else if (row.app === 'DRIVER') {
       grants.add('drivers');
+      if(row.canLock)grants.add('order-timeouts');
     }
     // M07.07: the delivery pages open for an administrator who may view the shop or the Shipper side; the server decides every read and action again.
     if (row.app === 'SHOP' || row.app === 'DRIVER') {
@@ -203,6 +205,7 @@ export const MENU: readonly MenuGroup[] = [
     items: [
       // Owner decision 2026-10-14: the SYSTEM account's switches (phone verification first). SYSTEM only.
       { id: 'system-settings', label: 'Cài đặt hệ thống', icon: 'gear', route: { name: 'settings' }, ready: true, access: 'system' },
+      { id:'order-timeouts',label:'Thời hạn xử lý đơn',icon:'gear',route:{name:'order-timeouts'},ready:true,access:'order-timeouts' },
       soon('zones', 'Vùng hoạt động', 'map-pin', 'zones'),
       // M03: Cài đặt › Tham số hệ thống › Ví Shipper (minimum top-up / withdrawal per request). Every administrator sees the values; only SYSTEM changes them
       // (Owner decision 2026-10-17; the server decides again on every call).
@@ -306,6 +309,8 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
       return canSee(role, grants, 'withdrawals');
     case 'wallet-params':
       return canSee(role, grants, 'parameters');
+    case 'order-timeouts':
+      return canSee(role,grants,'order-timeouts');
     case 'administrators':
     case 'settings':
     case 'invitations':
@@ -363,6 +368,8 @@ export function activeMenuId(route: Route): string {
       return 'parameters';
     case 'administrators':
       return 'administrators';
+    case 'order-timeouts':
+      return 'order-timeouts';
     case 'settings':
       return 'system-settings';
     case 'monitoring-errors':
@@ -429,6 +436,8 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
     case 'administrators':
       return ['Tài khoản', 'Quản trị viên'];
+    case 'order-timeouts':
+      return ['Cài đặt hệ thống','Đơn hàng & giao hàng','Thời hạn xử lý'];
     case 'settings':
       return ['Hệ thống', 'Cài đặt hệ thống'];
     case 'monitoring-errors':

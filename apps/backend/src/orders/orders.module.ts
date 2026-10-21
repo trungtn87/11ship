@@ -1,3 +1,5 @@
+import { DriverModule } from '../driver/driver.module';
+import { OrderTimeoutSweeper } from '../order-timeouts/order-timeout-sweeper';
 import { DynamicModule, Module } from '@nestjs/common';
 import { CustomersModule } from '../customers/customers.module';
 import { DeliveryCoreModule } from '../delivery/delivery-core.module';
@@ -25,9 +27,9 @@ export class OrdersModule {
   static register(auth: DynamicModule, delivery: DynamicModule): DynamicModule {
     return {
       module: OrdersModule,
-      imports: [auth, delivery, DeliveryCoreModule.register(auth), OrdersCoreModule, MenuModule.register(auth), CustomersModule.register(auth), ShopModule, M14RoutingModule, TransactionModule, IdempotencyModule],
+      imports: [DriverModule, auth, delivery, DeliveryCoreModule.register(auth), OrdersCoreModule, MenuModule.register(auth), CustomersModule.register(auth), ShopModule, M14RoutingModule, TransactionModule, IdempotencyModule],
       controllers: [OrderCustomerController, OrderShopController],
-      providers: [OrderCustomerService, OrderShopService, OrderViews, OrderSweeper, OrderSweeperRunner],
+      providers: [OrderTimeoutSweeper, OrderCustomerService, OrderShopService, OrderViews, OrderSweeper, OrderSweeperRunner],
       exports: [OrderSweeper],
     };
   }

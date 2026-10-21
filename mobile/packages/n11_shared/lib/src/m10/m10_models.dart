@@ -5,7 +5,7 @@ import '../m07/m07_models.dart';
 // clock decides nothing. The Order keeps its own snapshot of the dishes, the recipient and the address.
 
 /// The one status an Order shows (server aggregate of the Order and its latest delivery).
-enum DisplayStatus { awaitingShop, preparing, ready, searchingShipper, shipperComing, delivering, completed, searchStopped, deliveryFailed, cancelledByCustomer, cancelledByShop, rejected, notCompleted }
+enum DisplayStatus { awaitingShop, preparing, ready, searchingShipper, shipperComing, delivering, completed, searchStopped, deliveryFailed, cancelledByCustomer, cancelledByShop, cancelledBySystem, rejected, notCompleted }
 
 DisplayStatus displayStatusOf(String wire) => switch (wire) {
       'AWAITING_SHOP' => DisplayStatus.awaitingShop,
@@ -18,6 +18,7 @@ DisplayStatus displayStatusOf(String wire) => switch (wire) {
       'SEARCH_STOPPED' => DisplayStatus.searchStopped,
       'DELIVERY_FAILED' => DisplayStatus.deliveryFailed,
       'CANCELLED_BY_CUSTOMER' => DisplayStatus.cancelledByCustomer,
+      'CANCELLED_BY_SYSTEM' => DisplayStatus.cancelledBySystem,
       'CANCELLED_BY_SHOP' => DisplayStatus.cancelledByShop,
       'REJECTED' => DisplayStatus.rejected,
       'NOT_COMPLETED' => DisplayStatus.notCompleted,
@@ -36,12 +37,13 @@ extension DisplayStatusText on DisplayStatus {
         DisplayStatus.searchStopped => 'Chưa tìm được shipper — quán đang xử lý',
         DisplayStatus.deliveryFailed => 'Giao thất bại — đang xử lý',
         DisplayStatus.cancelledByCustomer || DisplayStatus.cancelledByShop => 'Đã hủy',
+        DisplayStatus.cancelledBySystem => 'Hệ thống hủy quá hạn',
         DisplayStatus.rejected => 'Quán từ chối',
         DisplayStatus.notCompleted => 'Không hoàn tất',
       };
 
   bool get ended => switch (this) {
-        DisplayStatus.completed || DisplayStatus.cancelledByCustomer || DisplayStatus.cancelledByShop || DisplayStatus.rejected || DisplayStatus.notCompleted => true,
+        DisplayStatus.completed || DisplayStatus.cancelledByCustomer || DisplayStatus.cancelledByShop || DisplayStatus.cancelledBySystem || DisplayStatus.rejected || DisplayStatus.notCompleted => true,
         _ => false,
       };
 }
@@ -260,6 +262,8 @@ class OrderEvent {
         'order.rejected' => 'Quán từ chối',
         'order.cancelled_by_customer' => 'Khách hủy đơn',
         'order.cancelled_by_shop' => 'Quán hủy đơn món',
+        'order.confirmation_timeout' || 'order.delivery_timeout' => 'Hệ thống hủy quá hạn',
+        'order.confirmation_reminder' => 'Nhắc quán xác nhận',
         'order.cancelled_by_admin' => 'Quản trị hủy đơn',
         'order.ready' => 'Món đã sẵn sàng',
         'order.payment_recorded' => 'Ghi nhận thanh toán',

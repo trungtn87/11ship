@@ -147,6 +147,9 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | orders | SELECT, INSERT, UPDATE (M10: a food Order moves along its status graph; never deleted) |
 | order_items | SELECT, INSERT, UPDATE (M10: lines written once; only the shop's edit columns change; never deleted) |
 | order_events | SELECT, INSERT (M10: the append-only history of an Order) |
+| order_timeout_policy | SELECT, UPDATE (M10/M07: current versioned stage policy) |
+| order_timeout_policy_changes | SELECT, INSERT (append-only policy history) |
+| cancellation_transitions | SELECT, INSERT (append-only cancellation before/after facts) |
 | shipper_latest_locations | SELECT, INSERT, UPDATE (M14/M07: the one latest position of each Shipper, replaced in place; no trail) |
 | notification_push_tokens | SELECT, INSERT, UPDATE (M08: the push token of one session; ended (never deleted) when the session ends or the token is replaced) |
 | notification_config | SELECT, INSERT, UPDATE (M08: the single settings row (channel, retention, retry); SYSTEM changes it through the Administration) |

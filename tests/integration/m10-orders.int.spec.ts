@@ -1,7 +1,8 @@
+import { OrderRecorder } from '../../apps/backend/src/orders/order-recorder';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
+import { afterAll, beforeAll, describe, expect, it, jest } from '@jest/globals';
 import { DeliverySweeper } from '../../apps/backend/src/delivery/delivery-sweeper';
 import { M14_ROUTING } from '../../apps/backend/src/delivery/m14-route-client';
 import { NotificationRuntime } from '../../apps/backend/src/notifications/notification-runtime';
@@ -797,4 +798,90 @@ describe('M10 — food orders', () => {
     ).rejects.toThrow(/not confirmed/u);
     expect(await countRows(app.pool, 'SELECT 1 FROM app.orders WHERE order_id = $1::uuid', [oid])).toBe(1);
   });
+  // #153: move persisted test deadlines, never wait or alter the application clock.
+  async function timeoutAge(table:'orders'|'deliveries'|'delivery_assignments',id:string,minutes:number):Promise<void>{
+    const key=table==='orders'?'order_id':table==='deliveries'?'delivery_id':'assignment_id';
+    const trigger=table==='orders'?'timeout_snapshot_orders':table==='deliveries'?'timeout_snapshot_deliveries':'timeout_snapshot_assignments';
+    const c=await app.pool.connect();
+    try{await c.query('BEGIN');await c.query(`ALTER TABLE app.${table} DISABLE TRIGGER ${trigger}`);
+      await c.query(`UPDATE app.${table} SET timeout_snapshot=timeout_snapshot||jsonb_build_object(
+        'warning_at',(timeout_snapshot->>'warning_at')::timestamptz-make_interval(mins=>$2::int),
+        'cancel_at',(timeout_snapshot->>'cancel_at')::timestamptz-make_interval(mins=>$2::int)),
+        ${table==='orders'?'timeout_next_reminder_at=timeout_next_reminder_at-make_interval(mins=>$2::int),':''}
+        version=version+1 WHERE ${key}=$1::uuid`,[id,minutes]);
+      await c.query('SET CONSTRAINTS ALL IMMEDIATE');
+      await c.query(`ALTER TABLE app.${table} ENABLE TRIGGER ${trigger}`);await c.query('COMMIT');
+    }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}
+  }
+  async function timeoutDrain():Promise<void>{for(let i=0;i<200&&(await runtime().dispatcher.dispatchOnce()).claimed>0;i+=1){/* drain */}}
+  async function activeAssignment(did:string):Promise<string>{return String((await app.pool.query(`SELECT assignment_id FROM app.delivery_assignments WHERE delivery_id=$1::uuid AND status='ACTIVE'`,[did])).rows[0].assignment_id);}
+
+  it('#153: 15/20/25 reminders, one cancellation at 30, durable audit and reorder',async()=>{
+    const o=await place(alice),oid=String(o.order_id);await timeoutAge('orders',oid,25);
+    await Promise.all([orderSweeper().sweep(),orderSweeper().sweep()]);
+    expect(await countRows(app.pool,`SELECT 1 FROM app.order_events WHERE order_id=$1::uuid AND type='order.confirmation_reminder'`,[oid])).toBe(3);
+    await timeoutAge('orders',oid,5);await Promise.all([orderSweeper().sweep(),orderSweeper().sweep()]);
+    expect(await orderRow(oid)).toMatchObject({status:'CANCELLED_BY_SYSTEM',end_actor:'SYSTEM',end_reason:'QUÁ HẠN QUÁN XÁC NHẬN'});
+    expect(await countRows(app.pool,`SELECT 1 FROM app.order_events WHERE order_id=$1::uuid AND type='order.confirmation_timeout'`,[oid])).toBe(1);
+    expect(await countRows(app.pool,`SELECT 1 FROM app.cancellation_transitions WHERE resource_id=$1::uuid AND before_state='PENDING_CONFIRMATION' AND after_state='CANCELLED_BY_SYSTEM' AND source='timeout' AND request_id IS NOT NULL`,[oid])).toBe(1);
+    await timeoutDrain();expect((await app.pool.query(`SELECT recipient_user_id::text FROM app.notifications WHERE target_id=$1::uuid AND kind='ORDER_TIMEOUT'`,[oid])).rows).toEqual([{recipient_user_id:alice.userId}]);
+    expect((await customerView(alice,oid)).display_status).toBe('CANCELLED_BY_SYSTEM');
+    expect((await asCustomer(alice,'POST',`/customers/me/orders/${oid}/reorder`,{replace_cart:true})).status).toBe(200);
+  });
+  it('#153: stopped search warns both parties; 60 cancels the whole Order once',async()=>{
+    const o=await confirmed(alice),called=ok(await callShipper(o),201),did=String((called.delivery as Json).delivery_id),oid=String(o.order_id);
+    await ageDelivery(app,did,31);await deliverySweeper().sweep();expect((await orderRow(oid)).status).toBe('PREPARING');
+    await timeoutDrain();const recipients=(await app.pool.query(`SELECT recipient_user_id::text FROM app.notifications WHERE kind='SEARCH_STOPPED' AND (target_id=$1::uuid OR target_id=$2::uuid)`,[oid,did])).rows.map(r=>r.recipient_user_id);
+    expect(recipients.sort()).toEqual([alice.userId,shop.userId].sort());
+    await timeoutAge('deliveries',did,60);await Promise.all([orderSweeper().sweep(),orderSweeper().sweep()]);
+    expect((await orderRow(oid)).status).toBe('CANCELLED_BY_SYSTEM');expect((await deliveryOf(oid))[0].state).toBe('cancelled_by_system');
+    await timeoutDrain();expect(await countRows(app.pool,`SELECT 1 FROM app.notifications WHERE kind='ORDER_TIMEOUT' AND target_id=$1::uuid`,[oid])).toBe(2);
+  });
+  it('#153: acceptance has an independent 30/60 clock; timeout releases commission and informs all parties',async()=>{
+    const d=await shipper(),o=await confirmed(alice),called=ok(await callShipper(o),201),did=String((called.delivery as Json).delivery_id),oid=String(o.order_id);
+    await timeoutAge('deliveries',did,60);ok(await asShipper(d,'POST',`/driver/deliveries/${did}/accept`,{}));await orderSweeper().sweep();expect((await orderRow(oid)).status).toBe('PREPARING');
+    const aid=await activeAssignment(did);await timeoutAge('delivery_assignments',aid,30);await Promise.all([orderSweeper().sweep(),orderSweeper().sweep()]);await timeoutDrain();
+    expect(await countRows(app.pool,`SELECT 1 FROM app.notifications WHERE kind='PICKUP_TIMEOUT_WARNING' AND (target_id=$1::uuid OR target_id=$2::uuid)`,[oid,did])).toBe(3);
+    await timeoutAge('delivery_assignments',aid,30);await Promise.all([orderSweeper().sweep(),orderSweeper().sweep()]);
+    expect((await orderRow(oid)).status).toBe('CANCELLED_BY_SYSTEM');expect(await walletOf(app,d)).toEqual({balance:50_000,held:0});
+    expect((await app.pool.query('SELECT status,end_actor FROM app.delivery_assignments WHERE assignment_id=$1::uuid',[aid])).rows[0]).toMatchObject({status:'CANCELLED_BY_SYSTEM',end_actor:'SYSTEM'});
+    await timeoutDrain();expect(await countRows(app.pool,`SELECT 1 FROM app.notifications WHERE kind='DELIVERY_CANCELLED' AND target_id=$1::uuid AND recipient_user_id=$2::uuid`,[did,d.userId])).toBe(1);
+  });
+  it('#153: pickup vs expiry has one winner; picked-up goods never auto-cancel',async()=>{
+    const d=await shipper(),o=await confirmed(alice),called=ok(await callShipper(o),201),did=String((called.delivery as Json).delivery_id),oid=String(o.order_id);
+    const accepted=ok(await asShipper(d,'POST',`/driver/deliveries/${did}/accept`,{}));
+    const dest=await asShipper(d,'POST',`/driver/deliveries/${did}/destination`,{expected_version:accepted.version,lat:21,lng:105.82,fee_vnd:15_000});const current=dest.status===200?dataOf(dest) as Json:accepted;
+    await timeoutAge('delivery_assignments',await activeAssignment(did),60);
+    await Promise.all([orderSweeper().sweep(),asShipper(d,'POST',`/driver/deliveries/${did}/pickup`,{expected_version:current.version})]);
+    const state=(await deliveryOf(oid))[0].state;expect(['delivering','cancelled_by_system']).toContain(state);await orderSweeper().sweep();
+    expect((await orderRow(oid)).status).toBe(state==='delivering'?'PREPARING':'CANCELLED_BY_SYSTEM');expect((await walletOf(app,d)).held).toBe(state==='delivering'?1000:0);
+  });
+  it('#153: confirm vs deadline has one winner',async()=>{
+    const o=await place(alice),oid=String(o.order_id);await timeoutAge('orders',oid,30);const version=Number((await orderRow(oid)).version);
+    const [,r]=await Promise.all([orderSweeper().sweep(),asShop('POST',`/shop/me/orders/${oid}/confirm`,{expected_version:version})]);const row=await orderRow(oid);
+    expect(['PREPARING','CANCELLED_BY_SYSTEM']).toContain(row.status);expect(r.status).toBe(row.status==='PREPARING'?200:409);
+  });
+  it('#153: a released assignment stops its old timer; the next driver has a fresh pickup deadline',async()=>{
+    const a=await shipper(),b=await shipper(),o=await confirmed(alice),called=ok(await callShipper(o),201),did=String((called.delivery as Json).delivery_id),oid=String(o.order_id);
+    const accepted=ok(await asShipper(a,'POST',`/driver/deliveries/${did}/accept`,{}));await timeoutAge('delivery_assignments',await activeAssignment(did),60);
+    ok(await asShipper(a,'POST',`/driver/deliveries/${did}/release`,{expected_version:accepted.version,reason:'Bận đột xuất'}));ok(await asShipper(b,'POST',`/driver/deliveries/${did}/accept`,{}));
+    await orderSweeper().sweep();expect((await orderRow(oid)).status).toBe('PREPARING');expect((await walletOf(app,a)).held).toBe(0);expect((await walletOf(app,b)).held).toBe(1000);
+  });
+  it('#153: audit failure rolls back order, assignment, hold and outbox atomically',async()=>{
+    const d=await shipper(),o=await confirmed(alice),called=ok(await callShipper(o),201),did=String((called.delivery as Json).delivery_id),oid=String(o.order_id);
+    ok(await asShipper(d,'POST',`/driver/deliveries/${did}/accept`,{}));await timeoutAge('delivery_assignments',await activeAssignment(did),60);
+    const recorder=app.running.app.get(OrderRecorder),original=recorder.record.bind(recorder);const spy=jest.spyOn(recorder,'record').mockImplementation(async(c,change)=>{if(change.order.orderId===oid&&change.type==='delivery_timeout')throw new Error('forced timeout audit failure');await original(c,change);});
+    try{await expect(orderSweeper().sweep()).rejects.toThrow('forced timeout audit failure');}finally{spy.mockRestore();}
+    expect((await orderRow(oid)).status).toBe('PREPARING');expect((await deliveryOf(oid))[0].state).toBe('accepted');expect((await walletOf(app,d)).held).toBe(1000);
+    expect(await countRows(app.pool,'SELECT 1 FROM app.cancellation_transitions WHERE resource_id=$1::uuid',[oid])).toBe(0);await orderSweeper().sweep();expect((await walletOf(app,d)).held).toBe(0);
+  });
+  it('#153: policy snapshots stay immutable; new delivery uses current policy; scheduled confirmation is exempt',async()=>{
+    const o=await place(alice),oid=String(o.order_id),before=(await orderRow(oid)).timeout_snapshot;
+    await expect(app.pool.query(`UPDATE app.orders SET timeout_snapshot=timeout_snapshot||'{"rule_version":999}',version=version+1 WHERE order_id=$1::uuid`,[oid])).rejects.toThrow(/TIMEOUT_SNAPSHOT_IMMUTABLE/u);
+    await app.pool.query(`UPDATE app.order_timeout_policy SET parameters=jsonb_set(parameters,'{search_stop}','25'),version=version+1 WHERE id`);
+    try{const co=await confirm(o);ok(await callShipper(co),201);const d=(await deliveryOf(oid))[0];expect((await orderRow(oid)).timeout_snapshot).toEqual(before);expect(new Date(d.search_expires_at).getTime()-new Date(d.search_started_at).getTime()).toBe(25*60_000);}
+    finally{await app.pool.query(`UPDATE app.order_timeout_policy SET parameters=jsonb_set(parameters,'{search_stop}','30'),version=version+1 WHERE id`);}
+    const scheduled=await place(alice,undefined,{scheduled_for:new Date(Date.now()+90*60_000).toISOString()});expect((await orderRow(String(scheduled.order_id))).timeout_snapshot).toBeNull();
+  });
+
 });

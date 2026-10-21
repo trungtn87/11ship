@@ -1,10 +1,10 @@
 // M10 vocabulary and fixed rules. The values mirror database/migrations/1794268800000_create-m10-orders.sql; keep the two in step.
 
-export const ORDER_STATUSES = ['PENDING_CONFIRMATION', 'PREPARING', 'COMPLETED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SHOP', 'REJECTED_BY_SHOP', 'NOT_COMPLETED'] as const;
+export const ORDER_STATUSES = ['PENDING_CONFIRMATION', 'PREPARING', 'COMPLETED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SHOP','CANCELLED_BY_SYSTEM', 'REJECTED_BY_SHOP', 'NOT_COMPLETED'] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 /** The Order has ended: nothing about it changes any more (a completed, cancelled, refused or "not completed" Order). */
-export const ENDED_STATUSES: readonly OrderStatus[] = ['COMPLETED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SHOP', 'REJECTED_BY_SHOP', 'NOT_COMPLETED'];
+export const ENDED_STATUSES: readonly OrderStatus[] = ['COMPLETED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SHOP','CANCELLED_BY_SYSTEM', 'REJECTED_BY_SHOP', 'NOT_COMPLETED'];
 /** Statuses in which a delivery may exist or be called: the shop has confirmed and the Order has not ended. */
 export const RUNNING_STATUS: OrderStatus = 'PREPARING';
 

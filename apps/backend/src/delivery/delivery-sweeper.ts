@@ -50,7 +50,7 @@ export class DeliverySweeper {
           state: 'search_stopped',
           searchStoppedNow: true,
           endedNow: true,
-          endReason: 'Hết thời gian tìm shipper (30 phút)',
+          endReason: 'Hết thời gian tìm shipper',
         });
         if (after === undefined) {
           continue;
@@ -75,7 +75,7 @@ export class DeliverySweeper {
           continue;
         }
         let current = locked;
-        for (const minute of dueSearchReminders(nowMs, locked.searchStartedAtMs, { m5: locked.reminded5AtMs !== null, m15: locked.reminded15AtMs !== null })) {
+        for (const minute of dueSearchReminders(nowMs, locked.searchStartedAtMs, { m5: locked.reminded5AtMs !== null, m15: locked.reminded15AtMs !== null }, locked.searchExpiresAtMs)) {
           const after = await this.deliveries.update(context, current.deliveryId, current.version, { remindedNow: minute === 5 ? 5 : 15 });
           if (after === undefined) {
             break;

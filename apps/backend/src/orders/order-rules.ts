@@ -95,6 +95,7 @@ export type DisplayStatus =
   | 'DELIVERY_FAILED'
   | 'CANCELLED_BY_CUSTOMER'
   | 'CANCELLED_BY_SHOP'
+  | 'CANCELLED_BY_SYSTEM'
   | 'REJECTED'
   | 'NOT_COMPLETED';
 
@@ -110,6 +111,8 @@ export function displayStatusOf(status: OrderStatus, ready: boolean, latestDeliv
       return 'COMPLETED';
     case 'CANCELLED_BY_CUSTOMER':
       return 'CANCELLED_BY_CUSTOMER';
+    case 'CANCELLED_BY_SYSTEM':
+      return 'CANCELLED_BY_SYSTEM';
     case 'CANCELLED_BY_SHOP':
       return 'CANCELLED_BY_SHOP';
     case 'REJECTED_BY_SHOP':

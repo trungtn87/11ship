@@ -1,3 +1,4 @@
+import { TimeoutPolicyService } from '../order-timeouts/timeout-policy-service';
 import { randomUUID } from 'node:crypto';
 import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Inject, Post, Query, Req, Res } from '@nestjs/common';
 import { ADMIN_AUTH_CONFIG } from '../admin-auth/admin-auth-config.provider';
@@ -33,6 +34,7 @@ export class SystemSettingsController {
 
   constructor(
     private readonly settings: SystemSettingsService,
+    private readonly timeouts: TimeoutPolicyService,
     private readonly limiter: AdminLimiter,
     @Inject(ADMIN_AUTH_CONFIG) config: AdminAuthConfig,
   ) {
@@ -73,6 +75,19 @@ export class SystemSettingsController {
     return { data: outcome.payload };
   }
 
+  @Get('order-timeouts')
+  async readTimeouts(@Req() request: AdminRequest) {
+    const origin=request.headers.origin;
+    if(origin!==undefined && (typeof origin!=='string'||!this.#origins.has(origin)))throw new AppError('ADMIN_CSRF_INVALID');
+    return {data:await this.timeouts.read(readCookieToken(request.headers.cookie,ADMIN_SESSION_COOKIE))};
+  }
+  @Post('order-timeouts')
+  @HttpCode(200)
+  async saveTimeouts(@Body() body:unknown,@Req() request:AdminRequest,@Headers('x-csrf-token') csrf:unknown,@Headers('idempotency-key') key:string|string[]|undefined) {
+    await this.#ingress(request);
+    const result=await this.timeouts.save(readCookieToken(request.headers.cookie,ADMIN_SESSION_COOKIE),csrf,body,key,request.requestId??randomUUID());
+    return {data:result.payload};
+  }
   async #ingress(request: AdminRequest): Promise<void> {
     const origin = request.headers.origin;
     if (typeof origin !== 'string' || !this.#origins.has(origin)) {

@@ -1,5 +1,7 @@
 # M07 — Quy trình giao hàng: kế hoạch triển khai và hợp đồng dữ liệu (18/10/2026)
 
+> Bổ sung Owner 21/10/2026: [Thời hạn ba giai đoạn, SYSTEM tự hủy, audit và cài đặt Admin](M10-timeouts-20261021.md) (#153) thay thế các mô tả timeout cũ xung đột.
+
 Nguồn: `11Ship-M07-Functional-Approved-UI-v1.0.md` (Owner duyệt chức năng 16/10/2026), phụ lục M14 (chỉ vị trí mới nhất), ADR-004 (hold/capture/release), M06 v1.1 (18/10, 3 km, ba khung phí, thỏa thuận phí). Nhánh `ccr-20044309-7dr277`, base `main@d77b9c4`. Không merge main, không deploy.
 
 ## 1. Quyết định khi tài liệu lệch nhau (cần Owner/ChatGPT biết)
