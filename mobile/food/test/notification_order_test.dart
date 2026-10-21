@@ -18,7 +18,9 @@ void main() {
       await tester.runAsync(() async {
         await session.start();
         await session.login(phone: '0901234567', password: 'Correct-Horse-9');
+        await session.refreshIdentity();
       });
+      expect(session.identity?.activeRole, role);
       final SampleOrderStore store = SampleOrderStore();
       final String orderId = store.seed(status: 'COMPLETED');
       final OrderRuntime orders = OrderRuntime(customer: SampleCustomerOrders(store), shop: SampleShopOrders(store), cart: CartController(source: SampleCustomerOrders(store)));
