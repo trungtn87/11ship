@@ -20,6 +20,16 @@ SERVICE = '11ship-staging'
 URL = 'https://103.9.78.67.sslip.io'
 BACKUPS = Path('/var/backups/11ship')
 POLICY = Path('/etc/11ship/migration-compatibility.json')
+REFRESH_WRAPPER = Path('/opt/11ship/tools/refresh-android.sh')
+REFRESH_WRAPPER_CONTENT = '\n'.join([
+    '#!/bin/bash',
+    'set -euo pipefail',
+    'FILE=/etc/11ship/trust/android-attestation-revocation.json',
+    'SCRIPT=$(readlink -f /opt/11ship/current/scripts/android-attestation-refresh.mjs)',
+    '/usr/bin/node "$SCRIPT" "$FILE"',
+    'chown root:ship11 "$FILE"',
+    'chmod 640 "$FILE"',
+]) + '\n'
 
 
 def run(args, **kwargs):
@@ -51,7 +61,12 @@ def verify_service():
     if prop('RootDirectory') or prop('RootImage'):
         raise RuntimeError('unsupported service filesystem namespace')
     refresh_start = run(['systemctl', 'show', '11ship-attestation-refresh.service', '--property=ExecStart', '--value'])
-    if '/opt/11ship/current/scripts/android-attestation-refresh.mjs /etc/11ship/trust/android-attestation-revocation.json' not in refresh_start or '/releases/' in refresh_start:
+    if 'argv[]=/opt/11ship/tools/refresh-android.sh ;' in refresh_start:
+        st = REFRESH_WRAPPER.lstat()
+        if (REFRESH_WRAPPER.is_symlink() or st.st_uid != 0 or st.st_mode & 0o022
+                or REFRESH_WRAPPER.read_text() != REFRESH_WRAPPER_CONTENT):
+            raise RuntimeError('refresh wrapper content or permissions differ')
+    elif '/opt/11ship/current/scripts/android-attestation-refresh.mjs /etc/11ship/trust/android-attestation-revocation.json' not in refresh_start or '/releases/' in refresh_start:
         raise RuntimeError('refresh service differs or pins an old release; complete initial setup')
     print('verified service: ' + SERVICE + ' (production must also pass application config check)')
 
@@ -97,8 +112,6 @@ def extract(archive, sha):
         if shutil.disk_usage(releases).free < needed + 512 * 1024 * 1024:
             raise RuntimeError('insufficient disk space')
         target = releases / sha
-        if target.exists():
-            raise RuntimeError('release already exists; never overwrite a release')
         with tempfile.TemporaryDirectory(prefix='.unpack-', dir=releases) as work:
             tar.extractall(work, members=members, filter='data')
             tree = Path(work) / name
@@ -122,8 +135,25 @@ def extract(archive, sha):
                 if not path.startswith('node_modules/') and re.search(r'(^|/)\.env($|\.)|\.(pem|key|p12|jks|keystore)$', path):
                     raise RuntimeError('secrets in artifact')
             # TemporaryDirectory is 0700; the release tree must be readable by ship11.
-            tree.rename(target)
+            if target.exists() or target.is_symlink():
+                # A preflight refusal leaves the immutable release behind. Retry only
+                # after comparing every file against the newly verified archive.
+                verify_existing_release(target, tree)
+            else:
+                tree.rename(target)
     return target
+
+
+def verify_existing_release(target, verified):
+    if target.is_symlink() or not target.is_dir():
+        raise RuntimeError('existing release is not a real directory')
+    paths = list(target.rglob('*'))
+    if any(p.is_symlink() or not (p.is_file() or p.is_dir()) for p in paths):
+        raise RuntimeError('existing release contains links or special files')
+    actual = {str(p.relative_to(target)) for p in paths if p.is_file()}
+    expected = {str(p.relative_to(verified)) for p in verified.rglob('*') if p.is_file()}
+    if actual != expected or any(digest(target / p) != digest(verified / p) for p in expected):
+        raise RuntimeError('existing release differs; never overwrite a release')
 
 
 def link(name, target):
@@ -238,6 +268,10 @@ def update(archive, sha):
     if pending:
         backup()
         migrate(new)
+    if new == old:
+        health(new)
+        print('already running this release; checked; previous rollback target preserved')
+        return
     # Persist rollback target before switching, including if this process is interrupted.
     link('previous', old)
     save_state({'previous': str(old), 'current': str(new), 'backward_compatible': True})
