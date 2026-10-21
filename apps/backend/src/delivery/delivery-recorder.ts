@@ -1,3 +1,4 @@
+import { WalletService } from '../wallet/wallet-service';
 import { cancellationAudit } from '../order-timeouts/cancellation-audit';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
@@ -36,11 +37,16 @@ export class DeliveryRecorder {
     private readonly deliveries: DeliveryRepository,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
+    private readonly wallets: WalletService,
   ) {}
 
   async record(context: TransactionContext, change: Change): Promise<void> {
     const d = change.delivery;
-    const cancellation=/cancel|release|search_stopped/.test(change.type)?await cancellationAudit(context,'deliveries',d.deliveryId,d.version,change.assignmentId):{};
+    const isCancellation = /cancel|release|search_stopped/.test(change.type);
+    const cancellation = isCancellation ? await cancellationAudit(context, 'deliveries', d.deliveryId, d.version, change.assignmentId) : {};
+    if (isCancellation && change.assignmentId) {
+      cancellation.commission_hold_status = await this.wallets.commissionHoldStatus(context, change.assignmentId);
+    }
     await this.deliveries.appendEvent(context, {
       eventId: randomUUID(),
       deliveryId: d.deliveryId,

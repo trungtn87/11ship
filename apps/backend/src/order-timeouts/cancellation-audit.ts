@@ -20,10 +20,6 @@ export async function cancellationAudit(
     facts.order_id = d?.order_id ?? null;
     facts.delivery_id = id;
     facts.assignment_id = assignmentId ?? null;
-    if (assignmentId)
-      facts.commission_hold_status =
-        (await c.query<{ status: string }>('SELECT status FROM app.wallet_holds WHERE commission_assignment_id=$1::uuid', [assignmentId])).rows[0]?.status ??
-        null;
   } else facts.order_id = id;
   return facts;
 }

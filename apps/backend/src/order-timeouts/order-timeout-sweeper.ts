@@ -106,10 +106,7 @@ export class OrderTimeoutSweeper {
 
   async delivery(c: TransactionContext, id: string): Promise<void> {
     const peeked = await this.deliveries.findActiveAssignment(c, id);
-    if (peeked) {
-      if ((await c.query('SELECT 1 FROM app.drivers WHERE driver_id=$1::uuid FOR UPDATE SKIP LOCKED', [peeked.driverId])).rows.length === 0) return;
-      await this.drivers.lockById(c, peeked.driverId);
-    }
+    if (peeked && !(await this.drivers.tryLockById(c, peeked.driverId))) return;
     if ((await c.query('SELECT 1 FROM app.deliveries WHERE delivery_id=$1::uuid FOR UPDATE SKIP LOCKED', [id])).rows.length === 0) return;
     const delivery = await this.deliveries.lockById(c, id);
     if (

@@ -222,6 +222,16 @@ export class DriverRepository {
     return row === undefined ? undefined : toDriver(row);
   }
 
+  /** Claims an available driver root lock for background work; skips a row held by another transaction. */
+  async tryLockById(context: TransactionContext, driverId: string): Promise<DriverRow | undefined> {
+    const result = await context.query<RawDriver>(
+      `SELECT ${DRIVER_COLUMNS} FROM app.drivers d WHERE d.driver_id = $1::uuid FOR UPDATE SKIP LOCKED`,
+      [driverId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toDriver(row);
+  }
+
   /** Locks a driver row by id (the administration commands; the target comes from the path). */
   async lockById(context: TransactionContext, driverId: string): Promise<DriverRow | undefined> {
     const result = await context.query<RawDriver>(
