@@ -217,7 +217,9 @@ export const MENU: readonly MenuGroup[] = [
       // M06-A: Phí & điều kiện giao (fee table; every administrator reads, only SYSTEM changes, the server decides again).
       { id: 'shipping-policy', label: 'Phí & điều kiện giao', icon: 'gear', route: { name: 'shipping-policy' }, ready: true, access: 'any' },
       soon('audit', 'Nhật ký', 'doc', 'audit'),
-      { id: 'monitoring-errors', label: 'Giám sát · Nhật ký lỗi', icon: 'activity', route: { name: 'monitoring-errors' }, ready: true, access: 'system' },
+      { id: 'monitoring', label: 'Giám sát', icon: 'activity', ready: true, access: 'system', children: [
+        { id: 'monitoring-errors', label: 'Nhật ký lỗi', route: { name: 'monitoring-errors' }, ready: true, access: 'system' },
+      ] },
     ],
   },
 ];
