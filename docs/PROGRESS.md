@@ -262,10 +262,11 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#148](https://github.com/trungtn87/11ship/pull/148) 11Food: sửa logo, banner lỗi và tìm kiếm chung quán/món (#1… | Đã merge (`MERGED`) | — | — | — | `9a6b47d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#149](https://github.com/trungtn87/11ship/pull/149) feat(deploy): manual GitHub Action for latest main on VPS | Đã merge (`MERGED`) | — | — | — | `f67f13d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#150](https://github.com/trungtn87/11ship/pull/150) fix(deploy): normalize verified release permissions before… | Đã merge (`MERGED`) | — | — | — | `b2733d6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#152](https://github.com/trungtn87/11ship/pull/152) fix(M08): mở đơn từ thông báo trên Android, phân biệt lỗi t… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `86d2c8e` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
-Không có vấn đề nào cần chú ý.
+- `UNCLASSIFIED_PR` PR #152: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
