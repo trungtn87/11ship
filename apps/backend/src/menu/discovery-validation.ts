@@ -76,3 +76,17 @@ function integer(raw: string | undefined, fallback: number, min: number, max: nu
   }
   return value;
 }
+
+/** Coordinates only, no repeated, missing or unknown parameters. Never infer a region from its name. */
+export function parseAreaPosition(query: unknown): { latitude: number; longitude: number } {
+  if (typeof query !== 'object' || query === null || Array.isArray(query)) throw new BadRequestException();
+  const record = query as Record<string, unknown>;
+  if (Object.keys(record).some((key) => key !== 'latitude' && key !== 'longitude')) throw new BadRequestException();
+  const coordinate = (raw: unknown, max: number): number => {
+    if (typeof raw !== 'string' || !/^-?\d{1,3}(?:\.\d{1,16})?$/.test(raw)) throw new BadRequestException();
+    const value = Number(raw);
+    if (!Number.isFinite(value) || Math.abs(value) > max) throw new BadRequestException();
+    return value;
+  };
+  return { latitude: coordinate(record.latitude, 90), longitude: coordinate(record.longitude, 180) };
+}

@@ -4,7 +4,7 @@ import { actorOf, AuthenticatedRequest } from '../auth/auth-principal';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
 import { DiscoveryService } from './discovery-service';
-import { parseDiscoveryQuery } from './discovery-validation';
+import { parseAreaPosition, parseDiscoveryQuery } from './discovery-validation';
 import { MenuService } from './menu-service';
 import {
   parseImageUploadBody,
@@ -134,6 +134,13 @@ export class DiscoveryController {
   async areas(@Res({ passthrough: true }) response: NoStore) {
     response.setHeader('Cache-Control', 'no-store');
     return { data: await this.discovery.serviceAreas() };
+  }
+
+  @Get('service-areas/resolve')
+  async resolveArea(@Query() query: unknown, @Res({ passthrough: true }) response: NoStore) {
+    const position = parseAreaPosition(query);
+    response.setHeader('Cache-Control', 'no-store');
+    return { data: await this.discovery.resolveArea(position.latitude, position.longitude) };
   }
 
   @Get('menu-categories')
