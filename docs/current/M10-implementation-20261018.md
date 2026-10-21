@@ -1,5 +1,7 @@
 # M10 — Đặt món và đơn hàng quán: triển khai và hợp đồng (18–19/10/2026)
 
+> Bổ sung Owner 21/10/2026: [Thời hạn ba giai đoạn, SYSTEM tự hủy, audit và cài đặt Admin](M10-timeouts-20261021.md) (#153) thay thế các mô tả timeout cũ xung đột.
+
 Nguồn thiết kế đã khóa: [11Ship-M10-Functional-UI-LOCKED-v1.0.md](11Ship-M10-Functional-UI-LOCKED-v1.0.md) (kèm §17 phụ lục M14 do Owner chốt 16/10/2026) và 3 ảnh UI đã duyệt ở `docs/ui/m10/`. Nhánh `claude/m10-order-delivery-hfy75r`. Chưa merge, chưa deploy, chưa chạy migration production.
 
 ## 1. Gói công việc (checklist task nhỏ)

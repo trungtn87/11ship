@@ -167,4 +167,22 @@ describe('M10.05 — Admin orders', () => {
     expect(refused.status).toBeGreaterThanOrEqual(400);
     expect((await app.pool.query('SELECT status FROM app.orders WHERE order_id = $1::uuid', [order.order_id])).rows[0]).toMatchObject({ status: 'PREPARING' });
   });
+  it('#153: settings enforce permissions, validation, versions and idempotent audit history',async()=>{
+    const path='/system-settings/order-timeouts';
+    expect((await adminGet(undefined,path)).status).toBe(401);expect((await adminGet(viewer,path)).status).toBe(403);expect((await adminGet(outsider,path)).status).toBe(403);
+    const original=adminJson(await adminGet(locker,path)),parameters={...original.parameters as Json,search_stop:25};
+    expect((await adminPost(locker,path,{expected_version:original.version,parameters:{...parameters,pickup_warning:60,pickup_cancel:60}})).status).toBe(400);
+    const key=randomUUID(),body={expected_version:original.version,parameters};
+    try{
+      const updated=await adminPost(locker,path,body,{key});expect(updated.status).toBe(200);expect(adminJson(updated).version).toBe(Number(original.version)+1);
+      expect((await adminPost(locker,path,body,{key})).status).toBe(200);expect((await adminPost(locker,path,body)).status).toBe(409);expect((await adminGet(system.login,path)).status).toBe(200);
+      const history=(await app.pool.query('SELECT old_values,new_values FROM app.order_timeout_policy_changes WHERE version=$1',[Number(original.version)+1])).rows;
+      expect(history).toHaveLength(1);expect(history[0].new_values.search_stop).toBe(25);
+      await expect(app.pool.query('DELETE FROM app.order_timeout_policy_changes WHERE version=$1',[Number(original.version)+1])).rejects.toThrow(/append-only/u);
+    }finally{
+      await app.pool.query('UPDATE app.order_timeout_policy SET parameters=$1::jsonb,updated_by=NULL,version=version+1 WHERE id',[JSON.stringify(original.parameters)]);
+      const c=await app.pool.connect();try{await c.query('BEGIN');await c.query('ALTER TABLE app.order_timeout_policy_changes DISABLE TRIGGER timeout_policy_changes_immutable');await c.query('DELETE FROM app.order_timeout_policy_changes WHERE version=$1',[Number(original.version)+1]);await c.query('ALTER TABLE app.order_timeout_policy_changes ENABLE TRIGGER timeout_policy_changes_immutable');await c.query('COMMIT');}catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}
+    }
+  });
+
 });
