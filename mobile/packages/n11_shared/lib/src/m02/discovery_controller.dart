@@ -7,7 +7,7 @@ import '../flows/location.dart';
 import 'discovery_models.dart';
 
 // The state behind the Home discovery (M02-KP01), the filter sheet (KP03) and the search screen (KP02). Rules that matter:
-//  - the area is chosen by the person (one area is chosen for them only when the server offers exactly one); nothing is guessed from GPS;
+//  - GPS areas come only from configured backend coverage; manual choices remain available when location fails;
 //  - the LATEST request wins: an answer for an older term / filter / area is dropped, so results never flash back from a previous term;
 //  - data that was loaded stays on screen, marked "not up to date", when a refresh fails; a first load that fails is an error with a
 //    retry, never an empty list;
@@ -16,7 +16,65 @@ import 'discovery_models.dart';
 enum DiscoveryLoad { idle, loading, ready, failed, notConnected }
 
 class DiscoveryController extends ChangeNotifier {
-  DiscoveryController({required this.api});
+  DiscoveryController({required this.api, DiscoveryPosition? position})
+      : position = position ?? DiscoveryPosition();
+
+  final DiscoveryPosition position;
+  bool outsideCoverage = false;
+  bool manualArea = false;
+  bool resolvingArea = false;
+  bool areaResolutionFailed = false;
+  bool _gpsResolved = false;
+  int _areaEpoch = 0;
+
+  /// One foreground attempt; denied/failed attempts require explicit retry, never repeated permission prompts.
+  Future<void> locate({DiscoveryPosition? source, bool force = false}) async {
+    final DiscoveryPosition gps = source ?? position;
+    if (_disposed ||
+        resolvingArea ||
+        gps.loading ||
+        (!force && !gps.needsRefresh)) {
+      return;
+    }
+    resolvingArea = true;
+    areaResolutionFailed = false;
+    final int epoch = ++_areaEpoch;
+    _notify();
+    await gps.locate();
+    if (_disposed || epoch != _areaEpoch) return;
+    final LocationFix? fix = gps.fix;
+    if (fix != null) {
+      try {
+        final AreaChoice? found =
+            await api.resolveArea(fix.latitude, fix.longitude);
+        if (_disposed || epoch != _areaEpoch) return;
+        _gpsResolved = true;
+        outsideCoverage = found == null;
+        manualArea = false;
+        if (found != null && !_areas.any((AreaChoice a) => a.id == found.id)) {
+          _areas = <AreaChoice>[..._areas, found];
+        }
+        final String? next = found?.id;
+        if (next != areaId || found == null) {
+          areaId = next;
+          _epoch++; // Invalidate an old area page, including loadMore.
+          _shops = const <ShopCardData>[];
+          _hasMore = _loadingMore = _stale = false;
+          _list = DiscoveryLoad.idle;
+          _notify();
+          if (next != null) await refresh();
+        }
+      } on AuthFailure {
+        if (!_disposed && epoch == _areaEpoch) areaResolutionFailed = true;
+      } on FeatureNotConnected {
+        if (!_disposed && epoch == _areaEpoch) areaResolutionFailed = true;
+      }
+    }
+    if (!_disposed && epoch == _areaEpoch) {
+      resolvingArea = false;
+      _notify();
+    }
+  }
 
   final DiscoveryApi api;
 
@@ -76,6 +134,7 @@ class DiscoveryController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    position.dispose();
     super.dispose();
   }
 
@@ -96,7 +155,7 @@ class DiscoveryController extends ChangeNotifier {
       if (areaId != null && area == null) {
         areaId = null;
       }
-      if (areaId == null && _areas.length == 1) {
+      if (!_gpsResolved && areaId == null && _areas.length == 1) {
         areaId = _areas.single.id;
       }
       if (categoryId != null && categoryOf(categoryId!) == null) {
@@ -204,6 +263,10 @@ class DiscoveryController extends ChangeNotifier {
 
   /// The person picks an area (the list reloads inside it; the filters stay).
   Future<void> chooseArea(String id) async {
+    if (!_areas.any((AreaChoice area) => area.id == id)) return;
+    _areaEpoch++;
+    resolvingArea = false;
+    manualArea = true;
     areaId = id;
     _shops = const <ShopCardData>[];
     _hasMore = false;
@@ -225,6 +288,11 @@ class DiscoveryController extends ChangeNotifier {
     required bool open,
   }) async {
     final bool areaChanged = area != null && area != areaId;
+    if (areaChanged) {
+      _areaEpoch++;
+      resolvingArea = false;
+      manualArea = true;
+    }
     if (area != null) {
       areaId = area;
     }
@@ -246,23 +314,33 @@ class DiscoveryController extends ChangeNotifier {
   }
 }
 
-/// One foreground fix for the current discovery visit, requested by the customer; no tracking.
+/// One foreground fix, shared across Home and search; no tracking or delivery-address mutation.
 class DiscoveryPosition extends ChangeNotifier {
   DiscoveryPosition({LocationProvider? provider})
-    : provider = provider ?? MethodChannelLocationProvider();
+      : provider = provider ?? MethodChannelLocationProvider();
   final LocationProvider provider;
   LocationFix? fix;
   bool loading = false;
+  DateTime? attemptedAt;
+  LocationFailure? failure;
+  bool get needsRefresh =>
+      attemptedAt == null ||
+      (failure == null &&
+          DateTime.now().difference(attemptedAt!) >=
+              const Duration(minutes: 5));
   bool _disposed = false;
   Future<void> locate() async {
     if (loading) return;
     loading = true;
+    attemptedAt = DateTime.now();
+    failure = null;
     fix = null;
     notifyListeners();
     try {
       final LocationFix found = await provider.currentFix();
       if (!_disposed) fix = found;
-    } on LocationException {
+    } on LocationException catch (error) {
+      failure = error.failure;
       // Unknown stays unknown; never substitute a saved address or map center.
     } finally {
       loading = false;
@@ -287,7 +365,20 @@ class DishSearchController extends ChangeNotifier {
     this.debounce = const Duration(milliseconds: 350),
   });
   final DiscoveryApi api;
-  final String areaId;
+  String? areaId;
+  void setArea(String? id) {
+    if (id == areaId) return;
+    areaId = id;
+    _epoch++;
+    _timer?.cancel();
+    shops = <ShopCardData>[];
+    dishes = <DishHit>[];
+    _moreShops = _moreDishes = loadingMore = stale = false;
+    state = DiscoveryLoad.idle;
+    _notify();
+    if (id != null && hasTerm) unawaited(run());
+  }
+
   final Duration debounce;
   String _term = '';
   List<ShopCardData> shops = <ShopCardData>[];
@@ -341,7 +432,7 @@ class DishSearchController extends ChangeNotifier {
   }
 
   Future<void> run() async {
-    if (!hasTerm || _disposed) return;
+    if (!hasTerm || _disposed || areaId == null) return;
     _timer?.cancel();
     final int epoch = ++_epoch;
     loadingMore = false;
@@ -360,14 +451,16 @@ class DishSearchController extends ChangeNotifier {
   }
 
   Future<void> _fetch(int epoch, {required bool more}) async {
+    final String? chosen = areaId;
+    if (chosen == null) return;
     // Each endpoint keeps its own raw offset: deduplicating cards must not skip pages.
     final DiscoveryQuery shopQuery = DiscoveryQuery(
-      areaId: areaId,
+      areaId: chosen,
       term: _term,
       offset: more ? _shopOffset : 0,
     );
     final DiscoveryQuery dishQuery = DiscoveryQuery(
-      areaId: areaId,
+      areaId: chosen,
       term: _term,
       offset: more ? _dishOffset : 0,
     );

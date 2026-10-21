@@ -116,6 +116,7 @@ function screenIdOf(route: Route): { id: string; variant?: string } {
     case 'invitation-revoke':
       return { id: 'invitation-detail', variant: 'revoke' };
     // The Shipper pages (M03) have no design-catalog sample: the preview shows the overview.
+    case 'monitoring-errors':
     case 'finance-bank-accounts':
     case 'shippers':
     case 'shipper':

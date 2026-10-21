@@ -59,6 +59,13 @@ export class DiscoveryService {
     });
   }
 
+  async resolveArea(latitude: number, longitude: number): Promise<Record<string, unknown> | null> {
+    return this.transactions.withTransaction(async (context) => {
+      const row = await this.areas.resolve(context, latitude, longitude);
+      return row === undefined ? null : { service_area_id: row.serviceAreaId, name: row.name };
+    });
+  }
+
   async categories(): Promise<Record<string, unknown>[]> {
     return this.transactions.withTransaction(async (context) => {
       const rows = await this.menu.listCategories(context);

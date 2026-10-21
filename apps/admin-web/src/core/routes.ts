@@ -33,6 +33,7 @@ export type Route =
   | { readonly name: 'shipping-policy' }
   | { readonly name: 'settings' }
   | { readonly name: 'order-timeouts' }
+  | { readonly name: 'monitoring-errors' }
   // M04 (UI phase): "Tài chính" and the wallet parameters ("Cài đặt › Tham số hệ thống › Ví Shipper").
   | { readonly name: 'finance' }
   | { readonly name: 'finance-wallets' }
@@ -66,6 +67,7 @@ export function parseRoute(pathname: string, search = ''): Route {
     return { name: 'categories' };
   }
   if (path === '/system/settings/order-timeouts') return { name: 'order-timeouts' };
+  if (path === '/system/monitoring/errors') return { name: 'monitoring-errors' };
   if (path === '/system/settings') {
     return { name: 'settings' };
   }
@@ -195,6 +197,8 @@ export function formatRoute(route: Route): string {
       return '/system/settings/order-timeouts';
     case 'settings':
       return '/system/settings';
+    case 'monitoring-errors':
+      return '/system/monitoring/errors';
     case 'wallet-parameters':
       return '/system/parameters/shipper-wallet';
     case 'shipping-policy':

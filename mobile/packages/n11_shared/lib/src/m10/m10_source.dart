@@ -1,3 +1,4 @@
+import '../account/models.dart';
 import '../m07/m07_source.dart';
 import 'm10_models.dart';
 
@@ -7,7 +8,9 @@ import 'm10_models.dart';
 // flows) on a refusal or a lost answer; the screen keeps the person's input and retries with the SAME operation key.
 
 /// What a refusal means to the person, in words. Codes of M10; anything else falls back to the generic text of its kind.
-String m10FailureText(M07Failure failure) {
+String m10FailureText(M07Failure failure) => withRequestTrace(_m10FailureText(failure), failure.requestId);
+
+String _m10FailureText(M07Failure failure) {
   switch (failure.code) {
     case 'ORDER_NOT_FOUND':
       return 'Không tìm thấy đơn này.';

@@ -126,6 +126,7 @@ class DiscoveryQuery {
 
 /// Throws [AuthFailure] (no answer / refusal) or [FeatureNotConnected].
 abstract class DiscoveryApi {
+  Future<AreaChoice?> resolveArea(double latitude, double longitude);
   Future<List<AreaChoice>> areas();
   Future<List<CategoryChoice>> categories();
   Future<DiscoveryPage<ShopCardData>> shops(DiscoveryQuery query);
@@ -134,6 +135,10 @@ abstract class DiscoveryApi {
 
 class UnwiredDiscoveryApi implements DiscoveryApi {
   const UnwiredDiscoveryApi();
+
+  @override
+  Future<AreaChoice?> resolveArea(double latitude, double longitude) =>
+      Future<AreaChoice?>.error(const FeatureNotConnected());
 
   @override
   Future<List<AreaChoice>> areas() =>

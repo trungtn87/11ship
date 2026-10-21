@@ -29,7 +29,7 @@ interface Reply {
   status: number;
 }
 
-function run(exception: unknown, request: { requestId?: string; method?: string } = {
+function run(exception: unknown, request: { requestId?: string; method?: string; originalUrl?: string; route?: { path?: unknown } } = {
   requestId: REQUEST_ID,
   method: 'GET',
 }): { reply: Reply; logs: string[]; headers: Array<[string, string]> } {
@@ -443,5 +443,19 @@ describe('AllExceptionsFilter', () => {
       expect(entry.error_class).toBe('UnknownError');
       expect(logs.join('\n')).not.toContain('SECRET_MARKER_CLASS_NAME');
     });
+  });
+});
+
+
+describe('M13 safe registered route correlation', () => {
+  it('records the route template without actual path IDs, query, or exception text', () => {
+    const { logs } = run(new Error(SECRET), { requestId: REQUEST_ID, method: 'POST',
+      originalUrl: '/v1/driver/wallet/topup-requests/' + SECRET + '?token=' + SECRET,
+      route: { path: '/v1/driver/wallet/topup-requests/:id' } });
+    const entry = JSON.parse(logs[0]!) as Record<string, unknown>;
+    expect(entry).toMatchObject({ route: '/v1/driver/wallet/topup-requests/:id', app: 'SHIP', module: 'M04', request_id: REQUEST_ID });
+    expect(logs.join('')).not.toContain(SECRET);
+    const unmatched = run(new Error(SECRET), { requestId: REQUEST_ID, originalUrl: '/v1/' + SECRET });
+    expect(JSON.parse(unmatched.logs[0]!).route).toBeUndefined();
   });
 });

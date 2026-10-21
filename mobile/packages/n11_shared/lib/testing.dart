@@ -552,6 +552,13 @@ class FakePublicShopApi implements PublicShopApi {
 /// An in-memory [DiscoveryApi] with the visible-data rules the screens rely on (shops of ONE area, folded search, open filter, paging).
 /// [gate] lets a test hold an answer back to prove the latest request wins.
 class FakeDiscoveryApi implements DiscoveryApi {
+  Future<AreaChoice?> Function(double latitude, double longitude)? areaResolver;
+  @override
+  Future<AreaChoice?> resolveArea(double latitude, double longitude) async {
+    await _enter(null, 'resolve');
+    return areaResolver == null ? null : await areaResolver!(latitude, longitude);
+  }
+
   FakeDiscoveryApi({List<AreaChoice>? areas, List<CategoryChoice>? categories, List<FakeShopEntry>? shops})
       : areaList = areas ?? <AreaChoice>[const AreaChoice(id: 'a1', name: 'Cao Bằng')],
         categoryList = categories ?? <CategoryChoice>[const CategoryChoice(id: 'c1', name: 'Ốc'), const CategoryChoice(id: 'c2', name: 'Hải sản')],
