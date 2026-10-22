@@ -112,7 +112,7 @@ abstract class ShopDeliverySource {
 
   /// Live HTTP sources filter on the server. Sample sources use this fallback
   /// so previews can display both active and ended requests under 'Tất cả'.
-  Future<List<DeliveryView>> listFiltered({String filter = 'all', String query = '', DateTime? from, DateTime? to}) async {
+  Future<List<DeliveryView>> listFiltered({String filter = 'all', String query = '', DateTime? from, DateTime? to, int offset = 0}) async {
     final List<DeliveryView> active = await list(history: false, query: query);
     final List<DeliveryView> ended = await list(history: true, query: query);
     final List<DeliveryView> all = <DeliveryView>[...active, ...ended];
