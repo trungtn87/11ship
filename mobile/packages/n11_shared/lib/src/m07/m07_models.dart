@@ -332,7 +332,7 @@ class DeliveryView {
     final Map<String, Object?> can = _obj(m['can'] ?? <String, Object?>{});
     return DeliveryView(
       deliveryId: _str(m['delivery_id']),
-      code: _str(m['code']),
+      code: _str(m['display_code'] ?? m['code']),
       source: _str(m['source']),
       orderId: _strOrNull(m['order_id']),
       previousDeliveryId: _strOrNull(m['previous_delivery_id']),
@@ -454,7 +454,7 @@ class OfferView {
     final Map<String, Object?> shop = _obj(m['shop']);
     return OfferView(
       deliveryId: _str(m['delivery_id']),
-      code: _str(m['code']),
+      code: _str(m['display_code'] ?? m['code']),
       shopName: _str(shop['name']),
       shopAreaText: _strOrNull(shop['area_text']),
       distanceToShopM: _intOrNull(m['distance_to_shop_m']),
