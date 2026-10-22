@@ -8,6 +8,7 @@ import '../m06/m06_views.dart' show kFeeNotePrivacyHint, noteLooksLikePhone, par
 import '../tokens.dart';
 import '../wallet/wallet_models.dart';
 import '../widgets/components.dart';
+import '../widgets/shop_order_filters.dart';
 import '../widgets/form_feedback.dart';
 import 'm07_models.dart';
 import 'm07_source.dart';
@@ -48,30 +49,66 @@ class ShopDeliveryHub extends StatefulWidget {
   State<ShopDeliveryHub> createState() => _ShopDeliveryHubState();
 }
 
+const List<ShopOrderFilterChoice> _deliveryStatusOptions = <ShopOrderFilterChoice>[
+  (value: 'all', label: 'Tất cả'),
+  (value: 'searching', label: 'Đang tìm shipper'),
+  (value: 'accepted', label: 'Shipper đã nhận'),
+  (value: 'delivering', label: 'Đang giao'),
+  (value: 'completed', label: 'Hoàn thành'),
+  (value: 'failed', label: 'Không thành công / Đã hủy'),
+];
+
 class _ShopDeliveryHubState extends State<ShopDeliveryHub> {
-  bool _history = false;
+  ShopOrderFilters _filters = const ShopOrderFilters();
   final TextEditingController _query = TextEditingController();
   String _applied = '';
+  int _offset = 0;
+  Timer? _debounce;
   int _rev = 0;
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _query.dispose();
     super.dispose();
   }
 
-  Future<void> _call() async {
-    await Navigator.of(context).push(n11Route(ShopCallScreen(source: widget.source, pinPicker: widget.pinPicker, mapBuilder: widget.mapBuilder)));
-    if (mounted) {
-      setState(() => _rev++);
-    }
+  void _onSearchChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      if (mounted && value.trim() != _applied) {
+        setState(() { _applied = value.trim(); _offset = 0; });
+      }
+    });
   }
 
-  Future<void> _open(DeliveryView d) async {
-    await Navigator.of(context).push(n11Route(ShopDeliveryDetailScreen(source: widget.source, deliveryId: d.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker, feedbackSlot: widget.feedbackSlot)));
-    if (mounted) {
-      setState(() => _rev++);
-    }
+  Future<void> _chooseFilters() async {
+    final ShopOrderFilters? next = await showShopOrderFilters(
+      context,
+      current: _filters,
+      statuses: _deliveryStatusOptions,
+    );
+    if (mounted && next != null) setState(() { _filters = next; _offset = 0; });
+  }
+
+  void _reset() {
+    _debounce?.cancel();
+    _query.clear();
+    setState(() {
+      _filters = const ShopOrderFilters();
+      _applied = '';
+      _offset = 0;
+    });
+  }
+
+  Future<void> _call() async {
+    await Navigator.of(context).push(n11Route(ShopCallScreen(source: widget.source, pinPicker: widget.pinPicker, mapBuilder: widget.mapBuilder)));
+    if (mounted) setState(() => _rev++);
+  }
+
+  Future<void> _open(DeliveryView delivery) async {
+    await Navigator.of(context).push(n11Route(ShopDeliveryDetailScreen(source: widget.source, deliveryId: delivery.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker, feedbackSlot: widget.feedbackSlot)));
+    if (mounted) setState(() => _rev++);
   }
 
   @override
@@ -82,49 +119,67 @@ class _ShopDeliveryHubState extends State<ShopDeliveryHub> {
         if (widget.source.isSample) const Padding(padding: EdgeInsets.only(bottom: N11Space.gap3), child: M07SampleBanner()),
         N11Button(key: const Key('m07-call-shipper'), label: 'Gọi shipper', icon: Icons.two_wheeler, onPressed: _call),
         const SizedBox(height: N11Space.gap3),
-        Wrap(
-          spacing: N11Space.gap3,
-          runSpacing: N11Space.gap2,
-          children: <Widget>[
-            N11Button(key: const Key('m07-tab-active'), label: 'Đang xử lý', compact: true, kind: _history ? ButtonKind.secondary : ButtonKind.primary, onPressed: () => setState(() => _history = false)),
-            N11Button(key: const Key('m07-tab-history'), label: 'Lịch sử', compact: true, kind: _history ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _history = true)),
-          ],
-        ),
-        const SizedBox(height: N11Space.gap3),
-        N11Field(
-          fieldKey: const Key('m07-search'),
-          label: 'Tìm theo mã hoặc người nhận',
-          controller: _query,
-          textInputAction: TextInputAction.search,
-          onChanged: () {
-            final String next = _query.text;
-            Future<void>.delayed(const Duration(milliseconds: 300), () {
-              if (mounted && _query.text == next && next != _applied) {
-                setState(() {
-                  _applied = next;
-                  _rev++;
-                });
-              }
-            });
-          },
-        ),
+        Row(children: <Widget>[
+          Expanded(
+            child: TextField(
+              key: const Key('m07-search'),
+              controller: _query,
+              textInputAction: TextInputAction.search,
+              onChanged: _onSearchChanged,
+              onSubmitted: (String value) {
+                _debounce?.cancel();
+                setState(() => _applied = value.trim());
+              },
+              decoration: InputDecoration(
+                hintText: 'Tìm mã đơn hoặc tên người nhận',
+                prefixIcon: const Icon(Icons.search),
+                filled: true,
+                fillColor: N11Colors.white,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: const BorderSide(color: N11Colors.line)),
+              ),
+            ),
+          ),
+          const SizedBox(width: N11Space.gap2),
+          IconButton(
+            key: const Key('m07-filter'),
+            tooltip: 'Lọc trạng thái và ngày',
+            onPressed: _chooseFilters,
+            icon: Stack(clipBehavior: Clip.none, children: <Widget>[
+              const Icon(Icons.filter_list),
+              if (_filters.isActive) const Positioned(right: -3, top: -3, child: CircleAvatar(radius: 4, backgroundColor: Colors.orange)),
+            ]),
+          ),
+        ]),
         const SizedBox(height: N11Space.gap3),
         M07Loader<List<DeliveryView>>(
-          key: ValueKey<String>('$_history|$_applied|$_rev'),
+          key: ValueKey<String>('m07|${_filters.status}|$_applied|${_filters.from?.toIso8601String()}|${_filters.toExclusive?.toIso8601String()}|$_rev|$_offset'),
           keyPrefix: 'm07-list',
           refreshEvery: const Duration(seconds: 20),
-          load: () => widget.source.list(history: _history, query: _applied),
-          isEmpty: (List<DeliveryView> v) => v.isEmpty,
+          load: () => widget.source.listFiltered(filter: _filters.status, query: _applied, from: _filters.from, to: _filters.toExclusive, offset: _offset),
+          isEmpty: (List<DeliveryView> items) => items.isEmpty,
           emptyIcon: Icons.two_wheeler,
-          emptyTitle: _history ? 'Chưa có lịch sử giao hàng' : 'Chưa có yêu cầu giao nào',
-          emptyText: _history ? 'Các yêu cầu đã kết thúc sẽ hiện ở đây.' : 'Bấm "Gọi shipper" để gọi shipper giao một đơn.',
+          emptyTitle: 'Không có đơn phù hợp',
+          emptyText: 'Hãy thử tìm kiếm hoặc thay đổi bộ lọc.',
           builder: (BuildContext context, List<DeliveryView> items, Future<void> Function() reload) => Column(
             children: <Widget>[
-              for (final DeliveryView d in items)
-                Padding(padding: const EdgeInsets.only(bottom: N11Space.gap3), child: _DeliveryCard(delivery: d, onTap: () => _open(d))),
+              for (final DeliveryView delivery in items)
+                Padding(padding: const EdgeInsets.only(bottom: N11Space.gap3), child: _DeliveryCard(delivery: delivery, onTap: () => _open(delivery))),
+              if (items.length == 50)
+                TextButton(
+                  key: const Key('m07-page-next'),
+                  onPressed: () => setState(() => _offset += 50),
+                  child: const Text('Trang sau'),
+                ),
             ],
           ),
         ),
+        if (_offset > 0) TextButton(
+          key: const Key('m07-page-previous'),
+          onPressed: () => setState(() => _offset -= 50),
+          child: Text('Trang trước · Trang ${_offset ~/ 50 + 1}'),
+        ),
+        if (_filters.isActive || _applied.isNotEmpty)
+          TextButton(key: const Key('m07-clear-filters'), onPressed: _reset, child: const Text('Xóa bộ lọc')),
       ],
     );
   }

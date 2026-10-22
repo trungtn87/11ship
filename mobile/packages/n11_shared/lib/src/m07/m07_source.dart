@@ -109,6 +109,22 @@ abstract class ShopDeliverySource {
   bool get isSample;
 
   Future<List<DeliveryView>> list({required bool history, String query = ''});
+
+  /// Live HTTP sources filter on the server. Sample sources use this fallback
+  /// so previews can display both active and ended requests under 'Tất cả'.
+  Future<List<DeliveryView>> listFiltered({String filter = 'all', String query = '', DateTime? from, DateTime? to, int offset = 0}) async {
+    final List<DeliveryView> active = await list(history: false, query: query);
+    final List<DeliveryView> ended = await list(history: true, query: query);
+    final List<DeliveryView> all = <DeliveryView>[...active, ...ended];
+    return all.where((DeliveryView item) => filter == 'history' ? ended.contains(item) : switch (filter) {
+      'searching' => item.state == DeliveryState.waitingDriver || item.state == DeliveryState.searchStopped,
+      'accepted' => item.state == DeliveryState.accepted || item.state == DeliveryState.locationConfirmed,
+      'delivering' => item.state == DeliveryState.pickedUp || item.state == DeliveryState.delivering,
+      'completed' => item.state == DeliveryState.completed,
+      'failed' => item.state == DeliveryState.failed || item.state == DeliveryState.cancelledByMerchant || item.state == DeliveryState.cancelledBySystem,
+      _ => true,
+    }).toList();
+  }
   Future<DeliveryView> get(String id);
   Future<DeliveryView> create(NewDeliveryInput input, {required String key});
   Future<DeliveryView> cancel(String id, {required String reason, required int expectedVersion, required String key});

@@ -278,7 +278,9 @@ void main() {
       expect(key('order-wanted'), findsOneWidget);
       await unmount(tester);
       await mount(tester, Scaffold(body: SingleChildScrollView(child: ShopOrderList(runtime: runtime))));
-      await tap(tester, key('shop-filter-scheduled'));
+      await tap(tester, key('shop-orders-filter'));
+      await tap(tester, key('order-filter-scheduled'));
+      await tap(tester, key('order-filter-apply'));
       expect(containing('Đơn hẹn'), findsWidgets);
       await unmount(tester);
     });
@@ -495,7 +497,7 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('the list separates the filters and the sample banner marks illustrative data', (WidgetTester tester) async {
+    testWidgets('the compact filter menu separates states and the sample banner marks illustrative data', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore();
       final OrderRuntime runtime = runtimeOf(store);
       final String pending = store.seed();
@@ -503,13 +505,19 @@ void main() {
       store.seed(status: 'COMPLETED');
       await mount(tester, Scaffold(body: SingleChildScrollView(child: ShopOrdersTab(runtime: runtime, deliveries: null))));
       expect(key('m10-sample-banner'), findsOneWidget);
-      await tap(tester, key('shop-filter-pending'));
+      await tap(tester, key('shop-orders-filter'));
+      await tap(tester, key('order-filter-pending'));
+      await tap(tester, key('order-filter-apply'));
       expect(key('order-card-$pending'), findsOneWidget);
       expect(key('order-card-$attention'), findsNothing);
-      await tap(tester, key('shop-filter-attention'));
+      await tap(tester, key('shop-orders-filter'));
+      await tap(tester, key('order-filter-attention'));
+      await tap(tester, key('order-filter-apply'));
       expect(key('order-card-$attention'), findsOneWidget);
       expect(containing('Cần xử lý'), findsWidgets);
-      await tap(tester, key('shop-filter-history'));
+      await tap(tester, key('shop-orders-filter'));
+      await tap(tester, key('order-filter-history'));
+      await tap(tester, key('order-filter-apply'));
       expect(find.byType(OrderSummaryCard), findsOneWidget);
       await unmount(tester);
     });

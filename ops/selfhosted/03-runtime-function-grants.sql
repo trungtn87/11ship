@@ -22,3 +22,7 @@ GRANT EXECUTE ON FUNCTION app.next_shipper_code() TO ship11_app;
 -- M11: app.next_complaint_code() hands out the human-readable complaint code (PA00001 ...) from a sequence the runtime role cannot touch directly.
 -- SECURITY DEFINER, owned by the migration role, no EXECUTE for PUBLIC.
 GRANT EXECUTE ON FUNCTION app.next_complaint_code() TO ship11_app;
+
+-- M07/M10 #165: scoped shop public display codes; writes are never exposed.
+GRANT EXECUTE ON FUNCTION app.shop_display_order(uuid) TO ship11_app;
+GRANT EXECUTE ON FUNCTION app.shop_display_delivery(uuid) TO ship11_app;

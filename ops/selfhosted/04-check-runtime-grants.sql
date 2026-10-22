@@ -76,6 +76,9 @@ WITH expected(table_name, privileges) AS (
     ('delivery_events', ARRAY['SELECT', 'INSERT']::text[]),
     ('delivery_incidents', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('shipper_latest_locations', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('shop_public_ids', ARRAY['SELECT']::text[]),
+    ('shop_display_counters', ARRAY['SELECT']::text[]),
+    ('shop_display_numbers', ARRAY['SELECT']::text[]),
     ('customer_carts', ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']::text[]),
     ('orders', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('order_items', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
@@ -108,7 +111,8 @@ WITH expected(table_name, privileges) AS (
               ELSE 'OK' END AS result
     FROM expected CROSS JOIN LATERAL unnest(privileges) AS p(privilege)
 ), functions(signature) AS (
-  VALUES ('app.purge_app_user(uuid)'), ('app.next_shipper_code()'), ('app.next_complaint_code()')
+  VALUES ('app.purge_app_user(uuid)'), ('app.next_shipper_code()'), ('app.next_complaint_code()'),
+         ('app.shop_display_order(uuid)'), ('app.shop_display_delivery(uuid)')
 ), function_checks AS (
   SELECT signature || ':EXECUTE' AS check_name,
          CASE WHEN to_regprocedure(signature) IS NULL THEN 'MISSING_FUNCTION'

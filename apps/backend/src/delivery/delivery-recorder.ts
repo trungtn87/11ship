@@ -75,7 +75,7 @@ export class DeliveryRecorder {
       resourceVersion: d.version,
       payload: {
         delivery_id: d.deliveryId,
-        code: d.code,
+        code: d.displayCode ?? d.code,
         shop_id: d.shopId,
         order_id: d.orderId,
         change: change.type,

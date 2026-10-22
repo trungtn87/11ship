@@ -115,6 +115,12 @@ GRANT SELECT, INSERT, UPDATE ON app.orders TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.order_items TO ship11_app;
 GRANT SELECT, INSERT ON app.order_events TO ship11_app;
 
+-- PR #165: the public IDs/counters are allocated and mutated by SECURITY DEFINER
+-- triggers only; the runtime role may read them but must not update the counters.
+GRANT SELECT ON app.shop_public_ids TO ship11_app;
+GRANT SELECT ON app.shop_display_counters TO ship11_app;
+GRANT SELECT ON app.shop_display_numbers TO ship11_app;
+
 -- M08: notifications. The inbox, the push attempts and their bookkeeping. DELETE exists only where the retention pass removes rows after the total window
 -- (Order, Delivery, ledger and audit rows are never touched); a push token is ended, never deleted.
 GRANT SELECT, INSERT, UPDATE ON app.notification_push_tokens TO ship11_app;

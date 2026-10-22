@@ -94,6 +94,10 @@ abstract class ShopOrderSource {
 
   /// [filter]: all, pending, preparing, scheduled, delivering, attention, history.
   Future<OrderList> list({required String filter, String query = '', DateTime? from, DateTime? to});
+
+  /// HTTP sources paginate on the server; sample sources keep the in-memory preview.
+  Future<OrderList> listPage({required String filter, String query = '', DateTime? from, DateTime? to, int offset = 0}) =>
+      list(filter: filter, query: query, from: from, to: to);
   Future<OrderView> get(String id);
   Future<OrderView> edit(String id, {required List<LineEdit> changes, required int expectedVersion, required String key});
   Future<OrderView> confirm(String id, {String? changeReason, required int expectedVersion, required String key});

@@ -422,7 +422,7 @@ describe('runtime grants (ops/selfhosted/02-runtime-grants.sql) with the real re
     await withClient(asRuntime, async (client) => {
       const results = await client.query(checkSql);
       const report = results.find((result) => result.fields.some((field) => field.name === 'check_name'));
-      const count = [...matrix.values()].reduce((n, privileges) => n + privileges.length, 0) + 5;
+      const count = [...matrix.values()].reduce((n, privileges) => n + privileges.length, 0) + 7;
       assert.deepEqual(report.rows, [{ check_name: 'SUMMARY', result: `${count}/${count} checks OK (${matrix.size} tables)` }]);
     });
   });

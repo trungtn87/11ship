@@ -110,20 +110,22 @@ void main() {
   });
 
   group('11Food — shop', () {
-    testWidgets('Q01 lists active deliveries, flags what needs attention, switches to history', (WidgetTester tester) async {
+    testWidgets('Q01 defaults to all deliveries, flags what needs attention, filters completed', (WidgetTester tester) async {
       final SampleShopSource source = SampleShopSource();
       await mount(tester, Scaffold(body: SingleChildScrollView(child: ShopDeliveryHub(source: source))));
       expect(key('m07-sample-banner'), findsOneWidget);
       expect(key('m07-card-d-wait'), findsOneWidget);
-      expect(key('m07-card-d-done'), findsNothing);
+      expect(key('m07-card-d-done'), findsOneWidget);
       expect(containing('Cần xử lý'), findsWidgets); // the stopped search and the open incident
-      await tap(tester, key('m07-tab-history'));
+      await tap(tester, key('m07-filter'));
+      await tap(tester, key('order-filter-completed'));
+      await tap(tester, key('order-filter-apply'));
       expect(key('m07-card-d-done'), findsOneWidget);
       expect(key('m07-card-d-wait'), findsNothing);
       await unmount(tester);
     });
 
-    testWidgets('Q01 empty history says what it is', (WidgetTester tester) async {
+    testWidgets('Q01 empty search reports no matching delivery', (WidgetTester tester) async {
       final SampleShopSource source = SampleShopSource();
       await mount(tester, Scaffold(body: SingleChildScrollView(child: ShopDeliveryHub(source: source))));
       await tester.enterText(key('m07-search').first, 'không có mã này');

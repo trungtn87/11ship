@@ -68,7 +68,7 @@ export class OrderRecorder {
         resourceType: ORDER_RESOURCE,
         resourceId: o.orderId,
         resourceVersion: o.version,
-        payload: { order_id: o.orderId, code: o.code, shop_id: o.shopId, customer_user_id: o.customerUserId, change: change.type, status: o.status, version: o.version },
+        payload: { order_id: o.orderId, code: o.displayCode ?? o.code, shop_id: o.shopId, customer_user_id: o.customerUserId, change: change.type, status: o.status, version: o.version },
       });
     }
   }

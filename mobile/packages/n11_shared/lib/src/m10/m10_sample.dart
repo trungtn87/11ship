@@ -439,6 +439,8 @@ class SampleShopOrders extends ShopOrderSource {
       if (query.trim().isNotEmpty && !o.code.contains(query.trim()) && !o.recipientName.toLowerCase().contains(query.trim().toLowerCase())) {
         return false;
       }
+      if (from != null && o.createdAt.isBefore(from)) return false;
+      if (to != null && !o.createdAt.isBefore(to)) return false;
       return switch (filter) {
         'pending' => o.status == 'PENDING_CONFIRMATION',
         'preparing' => o.status == 'PREPARING' && o.deliveryState != 'delivering' && o.deliveryState != 'search_stopped' && o.deliveryState != 'failed',
@@ -446,7 +448,7 @@ class SampleShopOrders extends ShopOrderSource {
         'delivering' => o.status == 'PREPARING' && o.deliveryState == 'delivering',
         'attention' => o.status == 'PREPARING' && (o.deliveryState == 'search_stopped' || o.deliveryState == 'failed'),
         'history' => ended(o),
-        _ => !ended(o),
+        _ => true,
       };
     }).toList();
     int count(bool Function(_Order) f) => store._orders.where(f).length;

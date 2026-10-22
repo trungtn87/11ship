@@ -159,8 +159,12 @@ class HttpShopOrderSource extends ShopOrderSource {
   String _path(String id, [String tail = '']) => '/v1/shop/me/orders/$id$tail';
 
   @override
-  Future<OrderList> list({required String filter, String query = '', DateTime? from, DateTime? to}) async {
-    final List<String> q = <String>['filter=$filter', 'limit=50', if (query.trim().isNotEmpty) 'q=${Uri.encodeQueryComponent(query.trim())}', if (from != null) 'from=${Uri.encodeQueryComponent(from.toUtc().toIso8601String())}', if (to != null) 'to=${Uri.encodeQueryComponent(to.toUtc().toIso8601String())}'];
+  Future<OrderList> list({required String filter, String query = '', DateTime? from, DateTime? to}) =>
+      listPage(filter: filter, query: query, from: from, to: to);
+
+  @override
+  Future<OrderList> listPage({required String filter, String query = '', DateTime? from, DateTime? to, int offset = 0}) async {
+    final List<String> q = <String>['filter=$filter', 'limit=50', 'offset=$offset', if (query.trim().isNotEmpty) 'q=${Uri.encodeQueryComponent(query.trim())}', if (from != null) 'from=${Uri.encodeQueryComponent(from.toUtc().toIso8601String())}', if (to != null) 'to=${Uri.encodeQueryComponent(to.toUtc().toIso8601String())}'];
     final Object? data = await _call(session, 'GET', '/v1/shop/me/orders?${q.join('&')}');
     return _parse<OrderList>(data, (Object? d) {
       final Map<String, Object?> m = d! as Map<String, Object?>;
