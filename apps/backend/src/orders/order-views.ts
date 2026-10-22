@@ -69,6 +69,7 @@ export class OrderViews {
     return {
       order_id: o.orderId,
       code: o.code,
+      display_code: o.displayCode ?? o.code,
       status: o.status,
       display_status: displayStatusOf(o.status, o.readyAtMs !== null, latest?.state ?? null),
       version: o.version,
@@ -97,6 +98,7 @@ export class OrderViews {
     return {
       order_id: o.orderId,
       code: o.code,
+      display_code: o.displayCode ?? o.code,
       status: o.status,
       display_status: displayStatusOf(o.status, o.readyAtMs !== null, item.latestDelivery),
       version: o.version,
@@ -140,7 +142,7 @@ export class OrderViews {
     const view = await this.#base(context, o, items, latest, nowMs);
     const activeDelivery = all.some((d) => ACTIVE_STATES.includes(d.state));
     view.delivery = latest === undefined ? null : await this.deliveryViews.forShop(context, latest, nowMs, detail);
-    view.deliveries = all.map((d) => ({ delivery_id: d.deliveryId, code: d.code, state: d.state, previous_delivery_id: d.previousDeliveryId, created_at: iso(d.createdAtMs), ended_at: iso(d.endedAtMs), end_reason: d.endReason }));
+    view.deliveries = all.map((d) => ({ delivery_id: d.deliveryId, code: d.code, display_code: d.displayCode ?? d.code, state: d.state, previous_delivery_id: d.previousDeliveryId, created_at: iso(d.createdAtMs), ended_at: iso(d.endedAtMs), end_reason: d.endReason }));
     view.schedule_conflict = await this.#scheduleConflict(context, o, nowMs);
     const running = o.status === 'PREPARING';
     view.can = {
@@ -169,7 +171,7 @@ export class OrderViews {
       calls.push(await this.deliveryViews.forCustomer(context, d, nowMs));
     }
     view.customer = { user_id: o.customerUserId };
-    view.deliveries = all.map((d) => ({ delivery_id: d.deliveryId, code: d.code, state: d.state, previous_delivery_id: d.previousDeliveryId, created_at: iso(d.createdAtMs), ended_at: iso(d.endedAtMs), end_reason: d.endReason }));
+    view.deliveries = all.map((d) => ({ delivery_id: d.deliveryId, code: d.code, display_code: d.displayCode ?? d.code, state: d.state, previous_delivery_id: d.previousDeliveryId, created_at: iso(d.createdAtMs), ended_at: iso(d.endedAtMs), end_reason: d.endReason }));
     view.delivery = calls.length === 0 ? null : (calls[calls.length - 1] as JsonObject);
     view.timeline = (await this.orders.listEvents(context, o.orderId, 400)).map((e) => eventView(e, true));
     view.can = [...can];
