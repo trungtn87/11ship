@@ -140,7 +140,7 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ship11_app') THEN
     GRANT EXECUTE ON FUNCTION app.shop_display_order(uuid), app.shop_display_delivery(uuid) TO ship11_app;
   END IF;
-END
+END;
 $grants$;
 
 -- Down Migration
