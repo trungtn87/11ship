@@ -45,6 +45,18 @@ SELECT s.shop_id, COALESCE(MAX(n.order_number), 0)
   FROM app.shops s LEFT JOIN app.shop_display_numbers n ON n.shop_id = s.shop_id
  GROUP BY s.shop_id;
 
+-- New shops receive their fixed K-number immediately on registration, even before an order.
+CREATE FUNCTION app.shop_display_new_shop()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = app, pg_temp AS $
+BEGIN
+  INSERT INTO app.shop_public_ids (shop_id) VALUES (NEW.shop_id);
+  INSERT INTO app.shop_display_counters (shop_id, last_number) VALUES (NEW.shop_id, 0);
+  RETURN NEW;
+END;
+$;
+CREATE TRIGGER shop_display_new_shop AFTER INSERT ON app.shops
+FOR EACH ROW EXECUTE FUNCTION app.shop_display_new_shop();
+
 -- Allocated in the same transaction as INSERT app.orders or app.deliveries.
 -- ON CONFLICT DO UPDATE serializes concurrent requests by shop, never MAX()+1.
 CREATE FUNCTION app.allocate_shop_display_number(p_shop uuid, p_kind varchar, p_id uuid)
@@ -120,7 +132,7 @@ $$;
 -- perform allocation; bounded API queries may execute read helpers.
 REVOKE ALL ON TABLE app.shop_public_ids, app.shop_display_counters, app.shop_display_numbers FROM PUBLIC;
 REVOKE ALL ON FUNCTION app.allocate_shop_display_number(uuid, varchar, uuid), app.shop_order_display_insert(),
-  app.shop_delivery_display_insert(), app.shop_display_order(uuid), app.shop_display_direct(uuid),
+  app.shop_delivery_display_insert(), app.shop_display_new_shop(), app.shop_display_order(uuid), app.shop_display_direct(uuid),
   app.shop_display_delivery(uuid) FROM PUBLIC;
 
 DO $grants$
@@ -142,11 +154,13 @@ END
 $guard$;
 
 DROP TRIGGER shop_delivery_display_insert ON app.deliveries;
+DROP TRIGGER shop_display_new_shop ON app.shops;
 DROP TRIGGER shop_order_display_insert ON app.orders;
 DROP FUNCTION app.shop_display_delivery(uuid);
 DROP FUNCTION app.shop_display_direct(uuid);
 DROP FUNCTION app.shop_display_order(uuid);
 DROP FUNCTION app.shop_delivery_display_insert();
+DROP FUNCTION app.shop_display_new_shop();
 DROP FUNCTION app.shop_order_display_insert();
 DROP FUNCTION app.allocate_shop_display_number(uuid, varchar, uuid);
 DROP TABLE app.shop_display_numbers;
