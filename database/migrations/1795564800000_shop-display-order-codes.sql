@@ -146,7 +146,7 @@ BEGIN
   IF EXISTS (SELECT 1 FROM app.shop_display_numbers) THEN
     RAISE EXCEPTION 'SHOP_DISPLAY_CODES_DOWN_REFUSED: data exists' USING ERRCODE = 'restrict_violation';
   END IF;
-END
+END;
 $guard$;
 
 DROP TRIGGER shop_delivery_display_insert ON app.deliveries;
