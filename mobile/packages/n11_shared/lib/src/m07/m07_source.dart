@@ -116,7 +116,7 @@ abstract class ShopDeliverySource {
     final List<DeliveryView> active = await list(history: false, query: query);
     final List<DeliveryView> ended = await list(history: true, query: query);
     final List<DeliveryView> all = <DeliveryView>[...active, ...ended];
-    return all.where((DeliveryView item) => switch (filter) {
+    return all.where((DeliveryView item) => filter == 'history' ? ended.contains(item) : switch (filter) {
       'searching' => item.state == DeliveryState.waitingDriver || item.state == DeliveryState.searchStopped,
       'accepted' => item.state == DeliveryState.accepted || item.state == DeliveryState.locationConfirmed,
       'delivering' => item.state == DeliveryState.pickedUp || item.state == DeliveryState.delivering,
