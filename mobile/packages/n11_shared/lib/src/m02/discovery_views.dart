@@ -370,7 +370,6 @@ class FilterSheet extends StatefulWidget {
 }
 
 class _FilterSheetState extends State<FilterSheet> {
-  late String? _area = widget.controller.areaId;
   late String? _category = widget.controller.categoryId;
   late bool _open = widget.controller.openOnly;
 
@@ -391,28 +390,9 @@ class _FilterSheetState extends State<FilterSheet> {
                 IconButton(key: const Key('filter-close'), tooltip: 'Đóng', constraints: const BoxConstraints(minWidth: kTapMin, minHeight: kTapMin), icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop()),
               ]),
               const SizedBox(height: N11Space.gap2),
-              const Text('Khu vực', style: N11Text.label),
-              const SizedBox(height: N11Space.gap2),
-              Container(
-                constraints: const BoxConstraints(minHeight: kTapMin),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: N11Colors.line), borderRadius: BorderRadius.circular(kRadiusControl)),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    key: const Key('filter-area'),
-                    isExpanded: true,
-                    value: c.areas.any((AreaChoice a) => a.id == _area) ? _area : null,
-                    hint: const Text('Chọn khu vực'),
-                    icon: const Icon(Icons.expand_more, color: N11Colors.ink2),
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: N11Colors.black),
-                    items: <DropdownMenuItem<String>>[
-                      for (final AreaChoice a in c.areas) DropdownMenuItem<String>(key: Key('filter-area-${a.id}'), value: a.id, child: Row(children: <Widget>[const Icon(Icons.place, size: 18, color: N11Colors.yellowStrong), const SizedBox(width: 8), Flexible(child: Text(a.name, overflow: TextOverflow.ellipsis))])),
-                    ],
-                    onChanged: (String? id) => setState(() => _area = id),
-                  ),
-                ),
-              ),
-              const SizedBox(height: N11Space.gap4),
+              if (c.area != null)
+                Text('Khu vực: ${c.area!.name} (theo GPS)', style: N11Text.caption),
+              const SizedBox(height: N11Space.gap3),
               const Text('Nhóm món', style: N11Text.label),
               const SizedBox(height: N11Space.gap2),
               Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[for (final CategoryChoice cat in c.categories) _pick('filter-cat-${cat.id}', cat.name, _category == cat.id, () => setState(() => _category = _category == cat.id ? null : cat.id))]),
@@ -436,7 +416,7 @@ class _FilterSheetState extends State<FilterSheet> {
                     label: 'Áp dụng',
                     onPressed: () {
                       final NavigatorState navigator = Navigator.of(context);
-                      c.apply(area: _area, category: _category, open: _open);
+                      c.apply(area: c.areaId, category: _category, open: _open);
                       navigator.pop();
                     },
                   ),
