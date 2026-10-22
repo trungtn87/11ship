@@ -23,6 +23,7 @@ const safeOrNull = (raw: unknown): number | null => (raw === null || raw === und
 export interface DeliveryRow {
   readonly deliveryId: string;
   readonly code: string;
+  readonly displayCode?: string | null;
   readonly source: 'DIRECT' | 'ORDER';
   readonly orderId: string | null;
   readonly previousDeliveryId: string | null;
@@ -65,6 +66,7 @@ export interface DeliveryRow {
 interface RawDelivery {
   delivery_id: string;
   code: string;
+  display_code?: string | null;
   source: 'DIRECT' | 'ORDER';
   order_id: string | null;
   previous_delivery_id: string | null;
@@ -104,7 +106,7 @@ interface RawDelivery {
   updated_ms: string;
 }
 
-export const DELIVERY_COLUMNS = `d.delivery_id::text AS delivery_id, d.code, d.source, d.order_id::text AS order_id, d.previous_delivery_id::text AS previous_delivery_id,
+export const DELIVERY_COLUMNS = `d.delivery_id::text AS delivery_id, d.code, app.shop_display_delivery(d.delivery_id) AS display_code, d.source, d.order_id::text AS order_id, d.previous_delivery_id::text AS previous_delivery_id,
   d.shop_id::text AS shop_id, d.requested_by::text AS requested_by, d.state, d.version::text AS version, d.shop_name, d.shop_phone, d.pickup_address_text,
   d.pickup_lat, d.pickup_lng, d.recipient_name, d.recipient_phone, d.dropoff_address_text, d.dropoff_area_text, d.dropoff_lat, d.dropoff_lng,
   d.dropoff_pinned_by::text AS dropoff_pinned_by, d.goods_description, d.goods_value_vnd::text AS goods_value_vnd, d.paid_vnd::text AS paid_vnd, d.note,
@@ -117,6 +119,7 @@ export function toDelivery(row: RawDelivery): DeliveryRow {
   return {
     deliveryId: row.delivery_id,
     code: row.code,
+    displayCode: row.display_code ?? null,
     source: row.source,
     orderId: row.order_id,
     previousDeliveryId: row.previous_delivery_id,
@@ -429,7 +432,7 @@ export class DeliveryRepository {
         WHERE d.shop_id = $1::uuid
           AND ($2::text = 'all' OR (($2::text = 'active') = (d.state IN ${ACTIVE_LIST_STATES} OR d.state = 'search_stopped'
                                    OR EXISTS (SELECT 1 FROM app.delivery_incidents i WHERE i.delivery_id = d.delivery_id AND i.status = 'OPEN'))))
-          AND ($3::text IS NULL OR d.code ILIKE $3 ESCAPE '\\' OR d.recipient_name ILIKE $3 ESCAPE '\\')
+          AND ($3::text IS NULL OR d.code ILIKE $3 ESCAPE '\\' OR app.shop_display_delivery(d.delivery_id) ILIKE $3 ESCAPE '\\' OR OR d.recipient_name ILIKE $3 ESCAPE '\\')
           AND CASE $5::text
               WHEN 'searching' THEN d.state IN ('waiting_driver', 'search_stopped')
               WHEN 'accepted' THEN d.state IN ('accepted', 'location_confirmed')
