@@ -390,7 +390,7 @@ class _FilterSheetState extends State<FilterSheet> {
               ]),
               const SizedBox(height: N11Space.gap2),
               if (c.area != null)
-                Text('Khu vực: ${c.area!.name} (theo GPS)', style: N11Text.caption),
+                Text('Khu vực: ${c.area!.name}${c.manualArea ? ' (tham khảo)' : ' (theo GPS)'}', style: N11Text.caption),
               const SizedBox(height: N11Space.gap3),
               const Text('Nhóm món', style: N11Text.label),
               const SizedBox(height: N11Space.gap2),
