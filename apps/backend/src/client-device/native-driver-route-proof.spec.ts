@@ -20,6 +20,10 @@ import { TransactionManager } from '../transaction/transaction-manager';
 @UseGuards(SessionAuthGuard)
 @Controller()
 class SignedNativeRouteProbe {
+  @Post('auth/role/select')
+  @HttpCode(200)
+  legacyRoleSelect(@Body() body: unknown) { return { data: body }; }
+
   @Post('driver/me/accepting')
   @HttpCode(200)
   accepting(@Body() body: unknown) { return { data: body }; }
@@ -115,6 +119,7 @@ describe('native signed body preservation on client API route families', () => {
   }
 
   it.each([
+    ['/v1/auth/role/select', 'POST', '{ "role": "SHIPPER" }'],
     ['/v1/driver/me/accepting', 'POST', '{ "accepting": true, "expected_version": 1 }'],
     [`/v1/driver/deliveries/${randomUUID()}/accept`, 'POST', '{}'],
     ['/v1/driver/location', 'PUT', '{ "lat": 22.66, "lon": 106.25 }'],
