@@ -96,11 +96,12 @@ class HttpShopDeliverySource extends ShopDeliverySource {
   }
 
   @override
-  Future<List<DeliveryView>> listFiltered({String filter = 'all', String query = '', DateTime? from, DateTime? to}) async {
+  Future<List<DeliveryView>> listFiltered({String filter = 'all', String query = '', DateTime? from, DateTime? to, int offset = 0}) async {
     final List<String> params = <String>[
       'scope=all',
       'filter=${Uri.encodeQueryComponent(filter)}',
       'limit=50',
+      'offset=$offset',
       if (query.trim().isNotEmpty) 'q=${Uri.encodeQueryComponent(query.trim())}',
       if (from != null) 'from=${Uri.encodeQueryComponent(from.toUtc().toIso8601String())}',
       if (to != null) 'to=${Uri.encodeQueryComponent(to.toUtc().toIso8601String())}',
