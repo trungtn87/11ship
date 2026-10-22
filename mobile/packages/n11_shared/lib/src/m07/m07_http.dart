@@ -96,6 +96,20 @@ class HttpShopDeliverySource extends ShopDeliverySource {
   }
 
   @override
+  Future<List<DeliveryView>> listFiltered({String filter = 'all', String query = '', DateTime? from, DateTime? to}) async {
+    final List<String> params = <String>[
+      'scope=all',
+      'filter=${Uri.encodeQueryComponent(filter)}',
+      'limit=50',
+      if (query.trim().isNotEmpty) 'q=${Uri.encodeQueryComponent(query.trim())}',
+      if (from != null) 'from=${Uri.encodeQueryComponent(from.toUtc().toIso8601String())}',
+      if (to != null) 'to=${Uri.encodeQueryComponent(to.toUtc().toIso8601String())}',
+    ];
+    final Object? data = await _call(session, 'GET', '/v1/shop/me/deliveries?${params.join('&')}');
+    return _items<DeliveryView>(data, 'deliveries', DeliveryView.fromJson);
+  }
+
+  @override
   Future<DeliveryView> get(String id) async => _delivery(await _call(session, 'GET', _path(id)));
 
   @override
