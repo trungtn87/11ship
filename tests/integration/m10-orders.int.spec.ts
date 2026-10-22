@@ -760,7 +760,8 @@ describe('M10 — food orders', () => {
     expect((await kinds(dana.userId)).sort()).toEqual(['ORDER_CONFIRMED', 'ORDER_READY', 'ORDER_SHIPPER_ACCEPTED']);
     // The lock-screen text carries only the code.
     const bodies = (await app.pool.query(`SELECT title, body FROM app.notifications WHERE target_id = $1::uuid`, [oid])).rows.map((r) => `${String(r.title)} ${String(r.body)}`).join(' ');
-    expect(bodies).toContain(String(order.code));
+    expect(order.display_code).toMatch(/^K\d{2,}-\d{4,}$/u);
+    expect(bodies).toContain(String(order.display_code));
     expect(bodies).not.toMatch(/Bún chả|Người nhận|0912|Phố Huế/u);
     // Opening: the customer opens their own Order; the shop owner opens theirs; a stranger gets nothing.
     const inbox = ok(await asCustomer(dana, 'GET', '/notifications?limit=20')) as Json;

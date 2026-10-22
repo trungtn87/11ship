@@ -1,3 +1,4 @@
+import { purgeShopDisplayCodes } from './shop-display-fixtures';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { AccountOriginPolicy } from '../../../apps/backend/src/auth/account-origin';
@@ -323,6 +324,12 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
       [normalizedPhone],
     );
   }
+  const ownedShops = await pool.query<{ shop_id: string }>(
+    `SELECT shop_id FROM app.shop_members
+      WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)`,
+    [normalizedPhone],
+  );
+  await purgeShopDisplayCodes(pool, ownedShops.rows.map((row) => row.shop_id));
   // Memberships first, then the shops no member points at any more (a shop of this user has exactly one member).
   await pool.query(
     `WITH owned AS (
