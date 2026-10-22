@@ -47,13 +47,13 @@ SELECT s.shop_id, COALESCE(MAX(n.order_number), 0)
 
 -- New shops receive their fixed K-number immediately on registration, even before an order.
 CREATE FUNCTION app.shop_display_new_shop()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = app, pg_temp AS $
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = app, pg_temp AS $$
 BEGIN
   INSERT INTO app.shop_public_ids (shop_id) VALUES (NEW.shop_id);
   INSERT INTO app.shop_display_counters (shop_id, last_number) VALUES (NEW.shop_id, 0);
   RETURN NEW;
 END;
-$;
+$$;
 CREATE TRIGGER shop_display_new_shop AFTER INSERT ON app.shops
 FOR EACH ROW EXECUTE FUNCTION app.shop_display_new_shop();
 
