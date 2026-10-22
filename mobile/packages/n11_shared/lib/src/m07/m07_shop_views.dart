@@ -62,6 +62,7 @@ class _ShopDeliveryHubState extends State<ShopDeliveryHub> {
   ShopOrderFilters _filters = const ShopOrderFilters();
   final TextEditingController _query = TextEditingController();
   String _applied = '';
+  int _offset = 0;
   Timer? _debounce;
   int _rev = 0;
 
@@ -76,7 +77,7 @@ class _ShopDeliveryHubState extends State<ShopDeliveryHub> {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 350), () {
       if (mounted && value.trim() != _applied) {
-        setState(() => _applied = value.trim());
+        setState(() { _applied = value.trim(); _offset = 0; });
       }
     });
   }
@@ -87,7 +88,7 @@ class _ShopDeliveryHubState extends State<ShopDeliveryHub> {
       current: _filters,
       statuses: _deliveryStatusOptions,
     );
-    if (mounted && next != null) setState(() => _filters = next);
+    if (mounted && next != null) setState(() { _filters = next; _offset = 0; });
   }
 
   void _reset() {
@@ -96,6 +97,7 @@ class _ShopDeliveryHubState extends State<ShopDeliveryHub> {
     setState(() {
       _filters = const ShopOrderFilters();
       _applied = '';
+      _offset = 0;
     });
   }
 
@@ -150,10 +152,10 @@ class _ShopDeliveryHubState extends State<ShopDeliveryHub> {
         ]),
         const SizedBox(height: N11Space.gap3),
         M07Loader<List<DeliveryView>>(
-          key: ValueKey<String>('m07|${_filters.status}|$_applied|${_filters.from?.toIso8601String()}|${_filters.toExclusive?.toIso8601String()}|$_rev'),
+          key: ValueKey<String>('m07|${_filters.status}|$_applied|${_filters.from?.toIso8601String()}|${_filters.toExclusive?.toIso8601String()}|$_rev|$_offset'),
           keyPrefix: 'm07-list',
           refreshEvery: const Duration(seconds: 20),
-          load: () => widget.source.listFiltered(filter: _filters.status, query: _applied, from: _filters.from, to: _filters.toExclusive),
+          load: () => widget.source.listFiltered(filter: _filters.status, query: _applied, from: _filters.from, to: _filters.toExclusive, offset: _offset),
           isEmpty: (List<DeliveryView> items) => items.isEmpty,
           emptyIcon: Icons.two_wheeler,
           emptyTitle: 'Không có đơn phù hợp',
@@ -162,9 +164,22 @@ class _ShopDeliveryHubState extends State<ShopDeliveryHub> {
             children: <Widget>[
               for (final DeliveryView delivery in items)
                 Padding(padding: const EdgeInsets.only(bottom: N11Space.gap3), child: _DeliveryCard(delivery: delivery, onTap: () => _open(delivery))),
+              if (items.length == 50)
+                TextButton(
+                  key: const Key('m07-page-next'),
+                  onPressed: () => setState(() => _offset += 50),
+                  child: const Text('Trang sau'),
+                ),
             ],
           ),
         ),
+        if (_offset > 0) TextButton(
+          key: const Key('m07-page-previous'),
+          onPressed: () => setState(() => _offset -= 50),
+          child: Text('Trang trước · Trang ${_offset ~/ 50 + 1}'),
+        ),
+        if (_filters.isActive || _applied.isNotEmpty)
+          TextButton(key: const Key('m07-clear-filters'), onPressed: _reset, child: const Text('Xóa bộ lọc')),
       ],
     );
   }
