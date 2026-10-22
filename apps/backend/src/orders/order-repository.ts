@@ -432,7 +432,7 @@ export class OrderRepository {
                 WHEN 'delivering' THEN o.status = 'PREPARING' AND ld.state IN ('delivering', 'picked_up')
                 WHEN 'attention' THEN o.status = 'PREPARING' AND ld.state IN ('search_stopped', 'failed')
                 ELSE o.status IN ${ENDED} END
-          AND ($3::text IS NULL OR o.code ILIKE $3 ESCAPE '\\' OR app.shop_display_order(o.order_id) ILIKE $3 ESCAPE '\\' OR OR o.recipient_name ILIKE $3 ESCAPE '\\')
+          AND ($3::text IS NULL OR o.code ILIKE $3 ESCAPE '\\' OR app.shop_display_order(o.order_id) ILIKE $3 ESCAPE '\\' OR o.recipient_name ILIKE $3 ESCAPE '\\')
           AND ($4::timestamptz IS NULL OR o.created_at >= $4::timestamptz)
           AND ($5::timestamptz IS NULL OR o.created_at < $5::timestamptz)
         ORDER BY CASE WHEN $2::text = 'scheduled' THEN o.scheduled_for END ASC NULLS LAST, o.created_at DESC, o.order_id
