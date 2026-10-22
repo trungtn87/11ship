@@ -260,10 +260,11 @@ String m02FailureText(AuthFailure failure) {
 
 /// The banner of a write that has no usable answer yet: it locks everything until the same request is sent again.
 class UnknownOutcomeBanner extends StatelessWidget {
-  const UnknownOutcomeBanner({super.key, required this.onRetry, required this.busy});
+  const UnknownOutcomeBanner({super.key, required this.onRetry, required this.busy, this.detail});
 
   final VoidCallback onRetry;
   final bool busy;
+  final String? detail;
 
   @override
   Widget build(BuildContext context) {
@@ -271,7 +272,7 @@ class UnknownOutcomeBanner extends StatelessWidget {
       key: const Key('pending-banner'),
       kind: BannerKind.warn,
       title: 'Chưa xác định được kết quả lưu',
-      text: 'Chưa xác định được kết quả lưu. Thử lại sẽ gửi đúng nội dung của lần lưu trước, không gửi nội dung mới sửa. Chỉnh sửa tạm khóa cho đến khi biết kết quả.',
+      text: <String>[if (detail != null) detail!, 'Chưa xác định được kết quả lưu. Thử lại sẽ gửi đúng nội dung của lần lưu trước, không gửi nội dung mới sửa. Chỉnh sửa tạm khóa cho đến khi biết kết quả.'].join('\n'),
       trailing: N11Button(key: const Key('pending-retry'), label: busy ? 'Đang thử lại…' : 'Thử lại', compact: true, loading: busy, onPressed: busy ? null : onRetry),
     );
   }

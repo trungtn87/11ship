@@ -11,6 +11,7 @@ dependencies:
   flutter:
     sdk: flutter
   crypto: ^3.0.3
+  image: ^4.5.4
   n11_m14_map:
     path: ../n11_m14_map
 

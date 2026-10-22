@@ -117,8 +117,10 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 13 delivery codes (M07: DELIVERY_*, FEE_*, DESTINATION_NOT_CONFIRMED, ... see app-errors.ts)
     // + 12 order codes (M10: ORDER_*; the earlier ORDER_MODULE_NOT_READY placeholder is gone, so +11 net; see app-errors.ts)
     // + 14 M11 codes (REVIEW_*, COMPLAINT_*, RECONSIDERATION_*, ADJUSTMENT_HISTORY_REVIEW_REQUIRED)
+    // + 2 shop logo codes (M02: INVALID_SHOP_LOGO, SHOP_LOGO_TOO_LARGE)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(162);
+    expect(codes).toHaveLength(164);
+    expect(codes).toEqual(expect.arrayContaining(['INVALID_SHOP_LOGO', 'SHOP_LOGO_TOO_LARGE']));
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(19);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);
     expect(codes).toContain('TRANSACTION_OUTCOME_UNKNOWN');

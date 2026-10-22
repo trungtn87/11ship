@@ -89,3 +89,5 @@ export 'src/wallet/wallet_views.dart';
 export 'src/widgets/components.dart';
 export 'src/widgets/connection_banner.dart';
 export 'src/widgets/diagnostics_view.dart';
+
+export 'src/flows/shop_logo_data.dart' show ShopLogoPickerPort, ShopLogoException;

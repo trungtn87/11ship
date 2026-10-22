@@ -31,7 +31,9 @@ describe('shop logo saved with the versioned profile', () => {
     expect(JSON.stringify((await read()).body)).toContain(png);
     expect((await put({ ...oldClient, expected_version: dataOf(preserved).version, logo: { ...logo, content_type: 'image/jpeg' } })).status).toBe(400);
     const tooLarge = Buffer.alloc(1048577); Buffer.from(png, 'base64').copy(tooLarge);
-    expect((await put({ ...oldClient, logo: { ...logo, data_base64: tooLarge.toString('base64') } })).status).toBe(400);
+    const oversized = await put({ ...oldClient, logo: { ...logo, data_base64: tooLarge.toString('base64') } });
+    expect(oversized.status).toBe(413);
+    expect(oversized.body).toMatchObject({ error: { code: 'SHOP_LOGO_TOO_LARGE' } });
     expect((await put({ ...oldClient, expected_version: dataOf(preserved).version, logo: null })).status).toBe(200);
     expect(JSON.stringify((await read()).body)).not.toContain(png);
   });
@@ -45,7 +47,9 @@ describe('shop logo saved with the versioned profile', () => {
     expect((await putProfile(app, owner.token, body, key)).body).toEqual(first.body);
     expect((await putProfile(app, owner.token, { ...body, logo: null }, key)).status).toBe(409);
     const tooLarge = Buffer.alloc(1048577); Buffer.from(png, 'base64').copy(tooLarge);
-    expect((await putProfile(app, owner.token, { ...body, logo: { ...logo, data_base64: tooLarge.toString('base64') } })).status).toBe(400);
+    const oversized = await putProfile(app, owner.token, { ...body, logo: { ...logo, data_base64: tooLarge.toString('base64') } });
+    expect(oversized.status).toBe(413);
+    expect(oversized.body).toMatchObject({ error: { code: 'SHOP_LOGO_TOO_LARGE' } });
     expect(dataOf(await getShop(app, owner.token)).logo).toEqual(logo);
     const url = `${app.running.baseUrl}/v1/shops/${owner.shopId}/logo`;
     const image = await fetch(url);

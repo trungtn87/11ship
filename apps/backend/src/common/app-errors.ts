@@ -170,6 +170,8 @@ export const APP_ERROR_DEFINITIONS = {
   // apart from one that does not exist. VERSION_CONFLICT, SHOP_NOT_FOUND, SHOP_DISABLED and SHOP_PROFILE_INCOMPLETE are reused.
   MENU_ITEM_NOT_FOUND: { status: 404, message: 'The dish was not found' },
   MENU_CATEGORY_NOT_AVAILABLE: { status: 400, message: 'The dish group cannot be chosen' },
+  INVALID_SHOP_LOGO: { status: 400, message: 'The shop logo is not valid' },
+  SHOP_LOGO_TOO_LARGE: { status: 413, message: 'The shop logo exceeds 1 MiB' },
   INVALID_MENU_IMAGE: { status: 400, message: 'The picture is not valid' },
   MENU_LIMIT_REACHED: { status: 409, message: 'The menu limit of this shop was reached' },
   MENU_IMAGE_NOT_FOUND: { status: 404, message: 'The picture was not found' },

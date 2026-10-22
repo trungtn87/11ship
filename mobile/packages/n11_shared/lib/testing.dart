@@ -206,6 +206,7 @@ class FakeShopServer {
         'contact_phone': body['contact_phone'],
         'zalo': body['zalo'],
         'facebook': body['facebook'],
+        'logo': body.containsKey('logo') ? body['logo'] : current?['logo'],
         'address_text': body['address_text'],
         'pickup_lat': body['pickup_lat'],
         'pickup_lng': body['pickup_lng'],
@@ -268,6 +269,7 @@ class FakeShopOpsServer {
     transport.routes['GET /v1/onboarding/shop/service-areas'] = (String m, String p, Map<String, String> h, String b) async =>
         json(200, <String, Object?>{'data': <Map<String, String>>[<String, String>{'service_area_id': areaId, 'name': 'Khu trung tâm'}, <String, String>{'service_area_id': otherAreaId, 'name': 'Khu Hòa An'}]});
     transport.routes['PUT /v1/shop/me/profile'] = (String m, String p, Map<String, String> h, String b) => _write(h, b, 'profile', (Map<String, Object?> body) {
+          if (body.containsKey('logo')) logo = body['logo'] as Map<String, Object?>?;
           name = body['name']! as String;
           phone = body['contact_phone']! as String;
           zalo = body['zalo'] as String?;
@@ -285,6 +287,7 @@ class FakeShopOpsServer {
   static const String areaId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   static const String otherAreaId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
+  Map<String, Object?>? logo;
   String status = 'ACTIVE';
   String name = 'Ốc 11';
   String phone = '+84912345678';
@@ -312,6 +315,7 @@ class FakeShopOpsServer {
   Map<String, Object?> view() => <String, Object?>{
         'shop_id': '44444444-4444-4444-8444-444444444444',
         'name': name,
+        'logo': logo,
         'contact_phone': phone,
         'zalo': zalo,
         'facebook': facebook,
