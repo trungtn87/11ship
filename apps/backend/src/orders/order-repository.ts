@@ -422,7 +422,7 @@ export class OrderRepository {
          FROM app.orders o ${LATEST}
         WHERE o.shop_id = $1::uuid
           AND CASE $2::text
-                WHEN 'all' THEN o.status NOT IN ${ENDED}
+                WHEN 'all' THEN TRUE
                 WHEN 'pending' THEN o.status = 'PENDING_CONFIRMATION'
                 WHEN 'preparing' THEN o.status = 'PREPARING' AND COALESCE(ld.state, '') NOT IN ('delivering', 'picked_up', 'search_stopped', 'failed')
                 WHEN 'scheduled' THEN o.status NOT IN ${ENDED} AND o.scheduled_for IS NOT NULL
