@@ -83,7 +83,7 @@ export class DeliveryShopService {
     return this.transactions.withTransaction(async (context) => {
       const { shop } = await this.actors.shopReader(context, principal);
       const nowMs = await freshClockMs(context);
-      const rows = await this.deliveries.listForShop(context, shop.shopId, query.scope, query.q, LIST_LIMIT);
+      const rows = await this.deliveries.listForShop(context, shop.shopId, query.scope, query.q, query.limit, { filter: query.filter, fromMs: query.fromMs, toMs: query.toMs, offset: query.offset });
       return { deliveries: await Promise.all(rows.map((row) => this.views.forShop(context, row, nowMs, false))) };
     });
   }
