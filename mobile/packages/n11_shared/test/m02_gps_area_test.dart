@@ -110,6 +110,31 @@ void main() {
     expect(c.areaId, 'a1');
   });
 
+  testWidgets('GPS denied: fallback area is optional and visibly marked as reference', (WidgetTester tester) async {
+    final FakeDiscoveryApi api = apiOf();
+    final FakeLocationProvider gps = FakeLocationProvider()..failure = LocationFailure.denied;
+    final DiscoveryController controller = DiscoveryController(
+      api: api, position: DiscoveryPosition(provider: gps));
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: DiscoveryHome(controller: controller, publicApi: const UnwiredPublicShopApi()))));
+    await tester.pumpAndSettle();
+    expect(gps.calls, 1);
+    expect(find.byKey(const Key('fallback-area-a1')), findsOneWidget);
+    expect(find.byKey(const Key('fallback-area-a2')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('fallback-area-a1')));
+    await tester.pumpAndSettle();
+    expect(controller.manualArea, isTrue);
+    expect(find.text('Vùng 1 · tham khảo'), findsOneWidget);
+    gps.failure = null;
+    gps.next = fix(2);
+    await controller.locate(force: true);
+    await tester.pumpAndSettle();
+    expect(controller.manualArea, isFalse);
+    expect(controller.areaId, 'a2');
+    expect(find.text('Vùng 2'), findsOneWidget);
+    expect(find.byKey(const Key('fallback-area-a1')), findsNothing);
+  });
   testWidgets(
       'Home auto locates once and live search changes area on stale resume',
       (WidgetTester tester) async {

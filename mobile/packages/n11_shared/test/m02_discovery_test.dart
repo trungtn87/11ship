@@ -229,7 +229,7 @@ void main() {
       final DiscoveryController c = DiscoveryController(api: seeded());
       addTearDown(c.dispose);
       await home(tester, c);
-      expect(find.text('Cao Bằng'), findsOneWidget);
+      expect(find.text('Cao Bằng · tham khảo'), findsOneWidget);
       final List<String> order = <String>['Zeta Ốc Hương', 'Alpha Hải Sản', 'Quán Chưa Lịch'];
       for (final String n in order) {
         expect(find.text(n), findsOneWidget);
@@ -317,32 +317,31 @@ void main() {
       expect(tester.getTopLeft(find.byKey(const Key('filter-cat-c1'))).dx, lessThan(tester.getTopLeft(find.byKey(const Key('filter-cat-c2'))).dx), reason: 'the groups sit side by side, in the order the server gave');
     });
 
-    testWidgets('the filter sheet picks the area from a dropdown: Áp dụng moves the list to that area, closing keeps the old one', (WidgetTester tester) async {
+    testWidgets('Home picks its region by GPS and does not expose a manual area picker', (WidgetTester tester) async {
       phone(tester);
       final FakeDiscoveryApi api = seeded()..areaList = <AreaChoice>[const AreaChoice(id: 'a1', name: 'Cao Bằng'), const AreaChoice(id: 'a2', name: 'Hòa An')];
-      final DiscoveryController c = DiscoveryController(api: api);
+      api.areaResolver = (double lat, double lng) async => lat == 1
+          ? const AreaChoice(id: 'a1', name: 'Cao Bằng')
+          : const AreaChoice(id: 'a2', name: 'Hòa An');
+      final FakeLocationProvider gps = FakeLocationProvider()
+        ..next = LocationFix(latitude: 1, longitude: 106.25, accuracyMeters: 10, takenAt: DateTime.now());
+      final DiscoveryController c = DiscoveryController(api: api, position: DiscoveryPosition(provider: gps));
       addTearDown(c.dispose);
       await home(tester, c);
-      await tapKey(tester, 'area-a1');
-      expect(find.text('Zeta Ốc Hương'), findsOneWidget);
-      await tapKey(tester, 'home-filter');
-      await tapKey(tester, 'filter-area');
-      await tester.tap(find.byKey(const Key('filter-area-a2')).last);
-      await tester.pumpAndSettle();
-      await tapKey(tester, 'filter-close');
       expect(c.areaId, 'a1');
-      expect(find.text('Zeta Ốc Hương'), findsOneWidget);
-      await tapKey(tester, 'home-area');
-      await tapKey(tester, 'filter-area');
-      await tester.tap(find.byKey(const Key('filter-area-a2')).last);
+      expect(find.text('Cao Bằng'), findsOneWidget);
+      expect(find.byKey(const Key('area-a1')), findsNothing);
+      await tapKey(tester, 'home-filter');
+      expect(find.byKey(const Key('filter-area')), findsNothing);
+      await tapKey(tester, 'filter-close');
+      gps.next = LocationFix(latitude: 2, longitude: 106.25, accuracyMeters: 10, takenAt: DateTime.now());
+      await c.locate(force: true);
       await tester.pumpAndSettle();
-      await tapKey(tester, 'filter-apply');
       expect(c.areaId, 'a2');
+      expect(find.text('Hòa An'), findsOneWidget);
       expect(find.text('Quán Khu Khác'), findsOneWidget);
       expect(find.text('Zeta Ốc Hương'), findsNothing);
-      expect(find.text('Hòa An · đang xem tham khảo'), findsOneWidget);
     });
-
     testWidgets('no match for the filters says so with Xóa bộ lọc; an area without shops says so', (WidgetTester tester) async {
       phone(tester);
       final DiscoveryController c = DiscoveryController(api: FakeDiscoveryApi(shops: <FakeShopEntry>[FakeShopEntry('s1', 'Quán Đóng', reason: 'OUTSIDE_BUSINESS_HOURS', dishes: const <FakeDishEntry>[FakeDishEntry('d', 'Món', 1000, 'c1')])]));
@@ -362,15 +361,23 @@ void main() {
       expect(find.text('Khu vực này chưa có quán nào có món để hiển thị.'), findsOneWidget);
     });
 
-    testWidgets('several areas: the person chooses; a failed load is an error with Thử lại; offline refresh keeps the list marked', (WidgetTester tester) async {
+    testWidgets('several areas without a GPS match: no manual selection; failed refresh retains the current list', (WidgetTester tester) async {
       phone(tester);
       final FakeDiscoveryApi api = seeded()..areaList = <AreaChoice>[const AreaChoice(id: 'a1', name: 'Cao Bằng'), const AreaChoice(id: 'a2', name: 'Hòa An')];
-      final DiscoveryController c = DiscoveryController(api: api);
+      final FakeLocationProvider gps = FakeLocationProvider()
+        ..next = LocationFix(latitude: 0, longitude: 106.25, accuracyMeters: 10, takenAt: DateTime.now());
+      api.areaResolver = (double lat, double lng) async => lat == 0 ? null : const AreaChoice(id: 'a1', name: 'Cao Bằng');
+      final DiscoveryController c = DiscoveryController(api: api, position: DiscoveryPosition(provider: gps));
       addTearDown(c.dispose);
       await home(tester, c);
-      expect(find.byKey(const Key('home-pick-area')), findsOneWidget);
-      expect(find.text('Zeta Ốc Hương'), findsNothing);
-      await tapKey(tester, 'area-a1');
+      expect(c.outsideCoverage, isTrue);
+      expect(find.byKey(const Key('home-pick-area')), findsNothing);
+      expect(find.byKey(const Key('area-a1')), findsNothing);
+      expect(find.text('Khu vực này chưa được phục vụ'), findsOneWidget);
+      expect(find.byKey(const Key('discovery-locate')), findsOneWidget);
+      gps.next = LocationFix(latitude: 1, longitude: 106.25, accuracyMeters: 10, takenAt: DateTime.now());
+      await tapKey(tester, 'discovery-locate');
+      expect(c.areaId, 'a1');
       expect(find.text('Zeta Ốc Hương'), findsOneWidget);
       api.offline = true;
       await c.refresh();
@@ -383,12 +390,10 @@ void main() {
       addTearDown(d.dispose);
       await home(tester, d);
       expect(find.text('Không tải được dữ liệu'), findsOneWidget);
-      expect(find.text('Chưa có quán phù hợp'), findsNothing);
       down.offline = false;
       await tapKey(tester, 'home-retry');
       expect(find.text('Zeta Ốc Hương'), findsOneWidget);
     });
-
     testWidgets('where discovery is not connected the Home says so (no sample shops)', (WidgetTester tester) async {
       phone(tester);
       final DiscoveryController c = DiscoveryController(api: const UnwiredDiscoveryApi());

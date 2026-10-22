@@ -2,6 +2,12 @@ name: Deploy VPS
 
 on:
   workflow_dispatch:
+    inputs:
+      configure_cao_bang_gps:
+        description: 'Approve reviewed M02 GPS coverage migrations for Cao Bang before deploy'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -49,12 +55,33 @@ jobs:
             artifact-out/*.sha256
           if-no-files-found: error
           retention-days: 14
+      - name: Approve the two reviewed Cao Bang GPS migrations
+        if: ${{ inputs.configure_cao_bang_gps == true }}
+        env:
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash scripts/deploy/github-vps-approve-gps.sh
       - name: Deploy over verified SSH
         env:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
           VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: bash scripts/deploy/github-vps-deploy.sh
+      - name: Check GPS coverage was activated
+        if: ${{ inputs.configure_cao_bang_gps == true }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import urllib.request
+          from urllib.parse import urlencode
+          url='https://103.9.78.67.sslip.io/v1/service-areas/resolve?' + urlencode({'latitude': '22.66667', 'longitude': '106.25833'})
+          with urllib.request.urlopen(url, timeout=20) as result:
+              payload=json.load(result)
+          area=payload.get('data')
+          if not isinstance(area, dict) or area.get('name') != 'Cao Bằng':
+              raise SystemExit('M02 GPS verification failed: expected active Cao Bằng zone at centre (check actual VPS area row)')
+          print('GPS area verified: Cao Bằng centre resolves successfully')
+          PY
       - name: Record checked deployment
         env:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}

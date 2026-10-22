@@ -179,7 +179,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
   void _openSearch() {
     final String? area = c.areaId;
     if (area == null) {
-      m02Toast(context, 'Hãy chọn khu vực trước khi tìm.');
+      m02Toast(context, 'Chưa xác định được khu vực từ GPS. Hãy thử định vị lại.');
       return;
     }
     Navigator.of(context).push(n11Route(SearchScreen(api: c.api, publicApi: widget.publicApi, ratings: widget.ratings, areaId: area, position: _position, discovery: c, retryPosition: () => c.locate(source: _position, force: true))));
@@ -245,30 +245,40 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
       if (c.outsideCoverage) return <Widget>[const Text('Khu vực này chưa được phục vụ', key: Key('home-outside-coverage'), style: N11Text.lead)];
       return <Widget>[const EmptyState(icon: Icons.place_outlined, title: 'Chưa có khu vực phục vụ', text: 'Hiện chưa có khu vực nào đang phục vụ. Vui lòng quay lại sau.')];
     }
-    out.add(InkWell(
+    // GPS controls this label; it is not an interactive area selector.
+    final String areaLabel = c.area == null
+        ? (c.resolvingArea || _position.loading ? 'Đang xác định khu vực…' : c.outsideCoverage ? 'Ngoài khu vực phục vụ' : 'Chưa xác định khu vực')
+        : c.manualArea ? '${c.area!.name} · tham khảo'
+        : _position.failure != null ? '${c.area!.name} · vị trí gần nhất' : c.area!.name;
+    out.add(ConstrainedBox(
       key: const Key('home-area'),
-      onTap: _openFilters,
-      borderRadius: BorderRadius.circular(kRadiusControl),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: kTapMin),
-        child: Row(children: <Widget>[
-          const Icon(Icons.place, size: 20, color: N11Colors.yellowStrong),
-          const SizedBox(width: 6),
-          Flexible(child: Text(c.area == null ? 'Chọn khu vực' : c.manualArea ? '${c.area!.name} · đang xem tham khảo' : c.area!.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: N11Colors.black))),
-          const Icon(Icons.expand_more, size: 22, color: N11Colors.ink2),
-        ]),
-      ),
+      constraints: const BoxConstraints(minHeight: kTapMin),
+      child: Row(children: <Widget>[
+        const Icon(Icons.my_location, size: 20, color: N11Colors.yellowStrong),
+        const SizedBox(width: 6),
+        Flexible(child: Text(areaLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: N11Colors.black))),
+      ]),
     ));
     out.add(_FakeField(onTap: _openSearch));
     out.add(_PositionButton(position: _position, resolving: c.resolvingArea, failed: c.areaResolutionFailed,
-      retry: () => c.locate(source: _position, force: true)));
+      outsideCoverage: c.outsideCoverage, retry: () => c.locate(source: _position, force: true)));
     if (c.outsideCoverage) {
       out.add(const Text('Khu vực này chưa được phục vụ', key: Key('home-outside-coverage'), style: N11Text.lead));
     }
     if (c.areaId == null) {
-      out.add(const Text('Chọn khu vực để xem các quán đang phục vụ.', key: Key('home-pick-area'), style: N11Text.lead));
-      for (final AreaChoice a in c.areas) {
-        out.add(N11ChoiceCard(key: Key('area-${a.id}'), title: a.name, selected: false, onTap: () => c.chooseArea(a.id)));
+      if (!c.outsideCoverage) {
+        out.add(Text(c.resolvingArea || _position.loading
+            ? 'Đang tìm khu vực phục vụ theo vị trí hiện tại…'
+            : 'Chưa xác định được khu vực theo GPS. Hãy thử định vị lại để xem các quán gần bạn.',
+          key: const Key('home-location-needed'), style: N11Text.lead));
+      }
+      // Optional recovery ONLY on real GPS/resolve failure. Never require a manual area
+      // during ordinary startup, and never misrepresent a manually browsed area as GPS.
+      if (_position.failure != null || c.areaResolutionFailed) {
+        out.add(const Text('Hoặc xem quán theo khu vực tham khảo:', style: N11Text.body));
+        for (final AreaChoice a in c.areas) {
+          out.add(N11ChoiceCard(key: Key('fallback-area-${a.id}'), title: a.name, selected: false, onTap: () => c.chooseArea(a.id)));
+        }
       }
       return out;
     }
@@ -356,8 +366,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
   }
 }
 
-/// KP03: area, group and "only open shops", as a draft: closing the sheet applies nothing; "Đặt lại" clears the group and the switch and
-/// keeps the area; "Áp dụng" updates the list.
+/// KP03: group and open-only filters; the area follows foreground GPS and is not editable.
 class FilterSheet extends StatefulWidget {
   const FilterSheet({super.key, required this.controller});
 
@@ -368,7 +377,6 @@ class FilterSheet extends StatefulWidget {
 }
 
 class _FilterSheetState extends State<FilterSheet> {
-  late String? _area = widget.controller.areaId;
   late String? _category = widget.controller.categoryId;
   late bool _open = widget.controller.openOnly;
 
@@ -389,28 +397,9 @@ class _FilterSheetState extends State<FilterSheet> {
                 IconButton(key: const Key('filter-close'), tooltip: 'Đóng', constraints: const BoxConstraints(minWidth: kTapMin, minHeight: kTapMin), icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop()),
               ]),
               const SizedBox(height: N11Space.gap2),
-              const Text('Khu vực', style: N11Text.label),
-              const SizedBox(height: N11Space.gap2),
-              Container(
-                constraints: const BoxConstraints(minHeight: kTapMin),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: N11Colors.line), borderRadius: BorderRadius.circular(kRadiusControl)),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    key: const Key('filter-area'),
-                    isExpanded: true,
-                    value: c.areas.any((AreaChoice a) => a.id == _area) ? _area : null,
-                    hint: const Text('Chọn khu vực'),
-                    icon: const Icon(Icons.expand_more, color: N11Colors.ink2),
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: N11Colors.black),
-                    items: <DropdownMenuItem<String>>[
-                      for (final AreaChoice a in c.areas) DropdownMenuItem<String>(key: Key('filter-area-${a.id}'), value: a.id, child: Row(children: <Widget>[const Icon(Icons.place, size: 18, color: N11Colors.yellowStrong), const SizedBox(width: 8), Flexible(child: Text(a.name, overflow: TextOverflow.ellipsis))])),
-                    ],
-                    onChanged: (String? id) => setState(() => _area = id),
-                  ),
-                ),
-              ),
-              const SizedBox(height: N11Space.gap4),
+              if (c.area != null)
+                Text('Khu vực: ${c.area!.name}${c.manualArea ? ' (tham khảo)' : ' (theo GPS)'}', style: N11Text.caption),
+              const SizedBox(height: N11Space.gap3),
               const Text('Nhóm món', style: N11Text.label),
               const SizedBox(height: N11Space.gap2),
               Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[for (final CategoryChoice cat in c.categories) _pick('filter-cat-${cat.id}', cat.name, _category == cat.id, () => setState(() => _category = _category == cat.id ? null : cat.id))]),
@@ -434,7 +423,7 @@ class _FilterSheetState extends State<FilterSheet> {
                     label: 'Áp dụng',
                     onPressed: () {
                       final NavigatorState navigator = Navigator.of(context);
-                      c.apply(area: _area, category: _category, open: _open);
+                      c.apply(area: c.areaId, category: _category, open: _open);
                       navigator.pop();
                     },
                   ),
@@ -550,7 +539,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   TextButton(key: const Key('search-cancel'), style: TextButton.styleFrom(minimumSize: const Size(kTapMin, kTapMin)), onPressed: () => Navigator.of(context).maybePop(), child: const Text('Hủy', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: N11Colors.black))),
                 ]),
               ),
-              _PositionButton(position: _position, retry: widget.retryPosition, resolving: widget.discovery?.resolvingArea ?? false, failed: widget.discovery?.areaResolutionFailed ?? false),
+              _PositionButton(position: _position, retry: widget.retryPosition, resolving: widget.discovery?.resolvingArea ?? false, failed: widget.discovery?.areaResolutionFailed ?? false, outsideCoverage: widget.discovery?.outsideCoverage ?? false),
               Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap3, N11Space.pad, N11Space.gap8), children: _results())),
             ],
           ),
@@ -563,7 +552,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final DishSearchController s = _search;
     Widget gap(Widget w) => Padding(padding: const EdgeInsets.only(bottom: N11Space.gap3), child: w);
     if (widget.discovery != null && widget.discovery!.areaId == null) {
-      return <Widget>[const Text('Chọn khu vực để tìm quán hoặc món.')];
+      return <Widget>[const Text('Chưa xác định khu vực theo GPS. Hãy quay lại trang chủ và thử định vị lại.')];
     }
     if (!s.hasTerm) {
       return <Widget>[const EmptyState(icon: Icons.search, title: 'Tìm quán hoặc món', text: 'Gõ tên quán hoặc tên món. Không cần gõ dấu.')];
@@ -649,19 +638,20 @@ class _DishResult extends StatelessWidget {
 }
 
 class _PositionButton extends StatelessWidget {
-  const _PositionButton({required this.position, this.retry, this.resolving = false, this.failed = false});
+  const _PositionButton({required this.position, this.retry, this.resolving = false, this.failed = false, this.outsideCoverage = false});
   final DiscoveryPosition position;
   final VoidCallback? retry;
   final bool resolving;
   final bool failed;
+  final bool outsideCoverage;
   @override
   Widget build(BuildContext context) {
-    if (position.fix != null && !resolving && !failed) return const SizedBox.shrink();
+    if (position.fix != null && !resolving && !failed && !outsideCoverage) return const SizedBox.shrink();
     final bool busy = position.loading || resolving;
-    final String label = busy ? 'Đang định vị…' : failed ? 'Chưa xác định được khu vực. Thử lại'
+    final String label = busy ? 'Đang định vị…' : outsideCoverage ? 'Thử xác định lại khu vực' : failed ? 'Chưa xác định được khu vực. Thử lại'
       : position.failure == LocationFailure.denied ? 'Chưa được cấp quyền vị trí. Thử lại'
       : position.failure == LocationFailure.disabled ? 'Vị trí đang tắt. Thử lại'
-      : position.attemptedAt != null ? 'Chưa lấy được vị trí. Thử lại' : 'Dùng vị trí hiện tại để xem khoảng cách';
+      : position.attemptedAt != null ? 'Chưa lấy được vị trí. Thử lại' : 'Đang chờ GPS. Thử lại';
     return TextButton.icon(
       key: const Key('discovery-locate'), onPressed: busy ? null : retry ?? position.locate,
       icon: const Icon(Icons.my_location, size: 18), label: Text(label),
