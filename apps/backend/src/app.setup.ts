@@ -86,6 +86,8 @@ export function configureApp(app: INestApplication): void {
   for (const route of ['driver/complaints', 'driver/reviews']) {
     app.use(`/${GLOBAL_PREFIX}/${route}`, clientAuthTransportMiddleware);
   }
+  // Legacy /auth/role/select also uses SessionAuthGuard for native sessions; preserve its signed request bytes.
+  app.use(`/${GLOBAL_PREFIX}/auth`, captureRawBody);
   app.use(`/${GLOBAL_PREFIX}/${CLIENT_AUTH_ROUTE_PREFIX}`, captureRawBody);
   app.use(`/${GLOBAL_PREFIX}/customer/me/profile`, captureRawBody);
   // M05: the customer address book writes a phone signs (create, edit, delete, default).
