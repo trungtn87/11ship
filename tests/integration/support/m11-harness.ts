@@ -265,6 +265,7 @@ export class M11World {
     throw new Error('M11 test outbox still has claimable events after 200 passes');
   }
 
+
   #shopFood: string | undefined;
 
   /** The shop owner in the 11Food app (a client session with the SHOP hat): the inbox and the notification routes are client routes. */

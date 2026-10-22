@@ -58,6 +58,7 @@ void main() {
       await again.load();
       expect(again.lines, hasLength(2));
       expect(again.shopName, 'Quán Phở Minh họa');
+      expect(again.feeEstimateVnd, 10000);
     });
 
     test('another shop needs a decision; replacing starts a new cart', () async {
@@ -146,13 +147,14 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('no pin (no GPS): the Order still goes, the fee reads "Chưa xác định phí" — never 0đ, and no total is claimed', (WidgetTester tester) async {
+    testWidgets('no pin: show provisional system M06 fee and expected total without inventing GPS coordinates', (WidgetTester tester) async {
       final (OrderRuntime runtime, SampleOrderStore store) = await readyCart();
       await mount(tester, CheckoutScreen(runtime: runtime));
       await fill(tester);
-      expect(containing('Chưa xác định phí'), findsWidgets);
+      expect(containing('Phí giao (dự tính)'), findsWidgets);
+      expect(find.text(m10Money(10000)), findsWidgets);
       expect(find.text(m10Money(0)), findsNothing);
-      expect(key('checkout-total'), findsNothing);
+      expect(key('checkout-total'), findsOneWidget);
       expect(containing('Thanh toán trực tiếp'), findsWidgets);
       await tap(tester, key('checkout-send'));
       expect(store.orderCount, 1);
