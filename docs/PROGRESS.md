@@ -270,10 +270,12 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#160](https://github.com/trungtn87/11ship/pull/160) fix(M02): auto-compress shop logo and recover from image er… | Đã merge (`MERGED`) | — | — | — | `a0d6860` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#161](https://github.com/trungtn87/11ship/pull/161) fix(M04): sửa DEVICE_PROOF_INVALID khi nạp tiền trên Android | Đã merge (`MERGED`) | — | — | — | `2c0d55b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#162](https://github.com/trungtn87/11ship/pull/162) fix(native): prevent DEVICE_PROOF_INVALID across Shipper M0… | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `e481ef5` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#163](https://github.com/trungtn87/11ship/pull/163) M10/11Food: Hiển thị phí giao dự kiến theo bảng giá M06 khi… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `d29a68e` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
 - `UNCLASSIFIED_PR` PR #162: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #163: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
