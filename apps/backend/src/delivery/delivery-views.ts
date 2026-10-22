@@ -124,6 +124,7 @@ export class DeliveryViews {
     const view: JsonObject = {
       delivery_id: d.deliveryId,
       code: d.code,
+      display_code: d.displayCode ?? d.code,
       source: d.source,
       order_id: d.orderId,
       previous_delivery_id: d.previousDeliveryId,
@@ -176,6 +177,7 @@ export class DeliveryViews {
     return {
       delivery_id: d.deliveryId,
       code: d.code,
+      display_code: d.displayCode ?? d.code,
       state: d.state,
       version: d.version,
       fee: { payer: d.feePayer, amount_vnd: d.feeVnd, status: feeStatusOf({ feeVnd: d.feeVnd, agreementStatus: agreement?.status ?? null }), distance_m: d.routeDistanceM },
@@ -205,6 +207,7 @@ export class DeliveryViews {
     return {
       delivery_id: d.deliveryId,
       code: d.code,
+      display_code: d.displayCode ?? d.code,
       source: d.source,
       order_id: null,
       previous_delivery_id: null,
@@ -250,6 +253,7 @@ export class DeliveryViews {
     return {
       delivery_id: d.deliveryId,
       code: d.code,
+      display_code: d.displayCode ?? d.code,
       shop: { name: d.shopName, area_text: dropoffAreaOf(d.pickupAddressText) },
       distance_to_shop_m: decision.distanceToShopM,
       dropoff_area_text: d.dropoffAreaText,
@@ -291,6 +295,7 @@ export class DeliveryViews {
     return {
       delivery_id: d.deliveryId,
       code: d.code,
+      display_code: d.displayCode ?? d.code,
       source: d.source,
       order_id: d.orderId,
       previous_delivery_id: d.previousDeliveryId,
