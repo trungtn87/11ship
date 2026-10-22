@@ -192,7 +192,7 @@ class OrderDelivery {
     final Object? result = m['result'];
     return OrderDelivery(
       deliveryId: _str(m['delivery_id']),
-      code: _str(m['code']),
+      code: _str(m['display_code'] ?? m['code']),
       state: deliveryStateOf(_str(m['state'])),
       version: _int(m['version']),
       feePayer: _str(fee['payer']),
@@ -282,7 +282,7 @@ class DeliveryBrief {
 
   factory DeliveryBrief.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
-    return DeliveryBrief(deliveryId: _str(m['delivery_id']), code: _str(m['code']), state: deliveryStateOf(_str(m['state'])), previousId: _strOrNull(m['previous_delivery_id']), createdAt: _time(m['created_at']), endReason: _strOrNull(m['end_reason']));
+    return DeliveryBrief(deliveryId: _str(m['delivery_id']), code: _str(m['display_code'] ?? m['code']), state: deliveryStateOf(_str(m['state'])), previousId: _strOrNull(m['previous_delivery_id']), createdAt: _time(m['created_at']), endReason: _strOrNull(m['end_reason']));
   }
 
   final String deliveryId;
@@ -330,7 +330,7 @@ class OrderView {
     final Object? can = m['can'];
     return OrderView(
       orderId: _str(m['order_id']),
-      code: _str(m['code']),
+      code: _str(m['display_code'] ?? m['code']),
       status: _str(m['status']),
       display: displayStatusOf(_str(m['display_status'])),
       version: _int(m['version']),
@@ -404,7 +404,7 @@ class OrderSummary {
     final Map<String, Object?> m = _obj(raw);
     return OrderSummary(
       orderId: _str(m['order_id']),
-      code: _str(m['code']),
+      code: _str(m['display_code'] ?? m['code']),
       display: displayStatusOf(_str(m['display_status'])),
       version: _int(m['version']),
       shopName: _str(m['shop_name']),
