@@ -12,6 +12,7 @@ import '../m11/m11_entries.dart';
 import '../m07/m07_widgets.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../widgets/shop_order_filters.dart';
 import 'm10_cart.dart';
 import 'm10_common.dart';
 import 'm10_customer_views.dart';
@@ -95,20 +96,19 @@ class ShopOrderList extends StatefulWidget {
   State<ShopOrderList> createState() => _ShopOrderListState();
 }
 
-const List<(String, String)> _filters = <(String, String)>[
-  ('all', 'Tất cả'),
-  ('pending', 'Chờ xác nhận'),
-  ('preparing', 'Đang chuẩn bị'),
-  ('scheduled', 'Đơn hẹn'),
-  ('delivering', 'Đang giao'),
-  ('attention', 'Cần xử lý'),
-  ('history', 'Lịch sử'),
+const List<ShopOrderFilterChoice> _orderStatusOptions = <ShopOrderFilterChoice>[
+  (value: 'all', label: 'Tất cả'),
+  (value: 'pending', label: 'Chờ xác nhận'),
+  (value: 'preparing', label: 'Đang chuẩn bị'),
+  (value: 'scheduled', label: 'Đơn hẹn'),
+  (value: 'delivering', label: 'Đang giao'),
+  (value: 'attention', label: 'Cần xử lý'),
+  (value: 'history', label: 'Lịch sử'),
 ];
 
 class _ShopOrderListState extends State<ShopOrderList> {
-  String _filter = 'all';
+  ShopOrderFilters _filters = const ShopOrderFilters();
   String _query = '';
-  DateTime? _day;
   final TextEditingController _search = TextEditingController();
   int _round = 0;
 
@@ -118,14 +118,24 @@ class _ShopOrderListState extends State<ShopOrderList> {
     super.dispose();
   }
 
-  int? _count(ShopOrderCounts c, String f) => switch (f) {
-        'pending' => c.pending,
-        'preparing' => c.preparing,
-        'scheduled' => c.scheduled,
-        'delivering' => c.delivering,
-        'attention' => c.attention,
-        _ => null,
-      };
+  Future<void> _openFilters() async {
+    final ShopOrderFilters? next = await showShopOrderFilters(
+      context,
+      current: _filters,
+      statuses: _orderStatusOptions,
+    );
+    if (mounted && next != null) {
+      setState(() => _filters = next);
+    }
+  }
+
+  void _reset() {
+    _search.clear();
+    setState(() {
+      _filters = const ShopOrderFilters();
+      _query = '';
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -134,62 +144,54 @@ class _ShopOrderListState extends State<ShopOrderList> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (source.isSample) const Padding(padding: EdgeInsets.only(bottom: N11Space.gap3), child: M10SampleBanner()),
-        M07Loader<OrderList>(
-          key: ValueKey<String>('shop-orders-$_filter-$_query-${_day?.toIso8601String()}-$_round'),
-          keyPrefix: 'shop-orders',
-          load: () => source.list(filter: _filter, query: _query, from: _day, to: _day?.add(const Duration(days: 1))),
-          refreshEvery: const Duration(seconds: 15),
-          builder: (BuildContext context, OrderList list, Future<void> Function() reload) => vstack(<Widget>[
-            Wrap(
-              spacing: N11Space.gap2,
-              runSpacing: N11Space.gap2,
-              children: <Widget>[
-                for (final (String f, String label) in _filters)
-                  ChoiceChip(
-                    key: Key('shop-filter-$f'),
-                    label: Text(_count(list.counts, f) == null || _count(list.counts, f) == 0 ? label : '$label (${_count(list.counts, f)})'),
-                    selected: _filter == f,
-                    onSelected: (bool _) => setState(() => _filter = f),
-                  ),
-              ],
-            ),
-            Row(children: <Widget>[
-              Expanded(
-                child: TextField(
-                  key: const Key('shop-orders-search'),
-                  controller: _search,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (String v) => setState(() => _query = v.trim()),
-                  decoration: InputDecoration(hintText: 'Tìm mã đơn hoặc tên người nhận', prefixIcon: const Icon(Icons.search), filled: true, fillColor: N11Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: const BorderSide(color: N11Colors.line))),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: TextField(
+                key: const Key('shop-orders-search'),
+                controller: _search,
+                textInputAction: TextInputAction.search,
+                onSubmitted: (String value) => setState(() => _query = value.trim()),
+                decoration: InputDecoration(
+                  hintText: 'Tìm mã đơn hoặc tên người nhận',
+                  prefixIcon: const Icon(Icons.search),
+                  filled: true,
+                  fillColor: N11Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: const BorderSide(color: N11Colors.line)),
                 ),
               ),
-              IconButton(
-                key: const Key('shop-orders-day'),
-                tooltip: _day == null ? 'Lọc theo ngày' : 'Bỏ lọc ngày ${m10Day(_day!)}',
-                icon: Icon(_day == null ? Icons.calendar_today_outlined : Icons.event_busy_outlined),
-                onPressed: () async {
-                  if (_day != null) {
-                    setState(() => _day = null);
-                    return;
-                  }
-                  final DateTime now = DateTime.now();
-                  final DateTime? d = await showDatePicker(context: context, initialDate: now, firstDate: now.subtract(const Duration(days: 365)), lastDate: now.add(const Duration(days: 7)));
-                  if (d != null) {
-                    setState(() => _day = DateTime(d.year, d.month, d.day));
-                  }
-                },
-              ),
-            ]),
-            if (list.orders.isEmpty)
-              const EmptyState(key: Key('shop-orders-empty'), icon: Icons.receipt_long_outlined, title: 'Không có đơn món', text: 'Đơn khách đặt trong ứng dụng sẽ hiện ở đây.')
-            else
+            ),
+            const SizedBox(width: N11Space.gap2),
+            IconButton(
+              key: const Key('shop-orders-filter'),
+              tooltip: 'Lọc trạng thái và ngày',
+              onPressed: _openFilters,
+              icon: Stack(clipBehavior: Clip.none, children: <Widget>[
+                const Icon(Icons.filter_list),
+                if (_filters.isActive) const Positioned(right: -3, top: -3, child: CircleAvatar(radius: 4, backgroundColor: Colors.orange)),
+              ]),
+            ),
+          ],
+        ),
+        const SizedBox(height: N11Space.gap3),
+        M07Loader<OrderList>(
+          key: ValueKey<String>('shop-orders-${_filters.status}-$_query-${_filters.from?.toIso8601String()}-${_filters.toExclusive?.toIso8601String()}-$_round'),
+          keyPrefix: 'shop-orders',
+          load: () => source.list(filter: _filters.status, query: _query, from: _filters.from, to: _filters.toExclusive),
+          refreshEvery: const Duration(seconds: 15),
+          builder: (BuildContext context, OrderList list, Future<void> Function() reload) => vstack(<Widget>[
+            if (list.orders.isEmpty) ...<Widget>[
+              const EmptyState(key: Key('shop-orders-empty'), icon: Icons.receipt_long_outlined, title: 'Không có đơn phù hợp', text: 'Hãy thử tìm kiếm hoặc thay đổi bộ lọc.'),
+              if (_filters.isActive || _query.isNotEmpty)
+                TextButton(key: const Key('shop-orders-clear-filters'), onPressed: _reset, child: const Text('Xóa bộ lọc')),
+            ] else
               for (final OrderSummary o in list.orders)
                 OrderSummaryCard(
                   summary: o,
                   forShop: true,
                   onTap: () async {
                     await Navigator.of(context).push(n11Route(ShopOrderDetailScreen(runtime: widget.runtime, orderId: o.orderId, deliveries: widget.deliveries)));
-                    setState(() => _round += 1);
+                    if (mounted) setState(() => _round += 1);
                   },
                 ),
           ]),
