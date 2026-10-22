@@ -432,7 +432,7 @@ export class DeliveryRepository {
         WHERE d.shop_id = $1::uuid
           AND ($2::text = 'all' OR (($2::text = 'active') = (d.state IN ${ACTIVE_LIST_STATES} OR d.state = 'search_stopped'
                                    OR EXISTS (SELECT 1 FROM app.delivery_incidents i WHERE i.delivery_id = d.delivery_id AND i.status = 'OPEN'))))
-          AND ($3::text IS NULL OR d.code ILIKE $3 ESCAPE '\\' OR app.shop_display_delivery(d.delivery_id) ILIKE $3 ESCAPE '\\' OR OR d.recipient_name ILIKE $3 ESCAPE '\\')
+          AND ($3::text IS NULL OR d.code ILIKE $3 ESCAPE '\\' OR app.shop_display_delivery(d.delivery_id) ILIKE $3 ESCAPE '\\' OR d.recipient_name ILIKE $3 ESCAPE '\\')
           AND CASE $5::text
               WHEN 'searching' THEN d.state IN ('waiting_driver', 'search_stopped')
               WHEN 'accepted' THEN d.state IN ('accepted', 'location_confirmed')
