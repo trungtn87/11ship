@@ -272,6 +272,14 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
             : 'Chưa xác định được khu vực theo GPS. Hãy thử định vị lại để xem các quán gần bạn.',
           key: const Key('home-location-needed'), style: N11Text.lead));
       }
+      // Optional recovery ONLY on real GPS/resolve failure. Never require a manual area
+      // during ordinary startup, and never misrepresent a manually browsed area as GPS.
+      if (_position.failure != null || c.areaResolutionFailed) {
+        out.add(const Text('Hoặc xem quán theo khu vực tham khảo:', style: N11Text.body));
+        for (final AreaChoice a in c.areas) {
+          out.add(N11ChoiceCard(key: Key('fallback-area-${a.id}'), title: a.name, selected: false, onTap: () => c.chooseArea(a.id)));
+        }
+      }
       return out;
     }
     if (c.categories.isNotEmpty) {
