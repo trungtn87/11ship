@@ -105,9 +105,11 @@ export function configureApp(app: INestApplication): void {
   // larger parser FIRST (the first parser to run wins; the later ones skip an already parsed body), everything else keeps the default limit.
   app.use(`/${GLOBAL_PREFIX}/shop/me/menu/images`, capturePictureBody);
   app.use(`/${GLOBAL_PREFIX}/shop/me`, captureRawBody);
-  // M04: native wallet writes sign the exact JSON bytes (top-up/withdrawal creation and cancellation).
-  // Without this hook reads work, but POST proof verification hashes an empty body and rejects valid signatures.
-  app.use(`/${GLOBAL_PREFIX}/driver/wallet`, captureRawBody);
+  // Native Shipper writes all sign the exact JSON bytes. Capture the whole driver route family, not only M04 wallet:
+  // M03 profile/online, M07 delivery actions, M14 location, M11 complaints, and M04 wallet all share the session guard.
+  // The M11 attachment upload's larger evidence parser is intentionally registered ABOVE this default-size parser.
+  // Without rawBody on these routes the guard hashes an empty body and rejects valid Android signatures with 403.
+  app.use(`/${GLOBAL_PREFIX}/driver`, captureRawBody);
   // M08: native notification writes sign their exact JSON bytes too (including `{}` on open/read-all).
   // Without this hook GET works, but the guard hashes an empty body for POST and refuses its valid proof.
   app.use(`/${GLOBAL_PREFIX}/notifications`, clientAuthTransportMiddleware);
