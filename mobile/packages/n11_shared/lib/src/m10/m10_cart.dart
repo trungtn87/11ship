@@ -23,6 +23,7 @@ class CartController extends ChangeNotifier {
 
   String? _shopId;
   String _shopName = '';
+  int? _feeEstimateVnd;
   String? _note;
   List<DraftLine> _lines = <DraftLine>[];
   bool _loaded = false;
@@ -33,6 +34,7 @@ class CartController extends ChangeNotifier {
 
   String? get shopId => _shopId;
   String get shopName => _shopName;
+  int? get feeEstimateVnd => _feeEstimateVnd;
   String? get note => _note;
   List<DraftLine> get lines => List<DraftLine>.unmodifiable(_lines);
   bool get loaded => _loaded;
@@ -67,12 +69,14 @@ class CartController extends ChangeNotifier {
     if (view == null) {
       _shopId = null;
       _shopName = '';
+      _feeEstimateVnd = null;
       _lines = <DraftLine>[];
       _note = null;
       return;
     }
     _shopId = view.shopId;
     _shopName = view.shopName;
+    _feeEstimateVnd = view.feeEstimateVnd;
     _note = view.note;
     _lines = <DraftLine>[for (final CartLine l in view.lines) DraftLine(itemId: l.itemId, name: l.name, quantity: l.quantity, priceVnd: l.priceVnd ?? 0, note: l.note)];
     _unavailable
@@ -92,6 +96,7 @@ class CartController extends ChangeNotifier {
       throw StateError('Ask before replacing the cart');
     }
     if (_shopId != shopId) {
+      _feeEstimateVnd = null;
       _lines = <DraftLine>[];
       _unavailable.clear();
       _note = null;
@@ -176,7 +181,8 @@ class CartController extends ChangeNotifier {
           if (_lines.isEmpty || shop == null) {
             await source.clearCart();
           } else {
-            await source.saveCart(shopId: shop, lines: _lines, note: _note);
+            final CartView? saved = await source.saveCart(shopId: shop, lines: _lines, note: _note);
+            if (_shopId == shop) _feeEstimateVnd = saved?.feeEstimateVnd;
           }
           _failure = null;
         } on M07Failure catch (failure) {
