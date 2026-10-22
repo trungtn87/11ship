@@ -111,6 +111,7 @@ class _ShopOrderListState extends State<ShopOrderList> {
   String _query = '';
   final TextEditingController _search = TextEditingController();
   int _round = 0;
+  int _offset = 0;
 
   @override
   void dispose() {
@@ -125,7 +126,7 @@ class _ShopOrderListState extends State<ShopOrderList> {
       statuses: _orderStatusOptions,
     );
     if (mounted && next != null) {
-      setState(() => _filters = next);
+      setState(() { _filters = next; _offset = 0; });
     }
   }
 
@@ -134,6 +135,7 @@ class _ShopOrderListState extends State<ShopOrderList> {
     setState(() {
       _filters = const ShopOrderFilters();
       _query = '';
+      _offset = 0;
     });
   }
 
@@ -151,7 +153,7 @@ class _ShopOrderListState extends State<ShopOrderList> {
                 key: const Key('shop-orders-search'),
                 controller: _search,
                 textInputAction: TextInputAction.search,
-                onSubmitted: (String value) => setState(() => _query = value.trim()),
+                onSubmitted: (String value) => setState(() { _query = value.trim(); _offset = 0; }),
                 decoration: InputDecoration(
                   hintText: 'Tìm mã đơn hoặc tên người nhận',
                   prefixIcon: const Icon(Icons.search),
@@ -175,9 +177,9 @@ class _ShopOrderListState extends State<ShopOrderList> {
         ),
         const SizedBox(height: N11Space.gap3),
         M07Loader<OrderList>(
-          key: ValueKey<String>('shop-orders-${_filters.status}-$_query-${_filters.from?.toIso8601String()}-${_filters.toExclusive?.toIso8601String()}-$_round'),
+          key: ValueKey<String>('shop-orders-${_filters.status}-$_query-${_filters.from?.toIso8601String()}-${_filters.toExclusive?.toIso8601String()}-$_round-$_offset'),
           keyPrefix: 'shop-orders',
-          load: () => source.list(filter: _filters.status, query: _query, from: _filters.from, to: _filters.toExclusive),
+          load: () => source.listPage(filter: _filters.status, query: _query, from: _filters.from, to: _filters.toExclusive, offset: _offset),
           refreshEvery: const Duration(seconds: 15),
           builder: (BuildContext context, OrderList list, Future<void> Function() reload) => vstack(<Widget>[
             if (list.orders.isEmpty) ...<Widget>[
@@ -194,6 +196,24 @@ class _ShopOrderListState extends State<ShopOrderList> {
                     if (mounted) setState(() => _round += 1);
                   },
                 ),
+            if (_offset > 0 || list.orders.length == 50)
+              Row(
+                children: <Widget>[
+                  if (_offset > 0) TextButton(
+                    key: const Key('shop-orders-page-previous'),
+                    onPressed: () => setState(() => _offset -= 50),
+                    child: const Text('Trang trước'),
+                  ),
+                  const Spacer(),
+                  Text('Trang ${_offset ~/ 50 + 1}', style: N11Text.caption),
+                  const Spacer(),
+                  if (list.orders.length == 50) TextButton(
+                    key: const Key('shop-orders-page-next'),
+                    onPressed: () => setState(() => _offset += 50),
+                    child: const Text('Trang sau'),
+                  ),
+                ],
+              ),
           ]),
         ),
       ],
