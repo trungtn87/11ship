@@ -112,6 +112,7 @@ export class MenuService {
       const sold = await this.sales.quantitiesOfItems(context, items.map((item) => item.itemId));
       return {
         shop_id: snapshot.shopId,
+        ...(snapshot.logo == null ? {} : { logo_url: '/v1/shops/' + snapshot.shopId + '/logo?v=' + snapshot.version }),
         name: snapshot.name,
         address_text: snapshot.addressText,
         timezone: AVAILABILITY_TIME_ZONE,

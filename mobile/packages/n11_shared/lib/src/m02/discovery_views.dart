@@ -16,8 +16,8 @@ import 'm02_widgets.dart';
 import 'menu_models.dart';
 import 'preview_views.dart';
 
-// M02-KP01 Trang chủ khám phá, KP03 bộ lọc, KP02 tìm quán/món. Layout of docs/current/M02-discovery-UI-LOCKED-20261016.md: area, search entry,
-// group chips, the shop list and the filter button. Ratings and pickup coordinates come from the server; distance is a foreground estimate. Tapping a shop opens its menu (K01); tapping a dish opens its shop and lands on the dish.
+// M02-KP01/KP02/KP03: Owner layout 22/10/2026 (M02-home-shop-detail-UI-OWNER-20261022.md).
+// Area, group chips, heading beside search/filters, then the shop list. Ratings and pickup coordinates come from the server; distance is a foreground estimate. Tapping a shop opens its menu (K01); tapping a dish opens its shop and lands on the dish.
 
 void _openShop(BuildContext context, PublicShopApi publicApi, ShopCardData shop, {String? focusItemId, M11Source? ratings}) {
   Navigator.of(context).push(n11Route(ShopPublicScreen(api: publicApi, shopId: shop.shopId, focusItemId: focusItemId, ratings: ratings)));
@@ -60,16 +60,11 @@ class ShopCard extends StatelessWidget {
           constraints: const BoxConstraints(minHeight: 76),
           padding: const EdgeInsets.all(N11Space.gap3),
           decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: N11Colors.line), borderRadius: BorderRadius.circular(kRadiusCard)),
-          child: Row(
+          child: LayoutBuilder(builder: (context, constraints) => Row(
             children: <Widget>[
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(color: N11Colors.yellowSoft, borderRadius: BorderRadius.circular(12)),
-                clipBehavior: Clip.antiAlias,
-                child: shop.logoUrl == null ? const Icon(Icons.storefront_outlined, size: 24, color: N11Colors.black)
-                  : Image.network(shop.logoUrl!, key: Key('shop-logo-${shop.shopId}'), fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const Icon(Icons.storefront_outlined, size: 24, color: N11Colors.black)),
+              SizedBox(
+                width: constraints.maxWidth * .35,
+                child: ShopLogoImage(key: Key('shop-logo-${shop.shopId}'), url: shop.logoUrl),
               ),
               const SizedBox(width: N11Space.gap3),
               Expanded(
@@ -84,9 +79,9 @@ class ShopCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2),
+              const Icon(Icons.chevron_right, size: 16, color: N11Colors.ink2),
             ],
-          ),
+          )),
         ),
       ),
     );
@@ -111,9 +106,9 @@ class _FakeField extends StatelessWidget {
         borderRadius: BorderRadius.circular(kRadiusControl),
         child: Container(
           height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: N11Colors.line), borderRadius: BorderRadius.circular(kRadiusControl)),
-          child: const Row(children: <Widget>[Icon(Icons.search, size: 20, color: N11Colors.ink2), SizedBox(width: 10), Text('Tìm quán hoặc món', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: N11Colors.placeholder))]),
+          child: LayoutBuilder(builder: (context, constraints) => Row(children: <Widget>[const Icon(Icons.search, size: 20, color: N11Colors.ink2), const SizedBox(width: 4), Expanded(child: Text(constraints.maxWidth < 155 ? 'Tìm kiếm' : 'Tìm quán hoặc món', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: N11Colors.placeholder)))])),
         ),
       ),
     );
@@ -241,10 +236,6 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
 
   List<Widget> _ready() {
     final List<Widget> out = <Widget>[];
-    if (c.areas.isEmpty) {
-      if (c.outsideCoverage) return <Widget>[const Text('Khu vực này chưa được phục vụ', key: Key('home-outside-coverage'), style: N11Text.lead)];
-      return <Widget>[const EmptyState(icon: Icons.place_outlined, title: 'Chưa có khu vực phục vụ', text: 'Hiện chưa có khu vực nào đang phục vụ. Vui lòng quay lại sau.')];
-    }
     // GPS controls this label; it is not an interactive area selector.
     final String areaLabel = c.area == null
         ? (c.resolvingArea || _position.loading ? 'Đang xác định khu vực…' : c.outsideCoverage ? 'Ngoài khu vực phục vụ' : 'Chưa xác định khu vực')
@@ -259,11 +250,39 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
         Flexible(child: Text(areaLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: N11Colors.black))),
       ]),
     ));
-    out.add(_FakeField(onTap: _openSearch));
     out.add(_PositionButton(position: _position, resolving: c.resolvingArea, failed: c.areaResolutionFailed,
       outsideCoverage: c.outsideCoverage, retry: () => c.locate(source: _position, force: true)));
+    if (c.categories.isNotEmpty) {
+      out.add(SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: <Widget>[
+          _chip('home-cat-all', 'Tất cả', c.categoryId == null, () => c.categoryId == null ? null : c.toggleCategory(c.categoryId!)),
+          for (final CategoryChoice cat in c.categories) _chip('home-cat-${cat.id}', cat.name, c.categoryId == cat.id, () => c.toggleCategory(cat.id)),
+        ]),
+      ));
+    }
+    if (c.stale) {
+      out.add(N11Banner(key: const Key('home-stale'), kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.', trailing: N11Button(key: const Key('home-reload'), label: 'Thử lại', compact: true, onPressed: c.refresh)));
+    }
+    out.add(LayoutBuilder(builder: (context, constraints) => Row(children: <Widget>[
+      Flexible(child: Text('Quán gần bạn', style: constraints.maxWidth < 360 ? N11Text.bodyStrong : N11Text.h2)),
+      const SizedBox(width: N11Space.gap2),
+      Expanded(child: _FakeField(onTap: _openSearch)),
+      IconButton(
+        key: const Key('home-filter'),
+        tooltip: c.filtersActive ? 'Bộ lọc đang bật' : 'Bộ lọc',
+        constraints: const BoxConstraints(minWidth: kTapMin, minHeight: kTapMin),
+        color: c.filtersActive ? N11Colors.yellowStrong : N11Colors.ink2,
+        onPressed: _openFilters,
+        icon: const Icon(Icons.tune, size: 20),
+      ),
+    ])));
     if (c.outsideCoverage) {
-      out.add(const Text('Khu vực này chưa được phục vụ', key: Key('home-outside-coverage'), style: N11Text.lead));
+      out.add(const N11InfoCard(key: Key('home-outside-coverage'), title: 'Khu vực này chưa được phục vụ', text: 'Hiện chưa thể giao hàng tới vị trí này.'));
+    }
+    if (c.areas.isEmpty) {
+      if (!c.outsideCoverage) out.add(const EmptyState(icon: Icons.place_outlined, title: 'Chưa có khu vực phục vụ', text: 'Hiện chưa có khu vực nào đang phục vụ. Vui lòng quay lại sau.'));
+      return out;
     }
     if (c.areaId == null) {
       if (!c.outsideCoverage) {
@@ -282,38 +301,6 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
       }
       return out;
     }
-    if (c.categories.isNotEmpty) {
-      out.add(SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: <Widget>[
-          _chip('home-cat-all', 'Tất cả', c.categoryId == null, () => c.categoryId == null ? null : c.toggleCategory(c.categoryId!)),
-          for (final CategoryChoice cat in c.categories) _chip('home-cat-${cat.id}', cat.name, c.categoryId == cat.id, () => c.toggleCategory(cat.id)),
-        ]),
-      ));
-    }
-    if (c.stale) {
-      out.add(N11Banner(key: const Key('home-stale'), kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.', trailing: N11Button(key: const Key('home-reload'), label: 'Thử lại', compact: true, onPressed: c.refresh)));
-    }
-    out.add(Row(children: <Widget>[
-      const Expanded(child: Text('Quán quanh bạn', style: N11Text.h2)),
-      Semantics(
-        button: true,
-        label: c.filtersActive ? 'Bộ lọc đang bật' : 'Bộ lọc',
-        excludeSemantics: true,
-        onTap: _openFilters,
-        child: InkWell(
-          key: const Key('home-filter'),
-          onTap: _openFilters,
-          borderRadius: BorderRadius.circular(kRadiusControl),
-          child: Container(
-            constraints: const BoxConstraints(minWidth: kTapMin, minHeight: kTapMin),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: c.filtersActive ? N11Colors.yellow : N11Colors.white, border: Border.all(color: c.filtersActive ? N11Colors.yellow : N11Colors.line), borderRadius: BorderRadius.circular(kRadiusControl)),
-            child: const Icon(Icons.tune, size: 22, color: N11Colors.black),
-          ),
-        ),
-      ),
-    ]));
     switch (c.listState) {
       case DiscoveryLoad.idle:
       case DiscoveryLoad.loading:

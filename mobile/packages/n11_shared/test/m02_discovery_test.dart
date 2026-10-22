@@ -285,7 +285,7 @@ void main() {
       expect(find.text('Alpha Hải Sản'), findsOneWidget);
     });
 
-    testWidgets('the layout follows the approved reference: brand and bell, area, search, group chips, then "Quán quanh bạn" with the filter button; the bell says M08 is not there yet', (WidgetTester tester) async {
+    testWidgets('the layout follows the approved reference: brand and bell, area, group chips, then Quán gần bạn beside search and filters; the bell says M08 is not there yet', (WidgetTester tester) async {
       phone(tester);
       final DiscoveryController c = DiscoveryController(api: seeded());
       addTearDown(c.dispose);
@@ -294,10 +294,12 @@ void main() {
       final double area = tester.getTopLeft(find.byKey(const Key('home-area'))).dy;
       final double search = tester.getTopLeft(find.byKey(const Key('home-search'))).dy;
       final double chips = tester.getTopLeft(find.byKey(const Key('home-cat-all'))).dy;
-      final double heading = tester.getTopLeft(find.text('Quán quanh bạn')).dy;
+      final double heading = tester.getTopLeft(find.text('Quán gần bạn')).dy;
       final double firstShop = tester.getTopLeft(find.byKey(const Key('shop-s1'))).dy;
-      expect(<double>[bell, area, search, chips, heading, firstShop], orderedEquals(<double>[bell, area, search, chips, heading, firstShop]..sort()));
-      expect(tester.getTopLeft(find.byKey(const Key('home-filter'))).dx, greaterThan(tester.getTopLeft(find.text('Quán quanh bạn')).dx), reason: 'the filter button sits at the end of the heading row');
+      expect(<double>[bell, area, chips, search, firstShop], orderedEquals(<double>[bell, area, chips, search, firstShop]..sort()));
+      expect((search - heading).abs(), lessThan(24));
+      expect(tester.getTopLeft(find.byKey(const Key('home-search'))).dx, greaterThan(tester.getTopLeft(find.text('Quán gần bạn')).dx));
+      expect(tester.getTopLeft(find.byKey(const Key('home-filter'))).dx, greaterThan(tester.getTopLeft(find.text('Quán gần bạn')).dx), reason: 'the filter button sits at the end of the heading row');
       expect((tester.getTopLeft(find.byKey(const Key('home-filter'))).dy - heading).abs(), lessThan(24));
       await tapKey(tester, 'home-bell');
       expect(find.text('Thông báo sẽ có ở bản sau.'), findsOneWidget);
