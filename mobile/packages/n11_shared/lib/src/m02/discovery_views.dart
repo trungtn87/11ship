@@ -179,7 +179,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
   void _openSearch() {
     final String? area = c.areaId;
     if (area == null) {
-      m02Toast(context, 'Hãy chọn khu vực trước khi tìm.');
+      m02Toast(context, 'Chưa xác định được khu vực từ GPS. Hãy thử định vị lại.');
       return;
     }
     Navigator.of(context).push(n11Route(SearchScreen(api: c.api, publicApi: widget.publicApi, ratings: widget.ratings, areaId: area, position: _position, discovery: c, retryPosition: () => c.locate(source: _position, force: true))));
@@ -245,30 +245,32 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
       if (c.outsideCoverage) return <Widget>[const Text('Khu vực này chưa được phục vụ', key: Key('home-outside-coverage'), style: N11Text.lead)];
       return <Widget>[const EmptyState(icon: Icons.place_outlined, title: 'Chưa có khu vực phục vụ', text: 'Hiện chưa có khu vực nào đang phục vụ. Vui lòng quay lại sau.')];
     }
-    out.add(InkWell(
+    // GPS controls this label; it is not an interactive area selector.
+    final String areaLabel = c.area == null
+        ? (c.resolvingArea || _position.loading ? 'Đang xác định khu vực…' : c.outsideCoverage ? 'Ngoài khu vực phục vụ' : 'Chưa xác định khu vực')
+        : c.manualArea ? '${c.area!.name} · tham khảo'
+        : _position.failure != null ? '${c.area!.name} · vị trí gần nhất' : c.area!.name;
+    out.add(ConstrainedBox(
       key: const Key('home-area'),
-      onTap: _openFilters,
-      borderRadius: BorderRadius.circular(kRadiusControl),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: kTapMin),
-        child: Row(children: <Widget>[
-          const Icon(Icons.place, size: 20, color: N11Colors.yellowStrong),
-          const SizedBox(width: 6),
-          Flexible(child: Text(c.area == null ? 'Chọn khu vực' : c.manualArea ? '${c.area!.name} · đang xem tham khảo' : c.area!.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: N11Colors.black))),
-          const Icon(Icons.expand_more, size: 22, color: N11Colors.ink2),
-        ]),
-      ),
+      constraints: const BoxConstraints(minHeight: kTapMin),
+      child: Row(children: <Widget>[
+        const Icon(Icons.my_location, size: 20, color: N11Colors.yellowStrong),
+        const SizedBox(width: 6),
+        Flexible(child: Text(areaLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: N11Colors.black))),
+      ]),
     ));
     out.add(_FakeField(onTap: _openSearch));
     out.add(_PositionButton(position: _position, resolving: c.resolvingArea, failed: c.areaResolutionFailed,
-      retry: () => c.locate(source: _position, force: true)));
+      outsideCoverage: c.outsideCoverage, retry: () => c.locate(source: _position, force: true)));
     if (c.outsideCoverage) {
       out.add(const Text('Khu vực này chưa được phục vụ', key: Key('home-outside-coverage'), style: N11Text.lead));
     }
     if (c.areaId == null) {
-      out.add(const Text('Chọn khu vực để xem các quán đang phục vụ.', key: Key('home-pick-area'), style: N11Text.lead));
-      for (final AreaChoice a in c.areas) {
-        out.add(N11ChoiceCard(key: Key('area-${a.id}'), title: a.name, selected: false, onTap: () => c.chooseArea(a.id)));
+      if (!c.outsideCoverage) {
+        out.add(Text(c.resolvingArea || _position.loading
+            ? 'Đang tìm khu vực phục vụ theo vị trí hiện tại…'
+            : 'Chưa xác định được khu vực theo GPS. Hãy thử định vị lại để xem các quán gần bạn.',
+          key: const Key('home-location-needed'), style: N11Text.lead));
       }
       return out;
     }
