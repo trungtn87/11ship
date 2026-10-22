@@ -271,7 +271,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#161](https://github.com/trungtn87/11ship/pull/161) fix(M04): sửa DEVICE_PROOF_INVALID khi nạp tiền trên Android | Đã merge (`MERGED`) | — | — | — | `2c0d55b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#162](https://github.com/trungtn87/11ship/pull/162) fix(native): prevent DEVICE_PROOF_INVALID across Shipper M0… | Đã merge (`MERGED`) | — | — | — | `175beb6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#163](https://github.com/trungtn87/11ship/pull/163) M10/11Food: Hiển thị phí giao dự kiến theo bảng giá M06 khi… | Đã merge (`MERGED`) | — | — | — | `efab58e` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#164](https://github.com/trungtn87/11ship/pull/164) M02/11Food: tự lấy vùng GPS + cấu hình vùng Cao Bằng 10 km… | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `fc5836f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#164](https://github.com/trungtn87/11ship/pull/164) M02/11Food: tự lấy vùng GPS + cấu hình vùng Cao Bằng 10 km… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `9694d9b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
