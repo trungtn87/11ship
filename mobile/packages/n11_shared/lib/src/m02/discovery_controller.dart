@@ -156,7 +156,9 @@ class DiscoveryController extends ChangeNotifier {
         areaId = null;
       }
       if (!_gpsResolved && areaId == null && _areas.length == 1) {
+        // One-area fallback is only for browsing; it is not a GPS-verified location.
         areaId = _areas.single.id;
+        manualArea = true;
       }
       if (categoryId != null && categoryOf(categoryId!) == null) {
         categoryId = null;
