@@ -22,8 +22,6 @@ import { CreateDeliveryInput, CustodyInput, ReasonInput, ShopListQuery, VersionI
 import { DeliveryViews } from './delivery-views';
 import { M14RouteClient, RouteLeg } from './m14-route-client';
 
-const LIST_LIMIT = 50;
-
 interface Pickup {
   readonly lat: number;
   readonly lng: number;
