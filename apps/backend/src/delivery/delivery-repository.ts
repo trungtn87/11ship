@@ -204,7 +204,7 @@ export interface DeliveryPatch {
   readonly endReason?: string | null;
 }
 
-export type ShopScope = 'active' | 'history';
+export type ShopScope = 'active' | 'history' | 'all';
 
 export interface AssignmentRow {
   readonly assignmentId: string;
@@ -414,18 +414,34 @@ export class DeliveryRepository {
    * The shop's list. "active" is what the shop still has to look at: running or searching deliveries, a stopped search (call again / cancel) and a failed
    * delivery whose goods are not settled. "history" is every other one, newest first.
    */
-  async listForShop(context: TransactionContext, shopId: string, scope: ShopScope, query: string, limit: number): Promise<DeliveryRow[]> {
+  async listForShop(
+    context: TransactionContext,
+    shopId: string,
+    scope: ShopScope,
+    query: string,
+    limit: number,
+    options: { filter: 'all' | 'searching' | 'accepted' | 'delivering' | 'completed' | 'failed'; fromMs: number | null; toMs: number | null; offset: number } = { filter: 'all', fromMs: null, toMs: null, offset: 0 },
+  ): Promise<DeliveryRow[]> {
     const pattern = query === '' ? null : `%${query.replace(/[\\%_]/g, '\\$&')}%`;
     const result = await context.query<RawDelivery>(
       `SELECT ${DELIVERY_COLUMNS}
          FROM app.deliveries d
         WHERE d.shop_id = $1::uuid
-          AND (($2 = 'active') = (d.state IN ${ACTIVE_LIST_STATES} OR d.state = 'search_stopped'
-                                  OR EXISTS (SELECT 1 FROM app.delivery_incidents i WHERE i.delivery_id = d.delivery_id AND i.status = 'OPEN')))
+          AND ($2::text = 'all' OR (($2::text = 'active') = (d.state IN ${ACTIVE_LIST_STATES} OR d.state = 'search_stopped'
+                                   OR EXISTS (SELECT 1 FROM app.delivery_incidents i WHERE i.delivery_id = d.delivery_id AND i.status = 'OPEN'))))
           AND ($3::text IS NULL OR d.code ILIKE $3 ESCAPE '\\' OR d.recipient_name ILIKE $3 ESCAPE '\\')
+          AND CASE $5::text
+              WHEN 'searching' THEN d.state IN ('waiting_driver', 'search_stopped')
+              WHEN 'accepted' THEN d.state IN ('accepted', 'location_confirmed')
+              WHEN 'delivering' THEN d.state IN ('picked_up', 'delivering')
+              WHEN 'completed' THEN d.state = 'completed'
+              WHEN 'failed' THEN d.state IN ('failed', 'cancelled_by_merchant', 'cancelled_by_system')
+              ELSE TRUE END
+          AND ($6::timestamptz IS NULL OR d.created_at >= $6::timestamptz)
+          AND ($7::timestamptz IS NULL OR d.created_at < $7::timestamptz)
         ORDER BY d.created_at DESC, d.delivery_id
-        LIMIT $4`,
-      [shopId, scope, pattern, limit],
+        LIMIT $4 OFFSET $8`,
+      [shopId, scope, pattern, limit, options.filter, options.fromMs === null ? null : new Date(options.fromMs).toISOString(), options.toMs === null ? null : new Date(options.toMs).toISOString(), options.offset],
     );
     return result.rows.map(toDelivery);
   }
