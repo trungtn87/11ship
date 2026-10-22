@@ -87,14 +87,14 @@ FOR EACH ROW EXECUTE FUNCTION app.shop_delivery_display_insert();
 -- SQL functions used only in scoped views/queries; a recall keeps its original number.
 CREATE FUNCTION app.shop_display_order(p_order uuid)
 RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = app, pg_temp AS $$
- SELECT 'K' || lpad(s.shop_number::text, 2, '0') || '-' || lpad(n.order_number::text, 4, '0')
+ SELECT 'K' || lpad(s.shop_number::text, greatest(2, length(s.shop_number::text)), '0') || '-' || lpad(n.order_number::text, greatest(4, length(n.order_number::text)), '0')
    FROM app.shop_display_numbers n JOIN app.shop_public_ids s ON s.shop_id = n.shop_id
   WHERE n.resource_kind = 'ORDER' AND n.resource_id = p_order
 $$;
 
 CREATE FUNCTION app.shop_display_direct(p_delivery uuid)
 RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = app, pg_temp AS $$
- SELECT 'K' || lpad(s.shop_number::text, 2, '0') || '-' || lpad(n.order_number::text, 4, '0')
+ SELECT 'K' || lpad(s.shop_number::text, greatest(2, length(s.shop_number::text)), '0') || '-' || lpad(n.order_number::text, greatest(4, length(n.order_number::text)), '0')
    FROM app.shop_display_numbers n JOIN app.shop_public_ids s ON s.shop_id = n.shop_id
   WHERE n.resource_kind = 'DIRECT' AND n.resource_id = p_delivery
 $$;
