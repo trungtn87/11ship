@@ -26,6 +26,7 @@ const safeOrNull = (raw: unknown): number | null => (raw === null || raw === und
 export interface OrderRow {
   readonly orderId: string;
   readonly code: string;
+  readonly displayCode?: string | null;
   readonly clientRef: string;
   readonly customerUserId: string;
   readonly shopId: string;
@@ -62,6 +63,7 @@ export interface OrderRow {
 interface RawOrder {
   order_id: string;
   code: string;
+  display_code?: string | null;
   client_ref: string;
   customer_user_id: string;
   shop_id: string;
@@ -95,7 +97,7 @@ interface RawOrder {
   updated_ms: string;
 }
 
-export const ORDER_COLUMNS = `o.order_id::text AS order_id, o.code, o.client_ref::text AS client_ref, o.customer_user_id::text AS customer_user_id, o.shop_id::text AS shop_id,
+export const ORDER_COLUMNS = `o.order_id::text AS order_id, o.code, app.shop_display_order(o.order_id) AS display_code, o.client_ref::text AS client_ref, o.customer_user_id::text AS customer_user_id, o.shop_id::text AS shop_id,
   o.status, o.version::text AS version, o.shop_name, o.shop_phone, o.shop_address_text, o.recipient_name, o.recipient_phone, o.address_text, o.address_lat, o.address_lng,
   o.source_address_id::text AS source_address_id, o.note, ${ms('o.scheduled_for', 'scheduled_ms')},
   o.items_original_total_vnd::text AS items_original_total_vnd, o.items_total_vnd::text AS items_total_vnd, o.paid_vnd::text AS paid_vnd,
@@ -107,6 +109,7 @@ function toOrder(row: RawOrder): OrderRow {
   return {
     orderId: row.order_id,
     code: row.code,
+    displayCode: row.display_code ?? null,
     clientRef: row.client_ref,
     customerUserId: row.customer_user_id,
     shopId: row.shop_id,
@@ -429,7 +432,7 @@ export class OrderRepository {
                 WHEN 'delivering' THEN o.status = 'PREPARING' AND ld.state IN ('delivering', 'picked_up')
                 WHEN 'attention' THEN o.status = 'PREPARING' AND ld.state IN ('search_stopped', 'failed')
                 ELSE o.status IN ${ENDED} END
-          AND ($3::text IS NULL OR o.code ILIKE $3 ESCAPE '\\' OR o.recipient_name ILIKE $3 ESCAPE '\\')
+          AND ($3::text IS NULL OR o.code ILIKE $3 ESCAPE '\\' OR app.shop_display_order(o.order_id) ILIKE $3 ESCAPE '\\' OR OR o.recipient_name ILIKE $3 ESCAPE '\\')
           AND ($4::timestamptz IS NULL OR o.created_at >= $4::timestamptz)
           AND ($5::timestamptz IS NULL OR o.created_at < $5::timestamptz)
         ORDER BY CASE WHEN $2::text = 'scheduled' THEN o.scheduled_for END ASC NULLS LAST, o.created_at DESC, o.order_id
