@@ -241,16 +241,30 @@ export class M11World {
     return admin.call('POST', path, { basePath: '/v1/admin', body, cookies: sessionCookies(who), csrf: who.csrf, headers: { 'idempotency-key': key } });
   }
 
-  /** Runs the outbox consumer until it has nothing left to claim (what M08 would have done in the background). */
+  /** Drain the real M08 consumer, without silently stopping while earlier test events are still queued.
+   * This is only a test harness: production dispatch limits and notification behavior stay unchanged.
+   */
   async dispatch(): Promise<void> {
     const runtime = this.app.running.app.get(NotificationRuntime);
-    for (let i = 0; i < 20; i += 1) {
+    for (let i = 0; i < 200; i += 1) {
       const summary = await runtime.dispatcher.dispatchOnce();
+      if (summary.claimFailure !== undefined || summary.transitionErrors > 0 ||
+          summary.retryScheduled > 0 || summary.deadAfterFailure > 0 || summary.timedOut > 0) {
+        throw new Error(`M11 test outbox dispatch failed: ${JSON.stringify({
+          claimFailure: summary.claimFailure,
+          transitionErrors: summary.transitionErrors,
+          retryScheduled: summary.retryScheduled,
+          deadAfterFailure: summary.deadAfterFailure,
+          timedOut: summary.timedOut,
+        })}`);
+      }
       if (summary.claimed === 0) {
         return;
       }
     }
+    throw new Error('M11 test outbox still has claimable events after 200 passes');
   }
+
 
   #shopFood: string | undefined;
 
