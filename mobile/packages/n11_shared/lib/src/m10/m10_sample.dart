@@ -278,6 +278,7 @@ class SampleCustomerOrders extends CustomerOrderSource {
           ),
       ],
       note: null,
+      feeEstimateVnd: 10000,
       itemsVnd: store._cart.fold(0, (int s, DraftLine l) => s + (store._gone.contains(l.itemId) ? 0 : store.priceOf(kSampleDishes.firstWhere((SampleDish d) => d.id == l.itemId)) * l.quantity)),
     );
   }
@@ -305,8 +306,8 @@ class SampleCustomerOrders extends CustomerOrderSource {
         PreviewLine(itemId: l.itemId, name: l.name, note: l.note, quantity: l.quantity, priceVnd: store._gone.contains(l.itemId) ? null : store.priceOf(kSampleDishes.firstWhere((SampleDish d) => d.id == l.itemId)), issue: store._gone.contains(l.itemId) ? 'ITEM_UNAVAILABLE' : null),
     ];
     final int items = lines.fold(0, (int s, PreviewLine l) => s + (l.priceVnd ?? 0) * l.quantity);
-    final int? fee = draft.address.hasPin ? 10000 : null;
-    return CheckoutPreview(ok: lines.every((PreviewLine l) => l.issue == null), blockers: const <String>[], lines: lines, itemsVnd: items, feeEstimateVnd: fee, feeDistanceM: fee == null ? null : 2500, expectedTotalVnd: fee == null ? null : items + fee);
+    const int fee = 10000; // Sample M06 entry-tier reference; no route or pin is invented.
+    return CheckoutPreview(ok: lines.every((PreviewLine l) => l.issue == null), blockers: const <String>[], lines: lines, itemsVnd: items, feeEstimateVnd: fee, feeDistanceM: draft.address.hasPin ? 2500 : null, expectedTotalVnd: items + fee);
   }
 
   @override
@@ -331,7 +332,7 @@ class SampleCustomerOrders extends CustomerOrderSource {
       ..lng = draft.address.lng
       ..scheduledFor = draft.scheduledFor
       ..note = draft.note
-      ..feeEstimate = draft.address.hasPin ? 10000 : null;
+      ..feeEstimate = 10000;
     store._cart = <DraftLine>[];
     store._cartShop = null;
     if (store.dropNextPlaceAnswer) {

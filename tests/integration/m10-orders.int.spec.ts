@@ -158,9 +158,9 @@ describe('M10 — food orders', () => {
     const body = { shop_id: shop.shopId, lines: [{ item_id: pho.itemId, quantity: 2 }], recipient_name: 'An', recipient_phone: '0912345678', address: ADDRESS };
     const preview = ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', body));
     expect(preview).toMatchObject({ ok: true, blockers: [], items_total_vnd: 90_000, fee: { status: 'ESTIMATE', estimate_vnd: 10_000, distance_m: 2500 }, expected_total_vnd: 100_000 });
-    // A typed address without a pin: the fee cannot be priced and is said to be unknown, not zero.
+    // No pin: quote the system M06 entry tier, but NEVER invent a route distance or treat it as an agreed fee.
     const unpinned = ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', { ...body, address: { address_text: '5 Phố Cổ' } }));
-    expect(unpinned).toMatchObject({ ok: true, fee: { status: 'UNKNOWN', estimate_vnd: null }, expected_total_vnd: null });
+    expect(unpinned).toMatchObject({ ok: true, fee: { status: 'ESTIMATE', estimate_vnd: 10_000, distance_m: null }, expected_total_vnd: 100_000 });
     // A dish nobody sells is a blocker, not a silent drop.
     const bad = ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', { ...body, lines: [{ item_id: randomUUID(), quantity: 1 }] }));
     expect(bad.ok).toBe(false);

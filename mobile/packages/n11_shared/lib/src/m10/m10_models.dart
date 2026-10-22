@@ -482,7 +482,7 @@ class CartLine {
 }
 
 class CartView {
-  const CartView({required this.shopId, required this.shopName, required this.online, required this.lines, required this.note, required this.itemsVnd});
+  const CartView({required this.shopId, required this.shopName, required this.online, required this.lines, required this.note, required this.itemsVnd, this.feeEstimateVnd});
 
   factory CartView.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
@@ -494,6 +494,7 @@ class CartView {
       lines: <CartLine>[for (final Object? l in _list(m['lines'])) CartLine.fromJson(l)],
       note: _strOrNull(m['note']),
       itemsVnd: _int(m['items_total_vnd']),
+      feeEstimateVnd: _intOrNull(m['fee_estimate_vnd']),
     );
   }
 
@@ -503,6 +504,8 @@ class CartView {
   final List<CartLine> lines;
   final String? note;
   final int itemsVnd;
+  /// Provisional entry-tier rate from the active M06 table, not a final delivery fee.
+  final int? feeEstimateVnd;
 }
 
 /// One dish of a cart or a checkout the phone sends: the dish, the quantity, the note and (placing) the price the customer saw.
