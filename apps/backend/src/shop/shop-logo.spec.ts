@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
-import { BadRequestException } from '@nestjs/common';
+import { AppError } from '../common/app-errors';
+import { classifyException } from '../http/error-envelope';
 import { parseShopLogo, shopLogoFingerprint } from './shop-logo';
 import { parseShopProfileBody } from '../onboarding/shop-onboarding-validation';
 
@@ -12,10 +13,28 @@ describe('optional shop logo', () => {
     expect(parseShopLogo(null)).toBeNull();
     expect(parseShopLogo(logo)).toEqual(logo);
     for (const bad of [{ ...logo, content_type: 'image/jpeg' }, { ...logo, data_base64: 'not base64' }, { ...logo, user_id: 'other' }, { content_type: 'image/svg+xml', data_base64: Buffer.from('<svg/>').toString('base64') }]) {
-      expect(() => parseShopLogo(bad)).toThrow(BadRequestException);
+      expect(() => parseShopLogo(bad)).toThrow(AppError);
     }
     const large = Buffer.alloc(1048577); Buffer.from(png, 'base64').copy(large);
-    expect(() => parseShopLogo({ ...logo, data_base64: large.toString('base64') })).toThrow(BadRequestException);
+    expect(() => parseShopLogo({ ...logo, data_base64: large.toString('base64') })).toThrow(AppError);
+  });
+
+  it('exposes safe, separate errors at the actual one MiB boundary', () => {
+    for (const size of [1048576, 1048577, 1048578]) {
+      const bytes = Buffer.alloc(size); Buffer.from(png, 'base64').copy(bytes);
+      const input = { ...logo, data_base64: bytes.toString('base64') };
+      if (size === 1048576) expect(parseShopLogo(input)).toEqual(input);
+      else {
+        try { parseShopLogo(input); throw new Error('expected refusal'); }
+        catch (error) { expect(classifyException(error)).toMatchObject({ status: 413, code: 'SHOP_LOGO_TOO_LARGE' }); }
+      }
+    }
+    try { parseShopLogo({ ...logo, content_type: 'image/svg+xml' }); throw new Error('expected refusal'); }
+    catch (error) {
+      const envelope = classifyException(error);
+      expect(envelope).toMatchObject({ status: 400, code: 'INVALID_SHOP_LOGO' });
+      expect(JSON.stringify(envelope)).not.toContain(png);
+    }
   });
 
   it('fingerprints bytes and MIME deterministically, distinguishes content and removal', () => {

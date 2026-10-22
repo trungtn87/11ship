@@ -1,3 +1,4 @@
+import 'shop_logo_data.dart';
 import 'shop_logo_widgets.dart';
 import 'package:flutter/material.dart';
 
@@ -37,7 +38,7 @@ Widget _shopFailure(ShopController controller) {
     key: const Key('shop-error'),
     kind: BannerKind.error,
     title: 'Chưa hoàn tất',
-    text: <String>[switch (failure.kind) {
+    text: <String>[shopLogoFailureText(failure) ?? switch (failure.kind) {
       AuthFailureKind.badRequest => 'Máy chủ từ chối thông tin hồ sơ quán. Kiểm tra tên quán, số điện thoại và địa chỉ rồi thử lại.',
       AuthFailureKind.invalidServiceArea => 'Hệ thống chưa xác định được khu vực phục vụ cho quán. Bấm Hoàn tất hồ sơ để thử xác định lại.',
       AuthFailureKind.badResponse when controller.hasPendingWrite => 'Đã nhận phản hồi lưu nhưng chưa xác nhận được hồ sơ trên máy chủ. Thông tin vẫn được giữ; bấm Hoàn tất hồ sơ để kiểm tra lại.',
@@ -45,8 +46,8 @@ Widget _shopFailure(ShopController controller) {
       AuthFailureKind.unknownOutcome when (failure.status ?? 0) >= 500 => 'Máy chủ gặp lỗi khi xử lý hồ sơ quán. Chưa xác định được kết quả lưu; bấm Hoàn tất hồ sơ để kiểm tra lại.',
       _ => failureMessage(failure),
     }, if (failure.diagnostic != null) failure.diagnostic!].join('\n'),
-    trailing: controller.hasPendingWrite && canRetryFailure(failure)
-        ? N11Button(key: const Key('shop-retry'), label: 'Thử lại', compact: true, onPressed: controller.busy ? null : controller.finishProfile)
+    trailing: controller.hasPendingWrite
+        ? N11Button(key: const Key('shop-retry'), label: 'Kiểm tra / thử lại', compact: true, onPressed: controller.busy ? null : controller.finishProfile)
         : null,
   );
 }

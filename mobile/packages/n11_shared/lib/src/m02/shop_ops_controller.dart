@@ -520,6 +520,11 @@ class ShopOpsController extends ChangeNotifier {
     if (o == null || locked || readOnly) {
       return false;
     }
+    if (profile.logo != null && ShopLogoData.tryParse(<String, Object?>{'content_type': profile.logo!.contentType, 'data_base64': profile.logo!.encoded}) == null) {
+      _writeFailure = const AuthFailure(AuthFailureKind.badRequest, code: 'INVALID_SHOP_LOGO');
+      _notify();
+      return false;
+    }
     final Map<String, String> errors = validateProfile();
     _profileErrors = errors;
     if (errors.isNotEmpty) {
@@ -619,7 +624,12 @@ class ShopOpsController extends ChangeNotifier {
         return false;
       }
       if (response.status != 200 && response.status != 201) {
-        throw failureOf(response);
+        final AuthFailure failure = failureOf(response);
+        // A gateway/server failure may follow a committed write; retain the exact intent.
+        if (response.status >= 500) {
+          throw AuthFailure(AuthFailureKind.unknownOutcome, status: response.status, code: failure.code, requestId: failure.requestId);
+        }
+        throw failure;
       }
       _pending = null;
       _writeFailure = null;
@@ -639,7 +649,7 @@ class ShopOpsController extends ChangeNotifier {
       }
       _busy = false;
       if (failureView == _failureView) _writeFailure = failure;
-      if (!failure.outcomeUnknown) {
+      if (!shopWriteOutcomeUnknown(failure)) {
         // The outcome is decided (a refusal): the key and body are released.
         _pending = null;
         if (failure.kind == AuthFailureKind.versionConflict) {

@@ -123,6 +123,7 @@ class ShopController extends ChangeNotifier {
   void setLogo(ShopLogoData? value) {
     if (busy || hasPendingWrite || (_profile != null && _profile!.status != 'INCOMPLETE')) return;
     logo = value;
+    dismissFailure(notify: false);
     _notify();
   }
 
@@ -237,14 +238,27 @@ class ShopController extends ChangeNotifier {
     serviceAreaId = profile.serviceAreaId;
   }
 
+  /// Refresh untouched fields from the server while preserving what the owner typed.
+  void _rebaseDraft(ShopProfile previous, ShopProfile current) {
+    if (name.trim() == previous.name) name = current.name;
+    if (contactPhone.trim() == previous.contactPhone) contactPhone = current.contactPhone;
+    if (addressText.trim() == previous.addressText) addressText = current.addressText;
+    if (zalo.trim() == (previous.zalo ?? '')) zalo = current.zalo ?? '';
+    if (facebook.trim() == (previous.facebook ?? '')) facebook = current.facebook ?? '';
+    if (logo == previous.logo) logo = current.logo;
+    if (serviceAreaId == previous.serviceAreaId) serviceAreaId = current.serviceAreaId;
+    _formRevision++;
+  }
+
   /// GET profile (and, for a draft or a new profile, the ACTIVE areas). A new profile is NOT created here.
-  Future<void> load() async {
+  Future<void> load({bool acceptSavedSnapshot = false}) async {
     if (_busy) {
       return;
     }
     final int epoch = _epoch;
+    final bool keepDraft = !acceptSavedSnapshot && (hasPendingWrite || (_load == ShopLoad.ready && _profileChanged));
     _load = ShopLoad.loading;
-    _failure = null;
+    if (!hasPendingWrite) _failure = null;
     _notify();
     try {
       final ApiResponse response = await session.protectedCall('GET', '/v1/onboarding/shop/profile');
@@ -262,8 +276,12 @@ class ShopController extends ChangeNotifier {
       if (data != null && parsed == null) {
         throw AuthFailure(AuthFailureKind.badResponse, status: response.status, endpoint: '/v1/onboarding/shop/profile');
       }
+      final ShopProfile? previous = _profile;
       _profile = parsed;
-      if (parsed != null) {
+      if (parsed != null && previous != null && keepDraft && !hasPendingWrite) {
+        _rebaseDraft(previous, parsed);
+      }
+      if (parsed != null && !keepDraft) {
         _fillFormFromProfile(parsed);
       }
       if (parsed == null || parsed.status == 'INCOMPLETE') {
@@ -441,20 +459,25 @@ class ShopController extends ChangeNotifier {
     if (_busy) {
       return false;
     }
+    if (hasPendingWrite) return retryPending();
+    if (logo != null && ShopLogoData.tryParse(<String, Object?>{'content_type': logo!.contentType, 'data_base64': logo!.encoded}) == null) {
+      _failure = const AuthFailure(AuthFailureKind.badRequest, code: 'INVALID_SHOP_LOGO');
+      _notify();
+      return false;
+    }
     final String body = jsonEncode(_body());
-    final bool same = _pendingKind == 'save' && _pendingBody == body;
-    return _write(kind: 'save', method: 'PUT', path: '/v1/onboarding/shop/profile', body: body, key: same ? _pendingKey! : newIdempotencyKey());
+    return _write(kind: 'save', method: 'PUT', path: '/v1/onboarding/shop/profile', body: body, key: newIdempotencyKey());
   }
 
   /// POST complete with the stored version. Only for a profile the server holds with a point and an area.
   Future<bool> complete() async {
+    if (!_busy && hasPendingWrite) return retryPending();
     final ShopProfile? current = _profile;
     if (_busy || current == null || !current.readyToComplete) {
       return false;
     }
     final String body = jsonEncode(<String, Object?>{'expected_version': current.version});
-    final bool same = _pendingKind == 'complete' && _pendingBody == body;
-    return _write(kind: 'complete', method: 'POST', path: '/v1/onboarding/shop/complete', body: body, key: same ? _pendingKey! : newIdempotencyKey());
+    return _write(kind: 'complete', method: 'POST', path: '/v1/onboarding/shop/complete', body: body, key: newIdempotencyKey());
   }
 
   /// The person pressed "Thử lại" after a lost answer: the very same key and body.
@@ -498,7 +521,7 @@ class ShopController extends ChangeNotifier {
       }
       _busy = false;
       // Keep the intent and selected point until a valid server snapshot confirms the write.
-      await load();
+      await load(acceptSavedSnapshot: true);
       if (epoch != _epoch || _load != ShopLoad.ready || _profile == null) {
         if (epoch == _epoch && _failure == null) {
           _failure = const AuthFailure(AuthFailureKind.badResponse, status: 200, endpoint: '/v1/onboarding/shop/profile');
@@ -518,7 +541,7 @@ class ShopController extends ChangeNotifier {
       if (epoch != _epoch) {
         return false;
       }
-      final bool unknown = failure.outcomeUnknown;
+      final bool unknown = shopWriteOutcomeUnknown(failure);
       if (!unknown) {
         _pendingKind = null;
         _pendingBody = null;

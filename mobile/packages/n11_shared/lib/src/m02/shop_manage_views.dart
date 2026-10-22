@@ -1,3 +1,4 @@
+import '../flows/shop_logo_data.dart';
 import '../flows/shop_logo_widgets.dart';
 import 'package:flutter/material.dart';
 
@@ -429,9 +430,9 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
       if (ops.overview?.availability.reason == 'SERVICE_AREA_INACTIVE')
         const N11Banner(kind: BannerKind.warn, title: 'Khu vực phục vụ ngừng hoạt động', text: 'Hệ thống sẽ xác định khu vực phục vụ khi lưu hồ sơ.'),
       if (ops.stale) const N11Banner(key: Key('profile-stale'), kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.'),
-      if (ops.pending != null && ops.pending!.kind == OpsWriteKind.profile) UnknownOutcomeBanner(onRetry: ops.retryPending, busy: ops.busy),
+      if (ops.pending != null && ops.pending!.kind == OpsWriteKind.profile) UnknownOutcomeBanner(onRetry: ops.retryPending, busy: ops.busy, detail: failure == null ? null : shopLogoFailureText(failure)),
       if (failure != null && ops.pending == null && !ops.conflict)
-        N11Banner(key: const Key('profile-error'), kind: BannerKind.error, title: 'Chưa lưu được', text: m02FailureText(failure)),
+        N11Banner(key: const Key('profile-error'), kind: BannerKind.error, title: 'Chưa lưu được', text: shopLogoFailureText(failure) ?? m02FailureText(failure)),
       if (ops.savedNotReloaded)
         N11Banner(
           key: const Key('profile-saved-not-reloaded'),
