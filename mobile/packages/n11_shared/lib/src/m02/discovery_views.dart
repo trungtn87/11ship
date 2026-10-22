@@ -358,8 +358,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
   }
 }
 
-/// KP03: area, group and "only open shops", as a draft: closing the sheet applies nothing; "Đặt lại" clears the group and the switch and
-/// keeps the area; "Áp dụng" updates the list.
+/// KP03: group and open-only filters; the area follows foreground GPS and is not editable.
 class FilterSheet extends StatefulWidget {
   const FilterSheet({super.key, required this.controller});
 
@@ -532,7 +531,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   TextButton(key: const Key('search-cancel'), style: TextButton.styleFrom(minimumSize: const Size(kTapMin, kTapMin)), onPressed: () => Navigator.of(context).maybePop(), child: const Text('Hủy', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: N11Colors.black))),
                 ]),
               ),
-              _PositionButton(position: _position, retry: widget.retryPosition, resolving: widget.discovery?.resolvingArea ?? false, failed: widget.discovery?.areaResolutionFailed ?? false),
+              _PositionButton(position: _position, retry: widget.retryPosition, resolving: widget.discovery?.resolvingArea ?? false, failed: widget.discovery?.areaResolutionFailed ?? false, outsideCoverage: widget.discovery?.outsideCoverage ?? false),
               Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap3, N11Space.pad, N11Space.gap8), children: _results())),
             ],
           ),
@@ -545,7 +544,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final DishSearchController s = _search;
     Widget gap(Widget w) => Padding(padding: const EdgeInsets.only(bottom: N11Space.gap3), child: w);
     if (widget.discovery != null && widget.discovery!.areaId == null) {
-      return <Widget>[const Text('Chọn khu vực để tìm quán hoặc món.')];
+      return <Widget>[const Text('Chưa xác định khu vực theo GPS. Hãy quay lại trang chủ và thử định vị lại.')];
     }
     if (!s.hasTerm) {
       return <Widget>[const EmptyState(icon: Icons.search, title: 'Tìm quán hoặc món', text: 'Gõ tên quán hoặc tên món. Không cần gõ dấu.')];
@@ -631,19 +630,20 @@ class _DishResult extends StatelessWidget {
 }
 
 class _PositionButton extends StatelessWidget {
-  const _PositionButton({required this.position, this.retry, this.resolving = false, this.failed = false});
+  const _PositionButton({required this.position, this.retry, this.resolving = false, this.failed = false, this.outsideCoverage = false});
   final DiscoveryPosition position;
   final VoidCallback? retry;
   final bool resolving;
   final bool failed;
+  final bool outsideCoverage;
   @override
   Widget build(BuildContext context) {
-    if (position.fix != null && !resolving && !failed) return const SizedBox.shrink();
+    if (position.fix != null && !resolving && !failed && !outsideCoverage) return const SizedBox.shrink();
     final bool busy = position.loading || resolving;
-    final String label = busy ? 'Đang định vị…' : failed ? 'Chưa xác định được khu vực. Thử lại'
+    final String label = busy ? 'Đang định vị…' : outsideCoverage ? 'Thử xác định lại khu vực' : failed ? 'Chưa xác định được khu vực. Thử lại'
       : position.failure == LocationFailure.denied ? 'Chưa được cấp quyền vị trí. Thử lại'
       : position.failure == LocationFailure.disabled ? 'Vị trí đang tắt. Thử lại'
-      : position.attemptedAt != null ? 'Chưa lấy được vị trí. Thử lại' : 'Dùng vị trí hiện tại để xem khoảng cách';
+      : position.attemptedAt != null ? 'Chưa lấy được vị trí. Thử lại' : 'Đang chờ GPS. Thử lại';
     return TextButton.icon(
       key: const Key('discovery-locate'), onPressed: busy ? null : retry ?? position.locate,
       icon: const Icon(Icons.my_location, size: 18), label: Text(label),
