@@ -108,6 +108,8 @@ export class OrderCustomerService {
     const dishes = new Map((await this.menu.listPublicItems(context, shopId)).map((d) => [d.itemId, d]));
     const out: JsonObject[] = [];
     let total = 0;
+    // The cart has no destination: entry tier of the active M06 policy is only a provisional reference.
+    const baseQuote = await this.agreements.estimate(context, 0);
     for (const line of lines) {
       const dish = snapshot?.status === 'ACTIVE' ? dishes.get(line.itemId) : undefined;
       if (dish !== undefined) {
@@ -128,6 +130,7 @@ export class OrderCustomerService {
       lines: out,
       note,
       items_total_vnd: total,
+      fee_estimate_vnd: baseQuote.status === 'PRICED' ? baseQuote.feeVnd : null,
       version,
     };
   }
@@ -220,9 +223,11 @@ export class OrderCustomerService {
   }
 
   async #estimate(context: TransactionContext, shop: ShopSnapshot | undefined, prepared: PreparedCheckout, leg: RouteLeg | undefined): Promise<{ feeVnd: number | null; distanceM: number | null }> {
-    // A distance measured from another position (the shop moved while the route was asked) is not used: the fee stays unknown.
+    // A missing or stale route uses the M06 entry tier only as a provisional reference.
+    // Preserve null distance: this is neither a measured distance nor the fee agreed with a shipper.
     if (leg === undefined || shop?.pickupLat == null || shop.pickupLng == null || prepared.pickup === null || prepared.pickup.lat !== shop.pickupLat || prepared.pickup.lng !== shop.pickupLng) {
-      return { feeVnd: null, distanceM: null };
+      const base = await this.agreements.estimate(context, 0);
+      return { feeVnd: base.status === 'PRICED' ? base.feeVnd : null, distanceM: null };
     }
     const quote = await this.agreements.estimate(context, leg.distanceM);
     return quote.status === 'PRICED' ? { feeVnd: quote.feeVnd, distanceM: leg.distanceM } : { feeVnd: null, distanceM: leg.distanceM };
