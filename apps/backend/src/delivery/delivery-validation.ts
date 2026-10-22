@@ -241,7 +241,7 @@ export interface ShopListQuery {
 
 function shopListDate(value: unknown): number | null {
   if (value === undefined) return null;
-  if (typeof value !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$/.test(value)) return reject();
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value)) return reject();
   const parsed = Date.parse(value);
   if (!Number.isFinite(parsed)) return reject();
   return parsed;
