@@ -625,8 +625,8 @@ class ShopOpsController extends ChangeNotifier {
       }
       if (response.status != 200 && response.status != 201) {
         final AuthFailure failure = failureOf(response);
-        // A gateway/server failure may follow a committed write; retain the exact intent.
-        if (response.status >= 500) {
+        // The logo/profile recovery policy is scoped to profile writes.
+        if (write.kind == OpsWriteKind.profile && response.status >= 500) {
           throw AuthFailure(AuthFailureKind.unknownOutcome, status: response.status, code: failure.code, requestId: failure.requestId);
         }
         throw failure;
@@ -649,7 +649,10 @@ class ShopOpsController extends ChangeNotifier {
       }
       _busy = false;
       if (failureView == _failureView) _writeFailure = failure;
-      if (!shopWriteOutcomeUnknown(failure)) {
+      final bool unknown = write.kind == OpsWriteKind.profile
+          ? shopWriteOutcomeUnknown(failure)
+          : failure.outcomeUnknown;
+      if (!unknown) {
         // The outcome is decided (a refusal): the key and body are released.
         _pending = null;
         if (failure.kind == AuthFailureKind.versionConflict) {
