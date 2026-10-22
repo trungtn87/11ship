@@ -135,13 +135,9 @@ REVOKE ALL ON FUNCTION app.allocate_shop_display_number(uuid, varchar, uuid), ap
   app.shop_delivery_display_insert(), app.shop_display_new_shop(), app.shop_display_order(uuid), app.shop_display_direct(uuid),
   app.shop_display_delivery(uuid) FROM PUBLIC;
 
-DO $grants$
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ship11_app') THEN
-    GRANT EXECUTE ON FUNCTION app.shop_display_order(uuid), app.shop_display_delivery(uuid) TO ship11_app;
-  END IF;
-END;
-$grants$;
+-- The runtime role gets EXECUTE through ops/selfhosted/03-runtime-function-grants.sql.
+-- Keeping role-specific grants outside the schema migration supports non-selfhosted
+-- database environments and matches the existing runtime privilege workflow.
 
 -- Down Migration
 -- Do not lose business aliases after any orders or deliveries exist.
