@@ -229,7 +229,7 @@ void main() {
       final DiscoveryController c = DiscoveryController(api: seeded());
       addTearDown(c.dispose);
       await home(tester, c);
-      expect(find.text('Cao Bằng'), findsOneWidget);
+      expect(find.text('Cao Bằng · tham khảo'), findsOneWidget);
       final List<String> order = <String>['Zeta Ốc Hương', 'Alpha Hải Sản', 'Quán Chưa Lịch'];
       for (final String n in order) {
         expect(find.text(n), findsOneWidget);
