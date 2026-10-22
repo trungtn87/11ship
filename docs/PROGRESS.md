@@ -271,7 +271,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#161](https://github.com/trungtn87/11ship/pull/161) fix(M04): sửa DEVICE_PROOF_INVALID khi nạp tiền trên Android | Đã merge (`MERGED`) | — | — | — | `2c0d55b` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#162](https://github.com/trungtn87/11ship/pull/162) fix(native): prevent DEVICE_PROOF_INVALID across Shipper M0… | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `e481ef5` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#163](https://github.com/trungtn87/11ship/pull/163) M10/11Food: Hiển thị phí giao dự kiến theo bảng giá M06 khi… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `d29a68e` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#164](https://github.com/trungtn87/11ship/pull/164) M02/11Food: khu vực trên trang chủ tự theo GPS, không bắt k… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `13d30f6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#164](https://github.com/trungtn87/11ship/pull/164) M02/11Food: khu vực trên trang chủ tự theo GPS, không bắt k… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `93ab893` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
