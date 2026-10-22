@@ -274,17 +274,21 @@ class _CartScreenState extends State<CartScreen> {
                     ),
                   const Divider(color: N11Colors.line),
                   Row(children: <Widget>[const Expanded(child: Text('Tiền món', style: N11Text.bodyStrong)), Text(m10Money(cart.itemsVnd), key: const Key('cart-total'), style: N11Text.bodyStrong)]),
+                  Row(children: <Widget>[const Expanded(child: Text('Phí giao (dự tính)', style: N11Text.body)), Text(cart.feeEstimateVnd == null ? 'Chưa có bảng giá' : m10Money(cart.feeEstimateVnd!), key: const Key('cart-fee-estimate'), style: N11Text.body)]),
+                  if (cart.feeEstimateVnd != null) Row(children: <Widget>[const Expanded(child: Text('Tổng dự kiến', style: N11Text.bodyStrong)), Text(m10Money(cart.itemsVnd + cart.feeEstimateVnd!), key: const Key('cart-expected-total'), style: N11Text.bodyStrong)]),
                 ],
               ),
             ),
-            const ReasonNote('Giá và món được máy chủ kiểm lại khi gửi đơn. Phí giao tính riêng ở bước xác nhận; chưa xác định thì sẽ ghi rõ "Chưa xác định phí".'),
+            ReasonNote(cart.feeEstimateVnd == null
+              ? 'Chưa có bảng giá phí giao đang áp dụng. Tiền món chưa bao gồm phí giao.'
+              : 'Phí giao tạm tính theo mức khởi điểm M06. Hệ thống tính lại theo khoảng cách khi có tuyến giao; phí thực tế chốt sau.'),
           ],
           bottom: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               N11Button(
                 key: const Key('cart-continue'),
-                label: 'Tiếp tục · ${m10Money(cart.itemsVnd)}',
+                label: cart.feeEstimateVnd == null ? 'Tiếp tục' : 'Tiếp tục · ${m10Money(cart.itemsVnd + cart.feeEstimateVnd!)}',
                 onPressed: cart.hasUnavailable ? null : () => Navigator.of(context).push(n11Route(CheckoutScreen(runtime: widget.runtime, addresses: widget.addresses ?? widget.runtime.addresses, session: widget.session ?? widget.runtime.session))),
               ),
               const SizedBox(height: N11Space.gap2),
@@ -547,6 +551,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final bool blocked = p != null && (!p.ok || p.blockers.isNotEmpty);
     final bool ready = !cart.isEmpty && cart.shopId != null && !blocked && _attempt != _Attempt.sending && _attempt != _Attempt.unknown;
     final int items = p?.itemsVnd ?? cart.itemsVnd;
+    final int? estimateFee = p == null ? cart.feeEstimateVnd : p.feeEstimateVnd;
+    final int? expectedTotal = p == null ? (estimateFee == null ? null : items + estimateFee) : p.expectedTotalVnd;
     return m07Page(
       'Xác nhận đơn',
       source.isSample,
@@ -609,10 +615,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               const Text('Thanh toán trực tiếp', style: N11Text.label),
               KeyValueRows(<(String, String)>[
                 ('Tiền món', m10Money(items)),
-                (p?.feeEstimateVnd == null ? 'Phí giao' : 'Phí giao (dự tính)', m10Fee(p?.feeEstimateVnd)),
+                ('Phí giao (dự tính)', estimateFee == null ? 'Chưa có bảng giá' : m10Money(estimateFee)),
               ]),
-              if (p?.expectedTotalVnd != null) Row(children: <Widget>[const Expanded(child: Text('Tổng dự kiến', style: N11Text.bodyStrong)), Text(m10Money(p!.expectedTotalVnd!), key: const Key('checkout-total'), style: N11Text.bodyStrong)])
-              else const ReasonNote('Chưa xác định phí giao nên chưa có tổng cuối. Tiền món và phí được tính riêng.'),
+              if (expectedTotal != null) Row(children: <Widget>[const Expanded(child: Text('Tổng dự kiến', style: N11Text.bodyStrong)), Text(m10Money(expectedTotal), key: const Key('checkout-total'), style: N11Text.bodyStrong)])
+              else const ReasonNote('Chưa có bảng giá phí giao áp dụng; tiền món chưa bao gồm phí giao.'),
+              if (estimateFee != null && (p == null || p.feeDistanceM == null))
+                const ReasonNote('Đang dùng mức khởi điểm theo bảng giá hệ thống. Phí dự kiến sẽ được cập nhật khi có khoảng cách tuyến giao.'),
               if (_previewing) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: LinearProgressIndicator()),
               const SizedBox(height: N11Space.gap2),
               const ReasonNote('Bạn thanh toán trực tiếp cho quán/shipper. Ứng dụng không giữ tiền hàng và không thanh toán online.'),
@@ -637,7 +645,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         else if (_failure != null && !_changed)
           N11Banner(key: const Key('checkout-failed'), kind: BannerKind.error, title: 'Chưa gửi được đơn', text: m10FailureText(_failure!)),
       ],
-      bottom: N11Button(key: const Key('checkout-send'), validate: true, label: 'Gửi đơn · ${m10Money(items)}', loading: _attempt == _Attempt.sending, onPressed: ready ? () => unawaited(_send()) : null),
+      bottom: N11Button(key: const Key('checkout-send'), validate: true, label: expectedTotal == null ? 'Gửi đơn' : 'Gửi đơn · ${m10Money(expectedTotal)}', loading: _attempt == _Attempt.sending, onPressed: ready ? () => unawaited(_send()) : null),
     );
   }
 
