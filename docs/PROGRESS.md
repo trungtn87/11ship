@@ -278,7 +278,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#170](https://github.com/trungtn87/11ship/pull/170) M01: xác thực tài khoản/phiên Android, bỏ attestation bắt b… | Đã merge (`MERGED`) | — | — | — | `f0b05d8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#171](https://github.com/trungtn87/11ship/pull/171) ops: diagnose immutable VPS release mismatch without modify… | Đã merge (`MERGED`) | — | — | — | `54727b6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#172](https://github.com/trungtn87/11ship/pull/172) fix(deploy): reproducible fresh builds and reviewed M01 rol… | Đã merge (`MERGED`) | — | — | — | `2cb08f8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#178](https://github.com/trungtn87/11ship/pull/178) M07: sửa luồng nhận hàng, thương lượng phí và quyền hủy (Ow… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `c6c7cc3` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#178](https://github.com/trungtn87/11ship/pull/178) M07: sửa luồng nhận hàng, thương lượng phí và quyền hủy (Ow… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `c6c7cc3` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
