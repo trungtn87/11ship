@@ -21,11 +21,7 @@ export interface ClientAuthSettings {
    * GET /v1/client-auth/config reports and what selects the registration body of POST /v1/client-auth/register.
    */
   readonly phoneVerificationMode: ClientPhoneVerificationMode;
-  /**
-   * The native Android gate (CLIENT_AUTH_ANDROID_ENABLED + valid pinned trust, development/test on loopback only). Absent or
-   * false: every ANDROID request is a fail-closed 503, exactly like before the native binding existed. True does NOT
-   * accept an ANDROID request by itself: the device proof headers are verified on every request (ClientDeviceProofService).
-   */
+  /** Legacy APK/device-proof compatibility only. Password sessions never require this verifier. */
   readonly androidEnabled?: boolean;
 }
 
@@ -38,29 +34,16 @@ export function clientAuthSettingsFrom(config: AppConfig, deviceTrust?: unknown)
   };
 }
 
-/**
- * The device gate of contract11 sections 6 and 7, applied before anything is read or written:
- *  - ANDROID needs the native gate (settings.androidEnabled): without it SERVICE_UNAVAILABLE (503). The platform label is never
- *    accepted as a proof and there is no device_id fallback; with the gate on, the proof headers are verified by
- *    ClientDeviceProofService before anything is created or consumed.
- *  - WEB is accepted only in LOCAL_WEB mode; anywhere else (production, staging, a non-loopback bind) it needs a device
- *    proof that WEB cannot give: DEVICE_PROOF_REQUIRED (403).
- */
+/** Android uses credentials/OTP and Bearer sessions. device_id is metadata, never authentication.
+ * WEB retains its existing local-development restriction. Legacy proof is verified separately when presented. */
 export function assertDeviceAllowed(settings: ClientAuthSettings, device: ClientDevice): void {
   assertPlatformAllowed(settings, device.platform);
 }
 
-/**
- * The same gate by platform alone. The endpoints that take a Bearer token (me, context, logout; M01.04) apply it to the
- * platform RECORDED on the session, so a session of a platform that this process cannot vouch for is never served: not an
- * ANDROID one (no verifier), and not a WEB one outside the explicit local mode.
- */
+/** Platform routing is separate from token validation and live account/role authorization. */
 export function assertPlatformAllowed(settings: ClientAuthSettings, platform: ClientPlatform): void {
   if (platform === 'ANDROID') {
-    if (settings.androidEnabled === true) {
-      return;
-    }
-    throw new TechnicalError('unavailable', 'The Android device proof verifier is not available');
+    return;
   }
   if (platform === 'WEB' && settings.localWeb) {
     return;

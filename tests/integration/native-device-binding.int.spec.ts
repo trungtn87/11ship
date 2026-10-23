@@ -132,14 +132,14 @@ describe('native device binding (fixture attestation)', () => {
   }
 
   describe('the gate and the challenge endpoint', () => {
-    it('with no pinned trust every ANDROID request stays a fail-closed 503 (challenge, register, login)', async () => {
+    it('without trust only legacy enrollment is unavailable; password registration and login work', async () => {
       const challenge = await closedApp.call('POST', '/client-auth/device/challenges', { body: { app: 'FOOD', purpose: 'ENROLL', key_id: null } });
       expect([challenge.status, errorCode(challenge)]).toEqual([503, 'SERVICE_UNAVAILABLE']);
       const phone = randomPhone();
       const register = await closedApp.call('POST', '/client-auth/register', { headers: { 'idempotency-key': randomUUID() }, body: registerBody(phone, 'FOOD') });
-      expect([register.status, errorCode(register)]).toEqual([503, 'SERVICE_UNAVAILABLE']);
+      expect(register.status).toBe(201);
       const login = await closedApp.call('POST', '/client-auth/login', { headers: { 'idempotency-key': randomUUID() }, body: loginBody(phone, 'FOOD') });
-      expect([login.status, errorCode(login)]).toEqual([503, 'SERVICE_UNAVAILABLE']);
+      expect(login.status).toBe(200);
     });
 
     it('answers 201 with the exact challenge shape, no-store, and refuses malformed bodies', async () => {

@@ -277,7 +277,7 @@ export class ClientSessionService {
     // revoked (outside the transaction below: it opens its own for the nonce). A stale token (binding replaced) may still be
     // logged out by that same key.
     const known = await this.transactions.withTransaction((context) => this.sessions.findByDigest(context, digest));
-    if (known !== undefined && isNativeSession(known.platform, known.app)) {
+    if (known !== undefined && known.authMethod !== 'PASSWORD' && isNativeSession(known.platform, known.app)) {
       if (!this.originPolicy.allows({ accountOrigin: known.accountOrigin, phoneNormalized: known.phoneNormalized })) {
         throw new AppError('SESSION_INVALID');
       }

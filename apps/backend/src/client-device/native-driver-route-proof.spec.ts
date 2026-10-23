@@ -67,6 +67,7 @@ describe('native signed body preservation on client API route families', () => {
   const token = randomBytes(32).toString('base64url');
   const key = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const nonces = new Set<string>();
+  let authMethod = 'LEGACY_DEVICE_PROOF';
 
   beforeAll(async () => {
     const transactions = {
@@ -89,7 +90,7 @@ describe('native signed body preservation on client API route families', () => {
       providers: [
         { provide: APP_LOGGER, useValue: new JsonLogger(() => undefined) },
         { provide: SessionService, useValue: { authenticate: async () => ({
-          userId: randomUUID(), sessionId: randomUUID(), platform: 'ANDROID', app: 'SHIP',
+          userId: randomUUID(), sessionId: randomUUID(), platform: 'ANDROID', app: 'SHIP', authMethod,
         }) } },
         { provide: ClientDeviceProofService, useValue: proof },
       ],
@@ -101,7 +102,7 @@ describe('native signed body preservation on client API route families', () => {
   });
 
   afterAll(async () => { await app?.close(); });
-  beforeEach(() => nonces.clear());
+  beforeEach(() => { nonces.clear(); authMethod = 'LEGACY_DEVICE_PROOF'; });
 
   function headers(path: string, body: string, method = 'POST'): Record<string, string> {
     const idempotencyKey = randomUUID();
@@ -132,6 +133,23 @@ describe('native signed body preservation on client API route families', () => {
     const response = await fetch(origin + path, { method, headers: headers(path, body, method), body });
     expect(response.status).toBe(200);
     expect((await response.json()) as unknown).toMatchObject({ data: JSON.parse(body) as unknown });
+  });
+
+  it.each([
+    ['/v1/driver/me/accepting', 'POST'],
+    ['/v1/driver/wallet/topup-requests', 'POST'],
+    ['/v1/driver/location', 'PUT'],
+    ['/v1/customers/me/orders', 'POST'],
+    ['/v1/notifications/read', 'POST'],
+    ['/v1/driver/complaints', 'POST'],
+  ])('PASSWORD sessions reach %s without hardware proof (domain checks are separate)', async (path, method) => {
+    authMethod = 'PASSWORD';
+    const response = await fetch(origin + path, { method,
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-device-signature': 'invalid-legacy-signature' },
+      body: '{}',
+    });
+    expect(response.status).toBe(200);
+    expect(nonces.size).toBe(0);
   });
 
   it('keeps the larger M11 evidence parser before the driver-wide default parser', async () => {

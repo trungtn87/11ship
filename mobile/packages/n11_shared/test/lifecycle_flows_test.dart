@@ -27,7 +27,7 @@ void main() {
       final RecordedRequest register = t.api.to('POST', '/v1/client-auth/register').single;
       final Map<String, Object?> body = jsonDecode(register.body) as Map<String, Object?>;
       expect(body.keys.toSet(), <String>{'phone', 'password', 'device', 'full_name', 'consent'});
-      expect(register.headers['x-device-registration'], isNotEmpty, reason: 'the device proof still applies');
+      expect(register.headers['x-device-registration'], isNull, reason: 'OTP policy remains independent of device hardware');
       expect(t.session.status, SessionStatus.signedIn);
     });
 

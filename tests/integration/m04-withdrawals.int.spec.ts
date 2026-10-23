@@ -246,7 +246,7 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
     const phone = randomPhone();
     const proof = await obtainProof(client, phone);
     const key = randomUUID();
-    const body = { phone: phone.local, password: PASSWORD, verification_token: proof.proofToken, device: WEB_SHIP, full_name: 'Nguyễn Văn Mới', consent: { terms_version: TERMS, privacy_version: PRIVACY } };
+    const body = { phone: phone.local, password: PASSWORD, verification_token: proof.proofToken, device: { ...WEB_SHIP, platform: 'ANDROID' }, full_name: 'Nguyễn Văn Mới', consent: { terms_version: TERMS, privacy_version: PRIVACY } };
     const registered = await client.call('POST', '/client-auth/register', { headers: { 'idempotency-key': key }, body });
     expect(registered.status).toBe(201);
     const data = dataOf(registered);
@@ -260,6 +260,18 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
     expect(dataOf(replay).user_id).toBe(data.user_id);
     expect(await countRows(client.pool, 'SELECT 1 FROM app.drivers WHERE user_id = $1::uuid', [data.user_id])).toBe(1);
     expect(errorCode(await client.call('POST', '/driver/me/accepting', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { expected_version: profile.version, accepting: true } }))).toBe('DRIVER_WALLET_NOT_READY');
+  });
+
+  it('Android PASSWORD wallet withdrawal holds once and never debits before manual confirmation', async () => {
+    const old = await newShipper(100_000);
+    const s = { ...old, token: await loginAs(old.phone, { ...WEB_SHIP, platform: 'ANDROID' }) };
+    const key = randomUUID();
+    const first = await withdraw(s, { amount_vnd: 50_000 }, key);
+    expect(first.status).toBe(201);
+    const repeated = await withdraw(s, { amount_vnd: 50_000 }, key);
+    expect(dataOf(repeated).withdrawal_id).toBe(dataOf(first).withdrawal_id);
+    expect(await wallet(s)).toEqual({ balance: '100000', held: '50000' });
+    expect(await debits(s.walletId)).toBe(0);
   });
 
   it('M03: confirmed funding enables activity without a bank; pending topup credits nothing; Admin suspension blocks activity', async () => {

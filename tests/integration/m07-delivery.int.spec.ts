@@ -112,7 +112,7 @@ describe('M07 — delivery flow', () => {
     app.call(method, path, { bearer: s.token, ...(method !== 'GET' ? { headers: { 'idempotency-key': key } } : {}), ...(body === undefined ? {} : { body }) });
 
   /** An ACTIVE, accepting Shipper with a wallet, ledger credit and a fresh position near the shop (committed, then purged with the account). */
-  async function newShipper(funds = 50_000, near = true): Promise<Shipper> {
+  async function newShipper(funds = 50_000, near = true, android = false): Promise<Shipper> {
     const phone = randomPhone();
     app.track(phone.normalized);
     const proof = await obtainProof(app, phone);
@@ -122,7 +122,7 @@ describe('M07 — delivery flow', () => {
     });
     expect(registered.status).toBe(201);
     const userId = String(dataOf(registered).user_id);
-    const loggedIn = await app.call('POST', '/client-auth/login', { headers: { 'idempotency-key': randomUUID() }, body: { phone: phone.local, password: PASSWORD, device: { ...WEB_SHIP } } });
+    const loggedIn = await app.call('POST', '/client-auth/login', { headers: { 'idempotency-key': randomUUID() }, body: { phone: phone.local, password: PASSWORD, device: { ...WEB_SHIP, ...(android ? { platform: 'ANDROID' } : {}) } } });
     expect(loggedIn.status).toBe(200);
     const token = String(dataOf(loggedIn).access_token);
     const created = await app.call('POST', '/onboarding/driver', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { full_name: `Shipper ${tag}`, plate_number: '59X1-123.45' } });
@@ -323,8 +323,8 @@ describe('M07 — delivery flow', () => {
     expect(await wallet(s)).toEqual({ balance: 49_000, held: 0 });
   });
 
-  it('full path: accept, pickup, complete: the commission is captured once and the delivery is completed', async () => {
-    const s = await newShipper();
+  it('PASSWORD Android full path: accept, pickup, complete: the commission is captured once and the delivery is completed', async () => {
+    const s = await newShipper(50_000, true, true);
     const view = await acceptNew(s);
     let current = view;
     if (current.state === 'accepted') {

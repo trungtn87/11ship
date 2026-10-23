@@ -7,6 +7,8 @@ export interface AuthPrincipal {
   /** The platform and app recorded on the session (immutable); a native session is ANDROID + FOOD/SHIP. */
   readonly platform?: string;
   readonly app?: string;
+  /** Immutable server-side authentication mode, never taken from a client header. */
+  readonly authMethod?: string;
 }
 
 /** Minimal request shape the guard and the controller share (no Express typings needed). */

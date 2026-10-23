@@ -125,7 +125,7 @@ AuthFailure failureOf(ApiResponse response, {String? endpoint}) {
       kind = AuthFailureKind.roleNotAvailable;
     case 'AUTH_REGISTRATION_UNAVAILABLE':
       kind = AuthFailureKind.verificationUnsupported;
-    case 'DEVICE_RATE_LIMITED' || 'OTP_RATE_LIMITED':
+    case 'LOGIN_RATE_LIMITED' || 'DEVICE_RATE_LIMITED' || 'OTP_RATE_LIMITED':
       kind = AuthFailureKind.rateLimited;
     case 'OTP_INVALID':
       kind = AuthFailureKind.otpInvalid;

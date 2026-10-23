@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
-import { AuthApp, countRows, dataOf, errorCode, PASSWORD, randomPhone, startAuthApp } from './support/auth-fixtures';
+import { AuthApp, countRows, dataOf, PASSWORD, randomPhone, startAuthApp } from './support/auth-fixtures';
 import { FixtureTrust, NativePhone } from './support/native-device-fixtures';
 
 // Issue #102: the Android apps register in REQUIRED mode (OTP + verification_token) and the OTP proof does NOT replace the native
@@ -42,14 +42,15 @@ describe('ANDROID registration in REQUIRED mode (OTP proof + native device proof
     consent: { terms_version: TERMS, privacy_version: PRIVACY },
   });
 
-  it('needs the native proof as well as the OTP proof: the OTP alone creates nothing and consumes nothing', async () => {
+  it('accepts OTP registration without hardware proof and serves the returned session immediately', async () => {
     const phone = randomPhone();
     app.track(phone.normalized);
     const proof = await proofFor(phone);
     const bare = await app.call('POST', '/client-auth/register', { headers: { 'idempotency-key': randomUUID() }, body: bodyOf(phone, proof) });
-    expect([bare.status, errorCode(bare)]).toEqual([403, 'DEVICE_PROOF_REQUIRED']);
-    expect(await countRows(app.pool, 'SELECT 1 FROM app.users WHERE phone_normalized = $1', [phone.normalized])).toBe(0);
-    expect(await countRows(app.pool, 'SELECT 1 FROM app.verification_proofs WHERE phone_normalized = $1 AND consumed_at IS NOT NULL', [phone.normalized])).toBe(0);
+    expect(bare.status).toBe(201);
+    expect((await app.call('GET', '/client-auth/me', { bearer: String(dataOf(bare).access_token) })).status).toBe(200);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.users WHERE phone_normalized = $1', [phone.normalized])).toBe(1);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.verification_proofs WHERE phone_normalized = $1 AND consumed_at IS NOT NULL', [phone.normalized])).toBe(1);
   });
 
   it('registers with both proofs, binds the session to the device, and replays a lost answer with the SAME token', async () => {

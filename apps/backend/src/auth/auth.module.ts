@@ -1,3 +1,4 @@
+import { ClientLoginLimiter } from '../client-auth/client-login-limiter';
 import { WalletModule } from '../wallet/wallet.module';
 import { ClientPasswordService } from '../client-auth/client-password-service';
 import { DynamicModule, Module } from '@nestjs/common';
@@ -137,6 +138,7 @@ export class AuthModule {
         ClientIdentityReader,
         ClientRegistrationService,
         ClientLoginService,
+        ClientLoginLimiter,
         ClientSessionAuthority,
         ClientSessionService,
         ClientPasswordService,
