@@ -168,10 +168,12 @@ class PublicCategory {
 /// What a customer (or the owner's preview) sees of a shop. Only public fields.
 @immutable
 class ShopMenuView {
-  const ShopMenuView({required this.name, required this.address, required this.availabilityReason, required this.serverNow, required this.hours, required this.categories});
+  const ShopMenuView({required this.name, required this.address, required this.availabilityReason, required this.serverNow, required this.hours, required this.categories, this.logoUrl, this.logoBytes});
 
   final String name;
   final String address;
+  final String? logoUrl;
+  final Uint8List? logoBytes;
 
   /// ONLINE / OUTSIDE_BUSINESS_HOURS / NO_BUSINESS_HOURS (anything else: the shop is not shown to customers).
   final String availabilityReason;
@@ -206,6 +208,7 @@ ShopMenuView previewOf({
   required DateTime? serverNow,
   required WeekSchedule hours,
   required MenuSnapshot menu,
+  Uint8List? logoBytes,
 }) {
   final List<PublicCategory> categories = <PublicCategory>[];
   for (final MenuCategory category in menu.categories) {
@@ -217,5 +220,5 @@ ShopMenuView previewOf({
       categories.add(PublicCategory(name: category.name, items: items));
     }
   }
-  return ShopMenuView(name: name, address: address, availabilityReason: reason, serverNow: serverNow, hours: hours, categories: categories);
+  return ShopMenuView(logoBytes: logoBytes, name: name, address: address, availabilityReason: reason, serverNow: serverNow, hours: hours, categories: categories);
 }

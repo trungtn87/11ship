@@ -442,3 +442,29 @@ List<String> linesOf(List<HourRange> ranges) => dayLines(ranges);
       return (label: 'Chưa rõ trạng thái', text: 'Chưa xác định được trạng thái hoạt động. Thử tải lại.', kind: ChipKind.neutral);
   }
 }
+
+/// The same square, uncropped frame for public logos and saved owner previews.
+class ShopLogoImage extends StatelessWidget {
+  const ShopLogoImage({super.key, this.url, this.bytes});
+  final String? url;
+  final Uint8List? bytes;
+
+  @override
+  Widget build(BuildContext context) {
+    const Widget fallback = Center(child: Icon(Icons.storefront_outlined, size: 36, color: N11Colors.black));
+    return AspectRatio(
+      aspectRatio: 1,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: ColoredBox(
+          color: N11Colors.yellowSoft,
+          child: bytes != null
+              ? Image.memory(bytes!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => fallback)
+              : url == null || url!.isEmpty
+                  ? fallback
+                  : Image.network(url!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => fallback),
+        ),
+      ),
+    );
+  }
+}

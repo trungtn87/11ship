@@ -35,6 +35,17 @@ ShopMenuView customerView({String reason = 'OUTSIDE_BUSINESS_HOURS', bool items 
     );
 
 void main() {
+  testWidgets('unavailable public logo falls back without hiding the menu or hours action', (tester) async {
+    await harness(tester, width: 320);
+    final view = ShopMenuView(name: 'Ốc 11', address: 'Cao Bằng', availabilityReason: 'ONLINE', serverNow: null, hours: week(), categories: customerView().categories, logoUrl: 'https://example.test/missing-logo.png');
+    await show(tester, ShopPublicScreen(api: FakePublicShopApi(view), shopId: 's1'));
+    expect(find.descendant(of: find.byKey(const Key('shop-view-logo')), matching: find.byIcon(Icons.storefront_outlined)), findsOneWidget);
+    expect(find.text('Ốc hương hấp'), findsOneWidget);
+    await tapKey(tester, 'shop-view-hours');
+    expect(find.text('Giờ Việt Nam · chỉ xem'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('F09: the preview leaves hidden dishes out and says so; showing a dish brings it back', (WidgetTester tester) async {
     final Harness h = await harness(tester, menu: seeded());
     await show(tester, PreviewScreen(flows: h.flows));
@@ -165,7 +176,7 @@ void main() {
     expect(find.text('Ốc 11'), findsNothing);
   });
 
-  for (final double width in <double>[360, 390]) {
+  for (final double width in <double>[320, 360, 390]) {
     testWidgets('layout at ${width.toInt()}px: K01 with a very long shop and dish name does not overflow', (WidgetTester tester) async {
       await harness(tester, width: width);
       final ShopMenuView view = ShopMenuView(
@@ -179,6 +190,9 @@ void main() {
       await show(tester, ShopPublicScreen(api: FakePublicShopApi(view), shopId: 's1'));
       expect(tester.takeException(), isNull);
       expect(find.text('99.999.999 đ'), findsOneWidget);
+      final Size logo = tester.getSize(find.byKey(const Key('shop-view-logo')));
+      expect(logo.width, closeTo(logo.height, .01));
+      expect(tester.getTopLeft(find.byKey(const Key('shop-view-logo'))).dx, lessThan(tester.getTopLeft(find.byKey(const Key('shop-view-name'))).dx));
     });
   }
 }

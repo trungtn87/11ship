@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { AuthApp, dataOf, startAuthApp, registerUser } from './support/auth-fixtures';
+import { publicShop } from './support/menu-fixtures';
 import { createShopOwner, getShop, profileBody, putProfile } from './support/shop-management-fixtures';
 
 const png = readFileSync('tests/fixtures/shop-logo-256.png').toString('base64');
@@ -51,6 +52,9 @@ describe('shop logo saved with the versioned profile', () => {
     expect(oversized.status).toBe(413);
     expect(oversized.body).toMatchObject({ error: { code: 'SHOP_LOGO_TOO_LARGE' } });
     expect(dataOf(await getShop(app, owner.token)).logo).toEqual(logo);
+    const detail = dataOf(await publicShop(app, owner.shopId));
+    expect(detail.logo_url).toBe(`/v1/shops/${owner.shopId}/logo?v=3`);
+    expect(detail).not.toHaveProperty('logo');
     const url = `${app.running.baseUrl}/v1/shops/${owner.shopId}/logo`;
     const image = await fetch(url);
     expect(image.status).toBe(200);
@@ -66,6 +70,7 @@ describe('shop logo saved with the versioned profile', () => {
     await app.pool.query("UPDATE app.shops SET status = 'ACTIVE' WHERE shop_id = $1", [owner.shopId]);
     expect((await putProfile(app, owner.token, profileBody(owner, { expected_version: 4, logo: null }))).status).toBe(200);
     expect(dataOf(await getShop(app, owner.token)).logo).toBeUndefined();
+    expect(dataOf(await publicShop(app, owner.shopId)).logo_url).toBeUndefined();
     expect((await fetch(url)).status).toBe(404);
   });
 });

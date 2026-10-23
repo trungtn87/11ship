@@ -132,6 +132,7 @@ class HttpPublicShopApi implements PublicShopApi {
     }
     final Object? at = availability['evaluated_at'];
     return ShopMenuView(
+      logoUrl: data['logo_url'] == null ? null : base.resolve(_str(data['logo_url'])).toString(),
       name: _str(data['name']),
       address: _str(data['address_text']),
       availabilityReason: _str(availability['reason']),

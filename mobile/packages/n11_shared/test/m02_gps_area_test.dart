@@ -30,6 +30,19 @@ FakeDiscoveryApi apiOf() => FakeDiscoveryApi(
             id: lat == 1 ? 'a1' : 'a2', name: lat == 1 ? 'Vùng 1' : 'Vùng 2');
 
 void main() {
+  testWidgets('outside coverage is explained below the search heading in the list', (tester) async {
+    final gps = FakeLocationProvider()..next = fix(0);
+    final c = DiscoveryController(api: apiOf(), position: DiscoveryPosition(provider: gps));
+    addTearDown(c.dispose);
+    await tester.pumpWidget(MaterialApp(theme: buildN11Theme(), home: Scaffold(body: DiscoveryHome(controller: c, publicApi: const UnwiredPublicShopApi()))));
+    await tester.pumpAndSettle();
+    expect(c.outsideCoverage, isTrue);
+    expect(find.byKey(const Key('shop-s1')), findsNothing);
+    expect(tester.getTopLeft(find.byKey(const Key('home-outside-coverage'))).dy,
+      greaterThan(tester.getBottomLeft(find.byKey(const Key('home-search'))).dy));
+    expect(tester.takeException(), isNull);
+  });
+
   test(
       'GPS replaces manual area; same-area fixes do not reload; outside coverage has no fallback',
       () async {

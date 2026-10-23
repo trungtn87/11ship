@@ -105,6 +105,7 @@ void main() {
     api.routes['GET /v1/shops/s1'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{
           'data': <String, Object?>{
             'shop_id': 's1',
+            'logo_url': '/v1/shops/s1/logo?v=3',
             'name': 'Ốc 11',
             'address_text': '12 Phố Kim Đồng',
             'timezone': 'Asia/Ho_Chi_Minh',
@@ -123,6 +124,7 @@ void main() {
     api.routes['GET /v1/shops/s3'] = (String m, String p, Map<String, String> h, String b) async => apiError(403, 'SHOP_UNAVAILABLE');
     final HttpPublicShopApi shops = HttpPublicShopApi(transport: api, base: base);
     final ShopMenuView view = await shops.load('s1');
+    expect(view.logoUrl, 'https://api.example.test/v1/shops/s1/logo?v=3');
     expect(view.availabilityReason, 'OUTSIDE_BUSINESS_HOURS');
     expect(view.serverNow, DateTime.utc(2026, 10, 14, 11, 30));
     expect(view.hours[0].single.open, '17:00');

@@ -136,30 +136,25 @@ class _ShopMenuContentState extends State<ShopMenuContent> {
     ].where((PublicCategory c) => c.items.isNotEmpty).toList();
     return vstack(<Widget>[
       N11Card(
-        child: Column(
+        child: LayoutBuilder(builder: (context, constraints) => Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Row(
+            SizedBox(width: constraints.maxWidth * .33, child: ShopLogoImage(key: const Key('shop-view-logo'), url: view.logoUrl, bytes: view.logoBytes)),
+            const SizedBox(width: N11Space.gap3),
+            Expanded(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Expanded(child: Text(view.name, key: const Key('shop-view-name'), style: const TextStyle(fontSize: 22, height: 1.25, fontWeight: FontWeight.w800, color: N11Colors.black))),
-                if (widget.preview) const Padding(padding: EdgeInsets.only(left: N11Space.gap2), child: N11Chip('Xem trước', kind: ChipKind.dark)),
-              ],
-            ),
-            if (view.address.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Icon(Icons.place_outlined, size: 16, color: N11Colors.ink2), const SizedBox(width: 4), Expanded(child: Text(view.address, style: N11Text.caption))])),
-            const SizedBox(height: N11Space.gap3),
-            Wrap(
-              spacing: N11Space.gap3,
-              runSpacing: N11Space.gap2,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: <Widget>[
+                Text(view.name, key: const Key('shop-view-name'), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, height: 1.25, fontWeight: FontWeight.w800, color: N11Colors.black)),
+                if (widget.preview) const N11Chip('Xem trước', kind: ChipKind.dark),
+                if (view.address.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(view.address, maxLines: 2, overflow: TextOverflow.ellipsis, style: N11Text.caption)),
+                const SizedBox(height: N11Space.gap2),
                 N11Chip(chip.label, key: const Key('shop-view-chip'), kind: chip.kind),
                 N11Link('Xem giờ hoạt động ›', key: const Key('shop-view-hours'), onPressed: widget.onHours),
+                if (widget.ratings != null) widget.ratings!,
               ],
-            ),
-            if (widget.ratings != null) ...<Widget>[const SizedBox(height: N11Space.gap3), widget.ratings!],
+            )),
           ],
-        ),
+        )),
       ),
       if (!view.hasItems)
         N11InfoCard(key: const Key('shop-view-empty'), title: widget.emptyText)
@@ -255,7 +250,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
         } else if (o == null || snapshot == null) {
           body = const <Widget>[M02Skeleton(rows: 1, height: 110), M02Skeleton(rows: 4, height: 76)];
         } else {
-          final ShopMenuView view = previewOf(name: o.name, address: o.addressText, reason: o.availability.reason, serverNow: o.availability.evaluatedAt, hours: o.hours, menu: snapshot);
+          final ShopMenuView view = previewOf(name: o.name, address: o.addressText, reason: o.availability.reason, serverNow: o.availability.evaluatedAt, hours: o.hours, menu: snapshot, logoBytes: o.logo?.bytes);
           final bool shown = o.isActive && o.availability.reason != 'SERVICE_AREA_INACTIVE';
           body = <Widget>[
             if (!shown) const N11Banner(key: Key('preview-not-public'), kind: BannerKind.warn, title: 'Quán hiện chưa hiển thị cho khách', text: 'Đây là bản xem trước dành cho chủ quán. Khách chưa tìm thấy quán này.'),
