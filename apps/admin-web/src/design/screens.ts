@@ -82,6 +82,7 @@ function screenIdOf(route: Route): { id: string; variant?: string } {
       return { id: 'user-detail' };
     case 'administrators':
       return { id: 'administrators' };
+    case 'order-timeouts':
     case 'settings':
       return { id: 'settings' };
     case 'categories':
@@ -115,11 +116,15 @@ function screenIdOf(route: Route): { id: string; variant?: string } {
     case 'invitation-revoke':
       return { id: 'invitation-detail', variant: 'revoke' };
     // The Shipper pages (M03) have no design-catalog sample: the preview shows the overview.
+    case 'monitoring-errors':
     case 'finance-bank-accounts':
     case 'shippers':
     case 'shipper':
     case 'deliveries':
+    case 'orders':
     case 'notifications':
+    case 'reviews':
+    case 'complaints':
     case 'wallet-parameters':
     case 'shipping-policy':
     // M13 pages show real data only; the preview has no sample for them.

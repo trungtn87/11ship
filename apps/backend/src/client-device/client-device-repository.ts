@@ -482,7 +482,7 @@ export class ClientDeviceRepository {
    */
   async nativeSessionState(context: TransactionContext, sessionId: string): Promise<'NOT_NATIVE' | 'USABLE' | 'UNBOUND'> {
     const result = await context.query<{ native: boolean; usable: boolean }>(
-      `SELECT (s.platform = 'ANDROID' AND s.app IN ('FOOD', 'SHIP')) AS native,
+      `SELECT (s.platform = 'ANDROID' AND s.app IN ('FOOD', 'SHIP') AND s.auth_method <> 'PASSWORD') AS native,
               COALESCE(csb.is_current AND b.deactivated_at IS NULL AND b.generation = csb.generation
                        AND l.detached_at IS NULL AND k.revoked_at IS NULL, false) AS usable
          FROM app.sessions s

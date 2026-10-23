@@ -31,12 +31,13 @@ typedef M07LocationSlot = Widget Function(BuildContext context);
 enum _ShipView { mine, offers, history }
 
 class ShipperDeliveryHub extends StatefulWidget {
-  const ShipperDeliveryHub({super.key, required this.source, this.mapBuilder, this.pinPicker, this.locationSlot});
+  const ShipperDeliveryHub({super.key, required this.source, this.mapBuilder, this.pinPicker, this.locationSlot, this.feedbackSlot});
 
   final ShipperDeliverySource source;
   final M07MapBuilder? mapBuilder;
   final M07PinPickerBuilder? pinPicker;
   final M07LocationSlot? locationSlot;
+  final M07FeedbackSlot? feedbackSlot;
 
   @override
   State<ShipperDeliveryHub> createState() => _ShipperDeliveryHubState();
@@ -47,7 +48,7 @@ class _ShipperDeliveryHubState extends State<ShipperDeliveryHub> with M07Actions
   int _rev = 0;
 
   Future<void> _open(DeliveryView d) async {
-    await Navigator.of(context).push(n11Route(ShipperDeliveryDetailScreen(source: widget.source, deliveryId: d.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker, locationSlot: widget.locationSlot)));
+    await Navigator.of(context).push(n11Route(ShipperDeliveryDetailScreen(source: widget.source, deliveryId: d.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker, locationSlot: widget.locationSlot, feedbackSlot: widget.feedbackSlot)));
     if (mounted) {
       setState(() => _rev++);
     }
@@ -78,17 +79,18 @@ class _ShipperDeliveryHubState extends State<ShipperDeliveryHub> with M07Actions
 
   Future<void> _counter(OfferView o) async {
     final TextEditingController amount = TextEditingController();
+    final GlobalKey<FormState> form = GlobalKey<FormState>();
     final bool? yes = await showDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => Form(key: form, child: AlertDialog(
         key: const Key('m07-counter-dialog'),
         title: const Text('Đề xuất mức phí khác', style: N11Text.h2),
-        content: N11Field(fieldKey: const Key('m07-counter-amount'), label: 'Mức phí bạn đề xuất (đ)', controller: amount, keyboard: TextInputType.number, maxLength: 10),
+        content: N11Field(validator: (String value) => parseAgreedFee(value) == null ? 'Nhập phí là số nguyên từ 0 đến 10.000.000đ.' : null, fieldKey: const Key('m07-counter-amount'), label: 'Mức phí bạn đề xuất (đ)', controller: amount, keyboard: TextInputType.number, maxLength: 10),
         actions: <Widget>[
           TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Quay lại')),
-          TextButton(key: const Key('m07-counter-send'), onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('Gửi đề xuất', style: TextStyle(fontWeight: FontWeight.w700))),
+          TextButton(key: const Key('m07-counter-send'), onPressed: () { if (form.currentState!.validate()) Navigator.of(dialogContext).pop(true); }, child: const Text('Gửi đề xuất', style: TextStyle(fontWeight: FontWeight.w700))),
         ],
-      ),
+      )),
     );
     final int? value = parseAgreedFee(amount.text);
     amount.dispose();
@@ -293,6 +295,8 @@ class _MineCard extends StatelessWidget {
       return (label: 'Bạn đã hủy nhận', kind: ChipKind.neutral);
     case 'released_by_admin':
       return (label: 'Admin đã gỡ bạn khỏi đơn', kind: ChipKind.warn);
+    case 'cancelled_by_system':
+      return (label: 'Hệ thống hủy quá hạn', kind: ChipKind.neutral);
     case 'cancelled_by_shop':
       return (label: 'Quán đã hủy yêu cầu giao', kind: ChipKind.neutral);
   }
@@ -302,13 +306,14 @@ class _MineCard extends StatelessWidget {
 // ---- S03 / S06 / S08: detail -----------------------------------------------------------------------------------------
 
 class ShipperDeliveryDetailScreen extends StatefulWidget {
-  const ShipperDeliveryDetailScreen({super.key, required this.source, required this.deliveryId, this.mapBuilder, this.pinPicker, this.locationSlot});
+  const ShipperDeliveryDetailScreen({super.key, required this.source, required this.deliveryId, this.mapBuilder, this.pinPicker, this.locationSlot, this.feedbackSlot});
 
   final ShipperDeliverySource source;
   final String deliveryId;
   final M07MapBuilder? mapBuilder;
   final M07PinPickerBuilder? pinPicker;
   final M07LocationSlot? locationSlot;
+  final M07FeedbackSlot? feedbackSlot;
 
   @override
   State<ShipperDeliveryDetailScreen> createState() => _ShipperDeliveryDetailScreenState();
@@ -404,6 +409,7 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
       Row(children: <Widget>[Expanded(child: Text(d.code, key: const Key('m07-ship-code'), style: N11Text.title)), N11Chip(chip.label, kind: chip.kind)]),
       actionBanner(),
       if (active && widget.locationSlot != null) widget.locationSlot!(context),
+      if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed)) widget.feedbackSlot!(context, d),
       if (active && widget.mapBuilder != null && pins.isNotEmpty)
         SizedBox(key: const Key('m07-ship-map'), height: 220, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusCard), child: widget.mapBuilder!(context, pins))),
       if (active && d.state != DeliveryState.delivering && (d.needsDestination || d.fee.amountVnd == null))
@@ -569,14 +575,14 @@ class _ConfirmDestinationScreenState extends State<ConfirmDestinationScreen> wit
             ),
           ),
         Text(_lat == null ? 'Chạm vào bản đồ để ghim điểm giao.' : 'Đã ghim ${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)}', key: const Key('m07-pin-text'), style: N11Text.caption),
-        if (_needsFee) N11Field(fieldKey: const Key('m07-agreed-fee'), label: 'Phí thỏa thuận (đ)', controller: _fee, keyboard: TextInputType.number, maxLength: 10, hint: 'Phí bạn và bên trả phí đã thống nhất. Sau khi nhận hàng sẽ bị khóa.')
+        if (_needsFee) N11Field(validator: (String value) => parseAgreedFee(value) == null ? 'Nhập phí là số nguyên từ 0 đến 10.000.000đ.' : null, fieldKey: const Key('m07-agreed-fee'), label: 'Phí thỏa thuận (đ)', controller: _fee, keyboard: TextInputType.number, maxLength: 10, hint: 'Phí bạn và bên trả phí đã thống nhất. Sau khi nhận hàng sẽ bị khóa.')
         else
           N11Card(child: KeyValueRows(<(String, String)>[('Phí giao đã chốt', m07Vnd(d.fee.amountVnd))])),
         const ReasonNote('Điểm ghim chỉ dùng cho đơn này, không ghi ngược vào sổ địa chỉ của khách.'),
         if (_problem != null) N11Banner(key: const Key('m07-dest-problem'), kind: BannerKind.error, title: 'Chưa xác nhận được', text: _problem),
         actionBanner(),
       ],
-      bottom: N11Button(key: const Key('m07-dest-submit'), label: 'Xác nhận điểm giao', loading: busy, onPressed: busy ? null : _submit),
+      bottom: N11Button(key: const Key('m07-dest-submit'), validate: true, label: 'Xác nhận điểm giao', loading: busy, onPressed: busy ? null : _submit),
     );
   }
 }
@@ -608,6 +614,7 @@ class _FailDeliveryScreenState extends State<FailDeliveryScreen> with M07Actions
   bool get _ready => _reason != null && _goods != null && (_reason != 'OTHER' || _note.text.trim().isNotEmpty);
 
   Future<void> _submit() async {
+    if (!_ready) return;
     final bool yes = await showConfirmDialog(context, title: 'Xác nhận giao thất bại?', confirmLabel: 'Xác nhận', content: const Text('Hoa hồng được giải phóng và hồ sơ xử lý hàng được mở cho quán. Hàng ở tay bạn thì bạn vẫn chịu trách nhiệm cho tới khi hàng về quán.', style: N11Text.lead));
     if (!yes || !mounted) {
       return;
@@ -640,12 +647,12 @@ class _FailDeliveryScreenState extends State<FailDeliveryScreen> with M07Actions
       <Widget>[
         const Text('Lý do giao thất bại', style: N11Text.label),
         for (final (String code, String label) in kFailReasons) N11ChoiceCard(key: Key('m07-reason-$code'), title: label, selected: _reason == code, onTap: () => setState(() => _reason = code)),
-        N11Field(fieldKey: const Key('m07-fail-note'), label: 'Ghi chú', controller: _note, maxLength: 200, optionalLabel: _reason != 'OTHER', onChanged: () => setState(() {})),
+        N11Field(requiredInput: _reason == 'OTHER', fieldKey: const Key('m07-fail-note'), label: 'Ghi chú', controller: _note, maxLength: 200, optionalLabel: _reason != 'OTHER', onChanged: () => setState(() {})),
         const Text('Hàng hiện ở đâu?', style: N11Text.label),
         for (final (String code, String label) in kGoodsConditions) N11ChoiceCard(key: Key('m07-goods-$code'), title: label, selected: _goods == code, onTap: () => setState(() => _goods = code)),
         actionBanner(),
       ],
-      bottom: N11Button(key: const Key('m07-fail-submit'), label: 'Xác nhận giao thất bại', loading: busy, onPressed: busy || !_ready ? null : _submit),
+      bottom: N11Button(key: const Key('m07-fail-submit'), validate: true, label: 'Xác nhận giao thất bại', loading: busy, onPressed: busy || _reason == null || _goods == null ? null : _submit),
     );
   }
 }

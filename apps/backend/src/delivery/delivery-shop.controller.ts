@@ -86,14 +86,6 @@ export class DeliveryShopController {
     return { data: outcome.payload };
   }
 
-  /** A call from a confirmed food order (M10). Refused until M10 is connected; direct calls do not use this route. */
-  @Post('orders/:order_id/delivery')
-  @HttpCode(201)
-  async fromOrder(@Param('order_id') id: string, @Body() body: unknown, @Req() request: AuthenticatedRequest) {
-    parseEmptyBody(body);
-    return { data: await this.shop.createFromOrder(this.#principal(request), parseDeliveryId(id)) };
-  }
-
   #principal(request: AuthenticatedRequest): AuthPrincipal {
     if (request.auth === undefined) {
       // Unreachable behind the guard; fail closed rather than act without an identity.

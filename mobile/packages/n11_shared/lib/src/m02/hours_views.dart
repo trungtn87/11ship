@@ -31,6 +31,7 @@ class _HoursScreenState extends State<HoursScreen> {
   @override
   void initState() {
     super.initState();
+    ops.dismissWriteFailure(notify: false);
     _seenNotice = ops.noticeSeq;
     ops.addListener(_onOps);
     ops.session.addListener(_gone);
@@ -41,6 +42,7 @@ class _HoursScreenState extends State<HoursScreen> {
 
   @override
   void dispose() {
+    ops.dismissWriteFailure(notify: false);
     ops.removeListener(_onOps);
     ops.session.removeListener(_gone);
     super.dispose();
@@ -171,7 +173,7 @@ class _HoursScreenState extends State<HoursScreen> {
               : <Widget>[
                   if (dirty || ops.busy) N11Button(key: const Key('hours-revert'), label: 'Bỏ thay đổi', kind: ButtonKind.secondary, onPressed: ops.locked ? null : ops.revertHours),
                   N11Button(
-                    key: const Key('hours-save'),
+                    key: const Key('hours-save'), validate: true,
                     label: ops.busy ? 'Đang lưu…' : 'Lưu lịch',
                     loading: ops.busy,
                     onPressed: ops.locked || !dirty ? null : _save,
@@ -454,24 +456,179 @@ class _HourEditorScreenState extends State<HourEditorScreen> {
   }
 
   Widget _timeField(int i, String label, TextEditingController controller, Key key, void Function(String) assign, bool errored) {
-    return N11Field(
-      fieldKey: key,
-      label: label,
-      controller: controller,
-      keyboard: TextInputType.number,
-      maxLength: 5,
-      placeholder: 'HH:MM',
-      tone: errored ? FieldTone.error : FieldTone.normal,
-      onChanged: () {
-        // Only the colon is inserted while typing digits; what the person typed is never replaced.
-        final String raw = controller.text;
-        final String digits = raw.replaceAll(RegExp(r'\D'), '');
-        final String shaped = digits.length > 2 ? '${digits.substring(0, 2)}:${digits.substring(2, digits.length > 4 ? 4 : digits.length)}' : digits;
-        if (shaped != raw && !(raw.length == 3 && raw.endsWith(':') && digits.length == 2)) {
-          controller.value = TextEditingValue(text: shaped, selection: TextSelection.collapsed(offset: shaped.length));
-        }
-        setState(() => assign(controller.text));
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(label, style: N11Text.label),
+        const SizedBox(height: N11Space.gap2),
+        TextField(
+          key: key,
+          controller: controller,
+          readOnly: true,
+          enableInteractiveSelection: false,
+          style: N11Text.bodyStrong,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: N11Colors.white,
+            suffixIcon: const Icon(Icons.schedule, color: N11Colors.ink2),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(kRadiusControl),
+              borderSide: BorderSide(color: errored ? N11Colors.error : N11Colors.line),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(kRadiusControl),
+              borderSide: const BorderSide(color: N11Colors.yellow, width: 2),
+            ),
+          ),
+          onTap: () async {
+            final HourRange range = _ranges[i];
+            final String? selected = await showModalBottomSheet<String>(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: N11Colors.white,
+              builder: (BuildContext context) => _HourWheelPicker(label: label, value: controller.text, allow24: controller == _close[i] && range.kind == RangeKind.day),
+            );
+            if (!mounted || selected == null || !_ranges.contains(range)) {
+              return;
+            }
+            setState(() {
+              controller.text = selected;
+              assign(selected);
+            });
+          },
+        ),
+      ],
+    );
+  }
+}
+
+/// Changes stay inside the sheet until Xong; dismissing keeps the editor draft.
+class _HourWheelPicker extends StatefulWidget {
+  const _HourWheelPicker({required this.label, required this.value, required this.allow24});
+
+  final String label;
+  final String value;
+  final bool allow24;
+
+  @override
+  State<_HourWheelPicker> createState() => _HourWheelPickerState();
+}
+
+class _HourWheelPickerState extends State<_HourWheelPicker> {
+  late int _hour;
+  late int _minute;
+  late final FixedExtentScrollController _hours;
+  late final FixedExtentScrollController _minutes;
+
+  @override
+  void initState() {
+    super.initState();
+    final int initial = parseHm(widget.value, allow24: widget.allow24) ?? 0;
+    _hour = initial ~/ 60;
+    _minute = initial % 60;
+    _hours = FixedExtentScrollController(initialItem: _hour);
+    _minutes = FixedExtentScrollController(initialItem: _minute);
+  }
+
+  @override
+  void dispose() {
+    _hours.dispose();
+    _minutes.dispose();
+    super.dispose();
+  }
+
+  Widget _wheel({required String label, required String keyName, required FixedExtentScrollController controller, required int count, required ValueChanged<int> onChanged}) {
+    return Expanded(
+      child: Column(
+        children: <Widget>[
+          Text(label, style: N11Text.label),
+          const SizedBox(height: N11Space.gap2),
+          Expanded(
+            child: Stack(
+              alignment: Alignment.center,
+              children: <Widget>[
+                IgnorePointer(
+                  child: Container(
+                    height: 48,
+                    decoration: BoxDecoration(color: N11Colors.yellowFaint, borderRadius: BorderRadius.circular(kRadiusControl)),
+                  ),
+                ),
+                Semantics(
+                  label: label,
+                  child: ListWheelScrollView.useDelegate(
+                    key: Key(keyName),
+                    controller: controller,
+                    itemExtent: 48,
+                    physics: const FixedExtentScrollPhysics(),
+                    perspective: 0.003,
+                    onSelectedItemChanged: onChanged,
+                    childDelegate: ListWheelChildBuilderDelegate(
+                      childCount: count,
+                      builder: (BuildContext context, int index) => Center(child: Text(index.toString().padLeft(2, '0'), style: N11Text.h2)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(N11Space.pad),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(widget.label, style: N11Text.h2),
+            const SizedBox(height: N11Space.gap3),
+            SizedBox(
+              height: 240,
+              child: Row(
+                children: <Widget>[
+                  _wheel(
+                    label: 'Giờ',
+                    keyName: 'time-picker-hours',
+                    controller: _hours,
+                    count: widget.allow24 ? 25 : 24,
+                    onChanged: (int hour) {
+                      setState(() {
+                        _hour = hour;
+                        if (hour == 24) {
+                          _minute = 0;
+                          _minutes.jumpToItem(0);
+                        }
+                      });
+                    },
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: N11Space.gap2),
+                    child: Text(':', style: N11Text.h2),
+                  ),
+                  _wheel(label: 'Phút', keyName: 'time-picker-minutes', controller: _minutes, count: _hour == 24 ? 1 : 60, onChanged: (int minute) => setState(() => _minute = minute)),
+                ],
+              ),
+            ),
+            const SizedBox(height: N11Space.gap3),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: N11Button(key: const Key('time-picker-cancel'), label: 'Hủy', kind: ButtonKind.secondary, onPressed: () => Navigator.of(context).pop()),
+                ),
+                const SizedBox(width: N11Space.gap3),
+                Expanded(
+                  child: N11Button(key: const Key('time-picker-done'), label: 'Xong', onPressed: () => Navigator.of(context).pop(formatHm(_hour * 60 + _minute))),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

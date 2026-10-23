@@ -8,6 +8,8 @@ import '../m06/m06_views.dart' show kFeeNotePrivacyHint, noteLooksLikePhone, par
 import '../tokens.dart';
 import '../wallet/wallet_models.dart';
 import '../widgets/components.dart';
+import '../widgets/shop_order_filters.dart';
+import '../widgets/form_feedback.dart';
 import 'm07_models.dart';
 import 'm07_source.dart';
 import 'm07_widgets.dart';
@@ -36,40 +38,77 @@ class ShopCallDraft {
 // ---- Q01: list -------------------------------------------------------------------------------------------------------
 
 class ShopDeliveryHub extends StatefulWidget {
-  const ShopDeliveryHub({super.key, required this.source, this.mapBuilder, this.pinPicker});
+  const ShopDeliveryHub({super.key, required this.source, this.mapBuilder, this.pinPicker, this.feedbackSlot});
 
   final ShopDeliverySource source;
   final M07MapBuilder? mapBuilder;
   final M07PinPickerBuilder? pinPicker;
+  final M07FeedbackSlot? feedbackSlot;
 
   @override
   State<ShopDeliveryHub> createState() => _ShopDeliveryHubState();
 }
 
+const List<ShopOrderFilterChoice> _deliveryStatusOptions = <ShopOrderFilterChoice>[
+  (value: 'all', label: 'Tất cả'),
+  (value: 'searching', label: 'Đang tìm shipper'),
+  (value: 'accepted', label: 'Shipper đã nhận'),
+  (value: 'delivering', label: 'Đang giao'),
+  (value: 'completed', label: 'Hoàn thành'),
+  (value: 'failed', label: 'Không thành công / Đã hủy'),
+];
+
 class _ShopDeliveryHubState extends State<ShopDeliveryHub> {
-  bool _history = false;
+  ShopOrderFilters _filters = const ShopOrderFilters();
   final TextEditingController _query = TextEditingController();
   String _applied = '';
+  int _offset = 0;
+  Timer? _debounce;
   int _rev = 0;
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _query.dispose();
     super.dispose();
   }
 
-  Future<void> _call() async {
-    await Navigator.of(context).push(n11Route(ShopCallScreen(source: widget.source, pinPicker: widget.pinPicker, mapBuilder: widget.mapBuilder)));
-    if (mounted) {
-      setState(() => _rev++);
-    }
+  void _onSearchChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      if (mounted && value.trim() != _applied) {
+        setState(() { _applied = value.trim(); _offset = 0; });
+      }
+    });
   }
 
-  Future<void> _open(DeliveryView d) async {
-    await Navigator.of(context).push(n11Route(ShopDeliveryDetailScreen(source: widget.source, deliveryId: d.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker)));
-    if (mounted) {
-      setState(() => _rev++);
-    }
+  Future<void> _chooseFilters() async {
+    final ShopOrderFilters? next = await showShopOrderFilters(
+      context,
+      current: _filters,
+      statuses: _deliveryStatusOptions,
+    );
+    if (mounted && next != null) setState(() { _filters = next; _offset = 0; });
+  }
+
+  void _reset() {
+    _debounce?.cancel();
+    _query.clear();
+    setState(() {
+      _filters = const ShopOrderFilters();
+      _applied = '';
+      _offset = 0;
+    });
+  }
+
+  Future<void> _call() async {
+    await Navigator.of(context).push(n11Route(ShopCallScreen(source: widget.source, pinPicker: widget.pinPicker, mapBuilder: widget.mapBuilder)));
+    if (mounted) setState(() => _rev++);
+  }
+
+  Future<void> _open(DeliveryView delivery) async {
+    await Navigator.of(context).push(n11Route(ShopDeliveryDetailScreen(source: widget.source, deliveryId: delivery.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker, feedbackSlot: widget.feedbackSlot)));
+    if (mounted) setState(() => _rev++);
   }
 
   @override
@@ -80,49 +119,67 @@ class _ShopDeliveryHubState extends State<ShopDeliveryHub> {
         if (widget.source.isSample) const Padding(padding: EdgeInsets.only(bottom: N11Space.gap3), child: M07SampleBanner()),
         N11Button(key: const Key('m07-call-shipper'), label: 'Gọi shipper', icon: Icons.two_wheeler, onPressed: _call),
         const SizedBox(height: N11Space.gap3),
-        Wrap(
-          spacing: N11Space.gap3,
-          runSpacing: N11Space.gap2,
-          children: <Widget>[
-            N11Button(key: const Key('m07-tab-active'), label: 'Đang xử lý', compact: true, kind: _history ? ButtonKind.secondary : ButtonKind.primary, onPressed: () => setState(() => _history = false)),
-            N11Button(key: const Key('m07-tab-history'), label: 'Lịch sử', compact: true, kind: _history ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _history = true)),
-          ],
-        ),
-        const SizedBox(height: N11Space.gap3),
-        N11Field(
-          fieldKey: const Key('m07-search'),
-          label: 'Tìm theo mã hoặc người nhận',
-          controller: _query,
-          textInputAction: TextInputAction.search,
-          onChanged: () {
-            final String next = _query.text;
-            Future<void>.delayed(const Duration(milliseconds: 300), () {
-              if (mounted && _query.text == next && next != _applied) {
-                setState(() {
-                  _applied = next;
-                  _rev++;
-                });
-              }
-            });
-          },
-        ),
+        Row(children: <Widget>[
+          Expanded(
+            child: TextField(
+              key: const Key('m07-search'),
+              controller: _query,
+              textInputAction: TextInputAction.search,
+              onChanged: _onSearchChanged,
+              onSubmitted: (String value) {
+                _debounce?.cancel();
+                setState(() => _applied = value.trim());
+              },
+              decoration: InputDecoration(
+                hintText: 'Tìm mã đơn hoặc tên người nhận',
+                prefixIcon: const Icon(Icons.search),
+                filled: true,
+                fillColor: N11Colors.white,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: const BorderSide(color: N11Colors.line)),
+              ),
+            ),
+          ),
+          const SizedBox(width: N11Space.gap2),
+          IconButton(
+            key: const Key('m07-filter'),
+            tooltip: 'Lọc trạng thái và ngày',
+            onPressed: _chooseFilters,
+            icon: Stack(clipBehavior: Clip.none, children: <Widget>[
+              const Icon(Icons.filter_list),
+              if (_filters.isActive) const Positioned(right: -3, top: -3, child: CircleAvatar(radius: 4, backgroundColor: Colors.orange)),
+            ]),
+          ),
+        ]),
         const SizedBox(height: N11Space.gap3),
         M07Loader<List<DeliveryView>>(
-          key: ValueKey<String>('$_history|$_applied|$_rev'),
+          key: ValueKey<String>('m07|${_filters.status}|$_applied|${_filters.from?.toIso8601String()}|${_filters.toExclusive?.toIso8601String()}|$_rev|$_offset'),
           keyPrefix: 'm07-list',
           refreshEvery: const Duration(seconds: 20),
-          load: () => widget.source.list(history: _history, query: _applied),
-          isEmpty: (List<DeliveryView> v) => v.isEmpty,
+          load: () => widget.source.listFiltered(filter: _filters.status, query: _applied, from: _filters.from, to: _filters.toExclusive, offset: _offset),
+          isEmpty: (List<DeliveryView> items) => items.isEmpty,
           emptyIcon: Icons.two_wheeler,
-          emptyTitle: _history ? 'Chưa có lịch sử giao hàng' : 'Chưa có yêu cầu giao nào',
-          emptyText: _history ? 'Các yêu cầu đã kết thúc sẽ hiện ở đây.' : 'Bấm "Gọi shipper" để gọi shipper giao một đơn.',
+          emptyTitle: 'Không có đơn phù hợp',
+          emptyText: 'Hãy thử tìm kiếm hoặc thay đổi bộ lọc.',
           builder: (BuildContext context, List<DeliveryView> items, Future<void> Function() reload) => Column(
             children: <Widget>[
-              for (final DeliveryView d in items)
-                Padding(padding: const EdgeInsets.only(bottom: N11Space.gap3), child: _DeliveryCard(delivery: d, onTap: () => _open(d))),
+              for (final DeliveryView delivery in items)
+                Padding(padding: const EdgeInsets.only(bottom: N11Space.gap3), child: _DeliveryCard(delivery: delivery, onTap: () => _open(delivery))),
+              if (items.length == 50)
+                TextButton(
+                  key: const Key('m07-page-next'),
+                  onPressed: () => setState(() => _offset += 50),
+                  child: const Text('Trang sau'),
+                ),
             ],
           ),
         ),
+        if (_offset > 0) TextButton(
+          key: const Key('m07-page-previous'),
+          onPressed: () => setState(() => _offset -= 50),
+          child: Text('Trang trước · Trang ${_offset ~/ 50 + 1}'),
+        ),
+        if (_filters.isActive || _applied.isNotEmpty)
+          TextButton(key: const Key('m07-clear-filters'), onPressed: _reset, child: const Text('Xóa bộ lọc')),
       ],
     );
   }
@@ -295,20 +352,20 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
       'Gọi shipper',
       widget.source.isSample,
       <Widget>[
-        N11Field(fieldKey: const Key('m07-f-name'), label: 'Tên người nhận', controller: _field('name'), maxLength: 80),
-        N11Field(fieldKey: const Key('m07-f-phone'), label: 'Số điện thoại người nhận', controller: _field('phone'), keyboard: TextInputType.phone, maxLength: 15),
-        N11Field(fieldKey: const Key('m07-f-address'), label: 'Địa chỉ giao (mô tả)', controller: _field('address'), maxLength: 200),
+        N11Field(requiredInput: true, fieldKey: const Key('m07-f-name'), label: 'Tên người nhận', controller: _field('name'), maxLength: 80),
+        N11Field(validator: recipientPhoneError, fieldKey: const Key('m07-f-phone'), label: 'Số điện thoại người nhận', controller: _field('phone'), keyboard: TextInputType.phone, maxLength: 15),
+        N11Field(requiredInput: true, fieldKey: const Key('m07-f-address'), label: 'Địa chỉ giao (mô tả)', controller: _field('address'), maxLength: 200),
         _pinSection(),
-        N11Field(fieldKey: const Key('m07-f-goods'), label: 'Mô tả hàng', controller: _field('goods'), maxLength: 120),
-        N11Field(fieldKey: const Key('m07-f-value'), label: 'Giá trị hàng (đ)', controller: _field('value'), keyboard: TextInputType.number, maxLength: 12),
-        N11Field(fieldKey: const Key('m07-f-paid'), label: 'Tiền hàng đã thanh toán (đ)', controller: _field('paid'), keyboard: TextInputType.number, maxLength: 12, optionalLabel: true, hint: 'Để trống nếu khách chưa trả trước.'),
+        N11Field(requiredInput: true, fieldKey: const Key('m07-f-goods'), label: 'Mô tả hàng', controller: _field('goods'), maxLength: 120),
+        N11Field(validator: (String value) => parseVndInput(value) == null ? 'Nhập giá trị hàng là số nguyên, có thể là 0.' : null, fieldKey: const Key('m07-f-value'), label: 'Giá trị hàng (đ)', controller: _field('value'), keyboard: TextInputType.number, maxLength: 12),
+        N11Field(validator: (String value) { if (value.trim().isEmpty) return null; final int? paid = parseVndInput(value); final int? goods = parseVndInput(_field('value').text); return paid == null || (goods != null && paid > goods) ? 'Tiền đã thanh toán phải từ 0 đến giá trị hàng.' : null; }, fieldKey: const Key('m07-f-paid'), label: 'Tiền hàng đã thanh toán (đ)', controller: _field('paid'), keyboard: TextInputType.number, maxLength: 12, optionalLabel: true, hint: 'Để trống nếu khách chưa trả trước.'),
         _payerSection(),
         _feeSection(),
         N11Field(fieldKey: const Key('m07-f-note'), label: 'Ghi chú', controller: _field('note'), maxLength: 200, optionalLabel: true),
         if (_problem != null) N11Banner(key: const Key('m07-form-problem'), kind: BannerKind.error, title: 'Chưa gửi được', text: _problem),
         actionBanner(),
       ],
-      bottom: N11Button(key: const Key('m07-submit-call'), label: 'Gọi shipper', icon: Icons.two_wheeler, loading: busy, onPressed: busy ? null : _submit),
+      bottom: N11Button(key: const Key('m07-submit-call'), validate: true, label: 'Gọi shipper', icon: Icons.two_wheeler, loading: busy, onPressed: busy ? null : _submit),
     );
   }
 
@@ -388,8 +445,8 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
               ],
             ),
             const SizedBox(height: N11Space.gap3),
-            N11Field(fieldKey: const Key('m07-f-amount'), label: 'Mức phí đề xuất (đ)', controller: _field('amount'), keyboard: TextInputType.number, maxLength: 10),
-            N11Field(fieldKey: const Key('m07-f-fee-note'), label: 'Ghi chú cho shipper', controller: _field('feeNote'), maxLength: 200, optionalLabel: true, hint: kFeeNotePrivacyHint),
+            N11Field(validator: (String value) => parseAgreedFee(value) == null ? 'Nhập phí là số nguyên từ 0 đến 10.000.000đ.' : null, fieldKey: const Key('m07-f-amount'), label: 'Mức phí đề xuất (đ)', controller: _field('amount'), keyboard: TextInputType.number, maxLength: 10),
+            N11Field(validator: (String value) => noteLooksLikePhone(value) ? 'Ghi chú cho shipper không được chứa số điện thoại.' : _reason == 'OTHER' && value.trim().isEmpty ? 'Lý do Khác cần có ghi chú.' : null, fieldKey: const Key('m07-f-fee-note'), label: 'Ghi chú cho shipper', controller: _field('feeNote'), maxLength: 200, optionalLabel: true, hint: kFeeNotePrivacyHint),
             if (_payer == 'CUSTOMER') const ReasonNote('Khách trả ship: mức khác bảng giá cần khách đồng ý trước khi chốt.'),
           ],
         ],
@@ -409,12 +466,13 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
 // ---- Q03-Q08: detail -------------------------------------------------------------------------------------------------
 
 class ShopDeliveryDetailScreen extends StatefulWidget {
-  const ShopDeliveryDetailScreen({super.key, required this.source, required this.deliveryId, this.mapBuilder, this.pinPicker});
+  const ShopDeliveryDetailScreen({super.key, required this.source, required this.deliveryId, this.mapBuilder, this.pinPicker, this.feedbackSlot});
 
   final ShopDeliverySource source;
   final String deliveryId;
   final M07MapBuilder? mapBuilder;
   final M07PinPickerBuilder? pinPicker;
+  final M07FeedbackSlot? feedbackSlot;
 
   @override
   State<ShopDeliveryDetailScreen> createState() => _ShopDeliveryDetailScreenState();
@@ -438,7 +496,7 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
   Future<void> _recall(DeliveryView d) async {
     DeliveryView? fresh;
     if (await act('recall-${d.deliveryId}', (String key) async => fresh = await widget.source.recall(d.deliveryId, key: key), onConflict: _reload) && mounted && fresh != null) {
-      await Navigator.of(context).pushReplacement(n11Route(ShopDeliveryDetailScreen(source: widget.source, deliveryId: fresh!.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker)));
+      await Navigator.of(context).pushReplacement(n11Route(ShopDeliveryDetailScreen(source: widget.source, deliveryId: fresh!.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker, feedbackSlot: widget.feedbackSlot)));
     }
   }
 
@@ -499,6 +557,7 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
       ..._byState(d),
       _recipientCard(d),
       MoneySummary(goods: d.goods, fee: d.fee),
+      if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed || d.state == DeliveryState.cancelledByMerchant)) widget.feedbackSlot!(context, d),
       if (d.previousDeliveryId != null) const N11Card(child: Text('Đây là lần gọi lại. Lần gọi trước vẫn nằm trong lịch sử.', style: N11Text.caption)),
       if (d.result != null || d.timeline.isNotEmpty) _timeline(d),
     ];
@@ -517,10 +576,11 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
         return <Widget>[_shipperCard(d), LocationCard(location: d.location, mapBuilder: widget.mapBuilder), const ReasonNote('Đã nhận hàng nên không hủy được và không sửa thông tin/phí.')];
       case DeliveryState.searchStopped:
         return <Widget>[
-          const N11Banner(key: Key('m07-stopped'), kind: BannerKind.warn, title: 'Đã ngừng tìm shipper', text: 'Đã tìm đủ 30 phút nhưng chưa có shipper. Đơn món (nếu có) không bị hủy.', icon: Icons.timer_off_outlined),
+          const N11Banner(key: Key('m07-stopped'), kind: BannerKind.warn, title: 'Đã ngừng tìm shipper', text: 'Đã hết thời gian tìm nhưng chưa có shipper. Đơn món sẽ tự hủy nếu quá thời hạn xử lý.', icon: Icons.timer_off_outlined),
         ];
       case DeliveryState.completed:
       case DeliveryState.failed:
+      case DeliveryState.cancelledBySystem:
       case DeliveryState.cancelledByMerchant:
         return <Widget>[if (d.assignment != null) _shipperCard(d), if (d.incident != null) _incidentCard(d)];
     }

@@ -1,0 +1,31 @@
+group = 'vn.eleven.m14.flutter.map'
+version = '0.1.0'
+buildscript {
+    repositories { google(); mavenCentral() }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.7.3'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.21'
+    }
+}
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+repositories { google(); mavenCentral() }
+android {
+    namespace = 'vn.eleven.m14.flutter.map'
+    compileSdk = 35
+    defaultConfig { minSdk = 26 }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+    // The SAME map sources and the SAME checked Cao Bang package as the GPS test app. Only `map` (no gps, routing or history) is compiled here.
+    def core = file('../../../gps-test')
+    sourceSets.main {
+        java.srcDirs += new File(core, 'map/src/main/java')
+        assets.srcDir new File(core, 'app/src/main/assets')
+    }
+}
+dependencies {
+    api 'org.maplibre.gl:android-sdk:11.8.0'
+}

@@ -289,15 +289,50 @@ describe('M01.04 — client login, me, context, logout', () => {
       expect(await sessionCount(user.userId)).toBe(before);
     });
 
-    it('ANDROID fails closed with 503 and creates nothing, even with correct credentials', async () => {
+    it('Android password login replaces prior sessions even with identical device_id; replay never revives them', async () => {
       const user = await newCustomer();
-      const before = await sessionCount(user.userId);
-      for (const device of [ANDROID_FOOD, { ...ANDROID_FOOD, app: 'SHIP' }]) {
-        const response = await login(user, { device });
-        expect([response.status, errorCode(response)]).toEqual([503, 'SERVICE_UNAVAILABLE']);
+      const old = await loginOk(user, ANDROID_FOOD);
+      expect((await me(old.token)).status).toBe(200);
+      expect(errorCode(await login(user, { device: ANDROID_FOOD, password: 'wrong-password' }))).toBe('INVALID_CREDENTIALS');
+      expect((await me(old.token)).status).toBe(200);
+      const next = await loginOk(user, { ...ANDROID_FOOD, app: 'SHIP' });
+      expect(errorCode(await me(old.token))).toBe('SESSION_REVOKED');
+      expect((await me(next.token)).status).toBe(200);
+      expect(errorCode(await login(user, { device: ANDROID_FOOD, key: old.key }))).toBe('AUTH_RESULT_NOT_REPLAYABLE');
+      const replay = await login(user, { device: { ...ANDROID_FOOD, app: 'SHIP' }, key: next.key });
+      expect(dataOf(replay).access_token).toBe(next.token);
+      expect((await app.call('GET', '/client-auth/me')).status).toBe(401);
+      expect((await app.call('GET', '/driver/me/wallet', { bearer: next.token })).status).not.toBe(200);
+      expect((await logout(next.token)).status).toBe(204);
+      expect(errorCode(await me(next.token))).toBe('SESSION_REVOKED');
+      const again = await loginOk(user, ANDROID_FOOD);
+      await expireSession(app.pool, again.sessionId);
+      expect(errorCode(await me(again.token))).toBe('SESSION_EXPIRED');
+    });
+
+    it('login quota survives device/app changes and expiry restores credential login', async () => {
+      const user = await newCustomer();
+      const bucket = app.config.auth!.otpHmacKey.hmacSha256Hex(JSON.stringify(['11ship.client-login.v1', user.phone.normalized]));
+      await app.pool.query('INSERT INTO app.client_login_limits (bucket_key, window_started_at, attempts) VALUES ($1, clock_timestamp(), 30)', [bucket]);
+      const limited = await login(user, { device: { ...ANDROID_FOOD, device_id: 'another-untrusted-id', app: 'SHIP' } });
+      expect([limited.status, errorCode(limited)]).toEqual([429, 'LOGIN_RATE_LIMITED']);
+      await app.pool.query("UPDATE app.client_login_limits SET window_started_at = clock_timestamp() - interval '61 seconds' WHERE bucket_key = $1", [bucket]);
+      expect((await login(user, { device: ANDROID_FOOD })).status).toBe(200);
+    });
+
+    it('legacy native token cannot become Bearer-only through client headers; session mode is immutable', async () => {
+      const user = await newCustomer();
+      const legacy = await loginOk(user);
+      // Simulate the immutable facts of a session created by the old server, not a client-supplied mode.
+      await app.pool.query("UPDATE app.sessions SET platform = 'ANDROID' WHERE session_id = $1", [legacy.sessionId]);
+      for (const headers of [{} as Record<string, string>, { 'x-session-auth-method': 'PASSWORD', 'x-device-id': ANDROID_FOOD.device_id }]) {
+        const denied = await app.call('GET', '/client-auth/me', { bearer: legacy.token, headers });
+        expect(denied.status).toBeGreaterThanOrEqual(400);
       }
-      expect(await sessionCount(user.userId)).toBe(before);
-      expect(await loginRecords(user.userId)).toBe(0);
+      const next = await loginOk(user, ANDROID_FOOD);
+      await expect(app.pool.query("UPDATE app.sessions SET auth_method = 'LEGACY_DEVICE_PROOF' WHERE session_id = $1", [next.sessionId])).rejects.toThrow('immutable');
+      expect((await me(next.token)).status).toBe(200);
+      expect(errorCode(await me(legacy.token))).toBe('SESSION_REVOKED');
     });
 
     for (const [label, override] of [

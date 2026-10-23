@@ -53,9 +53,9 @@ export function searchExpired(nowMs: number, searchExpiresAtMs: number): boolean
 }
 
 /** Reminders (minutes of the search) that are due at `nowMs` and have not been sent. Both are returned when the sweeper was down past both marks. */
-export function dueSearchReminders(nowMs: number, searchStartedAtMs: number, sent: { readonly m5: boolean; readonly m15: boolean }): readonly number[] {
+export function dueSearchReminders(nowMs: number, searchStartedAtMs: number, sent: { readonly m5: boolean; readonly m15: boolean }, searchExpiresAtMs = searchStartedAtMs + SEARCH_MS): readonly number[] {
   const elapsed = nowMs - searchStartedAtMs;
-  return REMINDER_MINUTES.filter((minute) => elapsed >= minute * 60_000 && elapsed < SEARCH_MS && !(minute === 5 ? sent.m5 : sent.m15));
+  return REMINDER_MINUTES.filter((minute) => elapsed >= minute * 60_000 && nowMs < searchExpiresAtMs && !(minute === 5 ? sent.m5 : sent.m15));
 }
 
 /** Whether a Shipper who accepted and has not picked up is due another "pick up the goods" reminder (every 5 minutes since the last one, or the accept). */

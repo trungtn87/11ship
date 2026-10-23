@@ -113,17 +113,17 @@ describe('M01.03 — client register', () => {
           'session',
         ]);
         expect(data.phone_normalized).toBe(phone.normalized);
-        expect(data.available_roles).toEqual(['CUSTOMER']);
-        expect(data.active_role).toBe('CUSTOMER');
+        expect(data.available_roles).toEqual(label === 'SHIP' ? ['CUSTOMER', 'DRIVER'] : ['CUSTOMER']);
+        expect(data.active_role).toBe(label === 'SHIP' ? 'DRIVER' : 'CUSTOMER');
         expect(data.profile).toEqual({ full_name: 'Trần Thị Bình', version: 1 });
         expect(data.capabilities).toEqual({
           customer_access: true,
           shop_profile_read: false,
           shop_manage: false,
-          driver_profile_read: false,
+          driver_profile_read: label === 'SHIP',
         });
         expect(data.role_selection_required).toBe(false);
-        expect(data.onboarding_required).toBe(label === 'SHIP');
+        expect(data.onboarding_required).toBe(false);
         expect(String(data.access_token).length).toBeGreaterThan(20);
         expect(Object.keys(data.session as object)).toEqual(['expires_at']);
         expect(Date.parse((data.session as { expires_at: string }).expires_at)).toBeGreaterThan(Date.now());
@@ -135,7 +135,7 @@ describe('M01.03 — client register', () => {
         );
         expect(user.rows[0]).toEqual({ status: 'ACTIVE', account_origin: 'PHONE_VERIFIED' });
         const roles = await app.pool.query<{ role: string }>('SELECT role FROM app.user_roles WHERE user_id = $1::uuid', [userId]);
-        expect(roles.rows.map((r) => r.role)).toEqual(['CUSTOMER']);
+        expect(roles.rows.map((r) => r.role).sort()).toEqual(label === 'SHIP' ? ['CUSTOMER', 'DRIVER'] : ['CUSTOMER']);
         const profile = await app.pool.query<{ full_name: string; version: string }>(
           'SELECT full_name, version::text FROM app.customer_profiles WHERE user_id = $1::uuid',
           [userId],
@@ -151,7 +151,7 @@ describe('M01.03 — client register', () => {
           'SELECT active_role, device_id, platform, app FROM app.sessions WHERE user_id = $1::uuid',
           [userId],
         );
-        expect(session.rows).toEqual([{ active_role: 'CUSTOMER', device_id: device.device_id, platform: 'WEB', app: label }]);
+        expect(session.rows).toEqual([{ active_role: label === 'SHIP' ? 'DRIVER' : 'CUSTOMER', device_id: device.device_id, platform: 'WEB', app: label }]);
         expect(await countRows(app.pool, "SELECT 1 FROM app.audit_logs WHERE actor_id = $1 AND action = 'client.auth.register.v1'", [userId])).toBe(1);
         expect(await countRows(app.pool, "SELECT 1 FROM app.outbox_events WHERE resource_id = $1 AND event_type = 'client.auth.user_registered.v1'", [userId])).toBe(1);
       });
@@ -832,15 +832,21 @@ describe('M01.03 — client register', () => {
   });
 
   describe('R13 — device gate fails closed before any mutation', () => {
-    it('ANDROID answers 503 SERVICE_UNAVAILABLE and consumes nothing, with any device_id', async () => {
-      const phone = randomPhone();
-      const proof = await obtainProof(app, phone);
-      for (const device of [ANDROID_FOOD, { ...ANDROID_FOOD, app: 'SHIP' }]) {
-        const response = await call(body(phone, proof.proofToken, { device }));
-        expect([response.status, errorCode(response)]).toEqual([503, 'SERVICE_UNAVAILABLE']);
+    it('Android registration needs OTP but no attestation, immediately serves me and safely replays', async () => {
+      for (const appLabel of ['FOOD', 'SHIP']) {
+        const phone = randomPhone();
+        const proof = await obtainProof(app, phone);
+        const key = randomUUID();
+        const request = body(phone, proof.proofToken, { device: { ...ANDROID_FOOD, app: appLabel } });
+        const response = await call(request, key);
+        expect(response.status).toBe(201);
+        const token = String(dataOf(response).access_token);
+        expect((await app.call('GET', '/client-auth/me', { bearer: token })).status).toBe(200);
+        const repeated = await call(request, key);
+        expect(repeated.status).toBe(201);
+        expect(dataOf(repeated).access_token).toBe(token);
+        expect((await app.pool.query('SELECT auth_method FROM app.sessions WHERE user_id = $1', [dataOf(response).user_id])).rows[0].auth_method).toBe('PASSWORD');
       }
-      await nothingCreated(phone.normalized);
-      expect(await countRows(app.pool, 'SELECT 1 FROM app.idempotency_records WHERE scope_id = $1', [await proofIdOfToken(app.pool, proof.proofToken)])).toBe(0);
     });
 
     for (const [label, override] of [

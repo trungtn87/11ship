@@ -16,15 +16,16 @@ M07Failure _failureOf(Object error) {
   }
   if (error is AuthFailure) {
     if (error.code == 'ORDER_MODULE_NOT_READY') {
-      return M07Failure(M07FailureKind.notReady, code: error.code);
+      return M07Failure(M07FailureKind.notReady, code: error.code, requestId: error.requestId);
     }
-    return switch (error.kind) {
+    final M07Failure mapped = switch (error.kind) {
       AuthFailureKind.unknownOutcome || AuthFailureKind.tls => const M07Failure(M07FailureKind.offline),
       AuthFailureKind.sessionEnded || AuthFailureKind.deviceProofRefused => const M07Failure(M07FailureKind.sessionEnded),
       AuthFailureKind.versionConflict => M07Failure(M07FailureKind.conflict, code: error.code ?? 'VERSION_CONFLICT'),
       AuthFailureKind.serverUnavailable => error.outcomeUnknown ? const M07Failure(M07FailureKind.offline) : const M07Failure(M07FailureKind.server),
       _ => _byCode(error.code),
     };
+    return M07Failure(mapped.kind, code: mapped.code, requestId: error.requestId);
   }
   if (error is FormatException) {
     return const M07Failure(M07FailureKind.server, code: 'BAD_RESPONSE');
@@ -91,6 +92,21 @@ class HttpShopDeliverySource extends ShopDeliverySource {
   Future<List<DeliveryView>> list({required bool history, String query = ''}) async {
     final String q = query.trim().isEmpty ? '' : '&q=${Uri.encodeQueryComponent(query.trim())}';
     final Object? data = await _call(session, 'GET', '/v1/shop/me/deliveries?scope=${history ? 'history' : 'active'}$q');
+    return _items<DeliveryView>(data, 'deliveries', DeliveryView.fromJson);
+  }
+
+  @override
+  Future<List<DeliveryView>> listFiltered({String filter = 'all', String query = '', DateTime? from, DateTime? to, int offset = 0}) async {
+    final List<String> params = <String>[
+      'scope=all',
+      'filter=${Uri.encodeQueryComponent(filter)}',
+      'limit=50',
+      'offset=$offset',
+      if (query.trim().isNotEmpty) 'q=${Uri.encodeQueryComponent(query.trim())}',
+      if (from != null) 'from=${Uri.encodeQueryComponent(from.toUtc().toIso8601String())}',
+      if (to != null) 'to=${Uri.encodeQueryComponent(to.toUtc().toIso8601String())}',
+    ];
+    final Object? data = await _call(session, 'GET', '/v1/shop/me/deliveries?${params.join('&')}');
     return _items<DeliveryView>(data, 'deliveries', DeliveryView.fromJson);
   }
 

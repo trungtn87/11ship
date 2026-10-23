@@ -53,7 +53,9 @@ class N11DeviceChannel(private val context: Context) : MethodChannel.MethodCallH
 
     private fun handle(call: MethodCall): Any? {
         val environment = N11PeerProtocol.environmentOf(context)
-        if (environment == null || call.argument<String>("environment") != environment) {
+        // Local token storage uses ordinary Android Keystore AES, without attestation or environment trust.
+        val localStorage = call.method in setOf("deviceId", "readToken", "storeToken", "clearToken")
+        if (!localStorage && (environment == null || call.argument<String>("environment") != environment)) {
             throw IllegalStateException("environment mismatch")
         }
         return when (call.method) {
@@ -101,7 +103,7 @@ class N11DeviceChannel(private val context: Context) : MethodChannel.MethodCallH
             "peer" -> peers.state()?.let { mapOf("bindingId" to it.bindingId, "keyId" to it.keyId) }
             "requestEndorsement" -> {
                 val endorsement = peers.endorse(
-                    environment,
+                    environment ?: throw IllegalStateException("environment missing"),
                     call.argument<String>("challengeId") ?: throw IllegalArgumentException("challengeId"),
                     call.argument<String>("nonce") ?: throw IllegalArgumentException("nonce"),
                     call.argument<String>("targetApp") ?: throw IllegalArgumentException("targetApp"),

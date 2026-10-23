@@ -1,3 +1,5 @@
+import { WalletService } from '../wallet/wallet-service';
+import { cancellationAudit } from '../order-timeouts/cancellation-audit';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
@@ -35,10 +37,16 @@ export class DeliveryRecorder {
     private readonly deliveries: DeliveryRepository,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
+    private readonly wallets: WalletService,
   ) {}
 
   async record(context: TransactionContext, change: Change): Promise<void> {
     const d = change.delivery;
+    const isCancellation = /cancel|release|search_stopped/.test(change.type);
+    const cancellation = isCancellation ? await cancellationAudit(context, 'deliveries', d.deliveryId, d.version, change.assignmentId) : {};
+    if (isCancellation && change.assignmentId) {
+      cancellation.commission_hold_status = await this.wallets.commissionHoldStatus(context, change.assignmentId);
+    }
     await this.deliveries.appendEvent(context, {
       eventId: randomUUID(),
       deliveryId: d.deliveryId,
@@ -57,7 +65,7 @@ export class DeliveryRecorder {
       resourceId: d.deliveryId,
       resourceVersion: d.version,
       outcome: 'SUCCESS',
-      metadata: { change: change.type, state: d.state, ...change.metadata },
+      metadata: { change: change.type, state: d.state, reason:change.note??null,actor_type:change.actorType,...cancellation,...change.metadata },
     });
     await this.outbox.append(context, {
       eventType: OUTBOX_DELIVERY_CHANGED,
@@ -67,8 +75,9 @@ export class DeliveryRecorder {
       resourceVersion: d.version,
       payload: {
         delivery_id: d.deliveryId,
-        code: d.code,
+        code: d.displayCode ?? d.code,
         shop_id: d.shopId,
+        order_id: d.orderId,
         change: change.type,
         state: d.state,
         version: d.version,

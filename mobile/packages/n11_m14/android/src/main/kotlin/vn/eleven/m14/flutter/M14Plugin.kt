@@ -40,7 +40,6 @@ class M14Plugin: FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler,
         attached = true
         channel = MethodChannel(binding.binaryMessenger,"vn.eleven/m14").also { it.setMethodCallHandler(this) }
         events = EventChannel(binding.binaryMessenger,"vn.eleven/m14/gps").also { it.setStreamHandler(this) }
-        binding.platformViewRegistry.registerViewFactory("vn.eleven/m14/map", M14MapFactory(binding.binaryMessenger))
     }
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         attached = false
@@ -54,14 +53,19 @@ class M14Plugin: FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler,
         val elapsed = p.getLong("elapsed",0)
         val age = SystemClock.elapsedRealtime()-elapsed
         val wallAge = System.currentTimeMillis()-p.getLong("time",0)
+        val manager = context.getSystemService(LocationManager::class.java)
+        val locationEnabled = if(Build.VERSION.SDK_INT >= 28) manager.isLocationEnabled else
+            manager.isProviderEnabled(LocationManager.GPS_PROVIDER) || manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        val permitted = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
         return mapOf("recording" to RecorderService.runningInProcess,
-            "gpsEnabled" to context.getSystemService(LocationManager::class.java).isProviderEnabled(LocationManager.GPS_PROVIDER),
-            "permissionGranted" to (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED),
+            "gpsEnabled" to locationEnabled,
+            "permissionGranted" to permitted,
             "lat" to p.getString("lat",null)?.toDoubleOrNull(), "lon" to p.getString("lon",null)?.toDoubleOrNull(),
             "accuracy" to if(p.contains("accuracy")) p.getFloat("accuracy",0f).toDouble() else null,
+            "fixState" to p.getString("fixState", "UNAVAILABLE"),
             "time" to if(p.contains("time")) p.getLong("time",0) else null,
-            "fresh" to (elapsed>0 && age in 0..120_000 && wallAge in 0..120_000),
-            "status" to if(RecorderService.runningInProcess) p.getString("status","") else "Đã dừng — không thu thập vị trí")
+            "fresh" to (RecorderService.runningInProcess && permitted && locationEnabled && p.getString("fixState", "") == "FIX" && elapsed>0 && age in 0..120_000 && wallAge in 0..120_000),
+            "status" to if(RecorderService.runningInProcess || !p.getBoolean("recording",false)) p.getString("status","Đã dừng — không thu thập vị trí") else "Đã dừng — không thu thập vị trí")
     }
     private fun async(result: MethodChannel.Result, task: () -> Any?) {
         worker.execute {
@@ -118,8 +122,8 @@ class M14Plugin: FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler,
     override fun onListen(arguments: Any?, eventSink: EventChannel.EventSink) {
         sink=eventSink
         if(!listening) {
-            if(Build.VERSION.SDK_INT>=33) context.registerReceiver(receiver,IntentFilter(RecorderService.ACTION),Context.RECEIVER_NOT_EXPORTED)
-            else context.registerReceiver(receiver,IntentFilter(RecorderService.ACTION))
+            if(Build.VERSION.SDK_INT>=33) context.registerReceiver(receiver,IntentFilter(RecorderService.ACTION).apply { addAction(LocationManager.PROVIDERS_CHANGED_ACTION) },Context.RECEIVER_NOT_EXPORTED)
+            else context.registerReceiver(receiver,IntentFilter(RecorderService.ACTION).apply { addAction(LocationManager.PROVIDERS_CHANGED_ACTION) })
             listening=true
         }
         sink?.success(snapshot())

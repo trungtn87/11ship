@@ -17,7 +17,7 @@ void main() {
     api.routes['POST /v1/client-auth/change-password'] = (String m, String p, Map<String, String> h, String b) async {
       expect(h['authorization'], isNotEmpty);
       expect(h['idempotency-key'], isNotEmpty);
-      expect(h['x-device-signature'], isNotEmpty);
+      expect(h['x-device-signature'], isNull);
       return (jsonDecode(b) as Map<String, Object?>)['current_password'] == 'wrong'
           ? apiError(400, 'CURRENT_PASSWORD_INVALID')
           : json(200, <String, Object?>{'data': <String, Object?>{'changed': true}});
@@ -27,7 +27,10 @@ void main() {
     await tester.enterText(find.byKey(const Key('password-new')), 'new-password-123');
     await tester.enterText(find.byKey(const Key('password-confirm')), 'mismatch');
     await tester.pump();
-    expect(tester.widget<N11Button>(find.byKey(const Key('password-submit'))).onPressed, isNull);
+    await tester.ensureVisible(find.byKey(const Key('password-submit')));
+    await tester.tap(find.byKey(const Key('password-submit')));
+    await tester.pumpAndSettle();
+    expect(find.text('Mật khẩu nhập lại chưa khớp.'), findsOneWidget);
     expect(api.to('POST', '/v1/client-auth/change-password'), isEmpty);
     await tester.enterText(find.byKey(const Key('password-confirm')), 'new-password-123');
     await tester.pump();

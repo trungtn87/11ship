@@ -4,7 +4,7 @@
 # FILES in <repo>\.11ship-local (fakeos.procs, fakeos.listeners, fakeos.next). Several real launcher processes therefore
 # see the SAME fake process table, so the suite can prove that two launchers started together build once, start ONE
 # backend, and only ever stop the process that is recorded for this checkout.
-# Everything it does is appended to <repo>\.11ship-local\harness-calls.log (with whether the shared lock was held).
+# Everything it does is appended to <repo>\.11ship-local\harness-calls-<pid>.log (with whether the shared lock was held).
 # SHIP11_HARNESS_START_DELAY_MS keeps a freshly "started" backend unrecorded for a while: a second launcher that was not
 # held back by the lock would run into it.
 # ASCII on purpose: Windows PowerShell 5.1 reads a BOM-less script as ANSI.
@@ -34,9 +34,11 @@ function Write-Call([string]$Text) {
   $dir = Join-Path $script:Repo '.11ship-local'
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
   $line = ('{0} pid={1} {2}' -f [DateTime]::UtcNow.Ticks, $PID, $Text) + "`n"
+  # One writer per file: concurrent AppendAllText calls can overwrite each other on Unix.
   for ($attempt = 0; $attempt -lt 20; $attempt++) {
-    try { [IO.File]::AppendAllText((Join-Path $dir 'harness-calls.log'), $line); return } catch { Start-Sleep -Milliseconds 50 }
+    try { [IO.File]::AppendAllText((Join-Path $dir ('harness-calls-{0}.log' -f $PID)), $line); return } catch { Start-Sleep -Milliseconds 50 }
   }
+  throw "Harness call log could not be written for pid=$PID"
 }
 function Test-HarnessLockHeld {
   $probe = Open-ExclusiveFile $script:LockFile

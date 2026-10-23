@@ -6,6 +6,7 @@ import '../account/api_client.dart';
 import '../account/models.dart';
 import '../account/session_controller.dart';
 import 'address_models.dart';
+import '../flows/location.dart';
 
 // M05-B: state of the address book screens over an [AddressApi].
 //
@@ -27,12 +28,13 @@ class AddressPending {
 }
 
 class AddressBookController extends ChangeNotifier {
-  AddressBookController({required this.api, this.session}) {
+  AddressBookController({required this.api, this.session, LocationProvider? location}) : location = location ?? MethodChannelLocationProvider() {
     session?.addListener(_onSession);
     _sessionEpoch = session?.sessionEpoch ?? 0;
   }
 
   final AddressApi api;
+  final LocationProvider location;
   final SessionController? session;
 
   AddressLoad _load = AddressLoad.idle;

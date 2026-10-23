@@ -5,7 +5,7 @@
 // never 0. A position always carries the time it was recorded; a stale one is never drawn as live.
 
 /// The states of a delivery (docs section 3). `pickedUp` is a milestone: the server moves straight to `delivering`.
-enum DeliveryState { waitingDriver, accepted, locationConfirmed, pickedUp, delivering, completed, failed, cancelledByMerchant, searchStopped }
+enum DeliveryState { waitingDriver, accepted, locationConfirmed, pickedUp, delivering, completed, failed, cancelledByMerchant, cancelledBySystem, searchStopped }
 
 DeliveryState deliveryStateOf(String wire) => switch (wire) {
       'waiting_driver' => DeliveryState.waitingDriver,
@@ -15,6 +15,7 @@ DeliveryState deliveryStateOf(String wire) => switch (wire) {
       'delivering' => DeliveryState.delivering,
       'completed' => DeliveryState.completed,
       'failed' => DeliveryState.failed,
+      'cancelled_by_system' => DeliveryState.cancelledBySystem,
       'cancelled_by_merchant' => DeliveryState.cancelledByMerchant,
       'search_stopped' => DeliveryState.searchStopped,
       _ => throw FormatException('delivery state $wire'),
@@ -39,6 +40,7 @@ extension DeliveryStateText on DeliveryState {
         DeliveryState.pickedUp || DeliveryState.delivering => 'Đang giao',
         DeliveryState.completed => 'Giao thành công',
         DeliveryState.failed => 'Giao thất bại',
+        DeliveryState.cancelledBySystem => 'Hệ thống hủy quá hạn',
         DeliveryState.cancelledByMerchant => 'Đã hủy yêu cầu giao',
         DeliveryState.searchStopped => 'Đã ngừng tìm',
       };
@@ -330,7 +332,7 @@ class DeliveryView {
     final Map<String, Object?> can = _obj(m['can'] ?? <String, Object?>{});
     return DeliveryView(
       deliveryId: _str(m['delivery_id']),
-      code: _str(m['code']),
+      code: _str(m['display_code'] ?? m['code']),
       source: _str(m['source']),
       orderId: _strOrNull(m['order_id']),
       previousDeliveryId: _strOrNull(m['previous_delivery_id']),
@@ -452,7 +454,7 @@ class OfferView {
     final Map<String, Object?> shop = _obj(m['shop']);
     return OfferView(
       deliveryId: _str(m['delivery_id']),
-      code: _str(m['code']),
+      code: _str(m['display_code'] ?? m['code']),
       shopName: _str(shop['name']),
       shopAreaText: _strOrNull(shop['area_text']),
       distanceToShopM: _intOrNull(m['distance_to_shop_m']),

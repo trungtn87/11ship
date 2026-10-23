@@ -4,10 +4,16 @@ import '../account/account_views.dart';
 import '../account/session_controller.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../m11/m11_rating_views.dart';
+import '../m11/m11_source.dart';
+import '../m11/m11_models.dart';
+import '../m11/m11_widgets.dart';
 import 'm02_flows.dart';
 import 'm02_format.dart';
 import 'm02_widgets.dart';
 import 'menu_controller.dart';
+import '../m10/m10_cart.dart';
+import '../m10/m10_customer_views.dart';
 import 'menu_models.dart';
 import 'public_shop_controller.dart';
 import 'schedule.dart';
@@ -40,8 +46,13 @@ class ShopMenuContent extends StatefulWidget {
     this.hiddenCount = 0,
     this.emptyText = 'Quán chưa có món để hiển thị.',
     this.focusItemId,
+    this.orderShopId,
+    this.ratings,
   });
 
+  /// The shop being viewed by a CUSTOMER: when set (and orders exist in this app) each dish gets the + / − and a note sheet. Null in the owner's preview.
+  final String? orderShopId;
+  final Widget? ratings;
   final ShopMenuView view;
   final bool preview;
   final VoidCallback onHours;
@@ -95,6 +106,25 @@ class _ShopMenuContentState extends State<ShopMenuContent> {
     Scrollable.ensureVisible(target, duration: const Duration(milliseconds: 250), alignment: 0.15);
   }
 
+  OrderRuntime? get _orders => widget.preview || widget.orderShopId == null ? null : OrderRuntime.current;
+
+  Widget? _stepper(BuildContext context, PublicItem item) {
+    final OrderRuntime? runtime = _orders;
+    if (runtime == null || widget.view.availabilityReason == 'NO_BUSINESS_HOURS') {
+      return null;
+    }
+    return DishStepper(cart: runtime.cart, shopId: widget.orderShopId!, shopName: widget.view.name, itemId: item.id, name: item.name, priceVnd: item.priceVnd, canOrder: runtime.canOrder);
+  }
+
+  Future<void> _openDish(BuildContext context, PublicItem item) async {
+    final OrderRuntime runtime = _orders!;
+    if (!runtime.canOrder()) {
+      m02Toast(context, 'Đăng nhập tài khoản khách để đặt món.');
+      return;
+    }
+    await showDishSheet(context, cart: runtime.cart, shopId: widget.orderShopId!, shopName: widget.view.name, itemId: item.id, name: item.name, priceVnd: item.priceVnd);
+  }
+
   @override
   Widget build(BuildContext context) {
     final ShopMenuView view = widget.view;
@@ -106,29 +136,25 @@ class _ShopMenuContentState extends State<ShopMenuContent> {
     ].where((PublicCategory c) => c.items.isNotEmpty).toList();
     return vstack(<Widget>[
       N11Card(
-        child: Column(
+        child: LayoutBuilder(builder: (context, constraints) => Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Row(
+            SizedBox(width: constraints.maxWidth * .33, child: ShopLogoImage(key: const Key('shop-view-logo'), url: view.logoUrl, bytes: view.logoBytes)),
+            const SizedBox(width: N11Space.gap3),
+            Expanded(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Expanded(child: Text(view.name, key: const Key('shop-view-name'), style: const TextStyle(fontSize: 22, height: 1.25, fontWeight: FontWeight.w800, color: N11Colors.black))),
-                if (widget.preview) const Padding(padding: EdgeInsets.only(left: N11Space.gap2), child: N11Chip('Xem trước', kind: ChipKind.dark)),
-              ],
-            ),
-            if (view.address.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Icon(Icons.place_outlined, size: 16, color: N11Colors.ink2), const SizedBox(width: 4), Expanded(child: Text(view.address, style: N11Text.caption))])),
-            const SizedBox(height: N11Space.gap3),
-            Wrap(
-              spacing: N11Space.gap3,
-              runSpacing: N11Space.gap2,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: <Widget>[
+                Text(view.name, key: const Key('shop-view-name'), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, height: 1.25, fontWeight: FontWeight.w800, color: N11Colors.black)),
+                if (widget.preview) const N11Chip('Xem trước', kind: ChipKind.dark),
+                if (view.address.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(view.address, maxLines: 2, overflow: TextOverflow.ellipsis, style: N11Text.caption)),
+                const SizedBox(height: N11Space.gap2),
                 N11Chip(chip.label, key: const Key('shop-view-chip'), kind: chip.kind),
                 N11Link('Xem giờ hoạt động ›', key: const Key('shop-view-hours'), onPressed: widget.onHours),
+                if (widget.ratings != null) widget.ratings!,
               ],
-            ),
+            )),
           ],
-        ),
+        )),
       ),
       if (!view.hasItems)
         N11InfoCard(key: const Key('shop-view-empty'), title: widget.emptyText)
@@ -161,8 +187,11 @@ class _ShopMenuContentState extends State<ShopMenuContent> {
                   key: _rows.putIfAbsent(item.id, GlobalKey.new),
                   name: item.name,
                   price: formatVnd(item.priceVnd),
+                  sub: item.soldCount == null ? null : 'Đã bán ${item.soldCount}',
                   imageUrl: item.imageUrl,
                   highlight: item.id == _highlight,
+                  chip: _stepper(context, item),
+                  onTap: _stepper(context, item) == null ? null : () => _openDish(context, item),
                 ),
             ]),
           ],
@@ -221,7 +250,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
         } else if (o == null || snapshot == null) {
           body = const <Widget>[M02Skeleton(rows: 1, height: 110), M02Skeleton(rows: 4, height: 76)];
         } else {
-          final ShopMenuView view = previewOf(name: o.name, address: o.addressText, reason: o.availability.reason, serverNow: o.availability.evaluatedAt, hours: o.hours, menu: snapshot);
+          final ShopMenuView view = previewOf(name: o.name, address: o.addressText, reason: o.availability.reason, serverNow: o.availability.evaluatedAt, hours: o.hours, menu: snapshot, logoBytes: o.logo?.bytes);
           final bool shown = o.isActive && o.availability.reason != 'SERVICE_AREA_INACTIVE';
           body = <Widget>[
             if (!shown) const N11Banner(key: Key('preview-not-public'), kind: BannerKind.warn, title: 'Quán hiện chưa hiển thị cho khách', text: 'Đây là bản xem trước dành cho chủ quán. Khách chưa tìm thấy quán này.'),
@@ -249,13 +278,16 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
 /// K01: a customer opens a shop by its id (from the entry point that has it). Public fields only.
 class ShopPublicScreen extends StatefulWidget {
-  const ShopPublicScreen({super.key, required this.api, required this.shopId, this.focusItemId});
+  const ShopPublicScreen({super.key, required this.api, required this.shopId, this.focusItemId, this.ratings});
 
   final PublicShopApi api;
   final String shopId;
 
   /// A dish a search result pointed at: the screen scrolls to it.
   final String? focusItemId;
+
+  /// M11: where the shop's public ratings come from. Null = no rating entry (preview, tests).
+  final M11Source? ratings;
 
   @override
   State<ShopPublicScreen> createState() => _ShopPublicScreenState();
@@ -314,13 +346,79 @@ class _ShopPublicScreenState extends State<ShopPublicScreen> {
                   text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.',
                   trailing: N11Button(key: const Key('k01-reload'), label: 'Thử lại', compact: true, onPressed: _controller.load),
                 ),
-              ShopMenuContent(view: view!, preview: false, focusItemId: widget.focusItemId, onHours: () => Navigator.of(context).push(n11Route(PublicHoursScreen(view: view)))),
+              ShopMenuContent(
+                view: view!, preview: false, orderShopId: widget.shopId, focusItemId: widget.focusItemId,
+                onHours: () => Navigator.of(context).push(n11Route(PublicHoursScreen(view: view))),
+                ratings: widget.ratings == null ? null : _ShopRatingLink(
+                  source: widget.ratings!, shopId: widget.shopId,
+                  onTap: () => Navigator.of(context).push(n11Route(ShopReviewsScreen(source: widget.ratings!, shopId: widget.shopId, title: view.name))),
+                ),
+              ),
             ];
         }
-        return M02Scaffold(title: view?.name ?? 'Quán', scrollController: _scroll, content: body);
+        final OrderRuntime? orders = OrderRuntime.current;
+        return M02Scaffold(title: view?.name ?? 'Quán', scrollController: _scroll, content: body, footer: view != null && orders != null ? <Widget>[CartBar(runtime: orders, shopId: widget.shopId)] : const <Widget>[]);
       },
     );
   }
+}
+
+/// A real summary inside the shop information card; failure must never look like zero reviews.
+class _ShopRatingLink extends StatefulWidget {
+  const _ShopRatingLink({required this.source, required this.shopId, required this.onTap});
+  final M11Source source;
+  final String shopId;
+  final VoidCallback onTap;
+
+  @override
+  State<_ShopRatingLink> createState() => _ShopRatingLinkState();
+}
+
+class _ShopRatingLinkState extends State<_ShopRatingLink> {
+  late Future<ShopReviewPage> _page;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_ShopRatingLink oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.shopId != widget.shopId || oldWidget.source != widget.source) _load();
+  }
+
+  void _load() {
+    _page = widget.source.publicShopReviews(widget.shopId);
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<ShopReviewPage>(
+    future: _page,
+    builder: (context, snapshot) {
+      final RatingSummary? summary = snapshot.data?.summary;
+      final bool failed = snapshot.hasError;
+      final String label = failed ? 'Chưa tải được đánh giá · Thử lại'
+          : summary == null ? 'Đang tải đánh giá…'
+          : summary.isEmpty ? 'Chưa có đánh giá (0 lượt)'
+          : '${m11Average(summary.average)}/5 · ${summary.count} lượt đánh giá';
+      return InkWell(
+        key: const Key('k01-ratings'),
+        onTap: failed ? () => setState(_load) : widget.onTap,
+        borderRadius: BorderRadius.circular(kRadiusControl),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: Row(children: <Widget>[
+            const Icon(Icons.star_rounded, color: N11Colors.yellowStrong, size: 22),
+            const SizedBox(width: N11Space.gap2),
+            Expanded(child: Text(label, key: const Key('shop-rating-summary'), style: N11Text.bodyStrong)),
+            Icon(failed ? Icons.refresh : Icons.chevron_right, color: N11Colors.ink2, size: 20),
+          ]),
+        ),
+      );
+    },
+  );
 }
 
 /// K02: the week as a customer reads it. Read only; today is marked from the SERVER's instant (Vietnam time), never the phone clock.

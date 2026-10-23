@@ -47,7 +47,8 @@ describe('systemd unit', () => {
     assert.match(service, /^Restart=on-failure$/m);
     assert.match(service, /^RestartSec=5$/m);
     const inline = service.split('\n').filter((l) => /^Environment=/.test(l));
-    assert.deepEqual(inline, ['Environment=NODE_OPTIONS=--max-old-space-size=384']);
+    assert.deepEqual(inline, ['Environment=M13_ERROR_LOG_PATH=/var/lib/11ship/error-events.jsonl', 'Environment=NODE_OPTIONS=--max-old-space-size=384']);
+    assert.match(service, /^StateDirectory=11ship$/m, 'the private persistent journal directory must be writable despite ProtectSystem=strict');
     assert.doesNotMatch(code(service), /password|secret|DATABASE_URL|KEYRING/i);
   });
 });

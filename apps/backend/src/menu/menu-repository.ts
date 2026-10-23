@@ -151,6 +151,18 @@ export class MenuRepository {
     return row === undefined ? undefined : toItem(row);
   }
 
+  /**
+   * The dishes of this shop among `itemIds` (never another shop's), locked FOR SHARE in id order so that a price or status change by the shop waits until the
+   * Order that read it has committed (M10: the price the Order keeps is the price in force at that instant). Ids that are not dishes of the shop are absent.
+   */
+  async lockItemsShared(context: TransactionContext, shopId: string, itemIds: readonly string[]): Promise<MenuItemRow[]> {
+    const result = await context.query<RawItem>(
+      `SELECT ${ITEM_COLUMNS} FROM app.menu_items WHERE shop_id = $1::uuid AND item_id = ANY($2::uuid[]) ORDER BY item_id FOR SHARE`,
+      [shopId, [...itemIds]],
+    );
+    return result.rows.map(toItem);
+  }
+
   async insertItem(context: TransactionContext, itemId: string, shopId: string, fields: MenuItemFields): Promise<MenuItemRow> {
     const result = await context.query<RawItem>(
       `INSERT INTO app.menu_items (item_id, shop_id, category_id, name, price_vnd, image_id, status, version, created_at, updated_at)

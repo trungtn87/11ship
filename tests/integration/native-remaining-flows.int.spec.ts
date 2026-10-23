@@ -71,6 +71,21 @@ describe('native remaining flows (fixture attestation)', () => {
 
   const me = (native: NativePhone, which: 'FOOD' | 'SHIP', token: string): Promise<ApiResponse> => native.signedCall(which, 'GET', '/client-auth/me', { bearer: token }).then((r) => r.response);
 
+  it('PASSWORD Food session updates shop profile with ordinary authorization', async () => {
+    const food = await registerFood();
+    const logged = await app.call('POST', '/client-auth/login', { headers: { 'idempotency-key': randomUUID() }, body: { phone: food.phone.local, password: PASSWORD, device: device('FOOD') } });
+    expect(logged.status).toBe(200);
+    const token = String(dataOf(logged).access_token);
+    const areaId = await createServiceArea(app.pool);
+    const saved = await app.call('PUT', '/onboarding/shop/profile', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: shopProfileBody({ ...GPS, service_area_id: areaId }) });
+    expect(saved.status).toBe(201);
+    expect((await app.call('POST', '/onboarding/shop/complete', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { expected_version: Number(dataOf(saved).version) } })).status).toBe(200);
+    expect((await app.call('POST', '/client-auth/context', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { context: 'SHOP_OWNER' } })).status).toBe(200);
+    expect((await app.call('GET', '/shop/me', { bearer: token })).status).toBe(200);
+    // The previous hardware session was revoked by password login.
+    expect((await me(food.native, 'FOOD', food.token)).status).toBe(401);
+  });
+
   describe('Food shop management and menu (M02) with the device proof', () => {
     it('the owner reads and writes the shop, schedule, pictures and dishes only with the signed request (raw body is what is signed)', async () => {
       const food = await registerFood();
@@ -226,14 +241,14 @@ describe('native remaining flows (fixture attestation)', () => {
       const key = randomUUID();
       const created = await native.signedCall('SHIP', 'POST', '/onboarding/driver', { bearer: token, body: { full_name: 'Trần Văn Shipper' }, idempotencyKey: key });
       expect(created.response.status).toBe(201);
-      expect(dataOf(created.response)).toMatchObject({ status: 'PENDING', accepting_deliveries: false });
+      expect(dataOf(created.response)).toMatchObject({ status: 'ACTIVE', accepting_deliveries: false });
       const replay = await native.signedCall('SHIP', 'POST', '/onboarding/driver', { bearer: token, body: { full_name: 'Trần Văn Shipper' }, idempotencyKey: key });
       expect(dataOf(replay.response)).toEqual(dataOf(created.response));
       const rows = await app.pool.query('SELECT 1 FROM app.drivers WHERE user_id = $1::uuid', [food.userId]);
       expect(rows.rowCount).toBe(1);
 
       const after = await native.signedCall('SHIP', 'GET', '/driver/me', { bearer: token });
-      expect(dataOf(after.response)).toMatchObject({ status: 'PENDING', full_name: 'Trần Văn Shipper' });
+      expect(dataOf(after.response)).toMatchObject({ status: 'ACTIVE', full_name: 'Trần Văn Shipper' });
       const identity = await me(native, 'SHIP', token);
       expect(dataOf(identity).active_role).toBe('CUSTOMER');
     });

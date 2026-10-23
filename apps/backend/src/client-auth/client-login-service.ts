@@ -1,3 +1,4 @@
+import { ClientLoginLimiter } from './client-login-limiter';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
 import { StandaloneAuditRecorder } from '../audit/standalone-audit-recorder';
@@ -70,6 +71,7 @@ export interface ClientLoginOutcome {
 export class ClientLoginService {
   constructor(
     private readonly transactions: TransactionManager,
+    private readonly loginLimiter: ClientLoginLimiter,
     private readonly executor: IdempotencyExecutor,
     private readonly users: UserRepository,
     private readonly customers: CustomerProfileRepository,
@@ -94,10 +96,11 @@ export class ClientLoginService {
     assertDeviceAllowed(this.settings, input.device);
     // The executor validates the key again; doing it first only avoids a database round trip and an Argon2 verification.
     parseIdempotencyKey(idempotencyKey);
+    await this.loginLimiter.reserve(input.phoneNormalized);
     // ANDROID: the registration token, its signature, the request time and nonce are verified before any password work. A replay
     // presents a fresh proof for the same, already consumed, token.
     let proof: NativeAuthProof | undefined;
-    if (input.device.platform === 'ANDROID') {
+    if (input.device.platform === 'ANDROID' && evidence?.headers['x-device-registration'] !== undefined) {
       if (evidence === undefined) {
         throw new AppError('DEVICE_PROOF_REQUIRED');
       }
@@ -225,15 +228,24 @@ export class ClientLoginService {
     const selectable = limited ? [] : await this.identityReader.selectableContexts(context, locked.userId);
     const chosen: PublicContext | null = limited ? 'DRIVER' : defaultContextFor(input.device.app, selectable);
 
+    if (proof !== undefined) {
+      await this.sessions.revokePasswordSessionsForUser(context, locked.userId);
+    }
     // 2b. Native: the binding decision (same phone / join / new phone) under the user root lock, before the session exists.
     const plan =
       proof === undefined ? undefined : await this.deviceBinding.prepare(context, { userId: locked.userId, app: input.device.app, proof });
+
+    // Serialize replacement under the user root lock; device_id is metadata, never authority.
+    if (proof === undefined && input.device.platform === 'ANDROID') {
+      await this.sessions.revokeAllForUser(context, locked.userId);
+    }
 
     // 3. The session and its plaintext token (returned once, stored only as a digest).
     const session = await this.sessions.create(context, {
       userId: locked.userId,
       device: { deviceId: input.device.deviceId, platform: input.device.platform, app: input.device.app },
       ttlSeconds: this.config.sessionTtlSeconds,
+      ...(proof === undefined && input.device.platform === 'ANDROID' ? { authMethod: 'PASSWORD' as const } : {}),
       ...(chosen === null ? {} : { activeRole: storageRoleOf(chosen) }),
     });
 
@@ -331,7 +343,7 @@ export class ClientLoginService {
     // Native: still on the current binding, issued to the key that signs THIS replay, with the grant that created it.
     if (proof !== undefined) {
       capture.binding = await this.deviceBinding.assertReplayable(context, { sessionId, proof });
-    } else if (input.device.platform === 'ANDROID') {
+    } else if (input.device.platform === 'ANDROID' && (await this.sessions.readClientView(context, sessionId))?.authMethod !== 'PASSWORD') {
       throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
     }
 

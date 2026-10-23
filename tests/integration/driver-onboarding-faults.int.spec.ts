@@ -94,7 +94,7 @@ describe('M01-A2D — Driver onboarding fault matrix', () => {
 
       const retry = await post(user.accessToken, body, key);
       expect(retry.status).toBe(201);
-      expect(dataOf(retry)).toMatchObject({ status: 'PENDING', role_granted: true, version: 1 });
+      expect(dataOf(retry)).toMatchObject({ status: 'ACTIVE', role_granted: true, version: 1 });
       expect(await count('SELECT 1 FROM app.drivers WHERE user_id = $1::uuid', [user.userId])).toBe(1);
       expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid AND role = $2', [user.userId, 'DRIVER'])).toBe(1);
       expect(await count("SELECT 1 FROM app.outbox_events WHERE event_type = 'driver.onboarded.v1' AND payload->>'user_id' = $1", [user.userId])).toBe(1);

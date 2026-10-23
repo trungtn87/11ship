@@ -56,7 +56,7 @@ class DeliveryAddress {
 
 String formatVnPhone(String e164) => e164.startsWith('+84') ? '0${e164.substring(3)}' : e164;
 
-/// What the form sends. [latitude]/[longitude] stay null: no position is invented (the map pin is not part of this build).
+/// Address text and the point chosen by the person. Legacy text-only addresses remain readable.
 class AddressInput {
   const AddressInput({required this.label, required this.recipientName, required this.phone, required this.addressText, required this.note, required this.makeDefault, this.latitude, this.longitude});
 

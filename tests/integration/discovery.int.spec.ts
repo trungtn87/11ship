@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { foldVietnamese } from '../../apps/backend/src/shared/fold-vietnamese';
@@ -13,6 +14,7 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
   let snail: string;
   let seafood: string;
   let drinks: string;
+  const reviewIds: string[] = [];
 
   beforeAll(async () => {
     app = await startAuthApp();
@@ -24,7 +26,22 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
   });
 
   afterAll(async () => {
-    await app.close();
+    try {
+      if (reviewIds.length > 0) {
+        const client = await app.pool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query('ALTER TABLE app.reviews DISABLE TRIGGER USER');
+          await client.query('DELETE FROM app.reviews WHERE review_id = ANY($1::uuid[])', [reviewIds]);
+          await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+          await client.query('ALTER TABLE app.reviews ENABLE TRIGGER USER');
+          await client.query('COMMIT');
+        } catch (error) {
+          await client.query('ROLLBACK');
+          throw error;
+        } finally { client.release(); }
+      }
+    } finally { await app.close(); }
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     try {
       await purgeCategories(pool);
@@ -50,6 +67,51 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
   }
 
   const names = (response: Awaited<ReturnType<typeof discoveryShops>>): string[] => (dataOf(response).shops as { name: string }[]).map((s) => s.name);
+
+  it('returns pickup coordinates and public M11 ratings on Home and dish-search cards, excluding hidden ratings', async () => {
+    const ownArea = await createServiceArea(app.pool);
+    const owner = await shop('Quán Điểm Sao', [['Món Điểm Sao', 10000, snail]], { areaId: ownArea });
+    for (const [stars, visibility] of [[5, 'VISIBLE'], [3, 'VISIBLE'], [1, 'HIDDEN']] as const) {
+      const reviewId = randomUUID();
+      reviewIds.push(reviewId);
+      await app.pool.query(`INSERT INTO app.reviews
+        (review_id, kind, reviewer_user_id, shop_id, order_id, stars, reviewer_name, shop_name, related_code, visibility, created_at)
+        VALUES ($1, 'SHOP_BY_CUSTOMER', $2, $3, $4, $5, 'Khách', 'Quán Điểm Sao', 'TEST147', $6, clock_timestamp())`,
+        [reviewId, owner.userId, owner.shopId, randomUUID(), stars, visibility]);
+    }
+    const home = dataOf(await discoveryShops(app, { area_id: ownArea })).shops as Record<string, unknown>[];
+    expect(home[0]).toMatchObject({ shop_id: owner.shopId, rating: { count: 2, average: 4 } });
+    expect(typeof home[0]?.pickup_lat).toBe('number');
+    expect(typeof home[0]?.pickup_lng).toBe('number');
+    const found = dataOf(await discoveryDishes(app, { area_id: ownArea, q: 'mon diem sao' })).dishes as { shop: unknown }[];
+    expect(found[0]?.shop).toMatchObject({ shop_id: owner.shopId, rating: { count: 2, average: 4 } });
+    const unrated = await shop('Chưa Đánh Giá', [['Món Chưa Sao', 10000, snail]], { areaId: ownArea });
+    const all = dataOf(await discoveryShops(app, { area_id: ownArea })).shops as { shop_id: string; rating: unknown }[];
+    expect(all.find((s) => s.shop_id === unrated.shopId)?.rating).toEqual({ count: 0, average: null });
+  });
+
+  it('resolves only ACTIVE configured circles and rejects incomplete or invalid geometry', async () => {
+    const first = await createServiceArea(app.pool);
+    const second = await createServiceArea(app.pool);
+    const inactive = await createServiceArea(app.pool, 'INACTIVE');
+    await app.pool.query(`UPDATE app.service_areas SET coverage_lat = 0, coverage_lng = 0, coverage_radius_m = 1000 WHERE service_area_id = $1`, [first]);
+    await app.pool.query(`UPDATE app.service_areas SET coverage_lat = 1, coverage_lng = 1, coverage_radius_m = 1000 WHERE service_area_id = $1`, [second]);
+    await app.pool.query(`UPDATE app.service_areas SET coverage_lat = 2, coverage_lng = 2, coverage_radius_m = 1000 WHERE service_area_id = $1`, [inactive]);
+    const resolve = (lat: number, lng: number) => app.call('GET', `/service-areas/resolve?latitude=${lat}&longitude=${lng}`);
+    const located = await resolve(0, 0);
+    expect(located.status).toBe(200);
+    expect(located.headers.get('cache-control')).toBe('no-store');
+    expect(located.body.data).toMatchObject({ service_area_id: first });
+    expect((await resolve(1, 1)).body.data).toMatchObject({ service_area_id: second });
+    expect((await resolve(2, 2)).body.data).toBeNull();
+    expect((await resolve(80, 80)).body.data).toBeNull();
+    for (const query of ['latitude=91&longitude=0', 'latitude=0', 'latitude=0&latitude=1&longitude=0', 'latitude=NaN&longitude=0']) {
+      expect((await app.call('GET', `/service-areas/resolve?${query}`)).status).toBe(400);
+    }
+    await expect(app.pool.query('UPDATE app.service_areas SET coverage_lat = 91 WHERE service_area_id = $1', [first])).rejects.toThrow();
+    await expect(app.pool.query('UPDATE app.service_areas SET coverage_lng = NULL WHERE service_area_id = $1', [first])).rejects.toThrow();
+    await expect(app.pool.query('UPDATE app.service_areas SET coverage_radius_m = 0 WHERE service_area_id = $1', [first])).rejects.toThrow();
+  });
 
   it('lists only the ACTIVE service areas and ACTIVE groups, never cached', async () => {
     const closed = await createServiceArea(app.pool, 'INACTIVE');
@@ -82,7 +144,7 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
     expect((data.shops as { availability: { reason: string }; shop_id: string }[])[1]!.availability.reason).toBe('NO_BUSINESS_HOURS');
     expect(data.has_more).toBe(false);
     expect(closedA.shopId).toBeTruthy();
-    expect(list.text).not.toMatch(/contact_phone|zalo|facebook|pickup_|accepting|user_id/i);
+    expect(list.text).not.toMatch(/contact_phone|zalo|facebook|accepting|user_id/i);
     expect(names(await discoveryShops(app, { area_id: otherArea }))).toEqual(['Quán Khu Khác']);
   });
 

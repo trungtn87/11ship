@@ -74,6 +74,7 @@ export class SessionService {
       phoneNormalized: view.phoneNormalized,
       platform: view.platform,
       app: view.app,
+      authMethod: view.authMethod,
     };
   }
 }

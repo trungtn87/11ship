@@ -3016,4 +3016,65 @@ select {
 
 .row-selected td {
   background: var(--yellow-soft);
+/* M11.03: ratings and complaints. */
+.stars {
+  color: var(--brand-yellow, #d8ad18);
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.evidence-link img {
+  display: block;
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e3e1db;
+}
+
+.detail-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.plain-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+/* M13: keep the everyday log compact; long technical fields wrap on phones. */
+.error-log-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+}
+.error-log-filters > details,
+.error-log-filters > .actions { grid-column: 1 / -1; }
+.error-log-filters input:not([type="checkbox"]),
+.error-log-filters select {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--white);
+  color: var(--charcoal);
+  font: inherit;
+}
+.error-log-content > * { min-width: 0; }
+.error-log-content code { overflow-wrap: anywhere; }
+.error-log-content summary { cursor: pointer; padding: 8px 0; }
+.error-log-content .btn { width: auto; }
+.error-log-auto { display: inline-flex; align-items: center; gap: 8px; }
+.error-log-auto input { width: 18px; height: 18px; }
+.error-log-table td > div { min-width: 0; }
+@media (max-width: 720px) {
+  .error-log-table td[data-label="Nội dung"] { flex-direction: column; text-align: left; gap: 8px; }
 }

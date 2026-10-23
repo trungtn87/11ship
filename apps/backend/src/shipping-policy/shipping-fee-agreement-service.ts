@@ -15,7 +15,7 @@ import {
 } from './shipping-fee-agreement';
 import { ActorType, ShippingFeeAgreementRepository } from './shipping-fee-agreement-repository';
 import { ShippingFeePolicyReader } from './shipping-fee-policy-repository';
-import { evaluateQuote, UnpricedReason } from './shipping-fee-quote';
+import { evaluateQuote, QuoteOutcome, UnpricedReason } from './shipping-fee-quote';
 
 /** The note is shown to Shippers before they accept: 8+ digits (separators ignored) look like a phone number and are refused. */
 export function noteLooksLikePhone(note: string): boolean {
@@ -89,6 +89,11 @@ export class ShippingFeeAgreementService {
     private readonly policies: ShippingFeePolicyReader,
     private readonly drivers: DriverRepository,
   ) {}
+
+  /** What the fee table says for this route distance NOW (a read only: nothing is recorded). Unpriced is `feeVnd: null`, never 0. */
+  async estimate(context: TransactionContext, distanceM: number | null): Promise<QuoteOutcome> {
+    return evaluateQuote(await this.policies.active(context), distanceM);
+  }
 
   /** STANDARD: the fee is the base fee of the three bands for this route distance, final at once. */
   async createStandard(context: TransactionContext, input: CreateBase): Promise<AgreementOutcome> {

@@ -1,3 +1,4 @@
+import { WalletModule } from '../wallet/wallet.module';
 import { DynamicModule, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { DriverModule } from '../driver/driver.module';
@@ -17,7 +18,7 @@ export class ShipperSelfModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: ShipperSelfModule,
-      imports: [auth, DriverModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
+      imports: [auth, DriverModule, WalletModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
       controllers: [ShipperSelfController],
       providers: [ShipperSelfService],
     };

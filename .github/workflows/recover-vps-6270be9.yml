@@ -1,0 +1,61 @@
+name: Recover VPS 6270be9
+
+on:
+  workflow_dispatch:
+    inputs:
+      approve_reviewed_hashes:
+        description: 'Record the two reviewed migration hashes and deploy existing release 6270be9'
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vps-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: github.ref == 'refs/heads/main' && inputs.approve_reviewed_hashes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    environment:
+      name: vps-production
+      url: https://103.9.78.67.sslip.io
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate the reviewed recovery script
+        run: |
+          bash -n scripts/deploy/recover-6270be9.sh
+          python3 tests/deploy/recover-6270be9.test.py
+      - name: Record exact reviewed hashes and resume the verified updater
+        env:
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$VPS_SSH_PRIVATE_KEY" && test -n "$VPS_KNOWN_HOSTS"
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf "$ssh_dir"' EXIT
+          chmod 700 "$ssh_dir"
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > "$ssh_dir/key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          chmod 600 "$ssh_dir/key" "$ssh_dir/known_hosts"
+          unset VPS_SSH_PRIVATE_KEY VPS_KNOWN_HOSTS
+          ssh_opts=(-i "$ssh_dir/key" -o IdentitiesOnly=yes -o BatchMode=yes
+            -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_dir/known_hosts"
+            -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+          ssh "${ssh_opts[@]}" root@103.9.78.67 'bash -s' < scripts/deploy/recover-6270be9.sh
+      - name: Record checked deployment
+        run: |
+          {
+            echo '### VPS recovery deployed and checked'
+            echo 'Application source: `6270be903e7c94b5155b3db9a353a7761b864722` (APK build 210).'
+            echo 'The existing updater completed backup/migrations/grants and HTTPS/API/Admin/Android readiness.'
+            echo 'Only the two explicitly reviewed hashes were recorded; future migrations remain gated.'
+          } >> "$GITHUB_STEP_SUMMARY"

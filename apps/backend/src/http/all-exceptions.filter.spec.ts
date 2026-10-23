@@ -29,7 +29,7 @@ interface Reply {
   status: number;
 }
 
-function run(exception: unknown, request: { requestId?: string; method?: string } = {
+function run(exception: unknown, request: { requestId?: string; method?: string; originalUrl?: string; route?: { path?: unknown } } = {
   requestId: REQUEST_ID,
   method: 'GET',
 }): { reply: Reply; logs: string[]; headers: Array<[string, string]> } {
@@ -179,6 +179,7 @@ describe('AllExceptionsFilter', () => {
       expect([...codes].sort()).toEqual([
         'ACCOUNT_DISABLED',
         'ACCOUNT_RECOVERY_AVAILABLE',
+        'ADJUSTMENT_HISTORY_REVIEW_REQUIRED',
         'ADMIN_ACTION_NOT_ALLOWED',
         'ADMIN_ACTIVATION_LINK_INVALID',
         'ADMIN_ACTIVATION_SESSION_INVALID',
@@ -202,7 +203,16 @@ describe('AllExceptionsFilter', () => {
         'AUTH_REGISTRATION_UNAVAILABLE',
         'AUTH_RESULT_NOT_REPLAYABLE',
         'BANK_HOLDER_MISMATCH',
+        'BANK_SNAPSHOT_STALE',
         'BANK_TRANSACTION_ALREADY_RECORDED',
+        'COMMISSION_POLICY_VERSION_CONFLICT',
+        'COMPLAINT_ATTACHMENT_INVALID',
+        'COMPLAINT_ATTACHMENT_LIMIT',
+        'COMPLAINT_ATTACHMENT_NOT_FOUND',
+        'COMPLAINT_FORBIDDEN',
+        'COMPLAINT_NOT_FOUND',
+        'COMPLAINT_STATE_CONFLICT',
+        'COMPLAINT_TARGET_NOT_FOUND',
         'CONSENT_VERSION_UNSUPPORTED',
         'CURRENT_PASSWORD_INVALID',
         'CUSTOMER_ADDRESS_NOT_FOUND',
@@ -219,6 +229,7 @@ describe('AllExceptionsFilter', () => {
         'DEVICE_PROOF_UNSUPPORTED',
         'DEVICE_RATE_LIMITED',
         'DRIVER_BANK_NOT_VERIFIED',
+        'DRIVER_FUNDING_REQUIRED',
         'DRIVER_HAS_ACTIVE_WORK',
         'DRIVER_NOT_ACTIVE',
         'DRIVER_NOT_FOUND',
@@ -252,6 +263,8 @@ describe('AllExceptionsFilter', () => {
         'INVALID_MENU_IMAGE',
         'INVALID_PHONE',
         'INVALID_SERVICE_AREA',
+        'INVALID_SHOP_LOGO',
+        'LOGIN_RATE_LIMITED',
         'MENU_CATEGORY_NAME_TAKEN',
         'MENU_CATEGORY_NAME_TAKEN_INACTIVE',
         'MENU_CATEGORY_NOT_AVAILABLE',
@@ -278,7 +291,18 @@ describe('AllExceptionsFilter', () => {
         'OPS_TARGET_NOT_FOUND',
         'OPS_UPDATE_NOT_READY',
         'OPS_WEBHOOK_INVALID',
-        'ORDER_MODULE_NOT_READY',
+        'ORDER_ADDRESS_INVALID',
+        'ORDER_CART_CHANGED',
+        'ORDER_CART_OTHER_SHOP',
+        'ORDER_CHANGE_REASON_REQUIRED',
+        'ORDER_EMPTY',
+        'ORDER_INPUT_INVALID',
+        'ORDER_NOT_FOUND',
+        'ORDER_PAYMENT_INVALID',
+        'ORDER_PAYMENT_LOCKED',
+        'ORDER_SCHEDULE_INVALID',
+        'ORDER_SHOP_NOT_OPEN',
+        'ORDER_STATE_CONFLICT',
         'OTP_ALREADY_USED',
         'OTP_EXPIRED',
         'OTP_INVALID',
@@ -288,6 +312,12 @@ describe('AllExceptionsFilter', () => {
         'PHONE_VERIFICATION_NOT_REQUIRED',
         'PHONE_VERIFICATION_REQUIRED',
         'RECALL_BLOCKED_GOODS_OUT',
+        'RECONSIDERATION_EXPIRED',
+        'RECONSIDERATION_NOT_AVAILABLE',
+        'REVIEW_ALREADY_EXISTS',
+        'REVIEW_NOT_ELIGIBLE',
+        'REVIEW_NOT_FOUND',
+        'REVIEW_TARGET_NOT_FOUND',
         'ROLE_NOT_AVAILABLE',
         'SESSION_EXPIRED',
         'SESSION_INVALID',
@@ -298,6 +328,7 @@ describe('AllExceptionsFilter', () => {
         'SHIPPING_POLICY_INVALID',
         'SHIPPING_POLICY_UNCHANGED',
         'SHOP_DISABLED',
+        'SHOP_LOGO_TOO_LARGE',
         'SHOP_NOT_FOUND',
         'SHOP_ONBOARDING_EXISTS',
         'SHOP_PROFILE_INCOMPLETE',
@@ -321,6 +352,13 @@ describe('AllExceptionsFilter', () => {
         'VERIFICATION_PURPOSE_MISMATCH',
         'VERSION_CONFLICT',
         'WALLET_PARAMETER_VERSION_CONFLICT',
+        'WITHDRAWAL_AMOUNT_BELOW_MINIMUM',
+        'WITHDRAWAL_BANK_NOT_VERIFIED',
+        'WITHDRAWAL_EVIDENCE_MISMATCH',
+        'WITHDRAWAL_INSUFFICIENT_AVAILABLE',
+        'WITHDRAWAL_NOT_FOUND',
+        'WITHDRAWAL_NOT_OWNER',
+        'WITHDRAWAL_STATE_CONFLICT',
       ]);
     });
 
@@ -425,5 +463,19 @@ describe('AllExceptionsFilter', () => {
       expect(entry.error_class).toBe('UnknownError');
       expect(logs.join('\n')).not.toContain('SECRET_MARKER_CLASS_NAME');
     });
+  });
+});
+
+
+describe('M13 safe registered route correlation', () => {
+  it('records the route template without actual path IDs, query, or exception text', () => {
+    const { logs } = run(new Error(SECRET), { requestId: REQUEST_ID, method: 'POST',
+      originalUrl: '/v1/driver/wallet/topup-requests/' + SECRET + '?token=' + SECRET,
+      route: { path: '/v1/driver/wallet/topup-requests/:id' } });
+    const entry = JSON.parse(logs[0]!) as Record<string, unknown>;
+    expect(entry).toMatchObject({ route: '/v1/driver/wallet/topup-requests/:id', app: 'SHIP', module: 'M04', request_id: REQUEST_ID });
+    expect(logs.join('')).not.toContain(SECRET);
+    const unmatched = run(new Error(SECRET), { requestId: REQUEST_ID, originalUrl: '/v1/' + SECRET });
+    expect(JSON.parse(unmatched.logs[0]!).route).toBeUndefined();
   });
 });

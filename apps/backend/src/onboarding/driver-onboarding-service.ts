@@ -1,3 +1,4 @@
+import { WalletService } from '../wallet/wallet-service';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
@@ -31,9 +32,9 @@ import { OnboardingOutcome } from './shop-onboarding-service';
  * transaction under their locks (SessionAuthorizationParticipant); the HTTP guard is only a precheck. Nothing
  * about identity, session, role, type, status or accepting_deliveries is read from the request body, and the
  * Driver row is always inserted as
- * EXTERNAL / PENDING / accepting_deliveries=false / version 1 by M03's own statement.
+ * EXTERNAL / ACTIVE / accepting_deliveries=false / version 1 by M03's own statement.
  *
- * Self-onboarding does not activate anything: it creates the PENDING profile and grants the DRIVER role, in one
+ * Self-onboarding creates the ACTIVE profile, zero wallet and grants the DRIVER role, in one
  * transaction with the audit row and the outbox event, so the role can never exist without the profile
  * that earned it (and the role-select eligibility rule would refuse a role without a profile anyway).
  */
@@ -46,6 +47,7 @@ export class DriverOnboardingService {
     private readonly drivers: DriverRepository,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
+    private readonly wallets: WalletService,
   ) {}
 
   async create(
@@ -92,6 +94,7 @@ export class DriverOnboardingService {
       throw new AppError('DRIVER_PROFILE_EXISTS');
     }
     await this.roleGrants.grant(context, userId, 'DRIVER');
+    await this.wallets.ensureZeroWallet(context, driverId);
 
     // Nothing the client typed goes into the audit row or the event: no name, no plate number.
     await this.audit.append(context, {
@@ -119,7 +122,7 @@ export class DriverOnboardingService {
       replayGuard: { user_id: userId },
       payload: {
         driver_id: driverId,
-        status: 'PENDING',
+        status: 'ACTIVE',
         accepting_deliveries: false,
         role_granted: true,
         version: 1,

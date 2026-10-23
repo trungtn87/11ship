@@ -88,7 +88,7 @@ describe('M01-A2D — Driver onboarding', () => {
       expect(response.status).toBe(201);
       const data = dataOf(response);
       expect(data).toMatchObject({
-        status: 'PENDING',
+        status: 'ACTIVE',
         accepting_deliveries: false,
         role_granted: true,
         version: 1,
@@ -105,7 +105,7 @@ describe('M01-A2D — Driver onboarding', () => {
         full_name: 'Lê Văn Shipper',
         plate_number: '29A-123.45',
         driver_type: 'EXTERNAL',
-        status: 'PENDING',
+        status: 'ACTIVE',
         accepting_deliveries: false,
       });
       expect(Number(rows[0]?.version)).toBe(1);
@@ -132,7 +132,7 @@ describe('M01-A2D — Driver onboarding', () => {
       expect((await driverRowsOf(user.userId))[0]?.plate_number).toBeNull();
     });
 
-    it('does not select the role: /auth/me lists DRIVER, reports PENDING_APPROVAL, and onboarding is not required again', async () => {
+    it('does not select the role: /auth/me lists DRIVER, reports ACTIVE, and onboarding is not required again', async () => {
       const user = await registerUser(app);
       expect(dataOf(await me(user.accessToken))).toMatchObject({
         onboarding: { shop: 'NOT_STARTED', driver: 'NOT_STARTED' },
@@ -144,7 +144,7 @@ describe('M01-A2D — Driver onboarding', () => {
       expect(data).toMatchObject({
         available_roles: ['DRIVER'],
         active_role: null,
-        onboarding: { shop: 'NOT_STARTED', driver: 'PENDING_APPROVAL' },
+        onboarding: { shop: 'NOT_STARTED', driver: 'ACTIVE' },
         onboarding_required: false,
         role_selection_required: true,
       });
@@ -234,7 +234,7 @@ describe('M01-A2D — Driver onboarding', () => {
       const user = await registerUser(app);
       const response = await create(user.accessToken, { full_name: 'Chỉ Có Tên' });
       expect(response.status).toBe(201);
-      expect(await driverRowsOf(user.userId)).toMatchObject([{ full_name: 'Chỉ Có Tên', plate_number: null, status: 'PENDING' }]);
+      expect(await driverRowsOf(user.userId)).toMatchObject([{ full_name: 'Chỉ Có Tên', plate_number: null, status: 'ACTIVE' }]);
     });
 
     it('a refusal does not consume the key: the same key then succeeds with a valid body', async () => {
@@ -321,7 +321,7 @@ describe('M01-A2D — Driver onboarding', () => {
       const data = dataOf(await me(user.accessToken));
       expect(data).toMatchObject({
         available_roles: ['DRIVER', 'SHOP'],
-        onboarding: { shop: 'COMPLETED', driver: 'PENDING_APPROVAL' },
+        onboarding: { shop: 'COMPLETED', driver: 'ACTIVE' },
         onboarding_required: false,
         role_selection_required: true,
       });
@@ -341,7 +341,7 @@ describe('M01-A2D — Driver onboarding', () => {
       expect(saved.status).toBe(201);
       expect(dataOf(await me(user.accessToken))).toMatchObject({
         available_roles: ['DRIVER'],
-        onboarding: { shop: 'INCOMPLETE', driver: 'PENDING_APPROVAL' },
+        onboarding: { shop: 'INCOMPLETE', driver: 'ACTIVE' },
         onboarding_required: false,
       });
       const completed = await app.call('POST', '/onboarding/shop/complete', {

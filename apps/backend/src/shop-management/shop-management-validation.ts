@@ -1,3 +1,4 @@
+import { parseShopLogo } from '../shop/shop-logo';
 import { requireNormalizedPhone } from '../auth/phone';
 import {
   boundedText,
@@ -68,7 +69,7 @@ export function parseShopProfileUpdateBody(body: unknown): ShopProfileUpdateInpu
   const parsed = objectWithKeys(
     body,
     ['expected_version', 'name', 'contact_phone', 'address_text', 'pickup_lat', 'pickup_lng', 'service_area_id'],
-    ['zalo', 'facebook'],
+    ['zalo', 'facebook', 'logo'],
   );
   const expectedVersion = positiveVersion(parsed.expected_version);
   const name = boundedText(parsed.name, SHOP_NAME_MAX_LENGTH);
@@ -81,7 +82,7 @@ export function parseShopProfileUpdateBody(body: unknown): ShopProfileUpdateInpu
   const serviceAreaId = requiredServiceAreaId(parsed.service_area_id);
   return {
     expectedVersion,
-    profile: { name, contactPhoneNormalized, zalo, facebook, addressText, pickupLat, pickupLng, serviceAreaId },
+    profile: { name, contactPhoneNormalized, zalo, facebook, addressText, pickupLat, pickupLng, serviceAreaId, ...(parsed.logo === undefined ? {} : { logo: parseShopLogo(parsed.logo) }) },
   };
 }
 

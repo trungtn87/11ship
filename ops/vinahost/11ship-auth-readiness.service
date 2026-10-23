@@ -1,0 +1,16 @@
+[Unit]
+Description=11Ship internal Android trust and snapshot expiry check
+After=11ship-staging.service
+
+[Service]
+Type=oneshot
+User=ship11
+Group=ship11
+WorkingDirectory=/opt/11ship/current
+EnvironmentFile=/etc/11ship/staging.env
+Environment=SHIP11_DIAGNOSTIC_ROOT=/opt/11ship/current
+ExecStart=/usr/bin/node /opt/11ship/tools/android-readiness.cjs
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true

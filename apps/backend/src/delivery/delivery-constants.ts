@@ -1,19 +1,19 @@
 // M07 vocabulary and fixed rules. The values mirror database/migrations/1794096000000_create-m07-delivery.sql; keep the two in step.
 
-export const DELIVERY_STATES = ['waiting_driver', 'accepted', 'location_confirmed', 'picked_up', 'delivering', 'completed', 'failed', 'cancelled_by_merchant', 'search_stopped'] as const;
+export const DELIVERY_STATES = ['waiting_driver', 'accepted', 'location_confirmed', 'picked_up', 'delivering', 'completed', 'failed', 'cancelled_by_merchant','cancelled_by_system', 'search_stopped'] as const;
 export type DeliveryState = (typeof DELIVERY_STATES)[number];
 
 /** Running states: a Shipper may hold the delivery. */
 export const RUNNING_STATES: readonly DeliveryState[] = ['accepted', 'location_confirmed', 'picked_up', 'delivering'];
 /** Active for the Order uniqueness rule (a search or a run is open). */
 export const ACTIVE_STATES: readonly DeliveryState[] = ['waiting_driver', ...RUNNING_STATES];
-export const TERMINAL_STATES: readonly DeliveryState[] = ['completed', 'failed', 'cancelled_by_merchant', 'search_stopped'];
+export const TERMINAL_STATES: readonly DeliveryState[] = ['completed', 'failed', 'cancelled_by_merchant','cancelled_by_system', 'search_stopped'];
 /** Before the goods are picked up: either side may still cancel its part. */
 export const BEFORE_PICKUP_STATES: readonly DeliveryState[] = ['waiting_driver', 'accepted', 'location_confirmed'];
 
 export type FeeMode = 'STANDARD' | 'AGREED' | 'PICKUP_AGREEMENT';
 export type FeePayer = 'CUSTOMER' | 'SHOP';
-export type AssignmentStatus = 'ACTIVE' | 'COMPLETED' | 'FAILED' | 'CANCELLED_BY_SHIPPER' | 'CANCELLED_BY_SHOP' | 'RELEASED_BY_ADMIN';
+export type AssignmentStatus = 'ACTIVE' | 'COMPLETED' | 'FAILED' | 'CANCELLED_BY_SHIPPER' | 'CANCELLED_BY_SHOP' | 'CANCELLED_BY_SYSTEM' | 'RELEASED_BY_ADMIN';
 export type ActorType = 'SHOP' | 'SHIPPER' | 'ADMIN' | 'SYSTEM';
 
 /** The search lasts 30 minutes from the server clock. Never extended; a cancelled assignment never restarts it. */
@@ -32,12 +32,8 @@ export const LOCATION_MAX_ACCURACY_M = 500;
 /** M06 asks "fresh": the position must be at most as old as LIVE. */
 export const LOCATION_FRESH_MS = LOCATION_LIVE_SECONDS * 1000;
 
-/**
- * Commission per successful delivery (ADR-004: 1.000 VND). It is SNAPSHOTTED on the assignment together with the policy label at acceptance;
- * capture and release use the snapshot, never this constant afterwards.
- */
-export const COMMISSION_VND = 1000n;
-export const COMMISSION_POLICY = 'COMMISSION_V1';
+// The commission per successful delivery is a versioned policy of M04 (app.wallet_commission_policies; version 1 = 1.000 VND, ADR-004). It is SNAPSHOTTED on the
+// assignment (amount and label COMMISSION_V<version>) when the delivery is accepted; capture and release use the snapshot, never the current policy.
 
 /** Fixed pre-pickup display: the first segment of an address (the street line) is never shown to a Shipper before accepting. */
 export const AREA_TEXT_MAX = 160;

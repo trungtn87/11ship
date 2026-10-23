@@ -146,6 +146,7 @@ export class SettingsView {
       h(
         'section',
         { class: 'detail-block' },
+        h('a', { href:'/system/settings/order-timeouts',class:'button button-secondary' },'Đơn hàng & giao hàng → Thời hạn xử lý'),
         h('h2', { class: 'subtitle' }, 'Xác thực số điện thoại'),
         h('p', { class: 'hint' }, 'Hai công tắc độc lập. Đăng nhập thông thường không dùng OTP. Không ảnh hưởng xác thực hai bước của SYSTEM/ADMIN và không tắt SMS Gateway. Khôi phục tài khoản đã khóa luôn bắt buộc OTP, dù công tắc nào đang tắt.'),
         ...rows,

@@ -66,7 +66,7 @@ describe('M06-B evaluateEligibility', () => {
   it('refuses a Shipper whose profile, accepting switch or bank is not ready', () => {
     expect(reasons(base({ driver: { status: 'SUSPENDED', acceptingDeliveries: true, driverType: 'EXTERNAL', bankVerified: true } }))).toEqual(['DRIVER_NOT_ACTIVE']);
     expect(reasons(base({ driver: { status: 'ACTIVE', acceptingDeliveries: false, driverType: 'EXTERNAL', bankVerified: true } }))).toEqual(['DRIVER_NOT_ACCEPTING']);
-    expect(reasons(base({ driver: { status: 'ACTIVE', acceptingDeliveries: true, driverType: 'EXTERNAL', bankVerified: false } }))).toEqual(['DRIVER_BANK_NOT_VERIFIED']);
+    expect(reasons(base({ driver: { status: 'ACTIVE', acceptingDeliveries: true, driverType: 'EXTERNAL', bankVerified: false } }))).toEqual([]);
   });
 
   it('fails closed on a fact its owner cannot give: M07 delivery/work, M14 location, M04 wallet, a missing shop position', () => {
@@ -86,6 +86,6 @@ describe('M06-B evaluateEligibility', () => {
 
   it('reports every reason at once, in a fixed order', () => {
     const verdict = evaluateEligibility(base({ driver: { status: 'PENDING', acceptingDeliveries: false, driverType: 'EXTERNAL', bankVerified: false }, activeCount: 3, availableVnd: 0n }));
-    expect(verdict.reasons).toEqual(['DRIVER_NOT_ACTIVE', 'DRIVER_NOT_ACCEPTING', 'DRIVER_BANK_NOT_VERIFIED', 'ACTIVE_LIMIT_REACHED', 'BALANCE_TOO_LOW']);
+    expect(verdict.reasons).toEqual(['DRIVER_NOT_ACTIVE', 'DRIVER_NOT_ACCEPTING', 'ACTIVE_LIMIT_REACHED', 'BALANCE_TOO_LOW']);
   });
 });

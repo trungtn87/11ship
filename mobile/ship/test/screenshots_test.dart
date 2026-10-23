@@ -61,6 +61,10 @@ void main() {
   }
 
   testWidgets('screenshots', skip: out == null, (WidgetTester tester) async {
+    // Native GPS is not present in widget renders; model the stopped M14 recorder.
+    final TestDefaultBinaryMessenger messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(const MethodChannel('vn.eleven/m14/gps'), (MethodCall call) async => null);
+    messenger.setMockMethodCallHandler(const MethodChannel('vn.eleven/m14'), (MethodCall call) async => <String, dynamic>{'recording': false});
     phone(tester);
     final FakeApiTransport api = FakeApiTransport();
     installAccountRoutes(api);

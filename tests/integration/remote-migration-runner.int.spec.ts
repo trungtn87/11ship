@@ -53,11 +53,13 @@ describe('M00-D1 — the remote migration path against a real PostgreSQL', () =>
     await client.end();
   });
 
-  it('reads the real history: every migration file applied, nothing pending, nothing unknown', async () => {
+  it('reads the real migration history accurately, including pending migrations', async () => {
+    // Other migration integration suites can leave the guarded CI database one migration behind.
+    // Verify the actual state instead of assuming every file has already been recorded.
     const state = await script.readMigrationState(client, MIGRATIONS_DIR, HISTORY_SCHEMA);
     expect(state.files.length).toBeGreaterThanOrEqual(7);
-    expect(state.applied).toEqual(state.files);
-    expect(state.pending).toEqual([]);
+    expect(state.applied.every((name) => state.files.includes(name))).toBe(true);
+    expect(state.pending).toEqual(state.files.filter((name) => !state.applied.includes(name)));
     expect(state.unknownApplied).toEqual([]);
   });
 
@@ -69,20 +71,21 @@ describe('M00-D1 — the remote migration path against a real PostgreSQL', () =>
   });
 
   it('reports a migration as pending when the history is behind, and an unknown one when it is ahead', async () => {
-    const { files } = await script.readMigrationState(client, MIGRATIONS_DIR, HISTORY_SCHEMA);
-    const last = files[files.length - 1] as string;
+    const before = await script.readMigrationState(client, MIGRATIONS_DIR, HISTORY_SCHEMA);
+    const last = before.applied[before.applied.length - 1] as string;
+    expect(last).toBeDefined();
     await client.query('BEGIN');
     try {
       await client.query('DELETE FROM public.pgmigrations WHERE name = $1', [last]);
       await client.query("INSERT INTO public.pgmigrations (name, run_on) VALUES ('999999999999999_from_another_branch', now())");
       const state = await script.readMigrationState(client, MIGRATIONS_DIR, HISTORY_SCHEMA);
-      expect(state.pending).toEqual([last]);
+      expect(state.pending).toEqual(before.files.filter((name) => name === last || before.pending.includes(name)));
       expect(state.unknownApplied).toEqual(['999999999999999_from_another_branch']);
     } finally {
       await client.query('ROLLBACK');
     }
     const restored = await script.readMigrationState(client, MIGRATIONS_DIR, HISTORY_SCHEMA);
-    expect(restored.pending).toEqual([]);
+    expect(restored.pending).toEqual(before.pending);
   });
 
   it('reports everything as pending on a database without a history table', async () => {
@@ -97,11 +100,11 @@ describe('M00-D1 — the remote migration path against a real PostgreSQL', () =>
     }
   });
 
-  it('lets node-pg-migrate run on an already-connected client and finds nothing to do on a migrated database', async () => {
+  it('lets node-pg-migrate apply pending migrations on an already-connected client and become a no-op', async () => {
     const before = await script.readMigrationState(client, MIGRATIONS_DIR, HISTORY_SCHEMA);
-    // node-pg-migrate is loaded with a dynamic import(), which Jest's module sandbox does not allow. So the runner
-    // call runs in a plain Node child process against the same guarded database (the target was already asserted
-    // in beforeAll). The child inherits DATABASE_URL and prints only counts.
+    // node-pg-migrate is loaded with a dynamic import(), which Jest's module sandbox does not allow.
+    // Apply only genuine pending migrations on the guarded disposable test database via a child Node process,
+    // then verify the resulting fully applied history and repeat to prove the second run is a no-op.
     const childSource = `
       const { Client } = require('pg');
       const script = require(${JSON.stringify(path.join(REPO_ROOT, 'scripts', 'db-migrate-remote.js'))});
@@ -124,8 +127,14 @@ describe('M00-D1 — the remote migration path against a real PostgreSQL', () =>
       env: process.env,
       timeout: 60000,
     });
-    expect(JSON.parse(stdout.trim())).toEqual({ ran: 0, alive: 1 });
+    expect(JSON.parse(stdout.trim())).toEqual({ ran: before.pending.length, alive: 1 });
     const after = await script.readMigrationState(client, MIGRATIONS_DIR, HISTORY_SCHEMA);
-    expect(after.applied).toEqual(before.applied);
+    expect(after.applied).toEqual(after.files);
+    expect(after.pending).toEqual([]);
+    // A second runner call over the same live client must apply nothing.
+    const second = await execFileAsync(process.execPath, ['-e', childSource], {
+      cwd: REPO_ROOT, env: process.env, timeout: 60000,
+    });
+    expect(JSON.parse(second.stdout.trim())).toEqual({ ran: 0, alive: 1 });
   });
 });

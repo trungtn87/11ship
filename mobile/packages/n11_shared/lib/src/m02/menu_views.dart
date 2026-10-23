@@ -502,7 +502,7 @@ class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOu
                   : <Widget>[
                       if (f.isNew || menu.busy) N11Button(key: const Key('dish-cancel'), label: 'Hủy', kind: ButtonKind.secondary, onPressed: menu.busy ? null : () => Navigator.of(context).maybePop()),
                       N11Button(
-                        key: const Key('dish-save'),
+                        key: const Key('dish-save'), validate: true,
                         label: menu.busy ? 'Đang lưu…' : (menu.uploading ? 'Chờ tải ảnh…' : (f.isNew ? 'Lưu món' : 'Lưu thay đổi')),
                         loading: menu.busy,
                         onPressed: menu.locked || menu.uploading ? null : () => menu.save(),
@@ -514,20 +514,48 @@ class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOu
   }
 
   Widget _categories(ItemForm f, MenuSnapshot snapshot, List<MenuCategory> choices, bool lock) {
-    if (choices.length <= 1) {
-      return choices.length == 1 ? Text('Nhóm món: ${choices.single.name} (tự chọn, chỉ có một nhóm).', key: const Key('dish-single-group'), style: N11Text.caption) : const SizedBox.shrink();
-    }
+    if (choices.isEmpty) return const SizedBox.shrink();
     return vstack(<Widget>[
       const Text('Nhóm món', style: N11Text.label),
-      for (final MenuCategory c in choices)
-        N11ChoiceCard(
-          key: Key('dish-cat-${c.id}'),
-          title: c.name,
-          text: c.active ? 'Đang hoạt động' : 'Ngừng hoạt động · chỉ giữ liên kết hiện có, không chọn lại sau khi đổi nhóm',
-          selected: f.categoryId == c.id,
-          onTap: lock || (!c.active && f.categoryId0 != c.id) ? null : () => menu.setCategory(c.id),
+      InputDecorator(
+        decoration: InputDecoration(
+          filled: true,
+          fillColor: N11Colors.white,
+          errorText: f.errors['category'],
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(kRadiusControl),
+            borderSide: const BorderSide(color: N11Colors.line),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
         ),
-      if (f.errors['category'] != null) N11Banner(kind: BannerKind.error, title: 'Chưa chọn nhóm', text: f.errors['category']),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            key: const Key('dish-category'),
+            value: choices.any((MenuCategory c) => c.id == f.categoryId) ? f.categoryId : null,
+            hint: const Text('Chọn nhóm món'),
+            isExpanded: true,
+            menuMaxHeight: 320,
+            borderRadius: BorderRadius.circular(kRadiusControl),
+            dropdownColor: N11Colors.white,
+            icon: const Icon(Icons.keyboard_arrow_down),
+            items: <DropdownMenuItem<String>>[
+              for (final MenuCategory c in choices)
+                DropdownMenuItem<String>(
+                  value: c.id,
+                  enabled: c.active || f.categoryId0 == c.id,
+                  child: Text(c.active ? c.name : '${c.name} (ngừng hoạt động)', key: Key('dish-cat-${c.id}'), overflow: TextOverflow.ellipsis),
+                ),
+            ],
+            onChanged: lock
+                ? null
+                : (String? id) {
+                    if (id != null) menu.setCategory(id);
+                  },
+          ),
+        ),
+      ),
+      if (choices.any((MenuCategory c) => c.id == f.categoryId && !c.active)) const Text('Ngừng hoạt động · chỉ giữ liên kết hiện có, không chọn lại sau khi đổi nhóm', style: N11Text.caption),
     ]);
   }
 

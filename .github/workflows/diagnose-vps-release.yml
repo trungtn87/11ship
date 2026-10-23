@@ -1,0 +1,56 @@
+name: Diagnose VPS release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: vps-production
+    steps:
+      - name: Read release integrity and deployment state
+        env:
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf "$ssh_dir"' EXIT
+          chmod 700 "$ssh_dir"
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > "$ssh_dir/key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          chmod 600 "$ssh_dir/key" "$ssh_dir/known_hosts"
+          unset VPS_SSH_PRIVATE_KEY VPS_KNOWN_HOSTS
+          ssh -i "$ssh_dir/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_dir/known_hosts" -o ConnectTimeout=20 root@103.9.78.67 'python3 -B -' <<'PY'
+          from pathlib import Path
+          import hashlib, json, tarfile, subprocess
+          base=Path('/opt/11ship')
+          sha='11ea361d039dee6cf55f1fb9bd4a9d60a22ba617'
+          target=base/'releases'/sha
+          for name in ('current','previous'):
+              p=base/name
+              print(name+': '+str(p.resolve()) if p.exists() else name+': missing')
+          print('service: '+subprocess.run(['systemctl','is-active','11ship-staging'],capture_output=True,text=True).stdout.strip())
+          archive=Path('/root/11ship-actions')/sha/('11ship-'+sha+'-ubuntu24-amd64.tar.gz')
+          with tarfile.open(archive,'r:gz') as tf:
+              members=[m for m in tf.getmembers() if m.isfile()]
+              prefix=members[0].name.split('/')[0]+'/'
+              expected={m.name[len(prefix):]:hashlib.sha256(tf.extractfile(m).read()).hexdigest() for m in members}
+          if not target.exists():
+              alternatives=[p for p in (base/'releases').iterdir() if sha in p.name]
+              print('candidate directories: '+json.dumps([str(p) for p in alternatives]))
+              if len(alternatives)==1: target=alternatives[0]
+          print('target: '+str(target))
+          if target.exists():
+              files=[p for p in target.rglob('*') if p.is_file()]
+              actual={str(p.relative_to(target)):hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+              print('extra paths: '+json.dumps(sorted(set(actual)-set(expected))))
+              print('missing paths: '+json.dumps(sorted(set(expected)-set(actual))))
+              changed=[p for p in expected if p in actual and expected[p]!=actual[p]]
+              print('changed paths: '+json.dumps(changed))
+              for p in changed: print('hash '+p+' expected='+expected[p]+' actual='+actual[p])
+          policy=Path('/etc/11ship/migration-compatibility.json')
+          known=json.loads(policy.read_text()) if policy.exists() else {}
+          print('reviewed migration names: '+json.dumps(sorted(known)))
+          PY

@@ -28,7 +28,8 @@ export type IconName =
   | 'map-pin'
   | 'gear'
   | 'doc'
-  | 'activity';
+  | 'activity'
+  | 'star';
 
 /** A domain an ADMIN can be granted. SYSTEM does not need a grant. */
 export type GrantId =
@@ -44,6 +45,7 @@ export type GrantId =
   | 'withdrawals'
   | 'catalog'
   | 'zones'
+  | 'order-timeouts'
   | 'parameters'
   | 'audit'
   | 'monitoring'
@@ -84,12 +86,16 @@ export function grantsFromPermissions(permissions: readonly AppPermission[]): Gr
       }
     } else if (row.app === 'DRIVER') {
       grants.add('drivers');
+      if(row.canLock)grants.add('order-timeouts');
     }
     // M07.07: the delivery pages open for an administrator who may view the shop or the Shipper side; the server decides every read and action again.
     if (row.app === 'SHOP' || row.app === 'DRIVER') {
       grants.add('deliveries');
+      grants.add('orders');
       // M08.06: the notification pages open for the same viewers; the server narrows what is listed to the apps the administrator may view.
       grants.add('notifications');
+      // M11.03: the rating and complaint pages open for the same viewers; the server decides every read and every action again (an action needs the review right).
+      grants.add('feedback');
     }
   }
   return grants;
@@ -148,10 +154,11 @@ export const MENU: readonly MenuGroup[] = [
     items: [
       soon('shops', 'Quán', 'store', 'shops'),
       { id: 'drivers', label: 'Shipper', icon: 'rider', route: { name: 'shippers' }, ready: true, access: 'drivers' },
-      soon('orders', 'Đơn hàng', 'receipt', 'orders'),
+      { id: 'orders', label: 'Đơn hàng', icon: 'receipt', route: { name: 'orders' }, ready: true, access: 'orders' },
       { id: 'deliveries', label: 'Giao hàng', icon: 'truck', route: { name: 'deliveries' }, ready: true, access: 'deliveries' },
       { id: 'notifications', label: 'Thông báo', icon: 'bell', route: { name: 'notifications' }, ready: true, access: 'notifications' },
-      soon('feedback', 'Phản ánh', 'chat', 'feedback'),
+      { id: 'reviews', label: 'Đánh giá', icon: 'star', route: { name: 'reviews' }, ready: true, access: 'feedback' },
+      { id: 'complaints', label: 'Phản ánh', icon: 'chat', route: { name: 'complaints' }, ready: true, access: 'feedback' },
     ],
   },
   {
@@ -223,6 +230,7 @@ export const MENU: readonly MenuGroup[] = [
     items: [
       // Owner decision 2026-10-14: the SYSTEM account's switches (phone verification first). SYSTEM only.
       { id: 'system-settings', label: 'Cài đặt hệ thống', icon: 'gear', route: { name: 'settings' }, ready: true, access: 'system' },
+      { id:'order-timeouts',label:'Thời hạn xử lý đơn',icon:'gear',route:{name:'order-timeouts'},ready:true,access:'order-timeouts' },
       soon('zones', 'Vùng hoạt động', 'map-pin', 'zones'),
       // M03: Cài đặt › Tham số hệ thống › Ví Shipper (minimum top-up / withdrawal per request). Every administrator sees the values; only SYSTEM changes them
       // (Owner decision 2026-10-17; the server decides again on every call).
@@ -236,6 +244,10 @@ export const MENU: readonly MenuGroup[] = [
       },
       // M06-A: Phí & điều kiện giao (fee table; every administrator reads, only SYSTEM changes, the server decides again).
       { id: 'shipping-policy', label: 'Phí & điều kiện giao', icon: 'gear', route: { name: 'shipping-policy' }, ready: true, access: 'any' },
+      soon('audit', 'Nhật ký', 'doc', 'audit'),
+      { id: 'monitoring', label: 'Giám sát', icon: 'activity', ready: true, access: 'system', children: [
+        { id: 'monitoring-errors', label: 'Nhật ký lỗi', route: { name: 'monitoring-errors' }, ready: true, access: 'system' },
+      ] },
     ],
   },
 ];
@@ -297,6 +309,8 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'shippers':
     case 'shipper':
       return canSee(role, grants, 'drivers');
+    case 'orders':
+      return canSee(role, grants, 'orders');
     case 'deliveries':
       return canSee(role, grants, 'deliveries');
     case 'notifications':
@@ -309,6 +323,9 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'ops-releases':
     case 'ops-config':
       return canSee(role, grants, 'ops');
+    case 'reviews':
+    case 'complaints':
+      return canSee(role, grants, 'feedback');
     case 'finance':
     case 'finance-wallets':
     case 'finance-transactions':
@@ -318,12 +335,15 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'finance-topup':
       return canSee(role, grants, 'topups');
     case 'finance-bank-accounts':
+    case 'monitoring-errors':
       return role === 'SYSTEM';
     case 'finance-withdrawals':
     case 'finance-withdrawal':
       return canSee(role, grants, 'withdrawals');
     case 'wallet-params':
       return canSee(role, grants, 'parameters');
+    case 'order-timeouts':
+      return canSee(role,grants,'order-timeouts');
     case 'administrators':
     case 'settings':
     case 'invitations':
@@ -347,10 +367,16 @@ export function activeMenuId(route: Route): string {
     case 'shippers':
     case 'shipper':
       return 'drivers';
+    case 'orders':
+      return 'orders';
     case 'deliveries':
       return 'deliveries';
     case 'notifications':
       return 'notifications';
+    case 'reviews':
+      return 'reviews';
+    case 'complaints':
+      return 'complaints';
     case 'wallet-parameters':
       return 'parameters-shipper-wallet';
     case 'shipping-policy':
@@ -388,8 +414,12 @@ export function activeMenuId(route: Route): string {
       return 'sysops-config';
     case 'administrators':
       return 'administrators';
+    case 'order-timeouts':
+      return 'order-timeouts';
     case 'settings':
       return 'system-settings';
+    case 'monitoring-errors':
+      return 'monitoring-errors';
     case 'invitations':
     case 'invitation-new':
     case 'invitation':
@@ -416,10 +446,16 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Vận hành', 'Shipper'];
     case 'shipper':
       return ['Vận hành', 'Shipper', 'Chi tiết'];
+    case 'orders':
+      return ['Vận hành', 'Đơn hàng'];
     case 'deliveries':
       return ['Vận hành', 'Giao hàng'];
     case 'notifications':
       return ['Vận hành', 'Thông báo'];
+    case 'reviews':
+      return ['Vận hành', 'Đánh giá'];
+    case 'complaints':
+      return ['Vận hành', 'Phản ánh'];
     case 'wallet-parameters':
       return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
     case 'shipping-policy':
@@ -460,8 +496,12 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Vận hành hệ thống', 'Cấu hình'];
     case 'administrators':
       return ['Tài khoản', 'Quản trị viên'];
+    case 'order-timeouts':
+      return ['Cài đặt hệ thống','Đơn hàng & giao hàng','Thời hạn xử lý'];
     case 'settings':
       return ['Hệ thống', 'Cài đặt hệ thống'];
+    case 'monitoring-errors':
+      return ['Hệ thống', 'Giám sát', 'Nhật ký lỗi'];
     case 'invitations':
       return ['Tài khoản', 'Lời mời Admin'];
     case 'invitation-new':

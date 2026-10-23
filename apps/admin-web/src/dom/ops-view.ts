@@ -240,7 +240,7 @@ function maintenanceList(items: readonly OpsMaintenance[], cancel?: (m: OpsMaint
 
 // ---- Tổng quan ------------------------------------------------------------------------------------------------------------------------
 
-export class OpsOverviewView extends Page {
+export class SysOpsOverviewView extends Page {
   constructor(root: HTMLElement, host: OpsHost) {
     super(root, host, 'ops-overview', 'Tổng quan vận hành');
   }

@@ -28,6 +28,7 @@ export const APP_ERROR_DEFINITIONS = {
 
   // Auth Core (M01-A1, task section 15). Fixed messages: they never echo a phone number, an OTP, a token or
   // anything else the client sent, and they never say whether an account exists.
+  LOGIN_RATE_LIMITED: { status: 429, message: 'Too many login attempts; try again later' },
   INVALID_PHONE: { status: 400, message: 'The phone number is not valid' },
   OTP_INVALID: { status: 400, message: 'The verification code is not correct' },
   OTP_EXPIRED: { status: 400, message: 'The verification code has expired' },
@@ -83,6 +84,7 @@ export const APP_ERROR_DEFINITIONS = {
   DRIVER_PROFILE_INCOMPLETE: { status: 409, message: 'The Shipper profile is missing required information' },
   BANK_HOLDER_MISMATCH: { status: 400, message: 'The bank account holder must match the Shipper name' },
   DRIVER_BANK_NOT_VERIFIED: { status: 409, message: 'The bank account has not been verified' },
+  DRIVER_FUNDING_REQUIRED: { status: 409, message: 'The Shipper needs the initial funding before the profile can be approved' },
   DRIVER_NOT_ACTIVE: { status: 409, message: 'The Shipper is not active' },
   DRIVER_WALLET_NOT_READY: { status: 409, message: 'The wallet does not meet the conditions to take orders' },
   DRIVER_HAS_ACTIVE_WORK: { status: 409, message: 'The Shipper still has deliveries in progress' },
@@ -106,6 +108,16 @@ export const APP_ERROR_DEFINITIONS = {
   TOPUP_REQUEST_NOT_FOUND: { status: 404, message: 'The top-up request was not found' },
   TOPUP_REQUEST_STATE_CONFLICT: { status: 409, message: 'The top-up request is not in a state that allows this action' },
   WALLET_PARAMETER_VERSION_CONFLICT: { status: 409, message: 'The wallet parameters were changed by another request' },
+  // Withdrawals (M04-C). Same rule: fixed messages that echo nothing the client sent; a withdrawal of another Shipper reads as not found.
+  WITHDRAWAL_AMOUNT_BELOW_MINIMUM: { status: 400, message: 'The withdrawal amount is below the current minimum' },
+  WITHDRAWAL_INSUFFICIENT_AVAILABLE: { status: 409, message: 'The available balance is not enough for this withdrawal' },
+  WITHDRAWAL_BANK_NOT_VERIFIED: { status: 409, message: 'A verified bank account is needed to withdraw' },
+  WITHDRAWAL_NOT_FOUND: { status: 404, message: 'The withdrawal was not found' },
+  WITHDRAWAL_STATE_CONFLICT: { status: 409, message: 'The withdrawal is not in a state that allows this action' },
+  BANK_SNAPSHOT_STALE: { status: 409, message: 'The bank account changed since the withdrawal was requested' },
+  WITHDRAWAL_NOT_OWNER: { status: 403, message: 'Only the administrator who took this withdrawal can confirm it' },
+  WITHDRAWAL_EVIDENCE_MISMATCH: { status: 409, message: 'The transfer evidence does not match the withdrawal; report it for reconciliation' },
+  COMMISSION_POLICY_VERSION_CONFLICT: { status: 409, message: 'The commission policy was changed by another request' },
 
   // M06-A shipping fee policy (Administration web).
   SHIPPING_POLICY_INVALID: { status: 400, message: 'The shipping fee table is not valid' },
@@ -148,8 +160,23 @@ export const APP_ERROR_DEFINITIONS = {
   FEE_LOCKED: { status: 409, message: 'The delivery fee is fixed' },
   DESTINATION_NOT_CONFIRMED: { status: 409, message: 'The drop-off point is not confirmed yet' },
   RECALL_BLOCKED_GOODS_OUT: { status: 409, message: 'The goods are not back at the shop, so the delivery cannot be requested again' },
-  ORDER_MODULE_NOT_READY: { status: 409, message: 'The order module is not connected yet' },
   ADMIN_ACTION_NOT_ALLOWED: { status: 409, message: 'This action does not apply to the delivery in its current state' },
+
+  // Food orders (M10). Fixed messages that echo nothing the client sent. An Order of another account or shop and a missing one answer the same
+  // ORDER_NOT_FOUND. VERSION_CONFLICT, SHOP_NOT_FOUND, SHOP_DISABLED, ROLE_NOT_AVAILABLE, AFTER_PICKUP_NO_CANCEL, RECALL_BLOCKED_GOODS_OUT and the
+  // DELIVERY_* / ADMIN_* codes (above) are reused unchanged.
+  ORDER_NOT_FOUND: { status: 404, message: 'The order was not found' },
+  ORDER_STATE_CONFLICT: { status: 409, message: 'The order is not in a state that allows this action' },
+  ORDER_CART_CHANGED: { status: 409, message: 'A dish or a price changed; check the cart and send the order again' },
+  ORDER_SHOP_NOT_OPEN: { status: 409, message: 'The shop cannot take this order now' },
+  ORDER_SCHEDULE_INVALID: { status: 409, message: 'The wanted time is not possible for this shop' },
+  ORDER_ADDRESS_INVALID: { status: 409, message: 'The delivery address is not available' },
+  ORDER_EMPTY: { status: 409, message: 'An order without dishes cannot be confirmed' },
+  ORDER_CHANGE_REASON_REQUIRED: { status: 409, message: 'The order was changed: a reason is required to confirm it' },
+  ORDER_PAYMENT_LOCKED: { status: 409, message: 'The paid amount cannot change while a delivery is in progress' },
+  ORDER_PAYMENT_INVALID: { status: 400, message: 'The paid amount is not valid' },
+  ORDER_CART_OTHER_SHOP: { status: 409, message: 'The cart holds dishes of another shop' },
+  ORDER_INPUT_INVALID: { status: 400, message: 'The order details are not valid' },
 
   // Shop management (M02-A, task section 7). Same rule: fixed messages that echo nothing the client sent and reveal
   // nothing about any other account. SESSION_*, ACCOUNT_DISABLED, INVALID_SERVICE_AREA, SHOP_PROFILE_INCOMPLETE and
@@ -163,6 +190,8 @@ export const APP_ERROR_DEFINITIONS = {
   // apart from one that does not exist. VERSION_CONFLICT, SHOP_NOT_FOUND, SHOP_DISABLED and SHOP_PROFILE_INCOMPLETE are reused.
   MENU_ITEM_NOT_FOUND: { status: 404, message: 'The dish was not found' },
   MENU_CATEGORY_NOT_AVAILABLE: { status: 400, message: 'The dish group cannot be chosen' },
+  INVALID_SHOP_LOGO: { status: 400, message: 'The shop logo is not valid' },
+  SHOP_LOGO_TOO_LARGE: { status: 413, message: 'The shop logo exceeds 1 MiB' },
   INVALID_MENU_IMAGE: { status: 400, message: 'The picture is not valid' },
   MENU_LIMIT_REACHED: { status: 409, message: 'The menu limit of this shop was reached' },
   MENU_IMAGE_NOT_FOUND: { status: 404, message: 'The picture was not found' },
@@ -236,6 +265,23 @@ export const APP_ERROR_DEFINITIONS = {
   DEVICE_PROOF_EXPIRED: { status: 403, message: 'The device proof has expired' },
   DEVICE_PROOF_UNSUPPORTED: { status: 403, message: 'This device cannot provide the required proof' },
   DEVICE_RATE_LIMITED: { status: 429, message: 'Too many device requests; try again later' },
+
+  // Reviews and complaints (M11). Fixed messages that echo nothing the client sent. A review, order, delivery or complaint of another account is never
+  // told apart from one that does not exist. ORDER_MODULE_NOT_READY, DELIVERY_NOT_FOUND, VERSION_CONFLICT and the ADMIN_* codes are reused.
+  REVIEW_NOT_ELIGIBLE: { status: 409, message: 'This rating is not available for the order or delivery yet' },
+  REVIEW_ALREADY_EXISTS: { status: 409, message: 'This order or delivery was already rated' },
+  REVIEW_NOT_FOUND: { status: 404, message: 'The rating was not found' },
+  REVIEW_TARGET_NOT_FOUND: { status: 404, message: 'The order or delivery to rate was not found' },
+  COMPLAINT_NOT_FOUND: { status: 404, message: 'The complaint was not found' },
+  COMPLAINT_TARGET_NOT_FOUND: { status: 404, message: 'The order, delivery or rating of the complaint was not found' },
+  COMPLAINT_STATE_CONFLICT: { status: 409, message: 'The complaint is not in a state that allows this action' },
+  COMPLAINT_ATTACHMENT_INVALID: { status: 400, message: 'The evidence picture is not valid' },
+  COMPLAINT_ATTACHMENT_NOT_FOUND: { status: 404, message: 'The evidence picture was not found' },
+  COMPLAINT_ATTACHMENT_LIMIT: { status: 409, message: 'Too many evidence pictures' },
+  COMPLAINT_FORBIDDEN: { status: 403, message: 'You cannot do this on this complaint' },
+  RECONSIDERATION_EXPIRED: { status: 409, message: 'The period to ask for another review has ended' },
+  RECONSIDERATION_NOT_AVAILABLE: { status: 409, message: 'Another review cannot be requested for this complaint' },
+  ADJUSTMENT_HISTORY_REVIEW_REQUIRED: { status: 409, message: 'The whole delivery history must be reviewed before this adjustment' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;

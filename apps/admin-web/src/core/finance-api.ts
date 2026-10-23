@@ -57,7 +57,15 @@ export function parseRights(data: Record<string, unknown>): FinanceRights | unde
   }
   // SYSTEM has every right implicitly; an ADMIN only the ones listed. Unknown keys are ignored: they open nothing.
   const every = data.role === 'SYSTEM' && data.implicit;
-  return { role: data.role, implicit: data.implicit, canRead: every || held.has('wallet.read'), canRecord: every || held.has('wallet.topup.record') };
+  return {
+    role: data.role,
+    implicit: data.implicit,
+    canRead: every || held.has('wallet.read'),
+    canRecord: every || held.has('wallet.topup.record'),
+    canProcess: every || held.has('wallet.withdrawal.process'),
+    canConfirm: every || held.has('wallet.withdrawal.confirm'),
+    canReconcile: every || held.has('wallet.withdrawal.reconcile'),
+  };
 }
 
 export function parseTopup(value: unknown): TopupItem | undefined {
@@ -252,9 +260,12 @@ const CONFLICTS: readonly string[] = [
   'FINANCE_GRANT_STATE_CONFLICT',
   'FINANCE_BANK_ACCOUNT_STATE_CONFLICT',
   'FINANCE_BANK_ACCOUNT_EXISTS',
+  'WITHDRAWAL_STATE_CONFLICT',
+  'BANK_SNAPSHOT_STALE',
+  'COMMISSION_POLICY_VERSION_CONFLICT',
 ];
 
-async function outcomeOf(result: ApiResult<unknown>, session: CsrfPort): Promise<FinanceOutcome> {
+export async function outcomeOf(result: ApiResult<unknown>, session: CsrfPort): Promise<FinanceOutcome> {
   if (result.kind === 'ok') {
     return { kind: 'ok' };
   }
@@ -283,7 +294,7 @@ async function outcomeOf(result: ApiResult<unknown>, session: CsrfPort): Promise
   }
 }
 
-function readOf<T>(result: ApiResult<T>): FinanceRead<T> {
+export function readOf<T>(result: ApiResult<T>): FinanceRead<T> {
   if (result.kind === 'ok') {
     return { kind: 'ready', data: result.data };
   }
