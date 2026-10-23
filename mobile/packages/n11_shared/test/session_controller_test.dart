@@ -65,9 +65,9 @@ void main() {
       t.bridge.key = const DeviceKeyState(keyId: 'k', publicKeySpki: 'c3Bracw=', chain: <String>[], bindingId: null, generation: null);
       t.api.failNext = const AuthFailure(AuthFailureKind.unknownOutcome);
       await t.session.start();
-      expect(t.session.status, SessionStatus.guest);
+      expect(t.session.status, SessionStatus.unverified);
       expect(t.session.identity, isNull);
-      expect(t.bridge.token, isNull);
+      expect(t.bridge.token, 'stored-token');
       await t.session.revalidate();
       expect(t.session.status, SessionStatus.signedIn);
     });
@@ -163,8 +163,8 @@ void main() {
       expect(sent[1].headers['x-device-nonce'], isNull);
       expect(t.session.status, SessionStatus.signedIn);
       expect(t.session.pending, isNull);
-      // One device registration for the two attempts.
-      expect(t.api.to('POST', '/v1/client-auth/device/registrations'), hasLength(1));
+      // No hardware enrollment for either attempt.
+      expect(t.api.to('POST', '/v1/client-auth/device/registrations'), isEmpty);
     });
 
     test('phones without attestation can register and log in without touching device endpoints', () async {
@@ -388,14 +388,14 @@ void main() {
       expect(puts[1].headers['x-device-nonce'], isNull);
     });
 
-    test('401 while saving ends the session: token and personal values are cleared, the key stays', () async {
+    test('401 while saving ends the session: token and personal values are cleared, no hardware key is needed', () async {
       final t = await signedIn();
       t.api.routes['PUT /v1/customer/me/profile'] = (String m, String p, Map<String, String> h, String b) async => apiError(401, 'SESSION_REVOKED');
       await t.session.saveProfile('Khác');
       expect(t.session.status, SessionStatus.guest);
       expect(t.session.profile, isNull);
       expect(t.bridge.token, isNull);
-      expect(t.bridge.key, isNotNull);
+      expect(t.bridge.key, isNull);
     });
   });
 

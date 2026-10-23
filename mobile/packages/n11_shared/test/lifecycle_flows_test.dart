@@ -198,6 +198,13 @@ void main() {
           t.api.routes['POST $path'] = (String m, String p, Map<String, String> h, String b) async => json(503, <String, Object?>{
             'error': <String, Object?>{'code': 'SERVICE_UNAVAILABLE', 'request_id': '123e4567-e89b-42d3-a456-426614174000', 'message': 'secret server detail'},
           });
+          if (path.contains('/device/')) {
+            // The old attestation services may be unavailable without blocking normal registration.
+            expect(await t.session.register(phone: '0901234567', password: 'Correct-Horse-9', fullName: 'Nguyễn Văn An'), isTrue);
+            expect(t.api.to('POST', path), isEmpty);
+            expect(t.session.lastFailure, isNull);
+            return;
+          }
           expect(await t.session.register(phone: '0901234567', password: 'Correct-Horse-9', fullName: 'Nguyễn Văn An'), isFalse);
           final AuthFailure failure = t.session.lastFailure!;
           expect(failure.endpoint, path);

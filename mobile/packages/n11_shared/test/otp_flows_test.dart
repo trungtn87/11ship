@@ -127,7 +127,7 @@ void main() {
       final Map<String, Object?> body = jsonDecode(register.body) as Map<String, Object?>;
       expect(body['verification_token'], 'REGISTER-PROOF-TOKEN-0123456789');
       expect(body.keys.toSet(), <String>{'phone', 'password', 'verification_token', 'device', 'full_name', 'consent'});
-      expect(register.headers['x-device-registration'], isNotEmpty, reason: 'the OTP proof does not replace the native device proof');
+      expect(register.headers['x-device-registration'], isNull, reason: 'OTP remains required without any hardware enrollment');
     });
   });
 

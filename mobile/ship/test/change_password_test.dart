@@ -17,7 +17,7 @@ void main() {
     api.routes['POST /v1/client-auth/change-password'] = (String m, String p, Map<String, String> h, String b) async {
       expect(h['authorization'], isNotEmpty);
       expect(h['idempotency-key'], isNotEmpty);
-      expect(h['x-device-signature'], isNotEmpty);
+      expect(h['x-device-signature'], isNull);
       return (jsonDecode(b) as Map<String, Object?>)['current_password'] == 'wrong'
           ? apiError(400, 'CURRENT_PASSWORD_INVALID')
           : json(200, <String, Object?>{'data': <String, Object?>{'changed': true}});

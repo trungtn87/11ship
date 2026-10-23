@@ -264,6 +264,7 @@ describe('AllExceptionsFilter', () => {
         'INVALID_PHONE',
         'INVALID_SERVICE_AREA',
         'INVALID_SHOP_LOGO',
+        'LOGIN_RATE_LIMITED',
         'MENU_CATEGORY_NAME_TAKEN',
         'MENU_CATEGORY_NAME_TAKEN_INACTIVE',
         'MENU_CATEGORY_NOT_AVAILABLE',
