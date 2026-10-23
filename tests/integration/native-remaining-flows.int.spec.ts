@@ -78,7 +78,7 @@ describe('native remaining flows (fixture attestation)', () => {
     const token = String(dataOf(logged).access_token);
     const areaId = await createServiceArea(app.pool);
     const saved = await app.call('PUT', '/onboarding/shop/profile', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: shopProfileBody({ ...GPS, service_area_id: areaId }) });
-    expect(saved.status).toBe(200);
+    expect(saved.status).toBe(201);
     expect((await app.call('POST', '/onboarding/shop/complete', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { expected_version: Number(dataOf(saved).version) } })).status).toBe(200);
     expect((await app.call('POST', '/client-auth/context', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { context: 'SHOP_OWNER' } })).status).toBe(200);
     expect((await app.call('GET', '/shop/me', { bearer: token })).status).toBe(200);

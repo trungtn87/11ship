@@ -154,7 +154,7 @@ describe('M01-A1 — Auth Core migration', () => {
       '1793404800000_create-driver-wallet-core',
       '1793491200000_create-wallet-holds',
       '1793577600000_create-wallet-topup-sources',
-      '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_open-topup-ledger-gate', '1794096000000_create-m07-delivery', '1794182400000_create-m08-notifications', '1794268800000_create-m10-orders', '1794355200000_create-m11-reviews-complaints', '1794441600000_open-adjustment-ledger-gate', '1795046400000_add-shop-logo', '1795132800000_create-wallet-withdrawals', '1795219200000_simplify-shipper-onboarding', '1795305600000_service-area-coverage', '1795392000000_order-stage-timeouts', '1795478400000_bootstrap-cao-bang-gps-coverage', '1795564800000_shop-display-order-codes',
+      '1793664000000_create-shipping-eligibility-parameters', '1793750400000_create-shipping-fee-policy', '1793836800000_m06-v1-1-three-tiers-agreement', '1793923200000_create-admin-finance-grants', '1794009600000_open-topup-ledger-gate', '1794096000000_create-m07-delivery', '1794182400000_create-m08-notifications', '1794268800000_create-m10-orders', '1794355200000_create-m11-reviews-complaints', '1794441600000_open-adjustment-ledger-gate', '1795046400000_add-shop-logo', '1795132800000_create-wallet-withdrawals', '1795219200000_simplify-shipper-onboarding', '1795305600000_service-area-coverage', '1795392000000_order-stage-timeouts', '1795478400000_bootstrap-cao-bang-gps-coverage', '1795564800000_shop-display-order-codes', '1795651200000_password-client-sessions',
     ]);
     expect(names.filter((name) => name.endsWith('create-auth-core'))).toHaveLength(1);
   });
@@ -423,6 +423,8 @@ describe('M01-A1 — Auth Core migration', () => {
           'sessions_token_digest_ck',
           'sessions_device_id_ck',
           'sessions_platform_ck',
+          'sessions_auth_method_ck',
+          'sessions_password_client_ck',
           'sessions_app_ck',
           'sessions_active_role_ck',
           'sessions_expiry_ck',

@@ -54,7 +54,7 @@ describe('native device binding (fixture attestation)', () => {
         configOverride: { clientAuth: { termsVersion: TERMS, privacyVersion: PRIVACY }, clientPhoneVerificationMode: 'DISABLED_TEST' },
       },
     );
-    // The gate is OFF (no trust): every ANDROID request must stay a fail-closed 503.
+    // No trust: legacy enrollment stays closed; password sessions need no attestation.
     closedApp = await startAuthApp(
       {},
       { configOverride: { clientAuth: { termsVersion: TERMS, privacyVersion: PRIVACY }, clientPhoneVerificationMode: 'DISABLED_TEST' } },
@@ -298,11 +298,17 @@ describe('native device binding (fixture attestation)', () => {
       expect(token.length).toBeGreaterThan(20);
     });
 
-    it('refuses ANDROID REQUIRED-mode registration (no OTP step is faked) and an ANDROID register with no proof', async () => {
+    it('registers an Android PASSWORD session without device proof in DISABLED_TEST mode', async () => {
       const phone = randomPhone();
-      const none = await app.call('POST', '/client-auth/register', { headers: { 'idempotency-key': randomUUID() }, body: registerBody(phone, 'FOOD') });
-      expect([none.status, errorCode(none)]).toEqual([403, 'DEVICE_PROOF_REQUIRED']);
-      expect(await countRows(app.pool, 'SELECT 1 FROM app.users WHERE phone_normalized = $1', [phone.normalized])).toBe(0);
+      app.track(phone.normalized);
+      const response = await app.call('POST', '/client-auth/register', { headers: { 'idempotency-key': randomUUID() }, body: registerBody(phone, 'FOOD') });
+      expect(response.status).toBe(201);
+      const token = String(dataOf(response).access_token);
+      const sessionId = await sessionIdOfToken(app.pool, token);
+      const session = await app.pool.query<{ auth_method: string }>('SELECT auth_method FROM app.sessions WHERE session_id = $1::uuid', [sessionId]);
+      expect(session.rows).toEqual([{ auth_method: 'PASSWORD' }]);
+      expect(response.headers.get('x-device-binding-id')).toBeNull();
+      expect((await app.call('GET', '/client-auth/me', { bearer: token })).status).toBe(200);
     });
 
     it('refuses a tampered body, a replayed nonce, a stale time, another key and a token signed for another idempotency key', async () => {
