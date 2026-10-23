@@ -250,7 +250,7 @@ class ReasonNote extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const Padding(padding: EdgeInsets.only(top: 2), child: Icon(icon, size: 16, color: N11Colors.ink3)),
+        Padding(padding: const EdgeInsets.only(top: 2), child: Icon(icon, size: 16, color: N11Colors.ink3)),
         const SizedBox(width: N11Space.gap2),
         Expanded(child: Text(text, style: N11Text.captionInk2)),
       ],
