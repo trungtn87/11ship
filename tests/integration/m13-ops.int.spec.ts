@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from '@jest/glo
 import { ADMIN_SESSION_COOKIE } from '../../apps/backend/src/admin-auth/admin-auth-constants';
 import { SmsGatewayConfig } from '../../apps/backend/src/config/sms-gateway-config';
 import { runSmsGatewayCli } from '../../apps/backend/src/sms-gateway/cli/sms-gateway-cli';
+import { runOpsCli } from '../../apps/backend/src/ops/cli/ops-cli';
 import { TransactionManager } from '../../apps/backend/src/transaction/transaction-manager';
 import { OpsCollector } from '../../apps/backend/src/ops/ops-collector';
 import { DiscordBody, DiscordClient, DiscordResult, OPS_DISCORD_CLIENT, OpsDiscordDispatcher } from '../../apps/backend/src/ops/ops-discord';
@@ -81,6 +82,10 @@ describe('M13 — operations, alerts and updates', () => {
     try {
       await client.query(`SET app.ops_purge = 'on'`);
       await client.query('UPDATE app.ops_incidents SET reopens_incident_id = NULL');
+      // Devices left by an earlier run would change what "no gateway paired" means; jobs reference them, so both go (test database only).
+      await client.query('DELETE FROM app.sms_jobs');
+      await client.query('DELETE FROM app.ops_gateway_telemetry');
+      await client.query('DELETE FROM app.sms_gateway_devices');
       for (const t of ['ops_events', 'ops_notifications', 'ops_incidents', 'ops_checks', 'ops_metrics', 'ops_metrics_hourly', 'ops_maintenance', 'ops_gateway_telemetry', 'ops_deploys', 'ops_version_reports', 'ops_releases', 'ops_backup_reports', 'ops_ingest_keys', 'ops_admin_scopes', 'ops_config']) {
         await client.query(`DELETE FROM app.${t}`);
       }
@@ -718,6 +723,33 @@ describe('M13 — operations, alerts and updates', () => {
     });
   });
 
+  describe('operator tool for the machine credentials', () => {
+    const ctl = async (...argv: string[]) => {
+      const out: string[] = [];
+      const err: string[] = [];
+      const c = await runOpsCli({ env: adminTestEnv(), argv, out: (l) => out.push(l), err: (l) => err.push(l) });
+      return { c, out, err };
+    };
+    it('creates a credential of ONE scope, shows it once, stores only its digest, lists and revokes it', async () => {
+      const made = await ctl('ingest-key', 'create', '--label', 'Probe test', '--scope', 'PROBE');
+      expect(made.c).toBe(0);
+      const secret = /: ([A-Za-z0-9_-]{43})$/.exec(made.out[1]!)![1]!;
+      const keyId = /created key ([0-9a-f-]{36})/.exec(made.out[0]!)![1]!;
+      const stored = await q<Json>(`SELECT credential_digest, scope FROM app.ops_ingest_keys WHERE key_id = $1::uuid`, [keyId]);
+      expect(stored[0]!.credential_digest).toBe(createHash('sha256').update(secret).digest('hex'));
+      expect(JSON.stringify(stored)).not.toContain(secret);
+      const post = (path: string) => api(admin.running.baseUrl, 'POST', `/ops/ingest/${path}`, { bearer: secret, body: path === 'probe' ? { reported_at: new Date().toISOString() } : { kind: 'BACKUP', ok: true, finished_at: new Date().toISOString() } });
+      expect((await post('probe')).status).toBe(200);
+      expect((await post('backup')).status).toBe(401);
+      expect((await ctl('ingest-key', 'list')).out.join('\n')).toContain(keyId);
+      expect((await ctl('ingest-key', 'revoke', '--key-id', keyId)).c).toBe(0);
+      expect((await post('probe')).status).toBe(401);
+      expect((await ctl('ingest-key', 'create', '--label', 'x', '--scope', 'ROOT')).c).toBe(2);
+      expect((await ctl('ingest-key', 'revoke', '--key-id', 'nope')).c).toBe(2);
+      expect((await ctl('nope')).c).toBe(2);
+    });
+  });
+
   // ---------------------------------------------------------------- permissions and secrets
   describe('permissions and secrets (design sections 2 and 8)', () => {
     it('an ADMIN without a grant sees nothing; VIEW reads but cannot act; HANDLE acts but cannot configure; only SYSTEM sees the admin log', async () => {
@@ -759,8 +791,9 @@ describe('M13 — operations, alerts and updates', () => {
         expect(text).not.toContain('SECRETTOKEN');
         expect(text).not.toContain('webhooks/123456789012345678');
       }
-      const stored = await q<Json>(`SELECT convert_from(webhook_ciphertext, 'LATIN1') AS c FROM app.ops_config`);
-      expect(stored[0]!.c).not.toContain('SECRETTOKEN');
+      const stored = await q<Json>(`SELECT encode(webhook_ciphertext, 'hex') AS c FROM app.ops_config`);
+      expect(String(stored[0]!.c)).not.toContain(Buffer.from('SECRETTOKEN').toString('hex'));
+      expect(String(stored[0]!.c)).not.toContain(Buffer.from('discord.com').toString('hex'));
       const audit = await q<Json>(`SELECT metadata::text AS m FROM app.audit_logs WHERE action = 'admin.ops.config.update.v1' ORDER BY occurred_at DESC LIMIT 2`);
       expect(audit.length).toBeGreaterThan(0);
       for (const a of audit) expect(String(a.m)).not.toMatch(/SECRETTOKEN|discord\.com/);

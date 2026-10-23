@@ -1,0 +1,13 @@
+{
+  "target_url": "https://YOUR-PUBLIC-HOST/v1/health/ready",
+  "interval_seconds": 60,
+  "timeout_seconds": 10,
+  "failures_to_alert": 3,
+  "successes_to_recover": 2,
+  "heartbeat_seconds": 300,
+  "environment": "production",
+  "state_file": "/var/lib/11ship-probe/state.json",
+  "discord_webhook_file": "/etc/11ship-probe/discord-webhook",
+  "m13_ingest_url": "https://YOUR-PUBLIC-HOST/v1/ops/ingest/probe",
+  "m13_ingest_token_file": "/etc/11ship-probe/ingest-token"
+}
