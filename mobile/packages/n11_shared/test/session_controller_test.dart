@@ -327,6 +327,72 @@ void main() {
       expect(t.bridge.token, isNull);
     });
 
+    test('issue #168: disposing the registration form cannot invalidate an in-flight shop request', () async {
+      final t = build();
+      await t.session.loadRegistrationMode();
+      expect(await t.session.register(phone: '0901234567', password: 'Correct-Horse-9', fullName: 'Nguyễn Văn An', verificationToken: 'PROOF-TOKEN-0123456789'), isTrue);
+      final int activeEpoch = t.session.sessionEpoch;
+      final Completer<ApiResponse> reply = Completer<ApiResponse>();
+      final Completer<void> requested = Completer<void>();
+      t.api.routes['GET /v1/onboarding/shop/profile'] = (String m, String p, Map<String, String> h, String b) {
+        requested.complete();
+        return reply.future;
+      };
+
+      // The shop opens while the register route is still disposing.
+      final Future<ApiResponse> shopLoad = t.session.protectedCall('GET', '/v1/onboarding/shop/profile');
+      await requested.future;
+      t.session.abandon();
+      expect(t.session.sessionEpoch, activeEpoch, reason: 'leaving a successful auth form is not a session change');
+      reply.complete(json(200, <String, Object?>{'data': null}));
+      expect((await shopLoad).status, 200);
+      expect(t.session.status, SessionStatus.signedIn);
+      expect(t.bridge.token, 'fake-access-token-0123456789');
+    });
+
+    test('issue #168: closing an already successful login does not invalidate a signed-in request', () async {
+      final t = build();
+      expect(await t.session.login(phone: '0901234567', password: 'Correct-Horse-9'), isTrue);
+      final int activeEpoch = t.session.sessionEpoch;
+      t.session.abandon();
+      expect(t.session.sessionEpoch, activeEpoch);
+      expect((await t.session.protectedCall('GET', '/v1/client-auth/me')).status, 200);
+      expect(t.session.status, SessionStatus.signedIn);
+    });
+
+    test('issue #168: after disposing auth form, a REAL server 401 still ends the session', () async {
+      final t = build();
+      expect(await t.session.login(phone: '0901234567', password: 'Correct-Horse-9'), isTrue);
+      t.session.abandon();
+      t.api.routes['GET /v1/onboarding/shop/profile'] = (String m, String p, Map<String, String> h, String b) async => apiError(401, 'SESSION_EXPIRED');
+      await expectLater(
+        t.session.protectedCall('GET', '/v1/onboarding/shop/profile'),
+        throwsA(isA<AuthFailure>().having((AuthFailure f) => f.kind, 'kind', AuthFailureKind.sessionEnded)),
+      );
+      expect(t.session.status, SessionStatus.guest);
+      expect(t.bridge.token, isNull);
+      expect(t.session.identity, isNull);
+      expect(t.session.sessionEndedNotice, isTrue);
+    });
+
+    test('issue #168: leaving a registration form BEFORE auth completes still drops its late success', () async {
+      final t = build();
+      await t.session.loadRegistrationMode();
+      final Completer<ApiResponse> reply = Completer<ApiResponse>();
+      final Completer<void> requested = Completer<void>();
+      t.api.routes['POST /v1/client-auth/register'] = (String m, String p, Map<String, String> h, String b) {
+        requested.complete();
+        return reply.future;
+      };
+      final Future<bool> registration = t.session.register(phone: '0901234567', password: 'Correct-Horse-9', fullName: 'Nguyễn Văn An', verificationToken: 'PROOF-TOKEN-0123456789');
+      await requested.future;
+      t.session.abandon();
+      reply.complete(json(201, <String, Object?>{'data': <String, Object?>{...identityJson(), 'access_token': 'late-token'}}));
+      expect(await registration, isFalse);
+      expect(t.session.status, isNot(SessionStatus.signedIn));
+      expect(t.bridge.token, isNull);
+    });
+
     test('leaving the form (abandon) drops the late answer', () async {
       final t = build();
       final Completer<ApiResponse> gate = Completer<ApiResponse>();
