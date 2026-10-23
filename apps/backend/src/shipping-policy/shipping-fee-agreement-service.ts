@@ -59,6 +59,10 @@ export interface Act {
   readonly action: AgreementAction;
   /** The user acting for SHOP / CUSTOMER / ADMIN (M07 authorized the role). Not needed for a Shipper (taken from the driver) or for LOCK / EXTEND_DEADLINE. */
   readonly actorUserId?: string;
+  /** SHOP_ACCEPT_COUNTER / SHOP_REJECT_COUNTER answered by the CUSTOMER who pays (an ORDER placed in 11Food): the log says CUSTOMER, not SHOP. */
+  readonly answeredBy?: 'CUSTOMER';
+  /** Stored as the reason of the event when the transition has none (for example "the shop confirmed on behalf of a customer without an app"). */
+  readonly eventNote?: string;
 }
 
 const ACTOR_OF: Readonly<Record<AgreementAction['type'], ActorType>> = {
@@ -93,6 +97,18 @@ export class ShippingFeeAgreementService {
   /** What the fee table says for this route distance NOW (a read only: nothing is recorded). Unpriced is `feeVnd: null`, never 0. */
   async estimate(context: TransactionContext, distanceM: number | null): Promise<QuoteOutcome> {
     return evaluateQuote(await this.policies.active(context), distanceM);
+  }
+
+  /**
+   * The three bands in force NOW, for a shop that picks one for an address without a map point. `fromM` is a distance inside the band (its lower bound) and is
+   * what `estimate` is asked with: the fee is the band's own, the distance is not claimed as measured. Null when no fee table is in force.
+   */
+  async bands(context: TransactionContext): Promise<{ readonly versionNo: number; readonly bands: readonly { readonly index: number; readonly fromM: number; readonly toM: number; readonly feeVnd: number }[] } | null> {
+    const active = await this.policies.active(context);
+    if (active === null) {
+      return null;
+    }
+    return { versionNo: active.versionNo, bands: active.policy.tiers.map((tier, index) => ({ index, fromM: tier.fromM, toM: tier.toM, feeVnd: tier.feeVnd })) };
   }
 
   /** STANDARD: the fee is the base fee of the three bands for this route distance, final at once. */
@@ -167,7 +183,7 @@ export class ShippingFeeAgreementService {
     if (current.version !== input.expectedVersion) {
       return { kind: 'conflict', agreement: current };
     }
-    const actorType = ACTOR_OF[input.action.type];
+    const actorType = input.answeredBy ?? ACTOR_OF[input.action.type];
     let actorUserId: string | null = null;
     let driverId: string | null = null;
     if ('driverId' in input.action) {
@@ -213,7 +229,7 @@ export class ShippingFeeAgreementService {
       actorId: actorUserId,
       driverId: transition.driverId ?? driverId,
       amountVnd: transition.amountVnd,
-      reason: transition.reason,
+      reason: transition.reason ?? input.eventNote ?? null,
       requestId: input.requestId,
       agreementVersion: next.version,
     });
@@ -222,6 +238,10 @@ export class ShippingFeeAgreementService {
 
   read(context: TransactionContext, agreementId: string): Promise<Agreement | undefined> {
     return this.agreements.find(context, agreementId);
+  }
+
+  lastAnsweredDriver(context: TransactionContext, agreementId: string): Promise<string | undefined> {
+    return this.agreements.lastAnsweredDriver(context, agreementId);
   }
 
   readByDelivery(context: TransactionContext, deliveryId: string): Promise<Agreement | undefined> {

@@ -33,7 +33,13 @@ export interface DeliveryChangePayload {
   readonly driverId: string | null;
   /** The food Order the delivery carries (M10), if any: its customer is told of the steps that matter to them. */
   readonly orderId?: string | null;
+  /** Who pays the delivery fee and where the request came from: they decide who is asked about a fee proposal. */
+  readonly feePayer?: 'CUSTOMER' | 'SHOP' | null;
+  readonly source?: 'ORDER' | 'DIRECT' | null;
 }
+
+/** The fee of an ORDER paid by the customer is decided by the customer in 11Food; every other fee is decided by the shop. */
+const customerDecidesFee = (p: DeliveryChangePayload): boolean => p.source === 'ORDER' && p.feePayer === 'CUSTOMER' && p.orderId !== undefined && p.orderId !== null;
 
 const delivery = (p: DeliveryChangePayload, audience: Audience, kind: NotificationKind, title: string, body: string, pushTtlMs: number = PUSH_TTL_MS.result): Draft => ({
   type: 'NOTIFY',
@@ -84,6 +90,12 @@ function composeForCustomer(p: DeliveryChangePayload): Draft[] {
       return [notify('ORDER_SHIPPER_ACCEPTED', 'Shipper đã nhận đơn của bạn', `Đơn ${p.code}: shipper đang đến quán lấy món.`)];
     case 'picked_up':
       return [notify('ORDER_DELIVERING', 'Đơn của bạn đang được giao', `Đơn ${p.code}: shipper đã lấy món và đang giao.`)];
+    case 'fee_countered':
+      return customerDecidesFee(p) ? [notify('FEE_COUNTERED', 'Shipper đề xuất phí khác', `Đơn ${p.code}: shipper muốn lấy phí giao khác. Bạn là người trả phí, mở ứng dụng để đồng ý hoặc từ chối.`)] : [];
+    case 'fee_counter_accepted':
+    case 'fee_counter_rejected':
+    case 'fee_customer_confirmed':
+      return [];
     case 'failed':
       return [notify('ORDER_DELIVERY_FAILED', 'Giao hàng chưa thành công', `Đơn ${p.code}: giao chưa thành công, quán đang xử lý. Mở ứng dụng để xem.`)];
     default:
@@ -98,7 +110,7 @@ function composeForShopAndShipper(p: DeliveryChangePayload): Draft[] {
     case 'recalled':
       return p.state === 'waiting_driver' ? [{ type: 'OFFER_ROUND', deliveryId: p.deliveryId, roundVersion: p.version }] : [];
     case 'accepted':
-      return [delivery(p, 'SHOP', 'DELIVERY_ACCEPTED', 'Shipper đã nhận đơn', `Đơn ${code} đã có shipper nhận.`)];
+      return [delivery(p, 'SHOP', 'DELIVERY_ACCEPTED', 'Shipper đã nhận đơn', `Đơn ${code}: shipper đã nhận và đang đến lấy hàng.`)];
     case 'released_by_shipper':
     case 'released_by_admin': {
       const out: Draft[] = [delivery(p, 'SHOP', 'DELIVERY_RELEASED', 'Shipper không còn nhận đơn', `Đơn ${code}: shipper đã hủy nhận. Mở ứng dụng để xem trạng thái.`)];
@@ -111,7 +123,7 @@ function composeForShopAndShipper(p: DeliveryChangePayload): Draft[] {
       return out;
     }
     case 'picked_up':
-      return [delivery(p, 'SHOP', 'DELIVERY_PICKED_UP', 'Shipper đã lấy hàng', `Đơn ${code} đang được giao.`)];
+      return [delivery(p, 'SHOP', 'DELIVERY_PICKED_UP', 'Shipper đã lấy hàng', `Đơn ${code}: shipper đã lấy hàng và đang đi giao.`)];
     case 'completed':
       return [delivery(p, 'SHOP', 'DELIVERY_COMPLETED', 'Giao hàng thành công', `Đơn ${code} đã giao thành công.`), reviewReminder(p)];
     case 'failed':
@@ -131,11 +143,25 @@ function composeForShopAndShipper(p: DeliveryChangePayload): Draft[] {
     case 'pickup_reminder':
       return p.driverId === null ? [] : [{ type: 'REMINDER', reminder: 'PICKUP', deliveryId: p.deliveryId, assignmentId: p.assignmentId }];
     case 'fee_countered':
-      return [delivery(p, 'SHOP', 'FEE_COUNTERED', 'Shipper đề xuất phí khác', `Đơn ${code}: shipper đề xuất mức phí khác. Mở ứng dụng để phản hồi.`)];
+      return customerDecidesFee(p)
+        ? [delivery(p, 'SHOP', 'FEE_COUNTERED', 'Shipper đề xuất phí khác', `Đơn ${code}: shipper đề xuất phí khác, đang chờ khách (người trả phí) quyết định.`)]
+        : [delivery(p, 'SHOP', 'FEE_COUNTERED', 'Shipper đề xuất phí khác', `Đơn ${code}: shipper đề xuất mức phí khác. Mở ứng dụng để phản hồi.`)];
     case 'fee_counter_accepted':
-    case 'fee_counter_rejected':
     case 'fee_customer_confirmed':
-      return [{ ...delivery(p, 'DRIVER_OF_AGREEMENT', 'FEE_UPDATED', 'Phí giao hàng đã được phản hồi', `Đơn ${code}: quán đã phản hồi về phí. Mở ứng dụng để xem.`) }];
+      return [
+        delivery(p, 'DRIVER_OF_AGREEMENT', 'FEE_UPDATED', 'Phí giao hàng đã được đồng ý', `Đơn ${code}: mức phí đã được đồng ý. Bạn có thể nhận đơn.`),
+        ...(customerDecidesFee(p) ? [delivery(p, 'SHOP', 'FEE_UPDATED', 'Khách đã đồng ý phí giao', `Đơn ${code}: khách đã đồng ý mức phí giao do shipper đề xuất.`)] : []),
+      ];
+    case 'fee_counter_rejected':
+      return [
+        delivery(p, 'DRIVER_OF_AGREEMENT', 'FEE_UPDATED', 'Đề xuất phí không được đồng ý', `Đơn ${code}: đề xuất phí của bạn không được đồng ý, đơn vẫn giữ mức phí cũ.`),
+        ...(customerDecidesFee(p) ? [delivery(p, 'SHOP', 'FEE_UPDATED', 'Khách không đồng ý phí', `Đơn ${code}: khách không đồng ý phí shipper đề xuất. Đơn vẫn đang tìm shipper khác.`)] : []),
+      ];
+    case 'cancelled_after_pickup':
+      return [
+        ...(p.driverId === null ? [] : [delivery(p, 'DRIVER', 'DELIVERY_CANCELLED', 'Đơn đã bị hủy', `Đơn ${code} đã bị hủy sau khi bạn lấy hàng. Hãy gọi quán để thống nhất việc trả lại hàng.`)]),
+        ...(p.source === 'ORDER' ? [delivery(p, 'SHOP', 'DELIVERY_CANCELLED', 'Khách đã hủy đơn đang giao', `Đơn ${code}: khách đã hủy sau khi shipper lấy hàng. Hàng đang ở shipper, hãy liên hệ và xác nhận khi nhận lại.`)] : []),
+      ];
     case 'goods_returned':
     case 'goods_handled':
       return p.driverId === null ? [] : [delivery(p, 'DRIVER', 'GOODS_SETTLED', 'Quán đã xử lý hàng', `Đơn ${code}: quán đã xác nhận xử lý hàng.`)];
@@ -220,6 +246,8 @@ export function composeOrderChange(p: OrderChangePayload): Draft[] {
       return [order(p, 'SHOP', 'ORDER_PLACED', 'Có đơn món mới', `Đơn ${code} đang chờ bạn xác nhận.`, PUSH_TTL_MS.offer)];
     case 'cancelled_by_customer':
       return [order(p, 'SHOP', 'ORDER_CANCELLED_BY_CUSTOMER', 'Khách đã hủy đơn món', `Đơn ${code} đã được khách hủy trước khi bạn xác nhận.`)];
+    case 'cancelled_by_customer_after_pickup':
+      return [order(p, 'SHOP', 'ORDER_CANCELLED_BY_CUSTOMER', 'Khách đã hủy đơn món', `Đơn ${code}: khách đã hủy khi shipper đang giao. Hàng đang ở shipper.`)];
     case 'schedule_reminder':
       return [order(p, 'SHOP', 'ORDER_SCHEDULE_REMINDER', 'Sắp đến giờ hẹn', `Đơn hẹn ${code} sắp đến giờ nhận món. Hãy chuẩn bị và gọi shipper.`, PUSH_TTL_MS.reminder)];
     case 'confirmed':

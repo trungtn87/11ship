@@ -202,6 +202,17 @@ export class ShippingFeeAgreementRepository {
     return result.rows.map(toEvent);
   }
 
+  /** The Shipper the latest answer to a counter-offer was about (accepted or refused), so they can be told even when the agreement no longer binds them. */
+  async lastAnsweredDriver(context: TransactionContext, agreementId: string): Promise<string | undefined> {
+    const result = await context.query<{ driver_id: string }>(
+      `SELECT driver_id::text AS driver_id FROM app.shipping_fee_agreement_events
+        WHERE agreement_id = $1::uuid AND event_type IN ('COUNTER_ACCEPTED', 'COUNTER_REJECTED', 'CUSTOMER_CONFIRMED', 'CUSTOMER_DECLINED') AND driver_id IS NOT NULL
+        ORDER BY agreement_version DESC, seq DESC LIMIT 1`,
+      [agreementId],
+    );
+    return result.rows[0]?.driver_id;
+  }
+
   /** Counter-offers the shop rejected, as `${driverId}:${amount}` keys. */
   async rejectedCounters(context: TransactionContext, agreementId: string): Promise<Set<string>> {
     const result = await context.query<{ driver_id: string; amount: string }>(
