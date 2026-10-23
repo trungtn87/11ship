@@ -274,10 +274,11 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#164](https://github.com/trungtn87/11ship/pull/164) M02/11Food: tự lấy vùng GPS + cấu hình vùng Cao Bằng 10 km… | Đã merge (`MERGED`) | — | — | — | `97c8ceb` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#165](https://github.com/trungtn87/11ship/pull/165) M10/M07: Danh sách đơn gọn + mã theo quán K01-0001 (Owner c… | Đã merge (`MERGED`) | — | — | — | `a81594f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#166](https://github.com/trungtn87/11ship/pull/166) M02: Thiết kế lại Trang chủ và Chi tiết quán 11Food (Owner… | Đã merge (`MERGED`) | — | — | — | `e0baa2c` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#169](https://github.com/trungtn87/11ship/pull/169) fix(11Food/M01): không báo giả hết phiên sau khi đăng ký (#… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `7863c33` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
-Không có vấn đề nào cần chú ý.
+- `UNCLASSIFIED_PR` PR #169: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
