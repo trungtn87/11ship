@@ -127,6 +127,19 @@ describe('M04-B2.1 — Shipper top-up requests', () => {
     Number((await pool.query<{ n: string }>(`SELECT count(*)::text AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)).rows[0]?.n);
 
   // ------------------------------------------------------------------------------------------------ tests
+  it('Android password session creates one pending topup on retry and never credits money', async () => {
+    const s = await newShipper();
+    const token = await loginAs(s.phone, { ...WEB_SHIP, platform: 'ANDROID' });
+    const key = randomUUID();
+    const first = await create(token, { amount_vnd: 100_000 }, key);
+    expect(first.status).toBe(201);
+    expect(dataOf(first).state).toBe('PENDING');
+    expect(dataOf(await create(token, { amount_vnd: 100_000 }, key)).request_id).toBe(dataOf(first).request_id);
+    expect(await requestRows(s.driverId)).toBe(1);
+    await expectNoMoney(s.driverId);
+    expect((await get(s.token, '')).status).toBe(401);
+  });
+
   it('1. creates a PENDING request for a PENDING Shipper: 201, one row, the wallet appears at 0, nothing moves; the same key replays and creates nothing more', async () => {
     const s = await newShipper();
     const key = randomUUID();

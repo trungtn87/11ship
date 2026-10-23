@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { parseCaBundle } from '../database/tls-config';
 import { isLocalWebMode, isProductionOnLoopback } from './client-auth-config';
 
+// Legacy APK compatibility ONLY: new password/OTP Android sessions do not use this configuration.
+// Set CLIENT_AUTH_ANDROID_ENABLED=false for a fresh password-only installation; retain true during old-APK rollout.
 // Configuration of the native Android binding (M01-ANDROID; contract11 sections 7 and 9). Pure validation: only the NAMES of
 // invalid variables are ever reported, never a value, a path or a file's content.
 //
@@ -14,7 +16,8 @@ import { isLocalWebMode, isProductionOnLoopback } from './client-auth-config';
 //   CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE JSON snapshot {fetched_at, entries:{<serial hex>:{status}}} of the official
 //                                             Android attestation status list; older than 24 hours means 503 at verify time
 //
-// When the gate is off the four device variables are not read at all, and every ANDROID request stays a fail-closed 503.
+// When the legacy gate is off these four variables are not read; legacy enrollment is closed.
+// Ordinary Android password authentication and PASSWORD sessions still work.
 
 export const CLIENT_AUTH_ANDROID_ENABLED_ENV = 'CLIENT_AUTH_ANDROID_ENABLED';
 export const CLIENT_DEVICE_ENVIRONMENT_ENV = 'CLIENT_DEVICE_ENVIRONMENT';

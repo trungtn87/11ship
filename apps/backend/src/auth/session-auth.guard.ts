@@ -9,9 +9,9 @@ import { AuthenticatedRequest } from './auth-principal';
 import { SessionService, bearerTokenFrom } from './session-service';
 
 /**
- * Authenticates the Authorization: Bearer header and attaches the principal to the request. A NATIVE session (ANDROID Food /
- * Ship) is additionally authenticated by the device proof of the request, signed by the key the session was issued to
- * (contract11 section 8): the token alone, stolen, opens nothing. The business transaction rechecks the binding under its locks.
+ * Authenticates the opaque Bearer token and attaches the database principal. New PASSWORD sessions require no device proof.
+ * Existing native sessions keep their original device proof until password re-login; client labels cannot change that mode.
+ * Business transactions recheck live session/account/role state under their locks.
  */
 @Injectable()
 export class SessionAuthGuard implements CanActivate {
@@ -29,7 +29,7 @@ export class SessionAuthGuard implements CanActivate {
     const allowLockedDriver =
       this.reflector?.getAllAndOverride<boolean | undefined>(ALLOW_LOCKED_DRIVER, [context.getHandler(), context.getClass()]) === true;
     const principal = await this.sessions.authenticate(request.headers['authorization'], { allowLockedDriver });
-    if (isNativeSession(principal.platform, principal.app)) {
+    if (isNativeSession(principal.platform, principal.app) && principal.authMethod !== 'PASSWORD') {
       const token = bearerTokenFrom(request.headers['authorization']);
       if (this.deviceProof === undefined || token === undefined) {
         throw new AppError('SESSION_INVALID');
@@ -44,7 +44,7 @@ export class SessionAuthGuard implements CanActivate {
         token,
         { sessionId: principal.sessionId, platform: principal.platform, app: principal.app },
       );
-    } else if (this.nativeSettings?.androidEnabled === true && principal.platform !== 'WEB') {
+    } else if (this.nativeSettings?.androidEnabled === true && principal.platform !== 'WEB' && principal.authMethod !== 'PASSWORD') {
       // The native gate is on: a session that is neither a proven native one nor a local web one (an ordinary session minted
       // earlier under another label, e.g. ANDROID/OTHER or IOS/FOOD) is not served. Fail closed, whatever its label says.
       throw new AppError('DEVICE_PROOF_REQUIRED');

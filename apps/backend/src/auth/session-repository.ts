@@ -27,6 +27,7 @@ export interface SessionView {
   readonly app: string;
   /** The owner's account origin, read in the same statement; the bearer policy decides on it. */
   readonly accountOrigin: AccountOrigin;
+  readonly authMethod?: string;
 }
 
 /**
@@ -47,6 +48,7 @@ export interface LockedSession {
  * expiry never change after creation, and the caller holds the session lock, so a plain read is coherent.
  */
 export interface ClientSessionView {
+  readonly authMethod?: string;
   readonly app: string;
   readonly platform: string;
   readonly activeRole: string | null;
@@ -65,16 +67,16 @@ export class SessionRepository {
    */
   async create(
     context: TransactionContext,
-    input: { userId: string; device: DeviceInfo; ttlSeconds: number; activeRole?: string },
+    input: { userId: string; device: DeviceInfo; ttlSeconds: number; activeRole?: string; authMethod?: 'PASSWORD' },
   ): Promise<CreatedSession> {
     const sessionId = randomUUID();
     const { token, digest } = generateToken();
     const result = await context.query<{ expires_ms: string }>(
       `INSERT INTO app.sessions (
-         session_id, user_id, token_digest, device_id, platform, app, active_role,
+         session_id, user_id, token_digest, device_id, platform, app, active_role, auth_method,
          expires_at, revoked_at, created_at, updated_at
        )
-       SELECT $1::uuid, $2::uuid, $3, $4, $5, $6, $8::varchar,
+       SELECT $1::uuid, $2::uuid, $3, $4, $5, $6, $8::varchar, $9,
               clock.t + make_interval(secs => $7::double precision), NULL, clock.t, clock.t
          FROM (${CLOCK_CTE}) AS clock
        RETURNING ${epochMs('expires_at')} AS expires_ms`,
@@ -87,6 +89,7 @@ export class SessionRepository {
         input.device.app,
         input.ttlSeconds,
         input.activeRole ?? null,
+        input.authMethod ?? 'LEGACY_DEVICE_PROOF',
       ],
     );
     const row = result.rows[0];
@@ -107,10 +110,11 @@ export class SessionRepository {
       status: string;
       phone_normalized: string;
       account_origin: string;
+      auth_method: string;
       platform: string;
       app: string;
     }>(
-      `SELECT s.session_id, s.user_id, s.active_role, s.platform, s.app,
+      `SELECT s.session_id, s.user_id, s.active_role, s.platform, s.app, s.auth_method,
               s.revoked_at IS NOT NULL AS revoked,
               s.expires_at <= clock_timestamp() AS expired,
               u.status, u.phone_normalized, u.account_origin
@@ -137,6 +141,7 @@ export class SessionRepository {
       platform: row.platform,
       app: row.app,
       accountOrigin: row.account_origin,
+      authMethod: row.auth_method,
     };
   }
 
@@ -224,12 +229,13 @@ export class SessionRepository {
   /** See ClientSessionView. Undefined when the session does not exist. */
   async readClientView(context: TransactionContext, sessionId: string): Promise<ClientSessionView | undefined> {
     const result = await context.query<{
+      auth_method: string;
       app: string;
       platform: string;
       active_role: string | null;
       expires_ms: string;
     }>(
-      `SELECT app, platform, active_role, ${epochMs('expires_at')} AS expires_ms
+      `SELECT auth_method, app, platform, active_role, ${epochMs('expires_at')} AS expires_ms
          FROM app.sessions WHERE session_id = $1::uuid`,
       [sessionId],
     );
@@ -238,6 +244,7 @@ export class SessionRepository {
       return undefined;
     }
     return {
+      authMethod: row.auth_method,
       app: row.app,
       platform: row.platform,
       activeRole: row.active_role,
@@ -290,6 +297,13 @@ export class SessionRepository {
       [userId, sessionId],
     );
     return result.rowCount ?? 0;
+  }
+
+  async revokePasswordSessionsForUser(context: TransactionContext, userId: string): Promise<void> {
+    await context.query(
+      `UPDATE app.sessions SET revoked_at = clock_timestamp(), updated_at = clock_timestamp()
+        WHERE user_id = $1::uuid AND auth_method = 'PASSWORD' AND revoked_at IS NULL`, [userId],
+    );
   }
 
   async revokeAllForUser(context: TransactionContext, userId: string): Promise<number> {

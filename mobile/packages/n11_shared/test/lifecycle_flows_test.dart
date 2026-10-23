@@ -27,7 +27,7 @@ void main() {
       final RecordedRequest register = t.api.to('POST', '/v1/client-auth/register').single;
       final Map<String, Object?> body = jsonDecode(register.body) as Map<String, Object?>;
       expect(body.keys.toSet(), <String>{'phone', 'password', 'device', 'full_name', 'consent'});
-      expect(register.headers['x-device-registration'], isNotEmpty, reason: 'the device proof still applies');
+      expect(register.headers['x-device-registration'], isNull, reason: 'OTP policy remains independent of device hardware');
       expect(t.session.status, SessionStatus.signedIn);
     });
 
@@ -198,6 +198,13 @@ void main() {
           t.api.routes['POST $path'] = (String m, String p, Map<String, String> h, String b) async => json(503, <String, Object?>{
             'error': <String, Object?>{'code': 'SERVICE_UNAVAILABLE', 'request_id': '123e4567-e89b-42d3-a456-426614174000', 'message': 'secret server detail'},
           });
+          if (path.contains('/device/')) {
+            // The old attestation services may be unavailable without blocking normal registration.
+            expect(await t.session.register(phone: '0901234567', password: 'Correct-Horse-9', fullName: 'Nguyễn Văn An'), isTrue);
+            expect(t.api.to('POST', path), isEmpty);
+            expect(t.session.lastFailure, isNull);
+            return;
+          }
           expect(await t.session.register(phone: '0901234567', password: 'Correct-Horse-9', fullName: 'Nguyễn Văn An'), isFalse);
           final AuthFailure failure = t.session.lastFailure!;
           expect(failure.endpoint, path);

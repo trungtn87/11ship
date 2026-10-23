@@ -28,6 +28,7 @@ export const APP_ERROR_DEFINITIONS = {
 
   // Auth Core (M01-A1, task section 15). Fixed messages: they never echo a phone number, an OTP, a token or
   // anything else the client sent, and they never say whether an account exists.
+  LOGIN_RATE_LIMITED: { status: 429, message: 'Too many login attempts; try again later' },
   INVALID_PHONE: { status: 400, message: 'The phone number is not valid' },
   OTP_INVALID: { status: 400, message: 'The verification code is not correct' },
   OTP_EXPIRED: { status: 400, message: 'The verification code has expired' },

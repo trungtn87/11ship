@@ -1,3 +1,4 @@
+import { PASSWORD_SESSION_UP_SQL, PASSWORD_SESSION_DOWN_SQL } from './support/password-session-migration-sql';
 import { PRE_TIMEOUT_MIGRATION_ARGS } from './support/timeout-migration-sql';
 import { assertTestDatabaseTarget } from './support/assert-test-target';
 import { minimalChildEnv, runNpmScript } from './support/test-helpers';
@@ -54,6 +55,7 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
   let accountId = '';
   let m07Applied = true;
   let addedPolicy = false;
+  let temporaryPasswordSchema = false;
   let originalMigrationHistory: Array<{ id: number; name: string; run_on: string }> = [];
   const shippers: Shipper[] = [];
   const pool = (): Pool => admin.pool;
@@ -129,6 +131,12 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
     }
     if (record === 'insert' && name === WITHDRAWAL_MIGRATION_NAME) {
       await restoreMigrationHistory();
+      // Remove the temporary auth overlay before the normal runner applies all pending migrations.
+      // These historical fixtures use legacy sessions, which the Down preserves.
+      if (temporaryPasswordSchema) {
+        await pool().query(PASSWORD_SESSION_DOWN_SQL);
+        temporaryPasswordSchema = false;
+      }
       const result = runNpmScript('db:migrate', [], minimalChildEnv({ APP_ENV: 'test', DATABASE_URL: process.env.DATABASE_URL }));
       expect(result.status).toBe(0);
     }
@@ -161,6 +169,8 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
     await runMigration(WITHDRAWAL_DOWN_SQL, 'delete', WITHDRAWAL_MIGRATION_NAME);
     await runMigration(M07_DOWN_SQL, 'delete');
     m07Applied = false;
+    await pool().query(PASSWORD_SESSION_UP_SQL);
+    temporaryPasswordSchema = true;
     system = await systemSession(admin);
     recorder = await activatedAdmin(`Admin ghi ${tag}`);
     recorderLogin = await login(recorder);

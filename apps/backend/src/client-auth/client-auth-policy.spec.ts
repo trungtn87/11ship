@@ -24,19 +24,19 @@ describe('assertDeviceAllowed', () => {
     }
   });
 
-  it('answers unavailable for ANDROID whatever the mode (no verifier, no fallback)', () => {
+  it('accepts Android password authentication without a hardware verifier', () => {
     for (const localWeb of [true, false]) {
-      expect(() => assertDeviceAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb }, android)).toThrow(TechnicalError);
+      expect(() => assertDeviceAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb }, android)).not.toThrow();
     }
   });
 });
 
 describe('assertPlatformAllowed (the platform recorded on a session)', () => {
-  it('serves WEB only in LOCAL_WEB mode and never ANDROID', () => {
+  it('serves WEB only locally and allows Android without hardware trust', () => {
     expect(() => assertPlatformAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb: true }, 'WEB')).not.toThrow();
     expect(() => assertPlatformAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb: false }, 'WEB')).toThrow(AppError);
     for (const localWeb of [true, false]) {
-      expect(() => assertPlatformAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb }, 'ANDROID')).toThrow(TechnicalError);
+      expect(() => assertPlatformAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb }, 'ANDROID')).not.toThrow();
     }
   });
 });
@@ -74,7 +74,7 @@ describe('clientAuthSettingsFrom (the phone verification mode comes from the val
   it('keeps the LOCAL_WEB device gate independent of the mode (no proof of phone is not a proof of device)', () => {
     const settings = clientAuthSettingsFrom({ ...base, clientPhoneVerificationMode: 'DISABLED_TEST' });
     expect(() => assertDeviceAllowed(settings, web)).not.toThrow();
-    expect(() => assertDeviceAllowed(settings, android)).toThrow(TechnicalError);
+    expect(() => assertDeviceAllowed(settings, android)).not.toThrow();
     const remote = clientAuthSettingsFrom({ ...base, host: '0.0.0.0', clientPhoneVerificationMode: 'DISABLED_TEST' });
     expect(() => assertDeviceAllowed(remote, web)).toThrow(AppError);
   });

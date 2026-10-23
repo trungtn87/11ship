@@ -11,8 +11,9 @@ async function checkAndroid(env = process.env, root = process.env.SHIP11_DIAGNOS
   const { currentSnapshot } = require(`${root}/apps/backend/dist/client-device/android-attestation.js`);
   const result = parseClientDevice({ appEnv: env.APP_ENV, host: env.HOST ?? '127.0.0.1', env });
   if (!result.ok) throw new DiagnosticError(`invalid variables: ${result.invalid.join(', ')}`);
-  if (env.APP_ENV !== 'production' || !result.config) throw new DiagnosticError('production Android trust is unavailable');
-  for (const name of ['CLIENT_DEVICE_ALLOWED_SIGNERS_FILE', 'CLIENT_DEVICE_ATTESTATION_ROOTS_FILE', 'CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE', 'DB_SSL_CA_FILE', 'PUSH_FCM_SERVICE_ACCOUNT_FILE']) {
+  if (env.APP_ENV !== 'production') throw new DiagnosticError('production environment required');
+  const legacyFiles = result.config ? ['CLIENT_DEVICE_ALLOWED_SIGNERS_FILE', 'CLIENT_DEVICE_ATTESTATION_ROOTS_FILE', 'CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE'] : [];
+  for (const name of [...legacyFiles, 'DB_SSL_CA_FILE', 'PUSH_FCM_SERVICE_ACCOUNT_FILE']) {
     if (!env[name]) continue;
     const file = realpathSync(env[name]);
     if (!isAbsolute(env[name]) || file.startsWith('/opt/11ship/releases/') || /^\/(tmp|run|dev|proc|sys)(\/|$)/.test(file) || file.startsWith(`${realpathSync(root)}/`)) {
@@ -20,6 +21,7 @@ async function checkAndroid(env = process.env, root = process.env.SHIP11_DIAGNOS
     }
     readFileSync(file);
   }
+  if (!result.config) return { accountAuthentication: 'password', androidTrust: 'legacy-disabled' };
   if (env.SHIP11_EXPECT_REVOCATION && realpathSync(result.config.revocationFile) !== realpathSync(env.SHIP11_EXPECT_REVOCATION)) throw new DiagnosticError('refresh target differs from runtime snapshot');
   const trust = trustFromConfig(result.config);
   trust.nowMs = () => now;

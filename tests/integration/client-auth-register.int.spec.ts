@@ -832,15 +832,21 @@ describe('M01.03 — client register', () => {
   });
 
   describe('R13 — device gate fails closed before any mutation', () => {
-    it('ANDROID answers 503 SERVICE_UNAVAILABLE and consumes nothing, with any device_id', async () => {
-      const phone = randomPhone();
-      const proof = await obtainProof(app, phone);
-      for (const device of [ANDROID_FOOD, { ...ANDROID_FOOD, app: 'SHIP' }]) {
-        const response = await call(body(phone, proof.proofToken, { device }));
-        expect([response.status, errorCode(response)]).toEqual([503, 'SERVICE_UNAVAILABLE']);
+    it('Android registration needs OTP but no attestation, immediately serves me and safely replays', async () => {
+      for (const appLabel of ['FOOD', 'SHIP']) {
+        const phone = randomPhone();
+        const proof = await obtainProof(app, phone);
+        const key = randomUUID();
+        const request = body(phone, proof.proofToken, { device: { ...ANDROID_FOOD, app: appLabel } });
+        const response = await call(request, key);
+        expect(response.status).toBe(201);
+        const token = String(dataOf(response).access_token);
+        expect((await app.call('GET', '/client-auth/me', { bearer: token })).status).toBe(200);
+        const repeated = await call(request, key);
+        expect(repeated.status).toBe(201);
+        expect(dataOf(repeated).access_token).toBe(token);
+        expect((await app.pool.query('SELECT auth_method FROM app.sessions WHERE user_id = $1', [dataOf(response).user_id])).rows[0].auth_method).toBe('PASSWORD');
       }
-      await nothingCreated(phone.normalized);
-      expect(await countRows(app.pool, 'SELECT 1 FROM app.idempotency_records WHERE scope_id = $1', [await proofIdOfToken(app.pool, proof.proofToken)])).toBe(0);
     });
 
     for (const [label, override] of [

@@ -328,9 +328,10 @@ export class ClientRegistrationService {
     evidence: NativeRequestEvidence | undefined,
     app: 'FOOD' | 'SHIP',
     idempotencyKey: string | readonly string[] | undefined,
-  ): Promise<NativeAuthProof> {
-    if (evidence === undefined) {
-      throw new AppError('DEVICE_PROOF_REQUIRED');
+  ): Promise<NativeAuthProof | undefined> {
+    // New APK: OTP/password + encrypted result replay, without key enrollment.
+    if (evidence?.headers['x-device-registration'] === undefined) {
+      return undefined;
     }
     return this.deviceProof.verifyAuthRequest(evidence, app, idempotencyKey);
   }
@@ -411,6 +412,7 @@ export class ClientRegistrationService {
       userId,
       device: { deviceId: input.device.deviceId, platform: input.device.platform, app: input.device.app },
       ttlSeconds: this.config.sessionTtlSeconds,
+      ...(nativeProof === undefined && input.device.platform === 'ANDROID' ? { authMethod: 'PASSWORD' as const } : {}),
       activeRole: input.device.app === 'SHIP' ? 'DRIVER' : CUSTOMER_ROLE,
     });
     if (plan !== undefined) {
@@ -516,7 +518,7 @@ export class ClientRegistrationService {
     // Native: the session must still be on the current binding, issued to the key that signs THIS replay.
     if (nativeProof !== undefined) {
       capture.binding = await this.deviceBinding.assertReplayable(context, { sessionId, proof: nativeProof });
-    } else if (input.device.platform === 'ANDROID') {
+    } else if (input.device.platform === 'ANDROID' && (await this.sessions.readClientView(context, sessionId))?.authMethod !== 'PASSWORD') {
       throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
     }
 
@@ -589,6 +591,7 @@ export class ClientRegistrationService {
       userId,
       device: { deviceId: input.device.deviceId, platform: input.device.platform, app: input.device.app },
       ttlSeconds: this.config.sessionTtlSeconds,
+      ...(proof === undefined && input.device.platform === 'ANDROID' ? { authMethod: 'PASSWORD' as const } : {}),
       activeRole: input.device.app === 'SHIP' ? 'DRIVER' : CUSTOMER_ROLE,
     });
     if (plan !== undefined) {
@@ -682,7 +685,7 @@ export class ClientRegistrationService {
     // Native: the session must still be on the current binding, issued to the key that signs THIS replay.
     if (proof !== undefined) {
       capture.binding = await this.deviceBinding.assertReplayable(context, { sessionId, proof });
-    } else if (input.device.platform === 'ANDROID') {
+    } else if (input.device.platform === 'ANDROID' && (await this.sessions.readClientView(context, sessionId))?.authMethod !== 'PASSWORD') {
       throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
     }
 

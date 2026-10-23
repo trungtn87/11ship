@@ -101,6 +101,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | admin_app_permissions | SELECT, INSERT (written once at activation) |
 | customer_profiles | SELECT, INSERT, UPDATE (M01.02: UPDATE is the version-checked profile edit and `FOR UPDATE`; no DELETE: a customer profile is never removed by the runtime) |
 | user_consents | SELECT, INSERT (M01.02: append-only; a trigger refuses UPDATE and DELETE for every role, and the runtime has neither privilege nor TRUNCATE) |
+| client_login_limits | SELECT, INSERT, UPDATE (M01 password login quota; HMAC keys only, no DELETE) |
 | client_device_keys | SELECT, INSERT, UPDATE (M01-ANDROID: UPDATE only sets `revoked_at`; a trigger refuses every other column change; no DELETE) |
 | client_device_challenges | SELECT, INSERT, UPDATE (UPDATE is `consumed_at` and `FOR UPDATE`; expired rows are removed only by the cleanup credential below) |
 | client_device_registration_grants | SELECT, INSERT, UPDATE (UPDATE is the one-use `consumed_at`; no DELETE) |
