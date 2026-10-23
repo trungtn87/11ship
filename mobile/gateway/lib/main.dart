@@ -136,10 +136,12 @@ class _GatewayHomeState extends State<GatewayHome> {
     try {
       final data = await _native.invokeMapMethod<dynamic, dynamic>('gatewayUpdateCheck');
       final info = UpdateInfo.fromMap(data);
-      if (mounted) setState(() {
-        _update = info;
-        _updateMessage = info.describe();
-      });
+      if (mounted) {
+        setState(() {
+          _update = info;
+          _updateMessage = info.describe();
+        });
+      }
     } on PlatformException catch (e) {
       if (mounted) setState(() => _updateMessage = e.message ?? e.code);
     } finally {
