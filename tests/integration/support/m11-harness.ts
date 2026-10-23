@@ -6,6 +6,10 @@ import { expect } from '@jest/globals';
 import { FEEDBACK_ORDER_PORT, FeedbackOrderPort, OrderFact } from '../../../apps/backend/src/feedback/feedback-order-port';
 import { M14_ROUTING } from '../../../apps/backend/src/delivery/m14-route-client';
 import { TransactionContext } from '../../../apps/backend/src/transaction/transaction-context';
+import { TransactionManager } from '../../../apps/backend/src/transaction/transaction-manager';
+import { DeliveryRepository } from '../../../apps/backend/src/delivery/delivery-repository';
+import { DriverRepository } from '../../../apps/backend/src/driver/driver-repository';
+import { CommissionHoldService } from '../../../apps/backend/src/wallet/commission-hold-service';
 import { FakeOtpProvider } from '../../../apps/backend/src/auth/fake-otp-provider';
 import { COMMISSION_ADJUSTMENT_PORT, CommissionAdjustmentPort, CommissionAdjustmentRequest, CommissionAdjustmentResult } from '../../../apps/backend/src/feedback/feedback-finance-port';
 import { ADMIN_SESSION_COOKIE } from '../../../apps/backend/src/admin-auth/admin-auth-constants';
@@ -17,7 +21,7 @@ import { NotificationRuntime } from '../../../apps/backend/src/notifications/not
 import { createShopOwner, ShopOwner } from './shop-management-fixtures';
 
 // The world M11 is tested in: a REAL Nest pipeline and PostgreSQL, a real local M14 routing server, one shop, Shippers and customers that go through
-// the real registration / login, and deliveries that go through the REAL M07 routes (accept, destination, pickup, complete / fail). The ONE stand-in is the
+// the real registration / login, and deliveries that go through the REAL M07 routes (accept, destination, pickup, complete; a failed one is old data). The ONE stand-in is the
 // M10 order adapter (M10 is not built): a port bound in memory that answers like M10 will (an order belongs to the account that placed it).
 
 export const TERMS = 'test-terms-20261011-v1';
@@ -421,10 +425,32 @@ export class M11World {
     return run.id;
   }
 
+  /**
+   * A FAILED delivery. Since 2026-10-23 a Shipper can no longer report one (the route answers 403), so this reproduces data that already exists in the
+   * database, with the very same primitives the removed command used: the assignment ends FAILED, the commission is given back, the goods incident opens.
+   */
   async failed(s: Shipper, over: Json = {}): Promise<string> {
     const run = await this.deliver(s, over);
-    const failed = await this.asShipper(s, 'POST', `/driver/deliveries/${run.id}/fail`, { expected_version: run.version, reason_code: 'RECIPIENT_UNREACHABLE', goods_condition: 'WITH_SHIPPER', note: 'Không liên lạc được' });
-    expect([failed.status, failed.text.slice(0, 300)]).toEqual([200, failed.text.slice(0, 300)]);
+    const refused = await this.asShipper(s, 'POST', `/driver/deliveries/${run.id}/fail`, { expected_version: run.version, reason_code: 'RECIPIENT_UNREACHABLE', goods_condition: 'WITH_SHIPPER', note: 'Không liên lạc được' });
+    expect(refused.status).toBe(403);
+    const nest = this.app.running.app;
+    const transactions = nest.get(TransactionManager, { strict: false });
+    const deliveries = nest.get(DeliveryRepository, { strict: false });
+    const drivers = nest.get(DriverRepository, { strict: false });
+    const commission = nest.get(CommissionHoldService, { strict: false });
+    await transactions.withTransaction(async (context) => {
+      await drivers.lockById(context, s.driverId);
+      const delivery = await deliveries.lockById(context, run.id);
+      const assignment = await deliveries.lockActiveAssignment(context, run.id);
+      if (delivery === undefined || assignment === undefined) {
+        throw new Error('the delivery to fail is not running');
+      }
+      const reason = 'RECIPIENT_UNREACHABLE: Không liên lạc được';
+      expect(await deliveries.endAssignment(context, assignment.assignmentId, assignment.version, 'FAILED', 'SHIPPER', reason)).toBe(true);
+      expect((await commission.releaseCommission(context, assignment.assignmentId)).kind).not.toBe('conflict');
+      expect(await deliveries.update(context, run.id, delivery.version, { state: 'failed', endedNow: true, endReason: reason })).toBeDefined();
+      await deliveries.insertIncident(context, { incidentId: randomUUID(), deliveryId: run.id, assignmentId: assignment.assignmentId, driverId: s.driverId, reasonCode: 'RECIPIENT_UNREACHABLE', reasonNote: 'Không liên lạc được', goodsCondition: 'WITH_SHIPPER' });
+    });
     return run.id;
   }
 

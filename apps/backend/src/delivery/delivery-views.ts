@@ -298,6 +298,8 @@ export class DeliveryViews {
       fee_vnd: d.feeVnd,
       fee_status: feeStatusOf({ feeVnd: d.feeVnd, agreementStatus: agreement?.status ?? null }),
       fee_payer: d.feePayer,
+      fee_decider: feeDeciderOf(d),
+      source: d.source,
       search_expires_at: iso(d.searchExpiresAtMs),
       server_now: iso(nowMs),
       eligible: decision.eligible,

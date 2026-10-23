@@ -1,6 +1,6 @@
 # M07 — Owner chốt quy trình giao hàng (23/10/2026)
 
-**Trạng thái:** Đặc tả/giao việc, CHƯA triển khai code. **Ưu tiên:** cao, lỗi chặn nhận hàng.
+**Trạng thái:** Đã triển khai backend + 11Ship/11Food trên nhánh PR #178 (xem mục VII); chờ CI, review và nghiệm thu thiết bị. Chưa deploy VPS. **Ưu tiên:** cao, lỗi chặn nhận hàng.
 **Phạm vi:** 11Ship Android + 11Food Android + backend/M07/M06/M10/M08, kiểm thử hành vi liên quan. Base main mới nhất; nhánh `codex/m07-owner-delivery-flow-20261023`. Quyết định mới ưu tiên hơn mô tả M07 cũ khi xung đột.
 
 ## I. Quy tắc chung
@@ -59,3 +59,26 @@
 ## VI. Quy tắc bàn giao
 
 Codex là **lead duy nhất** cho PR này; không tách thành PR trùng hoặc sửa chồng PR khác. Kiểm tra main và PR đang mở trước khi code, đồng bộ thay đổi tránh xung đột. Triển khai theo thứ tự: (1) backend states/fee/cancel, (2) UI 11Ship/11Food + thông báo, (3) targeted tests/CI. Giữ migration theo hướng tiến, không sửa migration đã deploy. Báo cáo ngắn: commit SHA, thay đổi, checks, blocker, cách Owner thử 2 luồng; không tự merge hoặc deploy trước review.
+
+## VII. Hiện trạng triển khai (PR #178)
+
+**Thay đổi hành vi**
+
+| Chủ đề | Quyết định đã code |
+|---|---|
+| Bước "Đã chuẩn bị xong" | Bỏ hẳn: không còn endpoint `POST /v1/shop/me/orders/:id/ready`, không còn `can.ready`/`ready_at`/trạng thái `READY`. **Gọi shipper = đồ sẵn sàng.** Cột `orders.ready_at` giữ nguyên (dữ liệu cũ). |
+| Phí | Phí luôn chốt **lúc gọi ship**: theo tuyến đo được; hoặc (ORDER) khoảng cách đã lưu từ lúc khách đặt; hoặc (DIRECT không bản đồ) **mốc phí M06 do quán chọn** (`fee_band` 0..2, hiển thị "Ước tính theo mốc"); hoặc phí quán đề xuất (`agreed_fee`). Không tính được thì trả `400 FEE_REQUIRED` và app mở form đề xuất phí — **không tạo đơn không ai nhận được**. Không còn tạo mới `PICKUP_AGREEMENT`. |
+| Đơn cũ kẹt (STANDARD phí null / PICKUP_AGREEMENT) | `can.confirm_fee` cho phép shipper nhập **một lần** mức phí đã thỏa thuận (`POST .../destination` chỉ cần `fee_vnd`; `lat/lng` tùy chọn). Phí đã có thì gọi lại là no-op, khác mức mới trả `FEE_LOCKED`. App dựa vào `can.*`, không dựa `amountVnd == null`. |
+| Nhận hàng | `pickup` chỉ cần phí đã chốt; **không cần điểm giao/ghim**. Khóa phí khi bấm "Đã nhận hàng". |
+| DIRECT | Địa chỉ mô tả, không GPS điểm giao, **quán không thấy vị trí hành trình** (`location = null`). Vị trí quán/shipper dùng tìm đơn không đổi. |
+| Phí shipper đề xuất | Người trả phí quyết định: ORDER khách trả → **khách trong 11Food** (`POST /v1/customers/me/orders/:id/delivery/fee` `{decision: ACCEPT|REJECT, expected_version}`; quán không trả lời thay, bị `DELIVERY_STATE_CONFLICT`); ORDER quán trả → quán; DIRECT → quán (nếu khách trả thì quán xác nhận **thay** khách, log `SHOP_ON_BEHALF_OF_CUSTOMER`). Từ chối/hết hạn: giữ phí cũ, tiếp tục tìm shipper, **Order không bị hủy**. |
+| Shipper sau khi lấy hàng | Chỉ **Giao thành công**. `POST .../fail` luôn trả `403 SHIPPER_FAIL_NOT_ALLOWED`; `release` trả `AFTER_PICKUP_NO_CANCEL`. App bỏ nút/màn "Giao thất bại". |
+| Hủy sau lấy hàng | Chỉ **người tạo**: ORDER → khách (`POST /v1/customers/me/orders/:id/cancel-after-pickup` `{reason, expected_version}`); DIRECT → quán (`POST /v1/shop/me/deliveries/:id/cancel`). Quán của đơn khách bị `AFTER_PICKUP_NO_CANCEL`. Kết quả: delivery `cancelled_by_merchant`, assignment `CANCELLED_BY_CUSTOMER/SHOP`, **hoa hồng được giải phóng (không thu)**, mở hồ sơ hàng `OPEN` (custody SHIPPER) — không mặc định hàng đã về quán; quán/Admin xác nhận qua `custody`. Order ORDER → `CANCELLED_BY_CUSTOMER`. Có audit + thông báo. Không timeout nào tự hủy đơn đã lấy hàng (kiểm thử). |
+| Thông báo/UX | Bỏ "Mã tra cứu" khỏi lỗi luồng giao hàng/đơn món; bỏ "Đã thanh toán", "Còn phải thu", "Ghi nhận đã thanh toán" khỏi UI (DB/endpoint `payment` giữ nguyên). Thông báo mới: phí đề xuất tới người trả phí, tiến độ tới bên còn lại, shipper được báo kết quả (kể cả khi bị từ chối), hủy sau lấy hàng. |
+
+**Migration mới (tiến, không sửa migration đã deploy):** `1795737600000_m07-creator-cancel-after-pickup.sql` — mở rộng guard/CHECK: `delivering → cancelled_by_merchant`, `delivery_events.actor_type`/`delivery_assignments` thêm `CUSTOMER`, `orders` cho phép `PREPARING → CANCELLED_BY_CUSTOMER` (giữ `confirmed_at`, bắt buộc lý do), `deliveries_pickup_ck` không còn đòi điểm giao. Chưa chạy trên VPS.
+
+**Cách Owner thử trên 2 APK (sau khi có bản build được phép phát hành)**
+1. *ORDER, khách trả phí:* 11Food (khách) đặt → 11Food (quán) xác nhận → **Gọi shipper** (không có bước "Món đã sẵn sàng") → 11Ship nhận → "Đề xuất mức khác" → khách thấy thẻ "Shipper muốn lấy phí…" → Đồng ý/Từ chối → shipper nhận → "Đã nhận hàng" (một bước) → "Giao thành công".
+2. *Hủy:* ở bước đang giao, khách bấm "Hủy đơn (shipper đã lấy hàng)" + lý do; quán thấy ghi chú "chỉ khách mới hủy được"; shipper chỉ có "Giao thành công".
+3. *DIRECT:* 11Food → Giao hàng → Gọi shipper: nhập địa chỉ mô tả, chọn **mốc phí**, không ghim bản đồ; shipper nhận/lấy/giao; quán không thấy vị trí shipper; quán hủy được sau lấy hàng và phải xác nhận xử lý hàng trước khi gọi lại.
