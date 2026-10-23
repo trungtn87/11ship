@@ -276,10 +276,12 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#166](https://github.com/trungtn87/11ship/pull/166) M02: Thiết kế lại Trang chủ và Chi tiết quán 11Food (Owner… | Đã merge (`MERGED`) | — | — | — | `e0baa2c` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#169](https://github.com/trungtn87/11ship/pull/169) fix(11Food/M01): không báo giả hết phiên sau khi đăng ký (#… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `7863c33` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#170](https://github.com/trungtn87/11ship/pull/170) M01: xác thực tài khoản/phiên Android, bỏ attestation bắt b… | Đã merge (`MERGED`) | — | — | — | `f0b05d8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#171](https://github.com/trungtn87/11ship/pull/171) ops: diagnose immutable VPS release mismatch without modify… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `54727b6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
 - `UNCLASSIFIED_PR` PR #169: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #171: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
