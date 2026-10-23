@@ -1,4 +1,3 @@
-import '../account/models.dart';
 import 'm07_models.dart';
 
 // The data seam of the M07 screens. A screen asks a source and draws whatever comes back; it never invents a value.
@@ -40,7 +39,8 @@ class M07Failure implements Exception {
   String toString() => 'M07Failure($kind, $code)';
 }
 
-String m07FailureText(M07Failure failure) => withRequestTrace(_m07FailureText(failure), failure.requestId);
+/// The sentence the person reads. It never shows a lookup code, a request id or any identifier: those stay in the server log.
+String m07FailureText(M07Failure failure) => _m07FailureText(failure);
 
 String _m07FailureText(M07Failure failure) {
   switch (failure.code) {
@@ -57,13 +57,19 @@ String _m07FailureText(M07Failure failure) {
     case 'REASON_REQUIRED':
       return 'Cần nhập lý do.';
     case 'AFTER_PICKUP_NO_CANCEL':
-      return 'Đã nhận hàng nên không hủy được nữa.';
+      return 'Hàng đã được lấy nên bạn không hủy được nữa. Hãy gọi người tạo đơn để thống nhất.';
+    case 'CANCEL_NOT_ALLOWED':
+      return 'Sau khi shipper lấy hàng, chỉ người tạo đơn mới hủy được.';
+    case 'SHIPPER_FAIL_NOT_ALLOWED':
+      return 'Không giao được thì hãy gọi quán để thống nhất, không báo giao thất bại trên ứng dụng.';
     case 'FEE_NOT_CONFIRMED':
-      return 'Phí giao chưa được chốt.';
+      return 'Phí giao chưa được chốt. Hãy nhập mức phí đã thống nhất với bên trả phí.';
+    case 'FEE_REQUIRED':
+      return 'Chưa tính được phí giao tự động. Hãy chọn mốc phí hoặc nhập mức phí đề xuất rồi gọi lại.';
     case 'DESTINATION_NOT_CONFIRMED':
-      return 'Cần ghim điểm giao và xác nhận phí trước khi nhận hàng.';
+      return 'Đơn chưa sẵn sàng để lấy hàng. Hãy tải lại rồi thử lại.';
     case 'FEE_LOCKED':
-      return 'Phí đã khóa sau khi nhận hàng.';
+      return 'Phí giao đã chốt, không đổi được nữa.';
     case 'RECALL_BLOCKED_GOODS_OUT':
       return 'Hàng chưa về quán hoặc chưa được xử lý nên chưa gọi lại được.';
     case 'ORDER_MODULE_NOT_READY':
@@ -138,6 +144,9 @@ abstract class ShopDeliverySource {
   /// The shop records that the customer agreed to the fee (the customer has no app yet).
   Future<DeliveryView> confirmCustomerFee(String id, {required int expectedVersion, required String key});
 
+  /// The three bands of the fee table (index 0..2) for an address with no map point; empty when no table is in force.
+  Future<List<FeeBand>> feeBands();
+
   /// After a failed delivery: GOODS_RETURNED (back at the shop, may be called again) or HANDLED_NO_RETURN (dealt with, close the incident).
   Future<DeliveryView> resolveCustody(String id, {required String resolution, String? note, required String key});
 }
@@ -158,8 +167,9 @@ abstract class ShipperDeliverySource {
   Future<OfferView> feeAgree(String id, {required String key});
   Future<void> feeSkip(String id, {required String key});
   Future<OfferView> feeCounter(String id, {required int amountVnd, required String key});
-  Future<DeliveryView> confirmDestination(String id, {required double lat, required double lng, int? feeVnd, required int expectedVersion, required String key});
+
+  /// Only when the server says `can.confirm_fee` (a call that was never priced): the amount agreed with the payer. No map point is needed.
+  Future<DeliveryView> confirmFee(String id, {required int feeVnd, required int expectedVersion, required String key});
   Future<DeliveryView> pickup(String id, {required int expectedVersion, required String key});
   Future<DeliveryView> complete(String id, {required int expectedVersion, required String key});
-  Future<DeliveryView> fail(String id, {required String reasonCode, String? note, required String goodsCondition, required int expectedVersion, required String key});
 }

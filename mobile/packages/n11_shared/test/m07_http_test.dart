@@ -73,6 +73,15 @@ void main() {
     expect(agreed.toJson()['agreed_fee'], <String, Object?>{'reason_code': 'BULKY', 'reason_note': 'To', 'amount_vnd': 30000});
   });
 
+  test('shop: a fee band is an estimate sent only for an address with no map point and never with an agreed fee', () async {
+    const NewDeliveryInput banded = NewDeliveryInput(recipientName: 'Lan', recipientPhone: '0912345678', addressText: 'x', goodsDescription: 'g', goodsValueVnd: 1, paidVnd: 0, feePayer: 'SHOP', feeBand: 1);
+    expect(banded.toJson()['fee_band'], 1);
+    const NewDeliveryInput pinned = NewDeliveryInput(recipientName: 'Lan', recipientPhone: '0912345678', addressText: 'x', lat: 22.6, lng: 106.2, goodsDescription: 'g', goodsValueVnd: 1, paidVnd: 0, feePayer: 'SHOP', feeBand: 1);
+    expect(pinned.toJson().containsKey('fee_band'), isFalse);
+    const NewDeliveryInput agreed = NewDeliveryInput(recipientName: 'Lan', recipientPhone: '0912345678', addressText: 'x', goodsDescription: 'g', goodsValueVnd: 1, paidVnd: 0, feePayer: 'SHOP', feeBand: 1, agreedAmountVnd: 5000, agreedReasonCode: 'URGENT');
+    expect(agreed.toJson().containsKey('fee_band'), isFalse);
+  });
+
   test('a lost answer is offline (outcome unknown) and the retry carries the same key', () async {
     final t = await signedIn();
     t.api.routes['POST /v1/shop/me/deliveries'] = (String m, String p, Map<String, String> h, String b) async => json(201, <String, Object?>{'data': <String, Object?>{'delivery': deliveryJson()}});
@@ -102,6 +111,8 @@ void main() {
     expect((await fail(409, 'VERSION_CONFLICT')).kind, M07FailureKind.conflict);
     expect((await fail(409, 'AFTER_PICKUP_NO_CANCEL')).kind, M07FailureKind.refused);
     expect((await fail(409, 'AFTER_PICKUP_NO_CANCEL')).message, contains('không hủy'));
+    expect((await fail(403, 'SHIPPER_FAIL_NOT_ALLOWED')).message, contains('gọi quán'));
+    expect((await fail(400, 'FEE_REQUIRED')).message, contains('mức phí'));
     expect((await fail(503, 'ORDER_MODULE_NOT_READY')).kind, M07FailureKind.notReady);
     expect((await fail(500, 'INTERNAL')).kind, M07FailureKind.refused);
   });
@@ -115,22 +126,22 @@ void main() {
   test('shipper: the commands use the contract paths and bodies', () async {
     final t = await signedIn();
     final HttpShipperDeliverySource source = HttpShipperDeliverySource(session: t.session);
-    for (final String tail in <String>['accept', 'release', 'destination', 'pickup', 'complete', 'fail']) {
+    for (final String tail in <String>['accept', 'release', 'destination', 'pickup', 'complete']) {
       t.api.routes['POST /v1/driver/deliveries/d1/$tail'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'delivery': deliveryJson(state: 'accepted')}});
     }
     const String k = '44444444-4444-4444-8444-444444444444';
     await source.accept('d1', key: k);
     await source.release('d1', reason: 'xe hỏng', expectedVersion: 2, key: k);
-    await source.confirmDestination('d1', lat: 22.6, lng: 106.2, feeVnd: 20000, expectedVersion: 2, key: k);
+    await source.confirmFee('d1', feeVnd: 20000, expectedVersion: 2, key: k);
     await source.pickup('d1', expectedVersion: 3, key: k);
     await source.complete('d1', expectedVersion: 4, key: k);
-    await source.fail('d1', reasonCode: 'OTHER', note: 'x', goodsCondition: 'WITH_SHIPPER', expectedVersion: 4, key: k);
     Map<String, Object?> bodyOf(String tail) => jsonDecode(t.api.to('POST', '/v1/driver/deliveries/d1/$tail').single.body) as Map<String, Object?>;
     expect(bodyOf('release'), <String, Object?>{'reason': 'xe hỏng', 'expected_version': 2});
-    expect(bodyOf('destination'), <String, Object?>{'lat': 22.6, 'lng': 106.2, 'fee_vnd': 20000, 'expected_version': 2});
+    // Only the agreed amount is sent: the Shipper never pins a point any more.
+    expect(bodyOf('destination'), <String, Object?>{'fee_vnd': 20000, 'expected_version': 2});
     expect(bodyOf('pickup'), <String, Object?>{'expected_version': 3});
-    expect(bodyOf('fail')['goods_condition'], 'WITH_SHIPPER');
-    expect(bodyOf('fail')['reason_code'], 'OTHER');
+    // There is no way to report a failed delivery from the app.
+    expect(t.api.to('POST', '/v1/driver/deliveries/d1/fail'), isEmpty);
   });
 
   test('shipper: an offer parses with no field for a phone, a street address or a drop-off position', () async {

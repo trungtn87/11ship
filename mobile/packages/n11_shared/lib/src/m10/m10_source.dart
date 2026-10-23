@@ -1,4 +1,3 @@
-import '../account/models.dart';
 import '../m07/m07_source.dart';
 import 'm10_models.dart';
 
@@ -8,7 +7,8 @@ import 'm10_models.dart';
 // flows) on a refusal or a lost answer; the screen keeps the person's input and retries with the SAME operation key.
 
 /// What a refusal means to the person, in words. Codes of M10; anything else falls back to the generic text of its kind.
-String m10FailureText(M07Failure failure) => withRequestTrace(_m10FailureText(failure), failure.requestId);
+/// It never shows a lookup code or request id: those stay in the server log.
+String m10FailureText(M07Failure failure) => _m10FailureText(failure);
 
 String _m10FailureText(M07Failure failure) {
   switch (failure.code) {
@@ -28,14 +28,14 @@ String _m10FailureText(M07Failure failure) {
       return 'Đơn không còn món nào nên chưa xác nhận được.';
     case 'ORDER_CHANGE_REASON_REQUIRED':
       return 'Đơn đã được chỉnh nên cần ghi lý do khi xác nhận.';
-    case 'ORDER_PAYMENT_LOCKED':
-      return 'Đang có yêu cầu giao nên chưa sửa được số tiền đã thanh toán.';
-    case 'ORDER_PAYMENT_INVALID':
-      return 'Số tiền đã thanh toán không hợp lệ.';
     case 'ORDER_CART_OTHER_SHOP':
       return 'Giỏ đang có món của quán khác.';
     case 'AFTER_PICKUP_NO_CANCEL':
-      return 'Shipper đã lấy hàng nên không hủy đơn món được nữa.';
+      return 'Shipper đã lấy hàng nên quán không hủy đơn món được nữa. Chỉ khách đặt đơn mới hủy được; hãy gọi khách để thống nhất.';
+    case 'CANCEL_NOT_ALLOWED':
+      return 'Sau khi shipper lấy hàng, chỉ người tạo đơn mới hủy được.';
+    case 'FEE_REQUIRED':
+      return 'Chưa tính được phí giao tự động. Hãy nhập mức phí đề xuất cho shipper rồi gọi lại.';
     case 'RECALL_BLOCKED_GOODS_OUT':
       return 'Hàng chưa về quán hoặc chưa được xử lý nên chưa thực hiện được.';
     case 'SHOP_PROFILE_INCOMPLETE':
@@ -49,6 +49,17 @@ String _m10FailureText(M07Failure failure) {
 }
 
 enum CustomerScope { processing, scheduled, history }
+
+/// A delivery fee the shop proposes when the table cannot price the order: a reason (M06 code), an optional note and the amount.
+class AgreedFeeProposal {
+  const AgreedFeeProposal({required this.reasonCode, this.reasonNote, required this.amountVnd});
+
+  final String reasonCode;
+  final String? reasonNote;
+  final int amountVnd;
+
+  Map<String, Object?> toJson() => <String, Object?>{'reason_code': reasonCode, if (reasonNote != null && reasonNote!.trim().isNotEmpty) 'reason_note': reasonNote!.trim(), 'amount_vnd': amountVnd};
+}
 
 /// One change of the shop to a line of an Order that still waits for confirmation.
 class LineEdit {
@@ -83,6 +94,12 @@ abstract class CustomerOrderSource {
   Future<List<OrderSummary>> list(CustomerScope scope);
   Future<OrderView> get(String id);
   Future<OrderView> cancel(String id, {String? reason, required int expectedVersion, required String key});
+
+  /// After the Shipper picked up the goods the customer who placed the order is the only one who can cancel it (a reason is required).
+  Future<OrderView> cancelAfterPickup(String id, {required String reason, required int expectedVersion, required String key});
+
+  /// The customer, as the payer, answers the delivery fee the Shipper proposed. [deliveryVersion] is `OrderDelivery.version`.
+  Future<OrderView> decideFee(String id, {required bool accept, required int deliveryVersion, required String key});
   Future<ReorderResult> reorder(String id, {required bool replaceCart, required String key});
 }
 
@@ -102,11 +119,10 @@ abstract class ShopOrderSource {
   Future<OrderView> edit(String id, {required List<LineEdit> changes, required int expectedVersion, required String key});
   Future<OrderView> confirm(String id, {String? changeReason, required int expectedVersion, required String key});
   Future<OrderView> reject(String id, {required String reason, required int expectedVersion, required String key});
-  Future<OrderView> ready(String id, {required int expectedVersion, required String key});
-  Future<OrderView> recordPayment(String id, {required int paidVnd, required int expectedVersion, required String key});
 
-  /// "Gọi shipper": a delivery from the confirmed snapshot (also a new call after a stopped search / cancelled request / settled failure).
-  Future<OrderView> callShipper(String id, {required String feePayer, required int expectedVersion, required String key});
+  /// "Gọi shipper" means the dishes are ready: a delivery from the confirmed snapshot (also a new call after a stopped search / cancelled request /
+  /// settled goods). [agreedFee] is given only when the server answered FEE_REQUIRED: the fee could not be priced automatically.
+  Future<OrderView> callShipper(String id, {required String feePayer, AgreedFeeProposal? agreedFee, required int expectedVersion, required String key});
   Future<OrderView> cancel(String id, {required String reason, required int expectedVersion, required String key});
   Future<OrderView> closeNotCompleted(String id, {required String reason, required int expectedVersion, required String key});
 

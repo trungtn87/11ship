@@ -5,12 +5,13 @@ import '../m07/m07_models.dart';
 // clock decides nothing. The Order keeps its own snapshot of the dishes, the recipient and the address.
 
 /// The one status an Order shows (server aggregate of the Order and its latest delivery).
-enum DisplayStatus { awaitingShop, preparing, ready, searchingShipper, shipperComing, delivering, completed, searchStopped, deliveryFailed, cancelledByCustomer, cancelledByShop, cancelledBySystem, rejected, notCompleted }
+enum DisplayStatus { awaitingShop, preparing, searchingShipper, shipperComing, delivering, completed, searchStopped, deliveryFailed, cancelledByCustomer, cancelledByShop, cancelledBySystem, rejected, notCompleted }
 
 DisplayStatus displayStatusOf(String wire) => switch (wire) {
       'AWAITING_SHOP' => DisplayStatus.awaitingShop,
       'PREPARING' => DisplayStatus.preparing,
-      'READY' => DisplayStatus.ready,
+      // An older server still says READY for a dish-ready flag nobody sets any more: there is no such step (Owner decision 2026-10-23).
+      'READY' => DisplayStatus.preparing,
       'SEARCHING_SHIPPER' => DisplayStatus.searchingShipper,
       'SHIPPER_COMING' => DisplayStatus.shipperComing,
       'DELIVERING' => DisplayStatus.delivering,
@@ -29,7 +30,6 @@ extension DisplayStatusText on DisplayStatus {
   String get label => switch (this) {
         DisplayStatus.awaitingShop => 'Chờ quán xác nhận',
         DisplayStatus.preparing => 'Quán đang chuẩn bị',
-        DisplayStatus.ready => 'Món đã sẵn sàng — chờ lấy',
         DisplayStatus.searchingShipper => 'Đang tìm shipper',
         DisplayStatus.shipperComing => 'Shipper đang đến quán',
         DisplayStatus.delivering => 'Đang giao',
@@ -181,8 +181,33 @@ class OrderMoney {
 
 /// The latest delivery of the Order as the ORDERING CUSTOMER may see it: no commission, no agreement, no other shop's data. The Shipper and the position
 /// exist only while a Shipper holds the delivery; after it ends (or the Shipper gives it back) both are null.
+/// The fee question waiting for the CUSTOMER of an order they pay for: the Shipper asked for [offeredVnd] instead of [currentVnd].
+class OrderFeeDecision {
+  const OrderFeeDecision({required this.state, required this.currentVnd, required this.offeredVnd, required this.expiresAt, required this.canDecline});
+
+  factory OrderFeeDecision.fromJson(Object? raw) {
+    final Map<String, Object?> m = _obj(raw);
+    return OrderFeeDecision(
+      state: _str(m['state']),
+      currentVnd: _intOrNull(m['current_vnd']),
+      offeredVnd: _intOrNull(m['offered_vnd']),
+      expiresAt: _time(m['expires_at']),
+      canDecline: m['can_decline'] == true,
+    );
+  }
+
+  /// COUNTERED (the Shipper proposed another amount) or AWAITING_CUSTOMER (the amount waits for the customer's agreement).
+  final String state;
+  final int? currentVnd;
+  final int? offeredVnd;
+  final DateTime expiresAt;
+
+  /// Only a Shipper's counter-offer can be refused.
+  final bool canDecline;
+}
+
 class OrderDelivery {
-  const OrderDelivery({required this.deliveryId, required this.code, required this.state, required this.version, required this.feePayer, required this.feeVnd, required this.feeStatus, required this.distanceM, required this.searchExpiresAt, required this.serverNow, required this.shipperName, required this.shipperPhone, required this.plate, required this.location, required this.resultReason, required this.goodsCustody, required this.pickupLat, required this.pickupLng, required this.dropoffLat, required this.dropoffLng});
+  const OrderDelivery({this.feeDecision, required this.deliveryId, required this.code, required this.state, required this.version, required this.feePayer, required this.feeVnd, required this.feeStatus, required this.distanceM, required this.searchExpiresAt, required this.serverNow, required this.shipperName, required this.shipperPhone, required this.plate, required this.location, required this.resultReason, required this.goodsCustody, required this.pickupLat, required this.pickupLng, required this.dropoffLat, required this.dropoffLng});
 
   factory OrderDelivery.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
@@ -211,8 +236,12 @@ class OrderDelivery {
       pickupLng: m['pickup'] == null ? null : _numOrNull(_obj(m['pickup'])['lng']),
       dropoffLat: m['dropoff'] == null ? null : _numOrNull(_obj(m['dropoff'])['lat']),
       dropoffLng: m['dropoff'] == null ? null : _numOrNull(_obj(m['dropoff'])['lng']),
+      feeDecision: m['fee_decision'] == null ? null : OrderFeeDecision.fromJson(m['fee_decision']),
     );
   }
+
+  /// The question the customer must answer about the delivery fee, or null.
+  final OrderFeeDecision? feeDecision;
 
   final String deliveryId;
   final String code;
@@ -261,11 +290,11 @@ class OrderEvent {
         'order.confirmed' => 'Quán xác nhận',
         'order.rejected' => 'Quán từ chối',
         'order.cancelled_by_customer' => 'Khách hủy đơn',
+        'order.cancelled_by_customer_after_pickup' => 'Khách hủy khi shipper đã lấy hàng',
         'order.cancelled_by_shop' => 'Quán hủy đơn món',
         'order.confirmation_timeout' || 'order.delivery_timeout' => 'Hệ thống hủy quá hạn',
         'order.confirmation_reminder' => 'Nhắc quán xác nhận',
         'order.cancelled_by_admin' => 'Quản trị hủy đơn',
-        'order.ready' => 'Món đã sẵn sàng',
         'order.payment_recorded' => 'Ghi nhận thanh toán',
         'order.shipper_called' => 'Quán gọi shipper',
         'order.shipper_called_again' => 'Quán gọi lại shipper',
@@ -309,7 +338,6 @@ class OrderView {
     required this.edited,
     required this.changeReason,
     required this.confirmedAt,
-    required this.readyAt,
     required this.endedAt,
     required this.endReason,
     required this.endActor,
@@ -343,7 +371,6 @@ class OrderView {
       edited: _bool(m['edited']),
       changeReason: _strOrNull(m['change_reason']),
       confirmedAt: _timeOrNull(m['confirmed_at']),
-      readyAt: _timeOrNull(m['ready_at']),
       endedAt: _timeOrNull(m['ended_at']),
       endReason: _strOrNull(m['end_reason']),
       endActor: _strOrNull(m['end_actor']),
@@ -374,7 +401,6 @@ class OrderView {
   final bool edited;
   final String? changeReason;
   final DateTime? confirmedAt;
-  final DateTime? readyAt;
   final DateTime? endedAt;
   final String? endReason;
   final String? endActor;
@@ -392,13 +418,12 @@ class OrderView {
   final List<OrderEvent> timeline;
 
   bool get isScheduled => scheduledFor != null;
-  bool get ready => readyAt != null;
   bool get ended => display.ended;
   bool allowed(String action) => can[action] ?? false;
 }
 
 class OrderSummary {
-  const OrderSummary({required this.orderId, required this.code, required this.display, required this.version, required this.shopName, required this.recipientName, required this.lineCount, required this.itemsVnd, required this.scheduledFor, required this.ready, required this.edited, required this.needsAttention, required this.createdAt});
+  const OrderSummary({required this.orderId, required this.code, required this.display, required this.version, required this.shopName, required this.recipientName, required this.lineCount, required this.itemsVnd, required this.scheduledFor, required this.edited, required this.needsAttention, required this.createdAt});
 
   factory OrderSummary.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
@@ -412,7 +437,6 @@ class OrderSummary {
       lineCount: _int(m['line_count']),
       itemsVnd: _int(m['items_total_vnd']),
       scheduledFor: _timeOrNull(m['scheduled_for']),
-      ready: _bool(m['ready']),
       edited: _bool(m['edited']),
       needsAttention: m['needs_attention'] == true,
       createdAt: _time(m['created_at']),
@@ -428,7 +452,6 @@ class OrderSummary {
   final int lineCount;
   final int itemsVnd;
   final DateTime? scheduledFor;
-  final bool ready;
   final bool edited;
   final bool needsAttention;
   final DateTime createdAt;

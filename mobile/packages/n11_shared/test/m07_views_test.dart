@@ -82,13 +82,16 @@ void main() {
         'pickup': <String, Object?>{'shop_name': 'Quán'},
         'recipient': <String, Object?>{'name': 'A', 'phone': '0900000000', 'address_text': 'x', 'lat': null, 'lng': null},
         'goods': <String, Object?>{'description': 'g', 'value_vnd': 1000, 'paid_vnd': 0},
-        'fee': <String, Object?>{'mode': 'PICKUP_AGREEMENT', 'payer': 'SHOP', 'amount_vnd': null, 'status': 'UNKNOWN', 'distance_m': null, 'agreement': null},
+        'fee': <String, Object?>{'mode': 'STANDARD', 'payer': 'SHOP', 'amount_vnd': null, 'status': 'UNKNOWN', 'distance_m': null, 'agreement': null, 'decider': 'SHOP', 'basis': null},
         'search': <String, Object?>{'started_at': '2026-10-18T09:00:00Z', 'expires_at': '2026-10-18T09:30:00Z', 'server_now': '2026-10-18T09:05:00Z', 'stopped_at': null},
-        'can': <String, Object?>{'cancel': true, 'recall': false},
+        'can': <String, Object?>{'cancel': true, 'recall': false, 'confirm_fee': true},
       });
       expect(d.state, DeliveryState.waitingDriver);
       expect(d.fee.amountVnd, isNull);
-      expect(d.needsDestination, isTrue);
+      // What the Shipper is asked follows the server's permission, not a null amount or a missing map point.
+      expect(d.recipient.hasPoint, isFalse);
+      expect(d.needsFee, isTrue);
+      expect(d.fee.decider, 'SHOP');
       expect(d.allows('cancel'), isTrue);
       expect(d.allows('recall'), isFalse);
       expect(d.search.elapsedMinutes, 5);
@@ -159,22 +162,42 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('Q05 delivering: no cancel button anywhere, position shown with its age', (WidgetTester tester) async {
-      await mount(tester, ShopDeliveryDetailScreen(source: SampleShopSource(), deliveryId: 'd-run'));
-      expect(key('m07-cancel'), findsNothing);
-      expect(containing('Hủy yêu cầu giao'), findsNothing);
-      expect(key('m07-location-card'), findsOneWidget);
-      // The sample position is 400 s old: it is labelled old, not live.
-      expect(containing('Vị trí cũ'), findsWidgets);
-      expect(containing('Cập nhật lúc'), findsOneWidget);
+    testWidgets('Q05 delivering a DIRECT call: status only (no Shipper route); the creating shop alone may cancel, with a clear warning', (WidgetTester tester) async {
+      final SampleShopSource source = SampleShopSource();
+      await mount(tester, ShopDeliveryDetailScreen(source: source, deliveryId: 'd-run'));
+      expect(key('m07-location-card'), findsNothing);
       expect(containing('Trực tiếp'), findsNothing);
+      expect(containing('phí không sửa được'), findsOneWidget);
+      expect(containing('Hủy giao (shipper đã lấy hàng)'), findsOneWidget);
+      await tap(tester, key('m07-cancel'));
+      expect(containing('hàng vẫn ở shipper'), findsOneWidget);
+      await tester.enterText(key('m07-reason-field').first, 'Khách không nhận nữa');
+      await settle(tester);
+      await tap(tester, key('m07-reason-confirm'));
+      final DeliveryView after = await source.get('d-run');
+      expect(after.state, DeliveryState.cancelledByMerchant);
+      // The goods are NOT assumed to be back: an open incident asks the shop to settle them before it can call again.
+      expect(after.incident?.isOpen, isTrue);
+      expect(key('m07-incident'), findsOneWidget);
+      expect(key('m07-recall'), findsNothing);
       await unmount(tester);
     });
 
-    testWidgets('Q04 accepted: shipper card with live position', (WidgetTester tester) async {
+    testWidgets('Q05 delivering a customer\'s order: the shop cannot cancel (the customer does) and sees the Shipper\'s position', (WidgetTester tester) async {
+      final SampleShopSource source = SampleShopSource();
+      final DeliveryView base = await source.get('d-run');
+      final _OrderShop orderShop = _OrderShop(base.copyWith(can: const <String>{}, location: LocationView(lat: 22.666, lng: 106.258, recordedAt: DateTime.utc(2026, 10, 18, 8, 59), ageSeconds: 60, freshness: Freshness.live)));
+      await mount(tester, ShopDeliveryDetailScreen(source: orderShop, deliveryId: 'd-run'));
+      expect(key('m07-cancel'), findsNothing);
+      expect(containing('chỉ khách mới hủy được'), findsOneWidget);
+      expect(key('m07-location-card'), findsOneWidget);
+      await unmount(tester);
+    });
+
+    testWidgets('Q04 accepted: shipper card, no Shipper route for a DIRECT call, cancel allowed before pickup', (WidgetTester tester) async {
       await mount(tester, ShopDeliveryDetailScreen(source: SampleShopSource(), deliveryId: 'd-acc'));
       expect(key('m07-shipper-card'), findsOneWidget);
-      expect(containing('Trực tiếp'), findsOneWidget);
+      expect(containing('Trực tiếp'), findsNothing);
       expect(key('m07-cancel'), findsOneWidget);
       await unmount(tester);
     });
@@ -226,6 +249,7 @@ void main() {
       await tester.enterText(key('m07-f-address').first, 'Số 5 Phố Mẫu');
       await tester.enterText(key('m07-f-goods').first, 'Bánh');
       await tester.enterText(key('m07-f-value').first, '120000');
+      await tap(tester, key('m07-band-0'));
       await settle(tester);
       await tap(tester, key('m07-submit-call'));
       expect(find.text('Gọi shipper?'), findsOneWidget); // the summary before sending
@@ -249,7 +273,38 @@ void main() {
       expect(find.text('Nhập tên người nhận.'), findsOneWidget);
       expect(tester.widget<TextField>(key('m07-f-name').first).focusNode!.hasFocus, isTrue);
       expect(source.createKeys, isEmpty);
-      expect(containing('Chưa ghim điểm giao nên Chưa xác định phí'), findsOneWidget);
+      // An address is enough: no map is asked for, and the fee is a band of the table (an estimate) or an agreed amount.
+      expect(key('m07-band-0'), findsOneWidget);
+      expect(containing('không phải quãng đường đo trên bản đồ'), findsOneWidget);
+      expect(containing('Ghim điểm giao'), findsNothing);
+      expect(key('m07-f-paid'), findsNothing);
+      await unmount(tester);
+      ShopCallDraft.clear();
+    });
+
+    testWidgets('Q02 an address-only call needs a fee band (or an agreed fee) and sends the chosen band, never 0đ', (WidgetTester tester) async {
+      final _FlakyShop source = _FlakyShop(failures: 0);
+      await mount(tester, ShopCallScreen(source: source));
+      await tester.enterText(key('m07-f-name').first, 'Lan');
+      await tester.enterText(key('m07-f-phone').first, '0912345678');
+      await tester.enterText(key('m07-f-address').first, 'Số 5 Phố Mẫu');
+      await tester.enterText(key('m07-f-goods').first, 'Bánh');
+      await tester.enterText(key('m07-f-value').first, '120000');
+      await settle(tester);
+      await tap(tester, key('m07-submit-call'));
+      expect(key('m07-form-problem'), findsOneWidget);
+      expect(containing('chọn mốc phí giao'), findsOneWidget);
+      expect(source.createKeys, isEmpty);
+      await tap(tester, key('m07-band-1'));
+      await tap(tester, key('m07-submit-call'));
+      expect(containing('15.000đ (ước tính theo mốc)'), findsOneWidget);
+      expect(containing('Còn phải thu'), findsNothing);
+      await tap(tester, key('m07-confirm-yes'));
+      expect(source.createKeys, hasLength(1));
+      final DeliveryView made = (await source.list(history: false)).first;
+      expect(made.fee.amountVnd, 15000);
+      expect(made.fee.estimated, isTrue);
+      expect(made.recipient.hasPoint, isFalse);
       await unmount(tester);
       ShopCallDraft.clear();
     });
@@ -299,12 +354,15 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('S02/S03 before pickup: missing drop-off blocks pickup and asks for pin + fee; release needs a reason', (WidgetTester tester) async {
+    testWidgets('S02/S03 before pickup: a fee never settled blocks pickup and asks for the agreed amount only; release needs a reason', (WidgetTester tester) async {
       final SampleShipperSource source = SampleShipperSource();
       await mount(tester, ShipperDeliveryDetailScreen(source: source, deliveryId: 'm-acc'));
       expect(key('m07-missing-banner'), findsOneWidget);
+      expect(containing('Phí giao chưa được chốt'), findsWidgets);
       expect(key('m07-pickup'), findsNothing); // the server did not allow pickup yet
-      expect(key('m07-confirm-destination'), findsOneWidget);
+      expect(key('m07-confirm-fee'), findsOneWidget);
+      expect(containing('Điểm giao'), findsNothing);
+      expect(containing('ghim'), findsNothing);
       expect(key('m07-release'), findsOneWidget);
       expect(containing('Hủy nhận đơn'), findsWidgets);
       await tap(tester, key('m07-release'));
@@ -315,46 +373,57 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('S04 needs a pin and a fee; without a map it says so', (WidgetTester tester) async {
+    testWidgets('S04 asks only for the agreed fee, no map; a bad amount is explained and nothing is sent', (WidgetTester tester) async {
       final SampleShipperSource source = SampleShipperSource();
       final DeliveryView d = await source.get('m-acc');
-      await mount(tester, ConfirmDestinationScreen(source: source, delivery: d));
-      expect(key('m07-no-map'), findsOneWidget);
-      await tap(tester, key('m07-dest-submit'));
+      await mount(tester, ConfirmFeeScreen(source: source, delivery: d));
+      expect(key('m07-no-map'), findsNothing);
+      await tap(tester, key('m07-fee-submit'));
       expect(find.text('Nhập phí là số nguyên từ 0 đến 10.000.000đ.'), findsOneWidget);
       expect((await source.get('m-acc')).version, d.version);
       await unmount(tester);
     });
 
-    testWidgets('S04 with a pin and an agreed fee confirms the drop-off', (WidgetTester tester) async {
+    testWidgets('S04 with an agreed fee the Shipper can pick up in one more step', (WidgetTester tester) async {
       final SampleShipperSource source = SampleShipperSource();
       final DeliveryView d = await source.get('m-acc');
-      await mount(
-        tester,
-        ConfirmDestinationScreen(
-          source: source,
-          delivery: d,
-          pinPicker: (BuildContext context, {required void Function(double lat, double lng) onPick, double? lat, double? lng}) =>
-              TextButton(key: const Key('fake-pin'), onPressed: () => onPick(22.67, 106.26), child: const Text('ghim')),
-        ),
-      );
-      await tap(tester, key('fake-pin'));
+      await mount(tester, ConfirmFeeScreen(source: source, delivery: d));
       await tester.enterText(key('m07-agreed-fee').first, '20000');
       await settle(tester);
-      await tap(tester, key('m07-dest-submit'));
+      await tap(tester, key('m07-fee-submit'));
       final DeliveryView after = await source.get('m-acc');
       expect(after.state, DeliveryState.locationConfirmed);
       expect(after.fee.amountVnd, 20000);
       expect(after.allows('pickup'), isTrue);
+      expect(after.needsFee, isFalse);
       await unmount(tester);
     });
 
-    testWidgets('S06 delivering: no release/cancel, complete and fail only', (WidgetTester tester) async {
+    testWidgets('S06 delivering: no release, no cancel and NO "Giao thất bại" — only complete, with a note to call the shop', (WidgetTester tester) async {
       await mount(tester, ShipperDeliveryDetailScreen(source: SampleShipperSource(), deliveryId: 'm-run'));
       expect(key('m07-release'), findsNothing);
       expect(key('m07-pickup'), findsNothing);
+      expect(key('m07-fail'), findsNothing);
+      expect(containing('Giao thất bại'), findsNothing);
       expect(key('m07-complete'), findsOneWidget);
-      expect(key('m07-fail'), findsOneWidget);
+      expect(key('m07-after-pickup-note'), findsOneWidget);
+      expect(containing('gọi quán để thống nhất'), findsWidgets);
+      await unmount(tester);
+    });
+
+    testWidgets('S06 a fee that is settled shows one "Đã nhận hàng" step and no fee screen', (WidgetTester tester) async {
+      final SampleShipperSource source = SampleShipperSource();
+      await source.accept('o-1', key: 'k');
+      await mount(tester, ShipperDeliveryDetailScreen(source: source, deliveryId: 'o-1'));
+      expect(key('m07-pickup'), findsOneWidget);
+      expect(key('m07-confirm-fee'), findsNothing);
+      expect(key('m07-missing-banner'), findsNothing);
+      expect(containing('Còn phải thu'), findsNothing);
+      expect(containing('Đã thanh toán'), findsNothing);
+      await tap(tester, key('m07-pickup'));
+      expect(containing('Xác nhận đã nhận hàng?'), findsOneWidget);
+      await tap(tester, key('m07-confirm-yes'));
+      expect((await source.get('o-1')).state, DeliveryState.delivering);
       await unmount(tester);
     });
 
@@ -367,23 +436,6 @@ void main() {
       expect((await source.get('m-run')).state, DeliveryState.completed);
       expect(key('m07-result'), findsOneWidget);
       expect(key('m07-complete'), findsNothing);
-      await unmount(tester);
-    });
-
-    testWidgets('S07 failing needs a reason and where the goods are, then shows who is responsible', (WidgetTester tester) async {
-      final SampleShipperSource source = SampleShipperSource();
-      final DeliveryView d = await source.get('m-run');
-      await mount(tester, FailDeliveryScreen(source: source, delivery: d));
-      expect(tester.widget<N11Button>(key('m07-fail-submit')).onPressed, isNull);
-      await tap(tester, key('m07-reason-RECIPIENT_UNREACHABLE'));
-      expect(tester.widget<N11Button>(key('m07-fail-submit')).onPressed, isNull);
-      await tap(tester, key('m07-goods-WITH_SHIPPER'));
-      expect(tester.widget<N11Button>(key('m07-fail-submit')).onPressed, isNotNull);
-      await tap(tester, key('m07-fail-submit'));
-      await tap(tester, key('m07-confirm-yes'));
-      expect(key('m07-fail-done'), findsOneWidget);
-      expect(key('m07-fail-custody'), findsOneWidget);
-      expect(containing('Hàng đang ở shipper hoặc chưa rõ'), findsOneWidget);
       await unmount(tester);
     });
   });
@@ -402,6 +454,30 @@ void main() {
   test('delivery helper builds a valid view', () {
     expect(_delivery('x', DeliveryState.accepted).state, DeliveryState.accepted);
   });
+}
+
+/// A customer's order as the shop sees its request: the Shipper's position is shown and only the customer can cancel.
+class _OrderShop extends SampleShopSource {
+  _OrderShop(this._order);
+
+  final DeliveryView _order;
+
+  @override
+  Future<DeliveryView> get(String id) async => DeliveryView(
+        deliveryId: _order.deliveryId,
+        code: _order.code,
+        source: 'ORDER',
+        state: _order.state,
+        version: _order.version,
+        pickup: _order.pickup,
+        recipient: _order.recipient,
+        goods: _order.goods,
+        fee: _order.fee,
+        search: _order.search,
+        assignment: _order.assignment,
+        location: _order.location,
+        can: _order.can,
+      );
 }
 
 class _ConflictShop extends SampleShopSource {
