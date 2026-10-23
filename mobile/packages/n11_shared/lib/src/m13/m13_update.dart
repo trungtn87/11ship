@@ -454,7 +454,7 @@ class AppUpdateController extends ChangeNotifier {
         await _delete(file);
         // A file that does not match is never retried into acceptance: the same bytes would be wrong again.
         if (error.code == 'SIZE_MISMATCH' || error.code == 'SHA256_MISMATCH' || error.code == 'BAD_ANSWER' || attempt == maxAttempts) {
-          throw error;
+          rethrow;
         }
         await Future<void>.delayed(retryDelay * attempt);
       }
