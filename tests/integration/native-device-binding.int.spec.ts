@@ -136,6 +136,7 @@ describe('native device binding (fixture attestation)', () => {
       const challenge = await closedApp.call('POST', '/client-auth/device/challenges', { body: { app: 'FOOD', purpose: 'ENROLL', key_id: null } });
       expect([challenge.status, errorCode(challenge)]).toEqual([503, 'SERVICE_UNAVAILABLE']);
       const phone = randomPhone();
+      closedApp.track(phone.normalized);
       const register = await closedApp.call('POST', '/client-auth/register', { headers: { 'idempotency-key': randomUUID() }, body: registerBody(phone, 'FOOD') });
       expect(register.status).toBe(201);
       const login = await closedApp.call('POST', '/client-auth/login', { headers: { 'idempotency-key': randomUUID() }, body: loginBody(phone, 'FOOD') });
