@@ -1,94 +1,56 @@
 name: Deploy VPS
-
 on:
   workflow_dispatch:
-    inputs:
-      configure_cao_bang_gps:
-        description: 'Approve reviewed M02 GPS coverage migrations for Cao Bang before deploy'
-        type: boolean
-        required: false
-        default: false
-
 permissions:
   contents: read
-
-concurrency:
-  group: vps-production-deploy
-  cancel-in-progress: false
-
 jobs:
-  deploy:
-    if: github.ref == 'refs/heads/main'
+  diagnose:
     runs-on: ubuntu-24.04
-    timeout-minutes: 50
-    environment:
-      name: vps-production
-      url: https://103.9.78.67.sslip.io
+    timeout-minutes: 5
+    environment: vps-production
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          persist-credentials: false
-      - name: Resolve latest main once
-        id: source
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - name: Install pinned dependencies
-        run: |
-          npm install --global npm@11.9.0
-          npm ci
-      - name: Build and verify release
-        env:
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
-        run: |
-          node scripts/deploy/build-ubuntu-artifact.mjs --out artifact-out --sha "$SOURCE_SHA"
-          node scripts/deploy/verify-ubuntu-artifact.mjs "artifact-out/11ship-${SOURCE_SHA}-ubuntu24-amd64.tar.gz" "$SOURCE_SHA"
-          (cd artifact-out && sha256sum -c "11ship-${SOURCE_SHA}-ubuntu24-amd64.tar.gz.sha256")
-      - uses: actions/upload-artifact@v4
-        with:
-          name: vps-release-${{ steps.source.outputs.sha }}
-          path: |
-            artifact-out/*.tar.gz
-            artifact-out/*.sha256
-          if-no-files-found: error
-          retention-days: 14
-      - name: Approve the two reviewed Cao Bang GPS migrations
-        if: ${{ inputs.configure_cao_bang_gps == true }}
+      - name: Read release integrity and deployment state
         env:
           VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
-        run: bash scripts/deploy/github-vps-approve-gps.sh
-      - name: Deploy over verified SSH
-        env:
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
-          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
-        run: bash scripts/deploy/github-vps-deploy.sh
-      - name: Check GPS coverage was activated
-        if: ${{ inputs.configure_cao_bang_gps == true }}
         run: |
-          python3 - <<'PY'
-          import json
-          import urllib.request
-          from urllib.parse import urlencode
-          url='https://103.9.78.67.sslip.io/v1/service-areas/resolve?' + urlencode({'latitude': '22.66667', 'longitude': '106.25833'})
-          with urllib.request.urlopen(url, timeout=20) as result:
-              payload=json.load(result)
-          area=payload.get('data')
-          if not isinstance(area, dict) or area.get('name') != 'Cao Bằng':
-              raise SystemExit('M02 GPS verification failed: expected active Cao Bằng zone at centre (check actual VPS area row)')
-          print('GPS area verified: Cao Bằng centre resolves successfully')
+          set -euo pipefail
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf "$ssh_dir"' EXIT
+          chmod 700 "$ssh_dir"
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > "$ssh_dir/key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          chmod 600 "$ssh_dir/key" "$ssh_dir/known_hosts"
+          unset VPS_SSH_PRIVATE_KEY VPS_KNOWN_HOSTS
+          ssh -i "$ssh_dir/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_dir/known_hosts" -o ConnectTimeout=20 root@103.9.78.67 'python3 -B -' <<'PY'
+          from pathlib import Path
+          import hashlib, json, tarfile, subprocess
+          base=Path('/opt/11ship')
+          sha='11ea361d039dee6cf55f1fb9bd4a9d60a22ba617'
+          target=base/'releases'/sha
+          for name in ('current','previous'):
+              p=base/name
+              print(name+': '+str(p.resolve()) if p.exists() else name+': missing')
+          print('service: '+subprocess.run(['systemctl','is-active','11ship-staging'],capture_output=True,text=True).stdout.strip())
+          archive=Path('/root/11ship-actions')/sha/('11ship-'+sha+'-ubuntu24-amd64.tar.gz')
+          with tarfile.open(archive,'r:gz') as tf:
+              members=[m for m in tf.getmembers() if m.isfile()]
+              prefix=members[0].name.split('/')[0]+'/'
+              expected={m.name[len(prefix):]:hashlib.sha256(tf.extractfile(m).read()).hexdigest() for m in members}
+          if not target.exists():
+              alternatives=[p for p in (base/'releases').iterdir() if sha in p.name]
+              print('candidate directories: '+json.dumps([str(p) for p in alternatives]))
+              if len(alternatives)==1: target=alternatives[0]
+          print('target: '+str(target))
+          if target.exists():
+              files=[p for p in target.rglob('*') if p.is_file()]
+              actual={str(p.relative_to(target)):hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+              print('extra paths: '+json.dumps(sorted(set(actual)-set(expected))))
+              print('missing paths: '+json.dumps(sorted(set(expected)-set(actual))))
+              changed=[p for p in expected if p in actual and expected[p]!=actual[p]]
+              print('changed paths: '+json.dumps(changed))
+              for p in changed: print('hash '+p+' expected='+expected[p]+' actual='+actual[p])
+          policy=Path('/etc/11ship/migration-compatibility.json')
+          known=json.loads(policy.read_text()) if policy.exists() else {}
+          print('reviewed migration names: '+json.dumps(sorted(known)))
           PY
-      - name: Record checked deployment
-        env:
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
-        run: |
-          {
-            echo '### VPS deployed and checked'
-            echo "Source main SHA: \`$SOURCE_SHA\`"
-            echo 'Target: https://103.9.78.67.sslip.io'
-            echo 'Existing updater verified HTTPS/API/Admin/Android readiness; no device acceptance claimed.'
-          } >> "$GITHUB_STEP_SUMMARY"
