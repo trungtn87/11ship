@@ -227,8 +227,13 @@ class SessionController extends ChangeNotifier {
     _notify();
   }
 
-  /// The person left the form while a request was in flight: its late answer is dropped, not installed.
+  /// The person left an unfinished login/register form: its late answer must not install a session.
+  /// Once authentication succeeded, disposing the form is just navigation; it must NOT
+  /// invalidate authenticated requests (for example the first shop-profile load).
   void abandon() {
+    if (_status == SessionStatus.signedIn) {
+      return;
+    }
     _epoch++;
     _busy = false;
     _pending = null;
