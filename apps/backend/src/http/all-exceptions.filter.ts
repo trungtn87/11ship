@@ -21,6 +21,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const requestId = request.requestId ?? randomUUID();
     const classified = classifyException(exception);
 
+    // Map only fixed route families to app/module; never log the URL, query, parameters or raw exception.
+    const original = (request as RequestWithContext & { originalUrl?: unknown }).originalUrl;
+    const route = typeof original === 'string' ? original.split('?')[0] : '';
+    const family = /^\/v1\/(driver\/wallet|driver|customers|customer|shop|onboarding|orders|admin|admin-auth|sms-gateway)(?:\/|$)/.exec(route)?.[1];
+    const app = family?.startsWith('driver') ? 'SHIP' :
+      ['customer', 'customers', 'shop', 'onboarding', 'orders'].includes(family ?? '') ? 'FOOD' :
+      family?.startsWith('admin') ? 'ADMIN' : 'API';
+    const moduleName = family === 'driver/wallet' ? 'M04' :
+      family?.startsWith('admin') ? 'ADMIN' : family === 'orders' ? 'M10' : family === 'driver' ? 'M03' : 'GENERAL';
+
+    // Express route.path is registered server code, unlike originalUrl which contains user data.
+    const template = (request as RequestWithContext & { route?: { path?: unknown } }).route?.path;
+    const safeRoute = typeof template === 'string' && /^\/[A-Za-z0-9/:._-]{0,127}$/.test(template) ? template : undefined;
+
     // Only whitelisted metadata is logged. The exception message and stack are never logged.
     this.logger.log(classified.status >= 500 ? 'error' : 'warn', 'request_failed', {
       request_id: requestId,
@@ -28,6 +42,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
       status: classified.status,
       code: classified.code,
       error_class: safeErrorClass(exception),
+      app,
+      module: moduleName,
+      ...(safeRoute === undefined ? {} : { route: safeRoute }),
     });
 
     if (classified.retryAfterSeconds !== undefined) {

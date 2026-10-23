@@ -52,6 +52,7 @@ const SHAPES: Record<UiIconName, readonly Shape[]> = {
   gear: [c(12, 12, 4), p('M12 2v3'), p('M12 19v3'), p('M4.2 4.2l2.1 2.1'), p('M17.7 17.7l2.1 2.1'), p('M2 12h3'), p('M19 12h3'), p('M4.2 19.8l2.1-2.1'), p('M17.7 6.3l2.1-2.1')],
   doc: [p('M7 3h8l4 4v14H7z'), p('M14 3v5h5'), p('M10 13h6'), p('M10 17h6')],
   activity: [p('M3 12h4l3-8 4 16 3-8h4')],
+  star: [p('M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z')],
   'chevron-down': [p('M6 9l6 6 6-6')],
   'chevron-up': [p('M6 15l6-6 6 6')],
   'chevrons-left': [p('M11 17l-5-5 5-5'), p('M18 17l-5-5 5-5')],

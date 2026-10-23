@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { purgeShopDisplayCodes } from './support/shop-display-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { AdminApp, adminData, adminErrorCode, startAdminApp } from './support/admin-fixtures';
 import { createActiveShopFor } from './support/auth-fixtures';
@@ -38,6 +39,7 @@ describe('M12-B — operations', () => {
       await purgeDeliveriesOfShops(admin.pool, [shopId]);
       await purgeGrants(admin.pool);
       await admin.pool.query('DELETE FROM app.shop_members WHERE shop_id = $1::uuid', [shopId]);
+      await purgeShopDisplayCodes(admin.pool, [shopId]);
       await admin.pool.query('DELETE FROM app.shops WHERE shop_id = $1::uuid', [shopId]);
     } finally {
       await admin.close();

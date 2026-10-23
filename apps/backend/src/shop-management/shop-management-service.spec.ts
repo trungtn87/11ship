@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { parseShopLogo } from '../shop/shop-logo';
+import { LOGICAL_REQUEST_POLICY } from '../shared/json/json-policy';
+import { validateJson } from '../shared/json/safe-json';
 import { describe, expect, it } from '@jest/globals';
 import { AuditWriter } from '../audit/audit-writer';
 import { fakeContext } from '../auth/auth-fakes.fixture';
@@ -95,6 +99,7 @@ function rig(
 
   const executor = {
     execute: async (request: IdempotentRequest, work: (context: TransactionContext) => Promise<IdempotentResult>) => {
+      validateJson(request.logicalRequest, LOGICAL_REQUEST_POLICY);
       requests.push(request);
       events.push('executor');
       const replay = request.replay;
@@ -124,6 +129,7 @@ function rig(
     },
   } as unknown as SessionAuthorizationParticipant;
   const shops = {
+    saveLogo: async () => undefined,
     lockOwnedShop: async () => {
       events.push('shop.lock');
       return shop;
@@ -203,6 +209,14 @@ const update = (r: Rig, input = PROFILE_INPUT) => r.service.updateProfile(ACTOR,
 const replace = (r: Rig, input = HOURS_INPUT) => r.service.replaceBusinessHours(ACTOR, input, KEY, REQUEST_ID);
 
 describe('ShopManagementService.updateProfile', () => {
+
+  it('accepts a real PNG above the logical JSON cap for shop/me profile updates', async () => {
+    const logo = parseShopLogo({ content_type: 'image/png', data_base64: readFileSync('tests/fixtures/shop-logo-256.png').toString('base64') })!;
+    expect(Buffer.byteLength(JSON.stringify(logo))).toBeGreaterThan(65536);
+    const r = rig();
+    await r.service.updateProfile(ACTOR, { ...PROFILE_INPUT, profile: { ...PROFILE_INPUT.profile, logo } }, KEY, REQUEST_ID);
+    expect(r.requests[0]?.logicalRequest).toMatchObject({ logo: { content_type: 'image/png', sha256: expect.stringMatching(/^[a-f0-9]{64}$/) } });
+  });
   it('runs in the global lock order and records one audit and one outbox row', async () => {
     const r = rig();
     const outcome = await update(r);

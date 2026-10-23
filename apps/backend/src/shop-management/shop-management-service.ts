@@ -1,3 +1,4 @@
+import { shopLogoFingerprint } from '../shop/shop-logo';
 import { Injectable } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
 import { SessionActor, SessionAuthorizationParticipant } from '../auth/session-authorization-participant';
@@ -96,6 +97,7 @@ export class ShopManagementService {
         // The NORMALIZED request: "absent" and null are the same logical request for zalo and facebook.
         logicalRequest: {
           expected_version: input.expectedVersion,
+          ...(profile.logo === undefined ? {} : { logo: shopLogoFingerprint(profile.logo) }),
           name: profile.name,
           contact_phone: profile.contactPhoneNormalized,
           zalo: profile.zalo,
@@ -154,6 +156,7 @@ export class ShopManagementService {
     }
 
     const version = await this.shops.updateActiveProfile(context, shop.shopId, shop.version, profile);
+    if (profile.logo !== undefined) await this.shops.saveLogo(context, shop.shopId, profile.logo);
     await this.#record(context, requestId, userId, shop.shopId, version, {
       audit: SHOP_MANAGEMENT_AUDIT_ACTIONS.profileUpdate,
       event: SHOP_PROFILE_UPDATED_EVENT_TYPE,
@@ -287,6 +290,7 @@ export class ShopManagementService {
 function toView(snapshot: ShopSnapshot): Record<string, unknown> {
   return {
     shop_id: snapshot.shopId,
+    ...(snapshot.logo == null ? {} : { logo: snapshot.logo }),
     name: snapshot.name,
     contact_phone: snapshot.contactPhoneNormalized,
     zalo: snapshot.zalo,

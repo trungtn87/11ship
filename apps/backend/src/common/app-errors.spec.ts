@@ -15,8 +15,8 @@ describe('application error registry', () => {
     for (const code of APP_ERROR_CODES) {
       const definition = APP_ERROR_DEFINITIONS[code];
       // M01-A1 adds 401 (credentials/session), 403 (disabled account, role) and 429 (OTP rate limit);
-      // M02-A adds 404 (SHOP_NOT_FOUND).
-      expect([400, 401, 403, 404, 409, 429, 503]).toContain(definition.status);
+      // M02-A adds 404 (SHOP_NOT_FOUND); shop logos add 413 (SHOP_LOGO_TOO_LARGE).
+      expect([400, 401, 403, 404, 409, 413, 429, 503]).toContain(definition.status);
       expect(definition.message.length).toBeGreaterThan(0);
       messages.add(definition.message);
     }

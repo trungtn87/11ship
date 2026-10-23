@@ -37,11 +37,15 @@ export const COPY_ENTRIES = [
   ['scripts/admin-auth-recover-system.js', 'scripts/admin-auth-recover-system.js'],
   ['scripts/sms-gateway-ctl.js', 'scripts/sms-gateway-ctl.js'],
   ['scripts/android-attestation-refresh.mjs', 'scripts/android-attestation-refresh.mjs'],
+  ['scripts/deploy/android-readiness.cjs', 'scripts/deploy/android-readiness.cjs'],
+  ['scripts/deploy/vps-update.py', 'scripts/deploy/vps-update.py'],
+  ['scripts/deploy/vps-diagnose.py', 'scripts/deploy/vps-diagnose.py'],
   ['ops/selfhosted', 'ops/selfhosted'],
   ['ops/vinahost', 'ops/vinahost'],
   ['ops/runbooks/selfhosted-postgres-staging.md', 'ops/runbooks/selfhosted-postgres-staging.md'],
   ['ops/runbooks/ubuntu-vinahost-staging.md', 'ops/runbooks/ubuntu-vinahost-staging.md'],
   ['ops/runbooks/vps-production-update-20261014.md', 'ops/runbooks/vps-production-update-20261014.md'],
+  ['ops/runbooks/vps-safe-update.md', 'ops/runbooks/vps-safe-update.md'],
   ['ops/runbooks/sms-gateway.md', 'ops/runbooks/sms-gateway.md'],
   ['docs/current/M01-terms-privacy-20261014.md', 'docs/current/M01-terms-privacy-20261014.md'],
   ['.node-version', '.node-version'],
@@ -226,6 +230,15 @@ export function assertCleanTree(stage) {
   return files.length;
 }
 
+// A retry for one source SHA must not change the immutable release bytes.
+// Keep interactive Admin builds timestamped normally; normalize only the packaged copy.
+export function normalizeAdminBuildTime(stage, epoch) {
+  const file = join(stage, 'apps', 'admin-web', 'dist', 'build-manifest.json');
+  const manifest = JSON.parse(readFileSync(file, 'utf8'));
+  manifest.built_at = new Date(epoch * 1000).toISOString();
+  writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
 function writeManifest(stage) {
   const lines = walk(stage)
     .map((file) => relative(stage, file).split(sep).join('/'))
@@ -292,6 +305,7 @@ export function buildArtifact(argv) {
   stripSourceMapReferences(stage);
 
   const epoch = Number(git('show', '-s', '--format=%ct', sha));
+  normalizeAdminBuildTime(stage, epoch);
   writeFileSync(
     join(stage, 'RELEASE.json'),
     `${JSON.stringify(

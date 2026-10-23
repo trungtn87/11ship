@@ -12,6 +12,8 @@ dependencies:
   flutter:
     sdk: flutter
   image_picker: ^1.2.4
+  n11_m14_map:
+    path: ../packages/n11_m14_map
   n11_shared:
     path: ../packages/n11_shared
 

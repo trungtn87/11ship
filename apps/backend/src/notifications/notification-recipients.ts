@@ -2,7 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { DeliveryRepository } from '../delivery/delivery-repository';
 import { ShipperLocationRepository } from '../delivery/shipper-location';
 import { DriverRepository } from '../driver/driver-repository';
+import { ComplaintRepository } from '../feedback/complaint-repository';
 import { freshClockMs } from '../idempotency/idempotency-repository';
+import { OrderRepository } from '../orders/order-repository';
 import { ShopRepository } from '../shop/shop-repository';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { TransactionContext } from '../transaction/transaction-context';
@@ -39,10 +41,30 @@ export class NotificationRecipients {
     private readonly locations: ShipperLocationRepository,
     private readonly topups: TopupRequestRepository,
     private readonly agreements: ShippingFeeAgreementService,
+    private readonly complaints: ComplaintRepository,
+    private readonly orders: OrderRepository,
   ) {}
 
   shopOwner(context: TransactionContext, shopId: string): Promise<string | undefined> {
     return this.shops.ownerUserIdOfShop(context, shopId);
+  }
+
+  /** The account that placed the Order (re-read: the event only carries the id). Never a phone typed into the Order. */
+  async orderCustomer(context: TransactionContext, orderId: string): Promise<string | undefined> {
+    return (await this.orders.findById(context, orderId))?.customerUserId;
+  }
+
+  /**
+   * Does this account have a right to open this Order now? The customer who placed it, or the owner of its shop. `ended` tells the app to show it as history.
+   * Nothing about the Order is returned when the right is gone.
+   */
+  async orderAccessFor(context: TransactionContext, orderId: string, userId: string, role: 'CUSTOMER' | 'SHOP'): Promise<{ access: boolean; ended: boolean; status: string | null }> {
+    const order = await this.orders.findById(context, orderId);
+    if (order === undefined) {
+      return { access: false, ended: false, status: null };
+    }
+    const access = role === 'CUSTOMER' ? order.customerUserId === userId : (await this.shops.ownerUserIdOfShop(context, order.shopId)) === userId;
+    return { access, ended: order.endedAtMs !== null, status: access ? order.status : null };
   }
 
   async driverUser(context: TransactionContext, driverId: string): Promise<string | undefined> {
@@ -129,6 +151,25 @@ export class NotificationRecipients {
         }
       }
     }
-    return { exists: true, access, state: d.state, ended: ['completed', 'failed', 'cancelled_by_merchant', 'search_stopped'].includes(d.state) };
+    return { exists: true, access, state: d.state, ended: ['completed', 'failed', 'cancelled_by_merchant','cancelled_by_system', 'search_stopped'].includes(d.state) };
+  }
+
+  /**
+   * The complaint as the receiving account must treat it right now: does it exist, may THIS account read it (its submitter, or a related party to which something
+   * was shown), and is it closed. Read through M11's own repository: M08 issues no SQL against M11's tables.
+   */
+  async complaintAccessFor(context: TransactionContext, complaintId: string, userId: string): Promise<{ exists: boolean; access: boolean; status: string | null; ended: boolean }> {
+    const c = await this.complaints.findById(context, complaintId);
+    if (c === undefined) {
+      return { exists: false, access: false, status: null, ended: true };
+    }
+    let access = c.submitterUserId === userId;
+    if (!access && c.submitterRole !== 'SHOP' && (await this.shops.isOwnerOfShop(context, c.shopId, userId))) {
+      access = await this.complaints.partyMayRead(context, c.complaintId, 'SHOP', c.shopId);
+    }
+    if (!access && c.submitterRole !== 'SHIPPER' && c.driverId !== null && (await this.drivers.findById(context, c.driverId))?.userId === userId) {
+      access = await this.complaints.partyMayRead(context, c.complaintId, 'SHIPPER', c.driverId);
+    }
+    return { exists: true, access, status: c.status, ended: c.status === 'RESOLVED' || c.status === 'CLOSED_NO_ACTION' };
   }
 }

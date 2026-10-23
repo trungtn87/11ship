@@ -25,7 +25,7 @@ export interface OverviewQuery {
 
 /** Where a figure leads: the area of the web and the filter its list opens with (the list shows the same number). */
 export interface MetricLink {
-  readonly area: 'deliveries' | 'shippers' | 'finance-topups';
+  readonly area: 'deliveries' | 'shippers' | 'finance-topups' | 'finance-withdrawals' | 'orders' | 'complaints';
   readonly query: Readonly<Record<string, string>>;
 }
 

@@ -42,13 +42,12 @@ enum PendingKind { register, login }
 
 /// A write whose outcome the app does not know: kept as it was sent so that the person can send it again unchanged.
 class PendingAuth {
-  PendingAuth({required this.kind, required this.path, required this.body, required this.idempotencyKey, required this.grant});
+  PendingAuth({required this.kind, required this.path, required this.body, required this.idempotencyKey});
 
   final PendingKind kind;
   final String path;
   final String body;
   final String idempotencyKey;
-  final RegistrationGrant grant;
 }
 
 class SessionController extends ChangeNotifier {
@@ -169,7 +168,6 @@ class SessionController extends ChangeNotifier {
           _notify();
           return;
         }
-        await _rememberBindingFrom(response);
         _identity = identity;
         _profile = identity.profile;
         _status = SessionStatus.signedIn;
@@ -178,7 +176,8 @@ class SessionController extends ChangeNotifier {
         return;
       }
       final AuthFailure failure = failureOf(response);
-      if (failure.kind == AuthFailureKind.sessionEnded) {
+      if (failure.kind == AuthFailureKind.sessionEnded || failure.kind == AuthFailureKind.deviceProofRefused) {
+        // A legacy token is never upgraded locally: ask for the password again.
         await _endSession(epoch, notice: true);
         return;
       }
@@ -229,6 +228,9 @@ class SessionController extends ChangeNotifier {
 
   /// The person left the form while a request was in flight: its late answer is dropped, not installed.
   void abandon() {
+    if (_status == SessionStatus.signedIn) {
+      return;
+    }
     _epoch++;
     _busy = false;
     _pending = null;
@@ -312,23 +314,10 @@ class SessionController extends ChangeNotifier {
     _loggedOutNotice = false;
     _setBusy(true);
     try {
-      // A registration is always a NEW account: it can never be the peer's, so it never joins the peer's binding. A login does not
-      // know yet whose binding the peer holds, so it tries the join first.
-      final RegistrationGrant grant = await api.obtainGrant(allowJoin: kind != PendingKind.register);
       final String deviceBody = build(await api.deviceBlock());
-      try {
-        return await _send(PendingAuth(kind: kind, path: path, body: deviceBody, idempotencyKey: newIdempotencyKey(), grant: grant), epoch);
-      } on AuthFailure catch (failure) {
-        // A DEFINITE device refusal of a login that used a JOIN grant: the account is another person's than the peer's binding. Redo
-        // it once on this app's own binding with a fresh key. An unknown outcome (or any other failure) is never redone here: the
-        // person's own retry replays the same intent.
-        if (kind != PendingKind.login || !grant.joined || failure.kind != AuthFailureKind.deviceProofRefused || epoch != _epoch) {
-          rethrow;
-        }
-        await api.discardJoinedKey();
-        final RegistrationGrant own = await api.obtainGrant(allowJoin: false);
-        return await _send(PendingAuth(kind: kind, path: path, body: deviceBody, idempotencyKey: newIdempotencyKey(), grant: own), epoch);
-      }
+      return await _send(PendingAuth(
+        kind: kind, path: path, body: deviceBody, idempotencyKey: newIdempotencyKey(),
+      ), epoch);
     } on AuthFailure catch (failure) {
       return _fail(failure, epoch);
     } on DeviceBridgeException catch (failure) {
@@ -370,14 +359,14 @@ class SessionController extends ChangeNotifier {
 
   Future<bool> _send(PendingAuth pending, int epoch) async {
     _pending = pending;
-    final ApiResponse response = await api.authCall(pending.path, pending.body, pending.grant, pending.idempotencyKey);
+    final ApiResponse response = await api.authCall(pending.path, pending.body, pending.idempotencyKey);
     if (epoch != _epoch) {
       return false;
     }
     final bool created = response.status == 201 && pending.kind == PendingKind.register;
     final bool ok = response.status == 200 && pending.kind == PendingKind.login;
     if (!created && !ok) {
-      throw failureOf(response);
+      throw failureOf(response, endpoint: pending.path);
     }
     final Object? data = response.data;
     final Identity? identity = Identity.tryParse(data);
@@ -386,10 +375,11 @@ class SessionController extends ChangeNotifier {
       throw const AuthFailure(AuthFailureKind.badResponse);
     }
     await bridge.storeToken(token);
-    await _rememberBindingFrom(response);
     if (epoch != _epoch) {
       return false;
     }
+    _sessionEndedNotice = false;
+    _loggedOutNotice = false;
     _identity = identity;
     _profile = identity.profile;
     _pending = null;
@@ -409,18 +399,6 @@ class SessionController extends ChangeNotifier {
     _lastFailure = failure;
     _notify();
     return false;
-  }
-
-  Future<void> _rememberBindingFrom(ApiResponse response) async {
-    final String? id = response.headers['x-device-binding-id'];
-    final int? generation = int.tryParse(response.headers['x-device-binding-generation'] ?? '');
-    if (id != null && generation != null) {
-      try {
-        await bridge.rememberBinding(id, generation);
-      } on DeviceBridgeException {
-        // The binding id is a convenience for the join; the session is valid without it.
-      }
-    }
   }
 
   // ---- protected calls for the other flows (shop, driver, context) ---------------------------------------------------

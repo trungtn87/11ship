@@ -414,6 +414,19 @@ describe('runtime grants (ops/selfhosted/02-runtime-grants.sql) with the real re
     });
   });
 
+  test('the read-only VPS audit executes as the restricted runtime role and reports every required privilege', async () => {
+    await withClient(asMigrator, async (client) => {
+      await client.query(readFileSync(path.join(ROOT, 'ops', 'selfhosted', '03-runtime-function-grants.sql'), 'utf8'));
+    });
+    const checkSql = readFileSync(path.join(ROOT, 'ops', 'selfhosted', '04-check-runtime-grants.sql'), 'utf8').replace(/^\\set.*$/gm, '');
+    await withClient(asRuntime, async (client) => {
+      const results = await client.query(checkSql);
+      const report = results.find((result) => result.fields.some((field) => field.name === 'check_name'));
+      const count = [...matrix.values()].reduce((n, privileges) => n + privileges.length, 0) + 7;
+      assert.deepEqual(report.rows, [{ check_name: 'SUMMARY', result: `${count}/${count} checks OK (${matrix.size} tables)` }]);
+    });
+  });
+
   test('the effective privileges of ship11_app on EVERY table equal the matrix, and nothing else', async () => {
     await withClient(asMigrator, async (client) => {
       for (const [table, privileges] of matrix) {
@@ -434,6 +447,10 @@ describe('runtime grants (ops/selfhosted/02-runtime-grants.sql) with the real re
   test('as the runtime role itself: reads and writes what the matrix allows, and every forbidden step stops with 42501', async () => {
     await withClient(asRuntime, async (client) => {
       await client.query('SELECT 1 FROM app.users LIMIT 1');
+      // Regression: shop onboarding first locks its OWNER membership. SELECT + INSERT alone raises
+      // 42501 even when this new owner has no matching row, so first-time profile creation also failed.
+      await client.query("SELECT shop_id FROM app.shop_members WHERE user_id = '00000000-0000-4000-8000-000000000001'::uuid AND member_role = 'OWNER' FOR UPDATE");
+      await assert.rejects(client.query('DELETE FROM app.shop_members WHERE false'), { code: '42501' });
       await client.query('SELECT 1 FROM app.admin_auth_limit_config LIMIT 1');
       await assert.rejects(client.query('SELECT 1 FROM app.pgmigrations LIMIT 1'), { code: '42501' });
       await assert.rejects(client.query('SELECT 1 FROM app.audit_logs LIMIT 1'), { code: '42501' });

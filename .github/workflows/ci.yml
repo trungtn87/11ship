@@ -17,7 +17,7 @@ jobs:
   verify:
     name: Verify (Node 24, PostgreSQL 17)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 50
 
     services:
       postgres:
@@ -35,6 +35,9 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+          --log-driver json-file
+          --log-opt max-size=200k
+          --log-opt max-file=1
 
     steps:
       - name: Check out
@@ -202,6 +205,7 @@ jobs:
       # Local mode: exactly what the README tells a developer to run. No CI admin credential and no
       # wrong-user fixture. Only the real wrong-user test may be skipped; nothing else.
       - name: Integration tests, local mode (no CI-only credentials)
+        timeout-minutes: 15
         env:
           NODE_ENV: test
           APP_ENV: test
@@ -222,6 +226,7 @@ jobs:
 
       # CI mode: same suite plus the real wrong-user fixture. Nothing may be skipped.
       - name: Integration tests, CI mode (real wrong-user fixture)
+        timeout-minutes: 15
         env:
           NODE_ENV: test
           APP_ENV: test
@@ -245,6 +250,30 @@ jobs:
             --expect "M01.03 client registration succeeds as the restricted runtime role=passed"
 
       # M01.07: images of the real 11Food register flow (real Chrome, real front, real backend and PostgreSQL), as annotations.
+      # When an integration run fails the job log ends with the PostgreSQL container's own log, which can bury the jest output. This prints the exact failing
+      # suites and tests (and the first lines of each message) from the JSON result, so the failure is readable in the log tail. The container log above is
+      # capped (--log-opt max-size) for the same reason.
+      - name: Failure digest (integration)
+        if: ${{ failure() }}
+        run: |
+          for f in .test-results/integration-local.json .test-results/integration-ci.json; do
+            [ -f "$f" ] || continue
+            echo "=== $f ==="
+            node -e '
+              const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+              console.log(`suites failed=${r.numFailedTestSuites} tests failed=${r.numFailedTests} passed=${r.numPassedTests} pending=${r.numPendingTests}`);
+              for (const s of r.testResults) {
+                if (s.status !== "failed") continue;
+                const name = s.name.replace(/^.*tests\/integration\//, "");
+                if (!s.assertionResults.some((a) => a.status === "failed")) { console.log(`SUITE ${name}: ${String(s.message).split("\n").slice(0, 12).join(" | ")}`); continue; }
+                for (const a of s.assertionResults.filter((x) => x.status === "failed")) {
+                  console.log(`TEST ${name} :: ${a.fullName}`);
+                  console.log("   " + String((a.failureMessages || [""])[0]).split("\n").slice(0, 10).join("\n   "));
+                }
+              }
+            ' "$f"
+          done
+
       - name: Publish 11Food register screenshots (annotations)
         if: ${{ always() && hashFiles('.test-results/food-register-shots/*.webp') != '' }}
         run: node scripts/ci-print-shots.mjs food-register-shot .test-results/food-register-shots f01-signed-in f12-register-outcome-unknown f11-filled f12-waiting-for-code f12-wrong-code
@@ -461,7 +490,7 @@ jobs:
         run: |
           set -euo pipefail
           first="$(cut -d' ' -f1 "artifact-out/11ship-${{ steps.build.outputs.sha }}-ubuntu24-amd64.tar.gz.sha256")"
-          node scripts/deploy/build-ubuntu-artifact.mjs --out artifact-out-2 --sha "${{ steps.build.outputs.sha }}" --skip-build >/dev/null
+          node scripts/deploy/build-ubuntu-artifact.mjs --out artifact-out-2 --sha "${{ steps.build.outputs.sha }}" >/dev/null
           second="$(cut -d' ' -f1 "artifact-out-2/11ship-${{ steps.build.outputs.sha }}-ubuntu24-amd64.tar.gz.sha256")"
           echo "first=${first} second=${second}"
           test "${first}" = "${second}"

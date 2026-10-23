@@ -3,7 +3,7 @@ import { DriverActiveGuard } from './driver-active-guard';
 import { DriverAdminQueryRepository } from './driver-admin-query-repository';
 import { DriverBankRepository } from './driver-bank-repository';
 import { DriverEventRepository } from './driver-event-repository';
-import { DRIVER_WALLET_PORT, NotIntegratedDriverWalletPort } from './driver-wallet-port';
+import { DelegatingDriverWalletPort, DRIVER_WALLET_PORT } from './driver-wallet-port';
 import { ShipperViewBuilder } from './shipper-view';
 import { ShipperWalletParametersReader, ShipperWalletParametersRepository } from './shipper-wallet-parameters';
 import { DriverEligibilityReader } from './driver-eligibility-reader';
@@ -29,8 +29,9 @@ import { DriverRepository } from './driver-repository';
     ShipperWalletParametersRepository,
     ShipperWalletParametersReader,
     ShipperViewBuilder,
-    // M04 has not delivered a wallet yet: everything that depends on it is blocked (see driver-wallet-port.ts).
-    { provide: DRIVER_WALLET_PORT, useClass: NotIntegratedDriverWalletPort },
+    // The wallet answers through a delegate the Wallet module binds at start-up; without it everything that depends on the wallet stays blocked (driver-wallet-port.ts).
+    DelegatingDriverWalletPort,
+    { provide: DRIVER_WALLET_PORT, useExisting: DelegatingDriverWalletPort },
   ],
   exports: [
     DriverRepository,
@@ -43,6 +44,7 @@ import { DriverRepository } from './driver-repository';
     ShipperWalletParametersReader,
     ShipperViewBuilder,
     DRIVER_WALLET_PORT,
+    DelegatingDriverWalletPort,
   ],
 })
 export class DriverModule {}

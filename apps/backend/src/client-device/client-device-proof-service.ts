@@ -69,7 +69,6 @@ export class ClientDeviceProofService {
     if (!isNativeSession(session.platform, session.app)) {
       return;
     }
-    const trust = this.#requireTrust();
     const keyIdHeader = header(evidence.headers, 'x-device-key-id');
     const timeHeader = header(evidence.headers, 'x-device-time');
     const nonceHeader = header(evidence.headers, 'x-device-nonce');
@@ -77,6 +76,7 @@ export class ClientDeviceProofService {
     if (keyIdHeader === undefined && timeHeader === undefined && nonceHeader === undefined && signatureHeader === undefined) {
       throw new AppError('DEVICE_PROOF_REQUIRED');
     }
+    const trust = this.#requireTrust();
     const nonce = fromBase64Url(nonceHeader, 32);
     const signature = fromBase64Url(signatureHeader, SIGNATURE_MAX_BYTES);
     if (

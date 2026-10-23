@@ -3,8 +3,9 @@ import { AdminRightsReader } from '../admin-m12/admin-rights';
 import { setBusinessLockTimeout } from '../admin-provisioning/admin-provisioning-locks';
 import { AdminSystemActor } from '../admin-provisioning/admin-system-actor';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
-import { COMMISSION_VND, SEARCH_MINUTES } from '../delivery/delivery-constants';
+import { SEARCH_MINUTES } from '../delivery/delivery-constants';
 import { LOCATION_LIVE_SECONDS, LOCATION_MAX_ACCURACY_M, LOCATION_STALE_SECONDS } from '../delivery/delivery-constants';
+import { CommissionPolicyRepository } from '../wallet/commission-policy-repository';
 import { ShipperWalletParametersRepository } from '../driver/shipper-wallet-parameters';
 import { JsonObject } from '../idempotency/idempotency-executor';
 import { NotificationRepository } from '../notifications/notification-repository';
@@ -42,6 +43,7 @@ export class AdminConfigService {
     private readonly rights: AdminRightsReader,
     private readonly settings: SystemSettingsRepository,
     private readonly wallet: ShipperWalletParametersRepository,
+    private readonly commissionPolicy: CommissionPolicyRepository,
     private readonly eligibility: EligibilityParametersRepository,
     private readonly fees: ShippingFeePolicyRepository,
     private readonly notifications: NotificationRepository,
@@ -60,6 +62,7 @@ export class AdminConfigService {
       const walletRows = await this.wallet.readAll(context);
       const eligibility = await this.eligibility.read(context);
       const fee = await this.fees.active(context);
+      const commission = await this.commissionPolicy.current(context);
       const notification = await this.notifications.readConfig(context);
       const maxMs = (values: ReadonlyArray<number | null>): number | null => values.reduce<number | null>((best, value) => (value === null ? best : best === null || value > best ? value : best), null);
       const otp = this.appConfig.auth;
@@ -96,7 +99,8 @@ export class AdminConfigService {
           maxMs(walletRows.map((row) => row.updatedAtMs)),
           walletRows.map((row) => ({ key: row.key, label: row.key === 'topup_min_vnd' ? 'Nạp tối thiểu mỗi yêu cầu' : 'Rút tối thiểu mỗi yêu cầu', value: row.valueVnd, unit: 'đ' })),
           [
-            { key: 'commission_vnd', label: 'Hoa hồng mỗi đơn giao thành công (chốt theo từng lần nhận)', value: Number(COMMISSION_VND), unit: 'đ' },
+            // M04-C owns the commission as an append-only policy changed in Tài chính; each assignment snapshots the amount when it is accepted, so a new policy never changes a delivery already taken.
+            { key: 'commission_vnd', label: `Hoa hồng mỗi đơn giao thành công (chính sách phiên bản ${String(commission.version)}, sửa ở Tài chính; chốt theo từng lần nhận)`, value: Number(commission.amountVnd), unit: 'đ' },
           ],
           { kind: 'WALLET', system_only: true, path: '/v1/admin/system-settings/shipper-wallet', note: 'Mức mới áp dụng cho yêu cầu mới; yêu cầu đang xử lý giữ điều kiện đã ghi nhận.' },
         ),

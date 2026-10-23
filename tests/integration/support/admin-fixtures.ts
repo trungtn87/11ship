@@ -78,6 +78,8 @@ export interface AdminResponse {
   readonly status: number;
   readonly requestId: string;
   readonly text: string;
+  /** The answer's bytes as received (a downloaded file is not text). */
+  readonly bytes: Buffer;
   readonly headers: http.IncomingHttpHeaders;
   readonly setCookie: string[];
   readonly body: {
@@ -144,7 +146,8 @@ export function adminCall(
         const chunks: Buffer[] = [];
         response.on('data', (chunk: Buffer) => chunks.push(chunk));
         response.on('end', () => {
-          const text = Buffer.concat(chunks).toString('utf8');
+          const bytes = Buffer.concat(chunks);
+          const text = bytes.toString('utf8');
           let body: AdminResponse['body'] = {};
           try {
             body = JSON.parse(text) as AdminResponse['body'];
@@ -156,6 +159,7 @@ export function adminCall(
             status: response.statusCode ?? 0,
             requestId: String(response.headers['x-request-id'] ?? ''),
             text,
+            bytes,
             headers: response.headers,
             setCookie: raw === undefined ? [] : raw,
             body,
@@ -196,6 +200,8 @@ export interface AdminApp {
   readonly running: RunningApp;
   readonly config: AppConfig;
   readonly pool: Pool;
+  /** The OTP provider the application was started with, when the test supplied one (M11: client accounts register in the same application). */
+  readonly provider?: FakeOtpProvider;
   call(method: 'GET' | 'POST', path: string, options?: AdminCallOptions): Promise<AdminResponse>;
   /** Registers a normalized phone whose Auth and administration rows are removed on close. */
   track(normalizedPhone: string): void;
@@ -240,6 +246,8 @@ export interface StartAdminOptions {
   readonly configOverride?: Partial<AppConfig>;
   /** M03: provider overrides (the wallet port, until M04 provides one). */
   readonly overrides?: ReadonlyArray<{ readonly provide: unknown; readonly useValue: unknown }>;
+  /** M11: the fake OTP provider to bind (so the test can read the codes of client registrations). Default: a private one. */
+  readonly otpProvider?: FakeOtpProvider;
 }
 
 export async function startAdminApp(options: StartAdminOptions = {}): Promise<AdminApp> {
@@ -288,7 +296,7 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
   };
   const running = await startApp(config, {
     ...(options.overrides === undefined ? {} : { overrides: options.overrides }),
-    auth: { otpProvider: options.smsGateway === undefined ? new FakeOtpProvider() : SMS_GATEWAY_BINDING },
+    auth: { otpProvider: options.smsGateway === undefined ? (options.otpProvider ?? new FakeOtpProvider()) : SMS_GATEWAY_BINDING },
     ...(options.activationProvider === undefined
       ? options.activationSms === true
         ? { activationOtpProvider: ACTIVATION_SMS_GATEWAY_BINDING }
@@ -309,6 +317,7 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
     running,
     config,
     pool,
+    ...(options.otpProvider === undefined ? {} : { provider: options.otpProvider }),
     call: (method, path, callOptions) => adminCall(running.baseUrl, method, path, callOptions),
     track: (phone) => {
       tracked.add(phone);

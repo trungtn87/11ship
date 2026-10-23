@@ -231,6 +231,25 @@ void main() {
       await expectLater(source.unreadCount(), throwsA(isA<NotificationFailure>().having((NotificationFailure f) => f.kind, 'kind', NotificationFailureKind.offline)));
     });
 
+    test('proof 403 keeps the session and unread card; only session 401 ends login', () async {
+      final t = await signedIn();
+      final HttpNotificationSource source = HttpNotificationSource(session: t.session);
+      t.api.routes['GET /v1/notifications?filter=all&limit=30'] = (String m, String p, Map<String, String> h, String b) async =>
+          json(200, <String, Object?>{'data': pageJson(<Map<String, Object?>>[itemJson('n1', 1, targetType: 'ORDER', targetId: 'server-order-id')], unread: 1, latest: 1)});
+      final NotificationController c = NotificationController(session: t.session, source: source);
+      await c.load();
+      t.api.routes['POST /v1/notifications/n1/open'] = (String m, String p, Map<String, String> h, String b) async => apiError(403, 'DEVICE_PROOF_INVALID');
+      await expectLater(c.open(c.items.single), throwsA(isA<NotificationFailure>().having((NotificationFailure f) => f.kind, 'kind', NotificationFailureKind.deviceProofRefused)));
+      expect(t.session.status, SessionStatus.signedIn);
+      expect(c.items.single.read, isFalse);
+      expect(c.unreadCount, 1);
+      expect(t.api.to('POST', '/v1/notifications/n1/open').single.body, '{}');
+      t.api.routes['POST /v1/notifications/n1/open'] = (String m, String p, Map<String, String> h, String b) async => apiError(401, 'SESSION_EXPIRED');
+      await expectLater(c.open(c.items.single), throwsA(isA<NotificationFailure>().having((NotificationFailure f) => f.kind, 'kind', NotificationFailureKind.sessionEnded)));
+      expect(t.session.status, isNot(SessionStatus.signedIn));
+      c.dispose();
+    });
+
     test('settings: the Shipper group is optional, the push availability is the server\'s', () {
       final NotificationSettings food = NotificationSettings.fromJson(<String, Object?>{'orders': true, 'reminders': true, 'wallet_profile': true, 'sound': true, 'vibrate': false, 'push_available': false});
       expect(food.available, isNull);

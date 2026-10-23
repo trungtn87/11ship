@@ -19,9 +19,11 @@ GRANT SELECT, INSERT ON app.user_roles TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.phone_verifications TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.verification_proofs TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.sessions TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.client_login_limits TO ship11_app;
 GRANT SELECT, UPDATE ON app.service_areas TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.shops TO ship11_app;
-GRANT SELECT, INSERT ON app.shop_members TO ship11_app;
+-- UPDATE is required by ShopRepository.lockOwnedShop SELECT ... FOR UPDATE, even with no matching row.
+GRANT SELECT, INSERT, UPDATE ON app.shop_members TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.drivers TO ship11_app;
 GRANT SELECT, INSERT, DELETE ON app.shop_business_hours TO ship11_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.idempotency_records TO ship11_app;
@@ -82,6 +84,11 @@ GRANT SELECT, INSERT ON app.wallet_bank_transactions TO ship11_app;
 GRANT SELECT, INSERT ON app.wallet_topups TO ship11_app;
 -- M04-B2.2a: finance rights of the administration. SYSTEM gives (INSERT) and takes back (UPDATE) each right; never DELETE. Default deny: no row = no right.
 GRANT SELECT, INSERT, UPDATE ON app.admin_finance_grants TO ship11_app;
+-- M04-C: the withdrawal. The Shipper creates a request (INSERT) and the Admin / the Shipper move it along the state machine (UPDATE, guarded by a trigger; never DELETE). The
+-- event trail and the commission policy versions are append-only (INSERT, never UPDATE or DELETE: triggers refuse them for every role).
+GRANT SELECT, INSERT, UPDATE ON app.wallet_withdrawals TO ship11_app;
+GRANT SELECT, INSERT ON app.wallet_withdrawal_events TO ship11_app;
+GRANT SELECT, INSERT ON app.wallet_commission_policies TO ship11_app;
 -- M06-A: the shipping-fee table. Versions are immutable (a trigger refuses UPDATE/DELETE/TRUNCATE for every role): the runtime only appends and reads. The draft is
 -- the one seeded row; the runtime reads it and updates it (never deletes: a trigger refuses).
 GRANT SELECT, INSERT ON app.shipping_fee_policy_versions TO ship11_app;
@@ -103,6 +110,19 @@ GRANT SELECT, INSERT ON app.delivery_events TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.delivery_incidents TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.shipper_latest_locations TO ship11_app;
 
+-- M10: food orders. The cart is a working copy (replaced or cleared: hence DELETE of it only); an Order is created and moved along its status graph, its lines are
+-- written once and only the shop's edit columns change; nothing of an Order is ever deleted (triggers refuse it) and its event log is append-only.
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.customer_carts TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.orders TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.order_items TO ship11_app;
+GRANT SELECT, INSERT ON app.order_events TO ship11_app;
+
+-- PR #165: the public IDs/counters are allocated and mutated by SECURITY DEFINER
+-- triggers only; the runtime role may read them but must not update the counters.
+GRANT SELECT ON app.shop_public_ids TO ship11_app;
+GRANT SELECT ON app.shop_display_counters TO ship11_app;
+GRANT SELECT ON app.shop_display_numbers TO ship11_app;
+
 -- M08: notifications. The inbox, the push attempts and their bookkeeping. DELETE exists only where the retention pass removes rows after the total window
 -- (Order, Delivery, ledger and audit rows are never touched); a push token is ended, never deleted.
 GRANT SELECT, INSERT, UPDATE ON app.notification_push_tokens TO ship11_app;
@@ -113,6 +133,26 @@ GRANT SELECT, INSERT, DELETE ON app.notification_consumed_events TO ship11_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.notification_reminders TO ship11_app;
 GRANT SELECT, INSERT, DELETE ON app.notification_offer_rounds TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.notification_settings TO ship11_app;
+
+-- M11: ratings and complaints. Nothing is ever deleted (guard triggers); messages, moderations and reply history are append-only. The complaint code comes from
+-- app.next_complaint_code() (03-runtime-function-grants.sql), not from a sequence privilege.
+GRANT SELECT, INSERT, UPDATE ON app.reviews TO ship11_app;
+GRANT SELECT, INSERT ON app.review_moderations TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.review_replies TO ship11_app;
+GRANT SELECT, INSERT ON app.review_reply_history TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.complaints TO ship11_app;
+GRANT SELECT, INSERT ON app.complaint_messages TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.complaint_attachments TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.complaint_reconsiderations TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.complaint_adjustments TO ship11_app;
+
+-- M04 adjustments (posted by the wallet package for a decision of M11): the record is append-only. The ledger row it comes with is covered by the ledger grant above.
+GRANT SELECT, INSERT ON app.wallet_adjustments TO ship11_app;
+
+-- #153: stage policy and append-only cancellation facts.
+GRANT SELECT, UPDATE ON app.order_timeout_policy TO ship11_app;
+GRANT SELECT, INSERT ON app.order_timeout_policy_changes TO ship11_app;
+GRANT SELECT, INSERT ON app.cancellation_transitions TO ship11_app;
 
 -- M12-E: report export jobs. A job row is updated by the runner (QUEUED -> RUNNING -> DONE/FAILED/EXPIRED) and never deleted (trigger); the file bytes live in their own table
 -- and are removed when the file expires.

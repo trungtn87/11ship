@@ -7,7 +7,7 @@ import { Metric, MetricGroup, MetricLink, OVERVIEW_RANGES, Overview, OverviewQue
 
 export const OVERVIEW_BASE = '/v1';
 
-const AREAS: readonly string[] = ['deliveries', 'shippers', 'finance-topups'];
+const AREAS: readonly string[] = ['deliveries', 'shippers', 'finance-topups', 'finance-withdrawals', 'orders', 'complaints'];
 const STATUSES: readonly string[] = ['OK', 'FORBIDDEN', 'NOT_READY', 'ERROR'];
 const safeInt = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value);
 const iso = (value: unknown): string | undefined => {

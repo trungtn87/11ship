@@ -1,3 +1,7 @@
+import { PASSWORD_SESSION_UP_SQL, PASSWORD_SESSION_DOWN_SQL } from './support/password-session-migration-sql';
+import { PRE_TIMEOUT_MIGRATION_ARGS } from './support/timeout-migration-sql';
+import { assertTestDatabaseTarget } from './support/assert-test-target';
+import { minimalChildEnv, runNpmScript } from './support/test-helpers';
 import { randomBytes, randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
@@ -9,7 +13,11 @@ import { ADMIN_PASSWORD, AdminApp, adminData, AdminResponse, cookieFrom, loginSt
 import { begin, ok, post } from './support/activation-fixtures';
 import { ApiResponse, AuthApp, dataOf, obtainProof, PASSWORD, Phone, purgePhone, randomPhone, startAuthApp } from './support/auth-fixtures';
 import { M07_DOWN_SQL, M07_MIGRATION_NAME, M07_UP_SQL } from './support/m07-migration-sql';
+import { WITHDRAWAL_DOWN_SQL, WITHDRAWAL_MIGRATION_NAME, WITHDRAWAL_UP_SQL } from './support/withdrawal-migration-sql';
 import { M08_DOWN_SQL, M08_MIGRATION_NAME, M08_UP_SQL } from './support/m08-migration-sql';
+import { M10_DOWN_SQL, M10_MIGRATION_NAME, M10_UP_SQL } from './support/m10-migration-sql';
+import { M11_DOWN_SQL, M11_MIGRATION_NAME, M11_UP_SQL } from './support/m11-migration-sql';
+import { ADJUSTMENT_DOWN_SQL, ADJUSTMENT_MIGRATION_NAME, ADJUSTMENT_UP_SQL } from './support/adjustment-migration-sql';
 import { createInvitation, createPayload, systemSession, SystemSession } from './support/provisioning-fixtures';
 import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
 
@@ -47,26 +55,37 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
   let accountId = '';
   let m07Applied = true;
   let addedPolicy = false;
+  let temporaryPasswordSchema = false;
+  let originalMigrationHistory: Array<{ id: number; name: string; run_on: string }> = [];
   const shippers: Shipper[] = [];
   const pool = (): Pool => admin.pool;
 
-  /**
-   * The M07 migration goes in and out as the runner would do it: its SQL, then its row in the history (so `npm run db:migrate` stays consistent). M08
-   * (notifications) references M07's deliveries, so it leaves BEFORE M07 and comes back AFTER it, with its own history row.
-   */
-  async function runMigration(sql: string, record: 'insert' | 'delete'): Promise<void> {
+  // This test temporarily removes/reapplies M07 and its dependants. Re-inserting history rows
+  // gives them NEW serial IDs and run_on timestamps, which makes a later node-pg-migrate checkOrder
+  // fail even though the schema was restored. Keep the original IDs and the exact PostgreSQL
+  // timestamp text: parsing run_on as a JS Date would silently discard microseconds.
+  async function restoreMigrationHistory(): Promise<void> {
+    if (originalMigrationHistory.length === 0) return;
+    const affectedNames = new Set([
+      M07_MIGRATION_NAME, M08_MIGRATION_NAME, M10_MIGRATION_NAME,
+      M11_MIGRATION_NAME, ADJUSTMENT_MIGRATION_NAME, WITHDRAWAL_MIGRATION_NAME,
+    ]);
     const c = await pool().connect();
     try {
       await c.query('BEGIN');
-      if (record === 'delete') {
-        await c.query(M08_DOWN_SQL);
-        await c.query(sql);
-        await c.query('DELETE FROM public.pgmigrations WHERE name = ANY($1::text[])', [[M07_MIGRATION_NAME, M08_MIGRATION_NAME]]);
-      } else {
-        await c.query(sql);
-        await c.query(M08_UP_SQL);
-        await c.query('INSERT INTO public.pgmigrations (name, run_on) VALUES ($1, now()), ($2, now())', [M07_MIGRATION_NAME, M08_MIGRATION_NAME]);
+      for (const original of originalMigrationHistory.filter((row) => affectedNames.has(row.name))) {
+        const result = await c.query(
+          'UPDATE public.pgmigrations SET id = $1, run_on = $2::timestamp WHERE name = $3',
+          [original.id, original.run_on, original.name],
+        );
+        if (result.rowCount !== 1) {
+          throw new Error(`Could not restore migration history for ${original.name}`);
+        }
       }
+      const restored = await c.query<{ id: number; name: string; run_on: string }>(
+        'SELECT id, name, run_on::text AS run_on FROM public.pgmigrations WHERE name = ANY($1::text[]) ORDER BY id', [originalMigrationHistory.map((row) => row.name)],
+      );
+      expect(restored.rows).toEqual(originalMigrationHistory);
       await c.query('COMMIT');
     } catch (error) {
       await c.query('ROLLBACK').catch(() => undefined);
@@ -76,7 +95,64 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
     }
   }
 
+  /**
+   * The M07 migration goes in and out as the runner would do it: its SQL, then its row in the history (so `npm run db:migrate` stays consistent). M08
+   * (notifications) references M07's deliveries, so it leaves BEFORE M07 and comes back AFTER it, with its own history row.
+   */
+  async function runMigration(sql: string, record: 'insert' | 'delete', name: string = M07_MIGRATION_NAME): Promise<void> {
+    const c = await pool().connect();
+    try {
+      await c.query('BEGIN');
+      if (name !== M07_MIGRATION_NAME) {
+        await c.query(sql);
+        if (record === 'delete') await c.query('DELETE FROM public.pgmigrations WHERE name = $1', [name]);
+        else await c.query('INSERT INTO public.pgmigrations (name, run_on) VALUES ($1, now())', [name]);
+      } else if (record === 'delete') {
+        await c.query(ADJUSTMENT_DOWN_SQL);
+        await c.query(M11_DOWN_SQL);
+        await c.query(M10_DOWN_SQL);
+        await c.query(M08_DOWN_SQL);
+        await c.query(sql);
+        await c.query('DELETE FROM public.pgmigrations WHERE name = ANY($1::text[])', [[M07_MIGRATION_NAME, M08_MIGRATION_NAME, M10_MIGRATION_NAME, M11_MIGRATION_NAME, ADJUSTMENT_MIGRATION_NAME]]);
+      } else {
+        await c.query(sql);
+        await c.query(M08_UP_SQL);
+        await c.query(M10_UP_SQL);
+        await c.query(M11_UP_SQL);
+        await c.query(ADJUSTMENT_UP_SQL);
+        await c.query('INSERT INTO public.pgmigrations (name, run_on) VALUES ($1, now()), ($2, now()), ($3, now()), ($4, now()), ($5, now())', [M07_MIGRATION_NAME, M08_MIGRATION_NAME, M10_MIGRATION_NAME, M11_MIGRATION_NAME, ADJUSTMENT_MIGRATION_NAME]);
+      }
+      await c.query('COMMIT');
+    } catch (error) {
+      await c.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      c.release();
+    }
+    if (record === 'insert' && name === WITHDRAWAL_MIGRATION_NAME) {
+      await restoreMigrationHistory();
+      // Remove the temporary auth overlay before the normal runner applies all pending migrations.
+      // These historical fixtures use legacy sessions, which the Down preserves.
+      if (temporaryPasswordSchema) {
+        await pool().query(PASSWORD_SESSION_DOWN_SQL);
+        temporaryPasswordSchema = false;
+      }
+      const result = runNpmScript('db:migrate', [], minimalChildEnv({ APP_ENV: 'test', DATABASE_URL: process.env.DATABASE_URL }));
+      expect(result.status).toBe(0);
+    }
+  }
+
   beforeAll(async () => {
+    const setup = new Pool({ connectionString: process.env.DATABASE_URL });
+    try {
+      await assertTestDatabaseTarget(setup);
+      await setup.query('DROP SCHEMA app CASCADE');
+      await setup.query('DROP TABLE public.pgmigrations');
+      const result = runNpmScript('db:migrate', PRE_TIMEOUT_MIGRATION_ARGS, minimalChildEnv({ APP_ENV: 'test', DATABASE_URL: process.env.DATABASE_URL }));
+      expect(result.status).toBe(0);
+    } finally {
+      await setup.end();
+    }
     router = http.createServer((request, response) => {
       request.resume();
       response.setHeader('content-type', 'application/json');
@@ -86,9 +162,15 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
     const origin = `http://127.0.0.1:${(router.address() as AddressInfo).port}`;
     client = await startAuthApp({}, { relaxTimeouts: true, configOverride: { clientAuth: { termsVersion: TERMS, privacyVersion: PRIVACY } }, overrides: [{ provide: M14_ROUTING, useValue: { origin, timeoutMs: 3000 } }] });
     admin = await startAdminApp({ activationDisabledTest: true });
+    originalMigrationHistory = (await pool().query<{ id: number; name: string; run_on: string }>(
+      'SELECT id, name, run_on::text AS run_on FROM public.pgmigrations ORDER BY id',
+    )).rows;
     // Back to the schema of main: M07 is taken off through its own Down (it is empty, so the safety latch lets it go).
+    await runMigration(WITHDRAWAL_DOWN_SQL, 'delete', WITHDRAWAL_MIGRATION_NAME);
     await runMigration(M07_DOWN_SQL, 'delete');
     m07Applied = false;
+    await pool().query(PASSWORD_SESSION_UP_SQL);
+    temporaryPasswordSchema = true;
     system = await systemSession(admin);
     recorder = await activatedAdmin(`Admin ghi ${tag}`);
     recorderLogin = await login(recorder);
@@ -104,13 +186,18 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
     try {
       if (!m07Applied) {
         await runMigration(M07_UP_SQL, 'insert');
+        await runMigration(WITHDRAWAL_UP_SQL, 'insert', WITHDRAWAL_MIGRATION_NAME);
         m07Applied = true;
       }
       await removeCommittedRows();
     } finally {
-      await client.close();
-      await admin.close();
-      await new Promise<void>((resolve) => router.close(() => resolve()));
+      try {
+        await restoreMigrationHistory();
+      } finally {
+        await client.close();
+        await admin.close();
+        await new Promise<void>((resolve) => router.close(() => resolve()));
+      }
     }
   });
 
@@ -139,6 +226,7 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
         await c.query('DELETE FROM app.shipping_fee_policy_versions');
       }
       await c.query('DELETE FROM app.admin_finance_grants');
+      await c.query('SET CONSTRAINTS ALL IMMEDIATE'); // the deferred withdrawal foreign keys fire now, before the triggers come back
       for (const table of tables) {
         await c.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
       }
@@ -330,6 +418,7 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
 
   it('applying the M07 migration over that money keeps every transaction, the balance and the history exactly as they were', async () => {
     await runMigration(M07_UP_SQL, 'insert');
+    await runMigration(WITHDRAWAL_UP_SQL, 'insert', WITHDRAWAL_MIGRATION_NAME);
     m07Applied = true;
     expect(await countTables()).toBe(2);
     expect(await snapshot(shipper)).toEqual(before);

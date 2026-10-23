@@ -1,3 +1,6 @@
+import { DriverRepository } from '../driver/driver-repository';
+import { RoleGrantParticipant } from '../auth/role-grant-participant';
+import { WalletService } from '../wallet/wallet-service';
 import { createHash, randomUUID } from 'node:crypto';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
@@ -102,6 +105,9 @@ export class ClientRegistrationService {
     @Optional() @Inject(ACCOUNT_ORIGIN_POLICY) private readonly originPolicy: AccountOriginPolicy = standardAccountOriginPolicy(),
     // The SYSTEM settings. Optional only so that a unit harness without a database can build the service (it then keeps the proof path).
     @Optional() private readonly systemSettings?: SystemSettingsReader,
+    @Optional() private readonly drivers?: DriverRepository,
+    @Optional() private readonly roleGrants?: RoleGrantParticipant,
+    @Optional() private readonly wallets?: WalletService,
   ) {}
 
   /**
@@ -322,9 +328,10 @@ export class ClientRegistrationService {
     evidence: NativeRequestEvidence | undefined,
     app: 'FOOD' | 'SHIP',
     idempotencyKey: string | readonly string[] | undefined,
-  ): Promise<NativeAuthProof> {
-    if (evidence === undefined) {
-      throw new AppError('DEVICE_PROOF_REQUIRED');
+  ): Promise<NativeAuthProof | undefined> {
+    // New APK: OTP/password + encrypted result replay, without key enrollment.
+    if (evidence?.headers['x-device-registration'] === undefined) {
+      return undefined;
     }
     return this.deviceProof.verifyAuthRequest(evidence, app, idempotencyKey);
   }
@@ -387,6 +394,13 @@ export class ClientRegistrationService {
     if (!provisioned.roleGranted || !provisioned.profileCreated || !provisioned.consentRecorded) {
       throw new TechnicalError('internal', 'A new customer was not fully provisioned');
     }
+    if (input.device.app === 'SHIP') {
+      if (!this.drivers || !this.roleGrants || !this.wallets) throw new TechnicalError('internal', 'Shipper provisioning unavailable');
+      const driverId = randomUUID();
+      if (!(await this.drivers.insertPending(context, { driverId, userId, fullName: input.fullName, plateNumber: null }))) throw new TechnicalError('internal', 'Shipper already exists');
+      await this.roleGrants.grant(context, userId, 'DRIVER');
+      await this.wallets.ensureZeroWallet(context, driverId);
+    }
 
     // 4b. Native: the one-use registration grant decides the binding (a new user can only start a NEW binding), before the session.
     const plan =
@@ -398,7 +412,8 @@ export class ClientRegistrationService {
       userId,
       device: { deviceId: input.device.deviceId, platform: input.device.platform, app: input.device.app },
       ttlSeconds: this.config.sessionTtlSeconds,
-      activeRole: CUSTOMER_ROLE,
+      ...(nativeProof === undefined && input.device.platform === 'ANDROID' ? { authMethod: 'PASSWORD' as const } : {}),
+      activeRole: input.device.app === 'SHIP' ? 'DRIVER' : CUSTOMER_ROLE,
     });
     if (plan !== undefined) {
       capture.binding = await this.deviceBinding.finish(context, plan, { userId, sessionId: session.sessionId });
@@ -437,7 +452,7 @@ export class ClientRegistrationService {
       phoneNormalized: input.phoneNormalized,
       app: input.device.app,
       enabled: true,
-      storedActiveRole: CUSTOMER_ROLE,
+      storedActiveRole: input.device.app === 'SHIP' ? 'DRIVER' : CUSTOMER_ROLE,
     });
 
     return {
@@ -503,7 +518,7 @@ export class ClientRegistrationService {
     // Native: the session must still be on the current binding, issued to the key that signs THIS replay.
     if (nativeProof !== undefined) {
       capture.binding = await this.deviceBinding.assertReplayable(context, { sessionId, proof: nativeProof });
-    } else if (input.device.platform === 'ANDROID') {
+    } else if (input.device.platform === 'ANDROID' && (await this.sessions.readClientView(context, sessionId))?.authMethod !== 'PASSWORD') {
       throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
     }
 
@@ -557,6 +572,13 @@ export class ClientRegistrationService {
     if (!provisioned.roleGranted || !provisioned.profileCreated || !provisioned.consentRecorded) {
       throw new TechnicalError('internal', 'A new customer was not fully provisioned');
     }
+    if (input.device.app === 'SHIP') {
+      if (!this.drivers || !this.roleGrants || !this.wallets) throw new TechnicalError('internal', 'Shipper provisioning unavailable');
+      const driverId = randomUUID();
+      if (!(await this.drivers.insertPending(context, { driverId, userId, fullName: input.fullName, plateNumber: null }))) throw new TechnicalError('internal', 'Shipper already exists');
+      await this.roleGrants.grant(context, userId, 'DRIVER');
+      await this.wallets.ensureZeroWallet(context, driverId);
+    }
 
     // 3b. Native: the one-use registration grant decides the binding (a new user can only start a NEW binding), before the session.
     const plan =
@@ -569,7 +591,8 @@ export class ClientRegistrationService {
       userId,
       device: { deviceId: input.device.deviceId, platform: input.device.platform, app: input.device.app },
       ttlSeconds: this.config.sessionTtlSeconds,
-      activeRole: CUSTOMER_ROLE,
+      ...(proof === undefined && input.device.platform === 'ANDROID' ? { authMethod: 'PASSWORD' as const } : {}),
+      activeRole: input.device.app === 'SHIP' ? 'DRIVER' : CUSTOMER_ROLE,
     });
     if (plan !== undefined) {
       capture.binding = await this.deviceBinding.finish(context, plan, { userId, sessionId: session.sessionId });
@@ -609,7 +632,7 @@ export class ClientRegistrationService {
       phoneNormalized: input.phoneNormalized,
       app: input.device.app,
       enabled: true,
-      storedActiveRole: CUSTOMER_ROLE,
+      storedActiveRole: input.device.app === 'SHIP' ? 'DRIVER' : CUSTOMER_ROLE,
     });
 
     return {
@@ -662,7 +685,7 @@ export class ClientRegistrationService {
     // Native: the session must still be on the current binding, issued to the key that signs THIS replay.
     if (proof !== undefined) {
       capture.binding = await this.deviceBinding.assertReplayable(context, { sessionId, proof });
-    } else if (input.device.platform === 'ANDROID') {
+    } else if (input.device.platform === 'ANDROID' && (await this.sessions.readClientView(context, sessionId))?.authMethod !== 'PASSWORD') {
       throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
     }
 

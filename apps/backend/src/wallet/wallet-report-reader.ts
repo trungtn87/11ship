@@ -153,6 +153,21 @@ export class WalletReportReader {
     return { ledgerSumVnd, walletBalanceVnd, differenceVnd: walletBalanceVnd - ledgerSumVnd };
   }
 
+  /**
+   * The withdrawals still open RIGHT NOW, by state: waiting for an administrator (`pending`), being transferred (`processing`) and those whose outcome is not known
+   * (`unknownOutcome`: the transfer may or may not have happened, so they are never counted as paid or as not paid).
+   */
+  async openWithdrawals(context: TransactionContext): Promise<{ pending: number; pendingVnd: number; processing: number; unknownOutcome: number; unknownOutcomeVnd: number }> {
+    const result = await context.query<Record<string, string>>(
+      `SELECT count(*) FILTER (WHERE state = 'PENDING')::text AS p, COALESCE(sum(amount_vnd) FILTER (WHERE state = 'PENDING'), 0)::text AS pa,
+              count(*) FILTER (WHERE state = 'PROCESSING')::text AS x,
+              count(*) FILTER (WHERE state = 'RECONCILIATION')::text AS r, COALESCE(sum(amount_vnd) FILTER (WHERE state = 'RECONCILIATION'), 0)::text AS ra
+         FROM app.wallet_withdrawals`,
+    );
+    const row = result.rows[0];
+    return { pending: whole(row?.p), pendingVnd: whole(row?.pa), processing: whole(row?.x), unknownOutcome: whole(row?.r), unknownOutcomeVnd: whole(row?.ra) };
+  }
+
   async pendingTopups(context: TransactionContext): Promise<PendingTopups> {
     const result = await context.query<{ n: string; amount: string }>(
       `SELECT count(*)::text AS n, COALESCE(sum(amount_requested_vnd), 0)::text AS amount FROM app.wallet_topup_requests WHERE state = 'PENDING'`,

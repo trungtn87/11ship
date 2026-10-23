@@ -4,18 +4,43 @@ import 'package:n11_shared/n11_shared.dart';
 
 import 'm02_shop_views_test.dart' show harness, show, tapKey, Harness;
 
+Future<void> pickTime(WidgetTester tester, String field, String value) async {
+  await tapKey(tester, field);
+  final List<String> parts = value.split(':');
+  final FixedExtentScrollController hours = tester.widget<ListWheelScrollView>(find.byKey(const Key('time-picker-hours'))).controller! as FixedExtentScrollController;
+  hours.jumpToItem(int.parse(parts[0]));
+  await tester.pumpAndSettle();
+  final FixedExtentScrollController minutes = tester.widget<ListWheelScrollView>(find.byKey(const Key('time-picker-minutes'))).controller! as FixedExtentScrollController;
+  minutes.jumpToItem(int.parse(parts[1]));
+  await tester.pumpAndSettle();
+  await tapKey(tester, 'time-picker-done');
+}
+
 Future<void> setRange(WidgetTester tester, int i, String open, String close) async {
-  await tester.enterText(find.byKey(Key('range-$i-open')), open);
-  await tester.pump();
+  await pickTime(tester, 'range-$i-open', open);
   if (find.byKey(Key('range-$i-close')).evaluate().isNotEmpty) {
-    await tester.enterText(find.byKey(Key('range-$i-close')), close);
-    await tester.pump();
+    await pickTime(tester, 'range-$i-close', close);
   }
 }
 
 String textOf(WidgetTester tester, String key) => tester.widget<TextField>(find.byKey(Key(key))).controller!.text;
 
 void main() {
+  testWidgets('leaving and reopening removes a definite error, keeps the empty-hours warning', (WidgetTester tester) async {
+    final Harness h = await harness(tester);
+    await show(tester, HoursScreen(flows: h.flows));
+    h.flows.ops.applyAllWeek(<HourRange>[HourRange(open: '17:00', close: '23:00', kind: RangeKind.day)]);
+    h.api.failNext = const AuthFailure(AuthFailureKind.badResponse);
+    await h.flows.ops.saveHours();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('hours-error')), findsOneWidget);
+    h.flows.ops.revertHours();
+    await tester.pumpWidget(const SizedBox());
+    await show(tester, HoursScreen(flows: h.flows));
+    expect(find.byKey(const Key('hours-error')), findsNothing);
+    expect(find.byKey(const Key('hours-fresh')), findsOneWidget);
+  });
+
   testWidgets('F03: no schedule yet -> Cả tuần 17:00-23:00 -> apply -> Chủ nhật 17:00-22:00 -> save -> read back', (WidgetTester tester) async {
     final Harness h = await harness(tester);
     await show(tester, HoursScreen(flows: h.flows));
@@ -99,24 +124,34 @@ void main() {
     expect((h.server.effects.single['intervals']! as List<Object?>), hasLength(3));
   });
 
-  testWidgets('a wrong time is reported and kept exactly as typed; digits get a colon but are never replaced; 24:00 only closes a same-day range', (WidgetTester tester) async {
+  testWidgets('wheel picker needs no keyboard, cancel keeps draft, exact minutes and 24:00 remain supported', (WidgetTester tester) async {
     final Harness h = await harness(tester);
     await show(tester, HoursScreen(flows: h.flows));
     await tapKey(tester, 'hours-day-1');
     await tapKey(tester, 'editor-add');
-    await tester.enterText(find.byKey(const Key('range-0-open')), '1730');
-    await tester.pump();
-    expect(textOf(tester, 'range-0-open'), '17:30');
-    await tester.enterText(find.byKey(const Key('range-0-close')), '2561');
-    await tester.pump();
-    expect(textOf(tester, 'range-0-close'), '25:61', reason: 'not repaired');
-    expect(find.textContaining('phút từ 00 đến 59'), findsOneWidget);
-    expect(tester.widget<N11Button>(find.byKey(const Key('editor-done'))).onPressed, isNull);
-    await setRange(tester, 0, '17:30', '24:00');
+    expect(tester.widget<TextField>(find.byKey(const Key('range-0-open'))).readOnly, isTrue);
+    await tapKey(tester, 'range-0-open');
+    expect(tester.testTextInput.isVisible, isFalse);
+    await tester.drag(find.byKey(const Key('time-picker-hours')), const Offset(0, -48));
+    await tester.pumpAndSettle();
+    await tapKey(tester, 'time-picker-cancel');
+    expect(textOf(tester, 'range-0-open'), '10:00');
+    expect(h.server.arrived, isEmpty);
+    await setRange(tester, 0, '17:37', '24:00');
+    expect(textOf(tester, 'range-0-open'), '17:37');
+    expect(textOf(tester, 'range-0-close'), '24:00');
     expect(find.byKey(const Key('range-0-error')), findsNothing);
     await tapKey(tester, 'range-0-kind-night');
-    expect(find.byKey(const Key('range-0-error')), findsOneWidget, reason: '24:00 is not a valid overnight close');
-    expect(textOf(tester, 'range-0-close'), '24:00', reason: 'switching the kind does not rewrite the time');
+    expect(find.byKey(const Key('range-0-error')), findsOneWidget);
+    expect(textOf(tester, 'range-0-close'), '24:00', reason: 'switching kind does not rewrite the draft');
+    await tapKey(tester, 'range-0-close');
+    final ListWheelScrollView wheel = tester.widget<ListWheelScrollView>(find.byKey(const Key('time-picker-hours')));
+    expect(wheel.childDelegate.estimatedChildCount, 24, reason: '24:00 is only offered for a same-day close');
+    await tapKey(tester, 'time-picker-cancel');
+    expect(textOf(tester, 'range-0-close'), '24:00');
+    await pickTime(tester, 'range-0-close', '02:13');
+    expect(find.byKey(const Key('range-0-error')), findsNothing);
+    expect(h.server.arrived, isEmpty, reason: 'choosing a time only edits the local draft');
   });
 
   testWidgets('24 giờ is chosen explicitly, mirrors the open time, and 00:00-24:00 reads as Cả ngày', (WidgetTester tester) async {

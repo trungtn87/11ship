@@ -4,6 +4,12 @@
 
 export const FINANCE_PERMISSION_READ = 'wallet.read';
 export const FINANCE_PERMISSION_TOPUP_RECORD = 'wallet.topup.record';
+// M04-C: the withdrawal is split in three rights so that nobody gets the whole chain by default. process = claim a PENDING withdrawal and make the manual transfer
+// (then see its payout destination); confirm = record the outgoing transfer as PAID (only the administrator who claimed it); reconcile = report/settle an unknown
+// outcome (a separate person: it never gives permission to transfer again).
+export const FINANCE_PERMISSION_WITHDRAWAL_PROCESS = 'wallet.withdrawal.process';
+export const FINANCE_PERMISSION_WITHDRAWAL_CONFIRM = 'wallet.withdrawal.confirm';
+export const FINANCE_PERMISSION_WITHDRAWAL_RECONCILE = 'wallet.withdrawal.reconcile';
 
 // M12-C: the same table carries the function rights of the administration beyond money (it is key-format-only by design). Each is separate: viewing a report is
 // not exporting it, and neither opens the audit log. SYSTEM holds them implicitly.
@@ -12,7 +18,13 @@ export const PERMISSION_REPORT_EXPORT = 'report.export';
 export const PERMISSION_AUDIT_READ = 'audit.read';
 
 /** The rights that can be granted TODAY. */
-export const GRANTABLE_FINANCE_PERMISSIONS = [FINANCE_PERMISSION_READ, FINANCE_PERMISSION_TOPUP_RECORD] as const;
+export const GRANTABLE_FINANCE_PERMISSIONS = [
+  FINANCE_PERMISSION_READ,
+  FINANCE_PERMISSION_TOPUP_RECORD,
+  FINANCE_PERMISSION_WITHDRAWAL_PROCESS,
+  FINANCE_PERMISSION_WITHDRAWAL_CONFIRM,
+  FINANCE_PERMISSION_WITHDRAWAL_RECONCILE,
+] as const;
 
 /** The function rights beyond money (M12-C). They live in the same table and are given by the same SYSTEM-only routes, but are not finance rights. */
 export const GRANTABLE_FUNCTION_PERMISSIONS = [PERMISSION_REPORT_READ, PERMISSION_REPORT_EXPORT, PERMISSION_AUDIT_READ] as const;
@@ -28,13 +40,7 @@ export type FinancePermissionKey = (typeof GRANTABLE_FINANCE_PERMISSIONS)[number
  * Names reserved for the packages that will use them (withdrawals, adjustments, the Shipper bank read). The table accepts them (format only), but
  * the service refuses to grant any of them until its package defines what it protects: reserving a name grants nothing to anybody.
  */
-export const RESERVED_FINANCE_PERMISSIONS = [
-  'wallet.withdrawal.process',
-  'wallet.withdrawal.confirm',
-  'wallet.withdrawal.reconcile',
-  'wallet.adjustment.post',
-  'driver.bank.read',
-] as const;
+export const RESERVED_FINANCE_PERMISSIONS = ['wallet.adjustment.post', 'driver.bank.read'] as const;
 
 export function isGrantableFinancePermission(value: unknown): value is FinancePermissionKey {
   return typeof value === 'string' && (GRANTABLE_FINANCE_PERMISSIONS as readonly string[]).includes(value);

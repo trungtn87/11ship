@@ -206,6 +206,7 @@ class FakeShopServer {
         'contact_phone': body['contact_phone'],
         'zalo': body['zalo'],
         'facebook': body['facebook'],
+        'logo': body.containsKey('logo') ? body['logo'] : current?['logo'],
         'address_text': body['address_text'],
         'pickup_lat': body['pickup_lat'],
         'pickup_lng': body['pickup_lng'],
@@ -268,6 +269,7 @@ class FakeShopOpsServer {
     transport.routes['GET /v1/onboarding/shop/service-areas'] = (String m, String p, Map<String, String> h, String b) async =>
         json(200, <String, Object?>{'data': <Map<String, String>>[<String, String>{'service_area_id': areaId, 'name': 'Khu trung tâm'}, <String, String>{'service_area_id': otherAreaId, 'name': 'Khu Hòa An'}]});
     transport.routes['PUT /v1/shop/me/profile'] = (String m, String p, Map<String, String> h, String b) => _write(h, b, 'profile', (Map<String, Object?> body) {
+          if (body.containsKey('logo')) logo = body['logo'] as Map<String, Object?>?;
           name = body['name']! as String;
           phone = body['contact_phone']! as String;
           zalo = body['zalo'] as String?;
@@ -285,6 +287,7 @@ class FakeShopOpsServer {
   static const String areaId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   static const String otherAreaId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
+  Map<String, Object?>? logo;
   String status = 'ACTIVE';
   String name = 'Ốc 11';
   String phone = '+84912345678';
@@ -312,6 +315,7 @@ class FakeShopOpsServer {
   Map<String, Object?> view() => <String, Object?>{
         'shop_id': '44444444-4444-4444-8444-444444444444',
         'name': name,
+        'logo': logo,
         'contact_phone': phone,
         'zalo': zalo,
         'facebook': facebook,
@@ -552,6 +556,13 @@ class FakePublicShopApi implements PublicShopApi {
 /// An in-memory [DiscoveryApi] with the visible-data rules the screens rely on (shops of ONE area, folded search, open filter, paging).
 /// [gate] lets a test hold an answer back to prove the latest request wins.
 class FakeDiscoveryApi implements DiscoveryApi {
+  Future<AreaChoice?> Function(double latitude, double longitude)? areaResolver;
+  @override
+  Future<AreaChoice?> resolveArea(double latitude, double longitude) async {
+    await _enter(null, 'resolve');
+    return areaResolver == null ? null : await areaResolver!(latitude, longitude);
+  }
+
   FakeDiscoveryApi({List<AreaChoice>? areas, List<CategoryChoice>? categories, List<FakeShopEntry>? shops})
       : areaList = areas ?? <AreaChoice>[const AreaChoice(id: 'a1', name: 'Cao Bằng')],
         categoryList = categories ?? <CategoryChoice>[const CategoryChoice(id: 'c1', name: 'Ốc'), const CategoryChoice(id: 'c2', name: 'Hải sản')],
@@ -660,12 +671,12 @@ class FakeDriverServer {
         'full_name': body['full_name'],
         'phone': '+84901234567',
         'plate_number': body['plate_number'],
-        'status': 'PENDING',
+        'status': 'ACTIVE',
         'review_state': 'DRAFT',
         'accepting_deliveries': false,
         'version': 1,
       };
-      return json(201, <String, Object?>{'data': <String, Object?>{'driver_id': profile!['driver_id'], 'status': 'PENDING', 'accepting_deliveries': false, 'role_granted': true, 'version': 1}});
+      return json(201, <String, Object?>{'data': <String, Object?>{'driver_id': profile!['driver_id'], 'status': 'ACTIVE', 'accepting_deliveries': false, 'role_granted': true, 'version': 1}});
     };
     transport.routes['PUT /v1/driver/me/profile'] = (String m, String p, Map<String, String> h, String b) async => _command(p, b, (Map<String, Object?> body) {
           profile!['full_name'] = body['full_name'];
@@ -692,7 +703,7 @@ class FakeDriverServer {
         });
     transport.routes['POST /v1/driver/me/accepting'] = (String m, String p, Map<String, String> h, String b) async => _command(p, b, (Map<String, Object?> body) {
           final bool on = body['accepting']! as bool;
-          if (on && (profile!['status'] != 'ACTIVE' || bank == null || bank!['verification_state'] != 'VERIFIED' || !walletReady)) {
+          if (on && (profile!['status'] != 'ACTIVE' || !walletReady)) {
             throw StateError('DRIVER_WALLET_NOT_READY');
           }
           profile!['accepting_deliveries'] = on;
@@ -736,7 +747,6 @@ class FakeDriverServer {
     final bool bankVerified = bank != null && bank!['verification_state'] == 'VERIFIED';
     final List<String> blocks = <String>[
       if (status != 'ACTIVE') (status == 'PENDING' ? 'PROFILE_NOT_APPROVED' : 'ACCOUNT_SUSPENDED'),
-      if (bank == null) 'BANK_MISSING' else if (!bankVerified) 'BANK_NOT_VERIFIED',
       if (!walletReady) 'WALLET_NOT_AVAILABLE',
     ];
     final bool editable = status == 'PENDING' && (review == 'DRAFT' || review == 'REJECTED');
@@ -754,7 +764,7 @@ class FakeDriverServer {
         'bank_verified': bankVerified,
         'wallet_ready': walletReady,
         'blocks': blocks,
-        'can_accept': status == 'ACTIVE' && bankVerified && walletReady,
+        'can_accept': status == 'ACTIVE' && walletReady,
       },
       'closure': status == 'CLOSING' ? <String, Object?>{'requested_at': '2026-10-17T00:00:00.000Z', 'note': closureNote, 'can_cancel': true} : null,
     };

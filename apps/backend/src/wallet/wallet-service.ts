@@ -35,6 +35,11 @@ export class WalletService {
     return row === undefined ? unprovisionedView(driverId) : viewOfRow(row);
   }
 
+  /** Safe read for the delivery cancellation audit: no balance or bank information leaves Wallet. */
+  async commissionHoldStatus(context: TransactionContext, assignmentId: string): Promise<HoldStatus | null> {
+    return (await this.wallets.findHoldBySource(context, assignmentId))?.status ?? null;
+  }
+
   /** The holds of a Shipper's wallet, oldest first (optionally one status). No wallet means no holds. Locks nothing, writes nothing. */
   async listHolds(context: TransactionContext, driverId: string, status?: HoldStatus): Promise<WalletHoldRow[]> {
     const wallet = await this.wallets.findByDriverId(context, driverId);

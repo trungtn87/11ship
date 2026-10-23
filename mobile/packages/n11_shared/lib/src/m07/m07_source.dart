@@ -1,3 +1,4 @@
+import '../account/models.dart';
 import 'm07_models.dart';
 
 // The data seam of the M07 screens. A screen asks a source and draws whatever comes back; it never invents a value.
@@ -27,10 +28,11 @@ enum M07FailureKind {
 }
 
 class M07Failure implements Exception {
-  const M07Failure(this.kind, {this.code});
+  const M07Failure(this.kind, {this.code, this.requestId});
 
   final M07FailureKind kind;
   final String? code;
+  final String? requestId;
 
   String get message => m07FailureText(this);
 
@@ -38,7 +40,9 @@ class M07Failure implements Exception {
   String toString() => 'M07Failure($kind, $code)';
 }
 
-String m07FailureText(M07Failure failure) {
+String m07FailureText(M07Failure failure) => withRequestTrace(_m07FailureText(failure), failure.requestId);
+
+String _m07FailureText(M07Failure failure) {
   switch (failure.code) {
     case 'DELIVERY_NOT_FOUND':
       return 'Không tìm thấy yêu cầu giao này.';
@@ -66,6 +70,24 @@ String m07FailureText(M07Failure failure) {
       return 'Đơn từ Order chưa dùng được vì module đặt món chưa sẵn sàng.';
     case 'DELIVERY_INPUT_INVALID':
       return 'Thông tin chưa hợp lệ. Hãy kiểm tra lại các ô đã nhập.';
+    case 'REVIEW_NOT_ELIGIBLE':
+      return 'Chưa đánh giá được ở thời điểm này.';
+    case 'REVIEW_ALREADY_EXISTS':
+      return 'Bạn đã đánh giá rồi. Mỗi đối tượng chỉ đánh giá một lần.';
+    case 'REVIEW_NOT_FOUND' || 'REVIEW_TARGET_NOT_FOUND' || 'COMPLAINT_TARGET_NOT_FOUND' || 'COMPLAINT_NOT_FOUND':
+      return 'Không tìm thấy nội dung này.';
+    case 'COMPLAINT_STATE_CONFLICT':
+      return 'Hồ sơ vừa thay đổi. Đã tải lại, hãy kiểm tra rồi thử lại.';
+    case 'COMPLAINT_ATTACHMENT_INVALID':
+      return 'Ảnh không hợp lệ. Dùng ảnh JPEG, PNG hoặc WebP, tối đa 5 MB.';
+    case 'COMPLAINT_ATTACHMENT_LIMIT':
+      return 'Tối đa 5 ảnh cho mỗi lần gửi.';
+    case 'COMPLAINT_FORBIDDEN':
+      return 'Bạn không có quyền thực hiện việc này trên hồ sơ.';
+    case 'RECONSIDERATION_EXPIRED':
+      return 'Đã hết 7 ngày để yêu cầu xem xét lại.';
+    case 'RECONSIDERATION_NOT_AVAILABLE':
+      return 'Hồ sơ này không còn yêu cầu xem xét lại được.';
     case 'SHOP_PROFILE_INCOMPLETE':
       return 'Quán chưa có vị trí lấy hàng. Hãy hoàn tất hồ sơ quán.';
   }
@@ -87,6 +109,22 @@ abstract class ShopDeliverySource {
   bool get isSample;
 
   Future<List<DeliveryView>> list({required bool history, String query = ''});
+
+  /// Live HTTP sources filter on the server. Sample sources use this fallback
+  /// so previews can display both active and ended requests under 'Tất cả'.
+  Future<List<DeliveryView>> listFiltered({String filter = 'all', String query = '', DateTime? from, DateTime? to, int offset = 0}) async {
+    final List<DeliveryView> active = await list(history: false, query: query);
+    final List<DeliveryView> ended = await list(history: true, query: query);
+    final List<DeliveryView> all = <DeliveryView>[...active, ...ended];
+    return all.where((DeliveryView item) => filter == 'history' ? ended.contains(item) : switch (filter) {
+      'searching' => item.state == DeliveryState.waitingDriver || item.state == DeliveryState.searchStopped,
+      'accepted' => item.state == DeliveryState.accepted || item.state == DeliveryState.locationConfirmed,
+      'delivering' => item.state == DeliveryState.pickedUp || item.state == DeliveryState.delivering,
+      'completed' => item.state == DeliveryState.completed,
+      'failed' => item.state == DeliveryState.failed || item.state == DeliveryState.cancelledByMerchant || item.state == DeliveryState.cancelledBySystem,
+      _ => true,
+    }).toList();
+  }
   Future<DeliveryView> get(String id);
   Future<DeliveryView> create(NewDeliveryInput input, {required String key});
   Future<DeliveryView> cancel(String id, {required String reason, required int expectedVersion, required String key});

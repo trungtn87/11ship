@@ -18,6 +18,9 @@ User=ship11
 Group=ship11
 # The release root holds apps/backend/dist, apps/admin-web/dist and node_modules; the admin web is found relative to it.
 WorkingDirectory=/opt/11ship/current
+# Persistent writable storage even with ProtectSystem=strict; owned by ship11.
+StateDirectory=11ship
+Environment=M13_ERROR_LOG_PATH=/var/lib/11ship/error-events.jsonl
 EnvironmentFile=/etc/11ship/staging.env
 ExecStart=/usr/bin/env node apps/backend/dist/main.js
 Restart=on-failure

@@ -168,7 +168,7 @@ Centralized config:
 
 - `AUTH_OTP_TTL_SECONDS=300`
 - `AUTH_OTP_RESEND_SECONDS=60`
-- `AUTH_OTP_MAX_ATTEMPTS=5`
+- `AUTH_OTP_MAX_ATTEMPTS=3` (Owner decision, M12 2026-10: three wrong codes cancel the flow; was 5)
 - `AUTH_PROOF_TTL_SECONDS=600`
 - `AUTH_SESSION_TTL_SECONDS=604800`
 - `AUTH_OTP_HMAC_SECRET`: base64 of exactly 32 bytes

@@ -3,6 +3,8 @@ import { AdminRights } from '../admin-m12/admin-rights';
 import { Period } from '../admin-m12/vietnam-time';
 import { DeliveryReportReader, ReportBasis } from '../delivery/delivery-report-reader';
 import { DriverRepository } from '../driver/driver-repository';
+import { FeedbackReportReader } from '../feedback/feedback-report-reader';
+import { OrderReportReader } from '../orders/order-report-reader';
 import { FINANCE_PERMISSION_READ, PERMISSION_REPORT_READ } from '../finance-access/finance-access-constants';
 import { AppError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
@@ -70,6 +72,8 @@ export class ReportBuilder {
     private readonly deliveries: DeliveryReportReader,
     private readonly wallets: WalletReportReader,
     private readonly drivers: DriverRepository,
+    private readonly orders: OrderReportReader,
+    private readonly feedback: FeedbackReportReader,
   ) {}
 
   async build(context: TransactionContext, kind: ReportKind, period: Period, basis: ReportBasis, rights: AdminRights, limit: number): Promise<Report> {
@@ -97,12 +101,14 @@ export class ReportBuilder {
     const days = await this.deliveries.perDay(context, basis, period.fromMs, period.toMs);
     const link = (extra: Record<string, string> = {}): Record<string, string> => ({ from: period.fromDay, to: period.toDay, basis, ...extra });
     const finished = s.completed + s.failed;
+    const orderCount = (await this.orders.summary(context, basis, period.fromMs, period.toMs)).total;
+    const orderNote = 'Order (M10) tính riêng với delivery: gọi lại shipper tạo delivery mới, không tạo Order mới';
     return {
       kind: 'deliveries',
       title: REPORT_TITLE.deliveries,
       basisLabel: basis === 'created' ? 'Theo ngày tạo delivery' : 'Theo ngày kết thúc delivery (thành công, thất bại, quán hủy, ngừng tìm)',
       summary: [
-        { key: 'orders', label: 'Order', value: null, format: 'count', note: 'Order (M10) chưa được xây dựng; Order và delivery được tính riêng' },
+        { key: 'orders', label: 'Order trong kỳ', value: orderCount, format: 'count', note: orderNote },
         { key: 'total', label: 'Delivery', value: s.total, format: 'count', link: link() },
         { key: 'completed', label: 'Giao thành công', value: s.completed, format: 'count', link: link({ state: 'completed' }) },
         { key: 'failed', label: 'Giao thất bại', value: s.failed, format: 'count', link: link({ state: 'failed' }) },
@@ -181,10 +187,11 @@ export class ReportBuilder {
 
   async #quality(context: TransactionContext, period: Period): Promise<Report> {
     const q = await this.deliveries.quality(context, period.fromMs, period.toMs);
+    const complaints = await this.feedback.unhandledComplaints(context);
     return {
       kind: 'quality',
       title: REPORT_TITLE.quality,
-      basisLabel: 'Hồ sơ hàng theo ngày mở; delivery theo ngày tạo; lần nhận theo ngày nhận',
+      basisLabel: 'Hồ sơ hàng theo ngày mở; delivery theo ngày tạo; lần nhận theo ngày nhận; phản ánh chưa xử lý là trạng thái hiện tại',
       summary: [
         { key: 'custody_open', label: 'Giao thất bại còn xử lý hàng', value: q.custodyOpen, format: 'count', link: { from: period.fromDay, to: period.toDay, group: 'custody_open' } },
         { key: 'stopped', label: 'Ngừng tìm, chưa gọi lại', value: q.stoppedNotRecalled, format: 'count', link: { from: period.fromDay, to: period.toDay, group: 'stopped' } },
@@ -192,7 +199,7 @@ export class ReportBuilder {
         { key: 'shipper_releases', label: 'Shipper trả đơn', value: q.shipperReleases, format: 'count' },
         { key: 'admin_releases', label: 'Admin giải phóng shipper', value: q.adminReleases, format: 'count' },
         { key: 'avg_accept', label: 'Thời gian trung bình đến khi có shipper nhận', value: q.avgSecondsToAccept, format: 'seconds', note: q.avgSecondsToAccept === null ? 'Chưa có delivery nào được nhận trong kỳ' : `Trên ${String(q.acceptedDeliveries)} delivery đã có shipper nhận` },
-        { key: 'complaints', label: 'Phản ánh', value: null, format: 'count', note: 'Phản ánh (M11) chưa được xây dựng' },
+        { key: 'complaints', label: 'Phản ánh chưa xử lý (hiện tại)', value: complaints, format: 'count', },
       ],
       columns: [
         { key: 'reason', label: 'Lý do giao thất bại', format: 'text' },
@@ -210,6 +217,7 @@ export class ReportBuilder {
     const totals = await this.wallets.totals(context);
     const pending = await this.wallets.pendingTopups(context);
     const recon = await this.wallets.reconciliation(context);
+    const withdrawals = await this.wallets.openWithdrawals(context);
     return {
       kind: 'money',
       title: REPORT_TITLE.money,
@@ -218,7 +226,9 @@ export class ReportBuilder {
         { key: 'topup', label: 'Nạp ví đã duyệt', value: ledger.topupVnd, format: 'vnd', note: 'Tiền nạp là tiền ký quỹ của shipper, không phải doanh thu' },
         { key: 'commission', label: 'Hoa hồng đã thu', value: ledger.commissionVnd, format: 'vnd', note: `${String(ledger.commissionEntries)} dòng sổ cái` },
         { key: 'adjustment', label: 'Điều chỉnh / hoàn (ròng)', value: ledger.adjustmentNetVnd, format: 'signed-vnd', note: `${String(ledger.adjustmentEntries)} dòng sổ cái` },
-        { key: 'withdrawal', label: 'Rút hoàn tất', value: null, format: 'vnd', note: 'Rút tiền (M04-C) chưa được xây dựng' },
+        { key: 'withdrawal', label: 'Rút hoàn tất', value: ledger.withdrawalVnd, format: 'vnd', note: `${String(ledger.withdrawalEntries)} dòng sổ cái` },
+        { key: 'withdrawal_pending', label: 'Yêu cầu rút chờ xử lý', value: withdrawals.pending, format: 'count', note: `${String(withdrawals.processing)} đang chuyển khoản` },
+        { key: 'withdrawal_unknown', label: 'Rút chưa rõ kết quả', value: withdrawals.unknownOutcome, format: 'count', note: `${withdrawals.unknownOutcomeVnd.toLocaleString('vi-VN')} đ: không tính là đã chi cũng không tính là chưa chi` },
         { key: 'balance', label: 'Tổng số dư ví (hiện tại)', value: totals.balanceVnd, format: 'vnd' },
         { key: 'held', label: 'Đang giữ (hold)', value: totals.heldVnd, format: 'vnd' },
         { key: 'available', label: 'Khả dụng', value: totals.availableVnd, format: 'vnd' },

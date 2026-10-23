@@ -193,7 +193,7 @@ String driverStandingLabel(DriverProfile profile) {
       }
       return profile.rejected ? 'Bị từ chối' : 'Chưa gửi hồ sơ';
     case 'ACTIVE':
-      return 'Đã duyệt';
+      return 'Đã kích hoạt';
     case 'SUSPENDED':
       return 'Tạm khóa';
     case 'CLOSING':

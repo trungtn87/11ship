@@ -3,7 +3,7 @@
 # launcher file that sits NEXT TO IT (so after an Update it loads the NEW code), replaces Docker, npm and node with
 # recording fakes, then runs the launcher's real entry point Invoke-LauncherMain. When the launcher re-runs itself it
 # starts THIS file again (RelaunchScript), so two real processes go through the real hand-over.
-# Everything it does is appended to <repo>\.11ship-local\harness-calls.log for the suite to read.
+# Everything it does is appended to <repo>\.11ship-local\harness-calls-<pid>.log for the suite to read.
 # ASCII on purpose: Windows PowerShell 5.1 reads a BOM-less script as ANSI.
 param(
   [string]$Command = 'Menu',
@@ -31,9 +31,11 @@ function Write-Call([string]$Text) {
   $dir = Join-Path $script:Repo '.11ship-local'
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
   $line = ('{0} pid={1} {2}' -f [DateTime]::UtcNow.Ticks, $PID, $Text) + "`n"
+  # One writer per file: concurrent AppendAllText calls can overwrite each other on Unix.
   for ($attempt = 0; $attempt -lt 20; $attempt++) {
-    try { [IO.File]::AppendAllText((Join-Path $dir 'harness-calls.log'), $line); return } catch { Start-Sleep -Milliseconds 50 }
+    try { [IO.File]::AppendAllText((Join-Path $dir ('harness-calls-{0}.log' -f $PID)), $line); return } catch { Start-Sleep -Milliseconds 50 }
   }
+  throw "Harness call log could not be written for pid=$PID"
 }
 function Test-HarnessLockHeld {
   $probe = Open-ExclusiveFile $script:LockFile

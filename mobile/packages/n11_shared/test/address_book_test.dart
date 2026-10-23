@@ -48,8 +48,8 @@ class FakeAddressServer {
       'recipient_name': body['recipient_name'],
       'contact_phone': (body['contact_phone']! as String).replaceFirst(RegExp(r'^0'), '+84'),
       'address_description': body['address_description'],
-      'latitude': null,
-      'longitude': null,
+      'latitude': body['latitude'],
+      'longitude': body['longitude'],
       'delivery_note': (body['delivery_note'] as String?)?.isEmpty == true ? null : body['delivery_note'],
       'is_default': first || body['is_default'] == true,
       'version': 1,
@@ -76,7 +76,7 @@ Future<({SessionController session, FakeApiTransport api, FakeAddressServer serv
   await session.start();
   await session.login(phone: '0901234567', password: 'Correct-Horse-9');
   final FakeAddressServer server = FakeAddressServer(api);
-  final AddressBookController controller = AddressBookController(api: HttpAddressApi(session: session), session: session);
+  final AddressBookController controller = AddressBookController(api: HttpAddressApi(session: session), session: session, location: FakeLocationProvider());
   addTearDown(controller.dispose);
   return (session: session, api: api, server: server, controller: controller);
 }
@@ -204,12 +204,21 @@ void main() {
     expect(find.text('Số điện thoại chưa hợp lệ.'), findsOneWidget);
     expect(find.text('Nhập địa chỉ giao hàng chi tiết.'), findsOneWidget);
     await tester.enterText(find.byKey(const Key('address-phone')), '0912 345 678');
-    await tester.enterText(find.byKey(const Key('address-text')), '12 Lê Lợi, Q1');
+    await tester.ensureVisible(find.byKey(const Key('address-text')));
+    await tester.tap(find.byKey(const Key('address-text')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('location-address-text')), '12 Lê Lợi, Q1');
+    await tester.tap(find.byKey(const Key('location-current')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('location-save')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('address-save')));
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
     await tester.pumpAndSettle();
     expect(find.text('12 Lê Lợi, Q1'), findsOneWidget);
     expect(find.text('Mặc định'), findsOneWidget);
+    expect(c.addresses.single.latitude, 10.0123);
+    expect(c.addresses.single.longitude, 106.0456);
   });
 
   testWidgets('new address: the phone of the signed-in account is prefilled and can be changed; the account phone is not touched', (WidgetTester tester) async {
@@ -220,7 +229,14 @@ void main() {
     String phoneField() => tester.widget<TextField>(find.byKey(const Key('address-phone'))).controller!.text;
     expect(phoneField(), '0901234567');
     await tester.enterText(find.byKey(const Key('address-phone')), '0987 654 321');
-    await tester.enterText(find.byKey(const Key('address-text')), '5 Nguyễn Huệ');
+    await tester.ensureVisible(find.byKey(const Key('address-text')));
+    await tester.tap(find.byKey(const Key('address-text')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('location-address-text')), '5 Nguyễn Huệ');
+    await tester.tap(find.byKey(const Key('location-current')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('location-save')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('address-save')));
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
     await tester.pumpAndSettle();

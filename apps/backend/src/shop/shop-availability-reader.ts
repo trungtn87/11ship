@@ -1,13 +1,15 @@
+import { ShopLogo } from './shop-logo';
 import { Injectable } from '@nestjs/common';
 import { AppError, TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
 import { BusinessInterval, BusinessIntervalWire, fromWire } from './business-hours';
-import { OWNER_SNAPSHOT_SQL, SHOP_SNAPSHOT_SQL } from './shop-availability-sql';
+import { buildAvailabilitySnapshotSql, OWNER_SNAPSHOT_SQL, SHOP_SNAPSHOT_SQL } from './shop-availability-sql';
 import { toSafeInteger } from './shop-db';
 import { SERVICE_AREA_STATUSES, SHOP_STATUSES, ShopAvailability, ShopStatus } from './shop-types';
 
 /** The raw row of the snapshot statement (see shop-availability-sql.ts). */
 export interface RawShopSnapshot {
+  logo?: ShopLogo | null;
   shop_id: string;
   name: string;
   contact_phone_normalized: string;
@@ -33,6 +35,7 @@ export interface RawShopSnapshot {
  * and the availability computed at one instant. `accepting_orders` is deliberately not part of it.
  */
 export interface ShopSnapshot {
+  readonly logo?: ShopLogo;
   readonly shopId: string;
   readonly name: string;
   readonly contactPhoneNormalized: string;
@@ -47,6 +50,8 @@ export interface ShopSnapshot {
   readonly hours: readonly BusinessInterval[];
   readonly availability: ShopAvailability;
 }
+
+const SHOP_AT_SQL = buildAvailabilitySnapshotSql('$2::timestamptz', 'shop');
 
 const EVALUATED_AT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
@@ -121,6 +126,7 @@ export function toShopSnapshot(row: RawShopSnapshot): ShopSnapshot {
   }
   return {
     shopId: row.shop_id,
+    ...(row.logo == null ? {} : { logo: row.logo }),
     name: row.name,
     contactPhoneNormalized: row.contact_phone_normalized,
     zalo: row.zalo,
@@ -159,6 +165,16 @@ export class ShopAvailabilityReader {
   /** The shop with this id, whatever its status, or undefined when there is none (the public shop view decides what to show). */
   async snapshotOfShop(context: TransactionContext, shopId: string): Promise<ShopSnapshot | undefined> {
     const result = await context.query<RawShopSnapshot>(SHOP_SNAPSHOT_SQL, [shopId]);
+    const row = result.rows[0];
+    return row === undefined ? undefined : toShopSnapshot(row);
+  }
+
+  /**
+   * The shop with this id as it would be at `atMs` (a wanted time of a scheduled Order): the same statement as the live one with the instant given as a
+   * parameter, so a shift past midnight and a 24-hour shop are decided by the very same rule. Undefined when there is no such shop.
+   */
+  async snapshotOfShopAt(context: TransactionContext, shopId: string, atMs: number): Promise<ShopSnapshot | undefined> {
+    const result = await context.query<RawShopSnapshot>(SHOP_AT_SQL, [shopId, new Date(atMs).toISOString()]);
     const row = result.rows[0];
     return row === undefined ? undefined : toShopSnapshot(row);
   }

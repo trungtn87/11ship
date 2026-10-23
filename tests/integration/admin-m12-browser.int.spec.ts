@@ -1,4 +1,5 @@
 import { createHash, randomBytes, X509Certificate } from 'node:crypto';
+import { purgeShopDisplayCodes } from './support/shop-display-fixtures';
 import { ChildProcess } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -8,7 +9,8 @@ import { ADMIN_ORIGIN, AdminApp, rewindAcceptedStep, startAdminApp, totpNow } fr
 import { freePort, repoRoot, runScript, startFront } from './support/admin-web-harness';
 import { Browser, launchChrome, Page } from './support/cdp';
 import { createActiveShopFor } from './support/auth-fixtures';
-import { ActivatedAdmin, activatedAdmin, permission, purgeDeliveriesOfShops, purgeGrants, seedDelivery } from './support/m12-fixtures';
+import { AdminReportService } from '../../apps/backend/src/admin-reports/admin-report-service';
+import { ActivatedAdmin, activatedAdmin, permission, purgeDeliveriesOfShops, purgeExportJobs, purgeGrants, seedDelivery } from './support/m12-fixtures';
 import { systemSession, SystemSession } from './support/provisioning-fixtures';
 
 // M12 on the Administration web in a REAL Chrome against the real front, backend and PostgreSQL (desktop size 1440x900 and a narrow check at 390 wide).
@@ -75,10 +77,12 @@ describe('M12 administration web (real browser)', () => {
     front?.kill('SIGTERM');
     if (app !== undefined) {
       await purgeDeliveriesOfShops(app.pool, [shopId]);
+      await purgeExportJobs(app.pool, [system.account.userId, viewer.userId]);
       await purgeGrants(app.pool);
       await app.pool.query('DELETE FROM app.shipper_wallet_parameter_changes');
       await app.pool.query('UPDATE app.shipper_wallet_parameters SET updated_by = NULL');
       await app.pool.query('DELETE FROM app.shop_members WHERE shop_id = $1::uuid', [shopId]);
+      await purgeShopDisplayCodes(app.pool, [shopId]);
       await app.pool.query('DELETE FROM app.shops WHERE shop_id = $1::uuid', [shopId]);
       await app.close();
     }
@@ -98,17 +102,17 @@ describe('M12 administration web (real browser)', () => {
     await page.goto(`${origin}/overview`);
     await page.waitFor(`document.querySelector('#overview-title') && document.querySelectorAll('.ov-card').length >= 10`);
     const text = await page.evaluate<string>(`document.body.innerText`);
-    for (const expected of ['Phát sinh trong kỳ', 'Trạng thái hiện tại', 'Việc cần xử lý', 'Order phát sinh', 'Delivery tạo mới', 'Quán đang nhận đơn', 'Tổng số dư ví', 'giờ Việt Nam', 'Order (M10) chưa được xây dựng', 'Rút tiền (M04-C) chưa được xây dựng', 'Phản ánh (M11) chưa được xây dựng']) {
+    for (const expected of ['Phát sinh trong kỳ', 'Trạng thái hiện tại', 'Việc cần xử lý', 'Order phát sinh', 'Delivery tạo mới', 'Quán đang nhận đơn', 'Tổng số dư ví', 'giờ Việt Nam', 'Hồ sơ quán không có bước duyệt']) {
       expect(text).toContain(expected);
     }
     // The stamp names the Vietnam clock and a time.
     expect(await page.text('#overview-stamp')).toMatch(/^Cập nhật lúc \d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2} \(giờ Việt Nam\)$/);
     await shot(page, 'm12a-overview-desktop');
 
-    // A figure that is not built is a dash with its reason, never 0.
-    const order = (await cards(page)).find((card) => card.startsWith('Order phát sinh')) as string;
-    expect(order).toContain('—');
-    expect(order).not.toMatch(/\b0\b/);
+    // A figure that does not exist (the shop review step) is a dash with its reason, never 0.
+    const shopReview = await page.evaluate<string>(`[...document.querySelectorAll('.ov-todo-row')].find((r) => r.textContent.includes('Hồ sơ quán')).textContent`);
+    expect(shopReview).toContain('Hồ sơ quán không có bước duyệt');
+    expect(shopReview).not.toMatch(/\b0\b/);
 
     // The "stopped" work item opens the delivery list already filtered, and the list's own total is the tile's number.
     const stoppedCount = await page.evaluate<number>(`Number([...document.querySelectorAll('.ov-todo-row')].find((r) => r.textContent.includes('ngừng tìm')).querySelector('.ov-todo-count').textContent.replace(/\\D/g, ''))`);
@@ -250,4 +254,82 @@ describe('M12 administration web (real browser)', () => {
     expect(await adminPage.evaluate<boolean>(`[...document.querySelectorAll('.cfg-card button')].every((b) => b.textContent !== 'Sửa')`)).toBe(true);
     await adminPage.close();
   }, 120_000);
+  it('M12-E: SYSTEM reads each report with its moment and denominators, a number opens the list, exports a CSV in the background and downloads it; an ADMIN with the report right only cannot export', async () => {
+    const page: Page = await (browser as Browser).newPage();
+    await page.viewport(1440, 900, false);
+    await page.send('Network.clearBrowserCookies');
+    await signIn(page, { phone: system.account.phone, password: system.account.password, userId: system.account.userId, secret: system.login.secret });
+    expect(await page.evaluate<boolean>(`!!document.querySelector('a[href="/reports"]')`)).toBe(true);
+    await page.goto(`${origin}/reports`);
+    await page.waitFor(`document.querySelector('#report-title') && document.querySelector('#report-stamp') && document.querySelectorAll('.ov-card').length >= 10`);
+    const text = await page.evaluate<string>(`document.body.innerText`);
+    for (const expected of ['Order trong kỳ', 'Tỷ lệ giao thành công', 'đã giao xong', 'Tiền giữa các bên, không phải doanh thu nền tảng', 'giờ Việt Nam', 'Theo ngày tạo delivery']) {
+      expect(text).toContain(expected);
+    }
+    await shot(page, 'm12e-reports-deliveries-desktop');
+
+    // A delivery count opens the delivery list with the same period and basis.
+    await page.evaluate(`[...document.querySelectorAll('.ov-link')].find((b) => b.textContent.startsWith('Ngừng tìm shipper')).click()`);
+    await page.waitFor(`location.pathname === '/operations/deliveries' && location.search.includes('state=search_stopped') && document.querySelector('#delivery-count')`);
+    await page.goto(`${origin}/reports`);
+    await page.waitFor(`document.querySelectorAll('.ov-card').length >= 10`);
+
+    // The money report states the ledger moment and the reconciliation difference.
+    await press(page, 'Tiền và đối soát', "document.querySelector('[aria-label=\"Loại báo cáo\"]')");
+    await page.waitFor(`document.body.innerText.includes('Đối soát: chênh lệch') && document.body.innerText.includes('Theo ngày ghi sổ cái')`);
+    expect(await page.evaluate<string>(`document.body.innerText`)).toContain('Nạp ví đã duyệt');
+    await shot(page, 'm12e-reports-money-desktop');
+    await press(page, 'Shipper', "document.querySelector('[aria-label=\"Loại báo cáo\"]')");
+    await page.waitFor(`document.body.innerText.includes('Số shipper nhận đơn trong kỳ')`);
+
+    // An invalid custom range is refused before any request.
+    await page.evaluate(`[...document.querySelectorAll('.ov-range')].find((b) => b.textContent === 'Tùy chọn').click()`);
+    await page.evaluate(`(() => { document.querySelector('#report-from').value = '2020-01-01'; document.querySelector('#report-to').value = '2020-12-31'; return true; })()`);
+    await page.evaluate(`[...document.querySelectorAll('.ov-custom button')].find((b) => b.textContent === 'Áp dụng').click()`);
+    await page.waitFor(`document.body.innerText.includes('Khoảng thời gian tối đa là 92 ngày')`);
+    await press(page, 'Hôm nay', "document.querySelector('[aria-label=\"Khoảng thời gian\"]')");
+    await press(page, 'Quán', "document.querySelector('[aria-label=\"Loại báo cáo\"]')");
+    await page.waitFor(`document.body.innerText.includes('Số quán có delivery trong kỳ')`);
+
+    // Export: accepted at once, finished by the background run, downloaded from the list.
+    const jobs = async (): Promise<number> => (await app.pool.query(`SELECT count(*)::int AS n FROM app.report_export_jobs WHERE requested_by = $1::uuid`, [system.account.userId])).rows[0].n as number;
+    const jobsBefore = await jobs();
+    await page.evaluate(`document.querySelector('#report-export-csv').click()`);
+    await page.waitFor(`document.body.innerText.includes('Đã nhận yêu cầu xuất')`);
+    expect(await jobs()).toBe(jobsBefore + 1);
+    await page.waitFor(`document.body.innerText.includes('Đang chờ') || document.body.innerText.includes('Đang tạo')`);
+    const service = app.running.app.get(AdminReportService, { strict: false });
+    while (await service.processNext()) {
+      // drain
+    }
+    await page.waitFor(`[...document.querySelectorAll('.rp-job button')].some((b) => b.textContent === 'Tải về')`, 20_000);
+    await shot(page, 'm12e-reports-export-done');
+    await page.evaluate(`[...document.querySelectorAll('.rp-job button')].find((b) => b.textContent === 'Tải về').click()`);
+    await page.waitFor(`document.body.innerText.includes('Đã tải 11ship-shops-')`);
+    const audited = await app.pool.query(`SELECT action FROM app.audit_logs WHERE resource_type = 'report_export' AND actor_id = $1 ORDER BY action`, [system.account.userId]);
+    expect(audited.rows.map((r) => r.action)).toEqual(['admin.report.export.create.v1', 'admin.report.export.download.v1']);
+
+    // Narrow screen: no horizontal scroll.
+    await page.viewport(390, 844, true);
+    await page.waitFor(`document.documentElement.clientWidth <= 400`);
+    expect(await page.evaluate<boolean>(`document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1`)).toBe(true);
+    await shot(page, 'm12e-reports-phone');
+    await page.close();
+
+    // The ADMIN of test M12-C holds report.read but not report.export: the report opens, the export is refused by the server, the money report is refused.
+    const adminPage: Page = await (browser as Browser).newPage();
+    await adminPage.viewport(1440, 900, false);
+    await adminPage.send('Network.clearBrowserCookies');
+    await signIn(adminPage, { phone: viewer.phone, password: 'Correct-Horse-Battery-9', userId: viewer.userId, secret: viewer.secret });
+    await adminPage.goto(`${origin}/reports`);
+    await adminPage.waitFor(`document.querySelectorAll('.ov-card').length >= 10 && document.body.innerText.includes('Tài khoản này không có quyền xuất báo cáo')`);
+    await adminPage.evaluate(`document.querySelector('#report-export-csv').click()`);
+    await adminPage.waitFor(`document.querySelector('.notice') && !document.querySelector('.notice').hidden && document.querySelector('.notice').textContent.length > 0`);
+    expect(await adminPage.evaluate<string>(`document.querySelector('.notice').textContent`)).not.toContain('Đã nhận yêu cầu');
+    await shot(adminPage, 'm12e-reports-admin-no-export');
+    await press(adminPage, 'Tiền và đối soát', "document.querySelector('[aria-label=\"Loại báo cáo\"]')");
+    await adminPage.waitFor(`document.body.innerText.includes('Không có quyền')`);
+    await shot(adminPage, 'm12e-reports-admin-money-forbidden');
+    await adminPage.close();
+  }, 180_000);
 });

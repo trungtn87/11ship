@@ -3,7 +3,7 @@ import { NotificationApp, NotificationKind, PUSH_TTL_MS, TargetType } from './no
 // Pure: an outbox event becomes zero or more notification drafts. Wording is fixed here and is safe for a lock screen: the delivery CODE is the only
 // identifier shown, never a phone, an address, an amount owner, an OTP or bank data. No I/O and no clock.
 
-export type Audience = 'SHOP' | 'DRIVER' | 'DRIVER_OF_AGREEMENT';
+export type Audience = 'SHOP' | 'DRIVER' | 'DRIVER_OF_AGREEMENT' | 'CUSTOMER' | 'ACCOUNT';
 
 export interface DraftBase {
   readonly audience: Audience;
@@ -31,13 +31,15 @@ export interface DeliveryChangePayload {
   readonly version: number;
   readonly assignmentId: string | null;
   readonly driverId: string | null;
+  /** The food Order the delivery carries (M10), if any: its customer is told of the steps that matter to them. */
+  readonly orderId?: string | null;
 }
 
 const delivery = (p: DeliveryChangePayload, audience: Audience, kind: NotificationKind, title: string, body: string, pushTtlMs: number = PUSH_TTL_MS.result): Draft => ({
   type: 'NOTIFY',
   draft: {
     audience,
-    app: audience === 'SHOP' ? 'FOOD' : 'SHIP',
+    app: audience === 'SHOP' || audience === 'CUSTOMER' ? 'FOOD' : 'SHIP',
     kind,
     title,
     body,
@@ -50,8 +52,46 @@ const delivery = (p: DeliveryChangePayload, audience: Audience, kind: Notificati
   },
 });
 
+/**
+ * M11: the shop may rate the Shipper once the delivery ended (delivered or failed). ONE reminder per delivery (the dedupe key has no version), in the inbox
+ * like the other reminders: it never forces a screen open, and the rating itself stays optional.
+ */
+function reviewReminder(p: DeliveryChangePayload): Draft {
+  const base = delivery(p, 'SHOP', 'REVIEW_REMINDER', 'Đánh giá shipper', `Đơn ${p.code}: bạn có thể đánh giá shipper đã giao.`);
+  return base.type === 'NOTIFY' ? { type: 'NOTIFY', draft: { ...base.draft, dedupeKey: `review-reminder:${p.deliveryId}` } } : base;
+}
+
 /** What a delivery change tells whom. Unknown changes tell nobody (they are internal steps such as a pinned destination). */
 export function composeDeliveryChange(p: DeliveryChangePayload): Draft[] {
+  return [...composeForShopAndShipper(p), ...composeForCustomer(p)];
+}
+
+function composeForCustomer(p: DeliveryChangePayload): Draft[] {
+  if (p.orderId === undefined || p.orderId === null) {
+    return [];
+  }
+  const orderId = p.orderId;
+  const notify = (kind: NotificationKind, title: string, body: string): Draft => ({
+    type: 'NOTIFY',
+    draft: { audience: 'CUSTOMER', app: 'FOOD', kind, title, body, targetType: 'ORDER', targetId: orderId, targetVersion: p.version, dedupeKey: `order-delivery:${orderId}:${p.deliveryId}:${p.change}:${String(p.version)}`, validForMs: null, pushTtlMs: PUSH_TTL_MS.result },
+  });
+  switch (p.change) {
+    case 'search_stopped':
+      return [notify('SEARCH_STOPPED','Chưa có shipper nhận đơn',`Đơn ${p.code}: tìm shipper đã dừng. Quán đang xử lý.`)];
+    case 'pickup_timeout_warning':
+      return [notify('PICKUP_TIMEOUT_WARNING','Shipper chưa lấy hàng',`Đơn ${p.code}: shipper chưa lấy hàng trong thời hạn cảnh báo.`)];
+    case 'accepted':
+      return [notify('ORDER_SHIPPER_ACCEPTED', 'Shipper đã nhận đơn của bạn', `Đơn ${p.code}: shipper đang đến quán lấy món.`)];
+    case 'picked_up':
+      return [notify('ORDER_DELIVERING', 'Đơn của bạn đang được giao', `Đơn ${p.code}: shipper đã lấy món và đang giao.`)];
+    case 'failed':
+      return [notify('ORDER_DELIVERY_FAILED', 'Giao hàng chưa thành công', `Đơn ${p.code}: giao chưa thành công, quán đang xử lý. Mở ứng dụng để xem.`)];
+    default:
+      return [];
+  }
+}
+
+function composeForShopAndShipper(p: DeliveryChangePayload): Draft[] {
   const code = p.code;
   switch (p.change) {
     case 'created':
@@ -73,13 +113,17 @@ export function composeDeliveryChange(p: DeliveryChangePayload): Draft[] {
     case 'picked_up':
       return [delivery(p, 'SHOP', 'DELIVERY_PICKED_UP', 'Shipper đã lấy hàng', `Đơn ${code} đang được giao.`)];
     case 'completed':
-      return [delivery(p, 'SHOP', 'DELIVERY_COMPLETED', 'Giao hàng thành công', `Đơn ${code} đã giao thành công.`)];
+      return [delivery(p, 'SHOP', 'DELIVERY_COMPLETED', 'Giao hàng thành công', `Đơn ${code} đã giao thành công.`), reviewReminder(p)];
     case 'failed':
-      return [delivery(p, 'SHOP', 'DELIVERY_FAILED', 'Giao hàng không thành công', `Đơn ${code} giao không thành công. Cần bạn xử lý hàng.`)];
+      return [delivery(p, 'SHOP', 'DELIVERY_FAILED', 'Giao hàng không thành công', `Đơn ${code} giao không thành công. Cần bạn xử lý hàng.`), reviewReminder(p)];
+    case 'cancelled_by_system':
+      return p.driverId===null?[]:[delivery(p,'DRIVER','DELIVERY_CANCELLED','Hệ thống đã hủy đơn quá hạn',`Đơn ${code} đã bị hủy trước khi lấy hàng. Khoản giữ hoa hồng đã được giải phóng.`)];
+    case 'pickup_timeout_warning':
+      return [delivery(p,'SHOP','PICKUP_TIMEOUT_WARNING','Shipper chưa lấy hàng',`Đơn ${code}: shipper chưa lấy hàng trong thời hạn cảnh báo.`),...(p.driverId===null?[]:[delivery(p,'DRIVER','PICKUP_TIMEOUT_WARNING','Vui lòng lấy hàng',`Đơn ${code}: bạn chưa lấy hàng trong thời hạn cảnh báo.`)])];
     case 'cancelled_by_shop':
       return p.driverId === null ? [] : [delivery(p, 'DRIVER', 'DELIVERY_CANCELLED', 'Quán đã hủy đơn', `Đơn ${code} đã bị quán hủy. Bạn không cần giao đơn này.`)];
     case 'search_stopped':
-      return [delivery(p, 'SHOP', 'SEARCH_STOPPED', 'Chưa có shipper nhận đơn', `Đơn ${code} đã tìm 30 phút. Hãy gọi lại hoặc hủy.`)];
+      return [delivery(p, 'SHOP', 'SEARCH_STOPPED', 'Chưa có shipper nhận đơn', `Đơn ${code} đã hết thời gian tìm. Hãy gọi lại hoặc hủy.`)];
     case 'search_reminder_5':
       return [{ type: 'REMINDER', reminder: 'SEARCH_5', deliveryId: p.deliveryId, assignmentId: null }];
     case 'search_reminder_15':
@@ -132,3 +176,68 @@ export const PROFILE_COPY: Readonly<Record<string, { kind: NotificationKind; tit
   suspended: { kind: 'PROFILE_SUSPENDED', title: 'Tài khoản shipper bị tạm khóa', body: 'Tài khoản của bạn đang bị tạm khóa. Mở ứng dụng để xem chi tiết.' },
   reopened: { kind: 'PROFILE_REOPENED', title: 'Tài khoản shipper đã được mở lại', body: 'Tài khoản của bạn đã được mở lại.' },
 };
+
+// ---- M10 food orders ----------------------------------------------------------------------------------------------------------
+
+export interface OrderChangePayload {
+  readonly orderId: string;
+  readonly code: string;
+  readonly shopId: string;
+  readonly customerUserId: string;
+  readonly change: string;
+  readonly status: string;
+  readonly version: number;
+}
+
+const order = (p: OrderChangePayload, audience: 'SHOP' | 'CUSTOMER', kind: NotificationKind, title: string, body: string, pushTtlMs: number = PUSH_TTL_MS.result): Draft => ({
+  type: 'NOTIFY',
+  draft: {
+    audience,
+    app: 'FOOD',
+    kind,
+    title,
+    body,
+    targetType: 'ORDER',
+    targetId: p.orderId,
+    targetVersion: p.version,
+    dedupeKey: `order:${p.orderId}:${p.change}:${String(p.version)}`,
+    validForMs: null,
+    pushTtlMs,
+  },
+});
+
+/** What an Order change tells whom. The Order CODE is the only identifier shown; no dish, phone, address or amount reaches a lock screen. */
+export function composeOrderChange(p: OrderChangePayload): Draft[] {
+  const code = p.code;
+  switch (p.change) {
+    case 'confirmation_reminder':
+      return [order(p,'SHOP','ORDER_CONFIRMATION_REMINDER','Vui lòng xác nhận đơn',`Đơn ${code} vẫn đang chờ quán xác nhận.`,PUSH_TTL_MS.reminder)];
+    case 'confirmation_timeout':
+      return [order(p,'CUSTOMER','ORDER_TIMEOUT','Đơn quá hạn chờ quán',`Đơn ${code} đã được hệ thống hủy. Bạn có thể đặt lại trong lịch sử.`)];
+    case 'delivery_timeout':
+      return [order(p,'CUSTOMER','ORDER_TIMEOUT','Hệ thống đã hủy đơn quá hạn',`Đơn ${code} đã bị hủy trước khi lấy hàng. Bạn có thể đặt lại trong lịch sử.`),order(p,'SHOP','ORDER_TIMEOUT','Hệ thống đã hủy đơn quá hạn',`Đơn ${code} đã bị hủy trước khi lấy hàng.`)];
+    case 'placed':
+      return [order(p, 'SHOP', 'ORDER_PLACED', 'Có đơn món mới', `Đơn ${code} đang chờ bạn xác nhận.`, PUSH_TTL_MS.offer)];
+    case 'cancelled_by_customer':
+      return [order(p, 'SHOP', 'ORDER_CANCELLED_BY_CUSTOMER', 'Khách đã hủy đơn món', `Đơn ${code} đã được khách hủy trước khi bạn xác nhận.`)];
+    case 'schedule_reminder':
+      return [order(p, 'SHOP', 'ORDER_SCHEDULE_REMINDER', 'Sắp đến giờ hẹn', `Đơn hẹn ${code} sắp đến giờ nhận món. Hãy chuẩn bị và gọi shipper.`, PUSH_TTL_MS.reminder)];
+    case 'confirmed':
+      return [order(p, 'CUSTOMER', 'ORDER_CONFIRMED', 'Quán đã xác nhận đơn', `Đơn ${code} đang được chuẩn bị.`)];
+    case 'rejected':
+      return [order(p, 'CUSTOMER', 'ORDER_REJECTED', 'Quán không nhận đơn', `Đơn ${code} chưa được quán nhận. Mở ứng dụng để xem lý do.`)];
+    case 'cancelled_by_shop':
+      return [order(p, 'CUSTOMER', 'ORDER_CANCELLED_BY_SHOP', 'Quán đã hủy đơn', `Đơn ${code} đã bị quán hủy. Mở ứng dụng để xem lý do.`)];
+    case 'cancelled_by_admin':
+      return [order(p, 'CUSTOMER', 'ORDER_CANCELLED_BY_SHOP', 'Đơn của bạn đã bị hủy', `Đơn ${code} đã được hủy. Mở ứng dụng để xem lý do.`), order(p, 'SHOP', 'ORDER_CANCELLED_BY_ADMIN', 'Quản trị viên đã hủy đơn', `Đơn ${code} đã được quản trị viên hủy.`)];
+    case 'ready':
+      return [order(p, 'CUSTOMER', 'ORDER_READY', 'Món đã sẵn sàng', `Món của đơn ${code} đã sẵn sàng.`)];
+    case 'completed':
+      return [order(p, 'CUSTOMER', 'ORDER_COMPLETED', 'Đơn đã hoàn thành', `Đơn ${code} đã giao thành công.`)];
+    case 'not_completed':
+    case 'not_completed_by_admin':
+      return [order(p, 'CUSTOMER', 'ORDER_NOT_COMPLETED', 'Đơn không hoàn tất', `Đơn ${code} không hoàn tất. Mở ứng dụng để xem lý do.`)];
+    default:
+      return [];
+  }
+}

@@ -80,7 +80,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | sessions | SELECT, INSERT, UPDATE |
 | service_areas | SELECT, UPDATE (UPDATE only because `FOR SHARE` needs it) |
 | shops | SELECT, INSERT, UPDATE |
-| shop_members | SELECT, INSERT |
+| shop_members | SELECT, INSERT, UPDATE (UPDATE because onboarding locks the OWNER row with `FOR UPDATE`) |
 | drivers | SELECT, INSERT, UPDATE |
 | shop_business_hours | SELECT, INSERT, DELETE |
 | idempotency_records | SELECT, INSERT, UPDATE, DELETE |
@@ -101,6 +101,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | admin_app_permissions | SELECT, INSERT (written once at activation) |
 | customer_profiles | SELECT, INSERT, UPDATE (M01.02: UPDATE is the version-checked profile edit and `FOR UPDATE`; no DELETE: a customer profile is never removed by the runtime) |
 | user_consents | SELECT, INSERT (M01.02: append-only; a trigger refuses UPDATE and DELETE for every role, and the runtime has neither privilege nor TRUNCATE) |
+| client_login_limits | SELECT, INSERT, UPDATE (M01 password login quota; HMAC keys only, no DELETE) |
 | client_device_keys | SELECT, INSERT, UPDATE (M01-ANDROID: UPDATE only sets `revoked_at`; a trigger refuses every other column change; no DELETE) |
 | client_device_challenges | SELECT, INSERT, UPDATE (UPDATE is `consumed_at` and `FOR UPDATE`; expired rows are removed only by the cleanup credential below) |
 | client_device_registration_grants | SELECT, INSERT, UPDATE (UPDATE is the one-use `consumed_at`; no DELETE) |
@@ -130,6 +131,9 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | wallet_topup_requests | SELECT, INSERT, UPDATE (M04-B2.1: the Shipper creates a PENDING request and cancels it; no DELETE; a request never moves money) |
 | wallet_bank_transactions | SELECT, INSERT (M04-B1/B2.2b: the shared registry of bank transactions, append-only; written once per bank transaction in the Admin confirmation) |
 | wallet_topups | SELECT, INSERT (M04-B1/B2.2b: money confirmed as received, append-only; it cannot commit without its ledger credit) |
+| wallet_withdrawals | SELECT, INSERT, UPDATE (M04-C: a withdrawal request with its immutable bank snapshot; the guard trigger allows only the state machine PENDING, PROCESSING, RECONCILIATION, PAID, CANCELLED; never deleted) |
+| wallet_withdrawal_events | SELECT, INSERT (M04-C: the append-only trail of every withdrawal transition; no bank detail) |
+| wallet_commission_policies | SELECT, INSERT (M04-C: append-only versions of the commission per delivery; an assignment snapshots the amount when accepted) |
 | shipping_fee_policy_versions | SELECT, INSERT (M06-A: one immutable row per applied fee table; a trigger refuses UPDATE, DELETE and TRUNCATE) |
 | shipping_fee_policy_drafts | SELECT, UPDATE (M06-A: the one seeded draft row; UPDATE is the version-checked save/clear and `FOR UPDATE`; never deleted) |
 | shipping_eligibility_parameters | SELECT, UPDATE (M06-B/C: the one seeded row of limits; UPDATE is the version-checked change and `FOR UPDATE`; never deleted) |
@@ -140,6 +144,16 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | delivery_assignments | SELECT, INSERT, UPDATE (M07: one Shipper's hold on a delivery; ACTIVE at most once per delivery; never deleted) |
 | delivery_events | SELECT, INSERT (M07: the append-only history of a delivery) |
 | delivery_incidents | SELECT, INSERT, UPDATE (M07: the goods-custody incident of a failed delivery; closed once; never deleted) |
+| shop_public_ids | SELECT (public shop number; immutable after creation, new rows allocated by a SECURITY DEFINER trigger) |
+| shop_display_counters | SELECT (per-shop serial; only the database allocation function may change it) |
+| shop_display_numbers | SELECT (public order and direct-delivery aliases; populated through a trigger, never rewritten) |
+| customer_carts | SELECT, INSERT, UPDATE, DELETE (M10: the customer's working cart; replaced or cleared, never history) |
+| orders | SELECT, INSERT, UPDATE (M10: a food Order moves along its status graph; never deleted) |
+| order_items | SELECT, INSERT, UPDATE (M10: lines written once; only the shop's edit columns change; never deleted) |
+| order_events | SELECT, INSERT (M10: the append-only history of an Order) |
+| order_timeout_policy | SELECT, UPDATE (M10/M07: current versioned stage policy) |
+| order_timeout_policy_changes | SELECT, INSERT (append-only policy history) |
+| cancellation_transitions | SELECT, INSERT (append-only cancellation before/after facts) |
 | shipper_latest_locations | SELECT, INSERT, UPDATE (M14/M07: the one latest position of each Shipper, replaced in place; no trail) |
 | notification_push_tokens | SELECT, INSERT, UPDATE (M08: the push token of one session; ended (never deleted) when the session ends or the token is replaced) |
 | notification_config | SELECT, INSERT, UPDATE (M08: the single settings row (channel, retention, retry); SYSTEM changes it through the Administration) |
@@ -149,6 +163,16 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | notification_reminders | SELECT, INSERT, UPDATE, DELETE (M08: due reminders from M07 events, resolved once; resolved rows are deleted by the retention pass) |
 | notification_offer_rounds | SELECT, INSERT, DELETE (M08: one row per Shipper, delivery and search round (at most one push); old rows are deleted by the retention pass) |
 | notification_settings | SELECT, INSERT, UPDATE (M08: the account's own notification settings per app) |
+| reviews | SELECT, INSERT, UPDATE (M11: a rating is written once; only its hidden state changes (guard trigger); never deleted) |
+| review_moderations | SELECT, INSERT (M11: hide / restore with reason; append-only) |
+| review_replies | SELECT, INSERT, UPDATE (M11: the shop reply (one per rating, updated with a version); never deleted) |
+| review_reply_history | SELECT, INSERT (M11: earlier reply texts; append-only) |
+| complaints | SELECT, INSERT, UPDATE (M11: one file per issue; status moves by the Administration; never deleted) |
+| complaint_messages | SELECT, INSERT (M11: the thread (submitter, parties, support, internal notes); append-only) |
+| complaint_attachments | SELECT, INSERT, UPDATE (M11: evidence pictures; attached to a file once; never deleted) |
+| complaint_reconsiderations | SELECT, INSERT, UPDATE (M11: a request to review a closed file and its decision; never deleted) |
+| complaint_adjustments | SELECT, INSERT, UPDATE (M11: result and commission adjustments; the finance posting state is updated; never deleted) |
+| wallet_adjustments | SELECT, INSERT (M04: the refund / extra charge of a commission decided by M11; append-only, one ledger row each; the ledger row itself is written through the existing wallet_ledger_entries grant) |
 | report_export_jobs | SELECT, INSERT, UPDATE (M12-E: export jobs; never deleted, a trigger refuses it) |
 | report_export_files | SELECT, INSERT, DELETE (M12-E: the bytes of an export; removed when the file expires) |
 

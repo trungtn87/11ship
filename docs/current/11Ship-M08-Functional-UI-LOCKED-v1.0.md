@@ -1,5 +1,7 @@
 # 11Ship — M08 Thông báo, nhắc việc và đồng bộ trạng thái
 
+> Bổ sung Owner 21/10/2026: [Thời hạn ba giai đoạn, SYSTEM tự hủy, audit và cài đặt Admin](M10-timeouts-20261021.md) (#153) thay thế các mô tả timeout cũ xung đột.
+
 Phiên bản v1.0 · Ngày 16/10/2026 · Asia/Ho_Chi_Minh.
 
 **Chức năng và UI: OWNER_APPROVED / DESIGN_LOCKED. Triển khai: IMPLEMENTATION_PENDING.**

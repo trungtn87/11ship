@@ -7,7 +7,7 @@ import { Failure } from './accounts.js';
 
 export const DELIVERY_PAGE_SIZE = 20;
 
-export const DELIVERY_STATES = ['waiting_driver', 'accepted', 'location_confirmed', 'delivering', 'completed', 'failed', 'cancelled_by_merchant', 'search_stopped'] as const;
+export const DELIVERY_STATES = ['waiting_driver', 'accepted', 'location_confirmed', 'delivering', 'completed', 'failed', 'cancelled_by_merchant','cancelled_by_system', 'search_stopped'] as const;
 export type DeliveryStateName = (typeof DELIVERY_STATES)[number] | 'picked_up';
 export type DeliveryStateFilter = 'ALL' | (typeof DELIVERY_STATES)[number];
 
@@ -20,6 +20,7 @@ export const DELIVERY_STATE_LABEL: Record<DeliveryStateName | 'ALL', string> = {
   delivering: 'Đang giao',
   completed: 'Giao thành công',
   failed: 'Giao thất bại',
+  cancelled_by_system:'Hệ thống hủy quá hạn',
   cancelled_by_merchant: 'Quán đã hủy',
   search_stopped: 'Đã ngừng tìm',
 };

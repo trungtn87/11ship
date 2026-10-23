@@ -1,3 +1,5 @@
+import { ShipperSettlementReader } from '../shipper-settlement/shipper-settlement-reader';
+import { WalletReadRepository } from '../wallet/wallet-read-repository';
 import { Inject, Injectable } from '@nestjs/common';
 import { SessionLookup } from '../admin-auth/admin-session-repository';
 import { AdminRole } from '../admin-auth/admin-auth-constants';
@@ -112,6 +114,8 @@ export class AdminShipperService {
     private readonly activity: AccountActivityRegistry,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
+    private readonly walletReads: WalletReadRepository,
+    private readonly settlement: ShipperSettlementReader,
     @Inject(DRIVER_WALLET_PORT) private readonly wallet: DriverWalletPort,
     @Inject(APP_CONFIG) appConfig: AppConfig,
   ) {
@@ -213,6 +217,11 @@ export class AdminShipperService {
         if (driver.fullName.trim() === '' || bank === undefined || !holderMatchesName(driver.fullName, bank.accountHolder)) {
           throw new AppError('DRIVER_PROFILE_INCOMPLETE');
         }
+        // The first activation needs real money already RECORDED by an administrator (M04 top-up confirmation): at least 100.000 VND confirmed and available. Approving
+        // credits nothing and a Shipper's own "I have transferred" request never activates anybody (ADR-004 6).
+        if (!(await this.wallet.fundingForActivation(context, driver.driverId)).funded) {
+          throw new AppError('DRIVER_FUNDING_REQUIRED');
+        }
         return { driver: await this.#write(context, driver, { status: 'ACTIVE', reviewState: 'APPROVED', reviewedAt: NOW, reviewedBy: auth.actorId, rejectionReason: null, acceptingDeliveries: false }), change: 'approved' };
       }
       case 'reject': {
@@ -238,11 +247,6 @@ export class AdminShipperService {
       case 'unlock': {
         if (driver.status !== 'SUSPENDED') {
           throw new AppError('DRIVER_STATE_CONFLICT');
-        }
-        const bank = await this.banks.find(context, driver.driverId);
-        if (bank?.verificationState !== 'VERIFIED') {
-          // Reopening needs the same standing as approval did: a verified bank account. Receiving orders stays off until the Shipper turns it on.
-          throw new AppError('DRIVER_BANK_NOT_VERIFIED');
         }
         return { driver: await this.#write(context, driver, { status: 'ACTIVE', suspensionReason: null, suspendedAt: null }), change: 'reopened' };
       }
@@ -277,13 +281,14 @@ export class AdminShipperService {
         await this.banks.markRejected(context, driver.driverId, reason);
         // An account that is not verified cannot back new orders.
         return {
-          driver: await this.#write(context, driver, driver.acceptingDeliveries ? { acceptingDeliveries: false } : {}),
+          driver: await this.#write(context, driver, {}),
           change: 'bank_rejected',
           reason,
           detail: { bank_code: bank.bankCode, accepting_stopped: driver.acceptingDeliveries },
         };
       }
       case 'closure_reject': {
+        if ((await this.walletReads.openWithdrawalCountOfDriver(context, driver.driverId)) > 0) throw new AppError('DRIVER_WALLET_NOT_SETTLED');
         if (driver.status !== 'CLOSING' || driver.statusBeforeClosing === null) {
           throw new AppError('DRIVER_STATE_CONFLICT');
         }
@@ -291,6 +296,9 @@ export class AdminShipperService {
         return { driver: await this.#write(context, driver, { status: driver.statusBeforeClosing, statusBeforeClosing: null, closureRequestedAt: null, closureNote: null }), change: 'closure_rejected', reason };
       }
       case 'closure_finalize': {
+        const obligations = await this.settlement.obligations(context, driver.driverId);
+        if (obligations.activeWork) throw new AppError('DRIVER_HAS_ACTIVE_WORK');
+        if (obligations.pendingFinance) throw new AppError('DRIVER_WALLET_NOT_SETTLED');
         if (driver.status !== 'CLOSING') {
           throw new AppError('DRIVER_STATE_CONFLICT');
         }

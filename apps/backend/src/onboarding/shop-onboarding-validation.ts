@@ -1,3 +1,4 @@
+import { parseShopLogo } from '../shop/shop-logo';
 import { BadRequestException } from '@nestjs/common';
 import { isWellFormed } from '../auth/auth-validation';
 import { requireNormalizedPhone } from '../auth/phone';
@@ -128,7 +129,7 @@ export function parseShopProfileBody(body: unknown): ShopProfileInput {
   const parsed = objectWithKeys(
     body,
     ['name', 'contact_phone', 'address_text'],
-    ['zalo', 'facebook', 'pickup_lat', 'pickup_lng', 'service_area_id', 'expected_version'],
+    ['zalo', 'facebook', 'pickup_lat', 'pickup_lng', 'service_area_id', 'expected_version', 'logo'],
   );
 
   const name = boundedText(parsed.name, SHOP_NAME_MAX_LENGTH);
@@ -155,6 +156,7 @@ export function parseShopProfileBody(body: unknown): ShopProfileInput {
     pickupLng,
     serviceAreaId,
     expectedVersion,
+    ...(parsed.logo === undefined ? {} : { logo: parseShopLogo(parsed.logo) }),
   };
 }
 

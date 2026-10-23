@@ -144,3 +144,21 @@ export async function purgeGrants(pool: Pool): Promise<void> {
     client.release();
   }
 }
+
+/** Removes the export jobs (and files) of the given users. The application never deletes a job row; the test database lifts the trigger inside one transaction. */
+export async function purgeExportJobs(pool: Pool, userIds: readonly string[]): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('ALTER TABLE app.report_export_jobs DISABLE TRIGGER report_export_jobs_no_delete');
+    await client.query('DELETE FROM app.report_export_files WHERE job_id IN (SELECT job_id FROM app.report_export_jobs WHERE requested_by = ANY($1::uuid[]))', [userIds]);
+    await client.query('DELETE FROM app.report_export_jobs WHERE requested_by = ANY($1::uuid[])', [userIds]);
+    await client.query('ALTER TABLE app.report_export_jobs ENABLE TRIGGER report_export_jobs_no_delete');
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}

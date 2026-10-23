@@ -82,6 +82,30 @@ export class DriverAdminQueryRepository {
     return result.rows.map(rowOf);
   }
 
+  /**
+   * The identity the finance screens show next to a wallet (M04-C): the Shipper code, the name, the status and the phone number, for these driver ids only.
+   * The administration masks the name and the phone before it leaves the server; the full values never reach a finance screen.
+   */
+  async identities(context: TransactionContext, driverIds: readonly string[]): Promise<Map<string, { readonly shipperCode: string; readonly fullName: string; readonly status: string; readonly phone: string }>> {
+    const result = await context.query<{ driver_id: string; shipper_code: string; full_name: string; status: string; phone: string }>(
+      `SELECT d.driver_id::text AS driver_id, d.shipper_code, d.full_name, d.status, u.phone_normalized AS phone
+         FROM app.drivers d JOIN app.users u ON u.user_id = d.user_id WHERE d.driver_id = ANY($1::uuid[])`,
+      [[...driverIds]],
+    );
+    return new Map(result.rows.map((row) => [row.driver_id, { shipperCode: row.shipper_code, fullName: row.full_name, status: row.status, phone: row.phone }]));
+  }
+
+  /** The driver ids matching a search pattern (Shipper code, folded name or phone), at most `limit`. */
+  async searchIds(context: TransactionContext, pattern: NonNullable<ShipperListFilter['pattern']>, limit: number): Promise<string[]> {
+    const { clause, params } = where({ pattern, status: null });
+    params.push(limit);
+    const result = await context.query<{ driver_id: string }>(
+      `SELECT d.driver_id::text AS driver_id FROM app.drivers d JOIN app.users u ON u.user_id = d.user_id ${clause} ORDER BY d.driver_id LIMIT $${params.length}::int`,
+      params,
+    );
+    return result.rows.map((row) => row.driver_id);
+  }
+
   async phoneOf(context: TransactionContext, userId: string): Promise<string | undefined> {
     const result = await context.query<{ phone_normalized: string }>('SELECT phone_normalized FROM app.users WHERE user_id = $1::uuid', [userId]);
     return result.rows[0]?.phone_normalized;

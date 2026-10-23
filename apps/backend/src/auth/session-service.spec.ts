@@ -155,7 +155,7 @@ describe('SessionService.authenticate account origin policy (M00-D2)', () => {
 
   it('a fixture session is accepted on staging, mode on, allowlisted; the principal gains no field beyond platform and app (device proof routing)', async () => {
     const principal = await serviceFor(FIXTURE_VIEW, STAGING_ON).authenticate(header());
-    expect(Object.keys(principal).sort()).toEqual(['activeRole', 'app', 'phoneNormalized', 'platform', 'sessionId', 'userId']);
+    expect(Object.keys(principal).sort()).toEqual(['activeRole', 'app', 'authMethod', 'phoneNormalized', 'platform', 'sessionId', 'userId']);
   });
 
   const denied: ReadonlyArray<readonly [string, AccountOriginPolicy | undefined]> = [

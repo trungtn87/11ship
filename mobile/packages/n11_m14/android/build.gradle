@@ -19,13 +19,13 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = '17' }
-    // Compile the SAME Kotlin sources as the test application. History is deliberately excluded.
+    // The recorder (gps) and the routing client of the SAME Kotlin sources as the GPS test app. History is deliberately excluded. The map sources and
+    // the Cao Bang package come from the map-only plugin (n11_m14_map), so no class is compiled twice.
     def core = file('../../../gps-test')
     sourceSets.main {
-        java.srcDirs += ['map', 'gps', 'routing'].collect { new File(core, "$it/src/main/java") }
-        assets.srcDir new File(core, 'app/src/main/assets')
+        java.srcDirs += ['gps', 'routing'].collect { new File(core, "$it/src/main/java") }
     }
 }
 dependencies {
-    implementation 'org.maplibre.gl:android-sdk:11.8.0'
+    implementation project(':n11_m14_map')
 }

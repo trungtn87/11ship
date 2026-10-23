@@ -36,7 +36,7 @@ class M02Scaffold extends StatelessWidget {
           navigator.pop();
         }
       },
-      child: Scaffold(
+      child: Form(child: Scaffold(
         backgroundColor: N11Colors.bg,
         body: SafeArea(
           child: Column(
@@ -79,7 +79,7 @@ class M02Scaffold extends StatelessWidget {
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 }
@@ -260,10 +260,11 @@ String m02FailureText(AuthFailure failure) {
 
 /// The banner of a write that has no usable answer yet: it locks everything until the same request is sent again.
 class UnknownOutcomeBanner extends StatelessWidget {
-  const UnknownOutcomeBanner({super.key, required this.onRetry, required this.busy});
+  const UnknownOutcomeBanner({super.key, required this.onRetry, required this.busy, this.detail});
 
   final VoidCallback onRetry;
   final bool busy;
+  final String? detail;
 
   @override
   Widget build(BuildContext context) {
@@ -271,7 +272,7 @@ class UnknownOutcomeBanner extends StatelessWidget {
       key: const Key('pending-banner'),
       kind: BannerKind.warn,
       title: 'Chưa xác định được kết quả lưu',
-      text: 'Chưa xác định được kết quả lưu. Thử lại sẽ gửi đúng nội dung của lần lưu trước, không gửi nội dung mới sửa. Chỉnh sửa tạm khóa cho đến khi biết kết quả.',
+      text: <String>[if (detail != null) detail!, 'Chưa xác định được kết quả lưu. Thử lại sẽ gửi đúng nội dung của lần lưu trước, không gửi nội dung mới sửa. Chỉnh sửa tạm khóa cho đến khi biết kết quả.'].join('\n'),
       trailing: N11Button(key: const Key('pending-retry'), label: busy ? 'Đang thử lại…' : 'Thử lại', compact: true, loading: busy, onPressed: busy ? null : onRetry),
     );
   }
@@ -439,5 +440,31 @@ List<String> linesOf(List<HourRange> ranges) => dayLines(ranges);
       return (label: 'Khu vực phục vụ ngừng hoạt động', text: 'Chọn khu vực phục vụ phù hợp trong hồ sơ quán.', kind: ChipKind.bad);
     default:
       return (label: 'Chưa rõ trạng thái', text: 'Chưa xác định được trạng thái hoạt động. Thử tải lại.', kind: ChipKind.neutral);
+  }
+}
+
+/// The same square, uncropped frame for public logos and saved owner previews.
+class ShopLogoImage extends StatelessWidget {
+  const ShopLogoImage({super.key, this.url, this.bytes});
+  final String? url;
+  final Uint8List? bytes;
+
+  @override
+  Widget build(BuildContext context) {
+    const Widget fallback = Center(child: Icon(Icons.storefront_outlined, size: 36, color: N11Colors.black));
+    return AspectRatio(
+      aspectRatio: 1,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: ColoredBox(
+          color: N11Colors.yellowSoft,
+          child: bytes != null
+              ? Image.memory(bytes!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => fallback)
+              : url == null || url!.isEmpty
+                  ? fallback
+                  : Image.network(url!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => fallback),
+        ),
+      ),
+    );
   }
 }

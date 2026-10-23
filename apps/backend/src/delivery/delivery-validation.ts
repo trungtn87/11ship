@@ -226,18 +226,44 @@ export function parseLocationBody(body: unknown): LocationInput {
   return { lat: coordinate(b.lat, 90), lng: coordinate(b.lng, 180), accuracyM };
 }
 
+export const SHOP_DELIVERY_FILTERS = ['all', 'searching', 'accepted', 'delivering', 'completed', 'failed'] as const;
+export type ShopDeliveryFilter = (typeof SHOP_DELIVERY_FILTERS)[number];
+
 export interface ShopListQuery {
-  readonly scope: 'active' | 'history';
+  readonly scope: 'active' | 'history' | 'all';
+  readonly filter: ShopDeliveryFilter;
   readonly q: string;
+  readonly fromMs: number | null;
+  readonly toMs: number | null;
+  readonly limit: number;
+  readonly offset: number;
 }
 
-/** GET /v1/shop/me/deliveries?scope=active|history&q= */
+function shopListDate(value: unknown): number | null {
+  if (value === undefined) return null;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value)) return reject();
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return reject();
+  return parsed;
+}
+
+/** Preserves the old active/history default for older clients; 11Food sends scope=all explicitly. */
 export function parseShopListQuery(query: unknown): ShopListQuery {
-  const q = shaped(query ?? {}, [], ['scope', 'q']);
-  if (q.scope !== undefined && q.scope !== 'active' && q.scope !== 'history') {
-    return reject();
-  }
-  return { scope: q.scope === 'history' ? 'history' : 'active', q: q.q === undefined ? '' : text(q.q, 0, 40) };
+  const q = shaped(query ?? {}, [], ['scope', 'filter', 'q', 'from', 'to', 'limit', 'offset']);
+  if (q.scope !== undefined && q.scope !== 'active' && q.scope !== 'history' && q.scope !== 'all') return reject();
+  if (q.filter !== undefined && !(SHOP_DELIVERY_FILTERS as readonly unknown[]).includes(q.filter)) return reject();
+  const fromMs = shopListDate(q.from);
+  const toMs = shopListDate(q.to);
+  if (fromMs !== null && toMs !== null && (toMs <= fromMs || toMs - fromMs > 367 * 86_400_000)) return reject();
+  const limit = q.limit === undefined ? 50 : Number(q.limit);
+  const offset = q.offset === undefined ? 0 : Number(q.offset);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50 || !Number.isSafeInteger(offset) || offset < 0 || offset > 100_000) return reject();
+  return {
+    scope: q.scope === 'all' ? 'all' : q.scope === 'history' ? 'history' : 'active',
+    filter: (q.filter ?? 'all') as ShopDeliveryFilter,
+    q: q.q === undefined ? '' : text(q.q, 0, 40),
+    fromMs, toMs, limit, offset,
+  };
 }
 
 export function parseScopeQuery(query: unknown): 'active' | 'history' {

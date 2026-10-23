@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { purgeShopDisplayCodes } from './support/shop-display-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { resolvePeriod } from '../../apps/backend/src/admin-m12/vietnam-time';
 import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
@@ -59,6 +60,7 @@ describe('M12-A — overview', () => {
       }
       await purgeGrants(admin.pool);
       await admin.pool.query('DELETE FROM app.shop_members WHERE shop_id = ANY($1::uuid[])', [shopIds]);
+      await purgeShopDisplayCodes(admin.pool, shopIds);
       await admin.pool.query('DELETE FROM app.shops WHERE shop_id = ANY($1::uuid[])', [shopIds]);
     } finally {
       await admin.close();
@@ -78,19 +80,21 @@ describe('M12-A — overview', () => {
   };
   const todoOf = (body: Json, key: string): Json => (body.todo as Json[]).find((item) => item.key === key) as Json;
 
-  it('1. rights: SYSTEM sees everything built; an ADMIN with DRIVER view sees deliveries but money is FORBIDDEN; modules that do not exist are NOT_READY, never 0', async () => {
+  it('1. rights: SYSTEM sees everything built; an ADMIN with DRIVER view sees deliveries but money is FORBIDDEN; a step that does not exist is NOT_READY, never 0', async () => {
     const asSystem = await data(systemLoginOf(system));
     expect(asSystem.time_zone).toBe('Asia/Ho_Chi_Minh');
     expect(asSystem.generated_at).toEqual(expect.any(String));
     for (const [group, metric] of [['deliveries_period', 'created'], ['deliveries_now', 'searching'], ['partners_now', 'shops_online'], ['partners_now', 'shippers_accepting'], ['partners_now', 'shippers_eligible'], ['money_now', 'wallet_balance_vnd'], ['money_period', 'commission_vnd']]) {
       expect(asSystem.groups[group].metrics[metric].status).toBe('OK');
     }
-    // M10 Order, M04-C withdrawals, M11 feedback and a shop review flow do not exist: honest NOT_READY with a reason.
-    expect(asSystem.groups.orders.metrics.created).toEqual({ status: 'NOT_READY', reason: 'M10_ORDER_NOT_CONNECTED' });
-    expect(asSystem.groups.money_period.metrics.withdrawal_vnd.status).toBe('NOT_READY');
-    expect(todoOf(asSystem, 'complaints_unhandled')).toMatchObject({ status: 'NOT_READY', reason: 'M11_FEEDBACK_NOT_CONNECTED' });
-    expect(todoOf(asSystem, 'withdrawals_pending').status).toBe('NOT_READY');
-    expect(todoOf(asSystem, 'shop_profiles_pending').status).toBe('NOT_READY');
+    // Orders (M10), withdrawals (M04-C) and complaints (M11) are built and read from their owners; only the shop review step does not exist (a shop is never "waiting for approval").
+    expect(asSystem.groups.orders.metrics.created.status).toBe('OK');
+    expect(asSystem.groups.orders.metrics.awaiting_confirmation.status).toBe('OK');
+    expect(asSystem.groups.money_period.metrics.withdrawal_vnd.status).toBe('OK');
+    expect(asSystem.groups.money_now.metrics.withdrawal_pending.status).toBe('OK');
+    expect(todoOf(asSystem, 'complaints_unhandled').status).toBe('OK');
+    expect(todoOf(asSystem, 'withdrawals_pending').status).toBe('OK');
+    expect(todoOf(asSystem, 'shop_profiles_pending')).toMatchObject({ status: 'NOT_READY', reason: 'M02_NO_SHOP_REVIEW_FLOW' });
 
     const driver = await data(driverViewer.login);
     expect(driver.groups.deliveries_period.metrics.created.status).toBe('OK');

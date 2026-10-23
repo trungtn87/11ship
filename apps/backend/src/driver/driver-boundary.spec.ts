@@ -88,7 +88,7 @@ describe('Driver (M03) module boundary', () => {
     expect(repository).toContain('d.version = $2::bigint');
     expect(codeIn('driver')).not.toMatch(/DELETE FROM/);
     const insert = repository.slice(repository.indexOf('INSERT INTO app.drivers'), repository.indexOf('ON CONFLICT (user_id) DO NOTHING'));
-    expect(insert).toContain("'EXTERNAL', 'PENDING', false, 1");
+    expect(insert).toContain("'EXTERNAL', 'ACTIVE', false, 1");
     // The four fixed values are literals: none of them is a bind parameter.
     expect(insert.match(/\$\d+/g)).toEqual(['$1', '$2', '$3', '$4']);
   });
@@ -130,7 +130,8 @@ describe('Driver onboarding coordinator boundary', () => {
     const code = driverFiles()
       .map((file) => codeOf(file))
       .join('\n');
-    expect(code).not.toMatch(/wallet|bank|approv|activat|topup|withdraw|menu|business_hours/i);
+    expect(code).not.toMatch(/bank|topup|withdraw|menu|business_hours/i);
+    expect(code).toContain('ensureZeroWallet');
     // The one allowed "delivery" word is the flag the contract answer reports as false.
     expect(code.replace(/accepting_deliveries/g, '')).not.toMatch(/deliver/i);
   });

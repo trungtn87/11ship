@@ -1,3 +1,4 @@
+import { purgeShopDisplayCodes } from './shop-display-fixtures';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { AccountOriginPolicy } from '../../../apps/backend/src/auth/account-origin';
@@ -199,6 +200,26 @@ async function purgeWalletsOfPhone(pool: Pool, normalizedPhone: string): Promise
     // user triggers of exactly those tables lifted for this transaction only; the deferred links are settled before the guards come back.
     const topupTables = ['wallet_ledger_entries', 'wallet_topups', 'wallet_bank_transactions', 'wallet_topup_requests'];
     const ownedWallets = `SELECT wallet_id FROM app.driver_wallets WHERE driver_id IN (${owned})`;
+    // M04-C: a test that committed withdrawals removes them first (events, the OUT bank record, the debit, the hold, the withdrawal itself), with the guards of
+    // exactly those tables lifted for this transaction only. Their links are deferred, so the order inside the transaction does not matter; they are checked at the end.
+    const withdrawalTables = ['wallet_withdrawal_events', 'wallet_withdrawals', 'wallet_ledger_entries', 'wallet_bank_transactions'];
+    for (const table of withdrawalTables) {
+      await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
+    }
+    await client.query('ALTER TABLE app.wallet_holds DISABLE TRIGGER wallet_holds_no_delete');
+    const ownedWithdrawals = `SELECT withdrawal_id FROM app.wallet_withdrawals WHERE wallet_id IN (${ownedWallets})`;
+    await client.query(`DELETE FROM app.wallet_ledger_entries WHERE withdrawal_id IN (${ownedWithdrawals})`, [normalizedPhone]);
+    await client.query(`DELETE FROM app.wallet_withdrawal_events WHERE withdrawal_id IN (${ownedWithdrawals})`, [normalizedPhone]);
+    await client.query(`DELETE FROM app.wallet_bank_transactions WHERE withdrawal_id IN (${ownedWithdrawals})`, [normalizedPhone]);
+    await client.query(`DELETE FROM app.wallet_holds WHERE withdrawal_id IN (${ownedWithdrawals})`, [normalizedPhone]);
+    await client.query(`DELETE FROM app.wallet_withdrawals WHERE wallet_id IN (${ownedWallets})`, [normalizedPhone]);
+    // The ledger rows of the withdrawals are gone, but the wallet balance was moved by them: the balance of a purged wallet is rewritten below with the rest.
+    await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+    await client.query('ALTER TABLE app.wallet_holds ENABLE TRIGGER wallet_holds_no_delete');
+    for (const table of withdrawalTables) {
+      await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
+    }
+    await client.query('SET CONSTRAINTS ALL DEFERRED');
     for (const table of topupTables) {
       await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
     }
@@ -228,6 +249,7 @@ async function purgeWalletsOfPhone(pool: Pool, normalizedPhone: string): Promise
     await client.query(`CREATE TEMP TABLE m07_purge ON COMMIT DROP AS SELECT delivery_id FROM app.delivery_assignments WHERE driver_id IN (${owned})`, [normalizedPhone]);
     await client.query(`DELETE FROM app.delivery_assignments WHERE driver_id IN (${owned})`, [normalizedPhone]);
     await client.query('DELETE FROM app.deliveries WHERE delivery_id IN (SELECT delivery_id FROM m07_purge)');
+    await client.query('SET CONSTRAINTS ALL IMMEDIATE');
     for (const table of m07Tables) {
       await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
     }
@@ -245,6 +267,26 @@ async function purgeWalletsOfPhone(pool: Pool, normalizedPhone: string): Promise
 
 /** Removes every Auth row of one phone number (and the register idempotency records of its proofs). */
 export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<void> {
+  const grants = await pool.query("SELECT to_regclass('app.admin_finance_grants') AS t");
+  if (grants.rows[0]?.t != null) {
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query('ALTER TABLE app.admin_finance_grants DISABLE TRIGGER admin_finance_grants_no_delete');
+      await c.query(`DELETE FROM app.admin_finance_grants
+        WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)
+           OR granted_by_user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)
+           OR revoked_by_user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)`, [normalizedPhone]);
+      await c.query('SET CONSTRAINTS ALL IMMEDIATE');
+      await c.query('ALTER TABLE app.admin_finance_grants ENABLE TRIGGER admin_finance_grants_no_delete');
+      await c.query('COMMIT');
+    } catch (error) {
+      await c.query('ROLLBACK');
+      throw error;
+    } finally {
+      c.release();
+    }
+  }
   // M01-A2S: shops owned by the user, their memberships and the user-scoped onboarding idempotency records.
   await pool.query(
     `DELETE FROM app.idempotency_records
@@ -282,6 +324,12 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
       [normalizedPhone],
     );
   }
+  const ownedShops = await pool.query<{ shop_id: string }>(
+    `SELECT shop_id FROM app.shop_members
+      WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)`,
+    [normalizedPhone],
+  );
+  await purgeShopDisplayCodes(pool, ownedShops.rows.map((row) => row.shop_id));
   // Memberships first, then the shops no member points at any more (a shop of this user has exactly one member).
   await pool.query(
     `WITH owned AS (

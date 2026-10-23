@@ -28,6 +28,17 @@ Future<({SessionController session, FakeApiTransport api, HttpMenuApi menu})> si
 }
 
 void main() {
+  test('GPS resolve parses configured area and explicit outside-coverage null', () async {
+    final FakeApiTransport transport = FakeApiTransport();
+    final HttpDiscoveryApi api = HttpDiscoveryApi(transport: transport, base: base);
+    transport.routes['GET /v1/service-areas/resolve?latitude=22.67&longitude=106.25'] =
+      (_, __, ___, ____) async => json(200, <String, Object?>{'data': <String, Object?>{'service_area_id': 'new-area', 'name': 'Vùng mới'}});
+    expect((await api.resolveArea(22.67, 106.25))?.id, 'new-area');
+    transport.routes['GET /v1/service-areas/resolve?latitude=0.0&longitude=0.0'] =
+      (_, __, ___, ____) async => json(200, <String, Object?>{'data': null});
+    expect(await api.resolveArea(0, 0), isNull);
+  });
+
   test('owner menu: the read is parsed, picture URLs point at the public image route, nothing else is invented', () async {
     final t = await signedIn();
     t.api.routes['GET /v1/shop/me/menu'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{
@@ -94,6 +105,7 @@ void main() {
     api.routes['GET /v1/shops/s1'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{
           'data': <String, Object?>{
             'shop_id': 's1',
+            'logo_url': '/v1/shops/s1/logo?v=3',
             'name': 'Ốc 11',
             'address_text': '12 Phố Kim Đồng',
             'timezone': 'Asia/Ho_Chi_Minh',
@@ -103,7 +115,7 @@ void main() {
               <String, Object?>{
                 'category_id': 'c1',
                 'name': 'Ốc',
-                'items': <Object?>[<String, Object?>{'item_id': 'i1', 'name': 'Ốc hương hấp', 'price_vnd': 120000, 'image_id': 'img-1'}],
+                'items': <Object?>[<String, Object?>{'item_id': 'i1', 'name': 'Ốc hương hấp', 'price_vnd': 120000, 'image_id': 'img-1', 'sold_count': 120}],
               },
             ],
           },
@@ -112,10 +124,12 @@ void main() {
     api.routes['GET /v1/shops/s3'] = (String m, String p, Map<String, String> h, String b) async => apiError(403, 'SHOP_UNAVAILABLE');
     final HttpPublicShopApi shops = HttpPublicShopApi(transport: api, base: base);
     final ShopMenuView view = await shops.load('s1');
+    expect(view.logoUrl, 'https://api.example.test/v1/shops/s1/logo?v=3');
     expect(view.availabilityReason, 'OUTSIDE_BUSINESS_HOURS');
     expect(view.serverNow, DateTime.utc(2026, 10, 14, 11, 30));
     expect(view.hours[0].single.open, '17:00');
     expect(view.categories.single.items.single.imageUrl, 'https://api.example.test/v1/menu-images/img-1');
+    expect(view.categories.single.items.single.soldCount, 120);
     await expectLater(shops.load('s2'), throwsA(isA<AuthFailure>().having((AuthFailure f) => f.code, 'code', 'SHOP_NOT_FOUND')));
     await expectLater(shops.load('s3'), throwsA(isA<AuthFailure>().having((AuthFailure f) => f.code, 'code', 'SHOP_UNAVAILABLE')));
     expect(api.requests.every((RecordedRequest r) => !r.headers.containsKey('authorization')), isTrue);
@@ -124,15 +138,27 @@ void main() {
     api.routes['GET /v1/menu-categories'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <Object?>[<String, Object?>{'category_id': 'c1', 'name': 'Ốc'}]});
     api.routes['GET /v1/discovery/shops?area_id=a1&category_id=c1&open_only=true&q=%E1%BB%91c+h%C6%B0%C6%A1ng&limit=30&offset=30'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{
           'data': <String, Object?>{
-            'shops': <Object?>[<String, Object?>{'shop_id': 's1', 'name': 'Ốc 11', 'address_text': 'x', 'availability': <String, Object?>{'online': true, 'reason': 'ONLINE'}}],
+            'shops': <Object?>[<String, Object?>{'shop_id': 's1', 'name': 'Ốc 11', 'logo_url': '/v1/shops/s1/logo?v=4', 'address_text': 'x', 'availability': <String, Object?>{'online': true, 'reason': 'ONLINE'}}],
             'has_more': true,
           },
         });
     final HttpDiscoveryApi discovery = HttpDiscoveryApi(transport: api, base: base);
+    api.routes['GET /v1/discovery/dishes?area_id=a1&limit=30'] = (m, p, h, b) async => json(200, <String, Object?>{
+      'data': <String, Object?>{'has_more': false, 'dishes': <Object?>[
+        <String, Object?>{'item_id': 'i1', 'name': 'Ốc hương hấp', 'price_vnd': 120000, 'image_id': null, 'sold_count': 120,
+          'shop': <String, Object?>{'shop_id': 's1', 'name': 'Ốc 11', 'address_text': 'x', 'availability': <String, Object?>{'online': true, 'reason': 'ONLINE'}}},
+        <String, Object?>{'item_id': 'i2', 'name': 'Món mới', 'price_vnd': 20000, 'image_id': null,
+          'shop': <String, Object?>{'shop_id': 's1', 'name': 'Ốc 11', 'address_text': 'x', 'availability': <String, Object?>{'online': true, 'reason': 'ONLINE'}}},
+      ]},
+    });
+    final soldDishes = await discovery.dishes(const DiscoveryQuery(areaId: 'a1'));
+    expect(soldDishes.items.first.soldCount, 120);
+    expect(soldDishes.items.last.soldCount, isNull, reason: 'old servers do not supply a count; never invent zero');
     expect((await discovery.areas()).single.name, 'Cao Bằng');
     expect((await discovery.categories()).single.name, 'Ốc');
     final DiscoveryPage<ShopCardData> page = await discovery.shops(const DiscoveryQuery(areaId: 'a1', categoryId: 'c1', openOnly: true, term: ' ốc hương ', offset: 30));
     expect(page.items.single.open, isTrue);
+    expect(page.items.single.logoUrl, 'https://api.example.test/v1/shops/s1/logo?v=4');
     expect(page.hasMore, isTrue);
     api.routes['GET /v1/discovery/dishes?area_id=a1&limit=30'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{
           'data': <String, Object?>{

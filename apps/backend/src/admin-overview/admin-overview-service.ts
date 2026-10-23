@@ -5,7 +5,6 @@ import { setBusinessLockTimeout } from '../admin-provisioning/admin-provisioning
 import { AdminSystemActor } from '../admin-provisioning/admin-system-actor';
 import { AppError } from '../common/app-errors';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
-import { COMMISSION_VND } from '../delivery/delivery-constants';
 import { AdminDeliveryFilter, DeliveryRepository } from '../delivery/delivery-repository';
 import { DriverAdminQueryRepository } from '../driver/driver-admin-query-repository';
 import { DriverBankRepository } from '../driver/driver-bank-repository';
@@ -17,13 +16,16 @@ import { AVAILABLE_BALANCE_PORT, AvailableBalancePort, SHIPPER_LOCATION_PORT, SH
 import { ShopDiscoveryReader } from '../shop/shop-discovery-reader';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
+import { CommissionPolicyRepository } from '../wallet/commission-policy-repository';
+import { FeedbackReportReader } from '../feedback/feedback-report-reader';
+import { OrderReportReader } from '../orders/order-report-reader';
 import { WalletReportReader } from '../wallet/wallet-report-reader';
 import { OverviewQuery } from './admin-overview-validation';
 import { FINANCE_PERMISSION_READ } from '../finance-access/finance-access-constants';
 
 /** A shortcut to the list that makes the number: the web opens `area` with `query`, and the list answers with the same filter (the tile and the list share one definition). */
 interface Link {
-  readonly area: 'deliveries' | 'shippers' | 'finance-topups';
+  readonly area: 'deliveries' | 'shippers' | 'finance-topups' | 'finance-withdrawals' | 'orders' | 'complaints';
   readonly query: Readonly<Record<string, string>>;
 }
 
@@ -83,6 +85,9 @@ export class AdminOverviewService {
     private readonly banks: DriverBankRepository,
     private readonly shops: ShopDiscoveryReader,
     private readonly wallets: WalletReportReader,
+    private readonly commissionPolicy: CommissionPolicyRepository,
+    private readonly orders: OrderReportReader,
+    private readonly feedback: FeedbackReportReader,
     private readonly parameters: EligibilityParametersRepository,
     @Inject(SHIPPER_WORK_PORT) private readonly work: ShipperWorkPort,
     @Inject(SHIPPER_LOCATION_PORT) private readonly locations: ShipperLocationPort,
@@ -120,6 +125,8 @@ export class AdminOverviewService {
     const current = async (group: NonNullable<AdminDeliveryFilter['group']>): Promise<Metric> =>
       this.#metric(seeDeliveries, async (context) => ({ value: await this.deliveries.countForAdmin(context, created(group)), link: { area: 'deliveries', query: { group } } }));
 
+    const ordersCreated = await this.#metric(seeDeliveries, async (context) => ({ value: (await this.orders.summary(context, 'created', period.fromMs, period.toMs)).total, link: { area: 'orders', query: {} } }));
+    const ordersAwaiting = await this.#metric(seeDeliveries, async (context) => ({ value: await this.orders.awaitingConfirmation(context), link: { area: 'orders', query: {} } }));
     const money = await this.#money(rights, period);
     const partners = await this.#partners(rights);
     const todo = await this.#todo(rights, current);
@@ -131,8 +138,11 @@ export class AdminOverviewService {
       groups: {
         orders: {
           scope: 'PERIOD',
-          // M10 (Order) does not exist yet: there is no table to count, so nothing is invented and nothing is 0.
-          metrics: { created: jsonMetric(notReady('M10_ORDER_NOT_CONNECTED')), awaiting_confirmation: jsonMetric(notReady('M10_ORDER_NOT_CONNECTED')) },
+          // Orders (M10) are counted apart from deliveries: a recall is a new delivery and never a new Order.
+          metrics: {
+            created: jsonMetric(ordersCreated),
+            awaiting_confirmation: jsonMetric(ordersAwaiting),
+          },
         },
         deliveries_period: {
           scope: 'PERIOD',
@@ -187,6 +197,7 @@ export class AdminOverviewService {
     const ledger = await this.#metricGroup(allowed, (context) => this.wallets.ledgerPeriod(context, period.fromMs, period.toMs));
     const totals = await this.#metricGroup(allowed, (context) => this.wallets.totals(context));
     const pending = await this.#metricGroup(allowed, (context) => this.wallets.pendingTopups(context));
+    const withdrawals = await this.#metricGroup(allowed, (context) => this.wallets.openWithdrawals(context));
     const pick = <T>(group: { status: Metric['status'] } & { data?: T }, get: (data: T) => Measured): Metric =>
       group.status === 'OK' && group.data !== undefined ? { status: 'OK', ...get(group.data) } : ({ status: group.status } as Metric);
     return {
@@ -194,15 +205,14 @@ export class AdminOverviewService {
         commission_vnd: pick(ledger, (l) => ({ value: l.commissionVnd, detail: { entries: l.commissionEntries } })),
         adjustment_net_vnd: pick(ledger, (l) => ({ value: l.adjustmentNetVnd, detail: { entries: l.adjustmentEntries } })),
         topup_vnd: pick(ledger, (l) => ({ value: l.topupVnd, detail: { entries: l.topupEntries } })),
-        // Withdrawals (M04-C) are not built: the ledger cannot hold a WITHDRAWAL_DEBIT yet, so a 0 here would be a claim about a feature that does not exist.
-        withdrawal_vnd: notReady('M04C_WITHDRAWAL_NOT_CONNECTED'),
+        withdrawal_vnd: pick(ledger, (l) => ({ value: l.withdrawalVnd, detail: { entries: l.withdrawalEntries } })),
       },
       now: {
         wallet_balance_vnd: pick(totals, (t) => ({ value: t.balanceVnd, detail: { wallets: t.wallets } })),
         wallet_held_vnd: pick(totals, (t) => ({ value: t.heldVnd })),
         wallet_available_vnd: pick(totals, (t) => ({ value: t.availableVnd })),
         topup_pending: pick(pending, (p) => ({ value: p.count, detail: { requested_vnd: p.requestedVnd }, link: { area: 'finance-topups', query: { status: 'PENDING' } } })),
-        withdrawal_pending: notReady('M04C_WITHDRAWAL_NOT_CONNECTED'),
+        withdrawal_pending: pick(withdrawals, (w) => ({ value: w.pending, detail: { processing: w.processing, unknown_outcome: w.unknownOutcome }, link: { area: 'finance-withdrawals', query: { status: 'PENDING' } } })),
       },
     };
   }
@@ -230,6 +240,8 @@ export class AdminOverviewService {
         throw new Error('too many accepting shippers to evaluate');
       }
       const params = await this.parameters.read(context);
+      // The balance a Shipper needs for ANY delivery: the commission in force now (M04 owns it; it can change, so it is read here, not assumed).
+      const commission = (await this.commissionPolicy.current(context)).amountVnd;
       let eligible = 0;
       for (const driverId of ids) {
         const driver = await this.drivers.findById(context, driverId);
@@ -251,7 +263,7 @@ export class AdminOverviewService {
         });
         // The verdict is evaluated without a delivery, so the delivery-bound reason is expected; every shipper-level reason still counts, and the balance must cover the commission any delivery needs.
         const shipperReasons = verdict.reasons.filter((reason) => reason !== 'DEPENDENCY_NOT_READY' || open === undefined);
-        if (shipperReasons.length === 0 && available !== undefined && available >= COMMISSION_VND) {
+        if (shipperReasons.length === 0 && available !== undefined && available >= commission) {
           eligible += 1;
         }
       }
@@ -277,15 +289,20 @@ export class AdminOverviewService {
       value: (await this.wallets.pendingTopups(context)).count,
       link: { area: 'finance-topups', query: { status: 'PENDING' } },
     }));
+    const withdrawals = await this.#metric(rights.has(FINANCE_PERMISSION_READ), async (context) => {
+      const open = await this.wallets.openWithdrawals(context);
+      return { value: open.pending, detail: { processing: open.processing, unknown_outcome: open.unknownOutcome }, link: { area: 'finance-withdrawals', query: { status: 'PENDING' } } };
+    });
+    const complaints = await this.#metric(rights.canViewDeliveries, async (context) => ({ value: await this.feedback.unhandledComplaints(context), link: { area: 'complaints', query: {} } }));
     return {
       shipper_profiles_pending: shipperProfiles,
       // M02 has no review step for a shop profile (a shop becomes ACTIVE when its owner completes onboarding): there is nothing waiting for approval.
       shop_profiles_pending: notReady('M02_NO_SHOP_REVIEW_FLOW'),
       topups_pending: topups,
-      withdrawals_pending: notReady('M04C_WITHDRAWAL_NOT_CONNECTED'),
+      withdrawals_pending: withdrawals,
       deliveries_stopped: stopped,
       custody_open: custody,
-      complaints_unhandled: notReady('M11_FEEDBACK_NOT_CONNECTED'),
+      complaints_unhandled: complaints,
     };
   }
 }

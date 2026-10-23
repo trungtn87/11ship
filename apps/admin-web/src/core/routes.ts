@@ -5,6 +5,7 @@
 import { DELIVERY_GROUPS } from './deliveries.js';
 import { TOPUP_TABS, TopupTab, WITHDRAWAL_TABS, WithdrawalTab } from './finance.js';
 import { TopupFilter, TOPUP_FILTERS } from './finance-admin.js';
+import { WithdrawalFilterOps, WITHDRAWAL_FILTERS } from './finance-ops.js';
 import { InvitationStatus, INVITATION_STATUSES, isUuid } from './provisioning-api.js';
 import { SHIPPER_FILTERS, ShipperFilter } from './shippers.js';
 
@@ -26,18 +27,25 @@ export type Route =
   | { readonly name: 'shipper'; readonly id: string }
   | { readonly name: 'deliveries'; readonly filter?: DeliveryRouteFilter }
   | { readonly name: 'overview' }
+  | { readonly name: 'orders' }
   | { readonly name: 'notifications' }
+  // M11.03: ratings and complaints.
+  | { readonly name: 'reviews' }
+  | { readonly name: 'complaints' }
   | { readonly name: 'wallet-parameters' }
   | { readonly name: 'shipping-policy' }
   | { readonly name: 'settings' }
   | { readonly name: 'config' }
+  | { readonly name: 'reports' }
+  | { readonly name: 'order-timeouts' }
+  | { readonly name: 'monitoring-errors' }
   // M04 (UI phase): "Tài chính" and the wallet parameters ("Cài đặt › Tham số hệ thống › Ví Shipper").
   | { readonly name: 'finance' }
   | { readonly name: 'finance-wallets' }
   | { readonly name: 'finance-topups'; readonly tab?: TopupTab; readonly status?: TopupFilter }
   | { readonly name: 'finance-bank-accounts' }
   | { readonly name: 'finance-topup'; readonly id: string }
-  | { readonly name: 'finance-withdrawals'; readonly tab?: WithdrawalTab }
+  | { readonly name: 'finance-withdrawals'; readonly tab?: WithdrawalTab; readonly status?: WithdrawalFilterOps }
   | { readonly name: 'finance-withdrawal'; readonly id: string }
   | { readonly name: 'finance-transactions'; readonly shipper?: string }
   | { readonly name: 'finance-reconciliation' }
@@ -105,9 +113,14 @@ export function parseRoute(pathname: string, search = ''): Route {
   if (path === '/catalog/categories') {
     return { name: 'categories' };
   }
+  if (path === '/reports') {
+    return { name: 'reports' };
+  }
   if (path === '/system/config') {
     return { name: 'config' };
   }
+  if (path === '/system/settings/order-timeouts') return { name: 'order-timeouts' };
+  if (path === '/system/monitoring/errors') return { name: 'monitoring-errors' };
   if (path === '/system/settings') {
     return { name: 'settings' };
   }
@@ -120,12 +133,21 @@ export function parseRoute(pathname: string, search = ''): Route {
   if (path === '/overview') {
     return { name: 'overview' };
   }
+  if (path === '/operations/orders') {
+    return { name: 'orders' };
+  }
   if (path === '/operations/deliveries') {
     const filter = deliveryFilter(search);
     return filter === undefined ? { name: 'deliveries' } : { name: 'deliveries', filter };
   }
   if (path === '/operations/notifications') {
     return { name: 'notifications' };
+  }
+  if (path === '/operations/reviews') {
+    return { name: 'reviews' };
+  }
+  if (path === '/operations/complaints') {
+    return { name: 'complaints' };
   }
   if (path === '/operations/shippers') {
     const status = new URLSearchParams(search).get('status');
@@ -192,7 +214,12 @@ function parseFinanceRoute(path: string, search: string): Route | undefined {
       return tab !== null && (TOPUP_TABS as readonly string[]).includes(tab) ? { name: 'finance-topups', tab: tab as TopupTab } : { name: 'finance-topups' };
     }
     case '/finance/withdrawals': {
-      const tab = new URLSearchParams(search).get('tab');
+      const params = new URLSearchParams(search);
+      const status = params.get('status');
+      if (status !== null && (WITHDRAWAL_FILTERS as readonly string[]).includes(status)) {
+        return { name: 'finance-withdrawals', status: status as WithdrawalFilterOps };
+      }
+      const tab = params.get('tab');
       return tab !== null && (WITHDRAWAL_TABS as readonly string[]).includes(tab) ? { name: 'finance-withdrawals', tab: tab as WithdrawalTab } : { name: 'finance-withdrawals' };
     }
   }
@@ -211,7 +238,7 @@ function parseFinanceRoute(path: string, search: string): Route | undefined {
  * Where a figure of the overview leads: only the closed set of areas the server may name, and each filter is re-checked by the route parser (an unknown
  * or malformed value is dropped, never passed on). The list the link opens answers with the same filter the number was counted with.
  */
-export function routeOfLink(area: 'deliveries' | 'shippers' | 'finance-topups', query: Readonly<Record<string, string>>): Route {
+export function routeOfLink(area: 'deliveries' | 'shippers' | 'finance-topups' | 'finance-withdrawals' | 'orders' | 'complaints', query: Readonly<Record<string, string>>): Route {
   const search = new URLSearchParams(query as Record<string, string>).toString();
   const suffix = search === '' ? '' : `?${search}`;
   switch (area) {
@@ -221,6 +248,12 @@ export function routeOfLink(area: 'deliveries' | 'shippers' | 'finance-topups', 
       return parseRoute('/operations/shippers', suffix);
     case 'finance-topups':
       return parseRoute('/finance/topups', suffix);
+    case 'finance-withdrawals':
+      return parseRoute('/finance/withdrawals', suffix);
+    case 'orders':
+      return parseRoute('/operations/orders', suffix);
+    case 'complaints':
+      return parseRoute('/operations/complaints', suffix);
   }
 }
 
@@ -242,10 +275,16 @@ export function formatRoute(route: Route): string {
       return '/accounts/access';
     case 'categories':
       return '/catalog/categories';
+    case 'order-timeouts':
+      return '/system/settings/order-timeouts';
     case 'settings':
       return '/system/settings';
+    case 'reports':
+      return '/reports';
     case 'config':
       return '/system/config';
+    case 'monitoring-errors':
+      return '/system/monitoring/errors';
     case 'wallet-parameters':
       return '/system/parameters/shipper-wallet';
     case 'shipping-policy':
@@ -260,8 +299,14 @@ export function formatRoute(route: Route): string {
       const entries = Object.entries(route.filter ?? {}).filter(([, value]) => value !== undefined) as Array<[string, string]>;
       return entries.length === 0 ? '/operations/deliveries' : `/operations/deliveries?${new URLSearchParams(entries).toString()}`;
     }
+    case 'orders':
+      return '/operations/orders';
     case 'notifications':
       return '/operations/notifications';
+    case 'reviews':
+      return '/operations/reviews';
+    case 'complaints':
+      return '/operations/complaints';
     case 'finance':
       return '/finance';
     case 'finance-wallets':
@@ -273,7 +318,7 @@ export function formatRoute(route: Route): string {
     case 'finance-topup':
       return `/finance/topups/${route.id}`;
     case 'finance-withdrawals':
-      return route.tab === undefined ? '/finance/withdrawals' : `/finance/withdrawals?tab=${route.tab}`;
+      return route.status !== undefined ? `/finance/withdrawals?status=${route.status}` : route.tab === undefined ? '/finance/withdrawals' : `/finance/withdrawals?tab=${route.tab}`;
     case 'finance-withdrawal':
       return `/finance/withdrawals/${route.id}`;
     case 'finance-transactions':

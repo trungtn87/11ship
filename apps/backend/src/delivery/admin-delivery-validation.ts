@@ -19,11 +19,11 @@ const REASON_MAX_CODEPOINTS = 500;
 /** Vietnam is UTC+7: a date typed by an administrator is a day of that clock. */
 const VIETNAM_OFFSET_MS = 7 * 3_600_000;
 
-function invalid(): never {
+export function invalid(): never {
   throw new AppError('ADMIN_INPUT_INVALID');
 }
 
-function plainObject(value: unknown): Record<string, unknown> {
+export function plainObject(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return invalid();
   }
@@ -34,7 +34,7 @@ function plainObject(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function onlyKeys(source: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []): void {
+export function onlyKeys(source: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []): void {
   for (const key of required) {
     if (!Object.hasOwn(source, key)) {
       invalid();
@@ -59,7 +59,7 @@ export function parseNoQuery(query: unknown): void {
   onlyKeys(plainObject(query), []);
 }
 
-function queryText(source: Record<string, unknown>, key: string, max: number): string {
+export function queryText(source: Record<string, unknown>, key: string, max: number): string {
   if (!Object.hasOwn(source, key)) {
     return '';
   }
@@ -74,7 +74,7 @@ function queryText(source: Record<string, unknown>, key: string, max: number): s
   return trimmed;
 }
 
-function integerParam(source: Record<string, unknown>, key: string, fallback: number, min: number, max: number): number {
+export function integerParam(source: Record<string, unknown>, key: string, fallback: number, min: number, max: number): number {
   if (!Object.hasOwn(source, key)) {
     return fallback;
   }
@@ -87,7 +87,7 @@ function integerParam(source: Record<string, unknown>, key: string, fallback: nu
 }
 
 /** `YYYY-MM-DD` as the start of that day in Vietnam time (epoch ms); undefined when absent. */
-function dayStart(source: Record<string, unknown>, key: string): number | null {
+export function dayStart(source: Record<string, unknown>, key: string): number | null {
   const text = queryText(source, key, 10);
   if (text === '') {
     return null;

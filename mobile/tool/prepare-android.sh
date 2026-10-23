@@ -57,10 +57,8 @@ grep -Eq 'applicationId\s*=?\s*"vn\.eleven\.'"$app"'"' "$gradle" || { echo "appl
 sed -i -E 's/(applicationId\s*=?\s*)"vn\.eleven\.'"$app"'"/\1"'"$app_id"'"/' "$gradle"
 grep -q "\"$app_id\"" "$gradle"
 
-# Shared M14 native library uses Android 8+. Food remains on its existing minimum.
-if [ "$app" = ship ]; then
-  sed -i -E 's/minSdk = flutter.minSdkVersion/minSdk = 26/; s/minSdkVersion flutter.minSdkVersion/minSdkVersion 26/' "$gradle"
-fi
+# The shared M14 native libraries (the map-only one in both apps, the recorder in Ship) use Android 8+ (API 26): both apps now carry the M14 map.
+sed -i -E 's/minSdk = flutter.minSdkVersion/minSdk = 26/; s/minSdkVersion flutter.minSdkVersion/minSdkVersion 26/' "$gradle"
 res="$dest/app/src/main/res"
 rm -rf "$res/drawable-v21" "$res/values-night" "$res/mipmap-hdpi/ic_launcher.webp" 2>/dev/null || true
 find "$res" -name 'ic_launcher*' -delete
@@ -123,15 +121,18 @@ find "$kt" -name MainActivity.kt -delete
 main_template="MainActivity.kt"
 if [ "$app" = food ]; then
   main_template="MainActivityFood.kt"
-  cp "$here/android-templates/kotlin/N11LocationChannel.kt" "$kt/vn/eleven/n11/N11LocationChannel.kt"
+  mkdir -p "$kt/vn/eleven/m14/gps"
+  cp "$here/../gps-test/gps/src/main/java/vn/eleven/m14/gps/FreshLocationRequest.kt" "$kt/vn/eleven/m14/gps/FreshLocationRequest.kt"
 fi
+cp "$here/android-templates/kotlin/N11LocationChannel.kt" "$kt/vn/eleven/n11/N11LocationChannel.kt"
 sed "s/@APP_PACKAGE@/vn.eleven.$app/" "$here/android-templates/kotlin/$main_template" > "$kt/vn/eleven/$app/MainActivity.kt"
 # JVM unit test of the Binder join rules (no device needed), run by `./gradlew :app:testDebugUnitTest` in CI.
 mkdir -p "$dest/app/src/test/kotlin/vn/eleven/n11"
 cp "$here/android-templates/kotlin-test/N11PeerPolicyTest.kt" "$dest/app/src/test/kotlin/vn/eleven/n11/N11PeerPolicyTest.kt"
+cp "$here/android-templates/kotlin-test/FreshLocationRequestTest.kt" "$dest/app/src/test/kotlin/vn/eleven/n11/FreshLocationRequestTest.kt"
 case "$gradle" in
-  *.kts) printf '\ndependencies {\n    testImplementation("junit:junit:4.13.2")\n}\n' >> "$gradle" ;;
-  *) printf "\ndependencies {\n    testImplementation 'junit:junit:4.13.2'\n}\n" >> "$gradle" ;;
+  *.kts) printf '\ndependencies {\n    testImplementation("junit:junit:4.13.2")\n    testImplementation("org.mockito:mockito-core:5.14.2")\n}\n' >> "$gradle" ;;
+  *) printf "\ndependencies {\n    testImplementation 'junit:junit:4.13.2'\n    testImplementation 'org.mockito:mockito-core:5.14.2'\n}\n" >> "$gradle" ;;
 esac
 if [ "$push" = on ]; then
   # FCM client library only; no Google Services Gradle plugin (the client identifiers are given above), so nothing else changes in the Gradle build.
@@ -142,5 +143,9 @@ if [ "$push" = on ]; then
 fi
 rm -rf "$dest/app/src/debug" "$dest/app/src/profile" 2>/dev/null || true
 # keep debug/profile manifests out: the permissions are declared in the main manifest only
+
+# flutter create ran in a temporary empty project. Regenerate plugin wiring in the real app
+# before a direct Gradle unit-test invocation, not only later inside `flutter build apk`.
+(cd "$root/$app" && flutter pub get --offline)
 
 echo "prepared $dest ($app_id) push=$push"

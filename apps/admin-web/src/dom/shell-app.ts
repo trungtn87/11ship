@@ -32,11 +32,12 @@ import {
   SettingsSource,
   SettingsState,
 } from '../core/settings.js';
-import { routeOfLink, formatRoute, parseRoute, Route } from '../core/routes.js';
+import { formatRoute, parseRoute, Route, routeOfLink } from '../core/routes.js';
 import { AccountsHooks, AdministratorsView, openLockDialog, renderUserDetail, UsersView } from './accounts-view.js';
 import { DialogHandle } from './dialog.js';
 import { h } from './dom.js';
 import { ProvisioningView } from './provisioning-view.js';
+import { orderTimeoutsPage } from './order-timeouts-page.js';
 import { SettingsView } from './settings-view.js';
 import { NOT_WIRED_CATALOG, CatalogSource } from '../core/catalog.js';
 import { CatalogController } from '../core/catalog-controller.js';
@@ -52,14 +53,23 @@ import { AccessSource, NOT_WIRED_ACCESS } from '../core/access.js';
 import { AccessHost, AccessView } from './access-view.js';
 import { ConfigSource, NOT_WIRED_CONFIG } from '../core/config.js';
 import { ConfigHost, ConfigView } from './config-view.js';
+import { NOT_WIRED_REPORTS, ReportSource } from '../core/reports.js';
+import { ReportsHost, ReportsView } from './reports-view.js';
+import { FeedbackSource, NOT_WIRED_FEEDBACK } from '../core/feedback.js';
+import { ComplaintListView, FeedbackHost, ReviewListView } from './feedback-view.js';
 import { DeliveryHost, DeliveryListView } from './deliveries-view.js';
+import { NOT_WIRED_ORDERS, OrderSource } from '../core/orders.js';
+import { OrderHost, OrderListView } from './orders-view.js';
 import { NOT_WIRED_NOTIFICATIONS, NotificationSource } from '../core/notifications.js';
 import { NotificationHost, NotificationsView } from './notifications-view.js';
 import { FinanceController, isFinanceRoute } from '../core/finance-controller.js';
 import { FinanceSource, NOT_WIRED_FINANCE } from '../core/finance.js';
 import { FinanceView } from './finance-view.js';
 import { FinanceAdminSource, FinanceRights, NO_FINANCE_RIGHTS, NOT_WIRED_FINANCE_ADMIN, TopupFilter } from '../core/finance-admin.js';
+import { FinanceOpsSource, NOT_WIRED_FINANCE_OPS } from '../core/finance-ops.js';
+import { FinanceOpsHost, OpsOverviewView, ReconciliationPageView, TransactionsView, WalletListView, WithdrawalDetailView, WithdrawalListView } from './finance-ops-view.js';
 import { BankAccountsView, FinanceAdminHost, FINANCE_RECORD_REQUIRES_READ, openFinanceAccessDialog, TopupDetailView, TopupListView } from './finance-admin-view.js';
+import { ErrorLogView } from './monitoring-errors-view.js';
 import { statePanel } from './states.js';
 import { ShellLayout } from './shell-layout.js';
 import { failurePanel, skeleton } from './states.js';
@@ -105,6 +115,7 @@ export class ShellApp implements ShellHost {
   #financeRights: FinanceRights = NO_FINANCE_RIGHTS;
   #financeLoaded = false;
   #financeDialog: { close(): void } | undefined;
+  #errorLogView: ErrorLogView | undefined;
   #roles: readonly UserRole[] = [];
   #grantsState: GrantsState = { kind: 'loading' };
   /** The users filter, kept only so "Back" from a detail returns to the same list. Dropped with the shell. */
@@ -139,12 +150,22 @@ export class ShellApp implements ShellHost {
     private readonly deliveries: DeliverySource = NOT_WIRED_DELIVERIES,
     /** Where the REAL finance pages (M04-B3a: top-up requests, receiving accounts, finance rights) come from. By default nothing is wired and no page shows data. */
     private readonly financeAdmin: FinanceAdminSource = NOT_WIRED_FINANCE_ADMIN,
+    /** Where the operating finance pages (M04-C: overview, wallets, withdrawals, transactions, reconciliation, commission) come from. By default nothing is wired and the earlier not-wired pages are shown. */
+    /** Where the operating finance pages (M04-C: overview, wallets, withdrawals, transactions, reconciliation, commission) come from. By default nothing is wired and the earlier not-wired pages are shown. */
+    /** Where the food orders (Vận hành › Đơn hàng, M10.05) come from. By default nothing is wired, so the page says so. */
+    private readonly orders: OrderSource = NOT_WIRED_ORDERS,
+    /** Where the ratings and complaints (Vận hành › Đánh giá / Phản ánh, M11.03) come from. By default nothing is wired, so the pages say so. */
+    private readonly feedback: FeedbackSource = NOT_WIRED_FEEDBACK,
+    private readonly financeOps: FinanceOpsSource = NOT_WIRED_FINANCE_OPS,
+    private readonly sessionCsrf: () => string | undefined = () => undefined,
     /** Where the overview figures (Tổng quan › Điều hành, M12-A) come from. By default nothing is wired, so the page says so. */
     private readonly overview: OverviewSource = NOT_WIRED_OVERVIEW,
     /** Where the administrator permission matrix (Tài khoản › Phân quyền, M12-C) comes from. By default nothing is wired, so the page says so. */
     private readonly access: AccessSource = NOT_WIRED_ACCESS,
     /** Where the central configuration (Cài đặt › Cấu hình tập trung, M12-D) comes from. By default nothing is wired, so the page says so. */
     private readonly config: ConfigSource = NOT_WIRED_CONFIG,
+    /** Where the reports and their CSV/Excel exports (Tổng quan › Báo cáo, M12-E) come from. By default nothing is wired, so the page says so. */
+    private readonly reports: ReportSource = NOT_WIRED_REPORTS,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -238,7 +259,13 @@ export class ShellApp implements ShellHost {
         return;
       }
       const next = read.kind === 'ready' ? read.data : NO_FINANCE_RIGHTS;
-      const changed = !this.#financeLoaded || next.canRead !== this.#financeRights.canRead || next.canRecord !== this.#financeRights.canRecord;
+      const changed =
+        !this.#financeLoaded ||
+        next.canRead !== this.#financeRights.canRead ||
+        next.canRecord !== this.#financeRights.canRecord ||
+        next.canProcess !== this.#financeRights.canProcess ||
+        next.canConfirm !== this.#financeRights.canConfirm ||
+        next.canReconcile !== this.#financeRights.canReconcile;
       this.#financeRights = next;
       this.#financeLoaded = true;
       if (!changed) {
@@ -247,7 +274,7 @@ export class ShellApp implements ShellHost {
       // Only a money page depends on these rights. Anywhere else just the menu is redrawn: redrawing the whole page would wipe a form the
       // administrator has already started to fill when the answer arrives late.
       const route = parseRoute(this.history.pathname(), this.history.search());
-      if (route.name === 'finance-topups' || route.name === 'finance-topup' || route.name === 'finance-bank-accounts') {
+      if (route.name === 'finance-topups' || route.name === 'finance-topup' || route.name === 'finance-bank-accounts' || route.name.startsWith('finance')) {
         this.#apply();
       } else if (this.#layout !== undefined && this.#role !== undefined) {
         this.#layout.render({ role: this.#role, grants: this.#effectiveGrants(), route, navigate: (next) => this.go(next) });
@@ -257,14 +284,17 @@ export class ShellApp implements ShellHost {
 
   /** What the shell may show: the application grants plus the finance READ right (never inferred from the application rights). */
   #effectiveGrants(): Grants {
-    return this.#financeRights.canRead ? new Set([...this.#grants, 'topups' as const]) : this.#grants;
+    // The finance READ right opens every finance page (the actions on them need their own rights, which the server asks again).
+    return this.#financeRights.canRead ? new Set([...this.#grants, 'topups' as const, 'driver-wallets' as const, 'withdrawals' as const]) : this.#grants;
   }
 
   #rights(): FinanceRights {
-    return this.#role === 'SYSTEM' ? { role: 'SYSTEM', implicit: true, canRead: true, canRecord: true } : this.#financeRights;
+    return this.#role === 'SYSTEM' ? { role: 'SYSTEM', implicit: true, canRead: true, canRecord: true, canProcess: true, canConfirm: true, canReconcile: true } : this.#financeRights;
   }
 
   #teardown(): void {
+    this.#errorLogView?.dispose();
+    this.#errorLogView = undefined;
     this.#financeDialog?.close();
     this.#financeDialog = undefined;
     this.#generation += 1;
@@ -312,7 +342,7 @@ export class ShellApp implements ShellHost {
       );
       return;
     }
-    const moneyRoute = route.name === 'finance-topups' || route.name === 'finance-topup';
+    const moneyRoute = route.name.startsWith('finance') && route.name !== 'finance-bank-accounts';
     if (moneyRoute && role === 'ADMIN' && !this.#financeLoaded) {
       content.replaceChildren(h('section', { class: 'content content-narrow', 'aria-busy': 'true' }, skeleton()));
       return;
@@ -340,6 +370,15 @@ export class ShellApp implements ShellHost {
       case 'administrators':
         this.#administrators(content);
         return;
+      case 'order-timeouts':
+        orderTimeoutsPage(content,this.sessionCsrf,this.onSessionLost);
+        break;
+      case 'monitoring-errors': {
+        const view = new ErrorLogView(this.onSessionLost);
+        this.#errorLogView = view;
+        content.replaceChildren(view.root);
+        return;
+      }
       case 'settings':
         this.#settings(content);
         return;
@@ -379,8 +418,20 @@ export class ShellApp implements ShellHost {
       case 'config':
         this.#configPage(content);
         return;
+      case 'reports':
+        this.#reportsPage(content);
+        return;
+      case 'orders':
+        this.#orderList(content);
+        return;
       case 'notifications':
         this.#notificationPage(content);
+        return;
+      case 'reviews':
+        this.#feedbackPage(content, 'reviews');
+        return;
+      case 'complaints':
+        this.#feedbackPage(content, 'complaints');
         return;
       case 'finance':
       case 'finance-wallets':
@@ -388,6 +439,13 @@ export class ShellApp implements ShellHost {
       case 'finance-withdrawal':
       case 'finance-transactions':
       case 'finance-reconciliation':
+        if (this.financeOps !== NOT_WIRED_FINANCE_OPS) {
+          this.#financeOpsPage(content, route);
+          return;
+        }
+        // Not wired (design preview or a build without the finance routes): the earlier pages that say so and draw no data.
+        this.#financePage(content, route);
+        return;
       case 'wallet-params':
         this.#financePage(content, route);
         return;
@@ -893,6 +951,26 @@ export class ShellApp implements ShellHost {
     void view.load();
   }
 
+  /** "Tổng quan › Báo cáo" (M12-E): the server decides every read, export and download; a number that counts deliveries opens the list with the same filter. */
+  #reportsPage(content: HTMLElement): void {
+    const host: ReportsHost = {
+      source: this.reports,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      openDeliveries: (query) => this.go(routeOfLink('deliveries', query)),
+    };
+    const view = new ReportsView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
   /** "Cài đặt › Cấu hình tập trung" (M12-D): every administrator reads; SYSTEM changes through the owners' own commands. */
   #configPage(content: HTMLElement): void {
     const host: ConfigHost = {
@@ -947,6 +1025,44 @@ export class ShellApp implements ShellHost {
       open: (link) => this.go(routeOfLink(link.area, link.query)),
     };
     const view = new OverviewView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Vận hành › Đơn hàng" (M10.05): filters, list and the detail drawer; the server decides every read and action. */
+  #orderList(content: HTMLElement): void {
+    const host: OrderHost = {
+      source: this.orders,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    };
+    const view = new OrderListView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Vận hành › Đánh giá" and "Vận hành › Phản ánh" (M11.03): the lists, the detail drawers and the actions; the server decides every read and action. */
+  #feedbackPage(content: HTMLElement, page: 'reviews' | 'complaints'): void {
+    const host: FeedbackHost = {
+      source: this.feedback,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    };
+    const view = page === 'reviews' ? new ReviewListView(content, host) : new ComplaintListView(content, host);
     this.#unsubscribe = () => view.dispose();
     void view.load();
   }
@@ -1044,6 +1160,43 @@ export class ShellApp implements ShellHost {
     };
     view.render(controller.screen);
     controller.load();
+  }
+
+  /** What the operating finance pages (M04-C) need from the shell. 401 ends the session; 403 re-reads the rights (and so redraws what is still allowed). */
+  #financeOpsHost(): FinanceOpsHost {
+    const { source, ...rest } = this.#financeHost();
+    void source;
+    return { ...rest, ops: this.financeOps };
+  }
+
+  /** "Tài chính": overview, Shipper wallets, withdrawals, transactions and reconciliation, from the server (M04-C). */
+  #financeOpsPage(content: HTMLElement, route: Route): void {
+    const host = this.#financeOpsHost();
+    let view: { load(): Promise<void>; dispose(): void };
+    switch (route.name) {
+      case 'finance':
+        view = new OpsOverviewView(content, host);
+        break;
+      case 'finance-wallets':
+        view = new WalletListView(content, host);
+        break;
+      case 'finance-withdrawals':
+        view = new WithdrawalListView(content, host, route.status ?? (route.tab === undefined ? 'PENDING' : route.tab === 'COMPLETED' ? 'PAID' : route.tab === 'NEEDS_RECONCILE' ? 'RECONCILIATION' : route.tab));
+        break;
+      case 'finance-withdrawal':
+        view = new WithdrawalDetailView(content, host, route.id);
+        break;
+      case 'finance-transactions':
+        view = new TransactionsView(content, host, route.shipper ?? null);
+        break;
+      case 'finance-reconciliation':
+        view = new ReconciliationPageView(content, host);
+        break;
+      default:
+        return;
+    }
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
   }
 
   /**

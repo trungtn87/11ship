@@ -18,10 +18,6 @@ on:
         description: 'Server origin the APKs talk to (https only). Empty = config/endpoints.json (the VPS).'
         required: false
         default: ''
-      m14_offline_map:
-        description: 'Enable the integrated Cao Bang offline map in 11Ship (no automatic GPS).'
-        type: boolean
-        default: false
   pull_request:
     paths:
       - 'mobile/**'
@@ -150,6 +146,11 @@ jobs:
               echo "::error title=tests failed in $d::$(grep -E -A1 'Which:|\[E\]' "$RUNNER_TEMP/t.log" | head -24 | tr '\n' '|' | head -c 4000)"; exit 1; }
           done
 
+      - name: 11Ship home with offline map enabled
+        if: matrix.app == 'ship'
+        working-directory: mobile/ship
+        run: flutter test test/home_map_test.dart --dart-define=M14_OFFLINE_MAP=true --reporter expanded
+
       - name: Render 11Ship M01 UI for review
         if: matrix.app == 'ship'
         working-directory: mobile/ship
@@ -164,6 +165,28 @@ jobs:
           name: 11Ship-m01-ui-widget-renders
           path: ${{ runner.temp }}/ship-m01-ui/*.png
           if-no-files-found: ignore
+
+      - name: Render 11Food M10 order screens for review
+        if: matrix.app == 'food'
+        working-directory: mobile/food
+        env:
+          N11_SCREENSHOTS: ${{ runner.temp }}/food-m10-ui
+        run: flutter test test/m10_screenshots_test.dart --reporter expanded
+
+      - name: Upload 11Food M10 widget renders (sample data, not device acceptance)
+        if: always() && matrix.app == 'food'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 11Food-m10-ui-widget-renders
+          path: ${{ runner.temp }}/food-m10-ui/*.png
+          if-no-files-found: ignore
+
+      - name: M14 map-only package contracts
+        working-directory: mobile/packages/n11_m14_map
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
 
       - name: M14 Flutter bridge contracts
         if: matrix.app == 'ship'
@@ -194,6 +217,34 @@ jobs:
           ./gradlew --no-daemon :app:testDebugUnitTest 2>&1 | tee "$RUNNER_TEMP/gradle-test.log" || {
             echo "::error title=native unit tests failed::$(grep -E 'FAILED|error:|e: ' "$RUNNER_TEMP/gradle-test.log" | head -12 | tr '\n' '|' | head -c 2500)"; exit 1; }
 
+      # The map flag is set only when the Cao Bang package is really in the tree and every file it lists matches its recorded SHA-256, so an APK never
+      # turns the map on without the asset. Both apps enable the offline map when the package is complete; GPS is independent.
+      - name: M14 map flag
+        id: m14
+        run: |
+          set -euo pipefail
+          flag=false
+            if python3 - <<'PYCODE'
+          import hashlib, json, os, sys
+          root = 'mobile/gps-test/app/src/main/assets/caobang'
+          try:
+              manifest = json.load(open(os.path.join(root, 'manifest.json')))
+              files = manifest['sha256']
+              for name in ('map.geojson', 'style.json'):
+                  assert name in files, name + ' missing checksum'
+                  assert os.path.isfile(os.path.join(root, name)), name + ' missing'
+              for name, digest in files.items():
+                  path = os.path.join(root, name)
+                  assert os.path.isfile(path), name + ' missing'
+                  assert hashlib.sha256(open(path, 'rb').read()).hexdigest() == digest, name + ' differs from the manifest'
+          except Exception as error:
+              print('::warning title=M14 map not enabled::' + str(error))
+              sys.exit(1)
+          PYCODE
+            then flag=true; else echo "::warning title=M14 map off for ${{ matrix.app }}::the Cao Bang package is missing or does not match its manifest; the app is built without the map"; fi
+          echo "flag=$flag" >> "$GITHUB_OUTPUT"
+          echo "M14_OFFLINE_MAP for ${{ matrix.app }}: $flag"
+
       - name: Build release APK
         run: |
           version="$(sed -n 's/^version: *\([0-9.]*\)+.*/\1/p' mobile/${{ matrix.app }}/pubspec.yaml)"
@@ -201,7 +252,7 @@ jobs:
           fv="$(flutter --version --machine | python3 -c 'import json,sys; print(json.load(sys.stdin)["frameworkVersion"])' 2>/dev/null)" || fv=unknown
           flutter build apk --release \
             --build-name="$version" --build-number="${{ github.run_number }}" \
-            --dart-define=M14_OFFLINE_MAP="${{ matrix.app == 'ship' && inputs.m14_offline_map || false }}" \
+            --dart-define=M14_OFFLINE_MAP="${{ steps.m14.outputs.flag }}" \
             --dart-define=API_BASE_URL="$API_BASE_URL" \
             --dart-define=APP_ID="${{ matrix.app_id }}" \
             --dart-define=APP_VERSION="$version" \
@@ -221,15 +272,45 @@ jobs:
           "$bt/aapt2" dump badging mobile/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk > "$RUNNER_TEMP/unsigned-badging.txt"
           mobile/tool/check-apk-permissions.sh ${{ matrix.app }} "$RUNNER_TEMP/unsigned-badging.txt"
 
+      # 11Food carries the map only: no recorder, no foreground-service permission (the allowlist above already refuses it), no routing client. The size
+      # the map adds is the Cao Bang package plus the MapLibre native libraries; both are measured on the built APK and printed in the job summary.
+      - name: 11Food is map-only and the map size is measured
+        if: matrix.app == 'food'
+        run: |
+          python3 - <<'PYCODE'
+          import os, zipfile
+          path = 'mobile/food/build/app/outputs/flutter-apk/app-release.apk'
+          with zipfile.ZipFile(path) as apk:
+              dex = b''.join(apk.read(n) for n in apk.namelist() if n.endswith('.dex'))
+              assert b'Lvn/eleven/m14/gps/RecorderService;' not in dex, 'the GPS recorder leaked into 11Food'
+              assert b'Lvn/eleven/m14/routing/' not in dex, 'the routing client leaked into 11Food'
+              assert b'Lvn/eleven/m14/history/' not in dex, 'test history leaked into 11Food'
+              names = apk.namelist()
+              flag = '${{ steps.m14.outputs.flag }}' == 'true'
+              if flag:
+                  assert 'assets/caobang/manifest.json' in names, 'the map is on but the Cao Bang package is not in the APK'
+              assets = sum(i.compress_size for i in apk.infolist() if i.filename.startswith('assets/caobang/'))
+              native = sum(i.compress_size for i in apk.infolist() if i.filename.startswith('lib/') and 'maplibre' in i.filename.lower())
+              total = os.path.getsize(path)
+          line = f'11Food map size: APK {total} B; Cao Bang package {assets} B; MapLibre native libs {native} B; map adds about {assets + native} B (compressed)'
+          print(line)
+          open(os.environ['GITHUB_STEP_SUMMARY'], 'a').write('- ' + line + '\n')
+          PYCODE
+
       - name: Official M14 excludes test history
         if: matrix.app == 'ship'
         run: |
           python3 - <<'PYCODE'
-          import zipfile
+          import hashlib, json, zipfile
           with zipfile.ZipFile('mobile/ship/build/app/outputs/flutter-apk/app-release.apk') as apk:
               dex = b''.join(apk.read(n) for n in apk.namelist() if n.endswith('.dex'))
               assert b'Lvn/eleven/m14/history/' not in dex, 'Test history leaked into official Ship'
               assert 'assets/caobang/manifest.json' in apk.namelist()
+              manifest = json.loads(apk.read('assets/caobang/manifest.json'))
+              for name, digest in manifest['sha256'].items():
+                  assert hashlib.sha256(apk.read('assets/caobang/' + name)).hexdigest() == digest, name
+              assert '${{ steps.m14.outputs.flag }}' == 'true', 'Ship must enable the verified offline package'
+              print('11Ship APK: offline map enabled; every Cao Bang asset checksum verified')
           PYCODE
 
       - name: Sign and verify

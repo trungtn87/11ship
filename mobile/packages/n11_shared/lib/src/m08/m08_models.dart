@@ -11,7 +11,7 @@ NotificationCategory _category(String value) => switch (value) {
       _ => throw const FormatException('category'),
     };
 
-enum TargetType { order, delivery, walletTxn, profile, deliveryList, none }
+enum TargetType { order, delivery, walletTxn, profile, deliveryList, complaint, none }
 
 TargetType _target(String value) => switch (value) {
       'ORDER' => TargetType.order,
@@ -19,6 +19,7 @@ TargetType _target(String value) => switch (value) {
       'WALLET_TXN' => TargetType.walletTxn,
       'PROFILE' => TargetType.profile,
       'DELIVERY_LIST' => TargetType.deliveryList,
+      'COMPLAINT' => TargetType.complaint,
       'NONE' => TargetType.none,
       _ => throw const FormatException('target'),
     };

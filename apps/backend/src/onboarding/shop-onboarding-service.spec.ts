@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { parseShopLogo } from '../shop/shop-logo';
+import { LOGICAL_REQUEST_POLICY } from '../shared/json/json-policy';
+import { validateJson } from '../shared/json/safe-json';
 import { describe, expect, it } from '@jest/globals';
 import { AuditWriter } from '../audit/audit-writer';
 import { fakeContext } from '../auth/auth-fakes.fixture';
@@ -77,6 +81,7 @@ function rig(options: {
 
   const executor = {
     execute: async (request: IdempotentRequest, work: (context: TransactionContext) => Promise<IdempotentResult>) => {
+      validateJson(request.logicalRequest, LOGICAL_REQUEST_POLICY);
       requests.push(request);
       events.push('executor');
       const result = await work(fakeContext(1, []));
@@ -98,6 +103,7 @@ function rig(options: {
     grant: async (_c: unknown, _u: string, role: string) => void events.push(`role.grant:${role}`),
   } as unknown as RoleGrantParticipant;
   const shops = {
+    saveLogo: async () => undefined,
     lockOwnedShop: async () => {
       events.push('shop.lock');
       return shop;
@@ -154,6 +160,19 @@ const complete = (r: Rig, input: ShopCompleteInput = { expectedVersion: 1 }) =>
   r.service.complete(ACTOR, input, KEY, REQUEST_ID);
 
 describe('ShopOnboardingService.saveProfile', () => {
+
+  it('accepts a real PNG above the logical JSON cap and fingerprints its content, preserving old-client omission', async () => {
+    const logo = parseShopLogo({ content_type: 'image/png', data_base64: readFileSync('tests/fixtures/shop-logo-256.png').toString('base64') })!;
+    expect(Buffer.byteLength(JSON.stringify(logo))).toBeGreaterThan(65536);
+    const r = rig();
+    await save(r, { ...PROFILE, logo });
+    expect(r.requests[0]?.logicalRequest).toMatchObject({ logo: { content_type: 'image/png', sha256: expect.stringMatching(/^[a-f0-9]{64}$/) } });
+    expect(JSON.stringify(r.requests[0]?.logicalRequest)).not.toContain(logo.data_base64);
+    const old = rig(); await save(old);
+    expect(old.requests[0]?.logicalRequest).not.toHaveProperty('logo');
+    const remove = rig(); await save(remove, { ...PROFILE, logo: null });
+    expect(remove.requests[0]?.logicalRequest).toHaveProperty('logo', null);
+  });
   it('create: user lock, owner lookup, service area (FOR SHARE), shop, membership, audit — in that order', async () => {
     const r = rig();
     const outcome = await save(r);

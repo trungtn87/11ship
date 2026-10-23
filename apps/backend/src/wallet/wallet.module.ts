@@ -1,13 +1,22 @@
-import { Module } from '@nestjs/common';
+import { Module, OnModuleInit } from '@nestjs/common';
+import { DelegatingDriverWalletPort } from '../driver/driver-wallet-port';
 import { DriverModule } from '../driver/driver.module';
 import { CommissionHoldService } from './commission-hold-service';
 import { WalletReportReader } from './wallet-report-reader';
+import { WalletAdjustmentRepository } from './wallet-adjustment-repository';
+import { WalletAdjustmentService } from './wallet-adjustment-service';
+import { WalletCommissionAdjustmentAdapter } from './wallet-commission-adjustment.adapter';
 import { WalletRepository } from './wallet-repository';
 import { SystemBankAccountRepository } from './system-bank-account-repository';
 import { TopupPostingService } from './topup-posting-service';
 import { TopupRequestRepository } from './topup-request-repository';
 import { TopupSettlementRepository } from './topup-settlement-repository';
 import { WalletService } from './wallet-service';
+import { WalletDriverPort } from './wallet-driver-port';
+import { CommissionPolicyRepository } from './commission-policy-repository';
+import { WalletReadRepository } from './wallet-read-repository';
+import { WithdrawalMoneyService } from './withdrawal-money-service';
+import { WithdrawalRepository } from './withdrawal-repository';
 
 /**
  * M04 Shipper wallet core (M04-A1): the zero wallet and its read model. It exposes NO controller, NO route and NO money command; it is
@@ -18,7 +27,10 @@ import { WalletService } from './wallet-service';
  */
 @Module({
   imports: [DriverModule],
-  providers: [WalletRepository, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupSettlementRepository, TopupPostingService, CommissionHoldService, WalletReportReader],
-  exports: [WalletReportReader, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupPostingService, CommissionHoldService],
+  providers: [WalletRepository, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupSettlementRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentRepository, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, CommissionPolicyRepository, WalletDriverPort, WalletReportReader],
+  exports: [WalletReportReader, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, CommissionPolicyRepository, WalletDriverPort],
 })
-export class WalletModule {}
+export class WalletModule implements OnModuleInit {
+  constructor(private readonly port: DelegatingDriverWalletPort, private readonly wallet: WalletDriverPort) {}
+  onModuleInit(): void { this.port.bind(this.wallet); }
+}
