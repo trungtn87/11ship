@@ -294,12 +294,19 @@ describe('M07 — delivery flow', () => {
     expect(await wallet(s)).toEqual({ balance: 50_000, held: 0 });
   });
 
-  it('pickup is refused while the pin or the fee is missing, then allowed once confirmed; after pickup nobody cancels', async () => {
+  it('an address without a map point needs a fee band (or an agreed fee): without one the call is refused with a clear code, with one pickup needs no pin', async () => {
     const s = await newShipper();
-    const view = await acceptNew(s, { dropoff_lat: undefined, dropoff_lng: undefined });
-    const early = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/pickup`, { expected_version: view.version });
-    expect(early.status).toBeGreaterThanOrEqual(400);
-    expect(await stateOf(String(view.delivery_id))).toBe('accepted');
+    const refused = await asShop('POST', '/shop/me/deliveries', createBody({ dropoff_lat: undefined, dropoff_lng: undefined }));
+    expect([refused.status, codeOf(refused)]).toEqual([400, 'FEE_REQUIRED']);
+    const bands = dataOf(await asShop('GET', '/shop/me/delivery-fee-bands')) as Json;
+    expect(bands.bands).toHaveLength(3);
+    const view = await acceptNew(s, { dropoff_lat: undefined, dropoff_lng: undefined, fee_band: 1 });
+    expect(view.fee).toMatchObject({ mode: 'STANDARD', amount_vnd: 15_000, status: 'FINAL', basis: 'ESTIMATED_BAND' });
+    expect(view.recipient).toMatchObject({ lat: null, lng: null });
+    expect(view.can).toMatchObject({ pickup: true, confirm_fee: false });
+    const picked = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/pickup`, { expected_version: view.version });
+    expect([picked.status, picked.text.slice(0, 200)]).toEqual([200, picked.text.slice(0, 200)]);
+    expect(await stateOf(String(view.delivery_id))).toBe('delivering');
   });
 
   it('M03 closing stops new orders but retains the active delivery and refuses a full refund', async () => {
@@ -337,8 +344,6 @@ describe('M07 — delivery flow', () => {
     expect([picked.status, picked.text.slice(0, 300)]).toEqual([200, picked.text.slice(0, 300)]);
     const afterPickup = dataOf(picked) as Json;
     expect(await stateOf(String(view.delivery_id))).toMatch(/picked_up|delivering/);
-    const shopCancel = await asShop('POST', `/shop/me/deliveries/${view.delivery_id}/cancel`, { reason: 'x', expected_version: afterPickup.version });
-    expect(shopCancel.status).toBeGreaterThanOrEqual(400);
     const shipperRelease = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/release`, { reason: 'x', expected_version: afterPickup.version });
     expect(shipperRelease.status).toBeGreaterThanOrEqual(400);
     const done = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/complete`, { expected_version: afterPickup.version });
@@ -416,24 +421,50 @@ describe('M07 — delivery flow', () => {
     }
   });
 
-  it('failed delivery: the hold is released and a custody incident is opened; the shop cannot recall until the goods are back', async () => {
+  it('after pickup the Shipper can neither fail the delivery nor give it back, even by calling the API directly; only completing is left', async () => {
     const s = await newShipper();
     const view = await acceptNew(s);
-    const dest = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/destination`, { expected_version: view.version, lat: 21.0, lng: 105.82, fee_vnd: 15_000 });
-    const base = dest.status === 200 ? (dataOf(dest) as Json) : view;
-    const picked = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/pickup`, { expected_version: base.version })) as Json;
-    const failed = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/fail`, {
-      expected_version: picked.version,
-      reason_code: 'RECIPIENT_UNREACHABLE',
-      goods_condition: 'WITH_SHIPPER',
-      note: 'Không liên lạc được',
-    });
-    expect([failed.status, failed.text.slice(0, 300)]).toEqual([200, failed.text.slice(0, 300)]);
-    expect(await stateOf(String(view.delivery_id))).toBe('failed');
+    const id = String(view.delivery_id);
+    const picked = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${id}/pickup`, { expected_version: view.version })) as Json;
+    expect(picked.can).toMatchObject({ complete: true, release: false, fail: false });
+    for (const body of [{ expected_version: picked.version, reason_code: 'RECIPIENT_UNREACHABLE', goods_condition: 'WITH_SHIPPER', note: 'Không liên lạc được' }, {}]) {
+      const failed = await asShipper(s, 'POST', `/driver/deliveries/${id}/fail`, body);
+      expect([failed.status, codeOf(failed)]).toEqual([403, 'SHIPPER_FAIL_NOT_ALLOWED']);
+    }
+    const released = await asShipper(s, 'POST', `/driver/deliveries/${id}/release`, { reason: 'Không giao được', expected_version: picked.version });
+    expect([released.status, codeOf(released)]).toEqual([409, 'AFTER_PICKUP_NO_CANCEL']);
+    expect(await stateOf(id)).toBe('delivering');
+    expect(await wallet(s)).toEqual({ balance: 50_000, held: 1000 });
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.delivery_incidents WHERE delivery_id = $1::uuid', [id])).toBe(0);
+  });
+
+  it('the creator of a DIRECT call cancels after pickup: the commission is given back, the goods stay with the Shipper until the shop settles them, and only then can it call again', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s);
+    const id = String(view.delivery_id);
+    const picked = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${id}/pickup`, { expected_version: view.version })) as Json;
+    const shopView = dataOf(await asShop('GET', `/shop/me/deliveries/${id}`)) as Json;
+    expect(shopView.can).toMatchObject({ cancel: true, cancel_after_pickup: true });
+    const stranger = await createShopOwner(app);
+    expect((await app.call('POST', `/shop/me/deliveries/${id}/cancel`, { bearer: stranger.token, headers: { 'idempotency-key': randomUUID() }, body: { reason: 'Không phải của tôi', expected_version: picked.version } })).status).toBe(404);
+    expect((await asShop('POST', `/shop/me/deliveries/${id}/cancel`, { reason: '', expected_version: picked.version })).status).toBe(400);
+    const cancelled = await asShop('POST', `/shop/me/deliveries/${id}/cancel`, { reason: 'Khách không nhận nữa', expected_version: picked.version });
+    expect([cancelled.status, cancelled.text.slice(0, 300)]).toEqual([200, cancelled.text.slice(0, 300)]);
+    expect(await stateOf(id)).toBe('cancelled_by_merchant');
     expect(await wallet(s)).toEqual({ balance: 50_000, held: 0 });
-    expect(await countRows(app.pool, `SELECT 1 FROM app.delivery_incidents WHERE delivery_id = $1::uuid AND status = 'OPEN'`, [view.delivery_id])).toBe(1);
-    const recall = await asShop('POST', `/shop/me/deliveries/${view.delivery_id}/recall`, {});
-    expect(recall.status).toBeGreaterThanOrEqual(400);
+    expect(await countRows(app.pool, `SELECT 1 FROM app.delivery_incidents WHERE delivery_id = $1::uuid AND status = 'OPEN' AND custody = 'SHIPPER'`, [id])).toBe(1);
+    expect(await eventsOf(id, 'delivery.cancelled_after_pickup')).toBe(1);
+    // the Shipper cannot complete a cancelled delivery, and nobody can cancel it twice
+    expect((await asShipper(s, 'POST', `/driver/deliveries/${id}/complete`, { expected_version: picked.version })).status).toBeGreaterThanOrEqual(400);
+    expect((await asShop('POST', `/shop/me/deliveries/${id}/cancel`, { reason: 'Lần hai', expected_version: picked.version + 1 })).status).toBeGreaterThanOrEqual(400);
+    // the goods are NOT assumed to be back at the shop: no new call until the shop says so
+    const blocked = await asShop('POST', `/shop/me/deliveries/${id}/recall`, {});
+    expect([blocked.status, codeOf(blocked)]).toEqual([409, 'RECALL_BLOCKED_GOODS_OUT']);
+    const resolved = await asShop('POST', `/shop/me/deliveries/${id}/custody`, { resolution: 'GOODS_RETURNED' });
+    expect([resolved.status, resolved.text.slice(0, 200)]).toEqual([200, resolved.text.slice(0, 200)]);
+    expect(await stateOf(id)).toBe('cancelled_by_merchant');
+    const recalled = await asShop('POST', `/shop/me/deliveries/${id}/recall`, {});
+    expect([recalled.status, recalled.text.slice(0, 200)]).toEqual([201, recalled.text.slice(0, 200)]);
   });
 
   it('the shop cancelling and the Shipper picking up at the same moment: exactly one wins and the money agrees with the winner', async () => {
@@ -578,75 +609,81 @@ describe('M07 — delivery flow', () => {
     expect(await wallet(s)).toEqual({ balance: 50_000, held: 1000 * accepted.length });
   });
 
-  it('the shop sees the latest position (with its time) of the Shipper who holds its delivery; another shop sees nothing; after cancel it is gone', async () => {
+  it('a DIRECT call is followed by its status only: the shop never gets the Shipper position of it', async () => {
     const s = await newShipper();
     const view = await acceptNew(s);
     const id = String(view.delivery_id);
     const mineView = dataOf(await asShop('GET', `/shop/me/deliveries/${id}`)) as Json;
-    expect(mineView.location).toMatchObject({ freshness: 'LIVE' });
-    expect(mineView.location.recorded_at).toBeDefined();
+    expect(mineView.state).toBe('accepted');
+    expect(mineView.location).toBeNull();
     const other = await createShopOwner(app);
     const stranger = await app.call('GET', `/shop/me/deliveries/${id}`, { bearer: other.token });
     expect(stranger.status).toBe(404);
     expect((await asShop('POST', `/shop/me/deliveries/${id}/cancel`, { reason: 'Đổi ý', expected_version: mineView.version })).status).toBe(200);
-    const after = dataOf(await asShop('GET', `/shop/me/deliveries/${id}`)) as Json;
-    expect(after.location).toBeNull();
   });
 
-  it('no pin and no fee: the Shipper confirms the pin and the agreed fee before pickup; after pickup the fee and the point are locked', async () => {
+  it('a fee that is already settled is never asked again: the Shipper goes straight to pickup, a repeated confirmation is a no-op, and after pickup the fee is locked', async () => {
     const s = await newShipper();
-    const view = await acceptNew(s, { dropoff_lat: undefined, dropoff_lng: undefined });
+    const view = await acceptNew(s);
     const id = String(view.delivery_id);
-    expect(view.fee).toMatchObject({ mode: 'PICKUP_AGREEMENT', amount_vnd: null });
-    expect(view.can).toMatchObject({ confirm_destination: true, pickup: false });
-    expect((await asShipper(s, 'POST', `/driver/deliveries/${id}/pickup`, { expected_version: view.version })).status).toBeGreaterThanOrEqual(400);
-    const confirmed = await asShipper(s, 'POST', `/driver/deliveries/${id}/destination`, { expected_version: view.version, lat: 21.01, lng: 105.83, fee_vnd: 18_000 });
-    expect([confirmed.status, confirmed.text.slice(0, 200)]).toEqual([200, confirmed.text.slice(0, 200)]);
-    const afterPin = dataOf(confirmed) as Json;
-    expect(afterPin).toMatchObject({ state: 'location_confirmed' });
-    expect(afterPin.fee.amount_vnd).toBe(18_000);
-    const picked = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${id}/pickup`, { expected_version: afterPin.version })) as Json;
+    expect(view.fee).toMatchObject({ mode: 'STANDARD', amount_vnd: 10_000 });
+    expect(view.can).toMatchObject({ confirm_fee: false, confirm_destination: false, pickup: true });
+    const same = await asShipper(s, 'POST', `/driver/deliveries/${id}/destination`, { expected_version: view.version, fee_vnd: 10_000 });
+    expect([same.status, same.text.slice(0, 200)]).toEqual([200, same.text.slice(0, 200)]);
+    const retyped = await asShipper(s, 'POST', `/driver/deliveries/${id}/destination`, { expected_version: (dataOf(same) as Json).version, fee_vnd: 18_000 });
+    expect([retyped.status, codeOf(retyped)]).toEqual([409, 'FEE_LOCKED']);
+    const picked = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${id}/pickup`, { expected_version: (dataOf(same) as Json).version })) as Json;
     expect(picked.state).toBe('delivering');
-    const again = await asShipper(s, 'POST', `/driver/deliveries/${id}/destination`, { expected_version: picked.version, lat: 21.02, lng: 105.84, fee_vnd: 1000 });
+    const again = await asShipper(s, 'POST', `/driver/deliveries/${id}/destination`, { expected_version: picked.version, fee_vnd: 1000 });
     expect(again.status).toBeGreaterThanOrEqual(400);
-    const stored = await row(id);
-    expect(Number(stored.fee_vnd)).toBe(18_000);
-    expect(stored.dropoff_pinned_by).toBe(s.driverId);
-    expect(stored.fee_confirmed_by).toBe(s.driverId);
+    expect(Number((await row(id)).fee_vnd)).toBe(10_000);
   });
 
-  it('complete and fail racing after pickup: exactly one wins, and the commission follows the winner', async () => {
+  it('a call that was never priced (legacy STANDARD with no fee) is not stuck: the Shipper confirms the agreed amount once and picks up', async () => {
+    const s = await newShipper();
+    const delivery = await newDelivery();
+    const id = String(delivery.delivery_id);
+    // Reproduces the old data: a priced call whose fee was never stored (the fee table could not price it at the time).
+    for (const table of ['deliveries', 'shipping_fee_agreement_events', 'shipping_fee_agreements']) {
+      await app.pool.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
+    }
+    await app.pool.query('UPDATE app.deliveries SET fee_vnd = NULL WHERE delivery_id = $1::uuid', [id]);
+    await app.pool.query('DELETE FROM app.shipping_fee_agreement_events WHERE agreement_id IN (SELECT agreement_id FROM app.shipping_fee_agreements WHERE delivery_id = $1::uuid)', [id]);
+    await app.pool.query('DELETE FROM app.shipping_fee_agreements WHERE delivery_id = $1::uuid', [id]);
+    for (const table of ['deliveries', 'shipping_fee_agreement_events', 'shipping_fee_agreements']) {
+      await app.pool.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
+    }
+    const accepted = await asShipper(s, 'POST', `/driver/deliveries/${id}/accept`, {});
+    expect([accepted.status, accepted.text.slice(0, 200)]).toEqual([200, accepted.text.slice(0, 200)]);
+    const view = dataOf(accepted) as Json;
+    expect(view.can).toMatchObject({ confirm_fee: true, pickup: false });
+    expect((await asShipper(s, 'POST', `/driver/deliveries/${id}/pickup`, { expected_version: view.version })).status).toBe(409);
+    const missing = await asShipper(s, 'POST', `/driver/deliveries/${id}/destination`, { expected_version: view.version });
+    expect([missing.status, codeOf(missing)]).toEqual([409, 'FEE_NOT_CONFIRMED']);
+    const confirmed = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${id}/destination`, { expected_version: view.version, fee_vnd: 18_000 })) as Json;
+    expect(confirmed.fee.amount_vnd).toBe(18_000);
+    const picked = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${id}/pickup`, { expected_version: confirmed.version })) as Json;
+    expect(picked.state).toBe('delivering');
+    expect((await row(id)).fee_confirmed_by).toBe(s.driverId);
+  });
+
+  it('completing and the creator cancelling after pickup at the same moment: exactly one wins, and the commission follows the winner', async () => {
     const s = await newShipper();
     const view = await acceptNew(s);
     const id = String(view.delivery_id);
     const picked = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${id}/pickup`, { expected_version: view.version })) as Json;
-    const [done, failed] = await Promise.all([
+    const [done, cancelled] = await Promise.all([
       asShipper(s, 'POST', `/driver/deliveries/${id}/complete`, { expected_version: picked.version }),
-      asShipper(s, 'POST', `/driver/deliveries/${id}/fail`, { expected_version: picked.version, reason_code: 'OTHER', goods_condition: 'WITH_SHIPPER', note: 'x' }),
+      asShop('POST', `/shop/me/deliveries/${id}/cancel`, { reason: 'Không nhận nữa', expected_version: picked.version }),
     ]);
-    expect([done.status, failed.status].filter((status) => status === 200)).toHaveLength(1);
+    expect([done.status, cancelled.status].filter((status) => status === 200)).toHaveLength(1);
     if (done.status === 200) {
       expect(await stateOf(id)).toBe('completed');
       expect(await wallet(s)).toEqual({ balance: 49_000, held: 0 });
+      expect(await countRows(app.pool, 'SELECT 1 FROM app.delivery_incidents WHERE delivery_id = $1::uuid', [id])).toBe(0);
     } else {
-      expect(await stateOf(id)).toBe('failed');
+      expect(await stateOf(id)).toBe('cancelled_by_merchant');
       expect(await wallet(s)).toEqual({ balance: 50_000, held: 0 });
     }
-  });
-
-  it('after a failure the goods come back: the shop confirms them, the incident closes and only then can it call again', async () => {
-    const s = await newShipper();
-    const view = await acceptNew(s);
-    const id = String(view.delivery_id);
-    const picked = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${id}/pickup`, { expected_version: view.version })) as Json;
-    const failed = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${id}/fail`, { expected_version: picked.version, reason_code: 'RECIPIENT_REFUSED', goods_condition: 'WITH_SHIPPER', note: 'Khách từ chối' })) as Json;
-    expect(failed.state).toBe('failed');
-    expect((await asShop('POST', `/shop/me/deliveries/${id}/recall`, {})).status).toBeGreaterThanOrEqual(400);
-    const resolved = await asShop('POST', `/shop/me/deliveries/${id}/custody`, { resolution: 'GOODS_RETURNED' });
-    expect([resolved.status, resolved.text.slice(0, 200)]).toEqual([200, resolved.text.slice(0, 200)]);
-    expect(await countRows(app.pool, `SELECT 1 FROM app.delivery_incidents WHERE delivery_id = $1::uuid AND status = 'CLOSED' AND custody = 'SHOP'`, [id])).toBe(1);
-    expect(await stateOf(id)).toBe('failed'); // the delivery stays failed; the Order is never completed by this
-    const recalled = await asShop('POST', `/shop/me/deliveries/${id}/recall`, {});
-    expect([recalled.status, recalled.text.slice(0, 200)]).toEqual([201, recalled.text.slice(0, 200)]);
   });
 });
