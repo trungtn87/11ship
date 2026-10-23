@@ -4,7 +4,7 @@
 // It checks the PUBLIC API every 60 seconds from a machine that is NOT the VPS being watched, tells Discord DIRECTLY (it does not use the backend, the database or
 // M08), and reports the outage to M13 afterwards, when the VPS answers again. Defaults of the approved design: 3 failures in a row = incident, 2 successes in a row =
 // recovery. Pure Node (>= 20), no dependency, no shell, no file outside its own state file. It is NOT activated by being in the repository: it runs only where the
-// operator installs it (see ops/runbooks/m13-external-probe-20261018.md). Placing it on the same VPS would not be independent monitoring.
+// operator installs it (see ops/runbooks/m13-external-probe-20261023.md). Placing it on the same VPS would not be independent monitoring.
 //
 // What it says is only what it measured: "the public API could not be reached from outside". It never claims the VPS is down.
 
