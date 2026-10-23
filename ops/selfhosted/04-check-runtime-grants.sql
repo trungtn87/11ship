@@ -104,7 +104,22 @@ WITH expected(table_name, privileges) AS (
     ('complaint_attachments', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('complaint_reconsiderations', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('complaint_adjustments', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
-    ('wallet_adjustments', ARRAY['SELECT', 'INSERT']::text[])
+    ('wallet_adjustments', ARRAY['SELECT', 'INSERT']::text[]),
+    ('ops_config', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('ops_admin_scopes', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('ops_incidents', ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']::text[]),
+    ('ops_events', ARRAY['SELECT', 'INSERT', 'DELETE']::text[]),
+    ('ops_checks', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('ops_metrics', ARRAY['SELECT', 'INSERT', 'DELETE']::text[]),
+    ('ops_metrics_hourly', ARRAY['SELECT', 'INSERT', 'DELETE']::text[]),
+    ('ops_notifications', ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']::text[]),
+    ('ops_maintenance', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('ops_gateway_telemetry', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('ops_ingest_keys', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('ops_releases', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('ops_version_reports', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('ops_deploys', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('ops_backup_reports', ARRAY['SELECT', 'INSERT', 'DELETE']::text[])
 ), table_checks AS (
   SELECT 'app.' || table_name || ':' || privilege AS check_name,
          CASE WHEN to_regclass('app.' || table_name) IS NULL THEN 'MISSING_TABLE'
