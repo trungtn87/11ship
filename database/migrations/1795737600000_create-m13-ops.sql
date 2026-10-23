@@ -282,7 +282,7 @@ CREATE TABLE app.ops_gateway_telemetry (
   topup_noted_on     date,
   topup_noted_by     uuid,
   CONSTRAINT ops_gateway_telemetry_pkey PRIMARY KEY (device_id),
-  CONSTRAINT ops_gateway_telemetry_device_fk FOREIGN KEY (device_id) REFERENCES app.sms_gateway_devices (device_id) ON DELETE RESTRICT,
+  CONSTRAINT ops_gateway_telemetry_device_fk FOREIGN KEY (device_id) REFERENCES app.sms_gateway_devices (device_id) ON DELETE CASCADE,
   CONSTRAINT ops_gateway_telemetry_noted_by_fk FOREIGN KEY (topup_noted_by) REFERENCES app.users (user_id) ON DELETE RESTRICT,
   CONSTRAINT ops_gateway_telemetry_battery_ck CHECK (battery_percent IS NULL OR battery_percent BETWEEN 0 AND 100),
   CONSTRAINT ops_gateway_telemetry_sim_ck CHECK (sim_state IS NULL OR sim_state IN ('READY', 'ABSENT', 'LOCKED', 'UNKNOWN')),

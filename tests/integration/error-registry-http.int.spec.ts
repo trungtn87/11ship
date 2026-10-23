@@ -119,8 +119,9 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 14 M11 codes (REVIEW_*, COMPLAINT_*, RECONSIDERATION_*, ADJUSTMENT_HISTORY_REVIEW_REQUIRED)
     // + 2 shop logo codes (M02: INVALID_SHOP_LOGO, SHOP_LOGO_TOO_LARGE)
     // + 1 password login quota code (M01: LOGIN_RATE_LIMITED)
+    // + 17 operations codes (M13: OPS_*, see app-errors.ts)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(165);
+    expect(codes).toHaveLength(182);
     expect(codes).toEqual(expect.arrayContaining(['INVALID_SHOP_LOGO', 'SHOP_LOGO_TOO_LARGE', 'LOGIN_RATE_LIMITED']));
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(19);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);
