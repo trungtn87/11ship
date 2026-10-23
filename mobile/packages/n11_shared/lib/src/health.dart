@@ -13,7 +13,7 @@ import 'errors.dart';
 //   GET /v1/health/ready -> 200 {"data":{"status":"ready"}}   or   HTTP 503 (process alive, not ready to serve)
 //
 // Rules this file enforces:
-//  * every request has a time limit (5 s) and asks for no cached answer: a health answer is never reused;
+//  * every request has a time limit (15 s) and asks for no cached answer: a health answer is never reused;
 //  * no credentials, cookies or tokens are sent: health is public and carries no session;
 //  * the body is checked exactly: a 200 whose body is not the agreed one is a failure, never "ok";
 //  * a result is applied only if it belongs to the NEWEST check (generation guard), so a slow old answer can never
@@ -21,7 +21,7 @@ import 'errors.dart';
 //  * a result carries a reason from a closed list, never an exception message or server text;
 //  * TLS is verified by the platform exactly as for any HTTPS client: there is no certificate override anywhere.
 
-const Duration kHealthTimeout = Duration(seconds: 5);
+const Duration kHealthTimeout = Duration(seconds: 15);
 const String kLivePath = '/v1/health/live';
 const String kReadyPath = '/v1/health/ready';
 

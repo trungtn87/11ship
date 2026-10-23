@@ -58,6 +58,11 @@ void main() {
     expect(s.live.reason, HealthFailureReason.tls);
   });
 
+  test('the default health timeout is 15 seconds', () {
+    expect(kHealthTimeout, const Duration(seconds: 15));
+    expect(HealthMonitor(baseUrl: base, transport: (Uri u, Duration t) async => throw StateError('unused')).timeout, kHealthTimeout);
+  });
+
   test('a transport that never answers ends as timeout', () async {
     final HealthMonitor m = monitor(routes(<String, FutureOr<RawHealthResponse> Function()>{kLivePath: () => Completer<RawHealthResponse>().future}),
         timeout: const Duration(milliseconds: 30));

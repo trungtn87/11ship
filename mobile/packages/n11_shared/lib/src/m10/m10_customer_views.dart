@@ -280,8 +280,9 @@ class _CartScreenState extends State<CartScreen> {
               ),
             ),
             ReasonNote(cart.feeEstimateVnd == null
-              ? 'Chưa có bảng giá phí giao đang áp dụng. Tiền món chưa bao gồm phí giao.'
-              : 'Phí giao tạm tính theo mức khởi điểm M06. Hệ thống tính lại theo khoảng cách khi có tuyến giao; phí thực tế chốt sau.'),
+              ? kNoFeeNote
+              : kFeeEstimateNote,
+              icon: Icons.warning_amber_rounded),
           ],
           bottom: Column(
             mainAxisSize: MainAxisSize.min,
@@ -602,7 +603,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 _touch();
               }),
               _TimeChoice(key: const Key('checkout-scheduled'), selected: _scheduled != null, label: _scheduled == null ? 'Hẹn giờ nhận món' : 'Hẹn lúc ${m10When(_scheduled!)}', onTap: () => unawaited(_pickTime())),
-              const ReasonNote('Giờ hẹn là giờ bạn muốn nhận món, không phải cam kết giao đúng giờ. Quán xác nhận trước và chủ động gọi shipper.'),
+              if (_scheduled != null) const ReasonNote(kScheduleNote, icon: Icons.info_outline),
             ],
           ),
         ),
@@ -618,12 +619,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ('Phí giao (dự tính)', estimateFee == null ? 'Chưa có bảng giá' : m10Money(estimateFee)),
               ]),
               if (expectedTotal != null) Row(children: <Widget>[const Expanded(child: Text('Tổng dự kiến', style: N11Text.bodyStrong)), Text(m10Money(expectedTotal), key: const Key('checkout-total'), style: N11Text.bodyStrong)])
-              else const ReasonNote('Chưa có bảng giá phí giao áp dụng; tiền món chưa bao gồm phí giao.'),
+              else const ReasonNote(kNoFeeNote, icon: Icons.warning_amber_rounded),
               if (estimateFee != null && (p == null || p.feeDistanceM == null))
-                const ReasonNote('Đang dùng mức khởi điểm theo bảng giá hệ thống. Phí dự kiến sẽ được cập nhật khi có khoảng cách tuyến giao.'),
+                const ReasonNote(kFeeEstimateNote, icon: Icons.warning_amber_rounded),
               if (_previewing) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: LinearProgressIndicator()),
               const SizedBox(height: N11Space.gap2),
-              const ReasonNote('Bạn thanh toán trực tiếp cho quán/shipper. Ứng dụng không giữ tiền hàng và không thanh toán online.'),
+              const ReasonNote(kDirectPayNote, icon: Icons.info_outline),
             ],
           ),
         ),

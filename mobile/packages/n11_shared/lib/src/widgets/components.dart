@@ -240,16 +240,17 @@ class N11Link extends StatelessWidget {
 
 /// The reason a business action is not available yet (03-ui-catalog C10). Always visible text, not a tooltip.
 class ReasonNote extends StatelessWidget {
-  const ReasonNote(this.text, {super.key});
+  const ReasonNote(this.text, {super.key, this.icon = Icons.lock_outline});
 
   final String text;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const Padding(padding: EdgeInsets.only(top: 2), child: Icon(Icons.lock_outline, size: 16, color: N11Colors.ink3)),
+        Padding(padding: const EdgeInsets.only(top: 2), child: Icon(icon, size: 16, color: N11Colors.ink3)),
         const SizedBox(width: N11Space.gap2),
         Expanded(child: Text(text, style: N11Text.captionInk2)),
       ],

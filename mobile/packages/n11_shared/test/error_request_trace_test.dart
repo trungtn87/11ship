@@ -6,11 +6,15 @@ import 'package:n11_shared/src/m10/m10_source.dart';
 
 void main() {
   const String id = '11111111-2222-4333-8444-555555555555';
-  test('both app account and order errors show safe correlation without duplicate text', () {
-    expect(failureMessage(const AuthFailure(AuthFailureKind.serverUnavailable, requestId: id)), contains('Mã tra cứu: $id'));
+  test('user-facing errors never show the lookup code or request id; the id stays on the failure', () {
+    const AuthFailure auth = AuthFailure(AuthFailureKind.serverUnavailable, requestId: id);
+    expect(failureMessage(auth), isNot(contains('Mã tra cứu')));
+    expect(failureMessage(auth), isNot(contains(id)));
+    expect(auth.requestId, id);
     const M07Failure failure = M07Failure(M07FailureKind.server, requestId: id);
-    expect(m07FailureText(failure), contains('Mã tra cứu: $id'));
-    expect(m10FailureText(failure).split('Mã tra cứu:'), hasLength(2));
+    expect(m07FailureText(failure), isNot(contains(id)));
+    expect(m10FailureText(failure), isNot(contains('Mã tra cứu')));
+    expect(m10FailureText(failure), isNot(contains(id)));
     expect(withRequestTrace('Lỗi', '<script>secret</script>'), 'Lỗi');
     expect(withRequestTrace('Lỗi', null), 'Lỗi');
   });

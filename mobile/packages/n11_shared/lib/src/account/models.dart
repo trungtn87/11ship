@@ -101,12 +101,9 @@ class Identity {
   }
 }
 
-/// Append only a validated server correlation UUID; never reflect arbitrary error text.
-String withRequestTrace(String message, String? requestId) {
-  if (requestId == null || !RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(requestId)) return message;
-  final String trace = '\nMã tra cứu: $requestId';
-  return message.endsWith(trace) ? message : message + trace;
-}
+/// User-facing error text never carries a correlation id: the request id stays on [AuthFailure] for logs and the SYSTEM error log.
+/// Kept as the single seam every failure text passes through, so callers need no change.
+String withRequestTrace(String message, String? requestId) => message;
 
 /// A refusal by the server or the device, as a closed code (no server text is ever shown).
 @immutable
