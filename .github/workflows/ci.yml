@@ -490,7 +490,7 @@ jobs:
         run: |
           set -euo pipefail
           first="$(cut -d' ' -f1 "artifact-out/11ship-${{ steps.build.outputs.sha }}-ubuntu24-amd64.tar.gz.sha256")"
-          node scripts/deploy/build-ubuntu-artifact.mjs --out artifact-out-2 --sha "${{ steps.build.outputs.sha }}" --skip-build >/dev/null
+          node scripts/deploy/build-ubuntu-artifact.mjs --out artifact-out-2 --sha "${{ steps.build.outputs.sha }}" >/dev/null
           second="$(cut -d' ' -f1 "artifact-out-2/11ship-${{ steps.build.outputs.sha }}-ubuntu24-amd64.tar.gz.sha256")"
           echo "first=${first} second=${second}"
           test "${first}" = "${second}"

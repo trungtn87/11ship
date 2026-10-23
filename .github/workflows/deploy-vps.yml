@@ -9,6 +9,12 @@ on:
         required: false
         default: false
 
+      approve_m01_shop_code_migrations:
+        description: 'Approve exact reviewed migrations from PRs #165 and #170 before deploy'
+        type: boolean
+        required: false
+        default: false
+
 permissions:
   contents: read
 
@@ -61,6 +67,12 @@ jobs:
           VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: bash scripts/deploy/github-vps-approve-gps.sh
+      - name: Approve reviewed M01 and shop-code migrations
+        if: ${{ inputs.approve_m01_shop_code_migrations == true }}
+        env:
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: bash scripts/deploy/github-vps-approve-m01-shop-codes.sh
       - name: Deploy over verified SSH
         env:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
