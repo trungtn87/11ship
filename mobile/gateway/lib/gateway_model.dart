@@ -17,6 +17,7 @@ class GatewayState {
     this.failedToday = 0,
     this.pendingReport = false,
     this.appVersion = '',
+    this.updateHint,
   });
 
   final bool paired;
@@ -34,6 +35,9 @@ class GatewayState {
   final int failedToday;
   final bool pendingReport;
   final String appVersion;
+
+  /// The version the VPS last offered while the gateway was running; informational (the update itself needs the gateway stopped).
+  final String? updateHint;
 
   factory GatewayState.fromMap(Map<dynamic, dynamic>? map) {
     if (map == null) return const GatewayState();
@@ -56,6 +60,7 @@ class GatewayState {
       failedToday: count('failedToday'),
       pendingReport: flag('pendingReport'),
       appVersion: text('appVersion') ?? '',
+      updateHint: text('updateHint'),
     );
   }
 
@@ -127,5 +132,49 @@ String describeError(String? code) {
         return 'VPS trả mã ${code.substring(9)}';
       }
       return code.startsWith('SERVER_') ? 'VPS lỗi (${code.substring(7)})' : 'lỗi ($code)';
+  }
+}
+
+/// The answer of "Kiểm tra bản cập nhật": the native side asks the VPS as a STOPPED phone and says why an update cannot start yet.
+class UpdateInfo {
+  const UpdateInfo({required this.state, this.versionName, this.sizeBytes, this.priority});
+
+  final String state;
+  final String? versionName;
+  final int? sizeBytes;
+  final String? priority;
+
+  factory UpdateInfo.fromMap(Map<dynamic, dynamic>? map) {
+    if (map == null) return const UpdateInfo(state: 'NO_UPDATE');
+    return UpdateInfo(
+      state: map['state'] is String ? map['state'] as String : 'NO_UPDATE',
+      versionName: map['versionName'] is String ? map['versionName'] as String : null,
+      sizeBytes: map['sizeBytes'] is int ? map['sizeBytes'] as int : null,
+      priority: map['priority'] is String ? map['priority'] as String : null,
+    );
+  }
+
+  bool get ready => state == 'READY';
+
+  /// Plain Vietnamese for each state. Nothing here claims a cause the phone does not know.
+  String describe() {
+    final String version = versionName == null ? '' : ' $versionName';
+    switch (state) {
+      case 'READY':
+        final String size = sizeBytes == null ? '' : ' (${(sizeBytes! / 1048576).toStringAsFixed(1)} MB)';
+        return 'Có bản mới$version$size. Bấm "Tải và cài" để cập nhật.';
+      case 'NO_UPDATE':
+        return 'Đang dùng bản mới nhất.';
+      case 'STOP_FIRST':
+        return 'Hãy tắt gateway trước khi cập nhật.';
+      case 'REPORT_PENDING':
+        return 'Còn kết quả SMS chưa báo về VPS. Chờ báo xong rồi cập nhật.';
+      case 'TASK_RUNNING':
+        return 'Gateway đang xử lý một việc. Thử lại sau.';
+      case 'SERVER_NOT_READY':
+        return 'VPS chưa cho phép cập nhật lúc này (chờ máy báo trạng thái rảnh). Thử lại sau ít phút.';
+      default:
+        return 'Chưa cập nhật được ($state).';
+    }
   }
 }

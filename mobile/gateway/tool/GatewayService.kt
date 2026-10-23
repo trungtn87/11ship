@@ -67,6 +67,10 @@ class GatewayService : Service() {
 
     @Volatile
     private var stopRequested = false
+
+    /** IDLE, SENDING (a message is with the radio) or REPORTING (a result is being delivered): sent with the heartbeat so the server never updates a busy phone. */
+    @Volatile
+    private var currentTask = "IDLE"
     private var worker: Thread? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private val sentResults = ConcurrentHashMap<String, LinkedBlockingQueue<Int>>()
@@ -182,8 +186,9 @@ class GatewayService : Service() {
                     val permission = hasSmsPermission()
                     val now = System.currentTimeMillis()
                     if (now - lastBeat > 60_000) {
-                        val beat = client.heartbeat(versionName(), permission, false)
+                        val beat = client.heartbeat(versionName(), permission, false, versionCode(), telemetry())
                         pollSeconds = beat.pollSeconds.coerceIn(2, 60)
+                        GatewayStore.setUpdateHint(this, beat.update?.versionName)
                         lastBeat = now
                     }
                     // A result that did not reach the server yet comes first: no new job is claimed (so the single pending slot
@@ -222,7 +227,8 @@ class GatewayService : Service() {
             // Tell the server this phone no longer takes work, so that no OTP is queued for a phone that stopped.
             api?.let {
                 try {
-                    it.heartbeat(versionName(), hasSmsPermission(), true)
+                    currentTask = "IDLE"
+                    it.heartbeat(versionName(), hasSmsPermission(), true, versionCode(), telemetry())
                 } catch (e: Exception) {
                     // Best effort: the server also notices the missing heartbeats.
                 }
@@ -265,6 +271,7 @@ class GatewayService : Service() {
         }
         // Written BEFORE the radio is touched: if the process dies from here on, the next start reports UNKNOWN and never resends.
         GatewayStore.markAttempt(this, job.jobId, job.attemptId)
+        currentTask = "SENDING"
         val results = LinkedBlockingQueue<Int>()
         sentResults[job.jobId] = results
         try {
@@ -312,7 +319,12 @@ class GatewayService : Service() {
         GatewayStore.clearAttempt(this)
         GatewayStore.countResult(this, result == "SENT")
         // If the server cannot be reached the report stays stored; the loop does not claim again until it is delivered.
-        flusher.flush()
+        currentTask = "REPORTING"
+        try {
+            flusher.flush()
+        } finally {
+            currentTask = "IDLE"
+        }
     }
 
     /** A previous run died between "about to send" and "reported": it may or may not have sent. Report UNKNOWN, never resend. */
@@ -335,6 +347,17 @@ class GatewayService : Service() {
     @Suppress("DEPRECATION")
     private fun smsManager(): SmsManager =
         if (Build.VERSION.SDK_INT >= 31) getSystemService(SmsManager::class.java) else SmsManager.getDefault()
+
+    private fun telemetry(): Telemetry =
+        DeviceTelemetry.read(this, GatewayStore.unreportedCount(this), currentTask, GatewayStore.lastError(this))
+
+    @Suppress("DEPRECATION")
+    private fun versionCode(): Int? = try {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        (if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()).toInt().takeIf { it > 0 }
+    } catch (e: Exception) {
+        null
+    }
 
     private fun versionName(): String = try {
         packageManager.getPackageInfo(packageName, 0).versionName ?: "0"

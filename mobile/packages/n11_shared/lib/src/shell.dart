@@ -10,6 +10,8 @@ import 'm08/m08_controller.dart';
 import 'm08/m08_models.dart';
 import 'm08/m08_push.dart';
 import 'm08/m08_views.dart';
+import 'm13/m13_update.dart';
+import 'm13/m13_views.dart';
 import 'tokens.dart';
 import 'widgets/components.dart';
 import 'widgets/connection_banner.dart';
@@ -65,12 +67,16 @@ class N11App extends StatelessWidget {
     this.navigationIdentity,
     this.pollInterval = const Duration(seconds: 30),
     this.notifications,
+    this.updates,
   });
 
   final String? navigationIdentity;
   final AppBrand brand;
   final List<TabSpec> tabs;
   final AppConfig config;
+
+  /// The M13 update check of this app. Null = the shell shows no update banner (tests, a build without a server address).
+  final AppUpdateController? updates;
 
   /// Live notifications, the push tap and the foreground resync (M08). Null = the shell does none of it (a build without notifications).
   final NotificationShell? notifications;
@@ -87,6 +93,7 @@ class N11App extends StatelessWidget {
       title: brand.name,
       debugShowCheckedModeBanner: false,
       theme: buildN11Theme(),
+      builder: updates == null ? null : (BuildContext context, Widget? child) => AppUpdateGate(controller: updates!, child: child ?? const SizedBox.shrink()),
       home: N11Shell(navigationIdentity: navigationIdentity, brand: brand, tabs: tabs, config: config, transport: transport, pollInterval: pollInterval, notifications: notifications),
     );
   }

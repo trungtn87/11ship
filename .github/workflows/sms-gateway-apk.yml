@@ -85,7 +85,7 @@ jobs:
           "$bt/aapt2" dump badging 11Ship-SMS-Gateway-test.apk > "$RUNNER_TEMP/gateway-badging.txt"
           grep -q "package: name='vn.eleven.gateway.test'" "$RUNNER_TEMP/gateway-badging.txt"
           grep -q "versionCode='${{ github.run_number }}'" "$RUNNER_TEMP/gateway-badging.txt"
-          for permission in SEND_SMS INTERNET FOREGROUND_SERVICE RECEIVE_BOOT_COMPLETED POST_NOTIFICATIONS; do
+          for permission in SEND_SMS INTERNET FOREGROUND_SERVICE RECEIVE_BOOT_COMPLETED POST_NOTIFICATIONS REQUEST_INSTALL_PACKAGES; do
             grep -q "uses-permission: name='android.permission.$permission'" "$RUNNER_TEMP/gateway-badging.txt" \
               || { echo "::error::Missing permission $permission"; exit 1; }
           done
