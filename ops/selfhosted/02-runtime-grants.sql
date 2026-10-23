@@ -7,7 +7,7 @@
 --
 -- Idempotent: GRANT of a privilege that is already held changes nothing. There is no ALTER DEFAULT PRIVILEGES, no
 -- sequence grant (no sequences are used), no GRANT ALL, no TRUNCATE/REFERENCES/TRIGGER, and no access to
--- app.pgmigrations. audit_logs is INSERT-only. This file is the same matrix as the table in
+-- app.pgmigrations. audit_logs is SELECT + INSERT only (never updated or deleted). This file is the same matrix as the table in
 -- ops/runbooks/render-supabase-staging.md section 3 (derived from reading the source); tests/selfhosted checks that the
 -- two stay equal and that they cover exactly the tables the migrations create. A new migration that adds a table must
 -- add its row to BOTH places in the same change.
@@ -26,7 +26,8 @@ GRANT SELECT, INSERT, UPDATE ON app.drivers TO ship11_app;
 GRANT SELECT, INSERT, DELETE ON app.shop_business_hours TO ship11_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.idempotency_records TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.outbox_events TO ship11_app;
-GRANT INSERT ON app.audit_logs TO ship11_app;
+-- M12: the administration reads the audit log (Nhật ký, the configuration history). It is still never updated or deleted: SELECT and INSERT only.
+GRANT SELECT, INSERT ON app.audit_logs TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.admin_memberships TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.admin_auth_challenges TO ship11_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.admin_totp_factors TO ship11_app;
@@ -112,3 +113,8 @@ GRANT SELECT, INSERT, DELETE ON app.notification_consumed_events TO ship11_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.notification_reminders TO ship11_app;
 GRANT SELECT, INSERT, DELETE ON app.notification_offer_rounds TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.notification_settings TO ship11_app;
+
+-- M12-E: report export jobs. A job row is updated by the runner (QUEUED -> RUNNING -> DONE/FAILED/EXPIRED) and never deleted (trigger); the file bytes live in their own table
+-- and are removed when the file expires.
+GRANT SELECT, INSERT, UPDATE ON app.report_export_jobs TO ship11_app;
+GRANT SELECT, INSERT, DELETE ON app.report_export_files TO ship11_app;

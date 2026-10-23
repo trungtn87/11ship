@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { AdminAccountReadRepository, AdminApp, PermissionRow } from '../admin-accounts/admin-account-read-repository';
 import { AdminRole } from '../admin-auth/admin-auth-constants';
+import { AdminMembershipRepository } from '../admin-auth/admin-membership-repository';
 import { SessionLookup } from '../admin-auth/admin-session-repository';
+import { UserRepository } from '../auth/user-repository';
 import { AdminSystemActor } from '../admin-provisioning/admin-system-actor';
 import { AppError } from '../common/app-errors';
 import { FinanceAccessRepository } from '../finance-access/finance-access-repository';
@@ -78,7 +80,27 @@ export class AdminRightsReader {
     private readonly actor: AdminSystemActor,
     private readonly permissions: AdminAccountReadRepository,
     private readonly grants: FinanceAccessRepository,
+    private readonly memberships: AdminMembershipRepository,
+    private readonly users: UserRepository,
   ) {}
+
+  /**
+   * The rights of an administrator who has NO session in this call (a background job running for them), read at this moment: an account that is locked, or whose
+   * membership is disabled, has none. The caller passes the database clock it already read. Same rows, same rules as `read`: nothing the job's creator held earlier counts.
+   */
+  async readForUser(context: TransactionContext, userId: string, nowMs: number): Promise<AdminRights | undefined> {
+    const user = await this.users.lockByIdForShare(context, userId);
+    const membership = user === undefined || user.status !== 'ACTIVE' ? undefined : await this.memberships.lockShared(context, userId);
+    if (membership === undefined || membership.status !== 'ACTIVE') {
+      return undefined;
+    }
+    if (membership.adminRole === 'SYSTEM') {
+      return new AdminRights('SYSTEM', userId, nowMs, new Map(), new Set());
+    }
+    const rows = await this.permissions.permissions(context, userId);
+    const held = (await this.grants.listForUser(context, userId)).filter((row) => row.state === 'GRANTED').map((row) => row.permissionKey);
+    return new AdminRights('ADMIN', userId, nowMs, new Map(rows.map((row) => [row.app, row])), new Set(held));
+  }
 
   async read(context: TransactionContext, known: SessionLookup): Promise<AdminRights> {
     const locked = await this.actor.lock(context, known, { user: 'read', factor: 'read' });

@@ -116,6 +116,43 @@ export class WalletReportReader {
     };
   }
 
+  /** Ledger sums per Vietnam day and kind, the rows of the money report. Positive VND for money in (top-up) and for commission / withdrawals taken, signed for adjustments. */
+  async ledgerByDay(context: TransactionContext, fromMs: number, toMs: number): Promise<Array<{ day: string; topupVnd: number; commissionVnd: number; adjustmentNetVnd: number; withdrawalVnd: number }>> {
+    const result = await context.query<{ day: string; kind: string; delta: string }>(
+      `SELECT to_char(date_trunc('day', created_at AT TIME ZONE 'Asia/Ho_Chi_Minh'), 'YYYY-MM-DD') AS day, entry_kind AS kind, COALESCE(sum(delta_vnd), 0)::text AS delta
+         FROM app.wallet_ledger_entries
+        WHERE created_at >= to_timestamp($1::bigint / 1000.0) AND created_at < to_timestamp($2::bigint / 1000.0)
+        GROUP BY 1, 2 ORDER BY 1`,
+      [fromMs, toMs],
+    );
+    const days = new Map<string, { day: string; topupVnd: number; commissionVnd: number; adjustmentNetVnd: number; withdrawalVnd: number }>();
+    for (const row of result.rows) {
+      const entry = days.get(row.day) ?? { day: row.day, topupVnd: 0, commissionVnd: 0, adjustmentNetVnd: 0, withdrawalVnd: 0 };
+      const delta = whole(row.delta);
+      if (row.kind === 'TOPUP') {
+        entry.topupVnd += delta;
+      } else if (row.kind === 'COMMISSION_DEBIT') {
+        entry.commissionVnd += -delta;
+      } else if (row.kind === 'WITHDRAWAL_DEBIT') {
+        entry.withdrawalVnd += -delta;
+      } else {
+        entry.adjustmentNetVnd += delta;
+      }
+      days.set(row.day, entry);
+    }
+    return [...days.values()];
+  }
+
+  /** The control total: the sum of every ledger row against the sum of the wallet balances. A difference is shown, never hidden. */
+  async reconciliation(context: TransactionContext): Promise<{ ledgerSumVnd: number; walletBalanceVnd: number; differenceVnd: number }> {
+    const result = await context.query<{ ledger: string; balance: string }>(
+      `SELECT (SELECT COALESCE(sum(delta_vnd), 0) FROM app.wallet_ledger_entries)::text AS ledger, (SELECT COALESCE(sum(balance_vnd), 0) FROM app.driver_wallets)::text AS balance`,
+    );
+    const ledgerSumVnd = whole(result.rows[0]?.ledger);
+    const walletBalanceVnd = whole(result.rows[0]?.balance);
+    return { ledgerSumVnd, walletBalanceVnd, differenceVnd: walletBalanceVnd - ledgerSumVnd };
+  }
+
   async pendingTopups(context: TransactionContext): Promise<PendingTopups> {
     const result = await context.query<{ n: string; amount: string }>(
       `SELECT count(*)::text AS n, COALESCE(sum(amount_requested_vnd), 0)::text AS amount FROM app.wallet_topup_requests WHERE state = 'PENDING'`,

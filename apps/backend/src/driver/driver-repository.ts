@@ -222,6 +222,15 @@ export class DriverRepository {
     return result.rows.map((row) => row.driver_id);
   }
 
+  /** The code and the name of each Shipper (M12 reports: the name is shown only to an administrator who may review Shippers). */
+  async identitiesOf(context: TransactionContext, driverIds: readonly string[]): Promise<Map<string, { shipperCode: string; fullName: string }>> {
+    const result = await context.query<{ driver_id: string; shipper_code: string; full_name: string }>(
+      `SELECT driver_id::text AS driver_id, shipper_code, full_name FROM app.drivers WHERE driver_id = ANY($1::uuid[])`,
+      [driverIds],
+    );
+    return new Map(result.rows.map((row) => [row.driver_id, { shipperCode: row.shipper_code, fullName: row.full_name }]));
+  }
+
   async findById(context: TransactionContext, driverId: string): Promise<DriverRow | undefined> {
     const result = await context.query<RawDriver>(`SELECT ${DRIVER_COLUMNS} FROM app.drivers d WHERE d.driver_id = $1::uuid`, [driverId]);
     const row = result.rows[0];

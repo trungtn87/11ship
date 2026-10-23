@@ -223,7 +223,7 @@ describe('M12 administration web (real browser)', () => {
     await press(page, 'Xác nhận lưu', "document.querySelector('.dialog')");
     await page.waitFor(`document.querySelector('.dialog .message-error') && !document.querySelector('.dialog .message-error').hidden`); // no reason: nothing sent
     expect((await app.pool.query(`SELECT int_value::text AS v FROM app.shipper_wallet_parameters WHERE param_key = 'topup_min_vnd'`)).rows[0].v).toBe(before);
-    await page.fill('.dialog textarea', 'Điều chỉnh mức nạp tối thiểu');
+    await page.fill('.dialog textarea', `Điều chỉnh mức nạp tối thiểu ${tag}`);
     await press(page, 'Xác nhận lưu', "document.querySelector('.dialog')");
     await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã lưu cấu hình')`);
     expect((await app.pool.query(`SELECT int_value::text AS v FROM app.shipper_wallet_parameters WHERE param_key = 'topup_min_vnd'`)).rows[0].v).toBe(String(Number(before) + 5000));
@@ -234,11 +234,11 @@ describe('M12 administration web (real browser)', () => {
     await press(page, 'Hoàn nguyên giá trị này');
     await page.waitFor(`document.querySelector('.dialog #cfg-f-topup_min_vnd') && document.querySelector('.dialog').textContent.includes('Hoàn nguyên')`);
     expect(await page.evaluate<string>(`document.querySelector('#cfg-f-topup_min_vnd').value`)).toBe(before);
-    await page.fill('.dialog textarea', 'Hoàn nguyên mức nạp');
+    await page.fill('.dialog textarea', `Hoàn nguyên mức nạp ${tag}`);
     await press(page, 'Xác nhận lưu', "document.querySelector('.dialog')");
     await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã lưu cấu hình')`);
     expect((await app.pool.query(`SELECT int_value::text AS v FROM app.shipper_wallet_parameters WHERE param_key = 'topup_min_vnd'`)).rows[0].v).toBe(before);
-    expect((await app.pool.query(`SELECT count(*)::int AS n FROM app.audit_logs WHERE action = 'admin.shipper_wallet_parameters.update.v1' AND metadata ->> 'reason' IN ('Điều chỉnh mức nạp tối thiểu', 'Hoàn nguyên mức nạp')`)).rows[0].n).toBe(2);
+    expect((await app.pool.query(`SELECT count(*)::int AS n FROM app.audit_logs WHERE action = 'admin.shipper_wallet_parameters.update.v1' AND metadata ->> 'reason' IN ($1, $2)`, [`Điều chỉnh mức nạp tối thiểu ${tag}`, `Hoàn nguyên mức nạp ${tag}`])).rows[0].n).toBe(2);
     await page.close();
 
     const adminPage: Page = await (browser as Browser).newPage();

@@ -85,7 +85,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | shop_business_hours | SELECT, INSERT, DELETE |
 | idempotency_records | SELECT, INSERT, UPDATE, DELETE |
 | outbox_events | SELECT, INSERT, UPDATE |
-| audit_logs | INSERT only |
+| audit_logs | SELECT, INSERT (M12: the administration reads the log; never updated or deleted) |
 | admin_memberships | SELECT, INSERT, UPDATE (INSERT: the activation (M01-D-ADMIN-1C) creates ADMIN-role rows; the SYSTEM row is created by the operator command; UPDATE also because `FOR UPDATE/SHARE` needs it) |
 | admin_auth_challenges | SELECT, INSERT, UPDATE |
 | admin_totp_factors | SELECT, INSERT, UPDATE, DELETE |
@@ -149,6 +149,8 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | notification_reminders | SELECT, INSERT, UPDATE, DELETE (M08: due reminders from M07 events, resolved once; resolved rows are deleted by the retention pass) |
 | notification_offer_rounds | SELECT, INSERT, DELETE (M08: one row per Shipper, delivery and search round (at most one push); old rows are deleted by the retention pass) |
 | notification_settings | SELECT, INSERT, UPDATE (M08: the account's own notification settings per app) |
+| report_export_jobs | SELECT, INSERT, UPDATE (M12-E: export jobs; never deleted, a trigger refuses it) |
+| report_export_files | SELECT, INSERT, DELETE (M12-E: the bytes of an export; removed when the file expires) |
 
 **Permanent account deletion (Owner decision 2026-10-14).** The runtime role has no `DELETE` on any account table. The only way an account is removed is the function `app.purge_app_user(uuid)` (created by the migration, `SECURITY DEFINER`, owned by the migration role, refuses an administration account and an account with a shop or driver profile). `PUBLIC` has no `EXECUTE` on it; after the migrations run, grant it to the runtime role with `ops/selfhosted/03-runtime-function-grants.sql` (one statement: `GRANT EXECUTE ON FUNCTION app.purge_app_user(uuid) TO ship11_app;`). Without that grant a permanent delete answers 503 and nothing is deleted.
 

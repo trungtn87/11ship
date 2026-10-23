@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DeliveryOfferReader, ShipperWorkReader } from './delivery-ports';
+import { DeliveryReportReader } from './delivery-report-reader';
 import { DeliveryRepository } from './delivery-repository';
 
 /**
@@ -7,7 +8,7 @@ import { DeliveryRepository } from './delivery-repository';
  * It imports NOTHING: its providers are participants that receive a TransactionContext, so M06 can bind them without a module cycle.
  */
 @Module({
-  providers: [DeliveryRepository, DeliveryOfferReader, ShipperWorkReader],
-  exports: [DeliveryRepository, DeliveryOfferReader, ShipperWorkReader],
+  providers: [DeliveryRepository, DeliveryOfferReader, ShipperWorkReader, DeliveryReportReader],
+  exports: [DeliveryRepository, DeliveryOfferReader, ShipperWorkReader, DeliveryReportReader],
 })
 export class DeliveryReadModule {}

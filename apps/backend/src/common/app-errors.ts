@@ -94,6 +94,11 @@ export const APP_ERROR_DEFINITIONS = {
   ADMIN_ACCESS_NOT_FOUND: { status: 404, message: 'The administrator account to manage was not found' },
   ADMIN_ACCESS_VERSION_CONFLICT: { status: 409, message: 'The administrator was changed by another request' },
   ADMIN_ACCESS_STATE_CONFLICT: { status: 409, message: 'The administrator is not in a state that allows this action' },
+  // M12-E: report exports.
+  REPORT_EXPORT_LIMIT: { status: 409, message: 'Too many report exports are already waiting or running' },
+  REPORT_EXPORT_NOT_FOUND: { status: 404, message: 'The report export was not found' },
+  REPORT_EXPORT_NOT_READY: { status: 409, message: 'The report export is not finished or did not succeed' },
+  REPORT_EXPORT_EXPIRED: { status: 409, message: 'The report export file has expired' },
   FINANCE_ADMIN_NOT_FOUND: { status: 404, message: 'The administrator was not found' },
   FINANCE_GRANT_STATE_CONFLICT: { status: 409, message: 'The finance right is not in a state that allows this action' },
   FINANCE_VERSION_CONFLICT: { status: 409, message: 'The finance right was changed by another request' },
