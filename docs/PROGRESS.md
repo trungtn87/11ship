@@ -279,11 +279,13 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#171](https://github.com/trungtn87/11ship/pull/171) ops: diagnose immutable VPS release mismatch without modify… | Đã merge (`MERGED`) | — | — | — | `54727b6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#172](https://github.com/trungtn87/11ship/pull/172) fix(deploy): reproducible fresh builds and reviewed M01 rol… | Đã merge (`MERGED`) | — | — | — | `2cb08f8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#178](https://github.com/trungtn87/11ship/pull/178) M07: sửa luồng nhận hàng, thương lượng phí và quyền hủy (Ow… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `c6c7cc3` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#179](https://github.com/trungtn87/11ship/pull/179) fix(ui): simplify user notices and connection timeout | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `e4c96d6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
 - `UNCLASSIFIED_PR` PR #169: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #178: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #179: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
