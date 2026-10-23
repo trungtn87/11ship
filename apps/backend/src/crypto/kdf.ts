@@ -17,6 +17,8 @@ export const HKDF_INFO_ADMIN_ACTIVATION_OTP_HMAC = Buffer.from('admin-activation
 // Issue #102: the queued SMS (recipient + text with the OTP) is sealed with its own purpose subkey (added last; earlier
 // derivations unchanged).
 export const HKDF_INFO_SMS_PAYLOAD = Buffer.from('sms-payload-aes-gcm.v1', 'utf8');
+// M13: the Discord webhook (the one secret M13 stores) is sealed with its own purpose subkey (added last; earlier derivations unchanged).
+export const HKDF_INFO_OPS_SECRET = Buffer.from('ops-secret-aes-gcm.v1', 'utf8');
 export const MASTER_KEY_BYTES = 32;
 export const SUBKEY_BYTES = 32;
 
@@ -29,6 +31,7 @@ export interface DerivedSubkeys {
   readonly adminOperation: Buffer;
   readonly adminActivationOtp: Buffer;
   readonly smsPayload: Buffer;
+  readonly opsSecret: Buffer;
 }
 
 export function deriveSubkeys(master: Buffer): DerivedSubkeys {
@@ -49,5 +52,6 @@ export function deriveSubkeys(master: Buffer): DerivedSubkeys {
       hkdfSync('sha256', master, HKDF_SALT, HKDF_INFO_ADMIN_ACTIVATION_OTP_HMAC, SUBKEY_BYTES),
     ),
     smsPayload: Buffer.from(hkdfSync('sha256', master, HKDF_SALT, HKDF_INFO_SMS_PAYLOAD, SUBKEY_BYTES)),
+    opsSecret: Buffer.from(hkdfSync('sha256', master, HKDF_SALT, HKDF_INFO_OPS_SECRET, SUBKEY_BYTES)),
   };
 }

@@ -5,6 +5,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import android.content.Intent
 import vn.eleven.n11.N11DeviceChannel
 import vn.eleven.n11.N11PushChannel
+import vn.eleven.n11.N11UpdateChannel
 import vn.eleven.n11.N11LocationChannel
 
 // 11Food only: the device bridge plus the one-shot foreground location channel for the shop position.
@@ -15,6 +16,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         N11DeviceChannel(applicationContext).register(flutterEngine.dartExecutor.binaryMessenger)
+        N11UpdateChannel(this).register(flutterEngine.dartExecutor.binaryMessenger)
         location = N11LocationChannel(this).also { it.register(flutterEngine.dartExecutor.binaryMessenger) }
         push = N11PushChannel(this).also { it.register(flutterEngine.dartExecutor.binaryMessenger) }
         N11PushChannel.handleIntent(intent)

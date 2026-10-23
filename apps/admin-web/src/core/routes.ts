@@ -44,7 +44,15 @@ export type Route =
   | { readonly name: 'finance-withdrawal'; readonly id: string }
   | { readonly name: 'finance-transactions'; readonly shipper?: string }
   | { readonly name: 'finance-reconciliation' }
-  | { readonly name: 'wallet-params' };
+  | { readonly name: 'wallet-params' }
+  // M13 "Vận hành hệ thống": overview, incidents (list and one), SMS Gateway, log, versions & updates, configuration & maintenance.
+  | { readonly name: 'ops' }
+  | { readonly name: 'ops-incidents' }
+  | { readonly name: 'ops-incident'; readonly ref: string }
+  | { readonly name: 'ops-gateway' }
+  | { readonly name: 'ops-logs' }
+  | { readonly name: 'ops-releases' }
+  | { readonly name: 'ops-config' };
 
 /** The only status filter with its own menu entry ("Đang khóa"); any other value of ?status= is ignored. */
 export type UserStatusFilter = 'LOCKED';
@@ -100,6 +108,10 @@ export function parseRoute(pathname: string, search = ''): Route {
   if (shipper !== null && isUuid(shipper[1])) {
     return { name: 'shipper', id: shipper[1] };
   }
+  const ops = parseOpsRoute(path);
+  if (ops !== undefined) {
+    return ops;
+  }
   const finance = parseFinanceRoute(path, search);
   if (finance !== undefined) {
     return finance;
@@ -129,6 +141,28 @@ export function parseRoute(pathname: string, search = ''): Route {
     return { name: 'invitation', id };
   }
   return { name: 'home' };
+}
+
+/** A SC-013 style incident code or a canonical uuid (the server decides what exists). */
+const INCIDENT_REF = /^(?:SC-\d{1,9}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+function parseOpsRoute(path: string): Route | undefined {
+  switch (path) {
+    case '/system-ops':
+      return { name: 'ops' };
+    case '/system-ops/incidents':
+      return { name: 'ops-incidents' };
+    case '/system-ops/gateway':
+      return { name: 'ops-gateway' };
+    case '/system-ops/logs':
+      return { name: 'ops-logs' };
+    case '/system-ops/releases':
+      return { name: 'ops-releases' };
+    case '/system-ops/config':
+      return { name: 'ops-config' };
+  }
+  const incident = /^\/system-ops\/incidents\/([^/]+)$/.exec(path);
+  return incident !== null && INCIDENT_REF.test(incident[1] as string) ? { name: 'ops-incident', ref: incident[1] as string } : undefined;
 }
 
 function parseFinanceRoute(path: string, search: string): Route | undefined {
@@ -237,6 +271,20 @@ export function formatRoute(route: Route): string {
       return '/finance/reconciliation';
     case 'wallet-params':
       return '/system/parameters/wallet';
+    case 'ops':
+      return '/system-ops';
+    case 'ops-incidents':
+      return '/system-ops/incidents';
+    case 'ops-incident':
+      return `/system-ops/incidents/${encodeURIComponent(route.ref)}`;
+    case 'ops-gateway':
+      return '/system-ops/gateway';
+    case 'ops-logs':
+      return '/system-ops/logs';
+    case 'ops-releases':
+      return '/system-ops/releases';
+    case 'ops-config':
+      return '/system-ops/config';
     case 'invitations':
       return route.status === undefined ? '/invitations' : `/invitations?status=${route.status}`;
     case 'invitation-new':

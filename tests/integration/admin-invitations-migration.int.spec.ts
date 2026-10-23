@@ -1,5 +1,6 @@
 import { ACTIVATION_DOWN_SQL, ACTIVATION_UP_SQL } from './support/activation-migration-sql';
 import { ACCOUNT_SCOPE_DOWN_SQL, ACCOUNT_SCOPE_UP_SQL } from './support/account-scope-migration-sql';
+import { M13_DOWN_SQL, M13_UP_SQL } from './support/m13-migration-sql';
 import { SMS_GATEWAY_DOWN_SQL, SMS_GATEWAY_UP_SQL } from './support/sms-gateway-migration-sql';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -146,6 +147,7 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
     expect(before.length).toBeGreaterThan(0);
     await client.query('BEGIN');
     try {
+      await client.query(M13_DOWN_SQL); // M13 is the newest of all: down first, up last
       await client.query(catalogDownSql);
       await client.query(ACCOUNT_SCOPE_DOWN_SQL); // the newest migration changes app.users: down first, up last
       await client.query(SMS_GATEWAY_DOWN_SQL); // the SMS queue references the activation challenges: newest, down first, up last
@@ -165,6 +167,7 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
       await client.query(SMS_GATEWAY_UP_SQL);
       await client.query(ACCOUNT_SCOPE_UP_SQL);
       await client.query(catalogUpSql);
+      await client.query(M13_UP_SQL);
     } finally {
       await client.query('ROLLBACK');
     }

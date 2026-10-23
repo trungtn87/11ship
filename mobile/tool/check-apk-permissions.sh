@@ -5,13 +5,14 @@
 #   vn.eleven.n11.permission.PEER_ENDORSEMENT  both apps (signature permission of the Binder door between the two apps)
 #   <applicationId>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION  added by AndroidX itself (not grantable to other apps)
 #   M08 push build: POST_NOTIFICATIONS, WAKE_LOCK, ACCESS_NETWORK_STATE and com.google.android.c2dm.permission.RECEIVE (the FCM client's own); a build without push has none.
+#   M13: REQUEST_INSTALL_PACKAGES (both apps) so a verified update can be handed to the Android installer, where the person confirms.
 #   Food: one foreground fix; Ship: explicit M14 foreground recorder, never background-location permission.
 # Usage: check-apk-permissions.sh <food|ship> <badging-file>
 set -euo pipefail
 app="${1:?app}"; badging="${2:?badging file}"
 case "$app" in
-  food) app_id="vn.eleven.food.test"; allowed="android.permission.INTERNET vn.eleven.n11.permission.PEER_ENDORSEMENT $app_id.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION android.permission.POST_NOTIFICATIONS android.permission.WAKE_LOCK android.permission.ACCESS_NETWORK_STATE com.google.android.c2dm.permission.RECEIVE" ;;
-  ship) app_id="vn.eleven.ship.test"; allowed="android.permission.INTERNET vn.eleven.n11.permission.PEER_ENDORSEMENT $app_id.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION android.permission.ACCESS_NETWORK_STATE android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION android.permission.FOREGROUND_SERVICE android.permission.FOREGROUND_SERVICE_LOCATION android.permission.POST_NOTIFICATIONS android.permission.WAKE_LOCK com.google.android.c2dm.permission.RECEIVE" ;;
+  food) app_id="vn.eleven.food.test"; allowed="android.permission.INTERNET vn.eleven.n11.permission.PEER_ENDORSEMENT $app_id.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION android.permission.POST_NOTIFICATIONS android.permission.WAKE_LOCK android.permission.ACCESS_NETWORK_STATE com.google.android.c2dm.permission.RECEIVE android.permission.REQUEST_INSTALL_PACKAGES" ;;
+  ship) app_id="vn.eleven.ship.test"; allowed="android.permission.INTERNET vn.eleven.n11.permission.PEER_ENDORSEMENT $app_id.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION android.permission.ACCESS_NETWORK_STATE android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION android.permission.FOREGROUND_SERVICE android.permission.FOREGROUND_SERVICE_LOCATION android.permission.POST_NOTIFICATIONS android.permission.WAKE_LOCK com.google.android.c2dm.permission.RECEIVE android.permission.REQUEST_INSTALL_PACKAGES" ;;
   *) echo "usage: $0 <food|ship> <badging-file>" >&2; exit 2 ;;
 esac
 found="$(sed -n "s/^uses-permission[a-z0-9-]*: name='\([^']*\)'.*/\1/p" "$badging" | sort -u)"

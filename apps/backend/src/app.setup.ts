@@ -41,6 +41,9 @@ export function configureApp(app: INestApplication): void {
   app.use(`/${GLOBAL_PREFIX}/admin-recovery`, clientAuthTransportMiddleware);
   // Issue #102: the SMS gateway API carries the message (an OTP) and a device credential, never cached.
   app.use(`/${GLOBAL_PREFIX}/sms-gateway`, clientAuthTransportMiddleware);
+  // M13: ingest credentials and update checks, never cached.
+  app.use(`/${GLOBAL_PREFIX}/ops`, clientAuthTransportMiddleware);
+  app.use(`/${GLOBAL_PREFIX}/app-updates`, clientAuthTransportMiddleware);
   // Same headers for the own-profile routes (M01.05): personal data, never cached.
   // The own shop and its menu are private to the owner as well (M02).
   app.use(`/${GLOBAL_PREFIX}/shop/me`, clientAuthTransportMiddleware);

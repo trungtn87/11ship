@@ -55,4 +55,18 @@ void main() {
     expect(state.vpsStatus(), isNot(contains('Mất kết nối')));
     expect(describeError('ACK_PENDING'), 'chưa báo được');
   });
+
+  test('the update answer is explained in plain words and only READY allows the download', () {
+    final ready = UpdateInfo.fromMap({'state': 'READY', 'versionName': '1.5', 'sizeBytes': 2097152, 'priority': 'RECOMMENDED'});
+    expect(ready.ready, isTrue);
+    expect(ready.describe(), contains('1.5'));
+    expect(ready.describe(), contains('2.0 MB'));
+    for (final blocked in ['STOP_FIRST', 'REPORT_PENDING', 'TASK_RUNNING', 'SERVER_NOT_READY', 'NO_UPDATE']) {
+      final info = UpdateInfo.fromMap({'state': blocked});
+      expect(info.ready, isFalse, reason: blocked);
+      expect(info.describe(), isNotEmpty);
+    }
+    expect(UpdateInfo.fromMap(null).ready, isFalse);
+    expect(GatewayState.fromMap({'updateHint': '1.5'}).updateHint, '1.5');
+  });
 }

@@ -56,7 +56,7 @@ describe('menu by permission', () => {
     const m = await load(real, 'core/menu.js');
     assert.deepEqual(
       m.MENU.flatMap((group) => group.items.map((item) => item.label)),
-      ['Tổng quan', 'Người dùng', 'Quản trị viên', 'Lời mời Admin', 'Quán', 'Shipper', 'Đơn hàng', 'Giao hàng', 'Thông báo', 'Đánh giá', 'Phản ánh', 'Danh mục', 'Tài chính', 'Cài đặt hệ thống', 'Thời hạn xử lý đơn', 'Vùng hoạt động', 'Tham số hệ thống', 'Phí & điều kiện giao', 'Nhật ký', 'Giám sát'],
+      ['Tổng quan', 'Người dùng', 'Quản trị viên', 'Lời mời Admin', 'Quán', 'Shipper', 'Đơn hàng', 'Giao hàng', 'Thông báo', 'Đánh giá', 'Phản ánh', 'Danh mục', 'Tài chính', 'Vận hành hệ thống', 'Cài đặt hệ thống', 'Thời hạn xử lý đơn', 'Vùng hoạt động', 'Tham số hệ thống', 'Phí & điều kiện giao', 'Nhật ký', 'Giám sát'],
     );
   });
   it('M04 "Tài chính": six ready entries in the approved order and the SYSTEM-only receiving accounts (B3a); SYSTEM sees them, an ADMIN only with the matching grant; parameters sit under the system group', async () => {
@@ -106,6 +106,43 @@ describe('menu by permission', () => {
     assert.equal(m.canOpenRoute('ADMIN', new Set(['users']), { name: 'users' }), true);
     assert.equal(m.canOpenRoute('SYSTEM', none, { name: 'administrators' }), true);
     assert.equal(m.canOpenRoute('ADMIN', none, { name: 'home' }), true);
+  });
+});
+
+describe('M13 "Vận hành hệ thống" menu and pages', () => {
+  const OPS = ['sysops', 'sysops-overview', 'sysops-incidents', 'sysops-gateway', 'sysops-logs', 'sysops-releases', 'sysops-config'];
+  it('SYSTEM sees all six entries; an ADMIN sees them only with the server-given "ops" access, never from application grants', async () => {
+    const m = await load(real, 'core/menu.js');
+    assert.deepEqual(ids(m.visibleMenu('SYSTEM')).filter((id) => id.startsWith('sysops')), OPS);
+    assert.deepEqual(ids(m.visibleMenu('ADMIN', new Set(['users', 'shops', 'drivers', 'deliveries', 'notifications']))).filter((id) => id.startsWith('sysops')), []);
+    assert.deepEqual(ids(m.visibleMenu('ADMIN', new Set(['ops']))).filter((id) => id.startsWith('sysops')), OPS);
+    assert.deepEqual(m.MENU.find((g) => g.id === 'sysops').items[0].children.map((c) => c.label), ['Tổng quan', 'Sự cố', 'SMS Gateway', 'Nhật ký', 'Phiên bản & cập nhật', 'Cấu hình']);
+  });
+  it('routes parse, format and are guarded like the menu', async () => {
+    const m = await load(real, 'core/menu.js');
+    const r = await load(real, 'core/routes.js');
+    for (const [path, name] of [['/system-ops', 'ops'], ['/system-ops/incidents', 'ops-incidents'], ['/system-ops/gateway', 'ops-gateway'], ['/system-ops/logs', 'ops-logs'], ['/system-ops/releases', 'ops-releases'], ['/system-ops/config', 'ops-config']]) {
+      const route = r.parseRoute(path);
+      assert.equal(route.name, name);
+      assert.equal(r.formatRoute(route), path);
+      assert.equal(m.canOpenRoute('ADMIN', m.NO_GRANTS, route), false, path);
+      assert.equal(m.canOpenRoute('ADMIN', new Set(['ops']), route), true, path);
+      assert.equal(m.canOpenRoute('SYSTEM', m.NO_GRANTS, route), true, path);
+    }
+    assert.deepEqual(r.parseRoute('/system-ops/incidents/SC-013'), { name: 'ops-incident', ref: 'SC-013' });
+    assert.equal(r.parseRoute('/system-ops/incidents/not-a-code').name, 'home');
+    assert.equal(r.formatRoute({ name: 'ops-incident', ref: 'SC-013' }), '/system-ops/incidents/SC-013');
+    assert.equal(m.activeMenuId({ name: 'ops-incident', ref: 'SC-013' }), 'sysops-incidents');
+    assert.deepEqual(m.breadcrumb({ name: 'ops-releases' }), ['Vận hành hệ thống', 'Phiên bản & cập nhật']);
+  });
+  it('the real build carries no sample operations data and no way to run a command, a path or a deploy', () => {
+    for (const file of ['core/ops.js', 'core/ops-api.js', 'dom/ops-view.js']) {
+      const text = readFileSync(join(real, 'js', file), 'utf8');
+      assert.ok(!/SC-01[0-9]|Gateway 01|Dữ liệu minh họa|localStorage|sessionStorage|innerHTML|eval\(/.test(text.replace(/SC-013/g, '')), file);
+      assert.ok(!/\/admin\/ops\/deploy|\/admin\/ops\/exec|\/admin\/ops\/shell/.test(text), file);
+    }
+    const view = readFileSync(join(real, 'js', 'dom/ops-view.js'), 'utf8');
+    assert.ok(!view.includes('Đăng nhập'), 'the OTP queue is for "Đăng ký / Quên mật khẩu" only');
   });
 });
 

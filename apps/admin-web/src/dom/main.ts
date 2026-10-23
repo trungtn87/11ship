@@ -15,6 +15,7 @@ import { AdminFinanceOpsApi, createFinanceOpsSource } from '../core/finance-ops-
 import { AdminShipperApi, createShipperSource, SHIPPERS_BASE } from '../core/shippers-api.js';
 import { AdminOrderApi, createOrderSource } from '../core/orders-api.js';
 import { AdminDeliveryApi, createDeliverySource, DELIVERIES_BASE } from '../core/deliveries-api.js';
+import { AdminOpsApi, createOpsSource, OPS_BASE } from '../core/ops-api.js';
 import { AdminFeedbackApi, createFeedbackSource, FEEDBACK_BASE } from '../core/feedback-api.js';
 import { AdminNotificationApi, createNotificationSource, NOTIFICATIONS_BASE } from '../core/notifications-api.js';
 import { createShippingPolicySource, SHIPPING_POLICY_BASE, ShippingPolicyApi } from '../core/shipping-policy-api.js';
@@ -173,6 +174,10 @@ function startAdmin(host: HTMLElement): void {
       refresh: () => controller.refreshSession(),
     }),
     () => controller.sessionCsrf,
+    createOpsSource(new AdminOpsApi(fetchTransport(window.fetch.bind(window), { base: OPS_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
   );
   const view = new AdminView(host, controller, shell);
   controller.subscribe((screen) => view.render(screen));

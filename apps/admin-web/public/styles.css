@@ -2893,6 +2893,129 @@ select {
   font-weight: 600;
 }
 
+/* M13 "Vận hành hệ thống": status tiles, the incident timeline and a few shared list shapes. Colors keep the project's palette; "no data" and "stale" are
+   neutral grey, never green. */
+.ops-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.ops-grid-2 {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.ops-tile {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--white);
+  padding: 16px;
+}
+
+.ops-tile-ok {
+  border-color: var(--ok-line);
+}
+
+.ops-tile-warning {
+  border-color: var(--warning-line);
+  background: var(--yellow-subtle);
+}
+
+.ops-tile-critical {
+  border-color: var(--error-line);
+  background: var(--error-bg);
+}
+
+.ops-tile-no_data,
+.ops-tile-stale,
+.ops-tile-plain {
+  background: var(--neutral-bg);
+}
+
+.ops-tile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ops-tile-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.ops-tile-text {
+  margin: 8px 0 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.ops-tile-value {
+  margin: 6px 0 0;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.ops-timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.ops-timeline li {
+  padding: 10px 12px;
+  border-left: 4px solid var(--line-strong);
+  background: var(--white);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  overflow-wrap: anywhere;
+}
+
+.ops-timeline-error {
+  border-left-color: var(--error) !important;
+}
+
+.ops-timeline-warn {
+  border-left-color: var(--yellow) !important;
+}
+
+.ops-timeline-info {
+  border-left-color: var(--ok) !important;
+}
+
+.ops-timeline-time {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.plain-list {
+  margin: 8px 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-right: 16px;
+}
+
+.detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.row-selected td {
+  background: var(--yellow-soft);
 /* M11.03: ratings and complaints. */
 .stars {
   color: var(--brand-yellow, #d8ad18);
