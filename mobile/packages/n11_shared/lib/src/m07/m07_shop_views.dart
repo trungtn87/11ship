@@ -713,7 +713,8 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
   Future<void> _reload() async => _page.currentState?.fetcher.reload(quiet: true);
 
   Future<void> _cancel(DeliveryView d) async {
-    final String? reason = await showReasonDialog(context, title: 'Hủy yêu cầu giao?', explanation: kCancelExplain, confirmLabel: 'Xác nhận hủy');
+    final bool afterPickup = d.allows('cancel_after_pickup');
+    final String? reason = await showReasonDialog(context, title: afterPickup ? 'Hủy giao khi shipper đã lấy hàng?' : 'Hủy yêu cầu giao?', explanation: afterPickup ? kCancelAfterPickupExplain : kCancelExplain, confirmLabel: 'Xác nhận hủy');
     if (reason == null || !mounted) {
       return;
     }
