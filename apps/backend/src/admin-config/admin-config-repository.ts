@@ -3,8 +3,8 @@ import { TechnicalError } from '../common/app-errors';
 import { JsonObject } from '../idempotency/idempotency-executor';
 import { TransactionContext } from '../transaction/transaction-context';
 
-export type ConfigGroupKey = 'security' | 'shipper_wallet' | 'delivery_policy' | 'notifications';
-export const CONFIG_GROUP_KEYS: readonly ConfigGroupKey[] = ['security', 'shipper_wallet', 'delivery_policy', 'notifications'];
+export type ConfigGroupKey = 'security' | 'shipper_wallet' | 'delivery_policy' | 'orders' | 'notifications';
+export const CONFIG_GROUP_KEYS: readonly ConfigGroupKey[] = ['security', 'shipper_wallet', 'delivery_policy', 'orders', 'notifications'];
 
 /** The audit action each owner writes when it changes its configuration, and the group the change belongs to. The owners' own rows are the history; M12 stores none. */
 export const CONFIG_AUDIT_ACTIONS: Readonly<Record<string, ConfigGroupKey>> = {
@@ -12,6 +12,7 @@ export const CONFIG_AUDIT_ACTIONS: Readonly<Record<string, ConfigGroupKey>> = {
   'admin.shipper_wallet_parameters.update.v1': 'shipper_wallet',
   'admin.shipping_eligibility_policy.update.v1': 'delivery_policy',
   'admin.shipping_fee_policy.apply.v1': 'delivery_policy',
+  'admin.order_parameters.update.v1': 'orders',
   'admin.notification_config.update.v1': 'notifications',
 };
 

@@ -298,6 +298,21 @@ export function parseReasonBody(body: unknown): ReasonInput {
   return { expectedVersion: versionOf(b.expected_version), reason: text(b.reason, 1, MAX_REASON) };
 }
 
+export interface FeeDecisionInput {
+  readonly accept: boolean;
+  /** The VERSION OF THE DELIVERY the customer saw (`delivery.version` of the order). */
+  readonly expectedVersion: number;
+}
+
+/** POST /v1/customers/me/orders/:id/delivery/fee : the payer answers the fee the Shipper proposed. */
+export function parseFeeDecisionBody(body: unknown): FeeDecisionInput {
+  const b = shaped(body, ['decision', 'expected_version']);
+  if (b.decision !== 'ACCEPT' && b.decision !== 'REJECT') {
+    return reject();
+  }
+  return { accept: b.decision === 'ACCEPT', expectedVersion: versionOf(b.expected_version) };
+}
+
 export interface VersionInput {
   readonly expectedVersion: number;
 }

@@ -3,13 +3,13 @@ import { UserRepository } from '../auth/user-repository';
 import { DriverRepository, DriverRow } from '../driver/driver-repository';
 import { JsonObject } from '../idempotency/idempotency-executor';
 import { freshClockMs } from '../idempotency/idempotency-repository';
-import { Agreement } from '../shipping-policy/shipping-fee-agreement';
+import { Agreement, answerIsWaiting } from '../shipping-policy/shipping-fee-agreement';
 import { SHIPPER_SEARCH_RADIUS_M } from '../shipping-policy/shipping-eligibility';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { TransactionContext } from '../transaction/transaction-context';
 import { RUNNING_STATES } from './delivery-constants';
 import { AssignmentRow, DeliveryRepository, DeliveryRow, EventRow, IncidentRow } from './delivery-repository';
-import { dropoffAreaOf, feeStatusOf, freshnessOf, locationValid, mayRecall, shipperMayRelease, shopMayCancel } from './delivery-rules';
+import { creatorMayCancelAfterPickup, dropoffAreaOf, feeStatusOf, freshnessOf, locationValid, mayRecall, shipperMayRelease, shopMayCancel } from './delivery-rules';
 import { ShipperLocationRepository } from './shipper-location';
 import { buildDeliveryStory, StoryDelivery } from '../orders/order-story';
 import { failReasonText, humanDeliveryReason, incidentReasonText } from './delivery-reason-text';
@@ -31,6 +31,29 @@ export function agreementView(agreement: Agreement | undefined): JsonObject | nu
     reason_code: agreement.reasonCode,
     reason_note: agreement.reasonNote,
     expires_at: new Date(agreement.expiresAtMs).toISOString(),
+    answer_expires_at: agreement.answerExpiresAtMs === null ? null : new Date(agreement.answerExpiresAtMs).toISOString(),
+  };
+}
+
+/** Who answers a fee the Shipper proposed: the customer for an ORDER they pay, the shop in every other case (for a DIRECT call, on behalf of a customer without an app). */
+export function feeDeciderOf(d: Pick<DeliveryRow, 'source' | 'feePayer'>): 'CUSTOMER' | 'SHOP' {
+  return d.source === 'ORDER' && d.feePayer === 'CUSTOMER' ? 'CUSTOMER' : 'SHOP';
+}
+
+/** The fee question waiting for the payer, or null. Only the amounts and the deadline: nothing about the Shipper. */
+function feeDecisionView(agreement: Agreement | undefined): JsonObject | null {
+  if (agreement === undefined || agreement.feeMode !== 'AGREED' || (agreement.status !== 'COUNTERED' && agreement.status !== 'AWAITING_CUSTOMER')) {
+    return null;
+  }
+  return {
+    state: agreement.status,
+    current_vnd: agreement.proposedFeeVnd,
+    offered_vnd: agreement.status === 'COUNTERED' ? agreement.counterFeeVnd : agreement.pendingFeeVnd,
+    // Only a Shipper's counter-offer can be refused; the shop's own proposal is answered by accepting or by the shop cancelling.
+    can_decline: agreement.status === 'COUNTERED' || agreement.pendingSource === 'COUNTER',
+    // The time the PAYER has to answer this offer (never later than the search deadline); a shop's own proposal only has the search deadline.
+    expires_at: new Date(answerIsWaiting(agreement) && agreement.answerExpiresAtMs !== null ? agreement.answerExpiresAtMs : agreement.expiresAtMs).toISOString(),
+    search_expires_at: new Date(agreement.expiresAtMs).toISOString(),
   };
 }
 
@@ -69,6 +92,9 @@ export class DeliveryViews {
       amount_vnd: d.feeVnd,
       status: feeStatusOf({ feeVnd: d.feeVnd, agreementStatus: agreement?.status ?? null }),
       distance_m: d.routeDistanceM,
+      // How the amount was found: a measured route, a band the shop chose for an address without a map point (an ESTIMATE, never a verified distance), or neither.
+      basis: d.routeDistanceM !== null ? 'ROUTE' : d.feeMode === 'STANDARD' && d.feeVnd !== null ? 'ESTIMATED_BAND' : null,
+      decider: feeDeciderOf(d),
       agreement: agreementView(agreement),
     };
   }
@@ -129,13 +155,16 @@ export class DeliveryViews {
         shipper: { name: shipper?.driver.fullName ?? '—', phone: shipper?.phone ?? null, plate_number: shipper?.driver.plateNumber ?? null },
         accepted_at: iso(assignment.acceptedAtMs),
         picked_up_at: iso(assignment.pickedUpAtMs),
-        destination_confirmed: assignment.destinationConfirmedAtMs !== null || (d.dropoffLat !== null && d.feeVnd !== null),
+        destination_confirmed: assignment.destinationConfirmedAtMs !== null || d.feeVnd !== null,
       };
       // Tracking is readable only while this shipper HOLDS the delivery (an active assignment of a running delivery).
-      if (RUNNING_STATES.includes(d.state)) {
+      // A DIRECT call has no map point to deliver to and is followed by its STATUS only, never by the Shipper's route (Owner decision 2026-10-23).
+      if (RUNNING_STATES.includes(d.state) && d.source === 'ORDER') {
         location = await this.#location(context, assignment.driverId);
       }
     }
+    const decider = feeDeciderOf(d);
+    const feeQuestionOpen = agreement !== undefined && agreement.feeMode === 'AGREED' && (agreement.status === 'COUNTERED' || agreement.status === 'AWAITING_CUSTOMER');
     const view: JsonObject = {
       delivery_id: d.deliveryId,
       code: d.code,
@@ -156,9 +185,14 @@ export class DeliveryViews {
       result: this.#result(d, incident),
       incident: this.#incident(incident),
       can: {
-        cancel: shopMayCancel(d.state),
+        cancel: shopMayCancel(d.state) || creatorMayCancelAfterPickup(d.state, d.source, 'SHOP'),
+        // After pickup: the shop that CREATED a DIRECT call (not the shop of a customer's order) is the only one who may cancel; the goods stay with the Shipper.
+        cancel_after_pickup: creatorMayCancelAfterPickup(d.state, d.source, 'SHOP'),
         recall: mayRecall(d.state, incident?.status === 'OPEN'),
         resolve_custody: incident?.status === 'OPEN',
+        // The shop answers a fee proposal only when it is the payer or stands in for a payer without an app (DIRECT).
+        decide_fee: feeQuestionOpen && decider === 'SHOP',
+        wait_customer_fee: feeQuestionOpen && decider === 'CUSTOMER',
       },
     };
     if (detail) {
@@ -201,7 +235,8 @@ export class DeliveryViews {
       shipper,
       location,
       result: this.#result(d, incident),
-      goods_custody: d.state === 'failed' ? (incident?.custody ?? null) : null,
+      goods_custody: d.state === 'failed' || incident !== undefined ? (incident?.custody ?? null) : null,
+      fee_decision: feeDeciderOf(d) === 'CUSTOMER' && d.source === 'ORDER' ? feeDecisionView(agreement) : null,
       // The points of the call as they were when it was made (snapshots): the map draws these; they say nothing about where anybody is NOW.
       pickup: { lat: d.pickupLat, lng: d.pickupLng },
       dropoff: d.dropoffLat === null || d.dropoffLng === null ? null : { lat: d.dropoffLat, lng: d.dropoffLng },
@@ -218,7 +253,6 @@ export class DeliveryViews {
     const agreement = await this.agreements.readByDelivery(context, d.deliveryId);
     const active = assignment.status === 'ACTIVE';
     const running = active && RUNNING_STATES.includes(d.state);
-    const pinned = d.dropoffLat !== null && d.dropoffLng !== null;
     const before = d.state === 'accepted' || d.state === 'location_confirmed';
     return {
       delivery_id: d.deliveryId,
@@ -248,17 +282,21 @@ export class DeliveryViews {
         shipper: { name: '', phone: null, plate_number: null },
         accepted_at: iso(assignment.acceptedAtMs),
         picked_up_at: iso(assignment.pickedUpAtMs),
-        destination_confirmed: assignment.destinationConfirmedAtMs !== null || (pinned && d.feeVnd !== null),
+        destination_confirmed: assignment.destinationConfirmedAtMs !== null || d.feeVnd !== null,
       },
       location: null,
       result: active ? null : { outcome: assignment.status === 'COMPLETED' ? 'completed' : assignment.status === 'FAILED' ? 'failed' : 'cancelled', at: iso(assignment.endedAtMs), reason: humanDeliveryReason(assignment.endReason), goods_condition: incident?.goodsCondition ?? null },
       incident: incident !== undefined && incident.assignmentId === assignment.assignmentId ? this.#incident(incident) : null,
       can: {
         release: active && shipperMayRelease(d.state),
-        confirm_destination: active && before && (!pinned || d.feeVnd === null) && agreement?.feeMode !== 'AGREED',
-        pickup: active && before && pinned && d.feeVnd !== null,
+        // Asked only when the fee really is empty and the Shipper is the one who may fill it (a never-priced call); never because a point or an amount is "null".
+        confirm_fee: active && before && d.feeVnd === null && agreement?.feeMode !== 'AGREED',
+        confirm_destination: active && before && d.feeVnd === null && agreement?.feeMode !== 'AGREED',
+        // One step: the fee is settled, nothing else (no drop-off pin) is required to take the goods.
+        pickup: active && before && d.feeVnd !== null,
         complete: running && d.state === 'delivering',
-        fail: running && d.state === 'delivering',
+        // Kept as false so an older app never offers it: after pickup the Shipper only completes, or calls the shop.
+        fail: false,
       },
     };
   }
@@ -279,6 +317,8 @@ export class DeliveryViews {
       fee_vnd: d.feeVnd,
       fee_status: feeStatusOf({ feeVnd: d.feeVnd, agreementStatus: agreement?.status ?? null }),
       fee_payer: d.feePayer,
+      fee_decider: feeDeciderOf(d),
+      source: d.source,
       search_expires_at: iso(d.searchExpiresAtMs),
       server_now: iso(nowMs),
       eligible: decision.eligible,

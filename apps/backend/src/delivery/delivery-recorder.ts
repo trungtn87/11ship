@@ -58,7 +58,7 @@ export class DeliveryRecorder {
     });
     await this.audit.append(context, {
       requestId: change.requestId,
-      actorType: change.actorType === 'SHOP' || change.actorType === 'SHIPPER' ? 'USER' : change.actorType,
+      actorType: change.actorType === 'SHOP' || change.actorType === 'SHIPPER' || change.actorType === 'CUSTOMER' ? 'USER' : change.actorType,
       actorId: change.actorId,
       action: change.operation,
       resourceType: DELIVERY_RESOURCE,
@@ -83,6 +83,8 @@ export class DeliveryRecorder {
         version: d.version,
         assignment_id: change.assignmentId ?? null,
         driver_id: change.driverId ?? null,
+        fee_payer: d.feePayer,
+        source: d.source,
       },
     });
   }

@@ -6,7 +6,7 @@ import 'package:n11_shared/testing.dart';
 // M10 phone screens on the sample store (one in-memory stand-in for the server, shared by both sides). What matters: the cart (one shop, same dish + same
 // note joins, another shop asks first, kept by the server), the checkout without a pin ("Chưa xác định phí", never 0đ), a changed price or a dish that is
 // gone is refused and the cart refreshed, a LOST answer is not reported as sent or failed and the same reference finds the Order (never two), the customer
-// cancels only before confirmation, the shop edits then must give a reason, "ready" and "call a Shipper" are independent, a failed delivery keeps the
+// cancels before confirmation (and, with a reason, after pickup), the shop edits then must give a reason, there is no "ready" step, a failed delivery keeps the
 // Order, and an ended Order draws no live position.
 
 Future<void> mount(WidgetTester tester, Widget screen) async {
@@ -463,21 +463,88 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('"Món đã sẵn sàng" and "Gọi shipper" are two buttons that need neither the other; both exist while preparing', (WidgetTester tester) async {
+    testWidgets('there is no "Món đã sẵn sàng" step: "Gọi shipper" is the one action after confirming, and no payment is recorded in the app', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore();
       final OrderRuntime runtime = runtimeOf(store);
       final String id = store.seed(status: 'PREPARING');
       await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: id));
-      expect(key('order-ready'), findsOneWidget);
+      expect(key('order-ready'), findsNothing);
+      expect(containing('Món đã sẵn sàng'), findsNothing);
+      expect(key('order-payment'), findsNothing);
+      expect(containing('Ghi nhận đã thanh toán'), findsNothing);
+      expect(containing('Đã thanh toán'), findsNothing);
+      expect(containing('Còn phải thu'), findsNothing);
       expect(key('order-call'), findsOneWidget);
-      // Call first, not ready: allowed.
       await tap(tester, key('order-call'));
+      expect(containing('sẵn sàng để shipper đến lấy'), findsOneWidget);
       await tap(tester, key('call-payer-customer'));
       expect(containing('Đang tìm shipper'), findsWidgets);
-      // Ready afterwards: still offered, and it does not touch the delivery.
-      await tap(tester, key('order-ready'));
-      expect(key('order-ready'), findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('when the table cannot price the order the shop is asked for a fee instead of getting a call no Shipper can take', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore()..feeNeedsProposal = true;
+      final OrderRuntime runtime = runtimeOf(store);
+      final String id = store.seed(status: 'PREPARING');
+      await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: id));
+      await tap(tester, key('order-call'));
+      await tap(tester, key('call-payer-shop'));
+      expect(key('fee-proposal-dialog'), findsOneWidget);
+      expect(containing('chưa tính được phí giao tự động'), findsOneWidget);
+      await tap(tester, key('fee-proposal-send'));
+      expect(containing('Nhập phí là số nguyên'), findsOneWidget); // nothing is sent without an amount
+      await tester.enterText(key('fee-proposal-amount').first, '22000');
+      await settle(tester);
+      await tap(tester, key('fee-proposal-send'));
+      expect(store.lastProposal?.amountVnd, 22000);
+      expect(store.lastProposal?.reasonCode, 'OUT_OF_PRICE_RANGE');
       expect(containing('Đang tìm shipper'), findsWidgets);
+      await unmount(tester);
+    });
+
+    testWidgets('the shop of a customer\'s order cannot cancel once the Shipper has the goods; the customer can, with a reason, and is warned', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final OrderRuntime runtime = runtimeOf(store);
+      final String id = store.seed(status: 'PREPARING', deliveryState: 'delivering');
+      await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: id));
+      expect(find.widgetWithText(OutlinedButton, 'Hủy đơn món'), findsNothing);
+      expect(key('order-delivering-note'), findsOneWidget);
+      expect(containing('chỉ khách mới hủy được'), findsWidgets);
+      await unmount(tester);
+      await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: id));
+      expect(key('order-cancel-after-pickup'), findsOneWidget);
+      await tap(tester, key('order-cancel-after-pickup'));
+      expect(containing('không tự hoàn tiền'), findsOneWidget);
+      await tap(tester, key('m07-reason-confirm'));
+      expect(key('m07-reason-dialog'), findsOneWidget); // a reason is required
+      await tester.enterText(key('m07-reason-field').first, 'Tôi không cần nữa');
+      await settle(tester);
+      await tap(tester, key('m07-reason-confirm'));
+      final OrderView after = await runtime.customer.get(id);
+      expect(after.display, DisplayStatus.cancelledByCustomer);
+      expect(after.endReason, 'Tôi không cần nữa');
+      expect(key('order-cancel-after-pickup'), findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('a fee the Shipper proposed is decided by the customer who pays: agree or refuse, and the order stays either way', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final OrderRuntime runtime = runtimeOf(store);
+      final String refused = store.seed(status: 'PREPARING', deliveryState: 'waiting_driver', feeCounter: 16000);
+      await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: refused));
+      expect(key('order-fee-decision'), findsOneWidget);
+      expect(containing('Shipper muốn lấy phí giao 16.000đ'), findsOneWidget);
+      expect(containing('Bạn là người trả phí nên bạn quyết định'), findsOneWidget);
+      await tap(tester, key('fee-reject'));
+      expect(key('order-fee-decision'), findsNothing);
+      final OrderView after = await runtime.customer.get(refused);
+      expect(after.status, 'PREPARING');
+      expect(after.money.fee.amountVnd, 10000); // the earlier fee is kept
+      await unmount(tester);
+      final String accepted = store.seed(status: 'PREPARING', deliveryState: 'waiting_driver', feeCounter: 16000);
+      await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: accepted));
+      await tap(tester, key('fee-accept'));
+      expect((await runtime.customer.get(accepted)).money.fee.amountVnd, 16000);
       await unmount(tester);
     });
 
@@ -547,7 +614,6 @@ void main() {
         'edited': false,
         'change_reason': null,
         'confirmed_at': '2026-10-18T09:00:00.000Z',
-        'ready_at': null,
         'ended_at': null,
         'end_actor': null,
         'end_reason': null,
@@ -569,7 +635,7 @@ void main() {
       expect(DisplayStatus.preparing.label, 'Quán đang chuẩn bị');
       expect(DisplayStatus.searchingShipper.label, 'Đang tìm shipper');
       expect(DisplayStatus.shipperComing.label, 'Shipper đang đến quán');
-      expect(DisplayStatus.ready.label, 'Món đã sẵn sàng — chờ lấy');
+      expect(displayStatusOf('READY'), DisplayStatus.preparing); // an older server's flag nobody sets any more
       expect(DisplayStatus.delivering.label, 'Đang giao');
       expect(DisplayStatus.completed.label, 'Hoàn thành');
       expect(DisplayStatus.searchStopped.label, 'Chưa tìm được shipper — quán đang xử lý');

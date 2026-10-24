@@ -16,6 +16,8 @@ export interface AgreementEvent {
   readonly reason: string | null;
   readonly requestId: string | null;
   readonly agreementVersion: number;
+  readonly onBehalfOf: 'CUSTOMER' | null;
+  readonly feePayer: 'CUSTOMER' | 'SHOP' | null;
   readonly createdAtMs: number;
 }
 
@@ -37,6 +39,7 @@ interface Raw {
   pending_source: 'PROPOSAL' | 'COUNTER' | null;
   final_fee_vnd: string | null;
   expires_ms: string;
+  answer_expires_ms: string | null;
   version: string;
   created_by: string;
   created_ms: string;
@@ -48,7 +51,7 @@ const ms = (column: string, alias: string): string => `(extract(epoch FROM ${col
 const COLUMNS = `agreement_id::text AS agreement_id, delivery_id::text AS delivery_id, fee_mode, payer, status, base_fee_vnd::text AS base_fee_vnd,
   base_policy_version_no::text AS base_policy_version_no, reason_code, reason_note, proposed_fee_vnd::text AS proposed_fee_vnd,
   counter_fee_vnd::text AS counter_fee_vnd, counter_by::text AS counter_by, bound_driver_id::text AS bound_driver_id,
-  pending_fee_vnd::text AS pending_fee_vnd, pending_source, final_fee_vnd::text AS final_fee_vnd, ${ms('expires_at', 'expires_ms')},
+  pending_fee_vnd::text AS pending_fee_vnd, pending_source, final_fee_vnd::text AS final_fee_vnd, ${ms('expires_at', 'expires_ms')}, ${ms('answer_expires_at', 'answer_expires_ms')},
   version::text AS version, created_by::text AS created_by, ${ms('created_at', 'created_ms')}, ${ms('updated_at', 'updated_ms')}, ${ms('locked_at', 'locked_ms')}`;
 
 const num = (value: string | null): number | null => (value === null ? null : toSafeInteger(value));
@@ -72,6 +75,7 @@ function toAgreement(row: Raw): Agreement {
     pendingSource: row.pending_source,
     finalFeeVnd: num(row.final_fee_vnd),
     expiresAtMs: toSafeInteger(row.expires_ms),
+    answerExpiresAtMs: num(row.answer_expires_ms),
     version: toSafeInteger(row.version),
     createdBy: row.created_by,
     createdAtMs: toSafeInteger(row.created_ms),
@@ -157,6 +161,7 @@ export class ShippingFeeAgreementRepository {
           final_fee_vnd = CASE WHEN $14::boolean THEN $15::bigint ELSE final_fee_vnd END,
           expires_at = CASE WHEN $16::boolean THEN to_timestamp($17::double precision / 1000.0) ELSE expires_at END,
           locked_at = CASE WHEN $18::boolean THEN to_timestamp($19::double precision / 1000.0) ELSE locked_at END,
+          answer_expires_at = CASE WHEN $20::boolean THEN to_timestamp($21::double precision / 1000.0) ELSE answer_expires_at END,
           version = version + 1, updated_at = date_trunc('milliseconds', clock_timestamp())
         WHERE agreement_id = $1::uuid
         RETURNING ${COLUMNS}`,
@@ -171,6 +176,7 @@ export class ShippingFeeAgreementRepository {
         has('finalFeeVnd'), patch.finalFeeVnd ?? null,
         has('expiresAtMs'), patch.expiresAtMs ?? null,
         has('lockedAtMs'), patch.lockedAtMs ?? null,
+        has('answerExpiresAtMs'), patch.answerExpiresAtMs ?? null,
       ],
     );
     if (result.rows[0] === undefined) {
@@ -181,14 +187,18 @@ export class ShippingFeeAgreementRepository {
 
   async appendEvent(
     context: TransactionContext,
-    input: { eventId: string; agreementId: string; eventType: EventType; actorType: ActorType; actorId: string | null; driverId: string | null; amountVnd: number | null; reason: string | null; requestId: string | null; agreementVersion: number },
+    input: { eventId: string; agreementId: string; eventType: EventType; actorType: ActorType; actorId: string | null; driverId: string | null; amountVnd: number | null; reason: string | null; requestId: string | null; agreementVersion: number;
+      /** 'CUSTOMER' when `actorId` confirmed for the payer, who has no app: the actor stays the person who acted. */
+      onBehalfOf: 'CUSTOMER' | null;
+      /** Who pays the delivery fee (the agreement's payer), stored on every event. */
+      feePayer: 'CUSTOMER' | 'SHOP' },
   ): Promise<void> {
     await context.query(
       `INSERT INTO app.shipping_fee_agreement_events
-         (event_id, agreement_id, seq, event_type, actor_type, actor_id, driver_id, amount_vnd, reason, request_id, agreement_version, created_at)
+         (event_id, agreement_id, seq, event_type, actor_type, actor_id, driver_id, amount_vnd, reason, request_id, agreement_version, on_behalf_of, fee_payer, created_at)
        VALUES ($1::uuid, $2::uuid, (SELECT COALESCE(MAX(seq), 0) + 1 FROM app.shipping_fee_agreement_events WHERE agreement_id = $2::uuid), $3, $4, $5::uuid, $6::uuid,
-               $7::bigint, $8, $9::uuid, $10::bigint, date_trunc('milliseconds', clock_timestamp()))`,
-      [input.eventId, input.agreementId, input.eventType, input.actorType, input.actorId, input.driverId, input.amountVnd, input.reason, input.requestId, input.agreementVersion],
+               $7::bigint, $8, $9::uuid, $10::bigint, $11, $12, date_trunc('milliseconds', clock_timestamp()))`,
+      [input.eventId, input.agreementId, input.eventType, input.actorType, input.actorId, input.driverId, input.amountVnd, input.reason, input.requestId, input.agreementVersion, input.onBehalfOf, input.feePayer],
     );
   }
 
@@ -200,6 +210,39 @@ export class ShippingFeeAgreementRepository {
   async events(context: TransactionContext, agreementId: string): Promise<AgreementEvent[]> {
     const result = await context.query<RawEvent>(`${EVENT_SELECT} WHERE agreement_id = $1::uuid ORDER BY seq`, [agreementId]);
     return result.rows.map(toEvent);
+  }
+
+  /** The Shipper the latest answer to a counter-offer was about (accepted or refused), so they can be told even when the agreement no longer binds them. */
+  async lastAnsweredDriver(context: TransactionContext, agreementId: string): Promise<string | undefined> {
+    const result = await context.query<{ driver_id: string }>(
+      `SELECT driver_id::text AS driver_id FROM app.shipping_fee_agreement_events
+        WHERE agreement_id = $1::uuid AND event_type IN ('COUNTER_ACCEPTED', 'COUNTER_REJECTED', 'COUNTER_EXPIRED', 'CUSTOMER_CONFIRMED', 'CUSTOMER_DECLINED') AND driver_id IS NOT NULL
+        ORDER BY agreement_version DESC, seq DESC LIMIT 1`,
+      [agreementId],
+    );
+    return result.rows[0]?.driver_id;
+  }
+
+  /** True when the newest event of the agreement is the drop of an offer whose answer time ran out (so an answer to that offer arrives too late). */
+  async lastEventIsExpiry(context: TransactionContext, agreementId: string): Promise<boolean> {
+    const result = await context.query<{ event_type: string }>(
+      `SELECT event_type FROM app.shipping_fee_agreement_events WHERE agreement_id = $1::uuid ORDER BY seq DESC LIMIT 1`,
+      [agreementId],
+    );
+    return result.rows[0]?.event_type === 'COUNTER_EXPIRED';
+  }
+
+  /** Open agreements whose payer's time to answer a counter-offer has run out, oldest first (a sweeper's list; each is re-read under its locks before it is applied). */
+  async answerDue(context: TransactionContext, nowMs: number, limit: number): Promise<{ agreementId: string; deliveryId: string; boundDriverId: string | null; counterBy: string | null }[]> {
+    const result = await context.query<{ agreement_id: string; delivery_id: string; bound: string | null; counter_by: string | null }>(
+      `SELECT agreement_id::text AS agreement_id, delivery_id::text AS delivery_id, bound_driver_id::text AS bound, counter_by::text AS counter_by
+         FROM app.shipping_fee_agreements
+        WHERE answer_expires_at IS NOT NULL AND answer_expires_at <= to_timestamp($1::double precision / 1000.0)
+          AND (status = 'COUNTERED' OR (status = 'AWAITING_CUSTOMER' AND pending_source = 'COUNTER'))
+        ORDER BY answer_expires_at, agreement_id LIMIT $2::int`,
+      [nowMs, limit],
+    );
+    return result.rows.map((row) => ({ agreementId: row.agreement_id, deliveryId: row.delivery_id, boundDriverId: row.bound, counterBy: row.counter_by }));
   }
 
   /** Counter-offers the shop rejected, as `${driverId}:${amount}` keys. */
@@ -223,11 +266,13 @@ interface RawEvent {
   reason: string | null;
   request_id: string | null;
   agreement_version: string;
+  on_behalf_of: 'CUSTOMER' | null;
+  fee_payer: 'CUSTOMER' | 'SHOP' | null;
   created_ms: string;
 }
 
 const EVENT_SELECT = `SELECT seq, event_type, actor_type, actor_id::text AS actor_id, driver_id::text AS driver_id, amount_vnd::text AS amount_vnd, reason,
-  request_id::text AS request_id, agreement_version::text AS agreement_version, ${ms('created_at', 'created_ms')} FROM app.shipping_fee_agreement_events`;
+  request_id::text AS request_id, agreement_version::text AS agreement_version, on_behalf_of, fee_payer, ${ms('created_at', 'created_ms')} FROM app.shipping_fee_agreement_events`;
 
 const toEvent = (row: RawEvent): AgreementEvent => ({
   seq: row.seq,
@@ -239,5 +284,7 @@ const toEvent = (row: RawEvent): AgreementEvent => ({
   reason: row.reason,
   requestId: row.request_id,
   agreementVersion: toSafeInteger(row.agreement_version),
+  onBehalfOf: row.on_behalf_of,
+  feePayer: row.fee_payer,
   createdAtMs: toSafeInteger(row.created_ms),
 });

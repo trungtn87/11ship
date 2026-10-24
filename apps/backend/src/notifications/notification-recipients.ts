@@ -84,10 +84,17 @@ export class NotificationRecipients {
     return (await this.drivers.findById(context, driverId))?.userId;
   }
 
-  /** The Shipper a fee agreement is bound to (the one who countered); undefined while it is still open to everybody. */
+  /**
+   * The Shipper a fee agreement is bound to (the one who countered), or, when a refusal released the binding, the Shipper whose counter-offer was just answered
+   * (they are told the answer, the delivery stays open to everybody). Undefined when there is none.
+   */
   async agreementDriverUser(context: TransactionContext, deliveryId: string): Promise<string | undefined> {
     const agreement = await this.agreements.readByDelivery(context, deliveryId);
-    return agreement?.boundDriverId == null ? undefined : this.driverUser(context, agreement.boundDriverId);
+    if (agreement === undefined) {
+      return undefined;
+    }
+    const driverId = agreement.boundDriverId ?? (await this.agreements.lastAnsweredDriver(context, agreement.agreementId));
+    return driverId === undefined ? undefined : this.driverUser(context, driverId);
   }
 
   async topupOwner(context: TransactionContext, requestId: string): Promise<string | undefined> {

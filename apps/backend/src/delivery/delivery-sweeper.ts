@@ -9,6 +9,7 @@ import { OPERATIONS } from './delivery-constants';
 import { DeliveryRecorder } from './delivery-recorder';
 import { DeliveryRepository } from './delivery-repository';
 import { dueSearchReminders, pickupReminderDue, searchExpired } from './delivery-rules';
+import { FeeAnswerExpiry } from './fee-answer-expiry';
 
 const BATCH = 50;
 export const SWEEP_INTERVAL_MS = 30_000;
@@ -17,13 +18,16 @@ export interface SweepResult {
   readonly stopped: number;
   readonly searchReminders: number;
   readonly pickupReminders: number;
+  /** Fee offers of a Shipper whose answer time ran out and were dropped. */
+  readonly feeAnswersExpired: number;
 }
 
 /**
  * The timers of M07, driven ONLY by the stored server times, so a restart or a second instance never resets or doubles anything:
  *  - a search that reached 30 minutes STOPS (the food order is not cancelled);
  *  - the shop is reminded once at minute 5 and once at minute 15 of a search (each mark is stored when it is sent);
- *  - a Shipper who accepted and has not picked up is reminded every 5 minutes (the last reminder is stored on the assignment).
+ *  - a Shipper who accepted and has not picked up is reminded every 5 minutes (the last reminder is stored on the assignment);
+ *  - a fee offer of a Shipper that the payer did not answer in the configured time is dropped and the earlier fee stays (FeeAnswerExpiry); it never extends the search.
  * Every pass re-reads the row under its lock and decides again, so a Shipper accepting at the very moment the search ends is not overtaken: whoever
  * holds the delivery row first wins, and the other finds the new state. The reminders are outbox events; notifying people is M08's job.
  */
@@ -33,13 +37,15 @@ export class DeliverySweeper {
     private readonly transactions: TransactionManager,
     private readonly deliveries: DeliveryRepository,
     private readonly recorder: DeliveryRecorder,
+    private readonly feeAnswers: FeeAnswerExpiry,
   ) {}
 
   async sweep(): Promise<SweepResult> {
     const stopped = await this.#stopExpired();
     const searchReminders = await this.#searchReminders();
     const pickupReminders = await this.#pickupReminders();
-    return { stopped, searchReminders, pickupReminders };
+    const feeAnswersExpired = await this.feeAnswers.sweep();
+    return { stopped, searchReminders, pickupReminders, feeAnswersExpired };
   }
 
   async #stopExpired(): Promise<number> {

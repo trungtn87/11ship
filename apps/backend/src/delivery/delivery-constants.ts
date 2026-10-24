@@ -13,8 +13,8 @@ export const BEFORE_PICKUP_STATES: readonly DeliveryState[] = ['waiting_driver',
 
 export type FeeMode = 'STANDARD' | 'AGREED' | 'PICKUP_AGREEMENT';
 export type FeePayer = 'CUSTOMER' | 'SHOP';
-export type AssignmentStatus = 'ACTIVE' | 'COMPLETED' | 'FAILED' | 'CANCELLED_BY_SHIPPER' | 'CANCELLED_BY_SHOP' | 'CANCELLED_BY_SYSTEM' | 'RELEASED_BY_ADMIN';
-export type ActorType = 'SHOP' | 'SHIPPER' | 'ADMIN' | 'SYSTEM';
+export type AssignmentStatus = 'ACTIVE' | 'COMPLETED' | 'FAILED' | 'CANCELLED_BY_SHIPPER' | 'CANCELLED_BY_SHOP' | 'CANCELLED_BY_CUSTOMER' | 'CANCELLED_BY_SYSTEM' | 'RELEASED_BY_ADMIN';
+export type ActorType = 'SHOP' | 'SHIPPER' | 'ADMIN' | 'SYSTEM' | 'CUSTOMER';
 
 /** The search lasts 30 minutes from the server clock. Never extended; a cancelled assignment never restarts it. */
 export const SEARCH_MINUTES = 30;
@@ -64,6 +64,9 @@ export const OPERATIONS = {
   pickup: 'delivery.pickup.v1',
   complete: 'delivery.complete.v1',
   fail: 'delivery.fail.v1',
+  cancelAfterPickup: 'delivery.cancel_after_pickup.v1',
+  customerFee: 'delivery.fee.customer_decide.v1',
+  feeAnswerExpired: 'delivery.fee_answer_expired.v1',
   adminAction: 'admin.delivery.action.v1',
   sweep: 'delivery.sweep.v1',
 } as const;

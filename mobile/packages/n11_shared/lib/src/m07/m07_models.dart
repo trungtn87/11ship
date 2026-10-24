@@ -72,6 +72,28 @@ DateTime? _timeOrNull(Object? v) => v == null ? null : _time(v);
 
 // ---- delivery --------------------------------------------------------------------------------------------------------
 
+/// One band of the fee table in force. The shop picks one for an address with no map point; the amount is that band's own fee and the
+/// distance is an estimate the app says so about, never a measured route.
+class FeeBand {
+  const FeeBand({required this.index, required this.fromM, required this.toM, required this.feeVnd});
+
+  factory FeeBand.fromJson(Object? raw) {
+    final Map<String, Object?> m = _obj(raw);
+    return FeeBand(index: _int(m['index']), fromM: _int(m['from_m']), toM: _int(m['to_m']), feeVnd: _int(m['fee_vnd']));
+  }
+
+  final int index;
+  final int fromM;
+  final int toM;
+  final int feeVnd;
+
+  /// "Dưới 3 km", "3 – 6 km"...
+  String get rangeText {
+    String km(int m) => m % 1000 == 0 ? '${m ~/ 1000}' : (m / 1000).toStringAsFixed(1).replaceAll('.', ',');
+    return fromM == 0 ? 'Dưới ${km(toM)} km' : '${km(fromM)} – ${km(toM)} km';
+  }
+}
+
 class AgreementSummary {
   const AgreementSummary({required this.state, required this.proposedVnd, this.counterVnd, required this.reasonCode, this.reasonNote, required this.expiresAt});
 
@@ -97,7 +119,7 @@ class AgreementSummary {
 }
 
 class FeeView {
-  const FeeView({required this.mode, required this.payer, required this.status, this.amountVnd, this.distanceM, this.agreement});
+  const FeeView({required this.mode, required this.payer, required this.status, this.amountVnd, this.distanceM, this.agreement, this.decider, this.basis});
 
   factory FeeView.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
@@ -112,8 +134,19 @@ class FeeView {
       amountVnd: _intOrNull(m['amount_vnd']),
       distanceM: _intOrNull(m['distance_m']),
       agreement: m['agreement'] == null ? null : AgreementSummary.fromJson(m['agreement']),
+      decider: _strOrNull(m['decider']),
+      basis: _strOrNull(m['basis']),
     );
   }
+
+  /// Who answers a fee the Shipper proposes: CUSTOMER (an order the customer pays, answered in 11Food) or SHOP (the shop pays, or a DIRECT call
+  /// where the shop answers for a customer without an app). Null from an older server.
+  final String? decider;
+
+  /// How the amount was found: ROUTE (measured), ESTIMATED_BAND (a band the shop chose for an address with no map point: an estimate) or null.
+  final String? basis;
+
+  bool get estimated => basis == 'ESTIMATED_BAND';
 
   /// STANDARD, AGREED or PICKUP_AGREEMENT.
   final String mode;
@@ -445,8 +478,9 @@ class DeliveryView {
         story: story ?? this.story,
       );
 
-  /// The drop-off position is missing: the Shipper pins it and confirms the fee before pickup.
-  bool get needsDestination => !recipient.hasPoint;
+  /// The fee was never settled and the server lets the Shipper enter the agreed amount (`can.confirm_fee`). A missing map point never blocks anything:
+  /// a delivery is made to the described address.
+  bool get needsFee => allows('confirm_fee') || allows('confirm_destination');
 }
 
 /// What a Shipper sees BEFORE accepting.
@@ -469,6 +503,8 @@ class OfferView {
     required this.eligible,
     this.reasons = const <String>[],
     this.agreement,
+    this.source,
+    this.feeDecider,
   });
 
   factory OfferView.fromJson(Object? raw) {
@@ -492,8 +528,19 @@ class OfferView {
       eligible: _bool(m['eligible']),
       reasons: <String>[for (final Object? r in _list(m['reasons'] ?? <Object?>[])) _str(r)],
       agreement: m['agreement'] == null ? null : AgreementSummary.fromJson(m['agreement']),
+      source: _strOrNull(m['source']),
+      feeDecider: _strOrNull(m['fee_decider']),
     );
   }
+
+  /// ORDER (from the customer's order) or DIRECT (called by the shop). Null from an older server.
+  final String? source;
+
+  /// Who answers a fee counter-offer: CUSTOMER or SHOP. Null from an older server.
+  final String? feeDecider;
+
+  /// Who is asked about the fee the Shipper proposes, in words.
+  String get deciderText => feeDecider == 'CUSTOMER' ? 'khách' : 'quán';
 
   final String deliveryId;
   final String code;
@@ -521,17 +568,7 @@ class OfferView {
 
 // ---- inputs ----------------------------------------------------------------------------------------------------------
 
-/// Why a Shipper could not deliver. Closed list; the server refuses any other code.
-const List<(String, String)> kFailReasons = <(String, String)>[
-  ('RECIPIENT_UNREACHABLE', 'Không liên lạc được người nhận'),
-  ('RECIPIENT_REFUSED', 'Người nhận từ chối nhận hàng'),
-  ('ADDRESS_NOT_FOUND', 'Không tìm thấy địa chỉ'),
-  ('GOODS_PROBLEM', 'Hàng hỏng hoặc thất lạc'),
-  ('VEHICLE_PROBLEM', 'Xe hoặc thiết bị gặp sự cố'),
-  ('OTHER', 'Lý do khác'),
-];
-
-/// Where the goods are when delivery fails. Closed list.
+/// Where the goods are after a delivery ended unsuccessfully. Closed list (the shop settles them).
 const List<(String, String)> kGoodsConditions = <(String, String)>[
   ('WITH_SHIPPER', 'Hàng còn ở shipper'),
   ('RETURNED_TO_SHOP', 'Đã trả về quán'),
@@ -554,6 +591,7 @@ class NewDeliveryInput {
     this.agreedReasonCode,
     this.agreedReasonNote,
     this.agreedAmountVnd,
+    this.feeBand,
   });
 
   final String recipientName;
@@ -574,6 +612,9 @@ class NewDeliveryInput {
   final String? agreedReasonNote;
   final int? agreedAmountVnd;
 
+  /// 0..2: the band of the fee table the shop chose for an address with no map point (an ESTIMATE the app says so about). Not sent with a map point or an agreed fee.
+  final int? feeBand;
+
   bool get agreed => agreedAmountVnd != null;
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -587,6 +628,7 @@ class NewDeliveryInput {
         'paid_vnd': paidVnd,
         'fee_payer': feePayer,
         if (note != null && note!.isNotEmpty) 'note': note,
+        if (feeBand != null && !agreed && lat == null) 'fee_band': feeBand,
         if (agreed) 'agreed_fee': <String, Object?>{'reason_code': agreedReasonCode, if (agreedReasonNote != null && agreedReasonNote!.isNotEmpty) 'reason_note': agreedReasonNote, 'amount_vnd': agreedAmountVnd},
       };
 }

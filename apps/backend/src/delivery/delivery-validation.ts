@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { isWellFormed } from '../auth/auth-validation';
 import { normalizeVietnamPhone } from '../auth/phone';
 import { AGREEMENT_REASONS, AgreementReason } from '../shipping-policy/shipping-fee-agreement';
-import { FAIL_REASON_CODES, FailReasonCode, FeePayer, GOODS_CONDITIONS, GoodsCondition } from './delivery-constants';
+import { FeePayer } from './delivery-constants';
 
 // Strict parsers of the M07 requests. Every body is an exact object (required keys, plus the few optional ones named): no key may be added, so no
 // shop id, driver id, status, fee mode or version of another record can arrive from a client. Failures never echo the offending key or value: a
@@ -87,11 +87,13 @@ export interface CreateDeliveryInput {
   readonly feePayer: FeePayer;
   readonly note: string | null;
   readonly agreedFee: AgreedFeeInput | null;
+  /** Index 0..2 of the fee table's band, chosen by the shop for an address without a map point (a fee ESTIMATE). Null otherwise. */
+  readonly feeBand: number | null;
 }
 
 /** POST /v1/shop/me/deliveries. */
 export function parseCreateBody(body: unknown): CreateDeliveryInput {
-  const b = shaped(body, ['recipient_name', 'recipient_phone', 'dropoff_address_text', 'goods_description', 'goods_value_vnd', 'paid_vnd', 'fee_payer'], ['dropoff_lat', 'dropoff_lng', 'note', 'agreed_fee']);
+  const b = shaped(body, ['recipient_name', 'recipient_phone', 'dropoff_address_text', 'goods_description', 'goods_value_vnd', 'paid_vnd', 'fee_payer'], ['dropoff_lat', 'dropoff_lng', 'note', 'agreed_fee', 'fee_band']);
   const phone = normalizeVietnamPhone(b.recipient_phone);
   if (phone === undefined || (b.fee_payer !== 'CUSTOMER' && b.fee_payer !== 'SHOP')) {
     return reject();
@@ -103,6 +105,11 @@ export function parseCreateBody(body: unknown): CreateDeliveryInput {
   }
   const goodsValueVnd = whole(b.goods_value_vnd, 0, MAX_MONEY_VND);
   const paidVnd = whole(b.paid_vnd, 0, goodsValueVnd);
+  const feeBand = b.fee_band === undefined ? null : whole(b.fee_band, 0, 2);
+  if (feeBand !== null && (b.agreed_fee !== undefined || hasLat)) {
+    // A band is an estimate for an address with no map point; with a map point the route measures the distance and with an agreed fee the amount is proposed.
+    return reject();
+  }
   let agreedFee: AgreedFeeInput | null = null;
   if (b.agreed_fee !== undefined) {
     const f = shaped(b.agreed_fee, ['reason_code', 'amount_vnd'], ['reason_note']);
@@ -123,6 +130,7 @@ export function parseCreateBody(body: unknown): CreateDeliveryInput {
     feePayer: b.fee_payer,
     note: optionalText(b.note, 200),
     agreedFee,
+    feeBand,
   };
 }
 
@@ -170,36 +178,24 @@ export function parseCustodyBody(body: unknown): CustodyInput {
 }
 
 export interface DestinationInput {
-  readonly lat: number;
-  readonly lng: number;
+  readonly lat: number | null;
+  readonly lng: number | null;
   readonly feeVnd: number | null;
   readonly expectedVersion: number;
 }
 
-/** POST .../destination: the pin and, when the fee is not set, the agreed fee. */
+/** POST .../destination: the agreed fee when the delivery has none, and optionally a pin ({lat, lng} together). */
 export function parseDestinationBody(body: unknown): DestinationInput {
-  const b = shaped(body, ['lat', 'lng', 'expected_version'], ['fee_vnd']);
-  return { lat: coordinate(b.lat, 90), lng: coordinate(b.lng, 180), feeVnd: b.fee_vnd === undefined ? null : whole(b.fee_vnd, 0, MAX_FEE_VND), expectedVersion: version(b.expected_version) };
-}
-
-export interface FailInput {
-  readonly reasonCode: FailReasonCode;
-  readonly note: string | null;
-  readonly goodsCondition: GoodsCondition;
-  readonly expectedVersion: number;
-}
-
-/** POST .../fail: a reason from the closed list, where the goods are, and a note (required for OTHER). */
-export function parseFailBody(body: unknown): FailInput {
-  const b = shaped(body, ['reason_code', 'goods_condition', 'expected_version'], ['note']);
-  if (typeof b.reason_code !== 'string' || !(FAIL_REASON_CODES as readonly string[]).includes(b.reason_code) || typeof b.goods_condition !== 'string' || !(GOODS_CONDITIONS as readonly string[]).includes(b.goods_condition)) {
+  const b = shaped(body, ['expected_version'], ['lat', 'lng', 'fee_vnd']);
+  if ((b.lat === undefined) !== (b.lng === undefined)) {
     return reject();
   }
-  const note = optionalText(b.note, 300);
-  if (b.reason_code === 'OTHER' && note === null) {
-    return reject();
-  }
-  return { reasonCode: b.reason_code as FailReasonCode, note, goodsCondition: b.goods_condition as GoodsCondition, expectedVersion: version(b.expected_version) };
+  return {
+    lat: b.lat === undefined ? null : coordinate(b.lat, 90),
+    lng: b.lng === undefined ? null : coordinate(b.lng, 180),
+    feeVnd: b.fee_vnd === undefined ? null : whole(b.fee_vnd, 0, MAX_FEE_VND),
+    expectedVersion: version(b.expected_version),
+  };
 }
 
 /** POST .../fee/counter: {amount_vnd}. */

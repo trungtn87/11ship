@@ -86,6 +86,8 @@ WITH expected(table_name, privileges) AS (
     ('order_events', ARRAY['SELECT', 'INSERT']::text[]),
     ('order_timeout_policy', ARRAY['SELECT', 'UPDATE']::text[]),
     ('order_timeout_policy_changes', ARRAY['SELECT', 'INSERT']::text[]),
+    ('order_parameters', ARRAY['SELECT', 'UPDATE']::text[]),
+    ('order_parameter_changes', ARRAY['SELECT', 'INSERT']::text[]),
     ('cancellation_transitions', ARRAY['SELECT', 'INSERT']::text[]),
     ('report_export_jobs', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('report_export_files', ARRAY['SELECT', 'INSERT', 'DELETE']::text[]),

@@ -2,8 +2,8 @@ import 'm07_models.dart';
 import 'm07_source.dart';
 
 // Illustrative data for the preview build (--dart-define=M07_UI_PREVIEW=true) and for tests. Every screen fed by it carries the
-// "Dữ liệu minh họa" banner. It is an in-memory stand-in with the same state rules as the server (cancel only before pickup, fail opens an
-// incident, ...) so the screens can be seen and tested end to end; it never reaches production flows and proves nothing about the server.
+// "Dữ liệu minh họa" banner. It is an in-memory stand-in with the same state rules as the server (the Shipper cannot cancel or fail after pickup,
+// the creator's cancel after pickup opens a goods incident, ...) so the screens can be seen and tested end to end; it never reaches production flows and proves nothing about the server.
 
 const bool kM07UiPreview = bool.fromEnvironment('M07_UI_PREVIEW');
 
@@ -39,6 +39,8 @@ LocationView _location(Freshness f) => LocationView(lat: 22.666, lng: 106.258, r
 /// The shop's "Đang xử lý" list: running deliveries, a stopped search (call again / cancel) and a failed one whose goods are not settled.
 bool _inActiveList(DeliveryView d) => d.state.isActive || d.state == DeliveryState.searchStopped || (d.incident?.isOpen ?? false);
 
+const List<FeeBand> _bands = <FeeBand>[FeeBand(index: 0, fromM: 0, toM: 3000, feeVnd: 10000), FeeBand(index: 1, fromM: 3000, toM: 6000, feeVnd: 15000), FeeBand(index: 2, fromM: 6000, toM: 10000, feeVnd: 20000)];
+
 int _seq = 100;
 String _nextId() => 'sample-${_seq++}';
 
@@ -47,7 +49,7 @@ class SampleShopSource extends ShopDeliverySource {
     _items.addAll(<DeliveryView>[
       _delivery('d-wait', 'G-100001', DeliveryState.waitingDriver, minutesAgo: 6, can: const <String>{'cancel'}),
       _delivery('d-acc', 'G-100002', DeliveryState.accepted, assignment: _assignment(), location: _location(Freshness.live), can: const <String>{'cancel'}),
-      _delivery('d-run', 'G-100003', DeliveryState.delivering, assignment: _assignment(pickedUpAt: _now.subtract(const Duration(minutes: 2))), location: _location(Freshness.stale)),
+      _delivery('d-run', 'G-100003', DeliveryState.delivering, assignment: _assignment(pickedUpAt: _now.subtract(const Duration(minutes: 2))), can: const <String>{'cancel', 'cancel_after_pickup'}),
       _delivery('d-stop', 'G-100004', DeliveryState.searchStopped, minutesAgo: 30, can: const <String>{'recall', 'cancel'}),
       _delivery('d-fail', 'G-100005', DeliveryState.failed,
           incident: IncidentView(incidentId: 'i-1', status: 'OPEN', custody: 'SHIPPER', reason: 'Không liên lạc được người nhận', openedAt: _now),
@@ -95,7 +97,9 @@ class SampleShopSource extends ShopDeliverySource {
       goods: GoodsView(description: input.goodsDescription, valueVnd: input.goodsValueVnd, paidVnd: input.paidVnd),
       fee: input.agreed
           ? FeeView(mode: 'AGREED', payer: input.feePayer, status: 'PENDING_AGREEMENT', amountVnd: null, agreement: AgreementSummary(state: 'PROPOSED', proposedVnd: input.agreedAmountVnd!, reasonCode: input.agreedReasonCode ?? 'OTHER', expiresAt: _now.add(const Duration(minutes: 30))))
-          : FeeView(mode: pinned ? 'STANDARD' : 'PICKUP_AGREEMENT', payer: input.feePayer, status: pinned ? 'FINAL' : 'UNKNOWN', amountVnd: pinned ? 15000 : null, distanceM: pinned ? 3000 : null),
+          : input.feeBand != null || pinned
+              ? FeeView(mode: 'STANDARD', payer: input.feePayer, status: 'FINAL', amountVnd: input.feeBand == null ? 15000 : _bands[input.feeBand!.clamp(0, 2)].feeVnd, distanceM: pinned ? 3000 : null, basis: pinned ? 'ROUTE' : 'ESTIMATED_BAND', decider: 'SHOP')
+              : throw const M07Failure(M07FailureKind.refused, code: 'FEE_REQUIRED'),
       search: SearchView(startedAt: _now, expiresAt: _now.add(const Duration(minutes: 30)), serverNow: _now),
       can: const <String>{'cancel'},
     );
@@ -104,18 +108,24 @@ class SampleShopSource extends ShopDeliverySource {
   }
 
   @override
+  Future<List<FeeBand>> feeBands() async => _bands;
+
+  @override
   Future<DeliveryView> cancel(String id, {required String reason, required int expectedVersion, required String key}) async {
     final DeliveryView d = _find(id);
     if (!d.allows('cancel')) {
       throw const M07Failure(M07FailureKind.conflict, code: 'AFTER_PICKUP_NO_CANCEL');
     }
+    // After pickup only the creator (a DIRECT call's shop) cancels: the goods stay with the Shipper until the shop settles them.
+    final bool afterPickup = d.state == DeliveryState.delivering || d.state == DeliveryState.pickedUp;
     return _replace(d.copyWith(
       state: DeliveryState.cancelledByMerchant,
       version: d.version + 1,
       clearAssignment: true,
       clearLocation: true,
-      can: const <String>{},
+      can: afterPickup ? const <String>{'resolve_custody'} : const <String>{},
       result: ResultView(outcome: 'cancelled', at: _now, reason: reason),
+      incident: afterPickup ? IncidentView(incidentId: 'i-after', status: 'OPEN', custody: 'SHIPPER', reason: reason, openedAt: _now) : null,
     ));
   }
 
@@ -168,8 +178,8 @@ class SampleShopSource extends ShopDeliverySource {
 class SampleShipperSource extends ShipperDeliverySource {
   SampleShipperSource() {
     _mine.addAll(<DeliveryView>[
-      _delivery('m-acc', 'G-200001', DeliveryState.accepted, assignment: _assignment(destination: false), pinned: false, fee: const FeeView(mode: 'PICKUP_AGREEMENT', payer: 'CUSTOMER', status: 'UNKNOWN'), can: const <String>{'release', 'confirm_destination'}),
-      _delivery('m-run', 'G-200002', DeliveryState.delivering, assignment: _assignment(pickedUpAt: _now.subtract(const Duration(minutes: 4))), can: const <String>{'complete', 'fail'}),
+      _delivery('m-acc', 'G-200001', DeliveryState.accepted, assignment: _assignment(destination: false), pinned: false, fee: const FeeView(mode: 'STANDARD', payer: 'CUSTOMER', status: 'UNKNOWN'), can: const <String>{'release', 'confirm_fee'}),
+      _delivery('m-run', 'G-200002', DeliveryState.delivering, assignment: _assignment(pickedUpAt: _now.subtract(const Duration(minutes: 4))), can: const <String>{'complete'}),
     ]);
   }
 
@@ -269,13 +279,12 @@ class SampleShipperSource extends ShipperDeliverySource {
   Future<OfferView> feeCounter(String id, {required int amountVnd, required String key}) async => _offers.firstWhere((OfferView o) => o.deliveryId == id);
 
   @override
-  Future<DeliveryView> confirmDestination(String id, {required double lat, required double lng, int? feeVnd, required int expectedVersion, required String key}) async {
+  Future<DeliveryView> confirmFee(String id, {required int feeVnd, required int expectedVersion, required String key}) async {
     final DeliveryView d = _find(id);
     return _replace(d.copyWith(
       state: DeliveryState.locationConfirmed,
       version: d.version + 1,
-      recipient: RecipientView(name: d.recipient.name, phone: d.recipient.phone, addressText: d.recipient.addressText, lat: lat, lng: lng),
-      fee: FeeView(mode: d.fee.mode, payer: d.fee.payer, status: 'FINAL', amountVnd: feeVnd ?? d.fee.amountVnd),
+      fee: FeeView(mode: d.fee.mode, payer: d.fee.payer, status: 'FINAL', amountVnd: feeVnd),
       assignment: _assignment(),
       can: const <String>{'release', 'pickup'},
     ));
@@ -285,28 +294,14 @@ class SampleShipperSource extends ShipperDeliverySource {
   Future<DeliveryView> pickup(String id, {required int expectedVersion, required String key}) async {
     final DeliveryView d = _find(id);
     if (!d.allows('pickup')) {
-      throw const M07Failure(M07FailureKind.refused, code: 'DESTINATION_NOT_CONFIRMED');
+      throw const M07Failure(M07FailureKind.refused, code: 'FEE_NOT_CONFIRMED');
     }
-    return _replace(d.copyWith(state: DeliveryState.delivering, version: d.version + 1, assignment: _assignment(pickedUpAt: _now), can: const <String>{'complete', 'fail'}));
+    return _replace(d.copyWith(state: DeliveryState.delivering, version: d.version + 1, assignment: _assignment(pickedUpAt: _now), can: const <String>{'complete'}));
   }
 
   @override
   Future<DeliveryView> complete(String id, {required int expectedVersion, required String key}) async {
     final DeliveryView d = _find(id);
     return _replace(d.copyWith(state: DeliveryState.completed, version: d.version + 1, clearLocation: true, can: const <String>{}, result: ResultView(outcome: 'completed', at: _now)));
-  }
-
-  @override
-  Future<DeliveryView> fail(String id, {required String reasonCode, String? note, required String goodsCondition, required int expectedVersion, required String key}) async {
-    final DeliveryView d = _find(id);
-    final String reason = kFailReasons.firstWhere(((String, String) r) => r.$1 == reasonCode, orElse: () => (reasonCode, reasonCode)).$2;
-    return _replace(d.copyWith(
-      state: DeliveryState.failed,
-      version: d.version + 1,
-      clearLocation: true,
-      can: const <String>{},
-      result: ResultView(outcome: 'failed', at: _now, reason: reason, goodsCondition: goodsCondition),
-      incident: IncidentView(incidentId: 'i-new', status: 'OPEN', custody: goodsCondition == 'RETURNED_TO_SHOP' ? 'SHOP' : 'SHIPPER', reason: reason, openedAt: _now),
-    ));
   }
 }
