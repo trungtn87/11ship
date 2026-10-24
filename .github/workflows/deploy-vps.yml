@@ -3,6 +3,11 @@ name: Deploy VPS
 on:
   workflow_dispatch:
     inputs:
+      approve_reviewed_migrations:
+        description: 'Import exact migration hashes reviewed in main (unknown or changed SQL still stops deploy)'
+        type: boolean
+        required: false
+        default: true
       configure_cao_bang_gps:
         description: 'Approve reviewed M02 GPS coverage migrations for Cao Bang before deploy'
         type: boolean
@@ -46,6 +51,8 @@ jobs:
         run: |
           npm install --global npm@11.9.0
           npm ci
+      - name: Validate reviewed migration hashes
+        run: python3 -B scripts/deploy/vps-update.py validate-reviewed .
       - name: Build and verify release
         env:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
@@ -75,6 +82,7 @@ jobs:
         run: bash scripts/deploy/github-vps-approve-m01-shop-codes.sh
       - name: Deploy over verified SSH
         env:
+          APPROVE_REVIEWED_MIGRATIONS: ${{ inputs.approve_reviewed_migrations }}
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
           VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
