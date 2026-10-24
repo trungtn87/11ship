@@ -78,11 +78,12 @@ try:
     adb('logcat', '-c')
     adb('shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1')
     wait('Chưa xác định trạng thái hoạt động')
-    wait('Chưa bật chia sẻ vị trí')
     wait('Bản đồ offline Cao Bằng đã hiển thị')
     hierarchy = nodes()
     online = [n for n in hierarchy if 'Bật online' in (n.get('text', '') + n.get('content-desc', '')) and n.get('clickable') == 'true']
     assert not online, 'unknown activity must not expose an online action'
+    # One online button only: no separate sharing control, and no status line while there is nothing to say.
+    assert not any('chia sẻ vị trí' in (n.get('text', '') + n.get('content-desc', '')) for n in hierarchy), 'no separate location-sharing control or standing status'
     assert not any('trong M01' in (n.get('text', '') + n.get('content-desc', '')) for n in hierarchy)
     capture('01-home-offline-no-gps')
     adb('shell', 'svc', 'wifi', 'enable')
