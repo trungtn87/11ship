@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { VerificationRepository } from '../auth/verification-repository';
+import { OpsCoreModule } from '../ops/ops-core.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { SmsGatewayAuthGuard } from './sms-gateway-auth.guard';
 import { SmsGatewayActivationOtpProvider } from './sms-gateway-activation-otp-provider';
@@ -16,7 +17,7 @@ import { SmsQueueSweeper } from './sms-queue-sweeper';
  * importing the Auth module (which imports this one).
  */
 @Module({
-  imports: [TransactionModule],
+  imports: [TransactionModule, OpsCoreModule],
   controllers: [SmsGatewayController],
   providers: [SmsGatewayRepository, VerificationRepository, SmsKeyringHolder, SmsQueueService, SmsGatewayOtpProvider, SmsGatewayActivationOtpProvider, SmsGatewayAuthGuard, SmsQueueSweeper],
   exports: [SmsGatewayOtpProvider, SmsGatewayActivationOtpProvider, SmsQueueService],

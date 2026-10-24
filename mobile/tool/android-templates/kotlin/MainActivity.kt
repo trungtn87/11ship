@@ -6,6 +6,7 @@ import android.content.Intent
 import vn.eleven.n11.N11DeviceChannel
 import vn.eleven.n11.N11LocationChannel
 import vn.eleven.n11.N11PushChannel
+import vn.eleven.n11.N11UpdateChannel
 
 // The device bridge plus the M08 push channel (a stub on a build without a push provider).
 class MainActivity : FlutterActivity() {
@@ -15,6 +16,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         N11DeviceChannel(applicationContext).register(flutterEngine.dartExecutor.binaryMessenger)
+        N11UpdateChannel(this).register(flutterEngine.dartExecutor.binaryMessenger)
         location = N11LocationChannel(this).also { it.register(flutterEngine.dartExecutor.binaryMessenger) }
         push = N11PushChannel(this).also { it.register(flutterEngine.dartExecutor.binaryMessenger) }
         N11PushChannel.handleIntent(intent)

@@ -85,7 +85,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | shop_business_hours | SELECT, INSERT, DELETE |
 | idempotency_records | SELECT, INSERT, UPDATE, DELETE |
 | outbox_events | SELECT, INSERT, UPDATE |
-| audit_logs | INSERT only |
+| audit_logs | SELECT, INSERT (M12: the administration reads the log; never updated or deleted) |
 | admin_memberships | SELECT, INSERT, UPDATE (INSERT: the activation (M01-D-ADMIN-1C) creates ADMIN-role rows; the SYSTEM row is created by the operator command; UPDATE also because `FOR UPDATE/SHARE` needs it) |
 | admin_auth_challenges | SELECT, INSERT, UPDATE |
 | admin_totp_factors | SELECT, INSERT, UPDATE, DELETE |
@@ -163,6 +163,21 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | notification_reminders | SELECT, INSERT, UPDATE, DELETE (M08: due reminders from M07 events, resolved once; resolved rows are deleted by the retention pass) |
 | notification_offer_rounds | SELECT, INSERT, DELETE (M08: one row per Shipper, delivery and search round (at most one push); old rows are deleted by the retention pass) |
 | notification_settings | SELECT, INSERT, UPDATE (M08: the account's own notification settings per app) |
+| ops_config | SELECT, INSERT, UPDATE (M13: the single settings row (thresholds, retention, Discord switch and the sealed webhook); SYSTEM changes it through the Administration; never deleted) |
+| ops_admin_scopes | SELECT, INSERT, UPDATE (M13: which ADMIN may view or handle incidents; default deny; never deleted) |
+| ops_incidents | SELECT, INSERT, UPDATE, DELETE (M13: one open incident per fingerprint; DELETE only by the retention pass after the incident window) |
+| ops_events | SELECT, INSERT, DELETE (M13: the append-only operations log and incident timeline; a trigger refuses UPDATE and any DELETE outside the retention pass) |
+| ops_checks | SELECT, INSERT, UPDATE (M13: the latest state of each check; UPDATE replaces it in place) |
+| ops_metrics | SELECT, INSERT, DELETE (M13: raw measurements; DELETE only by the retention pass after folding them into the hourly rows) |
+| ops_metrics_hourly | SELECT, INSERT, DELETE (M13: hourly aggregates; DELETE only by the retention pass) |
+| ops_notifications | SELECT, INSERT, UPDATE, DELETE (M13: the Discord messages and their real outcome; DELETE only by the retention pass with their incident) |
+| ops_maintenance | SELECT, INSERT, UPDATE (M13: scoped maintenance windows; UPDATE only cancels one; never deleted) |
+| ops_gateway_telemetry | SELECT, INSERT, UPDATE (M13: what the gateway phone reported besides the heartbeat (battery, charging, SIM state, results waiting); replaced in place) |
+| ops_ingest_keys | SELECT, INSERT, UPDATE (M13: hashed credentials of the probe, backup job and deploy pipeline; revoked, never deleted) |
+| ops_releases | SELECT, INSERT, UPDATE (M13: the release catalogue; UPDATE is the version-checked publish or withdraw; never deleted) |
+| ops_version_reports | SELECT, INSERT, UPDATE (M13: the version each device or service last reported; replaced in place) |
+| ops_deploys | SELECT, INSERT, UPDATE (M13: the deploy history reported by the pipeline; UPDATE closes a running deploy; never deleted) |
+| ops_backup_reports | SELECT, INSERT, DELETE (M13: backup and restore-test results reported by their jobs; DELETE only by the retention pass) |
 | reviews | SELECT, INSERT, UPDATE (M11: a rating is written once; only its hidden state changes (guard trigger); never deleted) |
 | review_moderations | SELECT, INSERT (M11: hide / restore with reason; append-only) |
 | review_replies | SELECT, INSERT, UPDATE (M11: the shop reply (one per rating, updated with a version); never deleted) |
@@ -173,6 +188,11 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | complaint_reconsiderations | SELECT, INSERT, UPDATE (M11: a request to review a closed file and its decision; never deleted) |
 | complaint_adjustments | SELECT, INSERT, UPDATE (M11: result and commission adjustments; the finance posting state is updated; never deleted) |
 | wallet_adjustments | SELECT, INSERT (M04: the refund / extra charge of a commission decided by M11; append-only, one ledger row each; the ledger row itself is written through the existing wallet_ledger_entries grant) |
+| report_export_jobs | SELECT, INSERT, UPDATE (M12-E: export jobs; never deleted, a trigger refuses it) |
+| report_export_files | SELECT, INSERT, DELETE (M12-E: the bytes of an export; removed when the file expires) |
+| backup_records | SELECT (M12-F: written by the backup job with the owner role; the application only reads it; never deleted) |
+| restore_requests | SELECT, INSERT, UPDATE (M12-F: SYSTEM's request to restore a verified backup, cancelled by SYSTEM, moved on by an operator; never deleted, the application never performs a restore) |
+| backup_jobs | SELECT, INSERT (M12-F: "Sao lưu ngay" queues one job; the backup job moves it on with the owner role; never deleted) |
 
 **Permanent account deletion (Owner decision 2026-10-14).** The runtime role has no `DELETE` on any account table. The only way an account is removed is the function `app.purge_app_user(uuid)` (created by the migration, `SECURITY DEFINER`, owned by the migration role, refuses an administration account and an account with a shop or driver profile). `PUBLIC` has no `EXECUTE` on it; after the migrations run, grant it to the runtime role with `ops/selfhosted/03-runtime-function-grants.sql` (one statement: `GRANT EXECUTE ON FUNCTION app.purge_app_user(uuid) TO ship11_app;`). Without that grant a permanent delete answers 503 and nothing is deleted.
 

@@ -453,7 +453,11 @@ describe('runtime grants (ops/selfhosted/02-runtime-grants.sql) with the real re
       await assert.rejects(client.query('DELETE FROM app.shop_members WHERE false'), { code: '42501' });
       await client.query('SELECT 1 FROM app.admin_auth_limit_config LIMIT 1');
       await assert.rejects(client.query('SELECT 1 FROM app.pgmigrations LIMIT 1'), { code: '42501' });
-      await assert.rejects(client.query('SELECT 1 FROM app.audit_logs LIMIT 1'), { code: '42501' });
+      // M12-F: the Web Admin READS the audit log (SELECT), but the log stays append-only for the runtime role: no UPDATE, DELETE or TRUNCATE.
+      await client.query('SELECT 1 FROM app.audit_logs LIMIT 1');
+      await assert.rejects(client.query("UPDATE app.audit_logs SET reason_code = reason_code WHERE false"), { code: '42501' });
+      await assert.rejects(client.query('DELETE FROM app.audit_logs WHERE false'), { code: '42501' });
+      await assert.rejects(client.query('TRUNCATE app.audit_logs'), { code: '42501' });
       await assert.rejects(client.query('DELETE FROM app.users'), { code: '42501' });
       await assert.rejects(client.query('TRUNCATE app.user_consents'), { code: '42501' });
       await assert.rejects(client.query('UPDATE app.admin_auth_limit_config SET limiter_key_id = limiter_key_id'), { code: '42501' });

@@ -28,6 +28,7 @@ export type IconName =
   | 'map-pin'
   | 'gear'
   | 'doc'
+  | 'key'
   | 'activity'
   | 'star';
 
@@ -48,7 +49,9 @@ export type GrantId =
   | 'order-timeouts'
   | 'parameters'
   | 'audit'
-  | 'monitoring';
+  | 'monitoring'
+  // M13: the "Vận hành hệ thống" section. An ADMIN gets it only from the server's answer (GET /admin/ops/me), never from the application grants.
+  | 'ops';
 
 export type Grants = ReadonlySet<GrantId>;
 
@@ -126,7 +129,16 @@ export interface MenuGroup {
 const soon = (id: string, label: string, icon: IconName, access: GrantId): MenuItem => ({ id, label, icon, ready: false, access });
 
 export const MENU: readonly MenuGroup[] = [
-  { id: 'overview', items: [{ id: 'home', label: 'Tổng quan', icon: 'home', route: { name: 'home' }, ready: true, access: 'any' }] },
+  {
+    id: 'overview',
+    items: [
+      { id: 'home', label: 'Tổng quan', icon: 'home', route: { name: 'home' }, ready: true, access: 'any' },
+      // M12-A: the figures and the work waiting; every figure is gated by the server per administrator (FORBIDDEN / NOT_READY / ERROR are shown as such).
+      { id: 'overview', label: 'Điều hành', icon: 'activity', route: { name: 'overview' }, ready: true, access: 'any' },
+      // M12-E: reports and CSV/Excel export; the server checks the report and export rights again on every read and download.
+      { id: 'reports', label: 'Báo cáo', icon: 'activity', route: { name: 'reports' }, ready: true, access: 'any' },
+    ],
+  },
   {
     id: 'accounts',
     label: 'TÀI KHOẢN',
@@ -143,6 +155,8 @@ export const MENU: readonly MenuGroup[] = [
         ],
       },
       { id: 'administrators', label: 'Quản trị viên', icon: 'shield', route: { name: 'administrators' }, ready: true, access: 'system' },
+      // M12-C: SYSTEM gives and takes back the rights of each ADMIN, locks the account and ends its sessions.
+      { id: 'access', label: 'Phân quyền', icon: 'key', route: { name: 'access' }, ready: true, access: 'system' },
       { id: 'invitations', label: 'Lời mời Admin', icon: 'mail', route: { name: 'invitations' }, ready: true, access: 'system' },
     ],
   },
@@ -200,11 +214,36 @@ export const MENU: readonly MenuGroup[] = [
     ],
   },
   {
+    // M13 (Owner-approved 2026-10-16): Tổng quan / Sự cố / SMS Gateway / Nhật ký / Phiên bản & cập nhật / Cấu hình. SYSTEM sees all; an ADMIN only with a
+    // grant from SYSTEM (view or handle), read from the server; the server decides every call again.
+    id: 'sysops',
+    label: 'VẬN HÀNH HỆ THỐNG',
+    items: [
+      {
+        id: 'sysops',
+        label: 'Vận hành hệ thống',
+        icon: 'activity',
+        ready: true,
+        access: 'ops',
+        children: [
+          { id: 'sysops-overview', label: 'Tổng quan', route: { name: 'ops' }, ready: true, access: 'ops' },
+          { id: 'sysops-incidents', label: 'Sự cố', route: { name: 'ops-incidents' }, ready: true, access: 'ops' },
+          { id: 'sysops-gateway', label: 'SMS Gateway', route: { name: 'ops-gateway' }, ready: true, access: 'ops' },
+          { id: 'sysops-logs', label: 'Nhật ký', route: { name: 'ops-logs' }, ready: true, access: 'ops' },
+          { id: 'sysops-releases', label: 'Phiên bản & cập nhật', route: { name: 'ops-releases' }, ready: true, access: 'ops' },
+          { id: 'sysops-config', label: 'Cấu hình', route: { name: 'ops-config' }, ready: true, access: 'ops' },
+        ],
+      },
+    ],
+  },
+  {
     id: 'system',
     label: 'HỆ THỐNG',
     items: [
       // Owner decision 2026-10-14: the SYSTEM account's switches (phone verification first). SYSTEM only.
       { id: 'system-settings', label: 'Cài đặt hệ thống', icon: 'gear', route: { name: 'settings' }, ready: true, access: 'system' },
+      // M12-D: every group of configuration in one place (every administrator reads; only SYSTEM changes, and each owner decides again).
+      { id: 'config', label: 'Cấu hình tập trung', icon: 'gear', route: { name: 'config' }, ready: true, access: 'any' },
       { id:'order-timeouts',label:'Thời hạn xử lý đơn',icon:'gear',route:{name:'order-timeouts'},ready:true,access:'order-timeouts' },
       soon('zones', 'Vùng hoạt động', 'map-pin', 'zones'),
       // M03: Cài đặt › Tham số hệ thống › Ví Shipper (minimum top-up / withdrawal per request). Every administrator sees the values; only SYSTEM changes them
@@ -219,7 +258,9 @@ export const MENU: readonly MenuGroup[] = [
       },
       // M06-A: Phí & điều kiện giao (fee table; every administrator reads, only SYSTEM changes, the server decides again).
       { id: 'shipping-policy', label: 'Phí & điều kiện giao', icon: 'gear', route: { name: 'shipping-policy' }, ready: true, access: 'any' },
-      soon('audit', 'Nhật ký', 'doc', 'audit'),
+      // M12-F: the audit log (read only; the server needs the audit.read right) and the backup history / restore requests (SYSTEM only).
+      { id: 'audit', label: 'Nhật ký', icon: 'doc', route: { name: 'audit' }, ready: true, access: 'any' },
+      { id: 'backups', label: 'Sao lưu và phục hồi', icon: 'shield', route: { name: 'backups' }, ready: true, access: 'system' },
       { id: 'monitoring', label: 'Giám sát', icon: 'activity', ready: true, access: 'system', children: [
         { id: 'monitoring-errors', label: 'Nhật ký lỗi', route: { name: 'monitoring-errors' }, ready: true, access: 'system' },
       ] },
@@ -271,6 +312,10 @@ export function entryRoute(item: MenuItem): Route | undefined {
 export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boolean {
   switch (route.name) {
     case 'home':
+    case 'overview':
+    case 'reports':
+    case 'audit':
+    case 'config':
     case 'activate':
     case 'reset':
     case 'wallet-parameters':
@@ -290,6 +335,14 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
       return canSee(role, grants, 'deliveries');
     case 'notifications':
       return canSee(role, grants, 'notifications');
+    case 'ops':
+    case 'ops-incidents':
+    case 'ops-incident':
+    case 'ops-gateway':
+    case 'ops-logs':
+    case 'ops-releases':
+    case 'ops-config':
+      return canSee(role, grants, 'ops');
     case 'reviews':
     case 'complaints':
       return canSee(role, grants, 'feedback');
@@ -312,6 +365,8 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'order-timeouts':
       return canSee(role,grants,'order-timeouts');
     case 'administrators':
+    case 'access':
+    case 'backups':
     case 'settings':
     case 'invitations':
     case 'invitation-new':
@@ -366,8 +421,23 @@ export function activeMenuId(route: Route): string {
       return 'finance-reconciliation';
     case 'wallet-params':
       return 'parameters';
+    case 'ops':
+      return 'sysops-overview';
+    case 'ops-incidents':
+    case 'ops-incident':
+      return 'sysops-incidents';
+    case 'ops-gateway':
+      return 'sysops-gateway';
+    case 'ops-logs':
+      return 'sysops-logs';
+    case 'ops-releases':
+      return 'sysops-releases';
+    case 'ops-config':
+      return 'sysops-config';
     case 'administrators':
       return 'administrators';
+    case 'access':
+      return 'access';
     case 'order-timeouts':
       return 'order-timeouts';
     case 'settings':
@@ -380,6 +450,16 @@ export function activeMenuId(route: Route): string {
     case 'invitation-reissue':
     case 'invitation-revoke':
       return 'invitations';
+    case 'overview':
+      return 'overview';
+    case 'reports':
+      return 'reports';
+    case 'audit':
+      return 'audit';
+    case 'backups':
+      return 'backups';
+    case 'config':
+      return 'config';
     case 'home':
     case 'activate':
     case 'reset':
@@ -434,8 +514,24 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Tài chính', 'Đối soát'];
     case 'wallet-params':
       return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
+    case 'ops':
+      return ['Vận hành hệ thống', 'Tổng quan'];
+    case 'ops-incidents':
+      return ['Vận hành hệ thống', 'Sự cố'];
+    case 'ops-incident':
+      return ['Vận hành hệ thống', 'Sự cố', route.ref.toUpperCase()];
+    case 'ops-gateway':
+      return ['Vận hành hệ thống', 'SMS Gateway'];
+    case 'ops-logs':
+      return ['Vận hành hệ thống', 'Nhật ký'];
+    case 'ops-releases':
+      return ['Vận hành hệ thống', 'Phiên bản & cập nhật'];
+    case 'ops-config':
+      return ['Vận hành hệ thống', 'Cấu hình'];
     case 'administrators':
       return ['Tài khoản', 'Quản trị viên'];
+    case 'access':
+      return ['Tài khoản', 'Phân quyền'];
     case 'order-timeouts':
       return ['Cài đặt hệ thống','Đơn hàng & giao hàng','Thời hạn xử lý'];
     case 'settings':
@@ -452,6 +548,16 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Lời mời Admin', 'Cấp lại lời mời'];
     case 'invitation-revoke':
       return ['Lời mời Admin', 'Thu hồi lời mời'];
+    case 'overview':
+      return ['Tổng quan', 'Điều hành'];
+    case 'reports':
+      return ['Tổng quan', 'Báo cáo'];
+    case 'audit':
+      return ['Hệ thống', 'Nhật ký'];
+    case 'backups':
+      return ['Hệ thống', 'Sao lưu và phục hồi'];
+    case 'config':
+      return ['Cài đặt', 'Cấu hình tập trung'];
     case 'home':
     case 'activate':
     case 'reset':

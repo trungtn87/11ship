@@ -3,6 +3,8 @@
          when the owner presses the button at the shop. Never background location, camera, contacts or storage.
          The marker below is replaced by tool/prepare-android.sh (Food: the two location lines; Ship: nothing). -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- M13: hand a downloaded, SHA-256-verified update to the Android installer (the person confirms there). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     @LOCATION_PERMISSIONS@
     <!-- M08: only a build that carries the push provider declares the notification permission (tool/prepare-android.sh fills the marker). -->
     @PUSH_PERMISSIONS@
@@ -26,6 +28,14 @@
             android:name="vn.eleven.n11.N11PeerService"
             android:exported="true"
             android:permission="vn.eleven.n11.permission.PEER_ENDORSEMENT"/>
+        <!-- M13: the installer reads the verified update through this provider, limited to the cache "updates" folder. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/n11_update_paths"/>
+        </provider>
         <activity
             android:name=".MainActivity"
             android:exported="true"

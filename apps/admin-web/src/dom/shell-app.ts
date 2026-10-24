@@ -19,7 +19,7 @@ import {
 } from '../core/accounts.js';
 import { AdminRole } from '../core/api.js';
 import { Clock } from '../core/controller.js';
-import { breadcrumb, canOpenRoute, Grants, NO_GRANTS } from '../core/menu.js';
+import { breadcrumb, canOpenRoute, GrantId, Grants, NO_GRANTS } from '../core/menu.js';
 import { ProvisioningController } from '../core/provisioning-controller.js';
 import {
   NOT_WIRED_SETTINGS,
@@ -32,7 +32,7 @@ import {
   SettingsSource,
   SettingsState,
 } from '../core/settings.js';
-import { formatRoute, parseRoute, Route } from '../core/routes.js';
+import { formatRoute, parseRoute, Route, routeOfLink } from '../core/routes.js';
 import { AccountsHooks, AdministratorsView, openLockDialog, renderUserDetail, UsersView } from './accounts-view.js';
 import { DialogHandle } from './dialog.js';
 import { h } from './dom.js';
@@ -47,6 +47,17 @@ import { ShipperDetailView, ShipperHost, ShipperListView, WalletParametersView }
 import { NOT_WIRED_SHIPPING, ShippingPolicySource } from '../core/shipping-policy.js';
 import { ShippingPolicyView } from './shipping-policy-view.js';
 import { DeliverySource, NOT_WIRED_DELIVERIES } from '../core/deliveries.js';
+import { NOT_WIRED_OVERVIEW, OverviewSource } from '../core/overview.js';
+import { OverviewHost, OverviewView } from './overview-view.js';
+import { AccessSource, NOT_WIRED_ACCESS } from '../core/access.js';
+import { AccessHost, AccessView } from './access-view.js';
+import { ConfigSource, NOT_WIRED_CONFIG } from '../core/config.js';
+import { ConfigHost, ConfigView } from './config-view.js';
+import { NOT_WIRED_REPORTS, ReportSource } from '../core/reports.js';
+import { ReportsHost, ReportsView } from './reports-view.js';
+import { NOT_WIRED_OPERATIONS, OperationsSource } from '../core/operations.js';
+import { AuditHost, AuditView } from './audit-view.js';
+import { BackupsHost, BackupsView } from './backups-view.js';
 import { FeedbackSource, NOT_WIRED_FEEDBACK } from '../core/feedback.js';
 import { ComplaintListView, FeedbackHost, ReviewListView } from './feedback-view.js';
 import { DeliveryHost, DeliveryListView } from './deliveries-view.js';
@@ -61,6 +72,8 @@ import { FinanceAdminSource, FinanceRights, NO_FINANCE_RIGHTS, NOT_WIRED_FINANCE
 import { FinanceOpsSource, NOT_WIRED_FINANCE_OPS } from '../core/finance-ops.js';
 import { FinanceOpsHost, OpsOverviewView, ReconciliationPageView, TransactionsView, WalletListView, WithdrawalDetailView, WithdrawalListView } from './finance-ops-view.js';
 import { BankAccountsView, FinanceAdminHost, FINANCE_RECORD_REQUIRES_READ, openFinanceAccessDialog, TopupDetailView, TopupListView } from './finance-admin-view.js';
+import { NOT_WIRED_OPS, OpsLevel, OpsSource } from '../core/ops.js';
+import { OpsConfigView, OpsGatewayView, OpsHost, OpsIncidentDetailView, OpsIncidentsView, OpsLogsView, SysOpsOverviewView, OpsReleasesView, openOpsAccessDialog } from './ops-view.js';
 import { ErrorLogView } from './monitoring-errors-view.js';
 import { statePanel } from './states.js';
 import { ShellLayout } from './shell-layout.js';
@@ -106,7 +119,11 @@ export class ShellApp implements ShellHost {
   /** The finance rights of THIS session as the server last said them (GET access/me). Independent of the application grants above. */
   #financeRights: FinanceRights = NO_FINANCE_RIGHTS;
   #financeLoaded = false;
+  /** The caller's own access to "Vận hành hệ thống" as the server last said it (GET ops/me); NONE until it answers (fail closed). */
+  #opsLevel: OpsLevel = 'NONE';
+  #opsLoaded = false;
   #financeDialog: { close(): void } | undefined;
+  #opsDialog: { close(): void } | undefined;
   #errorLogView: ErrorLogView | undefined;
   #roles: readonly UserRole[] = [];
   #grantsState: GrantsState = { kind: 'loading' };
@@ -150,6 +167,18 @@ export class ShellApp implements ShellHost {
     private readonly feedback: FeedbackSource = NOT_WIRED_FEEDBACK,
     private readonly financeOps: FinanceOpsSource = NOT_WIRED_FINANCE_OPS,
     private readonly sessionCsrf: () => string | undefined = () => undefined,
+    /** Where the overview figures (Tổng quan › Điều hành, M12-A) come from. By default nothing is wired, so the page says so. */
+    private readonly overview: OverviewSource = NOT_WIRED_OVERVIEW,
+    /** Where the administrator permission matrix (Tài khoản › Phân quyền, M12-C) comes from. By default nothing is wired, so the page says so. */
+    private readonly access: AccessSource = NOT_WIRED_ACCESS,
+    /** Where the central configuration (Cài đặt › Cấu hình tập trung, M12-D) comes from. By default nothing is wired, so the page says so. */
+    private readonly config: ConfigSource = NOT_WIRED_CONFIG,
+    /** Where the reports and their CSV/Excel exports (Tổng quan › Báo cáo, M12-E) come from. By default nothing is wired, so the page says so. */
+    private readonly reports: ReportSource = NOT_WIRED_REPORTS,
+    /** Where the audit log and the backup history / restore requests (Hệ thống › Nhật ký, Sao lưu và phục hồi, M12-F) come from. By default nothing is wired, so the pages say so. */
+    private readonly operations: OperationsSource = NOT_WIRED_OPERATIONS,
+    /** Where "Vận hành hệ thống" (M13) comes from. By default nothing is wired, so every page says so and no control works. */
+    private readonly ops: OpsSource = NOT_WIRED_OPS,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -161,6 +190,8 @@ export class ShellApp implements ShellHost {
       // SYSTEM reads everything; the server still decides every call.
       this.#roles = ALL_ROLES;
       this.#grantsState = { kind: 'ready' };
+      this.#opsLevel = 'SYSTEM';
+      this.#opsLoaded = true;
       this.#apply();
       this.#loadFinanceRights();
       return;
@@ -181,6 +212,10 @@ export class ShellApp implements ShellHost {
     this.#grants = NO_GRANTS;
     this.#financeRights = NO_FINANCE_RIGHTS;
     this.#financeLoaded = false;
+    this.#opsLevel = 'NONE';
+    this.#opsLoaded = false;
+    this.#opsDialog?.close();
+    this.#opsDialog = undefined;
     this.#roles = [];
     this.#usersFilter = undefined;
     this.#restoreFilter = false;
@@ -200,6 +235,7 @@ export class ShellApp implements ShellHost {
     const mount = this.#mounts;
     // The finance rights are read again with the application rights (mount, retry, a 403): they are the ones that decide the money pages.
     this.#loadFinanceRights();
+    this.#loadOpsLevel();
     if (!quiet) {
       this.#grantsState = { kind: 'loading' };
     }
@@ -266,10 +302,76 @@ export class ShellApp implements ShellHost {
     });
   }
 
-  /** What the shell may show: the application grants plus the finance READ right (never inferred from the application rights). */
+  /** GET ops/me (ADMIN only; SYSTEM has it implicitly). A failure leaves NO access (fail closed); 401 ends the session. A changed level redraws the menu and, on an ops page, the page. */
+  #loadOpsLevel(): void {
+    if (this.#role !== 'ADMIN') {
+      return;
+    }
+    const mount = this.#mounts;
+    void this.ops.me().then((read) => {
+      if (mount !== this.#mounts || this.#role === undefined) {
+        return;
+      }
+      if (read.kind === 'failed' && read.failure === 'session-expired') {
+        this.onSessionLost();
+        return;
+      }
+      const next: OpsLevel = read.kind === 'ready' ? read.data : 'NONE';
+      const changed = !this.#opsLoaded || next !== this.#opsLevel;
+      this.#opsLevel = next;
+      this.#opsLoaded = true;
+      if (!changed) {
+        return;
+      }
+      const route = parseRoute(this.history.pathname(), this.history.search());
+      if (route.name.startsWith('ops')) {
+        this.#apply();
+      } else if (this.#layout !== undefined && this.#role !== undefined) {
+        this.#layout.render({ role: this.#role, grants: this.#effectiveGrants(), route, navigate: (target) => this.go(target) });
+      }
+    });
+  }
+
+  /** What the shell may show: the application grants plus the finance READ right and the M13 access (never inferred from the application rights). */
   #effectiveGrants(): Grants {
+    const extra: GrantId[] = [];
     // The finance READ right opens every finance page (the actions on them need their own rights, which the server asks again).
-    return this.#financeRights.canRead ? new Set([...this.#grants, 'topups' as const, 'driver-wallets' as const, 'withdrawals' as const]) : this.#grants;
+    if (this.#financeRights.canRead) extra.push('topups', 'driver-wallets', 'withdrawals');
+    if (this.#opsLevel !== 'NONE') extra.push('ops');
+    return extra.length === 0 ? this.#grants : new Set([...this.#grants, ...extra]);
+  }
+
+  #opsHost(): OpsHost {
+    return {
+      source: this.ops,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => this.#loadOpsLevel(),
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      go: (route) => this.go(route),
+      level: () => (this.#role === 'SYSTEM' ? 'SYSTEM' : this.#opsLevel),
+    };
+  }
+
+  #opsPage(content: HTMLElement, route: Route): void {
+    const host = this.#opsHost();
+    const view =
+      route.name === 'ops-incident'
+        ? new OpsIncidentDetailView(content, host, route.ref)
+        : route.name === 'ops-incidents'
+          ? new OpsIncidentsView(content, host)
+          : route.name === 'ops-gateway'
+            ? new OpsGatewayView(content, host)
+            : route.name === 'ops-logs'
+              ? new OpsLogsView(content, host)
+              : route.name === 'ops-releases'
+                ? new OpsReleasesView(content, host)
+                : route.name === 'ops-config'
+                  ? new OpsConfigView(content, host)
+                  : new SysOpsOverviewView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
   }
 
   #rights(): FinanceRights {
@@ -328,6 +430,10 @@ export class ShellApp implements ShellHost {
     }
     const moneyRoute = route.name.startsWith('finance') && route.name !== 'finance-bank-accounts';
     if (moneyRoute && role === 'ADMIN' && !this.#financeLoaded) {
+      content.replaceChildren(h('section', { class: 'content content-narrow', 'aria-busy': 'true' }, skeleton()));
+      return;
+    }
+    if (route.name.startsWith('ops') && role === 'ADMIN' && !this.#opsLoaded) {
       content.replaceChildren(h('section', { class: 'content content-narrow', 'aria-busy': 'true' }, skeleton()));
       return;
     }
@@ -391,13 +497,40 @@ export class ShellApp implements ShellHost {
         this.#bankAccounts(content);
         return;
       case 'deliveries':
-        this.#deliveryList(content);
+        this.#deliveryList(content, route.filter);
+        return;
+      case 'overview':
+        this.#overviewPage(content);
+        return;
+      case 'access':
+        this.#accessPage(content);
+        return;
+      case 'config':
+        this.#configPage(content);
+        return;
+      case 'reports':
+        this.#reportsPage(content);
+        return;
+      case 'audit':
+        this.#auditPage(content);
+        return;
+      case 'backups':
+        this.#backupsPage(content);
         return;
       case 'orders':
         this.#orderList(content);
         return;
       case 'notifications':
         this.#notificationPage(content);
+        return;
+      case 'ops':
+      case 'ops-incidents':
+      case 'ops-incident':
+      case 'ops-gateway':
+      case 'ops-logs':
+      case 'ops-releases':
+      case 'ops-config':
+        this.#opsPage(content, route);
         return;
       case 'reviews':
         this.#feedbackPage(content, 'reviews');
@@ -902,8 +1035,11 @@ export class ShellApp implements ShellHost {
   }
 
   /** "Vận hành › Giao hàng" (M07.07): counters, filters, list and the detail drawer; the server decides every read and action. */
-  #deliveryList(content: HTMLElement): void {
+  #deliveryList(content: HTMLElement, filter?: Extract<Route, { name: 'deliveries' }>['filter']): void {
     const host: DeliveryHost = {
+      ...(filter === undefined ? {} : { initial: filter }),
+      // The Shipper page opens from a delivery only for an administrator who may open it (the server decides again on the read).
+      ...(this.#role !== undefined && canOpenRoute(this.#role, this.#effectiveGrants(), { name: 'shippers' }) ? { openShipper: (driverId: string) => this.go({ name: 'shipper', id: driverId }) } : {}),
       source: this.deliveries,
       newKey: this.newKey,
       onSessionLost: () => this.onSessionLost(),
@@ -916,6 +1052,121 @@ export class ShellApp implements ShellHost {
       home: () => this.go({ name: 'home' }),
     };
     const view = new DeliveryListView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Hệ thống › Nhật ký" (M12-F): read only; the server needs the audit.read right (SYSTEM has it). */
+  #auditPage(content: HTMLElement): void {
+    const host: AuditHost = {
+      source: this.operations,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    };
+    const view = new AuditView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Hệ thống › Sao lưu và phục hồi" (M12-F): SYSTEM only; a restore request is recorded, never performed here. */
+  #backupsPage(content: HTMLElement): void {
+    const host: BackupsHost = {
+      source: this.operations,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    };
+    const view = new BackupsView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Tổng quan › Báo cáo" (M12-E): the server decides every read, export and download; a number that counts deliveries opens the list with the same filter. */
+  #reportsPage(content: HTMLElement): void {
+    const host: ReportsHost = {
+      source: this.reports,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      openDeliveries: (query) => this.go(routeOfLink('deliveries', query)),
+    };
+    const view = new ReportsView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Cài đặt › Cấu hình tập trung" (M12-D): every administrator reads; SYSTEM changes through the owners' own commands. */
+  #configPage(content: HTMLElement): void {
+    const host: ConfigHost = {
+      source: this.config,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      openFeeTable: () => this.go({ name: 'shipping-policy' }),
+    };
+    const view = new ConfigView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Tài khoản › Phân quyền" (M12-C): SYSTEM only; the server decides every read and command again. */
+  #accessPage(content: HTMLElement): void {
+    const host: AccessHost = {
+      source: this.access,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    };
+    const view = new AccessView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Tổng quan › Điều hành" (M12-A): the figures, read-only; every figure is gated by the server for this administrator. */
+  #overviewPage(content: HTMLElement): void {
+    const host: OverviewHost = {
+      source: this.overview,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      open: (link) => this.go(routeOfLink(link.area, link.query)),
+    };
+    const view = new OverviewView(content, host);
     this.#unsubscribe = () => view.dispose();
     void view.load();
   }
@@ -1187,6 +1438,15 @@ export class ShellApp implements ShellHost {
             financeAccess: (row: { readonly id: string; readonly fullName: string }) => {
               this.#financeDialog?.close();
               this.#financeDialog = openFinanceAccessDialog(this.#financeHost(), row);
+            },
+          }
+        : {}),
+      // M13: SYSTEM gives or takes back an administrator's access to "Vận hành hệ thống" (the server refuses anyone else again).
+      ...(this.#role === 'SYSTEM' && this.ops !== NOT_WIRED_OPS
+        ? {
+            opsAccess: (row: { readonly id: string; readonly fullName: string }) => {
+              this.#opsDialog?.close();
+              this.#opsDialog = openOpsAccessDialog(this.#opsHost(), row);
             },
           }
         : {}),

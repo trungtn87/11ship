@@ -2,6 +2,7 @@
 // The activation page lives at /activate and the invitation token is in the URL FRAGMENT (#t=...), never in the path
 // or the query, so it is not sent to any server by the browser and is removed from the address bar right after reading.
 
+import { DELIVERY_GROUPS } from './deliveries.js';
 import { TOPUP_TABS, TopupTab, WITHDRAWAL_TABS, WithdrawalTab } from './finance.js';
 import { TopupFilter, TOPUP_FILTERS } from './finance-admin.js';
 import { WithdrawalFilterOps, WITHDRAWAL_FILTERS } from './finance-ops.js';
@@ -20,10 +21,12 @@ export type Route =
   | { readonly name: 'users'; readonly status?: UserStatusFilter }
   | { readonly name: 'user'; readonly id: string }
   | { readonly name: 'administrators' }
+  | { readonly name: 'access' }
   | { readonly name: 'categories' }
   | { readonly name: 'shippers'; readonly status?: ShipperFilter }
   | { readonly name: 'shipper'; readonly id: string }
-  | { readonly name: 'deliveries' }
+  | { readonly name: 'deliveries'; readonly filter?: DeliveryRouteFilter }
+  | { readonly name: 'overview' }
   | { readonly name: 'orders' }
   | { readonly name: 'notifications' }
   // M11.03: ratings and complaints.
@@ -32,6 +35,10 @@ export type Route =
   | { readonly name: 'wallet-parameters' }
   | { readonly name: 'shipping-policy' }
   | { readonly name: 'settings' }
+  | { readonly name: 'config' }
+  | { readonly name: 'reports' }
+  | { readonly name: 'audit' }
+  | { readonly name: 'backups' }
   | { readonly name: 'order-timeouts' }
   | { readonly name: 'monitoring-errors' }
   // M04 (UI phase): "Tài chính" and the wallet parameters ("Cài đặt › Tham số hệ thống › Ví Shipper").
@@ -44,7 +51,54 @@ export type Route =
   | { readonly name: 'finance-withdrawal'; readonly id: string }
   | { readonly name: 'finance-transactions'; readonly shipper?: string }
   | { readonly name: 'finance-reconciliation' }
-  | { readonly name: 'wallet-params' };
+  | { readonly name: 'wallet-params' }
+  // M13 "Vận hành hệ thống": overview, incidents (list and one), SMS Gateway, log, versions & updates, configuration & maintenance.
+  | { readonly name: 'ops' }
+  | { readonly name: 'ops-incidents' }
+  | { readonly name: 'ops-incident'; readonly ref: string }
+  | { readonly name: 'ops-gateway' }
+  | { readonly name: 'ops-logs' }
+  | { readonly name: 'ops-releases' }
+  | { readonly name: 'ops-config' };
+
+/** What a link (the overview tiles) opens the delivery list with. Every field is checked against the closed sets below; anything else is dropped. */
+export interface DeliveryRouteFilter {
+  readonly group?: (typeof DELIVERY_GROUPS)[number];
+  readonly state?: (typeof DELIVERY_ROUTE_STATES)[number];
+  readonly basis?: 'created' | 'ended';
+  /** `YYYY-MM-DD` days of the Vietnam calendar. */
+  readonly from?: string;
+  readonly to?: string;
+}
+
+export const DELIVERY_ROUTE_STATES = ['waiting_driver', 'accepted', 'location_confirmed', 'delivering', 'completed', 'failed', 'cancelled_by_merchant', 'search_stopped'] as const;
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function deliveryFilter(search: string): DeliveryRouteFilter | undefined {
+  const params = new URLSearchParams(search);
+  const group = params.get('group');
+  const state = params.get('state');
+  const basis = params.get('basis');
+  const from = params.get('from');
+  const to = params.get('to');
+  const filter: { -readonly [K in keyof DeliveryRouteFilter]: DeliveryRouteFilter[K] } = {};
+  if (group !== null && (DELIVERY_GROUPS as readonly string[]).includes(group)) {
+    filter.group = group as (typeof DELIVERY_GROUPS)[number];
+  }
+  if (state !== null && (DELIVERY_ROUTE_STATES as readonly string[]).includes(state)) {
+    filter.state = state as (typeof DELIVERY_ROUTE_STATES)[number];
+  }
+  if (basis === 'created' || basis === 'ended') {
+    filter.basis = basis;
+  }
+  if (from !== null && DAY_RE.test(from)) {
+    filter.from = from;
+  }
+  if (to !== null && DAY_RE.test(to)) {
+    filter.to = to;
+  }
+  return Object.keys(filter).length === 0 ? undefined : filter;
+}
 
 /** The only status filter with its own menu entry ("Đang khóa"); any other value of ?status= is ignored. */
 export type UserStatusFilter = 'LOCKED';
@@ -60,11 +114,26 @@ export function parseRoute(pathname: string, search = ''): Route {
   if (path === '/accounts/users') {
     return new URLSearchParams(search).get('status') === 'LOCKED' ? { name: 'users', status: 'LOCKED' } : { name: 'users' };
   }
+  if (path === '/accounts/access') {
+    return { name: 'access' };
+  }
   if (path === '/accounts/administrators') {
     return { name: 'administrators' };
   }
   if (path === '/catalog/categories') {
     return { name: 'categories' };
+  }
+  if (path === '/system/audit') {
+    return { name: 'audit' };
+  }
+  if (path === '/system/backups') {
+    return { name: 'backups' };
+  }
+  if (path === '/reports') {
+    return { name: 'reports' };
+  }
+  if (path === '/system/config') {
+    return { name: 'config' };
   }
   if (path === '/system/settings/order-timeouts') return { name: 'order-timeouts' };
   if (path === '/system/monitoring/errors') return { name: 'monitoring-errors' };
@@ -77,11 +146,15 @@ export function parseRoute(pathname: string, search = ''): Route {
   if (path === '/system/shipping-fee-policy') {
     return { name: 'shipping-policy' };
   }
+  if (path === '/overview') {
+    return { name: 'overview' };
+  }
   if (path === '/operations/orders') {
     return { name: 'orders' };
   }
   if (path === '/operations/deliveries') {
-    return { name: 'deliveries' };
+    const filter = deliveryFilter(search);
+    return filter === undefined ? { name: 'deliveries' } : { name: 'deliveries', filter };
   }
   if (path === '/operations/notifications') {
     return { name: 'notifications' };
@@ -99,6 +172,10 @@ export function parseRoute(pathname: string, search = ''): Route {
   const shipper = /^\/operations\/shippers\/([^/]+)$/.exec(path);
   if (shipper !== null && isUuid(shipper[1])) {
     return { name: 'shipper', id: shipper[1] };
+  }
+  const ops = parseOpsRoute(path);
+  if (ops !== undefined) {
+    return ops;
   }
   const finance = parseFinanceRoute(path, search);
   if (finance !== undefined) {
@@ -129,6 +206,28 @@ export function parseRoute(pathname: string, search = ''): Route {
     return { name: 'invitation', id };
   }
   return { name: 'home' };
+}
+
+/** A SC-013 style incident code or a canonical uuid (the server decides what exists). */
+const INCIDENT_REF = /^(?:SC-\d{1,9}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+function parseOpsRoute(path: string): Route | undefined {
+  switch (path) {
+    case '/system-ops':
+      return { name: 'ops' };
+    case '/system-ops/incidents':
+      return { name: 'ops-incidents' };
+    case '/system-ops/gateway':
+      return { name: 'ops-gateway' };
+    case '/system-ops/logs':
+      return { name: 'ops-logs' };
+    case '/system-ops/releases':
+      return { name: 'ops-releases' };
+    case '/system-ops/config':
+      return { name: 'ops-config' };
+  }
+  const incident = /^\/system-ops\/incidents\/([^/]+)$/.exec(path);
+  return incident !== null && INCIDENT_REF.test(incident[1] as string) ? { name: 'ops-incident', ref: incident[1] as string } : undefined;
 }
 
 function parseFinanceRoute(path: string, search: string): Route | undefined {
@@ -177,6 +276,29 @@ function parseFinanceRoute(path: string, search: string): Route | undefined {
   return undefined;
 }
 
+/**
+ * Where a figure of the overview leads: only the closed set of areas the server may name, and each filter is re-checked by the route parser (an unknown
+ * or malformed value is dropped, never passed on). The list the link opens answers with the same filter the number was counted with.
+ */
+export function routeOfLink(area: 'deliveries' | 'shippers' | 'finance-topups' | 'finance-withdrawals' | 'orders' | 'complaints', query: Readonly<Record<string, string>>): Route {
+  const search = new URLSearchParams(query as Record<string, string>).toString();
+  const suffix = search === '' ? '' : `?${search}`;
+  switch (area) {
+    case 'deliveries':
+      return parseRoute('/operations/deliveries', suffix);
+    case 'shippers':
+      return parseRoute('/operations/shippers', suffix);
+    case 'finance-topups':
+      return parseRoute('/finance/topups', suffix);
+    case 'finance-withdrawals':
+      return parseRoute('/finance/withdrawals', suffix);
+    case 'orders':
+      return parseRoute('/operations/orders', suffix);
+    case 'complaints':
+      return parseRoute('/operations/complaints', suffix);
+  }
+}
+
 export function formatRoute(route: Route): string {
   switch (route.name) {
     case 'home':
@@ -191,12 +313,22 @@ export function formatRoute(route: Route): string {
       return `/accounts/users/${route.id}`;
     case 'administrators':
       return '/accounts/administrators';
+    case 'access':
+      return '/accounts/access';
     case 'categories':
       return '/catalog/categories';
     case 'order-timeouts':
       return '/system/settings/order-timeouts';
     case 'settings':
       return '/system/settings';
+    case 'reports':
+      return '/reports';
+    case 'audit':
+      return '/system/audit';
+    case 'backups':
+      return '/system/backups';
+    case 'config':
+      return '/system/config';
     case 'monitoring-errors':
       return '/system/monitoring/errors';
     case 'wallet-parameters':
@@ -207,10 +339,14 @@ export function formatRoute(route: Route): string {
       return route.status === undefined ? '/operations/shippers' : `/operations/shippers?status=${route.status}`;
     case 'shipper':
       return `/operations/shippers/${route.id}`;
+    case 'overview':
+      return '/overview';
+    case 'deliveries': {
+      const entries = Object.entries(route.filter ?? {}).filter(([, value]) => value !== undefined) as Array<[string, string]>;
+      return entries.length === 0 ? '/operations/deliveries' : `/operations/deliveries?${new URLSearchParams(entries).toString()}`;
+    }
     case 'orders':
       return '/operations/orders';
-    case 'deliveries':
-      return '/operations/deliveries';
     case 'notifications':
       return '/operations/notifications';
     case 'reviews':
@@ -237,6 +373,20 @@ export function formatRoute(route: Route): string {
       return '/finance/reconciliation';
     case 'wallet-params':
       return '/system/parameters/wallet';
+    case 'ops':
+      return '/system-ops';
+    case 'ops-incidents':
+      return '/system-ops/incidents';
+    case 'ops-incident':
+      return `/system-ops/incidents/${encodeURIComponent(route.ref)}`;
+    case 'ops-gateway':
+      return '/system-ops/gateway';
+    case 'ops-logs':
+      return '/system-ops/logs';
+    case 'ops-releases':
+      return '/system-ops/releases';
+    case 'ops-config':
+      return '/system-ops/config';
     case 'invitations':
       return route.status === undefined ? '/invitations' : `/invitations?status=${route.status}`;
     case 'invitation-new':

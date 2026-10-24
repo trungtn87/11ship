@@ -23,7 +23,10 @@ import { foldVietnamese, likeContains } from '../shared/fold-vietnamese';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
+import { FINANCE_PERMISSION_READ } from '../finance-access/finance-access-constants';
+import { FinanceAccessRepository } from '../finance-access/finance-access-repository';
 import { CommissionHoldService } from '../wallet/commission-hold-service';
+import { WalletReportReader } from '../wallet/wallet-report-reader';
 
 type Right = 'view' | 'review' | 'lock';
 
@@ -40,10 +43,27 @@ interface Authorized {
   readonly actorId: string;
   readonly review: boolean;
   readonly lock: boolean;
+  /** The finance READ right (wallet.read): the commission hold / ledger facts of a delivery are money data, shown only with it. */
+  readonly walletRead: boolean;
 }
 
 /** `admin.delivery.action.v1.record_custody`: dotted lower-case segments (the audit and the idempotency scope accept no hyphen). */
 const operationOf = (name: AdminDeliveryAction): string => `${OPERATIONS.adminAction}.${name.replace(/-/g, '_')}`;
+
+/** What needs a person, from the stored state only (M12-B): a stopped search nobody called again, goods still unsettled, an active delivery without a fee. */
+export function signalsOf(state: string, feeVnd: number | null, custodyOpen: boolean, recalled: boolean): string[] {
+  const signals: string[] = [];
+  if (state === 'search_stopped' && !recalled) {
+    signals.push('SEARCH_STOPPED');
+  }
+  if (custodyOpen) {
+    signals.push('CUSTODY_OPEN');
+  }
+  if (feeVnd === null && ['waiting_driver', 'accepted', 'location_confirmed', 'picked_up', 'delivering'].includes(state)) {
+    signals.push('FEE_UNKNOWN');
+  }
+  return signals;
+}
 
 const iso = (ms: number | null): string | null => (ms === null ? null : new Date(ms).toISOString());
 
@@ -73,6 +93,8 @@ export class AdminDeliveryService {
     private readonly recorder: DeliveryRecorder,
     private readonly agreements: ShippingFeeAgreementService,
     private readonly commission: CommissionHoldService,
+    private readonly walletReports: WalletReportReader,
+    private readonly financeGrants: FinanceAccessRepository,
     @Inject(APP_CONFIG) appConfig: AppConfig,
   ) {
     this.#lockTimeoutMs = appConfig.idempotency.businessLockTimeoutMs;
@@ -91,7 +113,7 @@ export class AdminDeliveryService {
       const page =
         driverIds !== null && driverIds.length === 0
           ? { rows: [], total: 0 }
-          : await this.deliveries.listForAdmin(context, { q: query.q, state: query.state, goods: query.goods, fromMs: query.fromMs, toMs: query.toMs, shop: query.shop, driverIds }, { limit: query.limit, offset: query.offset });
+          : await this.deliveries.listForAdmin(context, { q: query.q, state: query.state, goods: query.goods, basis: query.basis, fromMs: query.fromMs, toMs: query.toMs, shop: query.shop, shopId: query.shopId, driverIds, source: query.source, group: query.group }, { limit: query.limit, offset: query.offset });
       const names = new Map<string, string>();
       const items: JsonObject[] = [];
       for (const row of page.rows) {
@@ -112,6 +134,10 @@ export class AdminDeliveryService {
           goods_value_vnd: d.goodsValueVnd,
           fee_vnd: d.feeVnd,
           fee_status: d.feeVnd === null ? 'UNKNOWN' : 'FINAL',
+          source: d.source,
+          order_id: d.orderId,
+          wait_seconds: row.waitSeconds,
+          signals: signalsOf(d.state, d.feeVnd, row.incidentStatus === 'OPEN', row.recalled),
           incident_open: row.incidentStatus === 'OPEN',
           custody: row.custody,
           created_at: iso(d.createdAtMs),
@@ -306,7 +332,25 @@ export class AdminDeliveryService {
     if (auth.lock && delivery.pickedUpAtMs !== null) {
       can.push('adjust-after-pickup');
     }
-    return this.views.forAdmin(context, delivery, auth.review, can);
+    const view = await this.views.forAdmin(context, delivery, auth.review, can);
+    if (!auth.walletRead) {
+      return { ...view, money: { status: 'FORBIDDEN' } };
+    }
+    const assignments = await this.deliveries.listAssignments(context, delivery.deliveryId);
+    const traces = await this.walletReports.commissionOf(context, assignments.map((assignment) => assignment.assignmentId));
+    return {
+      ...view,
+      money: {
+        status: 'OK',
+        commissions: traces.map((trace) => ({
+          assignment_id: trace.assignmentId,
+          hold_status: trace.holdStatus,
+          amount_vnd: trace.amountVnd,
+          ledger_entry_id: trace.ledgerEntryId,
+          ledger_at: trace.ledgerAtMs === null ? null : new Date(trace.ledgerAtMs).toISOString(),
+        })),
+      },
+    };
   }
 
   /**
@@ -320,8 +364,9 @@ export class AdminDeliveryService {
     const nowMs = await freshClockMs(context);
     this.actor.assertSessionLive(locked, nowMs);
     if (role === 'SYSTEM') {
-      return { role, actorId: known.userId, review: true, lock: true };
+      return { role, actorId: known.userId, review: true, lock: true, walletRead: true };
     }
+    const walletRead = (await this.financeGrants.listForUser(context, known.userId)).some((row) => row.permissionKey === FINANCE_PERMISSION_READ && row.state === 'GRANTED');
     const driver = rows.find((candidate) => candidate.app === 'DRIVER');
     const shop = rows.find((candidate) => candidate.app === 'SHOP');
     const mayView = (driver?.canView ?? false) || (shop?.canView ?? false);
@@ -330,7 +375,7 @@ export class AdminDeliveryService {
     if (!mayView || (right === 'review' && !review) || (right === 'lock' && !lock)) {
       throw new AppError('ADMIN_FORBIDDEN');
     }
-    return { role, actorId: known.userId, review, lock };
+    return { role, actorId: known.userId, review, lock, walletRead };
   }
 
   async #authorizeReplay(context: TransactionContext, guard: JsonObject, known: SessionLookup, name: AdminDeliveryAction): Promise<true> {

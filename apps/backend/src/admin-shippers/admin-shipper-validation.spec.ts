@@ -70,7 +70,7 @@ describe('Shipper administration parsers (M03)', () => {
 
   it('wallet parameters are whole positive VND at most one billion, both present, nothing else', () => {
     const max = 1_000_000_000;
-    expect(parseWalletParametersBody({ expected_version: 2, topup_min_vnd: 100000, withdraw_min_vnd: 10000 }, max)).toEqual({ expectedVersion: 2, topupMinVnd: 100000, withdrawMinVnd: 10000 });
+    expect(parseWalletParametersBody({ expected_version: 2, topup_min_vnd: 100000, withdraw_min_vnd: 10000 }, max)).toEqual({ expectedVersion: 2, topupMinVnd: 100000, withdrawMinVnd: 10000, reason: null });
     for (const bad of [
       { expected_version: 2, topup_min_vnd: 0, withdraw_min_vnd: 10000 },
       { expected_version: 2, topup_min_vnd: -1, withdraw_min_vnd: 10000 },

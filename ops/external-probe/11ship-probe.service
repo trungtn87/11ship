@@ -1,0 +1,19 @@
+[Unit]
+Description=11Ship independent external probe (M13)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ship11probe
+ExecStart=/usr/bin/node /opt/11ship-probe/probe.mjs --config /etc/11ship-probe/config.json
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/11ship-probe
+
+[Install]
+WantedBy=multi-user.target

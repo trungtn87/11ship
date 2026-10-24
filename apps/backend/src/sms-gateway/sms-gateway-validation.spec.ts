@@ -5,14 +5,20 @@ const ATTEMPT = '3f1c2b6a-0d4e-4f5a-8b9c-1a2b3c4d5e6f';
 
 describe('gateway request validation', () => {
   it('accepts exactly the documented heartbeat and claim fields', () => {
-    expect(parseHeartbeatBody({ app_version: '0.2.0', sms_permission: true, paused: false })).toEqual({ appVersion: '0.2.0', smsPermission: true, paused: false });
-    expect(parseHeartbeatBody({})).toEqual({ appVersion: null, smsPermission: null, paused: null });
-    expect(parseHeartbeatBody(undefined)).toEqual({ appVersion: null, smsPermission: null, paused: null });
+    const none = { batteryPercent: null, charging: null, simState: null, pendingReports: null, currentTask: null, lastErrorCode: null };
+    expect(parseHeartbeatBody({ app_version: '0.2.0', sms_permission: true, paused: false })).toEqual({ appVersion: '0.2.0', appVersionCode: null, smsPermission: true, paused: false, telemetry: none });
+    expect(parseHeartbeatBody({})).toEqual({ appVersion: null, appVersionCode: null, smsPermission: null, paused: null, telemetry: none });
+    expect(parseHeartbeatBody(undefined)).toEqual({ appVersion: null, appVersionCode: null, smsPermission: null, paused: null, telemetry: none });
+    // M13: what the phone says about itself (every field optional, bounded, a fixed vocabulary).
+    expect(parseHeartbeatBody({ battery_percent: 18, charging: false, sim_state: 'READY', pending_reports: 0, current_task: 'IDLE', last_error_code: 'NO_SERVICE', app_version_code: 12 })).toMatchObject({
+      appVersionCode: 12,
+      telemetry: { batteryPercent: 18, charging: false, simState: 'READY', pendingReports: 0, currentTask: 'IDLE', lastErrorCode: 'NO_SERVICE' },
+    });
     expect(parseClaimBody({ sms_permission: false })).toEqual({ smsPermission: false, paused: null });
   });
 
   it('refuses a recipient, a text or any other field, and wrong types', () => {
-    for (const body of [{ to: '+84900000000' }, { text: 'x' }, { paused: 'yes' }, { app_version: 'bad version!' }, [], 'x', null]) {
+    for (const body of [{ to: '+84900000000' }, { text: 'x' }, { paused: 'yes' }, { app_version: 'bad version!' }, { battery_percent: 101 }, { battery_percent: 1.5 }, { charging: 'yes' }, { sim_state: 'RICH' }, { current_task: 'FLYING' }, { last_error_code: 'lower' }, { sim_balance: 100000 }, [], 'x', null]) {
       expect(() => parseHeartbeatBody(body)).toThrow();
     }
     expect(() => parseClaimBody({ to: '+84900000000', text: 'hello' })).toThrow();

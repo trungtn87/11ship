@@ -208,7 +208,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(bridge.token, isNull);
     expect(find.byKey(const Key('open-login')), findsOneWidget);
-    expect(find.byKey(const Key('logged-out')), findsOneWidget);
+    expect(find.byKey(const Key('logged-out')), findsNothing, reason: 'a confirmed logout shows no banner');
   });
 
   testWidgets('register (REQUIRED, issue #102): the code field appears only after the SMS was SENT; the proof rides in the register body', (WidgetTester tester) async {

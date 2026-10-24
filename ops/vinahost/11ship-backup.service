@@ -1,0 +1,28 @@
+[Unit]
+Description=11Ship backup (PostgreSQL -> encrypted -> Google Drive, verified)
+After=network-online.target postgresql.service
+Wants=network-online.target
+# A second copy of this unit never starts while one runs; backup.sh also takes a lock, so a person or the Web Admin job cannot overlap it either.
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/11ship/backup/backup.env
+# Secrets are systemd credentials (encrypted with the host key, handed to this process only, not in the environment):
+#   systemd-creds encrypt --name=backup-passphrase <(printf '%s' "$PASSPHRASE") /etc/11ship/backup/passphrase.cred   (see the runbook)
+LoadCredentialEncrypted=backup-passphrase:/etc/11ship/backup/passphrase.cred
+LoadCredentialEncrypted=ops-ingest-key:/etc/11ship/backup/ops-ingest-key.cred
+Environment=BACKUP_PASSPHRASE_FILE=%d/backup-passphrase
+Environment=BACKUP_INGEST_KEY_FILE=%d/ops-ingest-key
+Environment=BACKUP_KIND=DAILY
+Environment=BACKUP_TRIGGER=TIMER
+ExecStart=/opt/11ship/tools/backup/backup.sh
+# Hard stop for a stuck run (a hung upload): the lock is released with the process and the next run retries.
+TimeoutStartSec=4h
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/backups/11ship /etc/11ship/backup

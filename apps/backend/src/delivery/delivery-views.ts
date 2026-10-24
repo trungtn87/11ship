@@ -325,10 +325,14 @@ export class DeliveryViews {
         accepted_at: iso(assignment.acceptedAtMs),
         ended_at: iso(assignment.endedAtMs),
         end_reason: assignment.endReason,
+        end_actor: assignment.endActor,
+        shipper_driver_id: assignment.driverId,
       });
     }
     const shipper = active === undefined ? undefined : await this.shipperOf(context, active.driverId);
-    const location = active !== undefined && RUNNING_STATES.includes(d.state) ? await this.#location(context, active.driverId) : null;
+    const running = active !== undefined && RUNNING_STATES.includes(d.state);
+    const location = running ? await this.#location(context, active.driverId) : null;
+    const recall = await this.deliveries.findRecallOf(context, d.deliveryId);
     return {
       delivery_id: d.deliveryId,
       code: d.code,
@@ -345,6 +349,24 @@ export class DeliveryViews {
       fee: { mode: d.feeMode, payer: d.feePayer, amount_vnd: d.feeVnd, status: feeStatusOf({ feeVnd: d.feeVnd, agreementStatus: agreement?.status ?? null }) },
       search: this.#search(d, nowMs),
       location,
+      // Why there is no position, said apart so the Admin map never mistakes "not tracked" for "tracking failed" (M12-B): NO_SHIPPER / NOT_RUNNING (the delivery
+      // is not on the way, so nothing is tracked) / NO_POSITION (running, but the Shipper's phone never sent one) / AVAILABLE (see `location.freshness`).
+      location_state: active === undefined ? 'NO_SHIPPER' : !running ? 'NOT_RUNNING' : location === null ? 'NO_POSITION' : 'AVAILABLE',
+      pickup: { address_text: d.pickupAddressText, lat: d.pickupLat, lng: d.pickupLng },
+      dropoff: {
+        area_text: d.dropoffAreaText,
+        address_text: canContact ? d.dropoffAddressText : null,
+        lat: canContact ? d.dropoffLat : null,
+        lng: canContact ? d.dropoffLng : null,
+        pinned: d.dropoffPinnedBy !== null,
+      },
+      links: {
+        shop_id: d.shopId,
+        shipper_driver_id: shipper === undefined ? null : shipper.driver.driverId,
+        order_id: d.orderId,
+        previous_delivery_id: d.previousDeliveryId,
+        next_delivery: recall === undefined ? null : { delivery_id: recall.deliveryId, code: recall.code },
+      },
       assignments: assignmentViews,
       timeline: (await this.deliveries.listEvents(context, d.deliveryId, 300)).map(eventView),
       incident:

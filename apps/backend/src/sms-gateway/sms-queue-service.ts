@@ -17,6 +17,10 @@ import {
   SmsPurpose,
 } from './sms-gateway-constants';
 import { JobOwner, SmsGatewayRepository } from './sms-gateway-repository';
+import { OpsTelemetryRepository } from '../ops/ops-telemetry-repository';
+import { OpsGatewayUpdate } from '../ops/ops-gateway-update';
+import { JsonObject } from '../idempotency/idempotency-executor';
+import { HeartbeatTelemetry } from './sms-gateway-validation';
 
 export interface SmsDelivery {
   readonly verificationId: string;
@@ -74,6 +78,8 @@ export class SmsQueueService {
     private readonly transactions: TransactionManager,
     private readonly repository: SmsGatewayRepository,
     private readonly verifications: VerificationRepository,
+    private readonly telemetry: OpsTelemetryRepository,
+    private readonly updates: OpsGatewayUpdate,
     @Inject(APP_CONFIG) appConfig: AppConfig,
     private readonly keyring: SmsKeyringHolder,
   ) {
@@ -208,13 +214,20 @@ export class SmsQueueService {
   /** Heartbeat of a paired device; the answer tells it whether sending is enabled at all (the kill switch). */
   async heartbeat(
     deviceId: string,
-    input: { appVersion: string | null; smsPermission: boolean | null; paused: boolean | null },
-  ): Promise<{ sendingEnabled: boolean; pollSeconds: number }> {
+    input: { appVersion: string | null; appVersionCode?: number | null; smsPermission: boolean | null; paused: boolean | null; telemetry?: HeartbeatTelemetry },
+  ): Promise<{ sendingEnabled: boolean; pollSeconds: number; update: JsonObject | null }> {
     return this.transactions.withTransaction(async (context) => {
-      if (!(await this.repository.recordHeartbeat(context, { deviceId, ...input }))) {
+      const { telemetry, appVersionCode, ...device } = input;
+      if (!(await this.repository.recordHeartbeat(context, { deviceId, ...device }))) {
         throw new AppError('GATEWAY_UNAUTHORIZED');
       }
-      return { sendingEnabled: await this.repository.sendingEnabled(context), pollSeconds: this.config.pollSeconds };
+      // M13: what the phone says about itself (battery, charging, SIM, results waiting). Only what was sent is stored; nothing is inferred.
+      if (telemetry !== undefined) {
+        await this.telemetry.recordTelemetry(context, deviceId, telemetry);
+      }
+      // M13: a newer GATEWAY release, offered with the server's own reading of whether this phone may take it now (idle, nothing unreported). Never offered mid-task.
+      const update = await this.updates.offer(context, deviceId, appVersionCode ?? null, input.paused);
+      return { sendingEnabled: await this.repository.sendingEnabled(context), pollSeconds: this.config.pollSeconds, update };
     });
   }
 

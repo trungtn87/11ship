@@ -53,6 +53,7 @@ export class KeyVersion {
   readonly #adminOperationKey: Buffer;
   readonly #adminActivationOtpKey: Buffer;
   readonly #smsPayloadKey: Buffer;
+  readonly #opsSecretKey: Buffer;
   readonly #random: RandomBytesFn;
 
   constructor(id: string, subkeys: DerivedSubkeys, random: RandomBytesFn) {
@@ -65,6 +66,7 @@ export class KeyVersion {
     this.#adminOperationKey = subkeys.adminOperation;
     this.#adminActivationOtpKey = subkeys.adminActivationOtp;
     this.#smsPayloadKey = subkeys.smsPayload;
+    this.#opsSecretKey = subkeys.opsSecret;
     this.#random = random;
     Object.freeze(this);
   }
@@ -305,6 +307,52 @@ export class KeyVersion {
     } catch {
       throw new CryptoError('authentication_failed');
     }
+  }
+
+  /**
+   * Seals one operations secret (the Discord webhook, M13). `label` (for example 'discord-webhook') is bound as associated data together with the key id, so the
+   * envelope cannot be read back as another secret. At most 512 bytes of plaintext.
+   */
+  sealOpsSecret(label: string, plaintext: Buffer): ReplayEnvelope {
+    let iv: Buffer;
+    try {
+      iv = this.#random(IV_BYTES);
+    } catch {
+      throw new CryptoError('rng_failure');
+    }
+    if (!Buffer.isBuffer(iv) || iv.length !== IV_BYTES || !Buffer.isBuffer(plaintext) || plaintext.length < 1 || plaintext.length > 512) {
+      throw new CryptoError('invalid_input');
+    }
+    try {
+      const cipher = createCipheriv('aes-256-gcm', this.#opsSecretKey, iv, { authTagLength: TAG_BYTES });
+      cipher.setAAD(this.#opsSecretAad(label));
+      const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+      return { iv: Buffer.from(iv), tag: cipher.getAuthTag(), ciphertext };
+    } catch {
+      throw new CryptoError('invalid_input');
+    }
+  }
+
+  openOpsSecret(label: string, envelope: ReplayEnvelope): Buffer {
+    const { iv, tag, ciphertext } = envelope;
+    if (!Buffer.isBuffer(iv) || iv.length !== IV_BYTES || !Buffer.isBuffer(tag) || tag.length !== TAG_BYTES || !Buffer.isBuffer(ciphertext) || ciphertext.length < 1 || ciphertext.length > 512) {
+      throw new CryptoError('invalid_envelope');
+    }
+    try {
+      const decipher = createDecipheriv('aes-256-gcm', this.#opsSecretKey, iv, { authTagLength: TAG_BYTES });
+      decipher.setAAD(this.#opsSecretAad(label));
+      decipher.setAuthTag(tag);
+      return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    } catch {
+      throw new CryptoError('authentication_failed');
+    }
+  }
+
+  #opsSecretAad(label: string): Buffer {
+    if (typeof label !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(label)) {
+      throw new CryptoError('invalid_input');
+    }
+    return Buffer.from(JSON.stringify(['11ship.ops-secret.v1', this.id, label]), 'utf8');
   }
 
   #smsPayloadAad(jobId: string): Buffer {

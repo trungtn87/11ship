@@ -91,11 +91,12 @@ fi
 mkdir -p "$res/xml"
 cp "$here/android-templates/network_security_config.xml" "$res/xml/network_security_config.xml"
 cp "$here/android-templates/n11_data_extraction_rules.xml" "$res/xml/n11_data_extraction_rules.xml"
+cp "$here/android-templates/n11_update_paths.xml" "$res/xml/n11_update_paths.xml"
 
 # The native device bridge: shared Kotlin sources (package vn.eleven.n11) + this app's MainActivity.
 kt="$dest/app/src/main/kotlin"
 mkdir -p "$kt/vn/eleven/n11"
-for f in N11DeviceStore N11DeviceKeys N11PeerPolicy N11PeerService N11PeerClient N11DeviceChannel; do
+for f in N11DeviceStore N11DeviceKeys N11PeerPolicy N11PeerService N11PeerClient N11DeviceChannel N11UpdateChannel; do
   cp "$here/android-templates/kotlin/$f.kt" "$kt/vn/eleven/n11/$f.kt"
 done
 cp "$here/android-templates/kotlin/N11Application.kt" "$kt/vn/eleven/n11/N11Application.kt"
@@ -130,6 +131,7 @@ sed "s/@APP_PACKAGE@/vn.eleven.$app/" "$here/android-templates/kotlin/$main_temp
 mkdir -p "$dest/app/src/test/kotlin/vn/eleven/n11"
 cp "$here/android-templates/kotlin-test/N11PeerPolicyTest.kt" "$dest/app/src/test/kotlin/vn/eleven/n11/N11PeerPolicyTest.kt"
 cp "$here/android-templates/kotlin-test/FreshLocationRequestTest.kt" "$dest/app/src/test/kotlin/vn/eleven/n11/FreshLocationRequestTest.kt"
+cp "$here/android-templates/kotlin-test/N11UpdatePathsTest.kt" "$dest/app/src/test/kotlin/vn/eleven/n11/N11UpdatePathsTest.kt"
 case "$gradle" in
   *.kts) printf '\ndependencies {\n    testImplementation("junit:junit:4.13.2")\n    testImplementation("org.mockito:mockito-core:5.14.2")\n}\n' >> "$gradle" ;;
   *) printf "\ndependencies {\n    testImplementation 'junit:junit:4.13.2'\n    testImplementation 'org.mockito:mockito-core:5.14.2'\n}\n" >> "$gradle" ;;

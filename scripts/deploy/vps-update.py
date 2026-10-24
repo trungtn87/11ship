@@ -20,6 +20,8 @@ SERVICE = '11ship-staging'
 URL = 'https://103.9.78.67.sslip.io'
 BACKUPS = Path('/var/backups/11ship')
 POLICY = Path('/etc/11ship/migration-compatibility.json')
+BACKUP_ENV = Path('/etc/11ship/backup/backup.env')
+PREDEPLOY_BACKUP_UNIT = '11ship-backup-predeploy.service'
 REFRESH_WRAPPER = Path('/opt/11ship/tools/refresh-android.sh')
 REFRESH_WRAPPER_CONTENT = '\n'.join([
     '#!/bin/bash',
@@ -222,6 +224,19 @@ def backup():
     print('backup archive verified; restore into an isolated DB remains a separate recovery procedure')
 
 
+def backup_offsite():
+    """Encrypted pre-migration backup to Google Drive (M12-F). Once the backup service is configured it is REQUIRED: the unit succeeds only when the copy outside the VPS was verified,
+    and a failure stops the update before any migration. Before the Owner has connected Drive the existing local dump above is all there is, and that is said out loud."""
+    if not BACKUP_ENV.exists():
+        print('WARNING: off-VPS backup is not configured (' + str(BACKUP_ENV) + ' is missing): only the local dump above exists before this migration')
+        return
+    try:
+        subprocess.run(['systemctl', 'start', '--wait', PREDEPLOY_BACKUP_UNIT], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=7200)
+    except (subprocess.SubprocessError, OSError):
+        raise RuntimeError('off-VPS backup before the migration failed; no migration applied (see: journalctl -u ' + PREDEPLOY_BACKUP_UNIT + ')') from None
+    print('pre-migration backup verified outside the VPS')
+
+
 def migrate(release):
     run(['systemd-run', '--quiet', '--wait', '--pipe', '--collect', '-p', 'Type=oneshot',
          '-p', 'WorkingDirectory=' + str(release), '-p', 'EnvironmentFile=' + OPERATOR,
@@ -284,6 +299,7 @@ def update(archive, sha):
     compatible(new, pending)
     if pending:
         backup()
+        backup_offsite()
         migrate(new)
     if new == old:
         health(new)

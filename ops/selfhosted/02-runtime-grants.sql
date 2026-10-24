@@ -7,7 +7,7 @@
 --
 -- Idempotent: GRANT of a privilege that is already held changes nothing. There is no ALTER DEFAULT PRIVILEGES, no
 -- sequence grant (no sequences are used), no GRANT ALL, no TRUNCATE/REFERENCES/TRIGGER, and no access to
--- app.pgmigrations. audit_logs is INSERT-only. This file is the same matrix as the table in
+-- app.pgmigrations. audit_logs is SELECT + INSERT only (never updated or deleted). This file is the same matrix as the table in
 -- ops/runbooks/render-supabase-staging.md section 3 (derived from reading the source); tests/selfhosted checks that the
 -- two stay equal and that they cover exactly the tables the migrations create. A new migration that adds a table must
 -- add its row to BOTH places in the same change.
@@ -28,7 +28,8 @@ GRANT SELECT, INSERT, UPDATE ON app.drivers TO ship11_app;
 GRANT SELECT, INSERT, DELETE ON app.shop_business_hours TO ship11_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.idempotency_records TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.outbox_events TO ship11_app;
-GRANT INSERT ON app.audit_logs TO ship11_app;
+-- M12: the administration reads the audit log (Nhật ký, the configuration history). It is still never updated or deleted: SELECT and INSERT only.
+GRANT SELECT, INSERT ON app.audit_logs TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.admin_memberships TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.admin_auth_challenges TO ship11_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.admin_totp_factors TO ship11_app;
@@ -133,6 +134,23 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON app.notification_reminders TO ship11_app
 GRANT SELECT, INSERT, DELETE ON app.notification_offer_rounds TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.notification_settings TO ship11_app;
 
+-- M13: operations, alerts and updates. The log and the metrics are append-only (a trigger refuses UPDATE of the log); DELETE exists only where the retention pass
+-- removes expired operational rows. No business table is granted here; nothing in M13 deletes an order, wallet, fee or account row.
+GRANT SELECT, INSERT, UPDATE ON app.ops_config TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_admin_scopes TO ship11_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.ops_incidents TO ship11_app;
+GRANT SELECT, INSERT, DELETE ON app.ops_events TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_checks TO ship11_app;
+GRANT SELECT, INSERT, DELETE ON app.ops_metrics TO ship11_app;
+GRANT SELECT, INSERT, DELETE ON app.ops_metrics_hourly TO ship11_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.ops_notifications TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_maintenance TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_gateway_telemetry TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_ingest_keys TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_releases TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_version_reports TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_deploys TO ship11_app;
+GRANT SELECT, INSERT, DELETE ON app.ops_backup_reports TO ship11_app;
 -- M11: ratings and complaints. Nothing is ever deleted (guard triggers); messages, moderations and reply history are append-only. The complaint code comes from
 -- app.next_complaint_code() (03-runtime-function-grants.sql), not from a sequence privilege.
 GRANT SELECT, INSERT, UPDATE ON app.reviews TO ship11_app;
@@ -152,3 +170,15 @@ GRANT SELECT, INSERT ON app.wallet_adjustments TO ship11_app;
 GRANT SELECT, UPDATE ON app.order_timeout_policy TO ship11_app;
 GRANT SELECT, INSERT ON app.order_timeout_policy_changes TO ship11_app;
 GRANT SELECT, INSERT ON app.cancellation_transitions TO ship11_app;
+
+-- M12-E: report export jobs. A job row is updated by the runner (QUEUED -> RUNNING -> DONE/FAILED/EXPIRED) and never deleted (trigger); the file bytes live in their own table
+-- and are removed when the file expires.
+GRANT SELECT, INSERT, UPDATE ON app.report_export_jobs TO ship11_app;
+GRANT SELECT, INSERT, DELETE ON app.report_export_files TO ship11_app;
+
+-- M12-F: backup records are written by the operating team's backup job (database owner role), the application only READS them. Restore requests are inserted and cancelled
+-- by SYSTEM through the Web Admin; an operator moves them on with the owner role. Neither table is ever deleted (trigger).
+GRANT SELECT ON app.backup_records TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.restore_requests TO ship11_app;
+-- "Sao lưu ngay": the application only queues a job (INSERT) and reads it; the backup job moves it on with the owner role. Never deleted (trigger).
+GRANT SELECT, INSERT ON app.backup_jobs TO ship11_app;

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { WalletModule } from '../wallet/wallet.module';
 import { DeliveryOfferReader, ShipperWorkReader } from './delivery-ports';
+import { DeliveryReportReader } from './delivery-report-reader';
 import { DeliveryRepository } from './delivery-repository';
 
 /**
@@ -9,7 +10,7 @@ import { DeliveryRepository } from './delivery-repository';
  */
 @Module({
   imports: [WalletModule],
-  providers: [DeliveryRepository, DeliveryOfferReader, ShipperWorkReader],
-  exports: [DeliveryRepository, DeliveryOfferReader, ShipperWorkReader],
+  providers: [DeliveryRepository, DeliveryOfferReader, ShipperWorkReader, DeliveryReportReader],
+  exports: [DeliveryRepository, DeliveryOfferReader, ShipperWorkReader, DeliveryReportReader],
 })
 export class DeliveryReadModule {}

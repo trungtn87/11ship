@@ -226,12 +226,13 @@ class AccountTab extends StatelessWidget {
         )
       else
         _hero(),
-      if (session.loggedOutNotice)
-        N11Banner(
-          key: const Key('logged-out'),
-          kind: session.logoutUnconfirmed ? BannerKind.warn : BannerKind.success,
-          title: session.logoutUnconfirmed ? 'Đã đăng xuất trên máy này' : 'Đã đăng xuất',
-          text: session.logoutUnconfirmed ? 'Chưa xác nhận được với máy chủ rằng phiên đã bị thu hồi (không có kết nối).' : 'Phiên đã được thu hồi trên máy chủ.',
+      // A confirmed logout shows nothing; only an unconfirmed revoke keeps a short warning.
+      if (session.loggedOutNotice && session.logoutUnconfirmed)
+        const N11Banner(
+          key: Key('logged-out'),
+          kind: BannerKind.warn,
+          title: 'Đã đăng xuất trên máy này',
+          text: 'Chưa xác nhận được với máy chủ rằng phiên đã bị thu hồi (không có kết nối).',
         ),
       if (!session.ready) const ReasonNote(kNoServerReason),
       if (ended)

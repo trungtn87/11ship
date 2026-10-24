@@ -27,6 +27,8 @@ for name in [
     "android.permission.RECEIVE_BOOT_COMPLETED",
     "android.permission.WAKE_LOCK",
     "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+    # M13: hand a downloaded, SHA-256-verified update to the Android installer (the person confirms there).
+    "android.permission.REQUEST_INSTALL_PACKAGES",
 ]:
     if not any(x.attrib.get(a + "name") == name for x in root.findall("uses-permission")):
         root.insert(0, ET.Element("uses-permission", {a + "name": name}))
@@ -50,6 +52,14 @@ receiver = ET.SubElement(app, "receiver", {a + "name": ".GatewayBootReceiver", a
 intent_filter = ET.SubElement(receiver, "intent-filter")
 ET.SubElement(intent_filter, "action", {a + "name": "android.intent.action.BOOT_COMPLETED"})
 ET.SubElement(intent_filter, "action", {a + "name": "android.intent.action.MY_PACKAGE_REPLACED"})
+# M13: the installer reads the verified file through a FileProvider limited to the cache "updates" folder.
+provider = ET.SubElement(app, "provider", {
+    a + "name": "androidx.core.content.FileProvider",
+    a + "authorities": "${applicationId}.updates",
+    a + "exported": "false",
+    a + "grantUriPermissions": "true",
+})
+ET.SubElement(provider, "meta-data", {a + "name": "android.support.FILE_PROVIDER_PATHS", a + "resource": "@xml/update_paths"})
 doc.write(manifest, encoding="utf-8", xml_declaration=True)
 gradle = Path("android/app/build.gradle.kts")
 s = gradle.read_text()
@@ -64,9 +74,18 @@ if "testImplementation" not in s:
 gradle.write_text(s)
 PY
 mkdir -p android/app/src/main/kotlin/vn/eleven/gateway
-for f in MainActivity GatewayStore GatewayApi GatewayService GatewayBootReceiver; do
+mkdir -p android/app/src/main/res/xml
+cat > android/app/src/main/res/xml/update_paths.xml <<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>
+XML
+for f in MainActivity GatewayStore GatewayApi GatewayService GatewayBootReceiver DeviceTelemetry; do
   cp "tool/$f.kt" "android/app/src/main/kotlin/vn/eleven/gateway/$f.kt"
 done
 mkdir -p android/app/src/test/kotlin/vn/eleven/gateway
 cp tool/ReportFlusher.kt android/app/src/main/kotlin/vn/eleven/gateway/ReportFlusher.kt
+cp tool/UpdateSupport.kt android/app/src/main/kotlin/vn/eleven/gateway/UpdateSupport.kt
 cp tool/test/ReportFlusherTest.kt android/app/src/test/kotlin/vn/eleven/gateway/ReportFlusherTest.kt
+cp tool/test/UpdateRulesTest.kt android/app/src/test/kotlin/vn/eleven/gateway/UpdateRulesTest.kt

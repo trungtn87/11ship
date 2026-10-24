@@ -12,6 +12,11 @@ import 'm10_source.dart';
 // Pieces both sides of M10 draw: the status chip, money rows (dishes and fee apart; an unknown fee never reads 0đ), the lines of an Order with the
 // shop's changes next to the original, the timeline and the map card of the CURRENT delivery.
 
+/// One wording for the reminders of the customer order flow (cart, checkout, order detail).
+const String kFeeEstimateNote = 'Phí giao chỉ là tạm tính, có thể chưa phải giá chính thức.';
+const String kScheduleNote = 'Giờ hẹn là thời gian mong muốn, món có thể đến sớm hoặc muộn hơn.';
+const String kDirectPayNote = 'Bạn thanh toán trực tiếp cho quán hoặc shipper, không qua ứng dụng.';
+const String kNoFeeNote = 'Chưa có phí giao nên chưa tính được tổng tiền.';
 const String kM10SampleLabel = 'Dữ liệu minh họa';
 
 /// "Chưa xác định phí" instead of a number when the fee is not known — never "0đ".
@@ -141,7 +146,9 @@ class OrderMoneyCard extends StatelessWidget {
             const Divider(height: N11Space.gap4, color: N11Colors.line),
             Row(children: <Widget>[const Expanded(child: Text('Tổng dự kiến', style: N11Text.bodyStrong)), Text(m10Money(money.expectedTotalVnd!), key: const Key('m10-expected-total'), style: N11Text.title.copyWith(fontSize: 18))]),
           ] else
-            const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: ReasonNote('Chưa xác định phí giao nên chưa có tổng cuối. Tiền món và phí được tính riêng.')),
+            const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: ReasonNote(kNoFeeNote, icon: Icons.warning_amber_rounded)),
+          const SizedBox(height: N11Space.gap2),
+          const ReasonNote(kDirectPayNote, icon: Icons.info_outline),
         ],
       ),
     );

@@ -15,8 +15,14 @@ import { AdminFinanceOpsApi, createFinanceOpsSource } from '../core/finance-ops-
 import { AdminShipperApi, createShipperSource, SHIPPERS_BASE } from '../core/shippers-api.js';
 import { AdminOrderApi, createOrderSource } from '../core/orders-api.js';
 import { AdminDeliveryApi, createDeliverySource, DELIVERIES_BASE } from '../core/deliveries-api.js';
+import { AdminOpsApi, createOpsSource, OPS_BASE } from '../core/ops-api.js';
 import { AdminFeedbackApi, createFeedbackSource, FEEDBACK_BASE } from '../core/feedback-api.js';
 import { AdminNotificationApi, createNotificationSource, NOTIFICATIONS_BASE } from '../core/notifications-api.js';
+import { AdminConfigApi, CONFIG_BASE, createConfigSource } from '../core/config-api.js';
+import { AdminOperationsApi, createOperationsSource, OPERATIONS_BASE } from '../core/operations-api.js';
+import { AdminReportApi, createReportSource, REPORTS_BASE } from '../core/reports-api.js';
+import { ACCESS_BASE, AdminAccessApi, createAccessSource } from '../core/access-api.js';
+import { AdminOverviewApi, createOverviewSource, OVERVIEW_BASE } from '../core/overview-api.js';
 import { createShippingPolicySource, SHIPPING_POLICY_BASE, ShippingPolicyApi } from '../core/shipping-policy-api.js';
 import { AdminSettingsApi, createSettingsSource, SETTINGS_BASE } from '../core/settings-api.js';
 import { ResetPage } from './reset-view.js';
@@ -173,6 +179,27 @@ function startAdmin(host: HTMLElement): void {
       refresh: () => controller.refreshSession(),
     }),
     () => controller.sessionCsrf,
+    createOverviewSource(new AdminOverviewApi(fetchTransport(window.fetch.bind(window), { base: OVERVIEW_BASE }))),
+    createAccessSource(new AdminAccessApi(fetchTransport(window.fetch.bind(window), { base: ACCESS_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
+    createConfigSource(new AdminConfigApi(fetchTransport(window.fetch.bind(window), { base: CONFIG_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
+    createReportSource(new AdminReportApi(fetchTransport(window.fetch.bind(window), { base: REPORTS_BASE })), window.fetch.bind(window), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
+    createOperationsSource(new AdminOperationsApi(fetchTransport(window.fetch.bind(window), { base: OPERATIONS_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
+    createOpsSource(new AdminOpsApi(fetchTransport(window.fetch.bind(window), { base: OPS_BASE })), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
   );
   const view = new AdminView(host, controller, shell);
   controller.subscribe((screen) => view.render(screen));

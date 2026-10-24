@@ -11,5 +11,15 @@ void main() {
   final AppFlows flows = createFlows(ClientApp.ship, session, config, picker: DeviceImagePicker(), pushPort: MethodChannelPushPort());
   // Cold start: the stored token is checked with the server (`me`) before anything personal is shown.
   session.start();
-  runApp(ListenableBuilder(listenable: session, builder: (BuildContext context, Widget? child) => N11App(navigationIdentity: session.identity?.userId, brand: shipBrand, tabs: buildShipTabs(session, flows: flows), config: config, notifications: NotificationShell(controller: flows.notifications!, router: shipNotificationRouter(session, flows), push: flows.push))));
+  // M13: update check, version report and the offline error queue. A REQUIRED update never covers a delivery in progress: the shipper with an active
+  // delivery sees only a banner until it is finished (an unreadable answer counts as "busy").
+  final OpsClient? ops = createOpsClient(
+    ClientApp.ship,
+    session,
+    config,
+    busyProbe: () async => (await (flows.shipperDeliveries?.mine(history: false) ?? Future<List<DeliveryView>>.value(const <DeliveryView>[]))).isNotEmpty,
+  );
+  ops?.installCrashHooks();
+  ops?.start();
+  runApp(ListenableBuilder(listenable: session, builder: (BuildContext context, Widget? child) => N11App(navigationIdentity: session.identity?.userId, brand: shipBrand, tabs: buildShipTabs(session, flows: flows), config: config, updates: ops?.updates, notifications: NotificationShell(controller: flows.notifications!, router: shipNotificationRouter(session, flows), push: flows.push))));
 }

@@ -92,6 +92,22 @@ export const APP_ERROR_DEFINITIONS = {
   DRIVER_SELF_ACTION_FORBIDDEN: { status: 403, message: 'An administrator cannot perform this action on their own Shipper profile' },
   // Finance access and the receiving accounts of the system (M04-B2.2a). Same rule: fixed messages that echo nothing the client sent and reveal nothing
   // about another account. ADMIN_FORBIDDEN (above) is the answer to an administrator without the right.
+  // M12-C: SYSTEM manages the administrators (permissions, lock, sessions).
+  ADMIN_ACCESS_NOT_FOUND: { status: 404, message: 'The administrator account to manage was not found' },
+  ADMIN_ACCESS_VERSION_CONFLICT: { status: 409, message: 'The administrator was changed by another request' },
+  ADMIN_ACCESS_STATE_CONFLICT: { status: 409, message: 'The administrator is not in a state that allows this action' },
+  // M12-E: report exports.
+  REPORT_EXPORT_LIMIT: { status: 409, message: 'Too many report exports are already waiting or running' },
+  REPORT_EXPORT_NOT_FOUND: { status: 404, message: 'The report export was not found' },
+  REPORT_EXPORT_NOT_READY: { status: 409, message: 'The report export is not finished or did not succeed' },
+  REPORT_EXPORT_EXPIRED: { status: 409, message: 'The report export file has expired' },
+  // M12-F: restore requests (the application records the request; an operator restores).
+  BACKUP_RUN_OPEN: { status: 409, message: 'A backup is already queued or running' },
+  RESTORE_BACKUP_NOT_FOUND: { status: 404, message: 'The backup to restore from was not found' },
+  RESTORE_BACKUP_NOT_USABLE: { status: 409, message: 'Only a finished, encrypted and verified backup can be restored' },
+  RESTORE_REQUEST_OPEN: { status: 409, message: 'A restore request is already open' },
+  RESTORE_REQUEST_NOT_FOUND: { status: 404, message: 'The restore request was not found' },
+  RESTORE_REQUEST_STATE_CONFLICT: { status: 409, message: 'The restore request was changed or can no longer be cancelled' },
   FINANCE_ADMIN_NOT_FOUND: { status: 404, message: 'The administrator was not found' },
   FINANCE_GRANT_STATE_CONFLICT: { status: 409, message: 'The finance right is not in a state that allows this action' },
   FINANCE_VERSION_CONFLICT: { status: 409, message: 'The finance right was changed by another request' },
@@ -130,6 +146,25 @@ export const APP_ERROR_DEFINITIONS = {
   // DELIVERY_NOT_FOUND. VERSION_CONFLICT, SHOP_NOT_FOUND, SHOP_PROFILE_INCOMPLETE and the DRIVER_* codes (above) are reused unchanged.
   // Notifications (M08). A notification of another account and a missing one answer the same.
   NOTIFICATION_NOT_FOUND: { status: 404, message: 'The notification was not found' },
+
+  // Operations (M13). Fixed messages; none echoes what the caller sent. An incident outside the caller's scope answers like a missing one.
+  OPS_INCIDENT_NOT_FOUND: { status: 404, message: 'The incident was not found' },
+  OPS_INCIDENT_STATE_CONFLICT: { status: 409, message: 'The incident is not in a state that allows this action' },
+  OPS_SETTINGS_INVALID: { status: 400, message: 'The operations settings are not valid' },
+  OPS_WEBHOOK_INVALID: { status: 400, message: 'The Discord webhook is not valid' },
+  OPS_SECRET_UNAVAILABLE: { status: 503, message: 'Secrets cannot be stored on this server' },
+  OPS_MAINTENANCE_INVALID: { status: 400, message: 'The maintenance window is not valid' },
+  OPS_MAINTENANCE_NOT_FOUND: { status: 404, message: 'The maintenance window was not found' },
+  OPS_RELEASE_NOT_FOUND: { status: 404, message: 'The release was not found' },
+  OPS_RELEASE_CONFLICT: { status: 409, message: 'The release already exists or is not in a state that allows this action' },
+  OPS_ARTIFACT_INVALID: { status: 400, message: 'The release file is not valid' },
+  OPS_ARTIFACT_UNAVAILABLE: { status: 503, message: 'Release files are not available on this server' },
+  OPS_INGEST_UNAUTHORIZED: { status: 401, message: 'The reporting credential is not valid' },
+  OPS_DEPLOY_NOT_FOUND: { status: 404, message: 'The deployment was not found' },
+  OPS_DEPLOY_STATE_CONFLICT: { status: 409, message: 'The deployment is not in a state that allows this report' },
+  OPS_TARGET_NOT_FOUND: { status: 404, message: 'The target was not found' },
+  OPS_UPDATE_NOT_READY: { status: 409, message: 'The device must finish its current work before it can update' },
+  OPS_DISCORD_NOT_CONFIGURED: { status: 409, message: 'The Discord channel is not configured' },
   DELIVERY_NOT_FOUND: { status: 404, message: 'The delivery was not found' },
   DELIVERY_STATE_CONFLICT: { status: 409, message: 'The delivery is not in a state that allows this action' },
   DELIVERY_ALREADY_TAKEN: { status: 409, message: 'Another Shipper already took this delivery' },

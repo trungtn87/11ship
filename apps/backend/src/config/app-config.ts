@@ -1,4 +1,5 @@
 import { M14RoutingConfig, parseM14Routing } from './m14-routing-config';
+import { OpsConfig, parseOpsConfig } from './ops-config';
 import { parsePushConfig, PushConfig } from './push-config';
 import { ACCOUNT_RECOVERY_MODE_ENV, AccountRecoveryMode, parseAccountRecoveryMode } from './account-recovery-config';
 import { AdminActivationConfig, loadAdminActivationConfig } from './admin-activation-config';
@@ -187,6 +188,8 @@ export interface AppConfig {
   m14Routing?: M14RoutingConfig;
   /** Android push provider (M08, FCM). Present only when PUSH_FCM_PROJECT_ID and PUSH_FCM_SERVICE_ACCOUNT_FILE are both set and valid; absent = push is not configured (the inbox still works). */
   push?: PushConfig;
+  /** M13 operations: always present (every variable is optional; absent inputs mean "not configured", never a made-up status). */
+  ops?: OpsConfig;
   /**
    * Native Android binding (M01-ANDROID). Present ONLY when CLIENT_AUTH_ANDROID_ENABLED=true (development/test on a loopback bind)
    * and the four CLIENT_DEVICE_* trust inputs are valid. Absent everywhere else: every ANDROID request then stays a 503.
@@ -714,6 +717,15 @@ export function loadConfig(env: EnvSource): ConfigResult {
     pushResult.invalid.forEach(flag);
   }
 
+  // M13 operations: optional inputs only; names only on error.
+  const opsResult = parseOpsConfig({ env, appEnv: appEnv ?? '' });
+  let ops: OpsConfig | undefined;
+  if (opsResult.ok) {
+    ops = opsResult.config;
+  } else {
+    opsResult.invalid.forEach(flag);
+  }
+
   // Admin activation by SMS (Owner decision 2026-10-14) rides the SAME gateway: without it the mode cannot be selected.
   if (adminActivation !== undefined && adminActivation.otpMode === 'SMS' && smsGateway === undefined) {
     flag('ADMIN_ACTIVATION_OTP_MODE');
@@ -790,6 +802,7 @@ export function loadConfig(env: EnvSource): ConfigResult {
       ...(smsGateway === undefined ? {} : { smsGateway }),
       ...(m14Routing === undefined ? {} : { m14Routing }),
       ...(push === undefined ? {} : { push }),
+      ...(ops === undefined ? {} : { ops }),
       ...(clientAndroid === undefined ? {} : { clientAndroid }),
     },
   };

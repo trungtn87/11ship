@@ -121,12 +121,26 @@ function screenIdOf(route: Route): { id: string; variant?: string } {
     case 'shippers':
     case 'shipper':
     case 'deliveries':
+    case 'overview':
+    case 'reports':
+    case 'audit':
+    case 'backups':
+    case 'config':
+    case 'access':
     case 'orders':
     case 'notifications':
     case 'reviews':
     case 'complaints':
     case 'wallet-parameters':
     case 'shipping-policy':
+    // M13 pages show real data only; the preview has no sample for them.
+    case 'ops':
+    case 'ops-incidents':
+    case 'ops-incident':
+    case 'ops-gateway':
+    case 'ops-logs':
+    case 'ops-releases':
+    case 'ops-config':
     case 'home':
     case 'activate':
     case 'reset':
