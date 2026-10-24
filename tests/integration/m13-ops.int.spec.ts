@@ -520,40 +520,42 @@ describe('M13 — operations, alerts and updates', () => {
       const key = await ingest.createKey('Sao luu Drive', 'BACKUP');
       const send = (body: unknown) => api(admin.running.baseUrl, 'POST', '/ops/ingest/backup', { bearer: key.secret, body });
       const ago = (hours: number): string => new Date(Date.now() - hours * 3_600_000).toISOString();
-      const said = (): string => JSON.stringify(discord.calls.map((c) => c.body));
+      // Only the backup incident is counted: other checks (a queue backlog left by earlier suites in the shared database, a late probe) may speak too, and that is not under test here.
+      const told = (): typeof discord.calls => discord.calls.filter((c) => c.body.embeds[0]!.fields.some((f) => f.name === 'Nguồn' && f.value === 'Sao lưu'));
+      const said = (): string => JSON.stringify(told().map((c) => c.body));
 
       expect((await send({ kind: 'BACKUP', ok: true, finished_at: ago(1), size_bytes: 1000 })).status).toBe(200);
       await dispatcher.runOnce();
-      expect(discord.calls).toHaveLength(0); // a good backup says nothing
+      expect(told()).toHaveLength(0); // a good backup says nothing
 
       expect((await send({ kind: 'BACKUP', ok: false, finished_at: ago(0), detail_code: 'DRIVE_QUOTA' })).status).toBe(200);
       await dispatcher.runOnce();
-      expect(discord.calls).toHaveLength(1);
+      expect(told()).toHaveLength(1);
       expect(said()).toContain('Google Drive đã đầy dung lượng');
 
       for (let i = 0; i < 3; i += 1) expect((await send({ kind: 'BACKUP', ok: false, finished_at: ago(0), detail_code: 'DRIVE_QUOTA' })).status).toBe(200);
       await dispatcher.runOnce();
-      expect(discord.calls).toHaveLength(1); // the same failure again: still one incident, no second message
+      expect(told()).toHaveLength(1); // the same failure again: still one incident, no second message
       expect(await incidentOf('backup')).toHaveLength(1);
 
       expect((await send({ kind: 'BACKUP', ok: true, finished_at: ago(0), size_bytes: 2000 })).status).toBe(200);
       await dispatcher.runOnce();
-      expect(discord.calls).toHaveLength(2); // one recovery message
+      expect(told()).toHaveLength(2); // one recovery message
       expect((await incidentOf('backup'))[0]).toMatchObject({ status: 'RECOVERED' });
 
       // 26 hours: the last verified copy is older than the limit, so the backup is late even though nothing "failed" (the timer may be dead).
       await sql('DELETE FROM app.ops_backup_reports');
       expect((await send({ kind: 'BACKUP', ok: true, finished_at: ago(27), size_bytes: 3000 })).status).toBe(200);
       await dispatcher.runOnce();
-      expect(discord.calls).toHaveLength(3);
+      expect(told()).toHaveLength(3);
       expect(said()).toContain('Quá 26 giờ chưa có bản sao lưu ngoài VPS thành công');
       await collector.collectOnce();
       await dispatcher.runOnce();
-      expect(discord.calls).toHaveLength(3); // the collector looking again does not repeat it
+      expect(told()).toHaveLength(3); // the collector looking again does not repeat it
 
       expect((await send({ kind: 'BACKUP', ok: true, finished_at: ago(0), size_bytes: 4000 })).status).toBe(200);
       await dispatcher.runOnce();
-      expect(discord.calls).toHaveLength(4);
+      expect(told()).toHaveLength(4);
 
       for (const forbidden of [key.secret, 'passphrase', 'ya29', 'refresh_token', 'rclone.conf', 'postgres://']) expect(said().toLowerCase()).not.toContain(forbidden.toLowerCase());
     });
@@ -880,6 +882,7 @@ describe('M13 — operations, alerts and updates', () => {
       await expect(sql(`TRUNCATE app.ops_events`)).rejects.toThrow(/never truncated/);
     });
 
+    // The two old samples sit inside ONE clock hour whatever minute the test runs at (they used to straddle the hour boundary when run in its last minutes).
     it('purges by class and age with the configured days, folds metrics, and never touches business tables or the audit log', async () => {
       const ins = (category: string, level: string, days: number) =>
         sql(`INSERT INTO app.ops_events (event_id, occurred_at, category, level, source, environment, message, detail${category === 'INCIDENT' ? ', incident_id' : ''}) VALUES ($1::uuid, now() - make_interval(days => $2), $3, $4, 'API', 'test', 'm', '{}'${category === 'INCIDENT' ? ', (SELECT incident_id FROM app.ops_incidents LIMIT 1)' : ''})`, [randomUUID(), days, category, level]);
@@ -890,7 +893,7 @@ describe('M13 — operations, alerts and updates', () => {
       await ins('TECHNICAL', 'ERROR', 31);
       await ins('ADMIN', 'INFO', 366);
       await ins('ADMIN', 'INFO', 364);
-      await sql(`INSERT INTO app.ops_metrics (metric_key, observed_at, value) VALUES ('cpu_percent', now() - interval '8 days', 50), ('cpu_percent', now() - interval '8 days' + interval '5 minutes', 70), ('cpu_percent', now() - interval '1 hour', 10)`);
+      await sql(`INSERT INTO app.ops_metrics (metric_key, observed_at, value) VALUES ('cpu_percent', date_trunc('hour', now() - interval '8 days') + interval '10 minutes', 50), ('cpu_percent', date_trunc('hour', now() - interval '8 days') + interval '15 minutes', 70), ('cpu_percent', now() - interval '1 hour', 10)`);
       const business = async () => (await q<Json>(`SELECT (SELECT count(*) FROM app.users)::int u, (SELECT count(*) FROM app.audit_logs)::int a, (SELECT count(*) FROM app.deliveries)::int d, (SELECT count(*) FROM app.wallet_ledger_entries)::int w`))[0];
       const before = await business();
       const result = await get<OpsRetention>(OpsRetention as never).runOnce();
