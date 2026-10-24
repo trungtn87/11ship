@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -189,6 +190,101 @@ def code_release(path):
     return real
 
 
+def reviewed_migrations(release):
+    """Exact SQL approvals committed and reviewed with the release, never inferred from DDL."""
+    manifest = release / 'ops/selfhosted/reviewed-migrations.json'
+    if manifest.is_symlink() or not manifest.is_file():
+        raise RuntimeError('reviewed migration manifest missing or unsafe')
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise RuntimeError('duplicate reviewed migration manifest key')
+            result[key] = value
+        return result
+    data = json.loads(manifest.read_text(), object_pairs_hook=unique_object)
+    if not isinstance(data, dict) or set(data) != {'version', 'migrations'} or type(data['version']) is not int or data['version'] != 1 or not isinstance(data['migrations'], dict):
+        raise RuntimeError('invalid reviewed migration manifest')
+    approved = {}
+    for name, entry in data['migrations'].items():
+        if not re.fullmatch(r'[0-9]{13}_[a-z0-9-]+', name) or not isinstance(entry, dict) or set(entry) != {'sha256', 'review'}:
+            raise RuntimeError('invalid reviewed migration entry')
+        value, review = entry['sha256'], entry['review']
+        if not isinstance(value, str) or not re.fullmatch(r'[a-f0-9]{64}', value) or not isinstance(review, str) or not review.strip():
+            raise RuntimeError('reviewed migration requires exact digest and compatibility review')
+        sql = release / 'database/migrations' / (name + '.sql')
+        if sql.is_symlink() or not sql.is_file() or digest(sql) != value:
+            raise RuntimeError('reviewed SQL hash mismatch: ' + name)
+        approved[name] = value
+    return approved
+
+
+def approve_reviewed(release, pending):
+    """Called under the existing deploy lock, only after validating the immutable release."""
+    approved = reviewed_migrations(release)
+    if not pending:
+        return
+    parent = POLICY.parent.lstat()
+    if POLICY.parent.is_symlink() or not stat.S_ISDIR(parent.st_mode) or parent.st_uid != 0 or parent.st_mode & 0o022:
+        raise RuntimeError('migration policy directory must be root-owned and not writable by others')
+    if POLICY.is_symlink():
+        raise RuntimeError('migration policy must not be a symlink')
+    if POLICY.exists():
+        metadata = POLICY.lstat()
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o022:
+            raise RuntimeError('migration policy must be root-owned and not writable by others')
+        existing = json.loads(POLICY.read_text())
+    else:
+        existing = {}
+    if not isinstance(existing, dict) or any(not isinstance(k, str) or not isinstance(v, str) or not re.fullmatch(r'[a-f0-9]{64}', v) for k, v in existing.items()):
+        raise RuntimeError('invalid migration policy')
+    additions = {}
+    # Validate the ENTIRE pending set before making any policy change.
+    for name in pending:
+        if not isinstance(name, str) or not re.fullmatch(r'[0-9]{13}_[a-z0-9-]+', name):
+            raise RuntimeError('invalid pending migration name')
+        if name not in existing and name not in approved:
+            raise RuntimeError('pending migration needs a compatibility review in ops/selfhosted/reviewed-migrations.json: ' + name)
+        actual = digest(release / 'database/migrations' / (name + '.sql'))
+        if name in existing:
+            if existing[name] != actual:
+                raise RuntimeError('migration policy conflict: ' + name)
+        elif approved.get(name) == actual:
+            additions[name] = actual
+        else:
+            raise RuntimeError('pending migration needs a compatibility review in ops/selfhosted/reviewed-migrations.json: ' + name)
+    if not additions:
+        print('pending migration hashes already approved; policy unchanged')
+        return
+    # Retain a root-only recovery copy; never replace an existing approval.
+    if POLICY.exists():
+        with tempfile.NamedTemporaryFile(prefix='.migration-compatibility.before-', dir=POLICY.parent, delete=False) as before:
+            os.fchmod(before.fileno(), 0o600)
+            before.write(POLICY.read_bytes())
+            before.flush()
+            os.fsync(before.fileno())
+    existing.update(additions)
+    fd, temporary = tempfile.mkstemp(prefix='.migration-compatibility-', dir=POLICY.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, 'w') as output:
+            json.dump(existing, output, sort_keys=True, indent=2)
+            output.write('\n')
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, POLICY)
+        directory_fd = os.open(POLICY.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    for name in sorted(additions):
+        print('approved reviewed migration: ' + name + ' sha256=' + additions[name])
+
+
 def compatible(release, pending):
     if not pending:
         return
@@ -286,7 +382,7 @@ def switch(release, old):
         raise RuntimeError('new release failed; previous code restored and checked; database NOT restored') from None
 
 
-def update(archive, sha):
+def update(archive, sha, approve_reviewed_migrations=False):
     verify_service()
     old = code_release(BASE / 'current')
     new = extract(archive, sha)
@@ -296,6 +392,8 @@ def update(archive, sha):
     probe(old)
     probe(new)
     pending = json.loads(probe(new, 'plan', operator=True))
+    if approve_reviewed_migrations:
+        approve_reviewed(new, pending)
     compatible(new, pending)
     if pending:
         backup()
@@ -370,10 +468,19 @@ def prune():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['update', 'rollback', 'prune'])
+    parser.add_argument('action', choices=['update', 'rollback', 'prune', 'validate-reviewed'])
     parser.add_argument('archive', nargs='?')
     parser.add_argument('sha', nargs='?')
+    parser.add_argument('--approve-reviewed-migrations', action='store_true', help='Import only exact pending SQL hashes reviewed in this release')
     args = parser.parse_args()
+    if args.action == 'validate-reviewed':
+        if not args.archive or args.sha or args.approve_reviewed_migrations:
+            raise RuntimeError('validate-reviewed requires a repository/release directory only')
+        approved = reviewed_migrations(Path(args.archive).resolve())
+        print('reviewed migration manifest verified: ' + str(len(approved)) + ' exact SQL hashes')
+        return
+    if args.approve_reviewed_migrations and args.action != 'update':
+        raise RuntimeError('migration approval is allowed only with update')
     if os.geteuid() != 0:
         raise RuntimeError('run on VPS as root')
     os.umask(0o077)
@@ -383,7 +490,7 @@ def main():
         if args.action == 'update':
             if not args.archive or not re.fullmatch('[a-f0-9]{40}', args.sha or ''):
                 raise RuntimeError('update requires archive and full source SHA')
-            update(args.archive, args.sha)
+            update(args.archive, args.sha, args.approve_reviewed_migrations)
         elif args.action == 'rollback':
             rollback()
         else:

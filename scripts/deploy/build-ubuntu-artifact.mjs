@@ -46,6 +46,7 @@ export const COPY_ENTRIES = [
   ['ops/runbooks/ubuntu-vinahost-staging.md', 'ops/runbooks/ubuntu-vinahost-staging.md'],
   ['ops/runbooks/vps-production-update-20261014.md', 'ops/runbooks/vps-production-update-20261014.md'],
   ['ops/runbooks/vps-safe-update.md', 'ops/runbooks/vps-safe-update.md'],
+  ['ops/runbooks/github-vps-deploy.md', 'ops/runbooks/github-vps-deploy.md'],
   ['ops/runbooks/sms-gateway.md', 'ops/runbooks/sms-gateway.md'],
   ['docs/current/M01-terms-privacy-20261014.md', 'docs/current/M01-terms-privacy-20261014.md'],
   ['.node-version', '.node-version'],

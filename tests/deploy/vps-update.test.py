@@ -34,6 +34,153 @@ class DeployTests(unittest.TestCase):
         (release / 'MANIFEST.sha256').write_text(hashlib.sha256(b'code').hexdigest() + '  code\n')
         return release
 
+    def approval_fixture(self):
+        name = '1796169600000_example'
+        folder = self.new / 'database/migrations'
+        folder.mkdir(parents=True)
+        (folder / (name + '.sql')).write_text('-- reviewed SQL')
+        manifest = self.new / 'ops/selfhosted/reviewed-migrations.json'
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({'version': 1, 'migrations': {
+            name: {'sha256': d.digest(folder / (name + '.sql')), 'review': 'Adds a new table; old code unchanged.'}
+        }}))
+        policy = self.root / 'migration-compatibility.json'
+        self.root.chmod(0o700)
+        owner_patch = patch.object(Path, 'lstat', self.root_owned_stat())
+        owner_patch.start()
+        self.addCleanup(owner_patch.stop)
+        policy_patch = patch.object(d, 'POLICY', policy)
+        policy_patch.start()
+        self.addCleanup(policy_patch.stop)
+        return name, manifest, policy
+
+    def root_owned_stat(self):
+        # Fixture filesystem may belong to an unprivileged CI user. Production still requires uid=0.
+        import os
+        real = Path.lstat
+        def root_stat(path, *args, **kwargs):
+            values = list(real(path, *args, **kwargs))
+            values[4] = 0
+            return os.stat_result(values)
+        return root_stat
+
+    def test_reviewed_approval_preserves_policy_is_idempotent_and_only_imports_pending(self):
+        name, manifest, policy = self.approval_fixture()
+        policy.write_text(json.dumps({'1790000000000_old': 'a' * 64}))
+        policy.chmod(0o600)
+        d.approve_reviewed(self.new, [name])
+        first = policy.read_bytes()
+        self.assertEqual(json.loads(first)['1790000000000_old'], 'a' * 64)
+        self.assertEqual(json.loads(first)[name], d.reviewed_migrations(self.new)[name])
+        self.assertEqual(policy.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(len(list(self.root.glob('.migration-compatibility.before-*'))), 1)
+        d.approve_reviewed(self.new, [name])
+        self.assertEqual(policy.read_bytes(), first)
+        self.assertEqual(len(list(self.root.glob('.migration-compatibility.before-*'))), 1)
+        policy.unlink()
+        d.approve_reviewed(self.new, [])
+        self.assertFalse(policy.exists())
+
+    def test_unknown_pending_set_never_partially_approves_or_changes_database(self):
+        name, manifest, policy = self.approval_fixture()
+        with patch.object(d, 'verify_service'), patch.object(d, 'extract', return_value=self.new), \
+             patch.object(d, 'probe', side_effect=['ready', 'ready', json.dumps([name, '1796256000000_unknown'])]), \
+             patch.object(d, 'run'), patch.object(d, 'backup') as backup, patch.object(d, 'migrate') as migrate, patch.object(d, 'switch') as switch:
+            with self.assertRaisesRegex(RuntimeError, 'needs a compatibility review'):
+                d.update('archive', 'b' * 40, True)
+            backup.assert_not_called()
+            migrate.assert_not_called()
+            switch.assert_not_called()
+        self.assertFalse(policy.exists())
+        self.assertEqual((self.root / 'current').resolve(), self.old)
+
+    def test_modified_sql_or_existing_policy_conflict_is_rejected_without_overwrite(self):
+        name, manifest, policy = self.approval_fixture()
+        policy.write_text(json.dumps({name: 'a' * 64}))
+        policy.chmod(0o600)
+        before = policy.read_bytes()
+        with self.assertRaisesRegex(RuntimeError, 'policy conflict'):
+            d.approve_reviewed(self.new, [name])
+        sql = self.new / 'database/migrations' / (name + '.sql')
+        sql.write_text('ALTERED SQL')
+        with self.assertRaisesRegex(RuntimeError, 'SQL hash mismatch'):
+            d.approve_reviewed(self.new, [name])
+        self.assertEqual(policy.read_bytes(), before)
+
+    def test_policy_symlink_and_other_writable_policy_or_directory_are_rejected(self):
+        name, manifest, policy = self.approval_fixture()
+        target = self.root / 'target'
+        target.write_text('{}')
+        policy.symlink_to(target)
+        with self.assertRaisesRegex(RuntimeError, 'symlink'):
+            d.approve_reviewed(self.new, [name])
+        policy.unlink()
+        policy.write_text('{}')
+        policy.chmod(0o666)
+        with self.assertRaisesRegex(RuntimeError, 'root-owned'):
+            d.approve_reviewed(self.new, [name])
+        policy.chmod(0o600)
+        self.root.chmod(0o777)
+        with self.assertRaisesRegex(RuntimeError, 'directory must be root-owned'):
+            d.approve_reviewed(self.new, [name])
+        self.assertEqual(policy.read_text(), '{}')
+
+    def test_non_root_policy_and_failed_atomic_write_preserve_existing_approvals(self):
+        import os
+        name, manifest, policy = self.approval_fixture()
+        policy.write_text(json.dumps({'1790000000000_old': 'a' * 64}))
+        policy.chmod(0o600)
+        first = policy.read_bytes()
+        real = Path.lstat
+        def foreign_owner(path, *args, **kwargs):
+            values = list(real(path, *args, **kwargs))
+            if path == policy:
+                values[4] = 12345
+            return os.stat_result(values)
+        with patch.object(Path, 'lstat', foreign_owner):
+            with self.assertRaisesRegex(RuntimeError, 'root-owned'):
+                d.approve_reviewed(self.new, [name])
+        with patch.object(d.os, 'replace', side_effect=OSError('simulated disk error')):
+            with self.assertRaises(OSError):
+                d.approve_reviewed(self.new, [name])
+        self.assertEqual(policy.read_bytes(), first)
+        self.assertEqual([p.name for p in self.root.glob('.migration-compatibility-*') if not p.name.startswith('.migration-compatibility.before-')], [])
+
+    def test_malformed_duplicate_traversal_or_unreviewed_manifest_is_rejected(self):
+        name, manifest, policy = self.approval_fixture()
+        for contents in [
+            '{"version":1,"version":1,"migrations":{}}',
+            json.dumps({'version': 1, 'migrations': {'../escape': {'sha256': 'a' * 64, 'review': 'x'}}}),
+            json.dumps({'version': 1, 'migrations': {name: {'sha256': 'a' * 64, 'review': ' '}}}),
+            json.dumps({'version': True, 'migrations': {}}),
+        ]:
+            with self.subTest(contents=contents):
+                manifest.write_text(contents)
+                with self.assertRaises(RuntimeError):
+                    d.approve_reviewed(self.new, [name])
+                self.assertFalse(policy.exists())
+
+    def test_approved_update_keeps_backup_before_migrate_and_switch(self):
+        name, manifest, policy = self.approval_fixture()
+        calls = []
+        with patch.object(d, 'verify_service'), patch.object(d, 'extract', return_value=self.new), \
+             patch.object(d, 'probe', side_effect=['ready', 'ready', json.dumps([name])]), patch.object(d, 'run'), \
+             patch.object(d, 'backup', side_effect=lambda: calls.append('backup')), \
+             patch.object(d, 'backup_offsite', side_effect=lambda: calls.append('offsite')), \
+             patch.object(d, 'migrate', side_effect=lambda _: calls.append('migrate')), \
+             patch.object(d, 'switch', side_effect=lambda *_: calls.append('switch')):
+            d.update('archive', 'b' * 40, True)
+        self.assertEqual(calls, ['backup', 'offsite', 'migrate', 'switch'])
+
+    def test_committed_reviewed_hashes_match_the_real_sql(self):
+        repo = Path(__file__).resolve().parents[2]
+        approvals = d.reviewed_migrations(repo)
+        # Legacy migrations already had per-release operator approval. Every migration
+        # added after the last legacy release must bring its review in the same PR.
+        baseline = '1795651200000_password-client-sessions'
+        new_sql = {p.stem for p in (repo / 'database/migrations').glob('*.sql') if p.stem > baseline}
+        self.assertEqual(new_sql - approvals.keys(), set(), 'Add a compatibility review and exact hash for every new migration before deploy')
+
     def test_failed_health_restores_previous_code_and_checks_it(self):
         with patch.object(d, 'run') as run, patch.object(d, 'health', side_effect=[RuntimeError('503'), None]) as health:
             with self.assertRaisesRegex(RuntimeError, 'previous code restored'):
