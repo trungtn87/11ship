@@ -36,6 +36,11 @@ export interface Agreement {
   /** NULL until the fee is final (accepted / locked). */
   readonly finalFeeVnd: number | null;
   readonly expiresAtMs: number;
+  /**
+   * The instant by which the payer must answer a Shipper's counter-offer (COUNTERED, or AWAITING_CUSTOMER that came from a counter-offer): fixed when the offer is made from the
+   * configured answer time, never later than `expiresAtMs` (the search window), never moved by a repeat of the same request. NULL when no counter-offer is waiting.
+   */
+  readonly answerExpiresAtMs: number | null;
   readonly version: number;
   readonly createdBy: string;
   readonly createdAtMs: number;
@@ -46,10 +51,11 @@ export interface Agreement {
 export type AgreementAction =
   | { readonly type: 'DRIVER_ACCEPT'; readonly driverId: string }
   | { readonly type: 'DRIVER_SKIP'; readonly driverId: string }
-  | { readonly type: 'COUNTER'; readonly driverId: string; readonly amountVnd: number }
+  | { readonly type: 'COUNTER'; readonly driverId: string; readonly amountVnd: number; readonly answerExpiresAtMs?: number }
   | { readonly type: 'SHOP_ACCEPT_COUNTER' }
   | { readonly type: 'SHOP_REJECT_COUNTER' }
   | { readonly type: 'CUSTOMER_CONFIRM'; readonly approve: boolean }
+  | { readonly type: 'EXPIRE_ANSWER' }
   | { readonly type: 'LOCK' }
   | { readonly type: 'ADMIN_ADJUST'; readonly amountVnd: number; readonly reason: string }
   | { readonly type: 'EXTEND_DEADLINE'; readonly newExpiresAtMs: number };
@@ -64,6 +70,7 @@ export type EventType =
   | 'COUNTER_REJECTED'
   | 'CUSTOMER_CONFIRMED'
   | 'CUSTOMER_DECLINED'
+  | 'COUNTER_EXPIRED'
   | 'EXPIRED'
   | 'LOCKED'
   | 'ADMIN_ADJUSTED'
@@ -75,11 +82,12 @@ export type RefusalCode =
   | 'COUNTER_SAME_AS_PROPOSAL'
   | 'COUNTER_ALREADY_REJECTED'
   | 'REASON_REQUIRED'
-  | 'DEADLINE_NOT_LATER';
+  | 'DEADLINE_NOT_LATER'
+  | 'ANSWER_NOT_DUE';
 
 /** The changed fields of the agreement row (everything else is untouched). */
 export type AgreementPatch = Partial<
-  Pick<Agreement, 'status' | 'counterFeeVnd' | 'counterBy' | 'boundDriverId' | 'pendingFeeVnd' | 'pendingSource' | 'finalFeeVnd' | 'expiresAtMs' | 'lockedAtMs'>
+  Pick<Agreement, 'status' | 'counterFeeVnd' | 'counterBy' | 'boundDriverId' | 'pendingFeeVnd' | 'pendingSource' | 'finalFeeVnd' | 'expiresAtMs' | 'answerExpiresAtMs' | 'lockedAtMs'>
 >;
 
 export type Transition =
@@ -93,6 +101,8 @@ export type Transition =
       readonly driverId: string | null;
     }
   | { readonly kind: 'expire' }
+  /** The payer's time to answer a counter-offer ran out: the offer is dropped (see `EXPIRE_ANSWER`); nothing the caller asked is applied. */
+  | { readonly kind: 'answer_expired' }
   | { readonly kind: 'refused'; readonly code: RefusalCode };
 
 export const isValidAmount = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= MAX_FEE_VND;
@@ -105,6 +115,17 @@ export function needsCustomerConsent(agreement: Agreement, amountVnd: number): b
 const OPEN: readonly AgreementStatus[] = ['PROPOSED', 'COUNTERED', 'AWAITING_CUSTOMER'];
 const NO_COUNTER = { counterFeeVnd: null, counterBy: null } as const;
 const NO_PENDING = { pendingFeeVnd: null, pendingSource: null } as const;
+const NO_ANSWER_CLOCK = { answerExpiresAtMs: null } as const;
+
+/** A counter-offer is waiting for the payer: COUNTERED, or AWAITING_CUSTOMER that came from the counter-offer (the shop's own proposal keeps only the search deadline). */
+export const answerIsWaiting = (agreement: Pick<Agreement, 'status' | 'pendingSource'>): boolean =>
+  agreement.status === 'COUNTERED' || (agreement.status === 'AWAITING_CUSTOMER' && agreement.pendingSource === 'COUNTER');
+
+/** The answer time of the offer has run out. The deadline instant itself is already late. */
+export const answerIsDue = (agreement: Agreement, nowMs: number): boolean => answerIsWaiting(agreement) && agreement.answerExpiresAtMs !== null && nowMs >= agreement.answerExpiresAtMs;
+
+/** The answer deadline of a new counter-offer: the configured time from now, never after the search deadline. */
+export const answerDeadline = (nowMs: number, answerMinutes: number, searchExpiresAtMs: number): number => Math.min(nowMs + answerMinutes * 60_000, searchExpiresAtMs);
 
 /** A counter-offer the shop already rejected: the same Shipper may not offer the same amount again. Keyed `${driverId}:${amount}`. */
 export const rejectedKey = (driverId: string, amountVnd: number): string => `${driverId}:${String(amountVnd)}`;
@@ -116,6 +137,18 @@ export const rejectedKey = (driverId: string, amountVnd: number): string => `${d
 export function applyAgreementAction(agreement: Agreement, action: AgreementAction, nowMs: number, rejected: ReadonlySet<string> = new Set()): Transition {
   if (OPEN.includes(agreement.status) && nowMs >= agreement.expiresAtMs && action.type !== 'EXTEND_DEADLINE') {
     return { kind: 'expire' };
+  }
+  if (action.type === 'EXPIRE_ANSWER') {
+    if (!answerIsDue(agreement, nowMs)) {
+      return { kind: 'refused', code: 'ANSWER_NOT_DUE' };
+    }
+    // The offer is dropped and the earlier fee stays: the proposal goes on waiting for a Shipper within the search window, which this never extends.
+    return agreement.status === 'COUNTERED'
+      ? { kind: 'ok', patch: { status: 'PROPOSED', ...NO_COUNTER, ...NO_ANSWER_CLOCK }, eventType: 'COUNTER_EXPIRED', amountVnd: agreement.counterFeeVnd, reason: null, driverId: agreement.counterBy }
+      : { kind: 'ok', patch: { status: 'PROPOSED', boundDriverId: null, ...NO_PENDING, ...NO_ANSWER_CLOCK }, eventType: 'COUNTER_EXPIRED', amountVnd: agreement.pendingFeeVnd, reason: null, driverId: agreement.boundDriverId };
+  }
+  if (answerIsDue(agreement, nowMs) && action.type !== 'EXTEND_DEADLINE') {
+    return { kind: 'answer_expired' };
   }
   const refuse = (code: RefusalCode): Transition => ({ kind: 'refused', code });
   const ok = (patch: AgreementPatch | null, eventType: EventType, amountVnd: number | null = null, driverId: string | null = null, reason: string | null = null): Transition => ({
@@ -130,7 +163,7 @@ export function applyAgreementAction(agreement: Agreement, action: AgreementActi
   const settle = (amount: number, driverId: string, source: 'PROPOSAL' | 'COUNTER', accepted: EventType): Transition =>
     needsCustomerConsent(agreement, amount)
       ? ok({ status: 'AWAITING_CUSTOMER', pendingFeeVnd: amount, pendingSource: source, boundDriverId: driverId, ...NO_COUNTER }, accepted, amount, driverId)
-      : ok({ status: 'ACCEPTED', finalFeeVnd: amount, boundDriverId: driverId, ...NO_COUNTER, ...NO_PENDING }, accepted, amount, driverId);
+      : ok({ status: 'ACCEPTED', finalFeeVnd: amount, boundDriverId: driverId, ...NO_COUNTER, ...NO_PENDING, ...NO_ANSWER_CLOCK }, accepted, amount, driverId);
 
   switch (action.type) {
     case 'DRIVER_ACCEPT':
@@ -156,7 +189,13 @@ export function applyAgreementAction(agreement: Agreement, action: AgreementActi
       if (rejected.has(rejectedKey(action.driverId, action.amountVnd))) {
         return refuse('COUNTER_ALREADY_REJECTED');
       }
-      return ok({ status: 'COUNTERED', counterFeeVnd: action.amountVnd, counterBy: action.driverId }, 'COUNTERED', action.amountVnd, action.driverId);
+      // The answer clock starts here, once: a repeat of this request is answered from its stored outcome and never reaches this line again.
+      return ok(
+        { status: 'COUNTERED', counterFeeVnd: action.amountVnd, counterBy: action.driverId, answerExpiresAtMs: Math.min(action.answerExpiresAtMs ?? agreement.expiresAtMs, agreement.expiresAtMs) },
+        'COUNTERED',
+        action.amountVnd,
+        action.driverId,
+      );
     case 'SHOP_ACCEPT_COUNTER':
       if (agreement.status !== 'COUNTERED' || agreement.counterFeeVnd === null || agreement.counterBy === null) {
         return refuse('INVALID_STATE');
@@ -167,18 +206,18 @@ export function applyAgreementAction(agreement: Agreement, action: AgreementActi
         return refuse('INVALID_STATE');
       }
       // The original proposal stays and so does the deadline (not in the patch): the search simply goes on with other Shippers.
-      return ok({ status: 'PROPOSED', ...NO_COUNTER }, 'COUNTER_REJECTED', agreement.counterFeeVnd, agreement.counterBy);
+      return ok({ status: 'PROPOSED', ...NO_COUNTER, ...NO_ANSWER_CLOCK }, 'COUNTER_REJECTED', agreement.counterFeeVnd, agreement.counterBy);
     case 'CUSTOMER_CONFIRM':
       if (agreement.status !== 'AWAITING_CUSTOMER' || agreement.pendingFeeVnd === null) {
         return refuse('INVALID_STATE');
       }
       if (action.approve) {
-        return ok({ status: 'ACCEPTED', finalFeeVnd: agreement.pendingFeeVnd, ...NO_PENDING }, 'CUSTOMER_CONFIRMED', agreement.pendingFeeVnd, agreement.boundDriverId);
+        return ok({ status: 'ACCEPTED', finalFeeVnd: agreement.pendingFeeVnd, ...NO_PENDING, ...NO_ANSWER_CLOCK }, 'CUSTOMER_CONFIRMED', agreement.pendingFeeVnd, agreement.boundDriverId);
       }
       // Declined: a customer who refuses a COUNTER sends the request back to the proposal (the search goes on); one who refuses the proposal itself ends it.
       return agreement.pendingSource === 'COUNTER'
-        ? ok({ status: 'PROPOSED', boundDriverId: null, ...NO_PENDING }, 'CUSTOMER_DECLINED', agreement.pendingFeeVnd, agreement.boundDriverId)
-        : ok({ status: 'DECLINED', ...NO_PENDING }, 'CUSTOMER_DECLINED', agreement.pendingFeeVnd, agreement.boundDriverId);
+        ? ok({ status: 'PROPOSED', boundDriverId: null, ...NO_PENDING, ...NO_ANSWER_CLOCK }, 'CUSTOMER_DECLINED', agreement.pendingFeeVnd, agreement.boundDriverId)
+        : ok({ status: 'DECLINED', ...NO_PENDING, ...NO_ANSWER_CLOCK }, 'CUSTOMER_DECLINED', agreement.pendingFeeVnd, agreement.boundDriverId);
     case 'LOCK':
       if (agreement.status !== 'ACCEPTED') {
         return refuse('INVALID_STATE');

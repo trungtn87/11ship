@@ -5,6 +5,7 @@ import { DriverRepository } from '../../apps/backend/src/driver/driver-repositor
 import { AgreementAction } from '../../apps/backend/src/shipping-policy/shipping-fee-agreement';
 import { AgreementOutcome, ShippingFeeAgreementService } from '../../apps/backend/src/shipping-policy/shipping-fee-agreement-service';
 import { ShippingFeeAgreementRepository } from '../../apps/backend/src/shipping-policy/shipping-fee-agreement-repository';
+import { FeeAnswerParameterReader, OrderParametersRepository } from '../../apps/backend/src/shipping-policy/fee-answer-parameter';
 import { ShippingFeePolicyReader, ShippingFeePolicyRepository } from '../../apps/backend/src/shipping-policy/shipping-fee-policy-repository';
 import { poolClientSource } from '../../apps/backend/src/transaction/pg-client-source';
 import { createDriverFor, purgePhone, randomPhone, createActiveShopFor } from './support/auth-fixtures';
@@ -30,7 +31,7 @@ describe('M06 v1.1 — shipping fee agreement', () => {
   let driver1 = '';
   let driver2 = '';
   const manager = () => managerFor(poolClientSource(pool), { timeoutMs: 20_000 });
-  const service = () => new ShippingFeeAgreementService(new ShippingFeeAgreementRepository(), new ShippingFeePolicyReader(new ShippingFeePolicyRepository()), new DriverRepository());
+  const service = () => new ShippingFeeAgreementService(new ShippingFeeAgreementRepository(), new ShippingFeePolicyReader(new ShippingFeePolicyRepository()), new DriverRepository(), new FeeAnswerParameterReader(new OrderParametersRepository()));
   const repo = new ShippingFeeAgreementRepository();
   const tx = <T>(fn: (context: Parameters<Parameters<ReturnType<typeof manager>['withTransaction']>[0]>[0]) => Promise<T>): Promise<T> => manager().withTransaction(fn);
 

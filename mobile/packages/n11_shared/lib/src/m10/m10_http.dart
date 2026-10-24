@@ -136,6 +136,14 @@ class HttpCustomerOrderSource extends CustomerOrderSource {
       _order(await _call(session, 'POST', '/v1/customers/me/orders/$id/cancel', body: <String, Object?>{'expected_version': expectedVersion, if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim()}, key: key));
 
   @override
+  Future<OrderView> cancelAfterPickup(String id, {required String reason, required int expectedVersion, required String key}) async =>
+      _order(await _call(session, 'POST', '/v1/customers/me/orders/$id/cancel-after-pickup', body: <String, Object?>{'expected_version': expectedVersion, 'reason': reason.trim()}, key: key));
+
+  @override
+  Future<OrderView> decideFee(String id, {required bool accept, required int deliveryVersion, required String key}) async =>
+      _order(await _call(session, 'POST', '/v1/customers/me/orders/$id/delivery/fee', body: <String, Object?>{'decision': accept ? 'ACCEPT' : 'REJECT', 'expected_version': deliveryVersion}, key: key));
+
+  @override
   Future<ReorderResult> reorder(String id, {required bool replaceCart, required String key}) async {
     final Object? data = await _call(session, 'POST', '/v1/customers/me/orders/$id/reorder', body: <String, Object?>{if (replaceCart) 'replace_cart': true}, key: key);
     return _parse<ReorderResult>(data, (Object? d) {
@@ -188,16 +196,8 @@ class HttpShopOrderSource extends ShopOrderSource {
       _order(await _call(session, 'POST', _path(id, '/reject'), body: <String, Object?>{'expected_version': expectedVersion, 'reason': reason}, key: key));
 
   @override
-  Future<OrderView> ready(String id, {required int expectedVersion, required String key}) async =>
-      _order(await _call(session, 'POST', _path(id, '/ready'), body: <String, Object?>{'expected_version': expectedVersion}, key: key));
-
-  @override
-  Future<OrderView> recordPayment(String id, {required int paidVnd, required int expectedVersion, required String key}) async =>
-      _order(await _call(session, 'POST', _path(id, '/payment'), body: <String, Object?>{'expected_version': expectedVersion, 'paid_vnd': paidVnd}, key: key));
-
-  @override
-  Future<OrderView> callShipper(String id, {required String feePayer, required int expectedVersion, required String key}) async =>
-      _order(await _call(session, 'POST', _path(id, '/call-shipper'), body: <String, Object?>{'expected_version': expectedVersion, 'fee_payer': feePayer}, key: key, ok: const <int>{200, 201}));
+  Future<OrderView> callShipper(String id, {required String feePayer, AgreedFeeProposal? agreedFee, required int expectedVersion, required String key}) async =>
+      _order(await _call(session, 'POST', _path(id, '/call-shipper'), body: <String, Object?>{'expected_version': expectedVersion, 'fee_payer': feePayer, if (agreedFee != null) 'agreed_fee': agreedFee.toJson()}, key: key, ok: const <int>{200, 201}));
 
   @override
   Future<OrderView> cancel(String id, {required String reason, required int expectedVersion, required String key}) async =>

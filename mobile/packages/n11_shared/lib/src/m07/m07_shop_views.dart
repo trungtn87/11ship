@@ -18,12 +18,14 @@ import 'm07_widgets.dart';
 //   Q01 ShopDeliveryHub        list: "Đang xử lý" / "Lịch sử", search by code or recipient, "Gọi shipper"
 //   Q02 ShopCallScreen         the call form with a summary before sending
 //   Q03-Q08 ShopDeliveryDetailScreen   one screen that shows the state the server reports:
-//        Q03 searching (server timer, 5/15/30 marks, cancel)   Q04 accepted (Shipper, position, cancel)   Q05 delivering (position, no cancel)
-//        Q06 search stopped (call again / cancel)   Q07 result and timeline (read only)   Q08 goods handling after a failed delivery
-// The shop can cancel only BEFORE the goods are picked up; after that the button is not drawn and the server refuses anyway. Cancelling a
-// delivery never cancels the food order.
+//        Q03 searching (server timer, 5/15/30 marks, cancel)   Q04 accepted (Shipper, cancel)   Q05 delivering (status; cancel only for the creator)
+//        Q06 search stopped (call again / cancel)   Q07 result and timeline (read only)   Q08 goods handling after a cancelled-after-pickup request
+// Owner decision 2026-10-23: a DIRECT call has a described address only (no map point, no tracking of the Shipper's route); its fee comes from a band
+// of the fee table the shop chose (an estimate) or from an agreed amount. After pickup ONLY the creator can cancel: here the shop of a DIRECT call;
+// the shop of a customer's order never can (the customer does, in 11Food). Cancelling a delivery never cancels the food order.
 
 const String kCancelExplain = 'Yêu cầu giao sẽ kết thúc, shipper (nếu đã nhận) được giải phóng và hệ thống ngừng tìm. Không tự hủy đơn món.';
+const String kCancelAfterPickupExplain = 'Shipper đã lấy hàng. Hủy bây giờ thì yêu cầu giao kết thúc, hoa hồng của shipper không bị thu, và hàng vẫn ở shipper cho tới khi bạn xác nhận đã nhận lại hoặc đã xử lý.';
 
 String _short(String text, int max) => text.length <= max ? text : '${text.substring(0, max - 1)}…';
 
@@ -238,11 +240,11 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
   String _payer = 'CUSTOMER';
   bool _agreed = false;
   String _reason = 'URGENT';
-  double? _lat;
-  double? _lng;
+  int? _band;
+  List<FeeBand>? _bands;
   String? _problem;
 
-  static const List<String> _fields = <String>['name', 'phone', 'address', 'goods', 'value', 'paid', 'note', 'amount', 'feeNote'];
+  static const List<String> _fields = <String>['name', 'phone', 'address', 'goods', 'value', 'note', 'amount', 'feeNote'];
 
   TextEditingController _field(String name) => _c.putIfAbsent(name, () => TextEditingController(text: ShopCallDraft.get(name))..addListener(() => ShopCallDraft.put(name, _c[name]!.text)));
 
@@ -252,6 +254,11 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
     for (final String f in _fields) {
       _field(f);
     }
+    widget.source.feeBands().then((List<FeeBand> bands) {
+      if (mounted) setState(() => _bands = bands);
+    }).catchError((Object _) {
+      if (mounted) setState(() => _bands = const <FeeBand>[]);
+    });
   }
 
   @override
@@ -269,7 +276,6 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
     final String address = _field('address').text.trim();
     final String goods = _field('goods').text.trim();
     final int? value = parseVndInput(_field('value').text) ?? (_field('value').text.trim().isEmpty ? null : -1);
-    final int paid = _field('paid').text.trim().isEmpty ? 0 : (parseVndInput(_field('paid').text) ?? -1);
     String? problem;
     if (name.isEmpty || address.isEmpty || goods.isEmpty) {
       problem = 'Hãy nhập tên người nhận, địa chỉ và mô tả hàng.';
@@ -277,8 +283,8 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
       problem = 'Số điện thoại người nhận chưa đúng (10 số, bắt đầu bằng 0).';
     } else if (value == null || value < 0) {
       problem = 'Hãy nhập giá trị hàng (số nguyên, có thể là 0).';
-    } else if (paid < 0 || paid > value) {
-      problem = 'Tiền hàng đã thanh toán phải từ 0 đến giá trị hàng.';
+    } else if (!_agreed && _band == null) {
+      problem = 'Hãy chọn mốc phí giao, hoặc chọn "Thỏa thuận" và nhập mức phí đề xuất.';
     }
     int? amount;
     if (problem == null && _agreed) {
@@ -300,16 +306,15 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
       recipientName: name,
       recipientPhone: phone,
       addressText: address,
-      lat: _lat,
-      lng: _lng,
       goodsDescription: goods,
       goodsValueVnd: value!,
-      paidVnd: paid,
+      paidVnd: 0,
       feePayer: _payer,
       note: _field('note').text.trim(),
       agreedReasonCode: _agreed ? _reason : null,
       agreedReasonNote: _agreed ? _field('feeNote').text.trim() : null,
       agreedAmountVnd: amount,
+      feeBand: _agreed ? null : _band,
     );
   }
 
@@ -328,8 +333,7 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
         ('Giao đến', input.addressText),
         ('Hàng', input.goodsDescription),
         ('Giá trị hàng', m07Vnd(input.goodsValueVnd)),
-        ('Còn phải thu', m07Vnd(input.goodsValueVnd - input.paidVnd)),
-        ('Phí giao', input.agreed ? '${m07Vnd(input.agreedAmountVnd)} (thỏa thuận)' : (input.lat == null ? kFeeUnknown : 'Theo bảng giá')),
+        ('Phí giao', input.agreed ? '${m07Vnd(input.agreedAmountVnd)} (thỏa thuận)' : '${m07Vnd(_bandOf(input.feeBand)?.feeVnd)} (ước tính theo mốc)'),
         ('Người trả phí', input.feePayer == 'CUSTOMER' ? 'Khách trả ship' : 'Quán trả ship'),
       ]),
     );
@@ -354,11 +358,9 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
       <Widget>[
         N11Field(requiredInput: true, fieldKey: const Key('m07-f-name'), label: 'Tên người nhận', controller: _field('name'), maxLength: 80),
         N11Field(validator: recipientPhoneError, fieldKey: const Key('m07-f-phone'), label: 'Số điện thoại người nhận', controller: _field('phone'), keyboard: TextInputType.phone, maxLength: 15),
-        N11Field(requiredInput: true, fieldKey: const Key('m07-f-address'), label: 'Địa chỉ giao (mô tả)', controller: _field('address'), maxLength: 200),
-        _pinSection(),
+        N11Field(requiredInput: true, fieldKey: const Key('m07-f-address'), label: 'Địa chỉ giao (mô tả)', controller: _field('address'), maxLength: 200, hint: 'Ghi rõ để shipper tìm được. Không cần ghim bản đồ.'),
         N11Field(requiredInput: true, fieldKey: const Key('m07-f-goods'), label: 'Mô tả hàng', controller: _field('goods'), maxLength: 120),
         N11Field(validator: (String value) => parseVndInput(value) == null ? 'Nhập giá trị hàng là số nguyên, có thể là 0.' : null, fieldKey: const Key('m07-f-value'), label: 'Giá trị hàng (đ)', controller: _field('value'), keyboard: TextInputType.number, maxLength: 12),
-        N11Field(validator: (String value) { if (value.trim().isEmpty) return null; final int? paid = parseVndInput(value); final int? goods = parseVndInput(_field('value').text); return paid == null || (goods != null && paid > goods) ? 'Tiền đã thanh toán phải từ 0 đến giá trị hàng.' : null; }, fieldKey: const Key('m07-f-paid'), label: 'Tiền hàng đã thanh toán (đ)', controller: _field('paid'), keyboard: TextInputType.number, maxLength: 12, optionalLabel: true, hint: 'Để trống nếu khách chưa trả trước.'),
         _payerSection(),
         _feeSection(),
         N11Field(fieldKey: const Key('m07-f-note'), label: 'Ghi chú', controller: _field('note'), maxLength: 200, optionalLabel: true),
@@ -369,27 +371,12 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
     );
   }
 
-  Widget _pinSection() {
-    final M07PinPickerBuilder? picker = widget.pinPicker;
-    return N11Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Text('Ghim điểm giao (không bắt buộc)', style: N11Text.label),
-          const SizedBox(height: N11Space.gap2),
-          if (picker == null)
-            const ReasonNote('Bản này chưa có bản đồ để ghim. Không ghim thì phí chưa xác định, shipper sẽ ghim điểm giao và xác nhận phí trước khi lấy hàng.')
-          else ...<Widget>[
-            SizedBox(height: 200, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusControl), child: picker(context, onPick: (double lat, double lng) => setState(() {
-                  _lat = lat;
-                  _lng = lng;
-                }), lat: _lat, lng: _lng))),
-            const SizedBox(height: N11Space.gap2),
-            Text(_lat == null ? 'Chạm vào bản đồ để ghim. Không ghim thì phí chưa xác định.' : 'Đã ghim ${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)}', style: N11Text.caption),
-          ],
-        ],
-      ),
-    );
+  FeeBand? _bandOf(int? index) {
+    final List<FeeBand> bands = _bands ?? const <FeeBand>[];
+    for (final FeeBand b in bands) {
+      if (b.index == index) return b;
+    }
+    return null;
   }
 
   Widget _payerSection() {
@@ -428,8 +415,31 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
             ],
           ),
           const SizedBox(height: N11Space.gap2),
-          if (!_agreed)
-            Text(_lat == null ? 'Chưa ghim điểm giao nên $kFeeUnknown. Shipper sẽ ghim và xác nhận phí trước khi lấy hàng.' : 'Phí tính theo quãng đường thật khi gửi yêu cầu. Nếu chưa tính được tuyến, phí hiện $kFeeUnknown.', style: N11Text.caption)
+          if (!_agreed) ...<Widget>[
+            if (_bands == null)
+              const Text('Đang tải bảng giá...', style: N11Text.caption)
+            else if (_bands!.isEmpty)
+              const ReasonNote('Chưa có bảng giá để chọn mốc. Hãy chọn "Thỏa thuận" và nhập mức phí đề xuất cho shipper.')
+            else ...<Widget>[
+              const Text('Chọn mốc quãng đường ước tính', style: N11Text.caption),
+              const SizedBox(height: N11Space.gap2),
+              Wrap(
+                spacing: N11Space.gap2,
+                runSpacing: N11Space.gap2,
+                children: <Widget>[
+                  for (final FeeBand b in _bands!)
+                    ChoiceChip(
+                      key: Key('m07-band-${b.index}'),
+                      label: Text('${b.rangeText} · ${m07Vnd(b.feeVnd)}'),
+                      selected: _band == b.index,
+                      onSelected: (bool _) => setState(() => _band = b.index),
+                    ),
+                ],
+              ),
+              const SizedBox(height: N11Space.gap2),
+              const ReasonNote('Đây là phí ước tính theo mốc bạn chọn, không phải quãng đường đo trên bản đồ. Shipper có thể đề xuất mức khác và bên trả phí quyết định.'),
+            ],
+          ]
           else ...<Widget>[
             Wrap(
               spacing: N11Space.gap2,
@@ -484,7 +494,8 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
   Future<void> _reload() async => _page.currentState?.fetcher.reload(quiet: true);
 
   Future<void> _cancel(DeliveryView d) async {
-    final String? reason = await showReasonDialog(context, title: 'Hủy yêu cầu giao?', explanation: kCancelExplain, confirmLabel: 'Xác nhận hủy');
+    final bool afterPickup = d.allows('cancel_after_pickup');
+    final String? reason = await showReasonDialog(context, title: afterPickup ? 'Hủy giao khi shipper đã lấy hàng?' : 'Hủy yêu cầu giao?', explanation: afterPickup ? kCancelAfterPickupExplain : kCancelExplain, confirmLabel: 'Xác nhận hủy');
     if (reason == null || !mounted) {
       return;
     }
@@ -570,10 +581,17 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
         return <Widget>[SearchTimerCard(search: d.search), ..._feeAgreementCards(d)];
       case DeliveryState.accepted:
       case DeliveryState.locationConfirmed:
-        return <Widget>[_shipperCard(d), _statusCard(d), LocationCard(location: d.location, mapBuilder: widget.mapBuilder)];
+        return <Widget>[_shipperCard(d), _statusCard(d), if (d.source == 'ORDER') LocationCard(location: d.location, mapBuilder: widget.mapBuilder)];
       case DeliveryState.pickedUp:
       case DeliveryState.delivering:
-        return <Widget>[_shipperCard(d), LocationCard(location: d.location, mapBuilder: widget.mapBuilder), const ReasonNote('Đã nhận hàng nên không hủy được và không sửa thông tin/phí.')];
+        return <Widget>[
+          _shipperCard(d),
+          // A DIRECT call is followed by its status only; the Shipper's route is shown for a customer's order.
+          if (d.source == 'ORDER') LocationCard(location: d.location, mapBuilder: widget.mapBuilder),
+          ReasonNote(d.allows('cancel_after_pickup')
+              ? 'Shipper đã lấy hàng. Bạn là người tạo yêu cầu nên có thể hủy nếu không giao nữa; phí không sửa được. Nếu shipper báo không giao được, hãy gọi để thống nhất.'
+              : 'Shipper đã lấy hàng. Phí không sửa được. Đơn này do khách đặt nên chỉ khách mới hủy được; nếu cần, hãy gọi shipper để thống nhất.'),
+        ];
       case DeliveryState.searchStopped:
         return <Widget>[
           const N11Banner(key: Key('m07-stopped'), kind: BannerKind.warn, title: 'Đã ngừng tìm shipper', text: 'Đã hết thời gian tìm nhưng chưa có shipper. Đơn món sẽ tự hủy nếu quá thời hạn xử lý.', icon: Icons.timer_off_outlined),
@@ -604,9 +622,13 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
               ('Lý do', _reasonText(a.reasonCode)),
               ('Trạng thái', _agreementText(a.state)),
             ]),
-            if (a.state == 'COUNTERED') ...<Widget>[
+            if (a.state == 'COUNTERED' && d.allows('wait_customer_fee'))
+              const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: ReasonNote('Khách là người trả phí nên khách quyết định mức này trong ứng dụng 11Food. Nếu khách từ chối, đơn vẫn giữ mức phí cũ và tiếp tục tìm shipper khác.')),
+            if (a.state == 'COUNTERED' && d.allows('decide_fee')) ...<Widget>[
               const SizedBox(height: N11Space.gap2),
-              const ReasonNote('Từ chối thì giữ mức đề xuất ban đầu và tiếp tục tìm shipper khác, thời gian tìm không tính lại.'),
+              ReasonNote(d.fee.payer == 'CUSTOMER'
+                  ? 'Khách trả ship: hãy liên hệ khách trước. Bấm Đồng ý nghĩa là quán xác nhận thay khách, hệ thống sẽ ghi lại như vậy. Từ chối thì giữ mức ban đầu và tiếp tục tìm shipper khác.'
+                  : 'Từ chối thì giữ mức đề xuất ban đầu và tiếp tục tìm shipper khác, thời gian tìm không tính lại.'),
               const SizedBox(height: N11Space.gap2),
               Row(
                 children: <Widget>[
@@ -616,9 +638,11 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
                 ],
               ),
             ],
-            if (a.state == 'AWAITING_CUSTOMER') ...<Widget>[
+            if (a.state == 'AWAITING_CUSTOMER' && d.allows('wait_customer_fee'))
+              const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: ReasonNote('Đang chờ khách đồng ý mức phí trong ứng dụng 11Food.')),
+            if (a.state == 'AWAITING_CUSTOMER' && d.allows('decide_fee')) ...<Widget>[
               const SizedBox(height: N11Space.gap2),
-              const ReasonNote('Khách trả ship nên mức này cần khách đồng ý. Chỉ bấm khi khách đã đồng ý với bạn.'),
+              const ReasonNote('Khách trả ship nên mức này cần khách đồng ý. Chỉ bấm khi bạn đã liên hệ và khách đồng ý; hệ thống ghi là quán xác nhận thay khách.'),
               const SizedBox(height: N11Space.gap2),
               N11Button(key: const Key('m07-customer-agreed'), label: 'Khách đã đồng ý mức phí', onPressed: busy ? null : () => _customerAgreed(d)),
             ],
@@ -656,7 +680,7 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
           children: <Widget>[
             const Icon(Icons.hourglass_bottom, color: N11Colors.ink2),
             const SizedBox(width: N11Space.gap3),
-            Expanded(child: Text(d.assignment?.destinationConfirmed ?? false ? 'Chờ lấy hàng' : 'Chờ shipper xác nhận điểm giao và phí', style: N11Text.bodyStrong)),
+            Expanded(child: Text(d.assignment?.destinationConfirmed ?? false ? 'Shipper đang đến lấy hàng' : 'Chờ shipper chốt phí rồi lấy hàng', style: N11Text.bodyStrong)),
           ],
         ),
       );
@@ -671,7 +695,6 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
               ('Tên', d.recipient.name),
               if (d.recipient.phone != null) ('Điện thoại', d.recipient.phone!),
               ('Địa chỉ', d.recipient.addressText ?? '—'),
-              ('Điểm giao', d.recipient.hasPoint ? 'Đã ghim' : 'Chưa ghim'),
               ('Hàng', d.goods.description),
             ]),
           ],
@@ -686,10 +709,10 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(children: <Widget>[const Expanded(child: Text('Xử lý hàng', style: N11Text.label)), N11Chip(i.isOpen ? 'Đang mở' : 'Đã đóng', kind: i.isOpen ? ChipKind.bad : ChipKind.ok)]),
-          KeyValueRows(<(String, String)>[('Lý do giao thất bại', i.reason), ('Hàng hiện ở', i.custodyText)]),
+          KeyValueRows(<(String, String)>[('Lý do', i.reason), ('Hàng hiện ở', i.custodyText)]),
           if (i.isOpen) ...<Widget>[
             const SizedBox(height: N11Space.gap2),
-            const ReasonNote('Hàng ở tay ai người đó chịu trách nhiệm. Giao thất bại không có nghĩa hàng đã về quán. Chưa gọi lại cùng hàng được khi hàng chưa về quán.'),
+            const ReasonNote('Hàng ở tay ai người đó chịu trách nhiệm. Hủy hoặc không giao được không có nghĩa hàng đã về quán. Chưa gọi lại cùng hàng được khi hàng chưa về quán.'),
             const SizedBox(height: N11Space.gap3),
             N11Button(key: const Key('m07-custody-returned'), label: 'Xác nhận hàng đã về quán', onPressed: busy ? null : () => _custody(d, 'GOODS_RETURNED')),
             const SizedBox(height: N11Space.gap2),
@@ -720,7 +743,7 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
   Widget? _bottom(DeliveryView d) {
     final List<Widget> actions = <Widget>[
       if (d.allows('recall')) N11Button(key: const Key('m07-recall'), label: 'Gọi lại shipper', icon: Icons.refresh, loading: busy, onPressed: busy ? null : () => _recall(d)),
-      if (d.allows('cancel')) DangerButton(key: const Key('m07-cancel'), label: 'Hủy yêu cầu giao', onPressed: busy ? null : () => _cancel(d)),
+      if (d.allows('cancel')) DangerButton(key: const Key('m07-cancel'), label: d.allows('cancel_after_pickup') ? 'Hủy giao (shipper đã lấy hàng)' : 'Hủy yêu cầu giao', onPressed: busy ? null : () => _cancel(d)),
     ];
     if (actions.isEmpty) {
       return null;

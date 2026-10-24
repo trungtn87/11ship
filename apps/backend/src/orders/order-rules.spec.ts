@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { customerMayCancel, displayStatusOf, goodsDescriptionOf, mayCallShipper, mergeCartLines, needsAttention, newOrderCode, scheduleInWindow, totalOf } from './order-rules';
+import { customerMayCancel, customerMayCancelAfterPickup, displayStatusOf, goodsDescriptionOf, mayCallShipper, mergeCartLines, needsAttention, newOrderCode, scheduleInWindow, totalOf } from './order-rules';
 
 describe('M10 order rules', () => {
   it('merges the same dish with the same note and keeps different notes on their own line', () => {
@@ -44,20 +44,27 @@ describe('M10 order rules', () => {
   });
 
   it('shows one status from the order and its latest delivery', () => {
-    expect(displayStatusOf('PENDING_CONFIRMATION', false, null)).toBe('AWAITING_SHOP');
-    expect(displayStatusOf('PREPARING', false, null)).toBe('PREPARING');
-    expect(displayStatusOf('PREPARING', true, null)).toBe('READY');
-    expect(displayStatusOf('PREPARING', false, 'waiting_driver')).toBe('SEARCHING_SHIPPER');
-    expect(displayStatusOf('PREPARING', false, 'accepted')).toBe('SHIPPER_COMING');
-    expect(displayStatusOf('PREPARING', true, 'accepted')).toBe('READY');
-    expect(displayStatusOf('PREPARING', true, 'delivering')).toBe('DELIVERING');
-    expect(displayStatusOf('PREPARING', false, 'search_stopped')).toBe('SEARCH_STOPPED');
-    expect(displayStatusOf('PREPARING', false, 'failed')).toBe('DELIVERY_FAILED');
+    expect(displayStatusOf('PENDING_CONFIRMATION', null)).toBe('AWAITING_SHOP');
+    expect(displayStatusOf('PREPARING', null)).toBe('PREPARING');
+    expect(displayStatusOf('PREPARING', 'waiting_driver')).toBe('SEARCHING_SHIPPER');
+    expect(displayStatusOf('PREPARING', 'accepted')).toBe('SHIPPER_COMING');
+    expect(displayStatusOf('PREPARING', 'delivering')).toBe('DELIVERING');
+    expect(displayStatusOf('PREPARING', 'search_stopped')).toBe('SEARCH_STOPPED');
+    expect(displayStatusOf('PREPARING', 'failed')).toBe('DELIVERY_FAILED');
     // a delivery cancelled on its own does not cancel the order
-    expect(displayStatusOf('PREPARING', false, 'cancelled_by_merchant')).toBe('PREPARING');
-    expect(displayStatusOf('COMPLETED', true, 'completed')).toBe('COMPLETED');
-    expect(displayStatusOf('REJECTED_BY_SHOP', false, null)).toBe('REJECTED');
-    expect(displayStatusOf('NOT_COMPLETED', false, 'failed')).toBe('NOT_COMPLETED');
+    expect(displayStatusOf('PREPARING', 'cancelled_by_merchant')).toBe('PREPARING');
+    expect(displayStatusOf('COMPLETED', 'completed')).toBe('COMPLETED');
+    expect(displayStatusOf('REJECTED_BY_SHOP', null)).toBe('REJECTED');
+    expect(displayStatusOf('NOT_COMPLETED', 'failed')).toBe('NOT_COMPLETED');
+  });
+
+  it('lets the customer cancel only before the shop confirms or after the goods were picked up', () => {
+    expect(customerMayCancel('PENDING_CONFIRMATION')).toBe(true);
+    expect(customerMayCancel('PREPARING')).toBe(false);
+    expect(customerMayCancelAfterPickup('PREPARING', 'delivering')).toBe(true);
+    expect(customerMayCancelAfterPickup('PREPARING', 'accepted')).toBe(false);
+    expect(customerMayCancelAfterPickup('PREPARING', null)).toBe(false);
+    expect(customerMayCancelAfterPickup('COMPLETED', 'delivering')).toBe(false);
   });
 
   it('flags a stopped search and a failed delivery for the shop, and allows a new call only when no delivery is running', () => {

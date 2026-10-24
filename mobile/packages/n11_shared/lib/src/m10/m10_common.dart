@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../m06/m06_models.dart';
+import '../m06/m06_views.dart' show kFeeNotePrivacyHint, noteLooksLikePhone, parseAgreedFee;
 import '../m07/m07_models.dart';
 import '../m07/m07_widgets.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
 import 'm10_models.dart';
+import 'm10_source.dart';
 
 // Pieces both sides of M10 draw: the status chip, money rows (dishes and fee apart; an unknown fee never reads 0đ), the lines of an Order with the
 // shop's changes next to the original, the timeline and the map card of the CURRENT delivery.
@@ -36,7 +39,7 @@ String m10When(DateTime t) {
 ({String label, ChipKind kind}) m10StatusChip(DisplayStatus s) => switch (s) {
       DisplayStatus.awaitingShop => (label: s.label, kind: ChipKind.warn),
       DisplayStatus.preparing || DisplayStatus.shipperComing => (label: s.label, kind: ChipKind.info),
-      DisplayStatus.ready || DisplayStatus.searchingShipper || DisplayStatus.delivering => (label: s.label, kind: ChipKind.yellow),
+      DisplayStatus.searchingShipper || DisplayStatus.delivering => (label: s.label, kind: ChipKind.yellow),
       DisplayStatus.completed => (label: s.label, kind: ChipKind.ok),
       DisplayStatus.searchStopped || DisplayStatus.deliveryFailed => (label: s.label, kind: ChipKind.bad),
       DisplayStatus.cancelledByCustomer || DisplayStatus.cancelledByShop || DisplayStatus.cancelledBySystem || DisplayStatus.rejected || DisplayStatus.notCompleted => (label: s.label, kind: ChipKind.neutral),
@@ -116,14 +119,13 @@ class OrderLinesCard extends StatelessWidget {
   }
 }
 
-/// Dishes, what was paid, what is left to pay for them, and the delivery fee — each on its own line. The "expected total" is shown only when it is
-/// complete; otherwise a sentence says the fee is not known yet.
+/// Dishes and the delivery fee, each on its own line. The "expected total" is shown only when it is complete; otherwise a sentence says the fee is not
+/// known yet. The app does not manage payment of the dishes, so there are no "paid" / "still to collect" lines (Owner decision 2026-10-23).
 class OrderMoneyCard extends StatelessWidget {
-  const OrderMoneyCard({super.key, required this.money, required this.edited, this.showPaid = true});
+  const OrderMoneyCard({super.key, required this.money, required this.edited});
 
   final OrderMoney money;
   final bool edited;
-  final bool showPaid;
 
   @override
   Widget build(BuildContext context) {
@@ -137,8 +139,6 @@ class OrderMoneyCard extends StatelessWidget {
           KeyValueRows(<(String, String)>[
             if (edited) ('Tiền món ban đầu', m10Money(money.originalItemsVnd)),
             (edited ? 'Tiền món đã chốt' : 'Tiền món', m10Money(money.itemsVnd)),
-            if (showPaid) ('Đã thanh toán', m10Money(money.paidVnd)),
-            if (showPaid) ('Còn phải thu (tiền món)', m10Money(money.remainingVnd)),
             (fee.isEstimate ? 'Phí giao (dự tính)' : 'Phí giao', m10Fee(fee.shownVnd)),
             ('Người trả phí', fee.payerText),
           ]),
@@ -236,6 +236,102 @@ class OrderMapCard extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// The shop proposes a delivery fee when the table cannot price an order (FEE_REQUIRED): a reason, an optional note and the amount. The Shipper may agree or
+/// counter, and whoever pays decides the counter.
+Future<AgreedFeeProposal?> showFeeProposalDialog(BuildContext context, {required bool payerIsCustomer}) {
+  return showDialog<AgreedFeeProposal>(context: context, builder: (BuildContext dialog) => _FeeProposalDialog(payerIsCustomer: payerIsCustomer));
+}
+
+class _FeeProposalDialog extends StatefulWidget {
+  const _FeeProposalDialog({required this.payerIsCustomer});
+
+  final bool payerIsCustomer;
+
+  @override
+  State<_FeeProposalDialog> createState() => _FeeProposalDialogState();
+}
+
+class _FeeProposalDialogState extends State<_FeeProposalDialog> {
+  final GlobalKey<FormState> _form = GlobalKey<FormState>();
+  final TextEditingController _amount = TextEditingController();
+  final TextEditingController _note = TextEditingController();
+  FeeReason _reason = FeeReason.outsideTable;
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  static String _wire(FeeReason r) => switch (r) {
+        FeeReason.urgent => 'URGENT',
+        FeeReason.bulky => 'BULKY',
+        FeeReason.badWeather => 'BAD_WEATHER',
+        FeeReason.outsideTable => 'OUT_OF_PRICE_RANGE',
+        FeeReason.other => 'OTHER',
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    return Form(
+      key: _form,
+      child: AlertDialog(
+        key: const Key('fee-proposal-dialog'),
+        title: const Text('Đề xuất phí giao', style: N11Text.h2),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text('Hệ thống chưa tính được phí giao tự động cho đơn này. Hãy đề xuất một mức phí; shipper đồng ý hoặc đề xuất mức khác, và người trả phí quyết định.', style: N11Text.lead),
+              const SizedBox(height: N11Space.gap2),
+              Wrap(
+                spacing: N11Space.gap2,
+                children: <Widget>[
+                  for (final FeeReason r in FeeReason.values)
+                    ChoiceChip(key: Key('fee-reason-${_wire(r)}'), label: Text(feeReasonText(r)), selected: _reason == r, onSelected: (bool _) => setState(() => _reason = r)),
+                ],
+              ),
+              const SizedBox(height: N11Space.gap2),
+              N11Field(
+                validator: (String value) => parseAgreedFee(value) == null ? 'Nhập phí là số nguyên từ 0 đến 10.000.000đ.' : null,
+                fieldKey: const Key('fee-proposal-amount'),
+                label: 'Mức phí đề xuất (đ)',
+                controller: _amount,
+                keyboard: TextInputType.number,
+                maxLength: 10,
+              ),
+              N11Field(
+                validator: (String value) => noteLooksLikePhone(value) ? 'Ghi chú cho shipper không được chứa số điện thoại.' : _reason == FeeReason.other && value.trim().isEmpty ? 'Lý do Khác cần có ghi chú.' : null,
+                fieldKey: const Key('fee-proposal-note'),
+                label: 'Ghi chú cho shipper',
+                controller: _note,
+                maxLength: 200,
+                optionalLabel: true,
+                hint: kFeeNotePrivacyHint,
+              ),
+              if (widget.payerIsCustomer) const ReasonNote('Khách trả phí: mức khác bảng giá cần khách đồng ý trong ứng dụng 11Food.'),
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Quay lại')),
+          TextButton(
+            key: const Key('fee-proposal-send'),
+            onPressed: () {
+              if (_form.currentState!.validate()) {
+                Navigator.of(context).pop(AgreedFeeProposal(reasonCode: _wire(_reason), reasonNote: _note.text, amountVnd: parseAgreedFee(_amount.text)!));
+              }
+            },
+            child: const Text('Gọi shipper'),
+          ),
+        ],
+      ),
     );
   }
 }

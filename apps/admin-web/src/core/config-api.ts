@@ -7,7 +7,7 @@ import { CommandResult, commandResultOf } from './commands.js';
 import { ConfigChange, ConfigGroup, ConfigGroupKey, ConfigKind, ConfigRead, ConfigSave, ConfigSource, ConfigValue, GROUP_ORDER, HistoryRead } from './config.js';
 
 export const CONFIG_BASE = '/v1';
-const KINDS: readonly string[] = ['OTP', 'WALLET', 'ELIGIBILITY', 'NOTIFICATION'];
+const KINDS: readonly string[] = ['OTP', 'WALLET', 'ELIGIBILITY', 'ORDER', 'NOTIFICATION'];
 const iso = (value: unknown): string | undefined => {
   const text = str(value);
   return text !== undefined && !Number.isNaN(Date.parse(text)) ? text : undefined;
@@ -105,6 +105,8 @@ function ownerRequest(save: ConfigSave): { path: string; body: Record<string, un
       return { path: '/admin/system-settings/phone-verification', body: { expected_version: save.version, otp_registration_enabled: v.otp_registration_enabled, otp_password_reset_enabled: v.otp_password_reset_enabled, reason: save.reason } };
     case 'WALLET':
       return { path: '/admin/system-settings/shipper-wallet', body: { expected_version: save.version, topup_min_vnd: v.topup_min_vnd, withdraw_min_vnd: v.withdraw_min_vnd, reason: save.reason } };
+    case 'ORDER':
+      return { path: '/admin/system-settings/order-parameters', body: { expected_version: save.version, fee_answer_minutes: v.fee_answer_minutes, reason: save.reason } };
     case 'ELIGIBILITY':
       return {
         path: '/admin/shipping-eligibility-policy',

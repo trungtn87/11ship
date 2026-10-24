@@ -9,6 +9,7 @@ import { DriverModule } from '../driver/driver.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { EligibilityParametersRepository } from './eligibility-parameters-repository';
+import { FeeAnswerParameterReader, OrderParametersRepository } from './fee-answer-parameter';
 import { ShippingFeeAgreementRepository } from './shipping-fee-agreement-repository';
 import { ShippingFeeAgreementService } from './shipping-fee-agreement-service';
 import { ShippingFeePolicyReader, ShippingFeePolicyRepository } from './shipping-fee-policy-repository';
@@ -36,6 +37,8 @@ import {
     ShippingFeePolicyRepository,
     ShippingFeePolicyReader,
     ShippingFeeAgreementRepository,
+    OrderParametersRepository,
+    FeeAnswerParameterReader,
     ShippingFeeAgreementService,
     // M07 and M14 are connected: the ports answer from M07's tables and M14's latest position / routing service. A fact the owner cannot give is
     // still `undefined` / unavailable, and the check then refuses (fail closed).
@@ -45,6 +48,6 @@ import {
     { provide: ROUTE_MATRIX_PORT, useExisting: M14RouteClient },
     { provide: AVAILABLE_BALANCE_PORT, useClass: WalletAvailableBalancePort },
   ],
-  exports: [EligibilityParametersRepository, ShippingEligibilityService, ShippingFeePolicyRepository, ShippingFeePolicyReader, ShippingFeeAgreementService, DELIVERY_OFFER_PORT, SHIPPER_WORK_PORT, SHIPPER_LOCATION_PORT, ROUTE_MATRIX_PORT, AVAILABLE_BALANCE_PORT],
+  exports: [EligibilityParametersRepository, OrderParametersRepository, FeeAnswerParameterReader, ShippingEligibilityService, ShippingFeePolicyRepository, ShippingFeePolicyReader, ShippingFeeAgreementService, DELIVERY_OFFER_PORT, SHIPPER_WORK_PORT, SHIPPER_LOCATION_PORT, ROUTE_MATRIX_PORT, AVAILABLE_BALANCE_PORT],
 })
 export class ShippingEligibilityModule {}

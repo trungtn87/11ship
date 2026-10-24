@@ -38,6 +38,17 @@ export function shopMayCancel(state: DeliveryState): boolean {
   return BEFORE_PICKUP_STATES.includes(state) || state === 'search_stopped';
 }
 
+/**
+ * After the goods are picked up (Owner decision 2026-10-23) only the CREATOR of the request may cancel: the customer for an ORDER, the shop for a DIRECT
+ * call. The shop of an ORDER (the customer's request) and the Shipper never can; the backend decides it here, not the app.
+ */
+export function creatorMayCancelAfterPickup(state: DeliveryState, source: 'ORDER' | 'DIRECT', actor: 'SHOP' | 'CUSTOMER'): boolean {
+  if (state !== 'delivering' && state !== 'picked_up') {
+    return false;
+  }
+  return source === 'ORDER' ? actor === 'CUSTOMER' : actor === 'SHOP';
+}
+
 /** The Shipper may give up the delivery only while it is accepted and not yet picked up. */
 export function shipperMayRelease(state: DeliveryState): boolean {
   return state === 'accepted' || state === 'location_confirmed';
@@ -63,12 +74,15 @@ export function pickupReminderDue(nowMs: number, acceptedAtMs: number, lastRemin
   return nowMs - (lastReminderAtMs ?? acceptedAtMs) >= PICKUP_REMINDER_MS;
 }
 
-/** A new delivery for the same goods may be requested only from a stopped, cancelled or failed one, and for a failed one only when the goods are back at the shop or handled. */
+/**
+ * A new delivery for the same goods may be requested only from a stopped, cancelled or failed one. A failed one, and one cancelled AFTER pickup (its goods
+ * incident is open), need the goods back at the shop or handled first.
+ */
 export function mayRecall(state: DeliveryState, incidentOpen: boolean): boolean {
-  if (state === 'search_stopped' || state === 'cancelled_by_merchant') {
+  if (state === 'search_stopped') {
     return true;
   }
-  return state === 'failed' && !incidentOpen;
+  return (state === 'failed' || state === 'cancelled_by_merchant') && !incidentOpen;
 }
 
 /** What a Shipper may see of the drop-off BEFORE accepting: the coarse area, never the first (street) line. Null when there is nothing coarse to show. */

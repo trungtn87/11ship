@@ -37,6 +37,13 @@ export class DeliveryShopController {
     return { data: outcome.payload };
   }
 
+  /** The three bands of the fee table, so the shop can choose one for an address without a map point. */
+  @Get('delivery-fee-bands')
+  async feeBands(@Req() request: AuthenticatedRequest, @Query() query: unknown) {
+    rejectBodyAndQuery(request, query);
+    return { data: await this.shop.feeBands(this.#principal(request)) };
+  }
+
   @Get('deliveries/:delivery_id')
   async read(@Param('delivery_id') id: string, @Req() request: AuthenticatedRequest, @Query() query: unknown) {
     rejectBodyAndQuery(request, query);

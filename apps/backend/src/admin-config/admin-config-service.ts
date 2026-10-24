@@ -7,6 +7,7 @@ import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { SEARCH_MINUTES } from '../delivery/delivery-constants';
 import { LOCATION_LIVE_SECONDS, LOCATION_MAX_ACCURACY_M, LOCATION_STALE_SECONDS } from '../delivery/delivery-constants';
 import { CommissionPolicyRepository } from '../wallet/commission-policy-repository';
+import { FEE_ANSWER_MINUTES_KEY, OrderParametersRepository } from '../shipping-policy/fee-answer-parameter';
 import { ShipperWalletParametersRepository } from '../driver/shipper-wallet-parameters';
 import { JsonObject } from '../idempotency/idempotency-executor';
 import { NotificationRepository } from '../notifications/notification-repository';
@@ -47,6 +48,7 @@ export class AdminConfigService {
     private readonly commissionPolicy: CommissionPolicyRepository,
     private readonly eligibility: EligibilityParametersRepository,
     private readonly fees: ShippingFeePolicyRepository,
+    private readonly orderParameters: OrderParametersRepository,
     private readonly notifications: NotificationRepository,
     private readonly history: AdminConfigRepository,
     @Inject(APP_CONFIG) private readonly appConfig: AppConfig,
@@ -63,6 +65,7 @@ export class AdminConfigService {
       const walletRows = await this.wallet.readAll(context);
       const eligibility = await this.eligibility.read(context);
       const fee = await this.fees.active(context);
+      const orderRows = await this.orderParameters.readAll(context);
       const commission = await this.commissionPolicy.current(context);
       const notification = await this.notifications.readConfig(context);
       const maxMs = (values: ReadonlyArray<number | null>): number | null => values.reduce<number | null>((best, value) => (value === null ? best : best === null || value > best ? value : best), null);
@@ -123,6 +126,23 @@ export class AdminConfigService {
             { key: 'search_window_minutes', label: 'Thời gian tìm shipper', value: SEARCH_MINUTES, unit: 'phút' },
           ],
           { kind: 'ELIGIBILITY', system_only: true, path: '/v1/admin/shipping-eligibility-policy', note: 'Bảng giá mới không đổi phí đã chốt của các delivery cũ (bảng giá có trang riêng).' },
+        ),
+        group(
+          'orders',
+          'Đơn hàng',
+          'M07',
+          orderRows.reduce((sum, row) => sum + row.version, 0),
+          maxMs(orderRows.map((row) => row.updatedAtMs)),
+          orderRows.map((row) => ({ key: row.key, label: row.key === FEE_ANSWER_MINUTES_KEY ? 'Thời gian trả lời đề xuất phí' : row.key, value: row.value, unit: 'phút' })),
+          [
+            { key: 'search_window_minutes', label: 'Thời gian tìm shipper (thời gian trả lời không bao giờ vượt quá mốc này)', value: SEARCH_MINUTES, unit: 'phút' },
+          ],
+          {
+            kind: 'ORDER',
+            system_only: true,
+            path: '/v1/admin/system-settings/order-parameters',
+            note: 'Mức mới chỉ áp dụng cho đề xuất phí tạo sau khi lưu; đề xuất đang chờ giữ hạn đã ghi nhận. Hết hạn thì bỏ đề xuất, giữ mức phí trước đó và tiếp tục tìm shipper.',
+          },
         ),
         group(
           'notifications',

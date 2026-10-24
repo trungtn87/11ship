@@ -153,6 +153,8 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | order_events | SELECT, INSERT (M10: the append-only history of an Order) |
 | order_timeout_policy | SELECT, UPDATE (M10/M07: current versioned stage policy) |
 | order_timeout_policy_changes | SELECT, INSERT (append-only policy history) |
+| order_parameters | SELECT, UPDATE (M07: fee-answer time configured by SYSTEM) |
+| order_parameter_changes | SELECT, INSERT (append-only parameter history) |
 | cancellation_transitions | SELECT, INSERT (append-only cancellation before/after facts) |
 | shipper_latest_locations | SELECT, INSERT, UPDATE (M14/M07: the one latest position of each Shipper, replaced in place; no trail) |
 | notification_push_tokens | SELECT, INSERT, UPDATE (M08: the push token of one session; ended (never deleted) when the session ends or the token is replaced) |

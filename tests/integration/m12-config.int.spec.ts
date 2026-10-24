@@ -31,6 +31,11 @@ describe('M12-D — central configuration', () => {
       await admin.pool.query(`DELETE FROM app.system_settings`); // an absent row means the default
       await admin.pool.query(`DELETE FROM app.shipper_wallet_parameter_changes`);
       await admin.pool.query(`UPDATE app.shipper_wallet_parameters SET updated_by = NULL`);
+      // The change log of the order parameters is append-only: lifted for this cleanup only, then the default (5 minutes, version 1) is back for the next suite.
+      await admin.pool.query(`ALTER TABLE app.order_parameter_changes DISABLE TRIGGER USER`);
+      await admin.pool.query(`DELETE FROM app.order_parameter_changes`);
+      await admin.pool.query(`ALTER TABLE app.order_parameter_changes ENABLE TRIGGER USER`);
+      await admin.pool.query(`UPDATE app.order_parameters SET int_value = 5, version = 1, updated_by = NULL`);
     } finally {
       await admin.close();
     }
@@ -41,12 +46,12 @@ describe('M12-D — central configuration', () => {
   const valueOf = (group: Json, key: string): number | boolean => (group.values as Json[]).find((v) => v.key === key)?.value;
   const history = async (group: string): Promise<Json[]> => ((adminData(await getAs(admin, systemLoginOf(system), `/config/history?group=${group}&limit=100`)) as Json).items as Json[]).filter((i) => i.metadata && Date.parse(i.at) >= startedAt);
 
-  it('every administrator reads the six groups from the owners; fixed rules are listed apart and have no edit; only SYSTEM is marked editable', async () => {
+  it('every administrator reads the seven groups from the owners; fixed rules are listed apart and have no edit; only SYSTEM is marked editable', async () => {
     const asAdmin = await groups(viewer.login);
     const asSystem = await groups();
     expect(asAdmin.editable).toBe(false);
     expect(asSystem.editable).toBe(true);
-    expect((asSystem.groups as Json[]).map((g) => g.key)).toEqual(['security', 'shipper_wallet', 'delivery_policy', 'notifications', 'map_gps', 'storage_backup']);
+    expect((asSystem.groups as Json[]).map((g) => g.key)).toEqual(['security', 'shipper_wallet', 'delivery_policy', 'orders', 'notifications', 'map_gps', 'storage_backup']);
     const security = await groupOf('security');
     expect(security.values.map((v: Json) => v.key)).toEqual(['otp_registration_enabled', 'otp_password_reset_enabled']);
     expect(security.fixed_rules.map((r: Json) => [r.key, r.value])).toEqual([['otp_resend_seconds', 60], ['otp_max_attempts', 3]]); // the values the auth module RUNS with (default 3 by Owner decision); the page never invents them
@@ -116,5 +121,44 @@ describe('M12-D — central configuration', () => {
     const now = await groupOf('shipper_wallet');
     expect((await postAs(admin, systemLoginOf(system), '/system-settings/shipper-wallet', { expected_version: now.version, topup_min_vnd: topup, withdraw_min_vnd: withdraw, reason: 'Hoàn nguyên' })).status).toBe(200);
     expect((await groupOf('shipper_wallet')).version).toBeGreaterThan(now.version);
+  });
+
+  it('"Thời gian trả lời đề xuất phí" (Đơn hàng): default 5 minutes, only SYSTEM changes it (API too), only a positive whole number of minutes, audited with its reason, a stale screen is refused', async () => {
+    const before = await groupOf('orders');
+    expect(before).toMatchObject({ title: 'Đơn hàng', owner: 'M07', edit: { kind: 'ORDER', system_only: true, path: '/v1/admin/system-settings/order-parameters' } });
+    expect(before.values).toEqual([{ key: 'fee_answer_minutes', label: 'Thời gian trả lời đề xuất phí', value: 5, unit: 'phút' }]);
+    expect(before.fixed_rules.map((r: Json) => [r.key, r.value])).toEqual([['search_window_minutes', 30]]);
+    const change = { expected_version: before.version, fee_answer_minutes: 8, reason: 'Khách trả lời chậm vào giờ cao điểm' };
+    // An ADMIN (even with every other right) reads but never writes, and the refused write changed nothing.
+    expect(code(await getAs(admin, viewer.login, '/system-settings/order-parameters')).status).toBe(200);
+    expect(code(await postAs(admin, viewer.login, '/system-settings/order-parameters', change))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
+    expect(valueOf(await groupOf('orders'), 'fee_answer_minutes')).toBe(5);
+    expect(code(await getAs(admin, undefined, '/system-settings/order-parameters')).status).toBe(401);
+    // Zero, negative, decimal, text, above the range, a missing or an extra field: refused, nothing stored.
+    for (const bad of [0, -3, 2.5, '8', null, 1441]) {
+      expect(code(await postAs(admin, systemLoginOf(system), '/system-settings/order-parameters', { ...change, fee_answer_minutes: bad })).code).toBe('ADMIN_INPUT_INVALID');
+    }
+    expect(code(await postAs(admin, systemLoginOf(system), '/system-settings/order-parameters', { expected_version: before.version, reason: 'x' })).code).toBe('ADMIN_INPUT_INVALID');
+    expect(code(await postAs(admin, systemLoginOf(system), '/system-settings/order-parameters', { ...change, other: 1 })).code).toBe('ADMIN_INPUT_INVALID');
+    expect(valueOf(await groupOf('orders'), 'fee_answer_minutes')).toBe(5);
+    // SYSTEM changes it; a retry with the same key is answered, not applied twice.
+    const key = randomUUID();
+    expect((await postAs(admin, systemLoginOf(system), '/system-settings/order-parameters', change, key)).status).toBe(200);
+    expect((await postAs(admin, systemLoginOf(system), '/system-settings/order-parameters', change, key)).status).toBe(200);
+    const after = await groupOf('orders');
+    expect(valueOf(after, 'fee_answer_minutes')).toBe(8);
+    expect(after.version).toBe(before.version + 1);
+    expect(await countRows(admin.pool, `SELECT 1 FROM app.order_parameter_changes WHERE param_key = 'fee_answer_minutes' AND old_value = 5 AND new_value = 8`)).toBe(1);
+    // Audit and history: who, before / after and the reason.
+    expect(await countRows(admin.pool, `SELECT 1 FROM app.audit_logs WHERE action = 'admin.order_parameters.update.v1' AND metadata->>'reason' = $1`, [change.reason])).toBe(1);
+    const entry = (await history('orders')).find((e) => e.metadata.reason === change.reason);
+    expect(entry).toMatchObject({ group: 'orders', actor_name: 'SYSTEM', metadata: { param_key: 'fee_answer_minutes', old_value: 5, new_value: 8 } });
+    // The same value again is no change at all (no new version, no new log row); a stale screen is refused.
+    expect((await postAs(admin, systemLoginOf(system), '/system-settings/order-parameters', { ...change, expected_version: after.version })).status).toBe(200);
+    expect((await groupOf('orders')).version).toBe(after.version);
+    expect(code(await postAs(admin, systemLoginOf(system), '/system-settings/order-parameters', change)).code).toBe('ORDER_PARAMETER_VERSION_CONFLICT');
+    // Back to the default as an ordinary new change.
+    expect((await postAs(admin, systemLoginOf(system), '/system-settings/order-parameters', { expected_version: after.version, fee_answer_minutes: 5, reason: 'Hoàn nguyên' })).status).toBe(200);
+    expect(valueOf(await groupOf('orders'), 'fee_answer_minutes')).toBe(5);
   });
 });

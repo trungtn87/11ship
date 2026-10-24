@@ -169,6 +169,9 @@ GRANT SELECT, INSERT ON app.wallet_adjustments TO ship11_app;
 -- #153: stage policy and append-only cancellation facts.
 GRANT SELECT, UPDATE ON app.order_timeout_policy TO ship11_app;
 GRANT SELECT, INSERT ON app.order_timeout_policy_changes TO ship11_app;
+-- M07: SYSTEM-configured fee-answer time and its append-only change history.
+GRANT SELECT, UPDATE ON app.order_parameters TO ship11_app;
+GRANT SELECT, INSERT ON app.order_parameter_changes TO ship11_app;
 GRANT SELECT, INSERT ON app.cancellation_transitions TO ship11_app;
 
 -- M12-E: report export jobs. A job row is updated by the runner (QUEUED -> RUNNING -> DONE/FAILED/EXPIRED) and never deleted (trigger); the file bytes live in their own table

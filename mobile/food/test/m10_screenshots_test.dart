@@ -61,7 +61,7 @@ void main() {
     await screen(CheckoutScreen(runtime: runtime), 'k02-checkout');
 
     final String pending = store.seed();
-    final String preparing = store.seed(status: 'PREPARING', ready: true);
+    final String preparing = store.seed(status: 'PREPARING');
     final String shipping = store.seed(status: 'PREPARING', deliveryState: 'accepted');
     final String scheduled = store.seed(scheduledFor: DateTime.now().add(const Duration(days: 1, hours: 2)));
     final String done = store.seed(status: 'COMPLETED');
@@ -74,7 +74,7 @@ void main() {
 
     await screen(Scaffold(appBar: AppBar(title: const Text('Đơn hàng')), body: SingleChildScrollView(child: ShopOrderList(runtime: runtime))), 'q10-shop-orders');
     await screen(ShopOrderDetailScreen(runtime: runtime, orderId: pending), 'q11-shop-pending');
-    await screen(ShopOrderDetailScreen(runtime: runtime, orderId: preparing), 'q12-shop-preparing-ready');
+    await screen(ShopOrderDetailScreen(runtime: runtime, orderId: preparing), 'q12-shop-preparing');
     await screen(ShopOrderDetailScreen(runtime: runtime, orderId: failed), 'q13-shop-delivery-failed');
   });
 }

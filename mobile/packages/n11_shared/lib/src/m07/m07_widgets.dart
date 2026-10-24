@@ -600,7 +600,8 @@ class LocationCard extends StatelessWidget {
   }
 }
 
-/// The money of a delivery in one place. No COD / ship fee goes through the wallet: the parties settle it directly.
+/// The money of a delivery in one place: the value of the goods, the delivery fee and who pays it. The app does not manage payment of the dishes, so
+/// it shows no "paid" / "still to collect" lines (Owner decision 2026-10-23).
 class MoneySummary extends StatelessWidget {
   const MoneySummary({super.key, required this.goods, required this.fee});
 
@@ -617,13 +618,10 @@ class MoneySummary extends StatelessWidget {
           const Text('Tiền hàng và phí giao', style: N11Text.label),
           KeyValueRows(<(String, String)>[
             ('Giá trị hàng', m07Vnd(goods.valueVnd)),
-            ('Đã thanh toán', m07Vnd(goods.paidVnd)),
-            ('Còn phải thu', m07Vnd(goods.unpaidVnd)),
             ('Phí giao', fee.amountVnd == null ? kFeeUnknown : m07Vnd(fee.amountVnd)),
+            if (fee.estimated) ('Cách tính phí', 'Ước tính theo mốc, không phải quãng đường đo trên bản đồ'),
             ('Người trả phí', fee.payerText),
           ]),
-          const SizedBox(height: N11Space.gap2),
-          const ReasonNote('Tiền hàng và phí giao do các bên giao nhận trực tiếp, không đi qua ví 11Ship.'),
         ],
       ),
     );

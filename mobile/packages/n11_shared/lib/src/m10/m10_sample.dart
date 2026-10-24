@@ -49,7 +49,6 @@ class _Order {
   final DateTime createdAt;
   String status = 'PENDING_CONFIRMATION';
   int version = 1;
-  bool ready = false;
   bool edited = false;
   String? changeReason;
   int paid = 0;
@@ -61,6 +60,9 @@ class _Order {
   String? endReason;
   String? endActor;
   String? deliveryState;
+
+  /// A Shipper's other fee waiting for the customer's answer (the customer pays), or null.
+  int? feeCounter;
   int deliveries = 0;
   String recipientName = 'Người nhận';
   String recipientPhone = '+84912345678';
@@ -87,6 +89,12 @@ class SampleOrderStore {
 
   /// A test can make the NEXT `place` lose its answer after the server stored the Order.
   bool dropNextPlaceAnswer = false;
+
+  /// A test can make the fee table unable to price the next call (the server answers FEE_REQUIRED until the shop proposes a fee).
+  bool feeNeedsProposal = false;
+
+  /// The fee the shop proposed in its last call, for assertions in tests.
+  AgreedFeeProposal? lastProposal;
 
   /// The shop changes a price after the customer saw it (for the "price changed" case).
   void changePrice(String dishId, int priceVnd) {
@@ -130,11 +138,11 @@ class SampleOrderStore {
     }
     return switch (o.deliveryState) {
       'waiting_driver' => 'SEARCHING_SHIPPER',
-      'accepted' => o.ready ? 'READY' : 'SHIPPER_COMING',
+      'accepted' => 'SHIPPER_COMING',
       'delivering' => 'DELIVERING',
       'search_stopped' => 'SEARCH_STOPPED',
       'failed' => 'DELIVERY_FAILED',
-      _ => o.ready ? 'READY' : 'PREPARING',
+      _ => 'PREPARING',
     };
   }
 
@@ -150,7 +158,6 @@ class SampleOrderStore {
   Map<String, Object?> _viewJson(_Order o, {required bool shop}) {
     final DateTime now = DateTime.now().toUtc();
     final bool running = o.status == 'PREPARING';
-    final bool active = o.deliveryState == 'waiting_driver' || o.deliveryState == 'accepted' || o.deliveryState == 'delivering';
     return <String, Object?>{
       'order_id': o.id,
       'code': o.code,
@@ -166,7 +173,6 @@ class SampleOrderStore {
       'edited': o.edited,
       'change_reason': o.changeReason,
       'confirmed_at': o.status == 'PENDING_CONFIRMATION' ? null : now.toIso8601String(),
-      'ready_at': o.ready ? now.toIso8601String() : null,
       'ended_at': o.status == 'PENDING_CONFIRMATION' || o.status == 'PREPARING' ? null : now.toIso8601String(),
       'end_actor': o.endActor,
       'end_reason': o.endReason,
@@ -181,6 +187,7 @@ class SampleOrderStore {
               'state': o.deliveryState,
               'version': 1,
               'fee': <String, Object?>{'payer': o.feePayer, 'amount_vnd': o.feeFixed, 'status': o.feeFixed == null ? 'UNKNOWN' : 'FINAL', 'distance_m': 2500},
+              'fee_decision': o.feeCounter == null ? null : <String, Object?>{'state': 'COUNTERED', 'current_vnd': o.feeFixed, 'offered_vnd': o.feeCounter, 'expires_at': now.add(const Duration(minutes: 20)).toIso8601String(), 'can_decline': true},
               'search': <String, Object?>{'started_at': now.toIso8601String(), 'expires_at': now.add(const Duration(minutes: 30)).toIso8601String(), 'server_now': now.toIso8601String(), 'stopped_at': null},
               'shipper': o.deliveryState == 'accepted' || o.deliveryState == 'delivering' ? <String, Object?>{'name': 'Shipper Minh Họa', 'phone': '+84911111111', 'plate_number': '59X1-123.45', 'accepted_at': now.toIso8601String(), 'picked_up_at': null} : null,
               'location': o.deliveryState == 'accepted' || o.deliveryState == 'delivering' ? <String, Object?>{'lat': 21.001, 'lng': 105.801, 'recorded_at': now.toIso8601String(), 'age_seconds': 20, 'freshness': 'LIVE'} : null,
@@ -200,24 +207,22 @@ class SampleOrderStore {
           'edit': o.status == 'PENDING_CONFIRMATION',
           'confirm': o.status == 'PENDING_CONFIRMATION' && _items(o) > 0,
           'reject': o.status == 'PENDING_CONFIRMATION',
-          'ready': running && !o.ready,
-          'record_payment': running && !active,
           'call_shipper': running && (o.deliveryState == null || o.deliveryState == 'search_stopped'),
           'cancel': running && o.deliveryState != 'delivering',
           'close_not_completed': false,
         }
       else
-        'can': <String, Object?>{'cancel': o.status == 'PENDING_CONFIRMATION', 'reorder': true},
+        'can': <String, Object?>{'cancel': o.status == 'PENDING_CONFIRMATION', 'cancel_after_pickup': running && o.deliveryState == 'delivering', 'reorder': true},
       'timeline': <Object?>[for (final (String, String, String?) e in o.events) <String, Object?>{'at': now.toIso8601String(), 'type': e.$1, 'actor': e.$2, 'note': e.$3}],
     };
   }
 
   /// Seeds one Order in a given state (for the screenshots and the list tests).
-  String seed({String status = 'PENDING_CONFIRMATION', String? deliveryState, bool ready = false, DateTime? scheduledFor, String name = 'Nguyễn Văn An', bool pin = true}) {
+  String seed({String status = 'PENDING_CONFIRMATION', String? deliveryState, int? feeCounter, DateTime? scheduledFor, String name = 'Nguyễn Văn An', bool pin = true}) {
     final _Order o = _create(<DraftLine>[DraftLine(itemId: kSampleDishes[0].id, name: kSampleDishes[0].name, quantity: 2, priceVnd: 45000), DraftLine(itemId: kSampleDishes[2].id, name: kSampleDishes[2].name, quantity: 1, priceVnd: 5000, note: 'Ít đá')], 'seed-$_next');
     o.status = status;
     o.deliveryState = deliveryState;
-    o.ready = ready;
+    o.feeCounter = feeCounter;
     o.scheduledFor = scheduledFor;
     o.recipientName = name;
     o.lat = pin ? 21.0 : null;
@@ -383,6 +388,39 @@ class SampleCustomerOrders extends CustomerOrderSource {
   }
 
   @override
+  Future<OrderView> cancelAfterPickup(String id, {required String reason, required int expectedVersion, required String key}) async {
+    final _Order o = store._find(id);
+    _version(o, expectedVersion);
+    if (o.status != 'PREPARING' || o.deliveryState != 'delivering') {
+      throw const M07Failure(M07FailureKind.conflict, code: 'ORDER_STATE_CONFLICT');
+    }
+    o
+      ..status = 'CANCELLED_BY_CUSTOMER'
+      ..endActor = 'CUSTOMER'
+      ..endReason = reason
+      ..deliveryState = 'cancelled_by_merchant'
+      ..version += 1;
+    o.events.add(('order.cancelled_by_customer_after_pickup', 'CUSTOMER', reason));
+    return OrderView.fromJson(store._viewJson(o, shop: false));
+  }
+
+  @override
+  Future<OrderView> decideFee(String id, {required bool accept, required int deliveryVersion, required String key}) async {
+    final _Order o = store._find(id);
+    if (o.feeCounter == null) {
+      throw const M07Failure(M07FailureKind.conflict, code: 'DELIVERY_STATE_CONFLICT');
+    }
+    if (accept) {
+      o.feeFixed = o.feeCounter;
+    }
+    o
+      ..feeCounter = null
+      ..version += 1;
+    o.events.add((accept ? 'order.fee_accepted' : 'order.fee_rejected', 'CUSTOMER', null));
+    return OrderView.fromJson(store._viewJson(o, shop: false));
+  }
+
+  @override
   Future<ReorderResult> reorder(String id, {required bool replaceCart, required String key}) async {
     final _Order o = store._find(id);
     final List<DraftLine> lines = <DraftLine>[];
@@ -414,7 +452,6 @@ OrderSummary _summary(SampleOrderStore store, _Order o, {required bool shop}) =>
       'line_count': o.lines.where((_Line l) => !l.removed).length,
       'items_total_vnd': store._items(o),
       'scheduled_for': o.scheduledFor?.toUtc().toIso8601String(),
-      'ready': o.ready,
       'edited': o.edited,
       'needs_attention': shop && o.status == 'PREPARING' && (o.deliveryState == 'search_stopped' || o.deliveryState == 'failed'),
       'created_at': o.createdAt.toUtc().toIso8601String(),
@@ -525,35 +562,18 @@ class SampleShopOrders extends ShopOrderSource {
   }
 
   @override
-  Future<OrderView> ready(String id, {required int expectedVersion, required String key}) async {
+  Future<OrderView> callShipper(String id, {required String feePayer, AgreedFeeProposal? agreedFee, required int expectedVersion, required String key}) async {
     final _Order o = store._find(id);
     _version(o, expectedVersion);
-    o
-      ..ready = true
-      ..version += 1;
-    o.events.add(('order.ready', 'SHOP', null));
-    return _v(o);
-  }
-
-  @override
-  Future<OrderView> recordPayment(String id, {required int paidVnd, required int expectedVersion, required String key}) async {
-    final _Order o = store._find(id);
-    _version(o, expectedVersion);
-    o
-      ..paid = paidVnd
-      ..version += 1;
-    return _v(o);
-  }
-
-  @override
-  Future<OrderView> callShipper(String id, {required String feePayer, required int expectedVersion, required String key}) async {
-    final _Order o = store._find(id);
-    _version(o, expectedVersion);
+    if (store.feeNeedsProposal && agreedFee == null) {
+      throw const M07Failure(M07FailureKind.refused, code: 'FEE_REQUIRED');
+    }
+    store.lastProposal = agreedFee;
     o
       ..deliveryState = 'waiting_driver'
       ..deliveries += 1
       ..feePayer = feePayer
-      ..feeFixed = o.feeEstimate ?? 10000
+      ..feeFixed = agreedFee?.amountVnd ?? o.feeEstimate ?? 10000
       ..version += 1;
     o.events.add((o.deliveries > 1 ? 'order.shipper_called_again' : 'order.shipper_called', 'SHOP', null));
     return _v(o);

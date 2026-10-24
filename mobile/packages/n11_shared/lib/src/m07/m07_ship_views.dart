@@ -11,15 +11,16 @@ import 'm07_models.dart';
 import 'm07_source.dart';
 import 'm07_widgets.dart';
 
-// 11Ship, the Shipper's side of M07 (screens S01-S08 of docs/current/M07-implementation-20261018.md):
+// 11Ship, the Shipper's side of M07 (Owner decision 2026-10-23: docs/current/M07-owner-delivery-flow-20261023.md):
 //   S01 offers            what a Shipper may see BEFORE accepting (no customer phone, no detailed address, no drop-off map)
 //   S02 my deliveries     in the order they were accepted; the Shipper chooses the delivery order
-//   S03 / S06 detail      before pickup: contacts, map, "Hủy nhận đơn" / "Đã nhận hàng"; after pickup: "Giao thành công" / "Giao thất bại", no cancel
-//   S04 confirm drop-off  pin and fee agreed with the customer, when the drop-off position or the fee is missing
+//   S03 / S06 detail      before pickup: contacts, "Hủy nhận đơn" / "Đã nhận hàng" (ONE step when the fee is settled);
+//                         after pickup: "Giao thành công" and calling the shop. No cancel, no "Giao thất bại": if the goods cannot be delivered the
+//                         Shipper calls the shop and the creator of the request decides.
+//   S04 confirm fee       only for a call whose fee was never settled (`can.confirm_fee`): the amount agreed with the payer. No map point is needed.
 //   S05 pickup pop-up     "Quay lại" / "Xác nhận đã nhận hàng"
-//   S07 failed            reason, note and where the goods are
 //   S08 result / history  limited projection once the delivery ended
-// After pickup there is no ordinary cancel: the button is not drawn and the server refuses it.
+// The screens follow what the server ALLOWS (`can`), never a null amount or a missing map point.
 
 const String kReleaseExplain = 'Bạn sẽ không còn giữ đơn này. Hệ thống tìm shipper khác theo thời hạn còn lại.';
 
@@ -35,6 +36,7 @@ class ShipperDeliveryHub extends StatefulWidget {
 
   final ShipperDeliverySource source;
   final M07MapBuilder? mapBuilder;
+  /// Kept so callers need not change: the Shipper no longer pins a drop-off point (a delivery is made to the described address).
   final M07PinPickerBuilder? pinPicker;
   final M07LocationSlot? locationSlot;
   final M07FeedbackSlot? feedbackSlot;
@@ -203,13 +205,12 @@ class OfferCard extends StatelessWidget {
             ('Quán', offer.shopName),
             if (offer.shopAreaText != null) ('Khu vực lấy hàng', offer.shopAreaText!),
             ('Cách quán', m07Km(offer.distanceToShopM)),
-            ('Khu vực giao', offer.dropoffAreaText ?? (offer.destinationKnown ? '—' : 'Chưa có điểm giao')),
+            ('Khu vực giao', offer.dropoffAreaText ?? '—'),
             ('Tiền hàng', m07Vnd(offer.goodsValueVnd)),
-            ('Còn phải thu', m07Vnd(offer.unpaidVnd)),
             ('Phí giao', offer.feeVnd == null ? kFeeUnknown : m07Vnd(offer.feeVnd)),
             ('Người trả phí', offer.feePayer == 'CUSTOMER' ? 'Khách trả ship' : 'Quán trả ship'),
           ]),
-          if (!offer.destinationKnown) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: ReasonNote('Chưa có điểm giao. Bạn sẽ ghim điểm giao và xác nhận phí trước khi lấy hàng. Chỉ shipper chưa có đơn khác nhận được.')),
+          if (!offer.destinationKnown) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: ReasonNote('Giao theo địa chỉ mô tả, không cần ghim điểm giao. Đơn này chỉ shipper chưa có đơn khác nhận được.')),
           if (a != null) ...<Widget>[
             const SizedBox(height: N11Space.gap2),
             Container(
@@ -219,9 +220,9 @@ class OfferCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text('Quán đề xuất phí ${m07Vnd(a.proposedVnd)}', style: N11Text.bodyStrong),
+                  Text('Phí đề xuất ${m07Vnd(a.proposedVnd)}', style: N11Text.bodyStrong),
                   Text(a.reasonNote == null || a.reasonNote!.isEmpty ? 'Lý do: ${feeReasonLabel(a.reasonCode)}' : 'Lý do: ${feeReasonLabel(a.reasonCode)} · ${a.reasonNote}', style: N11Text.caption),
-                  if (a.state == 'COUNTERED') Text('Bạn đã đề xuất ${m07Vnd(a.counterVnd)}, đang chờ quán trả lời.', style: N11Text.caption),
+                  if (a.state == 'COUNTERED') Text('Bạn đã đề xuất ${m07Vnd(a.counterVnd)}, đang chờ ${offer.deciderText} (người trả phí) trả lời.', key: const Key('m07-offer-waiting'), style: N11Text.caption),
                 ],
               ),
             ),
@@ -241,7 +242,7 @@ class OfferCard extends StatelessWidget {
           ],
           if (!offer.eligible && offer.reasons.isNotEmpty)
             Padding(padding: const EdgeInsets.only(top: N11Space.gap2), child: ReasonNote(m06ReasonText(offer.reasons.first))),
-          if (pendingFee) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: ReasonNote('Phí chưa chốt nên chưa nhận đơn được.')),
+          if (pendingFee) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: ReasonNote('Phí chưa chốt nên chưa nhận đơn được. Hãy đồng ý mức phí hoặc đề xuất mức khác.')),
           const SizedBox(height: N11Space.gap3),
           N11Button(key: Key('m07-accept-${offer.deliveryId}'), label: 'Nhận đơn', onPressed: busy || !canAccept ? null : onAccept),
         ],
@@ -267,7 +268,7 @@ class _MineCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ({String label, ChipKind kind}) chip = _ownChip(delivery) ?? m07StateChip(delivery.state);
-    final bool missing = delivery.state.isActive && (delivery.needsDestination || delivery.fee.amountVnd == null) && delivery.state != DeliveryState.delivering;
+    final bool missing = delivery.state.isActive && delivery.needsFee;
     return InkWell(
       key: Key('m07-mine-${delivery.deliveryId}'),
       borderRadius: BorderRadius.circular(kRadiusCard),
@@ -279,8 +280,8 @@ class _MineCard extends StatelessWidget {
             Row(children: <Widget>[Expanded(child: Text(delivery.code, style: N11Text.bodyStrong)), N11Chip(chip.label, kind: chip.kind)]),
             const SizedBox(height: N11Space.gap2),
             Text('${delivery.pickup.shopName} → ${delivery.recipient.name}', style: N11Text.body),
-            Text('Phí giao: ${m07Vnd(delivery.fee.amountVnd)} · Còn thu ${m07Vnd(delivery.goods.unpaidVnd)}', style: N11Text.caption),
-            if (missing) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: N11Chip('Thiếu điểm giao/phí', kind: ChipKind.warn)),
+            Text('Phí giao: ${m07Vnd(delivery.fee.amountVnd)}', style: N11Text.caption),
+            if (missing) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: N11Chip('Cần nhập phí đã thỏa thuận', kind: ChipKind.warn)),
           ],
         ),
       ),
@@ -345,11 +346,10 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
           KeyValueRows(<(String, String)>[
             ('Người nhận', d.recipient.name),
             ('Địa chỉ', d.recipient.addressText ?? '—'),
-            ('Còn phải thu', m07Vnd(d.goods.unpaidVnd)),
             ('Phí giao', m07Vnd(d.fee.amountVnd)),
           ]),
           const SizedBox(height: N11Space.gap2),
-          const Text('Sau khi xác nhận, đơn chuyển sang "Đang giao". Thông tin và phí bị khóa, không hủy nhận được nữa.', style: N11Text.caption),
+          const Text('Sau khi xác nhận, đơn chuyển sang "Đang giao". Phí bị khóa, bạn không hủy nhận được nữa. Nếu không giao được, hãy gọi quán để thống nhất.', style: N11Text.caption),
         ],
       ),
     );
@@ -372,16 +372,9 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
     }
   }
 
-  Future<void> _destination(DeliveryView d) async {
-    final bool? changed = await Navigator.of(context).push<bool>(MaterialPageRoute<bool>(builder: (BuildContext context) => ConfirmDestinationScreen(source: widget.source, delivery: d, pinPicker: widget.pinPicker)));
+  Future<void> _fee(DeliveryView d) async {
+    final bool? changed = await Navigator.of(context).push<bool>(MaterialPageRoute<bool>(builder: (BuildContext context) => ConfirmFeeScreen(source: widget.source, delivery: d)));
     if (changed == true) {
-      await _reload();
-    }
-  }
-
-  Future<void> _fail(DeliveryView d) async {
-    final bool? failed = await Navigator.of(context).push<bool>(MaterialPageRoute<bool>(builder: (BuildContext context) => FailDeliveryScreen(source: widget.source, delivery: d)));
-    if (failed == true) {
       await _reload();
     }
   }
@@ -412,18 +405,26 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
       if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed)) widget.feedbackSlot!(context, d),
       if (active && widget.mapBuilder != null && pins.isNotEmpty)
         SizedBox(key: const Key('m07-ship-map'), height: 220, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusCard), child: widget.mapBuilder!(context, pins))),
-      if (active && d.state != DeliveryState.delivering && (d.needsDestination || d.fee.amountVnd == null))
+      if (active && d.needsFee)
         N11Banner(
           key: const Key('m07-missing-banner'),
           kind: BannerKind.warn,
-          title: 'Thiếu điểm giao hoặc phí',
-          text: 'Ghim điểm giao và xác nhận phí thỏa thuận trước khi nhận hàng. Việc này không ghi vào sổ địa chỉ của khách.',
-          icon: Icons.pin_drop_outlined,
+          title: 'Phí giao chưa được chốt',
+          text: 'Hãy nhập mức phí bạn đã thống nhất với bên trả phí, rồi nhận hàng. Sau khi nhận hàng phí bị khóa.',
+          icon: Icons.payments_outlined,
+        ),
+      if (d.state == DeliveryState.delivering || d.state == DeliveryState.pickedUp)
+        const N11Banner(
+          key: Key('m07-after-pickup-note'),
+          kind: BannerKind.info,
+          title: 'Đã lấy hàng',
+          text: 'Chỉ cần bấm "Giao thành công" khi đã giao xong. Nếu không giao được, hãy gọi quán để thống nhất; chỉ người tạo đơn mới hủy được.',
+          icon: Icons.phone_in_talk_outlined,
         ),
       _contactCard('Quán lấy hàng', <(String, String)>[('Quán', d.pickup.shopName), if (d.pickup.phone != null) ('Điện thoại', d.pickup.phone!), if (d.pickup.addressText != null) ('Địa chỉ', d.pickup.addressText!)], key: 'm07-pickup-card', show: active),
       _contactCard(
         'Người nhận',
-        <(String, String)>[('Tên', d.recipient.name), if (d.recipient.phone != null) ('Điện thoại', d.recipient.phone!), ('Địa chỉ', d.recipient.addressText ?? '—'), ('Điểm giao', d.recipient.hasPoint ? 'Đã ghim' : 'Chưa ghim')],
+        <(String, String)>[('Tên', d.recipient.name), if (d.recipient.phone != null) ('Điện thoại', d.recipient.phone!), ('Địa chỉ', d.recipient.addressText ?? '—')],
         key: 'm07-recipient-card',
         show: active,
       ),
@@ -470,12 +471,9 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
       if (d.allows('complete')) {
         actions.add(N11Button(key: const Key('m07-complete'), label: 'Giao thành công', icon: Icons.check_circle_outline, loading: busy, onPressed: busy ? null : () => _complete(d)));
       }
-      if (d.allows('fail')) {
-        actions.add(N11Button(key: const Key('m07-fail'), label: 'Giao thất bại', kind: ButtonKind.secondary, onPressed: busy ? null : () => _fail(d)));
-      }
     } else {
-      if (d.allows('confirm_destination') && (d.needsDestination || d.fee.amountVnd == null)) {
-        actions.add(N11Button(key: const Key('m07-confirm-destination'), label: 'Xác nhận điểm giao và phí', icon: Icons.pin_drop_outlined, onPressed: busy ? null : () => _destination(d)));
+      if (d.needsFee) {
+        actions.add(N11Button(key: const Key('m07-confirm-fee'), label: 'Nhập phí đã thỏa thuận', icon: Icons.payments_outlined, onPressed: busy ? null : () => _fee(d)));
       }
       if (d.allows('pickup')) {
         actions.add(N11Button(key: const Key('m07-pickup'), label: 'Đã nhận hàng', icon: Icons.inventory_2_outlined, loading: busy, onPressed: busy ? null : () => _pickup(d)));
@@ -500,31 +498,23 @@ String _goodsText(String code) {
   return code;
 }
 
-// ---- S04: confirm the drop-off ---------------------------------------------------------------------------------------
+// ---- S04: confirm the fee --------------------------------------------------------------------------------------------
 
-class ConfirmDestinationScreen extends StatefulWidget {
-  const ConfirmDestinationScreen({super.key, required this.source, required this.delivery, this.pinPicker});
+/// Only for a call whose fee was never settled (`can.confirm_fee`): the Shipper enters the amount agreed with whoever pays. Nothing else is asked:
+/// no map point, no second confirmation of data the server already holds.
+class ConfirmFeeScreen extends StatefulWidget {
+  const ConfirmFeeScreen({super.key, required this.source, required this.delivery});
 
   final ShipperDeliverySource source;
   final DeliveryView delivery;
-  final M07PinPickerBuilder? pinPicker;
 
   @override
-  State<ConfirmDestinationScreen> createState() => _ConfirmDestinationScreenState();
+  State<ConfirmFeeScreen> createState() => _ConfirmFeeScreenState();
 }
 
-class _ConfirmDestinationScreenState extends State<ConfirmDestinationScreen> with M07Actions<ConfirmDestinationScreen> {
+class _ConfirmFeeScreenState extends State<ConfirmFeeScreen> with M07Actions<ConfirmFeeScreen> {
   final TextEditingController _fee = TextEditingController();
-  double? _lat;
-  double? _lng;
   String? _problem;
-
-  @override
-  void initState() {
-    super.initState();
-    _lat = widget.delivery.recipient.lat;
-    _lng = widget.delivery.recipient.lng;
-  }
 
   @override
   void dispose() {
@@ -532,21 +522,14 @@ class _ConfirmDestinationScreenState extends State<ConfirmDestinationScreen> wit
     super.dispose();
   }
 
-  bool get _needsFee => widget.delivery.fee.amountVnd == null;
-
   Future<void> _submit() async {
-    final int? fee = _needsFee ? parseAgreedFee(_fee.text) : null;
-    String? problem;
-    if (_lat == null || _lng == null) {
-      problem = 'Hãy chạm vào bản đồ để ghim điểm giao.';
-    } else if (_needsFee && fee == null) {
-      problem = 'Hãy nhập phí đã thỏa thuận (số nguyên, tối đa 10.000.000đ).';
-    }
+    final int? fee = parseAgreedFee(_fee.text);
+    final String? problem = fee == null ? 'Hãy nhập phí đã thỏa thuận (số nguyên, tối đa 10.000.000đ).' : null;
     setState(() => _problem = problem);
-    if (problem != null) {
+    if (fee == null) {
       return;
     }
-    final bool ok = await act('destination-${widget.delivery.deliveryId}', (String key) => widget.source.confirmDestination(widget.delivery.deliveryId, lat: _lat!, lng: _lng!, feeVnd: fee, expectedVersion: widget.delivery.version, key: key));
+    final bool ok = await act('fee-${widget.delivery.deliveryId}', (String key) => widget.source.confirmFee(widget.delivery.deliveryId, feeVnd: fee, expectedVersion: widget.delivery.version, key: key));
     if (ok && mounted) {
       Navigator.of(context).pop(true);
     }
@@ -555,104 +538,16 @@ class _ConfirmDestinationScreenState extends State<ConfirmDestinationScreen> wit
   @override
   Widget build(BuildContext context) {
     final DeliveryView d = widget.delivery;
-    final M07PinPickerBuilder? picker = widget.pinPicker;
     return m07Page(
-      'Xác nhận điểm giao',
+      'Phí giao',
       widget.source.isSample,
       <Widget>[
-        N11Card(child: KeyValueRows(<(String, String)>[('Người nhận', d.recipient.name), ('Địa chỉ mô tả', d.recipient.addressText ?? '—'), ('Người trả phí', d.fee.payerText)])),
-        if (picker == null)
-          const N11Banner(key: Key('m07-no-map'), kind: BannerKind.warn, title: 'Chưa có bản đồ', text: 'Bản này chưa có bản đồ để ghim điểm giao.', icon: Icons.map_outlined)
-        else
-          SizedBox(
-            height: 260,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(kRadiusCard),
-              child: picker(context, lat: _lat, lng: _lng, onPick: (double lat, double lng) => setState(() {
-                    _lat = lat;
-                    _lng = lng;
-                  })),
-            ),
-          ),
-        Text(_lat == null ? 'Chạm vào bản đồ để ghim điểm giao.' : 'Đã ghim ${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)}', key: const Key('m07-pin-text'), style: N11Text.caption),
-        if (_needsFee) N11Field(validator: (String value) => parseAgreedFee(value) == null ? 'Nhập phí là số nguyên từ 0 đến 10.000.000đ.' : null, fieldKey: const Key('m07-agreed-fee'), label: 'Phí thỏa thuận (đ)', controller: _fee, keyboard: TextInputType.number, maxLength: 10, hint: 'Phí bạn và bên trả phí đã thống nhất. Sau khi nhận hàng sẽ bị khóa.')
-        else
-          N11Card(child: KeyValueRows(<(String, String)>[('Phí giao đã chốt', m07Vnd(d.fee.amountVnd))])),
-        const ReasonNote('Điểm ghim chỉ dùng cho đơn này, không ghi ngược vào sổ địa chỉ của khách.'),
-        if (_problem != null) N11Banner(key: const Key('m07-dest-problem'), kind: BannerKind.error, title: 'Chưa xác nhận được', text: _problem),
+        N11Card(child: KeyValueRows(<(String, String)>[('Người nhận', d.recipient.name), ('Địa chỉ', d.recipient.addressText ?? '—'), ('Người trả phí', d.fee.payerText)])),
+        N11Field(validator: (String value) => parseAgreedFee(value) == null ? 'Nhập phí là số nguyên từ 0 đến 10.000.000đ.' : null, fieldKey: const Key('m07-agreed-fee'), label: 'Phí thỏa thuận (đ)', controller: _fee, keyboard: TextInputType.number, maxLength: 10, hint: 'Phí bạn và bên trả phí đã thống nhất. Sau khi nhận hàng sẽ bị khóa.'),
+        if (_problem != null) N11Banner(key: const Key('m07-fee-problem'), kind: BannerKind.error, title: 'Chưa xác nhận được', text: _problem),
         actionBanner(),
       ],
-      bottom: N11Button(key: const Key('m07-dest-submit'), validate: true, label: 'Xác nhận điểm giao', loading: busy, onPressed: busy ? null : _submit),
-    );
-  }
-}
-
-// ---- S07: delivery failed --------------------------------------------------------------------------------------------
-
-class FailDeliveryScreen extends StatefulWidget {
-  const FailDeliveryScreen({super.key, required this.source, required this.delivery});
-
-  final ShipperDeliverySource source;
-  final DeliveryView delivery;
-
-  @override
-  State<FailDeliveryScreen> createState() => _FailDeliveryScreenState();
-}
-
-class _FailDeliveryScreenState extends State<FailDeliveryScreen> with M07Actions<FailDeliveryScreen> {
-  String? _reason;
-  String? _goods;
-  final TextEditingController _note = TextEditingController();
-  DeliveryView? _done;
-
-  @override
-  void dispose() {
-    _note.dispose();
-    super.dispose();
-  }
-
-  bool get _ready => _reason != null && _goods != null && (_reason != 'OTHER' || _note.text.trim().isNotEmpty);
-
-  Future<void> _submit() async {
-    if (!_ready) return;
-    final bool yes = await showConfirmDialog(context, title: 'Xác nhận giao thất bại?', confirmLabel: 'Xác nhận', content: const Text('Hoa hồng được giải phóng và hồ sơ xử lý hàng được mở cho quán. Hàng ở tay bạn thì bạn vẫn chịu trách nhiệm cho tới khi hàng về quán.', style: N11Text.lead));
-    if (!yes || !mounted) {
-      return;
-    }
-    DeliveryView? result;
-    final bool ok = await act('fail-${widget.delivery.deliveryId}', (String key) async => result = await widget.source.fail(widget.delivery.deliveryId, reasonCode: _reason!, note: _note.text, goodsCondition: _goods!, expectedVersion: widget.delivery.version, key: key));
-    if (ok && mounted) {
-      setState(() => _done = result);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final DeliveryView? done = _done;
-    if (done != null) {
-      final IncidentView? i = done.incident;
-      return m07Page(
-        'Giao thất bại',
-        widget.source.isSample,
-        <Widget>[
-          N11Banner(key: const Key('m07-fail-done'), kind: BannerKind.warn, title: 'Đã ghi nhận giao thất bại', text: 'Hoa hồng đã được giải phóng. Đơn món chưa hoàn tất.', icon: Icons.report_gmailerrorred_outlined),
-          if (i != null) N11Card(key: const Key('m07-fail-custody'), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Text('Trách nhiệm hàng còn mở', style: N11Text.label), const SizedBox(height: N11Space.gap2), Text(i.custodyText, style: N11Text.bodyStrong), const SizedBox(height: N11Space.gap2), const ReasonNote('Hàng ở tay ai người đó chịu trách nhiệm. Hệ thống chỉ ghi nhận, không tự bồi thường hay hoàn tiền.')])),
-        ],
-        bottom: N11Button(key: const Key('m07-fail-close'), label: 'Đóng', onPressed: () => Navigator.of(context).pop(true)),
-      );
-    }
-    return m07Page(
-      'Giao thất bại',
-      widget.source.isSample,
-      <Widget>[
-        const Text('Lý do giao thất bại', style: N11Text.label),
-        for (final (String code, String label) in kFailReasons) N11ChoiceCard(key: Key('m07-reason-$code'), title: label, selected: _reason == code, onTap: () => setState(() => _reason = code)),
-        N11Field(requiredInput: _reason == 'OTHER', fieldKey: const Key('m07-fail-note'), label: 'Ghi chú', controller: _note, maxLength: 200, optionalLabel: _reason != 'OTHER', onChanged: () => setState(() {})),
-        const Text('Hàng hiện ở đâu?', style: N11Text.label),
-        for (final (String code, String label) in kGoodsConditions) N11ChoiceCard(key: Key('m07-goods-$code'), title: label, selected: _goods == code, onTap: () => setState(() => _goods = code)),
-        actionBanner(),
-      ],
-      bottom: N11Button(key: const Key('m07-fail-submit'), validate: true, label: 'Xác nhận giao thất bại', loading: busy, onPressed: busy || _reason == null || _goods == null ? null : _submit),
+      bottom: N11Button(key: const Key('m07-fee-submit'), validate: true, label: 'Xác nhận phí', loading: busy, onPressed: busy ? null : _submit),
     );
   }
 }

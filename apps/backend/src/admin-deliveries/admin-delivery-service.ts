@@ -219,7 +219,8 @@ export class AdminDeliveryService {
     switch (name) {
       case 'record-custody': {
         const incident = await this.deliveries.lockIncident(context, delivery.deliveryId);
-        if (delivery.state !== 'failed' || incident === undefined || incident.status !== 'OPEN' || input.resolution === null) {
+        // The goods of a failed delivery, or of one the creator cancelled after pickup, are settled the same way.
+        if ((delivery.state !== 'failed' && delivery.state !== 'cancelled_by_merchant') || incident === undefined || incident.status !== 'OPEN' || input.resolution === null) {
           throw new AppError('ADMIN_ACTION_NOT_ALLOWED');
         }
         const custody = input.resolution === 'GOODS_RETURNED' ? 'SHOP' : 'HANDLED';
@@ -319,7 +320,7 @@ export class AdminDeliveryService {
   async #view(context: TransactionContext, delivery: DeliveryRow, auth: Authorized): Promise<JsonObject> {
     const incident = await this.deliveries.findIncident(context, delivery.deliveryId);
     const can: string[] = [];
-    if (auth.review && delivery.state === 'failed' && incident?.status === 'OPEN') {
+    if (auth.review && (delivery.state === 'failed' || delivery.state === 'cancelled_by_merchant') && incident?.status === 'OPEN') {
       can.push('record-custody');
     }
     if (auth.review && incident !== undefined && incident.m11ReferredAtMs === null) {

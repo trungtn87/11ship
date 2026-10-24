@@ -134,6 +134,9 @@ class HttpShopDeliverySource extends ShopDeliverySource {
       _delivery(await _call(session, 'POST', _path(id, '/fee/customer-confirm'), body: <String, Object?>{'expected_version': expectedVersion}, key: key));
 
   @override
+  Future<List<FeeBand>> feeBands() async => _items<FeeBand>(await _call(session, 'GET', '/v1/shop/me/delivery-fee-bands'), 'bands', FeeBand.fromJson);
+
+  @override
   Future<DeliveryView> resolveCustody(String id, {required String resolution, String? note, required String key}) async => _delivery(await _call(session, 'POST', _path(id, '/custody'),
       body: <String, Object?>{'resolution': resolution, if (note != null && note.trim().isNotEmpty) 'note': note.trim()}, key: key));
 }
@@ -186,8 +189,8 @@ class HttpShipperDeliverySource extends ShipperDeliverySource {
       _offer(await _call(session, 'POST', _path(id, '/fee/counter'), body: <String, Object?>{'amount_vnd': amountVnd}, key: key));
 
   @override
-  Future<DeliveryView> confirmDestination(String id, {required double lat, required double lng, int? feeVnd, required int expectedVersion, required String key}) async =>
-      _delivery(await _call(session, 'POST', _path(id, '/destination'), body: <String, Object?>{'lat': lat, 'lng': lng, if (feeVnd != null) 'fee_vnd': feeVnd, 'expected_version': expectedVersion}, key: key));
+  Future<DeliveryView> confirmFee(String id, {required int feeVnd, required int expectedVersion, required String key}) async =>
+      _delivery(await _call(session, 'POST', _path(id, '/destination'), body: <String, Object?>{'fee_vnd': feeVnd, 'expected_version': expectedVersion}, key: key));
 
   @override
   Future<DeliveryView> pickup(String id, {required int expectedVersion, required String key}) async =>
@@ -196,9 +199,4 @@ class HttpShipperDeliverySource extends ShipperDeliverySource {
   @override
   Future<DeliveryView> complete(String id, {required int expectedVersion, required String key}) async =>
       _delivery(await _call(session, 'POST', _path(id, '/complete'), body: <String, Object?>{'expected_version': expectedVersion}, key: key));
-
-  @override
-  Future<DeliveryView> fail(String id, {required String reasonCode, String? note, required String goodsCondition, required int expectedVersion, required String key}) async =>
-      _delivery(await _call(session, 'POST', _path(id, '/fail'),
-          body: <String, Object?>{'reason_code': reasonCode, if (note != null && note.trim().isNotEmpty) 'note': note.trim(), 'goods_condition': goodsCondition, 'expected_version': expectedVersion}, key: key));
 }

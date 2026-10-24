@@ -10,6 +10,8 @@ import { AppError } from '../common/app-errors';
 import { AdminAuthConfig } from '../config/admin-auth-config';
 import { ShippingFeePolicyService } from './shipping-fee-policy-service';
 import { ShippingEligibilityPolicyService } from './shipping-eligibility-policy-service';
+import { OrderParametersService } from './order-parameters-service';
+import { parseOrderParametersBody } from './order-parameters-validation';
 import { parseSaveEligibilityBody } from './shipping-eligibility-policy-validation';
 import { parseApplyBody, parsePreviewBody, parseSaveDraftBody } from './shipping-fee-policy-validation';
 
@@ -141,6 +143,51 @@ export class ShippingEligibilityPolicyController {
     await this.limiter.reserveTotpRequest(resolveClientIp(request.socket.remoteAddress, request.headers['x-forwarded-for'], this.#trustedProxies));
     const input = parseSaveEligibilityBody(body);
     const outcome = await this.policy.update(readCookieToken(request.headers.cookie, ADMIN_SESSION_COOKIE), csrf, input, key, { requestId: request.requestId ?? randomUUID() });
+    response.status(outcome.status);
+    return { data: outcome.payload };
+  }
+}
+
+/** /v1/admin/system-settings/order-parameters (SYSTEM changes, any ADMIN reads): "Thời gian trả lời đề xuất phí" in minutes. Same transport order as the eligibility policy. */
+@Controller('admin/system-settings/order-parameters')
+export class OrderParametersController {
+  readonly #origins: ReadonlySet<string>;
+  readonly #trustedProxies: ReadonlySet<string>;
+
+  constructor(
+    private readonly parameters: OrderParametersService,
+    private readonly limiter: AdminLimiter,
+    @Inject(ADMIN_AUTH_CONFIG) config: AdminAuthConfig,
+  ) {
+    this.#origins = new Set(config.allowedOrigins);
+    this.#trustedProxies = new Set(config.trustedProxyIps);
+  }
+
+  @Get()
+  async read(@Query() query: unknown, @Req() request: AdminRequest) {
+    const origin = request.headers.origin;
+    if (origin !== undefined && (typeof origin !== 'string' || !this.#origins.has(origin))) {
+      throw new AppError('ADMIN_CSRF_INVALID');
+    }
+    if (typeof query !== 'object' || query === null || Object.keys(query).length > 0) {
+      throw new AppError('ADMIN_INPUT_INVALID');
+    }
+    return { data: await this.parameters.read(readCookieToken(request.headers.cookie, ADMIN_SESSION_COOKIE)) };
+  }
+
+  @Post()
+  @HttpCode(200)
+  async update(@Body() body: unknown, @Req() request: AdminRequest, @Res({ passthrough: true }) response: StatusResponse, @Headers('x-csrf-token') csrf: Header, @Headers('idempotency-key') key: Header) {
+    const origin = request.headers.origin;
+    if (typeof origin !== 'string' || !this.#origins.has(origin)) {
+      throw new AppError('ADMIN_CSRF_INVALID');
+    }
+    if (!isJsonContentType(request.headers['content-type'])) {
+      throw new BadRequestException();
+    }
+    await this.limiter.reserveTotpRequest(resolveClientIp(request.socket.remoteAddress, request.headers['x-forwarded-for'], this.#trustedProxies));
+    const input = parseOrderParametersBody(body);
+    const outcome = await this.parameters.update(readCookieToken(request.headers.cookie, ADMIN_SESSION_COOKIE), csrf, input, key, { requestId: request.requestId ?? randomUUID() });
     response.status(outcome.status);
     return { data: outcome.payload };
   }

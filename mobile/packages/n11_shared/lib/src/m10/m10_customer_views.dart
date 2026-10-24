@@ -795,6 +795,32 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
     }, onConflict: _fetcher.reload);
   }
 
+  /// After the Shipper picked up the goods the customer who placed the order is the only one who can cancel it, with a reason.
+  Future<void> _cancelAfterPickup(OrderView o) async {
+    final String? reason = await showReasonDialog(
+      context,
+      title: 'Hủy đơn khi shipper đã lấy hàng?',
+      explanation: 'Shipper đã lấy món và đang giao. Nếu hủy bây giờ, đơn kết thúc và shipper sẽ gọi quán để trả lại món. Ứng dụng không tự hoàn tiền hay bồi thường.',
+      confirmLabel: 'Hủy đơn',
+      reasonLabel: 'Lý do hủy',
+    );
+    if (reason == null || !mounted) {
+      return;
+    }
+    await act('cancel-after-pickup', (String key) async {
+      await widget.runtime.customer.cancelAfterPickup(o.orderId, reason: reason, expectedVersion: o.version, key: key);
+      await _fetcher.reload();
+    }, onConflict: _fetcher.reload);
+  }
+
+  /// The customer pays the delivery fee, so the customer decides the amount a Shipper proposed: agree, or refuse and keep the earlier fee.
+  Future<void> _decideFee(OrderView o, OrderDelivery d, bool accept) async {
+    await act('fee-${d.deliveryId}-$accept', (String key) async {
+      await widget.runtime.customer.decideFee(o.orderId, accept: accept, deliveryVersion: d.version, key: key);
+      await _fetcher.reload();
+    }, onConflict: _fetcher.reload);
+  }
+
   Future<void> _reorder(OrderView o) async {
     final CartController cart = widget.runtime.cart;
     var replace = false;
@@ -839,6 +865,9 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
     if (o.can['cancel'] ?? false) {
       return DangerButton(label: 'Hủy đơn', onPressed: busy ? null : () => unawaited(_cancel(o)));
     }
+    if (o.can['cancel_after_pickup'] ?? false) {
+      return DangerButton(key: const Key('order-cancel-after-pickup'), label: 'Hủy đơn (shipper đã lấy hàng)', onPressed: busy ? null : () => unawaited(_cancelAfterPickup(o)));
+    }
     if (o.ended) {
       return N11Button(key: const Key('order-reorder'), label: 'Đặt lại', loading: busy, onPressed: () => unawaited(_reorder(o)));
     }
@@ -865,7 +894,7 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
       ),
       if (o.edited && o.confirmedAt != null) N11Banner(key: const Key('order-edited'), kind: BannerKind.info, title: 'Quán đã chỉnh đơn', text: 'Lý do: ${o.changeReason ?? '—'}. Bên dưới là bản đã chốt, kèm số liệu ban đầu của bạn.'),
       OrderLinesCard(lines: o.items),
-      OrderMoneyCard(money: o.money, edited: o.edited, showPaid: o.confirmedAt != null),
+      OrderMoneyCard(money: o.money, edited: o.edited),
       N11Card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Text('Người nhận', style: N11Text.label), KeyValueRows(<(String, String)>[('Tên', o.recipient.name), ('Số điện thoại', o.recipient.phone), ('Địa chỉ', o.recipient.addressText)]), if (o.note != null) Text('Ghi chú: ${o.note}', style: N11Text.caption)])),
       if (d != null) _deliveryCard(o, d),
       if (o.ended && widget.runtime.feedback != null && widget.runtime.picker != null)
@@ -885,6 +914,33 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
     ]);
   }
 
+  Widget _feeDecisionCard(OrderView o, OrderDelivery d, OrderFeeDecision f) {
+    final bool counter = f.state == 'COUNTERED';
+    return Container(
+      key: const Key('order-fee-decision'),
+      margin: const EdgeInsets.only(bottom: N11Space.gap2),
+      padding: const EdgeInsets.all(N11Space.gap3),
+      decoration: BoxDecoration(color: N11Colors.yellowSoft, borderRadius: BorderRadius.circular(kRadiusControl)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(counter ? 'Shipper muốn lấy phí giao ${m10Fee(f.offeredVnd)}' : 'Phí giao ${m10Fee(f.offeredVnd)} đang chờ bạn đồng ý', style: N11Text.bodyStrong),
+          Text(counter ? 'Mức hiện tại là ${m10Fee(f.currentVnd)}. Bạn là người trả phí nên bạn quyết định. Nếu từ chối, đơn món vẫn giữ nguyên, phí giữ mức cũ và hệ thống tìm shipper khác.' : 'Bạn là người trả phí nên cần bạn đồng ý để shipper nhận đơn.', style: N11Text.caption),
+          const SizedBox(height: N11Space.gap2),
+          Row(
+            children: <Widget>[
+              Expanded(child: N11Button(key: const Key('fee-accept'), label: 'Đồng ý', compact: true, onPressed: busy ? null : () => unawaited(_decideFee(o, d, true)))),
+              if (f.canDecline) ...<Widget>[
+                const SizedBox(width: N11Space.gap2),
+                Expanded(child: N11Button(key: const Key('fee-reject'), label: 'Từ chối', compact: true, kind: ButtonKind.secondary, onPressed: busy ? null : () => unawaited(_decideFee(o, d, false)))),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _deliveryCard(OrderView o, OrderDelivery d) {
     return N11Card(
       key: const Key('order-delivery'),
@@ -895,6 +951,7 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
           const SizedBox(height: 4),
           Align(alignment: Alignment.centerLeft, child: N11Chip(d.state.label, kind: m07StateChip(d.state).kind)),
           const SizedBox(height: N11Space.gap2),
+          if (d.feeDecision != null) _feeDecisionCard(o, d, d.feeDecision!),
           if (d.hasShipper && !o.ended)
             KeyValueRows(<(String, String)>[('Shipper', d.shipperName!), if (d.plate != null) ('Biển số', d.plate!), if (d.shipperPhone != null) ('Điện thoại', d.shipperPhone!)])
           else if (d.state == DeliveryState.waitingDriver)
@@ -902,10 +959,10 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
           else if (d.state == DeliveryState.searchStopped)
             const Text('Chưa tìm được shipper — quán đang xử lý.', style: N11Text.body)
           else if (d.state == DeliveryState.failed)
-            Text('Giao thất bại — đang xử lý.${d.resultReason == null ? '' : ' Lý do: ${d.resultReason}'}', key: const Key('order-failed'), style: N11Text.body)
+            Text('Giao chưa thành công — quán đang xử lý.${d.resultReason == null ? '' : ' Lý do: ${d.resultReason}'}', key: const Key('order-failed'), style: N11Text.body)
           else
             const SizedBox.shrink(),
-          if (d.state == DeliveryState.failed && d.goodsCustody != null) Padding(padding: const EdgeInsets.only(top: 6), child: ReasonNote(d.goodsCustody == 'SHIPPER' ? 'Hàng chưa về quán hoặc chưa rõ. Hệ thống chỉ ghi nhận, không tự hoàn tiền hay bồi thường.' : 'Quán đã xác nhận xử lý hàng.')),
+          if ((d.state == DeliveryState.failed || d.state == DeliveryState.cancelledByMerchant) && d.goodsCustody != null) Padding(padding: const EdgeInsets.only(top: 6), child: ReasonNote(d.goodsCustody == 'SHIPPER' ? 'Hàng chưa về quán hoặc chưa rõ. Hệ thống chỉ ghi nhận, không tự hoàn tiền hay bồi thường.' : 'Quán đã xác nhận xử lý hàng.')),
         ],
       ),
     );
