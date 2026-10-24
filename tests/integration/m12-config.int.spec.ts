@@ -53,8 +53,10 @@ describe('M12-D — central configuration', () => {
     expect(asSystem.editable).toBe(true);
     expect((asSystem.groups as Json[]).map((g) => g.key)).toEqual(['security', 'shipper_wallet', 'delivery_policy', 'orders', 'notifications', 'map_gps', 'storage_backup']);
     const security = await groupOf('security');
-    expect(security.values.map((v: Json) => v.key)).toEqual(['otp_registration_enabled', 'otp_password_reset_enabled']);
-    expect(security.fixed_rules.map((r: Json) => [r.key, r.value])).toEqual([['otp_resend_seconds', 60], ['otp_max_attempts', 3]]); // the values the auth module RUNS with (default 3 by Owner decision); the page never invents them
+    expect(security.values.map((v: Json) => v.key)).toEqual(['otp_registration_enabled', 'otp_password_reset_enabled', 'cooldown_seconds', 'max_wrong_attempts', 'phone_per_hour', 'phone_per_day', 'ip_per_hour', 'global_per_day']);
+    // Issue #117: the six SMS OTP limits are read from the PostgreSQL policy the application RUNS with; nothing in the security group is fixed any more.
+    expect(security.values.slice(2).map((v: Json) => [v.key, v.value])).toEqual([['cooldown_seconds', 60], ['max_wrong_attempts', 3], ['phone_per_hour', 20], ['phone_per_day', 100], ['ip_per_hour', 1000], ['global_per_day', 10000]]);
+    expect(security.fixed_rules).toEqual([]);
     const policy = await groupOf('delivery_policy');
     expect(policy.fixed_rules.map((r: Json) => [r.key, r.value])).toEqual([['search_radius_m', 3000], ['search_window_minutes', 30]]);
     const map = await groupOf('map_gps');

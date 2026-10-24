@@ -257,7 +257,11 @@ export const MENU: readonly MenuGroup[] = [
         icon: 'gear',
         ready: true,
         access: 'any',
-        children: [{ id: 'parameters-shipper-wallet', label: 'Ví Shipper', route: { name: 'wallet-parameters' }, ready: true, access: 'any' }],
+        children: [
+          { id: 'parameters-shipper-wallet', label: 'Ví Shipper', route: { name: 'wallet-parameters' }, ready: true, access: 'any' },
+          // Issue #117: the six SMS OTP limits (every administrator reads, only SYSTEM changes, the server decides again).
+          { id: 'parameters-otp', label: 'SMS & OTP', route: { name: 'otp-policy' }, ready: true, access: 'any' },
+        ],
       },
       // M06-A: Phí & điều kiện giao (fee table; every administrator reads, only SYSTEM changes, the server decides again).
       { id: 'shipping-policy', label: 'Phí & điều kiện giao', icon: 'gear', route: { name: 'shipping-policy' }, ready: true, access: 'any' },
@@ -322,6 +326,7 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'activate':
     case 'reset':
     case 'wallet-parameters':
+    case 'otp-policy':
     case 'shipping-policy':
       return true;
     case 'users':
@@ -410,6 +415,8 @@ export function activeMenuId(route: Route): string {
       return 'complaints';
     case 'wallet-parameters':
       return 'parameters-shipper-wallet';
+    case 'otp-policy':
+      return 'parameters-otp';
     case 'shipping-policy':
       return 'shipping-policy';
     case 'finance':
@@ -505,6 +512,8 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Vận hành', 'Phản ánh'];
     case 'wallet-parameters':
       return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
+    case 'otp-policy':
+      return ['Cài đặt', 'Tham số hệ thống', 'SMS & OTP'];
     case 'shipping-policy':
       return ['Cài đặt', 'Phí & điều kiện giao'];
     case 'finance':

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
 import { SmsQueueService } from '../../apps/backend/src/sms-gateway/sms-queue-service';
 import { SmsQueueSweeper } from '../../apps/backend/src/sms-gateway/sms-queue-sweeper';
 import { runSmsGatewayCli } from '../../apps/backend/src/sms-gateway/cli/sms-gateway-cli';
@@ -19,6 +19,7 @@ import {
 } from './support/admin-fixtures';
 import { api, ApiResponse, dataOf, errorCode, grantRole, PASSWORD, Phone, randomPhone } from './support/auth-fixtures';
 import { logContainsClearOtp, rowsContainClearOtp, TECHNICAL_COLUMNS, TECHNICAL_ID_COLUMNS, TECHNICAL_JSON_KEYS, tableContainsClearOtp } from './support/otp-scan';
+import { loadIntegrationConfig, setOtpPolicy } from './support/test-helpers';
 
 // Issue #102 on the REAL Nest pipeline and a REAL PostgreSQL (TEST database only): the SMS gateway queue, the gateway API, the
 // REGISTER delivery states and the RESET_PASSWORD (SMS_OTP) flow. The "phone" is played by calls to /v1/sms-gateway with the
@@ -366,9 +367,9 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
         expect(errorCode(await verifyRegister(id, wrong))).toBe('OTP_INVALID');
       }
       const locked = await verifyRegister(id, wrong);
-      expect([locked.status, errorCode(locked)]).toEqual([429, 'OTP_RATE_LIMITED']);
+      expect([locked.status, errorCode(locked)]).toEqual([429, 'OTP_LOCKED']);
       const stillLocked = await verifyRegister(id, otp);
-      expect([stillLocked.status, errorCode(stillLocked)]).toEqual([429, 'OTP_RATE_LIMITED']);
+      expect([stillLocked.status, errorCode(stillLocked)]).toEqual([429, 'OTP_LOCKED']);
     });
 
     it('creates no account without the proof, and the proof from the queue registers exactly once', async () => {
@@ -610,16 +611,29 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       await ack(job, 'FAILED');
     });
 
-    it('caps the challenges per phone per hour (429) with the configured limit', async () => {
+    it('caps the challenges per phone per hour (429) with the limit SYSTEM configured, which applies at once', async () => {
       const phone = randomPhone();
       app.track(phone.normalized);
-      for (let i = 0; i < OPEN.limitPhonePerHour; i += 1) {
+      await setOtpPolicy(loadIntegrationConfig().database.url, { phone_per_hour: 3 });
+      try {
+        for (let i = 0; i < 3; i += 1) {
+          expect((await requestRegisterOtp(phone)).status).toBe(201);
+          const job = (await claim()) as NonNullable<Awaited<ReturnType<typeof claim>>>;
+          await ack(job, 'FAILED');
+        }
+        const capped = await requestRegisterOtp(phone);
+        expect([capped.status, errorCode(capped)]).toEqual([429, 'OTP_RATE_LIMITED']);
+        expect(capped.body.error?.details).toMatchObject({ reason: 'PHONE_HOUR' });
+        expect(Number((capped.body.error?.details as { retry_after_seconds: number }).retry_after_seconds)).toBeGreaterThan(0);
+        expect(capped.headers.get('retry-after')).not.toBeNull();
+        // Raising the limit takes effect on the next request, without a restart.
+        await setOtpPolicy(loadIntegrationConfig().database.url, { phone_per_hour: 4 });
         expect((await requestRegisterOtp(phone)).status).toBe(201);
         const job = (await claim()) as NonNullable<Awaited<ReturnType<typeof claim>>>;
         await ack(job, 'FAILED');
+      } finally {
+        await setOtpPolicy(loadIntegrationConfig().database.url);
       }
-      const capped = await requestRegisterOtp(phone);
-      expect([capped.status, errorCode(capped)]).toEqual([429, 'OTP_RATE_LIMITED']);
     });
 
     it('caps the whole gateway per day and refuses outside the allowlist, with the default ALLOWLIST mode', async () => {
@@ -633,6 +647,7 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       });
       try {
         await wipeQueue(strict.pool);
+        await setOtpPolicy(loadIntegrationConfig().database.url, { global_per_day: 2 });
         const outside = await requestRegisterOtp(blocked, strict);
         expect([outside.status]).toEqual([503]);
         expect(await count(strict.pool, 'SELECT 1 FROM app.phone_verifications WHERE phone_normalized = $1', [blocked.normalized])).toBe(0);
@@ -646,6 +661,7 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
         const globalCap = await requestRegisterOtp(allowed, strict);
         expect([globalCap.status, errorCode(globalCap)]).toEqual([429, 'OTP_RATE_LIMITED']);
       } finally {
+        await setOtpPolicy(loadIntegrationConfig().database.url);
         await wipeQueue(strict.pool);
         await strict.close();
       }
@@ -872,6 +888,238 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       } finally {
         expect((await ctl('enable')).code).toBe(0);
       }
+    });
+  });
+
+  // Issue #117: ONE shared, atomic set of OTP limits (cooldown, phone hour/day, client address hour) read from PostgreSQL on every request.
+  describe('issue #117 shared OTP limits', () => {
+    const url = (): string => loadIntegrationConfig().database.url;
+    let trusted: AdminApp;
+    const requestRecoveryOtp = (phoneLocal: string, target: AdminApp = app, headers: Record<string, string> = {}): Promise<ApiResponse> =>
+      api(target.running.baseUrl, 'POST', '/account-recovery/locked/otp', { headers, body: { phone: phoneLocal } });
+    const requestOn = (target: AdminApp, kind: 'register' | 'reset' | 'admin' | 'recover', phoneLocal: string, headers: Record<string, string> = {}): Promise<ApiResponse> => {
+      if (kind === 'register') {
+        return api(target.running.baseUrl, 'POST', '/auth/phone-verifications', { headers, body: { phone: phoneLocal, purpose: 'REGISTER' } });
+      }
+      if (kind === 'recover') {
+        return requestRecoveryOtp(phoneLocal, target, headers);
+      }
+      return api(target.running.baseUrl, 'POST', `${kind === 'admin' ? '/admin-recovery' : '/account-recovery'}/otp`, { headers, body: { phone: phoneLocal } });
+    };
+    const accepted = (response: ApiResponse): boolean => response.status === 200 || response.status === 201;
+    const reasonOf = (response: ApiResponse): unknown => (response.body.error?.details as { reason?: string } | undefined)?.reason;
+    const ipRows = async (): Promise<number> => count(app.pool, 'SELECT 1 FROM app.otp_ip_requests');
+
+    beforeAll(async () => {
+      trusted = await startAdminApp({ smsGateway: OPEN, trustedProxyIps: ['127.0.0.1'] });
+    });
+    beforeEach(async () => {
+      await setOtpPolicy(url());
+      await wipeQueue();
+    });
+    afterAll(async () => {
+      await setOtpPolicy(url());
+      await trusted.close();
+    });
+
+    it('REGISTER, RESET_PASSWORD, the admin reset and the account recovery share ONE cooldown per phone, whatever the app or the flow', async () => {
+      const user = await seedUser();
+      const first = await requestOn(app, 'register', user.phone.local);
+      // The number is registered: the registration flow says so, and that is NOT a quota use; the reset flows then take the cooldown.
+      expect(first.status).toBe(409);
+      expect(await count(app.pool, 'SELECT 1 FROM app.phone_verifications WHERE phone_normalized = $1', [user.phone.normalized])).toBe(0);
+
+      const unknown = randomPhone();
+      app.track(unknown.normalized);
+      expect((await requestOn(app, 'register', unknown.local)).status).toBe(201);
+      for (const kind of ['reset', 'admin', 'recover', 'register'] as const) {
+        const refused = await requestOn(app, kind, unknown.local);
+        expect([kind, refused.status, errorCode(refused), reasonOf(refused)]).toEqual([kind, 429, 'OTP_RATE_LIMITED', 'COOLDOWN']);
+        const details = refused.body.error?.details as { retry_after_seconds: number };
+        expect(details.retry_after_seconds).toBeGreaterThanOrEqual(1);
+        expect(details.retry_after_seconds).toBeLessThanOrEqual(60);
+        expect(Number(refused.headers.get('retry-after'))).toBe(details.retry_after_seconds);
+      }
+      expect(await count(app.pool, 'SELECT 1 FROM app.phone_verifications WHERE phone_normalized = $1', [unknown.normalized])).toBe(1);
+
+      // The cooldown is the CURRENT policy value counted from the challenge: shortening it applies to the next request, without a restart.
+      await app.pool.query(`UPDATE app.phone_verifications SET created_at = created_at - interval '20 seconds', expires_at = expires_at - interval '20 seconds', resend_not_before = resend_not_before - interval '20 seconds' WHERE phone_normalized = $1`, [unknown.normalized]);
+      expect((await requestOn(app, 'reset', unknown.local)).status).toBe(429);
+      await setOtpPolicy(url(), { cooldown_seconds: 15 });
+      expect((await requestOn(app, 'reset', unknown.local)).status).toBe(200);
+    });
+
+    it('a locked challenge keeps the cooldown (going back to the first step is no bypass) and never touches an existing account', async () => {
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      const id = String(dataOf(await requestOn(app, 'register', phone.local)).verification_id);
+      const job = (await claim()) as NonNullable<Awaited<ReturnType<typeof claim>>>;
+      await ack(job, 'SENT');
+      const wrong = otpOf(job.text) === '000000' ? '111111' : '000000';
+      const seen: Array<[string | undefined, unknown]> = [];
+      for (let i = 0; i < 3; i += 1) {
+        const response = await verifyRegister(id, wrong);
+        seen.push([errorCode(response), (response.body.error?.details as { attempts_remaining?: number }).attempts_remaining]);
+      }
+      expect(seen).toEqual([['OTP_INVALID', 2], ['OTP_INVALID', 1], ['OTP_LOCKED', 0]]);
+      expect((await challenge(id))?.status).toBe('LOCKED');
+      // The app goes back to step 1 and asks again at once: the server still holds the cooldown.
+      const again = await requestOn(app, 'register', phone.local);
+      expect([again.status, errorCode(again), reasonOf(again)]).toEqual([429, 'OTP_RATE_LIMITED', 'COOLDOWN']);
+      // A different flow or app does not get a fresh budget either.
+      expect(reasonOf(await requestOn(app, 'reset', phone.local))).toBe('COOLDOWN');
+
+      // An existing account whose reset challenge is locked is untouched: same user, still ACTIVE, still able to sign in.
+      const user = await seedUser();
+      const before = (await app.pool.query('SELECT status, version, password_hash FROM app.users WHERE user_id = $1::uuid', [user.userId])).rows[0];
+      const resetId = String(dataOf(await requestOn(app, 'reset', user.phone.local)).verification_id);
+      await app.pool.query(`UPDATE app.phone_verifications SET status = 'PENDING' WHERE verification_id = $1::uuid`, [resetId]);
+      for (let i = 0; i < 3; i += 1) {
+        await api(app.running.baseUrl, 'POST', `/account-recovery/otp/${resetId}/verify`, { body: { otp: '000000' } });
+      }
+      expect((await challenge(resetId))?.status).toBe('LOCKED');
+      expect((await app.pool.query('SELECT status, version, password_hash FROM app.users WHERE user_id = $1::uuid', [user.userId])).rows[0]).toEqual(before);
+      const login = await api(app.running.baseUrl, 'POST', '/client-auth/login', {
+        headers: { 'idempotency-key': randomUUID() },
+        body: { phone: user.phone.local, password: PASSWORD, device: { device_id: 'web-food-0001', platform: 'WEB', app: 'FOOD' } },
+      });
+      expect(login.status).toBe(200);
+    });
+
+    it('requests of different purposes for one phone, sent at the same moment, pass the check one at a time: exactly one is accepted', async () => {
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      const kinds = ['register', 'reset', 'admin', 'recover', 'register', 'reset', 'admin', 'recover'] as const;
+      const results = await Promise.all(kinds.map((kind) => requestOn(app, kind, phone.local)));
+      expect(results.filter(accepted)).toHaveLength(1);
+      expect(results.filter((r) => !accepted(r)).map((r) => [r.status, errorCode(r)])).toEqual(Array(7).fill([429, 'OTP_RATE_LIMITED']));
+      expect(await count(app.pool, 'SELECT 1 FROM app.phone_verifications WHERE phone_normalized = $1', [phone.normalized])).toBe(1);
+    });
+
+    it('caps a phone per rolling hour and per rolling day (with the retry time), counting every purpose; the window slides', async () => {
+      await setOtpPolicy(url(), { phone_per_hour: 2, phone_per_day: 3, cooldown_seconds: 10 });
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      const age = async (seconds: number): Promise<void> => {
+        await app.pool.query(
+          `UPDATE app.phone_verifications SET created_at = created_at - make_interval(secs => $2), expires_at = expires_at - make_interval(secs => $2), resend_not_before = resend_not_before - make_interval(secs => $2) WHERE phone_normalized = $1`,
+          [phone.normalized, seconds],
+        );
+      };
+      expect((await requestOn(app, 'register', phone.local)).status).toBe(201);
+      await age(30);
+      expect((await requestOn(app, 'reset', phone.local)).status).toBe(200);
+      await age(30);
+      const hour = await requestOn(app, 'admin', phone.local);
+      expect([hour.status, reasonOf(hour)]).toEqual([429, 'PHONE_HOUR']);
+      const retry = (hour.body.error?.details as { retry_after_seconds: number }).retry_after_seconds;
+      expect(retry).toBeGreaterThan(3000);
+      expect(retry).toBeLessThanOrEqual(3600);
+      // The oldest challenge leaves the 1 hour window (still inside the day): one more fits.
+      await age(3545);
+      expect((await requestOn(app, 'recover', phone.local)).status).toBe(200);
+      // Three challenges are inside the day (limit 3) although none is inside the hour any more: the day limit holds.
+      await age(3700);
+      const day = await requestOn(app, 'reset', phone.local);
+      expect([day.status, reasonOf(day)]).toEqual([429, 'PHONE_DAY']);
+      expect((day.body.error?.details as { retry_after_seconds: number }).retry_after_seconds).toBeGreaterThan(3600);
+    });
+
+    it('caps the client address per rolling hour across numbers, apps and flows; the counter holds an HMAC, never the address', async () => {
+      await setOtpPolicy(url(), { ip_per_hour: 3 });
+      const phones = Array.from({ length: 5 }, () => randomPhone());
+      phones.forEach((phone) => app.track(phone.normalized));
+      const kinds = ['register', 'reset', 'admin', 'register', 'reset'] as const;
+      const statuses: number[] = [];
+      for (const [index, phone] of phones.entries()) {
+        statuses.push((await requestOn(app, kinds[index] as (typeof kinds)[number], phone.local)).status);
+      }
+      expect(statuses.map((status) => status === 200 || status === 201)).toEqual([true, true, true, false, false]);
+      const refused = await requestOn(app, 'register', randomPhone().local);
+      expect([refused.status, reasonOf(refused)]).toEqual([429, 'IP_HOUR']);
+      expect(await ipRows()).toBe(3);
+      const stored = (await app.pool.query<{ ip_hmac: string }>('SELECT ip_hmac FROM app.otp_ip_requests')).rows;
+      for (const row of stored) {
+        expect(row.ip_hmac).toMatch(/^[0-9a-f]{64}$/);
+        expect(row.ip_hmac).not.toContain('127');
+      }
+      // A refused request leaves nothing behind (no challenge, no queue row, no counter row).
+      expect(await count(app.pool, 'SELECT 1 FROM app.sms_jobs')).toBe(1); // only the first REGISTER queued an SMS (the two resets are for unknown numbers)
+      // Sliding window: the oldest request leaves the hour and one more fits.
+      await app.pool.query(`UPDATE app.otp_ip_requests SET created_at = created_at - interval '61 minutes' WHERE request_id = (SELECT request_id FROM app.otp_ip_requests ORDER BY created_at LIMIT 1)`);
+      expect((await requestOn(app, 'register', randomPhone().local)).status).toBe(201);
+    });
+
+    it('concurrent requests from one address and different phones: exactly the limit is accepted, none more', async () => {
+      await setOtpPolicy(url(), { ip_per_hour: 4 });
+      const phones = Array.from({ length: 12 }, () => randomPhone());
+      phones.forEach((phone) => app.track(phone.normalized));
+      const results = await Promise.all(phones.map((phone, index) => requestOn(app, index % 2 === 0 ? 'register' : 'reset', phone.local)));
+      expect(results.filter(accepted)).toHaveLength(4);
+      expect(results.filter((r) => !accepted(r)).every((r) => r.status === 429 && reasonOf(r) === 'IP_HOUR')).toBe(true);
+      expect(await ipRows()).toBe(4);
+    });
+
+    it('does not believe X-Forwarded-For from an untrusted peer: rotating the header gives no new budget', async () => {
+      await setOtpPolicy(url(), { ip_per_hour: 2 });
+      const statuses: number[] = [];
+      for (const forged of ['198.51.100.1', '198.51.100.2', '198.51.100.3', '2001:db8::1']) {
+        const phone = randomPhone();
+        app.track(phone.normalized);
+        statuses.push((await requestOn(app, 'register', phone.local, { 'x-forwarded-for': forged })).status);
+      }
+      expect(statuses).toEqual([201, 201, 429, 429]);
+    });
+
+    it('behind a trusted proxy the forwarded address is the identity: users behind one NAT share a budget, others keep theirs, IPv6 counts as its /64', async () => {
+      await setOtpPolicy(url(), { ip_per_hour: 2 });
+      const call = async (forwarded: string | undefined): Promise<number> => {
+        const phone = randomPhone();
+        trusted.track(phone.normalized);
+        return (await requestOn(trusted, 'register', phone.local, forwarded === undefined ? {} : { 'x-forwarded-for': forwarded })).status;
+      };
+      // Two clients behind the same public address (NAT) share 2 requests; a third client has its own.
+      expect([await call('203.0.113.10'), await call('203.0.113.10'), await call('203.0.113.10'), await call('203.0.113.11')]).toEqual([201, 201, 429, 201]);
+      // IPv6: two addresses of one /64 share, another /64 does not.
+      expect([await call('2001:db8:aa:1::1'), await call('2001:db8:aa:1:ffff:ffff:ffff:ffff'), await call('2001:db8:aa:1::77'), await call('2001:db8:aa:2::1')]).toEqual([201, 201, 429, 201]);
+      // A trusted proxy that sends no forwarded address, or several, is refused instead of being limited under a wrong identity.
+      expect(await call(undefined)).toBe(400);
+      expect(await call('203.0.113.12, 198.51.100.9')).toBe(400);
+    });
+
+    it('an invalid or unallocated mobile number creates no challenge, no queue row and uses no quota, in every OTP flow', async () => {
+      const before = [
+        await count(app.pool, 'SELECT 1 FROM app.phone_verifications'),
+        await count(app.pool, 'SELECT 1 FROM app.sms_jobs'),
+        await ipRows(),
+      ];
+      const bad = ['0301234567', '0951234567', '0241234567', '091234567', '09123456789', '+14155550123', '01201234567'];
+      for (const number of bad) {
+        for (const kind of ['register', 'reset', 'admin', 'recover'] as const) {
+          const response = await requestOn(app, kind, number);
+          expect([number, kind, response.status, errorCode(response)]).toEqual([number, kind, 400, 'INVALID_PHONE']);
+        }
+      }
+      expect([
+        await count(app.pool, 'SELECT 1 FROM app.phone_verifications'),
+        await count(app.pool, 'SELECT 1 FROM app.sms_jobs'),
+        await ipRows(),
+      ]).toEqual(before);
+    });
+
+    it('RESET never shows whether an account exists: the same answer, the same quota use and the same refusals for a registered and an unknown number', async () => {
+      const known = await seedUser();
+      const unknown = randomPhone();
+      app.track(unknown.normalized);
+      const [a, b] = [await requestOn(app, 'reset', known.phone.local), await requestOn(app, 'reset', unknown.local)];
+      expect([a.status, b.status]).toEqual([200, 200]);
+      expect(Object.keys(dataOf(a)).sort()).toEqual(Object.keys(dataOf(b)).sort());
+      const [a2, b2] = [await requestOn(app, 'reset', known.phone.local), await requestOn(app, 'reset', unknown.local)];
+      expect([a2.status, errorCode(a2), reasonOf(a2)]).toEqual([b2.status, errorCode(b2), reasonOf(b2)]);
+      // Only the registered number queued an SMS; the unknown one is indistinguishable from outside.
+      expect(await count(app.pool, 'SELECT 1 FROM app.sms_jobs')).toBe(1);
+      expect(await count(app.pool, 'SELECT 1 FROM app.phone_verifications WHERE phone_normalized = ANY($1::text[])', [[known.phone.normalized, unknown.normalized]])).toBe(2);
+      expect(await ipRows()).toBe(2);
     });
   });
 });

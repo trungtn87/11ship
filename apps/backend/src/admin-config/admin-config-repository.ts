@@ -9,6 +9,7 @@ export const CONFIG_GROUP_KEYS: readonly ConfigGroupKey[] = ['security', 'shippe
 /** The audit action each owner writes when it changes its configuration, and the group the change belongs to. The owners' own rows are the history; M12 stores none. */
 export const CONFIG_AUDIT_ACTIONS: Readonly<Record<string, ConfigGroupKey>> = {
   'admin.system_setting.update.v1': 'security',
+  'admin.otp_policy.update.v1': 'security',
   'admin.shipper_wallet_parameters.update.v1': 'shipper_wallet',
   'admin.shipping_eligibility_policy.update.v1': 'delivery_policy',
   'admin.shipping_fee_policy.apply.v1': 'delivery_policy',

@@ -6,6 +6,7 @@ import {
   APP_ERROR_DEFINITIONS,
   AppError,
   isAppErrorCode,
+  OtpRefusalError,
   TechnicalError,
 } from '../common/app-errors';
 
@@ -22,7 +23,7 @@ export interface ClassifiedError {
   status: number;
   code: string;
   message: string;
-  /** Set only for the typed AdminAuthRateLimitError: seconds for the Retry-After header. */
+  /** Set only for the typed rate-limit errors (administration, device, OTP): seconds for the Retry-After header. */
   retryAfterSeconds?: number;
   /** Set only for the typed ActivationStateError: the safe state facts the client needs. */
   details?: Readonly<Record<string, unknown>>;
@@ -88,6 +89,16 @@ export function classifyException(exception: unknown): ClassifiedError {
   if (exception instanceof ActivationStateError) {
     const definition = APP_ERROR_DEFINITIONS.ADMIN_ACTIVATION_STEP_INVALID;
     return { status: definition.status, code: 'ADMIN_ACTIVATION_STEP_INVALID', message: definition.message, details: exception.details };
+  }
+  if (exception instanceof OtpRefusalError && isAppErrorCode(exception.code)) {
+    const definition = APP_ERROR_DEFINITIONS[exception.code];
+    return {
+      status: definition.status,
+      code: exception.code,
+      message: definition.message,
+      details: exception.details,
+      ...(exception.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: exception.retryAfterSeconds }),
+    };
   }
   if (exception instanceof AppError && isAppErrorCode(exception.code)) {
     const definition = APP_ERROR_DEFINITIONS[exception.code];

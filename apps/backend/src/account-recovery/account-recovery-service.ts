@@ -138,7 +138,7 @@ export class AccountRecoveryService {
    * scope that the reset serves (never SYSTEM, a fixture, an out-of-policy row or an account of the other scope) whose number the
    * recipient policy allows.
    */
-  async requestOtp(scope: AccountScope, phoneNormalized: string): Promise<OtpRequestResult> {
+  async requestOtp(scope: AccountScope, phoneNormalized: string, clientIp: string): Promise<OtpRequestResult> {
     this.assertSmsOtpOpen();
     if (scope === 'APP_USER') {
       await this.assertAppResetEnabled();
@@ -150,6 +150,7 @@ export class AccountRecoveryService {
         return target !== undefined && (await this.#classify(context, scope, target)) !== undefined;
       },
       PURPOSE_OF[scope],
+      clientIp,
     );
   }
 
@@ -239,7 +240,7 @@ export class AccountRecoveryService {
    * queued only for a locked account whose lock reason is DELETE_REQUEST. An account locked for a violation or for security is never
    * eligible: it cannot unlock itself.
    */
-  async requestRecoveryOtp(phoneNormalized: string): Promise<OtpRequestResult> {
+  async requestRecoveryOtp(phoneNormalized: string, clientIp: string): Promise<OtpRequestResult> {
     this.assertSmsOtpOpen();
     return this.verification.requestResetOtp(
       phoneNormalized,
@@ -248,6 +249,7 @@ export class AccountRecoveryService {
         return target !== undefined && (await this.#isRecoverable(context, target));
       },
       RECOVER_ACCOUNT_PURPOSE,
+      clientIp,
     );
   }
 

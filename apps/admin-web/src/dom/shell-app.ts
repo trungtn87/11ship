@@ -38,6 +38,7 @@ import { DialogHandle } from './dialog.js';
 import { h } from './dom.js';
 import { ProvisioningView } from './provisioning-view.js';
 import { orderTimeoutsPage } from './order-timeouts-page.js';
+import { otpPolicyPage } from './otp-policy-page.js';
 import { SettingsView } from './settings-view.js';
 import { NOT_WIRED_CATALOG, CatalogSource } from '../core/catalog.js';
 import { CatalogController } from '../core/catalog-controller.js';
@@ -495,6 +496,9 @@ export class ShellApp implements ShellHost {
         return;
       case 'wallet-parameters':
         this.#walletParameters(content);
+        return;
+      case 'otp-policy':
+        otpPolicyPage(content, this.sessionCsrf, this.onSessionLost);
         return;
       case 'shipping-policy':
         this.#shippingPolicy(content);

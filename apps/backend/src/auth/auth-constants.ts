@@ -90,3 +90,11 @@ export const STAGING_SEED_ACTOR_ID = 'staging-seed-cli';
 /** Outbox event of a completed registration. */
 export const USER_REGISTERED_EVENT_TYPE = 'auth.user_registered.v1';
 export const USER_REGISTERED_EVENT_SCHEMA_VERSION = 1;
+
+/**
+ * Issue #117: every purpose that sends an account OTP SMS. They share ONE cooldown and the same per-phone quota windows, so switching
+ * the app (11Food / 11Ship) or the flow (register / forgot password / recovery) never gives a new budget.
+ */
+export const OTP_QUOTA_PURPOSES: readonly string[] = [REGISTER_PURPOSE, RESET_PASSWORD_PURPOSE, RESET_PASSWORD_ADMIN_PURPOSE, RECOVER_ACCOUNT_PURPOSE];
+export const OTP_IP_LOCK_DOMAIN = '11ship.auth.otp.ip.v1';
+export const OTP_IP_HMAC_DOMAIN = '11ship.auth.otp.ip-identity.v1';

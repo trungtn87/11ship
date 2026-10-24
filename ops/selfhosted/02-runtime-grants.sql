@@ -172,6 +172,10 @@ GRANT SELECT, INSERT ON app.order_timeout_policy_changes TO ship11_app;
 -- M07: SYSTEM-configured fee-answer time and its append-only change history.
 GRANT SELECT, UPDATE ON app.order_parameters TO ship11_app;
 GRANT SELECT, INSERT ON app.order_parameter_changes TO ship11_app;
+-- #117: SYSTEM-configured SMS OTP limits (one row), their append-only history and the durable per-IP request counter (old rows are deleted by the requests).
+GRANT SELECT, UPDATE ON app.otp_policy TO ship11_app;
+GRANT SELECT, INSERT ON app.otp_policy_changes TO ship11_app;
+GRANT SELECT, INSERT, DELETE ON app.otp_ip_requests TO ship11_app;
 GRANT SELECT, INSERT ON app.cancellation_transitions TO ship11_app;
 
 -- M12-E: report export jobs. A job row is updated by the runner (QUEUED -> RUNNING -> DONE/FAILED/EXPIRED) and never deleted (trigger); the file bytes live in their own table

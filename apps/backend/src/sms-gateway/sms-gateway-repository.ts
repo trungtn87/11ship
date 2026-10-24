@@ -101,18 +101,6 @@ export class SmsGatewayRepository {
     return toSafeInteger(result.rows[0]?.n ?? '0');
   }
 
-  /** OTP challenges of a phone (every purpose, every outcome) inside the window. Same count for unknown phones. */
-  async countChallengesSince(context: TransactionContext, phoneNormalized: string, windowSeconds: number): Promise<number> {
-    const result = await context.query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM app.phone_verifications
-        WHERE phone_normalized = $1
-          AND purpose IN ('REGISTER', 'RESET_PASSWORD', 'RESET_PASSWORD_ADMIN', 'RECOVER_ACCOUNT')
-          AND created_at > clock_timestamp() - make_interval(secs => $2::double precision)`,
-      [phoneNormalized, windowSeconds],
-    );
-    return toSafeInteger(result.rows[0]?.n ?? '0');
-  }
-
   /** The OTP expiry of a challenge, as epoch ms of the database clock; undefined when it does not exist. */
   async verificationExpiry(context: TransactionContext, verificationId: string): Promise<{ readonly expiresAtMs: number; readonly nowMs: number } | undefined> {
     const result = await context.query<{ expires_ms: string; now_ms: string }>(

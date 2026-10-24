@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Req } from '@nestjs/common';
 import { parseVerificationId } from '../auth/auth-validation';
 import { AuthenticatedRequest } from '../auth/auth-principal';
+import { OtpClientIp, OtpIpRequest } from '../auth/otp-client-ip';
 import { AccountRecoveryService } from './account-recovery-service';
 import {
   assertNoInput,
@@ -19,7 +20,10 @@ import {
  */
 @Controller('account-recovery')
 export class AccountRecoveryController {
-  constructor(private readonly recovery: AccountRecoveryService) {}
+  constructor(
+    private readonly recovery: AccountRecoveryService,
+    private readonly clientIp: OtpClientIp,
+  ) {}
 
   @Get('config')
   async config(@Query() query: unknown, @Body() body: unknown) {
@@ -44,10 +48,11 @@ export class AccountRecoveryController {
   /** SMS_OTP step 1 (issue #102): the same generic answer for every number. Closed modes answer 503 before the body is read. */
   @Post('otp')
   @HttpCode(200)
-  async requestOtp(@Body() body: unknown) {
+  async requestOtp(@Body() body: unknown, @Req() request: OtpIpRequest) {
     this.recovery.assertSmsOtpOpen();
     await this.recovery.assertAppResetEnabled();
-    return { data: await this.recovery.requestOtp('APP_USER', parseResetOtpRequestBody(body).phoneNormalized) };
+    const phone = parseResetOtpRequestBody(body).phoneNormalized;
+    return { data: await this.recovery.requestOtp('APP_USER', phone, this.clientIp.identity(request)) };
   }
 
   @Post('otp/:verificationId/verify')
@@ -86,9 +91,10 @@ export class AccountRecoveryController {
 
   @Post('locked/otp')
   @HttpCode(200)
-  async requestRecoveryOtp(@Body() body: unknown) {
+  async requestRecoveryOtp(@Body() body: unknown, @Req() request: OtpIpRequest) {
     this.recovery.assertSmsOtpOpen();
-    return { data: await this.recovery.requestRecoveryOtp(parseResetOtpRequestBody(body).phoneNormalized) };
+    const phone = parseResetOtpRequestBody(body).phoneNormalized;
+    return { data: await this.recovery.requestRecoveryOtp(phone, this.clientIp.identity(request)) };
   }
 
   @Post('locked/otp/:verificationId/verify')
@@ -120,7 +126,10 @@ export class AccountRecoveryController {
  */
 @Controller('admin-recovery')
 export class AdminAccountRecoveryController {
-  constructor(private readonly recovery: AccountRecoveryService) {}
+  constructor(
+    private readonly recovery: AccountRecoveryService,
+    private readonly clientIp: OtpClientIp,
+  ) {}
 
   @Get('config')
   config(@Query() query: unknown, @Body() body: unknown) {
@@ -143,9 +152,10 @@ export class AdminAccountRecoveryController {
 
   @Post('otp')
   @HttpCode(200)
-  async requestOtp(@Body() body: unknown) {
+  async requestOtp(@Body() body: unknown, @Req() request: OtpIpRequest) {
     this.recovery.assertSmsOtpOpen();
-    return { data: await this.recovery.requestOtp('ADMIN_WEB', parseResetOtpRequestBody(body).phoneNormalized) };
+    const phone = parseResetOtpRequestBody(body).phoneNormalized;
+    return { data: await this.recovery.requestOtp('ADMIN_WEB', phone, this.clientIp.identity(request)) };
   }
 
   @Post('otp/:verificationId/verify')

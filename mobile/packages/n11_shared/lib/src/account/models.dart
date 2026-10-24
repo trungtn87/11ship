@@ -108,11 +108,20 @@ String withRequestTrace(String message, String? requestId) => message;
 /// A refusal by the server or the device, as a closed code (no server text is ever shown).
 @immutable
 class AuthFailure implements Exception {
-  const AuthFailure(this.kind, {this.code, this.status, this.endpoint, this.requestId});
+  const AuthFailure(this.kind, {this.code, this.status, this.endpoint, this.requestId, this.attemptsRemaining, this.retryAfterSeconds, this.reason});
 
   final AuthFailureKind kind;
   final String? code;
   final int? status;
+
+  /// OTP_INVALID: how many tries are left on this challenge (the server counts; the app only shows it). Null when the server did not say.
+  final int? attemptsRemaining;
+
+  /// OTP_RATE_LIMITED: seconds until the next request is allowed (the server's clock, not the phone's). Null when the server did not say.
+  final int? retryAfterSeconds;
+
+  /// OTP_RATE_LIMITED: why (COOLDOWN, PHONE_HOUR, PHONE_DAY, IP_HOUR, GLOBAL_DAY). A bounded code, never server text.
+  final String? reason;
 
   /// Static protocol path and server correlation UUID only; never request bodies or credentials.
   final String? endpoint;
@@ -209,4 +218,11 @@ enum AuthFailureKind {
 
   /// 400/409 VERIFICATION_PROOF_*: the phone proof is not valid any more (used, expired, other purpose).
   proofInvalid,
+
+  /// 429 OTP_LOCKED: too many wrong codes, the challenge is closed. NOT the send quota / cooldown (that is [rateLimited]): the flow
+  /// goes back to its first step, the temporary data is dropped and the server keeps the cooldown.
+  otpLocked,
+
+  /// 400 INVALID_PHONE on an OTP request: not an allocated Vietnamese mobile number.
+  invalidPhone,
 }

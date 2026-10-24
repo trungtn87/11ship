@@ -315,6 +315,8 @@ describe('AllExceptionsFilter', () => {
         'OTP_ALREADY_USED',
         'OTP_EXPIRED',
         'OTP_INVALID',
+        'OTP_LOCKED',
+        'OTP_POLICY_VERSION_CONFLICT',
         'OTP_RATE_LIMITED',
         'PASSWORD_RESET_DISABLED',
         'PHONE_ALREADY_REGISTERED',

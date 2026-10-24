@@ -17,6 +17,7 @@ import '../flows/reset_views.dart';
 import 'models.dart';
 import 'api_client.dart';
 import 'phone_verification.dart';
+import 'vn_mobile.dart';
 import 'otp_input.dart';
 import 'session_controller.dart';
 
@@ -64,7 +65,7 @@ String _failureMessage(AuthFailure failure) {
     case AuthFailureKind.badRequest:
       return 'Thông tin chưa hợp lệ. Kiểm tra số điện thoại, mật khẩu (8 đến 128 ký tự) và họ tên.';
     case AuthFailureKind.rateLimited:
-      return 'Thử quá nhiều lần. Vui lòng đợi một lát rồi thử lại.';
+      return rateLimitMessage(failure);
     case AuthFailureKind.verificationUnsupported:
       return 'Máy chủ yêu cầu xác minh số điện thoại, bước này chưa hỗ trợ trên Android.';
     case AuthFailureKind.badResponse:
@@ -76,7 +77,14 @@ String _failureMessage(AuthFailure failure) {
     case AuthFailureKind.roleNotAvailable:
       return 'Tài khoản chưa dùng được chế độ này.';
     case AuthFailureKind.otpInvalid:
-      return 'Mã xác minh chưa đúng, hoặc tin nhắn chưa được gửi đi. Kiểm tra lại mã trong tin nhắn.';
+      final int? left = failure.attemptsRemaining;
+      return left == null
+          ? 'Mã xác minh chưa đúng, hoặc tin nhắn chưa được gửi đi. Kiểm tra lại mã trong tin nhắn.'
+          : 'Mã xác minh chưa đúng. Bạn còn $left lượt nhập.';
+    case AuthFailureKind.otpLocked:
+      return 'Bạn đã nhập sai mã quá số lần cho phép nên luồng này đã bị hủy. Hãy bắt đầu lại từ bước đầu.';
+    case AuthFailureKind.invalidPhone:
+      return kInvalidMobileMessage;
     case AuthFailureKind.otpExpired:
       return 'Mã xác minh đã hết hạn. Hãy gửi mã mới.';
     case AuthFailureKind.otpAlreadyUsed:
@@ -84,6 +92,35 @@ String _failureMessage(AuthFailure failure) {
     case AuthFailureKind.proofInvalid:
       return 'Xác minh số điện thoại không còn hiệu lực. Hãy xác minh lại.';
   }
+}
+
+/// A send refusal in words (issue #117). The numbers are the server's: the app shows them and never invents a limit.
+String rateLimitMessage(AuthFailure failure) {
+  final int? wait = failure.retryAfterSeconds;
+  final String when = wait == null ? 'một lát' : formatWait(wait);
+  switch (failure.reason) {
+    case 'COOLDOWN':
+      return 'Vui lòng đợi $when rồi mới yêu cầu mã mới.';
+    case 'PHONE_HOUR' || 'PHONE_DAY':
+      return 'Số điện thoại này đã yêu cầu mã quá nhiều lần. Hãy thử lại sau $when.';
+    case 'IP_HOUR':
+      return 'Có quá nhiều yêu cầu mã từ kết nối mạng này. Hãy thử lại sau $when.';
+    case 'GLOBAL_DAY':
+      return 'Hệ thống tạm hết lượt gửi SMS. Hãy thử lại sau.';
+    default:
+      return 'Thử quá nhiều lần. Vui lòng đợi một lát rồi thử lại.';
+  }
+}
+
+/// 45 giây, 3 phút, 2 giờ: a wait in the unit a person reads.
+String formatWait(int seconds) {
+  if (seconds < 90) {
+    return '$seconds giây';
+  }
+  if (seconds < 5400) {
+    return '${(seconds + 59) ~/ 60} phút';
+  }
+  return '${(seconds + 3599) ~/ 3600} giờ';
 }
 
 bool canRetryFailure(AuthFailure? failure) =>
