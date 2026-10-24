@@ -31,6 +31,7 @@ class M14Plugin: FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler,
     private val worker = Executors.newSingleThreadExecutor()
     private var activityBinding: ActivityPluginBinding? = null
     private var pendingStart: MethodChannel.Result? = null
+    private var pendingBase: String? = null
     private var sink: EventChannel.EventSink? = null
     private var listening = false
     private var attached = false
@@ -66,6 +67,11 @@ class M14Plugin: FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler,
             "accuracy" to if(p.contains("accuracy")) p.getFloat("accuracy",0f).toDouble() else null,
             "fixState" to p.getString("fixState", "UNAVAILABLE"),
             "time" to if(p.contains("time")) p.getLong("time",0) else null,
+            // What the service itself got back from the server (it is the only sender): when the last report was accepted, and the server's words.
+            "uploadedAt" to if(p.contains("uploadedAt")) p.getLong("uploadedAt",0) else null,
+            "uploadState" to p.getString("uploadState",null),
+            "shouldShare" to if(p.contains("shouldShare")) p.getBoolean("shouldShare",false) else null,
+            "intentOnline" to if(p.contains("intentOnline")) p.getBoolean("intentOnline",false) else null,
             "fresh" to (RecorderService.runningInProcess && permitted && locationEnabled && p.getString("fixState", "") == "FIX" && elapsed>0 && age in 0..120_000 && wallAge in 0..120_000),
             "status" to if(RecorderService.runningInProcess || !p.getBoolean("recording",false)) p.getString("status","Đã dừng — không thu thập vị trí") else "Đã dừng — không thu thập vị trí")
     }
@@ -99,6 +105,7 @@ class M14Plugin: FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler,
                 val activity=activityBinding?.activity
                 if(activity==null || activity.isFinishing) { result.error("FOREGROUND","Mở ứng dụng để bắt đầu cập nhật vị trí",null); return }
                 pendingStart=result
+                pendingBase=call.argument<String>("apiBaseUrl")
                 val permissions=mutableListOf<String>()
                 if(context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) {
                     permissions.add(Manifest.permission.ACCESS_FINE_LOCATION); permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -106,7 +113,11 @@ class M14Plugin: FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler,
                 if(Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED) permissions.add(Manifest.permission.POST_NOTIFICATIONS)
                 if(permissions.isEmpty()) finishStart() else activity.requestPermissions(permissions.toTypedArray(),1414)
             }
-            "stop" -> { context.stopService(Intent(context,ShipLocationService::class.java)); result.success(null) }
+            "stop" -> {
+                // Stops the service and forgets its link even if the service was already gone, so nothing can restart or send afterwards.
+                ShipLocationService.clearLink(context)
+                context.stopService(Intent(context,ShipLocationService::class.java)); result.success(null)
+            }
             "openSettings" -> {
                 // Opens the phone's own screen only; the app never turns GPS on or grants a permission by itself.
                 val intent=when(call.argument<String>("kind")) {
@@ -124,7 +135,11 @@ class M14Plugin: FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler,
         val result=pendingStart?:return; pendingStart=null
         if(context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) { result.error("PERMISSION","Quyền vị trí chính xác bị từ chối",null); return }
         if(!context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()) { result.error("NOTIFICATION","Bật thông báo để hiển thị trạng thái và nút dừng GPS",null); return }
-        try { context.startForegroundService(Intent(context,ShipLocationService::class.java)); result.success(null) }
+        val base=pendingBase; pendingBase=null
+        val token=ShipSessionLink.token()
+        if(token==null) { result.error("SESSION","Phiên đăng nhập không còn hiệu lực",null); return }
+        if(base==null || !vn.eleven.m14.gps.ReportRules.validBase(base)) { result.error("CONFIG","Chưa có địa chỉ máy chủ hợp lệ",null); return }
+        try { context.startForegroundService(ShipLocationService.startIntent(context,base,token)); result.success(null) }
         catch(e: Exception) { result.error("START","Không thể bắt đầu GPS: ${e.message}",null) }
     }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray): Boolean {

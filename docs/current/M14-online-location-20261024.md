@@ -14,7 +14,7 @@ Shipper chỉ còn **một nút online**. Bật online tự bật chia sẻ vị
 |---|---|
 | Ý định online | Vẫn là `accepting_deliveries`. Chỉ shipper, khóa tài khoản hoặc yêu cầu ngừng hoạt động đổi nó. **Không có migration.** |
 | Đủ điều kiện nhận đơn thực tế | Dẫn xuất khi đọc: ý định bật **và** điều kiện hiện có (hồ sơ, ví…) **và** vị trí còn mới. Không lưu cột nào. |
-| Ngưỡng quá hạn | **Tái sử dụng** `LOCATION_LIVE_SECONDS = 120` (M07/M14, `delivery-constants.ts`): chu kỳ 60 giây nên trễ một lần không bị chặn, trễ hai lần thì tạm dừng. App coi "máy chủ đã có vị trí" trong 100 giây. |
+| Ngưỡng quá hạn | **Máy chủ quyết định**, tái sử dụng `LOCATION_LIVE_SECONDS = 120` (M07/M14, `delivery-constants.ts`): chu kỳ 60 giây nên trễ một lần không bị chặn, trễ hai lần thì tạm dừng. Mốc **100 giây** trong app chỉ để hiển thị dòng trạng thái và chủ động đọc lại hồ sơ (25 giây sau mốc đó); "đủ điều kiện nhận đơn" luôn là `presence.can_receive_orders` do máy chủ trả, không phải đồng hồ trong app. |
 | Bật online | `POST /driver/me/accepting {accepting:true}` thêm điều kiện: có vị trí hợp lệ, còn mới → nếu không `409 DRIVER_LOCATION_NOT_READY`. App gửi vị trí **trước** rồi mới gọi. |
 | Vị trí quá hạn | Danh sách đơn ẩn (`LOCATION_STALE`), nhận đơn bị từ chối `DELIVERY_NOT_ELIGIBLE` (kiểm lại trong giao dịch nhận), phân phối đơn bỏ qua shipper đó. Đơn đang giao không bị hủy. Vị trí về lại thì nhận đơn **tự khôi phục** nếu ý định còn bật; shipper đã tắt thì không bao giờ tự bật lại. |
 | Tắt online | Luôn được (M03 không chặn vì còn đơn; "đóng tài khoản" là yêu cầu riêng và vẫn bị `DRIVER_HAS_ACTIVE_WORK`/`DRIVER_WALLET_NOT_SETTLED` bảo vệ). Ngừng nhận đơn mới ngay. |
@@ -32,11 +32,26 @@ Shipper chỉ còn **một nút online**. Bật online tự bật chia sẻ vị
 - Giao diện: một dòng nhỏ ("Đang chia sẻ vị trí", "Đang lấy vị trí…", "Đang giao đơn · Vẫn chia sẻ vị trí", "Chưa có vị trí · Tạm dừng nhận đơn"); hướng dẫn + nút ("Thử lại", "Mở cài đặt", "Mở cài đặt vị trí", "Mở cài đặt thông báo") chỉ khi có vấn đề. Không hiện mã/ID; `request_id` vẫn nằm trong log.
 - Android: `ShipLocationService` (foreground service loại `location`, thông báo thường trực, không có nút dừng riêng). Manifest/quyền không đổi so với trước (đã có `FOREGROUND_SERVICE_LOCATION`, `POST_NOTIFICATIONS`); chỉ khởi động khi app đang hiển thị (đúng giới hạn Android 12+).
 
-## Giới hạn Android — chưa thử trên máy thật
+## Dịch vụ nền Android (gửi vị trí độc lập với Flutter)
 
-Vị trí được **gửi bởi app Flutter**, dịch vụ nền chỉ thu thập. Vì vậy:
+`ShipLocationService` (foreground service loại `location`) **vừa lấy vừa gửi** vị trí (`LocationReporter`, `HttpsReportTransport`). App Flutter chỉ bật/tắt dịch vụ và đọc trạng thái dịch vụ báo lại; **app không bao giờ tự gửi vị trí**, nên không có gửi trùng.
 
-- **Vuốt app khỏi danh sách gần đây**: engine Flutter bị hủy nên không còn gửi được. Dịch vụ dừng thu thập (không tốn pin vô ích) và để lại một thông báo "Mở lại 11Ship để tiếp tục nhận đơn"; mở lại app tự khôi phục. Máy chủ tự dừng cấp đơn mới sau 2 phút. Muốn gửi tiếp được khi bị vuốt cần bộ gửi vị trí viết bằng native dùng token/bằng chứng thiết bị — cần Owner quyết định riêng.
-- Force-stop, tiết kiệm pin/hạn chế nền của nhà sản xuất: không cam kết.
+- **Chạy tiếp** khi chuyển app, khóa màn hình và vuốt khỏi danh sách gần đây (tiến trình còn sống nhờ foreground service); mở lại app thì nhận lại dịch vụ đang chạy, không bật lần hai.
+- **Phiên**: dịch vụ đọc token từ kho mã hóa của app (`N11DeviceStore`, qua `ShipSessionLink` do `N11Application` đăng ký) **cho từng lần gửi**; không lưu, không ghi log, không đưa vào thông báo. Chỉ lưu dấu vân tay một chiều của token (để biết phiên còn là phiên cũ) và địa chỉ máy chủ. Không có cơ chế làm mới: hết hạn/thu hồi = `401`.
+- **Tự dừng và quên liên kết** khi: app tắt online mà hết đơn (app dừng); máy chủ trả `should_share_location=false` (sau 90 giây ân hạn kể từ lúc bật, để không tự dừng giữa lúc đang bật online); `401`; không còn token; token là của tài khoản khác. Đăng xuất: app gọi dừng, xóa liên kết, hủy request đang chờ; request trả về muộn bị bỏ.
+- **Offline nhưng còn đơn** (kể cả hàng còn ở shipper): máy chủ báo `should_share_location=true` nên dịch vụ chạy tiếp; đơn kết thúc thì lần báo kế tiếp trả `false` và dịch vụ tự dừng.
+- **Khởi động lại**: nếu Android giết tiến trình, dịch vụ chỉ được hệ thống dựng lại (`START_STICKY`) khi liên kết còn đánh dấu "đang cần"; mọi lần dừng đều xóa đánh dấu nên sau offline + hết đơn không tự chạy lại.
+- Chỉ giữ **vị trí mới nhất**: đang gửi dở mà có vị trí mới thì chỉ gửi cái mới nhất; lỗi mạng thử lại một lần sau 10 giây (nếu còn dưới 2 phút) rồi chờ vị trí kế tiếp. Chỉ gửi https; kiểm tra lại tọa độ/độ chính xác/tuổi như app.
+- `403/409` (tài khoản bị khóa…): dịch vụ báo `REFUSED`, app đọc lại hồ sơ rồi quyết định; không vòng lặp tự khởi động.
+- Giới hạn của Android vẫn áp dụng: **force-stop**, tiết kiệm pin/hạn chế nền của nhà sản xuất, người dùng gỡ quyền vị trí hoặc tắt thông báo có thể dừng dịch vụ — không cam kết vượt qua.
 
-Các mục dưới đây **chưa kiểm trên điện thoại thật** (CI/unit test không thay thế): khóa màn hình ≥ 5 phút vẫn gửi mỗi ~1 phút; chuyển app; vuốt khỏi gần đây (thông báo + khôi phục); force-stop; chế độ tiết kiệm pin; từ chối quyền ("không hỏi lại") → "Mở cài đặt"; tắt GPS → "Mở cài đặt vị trí"; tắt thông báo; Android 8, 12, 13, 14.
+## Bằng chứng kiểm thử
+
+**Tự động (đã chạy):**
+- Luật gửi của dịch vụ (JVM, `LocationReporterTest`, 16 ca): chỉ gửi vị trí hợp lệ, token chỉ ở header, không gửi trùng/cũ, chỉ vị trí mới nhất khi đang gửi dở, `401`/mất token/tài khoản khác → kết thúc và không gửi nữa, `403` tiếp tục, thử lại một lần, tự dừng khi máy chủ báo không cần (có ân hạn), dừng/khởi động lại không để request cũ trả lời hoặc gửi.
+- App (Flutter, `m07_location_test`, `ship_online_test`): bật/tắt, các lỗi quyền/GPS/thông báo/không có vị trí/gửi lỗi/API lỗi/mất câu trả lời, bấm lặp, mở lại app nhận lại dịch vụ đang chạy, dịch vụ tự dừng thì không bật lại, phiên bị thu hồi.
+- Máy chủ (integration, PostgreSQL): vị trí quá hạn chặn danh sách đơn, nhận đơn qua API, bật online và phân phối; phiên đăng xuất/thu hồi/hết hạn không báo vị trí, không bật online, không xem/nhận đơn, không được phân phối đơn.
+
+**Chưa chạy trên máy thật — không suy ra từ build/test:** dịch vụ khi khóa màn hình lâu, chuyển app, vuốt khỏi gần đây, Android tự giết tiến trình rồi dựng lại, force-stop, tiết kiệm pin; quyền "không hỏi lại"; tắt GPS/thông báo; Android 8/12/13/14; xác nhận trên server thật rằng vị trí đều đặn ~1 phút khi khóa màn hình. CI biên dịch Kotlin và chạy unit test JVM nhưng không chứng minh dịch vụ chạy ổn trên thiết bị.
+
+**Cách Owner thử:** bật online, khóa màn hình ≥ 5 phút, xem Admin/shop thấy vị trí cập nhật ~1 phút/lần; vuốt app khỏi gần đây, đợi 3 phút, kiểm tra vị trí vẫn cập nhật; tắt online lúc có đơn (vẫn chia sẻ) rồi hoàn tất đơn (thông báo biến mất); đăng xuất (thông báo biến mất, không còn cập nhật).

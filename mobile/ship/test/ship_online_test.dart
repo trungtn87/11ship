@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,30 +15,74 @@ import 'package:ship/ship_online.dart';
 
 const AppConfig config = AppConfig(apiBaseUrl: 'https://api.example.test', deviceEnvironment: 'fixture-env');
 
+/// The phone side: the real service collects AND sends, so this fake plays the service. When it runs and has a fix it "sends" through the fake server
+/// (the same route the real service calls) and reports what the server answered, the way the plugin's snapshot does. The Dart app never sends.
 class _Feed extends LocationFeed {
-  /// What the core reports when asked (null: nothing yet).
+  _Feed(this.api, this.clock);
+
+  final FakeApiTransport api;
+  final List<DateTime> clock;
+  final StreamController<Map<String, dynamic>> controller = StreamController<Map<String, dynamic>>.broadcast();
+
+  /// The fix the phone has (null: none yet).
   Map<String, dynamic>? current;
+
+  /// What the service reports about its own sending.
+  Map<String, dynamic> sent = <String, dynamic>{};
   int starts = 0;
   int stops = 0;
+  int puts = 0;
   bool running = false;
   final List<String> settings = <String>[];
   Object? startError;
   Completer<void>? startGate;
 
   @override
-  Stream<Map<String, dynamic>> get positions => const Stream<Map<String, dynamic>>.empty();
+  Stream<Map<String, dynamic>> get positions => controller.stream;
 
   @override
-  Future<void> start() async {
+  Future<void> start({String? apiBaseUrl}) async {
     starts++;
     await startGate?.future;
     if (startError != null) throw startError!;
     running = true;
+    sent = <String, dynamic>{};
+    if (_hasFix) await _send();
   }
 
-  /// Like the real core: it reports a position only while the service runs.
+  /// The service sends only a fix it accepts (fresh, GPS on).
+  bool get _hasFix => current != null && current!['fresh'] == true && current!['gpsEnabled'] != false;
+
+  Future<void> _send() async {
+    final ApiResponse r = await api.send('PUT', '/v1/driver/location', body: utf8.encode('{}'));
+    puts++;
+    if (r.status == 200) {
+      final Object? d = r.data;
+      final Map<String, Object?> data = d is Map<String, Object?> ? d : <String, Object?>{};
+      sent = <String, dynamic>{'uploadedAt': clock.last.millisecondsSinceEpoch, 'uploadState': 'OK', 'shouldShare': data['should_share_location'], 'intentOnline': data['intent_online']};
+    } else if (r.status == 401) {
+      running = false;
+      sent = <String, dynamic>{'uploadState': 'SESSION_ENDED'};
+    } else {
+      sent = <String, dynamic>{...sent, 'uploadState': r.status == 403 || r.status == 409 ? 'REFUSED' : 'FAILED'};
+    }
+  }
+
+  Map<String, dynamic> snapshot() => running
+      ? <String, dynamic>{...?current, ...sent, 'recording': true}
+      : <String, dynamic>{'recording': false, 'permissionGranted': true, 'gpsEnabled': true, 'status': 'Đã dừng', if (sent['uploadState'] == 'SESSION_ENDED') ...sent};
+
+  /// A new fix arrives; the service sends it and tells the app.
+  Future<void> nextFix() async {
+    current = fix(clock.last);
+    if (running && _hasFix) {
+      await _send();
+      controller.add(snapshot());
+    }
+  }
+
   @override
-  Future<Map<String, dynamic>?> status() async => running ? current : <String, dynamic>{'recording': false, 'permissionGranted': true, 'gpsEnabled': true, 'status': 'Đã dừng'};
+  Future<Map<String, dynamic>?> status() async => snapshot();
 
   @override
   Future<void> stop() async {
@@ -80,7 +125,7 @@ class _T {
 
   DateTime get now => clock.last;
   void advance(Duration d) => clock.add(clock.last.add(d));
-  Future<void> report() => reporter.onSnapshot(fix(now));
+  Future<void> report() => feed.nextFix();
   Iterable<String> get accepting => api.to('POST', '/v1/driver/me/accepting').map((RecordedRequest r) => r.body);
 }
 
@@ -96,8 +141,8 @@ Future<_T> _build({bool accepting = false, bool walletReady = true, bool attach 
   await session.start();
   await session.login(phone: '0901234567', password: 'Correct-Horse-9');
   final DriverController driver = DriverController(session: session);
-  final _Feed feed = _Feed();
   final List<DateTime> clock = <DateTime>[DateTime.utc(2026, 10, 24, 9)];
+  final _Feed feed = _Feed(api, clock);
   final ShipLocationReporter reporter = ShipLocationReporter(session: session, feed: feed, firstFixTimeout: firstFix, clock: () => clock.last);
   final ShipOnline online = ShipOnline(session: session, reporter: reporter, driver: driver);
   final _T t = _T(api, server, session, driver, feed, reporter, online, clock);
@@ -301,14 +346,18 @@ void main() {
       final t = await _build();
       await t.driver.setAccepting(true);
       final int postsBefore = t.accepting.length;
+      // Past this app's own 100 s the SERVER has not said anything yet: the screen still follows the server, and waits for the next report.
       t.advance(const Duration(seconds: 101));
+      expect(t.reporter.serverHasPosition, isFalse);
+      expect(t.online.receiving, isTrue);
+      expect(t.online.statusLine, 'Đang lấy vị trí…');
+      // Once the server's own 120 s have passed it says so, and only then the screen pauses.
+      t.server.locationReady = false;
+      await t.driver.load();
       expect(t.online.receiving, isFalse);
       expect(t.online.paused, isTrue);
       expect(t.online.statusLine, 'Chưa có vị trí · Tạm dừng nhận đơn');
       expect(t.driver.profile!.acceptingDeliveries, isTrue, reason: 'the switch is the Shipper\'s');
-      // The server's own verdict is stale too; a report makes it fresh and the profile is read again.
-      t.server.locationReady = false;
-      await t.driver.load();
       expect(t.driver.profile!.presence!.pausedReason, 'LOCATION_STALE');
       await t.report();
       await settle();
@@ -422,15 +471,51 @@ void main() {
       expect(t.online.receiving, isFalse);
     });
 
-    test('a revoked session (401 on a report) ends the sharing', () async {
+    test('a revoked session (the service gets 401): the service ends itself, the app learns it, ends the session and starts nothing again', () async {
       final t = await _build();
       await t.driver.setAccepting(true);
       t.api.routes['PUT /v1/driver/location'] = (String m, String p, Map<String, String> h, String b) async => apiError(401, 'SESSION_REVOKED');
+      t.api.routes['GET /v1/driver/me'] = (String m, String p, Map<String, String> h, String b) async => apiError(401, 'SESSION_REVOKED');
       t.advance(const Duration(minutes: 1));
       await t.report();
       await settle();
+      expect(t.feed.running, isFalse);
       expect(t.session.status, isNot(SessionStatus.signedIn));
       expect(t.reporter.sharing, isFalse);
+      final int starts = t.feed.starts;
+      await t.online.reconcile(force: true);
+      await settle();
+      expect(t.feed.starts, starts);
+    });
+
+    test('the app was swiped away and opened again: the service that kept running is adopted, nothing is started a second time', () async {
+      final t = await _build(attach: false, accepting: true, locationReady: true);
+      t.feed.running = true;
+      t.feed.current = fix(t.now);
+      t.feed.sent = <String, dynamic>{'uploadedAt': t.now.millisecondsSinceEpoch, 'uploadState': 'OK', 'shouldShare': true, 'intentOnline': true};
+      t.online.attach();
+      await t.driver.load();
+      await settle();
+      expect(t.reporter.sharing, isTrue);
+      expect(t.feed.starts, 0);
+      expect(t.online.receiving, isTrue);
+      expect(t.feed.puts, 0, reason: 'the app never sends');
+    });
+
+    test('the service stopped itself because nothing needs the position any more: the app does not start it again', () async {
+      final t = await _build();
+      await t.driver.setAccepting(true);
+      t.server.hasActiveWork = true;
+      await t.driver.setAccepting(false);
+      t.server.hasActiveWork = false;
+      t.feed.running = false; // the service saw should_share_location=false and stopped
+      t.advance(const Duration(seconds: 5));
+      t.feed.controller.add(t.feed.snapshot());
+      await settle();
+      await t.driver.load();
+      await settle();
+      expect(t.reporter.sharing, isFalse);
+      expect(t.feed.starts, 1);
     });
   });
 
@@ -483,7 +568,9 @@ void main() {
     testWidgets('Home: paused receiving is shown as paused, with the short line, and the switch is still the Shipper\'s', (WidgetTester tester) async {
       final t = await tester.runAsync(_build) as _T;
       await tester.runAsync(() => t.driver.setAccepting(true));
-      t.advance(const Duration(seconds: 101));
+      t.advance(const Duration(seconds: 130));
+      t.server.locationReady = false; // the server's own limit has passed
+      await tester.runAsync(t.driver.load);
       await tester.pumpWidget(MaterialApp(theme: buildN11Theme(), home: Scaffold(body: ShipHome(session: t.session, driver: t.driver, onNotifications: () {}, onlineOverride: t.online))));
       await tester.pump();
       expect(find.text('Tạm dừng nhận đơn'), findsOneWidget);

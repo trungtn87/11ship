@@ -285,6 +285,42 @@ describe('M07 — delivery flow', () => {
     expect((await asShipper(s, 'POST', `/driver/deliveries/${delivery.delivery_id}/accept`, {})).status).toBe(200);
   });
 
+  describe('a session that is over (logout, revoked, expired) does nothing for the Shipper', () => {
+    const logout = (s: Shipper): Promise<ApiResponse> => app.call('POST', '/client-auth/logout', { bearer: s.token, body: {} });
+
+    async function expectDead(s: Shipper, deliveryId: string): Promise<void> {
+      const version = 1;
+      const refused = [
+        await asShipper(s, 'PUT', '/driver/location', { lat: 21.0005, lng: 105.8005, accuracy_m: 20 }),
+        await asShipper(s, 'GET', '/driver/me'),
+        await asShipper(s, 'POST', '/driver/me/accepting', { expected_version: version, accepting: true }),
+        await asShipper(s, 'GET', '/driver/deliveries/offers'),
+        await asShipper(s, 'POST', `/driver/deliveries/${deliveryId}/accept`, {}),
+      ];
+      expect(refused.map((r) => r.status)).toEqual([401, 401, 401, 401, 401]);
+      expect(await stateOf(deliveryId)).toBe('waiting_driver');
+      expect(await countRows(app.pool, `SELECT 1 FROM app.delivery_assignments WHERE delivery_id = $1::uuid`, [deliveryId])).toBe(0);
+    }
+
+    it('after logout the old token cannot report a position, switch on, list offers or accept; nothing is held', async () => {
+      const s = await newShipper();
+      const delivery = await newDelivery();
+      expect((await logout(s)).status).toBe(204);
+      await expectDead(s, String(delivery.delivery_id));
+      expect(await wallet(s)).toEqual({ balance: 50_000, held: 0 });
+    });
+
+    it('a session revoked on the server side is just as dead, and so is one past its expiry', async () => {
+      const revoked = await newShipper();
+      const delivery = await newDelivery();
+      await app.pool.query(`UPDATE app.sessions SET revoked_at = clock_timestamp() WHERE user_id = $1::uuid AND revoked_at IS NULL`, [revoked.userId]);
+      await expectDead(revoked, String(delivery.delivery_id));
+      const expired = await newShipper();
+      await app.pool.query(`UPDATE app.sessions SET created_at = clock_timestamp() - interval '2 hours', expires_at = clock_timestamp() - interval '1 second' WHERE user_id = $1::uuid`, [expired.userId]);
+      await expectDead(expired, String(delivery.delivery_id));
+    });
+  });
+
   it('a Shipper who switched off never comes back online by reporting a position, and gets no new order', async () => {
     const s = await newShipper();
     const version = ((dataOf(await asShipper(s, 'GET', '/driver/me')) as Json).version);

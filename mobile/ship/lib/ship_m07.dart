@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,7 +7,11 @@ import 'package:n11_shared/n11_shared.dart';
 
 // 11Ship side of M07 that needs the phone: the M14 map for the delivery screens, the pin picker for the drop-off, and the sharing of the
 // Shipper's LATEST position. There is no separate switch: the one online button starts sharing (ship_online.dart decides when to start and stop),
-// a notification shows while it runs, and only the latest fresh position is uploaded (the server keeps one row per Shipper, no trail).
+// a notification shows while it runs, and only the latest fresh position is sent (the server keeps one row per Shipper, no trail).
+//
+// The Android foreground service (ShipLocationService) is the ONLY sender: it collects and sends with the screen locked, in the background and after
+// the app is swiped away. This class never sends a position; it starts/stops the service and reads what the service reports (the snapshot): the last
+// time the server accepted a report and what the server said about it.
 
 const bool kM14Map = bool.fromEnvironment('M14_OFFLINE_MAP');
 
@@ -35,7 +38,8 @@ M07PinPickerBuilder? shipPinPicker() => kM14Map
 abstract class LocationFeed {
   const LocationFeed();
   Stream<Map<String, dynamic>> get positions;
-  Future<void> start();
+  /// [apiBaseUrl] is where the service sends the position (the service is the only sender).
+  Future<void> start({String? apiBaseUrl});
   Future<Map<String, dynamic>?> status() async => null;
   Future<void> stop();
 
@@ -52,7 +56,7 @@ class M14LocationFeed extends LocationFeed {
   Stream<Map<String, dynamic>> get positions => _client.positions;
 
   @override
-  Future<void> start() => _client.start(consent: true);
+  Future<void> start({String? apiBaseUrl}) => _client.start(consent: true, apiBaseUrl: apiBaseUrl);
 
   @override
   Future<Map<String, dynamic>?> status() => _client.status();
@@ -80,20 +84,19 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
   ShipLocationReporter({
     required this.session,
     LocationFeed feed = const M14LocationFeed(),
-    this.minGap = const Duration(seconds: 45),
     this.firstFixTimeout = const Duration(seconds: 45),
     DateTime Function()? clock,
   })  : _feed = feed, _clock = clock ?? DateTime.now {
     session.addListener(_sessionChanged);
   }
 
-  /// A report this recent counts as "the server has my position"; the server itself accepts 120 s, so one late report is tolerated.
+  /// A report this recent counts as "the server has my position" on THIS screen (for the status line and to refresh the profile in time). It is not the
+  /// eligibility: the server alone decides that, with its own threshold of 120 s (two missed 60-second reports), and the app shows the server's verdict.
   static const Duration freshAck = Duration(seconds: 100);
   static const Duration startGrace = Duration(seconds: 3);
 
   final SessionController session;
   final LocationFeed _feed;
-  final Duration minGap;
   final Duration firstFixTimeout;
   final DateTime Function() _clock;
   StreamSubscription<Map<String, dynamic>>? _sub;
@@ -102,14 +105,15 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
   bool _sharing = false;
   bool _observeRecording = true;
   bool _observing = false;
-  bool _sending = false;
   bool _starting = false;
   Future<void>? _startFuture;
   Future<bool>? _acquiring;
   Completer<bool>? _ackWaiter;
   int? _latestTime;
   int _epoch = 0;
-  int? _lastSentTime;
+  int? _ackWallMs;
+  bool _endedFired = false;
+  bool _refusedSeen = false;
   DateTime? _lastUpload;
   DateTime? _startedAt;
   Map<String, dynamic>? _position;
@@ -198,9 +202,12 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
     _permissionDenied = false;
     _gpsOff = false;
     _uploadFailed = false;
+    _ackWallMs = null;
+    _endedFired = false;
+    _refusedSeen = false;
     notifyListeners();
     try {
-      await _feed.start();
+      await _feed.start(apiBaseUrl: session.apiBaseUrl);
       if (epoch != _epoch) {
         // Consent/permission may finish after stop or logout. Stop that late native start too.
         try { await _feed.stop(); } on Object { /* Already stopped. */ }
@@ -259,6 +266,7 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
     _sharing = false;
     _starting = false;
     _lastUpload = null;
+    _ackWallMs = null;
     _ackTimer?.cancel();
     _ackTimer = null;
     _clearPosition();
@@ -272,9 +280,10 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Snapshot timestamps are measurement times from M14, never reception times.
   Future<void> onSnapshot(Map<String, dynamic> snapshot) async {
+    _applyReport(snapshot);
     if (snapshot['recording'] == false) {
       // The service starts a moment after the call returns: a "not recording" read in that moment is not a stop.
-      if (_sharing && _startedAt != null && _clock().difference(_startedAt!) < startGrace && snapshot['permissionGranted'] != false) return;
+      if (_sharing && _startedAt != null && _clock().difference(_startedAt!) < startGrace && snapshot['permissionGranted'] != false && snapshot['uploadState'] != 'SESSION_ENDED') return;
       final bool wasSharing = _sharing;
       _sharing = false;
       _lastUpload = null;
@@ -327,36 +336,39 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
     });
     notifyListeners();
-    if (session.status != SessionStatus.signedIn || _sending ||
-        (_lastSentTime != null && measured <= _lastSentTime!) ||
-        (_lastUpload != null && now.difference(_lastUpload!) < minGap)) { return; }
-    final int epoch = _epoch;
-    _sending = true;
-    try {
-      final ApiResponse response = await session.protectedCall('PUT', '/v1/driver/location',
-        body: jsonEncode(<String, Object?>{'lat': lat.toDouble(), 'lng': lon.toDouble(), 'accuracy_m': accuracy.toDouble()}));
-      if (epoch != _epoch) return;
-      if (response.status == 200) {
-        _lastSentTime = measured;
-        _lastUpload = now;
-        _error = null;
-        _uploadFailed = false;
-        _ackTimer?.cancel();
-        _ackTimer = Timer(freshAck, notifyListeners);
-        _settle(true);
-        final Object? data = response.data;
-        final Map<String, Object?>? map = data is Map<String, Object?> ? data : null;
-        onAck?.call(LocationAck(shouldShare: map?['should_share_location'] as bool?, intentOnline: map?['intent_online'] as bool?));
-      } else {
-        _error = 'Chưa gửi được vị trí.';
-        _uploadFailed = true;
-        _settle(false);
-        if (response.status == 403 || response.status == 409) onRefused?.call();
-      }
-    } on Object {
-      if (epoch == _epoch) { _error = 'Chưa gửi được vị trí. Kiểm tra kết nối.'; _uploadFailed = true; _settle(false); }
-    } finally { _sending = false; }
-    if (epoch == _epoch) notifyListeners();
+  }
+
+  /// What the service says about its sending. Only a running service counts (the stored values of an earlier run are ignored).
+  void _applyReport(Map<String, dynamic> snapshot) {
+    final Object? state = snapshot['uploadState'];
+    if (state == 'SESSION_ENDED') {
+      // The server no longer knows this session: the profile read that follows ends it cleanly. Once per start.
+      if (!_endedFired) { _endedFired = true; _settle(false); onRefused?.call(); }
+      return;
+    }
+    if (snapshot['recording'] != true || !_sharing) return;
+    final Object? at = snapshot['uploadedAt'];
+    if (at is int && at != _ackWallMs) {
+      _ackWallMs = at;
+      _lastUpload = DateTime.fromMillisecondsSinceEpoch(at, isUtc: true);
+      _error = null;
+      _uploadFailed = false;
+      _ackTimer?.cancel();
+      _ackTimer = Timer(freshAck, notifyListeners);
+      _settle(true);
+      final Object? share = snapshot['shouldShare'];
+      final Object? intent = snapshot['intentOnline'];
+      onAck?.call(LocationAck(shouldShare: share is bool ? share : null, intentOnline: intent is bool ? intent : null));
+    }
+    if (state == 'FAILED') {
+      _error = 'Chưa gửi được vị trí. Kiểm tra kết nối.';
+      _uploadFailed = true;
+    } else if (state == 'REFUSED') {
+      if (!_refusedSeen) { _refusedSeen = true; onRefused?.call(); }
+    } else if (state == 'OK') {
+      _refusedSeen = false;
+    }
+    notifyListeners();
   }
 
   @override

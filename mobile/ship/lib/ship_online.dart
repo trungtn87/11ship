@@ -26,11 +26,13 @@ class ShipOnline extends ChangeNotifier {
   bool _busy = false;
   bool _turningOn = false;
   bool _reconciling = false;
+  bool _checking = false;
   bool _autoBlocked = false;
   int _sessionEpoch = -1;
   LocationProblem _problem = LocationProblem.none;
   String? _message;
   Timer? _retryTimer;
+  Timer? _staleTimer;
 
   DriverController? get driver => _driver;
 
@@ -54,7 +56,7 @@ class ShipOnline extends ChangeNotifier {
     if (_attached || _disposed) return;
     _attached = true;
     session.addListener(_onSession);
-    reporter.addListener(_notify);
+    reporter.addListener(_onReporter);
     reporter.onAck = _onAck;
     reporter.onRefused = () => unawaited(_reload());
     reporter.onResumed = () { _autoBlocked = false; unawaited(_reload()); };
@@ -72,9 +74,10 @@ class ShipOnline extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _retryTimer?.cancel();
+    _staleTimer?.cancel();
     if (_attached) {
       session.removeListener(_onSession);
-      reporter.removeListener(_notify);
+      reporter.removeListener(_onReporter);
       _driver?.removeListener(_onDriver);
       if (reporter.onAck == _onAck) reporter.onAck = null;
       _driver?.acceptingHandler = null;
@@ -103,8 +106,28 @@ class ShipOnline extends ChangeNotifier {
       _message = null;
       _autoBlocked = false;
       _retryTimer?.cancel();
+      _staleTimer?.cancel();
+      _staleTimer = null;
     }
     _notify();
+  }
+
+  void _onReporter() {
+    _notify();
+    // The service ended while the server may still want it (it stopped itself, or Android did): read the server first, then decide.
+    if (!reporter.sharing && !reporter.starting && !_busy && !_reconciling && !_checking && !_autoBlocked) {
+      final DriverProfile? p = _driver?.profile;
+      if (p != null && _wantShare(p)) {
+        _checking = true;
+        unawaited(_reload().whenComplete(() => _checking = false));
+      }
+    }
+    // 100 s without an accepted report: ask the server what it thinks once its own 120 s have passed. The screen then shows the server's verdict,
+    // not this app's guess.
+    final bool quiet = intent && reporter.sharing && reporter.lastUpload != null && !reporter.serverHasPosition;
+    if (quiet) {
+      _staleTimer ??= Timer(const Duration(seconds: 25), () { _staleTimer = null; unawaited(_reload()); });
+    }
   }
 
   void _onDriver() {
@@ -134,7 +157,8 @@ class ShipOnline extends ChangeNotifier {
   /// Makes the location service match what the server says is needed. Does nothing while a turn-on/off runs (that flow does its own cleanup).
   Future<void> reconcile({bool force = false}) async {
     final DriverController? d = _driver;
-    if (_disposed || _busy || _reconciling || d == null || d.busy || session.status != SessionStatus.signedIn) return;
+    // While the profile is being read, what we hold is old: the read finishing notifies again and decides then.
+    if (_disposed || _busy || _reconciling || d == null || d.busy || d.loadState == DriverLoad.loading || session.status != SessionStatus.signedIn) return;
     final DriverProfile? p = d.profile;
     if (p == null) return;
     _reconciling = true;
@@ -257,11 +281,12 @@ class ShipOnline extends ChangeNotifier {
   bool get intent => _driver?.profile?.acceptingDeliveries ?? false;
   bool get hasActiveWork => _driver?.profile?.presence?.hasActiveWork ?? false;
 
-  /// The server confirmed every condition AND the server holds a position this app sent a moment ago.
+  /// What the SERVER says: the switch is on, every condition holds and its latest position is fresh (120 s). The profile is re-read on every change
+  /// that matters (a report answer, the app coming back, 25 s after the app's own 100 s without a report), so this follows the server, not a local clock.
   bool get receiving {
     final DriverProfile? p = _driver?.profile;
-    if (p == null || !p.acceptingDeliveries || !reporter.serverHasPosition) return false;
-    return p.presence?.canReceiveOrders ?? p.readiness.canAccept;
+    if (p == null || !p.acceptingDeliveries) return false;
+    return p.presence?.canReceiveOrders ?? (p.readiness.canAccept && reporter.serverHasPosition);
   }
 
   /// The switch is on but receiving is paused (no position yet, or it went stale): nothing is cancelled and it resumes by itself.
@@ -278,6 +303,8 @@ class ShipOnline extends ChangeNotifier {
     if (work) return shared ? 'Đang giao đơn · Vẫn chia sẻ vị trí' : 'Đang giao đơn · Chưa có vị trí';
     if (shared) return 'Đang chia sẻ vị trí';
     if (reporter.sharing && reporter.lastUpload == null && problem == LocationProblem.none) return 'Đang lấy vị trí…';
+    // Past this app's 100 s but the server has not said otherwise yet (its own limit is 120 s): waiting for the next report, not yet paused.
+    if (receiving) return 'Đang lấy vị trí…';
     return 'Chưa có vị trí · Tạm dừng nhận đơn';
   }
 }

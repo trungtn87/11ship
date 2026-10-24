@@ -338,6 +338,21 @@ describe('M08 — notifications, reminders and sync', () => {
     expect(await rows(`SELECT 1 FROM app.notification_pushes WHERE recipient_user_id = $1::uuid`, [stale.userId])).toHaveLength(0);
   });
 
+  it('a Shipper whose session is over is not offered new deliveries, even with a fresh position and the switch on', async () => {
+    const live = await newShipper(true);
+    const gone = await newShipper(true);
+    expect((await registerToken(live, tokenOf('live'))).status).toBe(200);
+    expect((await registerToken(gone, tokenOf('gone'))).status).toBe(200);
+    const left = await app.call('POST', '/client-auth/logout', { bearer: gone.token, body: {} });
+    expect(left.status).toBe(204);
+    await newDelivery();
+    await settle();
+    expect((await inbox(live)).items).toHaveLength(1);
+    expect(await rows(`SELECT 1 FROM app.notifications WHERE recipient_user_id = $1::uuid AND kind = 'NEW_OFFERS'`, [gone.userId])).toHaveLength(0);
+    await flush();
+    expect(sentWith(tokenOf('gone'))).toHaveLength(0);
+  });
+
   it('redelivery of the same outbox event, and a second round for the same delivery version, never create a second card or push', async () => {
     const s = await newShipper(true);
     expect((await registerToken(s, tokenOf('dup'))).status).toBe(200);
