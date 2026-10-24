@@ -84,7 +84,7 @@ jobs:
           python3 mobile/gps-test/tools/verify-package.py
           python3 -m unittest discover -s ops/m14 -p 'test_*.py'
           cd mobile/gps-test
-          ./gradlew :history:testDebugUnitTest :routing:testDebugUnitTest :app:assembleRelease :app:lintRelease
+          ./gradlew :gps:testDebugUnitTest :history:testDebugUnitTest :routing:testDebugUnitTest :app:assembleRelease :app:lintRelease
       - name: Sign, verify and record build identity
         run: bash mobile/gps-test/tools/sign-apk.sh
       - uses: actions/upload-artifact@v4

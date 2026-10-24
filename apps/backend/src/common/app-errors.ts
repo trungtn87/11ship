@@ -87,6 +87,7 @@ export const APP_ERROR_DEFINITIONS = {
   DRIVER_FUNDING_REQUIRED: { status: 409, message: 'The Shipper needs the initial funding before the profile can be approved' },
   DRIVER_NOT_ACTIVE: { status: 409, message: 'The Shipper is not active' },
   DRIVER_WALLET_NOT_READY: { status: 409, message: 'The wallet does not meet the conditions to take orders' },
+  DRIVER_LOCATION_NOT_READY: { status: 409, message: 'The Shipper has no current position to take orders with' },
   DRIVER_HAS_ACTIVE_WORK: { status: 409, message: 'The Shipper still has deliveries in progress' },
   DRIVER_WALLET_NOT_SETTLED: { status: 409, message: 'The wallet balance must be settled first' },
   DRIVER_SELF_ACTION_FORBIDDEN: { status: 403, message: 'An administrator cannot perform this action on their own Shipper profile' },

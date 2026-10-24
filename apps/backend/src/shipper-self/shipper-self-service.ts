@@ -16,6 +16,9 @@ import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { AcceptingInput, BankUpdateInput, ClosureRequestInput, ProfileUpdateInput, VersionOnlyInput } from './shipper-self-validation';
 import { ShipperViewBuilder } from '../driver/shipper-view';
+import { ShipperLocationReader, shouldShareLocation } from '../delivery/shipper-location';
+import { LOCATION_LIVE_SECONDS } from '../delivery/delivery-constants';
+import { ShipperSettlementReader } from '../shipper-settlement/shipper-settlement-reader';
 
 const SCOPE_TYPE = 'user';
 const RESOURCE = 'driver';
@@ -60,14 +63,45 @@ export class ShipperSelfService {
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
     private readonly walletReads: WalletReadRepository,
+    private readonly locations: ShipperLocationReader,
+    private readonly settlement: ShipperSettlementReader,
   ) {}
+
+  /**
+   * The owner's view plus how the switch and the position stand together. `accepting_deliveries` stays the Shipper's INTENT (only the Shipper, a
+   * suspension or a closure change it). `presence` says what is true now: the intent is only effective while the latest position is fresh and valid (the
+   * threshold M06 uses at offers and at accepting, LOCATION_LIVE_SECONDS: two missed 60-second reports), and the position must be shared while the Shipper
+   * wants orders or still has work to finish. Nothing is stored for it, so a stale position pauses taking orders and a fresh one resumes it, but never
+   * turns a switch that is off back on.
+   */
+  async #view(context: TransactionContext, driver: DriverRow): Promise<JsonObject> {
+    const view = await this.views.build(context, driver);
+    const location = await this.locations.current(context, driver.driverId);
+    const locationReady = location !== undefined && location.fresh && location.valid;
+    const activeWork = await this.settlement.hasActiveWork(context, driver.driverId);
+    const canAccept = (view.readiness as { can_accept?: unknown }).can_accept === true;
+    const intent = driver.acceptingDeliveries;
+    const pausedReason = !intent || locationReady ? null : location === undefined ? 'LOCATION_MISSING' : 'LOCATION_STALE';
+    return {
+      ...view,
+      presence: {
+        intent_online: intent,
+        location_ready: locationReady,
+        location_fresh_seconds: LOCATION_LIVE_SECONDS,
+        can_receive_orders: intent && canAccept && locationReady,
+        paused_reason: pausedReason,
+        has_active_work: activeWork,
+        should_share_location: shouldShareLocation(driver, activeWork),
+      },
+    };
+  }
 
   /** GET /v1/driver/me. Reading grants nothing; a user without a Shipper profile reads null. */
   async read(principal: AuthPrincipal): Promise<JsonObject | null> {
     return this.transactions.withTransaction(async (context) => {
       const actor = await this.authority.lock(context, principal, 'share');
       const driver = await this.drivers.findByUserId(context, actor.userId);
-      return driver === undefined ? null : this.views.build(context, driver);
+      return driver === undefined ? null : this.#view(context, driver);
     });
   }
 
@@ -171,8 +205,15 @@ export class ShipperSelfService {
         if (!(await this.views.readiness(context, driver, bank)).walletReady) {
           throw new AppError('DRIVER_WALLET_NOT_READY');
         }
+        // Switching on shares the position first: the app sends a fresh one and only then asks. A switch that could take orders without a current
+        // position would be exactly the state this command exists to prevent.
+        const location = await this.locations.current(context, driver.driverId);
+        if (location === undefined || !location.fresh || !location.valid) {
+          throw new AppError('DRIVER_LOCATION_NOT_READY');
+        }
       }
-      // Switching off needs nothing and touches nothing but the switch: orders already taken are not cancelled or moved.
+      // Switching off stops NEW orders at once and needs nothing else: it never refuses because of work in progress, and orders already taken are not
+      // cancelled or moved (closing the ACCOUNT is the separate closure request).
       const updated = await this.#write(context, driver, { acceptingDeliveries: input.accepting });
       return { driver: updated, change: input.accepting ? 'accepting_on' : 'accepting_off' };
     });
@@ -255,7 +296,7 @@ export class ShipperSelfService {
         const applied = await apply(context, driver);
         if (applied === undefined) {
           // Nothing to change (the same data, the switch already in that position): the same answer, no new version, no history.
-          return { status: 200, replayGuard: { user_id: actor.userId }, payload: await this.views.build(context, driver) };
+          return { status: 200, replayGuard: { user_id: actor.userId }, payload: await this.#view(context, driver) };
         }
         const after = applied.driver;
         await this.events.append(context, {
@@ -288,7 +329,7 @@ export class ShipperSelfService {
           resourceVersion: after.version,
           payload: { driver_id: after.driverId, change: applied.change, status: after.status, review_state: after.reviewState, accepting_deliveries: after.acceptingDeliveries, version: after.version },
         });
-        return { status: 200, replayGuard: { user_id: actor.userId }, payload: await this.views.build(context, after) };
+        return { status: 200, replayGuard: { user_id: actor.userId }, payload: await this.#view(context, after) };
       },
     );
     return outcome.payload as JsonObject;

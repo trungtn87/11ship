@@ -3,6 +3,8 @@ import { DynamicModule, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { DriverModule } from '../driver/driver.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
+import { ShipperLocationModule } from '../delivery/shipper-location.module';
+import { ShipperSettlementModule } from '../shipper-settlement/shipper-settlement.module';
 import { OutboxModule } from '../outbox/outbox.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { ShipperSelfController } from './shipper-self.controller';
@@ -18,7 +20,7 @@ export class ShipperSelfModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: ShipperSelfModule,
-      imports: [auth, DriverModule, WalletModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
+      imports: [auth, DriverModule, WalletModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule, ShipperLocationModule, ShipperSettlementModule],
       controllers: [ShipperSelfController],
       providers: [ShipperSelfService],
     };

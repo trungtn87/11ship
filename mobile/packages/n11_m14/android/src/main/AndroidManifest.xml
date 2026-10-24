@@ -10,5 +10,6 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" tools:node="remove"/>
     <application>
         <service android:name="vn.eleven.m14.gps.RecorderService" android:exported="false" android:foregroundServiceType="location"/>
+        <service android:name="vn.eleven.m14.flutter.ShipLocationService" android:exported="false" android:foregroundServiceType="location"/>
     </application>
 </manifest>

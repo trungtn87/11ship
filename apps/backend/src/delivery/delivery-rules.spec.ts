@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { DELIVERY_STATES } from './delivery-constants';
+import { shouldShareLocation } from './shipper-location';
 import {
   dropoffAreaOf,
   dueSearchReminders,
@@ -137,5 +138,20 @@ describe('M07 rules — codes, ETA and fee status', () => {
     expect(feeStatusOf({ feeVnd: null, agreementStatus: 'COUNTERED' })).toBe('PENDING_AGREEMENT');
     expect(feeStatusOf({ feeVnd: null, agreementStatus: 'AWAITING_CUSTOMER' })).toBe('AWAITING_CUSTOMER');
     expect(feeStatusOf({ feeVnd: null, agreementStatus: 'EXPIRED' })).toBe('UNKNOWN');
+  });
+});
+
+describe('M14 — when the position must keep being shared', () => {
+  it.each([
+    ['ACTIVE', true, false, true],
+    ['ACTIVE', false, false, false],
+    ['ACTIVE', false, true, true],
+    ['ACTIVE', true, true, true],
+    ['CLOSING', true, false, false],
+    ['CLOSING', false, true, true],
+    ['SUSPENDED', true, false, false],
+    ['PENDING', false, false, false],
+  ] as const)('%s, switch %s, work in progress %s -> share %s', (status, accepting, work, expected) => {
+    expect(shouldShareLocation({ status, acceptingDeliveries: accepting }, work)).toBe(expected);
   });
 });

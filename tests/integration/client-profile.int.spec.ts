@@ -43,6 +43,7 @@ const DRIVER_KEYS = [
   'full_name',
   'phone',
   'plate_number',
+  'presence',
   'readiness',
   'rejection_reason',
   'review_state',
