@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
 import 'package:n11_shared/testing.dart';
 import 'package:ship/ship_m07.dart';
 
-// Sharing the Shipper's position (M07.06 / M14): nothing starts without consent, only a fresh latest position is uploaded, uploads are spaced,
-// an old snapshot is never sent, and stopping really stops.
+// Sharing the Shipper's position (M07.06 / M14): observing never starts GPS, only a fresh latest position is uploaded, uploads are spaced,
+// an old snapshot is never sent, a start waits for the server to hold a position, and stopping really stops.
 
 const AppConfig config = AppConfig(apiBaseUrl: 'https://api.example.test', deviceEnvironment: 'fixture-env');
 
@@ -37,7 +37,7 @@ class _Feed extends LocationFeed {
 
 Map<String, dynamic> fix({bool fresh = true, double lat = 22.66, double lon = 106.25, int time = 1792314000000}) => <String, dynamic>{'lat': lat, 'lon': lon, 'accuracy': 12.0, 'fresh': fresh, 'time': time};
 
-Future<({ShipLocationReporter reporter, FakeApiTransport api, _Feed feed, List<DateTime> clock})> build({Duration gap = const Duration(seconds: 45)}) async {
+Future<({ShipLocationReporter reporter, FakeApiTransport api, _Feed feed, List<DateTime> clock})> build({Duration gap = const Duration(seconds: 45), Duration firstFix = const Duration(milliseconds: 200)}) async {
   final FakeApiTransport api = FakeApiTransport();
   installAccountRoutes(api);
   api.routes['PUT /v1/driver/location'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'ok': true}});
@@ -46,13 +46,13 @@ Future<({ShipLocationReporter reporter, FakeApiTransport api, _Feed feed, List<D
   await session.login(phone: '0901234567', password: 'Correct-Horse-9');
   final _Feed feed = _Feed();
   final List<DateTime> clock = <DateTime>[DateTime.utc(2026, 10, 18, 9)];
-  final ShipLocationReporter reporter = ShipLocationReporter(session: session, feed: feed, minGap: gap, clock: () => clock.last);
+  final ShipLocationReporter reporter = ShipLocationReporter(session: session, feed: feed, minGap: gap, firstFixTimeout: firstFix, clock: () => clock.last);
   addTearDown(() async { reporter.dispose(); await feed.controller.close(); });
   return (reporter: reporter, api: api, feed: feed, clock: clock);
 }
 
 void main() {
-  test('nothing is started or uploaded before the Shipper agrees', () async {
+  test('observing never starts the core or uploads anything', () async {
     final t = await build();
     expect(t.reporter.sharing, isFalse);
     expect(t.feed.starts, 0);
@@ -88,6 +88,7 @@ void main() {
     await t.reporter.onSnapshot(<String, dynamic>{'fresh': false, 'recording': true, 'status': 'Hết thời gian chờ vị trí mới'});
     expect(t.reporter.error, contains('Hết thời gian chờ'));
     expect(t.api.to('PUT', '/v1/driver/location'), isEmpty);
+    t.clock.add(t.clock.last.add(const Duration(seconds: 5)));
     await t.reporter.onSnapshot(<String, dynamic>{...fix(), 'recording': false, 'status': 'Quyền vị trí đã bị thu hồi'});
     expect(t.reporter.sharing, isFalse);
     expect(t.reporter.error, contains('Quyền vị trí'));
@@ -198,26 +199,140 @@ void main() {
     expect(t.reporter.position, isNull);
   });
 
-  testWidgets('the card explains first; only "Đồng ý chia sẻ" starts the core', (WidgetTester tester) async {
+  test('a "not recording" read right after the start is the service still starting, not a stop; a real stop later is', () async {
     final t = await build();
-    await tester.pumpWidget(MaterialApp(theme: buildN11Theme(), home: Scaffold(body: SingleChildScrollView(child: ShipLocationShareCard(reporter: t.reporter)))));
-    expect(find.text('Đang tắt'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('m07-share-start')));
-    await tester.pump();
-    expect(find.textContaining('60 giây'), findsOneWidget);
-    expect(find.textContaining('không lưu vệt di chuyển'), findsOneWidget);
-    expect(t.feed.starts, 0);
-    await tester.tap(find.byKey(const Key('m07-confirm-back')));
-    await tester.pump();
-    expect(t.feed.starts, 0);
-    await tester.tap(find.byKey(const Key('m07-share-start')));
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('m07-confirm-yes')));
-    await tester.pump();
-    await tester.pump();
-    expect(t.feed.starts, 1);
-    expect(find.text('Đang chia sẻ'), findsOneWidget);
-    expect(find.byKey(const Key('m07-share-stop')), findsOneWidget);
-    await tester.runAsync(t.reporter.stop);
+    await t.reporter.start();
+    await t.reporter.onSnapshot(<String, dynamic>{'recording': false, 'permissionGranted': true, 'status': 'Đã dừng'});
+    expect(t.reporter.sharing, isTrue);
+    t.clock.add(t.clock.last.add(const Duration(seconds: 4)));
+    await t.reporter.onSnapshot(<String, dynamic>{'recording': false, 'permissionGranted': true, 'status': 'Đã dừng'});
+    expect(t.reporter.sharing, isFalse);
+  });
+
+  group('acquire: start, then wait until the server holds a fresh position', () {
+    test('starts the core once, uploads the first valid position and only then reports success', () async {
+      final t = await build();
+      final Future<bool> pending = t.reporter.acquire();
+      await Future<void>.delayed(Duration.zero);
+      expect(t.api.to('PUT', '/v1/driver/location'), isEmpty);
+      await t.reporter.onSnapshot(fix(time: t.clock.last.millisecondsSinceEpoch));
+      expect(await pending, isTrue);
+      expect(t.feed.starts, 1);
+      expect(t.api.to('PUT', '/v1/driver/location').length, 1);
+      expect(t.reporter.serverHasPosition, isTrue);
+      expect(t.reporter.problem, LocationProblem.none);
+    });
+
+    test('a double tap shares one attempt: one start, one answer', () async {
+      final t = await build();
+      final Future<bool> a = t.reporter.acquire();
+      final Future<bool> b = t.reporter.acquire();
+      await Future<void>.delayed(Duration.zero);
+      await t.reporter.onSnapshot(fix(time: t.clock.last.millisecondsSinceEpoch));
+      expect(await a, isTrue);
+      expect(await b, isTrue);
+      expect(t.feed.starts, 1);
+    });
+
+    test('already sharing with a recent report: answers at once, nothing new is started', () async {
+      final t = await build();
+      final Future<bool> first = t.reporter.acquire();
+      await Future<void>.delayed(Duration.zero);
+      await t.reporter.onSnapshot(fix(time: t.clock.last.millisecondsSinceEpoch));
+      await first;
+      expect(await t.reporter.acquire(), isTrue);
+      expect(t.feed.starts, 1);
+    });
+
+    test('a refused permission fails with the permission problem and leaves nothing running', () async {
+      final t = await build();
+      t.feed.startError = PlatformException(code: 'PERMISSION', message: 'x');
+      expect(await t.reporter.acquire(), isFalse);
+      expect(t.reporter.sharing, isFalse);
+      expect(t.reporter.problem, LocationProblem.permission);
+    });
+
+    test('notifications switched off is its own problem', () async {
+      final t = await build();
+      t.feed.startError = PlatformException(code: 'NOTIFICATION', message: 'x');
+      expect(await t.reporter.acquire(), isFalse);
+      expect(t.reporter.problem, LocationProblem.notification);
+    });
+
+    test('GPS off fails at once with the GPS problem (the app never turns GPS on itself)', () async {
+      final t = await build(firstFix: const Duration(seconds: 30));
+      final Future<bool> pending = t.reporter.acquire();
+      await Future<void>.delayed(Duration.zero);
+      await t.reporter.onSnapshot(<String, dynamic>{'recording': true, 'gpsEnabled': false, 'permissionGranted': true, 'fixState': 'DISABLED', 'status': 'Định vị đang tắt'});
+      expect(await pending, isFalse);
+      expect(t.reporter.problem, LocationProblem.gpsOff);
+    });
+
+    test('no position in time fails with the no-fix problem', () async {
+      final t = await build();
+      expect(await t.reporter.acquire(), isFalse);
+      expect(t.reporter.sharing, isTrue, reason: 'the caller decides whether to stop again');
+      expect(t.reporter.problem, LocationProblem.noFix);
+    });
+
+    test('a server that refuses the report fails with the upload problem', () async {
+      final t = await build(firstFix: const Duration(seconds: 30));
+      t.api.routes['PUT /v1/driver/location'] = (String m, String p, Map<String, String> h, String b) async => apiError(503, 'SERVICE_UNAVAILABLE');
+      final Future<bool> pending = t.reporter.acquire();
+      await Future<void>.delayed(Duration.zero);
+      await t.reporter.onSnapshot(fix(time: t.clock.last.millisecondsSinceEpoch));
+      expect(await pending, isFalse);
+      expect(t.reporter.problem, LocationProblem.upload);
+    });
+
+    test('stopping drops the report: a new start has to get a new position to the server first', () async {
+      final t = await build();
+      final Future<bool> first = t.reporter.acquire();
+      await Future<void>.delayed(Duration.zero);
+      await t.reporter.onSnapshot(fix(time: t.clock.last.millisecondsSinceEpoch));
+      await first;
+      await t.reporter.stop();
+      expect(t.reporter.serverHasPosition, isFalse);
+      expect(await t.reporter.acquire(), isFalse, reason: 'no new position arrived');
+    });
+  });
+
+  test('the server answer of every report reaches onAck; a refusal reaches onRefused', () async {
+    final t = await build();
+    final List<LocationAck> acks = <LocationAck>[];
+    int refused = 0;
+    t.reporter.onAck = acks.add;
+    t.reporter.onRefused = () => refused++;
+    t.api.routes['PUT /v1/driver/location'] = (String m, String p, Map<String, String> h, String b) async =>
+        json(200, <String, Object?>{'data': <String, Object?>{'ok': true, 'intent_online': false, 'should_share_location': false}});
+    await t.reporter.start();
+    await t.reporter.onSnapshot(fix(time: t.clock.last.millisecondsSinceEpoch));
+    expect(acks.single.shouldShare, isFalse);
+    expect(acks.single.intentOnline, isFalse);
+    t.api.routes['PUT /v1/driver/location'] = (String m, String p, Map<String, String> h, String b) async => apiError(403, 'ROLE_NOT_AVAILABLE');
+    t.clock.add(t.clock.last.add(const Duration(minutes: 1)));
+    await t.reporter.onSnapshot(fix(time: t.clock.last.millisecondsSinceEpoch));
+    expect(refused, 1);
+    expect(acks.length, 1);
+  });
+
+  test('signing out stops the core and nothing is sent afterwards', () async {
+    final t = await build();
+    await t.reporter.start();
+    await t.reporter.session.logout();
+    await Future<void>.delayed(Duration.zero);
+    expect(t.reporter.sharing, isFalse);
+    expect(t.feed.stops, greaterThanOrEqualTo(1));
+    await t.reporter.onSnapshot(fix(time: t.clock.last.millisecondsSinceEpoch));
+    expect(t.api.to('PUT', '/v1/driver/location'), isEmpty);
+  });
+
+  test('the report goes stale on screen without waiting for another native event', () async {
+    final t = await build();
+    await t.reporter.start();
+    await t.reporter.onSnapshot(fix(time: t.clock.last.millisecondsSinceEpoch));
+    expect(t.reporter.serverHasPosition, isTrue);
+    t.clock.add(t.clock.last.add(const Duration(seconds: 101)));
+    expect(t.reporter.serverHasPosition, isFalse);
   });
 }

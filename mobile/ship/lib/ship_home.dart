@@ -5,11 +5,12 @@ import 'package:n11_shared/n11_shared.dart';
 import 'package:n11_m14/n11_m14.dart';
 
 import 'ship_m07.dart';
+import 'ship_online.dart';
 
 const String kOnlineReason = 'Chưa có dữ liệu trạng thái hoạt động. Chưa thể bật online.';
 
 class ShipHome extends StatefulWidget {
-  const ShipHome({super.key, required this.session, required this.onNotifications, this.reset, this.notifications, this.driver, this.walletSource});
+  const ShipHome({super.key, required this.session, required this.onNotifications, this.reset, this.notifications, this.driver, this.walletSource, this.onlineOverride});
   final SessionController session;
   final DriverController? driver;
   final WalletSource? walletSource;
@@ -17,17 +18,23 @@ class ShipHome extends StatefulWidget {
   final VoidCallback onNotifications;
   final NotificationController? notifications;
 
+  /// For tests: the online controller to use instead of the session's own.
+  final ShipOnline? onlineOverride;
+
   @override
   State<ShipHome> createState() => _ShipHomeState();
 }
 
 class _ShipHomeState extends State<ShipHome> {
   late ShipLocationReporter reporter;
+  late ShipOnline online;
   int _epoch = -1;
   @override
   void initState() {
     super.initState();
     reporter = reporterFor(widget.session);
+    // The online state lives with the session, not with this screen: this only makes sure it is watching.
+    online = (widget.onlineOverride ?? shipOnlineFor(widget.session, driver: widget.driver))..attach();
     widget.session.addListener(_readDriver);
     _readDriver();
   }
@@ -49,14 +56,17 @@ class _ShipHomeState extends State<ShipHome> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge(<Listenable>[widget.session, reporter, if (widget.driver != null) widget.driver!]),
+    listenable: Listenable.merge(<Listenable>[widget.session, reporter, online, if (widget.driver != null) widget.driver!]),
     builder: (BuildContext context, Widget? child) {
-      if (widget.session.status == SessionStatus.signedIn) reporter.observe();
       return ShipHomeLayout(
       online: widget.driver?.profile?.acceptingDeliveries,
       reason: widget.driver?.profile == null ? kOnlineReason : (widget.driver!.profile!.readiness.canAccept ? 'Ví đủ điều kiện. Bạn có thể bật hoạt động.' : widget.driver!.profile!.readiness.blocks.map(driverBlockLabel).join('\n')),
-      onToggle: widget.driver?.profile == null || widget.driver!.busy || !(widget.driver!.profile!.acceptingDeliveries || widget.driver!.profile!.readiness.canAccept) ? null : () => widget.driver!.setAccepting(!widget.driver!.profile!.acceptingDeliveries),
-      gpsStatus: reporter.gpsStatus,
+      onToggle: widget.driver?.profile == null || widget.driver!.busy || online.busy || !(widget.driver!.profile!.acceptingDeliveries || widget.driver!.profile!.readiness.canAccept) ? null : () => widget.driver!.setAccepting(!widget.driver!.profile!.acceptingDeliveries),
+      paused: online.paused,
+      busy: online.busy,
+      message: online.message,
+      problem: ShipLocationProblemNote(online: online),
+      gpsStatus: online.statusLine,
       position: reporter.position,
       onNotifications: widget.onNotifications,
       bell: widget.notifications == null ? null : NotificationBell(controller: widget.notifications!, onPressed: widget.onNotifications),
@@ -75,15 +85,20 @@ class _ShipHomeState extends State<ShipHome> {
 
 class ShipHomeLayout extends StatelessWidget {
   const ShipHomeLayout({super.key, this.online, required this.reason, required this.onNotifications, this.bell, this.footer,
-    this.gpsStatus = 'Chưa bật chia sẻ vị trí', this.position, this.onToggle});
+    this.gpsStatus, this.position, this.onToggle, this.paused = false, this.busy = false, this.message, this.problem});
   final bool? online;
   final String reason;
   final VoidCallback onNotifications;
   final VoidCallback? onToggle;
   final Widget? bell;
   final Widget? footer;
-  final String gpsStatus;
+  /// The one small status line (null: nothing to say). Comes from the same state as the online button.
+  final String? gpsStatus;
   final Map<String, dynamic>? position;
+  final bool paused;
+  final bool busy;
+  final String? message;
+  final Widget? problem;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
@@ -96,9 +111,9 @@ class ShipHomeLayout extends StatelessWidget {
           bell ?? IconButton(key: const Key('home-notifications'), tooltip: 'Thông báo', onPressed: onNotifications,
             icon: const Icon(Icons.notifications_outlined, color: N11Colors.black)),
         ])),
-        Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 8), child: Text(gpsStatus, key: const Key('home-gps-status'), style: N11Text.caption)),
+        if (gpsStatus != null) Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 8), child: Text(gpsStatus!, key: const Key('home-gps-status'), style: N11Text.caption)),
         _HomeMap(height: mapHeight, position: position),
-        ShipActivityPanel(online: online, reason: reason, footer: footer, onToggle: onToggle),
+        ShipActivityPanel(online: online, reason: reason, footer: footer, onToggle: onToggle, paused: paused, busy: busy, message: message, problem: problem),
       ]),
     );
   });
@@ -168,11 +183,21 @@ class _HomeMapState extends State<_HomeMap> {
 
 /// Unknown until the real activity source is connected in M03.
 class ShipActivityPanel extends StatelessWidget {
-  const ShipActivityPanel({super.key, this.online, required this.reason, this.onToggle, this.footer});
+  const ShipActivityPanel({super.key, this.online, required this.reason, this.onToggle, this.footer, this.paused = false, this.busy = false, this.message, this.problem});
+
+  /// The switch ([online]) is on. Receiving orders also needs [paused] to be false: the server holds a current position.
   final bool? online;
   final String reason;
   final VoidCallback? onToggle;
   final Widget? footer;
+  final bool paused;
+  final bool busy;
+
+  /// A plain sentence when the server refused turning on (never a code or an id).
+  final String? message;
+
+  /// The short instruction and button of a location problem; shown only when there is one.
+  final Widget? problem;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -180,17 +205,20 @@ class ShipActivityPanel extends StatelessWidget {
     padding: const EdgeInsets.all(16),
     decoration: const BoxDecoration(color: N11Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
-      Text(online == null ? 'Chưa xác định trạng thái hoạt động' : online! ? 'Bạn đang online' : 'Bạn đang offline',
+      Text(online == null ? 'Chưa xác định trạng thái hoạt động' : online! ? (paused ? 'Tạm dừng nhận đơn' : 'Bạn đang online') : 'Bạn đang offline',
         key: const Key('home-activity-status'), style: N11Text.h2),
       const SizedBox(height: 8),
       Text(reason, key: const Key('home-online-reason'), style: N11Text.caption),
+      if (message != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(message!, key: const Key('home-online-message'), style: N11Text.captionInk2)),
+      if (problem != null) problem!,
       const SizedBox(height: 12),
       FilledButton.icon(
-        key: const Key('online-button'), onPressed: online == null ? null : onToggle,
+        key: const Key('online-button'), onPressed: online == null || busy ? null : onToggle,
         style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
         icon: const Icon(Icons.power_settings_new),
-        label: Text(online == null ? 'Bật online · Chưa khả dụng' : online! ? 'Tắt online' : 'Bật online'),
+        label: Text(online == null ? 'Bật online · Chưa khả dụng' : busy ? 'Đang xử lý…' : online! ? 'Tắt online' : 'Bật online'),
       ),
+      if (online == false) const Padding(padding: EdgeInsets.only(top: 8), child: Text('Bật online sẽ chia sẻ vị trí của bạn khoảng 1 phút một lần, kể cả khi khóa màn hình, để nhận đơn gần bạn và cho quán biết bạn đang tới. Tắt online để ngừng nhận đơn mới.', key: Key('home-online-disclosure'), style: N11Text.caption)),
       if (footer != null) Padding(padding: const EdgeInsets.only(top: 8), child: footer),
     ]),
   );

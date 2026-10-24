@@ -71,7 +71,8 @@ void main() {
     expect(find.textContaining('320.000'), findsNothing);
     expect(find.byKey(const Key('home-map-unavailable')), findsOneWidget);
     expect(find.textContaining('trong M01'), findsNothing);
-    expect(find.text('Chưa bật chia sẻ vị trí'), findsOneWidget);
+    expect(find.text('Chưa bật chia sẻ vị trí'), findsNothing, reason: 'no separate sharing control or status while there is nothing to say');
+    expect(find.byKey(const Key('home-gps-status')), findsNothing);
   });
 
   testWidgets('home bell opens notifications', (WidgetTester tester) async {

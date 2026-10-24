@@ -72,6 +72,37 @@ class DriverReadiness {
   }
 }
 
+/// How the switch and the position stand together, as the server says it (the app never decides it). `intentOnline` is the Shipper's own switch;
+/// `canReceiveOrders` is true only while that switch is on, every condition holds AND the latest position is still fresh. `pausedReason` is
+/// LOCATION_MISSING / LOCATION_STALE while the switch is on but the position is not (receiving is paused, nothing is cancelled).
+/// `shouldShareLocation` is true while the Shipper wants orders or still has work to finish: the app keeps its location service for exactly that.
+@immutable
+class DriverPresence {
+  const DriverPresence({required this.intentOnline, required this.locationReady, required this.canReceiveOrders, required this.hasActiveWork, required this.shouldShareLocation, this.pausedReason});
+
+  final bool intentOnline;
+  final bool locationReady;
+  final bool canReceiveOrders;
+  final bool hasActiveWork;
+  final bool shouldShareLocation;
+  final String? pausedReason;
+
+  static DriverPresence? tryParse(Object? data) {
+    if (data is! Map<String, Object?>) {
+      return null;
+    }
+    final Object? intent = data['intent_online'];
+    final Object? location = data['location_ready'];
+    final Object? can = data['can_receive_orders'];
+    final Object? work = data['has_active_work'];
+    final Object? share = data['should_share_location'];
+    if (intent is! bool || location is! bool || can is! bool || work is! bool || share is! bool) {
+      return null;
+    }
+    return DriverPresence(intentOnline: intent, locationReady: location, canReceiveOrders: can, hasActiveWork: work, shouldShareLocation: share, pausedReason: data['paused_reason'] as String?);
+  }
+}
+
 @immutable
 class DriverClosure {
   const DriverClosure({this.requestedAt, this.note, required this.canCancel});
@@ -107,6 +138,7 @@ class DriverProfile {
     required this.bank,
     required this.readiness,
     required this.closure,
+    this.presence,
   });
 
   final String driverId;
@@ -129,6 +161,9 @@ class DriverProfile {
   final DriverBank? bank;
   final DriverReadiness readiness;
   final DriverClosure? closure;
+
+  /// Null from a server that does not send it yet; then the app falls back to the switch alone.
+  final DriverPresence? presence;
 
   bool get rejected => status == 'PENDING' && reviewState == 'REJECTED';
   bool get submitted => status == 'PENDING' && reviewState == 'SUBMITTED';
@@ -171,6 +206,7 @@ class DriverProfile {
       bank: bank,
       readiness: readiness,
       closure: DriverClosure.tryParse(data['closure']),
+      presence: DriverPresence.tryParse(data['presence']),
     );
   }
 }
@@ -203,6 +239,15 @@ String driverStandingLabel(DriverProfile profile) {
     default:
       return 'Không rõ';
   }
+}
+
+/// The one wording of whether orders are coming: the switch AND (from the server) a position that is still fresh.
+String driverReceivingLabel(DriverProfile profile) {
+  if (!profile.acceptingDeliveries) {
+    return 'Chưa nhận đơn';
+  }
+  final DriverPresence? presence = profile.presence;
+  return presence != null && !presence.canReceiveOrders ? 'Tạm dừng nhận đơn' : 'Đang nhận đơn';
 }
 
 String driverStatusLabel(String status) {
@@ -274,6 +319,8 @@ String? driverRefusalMessage(AuthFailure failure) {
       return 'Ngân hàng chưa được xác minh nên chưa bật nhận đơn được.';
     case 'DRIVER_WALLET_NOT_READY':
       return 'Ví chưa đủ điều kiện nên chưa bật nhận đơn được.';
+    case 'DRIVER_LOCATION_NOT_READY':
+      return 'Chưa có vị trí hiện tại của bạn nên chưa bật online được. Hãy bật GPS và thử lại.';
     default:
       return null;
   }
@@ -489,9 +536,19 @@ class DriverController extends ChangeNotifier {
     return _command('POST', '/v1/driver/me/submit', <String, Object?>{'expected_version': current.version});
   }
 
+  /// Set by 11Ship: turning on first shares the position (one switch for both), turning off stops the position when nothing needs it. Every
+  /// screen that has the switch calls [setAccepting], so they all behave alike; only the handler itself calls [sendAccepting].
+  Future<bool> Function(bool accepting)? acceptingHandler;
+
   /// Turns receiving orders on or off. Every condition is decided by the server; turning off is always accepted and never touches
   /// orders already taken.
   Future<bool> setAccepting(bool accepting) {
+    final Future<bool> Function(bool accepting)? handler = acceptingHandler;
+    return handler == null ? sendAccepting(accepting) : handler(accepting);
+  }
+
+  /// The bare command POST /v1/driver/me/accepting.
+  Future<bool> sendAccepting(bool accepting) {
     final DriverProfile? current = _profile;
     if (_busy || current == null) {
       return Future<bool>.value(false);

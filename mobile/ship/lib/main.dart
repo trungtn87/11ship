@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:n11_shared/n11_shared.dart';
 
 import 'image_picker_adapter.dart';
+import 'ship_online.dart';
 import 'ship_tabs.dart';
 
 void main() {
@@ -11,6 +12,8 @@ void main() {
   final AppFlows flows = createFlows(ClientApp.ship, session, config, picker: DeviceImagePicker(), pushPort: MethodChannelPushPort());
   // Cold start: the stored token is checked with the server (`me`) before anything personal is shown.
   session.start();
+  // Sharing the position follows the session and what the server says is needed, not a screen: it starts watching here, before any tab is built.
+  shipOnlineFor(session, driver: flows.driver).attach();
   // M13: update check, version report and the offline error queue. A REQUIRED update never covers a delivery in progress: the shipper with an active
   // delivery sees only a banner until it is finished (an unreadable answer counts as "busy").
   final OpsClient? ops = createOpsClient(

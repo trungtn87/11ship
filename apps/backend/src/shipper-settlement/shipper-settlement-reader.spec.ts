@@ -19,3 +19,11 @@ it('an unresolved goods custody incident also prevents closing/refunding', async
   );
   expect((await reader.obligations({} as TransactionContext, 'driver')).activeWork).toBe(true);
 });
+
+it.each([[0, 0, false], [1, 0, true], [0, 1, true], [2, 1, true]])('the same definition keeps the position shared: %s running, %s custody incident -> work in progress %s', async (running, incidents, expected) => {
+  const reader = new ShipperSettlementReader(
+    { countActiveOfDriver: async () => running, countOpenIncidentsOfDriver: async () => incidents } as unknown as DeliveryRepository,
+    { pendingFinanceOfDriver: async () => 0 } as unknown as ComplaintRepository,
+  );
+  expect(await reader.hasActiveWork({} as TransactionContext, 'driver')).toBe(expected);
+});

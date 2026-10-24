@@ -201,6 +201,17 @@ describe('M03 — Shipper management', () => {
   const submit = async (s: Shipper): Promise<ApiResponse> => send(s, '/driver/me/submit', { expected_version: await versionOf(s) });
   const setAccepting = async (s: Shipper, accepting: boolean): Promise<ApiResponse> => send(s, '/driver/me/accepting', { expected_version: await versionOf(s), accepting });
 
+  /** The Shipper's latest position as M14 keeps it (one row), `ageSeconds` old on the database clock. Switching on needs a fresh one. */
+  const locate = async (s: Shipper, ageSeconds = 0, accuracyM = 20): Promise<void> => {
+    await admin.pool.query(
+      `INSERT INTO app.shipper_latest_locations (driver_id, lat, lng, accuracy_m, recorded_at)
+       VALUES ($1::uuid, 21.0005, 105.8005, $3::float8, clock_timestamp() - ($2::float8 * interval '1 second'))
+       ON CONFLICT (driver_id) DO UPDATE SET lat = EXCLUDED.lat, lng = EXCLUDED.lng, accuracy_m = EXCLUDED.accuracy_m, recorded_at = EXCLUDED.recorded_at`,
+      [s.driverId, ageSeconds, accuracyM],
+    );
+  };
+  const presence = async (s: Shipper): Promise<Record<string, unknown>> => (await mine(s)).presence as Record<string, unknown>;
+
   /** A Shipper with a bank account that has been submitted, and the version the administrator will see. */
   async function submitted(): Promise<Shipper> {
     const s = await newShipper();
@@ -379,6 +390,7 @@ describe('M03 — Shipper management', () => {
       try {
         const s = await approved();
         expect((await bankRow(s.driverId))?.verification_state).toBe('VERIFIED');
+        await locate(s);
         expect((await setAccepting(s, true)).status).toBe(200);
         const changed = await saveBank(s, { bank_code: 'TCB', account_number: '1112223334' });
         expect(changed.status).toBe(200);
@@ -423,6 +435,7 @@ describe('M03 — Shipper management', () => {
       wallet.ready = true;
       try {
         const s = await approved();
+        await locate(s);
         const on = await setAccepting(s, true);
         expect(on.status).toBe(200);
         expect(dataOf(on).accepting_deliveries).toBe(true);
@@ -438,10 +451,55 @@ describe('M03 — Shipper management', () => {
       }
     });
 
+    it('switching on needs a fresh, valid position first; without one it refuses and stays off, so there is never an online Shipper without a position', async () => {
+      wallet.ready = true;
+      try {
+        const s = await approved();
+        expect(errorCode(await setAccepting(s, true))).toBe('DRIVER_LOCATION_NOT_READY');
+        await locate(s, 130);
+        expect(errorCode(await setAccepting(s, true))).toBe('DRIVER_LOCATION_NOT_READY');
+        await locate(s, 0, 900);
+        expect(errorCode(await setAccepting(s, true))).toBe('DRIVER_LOCATION_NOT_READY');
+        expect((await row(s.driverId)).accepting_deliveries).toBe(false);
+        expect(await presence(s)).toMatchObject({ intent_online: false, location_ready: false, can_receive_orders: false, paused_reason: null, has_active_work: false, should_share_location: false });
+        await locate(s, 100);
+        expect((await setAccepting(s, true)).status).toBe(200);
+        expect(await presence(s)).toMatchObject({ intent_online: true, location_ready: true, can_receive_orders: true, paused_reason: null, should_share_location: true });
+      } finally {
+        wallet.ready = false;
+      }
+    });
+
+    it('a position that goes stale pauses receiving without changing the switch; a fresh one resumes it; a switch that is off is never turned on', async () => {
+      wallet.ready = true;
+      try {
+        const s = await approved();
+        await locate(s);
+        expect((await setAccepting(s, true)).status).toBe(200);
+        const v = await versionOf(s);
+        await locate(s, 125);
+        expect(await mine(s)).toMatchObject({ accepting_deliveries: true });
+        expect(await presence(s)).toMatchObject({ intent_online: true, location_ready: false, can_receive_orders: false, paused_reason: 'LOCATION_STALE', should_share_location: true });
+        await admin.pool.query('DELETE FROM app.shipper_latest_locations WHERE driver_id = $1::uuid', [s.driverId]);
+        expect(await presence(s)).toMatchObject({ can_receive_orders: false, paused_reason: 'LOCATION_MISSING' });
+        await locate(s);
+        expect(await presence(s)).toMatchObject({ intent_online: true, can_receive_orders: true, paused_reason: null });
+        expect(await versionOf(s)).toBe(v);
+        // The Shipper switches off on purpose: a fresh position afterwards never switches it back on.
+        expect((await setAccepting(s, false)).status).toBe(200);
+        await locate(s);
+        expect(await presence(s)).toMatchObject({ intent_online: false, can_receive_orders: false, paused_reason: null, should_share_location: false });
+        expect((await row(s.driverId)).accepting_deliveries).toBe(false);
+      } finally {
+        wallet.ready = false;
+      }
+    });
+
     it('a suspension stops receiving orders, keeps the profile, needs a reason and can be reopened only with a verified bank', async () => {
       wallet.ready = true;
       try {
         const s = await approved();
+        await locate(s);
         await setAccepting(s, true);
         const v = await versionOf(s);
         expect(codeOf(await command(lockOnly, s.driverId, 'lock', { expected_version: v }))).toEqual({ status: 400, code: 'ADMIN_INPUT_INVALID' });
@@ -457,6 +515,7 @@ describe('M03 — Shipper management', () => {
         const reopened = await command(lockOnly, s.driverId, 'unlock', { expected_version: await versionOf(s) });
         expect(adminData(reopened)).toMatchObject({ status: 'ACTIVE', accepting_deliveries: false, suspension_reason: null });
         // Reopening does not switch receiving back on by itself.
+        await locate(s);
         expect((await setAccepting(s, true)).status).toBe(200);
       } finally {
         wallet.ready = false;
@@ -477,6 +536,7 @@ describe('M03 — Shipper management', () => {
       wallet.ready = true;
       try {
         const s = await approved();
+        await locate(s);
         await setAccepting(s, true);
         const requested = await send(s, '/driver/me/closure-request', { expected_version: await versionOf(s), note: 'Nghỉ việc' });
         expect(requested.status).toBe(200);

@@ -21,6 +21,8 @@ open class RecorderService: Service() {
     }
     protected open val notificationTitle = "11Ship đang cập nhật vị trí"
     protected open val notificationText = "Chu kỳ mục tiêu 60 giây · chỉ giữ vị trí mới nhất"
+    /** The notification's own stop button; null removes it (11Ship stops sharing with its online button, not with the notification). */
+    protected open val stopActionLabel: String? = "Dừng ghi"
     /** Optional test-only sink; production core has no database or history dependency. */
     protected open fun onAcceptedLocation(location: Location) {}
     private val handler = Handler(Looper.getMainLooper())
@@ -43,9 +45,11 @@ open class RecorderService: Service() {
         if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) { state("Chưa được cấp quyền vị trí chính xác"); stopSelf(); return START_NOT_STICKY }
         val stop = PendingIntent.getService(this,1,Intent(this,javaClass).setAction(STOP),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val open = packageManager.getLaunchIntentForPackage(packageName)?.let { PendingIntent.getActivity(this,2,it,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
-        val notification = Notification.Builder(this,CHANNEL).setSmallIcon(android.R.drawable.ic_menu_mylocation)
+        val builder = Notification.Builder(this,CHANNEL).setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentTitle(notificationTitle).setContentText(notificationText)
-            .setOngoing(true).setContentIntent(open).addAction(Notification.Action.Builder(null,"Dừng ghi",stop).build()).build()
+            .setOngoing(true).setContentIntent(open)
+        stopActionLabel?.let { builder.addAction(Notification.Action.Builder(null,it,stop).build()) }
+        val notification = builder.build()
         if(Build.VERSION.SDK_INT >= 29) startForeground(14,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION) else startForeground(14,notification)
         if(!running) {
             running=true; runningInProcess=true
@@ -93,7 +97,7 @@ open class RecorderService: Service() {
         preferences(this).edit().putString("status",message).putString("fixState",code).apply()
         sendBroadcast(Intent(ACTION).setPackage(packageName))
     }
-    private fun shutdown(reason: String = "Đã dừng ghi — không tiếp tục thu thập vị trí") {
+    protected fun shutdown(reason: String = "Đã dừng ghi — không tiếp tục thu thập vị trí") {
         running=false; runningInProcess=false; handler.removeCallbacksAndMessages(null); cancelFix()
         preferences(this).edit().putBoolean("recording",false)
             .remove("lat").remove("lon").remove("time").remove("elapsed").remove("accuracy").apply()

@@ -1,6 +1,7 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { DriverModule } from '../driver/driver.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
+import { ShipperSettlementModule } from '../shipper-settlement/shipper-settlement.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { DeliveryCoreModule } from './delivery-core.module';
 import { ORDER_DELIVERY_PORT } from './delivery-order-port';
@@ -23,7 +24,7 @@ export class DeliveryModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: DeliveryModule,
-      imports: [auth, DeliveryCoreModule.register(auth), OrdersCoreModule, M14RoutingModule, DriverModule, TransactionModule, IdempotencyModule],
+      imports: [auth, DeliveryCoreModule.register(auth), OrdersCoreModule, M14RoutingModule, DriverModule, TransactionModule, IdempotencyModule, ShipperSettlementModule],
       controllers: [DeliveryShopController, DeliveryShipperController],
       providers: [DeliveryShopService, DeliveryShipperService, DeliverySweeper, DeliverySweeperRunner, { provide: ORDER_DELIVERY_PORT, useExisting: OrderDeliveryAdapter }],
       exports: [DeliverySweeper, DeliveryShopService],

@@ -25,6 +25,9 @@ class M14Client {
     await _channel.invokeMethod<void>('start', <String, dynamic>{'consent': true});
   }
   Future<void> stop() => _channel.invokeMethod<void>('stop');
+
+  /// Opens the phone's own settings screen: 'app' (permissions), 'location' (GPS on/off) or 'notifications'. Never changes a setting itself.
+  Future<void> openSettings(String kind) => _channel.invokeMethod<void>('openSettings', <String, dynamic>{'kind': kind});
   Future<Map<String, dynamic>?> savedRoute() => _channel.invokeMapMethod<String, dynamic>('savedRoute');
 
   /// Call only from a user's Calculate action, never from the positions stream.

@@ -231,6 +231,7 @@ describe('AllExceptionsFilter', () => {
         'DRIVER_BANK_NOT_VERIFIED',
         'DRIVER_FUNDING_REQUIRED',
         'DRIVER_HAS_ACTIVE_WORK',
+        'DRIVER_LOCATION_NOT_READY',
         'DRIVER_NOT_ACTIVE',
         'DRIVER_NOT_FOUND',
         'DRIVER_PENDING_APPROVAL',

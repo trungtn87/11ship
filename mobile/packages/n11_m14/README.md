@@ -25,6 +25,8 @@ final snapshot = await client.status(); // không lấy GPS
 final cached = await client.savedRoute(); // không dùng mạng
 ```
 
+**11Ship (24/10/2026):** không còn nút chia sẻ riêng. Nút online duy nhất bật/tắt chia sẻ (`mobile/ship/lib/ship_online.dart`; ghi chú: `docs/current/M14-online-location-20261024.md`). Ship dùng `ShipLocationService` (thông báo “11Ship đang chia sẻ vị trí”, không có nút dừng riêng) và `client.openSettings('app'|'location'|'notifications')` để mở màn hình cài đặt của máy; app không tự bật GPS hay cấp quyền. Phần mô tả dưới đây áp dụng cho app test GPS.
+
 Chỉ sau thao tác bắt đầu của shipper, UI giải thích: “Ứng dụng cập nhật vị trí theo chu kỳ mục tiêu 60 giây, kể cả khi khóa màn hình. Chỉ giữ vị trí mới nhất trên điện thoại. Bạn có thể dừng trong thông báo.” Nếu shipper đồng ý, gọi `client.start(consent: true)` khi activity đang hiển thị. Android hỏi vị trí chính xác khi dùng app và thông báo; từ chối trả `PlatformException` tiếng Việt. `client.stop()` hoặc nút Dừng ghi trong thông báo dừng thu thập. Không có start từ constructor, status, stream, bản đồ, đăng nhập, boot hoặc trạng thái online M01. Không upload vị trí từ plugin; luồng cập nhật vị trí server M14 sau này phải theo hợp đồng nghiệp vụ được duyệt.
 
 `client.positions` phát snapshot có `lat`, `lon`, `accuracy`, `time`, `fresh`, `recording`, `gpsEnabled`, `permissionGranted`, `status`. Không coi snapshot `fresh=false` là GPS mới; không tự gọi tính tuyến theo stream. Khi process chết không tự tiếp tục ghi. Chu kỳ/thời gian bắt GPS giữ nguyên app test: lần đầu tối đa 120 giây, sau đó cửa sổ tối đa 25 giây/chu kỳ mục tiêu 60 giây.

@@ -8,7 +8,9 @@ import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.os.*
+import android.provider.Settings
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -104,7 +106,17 @@ class M14Plugin: FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler,
                 if(Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED) permissions.add(Manifest.permission.POST_NOTIFICATIONS)
                 if(permissions.isEmpty()) finishStart() else activity.requestPermissions(permissions.toTypedArray(),1414)
             }
-            "stop" -> { context.stopService(Intent(context,RecorderService::class.java)); result.success(null) }
+            "stop" -> { context.stopService(Intent(context,ShipLocationService::class.java)); result.success(null) }
+            "openSettings" -> {
+                // Opens the phone's own screen only; the app never turns GPS on or grants a permission by itself.
+                val intent=when(call.argument<String>("kind")) {
+                    "location" -> Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                    "notifications" -> Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName)
+                    else -> Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.fromParts("package",context.packageName,null))
+                }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                try { context.startActivity(intent); result.success(null) }
+                catch(e: Exception) { result.error("SETTINGS","Không mở được cài đặt",null) }
+            }
             else -> result.notImplemented()
         }
     }
@@ -112,7 +124,7 @@ class M14Plugin: FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler,
         val result=pendingStart?:return; pendingStart=null
         if(context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) { result.error("PERMISSION","Quyền vị trí chính xác bị từ chối",null); return }
         if(!context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()) { result.error("NOTIFICATION","Bật thông báo để hiển thị trạng thái và nút dừng GPS",null); return }
-        try { context.startForegroundService(Intent(context,RecorderService::class.java)); result.success(null) }
+        try { context.startForegroundService(Intent(context,ShipLocationService::class.java)); result.success(null) }
         catch(e: Exception) { result.error("START","Không thể bắt đầu GPS: ${e.message}",null) }
     }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray): Boolean {
