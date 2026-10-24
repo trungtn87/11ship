@@ -40,7 +40,8 @@ describe('parseOtpPolicyBody (issue #117)', () => {
 
   it('refuses a phone hourly limit above its daily limit, a missing field, an extra key and a bad version or body', () => {
     expect(code(() => parseOtpPolicyBody({ ...VALID, phone_per_hour: 6, phone_per_day: 5 }))).toBe('ADMIN_INPUT_INVALID');
-    const { cooldown_seconds: _omitted, ...missing } = VALID;
+    const missing: Record<string, unknown> = { ...VALID };
+    delete missing.cooldown_seconds;
     for (const body of [missing, { ...VALID, enabled: false }, { ...VALID, expected_version: -1 }, { ...VALID, expected_version: '1' }, null, [], 'x', { ...VALID, reason: 5 }]) {
       expect(code(() => parseOtpPolicyBody(body))).toBe('ADMIN_INPUT_INVALID');
     }
