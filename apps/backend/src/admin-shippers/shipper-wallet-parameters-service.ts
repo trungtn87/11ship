@@ -71,7 +71,7 @@ export class ShipperWalletParametersService {
         scopeId: known.userId,
         operationId: OPERATION,
         idempotencyKey,
-        logicalRequest: { expected_version: body.expectedVersion, topup_min_vnd: body.topupMinVnd, withdraw_min_vnd: body.withdrawMinVnd },
+        logicalRequest: { expected_version: body.expectedVersion, topup_min_vnd: body.topupMinVnd, withdraw_min_vnd: body.withdrawMinVnd, reason: body.reason },
         replay: {
           kind: 'sensitive',
           authorize: async (context, guard) => {
@@ -113,7 +113,7 @@ export class ShipperWalletParametersService {
             resourceType: RESOURCE,
             resourceId: null,
             outcome: 'SUCCESS',
-            metadata: { param_key: row.key, old_value: row.valueVnd, new_value: next },
+            metadata: { param_key: row.key, old_value: row.valueVnd, new_value: next, ...(body.reason === null ? {} : { reason: body.reason }) },
           });
           await this.outbox.append(context, {
             eventType: 'shipper.wallet_parameter.changed.v1',

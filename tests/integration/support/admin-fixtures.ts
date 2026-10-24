@@ -78,6 +78,8 @@ export interface AdminResponse {
   readonly status: number;
   readonly requestId: string;
   readonly text: string;
+  /** The answer's bytes as received (a downloaded file is not text). */
+  readonly bytes: Buffer;
   readonly headers: http.IncomingHttpHeaders;
   readonly setCookie: string[];
   readonly body: {
@@ -144,7 +146,8 @@ export function adminCall(
         const chunks: Buffer[] = [];
         response.on('data', (chunk: Buffer) => chunks.push(chunk));
         response.on('end', () => {
-          const text = Buffer.concat(chunks).toString('utf8');
+          const bytes = Buffer.concat(chunks);
+          const text = bytes.toString('utf8');
           let body: AdminResponse['body'] = {};
           try {
             body = JSON.parse(text) as AdminResponse['body'];
@@ -156,6 +159,7 @@ export function adminCall(
             status: response.statusCode ?? 0,
             requestId: String(response.headers['x-request-id'] ?? ''),
             text,
+            bytes,
             headers: response.headers,
             setCookie: raw === undefined ? [] : raw,
             body,

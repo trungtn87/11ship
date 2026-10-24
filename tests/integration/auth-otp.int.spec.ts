@@ -212,16 +212,16 @@ describe('M01-A1 — OTP request and verification', () => {
     const otp = app.provider.lastOtpFor(phone.normalized) as string;
     const wrong = otp === '000000' ? '111111' : '000000';
 
-    for (let attempt = 1; attempt <= 4; attempt += 1) {
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
       const response = await app.call('POST', `/auth/phone-verifications/${id}/verify`, { body: { otp: wrong } });
       expect(response.status).toBe(400);
       expect(errorCode(response)).toBe('OTP_INVALID');
       const row = (await rowsOf(phone.normalized))[0] as VerificationRow;
       expect([row.attempt_count, row.status]).toEqual([attempt, 'PENDING']); // the wrong attempt COMMITTED
     }
-    const fifth = await app.call('POST', `/auth/phone-verifications/${id}/verify`, { body: { otp: wrong } });
-    expect(fifth.status).toBe(429);
-    expect(errorCode(fifth)).toBe('OTP_RATE_LIMITED');
+    const third = await app.call('POST', `/auth/phone-verifications/${id}/verify`, { body: { otp: wrong } });
+    expect(third.status).toBe(429);
+    expect(errorCode(third)).toBe('OTP_RATE_LIMITED');
     expect(((await rowsOf(phone.normalized))[0] as VerificationRow).status).toBe('LOCKED');
 
     const right = await app.call('POST', `/auth/phone-verifications/${id}/verify`, { body: { otp } });
@@ -232,7 +232,7 @@ describe('M01-A1 — OTP request and verification', () => {
     // The locked attempt is recorded as a standalone DENIED audit row (best effort, after the fact).
     const audit = await app.pool.query<{ outcome: string; reason_code: string }>(
       `SELECT outcome, reason_code FROM app.audit_logs WHERE request_id = $1::uuid AND action = 'auth.otp_verify.v1'`,
-      [fifth.requestId],
+      [third.requestId],
     );
     expect(audit.rows).toEqual([{ outcome: 'DENIED', reason_code: 'OTP_LOCKED' }]);
   });

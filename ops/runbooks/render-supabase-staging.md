@@ -85,7 +85,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | shop_business_hours | SELECT, INSERT, DELETE |
 | idempotency_records | SELECT, INSERT, UPDATE, DELETE |
 | outbox_events | SELECT, INSERT, UPDATE |
-| audit_logs | INSERT only |
+| audit_logs | SELECT, INSERT (M12: the administration reads the log; never updated or deleted) |
 | admin_memberships | SELECT, INSERT, UPDATE (INSERT: the activation (M01-D-ADMIN-1C) creates ADMIN-role rows; the SYSTEM row is created by the operator command; UPDATE also because `FOR UPDATE/SHARE` needs it) |
 | admin_auth_challenges | SELECT, INSERT, UPDATE |
 | admin_totp_factors | SELECT, INSERT, UPDATE, DELETE |
@@ -188,6 +188,11 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | complaint_reconsiderations | SELECT, INSERT, UPDATE (M11: a request to review a closed file and its decision; never deleted) |
 | complaint_adjustments | SELECT, INSERT, UPDATE (M11: result and commission adjustments; the finance posting state is updated; never deleted) |
 | wallet_adjustments | SELECT, INSERT (M04: the refund / extra charge of a commission decided by M11; append-only, one ledger row each; the ledger row itself is written through the existing wallet_ledger_entries grant) |
+| report_export_jobs | SELECT, INSERT, UPDATE (M12-E: export jobs; never deleted, a trigger refuses it) |
+| report_export_files | SELECT, INSERT, DELETE (M12-E: the bytes of an export; removed when the file expires) |
+| backup_records | SELECT (M12-F: written by the backup job with the owner role; the application only reads it; never deleted) |
+| restore_requests | SELECT, INSERT, UPDATE (M12-F: SYSTEM's request to restore a verified backup, cancelled by SYSTEM, moved on by an operator; never deleted, the application never performs a restore) |
+| backup_jobs | SELECT, INSERT (M12-F: "Sao lưu ngay" queues one job; the backup job moves it on with the owner role; never deleted) |
 
 **Permanent account deletion (Owner decision 2026-10-14).** The runtime role has no `DELETE` on any account table. The only way an account is removed is the function `app.purge_app_user(uuid)` (created by the migration, `SECURITY DEFINER`, owned by the migration role, refuses an administration account and an account with a shop or driver profile). `PUBLIC` has no `EXECUTE` on it; after the migrations run, grant it to the runtime role with `ops/selfhosted/03-runtime-function-grants.sql` (one statement: `GRANT EXECUTE ON FUNCTION app.purge_app_user(uuid) TO ship11_app;`). Without that grant a permanent delete answers 503 and nothing is deleted.
 

@@ -3,6 +3,7 @@ import { AuditModule } from '../audit/audit.module';
 import { OutboxModule } from '../outbox/outbox.module';
 import { ComplaintRepository } from './complaint-repository';
 import { FeedbackRecorder } from './feedback-recorder';
+import { FeedbackReportReader } from './feedback-report-reader';
 import { ReviewRepository } from './review-repository';
 
 /**
@@ -12,7 +13,7 @@ import { ReviewRepository } from './review-repository';
  */
 @Module({
   imports: [AuditModule, OutboxModule],
-  providers: [ReviewRepository, ComplaintRepository, FeedbackRecorder],
-  exports: [ReviewRepository, ComplaintRepository, FeedbackRecorder],
+  providers: [ReviewRepository, ComplaintRepository, FeedbackRecorder, FeedbackReportReader],
+  exports: [ReviewRepository, ComplaintRepository, FeedbackRecorder, FeedbackReportReader],
 })
 export class FeedbackReadModule {}
