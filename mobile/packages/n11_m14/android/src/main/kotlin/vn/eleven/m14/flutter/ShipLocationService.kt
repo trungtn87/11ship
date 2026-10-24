@@ -33,11 +33,11 @@ class ShipLocationService: RecorderService() {
 
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
-    private val reporter by lazy {
+    private val reporter: LocationReporter by lazy {
         LocationReporter(HttpsReportTransport(), ShipSessionLink, listener, System::currentTimeMillis, { task -> worker.execute(task) })
     }
 
-    private val listener = object: ReportListener {
+    private val listener: ReportListener = object: ReportListener {
         override fun uploaded(atWallMs: Long, shouldShare: Boolean?, intentOnline: Boolean?) {
             val edit = preferences(this@ShipLocationService).edit().putLong("uploadedAt", atWallMs).putString("uploadState", "OK")
             if (shouldShare == null) edit.remove("shouldShare") else edit.putBoolean("shouldShare", shouldShare)
