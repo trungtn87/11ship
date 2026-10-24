@@ -11,6 +11,7 @@ const data = JSON.parse(readFileSync(join(ROOT, 'config/vn-mobile-prefixes.json'
   reviewedOn: string;
   verification: { status: string; note: string };
   prefixes: Array<{ prefix: string; operator: string; kind: string }>;
+  pendingPrefixes: Array<{ prefix: string; stage: string; decision: string; basis: string; sources: string[]; readDirectly: boolean }>;
 };
 
 describe('central Vietnam mobile prefix table (issue #117)', () => {
@@ -55,5 +56,20 @@ describe('central Vietnam mobile prefix table (issue #117)', () => {
     for (const { input, expected } of vectors.cases) {
       expect([input, normalizeVietnamMobile(input) ?? null]).toEqual([input, expected]);
     }
+  });
+
+  it('a prefix that only WON an auction (095, 075) is listed with its basis and is NOT accepted until its allocation is evidenced', () => {
+    const pending = new Map(data.pendingPrefixes.map((entry) => [entry.prefix, entry]));
+    expect([...pending.keys()].sort()).toEqual(['075', '095']);
+    for (const entry of pending.values()) {
+      expect(entry.stage).toBe('WON_AT_AUCTION');
+      expect(entry.decision).toBe('NOT_ACCEPTED_YET');
+      expect(entry.basis.length).toBeGreaterThan(100);
+      expect(entry.sources.every((url) => url.startsWith('https://'))).toBe(true);
+      // Honest provenance: these pages were seen only through search summaries, never opened.
+      expect(entry.readDirectly).toBe(false);
+      expect(VN_MOBILE_PREFIXES.some((accepted) => entry.prefix === accepted || accepted.startsWith(entry.prefix) || entry.prefix.startsWith(accepted))).toBe(false);
+    }
+    expect(data.verification.status).toBe('PENDING_OFFICIAL_CONFIRMATION');
   });
 });
