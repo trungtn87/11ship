@@ -7,7 +7,7 @@ import { freshClockMs } from '../idempotency/idempotency-repository';
 import { DriverRepository } from '../driver/driver-repository';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { requireActiveShop } from '../shop/shop-guards';
-import { answerIsWaiting } from '../shipping-policy/shipping-fee-agreement';
+import { answerIsWaiting, revisionIsPending } from '../shipping-policy/shipping-fee-agreement';
 import { AgreementOutcome, ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
@@ -17,6 +17,7 @@ import { DeliveryActors, ShopCaller } from './delivery-actors';
 import { ORDER_DELIVERY_PORT, OrderDeliveryPort } from './delivery-order-port';
 import { DeliveryCancel } from './delivery-cancel';
 import { FeeAnswerExpiry } from './fee-answer-expiry';
+import { DeliveryHandback, FEE_NOT_AGREED_REASON } from './delivery-handback';
 import { DeliveryRecorder } from './delivery-recorder';
 import { DeliveryRepository, DeliveryRow, NewDelivery } from './delivery-repository';
 import { creatorMayCancelAfterPickup, dropoffAreaOf, mayRecall, newDeliveryCode } from './delivery-rules';
@@ -75,6 +76,7 @@ export class DeliveryShopService {
     private readonly agreements: ShippingFeeAgreementService,
     private readonly commission: CommissionHoldService,
     private readonly cancelling: DeliveryCancel,
+    private readonly handback: DeliveryHandback,
     private readonly feeAnswers: FeeAnswerExpiry,
     private readonly routes: M14RouteClient,
     @Inject(ORDER_DELIVERY_PORT) private readonly orders: OrderDeliveryPort,
@@ -477,15 +479,21 @@ export class DeliveryShopService {
         // A confirmation the shop gives for a payer who has no app: the ACTOR is the shop (the person who acted); that it stands in for the customer, and who the payer is,
         // are stored apart (on_behalf_of, fee_payer), so the log can never read as the customer's own act.
         const onBehalf = 'SHOP_ON_BEHALF_OF_CUSTOMER';
-        let confirmedForCustomer = action.type === 'CUSTOMER_CONFIRM';
+        // A proposal to change a FINAL fee is answered in ONE step by whoever decides (no second confirmation exists); when the payer is a customer without an app the shop answers
+        // for them and the log says so (on_behalf_of), exactly like a confirmation.
+        const revisionOpen = revisionIsPending(agreement);
+        const revisionBy = revisionOpen ? agreement.revisionBy : null;
+        const forCustomer = action.type === 'CUSTOMER_CONFIRM' || (revisionOpen && delivery.feePayer === 'CUSTOMER' && (action.type === 'SHOP_ACCEPT_COUNTER' || action.type === 'SHOP_REJECT_COUNTER'));
+        let confirmedForCustomer = forCustomer;
+        const nowMs = await freshClockMs(context);
         let outcome = await this.agreements.act(context, {
           agreementId: agreement.agreementId,
           expectedVersion: agreement.version,
           requestId: randomUUID(),
-          nowMs: await freshClockMs(context),
+          nowMs,
           action,
           actorUserId: caller.actor.userId,
-          ...(action.type === 'CUSTOMER_CONFIRM' ? { eventNote: onBehalf, answeredBy: 'SHOP' as const, onBehalfOf: 'CUSTOMER' as const } : {}),
+          ...(forCustomer ? { eventNote: onBehalf, answeredBy: 'SHOP' as const, onBehalfOf: 'CUSTOMER' as const } : {}),
         });
         if (outcome.kind === 'ok' && action.type === 'SHOP_ACCEPT_COUNTER' && outcome.agreement.status === 'AWAITING_CUSTOMER' && delivery.feePayer === 'CUSTOMER') {
           // The payer is a customer without an app: the shop accepting means the shop has talked to them, so the confirmation is recorded in the same step.
@@ -511,13 +519,28 @@ export class DeliveryShopService {
         if (outcome.kind !== 'ok' && outcome.kind !== 'replayed') {
           throw new AppError('DELIVERY_STATE_CONFLICT');
         }
-        let after = delivery;
-        if (outcome.agreement.finalFeeVnd !== null && delivery.feeVnd === null) {
-          after = await this.#update(context, delivery, { feeVnd: outcome.agreement.finalFeeVnd });
-        } else {
-          after = await this.#update(context, delivery, {});
+        // The agreed amount becomes the delivery's fee in the same commit (also when it replaces a fee that was already final); a refusal changes none.
+        const finalFee = outcome.agreement.finalFeeVnd;
+        let after = await this.#update(context, delivery, finalFee !== null && finalFee !== delivery.feeVnd ? { feeVnd: finalFee } : {});
+        // A refused proposal of the Shipper who already holds the delivery ends their turn: the fee stays as it was and the delivery goes back to the search.
+        let turnEnded = false;
+        if (action.type === 'SHOP_REJECT_COUNTER' && revisionBy !== null) {
+          const ended = await this.handback.endProposerTurn(context, after, revisionBy, { status: 'CANCELLED_BY_SYSTEM', actor: 'SYSTEM', reason: FEE_NOT_AGREED_REASON, stoppedReason: 'Hết thời gian tìm shipper', nowMs });
+          if (ended !== undefined) {
+            after = ended.delivery;
+            turnEnded = true;
+          }
         }
-        await this.recorder.record(context, { delivery: after, type: change, actorType: 'SHOP', actorId: caller.actor.userId, operation, requestId, metadata: { agreement_status: outcome.agreement.status, fee_payer: delivery.feePayer, ...(confirmedForCustomer ? { on_behalf_of: 'CUSTOMER' } : {}) } });
+        await this.recorder.record(context, {
+          delivery: after,
+          type: turnEnded ? `${change}_released` : change,
+          actorType: 'SHOP',
+          actorId: caller.actor.userId,
+          driverId: revisionBy,
+          operation,
+          requestId,
+          metadata: { agreement_status: outcome.agreement.status, fee_payer: delivery.feePayer, turn_ended: turnEnded, ...(confirmedForCustomer ? { on_behalf_of: 'CUSTOMER' } : {}) },
+        });
         return { status: 200, replayGuard: { user_id: caller.actor.userId }, payload: await this.views.forShop(context, after, await freshClockMs(context), true) };
       },
     );

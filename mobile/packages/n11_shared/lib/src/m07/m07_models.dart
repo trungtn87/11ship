@@ -118,8 +118,37 @@ class AgreementSummary {
   final DateTime expiresAt;
 }
 
+/// A Shipper's proposal to change a FINAL fee (the fee table's amount or an agreed one), waiting for whoever pays. The fee in force stays [currentVnd] until the payer
+/// agrees; until then the goods are not picked up.
+class FeeNegotiation {
+  const FeeNegotiation({required this.currentVnd, required this.offeredVnd, required this.decider, required this.byMe, this.answerExpiresAt});
+
+  factory FeeNegotiation.fromJson(Object? raw) {
+    final Map<String, Object?> m = _obj(raw);
+    return FeeNegotiation(
+      currentVnd: _int(m['current_vnd']),
+      offeredVnd: _int(m['offered_vnd']),
+      decider: _str(m['decider']),
+      byMe: m['by_me'] == true,
+      answerExpiresAt: _timeOrNull(m['answer_expires_at']),
+    );
+  }
+
+  final int currentVnd;
+  final int offeredVnd;
+
+  /// CUSTOMER or SHOP: who answers.
+  final String decider;
+
+  /// The reader is the Shipper who proposed it.
+  final bool byMe;
+  final DateTime? answerExpiresAt;
+
+  String get deciderText => decider == 'CUSTOMER' ? 'khách' : 'quán';
+}
+
 class FeeView {
-  const FeeView({required this.mode, required this.payer, required this.status, this.amountVnd, this.distanceM, this.agreement, this.decider, this.basis});
+  const FeeView({required this.mode, required this.payer, required this.status, this.amountVnd, this.distanceM, this.agreement, this.decider, this.basis, this.negotiation});
 
   factory FeeView.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
@@ -136,8 +165,12 @@ class FeeView {
       agreement: m['agreement'] == null ? null : AgreementSummary.fromJson(m['agreement']),
       decider: _strOrNull(m['decider']),
       basis: _strOrNull(m['basis']),
+      negotiation: m['negotiation'] == null ? null : FeeNegotiation.fromJson(m['negotiation']),
     );
   }
+
+  /// A Shipper's proposal about the final fee that waits for the payer (null when none). Null from an older server.
+  final FeeNegotiation? negotiation;
 
   /// Who answers a fee the Shipper proposes: CUSTOMER (an order the customer pays, answered in 11Food) or SHOP (the shop pays, or a DIRECT call
   /// where the shop answers for a customer without an app). Null from an older server.
@@ -505,6 +538,8 @@ class OfferView {
     this.agreement,
     this.source,
     this.feeDecider,
+    this.feeCounterAllowed,
+    this.negotiation,
   });
 
   factory OfferView.fromJson(Object? raw) {
@@ -530,8 +565,19 @@ class OfferView {
       agreement: m['agreement'] == null ? null : AgreementSummary.fromJson(m['agreement']),
       source: _strOrNull(m['source']),
       feeDecider: _strOrNull(m['fee_decider']),
+      feeCounterAllowed: m['fee_counter_allowed'] is bool ? m['fee_counter_allowed'] as bool : null,
+      negotiation: m['negotiation'] == null ? null : FeeNegotiation.fromJson(m['negotiation']),
     );
   }
+
+  /// The server's word on whether this Shipper may propose another fee now (a table fee, an agreed fee still open, or one that is theirs). Null from an older
+  /// server: then only an agreed proposal still PROPOSED can be countered, as before.
+  final bool? feeCounterAllowed;
+
+  /// This Shipper's own proposal, waiting for the payer (null when none).
+  final FeeNegotiation? negotiation;
+
+  bool get canCounter => feeCounterAllowed ?? agreement?.state == 'PROPOSED';
 
   /// ORDER (from the customer's order) or DIRECT (called by the shop). Null from an older server.
   final String? source;

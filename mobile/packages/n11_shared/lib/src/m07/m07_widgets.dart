@@ -120,6 +120,7 @@ String m07NewKey() => newIdempotencyKey();
 bool m07NeedsAttention(DeliveryView d) =>
     d.state == DeliveryState.searchStopped ||
     (d.fee.agreement?.state == 'COUNTERED' && d.state.isActive) ||
+    (d.fee.negotiation != null && d.state.isActive) ||
     (d.fee.status == 'AWAITING_CUSTOMER' && d.state.isActive) ||
     (d.incident?.isOpen ?? false);
 

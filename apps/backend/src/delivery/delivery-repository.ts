@@ -197,7 +197,7 @@ export interface DeliveryPatch {
   readonly dropoffPinnedBy?: string;
   readonly dropoffAddressText?: string;
   readonly dropoffAreaText?: string | null;
-  readonly feeVnd?: number;
+  readonly feeVnd?: number | null;
   readonly feeConfirmedBy?: string;
   readonly routeDistanceM?: number | null;
   readonly searchStoppedNow?: true;

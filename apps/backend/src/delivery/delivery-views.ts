@@ -3,13 +3,14 @@ import { UserRepository } from '../auth/user-repository';
 import { DriverRepository, DriverRow } from '../driver/driver-repository';
 import { JsonObject } from '../idempotency/idempotency-executor';
 import { freshClockMs } from '../idempotency/idempotency-repository';
-import { Agreement, answerIsWaiting } from '../shipping-policy/shipping-fee-agreement';
+import { Agreement, answerIsWaiting, feeAllowsAssignment, revisionIsPending } from '../shipping-policy/shipping-fee-agreement';
 import { SHIPPER_SEARCH_RADIUS_M } from '../shipping-policy/shipping-eligibility';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { TransactionContext } from '../transaction/transaction-context';
 import { RUNNING_STATES } from './delivery-constants';
 import { AssignmentRow, DeliveryRepository, DeliveryRow, EventRow, IncidentRow } from './delivery-repository';
-import { creatorMayCancelAfterPickup, dropoffAreaOf, feeStatusOf, freshnessOf, locationValid, mayRecall, shipperMayRelease, shopMayCancel } from './delivery-rules';
+import { FEE_EXPIRED_REASON, FEE_NOT_AGREED_REASON } from './delivery-handback';
+import { creatorMayCancelAfterPickup, dropoffAreaOf, feeStatusOf, freshnessOf, locationValid, mayRecall, searchExpired, shipperMayRelease, shopMayCancel } from './delivery-rules';
 import { ShipperLocationRepository } from './shipper-location';
 import { buildDeliveryStory, StoryDelivery } from '../orders/order-story';
 import { failReasonText, humanDeliveryReason, incidentReasonText } from './delivery-reason-text';
@@ -40,8 +41,36 @@ export function feeDeciderOf(d: Pick<DeliveryRow, 'source' | 'feePayer'>): 'CUST
   return d.source === 'ORDER' && d.feePayer === 'CUSTOMER' ? 'CUSTOMER' : 'SHOP';
 }
 
+/**
+ * A Shipper's proposal to change a FINAL fee (the bands' fee or an agreed amount), waiting for the payer. The fee in force is `current_vnd`; `offered_vnd` is what is asked.
+ * Null when there is none. `by_me` says whether the reader is the Shipper who proposed it (only a Shipper's own view fills it).
+ */
+function negotiationView(agreement: Agreement | undefined, decider: 'CUSTOMER' | 'SHOP', readerDriverId: string | null): JsonObject | null {
+  if (agreement === undefined || !revisionIsPending(agreement) || agreement.revisionFeeVnd === null) {
+    return null;
+  }
+  return {
+    state: 'WAITING',
+    current_vnd: agreement.finalFeeVnd,
+    offered_vnd: agreement.revisionFeeVnd,
+    decider,
+    by_me: readerDriverId !== null && agreement.revisionBy === readerDriverId,
+    answer_expires_at: agreement.answerExpiresAtMs === null ? null : new Date(agreement.answerExpiresAtMs).toISOString(),
+  };
+}
+
 /** The fee question waiting for the payer, or null. Only the amounts and the deadline: nothing about the Shipper. */
 function feeDecisionView(agreement: Agreement | undefined): JsonObject | null {
+  if (agreement !== undefined && revisionIsPending(agreement) && agreement.revisionFeeVnd !== null) {
+    return {
+      state: 'COUNTERED',
+      current_vnd: agreement.finalFeeVnd,
+      offered_vnd: agreement.revisionFeeVnd,
+      can_decline: true,
+      expires_at: new Date(agreement.answerExpiresAtMs ?? agreement.expiresAtMs).toISOString(),
+      search_expires_at: new Date(agreement.expiresAtMs).toISOString(),
+    };
+  }
   if (agreement === undefined || agreement.feeMode !== 'AGREED' || (agreement.status !== 'COUNTERED' && agreement.status !== 'AWAITING_CUSTOMER')) {
     return null;
   }
@@ -85,7 +114,7 @@ export class DeliveryViews {
     return { driver, phone: user?.phoneNormalized ?? null };
   }
 
-  #fee(d: DeliveryRow, agreement: Agreement | undefined): JsonObject {
+  #fee(d: DeliveryRow, agreement: Agreement | undefined, readerDriverId: string | null = null): JsonObject {
     return {
       mode: d.feeMode,
       payer: d.feePayer,
@@ -96,6 +125,8 @@ export class DeliveryViews {
       basis: d.routeDistanceM !== null ? 'ROUTE' : d.feeMode === 'STANDARD' && d.feeVnd !== null ? 'ESTIMATED_BAND' : null,
       decider: feeDeciderOf(d),
       agreement: agreementView(agreement),
+      // A Shipper's proposal to change a final fee, waiting for the payer (null when none).
+      negotiation: negotiationView(agreement, feeDeciderOf(d), readerDriverId),
     };
   }
 
@@ -164,7 +195,7 @@ export class DeliveryViews {
       }
     }
     const decider = feeDeciderOf(d);
-    const feeQuestionOpen = agreement !== undefined && agreement.feeMode === 'AGREED' && (agreement.status === 'COUNTERED' || agreement.status === 'AWAITING_CUSTOMER');
+    const feeQuestionOpen = agreement !== undefined && ((agreement.feeMode === 'AGREED' && (agreement.status === 'COUNTERED' || agreement.status === 'AWAITING_CUSTOMER')) || revisionIsPending(agreement));
     const view: JsonObject = {
       delivery_id: d.deliveryId,
       code: d.code,
@@ -263,7 +294,7 @@ export class DeliveryViews {
       previous_delivery_id: null,
       state: active ? d.state : assignment.status === 'COMPLETED' ? 'completed' : assignment.status === 'FAILED' ? 'failed' : 'cancelled_by_merchant',
       // How THIS Shipper's part ended, so the history can say "Đã hủy nhận" rather than the delivery's own state.
-      own_outcome: active ? null : assignment.status === 'CANCELLED_BY_SHIPPER' ? 'released' : assignment.status === 'RELEASED_BY_ADMIN' ? 'released_by_admin' : assignment.status === 'CANCELLED_BY_SHOP' ? 'cancelled_by_shop' : assignment.status.toLowerCase(),
+      own_outcome: active ? null : assignment.status === 'CANCELLED_BY_SHIPPER' ? 'released' : assignment.status === 'RELEASED_BY_ADMIN' ? 'released_by_admin' : assignment.status === 'CANCELLED_BY_SHOP' ? 'cancelled_by_shop' : assignment.status === 'CANCELLED_BY_SYSTEM' && (assignment.endReason === FEE_NOT_AGREED_REASON || assignment.endReason === FEE_EXPIRED_REASON) ? 'fee_not_agreed' : assignment.status.toLowerCase(),
       version: d.version,
       pickup: { shop_name: d.shopName, phone: active ? d.shopPhone : null, address_text: active ? d.pickupAddressText : null, lat: active ? d.pickupLat : null, lng: active ? d.pickupLng : null },
       recipient: {
@@ -274,7 +305,7 @@ export class DeliveryViews {
         lng: active ? d.dropoffLng : null,
       },
       goods: { description: d.goodsDescription, value_vnd: d.goodsValueVnd, paid_vnd: d.paidVnd },
-      fee: this.#fee(d, agreement),
+      fee: this.#fee(d, agreement, assignment.driverId),
       search: this.#search(d, nowMs),
       note: active ? d.note : null,
       assignment: {
@@ -292,8 +323,10 @@ export class DeliveryViews {
         // Asked only when the fee really is empty and the Shipper is the one who may fill it (a never-priced call); never because a point or an amount is "null".
         confirm_fee: active && before && d.feeVnd === null && agreement?.feeMode !== 'AGREED',
         confirm_destination: active && before && d.feeVnd === null && agreement?.feeMode !== 'AGREED',
-        // One step: the fee is settled, nothing else (no drop-off pin) is required to take the goods.
-        pickup: active && before && d.feeVnd !== null,
+        // One step: the fee is settled, nothing else (no drop-off pin) is required to take the goods. A proposal still waiting for the payer is not settled.
+        pickup: active && before && d.feeVnd !== null && !(agreement !== undefined && revisionIsPending(agreement)),
+        // The Shipper who holds the delivery may still propose another fee until they pick the goods up (the payer answers; the pickup waits).
+        propose_fee: active && before && agreement !== undefined && agreement.status === 'ACCEPTED' && agreement.revisionFeeVnd === null && !searchExpired(nowMs, d.searchExpiresAtMs),
         complete: running && d.state === 'delivering',
         // Kept as false so an older app never offers it: after pickup the Shipper only completes, or calls the shop.
         fail: false,
@@ -302,8 +335,10 @@ export class DeliveryViews {
   }
 
   /** One offer: only what the rules allow before accepting. No phone, no street address, no drop-off position. */
-  async offer(context: TransactionContext, d: DeliveryRow, nowMs: number, decision: { eligible: boolean; reasons: readonly string[]; distanceToShopM: number | null }): Promise<JsonObject> {
+  async offer(context: TransactionContext, d: DeliveryRow, nowMs: number, decision: { eligible: boolean; reasons: readonly string[]; distanceToShopM: number | null }, driverId: string | null = null): Promise<JsonObject> {
     const agreement = await this.agreements.readByDelivery(context, d.deliveryId);
+    // Whether this Shipper may propose another fee BEFORE taking it: the shop's agreed proposal still open, or a final fee that is theirs to take (a table fee included).
+    const counterable = agreement !== undefined && driverId !== null && !searchExpired(nowMs, d.searchExpiresAtMs) && ((agreement.feeMode === 'AGREED' && agreement.status === 'PROPOSED') || (agreement.status === 'ACCEPTED' && feeAllowsAssignment(agreement, driverId)));
     return {
       delivery_id: d.deliveryId,
       code: d.code,
@@ -324,6 +359,8 @@ export class DeliveryViews {
       eligible: decision.eligible,
       reasons: [...decision.reasons],
       agreement: agreementView(agreement),
+      fee_counter_allowed: counterable,
+      negotiation: negotiationView(agreement, feeDeciderOf(d), driverId),
     };
   }
 

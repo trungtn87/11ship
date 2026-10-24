@@ -98,6 +98,12 @@ function composeForCustomer(p: DeliveryChangePayload): Draft[] {
     case 'fee_answer_expired':
     case 'fee_customer_confirmed':
       return [];
+    case 'fee_counter_rejected_released':
+    case 'fee_answer_expired_released':
+      // The Shipper's turn ended with their fee proposal: the customer hears only what matters to the order (it is searched again, or the search stopped).
+      return p.state === 'search_stopped'
+        ? [notify('SEARCH_STOPPED', 'Chưa có shipper nhận đơn', `Đơn ${p.code}: tìm shipper đã dừng. Quán đang xử lý.`)]
+        : [notify('FEE_UPDATED', 'Đơn đang tìm shipper khác', `Đơn ${p.code}: shipper không còn nhận đơn. Hệ thống đang tìm shipper khác, đơn của bạn không bị hủy.`)];
     case 'failed':
       return [notify('ORDER_DELIVERY_FAILED', 'Giao hàng chưa thành công', `Đơn ${p.code}: giao chưa thành công, quán đang xử lý. Mở ứng dụng để xem.`)];
     default:
@@ -151,7 +157,13 @@ function composeForShopAndShipper(p: DeliveryChangePayload): Draft[] {
     case 'fee_counter_accepted':
     case 'fee_customer_confirmed':
       return [
-        delivery(p, 'DRIVER_OF_AGREEMENT', 'FEE_UPDATED', 'Phí giao hàng đã được đồng ý', `Đơn ${code}: mức phí đã được đồng ý. Bạn có thể nhận đơn.`),
+        delivery(
+          p,
+          'DRIVER_OF_AGREEMENT',
+          'FEE_UPDATED',
+          'Phí giao hàng đã được đồng ý',
+          p.state === 'accepted' || p.state === 'location_confirmed' ? `Đơn ${code}: mức phí mới đã được đồng ý. Bạn có thể đến lấy hàng.` : `Đơn ${code}: mức phí đã được đồng ý. Bạn có thể nhận đơn.`,
+        ),
         ...(customerDecidesFee(p) ? [delivery(p, 'SHOP', 'FEE_UPDATED', 'Khách đã đồng ý phí giao', `Đơn ${code}: khách đã đồng ý mức phí giao do shipper đề xuất.`)] : []),
       ];
     case 'fee_answer_expired':
@@ -165,6 +177,33 @@ function composeForShopAndShipper(p: DeliveryChangePayload): Draft[] {
         delivery(p, 'DRIVER_OF_AGREEMENT', 'FEE_UPDATED', 'Đề xuất phí không được đồng ý', `Đơn ${code}: đề xuất phí của bạn không được đồng ý, đơn vẫn giữ mức phí cũ.`),
         ...(customerDecidesFee(p) ? [delivery(p, 'SHOP', 'FEE_UPDATED', 'Khách không đồng ý phí', `Đơn ${code}: khách không đồng ý phí shipper đề xuất. Đơn vẫn đang tìm shipper khác.`)] : []),
       ];
+    case 'fee_counter_rejected_released':
+    case 'fee_answer_expired_released': {
+      // The Shipper who held the delivery proposed another fee and it was refused or not answered in time: their turn is over, the fee stays as it was and the delivery is searched
+      // again while its own window lasts (or the search stopped). The Order, if any, is not touched.
+      const expired = p.change === 'fee_answer_expired_released';
+      const why = expired ? 'chưa được trả lời nên đã hết hạn' : 'không được đồng ý';
+      const out: Draft[] = [
+        delivery(p, 'DRIVER_OF_AGREEMENT', 'FEE_UPDATED', expired ? 'Đề xuất phí đã hết hạn' : 'Đề xuất phí không được đồng ý', `Đơn ${code}: đề xuất phí của bạn ${why} nên lượt nhận đơn đã kết thúc. Đơn giữ mức phí cũ.`),
+      ];
+      if (expired || customerDecidesFee(p)) {
+        out.push(
+          delivery(
+            p,
+            'SHOP',
+            'FEE_UPDATED',
+            expired ? 'Đề xuất phí đã hết hạn' : 'Khách không đồng ý phí',
+            `Đơn ${code}: đề xuất phí của shipper ${why}, shipper không còn nhận đơn. ${p.state === 'search_stopped' ? 'Đã hết thời gian tìm, hãy gọi lại hoặc hủy.' : 'Đơn giữ mức phí cũ và đang tìm shipper khác.'}`,
+          ),
+        );
+      }
+      if (p.state === 'waiting_driver') {
+        out.push({ type: 'OFFER_ROUND', deliveryId: p.deliveryId, roundVersion: p.version });
+      } else if (p.state === 'search_stopped') {
+        out.push(delivery(p, 'SHOP', 'SEARCH_STOPPED', 'Chưa có shipper nhận đơn', `Đơn ${code} đã hết thời gian tìm. Hãy gọi lại hoặc hủy.`));
+      }
+      return out;
+    }
     case 'cancelled_after_pickup':
       return [
         ...(p.driverId === null ? [] : [delivery(p, 'DRIVER', 'DELIVERY_CANCELLED', 'Đơn đã bị hủy', `Đơn ${code} đã bị hủy sau khi bạn lấy hàng. Hãy gọi quán để thống nhất việc trả lại hàng.`)]),

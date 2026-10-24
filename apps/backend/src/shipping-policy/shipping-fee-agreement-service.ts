@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
+import { TechnicalError } from '../common/app-errors';
 import { DriverRepository } from '../driver/driver-repository';
 import { TransactionContext } from '../transaction/transaction-context';
 import {
@@ -10,6 +11,7 @@ import {
   answerDeadline,
   applyAgreementAction,
   FeePayer,
+  holderLeftEffect,
   isValidAmount,
   REASON_NOTE_MAX,
   RefusalCode,
@@ -86,6 +88,7 @@ const ACTOR_OF: Readonly<Record<AgreementAction['type'], ActorType>> = {
   ADMIN_ADJUST: 'ADMIN',
   EXTEND_DEADLINE: 'SYSTEM',
   EXPIRE_ANSWER: 'SYSTEM',
+  HOLDER_LEFT: 'DRIVER',
 };
 
 /**
@@ -279,6 +282,28 @@ export class ShippingFeeAgreementService {
       feePayer: current.payer,
     });
     return { kind: 'ok', agreement: next };
+  }
+
+  /**
+   * The Shipper's turn on the delivery ended (they gave it up, or a proposal of theirs was refused or ran out): a proposal of theirs that still waits is withdrawn and a fee that only
+   * they agreed goes back to the original (STANDARD: the base fee; AGREED: the shop's proposal, asked again of the next Shipper), so the delivery is open to anybody at a fee
+   * nobody had to agree to. The caller holds the Shipper and the delivery. Returns the agreement as it is now (undefined when the delivery has none); a turn that left nothing behind changes nothing.
+   */
+  async holderLeft(context: TransactionContext, deliveryId: string, driverId: string, nowMs: number): Promise<Agreement | undefined> {
+    const found = await this.agreements.findByDelivery(context, deliveryId);
+    const current = found === undefined ? undefined : await this.agreements.lock(context, found.agreementId);
+    if (current === undefined) {
+      return undefined;
+    }
+    const effect = holderLeftEffect(current, driverId);
+    if (!effect.withdrawn && !effect.revert) {
+      return current;
+    }
+    const outcome = await this.act(context, { agreementId: current.agreementId, expectedVersion: current.version, requestId: randomUUID(), nowMs, action: { type: 'HOLDER_LEFT', driverId } });
+    if (outcome.kind !== 'ok') {
+      throw new TechnicalError('internal', 'Fee agreement did not release its Shipper');
+    }
+    return outcome.agreement;
   }
 
   read(context: TransactionContext, agreementId: string): Promise<Agreement | undefined> {

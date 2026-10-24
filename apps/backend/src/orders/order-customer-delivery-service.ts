@@ -7,6 +7,7 @@ import { ClientActor, ClientSessionAuthority } from '../client-auth/client-sessi
 import { AppError, TechnicalError } from '../common/app-errors';
 import { ACTIVE_STATES, OPERATIONS } from '../delivery/delivery-constants';
 import { DeliveryCancel } from '../delivery/delivery-cancel';
+import { DeliveryHandback, FEE_NOT_AGREED_REASON } from '../delivery/delivery-handback';
 import { DeliveryRecorder } from '../delivery/delivery-recorder';
 import { FeeAnswerExpiry } from '../delivery/fee-answer-expiry';
 import { DeliveryRepository, DeliveryRow } from '../delivery/delivery-repository';
@@ -15,7 +16,7 @@ import { feeDeciderOf } from '../delivery/delivery-views';
 import { DriverRepository } from '../driver/driver-repository';
 import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempotency/idempotency-executor';
 import { freshClockMs } from '../idempotency/idempotency-repository';
-import { AgreementAction, answerIsWaiting } from '../shipping-policy/shipping-fee-agreement';
+import { AgreementAction, answerIsWaiting, revisionIsPending } from '../shipping-policy/shipping-fee-agreement';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { TransactionContext } from '../transaction/transaction-context';
@@ -46,6 +47,7 @@ export class OrderCustomerDeliveryService {
     private readonly drivers: DriverRepository,
     private readonly agreements: ShippingFeeAgreementService,
     private readonly cancelling: DeliveryCancel,
+    private readonly handback: DeliveryHandback,
     private readonly deliveryRecorder: DeliveryRecorder,
     private readonly feeAnswers: FeeAnswerExpiry,
   ) {}
@@ -131,18 +133,23 @@ export class OrderCustomerDeliveryService {
         if (delivery.version !== input.expectedVersion) {
           throw new AppError('VERSION_CONFLICT');
         }
-        if (agreement === undefined || (agreement.status !== 'COUNTERED' && agreement.status !== 'AWAITING_CUSTOMER')) {
+        const revisionOpen = agreement !== undefined && revisionIsPending(agreement);
+        if (agreement === undefined || (agreement.status !== 'COUNTERED' && agreement.status !== 'AWAITING_CUSTOMER' && !revisionOpen)) {
           throw new AppError('DELIVERY_STATE_CONFLICT');
         }
-        // Refusing the SHOP's own proposal would leave the request without any fee: only a Shipper's counter-offer can be refused (the shop cancels otherwise).
-        const refusable = agreement.status === 'COUNTERED' || agreement.pendingSource === 'COUNTER';
+        const revisionBy = revisionOpen ? agreement.revisionBy : null;
+        // Refusing the SHOP's own proposal would leave the request without any fee: only a Shipper's counter-offer (or a proposal to change a final fee) can be refused (the shop cancels otherwise).
+        const refusable = agreement.status === 'COUNTERED' || agreement.pendingSource === 'COUNTER' || revisionOpen;
         if (!input.accept && !refusable) {
           throw new AppError('DELIVERY_STATE_CONFLICT');
         }
+        // A proposal to change a FINAL fee is answered in one step by the payer.
         const steps: AgreementAction[] =
-          agreement.status === 'COUNTERED'
+          agreement.status === 'COUNTERED' || revisionOpen
             ? input.accept
-              ? [{ type: 'SHOP_ACCEPT_COUNTER' }, { type: 'CUSTOMER_CONFIRM', approve: true }]
+              ? revisionOpen
+                ? [{ type: 'SHOP_ACCEPT_COUNTER' }]
+                : [{ type: 'SHOP_ACCEPT_COUNTER' }, { type: 'CUSTOMER_CONFIRM', approve: true }]
               : [{ type: 'SHOP_REJECT_COUNTER' }]
             : [{ type: 'CUSTOMER_CONFIRM', approve: input.accept }];
         let current = agreement;
@@ -174,15 +181,27 @@ export class OrderCustomerDeliveryService {
         if (last === undefined) {
           throw new AppError('DELIVERY_STATE_CONFLICT');
         }
-        const after = await this.#touch(context, delivery, current.finalFeeVnd !== null && delivery.feeVnd === null ? { feeVnd: current.finalFeeVnd } : {});
+        // The agreed amount becomes the delivery's fee in the same commit, also when it replaces a fee that was already final.
+        let after = await this.#touch(context, delivery, current.finalFeeVnd !== null && current.finalFeeVnd !== delivery.feeVnd ? { feeVnd: current.finalFeeVnd } : {});
+        // A refused proposal of the Shipper who already holds the delivery ends their turn: the fee stays as it was and the delivery goes back to the search.
+        let turnEnded = false;
+        if (!input.accept && revisionBy !== null) {
+          const ended = await this.handback.endProposerTurn(context, after, revisionBy, { status: 'CANCELLED_BY_SYSTEM', actor: 'SYSTEM', reason: FEE_NOT_AGREED_REASON, stoppedReason: 'Hết thời gian tìm shipper', nowMs: await freshClockMs(context) });
+          if (ended !== undefined) {
+            after = ended.delivery;
+            turnEnded = true;
+          }
+        }
+        const change = input.accept ? 'fee_counter_accepted' : 'fee_counter_rejected';
         await this.deliveryRecorder.record(context, {
           delivery: after,
-          type: input.accept ? 'fee_counter_accepted' : 'fee_counter_rejected',
+          type: turnEnded ? `${change}_released` : change,
           actorType: 'CUSTOMER',
           actorId: actor.userId,
+          driverId: revisionBy,
           operation: OPERATIONS.customerFee,
           requestId,
-          metadata: { agreement_status: current.status, decided_by: 'CUSTOMER' },
+          metadata: { agreement_status: current.status, decided_by: 'CUSTOMER', turn_ended: turnEnded },
         });
         const order = await this.orders.findOfCustomer(context, orderId, actor.userId);
         return { status: 200, replayGuard: { user_id: actor.userId }, payload: await this.views.forCustomer(context, order as OrderRow, true) };
