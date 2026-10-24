@@ -4,6 +4,7 @@
 
 import { Failure } from './accounts.js';
 import { CommandResult } from './commands.js';
+import { OTP_POLICY_FIELDS } from './otp-policy.js';
 
 export type ConfigKind = 'OTP' | 'WALLET' | 'ELIGIBILITY' | 'ORDER' | 'NOTIFICATION';
 export type ConfigGroupKey = 'security' | 'shipper_wallet' | 'delivery_policy' | 'orders' | 'notifications' | 'map_gps' | 'storage_backup';
@@ -124,6 +125,7 @@ export function validateConfig(kind: ConfigKind, values: Readonly<Record<string,
 export const CONFIG_REFUSAL: Record<string, string> = {
   SYSTEM_SETTING_VERSION_CONFLICT: 'Cấu hình vừa được người khác thay đổi. Hãy tải lại.',
   ORDER_PARAMETER_VERSION_CONFLICT: 'Cấu hình vừa được người khác thay đổi. Hãy tải lại.',
+  OTP_POLICY_VERSION_CONFLICT: 'Cấu hình vừa được người khác thay đổi. Hãy tải lại.',
   ADMIN_INPUT_INVALID: 'Giá trị hoặc lý do không hợp lệ (lý do bắt buộc, tối đa 500 ký tự).',
 };
 
@@ -133,6 +135,13 @@ export const GROUP_ORDER: readonly ConfigGroupKey[] = ['security', 'shipper_wall
 export function describeChange(change: ConfigChange): string {
   const m = change.metadata;
   const yesNo = (value: unknown): string => (value === true ? 'bật' : value === false ? 'tắt' : String(value));
+  if ('to_values' in m && typeof m.to_values === 'object' && m.to_values !== null && typeof m.from_values === 'object' && m.from_values !== null) {
+    // Issue #117: the SMS OTP limits (before / after of every value that changed).
+    const from = m.from_values as Record<string, unknown>;
+    const to = m.to_values as Record<string, unknown>;
+    const lines = OTP_POLICY_FIELDS.filter((field) => from[field.key] !== to[field.key]).map((field) => `${field.label}: ${String(from[field.key])} → ${String(to[field.key])} ${field.unit}`);
+    return lines.length === 0 ? 'Đã thay đổi giới hạn SMS & OTP' : lines.join('; ');
+  }
   if ('setting_key' in m) {
     return `${m.setting_key === 'otp_registration_enabled' ? 'OTP khi đăng ký' : 'OTP khi quên mật khẩu'}: ${yesNo(m.old_value)} → ${yesNo(m.new_value)}`;
   }

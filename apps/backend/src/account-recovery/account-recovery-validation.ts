@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { exactObject, parseOtpVerifyBody, parsePassword } from '../auth/auth-validation';
-import { requireNormalizedPhone } from '../auth/phone';
+import { requireNormalizedPhone, requireVietnamMobile } from '../auth/phone';
 
 export interface ResetTestInput {
   readonly phoneNormalized: string;
@@ -32,7 +32,8 @@ export interface ResetOtpRequestInput {
 /** Step 1 of the OTP reset: exactly {phone}. */
 export function parseResetOtpRequestBody(body: unknown): ResetOtpRequestInput {
   const parsed = exactObject(body, ['phone']);
-  return { phoneNormalized: requireNormalizedPhone(parsed.phone) };
+  // An OTP SMS goes only to an allocated Vietnamese mobile number: refused here, before any challenge or queue row exists.
+  return { phoneNormalized: requireVietnamMobile(parsed.phone) };
 }
 
 /** Step 2: exactly {otp}, six digits (same parser as the registration verify). */

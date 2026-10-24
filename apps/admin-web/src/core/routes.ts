@@ -37,6 +37,7 @@ export type Route =
   | { readonly name: 'reviews' }
   | { readonly name: 'complaints' }
   | { readonly name: 'wallet-parameters' }
+  | { readonly name: 'otp-policy' }
   | { readonly name: 'shipping-policy' }
   | { readonly name: 'settings' }
   | { readonly name: 'config' }
@@ -143,6 +144,9 @@ export function parseRoute(pathname: string, search = ''): Route {
   if (path === '/system/monitoring/errors') return { name: 'monitoring-errors' };
   if (path === '/system/settings') {
     return { name: 'settings' };
+  }
+  if (path === '/system/parameters/otp') {
+    return { name: 'otp-policy' };
   }
   if (path === '/system/parameters/shipper-wallet') {
     return { name: 'wallet-parameters' };
@@ -361,6 +365,8 @@ export function formatRoute(route: Route): string {
       return '/system/config';
     case 'monitoring-errors':
       return '/system/monitoring/errors';
+    case 'otp-policy':
+      return '/system/parameters/otp';
     case 'wallet-parameters':
       return '/system/parameters/shipper-wallet';
     case 'shipping-policy':

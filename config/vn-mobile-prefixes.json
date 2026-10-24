@@ -1,0 +1,280 @@
+{
+  "version": 1,
+  "reviewedOn": "2026-10-24",
+  "scope": "Vietnam terrestrial mobile numbers (10 national digits, leading 0). Lists allocated number blocks only: a block says the number FORMAT is in an allocated mobile range, never that the subscriber exists, is active, or is still on that operator (number portability is allowed).",
+  "matching": "A national number (0 + 9 digits) is allocated when it starts with any listed prefix. A prefix may have 3 or more digits when only part of a 3-digit range is allocated; prefixes must not overlap.",
+  "verification": {
+    "status": "PENDING_OFFICIAL_CONFIRMATION",
+    "note": "Update 2026-10-24 (second pass). Status stays PENDING_OFFICIAL_CONFIRMATION: the two primary sources named by the Owner could NOT be opened from the build environment (vnta.gov.vn tinTucID=4480 and vnpost.vn: egress proxy answered 403 / DNS refused; no bypass was attempted), so the allocation table itself was never read. What WAS established, only from search-result summaries of the Ministry portal (mst.gov.vn pages) and national press, never by opening the page: the auction facts for 095 and 075 (see pendingPrefixes). NOT verified: every accepted 3-digit prefix against the regulator's table, any 4+ digit block, and any allocation change after 2026-04-17 other than the 095 and 075 auctions (a search found none, which proves nothing). Release owner: read the vnta.gov.vn table, record document number and date in officialSourcesToConfirm, then regenerate.",
+    "confirmedScope": "Auction results for 095 (2026-07-10) and 075 (2026-10-15) as reported; nothing else.",
+    "unverifiedScope": [
+      "all accepted prefixes against vnta.gov.vn tinTucID=4480",
+      "any block longer than 3 digits",
+      "allocation changes after 2026-04-17 other than the 095 and 075 auctions",
+      "whether 095 and 075 have an allocation decision or are in service"
+    ]
+  },
+  "officialSourcesToConfirm": [
+    {
+      "title": "Luat Vien thong 24/2023/QH15 (national numbering is a regulated resource)",
+      "issuer": "Quoc hoi"
+    },
+    {
+      "title": "Quy hoach kho so vien thong va tai nguyen Internet (mobile network codes 03x/05x/07x/08x/09x)",
+      "issuer": "Cuc Vien thong - Bo Khoa hoc va Cong nghe (mst.gov.vn)"
+    },
+    {
+      "title": "Thong tu 21/2025/TT-BKHCN (noi dung, trinh tu phe duyet quy hoach kho so vien thong)",
+      "issuer": "Bo Khoa hoc va Cong nghe"
+    },
+    {
+      "title": "Bảng phân bổ mã mạng di động (tinTucID=4480) — NOT opened: egress 403",
+      "issuer": "Cục Viễn thông",
+      "url": "https://vnta.gov.vn/doanhnghiep/trang/tinchitiet.aspx?tinTucID=4480"
+    }
+  ],
+  "secondarySourcesConsulted": [
+    {
+      "title": "iTel (087) - first virtual network, allocated 25/04/2019, on Vinaphone infrastructure",
+      "kind": "press",
+      "accessed": "2026-10-24"
+    },
+    {
+      "title": "Reddi/Wintel (055) - virtual network, in service 03/06/2020",
+      "kind": "press",
+      "accessed": "2026-10-24"
+    },
+    {
+      "title": "Gmobile 0199 -> 059; Vietnamobile 0186/0188 -> 056/058 (11-digit to 10-digit conversion 2018)",
+      "kind": "operator and press pages",
+      "accessed": "2026-10-24"
+    },
+    {
+      "title": "Operator prefix summaries (Viettel 03x/086/096-098, Vinaphone 081-085/088/091/094, MobiFone 070/076-079/089/090/093, Vietnamobile 052/056/058/092, Gmobile 059/099)",
+      "kind": "aggregator",
+      "accessed": "2026-10-24"
+    },
+    {
+      "title": "Search summaries of mst.gov.vn and press on the 095 and 075 auctions (pages not opened)",
+      "kind": "press/ministry portal via search",
+      "accessed": "2026-10-24"
+    }
+  ],
+  "prefixes": [
+    {
+      "prefix": "032",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "033",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "034",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "035",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "036",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "037",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "038",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "039",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "052",
+      "operator": "Vietnamobile",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "055",
+      "operator": "Wintel (Reddi)",
+      "kind": "MVNO"
+    },
+    {
+      "prefix": "056",
+      "operator": "Vietnamobile",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "058",
+      "operator": "Vietnamobile",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "059",
+      "operator": "Gmobile",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "070",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "076",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "077",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "078",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "079",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "081",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "082",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "083",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "084",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "085",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "086",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "087",
+      "operator": "iTel",
+      "kind": "MVNO"
+    },
+    {
+      "prefix": "088",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "089",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "090",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "091",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "092",
+      "operator": "Vietnamobile",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "093",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "094",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "096",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "097",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "098",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "099",
+      "operator": "Gmobile",
+      "kind": "MNO"
+    }
+  ],
+  "matchingDecisionRule": "A prefix is ACCEPTED only when its allocation (phân bổ) to an operator is evidenced. Three stages are kept apart: (1) won at auction, (2) allocated by decision of the Ministry/Cục Viễn thông, (3) in operation. A prefix at stage 1 only is NOT accepted: nobody can hold a subscriber on it yet, and a wrong rejection is fixed by moving the prefix to `prefixes` and regenerating. The cost of a wrong acceptance would only be one wasted SMS (bounded by the OTP quotas), so the Owner may decide to accept earlier; that is a business decision recorded here, not made by the code.",
+  "pendingPrefixes": [
+    {
+      "prefix": "095",
+      "operator": "Viettel",
+      "stage": "WON_AT_AUCTION",
+      "decision": "NOT_ACCEPTED_YET",
+      "basis": "Viettel won the auction of mã mạng 95 on 2026-07-10 (252.5 tỷ đồng, organised by VPA; plan: Quyết định 1845/QĐ-BKHCN 2026-03-20, Thông báo 2592/TB-CVT 2026-06-19). The block was S-Fone's, closed in 2016. Press reports say Viettel will put it into service after the regulatory procedures; the winner has at most 6 months after allocation to start operating. No allocation decision number and no in-service confirmation was found, so it is not accepted. HIGH PRIORITY: it is the most likely to be in service soon; confirm on vnta.gov.vn and move to `prefixes` when allocated.",
+      "sources": [
+        "https://mst.gov.vn/ve-viec-dau-gia-quyen-su-dung-ma-mang-di-dong-95-197260620145614961.htm",
+        "https://mst.gov.vn/thong-bao-dau-gia-quyen-su-dung-ma-mang-di-dong-95-197260703164851827.htm",
+        "https://tuoitre.vn/viettel-so-huu-them-dau-so-di-dong-095-100260711094049285.htm",
+        "https://thanhnien.vn/nha-mang-viettel-co-them-dau-so-095-185260710192936059.htm",
+        "https://www.sggp.org.vn/viettel-so-huu-dau-so-095-mo-rong-tai-nguyen-kho-so-di-dong-post861695.html"
+      ],
+      "checked": "2026-10-24",
+      "readDirectly": false
+    },
+    {
+      "prefix": "075",
+      "operator": "Vietnam Post (Pottel)",
+      "stage": "WON_AT_AUCTION",
+      "decision": "NOT_ACCEPTED_YET",
+      "basis": "Vietnam Post announced on 2026-10-15 that it won the auction of mã mạng H2H 75 (plan: Quyết định 3366/QĐ-BKHCN 2026-08-04; Thông báo 3795/TB-CVT 2026-08-20; reported price 2.75 tỷ đồng from one source only). The announcement says the remaining procedures must still be completed before the prefix is put into operation, so it is only at the auction stage: not allocated, not in service, not accepted. 075 was formerly Bến Tre's fixed-line code (now 0275). Move to `prefixes` when the allocation is evidenced.",
+      "sources": [
+        "https://vnpost.vn/vi/hoat-dong-nganh/vietnam-post-dau-gia-thanh-cong-quyen-su-dung-ma-mang-75",
+        "https://mst.gov.vn/tong-cong-ty-buu-dien-viet-nam-trung-dau-gia-dau-so-075-197261015144808297.htm",
+        "https://mst.gov.vn/thong-tin-dau-gia-quyen-su-dung-ma-so-vien-thong-ma-mang-di-dong-h2h-75-197261006143225927.htm",
+        "https://www.sggp.org.vn/vietnam-post-dau-gia-thanh-cong-dau-so-di-dong-075-post876704.html",
+        "https://vneconomy.vn/dau-so-075-ve-tay-vietnam-post.htm"
+      ],
+      "checked": "2026-10-24",
+      "readDirectly": false
+    }
+  ]
+}

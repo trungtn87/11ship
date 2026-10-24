@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../account/account_views.dart';
 import '../account/models.dart';
+import '../account/vn_mobile.dart';
 import '../brand.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
@@ -41,6 +42,7 @@ class _ResetScreenState extends State<ResetScreen> {
   final FormFeedback _feedback = FormFeedback();
   bool _phoneAttempted = false;
   bool _codeAttempted = false;
+  bool _lockHandled = false;
   Timer? _tick;
 
   @override
@@ -54,7 +56,18 @@ class _ResetScreenState extends State<ResetScreen> {
   /// A timer exists only while "send again" is locked, so an idle screen schedules nothing.
   void _changed() {
     final ResetController controller = widget.controller;
-    if (_tick == null && controller.mode == ResetMode.smsOtp && controller.otpStep == ResetOtpStep.requested && !controller.canResend) {
+    // The server closed the challenge (too many wrong codes): the flow is back at its first step and the temporary data is wiped
+    // (code, new password, confirmation). The number stays typed and the cooldown stays; no account is touched.
+    if (controller.lockedOut && !_lockHandled) {
+      _lockHandled = true;
+      _code.clear();
+      _password.clear();
+      _confirm.clear();
+      _codeAttempted = false;
+    } else if (!controller.lockedOut) {
+      _lockHandled = false;
+    }
+    if (_tick == null && controller.mode == ResetMode.smsOtp && !controller.canResend && controller.otpStep != ResetOtpStep.verified) {
       _tick = Timer.periodic(const Duration(seconds: 1), (Timer timer) {
         if (!mounted || widget.controller.canResend) {
           timer.cancel();
@@ -115,6 +128,13 @@ class _ResetScreenState extends State<ResetScreen> {
                   ? 'Nhập số điện thoại của tài khoản, mã xác minh nhận qua SMS (bắt buộc), rồi đặt mật khẩu mới. Tài khoản cũ được mở khóa và giữ nguyên dữ liệu.'
                   : 'Nhập số điện thoại đã đăng ký, mã xác minh nhận qua SMS, rồi đặt mật khẩu mới.',
             ),
+            if (controller.lockedOut)
+              const N11Banner(
+                key: Key('reset-otp-locked'),
+                kind: BannerKind.error,
+                title: 'Đã hủy luồng xác minh',
+                text: 'Bạn đã nhập sai mã quá số lần cho phép. Dữ liệu đang nhập đã được xóa; hãy bắt đầu lại. Bạn vẫn phải đợi hết thời gian chờ trước khi yêu cầu mã mới. Tài khoản của bạn không bị ảnh hưởng.',
+              ),
             if (sms && controller.otpStep == ResetOtpStep.requested) const N11Banner(key: Key('reset-otp-sent'), kind: BannerKind.info, title: kResetOtpSentTitle, text: kResetOtpSentText),
             if (sms && controller.otpVerified) const N11Banner(key: Key('reset-otp-verified'), kind: BannerKind.success, title: 'Đã xác minh mã'),
             if (controller.mode == ResetMode.closed)
@@ -134,7 +154,7 @@ class _ResetScreenState extends State<ResetScreen> {
                 text: 'Ứng dụng không đoán trạng thái của máy chủ nên chưa gửi yêu cầu.',
                 trailing: N11Button(key: const Key('reset-reload'), label: 'Thử lại', compact: true, kind: ButtonKind.secondary, onPressed: controller.loadConfig),
               ),
-            if (failure != null)
+            if (failure != null && !controller.lockedOut)
               N11Banner(
                 key: const Key('form-error'),
                 kind: BannerKind.error,
@@ -145,9 +165,9 @@ class _ResetScreenState extends State<ResetScreen> {
                     : null,
               ),
             N11Field(
-              validator: phoneError,
-              hint: _phoneAttempted ? phoneError(_phone.text) : null,
-              tone: _phoneAttempted && phoneError(_phone.text) != null ? FieldTone.error : FieldTone.normal,
+              validator: otpPhoneError,
+              hint: _phoneAttempted ? otpPhoneError(_phone.text) : null,
+              tone: _phoneAttempted && otpPhoneError(_phone.text) != null ? FieldTone.error : FieldTone.normal,
               key: _feedback.key('phone'),
               fieldKey: const Key('reset-phone'),
               label: 'Số điện thoại',
@@ -164,10 +184,10 @@ class _ResetScreenState extends State<ResetScreen> {
             if (sms && !controller.otpVerified) ...<Widget>[
               N11Button(
                 key: const Key('reset-otp-request'),
-                label: controller.otpStep == ResetOtpStep.requesting ? 'Đang gửi…' : (controller.otpStep == ResetOtpStep.idle ? 'Gửi mã xác minh' : 'Gửi lại mã'),
+                label: controller.otpStep == ResetOtpStep.requesting ? 'Đang gửi…' : (!controller.canResend && controller.resendSeconds > 0 ? 'Gửi lại sau ${formatWait(controller.resendSeconds)}' : (controller.otpStep == ResetOtpStep.idle ? 'Gửi mã xác minh' : 'Gửi lại mã')),
                 kind: ButtonKind.secondary,
                 loading: controller.otpStep == ResetOtpStep.requesting,
-                onPressed: busy || !controller.canResend ? null : () { setState(() => _phoneAttempted = true); if (_feedback.validate(<String, String?>{'phone': phoneError(_phone.text)})) controller.requestOtp(_phone.text); },
+                onPressed: busy || !controller.canResend ? null : () { setState(() => _phoneAttempted = true); if (_feedback.validate(<String, String?>{'phone': otpPhoneError(_phone.text)})) controller.requestOtp(_phone.text); },
               ),
               if (controller.otpStep == ResetOtpStep.requested || controller.otpStep == ResetOtpStep.verifying) ...<Widget>[
                 N11Field(key: _feedback.key('code'), validator: otpError, hint: _codeAttempted ? otpError(_code.text) : null, tone: _codeAttempted && otpError(_code.text) != null ? FieldTone.error : FieldTone.normal, fieldKey: const Key('reset-otp-code'), label: 'Mã xác minh', placeholder: '6 số', controller: _code, keyboard: TextInputType.number, maxLength: 6, enabled: !busy, onChanged: () => setState(() {})),

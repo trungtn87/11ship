@@ -9,6 +9,7 @@ import {
   parseVerificationId,
 } from './auth-validation';
 import { LoginService } from './login-service';
+import { OtpClientIp, OtpIpRequest } from './otp-client-ip';
 import { RegistrationService } from './registration-service';
 import { RoleContextService } from './role-context-service';
 import { SessionAuthGuard } from './session-auth.guard';
@@ -36,13 +37,14 @@ export class AuthController {
     private readonly registration: RegistrationService,
     private readonly login: LoginService,
     private readonly roles: RoleContextService,
+    private readonly clientIp: OtpClientIp,
   ) {}
 
   @Post('phone-verifications')
   @HttpCode(201)
-  async requestOtp(@Body() body: unknown) {
+  async requestOtp(@Body() body: unknown, @Req() request: OtpIpRequest) {
     const input = parseOtpRequestBody(body);
-    return { data: await this.verification.requestOtp(input.phoneNormalized, input.purpose) };
+    return { data: await this.verification.requestOtp(input.phoneNormalized, input.purpose, this.clientIp.identity(request)) };
   }
 
   /** Delivery state of a REGISTER code the caller requested (issue #102): the SMS is queued, then sent by the paired phone. */

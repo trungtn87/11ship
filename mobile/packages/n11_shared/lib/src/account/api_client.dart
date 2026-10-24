@@ -127,6 +127,10 @@ AuthFailure failureOf(ApiResponse response, {String? endpoint}) {
       kind = AuthFailureKind.verificationUnsupported;
     case 'LOGIN_RATE_LIMITED' || 'DEVICE_RATE_LIMITED' || 'OTP_RATE_LIMITED':
       kind = AuthFailureKind.rateLimited;
+    case 'OTP_LOCKED':
+      kind = AuthFailureKind.otpLocked;
+    case 'INVALID_PHONE':
+      kind = AuthFailureKind.invalidPhone;
     case 'OTP_INVALID':
       kind = AuthFailureKind.otpInvalid;
     case 'OTP_EXPIRED':
@@ -155,7 +159,21 @@ AuthFailure failureOf(ApiResponse response, {String? endpoint}) {
   final Object? rawId = error is Map<String, Object?> ? error['request_id'] : null;
   final String? requestId = rawId is String && RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(rawId) ? rawId : null;
   final String? safeCode = code != null && RegExp(r'^[A-Z][A-Z0-9_]{0,79}$').hasMatch(code) ? code : null;
-  return AuthFailure(kind, code: safeCode, status: status, endpoint: endpoint, requestId: requestId);
+  // The OTP facts the app may act on (issue #117): bounded numbers and one bounded code, nothing else of `details` is read.
+  final Object? details = error is Map<String, Object?> ? error['details'] : null;
+  final Object? left = details is Map<String, Object?> ? details['attempts_remaining'] : null;
+  final Object? retry = details is Map<String, Object?> ? details['retry_after_seconds'] : null;
+  final Object? why = details is Map<String, Object?> ? details['reason'] : null;
+  return AuthFailure(
+    kind,
+    code: safeCode,
+    status: status,
+    endpoint: endpoint,
+    requestId: requestId,
+    attemptsRemaining: left is int && left >= 0 && left <= 100 ? left : null,
+    retryAfterSeconds: retry is int && retry >= 1 && retry <= 172800 ? retry : null,
+    reason: why is String && RegExp(r'^[A-Z][A-Z_]{0,31}$').hasMatch(why) ? why : null,
+  );
 }
 
 /// A random UUID v4 for an Idempotency-Key.

@@ -1,16 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { StandaloneAuditRecorder } from '../audit/standalone-audit-recorder';
-import { AppError, TechnicalError } from '../common/app-errors';
+import { AppError, OtpRefusalError, TechnicalError } from '../common/app-errors';
 import { AuthConfig } from '../config/auth-config';
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { ACCOUNT_ORIGIN_POLICY, AccountOriginPolicy, standardAccountOriginPolicy } from './account-origin';
-import { AUDIT_ACTIONS, OTP_PROVIDER_TIMEOUT_MS, REGISTER_PURPOSE, RESET_PASSWORD_PURPOSE } from './auth-constants';
+import { AUDIT_ACTIONS, OTP_IP_HMAC_DOMAIN, OTP_PROVIDER_TIMEOUT_MS, REGISTER_PURPOSE, RESET_PASSWORD_PURPOSE } from './auth-constants';
 import { AUTH_CONFIG } from './auth-config.provider';
 import { computeOtpDigest, digestsEqual, generateOtp } from './otp';
-import { otpRequestLockKey } from './otp-lane-lock';
+import { otpIpLockKey, otpPhoneLockKey } from './otp-lane-lock';
+import { OtpPolicy, OtpPolicyRepository } from './otp-policy-repository';
 import { isQueuedReceipt, OTP_PROVIDER, OtpDelivery, OtpProvider } from './otp-provider';
 import { generateToken } from './tokens';
 import { UserRepository } from './user-repository';
@@ -42,7 +43,7 @@ export interface OtpVerifyResult {
 
 type VerifyOutcome =
   | { readonly kind: 'verified'; readonly token: string }
-  | { readonly kind: 'wrong' }
+  | { readonly kind: 'wrong'; readonly attemptsRemaining: number }
   | { readonly kind: 'locked'; readonly justLocked: boolean }
   | { readonly kind: 'expired' }
   | { readonly kind: 'rejected'; readonly code: 'OTP_INVALID' | 'OTP_ALREADY_USED' };
@@ -63,6 +64,8 @@ export class VerificationService {
     private readonly verifications: VerificationRepository,
     private readonly users: UserRepository,
     private readonly recorder: StandaloneAuditRecorder,
+    // The SYSTEM-configured OTP limits (issue #117): read in the transaction of every request, so a change applies at once.
+    private readonly policies: OtpPolicyRepository,
     @Inject(AUTH_CONFIG) private readonly config: AuthConfig,
     @Inject(OTP_PROVIDER) private readonly provider: OtpProvider,
     @Optional() @Inject(ACCOUNT_ORIGIN_POLICY) private readonly policy: AccountOriginPolicy = standardAccountOriginPolicy(),
@@ -70,7 +73,7 @@ export class VerificationService {
     @Optional() private readonly systemSettings?: SystemSettingsReader,
   ) {}
 
-  async requestOtp(phoneNormalized: string, purpose: string): Promise<OtpRequestResult> {
+  async requestOtp(phoneNormalized: string, purpose: string, clientIp: string): Promise<OtpRequestResult> {
     // Staging fixture mode (M00-D2): closed at the service boundary, before the database, a digest or the provider.
     this.policy.assertRegistrationOpen();
     // SYSTEM turned the registration OTP off: no code is issued (nothing is sent, no SMS is spent). The application registers
@@ -86,9 +89,11 @@ export class VerificationService {
     const verificationId = randomUUID();
     const otp = generateOtp();
     const otpDigest = computeOtpDigest(this.config.otpHmacKey, verificationId, phoneNormalized, purpose, otp);
+    const ipHmac = this.#ipHmac(clientIp);
+    let policy: OtpPolicy | undefined;
 
     await this.transactions.withTransaction(async (context) => {
-      await this.verifications.lockLane(context, otpRequestLockKey(phoneNormalized, purpose));
+      await this.verifications.lockLane(context, otpPhoneLockKey(phoneNormalized));
       if (await this.users.isPhoneRegistered(context, 'APP_USER', phoneNormalized)) {
         // A locked account whose owner asked for its deletion can be recovered (OTP + a new password): the app opens that flow.
         const existing = await this.users.findByPhone(context, 'APP_USER', phoneNormalized);
@@ -96,9 +101,7 @@ export class VerificationService {
           existing?.status === 'DISABLED' && existing.lockReason === 'DELETE_REQUEST' ? 'ACCOUNT_RECOVERY_AVAILABLE' : 'PHONE_ALREADY_REGISTERED',
         );
       }
-      if (await this.verifications.hasLiveCooldown(context, phoneNormalized, purpose)) {
-        throw new AppError('OTP_RATE_LIMITED');
-      }
+      policy = await this.#reserveQuota(context, phoneNormalized, ipHmac);
       await this.verifications.invalidateLive(context, phoneNormalized, purpose);
       await this.verifications.insertPendingDelivery(context, {
         verificationId,
@@ -106,9 +109,10 @@ export class VerificationService {
         purpose,
         otpDigest,
         otpTtlSeconds: this.config.otpTtlSeconds,
-        resendSeconds: this.config.otpResendSeconds,
+        resendSeconds: policy.values.cooldown_seconds,
       });
     });
+    const resendSeconds = (policy as OtpPolicy).values.cooldown_seconds;
 
     // Committed. The provider is called with no transaction open.
     let queued = false;
@@ -118,8 +122,12 @@ export class VerificationService {
         purpose: REGISTER_PURPOSE,
         ttlSeconds: this.config.otpTtlSeconds,
       });
-    } catch {
+    } catch (error) {
       await this.#markDeliveryFailed(verificationId);
+      if (error instanceof OtpRefusalError && error.code === 'OTP_RATE_LIMITED') {
+        // The whole-gateway daily cap was reached between the check and the queue (it is enforced under the queue lock): nothing was sent.
+        throw error;
+      }
       throw new TechnicalError('unavailable', 'OTP delivery failed');
     }
 
@@ -128,7 +136,7 @@ export class VerificationService {
       return {
         verification_id: verificationId,
         expires_in_seconds: this.config.otpTtlSeconds,
-        resend_after_seconds: this.config.otpResendSeconds,
+        resend_after_seconds: resendSeconds,
         delivery_status: 'PENDING_DELIVERY',
       };
     }
@@ -144,7 +152,7 @@ export class VerificationService {
     return {
       verification_id: verificationId,
       expires_in_seconds: this.config.otpTtlSeconds,
-      resend_after_seconds: this.config.otpResendSeconds,
+      resend_after_seconds: resendSeconds,
     };
   }
 
@@ -158,7 +166,8 @@ export class VerificationService {
     phoneNormalized: string,
     isEligible: (context: TransactionContext) => Promise<boolean>,
     // The challenge purpose (the account scope / flow it is bound to). The SMS category stays RESET_PASSWORD for all of them.
-    purpose: string = RESET_PASSWORD_PURPOSE,
+    purpose: string,
+    clientIp: string,
   ): Promise<OtpRequestResult> {
     const sender = this.provider.sendResetOtp?.bind(this.provider);
     if (sender === undefined) {
@@ -171,12 +180,13 @@ export class VerificationService {
     const verificationId = randomUUID();
     const otp = generateOtp();
     const otpDigest = computeOtpDigest(this.config.otpHmacKey, verificationId, phoneNormalized, purpose, otp);
+    const ipHmac = this.#ipHmac(clientIp);
+    let resendSeconds = 0;
 
     const eligible = await this.transactions.withTransaction(async (context) => {
-      await this.verifications.lockLane(context, otpRequestLockKey(phoneNormalized, purpose));
-      if (await this.verifications.hasLiveCooldown(context, phoneNormalized, purpose)) {
-        throw new AppError('OTP_RATE_LIMITED');
-      }
+      await this.verifications.lockLane(context, otpPhoneLockKey(phoneNormalized));
+      const policy = await this.#reserveQuota(context, phoneNormalized, ipHmac);
+      resendSeconds = policy.values.cooldown_seconds;
       await this.verifications.invalidateLive(context, phoneNormalized, purpose);
       await this.verifications.insertPendingDelivery(context, {
         verificationId,
@@ -184,7 +194,7 @@ export class VerificationService {
         purpose,
         otpDigest,
         otpTtlSeconds: this.config.otpTtlSeconds,
-        resendSeconds: this.config.otpResendSeconds,
+        resendSeconds,
       });
       return (await isEligible(context)) && readiness.deliverable;
     });
@@ -205,9 +215,51 @@ export class VerificationService {
     return {
       verification_id: verificationId,
       expires_in_seconds: this.config.otpTtlSeconds,
-      resend_after_seconds: this.config.otpResendSeconds,
+      resend_after_seconds: resendSeconds,
       delivery_status: 'PENDING_DELIVERY',
     };
+  }
+
+  /**
+   * Issue #117: the shared, atomic quota check-and-reserve of one OTP request. It runs INSIDE the request's transaction, after the
+   * PHONE lock (one lock per phone for every purpose and app) and before the challenge row is written, so two concurrent requests
+   * for the same phone cannot both pass. In order: the cooldown shared by all purposes, the phone's rolling hour and day windows
+   * (counted over the challenges of every purpose), then the client address's rolling hour (its own lock, always taken second; the
+   * request is recorded here, and a refusal later in the transaction rolls the record back with everything else). The policy is read
+   * from PostgreSQL now, so SYSTEM's change is in force for the next request. The answers never depend on any account.
+   * The whole-gateway daily cap is enforced by the SMS queue under its own lock (it also counts the administrators' activation SMS).
+   */
+  async #reserveQuota(context: TransactionContext, phoneNormalized: string, ipHmac: string): Promise<OtpPolicy> {
+    const policy = await this.policies.read(context);
+    const limits = policy.values;
+    const cooldown = await this.verifications.cooldownRemainingSeconds(context, phoneNormalized, limits.cooldown_seconds);
+    if (cooldown !== undefined) {
+      throw new OtpRefusalError('OTP_RATE_LIMITED', { reason: 'COOLDOWN', retry_after_seconds: cooldown }, cooldown);
+    }
+    for (const window of [
+      { reason: 'PHONE_HOUR', seconds: 3600, limit: limits.phone_per_hour },
+      { reason: 'PHONE_DAY', seconds: 86_400, limit: limits.phone_per_day },
+    ]) {
+      const count = await this.verifications.countPhoneChallenges(context, phoneNormalized, window.seconds);
+      if (count >= window.limit) {
+        const retry = await this.verifications.phoneRetryAfter(context, phoneNormalized, window.seconds, count, window.limit);
+        throw new OtpRefusalError('OTP_RATE_LIMITED', { reason: window.reason, retry_after_seconds: retry }, retry);
+      }
+    }
+    await this.policies.lockIp(context, otpIpLockKey(ipHmac));
+    const ipCount = await this.policies.countIpSince(context, ipHmac, 3600);
+    if (ipCount >= limits.ip_per_hour) {
+      const retry = await this.policies.ipRetryAfter(context, ipHmac, 3600, ipCount, limits.ip_per_hour);
+      throw new OtpRefusalError('OTP_RATE_LIMITED', { reason: 'IP_HOUR', retry_after_seconds: retry }, retry);
+    }
+    await this.policies.insertIpRequest(context, randomUUID(), ipHmac);
+    await this.policies.pruneIpRequests(context);
+    return policy;
+  }
+
+  /** The stored identity of a client address: an HMAC of its limiter identity (IPv4, or the IPv6 /64), never the address itself. */
+  #ipHmac(clientIdentity: string): string {
+    return this.config.otpHmacKey.hmacSha256Hex(JSON.stringify([OTP_IP_HMAC_DOMAIN, clientIdentity]));
   }
 
   /** Delivery state of a REGISTER challenge, for the client that created it. Says nothing about any account. */
@@ -248,7 +300,8 @@ export class VerificationService {
           expires_in_seconds: this.config.proofTtlSeconds,
         };
       case 'wrong':
-        throw new AppError('OTP_INVALID');
+        // The app shows how many tries are left on this challenge.
+        throw new OtpRefusalError('OTP_INVALID', { attempts_remaining: outcome.attemptsRemaining });
       case 'expired':
         throw new AppError('OTP_EXPIRED');
       case 'rejected':
@@ -263,7 +316,8 @@ export class VerificationService {
           outcome: 'DENIED',
           reasonCode: outcome.justLocked ? 'OTP_LOCKED' : 'OTP_ALREADY_LOCKED',
         });
-        throw new AppError('OTP_RATE_LIMITED');
+        // A closed challenge is NOT the send quota / cooldown (OTP_RATE_LIMITED): the app returns to the first step of its flow.
+        throw new OtpRefusalError('OTP_LOCKED', { attempts_remaining: 0 });
     }
   }
 
@@ -308,12 +362,9 @@ export class VerificationService {
       otp,
     );
     if (!digestsEqual(expected, row.otpDigest)) {
-      const { status } = await this.verifications.recordWrongAttempt(
-        context,
-        row.verificationId,
-        this.config.otpMaxAttempts,
-      );
-      return status === 'LOCKED' ? { kind: 'locked', justLocked: true } : { kind: 'wrong' };
+      const maxAttempts = (await this.policies.read(context)).values.max_wrong_attempts;
+      const { status, attemptCount } = await this.verifications.recordWrongAttempt(context, row.verificationId, maxAttempts);
+      return status === 'LOCKED' ? { kind: 'locked', justLocked: true } : { kind: 'wrong', attemptsRemaining: Math.max(0, maxAttempts - attemptCount) };
     }
 
     await this.verifications.markVerified(context, row.verificationId);

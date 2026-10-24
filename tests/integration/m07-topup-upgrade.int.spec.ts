@@ -1,8 +1,9 @@
 import { PASSWORD_SESSION_UP_SQL, PASSWORD_SESSION_DOWN_SQL } from './support/password-session-migration-sql';
 import { SHOP_RIGHT_DOWN_SQL, SHOP_RIGHT_UP_SQL } from './support/admin-shop-right-migration-sql';
+import { OTP_POLICY_DOWN_SQL, OTP_POLICY_UP_SQL } from './support/otp-policy-migration-sql';
 import { PRE_TIMEOUT_MIGRATION_ARGS } from './support/timeout-migration-sql';
 import { assertTestDatabaseTarget } from './support/assert-test-target';
-import { minimalChildEnv, runNpmScript } from './support/test-helpers';
+import { minimalChildEnv, runNpmScript, setOtpPolicy } from './support/test-helpers';
 import { randomBytes, randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
@@ -58,6 +59,7 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
   let addedPolicy = false;
   let temporaryPasswordSchema = false;
   let temporaryShopRight = false;
+  let temporaryOtpPolicy = false;
   let originalMigrationHistory: Array<{ id: number; name: string; run_on: string }> = [];
   const shippers: Shipper[] = [];
   const pool = (): Pool => admin.pool;
@@ -135,6 +137,10 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
       await restoreMigrationHistory();
       // Remove the temporary auth overlay before the normal runner applies all pending migrations.
       // These historical fixtures use legacy sessions, which the Down preserves.
+      if (temporaryOtpPolicy) {
+        await pool().query(OTP_POLICY_DOWN_SQL);
+        temporaryOtpPolicy = false;
+      }
       if (temporaryShopRight) {
         await pool().query(SHOP_RIGHT_DOWN_SQL);
         temporaryShopRight = false;
@@ -179,6 +185,9 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
     temporaryPasswordSchema = true;
     await pool().query(SHOP_RIGHT_UP_SQL);
     temporaryShopRight = true;
+    await pool().query(OTP_POLICY_UP_SQL);
+    temporaryOtpPolicy = true;
+    await setOtpPolicy(process.env.DATABASE_URL as string);
     system = await systemSession(admin);
     recorder = await activatedAdmin(`Admin ghi ${tag}`);
     recorderLogin = await login(recorder);
