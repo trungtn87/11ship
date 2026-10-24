@@ -1,6 +1,6 @@
 # M02 — Quản lý quán trên Web Admin (2026-10-24)
 
-Phạm vi: Web Admin › Vận hành › Quán (`/operations/shops`, `/operations/shops/:id`) + API `/v1/admin/shops`. Không có migration, không có grant mới (mọi bảng đã có quyền runtime). Không sửa hồ sơ/lịch/giá/món từ Admin.
+Phạm vi: Web Admin › Vận hành › Quán (`/operations/shops`, `/operations/shops/:id`) + API `/v1/admin/shops`. Có **1 migration** (`1796256000000_admin-shop-manage-right`, quyền `can_manage_shops`), không có grant mới (mọi bảng đã có quyền runtime). Không sửa hồ sơ/lịch/giá/món từ Admin.
 
 ## API (đọc: SYSTEM hoặc ADMIN có VIEW trên SHOP; ghi: SYSTEM hoặc ADMIN có VIEW + quyền riêng `can_manage_shops` "Quản lý hoạt động quán" trên SHOP)
 - `GET /v1/admin/shops?q&area&profile&schedule&limit&offset` — 20/trang; `profile` = trạng thái hồ sơ hiện có (INCOMPLETE/ACTIVE/DISABLED); `schedule` = OPEN/CLOSED do máy chủ tính cùng quy tắc `shop-availability-sql`.
@@ -11,7 +11,10 @@ Phạm vi: Web Admin › Vận hành › Quán (`/operations/shops`, `/operation
 ## Quyền (Owner duyệt 2026-10-24)
 - Cột mới `can_manage_shops` (mặc định `false`) trên `admin_app_permissions` và `admin_invitation_permissions`, chỉ SHOP và phải có VIEW (CHECK ở DB + validator). SYSTEM luôn có. ADMIN hiện hữu và lời mời cũ: `false`, không suy từ `can_lock`. `can_lock` giữ nguyên nghĩa/nhãn "Khóa tài khoản" và không còn cho phép đổi trạng thái quán.
 - Nối vào: lời mời (tạo/cấp lại), kích hoạt (copy snapshot), ma trận Phân quyền, đọc quyền. Replay kiểm lại quyền hiện tại.
-- Migration `1796256000000_admin-shop-manage-right.sql`; không đổi grants (cột mới nằm trong grant bảng hiện có). Hướng dẫn: `ops/runbooks/m02-admin-shops-deploy-20261024.md`.
+- Migration `1796256000000_admin-shop-manage-right.sql` — SHA-256 `aef67a467cf8b4d87e3642d7b6202af5573d6ed7153ba298890fe682bf140185`, đã có mục đánh giá tương thích trong `ops/selfhosted/reviewed-migrations.json` (cơ chế PR #186; updater từ chối deploy nếu thiếu hoặc hash lệch). Không đổi grants (cột mới nằm trong grant bảng hiện có). Hướng dẫn: `ops/runbooks/m02-admin-shops-deploy-20261024.md`.
+
+## Owner đã duyệt (24/10/2026)
+- Quyền riêng thay `can_lock`, và **chặn vô hiệu hóa khi quán còn đơn hoặc delivery chưa kết thúc** (kiểm lại dưới khóa giao dịch). Đây là điều chỉnh đã được duyệt, chưa phải nghiệm thu; M02 chưa đóng.
 
 ## Còn lại
 - Bản đồ web: chưa có tích hợp M14 cho web → hiển thị địa chỉ + tọa độ và ghi rõ chưa nối bản đồ.
