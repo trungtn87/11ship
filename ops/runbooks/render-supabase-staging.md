@@ -163,6 +163,21 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | notification_reminders | SELECT, INSERT, UPDATE, DELETE (M08: due reminders from M07 events, resolved once; resolved rows are deleted by the retention pass) |
 | notification_offer_rounds | SELECT, INSERT, DELETE (M08: one row per Shipper, delivery and search round (at most one push); old rows are deleted by the retention pass) |
 | notification_settings | SELECT, INSERT, UPDATE (M08: the account's own notification settings per app) |
+| ops_config | SELECT, INSERT, UPDATE (M13: the single settings row (thresholds, retention, Discord switch and the sealed webhook); SYSTEM changes it through the Administration; never deleted) |
+| ops_admin_scopes | SELECT, INSERT, UPDATE (M13: which ADMIN may view or handle incidents; default deny; never deleted) |
+| ops_incidents | SELECT, INSERT, UPDATE, DELETE (M13: one open incident per fingerprint; DELETE only by the retention pass after the incident window) |
+| ops_events | SELECT, INSERT, DELETE (M13: the append-only operations log and incident timeline; a trigger refuses UPDATE and any DELETE outside the retention pass) |
+| ops_checks | SELECT, INSERT, UPDATE (M13: the latest state of each check; UPDATE replaces it in place) |
+| ops_metrics | SELECT, INSERT, DELETE (M13: raw measurements; DELETE only by the retention pass after folding them into the hourly rows) |
+| ops_metrics_hourly | SELECT, INSERT, DELETE (M13: hourly aggregates; DELETE only by the retention pass) |
+| ops_notifications | SELECT, INSERT, UPDATE, DELETE (M13: the Discord messages and their real outcome; DELETE only by the retention pass with their incident) |
+| ops_maintenance | SELECT, INSERT, UPDATE (M13: scoped maintenance windows; UPDATE only cancels one; never deleted) |
+| ops_gateway_telemetry | SELECT, INSERT, UPDATE (M13: what the gateway phone reported besides the heartbeat (battery, charging, SIM state, results waiting); replaced in place) |
+| ops_ingest_keys | SELECT, INSERT, UPDATE (M13: hashed credentials of the probe, backup job and deploy pipeline; revoked, never deleted) |
+| ops_releases | SELECT, INSERT, UPDATE (M13: the release catalogue; UPDATE is the version-checked publish or withdraw; never deleted) |
+| ops_version_reports | SELECT, INSERT, UPDATE (M13: the version each device or service last reported; replaced in place) |
+| ops_deploys | SELECT, INSERT, UPDATE (M13: the deploy history reported by the pipeline; UPDATE closes a running deploy; never deleted) |
+| ops_backup_reports | SELECT, INSERT, DELETE (M13: backup and restore-test results reported by their jobs; DELETE only by the retention pass) |
 | reviews | SELECT, INSERT, UPDATE (M11: a rating is written once; only its hidden state changes (guard trigger); never deleted) |
 | review_moderations | SELECT, INSERT (M11: hide / restore with reason; append-only) |
 | review_replies | SELECT, INSERT, UPDATE (M11: the shop reply (one per rating, updated with a version); never deleted) |

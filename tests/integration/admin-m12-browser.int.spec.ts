@@ -362,7 +362,7 @@ describe('M12 administration web (real browser)', () => {
 
     // A verified backup on the VPS only: warned, not healthy; the restore button exists only for it.
     const good = randomUUID();
-    await app.pool.query(`INSERT INTO app.backup_records (backup_id, kind, state, started_at, finished_at, size_bytes, sha256, schema_version, encrypted, offsite, verified_at, verify_note) VALUES ($1::uuid, 'DAILY', 'SUCCEEDED', now() - interval '1 hour', now() - interval '59 minutes', 5242880, repeat('c', 64), '1795824000000_create-m12-backup-restore', true, false, now() - interval '58 minutes', 'đã khôi phục thử và kiểm tra')`, [good]);
+    await app.pool.query(`INSERT INTO app.backup_records (backup_id, kind, state, started_at, finished_at, size_bytes, sha256, schema_version, encrypted, offsite, verified_at, verify_note) VALUES ($1::uuid, 'DAILY', 'SUCCEEDED', now() - interval '1 hour', now() - interval '59 minutes', 5242880, repeat('c', 64), '1795996800000_create-m12-backup-restore', true, false, now() - interval '58 minutes', 'đã khôi phục thử và kiểm tra')`, [good]);
     await app.pool.query(`INSERT INTO app.backup_records (backup_id, kind, state, started_at, finished_at, error_code) VALUES (gen_random_uuid(), 'DAILY', 'FAILED', now() - interval '25 hours', now() - interval '24 hours', 'VERIFY_LEDGER_DIFFERENCE')`);
     await page.goto(`${origin}/system/backups`);
     await page.waitFor(`document.querySelector('#backup-table')`);

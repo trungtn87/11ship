@@ -54,7 +54,7 @@ describe('M12-F — audit viewer, backup history, restore requests', () => {
     await admin.pool.query(
       `INSERT INTO app.backup_records (backup_id, kind, state, started_at, finished_at, size_bytes, sha256, schema_version, encrypted, offsite, verified_at, verify_note, error_code)
        VALUES ($1::uuid, $2, $3, now() - $4::int * interval '1 millisecond', ${state === 'RUNNING' ? 'NULL' : `now() - $4::int * interval '1 millisecond' + interval '1 minute'`}, ${state === 'SUCCEEDED' ? '123456' : 'NULL'}, ${state === 'SUCCEEDED' ? `repeat('a', 64)` : 'NULL'},
-               ${state === 'SUCCEEDED' ? `'1795824000000_create-m12-backup-restore'` : 'NULL'}, $5, $6, ${verified ? `now() - $4::int * interval '1 millisecond' + interval '2 minutes'` : 'NULL'}, 'test', ${state === 'FAILED' ? `'DUMP_FAILED'` : 'NULL'})`,
+               ${state === 'SUCCEEDED' ? `'1795996800000_create-m12-backup-restore'` : 'NULL'}, $5, $6, ${verified ? `now() - $4::int * interval '1 millisecond' + interval '2 minutes'` : 'NULL'}, 'test', ${state === 'FAILED' ? `'DUMP_FAILED'` : 'NULL'})`,
       [id, spec.kind ?? 'DAILY', state, ago, spec.encrypted ?? true, spec.offsite ?? false],
     );
     return id;

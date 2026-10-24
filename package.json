@@ -42,6 +42,7 @@
     "admin-auth:bootstrap-system": "node scripts/admin-auth-bootstrap-system.js",
     "admin-auth:recover-system": "node scripts/admin-auth-recover-system.js",
     "sms-gateway:ctl": "node scripts/sms-gateway-ctl.js",
+    "ops:ctl": "node scripts/ops-ctl.js",
     "push:check": "node scripts/push-check.js",
     "deploy:validate": "node scripts/deploy/validate-render-blueprint.mjs",
     "deploy:test": "node --test \"tests/deploy/*.test.mjs\"",
@@ -52,7 +53,8 @@
     "test:integration": "npm run build:test && node .test-dist/tests/integration/support/guard-cli.js && jest --config jest.integration.config.js --runInBand",
     "progress:generate": "node scripts/generate-progress.mjs",
     "progress:check": "node scripts/generate-progress.mjs --check",
-    "progress:test": "node --test \"tests/progress/*.test.mjs\""
+    "progress:test": "node --test \"tests/progress/*.test.mjs\"",
+    "ops-probe:test": "node --test \"tests/ops-probe/*.test.mjs\""
   },
   "devDependencies": {
     "@jest/globals": "30.5.2",

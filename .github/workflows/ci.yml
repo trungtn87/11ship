@@ -133,6 +133,10 @@ jobs:
       - name: Admin web UI tests (menu, permissions, preview isolation)
         run: npm run admin-web:test
 
+      # M13: the independent external probe and the backup/deploy reporter (pure Node, loopback stand-ins for Discord, the API and the ingest endpoint).
+      - name: M13 external probe and reporter tests
+        run: npm run ops-probe:test
+
       # M00-L: structure checks plus the launcher behaviour suite under PowerShell 7 (real git, faked Docker/npm).
       # The Windows-only parts (cmd wrappers, double-click) run in the launcher-windows job below.
       - name: Local launcher tests (behaviour suite under PowerShell 7)

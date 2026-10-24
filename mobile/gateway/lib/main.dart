@@ -60,6 +60,9 @@ class _GatewayHomeState extends State<GatewayHome> {
   bool _sending = false;
   String _status = 'Đang kiểm tra thiết bị...';
   String _outcome = 'Chưa gửi SMS thử.';
+  UpdateInfo? _update;
+  bool _updating = false;
+  String _updateMessage = '';
 
   @override
   void initState() {
@@ -123,6 +126,43 @@ class _GatewayHomeState extends State<GatewayHome> {
     await _native.invokeMethod<bool>('gatewayUnpair');
     if (mounted) setState(() => _pairMessage = '');
     await _refreshGateway();
+  }
+
+  Future<void> _checkUpdate() async {
+    setState(() {
+      _updating = true;
+      _updateMessage = 'Đang hỏi VPS về bản cập nhật...';
+    });
+    try {
+      final data = await _native.invokeMapMethod<dynamic, dynamic>('gatewayUpdateCheck');
+      final info = UpdateInfo.fromMap(data);
+      if (mounted) {
+        setState(() {
+          _update = info;
+          _updateMessage = info.describe();
+        });
+      }
+    } on PlatformException catch (e) {
+      if (mounted) setState(() => _updateMessage = e.message ?? e.code);
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
+  /// Downloads the offered file, checks its SHA-256 and only then opens the Android installer, where the person confirms.
+  Future<void> _installUpdate() async {
+    setState(() {
+      _updating = true;
+      _updateMessage = 'Đang tải và kiểm tra tệp cập nhật...';
+    });
+    try {
+      await _native.invokeMethod<bool>('gatewayUpdateInstall');
+      if (mounted) setState(() => _updateMessage = 'Đã mở trình cài đặt Android. Hãy xác nhận cài đặt.');
+    } on PlatformException catch (e) {
+      if (mounted) setState(() => _updateMessage = e.message ?? e.code);
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
   }
 
   Future<void> _setEnabled(bool enabled) async {
@@ -225,7 +265,30 @@ class _GatewayHomeState extends State<GatewayHome> {
               const Text('Chưa cho phép thông báo: Android có thể ẩn thanh trạng thái của dịch vụ nền.'),
             Text('Hôm nay: ${g.sentToday} đã gửi, ${g.failedToday} lỗi/không rõ'),
             if (g.pendingReport) const Text('Có kết quả gửi đang chờ báo về VPS.'),
+            if (g.updateHint != null && g.serviceRunning)
+              Text('VPS có bản mới ${g.updateHint}. Tắt gateway rồi bấm "Kiểm tra bản cập nhật".'),
             const SizedBox(height: 12),
+            if (g.paired && !g.serviceRunning)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _updating ? null : _checkUpdate,
+                      icon: const Icon(Icons.system_update),
+                      label: const Text('Kiểm tra bản cập nhật'),
+                    ),
+                    if (_update?.ready == true)
+                      FilledButton.icon(
+                        onPressed: _updating ? null : _installUpdate,
+                        icon: const Icon(Icons.download),
+                        label: const Text('Tải và cài'),
+                      ),
+                    if (_updateMessage.isNotEmpty) Text(_updateMessage),
+                  ],
+                ),
+              ),
             if (!g.smsGranted || !g.notificationsGranted)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),

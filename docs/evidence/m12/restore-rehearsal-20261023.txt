@@ -2,13 +2,13 @@
 
 ## 1. Backup: dump -> encrypt -> restore into a scratch DB -> check -> record
 BACKUP OK id=ddf69d83-7d18-49b2-bf89-6f4ef49e235c kind=DAILY size=562992 sha256=7074bc9ab23d0dcbe4ef0ca8a15be98d9b6ceb961f18ad80f7013fb7ac740c37 offsite=false
-restored into scratch DB and checked: schema 1795824000000_create-m12-backup-restore, audit 500, ledger 20, users 0; no off-VPS target configured
+restored into scratch DB and checked: schema 1795996800000_create-m12-backup-restore, audit 500, ledger 20, users 0; no off-VPS target configured
 
 ## 2. The record the Web Admin reads
 DAILY | SUCCEEDED | 562992 bytes | encrypted=true | offsite=false | verified=true
 
 ## 3. Restore by hand from the encrypted file into a NEW scratch DB (kept to look at)
-schema_version|1795824000000_create-m12-backup-restore
+schema_version|1795996800000_create-m12-backup-restore
 users|0
 audit_logs|500
 wallet_ledger_entries|20

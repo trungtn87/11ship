@@ -39,6 +39,7 @@ object GatewayStore {
     private const val K_PEND_ATT = "pending_attempt"
     private const val K_PEND_RES = "pending_result"
     private const val K_PEND_ERR = "pending_error"
+    private const val K_UPDATE_HINT = "update_hint"
 
     private fun prefs(ctx: Context): SharedPreferences =
         ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -154,7 +155,21 @@ object GatewayStore {
             "sentToday" to (if (same) p.getInt(K_SENT, 0) else 0),
             "failedToday" to (if (same) p.getInt(K_FAILED, 0) else 0),
             "pendingReport" to p.contains(K_PEND_JOB),
+            "updateHint" to p.getString(K_UPDATE_HINT, null),
         )
+    }
+
+    /** Results the server does not hold yet: a stored report, or an attempt that started and was never reported (it will be reported UNKNOWN). */
+    fun unreportedCount(ctx: Context): Int {
+        val p = prefs(ctx)
+        return if (p.contains(K_PEND_JOB) || p.contains(K_ATT_JOB)) 1 else 0
+    }
+
+    fun lastError(ctx: Context): String? = prefs(ctx).getString(K_LAST_ERROR, null)
+
+    /** The version name the server last offered (shown as "Có bản mới"), or null. Informational: nothing is downloaded from here. */
+    fun setUpdateHint(ctx: Context, versionName: String?) {
+        prefs(ctx).edit().putString(K_UPDATE_HINT, versionName).apply()
     }
 
     // --- crash safety: what was being sent / what could not be reported yet (identifiers only, never the text) ---------------

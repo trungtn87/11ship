@@ -27,8 +27,8 @@ Phạm vi bàn giao này: **chưa merge, chưa deploy, chưa chạy migration tr
 
 Cả hai chỉ thêm bảng mới, không sửa/xóa gì đã có:
 
-1. `1795737600000_create-m12-report-exports.sql` — `report_export_jobs`, `report_export_files` (job không bao giờ bị xóa: trigger).
-2. `1795824000000_create-m12-backup-restore.sql` — `backup_records` (ứng dụng chỉ đọc), `restore_requests` (không bao giờ bị xóa; tối đa một yêu cầu mở nhờ unique index).
+1. `1795910400000_create-m12-report-exports.sql` — `report_export_jobs`, `report_export_files` (job không bao giờ bị xóa: trigger).
+2. `1795996800000_create-m12-backup-restore.sql` — `backup_records` (ứng dụng chỉ đọc), `restore_requests` (không bao giờ bị xóa; tối đa một yêu cầu mở nhờ unique index).
 
 Quyền runtime: `ops/selfhosted/02-runtime-grants.sql` (+ `04-check-runtime-grants.sql` và bảng trong `render-supabase-staging.md`, được `tests/deploy/selfhosted-grants.test.mjs` đối chiếu). `audit_logs` được cấp thêm `SELECT` (nhật ký chỉ đọc; vẫn không UPDATE/DELETE). **Trước khi chạy ứng dụng mới trên VPS**: chạy migration bằng quy trình cập nhật VPS hiện có, rồi áp dụng `02-runtime-grants.sql` và kiểm bằng `04-check-runtime-grants.sql`. Chưa làm bước nào trong số đó.
 
