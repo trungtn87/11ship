@@ -49,14 +49,8 @@ CREATE TABLE app.otp_policy_changes (
 );
 CREATE INDEX otp_policy_changes_idx ON app.otp_policy_changes (changed_at DESC, change_id);
 
-CREATE FUNCTION app.otp_policy_changes_reject_mutation() RETURNS trigger
-  LANGUAGE plpgsql AS $$
-BEGIN
-  RAISE EXCEPTION 'app.otp_policy_changes is append-only (% rejected)', TG_OP USING ERRCODE = 'restrict_violation';
-END;
-$$;
-CREATE TRIGGER otp_policy_changes_append_only BEFORE UPDATE OR DELETE OR TRUNCATE ON app.otp_policy_changes
-  FOR EACH STATEMENT EXECUTE FUNCTION app.otp_policy_changes_reject_mutation();
+-- Append-only is by privilege: the runtime role is granted SELECT and INSERT only on this table (ops/selfhosted/02-runtime-grants.sql), so the application can neither
+-- update nor delete a history row.
 
 -- Durable, multi-process counter of OTP requests per client address. The address is never stored: only an HMAC of its limiter identity (IPv4 as is,
 -- IPv6 as its /64 prefix). One row per accepted request; the sliding window counts rows, old rows are deleted by the requests themselves.
@@ -70,9 +64,6 @@ CREATE TABLE app.otp_ip_requests (
 );
 CREATE INDEX otp_ip_requests_window_idx ON app.otp_ip_requests (ip_hmac, created_at DESC);
 CREATE INDEX otp_ip_requests_age_idx ON app.otp_ip_requests (created_at);
-
--- Phone quota windows count the challenges of a phone across purposes.
-CREATE INDEX phone_verifications_phone_window_idx ON app.phone_verifications (phone_normalized, created_at DESC);
 
 -- Down Migration
 -- Preserve immutable history; use a corrective migration after release.

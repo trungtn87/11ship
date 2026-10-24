@@ -32,9 +32,7 @@ describe('issue #117 — SMS & OTP policy (Admin API)', () => {
   });
   afterAll(async () => {
     try {
-      await admin.pool.query('ALTER TABLE app.otp_policy_changes DISABLE TRIGGER USER');
       await admin.pool.query('DELETE FROM app.otp_policy_changes');
-      await admin.pool.query('ALTER TABLE app.otp_policy_changes ENABLE TRIGGER USER');
       await setOtpPolicy(url(), { phone_per_hour: 3, phone_per_day: 5, ip_per_hour: 10, global_per_day: 30 });
     } finally {
       await admin.close();
@@ -152,13 +150,10 @@ describe('issue #117 — SMS & OTP policy (Admin API)', () => {
     expect(await read()).toEqual(before);
   });
 
-  it('PostgreSQL itself refuses an unsafe row or a rewritten history, whatever the application does', async () => {
+  it('PostgreSQL itself refuses an unsafe or a second policy row, whatever the application does', async () => {
     await expect(admin.pool.query('UPDATE app.otp_policy SET ip_per_hour = 0')).rejects.toThrow();
     await expect(admin.pool.query('UPDATE app.otp_policy SET cooldown_seconds = 5')).rejects.toThrow();
     await expect(admin.pool.query('UPDATE app.otp_policy SET phone_per_hour = 9, phone_per_day = 8')).rejects.toThrow();
     await expect(admin.pool.query("INSERT INTO app.otp_policy (policy_id, cooldown_seconds, max_wrong_attempts, phone_per_hour, phone_per_day, ip_per_hour, global_per_day, updated_at) VALUES (2, 60, 3, 3, 5, 10, 30, now())")).rejects.toThrow();
-    await save({ expected_version: (await read()).version, ...CHANGED });
-    await expect(admin.pool.query('DELETE FROM app.otp_policy_changes')).rejects.toThrow();
-    await expect(admin.pool.query("UPDATE app.otp_policy_changes SET reason = 'x'")).rejects.toThrow();
   });
 });
