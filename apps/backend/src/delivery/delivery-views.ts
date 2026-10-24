@@ -12,7 +12,7 @@ import { AssignmentRow, DeliveryRepository, DeliveryRow, EventRow, IncidentRow }
 import { dropoffAreaOf, feeStatusOf, freshnessOf, locationValid, mayRecall, shipperMayRelease, shopMayCancel } from './delivery-rules';
 import { ShipperLocationRepository } from './shipper-location';
 import { buildDeliveryStory, StoryDelivery } from '../orders/order-story';
-import { failReasonText, humanDeliveryReason } from './delivery-reason-text';
+import { failReasonText, humanDeliveryReason, incidentReasonText } from './delivery-reason-text';
 
 // The JSON each reader gets. The server decides which fields are filled; a field the caller may not see is null (or absent), so a screen cannot
 // show what it was never given. Money is a whole number or null (never 0 for "unknown"); times are ISO strings; the search block carries the
@@ -97,7 +97,8 @@ export class DeliveryViews {
           incident_id: incident.incidentId,
           status: incident.status,
           custody: incident.custody,
-          reason: incident.reasonNote ?? incident.reasonCode,
+          // The goods card of the shop and of the Shipper: a failure code is read as its sentence, never as the code (the Admin view keeps the raw code and note).
+          reason: incidentReasonText(incident.reasonCode, incident.reasonNote),
           opened_at: iso(incident.openedAtMs),
         };
   }

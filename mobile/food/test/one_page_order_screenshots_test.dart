@@ -179,7 +179,7 @@ void main() {
         ('2026-10-20T10:58:00Z', 'Quán đã xác nhận'),
         ('2026-10-20T11:24:00Z', 'Đang tìm shipper'),
         ('2026-10-20T11:25:00Z', 'Shipper đã nhận đơn'),
-        ('2026-10-20T12:25:00Z', 'Đã hủy yêu cầu giao — Shipper chưa lấy hàng quá thời gian quy định'),
+        ('2026-10-20T12:25:00Z', 'Đã hủy yêu cầu giao vì shipper chưa lấy hàng quá thời gian quy định'),
       ],
     );
     await pumpScreen(tester, ShopOrderDetailScreen(runtime: runtimeOf(_Orders(store, lateOrder)), orderId: 'o1', deliveries: _Deliveries(late)), height: 2100);

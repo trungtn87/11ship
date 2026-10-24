@@ -246,7 +246,8 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
         [standalone],
       );
       expect(tables.rows[0]?.hit).toBe(false);
-      expect(app.running.logs.join('\n')).not.toContain(otp);
+      // The logs carry request ids (uuid) too: the same stand-alone rule, so a request id that happens to hold six decimal digits is not mistaken for the code.
+      expect(new RegExp(standalone).test(app.running.logs.join('\n'))).toBe(false);
       expect(app.running.logs.join('\n')).not.toContain(phone.normalized);
     });
 

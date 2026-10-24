@@ -1,4 +1,4 @@
-import { humanDeliveryReason } from '../delivery/delivery-reason-text';
+import { humanDeliveryReason, systemCancelSentence } from '../delivery/delivery-reason-text';
 
 // "Diễn biến" of an order or of a direct delivery as the shop and the customer read it: only the milestones that happened, in plain words, in time order.
 // Pure (no I/O, no clock). The full event log stays in the database, in the audit and in the SYSTEM/ADMIN views; nothing here is written back. Reminders,
@@ -107,7 +107,7 @@ function deliveryLine(e: StoryDeliveryEvent, d: StoryDelivery, audience: StoryAu
       // After pickup only the creator may cancel: the actor says who (the customer of an order, the shop of a direct call).
       return withReason(e.actorType === 'CUSTOMER' ? 'Khách đã hủy yêu cầu giao' : e.actorType === 'ADMIN' ? 'Quản trị đã hủy yêu cầu giao' : 'Quán đã hủy yêu cầu giao', reason);
     case 'cancelled_by_system':
-      return withReason('Đã hủy yêu cầu giao', reason);
+      return systemCancelSentence(e.note);
     case 'goods_returned':
       return audience === 'shop' ? 'Quán xác nhận hàng đã về' : null;
     case 'goods_handled':

@@ -58,3 +58,25 @@ export function humanDeliveryReason(raw: string | null | undefined): string | nu
   }
   return text;
 }
+
+/**
+ * The reason on the goods card of a delivery that failed or was cancelled with the goods still out. A failure code is its label (with the note a person added after
+ * it); anything else is read as an ended delivery's reason. Empty when there is nothing to say: the screen never receives a bare code.
+ */
+export function incidentReasonText(code: string, note: string | null): string {
+  if (failReasonLabel(code) !== null) {
+    return failReasonText(code, note);
+  }
+  return humanDeliveryReason(note) ?? humanDeliveryReason(code) ?? '';
+}
+
+/** A request the system ended on its own clock, in one sentence: "Đã hủy yêu cầu giao vì shipper chưa lấy hàng quá thời gian quy định". */
+export function systemCancelSentence(rawReason: string | null | undefined): string {
+  const head = 'Đã hủy yêu cầu giao';
+  const reason = humanDeliveryReason(rawReason);
+  if (reason === null) {
+    return head;
+  }
+  // Only the three system sentences above read well after "vì" once their first letter is lower case; a reason a person typed keeps its own writing.
+  return [PICKUP_TIMEOUT, ACCEPT_TIMEOUT, SEARCH_EXPIRED].includes(reason) ? `${head} vì ${reason.charAt(0).toLowerCase()}${reason.slice(1)}` : `${head} — ${reason}`;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { humanDeliveryReason } from '../delivery/delivery-reason-text';
+import { humanDeliveryReason, incidentReasonText, systemCancelSentence } from '../delivery/delivery-reason-text';
 import { buildDeliveryStory, buildOrderStory, StoryDelivery, StoryDeliveryEvent, StoryOrderEvent } from './order-story';
 
 const T0 = Date.parse('2026-10-20T11:00:00Z');
@@ -17,7 +17,7 @@ describe('order story: milestones only, in plain words', () => {
       [call([de(2, 'created', null, 'SHOP'), de(3, 'accepted', null, 'SHIPPER'), de(10, 'pickup_reminder', 'Nhắc shipper lấy hàng'), de(15, 'pickup_reminder', 'Nhắc shipper lấy hàng'), de(20, 'pickup_timeout_warning', 'Shipper chưa lấy hàng'), de(62, 'cancelled_by_system', 'QUÁ HẠN SHIPPER LẤY HÀNG')])],
       'shop',
     );
-    expect(texts(story)).toEqual(['Đã đặt đơn', 'Quán đã xác nhận', 'Đang tìm shipper', 'Shipper đã nhận đơn', 'Đã hủy yêu cầu giao — Shipper chưa lấy hàng quá thời gian quy định']);
+    expect(texts(story)).toEqual(['Đã đặt đơn', 'Quán đã xác nhận', 'Đang tìm shipper', 'Shipper đã nhận đơn', 'Đã hủy yêu cầu giao vì shipper chưa lấy hàng quá thời gian quy định']);
     expect(story.map((e) => e.at)).toEqual([at(0), at(1), at(2), at(3), at(62)].map((ms) => new Date(ms).toISOString()));
     expect(texts(story).join('|')).not.toMatch(/Đã hủy đơn/);
   });
@@ -122,5 +122,23 @@ describe('plain reasons', () => {
     expect(humanDeliveryReason('SOME_INTERNAL_CODE')).toBeNull();
     expect(humanDeliveryReason('  ')).toBeNull();
     expect(humanDeliveryReason(null)).toBeNull();
+  });
+
+  it('the goods card never receives a bare failure code: the label, then the note a person added', () => {
+    expect(incidentReasonText('RECIPIENT_UNREACHABLE', null)).toBe('Không liên lạc được người nhận');
+    expect(incidentReasonText('RECIPIENT_UNREACHABLE', 'gọi 3 lần không được')).toBe('Không liên lạc được người nhận: gọi 3 lần không được');
+    expect(incidentReasonText('GOODS_PROBLEM', '  ')).toBe('Hàng có vấn đề');
+    // A reason that is not a failure code is read as an ended delivery's reason; an internal code with no note says nothing.
+    expect(incidentReasonText('CANCELLED_AFTER_PICKUP', 'Khách đổi ý')).toBe('Khách đổi ý');
+    expect(incidentReasonText('CANCELLED_AFTER_PICKUP', null)).toBe('');
+  });
+
+  it('a request ended by the system reads as one sentence; a reason a person typed keeps its own writing', () => {
+    expect(systemCancelSentence('QUÁ HẠN SHIPPER LẤY HÀNG')).toBe('Đã hủy yêu cầu giao vì shipper chưa lấy hàng quá thời gian quy định');
+    expect(systemCancelSentence('QUÁ HẠN CHỜ SHIPPER NHẬN')).toBe('Đã hủy yêu cầu giao vì chưa có shipper nhận trong thời gian quy định');
+    expect(systemCancelSentence('Hết thời gian tìm shipper')).toBe('Đã hủy yêu cầu giao vì hết thời gian tìm shipper');
+    expect(systemCancelSentence('OTP của khách sai')).toBe('Đã hủy yêu cầu giao — OTP của khách sai');
+    expect(systemCancelSentence(null)).toBe('Đã hủy yêu cầu giao');
+    expect(systemCancelSentence('SOME_INTERNAL_CODE')).toBe('Đã hủy yêu cầu giao');
   });
 });
