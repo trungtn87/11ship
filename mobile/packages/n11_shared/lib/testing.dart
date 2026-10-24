@@ -706,6 +706,9 @@ class FakeDriverServer {
           if (on && (profile!['status'] != 'ACTIVE' || !walletReady)) {
             throw StateError('DRIVER_WALLET_NOT_READY');
           }
+          if (on && sendPresence && !locationReady) {
+            throw StateError('DRIVER_LOCATION_NOT_READY');
+          }
           profile!['accepting_deliveries'] = on;
         });
     transport.routes['POST /v1/driver/me/closure-request'] = (String m, String p, Map<String, String> h, String b) async => _command(p, b, (Map<String, Object?> body) {
@@ -732,6 +735,27 @@ class FakeDriverServer {
   Map<String, Object?>? bank;
   bool walletReady = false;
   String? closureNote;
+
+  /// 11Ship: when on, the profile carries `presence` and switching on needs [locationReady] (a position reported and still fresh), like the server.
+  bool sendPresence = false;
+  bool locationReady = false;
+
+  /// A delivery is still in progress (or goods are still with the Shipper): the position must keep being shared.
+  bool hasActiveWork = false;
+  int locationReports = 0;
+
+  /// PUT /v1/driver/location the way the server answers: the report makes the position fresh and says whether sharing must go on.
+  void enableLocationRoutes(FakeApiTransport transport) {
+    sendPresence = true;
+    transport.routes['PUT /v1/driver/location'] = (String m, String p, Map<String, String> h, String b) async {
+      locationReports++;
+      locationReady = true;
+      final bool intent = profile?['accepting_deliveries'] == true;
+      return json(200, <String, Object?>{
+        'data': <String, Object?>{'ok': true, 'intent_online': intent, 'has_active_work': hasActiveWork, 'should_share_location': (intent && profile?['status'] == 'ACTIVE') || hasActiveWork},
+      });
+    };
+  }
   final List<Map<String, Object?>> posts = <Map<String, Object?>>[];
 
   /// What the M03 commands received, in order: path and decoded body.
@@ -767,6 +791,16 @@ class FakeDriverServer {
         'can_accept': status == 'ACTIVE' && walletReady,
       },
       'closure': status == 'CLOSING' ? <String, Object?>{'requested_at': '2026-10-17T00:00:00.000Z', 'note': closureNote, 'can_cancel': true} : null,
+      if (sendPresence)
+        'presence': <String, Object?>{
+          'intent_online': stored['accepting_deliveries'] == true,
+          'location_ready': locationReady,
+          'location_fresh_seconds': 120,
+          'can_receive_orders': stored['accepting_deliveries'] == true && status == 'ACTIVE' && walletReady && locationReady,
+          'paused_reason': stored['accepting_deliveries'] == true && !locationReady ? 'LOCATION_STALE' : null,
+          'has_active_work': hasActiveWork,
+          'should_share_location': (stored['accepting_deliveries'] == true && status == 'ACTIVE') || hasActiveWork,
+        },
     };
   }
 

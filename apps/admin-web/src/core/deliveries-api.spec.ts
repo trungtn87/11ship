@@ -10,6 +10,7 @@ const reply = (status: number, body: unknown, headers: Record<string, string> = 
 const errorBody = (code: string) => ({ error: { code, message: 'x', request_id: 'r', details: {} } });
 const row = (over: Record<string, unknown> = {}) => ({
   delivery_id: ID, code: 'G-100001', shop: { shop_id: ID, name: 'Quán Mẫu' }, shipper: null, state: 'waiting_driver', goods_value_vnd: 150000, fee_vnd: null, fee_status: 'UNKNOWN',
+  source: 'DIRECT', order_id: null, wait_seconds: 125, signals: ['FEE_UNKNOWN'],
   incident_open: false, custody: null, created_at: '2026-10-18T09:00:00.000Z', updated_at: '2026-10-18T09:01:00.000Z', ...over,
 });
 const counters = { searching: 2, waiting_pickup: 1, delivering: 3, needs_attention: 1 };
@@ -21,7 +22,12 @@ const detail = (over: Record<string, unknown> = {}) => ({
   fee: { mode: 'PICKUP_AGREEMENT', payer: 'CUSTOMER', amount_vnd: 20000, status: 'FINAL' },
   search: { started_at: '2026-10-18T09:00:00.000Z', expires_at: '2026-10-18T09:30:00.000Z' },
   location: { lat: 22.66, lng: 106.25, recorded_at: '2026-10-18T09:20:00.000Z', age_seconds: 400, freshness: 'STALE' },
-  assignments: [{ assignment_id: ID, shipper_name: 'Shipper A', status: 'FAILED', accepted_at: '2026-10-18T09:05:00.000Z', ended_at: '2026-10-18T09:25:00.000Z', end_reason: 'RECIPIENT_UNREACHABLE' }],
+  location_state: 'AVAILABLE',
+  pickup: { address_text: '1 Phố Kim Đồng', lat: 22.66, lng: 106.25 },
+  dropoff: { area_text: 'Phường Hợp Giang', address_text: null, lat: null, lng: null, pinned: true },
+  links: { shop_id: ID, shipper_driver_id: ID, order_id: null, previous_delivery_id: null, next_delivery: { delivery_id: ID, code: 'G-100002' } },
+  money: { status: 'FORBIDDEN' },
+  assignments: [{ assignment_id: ID, shipper_name: 'Shipper A', shipper_driver_id: ID, end_actor: 'SHIPPER', status: 'FAILED', accepted_at: '2026-10-18T09:05:00.000Z', ended_at: '2026-10-18T09:25:00.000Z', end_reason: 'RECIPIENT_UNREACHABLE' }],
   timeline: [{ at: '2026-10-18T09:00:00.000Z', type: 'delivery.created', actor: 'SHOP', note: null }],
   incident: { incident_id: ID, status: 'OPEN', custody: 'SHIPPER', reason: 'Không liên lạc được', opened_at: '2026-10-18T09:25:00.000Z', closed_at: null, m11_referred_at: null },
   policy: { search_radius_m: 3000, commission_vnd: 1000, fee_policy_version_no: 2 },

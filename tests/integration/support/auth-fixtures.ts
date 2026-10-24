@@ -27,7 +27,7 @@ export function authTestConfig(overrides: Partial<AuthConfig> = {}): AuthConfig 
   return {
     otpTtlSeconds: 300,
     otpResendSeconds: 60,
-    otpMaxAttempts: 5,
+    otpMaxAttempts: 3,
     proofTtlSeconds: 600,
     sessionTtlSeconds: 604_800,
     otpHmacKey: new OtpHmacKey(TEST_OTP_KEY_BYTES),
@@ -296,7 +296,7 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
   );
   // M03: the history and the bank account of the user's Driver profile, then (M01-A2D) the Driver profile itself (all reference the user
   // or the driver purged below).
-  for (const table of ['driver_events', 'driver_bank_accounts']) {
+  for (const table of ['driver_events', 'driver_bank_accounts', 'shipper_latest_locations']) {
     await pool.query(
       `DELETE FROM app.${table}
         WHERE driver_id IN (SELECT driver_id FROM app.drivers WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1))`,

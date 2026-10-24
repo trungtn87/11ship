@@ -17,7 +17,7 @@ void main() {
     M14OfflineMap map = tester.widget<M14OfflineMap>(find.byType(M14OfflineMap));
     expect(map.pins, isEmpty, reason: 'regional Cao Bang center is not a shipper location');
     expect(map.focusPin, isFalse);
-    expect(find.text('Chưa bật chia sẻ vị trí'), findsOneWidget);
+    expect(find.byKey(const Key('home-gps-status')), findsNothing, reason: 'no status line while there is nothing to say');
     expect(tester.widget<IconButton>(find.byKey(const Key('home-recenter'))).onPressed, isNull);
     map.onReady!();
     await home(position: <String, dynamic>{'lat': 22.67, 'lon': 106.26});

@@ -173,6 +173,9 @@ export class OpsEngine {
       successStreak: 0,
       inMaintenance: maintenance,
       ...(SEVERITY_RANK[severity] > SEVERITY_RANK[existing.severity] ? { severity } : {}),
+      // The title says what the LATEST evidence says (a backup that failed for one reason and later fails for another, or is late): a reopened incident is announced with its current
+      // cause, never with the old one. Checks whose title never changes are unaffected.
+      ...(r.title !== existing.title ? { title: r.title } : {}),
     };
     if (existing.status === 'RECOVERED') {
       // It failed again after recovering: the same incident is reopened (not a duplicate) and announced again.

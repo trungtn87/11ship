@@ -22,3 +22,9 @@ build/
 *.pem
 *.key
 artifact-out*/
+
+# M12-F: a Google Drive credential is never committed
+rclone.conf
+*.rclone.conf
+*.cred
+backup.env

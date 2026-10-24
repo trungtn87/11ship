@@ -22,7 +22,8 @@ import { originalEtaMs, searchExpired, shipperMayRelease, stateAfterRelease } fr
 import { DestinationInput, FailInput, LocationInput, ReasonInput, VersionInput } from './delivery-validation';
 import { DeliveryViews } from './delivery-views';
 import { M14RouteClient } from './m14-route-client';
-import { ShipperLocationRepository } from './shipper-location';
+import { ShipperSettlementReader } from '../shipper-settlement/shipper-settlement-reader';
+import { ShipperLocationRepository, shouldShareLocation } from './shipper-location';
 
 const OFFER_LIMIT = 30;
 const HISTORY_LIMIT = 50;
@@ -56,6 +57,7 @@ export class DeliveryShipperService {
     private readonly parameters: EligibilityParametersRepository,
     private readonly routes: M14RouteClient,
     private readonly locations: ShipperLocationRepository,
+    private readonly settlement: ShipperSettlementReader,
     @Inject(ORDER_DELIVERY_PORT) private readonly orders: OrderDeliveryPort,
   ) {}
 
@@ -131,7 +133,9 @@ export class DeliveryShipperService {
     return this.transactions.withTransaction(async (context) => {
       const caller = await this.actors.shipperReader(context, principal);
       await this.locations.upsert(context, caller.driver.driverId, input.lat, input.lng, input.accuracyM);
-      return { ok: true };
+      // The answer tells the app whether it must keep sharing: a Shipper who is off and has no work left lets it stop by itself.
+      const activeWork = await this.settlement.hasActiveWork(context, caller.driver.driverId);
+      return { ok: true, intent_online: caller.driver.acceptingDeliveries, has_active_work: activeWork, should_share_location: shouldShareLocation(caller.driver, activeWork) };
     });
   }
 

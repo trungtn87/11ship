@@ -354,7 +354,7 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       expect(await deliveryOf(id)).toBe('EXPIRED');
     });
 
-    it('a wrong code five times locks the challenge, and a challenge verifies once', async () => {
+    it('a wrong code three times locks the challenge, and a challenge verifies once', async () => {
       const phone = randomPhone();
       app.track(phone.normalized);
       const id = String(dataOf(await requestRegisterOtp(phone)).verification_id);
@@ -362,7 +362,7 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       await ack(job, 'SENT');
       const otp = otpOf(job.text);
       const wrong = otp === '000000' ? '111111' : '000000';
-      for (let attempt = 0; attempt < 4; attempt += 1) {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
         expect(errorCode(await verifyRegister(id, wrong))).toBe('OTP_INVALID');
       }
       const locked = await verifyRegister(id, wrong);

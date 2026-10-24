@@ -3016,6 +3016,8 @@ select {
 
 .row-selected td {
   background: var(--yellow-soft);
+}
+
 /* M11.03: ratings and complaints. */
 .stars {
   color: var(--brand-yellow, #d8ad18);
@@ -3077,4 +3079,396 @@ select {
 .error-log-table td > div { min-width: 0; }
 @media (max-width: 720px) {
   .error-log-table td[data-label="Nội dung"] { flex-direction: column; text-align: left; gap: 8px; }
+}
+
+/* M12-A Overview ("Tổng quan › Điều hành"): range switch, figure cards (period and current state), the work list. */
+.ov-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.ov-ranges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+.ov-range {
+  min-height: 40px;
+  padding: 0 14px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--charcoal);
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.ov-range[aria-pressed='true'] {
+  background: var(--yellow);
+}
+.ov-range:focus-visible,
+.ov-card.ov-link:focus-visible {
+  outline: 3px solid var(--charcoal);
+  outline-offset: 2px;
+}
+.ov-custom[hidden] {
+  display: none;
+}
+.ov-stamp,
+.ov-scope {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.ov-section {
+  margin-bottom: 28px;
+}
+.ov-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.ov-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 108px;
+  padding: 14px 16px;
+  font: inherit;
+  text-align: left;
+  color: var(--charcoal);
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+.ov-link {
+  cursor: pointer;
+}
+.ov-link:hover {
+  border-color: var(--yellow-hover);
+  background: var(--yellow-subtle);
+}
+.ov-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.ov-value {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.ov-note,
+.ov-reason {
+  font-size: 12px;
+  color: var(--muted);
+}
+.ov-reason {
+  font-weight: 600;
+}
+.ov-wait {
+  border-color: var(--yellow);
+  background: var(--yellow-subtle);
+}
+.ov-ok {
+  border-color: var(--ok-line);
+  background: var(--ok-bg);
+}
+.ov-lock {
+  border-color: var(--error-line);
+  background: var(--error-bg);
+}
+.ov-muted {
+  background: var(--neutral-bg);
+}
+.ov-muted .ov-value {
+  color: var(--placeholder);
+}
+.ov-todo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ov-todo-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, auto) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+.ov-todo-label {
+  font-weight: 600;
+}
+.ov-todo-count {
+  min-width: 40px;
+  font-size: 20px;
+  font-weight: 800;
+  text-align: right;
+}
+.ov-todo-open {
+  color: var(--error-ink);
+}
+@media (max-width: 700px) {
+  .ov-todo-row {
+    grid-template-columns: 1fr auto;
+  }
+  .ov-todo-row .btn {
+    grid-column: 1 / -1;
+  }
+}
+
+/* M12-B Operations: list sub-line, linked-filter notice, plain list in the detail drawer. */
+.cell-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+.linked-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.linked-filter[hidden] {
+  display: none;
+}
+.plain-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+#delivery-map svg {
+  display: block;
+  max-width: 460px;
+  margin: 12px 0;
+}
+
+/* M12-C Access matrix: one row per function group, one switch per right. */
+.access-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.access-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+.access-group {
+  font-weight: 700;
+}
+.access-switches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--yellow-hover);
+}
+.textarea {
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  resize: vertical;
+}
+@media (max-width: 700px) {
+  .access-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* M12-D Configuration hub: one card per group, fixed rules apart. */
+.cfg-card {
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+.cfg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.cfg-fixed {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--neutral-bg);
+  border-radius: var(--radius-control);
+}
+.cfg-fixed-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.cfg-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.cfg-history:empty {
+  display: none;
+}
+.cfg-history {
+  margin-top: 12px;
+}
+
+/* M12-E: reports and the list of exported files. */
+.rp-body {
+  display: grid;
+  gap: 16px;
+}
+.rp-jobs {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rp-job {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid rgba(42, 42, 46, 0.12);
+  border-radius: 10px;
+}
+.rp-job-title {
+  font-weight: 600;
+}
+.rp-job .btn-inline {
+  margin-left: auto;
+}
+
+/* M12-F: audit log and backup history. */
+.au-body,
+.bk-body {
+  display: grid;
+  gap: 16px;
+}
+.au-meta {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  max-width: 560px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  background: #f6f5f2;
+  border-radius: 8px;
+}
+.au-denied td:first-child,
+.au-failure td:first-child {
+  box-shadow: inset 3px 0 0 #b3261e;
+}
+.bk-health {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(42, 42, 46, 0.12);
+  background: #fff;
+}
+.bk-ok {
+  border-color: #2e7d32;
+  background: #eef7ee;
+}
+.bk-stale,
+.bk-not_offsite {
+  border-color: #b26a00;
+  background: #fff6e5;
+}
+.bk-none {
+  border-color: #b3261e;
+  background: #fdecea;
+}
+.bk-facts {
+  display: grid;
+  grid-template-columns: minmax(180px, max-content) 1fr;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid rgba(42, 42, 46, 0.12);
+  border-radius: 12px;
+}
+.bk-facts dt {
+  font-weight: 600;
+}
+.bk-facts dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .bk-facts {
+    grid-template-columns: 1fr;
+  }
+}
+.bk-health strong,
+.bk-health span {
+  display: block;
+}
+.bk-body .cell-sub {
+  display: block;
+}
+.bk-body {
+  min-width: 0;
+}
+.bk-body .table-card {
+  overflow-x: auto;
+}
+.bk-facts dd .btn {
+  width: auto;
+}
+.bk-facts {
+  min-width: 0;
+}
+.au-body,
+.bk-body,
+.rp-body {
+  grid-template-columns: minmax(0, 1fr);
 }

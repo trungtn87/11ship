@@ -122,14 +122,18 @@ export function renderQr(uri: string, size = 208): SVGElement {
   );
 }
 
-/** dd/mm/yyyy HH:mm in the browser's zone. Unparseable input is shown as is (never throws). */
+/**
+ * dd/mm/yyyy HH:mm on the VIETNAM clock (Asia/Ho_Chi_Minh), whatever zone the browser is set to: every moment of the administration (periods, filters,
+ * reports) is a Vietnam moment, so a time on screen must not shift with the machine of whoever looks at it. Unparseable input is shown as is (never throws).
+ */
 export function formatDateTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) {
     return iso;
   }
-  const two = (value: number): string => String(value).padStart(2, '0');
-  return `${two(date.getDate())}/${two(date.getMonth() + 1)}/${date.getFullYear()} ${two(date.getHours())}:${two(date.getMinutes())}`;
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date);
+  const get = (type: string): string => parts.find((part) => part.type === type)?.value ?? '';
+  return `${get('day')}/${get('month')}/${get('year')} ${get('hour')}:${get('minute')}`;
 }
 
 /** A six-digit code field: numeric keypad, one-time-code autofill, and paste/typing reduced to ASCII digits (leading zeros kept: it is a string). */

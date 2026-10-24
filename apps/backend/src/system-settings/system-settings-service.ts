@@ -81,6 +81,7 @@ export class SystemSettingsService {
           expected_version: body.expectedVersion,
           [OTP_REGISTRATION_ENABLED]: body.otpRegistrationEnabled,
           [OTP_PASSWORD_RESET_ENABLED]: body.otpPasswordResetEnabled,
+          reason: body.reason,
         },
         replay: { kind: 'sensitive', authorize: (context, guard) => this.#authorizeReplay(context, guard, known) },
       },
@@ -117,7 +118,7 @@ export class SystemSettingsService {
             resourceType: SYSTEM_SETTING_RESOURCE,
             resourceId: null,
             outcome: 'SUCCESS',
-            metadata: { setting_key: state.key, old_value: state.value, new_value: next },
+            metadata: { setting_key: state.key, old_value: state.value, new_value: next, ...(body.reason === null ? {} : { reason: body.reason }) },
           });
           changed.push({ setting_key: state.key, old_value: state.value, new_value: next });
         }

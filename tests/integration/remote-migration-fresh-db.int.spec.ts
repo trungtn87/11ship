@@ -179,10 +179,12 @@ describeWithFixture('M00-D1 — remote migration path on a fresh disposable Post
       await migrator.query(`GRANT ${privileges.join(', ')} ON app.${table} TO ${RUNTIME_ROLE}`);
     }
 
-    // Runtime can read what the grants say, cannot read the history, and audit_logs is insert-only.
+    // Runtime can read what the grants say, cannot read the history, and audit_logs is append-only: readable by the Web Admin's log viewer (M12-F), never updated or deleted.
     await expect(runtime.query('SELECT 1 FROM app.users LIMIT 1')).resolves.toBeDefined();
     await expect(runtime.query('SELECT 1 FROM app.pgmigrations LIMIT 1')).rejects.toMatchObject({ code: '42501' });
-    await expect(runtime.query('SELECT 1 FROM app.audit_logs LIMIT 1')).rejects.toMatchObject({ code: '42501' });
+    await expect(runtime.query('SELECT 1 FROM app.audit_logs LIMIT 1')).resolves.toBeDefined();
+    await expect(runtime.query('UPDATE app.audit_logs SET reason_code = reason_code WHERE false')).rejects.toMatchObject({ code: '42501' });
+    await expect(runtime.query('DELETE FROM app.audit_logs WHERE false')).rejects.toMatchObject({ code: '42501' });
     const privilege = await migrator.query<{ ins: boolean; del: boolean; hist: boolean }>(
       `SELECT has_table_privilege($1, 'app.audit_logs', 'INSERT') AS ins,
               has_table_privilege($1, 'app.users', 'DELETE') AS del,

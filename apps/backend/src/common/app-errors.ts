@@ -87,11 +87,28 @@ export const APP_ERROR_DEFINITIONS = {
   DRIVER_FUNDING_REQUIRED: { status: 409, message: 'The Shipper needs the initial funding before the profile can be approved' },
   DRIVER_NOT_ACTIVE: { status: 409, message: 'The Shipper is not active' },
   DRIVER_WALLET_NOT_READY: { status: 409, message: 'The wallet does not meet the conditions to take orders' },
+  DRIVER_LOCATION_NOT_READY: { status: 409, message: 'The Shipper has no current position to take orders with' },
   DRIVER_HAS_ACTIVE_WORK: { status: 409, message: 'The Shipper still has deliveries in progress' },
   DRIVER_WALLET_NOT_SETTLED: { status: 409, message: 'The wallet balance must be settled first' },
   DRIVER_SELF_ACTION_FORBIDDEN: { status: 403, message: 'An administrator cannot perform this action on their own Shipper profile' },
   // Finance access and the receiving accounts of the system (M04-B2.2a). Same rule: fixed messages that echo nothing the client sent and reveal nothing
   // about another account. ADMIN_FORBIDDEN (above) is the answer to an administrator without the right.
+  // M12-C: SYSTEM manages the administrators (permissions, lock, sessions).
+  ADMIN_ACCESS_NOT_FOUND: { status: 404, message: 'The administrator account to manage was not found' },
+  ADMIN_ACCESS_VERSION_CONFLICT: { status: 409, message: 'The administrator was changed by another request' },
+  ADMIN_ACCESS_STATE_CONFLICT: { status: 409, message: 'The administrator is not in a state that allows this action' },
+  // M12-E: report exports.
+  REPORT_EXPORT_LIMIT: { status: 409, message: 'Too many report exports are already waiting or running' },
+  REPORT_EXPORT_NOT_FOUND: { status: 404, message: 'The report export was not found' },
+  REPORT_EXPORT_NOT_READY: { status: 409, message: 'The report export is not finished or did not succeed' },
+  REPORT_EXPORT_EXPIRED: { status: 409, message: 'The report export file has expired' },
+  // M12-F: restore requests (the application records the request; an operator restores).
+  BACKUP_RUN_OPEN: { status: 409, message: 'A backup is already queued or running' },
+  RESTORE_BACKUP_NOT_FOUND: { status: 404, message: 'The backup to restore from was not found' },
+  RESTORE_BACKUP_NOT_USABLE: { status: 409, message: 'Only a finished, encrypted and verified backup can be restored' },
+  RESTORE_REQUEST_OPEN: { status: 409, message: 'A restore request is already open' },
+  RESTORE_REQUEST_NOT_FOUND: { status: 404, message: 'The restore request was not found' },
+  RESTORE_REQUEST_STATE_CONFLICT: { status: 409, message: 'The restore request was changed or can no longer be cancelled' },
   FINANCE_ADMIN_NOT_FOUND: { status: 404, message: 'The administrator was not found' },
   FINANCE_GRANT_STATE_CONFLICT: { status: 409, message: 'The finance right is not in a state that allows this action' },
   FINANCE_VERSION_CONFLICT: { status: 409, message: 'The finance right was changed by another request' },

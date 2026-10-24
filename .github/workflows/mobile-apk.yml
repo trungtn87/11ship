@@ -217,6 +217,14 @@ jobs:
           ./gradlew --no-daemon :app:testDebugUnitTest 2>&1 | tee "$RUNNER_TEMP/gradle-test.log" || {
             echo "::error title=native unit tests failed::$(grep -E 'FAILED|error:|e: ' "$RUNNER_TEMP/gradle-test.log" | head -12 | tr '\n' '|' | head -c 2500)"; exit 1; }
 
+      # 11Ship's location service sends the position itself (it keeps going with the screen locked or the app swiped away): the JVM rules of the uploader run here.
+      - name: Location uploader unit tests (11Ship)
+        if: matrix.app == 'ship'
+        run: |
+          cd mobile/gps-test
+          ./gradlew --no-daemon :gps:testDebugUnitTest 2>&1 | tee "$RUNNER_TEMP/uploader-test.log" || {
+            echo "::error title=uploader unit tests failed::$(grep -E 'FAILED|error:|e: ' "$RUNNER_TEMP/uploader-test.log" | head -12 | tr '\n' '|' | head -c 2500)"; exit 1; }
+
       # The map flag is set only when the Cao Bang package is really in the tree and every file it lists matches its recorded SHA-256, so an APK never
       # turns the map on without the asset. Both apps enable the offline map when the package is complete; GPS is independent.
       - name: M14 map flag
@@ -266,6 +274,17 @@ jobs:
               echo "::error title=build failed::$(tail -n 25 "$RUNNER_TEMP/b.log" | cut -c1-220 | tr '\n' '|' | head -c 2500)"; exit 1; }
 
       # Exact permission allowlist of the compiled (still unsigned) APK: needs no secret, so it runs for every build.
+      # The manifest names the service, so this holds even when R8 renames the classes behind it.
+      - name: 11Ship declares the location service; 11Food does not
+        run: |
+          bt="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)"
+          "$bt/aapt2" dump xmltree --file AndroidManifest.xml mobile/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk > "$RUNNER_TEMP/manifest-service.txt"
+          if [ "${{ matrix.app }}" = ship ]; then
+            grep -q 'vn.eleven.m14.flutter.ShipLocationService' "$RUNNER_TEMP/manifest-service.txt" || { echo "::error::11Ship manifest does not declare ShipLocationService"; exit 1; }
+          else
+            if grep -q 'ShipLocationService' "$RUNNER_TEMP/manifest-service.txt"; then echo "::error::the location service leaked into 11Food"; exit 1; fi
+          fi
+
       - name: Permission allowlist
         run: |
           bt="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)"

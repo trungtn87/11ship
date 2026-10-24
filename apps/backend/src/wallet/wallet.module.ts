@@ -2,6 +2,7 @@ import { Module, OnModuleInit } from '@nestjs/common';
 import { DelegatingDriverWalletPort } from '../driver/driver-wallet-port';
 import { DriverModule } from '../driver/driver.module';
 import { CommissionHoldService } from './commission-hold-service';
+import { WalletReportReader } from './wallet-report-reader';
 import { WalletAdjustmentRepository } from './wallet-adjustment-repository';
 import { WalletAdjustmentService } from './wallet-adjustment-service';
 import { WalletCommissionAdjustmentAdapter } from './wallet-commission-adjustment.adapter';
@@ -26,8 +27,8 @@ import { WithdrawalRepository } from './withdrawal-repository';
  */
 @Module({
   imports: [DriverModule],
-  providers: [WalletRepository, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupSettlementRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentRepository, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, CommissionPolicyRepository, WalletDriverPort],
-  exports: [WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, CommissionPolicyRepository, WalletDriverPort],
+  providers: [WalletRepository, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupSettlementRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentRepository, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, CommissionPolicyRepository, WalletDriverPort, WalletReportReader],
+  exports: [WalletReportReader, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, CommissionPolicyRepository, WalletDriverPort],
 })
 export class WalletModule implements OnModuleInit {
   constructor(private readonly port: DelegatingDriverWalletPort, private readonly wallet: WalletDriverPort) {}

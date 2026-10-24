@@ -20,11 +20,16 @@ class M14Client {
 
   /// Present a Vietnamese explanation before passing consent=true. Android then
   /// asks only foreground precise location and notification permissions.
-  Future<void> start({required bool consent}) async {
+  ///
+  /// [apiBaseUrl] (https only) is where 11Ship's service sends the position itself; the GPS test app passes none and never sends.
+  Future<void> start({required bool consent, String? apiBaseUrl}) async {
     if (!consent) throw ArgumentError('Cần đồng ý cập nhật vị trí trước khi bắt đầu');
-    await _channel.invokeMethod<void>('start', <String, dynamic>{'consent': true});
+    await _channel.invokeMethod<void>('start', <String, dynamic>{'consent': true, if (apiBaseUrl != null) 'apiBaseUrl': apiBaseUrl});
   }
   Future<void> stop() => _channel.invokeMethod<void>('stop');
+
+  /// Opens the phone's own settings screen: 'app' (permissions), 'location' (GPS on/off) or 'notifications'. Never changes a setting itself.
+  Future<void> openSettings(String kind) => _channel.invokeMethod<void>('openSettings', <String, dynamic>{'kind': kind});
   Future<Map<String, dynamic>?> savedRoute() => _channel.invokeMapMethod<String, dynamic>('savedRoute');
 
   /// Call only from a user's Calculate action, never from the positions stream.
