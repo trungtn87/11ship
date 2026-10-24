@@ -309,8 +309,38 @@ describe('M12-E — reports and exports', () => {
     expect(file.bytes.subarray(0, 2).toString()).toBe('PK');
     const path = join(workDir, 'book.xlsx');
     writeFileSync(path, file.bytes);
-    // The workbook is opened by an independent reader (openpyxl), not by our own writer.
-    const sheets = JSON.parse(execFileSync('python3', ['-I', '-c', 'import json,sys,openpyxl\nwb=openpyxl.load_workbook(sys.argv[1])\nprint(json.dumps({s.title:[[c.value for c in r] for r in s.iter_rows()] for s in wb.worksheets}))', path], { encoding: 'utf8' })) as Record<string, unknown[][]>;
+    // The workbook is read back by an independent reader: Python's zip and XML parsers on the OOXML parts (no spreadsheet library is needed in CI). It checks the package, the sheet
+    // names in workbook order, and that numbers are stored as numbers and text as text. (A spreadsheet application, openpyxl, was also used once by hand on a real export.)
+    const reader = [
+      'import json,sys,zipfile,re',
+      'import xml.etree.ElementTree as ET',
+      'ns={"m":"http://schemas.openxmlformats.org/spreadsheetml/2006/main","r":"http://schemas.openxmlformats.org/officeDocument/2006/relationships"}',
+      'z=zipfile.ZipFile(sys.argv[1])',
+      'assert z.testzip() is None',
+      'wb=ET.fromstring(z.read("xl/workbook.xml"))',
+      'rels={r.get("Id"):r.get("Target") for r in ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))}',
+      'def col(ref):',
+      '    n=0',
+      '    for ch in re.match(r"[A-Z]+",ref).group(0): n=n*26+ord(ch)-64',
+      '    return n-1',
+      'out={}',
+      'for sh in wb.find("m:sheets",ns):',
+      '    target=rels[sh.get("{%s}id"%ns["r"])]',
+      '    rows=[]',
+      '    for row in ET.fromstring(z.read("xl/"+target)).find("m:sheetData",ns):',
+      '        cells=[]',
+      '        for c in row:',
+      '            i=col(c.get("r"))',
+      '            while len(cells)<i: cells.append(None)',
+      '            if c.get("t")=="inlineStr": cells.append("".join(t.text or "" for t in c.iter("{%s}t"%ns["m"])))',
+      '            else:',
+      '                v=c.find("m:v",ns).text',
+      '                cells.append(float(v) if "." in v else int(v))',
+      '        rows.append(cells)',
+      '    out[sh.get("name")]=rows',
+      'print(json.dumps(out))',
+    ].join('\n');
+    const sheets = JSON.parse(execFileSync('python3', ['-I', '-c', reader, path], { encoding: 'utf8' })) as Record<string, unknown[][]>;
     expect(Object.keys(sheets)).toEqual(['Chi tiết', 'Tổng hợp', 'Thông tin']);
     const summaryRows = sheets['Tổng hợp'] as unknown[][];
     expect(summaryRows[0]).toEqual(['Chỉ số', 'Giá trị', 'Ghi chú']);
