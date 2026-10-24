@@ -25,16 +25,16 @@ Mức bằng chứng trong bảng ở mục 2: **CODE** = đã đọc mã giao d
 |---|---|---|---|---|---|
 | A. Cài đặt và tài khoản | Cài APK 11Food/11Ship, cập nhật đè giữ dữ liệu và đăng nhập | `mobile/README.md; AGENTS.md (Android test updates); .github/workflows/mobile-apk.yml` | CODE + DOC | TC-SET-001, TC-SET-002, TC-SET-003, TC-SET-007, TC-SET-008, TC-SET-012 | APK, SHA, versionCode do Người phụ trách cung cấp; không có bản cài sẵn trong kho mã (chỉ build thử M14 trong downloads/m14) |
 | A. Cài đặt và tài khoản | Quyền vị trí, thông báo, hướng dẫn khi bị từ chối | `mobile/ship/lib/ship_online.dart; discovery_views.dart; flows/location.dart` | CODE | TC-SET-004, TC-SET-005, TC-NOTI-004 | Android 13+ mới có hộp xin quyền thông báo |
-| A. Cài đặt và tài khoản | Xem phiên bản ứng dụng | `account_views.dart:212 (showDiagnostics bị tắt/loại trừ); widgets/diagnostics_view.dart` | CODE | TC-SET-006 | Màn "Chẩn đoán kết nối" có dòng "Phiên bản" nhưng KHÔNG có đường vào từ tab Tài khoản -> CẦN XÁC MINH |
+| A. Cài đặt và tài khoản | Xem phiên bản ứng dụng | `account_views.dart:212 (showDiagnostics bị tắt/loại trừ); widgets/diagnostics_view.dart` | CODE | TC-SET-006 | Ứng dụng không có chỗ hiện phiên bản cho người dùng; test dùng Cài đặt Android (đủ dùng). Việc thêm vào ứng dụng là câu hỏi OQ-04, không chặn |
 | A. Cài đặt và tài khoản | Cập nhật trong ứng dụng (M13): "Có bản mới", "Cần cập nhật", kiểm SHA-256 | `mobile/packages/n11_shared/lib/src/m13/*; docs/current/M13-implementation-20261023.md` | CODE + DOC | TC-SET-009, TC-SET-010 | Cần SYSTEM đăng ký bản phát hành; kiểm tay trên máy thật |
-| A. Cài đặt và tài khoản | Chống thiết bị không đạt (khóa phần cứng, không root) | `mobile/README.md (Device proof); account_views.dart (DEVICE_PROOF_UNSUPPORTED)` | CODE | TC-SET-011, TC-ABN-017 | Cần máy không đạt hoặc đồng hồ sai để thử |
+| A. Cài đặt và tài khoản | Đăng ký/đăng nhập bằng mật khẩu KHÔNG còn đòi xác thực phần cứng (quyết định Owner 23/10, PR #170) | `docs/current/M01-password-sessions-20261023.md; native_auth.dart; client-login-service.ts (phiên PASSWORD)` | CODE + DOC | TC-SET-011, TC-ABN-017 | mobile/README.md mục Device proof đã lỗi thời. Phiên cũ (APK cũ) vẫn có kiểm tra thiết bị nhưng chỉ để tương thích; không test bằng tay |
 | A. Cài đặt và tài khoản | Đăng ký khách hàng 3 bước + OTP SMS | `account_views.dart (_foodForm); phone_verification.dart; ops/runbooks/sms-gateway.md` | CODE + TỰ ĐỘNG | TC-ACC-001, TC-ACC-002, TC-ACC-006, TC-ACC-007, TC-ACC-008, TC-ACC-009, TC-ACC-010, TC-ACC-011, TC-ACC-012, TC-ACC-013 | OTP chỉ qua máy SMS Gateway; hết SMS = báo lỗi trung thực |
 | A. Cài đặt và tài khoản | Đăng ký chủ quán (mục đích "Chủ quán") và shipper | `account_views.dart; docs/current/M03-simplified-onboarding-20261020.md` | CODE + DOC | TC-ACC-003, TC-ACC-004, TC-ACC-005 | Shipper được kích hoạt ngay, ví 0đ, không duyệt hồ sơ |
 | A. Cài đặt và tài khoản | Đăng nhập, đăng xuất, sai mật khẩu, giới hạn thử | `account_views.dart (LoginScreen, confirmLogout); session_controller.dart` | CODE + TỰ ĐỘNG | TC-ACC-014, TC-ACC-015, TC-ACC-016, TC-ACC-017 |  |
 | A. Cài đặt và tài khoản | Khôi phục phiên khi mở lại app / khởi động lại máy | `session_controller.dart; mobile/README.md (Storage)` | CODE | TC-ACC-018, TC-ACC-019, TC-ACC-026 | Không chứa thông tin đăng nhập trong sao lưu |
 | A. Cài đặt và tài khoản | Quên mật khẩu bằng SMS, hiệu lực thu hồi phiên cũ | `flows/reset_views.dart; reset_controller.dart; docs/tasks/M01-B-RESET-password-recovery-design.md` | CODE + TỰ ĐỘNG | TC-ACC-020, TC-ACC-021, TC-ACC-022 | SYSTEM không đặt lại được bằng luồng này |
 | A. Cài đặt và tài khoản | Đổi mật khẩu, sửa họ tên | `account_views.dart (ChangePasswordScreen, ProfileScreen)` | CODE + TỰ ĐỘNG | TC-ACC-023, TC-ACC-024, TC-ACC-028 |  |
-| A. Cài đặt và tài khoản | Một thiết bị/một phiên; đăng nhập máy khác đuổi máy cũ | `mobile/README.md (login from another phone ends the sessions); native-device-binding test` | CODE + TỰ ĐỘNG | TC-ACC-025, TC-ABN-020 |  |
+| A. Cài đặt và tài khoản | Một thiết bị/một phiên; đăng nhập máy khác đuổi máy cũ | `docs/current/M01-password-sessions-20261023.md (một phiên/tài khoản); client-auth-session.int.spec.ts` | CODE + TỰ ĐỘNG | TC-ACC-025, TC-ABN-020 |  |
 | A. Cài đặt và tài khoản | Khóa/mở khóa tài khoản thu hồi phiên; khôi phục tài khoản khóa theo yêu cầu xóa | `apps/admin-web accounts-view.ts; docs/current/M01-final-package-20261014.md` | CODE + DOC + TỰ ĐỘNG | TC-ACC-027, TC-ACC-031, TC-ADM-013, TC-ADM-035 | Mở khóa không tự mở lại quán/hồ sơ shipper/số dư |
 | A. Cài đặt và tài khoản | Điều khoản, chính sách, duyệt xem khi chưa đăng nhập, voucher | `account_views.dart (PolicyScreen, VoucherScreen); preview_views.dart` | CODE | TC-ACC-029, TC-ACC-030, TC-ACC-033 | Voucher: NOT READY; điều khoản: chờ Owner duyệt nội dung |
 | A. Cài đặt và tài khoản | Công tắc OTP đăng ký / quên mật khẩu (SYSTEM) | `apps/admin-web settings-view.ts; docs/current/M01-final-package-20261014.md` | CODE + DOC | TC-ACC-032 | Chỉ thử khi Owner cho phép |
@@ -110,8 +110,8 @@ Mỗi dòng đều **có test case** (không bỏ qua), để ghi nhận hiện 
 | Mã QR chuyển khoản và đính kèm ảnh chuyển khoản khi nạp ví | wallet_views.dart: "Mã QR chưa được hỗ trợ ở phiên bản này"; "Đính kèm ảnh chưa dùng được" | **NOT READY** | TC-WAL-003 |
 | Nút "Rút tiền" riêng cho shipper đang hoạt động | Chỉ có trong luồng "Dừng hoạt động / Rút tiền" (WithdrawScreen closing mode); nút riêng chỉ ở bản mẫu | **THEO THIẾT KẾ (M03 20/10)** | TC-WAL-014, TC-WAL-015 |
 | Chuyển một phần khi rút tiền; API điều chỉnh số dư thủ công | docs/current/M04-C: "chưa được Owner duyệt – hệ thống từ chối an toàn" | **KHÔNG CÓ (cố ý)** | TC-WAL-016 |
-| Duyệt quán / duyệt hồ sơ shipper bởi Admin | Quán ACTIVE ngay khi hồ sơ đủ; shipper ACTIVE ngay khi đăng ký; Web Admin chỉ có Vô hiệu hóa/Kích hoạt lại quán và các nút Xác minh/Từ chối cũ | **CẦN XÁC MINH (lệch tài liệu)** | TC-ADM-015, TC-ADM-019 |
-| Hiển thị phiên bản ứng dụng trong app | Màn Chẩn đoán kết nối có dòng Phiên bản nhưng không có đường vào từ Tài khoản | **CẦN XÁC MINH** | TC-SET-006 |
+| Duyệt quán / duyệt hồ sơ shipper bởi Admin | Quán ACTIVE ngay khi hồ sơ đủ; shipper ACTIVE ngay khi đăng ký; Web Admin chỉ có Vô hiệu hóa/Kích hoạt lại quán và các nút Xác minh/Từ chối cũ | **GHI NHẬN HIỆN TRẠNG (TC-ADM-015) / CẦN XÁC MINH (TC-ADM-019); quyết định nghiệp vụ là OQ-01 của Owner** | TC-ADM-015, TC-ADM-019 |
+| Hiển thị phiên bản ứng dụng trong app | Màn Chẩn đoán kết nối có dòng Phiên bản nhưng không có đường vào từ Tài khoản | **ĐÃ CÓ CÁCH TEST (Cài đặt Android); OQ-04 cho Owner, không chặn** | TC-SET-006 |
 | Thông báo đẩy thật (Firebase) | docs/current/M08: "APK bàn giao hiện chưa có push"; phụ thuộc cấu hình máy chủ và bản APK | **CẦN XÁC MINH** | TC-NOTI-001, TC-FLOW-023, TC-ABN-014 |
 | Bản đồ ghim điểm giao / xem vị trí trong 11Food và 11Ship | Chỉ khi APK build có cờ M14_OFFLINE_MAP và gói bản đồ Cao Bằng | **CẦN XÁC MINH** | TC-DRV-018, TC-CUS-027, TC-CUS-022 |
 | Khu vực phục vụ nhiều vùng | Hiện chỉ cấu hình vùng "Cao Bằng" bán kính 10 km (migration 1795478400000); thêm vùng cần kỹ thuật viên | **THEO CẤU HÌNH** | TC-CUS-003, TC-SHOP-004 |
@@ -142,25 +142,27 @@ Mỗi dòng đều **có test case** (không bỏ qua), để ghi nhận hiện 
 | 1 | `README.md` và `docs/PROGRESS.md`: "Chưa có Wallet, Delivery, frontend, SMS…", tiến độ dừng ở M00-D1, "CI main: Lỗi" | Code đã có M01–M14: đơn hàng, giao hàng, ví, thông báo, đánh giá, Admin Web, ứng dụng Android | **Không dùng README/PROGRESS làm nguồn trạng thái.** Test viết theo code và `docs/current` mới nhất |
 | 2 | Checklist Owner M07/M10 (18–19/10): có bước **"Món đã sẵn sàng"**, **"Giao thất bại"**, **"Ghi nhận thanh toán"**, "Đã thanh toán/Còn phải thu" | M07 23/10 **bỏ** "Món đã sẵn sàng", shipper **không còn** "Giao thất bại", UI **bỏ** dòng thanh toán; endpoint `.../ready` chỉ giữ để APK cũ không lỗi | Test **theo quyết định mới** (TC-DRV-015, TC-SHOP-022, TC-CUS-025). Test kiểm cả việc các nút cũ **không còn** |
 | 3 | Bán kính tìm shipper: M07 ghi 5 km | M06 v1.1 (18/10) khóa **3 km** | Dùng 3 km (TC-DRV-008) |
-| 4 | Màn đăng ký chủ quán: "Chỉ bán hàng **sau khi được duyệt**"; Admin Điều hành có thẻ "Hồ sơ quán/shipper **chờ duyệt**" | Quán ACTIVE ngay khi hồ sơ đủ; shipper ACTIVE ngay khi đăng ký (M03 20/10); Admin chỉ có Vô hiệu hóa/Kích hoạt lại | TC-ADM-015, TC-ADM-019 (CẦN XÁC MINH) |
+| 4 | Màn đăng ký chủ quán: "Chỉ bán hàng **sau khi được duyệt**"; Admin Điều hành có thẻ "Hồ sơ quán/shipper **chờ duyệt**" | Quán ACTIVE ngay khi hồ sơ đủ; shipper ACTIVE ngay khi đăng ký (M03 20/10); Admin chỉ có Vô hiệu hóa/Kích hoạt lại | TC-ADM-015 (ghi nhận hiện trạng), TC-ADM-019 (CẦN XÁC MINH); câu hỏi OQ-01 cho Owner |
 | 5 | Điều khoản hiển thị cho người dùng: "đặt món, giao hàng, ví và doanh thu **chưa hoạt động**; quyền chỉ có sau khi hồ sơ được duyệt" | Các chức năng này **đã hoạt động** | TC-ACC-029 (báo mức CAO; Owner duyệt/sửa điều khoản và đổi phiên bản) |
 | 6 | Chính sách quyền riêng tư: "ứng dụng không theo dõi vị trí nền" (nói về hồ sơ quán) | 11Ship chia sẻ vị trí **nền** khi online (M14) | TC-SEC-007 (CẦN XÁC MINH) |
 | 7 | `docs/current/M01-production-profile`: "xóa/khóa USER phải duyệt lại khi có đơn/ví" | Đã có kiểm tra "Không thể khóa lúc này: còn đơn đang xử lý" (M01 final) | TC-ADM-013, TC-ACC-027 |
 | 8 | Trang chủ Web Admin: "Các chức năng quản lý dành cho ADMIN sẽ có ở bước sau" | Nhiều chức năng đã có | TC-ADM-034 |
-| 9 | Màn Chẩn đoán kết nối có "Phiên bản" | Không có đường vào từ Tài khoản (cả hai app) | TC-SET-006 |
+| 9 | Màn Chẩn đoán kết nối có "Phiên bản" | Không có đường vào từ Tài khoản (cả hai app) | TC-SET-006 dùng Cài đặt Android; OQ-04 cho Owner |
 | 10 | M10 (19/10): "chưa có bản đồ trong 11Food; M10 chưa hoàn tất" | Đã có `food_m14.dart` (bản đồ chỉ-bản-đồ) nếu APK build có cờ | TC-CUS-027, TC-DRV-018 (CẦN XÁC MINH theo bản APK) |
 | 11 | M08 (18/10): "APK bàn giao hiện chưa có push" | Không rõ bản đang thử đã có push | TC-NOTI-001 (CẦN XÁC MINH) |
 | 12 | `docs/PROGRESS.md` ghi CI main có thể FAIL | Không kiểm được từ kho mã | Kỹ thuật viên xem CI đúng commit (TC-AUTO-001…007), nhưng **không dùng CI xanh để nghiệm thu** |
 | 13 | Tải lại trang con Web Admin (F5) | Có thể 404 (SPA_ROUTES thiếu) – `M02-admin-shops-20261024.md` | Ghi ở "hạn chế đã biết" của hướng dẫn |
+| 14 | `mobile/README.md` (mục "Device proof"): điện thoại không có TEE/StrongBox, đã root hoặc bootloader mở sẽ nhận `DEVICE_PROOF_UNSUPPORTED`, không có phương án thay thế | `docs/current/M01-password-sessions-20261023.md` (Owner 23/10, PR #170): đăng ký/đăng nhập thường dùng số điện thoại + mật khẩu, KHÔNG gọi attestation; Keystore chỉ mã hóa token trên máy. Phiên cũ (APK cũ) vẫn giữ kiểm tra thiết bị cho tới khi đăng nhập lại. Mã lỗi `DEVICE_PROOF_*` vẫn còn trong ứng dụng chỉ để tương thích | **Không dùng README cũ để khẳng định máy root/bootloader mở bị chặn.** TC-SET-011, TC-ABN-017 viết lại theo hành vi mới; TC-ACC-025/ABN-020 theo "mỗi tài khoản một phiên". Việc dọn `mobile/README.md` là của nhóm phát triển (không thuộc gói này) |
 
 ## 5. Phân loại test case
 
 | Loại kiểm thử | Ý nghĩa | Số test |
 |---|---|---|
-| Thủ công | Người kiểm thử mới tự làm được bằng điện thoại và trình duyệt (khi đã có điều kiện mục 3.1) | 198 |
-| Cần hỗ trợ kỹ thuật | Cần kỹ thuật viên/SYSTEM/Owner chuẩn bị hoặc thao tác một phần (tài khoản SYSTEM, SMS, tiền thử nghiệm, cấu hình…) | 84 |
-| Tự động đã có (đối chiếu) | Chỉ đối chiếu kết quả kiểm thử tự động của CI; dành cho kỹ thuật viên | 7 |
-| *Tình trạng sẵn sàng* | SẴN SÀNG 184 · CẦN HỖ TRỢ KỸ THUẬT 83 · CẦN XÁC MINH 18 · NOT READY 4 | 289 |
+| Thủ công | Người kiểm thử mới tự làm toàn bộ bằng điện thoại và trình duyệt (khi đã có điều kiện mục 3.1) | 199 |
+| Chuẩn bị trước, người mới tự làm | Kỹ thuật viên/Owner chuẩn bị TRƯỚC giờ test (SMS Gateway, tài khoản ADMIN-1, bảng phí, tiền thử nghiệm, hai file APK…). Sau đó người mới tự làm từ đầu đến cuối; cột "Việc cần chuẩn bị trước" nói rõ cần gì | 61 |
+| Cần kỹ thuật viên cùng làm | Có bước chỉ kỹ thuật viên/SYSTEM làm được (dùng tài khoản SYSTEM, tắt/bật SMS Gateway, đổi cấu hình). Bước đó được đánh dấu [KỸ THUẬT VIÊN/SYSTEM làm…]; người mới quan sát, chụp ảnh, so kết quả | 22 |
+| Tự động đã có (đối chiếu) | Chỉ đối chiếu kết quả kiểm thử tự động của CI; dành cho kỹ thuật viên, người mới bỏ qua | 7 |
+| *Tình trạng sẵn sàng* | SẴN SÀNG 186 · CẦN CHUẨN BỊ TRƯỚC 54 · CẦN KỸ THUẬT VIÊN LÀM CÙNG 22 · CHỈ KỸ THUẬT VIÊN 7 · CẦN XÁC MINH 16 · NOT READY 4 | 289 |
 
 **Kiểm thử tự động đã có (chỉ để đối chiếu, KHÔNG thay thế thử tay):**
 
@@ -180,13 +182,13 @@ Tài liệu M07/M10/M14 tự ghi "chưa kiểm trên thiết bị thật". Vì v
 
 ## 6. Tự kiểm tra bộ test case (kết quả thực tế khi tạo tài liệu)
 
-- **Tổng số test case: 289** (P0 132 · P1 122 · P2 35); **tổng số bước thao tác: 1085** (mỗi bước có kết quả mong đợi đối chiếu).
+- **Tổng số test case: 289** (P0 132 · P1 122 · P2 35); **tổng số bước thao tác: 1086** (mỗi bước có kết quả mong đợi đối chiếu).
 - **Mã test không trùng**: đạt. **Tên test không trùng**: đạt.
 - **Mọi tham chiếu "phụ thuộc" trỏ tới test có thật và test đó được xếp chạy TRƯỚC**: đạt.
 - **Mọi test đều có đủ**: điều kiện ban đầu, dữ liệu nhập, ≥2 bước kèm kết quả mong đợi, cách kết luận, cách khôi phục, căn cứ code/tài liệu: đạt.
 - **Mọi test đều xuất hiện trong bảng đối chiếu mục 2**: đạt.
 - **Bao phủ các nhóm đề bài (A–H)**: A = 45; B = 40; C = 37; D = 25; E = 30; F = 25; G = 36; H = 22; bổ sung (thông báo, đánh giá/phản ánh, quyền/riêng tư, đối chiếu tự động) = 29.
-- **File CSV**: UTF-8 có BOM, 289 dòng dữ liệu × 32 cột, ô dài nhất 2296 ký tự (giới hạn của Excel 32.767); đã kiểm tra đọc lại được bằng bộ đọc CSV chuẩn.
+- **File CSV**: UTF-8 có BOM, 289 dòng dữ liệu × 37 cột, ô dài nhất 2296 ký tự (giới hạn của Excel 32.767); đã kiểm tra đọc lại được bằng bộ đọc CSV chuẩn.
 - **Không có mật khẩu, mã OTP thật hay thông tin nhạy cảm** trong bộ tài liệu (chỉ dùng tên viết tắt tài khoản và nhãn SĐT-…).
 - **Không chạy ứng dụng thật**: các điểm này là nhận định từ mã nguồn; xem mục 7.
 

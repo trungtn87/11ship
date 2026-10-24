@@ -7,7 +7,7 @@ Tổng số test case trong ngày: **71** (P0: 38, P1: 27, P2: 6).
 
 | # | Mã | Tên | Mức | Cần | Sẵn sàng |
 |---|---|---|---|---|---|
-| 1 | TC-ADM-026 | Cài đặt "Thời hạn xử lý đơn" và "Thời gian trả lời đề xuất phí": kiểm tra giá trị và quyền | P1 | PC | CẦN HỖ TRỢ KỸ THUẬT |
+| 1 | TC-ADM-026 | Cài đặt "Thời hạn xử lý đơn" và "Thời gian trả lời đề xuất phí": kiểm tra giá trị và quyền | P1 | PC | CẦN KỸ THUẬT VIÊN LÀM CÙNG |
 | 2 | TC-FLOW-005 | Không có shipper nhận: sau 30 phút hệ thống ngừng tìm, đơn món không bị hủy | P0 | 3 ĐT | SẴN SÀNG |
 | 3 | TC-FLOW-006 | Sau khi ngừng tìm, quán gọi lại shipper và có người nhận | P0 | 2 ĐT | SẴN SÀNG |
 | 4 | TC-FLOW-007 | Đơn khách đặt, QUÁN trả phí: shipper đề xuất phí mới và quán ĐỒNG Ý | P0 | 3 ĐT | SẴN SÀNG |
@@ -32,7 +32,7 @@ Tổng số test case trong ngày: **71** (P0: 38, P1: 27, P2: 6).
 | 23 | TC-FLOW-026 | Hoa hồng của shipper: giữ chỗ khi nhận, trả lại khi hủy, thu đúng một lần khi hoàn thành | P0 | 2 ĐT | SẴN SÀNG |
 | 24 | TC-FLOW-027 | Đơn hẹn giờ chạy trọn luồng: đặt, quán xác nhận, gọi shipper, giao | P1 | 3 ĐT | SẴN SÀNG |
 | 25 | TC-FLOW-028 | Đơn ORDER chưa tính được phí giao (thiếu ghim/tuyến): quán phải đề xuất phí để gọi được shipper | P1 | 3 ĐT | SẴN SÀNG |
-| 26 | TC-FLOW-029 | SYSTEM tự hủy đơn: chờ quán quá lâu và chờ shipper quá lâu | P1 | 2 ĐT | CẦN HỖ TRỢ KỸ THUẬT |
+| 26 | TC-FLOW-029 | SYSTEM tự hủy đơn: chờ quán quá lâu và chờ shipper quá lâu | P1 | 2 ĐT | CẦN KỸ THUẬT VIÊN LÀM CÙNG |
 | 27 | TC-FLOW-030 | Shipper đang giữ một đơn nhận thêm đơn thứ hai (giới hạn số đơn cùng lúc) | P2 | 2 ĐT | CẦN XÁC MINH |
 | 28 | TC-NOTI-001 | Thông báo đẩy (push) tới điện thoại khi tắt màn hình | P1 | 3 ĐT | CẦN XÁC MINH |
 | 29 | TC-NOTI-002 | Hộp thông báo trong ứng dụng đồng bộ khi mở lại và cập nhật trực tiếp | P0 | 3 ĐT | SẴN SÀNG |
@@ -43,14 +43,14 @@ Tổng số test case trong ngày: **71** (P0: 38, P1: 27, P2: 6).
 | 34 | TC-SHOP-036 | Quán xác nhận hàng đã về / đã xử lý sau khi hủy giao đã lấy hàng | P0 | 1 ĐT | SẴN SÀNG |
 | 35 | TC-ACC-026 | Đăng nhập lại khi đang có đơn đang giao: đơn không mất | P0 | 3 ĐT | SẴN SÀNG |
 | 36 | TC-DRV-025 | Shipper nhắc "chưa lấy hàng" sau khi nhận đơn | P2 | 1 ĐT | SẴN SÀNG |
-| 37 | TC-ACC-027 | Phiên bị thu hồi khi Admin khóa tài khoản đang đăng nhập | P0 | 1 ĐT | CẦN HỖ TRỢ KỸ THUẬT |
-| 38 | TC-ACC-031 | Khôi phục tài khoản đã bị khóa theo yêu cầu xóa | P2 | 1 ĐT | CẦN HỖ TRỢ KỸ THUẬT |
-| 39 | TC-ADM-013 | Khóa tài khoản bị chặn khi tài khoản còn đơn đang xử lý | P0 | 1 ĐT | CẦN HỖ TRỢ KỸ THUẬT |
-| 40 | TC-ADM-016 | Admin vô hiệu hóa và kích hoạt lại quán | P0 | 1 ĐT | CẦN HỖ TRỢ KỸ THUẬT |
-| 41 | TC-ADM-018 | Admin "Khóa hoạt động" và "Mở lại" shipper; "Nhận đơn" bị tắt | P1 | 1 ĐT | CẦN HỖ TRỢ KỸ THUẬT |
-| 42 | TC-DRV-021 | Shipper bị Admin khóa: không nhận đơn mới nhưng vẫn xem ví | P1 | 1 ĐT | CẦN HỖ TRỢ KỸ THUẬT |
-| 43 | TC-ADM-036 | Admin xử lý yêu cầu giao: giải phóng shipper, ghi nhận hàng, điều chỉnh sau lấy hàng, chuyển phản ánh | P1 | 1 ĐT | CẦN HỖ TRỢ KỸ THUẬT |
-| 44 | TC-ADM-022 | Admin hủy đơn món và đóng "Không hoàn tất" (cần lý do, cần quyền) | P1 | 1 ĐT | CẦN HỖ TRỢ KỸ THUẬT |
+| 37 | TC-ACC-027 | Phiên bị thu hồi khi Admin khóa tài khoản đang đăng nhập | P0 | 1 ĐT | CẦN CHUẨN BỊ TRƯỚC |
+| 38 | TC-ACC-031 | Khôi phục tài khoản đã bị khóa theo yêu cầu xóa | P2 | 1 ĐT | CẦN KỸ THUẬT VIÊN LÀM CÙNG |
+| 39 | TC-ADM-013 | Khóa tài khoản bị chặn khi tài khoản còn đơn đang xử lý | P0 | 1 ĐT | CẦN CHUẨN BỊ TRƯỚC |
+| 40 | TC-ADM-016 | Admin vô hiệu hóa và kích hoạt lại quán | P0 | 1 ĐT | CẦN CHUẨN BỊ TRƯỚC |
+| 41 | TC-ADM-018 | Admin "Khóa hoạt động" và "Mở lại" shipper; "Nhận đơn" bị tắt | P1 | 1 ĐT | CẦN CHUẨN BỊ TRƯỚC |
+| 42 | TC-DRV-021 | Shipper bị Admin khóa: không nhận đơn mới nhưng vẫn xem ví | P1 | 1 ĐT | CẦN CHUẨN BỊ TRƯỚC |
+| 43 | TC-ADM-036 | Admin xử lý yêu cầu giao: giải phóng shipper, ghi nhận hàng, điều chỉnh sau lấy hàng, chuyển phản ánh | P1 | 1 ĐT | CẦN CHUẨN BỊ TRƯỚC |
+| 44 | TC-ADM-022 | Admin hủy đơn món và đóng "Không hoàn tất" (cần lý do, cần quyền) | P1 | 1 ĐT | CẦN CHUẨN BỊ TRƯỚC |
 | 45 | TC-CUS-014 | Quán bị Admin vô hiệu hóa không còn hiện cho khách | P0 | 1 ĐT | SẴN SÀNG |
 | 46 | TC-ABN-001 | Mất Internet khi đang xem quán và giỏ hàng (khách) | P0 | 1 ĐT | SẴN SÀNG |
 | 47 | TC-ABN-002 | Shipper mất Internet lúc bấm "Giao thành công" hoặc "Đã nhận hàng" | P0 | 1 ĐT | SẴN SÀNG |
@@ -59,25 +59,42 @@ Tổng số test case trong ngày: **71** (P0: 38, P1: 27, P2: 6).
 | 50 | TC-ABN-005 | Khởi động lại điện thoại shipper khi đang online hoặc đang có đơn | P1 | 1 ĐT | SẴN SÀNG |
 | 51 | TC-ABN-006 | GPS tắt giữa lúc shipper đang giữ đơn | P0 | 2 ĐT | SẴN SÀNG |
 | 52 | TC-ABN-007 | GPS yếu (trong nhà / dưới hầm): không có vị trí nhưng ứng dụng không treo | P1 | 1 ĐT | SẴN SÀNG |
-| 53 | TC-ABN-008 | Vị trí giả (ứng dụng giả GPS) bị từ chối | P2 | 1 ĐT | CẦN HỖ TRỢ KỸ THUẬT |
-| 54 | TC-ABN-009 | Máy chủ phản hồi chậm hoặc không sẵn sàng | P1 | 1 ĐT | CẦN HỖ TRỢ KỸ THUẬT |
+| 53 | TC-ABN-008 | Vị trí giả (ứng dụng giả GPS) bị từ chối | P2 | 1 ĐT | CẦN KỸ THUẬT VIÊN LÀM CÙNG |
+| 54 | TC-ABN-009 | Máy chủ phản hồi chậm hoặc không sẵn sàng | P1 | 1 ĐT | CẦN KỸ THUẬT VIÊN LÀM CÙNG |
 | 55 | TC-ABN-010 | Hai người cùng thao tác một đơn: quán hủy trong lúc shipper bấm "Nhận đơn" | P0 | 2 ĐT | SẴN SÀNG |
 | 56 | TC-ABN-011 | Khách hủy đơn trong lúc quán bấm "Xác nhận đơn" | P0 | 2 ĐT | SẴN SÀNG |
-| 57 | TC-ABN-012 | Hai quản trị viên cùng sửa một dữ liệu: người sau nhận cảnh báo "đã thay đổi ở nơi khác" | P1 | PC | CẦN HỖ TRỢ KỸ THUẬT |
+| 57 | TC-ABN-012 | Hai quản trị viên cùng sửa một dữ liệu: người sau nhận cảnh báo "đã thay đổi ở nơi khác" | P1 | PC | CẦN KỸ THUẬT VIÊN LÀM CÙNG |
 | 58 | TC-ABN-013 | Bấm nhiều lần liên tiếp vào các nút quan trọng ("Nhận đơn", "Đã nhận hàng", "Giao thành công", "Xác nhận đơn") | P0 | 2 ĐT | SẴN SÀNG |
 | 59 | TC-ABN-014 | Chuyển ứng dụng 11Ship sang chạy nền và khóa màn hình: vẫn nhận đơn và chia sẻ vị trí | P0 | 2 ĐT | SẴN SÀNG |
 | 60 | TC-ABN-015 | Bật chế độ tiết kiệm pin: vị trí và thông báo vẫn hoạt động (hoặc báo rõ giới hạn) | P1 | 1 ĐT | SẴN SÀNG |
 | 61 | TC-ABN-016 | Nhập ký tự đặc biệt, rất dài hoặc kiểu "mã độc" vào các ô văn bản | P1 | 2 ĐT | SẴN SÀNG |
-| 62 | TC-ABN-017 | Điện thoại có giờ sai (đồng hồ lệch nhiều) | P1 | 1 ĐT | SẴN SÀNG |
+| 62 | TC-ABN-017 | Điện thoại có giờ sai (đồng hồ lệch nhiều) | P1 | 1 ĐT | CẦN XÁC MINH |
 | 63 | TC-ABN-018 | Chạy trên các phiên bản Android khác nhau (8, 10, 12, 13, 14) | P1 | 1 ĐT | CẦN XÁC MINH |
 | 64 | TC-ABN-019 | Màn hình nhỏ, cỡ chữ lớn và xoay ngang | P2 | 1 ĐT | SẴN SÀNG |
 | 65 | TC-ABN-020 | Chủ quán đăng nhập trên điện thoại khác: phiên cũ kết thúc, quán không mất đơn | P1 | 2 ĐT | SẴN SÀNG |
 | 66 | TC-ABN-021 | Hai màn hình mở cùng một đơn: thao tác trên màn đã cũ bị yêu cầu tải lại | P1 | 2 ĐT | SẴN SÀNG |
 | 67 | TC-ABN-022 | Nút Back và đóng hộp thoại giữa chừng không làm mất hoặc gửi nhầm thao tác | P2 | 1 ĐT | SẴN SÀNG |
-| 68 | TC-SEC-001 | Quán này không thấy đơn và yêu cầu giao của quán khác | P0 | 1 ĐT | CẦN HỖ TRỢ KỸ THUẬT |
+| 68 | TC-SEC-001 | Quán này không thấy đơn và yêu cầu giao của quán khác | P0 | 1 ĐT | CẦN CHUẨN BỊ TRƯỚC |
 | 69 | TC-SEC-002 | Shipper này không thấy đơn đang giữ của shipper khác | P0 | 2 ĐT | SẴN SÀNG |
 | 70 | TC-SEC-003 | Người dùng không thấy mã tra cứu/UUID/mã kỹ thuật trên màn hình | P1 | 1 ĐT | SẴN SÀNG |
 | 71 | TC-SEC-004 | Mật khẩu luôn bị ẩn và không hiện trong thông báo hay chẩn đoán | P1 | 1 ĐT | SẴN SÀNG |
+
+## Từ ngữ dùng trong file này (đọc trước)
+
+| Từ | Nghĩa đơn giản |
+|---|---|
+| **PASS / FAIL / BLOCKED / NOT READY** | Kết quả bạn ghi: PASS = đúng hết; FAIL = có bước sai; BLOCKED = không làm tiếp được vì thiếu điều kiện; NOT READY = chức năng chưa có trong ứng dụng. |
+| **KH-A, CQ-A, SP-A, ADMIN-1, SYSTEM…** | Tên viết tắt tài khoản thử: KH = khách hàng, CQ = chủ quán, SP = shipper (người giao hàng), ADMIN = quản trị viên (quyền được cấp), SYSTEM = quản trị cao nhất (do kỹ thuật viên giữ). Mật khẩu nằm trong "bảng thông tin riêng" của Người phụ trách, không có trong tài liệu. |
+| **Điện thoại 1 / 2 / 3** | Điện thoại 1 = máy của khách; 2 = máy của quán; 3 = máy của shipper (xem HUONG_DAN mục 5.3 nếu bạn chỉ có 1-2 máy). |
+| **OTP / SMS Gateway** | OTP = mã 6 số gửi bằng tin nhắn để chứng minh số điện thoại là của bạn. SMS Gateway = điện thoại của hệ thống chuyên gửi tin nhắn này; nếu nó tắt thì không có mã. |
+| **APK** | File cài ứng dụng Android (11Food, 11Ship). |
+| **Web Admin** | Trang web quản trị mở bằng trình duyệt trên máy tính (không phải ứng dụng điện thoại). |
+| **Đơn món / Yêu cầu giao (ORDER, DIRECT)** | Đơn món = khách đặt món trong 11Food. Yêu cầu giao = việc nhờ shipper giao (mã dạng G-…). ORDER = giao cho đơn món của khách; DIRECT = quán tự gọi shipper, không qua khách. |
+| **Số dư, tạm giữ, hoa hồng, khả dụng** | Ví của shipper: Số dư = tổng tiền trong ví; Tạm giữ = phần bị giữ khi nhận đơn (hoa hồng); Khả dụng = số dư trừ tạm giữ; hoa hồng được thu một lần khi giao thành công, trả lại khi đơn hủy. Chỉ dùng TIỀN THỬ NGHIỆM đã được Owner duyệt. |
+| **Bấm lặp** | Bấm một nút nhiều lần chỉ được tác dụng một lần (không tạo đơn/giao dịch trùng). |
+| **Phiên đăng nhập** | Khoảng thời gian bạn đang đăng nhập. Mỗi tài khoản chỉ có một phiên: đăng nhập nơi khác thì nơi cũ bị đăng xuất. |
+| **Kỹ thuật viên / Người phụ trách / Owner** | Kỹ thuật viên = người chuẩn bị hệ thống và giữ tài khoản SYSTEM; Người phụ trách = người điều phối buổi test và giữ bảng thông tin riêng; Owner = chủ dự án, quyết định nghiệp vụ và nghiệm thu. |
+| **Cột "Sẵn sàng"** | SẴN SÀNG = bạn tự làm được; CẦN CHUẨN BỊ TRƯỚC = kỹ thuật viên chuẩn bị xong rồi bạn tự làm; CẦN KỸ THUẬT VIÊN LÀM CÙNG = có bước kỹ thuật viên làm, bạn quan sát; CHỈ KỸ THUẬT VIÊN = bạn bỏ qua; CẦN XÁC MINH = còn chờ Owner/kỹ thuật viên trả lời. |
 
 ---
 
@@ -90,23 +107,26 @@ Tổng số test case trong ngày: **71** (P0: 38, P1: 27, P2: 6).
 | Mục đích | Các thời hạn tự hủy/nhắc phải nhập đúng ràng buộc; thay đổi có lịch sử và chỉ áp dụng cho giai đoạn mới. |
 | Người thực hiện | SYSTEM, ADMIN |
 | Thiết bị cần có | Máy tính có trình duyệt (Web Admin) (tối thiểu chỉ cần máy tính điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
-| Tình trạng sẵn sàng | **CẦN HỖ TRỢ KỸ THUẬT** |
+| Loại kiểm thử | Cần kỹ thuật viên cùng làm |
+| Tình trạng sẵn sàng | **CẦN KỸ THUẬT VIÊN LÀM CÙNG** |
 | Phụ thuộc | Không (làm độc lập) |
 | Điều kiện hệ thống cần có | Web Admin + tài khoản quản trị; Tài khoản SYSTEM (kỹ thuật viên cấp) |
+| Việc cần chuẩn bị trước | Không có việc chuẩn bị thêm ngoài mục "Điều kiện ban đầu". |
+| Phân công khi đang test | Kỹ thuật viên/SYSTEM làm bước 1, 3, 4, 5, 6. SYSTEM nhập các thời hạn (và đặt lại về giá trị ban đầu ở bước 6); bạn đọc kết quả mong đợi và chụp màn hình lỗi nhập sai. |
+| Nếu thiếu điều kiện | Nếu kỹ thuật viên/SYSTEM chưa có mặt: đánh dấu BLOCKED, ghi "chờ kỹ thuật viên", hẹn giờ rồi chuyển sang test kế tiếp (hầu hết test sau không phụ thuộc test này trừ khi cột "Phụ thuộc" ghi tên nó). |
 | Điều kiện ban đầu | SYSTEM đăng nhập. |
 | Dữ liệu nhập | Giá trị hợp lệ: số nguyên 1-1440 phút. Thử sai: 0, 1441, "abc"; mốc nhắc lớn hơn mốc hủy. |
 
 | Bước | Việc cần làm | Kết quả mong đợi |
 |---|---|---|
-| 1 | Ở menu bên trái của Web Admin, chọn: HỆ THỐNG > "Thời hạn xử lý đơn". | Trang tương ứng mở ra, có tiêu đề đúng với mục vừa chọn, không báo lỗi đỏ. |
+| 1 | [KỸ THUẬT VIÊN/SYSTEM làm, bạn quan sát và chụp màn hình] Ở menu bên trái của Web Admin, chọn: HỆ THỐNG > "Thời hạn xử lý đơn". | Trang tương ứng mở ra, có tiêu đề đúng với mục vừa chọn, không báo lỗi đỏ. |
 | 2 | Đọc 7 ô: "Chờ quán: bắt đầu nhắc / nhắc lại mỗi / tự hủy sau", "Chờ shipper: dừng tìm / tự hủy đơn sau", "Đã nhận: cảnh báo chưa lấy hàng sau / tự hủy khi chưa lấy hàng sau". | Giá trị mặc định 15/5/30, 30/60, 30/60 (hoặc giá trị hiện hành); có dòng "Mốc nhắc phải trước mốc hủy; dừng tìm không được sau mốc hủy." |
-| 3 | Nhập giá trị sai (0, 1441, chữ, nhắc > hủy) rồi "Lưu thời hạn". | Không lưu; báo lỗi giá trị cụ thể. |
-| 4 | Nhập giá trị hợp lệ khác và lưu. | Hiện "Đã lưu. Áp dụng cho giai đoạn mới."; có dòng mới trong "Lịch sử thay đổi" (phiên bản, cũ -> mới). |
-| 5 | Mở "Cấu hình tập trung", tìm dòng "Thời gian trả lời đề xuất phí" và đổi thành 6 phút có lý do; sau đó đặt lại 5. | Lưu thành công; ADMIN chỉ xem được. |
-| 6 | Đặt lại toàn bộ thời hạn về giá trị ban đầu. | Về mặc định. |
+| 3 | [KỸ THUẬT VIÊN/SYSTEM làm, bạn quan sát và chụp màn hình] Nhập giá trị sai (0, 1441, chữ, nhắc > hủy) rồi "Lưu thời hạn". | Không lưu; báo lỗi giá trị cụ thể. |
+| 4 | [KỸ THUẬT VIÊN/SYSTEM làm, bạn quan sát và chụp màn hình] Nhập giá trị hợp lệ khác và lưu. | Hiện "Đã lưu. Áp dụng cho giai đoạn mới."; có dòng mới trong "Lịch sử thay đổi" (phiên bản, cũ -> mới). |
+| 5 | [KỸ THUẬT VIÊN/SYSTEM làm, bạn quan sát và chụp màn hình] Mở "Cấu hình tập trung", tìm dòng "Thời gian trả lời đề xuất phí" và đổi thành 6 phút có lý do; sau đó đặt lại 5. | Lưu thành công; ADMIN chỉ xem được. |
+| 6 | [KỸ THUẬT VIÊN/SYSTEM làm, bạn quan sát và chụp màn hình] Đặt lại toàn bộ thời hạn về giá trị ban đầu. | Các thời hạn về đúng giá trị mặc định ban đầu (đã khôi phục cấu hình). |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Đặt lại mọi thời hạn về giá trị ban đầu.
 
@@ -150,7 +170,7 @@ Ghi chú:
 | 5 | Kiểm tra trạng thái đơn món. | Đơn món KHÔNG bị hủy: vẫn "Đang chuẩn bị" (hoặc hiển thị chưa tìm được shipper). |
 | 6 | Bật online SP-A rồi mở "Có thể nhận". | Không thấy đơn đã ngừng tìm. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Đặt lại cấu hình thời hạn về 30/60 phút (nếu đã sửa). Quán "Hủy đơn món" hoặc làm tiếp TC-FLOW-006.
 
@@ -188,9 +208,9 @@ Ghi chú:
 |---|---|---|
 | 1 | Chủ quán mở đơn, chạm "Gọi lại shipper", chọn người trả phí. | Tạo lần tìm mới: "Lần gọi shipper thứ 2", trạng thái "Đang tìm shipper"; lần gọi trước vẫn hiện trong lịch sử gọi. Chỉ một yêu cầu giao đang hoạt động. |
 | 2 | SP-A bật online, mở "Có thể nhận", chạm "Nhận đơn". | Nhận được đơn (chỉ một thẻ, không trùng). |
-| 3 | Hoàn tất giao như TC-FLOW-001 (Đã nhận hàng, Giao thành công). | Đơn hoàn thành đúng một lần. |
+| 3 | Trên Điện thoại 3 mở đơn trong "Đang thực hiện", chạm "Đã nhận hàng" và xác nhận; sau đó chạm "Giao thành công" và xác nhận trong hộp thoại. | Đơn hoàn thành đúng một lần. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -231,9 +251,9 @@ Ghi chú:
 | 3 | Khách mở đơn. | Khách chỉ được báo tiến độ (không phải người quyết định vì quán trả phí). |
 | 4 | Quán chạm "Đồng ý". | Phí của đơn đổi đúng bằng mức đề xuất; thẻ đề xuất biến mất. |
 | 5 | Shipper kiểm tra thẻ đơn. | Phí giao đã là mức mới; nút "Nhận đơn" bấm được. Chạm "Nhận đơn". |
-| 6 | Hoàn tất lấy hàng và giao thành công như TC-FLOW-001. | Hoàn thành; phí giao hiển thị ở khách/quán/shipper đều bằng mức đã đồng ý; hoa hồng thu một lần. |
+| 6 | Trên Điện thoại 3 chạm "Đã nhận hàng" và xác nhận; sau đó chạm "Giao thành công" và xác nhận trong hộp thoại. | Hoàn thành; phí giao hiển thị ở khách/quán/shipper đều bằng mức đã đồng ý; hoa hồng thu một lần. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu phí cuối cùng khác mức đã đồng ý, hoặc hai shipper cùng nhận.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu phí cuối cùng khác mức đã đồng ý, hoặc hai shipper cùng nhận. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -274,7 +294,7 @@ Ghi chú:
 | 3 | Kiểm tra đồng hồ tìm shipper của đơn. | Thời gian tìm KHÔNG được tính lại (vẫn đếm theo lần gọi ban đầu). |
 | 4 | Một shipper khác (SP-B đã nạp tiền, hoặc SP-A) nhận lại đơn ở mức phí cũ. | Nhận được với phí cũ. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -314,9 +334,9 @@ Ghi chú:
 | 2 | Khách mở chi tiết đơn. | Hiện thẻ "Shipper muốn lấy phí giao … " / "Phí giao … đang chờ bạn đồng ý" với nút "Đồng ý" và "Từ chối", và nội dung "Bạn là người trả phí nên cần bạn đồng ý để shipper nhận đơn." |
 | 3 | Quán mở đơn. | Quán KHÔNG có nút trả lời (chỉ thông báo chờ khách); nếu cố thao tác sẽ bị từ chối. |
 | 4 | Khách chạm "Đồng ý". | Phí đơn đổi theo mức đề xuất. Shipper nhận được thông báo và nhận đơn được. |
-| 5 | Hoàn tất giao như TC-FLOW-001. | Hoàn thành, phí hiển thị mức đã đồng ý ở cả ba bên. |
+| 5 | Trên Điện thoại 3 chạm "Đã nhận hàng" và xác nhận; sau đó chạm "Giao thành công" và xác nhận trong hộp thoại. | Hoàn thành, phí hiển thị mức đã đồng ý ở cả ba bên. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -356,7 +376,7 @@ Ghi chú:
 | 2 | Shipper kiểm tra. | SP-A không còn giữ đơn; lịch sử ghi "Phí không được đồng ý". |
 | 3 | Khách xem lại đơn món. | Đơn món KHÔNG bị hủy. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -393,9 +413,9 @@ Ghi chú:
 | Bước | Việc cần làm | Kết quả mong đợi |
 |---|---|---|
 | 1 | Quán mở đơn, tìm nút "Đồng ý"/"Từ chối" cho đề xuất phí. | KHÔNG có nút trả lời; quán chỉ thấy dòng "Khách là người trả phí nên khách quyết định mức này trong 11Food. Bạn chỉ cần chờ." |
-| 2 | Kỹ thuật viên (tùy chọn) thử gọi API quán trả lời thay. | Máy chủ từ chối (DELIVERY_STATE_CONFLICT). Ghi vào ghi chú nếu có kỹ thuật viên. |
+| 2 | [CHỈ KỸ THUẬT VIÊN - người mới bỏ qua] Kỹ thuật viên thử gửi lệnh "quán trả lời thay khách" tới máy chủ. | Máy chủ từ chối thao tác (kỹ thuật viên ghi mã lỗi vào Ghi chú kết quả). Bước này CHỈ do kỹ thuật viên làm; người mới bỏ qua và ghi "bỏ qua bước 2". |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -433,10 +453,10 @@ Ghi chú:
 | Bước | Việc cần làm | Kết quả mong đợi |
 |---|---|---|
 | 1 | Chờ quá thời gian trả lời (5 phút). | Thẻ đề xuất biến mất khỏi màn quán; phí vẫn mức cũ. |
-| 2 | Quán thử bấm "Đồng ý" ở thẻ cũ nếu còn hiện (làm mới màn hình trước). | Không cho trả lời muộn: báo đề xuất đã hết hạn (FEE_ANSWER_EXPIRED / "Đã hết hạn"). |
+| 2 | Quán thử bấm "Đồng ý" ở thẻ cũ nếu còn hiện (làm mới màn hình trước). | Không cho trả lời muộn: báo đề xuất đã hết hạn (ví dụ chữ "Đã hết hạn"). |
 | 3 | Shipper kiểm tra. | Không còn giữ đơn; lịch sử "Phí không được đồng ý"/hết hạn; đơn tiếp tục tìm shipper. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ. Nếu đã sửa cấu hình thời gian trả lời, đặt lại 5 phút.
 
@@ -476,9 +496,9 @@ Ghi chú:
 | 2 | Quán mở yêu cầu giao. | Thấy "Shipper đề xuất đổi phí giao" 25.000đ với "Đồng ý"/"Từ chối". |
 | 3 | Quán chạm "Đồng ý". | Phí đổi thành 25.000đ; SP-A nhận được và có thể "Nhận đơn". |
 | 4 | Tạo yêu cầu giao DIRECT mới và để SP-A đề xuất 40000; quán chạm "Từ chối". | Phí giữ như ban đầu; yêu cầu giao KHÔNG bị hủy ("Đang tìm shipper"); SP-A không còn giữ. |
-| 5 | Quán hủy yêu cầu giao thử của lần 2 ("Hủy yêu cầu giao"). | Dọn xong. |
+| 5 | Quán hủy yêu cầu giao thử của lần 2 ("Hủy yêu cầu giao"). | Yêu cầu giao thử của lần 2 chuyển sang "Đã hủy"; không còn yêu cầu giao nào đang mở (đã dọn dữ liệu). |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Đã hủy yêu cầu thử ở bước 5.
 
@@ -514,12 +534,12 @@ Ghi chú:
 
 | Bước | Việc cần làm | Kết quả mong đợi |
 |---|---|---|
-| 1 | SP-A đề xuất mức phí khác. | Gửi được. |
+| 1 | Trên Điện thoại 3, SP-A mở thẻ đơn vừa tạo, chạm "Đề xuất mức khác", nhập 40000 và gửi. | Đề xuất được gửi đi; thẻ đơn của SP-A hiện đang chờ phản hồi. |
 | 2 | Quán mở yêu cầu giao. | Thấy nội dung "Khách trả ship: hãy liên hệ khách trước. Bấm Đồng ý nghĩa là quán xác nhận thay khách, hệ thống sẽ ghi lại như vậy." cùng "Đồng ý"/"Từ chối". |
 | 3 | Quán gọi điện cho người nhận (người trong nhóm test) để xin đồng ý, rồi chạm "Đồng ý". | Phí đổi; trong lịch sử/diễn biến của yêu cầu ghi nhận do quán xác nhận thay khách. |
 | 4 | Làm lại với đề xuất khác và chạm "Từ chối". | Phí giữ nguyên; shipper không còn giữ đơn; yêu cầu vẫn tìm shipper khác. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Hủy yêu cầu giao thử.
 
@@ -560,7 +580,7 @@ Ghi chú:
 | 3 | Quán chạm "Từ chối" đề xuất. | Shipper không còn giữ đơn (kết thúc lượt nhận), hoa hồng được giải phóng, đơn tìm shipper khác với phí cũ. |
 | 4 | Làm lại bước 1 với đơn khác và để quán "Đồng ý"; shipper bấm "Đã nhận hàng" rồi xác nhận. | Phí chốt theo mức mới; sau "Đã nhận hàng" nút đề xuất phí biến mất ("Phí đã khóa"). |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -602,7 +622,7 @@ Ghi chú:
 | 4 | SP-B mở "Có thể nhận" và nhận đơn. | SP-B nhận được; hoa hồng của SP-B tạm giữ; quán thấy tên SP-B. |
 | 5 | Quán kiểm tra đồng hồ tìm shipper của đơn. | Đồng hồ vẫn tính từ lần gọi ban đầu (không đặt lại 30 phút). |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -643,7 +663,7 @@ Ghi chú:
 | 3 | Khách mở đơn. | Đơn vẫn còn; cập nhật trạng thái phù hợp (quán đang xử lý). |
 | 4 | Quán chạm "Gọi lại shipper". | Tạo lần gọi mới; không bị chặn (vì hàng chưa rời quán). |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -684,7 +704,7 @@ Ghi chú:
 | 3 | Shipper kiểm tra. | Đơn không còn trong "Đang thực hiện"; thông báo báo đơn bị hủy; hoa hồng được giải phóng (khả dụng như cũ). |
 | 4 | Khách mở đơn. | Hiện "Đã hủy" cùng lý do của quán. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Không cần.
 
@@ -726,7 +746,7 @@ Ghi chú:
 | 4 | Shipper kiểm tra. | Đơn kết thúc, nhận thông báo hủy; ví: hoa hồng được giải phóng, KHÔNG bị trừ; Tổng số dư vẫn B. |
 | 5 | Quán thực hiện TC-SHOP-036 (xác nhận hàng đã về). | Hồ sơ hàng đóng. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu hoa hồng bị thu khi đơn bị hủy sau lấy hàng, hoặc đơn bị chuyển thành giao thành công.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu hoa hồng bị thu khi đơn bị hủy sau lấy hàng, hoặc đơn bị chuyển thành giao thành công. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Không cần.
 
@@ -768,7 +788,7 @@ Ghi chú:
 | 4 | Shipper kiểm tra. | Chỉ còn thông báo hủy; ví không bị trừ hoa hồng; có dòng hồ sơ hàng "Hồ sơ xử lý hàng đang mở…". |
 | 5 | Quán chạm "Xác nhận hàng đã về quán" (sau khi shipper trả hàng). | Hồ sơ đóng; gọi lại được. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Không cần.
 
@@ -805,9 +825,9 @@ Ghi chú:
 | Bước | Việc cần làm | Kết quả mong đợi |
 |---|---|---|
 | 1 | Quán mở đơn, tìm nút hủy. | KHÔNG có "Hủy đơn món" và không có "Hủy giao". Có banner "Shipper đã lấy hàng - Đơn này do khách đặt nên chỉ khách mới hủy được. Nếu shipper báo không giao được, hãy gọi khách và shipper để thống nhất." |
-| 2 | (Tùy chọn - kỹ thuật viên) gọi lệnh hủy sau lấy hàng của quán. | Bị từ chối (AFTER_PICKUP_NO_CANCEL). |
+| 2 | [CHỈ KỸ THUẬT VIÊN - người mới bỏ qua] Kỹ thuật viên thử gửi lệnh hủy sau lấy hàng của quán tới máy chủ. | Máy chủ từ chối lệnh (kỹ thuật viên ghi mã lỗi vào Ghi chú kết quả). Người mới bỏ qua, ghi "bỏ qua bước 2"; không ảnh hưởng PASS/FAIL. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -847,7 +867,7 @@ Ghi chú:
 | 2 | Với đơn món: quán chạm "Đóng đơn "Không hoàn tất"" và nhập lý do. | Đơn chuyển "Không hoàn tất". |
 | 3 | Admin (có quyền duyệt) mở Web Admin > VẬN HÀNH > Đơn hàng, tìm đơn. | Thấy trạng thái "Không hoàn tất" và nhật ký thao tác. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Không cần.
 
@@ -893,7 +913,7 @@ Ghi chú:
 | 7 | Chạm từng thông báo trên mỗi máy. | Mỗi thông báo mở ĐÚNG đơn đó (mã đơn khớp). Thông báo của đơn đã kết thúc mở ở dạng lịch sử ("Nội dung này đã kết thúc. Bạn đang xem ở lịch sử."). |
 | 8 | Nhìn nội dung thông báo hiện trên màn hình khóa (nếu có push). | Chỉ có mã giao hàng/nội dung ngắn, KHÔNG có số điện thoại, địa chỉ, ngân hàng hay mã OTP. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu thông báo gửi nhầm cho người không liên quan hoặc mở sai đơn.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu thông báo gửi nhầm cho người không liên quan hoặc mở sai đơn. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -933,7 +953,7 @@ Ghi chú:
 | 2 | Quán bấm "Gọi shipper" rồi chọn người trả phí; ngay sau đó bấm lặp nút trong hộp thoại nhiều lần. | Chỉ tạo MỘT yêu cầu giao ("Lần gọi shipper thứ 1"). Không có yêu cầu thứ hai. |
 | 3 | Đóng và mở lại cả hai ứng dụng. | Vẫn chỉ MỘT đơn và MỘT yêu cầu giao. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu có hai đơn/hai yêu cầu giao.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu có hai đơn/hai yêu cầu giao. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -974,7 +994,7 @@ Ghi chú:
 | 2 | Tắt Chế độ máy bay, chạm "Kiểm tra kết quả". | Ứng dụng cho biết đơn đã tạo hay chưa dựa trên máy chủ. |
 | 3 | Nếu báo chưa tạo: chạm "Gửi lại". Sau đó đếm số đơn trong "Đang xử lý". | Tổng cộng đúng MỘT đơn cho lần đặt này. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu có hai đơn cho cùng một lần đặt.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu có hai đơn cho cùng một lần đặt. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -1005,6 +1025,7 @@ Ghi chú:
 | Tình trạng sẵn sàng | **SẴN SÀNG** |
 | Phụ thuộc | TC-WAL-005 |
 | Điều kiện hệ thống cần có | Bảng phí giao đã được SYSTEM áp dụng; Tiền thử nghiệm trong ví shipper (Owner duyệt) |
+| **Có thể chặn thử nghiệm bên ngoài** | Giao dịch tài chính (ví, nạp, rút, hoa hồng): Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). |
 | Điều kiện ban đầu | SP-A online đủ tiền. Ghi Tổng số dư B0 và khả dụng A0. Hoa hồng đang áp dụng = H (mặc định 1.000đ). |
 | Dữ liệu nhập | Dùng 3 đơn DIRECT liên tiếp: (1) nhận rồi hủy nhận, (2) nhận rồi quán hủy trước lấy hàng, (3) nhận, lấy hàng, giao thành công. |
 
@@ -1015,7 +1036,7 @@ Ghi chú:
 | 3 | Đơn 3: SP-A nhận, "Đã nhận hàng", "Giao thành công". | Cuối cùng: tổng = B0 - H; khả dụng = A0 - H; đúng MỘT dòng "Hoa hồng" cho đơn 3 và KHÔNG có dòng hoa hồng cho đơn 1, 2. |
 | 4 | Mở "Lịch sử giao dịch" và cộng/trừ lại các dòng. | Tổng số dư hiện tại = B0 + các dòng nạp - các dòng hoa hồng. Khớp đến từng đồng. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG với bất kỳ sai lệch số dư nào (kể cả 1đ).
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG với bất kỳ sai lệch số dư nào (kể cả 1đ). Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Không cần (tiền đã hạch toán đúng).
 
@@ -1055,7 +1076,7 @@ Ghi chú:
 | 2 | Đến sát giờ hẹn, quán gọi shipper. | Tạo yêu cầu giao bình thường. |
 | 3 | Shipper nhận, lấy hàng, giao. | Hoàn thành; khách thấy đơn trong "Lịch sử". |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -1096,7 +1117,7 @@ Ghi chú:
 | 3 | Shipper xem thẻ đơn. | Thấy "Phí đề xuất 25.000đ" với "Đồng ý", "Đề xuất mức khác", "Bỏ qua". |
 | 4 | Hoàn tất theo các luồng thương lượng ở trên. | Đi được đến hoàn thành; phí hiển thị đúng. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -1123,10 +1144,13 @@ Ghi chú:
 | Mục đích | Đơn bị bỏ quên không để vô hạn: hệ thống nhắc rồi tự hủy, báo đúng người, hoa hồng giải phóng. |
 | Người thực hiện | Khách + Chủ quán + SYSTEM |
 | Thiết bị cần có | Điện thoại 1 (máy KHÁCH); Điện thoại 2 (máy QUÁN); Máy tính có trình duyệt (Web Admin) (tối thiểu 2 điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
-| Tình trạng sẵn sàng | **CẦN HỖ TRỢ KỸ THUẬT** |
+| Loại kiểm thử | Cần kỹ thuật viên cùng làm |
+| Tình trạng sẵn sàng | **CẦN KỸ THUẬT VIÊN LÀM CÙNG** |
 | Phụ thuộc | Không (làm độc lập) |
 | Điều kiện hệ thống cần có | Web Admin + tài khoản quản trị; Bảng phí giao đã được SYSTEM áp dụng; Tài khoản SYSTEM (kỹ thuật viên cấp) |
+| Việc cần chuẩn bị trước | Bạn đã làm xong các test ghi ở cột "Phụ thuộc" (dữ liệu từ test trước còn đó). |
+| Phân công khi đang test | Kỹ thuật viên/SYSTEM làm bước 5. SYSTEM đặt thời hạn ngắn TRƯỚC bước 1 (ví dụ 6 phút) và đặt lại về mặc định ở bước 5. Bạn và chủ quán làm bước 1-4. |
+| Nếu thiếu điều kiện | Nếu kỹ thuật viên/SYSTEM chưa có mặt: đánh dấu BLOCKED, ghi "chờ kỹ thuật viên", hẹn giờ rồi chuyển sang test kế tiếp (hầu hết test sau không phụ thuộc test này trừ khi cột "Phụ thuộc" ghi tên nó). |
 | Điều kiện ban đầu | SYSTEM đã đặt "Chờ quán: tự hủy sau (phút)" = 6, "Chờ quán: bắt đầu nhắc" = 2, "nhắc lại mỗi" = 2 (ví dụ). Ghi giờ. |
 | Dữ liệu nhập | Không cần nhập dữ liệu riêng. |
 | Ghi chú đặc biệt | Mặc định: chờ quán nhắc ở phút 15, 20, 25 và hủy ở phút 30; chờ shipper dừng tìm phút 30, hủy phút 60; đã nhận chưa lấy hàng cảnh báo phút 30, hủy phút 60. Để thử nhanh SYSTEM rút ngắn các mốc ở Web Admin > HỆ THỐNG > "Thời hạn xử lý đơn" (giá trị 1-1440 phút, mốc nhắc phải trước mốc hủy) rồi đặt lại. Không tự hủy đơn đã lấy hàng. |
@@ -1137,9 +1161,9 @@ Ghi chú:
 | 2 | Chờ đến mốc nhắc. | Quán nhận các thông báo nhắc xác nhận đơn. |
 | 3 | Chờ quá mốc tự hủy. | Đơn chuyển "Hệ thống hủy quá hạn"; khách nhận thông báo; quán thấy đơn đã hủy. |
 | 4 | Kiểm tra đơn trong Web Admin > Đơn hàng. | Trạng thái hủy do hệ thống (SYSTEM), có nhật ký. |
-| 5 | Đặt lại các thời hạn về mặc định. | Giá trị về 15/5/30, 30/60, 30/60. |
+| 5 | [KỸ THUẬT VIÊN/SYSTEM làm, bạn quan sát và chụp màn hình] Đặt lại các thời hạn về mặc định. | Giá trị về 15/5/30, 30/60, 30/60. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Đặt lại thời hạn mặc định.
 
@@ -1179,7 +1203,7 @@ Ghi chú:
 | 1 | Shipper mở "Có thể nhận". | Ghi nhận: đơn thứ hai hiện hay không, nút "Nhận đơn" bấm được hay bị khóa kèm lý do (ví dụ đã đạt giới hạn hoặc ghép đơn làm chậm đơn đầu). |
 | 2 | Nếu nhận được đơn thứ hai, hoàn tất hai đơn lần lượt. | Hai đơn hoàn thành độc lập; hoa hồng thu mỗi đơn đúng một lần. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -1206,10 +1230,13 @@ Ghi chú:
 | Mục đích | Người dùng nhận thông báo kể cả khi không mở ứng dụng. Chức năng này cần cấu hình dịch vụ Firebase phía máy chủ và bản APK có hỗ trợ push. |
 | Người thực hiện | Khách + Chủ quán + Shipper |
 | Thiết bị cần có | Điện thoại 1 (máy KHÁCH); Điện thoại 2 (máy QUÁN); Điện thoại 3 (máy SHIPPER) (tối thiểu 3 điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
+| Loại kiểm thử | Chuẩn bị trước, người mới tự làm |
 | Tình trạng sẵn sàng | **CẦN XÁC MINH** |
 | Phụ thuộc | Không (làm độc lập) |
 | Điều kiện hệ thống cần có | SMS (máy SMS Gateway đang chạy); Web Admin + tài khoản quản trị; Thông báo đẩy (Firebase) nếu muốn kiểm push |
+| Việc cần chuẩn bị trước | Kỹ thuật viên đã cấu hình thông báo đẩy (Firebase) và xác nhận APK đang thử có hỗ trợ; điện thoại đã cho phép thông báo. Bạn đã làm xong các test ghi ở cột "Phụ thuộc" (dữ liệu từ test trước còn đó). |
+| Phân công khi đang test | Sau khi chuẩn bị xong, người mới tự làm toàn bộ các bước. |
+| Nếu thiếu điều kiện | Nếu phần chuẩn bị ở trên CHƯA xong: đánh dấu BLOCKED, ghi điều kiện còn thiếu vào Ghi chú kết quả, báo Người phụ trách và chuyển sang test kế tiếp. Không tự làm thay phần của kỹ thuật viên. |
 | Điều kiện ban đầu | Push đã được kỹ thuật viên cấu hình (có thể xem Web Admin > Thông báo > "Cấu hình" không còn cảnh báo). Điện thoại đã cho phép thông báo. Cả ba máy đăng nhập. |
 | Dữ liệu nhập | Không cần nhập dữ liệu riêng. |
 | Ghi chú đặc biệt | Tài liệu ghi nhận "APK bàn giao hiện chưa có push vì dự án Firebase của Owner và khóa chưa được cung cấp" (M08). Cần Người phụ trách xác nhận push đã bật trên bản đang thử. Nếu chưa, ghi BLOCKED và dùng TC-NOTI-002 (hộp thư trong app). Web Admin > Thông báo > Cấu hình hiển thị cảnh báo "Máy chủ chưa cấu hình dịch vụ đẩy thông báo" nếu chưa bật. |
@@ -1221,7 +1248,7 @@ Ghi chú:
 | 3 | Chạm thông báo trên màn hình khóa. | Ứng dụng mở đúng đơn/đúng danh sách. |
 | 4 | Đọc nội dung thông báo. | Chỉ có nội dung ngắn (mã giao hàng/loại sự kiện); KHÔNG có số điện thoại, địa chỉ, thông tin ngân hàng hay mã OTP. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -1241,7 +1268,7 @@ Ghi chú:
 
 ### TC-NOTI-002 · Hộp thông báo trong ứng dụng đồng bộ khi mở lại và cập nhật trực tiếp
 
-**Mức độ:** P0 · **Nhóm:** Bổ sung: Thông báo · **Số thứ tự chạy:** #196 (trong ngày: 29) · **Mức nghiêm trọng nếu FAIL:** Cao
+**Mức độ:** P0 · **Nhóm:** Bổ sung: Thông báo · **Số thứ tự chạy:** #196 (trong ngày: 29) · **Mức nghiêm trọng nếu FAIL:** Cao · **Smoke #27**
 
 | Mục | Nội dung |
 |---|---|
@@ -1263,7 +1290,7 @@ Ghi chú:
 | 4 | Tắt Chế độ máy bay. | Danh sách tự cập nhật. |
 | 5 | Chạm "Đánh dấu tất cả đã đọc". | Số chưa đọc về 0. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Không cần khôi phục: test này không làm thay đổi dữ liệu.
 
@@ -1304,7 +1331,7 @@ Ghi chú:
 | 3 | Khách có một sự kiện đơn (ví dụ quán xác nhận). | Thông báo vẫn nằm trong hộp thông báo; không có thông báo đẩy. |
 | 4 | Bật lại nhóm. | Trở lại bình thường. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Bật lại mọi nhóm.
 
@@ -1343,7 +1370,7 @@ Ghi chú:
 | 1 | Mở Tài khoản > "Cài đặt thông báo". | Hiện "Thông báo đẩy chưa sẵn sàng"/"Chưa cấp" kèm hướng dẫn "Mở Cài đặt điện thoại › Thông báo và bật thông báo cho ứng dụng. Mở ứng dụng vẫn cập nhật trạng thái." và "Thông báo vẫn vào hộp thông báo khi bạn mở ứng dụng." |
 | 2 | Bật thông báo trong cài đặt điện thoại và quay lại ứng dụng. | Trạng thái đổi thành "Đang bật"/"Đã cấp". |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Để thông báo bật.
 
@@ -1383,7 +1410,7 @@ Ghi chú:
 | 2 | Quán xác nhận/xử lý đơn của KH-A. | Điện thoại 1 KHÔNG nhận thông báo nào về đơn đó (kể cả trên màn hình khóa). |
 | 3 | Đăng nhập KH-A trên Điện thoại 1 lại. | Hộp thông báo hiển thị đầy đủ thông báo đã bỏ lỡ. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu máy đã đăng xuất vẫn nhận thông báo riêng tư.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu máy đã đăng xuất vẫn nhận thông báo riêng tư. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -1422,7 +1449,7 @@ Ghi chú:
 | 1 | Quán mở hộp thông báo ở phút 5 và phút 15. | Có thông báo nhắc tìm (loại "Nhắc việc"/"Đang tìm") cho đúng đơn. |
 | 2 | Khi ngừng tìm, quán và khách mở hộp thông báo. | Cả hai nhận thông báo "ngừng tìm shipper" cho đúng đơn; nội dung khách không có thông tin dành riêng cho quán. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -1461,7 +1488,7 @@ Ghi chú:
 | 1 | Mở yêu cầu giao đó. | Thấy phần "Xử lý hàng" / "Hàng hiện ở": "Hàng đang ở shipper hoặc chưa rõ", kèm lời giải thích "Hàng ở tay ai người đó chịu trách nhiệm...". Chưa có nút "Gọi lại shipper". |
 | 2 | Chạm "Xác nhận hàng đã về quán" (nếu hàng đã về), hoặc "Đã xử lý, không giao tiếp" (nếu hàng đã được xử lý). Nhập ghi chú nếu hỏi. | Hồ sơ chuyển "Đã đóng"; "Hàng hiện ở" đổi thành "Hàng đã về quán" hoặc "Đã xử lý, không giao tiếp". Với đơn món: xuất hiện lại nút "Gọi lại shipper" khi hàng đã về. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -1502,7 +1529,7 @@ Ghi chú:
 | 3 | Trên máy Shipper đăng xuất rồi đăng nhập lại SP-A, mở tab "Đơn hàng" > "Đang thực hiện". | Đơn vẫn còn, vẫn có nút "Giao thành công". Trạng thái chia sẻ vị trí được khôi phục (hoặc có hướng dẫn rõ để bật). |
 | 4 | Shipper bấm "Giao thành công" và xác nhận. | Đơn kết thúc đúng một lần; khách và quán thấy "Hoàn thành". |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -1542,7 +1569,7 @@ Ghi chú:
 | 1 | Chờ khoảng 5 phút rồi mở tab "Thông báo". | Có thông báo nhắc lấy hàng cho đúng đơn (dạng nhắc "chưa lấy hàng"). |
 | 2 | Chờ thêm 5 phút. | Có thêm một nhắc nữa (mỗi 5 phút một lần), không nhắc dồn nhiều lần cùng lúc. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Hủy nhận đơn hoặc hoàn tất đơn.
 
@@ -1569,10 +1596,14 @@ Ghi chú:
 | Mục đích | Khi quản trị khóa tài khoản, người đó phải bị đăng xuất và không đăng nhập lại được cho đến khi mở khóa. |
 | Người thực hiện | Khách + ADMIN |
 | Thiết bị cần có | Điện thoại 1 (máy KHÁCH); Máy tính có trình duyệt (Web Admin) (tối thiểu 1 điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
-| Tình trạng sẵn sàng | **CẦN HỖ TRỢ KỸ THUẬT** |
+| Loại kiểm thử | Chuẩn bị trước, người mới tự làm |
+| Tình trạng sẵn sàng | **CẦN CHUẨN BỊ TRƯỚC** |
 | Phụ thuộc | Không (làm độc lập) |
 | Điều kiện hệ thống cần có | Web Admin + tài khoản quản trị; Tài khoản SYSTEM (kỹ thuật viên cấp) |
+| **Có thể chặn thử nghiệm bên ngoài** | Sai quyền (xem/làm việc không được phép): Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. |
+| Việc cần chuẩn bị trước | SYSTEM đã tạo và kích hoạt sẵn tài khoản ADMIN-1 (và ADMIN-2 nếu test cần) với đúng các quyền test yêu cầu, rồi đưa bạn số điện thoại/mật khẩu qua kênh riêng. Ứng dụng Authenticator đã cài trên điện thoại của bạn. Bạn đã làm xong các test ghi ở cột "Phụ thuộc" (dữ liệu từ test trước còn đó). |
+| Phân công khi đang test | Sau khi chuẩn bị xong, người mới tự làm toàn bộ các bước. |
+| Nếu thiếu điều kiện | Nếu phần chuẩn bị ở trên CHƯA xong: đánh dấu BLOCKED, ghi điều kiện còn thiếu vào Ghi chú kết quả, báo Người phụ trách và chuyển sang test kế tiếp. Không tự làm thay phần của kỹ thuật viên. |
 | Điều kiện ban đầu | Một tài khoản khách phụ (ví dụ KH-B) đang đăng nhập trên Điện thoại 1 và KHÔNG có đơn đang xử lý. ADMIN/SYSTEM có quyền "Khóa tài khoản" đăng nhập Web Admin trên máy tính. |
 | Dữ liệu nhập | Lý do khóa: chọn loại "Vi phạm" hoặc "Bảo mật" như giao diện cho phép, ghi chú "TEST khóa tài khoản". |
 
@@ -1585,7 +1616,7 @@ Ghi chú:
 | 5 | Admin bấm "Mở khóa" > xác nhận ("Mở khóa tài khoản?"). | Trạng thái về hoạt động. |
 | 6 | Đăng nhập lại KH-B trên Điện thoại 1. | Đăng nhập thành công. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Đảm bảo tài khoản đã được MỞ KHÓA trước khi kết thúc test.
 
@@ -1612,23 +1643,26 @@ Ghi chú:
 | Mục đích | Tài khoản bị "Xóa tài khoản" nhưng còn dữ liệu sẽ được khóa; chủ tài khoản đăng ký lại bằng số cũ thì khôi phục bằng OTP, không mất dữ liệu. |
 | Người thực hiện | Khách + SYSTEM |
 | Thiết bị cần có | Điện thoại 1 (máy KHÁCH); Máy tính có trình duyệt (Web Admin) (tối thiểu 1 điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
-| Tình trạng sẵn sàng | **CẦN HỖ TRỢ KỸ THUẬT** |
+| Loại kiểm thử | Cần kỹ thuật viên cùng làm |
+| Tình trạng sẵn sàng | **CẦN KỸ THUẬT VIÊN LÀM CÙNG** |
 | Phụ thuộc | Không (làm độc lập) |
 | Điều kiện hệ thống cần có | SMS (máy SMS Gateway đang chạy); Web Admin + tài khoản quản trị; Tài khoản SYSTEM (kỹ thuật viên cấp) |
+| Việc cần chuẩn bị trước | Kỹ thuật viên đã bật máy SMS Gateway, gửi thử SMS tới số điện thoại của bạn thành công trước giờ test, và bảo đảm số của bạn được phép nhận SMS. Bạn có SIM thật của số đó trong tay. Bạn đã làm xong các test ghi ở cột "Phụ thuộc" (dữ liệu từ test trước còn đó). |
+| Phân công khi đang test | Kỹ thuật viên/SYSTEM làm bước 1. Kỹ thuật viên (SYSTEM) làm bước 1 trên Web Admin. Bạn làm bước 2-5 trên điện thoại. |
+| Nếu thiếu điều kiện | Nếu kỹ thuật viên/SYSTEM chưa có mặt: đánh dấu BLOCKED, ghi "chờ kỹ thuật viên", hẹn giờ rồi chuyển sang test kế tiếp (hầu hết test sau không phụ thuộc test này trừ khi cột "Phụ thuộc" ghi tên nó). |
 | Điều kiện ban đầu | Tài khoản phụ KH-X đã có dữ liệu (từng đặt đơn đã hoàn thành). SYSTEM đăng nhập Web Admin. |
 | Dữ liệu nhập | Không cần nhập dữ liệu riêng. |
 | Ghi chú đặc biệt | Dùng một tài khoản phụ có dữ liệu liên quan (ví dụ đã có từng đặt đơn), KHÔNG dùng tài khoản chính. Cần quyền SYSTEM. |
 
 | Bước | Việc cần làm | Kết quả mong đợi |
 |---|---|---|
-| 1 | Web Admin > Người dùng > mở KH-X > "Xóa tài khoản" > xác nhận. | Hộp thoại nói rõ tài khoản có dữ liệu thì không xóa mà chuyển sang khóa theo yêu cầu xóa; sau xác nhận trạng thái hiện đã khóa. |
+| 1 | [KỸ THUẬT VIÊN/SYSTEM làm, bạn quan sát và chụp màn hình] Web Admin > Người dùng > mở KH-X > "Xóa tài khoản" > xác nhận. | Hộp thoại nói rõ tài khoản có dữ liệu thì không xóa mà chuyển sang khóa theo yêu cầu xóa; sau xác nhận trạng thái hiện đã khóa. |
 | 2 | Trên điện thoại, đăng nhập bằng KH-X. | Bị chặn với thông báo tài khoản đã khóa theo yêu cầu xóa. |
 | 3 | Chọn "Tạo tài khoản" bằng đúng số KH-X. | Hiện cảnh báo "Tài khoản này đã khóa theo yêu cầu xóa" cùng nút "Khôi phục tài khoản". |
 | 4 | Chạm "Khôi phục tài khoản", xác minh bằng mã SMS và đặt mật khẩu mới. | Hiện "Đã khôi phục tài khoản" / "Tài khoản đã được mở khóa với mật khẩu mới…". |
 | 5 | Đăng nhập bằng mật khẩu mới và mở "Đơn hàng". | Lịch sử đơn cũ của KH-X vẫn còn. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Không cần (tài khoản phụ).
 
@@ -1655,10 +1689,14 @@ Ghi chú:
 | Mục đích | Không được khóa người đang có đơn hay yêu cầu giao chưa kết thúc để tránh mất đơn. |
 | Người thực hiện | ADMIN/SYSTEM |
 | Thiết bị cần có | Máy tính có trình duyệt (Web Admin) (tối thiểu 1 điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
-| Tình trạng sẵn sàng | **CẦN HỖ TRỢ KỸ THUẬT** |
+| Loại kiểm thử | Chuẩn bị trước, người mới tự làm |
+| Tình trạng sẵn sàng | **CẦN CHUẨN BỊ TRƯỚC** |
 | Phụ thuộc | TC-CUS-025 |
 | Điều kiện hệ thống cần có | Web Admin + tài khoản quản trị; Tài khoản SYSTEM (kỹ thuật viên cấp) |
+| **Có thể chặn thử nghiệm bên ngoài** | Sai quyền (xem/làm việc không được phép): Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. |
+| Việc cần chuẩn bị trước | SYSTEM đã tạo và kích hoạt sẵn tài khoản ADMIN-1 (và ADMIN-2 nếu test cần) với đúng các quyền test yêu cầu, rồi đưa bạn số điện thoại/mật khẩu qua kênh riêng. Ứng dụng Authenticator đã cài trên điện thoại của bạn. Bạn đã làm xong các test ghi ở cột "Phụ thuộc" (dữ liệu từ test trước còn đó). |
+| Phân công khi đang test | Sau khi chuẩn bị xong, người mới tự làm toàn bộ các bước. |
+| Nếu thiếu điều kiện | Nếu phần chuẩn bị ở trên CHƯA xong: đánh dấu BLOCKED, ghi điều kiện còn thiếu vào Ghi chú kết quả, báo Người phụ trách và chuyển sang test kế tiếp. Không tự làm thay phần của kỹ thuật viên. |
 | Điều kiện ban đầu | KH-A có một đơn đang xử lý (chưa kết thúc). |
 | Dữ liệu nhập | Không cần nhập dữ liệu riêng. |
 
@@ -1666,9 +1704,9 @@ Ghi chú:
 |---|---|---|
 | 1 | Mở chi tiết KH-A trong Người dùng, bấm "Khóa", điền lý do, xác nhận. | Không khóa được; hiện "Không thể khóa lúc này: tài khoản còn đơn hàng hoặc đơn giao hàng đang xử lý. Đơn đã hoàn thành hoặc đã hủy không cản trở việc khóa." |
 | 2 | Hủy/hoàn tất đơn rồi khóa lại. | Khóa được (khi hết đơn đang xử lý). |
-| 3 | Mở khóa. | Mở khóa thành công (xem thêm TC-ACC-027). |
+| 3 | Mở lại chi tiết KH-A trên Web Admin, chạm "Mở khóa" và xác nhận. | Mở khóa thành công: trạng thái tài khoản về hoạt động (xem thêm TC-ACC-027). |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Đảm bảo KH-A được mở khóa.
 
@@ -1695,22 +1733,25 @@ Ghi chú:
 | Mục đích | Admin có quyền "Quản lý hoạt động quán" dừng quán vi phạm; không dừng được khi quán còn đơn chưa kết thúc. |
 | Người thực hiện | ADMIN (có quyền Quản lý hoạt động quán) / SYSTEM |
 | Thiết bị cần có | Máy tính có trình duyệt (Web Admin) (tối thiểu 1 điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
-| Tình trạng sẵn sàng | **CẦN HỖ TRỢ KỸ THUẬT** |
+| Loại kiểm thử | Chuẩn bị trước, người mới tự làm |
+| Tình trạng sẵn sàng | **CẦN CHUẨN BỊ TRƯỚC** |
 | Phụ thuộc | TC-SHOP-011 |
 | Điều kiện hệ thống cần có | Web Admin + tài khoản quản trị; Tài khoản SYSTEM (kỹ thuật viên cấp) |
+| Việc cần chuẩn bị trước | SYSTEM đã tạo và kích hoạt sẵn tài khoản ADMIN-1 (và ADMIN-2 nếu test cần) với đúng các quyền test yêu cầu, rồi đưa bạn số điện thoại/mật khẩu qua kênh riêng. Ứng dụng Authenticator đã cài trên điện thoại của bạn. Bạn đã làm xong các test ghi ở cột "Phụ thuộc" (dữ liệu từ test trước còn đó). |
+| Phân công khi đang test | Sau khi chuẩn bị xong, người mới tự làm toàn bộ các bước. |
+| Nếu thiếu điều kiện | Nếu phần chuẩn bị ở trên CHƯA xong: đánh dấu BLOCKED, ghi điều kiện còn thiếu vào Ghi chú kết quả, báo Người phụ trách và chuyển sang test kế tiếp. Không tự làm thay phần của kỹ thuật viên. |
 | Điều kiện ban đầu | Một quán thử không có đơn đang chạy (Quán Test B). Một quán khác có đơn đang xử lý (Quán Test A, đang có đơn). |
 | Dữ liệu nhập | Lý do: "TEST vô hiệu hóa quán" (1-500 ký tự). |
 
 | Bước | Việc cần làm | Kết quả mong đợi |
 |---|---|---|
-| 1 | Mở chi tiết quán có đơn đang xử lý, bấm "Vô hiệu hóa quán", nhập lý do, xác nhận. | Bị từ chối: quán còn đơn/yêu cầu giao chưa kết thúc (SHOP_HAS_OPEN_WORK, hiện thành câu tiếng Việt về việc đang xử lý). |
+| 1 | Mở chi tiết quán có đơn đang xử lý, bấm "Vô hiệu hóa quán", nhập lý do, xác nhận. | Bị từ chối: quán còn đơn/yêu cầu giao chưa kết thúc (thông báo tiếng Việt nói quán còn việc đang xử lý). |
 | 2 | Mở chi tiết quán KHÔNG có đơn, "Vô hiệu hóa quán", nhập lý do, xác nhận. | Hiện "Đã vô hiệu hóa quán."; trạng thái hồ sơ "Đã bị vô hiệu hóa"; có dòng trong lịch sử quản lý với lý do. |
 | 3 | Chủ quán mở 11Food, vào quản lý quán. | Hiện "Quán đã bị vô hiệu hóa. Bạn không thể chỉnh sửa hồ sơ." / "Quán đã bị vô hiệu hóa nên không thể sửa món." |
 | 4 | Khách tìm quán (xem TC-CUS-014). | Không thấy quán. |
 | 5 | Admin bấm "Kích hoạt lại quán" và xác nhận. | Hiện "Đã kích hoạt lại quán."; quán hoạt động trở lại theo giờ mở cửa. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Quán phải được kích hoạt lại ở bước 5.
 
@@ -1737,10 +1778,13 @@ Ghi chú:
 | Mục đích | Admin dừng một shipper vi phạm: shipper không nhận đơn mới nhưng đơn đang giao không bị hủy. |
 | Người thực hiện | ADMIN (có quyền Khóa) |
 | Thiết bị cần có | Máy tính có trình duyệt (Web Admin); Điện thoại 3 (máy SHIPPER) (tối thiểu 1 điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
-| Tình trạng sẵn sàng | **CẦN HỖ TRỢ KỸ THUẬT** |
+| Loại kiểm thử | Chuẩn bị trước, người mới tự làm |
+| Tình trạng sẵn sàng | **CẦN CHUẨN BỊ TRƯỚC** |
 | Phụ thuộc | TC-ADM-017 |
 | Điều kiện hệ thống cần có | Web Admin + tài khoản quản trị |
+| Việc cần chuẩn bị trước | SYSTEM đã tạo và kích hoạt sẵn tài khoản ADMIN-1 (và ADMIN-2 nếu test cần) với đúng các quyền test yêu cầu, rồi đưa bạn số điện thoại/mật khẩu qua kênh riêng. Ứng dụng Authenticator đã cài trên điện thoại của bạn. Bạn đã làm xong các test ghi ở cột "Phụ thuộc" (dữ liệu từ test trước còn đó). |
+| Phân công khi đang test | Sau khi chuẩn bị xong, người mới tự làm toàn bộ các bước. |
+| Nếu thiếu điều kiện | Nếu phần chuẩn bị ở trên CHƯA xong: đánh dấu BLOCKED, ghi điều kiện còn thiếu vào Ghi chú kết quả, báo Người phụ trách và chuyển sang test kế tiếp. Không tự làm thay phần của kỹ thuật viên. |
 | Điều kiện ban đầu | SP-B (không có đơn đang giao) đang online. |
 | Dữ liệu nhập | Lý do: "TEST khóa hoạt động". |
 
@@ -1750,7 +1794,7 @@ Ghi chú:
 | 2 | Shipper kiểm tra 11Ship. | Không nhận đơn mới; có thông báo về việc bị khóa; đơn đang giao (nếu có) vẫn hoàn tất được ("Đơn đã nhận và số dư ví của bạn không bị ảnh hưởng."). |
 | 3 | Admin "Mở lại hoạt động". | Hiện "Shipper quay lại trạng thái hoạt động với nhận đơn đang tắt." Shipper tự bật online khi đủ điều kiện. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** SP-B được mở lại.
 
@@ -1777,10 +1821,13 @@ Ghi chú:
 | Mục đích | Khóa shipper dừng nhận đơn; vẫn cho xem ví và gửi yêu cầu rút theo quy định. |
 | Người thực hiện | Shipper + ADMIN |
 | Thiết bị cần có | Điện thoại 3 (máy SHIPPER); Máy tính có trình duyệt (Web Admin) (tối thiểu 1 điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
-| Tình trạng sẵn sàng | **CẦN HỖ TRỢ KỸ THUẬT** |
+| Loại kiểm thử | Chuẩn bị trước, người mới tự làm |
+| Tình trạng sẵn sàng | **CẦN CHUẨN BỊ TRƯỚC** |
 | Phụ thuộc | TC-ADM-018 |
 | Điều kiện hệ thống cần có | Web Admin + tài khoản quản trị; Tiền thử nghiệm trong ví shipper (Owner duyệt) |
+| Việc cần chuẩn bị trước | SYSTEM đã tạo và kích hoạt sẵn tài khoản ADMIN-1 (và ADMIN-2 nếu test cần) với đúng các quyền test yêu cầu, rồi đưa bạn số điện thoại/mật khẩu qua kênh riêng. Ứng dụng Authenticator đã cài trên điện thoại của bạn. Bạn đã làm xong các test ghi ở cột "Phụ thuộc" (dữ liệu từ test trước còn đó). |
+| Phân công khi đang test | Sau khi chuẩn bị xong, người mới tự làm toàn bộ các bước. |
+| Nếu thiếu điều kiện | Nếu phần chuẩn bị ở trên CHƯA xong: đánh dấu BLOCKED, ghi điều kiện còn thiếu vào Ghi chú kết quả, báo Người phụ trách và chuyển sang test kế tiếp. Không tự làm thay phần của kỹ thuật viên. |
 | Điều kiện ban đầu | Một tài khoản shipper phụ (SP-B), không có đơn đang giao. Admin có quyền khóa. |
 | Dữ liệu nhập | Không cần nhập dữ liệu riêng. |
 
@@ -1791,7 +1838,7 @@ Ghi chú:
 | 3 | Thử "Bật online". | Không bật được ("Tài khoản đang bị tạm khóa"). |
 | 4 | Admin mở khóa. | Shipper bật lại online được khi ví đủ điều kiện. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Đảm bảo SP-B được mở khóa.
 
@@ -1818,10 +1865,13 @@ Ghi chú:
 | Mục đích | Admin có công cụ xử lý sự cố khi shipper mất liên lạc, hàng bị kẹt hoặc phí/địa chỉ cần sửa sau khi lấy hàng; mọi thao tác phải có lý do và nhật ký. |
 | Người thực hiện | ADMIN (quyền Khóa/Duyệt) / SYSTEM |
 | Thiết bị cần có | Máy tính có trình duyệt (Web Admin); Điện thoại 3 (máy SHIPPER) (tối thiểu 1 điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
-| Tình trạng sẵn sàng | **CẦN HỖ TRỢ KỸ THUẬT** |
+| Loại kiểm thử | Chuẩn bị trước, người mới tự làm |
+| Tình trạng sẵn sàng | **CẦN CHUẨN BỊ TRƯỚC** |
 | Phụ thuộc | TC-ADM-023 |
 | Điều kiện hệ thống cần có | Web Admin + tài khoản quản trị; Tài khoản SYSTEM (kỹ thuật viên cấp) |
+| Việc cần chuẩn bị trước | SYSTEM đã tạo và kích hoạt sẵn tài khoản ADMIN-1 (và ADMIN-2 nếu test cần) với đúng các quyền test yêu cầu, rồi đưa bạn số điện thoại/mật khẩu qua kênh riêng. Ứng dụng Authenticator đã cài trên điện thoại của bạn. Bạn đã làm xong các test ghi ở cột "Phụ thuộc" (dữ liệu từ test trước còn đó). |
+| Phân công khi đang test | Sau khi chuẩn bị xong, người mới tự làm toàn bộ các bước. |
+| Nếu thiếu điều kiện | Nếu phần chuẩn bị ở trên CHƯA xong: đánh dấu BLOCKED, ghi điều kiện còn thiếu vào Ghi chú kết quả, báo Người phụ trách và chuyển sang test kế tiếp. Không tự làm thay phần của kỹ thuật viên. |
 | Điều kiện ban đầu | Chuẩn bị 3 yêu cầu giao DIRECT thử: (1) SP-A đã nhận, CHƯA lấy hàng; (2) SP-A đã lấy hàng, đang giao; (3) một yêu cầu đã bị hủy sau khi lấy hàng và còn hồ sơ hàng mở (TC-FLOW-020). Admin đăng nhập Web Admin. |
 | Dữ liệu nhập | Lý do: "TEST xử lý sự cố". Phí mới: 20000. Địa chỉ mô tả mới: "Số 20 đường Test, tổ 6 (sửa TEST)". |
 
@@ -1835,7 +1885,7 @@ Ghi chú:
 | 6 | (Nếu có hồ sơ phản ánh) Chạm "Chuyển phản ánh (M11)". | Chỉ đánh dấu "Đã chuyển M11" và ghi nhật ký; không tạo phiếu giả. |
 | 7 | ADMIN-2 (chỉ xem) mở cùng trang. | Không có các nút thao tác ("Tài khoản này không có quyền thực hiện thao tác này."). |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Dọn các yêu cầu thử (hủy hoặc hoàn tất).
 
@@ -1862,10 +1912,13 @@ Ghi chú:
 | Mục đích | Hai thao tác xử lý đơn của Admin có lý do bắt buộc, ghi nhật ký, thông báo đúng bên. |
 | Người thực hiện | ADMIN (quyền khóa/duyệt) |
 | Thiết bị cần có | Máy tính có trình duyệt (Web Admin); Điện thoại 1 (máy KHÁCH) (tối thiểu 1 điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
-| Tình trạng sẵn sàng | **CẦN HỖ TRỢ KỸ THUẬT** |
+| Loại kiểm thử | Chuẩn bị trước, người mới tự làm |
+| Tình trạng sẵn sàng | **CẦN CHUẨN BỊ TRƯỚC** |
 | Phụ thuộc | TC-ADM-021 |
 | Điều kiện hệ thống cần có | Web Admin + tài khoản quản trị |
+| Việc cần chuẩn bị trước | SYSTEM đã tạo và kích hoạt sẵn tài khoản ADMIN-1 (và ADMIN-2 nếu test cần) với đúng các quyền test yêu cầu, rồi đưa bạn số điện thoại/mật khẩu qua kênh riêng. Ứng dụng Authenticator đã cài trên điện thoại của bạn. Bạn đã làm xong các test ghi ở cột "Phụ thuộc" (dữ liệu từ test trước còn đó). |
+| Phân công khi đang test | Sau khi chuẩn bị xong, người mới tự làm toàn bộ các bước. |
+| Nếu thiếu điều kiện | Nếu phần chuẩn bị ở trên CHƯA xong: đánh dấu BLOCKED, ghi điều kiện còn thiếu vào Ghi chú kết quả, báo Người phụ trách và chuyển sang test kế tiếp. Không tự làm thay phần của kỹ thuật viên. |
 | Điều kiện ban đầu | Một đơn thử "Đang chuẩn bị" (chưa lấy hàng). |
 | Dữ liệu nhập | Lý do: "TEST Admin hủy đơn". |
 
@@ -1876,7 +1929,7 @@ Ghi chú:
 | 3 | Khách mở đơn trên 11Food. | Hiện đã hủy; có thông báo cho khách. |
 | 4 | Tìm nút "Hủy đơn món" ở đơn mà shipper ĐÃ lấy hàng. | Không có/không dùng được ("Không dùng được sau khi shipper đã lấy hàng."). |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Không cần khôi phục: test này không làm thay đổi dữ liệu.
 
@@ -1918,7 +1971,7 @@ Ghi chú:
 | 4 | Nếu khách đang ở trang quán đó và thử thêm món/đặt đơn. | Báo quán không khả dụng ("Quán hiện không khả dụng" / "Quán hiện chưa hiển thị cho khách"). |
 | 5 | Admin kích hoạt lại quán. | Quán hiện lại cho khách. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Quán phải được kích hoạt lại ở bước 5.
 
@@ -1959,7 +2012,7 @@ Ghi chú:
 | 3 | Thử thêm một món vào giỏ và "Gửi đơn" khi đang mất mạng. | Không tạo đơn; báo lỗi mất kết nối hoặc "Chưa lưu được giỏ"/"Giỏ trên máy có thể mới hơn giỏ trên máy chủ. Sẽ lưu lại khi có mạng." (xem TC-FLOW-025 về nhánh chưa biết kết quả). |
 | 4 | Tắt Chế độ máy bay và chạm "Thử lại". | Thanh lỗi biến mất; dữ liệu cập nhật; giỏ còn đúng. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Tắt Chế độ máy bay.
 
@@ -1997,10 +2050,10 @@ Ghi chú:
 |---|---|---|
 | 1 | Ở chi tiết đơn đã nhận, bấm "Đã nhận hàng" rồi xác nhận, và NGAY LẬP TỨC bật Chế độ máy bay. | Ứng dụng báo chưa xác nhận được kết quả ("Chưa xác nhận được") hoặc báo mất kết nối; không tự giả định thành công. |
 | 2 | Tắt Chế độ máy bay, mở lại chi tiết đơn (kéo làm mới/ "Tải lại"). | Trạng thái hiện đúng thực tế trên máy chủ (đã lấy hàng hoặc chưa). Nếu chưa, bấm lại được; nếu rồi, chỉ còn "Giao thành công". |
-| 3 | Với đơn đang giao: bấm "Giao thành công" và bật Chế độ máy bay ngay. | Như bước 1. |
+| 3 | Với đơn đang giao: bấm "Giao thành công", xác nhận, và bật Chế độ máy bay ngay. | Ứng dụng báo chưa xác nhận được kết quả ("Chưa xác nhận được") hoặc báo mất kết nối; không tự giả định đơn đã hoàn thành. |
 | 4 | Tắt Chế độ máy bay, kiểm tra trạng thái và ví. | Đơn hoàn thành đúng một lần hoặc chưa hoàn thành (cả hai đều chấp nhận được nếu ứng dụng nói đúng); hoa hồng thu tối đa MỘT lần; nếu đơn chưa hoàn thành thì bấm lại được và vẫn chỉ thu một lần. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu hoa hồng bị thu hai lần hoặc trạng thái đơn hiển thị sai so với thực tế.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu hoa hồng bị thu hai lần hoặc trạng thái đơn hiển thị sai so với thực tế. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -2040,7 +2093,7 @@ Ghi chú:
 | 2 | Tắt Chế độ máy bay và làm mới danh sách. | Đơn ở trạng thái thật ("Đang chuẩn bị" hoặc vẫn "Chờ xác nhận"); không có đơn trùng. |
 | 3 | Với đơn "Đang chuẩn bị": bấm "Gọi shipper" > chọn người trả phí, bật Chế độ máy bay ngay, rồi tắt. | Sau khi có mạng chỉ MỘT yêu cầu giao tồn tại (xem phần giao hàng của đơn), không có lần gọi thứ hai ngoài ý muốn. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu có hai yêu cầu giao cho một đơn.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu có hai yêu cầu giao cho một đơn. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -2082,7 +2135,7 @@ Ghi chú:
 | 3 | Mở lại 11Ship. | Vào thẳng tài khoản SP-A; đơn vẫn "Đang thực hiện" ở trạng thái "Đang giao"; có nút "Giao thành công". |
 | 4 | Bấm "Giao thành công". | Hoàn thành bình thường, một lần. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -2123,7 +2176,7 @@ Ghi chú:
 | 3 | Nhìn dòng trạng thái vị trí ở Trang chủ. | Dịch vụ vị trí được khôi phục ("Đang lấy vị trí…"/"Đang chia sẻ vị trí") hoặc hiện hướng dẫn rõ vì sao chưa chạy (quyền, GPS) cùng nút "Thử lại". |
 | 4 | Hoàn tất đơn rồi bấm "Tắt online"; khởi động lại điện thoại lần nữa. | Sau khởi động KHÔNG tự bật online và không còn chia sẻ vị trí. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -2163,7 +2216,7 @@ Ghi chú:
 | 2 | Đợi 2-3 phút; quán làm mới chi tiết đơn. | Phần vị trí shipper hiện cũ/mất kết nối: "Vị trí cũ"/"Vị trí đã cũ. Có thể shipper đã di chuyển." hoặc "Mất kết nối vị trí". Không hiện vị trí mới giả. |
 | 3 | Shipper bật lại GPS và chạm "Thử lại". | Vị trí được chia sẻ lại; quán thấy giờ cập nhật mới và trạng thái mới. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -2203,7 +2256,7 @@ Ghi chú:
 | 2 | Khách mở "Trang chủ" 11Food trong nhà kín. | Hiện "Chưa xác định được khu vực theo GPS… Hãy thử định vị lại" và nút "Thử xác định lại khu vực"; ứng dụng không treo. |
 | 3 | Ra nơi thoáng và thử lại. | Lấy được vị trí. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Không cần khôi phục: test này không làm thay đổi dữ liệu.
 
@@ -2230,24 +2283,27 @@ Ghi chú:
 | Mục đích | Vị trí giả không được dùng để lấy khu vực/ghim quán hoặc làm vị trí shipper. |
 | Người thực hiện | Kỹ thuật viên / Người kiểm thử có kinh nghiệm |
 | Thiết bị cần có | Điện thoại 2 (máy QUÁN) (tối thiểu 1 điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
-| Tình trạng sẵn sàng | **CẦN HỖ TRỢ KỸ THUẬT** |
+| Loại kiểm thử | Cần kỹ thuật viên cùng làm |
+| Tình trạng sẵn sàng | **CẦN KỸ THUẬT VIÊN LÀM CÙNG** |
 | Phụ thuộc | Không (làm độc lập) |
-| Điều kiện hệ thống cần có | Không có điều kiện đặc biệt ngoài tài khoản và Internet |
+| Điều kiện hệ thống cần có | Tài khoản SYSTEM (kỹ thuật viên cấp) |
+| Việc cần chuẩn bị trước | Không có việc chuẩn bị thêm ngoài mục "Điều kiện ban đầu". |
+| Phân công khi đang test | Kỹ thuật viên/SYSTEM làm bước 1, 2. Kỹ thuật viên bật "Tùy chọn nhà phát triển" và ứng dụng giả vị trí trên MÁY THỬ riêng; bạn không tự cài. Không bắt buộc với người mới. |
+| Nếu thiếu điều kiện | Nếu kỹ thuật viên/SYSTEM chưa có mặt: đánh dấu BLOCKED, ghi "chờ kỹ thuật viên", hẹn giờ rồi chuyển sang test kế tiếp (hầu hết test sau không phụ thuộc test này trừ khi cột "Phụ thuộc" ghi tên nó). |
 | Điều kiện ban đầu | Điện thoại thử bật "Chọn ứng dụng vị trí giả" với một ứng dụng giả vị trí. |
 | Dữ liệu nhập | Không cần nhập dữ liệu riêng. |
 | Ghi chú đặc biệt | Chỉ thực hiện trên máy thử và khi Người phụ trách cho phép (cần bật "Tùy chọn nhà phát triển" và một ứng dụng giả vị trí). Không bắt buộc với người mới. |
 
 | Bước | Việc cần làm | Kết quả mong đợi |
 |---|---|---|
-| 1 | Mở 11Food, hồ sơ quán, chạm lấy vị trí tại quán. | Ứng dụng từ chối: "Không lấy được vị trí thật từ điện thoại. Bạn vẫn lưu nháp được, nhưng chưa hoàn tất hồ sơ." |
-| 2 | Tắt vị trí giả và thử lại. | Lấy được vị trí thật. |
+| 1 | [KỸ THUẬT VIÊN/SYSTEM làm, bạn quan sát và chụp màn hình] Mở 11Food với tài khoản chủ quán chưa hoàn tất hồ sơ, vào "Hồ sơ cửa hàng", chạm hàng "Địa chỉ lấy hàng" (đang ghi "Chọn địa chỉ"), gõ một địa chỉ vào ô "Địa chỉ" rồi chạm "Vị trí hiện tại". | Ứng dụng KHÔNG nhận vị trí giả: không hiện "Đã lấy vị trí hiện tại" và không ghim vị trí. Hiện thông báo lấy vị trí không thành công bằng tiếng Việt; nếu là thông báo mẫu trong ứng dụng thì có câu "Không lấy được vị trí thật từ điện thoại". Ghi lại nguyên văn thông báo thật vào Ghi chú kết quả (chữ chính xác chưa xác nhận trên máy thật). |
+| 2 | [KỸ THUẬT VIÊN/SYSTEM làm, bạn quan sát và chụp màn hình] Tắt ứng dụng giả vị trí trên máy (kỹ thuật viên làm), quay lại ứng dụng và chạm "Vị trí hiện tại" lần nữa. | Hiện "Đã lấy vị trí hiện tại" với vị trí thật của điện thoại. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Tắt tùy chọn vị trí giả.
 
-**Căn cứ:** `mobile/packages/n11_shared/lib/src/flows/location.dart; mobile/README.md (mock providers refused)`
+**Căn cứ:** `mobile/packages/n11_shared/lib/src/flows/location.dart; mobile/packages/n11_shared/lib/src/flows/location.dart (từ chối vị trí giả)`
 
 **Kiểm thử tự động liên quan (chỉ đối chiếu):** mobile/packages/n11_shared/test/flows_test.dart
 
@@ -2270,10 +2326,13 @@ Ghi chú:
 | Mục đích | Khi máy chủ chậm/bảo trì ứng dụng phải báo thật và không treo. |
 | Người thực hiện | Khách / Shipper |
 | Thiết bị cần có | Điện thoại 1 (máy KHÁCH) (tối thiểu 1 điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
-| Tình trạng sẵn sàng | **CẦN HỖ TRỢ KỸ THUẬT** |
+| Loại kiểm thử | Cần kỹ thuật viên cùng làm |
+| Tình trạng sẵn sàng | **CẦN KỸ THUẬT VIÊN LÀM CÙNG** |
 | Phụ thuộc | Không (làm độc lập) |
-| Điều kiện hệ thống cần có | Không có điều kiện đặc biệt ngoài tài khoản và Internet |
+| Điều kiện hệ thống cần có | Tài khoản SYSTEM (kỹ thuật viên cấp) |
+| Việc cần chuẩn bị trước | Không có việc chuẩn bị thêm ngoài mục "Điều kiện ban đầu". |
+| Phân công khi đang test | Kỹ thuật viên/SYSTEM làm bước 2. Kỹ thuật viên làm chậm/dừng máy chủ thử một lúc ngắn TRƯỚC bước 2 theo quy trình vps-safe-update và khôi phục trước bước 4. Không dừng máy chủ khi đang có người dùng thật. |
+| Nếu thiếu điều kiện | Nếu kỹ thuật viên/SYSTEM chưa có mặt: đánh dấu BLOCKED, ghi "chờ kỹ thuật viên", hẹn giờ rồi chuyển sang test kế tiếp (hầu hết test sau không phụ thuộc test này trừ khi cột "Phụ thuộc" ghi tên nó). |
 | Điều kiện ban đầu | Kỹ thuật viên sẵn sàng làm máy chủ chậm/không phản hồi. |
 | Dữ liệu nhập | Không cần nhập dữ liệu riêng. |
 | Ghi chú đặc biệt | Cần kỹ thuật viên làm chậm/dừng máy chủ thử trong thời gian ngắn theo quy trình vps-safe-update, hoặc dùng mạng rất yếu (3G yếu). KHÔNG dừng máy chủ khi đang có người dùng thật. |
@@ -2281,11 +2340,11 @@ Ghi chú:
 | Bước | Việc cần làm | Kết quả mong đợi |
 |---|---|---|
 | 1 | Khi máy chủ chậm, thực hiện một thao tác đọc (mở tab "Đơn hàng"). | Hiện trạng thái chờ rồi báo "Máy chủ phản hồi quá lâu - Chưa nhận được phản hồi. Vui lòng thử lại." (không treo vô hạn). |
-| 2 | Khi máy chủ báo chưa sẵn sàng. | Hiện "Máy chủ chưa sẵn sàng - Máy chủ đã phản hồi nhưng chưa sẵn sàng phục vụ. Vui lòng thử lại sau ít phút." |
+| 2 | [KỸ THUẬT VIÊN/SYSTEM làm, bạn quan sát và chụp màn hình] Khi máy chủ báo chưa sẵn sàng. | Hiện "Máy chủ chưa sẵn sàng - Máy chủ đã phản hồi nhưng chưa sẵn sàng phục vụ. Vui lòng thử lại sau ít phút." |
 | 3 | Thử một thao tác ghi (ví dụ gửi đơn) trong lúc này. | Không tạo đơn hoặc báo "Chưa biết đơn đã gửi chưa" và cho kiểm tra lại; không tạo đơn trùng. |
 | 4 | Khi máy chủ trở lại bình thường, chạm "Thử lại". | Mọi thứ phục hồi. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Kỹ thuật viên khôi phục máy chủ.
 
@@ -2326,7 +2385,7 @@ Ghi chú:
 | 2 | Kiểm tra ví shipper. | Không có hoa hồng bị thu; không có tiền tạm giữ treo vĩnh viễn. |
 | 3 | Kiểm tra màn hình quán và shipper. | Hai bên cùng thấy một trạng thái cuối nhất quán. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu hai bên thấy hai trạng thái khác nhau hoặc tiền tạm giữ bị treo.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu hai bên thấy hai trạng thái khác nhau hoặc tiền tạm giữ bị treo. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -2366,7 +2425,7 @@ Ghi chú:
 | 1 | Khách xác nhận hủy và quán bấm "Xác nhận đơn" cùng lúc. | Chỉ có một kết quả: đơn "Đã hủy" HOẶC đơn "Đang chuẩn bị". Bên thua nhận thông báo/báo lỗi rõ ràng ("Đơn vừa được thay đổi ở nơi khác…"). |
 | 2 | Đối chiếu màn hình khách, quán. | Hai bên thấy cùng một trạng thái cuối. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu hai bên thấy hai trạng thái khác nhau.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu hai bên thấy hai trạng thái khác nhau. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -2393,20 +2452,23 @@ Ghi chú:
 | Mục đích | Không ghi đè mù quáng; bên thua phải tải lại rồi quyết định. |
 | Người thực hiện | SYSTEM + ADMIN |
 | Thiết bị cần có | Máy tính có trình duyệt (Web Admin) (tối thiểu chỉ cần máy tính điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
-| Tình trạng sẵn sàng | **CẦN HỖ TRỢ KỸ THUẬT** |
+| Loại kiểm thử | Cần kỹ thuật viên cùng làm |
+| Tình trạng sẵn sàng | **CẦN KỸ THUẬT VIÊN LÀM CÙNG** |
 | Phụ thuộc | Không (làm độc lập) |
 | Điều kiện hệ thống cần có | Web Admin + tài khoản quản trị; Tài khoản SYSTEM (kỹ thuật viên cấp) |
+| Việc cần chuẩn bị trước | SYSTEM đã tạo và kích hoạt sẵn tài khoản ADMIN-1 (và ADMIN-2 nếu test cần) với đúng các quyền test yêu cầu, rồi đưa bạn số điện thoại/mật khẩu qua kênh riêng. Ứng dụng Authenticator đã cài trên điện thoại của bạn. Bạn đã làm xong các test ghi ở cột "Phụ thuộc" (dữ liệu từ test trước còn đó). |
+| Phân công khi đang test | Kỹ thuật viên/SYSTEM làm bước 1. Kỹ thuật viên (SYSTEM) dùng trình duyệt 1 ở bước 1; bạn dùng ADMIN-1 ở trình duyệt 2 (bước 2-3). |
+| Nếu thiếu điều kiện | Nếu kỹ thuật viên/SYSTEM chưa có mặt: đánh dấu BLOCKED, ghi "chờ kỹ thuật viên", hẹn giờ rồi chuyển sang test kế tiếp (hầu hết test sau không phụ thuộc test này trừ khi cột "Phụ thuộc" ghi tên nó). |
 | Điều kiện ban đầu | Hai trình duyệt đăng nhập hai tài khoản (SYSTEM và ADMIN-1 có quyền) cùng mở chi tiết một quán thử. |
 | Dữ liệu nhập | Không cần nhập dữ liệu riêng. |
 
 | Bước | Việc cần làm | Kết quả mong đợi |
 |---|---|---|
-| 1 | Trình duyệt 1: "Vô hiệu hóa quán" và xác nhận. | Thành công. |
+| 1 | [KỸ THUẬT VIÊN/SYSTEM làm, bạn quan sát và chụp màn hình] Trình duyệt 1: mở chi tiết quán thử, chạm "Vô hiệu hóa quán", nhập lý do và xác nhận. | Hiện "Đã vô hiệu hóa quán."; trạng thái quán là "Đã bị vô hiệu hóa". |
 | 2 | Trình duyệt 2 (chưa tải lại): cũng bấm "Vô hiệu hóa quán" và xác nhận. | Báo "Trạng thái quán đã thay đổi nên thao tác này không còn phù hợp. Đóng hộp thoại để xem trạng thái hiện tại." Không ghi trùng. |
 | 3 | Trình duyệt 1 "Kích hoạt lại quán". | Quán hoạt động lại. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Quán được kích hoạt lại.
 
@@ -2437,6 +2499,7 @@ Ghi chú:
 | Tình trạng sẵn sàng | **SẴN SÀNG** |
 | Phụ thuộc | TC-FLOW-003 |
 | Điều kiện hệ thống cần có | Không có điều kiện đặc biệt ngoài tài khoản và Internet |
+| **Có thể chặn thử nghiệm bên ngoài** | Giao dịch tài chính (ví, nạp, rút, hoa hồng): Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). |
 | Điều kiện ban đầu | Một yêu cầu giao DIRECT mới; ghi số dư ví SP-A (B0). |
 | Dữ liệu nhập | Không cần nhập dữ liệu riêng. |
 
@@ -2447,7 +2510,7 @@ Ghi chú:
 | 3 | Bấm "Giao thành công" > nút xác nhận 5 lần liên tiếp. | Chỉ hoàn thành một lần; có đúng MỘT dòng "Hoa hồng". |
 | 4 | Kiểm tra ví. | Tổng số dư = B0 - hoa hồng (đúng một lần). |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu có hơn một dòng hoa hồng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu có hơn một dòng hoa hồng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Không cần.
 
@@ -2478,6 +2541,7 @@ Ghi chú:
 | Tình trạng sẵn sàng | **SẴN SÀNG** |
 | Phụ thuộc | TC-DRV-002 |
 | Điều kiện hệ thống cần có | Thông báo đẩy (Firebase) nếu muốn kiểm push |
+| **Có thể chặn thử nghiệm bên ngoài** | Thông báo/đồng ý về vị trí nền: Shipper online chia sẻ vị trí cả khi tắt màn hình; phải có thông báo/đồng ý rõ ràng trước khi để shipper ngoài dùng. |
 | Điều kiện ban đầu | SP-A online, đủ điều kiện, trong 3 km quanh quán. |
 | Dữ liệu nhập | Không cần nhập dữ liệu riêng. |
 | Ghi chú đặc biệt | Thông báo đẩy khi màn hình khóa cần Firebase đã cấu hình (TC-NOTI-001). Nếu chưa có, đơn mới chỉ thấy khi mở app; ghi nhận. |
@@ -2489,7 +2553,7 @@ Ghi chú:
 | 3 | Mở khóa, chạm thông báo. | Mở đúng danh sách/đơn "Có thể nhận". |
 | 4 | Admin xem vị trí shipper (nếu đang giữ đơn) hoặc quán xem vị trí. | Vị trí được cập nhật liên tục khoảng 1 phút một lần trong thời gian khóa màn hình (ghi nhận số lần cập nhật). |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Tắt online.
 
@@ -2529,7 +2593,7 @@ Ghi chú:
 | 1 | Bật "Tiết kiệm pin" của điện thoại, khóa màn hình 5 phút. | Ghi nhận: vị trí có còn cập nhật? Thông báo có còn đến? |
 | 2 | Mở 11Ship. | Đơn còn; nếu vị trí bị gián đoạn có hướng dẫn "Thử lại"/"Mở cài đặt"; không có số liệu sai. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Tắt tiết kiệm pin.
 
@@ -2569,7 +2633,7 @@ Ghi chú:
 | 2 | Quán mở đơn và đọc ghi chú. | Hiện NGUYÊN VĂN từng ký tự như chữ thường (không in đậm, không chạy script, emoji hiển thị hoặc ô vuông). |
 | 3 | Admin mở đơn ở Web Admin > Đơn hàng. | Cũng hiện nguyên văn, không có cửa sổ cảnh báo lạ nào hiện ra. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu có cửa sổ cảnh báo của script hoặc giao diện bị vỡ do nội dung nhập.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu có cửa sổ cảnh báo của script hoặc giao diện bị vỡ do nội dung nhập. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -2593,28 +2657,29 @@ Ghi chú:
 
 | Mục | Nội dung |
 |---|---|
-| Mục đích | Giờ điện thoại sai làm xác thực thiết bị thất bại; ứng dụng phải hướng dẫn kiểm tra giờ. |
+| Mục đích | Giờ điện thoại sai nhiều có thể làm kết nối bảo mật tới máy chủ bị từ chối. Kiểm tra ứng dụng không đăng nhập sai/không treo, báo lỗi dễ hiểu, và dùng lại bình thường sau khi chỉnh giờ đúng. |
 | Người thực hiện | Khách / Shipper |
 | Thiết bị cần có | Điện thoại 1 (máy KHÁCH) (tối thiểu 1 điện thoại) |
 | Loại kiểm thử | Thủ công |
-| Tình trạng sẵn sàng | **SẴN SÀNG** |
+| Tình trạng sẵn sàng | **CẦN XÁC MINH** |
 | Phụ thuộc | Không (làm độc lập) |
 | Điều kiện hệ thống cần có | Không có điều kiện đặc biệt ngoài tài khoản và Internet |
-| Điều kiện ban đầu | Đăng xuất. Tắt "Ngày và giờ tự động" và chỉnh giờ điện thoại lệch hơn 1 ngày. |
+| Điều kiện ban đầu | Đăng xuất. Tắt "Ngày và giờ tự động" (Cài đặt > Hệ thống > Ngày và giờ) và chỉnh ngày điện thoại lệch hơn 1 ngày so với hôm nay. |
 | Dữ liệu nhập | Không cần nhập dữ liệu riêng. |
+| Ghi chú đặc biệt | Từ bản 23/10 đăng nhập chỉ dùng số điện thoại + mật khẩu, nên lỗi "kiểm tra giờ của điện thoại" của cơ chế xác thực thiết bị cũ không còn là kết quả chuẩn. Kết quả thực tế khi giờ sai chưa được xác nhận: có thể báo lỗi chứng chỉ bảo mật ("Chứng chỉ bảo mật của máy chủ không hợp lệ…"), lỗi kết nối, hoặc vẫn đăng nhập được. Test này CHỈ GHI NHẬN thông báo thực tế (chụp màn hình) để Người phụ trách đối chiếu; mọi kết quả đều chấp nhận trừ các trường hợp FAIL nêu ở cột "Cách kết luận". |
 
 | Bước | Việc cần làm | Kết quả mong đợi |
 |---|---|---|
-| 1 | Mở 11Food và đăng nhập. | Hiện lỗi "Máy chủ chưa xác nhận được thiết bị. Hãy kiểm tra giờ của điện thoại rồi thử lại." (hoặc thông báo tương tự), không vào được. |
-| 2 | Bật lại "Ngày và giờ tự động", đăng nhập lại. | Đăng nhập thành công. |
+| 1 | Mở 11Food, tab "Tài khoản" > "Đăng nhập", nhập số điện thoại và mật khẩu KH-A rồi chạm "Đăng nhập". | Một trong hai kết quả đều chấp nhận: (a) đăng nhập thành công; (b) hiện thông báo lỗi bằng tiếng Việt dễ hiểu (ví dụ về chứng chỉ bảo mật hoặc kết nối) và vẫn ở màn đăng nhập. Chụp màn hình và chép nguyên văn thông báo vào Ghi chú kết quả. |
+| 2 | Bật lại "Ngày và giờ tự động", chờ 10 giây, quay lại ứng dụng và chạm "Đăng nhập" (hoặc "Thử lại") lần nữa. | Đăng nhập thành công, vào được tab "Tài khoản" với tên KH-A. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: bước 2 đăng nhập thành công, và ở bước 1 không có hiện tượng nào nêu ở FAIL. FAIL: ứng dụng treo/tắt đột ngột, hiện chữ lỗi kỹ thuật tiếng Anh/mã lỗi viết hoa, đăng nhập vào nhầm tài khoản, hoặc sau khi chỉnh giờ đúng vẫn không đăng nhập được. BLOCKED: không chỉnh được giờ điện thoại. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
-**Cách khôi phục để chạy lại:** Bật lại ngày giờ tự động.
+**Cách khôi phục để chạy lại:** Bật lại "Ngày và giờ tự động" và kiểm tra giờ đúng.
 
-**Căn cứ:** `mobile/packages/n11_shared/lib/src/account/account_views.dart ("Hãy kiểm tra giờ của điện thoại")`
+**Căn cứ:** `docs/current/M01-password-sessions-20261023.md (đăng nhập chỉ cần mật khẩu); mobile/packages/n11_shared/lib/src/account/account_views.dart (thông báo chứng chỉ bảo mật/kết nối)`
 
-**Kiểm thử tự động liên quan (chỉ đối chiếu):** tests/integration/native-device-binding.int.spec.ts
+**Kiểm thử tự động liên quan (chỉ đối chiếu):** mobile/packages/n11_shared/test (lỗi TLS/kết nối); không có test tự động cho giờ điện thoại sai
 
 **GHI KẾT QUẢ** (chép vào file TESTCASE_11SHIP.csv):
 
@@ -2635,10 +2700,13 @@ Ghi chú:
 | Mục đích | Ứng dụng hỗ trợ từ Android 8.0; mỗi đời máy có cách hỏi quyền khác nhau (vị trí, thông báo, cài APK). |
 | Người thực hiện | Người kiểm thử |
 | Thiết bị cần có | Điện thoại 1 (máy KHÁCH); Điện thoại 3 (máy SHIPPER) (tối thiểu 1 điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
+| Loại kiểm thử | Chuẩn bị trước, người mới tự làm |
 | Tình trạng sẵn sàng | **CẦN XÁC MINH** |
 | Phụ thuộc | Không (làm độc lập) |
 | Điều kiện hệ thống cần có | Không có điều kiện đặc biệt ngoài tài khoản và Internet |
+| Việc cần chuẩn bị trước | Có ít nhất một điện thoại Android 8.0 trở lên; nếu có nhiều đời máy thì mỗi máy ghi một dòng kết quả. |
+| Phân công khi đang test | Sau khi chuẩn bị xong, người mới tự làm toàn bộ các bước. |
+| Nếu thiếu điều kiện | Nếu phần chuẩn bị ở trên CHƯA xong: đánh dấu BLOCKED, ghi điều kiện còn thiếu vào Ghi chú kết quả, báo Người phụ trách và chuyển sang test kế tiếp. Không tự làm thay phần của kỹ thuật viên. |
 | Điều kiện ban đầu | Một điện thoại thật Android 8.0+ (ghi hãng, model, đời Android). |
 | Dữ liệu nhập | Không cần nhập dữ liệu riêng. |
 | Ghi chú đặc biệt | Chỉ làm với các điện thoại thật có sẵn; mỗi máy một dòng kết quả. Không bắt buộc có đủ 5 đời máy. Ghi rõ hãng + đời Android. |
@@ -2650,7 +2718,7 @@ Ghi chú:
 | 3 | Thực hiện một vòng ngắn: tìm quán, thêm giỏ (khách); bật online (shipper). | Chạy được; không có màn trắng, không crash. |
 | 4 | Chụp màn hình các màn chính. | Chữ không bị cắt, nút bấm được. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Đăng xuất khỏi các tài khoản đã dùng trong test này (tab "Tài khoản" > "Đăng xuất").
 
@@ -2689,7 +2757,7 @@ Ghi chú:
 | 1 | Mở 11Food, duyệt Trang chủ, quán, giỏ và màn "Xác nhận đơn". | Chữ không bị cắt khuất nút "Gửi đơn"; vẫn cuộn được. |
 | 2 | Xoay ngang điện thoại ở màn "Giỏ hàng". | Không mất dữ liệu đã nhập; không crash. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Đặt lại cỡ chữ.
 
@@ -2729,11 +2797,11 @@ Ghi chú:
 | 2 | Trên Điện thoại 2 thao tác bất kỳ (ví dụ làm mới danh sách). | Bị đăng xuất ("Phiên đăng nhập đã kết thúc"). |
 | 3 | Trên Điện thoại 1 tiếp tục "Gọi shipper". | Thành công, không mất dữ liệu đơn. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
-**Căn cứ:** `mobile/README.md (login from another phone ends the sessions); apps/backend/src/client-auth`
+**Căn cứ:** `docs/current/M01-password-sessions-20261023.md (đăng nhập mới thu hồi phiên cũ); apps/backend/src/client-auth`
 
 **Kiểm thử tự động liên quan (chỉ đối chiếu):** tests/integration/native-device-binding.int.spec.ts; client-auth-session.int.spec.ts
 
@@ -2766,10 +2834,10 @@ Ghi chú:
 
 | Bước | Việc cần làm | Kết quả mong đợi |
 |---|---|---|
-| 1 | Admin hủy đơn món trên Web Admin (có lý do). | Đơn "Đã hủy". |
+| 1 | Admin hủy đơn món trên Web Admin (có lý do). | Đơn chuyển sang trạng thái "Đã hủy" trên Web Admin. |
 | 2 | Quán (màn chưa làm mới) bấm "Xác nhận đơn". | Không xác nhận được; hiện thông báo dữ liệu đã thay đổi và tải lại; đơn hiển thị "Đã hủy". |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Không cần khôi phục: test này không làm thay đổi dữ liệu.
 
@@ -2808,7 +2876,7 @@ Ghi chú:
 | 1 | Nhấn Back khi đang ở màn "Xác nhận đơn". | Quay về giỏ; chưa có đơn nào được tạo. |
 | 2 | Mở hộp "Hủy đơn?" của một đơn đang chờ rồi bấm ra ngoài/Back. | Hộp đóng, đơn KHÔNG bị hủy. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -2835,10 +2903,14 @@ Ghi chú:
 | Mục đích | Mỗi chủ quán chỉ thấy đơn của quán mình. |
 | Người thực hiện | Chủ quán A + Chủ quán B |
 | Thiết bị cần có | Điện thoại 2 (máy QUÁN) (tối thiểu 1 điện thoại) |
-| Loại kiểm thử | Cần hỗ trợ kỹ thuật |
-| Tình trạng sẵn sàng | **CẦN HỖ TRỢ KỸ THUẬT** |
+| Loại kiểm thử | Chuẩn bị trước, người mới tự làm |
+| Tình trạng sẵn sàng | **CẦN CHUẨN BỊ TRƯỚC** |
 | Phụ thuộc | TC-SHOP-011 |
 | Điều kiện hệ thống cần có | Không có điều kiện đặc biệt ngoài tài khoản và Internet |
+| **Có thể chặn thử nghiệm bên ngoài** | Sai quyền (xem/làm việc không được phép): Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. |
+| Việc cần chuẩn bị trước | Bạn đã làm xong các test ghi ở cột "Phụ thuộc" (dữ liệu từ test trước còn đó). |
+| Phân công khi đang test | Sau khi chuẩn bị xong, người mới tự làm toàn bộ các bước. |
+| Nếu thiếu điều kiện | Nếu phần chuẩn bị ở trên CHƯA xong: đánh dấu BLOCKED, ghi điều kiện còn thiếu vào Ghi chú kết quả, báo Người phụ trách và chuyển sang test kế tiếp. Không tự làm thay phần của kỹ thuật viên. |
 | Điều kiện ban đầu | Quán Test A có ít nhất một đơn. CQ-B đã hoàn tất hồ sơ Quán Test B. |
 | Dữ liệu nhập | Không cần nhập dữ liệu riêng. |
 
@@ -2848,7 +2920,7 @@ Ghi chú:
 | 2 | Tìm bằng mã một đơn của Quán Test A trong ô tìm. | "Không có đơn phù hợp". |
 | 3 | Đăng nhập CQ-A. | Thấy đầy đủ đơn của Quán Test A. |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu lộ đơn của quán khác.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu lộ đơn của quán khác. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Đăng xuất khỏi các tài khoản đã dùng trong test này (tab "Tài khoản" > "Đăng xuất").
 
@@ -2879,6 +2951,7 @@ Ghi chú:
 | Tình trạng sẵn sàng | **SẴN SÀNG** |
 | Phụ thuộc | TC-DRV-009 |
 | Điều kiện hệ thống cần có | Không có điều kiện đặc biệt ngoài tài khoản và Internet |
+| **Có thể chặn thử nghiệm bên ngoài** | Sai quyền (xem/làm việc không được phép): Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. |
 | Điều kiện ban đầu | SP-A đang giữ một đơn; SP-B online. |
 | Dữ liệu nhập | Không cần nhập dữ liệu riêng. |
 
@@ -2887,7 +2960,7 @@ Ghi chú:
 | 1 | SP-B mở "Đơn hàng" > "Đang thực hiện" và "Có thể nhận". | Không thấy đơn của SP-A; đơn đã bị nhận không còn trong "Có thể nhận". |
 | 2 | SP-B thử mở trực tiếp đơn của SP-A (nếu có đường dẫn từ thông báo cũ). | Bị từ chối hoặc báo không còn quyền xem ("Bạn không còn quyền xem nội dung này"). |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu SP-B thấy thông tin khách của đơn SP-A.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. FAIL NGHIÊM TRỌNG nếu SP-B thấy thông tin khách của đơn SP-A. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Nếu đơn vẫn còn đang chạy: hủy đơn đúng cách (khách hủy khi quán chưa xác nhận, hoặc quán bấm "Hủy đơn món"; nếu shipper đã lấy hàng thì xử lý theo test FLOW tương ứng) rồi ghi mã đơn đã dùng vào ô ghi chú. Mỗi lần chạy lại hãy đặt đơn mới, không dùng lại đơn cũ.
 
@@ -2924,9 +2997,9 @@ Ghi chú:
 | Bước | Việc cần làm | Kết quả mong đợi |
 |---|---|---|
 | 1 | Gây một lỗi bất kỳ ở màn đơn hàng/giao hàng (ví dụ bật máy bay rồi bấm thao tác). | Thông báo lỗi bằng tiếng Việt đơn giản. |
-| 2 | Đọc kỹ toàn bộ thông báo lỗi. | KHÔNG có "Mã tra cứu", chuỗi dài 32-36 ký tự kiểu UUID, hay tên lỗi tiếng Anh viết hoa liền nhau (ví dụ FEE_LOCKED). Ngoại lệ đã ghi: lỗi thiết bị "DEVICE_PROOF_UNSUPPORTED" ở màn đăng nhập. |
+| 2 | Đọc kỹ toàn bộ thông báo lỗi. | KHÔNG có "Mã tra cứu", chuỗi dài 32-36 ký tự gồm chữ và số (mã nội bộ), hay tên lỗi tiếng Anh viết hoa nối bằng dấu gạch dưới (ví dụ FEE_LOCKED). |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Không cần khôi phục: test này không làm thay đổi dữ liệu.
 
@@ -2964,9 +3037,9 @@ Ghi chú:
 |---|---|---|
 | 1 | Gõ mật khẩu ở các màn hình. | Ký tự hiển thị dạng chấm (ẩn); ở Web Admin chỉ hiện khi chủ động bấm biểu tượng con mắt. |
 | 2 | Gây lỗi đăng nhập và đọc thông báo. | Thông báo không in lại mật khẩu hay số điện thoại đầy đủ. |
-| 3 | Đọc mọi màn hình có chữ "Phiên bản" hoặc "Mã nguồn" nếu có (ví dụ trang Phiên bản & cập nhật của Web Admin). | Không có mật khẩu, token, OTP hay chuỗi bí mật. |
+| 3 | Đọc mọi màn hình có chữ "Phiên bản" hoặc "Mã nguồn" nếu có (ví dụ trang Phiên bản & cập nhật của Web Admin). | Không có mật khẩu, mã OTP hay chuỗi bí mật dài (mã phiên đăng nhập). |
 
-**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng.
+**Cách kết luận:** PASS: mọi bước đều đúng như cột "Kết quả mong đợi". FAIL: có ít nhất một bước khác kết quả mong đợi - ghi rõ bước số mấy, chụp ảnh hoặc quay màn hình ngay khi lỗi xảy ra. BLOCKED: không làm tiếp được vì thiếu điều kiện (tài khoản, dữ liệu, mạng, thiết bị) - ghi điều kiện còn thiếu và báo Người phụ trách. NOT READY: chỉ dùng khi cột "Tình trạng sẵn sàng" đã ghi NOT READY và màn hình thật sự không có chức năng. Khi FAIL: lập báo lỗi theo BAO_CAO_LOI_MAU.md (ghi mã test, số bước, kết quả thật, ảnh/video). Muốn chạy lại: làm theo mục "Cách khôi phục để chạy lại" rồi bắt đầu từ bước 1.
 
 **Cách khôi phục để chạy lại:** Không cần khôi phục: test này không làm thay đổi dữ liệu.
 

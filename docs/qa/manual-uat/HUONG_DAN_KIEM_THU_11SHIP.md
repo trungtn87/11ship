@@ -8,13 +8,14 @@
 | Thứ tự | File | Dùng để làm gì |
 |---|---|---|
 | 1 | `HUONG_DAN_KIEM_THU_11SHIP.md` (file này) | Hiểu hệ thống, chuẩn bị máy, tài khoản, dữ liệu, cách ghi kết quả |
-| 2 | `KICH_BAN_TEST_LIEN_THONG.md` | Hướng dẫn **ba người** (khách, quán, shipper) phối hợp thử cả hành trình đơn hàng |
-| 3 | `DANH_SACH_P0.md` | Danh sách 132 test **bắt buộc** (P0) để chạy nhanh trước |
-| 4 | `TESTCASE_11SHIP.csv` | **Toàn bộ 289 test case** (mở bằng Excel) và nơi ghi kết quả |
-| 5 | `chi-tiet/NGAY_1…NGAY_5` | Bản đọc dễ hơn của từng test case, chia theo 5 ngày làm việc |
-| 6 | `BAO_CAO_LOI_MAU.md` | Mẫu báo lỗi và cách điền |
-| 7 | `CHECKLIST_NGHIEM_THU.md` | Bảng đánh dấu kết quả và điều kiện chấp nhận phiên bản |
-| 8 | `DOI_CHIEU_CODE_TESTCASE.md` | Chức năng thật trong code ↔ test case, và những phần chưa xác minh được |
+| 2 | `SMOKE_TEST_NGUOI_MOI.md` | **Chạy thử lần đầu** (27 test, 3–4 giờ): đăng ký → đặt đơn → giao thành công → số dư ví → thông báo. Làm trước khi vào 5 ngày đầy đủ |
+| 3 | `KICH_BAN_TEST_LIEN_THONG.md` | Hướng dẫn **ba người** (khách, quán, shipper) phối hợp thử cả hành trình đơn hàng |
+| 4 | `DANH_SACH_P0.md` | Danh sách 132 test **bắt buộc** (P0) để nghiệm thu |
+| 5 | `TESTCASE_11SHIP.csv` | **Toàn bộ 289 test case** (mở bằng Excel) và nơi ghi kết quả |
+| 6 | `chi-tiet/NGAY_1…NGAY_5` | Bản đọc dễ hơn của từng test case, chia theo 5 ngày làm việc (mỗi file có bảng thuật ngữ ở đầu) |
+| 7 | `BAO_CAO_LOI_MAU.md` | Mẫu báo lỗi và cách điền |
+| 8 | `CHECKLIST_NGHIEM_THU.md` | Bảng đánh dấu kết quả, điều kiện chấp nhận phiên bản, **cổng chặn thử nghiệm bên ngoài** và **câu hỏi cần Owner quyết định** |
+| 9 | `DOI_CHIEU_CODE_TESTCASE.md` | Chức năng thật trong code ↔ test case, và những phần chưa xác minh được |
 
 Bạn **không cần** đọc code, mở terminal, chạy lệnh SQL hay xem log. Mọi việc đều làm bằng điện thoại và trình duyệt.
 
@@ -94,7 +95,8 @@ Những điều cần nhớ (Owner đã quyết định ngày 23–24/10/2026):
 | **Khu vực phục vụ** | Vòng tròn quanh trung tâm TP Cao Bằng (bán kính khoảng 10 km). Ngoài vòng này không đặt/giao được |
 | **Đơn món** (Order) | Đơn khách đặt món, có mã dạng "Đơn …" |
 | **Yêu cầu giao** (Delivery) | Việc nhờ shipper giao, có mã dạng **G-…**; một đơn món có thể có nhiều lần gọi shipper |
-| **Phiên đăng nhập** | Thời gian bạn đang "đăng nhập"; đăng nhập trên máy khác sẽ làm máy cũ bị đăng xuất |
+| **Phiên đăng nhập** | Thời gian bạn đang "đăng nhập". Mỗi tài khoản chỉ có **một** phiên: đăng nhập ở nơi khác (kể cả đăng nhập cùng tài khoản ở 11Food rồi 11Ship) sẽ làm nơi cũ bị đăng xuất |
+| **Smoke test** | Bộ test ngắn chạy lần đầu để biết "đường chính" có thông không; khác với nghiệm thu đầy đủ |
 | **Idempotency / bấm lặp** | Bấm nhiều lần cũng chỉ tác dụng một lần (hệ thống có cơ chế chống trùng) |
 | **ORDER / DIRECT** | Hai luồng đã nói ở 1.3 (xuất hiện trong tài liệu kỹ thuật) |
 | **CI xanh** | Máy tự chạy kiểm thử và báo "đạt". **Không** đồng nghĩa phần mềm đã đạt nghiệm thu (xem mục 9) |
@@ -131,8 +133,14 @@ Những điều cần nhớ (Owner đã quyết định ngày 23–24/10/2026):
 
 Thêm hai cột **chỉ để định hướng**, do người soạn đặt trước:
 
-- **Tình trạng sẵn sàng**: `SẴN SÀNG` (người kiểm thử tự làm được sau khi xong các test phụ thuộc và có đủ "điều kiện hệ thống" ở mục 5) · `CẦN HỖ TRỢ KỸ THUẬT` (cần kỹ thuật viên/SYSTEM chuẩn bị hoặc thao tác) · `CẦN XÁC MINH` (code và tài liệu chưa khớp hoặc chưa chắc, cần Owner/kỹ thuật viên trả lời) · `NOT READY`.
-- **Loại kiểm thử**: `Thủ công` · `Cần hỗ trợ kỹ thuật` · `Tự động đã có (đối chiếu)` – loại này **chỉ dành cho kỹ thuật viên** xác nhận kết quả bộ kiểm thử tự động; người kiểm thử mới bỏ qua.
+- **Tình trạng sẵn sàng**: `SẴN SÀNG` (bạn tự làm được sau khi xong các test phụ thuộc và có đủ "điều kiện hệ thống" ở mục 5) · `CẦN CHUẨN BỊ TRƯỚC` (kỹ thuật viên/Owner phải chuẩn bị xong TRƯỚC, rồi bạn tự làm một mình) · `CẦN KỸ THUẬT VIÊN LÀM CÙNG` (có bước chỉ kỹ thuật viên/SYSTEM làm được) · `CHỈ KỸ THUẬT VIÊN` (đối chiếu kiểm thử tự động; bạn bỏ qua) · `CẦN XÁC MINH` (code và tài liệu chưa khớp hoặc chưa chắc, cần Owner/kỹ thuật viên trả lời) · `NOT READY`.
+- **Loại kiểm thử**: `Thủ công` · `Chuẩn bị trước, người mới tự làm` · `Cần kỹ thuật viên cùng làm` · `Tự động đã có (đối chiếu)`.
+
+**Với test cần hỗ trợ kỹ thuật, ba cột sau cho bạn biết chính xác phải làm gì (để không bị kẹt giữa chừng):**
+
+1. **Việc cần chuẩn bị trước (ai chuẩn bị)** – danh sách việc kỹ thuật viên/Owner phải xong trước giờ test. Trước khi bắt đầu test, hỏi: "phần chuẩn bị của test này xong chưa?".
+2. **Phân công khi đang test** – bước nào do kỹ thuật viên/SYSTEM làm (trong bước ghi sẵn `[KỸ THUẬT VIÊN/SYSTEM làm, bạn quan sát và chụp màn hình]`), bước nào do bạn làm. Bạn **không bao giờ** được biết mật khẩu SYSTEM.
+3. **Nếu thiếu điều kiện / kỹ thuật viên chưa sẵn sàng** – luôn là: ghi **BLOCKED**, ghi điều kiện còn thiếu, báo Người phụ trách rồi làm test kế tiếp. Đừng tự làm thay phần của kỹ thuật viên và đừng đứng đợi.
 
 **Quy tắc vàng:** nghi ngờ thì **ghi lại và hỏi**, đừng đoán. Không tự sửa kết quả mong đợi cho khớp.
 
@@ -189,7 +197,7 @@ Mỗi lỗi **một báo cáo**, dùng mẫu trong `BAO_CAO_LOI_MAU.md`. Tóm t�
 
 ### 5.2 Yêu cầu về thiết bị và địa điểm
 
-- **Điện thoại Android 8.0 trở lên** (không phải iPhone). Điện thoại **không root**, không mở khóa bootloader, không phải máy ảo (nếu không, ứng dụng sẽ báo `DEVICE_PROOF_UNSUPPORTED` – xem TC-SET-011).
+- **Điện thoại Android 8.0 trở lên** (không phải iPhone). Nên dùng điện thoại **nguyên bản, bình thường** (không tự root, không tự mở khóa bootloader – việc này không cần thiết). Từ quyết định của Owner ngày 23/10 (PR #170), 11Food/11Ship bản mới đăng ký và đăng nhập bằng **số điện thoại + mật khẩu** và **không** còn chặn điện thoại vì lý do "xác thực phần cứng"; nếu bạn thấy chữ `DEVICE_PROOF_UNSUPPORTED` hoặc "chưa hỗ trợ xác thực phần cứng", rất có thể bạn đang cài **nhầm bản APK cũ** – hãy ghi lại và báo Người phụ trách (xem TC-SET-011).
 - Có **GPS**, có **Internet** (Wi-Fi hoặc 4G), pin đủ (shipper bật vị trí rất tốn pin).
 - Giờ điện thoại **đúng** (bật "Ngày và giờ tự động").
 - **Địa điểm:** cả ba điện thoại phải ở **trong khu vực phục vụ** (khoảng 10 km quanh trung tâm TP Cao Bằng) và **điện thoại shipper phải trong bán kính 3 km quanh "Quán Test A"** khi thử nhận đơn. **Không dùng ứng dụng giả vị trí** (ứng dụng từ chối vị trí giả).
@@ -215,7 +223,7 @@ Khi dùng phương án thay thế: **ghi vào cột "Ghi chú kết quả"** "đ
 
 **Mở Web Admin:** gõ địa chỉ (mục 5.1) vào trình duyệt → trang "Đăng nhập quản trị" → nhập số điện thoại, mật khẩu → "Tiếp tục" → nhập **mã 6 số** từ Authenticator → vào trang chủ ("Đăng nhập thành công", "Vai trò: …").
 
-**Xem số phiên bản (để ghi vào báo cáo):** hiện **không có màn hình trong ứng dụng** cho phiên bản (đã kiểm tra mã nguồn – xem TC-SET-006). Dùng: **Cài đặt Android > Ứng dụng > 11Food (hoặc 11Ship) > cuối trang: "Phiên bản"**, và đối chiếu với tên file APK được giao. Với Web Admin, Người phụ trách cho biết phiên bản đang chạy trên máy chủ.
+**Xem số phiên bản (để ghi vào báo cáo):** hiện **không có màn hình trong ứng dụng** cho phiên bản (đã kiểm tra mã nguồn – xem TC-SET-006). Dùng: **Cài đặt Android > Ứng dụng > 11Food (hoặc 11Ship) > cuối trang: "Phiên bản"** (hoặc nhấn giữ biểu tượng ứng dụng rồi chạm "Thông tin ứng dụng"; tên mục có thể khác chút theo hãng máy), và đối chiếu với tên file APK được giao. Với Web Admin, Người phụ trách cho biết phiên bản đang chạy trên máy chủ.
 
 **Ghi mã commit/phiên bản đang thử** vào mọi dòng kết quả ở cột "Phiên bản APK hoặc bản triển khai", ví dụ `11Food v1.0.12 / 11Ship v1.0.12 / máy chủ v1.0.12`.
 
@@ -223,6 +231,7 @@ Khi dùng phương án thay thế: **ghi vào cột "Ghi chú kết quả"** "đ
 
 - Đăng nhập: tab **Tài khoản** → **Đăng nhập** → số điện thoại + mật khẩu → **Đăng nhập**.
 - Đăng xuất: tab **Tài khoản** → kéo xuống → **Đăng xuất** → xác nhận.
+- Mỗi tài khoản chỉ có **một phiên đăng nhập**: đăng nhập tài khoản đó ở máy/ứng dụng khác thì nơi cũ bị đăng xuất (đó là hành vi đúng, xem TC-ACC-025). Vì vậy dùng **tài khoản khác nhau** cho 11Food và 11Ship khi muốn cả hai cùng đăng nhập (ví dụ KH-A ở 11Food, SP-A ở 11Ship).
 - Mật khẩu từ **8 đến 128 ký tự**. **Không bao giờ** ghi mật khẩu, OTP, mã Authenticator vào tài liệu này hay vào báo lỗi. Mỗi người giữ một **bảng thông tin riêng** (mục 6.4) ngoài kho mã nguồn.
 
 ---
@@ -334,7 +343,9 @@ Bộ test được sắp **theo hành trình người dùng**, không theo thư 
 | **4** | Hủy đơn (trước/sau lấy hàng), đổi phí, không có shipper, tự hủy quá hạn, bất thường (mất mạng, tắt app, GPS, nhấn nhiều lần, hai người cùng thao tác) | 71 | `chi-tiet/NGAY_4_…` |
 | **5** | Ví và tài chính, Web Admin (quyền, nhật ký, cấu hình, báo cáo), đánh giá/phản ánh, đối chiếu và nghiệm thu | 51 | `chi-tiet/NGAY_5_…` |
 
-**Chạy nhanh P0 trước:** làm theo `DANH_SACH_P0.md` (132 test, đúng thứ tự phụ thuộc). Nếu một test P0 FAIL, **báo ngay** và chỉ thử tiếp những test không phụ thuộc vào nó.
+**Lần đầu tiên:** làm `SMOKE_TEST_NGUOI_MOI.md` (27 test) để biết "đường chính" có thông. Smoke **không thay** nghiệm thu.
+
+**Nghiệm thu đầy đủ:** làm theo `DANH_SACH_P0.md` (132 test, đúng thứ tự phụ thuộc) rồi các test P1/P2. Nếu một test P0 FAIL, **báo ngay** và chỉ thử tiếp những test không phụ thuộc vào nó.
 
 **Thứ tự đề xuất cho người kiểm thử:**
 1. Đọc tài liệu này và `KICH_BAN_TEST_LIEN_THONG.md`.
@@ -350,6 +361,7 @@ Bộ test được sắp **theo hành trình người dùng**, không theo thư 
 - ✅ **Tiếp tục thử nghiệm nội bộ** khi: 100% test P0 **đã chạy**; không có lỗi **NGHIÊM TRỌNG** còn mở; mọi FAIL P0 đã có báo lỗi.
 - 🟡 **Chạy thử với quán và shipper thật** khi: toàn bộ P0 **PASS** trên **thiết bị thật**, các nhóm FLOW/WAL/SEC không còn lỗi nghiêm trọng hoặc cao; đối chiếu ví khớp; Owner duyệt điều khoản và chính sách tiền; kế hoạch hỗ trợ khi có sự cố.
 - ⛔ **Chưa được đưa vào sử dụng** khi có **bất kỳ** lỗi liên quan: **mất tiền, sai số dư, giao nhầm đơn, mất đơn, sai quyền người dùng, giao dịch lặp**; hoặc có test P0 FAIL/BLOCKED chưa giải quyết.
+- **Cổng chặn thử nghiệm bên ngoài:** trước khi mời quán, shipper hay khách bên ngoài dùng thử, các test thuộc 5 nhóm **Điều khoản · Chính sách quyền riêng tư · Thông báo vị trí nền · Sai quyền · Giao dịch tài chính** (bảng đầy đủ ở `CHECKLIST_NGHIEM_THU.md` mục 6, cột "Điểm có thể chặn thử nghiệm bên ngoài" của file CSV) phải đạt hoặc có quyết định bằng văn bản của Owner.
 - **CI xanh KHÔNG đủ để nghiệm thu.** Kiểm thử tự động không thay thế thử trên thiết bị thật và không bao quát các quy trình nhiều người (khách + quán + shipper) như tài liệu này.
 
 ---
@@ -362,7 +374,7 @@ Bộ test được sắp **theo hành trình người dùng**, không theo thư 
 | Không có nút **chỉ đường từng bước** trong 11Ship | Chưa làm (TC-DRV-019 – NOT READY) |
 | Tab **Thu nhập** của 11Ship chưa có số liệu | Chưa làm (TC-DRV-022 – NOT READY) |
 | **Voucher**, **Trợ giúp**, **Vùng hoạt động** (Web Admin) | Chưa làm, màn hình ghi "chưa hỗ trợ"/"Sắp có" |
-| Màn hình đăng ký còn câu "Chỉ bán hàng sau khi được duyệt" nhưng quán **hoạt động ngay** khi hồ sơ đủ điều kiện | Lệch tài liệu-mã nguồn: TC-ADM-015 (CẦN XÁC MINH) |
+| Màn hình đăng ký còn câu "Chỉ bán hàng sau khi được duyệt" nhưng quán **hoạt động ngay** khi hồ sơ đủ điều kiện | Lệch tài liệu-mã nguồn: TC-ADM-015 chỉ **ghi nhận hiện trạng**; quyết định nghiệp vụ là câu hỏi OQ-01 của Owner (CHECKLIST_NGHIEM_THU mục 7) |
 | Một số hãng điện thoại tự tắt ứng dụng nền / chia sẻ vị trí khi bật tiết kiệm pin | Giới hạn của Android; ghi hãng máy và đời Android (TC-ABN-004/015) |
 | Thông báo **đẩy** (push) có thể chưa bật | Hộp thông báo trong ứng dụng vẫn hoạt động; TC-NOTI-001 CẦN XÁC MINH |
 | Bản đồ trong 11Food/11Ship chỉ có khi APK được build kèm gói bản đồ Cao Bằng | TC-DRV-018, TC-CUS-027 CẦN XÁC MINH |

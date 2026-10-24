@@ -1,6 +1,6 @@
 # Kịch bản kiểm thử liên thông – ba người phối hợp (khách, quán, shipper)
 
-Dùng khi cần thử **cả hành trình một đơn hàng** với nhiều người cùng lúc. Mỗi kịch bản bên dưới **sắp xếp thao tác của từng người theo thứ tự thời gian**; chi tiết từng bước nhấn nút nằm trong test case có mã tương ứng (file `TESTCASE_11SHIP.csv` hoặc `chi-tiet/…`). Làm kịch bản **sau khi** đã xong các test chuẩn bị ở Ngày 1–2.
+Dùng khi cần thử **cả hành trình một đơn hàng** với nhiều người cùng lúc. Mỗi kịch bản bên dưới **sắp xếp thao tác của từng người theo thứ tự thời gian**; chi tiết từng bước nhấn nút nằm trong test case có mã tương ứng (file `TESTCASE_11SHIP.csv` hoặc `chi-tiet/…`). Làm kịch bản **sau khi** đã xong các test chuẩn bị ở Ngày 1–2. **Nếu đây là lần đầu bạn chạm vào 11Ship:** làm `SMOKE_TEST_NGUOI_MOI.md` trước (Kịch bản A và C bên dưới chính là phiên bản đầy đủ hơn của hai đơn trong smoke).
 
 > Ba người kiểm thử đứng **cùng khu vực** (thành phố Cao Bằng). Người SHIPPER phải đứng trong **bán kính 3 km quanh Quán Test A**. Nếu chỉ có 1–2 người, xem mục 5.3 "Nếu chỉ có 1 hoặc 2 điện thoại" trong `HUONG_DAN_KIEM_THU_11SHIP.md`.
 
@@ -63,7 +63,7 @@ Kịch bản C2 (khách trả phí, khách không có tài khoản): làm TC-FLO
 ## 5. Kịch bản D – Không có shipper nhận, ngừng tìm, gọi lại
 *Test tương ứng: **TC-FLOW-005**, **TC-FLOW-006**, TC-NOTI-007.*
 
-> Mặc định chờ **30 phút**. Để rút ngắn, SYSTEM đổi "Chờ shipper: dừng tìm / cảnh báo (phút)" (TC-ADM-026) **trước khi** gọi shipper và đặt lại sau test.
+> Mặc định chờ **30 phút**. Để rút ngắn, kỹ thuật viên giữ tài khoản SYSTEM đổi "Chờ shipper: dừng tìm / cảnh báo (phút)" (TC-ADM-026) **trước khi** gọi shipper và đặt lại sau test (bạn không tự làm bước này).
 
 | # | K | Q | S | Ghi nhận |
 |---|---|---|---|---|

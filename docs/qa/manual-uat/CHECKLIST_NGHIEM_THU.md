@@ -89,7 +89,67 @@ Tổng tiền thử nghiệm còn trong ví cuối vòng: ………… đ · Cá
 | Bổ sung: Rủi ro chỉ kiểm được bằng kỹ thuật (đối chiếu kiểm thử tự động) | 7 | 0 | 7 | 0 | | | | | |
 | **Tổng** | **289** | **132** | **122** | **35** | | | | | |
 
-## 6. Quyết định của Owner
+## 6. Điểm có thể CHẶN việc đưa cho người ngoài thử (pilot)
+
+Có 36 test thuộc 5 nhóm dưới đây. **Mọi dòng phải "đạt" (PASS) hoặc đã có quyết định bằng văn bản của Owner** trước khi mời quán/shipper/khách bên ngoài dùng thử. Một dòng FAIL, BLOCKED hoặc chưa chạy = **chưa đưa cho người ngoài**.
+
+| Cổng | Test case | Mức | Vì sao có thể chặn | Kết quả (☐ đạt ☐ chưa đạt) |
+|---|---|---|---|---|
+| Điều khoản sử dụng | TC-ACC-029 · Xem Điều khoản sử dụng và Chính sách quyền riêng tư | P2 | Nội dung Điều khoản còn nói "đặt món, giao hàng, ví chưa hoạt động" trong khi các chức năng này đã chạy. Người dùng bên ngoài không nên đồng ý một văn bản sai. | ☐ ☐ |
+| Chính sách quyền riêng tư | TC-ACC-029 · Xem Điều khoản sử dụng và Chính sách quyền riêng tư | P2 | Chính sách nói "không theo dõi vị trí nền" nhưng 11Ship chia sẻ vị trí khi shipper online. | ☐ ☐ |
+| Chính sách quyền riêng tư | TC-SEC-007 · Chính sách quyền riêng tư nói "không theo dõi vị trí nền" nhưng 11Ship chia sẻ vị trí khi online | P1 | Chính sách nói "không theo dõi vị trí nền" nhưng 11Ship chia sẻ vị trí khi shipper online. | ☐ ☐ |
+| Thông báo/đồng ý về vị trí nền | TC-SET-005 · Cấp quyền thông báo và vị trí cho 11Ship | P1 | Shipper online chia sẻ vị trí cả khi tắt màn hình; phải có thông báo/đồng ý rõ ràng trước khi để shipper ngoài dùng. | ☐ ☐ |
+| Thông báo/đồng ý về vị trí nền | TC-DRV-002 · Bật online thành công khi ví đủ điều kiện và GPS tốt | P0 | Shipper online chia sẻ vị trí cả khi tắt màn hình; phải có thông báo/đồng ý rõ ràng trước khi để shipper ngoài dùng. | ☐ ☐ |
+| Thông báo/đồng ý về vị trí nền | TC-ABN-014 · Chuyển ứng dụng 11Ship sang chạy nền và khóa màn hình: vẫn nhận đơn và chia sẻ vị trí | P0 | Shipper online chia sẻ vị trí cả khi tắt màn hình; phải có thông báo/đồng ý rõ ràng trước khi để shipper ngoài dùng. | ☐ ☐ |
+| Thông báo/đồng ý về vị trí nền | TC-SEC-007 · Chính sách quyền riêng tư nói "không theo dõi vị trí nền" nhưng 11Ship chia sẻ vị trí khi online | P1 | Shipper online chia sẻ vị trí cả khi tắt màn hình; phải có thông báo/đồng ý rõ ràng trước khi để shipper ngoài dùng. | ☐ ☐ |
+| Sai quyền (xem/làm việc không được phép) | TC-WAL-020 · SYSTEM quản lý "Tài khoản nhận tiền" của hệ thống; ADMIN không có quyền | P1 | Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. | ☐ ☐ |
+| Sai quyền (xem/làm việc không được phép) | TC-ACC-027 · Phiên bị thu hồi khi Admin khóa tài khoản đang đăng nhập | P0 | Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. | ☐ ☐ |
+| Sai quyền (xem/làm việc không được phép) | TC-ADM-013 · Khóa tài khoản bị chặn khi tài khoản còn đơn đang xử lý | P0 | Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. | ☐ ☐ |
+| Sai quyền (xem/làm việc không được phép) | TC-SEC-001 · Quán này không thấy đơn và yêu cầu giao của quán khác | P0 | Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. | ☐ ☐ |
+| Sai quyền (xem/làm việc không được phép) | TC-SEC-002 · Shipper này không thấy đơn đang giữ của shipper khác | P0 | Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. | ☐ ☐ |
+| Sai quyền (xem/làm việc không được phép) | TC-WAL-022 · SYSTEM đổi mức nạp/rút tối thiểu; ADMIN chỉ xem | P1 | Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. | ☐ ☐ |
+| Sai quyền (xem/làm việc không được phép) | TC-ADM-007 · Phân biệt quyền ADMIN và SYSTEM: ADMIN không vào được trang chỉ dành cho SYSTEM | P0 | Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. | ☐ ☐ |
+| Sai quyền (xem/làm việc không được phép) | TC-ADM-008 · ADMIN-2 (chỉ quyền Xem Quán) không thao tác được các hành động cần quyền cao hơn | P0 | Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. | ☐ ☐ |
+| Sai quyền (xem/làm việc không được phép) | TC-WAL-019 · Phân quyền tài chính: ADMIN không có quyền thì không thấy hoặc không thao tác được | P0 | Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. | ☐ ☐ |
+| Sai quyền (xem/làm việc không được phép) | TC-ADM-009 · SYSTEM cấp và thu hồi quyền của ADMIN; hiệu lực ở thao tác kế tiếp | P1 | Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. | ☐ ☐ |
+| Sai quyền (xem/làm việc không được phép) | TC-SEC-006 · Số điện thoại và tài khoản ngân hàng được che bớt ở Web Admin | P1 | Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. | ☐ ☐ |
+| Sai quyền (xem/làm việc không được phép) | TC-AUTO-004 · Đối chiếu CI: quyền người dùng và quyền quản trị | P1 | Một lỗi phân quyền cho phép người này thấy/sửa dữ liệu hoặc tiền của người khác - lỗi NGHIÊM TRỌNG, dừng pilot. | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-WAL-003 · Tạo yêu cầu nạp tiền: thông tin chuyển khoản và trạng thái "Chờ xử lý" (tiền chưa vào ví) | P0 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-WAL-005 · Admin ghi nhận tiền: ví shipper được cộng đúng một lần (nạp cho SP-A bằng tiền thử nghiệm) | P0 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-DRV-003 · Shipper không đủ tiền trong ví (SP-B) không bật online / không nhận được đơn | P0 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-WAL-006 · Admin từ chối yêu cầu nạp: ví không thay đổi | P0 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-WAL-008 · Admin không được ghi nhận trùng mã giao dịch ngân hàng | P0 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-WAL-009 · Số tiền thực nhận khác số tiền yêu cầu: ví cộng đúng số thực nhận | P1 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-DRV-014 · Shipper giao thành công: hoa hồng thu đúng một lần | P0 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-FLOW-026 · Hoa hồng của shipper: giữ chỗ khi nhận, trả lại khi hủy, thu đúng một lần khi hoàn thành | P0 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-ABN-013 · Bấm nhiều lần liên tiếp vào các nút quan trọng ("Nhận đơn", "Đã nhận hàng", "Giao thành công", "Xác nhận đơn") | P0 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-WAL-012 · Đối chiếu tay: tổng số dư = tổng các dòng giao dịch | P0 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-WAL-013 · Ví không đủ tiền hoa hồng thì không nhận được đơn mới, nhưng đơn đang giao vẫn hoàn tất | P0 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-WAL-015 · Rút toàn bộ số dư khi dừng hoạt động: Admin nhận xử lý và ghi nhận đã chuyển (tiền thử nghiệm) | P0 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-WAL-016 · Rút tiền: Admin nhập số tiền chuyển khác số yêu cầu thì không kết luận "đã chuyển đủ" | P1 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-WAL-017 · Shipper hủy yêu cầu rút tiền khi còn "Chờ xử lý": tiền được giải phóng | P1 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-WAL-021 · SYSTEM đổi mức hoa hồng: chỉ áp dụng cho đơn nhận sau đó | P1 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-WAL-023 · Admin hoàn tất đóng tài khoản shipper chỉ khi đã tất toán | P1 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-WAL-024 · Mất mạng hoặc bấm lặp khi tạo yêu cầu nạp/rút: không tạo trùng, không trừ hai lần | P0 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-WAL-025 · Admin điều chỉnh tài chính từ phản ánh (thu thêm / hoàn hoa hồng) | P1 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+| Giao dịch tài chính (ví, nạp, rút, hoa hồng) | TC-AUTO-003 · Đối chiếu CI: sổ cái ví, tạm giữ, nạp, rút và đối soát | P1 | Sai số dư, tạm giữ, cộng/trừ trùng hoặc rút nhầm là lỗi NGHIÊM TRỌNG. Chỉ chạy bằng tiền thử nghiệm đã được Owner duyệt (HUONG_DAN mục 7). | ☐ ☐ |
+
+## 7. Câu hỏi cần Owner quyết định (bộ test KHÔNG tự quyết thay)
+
+| Mã | Câu hỏi | Test liên quan | Ảnh hưởng nếu chưa trả lời |
+|---|---|---|---|
+| OQ-01 | Quán có cần **Admin duyệt** trước khi bán (như màn đăng ký ghi "Chỉ bán hàng sau khi được duyệt") hay được **hoạt động ngay** khi hồ sơ đủ (như code hiện tại)? | TC-ADM-015, TC-ADM-019, TC-ACC-003 | Test ADM-015 chỉ ghi nhận hiện trạng; chưa có kết luận đúng/sai nghiệp vụ |
+| OQ-02 | Ai sửa và duyệt lại **Điều khoản sử dụng** (đang nói các chức năng chưa hoạt động)? Khi nào đổi số phiên bản điều khoản? | TC-ACC-029 | Chặn pilot ngoài |
+| OQ-03 | Ai sửa **Chính sách quyền riêng tư** (đang nói không theo dõi vị trí nền) và có cần thêm thông báo "đang chia sẻ vị trí" cho shipper? | TC-SEC-007, TC-ABN-014 | Chặn pilot ngoài |
+| OQ-04 | Có cần hiển thị **số phiên bản** ngay trong ứng dụng không? (Hiện kiểm tra qua Cài đặt Android, đủ để test.) | TC-SET-006 | Không chặn; chỉ tiện lợi |
+| OQ-05 | Duyệt **quy tắc tiền thử nghiệm** (HUONG_DAN mục 7): tài khoản nhận tiền thử, mức nạp, cách xử lý số dư cuối vòng. | Nhóm Ví (TC-WAL-*) | Không thể chạy các test tiền P0 |
+| OQ-06 | Có bật **thông báo đẩy (Firebase)** cho vòng thử này không? | TC-NOTI-001 | Thông báo chỉ kiểm được khi mở ứng dụng |
+| OQ-07 | Có đưa **gói bản đồ ngoại tuyến** vào APK thử không? | TC-DRV-018, TC-CUS-027 | Bản đồ không kiểm được |
+| OQ-08 | **Chỉ đường, Thu nhập, Voucher** hiện "chưa có": chấp nhận không có trong vòng pilot này? | TC-DRV-019, TC-DRV-022, TC-ACC-033 | Giữ NOT READY |
+| OQ-09 | Khi điện thoại **giờ sai**, kết quả mong muốn là gì (báo lỗi kết nối/chứng chỉ, hay vẫn đăng nhập)? | TC-ABN-017 | Test chỉ ghi nhận hiện trạng |
+| OQ-10 | Nhóm phát triển **dọn `mobile/README.md`** (mục "Device proof" đã lỗi thời sau quyết định 23/10)? | TC-SET-011 | Người đọc README cũ hiểu sai |
+
+## 8. Quyết định của Owner
 
 | Mục | Lựa chọn |
 |---|---|
@@ -99,7 +159,7 @@ Tổng tiền thử nghiệm còn trong ví cuối vòng: ………… đ · Cá
 | Điều kiện bổ sung / việc phải làm trước vòng sau | |
 | Người quyết định, ngày | |
 
-## 7. Danh sách đánh dấu từng test (in hoặc dán vào Excel)
+## 9. Danh sách đánh dấu từng test (in hoặc dán vào Excel)
 
 Chép trạng thái thật vào cột "Trạng thái" của `TESTCASE_11SHIP.csv`; bảng dưới chỉ để đánh dấu nhanh. Thứ tự là **thứ tự nên chạy**.
 
@@ -112,21 +172,21 @@ Chép trạng thái thật vào cột "Trạng thái" của `TESTCASE_11SHIP.csv
 | 3 | TC-SET-003 | Cài cả 11Food và 11Ship trên cùng một điện thoại | P1 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
 | 4 | TC-SET-004 | Cấp quyền vị trí (GPS) cho 11Food lần đầu | P1 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
 | 5 | TC-SET-006 | Xem số phiên bản của ứng dụng để ghi vào báo cáo | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 6 | TC-SET-011 | Điện thoại không đạt yêu cầu bảo mật thiết bị | P2 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 7 | TC-ACC-001 | Đăng ký tài khoản khách hàng KH-A trên 11Food (có mã OTP) | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 8 | TC-ACC-002 | Đăng ký tài khoản khách hàng thứ hai KH-B | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 9 | TC-ACC-003 | Đăng ký với mục đích "Chủ quán" (CQ-A) và chuyển thẳng sang tạo hồ sơ quán | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 10 | TC-ACC-004 | Đăng ký tài khoản shipper SP-A trên 11Ship (có mã OTP) | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 11 | TC-ACC-005 | Đăng ký tài khoản shipper thứ hai SP-B | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 12 | TC-ACC-006 | Đăng ký bị chặn khi nhập thiếu hoặc sai thông tin (màn 1/3) | P1 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 13 | TC-ACC-007 | Số điện thoại sai định dạng khi đăng ký và đăng nhập | P1 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 14 | TC-ACC-008 | Đăng ký lại bằng số điện thoại đã có tài khoản | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 15 | TC-ACC-009 | Nhập sai mã OTP khi đăng ký | P1 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 16 | TC-ACC-010 | Mã OTP hết hạn và nút "Gửi lại mã" | P1 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 17 | TC-ACC-011 | Xin mã OTP quá nhiều lần bị giới hạn | P2 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 18 | TC-ACC-012 | Không gửi được SMS: ứng dụng phải báo thật, không giả thành công | P1 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 19 | TC-ACC-013 | Sửa số điện thoại giữa chừng khi đang xác minh OTP | P2 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 20 | TC-ACC-014 | Đăng nhập thành công bằng KH-A | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 6 | TC-ACC-001 | Đăng ký tài khoản khách hàng KH-A trên 11Food (có mã OTP) | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 7 | TC-ACC-002 | Đăng ký tài khoản khách hàng thứ hai KH-B | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 8 | TC-ACC-003 | Đăng ký với mục đích "Chủ quán" (CQ-A) và chuyển thẳng sang tạo hồ sơ quán | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 9 | TC-ACC-004 | Đăng ký tài khoản shipper SP-A trên 11Ship (có mã OTP) | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 10 | TC-ACC-005 | Đăng ký tài khoản shipper thứ hai SP-B | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 11 | TC-ACC-006 | Đăng ký bị chặn khi nhập thiếu hoặc sai thông tin (màn 1/3) | P1 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 12 | TC-ACC-007 | Số điện thoại sai định dạng khi đăng ký và đăng nhập | P1 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 13 | TC-ACC-008 | Đăng ký lại bằng số điện thoại đã có tài khoản | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 14 | TC-ACC-009 | Nhập sai mã OTP khi đăng ký | P1 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 15 | TC-ACC-010 | Mã OTP hết hạn và nút "Gửi lại mã" | P1 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 16 | TC-ACC-011 | Xin mã OTP quá nhiều lần bị giới hạn | P2 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 17 | TC-ACC-012 | Không gửi được SMS: ứng dụng phải báo thật, không giả thành công | P1 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 18 | TC-ACC-013 | Sửa số điện thoại giữa chừng khi đang xác minh OTP | P2 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 19 | TC-ACC-014 | Đăng nhập thành công bằng KH-A | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 20 | TC-SET-011 | Điện thoại thường (không cần chip bảo mật đặc biệt) vẫn đăng nhập bằng mật khẩu được, không bị chặn vì "xác thực phần cứng" | P2 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
 | 21 | TC-ACC-015 | Đăng nhập sai mật khẩu và sai số điện thoại | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
 | 22 | TC-SET-005 | Cấp quyền thông báo và vị trí cho 11Ship | P1 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
 | 23 | TC-ACC-016 | Đăng nhập shipper SP-A trên 11Ship | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
@@ -160,7 +220,7 @@ Chép trạng thái thật vào cột "Trạng thái" của `TESTCASE_11SHIP.csv
 | # | Mã | Tên | Mức | Kết quả |
 |---|---|---|---|---|
 | 1 | TC-SHOP-001 | Chủ quán A tạo hồ sơ quán, ghim vị trí lấy hàng và hoàn tất hồ sơ | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
-| 2 | TC-ADM-015 | Không có bước "Admin duyệt quán": quán đủ điều kiện hoạt động ngay | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
+| 2 | TC-ADM-015 | Ghi nhận hiện trạng: quán hoạt động ngay khi hồ sơ đủ, không có bước "Admin duyệt quán" | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
 | 3 | TC-SHOP-002 | Quán C chưa đủ điều kiện kích hoạt: không hoàn tất được khi thiếu địa chỉ hoặc vị trí ghim | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
 | 4 | TC-ADM-012 | Danh sách người dùng: tìm, lọc "Đang khóa", xem chi tiết | P0 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
 | 5 | TC-SHOP-003 | Lấy vị trí quán khi chưa cấp quyền GPS, GPS tắt hoặc GPS yếu | P1 | ☐ PASS ☐ FAIL ☐ BLOCKED ☐ NOT READY |
