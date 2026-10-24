@@ -1,0 +1,150 @@
+# M12-F Google Drive backup — rehearsal on a LOCAL test server, 2026-10-24.
+# Drive is a STAND-IN (tests/deploy/fixtures/fake-rclone.py: a local directory). This proves the job's logic; it does NOT prove a real Google Drive upload or download.
+# Database: a copy of the test database with sample data (500 audit rows, 20 ledger rows). Not production, not the VPS. Encryption passphrase: random, thrown away after the run.
+
+## 1. Scheduled run (TIMER): dump -> bundle+manifest -> encrypt -> restore check -> upload -> verify on Drive -> retention -> record
+dump (DAILY, trigger TIMER)
+restore check
+local copy made and restore-checked (675872 bytes)
+upload
+M13 report skipped: BACKUP_OPS_URL or the ingest key is not set
+BACKUP OK id=6cec4de8-6416-4d60-9992-12e82f2da475 kind=DAILY size=675872 offsite=true
+Drive folder now holds: ship11-DAILY-<stamp>-6cec4de8.manifest.json ship11-DAILY-<stamp>-6cec4de8.tar.enc 
+manifest next to the bundle (no secret):
+{
+  "bundle_bytes": 675872,
+  "bundle_sha256": "4111505b6d7f90a577e514f801a12c5b3348dd83afd2e2091675ad90ffdeab94",
+  "encrypted": "openssl enc -aes-256-cbc -pbkdf2 (passphrase kept outside the VPS)",
+  "format": 1,
+  "kind": "DAILY",
+  "name": "ship11-DAILY-20261024T010612Z-6cec4de8.tar.enc"
+}
+
+## 2. The inside manifest (decrypted from the bundle; versions, components, checksums)
+FETCHED ship11-DAILY-20261024T010612Z-6cec4de8 -> <work>/fetched1/contents (database.dump, manifest.json)
+{
+ "format": 1,
+ "kind": "DAILY",
+ "trigger": "TIMER",
+ "release": "1.2.3",
+ "commit": "0123456789abcdef0123456789abcdef01234567",
+ "schema_version": "1795996800000_create-m12-backup-restore",
+ "pg_dump_version": "16.15-0ubuntu0.24.04.1)",
+ "server_version": "16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)",
+ "storage": {
+  "complaint_attachments": "database",
+  "database_bytes": 16522263,
+  "extra_paths": [],
+  "menu_images": "database",
+  "shop_logos": "database"
+ },
+ "components": [
+  {
+   "bytes": 668887,
+   "name": "database.dump",
+   "sha256": "5f5d093dbe52ec44ac423fb110f1ef4de5baa496de29c05d1d1a97a7fe569ff3"
+  }
+ ],
+ "consistency": "database: one pg_dump snapshot (images stored in the database are inside it); extra files: copied after the dump, not point-in-time consistent with it"
+}
+
+## 3. Record the Web Admin reads
+DAILY | TIMER | SUCCEEDED | stage=VERIFIED | offsite=true | release=1.2.3 | schema=1795996800000_create-m12-backup-restore
+
+## 4. Overlap: two runs started together -> exactly one runs, the other starts nothing
+BACKUP OK id=0c32ccda-6f48-4a47-829a-ab09b4e3cdf3 kind=DAILY size=675872 offsite=true
+another backup is running: nothing was started
+records created by the pair: 2 (one)
+
+## 5. Upload fails (Drive full): the good local copy is kept, the record says where it stopped, NOTHING on Drive is deleted
+dump (DAILY, trigger TIMER)
+restore check
+local copy made and restore-checked (675872 bytes)
+upload
+upload failed (DRIVE_QUOTA): Failed to copy: googleapi: Error 403: The user's Drive storage quota has been exceeded., storageQuotaExceeded
+M13 report skipped: BACKUP_OPS_URL or the ingest key is not set
+BACKUP FAILED at stage LOCAL: DRIVE_QUOTA
+Drive files before/after: 4 / 4; deletefile calls: 0
+FAILED | stage=LOCAL | failed_stage=LOCAL | DRIVE_QUOTA
+local unsent copies kept: 3 encrypted files in the spool
+
+## 6. Drive authorisation lost: told as DRIVE_AUTH, with a leaking rclone the log carries no token
+debug: Authorization: [removed] [removed] refresh_token: [removed]
+M13 report skipped: BACKUP_OPS_URL or the ingest key is not set
+BACKUP FAILED at stage LOCAL: DRIVE_AUTH
+token VALUES in that log (ya29..., refresh token text): 0 (the key NAMES stay, the values show as [removed])
+
+## 7. Drive not configured (no remote): told as DRIVE_NOT_CONFIGURED, never as success
+M13 report skipped: BACKUP_OPS_URL or the ingest key is not set
+BACKUP FAILED at stage LOCAL: DRIVE_NOT_CONFIGURED
+
+## 8. Next normal run: new backup + the earlier unsent copies are sent (bounded retry), records move to VERIFIED
+dump (DAILY, trigger TIMER)
+restore check
+local copy made and restore-checked (675872 bytes)
+upload
+an earlier copy was sent now
+an earlier copy was sent now
+an earlier copy was sent now
+spool: removed a verified local copy
+spool: removed a verified local copy
+spool: removed a verified local copy
+spool: removed a verified local copy
+BACKUP OK id=b059fd9e-5d51-4dc5-b2a9-3ba3073e9e12 kind=DAILY size=675872 offsite=true
+SUCCEEDED | stage=VERIFIED | offsite=true | -
+SUCCEEDED | stage=VERIFIED | offsite=true | -
+SUCCEEDED | stage=VERIFIED | offsite=true | -
+SUCCEEDED | stage=VERIFIED | offsite=true | -
+SUCCEEDED | stage=VERIFIED | offsite=true | -
+SUCCEEDED | stage=VERIFIED | offsite=true | -
+
+## 9. 'Sao lưu ngay' from the Web Admin: queued job -> backup-trigger.sh claims it -> backup -> job DONE; a second pass finds nothing
+job before: QUEUED
+dump (MANUAL, trigger WEB)
+restore check
+local copy made and restore-checked (675872 bytes)
+upload
+spool: removed a verified local copy
+BACKUP OK id=e134388e-74e7-48ff-ab53-6805e05a607c kind=MANUAL size=675872 offsite=true
+job after: DONE | backup: WEB MANUAL SUCCEEDED stage=VERIFIED
+(second pass: exit 0 and nothing started)
+
+## 10. A job that finds another backup running goes back to the queue (not run twice)
+another backup is running: nothing was started
+another backup is running; the job waits
+job state while the other backup holds the lock: QUEUED
+
+## 11. Restore DRILL: download the newest backup from Drive, check, decrypt, restore into a scratch DB, run the checks (no SMS/push/Discord/payments exist there)
+drill OK for ship11-MANUAL-20261024T010656Z-e134388e
+schema_version|1795996800000_create-m12-backup-restore
+users|1
+audit_logs|1107
+wallet_ledger_entries|20
+wallets|5
+ledger_wallet_difference_vnd|0
+orders|0
+deliveries|0
+open_holds|0
+scratch databases left behind: 0
+
+## 12. Wrong passphrase on restore
+DECRYPTION FAILED: wrong passphrase or damaged file
+
+## 13. Secrets: scanning everything this rehearsal wrote (spool, Drive folder, logs, manifests) for the passphrase and token text
+passphrase present in any file: 0
+unencrypted dumps on Drive or in the spool: 0
+files on Drive or in the spool that contain readable database text (PGDMP header, table or sample strings): 0
+Drive folder at the end: 14 files; every name matches the job's own pattern: 0 foreign
+      6 ship11-DAILY-<id>.manifest.json
+      6 ship11-DAILY-<id>.tar.enc
+      1 ship11-MANUAL-<id>.manifest.json
+      1 ship11-MANUAL-<id>.tar.enc
+
+## 14. Read-only restore checklist run on the restored scratch copy (restore-checklist.sql)
+backup_stops_at|latest ledger row 2026-10-24 01:00:12.712664+00; latest audit row 2026-10-24 01:06:11.713+00; latest order none; latest delivery none
+ledger_wallet_difference_vnd|0  (must be 0)
+wallet_balance_vs_last_ledger_row_mismatches|0  (must be 0)
+active_holds|0 holding 0 VND  (each belongs to a live delivery/withdrawal at that moment; compare with what really happened after)
+topups_pending|0  (money may have arrived after the backup: check the bank statement before re-entering)
+background_outbox_unpublished|PENDING = 11
+neutralize-restored-db.sql refuses a non-rehearsal database: REFUSED: ship11_test is not a restore rehearsal database

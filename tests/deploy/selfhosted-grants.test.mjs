@@ -93,8 +93,8 @@ describe('ops/selfhosted/02-runtime-grants.sql', () => {
     assert.ok(parsed.size >= 28);
   });
 
-  test('keeps the append-only and write-once rules: audit_logs INSERT only; limiter configuration SELECT only; no DELETE where a trigger forbids it', () => {
-    assert.deepEqual(parsed.get('audit_logs'), ['INSERT']);
+  test('keeps the append-only and write-once rules: audit_logs SELECT + INSERT only (never UPDATE or DELETE); limiter configuration SELECT only; no DELETE where a trigger forbids it', () => {
+    assert.deepEqual(parsed.get('audit_logs'), ['INSERT', 'SELECT']);
     assert.deepEqual(parsed.get('admin_auth_limit_config'), ['SELECT']);
     for (const table of ['admin_invitations', 'admin_sensitive_operations', 'admin_activation_attempts', 'admin_activation_otp_challenges', 'customer_profiles', 'user_consents']) {
       assert.ok(!(parsed.get(table) ?? []).includes('DELETE'), table);

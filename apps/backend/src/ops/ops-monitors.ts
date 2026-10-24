@@ -197,6 +197,26 @@ export interface BackupFacts {
   readonly lastOkAtMs: number | null;
 }
 
+/**
+ * What the backup job (ops/backup/backup.sh) can say when it fails. Only these codes become words; any other code is shown as the generic failure. They are causes the job
+ * measured itself (a command's exit status), never a guess, and none of them carries a secret or customer data.
+ */
+export const BACKUP_FAILURE_TEXT: Readonly<Record<string, string>> = {
+  DRIVE_NOT_CONFIGURED: 'Sao lưu chưa được nối với Google Drive',
+  DRIVE_AUTH: 'Google Drive từ chối quyền truy cập (cần kết nối lại)',
+  DRIVE_QUOTA: 'Google Drive đã đầy dung lượng',
+  UPLOAD_FAILED: 'Tải bản sao lưu lên Google Drive thất bại',
+  UPLOAD_VERIFY: 'Bản sao trên Google Drive không khớp với bản gốc',
+  ENCRYPT_FAILED: 'Mã hóa bản sao lưu thất bại',
+  DUMP_FAILED: 'Sao lưu cơ sở dữ liệu thất bại',
+  PG_TOOL_OLD: 'Công cụ sao lưu PostgreSQL cũ hơn máy chủ cơ sở dữ liệu',
+  VERIFY_RESTORE: 'Khôi phục thử bản sao lưu thất bại',
+  SPOOL_FULL: 'Thư mục sao lưu trên VPS đã đầy',
+  DISK_LOW: 'Dung lượng trống trên VPS không đủ để sao lưu',
+  PASSPHRASE_MISSING: 'Thiếu khóa mã hóa bản sao lưu',
+  FILES_FAILED: 'Sao lưu tệp ảnh thất bại',
+};
+
 /** A successful backup and a successful restore test are two facts. This is the backup: failed, or older than the configured schedule. */
 export function evaluateBackup(f: BackupFacts, settings: OpsSettings): CheckReport {
   const base = { source: 'BACKUP' as const, checkKey: CHECK_BACKUP, staleAfterSeconds: 7 * 86400, title: 'Sao lưu cơ sở dữ liệu có vấn đề', impact: 'Nếu máy chủ hỏng sẽ khó khôi phục dữ liệu gần nhất' };
@@ -205,11 +225,11 @@ export function evaluateBackup(f: BackupFacts, settings: OpsSettings): CheckRepo
   }
   const maxAge = num(settings, 'server.backup_max_age_hours') * 3_600_000;
   if (!f.latest.ok) {
-    return { ...base, state: 'WARNING', value: { last_result: 'FAILED', last_ok_at: f.lastOkAtMs === null ? null : new Date(f.lastOkAtMs).toISOString(), detail: f.latest.detailCode }, evidenceCode: 'BACKUP_FAILED', title: 'Sao lưu cơ sở dữ liệu thất bại' };
+    return { ...base, state: 'WARNING', value: { last_result: 'FAILED', last_ok_at: f.lastOkAtMs === null ? null : new Date(f.lastOkAtMs).toISOString(), detail: f.latest.detailCode }, evidenceCode: 'BACKUP_FAILED', title: `Sao lưu thất bại: ${BACKUP_FAILURE_TEXT[f.latest.detailCode ?? ''] ?? 'cơ sở dữ liệu chưa được sao lưu'}` };
   }
   const age = f.nowMs - (f.lastOkAtMs ?? f.latest.finishedAtMs);
   if (age > maxAge) {
-    return { ...base, state: 'WARNING', value: { last_ok_at: new Date(f.lastOkAtMs ?? f.latest.finishedAtMs).toISOString(), age_hours: Math.floor(age / 3_600_000) }, evidenceCode: 'BACKUP_OVERDUE', title: 'Sao lưu cơ sở dữ liệu quá hạn' };
+    return { ...base, state: 'WARNING', value: { last_ok_at: new Date(f.lastOkAtMs ?? f.latest.finishedAtMs).toISOString(), age_hours: Math.floor(age / 3_600_000) }, evidenceCode: 'BACKUP_OVERDUE', title: `Quá ${String(num(settings, 'server.backup_max_age_hours'))} giờ chưa có bản sao lưu ngoài VPS thành công` };
   }
   return { ...base, state: 'OK', value: { last_ok_at: new Date(f.lastOkAtMs ?? f.latest.finishedAtMs).toISOString(), age_hours: Math.floor(age / 3_600_000) }, evidenceCode: 'BACKUP_OK' };
 }

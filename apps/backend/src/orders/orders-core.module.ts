@@ -4,6 +4,7 @@ import { OutboxModule } from '../outbox/outbox.module';
 import { OrderDeliveryAdapter } from './order-delivery-adapter';
 import { OrderFeedbackAdapter } from './order-feedback-adapter';
 import { OrderRecorder } from './order-recorder';
+import { OrderReportReader } from './order-report-reader';
 import { OrderRepository } from './order-repository';
 import { OrderSalesReader } from './order-sales-reader';
 
@@ -13,7 +14,7 @@ import { OrderSalesReader } from './order-sales-reader';
  */
 @Module({
   imports: [AuditModule, OutboxModule],
-  providers: [OrderRepository, OrderSalesReader, OrderRecorder, OrderDeliveryAdapter, OrderFeedbackAdapter],
-  exports: [OrderRepository, OrderSalesReader, OrderRecorder, OrderDeliveryAdapter, OrderFeedbackAdapter],
+  providers: [OrderReportReader, OrderRepository, OrderSalesReader, OrderRecorder, OrderDeliveryAdapter, OrderFeedbackAdapter],
+  exports: [OrderReportReader, OrderRepository, OrderSalesReader, OrderRecorder, OrderDeliveryAdapter, OrderFeedbackAdapter],
 })
 export class OrdersCoreModule {}

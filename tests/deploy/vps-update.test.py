@@ -74,6 +74,37 @@ class DeployTests(unittest.TestCase):
             migrate.assert_not_called()
         self.assertEqual((self.root / 'current').resolve(), self.old)
 
+    def test_configured_offsite_backup_is_required_before_a_migration_and_a_failure_stops_it(self):
+        env = self.root / 'backup.env'
+        env.write_text('x')
+        with patch.object(d, 'verify_service'), patch.object(d, 'extract', return_value=self.new), \
+             patch.object(d, 'probe', side_effect=['ready', 'ready', '["approved"]']), patch.object(d, 'compatible'), patch.object(d, 'run'), \
+             patch.object(d, 'backup'), patch.object(d, 'BACKUP_ENV', env), patch.object(d, 'migrate') as migrate, \
+             patch.object(d.subprocess, 'run', side_effect=d.subprocess.CalledProcessError(1, 'systemctl')) as started:
+            with self.assertRaisesRegex(RuntimeError, 'off-VPS backup before the migration failed; no migration applied'):
+                d.update('archive', 'b' * 40)
+            migrate.assert_not_called()
+            self.assertEqual(started.call_args.args[0], ['systemctl', 'start', '--wait', '11ship-backup-predeploy.service'])
+        self.assertEqual((self.root / 'current').resolve(), self.old)
+
+    def test_configured_offsite_backup_success_lets_the_migration_run(self):
+        env = self.root / 'backup.env'
+        env.write_text('x')
+        order = []
+        with patch.object(d, 'verify_service'), patch.object(d, 'extract', return_value=self.new), \
+             patch.object(d, 'probe', side_effect=['ready', 'ready', '["approved"]']), patch.object(d, 'compatible'), patch.object(d, 'run'), \
+             patch.object(d, 'backup', side_effect=lambda: order.append('local')), patch.object(d, 'BACKUP_ENV', env), patch.object(d, 'switch'), \
+             patch.object(d, 'migrate', side_effect=lambda release: order.append('migrate')), \
+             patch.object(d.subprocess, 'run', side_effect=lambda *a, **k: order.append('offsite')):
+            d.update('archive', 'b' * 40)
+        self.assertEqual(order, ['local', 'offsite', 'migrate'])
+
+    def test_unconfigured_offsite_backup_is_said_out_loud_and_does_not_block(self):
+        with patch.object(d, 'BACKUP_ENV', self.root / 'missing'), patch.object(d.subprocess, 'run') as started, patch('builtins.print') as printed:
+            d.backup_offsite()
+            started.assert_not_called()
+        self.assertIn('WARNING: off-VPS backup is not configured', printed.call_args.args[0])
+
     def test_prune_only_old_code_preserves_shared_current_previous_and_links(self):
         obsolete = self.release('c')
         shared = self.root / 'shared'

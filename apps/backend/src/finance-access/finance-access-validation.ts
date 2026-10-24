@@ -1,6 +1,6 @@
 import { AppError } from '../common/app-errors';
 import { isCanonicalUuid } from '../shared/identifiers';
-import { FinancePermissionKey, isGrantableFinancePermission } from './finance-access-constants';
+import { GrantablePermissionKey, isGrantablePermission } from './finance-access-constants';
 
 // Strict parsers of the finance routes of the administration (M04-B2.2a). The actor comes from the session and the target from the path; a body
 // never names an actor, a role or a state. Anything that is not exactly the documented shape is ADMIN_INPUT_INVALID, echoing nothing.
@@ -32,7 +32,7 @@ export function parseNoFinanceQuery(query: unknown): void {
 }
 
 export interface GrantBody {
-  readonly permissionKey: FinancePermissionKey;
+  readonly permissionKey: GrantablePermissionKey;
   /** The version of the right row the screen saw; 0 when the administrator has no row for this right yet. */
   readonly expectedVersion: number;
 }
@@ -41,7 +41,7 @@ export interface GrantBody {
 export function parseGrantBody(body: unknown): GrantBody {
   const parsed = exact(body, ['permission_key', 'expected_version']);
   const version = parsed.expected_version;
-  if (!isGrantableFinancePermission(parsed.permission_key) || typeof version !== 'number' || !Number.isSafeInteger(version) || version < 0) {
+  if (!isGrantablePermission(parsed.permission_key) || typeof version !== 'number' || !Number.isSafeInteger(version) || version < 0) {
     return invalid();
   }
   return { permissionKey: parsed.permission_key, expectedVersion: version };

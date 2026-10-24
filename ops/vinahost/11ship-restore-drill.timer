@@ -1,0 +1,10 @@
+[Unit]
+Description=11Ship weekly restore drill (Sunday 05:00 Vietnam time)
+
+[Timer]
+OnCalendar=Sun *-*-* 05:00:00 Asia/Ho_Chi_Minh
+Persistent=true
+Unit=11ship-restore-drill.service
+
+[Install]
+WantedBy=timers.target

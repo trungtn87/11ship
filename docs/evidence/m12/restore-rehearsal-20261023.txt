@@ -1,0 +1,40 @@
+# M12-F restore rehearsal, 2026-10-23, LOCAL TEST SERVER (PostgreSQL 16, a copy of the test database + sample data). Not production, not the VPS.
+
+## 1. Backup: dump -> encrypt -> restore into a scratch DB -> check -> record
+BACKUP OK id=ddf69d83-7d18-49b2-bf89-6f4ef49e235c kind=DAILY size=562992 sha256=7074bc9ab23d0dcbe4ef0ca8a15be98d9b6ceb961f18ad80f7013fb7ac740c37 offsite=false
+restored into scratch DB and checked: schema 1795996800000_create-m12-backup-restore, audit 500, ledger 20, users 0; no off-VPS target configured
+
+## 2. The record the Web Admin reads
+DAILY | SUCCEEDED | 562992 bytes | encrypted=true | offsite=false | verified=true
+
+## 3. Restore by hand from the encrypted file into a NEW scratch DB (kept to look at)
+schema_version|1795996800000_create-m12-backup-restore
+users|0
+audit_logs|500
+wallet_ledger_entries|20
+wallets|5
+ledger_wallet_difference_vnd|0
+orders|0
+deliveries|0
+open_holds|0
+exit=0
+
+## 4. Guards
+REFUSED: 'ship11_staging' is not a scratch database name (ship11_restore_* or ship11_verify_*)
+exit=64 (production name refused)
+REFUSED: 'ship11_test' is not a scratch database name (ship11_restore_* or ship11_verify_*)
+exit=64 (test DB name refused)
+REFUSED: database 'ship11_restore_manual_1' already exists; this script only creates new scratch databases
+exit=65 (existing database refused, nothing overwritten)
+still there and untouched: 500 audit rows
+
+## 5. A corrupted source is NOT recorded as a good backup (a wallet balance that no longer matches the ledger; the wallet guard trigger is bypassed only in this throwaway copy to plant the fault)
+BACKUP FAILED: VERIFY_LEDGER_DIFFERENCE
+exit=1
+DAILY | FAILED | error=VERIFY_LEDGER_DIFFERENCE
+(the corrupted run left no usable file: 5 files kept, all from verified runs)
+
+## 6. Wrong passphrase
+bad decrypt
+4067CC5DFE7E0000:error:1C800064:Provider routines:ossl_cipher_unpadblock:bad decrypt:../providers/implementations/ciphers/ciphercommon_block.c:124:
+exit=1

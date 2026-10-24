@@ -82,4 +82,17 @@ export class AdminMembershipRepository {
       throw new TechnicalError('internal', 'Membership was not written');
     }
   }
+
+  /**
+   * ACTIVE <-> DISABLED of an ADMIN membership, version + 1. The version is part of every session's binding, so any session issued for the old version stops working
+   * with this change (M12-C); the caller holds the membership FOR UPDATE and passes the version it read.
+   */
+  async setStatus(context: TransactionContext, userId: string, expectedVersion: number, status: MembershipStatus): Promise<boolean> {
+    const result = await context.query(
+      `UPDATE app.admin_memberships SET status = $3, version = version + 1, updated_at = date_trunc('milliseconds', clock_timestamp())
+        WHERE user_id = $1::uuid AND version = $2::bigint AND admin_role = 'ADMIN'`,
+      [userId, expectedVersion, status],
+    );
+    return result.rowCount === 1;
+  }
 }

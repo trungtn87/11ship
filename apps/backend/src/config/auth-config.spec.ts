@@ -100,7 +100,7 @@ describe('loadConfig — Auth settings (task section 6)', () => {
     expect(auth).toMatchObject({
       otpTtlSeconds: 300,
       otpResendSeconds: 60,
-      otpMaxAttempts: 5,
+      otpMaxAttempts: 3,
       proofTtlSeconds: 600,
       sessionTtlSeconds: 604_800,
     });

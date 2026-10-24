@@ -27,7 +27,7 @@ export function authTestConfig(overrides: Partial<AuthConfig> = {}): AuthConfig 
   return {
     otpTtlSeconds: 300,
     otpResendSeconds: 60,
-    otpMaxAttempts: 5,
+    otpMaxAttempts: 3,
     proofTtlSeconds: 600,
     sessionTtlSeconds: 604_800,
     otpHmacKey: new OtpHmacKey(TEST_OTP_KEY_BYTES),
