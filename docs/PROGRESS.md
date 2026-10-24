@@ -5,7 +5,7 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo mã main `887026a` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ⏳ Đang chạy (`RUNNING`)
+> Dữ liệu theo mã main `887026a` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ✅ Đạt (`PASS`)
 
 ## 🎯 VIỆC ĐANG LÀM
 
@@ -288,7 +288,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#185](https://github.com/trungtn87/11ship/pull/185) M02: Quản lý quán trên Web Admin | Đã merge (`MERGED`) | — | — | — | `098f17f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#186](https://github.com/trungtn87/11ship/pull/186) Deploy VPS: duyệt migration theo hash đã review và dùng lại… | Đã merge (`MERGED`) | — | — | — | `f24421f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#187](https://github.com/trungtn87/11ship/pull/187) Add archify skill (tt-a1i/archify v3.2) under .claude/skills | 🚫 Đã hủy / bỏ qua (`CANCELLED / IGNORED`) | — | — | — | `66ca65f` | 🚫 không tính (đã hủy) — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#188](https://github.com/trungtn87/11ship/pull/188) M07: sửa đơn kẹt khi shipper bỏ lượt nhận phí thương lượng;… | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `4ed24de` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#188](https://github.com/trungtn87/11ship/pull/188) M07: sửa đơn kẹt khi shipper bỏ lượt nhận phí thương lượng;… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `4ed24de` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
