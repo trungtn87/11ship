@@ -220,14 +220,30 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       const again = await verifyRegister(id, otp);
       expect([again.status, errorCode(again)]).toEqual([409, 'OTP_ALREADY_USED']);
 
-      // Nowhere at rest or in the logs: the sealed envelope is gone and the code was never written in clear.
+      // Nowhere at rest or in the logs: the sealed envelope is gone and the code was never written in clear. The scan looks for the code as a number standing on
+      // its own: six digits inside an id (uuid), a hash or the microseconds of a timestamp are not the code, and a bare substring match on whole tables reports
+      // those by chance (about one random code in 500 on a small database, more as the tables grow).
+      const standalone = `(?<![0-9A-Za-z.-])${otp}(?![0-9A-Za-z-]|\\.[0-9])`;
+      const control = await app.pool.query<{ clear: boolean; sentence: boolean; inUuid: boolean; inFraction: boolean; inHash: boolean }>(
+        `SELECT $2::text ~ $1 AS clear, $3::text ~ $1 AS sentence, $4::text ~ $1 AS "inUuid", $5::text ~ $1 AS "inFraction", $6::text ~ $1 AS "inHash"`,
+        [
+          standalone,
+          `{"otp":"${otp}"}`,
+          `{"body":"11Ship: Ma xac thuc dang ky cua ban la ${otp}. Hieu luc 5 phut."}`,
+          `{"id":"${otp}ab-1111-4111-8111-${otp}${otp}"}`,
+          `{"created_at":"2026-10-24T02:03:04.${otp}+00:00"}`,
+          `{"digest":"ab${otp}cd${otp}"}`,
+        ],
+      );
+      // The detector finds a code stored in clear and ignores look-alikes in ids, hashes and timestamps.
+      expect(control.rows[0]).toEqual({ clear: true, sentence: true, inUuid: false, inFraction: false, inHash: false });
       const tables = await app.pool.query<{ hit: boolean }>(
         `SELECT (
-           EXISTS (SELECT 1 FROM app.sms_jobs WHERE row_to_json(sms_jobs)::text LIKE $1)
-        OR EXISTS (SELECT 1 FROM app.audit_logs WHERE row_to_json(audit_logs)::text LIKE $1)
-        OR EXISTS (SELECT 1 FROM app.outbox_events WHERE row_to_json(outbox_events)::text LIKE $1)
+           EXISTS (SELECT 1 FROM app.sms_jobs WHERE row_to_json(sms_jobs)::text ~ $1)
+        OR EXISTS (SELECT 1 FROM app.audit_logs WHERE row_to_json(audit_logs)::text ~ $1)
+        OR EXISTS (SELECT 1 FROM app.outbox_events WHERE row_to_json(outbox_events)::text ~ $1)
         ) AS hit`,
-        [`%${otp}%`],
+        [standalone],
       );
       expect(tables.rows[0]?.hit).toBe(false);
       expect(app.running.logs.join('\n')).not.toContain(otp);
