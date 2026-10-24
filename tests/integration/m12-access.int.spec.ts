@@ -76,6 +76,9 @@ describe('M12-C — administrator access', () => {
       { permissions: [], expected_fingerprint: row.permissions_fingerprint, reason: 'x' },
       { permissions: [{ app: 'DRIVER', can_view: false, can_review_profile: true, can_lock: false }], expected_fingerprint: row.permissions_fingerprint, reason: 'x' },
       { permissions: [{ app: 'DRIVER', can_view: false, can_review_profile: false, can_lock: false }], expected_fingerprint: row.permissions_fingerprint, reason: 'x' },
+      { permissions: [{ app: 'SHOP', can_view: false, can_review_profile: false, can_lock: false, can_manage_shops: true }, { app: 'DRIVER', can_view: true, can_review_profile: false, can_lock: false }], expected_fingerprint: row.permissions_fingerprint, reason: 'x' },
+      { permissions: [{ app: 'DRIVER', can_view: true, can_review_profile: false, can_lock: false, can_manage_shops: true }], expected_fingerprint: row.permissions_fingerprint, reason: 'x' },
+      { permissions: [{ app: 'DRIVER', can_view: true, can_review_profile: false, can_lock: false, can_manage_shops: 'yes' }], expected_fingerprint: row.permissions_fingerprint, reason: 'x' },
       { permissions: [{ app: 'CUSTOMER', can_view: true, can_review_profile: true, can_lock: false }], expected_fingerprint: row.permissions_fingerprint, reason: 'x' },
       { permissions: [{ app: 'DRIVER', can_view: true, can_review_profile: false, can_lock: false }, { app: 'DRIVER', can_view: true, can_review_profile: false, can_lock: false }], expected_fingerprint: row.permissions_fingerprint, reason: 'x' },
       { permissions: row.permissions, expected_fingerprint: row.permissions_fingerprint, reason: '' },
@@ -102,7 +105,7 @@ describe('M12-C — administrator access', () => {
     const evidence = (await admin.pool.query(`SELECT metadata FROM app.audit_logs WHERE action = 'admin.access.permissions.update.v1' AND resource_id = $1`, [target.userId])).rows[0].metadata as Json;
     expect(evidence.reason).toBe('Chuyển sang phụ trách khách hàng');
     expect(evidence.before).toHaveLength(2);
-    expect(evidence.after).toEqual([{ app: 'CUSTOMER', can_view: true, can_review_profile: false, can_lock: false, can_manage_catalog: false }]);
+    expect(evidence.after).toEqual([{ app: 'CUSTOMER', can_view: true, can_review_profile: false, can_lock: false, can_manage_catalog: false, can_manage_shops: false }]);
     // Restore for the next cases.
     const restore = { permissions: [{ app: 'DRIVER', can_view: true, can_review_profile: false, can_lock: false }], expected_fingerprint: after.permissions_fingerprint, reason: 'Khôi phục' };
     expect((await postAs(admin, sys(system), path(target.userId, 'permissions'), restore)).status).toBe(200);

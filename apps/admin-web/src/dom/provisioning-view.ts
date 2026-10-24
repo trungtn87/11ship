@@ -251,11 +251,11 @@ export class ProvisioningView {
       item('Hết hạn', formatDateTime(invitation.expiresAt)),
       ...(invitation.terminalAt === null ? [] : [item('Kết thúc lúc', formatDateTime(invitation.terminalAt))]),
     );
-    const perms = h('table', { class: 'perm-table' }, h('caption', {}, 'Quyền được cấp'), h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Ứng dụng'), h('th', { scope: 'col' }, 'Xem'), h('th', { scope: 'col' }, 'Duyệt hồ sơ'), h('th', { scope: 'col' }, 'Khóa/Mở khóa'), h('th', { scope: 'col' }, 'Nhóm món'))));
+    const perms = h('table', { class: 'perm-table' }, h('caption', {}, 'Quyền được cấp'), h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Ứng dụng'), h('th', { scope: 'col' }, 'Xem'), h('th', { scope: 'col' }, 'Duyệt hồ sơ'), h('th', { scope: 'col' }, 'Khóa/Mở khóa'), h('th', { scope: 'col' }, 'Nhóm món'), h('th', { scope: 'col' }, 'Quản lý hoạt động quán'))));
     const tbody = h('tbody');
     for (const permission of invitation.permissions) {
       tbody.append(
-        h('tr', {}, h('th', { scope: 'row' }, APP_LABEL[permission.app]), h('td', {}, permission.canView ? 'Có' : '—'), h('td', {}, permission.canReviewProfile ? 'Có' : '—'), h('td', {}, permission.canLock ? 'Có' : '—'), h('td', {}, permission.canManageCatalog === true ? 'Có' : '—')),
+        h('tr', {}, h('th', { scope: 'row' }, APP_LABEL[permission.app]), h('td', {}, permission.canView ? 'Có' : '—'), h('td', {}, permission.canReviewProfile ? 'Có' : '—'), h('td', {}, permission.canLock ? 'Có' : '—'), h('td', {}, permission.canManageCatalog === true ? 'Có' : '—'), h('td', {}, permission.canManageShops === true ? 'Có' : '—')),
       );
     }
     perms.append(tbody);
@@ -290,7 +290,7 @@ export class ProvisioningView {
     const replace = h('input', { type: 'radio', name: 'perm-mode', id: 'perm-replace' });
     const matrixBox = h('fieldset', { class: 'perm-box' }, h('legend', {}, 'Quyền theo ứng dụng'));
     const boxes = new Map<string, HTMLInputElement>();
-    const matrix = h('table', { class: 'perm-table perm-edit' }, h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Ứng dụng'), h('th', { scope: 'col' }, 'Xem'), h('th', { scope: 'col' }, 'Duyệt hồ sơ'), h('th', { scope: 'col' }, 'Khóa/Mở khóa'), h('th', { scope: 'col' }, 'Nhóm món'))));
+    const matrix = h('table', { class: 'perm-table perm-edit' }, h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Ứng dụng'), h('th', { scope: 'col' }, 'Xem'), h('th', { scope: 'col' }, 'Duyệt hồ sơ'), h('th', { scope: 'col' }, 'Khóa/Mở khóa'), h('th', { scope: 'col' }, 'Nhóm món'), h('th', { scope: 'col' }, 'Quản lý hoạt động quán'))));
     const mbody = h('tbody');
     for (const app of APPS) {
       const row = h('tr', {}, h('th', { scope: 'row' }, APP_LABEL[app]));
@@ -312,8 +312,15 @@ export class ProvisioningView {
         });
         boxes.set('SHOP.canManageCatalog', box);
         row.append(h('td', {}, box));
+        const shopsBox = h('input', { type: 'checkbox', id: 'p-SHOP-canManageShops', 'aria-label': `${APP_LABEL[app]} · Quản lý hoạt động quán` });
+        shopsBox.addEventListener('change', () => {
+          permissions = togglePermission(permissions, app, 'canManageShops', shopsBox.checked);
+          syncBoxes();
+        });
+        boxes.set('SHOP.canManageShops', shopsBox);
+        row.append(h('td', {}, shopsBox));
       } else {
-        row.append(h('td', {}, '—'));
+        row.append(h('td', {}, '—'), h('td', {}, '—'));
       }
       mbody.append(row);
     }
@@ -331,6 +338,10 @@ export class ProvisioningView {
         const catalog = boxes.get(`${app}.canManageCatalog`);
         if (catalog !== undefined) {
           catalog.checked = permissions[app].canManageCatalog === true;
+        }
+        const shopsRight = boxes.get(`${app}.canManageShops`);
+        if (shopsRight !== undefined) {
+          shopsRight.checked = permissions[app].canManageShops === true;
         }
       }
     };

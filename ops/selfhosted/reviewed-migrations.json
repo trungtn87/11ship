@@ -21,6 +21,10 @@
       "sha256": "c32202d52f362bcd9fe40a624345f36da3d3e4aef0fa1a18bc4a5cdda406f44d",
       "review": "PR #178; compatibility review 2026-10-24: Up adds order parameter tables, default fee_answer_minutes=5, nullable offer deadline/payer/on-behalf fields and widens event types. Existing agreements keep NULL answer deadlines and their earlier search deadline; old writes remain valid."
     },
+    "1796256000000_admin-shop-manage-right": {
+      "sha256": "aef67a467cf8b4d87e3642d7b6202af5573d6ed7153ba298890fe682bf140185",
+      "review": "PR #185; compatibility review 2026-10-24: Up adds one boolean column can_manage_shops NOT NULL DEFAULT false to admin_app_permissions and admin_invitation_permissions plus CHECKs (requires can_view, only app = SHOP). Every existing row and invitation gets false, so no administrator is upgraded and nothing is copied from can_lock; no business data, grants or other tables change. The previous backend names its columns explicitly in every INSERT/SELECT of these tables, so it keeps working and ignores the column; all existing rows satisfy the CHECKs."
+    },
     "1796342400000_m07-fee-revision": {
       "sha256": "b5bb531d00e40f89bb01c2b637b0b27e5dd7335b6f22bf2bfddeca1f43135518",
       "review": "M07 fee negotiation fix; compatibility review 2026-10-24: Up adds two nullable columns and a check on the fee agreement, widens the status guard by one transition (ACCEPTED to PROPOSED for AGREED) and the event types by two. Existing rows are unchanged; the previous backend never sets the new columns and ignores them."

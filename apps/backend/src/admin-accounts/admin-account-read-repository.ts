@@ -24,6 +24,8 @@ export interface PermissionRow {
   readonly canLock: boolean;
   /** Dish-group management (SHOP only). Absent = false. */
   readonly canManageCatalog?: boolean;
+  /** Shop activity management: disable / enable a shop (SHOP only). Absent = false. */
+  readonly canManageShops?: boolean;
 }
 
 /** What the actor may read, derived once from the CURRENT permission rows (SYSTEM: everything). */
@@ -158,8 +160,8 @@ function toSummary(row: RawUser): UserSummaryRow {
 export class AdminAccountReadRepository {
   /** The CURRENT permission rows of an ADMIN, sorted by app. Read under the actor's shared membership lock. */
   async permissions(context: TransactionContext, userId: string): Promise<PermissionRow[]> {
-    const result = await context.query<{ app: AdminApp; can_view: boolean; can_review_profile: boolean; can_lock: boolean; can_manage_catalog: boolean }>(
-      `SELECT app, can_view, can_review_profile, can_lock, can_manage_catalog FROM app.admin_app_permissions WHERE user_id = $1::uuid ORDER BY app`,
+    const result = await context.query<{ app: AdminApp; can_view: boolean; can_review_profile: boolean; can_lock: boolean; can_manage_catalog: boolean; can_manage_shops: boolean }>(
+      `SELECT app, can_view, can_review_profile, can_lock, can_manage_catalog, can_manage_shops FROM app.admin_app_permissions WHERE user_id = $1::uuid ORDER BY app`,
       [userId],
     );
     return result.rows.map((row) => ({
@@ -168,6 +170,7 @@ export class AdminAccountReadRepository {
       canReviewProfile: row.can_review_profile,
       canLock: row.can_lock,
       canManageCatalog: row.can_manage_catalog,
+      canManageShops: row.can_manage_shops,
     }));
   }
 
@@ -313,14 +316,14 @@ export class AdminAccountReadRepository {
     if (userIds.length === 0) {
       return grouped;
     }
-    const result = await context.query<{ user_id: string; app: AdminApp; can_view: boolean; can_review_profile: boolean; can_lock: boolean; can_manage_catalog: boolean }>(
-      `SELECT user_id, app, can_view, can_review_profile, can_lock, can_manage_catalog FROM app.admin_app_permissions
+    const result = await context.query<{ user_id: string; app: AdminApp; can_view: boolean; can_review_profile: boolean; can_lock: boolean; can_manage_catalog: boolean; can_manage_shops: boolean }>(
+      `SELECT user_id, app, can_view, can_review_profile, can_lock, can_manage_catalog, can_manage_shops FROM app.admin_app_permissions
         WHERE user_id = ANY($1::uuid[]) ORDER BY user_id, app`,
       [userIds],
     );
     for (const row of result.rows) {
       const list = grouped.get(row.user_id) ?? [];
-      list.push({ app: row.app, canView: row.can_view, canReviewProfile: row.can_review_profile, canLock: row.can_lock, canManageCatalog: row.can_manage_catalog });
+      list.push({ app: row.app, canView: row.can_view, canReviewProfile: row.can_review_profile, canLock: row.can_lock, canManageCatalog: row.can_manage_catalog, canManageShops: row.can_manage_shops });
       grouped.set(row.user_id, list);
     }
     return grouped;

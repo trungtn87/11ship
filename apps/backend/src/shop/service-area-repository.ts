@@ -64,6 +64,14 @@ export class ServiceAreaRepository {
     return row === undefined ? undefined : { serviceAreaId: row.service_area_id, status: row.status };
   }
 
+  /** Every area, ACTIVE or not, for the administration filter (a shop may sit in an area that was switched off). Read only. */
+  async listAll(context: TransactionContext): Promise<{ serviceAreaId: string; name: string; status: ServiceAreaStatus }[]> {
+    const result = await context.query<{ service_area_id: string; name: string; status: ServiceAreaStatus }>(
+      `SELECT service_area_id, name, status FROM app.service_areas ORDER BY name ASC, service_area_id ASC`,
+    );
+    return result.rows.map((row) => ({ serviceAreaId: row.service_area_id, name: row.name, status: row.status }));
+  }
+
   /**
    * The ACTIVE areas a shop can pick during onboarding, by name and then by identifier so that the order is the same on
    * every call. A plain read: no lock (a later deactivation is caught by the FOR SHARE re-check of save and complete),
@@ -78,4 +86,5 @@ export class ServiceAreaRepository {
     );
     return result.rows.map((row) => ({ serviceAreaId: row.service_area_id, name: row.name }));
   }
+
 }

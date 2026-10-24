@@ -137,6 +137,43 @@ export class ShopRepository {
   }
 
   /**
+   * The shop by id, whatever its status, locked FOR UPDATE (administration: disable / enable). The owner's membership is NOT locked: an
+   * administrator never changes the membership, and every owner path locks membership then shop, so this order cannot close a cycle.
+   */
+  async lockShopForUpdate(context: TransactionContext, shopId: string): Promise<ShopRow | undefined> {
+    const result = await context.query<RawShop>(
+      `SELECT shop_id, name, contact_phone_normalized, zalo, facebook, address_text, pickup_lat, pickup_lng,
+              service_area_id, status, accepting_orders, version, logo
+         FROM app.shops WHERE shop_id = $1::uuid FOR UPDATE`,
+      [shopId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toShop(row);
+  }
+
+  /**
+   * ACTIVE <-> DISABLED at exactly `expectedVersion` and returns the new version. Nothing else of the shop changes (profile, schedule, dishes,
+   * owner membership and the legacy accepting_orders column stay as they are). An update that touches no row is a broken invariant: the caller
+   * holds the row FOR UPDATE and has just compared status and version.
+   */
+  async changeStatus(context: TransactionContext, shopId: string, from: 'ACTIVE' | 'DISABLED', to: 'ACTIVE' | 'DISABLED', expectedVersion: number): Promise<number> {
+    const result = await context.query<{ version: string }>(
+      `UPDATE app.shops
+          SET status = $4,
+              version = version + 1,
+              updated_at = date_trunc('milliseconds', clock_timestamp())
+        WHERE shop_id = $1::uuid AND status = $2 AND version = $3::bigint
+        RETURNING version`,
+      [shopId, from, expectedVersion, to],
+    );
+    const row = result.rows[0];
+    if (result.rowCount !== 1 || row === undefined) {
+      throw new TechnicalError('internal', 'Shop status was not changed');
+    }
+    return toSafeInteger(row.version);
+  }
+
+  /**
    * Reads the shop the user owns, whatever its status, or undefined when the user owns none. ONE statement on
    * purpose: the OWNER membership and the shop are joined in a single snapshot, so the caller can never see a
    * membership from one moment and a shop from another. It locks nothing and writes nothing.

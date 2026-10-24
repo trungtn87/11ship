@@ -577,8 +577,8 @@ export class AdminActivationRepository {
   /** Copies the sealed, immutable permission snapshot of the invitation. At least one row is required. */
   async copyPermissions(context: TransactionContext, input: { userId: string; invitationId: string }): Promise<void> {
     const result = await context.query(
-      `INSERT INTO app.admin_app_permissions (user_id, app, can_view, can_review_profile, can_lock, can_manage_catalog)
-       SELECT $1::uuid, p.app, p.can_view, p.can_review_profile, p.can_lock, p.can_manage_catalog
+      `INSERT INTO app.admin_app_permissions (user_id, app, can_view, can_review_profile, can_lock, can_manage_catalog, can_manage_shops)
+       SELECT $1::uuid, p.app, p.can_view, p.can_review_profile, p.can_lock, p.can_manage_catalog, p.can_manage_shops
          FROM app.admin_invitation_permissions p WHERE p.invitation_id = $2::uuid`,
       [input.userId, input.invitationId],
     );

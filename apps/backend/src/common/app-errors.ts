@@ -206,6 +206,8 @@ export const APP_ERROR_DEFINITIONS = {
   SHOP_NOT_FOUND: { status: 404, message: 'No shop was found for this account' },
   SHOP_ROLE_REQUIRED: { status: 403, message: 'The shop role is required for this request' },
   SHOP_DISABLED: { status: 403, message: 'The shop is disabled' },
+  SHOP_HAS_OPEN_WORK: { status: 409, message: 'The shop still has orders or deliveries that are not finished' },
+  SHOP_STATE_CONFLICT: { status: 409, message: 'The shop is not in a state that allows this action' },
   INVALID_BUSINESS_HOURS: { status: 400, message: 'The business hours are not valid' },
 
   // Menu (M02-MON). Same rule: fixed messages that echo nothing the client sent. A dish or picture of another shop is never told

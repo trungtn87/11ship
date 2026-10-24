@@ -43,6 +43,8 @@ import { NOT_WIRED_CATALOG, CatalogSource } from '../core/catalog.js';
 import { CatalogController } from '../core/catalog-controller.js';
 import { CatalogView } from './catalog-view.js';
 import { NOT_WIRED_SHIPPERS, ShipperFilter, ShipperSource } from '../core/shippers.js';
+import { NOT_WIRED_SHOPS, ShopSource } from '../core/shops.js';
+import { ShopDetailView, ShopHost, ShopListMemory, ShopListView } from './shops-view.js';
 import { ShipperDetailView, ShipperHost, ShipperListView, WalletParametersView } from './shippers-view.js';
 import { NOT_WIRED_SHIPPING, ShippingPolicySource } from '../core/shipping-policy.js';
 import { ShippingPolicyView } from './shipping-policy-view.js';
@@ -129,6 +131,8 @@ export class ShellApp implements ShellHost {
   #grantsState: GrantsState = { kind: 'loading' };
   /** The users filter, kept only so "Back" from a detail returns to the same list. Dropped with the shell. */
   #usersFilter: UserFilter | undefined;
+  /** The shop list filter, kept only so "Danh sách quán" from a detail returns to the same list. Dropped with the shell. */
+  readonly #shopMemory: ShopListMemory = { value: undefined };
   #restoreFilter = false;
   /** The open lock / unlock dialog, if any. Closed with the page: nothing about it outlives the screen or the session. */
   #dialog: DialogHandle | undefined;
@@ -179,6 +183,8 @@ export class ShellApp implements ShellHost {
     private readonly operations: OperationsSource = NOT_WIRED_OPERATIONS,
     /** Where "Vận hành hệ thống" (M13) comes from. By default nothing is wired, so every page says so and no control works. */
     private readonly ops: OpsSource = NOT_WIRED_OPS,
+    /** Where the shops (Vận hành › Quán, M02 shop management) come from. By default nothing is wired, so the pages say so. */
+    private readonly shops: ShopSource = NOT_WIRED_SHOPS,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -474,6 +480,12 @@ export class ShellApp implements ShellHost {
         return;
       case 'categories':
         this.#categories(content);
+        return;
+      case 'shops':
+        this.#shopList(content, route);
+        return;
+      case 'shop':
+        this.#shopDetail(content, route.id, route.tab);
         return;
       case 'shippers':
         this.#shipperList(content, route.status);
@@ -998,6 +1010,38 @@ export class ShellApp implements ShellHost {
   /** "Tài chính › Tài khoản nhận tiền" (SYSTEM only; the server decides again). */
   #bankAccounts(content: HTMLElement): void {
     const view = new BankAccountsView(content, this.#financeHost());
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** What the shop pages need from the shell. 401 ends the session; 403 re-reads the rights. */
+  #shopHost(): ShopHost {
+    return {
+      source: this.shops,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      go: (route) => this.go(route),
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      memory: this.#shopMemory,
+    };
+  }
+
+  /** "Vận hành › Quán": the list with search, area / profile / schedule filters and pages of 20. */
+  #shopList(content: HTMLElement, route: Extract<Route, { name: 'shops' }>): void {
+    const view = new ShopListView(content, this.#shopHost(), { ...(route.q === undefined ? {} : { q: route.q }), ...(route.area === undefined ? {} : { area: route.area }), ...(route.profile === undefined ? {} : { profile: route.profile }), ...(route.schedule === undefined ? {} : { schedule: route.schedule }) });
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** One shop: profile, schedule, menu and management history, with the disable / enable commands the server allows. */
+  #shopDetail(content: HTMLElement, id: string, tab: Extract<Route, { name: 'shop' }>['tab']): void {
+    const view = new ShopDetailView(content, this.#shopHost(), id, tab);
     this.#unsubscribe = () => view.dispose();
     void view.load();
   }

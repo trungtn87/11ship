@@ -8,6 +8,7 @@ import { TopupFilter, TOPUP_FILTERS } from './finance-admin.js';
 import { WithdrawalFilterOps, WITHDRAWAL_FILTERS } from './finance-ops.js';
 import { InvitationStatus, INVITATION_STATUSES, isUuid } from './provisioning-api.js';
 import { SHIPPER_FILTERS, ShipperFilter } from './shippers.js';
+import { PROFILE_FILTERS, ProfileFilter, SCHEDULE_FILTERS, ScheduleFilter, SEARCH_MAX, SHOP_TABS, ShopTab } from './shops.js';
 
 export type Route =
   | { readonly name: 'home' }
@@ -23,6 +24,9 @@ export type Route =
   | { readonly name: 'administrators' }
   | { readonly name: 'access' }
   | { readonly name: 'categories' }
+  // M02 shop management: the list (initial filters from the address) and one shop (optionally on a tab).
+  | { readonly name: 'shops'; readonly q?: string; readonly area?: string; readonly profile?: ProfileFilter; readonly schedule?: ScheduleFilter }
+  | { readonly name: 'shop'; readonly id: string; readonly tab?: ShopTab }
   | { readonly name: 'shippers'; readonly status?: ShipperFilter }
   | { readonly name: 'shipper'; readonly id: string }
   | { readonly name: 'deliveries'; readonly filter?: DeliveryRouteFilter }
@@ -164,6 +168,32 @@ export function parseRoute(pathname: string, search = ''): Route {
   }
   if (path === '/operations/complaints') {
     return { name: 'complaints' };
+  }
+  if (path === '/operations/shops') {
+    const params = new URLSearchParams(search);
+    const q = params.get('q')?.trim().slice(0, SEARCH_MAX);
+    const area = params.get('area');
+    const profile = params.get('profile');
+    const schedule = params.get('schedule');
+    const filters: { -readonly [K in keyof Extract<Route, { name: 'shops' }>]?: Extract<Route, { name: 'shops' }>[K] } = {};
+    if (q !== undefined && q !== '') {
+      filters.q = q;
+    }
+    if (area !== null && isUuid(area)) {
+      filters.area = area;
+    }
+    if (profile !== null && profile !== 'ALL' && (PROFILE_FILTERS as readonly string[]).includes(profile)) {
+      filters.profile = profile as ProfileFilter;
+    }
+    if (schedule !== null && schedule !== 'ALL' && (SCHEDULE_FILTERS as readonly string[]).includes(schedule)) {
+      filters.schedule = schedule as ScheduleFilter;
+    }
+    return { name: 'shops', ...filters };
+  }
+  const shop = /^\/operations\/shops\/([^/]+)$/.exec(path);
+  if (shop !== null && isUuid(shop[1])) {
+    const tab = new URLSearchParams(search).get('tab');
+    return tab !== null && (SHOP_TABS as readonly string[]).includes(tab) && tab !== 'profile' ? { name: 'shop', id: shop[1], tab: tab as ShopTab } : { name: 'shop', id: shop[1] };
   }
   if (path === '/operations/shippers') {
     const status = new URLSearchParams(search).get('status');
@@ -335,6 +365,17 @@ export function formatRoute(route: Route): string {
       return '/system/parameters/shipper-wallet';
     case 'shipping-policy':
       return '/system/shipping-fee-policy';
+    case 'shops': {
+      const params = new URLSearchParams();
+      if (route.q !== undefined) params.set('q', route.q);
+      if (route.area !== undefined) params.set('area', route.area);
+      if (route.profile !== undefined) params.set('profile', route.profile);
+      if (route.schedule !== undefined) params.set('schedule', route.schedule);
+      const text = params.toString();
+      return text === '' ? '/operations/shops' : `/operations/shops?${text}`;
+    }
+    case 'shop':
+      return route.tab === undefined || route.tab === 'profile' ? `/operations/shops/${route.id}` : `/operations/shops/${route.id}?tab=${route.tab}`;
     case 'shippers':
       return route.status === undefined ? '/operations/shippers' : `/operations/shippers?status=${route.status}`;
     case 'shipper':

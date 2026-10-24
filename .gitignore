@@ -28,3 +28,4 @@ rclone.conf
 *.rclone.conf
 *.cred
 backup.env
+scripts/deploy/__pycache__/

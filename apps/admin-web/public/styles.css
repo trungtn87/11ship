@@ -3472,3 +3472,70 @@ select {
 .rp-body {
   grid-template-columns: minmax(0, 1fr);
 }
+
+/* M02 shop management (Vận hành › Quán): logo, dish pictures, the weekly schedule and the customer preview. */
+.shop-logo {
+  display: block;
+  width: 72px;
+  height: 72px;
+  margin: 0 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  object-fit: cover;
+  background: var(--white);
+}
+
+.menu-thumb {
+  display: block;
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--white);
+}
+
+.menu-photo {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  margin: 0 0 12px;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.hours-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hours-slot {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.preview-items {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.preview-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.preview-item .row-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail-block + .detail-block {
+  margin-top: 16px;
+}

@@ -25,6 +25,44 @@ export const PRODUCTION_CLOCK = 'clock_timestamp()';
 
 export type SnapshotSource = 'owner' | 'shop';
 
+/**
+ * The membership test of the schedule: true when the local instant of `local_time l` lies in at least one interval of the shop. The ONE copy of the rule
+ * (the single-shop snapshot below and the administration list use it), so a list never disagrees with the detail about whether a shop is open.
+ */
+export function inHoursSql(shopIdRef: string): string {
+  return `EXISTS (
+         SELECT 1
+           FROM app.shop_business_hours h
+          CROSS JOIN LATERAL (
+            SELECT (h.weekday - 1) * 1440 + h.start_minute AS open_at,
+                   (h.weekday - 1 + h.end_day_offset) * 1440 + h.end_minute AS close_at
+          ) w
+          WHERE h.shop_id = ${shopIdRef}
+            AND ((l.week_minute >= w.open_at AND l.week_minute < w.close_at)
+              OR (l.week_minute + 10080 >= w.open_at AND l.week_minute + 10080 < w.close_at))
+       )`;
+}
+
+/** True when the shop has at least one interval (the "no schedule" reason). Kept here with the other schedule fragments: this module owns the table. */
+export function hasHoursSql(shopIdRef: string): string {
+  return `EXISTS (SELECT 1 FROM app.shop_business_hours bh WHERE bh.shop_id = ${shopIdRef})`;
+}
+
+/** The statement prefix every availability statement starts with: the clock (sampled once) and the local week minute. */
+export function localTimeCtes(clockExpression: string): string {
+  return `WITH clock AS MATERIALIZED (
+  SELECT ${clockExpression} AS instant
+),
+local_time AS MATERIALIZED (
+  SELECT c.instant,
+         EXTRACT(EPOCH FROM (
+           (c.instant AT TIME ZONE '${AVAILABILITY_TIME_ZONE}')
+           - date_trunc('week', c.instant AT TIME ZONE '${AVAILABILITY_TIME_ZONE}')
+         )) / 60 AS week_minute
+    FROM clock c
+)`;
+}
+
 const SELECT_LIST = `
 SELECT s.logo, s.shop_id, s.name, s.contact_phone_normalized, s.zalo, s.facebook, s.address_text, s.pickup_lat, s.pickup_lng,
        s.service_area_id, s.status, s.version,
@@ -51,17 +89,7 @@ SELECT s.logo, s.shop_id, s.name, s.contact_phone_normalized, s.zalo, s.facebook
          SELECT 1 FROM app.shop_members om JOIN app.users ou ON ou.user_id = om.user_id
           WHERE om.shop_id = s.shop_id AND om.member_role = 'OWNER' AND ou.status <> 'ACTIVE'
        ) AS owner_locked,
-       EXISTS (
-         SELECT 1
-           FROM app.shop_business_hours h
-          CROSS JOIN LATERAL (
-            SELECT (h.weekday - 1) * 1440 + h.start_minute AS open_at,
-                   (h.weekday - 1 + h.end_day_offset) * 1440 + h.end_minute AS close_at
-          ) w
-          WHERE h.shop_id = s.shop_id
-            AND ((l.week_minute >= w.open_at AND l.week_minute < w.close_at)
-              OR (l.week_minute + 10080 >= w.open_at AND l.week_minute + 10080 < w.close_at))
-       ) AS in_hours`;
+       ${inHoursSql('s.shop_id')} AS in_hours`;
 
 const FROM_OWNER = `
   FROM app.shop_members m
@@ -83,17 +111,7 @@ const FROM_SHOP = `
  */
 export function buildAvailabilitySnapshotSql(clockExpression: string, source: SnapshotSource): string {
   return `
-WITH clock AS MATERIALIZED (
-  SELECT ${clockExpression} AS instant
-),
-local_time AS MATERIALIZED (
-  SELECT c.instant,
-         EXTRACT(EPOCH FROM (
-           (c.instant AT TIME ZONE '${AVAILABILITY_TIME_ZONE}')
-           - date_trunc('week', c.instant AT TIME ZONE '${AVAILABILITY_TIME_ZONE}')
-         )) / 60 AS week_minute
-    FROM clock c
-)${SELECT_LIST}${source === 'owner' ? FROM_OWNER : FROM_SHOP}`;
+${localTimeCtes(clockExpression)}${SELECT_LIST}${source === 'owner' ? FROM_OWNER : FROM_SHOP}`;
 }
 
 export const OWNER_SNAPSHOT_SQL = buildAvailabilitySnapshotSql(PRODUCTION_CLOCK, 'owner');

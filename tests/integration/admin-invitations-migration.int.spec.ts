@@ -143,11 +143,16 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
     const catalogSql = readFileSync(path.join(dir, catalogFile), 'utf8');
     const catalogUpSql = (catalogSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
     const catalogDownSql = catalogSql.split('-- Down Migration')[1] as string;
+    // The shop-management right (M02) is newer still: it goes down before the catalog right and comes back after it.
+    const shopsSql = readFileSync(path.join(dir, readdirSync(dir).find((name) => name.endsWith('admin-shop-manage-right.sql')) as string), 'utf8');
+    const shopsUpSql = (shopsSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+    const shopsDownSql = shopsSql.split('-- Down Migration')[1] as string;
     const before = await inventory();
     expect(before.length).toBeGreaterThan(0);
     await client.query('BEGIN');
     try {
       await client.query(M13_DOWN_SQL); // M13 is the newest of all: down first, up last
+      await client.query(shopsDownSql);
       await client.query(catalogDownSql);
       await client.query(ACCOUNT_SCOPE_DOWN_SQL); // the newest migration changes app.users: down first, up last
       await client.query(SMS_GATEWAY_DOWN_SQL); // the SMS queue references the activation challenges: newest, down first, up last
@@ -159,7 +164,7 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
       expect(await inventory()).toEqual([]);
       await client.query(upSql);
       // The catalog right (M02) comes back last, so at this point exactly its own objects are missing.
-      expect(await inventory()).toEqual(before.filter((item) => !item.includes('catalog')));
+      expect(await inventory()).toEqual(before.filter((item) => !item.includes('catalog') && !item.includes('shops')));
       await client.query(operationsUpSql);
       for (const statement of ACTIVATION_UP_SQL) {
         await client.query(statement);
@@ -167,6 +172,7 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
       await client.query(SMS_GATEWAY_UP_SQL);
       await client.query(ACCOUNT_SCOPE_UP_SQL);
       await client.query(catalogUpSql);
+      await client.query(shopsUpSql);
       await client.query(M13_UP_SQL);
     } finally {
       await client.query('ROLLBACK');
