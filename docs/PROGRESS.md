@@ -286,7 +286,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#183](https://github.com/trungtn87/11ship/pull/183) M07/M08/M10: một trang chi tiết cho mỗi đơn món, Giao hàng… | Đã merge (`MERGED`) | — | — | — | `985f2c9` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#184](https://github.com/trungtn87/11ship/pull/184) feat(ship): một nút online tự chia sẻ vị trí (M03/M06/M14) | Đã merge (`MERGED`) | — | — | — | `05ec019` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#185](https://github.com/trungtn87/11ship/pull/185) M02: Quản lý quán trên Web Admin | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `472a079` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#186](https://github.com/trungtn87/11ship/pull/186) Deploy VPS: duyệt migration theo hash đã review và dùng lại… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `f24421f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#186](https://github.com/trungtn87/11ship/pull/186) Deploy VPS: duyệt migration theo hash đã review và dùng lại… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `f24421f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
