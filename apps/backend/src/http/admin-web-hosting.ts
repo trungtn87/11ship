@@ -60,6 +60,9 @@ const SPA_ROUTES: readonly RegExp[] = Object.freeze([
   /^\/activate$/,
   // M02 dish groups (Danh mục › Nhóm món): a reload or a bookmark of the page opens the app.
   /^\/catalog\/categories$/,
+  // M02 shop management (Vận hành › Quán): the list and one shop, so a reload or a bookmark of either opens the app.
+  /^\/operations\/shops$/,
+  new RegExp(`^/operations/shops/${UUID}$`),
   // M03 Shippers (Vận hành › Shipper) and the Shipper wallet parameters (Hệ thống › Tham số hệ thống).
   /^\/operations\/shippers$/,
   new RegExp(`^/operations/shippers/${UUID}$`),

@@ -16,6 +16,8 @@ describe('Menu module boundary', () => {
       .filter((name) => !name.startsWith('menu/'))
       // M03: the Shipper search compares names the same way (accent-insensitive); it only CALLS the function, it reads none of the menu tables.
       .filter((name) => name !== 'driver/driver-admin-query-repository.ts')
+      // M02 shop management: the administration's read-only projection of a shop's dishes (list, menu tab, customer preview); it writes nothing.
+      .filter((name) => name !== 'admin-shops/admin-shop-read-repository.ts')
       .filter((name) => /app\.(menu_categories|menu_images|menu_items|fold_vi)\b/.test(codeOf(name)));
     expect(outside).toEqual([]);
   });

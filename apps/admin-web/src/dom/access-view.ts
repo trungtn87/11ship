@@ -206,7 +206,7 @@ export class AccessView {
       if (app !== 'CUSTOMER') {
         dependent(app === 'DRIVER' ? 'Xử lý: xem liên hệ, xử lý hàng, duyệt hồ sơ' : 'Xử lý: duyệt hồ sơ', () => value.review, (on) => (value.review = on));
       }
-      dependent(app === 'DRIVER' ? 'Khóa: khóa shipper, gỡ shipper khỏi đơn, chỉnh phí' : 'Khóa tài khoản', () => value.lock, (on) => (value.lock = on));
+      dependent(app === 'DRIVER' ? 'Khóa: khóa shipper, gỡ shipper khỏi đơn, chỉnh phí' : app === 'SHOP' ? 'Khóa tài khoản và vô hiệu hóa / kích hoạt lại quán' : 'Khóa tài khoản', () => value.lock, (on) => (value.lock = on));
       if (app === 'SHOP') {
         dependent('Quản lý nhóm món', () => value.catalog, (on) => (value.catalog = on));
       }

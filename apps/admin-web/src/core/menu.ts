@@ -164,7 +164,8 @@ export const MENU: readonly MenuGroup[] = [
     id: 'operations',
     label: 'VẬN HÀNH',
     items: [
-      soon('shops', 'Quán', 'store', 'shops'),
+      // M02 shop management: list and detail from the server; an ADMIN needs VIEW on the SHOP app (the server decides every call again).
+      { id: 'shops', label: 'Quán', icon: 'store', route: { name: 'shops' }, ready: true, access: 'shops' },
       { id: 'drivers', label: 'Shipper', icon: 'rider', route: { name: 'shippers' }, ready: true, access: 'drivers' },
       { id: 'orders', label: 'Đơn hàng', icon: 'receipt', route: { name: 'orders' }, ready: true, access: 'orders' },
       { id: 'deliveries', label: 'Giao hàng', icon: 'truck', route: { name: 'deliveries' }, ready: true, access: 'deliveries' },
@@ -326,6 +327,9 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
       return canSee(role, grants, 'users');
     case 'categories':
       return canSee(role, grants, 'catalog');
+    case 'shops':
+    case 'shop':
+      return canSee(role, grants, 'shops');
     case 'shippers':
     case 'shipper':
       return canSee(role, grants, 'drivers');
@@ -386,6 +390,9 @@ export function activeMenuId(route: Route): string {
       return 'users-list';
     case 'categories':
       return 'catalog-categories';
+    case 'shops':
+    case 'shop':
+      return 'shops';
     case 'shippers':
     case 'shipper':
       return 'drivers';
@@ -476,6 +483,10 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Tài khoản', 'Người dùng', 'Chi tiết'];
     case 'categories':
       return ['Danh mục', 'Nhóm món'];
+    case 'shops':
+      return ['Vận hành', 'Quán'];
+    case 'shop':
+      return ['Vận hành', 'Quán', 'Chi tiết'];
     case 'shippers':
       return ['Vận hành', 'Shipper'];
     case 'shipper':

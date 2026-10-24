@@ -352,6 +352,7 @@ describe('AllExceptionsFilter', () => {
         'SHOP_ONBOARDING_EXISTS',
         'SHOP_PROFILE_INCOMPLETE',
         'SHOP_ROLE_REQUIRED',
+        'SHOP_STATE_CONFLICT',
         'SHOP_UNAVAILABLE',
         'SYSTEM_SETTING_VERSION_CONFLICT',
         'TOPUP_ACCOUNT_NOT_RECEIVING',
