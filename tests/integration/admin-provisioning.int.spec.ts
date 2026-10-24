@@ -364,8 +364,8 @@ describe('M01-D-ADMIN-1B - SYSTEM invitations over HTTP', () => {
       expect(invitation).toMatchObject({ status: 'PENDING', version: 1, full_name: 'Nguyễn Văn Quản Trị', note: 'ca sáng' });
       expect(invitation.phone_masked).toBe(`${phone.local.slice(0, 2)}•• ••• ${phone.local.slice(-3)}`);
       expect(invitation.permissions).toEqual([
-        { app: 'CUSTOMER', can_view: true, can_review_profile: false, can_lock: false, can_manage_catalog: false },
-        { app: 'SHOP', can_view: true, can_review_profile: false, can_lock: false, can_manage_catalog: false },
+        { app: 'CUSTOMER', can_view: true, can_review_profile: false, can_lock: false, can_manage_catalog: false, can_manage_shops: false },
+        { app: 'SHOP', can_view: true, can_review_profile: false, can_lock: false, can_manage_catalog: false, can_manage_shops: false },
       ]);
       const link = String(data.activation_link);
       const token = (LINK.exec(link) ?? [])[1] as string;
@@ -537,7 +537,7 @@ describe('M01-D-ADMIN-1B - SYSTEM invitations over HTTP', () => {
       const { response } = await reissue(old.invitationId, { expected_version: 1, reason: 'đổi quyền', permissions: newPermissions });
       expect(response.status).toBe(201);
       const fresh = adminData(response).invitation as Record<string, unknown>;
-      expect(fresh.permissions).toEqual(newPermissions.map((permission) => ({ ...permission, can_manage_catalog: false })));
+      expect(fresh.permissions).toEqual(newPermissions.map((permission) => ({ ...permission, can_manage_catalog: false, can_manage_shops: false })));
       expect(await permissionRows(String(fresh.invitation_id))).toEqual([{ app: 'DRIVER', can_view: true, can_review_profile: true, can_lock: true }]);
       expect(await permissionRows(old.invitationId)).toEqual(oldPermissions);
     });

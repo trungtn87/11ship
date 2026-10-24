@@ -72,6 +72,9 @@ import { FinanceAccessService } from '../finance-access/finance-access-service';
 import { SystemBankAccountService } from '../finance-access/system-bank-account-service';
 import { WalletCommissionAdjustmentAdapter } from '../wallet/wallet-commission-adjustment.adapter';
 import { WalletModule } from '../wallet/wallet.module';
+import { AdminShopController } from '../admin-shops/admin-shop.controller';
+import { AdminShopReadRepository } from '../admin-shops/admin-shop-read-repository';
+import { AdminShopService } from '../admin-shops/admin-shop-service';
 import { AdminMenuCategoryService } from '../admin-menu-categories/admin-menu-category-service';
 import { AdminMenuCategoryController } from '../admin-menu-categories/admin-menu-category.controller';
 import { MenuCategoryAdminRepository } from '../menu/menu-category-admin-repository';
@@ -159,7 +162,7 @@ export class AdminAuthModule implements NestModule {
       ],
       // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
       // M01-D-ADMIN-1C: the activation routes under /v1/admin-activation exist only when explicitly enabled.
-      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminErrorLogsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, OrderParametersController, FinanceAccessController, AdminTopupController, AdminFinanceController, AdminDeliveryController, AdminFeedbackController, AdminOrderController, AdminNotificationController, AdminOverviewController, AdminAccessController, AdminConfigController, AdminReportController, AdminOperationsController, OpsAdminController, ...(activation === undefined ? [] : [AdminActivationController])],
+      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminErrorLogsController, AdminAccountLockController, SystemSettingsController, AdminMenuCategoryController, AdminShopController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, OrderParametersController, FinanceAccessController, AdminTopupController, AdminFinanceController, AdminDeliveryController, AdminFeedbackController, AdminOrderController, AdminNotificationController, AdminOverviewController, AdminAccessController, AdminConfigController, AdminReportController, AdminOperationsController, OpsAdminController, ...(activation === undefined ? [] : [AdminActivationController])],
       providers: [
         adminAuthConfigProvider,
         {
@@ -203,6 +206,9 @@ export class AdminAuthModule implements NestModule {
         // M02 dish-group management (SYSTEM, or an ADMIN with the catalog right). The SQL stays in the Menu module's repository.
         MenuCategoryAdminRepository,
         AdminMenuCategoryService,
+        // M02 shop management (Quản lý quán): the read projections, the service and (through ShopModule) the status change of the Shop module.
+        AdminShopReadRepository,
+        AdminShopService,
         // M03 Shipper management (SYSTEM, or an ADMIN with the DRIVER permissions) and the SYSTEM-only Shipper wallet parameters.
         AdminShipperService,
         ShipperWalletParametersService,

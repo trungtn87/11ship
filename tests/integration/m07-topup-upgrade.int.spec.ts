@@ -1,4 +1,5 @@
 import { PASSWORD_SESSION_UP_SQL, PASSWORD_SESSION_DOWN_SQL } from './support/password-session-migration-sql';
+import { SHOP_RIGHT_DOWN_SQL, SHOP_RIGHT_UP_SQL } from './support/admin-shop-right-migration-sql';
 import { PRE_TIMEOUT_MIGRATION_ARGS } from './support/timeout-migration-sql';
 import { assertTestDatabaseTarget } from './support/assert-test-target';
 import { minimalChildEnv, runNpmScript } from './support/test-helpers';
@@ -56,6 +57,7 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
   let m07Applied = true;
   let addedPolicy = false;
   let temporaryPasswordSchema = false;
+  let temporaryShopRight = false;
   let originalMigrationHistory: Array<{ id: number; name: string; run_on: string }> = [];
   const shippers: Shipper[] = [];
   const pool = (): Pool => admin.pool;
@@ -133,6 +135,10 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
       await restoreMigrationHistory();
       // Remove the temporary auth overlay before the normal runner applies all pending migrations.
       // These historical fixtures use legacy sessions, which the Down preserves.
+      if (temporaryShopRight) {
+        await pool().query(SHOP_RIGHT_DOWN_SQL);
+        temporaryShopRight = false;
+      }
       if (temporaryPasswordSchema) {
         await pool().query(PASSWORD_SESSION_DOWN_SQL);
         temporaryPasswordSchema = false;
@@ -171,6 +177,8 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
     m07Applied = false;
     await pool().query(PASSWORD_SESSION_UP_SQL);
     temporaryPasswordSchema = true;
+    await pool().query(SHOP_RIGHT_UP_SQL);
+    temporaryShopRight = true;
     system = await systemSession(admin);
     recorder = await activatedAdmin(`Admin ghi ${tag}`);
     recorderLogin = await login(recorder);

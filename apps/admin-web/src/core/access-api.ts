@@ -17,10 +17,10 @@ const iso = (value: unknown): string | undefined => {
 
 function parsePermission(value: unknown): AppPermissionRow | undefined {
   const raw = record(value);
-  if (raw === undefined || typeof raw.app !== 'string' || !APPS.includes(raw.app) || typeof raw.can_view !== 'boolean' || typeof raw.can_review_profile !== 'boolean' || typeof raw.can_lock !== 'boolean' || typeof raw.can_manage_catalog !== 'boolean') {
+  if (raw === undefined || typeof raw.app !== 'string' || !APPS.includes(raw.app) || typeof raw.can_view !== 'boolean' || typeof raw.can_review_profile !== 'boolean' || typeof raw.can_lock !== 'boolean' || typeof raw.can_manage_catalog !== 'boolean' || typeof raw.can_manage_shops !== 'boolean') {
     return undefined;
   }
-  return { app: raw.app as AppName, canView: raw.can_view, canReviewProfile: raw.can_review_profile, canLock: raw.can_lock, canManageCatalog: raw.can_manage_catalog };
+  return { app: raw.app as AppName, canView: raw.can_view, canReviewProfile: raw.can_review_profile, canLock: raw.can_lock, canManageCatalog: raw.can_manage_catalog, canManageShops: raw.can_manage_shops };
 }
 
 function parseRight(value: unknown): RightState | undefined {
@@ -83,7 +83,7 @@ export function parseMatrix(data: Record<string, unknown>): AccessMatrix | undef
   return { items, truncated: data.truncated };
 }
 
-const permissionBody = (row: AppPermissionRow): Record<string, unknown> => ({ app: row.app, can_view: row.canView, can_review_profile: row.canReviewProfile, can_lock: row.canLock, can_manage_catalog: row.canManageCatalog });
+const permissionBody = (row: AppPermissionRow): Record<string, unknown> => ({ app: row.app, can_view: row.canView, can_review_profile: row.canReviewProfile, can_lock: row.canLock, can_manage_catalog: row.canManageCatalog, can_manage_shops: row.canManageShops });
 
 export class AdminAccessApi extends ApiClient {
   matrix(): Promise<ApiResult<AccessMatrix>> {

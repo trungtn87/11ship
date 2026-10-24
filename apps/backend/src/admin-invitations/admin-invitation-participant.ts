@@ -51,6 +51,9 @@ function assertPermissions(permissions: readonly InvitationPermission[]): void {
     if (permission.canManageCatalog === true && (!permission.canView || permission.app !== 'SHOP')) {
       invalid('CATALOG needs SHOP and VIEW');
     }
+    if (permission.canManageShops === true && (!permission.canView || permission.app !== 'SHOP')) {
+      invalid('SHOP MANAGEMENT needs SHOP and VIEW');
+    }
   }
   if (!permissions.some((permission) => permission.canView)) {
     invalid('at least one VIEW permission is required');

@@ -57,8 +57,8 @@ export class AdminAccessRepository {
     await context.query('DELETE FROM app.admin_app_permissions WHERE user_id = $1::uuid', [userId]);
     for (const row of rows) {
       await context.query(
-        `INSERT INTO app.admin_app_permissions (user_id, app, can_view, can_review_profile, can_lock, can_manage_catalog) VALUES ($1::uuid, $2, $3, $4, $5, $6)`,
-        [userId, row.app, row.canView, row.canReviewProfile, row.canLock, row.canManageCatalog],
+        `INSERT INTO app.admin_app_permissions (user_id, app, can_view, can_review_profile, can_lock, can_manage_catalog, can_manage_shops) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)`,
+        [userId, row.app, row.canView, row.canReviewProfile, row.canLock, row.canManageCatalog, row.canManageShops],
       );
     }
   }

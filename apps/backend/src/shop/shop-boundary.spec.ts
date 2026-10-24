@@ -49,6 +49,8 @@ describe('Shop (M02) module boundary', () => {
       .filter((name) => !name.startsWith('shop/'))
       // The one read-only projection of the administration web (M01-ADMIN account read), pinned by its own boundary spec.
       .filter((name) => name !== 'admin-accounts/admin-account-read-repository.ts')
+      // The read-only projections of the shop-management pages (M02 "Quản lý quán"); its status change goes through ShopRepository.
+      .filter((name) => name !== 'admin-shops/admin-shop-read-repository.ts')
       .filter((name) => /app\.(service_areas|shops|shop_members)\b/.test(codeOf(name)));
     expect(outside).toEqual([]);
   });

@@ -129,7 +129,7 @@ export function permissionsOfDraft(draft: PermissionsDraft): Permission[] {
   return apps.flatMap((app) => {
     const rights = draft[app];
     return rights.canView
-      ? [{ app, canView: true, canReviewProfile: rights.canReviewProfile, canLock: rights.canLock, ...(app === 'SHOP' && rights.canManageCatalog === true ? { canManageCatalog: true } : {}) }]
+      ? [{ app, canView: true, canReviewProfile: rights.canReviewProfile, canLock: rights.canLock, ...(app === 'SHOP' && rights.canManageCatalog === true ? { canManageCatalog: true } : {}), ...(app === 'SHOP' && rights.canManageShops === true ? { canManageShops: true } : {}) }]
       : [];
   });
 }
@@ -142,6 +142,7 @@ export function draftOfPermissions(permissions: readonly Permission[]): Permissi
       canReviewProfile: permission.canReviewProfile,
       canLock: permission.canLock,
       ...(permission.canManageCatalog === true ? { canManageCatalog: true } : {}),
+      ...(permission.canManageShops === true ? { canManageShops: true } : {}),
     };
   }
   return draft;

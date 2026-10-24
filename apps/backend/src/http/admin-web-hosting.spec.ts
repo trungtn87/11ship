@@ -92,6 +92,9 @@ describe('administration web hosting: what a path may resolve to', () => {
       `/finance/withdrawals/${UUID}/`,
       '/system/parameters/wallet',
       '/system/shipping-fee-policy',
+      '/operations/shops',
+      '/operations/shops/',
+      `/operations/shops/${UUID}`,
     ]) {
       expect(publicAdminAsset(path)).toBe('index.html');
     }
