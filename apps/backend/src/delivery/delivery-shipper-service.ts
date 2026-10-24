@@ -6,7 +6,7 @@ import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempoten
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { EligibilityParametersRepository } from '../shipping-policy/eligibility-parameters-repository';
-import { Agreement, AgreementAction } from '../shipping-policy/shipping-fee-agreement';
+import { Agreement, AgreementAction, feeAllowsAssignment, revisionIsPending } from '../shipping-policy/shipping-fee-agreement';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { ShippingEligibilityService } from '../shipping-policy/shipping-eligibility-service';
 import { TransactionContext } from '../transaction/transaction-context';
@@ -16,9 +16,10 @@ import { CommissionPolicyRepository } from '../wallet/commission-policy-reposito
 import { DELIVERY_SCOPE_TYPE, OPERATIONS } from './delivery-constants';
 import { DeliveryActors, ShipperCaller } from './delivery-actors';
 import { ORDER_DELIVERY_PORT, OrderDeliveryPort } from './delivery-order-port';
+import { DeliveryHandback } from './delivery-handback';
 import { DeliveryRecorder } from './delivery-recorder';
 import { AssignmentRow, DeliveryPatch, DeliveryRepository, DeliveryRow } from './delivery-repository';
-import { originalEtaMs, searchExpired, shipperMayRelease, stateAfterRelease } from './delivery-rules';
+import { originalEtaMs, searchExpired, shipperMayRelease } from './delivery-rules';
 import { DestinationInput, LocationInput, ReasonInput, VersionInput } from './delivery-validation';
 import { DeliveryViews, feeDeciderOf } from './delivery-views';
 import { M14RouteClient } from './m14-route-client';
@@ -50,6 +51,7 @@ export class DeliveryShipperService {
     private readonly deliveries: DeliveryRepository,
     private readonly views: DeliveryViews,
     private readonly recorder: DeliveryRecorder,
+    private readonly handback: DeliveryHandback,
     private readonly agreements: ShippingFeeAgreementService,
     private readonly commission: CommissionHoldService,
     private readonly policies: CommissionPolicyRepository,
@@ -91,7 +93,7 @@ export class DeliveryShipperService {
         if (decision === undefined || row === undefined || decision.reasons.some((reason) => HIDDEN_REASONS.includes(reason))) {
           continue;
         }
-        out.push(await this.views.offer(context, row, prep.nowMs, decision));
+        out.push(await this.views.offer(context, row, prep.nowMs, decision, prep.driverId));
       }
       return out;
     });
@@ -187,7 +189,7 @@ export class DeliveryShipperService {
         let current = delivery;
         const agreement = await this.agreements.readByDelivery(context, deliveryId);
         if (agreement !== undefined) {
-          if (!feeTakeable(agreement, driverId)) {
+          if (!feeAllowsAssignment(agreement, driverId)) {
             throw new AppError('FEE_NOT_CONFIRMED');
           }
           current = await this.#syncFee(context, current, agreement);
@@ -250,20 +252,16 @@ export class DeliveryShipperService {
         if (!shipperMayRelease(delivery.state)) {
           throw new AppError('DELIVERY_STATE_CONFLICT');
         }
-        await this.#endAssignment(context, assignment, 'CANCELLED_BY_SHIPPER', 'SHIPPER', input.reason);
-        const released = await this.commission.releaseCommission(context, assignment.assignmentId);
-        if (released.kind === 'conflict') {
-          throw new TechnicalError('internal', 'Commission hold was not releasable');
-        }
         const nowMs = await freshClockMs(context);
-        const next = stateAfterRelease(nowMs, delivery.searchExpiresAtMs);
-        const after = await this.#update(
-          context,
-          delivery,
-          next === 'waiting_driver'
-            ? { state: 'waiting_driver' }
-            : { state: 'search_stopped', searchStoppedNow: true, endedNow: true, endReason: 'Hết thời gian tìm shipper sau khi shipper hủy nhận' },
-        );
+        // One place ends a Shipper's turn: the assignment, the commission (released once), the fee only this Shipper had agreed (back to the original) and the delivery itself
+        // (back to the search while the ORIGINAL window is open, otherwise the search stops).
+        const { delivery: after, next } = await this.handback.endTurn(context, delivery, assignment, {
+          status: 'CANCELLED_BY_SHIPPER',
+          actor: 'SHIPPER',
+          reason: input.reason,
+          stoppedReason: 'Hết thời gian tìm shipper sau khi shipper hủy nhận',
+          nowMs,
+        });
         await this.recorder.record(context, {
           delivery: after,
           type: 'released_by_shipper',
@@ -292,8 +290,64 @@ export class DeliveryShipperService {
     return this.#feeAct(principal, deliveryId, key, requestId, OPERATIONS.feeSkip, (driverId) => ({ type: 'DRIVER_SKIP', driverId }), 'fee_skipped', {});
   }
 
+  /**
+   * The Shipper proposes another fee (Owner decision 2026-10-24): for an agreed fee still being settled, for a FINAL fee (the bands' fee of STANDARD, or an agreed amount) before taking the
+   * delivery, and for the Shipper who HOLDS it, until they pick the goods up. The fee in force does not change here: the payer answers (see ShippingFeeAgreement), and until then the goods
+   * cannot be picked up. The answer time is fixed by this request and never moved by a repeat of it; it is never later than the search deadline. After "Đã nhận hàng" the fee is locked.
+   */
   feeCounter(principal: AuthPrincipal, deliveryId: string, amountVnd: number, key: string | readonly string[] | undefined, requestId: string): Promise<IdempotentOutcome> {
-    return this.#feeAct(principal, deliveryId, key, requestId, OPERATIONS.feeCounter, (driverId) => ({ type: 'COUNTER', driverId, amountVnd }), 'fee_countered', { amount_vnd: amountVnd });
+    return this.executor.execute(
+      { scopeType: DELIVERY_SCOPE_TYPE, scopeId: principal.userId, operationId: OPERATIONS.feeCounter, idempotencyKey: key, logicalRequest: { delivery_id: deliveryId, amount_vnd: amountVnd }, replay: this.#replay(principal, false) },
+      async (context) => {
+        const caller = await this.actors.shipperWriter(context, principal, { acceptNew: false });
+        const driverId = caller.driver.driverId;
+        const delivery = await this.deliveries.lockById(context, deliveryId);
+        if (delivery === undefined) {
+          throw new AppError('DELIVERY_NOT_FOUND');
+        }
+        const nowMs = await freshClockMs(context);
+        if (delivery.state === 'delivering' || delivery.state === 'picked_up') {
+          throw new AppError('FEE_LOCKED');
+        }
+        const holding = delivery.state === 'accepted' || delivery.state === 'location_confirmed';
+        let held: AssignmentRow | undefined;
+        if (holding) {
+          held = await this.deliveries.lockActiveAssignment(context, deliveryId);
+          if (held === undefined || held.driverId !== driverId) {
+            // A delivery this Shipper does not hold is not theirs to talk about.
+            throw new AppError('DELIVERY_NOT_FOUND');
+          }
+        } else if (delivery.state !== 'waiting_driver') {
+          throw new AppError(searchExpired(nowMs, delivery.searchExpiresAtMs) ? 'DELIVERY_SEARCH_EXPIRED' : 'DELIVERY_STATE_CONFLICT');
+        } else if (caller.driver.status !== 'ACTIVE') {
+          throw new AppError('ROLE_NOT_AVAILABLE');
+        }
+        // The answer time never passes the search window, so a proposal made when that window is over would be dead on arrival.
+        if (searchExpired(nowMs, delivery.searchExpiresAtMs)) {
+          throw new AppError('DELIVERY_SEARCH_EXPIRED');
+        }
+        const agreement = await this.agreements.readByDelivery(context, deliveryId);
+        if (agreement === undefined || (agreement.status === 'ACCEPTED' && !holding && !feeAllowsAssignment(agreement, driverId)) || agreement.status === 'LOCKED') {
+          throw new AppError('DELIVERY_STATE_CONFLICT');
+        }
+        const outcome = await this.agreements.act(context, { agreementId: agreement.agreementId, expectedVersion: agreement.version, requestId: randomUUID(), nowMs, action: { type: 'COUNTER', driverId, amountVnd } });
+        if (outcome.kind === 'conflict') {
+          throw new AppError('VERSION_CONFLICT');
+        }
+        if (outcome.kind === 'expired') {
+          throw new AppError('DELIVERY_SEARCH_EXPIRED');
+        }
+        if (outcome.kind !== 'ok' && outcome.kind !== 'replayed') {
+          throw new AppError('DELIVERY_STATE_CONFLICT');
+        }
+        // A proposal about a FINAL fee moves the delivery's version (the people who answer it work from the version they last saw, and the notice of each proposal is its own).
+        const synced = await this.#syncFee(context, delivery, outcome.agreement);
+        const after = outcome.agreement.status === 'ACCEPTED' ? await this.#update(context, synced, {}) : synced;
+        await this.recorder.record(context, { delivery: after, type: 'fee_countered', actorType: 'SHIPPER', actorId: caller.actor.userId, assignmentId: held?.assignmentId ?? null, driverId, operation: OPERATIONS.feeCounter, requestId, metadata: { agreement_status: outcome.agreement.status, amount_vnd: amountVnd, held: holding } });
+        // The answer is the offer-shaped view whether or not the Shipper holds the delivery already (it carries no contact or address); a holder's screen reloads the delivery itself.
+        return { status: 200, replayGuard: { user_id: caller.actor.userId }, payload: await this.views.offer(context, after, nowMs, { eligible: true, reasons: [], distanceToShopM: null }, driverId) };
+      },
+    );
   }
 
   async #feeAct(
@@ -334,7 +388,7 @@ export class DeliveryShipperService {
         }
         const after = await this.#syncFee(context, delivery, outcome.agreement);
         await this.recorder.record(context, { delivery: after, type: change, actorType: 'SHIPPER', actorId: caller.actor.userId, driverId: caller.driver.driverId, operation, requestId, metadata: { agreement_status: outcome.agreement.status, ...extra } });
-        return { status: 200, replayGuard: { user_id: caller.actor.userId }, payload: await this.views.offer(context, after, nowMs, { eligible: true, reasons: [], distanceToShopM: null }) };
+        return { status: 200, replayGuard: { user_id: caller.actor.userId }, payload: await this.views.offer(context, after, nowMs, { eligible: true, reasons: [], distanceToShopM: null }, caller.driver.driverId) };
       },
     );
   }
@@ -434,7 +488,8 @@ export class DeliveryShipperService {
         const agreement = await this.agreements.readByDelivery(context, deliveryId);
         let current = delivery;
         if (agreement !== undefined) {
-          if (agreement.status !== 'ACCEPTED' && agreement.status !== 'LOCKED') {
+          // A fee still waiting for the payer's answer is not the fee: the goods are not picked up at an amount nobody agreed to.
+          if ((agreement.status !== 'ACCEPTED' && agreement.status !== 'LOCKED') || revisionIsPending(agreement)) {
             throw new AppError('FEE_NOT_CONFIRMED');
           }
           current = await this.#syncFee(context, current, agreement);
@@ -559,7 +614,7 @@ export class DeliveryShipperService {
 
   /** The fee of the delivery follows the agreement once it is final (and only then): the delivery never shows an amount nobody settled. */
   async #syncFee(context: TransactionContext, delivery: DeliveryRow, agreement: Agreement): Promise<DeliveryRow> {
-    if (agreement.finalFeeVnd !== null && delivery.feeVnd === null) {
+    if (agreement.finalFeeVnd !== null && delivery.feeVnd !== agreement.finalFeeVnd) {
       return this.#update(context, delivery, { feeVnd: agreement.finalFeeVnd });
     }
     return delivery;
@@ -591,22 +646,14 @@ export class DeliveryShipperService {
   }
 }
 
-/**
- * May this Shipper take the delivery at the fee as it stands? The fee must be final. An amount bound to a Shipper (who agreed it, or whose counter-offer
- * the shop accepted) is theirs; the shop's own original proposal stays open to anyone, so when the bound Shipper gives the delivery back the others can
- * still take it. An amount that came from a counter-offer is not offered to anyone else: the shop calls again.
- */
-function feeTakeable(agreement: Agreement, driverId: string): boolean {
-  if (agreement.status !== 'ACCEPTED' && agreement.status !== 'LOCKED') {
-    return false;
-  }
-  return agreement.feeMode === 'STANDARD' || agreement.boundDriverId === driverId || (agreement.finalFeeVnd !== null && agreement.finalFeeVnd === agreement.proposedFeeVnd);
-}
-
 /** Whether this Shipper may even see the offer: a fee still being settled, one that is theirs, or one that anyone can take. */
 export function feeOpenTo(agreement: Agreement, driverId: string): boolean {
+  if (revisionIsPending(agreement)) {
+    // A proposal for a final fee is waiting for the payer: the delivery is held for the Shipper who made it until it is answered or runs out.
+    return agreement.revisionBy === driverId;
+  }
   if (agreement.status === 'ACCEPTED' || agreement.status === 'LOCKED') {
-    return feeTakeable(agreement, driverId);
+    return feeAllowsAssignment(agreement, driverId);
   }
   return agreement.status === 'PROPOSED' || agreement.status === 'COUNTERED' || agreement.status === 'AWAITING_CUSTOMER';
 }

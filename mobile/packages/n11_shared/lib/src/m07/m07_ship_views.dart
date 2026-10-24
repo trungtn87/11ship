@@ -27,6 +27,52 @@ const String kReleaseExplain = 'Bạn sẽ không còn giữ đơn này. Hệ th
 /// Lets the app say what it does with the Shipper's position while a delivery is open (11Ship plugs in the M14 core).
 typedef M07LocationSlot = Widget Function(BuildContext context);
 
+/// The pop-up where a Shipper types the fee they want instead (before taking the delivery, or after taking it and before the pickup). Null when they go back.
+Future<int?> askFeeProposal(BuildContext context) => showDialog<int>(context: context, builder: (BuildContext dialogContext) => const _FeeProposalDialog());
+
+class _FeeProposalDialog extends StatefulWidget {
+  const _FeeProposalDialog();
+
+  @override
+  State<_FeeProposalDialog> createState() => _FeeProposalDialogState();
+}
+
+class _FeeProposalDialogState extends State<_FeeProposalDialog> {
+  // The dialog owns its field: the controller is disposed with the dialog, after its closing animation, never while it is still drawn.
+  final TextEditingController _amount = TextEditingController();
+  final GlobalKey<FormState> _form = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Form(
+      key: _form,
+      child: AlertDialog(
+        key: const Key('m07-counter-dialog'),
+        title: const Text('Đề xuất mức phí khác', style: N11Text.h2),
+        content: N11Field(validator: (String value) => parseAgreedFee(value) == null ? 'Nhập phí là số nguyên từ 0 đến 10.000.000đ.' : null, fieldKey: const Key('m07-counter-amount'), label: 'Mức phí bạn đề xuất (đ)', controller: _amount, keyboard: TextInputType.number, maxLength: 10),
+        actions: <Widget>[
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Quay lại')),
+          TextButton(
+            key: const Key('m07-counter-send'),
+            onPressed: () {
+              if (_form.currentState!.validate()) {
+                Navigator.of(context).pop(parseAgreedFee(_amount.text));
+              }
+            },
+            child: const Text('Gửi đề xuất', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ---- S01 / S02: hub ----------------------------------------------------------------------------------------------------
 
 enum _ShipView { mine, offers, history }
@@ -80,27 +126,8 @@ class _ShipperDeliveryHubState extends State<ShipperDeliveryHub> with M07Actions
   }
 
   Future<void> _counter(OfferView o) async {
-    final TextEditingController amount = TextEditingController();
-    final GlobalKey<FormState> form = GlobalKey<FormState>();
-    final bool? yes = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => Form(key: form, child: AlertDialog(
-        key: const Key('m07-counter-dialog'),
-        title: const Text('Đề xuất mức phí khác', style: N11Text.h2),
-        content: N11Field(validator: (String value) => parseAgreedFee(value) == null ? 'Nhập phí là số nguyên từ 0 đến 10.000.000đ.' : null, fieldKey: const Key('m07-counter-amount'), label: 'Mức phí bạn đề xuất (đ)', controller: amount, keyboard: TextInputType.number, maxLength: 10),
-        actions: <Widget>[
-          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Quay lại')),
-          TextButton(key: const Key('m07-counter-send'), onPressed: () { if (form.currentState!.validate()) Navigator.of(dialogContext).pop(true); }, child: const Text('Gửi đề xuất', style: TextStyle(fontWeight: FontWeight.w700))),
-        ],
-      )),
-    );
-    final int? value = parseAgreedFee(amount.text);
-    amount.dispose();
-    if (yes != true || !mounted) {
-      return;
-    }
-    if (value == null) {
-      setState(() => actionFailure = const M07Failure(M07FailureKind.refused, code: 'DELIVERY_INPUT_INVALID'));
+    final int? value = await askFeeProposal(context);
+    if (value == null || !mounted) {
       return;
     }
     await _feeAction(o, (String key) => widget.source.feeCounter(o.deliveryId, amountVnd: value, key: key), 'counter');
@@ -193,7 +220,9 @@ class OfferCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final AgreementSummary? a = offer.agreement;
     final bool pendingFee = offer.feeStatus == 'PENDING_AGREEMENT' || offer.feeStatus == 'AWAITING_CUSTOMER';
-    final bool canAccept = offer.eligible && !pendingFee;
+    final FeeNegotiation? n = offer.negotiation;
+    // A proposal of this Shipper that waits for the payer: the delivery is held for it, so it cannot be taken at either fee until it is answered or runs out.
+    final bool canAccept = offer.eligible && !pendingFee && n == null;
     return N11Card(
       key: Key('m07-offer-${offer.deliveryId}'),
       child: Column(
@@ -240,6 +269,17 @@ class OfferCard extends StatelessWidget {
                 ),
               ),
           ],
+          if (n != null)
+            Padding(
+              padding: const EdgeInsets.only(top: N11Space.gap2),
+              child: ReasonNote('Bạn đã đề xuất ${m07Vnd(n.offeredVnd)} (phí hiện tại ${m07Vnd(n.currentVnd)}), đang chờ ${n.deciderText} (người trả phí) trả lời.', key: const Key('m07-offer-waiting')),
+            )
+          else if (offer.canCounter && a?.state != 'PROPOSED')
+            // A fee that is already settled (the fee table's, or an agreed one): the Shipper may still ask for another before taking it.
+            Padding(
+              padding: const EdgeInsets.only(top: N11Space.gap2),
+              child: N11Button(key: const Key('m07-fee-counter'), label: 'Đề xuất mức phí khác', compact: true, kind: ButtonKind.secondary, onPressed: busy ? null : onCounter),
+            ),
           if (!offer.eligible && offer.reasons.isNotEmpty)
             Padding(padding: const EdgeInsets.only(top: N11Space.gap2), child: ReasonNote(m06ReasonText(offer.reasons.first))),
           if (pendingFee) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: ReasonNote('Phí chưa chốt nên chưa nhận đơn được. Hãy đồng ý mức phí hoặc đề xuất mức khác.')),
@@ -300,6 +340,8 @@ class _MineCard extends StatelessWidget {
       return (label: 'Hệ thống hủy quá hạn', kind: ChipKind.neutral);
     case 'cancelled_by_shop':
       return (label: 'Quán đã hủy yêu cầu giao', kind: ChipKind.neutral);
+    case 'fee_not_agreed':
+      return (label: 'Phí không được đồng ý', kind: ChipKind.neutral);
   }
   return null;
 }
@@ -361,6 +403,17 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
     }
   }
 
+  /// Before the pickup (also after taking the delivery) the Shipper may ask for another fee; the payer answers, and the pickup waits for the answer.
+  Future<void> _propose(DeliveryView d) async {
+    final int? value = await askFeeProposal(context);
+    if (value == null || !mounted) {
+      return;
+    }
+    if (await act('propose-${d.deliveryId}', (String key) => widget.source.feeCounter(d.deliveryId, amountVnd: value, key: key), onConflict: _reload)) {
+      await _reload();
+    }
+  }
+
   Future<void> _complete(DeliveryView d) async {
     final bool yes = await showConfirmDialog(context,
         title: 'Giao thành công?', confirmLabel: 'Giao thành công', content: const Text('Xác nhận đã giao hàng cho người nhận. Hoa hồng sẽ được thu một lần khi hoàn tất.', style: N11Text.lead));
@@ -412,6 +465,15 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
           title: 'Phí giao chưa được chốt',
           text: 'Hãy nhập mức phí bạn đã thống nhất với bên trả phí, rồi nhận hàng. Sau khi nhận hàng phí bị khóa.',
           icon: Icons.payments_outlined,
+        ),
+      if (active && d.fee.negotiation != null)
+        N11Banner(
+          key: const Key('m07-fee-waiting-banner'),
+          kind: BannerKind.info,
+          title: 'Đang chờ trả lời mức phí',
+          text:
+              'Bạn đã đề xuất ${m07Vnd(d.fee.negotiation!.offeredVnd)} (phí hiện tại ${m07Vnd(d.fee.negotiation!.currentVnd)}). Chưa nhận hàng được cho đến khi ${d.fee.negotiation!.deciderText} đồng ý. Nếu không được đồng ý hoặc quá hạn, bạn không còn giữ đơn này và đơn tiếp tục tìm shipper khác.',
+          icon: Icons.hourglass_top_outlined,
         ),
       if (d.state == DeliveryState.delivering || d.state == DeliveryState.pickedUp)
         const N11Banner(
@@ -477,6 +539,9 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
       }
       if (d.allows('pickup')) {
         actions.add(N11Button(key: const Key('m07-pickup'), label: 'Đã nhận hàng', icon: Icons.inventory_2_outlined, loading: busy, onPressed: busy ? null : () => _pickup(d)));
+      }
+      if (d.allows('propose_fee')) {
+        actions.add(N11Button(key: const Key('m07-propose-fee'), label: 'Đề xuất mức phí khác', icon: Icons.edit_outlined, kind: ButtonKind.secondary, onPressed: busy ? null : () => _propose(d)));
       }
       if (d.allows('release')) {
         actions.add(DangerButton(key: const Key('m07-release'), label: 'Hủy nhận đơn', onPressed: busy ? null : () => _release(d)));

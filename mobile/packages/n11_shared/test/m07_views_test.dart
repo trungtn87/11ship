@@ -438,6 +438,59 @@ void main() {
       expect(key('m07-complete'), findsNothing);
       await unmount(tester);
     });
+
+    testWidgets('S01 a fee in force can be questioned BEFORE taking (a table fee has no agreement): the button sends the amount; with a proposal waiting the offer cannot be taken', (WidgetTester tester) async {
+      final _TableOfferShipper source = _TableOfferShipper();
+      await mount(tester, Scaffold(body: SingleChildScrollView(child: ShipperDeliveryHub(source: source))));
+      await tap(tester, key('m07-ship-tab-offers'));
+      expect(key('m07-fee-counter'), findsOneWidget);
+      expect(key('m07-fee-agree'), findsNothing); // nothing to agree to: the fee is already settled
+      await tap(tester, key('m07-fee-counter'));
+      await tester.enterText(find.descendant(of: key('m07-counter-amount'), matching: find.byType(EditableText)), '20000');
+      await tap(tester, key('m07-counter-send'));
+      expect(source.proposed, <int>[20000]);
+      // The server now reports the waiting proposal: the offer says so and "Nhận đơn" is closed until it is answered.
+      expect(key('m07-offer-waiting'), findsOneWidget);
+      expect(containing('đang chờ quán (người trả phí) trả lời'), findsOneWidget);
+      expect(tester.widget<N11Button>(key('m07-accept-t-1')).onPressed, isNull);
+      expect(key('m07-fee-counter'), findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('S06 after taking and before the pickup: the Shipper may propose another fee, then pickup closes until the payer answers; nothing offers a failed delivery', (WidgetTester tester) async {
+      final _HeldShipper source = _HeldShipper();
+      await mount(tester, ShipperDeliveryDetailScreen(source: source, deliveryId: 'h-1'));
+      expect(key('m07-propose-fee'), findsOneWidget);
+      expect(key('m07-pickup'), findsOneWidget);
+      expect(key('m07-release'), findsOneWidget);
+      expect(key('m07-fee-waiting-banner'), findsNothing);
+      await tap(tester, key('m07-propose-fee'));
+      await tester.enterText(find.descendant(of: key('m07-counter-amount'), matching: find.byType(EditableText)), '18000');
+      await tap(tester, key('m07-counter-send'));
+      expect(source.proposed, <int>[18000]);
+      expect(key('m07-fee-waiting-banner'), findsOneWidget);
+      expect(containing('Chưa nhận hàng được cho đến khi khách đồng ý'), findsOneWidget);
+      expect(key('m07-pickup'), findsNothing);
+      expect(key('m07-propose-fee'), findsNothing);
+      expect(key('m07-release'), findsOneWidget); // giving the delivery up stays possible
+      expect(key('m07-fail'), findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('S06 once picked up there is no way to change the fee: no proposal button at all', (WidgetTester tester) async {
+      await mount(tester, ShipperDeliveryDetailScreen(source: SampleShipperSource(), deliveryId: 'm-run'));
+      expect(key('m07-propose-fee'), findsNothing);
+      expect(key('m07-fee-waiting-banner'), findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('S08 a turn that ended because the proposed fee was not agreed says so in the history', (WidgetTester tester) async {
+      final DeliveryView ended = _held(ownOutcome: 'fee_not_agreed', state: DeliveryState.cancelledByMerchant, can: const <String>{});
+      await mount(tester, Scaffold(body: SingleChildScrollView(child: ShipperDeliveryHub(source: _FixedMine(<DeliveryView>[ended])))));
+      await tap(tester, key('m07-ship-tab-history'));
+      expect(containing('Phí không được đồng ý'), findsOneWidget);
+      await unmount(tester);
+    });
   });
 
   group('failure texts', () {
@@ -448,6 +501,80 @@ void main() {
         expect(RegExp(r'[A-Z]{3,}_[A-Z]{3,}').hasMatch(text), isFalse);
       }
       expect(const M07Failure(M07FailureKind.refused, code: 'AFTER_PICKUP_NO_CANCEL').message, contains('không hủy'));
+    });
+  });
+
+  group('11Food — shop: a Shipper\'s other fee', () {
+    testWidgets('Q09 the shop pays: it answers Đồng ý / Từ chối, also after the Shipper took the delivery', (WidgetTester tester) async {
+      final _NegotiationShop source = _NegotiationShop(decider: 'SHOP', can: const <String>{'cancel', 'decide_fee'});
+      await mount(tester, ShopDeliveryDetailScreen(source: source, deliveryId: 'n-1'));
+      expect(key('m07-fee-negotiation'), findsOneWidget);
+      expect(containing('Phí hiện tại'), findsWidgets);
+      expect(key('m07-wait-customer-fee'), findsNothing);
+      await tap(tester, key('m07-counter-reject'));
+      expect(source.answers, <bool>[false]);
+      await unmount(tester);
+      final _NegotiationShop accepting = _NegotiationShop(decider: 'SHOP', can: const <String>{'cancel', 'decide_fee'});
+      await mount(tester, ShopDeliveryDetailScreen(source: accepting, deliveryId: 'n-1'));
+      await tap(tester, key('m07-counter-accept'));
+      expect(accepting.answers, <bool>[true]);
+      await unmount(tester);
+    });
+
+    testWidgets('Q09 an order the CUSTOMER pays: the shop only waits (the customer decides in 11Food) and has no buttons', (WidgetTester tester) async {
+      final _NegotiationShop source = _NegotiationShop(decider: 'CUSTOMER', can: const <String>{'cancel', 'wait_customer_fee'});
+      await mount(tester, ShopDeliveryDetailScreen(source: source, deliveryId: 'n-1'));
+      expect(key('m07-fee-negotiation'), findsOneWidget);
+      expect(key('m07-wait-customer-fee'), findsOneWidget);
+      expect(key('m07-counter-accept'), findsNothing);
+      expect(key('m07-counter-reject'), findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('Q09 a DIRECT call the customer pays: the shop answers for the customer and the screen says that is how it is recorded', (WidgetTester tester) async {
+      final _NegotiationShop source = _NegotiationShop(decider: 'SHOP', payer: 'CUSTOMER', can: const <String>{'cancel', 'decide_fee'});
+      await mount(tester, ShopDeliveryDetailScreen(source: source, deliveryId: 'n-1'));
+      expect(containing('xác nhận thay khách'), findsOneWidget);
+      expect(key('m07-counter-accept'), findsOneWidget);
+      await unmount(tester);
+    });
+  });
+
+  group('wire: the proposal that waits for the payer', () {
+    test('the fee and the offer carry it; an older server (no field) still lets an agreed proposal be countered, as before', () {
+      final FeeView fee = FeeView.fromJson(<String, Object?>{
+        'mode': 'STANDARD',
+        'payer': 'CUSTOMER',
+        'status': 'FINAL',
+        'amount_vnd': 15000,
+        'negotiation': <String, Object?>{'state': 'WAITING', 'current_vnd': 15000, 'offered_vnd': 20000, 'decider': 'CUSTOMER', 'by_me': true, 'answer_expires_at': '2026-10-24T10:05:00Z'},
+      });
+      expect(fee.negotiation?.offeredVnd, 20000);
+      expect(fee.negotiation?.currentVnd, 15000);
+      expect(fee.negotiation?.deciderText, 'khách');
+      expect(fee.negotiation?.byMe, isTrue);
+      expect(fee.negotiation?.answerExpiresAt, isNotNull);
+      expect(FeeView.fromJson(<String, Object?>{'mode': 'STANDARD', 'payer': 'SHOP', 'status': 'FINAL', 'amount_vnd': 1}).negotiation, isNull);
+      final Map<String, Object?> offer = <String, Object?>{
+        'delivery_id': 'o',
+        'code': 'G-1',
+        'shop': <String, Object?>{'name': 'Quán'},
+        'destination_known': false,
+        'goods_value_vnd': 1000,
+        'unpaid_vnd': 0,
+        'fee_status': 'FINAL',
+        'fee_payer': 'SHOP',
+        'search_expires_at': '2026-10-24T10:30:00Z',
+        'server_now': '2026-10-24T10:00:00Z',
+        'eligible': true,
+      };
+      expect(OfferView.fromJson(<String, Object?>{...offer, 'fee_counter_allowed': true}).canCounter, isTrue);
+      expect(OfferView.fromJson(<String, Object?>{...offer, 'fee_counter_allowed': false}).canCounter, isFalse);
+      expect(OfferView.fromJson(offer).canCounter, isFalse);
+      expect(
+        OfferView.fromJson(<String, Object?>{...offer, 'agreement': <String, Object?>{'state': 'PROPOSED', 'proposed_vnd': 1, 'reason_code': 'URGENT', 'expires_at': '2026-10-24T10:30:00Z'}}).canCounter,
+        isTrue,
+      );
     });
   });
 
@@ -492,4 +619,127 @@ class _ConflictShop extends SampleShopSource {
   @override
   Future<DeliveryView> cancel(String id, {required String reason, required int expectedVersion, required String key}) async =>
       throw const M07Failure(M07FailureKind.conflict, code: 'DELIVERY_STATE_CONFLICT');
+}
+
+DeliveryView _held({String ownOutcome = '', DeliveryState state = DeliveryState.accepted, Set<String> can = const <String>{'release', 'pickup', 'propose_fee'}, FeeNegotiation? negotiation, String decider = 'CUSTOMER', int version = 1}) {
+  final DeliveryView base = _delivery('h-1', state, can: can, version: version);
+  return DeliveryView(
+    deliveryId: base.deliveryId,
+    code: base.code,
+    source: 'ORDER',
+    state: state,
+    ownOutcome: ownOutcome.isEmpty ? null : ownOutcome,
+    version: version,
+    pickup: base.pickup,
+    recipient: base.recipient,
+    goods: base.goods,
+    fee: FeeView(mode: 'STANDARD', payer: 'CUSTOMER', status: 'FINAL', amountVnd: 15000, decider: decider, negotiation: negotiation),
+    search: base.search,
+    can: can,
+  );
+}
+
+/// Offers: a table fee (no agreement) that the Shipper may question. Proposing makes the server report the waiting proposal.
+class _TableOfferShipper extends SampleShipperSource {
+  final List<int> proposed = <int>[];
+  bool _waiting = false;
+
+  OfferView _offer() => OfferView(
+        deliveryId: 't-1',
+        code: 'G-T1',
+        shopName: 'Quán Mẫu',
+        destinationKnown: false,
+        goodsValueVnd: 100000,
+        unpaidVnd: 0,
+        feeVnd: 15000,
+        feeStatus: 'FINAL',
+        feePayer: 'SHOP',
+        expiresAt: DateTime.utc(2026, 10, 24, 10, 20),
+        serverNow: DateTime.utc(2026, 10, 24, 10),
+        eligible: true,
+        feeDecider: 'SHOP',
+        feeCounterAllowed: !_waiting,
+        negotiation: _waiting ? const FeeNegotiation(currentVnd: 15000, offeredVnd: 20000, decider: 'SHOP', byMe: true) : null,
+      );
+
+  @override
+  Future<List<OfferView>> offers() async => <OfferView>[_offer()];
+
+  @override
+  Future<OfferView> feeCounter(String id, {required int amountVnd, required String key}) async {
+    proposed.add(amountVnd);
+    _waiting = true;
+    return _offer();
+  }
+}
+
+/// A Shipper who already holds a delivery whose fee is settled; proposing puts the proposal on the delivery.
+class _HeldShipper extends SampleShipperSource {
+  final List<int> proposed = <int>[];
+  DeliveryView _view = _held();
+
+  @override
+  Future<DeliveryView> get(String id) async => _view;
+
+  @override
+  Future<OfferView> feeCounter(String id, {required int amountVnd, required String key}) async {
+    proposed.add(amountVnd);
+    _view = _held(
+      can: const <String>{'release'},
+      version: 2,
+      negotiation: FeeNegotiation(currentVnd: 15000, offeredVnd: amountVnd, decider: 'CUSTOMER', byMe: true),
+    );
+    return super.feeCounter('o-1', amountVnd: amountVnd, key: key);
+  }
+}
+
+class _FixedMine extends SampleShipperSource {
+  _FixedMine(this._items);
+
+  final List<DeliveryView> _items;
+
+  @override
+  Future<List<DeliveryView>> mine({required bool history}) async => _items;
+}
+
+/// A shop whose delivery has a Shipper's proposal about the fee in force, waiting for the payer.
+class _NegotiationShop extends SampleShopSource {
+  _NegotiationShop({required this.decider, this.payer = 'SHOP', required this.can});
+
+  final String decider;
+  final String payer;
+  final Set<String> can;
+  final List<bool> answers = <bool>[];
+
+  @override
+  Future<DeliveryView> get(String id) async {
+    final DeliveryView base = _delivery(id, DeliveryState.accepted, can: can, version: 4);
+    return DeliveryView(
+      deliveryId: base.deliveryId,
+      code: base.code,
+      source: decider == 'CUSTOMER' ? 'ORDER' : 'DIRECT',
+      state: base.state,
+      version: base.version,
+      pickup: base.pickup,
+      recipient: base.recipient,
+      goods: base.goods,
+      fee: FeeView(
+        mode: 'STANDARD',
+        payer: payer,
+        status: 'FINAL',
+        amountVnd: 15000,
+        decider: decider,
+        negotiation: FeeNegotiation(currentVnd: 15000, offeredVnd: 20000, decider: decider, byMe: false),
+      ),
+      search: base.search,
+      assignment: AssignmentView(assignmentId: 'a', shipperName: 'Shipper Mẫu', acceptedAt: DateTime.utc(2026, 10, 18, 9), destinationConfirmed: true),
+      can: can,
+    );
+  }
+
+  @override
+  Future<DeliveryView> answerCounter(String id, {required bool accept, required int expectedVersion, required String key}) async {
+    answers.add(accept);
+    return get(id);
+  }
 }

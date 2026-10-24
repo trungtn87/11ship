@@ -37,6 +37,8 @@ interface Raw {
   bound_driver_id: string | null;
   pending_fee_vnd: string | null;
   pending_source: 'PROPOSAL' | 'COUNTER' | null;
+  revision_fee_vnd: string | null;
+  revision_by: string | null;
   final_fee_vnd: string | null;
   expires_ms: string;
   answer_expires_ms: string | null;
@@ -52,7 +54,7 @@ const ms = (column: string, alias: string): string => `(extract(epoch FROM ${col
 const COLUMNS = `agreement_id::text AS agreement_id, delivery_id::text AS delivery_id, fee_mode, payer, status, base_fee_vnd::text AS base_fee_vnd,
   base_policy_version_no::text AS base_policy_version_no, reason_code, reason_note, proposed_fee_vnd::text AS proposed_fee_vnd,
   counter_fee_vnd::text AS counter_fee_vnd, counter_by::text AS counter_by, bound_driver_id::text AS bound_driver_id,
-  pending_fee_vnd::text AS pending_fee_vnd, pending_source, final_fee_vnd::text AS final_fee_vnd, floor(extract(epoch FROM expires_at) * 1000)::bigint::text AS expires_ms, ${ms('answer_expires_at', 'answer_expires_ms')},
+  pending_fee_vnd::text AS pending_fee_vnd, pending_source, revision_fee_vnd::text AS revision_fee_vnd, revision_by::text AS revision_by, final_fee_vnd::text AS final_fee_vnd, floor(extract(epoch FROM expires_at) * 1000)::bigint::text AS expires_ms, ${ms('answer_expires_at', 'answer_expires_ms')},
   version::text AS version, created_by::text AS created_by, ${ms('created_at', 'created_ms')}, ${ms('updated_at', 'updated_ms')}, ${ms('locked_at', 'locked_ms')}`;
 
 const num = (value: string | null): number | null => (value === null ? null : toSafeInteger(value));
@@ -74,6 +76,8 @@ function toAgreement(row: Raw): Agreement {
     boundDriverId: row.bound_driver_id,
     pendingFeeVnd: num(row.pending_fee_vnd),
     pendingSource: row.pending_source,
+    revisionFeeVnd: num(row.revision_fee_vnd),
+    revisionBy: row.revision_by,
     finalFeeVnd: num(row.final_fee_vnd),
     expiresAtMs: toSafeInteger(row.expires_ms),
     answerExpiresAtMs: num(row.answer_expires_ms),
@@ -163,6 +167,8 @@ export class ShippingFeeAgreementRepository {
           expires_at = CASE WHEN $16::boolean THEN to_timestamp($17::double precision / 1000.0) ELSE expires_at END,
           locked_at = CASE WHEN $18::boolean THEN to_timestamp($19::double precision / 1000.0) ELSE locked_at END,
           answer_expires_at = CASE WHEN $20::boolean THEN to_timestamp($21::double precision / 1000.0) ELSE answer_expires_at END,
+          revision_fee_vnd = CASE WHEN $22::boolean THEN $23::bigint ELSE revision_fee_vnd END,
+          revision_by = CASE WHEN $24::boolean THEN $25::uuid ELSE revision_by END,
           version = version + 1, updated_at = date_trunc('milliseconds', clock_timestamp())
         WHERE agreement_id = $1::uuid
         RETURNING ${COLUMNS}`,
@@ -178,6 +184,8 @@ export class ShippingFeeAgreementRepository {
         has('expiresAtMs'), patch.expiresAtMs ?? null,
         has('lockedAtMs'), patch.lockedAtMs ?? null,
         has('answerExpiresAtMs'), patch.answerExpiresAtMs ?? null,
+        has('revisionFeeVnd'), patch.revisionFeeVnd ?? null,
+        has('revisionBy'), patch.revisionBy ?? null,
       ],
     );
     if (result.rows[0] === undefined) {
@@ -236,10 +244,10 @@ export class ShippingFeeAgreementRepository {
   /** Open agreements whose payer's time to answer a counter-offer has run out, oldest first (a sweeper's list; each is re-read under its locks before it is applied). */
   async answerDue(context: TransactionContext, nowMs: number, limit: number): Promise<{ agreementId: string; deliveryId: string; boundDriverId: string | null; counterBy: string | null }[]> {
     const result = await context.query<{ agreement_id: string; delivery_id: string; bound: string | null; counter_by: string | null }>(
-      `SELECT agreement_id::text AS agreement_id, delivery_id::text AS delivery_id, bound_driver_id::text AS bound, counter_by::text AS counter_by
+      `SELECT agreement_id::text AS agreement_id, delivery_id::text AS delivery_id, bound_driver_id::text AS bound, COALESCE(counter_by, revision_by)::text AS counter_by
          FROM app.shipping_fee_agreements
         WHERE answer_expires_at IS NOT NULL AND answer_expires_at <= to_timestamp($1::double precision / 1000.0)
-          AND (status = 'COUNTERED' OR (status = 'AWAITING_CUSTOMER' AND pending_source = 'COUNTER'))
+          AND (status = 'COUNTERED' OR (status = 'AWAITING_CUSTOMER' AND pending_source = 'COUNTER') OR (status = 'ACCEPTED' AND revision_fee_vnd IS NOT NULL))
         ORDER BY answer_expires_at, agreement_id LIMIT $2::int`,
       [nowMs, limit],
     );

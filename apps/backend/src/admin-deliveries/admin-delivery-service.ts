@@ -12,7 +12,8 @@ import { AdminActionInput, AdminDeliveryAction, AdminDeliveryListQuery } from '.
 import { OPERATIONS } from '../delivery/delivery-constants';
 import { DeliveryRecorder } from '../delivery/delivery-recorder';
 import { DeliveryRepository, DeliveryRow } from '../delivery/delivery-repository';
-import { dropoffAreaOf, stateAfterRelease } from '../delivery/delivery-rules';
+import { DeliveryHandback } from '../delivery/delivery-handback';
+import { dropoffAreaOf } from '../delivery/delivery-rules';
 import { DeliveryViews } from '../delivery/delivery-views';
 import { DriverAdminQueryRepository } from '../driver/driver-admin-query-repository';
 import { DriverRepository } from '../driver/driver-repository';
@@ -93,6 +94,7 @@ export class AdminDeliveryService {
     private readonly recorder: DeliveryRecorder,
     private readonly agreements: ShippingFeeAgreementService,
     private readonly commission: CommissionHoldService,
+    private readonly handback: DeliveryHandback,
     private readonly walletReports: WalletReportReader,
     private readonly financeGrants: FinanceAccessRepository,
     @Inject(APP_CONFIG) appConfig: AppConfig,
@@ -250,19 +252,14 @@ export class AdminDeliveryService {
           // After pickup the goods are with the Shipper: nothing here marks the delivery as delivered or lost.
           throw new AppError('ADMIN_ACTION_NOT_ALLOWED');
         }
-        if (!(await this.deliveries.endAssignment(context, assignment.assignmentId, assignment.version, 'RELEASED_BY_ADMIN', 'ADMIN', input.reason))) {
-          throw new TechnicalError('internal', 'Assignment changed under its lock');
-        }
-        const released = await this.commission.releaseCommission(context, assignment.assignmentId);
-        if (released.kind === 'conflict') {
-          throw new TechnicalError('internal', 'Commission hold was not releasable');
-        }
-        const next = stateAfterRelease(await freshClockMs(context), delivery.searchExpiresAtMs);
-        const after = await this.#update(
-          context,
-          delivery,
-          next === 'waiting_driver' ? { state: 'waiting_driver' } : { state: 'search_stopped', searchStoppedNow: true, endedNow: true, endReason: 'Hết thời gian tìm shipper sau khi Admin giải phóng shipper' },
-        );
+        // The same end of a Shipper's turn as their own "Hủy nhận đơn": the commission is released once and a fee only this Shipper had agreed goes back to the original.
+        const { delivery: after, next } = await this.handback.endTurn(context, delivery, assignment, {
+          status: 'RELEASED_BY_ADMIN',
+          actor: 'ADMIN',
+          reason: input.reason,
+          stoppedReason: 'Hết thời gian tìm shipper sau khi Admin giải phóng shipper',
+          nowMs: await freshClockMs(context),
+        });
         await this.recorder.record(context, { delivery: after, type: 'released_by_admin', actorType: 'ADMIN', actorId: auth.actorId, assignmentId: assignment.assignmentId, driverId: assignment.driverId, note: input.reason, operation, requestId, metadata: { next_state: next } });
         return after;
       }

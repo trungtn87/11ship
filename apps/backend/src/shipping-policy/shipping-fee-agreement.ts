@@ -8,6 +8,12 @@ import { MAX_FEE_VND } from './shipping-fee-policy';
 //             ORIGINAL proposal and never touches the deadline (the search clock is M07's and does not restart). When the CUSTOMER pays and the amount is
 //             not the base fee (or there is no base fee), the customer must confirm before the amount becomes final. After `picked_up` the fee is locked.
 //
+// REVISION (Owner decision 2026-10-24): a Shipper may also propose another amount for a fee that is already FINAL (the bands' fee of STANDARD, or an agreed amount),
+// before the goods are picked up, even after taking the delivery. The agreement stays ACCEPTED at the fee it had; the proposal waits in `revisionFeeVnd` /
+// `revisionBy` until the payer answers it (accept: the fee changes, bound to that Shipper; refuse or silence: the proposal is dropped and the fee stays). A
+// fee that differs from the ORIGINAL one (the base fee, or the shop's proposal) belongs to the Shipper it was agreed with: when that Shipper's turn ends the fee
+// goes back to the original (see `HOLDER_LEFT`), so the delivery can be taken by anybody else at a fee nobody has to explain.
+//
 // Nothing here adds a surcharge by itself (weather, urgency, bulk): an amount exists only because a person proposed or accepted it.
 
 export type FeeMode = 'STANDARD' | 'AGREED';
@@ -33,6 +39,9 @@ export interface Agreement {
   readonly boundDriverId: string | null;
   readonly pendingFeeVnd: number | null;
   readonly pendingSource: 'PROPOSAL' | 'COUNTER' | null;
+  /** A Shipper's proposal to change a FINAL fee (status ACCEPTED), waiting for the payer; NULL when none. Both or neither. */
+  readonly revisionFeeVnd: number | null;
+  readonly revisionBy: string | null;
   /** NULL until the fee is final (accepted / locked). */
   readonly finalFeeVnd: number | null;
   readonly expiresAtMs: number;
@@ -56,6 +65,8 @@ export type AgreementAction =
   | { readonly type: 'SHOP_REJECT_COUNTER' }
   | { readonly type: 'CUSTOMER_CONFIRM'; readonly approve: boolean }
   | { readonly type: 'EXPIRE_ANSWER' }
+  /** The Shipper's turn on the delivery ended (gave it up, or a proposal of theirs was refused): their pending proposal is withdrawn and a fee bound to them goes back to the original. */
+  | { readonly type: 'HOLDER_LEFT'; readonly driverId: string }
   | { readonly type: 'LOCK' }
   | { readonly type: 'ADMIN_ADJUST'; readonly amountVnd: number; readonly reason: string }
   | { readonly type: 'EXTEND_DEADLINE'; readonly newExpiresAtMs: number };
@@ -71,6 +82,8 @@ export type EventType =
   | 'CUSTOMER_CONFIRMED'
   | 'CUSTOMER_DECLINED'
   | 'COUNTER_EXPIRED'
+  | 'COUNTER_WITHDRAWN'
+  | 'FEE_REVERTED'
   | 'EXPIRED'
   | 'LOCKED'
   | 'ADMIN_ADJUSTED'
@@ -87,7 +100,10 @@ export type RefusalCode =
 
 /** The changed fields of the agreement row (everything else is untouched). */
 export type AgreementPatch = Partial<
-  Pick<Agreement, 'status' | 'counterFeeVnd' | 'counterBy' | 'boundDriverId' | 'pendingFeeVnd' | 'pendingSource' | 'finalFeeVnd' | 'expiresAtMs' | 'answerExpiresAtMs' | 'lockedAtMs'>
+  Pick<
+    Agreement,
+    'status' | 'counterFeeVnd' | 'counterBy' | 'boundDriverId' | 'pendingFeeVnd' | 'pendingSource' | 'revisionFeeVnd' | 'revisionBy' | 'finalFeeVnd' | 'expiresAtMs' | 'answerExpiresAtMs' | 'lockedAtMs'
+  >
 >;
 
 export type Transition =
@@ -116,10 +132,27 @@ const OPEN: readonly AgreementStatus[] = ['PROPOSED', 'COUNTERED', 'AWAITING_CUS
 const NO_COUNTER = { counterFeeVnd: null, counterBy: null } as const;
 const NO_PENDING = { pendingFeeVnd: null, pendingSource: null } as const;
 const NO_ANSWER_CLOCK = { answerExpiresAtMs: null } as const;
+const NO_REVISION = { revisionFeeVnd: null, revisionBy: null } as const;
 
-/** A counter-offer is waiting for the payer: COUNTERED, or AWAITING_CUSTOMER that came from the counter-offer (the shop's own proposal keeps only the search deadline). */
-export const answerIsWaiting = (agreement: Pick<Agreement, 'status' | 'pendingSource'>): boolean =>
-  agreement.status === 'COUNTERED' || (agreement.status === 'AWAITING_CUSTOMER' && agreement.pendingSource === 'COUNTER');
+/** A Shipper's proposal to change a final fee is waiting for the payer. */
+export const revisionIsPending = (agreement: Pick<Agreement, 'status' | 'revisionFeeVnd'>): boolean => agreement.status === 'ACCEPTED' && agreement.revisionFeeVnd !== null;
+
+/** The fee as it was before any Shipper changed it: the base fee of the bands (STANDARD) or the shop's own proposal (AGREED). */
+export const originalFeeOf = (agreement: Pick<Agreement, 'feeMode' | 'baseFeeVnd' | 'proposedFeeVnd'>): number | null => (agreement.feeMode === 'STANDARD' ? agreement.baseFeeVnd : agreement.proposedFeeVnd);
+
+/** What it takes to end `driverId`'s turn: drop a proposal of theirs that is waiting, and/or take a fee that only they agreed back to the original. */
+export function holderLeftEffect(agreement: Agreement, driverId: string): { readonly withdrawn: boolean; readonly revert: boolean; readonly original: number | null } {
+  const original = originalFeeOf(agreement);
+  return {
+    withdrawn: revisionIsPending(agreement) && agreement.revisionBy === driverId,
+    revert: agreement.status === 'ACCEPTED' && agreement.boundDriverId === driverId && agreement.finalFeeVnd !== null && original !== null && agreement.finalFeeVnd !== original,
+    original,
+  };
+}
+
+/** A counter-offer is waiting for the payer: COUNTERED, AWAITING_CUSTOMER that came from the counter-offer (the shop's own proposal keeps only the search deadline), or a proposal to change a final fee. */
+export const answerIsWaiting = (agreement: Pick<Agreement, 'status' | 'pendingSource' | 'revisionFeeVnd'>): boolean =>
+  agreement.status === 'COUNTERED' || (agreement.status === 'AWAITING_CUSTOMER' && agreement.pendingSource === 'COUNTER') || revisionIsPending(agreement);
 
 /** The answer time of the offer has run out. The deadline instant itself is already late. */
 export const answerIsDue = (agreement: Agreement, nowMs: number): boolean => answerIsWaiting(agreement) && agreement.answerExpiresAtMs !== null && nowMs >= agreement.answerExpiresAtMs;
@@ -143,11 +176,14 @@ export function applyAgreementAction(agreement: Agreement, action: AgreementActi
       return { kind: 'refused', code: 'ANSWER_NOT_DUE' };
     }
     // The offer is dropped and the earlier fee stays: the proposal goes on waiting for a Shipper within the search window, which this never extends.
+    if (revisionIsPending(agreement)) {
+      return { kind: 'ok', patch: { ...NO_REVISION, ...NO_ANSWER_CLOCK }, eventType: 'COUNTER_EXPIRED', amountVnd: agreement.revisionFeeVnd, reason: null, driverId: agreement.revisionBy };
+    }
     return agreement.status === 'COUNTERED'
       ? { kind: 'ok', patch: { status: 'PROPOSED', ...NO_COUNTER, ...NO_ANSWER_CLOCK }, eventType: 'COUNTER_EXPIRED', amountVnd: agreement.counterFeeVnd, reason: null, driverId: agreement.counterBy }
       : { kind: 'ok', patch: { status: 'PROPOSED', boundDriverId: null, ...NO_PENDING, ...NO_ANSWER_CLOCK }, eventType: 'COUNTER_EXPIRED', amountVnd: agreement.pendingFeeVnd, reason: null, driverId: agreement.boundDriverId };
   }
-  if (answerIsDue(agreement, nowMs) && action.type !== 'EXTEND_DEADLINE') {
+  if (answerIsDue(agreement, nowMs) && action.type !== 'EXTEND_DEADLINE' && action.type !== 'HOLDER_LEFT') {
     return { kind: 'answer_expired' };
   }
   const refuse = (code: RefusalCode): Transition => ({ kind: 'refused', code });
@@ -166,6 +202,20 @@ export function applyAgreementAction(agreement: Agreement, action: AgreementActi
       : ok({ status: 'ACCEPTED', finalFeeVnd: amount, boundDriverId: driverId, ...NO_COUNTER, ...NO_PENDING, ...NO_ANSWER_CLOCK }, accepted, amount, driverId);
 
   switch (action.type) {
+    case 'HOLDER_LEFT': {
+      const { withdrawn, revert, original } = holderLeftEffect(agreement, action.driverId);
+      if (!withdrawn && !revert) {
+        return refuse('INVALID_STATE');
+      }
+      const dropRevision = withdrawn ? { ...NO_REVISION, ...NO_ANSWER_CLOCK } : {};
+      if (!revert) {
+        return ok({ ...dropRevision }, 'COUNTER_WITHDRAWN', agreement.revisionFeeVnd, action.driverId);
+      }
+      // The fee the Shipper alone agreed goes back to the original. An agreed fee the payer had not confirmed yet is asked again of the next Shipper (PROPOSED).
+      return agreement.feeMode === 'AGREED'
+        ? ok({ status: 'PROPOSED', boundDriverId: null, finalFeeVnd: null, ...NO_PENDING, ...NO_COUNTER, ...dropRevision }, 'FEE_REVERTED', agreement.finalFeeVnd, action.driverId)
+        : ok({ boundDriverId: null, finalFeeVnd: original, ...dropRevision }, 'FEE_REVERTED', agreement.finalFeeVnd, action.driverId);
+    }
     case 'DRIVER_ACCEPT':
       if (agreement.feeMode !== 'AGREED' || agreement.status !== 'PROPOSED' || agreement.proposedFeeVnd === null) {
         return refuse('INVALID_STATE');
@@ -177,6 +227,27 @@ export function applyAgreementAction(agreement: Agreement, action: AgreementActi
       }
       return ok(null, 'DRIVER_SKIPPED', null, action.driverId);
     case 'COUNTER':
+      if (agreement.status === 'ACCEPTED') {
+        // A FINAL fee (STANDARD, or an agreed amount): the Shipper proposes another amount; the fee stays as it is until the payer answers.
+        if (agreement.revisionFeeVnd !== null || agreement.finalFeeVnd === null) {
+          return refuse('INVALID_STATE');
+        }
+        if (!isValidAmount(action.amountVnd)) {
+          return refuse('AMOUNT_INVALID');
+        }
+        if (action.amountVnd === agreement.finalFeeVnd) {
+          return refuse('COUNTER_SAME_AS_PROPOSAL');
+        }
+        if (rejected.has(rejectedKey(action.driverId, action.amountVnd))) {
+          return refuse('COUNTER_ALREADY_REJECTED');
+        }
+        return ok(
+          { revisionFeeVnd: action.amountVnd, revisionBy: action.driverId, answerExpiresAtMs: Math.min(action.answerExpiresAtMs ?? agreement.expiresAtMs, agreement.expiresAtMs) },
+          'COUNTERED',
+          action.amountVnd,
+          action.driverId,
+        );
+      }
       if (agreement.feeMode !== 'AGREED' || agreement.status !== 'PROPOSED') {
         return refuse('INVALID_STATE');
       }
@@ -197,11 +268,18 @@ export function applyAgreementAction(agreement: Agreement, action: AgreementActi
         action.driverId,
       );
     case 'SHOP_ACCEPT_COUNTER':
+      if (revisionIsPending(agreement) && agreement.revisionFeeVnd !== null && agreement.revisionBy !== null) {
+        // The payer (or the shop for a payer without an app) answered: the amount becomes the fee, bound to the Shipper who proposed it. No further confirmation exists.
+        return ok({ finalFeeVnd: agreement.revisionFeeVnd, boundDriverId: agreement.revisionBy, ...NO_REVISION, ...NO_ANSWER_CLOCK }, 'COUNTER_ACCEPTED', agreement.revisionFeeVnd, agreement.revisionBy);
+      }
       if (agreement.status !== 'COUNTERED' || agreement.counterFeeVnd === null || agreement.counterBy === null) {
         return refuse('INVALID_STATE');
       }
       return settle(agreement.counterFeeVnd, agreement.counterBy, 'COUNTER', 'COUNTER_ACCEPTED');
     case 'SHOP_REJECT_COUNTER':
+      if (revisionIsPending(agreement)) {
+        return ok({ ...NO_REVISION, ...NO_ANSWER_CLOCK }, 'COUNTER_REJECTED', agreement.revisionFeeVnd, agreement.revisionBy);
+      }
       if (agreement.status !== 'COUNTERED' || agreement.counterFeeVnd === null) {
         return refuse('INVALID_STATE');
       }
@@ -219,7 +297,8 @@ export function applyAgreementAction(agreement: Agreement, action: AgreementActi
         ? ok({ status: 'PROPOSED', boundDriverId: null, ...NO_PENDING, ...NO_ANSWER_CLOCK }, 'CUSTOMER_DECLINED', agreement.pendingFeeVnd, agreement.boundDriverId)
         : ok({ status: 'DECLINED', ...NO_PENDING, ...NO_ANSWER_CLOCK }, 'CUSTOMER_DECLINED', agreement.pendingFeeVnd, agreement.boundDriverId);
     case 'LOCK':
-      if (agreement.status !== 'ACCEPTED') {
+      // A proposal still waiting for the payer means the fee is not settled: the goods are not picked up at it.
+      if (agreement.status !== 'ACCEPTED' || agreement.revisionFeeVnd !== null) {
         return refuse('INVALID_STATE');
       }
       return ok({ status: 'LOCKED', lockedAtMs: nowMs }, 'LOCKED', agreement.finalFeeVnd, agreement.boundDriverId);
@@ -244,10 +323,13 @@ export function applyAgreementAction(agreement: Agreement, action: AgreementActi
   }
 }
 
-/** Whether a Shipper may take the delivery at the agreed fee: the fee is final and bound to exactly that Shipper. */
+/**
+ * Whether a Shipper may take the delivery at the fee as it stands: the fee is final, no proposal about it waits for the payer, and it is either the ORIGINAL fee (the base fee of the
+ * bands, or the shop's own proposal), which anybody may take, or an amount agreed with exactly that Shipper, which is theirs alone.
+ */
 export function feeAllowsAssignment(agreement: Agreement, driverId: string): boolean {
-  if (agreement.status !== 'ACCEPTED' && agreement.status !== 'LOCKED') {
+  if ((agreement.status !== 'ACCEPTED' && agreement.status !== 'LOCKED') || agreement.revisionFeeVnd !== null) {
     return false;
   }
-  return agreement.feeMode === 'STANDARD' || agreement.boundDriverId === driverId;
+  return agreement.boundDriverId === driverId || (agreement.finalFeeVnd !== null && agreement.finalFeeVnd === originalFeeOf(agreement));
 }

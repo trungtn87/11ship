@@ -1457,4 +1457,295 @@ describe('M10 — food orders', () => {
     expect((await orderRow(oid)).status).toBe('PREPARING');
   });
 
+
+  // ---- 2026-10-24 (2): a Shipper who gives up an agreed fee; another fee for a fee already in force, also after taking the delivery -------------------
+
+  const shopFee = async (did: string, accept: boolean): Promise<ApiResponse> =>
+    asShop('POST', `/shop/me/deliveries/${did}/fee/${accept ? 'counter-accept' : 'counter-reject'}`, { expected_version: ((ok(await asShop('GET', `/shop/me/deliveries/${did}`))) as Json).version });
+  const shopSees = async (did: string): Promise<Json> => ok(await asShop('GET', `/shop/me/deliveries/${did}`));
+  const shipperSees = async (s: Shipper, did: string): Promise<Json> => ok(await asShipper(s, 'GET', `/driver/deliveries/${did}`));
+  const offerIds = async (s: Shipper): Promise<string[]> => (ok(await asShipper(s, 'GET', '/driver/deliveries/offers')).offers as Json[]).map((o) => String(o.delivery_id));
+  const acceptOf = (s: Shipper, did: string): Promise<ApiResponse> => asShipper(s, 'POST', `/driver/deliveries/${did}/accept`, {});
+  const deliveryRow = async (did: string): Promise<Json> => (await app.pool.query('SELECT * FROM app.deliveries WHERE delivery_id = $1::uuid', [did])).rows[0] as Json;
+  const assignmentStatuses = async (did: string): Promise<string[]> => (await app.pool.query('SELECT status FROM app.delivery_assignments WHERE delivery_id = $1::uuid ORDER BY accepted_at, assignment_id', [did])).rows.map((r) => String(r.status));
+  const tableCall = async (over: Json = {}): Promise<Json> => ok(await asShop('POST', '/shop/me/deliveries', directBody({ dropoff_lat: undefined, dropoff_lng: undefined, fee_band: 1, ...over })), 201);
+  const agreedCall = async (over: Json = {}): Promise<string> => String(ok(await asShop('POST', '/shop/me/deliveries', directBody({ agreed_fee: { reason_code: 'URGENT', amount_vnd: 15_000 }, ...over })), 201).delivery_id);
+
+  it('BUG 1: an agreed fee accepted for Shipper A, A takes the delivery and gives it up: it goes back to the search at the shop\'s own fee, B sees and takes it, nothing stays bound to A, the commission is released once and the history is kept', async () => {
+    const a = await shipper();
+    const b = await shipper();
+    const did = await agreedCall({ fee_payer: 'SHOP' });
+    const searchEnds = (await deliveryRow(did)).search_expires_at;
+    ok(await counter(a, did, 20_000));
+    ok(await shopFee(did, true));
+    expect(await agreementOf(did)).toMatchObject({ status: 'ACCEPTED', final_fee_vnd: '20000', bound_driver_id: a.driverId });
+    // B cannot take it at A's fee; A can.
+    expect(refused(await acceptOf(b, did))).toEqual({ status: 409, code: 'FEE_NOT_CONFIRMED' });
+    const taken = ok(await acceptOf(a, did));
+    expect(taken.fee).toMatchObject({ amount_vnd: 20_000, status: 'FINAL' });
+    expect(await walletOf(app, a)).toEqual({ balance: 50_000, held: 1000 });
+    ok(await asShipper(a, 'POST', `/driver/deliveries/${did}/release`, { reason: 'Xe hỏng', expected_version: taken.version }));
+    // The commission is given back (once) and the delivery is searched again inside the ORIGINAL window; the fee is the shop's own again and A is no longer bound.
+    expect(await walletOf(app, a)).toEqual({ balance: 50_000, held: 0 });
+    expect(await agreementOf(did)).toMatchObject({ status: 'PROPOSED', final_fee_vnd: null, bound_driver_id: null, revision_fee_vnd: null });
+    expect(await deliveryRow(did)).toMatchObject({ state: 'waiting_driver', fee_vnd: null });
+    expect((await deliveryRow(did)).search_expires_at).toEqual(searchEnds);
+    // B sees it, settles the shop's fee and takes it; A's turn stays in the history.
+    expect(await offerIds(b)).toContain(did);
+    ok(await asShipper(b, 'POST', `/driver/deliveries/${did}/fee/agree`, {}));
+    const bTaken = ok(await acceptOf(b, did));
+    expect(bTaken.fee).toMatchObject({ amount_vnd: 15_000, status: 'FINAL' });
+    expect(await walletOf(app, b)).toEqual({ balance: 50_000, held: 1000 });
+    expect(await assignmentStatuses(did)).toEqual(['CANCELLED_BY_SHIPPER', 'ACTIVE']);
+    expect((await agreementEvents(did)).map((e) => e.event_type)).toEqual(['PROPOSED', 'COUNTERED', 'COUNTER_ACCEPTED', 'FEE_REVERTED', 'DRIVER_ACCEPTED']);
+    expect(await eventsOfDelivery(did, 'delivery.released_by_shipper')).toBe(1);
+  });
+
+  it('BUG 1 for the fee table: A\'s approved amount is never offered to B after A gives the delivery up; and when the search window is over by then the search stops and the shop can call again', async () => {
+    const a = await shipper();
+    const b = await shipper();
+    const created = await tableCall({ fee_payer: 'SHOP' });
+    const did = String(created.delivery_id);
+    const base = Number((created.fee as Json).amount_vnd);
+    ok(await counter(a, did, base + 5_000));
+    ok(await shopFee(did, true));
+    expect((await agreementOf(did)).bound_driver_id).toBe(a.driverId);
+    expect(refused(await acceptOf(b, did)).status).toBe(409);
+    expect(await offerIds(b)).not.toContain(did);
+    const taken = ok(await acceptOf(a, did));
+    expect(taken.fee.amount_vnd).toBe(base + 5_000);
+    ok(await asShipper(a, 'POST', `/driver/deliveries/${did}/release`, { reason: 'Đổi ý', expected_version: taken.version }));
+    expect(await deliveryRow(did)).toMatchObject({ state: 'waiting_driver', fee_vnd: String(base) });
+    expect(await agreementOf(did)).toMatchObject({ status: 'ACCEPTED', final_fee_vnd: String(base), bound_driver_id: null });
+    expect(await offerIds(b)).toContain(did);
+    const bTaken = ok(await acceptOf(b, did));
+    expect(bTaken.fee.amount_vnd).toBe(base);
+    // The same again, but the window is over when A leaves: the search stops (no extension) and the shop is told what it may do.
+    const c = await shipper();
+    const created2 = await tableCall({ fee_payer: 'SHOP' });
+    const did2 = String(created2.delivery_id);
+    ok(await counter(c, did2, base + 2_000));
+    ok(await shopFee(did2, true));
+    const takenC = ok(await acceptOf(c, did2));
+    await ageDelivery(app, did2, 31);
+    ok(await asShipper(c, 'POST', `/driver/deliveries/${did2}/release`, { reason: 'Muộn quá', expected_version: takenC.version }));
+    expect(await deliveryRow(did2)).toMatchObject({ state: 'search_stopped', fee_vnd: String(base) });
+    expect((await shopSees(did2)).can).toMatchObject({ recall: true, cancel: true });
+    expect(await walletOf(app, c)).toEqual({ balance: 50_000, held: 0 });
+  });
+
+  it('a fee in force can be questioned by the Shipper BEFORE taking the delivery (table fee, ORDER paid by the shop): the shop decides, nobody else can take it meanwhile, a refusal keeps the fee and a repeat does not move the clock', async () => {
+    const a = await shipper();
+    const b = await shipper();
+    const order = await confirmed(alice);
+    const oid = String(order.order_id);
+    const called = ok(await callShipper(order, { fee_payer: 'SHOP' }), 201);
+    const did = String((called.delivery as Json).delivery_id);
+    const base = Number((called.delivery as Json).fee.amount_vnd);
+    const offered = (ok(await asShipper(a, 'GET', '/driver/deliveries/offers')).offers as Json[]).find((o) => o.delivery_id === did) as Json;
+    expect(offered).toMatchObject({ fee_counter_allowed: true, negotiation: null, fee_vnd: base });
+    const key = randomUUID();
+    const sent = await asShipper(a, 'POST', `/driver/deliveries/${did}/fee/counter`, { amount_vnd: base + 3_000 }, key);
+    expect(ok(sent)).toMatchObject({ fee_vnd: base, negotiation: { offered_vnd: base + 3_000, current_vnd: base, decider: 'SHOP', by_me: true } });
+    const clock = await secondsUntil('answer_expires_at', did);
+    expect(clock).toBeGreaterThan(280);
+    expect(clock).toBeLessThanOrEqual(300);
+    // Same key: the same answer, one proposal, the clock untouched. Another key while one waits: refused.
+    expect((await asShipper(a, 'POST', `/driver/deliveries/${did}/fee/counter`, { amount_vnd: base + 3_000 }, key)).status).toBe(200);
+    expect((await asShipper(a, 'POST', `/driver/deliveries/${did}/fee/counter`, { amount_vnd: base + 3_000 }, randomUUID())).status).toBe(409);
+    expect(await agreementEvents(did, 'COUNTERED')).toHaveLength(1);
+    expect(Math.abs((await secondsUntil('answer_expires_at', did)) - clock)).toBeLessThan(5);
+    // While it waits nobody takes the delivery (not at the old fee, not at the proposed one) and the others do not even see it.
+    expect(refused(await acceptOf(a, did))).toEqual({ status: 409, code: 'FEE_NOT_CONFIRMED' });
+    expect(refused(await acceptOf(b, did)).status).toBe(409);
+    expect(await offerIds(b)).not.toContain(did);
+    // The shop is the payer: it decides; the customer is not asked.
+    expect((await shopSees(did)).can).toMatchObject({ decide_fee: true, wait_customer_fee: false });
+    expect((await deliveryOfOrder(alice, oid)).fee_decision).toBeNull();
+    ok(await shopFee(did, false));
+    expect(await agreementOf(did)).toMatchObject({ status: 'ACCEPTED', final_fee_vnd: String(base), revision_fee_vnd: null, answer_expires_at: null });
+    expect((await orderRow(oid)).status).toBe('PREPARING');
+    expect(await agreementEvents(did, 'COUNTER_REJECTED')).toHaveLength(1);
+    // The refused amount cannot be pushed again by the same Shipper; the delivery is open again at the same fee.
+    expect((await asShipper(a, 'POST', `/driver/deliveries/${did}/fee/counter`, { amount_vnd: base + 3_000 }, randomUUID())).status).toBe(409);
+    expect(await offerIds(b)).toContain(did);
+    expect(ok(await acceptOf(b, did)).fee.amount_vnd).toBe(base);
+  });
+
+  it('AFTER taking the delivery and before the pickup (ORDER paid by the CUSTOMER): the Shipper proposes, the pickup waits, the CUSTOMER decides in 11Food; accepting changes the fee atomically for the same Shipper; after the pickup everything is locked', async () => {
+    const s = await shipper();
+    const order = await confirmed(alice);
+    const oid = String(order.order_id);
+    const called = ok(await callShipper(order, { fee_payer: 'CUSTOMER' }), 201);
+    const did = String((called.delivery as Json).delivery_id);
+    const base = Number((called.delivery as Json).fee.amount_vnd);
+    const taken = ok(await acceptOf(s, did));
+    expect(taken.can).toMatchObject({ propose_fee: true, pickup: true });
+    ok(await counter(s, did, base + 4_000));
+    const waiting = await shipperSees(s, did);
+    expect(waiting.can).toMatchObject({ pickup: false, propose_fee: false, release: true });
+    expect(waiting.fee).toMatchObject({ amount_vnd: base, negotiation: { offered_vnd: base + 4_000, decider: 'CUSTOMER', by_me: true } });
+    expect(refused(await asShipper(s, 'POST', `/driver/deliveries/${did}/pickup`, { expected_version: waiting.version }))).toEqual({ status: 409, code: 'FEE_NOT_CONFIRMED' });
+    // The shop of a customer-paid order only waits; the customer sees the question in 11Food.
+    expect((await shopSees(did)).can).toMatchObject({ decide_fee: false, wait_customer_fee: true });
+    expect(refused(await shopFee(did, true))).toEqual({ status: 409, code: 'DELIVERY_STATE_CONFLICT' });
+    const asked = await deliveryOfOrder(alice, oid);
+    expect(asked.fee_decision).toMatchObject({ state: 'COUNTERED', current_vnd: base, offered_vnd: base + 4_000, can_decline: true });
+    expect(refused(await decide(bob, oid, 'ACCEPT', asked.version)).status).toBe(404);
+    ok(await decide(alice, oid, 'ACCEPT', asked.version));
+    // Same Shipper, same assignment, new fee, same commission hold; the delivery row and the agreement agree.
+    const after = await shipperSees(s, did);
+    expect(after).toMatchObject({ state: 'accepted', fee: { amount_vnd: base + 4_000, status: 'FINAL', negotiation: null }, can: { pickup: true, propose_fee: true } });
+    expect(await deliveryRow(did)).toMatchObject({ fee_vnd: String(base + 4_000) });
+    expect(await agreementOf(did)).toMatchObject({ final_fee_vnd: String(base + 4_000), bound_driver_id: s.driverId, revision_fee_vnd: null });
+    expect(await assignmentStatuses(did)).toEqual(['ACTIVE']);
+    expect(await walletOf(app, s)).toEqual({ balance: 50_000, held: 1000 });
+    expect(await agreementEvents(did, 'COUNTER_ACCEPTED')).toHaveLength(1);
+    expect((await agreementEvents(did, 'COUNTER_ACCEPTED'))[0]).toMatchObject({ actor_type: 'CUSTOMER', fee_payer: 'CUSTOMER' });
+    // Pickup now: one step. After it nothing about the fee moves, from either side.
+    const picked = ok(await asShipper(s, 'POST', `/driver/deliveries/${did}/pickup`, { expected_version: after.version }));
+    expect(picked.can).toMatchObject({ propose_fee: false, release: false, fail: false });
+    expect(refused(await counter(s, did, base + 9_000))).toEqual({ status: 409, code: 'FEE_LOCKED' });
+    expect(refused(await asShipper(s, 'POST', `/driver/deliveries/${did}/release`, { reason: 'x', expected_version: picked.version }))).toEqual({ status: 409, code: 'AFTER_PICKUP_NO_CANCEL' });
+    expect(await agreementOf(did)).toMatchObject({ status: 'LOCKED', final_fee_vnd: String(base + 4_000) });
+    ok(await asShipper(s, 'POST', `/driver/deliveries/${did}/complete`, { expected_version: picked.version }));
+    expect(await walletOf(app, s)).toEqual({ balance: 49_000, held: 0 });
+    // Notices: the customer hears the question, the Shipper the answer ("you can go and pick it up"), the shop the progress.
+    await timeoutDrain();
+    const kindsOf = async (userId: string): Promise<string[]> => (await app.pool.query(`SELECT kind FROM app.notifications WHERE recipient_user_id = $1::uuid AND target_id IN ($2::uuid, $3::uuid)`, [userId, oid, did])).rows.map((r) => String(r.kind));
+    expect(await kindsOf(alice.userId)).toContain('FEE_COUNTERED');
+    expect(await kindsOf(s.userId)).toContain('FEE_UPDATED');
+    expect(await kindsOf(shop.userId)).toEqual(expect.arrayContaining(['FEE_COUNTERED', 'FEE_UPDATED']));
+  });
+
+  it('AFTER taking the delivery: a refusal ends that Shipper\'s turn with the proposal (commission released once, fee as before), the ORDER stays and is searched again, another Shipper takes it at the earlier fee; the customer is told, the order is not cancelled', async () => {
+    const s = await shipper();
+    const t = await shipper();
+    const order = await confirmed(alice);
+    const oid = String(order.order_id);
+    const called = ok(await callShipper(order, { fee_payer: 'CUSTOMER' }), 201);
+    const did = String((called.delivery as Json).delivery_id);
+    const base = Number((called.delivery as Json).fee.amount_vnd);
+    const searchEnds = (await deliveryRow(did)).search_expires_at;
+    ok(await acceptOf(s, did));
+    ok(await counter(s, did, base + 4_000));
+    const asked = await deliveryOfOrder(alice, oid);
+    const rejected = ok(await decide(alice, oid, 'REJECT', asked.version));
+    expect(rejected).toMatchObject({ status: 'PREPARING', display_status: 'SEARCHING_SHIPPER' });
+    expect(rejected.delivery).toMatchObject({ state: 'waiting_driver', fee_decision: null, shipper: null });
+    expect(await deliveryRow(did)).toMatchObject({ state: 'waiting_driver', fee_vnd: String(base) });
+    expect((await deliveryRow(did)).search_expires_at).toEqual(searchEnds);
+    expect(await assignmentStatuses(did)).toEqual(['CANCELLED_BY_SYSTEM']);
+    expect(await walletOf(app, s)).toEqual({ balance: 50_000, held: 0 });
+    // The Shipper sees how their turn ended; they cannot pick up or propose again on a delivery they no longer hold.
+    const mine = await shipperSees(s, did);
+    expect(mine).toMatchObject({ own_outcome: 'fee_not_agreed', can: { pickup: false, release: false, propose_fee: false } });
+    expect(refused(await asShipper(s, 'POST', `/driver/deliveries/${did}/pickup`, { expected_version: mine.version })).status).toBe(404);
+    expect(refused(await counter(s, did, base + 4_000)).status).toBe(409);
+    // Another Shipper takes it at the earlier fee; the first one holds nothing.
+    expect(await offerIds(t)).toContain(did);
+    expect(ok(await acceptOf(t, did)).fee).toMatchObject({ amount_vnd: base });
+    expect(await walletOf(app, t)).toEqual({ balance: 50_000, held: 1000 });
+    expect(await walletOf(app, s)).toEqual({ balance: 50_000, held: 0 });
+    await timeoutDrain();
+    const kindsOf = async (userId: string): Promise<string[]> => (await app.pool.query(`SELECT kind FROM app.notifications WHERE recipient_user_id = $1::uuid AND target_id IN ($2::uuid, $3::uuid)`, [userId, oid, did])).rows.map((r) => String(r.kind));
+    expect(await kindsOf(s.userId)).toContain('FEE_UPDATED');
+    expect(await kindsOf(alice.userId)).toContain('FEE_UPDATED');
+  });
+
+  it('AFTER taking the delivery: an unanswered proposal runs out once (sweeper twice, a late answer too): the Shipper\'s turn ends, the commission is released once, and with the search window over the search stops', async () => {
+    await setMinutes(5);
+    const s = await shipper();
+    const order = await confirmed(alice);
+    const oid = String(order.order_id);
+    const called = ok(await callShipper(order, { fee_payer: 'CUSTOMER' }), 201);
+    const did = String((called.delivery as Json).delivery_id);
+    const base = Number((called.delivery as Json).fee.amount_vnd);
+    ok(await acceptOf(s, did));
+    ok(await counter(s, did, base + 4_000));
+    const asked = await deliveryOfOrder(alice, oid);
+    await runOutAnswerTime(did);
+    expect(await deliverySweeper().sweep()).toMatchObject({ feeAnswersExpired: 1 });
+    expect(await deliverySweeper().sweep()).toMatchObject({ feeAnswersExpired: 0 });
+    expect(await deliveryRow(did)).toMatchObject({ state: 'waiting_driver', fee_vnd: String(base) });
+    expect(await assignmentStatuses(did)).toEqual(['CANCELLED_BY_SYSTEM']);
+    expect(await walletOf(app, s)).toEqual({ balance: 50_000, held: 0 });
+    expect(await agreementEvents(did, 'COUNTER_EXPIRED')).toHaveLength(1);
+    expect(await eventsOfDelivery(did, 'delivery.fee_answer_expired_released')).toBe(1);
+    // A late answer is refused; nothing changes twice.
+    expect(refused(await decide(alice, oid, 'ACCEPT', asked.version)).status).toBe(409);
+    expect(await walletOf(app, s)).toEqual({ balance: 50_000, held: 0 });
+    // The window is over when the answer time runs out: the search stops, the Order is untouched.
+    const s2 = await shipper();
+    const order2 = await confirmed(alice);
+    const called2 = ok(await callShipper(order2, { fee_payer: 'SHOP' }), 201);
+    const did2 = String((called2.delivery as Json).delivery_id);
+    ok(await acceptOf(s2, did2));
+    ok(await counter(s2, did2, Number((called2.delivery as Json).fee.amount_vnd) + 1_000));
+    await ageDelivery(app, did2, 31);
+    await runOutAnswerTime(did2);
+    await deliverySweeper().sweep();
+    expect(await deliveryRow(did2)).toMatchObject({ state: 'search_stopped' });
+    expect(await walletOf(app, s2)).toEqual({ balance: 50_000, held: 0 });
+    expect((await orderRow(String(order2.order_id))).status).toBe('PREPARING');
+    expect((await shopView(String(order2.order_id))).delivery).toMatchObject({ can: { recall: true } });
+  });
+
+  it('DIRECT: the SHOP answers (for a customer without an app, in the log), a proposal after taking is decided by the shop; an agreed fee can be questioned after taking; release and approval racing leave exactly one outcome', async () => {
+    const s = await shipper();
+    const did = await agreedCall({ fee_payer: 'CUSTOMER', agreed_fee: { reason_code: 'URGENT', amount_vnd: 14_000 } });
+    // The shop's own proposal needs the customer's word first (the shop gives it for them), then the Shipper takes it.
+    ok(await asShipper(s, 'POST', `/driver/deliveries/${did}/fee/agree`, {}));
+    ok(await asShop('POST', `/shop/me/deliveries/${did}/fee/customer-confirm`, { expected_version: (await shopSees(did)).version }));
+    const taken = ok(await acceptOf(s, did));
+    expect(taken.fee.amount_vnd).toBe(14_000);
+    expect(taken.can).toMatchObject({ propose_fee: true });
+    ok(await counter(s, did, 17_000));
+    expect((await shopSees(did)).can).toMatchObject({ decide_fee: true, wait_customer_fee: false });
+    ok(await shopFee(did, true));
+    expect((await agreementEvents(did, 'COUNTER_ACCEPTED'))[0]).toMatchObject({ actor_type: 'SHOP', on_behalf_of: 'CUSTOMER', fee_payer: 'CUSTOMER' });
+    expect(await deliveryRow(did)).toMatchObject({ fee_vnd: '17000' });
+    expect(await walletOf(app, s)).toEqual({ balance: 50_000, held: 1000 });
+    // A second proposal, then the Shipper gives up and the shop refuses at the same moment: exactly one of them takes effect.
+    const again = await shipperSees(s, did);
+    ok(await counter(s, did, 18_000));
+    const waiting = await shipperSees(s, did);
+    const shopVersion = (await shopSees(did)).version;
+    const results = await Promise.all([
+      asShipper(s, 'POST', `/driver/deliveries/${did}/release`, { reason: 'Đổi ý', expected_version: waiting.version }),
+      asShop('POST', `/shop/me/deliveries/${did}/fee/counter-reject`, { expected_version: shopVersion }),
+    ]);
+    expect(results.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(again.version).toBeLessThan(Number(waiting.version));
+    expect(await assignmentStatuses(did)).toHaveLength(1);
+    expect(await walletOf(app, s)).toEqual({ balance: 50_000, held: 0 });
+    // Whoever won, the fee is the original one again, nothing is bound and the delivery is searched.
+    expect(await agreementOf(did)).toMatchObject({ status: 'PROPOSED', final_fee_vnd: null, bound_driver_id: null, revision_fee_vnd: null });
+    expect(await deliveryRow(did)).toMatchObject({ state: 'waiting_driver', fee_vnd: null });
+  });
+
+
+  it('approving the new fee and picking the goods up at the same moment: the goods are never picked up at a fee nobody approved, and the commission and fee agree with the winner', async () => {
+    const s = await shipper();
+    const did = await agreedCall({ fee_payer: 'SHOP' });
+    ok(await asShipper(s, 'POST', `/driver/deliveries/${did}/fee/agree`, {}));
+    const held = ok(await acceptOf(s, did));
+    ok(await counter(s, did, 18_000));
+    const seen = await shipperSees(s, did);
+    const shopVersion = (await shopSees(did)).version;
+    const [pickup, approval] = await Promise.all([
+      asShipper(s, 'POST', `/driver/deliveries/${did}/pickup`, { expected_version: seen.version }),
+      asShop('POST', `/shop/me/deliveries/${did}/fee/counter-accept`, { expected_version: shopVersion }),
+    ]);
+    expect(approval.status).toBe(200);
+    // The pickup cannot have gone first: while the proposal waited it is refused; after the approval its version is stale.
+    expect(pickup.status).toBe(409);
+    expect(await deliveryRow(did)).toMatchObject({ state: 'accepted', fee_vnd: '18000' });
+    expect(held.fee.amount_vnd).toBe(15_000);
+    // With the fresh version the pickup goes through at the approved fee, once.
+    const fresh = await shipperSees(s, did);
+    const picked = ok(await asShipper(s, 'POST', `/driver/deliveries/${did}/pickup`, { expected_version: fresh.version }));
+    expect(picked.fee).toMatchObject({ amount_vnd: 18_000 });
+    expect(await walletOf(app, s)).toEqual({ balance: 50_000, held: 1000 });
+  });
 });

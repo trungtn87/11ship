@@ -58,4 +58,24 @@ describe('M08 composer', () => {
     expect(reminderCopy('PICKUP', 2, ['A', 'B']).title).toBe('Bạn còn 2 đơn chưa lấy hàng');
     expect(reminderCopy('PICKUP', 1, ['A']).title).toBe('Bạn còn đơn chưa lấy hàng');
   });
+
+  it('a refused or unanswered fee proposal of the Shipper who held the delivery tells the Shipper their turn ended, the payer side what happens next, and offers it to others only while it is searched again', () => {
+    const orderId = '55555555-5555-4555-8555-555555555555';
+    for (const change of ['fee_counter_rejected_released', 'fee_answer_expired_released']) {
+      const waiting = composeDeliveryChange({ ...base, change, state: 'waiting_driver', orderId, source: 'ORDER', feePayer: 'CUSTOMER' });
+      expect(notifies(waiting).map((d) => d.audience).sort()).toEqual(['CUSTOMER', 'DRIVER_OF_AGREEMENT', 'SHOP']);
+      expect(waiting.some((d) => d.type === 'OFFER_ROUND')).toBe(true);
+      expect(notifies(waiting).find((d) => d.audience === 'DRIVER_OF_AGREEMENT')?.body).toContain('lượt nhận đơn đã kết thúc');
+      expect(notifies(waiting).find((d) => d.audience === 'CUSTOMER')?.body).toContain('không bị hủy');
+      const stopped = composeDeliveryChange({ ...base, change, state: 'search_stopped', orderId, source: 'ORDER', feePayer: 'CUSTOMER' });
+      expect(stopped.some((d) => d.type === 'OFFER_ROUND')).toBe(false);
+      expect(notifies(stopped).some((d) => d.audience === 'SHOP' && d.kind === 'SEARCH_STOPPED')).toBe(true);
+    }
+    // The shop that paid and refused itself is not told its own answer; a silent offer is always reported to it.
+    expect(notifies(composeDeliveryChange({ ...base, change: 'fee_counter_rejected_released', state: 'waiting_driver', source: 'DIRECT', feePayer: 'SHOP' })).map((d) => d.audience)).toEqual(['DRIVER_OF_AGREEMENT']);
+    expect(notifies(composeDeliveryChange({ ...base, change: 'fee_answer_expired_released', state: 'waiting_driver', source: 'DIRECT', feePayer: 'SHOP' })).map((d) => d.audience)).toEqual(['DRIVER_OF_AGREEMENT', 'SHOP']);
+    // Approving a new fee after the Shipper took the delivery says "go and pick it up", not "you may take it".
+    const approved = notifies(composeDeliveryChange({ ...base, change: 'fee_counter_accepted', state: 'accepted' })).find((d) => d.audience === 'DRIVER_OF_AGREEMENT');
+    expect(approved?.body).toContain('đến lấy hàng');
+  });
 });

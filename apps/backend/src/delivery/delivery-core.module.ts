@@ -9,6 +9,7 @@ import { TransactionModule } from '../transaction/transaction.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { DeliveryActors } from './delivery-actors';
 import { DeliveryCancel } from './delivery-cancel';
+import { DeliveryHandback } from './delivery-handback';
 import { DeliveryReadModule } from './delivery-read.module';
 import { DeliveryRecorder } from './delivery-recorder';
 import { DeliveryViews } from './delivery-views';
@@ -26,8 +27,8 @@ export class DeliveryCoreModule {
     return {
       module: DeliveryCoreModule,
       imports: [auth, TransactionModule, IdempotencyModule, AuditModule, OutboxModule, DriverModule, ShopModule, WalletModule, ShippingEligibilityModule, DeliveryReadModule, ShipperLocationModule],
-      providers: [DeliveryActors, DeliveryViews, DeliveryRecorder, DeliveryCancel, FeeAnswerExpiry],
-      exports: [DeliveryActors, DeliveryViews, DeliveryRecorder, DeliveryCancel, FeeAnswerExpiry, DeliveryReadModule, ShipperLocationModule, WalletModule, ShippingEligibilityModule],
+      providers: [DeliveryActors, DeliveryViews, DeliveryRecorder, DeliveryCancel, DeliveryHandback, FeeAnswerExpiry],
+      exports: [DeliveryActors, DeliveryViews, DeliveryRecorder, DeliveryCancel, DeliveryHandback, FeeAnswerExpiry, DeliveryReadModule, ShipperLocationModule, WalletModule, ShippingEligibilityModule],
     };
   }
 }

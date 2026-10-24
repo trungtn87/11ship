@@ -7,6 +7,7 @@ import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agr
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { OPERATIONS } from './delivery-constants';
+import { DeliveryHandback, FEE_EXPIRED_REASON } from './delivery-handback';
 import { DeliveryRecorder } from './delivery-recorder';
 import { DeliveryRepository, DeliveryRow } from './delivery-repository';
 
@@ -30,6 +31,7 @@ export class FeeAnswerExpiry {
     private readonly drivers: DriverRepository,
     private readonly agreements: ShippingFeeAgreementService,
     private readonly recorder: DeliveryRecorder,
+    private readonly handback: DeliveryHandback,
   ) {}
 
   /** Drops every offer whose answer time ran out; returns how many were dropped. */
@@ -98,26 +100,30 @@ export class FeeAnswerExpiry {
         return 0;
       }
       if (delivery.state === 'waiting_driver' || delivery.state === 'accepted' || delivery.state === 'location_confirmed') {
-        const after = await this.deliveries.update(context, delivery.deliveryId, delivery.version, {});
+        // A proposal to change a final fee, made by the Shipper who already HOLDS the delivery, ends that Shipper's turn with it: the fee stays as it was and the delivery
+        // goes back to the search (or the search stops when its window is over). Everything else only drops the offer.
+        const proposer = agreement.revisionFeeVnd === null ? null : agreement.revisionBy;
+        const ended = proposer === null ? undefined : await this.handback.endProposerTurn(context, delivery, proposer, { status: 'CANCELLED_BY_SYSTEM', actor: 'SYSTEM', reason: FEE_EXPIRED_REASON, stoppedReason: 'Hết thời gian tìm shipper', nowMs });
+        const after = ended === undefined ? await this.deliveries.update(context, delivery.deliveryId, delivery.version, {}) : ended.delivery;
         if (after !== undefined) {
-          await this.#record(context, after, outcome.agreement.status, agreement.counterBy ?? agreement.boundDriverId);
+          await this.#record(context, after, outcome.agreement.status, agreement.counterBy ?? agreement.revisionBy ?? agreement.boundDriverId, ended !== undefined);
         }
       }
       return 1;
     });
   }
 
-  async #record(context: TransactionContext, delivery: DeliveryRow, agreementStatus: string, driverId: string | null): Promise<void> {
+  async #record(context: TransactionContext, delivery: DeliveryRow, agreementStatus: string, driverId: string | null, turnEnded: boolean): Promise<void> {
     await this.recorder.record(context, {
       delivery,
-      type: 'fee_answer_expired',
+      type: turnEnded ? 'fee_answer_expired_released' : 'fee_answer_expired',
       actorType: 'SYSTEM',
       actorId: null,
       driverId,
       operation: OPERATIONS.feeAnswerExpired,
       requestId: randomUUID(),
       note: 'Hết thời gian trả lời đề xuất phí',
-      metadata: { agreement_status: agreementStatus, fee_payer: delivery.feePayer },
+      metadata: { agreement_status: agreementStatus, fee_payer: delivery.feePayer, turn_ended: turnEnded },
     });
   }
 }

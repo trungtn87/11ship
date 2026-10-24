@@ -562,10 +562,10 @@ class _ShopDeliveryPanelState extends State<ShopDeliveryPanel> with M07Actions<S
   List<Widget> _byState(DeliveryView d) {
     switch (d.state) {
       case DeliveryState.waitingDriver:
-        return <Widget>[SearchTimerCard(search: d.search), ..._feeAgreementCards(d)];
+        return <Widget>[SearchTimerCard(search: d.search), ..._feeNegotiationCards(d), ..._feeAgreementCards(d)];
       case DeliveryState.accepted:
       case DeliveryState.locationConfirmed:
-        return <Widget>[_shipperCard(d), _statusCard(d), if (widget.showLocation && d.source == 'ORDER') LocationCard(location: d.location, mapBuilder: widget.mapBuilder)];
+        return <Widget>[_shipperCard(d), ..._feeNegotiationCards(d), _statusCard(d), if (widget.showLocation && d.source == 'ORDER') LocationCard(location: d.location, mapBuilder: widget.mapBuilder)];
       case DeliveryState.pickedUp:
       case DeliveryState.delivering:
         return <Widget>[
@@ -586,6 +586,44 @@ class _ShopDeliveryPanelState extends State<ShopDeliveryPanel> with M07Actions<S
       case DeliveryState.cancelledByMerchant:
         return <Widget>[if (d.assignment != null) _shipperCard(d), if (d.incident != null) _incidentCard(d)];
     }
+  }
+
+  /// A Shipper asks for another fee than the one in force (the fee table's, or an agreed one), also after taking the delivery: the payer answers. Who that is comes from the
+  /// server (`can.decide_fee` = the shop, for a payer without an app in the log as "thay khách"; `can.wait_customer_fee` = the customer in 11Food).
+  List<Widget> _feeNegotiationCards(DeliveryView d) {
+    final FeeNegotiation? n = d.fee.negotiation;
+    if (n == null) {
+      return <Widget>[];
+    }
+    return <Widget>[
+      N11Card(
+        key: const Key('m07-fee-negotiation'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text('Shipper đề xuất đổi phí giao', style: N11Text.label),
+            KeyValueRows(<(String, String)>[('Phí hiện tại', m07Vnd(n.currentVnd)), ('Shipper đề xuất', m07Vnd(n.offeredVnd))]),
+            if (d.allows('wait_customer_fee')) ...<Widget>[
+              const SizedBox(height: N11Space.gap2),
+              const ReasonNote('Khách là người trả phí nên khách quyết định mức này trong 11Food. Bạn chỉ cần chờ.', key: Key('m07-wait-customer-fee')),
+            ] else if (d.allows('decide_fee')) ...<Widget>[
+              const SizedBox(height: N11Space.gap2),
+              ReasonNote(d.fee.payer == 'CUSTOMER'
+                  ? 'Khách trả ship: hãy liên hệ khách trước. Bấm Đồng ý nghĩa là quán xác nhận thay khách, hệ thống sẽ ghi lại như vậy. Từ chối thì giữ mức hiện tại; shipper đang giữ đơn sẽ không còn giữ đơn và đơn tiếp tục tìm shipper khác.'
+                  : 'Từ chối thì giữ mức hiện tại; shipper đang giữ đơn (nếu có) sẽ không còn giữ đơn và đơn tiếp tục tìm shipper khác, thời gian tìm không tính lại.'),
+              const SizedBox(height: N11Space.gap2),
+              Row(
+                children: <Widget>[
+                  Expanded(child: N11Button(key: const Key('m07-counter-accept'), label: 'Đồng ý', onPressed: busy ? null : () => _counter(d, true))),
+                  const SizedBox(width: N11Space.gap3),
+                  Expanded(child: N11Button(key: const Key('m07-counter-reject'), label: 'Từ chối', kind: ButtonKind.secondary, onPressed: busy ? null : () => _counter(d, false))),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    ];
   }
 
   List<Widget> _feeAgreementCards(DeliveryView d) {
