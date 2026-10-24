@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import type { PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
 import {
@@ -19,6 +20,7 @@ import {
 import { begin, ok, post } from './support/activation-fixtures';
 import { ADMIN_SESSION_COOKIE } from '../../apps/backend/src/admin-auth/admin-auth-constants';
 import { AuthApp, createActiveShopFor, createServiceArea, Phone, randomPhone } from './support/auth-fixtures';
+import { insertDeliveryRow } from './support/delivery-fixtures';
 import { cleanupOrders } from './support/m10-fixtures';
 import { createInvitation, createPayload, systemSession, SystemSession } from './support/provisioning-fixtures';
 
@@ -41,7 +43,7 @@ interface ActivatedAdmin {
   readonly secret: string;
 }
 
-const row = (appName: string, view: boolean, lock = false): Record<string, unknown> => ({ app: appName, can_view: view, can_review_profile: false, can_lock: lock });
+const row = (appName: string, view: boolean, lock = false, shops = false): Record<string, unknown> => ({ app: appName, can_view: view, can_review_profile: false, can_lock: lock, ...(shops ? { can_manage_shops: true } : {}) });
 
 describe('admin shop management (API)', () => {
   let app: AdminApp;
@@ -49,6 +51,8 @@ describe('admin shop management (API)', () => {
   let viewer: AdminLogin;
   let manager: AdminLogin;
   let manager2: AdminLogin;
+  let lockOnly: AdminLogin;
+  let managerUser: ActivatedAdmin;
   let customerAdmin: AdminLogin;
   const owners: string[] = [];
   const shops: string[] = [];
@@ -161,6 +165,40 @@ describe('admin shop management (API)', () => {
     return { orderId, version: 1 };
   }
 
+  /** Ends every order of the shop the way the order module ends one (an M10 end status with its end time and actor). */
+  async function finishOrders(shopId: string): Promise<void> {
+    const client = await app.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('ALTER TABLE app.orders DISABLE TRIGGER USER');
+      await client.query(`UPDATE app.orders SET status = 'COMPLETED', confirmed_at = COALESCE(confirmed_at, now()), ended_at = now(), end_actor = 'SYSTEM' WHERE shop_id = $1::uuid`, [shopId]);
+      await client.query('ALTER TABLE app.orders ENABLE TRIGGER USER');
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Ends a delivery in an M07 terminal state (the search stopped). */
+  async function stopDelivery(deliveryId: string): Promise<void> {
+    const client = await app.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('ALTER TABLE app.deliveries DISABLE TRIGGER USER');
+      await client.query(`UPDATE app.deliveries SET state = 'search_stopped', search_stopped_at = now(), ended_at = now() WHERE delivery_id = $1::uuid`, [deliveryId]);
+      await client.query('ALTER TABLE app.deliveries ENABLE TRIGGER USER');
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   const shopRow = async (shopId: string): Promise<{ status: string; version: number; name: string; lat: number | null }> => {
     const result = await app.pool.query<{ status: string; version: string; name: string; pickup_lat: number | null }>('SELECT status, version::text AS version, name, pickup_lat FROM app.shops WHERE shop_id = $1::uuid', [shopId]);
     const found = result.rows[0] as { status: string; version: string; name: string; pickup_lat: number | null };
@@ -175,8 +213,11 @@ describe('admin shop management (API)', () => {
     app = await startAdminApp({ activationDisabledTest: true });
     system = await systemSession(app);
     viewer = await login(await activatedAdmin([row('SHOP', true)], `Quản trị xem quán ${tag}`));
-    manager = await login(await activatedAdmin([row('SHOP', true, true)], `Quản trị quán ${tag}`));
-    manager2 = await login(await activatedAdmin([row('SHOP', true, true)], `Quản trị quán hai ${tag}`));
+    // The shop-management right is its own right: `lockOnly` holds the account-lock right of SHOP and nothing else.
+    lockOnly = await login(await activatedAdmin([row('SHOP', true, true)], `Quản trị khóa ${tag}`));
+    managerUser = await activatedAdmin([row('SHOP', true, false, true)], `Quản trị quán ${tag}`);
+    manager = await login(managerUser);
+    manager2 = await login(await activatedAdmin([row('SHOP', true, false, true)], `Quản trị quán hai ${tag}`));
     customerAdmin = await login(await activatedAdmin([row('CUSTOMER', true)], `Quản trị Khách ${tag}`));
     areaA = await createServiceArea(app.pool);
     areaB = await createServiceArea(app.pool);
@@ -237,10 +278,13 @@ describe('admin shop management (API)', () => {
     }
     // The actions the page may offer follow the right, and the write itself is refused again.
     expect(adminData(await read(viewer, `/shops/${id}`)).allowed_actions).toEqual([]);
+    expect(adminData(await read(lockOnly, `/shops/${id}`)).allowed_actions).toEqual([]);
+    expect((await read(lockOnly, '/shops')).status).toBe(200);
     expect(adminData(await read(manager, `/shops/${id}`)).allowed_actions).toEqual(['DISABLE']);
     expect(adminData(await read(systemLogin(), `/shops/${id}`)).allowed_actions).toEqual(['DISABLE']);
     const version = (await shopRow(id)).version;
-    for (const who of [viewer, customerAdmin]) {
+    // The account-lock right (can_lock) is NOT the shop-management right: it neither disables nor enables a shop.
+    for (const who of [viewer, customerAdmin, lockOnly]) {
       expect(codeOf(await write(who, `/shops/${id}/disable`, { expected_version: version, reason: 'Thử' }))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
     }
     expect(await shopRow(id)).toMatchObject({ status: 'ACTIVE', version });
@@ -363,7 +407,24 @@ describe('admin shop management (API)', () => {
     const preparing = await addOrder(id, 'PREPARING', customer);
     const before = await shopRow(id);
     const detail = adminData(await read(manager, `/shops/${id}`));
-    expect(detail.open_work).toMatchObject({ orders_pending_confirmation: 1, orders_preparing: 1 });
+    expect(detail).toMatchObject({ open_work: { orders_open: 2, orders_pending_confirmation: 1, orders_preparing: 1, active_deliveries: 0 }, disable_blocked: true });
+    // Orders that are not finished block the disable: refused under the shop lock, nothing is written, nothing is cancelled.
+    const blocked = await write(manager, `/shops/${id}/disable`, { expected_version: before.version, reason: 'Lý do' });
+    expect(codeOf(blocked)).toEqual({ status: 409, code: 'SHOP_HAS_OPEN_WORK' });
+    expect(await shopRow(id)).toEqual(before);
+    expect(await audits(id, 'admin.shop.disable.v1')).toBe(0);
+    expect(await events(id, 'shop.disabled_by_admin.v1')).toBe(0);
+    const stillOpen = await app.pool.query<{ status: string; version: string }>('SELECT status, version::text AS version FROM app.orders WHERE shop_id = $1::uuid ORDER BY status', [id]);
+    expect(stillOpen.rows).toEqual([{ status: 'PENDING_CONFIRMATION', version: '1' }, { status: 'PREPARING', version: '1' }]);
+    // Orders ended, but a delivery still running blocks as well.
+    await finishOrders(id);
+    const deliveryId = await insertDeliveryRow(app.pool, { shopId: id, userId: alpha.ownerId });
+    expect(adminData(await read(manager, `/shops/${id}`))).toMatchObject({ open_work: { orders_open: 0, active_deliveries: 1 }, disable_blocked: true });
+    expect(codeOf(await write(manager, `/shops/${id}/disable`, { expected_version: before.version, reason: 'Lý do' }))).toEqual({ status: 409, code: 'SHOP_HAS_OPEN_WORK' });
+    expect(await shopRow(id)).toEqual(before);
+    // Nothing left to finish: the disable goes through.
+    await stopDelivery(deliveryId);
+    expect(adminData(await read(manager, `/shops/${id}`))).toMatchObject({ open_work: { orders_open: 0, active_deliveries: 0 }, disable_blocked: false });
     // Invalid bodies write nothing.
     for (const body of [{ expected_version: before.version }, { expected_version: before.version, reason: '' }, { expected_version: before.version, reason: '   ' }, { expected_version: before.version, reason: 'x'.repeat(501) }, { expected_version: 'one', reason: 'Lý do' }, { expected_version: before.version, reason: 'Lý do', status: 'ACTIVE' }]) {
       expect(codeOf(await write(manager, `/shops/${id}/disable`, body))).toEqual({ status: 400, code: 'ADMIN_INPUT_INVALID' });
@@ -386,7 +447,7 @@ describe('admin shop management (API)', () => {
       [id],
     );
     expect(audit.rows[0]).toMatchObject({ actor_type: 'ADMIN', resource_version: String(before.version + 1) });
-    expect(audit.rows[0]?.metadata).toMatchObject({ reason, from_status: 'ACTIVE', to_status: 'DISABLED', from_version: before.version, version: before.version + 1, open_orders: 2 });
+    expect(audit.rows[0]?.metadata).toMatchObject({ reason, from_status: 'ACTIVE', to_status: 'DISABLED', from_version: before.version, version: before.version + 1, open_orders: 0, active_deliveries: 0 });
     // The outbox payload carries no reason, no name and no phone.
     const outbox = await app.pool.query<{ payload: Record<string, unknown> }>(`SELECT payload FROM app.outbox_events WHERE resource_id = $1 AND event_type = 'shop.disabled_by_admin.v1'`, [id]);
     expect(outbox.rows[0]?.payload).toEqual({ shop_id: id, status: 'DISABLED', version: before.version + 1 });
@@ -395,14 +456,18 @@ describe('admin shop management (API)', () => {
     expect(await count(app.pool, 'SELECT 1 FROM app.shop_business_hours WHERE shop_id = $1::uuid', [id])).toBe(7);
     expect(await count(app.pool, `SELECT 1 FROM app.menu_items WHERE shop_id = $1::uuid AND status <> 'DELETED'`, [id])).toBe(3);
     const orders = await app.pool.query<{ order_id: string; status: string; version: string }>('SELECT order_id, status, version::text AS version FROM app.orders WHERE shop_id = $1::uuid ORDER BY status', [id]);
-    expect(orders.rows.map((order) => [order.order_id, order.status, order.version]).sort()).toEqual([[pending.orderId, 'PENDING_CONFIRMATION', '1'], [preparing.orderId, 'PREPARING', '1']].sort());
-    expect(adminData(await read(viewer, `/shops/${id}`)).open_work).toMatchObject({ orders_pending_confirmation: 1, orders_preparing: 1 });
+    expect(orders.rows.map((order) => [order.order_id, order.status, order.version]).sort()).toEqual([[pending.orderId, 'COMPLETED', '1'], [preparing.orderId, 'COMPLETED', '1']].sort());
     // A retry with the same key replays the stored answer: no second audit row, no second event, no new version.
     const replay = await write(manager, `/shops/${id}/disable`, { expected_version: before.version, reason }, { key });
     expect(replay.status).toBe(200);
     expect(adminData(replay).version).toBe(before.version + 1);
     expect(await audits(id, 'admin.shop.disable.v1')).toBe(1);
     expect(await shopRow(id)).toMatchObject({ version: before.version + 1 });
+    // A replay re-checks the CURRENT right: with the right taken away the same key is refused, and nothing is replayed.
+    await app.pool.query(`UPDATE app.admin_app_permissions SET can_manage_shops = false WHERE user_id = $1::uuid AND app = 'SHOP'`, [managerUser.userId]);
+    expect(codeOf(await write(manager, `/shops/${id}/disable`, { expected_version: before.version, reason }, { key }))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
+    await app.pool.query(`UPDATE app.admin_app_permissions SET can_manage_shops = true WHERE user_id = $1::uuid AND app = 'SHOP'`, [managerUser.userId]);
+    expect((await write(manager, `/shops/${id}/disable`, { expected_version: before.version, reason }, { key })).status).toBe(200);
     // The same key from ANOTHER administrator is not a replay: it is a new request, refused because the version moved on.
     expect(codeOf(await write(manager2, `/shops/${id}/disable`, { expected_version: before.version, reason }, { key }))).toEqual({ status: 409, code: 'VERSION_CONFLICT' });
     // Disabling a shop that is already disabled (current version) is a state conflict, not a second change.
@@ -433,6 +498,7 @@ describe('admin shop management (API)', () => {
     expect(await shopRow(id)).toMatchObject({ status: 'DISABLED', version: current.version });
     // A viewer cannot enable; the manager can. Make the schedule closed now to prove nothing forces it open.
     expect(codeOf(await write(viewer, `/shops/${id}/enable`, { expected_version: current.version, reason: 'Mở lại' }))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
+    expect(codeOf(await write(lockOnly, `/shops/${id}/enable`, { expected_version: current.version, reason: 'Mở lại' }))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
     await app.pool.query('DELETE FROM app.shop_business_hours WHERE shop_id = $1::uuid', [id]);
     const done = await write(manager, `/shops/${id}/enable`, { expected_version: current.version, reason: 'Đã khắc phục' });
     expect(done.status).toBe(200);
@@ -463,5 +529,74 @@ describe('admin shop management (API)', () => {
     expect(results.map((response) => response.status).sort()).toEqual([200, 409]);
     expect(await audits(id, 'admin.shop.disable.v1')).toBe(1);
     expect(await shopRow(id)).toMatchObject({ status: 'DISABLED', version: version + 1 });
+  });
+  it('the shop-management right: its own flag, SHOP only and always with VIEW; old rows and old invitations default to off and nothing is copied from can_lock', async () => {
+    const phone = randomPhone();
+    app.track(phone.normalized);
+    for (const permissions of [
+      [{ ...row('SHOP', false), can_manage_shops: true }, row('CUSTOMER', true)],
+      [{ ...row('CUSTOMER', true), can_manage_shops: true }],
+      [{ ...row('SHOP', true), can_manage_shops: 'yes' }],
+    ]) {
+      await expect(createInvitation(app, system, createPayload(phone.local, { permissions }))).rejects.toThrow();
+    }
+    // The stored rows: lockOnly and viewer (granted the old way) have the lock right / nothing, and NOT the new right.
+    const stored = await app.pool.query<{ full_name: string; can_lock: boolean; can_manage_shops: boolean }>(
+      `SELECT p.full_name, a.can_lock, a.can_manage_shops FROM app.admin_app_permissions a JOIN app.admin_profiles p ON p.user_id = a.user_id WHERE p.full_name LIKE $1 AND a.app = 'SHOP' ORDER BY p.full_name`,
+      [`%${tag}`],
+    );
+    expect(stored.rows.find((entry) => entry.full_name.startsWith('Quản trị khóa'))).toMatchObject({ can_lock: true, can_manage_shops: false });
+    expect(stored.rows.find((entry) => entry.full_name.startsWith('Quản trị xem quán'))).toMatchObject({ can_lock: false, can_manage_shops: false });
+    expect(stored.rows.find((entry) => entry.full_name === `Quản trị quán ${tag}`)).toMatchObject({ can_lock: false, can_manage_shops: true });
+    // The table refuses the right without VIEW or outside SHOP, whatever a caller tries.
+    await expect(app.pool.query(`UPDATE app.admin_app_permissions SET can_view = false WHERE user_id = $1::uuid AND app = 'SHOP'`, [managerUser.userId])).rejects.toThrow();
+    // The permissions the administrator reads back carry the new flag (the screens read it from here).
+    const mine = await app.call('GET', '/permissions', { basePath: '/v1/admin-auth', cookies: sessionCookies(manager) });
+    expect(JSON.stringify(mine.body)).toContain('"can_manage_shops":true');
+    expect(JSON.stringify((await app.call('GET', '/permissions', { basePath: '/v1/admin-auth', cookies: sessionCookies(lockOnly) })).body)).toContain('"can_manage_shops":false');
+  });
+
+  it('race: an order or a delivery that commits while the disable waits for the shop lock is seen and blocks it', async () => {
+    const id = beta.shopId;
+    const customer = owners[0] as string;
+    const before = await shopRow(id);
+    const waitAndCommit = async (client: PoolClient, attempt: Promise<AdminResponse>): Promise<AdminResponse> => {
+      const early = await Promise.race([attempt.then(() => 'answered'), new Promise<string>((resolve) => setTimeout(() => resolve('waiting'), 600))]);
+      // The disable must be WAITING for the lock the other writer holds, not already decided on stale figures.
+      expect(early).toBe('waiting');
+      await client.query('COMMIT');
+      client.release();
+      return attempt;
+    };
+    // (1) A customer's order: the order service locks the shop FOR SHARE and inserts the order; the disable queues behind it.
+    const orderWriter = await app.pool.connect();
+    await orderWriter.query('BEGIN');
+    await orderWriter.query('SELECT 1 FROM app.shops WHERE shop_id = $1::uuid FOR SHARE', [id]);
+    await orderWriter.query('ALTER TABLE app.orders DISABLE TRIGGER USER');
+    await orderWriter.query(
+      `INSERT INTO app.orders (order_id, code, client_ref, customer_user_id, shop_id, status, shop_name, shop_phone, shop_address_text, recipient_name, recipient_phone, address_text, items_original_total_vnd, items_total_vnd, created_at, updated_at)
+       VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, 'PENDING_CONFIRMATION', 'Quán', '0900000000', 'Số 1', 'Người nhận', '0912345678', 'Số 2', 50000, 50000, now(), now())`,
+      [randomUUID(), `#${tag}R1`, randomUUID(), customer, id],
+    );
+    await orderWriter.query('ALTER TABLE app.orders ENABLE TRIGGER USER');
+    const first = await waitAndCommit(orderWriter, write(manager, `/shops/${id}/disable`, { expected_version: before.version, reason: 'Đua đơn mới' }));
+    expect(codeOf(first)).toEqual({ status: 409, code: 'SHOP_HAS_OPEN_WORK' });
+    expect(await shopRow(id)).toEqual(before);
+    await finishOrders(id);
+    // (2) The owner's direct delivery: the owner's command locks the shop FOR UPDATE and inserts the delivery; the disable queues behind it.
+    const deliveryWriter = await app.pool.connect();
+    await deliveryWriter.query('BEGIN');
+    await deliveryWriter.query('SELECT 1 FROM app.shops WHERE shop_id = $1::uuid FOR UPDATE', [id]);
+    const deliveryId = await insertDeliveryRow(deliveryWriter, { shopId: id, userId: beta.ownerId });
+    const second = await waitAndCommit(deliveryWriter, write(manager, `/shops/${id}/disable`, { expected_version: before.version, reason: 'Đua giao hàng' }));
+    expect(codeOf(second)).toEqual({ status: 409, code: 'SHOP_HAS_OPEN_WORK' });
+    expect(await shopRow(id)).toEqual(before);
+    expect(await audits(id, 'admin.shop.disable.v1')).toBe(0);
+    // (3) Nothing running any more: the same request now succeeds, with one audit row and one event.
+    await stopDelivery(deliveryId);
+    const done = await write(manager, `/shops/${id}/disable`, { expected_version: before.version, reason: 'Hết việc đang chạy' });
+    expect(done.status).toBe(200);
+    expect(await shopRow(id)).toMatchObject({ status: 'DISABLED', version: before.version + 1 });
+    expect(await audits(id, 'admin.shop.disable.v1')).toBe(1);
   });
 });

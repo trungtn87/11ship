@@ -66,6 +66,8 @@ export interface AppPermission {
   readonly canLock: boolean;
   /** Dish-group management (SHOP only). Absent = false. */
   readonly canManageCatalog?: boolean;
+  /** Shop activity management (SHOP only). Absent = false. */
+  readonly canManageShops?: boolean;
 }
 
 /**

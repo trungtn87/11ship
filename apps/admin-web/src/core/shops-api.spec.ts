@@ -16,7 +16,7 @@ const detail = (over: Record<string, unknown> = {}) => ({
   shop_id: ID, code: 'K01', name: 'Phở Ngon', status: 'ACTIVE', version: 3, logo_url: null, owner,
   profile: { contact_phone: '+84911000222', zalo: null, facebook: null, address_text: 'Số 9, Cao Bằng', service_area: { service_area_id: AREA, name: 'Cao Bằng', status: 'ACTIVE' }, pickup_lat: 22.66, pickup_lng: 106.25 },
   availability: availability(), timezone: 'Asia/Ho_Chi_Minh', hours: [{ weekday: 1, start_minute: 0, end_minute: 1440, end_day_offset: 0 }], menu: { visible: 2, hidden: 1 },
-  open_work: { orders_pending_confirmation: 1, orders_preparing: 2, active_deliveries: 0 }, enable_blockers: [], allowed_actions: ['DISABLE'],
+  open_work: { orders_open: 3, orders_pending_confirmation: 1, orders_preparing: 2, active_deliveries: 0 }, disable_blocked: true, enable_blockers: [], allowed_actions: ['DISABLE'],
   created_at: '2026-10-01T03:00:00.000Z', updated_at: '2026-10-02T03:00:00.000Z', ...over,
 });
 
@@ -40,7 +40,7 @@ describe('admin web shops - parsers', () => {
   it('maps a row, a page, a detail, a menu page, a history page and both previews', () => {
     expect(parseRow(listRow())).toMatchObject({ id: ID, code: 'K01', status: 'ACTIVE', areaName: 'Cao Bằng', itemsVisible: 2, itemsTotal: 3, availability: { reason: 'ONLINE' } });
     expect(parsePage({ items: [listRow()], total: 41, areas: [{ service_area_id: AREA, name: 'Cao Bằng', status: 'INACTIVE' }] })).toMatchObject({ total: 41, areas: [{ id: AREA, active: false }] });
-    expect(parseDetail(detail())).toMatchObject({ id: ID, version: 3, actions: ['disable'], ordersPreparing: 2, pickupLat: 22.66, hours: [{ weekday: 1, startMinute: 0, endMinute: 1440, endDayOffset: 0 }] });
+    expect(parseDetail(detail())).toMatchObject({ id: ID, version: 3, actions: ['disable'], ordersOpen: 3, disableBlocked: true, ordersPreparing: 2, pickupLat: 22.66, hours: [{ weekday: 1, startMinute: 0, endMinute: 1440, endDayOffset: 0 }] });
     expect(parseDetail(detail({ status: 'DISABLED', allowed_actions: ['ENABLE'], enable_blockers: ['PICKUP_POINT_MISSING'] }))).toMatchObject({ actions: ['enable'], enableBlockers: ['PICKUP_POINT_MISSING'] });
     const menu = parseMenu({
       categories: [{ category_id: AREA, name: 'Món chính', status: 'INACTIVE', item_count: 1 }],
@@ -57,7 +57,7 @@ describe('admin web shops - parsers', () => {
     for (const bad of [{ status: 'DELETED' }, { shop_id: 'x' }, { availability: availability({ reason: 'MAYBE' }) }, { availability: availability({ evaluated_at: 'soon' }) }, { items_visible: -1 }, { owner: { name: null, phone: '', locked: false } }, { code: '' }]) {
       expect(parseRow(listRow(bad))).toBeUndefined();
     }
-    for (const bad of [{ version: 0 }, { allowed_actions: ['DELETE'] }, { hours: [{ weekday: 8, start_minute: 0, end_minute: 60, end_day_offset: 0 }] }, { hours: [{ weekday: 1, start_minute: 0, end_minute: 60, end_day_offset: 2 }] }, { menu: { visible: 1 } }, { profile: null }, { enable_blockers: [1] }]) {
+    for (const bad of [{ version: 0 }, { allowed_actions: ['DELETE'] }, { hours: [{ weekday: 8, start_minute: 0, end_minute: 60, end_day_offset: 0 }] }, { hours: [{ weekday: 1, start_minute: 0, end_minute: 60, end_day_offset: 2 }] }, { menu: { visible: 1 } }, { disable_blocked: 'yes' }, { open_work: { orders_pending_confirmation: 1, orders_preparing: 0, active_deliveries: 0 } }, { profile: null }, { enable_blockers: [1] }]) {
       expect(parseDetail(detail(bad))).toBeUndefined();
     }
     expect(parsePage({ items: [listRow({ status: 'X' })], total: 1, areas: [] })).toBeUndefined();
@@ -126,6 +126,7 @@ describe('admin web shops - what a command result means', () => {
     expect((await outcome(reply(401, errorBody('ADMIN_SESSION_INVALID')))).result).toEqual({ kind: 'session-expired' });
     expect((await outcome(reply(429, errorBody('ADMIN_AUTH_RATE_LIMITED'), { 'retry-after': '7' }))).result).toEqual({ kind: 'rate-limited', retryAfterSec: 7 });
     expect((await outcome(reply(409, errorBody('SHOP_STATE_CONFLICT')))).result).toEqual({ kind: 'refused', code: 'SHOP_STATE_CONFLICT' });
+    expect((await outcome(reply(409, errorBody('SHOP_HAS_OPEN_WORK')))).result).toEqual({ kind: 'refused', code: 'SHOP_HAS_OPEN_WORK' });
     expect((await outcome(reply(409, errorBody('SHOP_PROFILE_INCOMPLETE')))).result).toEqual({ kind: 'refused', code: 'SHOP_PROFILE_INCOMPLETE' });
     expect((await outcome(reply(400, errorBody('INVALID_SERVICE_AREA')))).result).toEqual({ kind: 'refused', code: 'INVALID_SERVICE_AREA' });
     expect((await outcome(reply(418, errorBody('SOMETHING_NEW')))).result).toEqual({ kind: 'refused', code: 'ADMIN_INPUT_INVALID' });

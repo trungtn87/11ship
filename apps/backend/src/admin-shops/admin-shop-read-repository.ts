@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { epochMs, toSafeInteger } from '../auth/auth-db';
 import { TechnicalError } from '../common/app-errors';
-import { ACTIVE_STATES } from '../delivery/delivery-constants';
+import { TERMINAL_STATES } from '../delivery/delivery-constants';
+import { ENDED_STATUSES } from '../orders/order-constants';
 import { evaluateAvailability } from '../shop/shop-availability-reader';
 import { hasHoursSql, inHoursSql, localTimeCtes, PRODUCTION_CLOCK } from '../shop/shop-availability-sql';
 import { ShopAvailability, ShopStatus } from '../shop/shop-types';
@@ -61,8 +62,11 @@ export interface ShopAdminFacts {
 }
 
 export interface OpenWork {
+  /** Orders whose status is not one of the M10 end statuses (pending, preparing, and any status the order module does not end). */
+  readonly ordersOpen: number;
   readonly ordersPendingConfirmation: number;
   readonly ordersPreparing: number;
+  /** Deliveries whose state is not one of the M07 terminal states. */
   readonly activeDeliveries: number;
 }
 
@@ -254,16 +258,22 @@ export class AdminShopReadRepository {
     };
   }
 
-  /** Orders waiting for the shop or being prepared, and deliveries still running, of one shop: what a disable does NOT stop. */
+  /**
+   * The work of one shop that is not finished, by the end statuses of M10 and the terminal states of M07 (nothing defined here): a disable is refused
+   * while any of it exists. One statement, so the three numbers are one snapshot; the caller holds the shop row FOR UPDATE, and every writer that can
+   * add work takes that row (the owner's commands FOR UPDATE, a customer's order FOR SHARE), so a count made after the lock cannot be overtaken.
+   */
   async openWork(context: TransactionContext, shopId: string): Promise<OpenWork> {
-    const result = await context.query<{ pending: string; preparing: string; deliveries: string }>(
-      `SELECT (SELECT count(*) FROM app.orders o WHERE o.shop_id = $1::uuid AND o.status = 'PENDING_CONFIRMATION') AS pending,
+    const result = await context.query<{ open: string; pending: string; preparing: string; deliveries: string }>(
+      `SELECT (SELECT count(*) FROM app.orders o WHERE o.shop_id = $1::uuid AND o.status <> ALL($3::text[])) AS open,
+              (SELECT count(*) FROM app.orders o WHERE o.shop_id = $1::uuid AND o.status = 'PENDING_CONFIRMATION') AS pending,
               (SELECT count(*) FROM app.orders o WHERE o.shop_id = $1::uuid AND o.status = 'PREPARING') AS preparing,
-              (SELECT count(*) FROM app.deliveries d WHERE d.shop_id = $1::uuid AND d.state = ANY($2::text[])) AS deliveries`,
-      [shopId, ACTIVE_STATES],
+              (SELECT count(*) FROM app.deliveries d WHERE d.shop_id = $1::uuid AND d.state <> ALL($2::text[])) AS deliveries`,
+      [shopId, TERMINAL_STATES, ENDED_STATUSES],
     );
     const row = result.rows[0];
     return {
+      ordersOpen: toSafeInteger(row?.open),
       ordersPendingConfirmation: toSafeInteger(row?.pending),
       ordersPreparing: toSafeInteger(row?.preparing),
       activeDeliveries: toSafeInteger(row?.deliveries),

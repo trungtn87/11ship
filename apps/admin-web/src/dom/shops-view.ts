@@ -13,7 +13,8 @@ import {
   MENU_STATUS_LABEL,
   MenuItem,
   MenuStatusFilter,
-  OPEN_WORK_WARNING,
+  OPEN_WORK_BLOCKED,
+  OPEN_WORK_COUNTS,
   PROFILE_FILTER_LABEL,
   PROFILE_FILTERS,
   PROFILE_STATUS,
@@ -488,14 +489,16 @@ export class ShopDetailView {
       h(
         'section',
         { class: 'detail-block' },
-        h('h3', { class: 'subtitle' }, 'Đơn đang xử lý'),
+        h('h3', { class: 'subtitle' }, 'Đơn và giao hàng chưa kết thúc'),
         definition([
-          ['Đơn chờ xác nhận', String(shop.ordersPendingConfirmation)],
-          ['Đơn đang chuẩn bị', String(shop.ordersPreparing)],
+          ['Đơn chưa kết thúc', String(shop.ordersOpen)],
+          ['Trong đó chờ xác nhận', String(shop.ordersPendingConfirmation)],
+          ['Trong đó đang chuẩn bị', String(shop.ordersPreparing)],
           ['Lượt giao đang chạy', String(shop.activeDeliveries)],
           ['Món hiện / ẩn', `${String(shop.menuVisible)} / ${String(shop.menuHidden)}`],
         ]),
-        h('p', { class: 'hint' }, 'Vô hiệu hóa quán không hủy và không tự đổi các đơn hay lượt giao đang chạy.'),
+        shop.disableBlocked ? h('p', { class: 'message message-warning' }, OPEN_WORK_BLOCKED) : undefined,
+        h('p', { class: 'hint' }, 'Chỉ vô hiệu hóa được khi mọi đơn đã kết thúc và không còn lượt giao đang chạy. Web Admin không hủy đơn hay giao hàng thay chủ quán.'),
       ),
     ];
     return blocks;
@@ -763,7 +766,9 @@ export class ShopDetailView {
       if (name === 'disable') {
         lines.push(
           h('p', { class: 'dialog-warning dialog-warning-danger', role: 'note' }, icon('alert', 18), h('span', {}, 'Quán sẽ ngừng hiển thị công khai và ngừng nhận đơn mới. Dữ liệu hồ sơ, lịch, thực đơn được giữ; tài khoản chủ quán không bị khóa.')),
-          h('p', { class: 'dialog-warning dialog-warning-info', role: 'note' }, icon('info', 18), h('span', {}, OPEN_WORK_WARNING(current.ordersPendingConfirmation, current.ordersPreparing, current.activeDeliveries))),
+          current.disableBlocked
+            ? h('p', { class: 'dialog-warning dialog-warning-danger', role: 'alert' }, icon('alert', 18), h('span', {}, `${OPEN_WORK_BLOCKED} ${OPEN_WORK_COUNTS(current.ordersOpen, current.ordersPendingConfirmation, current.ordersPreparing, current.activeDeliveries)}`))
+            : h('p', { class: 'dialog-warning dialog-warning-info', role: 'note' }, icon('info', 18), h('span', {}, 'Hiện không còn đơn hoặc giao hàng chưa kết thúc. Máy chủ kiểm tra lại khi ghi.')),
         );
       } else {
         lines.push(h('p', { class: 'dialog-warning dialog-warning-info', role: 'note' }, icon('info', 18), h('span', {}, 'Quán hoạt động trở lại khi hồ sơ còn đủ điều kiện. Việc mở hay đóng vẫn theo lịch hoạt động, không bị ép mở.')));
@@ -779,7 +784,7 @@ export class ShopDetailView {
       const locked = flow.locked;
       reasonInput.disabled = locked || view.phase === 'conflict';
       cancel.disabled = locked;
-      confirm.disabled = view.phase === 'sending' || (name === 'enable' && (this.#shop?.enableBlockers.length ?? 0) > 0 && view.phase !== 'conflict') || changedElsewhere;
+      confirm.disabled = view.phase === 'sending' || (name === 'enable' && (this.#shop?.enableBlockers.length ?? 0) > 0 && view.phase !== 'conflict') || (name === 'disable' && this.#shop?.disableBlocked === true && view.phase !== 'conflict') || changedElsewhere;
       confirm.setAttribute('aria-busy', String(view.phase === 'sending'));
       confirm.textContent = view.phase === 'sending' ? 'Đang gửi…' : view.phase === 'unknown' ? 'Thử lại' : view.phase === 'conflict' ? 'Đọc trạng thái mới' : spec.confirm;
       setMessage(reasonError, view.reasonError ?? undefined);
@@ -840,6 +845,18 @@ export class ShopDetailView {
           this.#draw(fresh);
           void this.#loadTab();
         }
+        return;
+      }
+      if (result?.kind === 'refused' && result.code === 'SHOP_HAS_OPEN_WORK') {
+        // The popup's figures were stale: read the shop again so the page and the popup show what blocks it now. Nothing was changed.
+        const fresh = await this.#read();
+        if (fresh !== undefined && !this.#disposed) {
+          this.#shop = fresh;
+          this.#draw(fresh);
+          void this.#loadTab();
+          drawWarning(fresh);
+        }
+        paint();
         return;
       }
       if (result?.kind === 'session-expired') {

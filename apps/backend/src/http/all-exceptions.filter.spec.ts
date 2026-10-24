@@ -347,6 +347,7 @@ describe('AllExceptionsFilter', () => {
         'SHIPPING_POLICY_INVALID',
         'SHIPPING_POLICY_UNCHANGED',
         'SHOP_DISABLED',
+        'SHOP_HAS_OPEN_WORK',
         'SHOP_LOGO_TOO_LARGE',
         'SHOP_NOT_FOUND',
         'SHOP_ONBOARDING_EXISTS',

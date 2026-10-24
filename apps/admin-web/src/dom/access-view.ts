@@ -20,7 +20,7 @@ export interface AccessHost {
 }
 
 interface Draft {
-  readonly apps: Map<AppName, { view: boolean; review: boolean; lock: boolean; catalog: boolean }>;
+  readonly apps: Map<AppName, { view: boolean; review: boolean; lock: boolean; catalog: boolean; shops: boolean }>;
   readonly rights: Map<RightKey, boolean>;
 }
 
@@ -31,10 +31,10 @@ function badge(label: string, tone: 'ok' | 'lock' | 'neutral' | 'wait'): HTMLEle
 }
 
 function draftOf(admin: AdministratorAccess): Draft {
-  const apps = new Map<AppName, { view: boolean; review: boolean; lock: boolean; catalog: boolean }>();
+  const apps = new Map<AppName, { view: boolean; review: boolean; lock: boolean; catalog: boolean; shops: boolean }>();
   for (const app of APPS) {
     const row = admin.permissions.find((entry) => entry.app === app);
-    apps.set(app, { view: row?.canView ?? false, review: row?.canReviewProfile ?? false, lock: row?.canLock ?? false, catalog: row?.canManageCatalog ?? false });
+    apps.set(app, { view: row?.canView ?? false, review: row?.canReviewProfile ?? false, lock: row?.canLock ?? false, catalog: row?.canManageCatalog ?? false, shops: row?.canManageShops ?? false });
   }
   return { apps, rights: new Map(RIGHT_KEYS.map((key) => [key, admin.rights.find((right) => right.key === key)?.granted ?? false])) };
 }
@@ -42,7 +42,7 @@ function draftOf(admin: AdministratorAccess): Draft {
 function permissionRows(draft: Draft): AppPermissionRow[] {
   return APPS.flatMap((app) => {
     const value = draft.apps.get(app);
-    return value === undefined || !value.view ? [] : [{ app, canView: true, canReviewProfile: value.review, canLock: value.lock, canManageCatalog: value.catalog }];
+    return value === undefined || !value.view ? [] : [{ app, canView: true, canReviewProfile: value.review, canLock: value.lock, canManageCatalog: value.catalog, canManageShops: value.shops }];
   });
 }
 
@@ -184,7 +184,7 @@ export class AccessView {
     const inputs: Array<() => void> = [];
     const syncDisabled = (): void => inputs.forEach((fn) => fn());
     const appBlock = (app: AppName): HTMLElement => {
-      const value = draft.apps.get(app) as { view: boolean; review: boolean; lock: boolean; catalog: boolean };
+      const value = draft.apps.get(app) as { view: boolean; review: boolean; lock: boolean; catalog: boolean; shops: boolean };
       const view = check(value.view, 'Xem', false, (on) => {
         value.view = on;
         if (!on) {
@@ -206,9 +206,10 @@ export class AccessView {
       if (app !== 'CUSTOMER') {
         dependent(app === 'DRIVER' ? 'Xử lý: xem liên hệ, xử lý hàng, duyệt hồ sơ' : 'Xử lý: duyệt hồ sơ', () => value.review, (on) => (value.review = on));
       }
-      dependent(app === 'DRIVER' ? 'Khóa: khóa shipper, gỡ shipper khỏi đơn, chỉnh phí' : app === 'SHOP' ? 'Khóa tài khoản và vô hiệu hóa / kích hoạt lại quán' : 'Khóa tài khoản', () => value.lock, (on) => (value.lock = on));
+      dependent(app === 'DRIVER' ? 'Khóa: khóa shipper, gỡ shipper khỏi đơn, chỉnh phí' : 'Khóa tài khoản', () => value.lock, (on) => (value.lock = on));
       if (app === 'SHOP') {
         dependent('Quản lý nhóm món', () => value.catalog, (on) => (value.catalog = on));
+        dependent('Quản lý hoạt động quán', () => value.shops, (on) => (value.shops = on));
       }
       return h('li', { class: 'access-row' }, h('span', { class: 'access-group' }, APP_LABEL[app]), h('span', { class: 'access-switches' }, ...parts));
     };

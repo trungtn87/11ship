@@ -32,8 +32,8 @@ const RESOURCE = 'admin_access';
 const LIST_LIMIT = 200;
 const iso = (ms: number | null): string | null => (ms === null ? null : new Date(ms).toISOString());
 
-const toInput = (row: PermissionRow): AppPermissionInput => ({ app: row.app, canView: row.canView, canReviewProfile: row.canReviewProfile, canLock: row.canLock, canManageCatalog: row.canManageCatalog === true });
-const permissionView = (row: AppPermissionInput): JsonObject => ({ app: row.app, can_view: row.canView, can_review_profile: row.canReviewProfile, can_lock: row.canLock, can_manage_catalog: row.canManageCatalog });
+const toInput = (row: PermissionRow): AppPermissionInput => ({ app: row.app, canView: row.canView, canReviewProfile: row.canReviewProfile, canLock: row.canLock, canManageCatalog: row.canManageCatalog === true, canManageShops: row.canManageShops === true });
+const permissionView = (row: AppPermissionInput): JsonObject => ({ app: row.app, can_view: row.canView, can_review_profile: row.canReviewProfile, can_lock: row.canLock, can_manage_catalog: row.canManageCatalog, can_manage_shops: row.canManageShops });
 
 /**
  * M12-C: SYSTEM manages the ADMIN accounts - the application permissions, the function rights (finance, reports, audit: the existing grant routes), the lock

@@ -125,9 +125,13 @@ export interface ShopDetail {
   readonly hours: readonly BusinessInterval[];
   readonly menuVisible: number;
   readonly menuHidden: number;
+  /** Orders not in an end status of M10 (the ones that block a disable), and two of its parts for the reader. */
+  readonly ordersOpen: number;
   readonly ordersPendingConfirmation: number;
   readonly ordersPreparing: number;
   readonly activeDeliveries: number;
+  /** The server says a disable would be refused now: orders or deliveries are not finished. */
+  readonly disableBlocked: boolean;
   readonly enableBlockers: readonly string[];
   readonly actions: readonly ShopCommandName[];
   readonly createdAt: string;
@@ -236,6 +240,7 @@ export type ShopCommandResult =
 
 export const REFUSAL_MESSAGE: Record<string, string> = {
   SHOP_NOT_FOUND: 'Không tìm thấy quán này.',
+  SHOP_HAS_OPEN_WORK: 'Quán còn đơn hoặc giao hàng chưa kết thúc. Hãy xử lý xong trước khi vô hiệu hóa.',
   SHOP_STATE_CONFLICT: 'Trạng thái quán đã thay đổi nên thao tác này không còn phù hợp. Hãy đọc trạng thái mới.',
   SHOP_PROFILE_INCOMPLETE: 'Hồ sơ quán thiếu tọa độ lấy hàng hoặc khu vực phục vụ nên chưa thể kích hoạt lại. Chủ quán cần bổ sung trong 11Food.',
   INVALID_SERVICE_AREA: 'Khu vực phục vụ của quán đang tạm ngưng nên chưa thể kích hoạt lại.',
@@ -311,8 +316,11 @@ export function displayPhone(phone: string): string {
   return `${local.slice(0, 4)} ${local.slice(4, 7)} ${local.slice(7)}`;
 }
 
-export const OPEN_WORK_WARNING = (pending: number, preparing: number, deliveries: number): string =>
-  `Quán đang có ${String(pending)} đơn chờ xác nhận, ${String(preparing)} đơn đang chuẩn bị và ${String(deliveries)} lượt giao đang chạy. Vô hiệu hóa không hủy và không tự đổi các đơn/lượt giao này.`;
+export const OPEN_WORK_BLOCKED = 'Quán còn đơn hoặc giao hàng chưa kết thúc. Hãy xử lý xong trước khi vô hiệu hóa.';
+
+/** The figures behind the refusal: orders not ended (of which waiting / being prepared) and deliveries still running. */
+export const OPEN_WORK_COUNTS = (open: number, pending: number, preparing: number, deliveries: number): string =>
+  `Đơn chưa kết thúc: ${String(open)} (chờ xác nhận ${String(pending)}, đang chuẩn bị ${String(preparing)}). Lượt giao đang chạy: ${String(deliveries)}.`;
 
 // ---- the disable / enable popup (pure state machine) -----------------------------------------------------------------------
 

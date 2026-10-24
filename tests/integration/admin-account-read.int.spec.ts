@@ -205,7 +205,7 @@ describe('admin account read (API + one real browser smoke)', () => {
     expect(sys.headers['cache-control']).toBe('no-store');
     expect(adminData(sys)).toEqual({
       admin_role: 'SYSTEM',
-      permissions: ['CUSTOMER', 'SHOP', 'DRIVER'].map((appName) => ({ app: appName, can_view: true, can_review_profile: true, can_lock: true, can_manage_catalog: appName === 'SHOP' })),
+      permissions: ['CUSTOMER', 'SHOP', 'DRIVER'].map((appName) => ({ app: appName, can_view: true, can_review_profile: true, can_lock: true, can_manage_catalog: appName === 'SHOP', can_manage_shops: appName === 'SHOP' })),
     });
     const scoped = await get('/permissions', customerAdmin, '/v1/admin-auth');
     expect(scoped.status).toBe(200);

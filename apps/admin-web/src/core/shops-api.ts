@@ -149,7 +149,7 @@ export function parseDetail(data: Record<string, unknown>): ShopDetail | undefin
   if (
     id === undefined || !UUID_RE.test(id) || code === undefined || name === undefined || status === undefined || owner === undefined || logoUrl === undefined || availability === undefined ||
     hours === undefined || profile === undefined || menu === undefined || work === undefined || createdAt === undefined || updatedAt === undefined || timezone === undefined ||
-    !whole(data.version) || data.version < 1 || !Array.isArray(data.enable_blockers) || !data.enable_blockers.every((entry) => typeof entry === 'string') ||
+    !whole(data.version) || data.version < 1 || typeof data.disable_blocked !== 'boolean' || !Array.isArray(data.enable_blockers) || !data.enable_blockers.every((entry) => typeof entry === 'string') ||
     !Array.isArray(data.allowed_actions) || !data.allowed_actions.every((entry) => entry === 'DISABLE' || entry === 'ENABLE')
   ) {
     return undefined;
@@ -164,7 +164,7 @@ export function parseDetail(data: Record<string, unknown>): ShopDetail | undefin
   if (contactPhone === undefined || zalo === undefined || facebook === undefined || addressText === undefined || lat === undefined || lng === undefined || area === undefined) {
     return undefined;
   }
-  if (!whole(menu.visible) || !whole(menu.hidden) || !whole(work.orders_pending_confirmation) || !whole(work.orders_preparing) || !whole(work.active_deliveries)) {
+  if (!whole(menu.visible) || !whole(menu.hidden) || !whole(work.orders_open) || !whole(work.orders_pending_confirmation) || !whole(work.orders_preparing) || !whole(work.active_deliveries)) {
     return undefined;
   }
   return {
@@ -173,8 +173,8 @@ export function parseDetail(data: Record<string, unknown>): ShopDetail | undefin
     areaActive: area === null ? null : area.status === 'ACTIVE',
     pickupLat: lat, pickupLng: lng, availability, timezone, hours,
     menuVisible: menu.visible, menuHidden: menu.hidden,
-    ordersPendingConfirmation: work.orders_pending_confirmation, ordersPreparing: work.orders_preparing, activeDeliveries: work.active_deliveries,
-    enableBlockers: data.enable_blockers as string[],
+    ordersOpen: work.orders_open, ordersPendingConfirmation: work.orders_pending_confirmation, ordersPreparing: work.orders_preparing, activeDeliveries: work.active_deliveries,
+    disableBlocked: data.disable_blocked, enableBlockers: data.enable_blockers as string[],
     actions: (data.allowed_actions as string[]).map((action) => (action === 'DISABLE' ? 'disable' : 'enable')),
     createdAt, updatedAt,
   };
@@ -325,7 +325,7 @@ export class AdminShopApi extends ApiClient {
 }
 
 /** Codes that mean "the server looked at it and said no": nothing changed, the page shows a sentence. */
-const REFUSALS: readonly string[] = ['SHOP_NOT_FOUND', 'SHOP_STATE_CONFLICT', 'SHOP_PROFILE_INCOMPLETE', 'INVALID_SERVICE_AREA', 'ADMIN_INPUT_INVALID'];
+const REFUSALS: readonly string[] = ['SHOP_NOT_FOUND', 'SHOP_STATE_CONFLICT', 'SHOP_HAS_OPEN_WORK', 'SHOP_PROFILE_INCOMPLETE', 'INVALID_SERVICE_AREA', 'ADMIN_INPUT_INVALID'];
 
 async function resultOf(result: ApiResult<unknown>, session: CsrfPort): Promise<ShopCommandResult> {
   if (result.kind === 'ok') {

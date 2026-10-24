@@ -42,6 +42,7 @@ describe('admin shop management (real browser)', () => {
   const shots: Shot[] = [];
   let viewerAdmin: Person;
   let managerAdmin: Person;
+  let lockAdmin: Person;
   let idA = '';
   let areaId = '';
   const shopIds: string[] = [];
@@ -103,6 +104,51 @@ describe('admin shop management (real browser)', () => {
   const tab = async (page: Page, id: string): Promise<void> => {
     await page.evaluate(`document.querySelector('#shop-tab-${id}').click()`);
   };
+  let customerId = '';
+  async function addOrder(status: 'PENDING_CONFIRMATION' | 'PREPARING', code: string): Promise<void> {
+    if (customerId === '') {
+      customerId = randomUUID();
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      await app.pool.query(
+        `INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at)
+         VALUES ($1::uuid, $2, $3, clock_timestamp(), 'PHONE_VERIFIED', 'ACTIVE', 1, clock_timestamp(), clock_timestamp())`,
+        [customerId, phone.normalized, await new Argon2idPasswordHasher().hash(ADMIN_PASSWORD)],
+      );
+    }
+    const client = await app.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('ALTER TABLE app.orders DISABLE TRIGGER USER');
+      await client.query(
+        `INSERT INTO app.orders (order_id, code, client_ref, customer_user_id, shop_id, status, shop_name, shop_phone, shop_address_text, recipient_name, recipient_phone, address_text, items_original_total_vnd, items_total_vnd, confirmed_at, created_at, updated_at)
+         VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6::varchar, 'Quán', '0900000000', 'Số 1', 'Người nhận', '0912345678', 'Số 2', 50000, 50000, CASE WHEN $6::varchar = 'PREPARING' THEN now() END, now(), now())`,
+        [randomUUID(), code, randomUUID(), customerId, idA, status],
+      );
+      await client.query('ALTER TABLE app.orders ENABLE TRIGGER USER');
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  async function finishOrders(): Promise<void> {
+    const client = await app.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('ALTER TABLE app.orders DISABLE TRIGGER USER');
+      await client.query(`UPDATE app.orders SET status = 'COMPLETED', confirmed_at = COALESCE(confirmed_at, now()), ended_at = now(), end_actor = 'SYSTEM' WHERE shop_id = $1::uuid`, [idA]);
+      await client.query('ALTER TABLE app.orders ENABLE TRIGGER USER');
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
   const shopRow = async (id: string): Promise<{ status: string; version: number }> => {
     const result = await app.pool.query<{ status: string; version: string }>('SELECT status, version::text AS version FROM app.shops WHERE shop_id = $1::uuid', [id]);
     const found = result.rows[0] as { status: string; version: string };
@@ -131,7 +177,8 @@ describe('admin shop management (real browser)', () => {
     browser = await launchChrome(spkiHash);
     system = await systemSession(app);
     viewerAdmin = await activatedAdmin([{ app: 'SHOP', can_view: true, can_review_profile: false, can_lock: false }], `Quản trị xem quán ${tag}`);
-    managerAdmin = await activatedAdmin([{ app: 'SHOP', can_view: true, can_review_profile: false, can_lock: true }], `Quản trị quán ${tag}`);
+    managerAdmin = await activatedAdmin([{ app: 'SHOP', can_view: true, can_review_profile: false, can_lock: false, can_manage_shops: true }], `Quản trị quán ${tag}`);
+    lockAdmin = await activatedAdmin([{ app: 'SHOP', can_view: true, can_review_profile: false, can_lock: true }], `Quản trị khóa ${tag}`);
     areaId = await createServiceArea(app.pool);
     await app.pool.query(`UPDATE app.service_areas SET name = $2 WHERE service_area_id = $1::uuid`, [areaId, `Thành phố Cao Bằng ${tag}`]);
     const a = await seedShop(NAME_A, 'Kim Đồng');
@@ -275,6 +322,23 @@ describe('admin shop management (real browser)', () => {
     await page.goto(`${origin}/operations/shops/${idA}?tab=menu`);
     await page.waitFor(`document.querySelectorAll('.table tbody tr').length === 3`);
 
+    // The right "Quản lý hoạt động quán" in the screens that grant rights: its own switch next to "Khóa tài khoản" (label unchanged), off without VIEW.
+    await page.goto(`${origin}/accounts/access`);
+    await page.waitFor(`[...document.querySelectorAll('button')].some((b) => b.getAttribute('aria-label') === ${JSON.stringify(`Phân quyền cho Quản trị quán ${tag}`)})`);
+    await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === ${JSON.stringify(`Phân quyền cho Quản trị quán ${tag}`)}).click()`);
+    await page.waitFor(`document.querySelector('#access-editor') && !document.querySelector('#access-editor').hidden && document.querySelector('#access-editor').innerText.includes('Quản lý hoạt động quán')`);
+    const editor = await page.evaluate<string>(`document.querySelector('#access-editor').innerText`);
+    expect(editor).toContain('Khóa tài khoản');
+    expect(editor).toContain('Quản lý nhóm món');
+    expect(await page.evaluate<boolean>(`(() => { const box = [...document.querySelectorAll('#access-editor label')].find((l) => l.textContent.includes('Quản lý hoạt động quán')).querySelector('input'); return box.checked && !box.disabled; })()`)).toBe(true);
+    await shot(page, 'access-shop-right-desktop');
+    await page.goto(`${origin}/invitations/new`);
+    await page.waitFor(`document.querySelector('#p-SHOP-canManageShops')`);
+    expect(await page.evaluate<boolean>(`document.querySelector('#p-SHOP-canManageShops').checked === false`)).toBe(true);
+    await page.evaluate(`document.querySelector('#p-SHOP-canManageShops').click()`);
+    expect(await page.evaluate<boolean>(`document.querySelector('#p-SHOP-canManageShops').checked && document.querySelector('#p-SHOP-canView').checked && !document.querySelector('#p-SHOP-canLock').checked`)).toBe(true);
+    await shot(page, 'invitation-shop-right-desktop');
+
     // Phone-sized: no sideways scroll on the list, the detail and the tabs.
     await page.viewport(390, 844, true);
     await page.goto(`${origin}/operations/shops`);
@@ -303,42 +367,63 @@ describe('admin shop management (real browser)', () => {
     expect(await page.evaluate<boolean>(`![...document.querySelectorAll('button')].some((b) => ['Vô hiệu hóa quán', 'Kích hoạt lại'].includes(b.textContent.trim()))`)).toBe(true);
     await shot(page, 'shop-detail-viewer-admin');
     await page.close();
+    // The account-lock right alone gives no shop action either.
+    const lockPage: Page = await (browser as Browser).newPage();
+    await lockPage.viewport(1280, 900, false);
+    await lockPage.send('Network.clearBrowserCookies');
+    await signIn(lockPage, { phone: lockAdmin.phone, password: ADMIN_PASSWORD, userId: lockAdmin.userId, secret: lockAdmin.secret });
+    await lockPage.waitFor(`!!document.querySelector('a[href="/operations/shops"]')`);
+    await lockPage.goto(`${origin}/operations/shops/${idA}`);
+    await lockPage.waitFor(`document.querySelector('#shop-detail-title')`);
+    expect(await lockPage.evaluate<boolean>(`![...document.querySelectorAll('button')].some((b) => ['Vô hiệu hóa quán', 'Kích hoạt lại'].includes(b.textContent.trim()))`)).toBe(true);
+    await lockPage.close();
   }, 120_000);
 
-  it('ADMIN with the lock right: disable needs a reason; a lost answer locks the popup and the retry is the SAME request; a conflict keeps the reason; enable does not force the shop open', async () => {
+  it('ADMIN with the shop-management right: unfinished work blocks the disable (re-counted by the backend); disable needs a reason; a lost answer locks the popup and the retry is the SAME request; a conflict keeps the reason; enable does not force the shop open', async () => {
     const page: Page = await (browser as Browser).newPage();
     await page.viewport(1280, 900, false);
     await page.send('Network.clearBrowserCookies');
     await signIn(page, { phone: managerAdmin.phone, password: ADMIN_PASSWORD, userId: managerAdmin.userId, secret: managerAdmin.secret });
     await page.waitFor(`!!document.querySelector('a[href="/operations/shops"]')`);
-    // A running order is added: the popup says so, and disabling does not touch it.
-    const customer = randomUUID();
-    await app.pool.query(
-      `INSERT INTO app.users (user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version, created_at, updated_at)
-       VALUES ($1::uuid, $2, $3, clock_timestamp(), 'PHONE_VERIFIED', 'ACTIVE', 1, clock_timestamp(), clock_timestamp())`,
-      [customer, randomPhone().normalized, await new Argon2idPasswordHasher().hash(ADMIN_PASSWORD)],
-    );
-    app.track((await app.pool.query<{ phone_normalized: string }>('SELECT phone_normalized FROM app.users WHERE user_id = $1::uuid', [customer])).rows[0]?.phone_normalized as string);
-    const client = await app.pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query('ALTER TABLE app.orders DISABLE TRIGGER USER');
-      await client.query(
-        `INSERT INTO app.orders (order_id, code, client_ref, customer_user_id, shop_id, status, shop_name, shop_phone, shop_address_text, recipient_name, recipient_phone, address_text, items_original_total_vnd, items_total_vnd, confirmed_at, created_at, updated_at)
-         VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, 'PREPARING', 'Quán', '0900000000', 'Số 1', 'Người nhận', '0912345678', 'Số 2', 50000, 50000, now(), now(), now())`,
-        [randomUUID(), `#${tag}B1`, randomUUID(), customer, idA],
-      );
-      await client.query('ALTER TABLE app.orders ENABLE TRIGGER USER');
-      await client.query('COMMIT');
-    } finally {
-      client.release();
-    }
+    // A running order is added: the popup says so and refuses; disabling never touches the order.
+    await addOrder('PREPARING', `#${tag}B1`);
 
     await page.goto(`${origin}/operations/shops/${idA}`);
     await page.waitFor(`document.querySelector('#shop-detail-title')`);
     expect(await press(page, 'Vô hiệu hóa quán')).toBe(true);
     await page.waitFor(`document.querySelector('.dialog')`);
-    expect(await page.evaluate<string>(`document.querySelector('.dialog').innerText`)).toContain('0 đơn chờ xác nhận, 1 đơn đang chuẩn bị');
+    // Orders not finished: the popup says so with the figures and the confirm button is off; nothing can be sent.
+    const blockedText = await page.evaluate<string>(`document.querySelector('.dialog').innerText`);
+    expect(blockedText).toContain('Quán còn đơn hoặc giao hàng chưa kết thúc. Hãy xử lý xong trước khi vô hiệu hóa.');
+    expect(blockedText).toContain('Đơn chưa kết thúc: 1 (chờ xác nhận 0, đang chuẩn bị 1). Lượt giao đang chạy: 0.');
+    expect(await page.evaluate<boolean>(`[...document.querySelectorAll('.dialog button')].find((b) => b.textContent.trim() === 'Vô hiệu hóa').disabled`)).toBe(true);
+    await shot(page, 'shop-disable-blocked-desktop');
+    expect(await press(page, 'Hủy', 'document.querySelector(".dialog")')).toBe(true);
+    await page.waitFor(`!document.querySelector('.dialog')`);
+    expect((await shopRow(idA)).status).toBe('ACTIVE');
+    // The order ends; the page is read again and offers the disable. A NEW order appears before the person confirms: the backend counts again under
+    // the lock, refuses, the popup reads the shop again and shows what blocks it now. The order is not touched.
+    await finishOrders();
+    await page.goto(`${origin}/operations/shops/${idA}`);
+    await page.waitFor(`document.querySelector('#shop-detail-title')`);
+    expect(await press(page, 'Vô hiệu hóa quán')).toBe(true);
+    await page.waitFor(`document.querySelector('.dialog') && document.querySelector('.dialog').innerText.includes('Hiện không còn đơn hoặc giao hàng chưa kết thúc')`);
+    await page.fill('#shop-reason', 'Quán vi phạm quy định bán hàng');
+    await addOrder('PENDING_CONFIRMATION', `#${tag}B2`);
+    const sameBefore = await shopRow(idA);
+    expect(await press(page, 'Vô hiệu hóa', 'document.querySelector(".dialog")')).toBe(true);
+    await page.waitFor(`document.querySelector('#shop-command-status').textContent.includes('Quán còn đơn hoặc giao hàng chưa kết thúc')`);
+    await page.waitFor(`document.querySelector('.dialog').innerText.includes('Đơn chưa kết thúc: 1 (chờ xác nhận 1, đang chuẩn bị 0)')`);
+    expect(await shopRow(idA)).toEqual(sameBefore);
+    expect(await audits(idA, 'admin.shop.disable.v1')).toBe(0);
+    expect(await page.evaluate<string>(`document.querySelector('#shop-reason').value`)).toBe('Quán vi phạm quy định bán hàng');
+    expect((await app.pool.query<{ status: string }>(`SELECT status FROM app.orders WHERE code = $1`, [`#${tag}B2`])).rows[0]?.status).toBe('PENDING_CONFIRMATION');
+    expect(await press(page, 'Hủy', 'document.querySelector(".dialog")')).toBe(true);
+    await finishOrders();
+    await page.goto(`${origin}/operations/shops/${idA}`);
+    await page.waitFor(`document.querySelector('#shop-detail-title')`);
+    expect(await press(page, 'Vô hiệu hóa quán')).toBe(true);
+    await page.waitFor(`document.querySelector('.dialog') && document.querySelector('.dialog').innerText.includes('Hiện không còn đơn hoặc giao hàng chưa kết thúc')`);
     await shot(page, 'shop-disable-dialog-desktop');
     // No reason: refused on the page, nothing is sent.
     const before = await shopRow(idA);
@@ -363,7 +448,7 @@ describe('admin shop management (real browser)', () => {
     await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã vô hiệu hóa')`);
     expect(await shopRow(idA)).toEqual({ status: 'DISABLED', version: before.version + 1 });
     expect(await audits(idA, 'admin.shop.disable.v1')).toBe(1);
-    expect((await app.pool.query<{ status: string }>(`SELECT status FROM app.orders WHERE shop_id = $1::uuid AND code = $2`, [idA, `#${tag}B1`])).rows[0]?.status).toBe('PREPARING');
+    expect((await app.pool.query<{ status: string }>(`SELECT status FROM app.orders WHERE shop_id = $1::uuid AND code = $2`, [idA, `#${tag}B1`])).rows[0]?.status).toBe('COMPLETED');
     expect((await app.pool.query<{ status: string }>('SELECT status FROM app.users WHERE user_id = $1::uuid', [ownerA])).rows[0]?.status).toBe('ACTIVE');
     await shot(page, 'shop-disabled-desktop');
     // The history tab shows who, when, the reason, before / after and the version.

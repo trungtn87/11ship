@@ -14,6 +14,8 @@ export interface InvitationPermission {
   readonly canLock: boolean;
   /** Dish-group management (SHOP only, needs VIEW). Absent = false, so older callers and snapshots are unchanged. */
   readonly canManageCatalog?: boolean;
+  /** Shop activity management (disable / enable), SHOP only. Absent = false. */
+  readonly canManageShops?: boolean;
 }
 
 export interface NewInvitationRow {
@@ -100,9 +102,9 @@ export class AdminInvitationRepository {
 
   async insertPermission(context: TransactionContext, invitationId: string, permission: InvitationPermission): Promise<void> {
     const result = await context.query(
-      `INSERT INTO app.admin_invitation_permissions (invitation_id, app, can_view, can_review_profile, can_lock, can_manage_catalog)
-       VALUES ($1::uuid, $2, $3, $4, $5, $6)`,
-      [invitationId, permission.app, permission.canView, permission.canReviewProfile, permission.canLock, permission.canManageCatalog === true],
+      `INSERT INTO app.admin_invitation_permissions (invitation_id, app, can_view, can_review_profile, can_lock, can_manage_catalog, can_manage_shops)
+       VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)`,
+      [invitationId, permission.app, permission.canView, permission.canReviewProfile, permission.canLock, permission.canManageCatalog === true, permission.canManageShops === true],
     );
     if (result.rowCount !== 1) {
       throw new TechnicalError('internal', 'Invitation permission was not written');

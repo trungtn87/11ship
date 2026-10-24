@@ -50,6 +50,7 @@ export interface AppPermissionInput {
   readonly canReviewProfile: boolean;
   readonly canLock: boolean;
   readonly canManageCatalog: boolean;
+  readonly canManageShops: boolean;
 }
 
 /** The rules the table's own checks enforce, said here first so a bad set is a 400 and not a database error. At least one app must be viewable. */
@@ -60,21 +61,21 @@ export function normalizePermissions(value: unknown): AppPermissionInput[] {
   const seen = new Set<string>();
   const out: AppPermissionInput[] = [];
   for (const entry of value) {
-    const row = exact(entry, ['app', 'can_view', 'can_review_profile', 'can_lock'], ['can_manage_catalog']);
+    const row = exact(entry, ['app', 'can_view', 'can_review_profile', 'can_lock'], ['can_manage_catalog', 'can_manage_shops']);
     const app = row.app;
     if (typeof app !== 'string' || !(ADMIN_APPS as readonly string[]).includes(app) || seen.has(app)) {
       return invalid();
     }
     seen.add(app);
-    const flags = [row.can_view, row.can_review_profile, row.can_lock, row.can_manage_catalog ?? false];
+    const flags = [row.can_view, row.can_review_profile, row.can_lock, row.can_manage_catalog ?? false, row.can_manage_shops ?? false];
     if (!flags.every((flag) => typeof flag === 'boolean')) {
       return invalid();
     }
-    const [canView, canReviewProfile, canLock, canManageCatalog] = flags as [boolean, boolean, boolean, boolean];
-    if ((canReviewProfile && !canView) || (canLock && !canView) || (canManageCatalog && (!canView || app !== 'SHOP')) || (app === 'CUSTOMER' && canReviewProfile)) {
+    const [canView, canReviewProfile, canLock, canManageCatalog, canManageShops] = flags as [boolean, boolean, boolean, boolean, boolean];
+    if ((canReviewProfile && !canView) || (canLock && !canView) || (canManageCatalog && (!canView || app !== 'SHOP')) || (canManageShops && (!canView || app !== 'SHOP')) || (app === 'CUSTOMER' && canReviewProfile)) {
       return invalid();
     }
-    out.push({ app: app as AdminAppName, canView, canReviewProfile, canLock, canManageCatalog });
+    out.push({ app: app as AdminAppName, canView, canReviewProfile, canLock, canManageCatalog, canManageShops });
   }
   if (!out.some((row) => row.canView)) {
     return invalid();
@@ -86,7 +87,7 @@ export function normalizePermissions(value: unknown): AppPermissionInput[] {
 export function permissionsFingerprint(rows: readonly AppPermissionInput[]): string {
   const canonical = [...rows]
     .sort((a, b) => ADMIN_APPS.indexOf(a.app) - ADMIN_APPS.indexOf(b.app))
-    .map((row) => `${row.app}:${row.canView ? 1 : 0}${row.canReviewProfile ? 1 : 0}${row.canLock ? 1 : 0}${row.canManageCatalog ? 1 : 0}`)
+    .map((row) => `${row.app}:${row.canView ? 1 : 0}${row.canReviewProfile ? 1 : 0}${row.canLock ? 1 : 0}${row.canManageCatalog ? 1 : 0}${row.canManageShops ? 1 : 0}`)
     .join('|');
   return createHash('sha256').update(canonical).digest('hex').slice(0, 32);
 }

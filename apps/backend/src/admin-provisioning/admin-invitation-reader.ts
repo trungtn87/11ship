@@ -114,8 +114,9 @@ export class AdminInvitationReader {
       can_review_profile: boolean;
       can_lock: boolean;
       can_manage_catalog: boolean;
+      can_manage_shops: boolean;
     }>(
-      `SELECT app, can_view, can_review_profile, can_lock, can_manage_catalog FROM app.admin_invitation_permissions
+      `SELECT app, can_view, can_review_profile, can_lock, can_manage_catalog, can_manage_shops FROM app.admin_invitation_permissions
         WHERE invitation_id = $1::uuid ORDER BY app`,
       [invitationId],
     );
@@ -125,6 +126,7 @@ export class AdminInvitationReader {
       canReviewProfile: row.can_review_profile,
       canLock: row.can_lock,
       canManageCatalog: row.can_manage_catalog,
+      canManageShops: row.can_manage_shops,
     }));
   }
 

@@ -40,7 +40,7 @@ export const SHOP_ADMIN_AUDIT_ACTIONS: readonly string[] = [OPERATION.disable, O
 interface Authorized {
   readonly role: AdminRole;
   readonly actorId: string;
-  /** May disable / enable (SYSTEM, or an ADMIN whose CURRENT SHOP row has VIEW and the lock right). */
+  /** May disable / enable (SYSTEM, or an ADMIN whose CURRENT SHOP row has VIEW and the shop-management right). */
   readonly manage: boolean;
 }
 
@@ -85,7 +85,7 @@ function historyView(row: HistoryRow): JsonObject {
 /**
  * Shop management for the administration web (M02 "Quản lý quán"): the list, the detail with the schedule, the dishes, the history and the customer
  * preview (reads), and the two status commands DISABLE / ENABLE (writes). SYSTEM, or an ADMIN whose CURRENT permission rows give VIEW on the SHOP app
- * (read) plus the lock right on SHOP (disable / enable: the existing "Khóa" right of that app, no new right). The backend decides on every read and
+ * (read) plus the shop-management right on SHOP (disable / enable: the separate `can_manage_shops` right; `can_lock`, which locks accounts, gives nothing here). The backend decides on every read and
  * write under the actor's locks and the database clock; the screen only hides what it cannot use.
  *
  * There is NO route that edits a profile, a schedule, a price or a dish: the owner keeps doing that in 11Food. A status command changes one column
@@ -252,6 +252,11 @@ export class AdminShopService {
           // A draft is finished and switched on by its owner (the onboarding flow); a shop already in the wanted state needs nothing.
           throw new AppError('SHOP_STATE_CONFLICT');
         }
+        const work = await this.reads.openWork(context, shopId);
+        if (name === 'disable' && (work.ordersOpen > 0 || work.activeDeliveries > 0)) {
+          // Counted again here, under the shop row lock, never from the popup's figures: nothing is cancelled or ended to make room.
+          throw new AppError('SHOP_HAS_OPEN_WORK');
+        }
         if (name === 'enable') {
           // The same conditions as the onboarding completion: a pickup point and an ACTIVE service area (held FOR SHARE until commit).
           if (shop.pickupLat === null || shop.pickupLng === null || shop.serviceAreaId === null) {
@@ -264,7 +269,6 @@ export class AdminShopService {
         }
         const to = name === 'disable' ? 'DISABLED' : 'ACTIVE';
         const version = await this.shops.changeStatus(context, shopId, from, to, shop.version);
-        const work = await this.reads.openWork(context, shopId);
         await this.audit.append(context, {
           requestId: meta.requestId,
           actorType: auth.role,
@@ -281,7 +285,7 @@ export class AdminShopService {
             to_status: to,
             from_version: shop.version,
             version,
-            open_orders: work.ordersPendingConfirmation + work.ordersPreparing,
+            open_orders: work.ordersOpen,
             active_deliveries: work.activeDeliveries,
           },
         });
@@ -321,6 +325,7 @@ export class AdminShopService {
     if (auth.manage && snapshot.status === 'ACTIVE') {
       actions.push('DISABLE');
     }
+    const blocked = snapshot.status === 'ACTIVE' && (work.ordersOpen > 0 || work.activeDeliveries > 0);
     if (auth.manage && snapshot.status === 'DISABLED') {
       actions.push('ENABLE');
     }
@@ -346,10 +351,12 @@ export class AdminShopService {
       hours: snapshot.hours.map(toWire),
       menu: { visible: facts.itemsVisible, hidden: facts.itemsHidden },
       open_work: {
+        orders_open: work.ordersOpen,
         orders_pending_confirmation: work.ordersPendingConfirmation,
         orders_preparing: work.ordersPreparing,
         active_deliveries: work.activeDeliveries,
       },
+      disable_blocked: blocked,
       enable_blockers: snapshot.status === 'DISABLED' ? enableBlockers(snapshot, facts.areaStatus) : [],
       allowed_actions: actions,
       created_at: iso(facts.createdAtMs),
@@ -359,7 +366,7 @@ export class AdminShopService {
 
   /**
    * Actor locks in the module order, the CURRENT permission rows (ADMIN) and the database clock after the last lock, then the right: SYSTEM; or an ADMIN with
-   * VIEW on SHOP, and for a write also the lock right of the SHOP row. Nothing from the client decides it.
+   * VIEW on SHOP, and for a write also the shop-management right of the SHOP row. Nothing from the client decides it.
    */
   async #authorize(context: TransactionContext, known: SessionLookup, right: 'view' | 'manage'): Promise<Authorized> {
     const locked = await this.actor.lock(context, known, { user: 'read', factor: 'read' });
@@ -372,7 +379,7 @@ export class AdminShopService {
     }
     const shop = rows.find((candidate) => candidate.app === 'SHOP');
     const view = shop?.canView ?? false;
-    const manage = view && (shop?.canLock ?? false);
+    const manage = view && (shop?.canManageShops ?? false);
     if (!view || (right === 'manage' && !manage)) {
       throw new AppError('ADMIN_FORBIDDEN');
     }

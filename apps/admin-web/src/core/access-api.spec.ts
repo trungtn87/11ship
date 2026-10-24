@@ -9,7 +9,7 @@ const ID = '11111111-1111-4111-8111-111111111111';
 const reply = (status: number, body: unknown): TransportResponse => ({ status, header: () => null, json: () => Promise.resolve(body) });
 const admin = (over: Record<string, unknown> = {}) => ({
   user_id: ID, full_name: 'Quản trị A', phone_masked: '09•• ••• 839', status: 'ACTIVE', membership_status: 'ACTIVE', membership_version: 3, created_at: '2026-10-18T09:00:00.000Z', live_sessions: 1, last_login_at: null,
-  permissions: [{ app: 'DRIVER', can_view: true, can_review_profile: false, can_lock: false, can_manage_catalog: false }], permissions_fingerprint: 'a'.repeat(32),
+  permissions: [{ app: 'DRIVER', can_view: true, can_review_profile: false, can_lock: false, can_manage_catalog: false, can_manage_shops: false }], permissions_fingerprint: 'a'.repeat(32),
   rights: [{ permission_key: 'report.read', state: 'GRANTED', version: 1 }, { permission_key: 'audit.read', state: 'NONE', version: 0 }], ...over,
 });
 function scripted(...answers: (TransportResponse | 'throw')[]): { transport: Transport; requests: TransportRequest[] } {
@@ -36,7 +36,7 @@ describe('M12-C access - parsers and source', () => {
     const source = createAccessSource(new AdminAccessApi(calls.transport), s.port);
     expect(await source.command({ name: 'lock', userId: ID, version: 3, reason: 'r', key: 'k1' })).toEqual({ kind: 'ok' });
     expect(await source.command({ name: 'grant', userId: ID, right: 'report.read', version: 0, key: 'k2' })).toEqual({ kind: 'ok' });
-    expect(await source.command({ name: 'permissions', userId: ID, permissions: [{ app: 'DRIVER', canView: true, canReviewProfile: false, canLock: false, canManageCatalog: false }], fingerprint: 'f'.repeat(32), reason: 'r', key: 'k3' })).toEqual({ kind: 'conflict' });
+    expect(await source.command({ name: 'permissions', userId: ID, permissions: [{ app: 'DRIVER', canView: true, canReviewProfile: false, canLock: false, canManageCatalog: false, canManageShops: false }], fingerprint: 'f'.repeat(32), reason: 'r', key: 'k3' })).toEqual({ kind: 'conflict' });
     expect(await source.command({ name: 'revoke-sessions', userId: ID, reason: 'r', key: 'k4' })).toEqual({ kind: 'unknown' });
     expect(await source.command({ name: 'unlock', userId: ID, version: 4, reason: 'r', key: 'k5' })).toEqual({ kind: 'forbidden' });
     expect(await source.command({ name: 'unlock', userId: ID, version: 4, reason: 'r', key: 'k6' })).toEqual({ kind: 'session-expired' });

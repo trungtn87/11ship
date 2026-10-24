@@ -13,6 +13,8 @@ export interface AppPermissionRow {
   readonly canReviewProfile: boolean;
   readonly canLock: boolean;
   readonly canManageCatalog: boolean;
+  /** Shop activity management: disable / enable a shop (SHOP only; needs VIEW). */
+  readonly canManageShops: boolean;
 }
 
 /** The function rights SYSTEM gives one by one (wallet.read, wallet.topup.record, report.read, report.export, audit.read). */
