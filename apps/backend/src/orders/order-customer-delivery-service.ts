@@ -117,9 +117,6 @@ export class OrderCustomerDeliveryService {
       async (context) => {
         const actor = await this.#customer(context, principal);
         const delivery = await this.#lockRunning(context, actor, orderId);
-        if (delivery.version !== input.expectedVersion) {
-          throw new AppError('VERSION_CONFLICT');
-        }
         if (delivery.state !== 'waiting_driver' && delivery.state !== 'accepted' && delivery.state !== 'location_confirmed') {
           throw new AppError('DELIVERY_STATE_CONFLICT');
         }
@@ -129,6 +126,10 @@ export class OrderCustomerDeliveryService {
         const agreement = await this.agreements.readByDelivery(context, delivery.deliveryId);
         if (agreement !== undefined && !answerIsWaiting(agreement) && (await this.agreements.answerWasDropped(context, agreement.agreementId))) {
           throw new AppError('FEE_ANSWER_EXPIRED');
+        }
+        // Expiry commits before this command and advances the delivery version; report that cause before rejecting the caller's old version.
+        if (delivery.version !== input.expectedVersion) {
+          throw new AppError('VERSION_CONFLICT');
         }
         if (agreement === undefined || (agreement.status !== 'COUNTERED' && agreement.status !== 'AWAITING_CUSTOMER')) {
           throw new AppError('DELIVERY_STATE_CONFLICT');

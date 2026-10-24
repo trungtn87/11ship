@@ -457,9 +457,6 @@ export class DeliveryShopService {
       async (context) => {
         const caller = await this.actors.shopWriter(context, principal);
         const delivery = await this.lockForShop(context, caller, deliveryId);
-        if (delivery.version !== input.expectedVersion) {
-          throw new AppError('VERSION_CONFLICT');
-        }
         if (delivery.state !== 'waiting_driver' && delivery.state !== 'accepted' && delivery.state !== 'location_confirmed') {
           throw new AppError('DELIVERY_STATE_CONFLICT');
         }
@@ -472,6 +469,10 @@ export class DeliveryShopService {
         }
         if (!answerIsWaiting(agreement) && (await this.agreements.answerWasDropped(context, agreement.agreementId))) {
           throw new AppError('FEE_ANSWER_EXPIRED');
+        }
+        // Expiry commits before this command and advances the delivery version; report that cause before rejecting the caller's old version.
+        if (delivery.version !== input.expectedVersion) {
+          throw new AppError('VERSION_CONFLICT');
         }
         // A confirmation the shop gives for a payer who has no app: the ACTOR is the shop (the person who acted); that it stands in for the customer, and who the payer is,
         // are stored apart (on_behalf_of, fee_payer), so the log can never read as the customer's own act.

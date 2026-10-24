@@ -212,9 +212,9 @@ describe('M12 administration web (real browser)', () => {
     await page.send('Network.clearBrowserCookies');
     await signIn(page, { phone: system.account.phone, password: system.account.password, userId: system.account.userId, secret: system.login.secret });
     await page.goto(`${origin}/system/config`);
-    await page.waitFor(`document.querySelector('#config-title') && document.querySelectorAll('.cfg-card').length === 6`);
+    await page.waitFor(`document.querySelector('#config-title') && document.querySelectorAll('.cfg-card').length === 7`);
     const text = await page.evaluate<string>(`document.body.innerText`);
-    for (const expected of ['Bảo mật, OTP và chống spam', 'Quy tắc cố định (không phải tham số, không chỉnh được)', 'Bán kính tìm shipper', '3.000 m', 'Chờ gửi lại mã OTP', 'Bản đồ và GPS', 'Lưu trữ và sao lưu']) {
+    for (const expected of ['Bảo mật, OTP và chống spam', 'Quy tắc cố định (không phải tham số, không chỉnh được)', 'Bán kính tìm shipper', '3.000 m', 'Chờ gửi lại mã OTP', 'Bản đồ và GPS', 'Lưu trữ và sao lưu', 'Thời gian trả lời đề xuất phí']) {
       expect(text).toContain(expected);
     }
     await shot(page, 'm12d-config-desktop');
@@ -251,7 +251,7 @@ describe('M12 administration web (real browser)', () => {
     await adminPage.send('Network.clearBrowserCookies');
     await signIn(adminPage, { phone: viewer.phone, password: 'Correct-Horse-Battery-9', userId: viewer.userId, secret: viewer.secret });
     await adminPage.goto(`${origin}/system/config`);
-    await adminPage.waitFor(`document.querySelectorAll('.cfg-card').length === 6`);
+    await adminPage.waitFor(`document.querySelectorAll('.cfg-card').length === 7`);
     expect(await adminPage.evaluate<boolean>(`[...document.querySelectorAll('.cfg-card button')].every((b) => b.textContent !== 'Sửa')`)).toBe(true);
     await adminPage.close();
   }, 120_000);
