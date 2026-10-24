@@ -80,6 +80,15 @@ class ResetController extends ChangeNotifier {
   /// Tries left on the current challenge after a wrong code, as the SERVER counted them.
   int? get attemptsRemaining => _failure?.kind == AuthFailureKind.otpInvalid ? _failure?.attemptsRemaining : null;
   DateTime get _now => DateTime.now();
+
+  /// Seconds left of the cooldown the SERVER set (rounded up); 0 when none is running.
+  int get resendSeconds {
+    final DateTime? at = _resendAt;
+    if (at == null) return 0;
+    final int millis = at.difference(_now).inMilliseconds;
+    return millis <= 0 ? 0 : (millis + 999) ~/ 1000;
+  }
+
   bool get canResend => _otpStep != ResetOtpStep.requesting && _otpStep != ResetOtpStep.verifying && _otpStep != ResetOtpStep.verified && (_resendAt == null || !_now.isBefore(_resendAt!));
 
   String _bodyFor(String phone, String password) => jsonEncode(<String, Object?>{'verification_token': _proof, 'password': password});

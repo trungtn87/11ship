@@ -398,6 +398,16 @@ Widget _failureBanner(SessionController session) {
   );
 }
 
+/// Shown at the first step after the server closed the OTP challenge for too many wrong codes (issue #117).
+Widget _otpLockedBanner(bool locked) => locked
+    ? const N11Banner(
+        key: Key('otp-locked'),
+        kind: BannerKind.error,
+        title: 'Đã hủy luồng xác minh',
+        text: 'Bạn đã nhập sai mã quá số lần cho phép. Dữ liệu đang nhập đã được xóa; hãy bắt đầu lại. Bạn vẫn phải đợi hết thời gian chờ trước khi yêu cầu mã mới.',
+      )
+    : const SizedBox.shrink();
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.session, required this.brand, this.reset, this.shop});
 
@@ -549,6 +559,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final FormFeedback _feedback = FormFeedback();
   bool _purposeAttempted = false;
   bool _otpPage = false;
+  bool _lockHandled = false;
   bool get _ship => widget.brand.id == AppId.ship;
   final TextEditingController _code = TextEditingController();
   late final PhoneVerificationController _otp = PhoneVerificationController(transport: widget.session.api.transport);
@@ -581,8 +592,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  /// A timer exists only while the "send again" button is locked, so an idle screen schedules nothing.
+  /// The server closed the challenge (too many wrong codes): back to the FIRST step with the temporary data of this flow wiped (code,
+  /// password, name, purpose, consent). The number stays typed and the cooldown stays (the controller and the server keep it). No
+  /// existing account is touched: nothing here reads or changes one.
   void _otpChanged() {
+    if (_otp.lockedOut && !_lockHandled) {
+      _lockHandled = true;
+      _code.clear();
+      _password.clear();
+      _confirm.clear();
+      _name.clear();
+      _agree = false;
+      _owner = null;
+      _purposeAttempted = false;
+      _step = 0;
+      _otpPage = false;
+      if (mounted) {
+        setState(() {});
+      }
+    } else if (!_otp.lockedOut) {
+      _lockHandled = false;
+    }
     if (_tick == null && !_otp.canResend && _otp.step != OtpStep.verified) {
       _tick = Timer.periodic(const Duration(seconds: 1), (Timer timer) {
         if (!mounted || _otp.canResend || _otp.step == OtpStep.verified) {
@@ -644,7 +674,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             onPressed: busy || !_otp.canResend ? null : () { if (_validate(phoneOnly: true)) _otp.request(_phone.text); },
           ),
           if (!_otp.canResend && _otp.resendSeconds > 0)
-            Text('Gửi lại sau ${_otp.resendSeconds} giây', key: const Key('otp-resend-countdown'), textAlign: TextAlign.center, style: N11Text.caption),
+            Text('Gửi lại sau ${formatWait(_otp.resendSeconds)}', key: const Key('otp-resend-countdown'), textAlign: TextAlign.center, style: N11Text.caption),
         ],
       ];
     }
@@ -659,7 +689,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         if (_otp.step == OtpStep.sent && note != null) N11Banner(key: const Key('otp-note'), kind: BannerKind.warn, title: 'Lưu ý', text: note),
         N11Button(
           key: const Key('otp-request'),
-          label: !_otp.canResend && !_otp.busy ? 'Gửi lại sau ${_otp.resendSeconds} giây' : _otp.step == OtpStep.requesting ? 'Đang gửi…' : (_otp.step == OtpStep.idle && _otp.phone == null ? 'Gửi mã xác minh' : 'Gửi lại mã'),
+          label: !_otp.canResend && !_otp.busy ? 'Gửi lại sau ${formatWait(_otp.resendSeconds)}' : _otp.step == OtpStep.requesting ? 'Đang gửi…' : (_otp.step == OtpStep.idle && _otp.phone == null ? 'Gửi mã xác minh' : 'Gửi lại mã'),
           kind: ButtonKind.secondary,
           loading: _otp.step == OtpStep.requesting,
           onPressed: busy || !_otp.canResend ? null : () { if (_validate(phoneOnly: true)) _otp.request(_phone.text); },
@@ -717,12 +747,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     'consent': _agree ? null : 'Bạn cần đồng ý với Điều khoản sử dụng và Chính sách bảo mật.',
   };
 
-  Map<String, String?> get _errors => <String, String?>{'phone': phoneError(_phone.text), ..._detailsErrors};
+  Map<String, String?> get _errors => <String, String?>{'phone': otpPhoneError(_phone.text), ..._detailsErrors};
   bool get _valid => _errors.values.every((String? error) => error == null);
   bool get _detailsValid => _detailsErrors.values.every((String? error) => error == null);
   String? _error(String id) => _feedback.message(_errors[id]);
   bool _validate({bool detailsOnly = false, bool phoneOnly = false}) {
-    final bool valid = _feedback.validate(phoneOnly ? <String, String?>{'phone': phoneError(_phone.text)} : detailsOnly ? _detailsErrors : _errors);
+    final bool valid = _feedback.validate(phoneOnly ? <String, String?>{'phone': otpPhoneError(_phone.text)} : detailsOnly ? _detailsErrors : _errors);
     setState(() {});
     return valid;
   }
@@ -740,6 +770,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         title: 'Đăng ký · ${_step + 1}/3', session: session, onBack: back,
         children: <Widget>[
           N11Heading(<String>['Tạo tài khoản', 'Mục đích sử dụng', 'Số điện thoại & OTP'][_step]),
+          if (_step == 0) _otpLockedBanner(_otp.lockedOut),
           if (session.lastFailure?.kind == AuthFailureKind.accountRecoverable || _otp.failure?.kind == AuthFailureKind.accountRecoverable)
             N11Banner(
               key: const Key('recover-account'),
@@ -838,6 +869,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           session: session,
           children: <Widget>[
             N11Heading(food ? 'Tạo tài khoản 11Food' : 'Đăng ký shipper', sub: food ? 'Tài khoản khách hàng dùng để đặt món.' : 'Bước 1/2 · Tạo tài khoản để bắt đầu cùng 11Ship', size: _ship ? 22 : null),
+            _otpLockedBanner(_otp.lockedOut),
             if (mode == RegistrationMode.unknown && session.ready)
               N11Banner(
                 key: const Key('config-unknown'),

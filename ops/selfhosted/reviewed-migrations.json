@@ -28,6 +28,10 @@
     "1796342400000_m07-fee-revision": {
       "sha256": "b5bb531d00e40f89bb01c2b637b0b27e5dd7335b6f22bf2bfddeca1f43135518",
       "review": "M07 fee negotiation fix; compatibility review 2026-10-24: Up adds two nullable columns and a check on the fee agreement, widens the status guard by one transition (ACCEPTED to PROPOSED for AGREED) and the event types by two. Existing rows are unchanged; the previous backend never sets the new columns and ignores them."
+    },
+    "1796428800000_create-otp-policy": {
+      "sha256": "2102f7b41029e0e7d0430ef8191d9594606a023b508ed531ebade5326863498b",
+      "review": "Issue #117; compatibility review 2026-10-24: Up only adds three new tables (app.otp_policy single row seeded 60/3/3/5/10/30 with CHECK bounds, append-only app.otp_policy_changes, app.otp_ip_requests holding only an HMAC of the client address) and one new index on app.phone_verifications; no existing table, column, constraint, grant or row changes. The previous backend never reads the new tables and keeps enforcing its environment limits, so it keeps working against the new schema. The new backend requires the migration (it reads app.otp_policy on every OTP request), so the migration runs before the backend restart; the runtime role grants are in ops/selfhosted/02-runtime-grants.sql."
     }
   }
 }
