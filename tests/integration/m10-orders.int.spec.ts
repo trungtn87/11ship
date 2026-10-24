@@ -1086,7 +1086,7 @@ describe('M10 — food orders', () => {
     const did = String((called.delivery as Json).delivery_id);
     await app.pool.query('ALTER TABLE app.shipping_fee_agreements DISABLE TRIGGER USER');
     try {
-      await app.pool.query(`UPDATE app.shipping_fee_agreements SET expires_at = clock_timestamp() + interval '2 minutes' WHERE delivery_id = $1::uuid`, [did]);
+      await app.pool.query(`UPDATE app.shipping_fee_agreements SET expires_at = date_trunc('milliseconds', clock_timestamp()) + interval '2 minutes 750 microseconds' WHERE delivery_id = $1::uuid`, [did]);
     } finally {
       await app.pool.query('ALTER TABLE app.shipping_fee_agreements ENABLE TRIGGER USER');
     }
