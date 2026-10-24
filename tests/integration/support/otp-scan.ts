@@ -1,61 +1,86 @@
 import type { Pool } from 'pg';
 
-// "Is a one-time code written in clear anywhere?" — decided on the STRUCTURE of the data, never on the characters next to the code.
+// "Is a one-time code written in clear anywhere?" — decided on the STRUCTURE of the data, never on the characters next to the code and never on the SHAPE of a value alone.
 //
-// A six-digit code can appear by chance inside an identifier (uuid), a timestamp or sealed bytes, so those technical fields are left out of the scan. Everything else is
-// searched as a plain substring, whatever surrounds the digits: `123456`, `code123456`, `123456abc`, `otp-123456`, `otp.123456`, `123456-x`, a JSON field, a message,
-// a log message. A field is left out only when it is declared technical here, and (for text fields that may hold anything) only when its WHOLE value has the shape of
-// an id or a timestamp. A string that merely contains an id is content and is searched in full.
+// A six-digit code can appear by chance inside an identifier (uuid), a timestamp or sealed bytes, so those technical fields are left out of the scan. A field is technical only
+// when the SCHEMA says so, by exact name and place:
+//   - a column listed in TECHNICAL_COLUMNS (uuid, timestamp, sealed bytes, counters, key id), left out whole;
+//   - a text column listed in TECHNICAL_ID_COLUMNS (actor_id, resource_id), left out only while its WHOLE value is a uuid;
+//   - a TOP-LEVEL key of a jsonb column listed in TECHNICAL_JSON_KEYS (session_id, user_id, ...), left out only while its WHOLE value is a uuid or a timestamp.
+// Everything else is searched as a plain substring, whatever surrounds the digits: `123456`, `code123456`, `123456abc`, `otp-123456`, `otp.123456`, `123456-x`. In particular a value
+// that merely LOOKS like a uuid or a timestamp inside content or metadata (a note, a nested object, a list, a key with another name) is searched in full: the shape alone never
+// excuses it.
 
 const UUID_WHOLE = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
 const ISO_TIME_WHOLE = '^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?(Z|[+-][0-9]{2}(:[0-9]{2})?)?$';
 const UUID_RE = new RegExp(UUID_WHOLE);
 const ISO_TIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
-/**
- * Columns that are technical by definition (uuid, timestamp, sealed bytes, counters, key id), per table. A text column that holds ids (actor_id, resource_id) is not here:
- * it is searched unless its whole value is a uuid or a timestamp.
- */
+/** Columns that are technical by definition (uuid, timestamp, sealed bytes, counters, key id), per table. */
 export const TECHNICAL_COLUMNS = {
   sms_jobs: ['job_id', 'verification_id', 'activation_challenge_id', 'attempt_id', 'claimed_by', 'claimed_at', 'lease_expires_at', 'created_at', 'expires_at', 'finished_at', 'delivered_at', 'payload_iv', 'payload_tag', 'payload_ciphertext', 'crypto_key_id'],
   audit_logs: ['audit_id', 'occurred_at', 'request_id', 'resource_version'],
   outbox_events: ['event_id', 'occurred_at', 'available_at', 'locked_at', 'published_at', 'lock_token', 'resource_version', 'event_schema_version', 'attempt_count'],
 } as const;
 
+/** Text columns that hold an id: left out only while the whole value is a uuid (the column is `varchar`, so anything else in it is content and is searched). */
+export const TECHNICAL_ID_COLUMNS = {
+  sms_jobs: [],
+  audit_logs: ['actor_id', 'resource_id'],
+  outbox_events: ['resource_id'],
+} as const;
+
+/** Top-level keys of a jsonb column (audit metadata, outbox payload) that carry an id. Nothing nested is left out, and a key with another name never is. */
+export const TECHNICAL_JSON_KEYS = ['session_id', 'user_id', 'proof_id', 'command_id', 'verification_id', 'job_id', 'driver_id', 'shop_id', 'delivery_id', 'order_id', 'assignment_id', 'request_id'] as const;
+
+export interface ScanRules {
+  /** Columns left out whole. */
+  readonly columns: readonly string[];
+  /** Text columns left out while their whole value is a uuid. */
+  readonly idColumns?: readonly string[];
+  /** Top-level keys of an object column left out while their whole value is a uuid or a timestamp. */
+  readonly jsonKeys?: readonly string[];
+}
+
 /**
- * True when [otp] appears in any column of the rows of [source] except the technical columns. `source` is a SELECT whose own parameters start at $3 ($1 is the code and
- * $2 the technical columns).
+ * True when [otp] appears in any column of the rows of [source] that [rules] does not declare technical. `source` is a SELECT whose own parameters start at $5 ($1 is the code, $2
+ * the technical columns, $3 the id columns and $4 the technical json keys).
  *
- * Every other column is searched as a plain substring. A jsonb column (metadata, payload) is read value by value: each string, number and key is searched on its own, with
- * nothing removed from it. A value is skipped only when the WHOLE value is a uuid or a timestamp (an id or a time field); a string that merely contains one, a message, a
- * note, a name, is content and is searched in full.
+ * A jsonb column is read value by value: each string, number and key is searched on its own, with nothing removed from it, except the declared top-level id keys described above.
  */
-export async function rowsContainClearOtp(pool: Pool, source: string, sourceParams: readonly unknown[], technical: readonly string[], otp: string): Promise<boolean> {
+export async function rowsContainClearOtp(pool: Pool, source: string, sourceParams: readonly unknown[], rules: ScanRules, otp: string): Promise<boolean> {
   const result = await pool.query<{ hit: boolean }>(
     `SELECT EXISTS (
        SELECT 1
          FROM (${source}) t,
               LATERAL jsonb_each(to_jsonb(t) - $2::text[]) c(col, val),
               LATERAL (
-                SELECT CASE WHEN jsonb_typeof(c.val) IN ('object', 'array') THEN NULL ELSE c.val #>> '{}' END AS x
+                SELECT CASE WHEN jsonb_typeof(c.val) = 'object'
+                            THEN (SELECT COALESCE(jsonb_object_agg(e.key, e.value), '{}'::jsonb)
+                                    FROM jsonb_each(c.val) e
+                                   WHERE NOT (e.key = ANY($4::text[]) AND jsonb_typeof(e.value) = 'string' AND ((e.value #>> '{}') ~ '${UUID_WHOLE}' OR (e.value #>> '{}') ~ '${ISO_TIME_WHOLE}')))
+                            ELSE c.val END AS v
+              ) j,
+              LATERAL (
+                SELECT CASE WHEN jsonb_typeof(j.v) IN ('object', 'array') THEN NULL ELSE j.v #>> '{}' END AS x
                 UNION ALL
                 SELECT leaf #>> '{}'
-                  FROM jsonb_path_query(CASE WHEN jsonb_typeof(c.val) IN ('object', 'array') THEN c.val ELSE '[]'::jsonb END, 'strict $.**') leaf
+                  FROM jsonb_path_query(CASE WHEN jsonb_typeof(j.v) IN ('object', 'array') THEN j.v ELSE '[]'::jsonb END, 'strict $.**') leaf
                  WHERE jsonb_typeof(leaf) NOT IN ('object', 'array')
                 UNION ALL
                 SELECT kv ->> 'key'
-                  FROM jsonb_path_query(CASE WHEN jsonb_typeof(c.val) IN ('object', 'array') THEN c.val ELSE '[]'::jsonb END, 'lax $.** ? (@.type() == "object").keyvalue()') kv
+                  FROM jsonb_path_query(CASE WHEN jsonb_typeof(j.v) IN ('object', 'array') THEN j.v ELSE '[]'::jsonb END, 'lax $.** ? (@.type() == "object").keyvalue()') kv
               ) s
-        WHERE s.x IS NOT NULL AND position($1::text IN s.x) > 0 AND s.x !~ '${UUID_WHOLE}' AND s.x !~ '${ISO_TIME_WHOLE}'
+        WHERE s.x IS NOT NULL AND position($1::text IN s.x) > 0 AND NOT (c.col = ANY($3::text[]) AND s.x ~ '${UUID_WHOLE}')
      ) AS hit`,
-    [otp, [...technical], ...sourceParams],
+    [otp, [...rules.columns], [...(rules.idColumns ?? [])], [...(rules.jsonKeys ?? [])], ...sourceParams],
   );
   return result.rows[0]?.hit === true;
 }
 
-/** True when [otp] is in any column of the table that is not a technical one (see [TECHNICAL_COLUMNS]). */
+/** True when [otp] is in any column of the table that is not declared technical (see [TECHNICAL_COLUMNS], [TECHNICAL_ID_COLUMNS], [TECHNICAL_JSON_KEYS]). */
 export function tableContainsClearOtp(pool: Pool, table: keyof typeof TECHNICAL_COLUMNS, otp: string): Promise<boolean> {
-  return rowsContainClearOtp(pool, `SELECT * FROM app.${table}`, [], TECHNICAL_COLUMNS[table], otp);
+  return rowsContainClearOtp(pool, `SELECT * FROM app.${table}`, [], { columns: TECHNICAL_COLUMNS[table], idColumns: TECHNICAL_ID_COLUMNS[table], jsonKeys: TECHNICAL_JSON_KEYS }, otp);
 }
 
 function valueContains(value: unknown, otp: string): boolean {
