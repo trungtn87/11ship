@@ -414,7 +414,8 @@ export class DeliveryRepository {
   }
 
   /**
-   * The shop's list. "active" is what the shop still has to look at: running or searching deliveries, a stopped search (call again / cancel) and a failed
+   * The shop's list of CALLS FOR A SHIPPER MADE DIRECTLY ("Giao hàng"). A delivery that belongs to an Order is not a row of its own: it is read inside the Order, active
+   * or past, so it is excluded here in the query itself (paging, search, filters and counts all see the same rows). "active" is what the shop still has to look at: running or searching deliveries, a stopped search (call again / cancel) and a failed
    * delivery whose goods are not settled. "history" is every other one, newest first.
    */
   async listForShop(
@@ -430,6 +431,7 @@ export class DeliveryRepository {
       `SELECT ${DELIVERY_COLUMNS}
          FROM app.deliveries d
         WHERE d.shop_id = $1::uuid
+          AND d.source = 'DIRECT'
           AND ($2::text = 'all' OR (($2::text = 'active') = (d.state IN ${ACTIVE_LIST_STATES} OR d.state = 'search_stopped'
                                    OR EXISTS (SELECT 1 FROM app.delivery_incidents i WHERE i.delivery_id = d.delivery_id AND i.status = 'OPEN'))))
           AND ($3::text IS NULL OR d.code ILIKE $3 ESCAPE '\\' OR app.shop_display_delivery(d.delivery_id) ILIKE $3 ESCAPE '\\' OR d.recipient_name ILIKE $3 ESCAPE '\\')

@@ -155,40 +155,6 @@ class OrderMoneyCard extends StatelessWidget {
   }
 }
 
-class OrderTimeline extends StatelessWidget {
-  const OrderTimeline(this.events, {super.key});
-
-  final List<OrderEvent> events;
-
-  @override
-  Widget build(BuildContext context) {
-    if (events.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    return N11Card(
-      key: const Key('m10-timeline'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Text('Diễn biến', style: N11Text.label),
-          const SizedBox(height: N11Space.gap2),
-          for (final OrderEvent e in events)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  SizedBox(width: 92, child: Text(m10When(e.at), style: N11Text.caption)),
-                  Expanded(child: Text(e.note == null || e.note!.isEmpty ? e.label : '${e.label} — ${e.note}', style: N11Text.body)),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
 /// The map of the CURRENT delivery: the pickup and the drop-off as they were when the call was made, and the Shipper's LATEST position with the time it was
 /// recorded — only while a Shipper holds the delivery ([location] is null otherwise and nothing live is drawn). When this build has no map, the points are
 /// said in words; a position is never faked and a route is never replaced by a straight line.

@@ -127,10 +127,11 @@ export class NotificationInboxService {
       await this.repo.markRead(context, actor.userId, actor.app, [n.notificationId]);
       const outcome = await this.#access(context, actor, n);
       const nowMs = await freshClockMs(context);
+      const target = outcome.kind === 'NO_ACCESS' ? null : outcome.target ?? { type: n.targetType, id: n.targetId, ...(n.targetType === 'DELIVERY_LIST' ? { list: listOf(n.kind) } : {}) };
       return {
         notification_id: n.notificationId,
         outcome: outcome.kind,
-        target: outcome.kind === 'NO_ACCESS' ? null : { type: n.targetType, id: n.targetId, ...(n.targetType === 'DELIVERY_LIST' ? { list: listOf(n.kind) } : {}) },
+        target,
         delivery_state: outcome.kind === 'NO_ACCESS' || n.targetType === 'COMPLAINT' ? null : outcome.state,
         // The state of the opened object when it is not a delivery (a complaint's status), so the app opens the right screen without guessing.
         object_state: outcome.kind === 'NO_ACCESS' || n.targetType !== 'COMPLAINT' ? null : outcome.state,
@@ -140,7 +141,7 @@ export class NotificationInboxService {
     });
   }
 
-  async #access(context: TransactionContext, actor: ClientActor, n: NotificationRow): Promise<{ kind: 'OK' | 'ENDED' | 'NO_ACCESS'; state: string | null }> {
+  async #access(context: TransactionContext, actor: ClientActor, n: NotificationRow): Promise<{ kind: 'OK' | 'ENDED' | 'NO_ACCESS'; state: string | null; target?: { type: string; id: string | null } }> {
     // A complaint opens for whoever the server says may read it NOW (the submitter in any role of the app, a related party it was shown to): the role hat
     // of the session is not what decides it.
     if (n.targetType === 'COMPLAINT') {
@@ -155,6 +156,14 @@ export class NotificationInboxService {
     }
     switch (n.targetType) {
       case 'DELIVERY': {
+        // 11Food has ONE page per food Order: a delivery of an Order (a notice sent before this rule, or of an earlier call) opens that Order, found by the delivery's own
+        // link and checked for the shop's right now. No right or no Order: nothing opens (never another order).
+        if (actor.app === 'FOOD' && n.targetId !== null) {
+          const linked = await this.recipients.orderOfDeliveryForShop(context, n.targetId, actor.userId);
+          if (linked.kind === 'order') {
+            return linked.access ? { kind: linked.ended ? 'ENDED' : 'OK', state: linked.status, target: { type: 'ORDER', id: linked.orderId } } : { kind: 'NO_ACCESS', state: null };
+          }
+        }
         const facts = n.targetId === null ? undefined : await this.recipients.deliveryAccessFor(context, n.targetId, actor.userId, actor.app);
         if (facts === undefined || !facts.exists || !facts.access) {
           return { kind: 'NO_ACCESS', state: null };

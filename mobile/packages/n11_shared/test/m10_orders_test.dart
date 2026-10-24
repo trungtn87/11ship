@@ -458,8 +458,8 @@ void main() {
       expect(containing('Quán từ chối'), findsWidgets);
       await unmount(tester);
       await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: id));
-      expect(key('order-end-reason'), findsOneWidget);
-      expect(containing('Hết món'), findsWidgets);
+      expect(containing('Quán đã từ chối đơn — Hết món'), findsOneWidget);
+      expect(key('order-end-reason'), findsNothing);
       await unmount(tester);
     });
 

@@ -380,7 +380,6 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
             const SizedBox(height: 4),
             Text('Đặt lúc ${m10When(o.createdAt)}', style: N11Text.caption),
             if (o.isScheduled) Padding(padding: const EdgeInsets.only(top: 6), child: Row(children: <Widget>[const N11Chip('Đơn hẹn', kind: ChipKind.dark), const SizedBox(width: N11Space.gap2), Expanded(child: Text('Khách muốn nhận món lúc ${m10When(o.scheduledFor!)}', key: const Key('order-wanted'), style: N11Text.body))])),
-            if (o.endReason != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Lý do: ${o.endReason}', style: N11Text.body)),
           ],
         ),
       ),
@@ -393,7 +392,7 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
       OrderLinesCard(lines: o.items),
       OrderMoneyCard(money: o.money, edited: o.edited),
       N11Card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Text('Người nhận', style: N11Text.label), KeyValueRows(<(String, String)>[('Tên', o.recipient.name), ('Số điện thoại', o.recipient.phone), ('Địa chỉ', o.recipient.addressText)]), if (o.note != null) Text('Ghi chú: ${o.note}', style: N11Text.caption)])),
-      if (d != null) _deliveryCard(o, d),
+      if (d != null) _deliverySection(o, d),
       if (d != null || o.recipient.hasPin)
         OrderMapCard(
           pickupLat: d?.pickup.lat,
@@ -405,44 +404,43 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
           ended: o.ended,
           who: 'shipper',
         ),
-      if (o.deliveries.length > 1)
-        N11Card(
-          key: const Key('order-calls'),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-            const Text('Các lần gọi shipper', style: N11Text.label),
-            for (final DeliveryBrief b in o.deliveries) Padding(padding: const EdgeInsets.only(top: 4), child: Text('${b.code} · ${b.state.label}${b.endReason == null ? '' : ' — ${b.endReason}'}', style: N11Text.body)),
-          ]),
-        ),
-      OrderTimeline(o.timeline),
+      StoryCard(o.story),
     ]);
   }
 
-  Widget _deliveryCard(OrderView o, DeliveryView d) {
-    return N11Card(
+  /// The current call for a Shipper, read and acted on inside the order: there is no second page for it. Earlier calls are in "Diễn biến".
+  Widget _deliverySection(OrderView o, DeliveryView d) {
+    final ShopDeliverySource? source = widget.deliveries;
+    return Column(
       key: const Key('order-delivery'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text('Giao hàng ${d.code}', style: N11Text.label),
-          const SizedBox(height: 4),
-          Align(alignment: Alignment.centerLeft, child: N11Chip(d.state.label, kind: m07StateChip(d.state).kind)),
-          if (d.assignment != null) KeyValueRows(<(String, String)>[('Shipper', d.assignment!.shipperName), if (d.assignment!.plateNumber != null) ('Biển số', d.assignment!.plateNumber!), if (d.assignment!.shipperPhone != null) ('Điện thoại', d.assignment!.shipperPhone!)]),
-          if (widget.deliveries != null)
-            Padding(
-              padding: const EdgeInsets.only(top: N11Space.gap2),
-              child: N11Button(
-                key: const Key('order-open-delivery'),
-                label: d.incident?.isOpen ?? false ? 'Xử lý hàng' : 'Mở yêu cầu giao',
-                kind: ButtonKind.secondary,
-                compact: true,
-                onPressed: () async {
-                  await Navigator.of(context).push(n11Route(ShopDeliveryDetailScreen(source: widget.deliveries!, deliveryId: d.deliveryId, feedbackSlot: widget.runtime.feedback == null ? null : shopDeliveryFeedbackSlot(source: widget.runtime.feedback!, picker: widget.runtime.picker ?? const NoImagePicker()))));
-                  await _fetcher.reload();
-                },
-              ),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        N11Card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text('Giao hàng', style: N11Text.label),
+              const SizedBox(height: 4),
+              Align(alignment: Alignment.centerLeft, child: N11Chip(d.state.label, kind: m07StateChip(d.state).kind)),
+              if (o.deliveries.length > 1) Padding(padding: const EdgeInsets.only(top: 4), child: Text('Lần gọi shipper thứ ${o.deliveries.length}', key: const Key('order-call-count'), style: N11Text.caption)),
+              if (source == null && d.assignment != null) KeyValueRows(<(String, String)>[('Shipper', d.assignment!.shipperName), if (d.assignment!.plateNumber != null) ('Biển số', d.assignment!.plateNumber!), if (d.assignment!.shipperPhone != null) ('Điện thoại', d.assignment!.shipperPhone!)]),
+            ],
+          ),
+        ),
+        if (source != null)
+          Padding(
+            padding: const EdgeInsets.only(top: N11Space.gap3),
+            child: ShopDeliveryPanel(
+              source: source,
+              delivery: d,
+              onChanged: () => _fetcher.reload(quiet: true),
+              mapBuilder: widget.mapBuilder ?? widget.runtime.mapBuilder,
+              showLocation: false,
+              allowCancel: true,
+              feedbackSlot: widget.runtime.feedback == null ? null : shopDeliveryFeedbackSlot(source: widget.runtime.feedback!, picker: widget.runtime.picker ?? const NoImagePicker()),
             ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 }

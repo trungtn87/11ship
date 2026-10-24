@@ -887,7 +887,6 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
             const SizedBox(height: 4),
             Text('Mã đơn ${o.code}', style: N11Text.caption),
             if (o.isScheduled) Padding(padding: const EdgeInsets.only(top: 6), child: Row(children: <Widget>[const N11Chip('Đơn hẹn', kind: ChipKind.dark), const SizedBox(width: N11Space.gap2), Expanded(child: Text('Muốn nhận món lúc ${m10When(o.scheduledFor!)}', key: const Key('order-wanted'), style: N11Text.body))])),
-            if (o.endReason != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Lý do: ${o.endReason}', key: const Key('order-end-reason'), style: N11Text.body)),
             if (o.shop.phone != null && !o.ended) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Liên hệ quán: ${o.shop.phone}', style: N11Text.caption)),
           ],
         ),
@@ -910,7 +909,7 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
           ended: o.ended,
           who: 'shipper',
         ),
-      OrderTimeline(o.timeline),
+      StoryCard(o.story),
     ]);
   }
 

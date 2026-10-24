@@ -18,6 +18,7 @@ import {
   startAdminApp,
 } from './support/admin-fixtures';
 import { api, ApiResponse, dataOf, errorCode, grantRole, PASSWORD, Phone, randomPhone } from './support/auth-fixtures';
+import { logContainsClearOtp, rowsContainClearOtp, TECHNICAL_COLUMNS, TECHNICAL_ID_COLUMNS, TECHNICAL_JSON_KEYS, tableContainsClearOtp } from './support/otp-scan';
 
 // Issue #102 on the REAL Nest pipeline and a REAL PostgreSQL (TEST database only): the SMS gateway queue, the gateway API, the
 // REGISTER delivery states and the RESET_PASSWORD (SMS_OTP) flow. The "phone" is played by calls to /v1/sms-gateway with the
@@ -220,17 +221,13 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       const again = await verifyRegister(id, otp);
       expect([again.status, errorCode(again)]).toEqual([409, 'OTP_ALREADY_USED']);
 
-      // Nowhere at rest or in the logs: the sealed envelope is gone and the code was never written in clear.
-      const tables = await app.pool.query<{ hit: boolean }>(
-        `SELECT (
-           EXISTS (SELECT 1 FROM app.sms_jobs WHERE row_to_json(sms_jobs)::text LIKE $1)
-        OR EXISTS (SELECT 1 FROM app.audit_logs WHERE row_to_json(audit_logs)::text LIKE $1)
-        OR EXISTS (SELECT 1 FROM app.outbox_events WHERE row_to_json(outbox_events)::text LIKE $1)
-        ) AS hit`,
-        [`%${otp}%`],
-      );
-      expect(tables.rows[0]?.hit).toBe(false);
-      expect(app.running.logs.join('\n')).not.toContain(otp);
+      // Nowhere at rest or in the logs: the sealed envelope is gone and the code was never written in clear. The scan reads the data by structure (see support/otp-scan.ts):
+      // only uuid, timestamp, counter and sealed-byte columns are left out; every other column, every metadata/payload object and every log field is searched for the code as a
+      // plain substring, so a code glued to letters or signs (`code123456`, `otp-123456`) would still be found.
+      for (const table of ['sms_jobs', 'audit_logs', 'outbox_events'] as const) {
+        expect([table, await tableContainsClearOtp(app.pool, table, otp)]).toEqual([table, false]);
+      }
+      expect(logContainsClearOtp(app.running.logs, otp)).toBe(false);
       expect(app.running.logs.join('\n')).not.toContain(phone.normalized);
     });
 
@@ -393,6 +390,92 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       const reused = await api(app.running.baseUrl, 'POST', '/auth/register', { headers: { 'idempotency-key': randomUUID() }, body });
       expect(reused.status).toBeGreaterThanOrEqual(400);
       expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE phone_normalized = $1', [phone.normalized])).toBe(1);
+    });
+  });
+
+  describe('the clear-OTP scan finds a code however it is written and leaves out only technical fields (support/otp-scan.ts)', () => {
+    const OTP = '482913';
+    const ID = randomUUID();
+    const LOOKALIKE_ID = `${OTP}ab-1111-4111-8111-${OTP}${OTP}`;
+    const rows = (over: { id?: string; at?: string; body?: string | null; actorId?: string; metadata?: unknown; cipherHex?: string } = {}): Promise<boolean> =>
+      rowsContainClearOtp(
+        app.pool,
+        'SELECT $5::uuid AS id, $6::timestamptz AS created_at, $7::text AS body, $8::text AS actor_id, $9::jsonb AS metadata, decode($10::text, \'hex\') AS payload_ciphertext',
+        [over.id ?? ID, over.at ?? '2026-10-24T02:03:04.123456Z', over.body ?? 'nothing here', over.actorId ?? ID, JSON.stringify(over.metadata ?? { note: 'nothing' }), over.cipherHex ?? '9fa0b1'],
+        { columns: ['id', 'created_at', 'payload_ciphertext'], idColumns: ['actor_id'], jsonKeys: ['session_id', 'at_time'] },
+        OTP,
+      );
+
+    it('finds the code stand-alone, glued to letters or signs, in a JSON field, in a message and next to a uuid', async () => {
+      for (const body of [`plain ${OTP}`, `code${OTP}`, `${OTP}abc`, `otp-${OTP}`, `otp.${OTP}`, `${OTP}-x`, `x-${OTP}`, `Ma xac thuc la ${OTP}. Hieu luc 5 phut.`, `req ${ID} code ${OTP}`, `${ID}-${OTP}`]) {
+        expect([body, await rows({ body })]).toEqual([body, true]);
+      }
+      for (const metadata of [{ otp: OTP }, { otp: Number(OTP) }, { nested: { list: [`code${OTP}`] } }, { id: ID, note: `otp ${OTP}` }, { id: ID, note: `${ID}-${OTP}` }]) {
+        expect([JSON.stringify(metadata), await rows({ metadata })]).toEqual([JSON.stringify(metadata), true]);
+      }
+    });
+
+    it('leaves out only declared technical fields: a uuid column, a timestamp column, sealed bytes, a declared id column or id key that holds a whole uuid', async () => {
+      expect(await rows({ id: LOOKALIKE_ID })).toBe(false);
+      expect(await rows({ at: `2026-10-24T02:03:04.${OTP}Z` })).toBe(false);
+      expect(await rows({ cipherHex: `9f${Buffer.from(OTP).toString('hex')}a0` })).toBe(false);
+      expect(await rows({ cipherHex: `9f${OTP}a0` })).toBe(false);
+      expect(await rows({ actorId: LOOKALIKE_ID })).toBe(false);
+      expect(await rows({ metadata: { session_id: LOOKALIKE_ID, at_time: `2026-10-24T02:03:04.${OTP}Z` } })).toBe(false);
+    });
+
+    it('never excuses a value because it LOOKS like a uuid or a timestamp: only the declared column / top-level key does', async () => {
+      // A content column, an undeclared key, a nested key, a list, a key with the declared name but a different place or a longer value: all content.
+      expect(await rows({ body: LOOKALIKE_ID })).toBe(true);
+      expect(await rows({ body: `2026-10-24T02:03:04.${OTP}Z` })).toBe(true);
+      expect(await rows({ metadata: { id: LOOKALIKE_ID } })).toBe(true);
+      expect(await rows({ metadata: { note: LOOKALIKE_ID } })).toBe(true);
+      expect(await rows({ metadata: { at: `2026-10-24T02:03:04.${OTP}Z` } })).toBe(true);
+      expect(await rows({ metadata: { ids: [LOOKALIKE_ID] } })).toBe(true);
+      expect(await rows({ metadata: { detail: { session_id: LOOKALIKE_ID } } })).toBe(true);
+      expect(await rows({ metadata: { list: [{ session_id: LOOKALIKE_ID }] } })).toBe(true);
+      expect(await rows({ metadata: { session_id: `${LOOKALIKE_ID} ` } })).toBe(true);
+      expect(await rows({ metadata: { session_id: `code${OTP}` } })).toBe(true);
+      expect(await rows({ metadata: { session_id: ID, note: `${LOOKALIKE_ID}` } })).toBe(true);
+      expect(await rows({ actorId: `${LOOKALIKE_ID} ` })).toBe(true);
+      expect(await rows({ actorId: `code${OTP}` })).toBe(true);
+      // Text that contains an id or a time next to the code is content too.
+      expect(await rows({ body: `${LOOKALIKE_ID} ` })).toBe(true);
+      expect(await rows({ metadata: { id: `${LOOKALIKE_ID} ` } })).toBe(true);
+      expect(await rows({ metadata: { note: `${LOOKALIKE_ID} ${OTP}` } })).toBe(true);
+      expect(await rows({ metadata: { ids: [LOOKALIKE_ID, `otp-${OTP}`] } })).toBe(true);
+      expect(await rows({ metadata: { [`otp${OTP}`]: true } })).toBe(true);
+      // The production rules: the same shape is excused only under the declared names.
+      const declared = (metadata: unknown): Promise<boolean> =>
+        rowsContainClearOtp(app.pool, 'SELECT $5::jsonb AS metadata', [JSON.stringify(metadata)], { columns: [], jsonKeys: TECHNICAL_JSON_KEYS }, OTP);
+      expect(await declared({ session_id: LOOKALIKE_ID, user_id: LOOKALIKE_ID })).toBe(false);
+      expect(await declared({ session: LOOKALIKE_ID })).toBe(true);
+      expect(await declared({ nested: { user_id: LOOKALIKE_ID } })).toBe(true);
+    });
+
+    it('reads a log line by its fields: time, request_id and numeric technical fields are skipped, a message is searched in full, an unparsable line is searched as it is', () => {
+      const line = (over: Record<string, unknown>): string => JSON.stringify({ time: '2026-10-24T02:03:04.123Z', level: 'info', event: 'request_done', request_id: ID, status: 200, duration_ms: 12, ...over });
+      expect(logContainsClearOtp([line({})], OTP)).toBe(false);
+      expect(logContainsClearOtp([line({ time: `2026-10-24T02:03:04.${OTP}Z`, request_id: LOOKALIKE_ID, duration_ms: Number(OTP), status: Number(OTP), port: Number(OTP) })], OTP)).toBe(false);
+      for (const over of [{ event: `sent code${OTP}` }, { event: `otp-${OTP}` }, { event: `otp.${OTP}` }, { event: `${OTP}abc` }, { event: `retry ${LOOKALIKE_ID} otp ${OTP}` }, { route: `/x/${OTP}` }, { code: `x-${OTP}` }, { request_id: `req-${OTP}` }, { time: `soon ${OTP}` }, { extra_field: OTP }]) {
+        expect([JSON.stringify(over), logContainsClearOtp([line(over)], OTP)]).toEqual([JSON.stringify(over), true]);
+      }
+      for (const raw of [`plain text ${OTP}`, `{"event":"cut off code${OTP}`, `[${OTP}]`, JSON.stringify([OTP]), JSON.stringify(OTP)]) {
+        expect([raw, logContainsClearOtp([raw], OTP)]).toEqual([raw, true]);
+      }
+      // The technical fields are the TOP-LEVEL ones; a field of the same name inside the content of the line is content.
+      for (const over of [{ ctx: { request_id: LOOKALIKE_ID } }, { ctx: { time: `2026-10-24T02:03:04.${OTP}Z` } }, { detail: [{ request_id: LOOKALIKE_ID }] }, { message: LOOKALIKE_ID }, { path: `2026-10-24T02:03:04.${OTP}Z` }, { request_id: `${LOOKALIKE_ID}x` }, { time: `${LOOKALIKE_ID}` }]) {
+        expect([JSON.stringify(over), logContainsClearOtp([line(over)], OTP)]).toEqual([JSON.stringify(over), true]);
+      }
+      expect(logContainsClearOtp(['{"event":"other"}', 'plain'], OTP)).toBe(false);
+    });
+
+    it('the technical columns are real columns of the tables (a renamed column must not silently widen or narrow the scan)', async () => {
+      for (const table of Object.keys(TECHNICAL_COLUMNS) as (keyof typeof TECHNICAL_COLUMNS)[]) {
+        const found = await app.pool.query<{ column_name: string }>(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'app' AND table_name = $1`, [table]);
+        const names = new Set(found.rows.map((row) => row.column_name));
+        expect([table, [...TECHNICAL_COLUMNS[table], ...TECHNICAL_ID_COLUMNS[table]].filter((column) => !names.has(column))]).toEqual([table, []]);
+      }
     });
   });
 

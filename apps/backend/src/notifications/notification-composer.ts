@@ -49,8 +49,9 @@ const delivery = (p: DeliveryChangePayload, audience: Audience, kind: Notificati
     kind,
     title,
     body,
-    targetType: 'DELIVERY',
-    targetId: p.deliveryId,
+    // A delivery that belongs to a food Order has no page of its own in 11Food: the shop's notices open the Order (identified by id, never by a code).
+    targetType: audience === 'SHOP' && p.orderId != null ? 'ORDER' : 'DELIVERY',
+    targetId: audience === 'SHOP' && p.orderId != null ? p.orderId : p.deliveryId,
     targetVersion: p.version,
     dedupeKey: `delivery:${p.deliveryId}:${p.change}:${String(p.version)}`,
     validForMs: null,

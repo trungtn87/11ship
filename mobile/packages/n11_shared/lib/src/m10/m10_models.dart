@@ -302,7 +302,7 @@ class OrderEvent {
         'order.completed' => 'Giao thành công',
         'order.not_completed' => 'Đóng đơn không hoàn tất',
         'order.not_completed_by_admin' => 'Quản trị đóng đơn không hoàn tất',
-        _ => type,
+        _ => 'Cập nhật đơn',
       };
 }
 
@@ -349,6 +349,7 @@ class OrderView {
     required this.scheduleConflict,
     required this.can,
     required this.timeline,
+    this.story = const <StoryEntry>[],
   });
 
   factory OrderView.fromJson(Object? raw) {
@@ -382,6 +383,7 @@ class OrderView {
       scheduleConflict: m['schedule_conflict'] == true,
       can: can is Map<String, Object?> ? <String, bool>{for (final MapEntry<String, Object?> e in can.entries) if (e.value is bool) e.key: e.value! as bool} : const <String, bool>{},
       timeline: m['timeline'] == null ? const <OrderEvent>[] : <OrderEvent>[for (final Object? e in _list(m['timeline'])) OrderEvent.fromJson(e)],
+      story: storyOf(m['story']),
     );
   }
 
@@ -416,6 +418,9 @@ class OrderView {
   final bool scheduleConflict;
   final Map<String, bool> can;
   final List<OrderEvent> timeline;
+
+  /// "Diễn biến" in plain words, order and every call for a Shipper together (what the screen draws). [timeline] is the raw log.
+  final List<StoryEntry> story;
 
   bool get isScheduled => scheduledFor != null;
   bool get ended => display.ended;

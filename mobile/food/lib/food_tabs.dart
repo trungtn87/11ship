@@ -19,7 +19,14 @@ NotificationRouter foodNotificationRouter(AppFlows flows) => (BuildContext conte
         case TargetType.delivery:
           final ShopDeliverySource? source = flows.shopDeliveries;
           if (source != null && target.id != null) {
-            await navigator.push(n11Route(ShopDeliveryDetailScreen(source: source, deliveryId: target.id!, feedbackSlot: _feedbackSlot(flows))));
+            // One page per food order: a delivery that belongs to an order opens that order (the server already answers with the order for such a notice; this
+            // keeps any other way in from showing a second page). The delivery's own link decides, never a code. A direct delivery opens as itself.
+            final String? orderId = await _orderOfDelivery(source, target.id!);
+            if (orderId != null && flows.orders != null) {
+              await navigator.push(n11Route(_orderPage(flows, orderId)));
+            } else {
+              await navigator.push(n11Route(ShopDeliveryDetailScreen(source: source, deliveryId: target.id!, feedbackSlot: _feedbackSlot(flows))));
+            }
           } else {
             navigator.popUntil((Route<dynamic> r) => r.isFirst);
             actions.goTab('orders');
@@ -38,9 +45,7 @@ NotificationRouter foodNotificationRouter(AppFlows flows) => (BuildContext conte
         case TargetType.order:
           final OrderRuntime? orders = flows.orders;
           if (orders != null && target.id != null) {
-            // The detail loads the CURRENT order and decides the right again: the shop's hat opens the shop's view, the customer's the customer's.
-            final bool shopHat = flows.session.identity?.activeRole == 'SHOP_OWNER';
-            await navigator.push(n11Route(shopHat ? ShopOrderDetailScreen(runtime: orders, orderId: target.id!, deliveries: flows.shopDeliveries) : CustomerOrderDetailScreen(runtime: orders, orderId: target.id!)));
+            await navigator.push(n11Route(_orderPage(flows, target.id!)));
           } else {
             navigator.popUntil((Route<dynamic> r) => r.isFirst);
             actions.goTab('orders');
@@ -49,6 +54,23 @@ NotificationRouter foodNotificationRouter(AppFlows flows) => (BuildContext conte
           break;
       }
     };
+
+/// The detail of a food order. It loads the CURRENT order and decides the right again: the shop's hat opens the shop's view, the customer's the customer's.
+Widget _orderPage(AppFlows flows, String orderId) {
+  final bool shopHat = flows.session.identity?.activeRole == 'SHOP_OWNER';
+  return shopHat ? ShopOrderDetailScreen(runtime: flows.orders!, orderId: orderId, deliveries: flows.shopDeliveries) : CustomerOrderDetailScreen(runtime: flows.orders!, orderId: orderId);
+}
+
+/// The order a delivery belongs to (its own `order_id`), or null for a direct delivery or when it cannot be read: then the delivery page opens and shows the
+/// server's answer (not found / no right) instead of another order.
+Future<String?> _orderOfDelivery(ShopDeliverySource source, String deliveryId) async {
+  try {
+    final DeliveryView d = await source.get(deliveryId);
+    return d.source == 'ORDER' ? d.orderId : null;
+  } on Object {
+    return null;
+  }
+}
 
 /// M11: rating and complaint entries under a finished delivery. Null while the app has no M11 source.
 M07FeedbackSlot? _feedbackSlot(AppFlows? flows) => flows?.feedback == null ? null : shopDeliveryFeedbackSlot(source: flows!.feedback!, picker: flows.picker);

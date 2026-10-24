@@ -11,6 +11,8 @@ import { RUNNING_STATES } from './delivery-constants';
 import { AssignmentRow, DeliveryRepository, DeliveryRow, EventRow, IncidentRow } from './delivery-repository';
 import { creatorMayCancelAfterPickup, dropoffAreaOf, feeStatusOf, freshnessOf, locationValid, mayRecall, shipperMayRelease, shopMayCancel } from './delivery-rules';
 import { ShipperLocationRepository } from './shipper-location';
+import { buildDeliveryStory, StoryDelivery } from '../orders/order-story';
+import { failReasonText, humanDeliveryReason, incidentReasonText } from './delivery-reason-text';
 
 // The JSON each reader gets. The server decides which fields are filled; a field the caller may not see is null (or absent), so a screen cannot
 // show what it was never given. Money is a whole number or null (never 0 for "unknown"); times are ISO strings; the search block carries the
@@ -111,7 +113,7 @@ export class DeliveryViews {
       return null;
     }
     const outcome = d.state === 'completed' ? 'completed' : d.state === 'failed' ? 'failed' : d.state === 'cancelled_by_merchant' ? 'cancelled' : 'search_stopped';
-    return { outcome, at: iso(d.endedAtMs), reason: d.endReason ?? incident?.reasonNote ?? null, goods_condition: incident?.goodsCondition ?? null };
+    return { outcome, at: iso(d.endedAtMs), reason: humanDeliveryReason(d.endReason) ?? humanDeliveryReason(incident?.reasonNote) ?? null, goods_condition: incident?.goodsCondition ?? null };
   }
 
   #incident(incident: IncidentRow | undefined): JsonObject | null {
@@ -121,9 +123,22 @@ export class DeliveryViews {
           incident_id: incident.incidentId,
           status: incident.status,
           custody: incident.custody,
-          reason: incident.reasonNote ?? incident.reasonCode,
+          // The goods card of the shop and of the Shipper: a failure code is read as its sentence, never as the code (the Admin view keeps the raw code and note).
+          reason: incidentReasonText(incident.reasonCode, incident.reasonNote),
           opened_at: iso(incident.openedAtMs),
         };
+  }
+
+  /** One call as the story builder reads it: its events and, when it failed, the failure as a sentence. */
+  async storyOf(context: TransactionContext, d: DeliveryRow, known?: IncidentRow): Promise<StoryDelivery> {
+    const incident = known ?? (d.state === 'failed' ? await this.deliveries.findIncident(context, d.deliveryId) : undefined);
+    return {
+      deliveryId: d.deliveryId,
+      source: d.source,
+      previousDeliveryId: d.previousDeliveryId,
+      events: await this.deliveries.listEvents(context, d.deliveryId, 200),
+      failText: d.state === 'failed' && incident !== undefined ? failReasonText(incident.reasonCode, incident.reasonNote) : null,
+    };
   }
 
   /** The shop's full view of one of its deliveries. `detail` adds the timeline. */
@@ -182,6 +197,7 @@ export class DeliveryViews {
     };
     if (detail) {
       view.timeline = (await this.deliveries.listEvents(context, d.deliveryId, 200)).map(eventView);
+      view.story = buildDeliveryStory(await this.storyOf(context, d, incident), 'shop').map((entry) => ({ at: entry.at, text: entry.text }));
     }
     return view;
   }
@@ -269,7 +285,7 @@ export class DeliveryViews {
         destination_confirmed: assignment.destinationConfirmedAtMs !== null || d.feeVnd !== null,
       },
       location: null,
-      result: active ? null : { outcome: assignment.status === 'COMPLETED' ? 'completed' : assignment.status === 'FAILED' ? 'failed' : 'cancelled', at: iso(assignment.endedAtMs), reason: assignment.endReason, goods_condition: incident?.goodsCondition ?? null },
+      result: active ? null : { outcome: assignment.status === 'COMPLETED' ? 'completed' : assignment.status === 'FAILED' ? 'failed' : 'cancelled', at: iso(assignment.endedAtMs), reason: humanDeliveryReason(assignment.endReason), goods_condition: incident?.goodsCondition ?? null },
       incident: incident !== undefined && incident.assignmentId === assignment.assignmentId ? this.#incident(incident) : null,
       can: {
         release: active && shipperMayRelease(d.state),

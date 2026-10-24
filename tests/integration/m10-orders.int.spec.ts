@@ -7,7 +7,7 @@ import { DeliverySweeper } from '../../apps/backend/src/delivery/delivery-sweepe
 import { M14_ROUTING } from '../../apps/backend/src/delivery/m14-route-client';
 import { NotificationRuntime } from '../../apps/backend/src/notifications/notification-runtime';
 import { OrderSweeper } from '../../apps/backend/src/orders/order-sweeper';
-import { ApiResponse, AuthApp, countRows, dataOf, startAuthApp } from './support/auth-fixtures';
+import { ApiResponse, AuthApp, countRows, dataOf, loginUser, sessionIdOfToken, startAuthApp } from './support/auth-fixtures';
 import { ageDelivery, cleanupOrders, codeOf, Customer, Dish, Json, newCustomer, newDish, newShipper, openAllWeek, PRIVACY, Shipper, setHours, TERMS, vietnamInstant, vietnamWeekday, walletOf } from './support/m10-fixtures';
 import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
 import { hideDish } from './support/m10-menu';
@@ -882,7 +882,8 @@ describe('M10 — food orders', () => {
       if ((await runtime().dispatcher.dispatchOnce()).claimed === 0) break;
     }
     const kinds = async (userId: string): Promise<string[]> => (await app.pool.query(`SELECT kind FROM app.notifications WHERE recipient_user_id = $1::uuid AND target_id = $2::uuid ORDER BY created_at, kind`, [userId, oid])).rows.map((r) => String(r.kind));
-    expect(await kinds(shop.userId)).toEqual(['ORDER_PLACED']);
+    // The shop's notice of its Shipper accepting opens the ORDER (one page per order), so it is filed under the order's id too.
+    expect(await kinds(shop.userId)).toEqual(['ORDER_PLACED', 'DELIVERY_ACCEPTED']);
     expect((await kinds(dana.userId)).sort()).toEqual(['ORDER_CONFIRMED', 'ORDER_SHIPPER_ACCEPTED']);
     // The lock-screen text carries only the code.
     const bodies = (await app.pool.query(`SELECT title, body FROM app.notifications WHERE target_id = $1::uuid`, [oid])).rows.map((r) => `${String(r.title)} ${String(r.body)}`).join(' ');
@@ -1011,6 +1012,204 @@ describe('M10 — food orders', () => {
     const scheduled=await place(alice,undefined,{scheduled_for:new Date(Date.now()+90*60_000).toISOString()});expect((await orderRow(String(scheduled.order_id))).timeout_snapshot).toBeNull();
   });
 
+  // ---- one page per order: lists, notifications and the story ------------------------------------------------------------
+
+  const directBody = (over: Json = {}): Json => ({ recipient_name: 'Khách gọi riêng', recipient_phone: '0912345678', dropoff_address_text: '12 Phố Huế, Hai Bà Trưng, Hà Nội', dropoff_lat: 21.0, dropoff_lng: 105.82, goods_description: 'Hộp quà', goods_value_vnd: 200_000, paid_vnd: 0, fee_payer: 'CUSTOMER', ...over });
+  const listAll = async (query: string): Promise<Json[]> => {
+    const rows: Json[] = [];
+    for (let offset = 0; offset < 400; offset += 7) {
+      const page = (ok(await asShop('GET', `/shop/me/deliveries?${query}&limit=7&offset=${String(offset)}`)).deliveries as Json[]);
+      rows.push(...page);
+      if (page.length < 7) break;
+    }
+    return rows;
+  };
+
+  it('"Giao hàng" lists only direct calls — active and history, every filter, search and page — and a call for an order never becomes a row of its own, even after calling again', async () => {
+    const s = await shipper();
+    const direct = ok(await asShop('POST', '/shop/me/deliveries', directBody()), 201);
+    const history = ok(await asShop('POST', '/shop/me/deliveries', directBody({ recipient_name: 'Khách đã hủy' })), 201);
+    ok(await asShop('POST', `/shop/me/deliveries/${String(history.delivery_id)}/cancel`, { reason: 'Đổi ý', expected_version: history.version }));
+    // An order with two calls: the first ended (history), the second still searching (active); a third order is delivered and complete.
+    const order = await confirmed(alice, [line(pho, 1)], { recipient_name: 'Người nhận đơn món' });
+    const first = ok(await callShipper(order), 201);
+    const firstDelivery = first.delivery as Json;
+    ok(await asShop('POST', `/shop/me/deliveries/${String(firstDelivery.delivery_id)}/cancel`, { reason: 'Chờ lâu', expected_version: firstDelivery.version }));
+    ok(await callShipper(await shopView(String(order.order_id))), 201);
+    const done = await confirmed(alice, [line(tea, 1)], { recipient_name: 'Người nhận đơn món' });
+    const { did, version } = await toDelivering(s, done);
+    ok(await asShipper(s, 'POST', `/driver/deliveries/${did}/complete`, { expected_version: version }));
+    const orderDeliveryIds = (await app.pool.query(`SELECT delivery_id::text FROM app.deliveries WHERE shop_id = $1::uuid AND source = 'ORDER'`, [shop.shopId])).rows.map((r) => String(r.delivery_id));
+    expect(orderDeliveryIds.length).toBeGreaterThanOrEqual(3);
+    const directIds = async (where = ''): Promise<string[]> => (await app.pool.query(`SELECT delivery_id::text FROM app.deliveries d WHERE shop_id = $1::uuid AND source = 'DIRECT' ${where} ORDER BY created_at DESC, delivery_id`, [shop.shopId])).rows.map((r) => String(r.delivery_id));
+    const idsOf = (rows: Json[]): string[] => rows.map((r) => String(r.delivery_id));
+    // Paged through the API 7 rows at a time: the same rows as the database holds for direct calls, no gap, no repeat, never an order's call.
+    const all = idsOf(await listAll('scope=all'));
+    expect(all).toEqual(await directIds());
+    expect(new Set(all).size).toBe(all.length);
+    expect(all).toEqual(expect.arrayContaining([String(direct.delivery_id), String(history.delivery_id)]));
+    for (const id of orderDeliveryIds) expect(all).not.toContain(id);
+    const active = idsOf(await listAll('scope=active'));
+    const past = idsOf(await listAll('scope=history'));
+    expect(active).toContain(String(direct.delivery_id));
+    expect(past).toContain(String(history.delivery_id));
+    expect([...active, ...past].sort()).toEqual([...all].sort());
+    for (const id of orderDeliveryIds) expect([...active, ...past]).not.toContain(id);
+    expect((await listAll('scope=all&filter=searching')).every((r) => r.source === 'DIRECT' && ['waiting_driver', 'search_stopped'].includes(String(r.state)))).toBe(true);
+    expect(idsOf(await listAll('scope=all&filter=completed'))).toEqual(await directIds(`AND state = 'completed'`));
+    // Search by what only an order's call has (its recipient, its code) finds nothing in this list.
+    expect(await listAll('scope=all&q=' + encodeURIComponent('Người nhận đơn món'))).toEqual([]);
+    expect(await listAll('scope=all&q=' + encodeURIComponent(String(order.display_code)))).toEqual([]);
+    expect(idsOf(await listAll('scope=all&q=' + encodeURIComponent('Khách đã hủy')))).toEqual([String(history.delivery_id)]);
+    // Calling again from the order adds no row to "Giao hàng".
+    const before = (await listAll('scope=all')).length;
+    const stopped = await shopView(String(order.order_id));
+    expect(stopped.deliveries).toHaveLength(2);
+    expect((await listAll('scope=all')).length).toBe(before);
+    // The order page is where the calls are read: both calls, newest last, with the current one in full.
+    expect(((await shopView(String(order.order_id))).delivery as Json).delivery_id).toBe((stopped.deliveries as Json[])[1]?.delivery_id);
+    // The order list still holds the orders (and only orders).
+    const orders = (ok(await asShop('GET', '/shop/me/orders?filter=all&limit=50')).orders) as Json[];
+    expect(orders.map((o) => o.order_id)).toEqual(expect.arrayContaining([order.order_id, done.order_id]));
+    expect(orders.every((o) => o.order_id !== undefined && o.delivery_id === undefined)).toBe(true);
+  });
+
+  it('every notice of one order opens that order: the shop\'s new notices, old ones that point at a delivery (any call of the order), and never another order or a stranger\'s', async () => {
+    const s = await shipper();
+    // The notification routes serve CLIENT sessions of the Food app: the shop owner signs in on the Food app (shop hat). One session per account, so the
+    // staff-style session the other tests use is restored at the end.
+    const food = await app.call('POST', '/client-auth/login', { headers: { 'idempotency-key': randomUUID() }, body: { phone: shop.user.phone.local, password: shop.user.password, device: { device_id: 'web-food-m10-link', platform: 'WEB', app: 'FOOD' } } });
+    const foodToken = String(ok(food).access_token);
+    ok(await app.call('POST', '/auth/role/select', { bearer: foodToken, body: { role: 'SHOP' } }));
+    shop = { ...shop, token: foodToken };
+    try {
+      await everyNoticeOpensTheOrder(s, foodToken);
+    } finally {
+      const back = await loginUser(app, shop.user);
+      const token = String(ok(back).access_token);
+      ok(await app.call('POST', '/auth/role/select', { bearer: token, body: { role: 'SHOP' } }));
+      shop = { ...shop, token, sessionId: await sessionIdOfToken(app.pool, token) };
+    }
+  });
+
+  async function everyNoticeOpensTheOrder(s: Shipper, foodToken: string): Promise<void> {
+    const asFoodShop = (method: Verb, path: string, body?: unknown): Promise<ApiResponse> => app.call(method, path, { bearer: foodToken, ...(body === undefined ? {} : { body }) });
+    const order = await confirmed(alice, [line(pho, 1)]);
+    const oid = String(order.order_id);
+    const first = ok(await callShipper(order), 201);
+    const firstId = String((first.delivery as Json).delivery_id);
+    ok(await asShipper(s, 'POST', `/driver/deliveries/${firstId}/accept`, {}));
+    const acceptedView = await shopView(oid);
+    ok(await asShipper(s, 'POST', `/driver/deliveries/${firstId}/release`, { expected_version: Number((acceptedView.delivery as Json).version), reason: 'Bận đột xuất' }));
+    const stopped = await shopView(oid);
+    await ageDelivery(app, firstId, 31);
+    await deliverySweeper().sweep();
+    ok(await callShipper(await shopView(oid)), 201);
+    for (let pass = 0; pass < 200; pass += 1) {
+      if ((await runtime().dispatcher.dispatchOnce()).claimed === 0) break;
+    }
+    expect(stopped.status).toBe('PREPARING');
+    const deliveryKinds = ['DELIVERY_ACCEPTED', 'DELIVERY_RELEASED', 'SEARCH_STOPPED'];
+    const rows = (await app.pool.query(`SELECT notification_id::text, kind, target_type, target_id::text FROM app.notifications WHERE recipient_user_id = $1::uuid AND kind = ANY($2::text[]) AND app = 'FOOD' AND target_id = $3::uuid`, [shop.userId, deliveryKinds, oid])).rows;
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    const orderDeliveries = (await deliveryOf(oid)).map((r) => String(r.delivery_id));
+    expect(await countRows(app.pool, `SELECT 1 FROM app.notifications WHERE recipient_user_id = $1::uuid AND app = 'FOOD' AND target_type = 'DELIVERY' AND target_id = ANY($2::uuid[])`, [shop.userId, orderDeliveries])).toBe(0);
+    // New notices: all point at the order id, never at a delivery.
+    for (const row of rows) expect([row.target_type, row.target_id]).toEqual(['ORDER', oid]);
+    for (const row of rows) {
+      expect(ok(await asFoodShop('POST', `/notifications/${String(row.notification_id)}/open`, {}))).toMatchObject({ target: { type: 'ORDER', id: oid } });
+    }
+    // Old notices (made before this rule) point at a delivery: the first call and the current one both open the same order.
+    const current = String(((await shopView(oid)).delivery as Json).delivery_id);
+    expect(current).not.toBe(firstId);
+    for (const legacy of [firstId, current]) {
+      await app.pool.query(`UPDATE app.notifications SET target_type = 'DELIVERY', target_id = $2::uuid WHERE notification_id = $1::uuid`, [rows[0]?.notification_id, legacy]);
+      const opened = ok(await asFoodShop('POST', `/notifications/${String(rows[0]?.notification_id)}/open`, {}));
+      expect(opened).toMatchObject({ outcome: expect.stringMatching(/^(OK|ENDED)$/u), target: { type: 'ORDER', id: oid } });
+    }
+    // A delivery of another shop's order is not opened for this shop, and nothing is silently opened instead; a missing delivery likewise.
+    const foreignShopOrder = await place(alice, [line(await newDish(app, otherShop.token, 'Món quán khác 2', 30_000), 1)], { shop_id: otherShop.shopId });
+    const foreignConfirmed = ok(await asShop('POST', `/shop/me/orders/${String(foreignShopOrder.order_id)}/confirm`, { expected_version: foreignShopOrder.version }, undefined, otherShop));
+    const foreignCall = ok(await asShop('POST', `/shop/me/orders/${String(foreignConfirmed.order_id)}/call-shipper`, { expected_version: foreignConfirmed.version }, undefined, otherShop), 201);
+    for (const target of [String((foreignCall.delivery as Json).delivery_id), randomUUID()]) {
+      await app.pool.query(`UPDATE app.notifications SET target_type = 'DELIVERY', target_id = $2::uuid WHERE notification_id = $1::uuid`, [rows[0]?.notification_id, target]);
+      expect(ok(await asFoodShop('POST', `/notifications/${String(rows[0]?.notification_id)}/open`, {}))).toMatchObject({ outcome: 'NO_ACCESS', target: null });
+    }
+    // The customer's notices of the same order already open the order; a direct delivery's notice still opens that delivery.
+    const customerRows = (await app.pool.query(`SELECT notification_id::text, target_type, target_id::text FROM app.notifications WHERE recipient_user_id = $1::uuid AND target_id = $2::uuid`, [alice.userId, oid])).rows;
+    expect(customerRows.length).toBeGreaterThan(0);
+    const direct = ok(await asShop('POST', '/shop/me/deliveries', directBody()), 201);
+    ok(await asShipper(s, 'POST', `/driver/deliveries/${String(direct.delivery_id)}/accept`, {}));
+    for (let pass = 0; pass < 200; pass += 1) {
+      if ((await runtime().dispatcher.dispatchOnce()).claimed === 0) break;
+    }
+    const directNotice = (await app.pool.query(`SELECT notification_id::text, target_type FROM app.notifications WHERE recipient_user_id = $1::uuid AND target_id = $2::uuid AND app = 'FOOD'`, [shop.userId, direct.delivery_id])).rows[0] as Json;
+    expect(directNotice.target_type).toBe('DELIVERY');
+    expect(ok(await asFoodShop('POST', `/notifications/${String(directNotice.notification_id)}/open`, {}))).toMatchObject({ target: { type: 'DELIVERY', id: direct.delivery_id } });
+    // 11Ship keeps opening the delivery of the Shipper.
+    const shipRow = (await app.pool.query(`SELECT notification_id::text, target_type, target_id::text FROM app.notifications WHERE recipient_user_id = $1::uuid AND app = 'SHIP' AND target_type = 'DELIVERY'`, [s.userId])).rows;
+    for (const row of shipRow) {
+      expect(ok(await asShipper(s, 'POST', `/notifications/${String(row.notification_id)}/open`, {}))).toMatchObject({ target: { type: 'DELIVERY', id: row.target_id } });
+    }
+  }
+
+  it('the order tells its story in plain words — one page for both calls — and the log underneath is kept whole', async () => {
+    const s = await shipper();
+    const order = await confirmed(alice, [line(pho, 1)]);
+    const oid = String(order.order_id);
+    const first = ok(await callShipper(order), 201);
+    const firstDelivery = first.delivery as Json;
+    const accepted = ok(await asShipper(s, 'POST', `/driver/deliveries/${String(firstDelivery.delivery_id)}/accept`, {}));
+    await deliverySweeper().sweep();
+    ok(await asShipper(s, 'POST', `/driver/deliveries/${String(firstDelivery.delivery_id)}/release`, { expected_version: accepted.version, reason: 'Xe hỏng' }));
+    const searching = (await shopView(oid)).delivery as Json;
+    ok(await asShop('POST', `/shop/me/deliveries/${String(searching.delivery_id)}/cancel`, { reason: 'Chờ lâu', expected_version: searching.version }));
+    ok(await callShipper(await shopView(oid)), 201);
+    const view = await shopView(oid);
+    const story = view.story as { at: string; text: string }[];
+    expect(story.map((e) => e.text)).toEqual(['Đã đặt đơn', 'Quán đã xác nhận', 'Đang tìm shipper', 'Shipper đã nhận đơn', 'Shipper đã hủy nhận đơn — Xe hỏng', 'Quán đã hủy yêu cầu giao — Chờ lâu', 'Quán gọi lại shipper, đang tìm shipper']);
+    expect(view.status).toBe('PREPARING');
+    expect(story.map((e) => Date.parse(e.at))).toEqual([...story.map((e) => Date.parse(e.at))].sort((a, b) => a - b));
+    const customerStory = ((await customerView(alice, oid)).story as { text: string }[]).map((e) => e.text);
+    expect(customerStory).toContain('Đang tìm shipper');
+    const shown = JSON.stringify([view.story, (await customerView(alice, oid)).story]);
+    expect(shown).not.toMatch(/delivery\.|order\.|_reminder|pickup_|search_|[0-9a-f]{8}-[0-9a-f]{4}-/u);
+    // The full log is still there for the Admin tools: raw events, reminders included.
+    expect(await countRows(app.pool, `SELECT 1 FROM app.delivery_events WHERE delivery_id = $1::uuid AND event_type = 'delivery.accepted'`, [firstDelivery.delivery_id])).toBe(1);
+    expect((view.timeline as Json[]).some((e) => e.type === 'order.shipper_called_again')).toBe(true);
+    // A late request is cancelled by the system: the call ends, and the story says so in words without calling the order cancelled by a person.
+    const late = await confirmed(alice, [line(tea, 1)]);
+    const lateCall = ok(await callShipper(late), 201);
+    const lateId = String((lateCall.delivery as Json).delivery_id);
+    ok(await asShipper(s, 'POST', `/driver/deliveries/${lateId}/accept`, {}));
+    await timeoutAge('delivery_assignments', await activeAssignment(lateId), 60);
+    await orderSweeper().sweep();
+    const lateView = await shopView(String(late.order_id));
+    const lateStory = (lateView.story as { text: string }[]).map((e) => e.text);
+    expect(lateStory.slice(-1)).toEqual(['Đã hủy đơn — shipper chưa lấy hàng quá thời gian quy định']);
+    expect(lateStory.filter((t) => t.startsWith('Đã hủy'))).toHaveLength(1);
+    expect(lateView.end_reason).toBe('Shipper chưa lấy hàng quá thời gian quy định');
+    expect(JSON.stringify(lateView.story)).not.toMatch(/QUÁ HẠN|cancelled_by|timeout/u);
+  });
+
+  it('customer cancellation after pickup reads once in the order story for both readers and opens the goods record', async () => {
+    const s = await shipper();
+    const order = await confirmed(alice, [line(bun, 1)]);
+    const oid = String(order.order_id);
+    const { did } = await toDelivering(s, order);
+    const before = await customerView(alice, oid);
+    ok(await asCustomer(alice, 'POST', `/customers/me/orders/${oid}/cancel-after-pickup`, { expected_version: before.version, reason: 'Tôi không nhận nữa' }));
+    const seen = await shopView(oid);
+    const texts = (seen.story as { text: string }[]).map((e) => e.text);
+    expect(texts.slice(-1)).toEqual(['Khách đã hủy đơn — Tôi không nhận nữa']);
+    expect(texts.filter((text) => text.includes('đã hủy'))).toHaveLength(1);
+    const mine = seen.delivery as Json;
+    const theirs = await customerView(alice, oid);
+    expect(mine.delivery_id).toBe(did);
+    expect(mine.incident).toMatchObject({ status: 'OPEN' });
+    expect((theirs.story as { text: string }[]).map((entry) => entry.text).slice(-1)).toEqual(['Khách đã hủy đơn — Tôi không nhận nữa']);
+    expect(seen.can).toMatchObject({ call_shipper: false });
+  });
 
   // ---- 2026-10-24: the payer's own time to answer a fee proposal ---------------------------------------------------------------
 
