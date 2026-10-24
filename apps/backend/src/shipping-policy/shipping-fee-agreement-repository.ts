@@ -48,10 +48,11 @@ interface Raw {
 }
 
 const ms = (column: string, alias: string): string => `(extract(epoch FROM ${column}) * 1000)::bigint::text AS ${alias}`;
+// Round the search deadline down when converting PostgreSQL microseconds to app milliseconds: rounding up could put a capped answer after the stored deadline.
 const COLUMNS = `agreement_id::text AS agreement_id, delivery_id::text AS delivery_id, fee_mode, payer, status, base_fee_vnd::text AS base_fee_vnd,
   base_policy_version_no::text AS base_policy_version_no, reason_code, reason_note, proposed_fee_vnd::text AS proposed_fee_vnd,
   counter_fee_vnd::text AS counter_fee_vnd, counter_by::text AS counter_by, bound_driver_id::text AS bound_driver_id,
-  pending_fee_vnd::text AS pending_fee_vnd, pending_source, final_fee_vnd::text AS final_fee_vnd, ${ms('expires_at', 'expires_ms')}, ${ms('answer_expires_at', 'answer_expires_ms')},
+  pending_fee_vnd::text AS pending_fee_vnd, pending_source, final_fee_vnd::text AS final_fee_vnd, floor(extract(epoch FROM expires_at) * 1000)::bigint::text AS expires_ms, ${ms('answer_expires_at', 'answer_expires_ms')},
   version::text AS version, created_by::text AS created_by, ${ms('created_at', 'created_ms')}, ${ms('updated_at', 'updated_ms')}, ${ms('locked_at', 'locked_ms')}`;
 
 const num = (value: string | null): number | null => (value === null ? null : toSafeInteger(value));
