@@ -351,7 +351,7 @@ describe('M07 — delivery flow', () => {
     expect(await presenceOf(s)).toMatchObject({ intent_online: false, has_active_work: false, should_share_location: false });
   });
 
-  it('goods still with the Shipper after a failed delivery count as work in progress: the position stays shared until the shop takes them back', async () => {
+  it('goods still with the Shipper after the creator cancels count as work in progress: the position stays shared until the shop takes them back', async () => {
     const s = await newShipper();
     const view = await acceptNew(s);
     const dest = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/destination`, { expected_version: view.version, lat: 21.0, lng: 105.82, fee_vnd: 15_000 });
@@ -359,8 +359,8 @@ describe('M07 — delivery flow', () => {
     const picked = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/pickup`, { expected_version: base.version })) as Json;
     const me = dataOf(await asShipper(s, 'GET', '/driver/me')) as Json;
     expect((await asShipper(s, 'POST', '/driver/me/accepting', { expected_version: me.version, accepting: false })).status).toBe(200);
-    const failed = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/fail`, { expected_version: picked.version, reason_code: 'RECIPIENT_UNREACHABLE', goods_condition: 'WITH_SHIPPER', note: 'Không liên lạc được' });
-    expect(failed.status).toBe(200);
+    const cancelled = await asShop('POST', `/shop/me/deliveries/${view.delivery_id}/cancel`, { expected_version: picked.version, reason: 'Khách không nhận hàng' });
+    expect([cancelled.status, cancelled.text.slice(0, 200)]).toEqual([200, expect.any(String)]);
     expect(await countRows(app.pool, `SELECT 1 FROM app.delivery_assignments WHERE delivery_id = $1::uuid AND status = 'ACTIVE'`, [view.delivery_id])).toBe(0);
     expect(await presenceOf(s)).toMatchObject({ intent_online: false, has_active_work: true, should_share_location: true });
   });
