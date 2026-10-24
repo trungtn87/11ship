@@ -67,7 +67,15 @@ SHA đầy đủ đã review, archive và `.sha256` cùng thư mục. Dùng arti
 
 Lệnh giữ flock; kiểm service/user/envfile, checksum, archive paths/types, dung lượng, RELEASE và mọi manifest checksum; giải nén riêng, không overwrite release. Không nhận symlink/hardlink/special file trong archive. Khởi động refresh/timer; kiểm config thật, Android trust/snapshot (UID ship11), TLS DB của cả code cũ và mới; preflight migration bằng tool hiện có. Sau đó chuyển symlink, restart, kiểm HTTPS health/client-auth config/Admin và CLI nội bộ. Không có migration thì không chạy apply/grants/backup/seed/reset.
 
-Migration pending mặc định **dừng trước backup/apply**. Reviewer phải xác nhận migration không phá tương thích code hiện tại, bảo toàn dữ liệu, rồi ghi tên migration → SHA256 **nội dung file** tại `/etc/11ship/migration-compatibility.json` (root-owned, không app-write). Không có blanket allow. Migration không tương thích phải tách sang kế hoạch maintenance/expand-contract được Owner duyệt, không dùng lệnh này. Với hash hợp lệ: dump `-Fc`, fsync, kiểm TOC và giải nén toàn archive bằng pg_restore, rồi mới apply bằng guard hiện có và cấp grants. Backup quyền 0600 ngoài release. Kiểm archive không phải diễn tập restore; định kỳ thử restore vào DB riêng và sao lưu off-VPS theo chính sách vận hành.
+Migration pending mặc định **dừng trước backup/apply**. Khi deploy qua GitHub, lựa chọn
+`approve_reviewed_migrations` mặc định bật; tương đương thêm `--approve-reviewed-migrations`
+vào lệnh update. Chỉ những hash có ghi chú review trong
+`ops/selfhosted/reviewed-migrations.json` của release đã verify mới được nhập, dưới
+cùng deploy lock. Kiểm toàn bộ pending set trước ghi, giữ approval cũ, từ chối
+xung đột/symlink/quyền ghi không an toàn, lưu bản policy trước thay đổi và ghi
+nguyên tử root-only. SQL chưa review vẫn bị chặn; không có blanket allow. Xem
+[quy trình manifest](github-vps-deploy.md#migration-đã-review--quy-trình-dùng-cho-các-lần-sau).
+ Reviewer phải xác nhận migration không phá tương thích code hiện tại, bảo toàn dữ liệu, rồi ghi tên migration → SHA256 **nội dung file** tại `/etc/11ship/migration-compatibility.json` (root-owned, không app-write). Không có blanket allow. Migration không tương thích phải tách sang kế hoạch maintenance/expand-contract được Owner duyệt, không dùng lệnh này. Với hash hợp lệ: dump `-Fc`, fsync, kiểm TOC và giải nén toàn archive bằng pg_restore, rồi mới apply bằng guard hiện có và cấp grants. Backup quyền 0600 ngoài release. Kiểm archive không phải diễn tập restore; định kỳ thử restore vào DB riêng và sao lưu off-VPS theo chính sách vận hành.
 
 Nếu migration lỗi: dừng, giữ code cũ; không tự down/restore. Nếu restart/health/probe lỗi sau chuyển: tự chuyển lại code cũ, restart và kiểm lại; nếu rollback cũng lỗi thì báo thất bại, không giả báo thành công. Release lỗi vẫn giữ để chẩn đoán; retry dùng artifact/SHA mới hoặc xử lý release chưa chạy tại máy, không overwrite tự động.
 

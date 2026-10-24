@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "migrations": {
+    "1795737600000_create-m13-ops": {
+      "sha256": "ffbabc123b379cf50f4733b8ea57bb72795db0914e95dff01147ede78330e536",
+      "review": "PR #181; compatibility review 2026-10-24: Up adds only ops tables, indexes and triggers on the new tables. Existing business tables and rows are unchanged; previous backend can ignore these objects."
+    },
+    "1795910400000_create-m12-report-exports": {
+      "sha256": "d58aa672ce31c0b355a34469e62c5e39e3302560fb7593596721c35dd87c0b41",
+      "review": "PR #180; compatibility review 2026-10-24: Up adds report export jobs/files and their indexes and delete guard. Existing tables and rows are unchanged; old backend ignores these objects."
+    },
+    "1795996800000_create-m12-backup-restore": {
+      "sha256": "545e3e246b1c15935880a91f97f667eea721e32e25ea281cc7bf7fe0cc2eb61b",
+      "review": "PR #180; compatibility review 2026-10-24: Up adds backup records/jobs and restore requests only. No backup/restore is executed by SQL; existing tables and rows are unchanged."
+    },
+    "1796083200000_m07-creator-cancel-after-pickup": {
+      "sha256": "de7c5437c1fd367c0f1470cf8235002d6294f51a029c0e63161a00b810aba608",
+      "review": "PR #178; compatibility review 2026-10-24: Up widens delivery transitions, pickup/actor/assignment constraints and permits customer cancellation of confirmed orders. Identity, fee lock and terminal guards remain. Existing rows are unchanged; the new reason constraint applies only to confirmed customer cancellations, which the previous customer endpoint did not permit."
+    },
+    "1796169600000_m07-fee-answer-deadline": {
+      "sha256": "c32202d52f362bcd9fe40a624345f36da3d3e4aef0fa1a18bc4a5cdda406f44d",
+      "review": "PR #178; compatibility review 2026-10-24: Up adds order parameter tables, default fee_answer_minutes=5, nullable offer deadline/payer/on-behalf fields and widens event types. Existing agreements keep NULL answer deadlines and their earlier search deadline; old writes remain valid."
+    }
+  }
+}

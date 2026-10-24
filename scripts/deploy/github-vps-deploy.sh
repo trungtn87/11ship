@@ -6,6 +6,8 @@ test -n "${VPS_SSH_PRIVATE_KEY:-}" && test -n "${VPS_KNOWN_HOSTS:-}" || {
   echo 'Configure VPS_SSH_PRIVATE_KEY and VPS_KNOWN_HOSTS in vps-production environment secrets.' >&2
   exit 1
 }
+approval=${APPROVE_REVIEWED_MIGRATIONS:-false}
+[[ $approval == true || $approval == false ]] || { echo 'Invalid reviewed migration approval selection' >&2; exit 1; }
 ssh_dir=$(mktemp -d)
 trap 'rm -rf "$ssh_dir"' EXIT
 chmod 700 "$ssh_dir"
@@ -22,9 +24,11 @@ archive="11ship-${SOURCE_SHA}-ubuntu24-amd64.tar.gz"
 ssh "${ssh_opts[@]}" "$destination" "install -d -m 700 '$inbox'"
 scp "${ssh_opts[@]}" "artifact-out/$archive" "artifact-out/$archive.sha256" \
   scripts/deploy/vps-update.py "$destination:$inbox/"
-ssh "${ssh_opts[@]}" "$destination" bash -s -- "$SOURCE_SHA" <<'REMOTE'
+ssh "${ssh_opts[@]}" "$destination" bash -s -- "$SOURCE_SHA" "$approval" <<'REMOTE'
 set -euo pipefail
 sha=$1
+approval=$2
+[[ $approval == true || $approval == false ]] || exit 1
 [[ $sha =~ ^[a-f0-9]{40}$ ]] || exit 1
 inbox="/root/11ship-actions/$sha"
 archive="11ship-${sha}-ubuntu24-amd64.tar.gz"
@@ -35,5 +39,7 @@ if test -f /opt/11ship/tools/vps-update.py; then
   cp -p /opt/11ship/tools/vps-update.py "$inbox/vps-update.before.py"
 fi
 install -m 644 "$inbox/vps-update.py" /opt/11ship/tools/vps-update.py
-python3 -B /opt/11ship/tools/vps-update.py update "$inbox/$archive" "$sha"
+flags=()
+if [[ $approval == true ]]; then flags+=(--approve-reviewed-migrations); fi
+python3 -B /opt/11ship/tools/vps-update.py update "$inbox/$archive" "$sha" "${flags[@]}"
 REMOTE
