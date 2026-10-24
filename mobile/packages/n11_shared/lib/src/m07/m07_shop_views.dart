@@ -463,25 +463,33 @@ class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCal
       };
 }
 
-// ---- Q03-Q08: detail -------------------------------------------------------------------------------------------------
 
-class ShopDeliveryDetailScreen extends StatefulWidget {
-  const ShopDeliveryDetailScreen({super.key, required this.source, required this.deliveryId, this.mapBuilder, this.pinPicker, this.feedbackSlot});
+// ---- the delivery part of a page: shipper, fee talks, goods handling -------------------------------------------------
+
+/// What the shop does about ONE delivery, as a part of a page: the search clock, the fee agreement (answer a Shipper's other price, confirm for the customer),
+/// the Shipper, the position, the goods handling after a failed delivery, and (when [allowCancel]) ending only the request. The direct delivery page and the
+/// food order page both draw it, so a delivery has one set of actions wherever it is read. The server decides what is allowed (`can`); nothing here does.
+class ShopDeliveryPanel extends StatefulWidget {
+  const ShopDeliveryPanel({super.key, required this.source, required this.delivery, required this.onChanged, this.mapBuilder, this.feedbackSlot, this.allowCancel = false, this.showLocation = true});
 
   final ShopDeliverySource source;
-  final String deliveryId;
+  final DeliveryView delivery;
+
+  /// Called after an action succeeded (or hit a conflict): the page reloads and gives a fresh [delivery].
+  final Future<void> Function() onChanged;
   final M07MapBuilder? mapBuilder;
-  final M07PinPickerBuilder? pinPicker;
   final M07FeedbackSlot? feedbackSlot;
+  final bool allowCancel;
+
+  /// False when the page draws the map and the position itself (the food order page).
+  final bool showLocation;
 
   @override
-  State<ShopDeliveryDetailScreen> createState() => _ShopDeliveryDetailScreenState();
+  State<ShopDeliveryPanel> createState() => _ShopDeliveryPanelState();
 }
 
-class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> with M07Actions<ShopDeliveryDetailScreen> {
-  final GlobalKey<M07DetailPageState<DeliveryView>> _page = GlobalKey<M07DetailPageState<DeliveryView>>();
-
-  Future<void> _reload() async => _page.currentState?.fetcher.reload(quiet: true);
+class _ShopDeliveryPanelState extends State<ShopDeliveryPanel> with M07Actions<ShopDeliveryPanel> {
+  Future<void> _reload() => widget.onChanged();
 
   Future<void> _cancel(DeliveryView d) async {
     final String? reason = await showReasonDialog(context, title: 'Hủy yêu cầu giao?', explanation: kCancelExplain, confirmLabel: 'Xác nhận hủy');
@@ -490,13 +498,6 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
     }
     if (await act('cancel-${d.deliveryId}', (String key) => widget.source.cancel(d.deliveryId, reason: reason, expectedVersion: d.version, key: key), onConflict: _reload)) {
       await _reload();
-    }
-  }
-
-  Future<void> _recall(DeliveryView d) async {
-    DeliveryView? fresh;
-    if (await act('recall-${d.deliveryId}', (String key) async => fresh = await widget.source.recall(d.deliveryId, key: key), onConflict: _reload) && mounted && fresh != null) {
-      await Navigator.of(context).pushReplacement(n11Route(ShopDeliveryDetailScreen(source: widget.source, deliveryId: fresh!.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker, feedbackSlot: widget.feedbackSlot)));
     }
   }
 
@@ -534,34 +535,17 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
 
   @override
   Widget build(BuildContext context) {
-    return M07DetailPage<DeliveryView>(
-      key: _page,
-      title: 'Yêu cầu giao',
-      sample: widget.source.isSample,
-      keyPrefix: 'm07-detail',
-      load: () => widget.source.get(widget.deliveryId),
-      builder: (BuildContext context, DeliveryView d, Future<void> Function() reload) => _parts(context, d),
+    final DeliveryView d = widget.delivery;
+    final bool ended = d.state == DeliveryState.completed || d.state == DeliveryState.failed || d.state == DeliveryState.cancelledByMerchant;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        actionBanner(),
+        for (final Widget w in _byState(d)) Padding(padding: const EdgeInsets.only(bottom: N11Space.gap3), child: w),
+        if (widget.allowCancel && d.allows('cancel')) Padding(padding: const EdgeInsets.only(bottom: N11Space.gap3), child: DangerButton(key: const Key('m07-cancel'), label: 'Hủy yêu cầu giao', onPressed: busy ? null : () => _cancel(d))),
+        if (widget.feedbackSlot != null && ended) widget.feedbackSlot!(context, d),
+      ],
     );
-  }
-
-  M07PageParts _parts(BuildContext context, DeliveryView d) {
-    final ({String label, ChipKind kind}) chip = m07StateChip(d.state);
-    final List<Widget> body = <Widget>[
-      Row(
-        children: <Widget>[
-          Expanded(child: Text(d.code, key: const Key('m07-detail-code'), style: N11Text.title)),
-          N11Chip(chip.label, kind: chip.kind),
-        ],
-      ),
-      actionBanner(),
-      ..._byState(d),
-      _recipientCard(d),
-      MoneySummary(goods: d.goods, fee: d.fee),
-      if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed || d.state == DeliveryState.cancelledByMerchant)) widget.feedbackSlot!(context, d),
-      if (d.previousDeliveryId != null) const N11Card(child: Text('Đây là lần gọi lại. Lần gọi trước vẫn nằm trong lịch sử.', style: N11Text.caption)),
-      if (d.result != null || d.timeline.isNotEmpty) _timeline(d),
-    ];
-    return M07PageParts(body, bottom: _bottom(d));
   }
 
   List<Widget> _byState(DeliveryView d) {
@@ -570,10 +554,10 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
         return <Widget>[SearchTimerCard(search: d.search), ..._feeAgreementCards(d)];
       case DeliveryState.accepted:
       case DeliveryState.locationConfirmed:
-        return <Widget>[_shipperCard(d), _statusCard(d), LocationCard(location: d.location, mapBuilder: widget.mapBuilder)];
+        return <Widget>[_shipperCard(d), _statusCard(d), if (widget.showLocation) LocationCard(location: d.location, mapBuilder: widget.mapBuilder)];
       case DeliveryState.pickedUp:
       case DeliveryState.delivering:
-        return <Widget>[_shipperCard(d), LocationCard(location: d.location, mapBuilder: widget.mapBuilder), const ReasonNote('Đã nhận hàng nên không hủy được và không sửa thông tin/phí.')];
+        return <Widget>[_shipperCard(d), if (widget.showLocation) LocationCard(location: d.location, mapBuilder: widget.mapBuilder), const ReasonNote('Đã nhận hàng nên không hủy được và không sửa thông tin/phí.')];
       case DeliveryState.searchStopped:
         return <Widget>[
           const N11Banner(key: Key('m07-stopped'), kind: BannerKind.warn, title: 'Đã ngừng tìm shipper', text: 'Đã hết thời gian tìm nhưng chưa có shipper. Đơn món sẽ tự hủy nếu quá thời hạn xử lý.', icon: Icons.timer_off_outlined),
@@ -661,23 +645,6 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
         ),
       );
 
-  Widget _recipientCard(DeliveryView d) => N11Card(
-        key: const Key('m07-recipient'),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            const Text('Người nhận', style: N11Text.label),
-            KeyValueRows(<(String, String)>[
-              ('Tên', d.recipient.name),
-              if (d.recipient.phone != null) ('Điện thoại', d.recipient.phone!),
-              ('Địa chỉ', d.recipient.addressText ?? '—'),
-              ('Điểm giao', d.recipient.hasPoint ? 'Đã ghim' : 'Chưa ghim'),
-              ('Hàng', d.goods.description),
-            ]),
-          ],
-        ),
-      );
-
   Widget _incidentCard(DeliveryView d) {
     final IncidentView i = d.incident!;
     return N11Card(
@@ -699,23 +666,93 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
       ),
     );
   }
+}
 
-  Widget _timeline(DeliveryView d) {
-    final List<TimelineEntry> entries = d.timeline;
-    return N11Card(
-      key: const Key('m07-timeline'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Text('Diễn biến', style: N11Text.label),
-          const SizedBox(height: N11Space.gap2),
-          if (d.result != null) Text('${d.state.label} lúc ${m07Hm(d.result!.at)}${d.result!.reason == null ? '' : ' · ${d.result!.reason}'}', style: N11Text.bodyStrong),
-          for (final TimelineEntry e in entries)
-            Padding(padding: const EdgeInsets.only(top: N11Space.gap2), child: Text('${m07Hm(e.at)} · ${e.type}${e.note == null ? '' : ' · ${e.note}'}', style: N11Text.caption)),
-        ],
-      ),
+// ---- Q03-Q08: detail -------------------------------------------------------------------------------------------------
+
+class ShopDeliveryDetailScreen extends StatefulWidget {
+  const ShopDeliveryDetailScreen({super.key, required this.source, required this.deliveryId, this.mapBuilder, this.pinPicker, this.feedbackSlot});
+
+  final ShopDeliverySource source;
+  final String deliveryId;
+  final M07MapBuilder? mapBuilder;
+  final M07PinPickerBuilder? pinPicker;
+  final M07FeedbackSlot? feedbackSlot;
+
+  @override
+  State<ShopDeliveryDetailScreen> createState() => _ShopDeliveryDetailScreenState();
+}
+
+class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> with M07Actions<ShopDeliveryDetailScreen> {
+  final GlobalKey<M07DetailPageState<DeliveryView>> _page = GlobalKey<M07DetailPageState<DeliveryView>>();
+
+  Future<void> _reload() async => _page.currentState?.fetcher.reload(quiet: true);
+
+  Future<void> _cancel(DeliveryView d) async {
+    final String? reason = await showReasonDialog(context, title: 'Hủy yêu cầu giao?', explanation: kCancelExplain, confirmLabel: 'Xác nhận hủy');
+    if (reason == null || !mounted) {
+      return;
+    }
+    if (await act('cancel-${d.deliveryId}', (String key) => widget.source.cancel(d.deliveryId, reason: reason, expectedVersion: d.version, key: key), onConflict: _reload)) {
+      await _reload();
+    }
+  }
+
+  Future<void> _recall(DeliveryView d) async {
+    DeliveryView? fresh;
+    if (await act('recall-${d.deliveryId}', (String key) async => fresh = await widget.source.recall(d.deliveryId, key: key), onConflict: _reload) && mounted && fresh != null) {
+      await Navigator.of(context).pushReplacement(n11Route(ShopDeliveryDetailScreen(source: widget.source, deliveryId: fresh!.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker, feedbackSlot: widget.feedbackSlot)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return M07DetailPage<DeliveryView>(
+      key: _page,
+      title: 'Yêu cầu giao',
+      sample: widget.source.isSample,
+      keyPrefix: 'm07-detail',
+      load: () => widget.source.get(widget.deliveryId),
+      builder: (BuildContext context, DeliveryView d, Future<void> Function() reload) => _parts(context, d),
     );
   }
+
+  M07PageParts _parts(BuildContext context, DeliveryView d) {
+    final ({String label, ChipKind kind}) chip = m07StateChip(d.state);
+    final List<Widget> body = <Widget>[
+      Row(
+        children: <Widget>[
+          Expanded(child: Text(d.code, key: const Key('m07-detail-code'), style: N11Text.title)),
+          N11Chip(chip.label, kind: chip.kind),
+        ],
+      ),
+      actionBanner(),
+      ShopDeliveryPanel(source: widget.source, delivery: d, onChanged: _reload, mapBuilder: widget.mapBuilder),
+      _recipientCard(d),
+      MoneySummary(goods: d.goods, fee: d.fee),
+      if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed || d.state == DeliveryState.cancelledByMerchant)) widget.feedbackSlot!(context, d),
+      if (d.previousDeliveryId != null) const N11Card(child: Text('Đây là lần gọi lại. Lần gọi trước vẫn nằm trong lịch sử.', style: N11Text.caption)),
+      StoryCard(d.story),
+    ];
+    return M07PageParts(body, bottom: _bottom(d));
+  }
+
+  Widget _recipientCard(DeliveryView d) => N11Card(
+        key: const Key('m07-recipient'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text('Người nhận', style: N11Text.label),
+            KeyValueRows(<(String, String)>[
+              ('Tên', d.recipient.name),
+              if (d.recipient.phone != null) ('Điện thoại', d.recipient.phone!),
+              ('Địa chỉ', d.recipient.addressText ?? '—'),
+              ('Điểm giao', d.recipient.hasPoint ? 'Đã ghim' : 'Chưa ghim'),
+              ('Hàng', d.goods.description),
+            ]),
+          ],
+        ),
+      );
 
   Widget? _bottom(DeliveryView d) {
     final List<Widget> actions = <Widget>[

@@ -40,7 +40,7 @@ extension DeliveryStateText on DeliveryState {
         DeliveryState.pickedUp || DeliveryState.delivering => 'Đang giao',
         DeliveryState.completed => 'Giao thành công',
         DeliveryState.failed => 'Giao thất bại',
-        DeliveryState.cancelledBySystem => 'Hệ thống hủy quá hạn',
+        DeliveryState.cancelledBySystem => 'Đã hủy yêu cầu giao',
         DeliveryState.cancelledByMerchant => 'Đã hủy yêu cầu giao',
         DeliveryState.searchStopped => 'Đã ngừng tìm',
       };
@@ -301,6 +301,21 @@ class TimelineEntry {
   final String? note;
 }
 
+/// One milestone of "Diễn biến", already put in plain words by the server (no event key, no internal code). Shown by [StoryCard].
+class StoryEntry {
+  const StoryEntry({required this.at, required this.text});
+
+  factory StoryEntry.fromJson(Object? raw) {
+    final Map<String, Object?> m = _obj(raw);
+    return StoryEntry(at: _time(m['at']), text: _str(m['text']));
+  }
+
+  final DateTime at;
+  final String text;
+}
+
+List<StoryEntry> storyOf(Object? raw) => <StoryEntry>[for (final Object? t in _list(raw ?? <Object?>[])) StoryEntry.fromJson(t)];
+
 /// One delivery as the shop (full) or the assigned Shipper (after accepting) sees it. The server decides which fields are filled;
 /// a field the caller may not see is null.
 class DeliveryView {
@@ -325,6 +340,7 @@ class DeliveryView {
     this.incident,
     this.can = const <String>{},
     this.timeline = const <TimelineEntry>[],
+    this.story = const <StoryEntry>[],
   });
 
   factory DeliveryView.fromJson(Object? raw) {
@@ -351,6 +367,7 @@ class DeliveryView {
       incident: m['incident'] == null ? null : IncidentView.fromJson(m['incident']),
       can: <String>{for (final MapEntry<String, Object?> e in can.entries) if (_bool(e.value)) e.key},
       timeline: <TimelineEntry>[for (final Object? t in _list(m['timeline'] ?? <Object?>[])) TimelineEntry.fromJson(t)],
+      story: storyOf(m['story']),
     );
   }
 
@@ -382,6 +399,9 @@ class DeliveryView {
   final Set<String> can;
   final List<TimelineEntry> timeline;
 
+  /// The milestones for the screen (plain words); [timeline] is the raw log and is never drawn.
+  final List<StoryEntry> story;
+
   bool allows(String action) => can.contains(action);
 
   /// A copy with some parts replaced (used by the sample source and by tests). `clear*` drop an optional part.
@@ -399,6 +419,7 @@ class DeliveryView {
     IncidentView? incident,
     Set<String>? can,
     List<TimelineEntry>? timeline,
+    List<StoryEntry>? story,
   }) =>
       DeliveryView(
         deliveryId: deliveryId,
@@ -421,6 +442,7 @@ class DeliveryView {
         incident: incident ?? this.incident,
         can: can ?? this.can,
         timeline: timeline ?? this.timeline,
+        story: story ?? this.story,
       );
 
   /// The drop-off position is missing: the Shipper pins it and confirms the fee before pickup.

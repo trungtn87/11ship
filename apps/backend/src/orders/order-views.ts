@@ -8,6 +8,8 @@ import { ShopAvailabilityReader } from '../shop/shop-availability-reader';
 import { TransactionContext } from '../transaction/transaction-context';
 import { ACTIVE_STATES } from '../delivery/delivery-constants';
 import { ItemRow, OrderEventRow, OrderListItem, OrderRepository, OrderRow } from './order-repository';
+import { buildOrderStory, StoryAudience, StoryOrderEvent } from './order-story';
+import { humanDeliveryReason } from '../delivery/delivery-reason-text';
 import { customerMayCancel, displayStatusOf, isEnded, mayCallShipper, needsAttention } from './order-rules';
 
 // The JSON each reader of an Order gets. The server decides which fields are filled; a field the caller may not see is null (or absent). Money is a whole
@@ -121,16 +123,28 @@ export class OrderViews {
     return { all, latest: all[all.length - 1] };
   }
 
+  /** The milestones of the order and of every call for a Shipper, in plain words (the raw `timeline` is kept for the Admin tools and old clients). */
+  async #story(context: TransactionContext, o: OrderRow, all: readonly DeliveryRow[], audience: StoryAudience): Promise<JsonObject[]> {
+    const events: StoryOrderEvent[] = (await this.orders.listEvents(context, o.orderId, 300)).map((e) => ({ atMs: e.atMs, type: e.type, actorType: e.actorType, note: e.note, details: e.details }));
+    const calls = [];
+    for (const d of all) {
+      calls.push(await this.deliveryViews.storyOf(context, d));
+    }
+    return buildOrderStory(events, calls, audience).map((entry) => ({ at: entry.at, text: entry.text }));
+  }
+
   async forCustomer(context: TransactionContext, o: OrderRow, detail: boolean): Promise<JsonObject> {
     const nowMs = await freshClockMs(context);
     const items = await this.orders.listItems(context, o.orderId);
     const { all, latest } = await this.#latest(context, o);
     const view = await this.#base(context, o, items, latest, nowMs);
+    view.end_reason = humanDeliveryReason(o.endReason);
     view.delivery = latest === undefined ? null : await this.deliveryViews.forCustomer(context, latest, nowMs);
     view.delivery_count = all.length;
     view.can = { cancel: customerMayCancel(o.status), reorder: true };
     if (detail) {
       view.timeline = (await this.orders.listEvents(context, o.orderId, 200)).map((e) => eventView(e, true));
+      view.story = await this.#story(context, o, all, 'customer');
     }
     return view;
   }
@@ -140,9 +154,10 @@ export class OrderViews {
     const items = await this.orders.listItems(context, o.orderId);
     const { all, latest } = await this.#latest(context, o);
     const view = await this.#base(context, o, items, latest, nowMs);
+    view.end_reason = humanDeliveryReason(o.endReason);
     const activeDelivery = all.some((d) => ACTIVE_STATES.includes(d.state));
     view.delivery = latest === undefined ? null : await this.deliveryViews.forShop(context, latest, nowMs, detail);
-    view.deliveries = all.map((d) => ({ delivery_id: d.deliveryId, code: d.code, display_code: d.displayCode ?? d.code, state: d.state, previous_delivery_id: d.previousDeliveryId, created_at: iso(d.createdAtMs), ended_at: iso(d.endedAtMs), end_reason: d.endReason }));
+    view.deliveries = all.map((d) => ({ delivery_id: d.deliveryId, code: d.code, display_code: d.displayCode ?? d.code, state: d.state, previous_delivery_id: d.previousDeliveryId, created_at: iso(d.createdAtMs), ended_at: iso(d.endedAtMs), end_reason: humanDeliveryReason(d.endReason) }));
     view.schedule_conflict = await this.#scheduleConflict(context, o, nowMs);
     const running = o.status === 'PREPARING';
     view.can = {
@@ -157,6 +172,7 @@ export class OrderViews {
     };
     if (detail) {
       view.timeline = (await this.orders.listEvents(context, o.orderId, 300)).map((e) => eventView(e, true));
+      view.story = await this.#story(context, o, all, 'shop');
     }
     return view;
   }

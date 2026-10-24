@@ -13,6 +13,20 @@ describe('M08 composer', () => {
     expect(composeDeliveryChange({ ...base, change: 'fee_agreed' })).toEqual([]);
   });
 
+  it('the shop\'s notices of a delivery that belongs to an Order open the Order by its id; a direct delivery and the Shipper keep the delivery', () => {
+    const orderId = '55555555-5555-4555-8555-555555555555';
+    for (const change of ['accepted', 'picked_up', 'completed', 'failed', 'search_stopped', 'released_by_shipper', 'pickup_timeout_warning', 'fee_countered']) {
+      const shop = notifies(composeDeliveryChange({ ...base, change, state: 'waiting_driver', orderId })).filter((d) => d.audience === 'SHOP');
+      expect(shop.length).toBeGreaterThan(0);
+      for (const d of shop) {
+        expect(d).toMatchObject({ targetType: 'ORDER', targetId: orderId });
+      }
+    }
+    expect(notifies(composeDeliveryChange({ ...base, change: 'accepted', orderId: null }))[0]).toMatchObject({ targetType: 'DELIVERY', targetId: base.deliveryId });
+    const driver = notifies(composeDeliveryChange({ ...base, change: 'cancelled_by_system', state: 'cancelled_by_system', orderId }));
+    expect(driver).toMatchObject([{ audience: 'DRIVER', targetType: 'DELIVERY', targetId: base.deliveryId }]);
+  });
+
   it('a new search round opens on creation, recall and a give-back that returns to waiting_driver; never when the delivery is not searching', () => {
     expect(composeDeliveryChange({ ...base, change: 'created', state: 'waiting_driver', driverId: null })).toEqual([{ type: 'OFFER_ROUND', deliveryId: base.deliveryId, roundVersion: 3 }]);
     expect(composeDeliveryChange({ ...base, change: 'released_by_shipper', state: 'waiting_driver' }).filter((d) => d.type === 'OFFER_ROUND')).toHaveLength(1);

@@ -209,6 +209,28 @@ class SampleOrderStore {
       else
         'can': <String, Object?>{'cancel': o.status == 'PENDING_CONFIRMATION', 'reorder': true},
       'timeline': <Object?>[for (final (String, String, String?) e in o.events) <String, Object?>{'at': now.toIso8601String(), 'type': e.$1, 'actor': e.$2, 'note': e.$3}],
+      'story': <Object?>[
+        for (final (String, String, String?) e in o.events)
+          if (_storyText(e) != null) <String, Object?>{'at': now.toIso8601String(), 'text': _storyText(e)},
+      ],
+    };
+  }
+
+  /// The sample's own plain-words version of an event (the real server writes the story; this only keeps previews and tests readable).
+  static String? _storyText((String, String, String?) e) {
+    final String? reason = e.$3 == null || e.$3!.isEmpty ? null : e.$3;
+    String withReason(String head) => reason == null ? head : '$head — $reason';
+    return switch (e.$1) {
+      'order.placed' => 'Đã đặt đơn',
+      'order.edited' => 'Quán đã chỉnh đơn',
+      'order.confirmed' => reason == null ? 'Quán đã xác nhận' : 'Quán đã xác nhận đơn đã chỉnh — $reason',
+      'order.rejected' => withReason('Quán đã từ chối đơn'),
+      'order.ready' => 'Món đã sẵn sàng',
+      'order.shipper_called' => 'Đang tìm shipper',
+      'order.shipper_called_again' => 'Quán gọi lại shipper, đang tìm shipper',
+      'order.cancelled_by_customer' => withReason('Khách đã hủy đơn'),
+      'order.cancelled_by_shop' => withReason('Quán đã hủy đơn'),
+      _ => null,
     };
   }
 

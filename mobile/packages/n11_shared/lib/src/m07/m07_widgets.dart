@@ -40,6 +40,46 @@ String m07Hm(DateTime t) {
   return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
 }
 
+String _dayOf(DateTime t) => '${t.day.toString().padLeft(2, '0')}/${t.month.toString().padLeft(2, '0')}';
+
+/// "Diễn biến": the milestones that happened, oldest first, one line each — time first ("18:24 · Đang tìm shipper"); the date is added only when the story
+/// runs over more than one day. Draws nothing for an empty story. One widget for the order of 11Food (shop and customer), the direct delivery and 11Ship.
+class StoryCard extends StatelessWidget {
+  const StoryCard(this.entries, {super.key});
+
+  final List<StoryEntry> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    if (entries.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final List<StoryEntry> ordered = <StoryEntry>[...entries]..sort((StoryEntry a, StoryEntry b) => a.at.compareTo(b.at));
+    final bool manyDays = ordered.map((StoryEntry e) => _dayOf(e.at.toLocal())).toSet().length > 1;
+    return N11Card(
+      key: const Key('m07-story'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Text('Diễn biến', style: N11Text.label),
+          const SizedBox(height: N11Space.gap2),
+          for (final StoryEntry e in ordered)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  SizedBox(width: manyDays ? 88 : 48, child: Text(manyDays ? '${_dayOf(e.at.toLocal())} ${m07Hm(e.at)}' : m07Hm(e.at), style: N11Text.caption)),
+                  Expanded(child: Text(e.text, style: N11Text.body)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 String m07Km(int? meters) {
   if (meters == null) {
     return 'Chưa rõ';

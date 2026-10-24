@@ -67,6 +67,19 @@ export class NotificationRecipients {
     return { access, ended: order.endedAtMs !== null, status: access ? order.status : null };
   }
 
+  /**
+   * The Order a delivery belongs to, for a FOOD session that opens an old notification of that delivery: the Order id is read from the delivery row (never guessed
+   * from a code), and the right to the Order is the shop owner's, checked here again. `none`: the delivery is a direct call (it opens as itself).
+   */
+  async orderOfDeliveryForShop(context: TransactionContext, deliveryId: string, userId: string): Promise<{ kind: 'none' } | { kind: 'order'; orderId: string; access: boolean; ended: boolean; status: string | null }> {
+    const d = await this.deliveries.findById(context, deliveryId);
+    if (d === undefined || d.source !== 'ORDER' || d.orderId === null) {
+      return { kind: 'none' };
+    }
+    const facts = await this.orderAccessFor(context, d.orderId, userId, 'SHOP');
+    return { kind: 'order', orderId: d.orderId, ...facts };
+  }
+
   async driverUser(context: TransactionContext, driverId: string): Promise<string | undefined> {
     return (await this.drivers.findById(context, driverId))?.userId;
   }
