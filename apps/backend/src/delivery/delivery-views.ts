@@ -3,7 +3,7 @@ import { UserRepository } from '../auth/user-repository';
 import { DriverRepository, DriverRow } from '../driver/driver-repository';
 import { JsonObject } from '../idempotency/idempotency-executor';
 import { freshClockMs } from '../idempotency/idempotency-repository';
-import { Agreement } from '../shipping-policy/shipping-fee-agreement';
+import { Agreement, answerIsWaiting } from '../shipping-policy/shipping-fee-agreement';
 import { SHIPPER_SEARCH_RADIUS_M } from '../shipping-policy/shipping-eligibility';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { TransactionContext } from '../transaction/transaction-context';
@@ -29,6 +29,7 @@ export function agreementView(agreement: Agreement | undefined): JsonObject | nu
     reason_code: agreement.reasonCode,
     reason_note: agreement.reasonNote,
     expires_at: new Date(agreement.expiresAtMs).toISOString(),
+    answer_expires_at: agreement.answerExpiresAtMs === null ? null : new Date(agreement.answerExpiresAtMs).toISOString(),
   };
 }
 
@@ -48,7 +49,9 @@ function feeDecisionView(agreement: Agreement | undefined): JsonObject | null {
     offered_vnd: agreement.status === 'COUNTERED' ? agreement.counterFeeVnd : agreement.pendingFeeVnd,
     // Only a Shipper's counter-offer can be refused; the shop's own proposal is answered by accepting or by the shop cancelling.
     can_decline: agreement.status === 'COUNTERED' || agreement.pendingSource === 'COUNTER',
-    expires_at: new Date(agreement.expiresAtMs).toISOString(),
+    // The time the PAYER has to answer this offer (never later than the search deadline); a shop's own proposal only has the search deadline.
+    expires_at: new Date(answerIsWaiting(agreement) && agreement.answerExpiresAtMs !== null ? agreement.answerExpiresAtMs : agreement.expiresAtMs).toISOString(),
+    search_expires_at: new Date(agreement.expiresAtMs).toISOString(),
   };
 }
 

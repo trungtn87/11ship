@@ -66,6 +66,7 @@ export const OPERATIONS = {
   fail: 'delivery.fail.v1',
   cancelAfterPickup: 'delivery.cancel_after_pickup.v1',
   customerFee: 'delivery.fee.customer_decide.v1',
+  feeAnswerExpired: 'delivery.fee_answer_expired.v1',
   adminAction: 'admin.delivery.action.v1',
   sweep: 'delivery.sweep.v1',
 } as const;

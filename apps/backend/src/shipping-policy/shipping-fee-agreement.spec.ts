@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { Agreement, AgreementAction, applyAgreementAction, feeAllowsAssignment, needsCustomerConsent, rejectedKey, Transition } from './shipping-fee-agreement';
+import { Agreement, AgreementAction, answerDeadline, answerIsDue, answerIsWaiting, applyAgreementAction, feeAllowsAssignment, needsCustomerConsent, rejectedKey, Transition } from './shipping-fee-agreement';
 
 const T0 = 1_000_000;
 const EXPIRES = T0 + 600_000;
@@ -24,6 +24,7 @@ const agreed = (over: Partial<Agreement> = {}): Agreement => ({
   pendingSource: null,
   finalFeeVnd: null,
   expiresAtMs: EXPIRES,
+  answerExpiresAtMs: null,
   version: 1,
   createdBy: 'shop',
   createdAtMs: T0 - 1000,
@@ -88,7 +89,7 @@ describe('M06 fee agreement: counter-offer, shop accepts or rejects', () => {
 
   it('a Shipper counters with another amount, above or below the proposal', () => {
     const t = okOf(run(agreed(), { type: 'COUNTER', driverId: D1, amountVnd: 30000 }));
-    expect(t.patch).toEqual({ status: 'COUNTERED', counterFeeVnd: 30000, counterBy: D1 });
+    expect(t.patch).toEqual({ status: 'COUNTERED', counterFeeVnd: 30000, counterBy: D1, answerExpiresAtMs: EXPIRES });
     expect(okOf(run(agreed(), { type: 'COUNTER', driverId: D1, amountVnd: 20000 })).patch).toMatchObject({ counterFeeVnd: 20000 });
   });
 
@@ -103,7 +104,7 @@ describe('M06 fee agreement: counter-offer, shop accepts or rejects', () => {
 
   it('shop REJECTS: the original proposal stays, the counter is cleared, and the deadline is NOT touched (the search clock does not restart)', () => {
     const t = okOf(run(countered(), { type: 'SHOP_REJECT_COUNTER' }));
-    expect(t.patch).toEqual({ status: 'PROPOSED', counterFeeVnd: null, counterBy: null });
+    expect(t.patch).toEqual({ status: 'PROPOSED', counterFeeVnd: null, counterBy: null, answerExpiresAtMs: null });
     expect(t.patch).not.toHaveProperty('expiresAtMs');
     expect(t.eventType).toBe('COUNTER_REJECTED');
     expect(t.amountVnd).toBe(30000);
@@ -190,5 +191,59 @@ describe('M06 fee agreement: expiry, lock and Admin adjustment', () => {
     expect(feeAllowsAssignment(agreed(), D1)).toBe(false);
     expect(feeAllowsAssignment(agreed({ status: 'AWAITING_CUSTOMER', pendingFeeVnd: 1, pendingSource: 'PROPOSAL', boundDriverId: D1 }), D1)).toBe(false);
     expect(feeAllowsAssignment(agreed({ feeMode: 'STANDARD', status: 'ACCEPTED', finalFeeVnd: 15000, proposedFeeVnd: null, reasonCode: null }), D2)).toBe(true);
+  });
+});
+
+describe('M07 2026-10-24: the payer\'s time to answer a fee proposal is its own clock, never longer than the search', () => {
+  const MIN = 60_000;
+  const waiting = (over: Partial<Agreement> = {}): Agreement =>
+    agreed({ status: 'COUNTERED', counterFeeVnd: 30000, counterBy: D1, answerExpiresAtMs: T0 + 5 * MIN, ...over });
+
+  it('each new offer takes the configured minutes from now; the search deadline caps it', () => {
+    expect(answerDeadline(T0, 5, T0 + 60 * MIN)).toBe(T0 + 5 * MIN);
+    expect(answerDeadline(T0, 10, T0 + 60 * MIN)).toBe(T0 + 10 * MIN);
+    expect(answerDeadline(T0, 5, T0 + 2 * MIN)).toBe(T0 + 2 * MIN);
+    expect(answerDeadline(T0, 5, T0)).toBe(T0);
+  });
+
+  it('a counter-offer stores the deadline it was given and never one past the search deadline', () => {
+    expect(okOf(run(agreed(), { type: 'COUNTER', driverId: D1, amountVnd: 30000, answerExpiresAtMs: T0 + 5 * MIN })).patch).toMatchObject({ answerExpiresAtMs: T0 + 5 * MIN });
+    expect(okOf(run(agreed(), { type: 'COUNTER', driverId: D1, amountVnd: 30000, answerExpiresAtMs: EXPIRES + 99 * MIN })).patch).toMatchObject({ answerExpiresAtMs: EXPIRES });
+  });
+
+  it('only a Shipper\'s counter-offer has the clock: the shop\'s own proposal does not', () => {
+    expect(answerIsWaiting(waiting())).toBe(true);
+    expect(answerIsWaiting(waiting({ status: 'AWAITING_CUSTOMER', pendingSource: 'COUNTER', pendingFeeVnd: 30000 }))).toBe(true);
+    expect(answerIsWaiting(waiting({ status: 'AWAITING_CUSTOMER', pendingSource: 'PROPOSAL', pendingFeeVnd: 25000, answerExpiresAtMs: null }))).toBe(false);
+    expect(answerIsWaiting(agreed())).toBe(false);
+    expect(answerIsDue(waiting(), T0 + 5 * MIN - 1)).toBe(false);
+    expect(answerIsDue(waiting(), T0 + 5 * MIN)).toBe(true);
+  });
+
+  it('an answer on time works; one at or after the deadline is refused as answer_expired and applies nothing', () => {
+    expect(okOf(run(waiting(), { type: 'SHOP_REJECT_COUNTER' }, T0 + 5 * MIN - 1)).eventType).toBe('COUNTER_REJECTED');
+    expect(run(waiting(), { type: 'SHOP_ACCEPT_COUNTER' }, T0 + 5 * MIN).kind).toBe('answer_expired');
+    expect(run(waiting(), { type: 'SHOP_REJECT_COUNTER' }, T0 + 6 * MIN).kind).toBe('answer_expired');
+    expect(run(waiting({ status: 'AWAITING_CUSTOMER', pendingSource: 'COUNTER', pendingFeeVnd: 30000, boundDriverId: D1 }), { type: 'CUSTOMER_CONFIRM', approve: true }, T0 + 5 * MIN).kind).toBe('answer_expired');
+  });
+
+  it('expiring drops the unapproved offer, keeps the earlier fee and the search deadline, and clears the clock', () => {
+    const t = okOf(run(waiting(), { type: 'EXPIRE_ANSWER' }, T0 + 5 * MIN));
+    expect(t.eventType).toBe('COUNTER_EXPIRED');
+    expect(t.patch).toEqual({ status: 'PROPOSED', counterFeeVnd: null, counterBy: null, answerExpiresAtMs: null });
+    expect(t.patch).not.toHaveProperty('expiresAtMs');
+    expect(t.patch).not.toHaveProperty('finalFeeVnd');
+    const awaiting = okOf(run(waiting({ status: 'AWAITING_CUSTOMER', pendingSource: 'COUNTER', pendingFeeVnd: 30000, boundDriverId: D1, counterFeeVnd: null, counterBy: null }), { type: 'EXPIRE_ANSWER' }, T0 + 6 * MIN));
+    expect(awaiting.patch).toMatchObject({ status: 'PROPOSED', boundDriverId: null, pendingFeeVnd: null, pendingSource: null, answerExpiresAtMs: null });
+  });
+
+  it('is not due before the deadline, nor for an offer without the clock, nor once settled', () => {
+    expect(refusal(run(waiting(), { type: 'EXPIRE_ANSWER' }, T0 + 5 * MIN - 1))).toBe('ANSWER_NOT_DUE');
+    expect(refusal(run(agreed(), { type: 'EXPIRE_ANSWER' }, T0 + 99 * MIN))).toBe('ANSWER_NOT_DUE');
+    expect(refusal(run(agreed({ status: 'ACCEPTED', finalFeeVnd: 25000 }), { type: 'EXPIRE_ANSWER' }, T0 + 99 * MIN))).toBe('ANSWER_NOT_DUE');
+  });
+
+  it('the search deadline still wins when both have passed (the whole agreement expires)', () => {
+    expect(run(waiting(), { type: 'EXPIRE_ANSWER' }, EXPIRES).kind).toBe('expire');
   });
 });

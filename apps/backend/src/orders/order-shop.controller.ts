@@ -5,7 +5,7 @@ import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
 import { rejectBodyAndQuery } from '../customer-profile/customer-profile-validation';
 import { OrderShopService } from './order-shop-service';
-import { parseCallBody, parseConfirmBody, parseEditBody, parseOrderId, parsePaymentBody, parseReasonBody, parseShopListQuery } from './order-validation';
+import { parseCallBody, parseConfirmBody, parseEditBody, parseOrderId, parsePaymentBody, parseReasonBody, parseShopListQuery, parseVersionBody } from './order-validation';
 
 type Key = string | string[] | undefined;
 
@@ -45,6 +45,14 @@ export class OrderShopController {
   @HttpCode(200)
   async confirm(@Param('order_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
     const outcome = await this.shop.confirm(this.#principal(request), parseOrderId(id), parseConfirmBody(body), key, requestIdOf(request));
+    return { data: outcome.payload };
+  }
+
+  /** Kept for the APK from before the "ready" step was removed; it only checks and answers the Order (see OrderShopService.readyCompat). */
+  @Post(':order_id/ready')
+  @HttpCode(200)
+  async ready(@Param('order_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
+    const outcome = await this.shop.readyCompat(this.#principal(request), parseOrderId(id), parseVersionBody(body), key, requestIdOf(request));
     return { data: outcome.payload };
   }
 

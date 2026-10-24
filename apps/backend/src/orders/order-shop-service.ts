@@ -17,7 +17,7 @@ import { ORDER_OPERATIONS, ORDER_SCOPE_TYPE } from './order-constants';
 import { OrderRecorder } from './order-recorder';
 import { OrderRepository, OrderRow } from './order-repository';
 import { goodsDescriptionOf, totalOf } from './order-rules';
-import { CallInput, ConfirmInput, EditInput, PaymentInput, ReasonInput, ShopListQuery } from './order-validation';
+import { CallInput, ConfirmInput, EditInput, PaymentInput, ReasonInput, ShopListQuery, VersionInput } from './order-validation';
 import { OrderViews } from './order-views';
 
 /**
@@ -159,7 +159,20 @@ export class OrderShopService {
     });
   }
 
-  // ---- while preparing -------------------------------------------------------------------------------------------------------
+  // ---- while preparing ---
+
+  /**
+   * Compatibility for the APK built before the "ready" step went away (Owner decision 2026-10-23): the old button still posts here. The caller's right to the
+   * Order and its state are checked like any shop command (another shop's Order is not found, a settled one is a state conflict), and the Order comes back as it
+   * is. Nothing is written and no event is recorded: "Gọi shipper" itself means the dishes are ready, and nothing depends on this call.
+   */
+  async readyCompat(principal: AuthPrincipal, orderId: string, input: VersionInput, key: string | readonly string[] | undefined, requestId: string): Promise<IdempotentOutcome> {
+    return this.#command(principal, orderId, ORDER_OPERATIONS.readyCompat, key, { expected_version: input.expectedVersion }, async (_context, _caller, order) => {
+      this.#expect(order, input.expectedVersion, 'PREPARING');
+      return order;
+    });
+  }
+----------------------------------------------------------------------------------------------------
 
   /**
    * Records how much of the dishes was paid directly (customer to shop). It is information noted by the person allowed to note it, not proof of a bank

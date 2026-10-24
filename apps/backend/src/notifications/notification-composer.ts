@@ -94,6 +94,7 @@ function composeForCustomer(p: DeliveryChangePayload): Draft[] {
       return customerDecidesFee(p) ? [notify('FEE_COUNTERED', 'Shipper đề xuất phí khác', `Đơn ${p.code}: shipper muốn lấy phí giao khác. Bạn là người trả phí, mở ứng dụng để đồng ý hoặc từ chối.`)] : [];
     case 'fee_counter_accepted':
     case 'fee_counter_rejected':
+    case 'fee_answer_expired':
     case 'fee_customer_confirmed':
       return [];
     case 'failed':
@@ -151,6 +152,12 @@ function composeForShopAndShipper(p: DeliveryChangePayload): Draft[] {
       return [
         delivery(p, 'DRIVER_OF_AGREEMENT', 'FEE_UPDATED', 'Phí giao hàng đã được đồng ý', `Đơn ${code}: mức phí đã được đồng ý. Bạn có thể nhận đơn.`),
         ...(customerDecidesFee(p) ? [delivery(p, 'SHOP', 'FEE_UPDATED', 'Khách đã đồng ý phí giao', `Đơn ${code}: khách đã đồng ý mức phí giao do shipper đề xuất.`)] : []),
+      ];
+    case 'fee_answer_expired':
+      // The offer is dropped, the earlier fee stays and the search goes on while its own window lasts.
+      return [
+        delivery(p, 'DRIVER_OF_AGREEMENT', 'FEE_UPDATED', 'Đề xuất phí đã hết hạn', `Đơn ${code}: đề xuất phí của bạn chưa được trả lời nên đã hết hạn, đơn vẫn giữ mức phí cũ.`),
+        delivery(p, 'SHOP', 'FEE_UPDATED', 'Đề xuất phí đã hết hạn', `Đơn ${code}: đề xuất phí của shipper chưa được trả lời nên đã hết hạn. Đơn giữ mức phí cũ và vẫn đang tìm shipper.`),
       ];
     case 'fee_counter_rejected':
       return [

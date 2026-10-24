@@ -5,8 +5,8 @@
 import { Failure } from './accounts.js';
 import { CommandResult } from './commands.js';
 
-export type ConfigKind = 'OTP' | 'WALLET' | 'ELIGIBILITY' | 'NOTIFICATION';
-export type ConfigGroupKey = 'security' | 'shipper_wallet' | 'delivery_policy' | 'notifications' | 'map_gps' | 'storage_backup';
+export type ConfigKind = 'OTP' | 'WALLET' | 'ELIGIBILITY' | 'ORDER' | 'NOTIFICATION';
+export type ConfigGroupKey = 'security' | 'shipper_wallet' | 'delivery_policy' | 'orders' | 'notifications' | 'map_gps' | 'storage_backup';
 
 export interface ConfigValue {
   readonly key: string;
@@ -92,6 +92,7 @@ export const CONFIG_FIELDS: Record<ConfigKind, readonly FieldSpec[]> = {
     { key: 'pickup_service_seconds', label: 'Thời gian phục vụ lấy hàng', type: 'integer', min: 0, max: 1800, unit: 'giây' },
     { key: 'handoff_service_seconds', label: 'Thời gian phục vụ giao hàng', type: 'integer', min: 0, max: 1800, unit: 'giây' },
   ],
+  ORDER: [{ key: 'fee_answer_minutes', label: 'Thời gian trả lời đề xuất phí', type: 'integer', min: 1, max: 1440, unit: 'phút' }],
   NOTIFICATION: [
     { key: 'push_enabled', label: 'Bật thông báo đẩy', type: 'boolean' },
     { key: 'default_sound', label: 'Âm thanh mặc định', type: 'boolean' },
@@ -122,10 +123,11 @@ export function validateConfig(kind: ConfigKind, values: Readonly<Record<string,
 
 export const CONFIG_REFUSAL: Record<string, string> = {
   SYSTEM_SETTING_VERSION_CONFLICT: 'Cấu hình vừa được người khác thay đổi. Hãy tải lại.',
+  ORDER_PARAMETER_VERSION_CONFLICT: 'Cấu hình vừa được người khác thay đổi. Hãy tải lại.',
   ADMIN_INPUT_INVALID: 'Giá trị hoặc lý do không hợp lệ (lý do bắt buộc, tối đa 500 ký tự).',
 };
 
-export const GROUP_ORDER: readonly ConfigGroupKey[] = ['security', 'shipper_wallet', 'delivery_policy', 'notifications', 'map_gps', 'storage_backup'];
+export const GROUP_ORDER: readonly ConfigGroupKey[] = ['security', 'shipper_wallet', 'delivery_policy', 'orders', 'notifications', 'map_gps', 'storage_backup'];
 
 /** One line of the history in words: who changed which value from what to what. Unknown shapes are shown as "Đã thay đổi cấu hình" rather than guessed. */
 export function describeChange(change: ConfigChange): string {
@@ -135,6 +137,9 @@ export function describeChange(change: ConfigChange): string {
     return `${m.setting_key === 'otp_registration_enabled' ? 'OTP khi đăng ký' : 'OTP khi quên mật khẩu'}: ${yesNo(m.old_value)} → ${yesNo(m.new_value)}`;
   }
   if ('param_key' in m) {
+    if (m.param_key === 'fee_answer_minutes') {
+      return `Thời gian trả lời đề xuất phí: ${Number(m.old_value).toLocaleString('vi-VN')} phút → ${Number(m.new_value).toLocaleString('vi-VN')} phút`;
+    }
     return `${m.param_key === 'topup_min_vnd' ? 'Nạp tối thiểu' : 'Rút tối thiểu'}: ${Number(m.old_value).toLocaleString('vi-VN')} đ → ${Number(m.new_value).toLocaleString('vi-VN')} đ`;
   }
   const pairs: string[] = [];

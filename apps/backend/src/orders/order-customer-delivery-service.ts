@@ -8,13 +8,14 @@ import { AppError, TechnicalError } from '../common/app-errors';
 import { ACTIVE_STATES, OPERATIONS } from '../delivery/delivery-constants';
 import { DeliveryCancel } from '../delivery/delivery-cancel';
 import { DeliveryRecorder } from '../delivery/delivery-recorder';
+import { FeeAnswerExpiry } from '../delivery/fee-answer-expiry';
 import { DeliveryRepository, DeliveryRow } from '../delivery/delivery-repository';
 import { creatorMayCancelAfterPickup } from '../delivery/delivery-rules';
 import { feeDeciderOf } from '../delivery/delivery-views';
 import { DriverRepository } from '../driver/driver-repository';
 import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempotency/idempotency-executor';
 import { freshClockMs } from '../idempotency/idempotency-repository';
-import { AgreementAction } from '../shipping-policy/shipping-fee-agreement';
+import { AgreementAction, answerIsWaiting } from '../shipping-policy/shipping-fee-agreement';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { TransactionContext } from '../transaction/transaction-context';
@@ -46,6 +47,7 @@ export class OrderCustomerDeliveryService {
     private readonly agreements: ShippingFeeAgreementService,
     private readonly cancelling: DeliveryCancel,
     private readonly deliveryRecorder: DeliveryRecorder,
+    private readonly feeAnswers: FeeAnswerExpiry,
   ) {}
 
   async #customer(context: TransactionContext, principal: AuthPrincipal): Promise<ClientActor> {
@@ -96,6 +98,13 @@ export class OrderCustomerDeliveryService {
   // ---- the fee the Shipper proposed ------------------------------------------------------------------------------------------
 
   async decideFee(principal: AuthPrincipal, orderId: string, input: FeeDecisionInput, key: string | readonly string[] | undefined, requestId: string): Promise<IdempotentOutcome> {
+    // An offer whose answer time ran out is dropped and COMMITTED first, in its own transaction: refusing the late answer below rolls this command back and the
+    // expiry must survive that.
+    await this.feeAnswers.expireIfDueForOrder(orderId);
+    return this.feeAnswers.saveExpiryIfRefused(() => this.#decideFeeRun(principal, orderId, input, key, requestId), () => this.feeAnswers.expireIfDueForOrder(orderId));
+  }
+
+  async #decideFeeRun(principal: AuthPrincipal, orderId: string, input: FeeDecisionInput, key: string | readonly string[] | undefined, requestId: string): Promise<IdempotentOutcome> {
     return this.executor.execute(
       {
         scopeType: ORDER_SCOPE_TYPE,
@@ -118,6 +127,9 @@ export class OrderCustomerDeliveryService {
           throw new AppError('DELIVERY_STATE_CONFLICT');
         }
         const agreement = await this.agreements.readByDelivery(context, delivery.deliveryId);
+        if (agreement !== undefined && !answerIsWaiting(agreement) && (await this.agreements.answerWasDropped(context, agreement.agreementId))) {
+          throw new AppError('FEE_ANSWER_EXPIRED');
+        }
         if (agreement === undefined || (agreement.status !== 'COUNTERED' && agreement.status !== 'AWAITING_CUSTOMER')) {
           throw new AppError('DELIVERY_STATE_CONFLICT');
         }
@@ -149,6 +161,9 @@ export class OrderCustomerDeliveryService {
           });
           if (last.kind === 'conflict') {
             throw new AppError('VERSION_CONFLICT');
+          }
+          if (last.kind === 'answer_expired') {
+            throw new AppError('FEE_ANSWER_EXPIRED');
           }
           if (last.kind !== 'ok' && last.kind !== 'replayed') {
             throw new AppError(last.kind === 'expired' ? 'DELIVERY_SEARCH_EXPIRED' : 'DELIVERY_STATE_CONFLICT');

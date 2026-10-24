@@ -20,7 +20,7 @@ import { DeliveryRecorder } from './delivery-recorder';
 import { AssignmentRow, DeliveryPatch, DeliveryRepository, DeliveryRow } from './delivery-repository';
 import { originalEtaMs, searchExpired, shipperMayRelease, stateAfterRelease } from './delivery-rules';
 import { DestinationInput, LocationInput, ReasonInput, VersionInput } from './delivery-validation';
-import { DeliveryViews } from './delivery-views';
+import { DeliveryViews, feeDeciderOf } from './delivery-views';
 import { M14RouteClient } from './m14-route-client';
 import { ShipperLocationRepository } from './shipper-location';
 
@@ -376,6 +376,11 @@ export class DeliveryShipperService {
         } else if (delivery.feeMode !== 'AGREED') {
           // STANDARD that was never priced and PICKUP_AGREEMENT: the amount the Shipper and the payer agreed (audited as entered by the Shipper).
           if (input.feeVnd === null) {
+            throw new AppError('FEE_NOT_CONFIRMED');
+          }
+          // The same approval rights as an agreed fee (Owner decision 2026-10-24): when the CUSTOMER decides the fee (an order they pay), the Shipper's typed amount is
+          // only a proposal and never becomes the fee by itself, whether the delivery is a legacy STANDARD one or not. The payer's approval is the only way in.
+          if (feeDeciderOf(delivery) === 'CUSTOMER') {
             throw new AppError('FEE_NOT_CONFIRMED');
           }
           patch.feeVnd = input.feeVnd;

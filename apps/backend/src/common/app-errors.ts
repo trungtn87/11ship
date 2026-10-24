@@ -123,6 +123,7 @@ export const APP_ERROR_DEFINITIONS = {
   TOPUP_RECEIVING_ACCOUNT_NOT_CONFIGURED: { status: 409, message: 'No receiving account is available for top-ups yet' },
   TOPUP_REQUEST_NOT_FOUND: { status: 404, message: 'The top-up request was not found' },
   TOPUP_REQUEST_STATE_CONFLICT: { status: 409, message: 'The top-up request is not in a state that allows this action' },
+  ORDER_PARAMETER_VERSION_CONFLICT: { status: 409, message: 'The order settings were changed by another request' },
   WALLET_PARAMETER_VERSION_CONFLICT: { status: 409, message: 'The wallet parameters were changed by another request' },
   // Withdrawals (M04-C). Same rule: fixed messages that echo nothing the client sent; a withdrawal of another Shipper reads as not found.
   WITHDRAWAL_AMOUNT_BELOW_MINIMUM: { status: 400, message: 'The withdrawal amount is below the current minimum' },
@@ -176,6 +177,7 @@ export const APP_ERROR_DEFINITIONS = {
   FEE_LOCKED: { status: 409, message: 'The delivery fee is fixed' },
   CANCEL_NOT_ALLOWED: { status: 403, message: 'Only the person who created the request can cancel it after the goods were picked up' },
   SHIPPER_FAIL_NOT_ALLOWED: { status: 403, message: 'A Shipper cannot report a failed delivery; contact the shop' },
+  FEE_ANSWER_EXPIRED: { status: 409, message: 'The time to answer the proposed delivery fee has run out; the earlier fee stays' },
   FEE_REQUIRED: { status: 400, message: 'The delivery fee must be chosen or proposed to call a Shipper' },
   DESTINATION_NOT_CONFIRMED: { status: 409, message: 'The drop-off point is not confirmed yet' },
   RECALL_BLOCKED_GOODS_OUT: { status: 409, message: 'The goods are not back at the shop, so the delivery cannot be requested again' },

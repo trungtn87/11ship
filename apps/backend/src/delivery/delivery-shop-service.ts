@@ -7,6 +7,7 @@ import { freshClockMs } from '../idempotency/idempotency-repository';
 import { DriverRepository } from '../driver/driver-repository';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { requireActiveShop } from '../shop/shop-guards';
+import { answerIsWaiting } from '../shipping-policy/shipping-fee-agreement';
 import { AgreementOutcome, ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
@@ -15,6 +16,7 @@ import { DELIVERY_SCOPE_TYPE, OPERATIONS } from './delivery-constants';
 import { DeliveryActors, ShopCaller } from './delivery-actors';
 import { ORDER_DELIVERY_PORT, OrderDeliveryPort } from './delivery-order-port';
 import { DeliveryCancel } from './delivery-cancel';
+import { FeeAnswerExpiry } from './fee-answer-expiry';
 import { DeliveryRecorder } from './delivery-recorder';
 import { DeliveryRepository, DeliveryRow, NewDelivery } from './delivery-repository';
 import { creatorMayCancelAfterPickup, dropoffAreaOf, mayRecall, newDeliveryCode } from './delivery-rules';
@@ -73,6 +75,7 @@ export class DeliveryShopService {
     private readonly agreements: ShippingFeeAgreementService,
     private readonly commission: CommissionHoldService,
     private readonly cancelling: DeliveryCancel,
+    private readonly feeAnswers: FeeAnswerExpiry,
     private readonly routes: M14RouteClient,
     @Inject(ORDER_DELIVERY_PORT) private readonly orders: OrderDeliveryPort,
   ) {}
@@ -433,6 +436,22 @@ export class DeliveryShopService {
     action: import('../shipping-policy/shipping-fee-agreement').AgreementAction,
     change: string,
   ): Promise<IdempotentOutcome> {
+    // An offer whose answer time ran out is dropped and COMMITTED first, in a transaction of its own: refusing a late answer below rolls this command back, and the
+    // expiry must not go with it.
+    await this.feeAnswers.expireIfDue(deliveryId);
+    return this.feeAnswers.saveExpiryIfRefused(() => this.#feeCommandRun(principal, deliveryId, input, key, requestId, operation, action, change), () => this.feeAnswers.expireIfDue(deliveryId));
+  }
+
+  async #feeCommandRun(
+    principal: AuthPrincipal,
+    deliveryId: string,
+    input: VersionInput,
+    key: string | readonly string[] | undefined,
+    requestId: string,
+    operation: string,
+    action: import('../shipping-policy/shipping-fee-agreement').AgreementAction,
+    change: string,
+  ): Promise<IdempotentOutcome> {
     return this.executor.execute(
       { scopeType: DELIVERY_SCOPE_TYPE, scopeId: principal.userId, operationId: operation, idempotencyKey: key, logicalRequest: { delivery_id: deliveryId, expected_version: input.expectedVersion }, replay: this.#replay(principal) },
       async (context) => {
@@ -451,7 +470,13 @@ export class DeliveryShopService {
         if (agreement === undefined) {
           throw new AppError('DELIVERY_STATE_CONFLICT');
         }
+        if (!answerIsWaiting(agreement) && (await this.agreements.answerWasDropped(context, agreement.agreementId))) {
+          throw new AppError('FEE_ANSWER_EXPIRED');
+        }
+        // A confirmation the shop gives for a payer who has no app: the ACTOR is the shop (the person who acted); that it stands in for the customer, and who the payer is,
+        // are stored apart (on_behalf_of, fee_payer), so the log can never read as the customer's own act.
         const onBehalf = 'SHOP_ON_BEHALF_OF_CUSTOMER';
+        let confirmedForCustomer = action.type === 'CUSTOMER_CONFIRM';
         let outcome = await this.agreements.act(context, {
           agreementId: agreement.agreementId,
           expectedVersion: agreement.version,
@@ -459,7 +484,7 @@ export class DeliveryShopService {
           nowMs: await freshClockMs(context),
           action,
           actorUserId: caller.actor.userId,
-          ...(action.type === 'CUSTOMER_CONFIRM' ? { eventNote: onBehalf } : {}),
+          ...(action.type === 'CUSTOMER_CONFIRM' ? { eventNote: onBehalf, answeredBy: 'SHOP' as const, onBehalfOf: 'CUSTOMER' as const } : {}),
         });
         if (outcome.kind === 'ok' && action.type === 'SHOP_ACCEPT_COUNTER' && outcome.agreement.status === 'AWAITING_CUSTOMER' && delivery.feePayer === 'CUSTOMER') {
           // The payer is a customer without an app: the shop accepting means the shop has talked to them, so the confirmation is recorded in the same step.
@@ -471,10 +496,16 @@ export class DeliveryShopService {
             action: { type: 'CUSTOMER_CONFIRM', approve: true },
             actorUserId: caller.actor.userId,
             eventNote: onBehalf,
+            answeredBy: 'SHOP',
+            onBehalfOf: 'CUSTOMER',
           });
+          confirmedForCustomer = true;
         }
         if (outcome.kind === 'conflict') {
           throw new AppError('VERSION_CONFLICT');
+        }
+        if (outcome.kind === 'answer_expired') {
+          throw new AppError('FEE_ANSWER_EXPIRED');
         }
         if (outcome.kind !== 'ok' && outcome.kind !== 'replayed') {
           throw new AppError('DELIVERY_STATE_CONFLICT');
@@ -485,7 +516,7 @@ export class DeliveryShopService {
         } else {
           after = await this.#update(context, delivery, {});
         }
-        await this.recorder.record(context, { delivery: after, type: change, actorType: 'SHOP', actorId: caller.actor.userId, operation, requestId, metadata: { agreement_status: outcome.agreement.status, on_behalf_of_customer: delivery.feePayer === 'CUSTOMER' } });
+        await this.recorder.record(context, { delivery: after, type: change, actorType: 'SHOP', actorId: caller.actor.userId, operation, requestId, metadata: { agreement_status: outcome.agreement.status, fee_payer: delivery.feePayer, ...(confirmedForCustomer ? { on_behalf_of: 'CUSTOMER' } : {}) } });
         return { status: 200, replayGuard: { user_id: caller.actor.userId }, payload: await this.views.forShop(context, after, await freshClockMs(context), true) };
       },
     );
