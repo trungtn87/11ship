@@ -32,7 +32,7 @@ import {
   SettingsSource,
   SettingsState,
 } from '../core/settings.js';
-import { formatRoute, parseRoute, Route } from '../core/routes.js';
+import { formatRoute, parseRoute, Route, routeOfLink } from '../core/routes.js';
 import { AccountsHooks, AdministratorsView, openLockDialog, renderUserDetail, UsersView } from './accounts-view.js';
 import { DialogHandle } from './dialog.js';
 import { h } from './dom.js';
@@ -47,6 +47,17 @@ import { ShipperDetailView, ShipperHost, ShipperListView, WalletParametersView }
 import { NOT_WIRED_SHIPPING, ShippingPolicySource } from '../core/shipping-policy.js';
 import { ShippingPolicyView } from './shipping-policy-view.js';
 import { DeliverySource, NOT_WIRED_DELIVERIES } from '../core/deliveries.js';
+import { NOT_WIRED_OVERVIEW, OverviewSource } from '../core/overview.js';
+import { OverviewHost, OverviewView } from './overview-view.js';
+import { AccessSource, NOT_WIRED_ACCESS } from '../core/access.js';
+import { AccessHost, AccessView } from './access-view.js';
+import { ConfigSource, NOT_WIRED_CONFIG } from '../core/config.js';
+import { ConfigHost, ConfigView } from './config-view.js';
+import { NOT_WIRED_REPORTS, ReportSource } from '../core/reports.js';
+import { ReportsHost, ReportsView } from './reports-view.js';
+import { NOT_WIRED_OPERATIONS, OperationsSource } from '../core/operations.js';
+import { AuditHost, AuditView } from './audit-view.js';
+import { BackupsHost, BackupsView } from './backups-view.js';
 import { FeedbackSource, NOT_WIRED_FEEDBACK } from '../core/feedback.js';
 import { ComplaintListView, FeedbackHost, ReviewListView } from './feedback-view.js';
 import { DeliveryHost, DeliveryListView } from './deliveries-view.js';
@@ -156,6 +167,16 @@ export class ShellApp implements ShellHost {
     private readonly feedback: FeedbackSource = NOT_WIRED_FEEDBACK,
     private readonly financeOps: FinanceOpsSource = NOT_WIRED_FINANCE_OPS,
     private readonly sessionCsrf: () => string | undefined = () => undefined,
+    /** Where the overview figures (Tổng quan › Điều hành, M12-A) come from. By default nothing is wired, so the page says so. */
+    private readonly overview: OverviewSource = NOT_WIRED_OVERVIEW,
+    /** Where the administrator permission matrix (Tài khoản › Phân quyền, M12-C) comes from. By default nothing is wired, so the page says so. */
+    private readonly access: AccessSource = NOT_WIRED_ACCESS,
+    /** Where the central configuration (Cài đặt › Cấu hình tập trung, M12-D) comes from. By default nothing is wired, so the page says so. */
+    private readonly config: ConfigSource = NOT_WIRED_CONFIG,
+    /** Where the reports and their CSV/Excel exports (Tổng quan › Báo cáo, M12-E) come from. By default nothing is wired, so the page says so. */
+    private readonly reports: ReportSource = NOT_WIRED_REPORTS,
+    /** Where the audit log and the backup history / restore requests (Hệ thống › Nhật ký, Sao lưu và phục hồi, M12-F) come from. By default nothing is wired, so the pages say so. */
+    private readonly operations: OperationsSource = NOT_WIRED_OPERATIONS,
     /** Where "Vận hành hệ thống" (M13) comes from. By default nothing is wired, so every page says so and no control works. */
     private readonly ops: OpsSource = NOT_WIRED_OPS,
   ) {}
@@ -476,7 +497,25 @@ export class ShellApp implements ShellHost {
         this.#bankAccounts(content);
         return;
       case 'deliveries':
-        this.#deliveryList(content);
+        this.#deliveryList(content, route.filter);
+        return;
+      case 'overview':
+        this.#overviewPage(content);
+        return;
+      case 'access':
+        this.#accessPage(content);
+        return;
+      case 'config':
+        this.#configPage(content);
+        return;
+      case 'reports':
+        this.#reportsPage(content);
+        return;
+      case 'audit':
+        this.#auditPage(content);
+        return;
+      case 'backups':
+        this.#backupsPage(content);
         return;
       case 'orders':
         this.#orderList(content);
@@ -996,8 +1035,11 @@ export class ShellApp implements ShellHost {
   }
 
   /** "Vận hành › Giao hàng" (M07.07): counters, filters, list and the detail drawer; the server decides every read and action. */
-  #deliveryList(content: HTMLElement): void {
+  #deliveryList(content: HTMLElement, filter?: Extract<Route, { name: 'deliveries' }>['filter']): void {
     const host: DeliveryHost = {
+      ...(filter === undefined ? {} : { initial: filter }),
+      // The Shipper page opens from a delivery only for an administrator who may open it (the server decides again on the read).
+      ...(this.#role !== undefined && canOpenRoute(this.#role, this.#effectiveGrants(), { name: 'shippers' }) ? { openShipper: (driverId: string) => this.go({ name: 'shipper', id: driverId }) } : {}),
       source: this.deliveries,
       newKey: this.newKey,
       onSessionLost: () => this.onSessionLost(),
@@ -1010,6 +1052,121 @@ export class ShellApp implements ShellHost {
       home: () => this.go({ name: 'home' }),
     };
     const view = new DeliveryListView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Hệ thống › Nhật ký" (M12-F): read only; the server needs the audit.read right (SYSTEM has it). */
+  #auditPage(content: HTMLElement): void {
+    const host: AuditHost = {
+      source: this.operations,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    };
+    const view = new AuditView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Hệ thống › Sao lưu và phục hồi" (M12-F): SYSTEM only; a restore request is recorded, never performed here. */
+  #backupsPage(content: HTMLElement): void {
+    const host: BackupsHost = {
+      source: this.operations,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    };
+    const view = new BackupsView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Tổng quan › Báo cáo" (M12-E): the server decides every read, export and download; a number that counts deliveries opens the list with the same filter. */
+  #reportsPage(content: HTMLElement): void {
+    const host: ReportsHost = {
+      source: this.reports,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      openDeliveries: (query) => this.go(routeOfLink('deliveries', query)),
+    };
+    const view = new ReportsView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Cài đặt › Cấu hình tập trung" (M12-D): every administrator reads; SYSTEM changes through the owners' own commands. */
+  #configPage(content: HTMLElement): void {
+    const host: ConfigHost = {
+      source: this.config,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      openFeeTable: () => this.go({ name: 'shipping-policy' }),
+    };
+    const view = new ConfigView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Tài khoản › Phân quyền" (M12-C): SYSTEM only; the server decides every read and command again. */
+  #accessPage(content: HTMLElement): void {
+    const host: AccessHost = {
+      source: this.access,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    };
+    const view = new AccessView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Tổng quan › Điều hành" (M12-A): the figures, read-only; every figure is gated by the server for this administrator. */
+  #overviewPage(content: HTMLElement): void {
+    const host: OverviewHost = {
+      source: this.overview,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      open: (link) => this.go(routeOfLink(link.area, link.query)),
+    };
+    const view = new OverviewView(content, host);
     this.#unsubscribe = () => view.dispose();
     void view.load();
   }

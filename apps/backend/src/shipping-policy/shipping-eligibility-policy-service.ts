@@ -84,7 +84,7 @@ export class ShippingEligibilityPolicyService {
         scopeId: known.userId,
         operationId: OPERATION,
         idempotencyKey,
-        logicalRequest: { expected_version: body.expectedVersion, ...valuesView(body.values) },
+        logicalRequest: { expected_version: body.expectedVersion, ...valuesView(body.values), reason: body.reason },
         replay: {
           kind: 'sensitive',
           authorize: async (context, guard) => {
@@ -130,6 +130,7 @@ export class ShippingEligibilityPolicyService {
               to_pickup_seconds: body.values.pickupServiceSeconds,
               from_handoff_seconds: current.handoffServiceSeconds,
               to_handoff_seconds: body.values.handoffServiceSeconds,
+              ...(body.reason === null ? {} : { reason: body.reason }),
             },
           });
           await this.outbox.append(context, {

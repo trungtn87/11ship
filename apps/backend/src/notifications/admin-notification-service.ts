@@ -202,6 +202,7 @@ export class AdminNotificationService {
           purge_days: body.purgeDays,
           retry_max_attempts: body.retryMaxAttempts,
           retry_base_seconds: body.retryBaseSeconds,
+          reason: body.reason,
         },
         replay: {
           kind: 'sensitive',
@@ -244,6 +245,7 @@ export class AdminNotificationService {
             to_retry_max: next.retryMaxAttempts,
             from_retry_base_seconds: current.retryBaseSeconds,
             to_retry_base_seconds: next.retryBaseSeconds,
+            ...(body.reason === null ? {} : { reason: body.reason }),
           },
         });
         return { status: 200, replayGuard: { actor_user_id: known.userId }, payload: await configView(context,await this.repo.readConfig(context), this.provider.configured) };

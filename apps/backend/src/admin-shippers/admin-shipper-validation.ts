@@ -1,4 +1,5 @@
 import { AppError } from '../common/app-errors';
+import { parseReason } from '../admin-access/admin-access-validation';
 import { SHIPPER_LIST_STATUSES, ShipperListFilter, ShipperListStatus } from '../driver/driver-admin-query-repository';
 import { DRIVER_TYPES, DriverType } from '../driver/driver-types';
 import { foldVietnamese, likeContains } from '../shared/fold-vietnamese';
@@ -174,12 +175,14 @@ export interface WalletParametersBody {
   readonly expectedVersion: number;
   readonly topupMinVnd: number;
   readonly withdrawMinVnd: number;
+  /** M12-D: why the parameter changes, written to the audit row. Optional so the older screen keeps working. */
+  readonly reason: string | null;
 }
 
 /** Whole VND, positive, at most one billion: anything else (a decimal, a string, zero, a negative, an extra key) is refused. */
 export function parseWalletParametersBody(body: unknown, max: number): WalletParametersBody {
   const source = plainObject(body);
-  onlyKeys(source, ['expected_version', 'topup_min_vnd', 'withdraw_min_vnd']);
+  onlyKeys(source, ['expected_version', 'topup_min_vnd', 'withdraw_min_vnd'], ['reason']);
   const amount = (value: unknown): number => {
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > max) {
       invalid();
@@ -190,5 +193,5 @@ export function parseWalletParametersBody(body: unknown, max: number): WalletPar
   if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 0) {
     invalid();
   }
-  return { expectedVersion: version, topupMinVnd: amount(source.topup_min_vnd), withdrawMinVnd: amount(source.withdraw_min_vnd) };
+  return { expectedVersion: version, topupMinVnd: amount(source.topup_min_vnd), withdrawMinVnd: amount(source.withdraw_min_vnd), reason: Object.hasOwn(source, 'reason') ? parseReason(source.reason) : null };
 }

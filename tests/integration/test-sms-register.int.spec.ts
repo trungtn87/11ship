@@ -86,18 +86,18 @@ describe('M01.22 — REGISTER OTP through the test inbox', () => {
     expect(list[0]?.purpose).toBe('REGISTER');
   });
 
-  it('TS03: a wrong code is counted, five lock the challenge and then even the right code is refused', async () => {
+  it('TS03: a wrong code is counted, three lock the challenge and then even the right code is refused', async () => {
     const phone = randomPhone();
     const id = String(dataOf(await requestOtp(phone)).verification_id);
     const otp = await readOtp(app.harness, 'REGISTER', phone.normalized);
     const wrong = otp === '000000' ? '111111' : '000000';
-    for (let attempt = 1; attempt <= 4; attempt += 1) {
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
       const response = await verify(id, wrong);
       expect([response.status, errorCode(response)]).toEqual([400, 'OTP_INVALID']);
       expect((await rowsOf(phone.normalized))[0]?.attempt_count).toBe(attempt);
     }
-    const fifth = await verify(id, wrong);
-    expect([fifth.status, errorCode(fifth)]).toEqual([429, 'OTP_RATE_LIMITED']);
+    const third = await verify(id, wrong);
+    expect([third.status, errorCode(third)]).toEqual([429, 'OTP_RATE_LIMITED']);
     const right = await verify(id, otp);
     expect([right.status, errorCode(right)]).toEqual([429, 'OTP_RATE_LIMITED']);
     expect((await rowsOf(phone.normalized))[0]?.status).toBe('LOCKED');

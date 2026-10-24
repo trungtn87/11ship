@@ -1,4 +1,5 @@
 import { AppError } from '../common/app-errors';
+import { parseReason } from '../admin-access/admin-access-validation';
 import { EligibilityValues } from './eligibility-parameters-repository';
 
 // Strict parser of the eligibility-parameter write (M06-B/C). The bounds are the database's own CHECKs; the radius is not a parameter.
@@ -17,6 +18,8 @@ export const ELIGIBILITY_BOUNDS = {
 export interface SaveEligibilityBody {
   readonly expectedVersion: number;
   readonly values: EligibilityValues;
+  /** M12-D: why the parameters change, written to the audit row. Optional so the older screen keeps working. */
+  readonly reason: string | null;
 }
 
 export function parseSaveEligibilityBody(body: unknown): SaveEligibilityBody {
@@ -34,7 +37,7 @@ export function parseSaveEligibilityBody(body: unknown): SaveEligibilityBody {
       return invalid();
     }
   }
-  if (Object.keys(source).some((key) => !allowed.includes(key))) {
+  if (Object.keys(source).some((key) => !allowed.includes(key) && key !== 'reason')) {
     return invalid();
   }
   const bounded = (key: keyof typeof ELIGIBILITY_BOUNDS): number => {
@@ -48,6 +51,7 @@ export function parseSaveEligibilityBody(body: unknown): SaveEligibilityBody {
   }
   return {
     expectedVersion: version,
+    reason: Object.hasOwn(source, 'reason') ? parseReason(source.reason) : null,
     values: {
       externalMaxDeliveries: bounded('external_max_deliveries'),
       batchMaxDelaySeconds: bounded('batch_max_delay_seconds'),
