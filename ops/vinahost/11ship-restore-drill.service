@@ -1,0 +1,21 @@
+[Unit]
+Description=11Ship restore drill (download newest backup from Drive, restore into a scratch database, check)
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/11ship/backup/backup.env
+LoadCredentialEncrypted=backup-passphrase:/etc/11ship/backup/passphrase.cred
+LoadCredentialEncrypted=ops-ingest-key:/etc/11ship/backup/ops-ingest-key.cred
+Environment=BACKUP_PASSPHRASE_FILE=%d/backup-passphrase
+Environment=BACKUP_INGEST_KEY_FILE=%d/ops-ingest-key
+ExecStart=/opt/11ship/tools/backup/restore-drill.sh
+TimeoutStartSec=4h
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/backups/11ship /etc/11ship/backup

@@ -180,3 +180,5 @@ GRANT SELECT, INSERT, DELETE ON app.report_export_files TO ship11_app;
 -- by SYSTEM through the Web Admin; an operator moves them on with the owner role. Neither table is ever deleted (trigger).
 GRANT SELECT ON app.backup_records TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.restore_requests TO ship11_app;
+-- "Sao lưu ngay": the application only queues a job (INSERT) and reads it; the backup job moves it on with the owner role. Never deleted (trigger).
+GRANT SELECT, INSERT ON app.backup_jobs TO ship11_app;

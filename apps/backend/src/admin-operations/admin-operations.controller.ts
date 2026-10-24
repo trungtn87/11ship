@@ -5,7 +5,7 @@ import { AdminLimiter } from '../admin-auth/admin-limiter';
 import { AdminRequest, AdminTransport, Csrf, StatusResponse } from '../admin-shippers/admin-shipper.controller';
 import { AdminAuthConfig } from '../config/admin-auth-config';
 import { AdminOperationsService } from './admin-operations-service';
-import { parseAuditQuery, parseCancelBody, parseNoOperationsQuery, parseOperationsId, parseRestoreBody } from './admin-operations-validation';
+import { parseAuditQuery, parseCancelBody, parseEmptyBody, parseNoOperationsQuery, parseOperationsId, parseRestoreBody } from './admin-operations-validation';
 
 /**
  * M12-F. GET /v1/admin/audit (audit.read; read only), GET /v1/admin/backups (SYSTEM), POST /v1/admin/restore-requests and .../:id/cancel (SYSTEM, idempotent, audited).
@@ -34,6 +34,16 @@ export class AdminOperationsController {
     const token = this.#transport.read(request);
     parseNoOperationsQuery(query);
     return { data: await this.operations.backups(token) };
+  }
+
+  @Post('backups/run')
+  @HttpCode(200)
+  async run(@Body() body: unknown, @Req() request: AdminRequest, @Res({ passthrough: true }) response: StatusResponse, @Headers('x-csrf-token') csrf: Csrf, @Headers('idempotency-key') key: Csrf) {
+    const token = await this.#transport.write(request);
+    parseEmptyBody(body);
+    const outcome = await this.operations.runBackup(token, csrf, key, { requestId: request.requestId ?? randomUUID() });
+    response.status(outcome.status);
+    return { data: outcome.payload };
   }
 
   @Post('restore-requests')

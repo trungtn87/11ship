@@ -37,7 +37,30 @@ if [[ -n "$exists" ]]; then
   exit 65
 fi
 
-openssl enc -d -aes-256-cbc -pbkdf2 -pass "file:$pass" -in "$file" -out "$work/backup.dump"
+openssl enc -d -aes-256-cbc -pbkdf2 -pass "file:$pass" -in "$file" -out "$work/decrypted" || { echo "REFUSED: the file could not be decrypted (wrong passphrase or damaged file)" >&2; exit 67; }
+# A bundle (tar: database.dump + manifest.json [+ files.tar]) or, for the first backups, a bare pg_dump custom archive.
+if [[ "$(head -c 5 "$work/decrypted")" == "PGDMP" ]]; then
+  mv "$work/decrypted" "$work/backup.dump"
+else
+  tar --extract --file "$work/decrypted" --directory "$work" --no-same-owner --no-same-permissions database.dump manifest.json
+  rm -f "$work/decrypted"
+  # The manifest holds the checksum of every component: a damaged or swapped component is refused before it is restored.
+  python3 - "$work" <<'PY' || { echo "REFUSED: a component does not match its manifest checksum" >&2; exit 68; }
+import hashlib, json, sys
+work = sys.argv[1]
+manifest = json.load(open(work + '/manifest.json'))
+for c in manifest['components']:
+    if c['name'] != 'database.dump':
+        continue  # files.tar is checked by restore-fetch.sh, which extracts it
+    digest = hashlib.sha256()
+    with open(work + '/' + c['name'], 'rb') as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b''):
+            digest.update(chunk)
+    if digest.hexdigest() != c['sha256']:
+        raise SystemExit(1)
+PY
+  mv "$work/database.dump" "$work/backup.dump"
+fi
 psql "$admin_url" -v ON_ERROR_STOP=1 -qc "CREATE DATABASE \"$scratch\""
 scratch_url="$(python3 -c 'import sys,urllib.parse as u; p=u.urlsplit(sys.argv[1]); print(u.urlunsplit(p._replace(path="/"+sys.argv[2])))' "$admin_url" "$scratch")"
 # Owners/ACLs of the source roles may not exist on the scratch server: restore the data and objects, not the grants.

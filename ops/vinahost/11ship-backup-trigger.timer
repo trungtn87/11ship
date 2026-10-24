@@ -1,0 +1,11 @@
+[Unit]
+Description=11Ship "Sao lưu ngay" runner, every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+AccuracySec=10s
+Unit=11ship-backup-trigger.service
+
+[Install]
+WantedBy=timers.target

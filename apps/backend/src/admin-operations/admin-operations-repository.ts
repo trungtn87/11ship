@@ -32,6 +32,21 @@ export interface BackupRow {
   readonly verifiedAtMs: number | null;
   readonly verifyNote: string | null;
   readonly errorCode: string | null;
+  readonly stage: 'STARTED' | 'LOCAL' | 'UPLOADED' | 'VERIFIED';
+  readonly failedStage: string | null;
+  readonly trigger: 'TIMER' | 'DEPLOY' | 'MANUAL' | 'WEB';
+  readonly releaseVersion: string | null;
+  readonly offsiteVerifiedAtMs: number | null;
+}
+
+export interface BackupJobRow {
+  readonly jobId: string;
+  readonly state: 'QUEUED' | 'RUNNING' | 'DONE' | 'FAILED';
+  readonly backupId: string | null;
+  readonly errorCode: string | null;
+  readonly createdAtMs: number;
+  readonly startedAtMs: number | null;
+  readonly finishedAtMs: number | null;
 }
 
 export interface RestoreRow {
@@ -59,13 +74,18 @@ const whole = (value: string | null): number | null => {
 };
 const ms = (column: string): string => `(extract(epoch FROM ${column}) * 1000)::bigint::text`;
 
-const BACKUP_COLUMNS = `backup_id::text AS backup_id, kind, state, ${ms('started_at')} AS started_ms, ${ms('finished_at')} AS finished_ms, size_bytes::text AS size_bytes, schema_version, encrypted, offsite, ${ms('verified_at')} AS verified_ms, verify_note, error_code`;
+const BACKUP_COLUMNS = `backup_id::text AS backup_id, kind, state, ${ms('started_at')} AS started_ms, ${ms('finished_at')} AS finished_ms, size_bytes::text AS size_bytes, schema_version, encrypted, offsite, ${ms('verified_at')} AS verified_ms, verify_note, error_code, stage, failed_stage, trigger_kind, release_version, ${ms('offsite_verified_at')} AS offsite_verified_ms`;
+const JOB_COLUMNS = `job_id::text AS job_id, state, backup_id::text AS backup_id, error_code, ${ms('created_at')} AS created_ms, ${ms('started_at')} AS started_ms, ${ms('finished_at')} AS finished_ms`;
 const RESTORE_COLUMNS = `r.request_id::text AS request_id, r.backup_id::text AS backup_id, b.kind AS backup_kind, ${ms('b.started_at')} AS backup_started_ms, r.reason, r.state, r.operator_note, r.version::text AS version, ${ms('r.created_at')} AS created_ms, ${ms('r.updated_at')} AS updated_ms`;
 
 const toBackup = (row: Record<string, string | boolean | null>): BackupRow => ({
   backupId: row.backup_id as string, kind: row.kind as string, state: row.state as string, startedAtMs: whole(row.started_ms as string) as number, finishedAtMs: whole(row.finished_ms as string | null),
   sizeBytes: whole(row.size_bytes as string | null), schemaVersion: row.schema_version as string | null, encrypted: row.encrypted as boolean, offsite: row.offsite as boolean, verifiedAtMs: whole(row.verified_ms as string | null),
-  verifyNote: row.verify_note as string | null, errorCode: row.error_code as string | null,
+  verifyNote: row.verify_note as string | null, errorCode: row.error_code as string | null, stage: row.stage as BackupRow['stage'], failedStage: row.failed_stage as string | null, trigger: row.trigger_kind as BackupRow['trigger'],
+  releaseVersion: row.release_version as string | null, offsiteVerifiedAtMs: whole(row.offsite_verified_ms as string | null),
+});
+const toJob = (row: Record<string, string | null>): BackupJobRow => ({
+  jobId: row.job_id as string, state: row.state as BackupJobRow['state'], backupId: row.backup_id, errorCode: row.error_code, createdAtMs: whole(row.created_ms) as number, startedAtMs: whole(row.started_ms), finishedAtMs: whole(row.finished_ms),
 });
 const toRestore = (row: Record<string, string | null>): RestoreRow => ({
   requestId: row.request_id as string, backupId: row.backup_id as string, backupKind: row.backup_kind as string, backupStartedAtMs: whole(row.backup_started_ms) as number, reason: row.reason as string, state: row.state as string,
@@ -132,6 +152,31 @@ export class AdminOperationsRepository {
       [requestId],
     );
     return result.rows[0] === undefined ? undefined : toRestore(result.rows[0]);
+  }
+
+  /** The job that is queued or running (at most one: unique index), else the newest finished one. */
+  async currentJob(context: TransactionContext): Promise<BackupJobRow | undefined> {
+    const result = await context.query<Record<string, string | null>>(`SELECT ${JOB_COLUMNS} FROM app.backup_jobs ORDER BY (state IN ('QUEUED', 'RUNNING')) DESC, created_at DESC LIMIT 1`);
+    return result.rows[0] === undefined ? undefined : toJob(result.rows[0]);
+  }
+
+  async openJobCount(context: TransactionContext): Promise<number> {
+    const result = await context.query<{ n: string }>(`SELECT count(*)::text AS n FROM app.backup_jobs WHERE state IN ('QUEUED', 'RUNNING')`);
+    return whole(result.rows[0]?.n ?? '0') as number;
+  }
+
+  /** A backup run that is still STARTED (the timer or a deploy is running one) also blocks "Sao lưu ngay". */
+  async runningBackupCount(context: TransactionContext): Promise<number> {
+    const result = await context.query<{ n: string }>(`SELECT count(*)::text AS n FROM app.backup_records WHERE state = 'RUNNING' AND started_at > clock_timestamp() - interval '6 hours'`);
+    return whole(result.rows[0]?.n ?? '0') as number;
+  }
+
+  async insertJob(context: TransactionContext, job: { jobId: string; requestedBy: string }): Promise<BackupJobRow> {
+    const result = await context.query<Record<string, string | null>>(
+      `INSERT INTO app.backup_jobs (job_id, requested_by, state, version, created_at) VALUES ($1::uuid, $2::uuid, 'QUEUED', 1, date_trunc('milliseconds', clock_timestamp())) RETURNING ${JOB_COLUMNS}`,
+      [job.jobId, job.requestedBy],
+    );
+    return toJob(result.rows[0] as Record<string, string | null>);
   }
 
   async openRestoreCount(context: TransactionContext): Promise<number> {

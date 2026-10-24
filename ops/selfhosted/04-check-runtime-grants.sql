@@ -91,6 +91,7 @@ WITH expected(table_name, privileges) AS (
     ('report_export_files', ARRAY['SELECT', 'INSERT', 'DELETE']::text[]),
     ('backup_records', ARRAY['SELECT']::text[]),
     ('restore_requests', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('backup_jobs', ARRAY['SELECT', 'INSERT']::text[]),
     ('notification_push_tokens', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('notification_config', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('notifications', ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']::text[]),

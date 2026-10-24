@@ -515,6 +515,60 @@ describe('M13 — operations, alerts and updates', () => {
       expect((await send({ kind: 'BACKUP', ok: true, finished_at: 'yesterday' })).status).toBe(400);
     });
 
+    it('Drive backup (M12-F): a failure is told once with its cause, a repeat is not told again, 26 hours without a verified off-VPS copy is told, recovery is told once, and Discord carries nothing sensitive', async () => {
+      await configureDiscord();
+      const key = await ingest.createKey('Sao luu Drive', 'BACKUP');
+      const send = (body: unknown) => api(admin.running.baseUrl, 'POST', '/ops/ingest/backup', { bearer: key.secret, body });
+      const ago = (hours: number): string => new Date(Date.now() - hours * 3_600_000).toISOString();
+      const said = (): string => JSON.stringify(discord.calls.map((c) => c.body));
+
+      expect((await send({ kind: 'BACKUP', ok: true, finished_at: ago(1), size_bytes: 1000 })).status).toBe(200);
+      await dispatcher.runOnce();
+      expect(discord.calls).toHaveLength(0); // a good backup says nothing
+
+      expect((await send({ kind: 'BACKUP', ok: false, finished_at: ago(0), detail_code: 'DRIVE_QUOTA' })).status).toBe(200);
+      await dispatcher.runOnce();
+      expect(discord.calls).toHaveLength(1);
+      expect(said()).toContain('Google Drive đã đầy dung lượng');
+
+      for (let i = 0; i < 3; i += 1) expect((await send({ kind: 'BACKUP', ok: false, finished_at: ago(0), detail_code: 'DRIVE_QUOTA' })).status).toBe(200);
+      await dispatcher.runOnce();
+      expect(discord.calls).toHaveLength(1); // the same failure again: still one incident, no second message
+      expect(await incidentOf('backup')).toHaveLength(1);
+
+      expect((await send({ kind: 'BACKUP', ok: true, finished_at: ago(0), size_bytes: 2000 })).status).toBe(200);
+      await dispatcher.runOnce();
+      expect(discord.calls).toHaveLength(2); // one recovery message
+      expect((await incidentOf('backup'))[0]).toMatchObject({ status: 'RECOVERED' });
+
+      // 26 hours: the last verified copy is older than the limit, so the backup is late even though nothing "failed" (the timer may be dead).
+      await sql('DELETE FROM app.ops_backup_reports');
+      expect((await send({ kind: 'BACKUP', ok: true, finished_at: ago(27), size_bytes: 3000 })).status).toBe(200);
+      await dispatcher.runOnce();
+      expect(discord.calls).toHaveLength(3);
+      expect(said()).toContain('Quá 26 giờ chưa có bản sao lưu ngoài VPS thành công');
+      await collector.collectOnce();
+      await dispatcher.runOnce();
+      expect(discord.calls).toHaveLength(3); // the collector looking again does not repeat it
+
+      expect((await send({ kind: 'BACKUP', ok: true, finished_at: ago(0), size_bytes: 4000 })).status).toBe(200);
+      await dispatcher.runOnce();
+      expect(discord.calls).toHaveLength(4);
+
+      for (const forbidden of [key.secret, 'passphrase', 'ya29', 'refresh_token', 'rclone.conf', 'postgres://']) expect(said().toLowerCase()).not.toContain(forbidden.toLowerCase());
+    });
+
+    it('a missing Drive configuration is told as such, never as a success', async () => {
+      await configureDiscord();
+      const key = await ingest.createKey('Sao luu Drive', 'BACKUP');
+      const send = (body: unknown) => api(admin.running.baseUrl, 'POST', '/ops/ingest/backup', { bearer: key.secret, body });
+      expect((await send({ kind: 'BACKUP', ok: false, finished_at: new Date().toISOString(), detail_code: 'DRIVE_NOT_CONFIGURED' })).status).toBe(200);
+      await dispatcher.runOnce();
+      expect(JSON.stringify(discord.calls.map((c) => c.body))).toContain('Sao lưu chưa được nối với Google Drive');
+      const overview = dataOf1(await aget(systemLogin(), '/overview'));
+      expect((overview.components as Json[]).find((c) => c.key === 'backup')!.state).toBe('WARNING');
+    });
+
     it('the deploy pipeline reports start and finish: history, one Discord result, and no promise of a database rollback', async () => {
       await configureDiscord();
       const key = await ingest.createKey('Deploy', 'DEPLOY');

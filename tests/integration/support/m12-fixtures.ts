@@ -168,12 +168,15 @@ export async function purgeBackups(pool: Pool): Promise<void> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query('ALTER TABLE app.backup_jobs DISABLE TRIGGER USER');
     await client.query('ALTER TABLE app.restore_requests DISABLE TRIGGER USER');
     await client.query('ALTER TABLE app.backup_records DISABLE TRIGGER USER');
+    await client.query('DELETE FROM app.backup_jobs');
     await client.query('DELETE FROM app.restore_requests');
     await client.query('DELETE FROM app.backup_records');
     await client.query('ALTER TABLE app.restore_requests ENABLE TRIGGER USER');
     await client.query('ALTER TABLE app.backup_records ENABLE TRIGGER USER');
+    await client.query('ALTER TABLE app.backup_jobs ENABLE TRIGGER USER');
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined);

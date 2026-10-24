@@ -41,21 +41,23 @@ describe('M12-F — audit viewer, backup history, restore requests', () => {
   const mine = `m12f.t${tag}`;
 
   const clearBackups = (): Promise<void> =>
-    withTriggerLifted(admin.pool, ['restore_requests', 'backup_records'], async (client) => {
+    withTriggerLifted(admin.pool, ['backup_jobs', 'restore_requests', 'backup_records'], async (client) => {
+      await client.query('DELETE FROM app.backup_jobs');
       await client.query('DELETE FROM app.restore_requests');
       await client.query('DELETE FROM app.backup_records');
     });
 
-  const backup = async (spec: { state?: string; startedAgoMs?: number; verified?: boolean; offsite?: boolean; kind?: string; encrypted?: boolean }): Promise<string> => {
+  const backup = async (spec: { state?: string; startedAgoMs?: number; verified?: boolean; offsite?: boolean; kind?: string; encrypted?: boolean; stage?: string; trigger?: string; error?: string }): Promise<string> => {
     const id = randomUUID();
     const state = spec.state ?? 'SUCCEEDED';
     const ago = spec.startedAgoMs ?? HOUR;
     const verified = spec.verified ?? true;
     await admin.pool.query(
-      `INSERT INTO app.backup_records (backup_id, kind, state, started_at, finished_at, size_bytes, sha256, schema_version, encrypted, offsite, verified_at, verify_note, error_code)
+      `INSERT INTO app.backup_records (backup_id, kind, state, started_at, finished_at, size_bytes, sha256, schema_version, encrypted, offsite, verified_at, verify_note, error_code, stage, trigger_kind, offsite_verified_at, failed_stage)
        VALUES ($1::uuid, $2, $3, now() - $4::int * interval '1 millisecond', ${state === 'RUNNING' ? 'NULL' : `now() - $4::int * interval '1 millisecond' + interval '1 minute'`}, ${state === 'SUCCEEDED' ? '123456' : 'NULL'}, ${state === 'SUCCEEDED' ? `repeat('a', 64)` : 'NULL'},
-               ${state === 'SUCCEEDED' ? `'1795996800000_create-m12-backup-restore'` : 'NULL'}, $5, $6, ${verified ? `now() - $4::int * interval '1 millisecond' + interval '2 minutes'` : 'NULL'}, 'test', ${state === 'FAILED' ? `'DUMP_FAILED'` : 'NULL'})`,
-      [id, spec.kind ?? 'DAILY', state, ago, spec.encrypted ?? true, spec.offsite ?? false],
+               ${state === 'SUCCEEDED' ? `'1795996800000_create-m12-backup-restore'` : 'NULL'}, $5, $6, ${verified ? `now() - $4::int * interval '1 millisecond' + interval '2 minutes'` : 'NULL'}, 'test', ${state === 'FAILED' ? `'${spec.error ?? 'DUMP_FAILED'}'` : 'NULL'}, $7, $8,
+               ${spec.offsite ? `now() - $4::int * interval '1 millisecond' + interval '3 minutes'` : 'NULL'}, ${state === 'FAILED' ? `'${spec.stage ?? 'STARTED'}'` : 'NULL'})`,
+      [id, spec.kind ?? 'DAILY', state, ago, spec.encrypted ?? true, spec.offsite ?? false, spec.stage ?? (spec.offsite ? 'VERIFIED' : state === 'SUCCEEDED' ? 'LOCAL' : 'STARTED'), spec.trigger ?? 'TIMER'],
     );
     return id;
   };
@@ -236,7 +238,57 @@ describe('M12-F — audit viewer, backup history, restore requests', () => {
     await expect(admin.pool.query('DELETE FROM app.restore_requests')).rejects.toThrow(/never deleted/);
   });
 
-  it('5. the configuration hub states the fixed backup rules for every administrator and exposes no backup data', async () => {
+  it('5. "Sao lưu ngay": SYSTEM only, one job at a time, the same key is the same job, a running backup also blocks it, audited, and it starts no process', async () => {
+    await clearBackups();
+    const run = (who: { cookie: string; csrf: string }, key?: string, body: unknown = {}) => postAs(admin, who, '/backups/run', body, key);
+    expect((await run(reader.login)).status).toBe(403);
+    expect((await run(other.login)).status).toBe(403);
+    expect((await postAs(admin, systemLogin(), '/backups/run', { kind: 'DAILY' })).status).toBe(400); // no input is accepted
+    const key = randomUUID();
+    const first = await run(systemLogin(), key);
+    expect(first.status).toBe(200);
+    const job = adminData(first) as Json;
+    expect([job.state, job.backup_id]).toEqual(['QUEUED', null]);
+    expect(((adminData(await run(systemLogin(), key))) as Json).job_id).toBe(job.job_id); // a lost answer, retried
+    const second = await run(systemLogin());
+    expect([second.status, adminErrorCode(second)]).toEqual([409, 'BACKUP_RUN_OPEN']);
+    const twice = await Promise.all([run(systemLogin()), run(systemLogin())]);
+    expect(twice.map((r) => r.status)).toEqual([409, 409]);
+    expect((await admin.pool.query<{ n: string }>(`SELECT count(*)::text AS n FROM app.backup_jobs WHERE state IN ('QUEUED', 'RUNNING')`)).rows[0]?.n).toBe('1');
+    const page = adminData(await getAs(admin, systemLogin(), '/backups')) as Json;
+    expect(page.job).toMatchObject({ job_id: job.job_id, state: 'QUEUED' });
+    expect(page.policy).toMatchObject({ schedule_time: '03:00', schedule_timezone: 'Asia/Ho_Chi_Minh', before_deploy: true });
+    expect((await admin.pool.query(`SELECT 1 FROM app.audit_logs WHERE action = 'admin.backup.run.v1' AND resource_id = $1`, [job.job_id])).rowCount).toBe(1);
+
+    // The job runner (the operating team's service, owner role) finishes it; then another may be queued, and a backup that is RUNNING blocks it too.
+    await withTriggerLifted(admin.pool, ['backup_jobs'], async (client) => {
+      await client.query(`UPDATE app.backup_jobs SET state = 'DONE', finished_at = now() WHERE job_id = $1::uuid`, [job.job_id]);
+    });
+    await backup({ state: 'RUNNING', verified: false });
+    const blocked = await run(systemLogin());
+    expect([blocked.status, adminErrorCode(blocked)]).toEqual([409, 'BACKUP_RUN_OPEN']);
+    await clearBackups();
+    expect((await run(systemLogin())).status).toBe(200);
+    // The application role can queue and read a job but never change or delete one.
+    await expect(admin.pool.query('DELETE FROM app.backup_jobs')).rejects.toThrow(/never deleted/);
+  });
+
+  it('6. the page tells the steps apart: made on the VPS, failed with its cause, verified outside the VPS; the latest of each is named', async () => {
+    await clearBackups();
+    const offsite = await backup({ offsite: true, startedAgoMs: 30 * HOUR, kind: 'DAILY', trigger: 'TIMER' });
+    const localNewer = await backup({ state: 'FAILED', startedAgoMs: 2 * HOUR, verified: true, stage: 'LOCAL', error: 'DRIVE_QUOTA' });
+    const page = adminData(await getAs(admin, systemLogin(), '/backups')) as Json;
+    const find = (id: string): Json => (page.items as Json[]).find((item) => item.backup_id === id) as Json;
+    expect(find(offsite)).toMatchObject({ state: 'SUCCEEDED', stage: 'VERIFIED', offsite: true });
+    expect(find(localNewer)).toMatchObject({ state: 'FAILED', stage: 'LOCAL', failed_stage: 'LOCAL', error_code: 'DRIVE_QUOTA', offsite: false });
+    expect(page.latest_offsite_at).toEqual(expect.stringMatching(/Z$/));
+    expect(Date.parse(page.latest_offsite_at as string)).toBeLessThan(Date.now() - 20 * HOUR);
+    expect((await health()).state).toBe('STALE');
+    // The database does not let a copy be called "outside the VPS" without the verified step.
+    await expect(admin.pool.query(`INSERT INTO app.backup_records (backup_id, kind, state, started_at, finished_at, size_bytes, sha256, schema_version, encrypted, verified_at, offsite, stage) VALUES (gen_random_uuid(), 'DAILY', 'SUCCEEDED', now(), now(), 10, repeat('b', 64), 'x', true, now(), true, 'LOCAL')`)).rejects.toThrow(/backup_records_offsite_ck/);
+  });
+
+  it('7. the configuration hub states the fixed backup rules for every administrator and exposes no backup data', async () => {
     const groups = adminData(await getAs(admin, other.login, '/config/groups')) as Json;
     const storage = (groups.groups as Json[]).find((group) => group.key === 'storage_backup') as Json;
     expect(storage.fixed_rules.map((rule: Json) => rule.key)).toEqual(['backup_daily', 'backup_keep_daily', 'backup_keep_weekly', 'backup_pre_migration', 'backup_offsite', 'backup_verified']);

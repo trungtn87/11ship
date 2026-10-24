@@ -11,13 +11,15 @@ import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { PERMISSION_AUDIT_READ } from '../finance-access/finance-access-constants';
 import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempotency/idempotency-executor';
 import { TransactionManager } from '../transaction/transaction-manager';
-import { AdminOperationsRepository, AuditRow, BackupRow, RestoreRow } from './admin-operations-repository';
+import { AdminOperationsRepository, AuditRow, BackupJobRow, BackupRow, RestoreRow } from './admin-operations-repository';
 import { AuditFilter, RestoreRequestBody } from './admin-operations-validation';
 
 const iso = (ms: number | null): string | null => (ms === null ? null : new Date(ms).toISOString());
 const RESOURCE = 'restore_request';
 const OPERATION_REQUEST = 'admin.restore.request.v1';
 const OPERATION_CANCEL = 'admin.restore.cancel.v1';
+const OPERATION_RUN = 'admin.backup.run.v1';
+const RESOURCE_JOB = 'backup_job';
 
 /** What the backup policy is. A fixed rule of the system (Owner, spec section 6): shown to the administrators, not a parameter. */
 export const BACKUP_POLICY = {
@@ -29,6 +31,11 @@ export const BACKUP_POLICY = {
   encrypted_required: true,
   /** A newest verified backup older than this is reported STALE: the daily job did not run or did not verify. */
   max_age_hours: 26,
+  /** The timer of the backup job (systemd OnCalendar on the VPS); shown so nobody has to guess when the next copy is made. */
+  schedule_time: '03:00',
+  schedule_timezone: 'Asia/Ho_Chi_Minh',
+  /** A backup is also made before a deploy that carries a migration, and kept apart from the daily/weekly chain. */
+  before_deploy: true,
 } as const;
 
 /** Keys whose VALUE is never shown, whatever the audit writer let through: the viewer must not become a second place where a secret can be read. */
@@ -80,8 +87,23 @@ const backupView = (row: BackupRow): JsonObject => ({
   verified_at: iso(row.verifiedAtMs),
   verify_note: row.verifyNote,
   error_code: row.errorCode,
+  stage: row.stage,
+  failed_stage: row.failedStage,
+  trigger: row.trigger,
+  release_version: row.releaseVersion,
+  offsite_verified_at: iso(row.offsiteVerifiedAtMs),
   // The only backups a restore may start from: finished, encrypted and verified.
   restorable: row.state === 'SUCCEEDED' && row.encrypted && row.verifiedAtMs !== null,
+});
+
+const jobView = (row: BackupJobRow): JsonObject => ({
+  job_id: row.jobId,
+  state: row.state,
+  backup_id: row.backupId,
+  error_code: row.errorCode,
+  created_at: iso(row.createdAtMs),
+  started_at: iso(row.startedAtMs),
+  finished_at: iso(row.finishedAtMs),
 });
 
 const restoreView = (row: RestoreRow): JsonObject => ({
@@ -164,13 +186,35 @@ export class AdminOperationsService {
       this.#requireSystem(rights);
       const rows = await this.repository.backups(context, 60);
       const restores = await this.repository.restores(context, 20);
+      const job = await this.repository.currentJob(context);
+      // "Latest made on the VPS" and "latest verified outside the VPS" are two facts: the first can be newer than the second (the upload failed or is pending).
+      const latestLocal = rows.find((row) => row.state === 'SUCCEEDED' || row.stage === 'LOCAL' || row.stage === 'UPLOADED');
+      const latestOffsite = rows.find((row) => row.offsite && row.offsiteVerifiedAtMs !== null && row.state === 'SUCCEEDED');
       return {
         generated_at: iso(rights.nowMs),
         policy: { ...BACKUP_POLICY },
         health: backupHealth(rows, rights.nowMs),
+        latest_local_at: latestLocal === undefined ? null : iso(latestLocal.startedAtMs),
+        latest_offsite_at: latestOffsite === undefined ? null : iso(latestOffsite.offsiteVerifiedAtMs),
+        job: job === undefined ? null : jobView(job),
         items: rows.map(backupView),
         restore_requests: restores.map(restoreView),
       };
+    });
+  }
+
+  /**
+   * "Sao lưu ngay": SYSTEM queues ONE job. The backup job of the operating team picks it up (the application starts no process). A run already queued or running (a job, the
+   * timer or a deploy) refuses a second one, and the same Idempotency-Key replays the first answer, so a double click or a retry can never queue two runs.
+   */
+  runBackup(sessionToken: string | undefined, csrf: unknown, key: string | readonly string[] | undefined, meta: { requestId: string }): Promise<IdempotentOutcome> {
+    return this.#command(sessionToken, csrf, OPERATION_RUN, {}, key, async (context, rights, known) => {
+      if ((await this.repository.openJobCount(context)) > 0 || (await this.repository.runningBackupCount(context)) > 0) {
+        throw new AppError('BACKUP_RUN_OPEN');
+      }
+      const job = await this.repository.insertJob(context, { jobId: randomUUID(), requestedBy: known.userId });
+      await this.audit.append(context, { requestId: meta.requestId, actorType: rights.role, actorId: known.userId, action: OPERATION_RUN, resourceType: RESOURCE_JOB, resourceId: job.jobId, resourceVersion: 1, outcome: 'SUCCESS', metadata: { kind: 'MANUAL' } });
+      return { status: 200, payload: jobView(job) };
     });
   }
 

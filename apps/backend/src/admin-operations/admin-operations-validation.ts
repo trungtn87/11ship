@@ -125,3 +125,11 @@ export function parseCancelBody(body: unknown): { expectedVersion: number } {
   const b = plain(body, ['expected_version']);
   return typeof b.expected_version === 'number' && Number.isSafeInteger(b.expected_version) && b.expected_version >= 1 ? { expectedVersion: b.expected_version } : invalid();
 }
+
+/** POST /backups/run takes no input: the actor comes from the session and the kind is always MANUAL. */
+export function parseEmptyBody(body: unknown): void {
+  if (body === undefined || body === null) {
+    return;
+  }
+  plain(body, []);
+}

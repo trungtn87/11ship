@@ -4,7 +4,7 @@
 import { CsrfPort, failureOf } from './accounts-api.js';
 import { ApiClient, ApiResult, record, str } from './api.js';
 import { CommandResult, commandResultOf } from './commands.js';
-import { AuditItem, AuditOutcome, AuditPage, AuditQuery, AuditRead, BackupItem, BackupKind, BackupPage, BackupRead, OperationsSource, RestoreItem, RestoreState } from './operations.js';
+import { AuditItem, AuditOutcome, AuditPage, AuditQuery, AuditRead, BackupItem, BackupJob, BackupKind, BackupPage, BackupRead, BackupStage, BackupTrigger, OperationsSource, RestoreItem, RestoreState } from './operations.js';
 
 export const OPERATIONS_BASE = '/v1';
 
@@ -18,6 +18,8 @@ const nullableWhole = (value: unknown): number | null | undefined => (value === 
 const KINDS: readonly string[] = ['DAILY', 'WEEKLY', 'PRE_MIGRATION', 'PRE_RESTORE', 'MANUAL'];
 const RESTORE_STATES: readonly string[] = ['REQUESTED', 'CANCELLED', 'IN_PROGRESS', 'COMPLETED', 'ABORTED'];
 const HEALTH: readonly string[] = ['OK', 'STALE', 'NOT_OFFSITE', 'NONE'];
+const STAGES: readonly string[] = ['STARTED', 'LOCAL', 'UPLOADED', 'VERIFIED'];
+const TRIGGERS: readonly string[] = ['TIMER', 'DEPLOY', 'MANUAL', 'WEB'];
 
 function parseAuditItem(value: unknown): AuditItem | undefined {
   const raw = record(value);
@@ -74,10 +76,13 @@ function parseBackup(value: unknown): BackupItem | undefined {
   const verifiedAt = nullableIso(raw?.verified_at);
   const note = nullableStr(raw?.verify_note);
   const error = nullableStr(raw?.error_code);
-  if (raw === undefined || id === undefined || typeof kind !== 'string' || !KINDS.includes(kind) || (state !== 'RUNNING' && state !== 'SUCCEEDED' && state !== 'FAILED') || startedAt === undefined || finishedAt === undefined || size === undefined || schema === undefined || verifiedAt === undefined || note === undefined || error === undefined || typeof raw.encrypted !== 'boolean' || typeof raw.offsite !== 'boolean' || typeof raw.restorable !== 'boolean') {
+  const failedStage = raw?.failed_stage === null ? null : typeof raw?.failed_stage === 'string' && STAGES.includes(raw.failed_stage) ? (raw.failed_stage as BackupStage) : undefined;
+  const release = nullableStr(raw?.release_version);
+  const offsiteAt = nullableIso(raw?.offsite_verified_at);
+  if (raw === undefined || failedStage === undefined || release === undefined || offsiteAt === undefined || typeof raw.stage !== 'string' || !STAGES.includes(raw.stage) || typeof raw.trigger !== 'string' || !TRIGGERS.includes(raw.trigger) || id === undefined || typeof kind !== 'string' || !KINDS.includes(kind) || (state !== 'RUNNING' && state !== 'SUCCEEDED' && state !== 'FAILED') || startedAt === undefined || finishedAt === undefined || size === undefined || schema === undefined || verifiedAt === undefined || note === undefined || error === undefined || typeof raw.encrypted !== 'boolean' || typeof raw.offsite !== 'boolean' || typeof raw.restorable !== 'boolean') {
     return undefined;
   }
-  return { id, kind: kind as BackupKind, state, startedAt, finishedAt, sizeBytes: size, schemaVersion: schema, encrypted: raw.encrypted, offsite: raw.offsite, verifiedAt, verifyNote: note, errorCode: error, restorable: raw.restorable };
+  return { id, kind: kind as BackupKind, state, startedAt, finishedAt, sizeBytes: size, schemaVersion: schema, encrypted: raw.encrypted, offsite: raw.offsite, verifiedAt, verifyNote: note, errorCode: error, stage: raw.stage as BackupStage, failedStage, trigger: raw.trigger as BackupTrigger, releaseVersion: release, offsiteVerifiedAt: offsiteAt, restorable: raw.restorable };
 }
 
 export function parseRestore(value: unknown): RestoreItem | undefined {
@@ -96,6 +101,18 @@ export function parseRestore(value: unknown): RestoreItem | undefined {
   return { id, backupId, backupKind: kind as BackupKind, backupStartedAt: startedAt, reason, state: state as RestoreState, operatorNote: note, version: raw.version, createdAt };
 }
 
+export function parseJob(value: unknown): BackupJob | undefined {
+  const raw = record(value);
+  const id = str(raw?.job_id);
+  const createdAt = iso(raw?.created_at);
+  const finishedAt = nullableIso(raw?.finished_at);
+  const error = nullableStr(raw?.error_code);
+  if (raw === undefined || id === undefined || createdAt === undefined || finishedAt === undefined || error === undefined || (raw.state !== 'QUEUED' && raw.state !== 'RUNNING' && raw.state !== 'DONE' && raw.state !== 'FAILED')) {
+    return undefined;
+  }
+  return { id, state: raw.state, errorCode: error, createdAt, finishedAt };
+}
+
 export function parseBackups(data: Record<string, unknown>): BackupPage | undefined {
   const generatedAt = iso(data.generated_at);
   const policy = record(data.policy);
@@ -104,6 +121,14 @@ export function parseBackups(data: Record<string, unknown>): BackupPage | undefi
   const lastVerified = nullableIso(health?.last_verified_at);
   const message = str(health?.message);
   if (generatedAt === undefined || policy === undefined || health === undefined || typeof healthState !== 'string' || !HEALTH.includes(healthState) || lastVerified === undefined || message === undefined || !Array.isArray(data.items) || !Array.isArray(data.restore_requests)) {
+    return undefined;
+  }
+  const latestLocal = nullableIso(data.latest_local_at);
+  const latestOffsite = nullableIso(data.latest_offsite_at);
+  const job = data.job === null ? null : parseJob(data.job);
+  const scheduleTime = str(policy.schedule_time);
+  const scheduleZone = str(policy.schedule_timezone);
+  if (latestLocal === undefined || latestOffsite === undefined || job === undefined || scheduleTime === undefined || scheduleZone === undefined) {
     return undefined;
   }
   const keepDaily = policy.keep_daily;
@@ -128,7 +153,7 @@ export function parseBackups(data: Record<string, unknown>): BackupPage | undefi
     }
     restoreRequests.push(item);
   }
-  return { generatedAt, policy: { keepDaily, keepWeekly, maxAgeHours: maxAge }, health: { state: healthState as BackupPage['health']['state'], lastVerifiedAt: lastVerified, message }, items, restoreRequests };
+  return { generatedAt, policy: { keepDaily, keepWeekly, maxAgeHours: maxAge, scheduleTime, scheduleTimezone: scheduleZone }, latestLocalAt: latestLocal, latestOffsiteAt: latestOffsite, job, health: { state: healthState as BackupPage['health']['state'], lastVerifiedAt: lastVerified, message }, items, restoreRequests };
 }
 
 export class AdminOperationsApi extends ApiClient {
@@ -149,6 +174,10 @@ export class AdminOperationsApi extends ApiClient {
 
   backups(): Promise<ApiResult<BackupPage>> {
     return this.call({ method: 'GET', path: '/admin/backups' }, parseBackups);
+  }
+
+  runBackup(csrf: string, input: { key: string }): Promise<ApiResult<BackupJob>> {
+    return this.call({ method: 'POST', path: '/admin/backups/run', body: {}, csrf, idempotencyKey: input.key }, (data) => parseJob(data));
   }
 
   requestRestore(csrf: string, input: { backupId: string; reason: string; key: string }): Promise<ApiResult<RestoreItem>> {
@@ -179,6 +208,7 @@ export function createOperationsSource(api: AdminOperationsApi, session?: CsrfPo
       const result = await api.backups();
       return result.kind === 'ok' ? { kind: 'ready', page: result.data } : failureOf(result);
     },
+    runBackup: (input) => command((csrf) => api.runBackup(csrf, input)),
     requestRestore: (input) => (UUID_RE.test(input.backupId) ? command((csrf) => api.requestRestore(csrf, input)) : Promise.resolve({ kind: 'refused', code: 'ADMIN_INPUT_INVALID' })),
     cancelRestore: (input) => (UUID_RE.test(input.requestId) ? command((csrf) => api.cancelRestore(csrf, input)) : Promise.resolve({ kind: 'refused', code: 'ADMIN_INPUT_INVALID' })),
   };

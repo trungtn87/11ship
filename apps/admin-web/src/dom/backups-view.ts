@@ -1,5 +1,5 @@
 import { commandFailureText, CommandResult } from '../core/commands.js';
-import { BACKUP_KIND_LABEL, BackupItem, BackupPage, OperationsSource, RESTORE_REASON_MAX, RESTORE_REASON_MIN, RESTORE_REFUSAL, RESTORE_STATE_LABEL, RestoreItem } from '../core/operations.js';
+import { BACKUP_ERROR_TEXT, BACKUP_KIND_LABEL, BACKUP_STAGE_LABEL, BACKUP_TRIGGER_LABEL, BackupItem, BackupPage, OperationsSource, RESTORE_REASON_MAX, RESTORE_REASON_MIN, RESTORE_REFUSAL, RESTORE_STATE_LABEL, RestoreItem } from '../core/operations.js';
 import { formatDateTime, h, primary, secondary } from './dom.js';
 import { DialogHandle, openDialog } from './dialog.js';
 import { failurePanel, notWiredPanel, skeleton } from './states.js';
@@ -26,6 +26,9 @@ export class BackupsView {
   #dialog: DialogHandle | undefined;
   #disposed = false;
   #latest = 0;
+  #poll: ReturnType<typeof setTimeout> | undefined;
+  /** The Idempotency-Key of the "Sao lưu ngay" intent in flight; kept until the server has answered, so a retry after a lost answer is the SAME request. */
+  #runKey: string | undefined;
 
   constructor(
     private readonly root: HTMLElement,
@@ -46,6 +49,9 @@ export class BackupsView {
 
   dispose(): void {
     this.#disposed = true;
+    if (this.#poll !== undefined) {
+      clearTimeout(this.#poll);
+    }
     this.#dialog?.close();
   }
 
@@ -77,6 +83,44 @@ export class BackupsView {
       return;
     }
     this.#body.replaceChildren(...this.#render(read.page));
+    if (this.#poll !== undefined) {
+      clearTimeout(this.#poll);
+      this.#poll = undefined;
+    }
+    // While a job is queued or running the page follows it on its own (the job is picked up by the backup service within a minute).
+    if (read.page.job !== null && (read.page.job.state === 'QUEUED' || read.page.job.state === 'RUNNING')) {
+      this.#poll = setTimeout(() => void this.load(), 5000);
+    }
+  }
+
+  async #runNow(button: HTMLButtonElement): Promise<void> {
+    button.disabled = true; // a double click sends nothing more
+    this.#runKey ??= this.host.newKey();
+    const result = await this.host.source.runBackup({ key: this.#runKey });
+    if (this.#disposed) {
+      return;
+    }
+    if (result.kind === 'ok') {
+      this.#runKey = undefined;
+      this.#say('Đã xếp lịch sao lưu ngay. Bản sao được tạo ở nền; trang tự cập nhật khi chạy xong.');
+      void this.load();
+      return;
+    }
+    if (result.kind === 'session-expired') {
+      this.host.onSessionLost();
+      return;
+    }
+    if (result.kind === 'forbidden') {
+      this.host.onForbidden();
+    }
+    if (result.kind !== 'unknown') {
+      this.#runKey = undefined;
+    }
+    button.disabled = false;
+    this.#say(commandFailureText(result, RESTORE_REFUSAL));
+    if (result.kind === 'refused' || result.kind === 'conflict') {
+      void this.load();
+    }
   }
 
   #render(page: BackupPage): HTMLElement[] {
@@ -87,6 +131,27 @@ export class BackupsView {
       h('strong', {}, `Tình trạng: ${HEALTH_TEXT[health.state]}`),
       h('span', {}, health.message),
       h('span', { class: 'cell-sub' }, health.lastVerifiedAt === null ? 'Chưa có lần kiểm chứng nào.' : `Kiểm chứng gần nhất: ${formatDateTime(health.lastVerifiedAt)} (giờ Việt Nam)`),
+    );
+    const when = (value: string | null): string => (value === null ? 'Chưa có' : `${formatDateTime(value)} (giờ Việt Nam)`);
+    const job = page.job;
+    const jobOpen = job !== null && (job.state === 'QUEUED' || job.state === 'RUNNING');
+    const run = primary('Sao lưu ngay', 'button');
+    run.id = 'backup-run';
+    run.disabled = jobOpen;
+    run.title = jobOpen ? 'Đang có một lần sao lưu chờ hoặc đang chạy.' : '';
+    run.addEventListener('click', () => void this.#runNow(run));
+    const jobText = job === null ? 'Chưa có yêu cầu "Sao lưu ngay" nào.' : job.state === 'QUEUED' ? 'Đã xếp hàng, đang chờ dịch vụ sao lưu nhận việc.' : job.state === 'RUNNING' ? 'Đang chạy.' : job.state === 'DONE' ? `Lần "Sao lưu ngay" gần nhất đã xong lúc ${when(job.finishedAt)}.` : `Lần "Sao lưu ngay" gần nhất thất bại: ${BACKUP_ERROR_TEXT[job.errorCode ?? ''] ?? job.errorCode ?? '—'}`;
+    const facts = h(
+      'dl',
+      { class: 'bk-facts', id: 'backup-facts' },
+      h('dt', {}, 'Lịch chạy'),
+      h('dd', {}, `Hằng ngày lúc ${page.policy.scheduleTime} (${page.policy.scheduleTimezone}); thêm một bản trước mỗi lần deploy có migration`),
+      h('dt', {}, 'Bản gần nhất tạo trên VPS'),
+      h('dd', { id: 'backup-latest-local' }, when(page.latestLocalAt)),
+      h('dt', {}, 'Bản gần nhất đã xác minh ngoài VPS'),
+      h('dd', { id: 'backup-latest-offsite' }, when(page.latestOffsiteAt)),
+      h('dt', {}, 'Sao lưu ngay'),
+      h('dd', {}, run, h('span', { class: 'cell-sub', id: 'backup-job-text' }, jobText)),
     );
     const policy = h(
       'ul',
@@ -100,13 +165,14 @@ export class BackupsView {
     const history =
       page.items.length === 0
         ? h('p', { class: 'empty', id: 'backup-empty' }, 'Chưa có bản sao lưu nào được ghi nhận. Việc sao lưu chạy bằng công việc của bộ phận vận hành (ops/backup/backup.sh); khi nó chạy, kết quả hiện ở đây.')
-        : h('div', { class: 'table-card' }, h('table', { class: 'table', id: 'backup-table' }, h('caption', { class: 'sr-only' }, 'Lịch sử sao lưu'), h('thead', {}, h('tr', {}, ...['Bắt đầu', 'Loại', 'Kết quả', 'Kích thước', 'Mã hóa', 'Ngoài VPS', 'Kiểm chứng', ''].map((label) => h('th', { scope: 'col' }, label)))), h('tbody', {}, ...rows)));
+        : h('div', { class: 'table-card' }, h('table', { class: 'table', id: 'backup-table' }, h('caption', { class: 'sr-only' }, 'Lịch sử sao lưu'), h('thead', {}, h('tr', {}, ...['Bắt đầu', 'Loại', 'Kết quả', 'Kích thước', 'Phiên bản', 'Mã hóa', 'Ngoài VPS', 'Kiểm chứng', ''].map((label) => h('th', { scope: 'col' }, label)))), h('tbody', {}, ...rows)));
     const requests =
       page.restoreRequests.length === 0
         ? h('p', { class: 'empty' }, 'Chưa có yêu cầu khôi phục nào.')
         : h('ul', { class: 'rp-jobs', id: 'restore-list' }, ...page.restoreRequests.map((r) => this.#restoreRow(r)));
     return [
       banner,
+      facts,
       h('section', { class: 'ov-section', 'aria-labelledby': 'bk-policy-title' }, h('h2', { class: 'subtitle', id: 'bk-policy-title' }, 'Chính sách'), policy),
       h('section', { class: 'ov-section', 'aria-labelledby': 'bk-history-title' }, h('h2', { class: 'subtitle', id: 'bk-history-title' }, 'Lịch sử sao lưu'), history),
       h('section', { class: 'ov-section', 'aria-labelledby': 'bk-restore-title' }, h('h2', { class: 'subtitle', id: 'bk-restore-title' }, 'Yêu cầu khôi phục'), requests),
@@ -114,7 +180,8 @@ export class BackupsView {
   }
 
   #backupRow(item: BackupItem, restoreOpen: boolean): HTMLElement {
-    const result = item.state === 'SUCCEEDED' ? 'Thành công' : item.state === 'RUNNING' ? 'Đang chạy' : `Thất bại (${item.errorCode ?? '—'})`;
+    // The steps are told apart: made on the VPS, uploaded, verified outside the VPS; "Thành công ngoài VPS" only when the copy on Drive was checked.
+    const result = item.state === 'SUCCEEDED' ? (item.offsite ? 'Thành công ngoài VPS' : `Thành công, chỉ trên VPS (${BACKUP_STAGE_LABEL[item.stage]})`) : item.state === 'RUNNING' ? BACKUP_STAGE_LABEL[item.stage] : `Thất bại${item.failedStage === null ? '' : ` sau bước "${BACKUP_STAGE_LABEL[item.failedStage]}"`}`;
     let action: HTMLElement | undefined;
     if (item.restorable) {
       const button = secondary('Yêu cầu khôi phục');
@@ -129,11 +196,12 @@ export class BackupsView {
       'tr',
       {},
       h('td', { 'data-label': 'Bắt đầu' }, formatDateTime(item.startedAt)),
-      h('td', { 'data-label': 'Loại' }, BACKUP_KIND_LABEL[item.kind]),
-      h('td', { 'data-label': 'Kết quả' }, h('span', { class: `badge ${item.state === 'SUCCEEDED' ? 'badge-ok' : item.state === 'FAILED' ? 'badge-lock' : 'badge-wait'}` }, result)),
+      h('td', { 'data-label': 'Loại' }, BACKUP_KIND_LABEL[item.kind], h('span', { class: 'cell-sub' }, BACKUP_TRIGGER_LABEL[item.trigger])),
+      h('td', { 'data-label': 'Kết quả' }, h('span', { class: `badge ${item.state === 'SUCCEEDED' && item.offsite ? 'badge-ok' : item.state === 'FAILED' ? 'badge-lock' : 'badge-wait'}` }, result), item.errorCode === null ? undefined : h('span', { class: 'cell-sub' }, BACKUP_ERROR_TEXT[item.errorCode] ?? item.errorCode)),
       h('td', { 'data-label': 'Kích thước' }, sizeText(item.sizeBytes)),
+      h('td', { 'data-label': 'Phiên bản' }, item.releaseVersion ?? '—', h('span', { class: 'cell-sub' }, item.schemaVersion ?? '')),
       h('td', { 'data-label': 'Mã hóa' }, item.encrypted ? 'Có' : 'Không'),
-      h('td', { 'data-label': 'Ngoài VPS' }, item.offsite ? 'Có' : 'Chưa'),
+      h('td', { 'data-label': 'Ngoài VPS' }, item.offsite ? 'Có (đã xác minh)' : 'Chưa'),
       h('td', { 'data-label': 'Kiểm chứng' }, item.verifiedAt === null ? 'Chưa' : formatDateTime(item.verifiedAt), item.verifyNote === null ? undefined : h('span', { class: 'cell-sub' }, item.verifyNote)),
       h('td', { class: 'cell-end' }, action),
     );

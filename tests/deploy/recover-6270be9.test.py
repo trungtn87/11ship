@@ -27,7 +27,8 @@ class RecoveryTests(unittest.TestCase):
         (self.base / 'releases' / OLD).mkdir()
         (self.base / 'current').symlink_to(self.base / 'releases' / OLD)
         (self.base / 'tools').mkdir()
-        shutil.copyfile(ROOT / 'scripts/deploy/vps-update.py', self.base / 'tools/vps-update.py')
+        # The one-off recovery pins the exact updater installed on the VPS; this fixture IS that reviewed file, so improving scripts/deploy/vps-update.py does not touch it.
+        shutil.copyfile(ROOT / 'tests/deploy/fixtures/vps-update-reviewed-6270be9.py', self.base / 'tools/vps-update.py')
         self.policy = self.root / 'migration-compatibility.json'
         self.policy.write_text(json.dumps({'historical': 'preserved'}))
         self.policy.chmod(0o600)

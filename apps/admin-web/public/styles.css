@@ -3016,6 +3016,8 @@ select {
 
 .row-selected td {
   background: var(--yellow-soft);
+}
+
 /* M11.03: ratings and complaints. */
 .stars {
   color: var(--brand-yellow, #d8ad18);
@@ -3420,4 +3422,53 @@ select {
 .bk-none {
   border-color: #b3261e;
   background: #fdecea;
+}
+.bk-facts {
+  display: grid;
+  grid-template-columns: minmax(180px, max-content) 1fr;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid rgba(42, 42, 46, 0.12);
+  border-radius: 12px;
+}
+.bk-facts dt {
+  font-weight: 600;
+}
+.bk-facts dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .bk-facts {
+    grid-template-columns: 1fr;
+  }
+}
+.bk-health strong,
+.bk-health span {
+  display: block;
+}
+.bk-body .cell-sub {
+  display: block;
+}
+.bk-body {
+  min-width: 0;
+}
+.bk-body .table-card {
+  overflow-x: auto;
+}
+.bk-facts dd .btn {
+  width: auto;
+}
+.bk-facts {
+  min-width: 0;
+}
+.au-body,
+.bk-body,
+.rp-body {
+  grid-template-columns: minmax(0, 1fr);
 }

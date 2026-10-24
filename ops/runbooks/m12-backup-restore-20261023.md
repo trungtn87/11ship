@@ -1,5 +1,7 @@
 # M12-F — Backup, verification and restore runbook (2026-10-23)
 
+Update 24/10: automatic backup to Google Drive (rclone, encrypted before upload) is described in [m12-drive-backup-20261024.md](m12-drive-backup-20261024.md); that page lists the schedule, retention, alerts and the step-by-step restore from Drive. Everything below still holds.
+
 Status: scripts and the Web Admin pages exist and a **local rehearsal on a test server was run** ([evidence](../../docs/evidence/m12/restore-rehearsal-20261023.txt)). **Nothing here has run on the VPS.** No scheduled backup exists on the VPS, no off-VPS store is configured and **no restore of production was performed or is authorised by this document**. The Web Admin says so itself: it shows "no verified backup" until the job below has recorded one.
 
 ## What is fixed (Owner, spec section 6)
@@ -8,14 +10,11 @@ Daily backup; keep 7 daily and 4 weekly; one more before a migration or a big ch
 
 ## Missing inputs (needed from the Owner before the VPS can claim backups)
 
-1. An off-VPS store (another server, object storage or a second provider) and the credentials to write to it. `BACKUP_UPLOAD_CMD` / `BACKUP_REMOTE_SHA_CMD` are the two hooks that use it; without both, every backup is recorded with `offsite = false` and the page reports "NOT_OFFSITE".
-2. Where the encryption passphrase lives **outside the VPS** (a lost passphrase is a lost backup). The file given to the script is only a working copy.
-3. A scheduler on the VPS (cron/systemd timer) for `BACKUP_KIND=DAILY` and a weekly `WEEKLY`, and one call with `PRE_MIGRATION` in the update procedure before `db:migrate`.
-4. A server where scratch databases may be created for verification (the VPS PostgreSQL itself is acceptable if its name guard is kept: only `ship11_verify_*` / `ship11_restore_*`).
+Decided 24/10: **Google Drive through rclone, encrypted before upload.** What is still needed from the Owner is listed in [m12-drive-backup-20261024.md](m12-drive-backup-20261024.md) section 3 (OAuth client, passphrase kept off the VPS, connecting Drive on the VPS, approval to install and enable the timers). Until then every run records `DRIVE_NOT_CONFIGURED` and the page reports "no copy outside the VPS".
 
 ## Backup run — `ops/backup/backup.sh`
 
-`pg_dump -Fc` → `openssl enc -aes-256-cbc -pbkdf2` → **restore of the encrypted file into `ship11_verify_*`** → checks in `verify.sql` (schema version equals the source, `audit_logs` and `wallet_ledger_entries` counts lie between the counts before and after the dump, **sum of the ledger = sum of the wallet balances**) → optional off-VPS copy with a checksum compare → `app.backup_records` updated to `SUCCEEDED`. Any failed step records `FAILED` with a code (`DUMP_FAILED`, `VERIFY_RESTORE_FAILED`, `VERIFY_SCHEMA_MISMATCH`, `VERIFY_AUDIT_COUNT`, `VERIFY_LEDGER_COUNT`, `VERIFY_LEDGER_DIFFERENCE`) and deletes the file. The database refuses `SUCCEEDED` without size, checksum, schema version, encryption and `verified_at` (`backup_records_success_ck`). Run it with the **database owner role**; the application role can only read `backup_records` (`ops/selfhosted/02-runtime-grants.sql`).
+`pg_dump -Fc` (+ extra files if configured) + manifest → one tar → `openssl enc -aes-256-cbc -pbkdf2` → **restore of the encrypted file into `ship11_verify_*`** and the checks in `verify.sql` (schema version equals the source, `audit_logs` and `wallet_ledger_entries` counts lie between the counts before and after the dump, **sum of the ledger = sum of the wallet balances**) → upload to Google Drive and check size + MD5 there → retention → `app.backup_records` → report to M13. Any failed step records `FAILED` with a code and keeps the stage it stopped at; the encrypted local copy of a good backup is kept for the retry. The database refuses `SUCCEEDED` without size, checksum, schema version, encryption and `verified_at`, and refuses `offsite` without the verified upload (`backup_records_success_ck`, `backup_records_offsite_ck`). Run it with the **database owner role**; the application role can only read `backup_records` and queue `backup_jobs` (`ops/selfhosted/02-runtime-grants.sql`).
 
 ## Restore — controlled, SYSTEM request first
 

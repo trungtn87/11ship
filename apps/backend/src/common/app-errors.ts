@@ -102,6 +102,7 @@ export const APP_ERROR_DEFINITIONS = {
   REPORT_EXPORT_NOT_READY: { status: 409, message: 'The report export is not finished or did not succeed' },
   REPORT_EXPORT_EXPIRED: { status: 409, message: 'The report export file has expired' },
   // M12-F: restore requests (the application records the request; an operator restores).
+  BACKUP_RUN_OPEN: { status: 409, message: 'A backup is already queued or running' },
   RESTORE_BACKUP_NOT_FOUND: { status: 404, message: 'The backup to restore from was not found' },
   RESTORE_BACKUP_NOT_USABLE: { status: 409, message: 'Only a finished, encrypted and verified backup can be restored' },
   RESTORE_REQUEST_OPEN: { status: 409, message: 'A restore request is already open' },

@@ -362,15 +362,34 @@ describe('M12 administration web (real browser)', () => {
 
     // A verified backup on the VPS only: warned, not healthy; the restore button exists only for it.
     const good = randomUUID();
-    await app.pool.query(`INSERT INTO app.backup_records (backup_id, kind, state, started_at, finished_at, size_bytes, sha256, schema_version, encrypted, offsite, verified_at, verify_note) VALUES ($1::uuid, 'DAILY', 'SUCCEEDED', now() - interval '1 hour', now() - interval '59 minutes', 5242880, repeat('c', 64), '1795996800000_create-m12-backup-restore', true, false, now() - interval '58 minutes', 'đã khôi phục thử và kiểm tra')`, [good]);
-    await app.pool.query(`INSERT INTO app.backup_records (backup_id, kind, state, started_at, finished_at, error_code) VALUES (gen_random_uuid(), 'DAILY', 'FAILED', now() - interval '25 hours', now() - interval '24 hours', 'VERIFY_LEDGER_DIFFERENCE')`);
+    await app.pool.query(`INSERT INTO app.backup_records (backup_id, kind, state, started_at, finished_at, size_bytes, sha256, schema_version, encrypted, offsite, verified_at, verify_note, stage, trigger_kind, release_version) VALUES ($1::uuid, 'DAILY', 'SUCCEEDED', now() - interval '1 hour', now() - interval '59 minutes', 5242880, repeat('c', 64), '1795996800000_create-m12-backup-restore', true, false, now() - interval '58 minutes', 'đã khôi phục thử và kiểm tra', 'LOCAL', 'TIMER', '1.2.3')`, [good]);
+    await app.pool.query(`INSERT INTO app.backup_records (backup_id, kind, state, started_at, finished_at, error_code, stage, failed_stage, trigger_kind) VALUES (gen_random_uuid(), 'DAILY', 'FAILED', now() - interval '25 hours', now() - interval '24 hours', 'VERIFY_LEDGER_DIFFERENCE', 'STARTED', 'STARTED', 'TIMER')`);
     await page.goto(`${origin}/system/backups`);
     await page.waitFor(`document.querySelector('#backup-table')`);
     expect(await page.text('#backup-health')).toContain('Chưa có bản ngoài VPS');
     const buttons = await page.evaluate<number>(`[...document.querySelectorAll('#backup-table button')].filter((b) => b.textContent === 'Yêu cầu khôi phục').length`);
     expect(buttons).toBe(1);
-    expect(await page.evaluate<string>(`document.querySelector('#backup-table').innerText`)).toContain('VERIFY_LEDGER_DIFFERENCE');
+    const tableText = await page.evaluate<string>(`document.querySelector('#backup-table').innerText`);
+    expect(tableText).toContain('ví và sổ cái không khớp'); // the code is told in words
+    expect(tableText).toContain('Thành công, chỉ trên VPS'); // made on the VPS, NOT "verified outside the VPS"
+    expect(tableText).not.toContain('Thành công ngoài VPS');
+    const facts = await page.text('#backup-facts');
+    expect(facts).toContain('03:00 (Asia/Ho_Chi_Minh)');
+    expect(await page.text('#backup-latest-offsite')).toBe('Chưa có'); // nothing verified outside the VPS yet
+    expect(await page.text('#backup-latest-local')).toContain('giờ Việt Nam');
     await shot(page, 'm12f-backups-desktop');
+
+    // "Sao lưu ngay": one click queues ONE job, the button locks, the page shows it waiting; a second click cannot add another.
+    await page.evaluate(`(() => { const b = document.querySelector('#backup-run'); b.click(); b.click(); return true; })()`);
+    await page.waitFor(`document.body.innerText.includes('Đã xếp lịch sao lưu ngay') && document.querySelector('#backup-run').disabled`);
+    expect((await app.pool.query(`SELECT count(*)::int AS n, min(state) AS state FROM app.backup_jobs`)).rows[0]).toEqual({ n: 1, state: 'QUEUED' });
+    expect(await page.text('#backup-job-text')).toContain('đang chờ dịch vụ sao lưu nhận việc');
+    await shot(page, 'm12f-backup-run-queued');
+    await app.pool.query('ALTER TABLE app.backup_jobs DISABLE TRIGGER USER');
+    await app.pool.query(`UPDATE app.backup_jobs SET state = 'DONE', finished_at = now()`);
+    await app.pool.query('ALTER TABLE app.backup_jobs ENABLE TRIGGER USER');
+    await page.goto(`${origin}/system/backups`);
+    await page.waitFor(`document.querySelector('#backup-run') && !document.querySelector('#backup-run').disabled`);
 
     // The request: no reason, then no confirmation, then sent. Nothing is restored: only a row in restore_requests and an audit entry.
     await press(page, 'Yêu cầu khôi phục', "document.querySelector('#backup-table')");
@@ -396,6 +415,8 @@ describe('M12 administration web (real browser)', () => {
     // Narrow screen.
     await page.viewport(390, 844, true);
     await page.waitFor(`document.documentElement.clientWidth <= 400`);
+    const wide = await page.evaluate<string[]>(`[...document.querySelectorAll('main *, .content *')].filter((e) => !e.closest('.table-card') && e.getBoundingClientRect().right > document.documentElement.clientWidth + 1).slice(0, 6).map((e) => e.tagName + '.' + e.className + '#' + e.id)`);
+    expect(wide).toEqual([]);
     expect(await page.evaluate<boolean>(`document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1`)).toBe(true);
     await shot(page, 'm12f-backups-phone');
     await page.close();

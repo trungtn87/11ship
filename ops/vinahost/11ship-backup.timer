@@ -1,0 +1,12 @@
+[Unit]
+Description=11Ship daily backup at 03:00 Vietnam time
+
+[Timer]
+# systemd evaluates the time zone written after the time, so the run is at 03:00 in Vietnam whatever the VPS clock zone is.
+OnCalendar=*-*-* 03:00:00 Asia/Ho_Chi_Minh
+Persistent=true
+AccuracySec=1min
+Unit=11ship-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -6,7 +6,7 @@ const NOW = Date.parse('2026-10-24T03:00:00Z');
 const HOUR = 3_600_000;
 
 const row = (over: Partial<BackupRow>): BackupRow => ({
-  backupId: 'b', kind: 'DAILY', state: 'SUCCEEDED', startedAtMs: NOW - HOUR, finishedAtMs: NOW - HOUR + 60_000, sizeBytes: 100, schemaVersion: 'x', encrypted: true, offsite: true, verifiedAtMs: NOW - HOUR + 120_000, verifyNote: null, errorCode: null, ...over,
+  backupId: 'b', kind: 'DAILY', state: 'SUCCEEDED', startedAtMs: NOW - HOUR, finishedAtMs: NOW - HOUR + 60_000, sizeBytes: 100, schemaVersion: 'x', encrypted: true, offsite: true, verifiedAtMs: NOW - HOUR + 120_000, verifyNote: null, errorCode: null, stage: 'VERIFIED', failedStage: null, trigger: 'TIMER', releaseVersion: null, offsiteVerifiedAtMs: NOW - HOUR + 180_000, ...over,
 });
 
 describe('backupHealth', () => {
