@@ -446,7 +446,7 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
     expect(await ledgerSum(shipper)).toBe(330_000);
   });
 
-  it('accept holds the commission, complete debits it exactly once, cancel and fail release it', async () => {
+  it('accept holds the commission, complete debits it exactly once, cancel (before or, by the creator, after pickup) and give-back release it', async () => {
     await reportLocation(shipper);
     // accept + complete
     const a = await acceptNew(shipper);
@@ -465,11 +465,14 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
     const c = await acceptNew(shipper);
     expect((await asShipper(shipper, 'POST', `/driver/deliveries/${String(c.delivery_id)}/release`, { reason: 'Xe hỏng', expected_version: c.version })).status).toBe(200);
     expect(await money(shipper)).toEqual({ balance: 329_000, held: 0 });
-    // accept + pickup + fail
+    // accept + pickup: the Shipper can no longer fail it; the creator (the shop of this direct call) cancels and the commission is given back
     const d = await acceptNew(shipper);
     const pickedD = dataOf(await asShipper(shipper, 'POST', `/driver/deliveries/${String(d.delivery_id)}/pickup`, { expected_version: d.version })) as Json;
     const failed = await asShipper(shipper, 'POST', `/driver/deliveries/${String(d.delivery_id)}/fail`, { expected_version: pickedD.version, reason_code: 'OTHER', goods_condition: 'WITH_SHIPPER', note: 'x' });
-    expect([failed.status, failed.text.slice(0, 200)]).toEqual([200, failed.text.slice(0, 200)]);
+    expect(failed.status).toBe(403);
+    expect(await money(shipper)).toEqual({ balance: 329_000, held: 1000 });
+    const cancelledD = await asShop('POST', `/shop/me/deliveries/${String(d.delivery_id)}/cancel`, { reason: 'Khách không nhận', expected_version: pickedD.version });
+    expect([cancelledD.status, cancelledD.text.slice(0, 200)]).toEqual([200, cancelledD.text.slice(0, 200)]);
     expect(await money(shipper)).toEqual({ balance: 329_000, held: 0 });
     // Everything adds up: balance = ledger, the TOPUP rows are the ones from before, and exactly one debit was ever taken.
     expect(await ledgerSum(shipper)).toBe(329_000);

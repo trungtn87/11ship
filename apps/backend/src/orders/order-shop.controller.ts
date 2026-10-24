@@ -5,7 +5,7 @@ import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
 import { rejectBodyAndQuery } from '../customer-profile/customer-profile-validation';
 import { OrderShopService } from './order-shop-service';
-import { parseCallBody, parseConfirmBody, parseEditBody, parseOrderId, parsePaymentBody, parseReasonBody, parseShopListQuery, parseVersionBody } from './order-validation';
+import { parseCallBody, parseConfirmBody, parseEditBody, parseOrderId, parsePaymentBody, parseReasonBody, parseShopListQuery } from './order-validation';
 
 type Key = string | string[] | undefined;
 
@@ -16,7 +16,7 @@ function requestIdOf(request: { requestId?: string }): string {
 /**
  * The shop's Orders (M10), behind the client session guard. Identity is the principal only: the only identifier in a path is the Order, resolved against the
  * caller's OWN shop, so another shop's Order reads as not found. There is no route to create an Order for a shop, set a status or a total: the shop edits lines
- * before confirming, confirms or refuses, marks the dishes ready, calls a Shipper, cancels or closes. Every write takes an Idempotency-Key and the Order version.
+ * before confirming, confirms or refuses, calls a Shipper, cancels or closes. Every write takes an Idempotency-Key and the Order version.
  */
 @UseGuards(SessionAuthGuard)
 @Controller('shop/me/orders')
@@ -52,13 +52,6 @@ export class OrderShopController {
   @HttpCode(200)
   async reject(@Param('order_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
     const outcome = await this.shop.reject(this.#principal(request), parseOrderId(id), parseReasonBody(body), key, requestIdOf(request));
-    return { data: outcome.payload };
-  }
-
-  @Post(':order_id/ready')
-  @HttpCode(200)
-  async ready(@Param('order_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
-    const outcome = await this.shop.ready(this.#principal(request), parseOrderId(id), parseVersionBody(body), key, requestIdOf(request));
     return { data: outcome.payload };
   }
 

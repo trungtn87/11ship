@@ -19,7 +19,7 @@ import { ORDER_DELIVERY_PORT, OrderDeliveryPort } from './delivery-order-port';
 import { DeliveryRecorder } from './delivery-recorder';
 import { AssignmentRow, DeliveryPatch, DeliveryRepository, DeliveryRow } from './delivery-repository';
 import { originalEtaMs, searchExpired, shipperMayRelease, stateAfterRelease } from './delivery-rules';
-import { DestinationInput, FailInput, LocationInput, ReasonInput, VersionInput } from './delivery-validation';
+import { DestinationInput, LocationInput, ReasonInput, VersionInput } from './delivery-validation';
 import { DeliveryViews } from './delivery-views';
 import { M14RouteClient } from './m14-route-client';
 import { ShipperLocationRepository } from './shipper-location';
@@ -31,7 +31,7 @@ const HIDDEN_REASONS = ['OUT_OF_SEARCH_RADIUS', 'LOCATION_UNAVAILABLE', 'LOCATIO
 
 /**
  * The Shipper's side of M07 (11Ship): what may be taken, accepting (one winner, commission set aside in the same commit), giving the delivery back,
- * the drop-off pin and fee, the pickup, and the two ways a delivery ends. The caller is the authenticated principal only.
+ * the fee, the pickup, and the only way a Shipper ends a delivery (completing it). The caller is the authenticated principal only.
  *
  * Each write is ONE transaction opened by the idempotency executor: record -> user row -> CURRENT session row -> the Shipper (driver) row FOR UPDATE
  * (the root of every assignment and money path) -> the delivery row -> assignment -> wallet hold -> writes -> timeline -> audit -> outbox -> the
@@ -335,12 +335,13 @@ export class DeliveryShipperService {
     );
   }
 
-  // ---- drop-off pin and fee ---------------------------------------------------------------------------------------------------
+  // ---- fee confirmation (and the optional drop-off pin) ----------------------------------------------------------------------
 
   /**
-   * Before pickup, when the drop-off point or the fee is missing: the Shipper pins the point and, for a delivery with no point at all, confirms the fee
-   * agreed with the payer. Who pinned and who confirmed (and when) is stored. Nothing is written back to the customer's address book. A fee already
-   * settled by the system (the bands) or by an agreement cannot be changed here.
+   * Before pickup, ONLY when the fee is still empty (a legacy call that was never priced): the Shipper enters the fee agreed with the payer. Whenever the
+   * fee is already set nothing is asked again: the same amount (or none) is an idempotent no-op. The drop-off pin is optional (an address is enough to
+   * deliver: Owner decision 2026-10-23); a Shipper who wants to may pin a point that does not exist yet, they never move one that is fixed. A fee of the
+   * bands or of an agreement is set by M06, never typed in by the Shipper. After pickup the fee and the point are locked.
    */
   async confirmDestination(principal: AuthPrincipal, deliveryId: string, input: DestinationInput, key: string | readonly string[] | undefined, requestId: string): Promise<IdempotentOutcome> {
     return this.executor.execute(
@@ -358,27 +359,30 @@ export class DeliveryShipperService {
           throw new AppError(delivery.state === 'delivering' ? 'FEE_LOCKED' : 'DELIVERY_STATE_CONFLICT');
         }
         const patch: { -readonly [K in keyof DeliveryPatch]: DeliveryPatch[K] } = {};
-        if (delivery.dropoffLat === null || delivery.dropoffLng === null) {
-          patch.dropoffLat = input.lat;
-          patch.dropoffLng = input.lng;
-          patch.dropoffPinnedBy = caller.driver.driverId;
-        } else if (Math.abs(delivery.dropoffLat - input.lat) > 1e-6 || Math.abs(delivery.dropoffLng - input.lng) > 1e-6) {
-          // The point is already fixed (the shop pinned it): the Shipper confirms it, they do not move it.
-          throw new AppError('DELIVERY_INPUT_INVALID');
+        if (input.lat !== null && input.lng !== null) {
+          if (delivery.dropoffLat === null || delivery.dropoffLng === null) {
+            patch.dropoffLat = input.lat;
+            patch.dropoffLng = input.lng;
+            patch.dropoffPinnedBy = caller.driver.driverId;
+          } else if (Math.abs(delivery.dropoffLat - input.lat) > 1e-6 || Math.abs(delivery.dropoffLng - input.lng) > 1e-6) {
+            // The point is already fixed (the shop pinned it): the Shipper may confirm it, they do not move it.
+            throw new AppError('DELIVERY_INPUT_INVALID');
+          }
         }
         if (delivery.feeVnd !== null) {
           if (input.feeVnd !== null && input.feeVnd !== delivery.feeVnd) {
             throw new AppError('FEE_LOCKED');
           }
-        } else if (delivery.feeMode === 'PICKUP_AGREEMENT') {
+        } else if (delivery.feeMode !== 'AGREED') {
+          // STANDARD that was never priced and PICKUP_AGREEMENT: the amount the Shipper and the payer agreed (audited as entered by the Shipper).
           if (input.feeVnd === null) {
             throw new AppError('FEE_NOT_CONFIRMED');
           }
           patch.feeVnd = input.feeVnd;
           patch.feeConfirmedBy = caller.driver.driverId;
-        } else if (input.feeVnd !== null) {
-          // A fee of the bands or of an agreement is set by M06, never typed in by the Shipper (the shop can ask for it to be calculated again).
-          throw new AppError('FEE_LOCKED');
+        } else {
+          // AGREED but not final yet: the payer settles it through the agreement, never the Shipper.
+          throw new AppError('FEE_NOT_CONFIRMED');
         }
         if (delivery.state === 'accepted') {
           patch.state = 'location_confirmed';
@@ -407,7 +411,8 @@ export class DeliveryShipperService {
 
   /**
    * "Đã nhận hàng": ONE command records the pickup and moves the delivery to `delivering` (there is no separate "start delivery"). It needs this Shipper's
-   * live assignment, a drop-off point and a settled fee; it locks the fee and the delivery information. After it, no ordinary cancel exists on either side.
+   * live assignment and a settled fee (no drop-off point: the address is enough); it locks the fee and the delivery information. After it the Shipper can
+   * no longer cancel or fail it; only the creator of the request can cancel (see DeliveryCancel.cancelAfterPickup).
    */
   async pickup(principal: AuthPrincipal, deliveryId: string, input: VersionInput, key: string | readonly string[] | undefined, requestId: string): Promise<IdempotentOutcome> {
     return this.executor.execute(
@@ -416,9 +421,6 @@ export class DeliveryShipperService {
         const { caller, delivery, assignment } = await this.#mine(context, principal, deliveryId, input.expectedVersion);
         if (delivery.state !== 'accepted' && delivery.state !== 'location_confirmed') {
           throw new AppError('DELIVERY_STATE_CONFLICT');
-        }
-        if (delivery.dropoffLat === null || delivery.dropoffLng === null) {
-          throw new AppError('DESTINATION_NOT_CONFIRMED');
         }
         const agreement = await this.agreements.readByDelivery(context, deliveryId);
         let current = delivery;
@@ -494,56 +496,12 @@ export class DeliveryShipperService {
   }
 
   /**
-   * "Giao thất bại": a reason and where the goods are. The assignment and the delivery end, the commission is GIVEN BACK, the goods-custody incident is
-   * opened for the shop and the Admin, and the Order is NOT completed. The failure does not say the goods are back at the shop: they stay the Shipper's
-   * responsibility until the shop confirms them.
+   * "Giao thất bại" does not exist for the Shipper any more (Owner decision 2026-10-23): once the goods are picked up the Shipper can only complete the
+   * delivery; if it cannot be delivered they call the shop and the creator of the request decides (cancel after pickup). Refused for every state, so a
+   * direct API call cannot go around the app. Nothing is read or written.
    */
-  async fail(principal: AuthPrincipal, deliveryId: string, input: FailInput, key: string | readonly string[] | undefined, requestId: string): Promise<IdempotentOutcome> {
-    return this.executor.execute(
-      {
-        scopeType: DELIVERY_SCOPE_TYPE,
-        scopeId: principal.userId,
-        operationId: OPERATIONS.fail,
-        idempotencyKey: key,
-        logicalRequest: { delivery_id: deliveryId, reason_code: input.reasonCode, note: input.note, goods_condition: input.goodsCondition, expected_version: input.expectedVersion },
-        replay: this.#replay(principal, false),
-      },
-      async (context) => {
-        const { caller, delivery, assignment } = await this.#mine(context, principal, deliveryId, input.expectedVersion);
-        if (delivery.state !== 'delivering') {
-          throw new AppError('DELIVERY_STATE_CONFLICT');
-        }
-        const reason = input.note === null ? input.reasonCode : `${input.reasonCode}: ${input.note}`;
-        await this.#endAssignment(context, assignment, 'FAILED', 'SHIPPER', reason);
-        const released = await this.commission.releaseCommission(context, assignment.assignmentId);
-        if (released.kind === 'conflict') {
-          throw new TechnicalError('internal', 'Commission hold was not releasable');
-        }
-        const after = await this.#update(context, delivery, { state: 'failed', endedNow: true, endReason: reason.slice(0, 300) });
-        await this.deliveries.insertIncident(context, {
-          incidentId: randomUUID(),
-          deliveryId,
-          assignmentId: assignment.assignmentId,
-          driverId: caller.driver.driverId,
-          reasonCode: input.reasonCode,
-          reasonNote: input.note,
-          goodsCondition: input.goodsCondition,
-        });
-        await this.recorder.record(context, {
-          delivery: after,
-          type: 'failed',
-          actorType: 'SHIPPER',
-          actorId: caller.actor.userId,
-          assignmentId: assignment.assignmentId,
-          driverId: caller.driver.driverId,
-          note: reason,
-          operation: OPERATIONS.fail,
-          requestId,
-          metadata: { reason_code: input.reasonCode, goods_condition: input.goodsCondition },
-        });
-        return { status: 200, replayGuard: { user_id: caller.actor.userId }, payload: await this.views.forShipper(context, after, await this.#assignment(context, assignment.assignmentId), await freshClockMs(context)) };
-      },
-    );
+  fail(): never {
+    throw new AppError('SHIPPER_FAIL_NOT_ALLOWED');
   }
 
   // ---- shared ----------------------------------------------------------------------------------------------------------------

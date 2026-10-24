@@ -5,7 +5,7 @@ import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
 import { rejectBodyAndQuery } from '../customer-profile/customer-profile-validation';
 import { DeliveryShipperService } from './delivery-shipper-service';
-import { parseCounterBody, parseDeliveryId, parseDestinationBody, parseEmptyBody, parseFailBody, parseLocationBody, parseReasonBody, parseScopeQuery, parseVersionBody } from './delivery-validation';
+import { parseCounterBody, parseDeliveryId, parseDestinationBody, parseEmptyBody, parseLocationBody, parseReasonBody, parseScopeQuery, parseVersionBody } from './delivery-validation';
 
 type Key = string | string[] | undefined;
 
@@ -104,9 +104,9 @@ export class DeliveryShipperController {
 
   @Post('deliveries/:delivery_id/fail')
   @HttpCode(200)
-  async fail(@Param('delivery_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
-    const outcome = await this.shipper.fail(this.#principal(request), parseDeliveryId(id), parseFailBody(body), key, requestIdOf(request));
-    return { data: outcome.payload };
+  fail(): never {
+    // The route stays only so an old app gets a clear, fixed refusal; the Shipper has no "failed" any more (Owner decision 2026-10-23).
+    return this.shipper.fail();
   }
 
   /** The Shipper's LATEST position (M14): overwrites the previous one, keeps no trail. */

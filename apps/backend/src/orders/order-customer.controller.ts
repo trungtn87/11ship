@@ -4,8 +4,9 @@ import { AuthenticatedRequest, AuthPrincipal } from '../auth/auth-principal';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
 import { rejectBodyAndQuery } from '../customer-profile/customer-profile-validation';
+import { OrderCustomerDeliveryService } from './order-customer-delivery-service';
 import { OrderCustomerService } from './order-customer-service';
-import { parseCartBody, parseClientRefQuery, parseCustomerCancelBody, parseCustomerListQuery, parseOrderId, parsePlaceBody, parsePreviewBody, parseReorderBody } from './order-validation';
+import { parseCartBody, parseClientRefQuery, parseCustomerCancelBody, parseCustomerListQuery, parseFeeDecisionBody, parseOrderId, parsePlaceBody, parsePreviewBody, parseReasonBody, parseReorderBody } from './order-validation';
 
 type Key = string | string[] | undefined;
 
@@ -21,7 +22,10 @@ function requestIdOf(request: { requestId?: string }): string {
 @UseGuards(SessionAuthGuard)
 @Controller('customers/me')
 export class OrderCustomerController {
-  constructor(private readonly customer: OrderCustomerService) {}
+  constructor(
+    private readonly customer: OrderCustomerService,
+    private readonly delivery: OrderCustomerDeliveryService,
+  ) {}
 
   @Get('cart')
   async cart(@Req() request: AuthenticatedRequest, @Query() query: unknown) {
@@ -73,6 +77,22 @@ export class OrderCustomerController {
   @HttpCode(200)
   async cancel(@Param('order_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
     const outcome = await this.customer.cancel(this.#principal(request), parseOrderId(id), parseCustomerCancelBody(body), key, requestIdOf(request));
+    return { data: outcome.payload };
+  }
+
+  /** After the Shipper picked up the goods the customer who placed the order is the only one who can cancel it (reason required). */
+  @Post('orders/:order_id/cancel-after-pickup')
+  @HttpCode(200)
+  async cancelAfterPickup(@Param('order_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
+    const outcome = await this.delivery.cancelAfterPickup(this.#principal(request), parseOrderId(id), parseReasonBody(body), key, requestIdOf(request));
+    return { data: outcome.payload };
+  }
+
+  /** The customer, as the payer, answers the delivery fee a Shipper proposed (ACCEPT or REJECT). */
+  @Post('orders/:order_id/delivery/fee')
+  @HttpCode(200)
+  async decideFee(@Param('order_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
+    const outcome = await this.delivery.decideFee(this.#principal(request), parseOrderId(id), parseFeeDecisionBody(body), key, requestIdOf(request));
     return { data: outcome.payload };
   }
 

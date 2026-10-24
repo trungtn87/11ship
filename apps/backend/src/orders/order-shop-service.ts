@@ -17,18 +17,18 @@ import { ORDER_OPERATIONS, ORDER_SCOPE_TYPE } from './order-constants';
 import { OrderRecorder } from './order-recorder';
 import { OrderRepository, OrderRow } from './order-repository';
 import { goodsDescriptionOf, totalOf } from './order-rules';
-import { CallInput, ConfirmInput, EditInput, PaymentInput, ReasonInput, ShopListQuery, VersionInput } from './order-validation';
+import { CallInput, ConfirmInput, EditInput, PaymentInput, ReasonInput, ShopListQuery } from './order-validation';
 import { OrderViews } from './order-views';
 
 /**
- * The shop's side of M10 (11Food): the list and detail of the Orders, editing before confirmation, confirming or refusing, "Món đã sẵn sàng", the paid amount,
+ * The shop's side of M10 (11Food): the list and detail of the Orders, editing before confirmation, confirming or refusing, the paid amount,
  * calling a Shipper (M07), cancelling the dish order and closing it as not completed. The caller is the authenticated principal only: the only identifier in a
  * path is the Order, resolved against the caller's OWN shop, so another shop's Order reads as not found.
  *
  * Each write is ONE transaction opened by the idempotency executor. The lock order is the whole system's: record -> user -> CURRENT session -> shop -> Shipper
  * (driver) -> delivery -> ORDER. A command that can touch a running delivery (cancel the dish order) takes the Shipper and the delivery BEFORE the Order, exactly
  * like the Shipper's own pickup and complete, so cancel-vs-pickup and complete-vs-cancel are decided on the delivery row and exactly one commits.
- * "Món đã sẵn sàng" and "Gọi shipper" are two independent commands: neither requires the other.
+ * There is no "ready" step: "Gọi shipper" itself means the dishes are ready (Owner decision 2026-10-23).
  */
 @Injectable()
 export class OrderShopService {
@@ -161,19 +161,6 @@ export class OrderShopService {
 
   // ---- while preparing -------------------------------------------------------------------------------------------------------
 
-  /** "Món đã sẵn sàng": records that the dishes are ready. It does NOT call a Shipper and does not need one; calling does not need this. */
-  async ready(principal: AuthPrincipal, orderId: string, input: VersionInput, key: string | readonly string[] | undefined, requestId: string): Promise<IdempotentOutcome> {
-    return this.#command(principal, orderId, ORDER_OPERATIONS.ready, key, { expected_version: input.expectedVersion }, async (context, caller, order) => {
-      this.#expect(order, input.expectedVersion, 'PREPARING');
-      if (order.readyAtMs !== null) {
-        return order;
-      }
-      const after = await this.#update(context, order, { readyNow: true });
-      await this.recorder.record(context, { order: after, type: 'ready', actorType: 'SHOP', actorId: caller.actor.userId, operation: ORDER_OPERATIONS.ready, requestId });
-      return after;
-    });
-  }
-
   /**
    * Records how much of the dishes was paid directly (customer to shop). It is information noted by the person allowed to note it, not proof of a bank
    * transfer, and no money moves through the app. It is fixed into a delivery when one is called, so it cannot change while a delivery is in progress.
@@ -243,6 +230,7 @@ export class OrderShopService {
         feePayer: input.feePayer,
         note: order.note,
         agreedFee: input.agreedFee,
+        estimatedDistanceM: order.feeEstimateDistanceM,
         route: route?.leg,
         routeFrom: route?.from,
         requestId,

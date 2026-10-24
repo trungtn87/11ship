@@ -21,8 +21,9 @@ import 'm10_source.dart';
 
 // The shop's side of M10 in 11Food: "Đơn hàng" with two parts — "Đơn món" (what customers ordered in the app) and "Giao hàng" (calls for a Shipper, from an
 // order or direct, M07) —, the filters, the detail with every step: edit before confirming (after contacting the customer), confirm (a reason when edited),
-// refuse, "Món đã sẵn sàng" and "Gọi shipper" (two independent buttons), the paid amount, cancel the dish order (ends the waiting delivery too) and close an
-// order as not completed after a failed delivery whose goods were settled.
+// refuse, "Gọi shipper" (which itself means the dishes are ready: there is no "Đã chuẩn bị xong" step), cancel the dish order BEFORE pickup (ends the waiting
+// delivery too; after pickup only the customer who placed the order can cancel it) and close an order as not completed once its goods were settled.
+// The app records no payment of the dishes (Owner decision 2026-10-23).
 
 class ShopOrdersTab extends StatefulWidget {
   const ShopOrdersTab({super.key, required this.runtime, required this.deliveries, this.deliveriesBuilder});
@@ -281,12 +282,35 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
     final String? payer = await showDecision(
       context,
       title: 'Gọi shipper',
-      text: 'Ai trả phí giao? Phí lấy theo bảng giá; nếu chưa xác định sẽ ghi "Chưa xác định phí" và chốt với shipper. Bạn có thể gọi ngay cả khi món chưa sẵn sàng.',
+      text: 'Ai trả phí giao? Phí tính theo bảng giá khi gọi. Gọi shipper nghĩa là món đã chuẩn bị xong, sẵn sàng để shipper đến lấy.',
       dismissible: true,
       actions: const <DialogAction>[DialogAction('Khách trả phí', 'CUSTOMER', kind: ButtonKind.primary, key: Key('call-payer-customer')), DialogAction('Quán trả phí', 'SHOP', key: Key('call-payer-shop'))],
     );
     if (payer != null) {
-      await _run('call', (String key) => source.callShipper(o.orderId, feePayer: payer, expectedVersion: o.version, key: key));
+      await _callWith(o, payer, null);
+    }
+  }
+
+  /// The call; when the fee table cannot price this order the server says FEE_REQUIRED and the shop proposes a fee (the payer and the Shipper settle it).
+  Future<void> _callWith(OrderView o, String payer, AgreedFeeProposal? fee) async {
+    var needsFee = false;
+    await act(fee == null ? 'call' : 'call-fee-${fee.amountVnd}-${fee.reasonCode}', (String key) async {
+      try {
+        await source.callShipper(o.orderId, feePayer: payer, agreedFee: fee, expectedVersion: o.version, key: key);
+      } on M07Failure catch (failure) {
+        if (failure.code == 'FEE_REQUIRED') {
+          needsFee = true;
+          return;
+        }
+        rethrow;
+      }
+      await _fetcher.reload(quiet: true);
+    }, onConflict: _fetcher.reload);
+    if (needsFee && mounted) {
+      final AgreedFeeProposal? proposal = await showFeeProposalDialog(context, payerIsCustomer: payer == 'CUSTOMER');
+      if (proposal != null && mounted) {
+        await _callWith(o, payer, proposal);
+      }
     }
   }
 
@@ -307,29 +331,6 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
     final String? reason = await showReasonDialog(context, title: 'Đóng đơn "Không hoàn tất"?', explanation: 'Hàng đã được xử lý và không giao lại. Hệ thống chỉ ghi nhận, không tự hoàn tiền hay bồi thường.', confirmLabel: 'Đóng đơn', reasonLabel: 'Lý do');
     if (reason != null) {
       await _run('close', (String key) => source.closeNotCompleted(o.orderId, reason: reason, expectedVersion: o.version, key: key));
-    }
-  }
-
-  Future<void> _payment(OrderView o) async {
-    final GlobalKey<FormState> form = GlobalKey<FormState>();
-    final TextEditingController c = TextEditingController(text: o.money.paidVnd.toString());
-    final String? value = await showDialog<String>(
-      context: context,
-      builder: (BuildContext d) => Form(key: form, child: AlertDialog(
-        key: const Key('payment-dialog'),
-        title: const Text('Đã thanh toán trực tiếp', style: N11Text.h2),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-          Text('Tiền món ${m10Money(o.money.itemsVnd)}. Đây là thông tin bạn ghi nhận, không chứng minh ngân hàng đã xác nhận.', style: N11Text.lead),
-          const SizedBox(height: N11Space.gap2),
-          N11Field(validator: (String value) { final int? paid = int.tryParse(value.replaceAll(RegExp(r'[^0-9]'), '')); return paid == null || paid > o.money.itemsVnd ? 'Nhập số tiền từ 0 đến tổng tiền món.' : null; }, fieldKey: const Key('payment-field'), label: 'Số tiền đã thanh toán (đ)', controller: c, keyboard: TextInputType.number, maxLength: 12),
-        ]),
-        actions: <Widget>[TextButton(onPressed: () => Navigator.of(d).pop(), child: const Text('Quay lại')), TextButton(key: const Key('payment-save'), onPressed: () { if (form.currentState!.validate()) Navigator.of(d).pop(c.text); }, child: const Text('Lưu'))],
-      )),
-    );
-    c.dispose();
-    final int? paid = int.tryParse((value ?? '').replaceAll(RegExp(r'[^0-9]'), ''));
-    if (paid != null) {
-      await _run('payment', (String key) => source.recordPayment(o.orderId, paidVnd: paid, expectedVersion: o.version, key: key));
     }
   }
 
@@ -356,7 +357,6 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
       if (o.allowed('confirm')) N11Button(key: const Key('order-confirm'), label: o.edited ? 'Xác nhận đơn đã chỉnh' : 'Xác nhận đơn', loading: busy, onPressed: () => unawaited(_confirm(o))),
       if (o.allowed('edit')) N11Button(key: const Key('order-edit'), label: 'Chỉnh đơn', kind: ButtonKind.secondary, onPressed: busy ? null : () => unawaited(_edit(o))),
       if (o.allowed('reject')) DangerButton(label: 'Từ chối đơn', onPressed: busy ? null : () => unawaited(_reject(o))),
-      if (o.allowed('ready')) N11Button(key: const Key('order-ready'), label: 'Món đã sẵn sàng', kind: ButtonKind.secondary, onPressed: busy ? null : () => unawaited(_run('ready', (String key) => source.ready(o.orderId, expectedVersion: o.version, key: key)))),
       if (o.allowed('call_shipper')) N11Button(key: const Key('order-call'), label: o.deliveries.isEmpty ? 'Gọi shipper' : 'Gọi lại shipper', loading: busy, onPressed: () => unawaited(_call(o))),
       if (o.allowed('close_not_completed')) N11Button(key: const Key('order-close'), label: 'Đóng đơn "Không hoàn tất"', kind: ButtonKind.secondary, onPressed: busy ? null : () => unawaited(_close(o))),
       if (o.allowed('cancel')) DangerButton(label: 'Hủy đơn món', onPressed: busy ? null : () => unawaited(_cancel(o))),
@@ -387,9 +387,10 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
       if (o.allowed('edit')) const N11Banner(key: Key('order-edit-note'), kind: BannerKind.info, title: 'Liên hệ khách trước khi đổi', text: 'Đổi nội dung hoặc tăng tiền cần được khách đồng ý trước. Khi xác nhận đơn đã chỉnh, bạn phải ghi lý do.'),
       if (o.display == DisplayStatus.searchStopped) const N11Banner(key: Key('order-search-stopped'), kind: BannerKind.warn, title: 'Chưa tìm được shipper', text: 'Đơn món vẫn còn. Bạn có thể gọi lại shipper hoặc hủy đơn món.'),
       if (o.display == DisplayStatus.deliveryFailed && !o.allowed('call_shipper')) const N11Banner(key: Key('order-goods-out'), kind: BannerKind.error, title: 'Hàng chưa về quán', text: 'Giao thất bại. Khi hàng còn ở shipper hoặc chưa rõ thì chưa gọi lại được. Xác nhận hàng đã về hoặc đã xử lý ở phần giao hàng.'),
+      if (o.display == DisplayStatus.delivering)
+        const N11Banner(key: Key('order-delivering-note'), kind: BannerKind.info, title: 'Shipper đã lấy hàng', text: 'Đơn này do khách đặt nên chỉ khách mới hủy được. Nếu shipper báo không giao được, hãy gọi khách và shipper để thống nhất.'),
       OrderLinesCard(lines: o.items),
       OrderMoneyCard(money: o.money, edited: o.edited),
-      if (o.allowed('record_payment')) N11Button(key: const Key('order-payment'), label: 'Ghi nhận đã thanh toán', kind: ButtonKind.secondary, onPressed: busy ? null : () => unawaited(_payment(o))),
       N11Card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Text('Người nhận', style: N11Text.label), KeyValueRows(<(String, String)>[('Tên', o.recipient.name), ('Số điện thoại', o.recipient.phone), ('Địa chỉ', o.recipient.addressText)]), if (o.note != null) Text('Ghi chú: ${o.note}', style: N11Text.caption)])),
       if (d != null) _deliverySection(o, d),
       if (d != null || o.recipient.hasPin)

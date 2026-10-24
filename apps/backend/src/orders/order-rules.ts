@@ -66,6 +66,14 @@ export function goodsDescriptionOf(lines: readonly { readonly name: string; read
   return chars.length <= 120 ? text : `${chars.slice(0, 117).join('').trimEnd()}…`;
 }
 
+/**
+ * The customer may cancel the Order until the shop confirmed it, and again once the Shipper has PICKED UP the goods (Owner decision 2026-10-23: the
+ * creator of the request owns the cancellation after pickup). In between they ask the shop.
+ */
+export function customerMayCancelAfterPickup(status: OrderStatus, latestDelivery: DeliveryState | null): boolean {
+  return status === 'PREPARING' && (latestDelivery === 'delivering' || latestDelivery === 'picked_up');
+}
+
 /** The customer may cancel the Order only until the shop confirmed it (after that they ask the shop). */
 export function customerMayCancel(status: OrderStatus): boolean {
   return status === 'PENDING_CONFIRMATION';
@@ -86,7 +94,6 @@ export function scheduleInWindow(scheduledMs: number, nowMs: number): 'OK' | 'TO
 export type DisplayStatus =
   | 'AWAITING_SHOP'
   | 'PREPARING'
-  | 'READY'
   | 'SEARCHING_SHIPPER'
   | 'SHIPPER_COMING'
   | 'DELIVERING'
@@ -101,9 +108,10 @@ export type DisplayStatus =
 
 /**
  * The one status the apps show, put together from the Order and the state of its LATEST delivery as the server holds them (never from a phone clock).
- * A delivery that was cancelled on its own (the Order stays) puts the Order back to "preparing" / "ready" so the shop can call again.
+ * A delivery that was cancelled on its own (the Order stays) puts the Order back to "preparing" so the shop can call again. There is no "ready" step
+ * (Owner decision 2026-10-23): calling a Shipper means the dishes are ready.
  */
-export function displayStatusOf(status: OrderStatus, ready: boolean, latestDelivery: DeliveryState | null): DisplayStatus {
+export function displayStatusOf(status: OrderStatus, latestDelivery: DeliveryState | null): DisplayStatus {
   switch (status) {
     case 'PENDING_CONFIRMATION':
       return 'AWAITING_SHOP';
@@ -127,7 +135,7 @@ export function displayStatusOf(status: OrderStatus, ready: boolean, latestDeliv
       return 'SEARCHING_SHIPPER';
     case 'accepted':
     case 'location_confirmed':
-      return ready ? 'READY' : 'SHIPPER_COMING';
+      return 'SHIPPER_COMING';
     case 'picked_up':
     case 'delivering':
       return 'DELIVERING';
@@ -136,7 +144,7 @@ export function displayStatusOf(status: OrderStatus, ready: boolean, latestDeliv
     case 'failed':
       return 'DELIVERY_FAILED';
     default:
-      return ready ? 'READY' : 'PREPARING';
+      return 'PREPARING';
   }
 }
 

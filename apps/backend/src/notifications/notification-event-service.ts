@@ -33,11 +33,11 @@ import { isCanonicalUuid } from '../shared/identifiers';
 const CANDIDATE_LIMIT = 100;
 
 function parseDeliveryPayload(payload: Readonly<Record<string, unknown>>): DeliveryChangePayload | undefined {
-  const { delivery_id: deliveryId, code, shop_id: shopId, change, state, version, assignment_id: assignmentId, driver_id: driverId, order_id: orderId } = payload;
+  const { delivery_id: deliveryId, code, shop_id: shopId, change, state, version, assignment_id: assignmentId, driver_id: driverId, order_id: orderId, fee_payer: feePayer, source } = payload;
   if (!isCanonicalUuid(deliveryId) || typeof code !== 'string' || !isCanonicalUuid(shopId) || typeof change !== 'string' || typeof state !== 'string' || typeof version !== 'number') {
     return undefined;
   }
-  return { deliveryId, code, shopId, change, state, version, assignmentId: isCanonicalUuid(assignmentId) ? assignmentId : null, driverId: isCanonicalUuid(driverId) ? driverId : null, orderId: isCanonicalUuid(orderId) ? orderId : null };
+  return { deliveryId, code, shopId, change, state, version, assignmentId: isCanonicalUuid(assignmentId) ? assignmentId : null, driverId: isCanonicalUuid(driverId) ? driverId : null, orderId: isCanonicalUuid(orderId) ? orderId : null, feePayer: feePayer === 'CUSTOMER' || feePayer === 'SHOP' ? feePayer : null, source: source === 'ORDER' || source === 'DIRECT' ? source : null };
 }
 
 function parseOrderPayload(payload: Readonly<Record<string, unknown>>): OrderChangePayload | undefined {

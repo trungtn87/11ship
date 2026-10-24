@@ -10,7 +10,7 @@ import { ACTIVE_STATES } from '../delivery/delivery-constants';
 import { ItemRow, OrderEventRow, OrderListItem, OrderRepository, OrderRow } from './order-repository';
 import { buildOrderStory, StoryAudience, StoryOrderEvent } from './order-story';
 import { humanDeliveryReason } from '../delivery/delivery-reason-text';
-import { customerMayCancel, displayStatusOf, isEnded, mayCallShipper, needsAttention } from './order-rules';
+import { customerMayCancel, customerMayCancelAfterPickup, displayStatusOf, isEnded, mayCallShipper, needsAttention } from './order-rules';
 
 // The JSON each reader of an Order gets. The server decides which fields are filled; a field the caller may not see is null (or absent). Money is a whole
 // number or null (never 0 for "unknown"); times are ISO strings; `server_now` carries the SERVER clock so nothing depends on the phone clock. The fee and the
@@ -73,7 +73,7 @@ export class OrderViews {
       code: o.code,
       display_code: o.displayCode ?? o.code,
       status: o.status,
-      display_status: displayStatusOf(o.status, o.readyAtMs !== null, latest?.state ?? null),
+      display_status: displayStatusOf(o.status, latest?.state ?? null),
       version: o.version,
       shop: { shop_id: o.shopId, name: o.shopName, phone: o.shopPhone, address_text: o.shopAddressText },
       recipient: { name: o.recipientName, phone: o.recipientPhone, address_text: o.addressText, lat: o.addressLat, lng: o.addressLng },
@@ -84,7 +84,6 @@ export class OrderViews {
       edited: o.editedAtMs !== null,
       change_reason: o.changeReason,
       confirmed_at: iso(o.confirmedAtMs),
-      ready_at: iso(o.readyAtMs),
       ended_at: iso(o.endedAtMs),
       end_actor: o.endActor,
       end_reason: o.endReason,
@@ -102,14 +101,13 @@ export class OrderViews {
       code: o.code,
       display_code: o.displayCode ?? o.code,
       status: o.status,
-      display_status: displayStatusOf(o.status, o.readyAtMs !== null, item.latestDelivery),
+      display_status: displayStatusOf(o.status, item.latestDelivery),
       version: o.version,
       shop_name: o.shopName,
       recipient_name: o.recipientName,
       line_count: item.lineCount,
       items_total_vnd: o.itemsTotalVnd,
       scheduled_for: iso(o.scheduledForMs),
-      ready: o.readyAtMs !== null,
       edited: o.editedAtMs !== null,
       needs_attention: forShop && needsAttention(o.status, item.latestDelivery),
       created_at: iso(o.createdAtMs),
@@ -141,7 +139,8 @@ export class OrderViews {
     view.end_reason = humanDeliveryReason(o.endReason);
     view.delivery = latest === undefined ? null : await this.deliveryViews.forCustomer(context, latest, nowMs);
     view.delivery_count = all.length;
-    view.can = { cancel: customerMayCancel(o.status), reorder: true };
+    // After pickup the customer (who created an ORDER) may cancel; the Shipper is told to call the shop and the goods stay with them until the shop settles them.
+    view.can = { cancel: customerMayCancel(o.status), cancel_after_pickup: customerMayCancelAfterPickup(o.status, latest?.state ?? null), reorder: true };
     if (detail) {
       view.timeline = (await this.orders.listEvents(context, o.orderId, 200)).map((e) => eventView(e, true));
       view.story = await this.#story(context, o, all, 'customer');
@@ -164,7 +163,6 @@ export class OrderViews {
       edit: o.status === 'PENDING_CONFIRMATION',
       confirm: o.status === 'PENDING_CONFIRMATION' && o.itemsTotalVnd > 0,
       reject: o.status === 'PENDING_CONFIRMATION',
-      ready: running && o.readyAtMs === null,
       record_payment: running && !activeDelivery,
       call_shipper: mayCallShipper(o.status, latest?.state ?? null) && (latest === undefined || latest.state !== 'failed' || (await this.#goodsSettled(context, latest))),
       cancel: running && (latest === undefined || !['delivering', 'picked_up', 'completed'].includes(latest.state)),

@@ -9,6 +9,7 @@ import { MenuModule } from '../menu/menu.module';
 import { ShopModule } from '../shop/shop.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { OrderCustomerController } from './order-customer.controller';
+import { OrderCustomerDeliveryService } from './order-customer-delivery-service';
 import { OrderCustomerService } from './order-customer-service';
 import { OrderShopController } from './order-shop.controller';
 import { OrderShopService } from './order-shop-service';
@@ -29,7 +30,7 @@ export class OrdersModule {
       module: OrdersModule,
       imports: [DriverModule, auth, delivery, DeliveryCoreModule.register(auth), OrdersCoreModule, MenuModule.register(auth), CustomersModule.register(auth), ShopModule, M14RoutingModule, TransactionModule, IdempotencyModule],
       controllers: [OrderCustomerController, OrderShopController],
-      providers: [OrderTimeoutSweeper, OrderCustomerService, OrderShopService, OrderViews, OrderSweeper, OrderSweeperRunner],
+      providers: [OrderTimeoutSweeper, OrderCustomerService, OrderCustomerDeliveryService, OrderShopService, OrderViews, OrderSweeper, OrderSweeperRunner],
       exports: [OrderSweeper],
     };
   }
