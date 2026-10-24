@@ -90,6 +90,17 @@ describe('order story: milestones only, in plain words', () => {
     expect(texts(story).filter((t) => t.startsWith('Giao thành công'))).toHaveLength(1);
   });
 
+  it('a cancel after pickup (creator only) is told once by who did it; a direct call says so on its own', () => {
+    const order = buildOrderStory(
+      [oe(0, 'placed', null, null, 'CUSTOMER'), oe(1, 'confirmed'), oe(30, 'cancelled_by_customer_after_pickup', 'Khách đổi ý', null, 'CUSTOMER')],
+      [call([de(2, 'created'), de(3, 'accepted'), de(10, 'picked_up'), { atMs: at(30), type: 'delivery.cancelled_after_pickup', actorType: 'CUSTOMER', note: 'Khách đổi ý' }])],
+      'shop',
+    );
+    expect(texts(order)).toEqual(['Đã đặt đơn', 'Quán đã xác nhận', 'Đang tìm shipper', 'Shipper đã nhận đơn', 'Shipper đã lấy hàng', 'Khách đã hủy đơn — Khách đổi ý']);
+    const direct = buildDeliveryStory(call([de(0, 'created'), de(5, 'picked_up'), { atMs: at(9), type: 'delivery.cancelled_after_pickup', actorType: 'SHOP', note: 'Khách không nhận' }], { source: 'DIRECT' }), 'shop');
+    expect(texts(direct).slice(-1)).toEqual(['Quán đã hủy yêu cầu giao — Khách không nhận']);
+  });
+
   it('a confirmation that carries the reason of an edit says so', () => {
     expect(texts(buildOrderStory([oe(1, 'confirmed', 'Hết bún, khách đồng ý bớt')], [], 'customer'))).toEqual(['Quán đã xác nhận đơn đã chỉnh — Hết bún, khách đồng ý bớt']);
   });

@@ -588,7 +588,11 @@ class _ShopDeliveryPanelState extends State<ShopDeliveryPanel> with M07Actions<S
               ('Lý do', _reasonText(a.reasonCode)),
               ('Trạng thái', _agreementText(a.state)),
             ]),
-            if (a.state == 'COUNTERED') ...<Widget>[
+            // Who answers is the server's call: for an order the customer pays, the customer decides in 11Food and the shop only waits.
+            if (d.allows('wait_customer_fee') && (a.state == 'COUNTERED' || a.state == 'AWAITING_CUSTOMER')) ...<Widget>[
+              const SizedBox(height: N11Space.gap2),
+              const ReasonNote('Khách là người trả phí nên khách quyết định mức này trong 11Food. Bạn chỉ cần chờ.', key: Key('m07-wait-customer-fee')),
+            ] else if (a.state == 'COUNTERED') ...<Widget>[
               const SizedBox(height: N11Space.gap2),
               const ReasonNote('Từ chối thì giữ mức đề xuất ban đầu và tiếp tục tìm shipper khác, thời gian tìm không tính lại.'),
               const SizedBox(height: N11Space.gap2),
@@ -600,7 +604,7 @@ class _ShopDeliveryPanelState extends State<ShopDeliveryPanel> with M07Actions<S
                 ],
               ),
             ],
-            if (a.state == 'AWAITING_CUSTOMER') ...<Widget>[
+            if (a.state == 'AWAITING_CUSTOMER' && !d.allows('wait_customer_fee')) ...<Widget>[
               const SizedBox(height: N11Space.gap2),
               const ReasonNote('Khách trả ship nên mức này cần khách đồng ý. Chỉ bấm khi khách đã đồng ý với bạn.'),
               const SizedBox(height: N11Space.gap2),
@@ -653,7 +657,7 @@ class _ShopDeliveryPanelState extends State<ShopDeliveryPanel> with M07Actions<S
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(children: <Widget>[const Expanded(child: Text('Xử lý hàng', style: N11Text.label)), N11Chip(i.isOpen ? 'Đang mở' : 'Đã đóng', kind: i.isOpen ? ChipKind.bad : ChipKind.ok)]),
-          KeyValueRows(<(String, String)>[('Lý do giao thất bại', i.reason), ('Hàng hiện ở', i.custodyText)]),
+          KeyValueRows(<(String, String)>[(d.state == DeliveryState.failed ? 'Lý do giao thất bại' : 'Lý do hủy', i.reason), ('Hàng hiện ở', i.custodyText)]),
           if (i.isOpen) ...<Widget>[
             const SizedBox(height: N11Space.gap2),
             const ReasonNote('Hàng ở tay ai người đó chịu trách nhiệm. Giao thất bại không có nghĩa hàng đã về quán. Chưa gọi lại cùng hàng được khi hàng chưa về quán.'),

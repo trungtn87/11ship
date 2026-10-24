@@ -59,6 +59,7 @@ function orderLine(e: StoryOrderEvent): string | null {
     case 'ready':
       return 'Món đã sẵn sàng';
     case 'cancelled_by_customer':
+    case 'cancelled_by_customer_after_pickup':
       return withReason('Khách đã hủy đơn', reason);
     case 'cancelled_by_shop':
       return withReason('Quán đã hủy đơn', reason);
@@ -102,7 +103,9 @@ function deliveryLine(e: StoryDeliveryEvent, d: StoryDelivery, audience: StoryAu
     case 'search_stopped':
       return 'Chưa có shipper nhận, đã dừng tìm';
     case 'cancelled_by_shop':
-      return withReason('Quán đã hủy yêu cầu giao', reason);
+    case 'cancelled_after_pickup':
+      // After pickup only the creator may cancel: the actor says who (the customer of an order, the shop of a direct call).
+      return withReason(e.actorType === 'CUSTOMER' ? 'Khách đã hủy yêu cầu giao' : e.actorType === 'ADMIN' ? 'Quản trị đã hủy yêu cầu giao' : 'Quán đã hủy yêu cầu giao', reason);
     case 'cancelled_by_system':
       return withReason('Đã hủy yêu cầu giao', reason);
     case 'goods_returned':
@@ -118,8 +121,8 @@ function deliveryLine(e: StoryDeliveryEvent, d: StoryDelivery, audience: StoryAu
   }
 }
 
-const ENDING_ORDER_EVENTS = new Set(['cancelled_by_shop', 'cancelled_by_admin', 'delivery_timeout', 'confirmation_timeout']);
-const CANCEL_DELIVERY_EVENTS = new Set(['cancelled_by_shop', 'cancelled_by_system']);
+const ENDING_ORDER_EVENTS = new Set(['cancelled_by_shop', 'cancelled_by_admin', 'cancelled_by_customer', 'cancelled_by_customer_after_pickup', 'delivery_timeout', 'confirmation_timeout']);
+const CANCEL_DELIVERY_EVENTS = new Set(['cancelled_by_shop', 'cancelled_after_pickup', 'cancelled_by_system']);
 
 /** The story of an order: its own milestones and those of every call for a Shipper, oldest first. */
 export function buildOrderStory(orderEvents: readonly StoryOrderEvent[], deliveries: readonly StoryDelivery[], audience: StoryAudience): StoryEntry[] {

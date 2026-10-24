@@ -272,6 +272,17 @@ void main() {
       await unmount(tester);
     });
 
+    testWidgets('an order the customer pays for: the customer decides the fee in 11Food, the shop only waits (no answer buttons)', (WidgetTester tester) async {
+      final Map<String, Object?> countered = <String, Object?>{'state': 'COUNTERED', 'proposed_vnd': 15000, 'counter_vnd': 20000, 'reason_code': 'BAD_WEATHER', 'reason_note': null, 'expires_at': '2026-10-20T11:30:00Z'};
+      final Map<String, Object?> d = deliveryJson(state: 'waiting_driver', agreement: countered, incident: false, can: <String>{'wait_customer_fee'});
+      await mount(tester, ShopOrderDetailScreen(runtime: runtimeOf(_Orders(orderJson(delivery: d, display: 'SEARCHING_SHIPPER'))), orderId: 'o1', deliveries: _Deliveries(d)));
+      expect(key('m07-wait-customer-fee'), findsOneWidget);
+      expect(key('m07-counter-accept'), findsNothing);
+      expect(key('m07-counter-reject'), findsNothing);
+      expect(key('m07-customer-agreed'), findsNothing);
+      await unmount(tester);
+    });
+
     testWidgets('"Hủy yêu cầu giao" ends only the request (needs a reason) and sits beside "Hủy đơn món" and "Gọi lại shipper", each for its own right', (WidgetTester tester) async {
       final _Deliveries deliveries = _Deliveries(deliveryJson(state: 'accepted', incident: false, can: <String>{'cancel'}));
       final _Orders orders = _Orders(orderJson(delivery: deliveryJson(state: 'accepted', incident: false, can: <String>{'cancel'}), display: 'SHIPPER_COMING', can: <String, bool>{'cancel': true}));
