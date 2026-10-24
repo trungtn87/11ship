@@ -37,6 +37,8 @@ export type Route =
   | { readonly name: 'settings' }
   | { readonly name: 'config' }
   | { readonly name: 'reports' }
+  | { readonly name: 'audit' }
+  | { readonly name: 'backups' }
   | { readonly name: 'order-timeouts' }
   | { readonly name: 'monitoring-errors' }
   // M04 (UI phase): "Tài chính" and the wallet parameters ("Cài đặt › Tham số hệ thống › Ví Shipper").
@@ -112,6 +114,12 @@ export function parseRoute(pathname: string, search = ''): Route {
   }
   if (path === '/catalog/categories') {
     return { name: 'categories' };
+  }
+  if (path === '/system/audit') {
+    return { name: 'audit' };
+  }
+  if (path === '/system/backups') {
+    return { name: 'backups' };
   }
   if (path === '/reports') {
     return { name: 'reports' };
@@ -281,6 +289,10 @@ export function formatRoute(route: Route): string {
       return '/system/settings';
     case 'reports':
       return '/reports';
+    case 'audit':
+      return '/system/audit';
+    case 'backups':
+      return '/system/backups';
     case 'config':
       return '/system/config';
     case 'monitoring-errors':

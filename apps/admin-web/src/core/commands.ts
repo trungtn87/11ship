@@ -15,7 +15,7 @@ export type CommandResult =
   | { readonly kind: 'not-wired' };
 
 /** Codes that mean "the thing you saw is no longer what is stored": the page offers a reload, never a blind retry. */
-const CONFLICT_CODES: readonly string[] = ['ADMIN_ACCESS_VERSION_CONFLICT', 'FINANCE_VERSION_CONFLICT', 'VERSION_CONFLICT', 'CONFIG_VERSION_CONFLICT', 'ADMIN_ACCESS_STATE_CONFLICT', 'FINANCE_GRANT_STATE_CONFLICT', 'SYSTEM_SETTING_VERSION_CONFLICT', 'WALLET_PARAMETER_VERSION_CONFLICT', 'SHIPPING_ELIGIBILITY_VERSION_CONFLICT'];
+const CONFLICT_CODES: readonly string[] = ['ADMIN_ACCESS_VERSION_CONFLICT', 'FINANCE_VERSION_CONFLICT', 'VERSION_CONFLICT', 'CONFIG_VERSION_CONFLICT', 'ADMIN_ACCESS_STATE_CONFLICT', 'FINANCE_GRANT_STATE_CONFLICT', 'SYSTEM_SETTING_VERSION_CONFLICT', 'WALLET_PARAMETER_VERSION_CONFLICT', 'SHIPPING_ELIGIBILITY_VERSION_CONFLICT', 'RESTORE_REQUEST_STATE_CONFLICT'];
 
 export async function commandResultOf(result: ApiResult<unknown>, session: CsrfPort): Promise<CommandResult> {
   if (result.kind === 'ok') {

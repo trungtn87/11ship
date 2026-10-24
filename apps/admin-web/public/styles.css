@@ -3255,3 +3255,46 @@ select {
 .rp-job .btn-inline {
   margin-left: auto;
 }
+
+/* M12-F: audit log and backup history. */
+.au-body,
+.bk-body {
+  display: grid;
+  gap: 16px;
+}
+.au-meta {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  max-width: 560px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  background: #f6f5f2;
+  border-radius: 8px;
+}
+.au-denied td:first-child,
+.au-failure td:first-child {
+  box-shadow: inset 3px 0 0 #b3261e;
+}
+.bk-health {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(42, 42, 46, 0.12);
+  background: #fff;
+}
+.bk-ok {
+  border-color: #2e7d32;
+  background: #eef7ee;
+}
+.bk-stale,
+.bk-not_offsite {
+  border-color: #b26a00;
+  background: #fff6e5;
+}
+.bk-none {
+  border-color: #b3261e;
+  background: #fdecea;
+}

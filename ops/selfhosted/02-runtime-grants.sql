@@ -158,3 +158,8 @@ GRANT SELECT, INSERT ON app.cancellation_transitions TO ship11_app;
 -- and are removed when the file expires.
 GRANT SELECT, INSERT, UPDATE ON app.report_export_jobs TO ship11_app;
 GRANT SELECT, INSERT, DELETE ON app.report_export_files TO ship11_app;
+
+-- M12-F: backup records are written by the operating team's backup job (database owner role), the application only READS them. Restore requests are inserted and cancelled
+-- by SYSTEM through the Web Admin; an operator moves them on with the owner role. Neither table is ever deleted (trigger).
+GRANT SELECT ON app.backup_records TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.restore_requests TO ship11_app;

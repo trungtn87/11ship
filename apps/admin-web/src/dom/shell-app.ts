@@ -55,6 +55,9 @@ import { ConfigSource, NOT_WIRED_CONFIG } from '../core/config.js';
 import { ConfigHost, ConfigView } from './config-view.js';
 import { NOT_WIRED_REPORTS, ReportSource } from '../core/reports.js';
 import { ReportsHost, ReportsView } from './reports-view.js';
+import { NOT_WIRED_OPERATIONS, OperationsSource } from '../core/operations.js';
+import { AuditHost, AuditView } from './audit-view.js';
+import { BackupsHost, BackupsView } from './backups-view.js';
 import { FeedbackSource, NOT_WIRED_FEEDBACK } from '../core/feedback.js';
 import { ComplaintListView, FeedbackHost, ReviewListView } from './feedback-view.js';
 import { DeliveryHost, DeliveryListView } from './deliveries-view.js';
@@ -166,6 +169,8 @@ export class ShellApp implements ShellHost {
     private readonly config: ConfigSource = NOT_WIRED_CONFIG,
     /** Where the reports and their CSV/Excel exports (Tổng quan › Báo cáo, M12-E) come from. By default nothing is wired, so the page says so. */
     private readonly reports: ReportSource = NOT_WIRED_REPORTS,
+    /** Where the audit log and the backup history / restore requests (Hệ thống › Nhật ký, Sao lưu và phục hồi, M12-F) come from. By default nothing is wired, so the pages say so. */
+    private readonly operations: OperationsSource = NOT_WIRED_OPERATIONS,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -420,6 +425,12 @@ export class ShellApp implements ShellHost {
         return;
       case 'reports':
         this.#reportsPage(content);
+        return;
+      case 'audit':
+        this.#auditPage(content);
+        return;
+      case 'backups':
+        this.#backupsPage(content);
         return;
       case 'orders':
         this.#orderList(content);
@@ -947,6 +958,43 @@ export class ShellApp implements ShellHost {
       home: () => this.go({ name: 'home' }),
     };
     const view = new DeliveryListView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Hệ thống › Nhật ký" (M12-F): read only; the server needs the audit.read right (SYSTEM has it). */
+  #auditPage(content: HTMLElement): void {
+    const host: AuditHost = {
+      source: this.operations,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    };
+    const view = new AuditView(content, host);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** "Hệ thống › Sao lưu và phục hồi" (M12-F): SYSTEM only; a restore request is recorded, never performed here. */
+  #backupsPage(content: HTMLElement): void {
+    const host: BackupsHost = {
+      source: this.operations,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+    };
+    const view = new BackupsView(content, host);
     this.#unsubscribe = () => view.dispose();
     void view.load();
   }

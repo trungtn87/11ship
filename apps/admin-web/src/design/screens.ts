@@ -123,6 +123,8 @@ function screenIdOf(route: Route): { id: string; variant?: string } {
     case 'deliveries':
     case 'overview':
     case 'reports':
+    case 'audit':
+    case 'backups':
     case 'config':
     case 'access':
     case 'orders':

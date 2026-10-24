@@ -101,6 +101,12 @@ export const APP_ERROR_DEFINITIONS = {
   REPORT_EXPORT_NOT_FOUND: { status: 404, message: 'The report export was not found' },
   REPORT_EXPORT_NOT_READY: { status: 409, message: 'The report export is not finished or did not succeed' },
   REPORT_EXPORT_EXPIRED: { status: 409, message: 'The report export file has expired' },
+  // M12-F: restore requests (the application records the request; an operator restores).
+  RESTORE_BACKUP_NOT_FOUND: { status: 404, message: 'The backup to restore from was not found' },
+  RESTORE_BACKUP_NOT_USABLE: { status: 409, message: 'Only a finished, encrypted and verified backup can be restored' },
+  RESTORE_REQUEST_OPEN: { status: 409, message: 'A restore request is already open' },
+  RESTORE_REQUEST_NOT_FOUND: { status: 404, message: 'The restore request was not found' },
+  RESTORE_REQUEST_STATE_CONFLICT: { status: 409, message: 'The restore request was changed or can no longer be cancelled' },
   FINANCE_ADMIN_NOT_FOUND: { status: 404, message: 'The administrator was not found' },
   FINANCE_GRANT_STATE_CONFLICT: { status: 409, message: 'The finance right is not in a state that allows this action' },
   FINANCE_VERSION_CONFLICT: { status: 409, message: 'The finance right was changed by another request' },

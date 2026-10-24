@@ -233,7 +233,9 @@ export const MENU: readonly MenuGroup[] = [
       },
       // M06-A: Phí & điều kiện giao (fee table; every administrator reads, only SYSTEM changes, the server decides again).
       { id: 'shipping-policy', label: 'Phí & điều kiện giao', icon: 'gear', route: { name: 'shipping-policy' }, ready: true, access: 'any' },
-      soon('audit', 'Nhật ký', 'doc', 'audit'),
+      // M12-F: the audit log (read only; the server needs the audit.read right) and the backup history / restore requests (SYSTEM only).
+      { id: 'audit', label: 'Nhật ký', icon: 'doc', route: { name: 'audit' }, ready: true, access: 'any' },
+      { id: 'backups', label: 'Sao lưu và phục hồi', icon: 'shield', route: { name: 'backups' }, ready: true, access: 'system' },
       { id: 'monitoring', label: 'Giám sát', icon: 'activity', ready: true, access: 'system', children: [
         { id: 'monitoring-errors', label: 'Nhật ký lỗi', route: { name: 'monitoring-errors' }, ready: true, access: 'system' },
       ] },
@@ -287,6 +289,7 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'home':
     case 'overview':
     case 'reports':
+    case 'audit':
     case 'config':
     case 'activate':
     case 'reset':
@@ -330,6 +333,7 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
       return canSee(role,grants,'order-timeouts');
     case 'administrators':
     case 'access':
+    case 'backups':
     case 'settings':
     case 'invitations':
     case 'invitation-new':
@@ -404,6 +408,10 @@ export function activeMenuId(route: Route): string {
       return 'overview';
     case 'reports':
       return 'reports';
+    case 'audit':
+      return 'audit';
+    case 'backups':
+      return 'backups';
     case 'config':
       return 'config';
     case 'home':
@@ -484,6 +492,10 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Tổng quan', 'Điều hành'];
     case 'reports':
       return ['Tổng quan', 'Báo cáo'];
+    case 'audit':
+      return ['Hệ thống', 'Nhật ký'];
+    case 'backups':
+      return ['Hệ thống', 'Sao lưu và phục hồi'];
     case 'config':
       return ['Cài đặt', 'Cấu hình tập trung'];
     case 'home':

@@ -1,4 +1,4 @@
-import { createHash, randomBytes, X509Certificate } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, X509Certificate } from 'node:crypto';
 import { purgeShopDisplayCodes } from './support/shop-display-fixtures';
 import { ChildProcess } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -10,7 +10,7 @@ import { freePort, repoRoot, runScript, startFront } from './support/admin-web-h
 import { Browser, launchChrome, Page } from './support/cdp';
 import { createActiveShopFor } from './support/auth-fixtures';
 import { AdminReportService } from '../../apps/backend/src/admin-reports/admin-report-service';
-import { ActivatedAdmin, activatedAdmin, permission, purgeDeliveriesOfShops, purgeExportJobs, purgeGrants, seedDelivery } from './support/m12-fixtures';
+import { ActivatedAdmin, activatedAdmin, permission, purgeDeliveriesOfShops, purgeBackups, purgeExportJobs, purgeGrants, seedDelivery } from './support/m12-fixtures';
 import { systemSession, SystemSession } from './support/provisioning-fixtures';
 
 // M12 on the Administration web in a REAL Chrome against the real front, backend and PostgreSQL (desktop size 1440x900 and a narrow check at 390 wide).
@@ -77,6 +77,7 @@ describe('M12 administration web (real browser)', () => {
     front?.kill('SIGTERM');
     if (app !== undefined) {
       await purgeDeliveriesOfShops(app.pool, [shopId]);
+      await purgeBackups(app.pool);
       await purgeExportJobs(app.pool, [system.account.userId, viewer.userId]);
       await purgeGrants(app.pool);
       await app.pool.query('DELETE FROM app.shipper_wallet_parameter_changes');
@@ -330,6 +331,86 @@ describe('M12 administration web (real browser)', () => {
     await press(adminPage, 'Tiền và đối soát', "document.querySelector('[aria-label=\"Loại báo cáo\"]')");
     await adminPage.waitFor(`document.body.innerText.includes('Không có quyền')`);
     await shot(adminPage, 'm12e-reports-admin-money-forbidden');
+    await adminPage.close();
+  }, 180_000);
+  it('M12-F: SYSTEM reads the audit log (read only) and the backup page tells the truth; a restore request needs a reason and an explicit confirmation and restores nothing; an ADMIN cannot open the backups', async () => {
+    await purgeBackups(app.pool);
+    const page: Page = await (browser as Browser).newPage();
+    await page.viewport(1440, 900, false);
+    await page.send('Network.clearBrowserCookies');
+    await signIn(page, { phone: system.account.phone, password: system.account.password, userId: system.account.userId, secret: system.login.secret });
+
+    // Audit: the log has rows from this very run (logins, config and grant changes), no edit or delete control, details are text.
+    await page.goto(`${origin}/system/audit`);
+    await page.waitFor(`document.querySelector('#audit-title') && document.querySelectorAll('#audit-table tbody tr').length >= 3`);
+    expect(await page.evaluate<boolean>(`[...document.querySelectorAll('button')].every((b) => !/xóa|sửa|delete|edit/i.test(b.textContent ?? ''))`)).toBe(true);
+    expect(await page.evaluate<string>(`document.body.innerText`)).toContain('giờ Việt Nam');
+    await shot(page, 'm12f-audit-desktop');
+    await page.fill('#audit-action', 'admin.access');
+    await page.evaluate(`[...document.querySelectorAll('.toolbar-filters button')].find((b) => b.textContent === 'Lọc').click()`);
+    await page.waitFor(`document.querySelector('#audit-empty') || [...document.querySelectorAll('#audit-table tbody code')].every((c) => c.textContent.startsWith('admin.access'))`);
+    await page.fill('#audit-action', 'no.such.action');
+    await page.evaluate(`[...document.querySelectorAll('.toolbar-filters button')].find((b) => b.textContent === 'Lọc').click()`);
+    await page.waitFor(`document.querySelector('#audit-empty')`);
+    await shot(page, 'm12f-audit-empty');
+
+    // Backups with nothing recorded: the page says there is none, never "OK".
+    await page.goto(`${origin}/system/backups`);
+    await page.waitFor(`document.querySelector('#backup-health') && document.querySelector('#backup-empty')`);
+    expect(await page.text('#backup-health')).toContain('Chưa có bản sao lưu');
+    await shot(page, 'm12f-backups-none');
+
+    // A verified backup on the VPS only: warned, not healthy; the restore button exists only for it.
+    const good = randomUUID();
+    await app.pool.query(`INSERT INTO app.backup_records (backup_id, kind, state, started_at, finished_at, size_bytes, sha256, schema_version, encrypted, offsite, verified_at, verify_note) VALUES ($1::uuid, 'DAILY', 'SUCCEEDED', now() - interval '1 hour', now() - interval '59 minutes', 5242880, repeat('c', 64), '1795824000000_create-m12-backup-restore', true, false, now() - interval '58 minutes', 'đã khôi phục thử và kiểm tra')`, [good]);
+    await app.pool.query(`INSERT INTO app.backup_records (backup_id, kind, state, started_at, finished_at, error_code) VALUES (gen_random_uuid(), 'DAILY', 'FAILED', now() - interval '25 hours', now() - interval '24 hours', 'VERIFY_LEDGER_DIFFERENCE')`);
+    await page.goto(`${origin}/system/backups`);
+    await page.waitFor(`document.querySelector('#backup-table')`);
+    expect(await page.text('#backup-health')).toContain('Chưa có bản ngoài VPS');
+    const buttons = await page.evaluate<number>(`[...document.querySelectorAll('#backup-table button')].filter((b) => b.textContent === 'Yêu cầu khôi phục').length`);
+    expect(buttons).toBe(1);
+    expect(await page.evaluate<string>(`document.querySelector('#backup-table').innerText`)).toContain('VERIFY_LEDGER_DIFFERENCE');
+    await shot(page, 'm12f-backups-desktop');
+
+    // The request: no reason, then no confirmation, then sent. Nothing is restored: only a row in restore_requests and an audit entry.
+    await press(page, 'Yêu cầu khôi phục', "document.querySelector('#backup-table')");
+    await page.waitFor(`document.querySelector('.dialog #restore-reason')`);
+    await shot(page, 'm12f-restore-dialog');
+    await press(page, 'Gửi yêu cầu', "document.querySelector('.dialog')");
+    await page.waitFor(`document.querySelector('.dialog .message-error') && !document.querySelector('.dialog .message-error').hidden`);
+    await page.fill('#restore-reason', `Thử quy trình khôi phục ${tag}`);
+    await press(page, 'Gửi yêu cầu', "document.querySelector('.dialog')");
+    await page.waitFor(`document.querySelector('.dialog .message-error').textContent.includes('xác nhận')`);
+    expect((await app.pool.query(`SELECT count(*)::int AS n FROM app.restore_requests`)).rows[0].n).toBe(0);
+    await page.evaluate(`document.querySelector('#restore-understood').click()`);
+    await press(page, 'Gửi yêu cầu', "document.querySelector('.dialog')");
+    await page.waitFor(`!document.querySelector('.dialog') && document.querySelector('#restore-list') && document.body.innerText.includes('Chưa có dữ liệu nào thay đổi')`);
+    expect((await app.pool.query(`SELECT state, backup_id::text AS backup_id FROM app.restore_requests`)).rows).toEqual([{ state: 'REQUESTED', backup_id: good }]);
+    expect(await page.evaluate<boolean>(`[...document.querySelectorAll('#backup-table button')].every((b) => b.disabled)`)).toBe(true); // one open request at a time
+    expect((await app.pool.query(`SELECT 1 FROM app.audit_logs WHERE action = 'admin.restore.request.v1' AND metadata ->> 'backup_id' = $1`, [good])).rowCount).toBe(1);
+    await shot(page, 'm12f-restore-requested');
+    await press(page, 'Hủy yêu cầu');
+    await page.waitFor(`document.body.innerText.includes('Đã hủy yêu cầu khôi phục')`);
+    expect((await app.pool.query(`SELECT state FROM app.restore_requests`)).rows).toEqual([{ state: 'CANCELLED' }]);
+
+    // Narrow screen.
+    await page.viewport(390, 844, true);
+    await page.waitFor(`document.documentElement.clientWidth <= 400`);
+    expect(await page.evaluate<boolean>(`document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1`)).toBe(true);
+    await shot(page, 'm12f-backups-phone');
+    await page.close();
+
+    // An ADMIN without the audit right and without SYSTEM: the audit says no, the backups say no, and the menu does not offer the backups.
+    const adminPage: Page = await (browser as Browser).newPage();
+    await adminPage.viewport(1440, 900, false);
+    await adminPage.send('Network.clearBrowserCookies');
+    await signIn(adminPage, { phone: viewer.phone, password: 'Correct-Horse-Battery-9', userId: viewer.userId, secret: viewer.secret });
+    expect(await adminPage.evaluate<boolean>(`!!document.querySelector('a[href="/system/backups"]')`)).toBe(false);
+    await adminPage.goto(`${origin}/system/audit`);
+    await adminPage.waitFor(`document.body.innerText.includes('Không có quyền')`);
+    await shot(adminPage, 'm12f-audit-admin-forbidden');
+    await adminPage.goto(`${origin}/system/backups`);
+    await adminPage.waitFor(`document.body.innerText.includes('Không có quyền')`);
     await adminPage.close();
   }, 180_000);
 });

@@ -18,6 +18,7 @@ import { AdminDeliveryApi, createDeliverySource, DELIVERIES_BASE } from '../core
 import { AdminFeedbackApi, createFeedbackSource, FEEDBACK_BASE } from '../core/feedback-api.js';
 import { AdminNotificationApi, createNotificationSource, NOTIFICATIONS_BASE } from '../core/notifications-api.js';
 import { AdminConfigApi, CONFIG_BASE, createConfigSource } from '../core/config-api.js';
+import { AdminOperationsApi, createOperationsSource, OPERATIONS_BASE } from '../core/operations-api.js';
 import { AdminReportApi, createReportSource, REPORTS_BASE } from '../core/reports-api.js';
 import { ACCESS_BASE, AdminAccessApi, createAccessSource } from '../core/access-api.js';
 import { AdminOverviewApi, createOverviewSource, OVERVIEW_BASE } from '../core/overview-api.js';
@@ -187,6 +188,10 @@ function startAdmin(host: HTMLElement): void {
       refresh: () => controller.refreshSession(),
     }),
     createReportSource(new AdminReportApi(fetchTransport(window.fetch.bind(window), { base: REPORTS_BASE })), window.fetch.bind(window), {
+      csrf: () => controller.sessionCsrf,
+      refresh: () => controller.refreshSession(),
+    }),
+    createOperationsSource(new AdminOperationsApi(fetchTransport(window.fetch.bind(window), { base: OPERATIONS_BASE })), {
       csrf: () => controller.sessionCsrf,
       refresh: () => controller.refreshSession(),
     }),

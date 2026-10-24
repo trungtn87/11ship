@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { BACKUP_POLICY } from '../admin-operations/admin-operations-service';
 import { AdminRightsReader } from '../admin-m12/admin-rights';
 import { setBusinessLockTimeout } from '../admin-provisioning/admin-provisioning-locks';
 import { AdminSystemActor } from '../admin-provisioning/admin-system-actor';
@@ -157,7 +158,24 @@ export class AdminConfigService {
           ],
           null,
         ),
-        group('storage_backup', 'Lưu trữ và sao lưu', 'M12-F', null, null, [], [], null),
+        // The backup rules are fixed by the Owner (not parameters). The history and its health are SYSTEM's page "Sao lưu và phục hồi"; here only the rules.
+        group(
+          'storage_backup',
+          'Lưu trữ và sao lưu',
+          'M12-F',
+          null,
+          null,
+          [],
+          [
+            { key: 'backup_daily', label: 'Chu kỳ sao lưu', value: 'Hằng ngày' },
+            { key: 'backup_keep_daily', label: 'Giữ bản ngày', value: BACKUP_POLICY.keep_daily, unit: 'bản' },
+            { key: 'backup_keep_weekly', label: 'Giữ bản tuần', value: BACKUP_POLICY.keep_weekly, unit: 'bản' },
+            { key: 'backup_pre_migration', label: 'Bản trước migration hoặc thay đổi lớn', value: 'Có' },
+            { key: 'backup_offsite', label: 'Bản sao ngoài VPS, mã hóa, giới hạn truy cập', value: 'Bắt buộc' },
+            { key: 'backup_verified', label: 'Chỉ coi là thành công khi đã khôi phục thử và kiểm tra', value: 'Có' },
+          ],
+          null,
+        ),
       ];
       return { generated_at: iso(rights.nowMs), editable: rights.isSystem, groups };
     });
