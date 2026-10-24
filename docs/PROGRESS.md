@@ -288,10 +288,12 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#185](https://github.com/trungtn87/11ship/pull/185) M02: Quản lý quán trên Web Admin | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `098f17f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#186](https://github.com/trungtn87/11ship/pull/186) Deploy VPS: duyệt migration theo hash đã review và dùng lại… | Đã merge (`MERGED`) | — | — | — | `f24421f` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#187](https://github.com/trungtn87/11ship/pull/187) Add archify skill (tt-a1i/archify v3.2) under .claude/skills | 🚫 Đã hủy / bỏ qua (`CANCELLED / IGNORED`) | — | — | — | `66ca65f` | 🚫 không tính (đã hủy) — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#188](https://github.com/trungtn87/11ship/pull/188) M07: sửa đơn kẹt khi shipper bỏ lượt nhận phí thương lượng;… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `728f349` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
 - `UNCLASSIFIED_PR` PR #185: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #188: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
