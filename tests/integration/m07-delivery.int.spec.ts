@@ -259,6 +259,112 @@ describe('M07 — delivery flow', () => {
     expect(await wallet(far)).toEqual({ balance: 50_000, held: 0 });
   });
 
+  const presenceOf = async (s: Shipper): Promise<Json> => (dataOf(await asShipper(s, 'GET', '/driver/me')) as Json).presence as Json;
+  const ageLocation = (s: Shipper, seconds: number): Promise<unknown> =>
+    app.pool.query(`UPDATE app.shipper_latest_locations SET recorded_at = clock_timestamp() - ($2::float8 * interval '1 second') WHERE driver_id = $1::uuid`, [s.driverId, seconds]);
+
+  it('a position older than 2 minutes stops new orders on the server whatever the app does: no offer, no accept; a fresh position resumes them', async () => {
+    const s = await newShipper();
+    const delivery = await newDelivery();
+    const listed = async (): Promise<boolean> => ((dataOf(await asShipper(s, 'GET', '/driver/deliveries/offers')) as Json).offers as Json[]).some((o) => o.delivery_id === delivery.delivery_id);
+    expect(await listed()).toBe(true);
+    // One late report (110 s old) is tolerated; two missed ones (121 s) are not.
+    await ageLocation(s, 110);
+    expect(await listed()).toBe(true);
+    await ageLocation(s, 121);
+    expect(await listed()).toBe(false);
+    expect(await presenceOf(s)).toMatchObject({ intent_online: true, location_ready: false, can_receive_orders: false, paused_reason: 'LOCATION_STALE' });
+    const refused = await asShipper(s, 'POST', `/driver/deliveries/${delivery.delivery_id}/accept`, {});
+    expect(codeOf(refused)).toBe('DELIVERY_NOT_ELIGIBLE');
+    expect(await wallet(s)).toEqual({ balance: 50_000, held: 0 });
+    expect(await stateOf(String(delivery.delivery_id))).toBe('waiting_driver');
+    // The position comes back: the switch was never touched, so receiving resumes by itself.
+    expect((await asShipper(s, 'PUT', '/driver/location', { lat: 21.0005, lng: 105.8005, accuracy_m: 20 })).status).toBe(200);
+    expect(await presenceOf(s)).toMatchObject({ intent_online: true, location_ready: true, paused_reason: null });
+    expect(await listed()).toBe(true);
+    expect((await asShipper(s, 'POST', `/driver/deliveries/${delivery.delivery_id}/accept`, {})).status).toBe(200);
+  });
+
+  describe('a session that is over (logout, revoked, expired) does nothing for the Shipper', () => {
+    const logout = (s: Shipper): Promise<ApiResponse> => app.call('POST', '/client-auth/logout', { bearer: s.token, body: {} });
+
+    async function expectDead(s: Shipper, deliveryId: string): Promise<void> {
+      const version = 1;
+      const refused = [
+        await asShipper(s, 'PUT', '/driver/location', { lat: 21.0005, lng: 105.8005, accuracy_m: 20 }),
+        await asShipper(s, 'GET', '/driver/me'),
+        await asShipper(s, 'POST', '/driver/me/accepting', { expected_version: version, accepting: true }),
+        await asShipper(s, 'GET', '/driver/deliveries/offers'),
+        await asShipper(s, 'POST', `/driver/deliveries/${deliveryId}/accept`, {}),
+      ];
+      expect(refused.map((r) => r.status)).toEqual([401, 401, 401, 401, 401]);
+      expect(await stateOf(deliveryId)).toBe('waiting_driver');
+      expect(await countRows(app.pool, `SELECT 1 FROM app.delivery_assignments WHERE delivery_id = $1::uuid`, [deliveryId])).toBe(0);
+    }
+
+    it('after logout the old token cannot report a position, switch on, list offers or accept; nothing is held', async () => {
+      const s = await newShipper();
+      const delivery = await newDelivery();
+      expect((await logout(s)).status).toBe(204);
+      await expectDead(s, String(delivery.delivery_id));
+      expect(await wallet(s)).toEqual({ balance: 50_000, held: 0 });
+    });
+
+    it('a session revoked on the server side is just as dead, and so is one past its expiry', async () => {
+      const revoked = await newShipper();
+      const delivery = await newDelivery();
+      await app.pool.query(`UPDATE app.sessions SET revoked_at = clock_timestamp() WHERE user_id = $1::uuid AND revoked_at IS NULL`, [revoked.userId]);
+      await expectDead(revoked, String(delivery.delivery_id));
+      const expired = await newShipper();
+      await app.pool.query(`UPDATE app.sessions SET created_at = clock_timestamp() - interval '2 hours', expires_at = clock_timestamp() - interval '1 second' WHERE user_id = $1::uuid`, [expired.userId]);
+      await expectDead(expired, String(delivery.delivery_id));
+    });
+  });
+
+  it('a Shipper who switched off never comes back online by reporting a position, and gets no new order', async () => {
+    const s = await newShipper();
+    const version = ((dataOf(await asShipper(s, 'GET', '/driver/me')) as Json).version);
+    const off = await asShipper(s, 'POST', '/driver/me/accepting', { expected_version: version, accepting: false });
+    expect(off.status).toBe(200);
+    expect((await asShipper(s, 'PUT', '/driver/location', { lat: 21.0005, lng: 105.8005, accuracy_m: 20 })).status).toBe(200);
+    expect(await presenceOf(s)).toMatchObject({ intent_online: false, can_receive_orders: false, should_share_location: false });
+    const delivery = await newDelivery();
+    expect(codeOf(await asShipper(s, 'POST', `/driver/deliveries/${delivery.delivery_id}/accept`, {}))).toBe('DELIVERY_NOT_ELIGIBLE');
+    expect(dataOf(await asShipper(s, 'GET', '/driver/me')).accepting_deliveries).toBe(false);
+  });
+
+  it('switching off with a delivery in progress is accepted: new orders stop, the position stays shared until the delivery ends', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s);
+    const me = dataOf(await asShipper(s, 'GET', '/driver/me')) as Json;
+    const off = await asShipper(s, 'POST', '/driver/me/accepting', { expected_version: me.version, accepting: false });
+    expect(off.status).toBe(200);
+    expect(dataOf(off)).toMatchObject({ accepting_deliveries: false, status: 'ACTIVE', presence: { intent_online: false, can_receive_orders: false, has_active_work: true, should_share_location: true } });
+    expect(await stateOf(String(view.delivery_id))).toBe('accepted');
+    const other = await newDelivery();
+    expect(codeOf(await asShipper(s, 'POST', `/driver/deliveries/${other.delivery_id}/accept`, {}))).toBe('DELIVERY_NOT_ELIGIBLE');
+    const picked = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/pickup`, { expected_version: view.version });
+    expect(picked.status).toBe(200);
+    expect(await presenceOf(s)).toMatchObject({ has_active_work: true, should_share_location: true });
+    const completed = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/complete`, { expected_version: dataOf(picked).version });
+    expect(completed.status).toBe(200);
+    expect(await presenceOf(s)).toMatchObject({ intent_online: false, has_active_work: false, should_share_location: false });
+  });
+
+  it('goods still with the Shipper after a failed delivery count as work in progress: the position stays shared until the shop takes them back', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s);
+    const dest = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/destination`, { expected_version: view.version, lat: 21.0, lng: 105.82, fee_vnd: 15_000 });
+    const base = dest.status === 200 ? (dataOf(dest) as Json) : view;
+    const picked = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/pickup`, { expected_version: base.version })) as Json;
+    const me = dataOf(await asShipper(s, 'GET', '/driver/me')) as Json;
+    expect((await asShipper(s, 'POST', '/driver/me/accepting', { expected_version: me.version, accepting: false })).status).toBe(200);
+    const failed = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/fail`, { expected_version: picked.version, reason_code: 'RECIPIENT_UNREACHABLE', goods_condition: 'WITH_SHIPPER', note: 'Không liên lạc được' });
+    expect(failed.status).toBe(200);
+    expect(await countRows(app.pool, `SELECT 1 FROM app.delivery_assignments WHERE delivery_id = $1::uuid AND status = 'ACTIVE'`, [view.delivery_id])).toBe(0);
+    expect(await presenceOf(s)).toMatchObject({ intent_online: false, has_active_work: true, should_share_location: true });
+  });
+
   it('retrying an accept after a lost answer does not take the commission twice', async () => {
     const s = await newShipper();
     const delivery = await newDelivery();

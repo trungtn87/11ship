@@ -155,7 +155,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         chips: <Widget>[
           const N11Chip('Shipper', kind: ChipKind.dark),
           N11Chip(driverStandingLabel(profile), key: const Key('driver-status-chip'), kind: _standingKind(profile)),
-          N11Chip(profile.acceptingDeliveries ? 'Đang nhận đơn' : 'Chưa nhận đơn', kind: profile.acceptingDeliveries ? ChipKind.ok : ChipKind.soon),
+          N11Chip(driverReceivingLabel(profile), kind: profile.acceptingDeliveries && (profile.presence?.canReceiveOrders ?? true) ? ChipKind.ok : ChipKind.soon),
         ],
       ),
       if (_saved != null) N11Banner(key: const Key('driver-saved'), kind: BannerKind.success, title: _saved!),
@@ -195,7 +195,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
               key: const Key('driver-activity-entry'),
               icon: Icons.two_wheeler_outlined,
               title: 'Nhận đơn và ngừng hoạt động',
-              sub: profile.acceptingDeliveries ? 'Đang nhận đơn' : 'Đang tắt nhận đơn',
+              sub: profile.acceptingDeliveries ? driverReceivingLabel(profile) : 'Đang tắt nhận đơn',
               onTap: () => Navigator.of(context).push(n11Route(DriverActivityScreen(controller: c, walletSource: widget.walletSource))),
             ),
         ],
@@ -395,7 +395,7 @@ class _DriverActivityScreenState extends State<DriverActivityScreen> {
                 ],
               ),
             ),
-            const ReasonNote('Tắt nhận đơn không hủy các đơn bạn đã nhận.'),
+            const ReasonNote('Tắt nhận đơn không hủy các đơn bạn đã nhận. Bật nhận đơn sẽ chia sẻ vị trí của bạn; đang có đơn thì vị trí vẫn được chia sẻ đến khi giao xong.'),
             N11CheckList(
               items: <N11CheckItem>[
                 N11CheckItem('Tài khoản hợp lệ', active || profile.status == 'CLOSING' || profile.status == 'SUSPENDED' ? CheckState.done : CheckState.missing),

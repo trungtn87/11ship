@@ -3,6 +3,7 @@ import 'package:n11_shared/n11_shared.dart';
 
 import 'ship_home.dart';
 import 'ship_m07.dart';
+import 'ship_online.dart';
 import 'ship_wallet.dart';
 
 // M01 phone tabs. Home follows the approved Offline/Online reference; later-module actions remain gated.
@@ -24,7 +25,7 @@ NotificationRouter shipNotificationRouter(SessionController session, AppFlows fl
               deliveryId: target.id!,
               mapBuilder: shipMapBuilder(),
               pinPicker: shipPinPicker(),
-              locationSlot: (BuildContext context) => ShipLocationShareCard(reporter: reporterFor(session)),
+              locationSlot: (BuildContext context) => ShipLocationStatusLine(online: shipOnlineFor(session, driver: flows.driver)..attach()),
               feedbackSlot: _feedbackSlot(flows),
             )));
           } else {
@@ -96,7 +97,7 @@ Widget _orders(SessionController session, AppFlows? flows) {
   final bool shipper = session.status == SessionStatus.signedIn && (onboarding == 'ACTIVE' || onboarding == 'CLOSING');
   if (deliveries != null && shipper) {
     // M07: offers, my deliveries, drop-off and pickup confirmation, result and history.
-    return ShipperDeliveryHub(source: deliveries, mapBuilder: shipMapBuilder(), pinPicker: shipPinPicker(), locationSlot: (BuildContext context) => ShipLocationShareCard(reporter: reporterFor(session)), feedbackSlot: _feedbackSlot(flows));
+    return ShipperDeliveryHub(source: deliveries, mapBuilder: shipMapBuilder(), pinPicker: shipPinPicker(), locationSlot: (BuildContext context) => ShipLocationStatusLine(online: shipOnlineFor(session, driver: flows?.driver)..attach()), feedbackSlot: _feedbackSlot(flows));
   }
   return const OrdersBody();
 }

@@ -277,6 +277,8 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
   it('M03: confirmed funding enables activity without a bank; pending topup credits nothing; Admin suspension blocks activity', async () => {
     const s = await newShipper(100_000);
     await client.pool.query('DELETE FROM app.driver_bank_accounts WHERE driver_id = $1::uuid', [s.driverId]);
+    // Switching on needs a current position (the app sends one first).
+    expect((await client.call('PUT', '/driver/location', { bearer: s.token, body: { lat: 21.0005, lng: 105.8005, accuracy_m: 20 } })).status).toBe(200);
     expect((await selfCommand(s, 'accepting', { accepting: true })).status).toBe(200);
     const topup = await client.call('POST', `${BASE}/topup-requests`, { bearer: s.token, headers: { 'idempotency-key': randomUUID() }, body: { amount_vnd: 100_000 } });
     expect(topup.status).toBe(201);

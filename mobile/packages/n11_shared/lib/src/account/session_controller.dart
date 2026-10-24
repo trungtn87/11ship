@@ -59,6 +59,12 @@ class SessionController extends ChangeNotifier {
   /// False when the build has no valid HTTPS server address: every action is unavailable and says so.
   final bool ready;
 
+  /// The server origin of this build (for the native location service, which sends the position itself); null when unknown.
+  String? get apiBaseUrl {
+    final ApiTransport transport = api.transport;
+    return transport is HttpApiTransport ? transport.base.toString() : null;
+  }
+
   SessionStatus _status = SessionStatus.starting;
   Identity? _identity;
   Profile? _profile;

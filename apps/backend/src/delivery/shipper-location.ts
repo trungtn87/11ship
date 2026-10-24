@@ -38,15 +38,19 @@ export class ShipperLocationRepository {
     );
   }
 
-  /** The Shippers whose latest position lies inside a box around a point, nearest first (a cheap prefilter; M06 decides the real radius and freshness). */
+  /**
+   * The Shippers whose latest position lies inside a box around a point and is still fresh (LOCATION_FRESH_MS, the same threshold M06 uses), nearest first.
+   * A cheap prefilter: a Shipper whose position went stale is not told about new deliveries; M06 still decides the real radius and freshness.
+   */
   async driversNear(context: TransactionContext, lat: number, lng: number, radiusM: number, limit: number): Promise<string[]> {
     const dLat = radiusM / 111_000;
     const dLng = radiusM / (111_000 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
     const result = await context.query<{ driver_id: string }>(
       `SELECT driver_id FROM app.shipper_latest_locations
         WHERE lat BETWEEN $1::float8 AND $2::float8 AND lng BETWEEN $3::float8 AND $4::float8
+          AND recorded_at >= clock_timestamp() - ($8::float8 * interval '1 millisecond')
         ORDER BY (lat - $5::float8) * (lat - $5::float8) + (lng - $6::float8) * (lng - $6::float8) LIMIT $7`,
-      [lat - dLat, lat + dLat, lng - dLng, lng + dLng, lat, lng, limit],
+      [lat - dLat, lat + dLat, lng - dLng, lng + dLng, lat, lng, limit, LOCATION_FRESH_MS],
     );
     return result.rows.map((r) => r.driver_id);
   }
@@ -89,3 +93,10 @@ export class ShipperLocationReader implements ShipperLocationPort {
     };
   }
 }
+
+/**
+ * Whether the app must keep sharing the position: the Shipper wants orders (switch on while ACTIVE) or still has work to finish. Both the profile
+ * (`presence`) and every position report answer with this, so the app starts and stops its location service from the server's word.
+ */
+export const shouldShareLocation = (driver: { readonly status: string; readonly acceptingDeliveries: boolean }, hasActiveWork: boolean): boolean =>
+  (driver.acceptingDeliveries && driver.status === 'ACTIVE') || hasActiveWork;

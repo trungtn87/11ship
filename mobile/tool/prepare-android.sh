@@ -99,7 +99,12 @@ mkdir -p "$kt/vn/eleven/n11"
 for f in N11DeviceStore N11DeviceKeys N11PeerPolicy N11PeerService N11PeerClient N11DeviceChannel N11UpdateChannel; do
   cp "$here/android-templates/kotlin/$f.kt" "$kt/vn/eleven/n11/$f.kt"
 done
-cp "$here/android-templates/kotlin/N11Application.kt" "$kt/vn/eleven/n11/N11Application.kt"
+# Ship also gives the location service its reader of the session; Food carries no recorder and no such link.
+if [ "$app" = ship ]; then
+  cp "$here/android-templates/kotlin/N11ApplicationShip.kt" "$kt/vn/eleven/n11/N11Application.kt"
+else
+  cp "$here/android-templates/kotlin/N11Application.kt" "$kt/vn/eleven/n11/N11Application.kt"
+fi
 if [ "$push" = on ]; then
   cp "$here/android-templates/kotlin/N11PushChannel.kt" "$kt/vn/eleven/n11/N11PushChannel.kt"
   cp "$here/android-templates/kotlin/N11FirebaseService.kt" "$kt/vn/eleven/n11/N11FirebaseService.kt"
