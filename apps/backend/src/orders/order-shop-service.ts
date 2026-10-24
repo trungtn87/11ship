@@ -159,7 +159,7 @@ export class OrderShopService {
     });
   }
 
-  // ---- while preparing ---
+  // ---- while preparing -------------------------------------------------------------------------------------------------------
 
   /**
    * Compatibility for the APK built before the "ready" step went away (Owner decision 2026-10-23): the old button still posts here. The caller's right to the
@@ -172,7 +172,6 @@ export class OrderShopService {
       return order;
     });
   }
-----------------------------------------------------------------------------------------------------
 
   /**
    * Records how much of the dishes was paid directly (customer to shop). It is information noted by the person allowed to note it, not proof of a bank
