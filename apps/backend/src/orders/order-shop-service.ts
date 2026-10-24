@@ -166,7 +166,7 @@ export class OrderShopService {
    * Order and its state are checked like any shop command (another shop's Order is not found, a settled one is a state conflict), and the Order comes back as it
    * is. Nothing is written and no event is recorded: "Gọi shipper" itself means the dishes are ready, and nothing depends on this call.
    */
-  async readyCompat(principal: AuthPrincipal, orderId: string, input: VersionInput, key: string | readonly string[] | undefined, requestId: string): Promise<IdempotentOutcome> {
+  async readyCompat(principal: AuthPrincipal, orderId: string, input: VersionInput, key: string | readonly string[] | undefined): Promise<IdempotentOutcome> {
     return this.#command(principal, orderId, ORDER_OPERATIONS.readyCompat, key, { expected_version: input.expectedVersion }, async (_context, _caller, order) => {
       this.#expect(order, input.expectedVersion, 'PREPARING');
       return order;

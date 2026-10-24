@@ -239,7 +239,7 @@ describe('M07 2026-10-24: the payer\'s time to answer a fee proposal is its own 
 
   it('is not due before the deadline, nor for an offer without the clock, nor once settled', () => {
     expect(refusal(run(waiting(), { type: 'EXPIRE_ANSWER' }, T0 + 5 * MIN - 1))).toBe('ANSWER_NOT_DUE');
-    expect(refusal(run(agreed(), { type: 'EXPIRE_ANSWER' }, T0 + 99 * MIN))).toBe('ANSWER_NOT_DUE');
+    expect(refusal(run(agreed(), { type: 'EXPIRE_ANSWER' }, EXPIRES - 1))).toBe('ANSWER_NOT_DUE');
     expect(refusal(run(agreed({ status: 'ACCEPTED', finalFeeVnd: 25000 }), { type: 'EXPIRE_ANSWER' }, T0 + 99 * MIN))).toBe('ANSWER_NOT_DUE');
   });
 

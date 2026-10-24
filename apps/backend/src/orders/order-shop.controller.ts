@@ -52,7 +52,7 @@ export class OrderShopController {
   @Post(':order_id/ready')
   @HttpCode(200)
   async ready(@Param('order_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
-    const outcome = await this.shop.readyCompat(this.#principal(request), parseOrderId(id), parseVersionBody(body), key, requestIdOf(request));
+    const outcome = await this.shop.readyCompat(this.#principal(request), parseOrderId(id), parseVersionBody(body), key);
     return { data: outcome.payload };
   }
 
