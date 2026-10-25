@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../account/account_views.dart';
 import '../m02/m02_widgets.dart';
@@ -18,6 +19,9 @@ import 'm10_common.dart';
 import 'm10_customer_views.dart';
 import 'm10_models.dart';
 import 'm10_source.dart';
+import 'order_chat_models.dart';
+import 'order_chat_view.dart';
+import 'order_sections.dart';
 
 // The shop's side of M10 in 11Food: "Đơn hàng" with two parts — "Đơn món" (what customers ordered in the app) and "Giao hàng" (calls for a Shipper, from an
 // order or direct, M07) —, the filters, the detail with every step: edit before confirming (after contacting the customer), confirm (a reason when edited),
@@ -241,7 +245,23 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
 
   ShopOrderSource get source => widget.runtime.shop;
 
+  /// "Trao đổi đơn hàng", held above the collapsible card so closing it keeps the typed text, the pages read and the key of a send in flight.
+  OrderChatController? _chat;
+
+  @override
+  void initState() {
+    super.initState();
+    final OrderChatApi? api = source.chat;
+    if (api != null) {
+      _chat = OrderChatController(api: api, room: ChatRoomRef(ChatDoor.shopOrder, widget.orderId));
+    }
+  }
+
   void _changed() {
+    final OrderView? o = _fetcher.value;
+    if (o != null) {
+      _chat?.noteVersion(o.version);
+    }
     if (mounted) {
       setState(() {});
     }
@@ -249,6 +269,7 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
 
   @override
   void dispose() {
+    _chat?.dispose();
     _fetcher.dispose();
     super.dispose();
   }
@@ -371,17 +392,36 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
 
   Widget _body(OrderView o) {
     final DeliveryView? d = o.shopDelivery;
+    final bool live = !o.ended;
     return vstack(<Widget>[
       N11Card(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text('${o.code} · ${o.recipient.name}', style: N11Text.h2),
+            Row(
+              children: <Widget>[
+                Expanded(child: Text('${o.code} · ${o.recipient.name}', key: const Key('order-code'), style: N11Text.h2)),
+                IconButton(
+                  key: const Key('order-copy-code'),
+                  tooltip: 'Sao chép mã đơn',
+                  constraints: const BoxConstraints(minWidth: kTapMin, minHeight: kTapMin),
+                  onPressed: () => unawaited(Clipboard.setData(ClipboardData(text: o.code))),
+                  icon: const Icon(Icons.copy, size: 18),
+                ),
+              ],
+            ),
             const SizedBox(height: 4),
             Align(alignment: Alignment.centerLeft, child: OrderStatusChip(o.display)),
             const SizedBox(height: 4),
             Text('Đặt lúc ${m10When(o.createdAt)}', style: N11Text.caption),
             if (o.isScheduled) Padding(padding: const EdgeInsets.only(top: 6), child: Row(children: <Widget>[const N11Chip('Đơn hẹn', kind: ChipKind.dark), const SizedBox(width: N11Space.gap2), Expanded(child: Text('Khách muốn nhận món lúc ${m10When(o.scheduledFor!)}', key: const Key('order-wanted'), style: N11Text.body))])),
+            const Divider(height: N11Space.gap4, color: N11Colors.line),
+            Row(
+              children: <Widget>[
+                Expanded(child: Text(o.money.expectedTotalVnd != null ? 'Tổng dự kiến' : 'Tiền món', style: N11Text.bodyStrong)),
+                Text(m10Money(o.money.expectedTotalVnd ?? o.money.itemsVnd), key: const Key('order-total'), textAlign: TextAlign.right, style: N11Text.title.copyWith(fontSize: 20)),
+              ],
+            ),
           ],
         ),
       ),
@@ -391,26 +431,59 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
       if (o.display == DisplayStatus.deliveryFailed && !o.allowed('call_shipper')) const N11Banner(key: Key('order-goods-out'), kind: BannerKind.error, title: 'Hàng chưa về quán', text: 'Giao thất bại. Khi hàng còn ở shipper hoặc chưa rõ thì chưa gọi lại được. Xác nhận hàng đã về hoặc đã xử lý ở phần giao hàng.'),
       if (o.display == DisplayStatus.delivering)
         const N11Banner(key: Key('order-delivering-note'), kind: BannerKind.info, title: 'Shipper đã lấy hàng', text: 'Đơn này do khách đặt nên chỉ khách mới hủy được. Nếu shipper báo không giao được, hãy gọi khách và shipper để thống nhất.'),
-      OrderLinesCard(lines: o.items),
-      OrderMoneyCard(money: o.money, edited: o.edited),
-      N11Card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Text('Người nhận', style: N11Text.label), KeyValueRows(<(String, String)>[('Tên', o.recipient.name), ('Số điện thoại', o.recipient.phone), ('Địa chỉ', o.recipient.addressText)]), if (o.note != null) Text('Ghi chú: ${o.note}', style: N11Text.caption)])),
+      // The customer: the number on the ORDER (the one the customer typed for the recipient), never the account's number.
+      OrderSection(
+        id: 'customer',
+        title: 'Khách / Người nhận',
+        summary: [o.recipient.name, dialNumberText(o.recipient.phone) ?? ''].where((String s) => s.isNotEmpty).join(' · '),
+        initiallyExpanded: live,
+        trailing: live ? QuickCall(phone: o.recipient.phone, who: 'khách') : null,
+        builder: (BuildContext _) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[KeyValueRows(<(String, String)>[('Tên', o.recipient.name), ('Số điện thoại', o.recipient.phone), ('Địa chỉ', o.recipient.addressText)]), if (o.note != null) Container(key: const Key('order-customer-note'), margin: const EdgeInsets.only(top: 6), padding: const EdgeInsets.all(N11Space.gap2), decoration: BoxDecoration(color: N11Colors.yellowFaint, borderRadius: BorderRadius.circular(kRadiusControl)), child: Text('Ghi chú của khách: ${o.note}', style: N11Text.body))]),
+      ),
       if (d != null) _deliverySection(o, d),
+      OrderSection(id: 'items', title: 'Món đã đặt', summary: orderLinesSummary(o.items, o.money.itemsVnd), initiallyExpanded: live, builder: (BuildContext _) => OrderLinesBody(key: const Key('m10-lines'), lines: o.items)),
+      OrderSection(id: 'money', title: 'Tiền món và phí giao', summary: orderMoneySummary(o.money), initiallyExpanded: true, builder: (BuildContext _) => OrderMoneyBody(key: const Key('m10-money'), money: o.money, edited: o.edited)),
+      OrderSection(id: 'other', title: 'Thông tin khác', summary: 'Đặt lúc ${m10When(o.createdAt)}', builder: (BuildContext _) => _otherInfo(o, d)),
       if (d != null || o.recipient.hasPin)
-        OrderMapCard(
-          pickupLat: d?.pickup.lat,
-          pickupLng: d?.pickup.lng,
-          dropoffLat: d?.recipient.lat ?? o.recipient.lat,
-          dropoffLng: d?.recipient.lng ?? o.recipient.lng,
-          location: o.ended ? null : d?.location,
-          mapBuilder: widget.mapBuilder ?? widget.runtime.mapBuilder,
-          ended: o.ended,
-          who: 'shipper',
+        OrderSection(
+          id: 'map',
+          title: 'Bản đồ giao hàng',
+          summary: !live ? 'Xem bản đồ · Đơn đã kết thúc' : d?.location != null ? 'Xem bản đồ · Đang theo dõi shipper' : 'Xem bản đồ · Chưa có vị trí shipper',
+          // Closed by default: the heavy map is not built until the shop asks for it.
+          builder: (BuildContext _) => OrderMapCard(
+            framed: false,
+            pickupLat: d?.pickup.lat,
+            pickupLng: d?.pickup.lng,
+            dropoffLat: d?.recipient.lat ?? o.recipient.lat,
+            dropoffLng: d?.recipient.lng ?? o.recipient.lng,
+            location: o.ended ? null : d?.location,
+            mapBuilder: widget.mapBuilder ?? widget.runtime.mapBuilder,
+            ended: o.ended,
+            who: 'shipper',
+          ),
         ),
-      StoryCard(o.story),
+      if (_chat != null)
+        ListenableBuilder(
+          listenable: _chat!,
+          builder: (BuildContext context, Widget? _) => OrderSection(id: 'chat', title: 'Trao đổi đơn hàng', summary: _chat!.summary, initiallyExpanded: true, builder: (BuildContext _) => OrderChatPanel(controller: _chat!)),
+        ),
     ]);
   }
 
-  /// The current call for a Shipper, read and acted on inside the order: there is no second page for it. Earlier calls are in "Diễn biến".
+  /// Times that really happened (from the order and its delivery) and the route distance only when it is a measured route; nothing is guessed.
+  Widget _otherInfo(OrderView o, DeliveryView? d) {
+    final DateTime? pickedUp = d?.assignment?.pickedUpAt;
+    final int? distance = d != null && d.fee.basis == 'ROUTE' ? d.fee.distanceM : null;
+    return KeyValueRows(<(String, String)>[
+      ('Thời gian đặt', m10When(o.createdAt)),
+      if (o.confirmedAt != null) ('Quán xác nhận', m10When(o.confirmedAt!)),
+      if (pickedUp != null) ('Shipper lấy hàng', m10When(pickedUp)),
+      if (o.endedAt != null) (o.display == DisplayStatus.completed ? 'Hoàn thành' : 'Kết thúc', m10When(o.endedAt!)),
+      if (distance != null) ('Khoảng cách đường đi', '${(distance / 1000).toStringAsFixed(1)} km'),
+    ]);
+  }
+
+  /// The current call for a Shipper, read and acted on inside the order: there is no second page for it. Earlier calls are milestones of "Trao đổi đơn hàng".
   Widget _deliverySection(OrderView o, DeliveryView d) {
     final ShopDeliverySource? source = widget.deliveries;
     return Column(
@@ -425,7 +498,7 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
               const SizedBox(height: 4),
               Align(alignment: Alignment.centerLeft, child: N11Chip(d.state.label, kind: m07StateChip(d.state).kind)),
               if (o.deliveries.length > 1) Padding(padding: const EdgeInsets.only(top: 4), child: Text('Lần gọi shipper thứ ${o.deliveries.length}', key: const Key('order-call-count'), style: N11Text.caption)),
-              if (source == null && d.assignment != null) KeyValueRows(<(String, String)>[('Shipper', d.assignment!.shipperName), if (d.assignment!.plateNumber != null) ('Biển số', d.assignment!.plateNumber!), if (d.assignment!.shipperPhone != null) ('Điện thoại', d.assignment!.shipperPhone!)]),
+              if (source == null && d.assignment != null) ContactRow(name: d.assignment!.shipperName, detail: d.assignment!.plateNumber == null ? null : 'Biển số ${d.assignment!.plateNumber}', phone: d.assignment!.shipperPhone, who: 'shipper'),
             ],
           ),
         ),

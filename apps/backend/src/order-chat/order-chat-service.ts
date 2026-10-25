@@ -13,6 +13,7 @@ import { parseIdempotencyKey } from '../idempotency/idempotency-key';
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { OrderRepository } from '../orders/order-repository';
 import { buildDeliveryStory, buildOrderStory, StoryDelivery } from '../orders/order-story';
+import { OpsSettingsService } from '../ops/ops-settings-service';
 import { OutboxWriter } from '../outbox/outbox-writer';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
@@ -59,6 +60,7 @@ export class OrderChatService {
     private readonly deliveries: DeliveryRepository,
     private readonly deliveryViews: DeliveryViews,
     private readonly outbox: OutboxWriter,
+    private readonly settings: OpsSettingsService,
   ) {}
 
   // ---- who is asking ---------------------------------------------------------------------------------------------------------
@@ -109,18 +111,41 @@ export class OrderChatService {
       const caller = await this.#caller(context, principal, door);
       const seat = await this.#seat(context, caller, door, id);
       const nowMs = await freshClockMs(context);
+      const retention = await this.#retention(context, seat.room, nowMs);
+      if (retention.expired) {
+        // The retention ran out: no content of the conversation is returned any more (the order / delivery events and the audit are untouched).
+        return { room: { ...this.#roomView(seat), ...retention.view }, items: [], has_more: false, next_before: null, server_now: iso(nowMs) };
+      }
       const milestones = systemEntries(await this.#story(context, seat.room));
       const messages = await this.repo.listOlder(context, seat.room.type, seat.room.id, page.before, page.limit + 1);
       const result = pageOf(messages, milestones, page.before, page.limit);
       const first = result.entries[0];
       return {
-        room: this.#roomView(seat),
+        room: { ...this.#roomView(seat), ...retention.view },
         items: result.entries.map((e) => this.#entryView(e, caller.userId)),
         has_more: result.hasMore,
         next_before: result.hasMore && first !== undefined ? encodeCursor(cursorOf(first)) : null,
         server_now: iso(nowMs),
       };
     });
+  }
+
+  /**
+   * How long the history of this room is kept (the SYSTEM setting `chat.retention_days`, default 7), counted from the moment the WHOLE file closed — the order, or the
+   * direct delivery — and, when a complaint about it closed later, from that later moment. An open complaint holds the history. Expired: the feed is not returned.
+   */
+  async #retention(context: TransactionContext, room: ChatRoom, nowMs: number): Promise<{ expired: boolean; view: JsonObject }> {
+    const days = (await this.settings.load(context)).settings['chat.retention_days'] as number;
+    if (room.open) {
+      return { expired: false, view: { retention_days: days, expires_at: null, expired: false } };
+    }
+    const r = await this.repo.retentionOf(context, room.type, room.id);
+    if (r.endedAtMs === null) {
+      return { expired: false, view: { retention_days: days, expires_at: null, expired: false } };
+    }
+    const expiresAt = r.openComplaints > 0 ? null : Math.max(r.endedAtMs, r.complaintClosedAtMs ?? 0) + days * 86_400_000;
+    const expired = expiresAt !== null && nowMs >= expiresAt;
+    return { expired, view: { retention_days: days, expires_at: expiresAt === null ? null : iso(expiresAt), expired } };
   }
 
   // ---- send ------------------------------------------------------------------------------------------------------------------

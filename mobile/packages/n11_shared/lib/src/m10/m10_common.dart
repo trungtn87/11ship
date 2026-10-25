@@ -87,6 +87,31 @@ class OrderLinesCard extends StatelessWidget {
         children: <Widget>[
           Text(title, style: N11Text.label),
           const SizedBox(height: N11Space.gap2),
+          OrderLinesBody(lines: lines),
+        ],
+      ),
+    );
+  }
+}
+
+/// "3 món · 130.000đ": the line of the closed dishes card. Removed lines are not counted; the figure is what the dishes cost now, never the fee.
+String orderLinesSummary(List<OrderLine> lines, int itemsVnd) {
+  final int count = lines.where((OrderLine l) => !l.removed).fold<int>(0, (int sum, OrderLine l) => sum + l.quantity);
+  return '$count món · ${m10Money(itemsVnd)}';
+}
+
+/// The rows of the dishes WITHOUT a frame, for a collapsible section. Text only: no picture of a dish is drawn on an order (Owner decision 2026-10-25); each
+/// row is "2× Name" with the line total on the right and the dish's own note under its name.
+class OrderLinesBody extends StatelessWidget {
+  const OrderLinesBody({super.key, required this.lines});
+
+  final List<OrderLine> lines;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
           for (final OrderLine l in lines)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
@@ -100,6 +125,7 @@ class OrderLinesCard extends StatelessWidget {
                       children: <Widget>[
                         Text(l.name, style: N11Text.bodyStrong.copyWith(decoration: l.removed ? TextDecoration.lineThrough : null)),
                         if (l.note != null) Text('Ghi chú: ${l.note}', style: N11Text.caption),
+                        if (!l.removed && l.quantity > 1) Text('${m10Money(l.unitPriceVnd)} / món', style: N11Text.caption),
                         if (l.changed)
                           Text(
                             l.removed ? 'Đã bỏ món (ban đầu ${l.originalQuantity}× ${m10Money(l.originalPriceVnd ?? 0)})' : 'Ban đầu ${l.originalQuantity}× ${m10Money(l.originalPriceVnd ?? 0)}',
@@ -109,12 +135,11 @@ class OrderLinesCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Text(l.removed ? '—' : m10Money(l.lineTotalVnd), style: N11Text.bodyStrong),
+                  Text(l.removed ? '—' : m10Money(l.lineTotalVnd), textAlign: TextAlign.right, style: N11Text.bodyStrong),
                 ],
               ),
             ),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -129,13 +154,37 @@ class OrderMoneyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final OrderFee fee = money.fee;
     return N11Card(
       key: const Key('m10-money'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           const Text('Tiền món và phí giao', style: N11Text.label),
+          OrderMoneyBody(money: money, edited: edited),
+        ],
+      ),
+    );
+  }
+}
+
+/// The closed money card says the one figure that matters: the expected total when it is complete, else that it is not known yet (never a made-up sum).
+String orderMoneySummary(OrderMoney money) => money.expectedTotalVnd == null ? 'Tiền món ${m10Money(money.itemsVnd)} · $kFeeUnknownShort' : 'Tổng dự kiến ${m10Money(money.expectedTotalVnd!)}';
+
+const String kFeeUnknownShort = 'phí giao chưa xác định';
+
+/// The rows of the money card without a frame, for a collapsible section.
+class OrderMoneyBody extends StatelessWidget {
+  const OrderMoneyBody({super.key, required this.money, required this.edited});
+
+  final OrderMoney money;
+  final bool edited;
+
+  @override
+  Widget build(BuildContext context) {
+    final OrderFee fee = money.fee;
+    return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
           KeyValueRows(<(String, String)>[
             if (edited) ('Tiền món ban đầu', m10Money(money.originalItemsVnd)),
             (edited ? 'Tiền món đã chốt' : 'Tiền món', m10Money(money.itemsVnd)),
@@ -150,7 +199,6 @@ class OrderMoneyCard extends StatelessWidget {
           const SizedBox(height: N11Space.gap2),
           const ReasonNote(kDirectPayNote, icon: Icons.info_outline),
         ],
-      ),
     );
   }
 }
@@ -159,7 +207,10 @@ class OrderMoneyCard extends StatelessWidget {
 /// recorded — only while a Shipper holds the delivery ([location] is null otherwise and nothing live is drawn). When this build has no map, the points are
 /// said in words; a position is never faked and a route is never replaced by a straight line.
 class OrderMapCard extends StatelessWidget {
-  const OrderMapCard({super.key, required this.pickupLat, required this.pickupLng, required this.dropoffLat, required this.dropoffLng, required this.location, required this.mapBuilder, required this.ended, required this.who});
+  const OrderMapCard({super.key, required this.pickupLat, required this.pickupLng, required this.dropoffLat, required this.dropoffLng, required this.location, required this.mapBuilder, required this.ended, required this.who, this.framed = true});
+
+  /// False inside a collapsible section, which already is the card: the map is then drawn without a second frame and title.
+  final bool framed;
 
   final double? pickupLat;
   final double? pickupLng;
@@ -184,12 +235,12 @@ class OrderMapCard extends StatelessWidget {
         if (location != null)
           LocationCard(location: location, mapBuilder: mapBuilder, pins: pins, who: who)
         else
-          N11Card(
-            child: Column(
+          _frame(
+            Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                const Text('Bản đồ giao hàng', style: N11Text.label),
-                const SizedBox(height: N11Space.gap2),
+                if (framed) const Text('Bản đồ giao hàng', style: N11Text.label),
+                if (framed) const SizedBox(height: N11Space.gap2),
                 if (nothing)
                   const ReasonNote('Chưa có ghim điểm giao nên chưa vẽ được bản đồ.')
                 else if (mapBuilder != null)
@@ -204,6 +255,8 @@ class OrderMapCard extends StatelessWidget {
       ],
     );
   }
+
+  Widget _frame(Widget child) => framed ? N11Card(child: child) : child;
 }
 
 /// The shop proposes a delivery fee when the table cannot price an order (FEE_REQUIRED): a reason, an optional note and the amount. The Shipper may agree or

@@ -31,6 +31,8 @@ Future<void> tap(WidgetTester tester, Finder finder) async {
 }
 
 Finder key(String value) => find.byKey(Key(value));
+/// A line of the chat feed (the closed card's own summary line is not the feed).
+Finder inFeed(String value) => find.descendant(of: find.byKey(const Key('order-chat')), matching: find.textContaining(value));
 Finder containing(String value) => find.textContaining(value);
 
 final List<RegExp> _technical = <RegExp>[
@@ -132,6 +134,9 @@ class _Orders extends ShopOrderSource {
   final List<String> calls = <String>[];
 
   @override
+  OrderChatApi get chat => chatOfStory(json['story']);
+
+  @override
   bool get isSample => false;
 
   @override
@@ -163,11 +168,23 @@ class _Orders extends ShopOrderSource {
   Future<void> resolveCustody(String deliveryId, {required String resolution, String? note, required String key}) => throw UnimplementedError();
 }
 
+/// The chat feed of a screen under test: the milestones are the `story` lines of its JSON (the real server projects the same from the real events).
+OrderChatApi chatOfStory(Object? story) => SampleOrderChat(
+      milestonesOf: (String _) => <ChatMilestone>[
+        if (story is List<Object?>)
+          for (int i = 0; i < story.length; i++)
+            ChatMilestone(id: 's$i', at: DateTime.parse((story[i]! as Map<String, Object?>)['at']! as String), text: (story[i]! as Map<String, Object?>)['text']! as String),
+      ],
+    );
+
 class _Deliveries extends ShopDeliverySource {
   _Deliveries(this.json);
 
   Map<String, Object?> json;
   final List<String> calls = <String>[];
+
+  @override
+  OrderChatApi get chat => chatOfStory(json['story']);
 
   @override
   bool get isSample => false;
@@ -236,10 +253,10 @@ void main() {
       expect(key('order-call-count'), findsOneWidget);
       expect(containing('Lần gọi shipper thứ 2'), findsOneWidget);
       for (final String line in <String>['Đã đặt đơn', 'Quán đã xác nhận', 'Đang tìm shipper', 'Shipper đã nhận đơn']) {
-        expect(find.text(line), findsOneWidget);
+        expect(inFeed(line), findsOneWidget);
       }
       // The result is told once, in the story; not again at the head of the card.
-      expect(containing('Giao không thành công'), findsOneWidget);
+      expect(inFeed('Giao không thành công'), findsOneWidget);
       for (final String line in texts(tester)) {
         for (final RegExp bad in _technical) {
           expect(bad.hasMatch(line), isFalse, reason: line);
@@ -301,7 +318,7 @@ void main() {
       final _Orders after = _Orders(orderJson(delivery: ended, display: 'PREPARING', can: <String, bool>{'call_shipper': true, 'cancel': true}, story: <Map<String, Object?>>[..._story.sublist(0, 4), <String, Object?>{'at': '2026-10-20T11:30:00Z', 'text': 'Quán đã hủy yêu cầu giao — Chờ lâu'}]));
       await mount(tester, ShopOrderDetailScreen(runtime: runtimeOf(after), orderId: 'o1', deliveries: _Deliveries(ended)));
       expect(key('order-call'), findsOneWidget);
-      expect(containing('Quán đã hủy yêu cầu giao — Chờ lâu'), findsOneWidget);
+      expect(inFeed('Quán đã hủy yêu cầu giao — Chờ lâu'), findsOneWidget);
       expect(find.text('Đã hủy'), findsNothing);
       expect(containing('Đã hủy đơn'), findsNothing);
       await unmount(tester);
@@ -311,28 +328,8 @@ void main() {
       final Map<String, Object?> ended = deliveryJson(state: 'cancelled_by_merchant', incident: false);
       final _Orders orders = _Orders(orderJson(delivery: ended, display: 'CANCELLED_BY_SHOP', status: 'CANCELLED_BY_SHOP', endReason: 'Hết nguyên liệu', story: <Map<String, Object?>>[..._story.sublist(0, 3), <String, Object?>{'at': '2026-10-20T12:00:00Z', 'text': 'Quán đã hủy đơn — Hết nguyên liệu'}]));
       await mount(tester, ShopOrderDetailScreen(runtime: runtimeOf(orders), orderId: 'o1', deliveries: _Deliveries(ended)));
-      expect(containing('Hết nguyên liệu'), findsOneWidget);
+      expect(inFeed('Hết nguyên liệu'), findsOneWidget);
       expect(containing('Lý do:'), findsNothing);
-      await unmount(tester);
-    });
-  });
-
-  group('story card', () {
-    testWidgets('time first, oldest first; the date only when the story runs over more than one day; nothing for an empty story', (WidgetTester tester) async {
-      final DateTime a = DateTime(2026, 10, 20, 18, 24);
-      final DateTime b = DateTime(2026, 10, 20, 18, 25);
-      await mount(tester, Scaffold(body: StoryCard(<StoryEntry>[StoryEntry(at: b, text: 'Shipper đã nhận đơn'), StoryEntry(at: a, text: 'Đang tìm shipper')])));
-      expect(find.text('18:24'), findsOneWidget);
-      expect(find.text('18:25'), findsOneWidget);
-      expect(tester.getTopLeft(find.text('Đang tìm shipper')).dy, lessThan(tester.getTopLeft(find.text('Shipper đã nhận đơn')).dy));
-      expect(containing('20/10'), findsNothing);
-      await unmount(tester);
-      await mount(tester, Scaffold(body: StoryCard(<StoryEntry>[StoryEntry(at: a, text: 'Đang tìm shipper'), StoryEntry(at: DateTime(2026, 10, 21, 1, 5), text: 'Giao thành công')])));
-      expect(find.text('20/10 18:24'), findsOneWidget);
-      expect(find.text('21/10 01:05'), findsOneWidget);
-      await unmount(tester);
-      await mount(tester, const Scaffold(body: StoryCard(<StoryEntry>[])));
-      expect(key('m07-story'), findsNothing);
       await unmount(tester);
     });
   });
@@ -348,8 +345,8 @@ void main() {
         'order_id': null,
       };
       await mount(tester, ShopDeliveryDetailScreen(source: _Deliveries(json), deliveryId: 'd2'));
-      expect(key('m07-story'), findsOneWidget);
-      expect(containing('Giao không thành công'), findsOneWidget);
+      expect(key('section-chat-body'), findsOneWidget);
+      expect(inFeed('Giao không thành công'), findsOneWidget);
       for (final String line in texts(tester)) {
         for (final RegExp bad in _technical) {
           expect(bad.hasMatch(line), isFalse, reason: line);

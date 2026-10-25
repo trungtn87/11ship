@@ -4,6 +4,7 @@ import { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
 import { DeliverySweeper } from '../../apps/backend/src/delivery/delivery-sweeper';
 import { M14_ROUTING } from '../../apps/backend/src/delivery/m14-route-client';
+import { OrderChatRetention } from '../../apps/backend/src/order-chat/order-chat-retention';
 import { NotificationRuntime } from '../../apps/backend/src/notifications/notification-runtime';
 import { ApiResponse, AuthApp, countRows, dataOf, startAuthApp } from './support/auth-fixtures';
 import { ageDelivery, cleanupOrders, codeOf, Customer, Dish, Json, newCustomer, newDish, newShipper, openAllWeek, PRIVACY, Shipper, TERMS } from './support/m10-fixtures';
@@ -330,6 +331,110 @@ describe('#191 — order chat', () => {
     const closed = ok(await call(shop.token, 'GET', `/shop/me/deliveries/${did}/chat`));
     expect(closed.room).toMatchObject({ open: false, can_send: false });
     expect(messagesIn(closed)).toHaveLength(2);
+  });
+
+
+  // ---- retention -----------------------------------------------------------------------------------------------------------------
+
+  const backdateEnd = async (orderId: string, hours: number): Promise<void> => {
+    const client = await app.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('ALTER TABLE app.orders DISABLE TRIGGER USER');
+      await client.query(`UPDATE app.orders SET ended_at = ended_at - make_interval(hours => $2::int) WHERE order_id = $1::uuid`, [orderId, hours]);
+      await client.query('ALTER TABLE app.orders ENABLE TRIGGER USER');
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  };
+  const retention = (): OrderChatRetention => app.running.app.get(OrderChatRetention);
+  const setRetentionDays = async (days: number | null): Promise<void> => {
+    // The row SYSTEM edits (absent until the first change): only this one key is touched, and `null` restores the default.
+    await app.pool.query(
+      `INSERT INTO app.ops_config (config_id, version, settings, discord_enabled, discord_min_severity, updated_at)
+       VALUES (1, 1, CASE WHEN $1::int IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('chat.retention_days', $1::int) END, false, 'WARNING', now())
+       ON CONFLICT (config_id) DO UPDATE SET settings = CASE WHEN $1::int IS NULL THEN app.ops_config.settings - 'chat.retention_days' ELSE app.ops_config.settings || jsonb_build_object('chat.retention_days', $1::int) END`,
+      [days],
+    );
+  };
+
+  it('retention: 7 days after the whole file closed (not from each message); open orders keep everything; after it the API returns no feed and the job removes only the messages', async () => {
+    const order = await confirmed(alice);
+    const oid = String(order.order_id);
+    ok(await asCustomerChat(alice, oid, 'POST', { body: 'Tin đầu tiên' }), 201);
+    // A very old message of a still-open order is kept: the clock starts when the file closes.
+    await app.pool.query(`UPDATE app.order_chat_messages SET created_at = created_at - interval '30 days' WHERE order_id = $1::uuid`, [oid]).catch(() => undefined);
+    await retention().runOnce();
+    expect(await stored(oid)).toBe(1);
+    const version = Number(((await app.pool.query('SELECT version FROM app.orders WHERE order_id = $1::uuid', [oid])).rows[0] as Json).version);
+    ok(await call(shop.token, 'POST', `/shop/me/orders/${oid}/cancel`, { expected_version: version, reason: 'Hết hàng' }));
+    const events = await countRows(app.pool, 'SELECT 1 FROM app.order_events WHERE order_id = $1::uuid', [oid]);
+    // 6 days 23 hours after the close: still readable, with the expiry the app shows.
+    await backdateEnd(oid, 6 * 24 + 23);
+    const early = ok(await asCustomerChat(alice, oid, 'GET'));
+    expect(messagesIn(early)).toEqual(['Tin đầu tiên']);
+    expect(early.room).toMatchObject({ open: false, retention_days: 7, expired: false });
+    expect(await retention().runOnce()).toBe(0);
+    expect(await stored(oid)).toBe(1);
+    // 7 days and an hour: nothing of the conversation is returned, to any reader, and the job deletes the messages.
+    await backdateEnd(oid, 2);
+    const late = ok(await asCustomerChat(alice, oid, 'GET'));
+    expect(late).toMatchObject({ items: [], has_more: false, room: { expired: true, retention_days: 7 } });
+    expect(ok(await asShopChat(oid, 'GET')).items).toEqual([]);
+    expect(await stored(oid)).toBe(1);
+    expect(await retention().runOnce()).toBeGreaterThanOrEqual(1);
+    expect(await stored(oid)).toBe(0);
+    // Business history and audit stay.
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.order_events WHERE order_id = $1::uuid', [oid])).toBe(events);
+  });
+
+  it('retention: SYSTEM changes the number of days (7 is allowed); an open complaint holds the history and a later closed complaint moves the start', async () => {
+    const order = await confirmed(alice);
+    const oid = String(order.order_id);
+    ok(await asCustomerChat(alice, oid, 'POST', { body: 'Giữ lại nhé' }), 201);
+    const version = Number(((await app.pool.query('SELECT version FROM app.orders WHERE order_id = $1::uuid', [oid])).rows[0] as Json).version);
+    ok(await call(shop.token, 'POST', `/shop/me/orders/${oid}/cancel`, { expected_version: version, reason: 'Hết hàng' }));
+    await backdateEnd(oid, 10 * 24);
+    await setRetentionDays(30);
+    try {
+      expect(ok(await asCustomerChat(alice, oid, 'GET')).room).toMatchObject({ expired: false, retention_days: 30 });
+      expect(await retention().runOnce()).toBe(0);
+      await setRetentionDays(7);
+      // An open complaint about the order holds the deletion and the reading, whatever the days.
+      const complaintId = randomUUID();
+      await app.pool.query(
+        `INSERT INTO app.complaints (complaint_id, code, submitter_user_id, submitter_role, category, order_id, shop_id, related_code, shop_name, scope_key, status, body, created_at, updated_at)
+         VALUES ($1::uuid, $2, $3::uuid, 'CUSTOMER', 'SERVICE', $4::uuid, $5::uuid, 'K', 'Quán', $4::uuid, 'PENDING', 'Đơn có vấn đề', now(), now())`,
+        [complaintId, `PA${String(Date.now()).slice(-9)}`, alice.userId, oid, shop.shopId],
+      );
+      try {
+        const held = ok(await asCustomerChat(alice, oid, 'GET'));
+        expect(held.room).toMatchObject({ expired: false, expires_at: null });
+        expect(messagesIn(held)).toEqual(['Giữ lại nhé']);
+        expect(await retention().runOnce()).toBe(0);
+        expect(await stored(oid)).toBe(1);
+      } finally {
+        const client = await app.pool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query('ALTER TABLE app.complaints DISABLE TRIGGER USER');
+          await client.query('DELETE FROM app.complaints WHERE complaint_id = $1::uuid', [complaintId]);
+          await client.query('ALTER TABLE app.complaints ENABLE TRIGGER USER');
+          await client.query('COMMIT');
+        } finally {
+          client.release();
+        }
+      }
+      expect(ok(await asCustomerChat(alice, oid, 'GET')).room).toMatchObject({ expired: true });
+      expect(await retention().runOnce()).toBeGreaterThanOrEqual(1);
+      expect(await stored(oid)).toBe(0);
+    } finally {
+      await setRetentionDays(null);
+    }
   });
 
   // ---- M08 -----------------------------------------------------------------------------------------------------------------------

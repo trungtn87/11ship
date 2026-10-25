@@ -113,4 +113,53 @@ export class OrderChatRepository {
     );
     return result.rows.map(toMessage);
   }
+
+  /**
+   * When the room's file closed and whether something keeps it open: the order's (or the direct delivery's) end time, the end of its latest closed complaint,
+   * and the number of complaints still open. Retention counts from the LATER of the first two; an open complaint holds the deletion.
+   */
+  async retentionOf(context: TransactionContext, roomType: ChatRoomType, roomId: string): Promise<{ endedAtMs: number | null; complaintClosedAtMs: number | null; openComplaints: number }> {
+    const subject = roomType === 'ORDER' ? 'o.ended_at' : 'd.ended_at';
+    const from = roomType === 'ORDER' ? 'app.orders o' : 'app.deliveries d';
+    const key = roomType === 'ORDER' ? 'o.order_id' : 'd.delivery_id';
+    const complaints = roomType === 'ORDER' ? `x.order_id = o.order_id OR x.delivery_id IN (SELECT t.delivery_id FROM app.deliveries t WHERE t.order_id = o.order_id)` : `x.delivery_id = d.delivery_id`;
+    const result = await context.query<{ ended_ms: string | null; complaint_ms: string | null; open_count: string }>(
+      `SELECT (extract(epoch FROM ${subject}) * 1000)::bigint::text AS ended_ms, (extract(epoch FROM c.last_closed) * 1000)::bigint::text AS complaint_ms, COALESCE(c.open_count, 0)::text AS open_count
+         FROM ${from}
+         LEFT JOIN LATERAL (
+           SELECT max(COALESCE(x.closed_at, x.concluded_at, x.updated_at)) FILTER (WHERE x.status IN ('RESOLVED', 'CLOSED_NO_ACTION')) AS last_closed,
+                  count(*) FILTER (WHERE x.status NOT IN ('RESOLVED', 'CLOSED_NO_ACTION')) AS open_count
+             FROM app.complaints x WHERE ${complaints}) c ON true
+        WHERE ${key} = $1::uuid`,
+      [roomId],
+    );
+    const row = result.rows[0];
+    return { endedAtMs: row?.ended_ms == null ? null : safe(row.ended_ms), complaintClosedAtMs: row?.complaint_ms == null ? null : safe(row.complaint_ms), openComplaints: row === undefined ? 0 : safe(row.open_count) };
+  }
+
+  /**
+   * Deletes, in batches, the messages of rooms whose retention ran out: closed for `days` (counted from the later of the file's end and its last closed
+   * complaint, on the database clock) with no complaint still open. Only the typed messages go; order / delivery events and the audit are never touched.
+   */
+  async purgeExpired(context: TransactionContext, days: number, limit: number): Promise<number> {
+    const due = (kind: 'ORDER' | 'DIRECT'): string => {
+      const alias = kind === 'ORDER' ? 'o' : 'd';
+      const table = kind === 'ORDER' ? 'app.orders o' : 'app.deliveries d';
+      const joinOn = kind === 'ORDER' ? 'm.order_id = o.order_id' : 'm.delivery_id = d.delivery_id AND m.order_id IS NULL';
+      const complaints = kind === 'ORDER' ? `x.order_id = o.order_id OR x.delivery_id IN (SELECT t.delivery_id FROM app.deliveries t WHERE t.order_id = o.order_id)` : `x.delivery_id = d.delivery_id`;
+      return `SELECT m.message_id FROM app.order_chat_messages m JOIN ${table} ON ${joinOn}
+               LEFT JOIN LATERAL (
+                 SELECT max(COALESCE(x.closed_at, x.concluded_at, x.updated_at)) FILTER (WHERE x.status IN ('RESOLVED', 'CLOSED_NO_ACTION')) AS last_closed,
+                        count(*) FILTER (WHERE x.status NOT IN ('RESOLVED', 'CLOSED_NO_ACTION')) AS open_count
+                   FROM app.complaints x WHERE ${complaints}) c ON true
+              WHERE ${alias}.ended_at IS NOT NULL AND COALESCE(c.open_count, 0) = 0
+                AND GREATEST(${alias}.ended_at, COALESCE(c.last_closed, ${alias}.ended_at)) + ($1::int * interval '1 day') <= clock_timestamp()`;
+    };
+    const result = await context.query(
+      `DELETE FROM app.order_chat_messages WHERE message_id IN (
+         SELECT message_id FROM (${due('ORDER')} UNION ${due('DIRECT')}) due LIMIT $2)`,
+      [days, limit],
+    );
+    return result.rowCount ?? 0;
+  }
 }

@@ -1,10 +1,12 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { DeliveryCoreModule } from '../delivery/delivery-core.module';
+import { OpsCoreModule } from '../ops/ops-core.module';
 import { OutboxModule } from '../outbox/outbox.module';
 import { OrdersCoreModule } from '../orders/orders-core.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { CustomerOrderChatController, ShipperOrderChatController, ShopOrderChatController } from './order-chat.controller';
 import { OrderChatCoreModule } from './order-chat-core.module';
+import { OrderChatRetention, OrderChatRuntime } from './order-chat-retention';
 import { OrderChatService } from './order-chat-service';
 
 /**
@@ -16,9 +18,10 @@ export class OrderChatModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: OrderChatModule,
-      imports: [auth, TransactionModule, OutboxModule, OrdersCoreModule, DeliveryCoreModule.register(auth), OrderChatCoreModule],
+      imports: [auth, TransactionModule, OutboxModule, OrdersCoreModule, DeliveryCoreModule.register(auth), OrderChatCoreModule, OpsCoreModule],
       controllers: [CustomerOrderChatController, ShopOrderChatController, ShipperOrderChatController],
-      providers: [OrderChatService],
+      providers: [OrderChatService, OrderChatRetention, OrderChatRuntime],
+      exports: [OrderChatRetention],
     };
   }
 }

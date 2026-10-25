@@ -3,6 +3,8 @@ import 'dart:convert';
 import '../account/api_client.dart';
 import '../account/models.dart';
 import '../account/session_controller.dart';
+import '../m10/m10_http.dart' show HttpOrderChatApi;
+import '../m10/order_chat_models.dart' show OrderChatApi;
 import 'm07_models.dart';
 import 'm07_source.dart';
 
@@ -84,6 +86,9 @@ class HttpShopDeliverySource extends ShopDeliverySource {
   final SessionController session;
 
   @override
+  OrderChatApi get chat => HttpOrderChatApi(session: session);
+
+  @override
   bool get isSample => false;
 
   String _path(String id, [String tail = '']) => '/v1/shop/me/deliveries/$id$tail';
@@ -145,6 +150,9 @@ class HttpShipperDeliverySource extends ShipperDeliverySource {
   const HttpShipperDeliverySource({required this.session});
 
   final SessionController session;
+
+  @override
+  OrderChatApi get chat => HttpOrderChatApi(session: session);
 
   @override
   bool get isSample => false;

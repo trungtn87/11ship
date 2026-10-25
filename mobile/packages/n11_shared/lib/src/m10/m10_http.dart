@@ -6,6 +6,7 @@ import '../account/session_controller.dart';
 import '../m07/m07_source.dart';
 import 'm10_models.dart';
 import 'm10_source.dart';
+import 'order_chat_models.dart';
 
 // The HTTP side of the M10 sources: signed requests of the session (Bearer + device proof). Every answer is parsed strictly; a body that is not what
 // the contract says is a server failure, never a half-filled screen. A lost answer is `offline`: the write may or may not have happened, and the screen
@@ -79,6 +80,9 @@ class HttpCustomerOrderSource extends CustomerOrderSource {
   const HttpCustomerOrderSource({required this.session});
 
   final SessionController session;
+
+  @override
+  OrderChatApi get chat => HttpOrderChatApi(session: session);
 
   @override
   bool get isSample => false;
@@ -162,6 +166,9 @@ class HttpShopOrderSource extends ShopOrderSource {
   final SessionController session;
 
   @override
+  OrderChatApi get chat => HttpOrderChatApi(session: session);
+
+  @override
   bool get isSample => false;
 
   String _path(String id, [String tail = '']) => '/v1/shop/me/orders/$id$tail';
@@ -211,4 +218,32 @@ class HttpShopOrderSource extends ShopOrderSource {
   Future<void> resolveCustody(String deliveryId, {required String resolution, String? note, required String key}) async {
     await _call(session, 'POST', '/v1/shop/me/deliveries/$deliveryId/custody', body: <String, Object?>{'resolution': resolution, if (note != null && note.trim().isNotEmpty) 'note': note.trim()}, key: key);
   }
+}
+
+/// The chat of an order or of a direct delivery over the signed session. The Idempotency-Key is the message: a lost answer is retried with the same key and
+/// the server returns the message it already stored.
+class HttpOrderChatApi extends OrderChatApi {
+  const HttpOrderChatApi({required this.session});
+
+  final SessionController session;
+
+  @override
+  bool get isSample => false;
+
+  static String pathOf(ChatRoomRef room) => switch (room.door) {
+        ChatDoor.customerOrder => '/v1/customers/me/orders/${room.id}/chat',
+        ChatDoor.shopOrder => '/v1/shop/me/orders/${room.id}/chat',
+        ChatDoor.shopDirect => '/v1/shop/me/deliveries/${room.id}/chat',
+        ChatDoor.shipperDelivery => '/v1/driver/deliveries/${room.id}/chat',
+      };
+
+  @override
+  Future<ChatFeed> read(ChatRoomRef room, {String? before, int limit = 30}) async {
+    final String query = 'limit=$limit${before == null ? '' : '&before=${Uri.encodeQueryComponent(before)}'}';
+    return _parse<ChatFeed>(await _call(session, 'GET', '${pathOf(room)}?$query'), ChatFeed.fromJson);
+  }
+
+  @override
+  Future<ChatSent> send(ChatRoomRef room, {required String body, required String key}) async =>
+      _parse<ChatSent>(await _call(session, 'POST', pathOf(room), body: <String, Object?>{'body': body}, key: key, ok: const <int>{200, 201}), ChatSent.fromJson);
 }
