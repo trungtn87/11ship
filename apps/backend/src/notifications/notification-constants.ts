@@ -48,11 +48,15 @@ export const KINDS = [
   'ORDER_SHIPPER_ACCEPTED',
   'ORDER_DELIVERING',
   'ORDER_DELIVERY_FAILED',
+  // #191: someone wrote in the chat of an order / direct delivery (one collapsed card per room; the text itself is never in the notification).
+  'ORDER_CHAT_MESSAGE',
 ] as const;
 export type NotificationKind = (typeof KINDS)[number];
 
 export const OUTBOX_DELIVERY_CHANGED_TYPE = 'delivery.changed.v1';
 export const OUTBOX_ORDER_CHANGED_TYPE = 'order.changed.v1';
+/** #191: a person wrote in an order chat room. */
+export const OUTBOX_ORDER_CHAT_MESSAGE_TYPE = 'order.chat_message.v1';
 export const OUTBOX_TOPUP_CHANGED_TYPE = 'wallet.topup_request.changed.v1';
 export const OUTBOX_DRIVER_STATE_CHANGED_TYPE = 'driver.state_changed.v1';
 /** M11: a complaint moved (the Administration received it, asked, concluded, closed, re-opened). */
@@ -142,6 +146,7 @@ export const CATEGORY_OF_KIND: Readonly<Record<NotificationKind, NotificationCat
   ORDER_SHIPPER_ACCEPTED: 'ORDERS',
   ORDER_DELIVERING: 'ORDERS',
   ORDER_DELIVERY_FAILED: 'ORDERS',
+  ORDER_CHAT_MESSAGE: 'ORDERS',
 };
 
 export function isNotificationApp(value: unknown): value is NotificationApp {

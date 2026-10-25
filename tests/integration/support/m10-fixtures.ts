@@ -208,6 +208,7 @@ export async function cleanupOrders(app: AuthApp, input: { shopIds: readonly str
     for (const table of ['notification_reminders', 'notification_offer_rounds']) {
       await client.query(`DELETE FROM app.${table} WHERE delivery_id IN (${deliveries})`, [shops, customers]);
     }
+    await client.query(`DELETE FROM app.order_chat_messages WHERE order_id IN (${orders}) OR delivery_id IN (${deliveries})`, [shops, customers]);
     await client.query(`DELETE FROM app.deliveries WHERE delivery_id IN (${deliveries})`, [shops, customers]);
     await client.query(`DELETE FROM app.order_events WHERE order_id IN (${orders})`, [shops, customers]);
     await client.query(`DELETE FROM app.order_items WHERE order_id IN (${orders})`, [shops, customers]);
