@@ -354,7 +354,9 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
 
   Widget? _bottom(OrderView o) {
     final List<Widget> buttons = <Widget>[
-      if (o.allowed('confirm')) N11Button(key: const Key('order-confirm'), label: o.edited ? 'Xác nhận đơn đã chỉnh' : 'Xác nhận đơn', loading: busy, onPressed: () => unawaited(_confirm(o))),
+      if (o.allowed('confirm') && widget.runtime.newWorkBlocked())
+        const ReasonNote('Cần cập nhật ứng dụng trước khi nhận đơn mới. Các đơn đã nhận vẫn xử lý bình thường; bạn vẫn có thể từ chối đơn này.', key: Key('order-confirm-blocked'))
+      else if (o.allowed('confirm')) N11Button(key: const Key('order-confirm'), label: o.edited ? 'Xác nhận đơn đã chỉnh' : 'Xác nhận đơn', loading: busy, onPressed: () => unawaited(_confirm(o))),
       if (o.allowed('edit')) N11Button(key: const Key('order-edit'), label: 'Chỉnh đơn', kind: ButtonKind.secondary, onPressed: busy ? null : () => unawaited(_edit(o))),
       if (o.allowed('reject')) DangerButton(label: 'Từ chối đơn', onPressed: busy ? null : () => unawaited(_reject(o))),
       if (o.allowed('call_shipper')) N11Button(key: const Key('order-call'), label: o.deliveries.isEmpty ? 'Gọi shipper' : 'Gọi lại shipper', loading: busy, onPressed: () => unawaited(_call(o))),

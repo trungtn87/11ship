@@ -242,6 +242,25 @@ class MethodChannelUpdatePlatform implements UpdatePlatform {
 
 enum AppUpdatePhase { idle, checking, upToDate, available, downloading, installerOpened, failed }
 
+/// What the server said about this build's compatibility (the `status` of /v1/app-updates/check). null = an older server that does not say.
+enum CompatStatus { compatible, updateOptional, updateRequired, updateRequiredUnavailable, unknownVersion }
+
+CompatStatus? parseCompatStatus(Object? raw) {
+  switch (raw) {
+    case 'COMPATIBLE':
+      return CompatStatus.compatible;
+    case 'UPDATE_OPTIONAL':
+      return CompatStatus.updateOptional;
+    case 'UPDATE_REQUIRED':
+      return CompatStatus.updateRequired;
+    case 'UPDATE_REQUIRED_UNAVAILABLE':
+      return CompatStatus.updateRequiredUnavailable;
+    case 'UNKNOWN_VERSION':
+      return CompatStatus.unknownVersion;
+  }
+  return null;
+}
+
 class _DigestSink implements Sink<crypto.Digest> {
   crypto.Digest? value;
 
@@ -266,6 +285,7 @@ class AppUpdateController extends ChangeNotifier {
     this.isBusy = _never,
     this.busyProbe,
     this.minInterval = const Duration(minutes: 30),
+    this.failureRetryInterval = const Duration(minutes: 2),
     this.retryDelay = const Duration(seconds: 3),
     this.maxAttempts = 3,
     this.enabled = true,
@@ -289,6 +309,10 @@ class AppUpdateController extends ChangeNotifier {
   final Future<bool> Function()? busyProbe;
   bool _probedBusy = false;
   final Duration minInterval;
+
+  /// After a check that could not be answered (offline, server error) the next one may come this soon, not after the full [minInterval]:
+  /// not hearing from the server says nothing about this build and must not hide a pending update for half an hour.
+  final Duration failureRetryInterval;
   final Duration retryDelay;
   final int maxAttempts;
 
@@ -302,24 +326,43 @@ class AppUpdateController extends ChangeNotifier {
   double _progress = 0;
   DateTime? _lastCheck;
   bool _dismissed = false;
+  bool _lastCheckFailed = false;
+  CompatStatus? _compat;
+  String? _unavailableReason;
+  int? _minSupported;
 
   AppUpdatePhase get phase => _phase;
   AppUpdateOffer? get offer => _offer;
   String? get failureCode => _failure;
   double get progress => _progress;
 
+  /// The server demands a build this app cannot offer yet (the APK is not published or not downloadable): an operations fault, never "up to date".
+  bool get requiredUnavailable => _compat == CompatStatus.updateRequiredUnavailable;
+  CompatStatus? get compat => _compat;
+  String? get unavailableReason => _unavailableReason;
+
+  /// The newest build this server says it supports as the oldest (FOOD and SHIP have their own number), when it said so.
+  int? get minSupportedVersionCode => _minSupported;
+
+  /// A required update exists (downloadable or not): the person must update before NEW work starts. It never interrupts work in progress.
+  bool get mustUpdate => (_offer != null && _offer!.required) || requiredUnavailable;
+
   /// An update that must be installed before the app is used further. Never while the person is busy (an active order): then it is only a banner.
-  bool get blocking => _offer != null && _offer!.required && !_working && _phase != AppUpdatePhase.installerOpened;
+  bool get blocking => mustUpdate && !_working && _phase != AppUpdatePhase.installerOpened;
 
   /// A required update that waits because the person is in the middle of an order.
-  bool get deferred => _offer != null && _offer!.required && _working;
+  bool get deferred => mustUpdate && _working;
+
+  /// Whether a screen must refuse to START new work (go online, accept an order). True from the moment a required update is known, also while it is
+  /// deferred behind work in progress: the order in hand is finished, nothing new begins.
+  bool get blocksNewWork => mustUpdate && _phase != AppUpdatePhase.installerOpened;
 
   bool get _working => isBusy() || _probedBusy;
 
   /// Re-reads "is the person mid-work" from [busyProbe]. A probe that fails counts as busy: an update screen never replaces an order on a guess.
   Future<void> refreshBusy() async {
     final Future<bool> Function()? probe = busyProbe;
-    if (probe == null || _offer == null || !_offer!.required) {
+    if (probe == null || !mustUpdate) {
       return;
     }
     bool busy;
@@ -352,7 +395,7 @@ class AppUpdateController extends ChangeNotifier {
       return;
     }
     final DateTime now = _now();
-    if (!force && _lastCheck != null && now.difference(_lastCheck!) < minInterval) {
+    if (!force && _lastCheck != null && now.difference(_lastCheck!) < (_lastCheckFailed ? failureRetryInterval : minInterval)) {
       return;
     }
     _lastCheck = now;
@@ -364,13 +407,29 @@ class AppUpdateController extends ChangeNotifier {
         throw UpdateFailure(response.status >= 500 ? 'SERVER' : 'BAD_ANSWER');
       }
       final AppUpdateOffer? offer = AppUpdateOffer.fromCheck(response.data);
-      if (offer != null && offer.versionCode <= installedVersionCode) {
+      final Object? data = response.data;
+      _compat = data is Map<String, Object?> ? parseCompatStatus(data['status']) : null;
+      final Object? minSupported = data is Map<String, Object?> ? data['min_supported_version_code'] : null;
+      _minSupported = minSupported is int && minSupported > 0 ? minSupported : null;
+      if (requiredUnavailable) {
+        // The backend does not work with this build and no APK can be downloaded: say so plainly, offer nothing to download, never claim "up to date".
+        final Object? reason = (data as Map<String, Object?>)['reason'];
+        _unavailableReason = reason is String && reason.isNotEmpty ? (reason.length > 300 ? reason.substring(0, 300) : reason) : null;
+        _offer = null;
+        _phase = AppUpdatePhase.available;
+        if (busyProbe != null) {
+          _probedBusy = true; // until the probe answers, an update screen must not cover work in progress
+        }
+      } else if (offer != null && offer.versionCode <= installedVersionCode) {
+        _unavailableReason = null;
         _offer = null;
         _phase = AppUpdatePhase.upToDate;
       } else if (offer == null) {
+        _unavailableReason = null;
         _offer = null;
         _phase = AppUpdatePhase.upToDate;
       } else {
+        _unavailableReason = null;
         if (_offer?.releaseId != offer.releaseId) {
           _dismissed = false;
         }
@@ -381,19 +440,23 @@ class AppUpdateController extends ChangeNotifier {
         }
       }
       _failure = null;
+      _lastCheckFailed = false;
     } on FormatException {
+      _lastCheckFailed = true;
       _failure = 'BAD_ANSWER';
-      _phase = _offer == null ? AppUpdatePhase.idle : AppUpdatePhase.available;
+      _phase = _offer == null && !requiredUnavailable ? AppUpdatePhase.idle : AppUpdatePhase.available;
     } on UpdateFailure catch (error) {
+      _lastCheckFailed = true;
       _failure = error.code;
-      _phase = _offer == null ? AppUpdatePhase.idle : AppUpdatePhase.available;
+      _phase = _offer == null && !requiredUnavailable ? AppUpdatePhase.idle : AppUpdatePhase.available;
     } on Object {
+      _lastCheckFailed = true;
       // A failed check is not an error the person must deal with: the last known offer (if any) stays, the next check tries again.
       _failure = 'OFFLINE';
-      _phase = _offer == null ? AppUpdatePhase.idle : AppUpdatePhase.available;
+      _phase = _offer == null && !requiredUnavailable ? AppUpdatePhase.idle : AppUpdatePhase.available;
     }
     notifyListeners();
-    if (_offer != null && _offer!.required) {
+    if (mustUpdate) {
       await refreshBusy();
     }
   }

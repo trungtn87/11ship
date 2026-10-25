@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { SmsGatewayOpsReader } from '../sms-gateway/sms-gateway-ops-reader';
 import { TransactionModule } from '../transaction/transaction.module';
 import { FetchDiscordClient, OPS_DISCORD_CLIENT, OpsDiscordDispatcher } from './ops-discord';
+import { APP_COMPAT, APP_COMPAT_MATRIX } from './ops-compat';
 import { OpsEngine } from './ops-engine';
 import { OpsGatewayUpdate } from './ops-gateway-update';
 import { OpsIncidentRepository } from './ops-incident-repository';
@@ -29,7 +30,8 @@ import { OpsTelemetryRepository } from './ops-telemetry-repository';
     OpsDiscordDispatcher,
     OpsIngestService,
     OpsGatewayUpdate,
+    { provide: APP_COMPAT_MATRIX, useValue: APP_COMPAT },
   ],
-  exports: [OpsRepository, OpsIncidentRepository, OpsReleaseRepository, OpsTelemetryRepository, SmsGatewayOpsReader, OpsSettingsService, OpsEngine, OPS_DISCORD_CLIENT, OpsDiscordDispatcher, OpsIngestService, OpsGatewayUpdate],
+  exports: [APP_COMPAT_MATRIX, OpsRepository, OpsIncidentRepository, OpsReleaseRepository, OpsTelemetryRepository, SmsGatewayOpsReader, OpsSettingsService, OpsEngine, OPS_DISCORD_CLIENT, OpsDiscordDispatcher, OpsIngestService, OpsGatewayUpdate],
 })
 export class OpsCoreModule {}

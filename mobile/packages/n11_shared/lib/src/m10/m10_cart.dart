@@ -229,6 +229,11 @@ class OrderRuntime {
 
   static bool _always() => true;
 
+  /// M13 (#193): true while a REQUIRED app update is pending. The shop keeps handling the orders it already accepted (confirmed, preparing, delivering),
+  /// but does not start new work: an order still waiting to be accepted cannot be confirmed until the app is updated. Set by the app; false by default.
+  bool Function() newWorkBlocked = _never;
+  static bool _never() => false;
+
   /// Whether the person using the app may order now (signed in as a customer, not in the shop's hat). A guest taps + and is asked to sign in.
   final bool Function() canOrder;
 

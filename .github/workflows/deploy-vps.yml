@@ -68,6 +68,12 @@ jobs:
             artifact-out/*.sha256
           if-no-files-found: error
           retention-days: 14
+      - name: APK compatibility preflight (blocks a breaking backend without a published, downloadable APK)
+        run: |
+          set -o pipefail
+          ORIGIN=$(node -p "require('./config/endpoints.json').api_origin")
+          echo '### APK–backend compatibility (before promote)' >> "$GITHUB_STEP_SUMMARY"
+          node scripts/deploy/check-app-compat.mjs --live "$ORIGIN" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Approve the two reviewed Cao Bang GPS migrations
         if: ${{ inputs.configure_cao_bang_gps == true }}
         env:
@@ -87,6 +93,10 @@ jobs:
           VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: bash scripts/deploy/github-vps-deploy.sh
+      - name: APK compatibility after deploy (production serves the contract; below-minimum phones get a download)
+        run: |
+          ORIGIN=$(node -p "require('./config/endpoints.json').api_origin")
+          node scripts/deploy/check-app-compat.mjs --live "$ORIGIN" --after
       - name: Check GPS coverage was activated
         if: ${{ inputs.configure_cao_bang_gps == true }}
         run: |

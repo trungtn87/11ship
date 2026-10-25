@@ -306,6 +306,10 @@ export function parseReleases(d: Record<string, unknown>): ReleasesPage | undefi
       published,
       status: r.status as string,
       statusLabel: str(r.status_label) ?? '',
+      compatibility: ((): ComponentVersion['compatibility'] => {
+        const c = record(r.compatibility);
+        return c === undefined || typeof c.ok !== 'boolean' || !whole(c.min_client_version_code) || str(c.summary) === undefined ? null : { ok: c.ok, minClientVersionCode: c.min_client_version_code, summary: c.summary as string };
+      })(),
     };
   });
   const rel = record(d.releases);
@@ -460,6 +464,7 @@ async function writeResult<T>(result: ApiResult<Record<string, unknown>>, sessio
       return { kind: 'conflict' };
     case 'OPS_INCIDENT_STATE_CONFLICT':
     case 'OPS_RELEASE_CONFLICT':
+    case 'OPS_RELEASE_WITHDRAW_BLOCKED':
       return { kind: 'state-conflict' };
     case 'ADMIN_CSRF_INVALID':
       await session.refresh();
