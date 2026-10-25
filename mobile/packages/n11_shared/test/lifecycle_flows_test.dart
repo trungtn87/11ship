@@ -80,11 +80,11 @@ void main() {
       await tester.ensureVisible(find.byKey(const Key('register-submit')));
       await tester.tap(find.byKey(const Key('register-submit')));
       await tester.pumpAndSettle();
-      expect(find.textContaining('không có dấu cách'), findsOneWidget);
+      expect(find.text('Số điện thoại không hợp lệ. Hãy nhập số di động Việt Nam.'), findsOneWidget);
       expect(t.api.to('POST', '/v1/client-auth/register'), isEmpty);
       await tester.enterText(find.byKey(const Key('register-phone')), '0901234567');
       await tester.pump();
-      expect(find.textContaining('không có dấu cách'), findsNothing);
+      expect(find.text('Số điện thoại không hợp lệ. Hãy nhập số di động Việt Nam.'), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
     });
 

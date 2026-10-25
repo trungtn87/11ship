@@ -22,6 +22,8 @@ describe('admin web routes', () => {
     expect(parseRoute('/accounts/users/not-a-uuid')).toEqual({ name: 'home' });
     expect(parseRoute('/accounts/administrators')).toEqual({ name: 'administrators' });
     expect(parseRoute('/system/settings')).toEqual({ name: 'settings' });
+    expect(parseRoute('/system/parameters/otp')).toEqual({ name: 'otp-policy' });
+    expect(formatRoute({ name: 'otp-policy' })).toBe('/system/parameters/otp');
     expect(parseRoute('/catalog/categories')).toEqual({ name: 'categories' });
     expect(parseRoute('/catalog/categories/')).toEqual({ name: 'categories' });
     expect(parseRoute('/system/settings/')).toEqual({ name: 'settings' });

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { TechnicalError } from '../common/app-errors';
 import { LockKey } from '../shared/lock-key';
 import { TransactionContext } from '../transaction/transaction-context';
+import { OTP_QUOTA_PURPOSES } from './auth-constants';
 import { CLOCK_CTE, epochMs, toSafeInteger } from './auth-db';
 
 export type VerificationStatus =
@@ -49,25 +50,48 @@ export class VerificationRepository {
   }
 
   /**
-   * True while a challenge of the lane still holds the resend cooldown. A DELIVERY_FAILED challenge never
-   * does, so a failed delivery cannot block the retry. Time is the database clock, read now.
+   * Seconds left of the shared resend cooldown of a PHONE (every OTP purpose, so another flow or app gives no new budget), or undefined
+   * when none is running. The window is the CURRENT policy value counted from each challenge's creation, so a change by SYSTEM applies
+   * at once. A DELIVERY_FAILED challenge never holds it (a failed delivery cannot block the retry); a challenge that was locked by wrong
+   * codes still does. Time is the database clock, read now.
    */
-  async hasLiveCooldown(
-    context: TransactionContext,
-    phoneNormalized: string,
-    purpose: string,
-  ): Promise<boolean> {
-    const result = await context.query(
-      `SELECT 1
+  async cooldownRemainingSeconds(context: TransactionContext, phoneNormalized: string, cooldownSeconds: number): Promise<number | undefined> {
+    const result = await context.query<{ seconds: string | null }>(
+      `SELECT ceil(extract(epoch FROM (max(created_at) + make_interval(secs => $2::double precision) - clock_timestamp())))::text AS seconds
          FROM app.phone_verifications
         WHERE phone_normalized = $1
-          AND purpose = $2
+          AND purpose = ANY($3::text[])
           AND status IN ('PENDING_DELIVERY', 'PENDING', 'VERIFIED', 'LOCKED')
-          AND resend_not_before > clock_timestamp()
-        LIMIT 1`,
-      [phoneNormalized, purpose],
+          AND created_at + make_interval(secs => $2::double precision) > clock_timestamp()`,
+      [phoneNormalized, cooldownSeconds, [...OTP_QUOTA_PURPOSES]],
     );
-    return result.rows.length > 0;
+    const seconds = Number(result.rows[0]?.seconds ?? Number.NaN);
+    return Number.isSafeInteger(seconds) && seconds >= 1 ? seconds : undefined;
+  }
+
+  /** OTP challenges of a phone (every purpose, every outcome) created inside the rolling window. Same count for unknown phones. */
+  async countPhoneChallenges(context: TransactionContext, phoneNormalized: string, windowSeconds: number): Promise<number> {
+    const result = await context.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM app.phone_verifications
+        WHERE phone_normalized = $1 AND purpose = ANY($3::text[])
+          AND created_at > clock_timestamp() - make_interval(secs => $2::double precision)`,
+      [phoneNormalized, windowSeconds, [...OTP_QUOTA_PURPOSES]],
+    );
+    return toSafeInteger(result.rows[0]?.n ?? '0');
+  }
+
+  /** Seconds until enough challenges leave the window for one more to fit (>= 1). */
+  async phoneRetryAfter(context: TransactionContext, phoneNormalized: string, windowSeconds: number, count: number, limit: number): Promise<number> {
+    const result = await context.query<{ seconds: string | null }>(
+      `SELECT ceil(extract(epoch FROM (created_at + make_interval(secs => $2::double precision) - clock_timestamp())))::text AS seconds
+         FROM app.phone_verifications
+        WHERE phone_normalized = $1 AND purpose = ANY($3::text[])
+          AND created_at > clock_timestamp() - make_interval(secs => $2::double precision)
+        ORDER BY created_at ASC OFFSET $4::int LIMIT 1`,
+      [phoneNormalized, windowSeconds, [...OTP_QUOTA_PURPOSES], Math.max(0, count - limit)],
+    );
+    const seconds = Number(result.rows[0]?.seconds ?? '1');
+    return Number.isSafeInteger(seconds) && seconds >= 1 ? seconds : 1;
   }
 
   /** A new request supersedes any challenge of the lane that could still be verified. */
@@ -192,20 +216,20 @@ export class VerificationRepository {
     context: TransactionContext,
     verificationId: string,
     maxAttempts: number,
-  ): Promise<{ readonly status: VerificationStatus }> {
-    const result = await context.query<{ status: VerificationStatus }>(
+  ): Promise<{ readonly status: VerificationStatus; readonly attemptCount: number }> {
+    const result = await context.query<{ status: VerificationStatus; attempt_count: number }>(
       `UPDATE app.phone_verifications
           SET attempt_count = attempt_count + 1,
               status = CASE WHEN attempt_count + 1 >= $2::int THEN 'LOCKED' ELSE status END
         WHERE verification_id = $1::uuid AND status = 'PENDING'
-        RETURNING status`,
+        RETURNING status, attempt_count`,
       [verificationId, maxAttempts],
     );
     const row = result.rows[0];
     if (row === undefined) {
       throw new TechnicalError('internal', 'Verification attempt was not recorded');
     }
-    return { status: row.status };
+    return { status: row.status, attemptCount: row.attempt_count };
   }
 
   async markVerified(context: TransactionContext, verificationId: string): Promise<void> {

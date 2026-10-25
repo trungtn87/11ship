@@ -14,6 +14,7 @@ import { NotificationRepository } from '../notifications/notification-repository
 import { SHIPPER_SEARCH_RADIUS_M } from '../shipping-policy/shipping-eligibility';
 import { EligibilityParametersRepository } from '../shipping-policy/eligibility-parameters-repository';
 import { ShippingFeePolicyRepository } from '../shipping-policy/shipping-fee-policy-repository';
+import { OtpPolicyRepository } from '../auth/otp-policy-repository';
 import { SystemSettingsRepository } from '../system-settings/system-settings-repository';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { AdminConfigRepository, CONFIG_AUDIT_ACTIONS, ConfigGroupKey } from './admin-config-repository';
@@ -44,6 +45,7 @@ export class AdminConfigService {
     private readonly actor: AdminSystemActor,
     private readonly rights: AdminRightsReader,
     private readonly settings: SystemSettingsRepository,
+    private readonly otpPolicy: OtpPolicyRepository,
     private readonly wallet: ShipperWalletParametersRepository,
     private readonly commissionPolicy: CommissionPolicyRepository,
     private readonly eligibility: EligibilityParametersRepository,
@@ -62,6 +64,7 @@ export class AdminConfigService {
       await setBusinessLockTimeout(context, this.#lockTimeoutMs);
       const rights = await this.rights.read(context, known);
       const settings = await this.settings.readAll(context);
+      const otpPolicy = await this.otpPolicy.read(context);
       const walletRows = await this.wallet.readAll(context);
       const eligibility = await this.eligibility.read(context);
       const fee = await this.fees.active(context);
@@ -69,7 +72,6 @@ export class AdminConfigService {
       const commission = await this.commissionPolicy.current(context);
       const notification = await this.notifications.readConfig(context);
       const maxMs = (values: ReadonlyArray<number | null>): number | null => values.reduce<number | null>((best, value) => (value === null ? best : best === null || value > best ? value : best), null);
-      const otp = this.appConfig.auth;
       const group = (key: ConfigGroupKey | 'map_gps' | 'storage_backup', title: string, owner: string, version: number | null, updatedAtMs: number | null, values: readonly Value[], fixed: readonly Value[], edit: JsonObject | null): JsonObject => ({
         key,
         title,
@@ -88,12 +90,18 @@ export class AdminConfigService {
           // The version a save must echo is the SUM of the rows' versions (the owner's own group token).
           settings.reduce((sum, row) => sum + row.version, 0),
           maxMs(settings.map((row) => row.updatedAtMs)),
-          settings.map((row) => ({ key: row.key, label: row.key === 'otp_registration_enabled' ? 'OTP khi đăng ký' : 'OTP khi quên mật khẩu', value: row.value })),
           [
-            { key: 'otp_resend_seconds', label: 'Chờ gửi lại mã OTP', value: otp?.otpResendSeconds ?? 60, unit: 'giây' },
-            { key: 'otp_max_attempts', label: 'Số lần nhập sai trước khi hủy luồng OTP', value: otp?.otpMaxAttempts ?? 3, unit: 'lần' },
+            ...settings.map((row): Value => ({ key: row.key, label: row.key === 'otp_registration_enabled' ? 'OTP khi đăng ký' : 'OTP khi quên mật khẩu', value: row.value })),
+            // Issue #117: the SMS OTP limits are edited on their own page (Hệ thống › SMS & OTP); the values are read from the same row here.
+            { key: 'cooldown_seconds', label: 'Chờ gửi lại mã OTP (chung mọi luồng và hai app)', value: otpPolicy.values.cooldown_seconds, unit: 'giây' },
+            { key: 'max_wrong_attempts', label: 'Số lần nhập sai trước khi hủy luồng OTP', value: otpPolicy.values.max_wrong_attempts, unit: 'lần' },
+            { key: 'phone_per_hour', label: 'Yêu cầu OTP mỗi số điện thoại / 1 giờ', value: otpPolicy.values.phone_per_hour, unit: 'lần' },
+            { key: 'phone_per_day', label: 'Yêu cầu OTP mỗi số điện thoại / 24 giờ', value: otpPolicy.values.phone_per_day, unit: 'lần' },
+            { key: 'ip_per_hour', label: 'Yêu cầu OTP mỗi địa chỉ IP / 1 giờ', value: otpPolicy.values.ip_per_hour, unit: 'lần' },
+            { key: 'global_per_day', label: 'Tổng SMS toàn Gateway / 24 giờ', value: otpPolicy.values.global_per_day, unit: 'SMS' },
           ],
-          { kind: 'OTP', system_only: true, path: '/v1/admin/system-settings/phone-verification' },
+          [],
+          { kind: 'OTP', system_only: true, path: '/v1/admin/system-settings/phone-verification', note: 'Hai công tắc OTP sửa ở đây. Sáu giới hạn gửi SMS OTP sửa ở Hệ thống › SMS & OTP (có hiệu lực ngay).' },
         ),
         group(
           'shipper_wallet',

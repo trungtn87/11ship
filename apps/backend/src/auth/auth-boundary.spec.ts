@@ -127,8 +127,10 @@ describe('what Auth does not own', () => {
     expect(withoutResetOtp).not.toMatch(/refresh[_ ]?token|logout|reset[_ ]?password|change[_ ]?phone|forgot/i);
   });
 
-  it('has no IP, device or daily throttle: the only limit is the locked per-lane cooldown', () => {
-    expect(allAuthCode()).not.toMatch(/x-forwarded-for|remoteAddress|\bip\b.*limit|daily|quota|throttle/i);
+  it('has no CAPTCHA, Redis or external limiter: the OTP limits are the PostgreSQL policy (issue #117)', () => {
+    // The OTP request quotas (shared cooldown, phone hour/day, client address hour) are SYSTEM parameters read from PostgreSQL and
+    // reserved atomically with the challenge. Nothing else limits here: no Redis, no CAPTCHA.
+    expect(allAuthCode()).not.toMatch(/throttle|captcha|redis/i);
   });
 
   it('only the binding file imports the fake provider among production files', () => {

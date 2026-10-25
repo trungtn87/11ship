@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { computeOtpDigest } from '../../apps/backend/src/auth/otp';
-import { otpRequestLockKey } from '../../apps/backend/src/auth/otp-lane-lock';
+import { otpPhoneLockKey } from '../../apps/backend/src/auth/otp-lane-lock';
 import { eventually } from './support/async-helpers';
+import { loadIntegrationConfig, setOtpPolicy } from './support/test-helpers';
 import {
   ageVerification,
   AuthApp,
@@ -216,17 +217,20 @@ describe('M01-A1 — OTP request and verification', () => {
       const response = await app.call('POST', `/auth/phone-verifications/${id}/verify`, { body: { otp: wrong } });
       expect(response.status).toBe(400);
       expect(errorCode(response)).toBe('OTP_INVALID');
+      // Issue #117: the app is told how many tries are left (2, then 1).
+      expect(response.body.error?.details).toEqual({ attempts_remaining: 3 - attempt });
       const row = (await rowsOf(phone.normalized))[0] as VerificationRow;
       expect([row.attempt_count, row.status]).toEqual([attempt, 'PENDING']); // the wrong attempt COMMITTED
     }
     const third = await app.call('POST', `/auth/phone-verifications/${id}/verify`, { body: { otp: wrong } });
     expect(third.status).toBe(429);
-    expect(errorCode(third)).toBe('OTP_RATE_LIMITED');
+    // A closed challenge is OTP_LOCKED, not the send quota / cooldown (OTP_RATE_LIMITED): the app returns to the first step.
+    expect(errorCode(third)).toBe('OTP_LOCKED');
     expect(((await rowsOf(phone.normalized))[0] as VerificationRow).status).toBe('LOCKED');
 
     const right = await app.call('POST', `/auth/phone-verifications/${id}/verify`, { body: { otp } });
     expect(right.status).toBe(429);
-    expect(errorCode(right)).toBe('OTP_RATE_LIMITED');
+    expect(errorCode(right)).toBe('OTP_LOCKED');
     expect(await countRows(app.pool, 'SELECT 1 FROM app.verification_proofs WHERE verification_id = $1::uuid', [id])).toBe(0);
 
     // The locked attempt is recorded as a standalone DENIED audit row (best effort, after the fact).
@@ -237,21 +241,19 @@ describe('M01-A1 — OTP request and verification', () => {
     expect(audit.rows).toEqual([{ outcome: 'DENIED', reason_code: 'OTP_LOCKED' }]);
   });
 
-  it('honours AUTH_OTP_MAX_ATTEMPTS from configuration', async () => {
-    const strict = await startAuthApp({ otpMaxAttempts: 1 });
+  it('honours the SYSTEM policy: a lower wrong-attempt limit applies at once, without a restart', async () => {
+    const url = loadIntegrationConfig().database.url;
+    await setOtpPolicy(url, { max_wrong_attempts: 1 });
     try {
       const phone = randomPhone();
-      strict.track(phone.normalized);
-      const requested = await strict.call('POST', '/auth/phone-verifications', {
-        body: { phone: phone.local, purpose: 'REGISTER' },
-      });
+      const requested = await requestOtp(phone.local, phone.normalized);
       const id = String(dataOf(requested).verification_id);
-      const otp = strict.provider.lastOtpFor(phone.normalized) as string;
+      const otp = app.provider.lastOtpFor(phone.normalized) as string;
       const wrong = otp === '000000' ? '111111' : '000000';
-      const response = await strict.call('POST', `/auth/phone-verifications/${id}/verify`, { body: { otp: wrong } });
-      expect([response.status, errorCode(response)]).toEqual([429, 'OTP_RATE_LIMITED']);
+      const response = await app.call('POST', `/auth/phone-verifications/${id}/verify`, { body: { otp: wrong } });
+      expect([response.status, errorCode(response)]).toEqual([429, 'OTP_LOCKED']);
     } finally {
-      await strict.close();
+      await setOtpPolicy(url);
     }
   });
 
@@ -315,7 +317,7 @@ describe('M01-A1 — OTP request and verification', () => {
     try {
       await eventually(async () => app.provider.sendStarted() > started, 'provider call is in flight');
 
-      const [first, second] = otpRequestLockKey(phone.normalized, 'REGISTER');
+      const [first, second] = otpPhoneLockKey(phone.normalized);
       const client = await app.pool.connect();
       try {
         await client.query('BEGIN');
@@ -345,8 +347,11 @@ describe('M01-A1 — OTP request and verification', () => {
     expect(errorCode(response)).toBe('PHONE_ALREADY_REGISTERED');
   });
 
-  it('uses configurable TTL and resend values in the response', async () => {
-    const custom = await startAuthApp(authTestConfig({ otpTtlSeconds: 120, otpResendSeconds: 30 }));
+  it('uses the configured TTL and the SYSTEM cooldown in the response', async () => {
+    const url = loadIntegrationConfig().database.url;
+    await setOtpPolicy(url, { cooldown_seconds: 30 });
+    const custom = await startAuthApp(authTestConfig({ otpTtlSeconds: 120 }));
+    await setOtpPolicy(url, { cooldown_seconds: 30 });
     try {
       const phone = randomPhone();
       custom.track(phone.normalized);
@@ -357,6 +362,7 @@ describe('M01-A1 — OTP request and verification', () => {
       expect(dataOf(response).resend_after_seconds).toBe(30);
     } finally {
       await custom.close();
+      await setOtpPolicy(url);
     }
   });
 });

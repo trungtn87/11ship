@@ -37,6 +37,9 @@ export const APP_ERROR_DEFINITIONS = {
     status: 429,
     message: 'Too many verification requests or attempts; try again later',
   },
+  // The OTP challenge is closed after too many wrong codes (distinct from OTP_RATE_LIMITED: the send quota / cooldown). The client starts the flow again.
+  OTP_LOCKED: { status: 429, message: 'Too many wrong verification codes; request a new code' },
+  OTP_POLICY_VERSION_CONFLICT: { status: 409, message: 'The SMS OTP settings were changed by another request' },
   PHONE_ALREADY_REGISTERED: { status: 409, message: 'This phone number is already registered' },
   // The phone belongs to an account locked at its owner's request: it can be recovered through the OTP-proven recovery flow.
   ACCOUNT_RECOVERY_AVAILABLE: { status: 409, message: 'This account can be recovered with phone verification' },
@@ -344,6 +347,24 @@ export class AdminAuthRateLimitError extends AppError {
     this.name = 'AdminAuthRateLimitError';
     this.retryAfterSeconds =
       Number.isSafeInteger(retryAfterSeconds) && retryAfterSeconds >= 1 ? retryAfterSeconds : 1;
+  }
+}
+
+/**
+ * An OTP refusal that carries the safe facts the app needs to react (issue #117): the wrong attempts left, the reason a request was
+ * refused (COOLDOWN, PHONE_HOUR, PHONE_DAY, IP_HOUR, GLOBAL_DAY) and when to retry. Only fixed enum strings and integers: never a phone,
+ * an address or a code. A refusal with a retry time also sends Retry-After.
+ */
+export class OtpRefusalError extends AppError {
+  readonly details: Readonly<Record<string, string | number>>;
+  readonly retryAfterSeconds: number | undefined;
+
+  constructor(code: 'OTP_INVALID' | 'OTP_RATE_LIMITED' | 'OTP_LOCKED', details: Readonly<Record<string, string | number>>, retryAfterSeconds?: number) {
+    super(code);
+    this.name = 'OtpRefusalError';
+    this.details = details;
+    this.retryAfterSeconds =
+      retryAfterSeconds === undefined ? undefined : Number.isSafeInteger(retryAfterSeconds) && retryAfterSeconds >= 1 ? retryAfterSeconds : 1;
   }
 }
 

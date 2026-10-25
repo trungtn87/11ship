@@ -155,6 +155,9 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | order_timeout_policy_changes | SELECT, INSERT (append-only policy history) |
 | order_parameters | SELECT, UPDATE (M07: fee-answer time configured by SYSTEM) |
 | order_parameter_changes | SELECT, INSERT (append-only parameter history) |
+| otp_policy | SELECT, UPDATE (#117: SYSTEM-configured SMS OTP limits, one row) |
+| otp_policy_changes | SELECT, INSERT (#117: append-only history) |
+| otp_ip_requests | SELECT, INSERT, DELETE (#117: per-IP OTP counter, HMAC only) |
 | cancellation_transitions | SELECT, INSERT (append-only cancellation before/after facts) |
 | shipper_latest_locations | SELECT, INSERT, UPDATE (M14/M07: the one latest position of each Shipper, replaced in place; no trail) |
 | notification_push_tokens | SELECT, INSERT, UPDATE (M08: the push token of one session; ended (never deleted) when the session ends or the token is replaced) |

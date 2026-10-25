@@ -97,9 +97,9 @@ describe('M01.22 — REGISTER OTP through the test inbox', () => {
       expect((await rowsOf(phone.normalized))[0]?.attempt_count).toBe(attempt);
     }
     const third = await verify(id, wrong);
-    expect([third.status, errorCode(third)]).toEqual([429, 'OTP_RATE_LIMITED']);
+    expect([third.status, errorCode(third)]).toEqual([429, 'OTP_LOCKED']);
     const right = await verify(id, otp);
-    expect([right.status, errorCode(right)]).toEqual([429, 'OTP_RATE_LIMITED']);
+    expect([right.status, errorCode(right)]).toEqual([429, 'OTP_LOCKED']);
     expect((await rowsOf(phone.normalized))[0]?.status).toBe('LOCKED');
   });
 
