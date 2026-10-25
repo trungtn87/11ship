@@ -11,6 +11,7 @@ const data = JSON.parse(readFileSync(join(ROOT, 'config/vn-mobile-prefixes.json'
   reviewedOn: string;
   verification: { status: string; note: string };
   prefixes: Array<{ prefix: string; operator: string; kind: string }>;
+  ownerDecisions: Array<{ date: string; prefixes: string[]; decision: string; officialAllocationIndependentlyConfirmed: boolean }>;
   pendingPrefixes: Array<{ prefix: string; stage: string; decision: string; basis: string; sources: string[]; readDirectly: boolean }>;
 };
 
@@ -58,17 +59,16 @@ describe('central Vietnam mobile prefix table (issue #117)', () => {
     }
   });
 
-  it('a prefix that only WON an auction (095, 075) is listed with its basis and is NOT accepted until its allocation is evidenced', () => {
-    const pending = new Map(data.pendingPrefixes.map((entry) => [entry.prefix, entry]));
-    expect([...pending.keys()].sort()).toEqual(['075', '095']);
-    for (const entry of pending.values()) {
-      expect(entry.stage).toBe('WON_AT_AUCTION');
-      expect(entry.decision).toBe('NOT_ACCEPTED_YET');
-      expect(entry.basis.length).toBeGreaterThan(100);
-      expect(entry.sources.every((url) => url.startsWith('https://'))).toBe(true);
-      // Honest provenance: these pages were seen only through search summaries, never opened.
-      expect(entry.readDirectly).toBe(false);
-      expect(VN_MOBILE_PREFIXES.some((accepted) => entry.prefix === accepted || accepted.startsWith(entry.prefix) || entry.prefix.startsWith(accepted))).toBe(false);
+  it('accepts 075 and 095 as explicitly approved by the Owner while retaining honest source verification status', () => {
+    const decision = data.ownerDecisions.find((entry) => entry.date === '2026-10-25' && entry.decision === 'ACCEPT_FOR_OTP_VALIDATION');
+    expect(decision?.prefixes).toEqual(['075', '095']);
+    expect(decision?.officialAllocationIndependentlyConfirmed).toBe(false);
+    for (const prefix of ['075', '095']) {
+      expect(VN_MOBILE_PREFIXES).toContain(prefix);
+      expect(data.pendingPrefixes.some((entry) => entry.prefix === prefix)).toBe(false);
+      for (const suffix of ['0000000', '9999999']) {
+        expect(normalizeVietnamMobile(prefix + suffix)).toBe('+84' + prefix.slice(1) + suffix);
+      }
     }
     expect(data.verification.status).toBe('PENDING_OFFICIAL_CONFIRMATION');
   });

@@ -79,7 +79,7 @@
     },
     {
       "input": "0750000000",
-      "expected": null
+      "expected": "+84750000000"
     },
     {
       "input": "0800000000",
@@ -87,7 +87,7 @@
     },
     {
       "input": "0950000000",
-      "expected": null
+      "expected": "+84950000000"
     },
     {
       "input": "0241234567",
@@ -163,18 +163,38 @@
     },
     {
       "input": "0751234567",
-      "expected": null
+      "expected": "+84751234567"
     },
     {
       "input": "84751234567",
-      "expected": null
+      "expected": "+84751234567"
     },
     {
       "input": "+84951234567",
-      "expected": null
+      "expected": "+84951234567"
     },
     {
       "input": "0959999999",
+      "expected": "+84959999999"
+    },
+    {
+      "input": "0759999999",
+      "expected": "+84759999999"
+    },
+    {
+      "input": "+84751234567",
+      "expected": "+84751234567"
+    },
+    {
+      "input": "84951234567",
+      "expected": "+84951234567"
+    },
+    {
+      "input": "075123456",
+      "expected": null
+    },
+    {
+      "input": "09512345678",
       "expected": null
     }
   ]

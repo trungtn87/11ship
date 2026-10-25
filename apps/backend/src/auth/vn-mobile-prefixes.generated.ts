@@ -1,7 +1,7 @@
 // Generated from config/vn-mobile-prefixes.json by scripts/gen-vn-mobile-prefixes.mjs. Do not edit.
-// Data reviewed 2026-10-24; official confirmation status: PENDING_OFFICIAL_CONFIRMATION.
+// Data reviewed 2026-10-25; official confirmation status: PENDING_OFFICIAL_CONFIRMATION.
 
-export const VN_MOBILE_PREFIXES_REVIEWED_ON = '2026-10-24';
+export const VN_MOBILE_PREFIXES_REVIEWED_ON = '2026-10-25';
 
 /** Allocated national mobile prefixes (leading 0, 3 or more digits, no overlaps). */
 export const VN_MOBILE_PREFIXES: readonly string[] = [
@@ -19,6 +19,7 @@ export const VN_MOBILE_PREFIXES: readonly string[] = [
   '058',
   '059',
   '070',
+  '075',
   '076',
   '077',
   '078',
@@ -37,6 +38,7 @@ export const VN_MOBILE_PREFIXES: readonly string[] = [
   '092',
   '093',
   '094',
+  '095',
   '096',
   '097',
   '098',

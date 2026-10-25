@@ -1,11 +1,11 @@
 {
-  "version": 1,
-  "reviewedOn": "2026-10-24",
-  "scope": "Vietnam terrestrial mobile numbers (10 national digits, leading 0). Lists allocated number blocks only: a block says the number FORMAT is in an allocated mobile range, never that the subscriber exists, is active, or is still on that operator (number portability is allowed).",
-  "matching": "A national number (0 + 9 digits) is allocated when it starts with any listed prefix. A prefix may have 3 or more digits when only part of a 3-digit range is allocated; prefixes must not overlap.",
+  "version": 2,
+  "reviewedOn": "2026-10-25",
+  "scope": "Vietnam terrestrial mobile numbers (10 national digits, leading 0). Accepted mobile prefixes, including 075 and 095 explicitly approved by the Owner on 2026-10-25. Acceptance validates format only, not subscriber existence, activity or current operator.",
+  "matching": "A national number (0 + 9 digits) is accepted when it starts with any listed prefix. Prefixes may have 3 or more digits and must not overlap.",
   "verification": {
     "status": "PENDING_OFFICIAL_CONFIRMATION",
-    "note": "Update 2026-10-24 (second pass). Status stays PENDING_OFFICIAL_CONFIRMATION: the two primary sources named by the Owner could NOT be opened from the build environment (vnta.gov.vn tinTucID=4480 and vnpost.vn: egress proxy answered 403 / DNS refused; no bypass was attempted), so the allocation table itself was never read. What WAS established, only from search-result summaries of the Ministry portal (mst.gov.vn pages) and national press, never by opening the page: the auction facts for 095 and 075 (see pendingPrefixes). NOT verified: every accepted 3-digit prefix against the regulator's table, any 4+ digit block, and any allocation change after 2026-04-17 other than the 095 and 075 auctions (a search found none, which proves nothing). Release owner: read the vnta.gov.vn table, record document number and date in officialSourcesToConfirm, then regenerate.",
+    "note": "The full regulator allocation table has not been independently verified; PENDING_OFFICIAL_CONFIRMATION remains a provenance status, not a runtime rejection. Owner decision 2026-10-25 explicitly accepts 075 and 095 for OTP validation. This does not assert that allocation or in-service status was independently confirmed.",
     "confirmedScope": "Auction results for 095 (2026-07-10) and 075 (2026-10-15) as reported; nothing else.",
     "unverifiedScope": [
       "all accepted prefixes against vnta.gov.vn tinTucID=4480",
@@ -132,6 +132,19 @@
       "kind": "MNO"
     },
     {
+      "prefix": "075",
+      "operator": "Vietnam Post (Pottel)",
+      "kind": "MVNO",
+      "acceptance": "OWNER_APPROVED_2026_10_25",
+      "sources": [
+        "https://vnpost.vn/vi/hoat-dong-nganh/vietnam-post-dau-gia-thanh-cong-quyen-su-dung-ma-mang-75",
+        "https://mst.gov.vn/tong-cong-ty-buu-dien-viet-nam-trung-dau-gia-dau-so-075-197261015144808297.htm",
+        "https://mst.gov.vn/thong-tin-dau-gia-quyen-su-dung-ma-so-vien-thong-ma-mang-di-dong-h2h-75-197261006143225927.htm",
+        "https://www.sggp.org.vn/vietnam-post-dau-gia-thanh-cong-dau-so-di-dong-075-post876704.html",
+        "https://vneconomy.vn/dau-so-075-ve-tay-vietnam-post.htm"
+      ]
+    },
+    {
       "prefix": "076",
       "operator": "MobiFone",
       "kind": "MNO"
@@ -222,6 +235,19 @@
       "kind": "MNO"
     },
     {
+      "prefix": "095",
+      "operator": "Viettel",
+      "kind": "MNO",
+      "acceptance": "OWNER_APPROVED_2026_10_25",
+      "sources": [
+        "https://mst.gov.vn/ve-viec-dau-gia-quyen-su-dung-ma-mang-di-dong-95-197260620145614961.htm",
+        "https://mst.gov.vn/thong-bao-dau-gia-quyen-su-dung-ma-mang-di-dong-95-197260703164851827.htm",
+        "https://tuoitre.vn/viettel-so-huu-them-dau-so-di-dong-095-100260711094049285.htm",
+        "https://thanhnien.vn/nha-mang-viettel-co-them-dau-so-095-185260710192936059.htm",
+        "https://www.sggp.org.vn/viettel-so-huu-dau-so-095-mo-rong-tai-nguyen-kho-so-di-dong-post861695.html"
+      ]
+    },
+    {
       "prefix": "096",
       "operator": "Viettel",
       "kind": "MNO"
@@ -242,39 +268,18 @@
       "kind": "MNO"
     }
   ],
-  "matchingDecisionRule": "A prefix is ACCEPTED only when its allocation (phân bổ) to an operator is evidenced. Three stages are kept apart: (1) won at auction, (2) allocated by decision of the Ministry/Cục Viễn thông, (3) in operation. A prefix at stage 1 only is NOT accepted: nobody can hold a subscriber on it yet, and a wrong rejection is fixed by moving the prefix to `prefixes` and regenerating. The cost of a wrong acceptance would only be one wasted SMS (bounded by the OTP quotas), so the Owner may decide to accept earlier; that is a business decision recorded here, not made by the code.",
-  "pendingPrefixes": [
+  "matchingDecisionRule": "Use the accepted prefixes below for OTP validation. Owner explicitly approved accepting 075 and 095 on 2026-10-25 without waiting for further allocation evidence. Provenance uncertainty must not reject these two prefixes.",
+  "pendingPrefixes": [],
+  "ownerDecisions": [
     {
-      "prefix": "095",
-      "operator": "Viettel",
-      "stage": "WON_AT_AUCTION",
-      "decision": "NOT_ACCEPTED_YET",
-      "basis": "Viettel won the auction of mã mạng 95 on 2026-07-10 (252.5 tỷ đồng, organised by VPA; plan: Quyết định 1845/QĐ-BKHCN 2026-03-20, Thông báo 2592/TB-CVT 2026-06-19). The block was S-Fone's, closed in 2016. Press reports say Viettel will put it into service after the regulatory procedures; the winner has at most 6 months after allocation to start operating. No allocation decision number and no in-service confirmation was found, so it is not accepted. HIGH PRIORITY: it is the most likely to be in service soon; confirm on vnta.gov.vn and move to `prefixes` when allocated.",
-      "sources": [
-        "https://mst.gov.vn/ve-viec-dau-gia-quyen-su-dung-ma-mang-di-dong-95-197260620145614961.htm",
-        "https://mst.gov.vn/thong-bao-dau-gia-quyen-su-dung-ma-mang-di-dong-95-197260703164851827.htm",
-        "https://tuoitre.vn/viettel-so-huu-them-dau-so-di-dong-095-100260711094049285.htm",
-        "https://thanhnien.vn/nha-mang-viettel-co-them-dau-so-095-185260710192936059.htm",
-        "https://www.sggp.org.vn/viettel-so-huu-dau-so-095-mo-rong-tai-nguyen-kho-so-di-dong-post861695.html"
+      "date": "2026-10-25",
+      "prefixes": [
+        "075",
+        "095"
       ],
-      "checked": "2026-10-24",
-      "readDirectly": false
-    },
-    {
-      "prefix": "075",
-      "operator": "Vietnam Post (Pottel)",
-      "stage": "WON_AT_AUCTION",
-      "decision": "NOT_ACCEPTED_YET",
-      "basis": "Vietnam Post announced on 2026-10-15 that it won the auction of mã mạng H2H 75 (plan: Quyết định 3366/QĐ-BKHCN 2026-08-04; Thông báo 3795/TB-CVT 2026-08-20; reported price 2.75 tỷ đồng from one source only). The announcement says the remaining procedures must still be completed before the prefix is put into operation, so it is only at the auction stage: not allocated, not in service, not accepted. 075 was formerly Bến Tre's fixed-line code (now 0275). Move to `prefixes` when the allocation is evidenced.",
-      "sources": [
-        "https://vnpost.vn/vi/hoat-dong-nganh/vietnam-post-dau-gia-thanh-cong-quyen-su-dung-ma-mang-75",
-        "https://mst.gov.vn/tong-cong-ty-buu-dien-viet-nam-trung-dau-gia-dau-so-075-197261015144808297.htm",
-        "https://mst.gov.vn/thong-tin-dau-gia-quyen-su-dung-ma-so-vien-thong-ma-mang-di-dong-h2h-75-197261006143225927.htm",
-        "https://www.sggp.org.vn/vietnam-post-dau-gia-thanh-cong-dau-so-di-dong-075-post876704.html",
-        "https://vneconomy.vn/dau-so-075-ve-tay-vietnam-post.htm"
-      ],
-      "checked": "2026-10-24",
-      "readDirectly": false
+      "decision": "ACCEPT_FOR_OTP_VALIDATION",
+      "instruction": "Coi như 2 đầu số đấy đã triển khai, đưa vào điều kiện kiểm tra luôn",
+      "officialAllocationIndependentlyConfirmed": false
     }
   ]
 }
