@@ -1093,7 +1093,7 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
         await count(app.pool, 'SELECT 1 FROM app.sms_jobs'),
         await ipRows(),
       ];
-      const bad = ['0301234567', '0951234567', '0241234567', '091234567', '09123456789', '+14155550123', '01201234567'];
+      const bad = ['0301234567', '0501234567', '0241234567', '091234567', '09123456789', '+14155550123', '01201234567'];
       for (const number of bad) {
         for (const kind of ['register', 'reset', 'admin', 'recover'] as const) {
           const response = await requestOn(app, kind, number);

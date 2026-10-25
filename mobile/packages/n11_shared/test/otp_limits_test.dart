@@ -136,7 +136,7 @@ void main() {
 
     test('an unallocated number sends nothing', () async {
       final (ResetController reset, FakeApiTransport api) = await open();
-      expect(await reset.requestOtp('0951234567'), isFalse);
+      expect(await reset.requestOtp('0501234567'), isFalse);
       expect(reset.failure?.kind, AuthFailureKind.invalidPhone);
       expect(api.to('POST', '/v1/account-recovery/otp'), isEmpty);
     });

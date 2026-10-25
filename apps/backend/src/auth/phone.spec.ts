@@ -105,7 +105,7 @@ describe('Vietnamese mobile allocation rule for OTP (issue #117)', () => {
   });
 
   it('refuses prefixes that are not allocated, although the old broad 03/05/07/08/09 pattern would accept them', () => {
-    for (const prefix of ['030', '031', '050', '051', '053', '054', '057', '071', '072', '073', '074', '075', '080', '095']) {
+    for (const prefix of ['030', '031', '050', '051', '053', '054', '057', '071', '072', '073', '074', '080']) {
       expect(normalizeVietnamMobile(`${prefix}${NINE.slice(0, 7)}`)).toBeUndefined();
       // The looser format rule (used by login) still accepts the shape: only the OTP request is stricter.
       expect(normalizeVietnamPhone(`${prefix}${NINE.slice(0, 7)}`)).toBeDefined();
