@@ -1,3 +1,4 @@
+import { BUSINESS_DOWN_SQL, BUSINESS_UP_SQL } from './support/business-migration-sql';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Pool, PoolClient } from 'pg';
@@ -446,7 +447,8 @@ describe('M04-B1 - topup sources, bank registry and ledger source (schema, invar
     try {
       await client.query('BEGIN');
       const before = await snapshot(client);
-      await client.query(WITHDRAWAL_DOWN_SQL); // M04-C withdrawals: the very newest, down first, up last
+      await client.query(BUSINESS_DOWN_SQL); // Newest dependent schema, with its history refusal intact.
+      await client.query(WITHDRAWAL_DOWN_SQL); // M04-C withdrawals: down before M04 sources
       await client.query(TOPUP_DOWN_SQL);
       const gone = await client.query(`SELECT 1 FROM information_schema.tables WHERE table_schema = 'app' AND table_name IN ('system_owned_bank_accounts', 'wallet_topup_requests', 'wallet_bank_transactions', 'wallet_topups')`);
       expect(gone.rowCount).toBe(0);
@@ -454,6 +456,7 @@ describe('M04-B1 - topup sources, bank registry and ledger source (schema, invar
       expect(await snapshot(client)).toEqual(before);
       await client.query(TOPUP_UP_SQL);
       await client.query(WITHDRAWAL_UP_SQL);
+      await client.query(BUSINESS_UP_SQL);
       expect(await snapshot(client)).toEqual(before);
     } finally {
       await client.query('ROLLBACK').catch(() => undefined);
@@ -502,6 +505,7 @@ describe('M04-B1 - topup sources, bank registry and ledger source (schema, invar
         await reader.query('BEGIN');
         await reader.query('SELECT count(*) FROM app.wallet_topups');
         await migrator.query('BEGIN');
+        await migrator.query(BUSINESS_DOWN_SQL);
         await migrator.query(WITHDRAWAL_DOWN_SQL); // M04-C withdrawals depend on the registry: newest, down first
         const migrating = migrator.query(TOPUP_DOWN_SQL).then(() => undefined, (error: unknown) => error);
         await eventually(async () => (await waiting()) >= 1, 'the down migration blocked behind the open reader');

@@ -575,4 +575,28 @@ describe('admin order chat (real browser)', () => {
     } finally {await page.close();}
   },180000);
 
+  it('a delayed finance response cannot restore another account\'s requests after logout and login in the same PWA',async()=>{
+    const requestId=randomUUID();
+    await app.pool.query(`INSERT INTO app.business_finance_requests(request_id,kind,owner_user_id,shop_id,amount_requested_vnd,state) VALUES($1,'SHOP_PAYMENT',$2,$3,29000,'PENDING')`,[requestId,shop.userId,shop.shopId]);
+    const page=await (browser as Browser).newPage();
+    try{
+      await page.viewport(390,844,true);await page.send('Network.clearBrowserCookies');await asSystem(page);
+      await page.interceptResponses('*/v1/admin/business/reports*');
+      await page.goto(origin+'/business/finance');
+      const held=await page.nextPausedResponse();
+      expect(await press(page,'Đăng xuất')).toBe(true);
+      await page.waitFor(`document.querySelector('#login-title')`);
+      await admin.clearLimits();
+      await page.fill('#phone',viewer.phone.local);await page.fill('#password',ADMIN_PASSWORD);await page.pressEnter();
+      await page.waitFor(`document.querySelector('#verify-title')`);
+      await rewindAcceptedStep(admin,viewer.userId);await page.fill('#verify-code',totpNow(viewer.secret));await page.pressEnter();
+      await page.waitFor(`document.querySelector('.business-nav') && document.querySelector('.business-error')?.textContent.includes('chưa được cấp quyền')`);
+      await page.send('Fetch.continueRequest',{requestId:held.requestId});await page.stopIntercepting();
+      await new Promise(resolve=>setTimeout(resolve,800));
+      expect(await page.evaluate<number>(`document.querySelectorAll('.business-request').length`)).toBe(0);
+      expect(await page.evaluate<string>(`document.querySelector('.business-content').textContent`)).toBe('');
+      expect(await page.evaluate<string>(`location.pathname`)).toBe('/business/finance');
+    }finally{await page.close();}
+  },180000);
+
 });

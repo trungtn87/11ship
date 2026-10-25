@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { AdminApp, adminData, adminErrorCode, startAdminApp } from './support/admin-fixtures';
 import { AuthApp, dataOf, PASSWORD, startAuthApp } from './support/auth-fixtures';
@@ -16,7 +16,7 @@ describe('Business Dashboard — real money requests, chat, rights and reports',
     app=await startAuthApp({}, {configOverride:{clientAuth}});
     admin=await startAdminApp({activationDisabledTest:true,configOverride:{clientAuth}});system=await systemSession(admin);
     shop=await clientShop();other=await clientShop();
-    accountId=randomUUID();await admin.pool.query(`INSERT INTO app.system_owned_bank_accounts(system_account_id,bank_id,account_number,account_holder,can_receive,created_at,updated_at) VALUES($1,'VCB',$2,'TEST BUSINESS',true,now(),now())`,[accountId,randomUUID().replaceAll('-','').slice(0,15)]);
+    accountId=randomUUID();await admin.pool.query(`INSERT INTO app.system_owned_bank_accounts(system_account_id,bank_id,account_number,account_holder,can_receive,created_at,updated_at) VALUES($1,'VCB',$2,'TEST BUSINESS',true,now(),now())`,[accountId,String(randomInt(1_000_000_000,9_000_000_000))]);
   });
   afterAll(async()=>{
     try{

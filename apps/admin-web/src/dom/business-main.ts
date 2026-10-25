@@ -7,7 +7,7 @@ function deviceId():string {
   try {const old=localStorage.getItem('11admin.device_id');if(old&&/^web-[0-9a-f]{32}$/.test(old))return old;}catch{/* blocked storage */}
   const id='web-'+crypto.randomUUID().replaceAll('-','');try{localStorage.setItem('11admin.device_id',id);}catch{/* ephemeral label */}return id;
 }
-if(location.pathname==='/business')history.replaceState(null,'','/business/'+location.search);
+if((location.pathname==='/business'||location.pathname==='/business.html'))history.replaceState(null,'','/business/'+location.search);
 const root=document.getElementById('app');
 if(root){
   const auth=new AdminAuthController(new AdminAuthApi(fetchTransport(window.fetch.bind(window))),clock,deviceId);

@@ -92,6 +92,7 @@ const SPA_ROUTES: readonly RegExp[] = Object.freeze([
  * it parses a route, so the server accepts them the same way for a route (never for an asset).
  */
 export function publicAdminAsset(pathname: string): string | undefined {
+  if (pathname === '/business.html') return 'business.html';
   if (/^\/business(?:\/(?:overview|finance|orders|chat|notifications)?)?\/?$/.test(pathname)) return 'business.html';
   if (['/business-sw.js','/business.webmanifest','/business.css'].includes(pathname)) return pathname.slice(1);
   if (pathname === '/' || pathname === '/index.html') {
