@@ -60,8 +60,12 @@ class M14Plugin: FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler,
         val locationEnabled = if(Build.VERSION.SDK_INT >= 28) manager.isLocationEnabled else
             manager.isProviderEnabled(LocationManager.GPS_PROVIDER) || manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
         val permitted = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
+        // What the operating system says about the Internet right now (a validated network). It says nothing about whether OUR server answers.
+        val connectivity=context.getSystemService(ConnectivityManager::class.java)
+        val internet=connectivity?.getNetworkCapabilities(connectivity.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)==true
         return mapOf("recording" to RecorderService.runningInProcess,
             "gpsEnabled" to locationEnabled,
+            "networkAvailable" to internet,
             "permissionGranted" to permitted,
             "lat" to p.getString("lat",null)?.toDoubleOrNull(), "lon" to p.getString("lon",null)?.toDoubleOrNull(),
             "accuracy" to if(p.contains("accuracy")) p.getFloat("accuracy",0f).toDouble() else null,

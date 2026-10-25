@@ -41,7 +41,7 @@ typedef TabBody = Widget Function(BuildContext context, ShellActions actions);
 
 /// One bottom-navigation tab: its label and icon, the title of its screen and its body.
 class TabSpec {
-  const TabSpec({required this.id, required this.label, required this.icon, required this.title, required this.body, this.showLogo = false, this.fullBleed = false, this.showAppBar = true});
+  const TabSpec({required this.id, required this.label, required this.icon, required this.title, required this.body, this.showLogo = false, this.fullBleed = false, this.showAppBar = true, this.ownsConnectionBanner = false});
 
   final String id;
   final String label;
@@ -53,6 +53,9 @@ class TabSpec {
   /// Map-based screens own their layout and scrolling, without shell padding.
   final bool fullBleed;
   final bool showAppBar;
+
+  /// The tab draws the connection state itself (merged with its own alerts) and reads the monitor from [HealthScope]: the shell then shows no second banner.
+  final bool ownsConnectionBanner;
   final TabBody body;
 }
 
@@ -238,7 +241,9 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
     final TabSpec tab = widget.tabs[_index];
     final ShellActions actions = ShellActions(goTab: _goTab, openDiagnostics: _openDiagnostics);
     final bool diagnostics = _diagnostics;
-    return PopScope(
+    return HealthScope(
+      monitor: _monitor,
+      child: PopScope(
       canPop: _canLeave,
       onPopInvokedWithResult: (bool didPop, Object? result) {
         if (didPop) {
@@ -262,7 +267,7 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
                 N11AppBar(logo: BrandLogo(brand: widget.brand), title: tab.title)
               else if (tab.showAppBar)
                 N11AppBar(title: tab.title),
-              if (!diagnostics) ConnectionBanner(monitor: _monitor),
+              if (!diagnostics && !tab.ownsConnectionBanner) ConnectionBanner(monitor: _monitor),
               Expanded(
                 // The tabs stay in the tree (offstage) while diagnostics is open, so what was typed in a tab is not lost.
                 child: Stack(
@@ -297,6 +302,6 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
           onSelect: _select,
         ),
       ),
-    );
+    ));
   }
 }

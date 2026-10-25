@@ -46,6 +46,9 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
     expect(gps.calls, 0);
+    // #194: the screen says the pinned point is fixed and that opening it shares nothing.
+    expect(find.byKey(const Key('location-picker-fixed-note'), skipOffstage: false), findsOneWidget);
+    expect(find.textContaining('Điểm giao đã chọn là vị trí cố định; di chuyển của bạn không tự đổi điểm này.', skipOffstage: false), findsOneWidget);
     await tester.enterText(
       find.byKey(const Key('location-address-text')),
       'Tổ 16, Cao Bằng',
@@ -171,7 +174,7 @@ void main() {
     await tester.tap(find.byKey(const Key('location-current')));
     await tester.pumpAndSettle();
     expect(find.textContaining('Hết thời gian chờ'), findsOneWidget);
-    expect(find.textContaining('Điểm giao đã chọn'), findsOneWidget);
+    expect(find.text('Điểm giao đã chọn. Chạm bản đồ để chuyển ghim.'), findsOneWidget);
     expect(find.text('22.66,106.25'), findsOneWidget);
     gps.failure = null;
     gps.next = LocationFix(
@@ -208,7 +211,7 @@ void main() {
         takenAt: DateTime.now()));
     await tester.pumpAndSettle();
     expect(find.text('22.67,106.26'), findsOneWidget);
-    expect(find.textContaining('Điểm giao đã chọn'), findsOneWidget);
+    expect(find.text('Điểm giao đã chọn. Chạm bản đồ để chuyển ghim.'), findsOneWidget);
   });
 }
 

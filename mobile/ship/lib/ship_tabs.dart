@@ -63,7 +63,7 @@ WidgetBuilder? _settingsBuilder(AppFlows? flows) {
 
 List<TabSpec> buildShipTabs(SessionController session, {AppFlows? flows}) {
   return <TabSpec>[
-    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', fullBleed: true, showAppBar: false, body: (BuildContext context, ShellActions actions) => ShipHome(session: session, driver: flows?.driver, walletSource: buildWalletSource(session: session), reset: flows?.reset, notifications: flows?.notifications, onNotifications: () => actions.goTab('notifications'))),
+    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', fullBleed: true, showAppBar: false, ownsConnectionBanner: true, body: (BuildContext context, ShellActions actions) => ShipHome(session: session, driver: flows?.driver, walletSource: buildWalletSource(session: session), reset: flows?.reset, notifications: flows?.notifications, onNotifications: () => actions.goTab('notifications'))),
     TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: (BuildContext context, ShellActions actions) => _orders(session, flows)),
     TabSpec(id: 'income', label: 'Thu nhập', icon: Icons.bar_chart_outlined, title: 'Thu nhập', body: (BuildContext context, ShellActions actions) => _income(context, actions, session)),
     TabSpec(id: 'notifications', label: 'Thông báo', icon: Icons.notifications_outlined, title: 'Thông báo', fullBleed: true, body: (BuildContext context, ShellActions actions) => _notifications(session, flows, actions)),

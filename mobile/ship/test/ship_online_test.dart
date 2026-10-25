@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
 import 'package:n11_shared/testing.dart';
+import 'package:ship/ship_alerts.dart';
 import 'package:ship/ship_home.dart';
 import 'package:ship/ship_m07.dart';
 import 'package:ship/ship_online.dart';
@@ -555,12 +556,13 @@ void main() {
       await tester.runAsync(() async { await settle(); await settle(); });
       await tester.pump();
       expect(find.text('Bạn đang offline'), findsOneWidget);
-      expect(find.byKey(const Key('ship-location-problem')), findsOneWidget);
-      expect(find.textContaining('quyền vị trí'), findsWidgets);
-      expect(find.byKey(const Key('ship-location-settings')), findsOneWidget);
+      expect(find.byKey(const Key('ship-alert')), findsOneWidget, reason: 'one alert, not a stack of notices');
+      expect(find.text('11Ship chưa được cấp quyền vị trí.'), findsOneWidget);
+      expect(find.byKey(const Key('ship-alert-app-settings')), findsOneWidget);
+      expect(find.byKey(const Key('ship-location-problem')), findsNothing, reason: 'the old problem note is merged into the alert');
       expect(find.textContaining('request'), findsNothing);
       expect(find.textContaining('PERMISSION'), findsNothing);
-      await tester.tap(find.byKey(const Key('ship-location-settings')));
+      await tester.tap(find.byKey(const Key('ship-alert-app-settings')));
       await tester.runAsync(settle);
       expect(t.feed.settings, <String>['app']);
     });
@@ -573,9 +575,12 @@ void main() {
       await tester.runAsync(t.driver.load);
       await tester.pumpWidget(MaterialApp(theme: buildN11Theme(), home: Scaffold(body: ShipHome(session: t.session, driver: t.driver, onNotifications: () {}, onlineOverride: t.online))));
       await tester.pump();
-      expect(find.text('Tạm dừng nhận đơn'), findsOneWidget);
-      expect(find.text('Chưa có vị trí · Tạm dừng nhận đơn'), findsOneWidget);
+      expect(find.byKey(const Key('home-activity-status')), findsOneWidget);
+      expect(tester.widget<Text>(find.byKey(const Key('home-activity-status'))).data, 'Tạm dừng nhận đơn');
+      expect(find.byKey(const Key('ship-alert')), findsOneWidget);
+      expect(find.text('Tạm dừng nhận đơn — chưa có vị trí mới.'), findsOneWidget);
       expect(find.text('Tắt online'), findsOneWidget);
+      expect(find.byKey(const Key('home-gps-status')), findsNothing, reason: 'the GPS line is merged into the label and the alert');
     });
 
     testWidgets('Delivery screens: the same line, from the same state', (WidgetTester tester) async {
@@ -603,4 +608,150 @@ void main() {
       await tester.runAsync(t.reporter.stop);
     });
   });
+
+  group('home alert and label on the real state (#194)', () {
+    Widget home(_T t, {HealthMonitor? monitor}) {
+      final Widget screen = Scaffold(body: ShipHome(session: t.session, driver: t.driver, onNotifications: () {}, onlineOverride: t.online, liveTick: const Duration(days: 1)));
+      return MaterialApp(theme: buildN11Theme(), home: monitor == null ? screen : HealthScope(monitor: monitor, child: screen));
+    }
+
+    Future<void> online(WidgetTester tester, _T t, {HealthMonitor? monitor}) async {
+      await tester.pumpWidget(home(t, monitor: monitor));
+      await tester.pump();
+      await tester.runAsync(settle);
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('online-button')));
+      await tester.runAsync(() async { await settle(); await settle(); });
+      await tester.pump();
+    }
+
+    // The reporter's own timers (100 s ack, position expiry) belong to the test's fake clock: end the sharing so none is left pending.
+    Future<void> finish(WidgetTester tester, _T t) async {
+      await tester.pumpWidget(const SizedBox());
+      await tester.runAsync(t.reporter.stop);
+    }
+
+    Future<void> phone(WidgetTester tester, _T t, Map<String, dynamic> change) async {
+      t.feed.current = <String, dynamic>{...?t.feed.current, ...change};
+      await tester.runAsync(() async { t.feed.controller.add(t.feed.snapshot()); await settle(); });
+      await tester.pump();
+    }
+
+    testWidgets('online, GPS turned off: the alert names the GPS, opens the location settings, receiving is paused; GPS back on clears it by itself', (WidgetTester tester) async {
+      final t = await tester.runAsync(_build) as _T;
+      await online(tester, t);
+      expect(find.byKey(const Key('ship-alert')), findsNothing, reason: 'nothing to report while everything works');
+      expect(find.text('Đang chia sẻ vị trí'), findsOneWidget);
+      await phone(tester, t, <String, dynamic>{'gpsEnabled': false, 'fresh': false, 'fixState': 'DISABLED'});
+      expect(find.text('Vị trí đang tắt'), findsOneWidget);
+      expect(find.text('Vị trí đang tắt. Hãy bật Vị trí để tiếp tục nhận đơn.'), findsOneWidget);
+      expect(find.byKey(const Key('ship-alert')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('ship-alert-location-settings')));
+      await tester.runAsync(settle);
+      expect(t.feed.settings, <String>['location']);
+      await tester.runAsync(() async { t.feed.current = fix(t.now); await t.report(); await settle(); });
+      await tester.pump();
+      expect(find.byKey(const Key('ship-alert')), findsNothing, reason: 'it disappears by itself once the phone has a fix again');
+      expect(t.driver.profile!.acceptingDeliveries, isTrue, reason: 'the intent to be online was kept the whole time');
+      expect(find.text('Đang chia sẻ vị trí'), findsOneWidget);
+      await finish(tester, t);
+    });
+
+    testWidgets('the phone says there is no Internet but GPS is fine: the alert is about the network only', (WidgetTester tester) async {
+      final t = await tester.runAsync(_build) as _T;
+      await online(tester, t);
+      await phone(tester, t, <String, dynamic>{'networkAvailable': false});
+      expect(find.text('Điện thoại đang mất kết nối Internet.'), findsOneWidget);
+      expect(find.textContaining('Vị trí đang tắt'), findsNothing);
+      expect(find.byKey(const Key('ship-alert-retry-network')), findsOneWidget);
+      await phone(tester, t, <String, dynamic>{'networkAvailable': true});
+      expect(find.byKey(const Key('ship-alert')), findsNothing);
+      await finish(tester, t);
+    });
+
+    testWidgets('Internet fine but the server answers 503: "Chưa kết nối được máy chủ", never "Wi-Fi/dữ liệu đã tắt"; one alert, no second connection banner', (WidgetTester tester) async {
+      final t = await tester.runAsync(_build) as _T;
+      final HealthMonitor monitor = HealthMonitor(baseUrl: Uri.parse('https://api.example.test'), transport: (Uri uri, Duration timeout) async => const RawHealthResponse(status: 503, body: '{}'));
+      await tester.runAsync(monitor.check);
+      await phone(tester, t, <String, dynamic>{'networkAvailable': true});
+      await online(tester, t, monitor: monitor);
+      await tester.runAsync(monitor.check);
+      await tester.pump();
+      expect(find.text('Chưa kết nối được máy chủ. Vui lòng thử lại.'), findsOneWidget);
+      expect(find.byKey(const Key('connection-banner')), findsNothing, reason: 'the home shows one notice, not the alert plus the shell banner');
+      expect(find.textContaining('Wi-Fi'), findsNothing);
+      expect(find.textContaining('dữ liệu di động'), findsNothing);
+      await tester.tap(find.byKey(const Key('ship-alert-retry')));
+      await tester.runAsync(settle);
+      await finish(tester, t);
+    });
+
+    testWidgets('a shipper who is resting is not alarmed by a dead server or GPS; the normal connection banner stays the only notice', (WidgetTester tester) async {
+      final t = await tester.runAsync(_build) as _T;
+      t.feed.current = <String, dynamic>{...?t.feed.current, 'gpsEnabled': false, 'networkAvailable': false};
+      final HealthMonitor monitor = HealthMonitor(baseUrl: Uri.parse('https://api.example.test'), transport: (Uri uri, Duration timeout) async => throw Exception('down'));
+      await tester.runAsync(monitor.check);
+      await tester.pumpWidget(home(t, monitor: monitor));
+      await tester.pump();
+      await tester.runAsync(settle);
+      await tester.pump();
+      expect(find.byKey(const Key('ship-alert')), findsNothing);
+      expect(find.byKey(const Key('connection-banner')), findsOneWidget);
+      expect(find.text('Đã dừng chia sẻ vị trí'), findsOneWidget);
+      expect(find.text('Bạn đang offline'), findsOneWidget);
+      await finish(tester, t);
+    });
+
+    testWidgets('tapping Bật online with GPS off explains it then (not before), and the switch stays off', (WidgetTester tester) async {
+      final t = await tester.runAsync(_build) as _T;
+      t.feed.current = <String, dynamic>{'recording': true, 'gpsEnabled': false, 'permissionGranted': true, 'fixState': 'DISABLED', 'status': 'Định vị đang tắt'};
+      await tester.pumpWidget(home(t));
+      await tester.pump();
+      await tester.runAsync(settle);
+      await tester.pump();
+      expect(find.byKey(const Key('ship-alert')), findsNothing);
+      await tester.tap(find.byKey(const Key('online-button')));
+      await tester.runAsync(() async { await settle(); await settle(); });
+      await tester.pump();
+      expect(find.text('Vị trí đang tắt'), findsOneWidget);
+      expect(find.text('Bạn đang offline'), findsOneWidget);
+      expect(t.driver.profile!.acceptingDeliveries, isFalse);
+      await finish(tester, t);
+    });
+
+    testWidgets('server paused after 120 s: the label turns into "last location", says it is not updated, and the explanation separates phone GPS from what the server got', (WidgetTester tester) async {
+      final t = await tester.runAsync(_build) as _T;
+      await online(tester, t);
+      await tester.tap(find.byKey(const Key('home-location-info')));
+      await tester.pump();
+      expect(find.textContaining('Máy chủ nhận vị trí lần cuối: ${clockText(t.now)}'), findsOneWidget);
+      expect(find.textContaining('Độ chính xác ước tính: ~12 m'), findsOneWidget);
+      expect(find.textContaining('khoảng 1 phút/lần'), findsOneWidget);
+      t.advance(const Duration(seconds: 130));
+      t.server.locationReady = false;
+      await tester.runAsync(t.driver.load);
+      await tester.pump();
+      expect(find.text('Vị trí lần cuối ${clockText(t.now.subtract(const Duration(seconds: 130)))}'), findsOneWidget);
+      expect(find.textContaining('chưa được cập nhật'), findsOneWidget);
+      expect(find.text('Tạm dừng nhận đơn — chưa có vị trí mới.'), findsOneWidget);
+      expect(find.text('Đang chia sẻ vị trí'), findsNothing, reason: 'an old position is never described as live');
+      expect(t.driver.profile!.acceptingDeliveries, isTrue, reason: 'opening the explanation and the pause never touch the switch');
+      await finish(tester, t);
+    });
+
+    testWidgets('switched off with a delivery still in hand: the home says the sharing continues for that order', (WidgetTester tester) async {
+      final t = await tester.runAsync(_build) as _T;
+      await online(tester, t);
+      t.server.hasActiveWork = true;
+      await tester.tap(find.byKey(const Key('online-button')));
+      await tester.runAsync(() async { await settle(); await settle(); });
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('home-location-info')));
+      await tester.pump();
+      expect(find.textContaining('Bạn đã tắt nhận đơn mới nhưng vẫn chia sẻ vị trí cho đơn đang xử lý.'), findsOneWidget);
+      expect(find.text('Đã dừng chia sẻ vị trí'), findsNothing);
+      await finish(tester, t);
+    });
+  });
+
 }
