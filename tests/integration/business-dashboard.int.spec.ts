@@ -1,4 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto';
+import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { AdminApp, adminData, adminErrorCode, startAdminApp } from './support/admin-fixtures';
 import { AuthApp, dataOf, PASSWORD, startAuthApp } from './support/auth-fixtures';
@@ -23,7 +24,7 @@ describe('Business Dashboard — real money requests, chat, rights and reports',
       await purgeDeliveriesOfShops(app.pool,[shop.shopId,other.shopId]);await app.close();await admin.close();
     }finally{
       // The shared fixture pool is closed above. The suite's receiving account is removed by the following guarded test-only connection.
-      const {Client}=await import('pg');const c=new Client({connectionString:process.env.DATABASE_URL});await c.connect();
+      const c=new Client({connectionString:process.env.DATABASE_URL});await c.connect();
       try{await c.query('BEGIN');await c.query('ALTER TABLE app.system_owned_bank_accounts DISABLE TRIGGER USER');await c.query('DELETE FROM app.system_owned_bank_accounts WHERE system_account_id=$1',[accountId]);await c.query('ALTER TABLE app.system_owned_bank_accounts ENABLE TRIGGER USER');await c.query('COMMIT');}finally{await c.end();}
     }
   });
