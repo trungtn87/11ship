@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { TechnicalError } from '../common/app-errors';
+import { AppError, TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
 
 // SQL of the money posted by an administrator's confirmation (M04-B2.2b): the wallet row lock, the receiving account lock, the bank record (IN), the topup, the
@@ -65,12 +65,17 @@ export class TopupSettlementRepository {
     context: TransactionContext,
     input: { bankRecordId: string; bankId: string; systemAccountId: string; canonicalTransactionId: string; amountVnd: bigint; occurredAtIso: string; topupId: string },
   ): Promise<boolean> {
-    const result = await context.query(
+    let result;
+    try { result = await context.query(
       `INSERT INTO app.wallet_bank_transactions (bank_record_id, bank_id, system_owned_account_id, canonical_transaction_id, direction, amount_vnd, occurred_at, topup_id, withdrawal_id, created_at)
        SELECT $1::uuid, $2, $3::uuid, $4, 'IN', $5::bigint, $6::timestamptz, $7::uuid, NULL, date_trunc('milliseconds', clock_timestamp())
        ON CONFLICT (bank_id, system_owned_account_id, canonical_transaction_id) DO NOTHING`,
       [input.bankRecordId, input.bankId, input.systemAccountId, input.canonicalTransactionId, input.amountVnd.toString(), input.occurredAtIso, input.topupId],
     );
+    } catch (error) {
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505' && 'constraint' in error && error.constraint === 'business_bank_receipts_pkey') throw new AppError('BANK_TRANSACTION_ALREADY_RECORDED');
+      throw error;
+    }
     return result.rowCount === 1;
   }
 

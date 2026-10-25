@@ -200,6 +200,12 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | backup_records | SELECT (M12-F: written by the backup job with the owner role; the application only reads it; never deleted) |
 | restore_requests | SELECT, INSERT, UPDATE (M12-F: SYSTEM's request to restore a verified backup, cancelled by SYSTEM, moved on by an operator; never deleted, the application never performs a restore) |
 | backup_jobs | SELECT, INSERT (M12-F: "Sao lưu ngay" queues one job; the backup job moves it on with the owner role; never deleted) |
+| business_finance_requests | SELECT, INSERT, UPDATE |
+| business_finance_reads | SELECT, INSERT, UPDATE |
+| business_push_subscriptions | SELECT, INSERT, UPDATE |
+| business_push_jobs | SELECT, INSERT, UPDATE |
+| business_finance_messages | SELECT, INSERT |
+| business_bank_receipts | SELECT, INSERT |
 
 **Permanent account deletion (Owner decision 2026-10-14).** The runtime role has no `DELETE` on any account table. The only way an account is removed is the function `app.purge_app_user(uuid)` (created by the migration, `SECURITY DEFINER`, owned by the migration role, refuses an administration account and an account with a shop or driver profile). `PUBLIC` has no `EXECUTE` on it; after the migrations run, grant it to the runtime role with `ops/selfhosted/03-runtime-function-grants.sql` (one statement: `GRANT EXECUTE ON FUNCTION app.purge_app_user(uuid) TO ship11_app;`). Without that grant a permanent delete answers 503 and nothing is deleted.
 

@@ -1,3 +1,8 @@
+import { BusinessAdminController, BusinessClientController } from '../business-dashboard/business.controller';
+import { BusinessFinanceService } from '../business-dashboard/finance-service';
+import { BusinessFinanceRepository } from '../business-dashboard/finance-repository';
+import { BusinessReportService } from '../business-dashboard/business-report-service';
+import { BusinessPushService } from '../business-dashboard/business-push-service';
 import { ShipperSettlementModule } from '../shipper-settlement/shipper-settlement.module';
 import { DynamicModule, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ActivationOtpProvider, ACTIVATION_OTP_PROVIDER } from '../admin-activation/activation-otp-provider';
@@ -172,8 +177,8 @@ export class AdminAuthModule implements NestModule {
       ],
       // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
       // M01-D-ADMIN-1C: the activation routes under /v1/admin-activation exist only when explicitly enabled.
-      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminErrorLogsController, AdminAccountLockController, SystemSettingsController, OtpPolicyController, AdminMenuCategoryController, AdminShopController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, OrderParametersController, FinanceAccessController, AdminTopupController, AdminFinanceController, AdminDeliveryController, AdminFeedbackController, AdminOrderController, AdminNotificationController, AdminOverviewController, AdminAccessController, AdminConfigController, AdminReportController, AdminOperationsController, OpsAdminController, ...(activation === undefined ? [] : [AdminActivationController])],
-      providers: [
+      controllers: [BusinessAdminController, BusinessClientController, AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminErrorLogsController, AdminAccountLockController, SystemSettingsController, OtpPolicyController, AdminMenuCategoryController, AdminShopController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, OrderParametersController, FinanceAccessController, AdminTopupController, AdminFinanceController, AdminDeliveryController, AdminFeedbackController, AdminOrderController, AdminNotificationController, AdminOverviewController, AdminAccessController, AdminConfigController, AdminReportController, AdminOperationsController, OpsAdminController, ...(activation === undefined ? [] : [AdminActivationController])],
+      providers: [BusinessFinanceService, BusinessFinanceRepository, BusinessReportService, BusinessPushService,
         adminAuthConfigProvider,
         {
           provide: ADMIN_LIMITER_KEY,
@@ -286,7 +291,7 @@ export class AdminAuthModule implements NestModule {
   }
 
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminErrorLogsController, AdminAccountLockController, SystemSettingsController, OtpPolicyController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, OrderParametersController, FinanceAccessController, AdminTopupController, AdminFinanceController, AdminDeliveryController, AdminNotificationController, AdminOverviewController, AdminAccessController, AdminConfigController, AdminReportController, AdminOperationsController, OpsAdminController);
+    consumer.apply(noStoreMiddleware).forRoutes(BusinessAdminController, BusinessClientController, AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminErrorLogsController, AdminAccountLockController, SystemSettingsController, OtpPolicyController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, OrderParametersController, FinanceAccessController, AdminTopupController, AdminFinanceController, AdminDeliveryController, AdminNotificationController, AdminOverviewController, AdminAccessController, AdminConfigController, AdminReportController, AdminOperationsController, OpsAdminController);
     // The activation transport headers are an application-level middleware in configureApp (app.setup.ts): it must precede
     // the body parser, which module middleware does not.
   }

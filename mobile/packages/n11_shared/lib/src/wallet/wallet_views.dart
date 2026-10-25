@@ -5,6 +5,8 @@ import '../account/account_views.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
 import 'wallet_models.dart';
+import 'wallet_http.dart';
+import '../finance/finance_views.dart';
 import 'wallet_sample.dart';
 import 'wallet_source.dart';
 
@@ -807,6 +809,7 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
                 ],
               ),
             ),
+            if (source is HttpWalletSource) N11Button(label: 'Trao đổi với quản trị', kind: ButtonKind.secondary, onPressed: () => Navigator.of(context).push(n11Route(FinanceRequestsScreen(session: source.session, requestId: r.code)))),
             if (_error != null) N11Banner(kind: BannerKind.error, title: 'Chưa hủy được', text: _error),
             if (r.canCancel) N11Button(key: const Key('topup-cancel'), label: 'Hủy yêu cầu', kind: ButtonKind.secondary, loading: _busy, onPressed: source.canWrite ? _cancel : null),
             if (r.canCancel && !source.canWrite) ReasonNote(source.notWiredReason),
@@ -1090,6 +1093,7 @@ class _WithdrawDetailScreenState extends State<WithdrawDetailScreen> {
                 ],
               ),
             ),
+            if (source is HttpWalletSource) N11Button(label: 'Trao đổi với quản trị', kind: ButtonKind.secondary, onPressed: () => Navigator.of(context).push(n11Route(FinanceRequestsScreen(session: source.session, requestId: r.code)))),
             if (_error != null) N11Banner(kind: BannerKind.error, title: 'Chưa hủy được', text: _error),
             if (r.canCancel) N11Button(key: const Key('withdraw-cancel'), label: 'Hủy yêu cầu', kind: ButtonKind.secondary, loading: _busy, onPressed: source.canWrite ? _cancel : null),
             if (r.canCancel && !source.canWrite) ReasonNote(source.notWiredReason),

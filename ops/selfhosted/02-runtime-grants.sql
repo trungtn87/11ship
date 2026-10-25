@@ -193,3 +193,11 @@ GRANT SELECT ON app.backup_records TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.restore_requests TO ship11_app;
 -- "Sao lưu ngay": the application only queues a job (INSERT) and reads it; the backup job moves it on with the owner role. Never deleted (trigger).
 GRANT SELECT, INSERT ON app.backup_jobs TO ship11_app;
+
+-- Business Dashboard: scoped operational rows and append-only financial evidence.
+GRANT SELECT, INSERT, UPDATE ON app.business_finance_requests TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.business_finance_reads TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.business_push_subscriptions TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.business_push_jobs TO ship11_app;
+GRANT SELECT, INSERT ON app.business_finance_messages TO ship11_app;
+GRANT SELECT, INSERT ON app.business_bank_receipts TO ship11_app;

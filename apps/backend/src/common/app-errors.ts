@@ -3,6 +3,9 @@
 // ever copied into a response: classification looks at the class of the exception, not its content.
 
 export const APP_ERROR_DEFINITIONS = {
+  BUSINESS_PUSH_NOT_CONFIGURED: { status: 503, message: 'Thông báo đẩy chưa được cấu hình. Vẫn có thể xem danh sách chờ.' },
+  BUSINESS_REQUEST_NOT_FOUND: { status: 404, message: 'Không tìm thấy yêu cầu thanh toán.' },
+  BUSINESS_REQUEST_CLOSED: { status: 409, message: 'Yêu cầu đã kết thúc. Không thể gửi thêm tin nhắn.' },
   IDEMPOTENCY_KEY_REQUIRED: { status: 400, message: 'Idempotency-Key header is required' },
   INVALID_IDEMPOTENCY_KEY: { status: 400, message: 'Idempotency-Key is invalid' },
   IDEMPOTENCY_KEY_REUSED: {

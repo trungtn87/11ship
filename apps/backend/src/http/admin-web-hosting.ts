@@ -23,6 +23,7 @@ import { ADMIN_WEB_STAGING_ENABLED_VARIABLE } from '../config/admin-web-hosting-
 import { StartupConfigError } from '../config/startup-config-error';
 
 const MIME: Readonly<Record<string, string>> = Object.freeze({
+  '.webmanifest': 'application/manifest+json',
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -36,7 +37,7 @@ const MIME: Readonly<Record<string, string>> = Object.freeze({
 const HEADERS: Readonly<Record<string, string>> = Object.freeze({
   'content-security-policy':
     "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; " +
-    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
   'x-frame-options': 'DENY',
@@ -58,6 +59,8 @@ const UUID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-
  */
 const SPA_ROUTES: readonly RegExp[] = Object.freeze([
   /^\/activate$/,
+  /^\/(?:reports|overview)$/,
+  /^\/operations\/(?:orders|deliveries|notifications)$/,
   // M02 dish groups (Danh mục › Nhóm món): a reload or a bookmark of the page opens the app.
   /^\/catalog\/categories$/,
   // M02 shop management (Vận hành › Quán): the list and one shop, so a reload or a bookmark of either opens the app.
@@ -89,6 +92,8 @@ const SPA_ROUTES: readonly RegExp[] = Object.freeze([
  * it parses a route, so the server accepts them the same way for a route (never for an asset).
  */
 export function publicAdminAsset(pathname: string): string | undefined {
+  if (/^\/business(?:\/(?:overview|finance|orders|chat|notifications)?)?\/?$/.test(pathname)) return 'business.html';
+  if (['/business-sw.js','/business.webmanifest','/business.css'].includes(pathname)) return pathname.slice(1);
   if (pathname === '/' || pathname === '/index.html') {
     return 'index.html';
   }

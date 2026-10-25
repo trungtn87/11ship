@@ -181,7 +181,8 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
           onTap: () => Navigator.of(context).push(n11Route(NotificationSettingsScreen(source: flows!.notificationSource!, push: flows.push!, shipper: false))),
         ),
     ],
-    entries: const <Widget>[
+    entries: <Widget>[
+      if (session.status == SessionStatus.signedIn && session.identity?.activeRole == 'SHOP_OWNER') N11ListItem(icon: Icons.payments_outlined, title: 'Thanh toán và trao đổi', sub: 'Báo đã thanh toán và trao đổi với quản trị', onTap: () => Navigator.of(context).push(n11Route(FinanceRequestsScreen(session: session, shopPayments: true)))),
       N11ListItem(icon: Icons.help_outline, title: 'Trợ giúp', soon: true),
     ],
   ));
