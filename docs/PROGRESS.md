@@ -295,10 +295,12 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#196](https://github.com/trungtn87/11ship/pull/196) M13 #193: tương thích APK–backend, preflight chặn deploy br… | Đã merge (`MERGED`) | — | — | — | `3123ea4` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#197](https://github.com/trungtn87/11ship/pull/197) 11Ship #194: cảnh báo nổi bật GPS/mạng trên Home và minh bạ… | Đã merge (`MERGED`) | — | — | — | `085608a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#200](https://github.com/trungtn87/11ship/pull/200) feat(#191): Trao đổi đơn hàng + chi tiết đơn dạng thẻ (11Fo… | Đã merge (`MERGED`) | — | — | — | `12e8e52` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#201](https://github.com/trungtn87/11ship/pull/201) feat: 11Ship Business Dashboard PWA và trao đổi tài chính | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `701377c` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
 - `UNCLASSIFIED_PR` PR #189: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #201: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
