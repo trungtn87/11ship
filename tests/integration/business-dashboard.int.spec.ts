@@ -8,6 +8,8 @@ import { activatedAdmin, changeGrant, getAs, permission, postAs, purgeDeliveries
 import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
 import { newShipper, PRIVACY, TERMS } from './support/m10-fixtures';
 import { BusinessPushService } from '../../apps/backend/src/business-dashboard/business-push-service';
+import { BUSINESS_DOWN_SQL } from './support/business-migration-sql';
+import { eventually } from './support/async-helpers';
 
 describe('Business Dashboard — real money requests, chat, rights and reports',()=>{
   let admin:AdminApp;let app:AuthApp;let system:SystemSession;let shop:ShopOwner;let other:ShopOwner;let accountId:string;
@@ -40,6 +42,22 @@ describe('Business Dashboard — real money requests, chat, rights and reports',
     const r=await client(shop,'POST','/shop-payments',{amount_vnd:29000,note:'Đã chuyển khoản, nhờ kiểm tra'});expect(r.status).toBe(201);return String(adminData(r).request_id);
   };
   const confirmation=(version=1)=>({expected_version:version,actual_amount_vnd:29000,bank_id:'VCB',system_owned_account_id:accountId,canonical_transaction_id:bankTransaction,received_at:new Date().toISOString()});
+  it('locks before checking financial history during rollback, preserving a concurrent committed request',async()=>{
+    const id=randomUUID();const writer=await admin.pool.connect();const migrator=await admin.pool.connect();
+    try{
+      await writer.query('BEGIN');
+      await writer.query(`INSERT INTO app.business_finance_requests(request_id,kind,owner_user_id,shop_id,amount_requested_vnd,state) VALUES($1,'SHOP_PAYMENT',$2,$3,29000,'PENDING')`,[id,shop.userId,shop.shopId]);
+      await migrator.query('BEGIN');
+      const migrating=migrator.query(BUSINESS_DOWN_SQL).then(()=>undefined,(error:unknown)=>error);
+      await eventually(async()=>Number((await admin.pool.query(`SELECT count(*)::int AS n FROM pg_locks WHERE NOT granted AND relation='app.business_finance_requests'::regclass`)).rows[0].n)>0,'rollback waits behind the uncommitted finance request');
+      await writer.query('COMMIT');
+      expect(String(await migrating)).toContain('BUSINESS_FINANCE_DOWN_REFUSED');
+    }finally{
+      await writer.query('ROLLBACK').catch(()=>undefined);await migrator.query('ROLLBACK').catch(()=>undefined);
+      writer.release();migrator.release();
+    }
+    expect((await admin.pool.query('SELECT 1 FROM app.business_finance_requests WHERE request_id=$1',[id])).rowCount).toBe(1);
+  });
   it('uses existing administration sessions and denies missing or unrelated finance rights',async()=>{
     expect((await getAs(admin,undefined,'/business/requests')).status).toBe(401);
     const viewer=await activatedAdmin(admin,system,[permission('SHOP')],'Business reader');

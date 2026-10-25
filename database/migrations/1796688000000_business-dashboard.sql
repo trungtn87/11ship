@@ -132,6 +132,8 @@ CREATE TRIGGER business_finance_messages_immutable BEFORE UPDATE OR DELETE ON ap
 CREATE TRIGGER business_bank_receipts_immutable BEFORE UPDATE OR DELETE ON app.business_bank_receipts FOR EACH ROW EXECUTE FUNCTION app.business_finance_immutable();
 
 -- Down Migration
+-- Keep the history check and DROP atomic against concurrent request/receipt writers.
+LOCK TABLE app.business_finance_requests, app.business_bank_receipts IN ACCESS EXCLUSIVE MODE;
 DO $$ BEGIN
   IF EXISTS(SELECT 1 FROM app.business_finance_requests) OR EXISTS(SELECT 1 FROM app.business_bank_receipts) THEN
     RAISE EXCEPTION 'BUSINESS_FINANCE_DOWN_REFUSED: financial history exists';
